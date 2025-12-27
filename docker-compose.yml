@@ -1,0 +1,80 @@
+services:
+  # 1. Base de Dados (Igual ao antigo)
+  db:
+    image: postgres:15-alpine
+    container_name: horario_zen_db
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: mysecretpassword
+      POSTGRES_DB: horario_zen_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # 2. Redis (Igual ao antigo)
+  redis:
+    image: redis:7-alpine
+    container_name: horario_zen_redis
+    restart: always
+    expose:
+      - "6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # 3. Backend API (Antigo 'web')
+  backend: 
+    build: ./backend  # <--- Aponta para a pasta do backend
+    container_name: horario_zen_backend
+    # O comando mantém-se, mas o host interno é 0.0.0.0
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+    expose:
+      - "8000" # A porta 8000 fica fechada para fora, só o Nginx a vê
+    env_file:
+      - ./backend/.env # Aponta para o .env dentro da pasta backend
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://postgres:mysecretpassword@db:5432/horario_zen_db
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # 4. Worker Celery (Igual ao antigo, mas com path ajustado)
+  worker:
+    build: ./backend # Usa o mesmo Dockerfile do backend
+    container_name: horario_zen_worker
+    command: celery -A app.celery_worker.celery_app worker --loglevel=info
+    env_file:
+      - ./backend/.env
+    environment:
+      - DATABASE_URL=postgresql+psycopg2://postgres:mysecretpassword@db:5432/horario_zen_db
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      - backend
+      - redis
+      - db
+
+  # 5. Frontend (Nginx Reverse Proxy) - O Porteiro
+  frontend:
+    build: ./frontend # Aponta para a pasta do frontend
+    container_name: horario_zen_frontend
+    ports:
+      - "80:80" # <--- A ÚNICA porta de entrada (http://localhost)
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:

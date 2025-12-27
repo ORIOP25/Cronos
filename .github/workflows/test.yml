@@ -1,0 +1,75 @@
+name: CI Pipeline (Tests)
+
+on:
+  push:
+    branches: [ "main", "master" ]
+    paths:
+      - 'backend/**'  # Só dispara se mexeres no backend
+  pull_request:
+    branches: [ "main", "master" ]
+
+jobs:
+  test-backend:
+    runs-on: ubuntu-latest
+    
+    # Serviços Temporários (Sidecars) para o teste
+    services:
+      # 1. Postgres de Teste
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: mysecretpassword
+          POSTGRES_DB: horario_zen_test_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      # 2. Redis de Teste
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Configurar Python 3.12
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
+        cache: 'pip' # Cache das dependências para ser mais rápido
+
+    - name: Instalar Dependências
+      working-directory: ./backend
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        # Instalar ferramentas de teste extra
+        pip install pytest pytest-asyncio httpx
+
+    - name: Correr Testes (Pytest)
+      working-directory: ./backend
+      env:
+        # ENVIRONMENT IMPORTANTE: 'local' usa logs coloridos, 'test' ou 'ci' seria ideal
+        ENVIRONMENT: local
+        # URL aponta para o serviço 'postgres' criado acima
+        DATABASE_URL: postgresql+asyncpg://postgres:mysecretpassword@localhost:5432/horario_zen_test_db
+        # URL aponta para o serviço 'redis' criado acima
+        REDIS_URL: redis://localhost:6379/0
+        
+        # Segredos Falsos para Teste
+        SECRET_KEY: segredo_super_secreto_apenas_para_testes_ci
+        ACCESS_TOKEN_EXPIRE_MINUTES: 60
+      run: |
+        # -v: Verbose, -s: Mostra prints
+        pytest -v -sgit add README.md
