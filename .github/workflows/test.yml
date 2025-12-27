@@ -72,4 +72,4 @@ jobs:
         ACCESS_TOKEN_EXPIRE_MINUTES: 60
       run: |
         # -v: Verbose, -s: Mostra prints
-        pytest -v -sgit add README.md
+        pytest -v -s
