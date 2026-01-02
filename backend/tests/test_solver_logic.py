@@ -23,9 +23,10 @@ def test_solver_simple_case_with_classes():
     classes = [MockObj(id=1)] # <--- Engine agora exige isto
     
     constraints = []
+    availabilities = []
 
     # 2. Inicializar a Engine
-    engine = ScheduleEngine(lessons, timeslots, rooms, teachers, classes, constraints)
+    engine = ScheduleEngine(lessons, timeslots, rooms, teachers, classes, constraints, availabilities)
 
     # 3. Resolver
     result = engine.solve()
@@ -53,8 +54,9 @@ def test_solver_conflict_class():
     classes = [MockObj(id=1)] # Só há 1 turma
     
     constraints = []
+    availabilities = []
 
-    engine = ScheduleEngine(lessons, timeslots, rooms, teachers, classes, constraints)
+    engine = ScheduleEngine(lessons, timeslots, rooms, teachers, classes, constraints, availabilities)
     result = engine.solve()
 
     # Deve falhar (None) porque a turma não se pode dividir em dois
