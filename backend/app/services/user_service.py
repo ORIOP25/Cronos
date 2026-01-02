@@ -1,3 +1,5 @@
+#C:\Users\Hp\Desktop\AnoLetivo25_26\MeuProjeto\backend\app\services\user_service.py
+
 import bcrypt
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
@@ -6,23 +8,7 @@ from sqlalchemy import desc, delete
 from app import models, schemas
 from app.services.teacher_service import get_teachers_by_org
 from app.models import UserRole
-
-# --- Funções de Segurança (Hashing) ---
-
-def hash_password(password: str) -> str:
-    """Gera um hash bcrypt de uma password."""
-    # Geramos um "salt" e fazemos o hash
-    pwd_bytes = password.encode('utf-8')
-    salt = bcrypt.gensalt()
-    hashed_password = bcrypt.hashpw(pwd_bytes, salt)
-    return hashed_password.decode('utf-8') # Devolve como string
-
-def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """Verifica se a password em texto simples corresponde ao hash."""
-    password_bytes = plain_password.encode('utf-8')
-    hashed_password_bytes = hashed_password.encode('utf-8')
-    # O bcrypt faz a verificação por nós
-    return bcrypt.checkpw(password_bytes, hashed_password_bytes)
+from app.core.security import hash_password
 
 # --- CRUD: User (Utilizador) ---
 

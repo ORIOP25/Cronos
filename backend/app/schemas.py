@@ -1,7 +1,7 @@
 from pydantic import BaseModel, EmailStr, Field, ConfigDict, model_validator
 from datetime import time
-from typing import Any
-from .models import RoomType, UserRole, ConstraintType
+from typing import Any, Optional
+from .models import RoomType, UserRole, ConstraintType, PreferenceLevel
 
 
 # --- CONFIGURAÇÃO GLOBAL ---
@@ -19,10 +19,8 @@ class Token(BaseModel):
     token_type: str
     organization_id: int
     user_email: str  
-    
-    # Adicionamos estes campos para o frontend saber quem entrou
     role: str 
-    teacher_id: int | None = None
+    teacher_id: Optional[int] = None
 
 class TokenData(BaseModel):
     email: str | None = None
@@ -58,14 +56,18 @@ class OrganizationRead(OrganizationBase):
 # --- TEACHER (PROFESSOR) ---
 class TeacherBase(BaseModel):
     name: str
+    email: Optional[str] = None
 
 class TeacherCreate(TeacherBase):
-    pass
+    email: Optional[str] = None
 
 class TeacherRead(TeacherBase):
     id: int
     organization_id: int
-    model_config = model_config
+    # Opcional: Incluir lista de disponibilidades quando pedes o professor
+    # availabilities: List[AvailabilityRead] = [] 
+
+    model_config = ConfigDict(from_attributes=True)
 
 # --- Class (Turma) ---
 class ClassBase(BaseModel):
@@ -95,6 +97,7 @@ class SubjectRead(SubjectBase):
 class RoomBase(BaseModel):
     name: str
     type: RoomType
+    capacity: int = 30
 
 class RoomCreate(RoomBase):
     pass
@@ -163,6 +166,21 @@ class ConstraintRead(ConstraintBase):
     id: int
     organization_id: int
     model_config = model_config
+
+# --- Disponibilidade ---
+class AvailabilityBase(BaseModel):
+    teacher_id: int
+    timeslot_id: int
+    # O Pydantic valida se é um dos valores do Enum (-1, 0, 1, 2)
+    score: PreferenceLevel = PreferenceLevel.NEUTRAL
+
+class AvailabilityCreate(AvailabilityBase):
+    pass
+
+class AvailabilityRead(AvailabilityBase):
+    id: int
+    
+    model_config = ConfigDict(from_attributes=True)
 
 # --- SCHEDULE OUTPUT (O RESULTADO FINAL) ---
 class ScheduleOutputBase(BaseModel):

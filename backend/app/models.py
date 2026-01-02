@@ -42,6 +42,30 @@ class ConstraintType(str, enum.Enum):
     min_gap = "min_gap"
     max_days = "max_days"
 
+class PreferenceLevel(int, enum.Enum):
+    PREFERRED = 2    # Verde: "Quero muito" (Bónus no score)
+    NEUTRAL = 1      # Amarelo: "Tanto faz" (Padrão)
+    AVOID = 0        # Laranja: "Evitar" (Penalização no score)
+    IMPOSSIBLE = -1  # Vermelho: "Proibido" (Hard Constraint)
+
+class Availability(Base):
+    __tablename__ = "availability"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    teacher_id: Mapped[int] = mapped_column(ForeignKey("teacher.id"), index=True)
+    timeslot_id: Mapped[int] = mapped_column(ForeignKey("timeslot.id"), index=True)
+    
+    # O Score (-1 a 2)
+    score: Mapped[int] = mapped_column(Integer, default=PreferenceLevel.NEUTRAL.value, nullable=False)
+
+    # Relacionamentos (Ajusta os nomes se as tuas classes Teacher/Timeslot forem diferentes)
+    teacher: Mapped["Teacher"] = relationship(back_populates="availabilities")
+    timeslot: Mapped["Timeslot"] = relationship()
+
+    __table_args__ = (
+        UniqueConstraint('teacher_id', 'timeslot_id', name='uq_teacher_timeslot_availability'),
+    )
+
 # Modelo "Organization" (O Colégio)
 # Esta é a tabela "mãe" de quase todas as outras.
 class Organization(Base):
@@ -107,6 +131,8 @@ class Teacher(Base):
     # Relacionamento: Permite-nos fazer my_teacher.organization
     organization: Mapped["Organization"] = relationship(back_populates="teachers")
 
+    availabilities: Mapped[List["Availability"]] = relationship(back_populates="teacher", cascade="all, delete-orphan")
+
     def __repr__(self) -> str:
         return f"<Teacher(id={self.id}, name='{self.name}')>"
 
@@ -134,6 +160,9 @@ class Room(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(100), nullable=False)
+
+    # Adicionamos a capacidade (Lotação)
+    capacity: Mapped[int] = mapped_column(Integer, default=30, nullable=False)
     
     # Usamos o Enum que definimos em cima
     type: Mapped[RoomType] = mapped_column(SAEnum(RoomType), nullable=False, default=RoomType.normal)
@@ -231,6 +260,7 @@ class Lesson(Base):
     def __repr__(self) -> str:
         return f"<Lesson(id={self.id}, class_id={self.class_id}, subject_id={self.subject_id})>"
     
+
 
 # 11. Modelo "Constraint" (A "Regra")
 # (Como definido no Ponto 3.5 do Charter)

@@ -18,7 +18,7 @@ async def login_for_access_token(
 ):
     # 1. Verificar User e Password
     user = await user_service.get_user_by_email(db, form_data.username)
-    if not user or not user_service.verify_password(form_data.password, user.hashed_password):
+    if not user or not security.verify_password(form_data.password, user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Email ou password incorretos",
@@ -34,7 +34,8 @@ async def login_for_access_token(
         "token_type": "bearer",
         "organization_id": user.organization_id,
         "user_email": user.email,
-        "role": user.role
+        "role": user.role,
+        "teacher_id": user.teacher_id
     }
 
 @router.post("/register", response_model=schemas.UserRead)

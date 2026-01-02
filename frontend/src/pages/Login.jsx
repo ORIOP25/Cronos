@@ -59,7 +59,12 @@ const Login = () => {
       console.log('✅ Login efetuado com sucesso!')
       
       // 1. Guardar o token na Store (Zustand)
-      setToken(data.access_token, data.role || 'user') // Guardamos também a role se existir
+      setToken(
+        data.access_token,
+        data.role || 'user',
+        email,
+        data.teacher_id
+      ) // Guardamos também a role se existir
 
       // 2. Redirecionar para a Dashboard
       navigate('/dashboard')

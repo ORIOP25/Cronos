@@ -14,9 +14,7 @@ async def get_timeslots_by_org(db: AsyncSession, org_id: int):
     return result.scalars().all()
 
 async def create_timeslot(db: AsyncSession, item: schemas.TimeslotCreate, org_id: int):
-    # O item.dict() (ou item.model_dump() no Pydantic v2) 
-    # já vai ter 'start_time' como objeto time. O Model espera time.
-    # Tudo compatível!
+    # O item.model_dump() já vai ter 'start_time' como objeto time.
     db_item = models.Timeslot(**item.model_dump(), organization_id=org_id)
     db.add(db_item)
     await db.commit()
@@ -66,15 +64,6 @@ async def delete_constraint(db: AsyncSession, constraint_id: int, org_id: int):
 # --- OUTPUT (RESULTADOS) ---
 async def get_latest_schedule_by_org(db: AsyncSession, org_id: int):
     """Vai buscar o horário gerado mais recente."""
-    # Ordena por ID decrescente (o mais alto é o mais recente)
-    query = select(models.ScheduleOutput)\
-        .where(models.ScheduleOutput.organization_id == org_id)\
-        .order_by(desc(models.ScheduleOutput.id))
-    
-    result = await db.execute(query)
-    # Retorna todos os items dessa geração (não apenas um)
-    # Mas espera... a lógica original buscava o generation_id primeiro.
-    # Vamos simplificar: Retorna as linhas da última geração.
     
     # 1. Descobrir qual é o último generation_id
     gen_query = select(models.ScheduleOutput.generation_id)\
@@ -120,12 +109,15 @@ def get_timeslots_by_org_sync(db: Session, org_id: int):
 def get_constraints_by_org_sync(db: Session, org_id: int):
     return db.query(models.Constraint).filter(models.Constraint.organization_id == org_id).all()
 
-def clear_schedule_sync(db: Session, org_id: int):
+def get_availabilities_by_org_sync(db: Session, org_id: int):
     """
-    Apaga todo o horário gerado anteriormente para esta escola.
+    Retorna todas as disponibilidades dos professores desta organização.
+    Faz um JOIN com a tabela Teacher para filtrar pelo org_id.
     """
-    db.query(models.ScheduleOutput).filter(models.ScheduleOutput.organization_id == org_id).delete()
-    # Nota: O commit será feito pelo solver_tasks no final
+    return db.query(models.Availability)\
+             .join(models.Teacher)\
+             .filter(models.Teacher.organization_id == org_id)\
+             .all()
 
 def create_schedule_output_sync(db: Session, lesson_id, timeslot_id, room_id, org_id, gen_id):
     db_out = models.ScheduleOutput(

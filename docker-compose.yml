@@ -35,8 +35,8 @@ services:
   backend: 
     build: ./backend  # <--- Aponta para a pasta do backend
     container_name: horario_zen_backend
-    # O comando mantém-se, mas o host interno é 0.0.0.0
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+    # Corre migrações ANTES de iniciar a API
+    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
     expose:
       - "8000" # A porta 8000 fica fechada para fora, só o Nginx a vê
     env_file:
@@ -45,6 +45,13 @@ services:
       - DATABASE_URL=postgresql+asyncpg://postgres:mysecretpassword@db:5432/horario_zen_db
       - CELERY_BROKER_URL=redis://redis:6379/0
       - REDIS_URL=redis://redis:6379/0
+
+    ports:
+      - "8000:8000"
+
+    volumes:
+      - ./backend:/app
+      
     depends_on:
       db:
         condition: service_healthy
@@ -69,10 +76,22 @@ services:
 
   # 5. Frontend (Nginx Reverse Proxy) - O Porteiro
   frontend:
-    build: ./frontend # Aponta para a pasta do frontend
+    build: 
+      context: ./frontend
+      dockerfile: Dockerfile
     container_name: horario_zen_frontend
+    # Mapear a porta do Vite (5173) para o teu PC
     ports:
-      - "80:80" # <--- A ÚNICA porta de entrada (http://localhost)
+      - "5173:5173"
+    # O comando mágico para desenvolvimento
+    command: npm run dev
+    volumes:
+      # Sincroniza a pasta do teu PC com o Container
+      - ./frontend:/app
+      # Truque importante: impede que o node_modules do teu PC estrague o do Linux
+      - /app/node_modules
+    environment:
+      - CHOKIDAR_USEPOLLING=true # Ajuda o Windows a detetar saves
     depends_on:
       - backend
 

@@ -1,16 +1,19 @@
-# Estágio 1: Build (Construir o site)
-FROM node:22-alpine AS build
-WORKDIR /app
-COPY package*.json ./
-RUN npm install
-COPY . .
-RUN npm run build
+# Usamos uma imagem de Node simples
+FROM node:22-alpine
 
-# Estágio 2: Production (Servir com Nginx)
-FROM nginx:alpine
-# Copiar o site construído para a pasta do Nginx
-COPY --from=build /app/dist /usr/share/nginx/html
-# Copiar a nossa configuração personalizada
-COPY nginx.conf /etc/nginx/conf.d/default.conf
-EXPOSE 80
-CMD ["nginx", "-g", "daemon off;"]
+WORKDIR /app
+
+# Copiamos apenas os ficheiros de dependências primeiro (Cache eficiente)
+COPY package*.json ./
+
+# Instalamos as dependências
+RUN npm install
+
+# Copiamos o resto do código
+COPY . .
+
+# Expomos a porta do Vite
+EXPOSE 5173
+
+# Comando por defeito (Modo Desenvolvimento)
+CMD ["npm", "run", "dev"]

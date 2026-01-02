@@ -11,17 +11,19 @@ export const useAuthStore = create(
       role: null,
       isAuthenticated: false,
       userEmail: null, // Útil para mostrar "Olá, user@email.com" na navbar
+      teacherId: null,
 
       // --- AÇÕES (FUNÇÕES) ---
       
       // 1. Ação de Login (Chamada pelo Login.jsx)
       // Nota: O Login.jsx envia (token, role). Adicionei email como opcional.
-      setLogin: (token, role, email = null) => {
+      setLogin: (token, role, email = null, teacherId = null) => {
         set({ 
           accessToken: token, 
           role: role, 
           userEmail: email,
-          isAuthenticated: true 
+          isAuthenticated: true,
+          teacherId: teacherId
         })
       },
 
@@ -31,7 +33,8 @@ export const useAuthStore = create(
           accessToken: null, 
           role: null, 
           userEmail: null,
-          isAuthenticated: false 
+          isAuthenticated: false,
+          teacherId: null
         })
         
         // Limpeza extra de segurança

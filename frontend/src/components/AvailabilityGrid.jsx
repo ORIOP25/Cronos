@@ -1,135 +1,119 @@
-import React, { useState } from 'react'
-import { useQuery, useMutation } from '@tanstack/react-query' 
-import apiClient from '../apiClient'
-import {
-  CRow, CCol, CCard, CCardBody, CSpinner, CAlert, CButton 
-} from '@coreui/react'
-import CIcon from '@coreui/icons-react'
-import { cilSave } from '@coreui/icons'
+import React from 'react';
+import { PREFERENCE_LEVELS, DEFAULT_PREFERENCE } from '../constants';
 
-const daysOfWeek = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domingo"]
+const AvailabilityGrid = ({ timeslots, availabilityMap, onChange }) => {
+  // timeslots: Lista vinda da BD (ex: day_of_week: 0, start_time: "08:00:00")
+  
+  // Agrupar timeslots por Dias da Semana para desenhar a tabela
+  const days = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta"];
+  
+  // Extrair as horas únicas e ordenar (ex: "08:00:00", "09:00:00")
+  const uniqueTimes = [...new Set(timeslots.map(t => t.start_time))].sort();
 
-const STATUS_COLORS = {
-  available: 'light',
-  unavailable: 'danger',
-  preferred: 'warning'
-}
+  const getScore = (timeslotId) => {
+    return availabilityMap[timeslotId] !== undefined 
+      ? availabilityMap[timeslotId] 
+      : DEFAULT_PREFERENCE;
+  };
 
-// Função API para guardar
-const saveAvailability = async (selections) => {
-  // Converter o objeto { "1": "unavailable" } para array [{ timeslot_id: 1, status: "unavailable" }]
-  const updates = Object.entries(selections).map(([id, status]) => ({
-    timeslot_id: parseInt(id),
-    status: status
-  }))
+  const handleCellClick = (timeslot) => {
+    const currentScore = getScore(timeslot.id);
+    const nextScore = PREFERENCE_LEVELS[currentScore].next;
+    onChange(timeslot.id, nextScore);
+  };
 
-  const response = await apiClient.post('/users/me/availability', updates)
-  return response.data
-}
-
-const AvailabilityGrid = () => {
-  const [selections, setSelections] = useState({})
-  const [successMsg, setSuccessMsg] = useState('') // Mensagem de sucesso
-
-  // Buscar Timeslots
-  const { data: timeslots, isLoading, isError } = useQuery({
-    queryKey: ['timeslots'],
-    queryFn: async () => {
-      const res = await apiClient.get('/import/timeslots')
-      return res.data
-    }
-  })
-
-  // Mutação para Guardar
-  const mutation = useMutation({
-    mutationFn: saveAvailability,
-    onSuccess: (data) => {
-      setSuccessMsg(data.message)
-      setTimeout(() => setSuccessMsg(''), 3000)
-    }
-  })
-
-  const toggleSlot = (slotId) => {
-    setSelections(prev => {
-      const current = prev[slotId] || 'available'
-      let nextStatus = 'available'
-      if (current === 'available') nextStatus = 'unavailable'
-      else if (current === 'unavailable') nextStatus = 'preferred'
-      else nextStatus = 'available'
-      return { ...prev, [slotId]: nextStatus }
+  const styles = {
+    grid: {
+      display: 'grid',
+      gridTemplateColumns: `100px repeat(${days.length}, 1fr)`,
+      gap: '4px',
+      marginTop: '20px'
+    },
+    headerCell: {
+      fontWeight: 'bold',
+      textAlign: 'center',
+      padding: '10px',
+      backgroundColor: '#e5e7eb'
+    },
+    timeLabel: {
+      fontWeight: 'bold',
+      textAlign: 'center',
+      padding: '10px',
+      backgroundColor: '#f9fafb',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center'
+    },
+    cell: (score) => ({
+      height: '60px',
+      backgroundColor: PREFERENCE_LEVELS[score].color,
+      cursor: 'pointer', // Agora o cursor vai aparecer como mãozinha!
+      border: '1px solid #d1d5db',
+      borderRadius: '4px',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      fontSize: '0.8rem',
+      fontWeight: '500',
+      transition: 'background-color 0.2s',
+      userSelect: 'none'
     })
-  }
-
-  // Organizar dados (igual a antes)
-  const slotsByDay = (timeslots || []).reduce((acc, slot) => {
-    if (!acc[slot.day_of_week]) acc[slot.day_of_week] = []
-    acc[slot.day_of_week].push(slot)
-    return acc
-  }, {})
-  Object.keys(slotsByDay).forEach(day => {
-    slotsByDay[day].sort((a, b) => a.start_time.localeCompare(b.start_time))
-  })
-
-  if (isLoading) return <div className="text-center p-4"><CSpinner /> A carregar...</div>
-  if (isError) return <CAlert color="danger">Erro ao carregar dados.</CAlert>
+  };
 
   return (
-    <div>
-      {/* BARRA DE AÇÃO */}
-      <div className="d-flex justify-content-between align-items-center mb-4">
-        <div className="d-flex gap-2">
-          <span className="badge bg-light text-dark border">Disponível</span>
-          <span className="badge bg-danger">Indisponível</span>
-          <span className="badge bg-warning text-dark">Preferencial</span>
-        </div>
-        
-        <CButton 
-          color="primary" 
-          onClick={() => mutation.mutate(selections)}
-          disabled={mutation.isPending || Object.keys(selections).length === 0}
-        >
-          {mutation.isPending ? <CSpinner size="sm"/> : <><CIcon icon={cilSave} className="me-2"/> Guardar Alterações</>}
-        </CButton>
+    <div style={{ maxWidth: '100%', overflowX: 'auto' }}>
+      {/* Legenda */}
+      <div style={{ display: 'flex', gap: '15px', marginBottom: '15px' }}>
+        {Object.entries(PREFERENCE_LEVELS).map(([score, info]) => (
+          <div key={score} style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+            <div style={{ width: '20px', height: '20px', backgroundColor: info.color, border: '1px solid #ccc' }}></div>
+            <span>{info.label}</span>
+          </div>
+        ))}
       </div>
 
-      {mutation.isError && <CAlert color="danger">Erro ao guardar.</CAlert>}
-      {successMsg && <CAlert color="success">{successMsg}</CAlert>}
+      {/* A Grelha */}
+      <div style={styles.grid}>
+        {/* Cabeçalho */}
+        <div style={styles.headerCell}>Hora</div>
+        {days.map(day => (
+          <div key={day} style={styles.headerCell}>{day}</div>
+        ))}
 
-      <CRow>
-        {[0, 1, 2, 3, 4, 5].map(dayIndex => {
-          const daySlots = slotsByDay[dayIndex]
-          if (!daySlots || daySlots.length === 0) return null
+        {/* Linhas (Horas) */}
+        {uniqueTimes.map(time => (
+          <React.Fragment key={time}>
+            {/* Coluna da Hora (com slice para tirar os segundos :00) */}
+            <div style={styles.timeLabel}>{time.slice(0, 5)}</div>
+            
+            {/* Células dos Dias */}
+            {days.map((dayName, index) => {
+              // CORREÇÃO CRÍTICA AQUI:
+              // Usamos 'index' (0-4) em vez de 'dayName' ("Segunda")
+              // para bater certo com o 'day_of_week' da base de dados.
+              const slot = timeslots.find(t => t.day_of_week === index && t.start_time === time);
+              
+              // Se não houver slot na BD para esta hora/dia, desenha um buraco cinzento
+              if (!slot) return <div key={`${index}-${time}`} style={{ background: '#f3f4f6', border: '1px dashed #ccc' }} title="Sem horário definido" />; 
 
-          return (
-            <CCol key={dayIndex} style={{ minWidth: '150px' }}>
-              <h6 className="text-center mb-3">{daysOfWeek[dayIndex]}</h6>
-              <div className="d-flex flex-column gap-2">
-                {daySlots.map(slot => {
-                  const status = selections[slot.id] || 'available'
-                  const color = STATUS_COLORS[status]
-                  
-                  return (
-                    <CCard 
-                      key={slot.id} 
-                      className={`text-center border-${color === 'light' ? 'secondary' : color} bg-${color}`}
-                      style={{ cursor: 'pointer', transition: 'all 0.2s', userSelect: 'none' }}
-                      onClick={() => toggleSlot(slot.id)}
-                    >
-                      <CCardBody className="p-2">
-                        <small className="fw-bold">{slot.start_time.slice(0, 5)}</small>
-                        <br/>
-                        <small>{slot.end_time.slice(0, 5)}</small>
-                      </CCardBody>
-                    </CCard>
-                  )
-                })}
-              </div>
-            </CCol>
-          )
-        })}
-      </CRow>
+              const score = getScore(slot.id);
+              
+              return (
+                <div 
+                  key={slot.id}
+                  style={styles.cell(score)}
+                  onClick={() => handleCellClick(slot)}
+                  title={`Clique para mudar: ${dayName} às ${time}`}
+                >
+                  {PREFERENCE_LEVELS[score].label}
+                </div>
+              );
+            })}
+          </React.Fragment>
+        ))}
+      </div>
     </div>
-  )
-}
+  );
+};
 
-export default AvailabilityGrid
+export default AvailabilityGrid;
