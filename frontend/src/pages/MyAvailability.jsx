@@ -11,7 +11,7 @@ const MyAvailability = () => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
-  const teacherId = useAuthStore((state) => state.teacherId);
+  const teacherId = useAuthStore((state) => state.user?.teacherId);
 
   // 1. Carregar Dados Iniciais
   useEffect(() => {

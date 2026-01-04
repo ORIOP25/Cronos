@@ -1,5 +1,5 @@
 from pydantic import BaseModel, EmailStr, Field, ConfigDict, model_validator
-from datetime import time
+from datetime import time, datetime, date
 from typing import Any, Optional
 from .models import RoomType, UserRole, ConstraintType, PreferenceLevel
 
@@ -59,15 +59,21 @@ class TeacherBase(BaseModel):
     email: Optional[str] = None
 
 class TeacherCreate(TeacherBase):
-    email: Optional[str] = None
+    create_user_account: bool = False
 
 class TeacherRead(TeacherBase):
     id: int
     organization_id: int
+    user_id: Optional[int] = None
+    login_email: Optional[str] = None
     # Opcional: Incluir lista de disponibilidades quando pedes o professor
     # availabilities: List[AvailabilityRead] = [] 
 
     model_config = ConfigDict(from_attributes=True)
+
+class TeacherUpdate(BaseModel):
+    name: Optional[str] = None
+    # No futuro, se adicionares 'email' ou 'phone' ao Teacher, adicionas aqui também.
 
 # --- Class (Turma) ---
 class ClassBase(BaseModel):
@@ -193,3 +199,37 @@ class ScheduleOutputRead(ScheduleOutputBase):
     id: int
     organization_id: int
     model_config = model_config
+
+
+# --- SUBSTITUTIONS ---
+
+class SubstitutionBase(BaseModel):
+    lesson_id: int
+    timeslot_id: int
+    original_teacher_id: int
+    date: date  # Campo crítico para a mudança pontual
+    reason: Optional[str] = None
+
+class SubstitutionCreate(SubstitutionBase):
+    # O ID do professor substituto é enviado aqui
+    substitute_teacher_id: int 
+
+class SubstitutionResponse(SubstitutionBase):
+    id: int
+    substitute_teacher_id: int
+    status: str
+    created_at: datetime
+    
+    # Para facilitar a leitura no frontend (opcional, mas recomendado)
+    original_teacher_name: Optional[str] = None
+    substitute_teacher_name: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+# Schema para a sugestão (resposta do algoritmo)
+class ReplacementSuggestion(BaseModel):
+    teacher_id: int
+    teacher_name: str
+    priority: int  # 1 (Mesma Disciplina), 2 (Mesma Área), 3 (Livre)
+    reason: str    # Ex: "Livre e da mesma disciplina"

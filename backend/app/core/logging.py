@@ -45,3 +45,7 @@ def setup_logging():
         stream=sys.stdout,
         level=level,
     )
+
+    # Define que estas bibliotecas só mostram logs se forem WARNING ou pior.
+    logging.getLogger("urllib3").setLevel(logging.WARNING)
+    logging.getLogger("sentry_sdk").setLevel(logging.WARNING)

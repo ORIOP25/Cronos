@@ -18,56 +18,96 @@ async def get_teachers_by_org(
     org_id: int, 
     skip: int = 0, 
     limit: int = 100
-) -> List[models.Teacher]:
+):
     """
-    Retorna professores de uma organização com paginação.
+    Retorna professores e verifica se têm login associado (LEFT JOIN).
     """
-    query = select(models.Teacher).where(models.Teacher.organization_id == org_id)
+    # 1. Query: Seleciona o Professor E o email do User (se existir)
+    stmt = (
+        select(models.Teacher, models.User.email)
+        .outerjoin(models.User, models.User.teacher_id == models.Teacher.id)
+        .where(models.Teacher.organization_id == org_id)
+        .order_by(models.Teacher.name) # Boa prática: ordenar alfabeticamente
+        .offset(skip)
+        .limit(limit)
+    )
     
-    # 2. Aplicamos a paginação na Query SQL
-    query = query.offset(skip).limit(limit)
+    result = await db.execute(stmt)
+    rows = result.all()
     
-    result = await db.execute(query)
-    return result.scalars().all()
+    # 2. Mapeamento: Transformamos a tupla (Teacher, email) num dicionário
+    # Isto é necessário para preencher o campo 'login_email' do Schema
+    final_list = []
+    for teacher, user_email in rows:
+        teacher_dict = {
+            "id": teacher.id,
+            "name": teacher.name,
+            "email": user_email, # Email de contacto (info do professor)
+            "organization_id": teacher.organization_id,
+            "login_email": user_email # Email de login (info do user, se existir)
+        }
+        final_list.append(teacher_dict)
+        
+    return final_list
 
 async def create_teacher(db: AsyncSession, teacher: schemas.TeacherCreate, org_id: int):
     """
     Cria um novo professor. 
-    Se o schema trouxer 'email', cria também o User associado (Login).
+    Se o payload trouxer 'create_user_account=True' e 'email', 
+    invoca o user_service para criar o Login separadamente.
     """
-    # 1. Criar o Professor (Recurso)
+    
+    # [CORREÇÃO CRÍTICA]
+    # Instanciamos o modelo Teacher APENAS com os campos que existem na tabela Teacher.
+    # Ignoramos propositadamente o 'teacher.email' aqui, pois ele pertence ao User, não ao Teacher.
     db_teacher = models.Teacher(
         name=teacher.name, 
         organization_id=org_id
     )
+    
     db.add(db_teacher)
-    await db.flush() # Para gerar o ID do professor imediatamente (necessário para o User)
-
-    # 2. Criar o User (Ator), se for pedido
-    if teacher.email:
-        # Verificar se o email já existe
-        stmt = select(User).where(User.email == teacher.email)
-        existing_user = await db.execute(stmt)
-        if existing_user.scalars().first():
-            # Se já existe, não criamos duplicado, mas podíamos ligar (fica para v2)
-            print(f"⚠️ User {teacher.email} já existe. Ignorando criação de login.")
-        else:
-            print(f"👤 Criando login automático para {teacher.name}...")
-            new_user = User(
-                email=teacher.email,
-                hashed_password=hash_password("1234"), # Password provisória padrão
-                role=UserRole.teacher,
-                organization_id=org_id,
-                teacher_id=db_teacher.id # <--- A LIGAÇÃO CRÍTICA
-            )
-            db.add(new_user)
-
-    await db.commit()
+    
+    # Flush para obter o ID do professor (db_teacher.id) antes do commit final
+    await db.flush() 
     await db.refresh(db_teacher)
+
+    # Lógica de criação de User (Separada e desacoplada)
+    if teacher.create_user_account and teacher.email:
+        # Importação local para evitar ciclo de dependência
+        from app.services import user_service
+        from app.models import UserRole
+        
+        # Prepara os dados para o user_service
+        user_in = schemas.UserCreate(
+            email=teacher.email,
+            password="1234" # Password provisória
+        )
+        
+        # O user_service encarrega-se de criar o registo na tabela 'user'
+        # e ligá-lo a este professor via 'teacher_id'
+        await user_service.create_user(
+            db, 
+            user_in, 
+            org_id=org_id, 
+            role=UserRole.teacher,
+            teacher_id=db_teacher.id 
+        )
+
+    # Commit atómico: ou cria ambos, ou falha ambos
+    await db.commit()
+    
     return db_teacher
 
-async def delete_teacher(db: AsyncSession, teacher_id: int, org_id: int):
-    """Apaga um professor pelo ID (Async)."""
+async def delete_teacher(
+    db: AsyncSession, 
+    teacher_id: int,
+    org_id: int
+) -> str:
+    """
+    Remove um professor.
+    Retorna: 'SUCCESS', 'NOT_FOUND' ou 'DEPENDENCY_ERROR'.
+    """
+    # 1. Buscar o professor
     query = select(models.Teacher).where(
         models.Teacher.id == teacher_id,
         models.Teacher.organization_id == org_id
@@ -75,11 +115,52 @@ async def delete_teacher(db: AsyncSession, teacher_id: int, org_id: int):
     result = await db.execute(query)
     teacher = result.scalars().first()
     
-    if teacher:
-        await db.delete(teacher)
-        await db.commit()
-        return True
-    return False
+    if not teacher:
+        return "NOT_FOUND"
+
+    # 2. VERIFICAÇÃO DE INTEGRIDADE (Visão Sénior) 🛡️
+    # Não podemos apagar um professor se ele tiver Aulas (Lessons) atribuídas.
+    # Isso deixaria as aulas órfãs e quebraria o horário.
+    query_dependency = select(models.Lesson).where(models.Lesson.teacher_id == teacher_id)
+    result_dependency = await db.execute(query_dependency)
+    if result_dependency.first():
+        return "DEPENDENCY_ERROR"
+
+    # 3. Apagar
+    await db.delete(teacher)
+    await db.commit()
+    return "SUCCESS"
+
+async def update_teacher(
+    db: AsyncSession, 
+    teacher_id: int, 
+    teacher_in: schemas.TeacherUpdate,
+    org_id: int
+):
+    """
+    Atualiza um professor. Verifica se pertence à organização.
+    """
+    # 1. Buscar o professor (garantindo que é da escola certa)
+    query = select(models.Teacher).where(
+        models.Teacher.id == teacher_id,
+        models.Teacher.organization_id == org_id
+    )
+    result = await db.execute(query)
+    teacher = result.scalars().first()
+    
+    if not teacher:
+        return None
+
+    # 2. Atualizar campos apenas se foram enviados (exclude_unset)
+    update_data = teacher_in.model_dump(exclude_unset=True)
+    for field, value in update_data.items():
+        setattr(teacher, field, value)
+
+    # 3. Gravar
+    db.add(teacher)
+    await db.commit()
+    await db.refresh(teacher)
+    return teacher
 
 async def find_replacement_teacher(
     db: AsyncSession, 

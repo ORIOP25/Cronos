@@ -12,7 +12,8 @@ from app.api.v1.endpoints import (
     import_data,
     timeslots,
     lessons,
-    health
+    health,
+    substitutions
 )
 
 api_router = APIRouter()
@@ -31,6 +32,7 @@ api_router.include_router(lessons.router, prefix="/lessons", tags=["Aulas"])
 api_router.include_router(schedule.router, prefix="/schedule", tags=["Gerador de Horários"])
 api_router.include_router(analytics.router, prefix="/analytics", tags=["Analytics"])
 api_router.include_router(import_data.router, prefix="/import", tags=["Importação de Dados"])
+api_router.include_router(substitutions.router, prefix="/substitutions", tags=["substitutions"])
 
 # Health Check (Geralmente não leva prefixo dentro da API ou usa /ops)
 # Mas para ficar organizado, deixamos na raiz da API ou sob /ops

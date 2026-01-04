@@ -49,3 +49,32 @@ async def get_current_user(
         raise credentials_exception
         
     return user
+
+# 3. Dependency: Verificar se está Ativo (Segurança Extra)
+async def get_current_active_user(
+    current_user: models.User = Depends(get_current_user),
+) -> models.User:
+    """
+    Garante que o utilizador não foi desativado/bloqueado.
+    """
+    if not current_user.is_active:
+        raise HTTPException(status_code=400, detail="Utilizador inativo")
+    return current_user
+
+# 4. Dependency: Autorização de Admin (Apenas Diretores/Admins)
+async def get_current_active_admin(
+    current_user: models.User = Depends(get_current_active_user),
+) -> models.User:
+    """
+    Garante que o utilizador tem permissões de administração.
+    """
+    # Verifica se é superuser OU se tem role de 'admin'/'director'
+    # Ajusta a string "admin" conforme o que tens na tua base de dados na coluna 'role'
+    is_admin = current_user.is_superuser or (hasattr(current_user, 'role') and current_user.role in ['admin', 'director'])
+    
+    if not is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, 
+            detail="O utilizador não tem privilégios suficientes"
+        )
+    return current_user

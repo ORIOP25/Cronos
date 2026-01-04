@@ -1,100 +1,62 @@
+// Ficheiro: src/pages/Login.jsx
 import React, { useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import apiClient from '../apiClient'
-
-// Ferramentas de Navegação e Estado Global
 import { useNavigate } from 'react-router-dom'
 import { useAuthStore } from '../store'
 
-// Componentes de UI (CoreUI)
+// UI Components
 import {
-  CButton,
-  CCard,
-  CCardBody,
-  CCardGroup,
-  CCol,
-  CContainer,
-  CForm,
-  CFormInput,
-  CInputGroup,
-  CInputGroupText,
-  CRow,
-  CAlert,
+  CButton, CCard, CCardBody, CCardGroup, CCol, CContainer,
+  CForm, CFormInput, CInputGroup, CInputGroupText, CRow, CAlert
 } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
 import { cilLockLocked, cilUser } from '@coreui/icons'
 
-// ==========================================
-// 1. FUNÇÃO DE SERVIÇO (API)
-// ==========================================
-const loginUser = async ({ email, password }) => {
-  // O FastAPI (OAuth2) exige dados em formato de formulário, não JSON.
-  const formData = new URLSearchParams()
-  formData.append('username', email) // Mapeamos email -> username
-  formData.append('password', password)
-
-  const response = await apiClient.post('/auth/token', formData, {
-    headers: {
-      // CRÍTICO: Sobrescrevemos o 'application/json' global para este pedido específico
-      'Content-Type': 'application/x-www-form-urlencoded',
-    },
-  })
-  return response.data
-}
-
-// ==========================================
-// 2. COMPONENTE VISUAL
-// ==========================================
 const Login = () => {
+  const navigate = useNavigate()
+  const setLogin = useAuthStore((state) => state.login)
+  
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  
-  const navigate = useNavigate()
-  const setToken = useAuthStore((state) => state.setLogin) // Função para guardar o token
+  const [errorMsg, setErrorMsg] = useState('')
 
-  // Configuração da Mutação (React Query)
+  // Mutação do Login
   const mutation = useMutation({
-    mutationFn: loginUser,
-    onSuccess: (data) => {
-      console.log('✅ Login efetuado com sucesso!')
-      
-      // 1. Guardar o token na Store (Zustand)
-      setToken(
-        data.access_token,
-        data.role || 'user',
-        email,
-        data.teacher_id
-      ) // Guardamos também a role se existir
+    mutationFn: async (credentials) => {
+      // Formato OAuth2 (x-www-form-urlencoded)
+      const formData = new URLSearchParams()
+      formData.append('username', credentials.email)
+      formData.append('password', credentials.password)
 
-      // 2. Redirecionar para a Dashboard
-      navigate('/dashboard')
+      const res = await apiClient.post('/auth/token', formData, {
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+      })
+      return res.data
     },
-    onError: (error) => {
-      console.error('❌ Erro no login:', error)
-      // O erro é tratado visualmente abaixo, não precisamos de fazer alert aqui
+    onSuccess: (data) => {
+      // 1. Guardar na Store
+      setLogin(data)
+
+      // 2. Redirecionar Inteligente
+      const role = data.role
+      if (role === 'admin') {
+        navigate('/dashboard')
+      } else if (role === 'teacher') {
+        navigate('/my-availability')
+      } else {
+        navigate('/') // Fallback
+      }
     },
+    onError: (err) => {
+      console.error("Login falhou:", err)
+      setErrorMsg('Credenciais inválidas. Tente novamente.')
+    }
   })
 
-  // Função para extrair mensagem de erro legível (Evita o Crash do React)
-  const getErrorMessage = (error) => {
-    if (!error) return null;
-    
-    // Tenta ler a mensagem enviada pelo Backend (ex: "Email ou password incorretos")
-    if (error.response?.data?.detail) {
-        return error.response.data.detail;
-    }
-    
-    // Tenta ler mensagem genérica do Axios
-    if (error.message) {
-        return error.message;
-    }
-
-    return "Erro desconhecido ao tentar entrar.";
-  }
-
-  // Submissão do Formulário
   const handleSubmit = (e) => {
     e.preventDefault()
+    setErrorMsg('')
     mutation.mutate({ email, password })
   }
 
@@ -110,20 +72,13 @@ const Login = () => {
                     <h1>Login</h1>
                     <p className="text-medium-emphasis">Entre na sua conta</p>
                     
-                    {/* ZONA DE ERROS BLINDADA */}
-                    {mutation.isError && (
-                      <CAlert color="danger" className="mb-4">
-                        {getErrorMessage(mutation.error)}
-                      </CAlert>
-                    )}
+                    {errorMsg && <CAlert color="danger">{errorMsg}</CAlert>}
 
                     <CInputGroup className="mb-3">
-                      <CInputGroupText>
-                        <CIcon icon={cilUser} />
-                      </CInputGroupText>
-                      <CFormInput
-                        placeholder="Email"
-                        autoComplete="email"
+                      <CInputGroupText><CIcon icon={cilUser} /></CInputGroupText>
+                      <CFormInput 
+                        placeholder="Email" 
+                        autoComplete="email" 
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
                         required
@@ -131,12 +86,10 @@ const Login = () => {
                     </CInputGroup>
                     
                     <CInputGroup className="mb-4">
-                      <CInputGroupText>
-                        <CIcon icon={cilLockLocked} />
-                      </CInputGroupText>
-                      <CFormInput
-                        type="password"
-                        placeholder="Password"
+                      <CInputGroupText><CIcon icon={cilLockLocked} /></CInputGroupText>
+                      <CFormInput 
+                        type="password" 
+                        placeholder="Password" 
                         autoComplete="current-password"
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
@@ -146,12 +99,7 @@ const Login = () => {
                     
                     <CRow>
                       <CCol xs={6}>
-                        <CButton
-                          type="submit"
-                          color="primary"
-                          className="px-4"
-                          disabled={mutation.isPending}
-                        >
+                        <CButton type="submit" color="primary" className="px-4" disabled={mutation.isPending}>
                           {mutation.isPending ? 'A entrar...' : 'Login'}
                         </CButton>
                       </CCol>
@@ -160,14 +108,11 @@ const Login = () => {
                 </CCardBody>
               </CCard>
               
-              {/* Lado Direito (Decorativo - Opcional) */}
               <CCard className="text-white bg-primary py-5" style={{ width: '44%' }}>
-                <CCardBody className="text-center">
+                <CCardBody className="text-center d-flex align-items-center justify-content-center">
                   <div>
-                    <h2>Horário Zen</h2>
-                    <p>
-                      Gestão de horários escolar simplificada, rápida e inteligente.
-                    </p>
+                    <h2>Horário Zen 🧘</h2>
+                    <p>Gestão escolar inteligente e sem stress.</p>
                   </div>
                 </CCardBody>
               </CCard>

@@ -44,6 +44,7 @@ apiClient.interceptors.response.use(
       
       // Ação 1: Limpar o estado local (Logout)
       useAuthStore.getState().logout();
+      localStorage.clear();
       
       // Ação 2: Redirecionar para o Login
       // Nota: Verificamos se já não estamos no login para evitar loops
@@ -54,5 +55,23 @@ apiClient.interceptors.response.use(
     return Promise.reject(error);
   }
 );
+
+// --- API HELPER FUNCTIONS (Novas) ---
+export const auth = {
+  login: (credentials) => {
+    const formData = new URLSearchParams();
+    formData.append('username', credentials.email);
+    formData.append('password', credentials.password);
+    return apiClient.post('/auth/token', formData, {
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+    });
+  }
+};
+
+export const teachers = {
+  getAll: () => apiClient.get('/teachers/'),
+  create: (data) => apiClient.post('/teachers/', data),
+  // delete: (id) => apiClient.delete(`/teachers/${id}`), // Futuro
+};
 
 export default apiClient;

@@ -68,3 +68,52 @@ async def update_teacher_availability(
         availability_data
     )
     return result
+
+# --- 3. Atualizar Professor (PUT) ---
+@router.put("/{teacher_id}", response_model=schemas.TeacherRead)
+async def update_teacher(
+    teacher_id: int,
+    teacher_in: schemas.TeacherUpdate,
+    db: AsyncSession = Depends(deps.get_db),
+    current_user: models.User = Depends(deps.get_current_active_admin) # Apenas Admins
+):
+    """
+    Atualiza dados do professor (ex: Nome).
+    """
+    teacher = await teacher_service.update_teacher(
+        db, 
+        teacher_id, 
+        teacher_in, 
+        org_id=current_user.organization_id
+    )
+    if not teacher:
+        raise HTTPException(status_code=404, detail="Professor não encontrado")
+    return teacher
+
+# --- 4. Apagar Professor (DELETE) ---
+@router.delete("/{teacher_id}")
+async def delete_teacher(
+    teacher_id: int,
+    db: AsyncSession = Depends(deps.get_db),
+    current_user: models.User = Depends(deps.get_current_active_admin) # Apenas Admins
+):
+    """
+    Remove um professor. Falha se o professor tiver aulas atribuídas.
+    """
+    status_result = await teacher_service.delete_teacher(
+        db, 
+        teacher_id, 
+        org_id=current_user.organization_id
+    )
+    
+    if status_result == "NOT_FOUND":
+        raise HTTPException(status_code=404, detail="Professor não encontrado")
+    
+    if status_result == "DEPENDENCY_ERROR":
+        # Erro 400 ou 409 (Conflict) é adequado aqui.
+        raise HTTPException(
+            status_code=400, 
+            detail="Não é possível apagar este professor pois ele tem aulas atribuídas. Remova as aulas primeiro."
+        )
+    
+    return {"message": "Professor removido com sucesso"}

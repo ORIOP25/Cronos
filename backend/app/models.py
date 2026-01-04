@@ -1,5 +1,5 @@
 import enum
-from datetime import time
+from datetime import datetime, time
 from typing import List, Optional
 from sqlalchemy import (
     Column,
@@ -7,7 +7,10 @@ from sqlalchemy import (
     String,
     Boolean,
     ForeignKey,
+    Date,
+    DateTime,
     Time,
+    Text,
     Enum as SAEnum,
     UniqueConstraint,
 )
@@ -98,21 +101,17 @@ class User(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     email: Mapped[str] = mapped_column(String(100), unique=True, index=True, nullable=False)
     hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
-
     # O Papel do utilizador (Admin por defeito)
     role: Mapped[UserRole] = mapped_column(SAEnum(UserRole), default=UserRole.admin, nullable=False)
-
-    # Ligação opcional a um perfil de Professor
     # Se for admin, isto fica NULL. Se for professor, aponta para o ID dele.
     teacher_id: Mapped[Optional[int]] = mapped_column(ForeignKey("teacher.id"), nullable=True)
-
-    # Chave Estrangeira: Liga o User à sua Organization
     organization_id: Mapped[int] = mapped_column(ForeignKey("organization.id"))
-
-    # Relacionamentos
     organization: Mapped["Organization"] = relationship(back_populates="users")
     # Atalho para aceder aos dados do professor (se existirem)
     teacher_profile: Mapped[Optional["Teacher"]] = relationship()
+    # Permite bloquear utilizadores sem apagar o histórico (Soft Delete)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    is_superuser: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     def __repr__(self) -> str:
         return f"<User(id={self.id}, email='{self.email}', role='{self.role}')>"
@@ -310,3 +309,31 @@ class ScheduleOutput(Base):
 
     def __repr__(self) -> str:
         return f"<ScheduleOutput(lesson_id={self.lesson_id}, timeslot_id={self.timeslot_id})>"
+    
+# -- SUBSTITUIÇÕES --
+class Substitution(Base):
+    __tablename__ = "substitutions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    
+    # Qual é a aula original que vai sofrer alteração?
+    lesson_id = Column(Integer, ForeignKey("lesson.id"), nullable=False)
+    timeslot_id = Column(Integer, ForeignKey("timeslot.id"), nullable=False)
+    
+    # A data específica (ex: 2026-03-12). Isto diferencia a mudança pontual da permanente.
+    date = Column(Date, nullable=False, index=True)
+    
+    # Quem faltou e quem vai substituir
+    original_teacher_id = Column(Integer, ForeignKey("teacher.id"), nullable=False)
+    substitute_teacher_id = Column(Integer, ForeignKey("teacher.id"), nullable=False)
+    
+    # Auditoria e Estado
+    status = Column(String, default="PENDING") # PENDING, CONFIRMED, CANCELLED
+    reason = Column(Text, nullable=True) # Ex: "Baixa médica"
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    # Relacionamentos
+    lesson = relationship("Lesson")
+    timeslot = relationship("Timeslot")
+    original_teacher = relationship("Teacher", foreign_keys=[original_teacher_id])
+    substitute_teacher = relationship("Teacher", foreign_keys=[substitute_teacher_id])

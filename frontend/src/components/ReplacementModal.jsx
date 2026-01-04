@@ -6,12 +6,19 @@ import {
   CButton, CListGroup, CListGroupItem, CBadge, CSpinner, CAlert
 } from '@coreui/react'
 
+// Função auxiliar para formatar datas (YYYY-MM-DD)
+const formatDate = (dateObj) => {
+  if (!dateObj) return null
+  return new Date(dateObj).toISOString().split('T')[0]
+}
+
 const fetchSuggestions = async ({ queryKey }) => {
   const [_, params] = queryKey
-  // Se faltarem dados, não faz pedido (segurança extra)
-  if (!params.timeslot_id) return []
+  // Agora exigimos date_str também
+  if (!params.timeslot_id || !params.date_str) return []
   
-  const response = await apiClient.get('/suggestions/replacement', {
+  // ATENÇÃO: Mudámos o endpoint para o novo que criaste
+  const response = await apiClient.get('/substitutions/suggestions', {
     params: params
   })
   return response.data
@@ -20,67 +27,76 @@ const fetchSuggestions = async ({ queryKey }) => {
 const ReplacementModal = ({ visible, onClose, eventData }) => {
   const queryClient = useQueryClient()
 
-  // 1. EXTRAIR DADOS DE FORMA SEGURA
-  // Se eventData for null, usamos um objeto vazio para não crashar
+  // 1. EXTRAIR DADOS (Incluindo a DATA do evento clicado)
   const safeEventData = eventData || { extendedProps: {} }
-  const { extendedProps } = safeEventData
+  const { extendedProps, start } = safeEventData // 'start' vem do FullCalendar
+  
+  // Converter a data do evento para String (YYYY-MM-DD)
+  const dateStr = formatDate(start)
 
-  // 2. USE QUERY (Corre sempre, mas 'enabled' controla se faz o pedido)
+  // 2. USE QUERY (Buscar Sugestões)
   const { data: suggestions, isLoading, isError } = useQuery({
     queryKey: ['suggestions', {
-      timeslot_id: extendedProps?.timeslot_id,      // Uso de ?.
-      class_id: extendedProps?.class_id,            // Uso de ?.
-      missing_teacher_id: extendedProps?.teacher_id // Uso de ?.
+      timeslot_id: extendedProps?.timeslot_id,
+      original_teacher_id: extendedProps?.teacher_id,
+      date_str: dateStr // <--- O novo parametro crítico
     }],
     queryFn: fetchSuggestions,
-    enabled: !!eventData && visible // Só ativa se eventData existir E modal visível
+    // Só ativa se tivermos eventData, estiver visível E tivermos uma data válida
+    enabled: !!eventData && visible && !!dateStr
   })
 
-  // 3. USE MUTATION (Corre sempre)
+  // 3. USE MUTATION (Criar Substituição)
   const mutation = useMutation({
     mutationFn: async (newTeacherId) => {
-      await apiClient.post('/schedule/swap', {
-        schedule_id: parseInt(eventData.id),
-        new_teacher_id: newTeacherId,
-        class_id: extendedProps.class_id
+      // Endpoint novo para criar a substituição
+      await apiClient.post('/substitutions/', {
+        lesson_id: extendedProps.lesson_id,     // Backend precisa disto
+        timeslot_id: extendedProps.timeslot_id,
+        original_teacher_id: extendedProps.teacher_id,
+        substitute_teacher_id: newTeacherId,
+        date: dateStr, // <--- A data específica
+        reason: "Substituição pontual via Dashboard"
       })
     },
     onSuccess: () => {
-      alert("Troca efetuada com sucesso!")
-      queryClient.invalidateQueries({ queryKey: ['fullScheduleData'] })
+      alert("Substituição agendada com sucesso!")
+      // Invalidar queries para atualizar o calendário visualmente
+      queryClient.invalidateQueries({ queryKey: ['substitutions'] })
       onClose()
     },
     onError: (err) => {
-      alert(err.response?.data?.detail || "Erro ao trocar.")
+      const msg = err.response?.data?.detail || "Erro ao trocar."
+      alert(msg)
     }
   })
 
-  // 4. RETURN ANTECIPADO (Agora é seguro fazer isto aqui)
   if (!eventData) return null
 
   return (
     <CModal visible={visible} onClose={onClose} size="lg">
       <CModalHeader onClose={onClose}>
-        <CModalTitle>Gerir Substituição</CModalTitle>
+        <CModalTitle>Gerir Substituição - {dateStr}</CModalTitle>
       </CModalHeader>
       
       <CModalBody>
         <p className="mb-4">
           A procurar substituto para <strong>{extendedProps.teacher_name}</strong><br/>
-          Aula: <strong>{eventData.title}</strong>
+          Aula: <strong>{safeEventData.title}</strong><br/>
+          Data: <CBadge color="info">{dateStr}</CBadge>
         </p>
 
-        {isLoading && <div className="text-center"><CSpinner/> A analisar horários...</div>}
+        {isLoading && <div className="text-center"><CSpinner/> A analisar horários para dia {dateStr}...</div>}
         
         {isError && <CAlert color="danger">Erro ao buscar sugestões.</CAlert>}
 
         {suggestions && suggestions.length === 0 && (
-          <CAlert color="warning">Nenhum professor disponível neste horário.</CAlert>
+          <CAlert color="warning">Nenhum professor disponível neste dia/hora.</CAlert>
         )}
 
         {suggestions && suggestions.length > 0 && (
           <>
-            <h5>Sugestões Encontradas:</h5>
+            <h5>Sugestões para esta data:</h5>
             <CListGroup>
               {suggestions.map((prof) => (
                 <CListGroupItem key={prof.teacher_id} className="d-flex justify-content-between align-items-center">
@@ -92,9 +108,9 @@ const ReplacementModal = ({ visible, onClose, eventData }) => {
                   
                   <div className="d-flex align-items-center gap-2">
                     {prof.priority === 1 ? (
-                      <CBadge color="success">Ideal (Antecipação)</CBadge>
+                      <CBadge color="success">Mesma Disciplina</CBadge>
                     ) : (
-                      <CBadge color="warning" className="text-dark">Vigilância</CBadge>
+                      <CBadge color="warning" className="text-dark">Outra Área</CBadge>
                     )}
                     
                     <CButton

@@ -1,54 +1,42 @@
 // Ficheiro: src/store.js
-
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 
 export const useAuthStore = create(
   persist(
     (set) => ({
-      // --- ESTADO (DADOS) ---
+      // --- ESTADO ---
       accessToken: null,
-      role: null,
       isAuthenticated: false,
-      userEmail: null, // Útil para mostrar "Olá, user@email.com" na navbar
-      teacherId: null,
+      user: null, // Guardará: { email, role, teacherId, orgId }
 
-      // --- AÇÕES (FUNÇÕES) ---
+      // --- AÇÕES ---
       
-      // 1. Ação de Login (Chamada pelo Login.jsx)
-      // Nota: O Login.jsx envia (token, role). Adicionei email como opcional.
-      setLogin: (token, role, email = null, teacherId = null) => {
+      // Recebe a resposta completa da API (Token Schema)
+      login: (data) => {
         set({ 
-          accessToken: token, 
-          role: role, 
-          userEmail: email,
+          accessToken: data.access_token,
           isAuthenticated: true,
-          teacherId: teacherId
+          user: {
+            email: data.user_email,
+            role: data.role,
+            teacherId: data.teacher_id,
+            orgId: data.organization_id
+          }
         })
       },
 
-      // 2. Ação de Logout
       logout: () => {
         set({ 
           accessToken: null, 
-          role: null, 
-          userEmail: null,
-          isAuthenticated: false,
-          teacherId: null
+          isAuthenticated: false, 
+          user: null 
         })
-        
-        // Limpeza extra de segurança
         localStorage.removeItem('horario-zen-storage')
-        
-        // Redirecionar se não estivermos já no login
-        if (window.location.pathname !== '/login') {
-          window.location.href = '/login'
-        }
       },
     }),
     {
-      // Nome da chave no browser (podes ver isto na Tab Application > Local Storage)
-      name: 'horario-zen-storage', 
+      name: 'horario-zen-storage',
       storage: createJSONStorage(() => localStorage),
     }
   )
