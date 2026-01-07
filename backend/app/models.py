@@ -76,6 +76,8 @@ class Organization(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(100), nullable=False)
+
+    courses: Mapped[List["Course"]] = relationship(back_populates="organization", cascade="all, delete-orphan")
     
     # Campo para o plano de subscrição (do Ponto 3.6 do Charter)
     plan_status: Mapped[str] = mapped_column(String(50), default="inactive")
@@ -146,6 +148,13 @@ class Class(Base):
     # Default 25 para evitar problemas na migração e ser um valor comum
     size: Mapped[int] = mapped_column(Integer, default=25, nullable=False)
 
+    # Associação a um Curso (Opcional por enquanto para não partir dados antigos)
+    course_id: Mapped[Optional[int]] = mapped_column(ForeignKey("course.id"), nullable=True)
+    course: Mapped[Optional["Course"]] = relationship(back_populates="classes")
+
+    # Histórico de progresso
+    progress_records: Mapped[List["ClassProgress"]] = relationship(back_populates="class_", cascade="all, delete-orphan")
+
     # Chave Estrangeira: Liga a Turma à sua Organization
     organization_id: Mapped[int] = mapped_column(ForeignKey("organization.id"))
     
@@ -193,6 +202,8 @@ class Subject(Base):
         default=RoomType.normal, 
         nullable=False
     )
+
+    modules: Mapped[List["Module"]] = relationship(back_populates="subject", cascade="all, delete-orphan")
 
     # Chave Estrangeira: Liga a Disciplina à sua Organization
     organization_id: Mapped[int] = mapped_column(ForeignKey("organization.id"))
@@ -348,3 +359,55 @@ class Substitution(Base):
     timeslot = relationship("Timeslot")
     original_teacher = relationship("Teacher", foreign_keys=[original_teacher_id])
     substitute_teacher = relationship("Teacher", foreign_keys=[substitute_teacher_id])
+
+
+# --- ENSINO PROFISSIONAL / MODULAR ---
+
+class Course(Base):
+    """Ex: Técnico de Gestão e Programação de Sistemas Informáticos"""
+    __tablename__ = "course"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(150), nullable=False)
+    organization_id: Mapped[int] = mapped_column(ForeignKey("organization.id"))
+    
+    organization: Mapped["Organization"] = relationship(back_populates="courses")
+    classes: Mapped[List["Class"]] = relationship(back_populates="course")
+
+    def __repr__(self) -> str:
+        return f"<Course(id={self.id}, name='{self.name}')>"
+
+class Module(Base):
+    """Ex: UFCD 0789 - Fundamentos de Programação (50h)"""
+    __tablename__ = "module"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(150), nullable=False)
+    code: Mapped[Optional[str]] = mapped_column(String(50), nullable=True) # Ex: "0789"
+    hours_total: Mapped[int] = mapped_column(Integer, nullable=False, default=25)
+    
+    # Um módulo pertence a uma disciplina macro (ex: pertence a "Programação")
+    subject_id: Mapped[int] = mapped_column(ForeignKey("subject.id"))
+    subject: Mapped["Subject"] = relationship(back_populates="modules")
+
+    # Relação com Organization via Subject (indireta, mas útil saber)
+    # Não criamos FK direta para evitar redundância, acedemos via subject.organization
+
+    def __repr__(self) -> str:
+        return f"<Module(id={self.id}, code='{self.code}', hours={self.hours_total})>"
+
+class ClassProgress(Base):
+    """Rastreia quantas horas a turma já fez de um módulo"""
+    __tablename__ = "class_progress"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    
+    class_id: Mapped[int] = mapped_column(ForeignKey("class.id"))
+    module_id: Mapped[int] = mapped_column(ForeignKey("module.id"))
+    
+    hours_completed: Mapped[int] = mapped_column(Integer, default=0)
+    is_completed: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    # Relacionamentos
+    class_: Mapped["Class"] = relationship(back_populates="progress_records")
+    module: Mapped["Module"] = relationship()

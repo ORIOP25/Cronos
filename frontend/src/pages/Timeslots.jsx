@@ -8,6 +8,7 @@ import { cilClock, cilPlus } from '@coreui/icons'
 import SmartTable from '../components/SmartTable'
 import GenericModalForm from '../components/GenericModalForm'
 import TimeslotForm from '../components/Forms/TimeslotForm'
+import TimeslotGeneratorModal from '../components/Modals/TimeslotGeneratorModal'
 
 import { 
   useTimeslots, 
@@ -19,6 +20,7 @@ import {
 const Timeslots = () => {
   const [modalVisible, setModalVisible] = useState(false)
   const [selectedItem, setSelectedItem] = useState(null)
+  const [genModalVisible, setGenModalVisible] = useState(false)
 
   const { data: timeslots, isLoading } = useTimeslots()
   const createMutation = useCreateEntity('timeslots')
@@ -74,8 +76,16 @@ const Timeslots = () => {
           </h2>
           <small className="text-muted">Defina a grelha de tempos (ex: 08:30 - 09:15).</small>
         </CCol>
-        <CCol className="text-end">
-          <CButton color="primary" onClick={handleCreate} className="d-flex align-items-center gap-2 ms-auto">
+        
+        {/* ALTERAÇÃO 1: Adicionar classes flex para alinhar os dois botões */}
+        <CCol className="text-end d-flex gap-2 justify-content-end">
+          
+          {/* ALTERAÇÃO 2: O Novo Botão "Gerar Auto" */}
+          <CButton color="success" variant="outline" onClick={() => setGenModalVisible(true)}>
+             ⚡ Gerar Auto
+          </CButton>
+
+          <CButton color="primary" onClick={handleCreate} className="d-flex align-items-center gap-2">
             <CIcon icon={cilPlus} />
             Novo Bloco
           </CButton>
@@ -87,15 +97,8 @@ const Timeslots = () => {
         <CAlert color="danger" dismissible onClose={deleteMutation.reset}>
           <strong>Erro ao remover:</strong> {
             (() => {
-              // Tenta ler a mensagem detalhada enviada pelo FastAPI
               const detail = deleteMutation.error?.response?.data?.detail;
-              
-              // Se for uma lista (erros de validação), junta-os
-              if (Array.isArray(detail)) {
-                  return detail.map(e => e.msg).join(', ');
-              }
-              
-              // Se for string simples (nossos erros manuais), mostra-a
+              if (Array.isArray(detail)) return detail.map(e => e.msg).join(', ');
               return detail || "Ocorreu um erro desconhecido.";
             })()
           }
@@ -114,6 +117,12 @@ const Timeslots = () => {
           />
         </CCardBody>
       </CCard>
+
+      {/* ALTERAÇÃO 3: Renderizar o Modal de Geração (Pode ficar aqui, antes do outro modal) */}
+      <TimeslotGeneratorModal 
+        visible={genModalVisible} 
+        onClose={() => setGenModalVisible(false)} 
+      />
 
       <GenericModalForm
         visible={modalVisible}

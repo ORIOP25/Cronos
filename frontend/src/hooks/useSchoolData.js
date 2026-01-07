@@ -80,6 +80,26 @@ export const useTimeslots = () => useQuery({
   ...STATIC_OPTS
 })
 
+// --- CURSOS ---
+export const useCourses = () => useQuery({
+  queryKey: ['courses'],
+  queryFn: async () => {
+    const { data } = await apiClient.get('/courses/')
+    return data
+  },
+  ...STATIC_OPTS
+})
+
+// --- MÓDULOS ---
+export const useModules = () => useQuery({
+  queryKey: ['modules'],
+  queryFn: async () => {
+    const { data } = await apiClient.get('/modules/')
+    return data
+  },
+  ...STATIC_OPTS
+})
+
 // --- HOOKS OPERACIONAIS (Dinâmicos) ---
 
 export const useSchedule = () => useQuery({

@@ -4,9 +4,11 @@ import {
 } from '@coreui/react'
 
 const ClassForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
+  const { data: courses } = useCourses()
   const [formData, setFormData] = useState({ 
     name: '', 
-    size: 25 
+    size: 25,
+    course_id: ''
   })
 
   // Popula o formulário se estivermos a editar
@@ -14,7 +16,8 @@ const ClassForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
     if (initialData) {
       setFormData({
         name: initialData.name || '',
-        size: initialData.size || 25
+        size: initialData.size || 25,
+        course_id: initialData.course_id || ''
       })
     } else {
         setFormData({ name: '', size: 25 })
@@ -57,6 +60,21 @@ const ClassForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
             required
             text="Usado para validar a lotação da sala."
           />
+        </CCol>
+
+        <CCol md={12}>
+          <CFormSelect
+            label="Curso Associado (Opcional)"
+            name="course_id"
+            value={formData.course_id}
+            onChange={handleChange}
+            text="Associe esta turma a um curso profissional."
+          >
+            <option value="">-- Sem Curso --</option>
+            {courses?.map(course => (
+                <option key={course.id} value={course.id}>{course.name}</option>
+            ))}
+          </CFormSelect>
         </CCol>
       </CRow>
 

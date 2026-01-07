@@ -1,7 +1,7 @@
 from pydantic import BaseModel, EmailStr, Field, ConfigDict, model_validator
 from datetime import time, datetime, date
 from typing import Any, Optional
-from .models import RoomType, UserRole, ConstraintType, PreferenceLevel
+from .models import RoomType, UserRole, ConstraintType, PreferenceLevel, List
 
 
 # --- CONFIGURAÇÃO GLOBAL ---
@@ -90,6 +90,7 @@ class ClassBase(BaseModel):
     size: int = Field(default=25, gt=0, description="Número de alunos da turma")
 
 class ClassCreate(ClassBase):
+    course_id: Optional[int] = None
     pass
 
 # Novo Schema de Update
@@ -101,6 +102,7 @@ class ClassRead(ClassBase):
     id: int
     organization_id: int
     model_config = model_config
+    course_id: Optional[int] = None
 
 # --- SUBJECT (DISCIPLINA) ---
 class SubjectBase(BaseModel):
@@ -271,3 +273,37 @@ class ReplacementSuggestion(BaseModel):
     teacher_name: str
     priority: int  # 1 (Mesma Disciplina), 2 (Mesma Área), 3 (Livre)
     reason: str    # Ex: "Livre e da mesma disciplina"
+
+# --- CURSOS ---
+class CourseBase(BaseModel):
+    name: str
+
+class CourseCreate(CourseBase):
+    pass
+
+class CourseRead(CourseBase):
+    id: int
+    organization_id: int
+    model_config = ConfigDict(from_attributes=True)
+
+# --- MÓDULOS ---
+class ModuleBase(BaseModel):
+    name: str
+    code: Optional[str] = None
+    hours_total: int = Field(..., gt=0, description="Carga horária total do módulo")
+    subject_id: int
+
+class ModuleCreate(ModuleBase):
+    pass
+
+class ModuleRead(ModuleBase):
+    id: int
+    model_config = ConfigDict(from_attributes=True)
+
+# --- GERADOR DE TIMESLOTS (BULK) ---
+class TimeslotBulkCreate(BaseModel):
+    start_time: time
+    end_time: time
+    slot_duration_minutes: int = Field(..., gt=0, description="Duração de cada aula (ex: 50 ou 90)")
+    break_duration_minutes: int = Field(0, ge=0, description="Intervalo entre aulas")
+    days_of_week: List[int] = Field(..., description="Lista de dias (0=Seg, 4=Sex)")
