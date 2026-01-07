@@ -56,7 +56,7 @@ export const useSubjects = () => useQuery({
 export const useClasses = () => useQuery({
   queryKey: ['classes'],
   queryFn: async () => {
-    const { data } = await apiClient.get('/import/classes')
+    const { data } = await apiClient.get('/classes/')
     return data
   },
   ...STATIC_OPTS
@@ -74,7 +74,7 @@ export const useLessons = () => useQuery({
 export const useTimeslots = () => useQuery({
   queryKey: ['timeslots'],
   queryFn: async () => {
-    const { data } = await apiClient.get('/import/timeslots')
+    const { data } = await apiClient.get('/timeslots/')
     return data
   },
   ...STATIC_OPTS

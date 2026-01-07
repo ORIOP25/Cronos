@@ -143,6 +143,9 @@ class Class(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(100), nullable=False)
 
+    # Default 25 para evitar problemas na migração e ser um valor comum
+    size: Mapped[int] = mapped_column(Integer, default=25, nullable=False)
+
     # Chave Estrangeira: Liga a Turma à sua Organization
     organization_id: Mapped[int] = mapped_column(ForeignKey("organization.id"))
     
@@ -182,6 +185,14 @@ class Subject(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(100), nullable=False)
+
+    # Define qual o tipo de sala ideal para esta disciplina.
+    # Default: Sala Normal.
+    required_room_type: Mapped[RoomType] = mapped_column(
+        SAEnum(RoomType), 
+        default=RoomType.normal, 
+        nullable=False
+    )
 
     # Chave Estrangeira: Liga a Disciplina à sua Organization
     organization_id: Mapped[int] = mapped_column(ForeignKey("organization.id"))

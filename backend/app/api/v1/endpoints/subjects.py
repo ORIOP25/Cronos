@@ -1,23 +1,68 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List
-from app import schemas
+from app import schemas, models
 from app.api import deps
 from app.services import subject_service
 
 router = APIRouter()
 
+# --- 1. Ler Disciplinas ---
 @router.get("/", response_model=List[schemas.SubjectRead])
-async def read_subjects(org_id: int, db: AsyncSession = Depends(deps.get_db)):
-    return await subject_service.get_subjects_by_org(db, org_id)
+async def read_subjects(
+    db: AsyncSession = Depends(deps.get_db),
+    current_user: models.User = Depends(deps.get_current_active_user)
+):
+    # Qualquer utilizador autenticado pode ver a lista de disciplinas
+    return await subject_service.get_subjects_by_org(db, current_user.organization_id)
 
+# --- 2. Criar Disciplina ---
 @router.post("/", response_model=schemas.SubjectRead)
-async def create_subject(item: schemas.SubjectCreate, org_id: int, db: AsyncSession = Depends(deps.get_db)):
-    return await subject_service.create_subject(db, item, org_id)
+async def create_subject(
+    item: schemas.SubjectCreate, 
+    db: AsyncSession = Depends(deps.get_db),
+    current_user: models.User = Depends(deps.get_current_active_admin) # Apenas Admin
+):
+    return await subject_service.create_subject(db, item, current_user.organization_id)
 
-@router.delete("/{subject_id}")
-async def delete_subject(subject_id: int, org_id: int, db: AsyncSession = Depends(deps.get_db)):
-    success = await subject_service.delete_subject(db, subject_id, org_id)
-    if not success:
+# --- 3. Atualizar Disciplina (Novo) ---
+@router.put("/{subject_id}", response_model=schemas.SubjectRead)
+async def update_subject(
+    subject_id: int,
+    subject_in: schemas.SubjectUpdate,
+    db: AsyncSession = Depends(deps.get_db),
+    current_user: models.User = Depends(deps.get_current_active_admin) # Apenas Admin
+):
+    subject = await subject_service.update_subject(
+        db, 
+        subject_id, 
+        subject_in, 
+        current_user.organization_id
+    )
+    if not subject:
         raise HTTPException(status_code=404, detail="Disciplina não encontrada")
-    return {"ok": True}
+    return subject
+
+# --- 4. Apagar Disciplina (Atualizado) ---
+@router.delete("/{subject_id}")
+async def delete_subject(
+    subject_id: int, 
+    db: AsyncSession = Depends(deps.get_db),
+    current_user: models.User = Depends(deps.get_current_active_admin) # Apenas Admin
+):
+    status = await subject_service.delete_subject(
+        db, 
+        subject_id, 
+        current_user.organization_id
+    )
+    
+    if status == "NOT_FOUND":
+        raise HTTPException(status_code=404, detail="Disciplina não encontrada")
+    
+    if status == "DEPENDENCY_ERROR":
+        raise HTTPException(
+            status_code=400, 
+            detail="Não é possível apagar esta disciplina pois existem aulas associadas a ela."
+        )
+    
+    return {"message": "Disciplina removida com sucesso"}

@@ -104,8 +104,10 @@ async def delete_teacher(
     org_id: int
 ) -> str:
     """
-    Remove um professor.
-    Retorna: 'SUCCESS', 'NOT_FOUND' ou 'DEPENDENCY_ERROR'.
+    Remove um professor. 
+    1. Verifica dependências de aulas (Erro se tiver).
+    2. Remove o User associado (se tiver).
+    3. Remove o Teacher.
     """
     # 1. Buscar o professor
     query = select(models.Teacher).where(
@@ -118,15 +120,23 @@ async def delete_teacher(
     if not teacher:
         return "NOT_FOUND"
 
-    # 2. VERIFICAÇÃO DE INTEGRIDADE (Visão Sénior) 🛡️
-    # Não podemos apagar um professor se ele tiver Aulas (Lessons) atribuídas.
-    # Isso deixaria as aulas órfãs e quebraria o horário.
+    # 2. VERIFICAÇÃO DE INTEGRIDADE (Aulas)
+    # Não podemos apagar se tiver aulas.
     query_dependency = select(models.Lesson).where(models.Lesson.teacher_id == teacher_id)
     result_dependency = await db.execute(query_dependency)
     if result_dependency.first():
         return "DEPENDENCY_ERROR"
 
-    # 3. Apagar
+    # 3. LIMPEZA DE UTILIZADOR (Resolve o IntegrityError)
+    # Antes de apagar o Teacher, temos de apagar o User que aponta para ele.
+    query_user = select(models.User).where(models.User.teacher_id == teacher_id)
+    result_user = await db.execute(query_user)
+    user = result_user.scalars().first()
+    
+    if user:
+        await db.delete(user) # Apaga o login primeiro
+
+    # 4. Apagar o Professor
     await db.delete(teacher)
     await db.commit()
     return "SUCCESS"
@@ -138,9 +148,9 @@ async def update_teacher(
     org_id: int
 ):
     """
-    Atualiza um professor. Verifica se pertence à organização.
+    Atualiza um professor. Se o email mudar, atualiza também o User associado.
     """
-    # 1. Buscar o professor (garantindo que é da escola certa)
+    # 1. Buscar o professor
     query = select(models.Teacher).where(
         models.Teacher.id == teacher_id,
         models.Teacher.organization_id == org_id
@@ -151,16 +161,54 @@ async def update_teacher(
     if not teacher:
         return None
 
-    # 2. Atualizar campos apenas se foram enviados (exclude_unset)
+    # 2. Atualizar dados do Teacher (Nome, etc)
     update_data = teacher_in.model_dump(exclude_unset=True)
+    
+    # Removemos 'email' do update_data porque 'email' não é coluna de Teacher
+    email_to_update = update_data.pop("email", None) 
+
     for field, value in update_data.items():
         setattr(teacher, field, value)
 
-    # 3. Gravar
+    # 3. Lógica de Atualização de Email (Tabela User)
+    if email_to_update:
+        # Procurar se existe um User ligado a este Teacher
+        query_user = select(models.User).where(models.User.teacher_id == teacher_id)
+        result_user = await db.execute(query_user)
+        user = result_user.scalars().first()
+        
+        if user:
+            # Se existe user, atualizamos o email
+            user.email = email_to_update
+            db.add(user) # Marca para gravar
+        else:
+            # (Opcional) Se não existia user, poderíamos criar um aqui?
+            # Para manter simples, assumimos que só edita se já existir.
+            pass
+
+    # 4. Gravar tudo
     db.add(teacher)
     await db.commit()
     await db.refresh(teacher)
-    return teacher
+    
+    # --- CONSTRUÇÃO DA RESPOSTA (Data Mapping) ---
+    # Como o TeacherRead espera um 'login_email', mas o modelo Teacher não o tem,
+    # injetamos o valor dinamicamente no objeto Python antes de o Pydantic o ler.
+    
+    if email_to_update:
+        # Se atualizámos o email, usamos esse novo valor
+        setattr(teacher, "login_email", email_to_update)
+        # Também preenchemos o 'email' do TeacherBase para consistência
+        setattr(teacher, "email", email_to_update)
+    else:
+        # Se não enviámos email novo, tentamos manter o antigo.
+        # Numa arquitetura ideal, faríamos um JOIN, mas para performance de update:
+        # Se o user existe, usamos o email dele.
+        if user:
+             setattr(teacher, "login_email", user.email)
+             setattr(teacher, "email", user.email)
+
+    return teacher  
 
 async def find_replacement_teacher(
     db: AsyncSession, 

@@ -2,27 +2,69 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 from sqlalchemy.future import select
 from app import models, schemas
+from app.models import Lesson
 
 # --- ASYNC (API) ---
 async def get_classes_by_org(db: AsyncSession, org_id: int):
-    result = await db.execute(select(models.Class).where(models.Class.organization_id == org_id))
+    # Ordenar por nome
+    result = await db.execute(select(models.Class).where(models.Class.organization_id == org_id).order_by(models.Class.name))
     return result.scalars().all()
 
 async def create_class(db: AsyncSession, item: schemas.ClassCreate, org_id: int):
-    db_item = models.Class(name=item.name, organization_id=org_id)
+    # **item.model_dump() injeta 'name' e 'size' automaticamente
+    db_item = models.Class(**item.model_dump(), organization_id=org_id)
     db.add(db_item)
     await db.commit()
     await db.refresh(db_item)
     return db_item
 
+async def update_class(
+    db: AsyncSession, 
+    class_id: int, 
+    class_in: schemas.ClassUpdate,
+    org_id: int
+):
+    query = select(models.Class).where(
+        models.Class.id == class_id,
+        models.Class.organization_id == org_id
+    )
+    result = await db.execute(query)
+    db_class = result.scalars().first()
+    
+    if not db_class:
+        return None
+
+    update_data = class_in.model_dump(exclude_unset=True)
+    for field, value in update_data.items():
+        setattr(db_class, field, value)
+
+    db.add(db_class)
+    await db.commit()
+    await db.refresh(db_class)
+    return db_class
+
 async def delete_class(db: AsyncSession, class_id: int, org_id: int):
+    """
+    Remove uma turma. Protege se existirem aulas (Lessons) associadas.
+    """
+    # 1. Buscar turma
     result = await db.execute(select(models.Class).where(models.Class.id == class_id, models.Class.organization_id == org_id))
     item = result.scalars().first()
-    if item:
-        await db.delete(item)
-        await db.commit()
-        return True
-    return False
+    
+    if not item:
+        return "NOT_FOUND"
+
+    # 2. VERIFICAÇÃO DE INTEGRIDADE
+    query_dep = select(models.Lesson).where(models.Lesson.class_id == class_id)
+    result_dep = await db.execute(query_dep)
+    
+    if result_dep.first():
+        return "DEPENDENCY_ERROR"
+
+    # 3. Apagar
+    await db.delete(item)
+    await db.commit()
+    return "SUCCESS"
 
 # --- SYNC (SOLVER) ---
 def get_classes_by_org_sync(db: Session, org_id: int):

@@ -38,9 +38,33 @@ async def create_room(
         org_id=current_user.organization_id # <--- Passamos o ID aqui internamente
     )
 
-@router.delete("/{room_id}")
-async def delete_room(room_id: int, org_id: int, db: AsyncSession = Depends(deps.get_db)):
-    success = await room_service.delete_room(db, room_id, org_id)
-    if not success:
+@router.put("/{room_id}", response_model=schemas.RoomRead)
+async def update_room(
+    room_id: int,
+    room_in: schemas.RoomUpdate,
+    db: AsyncSession = Depends(deps.get_db),
+    current_user: models.User = Depends(deps.get_current_active_admin)
+):
+    room = await room_service.update_room(db, room_id, room_in, current_user.organization_id)
+    if not room:
         raise HTTPException(status_code=404, detail="Sala não encontrada")
-    return {"ok": True}
+    return room
+
+@router.delete("/{room_id}")
+async def delete_room(
+    room_id: int,
+    db: AsyncSession = Depends(deps.get_db),
+    current_user: models.User = Depends(deps.get_current_active_admin)
+):
+    status = await room_service.delete_room(db, room_id, current_user.organization_id)
+    
+    if status == "NOT_FOUND":
+        raise HTTPException(status_code=404, detail="Sala não encontrada")
+    
+    if status == "DEPENDENCY_ERROR":
+        raise HTTPException(
+            status_code=400, 
+            detail="Não é possível apagar esta sala pois existem aulas agendadas nela."
+        )
+    
+    return {"message": "Sala removida com sucesso"}

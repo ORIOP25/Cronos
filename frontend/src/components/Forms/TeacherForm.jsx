@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import {
-  CForm, CCol, CRow, CFormInput, CButton, CModalFooter
+  CForm, CCol, CRow, CFormInput, CButton, CModalFooter, CFormCheck
 } from '@coreui/react'
 
 const TeacherForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
@@ -9,6 +9,9 @@ const TeacherForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
     name: '', 
     email: '' 
   })
+  
+  // Estado para a opção de criar conta (Apenas relevante na criação)
+  const [createUser, setCreateUser] = useState(true)
 
   // Popula o formulário se estivermos em modo de Edição
   useEffect(() => {
@@ -17,9 +20,11 @@ const TeacherForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
         name: initialData.name || '',
         email: initialData.email || ''
       })
+      // Na edição, ignoramos a criação de user para já
     } else {
         // Reset para criação
         setFormData({ name: '', email: '' })
+        setCreateUser(true) // Por defeito, queremos criar conta
     }
   }, [initialData])
 
@@ -30,8 +35,16 @@ const TeacherForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
 
   const handleSubmit = (e) => {
     e.preventDefault()
+    
+    // Prepara o objeto final
+    const finalData = {
+        ...formData,
+        // Se for criação (!initialData), enviamos a flag create_user_account
+        ...( !initialData && { create_user_account: createUser } )
+    }
+
     // Envia os dados para o componente pai (o Modal)
-    onSubmit(formData)
+    onSubmit(finalData)
   }
 
   return (
@@ -57,9 +70,27 @@ const TeacherForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
             value={formData.email}
             onChange={handleChange}
             placeholder="Ex: maria.silva@escola.pt"
-            text="Se preenchido, será criada uma conta de utilizador automaticamente."
+            text={initialData ? "" : "Obrigatório para criar conta de acesso."}
           />
         </CCol>
+
+        {/* Checkbox de Criação de Conta (Apenas Visível no Modo Criação) */}
+        {!initialData && (
+            <CCol md={12} className="pt-2">
+                <div className="bg-light p-3 rounded border">
+                    <CFormCheck 
+                        id="createUserCheck"
+                        label="Criar conta de acesso à plataforma?"
+                        checked={createUser}
+                        onChange={(e) => setCreateUser(e.target.checked)}
+                        disabled={!formData.email} // Só ativa se houver email
+                    />
+                    <small className="text-muted d-block mt-1">
+                        Se marcado, o professor receberá acesso com este email. A password será gerada automaticamente ou definida por defeito (ex: 'mudar123').
+                    </small>
+                </div>
+            </CCol>
+        )}
       </CRow>
 
       {/* Footer do Formulário (Botões de Ação) */}
@@ -68,7 +99,7 @@ const TeacherForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
           Cancelar
         </CButton>
         <CButton color="primary" type="submit" disabled={isLoading}>
-          {isLoading ? 'A gravar...' : 'Gravar'}
+          {isLoading ? 'A gravar...' : (initialData ? 'Atualizar Professor' : 'Criar Professor')}
         </CButton>
       </CModalFooter>
     </CForm>

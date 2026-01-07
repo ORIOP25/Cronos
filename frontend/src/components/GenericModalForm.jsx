@@ -1,19 +1,11 @@
-import React, { useEffect } from 'react'
+import React from 'react'
 import {
-  CModal, CModalHeader, CModalTitle, CModalBody, CModalFooter,
-  CButton, CAlert
+  CModal, CModalHeader, CModalTitle, CModalBody,
+  CAlert
 } from '@coreui/react'
 
 /**
  * Componente Genérico para Criar/Editar Entidades via Modal.
- * * @param {boolean} visible - Se o modal está aberto
- * @param {function} onClose - Função para fechar o modal
- * @param {string} title - Título base (ex: "Professor")
- * @param {object} initialData - Dados para edição (se null, é criação)
- * @param {Component} formComponent - O componente do formulário (ex: TeacherForm)
- * @param {function} onSubmit - Função chamada ao submeter (mutate)
- * @param {boolean} isLoading - Estado de loading da mutação
- * @param {object} error - Erro da mutação (para mostrar mensagens do backend)
  */
 const GenericModalForm = ({ 
   visible, 
@@ -29,9 +21,26 @@ const GenericModalForm = ({
   const isEditing = !!initialData
   const modalTitle = isEditing ? `Editar ${title}` : `Novo ${title}`
 
-  // Extrair mensagem de erro amigável do backend
-  // O FastAPI envia erros em: err.response.data.detail
-  const errorMessage = error?.response?.data?.detail || error?.message
+  // --- TRATAMENTO DE ERROS INTELIGENTE (CORREÇÃO) ---
+  let errorMessage = null
+
+  if (error) {
+    // 1. Tenta obter o detalhe do backend
+    const detail = error.response?.data?.detail
+
+    if (Array.isArray(detail)) {
+      // Caso 1: Erro de Validação do Pydantic (Erro 422)
+      // O detail é um array de objetos: [{ loc: 'email', msg: 'invalido' }]
+      // Vamos juntar todas as mensagens numa string.
+      errorMessage = detail.map(err => err.msg).join(', ')
+    } else if (typeof detail === 'string') {
+      // Caso 2: Erro Simples (Erro 400/404/409 que nós criámos)
+      errorMessage = detail
+    } else {
+      // Caso 3: Fallback (Erro de rede ou desconhecido)
+      errorMessage = error.message || "Ocorreu um erro desconhecido."
+    }
+  }
 
   return (
     <CModal visible={visible} onClose={onClose} backdrop="static">
@@ -40,16 +49,13 @@ const GenericModalForm = ({
       </CModalHeader>
       
       <CModalBody>
-        {/* Tratamento de Erros (Visão Sénior) */}
-        {/* Aqui apanhamos os erros 400 (Dependências) e 409 (Duplicados) */}
+        {/* Mostra o erro já tratado (agora é garantidamente uma String) */}
         {errorMessage && (
           <CAlert color="danger" dismissible>
             <strong>Erro:</strong> {errorMessage}
           </CAlert>
         )}
 
-        {/* Renderizamos o Formulário Específico */}
-        {/* Passamos o onSubmit e o initialData para ele */}
         <FormComponent 
           initialData={initialData} 
           onSubmit={onSubmit} 
@@ -57,8 +63,6 @@ const GenericModalForm = ({
           onCancel={onClose}
         />
       </CModalBody>
-      
-      {/* Removemos o Footer padrão porque os botões de submit devem estar dentro do FormComponent para controlar o estado do form (react-hook-form) */}
     </CModal>
   )
 }

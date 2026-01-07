@@ -34,6 +34,10 @@ const DefaultLayout = () => {
             <>
               <Link to="/dashboard" style={linkStyle}>📊 Dashboard</Link>
               <Link to="/teachers" style={linkStyle}>👨‍🏫 Professores</Link>
+              <Link to="/subjects" style={linkStyle}>📚 Disciplinas</Link>
+              <Link to="/classes" style={linkStyle}>👥 Turmas</Link>
+              <Link to="/rooms" style={linkStyle}>🏫 Salas</Link>
+              <Link to="/timeslots" style={linkStyle}>⏱️ Timeslots</Link>
             </>
           )}
 

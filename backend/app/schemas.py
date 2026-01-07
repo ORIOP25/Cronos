@@ -31,6 +31,14 @@ class UserBase(BaseModel):
 class UserCreate(UserBase):
     password: str
 
+class UserRead(UserBase):
+    id: int
+    # Enviamos a role e o teacher_id para o frontend saber quem é
+    role: UserRole
+    teacher_id: int | None = None 
+
+    model_config = model_config
+
 class UserResponse(UserBase):
     id: int
     organization_id: int
@@ -56,7 +64,7 @@ class OrganizationRead(OrganizationBase):
 # --- TEACHER (PROFESSOR) ---
 class TeacherBase(BaseModel):
     name: str
-    email: Optional[str] = None
+    email: Optional[EmailStr] = None
 
 class TeacherCreate(TeacherBase):
     create_user_account: bool = False
@@ -73,14 +81,21 @@ class TeacherRead(TeacherBase):
 
 class TeacherUpdate(BaseModel):
     name: Optional[str] = None
+    email: Optional[EmailStr] = None
     # No futuro, se adicionares 'email' ou 'phone' ao Teacher, adicionas aqui também.
 
 # --- Class (Turma) ---
 class ClassBase(BaseModel):
     name: str
+    size: int = Field(default=25, gt=0, description="Número de alunos da turma")
 
 class ClassCreate(ClassBase):
     pass
+
+# Novo Schema de Update
+class ClassUpdate(BaseModel):
+    name: Optional[str] = None
+    size: Optional[int] = None
 
 class ClassRead(ClassBase):
     id: int
@@ -90,9 +105,14 @@ class ClassRead(ClassBase):
 # --- SUBJECT (DISCIPLINA) ---
 class SubjectBase(BaseModel):
     name: str
+    required_room_type: RoomType = RoomType.normal
 
 class SubjectCreate(SubjectBase):
     pass
+
+class SubjectUpdate(BaseModel):
+    name: Optional[str] = None
+    required_room_type: Optional[RoomType] = None
 
 class SubjectRead(SubjectBase):
     id: int
@@ -108,17 +128,14 @@ class RoomBase(BaseModel):
 class RoomCreate(RoomBase):
     pass
 
+class RoomUpdate(BaseModel):
+    name: Optional[str] = None
+    type: Optional[RoomType] = None
+    capacity: Optional[int] = None
+
 class RoomRead(RoomBase):
     id: int
     organization_id: int
-    model_config = model_config
-
-class UserRead(UserBase):
-    id: int
-    # Enviamos a role e o teacher_id para o frontend saber quem é
-    role: UserRole
-    teacher_id: int | None = None 
-
     model_config = model_config
 
 # ==========================================
@@ -126,16 +143,37 @@ class UserRead(UserBase):
 # ==========================================
 
 # --- TIMESLOT (BLOCO DE TEMPO) ---
+# --- TIMESLOT (BLOCO DE TEMPO) ---
 class TimeslotBase(BaseModel):
-    # 0=Segunda, 6=Domingo. O 'ge' e 'le' validam o intervalo.
+    # 0=Segunda, 6=Domingo.
     day_of_week: int = Field(..., ge=0, le=6, description="0=Segunda, 6=Domingo")
-    
-    # O Pydantic converte automaticamente strings "08:30" para objetos time
     start_time: time
     end_time: time
 
+    # VALIDAÇÃO SÉNIOR: Garantir que o fim é depois do início
+    @model_validator(mode='after')
+    def check_times(self):
+        if self.end_time <= self.start_time:
+            raise ValueError('A hora de fim deve ser posterior à hora de início')
+        return self
+
 class TimeslotCreate(TimeslotBase):
     pass
+
+class TimeslotUpdate(BaseModel):
+    day_of_week: Optional[int] = Field(None, ge=0, le=6)
+    start_time: Optional[time] = None
+    end_time: Optional[time] = None
+
+    @model_validator(mode='after')
+    def check_times(self):
+        # Apenas valida se ambos os campos estiverem presentes no update
+        # (Para updates parciais complexos, a lógica seria mais extensa, 
+        # mas para este MVP assume-se que se mudas horas, deves ter cuidado)
+        if self.start_time and self.end_time:
+             if self.end_time <= self.start_time:
+                raise ValueError('A hora de fim deve ser posterior à hora de início')
+        return self
 
 class TimeslotRead(TimeslotBase):
     id: int

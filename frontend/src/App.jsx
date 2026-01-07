@@ -3,7 +3,11 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import MyAvailability from './pages/MyAvailability';
-import Teachers from './pages/Teachers'; // Vamos criar este ficheiro a seguir
+import Teachers from './pages/Teachers';
+import Rooms from './pages/Rooms';
+import Subjects from './pages/Subjects';
+import Classes from './pages/Classes';
+import Timeslots from './pages/Timeslots';
 import DefaultLayout from './components/DefaultLayout';
 import ProtectedRoute from './components/ProtectedRoute';
 
@@ -20,6 +24,10 @@ function App() {
           
           {/* Novas Rotas */}
           <Route path="teachers" element={<Teachers />} />
+          <Route path="rooms" element={<Rooms />} />
+          <Route path="subjects" element={<Subjects />} />
+          <Route path="classes" element={<Classes />} />
+          <Route path="timeslots" element={<Timeslots />} />
           <Route path="my-availability" element={<MyAvailability />} />
         </Route>
       </Routes>
