@@ -14,6 +14,6 @@ from app.config import settings
 
 limiter = Limiter(
     key_func=get_remote_address,
-    storage_uri=str(str(settings.REDIS_URL)), # <--- A MAGIA ACONTECE AQUI 🪄
+    storage_uri=str(str(settings.REDIS_URL)),
     default_limits=["200 per day", "50 per hour"] # Limites padrão de segurança
 )

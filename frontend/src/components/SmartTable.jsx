@@ -1,86 +1,84 @@
 import React from 'react'
 import {
-  CTable, CTableHead, CTableRow, CTableHeaderCell, CTableBody, CTableDataCell, CButton, CSpinner, CTooltip
+  CTable, CTableHead, CTableRow, CTableHeaderCell, CTableBody, CTableDataCell,
+  CButton, CSpinner
 } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
-import { cilTrash, cilPencil } from '@coreui/icons'
+import { cilPencil, cilTrash } from '@coreui/icons'
 
-// Props atualizadas:
-// - actions: boolean (Se true, mostra a coluna de editar/apagar)
-// - onEdit: Função que recebe o item para editar
-// - onDelete: Função que recebe o ID para apagar
-const SmartTable = ({ columns, data, onDelete, onEdit, isLoading, actions = false }) => {
+const SmartTable = ({ 
+  columns, 
+  data, 
+  isLoading, 
+  actions, 
+  onEdit, 
+  onDelete 
+}) => {
   
-  if (isLoading) return <div className="text-center p-5"><CSpinner color="primary"/></div>
-  
+  if (isLoading) {
+    return (
+      <div className="text-center p-4">
+        <CSpinner color="primary" />
+        <p className="text-muted mt-2">A carregar dados...</p>
+      </div>
+    )
+  }
+
   if (!data || data.length === 0) {
-    return <div className="text-center p-4 text-muted border rounded bg-light">Nenhum registo encontrado.</div>
+    return <div className="text-center p-4 text-muted">Não há dados para mostrar.</div>
   }
 
   return (
-    <div className="border rounded overflow-hidden shadow-sm">
-      <CTable hover responsive className="mb-0 align-middle">
-        <CTableHead color="light">
-          <CTableRow>
-            {columns.map((col, index) => (
-              <CTableHeaderCell key={index} scope="col">{col.label}</CTableHeaderCell>
-            ))}
-            {/* Coluna de Ações Condicional */}
-            {actions && <CTableHeaderCell className="text-end" style={{width: '120px'}}>Ações</CTableHeaderCell>}
-          </CTableRow>
-        </CTableHead>
-        <CTableBody>
-          {data.map((item) => (
-            <CTableRow key={item.id}>
-              {columns.map((col, index) => (
-                <CTableDataCell key={index}>
-                  {/* Suporte para valores aninhados ou formatação customizada se necessário futuramente */}
-                  {item[col.key]}
-                </CTableDataCell>
-              ))}
-              
-              {/* Botões de Ação */}
-              {actions && (
-                <CTableDataCell className="text-end">
-                  <div className="d-flex justify-content-end gap-2">
-                    {onEdit && (
-                      <CTooltip content="Editar">
-                        <CButton 
-                          color="info" 
-                          variant="ghost" 
-                          size="sm"
-                          onClick={() => onEdit(item)}
-                        >
-                          <CIcon icon={cilPencil} className="text-info" />
-                        </CButton>
-                      </CTooltip>
-                    )}
-                    
-                    {onDelete && (
-                      <CTooltip content="Apagar">
-                        <CButton 
-                          color="danger" 
-                          variant="ghost" 
-                          size="sm"
-                          onClick={() => {
-                            // "Bloqueio Rígido" começa aqui: Confirmação do utilizador
-                            if(window.confirm('Tem a certeza absoluta? Esta ação não pode ser desfeita.')) {
-                                onDelete(item.id)
-                            }
-                          }}
-                        >
-                          <CIcon icon={cilTrash} className="text-danger" />
-                        </CButton>
-                      </CTooltip>
-                    )}
-                  </div>
-                </CTableDataCell>
-              )}
-            </CTableRow>
+    <CTable hover responsive className="align-middle mb-0 border">
+      <CTableHead color="light">
+        <CTableRow>
+          {columns.map((col, index) => (
+            <CTableHeaderCell key={index} style={col._style}>
+              {col.label}
+            </CTableHeaderCell>
           ))}
-        </CTableBody>
-      </CTable>
-    </div>
+          {actions && <CTableHeaderCell className="text-end">Ações</CTableHeaderCell>}
+        </CTableRow>
+      </CTableHead>
+      <CTableBody>
+        {data.map((item, rowIndex) => (
+          <CTableRow key={item.id || rowIndex}>
+            {columns.map((col, colIndex) => (
+              <CTableDataCell key={colIndex}>
+                {/* AQUI ESTÁ A CORREÇÃO MÁGICA:
+                   Se a coluna tiver uma função 'render', executa-a.
+                   Caso contrário, mostra o valor direto.
+                */}
+                {col.render ? col.render(item) : item[col.key]}
+              </CTableDataCell>
+            ))}
+            
+            {actions && (
+              <CTableDataCell className="text-end">
+                <CButton 
+                  color="light" 
+                  size="sm" 
+                  className="me-2 text-primary"
+                  onClick={() => onEdit(item)}
+                  title="Editar"
+                >
+                  <CIcon icon={cilPencil} size="sm"/>
+                </CButton>
+                <CButton 
+                  color="light" 
+                  size="sm" 
+                  className="text-danger"
+                  onClick={() => onDelete(item.id)}
+                  title="Apagar"
+                >
+                  <CIcon icon={cilTrash} size="sm"/>
+                </CButton>
+              </CTableDataCell>
+            )}
+          </CTableRow>
+        ))}
+      </CTableBody>
+    </CTable>
   )
 }
 

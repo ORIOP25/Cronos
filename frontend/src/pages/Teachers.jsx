@@ -3,7 +3,7 @@ import {
   CCard, CCardBody, CCol, CRow, CButton, CAlert, CBadge 
 } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
-import { cilUserPlus, cilPeople } from '@coreui/icons'
+import { cilUserPlus, cilPeople, cilUser } from '@coreui/icons'
 
 // --- Arquitetura Limpa: Imports Padronizados ---
 import SmartTable from '../components/SmartTable'
@@ -12,7 +12,8 @@ import TeacherForm from '../components/Forms/TeacherForm' // O formulário que a
 
 // Hooks de Dados (Read & Write)
 import { 
-  useTeachers, 
+  useTeachers,
+  useSubjects, 
   useCreateEntity, 
   useUpdateEntity, 
   useDeleteEntity 
@@ -25,27 +26,76 @@ const Teachers = () => {
 
   // 2. Hooks de Dados (A "Magia" acontece aqui)
   const { data: teachers, isLoading } = useTeachers()
+  const { data: subjects } = useSubjects()
   const createMutation = useCreateEntity('teachers')
   const updateMutation = useUpdateEntity('teachers')
   const deleteMutation = useDeleteEntity('teachers')
 
+  // Função auxiliar para formatar listas (igual à de Courses)
+  const formatList = (names) => {
+    if (!names.length) return <span className="text-muted">-</span>;
+    if (names.length > 3) {
+      return <span title={names.join(', ')}>{names.slice(0, 3).join(', ')} (+{names.length - 3})</span>;
+    }
+    return names.join(', ');
+  }
+
   // 3. Definição das Colunas da Tabela
   const columns = [
     { key: 'name', label: 'Nome' },
-    { key: 'email', label: 'Email' },
-    { key: 'login_status', label: 'Acesso' } // Campo calculado abaixo no map
+    { 
+        key: 'email', 
+        label: 'Email / Acesso',
+        render: (item) => (
+            <div>
+                {/* Mostrar email (agora persiste mesmo se inativo) */}
+                <div className="fw-bold">{item.email || '-'}</div>
+                
+                {/* Lógica Visual: Ativo vs Inativo */}
+                {item.email && (
+                    item.is_active ? (
+                        <small className="text-success d-flex align-items-center mt-1">
+                            <CIcon icon={cilUser} size="sm" className="me-1"/>
+                            <span>Conta Ativa</span>
+                        </small>
+                    ) : (
+                        <small className="text-muted d-flex align-items-center mt-1">
+                            <CIcon icon={cilUser} size="sm" className="me-1"/>
+                            <span>Inativo</span>
+                        </small>
+                    )
+                )}
+            </div>
+        )
+    },
+    { 
+        key: 'subjects', 
+        label: 'Competências', 
+        _style: { width: '40%' },
+        render: (item) => {
+            // 1. Resiliência: Obter IDs venham eles como venham
+            let ids = item.subject_ids || [];
+            if (item.subjects && item.subjects.length > 0) {
+                ids = item.subjects.map(s => s.id);
+            }
+
+            // 2. Loading State: Se ainda não temos disciplinas, mostramos "..."
+            if (!subjects) return <span className="text-muted">...</span>;
+
+            // 3. Tradução: ID -> Nome
+            const names = ids.map(id => {
+                const sub = subjects.find(s => s.id === id);
+                return sub ? sub.name : null;
+            }).filter(Boolean); // Remove nulos
+
+            // 4. Formatação bonita
+            return formatList(names);
+        }
+    },
   ]
 
   // 4. Preparação dos Dados para a Tabela (ViewModel)
-  // Transformamos os dados brutos para adicionar badges visuais, etc.
-  const tableData = (teachers || []).map(t => ({
-    ...t,
-    login_status: t.login_email ? (
-      <CBadge color="success">Ativo</CBadge>
-    ) : (
-      <CBadge color="secondary">Sem Acesso</CBadge>
-    )
-  }))
+  const tableData = teachers || []
 
   // --- Handlers (Controladores) ---
 

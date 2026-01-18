@@ -25,10 +25,18 @@ async def login_for_access_token(
             headers={"WWW-Authenticate": "Bearer"},
         )
     
-    # 2. Gerar Token
+    # 2. Validar que a conta está ativa (NOVO)
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="A sua conta está inativa. Contacte o administrador para mais informações.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    # 3. Gerar Token
     access_token = security.create_access_token(data={"sub": user.email})
     
-    # 3. Retornar Token + ID da Organização (útil para o frontend)
+    # 4. Retornar Token + ID da Organização (útil para o frontend)
     return {
         "access_token": access_token, 
         "token_type": "bearer",

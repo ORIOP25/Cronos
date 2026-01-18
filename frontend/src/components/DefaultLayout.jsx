@@ -35,8 +35,22 @@ const DefaultLayout = () => {
               <Link to="/dashboard" style={linkStyle}>📊 Dashboard</Link>
               <Link to="/schedules" style={linkStyle}>📅 Horários</Link>
               <div className="my-2 border-top border-secondary"></div> {/* Separador */}
+              
+              {/* Secção de Pedagogia */}
+              <div style={{ fontSize: '0.75rem', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.5px', marginTop: '15px', marginBottom: '10px', fontWeight: 'bold' }}>
+                📚 PEDAGOGIA
+              </div>
+              <Link to="/courses" style={linkStyle}>🎓 Cursos</Link>
+              <Link to="/modules" style={linkStyle}>📋 Módulos</Link>
               <Link to="/teachers" style={linkStyle}>👨‍🏫 Professores</Link>
-              <Link to="/subjects" style={linkStyle}>📚 Disciplinas</Link>
+              <Link to="/subjects" style={linkStyle}>📖 Disciplinas</Link>
+              
+              <div className="my-2 border-top border-secondary"></div> {/* Separador */}
+              
+              {/* Secção de Recursos */}
+              <div style={{ fontSize: '0.75rem', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.5px', marginTop: '15px', marginBottom: '10px', fontWeight: 'bold' }}>
+                🏫 RECURSOS
+              </div>
               <Link to="/classes" style={linkStyle}>👥 Turmas</Link>
               <Link to="/rooms" style={linkStyle}>🏫 Salas</Link>
               <Link to="/config" style={linkStyle}>⚙️ Configuração</Link>

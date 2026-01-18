@@ -2,31 +2,20 @@ import enum
 from datetime import datetime, time
 from typing import List, Optional
 from sqlalchemy import (
-    Column,
-    Integer,
-    String,
-    Boolean,
-    ForeignKey,
-    Date,
-    DateTime,
-    Time,
-    Text,
-    Enum as SAEnum,
-    UniqueConstraint,
+    Column, Integer, String, Boolean,
+    ForeignKey, Date, DateTime, Time,
+    Text, Enum as SAEnum, UniqueConstraint, Table,
 )
 from sqlalchemy.types import JSON
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.database import Base
 
-# Enum para Tipos de Sala
-# Isto garante que o tipo de sala só pode ser um destes valores
 class RoomType(str, enum.Enum):
     normal = "normal"
     lab = "lab"
     gym = "gym"
-    art = "art"  # Exemplo futuro
+    art = "art"
 
-# Enum para os Papéis de Utilizador
 class UserRole(str, enum.Enum):
     admin = "admin"
     teacher = "teacher"
@@ -37,7 +26,7 @@ class ConstraintType(str, enum.Enum):
     specific_room = "specific_room"
     lock_time = "lock_time"
     
-    # Regras de Professor (Novas)
+    # Regras de Professor
     teacher_unavailable = "teacher_unavailable"
     teacher_preferred = "teacher_preferred"
     
@@ -50,6 +39,22 @@ class PreferenceLevel(int, enum.Enum):
     NEUTRAL = 1      # Amarelo: "Tanto faz" (Padrão)
     AVOID = 0        # Laranja: "Evitar" (Penalização no score)
     IMPOSSIBLE = -1  # Vermelho: "Proibido" (Hard Constraint)
+
+# Tabela Relacional entre Cursos e Disciplinas
+course_subject_link = Table(
+    "course_subject_link",
+    Base.metadata,
+    Column("course_id", ForeignKey("course.id", ondelete="CASCADE"), primary_key=True),
+    Column("subject_id", ForeignKey("subject.id", ondelete="CASCADE"), primary_key=True),
+)
+
+# Tabela Relacional entre Professores e Disciplinas
+teacher_subject_link = Table(
+    "teacher_subject_link",
+    Base.metadata,
+    Column("teacher_id", ForeignKey("teacher.id", ondelete="CASCADE"), primary_key=True),
+    Column("subject_id", ForeignKey("subject.id", ondelete="CASCADE"), primary_key=True),
+)
 
 class Availability(Base):
     __tablename__ = "availability"
@@ -119,7 +124,7 @@ class User(Base):
         return f"<User(id={self.id}, email='{self.email}', role='{self.role}')>"
 
 
-# 5. Modelo "Teacher" (Professor)
+# 5. Modelo "Teacher"
 class Teacher(Base):
     __tablename__ = "teacher"
 
@@ -131,6 +136,19 @@ class Teacher(Base):
     
     # Relacionamento: Permite-nos fazer my_teacher.organization
     organization: Mapped["Organization"] = relationship(back_populates="teachers")
+
+    subjects: Mapped[List["Subject"]] = relationship(
+        secondary=teacher_subject_link,
+        back_populates="teachers"
+    )
+
+    @property
+    def subject_ids(self) -> List[int]:
+        """
+        Permite ao Pydantic ler 'teacher.subject_ids' e receber [1, 2]
+        em vez de crashar a tentar ler objetos complexos.
+        """
+        return [s.id for s in self.subjects]
 
     availabilities: Mapped[List["Availability"]] = relationship(back_populates="teacher", cascade="all, delete-orphan")
 
@@ -210,6 +228,17 @@ class Subject(Base):
     
     # Relacionamento: Permite-nos fazer my_subject.organization
     organization: Mapped["Organization"] = relationship(back_populates="subjects")
+    
+    # Relação N:M com Course - Define a Matriz Curricular
+    courses: Mapped[List["Course"]] = relationship(
+        secondary=course_subject_link,
+        back_populates="subjects"
+    )
+
+    teachers: Mapped[List[Teacher]] = relationship(
+        secondary=teacher_subject_link,
+        back_populates="subjects"
+    )
 
     def __repr__(self) -> str:
         return f"<Subject(id={self.id}, name='{self.name}')>"
@@ -284,7 +313,6 @@ class Lesson(Base):
 
 
 # 11. Modelo "Constraint" (A "Regra")
-# (Como definido no Ponto 3.5 do Charter)
 class Constraint(Base):
     __tablename__ = "constraint"
 
@@ -373,6 +401,20 @@ class Course(Base):
     
     organization: Mapped["Organization"] = relationship(back_populates="courses")
     classes: Mapped[List["Class"]] = relationship(back_populates="course")
+    
+    # Relação N:M com Subject - Define a Matriz Curricular
+    subjects: Mapped[List["Subject"]] = relationship(
+        secondary=course_subject_link,
+        back_populates="courses"
+    )
+
+    @property
+    def subject_ids(self) -> List[int]:
+        """
+        Propriedade virtual que o Pydantic lê automaticamente
+        devido ao 'from_attributes=True' no schema.
+        """
+        return [s.id for s in self.subjects]
 
     def __repr__(self) -> str:
         return f"<Course(id={self.id}, name='{self.name}')>"

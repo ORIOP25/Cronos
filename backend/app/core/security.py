@@ -5,13 +5,11 @@ import bcrypt
 from jose import jwt, JWTError
 from pydantic import ValidationError
 
-# Importamos as configurações (para não ter chaves hardcoded)
 from app.config import settings
 from app import schemas
 
 # ==========================================
 # 1. CRIPTOGRAFIA DE PASSWORDS
-# (Vindo do antigo securityCore.py / user_service)
 # ==========================================
 
 def hash_password(password: str) -> str:
@@ -30,7 +28,6 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 
 # ==========================================
 # 2. GESTÃO DE TOKENS JWT
-# (Consolidado do antigo app/security.py e securityCore.py)
 # ==========================================
 
 def create_token(data: dict, expires_delta: timedelta) -> str:

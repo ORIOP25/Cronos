@@ -22,6 +22,20 @@ async def create_module(
 ):
     return await module_service.create_module(db, item)
 
+@router.put("/{module_id}", response_model=schemas.ModuleRead)
+async def update_module(
+    module_id: int,
+    item: schemas.ModuleUpdate, 
+    db: AsyncSession = Depends(deps.get_db),
+    current_user: models.User = Depends(deps.get_current_active_admin)
+):
+    # Nota: O service deve ter a função update_module. 
+    # Se não tiver, verifica o module_service.py também.
+    updated = await module_service.update_module(db, module_id, item)
+    if not updated:
+        raise HTTPException(status_code=404, detail="Módulo não encontrado")
+    return updated
+
 @router.delete("/{module_id}")
 async def delete_module(
     module_id: int, 

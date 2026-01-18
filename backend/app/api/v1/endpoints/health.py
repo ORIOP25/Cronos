@@ -58,12 +58,3 @@ async def health_check(
         )
     
     return health_status
-
-@router.get("/sentry-debug")
-async def trigger_error():
-    """
-    Routa suicida: Serve apenas para testar se o Sentry está a apanhar erros.
-    Gera uma divisão por zero propositada.
-    """
-    division_by_zero = 1 / 0
-    return division_by_zero

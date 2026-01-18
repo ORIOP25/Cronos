@@ -9,6 +9,8 @@ import Subjects from './pages/Subjects';
 import Classes from './pages/Classes';
 import SchoolConfig from './pages/SchoolConfig';
 import Schedules from './pages/Schedules';
+import Courses from './pages/Courses';
+import Modules from './pages/Modules';
 import DefaultLayout from './components/DefaultLayout';
 import ProtectedRoute from './components/ProtectedRoute';
 
@@ -28,6 +30,8 @@ function App() {
           <Route path="rooms" element={<Rooms />} />
           <Route path="subjects" element={<Subjects />} />
           <Route path="classes" element={<Classes />} />
+          <Route path="courses" element={<Courses />} />
+          <Route path="modules" element={<Modules />} />
           <Route path="config" element={<SchoolConfig />} />
           <Route path="schedules" element={<Schedules />} />
           <Route path="my-availability" element={<MyAvailability />} />

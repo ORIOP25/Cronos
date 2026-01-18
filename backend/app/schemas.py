@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr, Field, ConfigDict, model_validator
+from pydantic import BaseModel, EmailStr, Field, ConfigDict, model_validator, computed_field
 from datetime import time, datetime, date
 from typing import Any, Optional
 from .models import RoomType, UserRole, ConstraintType, PreferenceLevel, List
@@ -61,19 +61,26 @@ class OrganizationRead(OrganizationBase):
     plan_status: str
     model_config = model_config
 
-# --- TEACHER (PROFESSOR) ---
+# --- TEACHER ---
 class TeacherBase(BaseModel):
     name: str
+    # Email: Será obrigatório em TeacherCreate, opcional em TeacherRead (compatibilidade)
     email: Optional[EmailStr] = None
 
 class TeacherCreate(TeacherBase):
+    # SOBRESCRITA: Email OBRIGATÓRIO para novos professores
+    email: EmailStr
     create_user_account: bool = False
+    subject_ids: list[int] = Field(default_factory=list, description="IDs das disciplinas associadas")
 
 class TeacherRead(TeacherBase):
     id: int
     organization_id: int
     user_id: Optional[int] = None
     login_email: Optional[str] = None
+    # NOVO: Para o frontend saber se a conta está ativa ou inativa
+    is_active: bool = False
+    subject_ids: list[int] = Field(default_factory=list, description="IDs das disciplinas associadas")
     # Opcional: Incluir lista de disponibilidades quando pedes o professor
     # availabilities: List[AvailabilityRead] = [] 
 
@@ -82,7 +89,9 @@ class TeacherRead(TeacherBase):
 class TeacherUpdate(BaseModel):
     name: Optional[str] = None
     email: Optional[EmailStr] = None
-    # No futuro, se adicionares 'email' ou 'phone' ao Teacher, adicionas aqui também.
+    subject_ids: list[int] = Field(default_factory=list, description="IDs das disciplinas associadas")
+    # NOVO: Para permitir ativar/desativar a conta de acesso via API
+    create_user_account: Optional[bool] = None
 
 # --- Class (Turma) ---
 class ClassBase(BaseModel):
@@ -144,7 +153,6 @@ class RoomRead(RoomBase):
 #  HORÁRIOS (Complexo)
 # ==========================================
 
-# --- TIMESLOT (BLOCO DE TEMPO) ---
 # --- TIMESLOT (BLOCO DE TEMPO) ---
 class TimeslotBase(BaseModel):
     # 0=Segunda, 6=Domingo.
@@ -279,11 +287,16 @@ class CourseBase(BaseModel):
     name: str
 
 class CourseCreate(CourseBase):
-    pass
+    subject_ids: list[int] = Field(default_factory=list, description="IDs das disciplinas que compõem o curso")
+
+class CourseUpdate(BaseModel):
+    name: Optional[str] = None
+    subject_ids: Optional[list[int]] = None
 
 class CourseRead(CourseBase):
     id: int
     organization_id: int
+    subject_ids: list[int] = Field(default_factory=list, description="IDs das disciplinas associadas")
     model_config = ConfigDict(from_attributes=True)
 
 # --- MÓDULOS ---
@@ -295,6 +308,12 @@ class ModuleBase(BaseModel):
 
 class ModuleCreate(ModuleBase):
     pass
+
+class ModuleUpdate(BaseModel):
+    name: Optional[str] = None
+    code: Optional[str] = None
+    hours_total: Optional[int] = Field(None, gt=0, description="Carga horária total do módulo")
+    subject_id: Optional[int] = None
 
 class ModuleRead(ModuleBase):
     id: int

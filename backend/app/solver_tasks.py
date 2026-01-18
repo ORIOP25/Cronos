@@ -54,7 +54,7 @@ def generate_schedule_task(self: Task, org_id: int):
         logger.info(f"   - Aulas: {len(lessons)}")
         logger.info(f"   - Timeslots: {len(timeslots)}")
         logger.info(f"   - Professores: {len(teachers)}")
-        logger.info(f"   - Disponibilidades: {len(availabilities)}") # <--- ISTO VAI SER CRÍTICO
+        logger.info(f"   - Disponibilidades: {len(availabilities)}")
         
         if availabilities:
             # Mostra a primeira regra para ver se o formato está ok
@@ -78,7 +78,7 @@ def generate_schedule_task(self: Task, org_id: int):
             teachers=teachers,
             classes=classes,
             constraints=constraints,
-            availabilities=availabilities # <--- Passamos os dados novos aqui
+            availabilities=availabilities
         )
         
         # O motor devolve uma lista de dicionários ou None

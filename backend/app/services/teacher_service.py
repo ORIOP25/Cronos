@@ -1,13 +1,12 @@
 # Ficheiro: app/services/teacher_service.py
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 from sqlalchemy import select, delete
 from app import models, schemas
-from app.models import Availability, PreferenceLevel, User, UserRole
+from app.models import Availability, Teacher
 from app.schemas import AvailabilityCreate
-from app.core.security import hash_password
-from typing import List
+
 
 # ==========================================
 #  FUNÇÕES ASSÍNCRONAS (Para usar na API/FastAPI)
@@ -20,14 +19,16 @@ async def get_teachers_by_org(
     limit: int = 100
 ):
     """
-    Retorna professores e verifica se têm login associado (LEFT JOIN).
+    Retorna professores com email, login_email e status is_active.
+    LEFT JOIN com User para obter dados de autenticação.
     """
-    # 1. Query: Seleciona o Professor E o email do User (se existir)
+    # 1. Query: Selecionamos Teacher + email + is_active do User
     stmt = (
-        select(models.Teacher, models.User.email)
+        select(models.Teacher, models.User.email, models.User.is_active)
         .outerjoin(models.User, models.User.teacher_id == models.Teacher.id)
         .where(models.Teacher.organization_id == org_id)
-        .order_by(models.Teacher.name) # Boa prática: ordenar alfabeticamente
+        .options(selectinload(models.Teacher.subjects))
+        .order_by(models.Teacher.name)
         .offset(skip)
         .limit(limit)
     )
@@ -35,68 +36,86 @@ async def get_teachers_by_org(
     result = await db.execute(stmt)
     rows = result.all()
     
-    # 2. Mapeamento: Transformamos a tupla (Teacher, email) num dicionário
-    # Isto é necessário para preencher o campo 'login_email' do Schema
+    # 2. Mapeamento: Transformamos as tuplas em objetos com dados injetados
     final_list = []
-    for teacher, user_email in rows:
-        teacher_dict = {
-            "id": teacher.id,
-            "name": teacher.name,
-            "email": user_email, # Email de contacto (info do professor)
-            "organization_id": teacher.organization_id,
-            "login_email": user_email # Email de login (info do user, se existir)
-        }
-        final_list.append(teacher_dict)
+    for teacher, user_email, is_active in rows:
+        # Injetar campos no objeto ORM (mantém relações carregadas intactas)
+        setattr(teacher, "login_email", user_email)
+        setattr(teacher, "email", user_email)
+        # Se is_active for None (sem User), assumimos False
+        setattr(teacher, "is_active", is_active if is_active is not None else False)
+        final_list.append(teacher)
         
     return final_list
 
-async def create_teacher(db: AsyncSession, teacher: schemas.TeacherCreate, org_id: int):
-    """
-    Cria um novo professor. 
-    Se o payload trouxer 'create_user_account=True' e 'email', 
-    invoca o user_service para criar o Login separadamente.
-    """
-    
-    # [CORREÇÃO CRÍTICA]
-    # Instanciamos o modelo Teacher APENAS com os campos que existem na tabela Teacher.
-    # Ignoramos propositadamente o 'teacher.email' aqui, pois ele pertence ao User, não ao Teacher.
-    db_teacher = models.Teacher(
-        name=teacher.name, 
-        organization_id=org_id
-    )
-    
+async def create_teacher(db: AsyncSession, teacher_in: schemas.TeacherCreate, org_id: int):
+    # 1. Separar dados: O que é do Professor vs O que é da Relação
+    # Retiramos os IDs das disciplinas para uma lista à parte
+    subject_ids = teacher_in.subject_ids
+
+    # Criamos os dados para a tabela Teacher, excluindo o que não é coluna dela
+    teacher_data = teacher_in.model_dump(exclude={'subject_ids', 'create_user_account', 'email'})
+
+    # 2. Criar a Instância do Professor
+    db_teacher = models.Teacher(**teacher_data, organization_id=org_id)
+
+    # 3. Tratar as Disciplinas (Relação N:M)
+    if subject_ids:
+        query_subs = select(models.Subject).where(
+            models.Subject.id.in_(subject_ids),
+            models.Subject.organization_id == org_id
+        )
+        result_subs = await db.execute(query_subs)
+        subjects_objects = result_subs.scalars().all()
+        
+        db_teacher.subjects = list(subjects_objects)
+
+    # 4. Adicionar à Sessão e Obter ID
     db.add(db_teacher)
-    
-    # Flush para obter o ID do professor (db_teacher.id) antes do commit final
-    await db.flush() 
+    await db.flush() # Flush garante que db_teacher.id é gerado agora
     await db.refresh(db_teacher)
 
-    # Lógica de criação de User (Separada e desacoplada)
-    if teacher.create_user_account and teacher.email:
-        # Importação local para evitar ciclo de dependência
+    # 5. Lógica de User (ALTERADA - Criar SEMPRE que tiver email)
+    if teacher_in.email:
         from app.services import user_service
         from app.models import UserRole
         
-        # Prepara os dados para o user_service
-        user_in = schemas.UserCreate(
-            email=teacher.email,
-            password="1234" # Password provisória
+        # Determinar o estado da conta (Ativo/Inativo) conforme o switch
+        is_active_status = teacher_in.create_user_account
+        
+        user_create_data = schemas.UserCreate(
+            email=teacher_in.email,
+            password="1234" 
         )
         
-        # O user_service encarrega-se de criar o registo na tabela 'user'
-        # e ligá-lo a este professor via 'teacher_id'
-        await user_service.create_user(
+        # Criar o utilizador (por defeito, create_user cria com is_active=True)
+        new_user = await user_service.create_user(
             db, 
-            user_in, 
+            user_create_data, 
             org_id=org_id, 
             role=UserRole.teacher,
             teacher_id=db_teacher.id 
         )
+        
+        # Forçar o estado correto (Ativo ou Inativo conforme o switch)
+        new_user.is_active = is_active_status
+        db.add(new_user)
 
-    # Commit atómico: ou cria ambos, ou falha ambos
+    # 6. Gravar tudo na BD
     await db.commit()
+
+    # 7. Retornar o Professor com dados atualizados (Single Source of Truth)
+    return await get_teacher_details(db, db_teacher.id, org_id)
+
+# Helper Function
+async def get_teacher_with_subjects(db: AsyncSession, teacher_id: int, org_id: int):
+    query = select(models.Teacher).where(
+        models.Teacher.id == teacher_id,
+        models.Teacher.organization_id == org_id
+    ).options(selectinload(models.Teacher.subjects))
     
-    return db_teacher
+    result = await db.execute(query)
+    return result.scalars().first()
 
 async def delete_teacher(
     db: AsyncSession, 
@@ -148,67 +167,116 @@ async def update_teacher(
     org_id: int
 ):
     """
-    Atualiza um professor. Se o email mudar, atualiza também o User associado.
+    Atualiza um professor. Permite:
+    - Mudar nome, email, competências
+    - Ativar/desativar a conta de acesso via create_user_account
     """
-    # 1. Buscar o professor
+    # 1. Buscar Teacher + Disciplinas (Eager Loading)
     query = select(models.Teacher).where(
         models.Teacher.id == teacher_id,
         models.Teacher.organization_id == org_id
-    )
+    ).options(selectinload(models.Teacher.subjects))
+
     result = await db.execute(query)
     teacher = result.scalars().first()
     
     if not teacher:
         return None
 
-    # 2. Atualizar dados do Teacher (Nome, etc)
-    update_data = teacher_in.model_dump(exclude_unset=True)
-    
-    # Removemos 'email' do update_data porque 'email' não é coluna de Teacher
-    email_to_update = update_data.pop("email", None) 
+    # 2. Preparar dados (Excluir email e create_user_account porque têm lógica especial)
+    update_data = teacher_in.model_dump(
+        exclude_unset=True, 
+        exclude={"subject_ids", "email", "create_user_account"}
+    )
 
+    # 3. Atualizar campos simples do Professor
     for field, value in update_data.items():
         setattr(teacher, field, value)
 
-    # 3. Lógica de Atualização de Email (Tabela User)
-    if email_to_update:
-        # Procurar se existe um User ligado a este Teacher
-        query_user = select(models.User).where(models.User.teacher_id == teacher_id)
-        result_user = await db.execute(query_user)
-        user = result_user.scalars().first()
-        
-        if user:
-            # Se existe user, atualizamos o email
-            user.email = email_to_update
-            db.add(user) # Marca para gravar
-        else:
-            # (Opcional) Se não existia user, poderíamos criar um aqui?
-            # Para manter simples, assumimos que só edita se já existir.
-            pass
+    # 4. Atualizar Disciplinas
+    if teacher_in.subject_ids is not None and len(teacher_in.subject_ids) > 0:
+        query_subjects = select(models.Subject).where(
+            models.Subject.id.in_(teacher_in.subject_ids),
+            models.Subject.organization_id == org_id
+        )
+        result_subjects = await db.execute(query_subjects)
+        new_subjects = result_subjects.scalars().all()
+        teacher.subjects = list(new_subjects)
+    elif teacher_in.subject_ids is not None:
+        # Se enviou lista vazia, limpa as disciplinas
+        teacher.subjects = []
 
-    # 4. Gravar tudo
+    # 5. Lógica de User e Email (REFINADA)
+    
+    # 5.1 Buscar o user atual (se existir)
+    query_user = select(models.User).where(models.User.teacher_id == teacher_id)
+    result_user = await db.execute(query_user)
+    user = result_user.scalars().first()
+
+    # 5.2 Se mudou o email, atualiza no User (se existir)
+    if teacher_in.email and user:
+        user.email = teacher_in.email
+        db.add(user)
+    
+    # 5.3 Se mudou o estado da conta (Ativar/Desativar)
+    if teacher_in.create_user_account is not None:
+        if user:
+            # Caso 1: User existe, apenas atualizamos o switch
+            user.is_active = teacher_in.create_user_account
+            db.add(user)
+        elif teacher_in.create_user_account and teacher_in.email:
+            # Caso 2: Não tinha user, mas agora quer CRIAR (ativar)
+            # Precisamos do email para criar a conta
+            from app.services import user_service
+            from app.models import UserRole
+            
+            user_create_data = schemas.UserCreate(
+                email=teacher_in.email,
+                password="1234"
+            )
+            # Criar o user (por defeito is_active=True, que é o que queremos)
+            await user_service.create_user(
+                db, user_create_data, org_id=org_id, 
+                role=UserRole.teacher, teacher_id=teacher.id
+            )
+        # Caso 3: Quer desativar (create_user_account=False) mas não tem user
+        # -> Nada a fazer, não há User para desativar
+
+    # 6. Gravar tudo na BD
     db.add(teacher)
     await db.commit()
-    await db.refresh(teacher)
     
-    # --- CONSTRUÇÃO DA RESPOSTA (Data Mapping) ---
-    # Como o TeacherRead espera um 'login_email', mas o modelo Teacher não o tem,
-    # injetamos o valor dinamicamente no objeto Python antes de o Pydantic o ler.
-    
-    if email_to_update:
-        # Se atualizámos o email, usamos esse novo valor
-        setattr(teacher, "login_email", email_to_update)
-        # Também preenchemos o 'email' do TeacherBase para consistência
-        setattr(teacher, "email", email_to_update)
-    else:
-        # Se não enviámos email novo, tentamos manter o antigo.
-        # Numa arquitetura ideal, faríamos um JOIN, mas para performance de update:
-        # Se o user existe, usamos o email dele.
-        if user:
-             setattr(teacher, "login_email", user.email)
-             setattr(teacher, "email", user.email)
+    # 7. Retornar dados frescos (Single Source of Truth)
+    return await get_teacher_details(db, teacher_id, org_id)
 
-    return teacher  
+async def get_teacher_details(db: AsyncSession, teacher_id: int, org_id: int):
+    # 1. Query: Selecionamos também o campo is_active do User
+    stmt = (
+        select(models.Teacher, models.User.email, models.User.is_active)
+        .outerjoin(models.User, models.User.teacher_id == models.Teacher.id)
+        .where(
+            models.Teacher.id == teacher_id,
+            models.Teacher.organization_id == org_id
+        )
+        .options(selectinload(models.Teacher.subjects))
+    )
+    
+    result = await db.execute(stmt)
+    row = result.first()
+    
+    if not row:
+        return None
+    
+    # 2. Desembrulhamos os 3 valores (Teacher, email, is_active)
+    teacher, email, is_active = row
+    
+    # 3. Injetamos os valores no objeto Teacher para o Pydantic conseguir ler
+    setattr(teacher, "login_email", email)
+    setattr(teacher, "email", email)
+    # Se is_active for None (não tem User), assumimos False
+    setattr(teacher, "is_active", is_active if is_active is not None else False)
+    
+    return teacher
 
 async def find_replacement_teacher(
     db: AsyncSession, 

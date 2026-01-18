@@ -1,13 +1,14 @@
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 from sqlalchemy import select
 from app import models, schemas
 
 async def get_modules_by_org(db: AsyncSession, org_id: int):
-    # Fazemos um join com Subject para garantir que o módulo pertence à organização certa
     stmt = (
         select(models.Module)
         .join(models.Subject)
         .where(models.Subject.organization_id == org_id)
+        .options(selectinload(models.Module.subject))  # ✅ ADICIONAR
         .order_by(models.Module.name)
     )
     result = await db.execute(stmt)

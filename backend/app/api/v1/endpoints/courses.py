@@ -22,6 +22,18 @@ async def create_course(
 ):
     return await course_service.create_course(db, item, current_user.organization_id)
 
+@router.put("/{course_id}", response_model=schemas.CourseRead)
+async def update_course(
+    course_id: int,
+    item: schemas.CourseUpdate, 
+    db: AsyncSession = Depends(deps.get_db),
+    current_user: models.User = Depends(deps.get_current_active_admin)
+):
+    result = await course_service.update_course(db, course_id, item, current_user.organization_id)
+    if not result:
+        raise HTTPException(status_code=404, detail="Curso não encontrado")
+    return result
+
 @router.delete("/{course_id}")
 async def delete_course(
     course_id: int, 

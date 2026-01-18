@@ -13,15 +13,9 @@ from app.core.security import hash_password
 # --- CRUD: User (Utilizador) ---
 
 async def get_user_by_email(db: AsyncSession, email: str) -> models.User | None:
-    """Procura um utilizador pelo seu email."""
-    # "select(models.User)" é o mesmo que "SELECT * FROM user"
-    # ".where(...)" é o nosso "WHERE email = ..."
     query = select(models.User).where(models.User.email == email)
-    
-    # "await db.execute(...)" corre o comando
     result = await db.execute(query)
     
-    # ".scalars().first()" dá-nos o primeiro resultado (ou None)
     return result.scalars().first()
 
 
