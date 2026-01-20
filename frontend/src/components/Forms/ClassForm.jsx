@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react'
 import {
-  CForm, CCol, CRow, CFormInput, CButton, CModalFooter
+  CForm, CCol, CRow, CFormInput, CButton, CModalFooter, CFormSelect
 } from '@coreui/react'
+import { useCourses } from '../../hooks/useSchoolData'
 
 const ClassForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
   const { data: courses } = useCourses()
@@ -17,7 +18,7 @@ const ClassForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
       setFormData({
         name: initialData.name || '',
         size: initialData.size || 25,
-        course_id: initialData.course_id || ''
+        course_id: initialData.course_id ? String(initialData.course_id) : ''
       })
     } else {
         setFormData({ name: '', size: 25 })
@@ -31,7 +32,12 @@ const ClassForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
 
   const handleSubmit = (e) => {
     e.preventDefault()
-    onSubmit(formData)
+    // Pequena proteção: converter string vazia em null para o backend
+    const finalData = {
+        ...formData,
+        course_id: formData.course_id ? parseInt(formData.course_id) : null
+    }
+    onSubmit(finalData)
   }
 
   return (
@@ -64,13 +70,14 @@ const ClassForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
 
         <CCol md={12}>
           <CFormSelect
-            label="Curso Associado (Opcional)"
+            label="Curso Associado"
             name="course_id"
             value={formData.course_id}
             onChange={handleChange}
-            text="Associe esta turma a um curso profissional."
+            text="Associe esta turma a um curso profissional para desbloquear a Distribuição de Serviço."
           >
             <option value="">-- Sem Curso --</option>
+            {/* Lista dinâmica de cursos */}
             {courses?.map(course => (
                 <option key={course.id} value={course.id}>{course.name}</option>
             ))}

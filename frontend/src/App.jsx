@@ -11,6 +11,7 @@ import SchoolConfig from './pages/SchoolConfig';
 import Schedules from './pages/Schedules';
 import Courses from './pages/Courses';
 import Modules from './pages/Modules';
+import ServiceDistribution from './pages/ServiceDistribution';
 import DefaultLayout from './components/DefaultLayout';
 import ProtectedRoute from './components/ProtectedRoute';
 
@@ -35,6 +36,7 @@ function App() {
           <Route path="config" element={<SchoolConfig />} />
           <Route path="schedules" element={<Schedules />} />
           <Route path="my-availability" element={<MyAvailability />} />
+          <Route path="service-distribution" element={<ServiceDistribution />} />
         </Route>
       </Routes>
     </Router>

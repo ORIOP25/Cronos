@@ -192,16 +192,35 @@ class TimeslotRead(TimeslotBase):
     class Config:
         from_attributes = True
 
-# --- LESSON (AULA A ALOCAR) ---
+# --- LESSON (ATRIBUIÇÃO DE PROFESSOR) ---
+# 
+# NOVO PADRÃO (Service Distribution):
+# Uma "Lesson" é agora a Atribuição de um Professor a uma Disciplina/Turma.
+# O Solver calculará dinamicamente quantas vezes por semana o professor dá aulas.
+#
+# - Turma: A que turma é? (ex: 10º TGEI)
+# - Disciplina: Qual disciplina? (ex: Matemática)
+# - Professor: Quem leciona? (ex: Prof. Silva) [VALIDADO: deve ter competência]
+# - num_per_week: Deixa opcional/comentado. O Solver calcula isto baseado em:
+#   * Currículo do curso (quantas horas tem a disciplina)
+#   * Progresso/Módulos atrasados
+#   * Disponibilidade do professor
+# - is_double: Se a aula é de 2h seguidas
+#
+# Esta abordagem elimina micro-gestão manual e permite escalabilidade.
+
 class LessonBase(BaseModel):
     class_id: int
     subject_id: int
     teacher_id: int
-    num_per_week: int = Field(..., ge=0) # Geater or Equal
+    # NOVO: num_per_week é opcional. O Solver define isto dinamicamente.
+    num_per_week: int = Field(default=1, ge=0, description="Opcional. Solver calcula.")
     is_double: bool = False
 
 class LessonCreate(LessonBase):
-    num_per_week: int = Field(..., gt=0) # Greater Than 0
+    # NOVO: Permite criar uma atribuição sem especificar horas exatas.
+    # O Solver dirá quantas horas por semana são necessárias.
+    pass
 
 class LessonRead(LessonBase):
     id: int

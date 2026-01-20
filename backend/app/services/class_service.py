@@ -1,5 +1,5 @@
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 from sqlalchemy.future import select
 from app import models, schemas
 from app.models import Lesson
@@ -65,6 +65,47 @@ async def delete_class(db: AsyncSession, class_id: int, org_id: int):
     await db.delete(item)
     await db.commit()
     return "SUCCESS"
+
+async def get_class_curriculum(db: AsyncSession, class_id: int, org_id: int):
+    """
+    Retorna a lista de disciplinas que a turma precisa ter.
+    
+    A turma está associada a um curso, e o curso tem disciplinas.
+    Esta função facilita o frontend para apresentar qual disciplinas a turma necessita.
+    
+    Útil para a "Matriz de Distribuição de Serviço" (Atribuição de Professores).
+    
+    Retorna: List[SubjectRead]
+    """
+    # 1. Buscar a Turma
+    class_query = select(models.Class).where(
+        models.Class.id == class_id,
+        models.Class.organization_id == org_id
+    )
+    class_result = await db.execute(class_query)
+    db_class = class_result.scalars().first()
+    
+    if not db_class:
+        return []
+    
+    # 2. Se não tiver curso associado, retorna vazio
+    if not db_class.course_id:
+        return []
+    
+    # 3. Buscar o Curso e carregar as Disciplinas (LEFT JOIN)
+    course_query = (
+        select(models.Course)
+        .where(models.Course.id == db_class.course_id)
+        .options(selectinload(models.Course.subjects))
+    )
+    course_result = await db.execute(course_query)
+    course = course_result.scalars().first()
+    
+    if not course:
+        return []
+    
+    # 4. Retornar as disciplinas do curso
+    return course.subjects if course.subjects else []
 
 # --- SYNC (SOLVER) ---
 def get_classes_by_org_sync(db: Session, org_id: int):

@@ -52,3 +52,25 @@ async def delete_class(
         )
     
     return {"message": "Turma removida com sucesso"}
+
+@router.get("/{class_id}/curriculum", response_model=List[schemas.SubjectRead])
+async def get_class_curriculum(
+    class_id: int,
+    db: AsyncSession = Depends(deps.get_db),
+    current_user: models.User = Depends(deps.get_current_active_user)
+):
+    """
+    Retorna o currículo (disciplinas) da turma.
+    
+    A turma está associada a um curso, e o curso define quais disciplinas ela precisa ter.
+    Este endpoint facilita a "Matriz de Distribuição de Serviço" (Atribuição de Professores).
+    
+    Exemplo de uso:
+    - GET /api/v1/classes/5/curriculum → Lista as disciplinas do curso do 10º TGEI
+    """
+    curriculum = await class_service.get_class_curriculum(
+        db, 
+        class_id, 
+        current_user.organization_id
+    )
+    return curriculum

@@ -11,7 +11,8 @@ import ClassForm from '../components/Forms/ClassForm'
 
 // Hooks de Dados (CRUD)
 import { 
-  useClasses, 
+  useClasses,
+  useCourses,
   useCreateEntity, 
   useUpdateEntity, 
   useDeleteEntity 
@@ -23,6 +24,7 @@ const Classes = () => {
 
   // 1. Acesso aos Dados
   const { data: classes, isLoading } = useClasses()
+  const { data: courses } = useCourses()
   const createMutation = useCreateEntity('classes')
   const updateMutation = useUpdateEntity('classes')
   const deleteMutation = useDeleteEntity('classes')
@@ -30,14 +32,25 @@ const Classes = () => {
   // 2. Definição das Colunas
   const columns = [
     { key: 'name', label: 'Turma' },
-    { key: 'size_badge', label: 'Nº Alunos' }
+    { key: 'size_badge', label: 'Nº Alunos' },
+    { key: 'course_badge', label: 'Curso' }
   ]
 
   // 3. Transformação (ViewModel)
-  const tableData = (classes || []).map(c => ({
-    ...c,
-    size_badge: <CBadge color="info" shape="rounded-pill">{c.size} alunos</CBadge>
-  }))
+  const tableData = (classes || []).map(c => {
+    // Procura o nome do curso pelo ID
+    const courseName = courses?.find(course => course.id === c.course_id)?.name
+    
+    return {
+      ...c,
+      size_badge: <CBadge color="info" shape="rounded-pill">{c.size} alunos</CBadge>,
+      course_badge: c.course_id ? (
+        <CBadge color="success" shape="rounded-pill">{courseName || 'Carregando...'}</CBadge>
+      ) : (
+        <CBadge color="secondary" shape="rounded-pill">Sem curso</CBadge>
+      )
+    }
+  })
 
   // --- Handlers ---
 

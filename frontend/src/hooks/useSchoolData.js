@@ -100,6 +100,31 @@ export const useModules = () => useQuery({
   ...STATIC_OPTS
 })
 
+// --- CURRÍCULO DA TURMA (Dados Relacionados) ---
+/**
+ * Hook para carregar o currículo (disciplinas) de uma turma.
+ * 
+ * Implementa o padrão de "Dados Relacionados":
+ * - enabled=!!classId: Só faz fetch se classId existir
+ * - queryKey inclui classId: Cache separada por turma
+ * - STATIC_OPTS: Currículo muda raramente
+ * 
+ * Uso:
+ * const { data: curriculum, isLoading } = useClassCurriculum(5)
+ */
+export const useClassCurriculum = (classId) => useQuery({
+  queryKey: ['class-curriculum', classId],
+  queryFn: async () => {
+    // Proteção: Se classId é falsy, retorna array vazio
+    if (!classId) return []
+    const { data } = await apiClient.get(`/classes/${classId}/curriculum`)
+    return data
+  },
+  // OTIMIZAÇÃO: Só faz fetch se classId existir
+  enabled: !!classId,
+  ...STATIC_OPTS
+})
+
 // --- HOOKS OPERACIONAIS (Dinâmicos) ---
 
 export const useSchedule = () => useQuery({

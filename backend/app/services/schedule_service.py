@@ -27,6 +27,60 @@ async def get_lessons_by_org(db: AsyncSession, org_id: int):
     return result.scalars().all()
 
 async def create_lesson(db: AsyncSession, item: schemas.LessonCreate, org_id: int):
+    """
+    Cria uma atribuição de professor a uma disciplina/turma.
+    
+    VALIDAÇÃO CRÍTICA: Verifica se o professor tem competência na disciplina.
+    Isto evita que dados "lixo" cheguem ao Solver.
+    """
+    # 1. Buscar o Professor e as suas Competências (Subjects)
+    from sqlalchemy.orm import selectinload
+    from app.services import teacher_service
+    
+    teacher_query = (
+        select(models.Teacher)
+        .where(
+            models.Teacher.id == item.teacher_id,
+            models.Teacher.organization_id == org_id
+        )
+        .options(selectinload(models.Teacher.subjects))
+    )
+    teacher_result = await db.execute(teacher_query)
+    teacher = teacher_result.scalars().first()
+    
+    if not teacher:
+        raise ValueError(f"Professor com ID {item.teacher_id} não encontrado na organização")
+    
+    # 2. VALIDAÇÃO CRÍTICA: Verificar competência
+    teacher_subject_ids = [s.id for s in teacher.subjects]
+    if item.subject_id not in teacher_subject_ids:
+        # Obter nome da disciplina para melhor mensagem de erro
+        subject_query = select(models.Subject).where(models.Subject.id == item.subject_id)
+        subject_result = await db.execute(subject_query)
+        subject = subject_result.scalars().first()
+        subject_name = subject.name if subject else f"ID {item.subject_id}"
+        
+        raise ValueError(
+            f"O professor '{teacher.name}' não tem competência para lecionar '{subject_name}'. "
+            f"Competências atuais: {', '.join([s.name for s in teacher.subjects]) or 'nenhuma'}."
+        )
+    
+    # 3. Verificar se já existe Lesson para esta turma/disciplina/professor
+    # (Evita duplicados)
+    existing_query = select(models.Lesson).where(
+        models.Lesson.class_id == item.class_id,
+        models.Lesson.subject_id == item.subject_id,
+        models.Lesson.teacher_id == item.teacher_id,
+        models.Lesson.organization_id == org_id
+    )
+    existing_result = await db.execute(existing_query)
+    if existing_result.scalars().first():
+        raise ValueError(
+            f"Já existe uma atribuição deste professor para esta disciplina/turma. "
+            f"Para mudar o professor, edite a atribuição existente."
+        )
+    
+    # 4. Criar a Lesson
     db_item = models.Lesson(**item.model_dump(), organization_id=org_id)
     db.add(db_item)
     await db.commit()
