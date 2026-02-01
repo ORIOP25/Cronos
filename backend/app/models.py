@@ -1,5 +1,5 @@
 import enum
-from datetime import datetime, time
+from datetime import datetime, time, timezone
 from typing import List, Optional
 from sqlalchemy import (
     Column, Integer, String, Boolean,
@@ -162,13 +162,16 @@ class Class(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(100), nullable=False)
+    size: Mapped[int] = mapped_column(Integer, nullable=False)  # Sem default - admin define
 
-    # Default 25 para evitar problemas na migração e ser um valor comum
-    size: Mapped[int] = mapped_column(Integer, default=25, nullable=False)
+    # Ciclo do curso (ex: 2025-2028 para 10º, 2024-2027 para 11º, 2023-2026 para 12º)
+    start_year: Mapped[int] = mapped_column(Integer, nullable=False)  # Ex: 2025
+    end_year: Mapped[int] = mapped_column(Integer, nullable=False)  # Ex: 2028
+    grade_level: Mapped[int] = mapped_column(Integer, nullable=False)  # 10, 11, 12
 
-    # Associação a um Curso (Opcional por enquanto para não partir dados antigos)
-    course_id: Mapped[Optional[int]] = mapped_column(ForeignKey("course.id"), nullable=True)
-    course: Mapped[Optional["Course"]] = relationship(back_populates="classes")
+    # Associação a um Curso
+    course_id: Mapped[int] = mapped_column(ForeignKey("course.id"), nullable=False)
+    course: Mapped["Course"] = relationship(back_populates="classes")
 
     # Histórico de progresso
     progress_records: Mapped[List["ClassProgress"]] = relationship(back_populates="class_", cascade="all, delete-orphan")
@@ -380,7 +383,7 @@ class Substitution(Base):
     # Auditoria e Estado
     status = Column(String, default="PENDING") # PENDING, CONFIRMED, CANCELLED
     reason = Column(Text, nullable=True) # Ex: "Baixa médica"
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     
     # Relacionamentos
     lesson = relationship("Lesson")
@@ -397,6 +400,7 @@ class Course(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(150), nullable=False)
+    abbreviation: Mapped[str] = mapped_column(String(10), unique=True, nullable=False)  # Ex: "TGEI"
     organization_id: Mapped[int] = mapped_column(ForeignKey("organization.id"))
     
     organization: Mapped["Organization"] = relationship(back_populates="courses")
@@ -426,14 +430,17 @@ class Module(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(150), nullable=False)
     code: Mapped[Optional[str]] = mapped_column(String(50), nullable=True) # Ex: "0789"
-    hours_total: Mapped[int] = mapped_column(Integer, nullable=False, default=25)
+    hours_total: Mapped[int] = mapped_column(Integer, nullable=False)  # Sem default - admin define
+    order: Mapped[int] = mapped_column(Integer, nullable=False)  # Sequência no currículo (1, 2, 3...)
     
     # Um módulo pertence a uma disciplina macro (ex: pertence a "Programação")
     subject_id: Mapped[int] = mapped_column(ForeignKey("subject.id"))
     subject: Mapped["Subject"] = relationship(back_populates="modules")
 
-    # Relação com Organization via Subject (indireta, mas útil saber)
-    # Não criamos FK direta para evitar redundância, acedemos via subject.organization
+    # Garante ordem única por disciplina
+    __table_args__ = (
+        UniqueConstraint("subject_id", "order", name="uq_module_order_per_subject"),
+    )
 
     def __repr__(self) -> str:
         return f"<Module(id={self.id}, code='{self.code}', hours={self.hours_total})>"
@@ -447,9 +454,15 @@ class ClassProgress(Base):
     class_id: Mapped[int] = mapped_column(ForeignKey("class.id"))
     module_id: Mapped[int] = mapped_column(ForeignKey("module.id"))
     
-    hours_completed: Mapped[int] = mapped_column(Integer, default=0)
-    is_completed: Mapped[bool] = mapped_column(Boolean, default=False)
+    hours_completed: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    is_completed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), nullable=False)
 
     # Relacionamentos
     class_: Mapped["Class"] = relationship(back_populates="progress_records")
     module: Mapped["Module"] = relationship()
+    
+    # Garante uma entrada por turma/módulo
+    __table_args__ = (
+        UniqueConstraint("class_id", "module_id", name="uq_class_module"),
+    )

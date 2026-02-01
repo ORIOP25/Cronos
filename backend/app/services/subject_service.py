@@ -6,9 +6,7 @@ from app import models, schemas
 from app.models import Lesson 
 
 # --- ASYNC (API) ---
-
 async def get_subjects_by_org(db: AsyncSession, org_id: int):
-    # Ordenar por nome facilita a leitura no frontend
     stmt = select(models.Subject).where(models.Subject.organization_id == org_id).order_by(models.Subject.name)
     result = await db.execute(stmt)
     return result.scalars().all()

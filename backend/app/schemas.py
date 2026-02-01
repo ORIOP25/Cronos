@@ -113,7 +113,7 @@ class ClassRead(ClassBase):
     model_config = model_config
     course_id: Optional[int] = None
 
-# --- SUBJECT (DISCIPLINA) ---
+# --- SUBJECT ---
 class SubjectBase(BaseModel):
     name: str
     required_room_type: RoomType = RoomType.normal
@@ -188,9 +188,8 @@ class TimeslotUpdate(BaseModel):
 class TimeslotRead(TimeslotBase):
     id: int
     organization_id: int
-    
-    class Config:
-        from_attributes = True
+
+    model_config = ConfigDict(from_attributes=True)
 
 # --- LESSON (ATRIBUIÇÃO DE PROFESSOR) ---
 # 
@@ -291,8 +290,7 @@ class SubstitutionResponse(SubstitutionBase):
     original_teacher_name: Optional[str] = None
     substitute_teacher_name: Optional[str] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 # Schema para a sugestão (resposta do algoritmo)
 class ReplacementSuggestion(BaseModel):

@@ -25,7 +25,7 @@ async def create_subject(
 ):
     return await subject_service.create_subject(db, item, current_user.organization_id)
 
-# --- 3. Atualizar Disciplina (Novo) ---
+# --- 3. Atualizar Disciplina ---
 @router.put("/{subject_id}", response_model=schemas.SubjectRead)
 async def update_subject(
     subject_id: int,
@@ -43,7 +43,7 @@ async def update_subject(
         raise HTTPException(status_code=404, detail="Disciplina não encontrada")
     return subject
 
-# --- 4. Apagar Disciplina (Atualizado) ---
+# --- 4. Apagar Disciplina   ---
 @router.delete("/{subject_id}")
 async def delete_subject(
     subject_id: int, 
