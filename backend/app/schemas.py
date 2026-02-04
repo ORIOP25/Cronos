@@ -102,7 +102,6 @@ class ClassCreate(ClassBase):
     course_id: Optional[int] = None
     pass
 
-# Novo Schema de Update
 class ClassUpdate(BaseModel):
     name: Optional[str] = None
     size: Optional[int] = None
@@ -113,13 +112,34 @@ class ClassRead(ClassBase):
     model_config = model_config
     course_id: Optional[int] = None
 
+# --- MÓDULOS ---
+class ModuleBase(BaseModel):
+    name: str
+    code: Optional[str] = None
+    hours_total: int = Field(..., gt=0, description="Carga horária total do módulo")
+    order: int = Field(..., gt=0, description="Ordem sequencial do módulo (1, 2, 3...)")
+
+class ModuleCreate(ModuleBase):
+    pass
+
+class ModuleUpdate(BaseModel):
+    name: Optional[str] = None
+    code: Optional[str] = None
+    hours_total: Optional[int] = Field(None, gt=0, description="Carga horária total do módulo")
+    subject_id: Optional[int] = None
+
+class ModuleRead(ModuleBase):
+    id: int
+    subject_id: int
+    model_config = ConfigDict(from_attributes=True)
+
 # --- SUBJECT ---
 class SubjectBase(BaseModel):
     name: str
     required_room_type: RoomType = RoomType.normal
 
 class SubjectCreate(SubjectBase):
-    pass
+    modules: list[ModuleCreate] = Field(default_factory=list, description="Lista de módulos iniciais")
 
 class SubjectUpdate(BaseModel):
     name: Optional[str] = None
@@ -128,6 +148,7 @@ class SubjectUpdate(BaseModel):
 class SubjectRead(SubjectBase):
     id: int
     organization_id: int
+    modules: list[ModuleRead] = []
     model_config = model_config
 
 # --- ROOM (SALA) ---
@@ -300,14 +321,31 @@ class ReplacementSuggestion(BaseModel):
     reason: str    # Ex: "Livre e da mesma disciplina"
 
 # --- CURSOS ---
+# Classes Auxiliares
+class ClassConfigCreate(BaseModel):
+    """Define as regras para criar uma turma automática"""
+    grade_level: int = Field(..., ge=10, le=12, description="Ano de escolaridade (10, 11, 12)")
+    size: int = Field(25, gt=0, description="Número de alunos")
+    start_year: int = Field(..., description="Ano de início (ex: 2025)")
+    end_year: int = Field(..., description="Ano de fim (ex: 2028)")
+
+class TeacherAssignmentCreate(BaseModel):
+    """Define quem é o professor 'padrão' para uma disciplina neste curso"""
+    subject_id: int
+    teacher_id: int
+
 class CourseBase(BaseModel):
     name: str
+    abbreviation: str = Field(..., min_length=2, max_length=10, description="Sigla do curso (ex: TGEI)")
 
 class CourseCreate(CourseBase):
     subject_ids: list[int] = Field(default_factory=list, description="IDs das disciplinas que compõem o curso")
+    teacher_assignments: list[TeacherAssignmentCreate] = Field(default_factory=list, description="Professores por disciplina")
+    classes_config: list[ClassConfigCreate] = Field(default_factory=list, description="Configuração das turmas a criar")
 
 class CourseUpdate(BaseModel):
     name: Optional[str] = None
+    abbreviation: Optional[str] = None
     subject_ids: Optional[list[int]] = None
 
 class CourseRead(CourseBase):
@@ -316,27 +354,12 @@ class CourseRead(CourseBase):
     subject_ids: list[int] = Field(default_factory=list, description="IDs das disciplinas associadas")
     model_config = ConfigDict(from_attributes=True)
 
-# --- MÓDULOS ---
-class ModuleBase(BaseModel):
-    name: str
-    code: Optional[str] = None
-    hours_total: int = Field(..., gt=0, description="Carga horária total do módulo")
-    subject_id: int
-
-class ModuleCreate(ModuleBase):
-    pass
-
-class ModuleUpdate(BaseModel):
-    name: Optional[str] = None
-    code: Optional[str] = None
-    hours_total: Optional[int] = Field(None, gt=0, description="Carga horária total do módulo")
-    subject_id: Optional[int] = None
-
-class ModuleRead(ModuleBase):
-    id: int
+# Este schema traz logo as turmas associadas para não termos de fazer 2 pedidos
+class CourseDetailRead(CourseRead):
+    classes: list[ClassRead] = []
     model_config = ConfigDict(from_attributes=True)
 
-# --- GERADOR DE TIMESLOTS (BULK) ---
+# --- GERADOR DE TIMESLOTS ---
 class TimeslotBulkCreate(BaseModel):
     start_time: time
     end_time: time

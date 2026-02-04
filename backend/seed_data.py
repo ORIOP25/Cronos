@@ -1,14 +1,4 @@
 # Ficheiro: backend/seed_data.py
-"""
-Script TUDO-EM-UM: Limpa BD + Recria tabelas + Popula dados de teste
-Usa: python seed_data.py (com venv já ativado)
-
-🔒 POSTGRESQL-EXCLUSIVE: Este script é optimizado APENAS para PostgreSQL.
-Sem código agnóstico, sem compatibilidade SQLite. Pure Postgres.
-
-Este ficheiro é a FONTE DE VERDADE para inicializar a BD.
-Sem ficheiros auxiliares, sem redundância - KISS principle.
-"""
 import sys
 import datetime
 from sqlalchemy import text

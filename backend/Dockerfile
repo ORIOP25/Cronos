@@ -22,8 +22,14 @@ RUN pip install --no-cache-dir --upgrade pip && \
 # 6. Copiar o código todo do projeto para dentro do Docker
 COPY . .
 
-# 7. Expor a porta 8000
+# 7. Instalar netcat para health check
+RUN apt-get update && apt-get install -y --no-install-recommends netcat-traditional && rm -rf /var/lib/apt/lists/*
+
+# 8. Tornar o script executável
+RUN chmod +x /app/entrypoint.sh
+
+# 9. Expor a porta 8000
 EXPOSE 8000
 
-# 8. Comando para arrancar a API (por defeito)
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# 10. Usar entrypoint script (garante Alembic + seed antes de FastAPI)
+ENTRYPOINT ["/app/entrypoint.sh"]

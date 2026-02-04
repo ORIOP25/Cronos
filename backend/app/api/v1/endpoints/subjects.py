@@ -21,7 +21,7 @@ async def read_subjects(
 async def create_subject(
     item: schemas.SubjectCreate, 
     db: AsyncSession = Depends(deps.get_db),
-    current_user: models.User = Depends(deps.get_current_active_admin) # Apenas Admin
+    current_user: models.User = Depends(deps.get_current_active_admin)
 ):
     return await subject_service.create_subject(db, item, current_user.organization_id)
 
