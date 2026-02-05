@@ -390,6 +390,25 @@ class CourseDetailRead(CourseRead):
     classes: list[ClassRead] = Field(default_factory=list, description="Turmas do curso")
     model_config = ConfigDict(from_attributes=True)
 
+# --- COURSE BASIC (para relacionamentos) ---
+class CourseBasic(CourseBase):
+    """Versão simples de Course sem disciplinas/turmas (evita circular imports)"""
+    id: int
+    organization_id: int
+    model_config = ConfigDict(from_attributes=True)
+
+# --- CLASS DETAIL READ (Turma + Curso) ---
+class ClassDetailRead(ClassRead):
+    """
+    Detalhes da turma incluindo o curso associado.
+    Não inclui Lessons (horário) para manter payload leve - essas vêm de um endpoint separado.
+    
+    4º Pilar - Scalability: Endpoint é autossuficiente (tem course no browser navigation),
+    sem sobrecarregar com centenas de lessons. O horário vem depois se necessário.
+    """
+    course: Optional[CourseBasic] = None
+    model_config = ConfigDict(from_attributes=True)
+
 # --- GERADOR DE TIMESLOTS ---
 class TimeslotBulkCreate(BaseModel):
     start_time: time

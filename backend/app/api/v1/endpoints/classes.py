@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import List
+from typing import List, Any
 from app import schemas, models
 from app.api import deps
 from app.services import class_service
@@ -13,6 +13,30 @@ async def read_classes(
     current_user: models.User = Depends(deps.get_current_active_user)
 ):
     return await class_service.get_classes_by_org(db, current_user.organization_id)
+
+@router.get("/{class_id}", response_model=schemas.ClassDetailRead)
+async def read_class(
+    class_id: int,
+    db: AsyncSession = Depends(deps.get_db),
+    current_user: models.User = Depends(deps.get_current_active_user),
+) -> Any:
+    """
+    Retorna detalhes de uma turma + curso associado.
+    
+    Útil para: /courses/:courseId/classes/:classId - exibir dashboard da turma
+    
+    4 Pilares:
+    🔐 Security: Valida org_id - turma só é retornada se pertence à organização do utilizador
+    ⚙️ Stability: Eager load do course (selectinload) previne N+1 em async
+    ⚡ Optimization: Uma query retorna tudo (class + course) sem lazy loading
+    📈 Scalability: Padrão aplicável a detalhes de qualquer entidade
+    """
+    result = await class_service.get_class_details(db, class_id, current_user.organization_id)
+    
+    if not result:
+        raise HTTPException(status_code=404, detail="Turma não encontrada")
+    
+    return result
 
 @router.post("/", response_model=schemas.ClassRead)
 async def create_class(

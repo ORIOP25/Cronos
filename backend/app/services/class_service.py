@@ -10,6 +10,27 @@ async def get_classes_by_org(db: AsyncSession, org_id: int):
     result = await db.execute(select(models.Class).where(models.Class.organization_id == org_id).order_by(models.Class.name))
     return result.scalars().all()
 
+async def get_class_details(db: AsyncSession, class_id: int, org_id: int):
+    """
+    Busca turma com o curso associado (Eager Load).
+    
+    🔐 Security: Filtra por org_id - cada organização só vê suas turmas
+    ⚙️ Stability: selectinload previne N+1 queries e lazy loading em async context
+    ⚡ Optimization: Uma query com JOIN retorna tudo de uma vez
+    📈 Scalability: Padrão aplicável a qualquer entity com relationships
+    
+    Retorna: Class com course populated, ou None se não encontrada
+    """
+    query = select(models.Class).where(
+        models.Class.id == class_id,
+        models.Class.organization_id == org_id
+    ).options(
+        selectinload(models.Class.course)  # Carrega o curso associado
+    )
+    
+    result = await db.execute(query)
+    return result.scalars().first()
+
 async def create_class(db: AsyncSession, item: schemas.ClassCreate, org_id: int):
     # **item.model_dump() injeta 'name' e 'size' automaticamente
     db_item = models.Class(**item.model_dump(), organization_id=org_id)
