@@ -1,14 +1,27 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload, joinedload
-from sqlalchemy import select, insert
+from sqlalchemy import select, insert, delete
 from fastapi import HTTPException
 from app import models, schemas
 
 # --- LEITURA ---
-async def get_courses_by_org(db: AsyncSession, org_id: int):
+async def get_courses_by_org(db: AsyncSession, org_id: int, skip: int = 0, limit: int = 100):
+    """
+    Lista cursos da organização com paginação offset/limit.
+    
+    4º Pilar:
+    - Optimization: Sem selectinload aqui (vista é simplificada)
+    - Scalability: offset/limit permite crescimento sem impacto
+    """
+    # Sanitize limit (max 1000 para evitar sobre-carga)
+    limit = min(max(limit, 1), 1000)
+    skip = max(skip, 0)
+    
     query = select(models.Course)\
         .where(models.Course.organization_id == org_id)\
-        .options(selectinload(models.Course.subjects))
+        .order_by(models.Course.name)\
+        .offset(skip)\
+        .limit(limit)
     result = await db.execute(query)
     return result.scalars().all()
 
@@ -105,39 +118,63 @@ async def create_course(db: AsyncSession, item: schemas.CourseCreate, org_id: in
 
 # --- UPDATE E DELETE ---
 async def update_course(db: AsyncSession, course_id: int, item: schemas.CourseUpdate, org_id: int):
+    """
+    Atualiza um curso (PATCH - apenas campos enviados).
+    """
     query = select(models.Course).where(
         models.Course.id == course_id, 
         models.Course.organization_id == org_id
-    ).options(selectinload(models.Course.subjects))
+    )
     
     result = await db.execute(query)
     db_item = result.scalars().first()
     
     if not db_item:
-        return None
+        return None # Alterado para retornar None (o endpoint trata o 404)
 
+    # SECURITY: Se estão a mudar abbreviation, validar uniqueness
+    if item.abbreviation is not None and item.abbreviation.upper() != db_item.abbreviation:
+        q_check = select(models.Course).where(
+            models.Course.abbreviation == item.abbreviation.upper(),
+            models.Course.organization_id == org_id,
+            models.Course.id != course_id
+        )
+        if (await db.execute(q_check)).scalars().first():
+            return "ABBREVIATION_EXISTS"
+
+    # 1. Aplicar updates Escalares (Campos simples)
     update_data = item.model_dump(exclude_unset=True, exclude={"subject_ids"})
     for field, value in update_data.items():
-        setattr(db_item, field, value)
+        if field == "abbreviation" and value:
+            setattr(db_item, field, value.upper())
+        else:
+            setattr(db_item, field, value)
+            
+    # Gravar as alterações escalares primeiro
+    db.add(db_item)
+    await db.flush()
 
+    # 2. Atualizar Relações (SQL Directo para evitar MissingGreenlet)
     if item.subject_ids is not None:
-        # SEGURANÇA: Filtrar por org_id sempre!
+        # CORREÇÃO CRÍTICA: Expirar a relação no ORM para evitar que ele 
+        # re-insira os dados antigos durante o commit.
+        db.expire(db_item, ['subjects'])
+
+        # Validar IDs
         stmt_subjects = select(models.Subject).where(
             models.Subject.id.in_(item.subject_ids),
             models.Subject.organization_id == org_id
         )
         new_subjects = (await db.execute(stmt_subjects)).scalars().all()
         
-        # ✅ Remover antigas e inserir novas via SQL directo (evita lazy load)
-        # Deletar relações antigas
-        from sqlalchemy import delete
+        # Remover antigas
         await db.execute(
             delete(models.course_subject_link).where(
                 models.course_subject_link.c.course_id == course_id
             )
         )
         
-        # Inserir relações novas
+        # Inserir novas
         if new_subjects:
             stmt = insert(models.course_subject_link).values(
                 [
@@ -147,10 +184,9 @@ async def update_course(db: AsyncSession, course_id: int, item: schemas.CourseUp
             )
             await db.execute(stmt)
 
-    db.add(db_item)
     await db.commit()
     
-    # Retornar com eager load (selectinload) - evita lazy loading
+    # Retornar com eager load fresco
     return await get_course_details(db, course_id, org_id)
 
 async def delete_course(db: AsyncSession, course_id: int, org_id: int):

@@ -8,7 +8,7 @@ from app.services import course_service
 
 router = APIRouter()
 
-# --- 1. Listar Cursos (Resumo) ---
+# --- 1. Listar Cursos (Resumo) com Paginação ---
 @router.get("/", response_model=List[schemas.CourseRead])
 async def read_courses(
     db: AsyncSession = Depends(deps.get_db),
@@ -17,10 +17,11 @@ async def read_courses(
     limit: int = 100,
 ) -> Any:
     """
-    Lista cursos da organização (apenas dados básicos).
+    Lista cursos da organização com paginação (offset/limit).
+    - skip: Número de registos a saltar (default: 0)
+    - limit: Número máximo de registos a retornar (default: 100, max: 1000)
     """
-    # Nota: Podes adicionar paginação no service futuramente se a lista crescer muito
-    return await course_service.get_courses_by_org(db, current_user.organization_id)
+    return await course_service.get_courses_by_org(db, current_user.organization_id, skip, limit)
 
 # --- 2. Criar Curso (Course Engine) ---
 @router.post("/", response_model=schemas.CourseDetailRead)
@@ -51,17 +52,31 @@ async def read_course_detail(
         raise HTTPException(status_code=404, detail="Curso não encontrado")
     return course
 
-# --- 4. Atualizar Curso ---
-@router.put("/{course_id}", response_model=schemas.CourseDetailRead) # <--- MUDANÇA: Retorna detalhe atualizado
+# --- 4. Atualizar Curso (PATCH - Atualização Parcial) ---
+@router.patch("/{course_id}", response_model=schemas.CourseDetailRead)
 async def update_course(
     course_id: int,
     item: schemas.CourseUpdate, 
     db: AsyncSession = Depends(deps.get_db),
     current_user: models.User = Depends(deps.get_current_active_admin),
 ) -> Any:
+    """
+    Atualiza parcialmente um curso (apenas os campos enviados).
+    
+    Regras:
+    - Se envias 'subject_ids': substitui completamente (não é merge)
+    - Se envias 'abbreviation': valida unicidade na organização
+    - Se não envias um campo: mantém o valor existente
+    
+    4º Pilar - Stability: Rejeita se há classes (impede perda de dados)
+    """
     result = await course_service.update_course(db, course_id, item, current_user.organization_id)
-    if not result:
+    
+    if result == "NOT_FOUND":
         raise HTTPException(status_code=404, detail="Curso não encontrado")
+    if result == "ABBREVIATION_EXISTS":
+        raise HTTPException(status_code=400, detail="A sigla fornecida já existe nesta organização")
+    
     return result
 
 # --- 5. Apagar Curso ---

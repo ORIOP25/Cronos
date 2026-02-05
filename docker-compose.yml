@@ -35,8 +35,6 @@ services:
   backend: 
     build: ./backend
     container_name: horario_zen_backend
-    # Corre migrações ANTES de iniciar a API
-    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
     expose:
       - "8000" # A porta 8000 fica fechada para fora, só o Nginx a vê
     env_file:
@@ -62,7 +60,7 @@ services:
   worker:
     build: ./backend # Usa o mesmo Dockerfile do backend
     container_name: horario_zen_worker
-    command: celery -A app.celery_worker.celery_app worker --loglevel=info
+    command: sh -c "sleep 5 && celery -A app.celery_worker.celery_app worker --loglevel=info"
     env_file:
       - ./backend/.env
     environment:

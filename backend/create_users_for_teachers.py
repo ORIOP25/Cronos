@@ -8,7 +8,7 @@ sys.path.insert(0, os.getcwd())
 
 from app.db.database import SessionLocal 
 from app.models import User, Teacher, UserRole
-from app.services.user_service import hash_password
+from app.core.security import hash_password
 
 async def onboard_teachers():
     print("🚀 A criar logins para os professores...")

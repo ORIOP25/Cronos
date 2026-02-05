@@ -12,6 +12,7 @@ from app.main import app
 from app.services import user_service
 from app.schemas import UserCreate
 from app.core.security import create_access_token
+from app.models import UserRole
 
 # 1. Configurar Engine de Teste (Usando Postgres)
 # Usamos NullPool para garantir que as conexões são fechadas após cada teste
@@ -72,3 +73,33 @@ async def authorized_client(async_client: AsyncClient, db_session: AsyncSession)
     # Injetar Token no Header
     async_client.headers.update({"Authorization": f"Bearer {access_token}"})
     return async_client
+
+@pytest_asyncio.fixture(scope="function")
+async def admin_token_headers(async_client: AsyncClient, db_session: AsyncSession) -> dict:
+    email = "admin@escola.com"
+    password = "adminpass"
+    
+    # 1. Criar User ADMIN
+    from app import models
+    # CORREÇÃO AQUI: Usar o nome real da função definida em security.py
+    from app.core.security import hash_password 
+    
+    # Criar Organization primeiro
+    org = models.Organization(name="Escola Teste", plan_status="active")
+    db_session.add(org)
+    await db_session.flush()
+
+    admin_user = models.User(
+        email=email,
+        hashed_password=hash_password(password), # CORREÇÃO AQUI
+        is_active=True,
+        role=UserRole.admin,
+        organization_id=org.id
+    )
+    db_session.add(admin_user)
+    await db_session.commit()
+    
+    # 2. Gerar Token
+    access_token = create_access_token(data={"sub": email})
+    
+    return {"Authorization": f"Bearer {access_token}"}

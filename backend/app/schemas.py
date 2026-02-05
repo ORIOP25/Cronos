@@ -117,7 +117,7 @@ class ModuleBase(BaseModel):
     name: str
     code: Optional[str] = None
     hours_total: int = Field(..., gt=0, description="Carga horária total do módulo")
-    order: int = Field(..., gt=0, description="Ordem sequencial do módulo (1, 2, 3...)")
+    order: int = Field(..., ge=0, description="Ordem sequencial do módulo (0, 1, 2...)")
 
 class ModuleCreate(ModuleBase):
     pass
@@ -140,6 +140,30 @@ class SubjectBase(BaseModel):
 
 class SubjectCreate(SubjectBase):
     modules: list[ModuleCreate] = Field(default_factory=list, description="Lista de módulos iniciais")
+
+    @model_validator(mode='after')
+    def validate_module_order(self):
+        """
+        Valida que os módulos têm ordem sequencial começando em 0: [0, 1, 2, ...]
+        Garante integridade de dados - pré-requisitos funcionam corretamente.
+        
+        4º Pilar - Security: Evita injeção de dados inválidos via API
+        """
+        if not self.modules:
+            # Permitir subject sem módulos (criar depois)
+            return self
+        
+        # Extrai orders e ordena
+        orders = sorted([m.order for m in self.modules])
+        expected = list(range(0, len(self.modules)))
+        
+        # Valida sequência começando em 0
+        if orders != expected:
+            raise ValueError(
+                f"Módulos devem ter ordem sequencial começando em 0 [0, 1, 2, ...]. "
+                f"Recebido: {orders}, Esperado: {expected}"
+            )
+        return self
 
 class SubjectUpdate(BaseModel):
     name: Optional[str] = None
@@ -348,15 +372,22 @@ class CourseUpdate(BaseModel):
     abbreviation: Optional[str] = None
     subject_ids: Optional[list[int]] = None
 
+class SubjectSimple(BaseModel):
+    """Versão simplificada de Subject para não over-fetch"""
+    id: int
+    name: str
+    required_room_type: RoomType
+    model_config = ConfigDict(from_attributes=True)
+
 class CourseRead(CourseBase):
     id: int
     organization_id: int
-    subject_ids: list[int] = Field(default_factory=list, description="IDs das disciplinas associadas")
     model_config = ConfigDict(from_attributes=True)
 
-# Este schema traz logo as turmas associadas para não termos de fazer 2 pedidos
+# Este schema traz logo as turmas + disciplinas associadas para não termos de fazer múltiplos pedidos
 class CourseDetailRead(CourseRead):
-    classes: list[ClassRead] = []
+    subjects: list[SubjectSimple] = Field(default_factory=list, description="Disciplinas do curso (sem módulos)")
+    classes: list[ClassRead] = Field(default_factory=list, description="Turmas do curso")
     model_config = ConfigDict(from_attributes=True)
 
 # --- GERADOR DE TIMESLOTS ---
