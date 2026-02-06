@@ -168,6 +168,7 @@ class SubjectCreate(SubjectBase):
 class SubjectUpdate(BaseModel):
     name: Optional[str] = None
     required_room_type: Optional[RoomType] = None
+    modules: Optional[list[ModuleCreate]] = None
 
 class SubjectRead(SubjectBase):
     id: int

@@ -1,6 +1,6 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session, selectinload
-from sqlalchemy import select
+from sqlalchemy import select, delete
 from app import models, schemas
 # Importamos Lesson para garantir que não apagamos disciplinas em uso
 from app.models import Lesson
@@ -60,15 +60,8 @@ async def create_subject(db: AsyncSession, item: schemas.SubjectCreate, organiza
     result = await db.execute(query)
     return result.scalars().first()
 
-async def update_subject(
-    db: AsyncSession, 
-    subject_id: int, 
-    subject_in: schemas.SubjectUpdate,
-    org_id: int
-):
-    """
-    Atualiza nome ou tipo de sala da disciplina.
-    """
+async def update_subject(db: AsyncSession, subject_id: int, subject_in: schemas.SubjectUpdate, org_id: int):
+    # 1. Buscar a disciplina
     query = select(models.Subject).where(
         models.Subject.id == subject_id,
         models.Subject.organization_id == org_id
@@ -79,15 +72,42 @@ async def update_subject(
     if not subject:
         return None
 
-    # Atualização parcial (apenas os campos enviados)
-    update_data = subject_in.model_dump(exclude_unset=True)
+    # 2. Validar Nome Único (Security)
+    if subject_in.name and subject_in.name != subject.name:
+        q_check = select(models.Subject).where(
+            models.Subject.name == subject_in.name,
+            models.Subject.organization_id == org_id,
+            models.Subject.id != subject_id # Exclui o próprio da verificação
+        )
+        if (await db.execute(q_check)).scalars().first():
+            # Retorna None ou levanta exceção para o endpoint tratar
+            return None 
+
+    # 3. Atualizar campos simples
+    update_data = subject_in.model_dump(exclude_unset=True, exclude={'modules'})
     for field, value in update_data.items():
         setattr(subject, field, value)
 
+    # 4. Atualizar Módulos (Optimization/Scalability)
+    # Estratégia "Replace": Apaga os antigos e cria os novos. 
+    # Garante consistência com o que vem do Frontend Wizard.
+    if subject_in.modules is not None:
+        # A) Apagar módulos antigos desta disciplina
+        await db.execute(delete(models.Module).where(models.Module.subject_id == subject_id))
+        
+        # B) Criar novos módulos
+        for mod_data in subject_in.modules:
+            new_mod = models.Module(
+                **mod_data.model_dump(), 
+                subject_id=subject_id
+            )
+            db.add(new_mod)
+
     db.add(subject)
     await db.commit()
-    await db.refresh(subject)
-    return subject
+    stmt = select(models.Subject).options(selectinload(models.Subject.modules)).where(models.Subject.id == subject.id)
+    result = await db.execute(stmt)
+    return result.scalars().first()
 
 async def delete_subject(db: AsyncSession, subject_id: int, org_id: int):
     """
