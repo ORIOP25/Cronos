@@ -14,23 +14,48 @@ async def get_modules_by_org(db: AsyncSession, org_id: int):
     result = await db.execute(stmt)
     return result.scalars().all()
 
-async def create_module(db: AsyncSession, item: schemas.ModuleCreate):
-    # Nota: Validar se o subject_id pertence à organização seria o ideal aqui
+async def create_module(db: AsyncSession, item: schemas.ModuleCreate, org_id: int):
+    # Validar se o subject_id pertence à organização
+    subject_query = select(models.Subject).where(
+        models.Subject.id == item.subject_id,
+        models.Subject.organization_id == org_id
+    )
+    subject_result = await db.execute(subject_query)
+    if not subject_result.scalars().first():
+        return "INVALID_SUBJECT"
+
     db_item = models.Module(**item.model_dump())
     db.add(db_item)
     await db.commit()
     await db.refresh(db_item)
     return db_item
 
-async def update_module(db: AsyncSession, module_id: int, item: schemas.ModuleCreate):
-    # Busca simples (assumindo validação de org na rota ou query futura)
-    result = await db.execute(select(models.Module).where(models.Module.id == module_id))
+async def update_module(db: AsyncSession, module_id: int, item: schemas.ModuleUpdate, org_id: int):
+    # Garantir que o módulo pertence à organização
+    result = await db.execute(
+        select(models.Module)
+        .join(models.Subject)
+        .where(
+            models.Module.id == module_id,
+            models.Subject.organization_id == org_id
+        )
+    )
     db_item = result.scalars().first()
     
     if not db_item:
         return None
 
-    for field, value in item.model_dump().items():
+    # Se subject_id for alterado, validar que pertence à organização
+    if item.subject_id is not None:
+        subject_query = select(models.Subject).where(
+            models.Subject.id == item.subject_id,
+            models.Subject.organization_id == org_id
+        )
+        subject_result = await db.execute(subject_query)
+        if not subject_result.scalars().first():
+            return "INVALID_SUBJECT"
+
+    for field, value in item.model_dump(exclude_unset=True).items():
         setattr(db_item, field, value)
 
     db.add(db_item)
@@ -38,9 +63,16 @@ async def update_module(db: AsyncSession, module_id: int, item: schemas.ModuleCr
     await db.refresh(db_item)
     return db_item
 
-async def delete_module(db: AsyncSession, module_id: int):
-    # 1. Verificar existência
-    result = await db.execute(select(models.Module).where(models.Module.id == module_id))
+async def delete_module(db: AsyncSession, module_id: int, org_id: int):
+    # 1. Verificar existência + org
+    result = await db.execute(
+        select(models.Module)
+        .join(models.Subject)
+        .where(
+            models.Module.id == module_id,
+            models.Subject.organization_id == org_id
+        )
+    )
     db_item = result.scalars().first()
     if not db_item:
         return "NOT_FOUND"

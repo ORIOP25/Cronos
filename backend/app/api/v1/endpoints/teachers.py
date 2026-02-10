@@ -1,11 +1,12 @@
 # Ficheiro: backend/app/api/endpoints/teachers.py
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List
 from app import schemas
 from app.api import deps
 from app.services import teacher_service
+from app.core.ratelimit import limiter
 from app import models
 
 router = APIRouter()
@@ -38,39 +39,41 @@ async def create_teacher(
         org_id=current_user.organization_id
     )
 
-# --- 3. Apagar Professor ---
-@router.delete("/{teacher_id}")
-async def delete_teacher(
-    teacher_id: int, 
-    # org_id não vem no path, tiramo-lo do token de segurança para garantir que ninguém apaga profs de outra escola
-    db: AsyncSession = Depends(deps.get_db),
-    current_user: models.User = Depends(deps.get_current_user)
-):
-    success = await teacher_service.delete_teacher(db, teacher_id, current_user.organization_id)
-    if not success:
-        raise HTTPException(status_code=404, detail="Professor não encontrado")
-    return {"ok": True}
-
 # --- 4. NOVO ENDPOINT: Gravar Disponibilidades ---
 # Chama o serviço que já existe em teacher_service.py
 @router.post("/{teacher_id}/availability")
+@limiter.limit("30/minute")
 async def update_teacher_availability(
+    request: Request,
     teacher_id: int,
-    availability_data: List[schemas.AvailabilityCreate], # Recebe a lista do Frontend
-    db: AsyncSession = Depends(deps.get_db)
+    availability_data: List[schemas.AvailabilitySelfCreate], # Recebe a lista do Frontend
+    db: AsyncSession = Depends(deps.get_db),
+    current_user: models.User = Depends(deps.get_current_active_user)
 ):
     """
     Grava as preferências de horário chamando o serviço dedicado.
     """
+    # Professores só podem atualizar a própria disponibilidade
+    if current_user.role == models.UserRole.teacher and current_user.teacher_id != teacher_id:
+        raise HTTPException(status_code=403, detail="Sem permissões para atualizar outro professor")
+
     result = await teacher_service.set_teacher_availability(
         db, 
         teacher_id, 
-        availability_data
+        availability_data,
+        org_id=current_user.organization_id
     )
+
+    if result == "NOT_FOUND":
+        raise HTTPException(status_code=404, detail="Professor não encontrado")
+
+    if result == "INVALID_TIMESLOT":
+        raise HTTPException(status_code=400, detail="Timeslot inválido ou fora da organização")
+
     return result
 
-# --- 3. Atualizar Professor (PUT) ---
-@router.put("/{teacher_id}", response_model=schemas.TeacherRead)
+# --- 3. Atualizar Professor (PATCH) ---
+@router.patch("/{teacher_id}", response_model=schemas.TeacherRead)
 async def update_teacher(
     teacher_id: int,
     teacher_in: schemas.TeacherUpdate,

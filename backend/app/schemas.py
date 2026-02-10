@@ -99,18 +99,23 @@ class ClassBase(BaseModel):
     size: int = Field(default=25, gt=0, description="Número de alunos da turma")
 
 class ClassCreate(ClassBase):
-    course_id: Optional[int] = None
-    pass
+    course_id: int = Field(..., description="ID do curso (obrigatório — turmas pertencem sempre a um curso)")
+    grade_level: int = Field(..., ge=10, le=12, description="Ano de escolaridade (10, 11, 12)")
+    start_year: int = Field(..., description="Ano de início (ex: 2025)")
+    end_year: int = Field(..., description="Ano de fim (ex: 2028)")
 
 class ClassUpdate(BaseModel):
     name: Optional[str] = None
-    size: Optional[int] = None
+    size: Optional[int] = Field(None, gt=0, description="Número de alunos da turma")
 
 class ClassRead(ClassBase):
     id: int
     organization_id: int
-    model_config = model_config
     course_id: Optional[int] = None
+    grade_level: int
+    start_year: int
+    end_year: int
+    model_config = model_config
 
 # --- MÓDULOS ---
 class ModuleBase(BaseModel):
@@ -295,6 +300,11 @@ class AvailabilityBase(BaseModel):
 class AvailabilityCreate(AvailabilityBase):
     pass
 
+class AvailabilitySelfCreate(BaseModel):
+    """Disponibilidade sem teacher_id (usa ID do path/autenticacao)."""
+    timeslot_id: int
+    score: PreferenceLevel = PreferenceLevel.NEUTRAL
+
 class AvailabilityRead(AvailabilityBase):
     id: int
     
@@ -409,6 +419,54 @@ class ClassDetailRead(ClassRead):
     """
     course: Optional[CourseBasic] = None
     model_config = ConfigDict(from_attributes=True)
+
+# --- PROGRESSO DE MÓDULOS (Dashboard da Turma) ---
+
+class ModuleProgressRead(BaseModel):
+    """Módulo com informação de progresso para uma turma específica"""
+    id: int
+    name: str
+    code: Optional[str] = None
+    hours_total: int
+    order: int
+    hours_completed: int = 0
+    is_completed: bool = False
+    percentage: float = 0.0
+
+class SubjectProgressRead(BaseModel):
+    """Disciplina com módulos e progresso agregado por turma"""
+    id: int
+    name: str
+    required_room_type: RoomType
+    modules: list[ModuleProgressRead] = []
+    total_hours: int = 0
+    completed_hours: int = 0
+    overall_percentage: float = 0.0
+
+class ClassFullDetailRead(ClassRead):
+    """
+    Dashboard completo da turma: Curso + Disciplinas + Módulos + Progresso.
+    
+    4 Pilares:
+    ⚡ Optimization: 2 queries otimizadas com selectinload (vs N+1)
+    📈 Scalability: Esquema extensível para futuras features (alunos, notas)
+    ⚙️ Stability: Progresso calculado server-side (fonte de verdade única)
+    🔐 Security: Filtrado por org_id no service layer
+    """
+    course: Optional[CourseBasic] = None
+    subjects: list[SubjectProgressRead] = []
+    model_config = ConfigDict(from_attributes=True)
+
+# --- ATUALIZAÇÃO DE PROGRESSO ---
+
+class ClassProgressUpdate(BaseModel):
+    """Atualizar horas completadas de um módulo para uma turma"""
+    module_id: int
+    hours_completed: int = Field(..., ge=0, description="Horas já lecionadas")
+
+class ClassProgressBulkUpdate(BaseModel):
+    """Atualizar progresso de múltiplos módulos de uma vez"""
+    progress: list[ClassProgressUpdate] = Field(..., min_length=1, description="Lista de atualizações")
 
 # --- GERADOR DE TIMESLOTS ---
 class TimeslotBulkCreate(BaseModel):

@@ -1,6 +1,6 @@
 # Ficheiro: backend/app/api/deps.py
 from typing import Generator, AsyncGenerator
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,7 +14,10 @@ from app import models, schemas
 from app.services import user_service 
 
 # Define onde o FastAPI vai buscar o token (Url do login)
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.API_V1_STR}/auth/token")
+oauth2_scheme = OAuth2PasswordBearer(
+    tokenUrl=f"{settings.API_V1_STR}/auth/token",
+    auto_error=False
+)
 
 # --- DATABASE ---
 async def get_db() -> AsyncGenerator:
@@ -24,7 +27,8 @@ async def get_db() -> AsyncGenerator:
 
 # --- AUTH (Proteção de Rotas) ---
 async def get_current_user(
-    token: str = Depends(oauth2_scheme), 
+    request: Request,
+    token: str | None = Depends(oauth2_scheme),
     db: AsyncSession = Depends(get_db)
 ) -> models.User:
     """
@@ -36,13 +40,20 @@ async def get_current_user(
         headers={"WWW-Authenticate": "Bearer"},
     )
     
-    # 1. Validar estrutura do token (usando a função pura do core)
+    # 1. Buscar token do header Authorization ou do cookie (httpOnly)
+    if not token:
+        token = request.cookies.get(settings.ACCESS_TOKEN_COOKIE_NAME)
+
+    if not token:
+        raise credentials_exception
+
+    # 2. Validar estrutura do token (usando a função pura do core)
     token_data = security.verify_token(token)
     
     if token_data is None:
         raise credentials_exception
     
-    # 2. Buscar utilizador à BD (usando o user_service)
+    # 3. Buscar utilizador à BD (usando o user_service)
     user = await user_service.get_user_by_email(db, email=token_data.email)
     
     if user is None:

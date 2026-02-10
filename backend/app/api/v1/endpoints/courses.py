@@ -8,8 +8,8 @@ from app.services import course_service
 
 router = APIRouter()
 
-# --- 1. Listar Cursos (Resumo) com Paginação ---
-@router.get("/", response_model=List[schemas.CourseRead])
+# --- 1. Listar Cursos (com Disciplinas e Turmas) ---
+@router.get("/", response_model=List[schemas.CourseDetailRead])
 async def read_courses(
     db: AsyncSession = Depends(deps.get_db),
     current_user: models.User = Depends(deps.get_current_active_user),

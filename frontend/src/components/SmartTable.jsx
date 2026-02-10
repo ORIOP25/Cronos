@@ -4,7 +4,7 @@ import {
   CButton, CSpinner
 } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
-import { cilPencil, cilTrash } from '@coreui/icons'
+import { cilPencil, cilTrash, cilChevronRight } from '@coreui/icons'
 
 const SmartTable = ({ 
   columns, 
@@ -12,8 +12,10 @@ const SmartTable = ({
   isLoading, 
   actions, 
   onEdit, 
-  onDelete 
+  onDelete,
+  onRowClick,
 }) => {
+  const isClickable = typeof onRowClick === 'function'
   
   if (isLoading) {
     return (
@@ -38,11 +40,17 @@ const SmartTable = ({
             </CTableHeaderCell>
           ))}
           {actions && <CTableHeaderCell className="text-end">Ações</CTableHeaderCell>}
+          {isClickable && !actions && <CTableHeaderCell style={{ width: '40px' }} />}
         </CTableRow>
       </CTableHead>
       <CTableBody>
         {data.map((item, rowIndex) => (
-          <CTableRow key={item.id || rowIndex}>
+          <CTableRow 
+            key={item.id || rowIndex}
+            onClick={isClickable ? () => onRowClick(item) : undefined}
+            style={isClickable ? { cursor: 'pointer' } : undefined}
+            className={isClickable ? 'smart-table-clickable' : ''}
+          >
             {columns.map((col, colIndex) => (
               <CTableDataCell key={colIndex}>
                 {/* AQUI ESTÁ A CORREÇÃO MÁGICA:
@@ -59,7 +67,7 @@ const SmartTable = ({
                   color="light" 
                   size="sm" 
                   className="me-2 text-primary"
-                  onClick={() => onEdit(item)}
+                  onClick={(e) => { e.stopPropagation(); onEdit(item) }}
                   title="Editar"
                 >
                   <CIcon icon={cilPencil} size="sm"/>
@@ -68,11 +76,17 @@ const SmartTable = ({
                   color="light" 
                   size="sm" 
                   className="text-danger"
-                  onClick={() => onDelete(item.id)}
+                  onClick={(e) => { e.stopPropagation(); onDelete(item.id) }}
                   title="Apagar"
                 >
                   <CIcon icon={cilTrash} size="sm"/>
                 </CButton>
+              </CTableDataCell>
+            )}
+
+            {isClickable && !actions && (
+              <CTableDataCell className="text-end pe-3">
+                <CIcon icon={cilChevronRight} size="sm" className="text-muted" />
               </CTableDataCell>
             )}
           </CTableRow>

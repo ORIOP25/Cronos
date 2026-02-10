@@ -51,11 +51,14 @@ const Subjects = () => {
   // --- Handlers ---
 
   const handleCreate = () => {
+    // Wizard: Sempre começa do zero (Opção A - Decisão Arquitetural)
     setSelectedItem(null)
     setModalVisible(true)
   }
 
   const handleEdit = (item) => {
+    // RESTRIÇÃO: Por enquanto, edição simples (Fase 6)
+    // O Wizard é apenas para CRIAÇÃO (Opção A)
     setSelectedItem(item)
     setModalVisible(true)
   }
@@ -64,13 +67,21 @@ const Subjects = () => {
     deleteMutation.mutate(id)
   }
 
-  const handleFormSubmit = async (formData) => {
+  const handleFormSubmit = (formData) => {
     if (selectedItem) {
-      await updateMutation.mutateAsync({ id: selectedItem.id, ...formData })
+      // --- MODO EDIÇÃO (Stability) ---
+      // Usa PUT/PATCH e envia o ID
+      updateMutation.mutate(
+        { id: selectedItem.id, ...formData },
+        { onSuccess: () => setModalVisible(false) }
+      )
     } else {
-      await createMutation.mutateAsync(formData)
+      // --- MODO CRIAÇÃO ---
+      // Usa POST
+      createMutation.mutate(formData, {
+        onSuccess: () => setModalVisible(false)
+      })
     }
-    setModalVisible(false)
   }
 
   const activeMutation = selectedItem ? updateMutation : createMutation
@@ -83,7 +94,7 @@ const Subjects = () => {
             <CIcon icon={cilBook} className="me-2 text-info" />
             Gestão de Disciplinas
           </h2>
-          <small className="text-muted">Defina as unidades curriculares e as suas necessidades de espaço.</small>
+          <small className="text-muted">Defina as unidades curriculares, tipos de sala e módulos associados.</small>
         </CCol>
         <CCol className="text-end">
           <CButton color="primary" onClick={handleCreate} className="d-flex align-items-center gap-2 ms-auto">
@@ -93,7 +104,13 @@ const Subjects = () => {
         </CCol>
       </CRow>
 
-      {/* Tratamento de Erros de Eliminação */}
+      {/* Tratamento de Erros de Criação/Eliminação */}
+      {createMutation.isError && (
+        <CAlert color="danger" dismissible onClose={createMutation.reset}>
+          <strong>Erro ao criar:</strong> {createMutation.error?.response?.data?.detail || "Erro desconhecido."}
+        </CAlert>
+      )}
+
       {deleteMutation.isError && (
         <CAlert color="danger" dismissible onClose={deleteMutation.reset}>
           <strong>Erro ao remover:</strong> {deleteMutation.error?.response?.data?.detail || "Erro de dependência."}
@@ -113,10 +130,11 @@ const Subjects = () => {
         </CCardBody>
       </CCard>
 
+      {/* MODAL COM WIZARD (Opção A: Criação com módulos) */}
       <GenericModalForm
         visible={modalVisible}
         onClose={() => setModalVisible(false)}
-        title="Disciplina"
+        title={selectedItem ? "Editar Disciplina" : "Nova Disciplina (Wizard)"}
         initialData={selectedItem}
         FormComponent={SubjectForm}
         onSubmit={handleFormSubmit}

@@ -15,7 +15,8 @@ const GenericModalForm = ({
   FormComponent, 
   onSubmit, 
   isLoading,
-  error 
+  error,
+  size
 }) => {
 
   const isEditing = !!initialData
@@ -43,7 +44,7 @@ const GenericModalForm = ({
   }
 
   return (
-    <CModal visible={visible} onClose={onClose} backdrop="static">
+    <CModal visible={visible} onClose={onClose} backdrop="static" size={size}>
       <CModalHeader onClose={onClose}>
         <CModalTitle>{modalTitle}</CModalTitle>
       </CModalHeader>

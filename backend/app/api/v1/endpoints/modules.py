@@ -20,9 +20,12 @@ async def create_module(
     db: AsyncSession = Depends(deps.get_db),
     current_user: models.User = Depends(deps.get_current_active_admin)
 ):
-    return await module_service.create_module(db, item)
+    result = await module_service.create_module(db, item, current_user.organization_id)
+    if result == "INVALID_SUBJECT":
+        raise HTTPException(status_code=400, detail="Disciplina inválida ou não pertence à organização")
+    return result
 
-@router.put("/{module_id}", response_model=schemas.ModuleRead)
+@router.patch("/{module_id}", response_model=schemas.ModuleRead)
 async def update_module(
     module_id: int,
     item: schemas.ModuleUpdate, 
@@ -31,7 +34,9 @@ async def update_module(
 ):
     # Nota: O service deve ter a função update_module. 
     # Se não tiver, verifica o module_service.py também.
-    updated = await module_service.update_module(db, module_id, item)
+    updated = await module_service.update_module(db, module_id, item, current_user.organization_id)
+    if updated == "INVALID_SUBJECT":
+        raise HTTPException(status_code=400, detail="Disciplina inválida ou não pertence à organização")
     if not updated:
         raise HTTPException(status_code=404, detail="Módulo não encontrado")
     return updated
@@ -42,7 +47,7 @@ async def delete_module(
     db: AsyncSession = Depends(deps.get_db),
     current_user: models.User = Depends(deps.get_current_active_admin)
 ):
-    status = await module_service.delete_module(db, module_id)
+    status = await module_service.delete_module(db, module_id, current_user.organization_id)
     
     if status == "NOT_FOUND":
         raise HTTPException(status_code=404, detail="Módulo não encontrado")

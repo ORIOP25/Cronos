@@ -10,8 +10,12 @@ async def get_courses_by_org(db: AsyncSession, org_id: int, skip: int = 0, limit
     Lista cursos da organização com paginação offset/limit.
     
     4º Pilar:
-    - Optimization: Sem selectinload aqui (vista é simplificada)
+    - Optimization: selectinload carrega subjects+classes em 3 queries (não N+1)
     - Scalability: offset/limit permite crescimento sem impacto
+    
+    Nota: Carregamos subjects e classes porque a tabela precisa da contagem
+    e o modal de edição precisa dos dados completos para popular o form.
+    Para ~50 cursos com ~10 disciplinas cada, o overhead é negligível.
     """
     # Sanitize limit (max 1000 para evitar sobre-carga)
     limit = min(max(limit, 1), 1000)
@@ -19,6 +23,10 @@ async def get_courses_by_org(db: AsyncSession, org_id: int, skip: int = 0, limit
     
     query = select(models.Course)\
         .where(models.Course.organization_id == org_id)\
+        .options(
+            selectinload(models.Course.subjects),
+            selectinload(models.Course.classes)
+        )\
         .order_by(models.Course.name)\
         .offset(skip)\
         .limit(limit)

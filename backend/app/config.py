@@ -25,6 +25,31 @@ class Settings(BaseSettings):
     SECRET_KEY: str
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 8
+    REFRESH_TOKEN_EXPIRE_DAYS: int = 30
+
+    # --- Cookies (Auth) ---
+    ACCESS_TOKEN_COOKIE_NAME: str = "hz_access"
+    ACCESS_TOKEN_COOKIE_SECURE: bool = False
+    ACCESS_TOKEN_COOKIE_SAMESITE: Literal["lax", "strict", "none"] = "lax"
+    REFRESH_TOKEN_COOKIE_NAME: str = "hz_refresh"
+    REFRESH_TOKEN_COOKIE_SECURE: bool = False
+    REFRESH_TOKEN_COOKIE_SAMESITE: Literal["lax", "strict", "none"] = "lax"
+
+    # --- CORS ---
+    # Lista separada por virgulas (ex: "https://app.exemplo.com,https://admin.exemplo.com")
+    CORS_ORIGINS: str = ""
+
+    @computed_field(return_type=list[str])
+    def CORS_ORIGINS_LIST(self) -> list[str]:
+        if self.CORS_ORIGINS:
+            return [origin.strip() for origin in self.CORS_ORIGINS.split(",") if origin.strip()]
+        if self.ENVIRONMENT == "local":
+            return [
+                "http://localhost:5173",
+                "http://localhost:3000",
+                "http://localhost",
+            ]
+        return []
 
     # --- Infraestrutura (Redis & Celery) ---
     # Se não definires no .env, assume o default do Docker

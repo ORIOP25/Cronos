@@ -6,11 +6,11 @@ import MyAvailability from './pages/MyAvailability';
 import Teachers from './pages/Teachers';
 import Rooms from './pages/Rooms';
 import Subjects from './pages/Subjects';
-import Classes from './pages/Classes';
 import SchoolConfig from './pages/SchoolConfig';
 import Schedules from './pages/Schedules';
 import Courses from './pages/Courses';
-import Modules from './pages/Modules';
+import CourseDetails from './pages/CourseDetails';
+import ClassDetails from './pages/ClassDetails';
 import ServiceDistribution from './pages/ServiceDistribution';
 import DefaultLayout from './components/DefaultLayout';
 import ProtectedRoute from './components/ProtectedRoute';
@@ -26,13 +26,16 @@ function App() {
           <Route index element={<Navigate to="/dashboard" replace />} />
           <Route path="dashboard" element={<Dashboard />} />
           
-          {/* Novas Rotas */}
+        {/* Novas Rotas */}
           <Route path="teachers" element={<Teachers />} />
           <Route path="rooms" element={<Rooms />} />
           <Route path="subjects" element={<Subjects />} />
-          <Route path="classes" element={<Classes />} />
+          
+          {/* Cursos com Hierarchia */}
           <Route path="courses" element={<Courses />} />
-          <Route path="modules" element={<Modules />} />
+          <Route path="courses/:id" element={<CourseDetails />} />
+          <Route path="courses/:courseId/classes/:classId" element={<ClassDetails />} />
+          
           <Route path="config" element={<SchoolConfig />} />
           <Route path="schedules" element={<Schedules />} />
           <Route path="my-availability" element={<MyAvailability />} />

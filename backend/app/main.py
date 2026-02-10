@@ -3,6 +3,7 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from slowapi.middleware import SlowAPIMiddleware
 
 # --- Imports de Performance e Segurança ---
 from slowapi import _rate_limit_exceeded_handler
@@ -64,7 +65,7 @@ if settings.SENTRY_DSN:
         },
         
         # Dados extra
-        send_default_pii=True, # Envia info do user (IP, headers) - cuidado com GDPR em prod
+        send_default_pii=settings.ENVIRONMENT != "production", # Evita PII em produção
     )
     logger.info("✅ Sentry: LIGADO")
 else:
@@ -80,20 +81,30 @@ app = FastAPI(
 # --- Configuração do Rate Limiter ---
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_middleware(SlowAPIMiddleware)
 
 # --- Configuração de CORS ---
 # Nota: Em produção, deves restringir isto aos domínios reais
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",  # Vite Local
-        "http://localhost:3000",  # Alternativa Local
-        "http://localhost",       # Nginx Docker
-    ],
+    allow_origins=settings.CORS_ORIGINS_LIST,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# --- Security Headers ---
+@app.middleware("http")
+async def security_headers(request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
+    response.headers["Content-Security-Policy"] = "default-src 'none'"
+    if settings.ENVIRONMENT == "production":
+        response.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains; preload"
+    return response
 
 # ==========================================
 # ROTAS (ROUTERS)

@@ -1,4 +1,5 @@
-import React, { useState, useMemo } from 'react'
+import React, { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { 
   CCard, CCardBody, CCol, CRow, CButton, CAlert, CBadge
 } from '@coreui/react'
@@ -12,88 +13,67 @@ import CourseForm from '../components/Forms/CourseForm'
 import { 
   useCourses,
   useSubjects,
-  useCreateEntity, 
-  useUpdateEntity, 
-  useDeleteEntity 
+  useCreateEntity,
 } from '../hooks/useSchoolData'
 
 const Courses = () => {
+  const navigate = useNavigate()
   const [modalVisible, setModalVisible] = useState(false)
-  const [selectedItem, setSelectedItem] = useState(null)
 
+  // 1. Hooks de Dados
   const { data: courses, isLoading } = useCourses()
   const { data: subjects } = useSubjects()
   const createMutation = useCreateEntity('courses')
-  const updateMutation = useUpdateEntity('courses')
-  const deleteMutation = useDeleteEntity('courses')
-  
-// Função auxiliar para formatar a lista de nomes (com truncagem se forem muitos)
-  const formatList = (names) => {
-    if (names.length === 0) return <span className="text-muted">-</span>;
-    
-    // Se tiver mais de 3 disciplinas, mostra "Matemática, Inglês, Português (+2)"
-    if (names.length > 3) {
-      const visible = names.slice(0, 3).join(', ');
-      const remaining = names.length - 3;
-      return <span title={names.join(', ')}>{visible} (+{remaining})</span>;
-    }
-    
-    return names.join(', ');
-  }
 
+  // 2. Colunas da Tabela
   const columns = [
     { key: 'name', label: 'Nome do Curso' },
+    { key: 'abbreviation', label: 'Sigla' },
     { 
-      key: 'subjects', 
+      key: 'subjects_count', 
       label: 'Disciplinas',
-      _style: { width: '50%' },
-      // Agora que a SmartTable suporta render, isto vai funcionar!
-      render: (item) => {
-        // Lógica de visualização robusta (IDs ou Objetos)
-        let ids = item.subject_ids || [];
-        
-        // Fallback: se vierem objetos em vez de IDs
-        if (item.subjects && item.subjects.length > 0) {
-            ids = item.subjects.map(s => s.id);
-        }
-
-        if (!subjects) return <span>...</span>;
-
-        const names = ids.map(id => {
-            const sub = subjects.find(s => s.id === id);
-            return sub ? sub.name : null;
-        }).filter(Boolean);
-
-        return formatList(names);
-      }
-    }
-    // REMOVIDA A COLUNA 'actions' MANUAL
+      _style: { width: '12%' },
+      render: (item) => (
+        <CBadge color="info" shape="rounded-pill">
+          {item.subjects_count}
+        </CBadge>
+      )
+    },
+    {
+      key: 'classes_count',
+      label: 'Turmas',
+      _style: { width: '12%' },
+      render: (item) => (
+        <CBadge color="success" shape="rounded-pill">
+          {item.classes_count}
+        </CBadge>
+      )
+    },
   ]
 
+  // 3. Transformação de Dados (ViewModel)
+  const tableData = (courses || []).map(c => ({
+    ...c,
+    subjects_count: c.subjects ? c.subjects.length : 0,
+    classes_count: c.classes ? c.classes.length : 0,
+  }))
+
+  // --- HANDLERS ---
+
   const handleCreate = () => {
-    setSelectedItem(null)
     setModalVisible(true)
   }
 
-  const handleEdit = (item) => {
-    setSelectedItem(item)
-    setModalVisible(true)
+  const handleRowClick = (item) => {
+    navigate(`/courses/${item.id}`)
   }
 
-  const handleDelete = async (id) => {
-    deleteMutation.mutate(id)
+  // Submissão do formulário (apenas criação — edição movida para CourseDetails)
+  const handleFormSubmit = (formData) => {
+    createMutation.mutate(formData, {
+      onSuccess: () => setModalVisible(false)
+    })
   }
-
-  const handleFormSubmit = async (formData) => {
-    if (selectedItem) {
-      await updateMutation.mutateAsync({ id: selectedItem.id, ...formData })
-    } else {
-      await createMutation.mutateAsync(formData)
-    }
-    setModalVisible(false)
-  }
-
-  const activeMutation = selectedItem ? updateMutation : createMutation
 
   return (
     <div className="p-4">
@@ -103,7 +83,7 @@ const Courses = () => {
             <CIcon icon={cilBookmark} className="me-2 text-primary" />
             Gestão de Cursos
           </h2>
-          <small className="text-muted">Defina os cursos oferecidos pela escola e a sua estrutura curricular.</small>
+          <small className="text-muted">Crie cursos, defina o plano curricular e gere turmas iniciais.</small>
         </CCol>
         <CCol className="text-end">
           <CButton color="primary" onClick={handleCreate} className="d-flex align-items-center gap-2 ms-auto">
@@ -113,34 +93,54 @@ const Courses = () => {
         </CCol>
       </CRow>
 
-      {deleteMutation.isError && (
-        <CAlert color="danger" dismissible onClose={deleteMutation.reset}>
-          <strong>Erro ao remover:</strong> {deleteMutation.error?.response?.data?.detail || "Ocorreu um erro."}
+      {/* ERROS */}
+      {createMutation.isError && (
+        <CAlert color="danger" dismissible onClose={() => createMutation.reset()}>
+          <strong>Erro:</strong>
+          <div className="mt-1 text-sm">
+            {(() => {
+              const detail = createMutation.error?.response?.data?.detail;
+              if (typeof detail === 'string') return detail;
+              if (Array.isArray(detail)) {
+                return (
+                  <ul className="mb-0 ps-3">
+                    {detail.map((err, i) => (
+                      <li key={i}>
+                        {err.msg} 
+                        {err.loc ? <span className="opacity-75 ms-1">({err.loc.join(' -> ')})</span> : ''}
+                      </li>
+                    ))}
+                  </ul>
+                );
+              }
+              return createMutation.error?.message || "Ocorreu um erro inesperado.";
+            })()}
+          </div>
         </CAlert>
       )}
 
+      {/* TABELA */}
       <CCard className="border-0 shadow-sm">
         <CCardBody className="p-0">
           <SmartTable
             columns={columns}
-            data={courses || []}
+            data={tableData}
             isLoading={isLoading}
-            actions={true}
-            onEdit={handleEdit}
-            onDelete={handleDelete}
+            onRowClick={handleRowClick}
           />
         </CCardBody>
       </CCard>
 
+      {/* MODAL WIZARD (apenas criação — edição via CourseDetails) */}
       <GenericModalForm
         visible={modalVisible}
         onClose={() => setModalVisible(false)}
-        title="Curso"
-        initialData={selectedItem}
+        title="Novo Curso Profissional"
+        size="lg"
         FormComponent={CourseForm}
         onSubmit={handleFormSubmit}
-        isLoading={activeMutation.isPending}
-        error={activeMutation.error}
+        isLoading={createMutation.isPending}
+        error={createMutation.error}
       />
     </div>
   )

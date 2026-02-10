@@ -33,7 +33,37 @@ async def create_lesson(db: AsyncSession, item: schemas.LessonCreate, org_id: in
     VALIDAÇÃO CRÍTICA: Verifica se o professor tem competência na disciplina.
     Isto evita que dados "lixo" cheguem ao Solver.
     """
-    # 1. Buscar o Professor e as suas Competências (Subjects)
+    # 1. Validar turma pertence à organização
+    class_query = select(models.Class).where(
+        models.Class.id == item.class_id,
+        models.Class.organization_id == org_id
+    )
+    class_result = await db.execute(class_query)
+    db_class = class_result.scalars().first()
+    if not db_class:
+        raise ValueError(f"Turma com ID {item.class_id} não encontrada na organização")
+
+    # 2. Validar disciplina pertence à organização
+    subject_query = select(models.Subject).where(
+        models.Subject.id == item.subject_id,
+        models.Subject.organization_id == org_id
+    )
+    subject_result = await db.execute(subject_query)
+    db_subject = subject_result.scalars().first()
+    if not db_subject:
+        raise ValueError(f"Disciplina com ID {item.subject_id} não encontrada na organização")
+
+    # 3. Validar disciplina faz parte do curso da turma
+    course_subject_query = select(models.Course).where(
+        models.Course.id == db_class.course_id
+    ).where(
+        models.Course.subjects.any(models.Subject.id == item.subject_id)
+    )
+    course_subject_result = await db.execute(course_subject_query)
+    if not course_subject_result.scalars().first():
+        raise ValueError("A disciplina não pertence ao curso desta turma")
+
+    # 4. Buscar o Professor e as suas Competências (Subjects)
     from sqlalchemy.orm import selectinload
     from app.services import teacher_service
     
@@ -51,7 +81,7 @@ async def create_lesson(db: AsyncSession, item: schemas.LessonCreate, org_id: in
     if not teacher:
         raise ValueError(f"Professor com ID {item.teacher_id} não encontrado na organização")
     
-    # 2. VALIDAÇÃO CRÍTICA: Verificar competência
+    # 5. VALIDAÇÃO CRÍTICA: Verificar competência
     teacher_subject_ids = [s.id for s in teacher.subjects]
     if item.subject_id not in teacher_subject_ids:
         # Obter nome da disciplina para melhor mensagem de erro
@@ -65,7 +95,7 @@ async def create_lesson(db: AsyncSession, item: schemas.LessonCreate, org_id: in
             f"Competências atuais: {', '.join([s.name for s in teacher.subjects]) or 'nenhuma'}."
         )
     
-    # 3. Verificar se já existe Lesson para esta turma/disciplina/professor
+    # 6. Verificar se já existe Lesson para esta turma/disciplina/professor
     # (Evita duplicados)
     existing_query = select(models.Lesson).where(
         models.Lesson.class_id == item.class_id,

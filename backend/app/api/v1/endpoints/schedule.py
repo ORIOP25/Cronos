@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi_cache.decorator import cache
 from fastapi.encoders import jsonable_encoder
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,6 +11,7 @@ from app.api import deps
 from app.services import schedule_service
 from app.solver_tasks import generate_schedule_task
 from app.config import settings
+from app.core.ratelimit import limiter
 
 router = APIRouter()
 
@@ -44,16 +45,43 @@ async def delete_constraint(
 
 # --- GERAÇÃO (Celery) ---
 @router.post("/generate")
+@limiter.limit("5/minute")
 async def trigger_generation(
+    request: Request,
     current_user: models.User = Depends(deps.get_current_user)
 ):
     """Inicia a tarefa em background no Celery."""
     task = generate_schedule_task.delay(current_user.organization_id)
+    # Guardar o org_id associado ao task_id (TTL 24h)
+    try:
+        r = redis.Redis.from_url(str(settings.REDIS_URL))
+        r.setex(f"schedule_task_org:{task.id}", 60 * 60 * 24, str(current_user.organization_id))
+    except Exception:
+        pass
     return {"task_id": task.id, "status": "Processing started"}
 
 @router.get("/status/{task_id}")
-async def get_status(task_id: str):
+@limiter.limit("60/minute")
+async def get_status(
+    request: Request,
+    task_id: str,
+    current_user: models.User = Depends(deps.get_current_user)
+):
     """Verifica o progresso da geração."""
+    # Validar se o task_id pertence à organização
+    try:
+        r = redis.Redis.from_url(str(settings.REDIS_URL))
+        org_value = r.get(f"schedule_task_org:{task_id}")
+        if not org_value:
+            raise HTTPException(status_code=404, detail="Task não encontrada")
+        if org_value.decode("utf-8") != str(current_user.organization_id):
+            raise HTTPException(status_code=403, detail="Sem permissões para esta task")
+    except HTTPException:
+        raise
+    except Exception:
+        # Se Redis falhar, negar por segurança
+        raise HTTPException(status_code=503, detail="Validação de task indisponível")
+
     task_result = AsyncResult(task_id)
     response = {
         "task_id": task_id,

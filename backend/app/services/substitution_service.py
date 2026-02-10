@@ -81,7 +81,40 @@ async def find_available_teachers(
     suggestions.sort(key=lambda x: x.priority)
     return suggestions
 
-async def create_substitution(db: AsyncSession, data: schemas.SubstitutionCreate):
+async def create_substitution(db: AsyncSession, data: schemas.SubstitutionCreate, org_id: int):
+    # 1. Validar lesson pertence à organização
+    lesson_query = select(models.Lesson).where(
+        models.Lesson.id == data.lesson_id,
+        models.Lesson.organization_id == org_id
+    )
+    lesson_result = await db.execute(lesson_query)
+    db_lesson = lesson_result.scalars().first()
+    if not db_lesson:
+        return "INVALID_LESSON"
+
+    # 2. Validar timeslot pertence à organização
+    timeslot_query = select(models.Timeslot).where(
+        models.Timeslot.id == data.timeslot_id,
+        models.Timeslot.organization_id == org_id
+    )
+    timeslot_result = await db.execute(timeslot_query)
+    if not timeslot_result.scalars().first():
+        return "INVALID_TIMESLOT"
+
+    # 3. Validar professores pertencem à organização
+    teacher_query = select(models.Teacher).where(
+        models.Teacher.id.in_([data.original_teacher_id, data.substitute_teacher_id]),
+        models.Teacher.organization_id == org_id
+    )
+    teacher_result = await db.execute(teacher_query)
+    teachers = teacher_result.scalars().all()
+    if len(teachers) != 2:
+        return "INVALID_TEACHER"
+
+    # 4. Validar que o teacher original corresponde à aula (lesson)
+    if db_lesson.teacher_id != data.original_teacher_id:
+        return "ORIGINAL_TEACHER_MISMATCH"
+
     db_sub = models.Substitution(
         lesson_id=data.lesson_id,
         timeslot_id=data.timeslot_id,
@@ -96,7 +129,7 @@ async def create_substitution(db: AsyncSession, data: schemas.SubstitutionCreate
     await db.refresh(db_sub)
     return db_sub
 
-async def get_active_substitutions(db: AsyncSession, skip: int = 0, limit: int = 100):
+async def get_active_substitutions(db: AsyncSession, org_id: int, skip: int = 0, limit: int = 100):
     query = (
         select(models.Substitution)
         # Dizemos ao SQL: "Traz logo os dados dos professores, não esperes que eu peça"
@@ -106,6 +139,8 @@ async def get_active_substitutions(db: AsyncSession, skip: int = 0, limit: int =
             selectinload(models.Substitution.lesson),
             selectinload(models.Substitution.timeslot)
         )
+        .join(models.Substitution.original_teacher)
+        .where(models.Teacher.organization_id == org_id)
         .order_by(models.Substitution.date.desc())
         .offset(skip)
         .limit(limit)

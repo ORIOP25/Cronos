@@ -38,7 +38,7 @@ async def create_room(
         org_id=current_user.organization_id # <--- Passamos o ID aqui internamente
     )
 
-@router.put("/{room_id}", response_model=schemas.RoomRead)
+@router.patch("/{room_id}", response_model=schemas.RoomRead)
 async def update_room(
     room_id: int,
     room_in: schemas.RoomUpdate,

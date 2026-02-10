@@ -6,7 +6,6 @@ export const useAuthStore = create(
   persist(
     (set) => ({
       // --- ESTADO ---
-      accessToken: null,
       isAuthenticated: false,
       user: null, // Guardará: { email, role, teacherId, orgId }
 
@@ -15,7 +14,6 @@ export const useAuthStore = create(
       // Recebe a resposta completa da API (Token Schema)
       login: (data) => {
         set({ 
-          accessToken: data.access_token,
           isAuthenticated: true,
           user: {
             email: data.user_email,
@@ -28,7 +26,6 @@ export const useAuthStore = create(
 
       logout: () => {
         set({ 
-          accessToken: null, 
           isAuthenticated: false, 
           user: null 
         })

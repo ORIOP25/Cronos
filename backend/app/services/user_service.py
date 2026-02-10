@@ -23,7 +23,7 @@ async def create_user(
     db: AsyncSession, 
     user: schemas.UserCreate, 
     org_id: int | None = None,     # <--- Agora é opcional (pode ser None)
-    role: UserRole = UserRole.admin, # <--- Por defeito, quem se regista é Admin
+    role: UserRole | None = None,
     teacher_id: int | None = None
 ):
     """
@@ -42,6 +42,10 @@ async def create_user(
         await db.commit()
         await db.refresh(db_org)
         final_org_id = db_org.id
+
+    # Definir role por defeito dependendo do contexto
+    if role is None:
+        role = UserRole.admin if org_id is None else UserRole.teacher
     
     # 2. Criar Utilizador
     db_user = models.User(

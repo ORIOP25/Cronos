@@ -1,6 +1,7 @@
 // Ficheiro: src/components/DefaultLayout.jsx
 import React from 'react';
 import { Outlet, Link, useNavigate } from 'react-router-dom';
+import { auth } from '../apiClient';
 import { useAuthStore } from '../store';
 
 const DefaultLayout = () => {
@@ -8,7 +9,12 @@ const DefaultLayout = () => {
   const logout = useAuthStore((state) => state.logout);
   const user = useAuthStore((state) => state.user); // Objeto completo { email, role... }
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    try {
+      await auth.logout();
+    } catch (e) {
+      // Silenciar erro de logout (ex: cookie já expirado)
+    }
     logout();
     navigate('/login');
   };
@@ -41,7 +47,6 @@ const DefaultLayout = () => {
                 📚 PEDAGOGIA
               </div>
               <Link to="/courses" style={linkStyle}>🎓 Cursos</Link>
-              <Link to="/modules" style={linkStyle}>📋 Módulos</Link>
               <Link to="/teachers" style={linkStyle}>👨‍🏫 Professores</Link>
               <Link to="/subjects" style={linkStyle}>📖 Disciplinas</Link>
               <Link to="/service-distribution" style={linkStyle}>🔗 Distribuição de Serviço</Link>
@@ -52,7 +57,6 @@ const DefaultLayout = () => {
               <div style={{ fontSize: '0.75rem', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.5px', marginTop: '15px', marginBottom: '10px', fontWeight: 'bold' }}>
                 🏫 RECURSOS
               </div>
-              <Link to="/classes" style={linkStyle}>👥 Turmas</Link>
               <Link to="/rooms" style={linkStyle}>🏫 Salas</Link>
               <Link to="/config" style={linkStyle}>⚙️ Configuração</Link>
             </>

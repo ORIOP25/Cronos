@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session, selectinload
 from sqlalchemy import select, delete
 from app import models, schemas
 from app.models import Availability, Teacher
-from app.schemas import AvailabilityCreate
+from app.schemas import AvailabilitySelfCreate
 
 
 # ==========================================
@@ -347,18 +347,42 @@ async def find_replacement_teacher(
 async def set_teacher_availability(
     db: AsyncSession, 
     teacher_id: int, 
-    availabilities: list[AvailabilityCreate]
+    availabilities: list[AvailabilitySelfCreate],
+    org_id: int
 ):
     """
     Define as disponibilidades de um professor.
     Estratégia: Apagar as antigas para esse professor e inserir as novas (Bulk Update).
     Isto é mais simples do que fazer update linha a linha.
     """
-    # 1. Limpar disponibilidades antigas deste professor
+    # 1. Validar que o professor pertence a esta organização
+    teacher_query = select(models.Teacher).where(
+        models.Teacher.id == teacher_id,
+        models.Teacher.organization_id == org_id
+    )
+    teacher_result = await db.execute(teacher_query)
+    db_teacher = teacher_result.scalars().first()
+
+    if not db_teacher:
+        return "NOT_FOUND"
+
+    # 2. Limpar disponibilidades antigas deste professor
     # (Ou apenas as que colidirem, mas limpar tudo é mais seguro para garantir consistência)
     await db.execute(delete(Availability).where(Availability.teacher_id == teacher_id))
+
+    # 3. Validar que todos os timeslots pertencem à organização
+    if availabilities:
+        timeslot_ids = [item.timeslot_id for item in availabilities]
+        timeslot_query = select(models.Timeslot.id).where(
+            models.Timeslot.id.in_(timeslot_ids),
+            models.Timeslot.organization_id == org_id
+        )
+        timeslot_result = await db.execute(timeslot_query)
+        valid_ids = {row[0] for row in timeslot_result.all()}
+        if len(valid_ids) != len(set(timeslot_ids)):
+            return "INVALID_TIMESLOT"
     
-    # 2. Preparar novos objetos
+    # 4. Preparar novos objetos
     new_records = [
         Availability(
             teacher_id=teacher_id,
@@ -368,7 +392,7 @@ async def set_teacher_availability(
         for item in availabilities
     ]
     
-    # 3. Inserir em massa
+    # 5. Inserir em massa
     db.add_all(new_records)
     await db.commit()
     return {"status": "success", "count": len(new_records)}

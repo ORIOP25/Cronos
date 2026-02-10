@@ -57,9 +57,8 @@ const MyAvailability = () => {
     try {
       // Transformar o mapa {1: 2, 5: -1} numa lista para a API
       const payload = Object.entries(availabilityMap).map(([tsId, score]) => ({
-        timeslot_id: parseInt(tsId),
+        timeslot_id: parseInt(tsId, 10),
         score: score,
-        teacher_id: teacherId
       }));
 
       // Enviar para o endpoint de Bulk Update

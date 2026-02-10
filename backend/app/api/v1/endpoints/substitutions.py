@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 from typing import List, Any
 from datetime import date
 
@@ -25,6 +26,22 @@ async def get_suggestions(
     except ValueError:
         raise HTTPException(status_code=400, detail="Data inválida. Use YYYY-MM-DD")
 
+    # Validar timeslot pertence à organização
+    timeslot_query = select(models.Timeslot).where(
+        models.Timeslot.id == timeslot_id,
+        models.Timeslot.organization_id == current_user.organization_id
+    )
+    if not (await db.execute(timeslot_query)).scalars().first():
+        raise HTTPException(status_code=404, detail="Timeslot não encontrado")
+
+    # Validar professor original pertence à organização
+    teacher_query = select(models.Teacher).where(
+        models.Teacher.id == original_teacher_id,
+        models.Teacher.organization_id == current_user.organization_id
+    )
+    if not (await db.execute(teacher_query)).scalars().first():
+        raise HTTPException(status_code=404, detail="Professor não encontrado")
+
     suggestions = await substitution_service.find_available_teachers(
         db=db,
         timeslot_id=timeslot_id,
@@ -43,7 +60,16 @@ async def create_substitution(
     """
     Grava a substituição e dispara notificações (futuro).
     """
-    new_sub = await substitution_service.create_substitution(db, sub_in)
+    new_sub = await substitution_service.create_substitution(db, sub_in, current_user.organization_id)
+
+    if new_sub == "INVALID_LESSON":
+        raise HTTPException(status_code=400, detail="Aula inválida ou fora da organização")
+    if new_sub == "INVALID_TIMESLOT":
+        raise HTTPException(status_code=400, detail="Timeslot inválido ou fora da organização")
+    if new_sub == "INVALID_TEACHER":
+        raise HTTPException(status_code=400, detail="Professor inválido ou fora da organização")
+    if new_sub == "ORIGINAL_TEACHER_MISMATCH":
+        raise HTTPException(status_code=400, detail="Professor original não corresponde à aula")
     
     # TODO: Chamar Celery Task aqui para enviar email ao original e ao substituto
     
@@ -60,5 +86,10 @@ async def read_substitutions(
     Retorna a lista de substituições ativas (para pintar no calendário).
     """
     # Precisamos de criar esta função no service (ver passo seguinte)
-    substitutions = await substitution_service.get_active_substitutions(db, skip=skip, limit=limit)
+    substitutions = await substitution_service.get_active_substitutions(
+        db,
+        org_id=current_user.organization_id,
+        skip=skip,
+        limit=limit
+    )
     return substitutions

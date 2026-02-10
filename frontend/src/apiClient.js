@@ -11,6 +11,7 @@ const apiClient = axios.create({
   // MUDANÇA CRÍTICA: Usamos caminho relativo.
   // O Nginx vai receber este pedido e encaminhar para o container do backend.
   baseURL: '/api/v1', 
+  withCredentials: true,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -20,38 +21,37 @@ const apiClient = axios.create({
 // INTERCEPTORS (Interceptadores de Pedidos)
 // ==========================================
 
-// 1. Interceptor de REQUEST: Anexa o Token automaticamente
-apiClient.interceptors.request.use(
-  (config) => {
-    // Vamos buscar o token à store do Zustand
-    const accessToken = useAuthStore.getState().accessToken;
-    
-    if (accessToken) {
-      config.headers.Authorization = `Bearer ${accessToken}`;
-    }
-    return config;
-  },
-  (error) => Promise.reject(error)
-);
+let refreshPromise = null;
 
-// 2. Interceptor de RESPONSE: Gere Sessão Expirada (Erro 401)
+// 1. Interceptor de RESPONSE: Gere Sessão Expirada (Erro 401)
 apiClient.interceptors.response.use(
   (response) => response, // Se correu bem, passa à frente
-  (error) => {
-    // Se recebermos um 401 (Unauthorized), significa que o token morreu
-    if (error.response && error.response.status === 401) {
-      console.warn('⚠️ Sessão expirada ou inválida. A fazer logout...');
-      
-      // Ação 1: Limpar o estado local (Logout)
-      useAuthStore.getState().logout();
-      localStorage.clear();
-      
-      // Ação 2: Redirecionar para o Login
-      // Nota: Verificamos se já não estamos no login para evitar loops
-      if (window.location.pathname !== '/login') {
-        window.location.href = '/login';
+  async (error) => {
+    const originalRequest = error.config || {};
+    const isAuthRefresh = originalRequest.url?.includes('/auth/refresh');
+
+    // Se recebermos um 401 (Unauthorized), tentamos refresh uma vez
+    if (error.response && error.response.status === 401 && !originalRequest._retry && !isAuthRefresh) {
+      originalRequest._retry = true;
+      try {
+        if (!refreshPromise) {
+          refreshPromise = apiClient.post('/auth/refresh');
+        }
+        await refreshPromise;
+        refreshPromise = null;
+        return apiClient(originalRequest);
+      } catch (refreshError) {
+        refreshPromise = null;
+        console.warn('⚠️ Sessão expirada ou inválida. A fazer logout...');
+        useAuthStore.getState().logout();
+        localStorage.clear();
+        if (window.location.pathname !== '/login') {
+          window.location.href = '/login';
+        }
+        return Promise.reject(refreshError);
       }
     }
+
     return Promise.reject(error);
   }
 );
@@ -65,7 +65,8 @@ export const auth = {
     return apiClient.post('/auth/token', formData, {
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
     });
-  }
+  },
+  logout: () => apiClient.post('/auth/logout')
 };
 
 export const teachers = {

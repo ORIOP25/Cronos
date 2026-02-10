@@ -26,7 +26,7 @@ async def create_subject(
     return await subject_service.create_subject(db, item, current_user.organization_id)
 
 # --- 3. Atualizar Disciplina ---
-@router.put("/{subject_id}", response_model=schemas.SubjectRead)
+@router.patch("/{subject_id}", response_model=schemas.SubjectRead)
 async def update_subject(
     subject_id: int,
     subject_in: schemas.SubjectUpdate,
