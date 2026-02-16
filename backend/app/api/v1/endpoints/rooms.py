@@ -8,9 +8,6 @@ from app import models
 
 router = APIRouter()
 
-#@router.get("/", response_model=List[schemas.RoomRead])
-#async def read_rooms(org_id: int, db: AsyncSession = Depends(deps.get_db)):
-    #return await room_service.get_rooms_by_org(db, org_id)
 @router.get("/", response_model=List[schemas.RoomRead])
 async def read_rooms(
     current_user: models.User = Depends(deps.get_current_user),
