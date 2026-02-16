@@ -321,3 +321,338 @@ async def update_class_progress(
     
     await db.commit()
     return "SUCCESS"
+
+
+# ==========================================
+#  DISCIPLINAS DA TURMA (Class-Subject Link)
+#  Gestão curso-cêntrica de professores
+# ==========================================
+
+async def get_class_subjects(db: AsyncSession, class_id: int, org_id: int):
+    """
+    Lista disciplinas associadas à turma (para o grade_level atual).
+    Inclui professor atribuído (se houver).
+    
+    Retorna: ClassSubjectsListRead
+    """
+    # 1. Buscar turma com curso
+    class_query = select(models.Class).where(
+        models.Class.id == class_id,
+        models.Class.organization_id == org_id
+    ).options(selectinload(models.Class.course))
+    
+    result = await db.execute(class_query)
+    db_class = result.scalars().first()
+    
+    if not db_class:
+        return None
+    
+    # 2. Buscar disciplinas associadas à turma para o grade_level atual
+    links_query = select(models.ClassSubjectLink).where(
+        models.ClassSubjectLink.class_id == class_id,
+        models.ClassSubjectLink.grade_level == db_class.grade_level
+    ).options(
+        selectinload(models.ClassSubjectLink.subject),
+        selectinload(models.ClassSubjectLink.teacher)
+    )
+    
+    links_result = await db.execute(links_query)
+    links = links_result.scalars().all()
+    
+    # 3. Construir resposta
+    subjects_data = []
+    for link in sorted(links, key=lambda l: l.subject.name if l.subject else ""):
+        subjects_data.append({
+            "id": link.id,
+            "subject_id": link.subject_id,
+            "subject_name": link.subject.name if link.subject else "",
+            "required_room_type": link.subject.required_room_type if link.subject else "normal",
+            "grade_level": link.grade_level,
+            "teacher_id": link.teacher_id,
+            "teacher_name": link.teacher.name if link.teacher else None
+        })
+    
+    return {
+        "class_id": db_class.id,
+        "class_name": db_class.name,
+        "course_name": db_class.course.name if db_class.course else None,
+        "course_abbreviation": db_class.course.abbreviation if db_class.course else None,
+        "grade_level": db_class.grade_level,
+        "subjects": subjects_data
+    }
+
+
+async def add_class_subject(
+    db: AsyncSession, 
+    class_id: int, 
+    subject_id: int, 
+    org_id: int
+):
+    """
+    Adiciona uma disciplina à turma (para o grade_level atual).
+    
+    Validações:
+    - Turma existe e pertence à org
+    - Disciplina existe e pertence à org
+    - Disciplina não está já associada à turma neste grade_level
+    """
+    # 1. Buscar turma
+    class_query = select(models.Class).where(
+        models.Class.id == class_id,
+        models.Class.organization_id == org_id
+    )
+    class_result = await db.execute(class_query)
+    db_class = class_result.scalars().first()
+    
+    if not db_class:
+        return "CLASS_NOT_FOUND"
+    
+    # 2. Buscar disciplina
+    subject_query = select(models.Subject).where(
+        models.Subject.id == subject_id,
+        models.Subject.organization_id == org_id
+    )
+    subject_result = await db.execute(subject_query)
+    db_subject = subject_result.scalars().first()
+    
+    if not db_subject:
+        return "SUBJECT_NOT_FOUND"
+    
+    # 3. Verificar se já existe
+    existing_query = select(models.ClassSubjectLink).where(
+        models.ClassSubjectLink.class_id == class_id,
+        models.ClassSubjectLink.subject_id == subject_id,
+        models.ClassSubjectLink.grade_level == db_class.grade_level
+    )
+    existing_result = await db.execute(existing_query)
+    
+    if existing_result.scalars().first():
+        return "ALREADY_EXISTS"
+    
+    # 4. Criar associação
+    link = models.ClassSubjectLink(
+        class_id=class_id,
+        subject_id=subject_id,
+        grade_level=db_class.grade_level,
+        teacher_id=None
+    )
+    db.add(link)
+    await db.commit()
+    await db.refresh(link)
+    
+    return link
+
+
+async def update_class_subject_teacher(
+    db: AsyncSession,
+    class_id: int,
+    subject_id: int,
+    teacher_id: int | None,
+    org_id: int
+):
+    """
+    Atribui ou remove professor de uma disciplina da turma.
+    
+    Validações:
+    - Associação existe
+    - Se teacher_id não é None, professor existe e tem competência na disciplina
+    """
+    # 1. Buscar turma para obter grade_level
+    class_query = select(models.Class).where(
+        models.Class.id == class_id,
+        models.Class.organization_id == org_id
+    )
+    class_result = await db.execute(class_query)
+    db_class = class_result.scalars().first()
+    
+    if not db_class:
+        return "CLASS_NOT_FOUND"
+    
+    # 2. Buscar associação
+    link_query = select(models.ClassSubjectLink).where(
+        models.ClassSubjectLink.class_id == class_id,
+        models.ClassSubjectLink.subject_id == subject_id,
+        models.ClassSubjectLink.grade_level == db_class.grade_level
+    )
+    link_result = await db.execute(link_query)
+    link = link_result.scalars().first()
+    
+    if not link:
+        return "LINK_NOT_FOUND"
+    
+    # 3. Se teacher_id é None, remove atribuição
+    if teacher_id is None:
+        link.teacher_id = None
+        await db.commit()
+        return link
+    
+    # 4. Validar professor existe e pertence à org
+    teacher_query = select(models.Teacher).where(
+        models.Teacher.id == teacher_id,
+        models.Teacher.organization_id == org_id
+    ).options(selectinload(models.Teacher.subjects))
+    
+    teacher_result = await db.execute(teacher_query)
+    db_teacher = teacher_result.scalars().first()
+    
+    if not db_teacher:
+        return "TEACHER_NOT_FOUND"
+    
+    # 5. Validar professor tem competência na disciplina
+    teacher_subject_ids = [s.id for s in db_teacher.subjects]
+    if subject_id not in teacher_subject_ids:
+        return "NO_COMPETENCY"
+    
+    # 6. Atribuir professor
+    link.teacher_id = teacher_id
+    await db.commit()
+    await db.refresh(link)
+    
+    return link
+
+
+async def remove_class_subject(
+    db: AsyncSession,
+    class_id: int,
+    subject_id: int,
+    org_id: int
+):
+    """
+    Remove uma disciplina da turma (para o grade_level atual).
+    """
+    # 1. Buscar turma
+    class_query = select(models.Class).where(
+        models.Class.id == class_id,
+        models.Class.organization_id == org_id
+    )
+    class_result = await db.execute(class_query)
+    db_class = class_result.scalars().first()
+    
+    if not db_class:
+        return "CLASS_NOT_FOUND"
+    
+    # 2. Buscar associação
+    link_query = select(models.ClassSubjectLink).where(
+        models.ClassSubjectLink.class_id == class_id,
+        models.ClassSubjectLink.subject_id == subject_id,
+        models.ClassSubjectLink.grade_level == db_class.grade_level
+    )
+    link_result = await db.execute(link_query)
+    link = link_result.scalars().first()
+    
+    if not link:
+        return "NOT_FOUND"
+    
+    # 3. Remover
+    await db.delete(link)
+    await db.commit()
+    
+    return "SUCCESS"
+
+
+async def get_available_subjects_for_class(
+    db: AsyncSession,
+    class_id: int,
+    org_id: int
+):
+    """
+    Lista disciplinas disponíveis para adicionar à turma.
+    (Disciplinas da org que ainda não estão associadas à turma neste grade_level)
+    """
+    from sqlalchemy import true as sa_true
+    
+    # 1. Buscar turma
+    class_query = select(models.Class).where(
+        models.Class.id == class_id,
+        models.Class.organization_id == org_id
+    )
+    class_result = await db.execute(class_query)
+    db_class = class_result.scalars().first()
+    
+    if not db_class:
+        return []
+    
+    # 2. Buscar IDs das disciplinas já associadas
+    existing_query = select(models.ClassSubjectLink.subject_id).where(
+        models.ClassSubjectLink.class_id == class_id,
+        models.ClassSubjectLink.grade_level == db_class.grade_level
+    )
+    existing_result = await db.execute(existing_query)
+    existing_ids = {row[0] for row in existing_result.all()}
+    
+    # 3. Buscar todas as disciplinas da org que não estão associadas
+    if existing_ids:
+        subjects_query = select(models.Subject).where(
+            models.Subject.organization_id == org_id,
+            models.Subject.id.notin_(existing_ids)
+        ).order_by(models.Subject.name)
+    else:
+        subjects_query = select(models.Subject).where(
+            models.Subject.organization_id == org_id
+        ).order_by(models.Subject.name)
+    
+    subjects_result = await db.execute(subjects_query)
+    return subjects_result.scalars().all()
+
+
+async def get_eligible_teachers_for_subject(
+    db: AsyncSession,
+    subject_id: int,
+    org_id: int
+):
+    """
+    Lista professores elegíveis para lecionar uma disciplina.
+    (Professores que têm competência na disciplina via teacher_subject_link)
+    
+    Também indica quantas turmas o professor já tem atribuídas.
+    """
+    from sqlalchemy import func
+    
+    # 1. Buscar disciplina para validar que pertence à org
+    subject_query = select(models.Subject).where(
+        models.Subject.id == subject_id,
+        models.Subject.organization_id == org_id
+    )
+    subject_result = await db.execute(subject_query)
+    db_subject = subject_result.scalars().first()
+    
+    if not db_subject:
+        return []
+    
+    # 2. Buscar professores com competência na disciplina
+    teachers_query = select(models.Teacher).where(
+        models.Teacher.organization_id == org_id
+    ).options(selectinload(models.Teacher.subjects))
+    
+    teachers_result = await db.execute(teachers_query)
+    all_teachers = teachers_result.scalars().all()
+    
+    # Filtrar apenas os que têm competência
+    eligible = [t for t in all_teachers if subject_id in [s.id for s in t.subjects]]
+    
+    if not eligible:
+        return []
+    
+    # 3. Contar quantas turmas cada professor já tem para esta disciplina
+    counts_query = select(
+        models.ClassSubjectLink.teacher_id,
+        func.count(models.ClassSubjectLink.id).label("count")
+    ).where(
+        models.ClassSubjectLink.subject_id == subject_id,
+        models.ClassSubjectLink.teacher_id.isnot(None)
+    ).group_by(models.ClassSubjectLink.teacher_id)
+    
+    counts_result = await db.execute(counts_query)
+    counts_map = {row[0]: row[1] for row in counts_result.all()}
+    
+    # 4. Construir resposta
+    result = []
+    for teacher in sorted(eligible, key=lambda t: t.name):
+        result.append({
+            "id": teacher.id,
+            "name": teacher.name,
+            "is_assigned_elsewhere": teacher.id in counts_map,
+            "current_classes_count": counts_map.get(teacher.id, 0)
+        })
+    
+    return result

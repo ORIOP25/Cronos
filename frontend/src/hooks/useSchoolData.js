@@ -391,3 +391,109 @@ export const useUpdateClassProgress = () => {
     }
   })
 }
+
+// ==========================================
+//  DISCIPLINAS DA TURMA (Class-Subject Link)
+//  Gestão curso-cêntrica de professores
+// ==========================================
+
+/**
+ * Lista disciplinas associadas à turma (para o grade_level atual).
+ * Inclui professor atribuído a cada disciplina.
+ * 
+ * Usado na página ClassSubjects.jsx
+ */
+export const useClassSubjects = (classId) => useQuery({
+  queryKey: ['class-subjects', classId],
+  queryFn: async () => {
+    if (!classId) return null
+    const { data } = await apiClient.get(`/classes/${classId}/subjects`)
+    return data
+  },
+  enabled: !!classId,
+  staleTime: 1000 * 60 * 5,
+  refetchOnWindowFocus: false,
+})
+
+/**
+ * Lista disciplinas disponíveis para adicionar à turma.
+ * (Disciplinas da org que ainda não estão associadas)
+ */
+export const useAvailableSubjects = (classId) => useQuery({
+  queryKey: ['available-subjects', classId],
+  queryFn: async () => {
+    if (!classId) return []
+    const { data } = await apiClient.get(`/classes/${classId}/available-subjects`)
+    return data
+  },
+  enabled: !!classId,
+  staleTime: 1000 * 60 * 5,
+})
+
+/**
+ * Lista professores elegíveis para lecionar uma disciplina.
+ * (Professores que têm competência na disciplina)
+ */
+export const useEligibleTeachers = (subjectId) => useQuery({
+  queryKey: ['eligible-teachers', subjectId],
+  queryFn: async () => {
+    if (!subjectId) return []
+    const { data } = await apiClient.get(`/classes/subjects/${subjectId}/eligible-teachers`)
+    return data
+  },
+  enabled: !!subjectId,
+  staleTime: 1000 * 60 * 5,
+})
+
+/**
+ * Adiciona uma disciplina à turma.
+ */
+export const useAddClassSubject = () => {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async ({ classId, subjectId }) => {
+      const { data } = await apiClient.post(`/classes/${classId}/subjects`, { subject_id: subjectId })
+      return data
+    },
+    onSuccess: (data, variables) => {
+      queryClient.setQueryData(['class-subjects', variables.classId], data)
+      queryClient.invalidateQueries({ queryKey: ['available-subjects', variables.classId] })
+    }
+  })
+}
+
+/**
+ * Atualiza o professor de uma disciplina da turma.
+ */
+export const useUpdateClassSubjectTeacher = () => {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async ({ classId, subjectId, teacherId }) => {
+      const { data } = await apiClient.patch(`/classes/${classId}/subjects/${subjectId}`, { teacher_id: teacherId })
+      return data
+    },
+    onSuccess: (data, variables) => {
+      queryClient.setQueryData(['class-subjects', variables.classId], data)
+    }
+  })
+}
+
+/**
+ * Remove uma disciplina da turma.
+ */
+export const useRemoveClassSubject = () => {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async ({ classId, subjectId }) => {
+      const { data } = await apiClient.delete(`/classes/${classId}/subjects/${subjectId}`)
+      return data
+    },
+    onSuccess: (data, variables) => {
+      queryClient.setQueryData(['class-subjects', variables.classId], data)
+      queryClient.invalidateQueries({ queryKey: ['available-subjects', variables.classId] })
+    }
+  })
+}

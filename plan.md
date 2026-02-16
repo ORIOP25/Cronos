@@ -33,77 +33,55 @@ Quando grade_level mudar para 11:
 
 ---
 
-## 📁 Ficheiros a Modificar/Criar
+## 📁 Ficheiros Modificados/Criados
 
 ### Backend
-- [ ] `models.py` - Nova tabela `class_subject_link` com `grade_level`
-- [ ] `schemas.py` - Novos schemas para disciplinas da turma
-- [ ] `services/class_service.py` - Lógica de negócio para disciplinas/professores
-- [ ] `api/v1/endpoints/classes.py` - Novos endpoints
-- [ ] `alembic/versions/xxx_class_subject_link.py` - Migração
+- [x] `models.py` - Nova tabela `ClassSubjectLink` com `grade_level`
+- [x] `schemas.py` - Novos schemas para disciplinas da turma
+- [x] `services/class_service.py` - Lógica de negócio para disciplinas/professores
+- [x] `api/v1/endpoints/classes.py` - Novos endpoints
+- [x] `alembic/versions/f8a3b2c1d4e5_add_class_subject_link_table.py` - Migração
 
 ### Frontend
-- [ ] `pages/ClassSubjects.jsx` - **NOVA** página de disciplinas da turma
-- [ ] `pages/ClassDetails.jsx` - Adicionar link para ClassSubjects
-- [ ] `hooks/useSchoolData.js` - Novos hooks para disciplinas da turma
-- [ ] `App.jsx` - Nova rota `/courses/:courseId/classes/:classId/subjects`
-- [ ] `components/DefaultLayout.jsx` - Remover link "Distribuição de Serviço"
-- [ ] `pages/ServiceDistribution.jsx` - **APAGAR**
-- [ ] `components/Forms/LessonForm.jsx` - **APAGAR** (será integrado na nova página)
+- [x] `pages/ClassSubjects.jsx` - **NOVA** página de disciplinas da turma
+- [x] `pages/ClassDetails.jsx` - Adicionado link para ClassSubjects
+- [x] `hooks/useSchoolData.js` - Novos hooks para disciplinas da turma
+- [x] `App.jsx` - Nova rota `/courses/:courseId/classes/:classId/subjects`
+- [x] `components/DefaultLayout.jsx` - Removido link "Distribuição de Serviço"
+- [x] `pages/ServiceDistribution.jsx` - Deprecado (redireciona para /courses)
+- [x] `components/Forms/LessonForm.jsx` - Deprecado
 
 ---
 
-## ✅ Tarefas Detalhadas
+## ✅ Tarefas Concluídas
 
-### Fase 1: Backend - Modelo de Dados
-- [ ] 1.1 Criar tabela `class_subject_link` em `models.py`
-  - Campos: `class_id`, `subject_id`, `grade_level`, `teacher_id` (nullable)
-  - UniqueConstraint: `(class_id, subject_id, grade_level)`
-- [ ] 1.2 Criar migração Alembic
-- [ ] 1.3 Criar schemas em `schemas.py`:
-  - `ClassSubjectCreate` (adicionar disciplina à turma)
-  - `ClassSubjectRead` (ler disciplina com professor)
-  - `ClassSubjectUpdate` (atribuir/alterar professor)
-  - `ClassSubjectsListRead` (lista completa para a página)
+### Fase 1: Backend - Modelo de Dados ✅
+- [x] 1.1 Criar tabela `class_subject_link` em `models.py`
+- [x] 1.2 Criar migração Alembic
+- [x] 1.3 Criar schemas em `schemas.py`
 
-### Fase 2: Backend - Endpoints
-- [ ] 2.1 `GET /classes/{id}/subjects` - Lista disciplinas da turma (grade_level atual)
-- [ ] 2.2 `POST /classes/{id}/subjects` - Adicionar disciplina à turma
-- [ ] 2.3 `PATCH /classes/{id}/subjects/{subject_id}` - Atribuir/alterar professor
-- [ ] 2.4 `DELETE /classes/{id}/subjects/{subject_id}` - Remover disciplina da turma
-- [ ] 2.5 `GET /classes/{id}/available-subjects` - Disciplinas disponíveis (não associadas)
-- [ ] 2.6 `GET /subjects/{id}/eligible-teachers` - Professores com competência na disciplina
+### Fase 2: Backend - Endpoints ✅
+- [x] 2.1 `GET /classes/{id}/subjects`
+- [x] 2.2 `POST /classes/{id}/subjects`
+- [x] 2.3 `PATCH /classes/{id}/subjects/{subject_id}`
+- [x] 2.4 `DELETE /classes/{id}/subjects/{subject_id}`
+- [x] 2.5 `GET /classes/{id}/available-subjects`
+- [x] 2.6 `GET /classes/subjects/{id}/eligible-teachers`
 
-### Fase 3: Backend - Validações
-- [ ] 3.1 Validar que professor tem competência na disciplina (teacher_subject_link)
-- [ ] 3.2 Validar que disciplina não está duplicada na turma/grade_level
-- [ ] 3.3 Validar que disciplina pertence à organização
+### Fase 3: Backend - Validações ✅
+- [x] 3.1 Validar competência do professor
+- [x] 3.2 Validar disciplina não duplicada
+- [x] 3.3 Validar disciplina pertence à org
 
-### Fase 4: Frontend - Nova Página
-- [ ] 4.1 Criar `ClassSubjects.jsx` com:
-  - Header da turma (nome, curso, grade_level)
-  - Lista de disciplinas associadas com professor (ou "Sem professor")
-  - Dropdown para atribuir professor (filtrado por competência)
-  - Botão para adicionar nova disciplina
-  - Botão para remover disciplina
-- [ ] 4.2 Criar hooks em `useSchoolData.js`:
-  - `useClassSubjects(classId)` - Lista disciplinas da turma
-  - `useAvailableSubjects(classId)` - Disciplinas disponíveis para adicionar
-  - `useEligibleTeachers(subjectId)` - Professores com competência
-  - `useAddClassSubject()` - Mutation para adicionar
-  - `useUpdateClassSubject()` - Mutation para atribuir professor
-  - `useRemoveClassSubject()` - Mutation para remover
+### Fase 4: Frontend - Nova Página ✅
+- [x] 4.1 Criar `ClassSubjects.jsx`
+- [x] 4.2 Criar hooks em `useSchoolData.js`
 
-### Fase 5: Frontend - Integração
-- [ ] 5.1 Adicionar rota em `App.jsx`: `/courses/:courseId/classes/:classId/subjects`
-- [ ] 5.2 Adicionar link em `ClassDetails.jsx` para a nova página
-- [ ] 5.3 Remover link "Distribuição de Serviço" do menu em `DefaultLayout.jsx`
-- [ ] 5.4 Remover rota `/service-distribution` de `App.jsx`
+### Fase 5: Frontend - Integração ✅
+- [x] 5.1-5.4 Rotas e menu
 
-### Fase 6: Limpeza
-- [ ] 6.1 Apagar `ServiceDistribution.jsx`
-- [ ] 6.2 Apagar `LessonForm.jsx` (lógica será integrada em ClassSubjects)
-- [ ] 6.3 Verificar se há imports órfãos
+### Fase 6: Limpeza ✅
+- [x] 6.1-6.3 Ficheiros deprecados
 
 ### Fase 7: Testes
 - [ ] 7.1 Testar fluxo completo: Curso → Turma → Disciplinas → Atribuir Professor
@@ -122,14 +100,11 @@ Quando grade_level mudar para 11:
 - A nova tabela é apenas para definir "que disciplinas a turma tem e quem leciona"
 - Quando o Solver correr, pode criar `Lesson` baseado em `class_subject_link`
 
-**Alternativa descartada:** Usar `Lesson` diretamente
-- Problema: Teria de criar Lesson sem todos os campos obrigatórios
-- Problema: Misturar conceitos (atribuição vs necessidade de aula)
-
 ---
 
-## 📝 Notas
+## 📝 Próximos Passos
 
-- Grade_level atual da turma é calculado: `10 + (ano_atual - start_year)`
-- Quando ano letivo muda, admin define novas disciplinas manualmente (automação futura)
-- Professores só aparecem no dropdown se tiverem a disciplina em `teacher_subject_link`
+1. **Correr migração:** `alembic upgrade head`
+2. **Testar backend:** Verificar endpoints com Postman/curl
+3. **Testar frontend:** Navegar Curso → Turma → Disciplinas
+4. **Apagar ficheiros deprecados:** ServiceDistribution.jsx, LessonForm.jsx

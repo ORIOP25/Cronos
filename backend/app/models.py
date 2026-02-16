@@ -56,6 +56,27 @@ teacher_subject_link = Table(
     Column("subject_id", ForeignKey("subject.id", ondelete="CASCADE"), primary_key=True),
 )
 
+# Tabela Relacional: Disciplinas de uma Turma (com professor opcional)
+# Esta tabela define que disciplinas uma turma tem num determinado grade_level
+# e quem é o professor atribuído a cada uma.
+class ClassSubjectLink(Base):
+    __tablename__ = "class_subject_link"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    class_id: Mapped[int] = mapped_column(ForeignKey("class.id", ondelete="CASCADE"), index=True)
+    subject_id: Mapped[int] = mapped_column(ForeignKey("subject.id", ondelete="CASCADE"), index=True)
+    grade_level: Mapped[int] = mapped_column(Integer, nullable=False)  # 10, 11, 12
+    teacher_id: Mapped[Optional[int]] = mapped_column(ForeignKey("teacher.id", ondelete="SET NULL"), nullable=True)
+
+    # Relacionamentos
+    class_: Mapped["Class"] = relationship()
+    subject: Mapped["Subject"] = relationship()
+    teacher: Mapped[Optional["Teacher"]] = relationship()
+
+    __table_args__ = (
+        UniqueConstraint("class_id", "subject_id", "grade_level", name="uq_class_subject_grade"),
+    )
+
 class Availability(Base):
     __tablename__ = "availability"
 
