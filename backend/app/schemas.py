@@ -475,3 +475,48 @@ class TimeslotBulkCreate(BaseModel):
     slot_duration_minutes: int = Field(..., gt=0, description="Duração de cada aula (ex: 50 ou 90)")
     break_duration_minutes: int = Field(0, ge=0, description="Intervalo entre aulas")
     days_of_week: List[int] = Field(..., description="Lista de dias (0=Seg, 4=Sex)")
+
+# ==========================================
+#  DISCIPLINAS DA TURMA (Class-Subject Link)
+#  Gestão curso-cêntrica de professores
+# ==========================================
+
+class ClassSubjectCreate(BaseModel):
+    """Adicionar uma disciplina a uma turma (para o grade_level atual)"""
+    subject_id: int
+
+class ClassSubjectUpdate(BaseModel):
+    """Atribuir ou alterar professor de uma disciplina da turma"""
+    teacher_id: Optional[int] = Field(None, description="ID do professor (null para remover atribuição)")
+
+class TeacherSimple(BaseModel):
+    """Versão simplificada de Teacher para dropdowns"""
+    id: int
+    name: str
+    model_config = ConfigDict(from_attributes=True)
+
+class ClassSubjectRead(BaseModel):
+    """Disciplina da turma com professor atribuído"""
+    id: int
+    subject_id: int
+    subject_name: str
+    required_room_type: RoomType
+    grade_level: int
+    teacher_id: Optional[int] = None
+    teacher_name: Optional[str] = None
+    
+class ClassSubjectsListRead(BaseModel):
+    """Lista completa de disciplinas da turma para a página ClassSubjects"""
+    class_id: int
+    class_name: str
+    course_name: Optional[str] = None
+    course_abbreviation: Optional[str] = None
+    grade_level: int
+    subjects: list[ClassSubjectRead] = []
+
+class EligibleTeacherRead(BaseModel):
+    """Professor elegível para lecionar uma disciplina (tem competência)"""
+    id: int
+    name: str
+    is_assigned_elsewhere: bool = False  # True se já dá esta disciplina noutra turma
+    current_classes_count: int = 0  # Quantas turmas já tem

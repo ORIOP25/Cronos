@@ -8,7 +8,7 @@ import CIcon from '@coreui/icons-react'
 import {
   cilArrowLeft, cilPencil, cilSave, cilX,
   cilPeople, cilBook, cilCheckCircle, cilClock,
-  cilBookmark,
+  cilBookmark, cilChevronRight,
 } from '@coreui/icons'
 
 import {
@@ -387,10 +387,22 @@ const ClassDetails = () => {
                   </div>
                 </div>
               </div>
-              <CButton color="light" size="sm" onClick={startEditHeader} title="Editar nome e capacidade">
-                <CIcon icon={cilPencil} className="me-1" />
-                Editar
-              </CButton>
+              <div className="d-flex gap-2">
+                <CButton 
+                  color="primary" 
+                  size="sm" 
+                  onClick={() => navigate(`/courses/${numCourseId}/classes/${numClassId}/subjects`)}
+                  title="Gerir disciplinas e professores"
+                >
+                  <CIcon icon={cilPeople} className="me-1" />
+                  Disciplinas e Professores
+                  <CIcon icon={cilChevronRight} size="sm" className="ms-1" />
+                </CButton>
+                <CButton color="light" size="sm" onClick={startEditHeader} title="Editar nome e capacidade">
+                  <CIcon icon={cilPencil} className="me-1" />
+                  Editar
+                </CButton>
+              </div>
             </div>
           )}
         </CCardBody>

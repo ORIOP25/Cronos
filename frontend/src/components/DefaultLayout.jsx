@@ -49,7 +49,6 @@ const DefaultLayout = () => {
               <Link to="/courses" style={linkStyle}>🎓 Cursos</Link>
               <Link to="/teachers" style={linkStyle}>👨‍🏫 Professores</Link>
               <Link to="/subjects" style={linkStyle}>📖 Disciplinas</Link>
-              <Link to="/service-distribution" style={linkStyle}>🔗 Distribuição de Serviço</Link>
               
               <div className="my-2 border-top border-secondary"></div> {/* Separador */}
               

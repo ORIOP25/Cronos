@@ -147,3 +147,158 @@ async def update_class_progress(
     
     # Retornar dados atualizados para refresh na UI
     return await class_service.get_class_full_details(db, class_id, current_user.organization_id)
+
+
+# ==========================================
+#  DISCIPLINAS DA TURMA (Class-Subject Link)
+#  Gestão curso-cêntrica de professores
+# ==========================================
+
+@router.get("/{class_id}/subjects", response_model=schemas.ClassSubjectsListRead)
+async def get_class_subjects(
+    class_id: int,
+    db: AsyncSession = Depends(deps.get_db),
+    current_user: models.User = Depends(deps.get_current_active_user),
+):
+    """
+    Lista disciplinas associadas à turma (para o grade_level atual).
+    Inclui professor atribuído a cada disciplina.
+    
+    Usado na página ClassSubjects.jsx para mostrar:
+    - Quais disciplinas a turma tem
+    - Quem é o professor de cada disciplina
+    """
+    result = await class_service.get_class_subjects(db, class_id, current_user.organization_id)
+    
+    if not result:
+        raise HTTPException(status_code=404, detail="Turma não encontrada")
+    
+    return result
+
+
+@router.post("/{class_id}/subjects", response_model=schemas.ClassSubjectsListRead)
+async def add_class_subject(
+    class_id: int,
+    payload: schemas.ClassSubjectCreate,
+    db: AsyncSession = Depends(deps.get_db),
+    current_user: models.User = Depends(deps.get_current_active_admin),
+):
+    """
+    Adiciona uma disciplina à turma (para o grade_level atual).
+    
+    Validações:
+    - Turma existe e pertence à organização
+    - Disciplina existe e pertence à organização
+    - Disciplina não está já associada à turma
+    """
+    result = await class_service.add_class_subject(
+        db, class_id, payload.subject_id, current_user.organization_id
+    )
+    
+    if result == "CLASS_NOT_FOUND":
+        raise HTTPException(status_code=404, detail="Turma não encontrada")
+    
+    if result == "SUBJECT_NOT_FOUND":
+        raise HTTPException(status_code=404, detail="Disciplina não encontrada")
+    
+    if result == "ALREADY_EXISTS":
+        raise HTTPException(status_code=400, detail="Esta disciplina já está associada à turma")
+    
+    # Retornar lista atualizada
+    return await class_service.get_class_subjects(db, class_id, current_user.organization_id)
+
+
+@router.patch("/{class_id}/subjects/{subject_id}", response_model=schemas.ClassSubjectsListRead)
+async def update_class_subject_teacher(
+    class_id: int,
+    subject_id: int,
+    payload: schemas.ClassSubjectUpdate,
+    db: AsyncSession = Depends(deps.get_db),
+    current_user: models.User = Depends(deps.get_current_active_admin),
+):
+    """
+    Atribui ou altera o professor de uma disciplina da turma.
+    
+    Validações:
+    - Associação turma/disciplina existe
+    - Se teacher_id não é null, professor tem competência na disciplina
+    
+    Enviar teacher_id=null para remover a atribuição.
+    """
+    result = await class_service.update_class_subject_teacher(
+        db, class_id, subject_id, payload.teacher_id, current_user.organization_id
+    )
+    
+    if result == "CLASS_NOT_FOUND":
+        raise HTTPException(status_code=404, detail="Turma não encontrada")
+    
+    if result == "LINK_NOT_FOUND":
+        raise HTTPException(status_code=404, detail="Esta disciplina não está associada à turma")
+    
+    if result == "TEACHER_NOT_FOUND":
+        raise HTTPException(status_code=404, detail="Professor não encontrado")
+    
+    if result == "NO_COMPETENCY":
+        raise HTTPException(
+            status_code=400, 
+            detail="Este professor não tem competência para lecionar esta disciplina"
+        )
+    
+    # Retornar lista atualizada
+    return await class_service.get_class_subjects(db, class_id, current_user.organization_id)
+
+
+@router.delete("/{class_id}/subjects/{subject_id}", response_model=schemas.ClassSubjectsListRead)
+async def remove_class_subject(
+    class_id: int,
+    subject_id: int,
+    db: AsyncSession = Depends(deps.get_db),
+    current_user: models.User = Depends(deps.get_current_active_admin),
+):
+    """
+    Remove uma disciplina da turma (para o grade_level atual).
+    """
+    result = await class_service.remove_class_subject(
+        db, class_id, subject_id, current_user.organization_id
+    )
+    
+    if result == "CLASS_NOT_FOUND":
+        raise HTTPException(status_code=404, detail="Turma não encontrada")
+    
+    if result == "NOT_FOUND":
+        raise HTTPException(status_code=404, detail="Esta disciplina não está associada à turma")
+    
+    # Retornar lista atualizada
+    return await class_service.get_class_subjects(db, class_id, current_user.organization_id)
+
+
+@router.get("/{class_id}/available-subjects", response_model=List[schemas.SubjectRead])
+async def get_available_subjects(
+    class_id: int,
+    db: AsyncSession = Depends(deps.get_db),
+    current_user: models.User = Depends(deps.get_current_active_user),
+):
+    """
+    Lista disciplinas disponíveis para adicionar à turma.
+    (Disciplinas da organização que ainda não estão associadas à turma)
+    """
+    return await class_service.get_available_subjects_for_class(
+        db, class_id, current_user.organization_id
+    )
+
+
+@router.get("/subjects/{subject_id}/eligible-teachers", response_model=List[schemas.EligibleTeacherRead])
+async def get_eligible_teachers(
+    subject_id: int,
+    db: AsyncSession = Depends(deps.get_db),
+    current_user: models.User = Depends(deps.get_current_active_user),
+):
+    """
+    Lista professores elegíveis para lecionar uma disciplina.
+    (Professores que têm competência na disciplina)
+    
+    Também indica quantas turmas cada professor já tem para esta disciplina.
+    """
+    return await class_service.get_eligible_teachers_for_subject(
+        db, subject_id, current_user.organization_id
+    )

@@ -11,7 +11,7 @@ import Schedules from './pages/Schedules';
 import Courses from './pages/Courses';
 import CourseDetails from './pages/CourseDetails';
 import ClassDetails from './pages/ClassDetails';
-import ServiceDistribution from './pages/ServiceDistribution';
+import ClassSubjects from './pages/ClassSubjects';
 import DefaultLayout from './components/DefaultLayout';
 import ProtectedRoute from './components/ProtectedRoute';
 
@@ -35,11 +35,11 @@ function App() {
           <Route path="courses" element={<Courses />} />
           <Route path="courses/:id" element={<CourseDetails />} />
           <Route path="courses/:courseId/classes/:classId" element={<ClassDetails />} />
+          <Route path="courses/:courseId/classes/:classId/subjects" element={<ClassSubjects />} />
           
           <Route path="config" element={<SchoolConfig />} />
           <Route path="schedules" element={<Schedules />} />
           <Route path="my-availability" element={<MyAvailability />} />
-          <Route path="service-distribution" element={<ServiceDistribution />} />
         </Route>
       </Routes>
     </Router>
