@@ -8,7 +8,7 @@ Valida regras de negócio em Pydantic schemas.
 
 import pytest
 from pydantic import ValidationError
-from app.schemas import SubjectCreate, ModuleCreate
+from app.schemas import SubjectCreate, ModuleCreate, ClassCreateInCourse, ClassUpdateInCourse
 from app.models import RoomType
 
 
@@ -154,3 +154,24 @@ class TestSubjectCreateValidation:
         error_msg = str(exc_info.value)
         assert "[0, 1]" in error_msg
         assert "[5, 6]" in error_msg
+
+
+class TestClassInCourseValidation:
+    def test_class_create_rejects_invalid_year_window(self):
+        with pytest.raises(ValidationError):
+            ClassCreateInCourse(
+                name="TGPSI 10A",
+                size=25,
+                grade_level=10,
+                start_year=2028,
+                end_year=2028,
+            )
+
+    def test_class_update_accepts_partial_year_fields(self):
+        schema = ClassUpdateInCourse(start_year=2027)
+        assert schema.start_year == 2027
+        assert schema.end_year is None
+
+    def test_class_update_rejects_invalid_year_window_when_both_present(self):
+        with pytest.raises(ValidationError):
+            ClassUpdateInCourse(start_year=2029, end_year=2028)

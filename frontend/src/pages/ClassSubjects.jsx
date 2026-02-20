@@ -2,7 +2,8 @@ import React, { useState, useMemo } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import {
   CCard, CCardBody, CCardHeader, CCol, CRow, CButton, CAlert,
-  CBadge, CSpinner, CFormSelect, CModal, CModalHeader, CModalTitle,
+  CBadge, CSpinner, CFormSelect,
+  CModal, CModalHeader, CModalTitle,
   CModalBody, CModalFooter,
 } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
@@ -59,14 +60,14 @@ const SubjectRow = ({
       <CCardBody className="py-2 px-3">
         <div className="d-flex justify-content-between align-items-center">
           {/* Info da Disciplina */}
-          <div className="d-flex align-items-center gap-2" style={{ minWidth: '200px' }}>
+          <div className="d-flex align-items-center gap-2" style={{ minWidth: '180px' }}>
             <CIcon icon={cilBook} className="text-info" size="sm" />
             <span className="fw-medium">{subject.subject_name}</span>
             <RoomBadge type={subject.required_room_type} />
           </div>
 
           {/* Dropdown de Professor */}
-          <div className="d-flex align-items-center gap-2" style={{ flex: 1, maxWidth: '350px' }}>
+          <div className="d-flex align-items-center gap-2" style={{ flex: 1, maxWidth: '280px' }}>
             {teachersLoading ? (
               <CSpinner size="sm" />
             ) : (
@@ -75,7 +76,7 @@ const SubjectRow = ({
                 value={subject.teacher_id || ''}
                 onChange={handleTeacherChange}
                 disabled={isUpdating}
-                style={{ minWidth: '200px' }}
+                style={{ minWidth: '180px' }}
               >
                 <option value="">
                   {eligibleTeachers?.length === 0 
@@ -116,7 +117,8 @@ const SubjectRow = ({
         {/* Info do professor atribuído */}
         {subject.teacher_name && (
           <small className="text-success d-block mt-1 ms-4">
-            ✓ {subject.teacher_name}
+            <CIcon icon={cilCheckCircle} size="sm" className="me-1" />
+            {subject.teacher_name}
           </small>
         )}
       </CCardBody>

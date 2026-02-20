@@ -1,7 +1,6 @@
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload, joinedload
+from sqlalchemy.orm import selectinload
 from sqlalchemy import select, insert, delete
-from fastapi import HTTPException
 from app import models, schemas
 
 # --- LEITURA ---
@@ -57,7 +56,7 @@ async def create_course(db: AsyncSession, item: schemas.CourseCreate, org_id: in
         models.Course.organization_id == org_id
     )
     if (await db.execute(q_check)).scalars().first():
-        raise HTTPException(400, f"A sigla '{item.abbreviation}' já existe nesta escola.")
+        return "ABBREVIATION_EXISTS"
 
     # 2. Preparar as Disciplinas (ANTES DE CRIAR O CURSO)
     # Buscamos as disciplinas primeiro para injetar logo na criação
@@ -70,7 +69,7 @@ async def create_course(db: AsyncSession, item: schemas.CourseCreate, org_id: in
         subjects_to_link = (await db.execute(q_subjects)).scalars().all()
         
         if len(subjects_to_link) != len(item.subject_ids):
-            raise HTTPException(400, "Tentativa de associar disciplinas inválidas ou de outra escola.")
+            return "INVALID_SUBJECTS"
 
     # 3. Criar o Objeto Curso (SEM disciplinas, evita lazy loading em async)
     course_data = item.model_dump(

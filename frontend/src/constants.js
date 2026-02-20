@@ -1,25 +1,26 @@
 // frontend/src/constants.js
+// Cores definidas com CSS variables (--rs-pref-*) no index.css
 
 export const PREFERENCE_LEVELS = {
-  "2": { 
-    label: "Preferencial", 
-    color: "#4ade80", // Verde
-    next: 0 // Do Verde vai para Laranja (Evitar)
+  "2": {
+    label: "Preferencial",
+    color: "var(--rs-pref-preferred)", // Teal claro
+    next: 0
   },
-  "1": { 
-    label: "Neutro", 
-    color: "#f3f4f6", // Cinzento (Start)
-    next: 2 // Do Cinzento vai para VERDE (Preferred)
+  "1": {
+    label: "Neutro",
+    color: "var(--rs-pref-neutral)", // Creme neutro
+    next: 2
   },
-  "0": { 
-    label: "Evitar", 
-    color: "#fb923c", // Laranja
-    next: -1 // Do Laranja vai para Vermelho (Impossible)
+  "0": {
+    label: "Evitar",
+    color: "var(--rs-pref-avoid)", // Mostarda claro
+    next: -1
   },
-  "-1": { 
-    label: "Impossível", 
-    color: "#ef4444", // Vermelho
-    next: 1 // Do Vermelho volta a Neutro (Cinzento)
+  "-1": {
+    label: "Impossível",
+    color: "var(--rs-pref-impossible)", // Laranja queimado
+    next: 1
   }
 };
 

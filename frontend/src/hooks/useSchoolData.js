@@ -90,16 +90,6 @@ export const useCourses = () => useQuery({
   ...STATIC_OPTS
 })
 
-// --- MÓDULOS ---
-export const useModules = () => useQuery({
-  queryKey: ['modules'],
-  queryFn: async () => {
-    const { data } = await apiClient.get('/modules/')
-    return data
-  },
-  ...STATIC_OPTS
-})
-
 // --- CURRÍCULO DA TURMA (Dados Relacionados) ---
 /**
  * Hook para carregar o currículo (disciplinas) de uma turma.
@@ -234,9 +224,9 @@ export const useCourseDetails = (courseId) => useQuery({
     const { data } = await apiClient.get(`/courses/${courseId}`)
     return data
   },
-  enabled: !!courseId, // Optimization: Só dispara se houver ID
-  staleTime: 1000 * 60 * 5, // 5 minutos (dados semi-estáticos)
-  refetchOnWindowFocus: false, // Stability: Não recarrega ao voltar à tab
+  enabled: !!courseId,
+  staleTime: 0, // Sempre buscar dados frescos (disciplinas mudam via ClassSubjects)
+  refetchOnWindowFocus: true,
 })
 
 /**
@@ -329,6 +319,62 @@ export const useDeleteCourse = () => {
   })
 }
 
+
+export const useCreateCourseClass = () => {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async ({ courseId, data }) => {
+      const { data: response } = await apiClient.post(`/courses/${courseId}/classes`, data)
+      return response
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['courses'] })
+      queryClient.invalidateQueries({ queryKey: ['courses', variables.courseId] })
+      queryClient.invalidateQueries({ queryKey: ['classes'] })
+    }
+  })
+}
+
+
+export const useUpdateCourseClass = () => {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async ({ courseId, classId, data }) => {
+      const { data: response } = await apiClient.patch(`/courses/${courseId}/classes/${classId}`, data)
+      return response
+    },
+    onSuccess: (data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['courses'] })
+      queryClient.invalidateQueries({ queryKey: ['courses', variables.courseId] })
+      queryClient.invalidateQueries({ queryKey: ['classes'] })
+      queryClient.setQueryData(['classes', variables.classId], (previous) => (
+        previous ? { ...previous, ...data } : previous
+      ))
+    }
+  })
+}
+
+
+export const useDeleteCourseClass = () => {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async ({ courseId, classId }) => {
+      await apiClient.delete(`/courses/${courseId}/classes/${classId}`)
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['courses'] })
+      queryClient.invalidateQueries({ queryKey: ['courses', variables.courseId] })
+      queryClient.invalidateQueries({ queryKey: ['classes'] })
+      queryClient.removeQueries({ queryKey: ['classes', variables.classId] })
+      queryClient.removeQueries({ queryKey: ['class-subjects', variables.classId] })
+      queryClient.removeQueries({ queryKey: ['available-subjects', variables.classId] })
+    }
+  })
+}
+
 // ==========================================
 //  FASE 4: GESTÃO DE TURMAS (Esqueleto)
 //  Implementação completa na Fase 5
@@ -354,8 +400,8 @@ export const useClassDetails = (classId) => useQuery({
     return data
   },
   enabled: !!classId,
-  staleTime: 1000 * 60 * 5,
-  refetchOnWindowFocus: false,
+  staleTime: 0, // Sempre buscar dados frescos (progresso muda frequentemente)
+  refetchOnWindowFocus: true,
 })
 
 /**
@@ -459,6 +505,9 @@ export const useAddClassSubject = () => {
     onSuccess: (data, variables) => {
       queryClient.setQueryData(['class-subjects', variables.classId], data)
       queryClient.invalidateQueries({ queryKey: ['available-subjects', variables.classId] })
+      queryClient.invalidateQueries({ queryKey: ['classes', variables.classId] })
+      // Sync: atualizar contagem de disciplinas na página do curso
+      queryClient.invalidateQueries({ queryKey: ['courses'] })
     }
   })
 }
@@ -471,7 +520,9 @@ export const useUpdateClassSubjectTeacher = () => {
 
   return useMutation({
     mutationFn: async ({ classId, subjectId, teacherId }) => {
-      const { data } = await apiClient.patch(`/classes/${classId}/subjects/${subjectId}`, { teacher_id: teacherId })
+      const payload = {}
+      if (teacherId !== undefined) payload.teacher_id = teacherId
+      const { data } = await apiClient.patch(`/classes/${classId}/subjects/${subjectId}`, payload)
       return data
     },
     onSuccess: (data, variables) => {
@@ -494,6 +545,9 @@ export const useRemoveClassSubject = () => {
     onSuccess: (data, variables) => {
       queryClient.setQueryData(['class-subjects', variables.classId], data)
       queryClient.invalidateQueries({ queryKey: ['available-subjects', variables.classId] })
+      queryClient.invalidateQueries({ queryKey: ['classes', variables.classId] })
+      // Sync: atualizar contagem de disciplinas na página do curso
+      queryClient.invalidateQueries({ queryKey: ['courses'] })
     }
   })
 }

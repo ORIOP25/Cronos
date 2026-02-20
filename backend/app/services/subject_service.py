@@ -2,8 +2,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session, selectinload
 from sqlalchemy import select, delete
 from app import models, schemas
-# Importamos Lesson para garantir que não apagamos disciplinas em uso
-from app.models import Lesson
 
 # --- ASYNC (API) ---
 async def get_subjects_by_org(db: AsyncSession, org_id: int):
@@ -61,11 +59,11 @@ async def create_subject(db: AsyncSession, item: schemas.SubjectCreate, organiza
     return result.scalars().first()
 
 async def update_subject(db: AsyncSession, subject_id: int, subject_in: schemas.SubjectUpdate, org_id: int):
-    # 1. Buscar a disciplina
+    # 1. Buscar a disciplina com módulos
     query = select(models.Subject).where(
         models.Subject.id == subject_id,
         models.Subject.organization_id == org_id
-    )
+    ).options(selectinload(models.Subject.modules))
     result = await db.execute(query)
     subject = result.scalars().first()
     
@@ -77,10 +75,9 @@ async def update_subject(db: AsyncSession, subject_id: int, subject_in: schemas.
         q_check = select(models.Subject).where(
             models.Subject.name == subject_in.name,
             models.Subject.organization_id == org_id,
-            models.Subject.id != subject_id # Exclui o próprio da verificação
+            models.Subject.id != subject_id
         )
         if (await db.execute(q_check)).scalars().first():
-            # Retorna None ou levanta exceção para o endpoint tratar
             return None 
 
     # 3. Atualizar campos simples
@@ -88,22 +85,61 @@ async def update_subject(db: AsyncSession, subject_id: int, subject_in: schemas.
     for field, value in update_data.items():
         setattr(subject, field, value)
 
-    # 4. Atualizar Módulos (Optimization/Scalability)
-    # Estratégia "Replace": Apaga os antigos e cria os novos. 
-    # Garante consistência com o que vem do Frontend Wizard.
+    # 4. Atualizar Módulos (Smart diff: update existing, create new, delete removed)
     if subject_in.modules is not None:
-        # A) Apagar módulos antigos desta disciplina
-        await db.execute(delete(models.Module).where(models.Module.subject_id == subject_id))
+        incoming_modules = subject_in.modules
+        existing_modules = {m.id: m for m in subject.modules}
         
-        # B) Criar novos módulos
-        for mod_data in subject_in.modules:
-            new_mod = models.Module(
-                **mod_data.model_dump(), 
-                subject_id=subject_id
+        # IDs dos módulos que o frontend quer MANTER (têm id)
+        incoming_ids = {m.id for m in incoming_modules if m.id is not None}
+        
+        # A) Apagar módulos que foram removidos pelo utilizador
+        #    Primeiro apaga class_progress (FK), depois remove via ORM delete
+        ids_to_delete = set(existing_modules.keys()) - incoming_ids
+        if ids_to_delete:
+            # Bulk delete class_progress (sem relações ORM a gerir)
+            await db.execute(
+                delete(models.ClassProgress).where(
+                    models.ClassProgress.module_id.in_(ids_to_delete)
+                )
             )
-            db.add(new_mod)
+            # ORM delete — mantém o identity map sincronizado
+            for mod_id in ids_to_delete:
+                await db.delete(existing_modules[mod_id])
+            await db.flush()
+        
+        # B) Evitar violação da UniqueConstraint (uq_module_order_per_subject)
+        #    ao reordenar módulos: definir ordens temporárias negativas primeiro
+        modules_to_update = [
+            m for m in incoming_modules
+            if m.id is not None and m.id in existing_modules
+        ]
+        if modules_to_update:
+            for i, mod_data in enumerate(modules_to_update, start=1):
+                existing_modules[mod_data.id].order = -i
+            await db.flush()
+        
+        # C) Atualizar módulos existentes e criar novos (com ordens finais)
+        for mod_data in incoming_modules:
+            if mod_data.id is not None and mod_data.id in existing_modules:
+                # Atualizar módulo existente (já tracked pela sessão)
+                existing_mod = existing_modules[mod_data.id]
+                existing_mod.name = mod_data.name
+                existing_mod.code = mod_data.code
+                existing_mod.hours_total = mod_data.hours_total
+                existing_mod.order = mod_data.order
+            else:
+                # Criar novo módulo (sem id ou id desconhecido)
+                new_mod = models.Module(
+                    name=mod_data.name,
+                    code=mod_data.code,
+                    hours_total=mod_data.hours_total,
+                    order=mod_data.order,
+                    subject_id=subject_id
+                )
+                db.add(new_mod)
 
-    db.add(subject)
+    # subject já está tracked pela sessão — commit grava todas as alterações
     await db.commit()
     stmt = select(models.Subject).options(selectinload(models.Subject.modules)).where(models.Subject.id == subject.id)
     result = await db.execute(stmt)

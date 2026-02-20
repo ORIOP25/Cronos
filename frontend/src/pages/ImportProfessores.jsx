@@ -6,13 +6,12 @@ import {
 } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
 import { 
-  cilUser, cilPeople, cilBook, cilRoom, cilClock, cilPencil, cilSettings, cilCloudUpload
+  cilUser, cilPeople, cilBook, cilRoom, cilClock, cilCloudUpload
 } from '@coreui/icons'
 
 // Importar componentes
 import SimpleEntityForm from '../components/ImportForms/SimpleEntityForm'
 import TimeslotForm from '../components/ImportForms/TimeslotForm'
-import LessonForm from '../components/ImportForms/LessonForm'
 import SmartTable from '../components/SmartTable'
 import BulkImportModal from '../components/ImportForms/BulkImportModal'
 import RoomForm from '../components/ImportForms/RoomForm'
@@ -278,7 +277,6 @@ const ImportWizard = () => {
                 <CNavItem><CNavLink active={activeKey === 3} onClick={() => setActiveKey(3)} style={{cursor: 'pointer', fontWeight: '500'}}><CIcon icon={cilBook} className="me-2"/>Disciplinas</CNavLink></CNavItem>
                 <CNavItem><CNavLink active={activeKey === 4} onClick={() => setActiveKey(4)} style={{cursor: 'pointer', fontWeight: '500'}}><CIcon icon={cilRoom} className="me-2"/>Salas</CNavLink></CNavItem>
                 <CNavItem><CNavLink active={activeKey === 5} onClick={() => setActiveKey(5)} style={{cursor: 'pointer', fontWeight: '500'}}><CIcon icon={cilClock} className="me-2"/>Horários</CNavLink></CNavItem>
-                <CNavItem><CNavLink active={activeKey === 6} onClick={() => setActiveKey(6)} style={{cursor: 'pointer', fontWeight: '500'}}><CIcon icon={cilPencil} className="me-2"/>Aulas</CNavLink></CNavItem>
               </CNav>
             </CCardBody>
           </CCard>
@@ -292,11 +290,6 @@ const ImportWizard = () => {
             <CTabPane visible={activeKey === 5}>
                 {/* Nota: Timeslots ainda não têm Gestor (apenas form), podemos fazer no futuro */}
                 <TimeslotForm />
-            </CTabPane>
-
-            <CTabPane visible={activeKey === 6}>
-                {/* Nota: Lessons são complexas de listar numa tabela simples, mantemos o Form */}
-                <LessonForm />
             </CTabPane>
           </CTabContent>
         </CCol>

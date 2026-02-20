@@ -159,8 +159,8 @@ const Dashboard = () => {
                 isSubstitution: false,
                 type: 'regular' // FLAG IMPORTANTE: Identifica aula padrão
             },
-            backgroundColor: '#3b82f6', 
-            borderColor: '#2563eb'
+            backgroundColor: 'var(--rs-event-bg)', 
+            borderColor: 'var(--rs-event-border)'
         }
     }).filter(Boolean)
 
@@ -195,8 +195,8 @@ const Dashboard = () => {
                 isSubstitution: true,
                 type: 'substitution' // FLAG IMPORTANTE: Identifica substituição
             },
-            backgroundColor: '#e55353', 
-            borderColor: '#e55353'
+            backgroundColor: 'var(--rs-sub-event-bg)', 
+            borderColor: 'var(--rs-sub-event-border)'
         }
     }).filter(Boolean)
 

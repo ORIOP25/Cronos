@@ -1,17 +1,18 @@
 import React, { useState } from 'react'
-import { 
+import {
   CCard, CCardBody, CCol, CRow, CButton, CAlert, CBadge 
 } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
 import { cilBook, cilPlus } from '@coreui/icons'
+import { useQueryClient } from '@tanstack/react-query'
 
 import SmartTable from '../components/SmartTable'
 import GenericModalForm from '../components/GenericModalForm'
 import SubjectForm from '../components/Forms/SubjectForm'
 
 // Hooks de Dados
-import { 
-  useSubjects, 
+import {
+  useSubjects,
   useCreateEntity, 
   useUpdateEntity, 
   useDeleteEntity 
@@ -20,6 +21,7 @@ import {
 const Subjects = () => {
   const [modalVisible, setModalVisible] = useState(false)
   const [selectedItem, setSelectedItem] = useState(null)
+  const queryClient = useQueryClient()
 
   // 1. Acesso aos Dados
   const { data: subjects, isLoading } = useSubjects()
@@ -73,13 +75,20 @@ const Subjects = () => {
       // Usa PUT/PATCH e envia o ID
       updateMutation.mutate(
         { id: selectedItem.id, ...formData },
-        { onSuccess: () => setModalVisible(false) }
+        { onSuccess: () => {
+          setModalVisible(false)
+          // Invalidar cache de cursos (incluem dados de disciplinas/módulos)
+          queryClient.invalidateQueries({ queryKey: ['courses'] })
+        }}
       )
     } else {
       // --- MODO CRIAÇÃO ---
       // Usa POST
       createMutation.mutate(formData, {
-        onSuccess: () => setModalVisible(false)
+        onSuccess: () => {
+          setModalVisible(false)
+          queryClient.invalidateQueries({ queryKey: ['courses'] })
+        }
       })
     }
   }

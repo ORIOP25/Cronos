@@ -3,8 +3,9 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App.jsx'
 
-// Importar o CSS do CoreUI
+// Importar o CSS do CoreUI + Theme customizado
 import '@coreui/coreui/dist/css/coreui.min.css'
+import './index.css'
 
 // --- 1. IMPORTAR O REACT QUERY ---
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'

@@ -30,33 +30,39 @@ const AvailabilityGrid = ({ timeslots, availabilityMap, onChange }) => {
       marginTop: '20px'
     },
     headerCell: {
-      fontWeight: 'bold',
+      fontWeight: '600',
       textAlign: 'center',
       padding: '10px',
-      backgroundColor: '#e5e7eb'
+      backgroundColor: 'var(--rs-grid-header-bg)',
+      color: 'var(--rs-grid-header-text)',
+      fontSize: '0.85rem',
+      borderRadius: '6px',
     },
     timeLabel: {
-      fontWeight: 'bold',
+      fontWeight: '600',
       textAlign: 'center',
       padding: '10px',
-      backgroundColor: '#f9fafb',
+      backgroundColor: 'var(--rs-grid-time-bg)',
+      color: 'var(--rs-grid-time-text)',
       display: 'flex',
       alignItems: 'center',
-      justifyContent: 'center'
+      justifyContent: 'center',
+      borderRadius: '6px',
+      fontSize: '0.85rem',
     },
     cell: (score) => ({
       height: '60px',
       backgroundColor: PREFERENCE_LEVELS[score].color,
-      cursor: 'pointer', // Agora o cursor vai aparecer como mãozinha!
-      border: '1px solid #d1d5db',
-      borderRadius: '4px',
+      cursor: 'pointer',
+      border: '1px solid var(--rs-grid-cell-border)',
+      borderRadius: '8px',
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
       fontSize: '0.8rem',
       fontWeight: '500',
-      transition: 'background-color 0.2s',
-      userSelect: 'none'
+      transition: 'all 0.2s ease',
+      userSelect: 'none',
     })
   };
 
@@ -66,7 +72,7 @@ const AvailabilityGrid = ({ timeslots, availabilityMap, onChange }) => {
       <div style={{ display: 'flex', gap: '15px', marginBottom: '15px' }}>
         {Object.entries(PREFERENCE_LEVELS).map(([score, info]) => (
           <div key={score} style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-            <div style={{ width: '20px', height: '20px', backgroundColor: info.color, border: '1px solid #ccc' }}></div>
+            <div style={{ width: '20px', height: '20px', backgroundColor: info.color, border: '1px solid var(--rs-grid-cell-border)', borderRadius: '4px' }}></div>
             <span>{info.label}</span>
           </div>
         ))}
@@ -94,7 +100,7 @@ const AvailabilityGrid = ({ timeslots, availabilityMap, onChange }) => {
               const slot = timeslots.find(t => t.day_of_week === index && t.start_time === time);
               
               // Se não houver slot na BD para esta hora/dia, desenha um buraco cinzento
-              if (!slot) return <div key={`${index}-${time}`} style={{ background: '#f3f4f6', border: '1px dashed #ccc' }} title="Sem horário definido" />; 
+              if (!slot) return <div key={`${index}-${time}`} style={{ background: 'var(--rs-grid-empty-bg)', border: '1px dashed var(--rs-grid-empty-border)', borderRadius: '8px' }} title="Sem horário definido" />; 
 
               const score = getScore(slot.id);
               

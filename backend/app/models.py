@@ -309,10 +309,6 @@ class Lesson(Base):
     subject_id: Mapped[int] = mapped_column(ForeignKey("subject.id"), index=True)
     teacher_id: Mapped[int] = mapped_column(ForeignKey("teacher.id"), index=True)
     
-    # As "regras" da aula
-    num_per_week: Mapped[int] = mapped_column(Integer, default=1)
-    is_double: Mapped[bool] = mapped_column(Boolean, default=False)
-
     # --- Relacionamentos ---
     # (Para podermos aceder a lesson.class, lesson.teacher, etc.)
     organization: Mapped["Organization"] = relationship()

@@ -93,11 +93,15 @@ class ScheduleEngine:
         """Regras que NÃO podem ser quebradas (Vermelho)."""
         
         # Regra 1: Cada aula tem de acontecer exatamente X vezes
+        # NOTA: num_per_week foi removido do modelo Lesson (Audit O3).
+        # Valor fixo de 1 até o Solver ser refatorizado para cálculo
+        # dinâmico baseado no progresso modular (Ensino Profissional).
         for l in self.lessons:
+            slots_per_week = getattr(l, 'num_per_week', 1)
             self.model.Add(
                 sum(self.aula_agendada[(l.id, t.id, r.id)] 
                     for t in self.timeslots 
-                    for r in self.rooms) == l.num_per_week
+                    for r in self.rooms) == slots_per_week
             )
 
         # Regra 2: Turma não pode estar em dois sítios ao mesmo tempo

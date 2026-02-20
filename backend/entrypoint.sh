@@ -47,5 +47,5 @@ else
     echo -e "${GREEN}✅ Migrações executadas com sucesso${NC}"
 fi
 
-echo -e "${GREEN}✅ Iniciando servidor FastAPI...${NC}"
-exec uvicorn app.main:app --host 0.0.0.0 --port 8000
+echo -e "${GREEN}✅ Entrypoint concluído. A iniciar processo...${NC}"
+exec "$@"

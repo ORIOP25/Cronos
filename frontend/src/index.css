@@ -1,0 +1,383 @@
+/* ==========================================================
+   HORÁRIO ZEN — Retro Sunset Theme
+   Palette:
+     1. Burnt Orange (primary):  #be5103
+     2. Mustard Yellow (accent): #ffce1b
+     3. Teal (cool contrast):    #069494
+     4. Deep Burnt Orange:       #b7410e
+   ========================================================== */
+
+/* ===========================
+   CSS CUSTOM PROPERTIES
+   =========================== */
+:root {
+  /* --- Palette: Burnt Orange (Primary) --- */
+  --rs-primary: #be5103;
+  --rs-primary-hover: #a04502;
+  --rs-primary-active: #8a3a02;
+  --rs-primary-light: #f5dcc8;
+  --rs-primary-rgb: 190, 81, 3;
+
+  /* --- Palette: Mustard Yellow (Accent) --- */
+  --rs-accent: #ffce1b;
+  --rs-accent-hover: #e6b800;
+  --rs-accent-dark: #c49a00;
+  --rs-accent-light: #fff5d4;
+  --rs-accent-rgb: 255, 206, 27;
+
+  /* --- Palette: Teal (Cool Contrast) --- */
+  --rs-teal: #069494;
+  --rs-teal-hover: #057a7a;
+  --rs-teal-dark: #045e5e;
+  --rs-teal-light: #d4f0f0;
+  --rs-teal-rgb: 6, 148, 148;
+
+  /* --- Palette: Deep Burnt Orange --- */
+  --rs-deep: #b7410e;
+  --rs-deep-hover: #9c3709;
+  --rs-deep-light: #fde5d8;
+  --rs-deep-rgb: 183, 65, 14;
+
+  /* --- Derived Neutrals (warm-tinted) --- */
+  --rs-body-bg: #fef8f2;
+  --rs-body-text: #3a2518;
+  --rs-heading: #2e1c10;
+  --rs-muted: #8a7060;
+  --rs-card-border: #e8d8c8;
+  --rs-card-header-bg: #fef6ee;
+  --rs-table-header-bg: #f5efe6;
+  --rs-table-header-text: #5c3f2b;
+  --rs-table-row-hover: #faf5ed;
+  --rs-light-border: #e0d5c5;
+  --rs-disabled: #c4a882;
+
+  /* --- Sidebar --- */
+  --rs-sidebar-start: #0a5e5e;
+  --rs-sidebar-end: #063f3f;
+  --rs-sidebar-text: #e6f5f5;
+  --rs-sidebar-brand: #ffce1b;
+  --rs-sidebar-section: #7abfbf;
+  --rs-sidebar-link: #cce8e8;
+  --rs-sidebar-divider: rgba(255, 206, 27, 0.2);
+  --rs-sidebar-logout: #7abfbf;
+  --rs-sidebar-logout-border: rgba(122, 191, 191, 0.4);
+
+  /* --- Focus & Input --- */
+  --rs-focus-ring: rgba(190, 81, 3, 0.25);
+  --rs-input-focus-border: #be5103;
+  --rs-input-focus-shadow: rgba(190, 81, 3, 0.15);
+  --rs-input-group-bg: #f5efe6;
+  --rs-input-group-border: #e8d8c8;
+
+  /* --- Login --- */
+  --rs-login-right-start: #be5103;
+  --rs-login-right-end: #8a3a02;
+  --rs-login-tagline: #ffd780;
+
+  /* --- Calendar Events --- */
+  --rs-event-bg: #be5103;
+  --rs-event-border: #a04502;
+  --rs-sub-event-bg: #069494;
+  --rs-sub-event-border: #057a7a;
+
+  /* --- Heatmap --- */
+  --rs-heat-good-bg: #d4f0f0;
+  --rs-heat-good-border: #069494;
+  --rs-heat-good-text: #045e5e;
+  --rs-heat-medium-bg: #fff5d4;
+  --rs-heat-medium-border: #e6b800;
+  --rs-heat-medium-text: #8a6d00;
+  --rs-heat-critical-bg: #fde5d8;
+  --rs-heat-critical-border: #b7410e;
+  --rs-heat-critical-text: #8a3109;
+  --rs-heat-neutral-bg: #f5efe6;
+  --rs-heat-neutral-border: #e0d5c5;
+
+  /* --- Availability Grid --- */
+  --rs-grid-header-bg: #f5efe6;
+  --rs-grid-header-text: #5c3f2b;
+  --rs-grid-time-bg: #faf5ed;
+  --rs-grid-time-text: #be5103;
+  --rs-grid-cell-border: #e0d5c5;
+  --rs-grid-empty-bg: #faf5ed;
+  --rs-grid-empty-border: #e0d5c5;
+
+  /* --- Preference Levels --- */
+  --rs-pref-preferred: #b8e8e8;
+  --rs-pref-neutral: #f0e8dc;
+  --rs-pref-avoid: #ffe594;
+  --rs-pref-impossible: #f5a882;
+
+  /* --- Progress Bars (exception: red→green gradient) --- */
+  --rs-progress-red: #dc2626;
+  --rs-progress-orange: #ea580c;
+  --rs-progress-yellow: #ca8a04;
+  --rs-progress-green: #16a34a;
+
+  /* --- Scrollbar --- */
+  --rs-scrollbar-track: #f5efe6;
+  --rs-scrollbar-thumb: #c4a882;
+  --rs-scrollbar-thumb-hover: #a08872;
+
+  /* --- Shadows --- */
+  --rs-card-shadow: rgba(183, 65, 14, 0.06);
+  --rs-card-shadow-hover: rgba(183, 65, 14, 0.1);
+
+  /* --- Selected Card --- */
+  --rs-selected-card-bg: #fff5ea;
+  --rs-selected-card-border: #be5103;
+}
+
+
+/* ===========================
+   COREUI VARIABLE OVERRIDES
+   =========================== */
+:root {
+  --cui-primary: #be5103;
+  --cui-primary-rgb: 190, 81, 3;
+  --cui-info: #069494;
+  --cui-info-rgb: 6, 148, 148;
+  --cui-success: #069494;
+  --cui-success-rgb: 6, 148, 148;
+  --cui-warning: #d4a006;
+  --cui-warning-rgb: 212, 160, 6;
+  --cui-danger: #b7410e;
+  --cui-danger-rgb: 183, 65, 14;
+  --cui-secondary: #9c7a58;
+  --cui-secondary-rgb: 156, 122, 88;
+
+  --cui-body-bg: #fef8f2;
+  --cui-body-color: #3a2518;
+  --cui-link-color: #be5103;
+  --cui-link-hover-color: #a04502;
+  --cui-focus-ring-color: rgba(190, 81, 3, 0.25);
+}
+
+
+/* ===========================
+   BUTTON OVERRIDES
+   =========================== */
+.btn-primary {
+  --cui-btn-bg: var(--rs-primary);
+  --cui-btn-border-color: var(--rs-primary);
+  --cui-btn-hover-bg: var(--rs-primary-hover);
+  --cui-btn-hover-border-color: var(--rs-primary-hover);
+  --cui-btn-active-bg: var(--rs-primary-active);
+  --cui-btn-active-border-color: var(--rs-primary-active);
+  --cui-btn-disabled-bg: var(--rs-disabled);
+  --cui-btn-disabled-border-color: var(--rs-disabled);
+  --cui-btn-focus-shadow-rgb: 190, 81, 3;
+}
+
+.btn-outline-primary {
+  --cui-btn-color: var(--rs-primary);
+  --cui-btn-border-color: var(--rs-primary);
+  --cui-btn-hover-bg: var(--rs-primary);
+  --cui-btn-hover-border-color: var(--rs-primary);
+  --cui-btn-active-bg: var(--rs-primary-hover);
+  --cui-btn-focus-shadow-rgb: 190, 81, 3;
+}
+
+.btn-success {
+  --cui-btn-bg: var(--rs-teal);
+  --cui-btn-border-color: var(--rs-teal);
+  --cui-btn-hover-bg: var(--rs-teal-hover);
+  --cui-btn-hover-border-color: var(--rs-teal-hover);
+  --cui-btn-active-bg: var(--rs-teal-dark);
+  --cui-btn-active-border-color: var(--rs-teal-dark);
+  --cui-btn-focus-shadow-rgb: 6, 148, 148;
+}
+
+.btn-outline-success {
+  --cui-btn-color: var(--rs-teal);
+  --cui-btn-border-color: var(--rs-teal);
+  --cui-btn-hover-bg: var(--rs-teal);
+  --cui-btn-hover-border-color: var(--rs-teal);
+  --cui-btn-active-bg: var(--rs-teal-hover);
+  --cui-btn-focus-shadow-rgb: 6, 148, 148;
+}
+
+
+/* ===========================
+   BADGE & UTILITY OVERRIDES
+   =========================== */
+.badge.bg-primary { background-color: var(--rs-primary) !important; }
+.bg-primary { background-color: var(--rs-primary) !important; }
+.text-primary { color: var(--rs-primary) !important; }
+.border-primary { border-color: var(--rs-primary) !important; }
+
+.badge.bg-info { background-color: var(--rs-teal) !important; }
+.bg-info { background-color: var(--rs-teal) !important; }
+.text-info { color: var(--rs-teal) !important; }
+
+.badge.bg-success { background-color: var(--rs-teal) !important; }
+.bg-success { background-color: var(--rs-teal) !important; }
+.text-success { color: var(--rs-teal) !important; }
+
+.badge.bg-warning { background-color: var(--rs-accent) !important; color: #3a2518 !important; }
+.text-warning { color: var(--rs-accent-dark) !important; }
+
+.badge.bg-danger { background-color: var(--rs-deep) !important; }
+.text-danger { color: var(--rs-deep) !important; }
+
+.badge.bg-secondary { background-color: #9c7a58 !important; }
+
+
+/* ===========================
+   SPINNER
+   =========================== */
+.spinner-border.text-primary { color: var(--rs-primary) !important; }
+
+
+/* ===========================
+   ALERTS
+   =========================== */
+.alert-info {
+  --cui-alert-bg: var(--rs-accent-light);
+  --cui-alert-border-color: var(--rs-accent-hover);
+  --cui-alert-color: var(--rs-accent-dark);
+}
+
+.alert-success {
+  --cui-alert-bg: var(--rs-teal-light);
+  --cui-alert-border-color: var(--rs-teal);
+  --cui-alert-color: var(--rs-teal-dark);
+}
+
+.alert-danger {
+  --cui-alert-bg: var(--rs-deep-light);
+  --cui-alert-border-color: var(--rs-deep);
+  --cui-alert-color: var(--rs-deep-hover);
+}
+
+
+/* ===========================
+   CARDS
+   =========================== */
+.card {
+  border-radius: 12px;
+  border: 1px solid var(--rs-card-border);
+  box-shadow: 0 1px 3px var(--rs-card-shadow);
+  transition: box-shadow 0.2s ease;
+}
+
+.card:hover {
+  box-shadow: 0 4px 12px var(--rs-card-shadow-hover);
+}
+
+.card-header {
+  border-bottom: 1px solid var(--rs-card-border);
+  background-color: var(--rs-card-header-bg) !important;
+  border-radius: 12px 12px 0 0 !important;
+}
+
+
+/* ===========================
+   TABLES
+   =========================== */
+.table > thead {
+  background-color: var(--rs-table-header-bg);
+}
+
+.table > thead > tr > th {
+  border-bottom-color: var(--rs-light-border);
+  color: var(--rs-table-header-text);
+  font-weight: 600;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.table > tbody > tr:hover {
+  background-color: var(--rs-table-row-hover);
+}
+
+
+/* ===========================
+   INPUT FOCUS
+   =========================== */
+.form-control:focus,
+.form-select:focus {
+  border-color: var(--rs-input-focus-border);
+  box-shadow: 0 0 0 0.25rem var(--rs-input-focus-shadow);
+}
+
+
+/* ===========================
+   MODALS
+   =========================== */
+.modal-header {
+  background-color: var(--rs-table-row-hover);
+  border-bottom-color: var(--rs-card-border);
+}
+
+.modal-content {
+  border-radius: 12px;
+  border-color: var(--rs-card-border);
+}
+
+
+/* ===========================
+   NAV TABS
+   =========================== */
+.nav-link.active {
+  color: var(--rs-primary) !important;
+  border-bottom-color: var(--rs-primary) !important;
+}
+
+
+/* ===========================
+   GENERAL POLISH
+   =========================== */
+body {
+  font-family: 'Inter', 'Segoe UI', -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  background-color: var(--rs-body-bg);
+}
+
+h1, h2, h3, h4, h5, h6 {
+  color: var(--rs-heading);
+}
+
+
+/* ===========================
+   SCROLLBAR (Webkit)
+   =========================== */
+::-webkit-scrollbar { width: 8px; }
+::-webkit-scrollbar-track { background: var(--rs-scrollbar-track); }
+::-webkit-scrollbar-thumb { background: var(--rs-scrollbar-thumb); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: var(--rs-scrollbar-thumb-hover); }
+
+
+/* ===========================
+   FULLCALENDAR
+   =========================== */
+.fc .fc-button-primary {
+  background-color: var(--rs-primary);
+  border-color: var(--rs-primary);
+}
+
+.fc .fc-button-primary:hover {
+  background-color: var(--rs-primary-hover);
+  border-color: var(--rs-primary-hover);
+}
+
+.fc .fc-button-primary:not(:disabled).fc-button-active,
+.fc .fc-button-primary:not(:disabled):active {
+  background-color: var(--rs-primary-active);
+  border-color: var(--rs-primary-active);
+}
+
+.fc .fc-daygrid-day.fc-day-today,
+.fc .fc-timegrid-col.fc-day-today {
+  background-color: rgba(6, 148, 148, 0.06) !important;
+}
+
+
+/* ===========================
+   SELECTED CARD UTILITY
+   =========================== */
+.rs-card-selected {
+  border: 2px solid var(--rs-selected-card-border) !important;
+  background-color: var(--rs-selected-card-bg) !important;
+}

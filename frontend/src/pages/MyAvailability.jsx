@@ -63,7 +63,7 @@ const MyAvailability = () => {
 
       // Enviar para o endpoint de Bulk Update
       await apiClient.post(`/teachers/${teacherId}/availability`, payload);
-      alert("Disponibilidade gravada com sucesso! 💾");
+      alert("Disponibilidade gravada com sucesso!");
     } catch (err) {
       console.error(err);
       alert("Erro ao gravar. Tente novamente.");
@@ -72,13 +72,13 @@ const MyAvailability = () => {
     }
   };
 
-  if (loading) return <div>A carregar grelha...</div>;
-  if (error) return <div style={{color: 'red'}}>{error}</div>;
+  if (loading) return <div style={{ padding: '32px', color: 'var(--rs-muted)' }}>A carregar grelha...</div>;
+  if (error) return <div style={{color: 'var(--rs-deep)', padding: '32px'}}>{error}</div>;
 
   return (
-    <div style={{ padding: '20px' }}>
-      <h1>A Minha Disponibilidade 📅</h1>
-      <p>Clique nas células para definir a sua preferência.</p>
+    <div>
+      <h2 style={{ color: 'var(--rs-heading)', fontWeight: '700', marginBottom: '4px' }}>Minhas Preferências</h2>
+      <p style={{ color: 'var(--rs-muted)', marginBottom: '24px' }}>Clique nas células para definir a sua disponibilidade.</p>
       
       <AvailabilityGrid 
         timeslots={timeslots} 
@@ -86,18 +86,20 @@ const MyAvailability = () => {
         onChange={handleGridChange} 
       />
 
-      <div style={{ marginTop: '20px', textAlign: 'right' }}>
+      <div style={{ marginTop: '24px', textAlign: 'right' }}>
         <button 
           onClick={handleSave} 
           disabled={saving}
           style={{
-            padding: '10px 20px',
-            fontSize: '16px',
-            backgroundColor: '#2563eb',
-            color: 'white',
+            padding: '10px 24px',
+            fontSize: '15px',
+            backgroundColor: 'var(--rs-primary)',
+            color: '#ffffff',
             border: 'none',
-            borderRadius: '5px',
-            cursor: saving ? 'not-allowed' : 'pointer'
+            borderRadius: '8px',
+            cursor: saving ? 'not-allowed' : 'pointer',
+            fontWeight: '600',
+            transition: 'all 0.2s ease',
           }}
         >
           {saving ? 'A gravar...' : 'Gravar Alterações'}

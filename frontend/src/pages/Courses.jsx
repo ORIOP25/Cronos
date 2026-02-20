@@ -12,7 +12,6 @@ import CourseForm from '../components/Forms/CourseForm'
 
 import { 
   useCourses,
-  useSubjects,
   useCreateEntity,
 } from '../hooks/useSchoolData'
 
@@ -22,23 +21,12 @@ const Courses = () => {
 
   // 1. Hooks de Dados
   const { data: courses, isLoading } = useCourses()
-  const { data: subjects } = useSubjects()
   const createMutation = useCreateEntity('courses')
 
   // 2. Colunas da Tabela
   const columns = [
     { key: 'name', label: 'Nome do Curso' },
     { key: 'abbreviation', label: 'Sigla' },
-    { 
-      key: 'subjects_count', 
-      label: 'Disciplinas',
-      _style: { width: '12%' },
-      render: (item) => (
-        <CBadge color="info" shape="rounded-pill">
-          {item.subjects_count}
-        </CBadge>
-      )
-    },
     {
       key: 'classes_count',
       label: 'Turmas',
@@ -54,7 +42,6 @@ const Courses = () => {
   // 3. Transformação de Dados (ViewModel)
   const tableData = (courses || []).map(c => ({
     ...c,
-    subjects_count: c.subjects ? c.subjects.length : 0,
     classes_count: c.classes ? c.classes.length : 0,
   }))
 

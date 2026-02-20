@@ -16,15 +16,14 @@ const AnalyticsHeatmap = () => {
     queryFn: async () => (await apiClient.get('/analytics/availability-heatmap')).data
   })
 
-  // Cores mais suaves e modernas (Estilo GitHub)
+  // Cores quentes alinhadas com Retro Sunset
   const getSlotStyle = (stats) => {
-    if (!stats) return { bg: '#ebedf0', border: '#e1e4e8' } // Cinza claro
+    if (!stats) return { bg: 'var(--rs-heat-neutral-bg)', border: 'var(--rs-heat-neutral-border)' }
     const r = stats.availability_ratio
     
-    // Gradiente de Verde (Saudável) a Vermelho (Crítico)
-    if (r < 0.3) return { bg: '#ffebe9', border: '#ff8182', text: '#cf222e' } // Vermelho Suave
-    if (r < 0.6) return { bg: '#fff8c5', border: '#d4a72c', text: '#9a6700' } // Amarelo Suave
-    return { bg: '#dafbe1', border: '#4ac26b', text: '#1a7f37' } // Verde Suave
+    if (r < 0.3) return { bg: 'var(--rs-heat-critical-bg)', border: 'var(--rs-heat-critical-border)', text: 'var(--rs-heat-critical-text)' }
+    if (r < 0.6) return { bg: 'var(--rs-heat-medium-bg)', border: 'var(--rs-heat-medium-border)', text: 'var(--rs-heat-medium-text)' }
+    return { bg: 'var(--rs-heat-good-bg)', border: 'var(--rs-heat-good-border)', text: 'var(--rs-heat-good-text)' }
   }
 
   if (isLoading) return <div className="text-center p-3 text-muted small"><CSpinner size="sm"/> A carregar dados...</div>
@@ -48,9 +47,9 @@ const AnalyticsHeatmap = () => {
           <small className="text-muted">Capacidade da escola para alocar aulas</small>
         </div>
         <div className="d-flex gap-2 small">
-          <span className="d-flex align-items-center gap-1"><div style={{width: 8, height: 8, background: '#4ac26b', borderRadius: '50%'}}></div> Bom</span>
-          <span className="d-flex align-items-center gap-1"><div style={{width: 8, height: 8, background: '#d4a72c', borderRadius: '50%'}}></div> Médio</span>
-          <span className="d-flex align-items-center gap-1"><div style={{width: 8, height: 8, background: '#ff8182', borderRadius: '50%'}}></div> Crítico</span>
+          <span className="d-flex align-items-center gap-1"><div style={{width: 8, height: 8, background: 'var(--rs-heat-good-border)', borderRadius: '50%'}}></div> Bom</span>
+          <span className="d-flex align-items-center gap-1"><div style={{width: 8, height: 8, background: 'var(--rs-heat-medium-border)', borderRadius: '50%'}}></div> Médio</span>
+          <span className="d-flex align-items-center gap-1"><div style={{width: 8, height: 8, background: 'var(--rs-heat-critical-border)', borderRadius: '50%'}}></div> Crítico</span>
         </div>
       </div>
 

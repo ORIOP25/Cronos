@@ -104,9 +104,50 @@ class ClassCreate(ClassBase):
     start_year: int = Field(..., description="Ano de início (ex: 2025)")
     end_year: int = Field(..., description="Ano de fim (ex: 2028)")
 
+    @model_validator(mode='after')
+    def validate_year_window(self):
+        if self.end_year <= self.start_year:
+            raise ValueError("Ano de fim deve ser maior que o ano de início")
+        return self
+
 class ClassUpdate(BaseModel):
     name: Optional[str] = None
     size: Optional[int] = Field(None, gt=0, description="Número de alunos da turma")
+    grade_level: Optional[int] = Field(None, ge=10, le=12, description="Ano de escolaridade (10, 11, 12)")
+    start_year: Optional[int] = Field(None, description="Ano de início (ex: 2025)")
+    end_year: Optional[int] = Field(None, description="Ano de fim (ex: 2028)")
+
+    @model_validator(mode='after')
+    def validate_year_window_if_present(self):
+        if self.start_year is not None and self.end_year is not None and self.end_year <= self.start_year:
+            raise ValueError("Ano de fim deve ser maior que o ano de início")
+        return self
+
+
+class ClassCreateInCourse(ClassBase):
+    grade_level: int = Field(..., ge=10, le=12, description="Ano de escolaridade (10, 11, 12)")
+    start_year: int = Field(..., description="Ano de início (ex: 2025)")
+    end_year: int = Field(..., description="Ano de fim (ex: 2028)")
+
+    @model_validator(mode='after')
+    def validate_year_window(self):
+        if self.end_year <= self.start_year:
+            raise ValueError("Ano de fim deve ser maior que o ano de início")
+        return self
+
+
+class ClassUpdateInCourse(BaseModel):
+    name: Optional[str] = None
+    size: Optional[int] = Field(None, gt=0, description="Número de alunos da turma")
+    grade_level: Optional[int] = Field(None, ge=10, le=12, description="Ano de escolaridade (10, 11, 12)")
+    start_year: Optional[int] = Field(None, description="Ano de início (ex: 2025)")
+    end_year: Optional[int] = Field(None, description="Ano de fim (ex: 2028)")
+
+    @model_validator(mode='after')
+    def validate_year_window_if_present(self):
+        if self.start_year is not None and self.end_year is not None and self.end_year <= self.start_year:
+            raise ValueError("Ano de fim deve ser maior que o ano de início")
+        return self
 
 class ClassRead(ClassBase):
     id: int
@@ -126,6 +167,14 @@ class ModuleBase(BaseModel):
 
 class ModuleCreate(ModuleBase):
     pass
+
+class ModuleUpsert(BaseModel):
+    """Módulo para upsert: se id presente = atualizar, se ausente = criar"""
+    id: Optional[int] = None
+    name: str
+    code: Optional[str] = None
+    hours_total: int = Field(..., gt=0, description="Carga horária total do módulo")
+    order: int = Field(..., ge=0, description="Ordem sequencial do módulo")
 
 class ModuleUpdate(BaseModel):
     name: Optional[str] = None
@@ -173,7 +222,7 @@ class SubjectCreate(SubjectBase):
 class SubjectUpdate(BaseModel):
     name: Optional[str] = None
     required_room_type: Optional[RoomType] = None
-    modules: Optional[list[ModuleCreate]] = None
+    modules: Optional[list[ModuleUpsert]] = None
 
 class SubjectRead(SubjectBase):
     id: int
@@ -244,28 +293,19 @@ class TimeslotRead(TimeslotBase):
 
 # --- LESSON (ATRIBUIÇÃO DE PROFESSOR) ---
 # 
-# NOVO PADRÃO (Service Distribution):
-# Uma "Lesson" é agora a Atribuição de um Professor a uma Disciplina/Turma.
-# O Solver calculará dinamicamente quantas vezes por semana o professor dá aulas.
+# Padrão (Service Distribution):
+# Uma "Lesson" é a Atribuição de um Professor a uma Disciplina/Turma.
+# O Solver calcula dinamicamente quantas vezes por semana o professor dá aulas,
+# baseado no currículo do curso, progresso modular e disponibilidade.
 #
 # - Turma: A que turma é? (ex: 10º TGEI)
 # - Disciplina: Qual disciplina? (ex: Matemática)
 # - Professor: Quem leciona? (ex: Prof. Silva) [VALIDADO: deve ter competência]
-# - num_per_week: Deixa opcional/comentado. O Solver calcula isto baseado em:
-#   * Currículo do curso (quantas horas tem a disciplina)
-#   * Progresso/Módulos atrasados
-#   * Disponibilidade do professor
-# - is_double: Se a aula é de 2h seguidas
-#
-# Esta abordagem elimina micro-gestão manual e permite escalabilidade.
 
 class LessonBase(BaseModel):
     class_id: int
     subject_id: int
     teacher_id: int
-    # NOVO: num_per_week é opcional. O Solver define isto dinamicamente.
-    num_per_week: int = Field(default=1, ge=0, description="Opcional. Solver calcula.")
-    is_double: bool = False
 
 class LessonCreate(LessonBase):
     # NOVO: Permite criar uma atribuição sem especificar horas exatas.

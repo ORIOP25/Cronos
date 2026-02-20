@@ -3,7 +3,7 @@ import {
   CForm, CCol, CRow, CFormInput, CButton, CModalFooter, CFormSelect, CCard, CCardBody, CAlert, CBadge
 } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
-import { cilX } from '@coreui/icons'
+import { cilX, cilPencil, cilCheckCircle } from '@coreui/icons'
 
 const SubjectForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
   // --- WIZARD STATE ---
@@ -23,18 +23,31 @@ const SubjectForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
     hours_total: ''
   })
 
-  // ✅ CORREÇÃO 1: Popular dados na Edição (Passo 1 e 2)
+  // --- EDIÇÃO INLINE DE MÓDULOS ---
+  const [editingModuleIndex, setEditingModuleIndex] = useState(null)
+  const [editModuleData, setEditModuleData] = useState({
+    name: '',
+    code: '',
+    hours_total: ''
+  })
+
+  // ✅ Popular dados na Edição (Passo 1 e 2)
   useEffect(() => {
     if (initialData) {
       setFormData({
         name: initialData.name || '',
         required_room_type: initialData.required_room_type || 'normal',
-        // Se a lista vier sem módulos (endpoint simples), inicia array vazio.
-        // Se vier com módulos (endpoint detalhado), popula a lista.
-        modules: initialData.modules || [] 
+        // Preservar id dos módulos existentes para o backend fazer smart diff
+        modules: (initialData.modules || []).map(m => ({
+          id: m.id || undefined,
+          name: m.name,
+          code: m.code || '',
+          hours_total: m.hours_total,
+          order: m.order
+        }))
       })
     }
-  }, [initialData]) // Corre sempre que initialData mudar
+  }, [initialData])
 
   // --- HANDLERS ---
 
@@ -60,6 +73,7 @@ const SubjectForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
           ...currentModule,
           order: prev.modules.length, // Auto-ordenação
           hours_total: parseInt(currentModule.hours_total, 10)
+          // Sem id = módulo novo
         }
       ]
     }))
@@ -71,10 +85,43 @@ const SubjectForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
   const handleRemoveModule = (indexToRemove) => {
     setFormData(prev => {
       const filtered = prev.modules.filter((_, i) => i !== indexToRemove)
-      // Re-indexar orders para manter sequencial [0, 1, 2...]
+      // Re-indexar orders para manter sequencial [0, 1, 2...], preservando id
       const reordered = filtered.map((m, i) => ({ ...m, order: i }))
       return { ...prev, modules: reordered }
     })
+    // Se estávamos a editar este módulo, fechar edição
+    if (editingModuleIndex === indexToRemove) {
+      setEditingModuleIndex(null)
+    } else if (editingModuleIndex !== null && editingModuleIndex > indexToRemove) {
+      setEditingModuleIndex(editingModuleIndex - 1)
+    }
+  }
+
+  const handleStartEditModule = (index) => {
+    const mod = formData.modules[index]
+    setEditModuleData({
+      name: mod.name,
+      code: mod.code || '',
+      hours_total: mod.hours_total
+    })
+    setEditingModuleIndex(index)
+  }
+
+  const handleSaveEditModule = () => {
+    if (!editModuleData.name || !editModuleData.hours_total) return
+    setFormData(prev => ({
+      ...prev,
+      modules: prev.modules.map((m, i) => 
+        i === editingModuleIndex 
+          ? { ...m, name: editModuleData.name, code: editModuleData.code, hours_total: parseInt(editModuleData.hours_total, 10) }
+          : m
+      )
+    }))
+    setEditingModuleIndex(null)
+  }
+
+  const handleCancelEditModule = () => {
+    setEditingModuleIndex(null)
   }
 
   const handleNextStep = () => {
@@ -222,20 +269,83 @@ const SubjectForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
                     {formData.modules.map((mod, index) => (
                       <tr key={index} className="align-middle">
                         <td className="px-3 text-muted small">{index + 1}</td>
-                        <td className="fw-semibold">{mod.name}</td>
-                        <td className="text-muted small">{mod.code || '-'}</td>
-                        <td><CBadge color="info" shape="rounded-pill">{mod.hours_total}h</CBadge></td>
-                        <td className="text-end pe-3">
-                          <CButton 
-                            color="danger" 
-                            variant="ghost" 
-                            size="sm" 
-                            onClick={() => handleRemoveModule(index)}
-                            className="p-1"
-                          >
-                            <CIcon icon={cilX} />
-                          </CButton>
-                        </td>
+                        {editingModuleIndex === index ? (
+                          <>
+                            <td>
+                              <CFormInput
+                                size="sm"
+                                value={editModuleData.name}
+                                onChange={(e) => setEditModuleData(prev => ({ ...prev, name: e.target.value }))}
+                              />
+                            </td>
+                            <td>
+                              <CFormInput
+                                size="sm"
+                                value={editModuleData.code}
+                                onChange={(e) => setEditModuleData(prev => ({ ...prev, code: e.target.value }))}
+                              />
+                            </td>
+                            <td>
+                              <CFormInput
+                                size="sm"
+                                type="number"
+                                value={editModuleData.hours_total}
+                                onChange={(e) => setEditModuleData(prev => ({ ...prev, hours_total: e.target.value }))}
+                                style={{ width: '70px' }}
+                              />
+                            </td>
+                            <td className="text-end pe-3">
+                              <CButton 
+                                color="success" 
+                                variant="ghost" 
+                                size="sm" 
+                                onClick={handleSaveEditModule}
+                                className="p-1 me-1"
+                                title="Confirmar"
+                              >
+                                <CIcon icon={cilCheckCircle} />
+                              </CButton>
+                              <CButton 
+                                color="secondary" 
+                                variant="ghost" 
+                                size="sm" 
+                                onClick={handleCancelEditModule}
+                                className="p-1"
+                                title="Cancelar"
+                              >
+                                <CIcon icon={cilX} />
+                              </CButton>
+                            </td>
+                          </>
+                        ) : (
+                          <>
+                            <td className="fw-semibold">{mod.name}</td>
+                            <td className="text-muted small">{mod.code || '-'}</td>
+                            <td><CBadge color="info" shape="rounded-pill">{mod.hours_total}h</CBadge></td>
+                            <td className="text-end pe-3">
+                              <CButton 
+                                color="primary" 
+                                variant="ghost" 
+                                size="sm" 
+                                onClick={() => handleStartEditModule(index)}
+                                className="p-1 me-1"
+                                title="Editar módulo"
+                              >
+                                <CIcon icon={cilPencil} />
+                              </CButton>
+                              <CButton 
+                                color="danger" 
+                                variant="ghost" 
+                                size="sm" 
+                                onClick={() => handleRemoveModule(index)}
+                                className="p-1"
+                                title="Remover módulo"
+                              >
+                                <CIcon icon={cilX} />
+                              </CButton>
+                            </td>
+                          </>
+                        )}
                       </tr>
                     ))}
                   </tbody>

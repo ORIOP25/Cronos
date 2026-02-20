@@ -33,3 +33,6 @@ EXPOSE 8000
 
 # 10. Usar entrypoint script (garante Alembic + seed antes de FastAPI)
 ENTRYPOINT ["/app/entrypoint.sh"]
+
+# 11. Comando por defeito: Uvicorn (o worker sobreescreve via docker-compose command)
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

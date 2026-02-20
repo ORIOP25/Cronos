@@ -7,34 +7,24 @@ import {
 import CIcon from '@coreui/icons-react'
 import {
   cilArrowLeft, cilPencil, cilSave, cilX, cilTrash,
-  cilBookmark, cilBook, cilPeople, cilChevronRight,
+  cilBookmark, cilPeople, cilChevronRight, cilPlus,
 } from '@coreui/icons'
+import GenericModalForm from '../components/GenericModalForm'
+import ClassInCourseForm from '../components/Forms/ClassInCourseForm'
 
 import {
   useCourseDetails,
   useUpdateCourse,
   useDeleteCourse,
-  useSubjects,
+  useCreateCourseClass,
+  useUpdateCourseClass,
+  useDeleteCourseClass,
 } from '../hooks/useSchoolData'
-
-// ==========================================
-//  HELPER: Badge de tipo de sala
-// ==========================================
-const RoomBadge = ({ type }) => {
-  const config = {
-    gym: { color: 'warning', label: 'Ginásio' },
-    lab: { color: 'info', label: 'Laboratório' },
-    art: { color: 'danger', label: 'Artes' },
-    normal: { color: 'light', label: 'Normal', textClass: 'text-dark' },
-  }
-  const c = config[type] || config.normal
-  return <CBadge color={c.color} shape="rounded-pill" className={c.textClass || ''}>{c.label}</CBadge>
-}
 
 // ==========================================
 //  HELPER: Card de turma (grade_level agrupado)
 // ==========================================
-const ClassCard = ({ cls, courseId, onNavigate }) => {
+const ClassCard = ({ cls, onNavigate, onEdit, onDelete }) => {
   const yearLabel = `${cls.start_year}/${cls.end_year}`
   const gradeLabels = { 10: '10.º ano', 11: '11.º ano', 12: '12.º ano' }
 
@@ -44,7 +34,7 @@ const ClassCard = ({ cls, courseId, onNavigate }) => {
       style={{ cursor: 'pointer', transition: 'box-shadow 0.2s, transform 0.15s' }}
       onClick={() => onNavigate(cls)}
       onMouseEnter={(e) => {
-        e.currentTarget.style.boxShadow = '0 4px 15px rgba(0,0,0,0.15)'
+      e.currentTarget.style.boxShadow = '0 4px 15px var(--rs-card-shadow-hover)'
         e.currentTarget.style.transform = 'translateY(-2px)'
       }}
       onMouseLeave={(e) => {
@@ -63,7 +53,31 @@ const ClassCard = ({ cls, courseId, onNavigate }) => {
         <div className="d-flex align-items-center gap-2 mt-auto text-muted" style={{ fontSize: '0.85rem' }}>
           <CIcon icon={cilPeople} size="sm" />
           <span>{cls.size} alunos</span>
-          <CIcon icon={cilChevronRight} size="sm" className="ms-auto" />
+          <div className="ms-auto d-flex align-items-center gap-1">
+            <CButton
+              size="sm"
+              color="light"
+              className="d-flex align-items-center gap-1 text-primary"
+              onClick={(e) => {
+                e.stopPropagation()
+                onEdit(cls)
+              }}
+            >
+              <CIcon icon={cilPencil} size="sm" />
+            </CButton>
+            <CButton
+              size="sm"
+              color="danger"
+              variant="ghost"
+              onClick={(e) => {
+                e.stopPropagation()
+                onDelete(cls)
+              }}
+            >
+              <CIcon icon={cilTrash} size="sm" />
+            </CButton>
+            <CIcon icon={cilChevronRight} size="sm" />
+          </div>
         </div>
       </CCardBody>
     </CCard>
@@ -80,17 +94,17 @@ const CourseDetails = () => {
 
   // --- DATA ---
   const { data: course, isLoading, error } = useCourseDetails(courseId)
-  const { data: allSubjects } = useSubjects()
   const updateCourse = useUpdateCourse()
   const deleteCourse = useDeleteCourse()
+  const createCourseClass = useCreateCourseClass()
+  const updateCourseClass = useUpdateCourseClass()
+  const deleteCourseClass = useDeleteCourseClass()
 
   // --- STATE: Edição do header ---
   const [editingHeader, setEditingHeader] = useState(false)
   const [headerForm, setHeaderForm] = useState({ name: '', abbreviation: '' })
-
-  // --- STATE: Edição de disciplinas ---
-  const [editingSubjects, setEditingSubjects] = useState(false)
-  const [selectedSubjectIds, setSelectedSubjectIds] = useState([])
+  const [classModalVisible, setClassModalVisible] = useState(false)
+  const [selectedClass, setSelectedClass] = useState(null)
 
   // --- MEMOIZED: Turmas agrupadas por grade_level ---
   const classGroups = useMemo(() => {
@@ -112,13 +126,6 @@ const CourseDetails = () => {
     () => Object.keys(classGroups).map(Number).sort((a, b) => a - b),
     [classGroups]
   )
-
-  // --- MEMOIZED: Disciplinas disponíveis (não associadas ao curso) ---
-  const availableSubjects = useMemo(() => {
-    if (!allSubjects || !course) return []
-    const courseSubjectIds = new Set((course.subjects || []).map(s => s.id))
-    return allSubjects.filter(s => !courseSubjectIds.has(s.id))
-  }, [allSubjects, course])
 
   // ==========================================
   //  HANDLERS
@@ -143,28 +150,6 @@ const CourseDetails = () => {
     )
   }
 
-  const startEditSubjects = useCallback(() => {
-    setSelectedSubjectIds((course.subjects || []).map(s => s.id))
-    setEditingSubjects(true)
-  }, [course])
-
-  const cancelEditSubjects = () => setEditingSubjects(false)
-
-  const toggleSubject = (subjectId) => {
-    setSelectedSubjectIds(prev =>
-      prev.includes(subjectId)
-        ? prev.filter(id => id !== subjectId)
-        : [...prev, subjectId]
-    )
-  }
-
-  const saveSubjects = () => {
-    updateCourse.mutate(
-      { courseId, data: { subject_ids: selectedSubjectIds } },
-      { onSuccess: () => setEditingSubjects(false) }
-    )
-  }
-
   const handleDeleteCourse = () => {
     if (window.confirm('Apagar este curso? Esta ação é irreversível e pode falhar se houver turmas.')) {
       deleteCourse.mutate(courseId, {
@@ -175,6 +160,50 @@ const CourseDetails = () => {
 
   const handleClassClick = (cls) => {
     navigate(`/courses/${courseId}/classes/${cls.id}`)
+  }
+
+  const handleOpenCreateClass = () => {
+    setSelectedClass(null)
+    setClassModalVisible(true)
+  }
+
+  const handleOpenEditClass = (cls) => {
+    setSelectedClass(cls)
+    setClassModalVisible(true)
+  }
+
+  const handleSubmitClass = (formData) => {
+    if (selectedClass) {
+      updateCourseClass.mutate(
+        { courseId, classId: selectedClass.id, data: formData },
+        {
+          onSuccess: () => {
+            setClassModalVisible(false)
+            setSelectedClass(null)
+          }
+        }
+      )
+      return
+    }
+
+    createCourseClass.mutate(
+      { courseId, data: formData },
+      {
+        onSuccess: () => {
+          setClassModalVisible(false)
+        }
+      }
+    )
+  }
+
+  const handleDeleteClass = (cls) => {
+    const confirmation = window.confirm(
+      `Apagar a turma ${cls.name}? Esta ação elimina aulas, agendamentos e substituições associados.`
+    )
+
+    if (!confirmation) return
+
+    deleteCourseClass.mutate({ courseId, classId: cls.id })
   }
 
   // ==========================================
@@ -228,6 +257,23 @@ const CourseDetails = () => {
         <CAlert color="danger" dismissible onClose={() => deleteCourse.reset()}>
           <strong>Erro ao apagar:</strong>{' '}
           {deleteCourse.error?.response?.data?.detail || 'Não é possível apagar este curso.'}
+        </CAlert>
+      )}
+      {(createCourseClass.isError || updateCourseClass.isError || deleteCourseClass.isError) && (
+        <CAlert
+          color="danger"
+          dismissible
+          onClose={() => {
+            createCourseClass.reset()
+            updateCourseClass.reset()
+            deleteCourseClass.reset()
+          }}
+        >
+          <strong>Erro ao gerir turma:</strong>{' '}
+          {createCourseClass.error?.response?.data?.detail
+            || updateCourseClass.error?.response?.data?.detail
+            || deleteCourseClass.error?.response?.data?.detail
+            || 'Ocorreu um erro inesperado.'}
         </CAlert>
       )}
 
@@ -287,12 +333,12 @@ const CourseDetails = () => {
                 </small>
               </div>
               <div className="d-flex gap-2">
-                <CButton color="light" size="sm" onClick={startEditHeader} title="Editar nome e sigla">
-                  <CIcon icon={cilPencil} className="me-1" />
+                <CButton color="light" size="sm" className="d-flex align-items-center gap-1 text-primary" onClick={startEditHeader} title="Editar nome e sigla">
+                  <CIcon icon={cilPencil} size="sm" />
                   Editar
                 </CButton>
-                <CButton color="danger" variant="ghost" size="sm" onClick={handleDeleteCourse} title="Apagar curso">
-                  <CIcon icon={cilTrash} />
+                <CButton color="danger" variant="ghost" size="sm" className="d-flex align-items-center" onClick={handleDeleteCourse} title="Apagar curso">
+                  <CIcon icon={cilTrash} size="sm" />
                 </CButton>
               </div>
             </div>
@@ -301,124 +347,31 @@ const CourseDetails = () => {
       </CCard>
 
       <CRow className="g-4">
-        {/* ==== DISCIPLINAS ==== */}
-        <CCol lg={5}>
-          <CCard className="border-0 shadow-sm h-100">
-            <CCardHeader className="bg-transparent d-flex justify-content-between align-items-center">
-              <div className="d-flex align-items-center gap-2">
-                <CIcon icon={cilBook} className="text-info" />
-                <strong>Disciplinas</strong>
-                <CBadge color="info" shape="rounded-pill">{course.subjects?.length || 0}</CBadge>
-              </div>
-              {!editingSubjects ? (
-                <CButton color="light" size="sm" onClick={startEditSubjects}>
-                  <CIcon icon={cilPencil} size="sm" className="me-1" />
-                  Gerir
-                </CButton>
-              ) : (
-                <div className="d-flex gap-1">
-                  <CButton color="primary" size="sm" onClick={saveSubjects} disabled={updateCourse.isPending}>
-                    {updateCourse.isPending ? <CSpinner size="sm" /> : <CIcon icon={cilSave} size="sm" className="me-1" />}
-                    Guardar
-                  </CButton>
-                  <CButton color="light" size="sm" onClick={cancelEditSubjects}>
-                    <CIcon icon={cilX} size="sm" />
-                  </CButton>
-                </div>
-              )}
-            </CCardHeader>
-            <CCardBody style={{ maxHeight: '500px', overflowY: 'auto' }}>
-              {editingSubjects ? (
-                /* --- MODO EDIÇÃO: Checkboxes --- */
-                <div>
-                  {/* Disciplinas já associadas */}
-                  {(allSubjects || [])
-                    .filter(s => selectedSubjectIds.includes(s.id))
-                    .sort((a, b) => a.name.localeCompare(b.name))
-                    .map(s => (
-                      <div
-                        key={s.id}
-                        className="d-flex align-items-center justify-content-between p-2 mb-1 rounded"
-                        style={{ backgroundColor: '#e8f5e9', cursor: 'pointer' }}
-                        onClick={() => toggleSubject(s.id)}
-                      >
-                        <div className="d-flex align-items-center gap-2">
-                          <input type="checkbox" checked readOnly style={{ pointerEvents: 'none' }} />
-                          <span className="fw-medium">{s.name}</span>
-                        </div>
-                        <RoomBadge type={s.required_room_type} />
-                      </div>
-                    ))}
-
-                  {/* Separador */}
-                  {availableSubjects.length > 0 && selectedSubjectIds.length > 0 && (
-                    <hr className="my-2" />
-                  )}
-
-                  {/* Disciplinas disponíveis */}
-                  {availableSubjects
-                    .filter(s => !selectedSubjectIds.includes(s.id))
-                    .sort((a, b) => a.name.localeCompare(b.name))
-                    .map(s => (
-                      <div
-                        key={s.id}
-                        className="d-flex align-items-center justify-content-between p-2 mb-1 rounded"
-                        style={{ cursor: 'pointer', opacity: 0.7 }}
-                        onClick={() => toggleSubject(s.id)}
-                      >
-                        <div className="d-flex align-items-center gap-2">
-                          <input type="checkbox" checked={false} readOnly style={{ pointerEvents: 'none' }} />
-                          <span>{s.name}</span>
-                        </div>
-                        <RoomBadge type={s.required_room_type} />
-                      </div>
-                    ))}
-
-                  {(allSubjects || []).length === 0 && (
-                    <p className="text-muted text-center mb-0">
-                      Nenhuma disciplina registada. Crie disciplinas primeiro.
-                    </p>
-                  )}
-                </div>
-              ) : (
-                /* --- MODO VISUALIZAÇÃO: Lista simples --- */
-                <div>
-                  {(course.subjects || []).length === 0 ? (
-                    <p className="text-muted text-center mb-0">
-                      Nenhuma disciplina associada.
-                    </p>
-                  ) : (
-                    course.subjects
-                      .sort((a, b) => a.name.localeCompare(b.name))
-                      .map(s => (
-                        <div
-                          key={s.id}
-                          className="d-flex align-items-center justify-content-between p-2 mb-1 border-bottom"
-                        >
-                          <span>{s.name}</span>
-                          <RoomBadge type={s.required_room_type} />
-                        </div>
-                      ))
-                  )}
-                </div>
-              )}
-            </CCardBody>
-          </CCard>
-        </CCol>
-
         {/* ==== TURMAS ==== */}
-        <CCol lg={7}>
+        <CCol lg={12}>
           <CCard className="border-0 shadow-sm h-100">
             <CCardHeader className="bg-transparent d-flex align-items-center gap-2">
               <CIcon icon={cilPeople} className="text-success" />
               <strong>Turmas</strong>
               <CBadge color="success" shape="rounded-pill">{course.classes?.length || 0}</CBadge>
+              <CButton
+                color="primary"
+                size="sm"
+                className="ms-auto d-flex align-items-center gap-1"
+                onClick={handleOpenCreateClass}
+              >
+                <CIcon icon={cilPlus} size="sm" />
+                Nova Turma
+              </CButton>
             </CCardHeader>
             <CCardBody>
               {(course.classes || []).length === 0 ? (
-                <p className="text-muted text-center mb-0">
-                  Nenhuma turma criada. As turmas são geradas automaticamente na criação do curso.
-                </p>
+                <div className="text-muted text-center mb-0">
+                  <p className="mb-3">Nenhuma turma criada para este curso.</p>
+                  <CButton color="primary" variant="outline" onClick={handleOpenCreateClass}>
+                    <CIcon icon={cilPlus} className="me-1" /> Criar primeira turma
+                  </CButton>
+                </div>
               ) : (
                 sortedGrades.map(grade => (
                   <div key={grade} className="mb-4">
@@ -430,8 +383,9 @@ const CourseDetails = () => {
                         <CCol sm={6} md={4} key={cls.id}>
                           <ClassCard
                             cls={cls}
-                            courseId={courseId}
                             onNavigate={handleClassClick}
+                            onEdit={handleOpenEditClass}
+                            onDelete={handleDeleteClass}
                           />
                         </CCol>
                       ))}
@@ -443,6 +397,22 @@ const CourseDetails = () => {
           </CCard>
         </CCol>
       </CRow>
+
+      <GenericModalForm
+        visible={classModalVisible}
+        onClose={() => {
+          setClassModalVisible(false)
+          setSelectedClass(null)
+          createCourseClass.reset()
+          updateCourseClass.reset()
+        }}
+        title="Turma"
+        FormComponent={ClassInCourseForm}
+        initialData={selectedClass}
+        onSubmit={handleSubmitClass}
+        isLoading={createCourseClass.isPending || updateCourseClass.isPending}
+        error={createCourseClass.error || updateCourseClass.error}
+      />
     </div>
   )
 }

@@ -47,7 +47,10 @@ async def create_class(
     db: AsyncSession = Depends(deps.get_db),
     current_user: models.User = Depends(deps.get_current_active_admin)
 ):
-    return await class_service.create_class(db, item, current_user.organization_id)
+    result = await class_service.create_class(db, item, current_user.organization_id)
+    if result == "COURSE_NOT_FOUND":
+        raise HTTPException(status_code=404, detail="Curso não encontrado")
+    return result
 
 @router.patch("/{class_id}", response_model=schemas.ClassRead)
 async def update_class(
@@ -57,6 +60,8 @@ async def update_class(
     current_user: models.User = Depends(deps.get_current_active_admin)
 ):
     updated = await class_service.update_class(db, class_id, item, current_user.organization_id)
+    if updated == "INVALID_YEAR_RANGE":
+        raise HTTPException(status_code=400, detail="Ano de fim deve ser maior que o ano de início")
     if not updated:
         raise HTTPException(status_code=404, detail="Turma não encontrada")
     return updated
@@ -71,13 +76,7 @@ async def delete_class(
     
     if status == "NOT_FOUND":
         raise HTTPException(status_code=404, detail="Turma não encontrada")
-    
-    if status == "DEPENDENCY_ERROR":
-        raise HTTPException(
-            status_code=400, 
-            detail="Não é possível apagar esta turma pois existem aulas associadas a ela."
-        )
-    
+
     return {"message": "Turma removida com sucesso"}
 
 @router.get("/{class_id}/curriculum", response_model=List[schemas.SubjectRead])
@@ -135,6 +134,9 @@ async def update_class_progress(
     if status == "NOT_FOUND":
         raise HTTPException(status_code=404, detail="Turma não encontrada")
     
+    if status == "NO_SUBJECTS":
+        raise HTTPException(status_code=400, detail="Turma sem disciplinas atribuídas — adicione disciplinas primeiro")
+    
     if status == "NO_COURSE":
         raise HTTPException(status_code=400, detail="Turma sem curso associado — não é possível registar progresso")
     
@@ -142,7 +144,7 @@ async def update_class_progress(
         module_id = status.split(":")[1]
         raise HTTPException(
             status_code=400, 
-            detail=f"Módulo {module_id} não pertence ao curso desta turma"
+            detail=f"Módulo {module_id} não pertence às disciplinas desta turma"
         )
     
     # Retornar dados atualizados para refresh na UI
@@ -226,7 +228,7 @@ async def update_class_subject_teacher(
     Enviar teacher_id=null para remover a atribuição.
     """
     result = await class_service.update_class_subject_teacher(
-        db, class_id, subject_id, payload.teacher_id, current_user.organization_id
+        db, class_id, subject_id, payload, current_user.organization_id
     )
     
     if result == "CLASS_NOT_FOUND":

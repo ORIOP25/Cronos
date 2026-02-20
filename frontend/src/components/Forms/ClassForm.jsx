@@ -74,7 +74,7 @@ const ClassForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
             name="course_id"
             value={formData.course_id}
             onChange={handleChange}
-            text="Associe esta turma a um curso profissional para desbloquear a Distribuição de Serviço."
+            text="Associe esta turma a um curso profissional para gerir disciplinas e professores na página da turma."
           >
             <option value="">-- Sem Curso --</option>
             {/* Lista dinâmica de cursos */}

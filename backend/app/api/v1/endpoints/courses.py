@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import schemas, models
 from app.api import deps
-from app.services import course_service
+from app.services import course_service, class_service
 
 router = APIRouter()
 
@@ -33,7 +33,14 @@ async def create_course(
     """
     Cria um novo curso e gera automaticamente a sua estrutura (turmas, matriz).
     """
-    return await course_service.create_course(db, item, current_user.organization_id)
+    result = await course_service.create_course(db, item, current_user.organization_id)
+    
+    if result == "ABBREVIATION_EXISTS":
+        raise HTTPException(status_code=400, detail=f"A sigla '{item.abbreviation}' já existe nesta organização.")
+    if result == "INVALID_SUBJECTS":
+        raise HTTPException(status_code=400, detail="Tentativa de associar disciplinas inválidas ou de outra escola.")
+    
+    return result
 
 # --- 3. Obter Detalhes do Curso (Dashboard) ---
 # NOVO ENDPOINT FUNDAMENTAL
@@ -51,6 +58,64 @@ async def read_course_detail(
     if not course:
         raise HTTPException(status_code=404, detail="Curso não encontrado")
     return course
+
+
+@router.get("/{course_id}/classes", response_model=List[schemas.ClassRead])
+async def read_course_classes(
+    course_id: int,
+    db: AsyncSession = Depends(deps.get_db),
+    current_user: models.User = Depends(deps.get_current_active_user),
+) -> Any:
+    course = await course_service.get_course_details(db, course_id, current_user.organization_id)
+    if not course:
+        raise HTTPException(status_code=404, detail="Curso não encontrado")
+    return await class_service.get_classes_by_course(db, course_id, current_user.organization_id)
+
+
+@router.post("/{course_id}/classes", response_model=schemas.ClassRead)
+async def create_course_class(
+    course_id: int,
+    item: schemas.ClassCreateInCourse,
+    db: AsyncSession = Depends(deps.get_db),
+    current_user: models.User = Depends(deps.get_current_active_admin),
+) -> Any:
+    result = await class_service.create_class_in_course(db, course_id, item, current_user.organization_id)
+    if result == "COURSE_NOT_FOUND":
+        raise HTTPException(status_code=404, detail="Curso não encontrado")
+    return result
+
+
+@router.patch("/{course_id}/classes/{class_id}", response_model=schemas.ClassRead)
+async def update_course_class(
+    course_id: int,
+    class_id: int,
+    item: schemas.ClassUpdateInCourse,
+    db: AsyncSession = Depends(deps.get_db),
+    current_user: models.User = Depends(deps.get_current_active_admin),
+) -> Any:
+    result = await class_service.update_class_in_course(
+        db, course_id, class_id, item, current_user.organization_id
+    )
+    if result == "NOT_FOUND":
+        raise HTTPException(status_code=404, detail="Turma não encontrada neste curso")
+    if result == "INVALID_YEAR_RANGE":
+        raise HTTPException(status_code=400, detail="Ano de fim deve ser maior que o ano de início")
+    return result
+
+
+@router.delete("/{course_id}/classes/{class_id}")
+async def delete_course_class(
+    course_id: int,
+    class_id: int,
+    db: AsyncSession = Depends(deps.get_db),
+    current_user: models.User = Depends(deps.get_current_active_admin),
+) -> Any:
+    status = await class_service.delete_class_in_course(
+        db, course_id, class_id, current_user.organization_id
+    )
+    if status == "NOT_FOUND":
+        raise HTTPException(status_code=404, detail="Turma não encontrada neste curso")
+    return {"message": "Turma removida com sucesso"}
 
 # --- 4. Atualizar Curso (PATCH - Atualização Parcial) ---
 @router.patch("/{course_id}", response_model=schemas.CourseDetailRead)

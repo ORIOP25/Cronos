@@ -28,50 +28,56 @@ const DefaultLayout = () => {
   };
 
   return (
-    <div style={{ display: 'flex', minHeight: '100vh', fontFamily: 'Arial, sans-serif' }}>
+    <div style={{ display: 'flex', minHeight: '100vh', fontFamily: "'Inter', 'Segoe UI', sans-serif" }}>
       {/* --- SIDEBAR --- */}
-      <aside style={{ width: '250px', backgroundColor: '#1e293b', color: 'white', padding: '20px', display: 'flex', flexDirection: 'column' }}>
-        <h2 style={{ marginBottom: '30px', color: '#60a5fa', fontSize: '1.5rem' }}>Horário-Zen 🧘</h2>
+      <aside style={{
+        width: '260px',
+        background: 'linear-gradient(180deg, var(--rs-sidebar-start) 0%, var(--rs-sidebar-end) 100%)',
+        color: 'var(--rs-sidebar-text)',
+        padding: '24px 16px',
+        display: 'flex',
+        flexDirection: 'column',
+        position: 'sticky',
+        top: 0,
+        height: '100vh',
+        overflowY: 'auto',
+        flexShrink: 0,
+      }}>
+        <h2 style={{ marginBottom: '32px', color: 'var(--rs-sidebar-brand)', fontSize: '1.4rem', fontWeight: '700', letterSpacing: '-0.5px' }}>
+          Horário Zen
+        </h2>
         
-        <nav style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+        <nav style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
           
           {/* Menu para DIRETORES */}
           {user?.role === 'admin' && (
             <>
-              <Link to="/dashboard" style={linkStyle}>📊 Dashboard</Link>
-              <Link to="/schedules" style={linkStyle}>📅 Horários</Link>
-              <div className="my-2 border-top border-secondary"></div> {/* Separador */}
+              <Link to="/dashboard" style={linkStyle}>Dashboard</Link>
+              <Link to="/schedules" style={linkStyle}>Horários</Link>
               
-              {/* Secção de Pedagogia */}
-              <div style={{ fontSize: '0.75rem', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.5px', marginTop: '15px', marginBottom: '10px', fontWeight: 'bold' }}>
-                📚 PEDAGOGIA
-              </div>
-              <Link to="/courses" style={linkStyle}>🎓 Cursos</Link>
-              <Link to="/teachers" style={linkStyle}>👨‍🏫 Professores</Link>
-              <Link to="/subjects" style={linkStyle}>📖 Disciplinas</Link>
+              {/* Separador de Secção */}
+              <div style={sectionLabelStyle}>Pedagogia</div>
+              <Link to="/courses" style={linkStyle}>Cursos</Link>
+              <Link to="/teachers" style={linkStyle}>Professores</Link>
+              <Link to="/subjects" style={linkStyle}>Disciplinas</Link>
               
-              <div className="my-2 border-top border-secondary"></div> {/* Separador */}
-              
-              {/* Secção de Recursos */}
-              <div style={{ fontSize: '0.75rem', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.5px', marginTop: '15px', marginBottom: '10px', fontWeight: 'bold' }}>
-                🏫 RECURSOS
-              </div>
-              <Link to="/rooms" style={linkStyle}>🏫 Salas</Link>
-              <Link to="/config" style={linkStyle}>⚙️ Configuração</Link>
+              <div style={sectionLabelStyle}>Recursos</div>
+              <Link to="/rooms" style={linkStyle}>Salas</Link>
+              <Link to="/config" style={linkStyle}>Configuração</Link>
             </>
           )}
 
-          {/* Menu para TODOS (Professores e Diretores têm preferências) */}
-          <Link to="/my-availability" style={linkStyle}>📅 Minhas Preferências</Link>
+          {/* Menu para TODOS */}
+          <Link to="/my-availability" style={linkStyle}>Minhas Preferências</Link>
         </nav>
 
         {/* Rodapé da Sidebar */}
-        <div style={{ marginTop: 'auto', paddingTop: '20px', borderTop: '1px solid #334155' }}>
-          <div style={{ marginBottom: '15px' }}>
-            <p style={{ fontSize: '0.9rem', color: '#fff', fontWeight: 'bold', margin: 0 }}>
+        <div style={{ marginTop: 'auto', paddingTop: '20px', borderTop: '1px solid var(--rs-sidebar-divider)' }}>
+          <div style={{ marginBottom: '16px' }}>
+            <p style={{ fontSize: '0.85rem', color: 'var(--rs-sidebar-text)', fontWeight: '600', margin: 0 }}>
               {user ? user.email : 'Convidado'}
             </p>
-            <span style={{ fontSize: '0.75rem', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+            <span style={{ fontSize: '0.7rem', color: 'var(--rs-sidebar-section)', textTransform: 'uppercase', letterSpacing: '1px' }}>
               {getRoleLabel()}
             </span>
           </div>
@@ -80,32 +86,47 @@ const DefaultLayout = () => {
       </aside>
 
       {/* --- MAIN CONTENT --- */}
-      <main style={{ flex: 1, backgroundColor: '#f1f5f9', padding: '30px', overflowY: 'auto' }}>
+      <main style={{ flex: 1, backgroundColor: 'var(--rs-body-bg)', padding: '32px', overflowY: 'auto' }}>
         <Outlet />
       </main>
     </div>
   );
 };
 
-// Estilos (Mantidos simples como tinhas)
+// Estilos — Retro Sunset
 const linkStyle = {
-  color: '#e2e8f0',
+  color: 'var(--rs-sidebar-link)',
   textDecoration: 'none',
-  padding: '10px',
-  borderRadius: '5px',
+  padding: '10px 14px',
+  borderRadius: '8px',
   display: 'block',
-  transition: 'background 0.2s',
+  fontSize: '0.9rem',
+  fontWeight: '500',
+  transition: 'all 0.2s ease',
+};
+
+const sectionLabelStyle = {
+  fontSize: '0.65rem',
+  color: 'var(--rs-sidebar-section)',
+  textTransform: 'uppercase',
+  letterSpacing: '1.5px',
+  marginTop: '20px',
+  marginBottom: '8px',
+  fontWeight: '700',
+  paddingLeft: '14px',
 };
 
 const logoutButtonStyle = {
   width: '100%',
   padding: '10px',
-  backgroundColor: '#ef4444',
-  color: 'white',
-  border: 'none',
-  borderRadius: '5px',
+  backgroundColor: 'transparent',
+  color: 'var(--rs-sidebar-logout)',
+  border: '1px solid var(--rs-sidebar-logout-border)',
+  borderRadius: '8px',
   cursor: 'pointer',
-  fontWeight: 'bold',
+  fontWeight: '600',
+  fontSize: '0.85rem',
+  transition: 'all 0.2s ease',
 };
 
 export default DefaultLayout;

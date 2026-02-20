@@ -3,7 +3,7 @@ import {
   CCard, CCardBody, CCol, CRow, CButton, CAlert, CBadge 
 } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
-import { cilClock, cilPlus } from '@coreui/icons'
+import { cilClock, cilPlus, cilSync } from '@coreui/icons'
 
 import SmartTable from '../components/SmartTable'
 import GenericModalForm from '../components/GenericModalForm'
@@ -82,7 +82,7 @@ const Timeslots = () => {
           
           {/* ALTERAÇÃO 2: O Novo Botão "Gerar Auto" */}
           <CButton color="success" variant="outline" onClick={() => setGenModalVisible(true)}>
-             ⚡ Gerar Auto
+             <CIcon icon={cilSync} size="sm" className="me-1" /> Gerar Auto
           </CButton>
 
           <CButton color="primary" onClick={handleCreate} className="d-flex align-items-center gap-2">

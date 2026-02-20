@@ -61,32 +61,37 @@ const Login = () => {
   }
 
   return (
-    <div className="bg-light min-vh-100 d-flex flex-row align-items-center">
+    <div className="min-vh-100 d-flex flex-row align-items-center" style={{ backgroundColor: 'var(--rs-body-bg)' }}>
       <CContainer>
         <CRow className="justify-content-center">
-          <CCol md={8}>
+          <CCol md={8} lg={7}>
             <CCardGroup>
-              <CCard className="p-4">
+              <CCard className="p-4" style={{ borderRadius: '12px 0 0 12px', border: '1px solid var(--rs-card-border)' }}>
                 <CCardBody>
                   <CForm onSubmit={handleSubmit}>
-                    <h1>Login</h1>
-                    <p className="text-medium-emphasis">Entre na sua conta</p>
+                    <h1 style={{ color: 'var(--rs-heading)', fontWeight: '700' }}>Bem-vindo</h1>
+                    <p style={{ color: 'var(--rs-muted)' }}>Entre na sua conta para continuar</p>
                     
                     {errorMsg && <CAlert color="danger">{errorMsg}</CAlert>}
 
                     <CInputGroup className="mb-3">
-                      <CInputGroupText><CIcon icon={cilUser} /></CInputGroupText>
+                      <CInputGroupText style={{ backgroundColor: 'var(--rs-input-group-bg)', border: '1px solid var(--rs-input-group-border)' }}>
+                        <CIcon icon={cilUser} />
+                      </CInputGroupText>
                       <CFormInput 
                         placeholder="Email" 
                         autoComplete="email" 
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
                         required
+                        style={{ border: '1px solid var(--rs-input-group-border)' }}
                       />
                     </CInputGroup>
                     
                     <CInputGroup className="mb-4">
-                      <CInputGroupText><CIcon icon={cilLockLocked} /></CInputGroupText>
+                      <CInputGroupText style={{ backgroundColor: 'var(--rs-input-group-bg)', border: '1px solid var(--rs-input-group-border)' }}>
+                        <CIcon icon={cilLockLocked} />
+                      </CInputGroupText>
                       <CFormInput 
                         type="password" 
                         placeholder="Password" 
@@ -94,6 +99,7 @@ const Login = () => {
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
                         required
+                        style={{ border: '1px solid var(--rs-input-group-border)' }}
                       />
                     </CInputGroup>
                     
@@ -108,11 +114,18 @@ const Login = () => {
                 </CCardBody>
               </CCard>
               
-              <CCard className="text-white bg-primary py-5" style={{ width: '44%' }}>
+              <CCard 
+                className="text-white py-5" 
+                style={{ 
+                  width: '44%', 
+                  background: 'linear-gradient(135deg, var(--rs-login-right-start) 0%, var(--rs-login-right-end) 100%)',
+                  borderRadius: '0 12px 12px 0',
+                  border: 'none',
+                }}>
                 <CCardBody className="text-center d-flex align-items-center justify-content-center">
                   <div>
-                    <h2>Horário Zen 🧘</h2>
-                    <p>Gestão escolar inteligente e sem stress.</p>
+                    <h2 style={{ fontWeight: '700', letterSpacing: '-0.5px' }}>Horário Zen</h2>
+                    <p style={{ color: 'var(--rs-login-tagline)', fontSize: '0.95rem' }}>Gestão escolar inteligente e sem stress.</p>
                   </div>
                 </CCardBody>
               </CCard>

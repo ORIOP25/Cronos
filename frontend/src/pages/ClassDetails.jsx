@@ -8,25 +8,26 @@ import CIcon from '@coreui/icons-react'
 import {
   cilArrowLeft, cilPencil, cilSave, cilX,
   cilPeople, cilBook, cilCheckCircle, cilClock,
-  cilBookmark, cilChevronRight,
+  cilBookmark, cilChevronRight, cilSettings,
 } from '@coreui/icons'
 
 import {
   useClassDetails,
   useUpdateEntity,
   useUpdateClassProgress,
+  useClassSubjects,
 } from '../hooks/useSchoolData'
 
 // ==========================================
 //  HELPERS
 // ==========================================
 
-/** Cor da barra de progresso conforme percentagem */
+/** Cor da barra de progresso conforme percentagem (exception: red→green gradient) */
 const getProgressColor = (pct) => {
-  if (pct >= 100) return 'success'
-  if (pct >= 60) return 'info'
-  if (pct >= 30) return 'warning'
-  return 'danger'
+  if (pct >= 100) return 'var(--rs-progress-green)'
+  if (pct >= 60)  return 'var(--rs-progress-yellow)'
+  if (pct >= 30)  return 'var(--rs-progress-orange)'
+  return 'var(--rs-progress-red)'
 }
 
 /** Badge de tipo de sala */
@@ -80,16 +81,15 @@ const ModuleRow = ({ module, isEditing, editValue, onChangeHours }) => {
             </span>
           )}
           <CBadge
-            color={getProgressColor(displayPct)}
             shape="rounded-pill"
-            style={{ minWidth: '48px', textAlign: 'center' }}
+            style={{ minWidth: '48px', textAlign: 'center', backgroundColor: getProgressColor(displayPct), color: '#fff' }}
           >
             {displayPct}%
           </CBadge>
         </div>
       </div>
       <CProgress thin className="mt-1">
-        <CProgressBar color={getProgressColor(displayPct)} value={displayPct} />
+        <CProgressBar value={displayPct} style={{ width: `${displayPct}%`, backgroundColor: getProgressColor(displayPct) }} />
       </CProgress>
     </div>
   )
@@ -115,16 +115,15 @@ const SubjectCard = ({ subject, isEditing, editMap, onChangeHours }) => {
               {subject.completed_hours}/{subject.total_hours}h
             </span>
             <CBadge
-              color={getProgressColor(pct)}
               shape="rounded-pill"
-              style={{ minWidth: '48px', textAlign: 'center' }}
+              style={{ minWidth: '48px', textAlign: 'center', backgroundColor: getProgressColor(pct), color: '#fff' }}
             >
               {pct}%
             </CBadge>
           </div>
         </div>
         <CProgress thin className="mt-2">
-          <CProgressBar color={getProgressColor(pct)} value={Math.min(pct, 100)} />
+          <CProgressBar value={Math.min(pct, 100)} style={{ width: `${Math.min(pct, 100)}%`, backgroundColor: getProgressColor(pct) }} />
         </CProgress>
       </CCardHeader>
       <CCardBody className="py-1 px-3">
@@ -160,6 +159,7 @@ const ClassDetails = () => {
 
   // --- DATA ---
   const { data: classData, isLoading, error } = useClassDetails(numClassId)
+  const { data: classSubjects } = useClassSubjects(numClassId)
   const updateClass = useUpdateEntity('classes')
   const updateProgress = useUpdateClassProgress()
 
@@ -388,16 +388,6 @@ const ClassDetails = () => {
                 </div>
               </div>
               <div className="d-flex gap-2">
-                <CButton 
-                  color="primary" 
-                  size="sm" 
-                  onClick={() => navigate(`/courses/${numCourseId}/classes/${numClassId}/subjects`)}
-                  title="Gerir disciplinas e professores"
-                >
-                  <CIcon icon={cilPeople} className="me-1" />
-                  Disciplinas e Professores
-                  <CIcon icon={cilChevronRight} size="sm" className="ms-1" />
-                </CButton>
                 <CButton color="light" size="sm" onClick={startEditHeader} title="Editar nome e capacidade">
                   <CIcon icon={cilPencil} className="me-1" />
                   Editar
@@ -415,18 +405,19 @@ const ClassDetails = () => {
             <div className="d-flex justify-content-between align-items-center mb-2">
               <strong style={{ fontSize: '0.9rem' }}>Progresso Global</strong>
               <CBadge
-                color={getProgressColor(globalStats.pct)}
                 shape="rounded-pill"
-                style={{ fontSize: '0.85rem' }}
+                style={{ fontSize: '0.85rem', backgroundColor: getProgressColor(globalStats.pct), color: '#fff' }}
               >
                 {globalStats.pct}%
               </CBadge>
             </div>
-            <CProgress className="mb-1" style={{ height: '12px' }}>
+            <CProgress
+              className="mb-1"
+              style={{ height: '12px', backgroundColor: 'var(--rs-light-border)' }}
+            >
               <CProgressBar
-                color={getProgressColor(globalStats.pct)}
                 value={Math.min(globalStats.pct, 100)}
-                animated={globalStats.pct > 0 && globalStats.pct < 100}
+                style={{ width: `${Math.min(globalStats.pct, 100)}%`, backgroundColor: getProgressColor(globalStats.pct) }}
               />
             </CProgress>
             <small className="text-muted">
@@ -435,6 +426,73 @@ const ClassDetails = () => {
           </CCardBody>
         </CCard>
       )}
+
+      {/* ==== RESUMO DISCIPLINAS & PROFESSORES (inline) ==== */}
+      <CCard className="mb-4 border-0 shadow-sm">
+        <CCardHeader className="bg-transparent d-flex justify-content-between align-items-center">
+          <div className="d-flex align-items-center gap-2">
+            <CIcon icon={cilSettings} className="text-primary" />
+            <strong>Disciplinas &amp; Professores</strong>
+            <CBadge color="primary" shape="rounded-pill">
+              {classSubjects?.subjects?.length || 0}
+            </CBadge>
+            {(classSubjects?.subjects || []).filter(s => !s.teacher_id).length > 0 && (
+              <CBadge color="warning" shape="rounded-pill">
+                {classSubjects.subjects.filter(s => !s.teacher_id).length} sem professor
+              </CBadge>
+            )}
+          </div>
+          <CButton
+            color="primary"
+            variant="outline"
+            size="sm"
+            onClick={() => navigate(`/courses/${numCourseId}/classes/${numClassId}/subjects`)}
+          >
+            Gerir
+            <CIcon icon={cilChevronRight} size="sm" className="ms-1" />
+          </CButton>
+        </CCardHeader>
+        <CCardBody className="py-2">
+          {(classSubjects?.subjects || []).length === 0 ? (
+            <p className="text-muted text-center mb-0 py-2">
+              Nenhuma disciplina atribuída. Clique em "Gerir" para adicionar disciplinas e atribuir professores.
+            </p>
+          ) : (
+            <div className="table-responsive">
+              <table className="table table-sm table-hover mb-0 align-middle" style={{ fontSize: '0.9rem' }}>
+                <thead>
+                  <tr className="text-muted">
+                    <th style={{ fontWeight: 600 }}>Disciplina</th>
+                    <th style={{ fontWeight: 600 }}>Professor</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {classSubjects.subjects.map(s => (
+                    <tr key={s.id}>
+                      <td>
+                        <div className="d-flex align-items-center gap-2">
+                          <CIcon icon={cilBook} className="text-info" size="sm" />
+                          <span className="fw-medium">{s.subject_name}</span>
+                        </div>
+                      </td>
+                      <td>
+                        {s.teacher_name ? (
+                          <span className="text-success">
+                            <CIcon icon={cilCheckCircle} size="sm" className="me-1" />
+                            {s.teacher_name}
+                          </span>
+                        ) : (
+                          <span className="text-warning fst-italic">Sem professor</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </CCardBody>
+      </CCard>
 
       {/* ==== SECÇÃO DE DISCIPLINAS + MÓDULOS ==== */}
       <CCard className="border-0 shadow-sm">

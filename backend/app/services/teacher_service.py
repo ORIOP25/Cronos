@@ -70,39 +70,43 @@ async def create_teacher(db: AsyncSession, teacher_in: schemas.TeacherCreate, or
         
         db_teacher.subjects = list(subjects_objects)
 
-    # 4. Adicionar à Sessão e Obter ID
-    db.add(db_teacher)
-    await db.flush() # Flush garante que db_teacher.id é gerado agora
-    await db.refresh(db_teacher)
+    try:
+        # 4. Adicionar à Sessão e Obter ID
+        db.add(db_teacher)
+        await db.flush() # Flush garante que db_teacher.id é gerado agora
+        await db.refresh(db_teacher)
 
-    # 5. Lógica de User (ALTERADA - Criar SEMPRE que tiver email)
-    if teacher_in.email:
-        from app.services import user_service
-        from app.models import UserRole
-        
-        # Determinar o estado da conta (Ativo/Inativo) conforme o switch
-        is_active_status = teacher_in.create_user_account
-        
-        user_create_data = schemas.UserCreate(
-            email=teacher_in.email,
-            password="1234" 
-        )
-        
-        # Criar o utilizador (por defeito, create_user cria com is_active=True)
-        new_user = await user_service.create_user(
-            db, 
-            user_create_data, 
-            org_id=org_id, 
-            role=UserRole.teacher,
-            teacher_id=db_teacher.id 
-        )
-        
-        # Forçar o estado correto (Ativo ou Inativo conforme o switch)
-        new_user.is_active = is_active_status
-        db.add(new_user)
+        # 5. Lógica de User (Criar SEMPRE que tiver email)
+        if teacher_in.email:
+            from app.services import user_service
+            from app.models import UserRole
+            
+            # Determinar o estado da conta (Ativo/Inativo) conforme o switch
+            is_active_status = teacher_in.create_user_account
+            
+            user_create_data = schemas.UserCreate(
+                email=teacher_in.email,
+                password="1234" 
+            )
+            
+            # Criar o utilizador (por defeito, create_user cria com is_active=True)
+            new_user = await user_service.create_user(
+                db, 
+                user_create_data, 
+                org_id=org_id, 
+                role=UserRole.teacher,
+                teacher_id=db_teacher.id 
+            )
+            
+            # Forçar o estado correto (Ativo ou Inativo conforme o switch)
+            new_user.is_active = is_active_status
+            db.add(new_user)
 
-    # 6. Gravar tudo na BD
-    await db.commit()
+        # 6. Gravar tudo na BD
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise
 
     # 7. Retornar o Professor com dados atualizados (Single Source of Truth)
     return await get_teacher_details(db, db_teacher.id, org_id)
