@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import List
+from typing import List, Annotated
 from app import schemas
 from app.api import deps
 from app.services import room_service
@@ -10,8 +10,8 @@ router = APIRouter()
 
 @router.get("/", response_model=List[schemas.RoomRead])
 async def read_rooms(
-    current_user: models.User = Depends(deps.get_current_user),
-    db: AsyncSession = Depends(deps.get_db)
+    current_user: Annotated[models.User, Depends(deps.get_current_user)],
+    db: Annotated[AsyncSession, Depends(deps.get_db)]
 ):
     return await room_service.get_rooms_by_org(
         db,
@@ -21,9 +21,9 @@ async def read_rooms(
 @router.post("/", response_model=schemas.RoomRead)
 async def create_room(
     room: schemas.RoomCreate,
-    db: AsyncSession = Depends(deps.get_db),
+    db: Annotated[AsyncSession, Depends(deps.get_db)],
     # A Correção: Pedimos o Utilizador Logado, não o org_id direto
-    current_user: models.User = Depends(deps.get_current_user) 
+    current_user: Annotated[models.User, Depends(deps.get_current_user)] 
 ):
     """
     Cria uma nova sala.
@@ -39,8 +39,8 @@ async def create_room(
 async def update_room(
     room_id: int,
     room_in: schemas.RoomUpdate,
-    db: AsyncSession = Depends(deps.get_db),
-    current_user: models.User = Depends(deps.get_current_active_admin)
+    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    current_user: Annotated[models.User, Depends(deps.get_current_active_admin)]
 ):
     room = await room_service.update_room(db, room_id, room_in, current_user.organization_id)
     if not room:
@@ -50,8 +50,8 @@ async def update_room(
 @router.delete("/{room_id}")
 async def delete_room(
     room_id: int,
-    db: AsyncSession = Depends(deps.get_db),
-    current_user: models.User = Depends(deps.get_current_active_admin)
+    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    current_user: Annotated[models.User, Depends(deps.get_current_active_admin)]
 ):
     status = await room_service.delete_room(db, room_id, current_user.organization_id)
     

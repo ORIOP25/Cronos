@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import List, Any
+from typing import List, Any, Annotated
 from app import schemas, models
 from app.api import deps
 from app.services import class_service
@@ -9,16 +9,16 @@ router = APIRouter()
 
 @router.get("/", response_model=List[schemas.ClassRead])
 async def read_classes(
-    db: AsyncSession = Depends(deps.get_db),
-    current_user: models.User = Depends(deps.get_current_active_user)
+    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    current_user: Annotated[models.User, Depends(deps.get_current_active_user)]
 ):
     return await class_service.get_classes_by_org(db, current_user.organization_id)
 
 @router.get("/{class_id}", response_model=schemas.ClassFullDetailRead)
 async def read_class(
     class_id: int,
-    db: AsyncSession = Depends(deps.get_db),
-    current_user: models.User = Depends(deps.get_current_active_user),
+    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    current_user: Annotated[models.User, Depends(deps.get_current_active_user)],
 ) -> Any:
     """
     Retorna dashboard completo da turma: Curso + Disciplinas + Módulos + Progresso.
@@ -44,8 +44,8 @@ async def read_class(
 @router.post("/", response_model=schemas.ClassRead)
 async def create_class(
     item: schemas.ClassCreate, 
-    db: AsyncSession = Depends(deps.get_db),
-    current_user: models.User = Depends(deps.get_current_active_admin)
+    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    current_user: Annotated[models.User, Depends(deps.get_current_active_admin)]
 ):
     result = await class_service.create_class(db, item, current_user.organization_id)
     if result == "COURSE_NOT_FOUND":
@@ -56,8 +56,8 @@ async def create_class(
 async def update_class(
     class_id: int,
     item: schemas.ClassUpdate,
-    db: AsyncSession = Depends(deps.get_db),
-    current_user: models.User = Depends(deps.get_current_active_admin)
+    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    current_user: Annotated[models.User, Depends(deps.get_current_active_admin)]
 ):
     updated = await class_service.update_class(db, class_id, item, current_user.organization_id)
     if updated == "INVALID_YEAR_RANGE":
@@ -69,8 +69,8 @@ async def update_class(
 @router.delete("/{class_id}")
 async def delete_class(
     class_id: int, 
-    db: AsyncSession = Depends(deps.get_db),
-    current_user: models.User = Depends(deps.get_current_active_admin)
+    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    current_user: Annotated[models.User, Depends(deps.get_current_active_admin)]
 ):
     status = await class_service.delete_class(db, class_id, current_user.organization_id)
     
@@ -82,8 +82,8 @@ async def delete_class(
 @router.get("/{class_id}/curriculum", response_model=List[schemas.SubjectRead])
 async def get_class_curriculum(
     class_id: int,
-    db: AsyncSession = Depends(deps.get_db),
-    current_user: models.User = Depends(deps.get_current_active_user)
+    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    current_user: Annotated[models.User, Depends(deps.get_current_active_user)]
 ):
     """
     Retorna o currículo (disciplinas) da turma.
@@ -110,8 +110,8 @@ async def get_class_curriculum(
 async def update_class_progress(
     class_id: int,
     payload: schemas.ClassProgressBulkUpdate,
-    db: AsyncSession = Depends(deps.get_db),
-    current_user: models.User = Depends(deps.get_current_active_admin),
+    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    current_user: Annotated[models.User, Depends(deps.get_current_active_admin)],
 ) -> Any:
     """
     Atualiza o progresso de módulos para uma turma (upsert).
@@ -159,8 +159,8 @@ async def update_class_progress(
 @router.get("/{class_id}/subjects", response_model=schemas.ClassSubjectsListRead)
 async def get_class_subjects(
     class_id: int,
-    db: AsyncSession = Depends(deps.get_db),
-    current_user: models.User = Depends(deps.get_current_active_user),
+    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    current_user: Annotated[models.User, Depends(deps.get_current_active_user)],
 ):
     """
     Lista disciplinas associadas à turma (para o grade_level atual).
@@ -182,8 +182,8 @@ async def get_class_subjects(
 async def add_class_subject(
     class_id: int,
     payload: schemas.ClassSubjectCreate,
-    db: AsyncSession = Depends(deps.get_db),
-    current_user: models.User = Depends(deps.get_current_active_admin),
+    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    current_user: Annotated[models.User, Depends(deps.get_current_active_admin)],
 ):
     """
     Adiciona uma disciplina à turma (para o grade_level atual).
@@ -215,8 +215,8 @@ async def update_class_subject_teacher(
     class_id: int,
     subject_id: int,
     payload: schemas.ClassSubjectUpdate,
-    db: AsyncSession = Depends(deps.get_db),
-    current_user: models.User = Depends(deps.get_current_active_admin),
+    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    current_user: Annotated[models.User, Depends(deps.get_current_active_admin)],
 ):
     """
     Atribui ou altera o professor de uma disciplina da turma.
@@ -254,8 +254,8 @@ async def update_class_subject_teacher(
 async def remove_class_subject(
     class_id: int,
     subject_id: int,
-    db: AsyncSession = Depends(deps.get_db),
-    current_user: models.User = Depends(deps.get_current_active_admin),
+    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    current_user: Annotated[models.User, Depends(deps.get_current_active_admin)],
 ):
     """
     Remove uma disciplina da turma (para o grade_level atual).
@@ -277,8 +277,8 @@ async def remove_class_subject(
 @router.get("/{class_id}/available-subjects", response_model=List[schemas.SubjectRead])
 async def get_available_subjects(
     class_id: int,
-    db: AsyncSession = Depends(deps.get_db),
-    current_user: models.User = Depends(deps.get_current_active_user),
+    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    current_user: Annotated[models.User, Depends(deps.get_current_active_user)],
 ):
     """
     Lista disciplinas disponíveis para adicionar à turma.
@@ -292,8 +292,8 @@ async def get_available_subjects(
 @router.get("/subjects/{subject_id}/eligible-teachers", response_model=List[schemas.EligibleTeacherRead])
 async def get_eligible_teachers(
     subject_id: int,
-    db: AsyncSession = Depends(deps.get_db),
-    current_user: models.User = Depends(deps.get_current_active_user),
+    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    current_user: Annotated[models.User, Depends(deps.get_current_active_user)],
 ):
     """
     Lista professores elegíveis para lecionar uma disciplina.

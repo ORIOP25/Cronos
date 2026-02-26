@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import List
+from typing import List, Annotated
 from app import schemas
 from app.api import deps
 from app.services import teacher_service
@@ -14,10 +14,10 @@ router = APIRouter()
 # --- 1. Ler Professores ---
 @router.get("/", response_model=List[schemas.TeacherRead])
 async def read_teachers(
-    current_user: models.User = Depends(deps.get_current_user), 
+    current_user: Annotated[models.User, Depends(deps.get_current_user)],
+    db: Annotated[AsyncSession, Depends(deps.get_db)],
     skip: int = 0, 
-    limit: int = 100, 
-    db: AsyncSession = Depends(deps.get_db)
+    limit: int = 100,
 ):
     return await teacher_service.get_teachers_by_org(
         db, 
@@ -30,8 +30,8 @@ async def read_teachers(
 @router.post("/", response_model=schemas.TeacherRead)
 async def create_teacher(
     teacher: schemas.TeacherCreate,
-    db: AsyncSession = Depends(deps.get_db),
-    current_user: models.User = Depends(deps.get_current_user)
+    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    current_user: Annotated[models.User, Depends(deps.get_current_user)]
 ):
     return await teacher_service.create_teacher(
         db,
@@ -47,8 +47,8 @@ async def update_teacher_availability(
     request: Request,
     teacher_id: int,
     availability_data: List[schemas.AvailabilitySelfCreate], # Recebe a lista do Frontend
-    db: AsyncSession = Depends(deps.get_db),
-    current_user: models.User = Depends(deps.get_current_active_user)
+    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    current_user: Annotated[models.User, Depends(deps.get_current_active_user)]
 ):
     """
     Grava as preferências de horário chamando o serviço dedicado.
@@ -77,8 +77,8 @@ async def update_teacher_availability(
 async def update_teacher(
     teacher_id: int,
     teacher_in: schemas.TeacherUpdate,
-    db: AsyncSession = Depends(deps.get_db),
-    current_user: models.User = Depends(deps.get_current_active_admin) # Apenas Admins
+    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    current_user: Annotated[models.User, Depends(deps.get_current_active_admin)] # Apenas Admins
 ):
     """
     Atualiza dados do professor (ex: Nome).
@@ -97,8 +97,8 @@ async def update_teacher(
 @router.delete("/{teacher_id}")
 async def delete_teacher(
     teacher_id: int,
-    db: AsyncSession = Depends(deps.get_db),
-    current_user: models.User = Depends(deps.get_current_active_admin) # Apenas Admins
+    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    current_user: Annotated[models.User, Depends(deps.get_current_active_admin)] # Apenas Admins
 ):
     """
     Remove um professor. Falha se o professor tiver aulas atribuídas.

@@ -1,5 +1,5 @@
 # Ficheiro: backend/app/api/deps.py
-from typing import Generator, AsyncGenerator
+from typing import Generator, AsyncGenerator, Annotated
 from fastapi import Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
@@ -28,8 +28,8 @@ async def get_db() -> AsyncGenerator:
 # --- AUTH (Proteção de Rotas) ---
 async def get_current_user(
     request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
     token: str | None = Depends(oauth2_scheme),
-    db: AsyncSession = Depends(get_db)
 ) -> models.User:
     """
     Valida o token e retorna o utilizador atual da BD.
@@ -63,7 +63,7 @@ async def get_current_user(
 
 # 3. Dependency: Verificar se está Ativo (Segurança Extra)
 async def get_current_active_user(
-    current_user: models.User = Depends(get_current_user),
+    current_user: Annotated[models.User, Depends(get_current_user)],
 ) -> models.User:
     """
     Garante que o utilizador não foi desativado/bloqueado.
@@ -74,7 +74,7 @@ async def get_current_active_user(
 
 # 4. Dependency: Autorização de Admin (Apenas Diretores/Admins)
 async def get_current_active_admin(
-    current_user: models.User = Depends(get_current_active_user),
+    current_user: Annotated[models.User, Depends(get_current_active_user)],
 ) -> models.User:
     """
     Garante que o utilizador tem permissões de administração.

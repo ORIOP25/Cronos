@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Annotated
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from app import schemas, models
@@ -9,8 +9,8 @@ router = APIRouter()
 
 @router.get("/", response_model=List[schemas.LessonRead])
 async def read_lessons(
-    current_user: models.User = Depends(deps.get_current_user),
-    db: AsyncSession = Depends(deps.get_db)
+    current_user: Annotated[models.User, Depends(deps.get_current_user)],
+    db: Annotated[AsyncSession, Depends(deps.get_db)]
 ):
     """
     Lista todas as aulas da organização.
@@ -23,8 +23,8 @@ async def read_lessons(
 @router.post("/", response_model=schemas.LessonRead)
 async def create_lesson(
     lesson: schemas.LessonCreate,
-    current_user: models.User = Depends(deps.get_current_user),
-    db: AsyncSession = Depends(deps.get_db)
+    current_user: Annotated[models.User, Depends(deps.get_current_user)],
+    db: Annotated[AsyncSession, Depends(deps.get_db)]
 ):
     """
     Cria uma nova aula (ex: Matemática, 12ºA, Prof. Snape, 2x por semana).

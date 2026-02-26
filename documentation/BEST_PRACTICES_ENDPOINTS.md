@@ -51,8 +51,8 @@ class PaginatedResponse(BaseModel):
     }
 )
 async def list_items(
-    db: AsyncSession = Depends(deps.get_db),
-    current_user: models.User = Depends(deps.get_current_user),
+    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    current_user: Annotated[models.User, Depends(deps.get_current_user)],
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
 ):
@@ -156,7 +156,7 @@ return {
 
 ```python
 @router.get("/health", response_model=dict)
-async def health_check(db: AsyncSession = Depends(deps.get_db)):
+async def health_check(db: Annotated[AsyncSession, Depends(deps.get_db)]):
     try:
         # Test DB
         await db.execute(select(1))
@@ -179,7 +179,7 @@ async def health_check(db: AsyncSession = Depends(deps.get_db)):
 async def update_teacher_availability(
     teacher_id: int,
     availability_data: List[schemas.AvailabilityCreate],
-    db: AsyncSession = Depends(deps.get_db)
+    db: Annotated[AsyncSession, Depends(deps.get_db)]
 ):
     # ❌ Falta: Autenticação, validação de permissão, logging, tratamento erro
 ```

@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import List
+from typing import List, Annotated
 from app import schemas, models
 from app.api import deps
 from app.services import subject_service
@@ -10,8 +10,8 @@ router = APIRouter()
 # --- 1. Ler Disciplinas ---
 @router.get("/", response_model=List[schemas.SubjectRead])
 async def read_subjects(
-    db: AsyncSession = Depends(deps.get_db),
-    current_user: models.User = Depends(deps.get_current_active_user)
+    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    current_user: Annotated[models.User, Depends(deps.get_current_active_user)]
 ):
     # Qualquer utilizador autenticado pode ver a lista de disciplinas
     return await subject_service.get_subjects_by_org(db, current_user.organization_id)
@@ -20,8 +20,8 @@ async def read_subjects(
 @router.post("/", response_model=schemas.SubjectRead)
 async def create_subject(
     item: schemas.SubjectCreate, 
-    db: AsyncSession = Depends(deps.get_db),
-    current_user: models.User = Depends(deps.get_current_active_admin)
+    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    current_user: Annotated[models.User, Depends(deps.get_current_active_admin)]
 ):
     return await subject_service.create_subject(db, item, current_user.organization_id)
 
@@ -30,8 +30,8 @@ async def create_subject(
 async def update_subject(
     subject_id: int,
     subject_in: schemas.SubjectUpdate,
-    db: AsyncSession = Depends(deps.get_db),
-    current_user: models.User = Depends(deps.get_current_active_admin) # Apenas Admin
+    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    current_user: Annotated[models.User, Depends(deps.get_current_active_admin)] # Apenas Admin
 ):
     subject = await subject_service.update_subject(
         db, 
@@ -47,8 +47,8 @@ async def update_subject(
 @router.delete("/{subject_id}")
 async def delete_subject(
     subject_id: int, 
-    db: AsyncSession = Depends(deps.get_db),
-    current_user: models.User = Depends(deps.get_current_active_admin) # Apenas Admin
+    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    current_user: Annotated[models.User, Depends(deps.get_current_active_admin)] # Apenas Admin
 ):
     status = await subject_service.delete_subject(
         db, 

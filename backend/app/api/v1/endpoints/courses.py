@@ -1,4 +1,4 @@
-from typing import List, Any
+from typing import List, Any, Annotated
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -11,8 +11,8 @@ router = APIRouter()
 # --- 1. Listar Cursos (com Disciplinas e Turmas) ---
 @router.get("/", response_model=List[schemas.CourseDetailRead])
 async def read_courses(
-    db: AsyncSession = Depends(deps.get_db),
-    current_user: models.User = Depends(deps.get_current_active_user),
+    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    current_user: Annotated[models.User, Depends(deps.get_current_active_user)],
     skip: int = 0,
     limit: int = 100,
 ) -> Any:
@@ -27,8 +27,8 @@ async def read_courses(
 @router.post("/", response_model=schemas.CourseDetailRead)
 async def create_course(
     item: schemas.CourseCreate, 
-    db: AsyncSession = Depends(deps.get_db),
-    current_user: models.User = Depends(deps.get_current_active_admin),
+    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    current_user: Annotated[models.User, Depends(deps.get_current_active_admin)],
 ) -> Any:
     """
     Cria um novo curso e gera automaticamente a sua estrutura (turmas, matriz).
@@ -47,8 +47,8 @@ async def create_course(
 @router.get("/{course_id}", response_model=schemas.CourseDetailRead)
 async def read_course_detail(
     course_id: int,
-    db: AsyncSession = Depends(deps.get_db),
-    current_user: models.User = Depends(deps.get_current_active_user),
+    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    current_user: Annotated[models.User, Depends(deps.get_current_active_user)],
 ) -> Any:
     """
     Retorna toda a árvore do curso: Disciplinas + Turmas Ativas.
@@ -63,8 +63,8 @@ async def read_course_detail(
 @router.get("/{course_id}/classes", response_model=List[schemas.ClassRead])
 async def read_course_classes(
     course_id: int,
-    db: AsyncSession = Depends(deps.get_db),
-    current_user: models.User = Depends(deps.get_current_active_user),
+    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    current_user: Annotated[models.User, Depends(deps.get_current_active_user)],
 ) -> Any:
     course = await course_service.get_course_details(db, course_id, current_user.organization_id)
     if not course:
@@ -76,8 +76,8 @@ async def read_course_classes(
 async def create_course_class(
     course_id: int,
     item: schemas.ClassCreateInCourse,
-    db: AsyncSession = Depends(deps.get_db),
-    current_user: models.User = Depends(deps.get_current_active_admin),
+    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    current_user: Annotated[models.User, Depends(deps.get_current_active_admin)],
 ) -> Any:
     result = await class_service.create_class_in_course(db, course_id, item, current_user.organization_id)
     if result == "COURSE_NOT_FOUND":
@@ -90,8 +90,8 @@ async def update_course_class(
     course_id: int,
     class_id: int,
     item: schemas.ClassUpdateInCourse,
-    db: AsyncSession = Depends(deps.get_db),
-    current_user: models.User = Depends(deps.get_current_active_admin),
+    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    current_user: Annotated[models.User, Depends(deps.get_current_active_admin)],
 ) -> Any:
     result = await class_service.update_class_in_course(
         db, course_id, class_id, item, current_user.organization_id
@@ -107,8 +107,8 @@ async def update_course_class(
 async def delete_course_class(
     course_id: int,
     class_id: int,
-    db: AsyncSession = Depends(deps.get_db),
-    current_user: models.User = Depends(deps.get_current_active_admin),
+    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    current_user: Annotated[models.User, Depends(deps.get_current_active_admin)],
 ) -> Any:
     status = await class_service.delete_class_in_course(
         db, course_id, class_id, current_user.organization_id
@@ -122,8 +122,8 @@ async def delete_course_class(
 async def update_course(
     course_id: int,
     item: schemas.CourseUpdate, 
-    db: AsyncSession = Depends(deps.get_db),
-    current_user: models.User = Depends(deps.get_current_active_admin),
+    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    current_user: Annotated[models.User, Depends(deps.get_current_active_admin)],
 ) -> Any:
     """
     Atualiza parcialmente um curso (apenas os campos enviados).
@@ -148,8 +148,8 @@ async def update_course(
 @router.delete("/{course_id}")
 async def delete_course(
     course_id: int, 
-    db: AsyncSession = Depends(deps.get_db),
-    current_user: models.User = Depends(deps.get_current_active_admin),
+    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    current_user: Annotated[models.User, Depends(deps.get_current_active_admin)],
 ) -> Any:
     status = await course_service.delete_course(db, course_id, current_user.organization_id)
     

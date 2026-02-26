@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from typing import List, Any
+from typing import List, Annotated
 from datetime import date
 
 from app import schemas, models
@@ -15,8 +15,8 @@ async def get_suggestions(
     timeslot_id: int,
     date_str: str, # Recebemos como string "2026-03-12" e convertemos
     original_teacher_id: int,
-    db: AsyncSession = Depends(deps.get_db),
-    current_user: models.User = Depends(deps.get_current_active_user),
+    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    current_user: Annotated[models.User, Depends(deps.get_current_active_user)],
 ):
     """
     Retorna professores sugeridos para uma data específica.
@@ -54,8 +54,8 @@ async def get_suggestions(
 @router.post("/", response_model=schemas.SubstitutionResponse)
 async def create_substitution(
     sub_in: schemas.SubstitutionCreate,
-    db: AsyncSession = Depends(deps.get_db),
-    current_user: models.User = Depends(deps.get_current_active_admin), # Apenas Admin/Diretor
+    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    current_user: Annotated[models.User, Depends(deps.get_current_active_admin)], # Apenas Admin/Diretor
 ):
     """
     Grava a substituição e dispara notificações (futuro).
@@ -77,10 +77,10 @@ async def create_substitution(
 
 @router.get("/", response_model=List[schemas.SubstitutionResponse])
 async def read_substitutions(
+    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    current_user: Annotated[models.User, Depends(deps.get_current_active_user)],
     skip: int = 0,
     limit: int = 100,
-    db: AsyncSession = Depends(deps.get_db),
-    current_user: models.User = Depends(deps.get_current_active_user),
 ):
     """
     Retorna a lista de substituições ativas (para pintar no calendário).

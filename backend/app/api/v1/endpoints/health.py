@@ -6,12 +6,13 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.api import deps
 from app.config import settings
+from typing import Annotated
 
 router = APIRouter()
 
 @router.get("/health", status_code=status.HTTP_200_OK)
 async def health_check(
-    db: AsyncSession = Depends(deps.get_db)
+    db: Annotated[AsyncSession, Depends(deps.get_db)]
 ):
     """
     Verifica a saúde vital do sistema:

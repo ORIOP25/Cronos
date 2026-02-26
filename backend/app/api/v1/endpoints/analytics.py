@@ -1,6 +1,6 @@
 # Ficheiro: backend/app/api/endpoints/analytics.py
 
-from typing import List
+from typing import Annotated
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
@@ -12,8 +12,8 @@ router = APIRouter()
 
 @router.get("/availability-heatmap")
 async def get_availability_heatmap(
-    db: AsyncSession = Depends(deps.get_db),
-    current_user: models.User = Depends(deps.get_current_user),
+    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    current_user: Annotated[models.User, Depends(deps.get_current_user)],
 ):
     """
     Calcula a taxa de disponibilidade.

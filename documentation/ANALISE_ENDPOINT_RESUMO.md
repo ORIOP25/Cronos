@@ -162,8 +162,8 @@ Swagger fica vazio. Sem exemplos. Sem status codes documentados.
 ```python
 @router.get("/resource", response_model=ResponseSchema)
 async def get_resource(
-    db: AsyncSession = Depends(deps.get_db),
-    current_user: models.User = Depends(deps.get_current_user),
+    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    current_user: Annotated[models.User, Depends(deps.get_current_user)],
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
 ):

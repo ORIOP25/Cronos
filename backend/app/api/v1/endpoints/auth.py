@@ -7,6 +7,7 @@ from app.services import user_service
 from app.core import security
 from app.core.ratelimit import limiter
 from app.config import settings
+from typing import Annotated
 
 router = APIRouter()
 
@@ -15,8 +16,8 @@ router = APIRouter()
 async def login_for_access_token(
     request: Request,
     response: Response,
-    form_data: OAuth2PasswordRequestForm = Depends(), 
-    db: AsyncSession = Depends(deps.get_db)
+    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    form_data: OAuth2PasswordRequestForm = Depends(),
 ):
     # 1. Verificar User e Password
     user = await user_service.get_user_by_email(db, form_data.username)
@@ -76,7 +77,7 @@ async def login_for_access_token(
 async def register(
     request: Request,
     user: schemas.UserCreate, 
-    db: AsyncSession = Depends(deps.get_db)
+    db: Annotated[AsyncSession, Depends(deps.get_db)]
 ):
     # Verificar se email já existe
     db_user = await user_service.get_user_by_email(db, email=user.email)
@@ -91,7 +92,7 @@ async def register(
 async def refresh_token(
     request: Request,
     response: Response,
-    db: AsyncSession = Depends(deps.get_db)
+    db: Annotated[AsyncSession, Depends(deps.get_db)]
 ):
     """Renova o access token usando o refresh token em cookie."""
     refresh_token = request.cookies.get(settings.REFRESH_TOKEN_COOKIE_NAME)

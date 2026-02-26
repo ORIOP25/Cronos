@@ -3,7 +3,7 @@ from fastapi_cache.decorator import cache
 from fastapi.encoders import jsonable_encoder
 from sqlalchemy.ext.asyncio import AsyncSession
 from celery.result import AsyncResult
-from typing import List
+from typing import List, Annotated
 import json
 import redis
 from app import schemas, models
@@ -19,24 +19,24 @@ router = APIRouter()
 @router.post("/constraints/", response_model=schemas.ConstraintRead)
 async def create_constraint(
     item: schemas.ConstraintCreate, 
-    db: AsyncSession = Depends(deps.get_db),
-    current_user: models.User = Depends(deps.get_current_user)
+    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    current_user: Annotated[models.User, Depends(deps.get_current_user)]
 ):
     # Garante que usamos o org_id do utilizador logado
     return await schedule_service.create_constraint(db, item, current_user.organization_id)
 
 @router.get("/constraints/", response_model=List[schemas.ConstraintRead])
 async def read_constraints(
-    db: AsyncSession = Depends(deps.get_db),
-    current_user: models.User = Depends(deps.get_current_user)
+    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    current_user: Annotated[models.User, Depends(deps.get_current_user)]
 ):
     return await schedule_service.get_constraints_by_org(db, current_user.organization_id)
 
 @router.delete("/constraints/{constraint_id}")
 async def delete_constraint(
     constraint_id: int, 
-    db: AsyncSession = Depends(deps.get_db),
-    current_user: models.User = Depends(deps.get_current_user)
+    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    current_user: Annotated[models.User, Depends(deps.get_current_user)]
 ):
     success = await schedule_service.delete_constraint(db, constraint_id, current_user.organization_id)
     if not success:
@@ -48,7 +48,7 @@ async def delete_constraint(
 @limiter.limit("5/minute")
 async def trigger_generation(
     request: Request,
-    current_user: models.User = Depends(deps.get_current_user)
+    current_user: Annotated[models.User, Depends(deps.get_current_user)]
 ):
     """Inicia a tarefa em background no Celery."""
     task = generate_schedule_task.delay(current_user.organization_id)
@@ -65,7 +65,7 @@ async def trigger_generation(
 async def get_status(
     request: Request,
     task_id: str,
-    current_user: models.User = Depends(deps.get_current_user)
+    current_user: Annotated[models.User, Depends(deps.get_current_user)]
 ):
     """Verifica o progresso da geração."""
     # Validar se o task_id pertence à organização
@@ -93,8 +93,8 @@ async def get_status(
 # --- RESULTADOS ---
 @router.get("/latest", response_model=List[schemas.ScheduleOutputRead])
 async def get_schedule(
-    db: AsyncSession = Depends(deps.get_db),
-    current_user: models.User = Depends(deps.get_current_user)
+    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    current_user: Annotated[models.User, Depends(deps.get_current_user)]
 ):
     """
     Retorna o horário mais recente.
@@ -140,8 +140,8 @@ async def get_schedule(
 
 @router.delete("/reset")
 async def reset_all_data(
-    db: AsyncSession = Depends(deps.get_db),
-    current_user: models.User = Depends(deps.get_current_user)
+    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    current_user: Annotated[models.User, Depends(deps.get_current_user)]
 ):
     await schedule_service.delete_all_schedule_data(db, current_user.organization_id)
     
