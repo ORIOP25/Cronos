@@ -61,3 +61,24 @@ Evaluate every line of code against these:
 - **Architectural View:** Before coding, ask yourself: "Does this respect the dynamic nature of Professional Schools?"
 - **Context:** If a Class is created, it must have a start/end year (Cycle).
 - **Troubleshooting:** Check for "Greenlet" errors in Backend and "Serialization" errors in Frontend first.
+
+### 6. Errors that have been found in the code base and should never be repeated
+- Not using "Annotated" type hints for FastAPI dependecy injection.
+    Bad Example: async def get_availability_heatmap(db: AsyncSession = Depends(deps.get_db),current_user: models.User = Depends(deps.get_current_user), ):
+
+    Good Example: async def get_availability_heatmap(db: Annotated[AsyncSession, Depends(deps.get_db)], current_user: Annotated[models.User, Depends(deps.get_current_user)], ):
+
+- Not providing "a compare function to avoid sorting elements alphabetically in JavaScript".
+    JavaScript's `.sort()` without a compare function converts elements to strings and sorts them lexicographically (by Unicode code points). This produces incorrect results for numbers (e.g., `[1, 10, 2]`) and unreliable results for strings with accented or Unicode characters. Always provide an explicit compare function.
+
+    Bad Example (strings): `const uniqueTimes = [...new Set(timeslots.map(t => t.start_time))].sort();`
+    Good Example (strings): `const uniqueTimes = [...new Set(timeslots.map(t => t.start_time))].sort((a, b) => a.localeCompare(b));`
+
+    Bad Example (numbers): `const activeDays = [...new Set(timeslots.map(t => t.day_of_week))].sort();`
+    Good Example (numbers): `const activeDays = [...new Set(timeslots.map(t => t.day_of_week))].sort((a, b) => a - b);`
+
+- Visible, non-interactive elements with `onClick` must have at least one keyboard listener.
+    Using `onClick` without a keyboard handler (e.g., `onKeyDown`) makes the element inaccessible to keyboard and assistive-technology users. Additionally, the element needs `role="button"` and `tabIndex={0}` to be focusable and semantically correct.
+
+    Bad Example: `<div onClick={() => handleClick(item)} />`
+    Good Example: `<div role="button" tabIndex={0} onClick={() => handleClick(item)} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleClick(item); } }} />`

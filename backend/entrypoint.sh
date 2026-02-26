@@ -14,7 +14,7 @@ DB_PORT=${DB_PORT:-5432}
 echo -e "${YELLOW}🔄 Aguardando PostgreSQL em $DB_HOST:$DB_PORT...${NC}"
 attempt=0
 max_attempts=30
-while [ $attempt -lt $max_attempts ]; do
+while [[ $attempt -lt $max_attempts ]]; do
     if nc -z "$DB_HOST" "$DB_PORT" 2>/dev/null; then
         echo -e "${GREEN}✅ PostgreSQL pronto!${NC}"
         break
@@ -24,7 +24,7 @@ while [ $attempt -lt $max_attempts ]; do
     sleep 1
 done
 
-if [ $attempt -eq $max_attempts ]; then
+if [[ $attempt -eq $max_attempts ]]; then
     echo -e "${RED}❌ PostgreSQL não respondeu após $max_attempts tentativas${NC}"
     exit 1
 fi

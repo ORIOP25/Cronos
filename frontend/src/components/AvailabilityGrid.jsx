@@ -8,7 +8,7 @@ const AvailabilityGrid = ({ timeslots, availabilityMap, onChange }) => {
   const days = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta"];
   
   // Extrair as horas únicas e ordenar (ex: "08:00:00", "09:00:00")
-  const uniqueTimes = [...new Set(timeslots.map(t => t.start_time))].sort();
+  const uniqueTimes = [...new Set(timeslots.map(t => t.start_time))].sort((a, b) => a.localeCompare(b));
 
   const getScore = (timeslotId) => {
     return availabilityMap[timeslotId] !== undefined 
@@ -107,8 +107,11 @@ const AvailabilityGrid = ({ timeslots, availabilityMap, onChange }) => {
               return (
                 <div 
                   key={slot.id}
+                  role="button"
+                  tabIndex={0}
                   style={styles.cell(score)}
                   onClick={() => handleCellClick(slot)}
+                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleCellClick(slot); } }}
                   title={`Clique para mudar: ${dayName} às ${time}`}
                 >
                   {PREFERENCE_LEVELS[score].label}

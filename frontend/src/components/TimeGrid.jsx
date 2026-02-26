@@ -2,12 +2,12 @@ import React from 'react'
 
 const TimeGrid = ({ timeslots }) => {
   // 1. Extrair tempos únicos ordenados para o eixo Y
-  const uniqueTimes = [...new Set(timeslots.map(t => t.start_time))].sort()
+  const uniqueTimes = [...new Set(timeslots.map(t => t.start_time))].sort((a, b) => a.localeCompare(b))
   
   // 2. Mapeamento de dias
   const days = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domingo"]
   // Descobrir quais dias existem nos dados
-  const activeDaysIndices = [...new Set(timeslots.map(t => t.day_of_week))].sort()
+  const activeDaysIndices = [...new Set(timeslots.map(t => t.day_of_week))].sort((a, b) => a - b)
 
   if (!timeslots.length) return <div className="text-center p-5 text-muted">Sem horários configurados.</div>
 

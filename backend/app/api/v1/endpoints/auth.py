@@ -17,7 +17,7 @@ async def login_for_access_token(
     request: Request,
     response: Response,
     db: Annotated[AsyncSession, Depends(deps.get_db)],
-    form_data: OAuth2PasswordRequestForm = Depends(),
+    form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
 ):
     # 1. Verificar User e Password
     user = await user_service.get_user_by_email(db, form_data.username)
