@@ -5,7 +5,7 @@ import {
   CButton, CFormInput, CProgress, CAlert, CTable, CTableHead, CTableRow, CTableHeaderCell, CTableBody, CTableDataCell, CBadge, CTooltip
 } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
-import { cilCloudUpload, cilWarning, cilBan } from '@coreui/icons'
+import { cilCloudUpload, cilBan } from '@coreui/icons'
 
 const BulkImportModal = ({ visible, onClose, entityName, onProcessItem, templateExample, validateRow }) => {
   const fileInputRef = useRef()

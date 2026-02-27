@@ -238,6 +238,50 @@ def get_classes_by_org_sync(db: Session, org_id: int):
 #  DASHBOARD DA TURMA (ClassFullDetail)
 # ==========================================
 
+def _build_module_data(module, progress_map: dict) -> dict:
+    """Constrói dados de um módulo com o seu progresso atual."""
+    progress = progress_map.get(module.id)
+    hours_done = progress.hours_completed if progress else 0
+    completed = progress.is_completed if progress else False
+    pct = round((hours_done / module.hours_total) * 100, 1) if module.hours_total > 0 else 0.0
+
+    return {
+        "id": module.id,
+        "name": module.name,
+        "code": module.code,
+        "hours_total": module.hours_total,
+        "order": module.order,
+        "hours_completed": hours_done,
+        "is_completed": completed,
+        "percentage": pct,
+    }
+
+
+def _build_subject_with_progress(subject, progress_map: dict) -> dict:
+    """Constrói dados de uma disciplina com módulos e progresso agregado."""
+    modules_data = []
+    subject_total = 0
+    subject_completed = 0
+
+    for module in sorted(subject.modules, key=lambda m: m.order):
+        module_data = _build_module_data(module, progress_map)
+        modules_data.append(module_data)
+        subject_total += module.hours_total
+        subject_completed += module_data["hours_completed"]
+
+    overall_pct = round((subject_completed / subject_total) * 100, 1) if subject_total > 0 else 0.0
+
+    return {
+        "id": subject.id,
+        "name": subject.name,
+        "required_room_type": subject.required_room_type,
+        "modules": modules_data,
+        "total_hours": subject_total,
+        "completed_hours": subject_completed,
+        "overall_percentage": overall_pct,
+    }
+
+
 async def get_class_full_details(db: AsyncSession, class_id: int, org_id: int):
     """
     Busca turma com curso, disciplinas, módulos e progresso.
@@ -308,42 +352,7 @@ async def get_class_full_details(db: AsyncSession, class_id: int, org_id: int):
         subject = link.subject
         if not subject:
             continue
-            
-        modules_data = []
-        subject_total = 0
-        subject_completed = 0
-        
-        for module in sorted(subject.modules, key=lambda m: m.order):
-            progress = progress_map.get(module.id)
-            hours_done = progress.hours_completed if progress else 0
-            completed = progress.is_completed if progress else False
-            pct = round((hours_done / module.hours_total) * 100, 1) if module.hours_total > 0 else 0.0
-            
-            modules_data.append({
-                "id": module.id,
-                "name": module.name,
-                "code": module.code,
-                "hours_total": module.hours_total,
-                "order": module.order,
-                "hours_completed": hours_done,
-                "is_completed": completed,
-                "percentage": pct
-            })
-            
-            subject_total += module.hours_total
-            subject_completed += hours_done
-        
-        overall_pct = round((subject_completed / subject_total) * 100, 1) if subject_total > 0 else 0.0
-        
-        response["subjects"].append({
-            "id": subject.id,
-            "name": subject.name,
-            "required_room_type": subject.required_room_type,
-            "modules": modules_data,
-            "total_hours": subject_total,
-            "completed_hours": subject_completed,
-            "overall_percentage": overall_pct
-        })
+        response["subjects"].append(_build_subject_with_progress(subject, progress_map))
     
     return response
 

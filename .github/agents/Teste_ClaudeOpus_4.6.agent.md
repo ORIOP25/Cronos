@@ -82,3 +82,93 @@ Evaluate every line of code against these:
 
     Bad Example: `<div onClick={() => handleClick(item)} />`
     Good Example: `<div role="button" tabIndex={0} onClick={() => handleClick(item)} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleClick(item); } }} />`
+
+- Functions with high Cognitive Complexity (exceeding the allowed threshold of 15) must be refactored.
+    Cognitive Complexity measures how hard it is to understand a function's control flow. Nested loops, conditionals, and ternary expressions inside loops compound the score rapidly. Extract inner logic into well-named helper functions to flatten nesting and reduce complexity.
+
+    Bad Example:
+    ```python
+    async def get_class_full_details(db, class_id, org_id):
+        ...
+        for link in sorted(links, key=lambda l: l.subject.name if l.subject else ""):
+            if not subject:
+                continue
+            for module in sorted(subject.modules, key=lambda m: m.order):
+                hours_done = progress.hours_completed if progress else 0       # nesting=2
+                completed = progress.is_completed if progress else False        # nesting=2
+                pct = round(...) if module.hours_total > 0 else 0.0            # nesting=2
+            overall_pct = round(...) if subject_total > 0 else 0.0             # nesting=1
+    ```
+
+    Good Example:
+    ```python
+    def _build_module_data(module, progress_map):
+        progress = progress_map.get(module.id)
+        hours_done = progress.hours_completed if progress else 0
+        completed = progress.is_completed if progress else False
+        pct = round((hours_done / module.hours_total) * 100, 1) if module.hours_total > 0 else 0.0
+        return { "id": module.id, ... }
+
+    def _build_subject_with_progress(subject, progress_map):
+        for module in sorted(subject.modules, key=lambda m: m.order):
+            module_data = _build_module_data(module, progress_map)
+            ...
+        return { "id": subject.id, ... }
+
+    async def get_class_full_details(db, class_id, org_id):
+        ...
+        for link in sorted(links, ...):
+            if not subject:
+                continue
+            response["subjects"].append(_build_subject_with_progress(subject, progress_map))
+    ```
+
+    Bad Example 2 (nested if/for blocks inside a guard clause — complexity 25):
+    ```python
+    async def update_subject(db, subject_id, subject_in, org_id):
+        ...
+        if subject_in.modules is not None:
+            ids_to_delete = set(existing_modules.keys()) - incoming_ids
+            if ids_to_delete:                                              # nesting=1
+                for mod_id in ids_to_delete:                               # nesting=2
+                    await db.delete(existing_modules[mod_id])
+            if modules_to_update:                                          # nesting=1
+                for i, mod_data in enumerate(modules_to_update, start=1): # nesting=2
+                    existing_modules[mod_data.id].order = -i
+            for mod_data in incoming_modules:                              # nesting=1
+                if mod_data.id is not None and ...:                        # nesting=2 + &&
+                    ...
+                else:                                                      # nesting=2
+                    ...
+    ```
+
+    Good Example 2 (extract async helpers for each sub-operation):
+    ```python
+    async def _delete_removed_modules(db, existing_modules, incoming_ids):
+        ids_to_delete = set(existing_modules.keys()) - incoming_ids
+        if not ids_to_delete:
+            return
+        for mod_id in ids_to_delete:
+            await db.delete(existing_modules[mod_id])
+
+    async def _reset_module_orders(db, incoming_modules, existing_modules):
+        modules_to_update = [m for m in incoming_modules if m.id is not None and m.id in existing_modules]
+        if not modules_to_update:
+            return
+        for i, mod_data in enumerate(modules_to_update, start=1):
+            existing_modules[mod_data.id].order = -i
+
+    def _upsert_modules(db, incoming_modules, existing_modules, subject_id):
+        for mod_data in incoming_modules:
+            if mod_data.id is not None and mod_data.id in existing_modules:
+                ...  # update existing
+            else:
+                ...  # create new
+
+    async def update_subject(db, subject_id, subject_in, org_id):
+        ...
+        if subject_in.modules is not None:
+            await _delete_removed_modules(db, existing_modules, incoming_ids)
+            await _reset_module_orders(db, subject_in.modules, existing_modules)
+            _upsert_modules(db, subject_in.modules, existing_modules, subject_id)
+    ```

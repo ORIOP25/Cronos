@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import {
-  CForm, CCol, CRow, CFormInput, CButton, CModalFooter, CFormSelect
+  CForm, CRow, CFormInput, CButton, CModalFooter, CFormSelect
 } from '@coreui/react'
 
 const RoomForm = ({ initialData, onSubmit, isLoading, onCancel }) => {

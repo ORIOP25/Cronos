@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import {
-  CCard, CCardBody, CCardHeader, CCol, CRow, CButton, CAlert,
+  CCard, CCardBody, CCardHeader, CButton, CAlert,
   CBadge, CSpinner, CFormSelect,
   CModal, CModalHeader, CModalTitle,
   CModalBody, CModalFooter,

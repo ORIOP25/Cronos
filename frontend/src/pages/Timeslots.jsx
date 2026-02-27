@@ -1,7 +1,5 @@
 import React, { useState } from 'react'
-import { 
-  CCard, CCardBody, CCol, CRow, CButton, CAlert, CBadge 
-} from '@coreui/react'
+import { CCard, CCardBody, CCol, CRow, CButton, CAlert } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
 import { cilClock, cilPlus, cilSync } from '@coreui/icons'
 

@@ -58,6 +58,59 @@ async def create_subject(db: AsyncSession, item: schemas.SubjectCreate, organiza
     result = await db.execute(query)
     return result.scalars().first()
 
+# --- HELPERS: Sincronização de Módulos (Smart Diff) ---
+
+async def _delete_removed_modules(db: AsyncSession, existing_modules: dict, incoming_ids: set):
+    """Apaga módulos removidos pelo utilizador e o class_progress associado."""
+    ids_to_delete = set(existing_modules.keys()) - incoming_ids
+    if not ids_to_delete:
+        return
+    # Bulk delete class_progress (FK) antes dos módulos
+    await db.execute(
+        delete(models.ClassProgress).where(
+            models.ClassProgress.module_id.in_(ids_to_delete)
+        )
+    )
+    # ORM delete — mantém o identity map sincronizado
+    for mod_id in ids_to_delete:
+        await db.delete(existing_modules[mod_id])
+    await db.flush()
+
+
+async def _reset_module_orders(db: AsyncSession, incoming_modules: list, existing_modules: dict):
+    """Evita violação da UniqueConstraint (uq_module_order_per_subject)
+    ao reordenar módulos: define ordens temporárias negativas primeiro."""
+    modules_to_update = [
+        m for m in incoming_modules
+        if m.id is not None and m.id in existing_modules
+    ]
+    if not modules_to_update:
+        return
+    for i, mod_data in enumerate(modules_to_update, start=1):
+        existing_modules[mod_data.id].order = -i
+    await db.flush()
+
+
+def _upsert_modules(db: AsyncSession, incoming_modules: list, existing_modules: dict, subject_id: int):
+    """Atualiza módulos existentes e cria novos (com ordens finais)."""
+    for mod_data in incoming_modules:
+        if mod_data.id is not None and mod_data.id in existing_modules:
+            existing_mod = existing_modules[mod_data.id]
+            existing_mod.name = mod_data.name
+            existing_mod.code = mod_data.code
+            existing_mod.hours_total = mod_data.hours_total
+            existing_mod.order = mod_data.order
+        else:
+            new_mod = models.Module(
+                name=mod_data.name,
+                code=mod_data.code,
+                hours_total=mod_data.hours_total,
+                order=mod_data.order,
+                subject_id=subject_id,
+            )
+            db.add(new_mod)
+
+
 async def update_subject(db: AsyncSession, subject_id: int, subject_in: schemas.SubjectUpdate, org_id: int):
     # 1. Buscar a disciplina com módulos
     query = select(models.Subject).where(
@@ -85,59 +138,13 @@ async def update_subject(db: AsyncSession, subject_id: int, subject_in: schemas.
     for field, value in update_data.items():
         setattr(subject, field, value)
 
-    # 4. Atualizar Módulos (Smart diff: update existing, create new, delete removed)
+    # 4. Sincronizar Módulos (Smart diff: update existing, create new, delete removed)
     if subject_in.modules is not None:
-        incoming_modules = subject_in.modules
         existing_modules = {m.id: m for m in subject.modules}
-        
-        # IDs dos módulos que o frontend quer MANTER (têm id)
-        incoming_ids = {m.id for m in incoming_modules if m.id is not None}
-        
-        # A) Apagar módulos que foram removidos pelo utilizador
-        #    Primeiro apaga class_progress (FK), depois remove via ORM delete
-        ids_to_delete = set(existing_modules.keys()) - incoming_ids
-        if ids_to_delete:
-            # Bulk delete class_progress (sem relações ORM a gerir)
-            await db.execute(
-                delete(models.ClassProgress).where(
-                    models.ClassProgress.module_id.in_(ids_to_delete)
-                )
-            )
-            # ORM delete — mantém o identity map sincronizado
-            for mod_id in ids_to_delete:
-                await db.delete(existing_modules[mod_id])
-            await db.flush()
-        
-        # B) Evitar violação da UniqueConstraint (uq_module_order_per_subject)
-        #    ao reordenar módulos: definir ordens temporárias negativas primeiro
-        modules_to_update = [
-            m for m in incoming_modules
-            if m.id is not None and m.id in existing_modules
-        ]
-        if modules_to_update:
-            for i, mod_data in enumerate(modules_to_update, start=1):
-                existing_modules[mod_data.id].order = -i
-            await db.flush()
-        
-        # C) Atualizar módulos existentes e criar novos (com ordens finais)
-        for mod_data in incoming_modules:
-            if mod_data.id is not None and mod_data.id in existing_modules:
-                # Atualizar módulo existente (já tracked pela sessão)
-                existing_mod = existing_modules[mod_data.id]
-                existing_mod.name = mod_data.name
-                existing_mod.code = mod_data.code
-                existing_mod.hours_total = mod_data.hours_total
-                existing_mod.order = mod_data.order
-            else:
-                # Criar novo módulo (sem id ou id desconhecido)
-                new_mod = models.Module(
-                    name=mod_data.name,
-                    code=mod_data.code,
-                    hours_total=mod_data.hours_total,
-                    order=mod_data.order,
-                    subject_id=subject_id
-                )
-                db.add(new_mod)
+        incoming_ids = {m.id for m in subject_in.modules if m.id is not None}
+        await _delete_removed_modules(db, existing_modules, incoming_ids)
+        await _reset_module_orders(db, subject_in.modules, existing_modules)
+        _upsert_modules(db, subject_in.modules, existing_modules, subject_id)
 
     # subject já está tracked pela sessão — commit grava todas as alterações
     await db.commit()

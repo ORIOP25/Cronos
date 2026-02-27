@@ -1,7 +1,7 @@
 import React, { useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import {
-  CButton, CCol, CForm, CFormInput, CAlert, CSpinner, CCard, CCardBody
+  CButton, CForm, CFormInput, CAlert, CSpinner, CCard, CCardBody
 } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
 import { cilPlus, cilCheckCircle, cilWarning } from '@coreui/icons'
