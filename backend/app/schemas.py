@@ -68,8 +68,7 @@ class TeacherBase(BaseModel):
     email: Optional[EmailStr] = None
 
 class TeacherCreate(TeacherBase):
-    # SOBRESCRITA: Email OBRIGATÓRIO para novos professores
-    email: EmailStr
+    # Email opcional — se fornecido, permite criar conta de acesso ao professor
     create_user_account: bool = False
     subject_ids: list[int] = Field(default_factory=list, description="IDs das disciplinas associadas")
 
