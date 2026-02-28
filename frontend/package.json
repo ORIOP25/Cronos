@@ -21,11 +21,11 @@
     "@fullcalendar/react": "^6.1.19",
     "@fullcalendar/timegrid": "^6.1.19",
     "@tanstack/react-query": "^5.90.8",
-    "axios": "^1.13.2",
+    "axios": "^1.13.5",
     "luxon": "^3.7.2",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
-    "react-router-dom": "^7.9.5",
+    "react-router-dom": "^7.13.1",
     "xlsx": "^0.18.5",
     "zustand": "^5.0.8"
   },
