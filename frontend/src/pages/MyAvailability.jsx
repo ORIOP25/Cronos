@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import apiClient from '../apiClient';
 import AvailabilityGrid from '../components/AvailabilityGrid';
 import { useAuthStore } from '../store';
+import { PREFERENCE_LEVELS, DEFAULT_PREFERENCE } from '../constants';
 
 const MyAvailability = () => {
   const [timeslots, setTimeslots] = useState([]);
@@ -11,6 +12,7 @@ const MyAvailability = () => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
+  const [selectedMode, setSelectedMode] = useState(DEFAULT_PREFERENCE);
   const teacherId = useAuthStore((state) => state.user?.teacherId);
 
   // 1. Carregar Dados Iniciais
@@ -78,12 +80,47 @@ const MyAvailability = () => {
   return (
     <div>
       <h2 style={{ color: 'var(--rs-heading)', fontWeight: '700', marginBottom: '4px' }}>Minhas Preferências</h2>
-      <p style={{ color: 'var(--rs-muted)', marginBottom: '24px' }}>Clique nas células para definir a sua disponibilidade.</p>
+      <p style={{ color: 'var(--rs-muted)', marginBottom: '16px' }}>Selecione uma ferramenta e clique (ou arraste) nas células para pintar.</p>
       
+      {/* Seletor de Modo (Paintbrush Toolbar) — Ordem: Impossível → Evitar → Neutro → Preferencial */}
+      <div style={{ display: 'flex', gap: '8px', marginBottom: '20px', flexWrap: 'wrap' }}>
+        {['-1', '0', '1', '2'].map((score) => {
+          const info = PREFERENCE_LEVELS[score];
+          const numScore = Number(score);
+          const isActive = selectedMode === numScore;
+          return (
+            <button
+              key={score}
+              type="button"
+              onClick={() => setSelectedMode(numScore)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '8px 16px',
+                border: isActive ? '2px solid var(--rs-primary)' : '2px solid var(--rs-grid-cell-border)',
+                borderRadius: '8px',
+                backgroundColor: isActive ? info.color : 'transparent',
+                cursor: 'pointer',
+                fontWeight: isActive ? '700' : '500',
+                fontSize: '0.9rem',
+                transition: 'all 0.15s ease',
+                opacity: isActive ? 1 : 0.7,
+                boxShadow: isActive ? '0 2px 8px rgba(0,0,0,0.12)' : 'none',
+              }}
+            >
+              <span style={{ width: '14px', height: '14px', borderRadius: '50%', backgroundColor: info.color, border: '1px solid var(--rs-grid-cell-border)', flexShrink: 0 }} />
+              {info.label}
+            </button>
+          );
+        })}
+      </div>
+
       <AvailabilityGrid 
         timeslots={timeslots} 
         availabilityMap={availabilityMap} 
-        onChange={handleGridChange} 
+        onChange={handleGridChange}
+        selectedMode={selectedMode}
       />
 
       <div style={{ marginTop: '24px', textAlign: 'right' }}>

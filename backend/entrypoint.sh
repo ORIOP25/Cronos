@@ -11,12 +11,12 @@ NC='\033[0m' # No Color
 DB_HOST=${DB_HOST:-db}
 DB_PORT=${DB_PORT:-5432}
 
-echo -e "${YELLOW}🔄 Aguardando PostgreSQL em $DB_HOST:$DB_PORT...${NC}"
+echo -e "${YELLOW}ðŸ”„ Aguardando PostgreSQL em $DB_HOST:$DB_PORT...${NC}"
 attempt=0
 max_attempts=30
 while [[ $attempt -lt $max_attempts ]]; do
     if nc -z "$DB_HOST" "$DB_PORT" 2>/dev/null; then
-        echo -e "${GREEN}✅ PostgreSQL pronto!${NC}"
+        echo -e "${GREEN}âœ… PostgreSQL pronto!${NC}"
         break
     fi
     attempt=$((attempt + 1))
@@ -25,27 +25,27 @@ while [[ $attempt -lt $max_attempts ]]; do
 done
 
 if [[ $attempt -eq $max_attempts ]]; then
-    echo -e "${RED}❌ PostgreSQL não respondeu após $max_attempts tentativas${NC}"
+    echo -e "${RED}âŒ PostgreSQL nÃ£o respondeu apÃ³s $max_attempts tentativas${NC}"
     exit 1
 fi
 
-echo -e "${YELLOW}🔄 Verificando/Executando migrações Alembic...${NC}"
+echo -e "${YELLOW}ðŸ”„ Verificando/Executando migraÃ§Ãµes Alembic...${NC}"
 
-# Tenta executar as migrações
-# Se falhar com DuplicateTable (tabelas já existem), marca as migrações como executadas (stamp)
+# Tenta executar as migraÃ§Ãµes
+# Se falhar com DuplicateTable (tabelas jÃ¡ existem), marca as migraÃ§Ãµes como executadas (stamp)
 if ! alembic upgrade head 2>&1; then
-    echo -e "${YELLOW}⚠️  Migrações falharam. Verificando se tabelas já existem...${NC}"
+    echo -e "${YELLOW}âš ï¸  MigraÃ§Ãµes falharam. Verificando se tabelas jÃ¡ existem...${NC}"
     
-    # Se as tabelas já existem (erro de DuplicateTable), marca as versões como executadas
+    # Se as tabelas jÃ¡ existem (erro de DuplicateTable), marca as versÃµes como executadas
     if alembic stamp head 2>&1; then
-        echo -e "${GREEN}✅ Marcadas migrações como executadas (tabelas já existiam)${NC}"
+        echo -e "${GREEN}âœ… Marcadas migraÃ§Ãµes como executadas (tabelas jÃ¡ existiam)${NC}"
     else
-        echo -e "${RED}❌ Falha ao processar migrações${NC}"
+        echo -e "${RED}âŒ Falha ao processar migraÃ§Ãµes${NC}"
         exit 1
     fi
 else
-    echo -e "${GREEN}✅ Migrações executadas com sucesso${NC}"
+    echo -e "${GREEN}âœ… MigraÃ§Ãµes executadas com sucesso${NC}"
 fi
 
-echo -e "${GREEN}✅ Entrypoint concluído. A iniciar processo...${NC}"
+echo -e "${GREEN}âœ… Entrypoint concluÃ­do. A iniciar processo...${NC}"
 exec "$@"

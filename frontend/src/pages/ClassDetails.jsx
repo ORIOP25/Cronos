@@ -46,11 +46,27 @@ const RoomBadge = ({ type }) => {
 //  SUB-COMPONENT: Linha de módulo com progresso editável
 // ==========================================
 const ModuleRow = ({ module, isEditing, editValue, onChangeHours }) => {
+  // Quando editValue é 0, mostramos string vazia para UX limpa
+  const rawEditValue = editValue === 0 ? '' : editValue
+  const numericValue = editValue || 0
   const pct = module.hours_total > 0
-    ? Math.round(((isEditing ? editValue : module.hours_completed) / module.hours_total) * 100)
+    ? Math.round(((isEditing ? numericValue : module.hours_completed) / module.hours_total) * 100)
     : 0
   const displayPct = Math.min(pct, 100)
-  const displayHours = isEditing ? editValue : module.hours_completed
+  const displayHours = isEditing ? numericValue : module.hours_completed
+
+  const handleInputChange = (e) => {
+    const raw = e.target.value
+    // Permitir campo vazio (interpretado como 0)
+    if (raw === '') {
+      onChangeHours(module.id, 0)
+      return
+    }
+    const parsed = parseInt(raw, 10)
+    if (!isNaN(parsed)) {
+      onChangeHours(module.id, parsed)
+    }
+  }
 
   return (
     <div className="py-2 border-bottom">
@@ -66,15 +82,21 @@ const ModuleRow = ({ module, isEditing, editValue, onChangeHours }) => {
         </div>
         <div className="d-flex align-items-center gap-2 flex-shrink-0 ms-2">
           {isEditing ? (
-            <CFormInput
-              type="number"
-              min={0}
-              max={module.hours_total}
-              value={editValue}
-              onChange={(e) => onChangeHours(module.id, parseInt(e.target.value, 10) || 0)}
-              size="sm"
-              style={{ width: '70px', textAlign: 'center' }}
-            />
+            <div className="d-flex align-items-center gap-1">
+              <CFormInput
+                type="number"
+                min={0}
+                max={module.hours_total}
+                value={rawEditValue}
+                placeholder="0"
+                onChange={handleInputChange}
+                size="sm"
+                style={{ width: '70px', textAlign: 'center' }}
+              />
+              <span className="text-muted fw-medium" style={{ fontSize: '0.85rem', whiteSpace: 'nowrap' }}>
+                / {module.hours_total}h
+              </span>
+            </div>
           ) : (
             <span className="text-muted" style={{ fontSize: '0.85rem', whiteSpace: 'nowrap' }}>
               {displayHours}/{module.hours_total}h
@@ -411,15 +433,21 @@ const ClassDetails = () => {
                 {globalStats.pct}%
               </CBadge>
             </div>
-            <CProgress
+            {/* Barra nativa — substitui CProgress/CProgressBar que não renderizava */}
+            <div
               className="mb-1"
-              style={{ height: '12px', backgroundColor: 'var(--rs-light-border)' }}
+              style={{ height: '12px', borderRadius: '6px', backgroundColor: '#e9ecef', overflow: 'hidden' }}
             >
-              <CProgressBar
-                value={Math.min(globalStats.pct, 100)}
-                style={{ width: `${Math.min(globalStats.pct, 100)}%`, backgroundColor: getProgressColor(globalStats.pct) }}
+              <div
+                style={{
+                  height: '100%',
+                  width: `${Math.min(Number(globalStats.pct) || 0, 100)}%`,
+                  backgroundColor: getProgressColor(globalStats.pct),
+                  borderRadius: '6px',
+                  transition: 'width 0.5s ease',
+                }}
               />
-            </CProgress>
+            </div>
             <small className="text-muted">
               {globalStats.completedHours} de {globalStats.totalHours} horas · {globalStats.completedModules} de {globalStats.totalModules} módulos concluídos
             </small>

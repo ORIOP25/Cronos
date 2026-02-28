@@ -332,8 +332,16 @@ class TestCourseCentricModel:
         await db_session.commit()
         await db_session.refresh(progress)
         
-        # Verificar a hierarquia completa
-        result = await db_session.execute(select(models.ClassProgress).where(models.ClassProgress.id == progress.id))
+        # Verificar a hierarquia completa (com eager loading para evitar MissingGreenlet)
+        from sqlalchemy.orm import selectinload
+        result = await db_session.execute(
+            select(models.ClassProgress)
+            .where(models.ClassProgress.id == progress.id)
+            .options(
+                selectinload(models.ClassProgress.class_).selectinload(models.Class.course).selectinload(models.Course.organization),
+                selectinload(models.ClassProgress.module).selectinload(models.Module.subject).selectinload(models.Subject.organization),
+            )
+        )
         fetched_progress = result.scalar()
         
         assert fetched_progress.class_.course.organization.id == org.id

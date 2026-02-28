@@ -109,7 +109,7 @@ const SchoolConfig = () => {
                         {daysLabel.map((label, idx) => (
                             <CFormCheck 
                                 key={idx}
-                                button={{ color: formData.days[idx] ? 'primary' : 'light', variant: formData.days[idx] ? '' : 'ghost' }}
+                                button={{ color: formData.days[idx] ? 'primary' : 'secondary', variant: formData.days[idx] ? '' : 'outline' }}
                                 type="checkbox" 
                                 id={`day-${idx}`} 
                                 label={label}

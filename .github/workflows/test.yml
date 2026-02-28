@@ -4,7 +4,8 @@ on:
   push:
     branches: [ "main", "master" ]
     paths:
-      - 'backend/**'  # Só dispara se mexeres no backend
+      - 'backend/**'
+      - 'frontend/**'
   pull_request:
     branches: [ "main", "master" ]
 
@@ -47,29 +48,43 @@ jobs:
       uses: actions/setup-python@v5
       with:
         python-version: "3.12"
-        cache: 'pip' # Cache das dependências para ser mais rápido
+        cache: 'pip'
 
     - name: Instalar Dependências
       working-directory: ./backend
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
-        # Instalar ferramentas de teste extra
         pip install pytest pytest-asyncio httpx
 
-    - name: Correr Testes (Pytest)
+    - name: Correr Testes Backend (Pytest)
       working-directory: ./backend
       env:
-        # ENVIRONMENT IMPORTANTE: 'local' usa logs coloridos, 'test' ou 'ci' seria ideal
         ENVIRONMENT: local
-        # URL aponta para o serviço 'postgres' criado acima
         DATABASE_URL: postgresql+asyncpg://postgres:mysecretpassword@localhost:5432/horario_zen_test_db
-        # URL aponta para o serviço 'redis' criado acima
         REDIS_URL: redis://localhost:6379/0
-        
-        # Segredos Falsos para Teste
         SECRET_KEY: segredo_super_secreto_apenas_para_testes_ci
         ACCESS_TOKEN_EXPIRE_MINUTES: 60
       run: |
-        # -v: Verbose, -s: Mostra prints
         pytest -v -s
+
+  test-frontend:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Configurar Node.js 20
+      uses: actions/setup-node@v4
+      with:
+        node-version: "20"
+        cache: 'npm'
+        cache-dependency-path: frontend/package-lock.json
+
+    - name: Instalar Dependências
+      working-directory: ./frontend
+      run: npm ci
+
+    - name: Correr Testes Frontend (Vitest)
+      working-directory: ./frontend
+      run: npx vitest run

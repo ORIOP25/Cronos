@@ -1,7 +1,7 @@
-import React from 'react';
+import React, { useState, useRef, useCallback } from 'react';
 import { PREFERENCE_LEVELS, DEFAULT_PREFERENCE } from '../constants';
 
-const AvailabilityGrid = ({ timeslots, availabilityMap, onChange }) => {
+const AvailabilityGrid = ({ timeslots, availabilityMap, onChange, selectedMode }) => {
   // timeslots: Lista vinda da BD (ex: day_of_week: 0, start_time: "08:00:00")
   
   // Agrupar timeslots por Dias da Semana para desenhar a tabela
@@ -10,16 +10,35 @@ const AvailabilityGrid = ({ timeslots, availabilityMap, onChange }) => {
   // Extrair as horas únicas e ordenar (ex: "08:00:00", "09:00:00")
   const uniqueTimes = [...new Set(timeslots.map(t => t.start_time))].sort((a, b) => a.localeCompare(b));
 
+  // --- Click-and-Drag (Paintbrush) ---
+  const isDragging = useRef(false);
+
   const getScore = (timeslotId) => {
     return availabilityMap[timeslotId] !== undefined 
       ? availabilityMap[timeslotId] 
       : DEFAULT_PREFERENCE;
   };
 
-  const handleCellClick = (timeslot) => {
+  const applyPaint = useCallback((timeslot) => {
     const currentScore = getScore(timeslot.id);
-    const nextScore = PREFERENCE_LEVELS[currentScore].next;
-    onChange(timeslot.id, nextScore);
+    if (currentScore !== selectedMode) {
+      onChange(timeslot.id, selectedMode);
+    }
+  }, [selectedMode, availabilityMap, onChange]);
+
+  const handleCellMouseDown = (timeslot) => {
+    isDragging.current = true;
+    applyPaint(timeslot);
+  };
+
+  const handleCellMouseEnter = (timeslot) => {
+    if (isDragging.current) {
+      applyPaint(timeslot);
+    }
+  };
+
+  const handleMouseUp = () => {
+    isDragging.current = false;
   };
 
   const styles = {
@@ -67,17 +86,11 @@ const AvailabilityGrid = ({ timeslots, availabilityMap, onChange }) => {
   };
 
   return (
-    <div style={{ maxWidth: '100%', overflowX: 'auto' }}>
-      {/* Legenda */}
-      <div style={{ display: 'flex', gap: '15px', marginBottom: '15px' }}>
-        {Object.entries(PREFERENCE_LEVELS).map(([score, info]) => (
-          <div key={score} style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-            <div style={{ width: '20px', height: '20px', backgroundColor: info.color, border: '1px solid var(--rs-grid-cell-border)', borderRadius: '4px' }}></div>
-            <span>{info.label}</span>
-          </div>
-        ))}
-      </div>
-
+    <div
+      style={{ maxWidth: '100%', overflowX: 'auto' }}
+      onMouseUp={handleMouseUp}
+      onMouseLeave={handleMouseUp}
+    >
       {/* A Grelha */}
       <div style={styles.grid}>
         {/* Cabeçalho */}
@@ -94,12 +107,8 @@ const AvailabilityGrid = ({ timeslots, availabilityMap, onChange }) => {
             
             {/* Células dos Dias */}
             {days.map((dayName, index) => {
-              // CORREÇÃO CRÍTICA AQUI:
-              // Usamos 'index' (0-4) em vez de 'dayName' ("Segunda")
-              // para bater certo com o 'day_of_week' da base de dados.
               const slot = timeslots.find(t => t.day_of_week === index && t.start_time === time);
               
-              // Se não houver slot na BD para esta hora/dia, desenha um buraco cinzento
               if (!slot) return <div key={`${index}-${time}`} style={{ background: 'var(--rs-grid-empty-bg)', border: '1px dashed var(--rs-grid-empty-border)', borderRadius: '8px' }} title="Sem horário definido" />; 
 
               const score = getScore(slot.id);
@@ -110,9 +119,10 @@ const AvailabilityGrid = ({ timeslots, availabilityMap, onChange }) => {
                   role="button"
                   tabIndex={0}
                   style={styles.cell(score)}
-                  onClick={() => handleCellClick(slot)}
-                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleCellClick(slot); } }}
-                  title={`Clique para mudar: ${dayName} às ${time}`}
+                  onMouseDown={() => handleCellMouseDown(slot)}
+                  onMouseEnter={() => handleCellMouseEnter(slot)}
+                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); applyPaint(slot); } }}
+                  title={`${PREFERENCE_LEVELS[selectedMode].label}: ${dayName} às ${time}`}
                 >
                   {PREFERENCE_LEVELS[score].label}
                 </div>

@@ -22,11 +22,11 @@ RUN pip install --no-cache-dir --upgrade pip && \
 # 6. Copiar o código todo do projeto para dentro do Docker
 COPY . .
 
-# 7. Instalar netcat para health check
-RUN apt-get update && apt-get install -y --no-install-recommends netcat-traditional && rm -rf /var/lib/apt/lists/*
+# 7. Instalar netcat para health check + dos2unix para line endings
+RUN apt-get update && apt-get install -y --no-install-recommends netcat-traditional dos2unix && rm -rf /var/lib/apt/lists/*
 
-# 8. Tornar o script executável
-RUN chmod +x /app/entrypoint.sh
+# 8. Converter line endings (CRLF → LF) e tornar o script executável
+RUN dos2unix /app/entrypoint.sh && chmod +x /app/entrypoint.sh
 
 # 9. Expor a porta 8000
 EXPOSE 8000
