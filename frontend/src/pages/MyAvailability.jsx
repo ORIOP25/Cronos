@@ -8,7 +8,7 @@ import { PREFERENCE_LEVELS, DEFAULT_PREFERENCE } from '../constants';
 
 const MyAvailability = () => {
   const [timeslots, setTimeslots] = useState([]);
-  const [availabilityMap, setAvailabilityMap] = useState({}); // { timeslot_id: score }
+  const [availabilityMap, setAvailabilityMap] = useState({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
@@ -59,7 +59,7 @@ const MyAvailability = () => {
     try {
       // Transformar o mapa {1: 2, 5: -1} numa lista para a API
       const payload = Object.entries(availabilityMap).map(([tsId, score]) => ({
-        timeslot_id: parseInt(tsId, 10),
+        timeslot_id: Number.parseInt(tsId, 10),
         score: score,
       }));
 

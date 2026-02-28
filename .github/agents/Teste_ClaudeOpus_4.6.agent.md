@@ -172,3 +172,116 @@ Evaluate every line of code against these:
             await _reset_module_orders(db, subject_in.modules, existing_modules)
             _upsert_modules(db, subject_in.modules, existing_modules, subject_id)
     ```
+
+- Do not duplicate string literals 3 or more times (SonarQube rule: "Define a constant instead of duplicating this literal").
+    When defining Pydantic schemas or repeating descriptions/error messages, extract the string into a module-level constant at the top of the file and reuse it. Do not repeat the exact same string literal across multiple fields or classes.
+
+    Bad Example:
+    ```python
+    class ClassCreate(BaseModel):
+        start_year: int = Field(..., description="Ano de início (ex: 2025)")
+    class ClassUpdate(BaseModel):
+        start_year: int | None = Field(None, description="Ano de início (ex: 2025)")
+    ```
+
+    Good Example:
+    ```python
+    DESC_START_YEAR = "Ano de início (ex: 2025)"
+
+    class ClassCreate(BaseModel):
+        start_year: int = Field(..., description=DESC_START_YEAR)
+    class ClassUpdate(BaseModel):
+        start_year: int | None = Field(None, description=DESC_START_YEAR)
+    ```
+
+- Missing React PropTypes validation (ESLint: react/prop-types).
+    Always define `propTypes` for all React components to ensure runtime type checking and better IDE autocompletion.
+    
+    Bad Example:
+    ```jsx
+    const MyComponent = ({ title, items }) => (<div>{title}</div>);
+    ```
+
+    Good Example:
+    ```jsx
+    import PropTypes from 'prop-types';
+    const MyComponent = ({ title, items }) => (<div>{title}</div>);
+    MyComponent.propTypes = {
+      title: PropTypes.string.isRequired,
+      items: PropTypes.array
+    };
+    ```
+
+- Using `role="button"` on non-interactive elements (SonarQube/A11y).
+    Do not use `<div role="button">` or `<span role="button">`. Always use native `<button type="button">` elements for clickable actions. Native buttons automatically handle keyboard events (Enter/Space) and focus management. Tailwind's reset makes buttons look like empty containers anyway, so they are perfect for custom UI grids.
+
+    Bad Example: `<div role="button" tabIndex={0} onClick={handleClick} className="p-4 bg-red" />`
+    Good Example: `<button type="button" onClick={handleClick} className="p-4 bg-red w-full block text-left" />`
+
+- Nested ternary operators are strictly forbidden (SonarQube rule: S3358).
+    Do not nest ternary operators (`condition ? true : false`). It makes JSX and business logic incredibly hard to read. Extract nested conditions into separate independent statements, helper functions, `if/else` blocks before the `return`, or create a clear `switch` statement if appropriate.
+
+    Bad Example:
+    ```jsx
+    return (
+      <button className={isPrimary ? 'bg-blue' : isDanger ? 'bg-red' : 'bg-gray'}>
+        Click me
+      </button>
+    );
+    ```
+
+    Good Example (Extracted logic):
+    ```jsx
+    let buttonClass = 'bg-gray';
+    if (isPrimary) buttonClass = 'bg-blue';
+    else if (isDanger) buttonClass = 'bg-red';
+
+    return (
+      <button className={buttonClass}>
+        Click me
+      </button>
+    );
+    ```
+
+- Prefer explicit Number methods (SonarQube rule: S7773).
+    Do not use global `parseInt()`, `parseFloat()`, or `isNaN()`. Always use the explicit `Number` object methods to prevent unexpected type coercion issues.
+    Bad: `parseInt(value)` or `isNaN(value)`
+    Good: `Number.parseInt(value, 10)` or `Number.isNaN(value)`
+
+- Form labels must be associated with a control (SonarQube rule: S6853).
+    A `<label>` must have an `htmlFor` attribute that exactly matches the `id` of its corresponding input element, or the input must be nested inside the label.
+    Bad: `<label>Name:</label><input type="text" />`
+    Good: `<label htmlFor="nameInput">Name:</label><input id="nameInput" type="text" />`
+
+- Prefer `.some(...)` over `.filter(...).length > 0` (SonarQube rule: S7754).
+    When checking if an array contains at least one element that matches a condition, use `.some()`. It is faster because it short-circuits (stops executing) as soon as it finds the first match, whereas `.filter()` iterates the entire array and allocates memory for a new array.
+    Bad: `const hasActive = items.filter(i => i.active).length > 0;`
+    Good: `const hasActive = items.some(i => i.active);`
+
+- Avoid unexpected negated conditions (SonarQube rule: S7735).
+    Do not use negated conditions in `if/else` statements or ternary operators if the `else` branch is also present. Invert the logic to make it more readable.
+    Bad: `!isValid ? showErrors() : proceed();`
+    Good: `isValid ? proceed() : showErrors();`
+
+- Remove commented-out code (SonarQube rule: S125).
+    Do not leave blocks of commented-out code in the source files. Version control (Git) handles history.
+
+- Do not use Array index in keys (SonarQube rule: S6479).
+    In React, using the array index as a `key` prop can lead to rendering bugs and performance issues if the list order changes. Always use a unique, stable identifier from the data (like an `id`, `uuid`, or a uniquely guaranteed string/value).
+    Bad: `items.map((item, index) => <div key={index}>{item.name}</div>)`
+    Good: `items.map(item => <div key={item.id}>{item.name}</div>)`
+
+- Avoid ambiguous spacing in JSX (SonarQube rule: S6772).
+    When mixing plain text and inline HTML elements (like `<strong>`, `<span>`, `<a>`), the whitespace can be stripped or render unpredictably. Use an explicit space expression `{' '}` to guarantee separation.
+    Bad: `<p>Please click <a>here</a> to continue.</p>`
+    Good: `<p>Please click{' '}<a>here</a>{' '}to continue.</p>`
+
+- Do not perform equality checks with floating point values (SonarQube rule: python:S1244).
+    Floating-point math is imprecise. Never use `==` to compare float values. If writing tests in pytest, use `pytest.approx()`. In production code, use `math.isclose()`.
+    Bad: `assert percentage == 50.0`
+    Good: `from pytest import approx; assert percentage == approx(50.0)`
+
+- Add replacement fields or use a normal string instead of an f-string (SonarQube rule: python:S3457).
+    Do not use the `f""` string prefix if there are no expressions `{}` to evaluate inside the string. It causes unnecessary overhead and triggers linters.
+    Bad: `print(f"Database seeded successfully.")`
+    Good: `print("Database seeded successfully.")`

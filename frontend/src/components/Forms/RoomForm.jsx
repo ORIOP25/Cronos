@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import PropTypes from 'prop-types'
 import {
   CForm, CRow, CCol, CFormInput, CButton, CModalFooter, CFormSelect
 } from '@coreui/react'
@@ -31,6 +32,10 @@ const RoomForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
     e.preventDefault()
     onSubmit(formData)
   }
+
+  let submitLabel = 'Criar Sala'
+  if (isLoading) submitLabel = 'A gravar...'
+  else if (initialData) submitLabel = 'Atualizar Sala'
 
   return (
     <CForm onSubmit={handleSubmit}>
@@ -79,11 +84,22 @@ const RoomForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
           Cancelar
         </CButton>
         <CButton color="primary" type="submit" disabled={isLoading}>
-          {isLoading ? 'A gravar...' : (initialData ? 'Atualizar Sala' : 'Criar Sala')}
+          {submitLabel}
         </CButton>
       </CModalFooter>
     </CForm>
   )
+}
+
+RoomForm.propTypes = {
+  initialData: PropTypes.shape({
+    name: PropTypes.string,
+    type: PropTypes.string,
+    capacity: PropTypes.number,
+  }),
+  onSubmit: PropTypes.func.isRequired,
+  isLoading: PropTypes.bool,
+  onCancel: PropTypes.func.isRequired,
 }
 
 export default RoomForm

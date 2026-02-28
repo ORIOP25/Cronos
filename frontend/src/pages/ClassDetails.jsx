@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useCallback } from 'react'
+import PropTypes from 'prop-types'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import {
   CCard, CCardBody, CCardHeader, CCol, CRow, CButton, CAlert,
@@ -42,6 +43,10 @@ const RoomBadge = ({ type }) => {
   return <CBadge color={c.color} shape="rounded-pill" className={c.textClass || ''}>{c.label}</CBadge>
 }
 
+RoomBadge.propTypes = {
+  type: PropTypes.string.isRequired,
+}
+
 // ==========================================
 //  SUB-COMPONENT: Linha de módulo com progresso editável
 // ==========================================
@@ -49,11 +54,12 @@ const ModuleRow = ({ module, isEditing, editValue, onChangeHours }) => {
   // Quando editValue é 0, mostramos string vazia para UX limpa
   const rawEditValue = editValue === 0 ? '' : editValue
   const numericValue = editValue || 0
+  const activeHours = isEditing ? numericValue : module.hours_completed
   const pct = module.hours_total > 0
-    ? Math.round(((isEditing ? numericValue : module.hours_completed) / module.hours_total) * 100)
+    ? Math.round((activeHours / module.hours_total) * 100)
     : 0
   const displayPct = Math.min(pct, 100)
-  const displayHours = isEditing ? numericValue : module.hours_completed
+  const displayHours = activeHours
 
   const handleInputChange = (e) => {
     const raw = e.target.value
@@ -62,8 +68,8 @@ const ModuleRow = ({ module, isEditing, editValue, onChangeHours }) => {
       onChangeHours(module.id, 0)
       return
     }
-    const parsed = parseInt(raw, 10)
-    if (!isNaN(parsed)) {
+    const parsed = Number.parseInt(raw, 10)
+    if (!Number.isNaN(parsed)) {
       onChangeHours(module.id, parsed)
     }
   }
@@ -115,6 +121,20 @@ const ModuleRow = ({ module, isEditing, editValue, onChangeHours }) => {
       </CProgress>
     </div>
   )
+}
+
+ModuleRow.propTypes = {
+  module: PropTypes.shape({
+    id: PropTypes.number.isRequired,
+    name: PropTypes.string.isRequired,
+    code: PropTypes.string,
+    hours_total: PropTypes.number.isRequired,
+    hours_completed: PropTypes.number.isRequired,
+    is_completed: PropTypes.bool,
+  }).isRequired,
+  isEditing: PropTypes.bool.isRequired,
+  editValue: PropTypes.number.isRequired,
+  onChangeHours: PropTypes.func.isRequired,
 }
 
 // ==========================================
@@ -170,6 +190,21 @@ const SubjectCard = ({ subject, isEditing, editMap, onChangeHours }) => {
   )
 }
 
+SubjectCard.propTypes = {
+  subject: PropTypes.shape({
+    id: PropTypes.number.isRequired,
+    name: PropTypes.string.isRequired,
+    overall_percentage: PropTypes.number.isRequired,
+    required_room_type: PropTypes.string,
+    completed_hours: PropTypes.number.isRequired,
+    total_hours: PropTypes.number.isRequired,
+    modules: PropTypes.arrayOf(PropTypes.object).isRequired,
+  }).isRequired,
+  isEditing: PropTypes.bool.isRequired,
+  editMap: PropTypes.objectOf(PropTypes.number).isRequired,
+  onChangeHours: PropTypes.func.isRequired,
+}
+
 // ==========================================
 //  COMPONENT PRINCIPAL: ClassDetails
 // ==========================================
@@ -191,7 +226,7 @@ const ClassDetails = () => {
 
   // --- STATE: Edição de progresso ---
   const [editingProgress, setEditingProgress] = useState(false)
-  const [progressEdit, setProgressEdit] = useState({}) // { moduleId: hours }
+  const [progressEdit, setProgressEdit] = useState({})
 
   // --- MEMOIZED: Totais globais ---
   const globalStats = useMemo(() => {
@@ -226,8 +261,8 @@ const ClassDetails = () => {
 
   const saveHeader = () => {
     const trimName = headerForm.name.trim()
-    const size = parseInt(headerForm.size, 10)
-    if (!trimName || isNaN(size) || size <= 0) return
+    const size = Number.parseInt(headerForm.size, 10)
+    if (!trimName || Number.isNaN(size) || size <= 0) return
 
     updateClass.mutate(
       { id: numClassId, name: trimName, size },
@@ -347,8 +382,9 @@ const ClassDetails = () => {
             /* --- MODO EDIÇÃO --- */
             <CRow className="g-3 align-items-end">
               <CCol md={5}>
-                <label className="form-label fw-semibold">Nome da Turma</label>
+                <label htmlFor="header-name" className="form-label fw-semibold">Nome da Turma</label>
                 <CFormInput
+                  id="header-name"
                   value={headerForm.name}
                   onChange={(e) => setHeaderForm(prev => ({ ...prev, name: e.target.value }))}
                   placeholder="Ex: TGEI 25/28"
@@ -356,8 +392,9 @@ const ClassDetails = () => {
                 />
               </CCol>
               <CCol md={3}>
-                <label className="form-label fw-semibold">Capacidade (alunos)</label>
+                <label htmlFor="header-size" className="form-label fw-semibold">Capacidade (alunos)</label>
                 <CFormInput
+                  id="header-size"
                   type="number"
                   min={1}
                   max={200}
@@ -464,7 +501,7 @@ const ClassDetails = () => {
             <CBadge color="primary" shape="rounded-pill">
               {classSubjects?.subjects?.length || 0}
             </CBadge>
-            {(classSubjects?.subjects || []).filter(s => !s.teacher_id).length > 0 && (
+            {(classSubjects?.subjects || []).some(s => !s.teacher_id) && (
               <CBadge color="warning" shape="rounded-pill">
                 {classSubjects.subjects.filter(s => !s.teacher_id).length} sem professor
               </CBadge>
@@ -532,17 +569,7 @@ const ClassDetails = () => {
               {classData.subjects?.length || 0}
             </CBadge>
           </div>
-          {!editingProgress ? (
-            <CButton
-              color="light"
-              size="sm"
-              onClick={startEditProgress}
-              disabled={(classData.subjects || []).length === 0}
-            >
-              <CIcon icon={cilPencil} size="sm" className="me-1" />
-              Editar Progresso
-            </CButton>
-          ) : (
+          {editingProgress ? (
             <div className="d-flex gap-1">
               <CButton color="primary" size="sm" onClick={saveProgress} disabled={updateProgress.isPending}>
                 {updateProgress.isPending ? <CSpinner size="sm" /> : <CIcon icon={cilSave} size="sm" className="me-1" />}
@@ -552,6 +579,16 @@ const ClassDetails = () => {
                 <CIcon icon={cilX} size="sm" />
               </CButton>
             </div>
+          ) : (
+            <CButton
+              color="light"
+              size="sm"
+              onClick={startEditProgress}
+              disabled={(classData.subjects || []).length === 0}
+            >
+              <CIcon icon={cilPencil} size="sm" className="me-1" />
+              Editar Progresso
+            </CButton>
           )}
         </CCardHeader>
         <CCardBody>

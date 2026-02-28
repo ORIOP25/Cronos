@@ -1,4 +1,5 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useRef, useCallback, useEffect } from 'react';
+import PropTypes from 'prop-types';
 import { PREFERENCE_LEVELS, DEFAULT_PREFERENCE } from '../constants';
 
 const AvailabilityGrid = ({ timeslots, availabilityMap, onChange, selectedMode }) => {
@@ -13,11 +14,7 @@ const AvailabilityGrid = ({ timeslots, availabilityMap, onChange, selectedMode }
   // --- Click-and-Drag (Paintbrush) ---
   const isDragging = useRef(false);
 
-  const getScore = (timeslotId) => {
-    return availabilityMap[timeslotId] !== undefined 
-      ? availabilityMap[timeslotId] 
-      : DEFAULT_PREFERENCE;
-  };
+  const getScore = (timeslotId) => availabilityMap[timeslotId] ?? DEFAULT_PREFERENCE;
 
   const applyPaint = useCallback((timeslot) => {
     const currentScore = getScore(timeslot.id);
@@ -40,6 +37,13 @@ const AvailabilityGrid = ({ timeslots, availabilityMap, onChange, selectedMode }
   const handleMouseUp = () => {
     isDragging.current = false;
   };
+
+  // Captura a libertação do rato globalmente para não quebrar o drag quando
+  // o cursor sai da janela antes de soltar o botão.
+  useEffect(() => {
+    globalThis.addEventListener('mouseup', handleMouseUp);
+    return () => globalThis.removeEventListener('mouseup', handleMouseUp);
+  }, []);
 
   const styles = {
     grid: {
@@ -70,7 +74,11 @@ const AvailabilityGrid = ({ timeslots, availabilityMap, onChange, selectedMode }
       fontSize: '0.85rem',
     },
     cell: (score) => ({
+      width: '100%',
       height: '60px',
+      padding: 0,
+      fontFamily: 'inherit',
+      color: 'inherit',
       backgroundColor: PREFERENCE_LEVELS[score].color,
       cursor: 'pointer',
       border: '1px solid var(--rs-grid-cell-border)',
@@ -86,11 +94,7 @@ const AvailabilityGrid = ({ timeslots, availabilityMap, onChange, selectedMode }
   };
 
   return (
-    <div
-      style={{ maxWidth: '100%', overflowX: 'auto' }}
-      onMouseUp={handleMouseUp}
-      onMouseLeave={handleMouseUp}
-    >
+    <div style={{ maxWidth: '100%', overflowX: 'auto' }}>
       {/* A Grelha */}
       <div style={styles.grid}>
         {/* Cabeçalho */}
@@ -114,18 +118,17 @@ const AvailabilityGrid = ({ timeslots, availabilityMap, onChange, selectedMode }
               const score = getScore(slot.id);
               
               return (
-                <div 
+                <button
+                  type="button"
                   key={slot.id}
-                  role="button"
-                  tabIndex={0}
                   style={styles.cell(score)}
                   onMouseDown={() => handleCellMouseDown(slot)}
                   onMouseEnter={() => handleCellMouseEnter(slot)}
-                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); applyPaint(slot); } }}
+                  onClick={() => applyPaint(slot)}
                   title={`${PREFERENCE_LEVELS[selectedMode].label}: ${dayName} às ${time}`}
                 >
                   {PREFERENCE_LEVELS[score].label}
-                </div>
+                </button>
               );
             })}
           </React.Fragment>
@@ -133,6 +136,19 @@ const AvailabilityGrid = ({ timeslots, availabilityMap, onChange, selectedMode }
       </div>
     </div>
   );
+};
+
+AvailabilityGrid.propTypes = {
+  timeslots: PropTypes.arrayOf(
+    PropTypes.shape({
+      id: PropTypes.number.isRequired,
+      day_of_week: PropTypes.number.isRequired,
+      start_time: PropTypes.string.isRequired,
+    }),
+  ).isRequired,
+  availabilityMap: PropTypes.objectOf(PropTypes.number).isRequired,
+  onChange: PropTypes.func.isRequired,
+  selectedMode: PropTypes.number.isRequired,
 };
 
 export default AvailabilityGrid;

@@ -13,6 +13,7 @@ NÃO inclui testes de Solver/Schedule (excluídos por indicação).
 """
 
 import pytest
+from pytest import approx
 from httpx import AsyncClient
 from app.config import settings
 from app import models
@@ -248,7 +249,7 @@ class TestModuleProgress:
         assert m1 is not None
         assert m1["hours_completed"] == 10
         assert m1["is_completed"] is False
-        assert m1["percentage"] == 40.0  # 10/25 * 100
+        assert m1["percentage"] == approx(40.0)  # 10/25 * 100
 
     async def test_progress_auto_complete(
         self, async_client: AsyncClient, admin_token_headers: dict
@@ -273,7 +274,7 @@ class TestModuleProgress:
                     m1 = mod
                     break
         assert m1["is_completed"] is True
-        assert m1["percentage"] == 100.0
+        assert m1["percentage"] == approx(100.0)
 
     async def test_progress_clamp_to_max(
         self, async_client: AsyncClient, admin_token_headers: dict

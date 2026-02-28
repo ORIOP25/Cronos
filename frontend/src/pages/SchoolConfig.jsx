@@ -36,13 +36,13 @@ const SchoolConfig = () => {
   const handleSubmit = () => {
     const selectedDays = Object.keys(formData.days)
         .filter(d => formData.days[d])
-        .map(d => parseInt(d))
+        .map(d => Number.parseInt(d, 10))
 
     const payload = {
         start_time: formData.start_time + ':00',
         end_time: formData.end_time + ':00',
-        slot_duration_minutes: parseInt(formData.slot_duration_minutes),
-        break_duration_minutes: parseInt(formData.break_duration_minutes),
+        slot_duration_minutes: Number.parseInt(formData.slot_duration_minutes, 10),
+        break_duration_minutes: Number.parseInt(formData.break_duration_minutes, 10),
         days_of_week: selectedDays
     }
     mutation.mutate(payload)
@@ -70,8 +70,8 @@ const SchoolConfig = () => {
         </CCardHeader>
         <CCardBody className="p-4">
             <p className="text-muted mb-4">
-                Defina aqui o funcionamento geral da escola. Ao guardar, o sistema irá 
-                <strong> regenerar todos os blocos horários</strong> base (Timeslots).
+                Defina aqui o funcionamento geral da escola. Ao guardar, o sistema irá{' '}
+                <strong>regenerar todos os blocos horários</strong> base (Timeslots).
             </p>
 
             <CForm>
@@ -103,12 +103,12 @@ const SchoolConfig = () => {
                     </CCol>
                 </CRow>
 
-                <div className="mb-4">
-                    <label className="form-label fw-bold d-block mb-2">Dias de Funcionamento</label>
+                <fieldset className="mb-4">
+                    <legend className="form-label fw-bold d-block mb-2">Dias de Funcionamento</legend>
                     <div className="d-flex gap-2 flex-wrap">
                         {daysLabel.map((label, idx) => (
                             <CFormCheck 
-                                key={idx}
+                                key={label}
                                 button={{ color: formData.days[idx] ? 'primary' : 'secondary', variant: formData.days[idx] ? '' : 'outline' }}
                                 type="checkbox" 
                                 id={`day-${idx}`} 
@@ -118,7 +118,7 @@ const SchoolConfig = () => {
                             />
                         ))}
                     </div>
-                </div>
+                </fieldset>
 
                 <div className="d-grid gap-2 d-md-flex justify-content-md-end">
                     <CButton color="primary" size="lg" onClick={handleSubmit} disabled={mutation.isPending}>

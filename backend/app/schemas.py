@@ -11,6 +11,17 @@ from .models import RoomType, UserRole, ConstraintType, PreferenceLevel, List
 model_config = ConfigDict(from_attributes=True)
 
 # ==========================================
+#  CONSTANTES DE DESCRIÇÃO (SonarQube: evitar duplicação de literals)
+# ==========================================
+DESC_SUBJECT_IDS = "IDs das disciplinas associadas"
+DESC_CLASS_SIZE = "Número de alunos da turma"
+DESC_GRADE_LEVEL = "Ano de escolaridade (10, 11, 12)"
+DESC_START_YEAR = "Ano de início (ex: 2025)"
+DESC_END_YEAR = "Ano de fim (ex: 2028)"
+ERR_YEAR_RANGE = "Ano de fim deve ser maior que o ano de início"
+DESC_HOURS_TOTAL = "Carga horária total do módulo"
+
+# ==========================================
 #  AUTENTICAÇÃO & USERS
 # ==========================================
 
@@ -70,7 +81,7 @@ class TeacherBase(BaseModel):
 class TeacherCreate(TeacherBase):
     # Email opcional — se fornecido, permite criar conta de acesso ao professor
     create_user_account: bool = False
-    subject_ids: list[int] = Field(default_factory=list, description="IDs das disciplinas associadas")
+    subject_ids: list[int] = Field(default_factory=list, description=DESC_SUBJECT_IDS)
 
 class TeacherRead(TeacherBase):
     id: int
@@ -79,7 +90,7 @@ class TeacherRead(TeacherBase):
     login_email: Optional[str] = None
     # NOVO: Para o frontend saber se a conta está ativa ou inativa
     is_active: bool = False
-    subject_ids: list[int] = Field(default_factory=list, description="IDs das disciplinas associadas")
+    subject_ids: list[int] = Field(default_factory=list, description=DESC_SUBJECT_IDS)
     # Opcional: Incluir lista de disponibilidades quando pedes o professor
     # availabilities: List[AvailabilityRead] = [] 
 
@@ -88,64 +99,64 @@ class TeacherRead(TeacherBase):
 class TeacherUpdate(BaseModel):
     name: Optional[str] = None
     email: Optional[EmailStr] = None
-    subject_ids: list[int] = Field(default_factory=list, description="IDs das disciplinas associadas")
+    subject_ids: list[int] = Field(default_factory=list, description=DESC_SUBJECT_IDS)
     # NOVO: Para permitir ativar/desativar a conta de acesso via API
     create_user_account: Optional[bool] = None
 
 # --- Class (Turma) ---
 class ClassBase(BaseModel):
     name: str
-    size: int = Field(default=25, gt=0, description="Número de alunos da turma")
+    size: int = Field(default=25, gt=0, description=DESC_CLASS_SIZE)
 
 class ClassCreate(ClassBase):
     course_id: int = Field(..., description="ID do curso (obrigatório — turmas pertencem sempre a um curso)")
-    grade_level: int = Field(..., ge=10, le=12, description="Ano de escolaridade (10, 11, 12)")
-    start_year: int = Field(..., description="Ano de início (ex: 2025)")
-    end_year: int = Field(..., description="Ano de fim (ex: 2028)")
+    grade_level: int = Field(..., ge=10, le=12, description=DESC_GRADE_LEVEL)
+    start_year: int = Field(..., description=DESC_START_YEAR)
+    end_year: int = Field(..., description=DESC_END_YEAR)
 
     @model_validator(mode='after')
     def validate_year_window(self):
         if self.end_year <= self.start_year:
-            raise ValueError("Ano de fim deve ser maior que o ano de início")
+            raise ValueError(ERR_YEAR_RANGE)
         return self
 
 class ClassUpdate(BaseModel):
     name: Optional[str] = None
-    size: Optional[int] = Field(None, gt=0, description="Número de alunos da turma")
-    grade_level: Optional[int] = Field(None, ge=10, le=12, description="Ano de escolaridade (10, 11, 12)")
-    start_year: Optional[int] = Field(None, description="Ano de início (ex: 2025)")
-    end_year: Optional[int] = Field(None, description="Ano de fim (ex: 2028)")
+    size: Optional[int] = Field(None, gt=0, description=DESC_CLASS_SIZE)
+    grade_level: Optional[int] = Field(None, ge=10, le=12, description=DESC_GRADE_LEVEL)
+    start_year: Optional[int] = Field(None, description=DESC_START_YEAR)
+    end_year: Optional[int] = Field(None, description=DESC_END_YEAR)
 
     @model_validator(mode='after')
     def validate_year_window_if_present(self):
         if self.start_year is not None and self.end_year is not None and self.end_year <= self.start_year:
-            raise ValueError("Ano de fim deve ser maior que o ano de início")
+            raise ValueError(ERR_YEAR_RANGE)
         return self
 
 
 class ClassCreateInCourse(ClassBase):
-    grade_level: int = Field(..., ge=10, le=12, description="Ano de escolaridade (10, 11, 12)")
-    start_year: int = Field(..., description="Ano de início (ex: 2025)")
-    end_year: int = Field(..., description="Ano de fim (ex: 2028)")
+    grade_level: int = Field(..., ge=10, le=12, description=DESC_GRADE_LEVEL)
+    start_year: int = Field(..., description=DESC_START_YEAR)
+    end_year: int = Field(..., description=DESC_END_YEAR)
 
     @model_validator(mode='after')
     def validate_year_window(self):
         if self.end_year <= self.start_year:
-            raise ValueError("Ano de fim deve ser maior que o ano de início")
+            raise ValueError(ERR_YEAR_RANGE)
         return self
 
 
 class ClassUpdateInCourse(BaseModel):
     name: Optional[str] = None
-    size: Optional[int] = Field(None, gt=0, description="Número de alunos da turma")
-    grade_level: Optional[int] = Field(None, ge=10, le=12, description="Ano de escolaridade (10, 11, 12)")
-    start_year: Optional[int] = Field(None, description="Ano de início (ex: 2025)")
-    end_year: Optional[int] = Field(None, description="Ano de fim (ex: 2028)")
+    size: Optional[int] = Field(None, gt=0, description=DESC_CLASS_SIZE)
+    grade_level: Optional[int] = Field(None, ge=10, le=12, description=DESC_GRADE_LEVEL)
+    start_year: Optional[int] = Field(None, description=DESC_START_YEAR)
+    end_year: Optional[int] = Field(None, description=DESC_END_YEAR)
 
     @model_validator(mode='after')
     def validate_year_window_if_present(self):
         if self.start_year is not None and self.end_year is not None and self.end_year <= self.start_year:
-            raise ValueError("Ano de fim deve ser maior que o ano de início")
+            raise ValueError(ERR_YEAR_RANGE)
         return self
 
 class ClassRead(ClassBase):
@@ -161,7 +172,7 @@ class ClassRead(ClassBase):
 class ModuleBase(BaseModel):
     name: str
     code: Optional[str] = None
-    hours_total: int = Field(..., gt=0, description="Carga horária total do módulo")
+    hours_total: int = Field(..., gt=0, description=DESC_HOURS_TOTAL)
     order: int = Field(..., ge=0, description="Ordem sequencial do módulo (0, 1, 2...)")
 
 class ModuleCreate(ModuleBase):
@@ -172,13 +183,13 @@ class ModuleUpsert(BaseModel):
     id: Optional[int] = None
     name: str
     code: Optional[str] = None
-    hours_total: int = Field(..., gt=0, description="Carga horária total do módulo")
+    hours_total: int = Field(..., gt=0, description=DESC_HOURS_TOTAL)
     order: int = Field(..., ge=0, description="Ordem sequencial do módulo")
 
 class ModuleUpdate(BaseModel):
     name: Optional[str] = None
     code: Optional[str] = None
-    hours_total: Optional[int] = Field(None, gt=0, description="Carga horária total do módulo")
+    hours_total: Optional[int] = Field(None, gt=0, description=DESC_HOURS_TOTAL)
     subject_id: Optional[int] = None
 
 class ModuleRead(ModuleBase):
@@ -398,10 +409,10 @@ class ReplacementSuggestion(BaseModel):
 # Classes Auxiliares
 class ClassConfigCreate(BaseModel):
     """Define as regras para criar uma turma automática"""
-    grade_level: int = Field(..., ge=10, le=12, description="Ano de escolaridade (10, 11, 12)")
+    grade_level: int = Field(..., ge=10, le=12, description=DESC_GRADE_LEVEL)
     size: int = Field(25, gt=0, description="Número de alunos")
-    start_year: int = Field(..., description="Ano de início (ex: 2025)")
-    end_year: int = Field(..., description="Ano de fim (ex: 2028)")
+    start_year: int = Field(..., description=DESC_START_YEAR)
+    end_year: int = Field(..., description=DESC_END_YEAR)
 
 class TeacherAssignmentCreate(BaseModel):
     """Define quem é o professor 'padrão' para uma disciplina neste curso"""

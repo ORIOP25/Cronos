@@ -235,357 +235,381 @@ def create_tables():
     print("   Todas as tabelas criadas!")
 
 
+def _seed_organization(db):
+    """Cria a organização raiz."""
+    org = models.Organization(name=SCHOOL_NAME, plan_status="active")
+    db.add(org)
+    db.commit()
+    db.refresh(org)
+    print(f"[OK] Organização: {org.name} (ID {org.id})")
+    return org
+
+
+def _seed_teachers(db, org):
+    """Cria professores e os respetivos utilizadores."""
+    teacher_objs = []
+    for t_data in TEACHERS:
+        teacher = models.Teacher(name=t_data["name"], organization_id=org.id)
+        db.add(teacher)
+        db.flush()
+
+        user = models.User(
+            email=t_data["email"],
+            hashed_password=hash_password(t_data["pass"]),
+            role=UserRole.admin,
+            organization_id=org.id,
+            teacher_id=teacher.id,
+            is_active=True,
+        )
+        db.add(user)
+        teacher_objs.append(teacher)
+
+    db.commit()
+    for t in teacher_objs:
+        db.refresh(t)
+    print(f"[OK] {len(teacher_objs)} Professores + Utilizadores criados")
+    return teacher_objs
+
+
+def _seed_rooms(db, org):
+    """Cria salas com tipos variados."""
+    room_objs = []
+    for r_data in ROOMS:
+        room = models.Room(
+            name=r_data["name"],
+            capacity=r_data["capacity"],
+            type=r_data["type"],
+            organization_id=org.id,
+        )
+        db.add(room)
+        room_objs.append(room)
+    db.commit()
+    n_normal = sum(1 for r in ROOMS if r["type"] == RoomType.normal)
+    n_lab = sum(1 for r in ROOMS if r["type"] == RoomType.lab)
+    n_gym = sum(1 for r in ROOMS if r["type"] == RoomType.gym)
+    print(f"[OK] {len(room_objs)} Salas ({n_normal} normais, {n_lab} labs, {n_gym} ginásio)")
+    return room_objs
+
+
+def _seed_timeslots(db, org):
+    """Cria blocos horários (Seg-Sex, 08:30–17:30)."""
+    slot_start_hour = 8
+    slot_start_min = 30
+    slots_per_day = 9
+
+    ts_map = {}
+    count_slots = 0
+    for day in range(5):
+        for i in range(slots_per_day):
+            h = slot_start_hour + i
+            t_start = datetime.time(h, slot_start_min)
+            t_end = datetime.time(h + 1, slot_start_min)
+            ts = models.Timeslot(
+                day_of_week=day,
+                start_time=t_start,
+                end_time=t_end,
+                organization_id=org.id,
+            )
+            db.add(ts)
+            ts_map[(day, h)] = ts
+            count_slots += 1
+    db.commit()
+    for key in ts_map:
+        db.refresh(ts_map[key])
+    print(f"[OK] {count_slots} Blocos horários (Seg-Sex, "
+          f"{slot_start_hour}:{slot_start_min:02d}-"
+          f"{slot_start_hour + slots_per_day}:{slot_start_min:02d})")
+    return ts_map, count_slots
+
+
+def _seed_courses(db, org):
+    """Cria cursos profissionais."""
+    course_objs = []
+    for c_data in COURSES:
+        course = models.Course(
+            name=c_data["name"],
+            abbreviation=c_data["abbr"],
+            organization_id=org.id,
+        )
+        db.add(course)
+        course_objs.append(course)
+    db.commit()
+    for c in course_objs:
+        db.refresh(c)
+    print(f"[OK] {len(course_objs)} Cursos: {', '.join(c['abbr'] for c in COURSES)}")
+    return course_objs
+
+
+def _seed_subjects(db, org, course_objs, teacher_objs):
+    """Cria disciplinas, módulos e ligações curso/professor."""
+    subject_objs = []
+    module_objs_by_subject = {}
+
+    for s_idx, s_data in enumerate(SUBJECTS):
+        subj = models.Subject(
+            name=s_data["name"],
+            required_room_type=s_data["room_type"],
+            organization_id=org.id,
+        )
+        db.add(subj)
+        db.flush()
+
+        mods = []
+        for m_data in s_data["modules"]:
+            mod = models.Module(
+                name=m_data["name"],
+                code=m_data["code"],
+                hours_total=m_data["hours"],
+                order=m_data["order"],
+                subject_id=subj.id,
+            )
+            db.add(mod)
+            mods.append(mod)
+        module_objs_by_subject[s_idx] = mods
+
+        for c_idx in s_data["courses"]:
+            subj.courses.append(course_objs[c_idx])
+        for t_idx in s_data["teachers"]:
+            subj.teachers.append(teacher_objs[t_idx])
+
+        subject_objs.append(subj)
+
+    db.commit()
+    for s in subject_objs:
+        db.refresh(s)
+    for mods in module_objs_by_subject.values():
+        for m in mods:
+            db.refresh(m)
+
+    total_modules = sum(len(m) for m in module_objs_by_subject.values())
+    print(f"[OK] {len(subject_objs)} Disciplinas + {total_modules} Módulos")
+    print("     Ligações curso-disciplina e professor-disciplina configuradas")
+    return subject_objs, module_objs_by_subject, total_modules
+
+
+def _seed_classes(db, org, course_objs):
+    """Cria turmas associadas aos cursos."""
+    class_objs = []
+    for cl_data in CLASSES:
+        klass = models.Class(
+            name=cl_data["name"],
+            size=cl_data["size"],
+            course_id=course_objs[cl_data["course_idx"]].id,
+            grade_level=cl_data["grade"],
+            start_year=cl_data["start"],
+            end_year=cl_data["end"],
+            organization_id=org.id,
+        )
+        db.add(klass)
+        class_objs.append(klass)
+    db.commit()
+    for k in class_objs:
+        db.refresh(k)
+    print(f"[OK] {len(class_objs)} Turmas criadas")
+    return class_objs
+
+
+def _seed_class_subject_links(db, class_objs, subject_objs, teacher_objs):
+    """Cria atribuições professor → turma → disciplina."""
+    csl_count = 0
+    for cl_idx, cl_data in enumerate(CLASSES):
+        course_idx = cl_data["course_idx"]
+        for s_idx, s_data in enumerate(SUBJECTS):
+            if course_idx in s_data["courses"]:
+                primary_teacher_idx = s_data["teachers"][0]
+                csl = models.ClassSubjectLink(
+                    class_id=class_objs[cl_idx].id,
+                    subject_id=subject_objs[s_idx].id,
+                    grade_level=cl_data["grade"],
+                    teacher_id=teacher_objs[primary_teacher_idx].id,
+                )
+                db.add(csl)
+                csl_count += 1
+    db.commit()
+    print(f"[OK] {csl_count} Atribuições professor-turma-disciplina")
+    return csl_count
+
+
+def _seed_lessons(db, org, class_objs, subject_objs, teacher_objs):
+    """Cria aulas (Lessons) para cada turma × disciplina."""
+    lesson_count = 0
+    for cl_idx, cl_data in enumerate(CLASSES):
+        course_idx = cl_data["course_idx"]
+        for s_idx, s_data in enumerate(SUBJECTS):
+            if course_idx in s_data["courses"]:
+                primary_teacher_idx = s_data["teachers"][0]
+                lesson = models.Lesson(
+                    teacher_id=teacher_objs[primary_teacher_idx].id,
+                    subject_id=subject_objs[s_idx].id,
+                    class_id=class_objs[cl_idx].id,
+                    organization_id=org.id,
+                )
+                db.add(lesson)
+                lesson_count += 1
+    db.commit()
+    print(f"[OK] {lesson_count} Aulas (Lessons)")
+    return lesson_count
+
+
+def _seed_progress(db, class_objs, module_objs_by_subject):
+    """Cria registos de progresso modular e aplica horas pré-preenchidas."""
+    progress_count = 0
+    progress_map = {}
+
+    for cl_idx, cl_data in enumerate(CLASSES):
+        course_idx = cl_data["course_idx"]
+        for s_idx, s_data in enumerate(SUBJECTS):
+            if course_idx in s_data["courses"]:
+                for mod in module_objs_by_subject[s_idx]:
+                    cp = models.ClassProgress(
+                        class_id=class_objs[cl_idx].id,
+                        module_id=mod.id,
+                        hours_completed=0,
+                        is_completed=False,
+                    )
+                    db.add(cp)
+                    progress_map[(cl_idx, s_idx, mod.order)] = cp
+                    progress_count += 1
+
+    db.flush()
+
+    overrides_applied = 0
+    for cl_idx, s_idx, mod_order, hours, completed in PROGRESS_OVERRIDES:
+        key = (cl_idx, s_idx, mod_order)
+        if key in progress_map:
+            progress_map[key].hours_completed = hours
+            progress_map[key].is_completed = completed
+            overrides_applied += 1
+
+    db.commit()
+    print(f"[OK] {progress_count} Registos de progresso "
+          f"({overrides_applied} com horas pré-preenchidas)")
+    return progress_count, overrides_applied
+
+
+def _add_availability(db, teacher_id, ts_map, slots, score):
+    """Adiciona registos de disponibilidade para um conjunto de (day, hour)."""
+    count = 0
+    for day, h in slots:
+        if (day, h) in ts_map:
+            db.add(models.Availability(
+                teacher_id=teacher_id,
+                timeslot_id=ts_map[(day, h)].id,
+                score=score,
+            ))
+            count += 1
+    return count
+
+
+def _seed_availabilities(db, teacher_objs, ts_map):
+    """Cria disponibilidades com padrões diferentes por professor."""
+    avail_count = 0
+
+    # Ana Silva (0): Indisponível segunda de manhã (formação externa)
+    avail_count += _add_availability(
+        db, teacher_objs[0].id, ts_map,
+        [(0, h) for h in [8, 9, 10, 11]],
+        PreferenceLevel.IMPOSSIBLE.value,
+    )
+
+    # Bruno Costa (1): Prefere manhãs (score 2), evita sexta à tarde
+    avail_count += _add_availability(
+        db, teacher_objs[1].id, ts_map,
+        [(day, h) for day in range(5) for h in [8, 9, 10]],
+        PreferenceLevel.PREFERRED.value,
+    )
+    avail_count += _add_availability(
+        db, teacher_objs[1].id, ts_map,
+        [(4, h) for h in [14, 15, 16]],
+        PreferenceLevel.AVOID.value,
+    )
+
+    # Carla Mendes (2): Indisponível quarta inteira (dia de formação)
+    avail_count += _add_availability(
+        db, teacher_objs[2].id, ts_map,
+        [(2, h) for h in range(8, 17)],
+        PreferenceLevel.IMPOSSIBLE.value,
+    )
+
+    # Daniel Ferreira (3): Evita 1º tempo de cada dia
+    avail_count += _add_availability(
+        db, teacher_objs[3].id, ts_map,
+        [(day, 8) for day in range(5)],
+        PreferenceLevel.AVOID.value,
+    )
+
+    # Eva Rodrigues (4): Prefere tardes (treinos)
+    avail_count += _add_availability(
+        db, teacher_objs[4].id, ts_map,
+        [(day, h) for day in range(5) for h in [14, 15, 16]],
+        PreferenceLevel.PREFERRED.value,
+    )
+
+    db.commit()
+    print(f"[OK] {avail_count} Disponibilidades (5 padrões diferentes)")
+    return avail_count
+
+
+def _print_summary(count_slots, total_modules, csl_count, lesson_count,
+                   progress_count, overrides_applied, avail_count):
+    """Imprime o resumo final dos dados de seed."""
+    n_normal = sum(1 for r in ROOMS if r["type"] == RoomType.normal)
+    n_lab = sum(1 for r in ROOMS if r["type"] == RoomType.lab)
+    n_gym = sum(1 for r in ROOMS if r["type"] == RoomType.gym)
+
+    print("\n" + "=" * 60)
+    print("  RESUMO DOS DADOS DE SEED")
+    print("=" * 60)
+    print(f"   Organização:  {SCHOOL_NAME}")
+    print(f"   Professores:  {len(TEACHERS)}")
+    print(f"   Salas:        {len(ROOMS)} ({n_normal} normais, {n_lab} labs, {n_gym} ginásio)")
+    print(f"   Timeslots:    {count_slots} (Seg-Sex)")
+    print(f"   Cursos:       {len(COURSES)}")
+    print(f"   Disciplinas:  {len(SUBJECTS)}")
+    print(f"   Módulos:      {total_modules}")
+    print(f"   Turmas:       {len(CLASSES)}")
+    print(f"   Atribuições:  {csl_count}")
+    print(f"   Aulas:        {lesson_count}")
+    print(f"   Progresso:    {progress_count} ({overrides_applied} com horas)")
+    print(f"   Dispon.:      {avail_count}")
+    print()
+    print("  LOGINS DE TESTE:")
+    for t in TEACHERS:
+        print(f"   {t['email']} / {t['pass']}")
+    print()
+    print("  CURSOS E DISCIPLINAS:")
+    for c_idx, c in enumerate(COURSES):
+        course_subjects = [s["name"] for s in SUBJECTS if c_idx in s["courses"]]
+        print(f"   {c['abbr']}: {c['name']}")
+        for sn in course_subjects:
+            print(f"     -- {sn}")
+
+
 def run_seed():
     """Preenche a BD com dados realistas de Ensino Profissional."""
     db = SessionLocalSync()
     try:
         print("\n3/3  A preencher dados de teste...\n")
 
-        # ==================================================
-        # 1. ORGANIZAÇÃO
-        # ==================================================
-        org = models.Organization(name=SCHOOL_NAME, plan_status="active")
-        db.add(org)
-        db.commit()
-        db.refresh(org)
-        print(f"[OK] Organização: {org.name} (ID {org.id})")
-
-        # ==================================================
-        # 2. PROFESSORES + UTILIZADORES
-        # ==================================================
-        teacher_objs = []
-        for t_data in TEACHERS:
-            teacher = models.Teacher(name=t_data["name"], organization_id=org.id)
-            db.add(teacher)
-            db.flush()
-
-            user = models.User(
-                email=t_data["email"],
-                hashed_password=hash_password(t_data["pass"]),
-                role=UserRole.admin,
-                organization_id=org.id,
-                teacher_id=teacher.id,
-                is_active=True,
-            )
-            db.add(user)
-            teacher_objs.append(teacher)
-
-        db.commit()
-        for t in teacher_objs:
-            db.refresh(t)
-        print(f"[OK] {len(teacher_objs)} Professores + Utilizadores criados")
-
-        # ==================================================
-        # 3. SALAS
-        # ==================================================
-        room_objs = []
-        for r_data in ROOMS:
-            room = models.Room(
-                name=r_data["name"],
-                capacity=r_data["capacity"],
-                type=r_data["type"],
-                organization_id=org.id,
-            )
-            db.add(room)
-            room_objs.append(room)
-        db.commit()
-        n_normal = sum(1 for r in ROOMS if r["type"] == RoomType.normal)
-        n_lab = sum(1 for r in ROOMS if r["type"] == RoomType.lab)
-        n_gym = sum(1 for r in ROOMS if r["type"] == RoomType.gym)
-        print(f"[OK] {len(room_objs)} Salas ({n_normal} normais, {n_lab} labs, {n_gym} ginásio)")
-
-        # ==================================================
-        # 4. BLOCOS HORÁRIOS (Seg-Sex, 08:30 – 17:30)
-        # ==================================================
-        SLOT_START_HOUR = 8
-        SLOT_START_MIN = 30
-        SLOTS_PER_DAY = 9  # 08:30-09:30 … 16:30-17:30
-
-        ts_map = {}  # (day, hour) -> Timeslot object
-        count_slots = 0
-        for day in range(5):
-            for i in range(SLOTS_PER_DAY):
-                h = SLOT_START_HOUR + i
-                t_start = datetime.time(h, SLOT_START_MIN)
-                t_end = datetime.time(h + 1, SLOT_START_MIN)
-                ts = models.Timeslot(
-                    day_of_week=day,
-                    start_time=t_start,
-                    end_time=t_end,
-                    organization_id=org.id,
-                )
-                db.add(ts)
-                ts_map[(day, h)] = ts
-                count_slots += 1
-        db.commit()
-        for key in ts_map:
-            db.refresh(ts_map[key])
-        print(f"[OK] {count_slots} Blocos horários (Seg-Sex, "
-              f"{SLOT_START_HOUR}:{SLOT_START_MIN:02d}-"
-              f"{SLOT_START_HOUR + SLOTS_PER_DAY}:{SLOT_START_MIN:02d})")
-
-        # ==================================================
-        # 5. CURSOS
-        # ==================================================
-        course_objs = []
-        for c_data in COURSES:
-            course = models.Course(
-                name=c_data["name"],
-                abbreviation=c_data["abbr"],
-                organization_id=org.id,
-            )
-            db.add(course)
-            course_objs.append(course)
-        db.commit()
-        for c in course_objs:
-            db.refresh(c)
-        print(f"[OK] {len(course_objs)} Cursos: {', '.join(c['abbr'] for c in COURSES)}")
-
-        # ==================================================
-        # 6. DISCIPLINAS + MÓDULOS + LIGAÇÕES
-        #    (course_subject_link + teacher_subject_link)
-        # ==================================================
-        subject_objs = []
-        module_objs_by_subject = {}  # subject_idx -> [Module, ...]
-
-        for s_idx, s_data in enumerate(SUBJECTS):
-            subj = models.Subject(
-                name=s_data["name"],
-                required_room_type=s_data["room_type"],
-                organization_id=org.id,
-            )
-            db.add(subj)
-            db.flush()
-
-            # Módulos
-            mods = []
-            for m_data in s_data["modules"]:
-                mod = models.Module(
-                    name=m_data["name"],
-                    code=m_data["code"],
-                    hours_total=m_data["hours"],
-                    order=m_data["order"],
-                    subject_id=subj.id,
-                )
-                db.add(mod)
-                mods.append(mod)
-            module_objs_by_subject[s_idx] = mods
-
-            # Course <-> Subject
-            for c_idx in s_data["courses"]:
-                subj.courses.append(course_objs[c_idx])
-
-            # Teacher <-> Subject (competência)
-            for t_idx in s_data["teachers"]:
-                subj.teachers.append(teacher_objs[t_idx])
-
-            subject_objs.append(subj)
-
-        db.commit()
-        for s in subject_objs:
-            db.refresh(s)
-        for mods in module_objs_by_subject.values():
-            for m in mods:
-                db.refresh(m)
-
-        total_modules = sum(len(m) for m in module_objs_by_subject.values())
-        print(f"[OK] {len(subject_objs)} Disciplinas + {total_modules} Módulos")
-        print(f"     Ligações curso-disciplina e professor-disciplina configuradas")
-
-        # ==================================================
-        # 7. TURMAS
-        # ==================================================
-        class_objs = []
-        for cl_data in CLASSES:
-            klass = models.Class(
-                name=cl_data["name"],
-                size=cl_data["size"],
-                course_id=course_objs[cl_data["course_idx"]].id,
-                grade_level=cl_data["grade"],
-                start_year=cl_data["start"],
-                end_year=cl_data["end"],
-                organization_id=org.id,
-            )
-            db.add(klass)
-            class_objs.append(klass)
-        db.commit()
-        for k in class_objs:
-            db.refresh(k)
-        print(f"[OK] {len(class_objs)} Turmas criadas")
-
-        # ==================================================
-        # 8. CLASS-SUBJECT LINKS (professor -> turma -> disciplina)
-        # ==================================================
-        csl_count = 0
-        for cl_idx, cl_data in enumerate(CLASSES):
-            course_idx = cl_data["course_idx"]
-            for s_idx, s_data in enumerate(SUBJECTS):
-                if course_idx in s_data["courses"]:
-                    primary_teacher_idx = s_data["teachers"][0]
-                    csl = models.ClassSubjectLink(
-                        class_id=class_objs[cl_idx].id,
-                        subject_id=subject_objs[s_idx].id,
-                        grade_level=cl_data["grade"],
-                        teacher_id=teacher_objs[primary_teacher_idx].id,
-                    )
-                    db.add(csl)
-                    csl_count += 1
-        db.commit()
-        print(f"[OK] {csl_count} Atribuições professor-turma-disciplina")
-
-        # ==================================================
-        # 9. AULAS (Lessons)
-        # ==================================================
-        lesson_count = 0
-        for cl_idx, cl_data in enumerate(CLASSES):
-            course_idx = cl_data["course_idx"]
-            for s_idx, s_data in enumerate(SUBJECTS):
-                if course_idx in s_data["courses"]:
-                    primary_teacher_idx = s_data["teachers"][0]
-                    lesson = models.Lesson(
-                        teacher_id=teacher_objs[primary_teacher_idx].id,
-                        subject_id=subject_objs[s_idx].id,
-                        class_id=class_objs[cl_idx].id,
-                        organization_id=org.id,
-                    )
-                    db.add(lesson)
-                    lesson_count += 1
-        db.commit()
-        print(f"[OK] {lesson_count} Aulas (Lessons)")
-
-        # ==================================================
-        # 10. PROGRESSO MODULAR
-        # ==================================================
-        progress_count = 0
-        progress_map = {}  # (class_idx, subject_idx, module_order) -> ClassProgress
-
-        for cl_idx, cl_data in enumerate(CLASSES):
-            course_idx = cl_data["course_idx"]
-            for s_idx, s_data in enumerate(SUBJECTS):
-                if course_idx in s_data["courses"]:
-                    for mod in module_objs_by_subject[s_idx]:
-                        cp = models.ClassProgress(
-                            class_id=class_objs[cl_idx].id,
-                            module_id=mod.id,
-                            hours_completed=0,
-                            is_completed=False,
-                        )
-                        db.add(cp)
-                        progress_map[(cl_idx, s_idx, mod.order)] = cp
-                        progress_count += 1
-
-        db.flush()
-
-        # Aplicar horas já dadas
-        overrides_applied = 0
-        for cl_idx, s_idx, mod_order, hours, completed in PROGRESS_OVERRIDES:
-            key = (cl_idx, s_idx, mod_order)
-            if key in progress_map:
-                progress_map[key].hours_completed = hours
-                progress_map[key].is_completed = completed
-                overrides_applied += 1
-
-        db.commit()
-        print(f"[OK] {progress_count} Registos de progresso "
-              f"({overrides_applied} com horas pré-preenchidas)")
-
-        # ==================================================
-        # 11. DISPONIBILIDADES (padrão diferente por professor)
-        # ==================================================
-        avail_count = 0
-
-        # Ana Silva (0): Indisponível segunda de manhã (formação externa)
-        for h in [8, 9, 10, 11]:
-            if (0, h) in ts_map:
-                db.add(models.Availability(
-                    teacher_id=teacher_objs[0].id,
-                    timeslot_id=ts_map[(0, h)].id,
-                    score=PreferenceLevel.IMPOSSIBLE.value,
-                ))
-                avail_count += 1
-
-        # Bruno Costa (1): Prefere manhãs (score 2), evita sexta à tarde
-        for day in range(5):
-            for h in [8, 9, 10]:
-                if (day, h) in ts_map:
-                    db.add(models.Availability(
-                        teacher_id=teacher_objs[1].id,
-                        timeslot_id=ts_map[(day, h)].id,
-                        score=PreferenceLevel.PREFERRED.value,
-                    ))
-                    avail_count += 1
-        for h in [14, 15, 16]:
-            if (4, h) in ts_map:
-                db.add(models.Availability(
-                    teacher_id=teacher_objs[1].id,
-                    timeslot_id=ts_map[(4, h)].id,
-                    score=PreferenceLevel.AVOID.value,
-                ))
-                avail_count += 1
-
-        # Carla Mendes (2): Indisponível quarta inteira (dia de formação)
-        for h in range(8, 17):
-            if (2, h) in ts_map:
-                db.add(models.Availability(
-                    teacher_id=teacher_objs[2].id,
-                    timeslot_id=ts_map[(2, h)].id,
-                    score=PreferenceLevel.IMPOSSIBLE.value,
-                ))
-                avail_count += 1
-
-        # Daniel Ferreira (3): Evita 1º tempo de cada dia
-        for day in range(5):
-            if (day, 8) in ts_map:
-                db.add(models.Availability(
-                    teacher_id=teacher_objs[3].id,
-                    timeslot_id=ts_map[(day, 8)].id,
-                    score=PreferenceLevel.AVOID.value,
-                ))
-                avail_count += 1
-
-        # Eva Rodrigues (4): Prefere tardes (treinos)
-        for day in range(5):
-            for h in [14, 15, 16]:
-                if (day, h) in ts_map:
-                    db.add(models.Availability(
-                        teacher_id=teacher_objs[4].id,
-                        timeslot_id=ts_map[(day, h)].id,
-                        score=PreferenceLevel.PREFERRED.value,
-                    ))
-                    avail_count += 1
-
-        db.commit()
-        print(f"[OK] {avail_count} Disponibilidades (5 padrões diferentes)")
-
-        # ==================================================
-        # RESUMO FINAL
-        # ==================================================
-        print("\n" + "=" * 60)
-        print("  RESUMO DOS DADOS DE SEED")
-        print("=" * 60)
-        print(f"   Organização:  {SCHOOL_NAME}")
-        print(f"   Professores:  {len(TEACHERS)}")
-        print(f"   Salas:        {len(ROOMS)} ({n_normal} normais, {n_lab} labs, {n_gym} ginásio)")
-        print(f"   Timeslots:    {count_slots} (Seg-Sex)")
-        print(f"   Cursos:       {len(COURSES)}")
-        print(f"   Disciplinas:  {len(SUBJECTS)}")
-        print(f"   Módulos:      {total_modules}")
-        print(f"   Turmas:       {len(CLASSES)}")
-        print(f"   Atribuições:  {csl_count}")
-        print(f"   Aulas:        {lesson_count}")
-        print(f"   Progresso:    {progress_count} ({overrides_applied} com horas)")
-        print(f"   Dispon.:      {avail_count}")
-        print()
-        print("  LOGINS DE TESTE:")
-        for t in TEACHERS:
-            print(f"   {t['email']} / {t['pass']}")
-        print()
-        print("  CURSOS E DISCIPLINAS:")
-        for c_idx, c in enumerate(COURSES):
-            course_subjects = [s["name"] for s in SUBJECTS if c_idx in s["courses"]]
-            print(f"   {c['abbr']}: {c['name']}")
-            for sn in course_subjects:
-                print(f"     -- {sn}")
+        org = _seed_organization(db)
+        teacher_objs = _seed_teachers(db, org)
+        _seed_rooms(db, org)
+        ts_map, count_slots = _seed_timeslots(db, org)
+        course_objs = _seed_courses(db, org)
+        subject_objs, module_objs_by_subject, total_modules = _seed_subjects(
+            db, org, course_objs, teacher_objs,
+        )
+        class_objs = _seed_classes(db, org, course_objs)
+        csl_count = _seed_class_subject_links(db, class_objs, subject_objs, teacher_objs)
+        lesson_count = _seed_lessons(db, org, class_objs, subject_objs, teacher_objs)
+        progress_count, overrides_applied = _seed_progress(
+            db, class_objs, module_objs_by_subject,
+        )
+        avail_count = _seed_availabilities(db, teacher_objs, ts_map)
+        _print_summary(
+            count_slots, total_modules, csl_count, lesson_count,
+            progress_count, overrides_applied, avail_count,
+        )
 
     except Exception as e:
         print(f"\n[ERRO] Erro Critico no Seed: {e}")

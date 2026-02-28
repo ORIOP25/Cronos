@@ -1,4 +1,5 @@
 import React from 'react'
+import PropTypes from 'prop-types'
 
 const TimeGrid = ({ timeslots }) => {
   // 1. Extrair tempos únicos ordenados para o eixo Y
@@ -52,6 +53,15 @@ const TimeGrid = ({ timeslots }) => {
       </table>
     </div>
   )
+}
+
+TimeGrid.propTypes = {
+  timeslots: PropTypes.arrayOf(
+    PropTypes.shape({
+      day_of_week: PropTypes.number.isRequired,
+      start_time: PropTypes.string.isRequired,
+    }),
+  ).isRequired,
 }
 
 export default TimeGrid

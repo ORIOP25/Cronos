@@ -5,6 +5,7 @@
  */
 
 import React from 'react'
+import PropTypes from 'prop-types'
 import { render } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
@@ -35,6 +36,10 @@ export function renderWithProviders(ui, options = {}) {
         {children}
       </QueryClientProvider>
     )
+  }
+
+  Wrapper.propTypes = {
+    children: PropTypes.node,
   }
 
   return render(ui, { wrapper: Wrapper, ...options })
