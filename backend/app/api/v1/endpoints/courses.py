@@ -6,6 +6,8 @@ from app import schemas, models
 from app.api import deps
 from app.services import course_service, class_service
 
+COURSE_NOT_FOUND_MSG = "Curso não encontrado"
+
 router = APIRouter()
 
 # --- 1. Listar Cursos (com Disciplinas e Turmas) ---
@@ -24,7 +26,7 @@ async def read_courses(
     return await course_service.get_courses_by_org(db, current_user.organization_id, skip, limit)
 
 # --- 2. Criar Curso (Course Engine) ---
-@router.post("/", response_model=schemas.CourseDetailRead)
+@router.post("/", response_model=schemas.CourseDetailRead, responses={400: {"description": "Sigla duplicada ou disciplinas inválidas"}})
 async def create_course(
     item: schemas.CourseCreate, 
     db: Annotated[AsyncSession, Depends(deps.get_db)],
@@ -44,7 +46,7 @@ async def create_course(
 
 # --- 3. Obter Detalhes do Curso (Dashboard) ---
 # NOVO ENDPOINT FUNDAMENTAL
-@router.get("/{course_id}", response_model=schemas.CourseDetailRead)
+@router.get("/{course_id}", response_model=schemas.CourseDetailRead, responses={404: {"description": COURSE_NOT_FOUND_MSG}})
 async def read_course_detail(
     course_id: int,
     db: Annotated[AsyncSession, Depends(deps.get_db)],
@@ -56,11 +58,11 @@ async def read_course_detail(
     """
     course = await course_service.get_course_details(db, course_id, current_user.organization_id)
     if not course:
-        raise HTTPException(status_code=404, detail="Curso não encontrado")
+        raise HTTPException(status_code=404, detail=COURSE_NOT_FOUND_MSG)
     return course
 
 
-@router.get("/{course_id}/classes", response_model=List[schemas.ClassRead])
+@router.get("/{course_id}/classes", response_model=List[schemas.ClassRead], responses={404: {"description": COURSE_NOT_FOUND_MSG}})
 async def read_course_classes(
     course_id: int,
     db: Annotated[AsyncSession, Depends(deps.get_db)],
@@ -68,11 +70,11 @@ async def read_course_classes(
 ) -> Any:
     course = await course_service.get_course_details(db, course_id, current_user.organization_id)
     if not course:
-        raise HTTPException(status_code=404, detail="Curso não encontrado")
+        raise HTTPException(status_code=404, detail=COURSE_NOT_FOUND_MSG)
     return await class_service.get_classes_by_course(db, course_id, current_user.organization_id)
 
 
-@router.post("/{course_id}/classes", response_model=schemas.ClassRead)
+@router.post("/{course_id}/classes", response_model=schemas.ClassRead, responses={404: {"description": COURSE_NOT_FOUND_MSG}})
 async def create_course_class(
     course_id: int,
     item: schemas.ClassCreateInCourse,
@@ -81,11 +83,11 @@ async def create_course_class(
 ) -> Any:
     result = await class_service.create_class_in_course(db, course_id, item, current_user.organization_id)
     if result == "COURSE_NOT_FOUND":
-        raise HTTPException(status_code=404, detail="Curso não encontrado")
+        raise HTTPException(status_code=404, detail=COURSE_NOT_FOUND_MSG)
     return result
 
 
-@router.patch("/{course_id}/classes/{class_id}", response_model=schemas.ClassRead)
+@router.patch("/{course_id}/classes/{class_id}", response_model=schemas.ClassRead, responses={404: {"description": "Turma não encontrada neste curso"}, 400: {"description": "Intervalo de anos inválido"}})
 async def update_course_class(
     course_id: int,
     class_id: int,
@@ -103,7 +105,7 @@ async def update_course_class(
     return result
 
 
-@router.delete("/{course_id}/classes/{class_id}")
+@router.delete("/{course_id}/classes/{class_id}", responses={404: {"description": "Turma não encontrada neste curso"}})
 async def delete_course_class(
     course_id: int,
     class_id: int,
@@ -118,7 +120,7 @@ async def delete_course_class(
     return {"message": "Turma removida com sucesso"}
 
 # --- 4. Atualizar Curso (PATCH - Atualização Parcial) ---
-@router.patch("/{course_id}", response_model=schemas.CourseDetailRead)
+@router.patch("/{course_id}", response_model=schemas.CourseDetailRead, responses={404: {"description": COURSE_NOT_FOUND_MSG}, 400: {"description": "Sigla já existente"}})
 async def update_course(
     course_id: int,
     item: schemas.CourseUpdate, 
@@ -138,14 +140,14 @@ async def update_course(
     result = await course_service.update_course(db, course_id, item, current_user.organization_id)
     
     if result == "NOT_FOUND":
-        raise HTTPException(status_code=404, detail="Curso não encontrado")
+        raise HTTPException(status_code=404, detail=COURSE_NOT_FOUND_MSG)
     if result == "ABBREVIATION_EXISTS":
         raise HTTPException(status_code=400, detail="A sigla fornecida já existe nesta organização")
     
     return result
 
 # --- 5. Apagar Curso ---
-@router.delete("/{course_id}")
+@router.delete("/{course_id}", responses={404: {"description": COURSE_NOT_FOUND_MSG}, 400: {"description": "Dependências existentes"}})
 async def delete_course(
     course_id: int, 
     db: Annotated[AsyncSession, Depends(deps.get_db)],
@@ -154,7 +156,7 @@ async def delete_course(
     status = await course_service.delete_course(db, course_id, current_user.organization_id)
     
     if status == "NOT_FOUND":
-        raise HTTPException(status_code=404, detail="Curso não encontrado")
+        raise HTTPException(status_code=404, detail=COURSE_NOT_FOUND_MSG)
     
     if status == "DEPENDENCY_ERROR":
         # Melhoria de UX: Mensagem mais explicita

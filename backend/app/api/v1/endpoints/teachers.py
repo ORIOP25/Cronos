@@ -9,6 +9,8 @@ from app.services import teacher_service
 from app.core.ratelimit import limiter
 from app import models
 
+TEACHER_NOT_FOUND_MSG = "Professor não encontrado"
+
 router = APIRouter()
 
 # --- 1. Ler Professores ---
@@ -41,7 +43,7 @@ async def create_teacher(
 
 # --- 4. NOVO ENDPOINT: Gravar Disponibilidades ---
 # Chama o serviço que já existe em teacher_service.py
-@router.post("/{teacher_id}/availability")
+@router.post("/{teacher_id}/availability", responses={403: {"description": "Sem permissões"}, 404: {"description": TEACHER_NOT_FOUND_MSG}, 400: {"description": "Timeslot inválido"}})
 @limiter.limit("30/minute")
 async def update_teacher_availability(
     request: Request,
@@ -65,7 +67,7 @@ async def update_teacher_availability(
     )
 
     if result == "NOT_FOUND":
-        raise HTTPException(status_code=404, detail="Professor não encontrado")
+        raise HTTPException(status_code=404, detail=TEACHER_NOT_FOUND_MSG)
 
     if result == "INVALID_TIMESLOT":
         raise HTTPException(status_code=400, detail="Timeslot inválido ou fora da organização")
@@ -73,7 +75,7 @@ async def update_teacher_availability(
     return result
 
 # --- 3. Atualizar Professor (PATCH) ---
-@router.patch("/{teacher_id}", response_model=schemas.TeacherRead)
+@router.patch("/{teacher_id}", response_model=schemas.TeacherRead, responses={404: {"description": TEACHER_NOT_FOUND_MSG}})
 async def update_teacher(
     teacher_id: int,
     teacher_in: schemas.TeacherUpdate,
@@ -90,11 +92,11 @@ async def update_teacher(
         org_id=current_user.organization_id
     )
     if not teacher:
-        raise HTTPException(status_code=404, detail="Professor não encontrado")
+        raise HTTPException(status_code=404, detail=TEACHER_NOT_FOUND_MSG)
     return teacher
 
 # --- 4. Apagar Professor (DELETE) ---
-@router.delete("/{teacher_id}")
+@router.delete("/{teacher_id}", responses={404: {"description": TEACHER_NOT_FOUND_MSG}, 400: {"description": "Dependências existentes"}})
 async def delete_teacher(
     teacher_id: int,
     db: Annotated[AsyncSession, Depends(deps.get_db)],
@@ -110,7 +112,7 @@ async def delete_teacher(
     )
     
     if status_result == "NOT_FOUND":
-        raise HTTPException(status_code=404, detail="Professor não encontrado")
+        raise HTTPException(status_code=404, detail=TEACHER_NOT_FOUND_MSG)
     
     if status_result == "DEPENDENCY_ERROR":
         # Erro 400 ou 409 (Conflict) é adequado aqui.

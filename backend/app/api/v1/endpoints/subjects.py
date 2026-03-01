@@ -26,7 +26,7 @@ async def create_subject(
     return await subject_service.create_subject(db, item, current_user.organization_id)
 
 # --- 3. Atualizar Disciplina ---
-@router.patch("/{subject_id}", response_model=schemas.SubjectRead)
+@router.patch("/{subject_id}", response_model=schemas.SubjectRead, responses={404: {"description": "Disciplina não encontrada"}})
 async def update_subject(
     subject_id: int,
     subject_in: schemas.SubjectUpdate,
@@ -44,7 +44,7 @@ async def update_subject(
     return subject
 
 # --- 4. Apagar Disciplina   ---
-@router.delete("/{subject_id}")
+@router.delete("/{subject_id}", responses={404: {"description": "Disciplina não encontrada"}, 400: {"description": "Dependências existentes"}})
 async def delete_subject(
     subject_id: int, 
     db: Annotated[AsyncSession, Depends(deps.get_db)],

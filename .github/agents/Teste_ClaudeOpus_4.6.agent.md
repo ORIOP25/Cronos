@@ -285,3 +285,30 @@ Evaluate every line of code against these:
     Do not use the `f""` string prefix if there are no expressions `{}` to evaluate inside the string. It causes unnecessary overhead and triggers linters.
     Bad: `print(f"Database seeded successfully.")`
     Good: `print("Database seeded successfully.")`
+
+- Document HTTPExceptions in FastAPI decorators (SonarQube rule: python:S8415).
+    If an endpoint raises an `HTTPException`, its status code must be documented in the `responses` parameter of the `@router` decorator. This ensures the OpenAPI/Swagger documentation is accurate.
+    Bad: 
+    ```python
+    @router.get("/{id}")
+    def get_item(id: int):
+        raise HTTPException(status_code=404, detail="Not found")
+    ```
+    Good:
+    ```python
+    @router.get("/{id}", responses={404: {"description": "Not found"}})
+    def get_item(id: int):
+        raise HTTPException(status_code=404, detail="Not found")
+    ```
+
+- Define a constant instead of duplicating a string literal 3 or more times (SonarQube rule: python:S1192).
+    Extract repeated string literals (like exception details or validation messages) into module-level constants.
+    Bad: `raise HTTPException(status_code=404, detail="Class not found")` (used multiple times)
+    Good: 
+    `CLASS_NOT_FOUND_MSG = "Class not found"`
+    `raise HTTPException(status_code=404, detail=CLASS_NOT_FOUND_MSG)`
+
+- Do not use bare `except:` blocks (SonarQube rule: python:S5754).
+    A bare `except:` catches system-level exceptions like `SystemExit` or `KeyboardInterrupt`. Always specify the exception type, usually `except Exception as e:` or a more specific error class.
+    Bad: `except:`
+    Good: `except Exception as e:`

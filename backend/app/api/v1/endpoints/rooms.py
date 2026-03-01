@@ -35,7 +35,7 @@ async def create_room(
         org_id=current_user.organization_id # <--- Passamos o ID aqui internamente
     )
 
-@router.patch("/{room_id}", response_model=schemas.RoomRead)
+@router.patch("/{room_id}", response_model=schemas.RoomRead, responses={404: {"description": "Sala não encontrada"}})
 async def update_room(
     room_id: int,
     room_in: schemas.RoomUpdate,
@@ -47,7 +47,7 @@ async def update_room(
         raise HTTPException(status_code=404, detail="Sala não encontrada")
     return room
 
-@router.delete("/{room_id}")
+@router.delete("/{room_id}", responses={404: {"description": "Sala não encontrada"}, 400: {"description": "Dependências existentes"}})
 async def delete_room(
     room_id: int,
     db: Annotated[AsyncSession, Depends(deps.get_db)],

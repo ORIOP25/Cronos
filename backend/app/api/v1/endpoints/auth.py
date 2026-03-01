@@ -72,7 +72,7 @@ async def login_for_access_token(
         "teacher_id": user.teacher_id
     }
 
-@router.post("/register", response_model=schemas.UserRead)
+@router.post("/register", response_model=schemas.UserRead, responses={400: {"description": "Email already registered"}})
 @limiter.limit("3/minute")
 async def register(
     request: Request,

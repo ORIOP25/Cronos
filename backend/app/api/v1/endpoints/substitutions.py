@@ -10,7 +10,7 @@ from app.services import substitution_service
 
 router = APIRouter()
 
-@router.get("/suggestions", response_model=List[schemas.ReplacementSuggestion])
+@router.get("/suggestions", response_model=List[schemas.ReplacementSuggestion], responses={400: {"description": "Data inválida"}, 404: {"description": "Timeslot ou professor não encontrado"}})
 async def get_suggestions(
     timeslot_id: int,
     date_str: str, # Recebemos como string "2026-03-12" e convertemos
@@ -51,7 +51,7 @@ async def get_suggestions(
     )
     return suggestions
 
-@router.post("/", response_model=schemas.SubstitutionResponse)
+@router.post("/", response_model=schemas.SubstitutionResponse, responses={400: {"description": "Aula, timeslot ou professor inválidos"}})
 async def create_substitution(
     sub_in: schemas.SubstitutionCreate,
     db: Annotated[AsyncSession, Depends(deps.get_db)],

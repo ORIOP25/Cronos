@@ -5,6 +5,8 @@ from app import schemas, models
 from app.api import deps
 from app.services import class_service
 
+CLASS_NOT_FOUND_MSG = "Turma não encontrada"
+
 router = APIRouter()
 
 @router.get("/", response_model=List[schemas.ClassRead])
@@ -14,7 +16,7 @@ async def read_classes(
 ):
     return await class_service.get_classes_by_org(db, current_user.organization_id)
 
-@router.get("/{class_id}", response_model=schemas.ClassFullDetailRead)
+@router.get("/{class_id}", response_model=schemas.ClassFullDetailRead, responses={404: {"description": CLASS_NOT_FOUND_MSG}})
 async def read_class(
     class_id: int,
     db: Annotated[AsyncSession, Depends(deps.get_db)],
@@ -37,11 +39,11 @@ async def read_class(
     result = await class_service.get_class_full_details(db, class_id, current_user.organization_id)
     
     if not result:
-        raise HTTPException(status_code=404, detail="Turma não encontrada")
+        raise HTTPException(status_code=404, detail=CLASS_NOT_FOUND_MSG)
     
     return result
 
-@router.post("/", response_model=schemas.ClassRead)
+@router.post("/", response_model=schemas.ClassRead, responses={404: {"description": "Curso não encontrado"}})
 async def create_class(
     item: schemas.ClassCreate, 
     db: Annotated[AsyncSession, Depends(deps.get_db)],
@@ -52,7 +54,7 @@ async def create_class(
         raise HTTPException(status_code=404, detail="Curso não encontrado")
     return result
 
-@router.patch("/{class_id}", response_model=schemas.ClassRead)
+@router.patch("/{class_id}", response_model=schemas.ClassRead, responses={400: {"description": "Intervalo de anos inválido"}, 404: {"description": CLASS_NOT_FOUND_MSG}})
 async def update_class(
     class_id: int,
     item: schemas.ClassUpdate,
@@ -63,10 +65,10 @@ async def update_class(
     if updated == "INVALID_YEAR_RANGE":
         raise HTTPException(status_code=400, detail="Ano de fim deve ser maior que o ano de início")
     if not updated:
-        raise HTTPException(status_code=404, detail="Turma não encontrada")
+        raise HTTPException(status_code=404, detail=CLASS_NOT_FOUND_MSG)
     return updated
 
-@router.delete("/{class_id}")
+@router.delete("/{class_id}", responses={404: {"description": CLASS_NOT_FOUND_MSG}})
 async def delete_class(
     class_id: int, 
     db: Annotated[AsyncSession, Depends(deps.get_db)],
@@ -75,7 +77,7 @@ async def delete_class(
     status = await class_service.delete_class(db, class_id, current_user.organization_id)
     
     if status == "NOT_FOUND":
-        raise HTTPException(status_code=404, detail="Turma não encontrada")
+        raise HTTPException(status_code=404, detail=CLASS_NOT_FOUND_MSG)
 
     return {"message": "Turma removida com sucesso"}
 
@@ -106,7 +108,7 @@ async def get_class_curriculum(
 #  PROGRESSO DA TURMA (Módulos)
 # ==========================================
 
-@router.patch("/{class_id}/progress", response_model=schemas.ClassFullDetailRead)
+@router.patch("/{class_id}/progress", response_model=schemas.ClassFullDetailRead, responses={404: {"description": CLASS_NOT_FOUND_MSG}, 400: {"description": "Bad Request"}})
 async def update_class_progress(
     class_id: int,
     payload: schemas.ClassProgressBulkUpdate,
@@ -132,7 +134,7 @@ async def update_class_progress(
     )
     
     if status == "NOT_FOUND":
-        raise HTTPException(status_code=404, detail="Turma não encontrada")
+        raise HTTPException(status_code=404, detail=CLASS_NOT_FOUND_MSG)
     
     if status == "NO_SUBJECTS":
         raise HTTPException(status_code=400, detail="Turma sem disciplinas atribuídas — adicione disciplinas primeiro")
@@ -156,7 +158,7 @@ async def update_class_progress(
 #  Gestão curso-cêntrica de professores
 # ==========================================
 
-@router.get("/{class_id}/subjects", response_model=schemas.ClassSubjectsListRead)
+@router.get("/{class_id}/subjects", response_model=schemas.ClassSubjectsListRead, responses={404: {"description": CLASS_NOT_FOUND_MSG}})
 async def get_class_subjects(
     class_id: int,
     db: Annotated[AsyncSession, Depends(deps.get_db)],
@@ -173,12 +175,12 @@ async def get_class_subjects(
     result = await class_service.get_class_subjects(db, class_id, current_user.organization_id)
     
     if not result:
-        raise HTTPException(status_code=404, detail="Turma não encontrada")
+        raise HTTPException(status_code=404, detail=CLASS_NOT_FOUND_MSG)
     
     return result
 
 
-@router.post("/{class_id}/subjects", response_model=schemas.ClassSubjectsListRead)
+@router.post("/{class_id}/subjects", response_model=schemas.ClassSubjectsListRead, responses={404: {"description": CLASS_NOT_FOUND_MSG}, 400: {"description": "Bad Request"}})
 async def add_class_subject(
     class_id: int,
     payload: schemas.ClassSubjectCreate,
@@ -198,7 +200,7 @@ async def add_class_subject(
     )
     
     if result == "CLASS_NOT_FOUND":
-        raise HTTPException(status_code=404, detail="Turma não encontrada")
+        raise HTTPException(status_code=404, detail=CLASS_NOT_FOUND_MSG)
     
     if result == "SUBJECT_NOT_FOUND":
         raise HTTPException(status_code=404, detail="Disciplina não encontrada")
@@ -210,7 +212,7 @@ async def add_class_subject(
     return await class_service.get_class_subjects(db, class_id, current_user.organization_id)
 
 
-@router.patch("/{class_id}/subjects/{subject_id}", response_model=schemas.ClassSubjectsListRead)
+@router.patch("/{class_id}/subjects/{subject_id}", response_model=schemas.ClassSubjectsListRead, responses={404: {"description": CLASS_NOT_FOUND_MSG}, 400: {"description": "Bad Request"}})
 async def update_class_subject_teacher(
     class_id: int,
     subject_id: int,
@@ -232,7 +234,7 @@ async def update_class_subject_teacher(
     )
     
     if result == "CLASS_NOT_FOUND":
-        raise HTTPException(status_code=404, detail="Turma não encontrada")
+        raise HTTPException(status_code=404, detail=CLASS_NOT_FOUND_MSG)
     
     if result == "LINK_NOT_FOUND":
         raise HTTPException(status_code=404, detail="Esta disciplina não está associada à turma")
@@ -250,7 +252,7 @@ async def update_class_subject_teacher(
     return await class_service.get_class_subjects(db, class_id, current_user.organization_id)
 
 
-@router.delete("/{class_id}/subjects/{subject_id}", response_model=schemas.ClassSubjectsListRead)
+@router.delete("/{class_id}/subjects/{subject_id}", response_model=schemas.ClassSubjectsListRead, responses={404: {"description": CLASS_NOT_FOUND_MSG}})
 async def remove_class_subject(
     class_id: int,
     subject_id: int,
@@ -265,7 +267,7 @@ async def remove_class_subject(
     )
     
     if result == "CLASS_NOT_FOUND":
-        raise HTTPException(status_code=404, detail="Turma não encontrada")
+        raise HTTPException(status_code=404, detail=CLASS_NOT_FOUND_MSG)
     
     if result == "NOT_FOUND":
         raise HTTPException(status_code=404, detail="Esta disciplina não está associada à turma")

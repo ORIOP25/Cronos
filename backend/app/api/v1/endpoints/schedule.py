@@ -32,7 +32,7 @@ async def read_constraints(
 ):
     return await schedule_service.get_constraints_by_org(db, current_user.organization_id)
 
-@router.delete("/constraints/{constraint_id}")
+@router.delete("/constraints/{constraint_id}", responses={404: {"description": "Regra não encontrada"}})
 async def delete_constraint(
     constraint_id: int, 
     db: Annotated[AsyncSession, Depends(deps.get_db)],
@@ -60,7 +60,7 @@ async def trigger_generation(
         pass
     return {"task_id": task.id, "status": "Processing started"}
 
-@router.get("/status/{task_id}")
+@router.get("/status/{task_id}", responses={404: {"description": "Task não encontrada"}, 403: {"description": "Sem permissões para esta task"}, 503: {"description": "Validação de task indisponível"}})
 @limiter.limit("60/minute")
 async def get_status(
     request: Request,
@@ -150,7 +150,7 @@ async def reset_all_data(
         r = redis.Redis.from_url(str(settings.REDIS_URL))
         CACHE_KEY = f"schedule_latest_data_{current_user.organization_id}"
         r.delete(CACHE_KEY)
-    except:
+    except Exception:
         pass
 
     return {"msg": "Dados de horário apagados com sucesso."}

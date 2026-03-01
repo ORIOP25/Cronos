@@ -53,9 +53,21 @@ class ScheduleEngine:
             return self._format_solution()
         return None
 
+    def _link_teacher_active_var(self, teacher, t):
+        """Liga a variável teacher_active[…] às variáveis de aulas desse professor."""
+        lessons_of_teacher = [l for l in self.lessons if l.teacher_id == teacher.id]
+        relevant_vars = []
+        for l in lessons_of_teacher:
+            for r in self.rooms:
+                relevant_vars.append(self.aula_agendada[(l.id, t.id, r.id)])
+        if relevant_vars:
+            self.model.Add(self.teacher_active[(teacher.id, t.id)] == sum(relevant_vars))
+        else:
+            self.model.Add(self.teacher_active[(teacher.id, t.id)] == 0)
+
     def _create_variables(self):
         """Cria as variáveis do problema (X_ltr)."""
-        
+
         # 1. Variável Principal: Aula L ocorre no Tempo T na Sala R?
         for l in self.lessons:
             for t in self.timeslots:
@@ -65,42 +77,30 @@ class ScheduleEngine:
                     )
 
         # 2. Variável Auxiliar: Professor P está a trabalhar no Tempo T?
-        # Necessário para calcular buracos e verificar colisões
         for teacher in self.teachers:
             for t in self.timeslots:
                 self.teacher_active[(teacher.id, t.id)] = self.model.NewBoolVar(
                     f"teacher_active_{teacher.id}_{t.id}"
                 )
-                
-                # Ligar as variáveis:
-                # Se o professor dá QUALQUER aula neste tempo, teacher_active = 1
-                # Encontrar todas as aulas deste professor
-                lessons_of_teacher = [l for l in self.lessons if l.teacher_id == teacher.id]
-                
-                relevant_vars = []
-                for l in lessons_of_teacher:
-                    for r in self.rooms:
-                        relevant_vars.append(self.aula_agendada[(l.id, t.id, r.id)])
-                
-                # Constraint: teacher_active == sum(aulas_deste_prof_neste_tempo)
-                # Como ele só pode estar num sítio (regra hard abaixo), a soma será 0 ou 1
-                if relevant_vars:
-                    self.model.Add(self.teacher_active[(teacher.id, t.id)] == sum(relevant_vars))
-                else:
+                self._link_teacher_active_var(teacher, t)
+
+    def _apply_impossible_availability_constraints(self):
+        """Regra 5: Bloqueia slots onde o professor marcou IMPOSSÍVEL (-1)."""
+        for teacher in self.teachers:
+            for t in self.timeslots:
+                score = self.availability_map.get((teacher.id, t.id), 1)
+                if score == -1:
                     self.model.Add(self.teacher_active[(teacher.id, t.id)] == 0)
 
     def _apply_hard_constraints(self):
         """Regras que NÃO podem ser quebradas (Vermelho)."""
-        
+
         # Regra 1: Cada aula tem de acontecer exatamente X vezes
-        # NOTA: num_per_week foi removido do modelo Lesson (Audit O3).
-        # Valor fixo de 1 até o Solver ser refatorizado para cálculo
-        # dinâmico baseado no progresso modular (Ensino Profissional).
         for l in self.lessons:
             slots_per_week = getattr(l, 'num_per_week', 1)
             self.model.Add(
-                sum(self.aula_agendada[(l.id, t.id, r.id)] 
-                    for t in self.timeslots 
+                sum(self.aula_agendada[(l.id, t.id, r.id)]
+                    for t in self.timeslots
                     for r in self.rooms) == slots_per_week
             )
 
@@ -115,7 +115,6 @@ class ScheduleEngine:
                 )
 
         # Regra 3: Professor não pode estar em dois sítios
-        # (Já garantido implicitamente pela teacher_active <= 1, mas reforçamos)
         for teacher in self.teachers:
             for t in self.timeslots:
                 self.model.Add(self.teacher_active[(teacher.id, t.id)] <= 1)
@@ -129,73 +128,53 @@ class ScheduleEngine:
                 )
 
         # Regra 5: Disponibilidade IMPOSSÍVEL (-1)
-        # Se o professor marcou Vermelho, bloqueamos o slot.
-        for teacher in self.teachers:
-            for t in self.timeslots:
-                # Valor por defeito é 1 (Neutro) se não existir no mapa
-                score = self.availability_map.get((teacher.id, t.id), 1)
-                
-                if score == -1: # IMPOSSÍVEL
-                    # Força a variável a 0
-                    self.model.Add(self.teacher_active[(teacher.id, t.id)] == 0)
+        self._apply_impossible_availability_constraints()
 
-    def _apply_soft_constraints(self):
-        """Regras que custam pontos (Laranja e Buracos)."""
-        penalties = []
-        rewards = []
-        
-        # Agrupar slots por dia para calcular buracos
+    def _get_slots_by_day(self):
+        """Agrupa e ordena os timeslots por dia da semana."""
         slots_by_day = {}
         for t in self.timeslots:
             if t.day_of_week not in slots_by_day:
                 slots_by_day[t.day_of_week] = []
             slots_by_day[t.day_of_week].append(t)
-        
-        # Ordenar slots por hora
         for day in slots_by_day:
             slots_by_day[day].sort(key=lambda x: x.start_time)
+        return slots_by_day
+
+    def _apply_availability_preferences(self, teacher, penalties):
+        """Adiciona penalidades por AVOID e recompensas por PREFERRED."""
+        for t in self.timeslots:
+            score = self.availability_map.get((teacher.id, t.id), 1)
+            if score == 0:  # AVOID
+                penalties.append(self.teacher_active[(teacher.id, t.id)] * 20)
+            if score == 2:  # PREFERRED
+                is_missing = self.model.NewBoolVar(f"missing_{teacher.id}_{t.id}")
+                self.model.Add(is_missing == 1 - self.teacher_active[(teacher.id, t.id)])
+                penalties.append(is_missing * 10)
+
+    def _apply_gap_penalties(self, teacher, day_slots, penalties):
+        """Adiciona penalidades por buracos no horário do professor."""
+        for i in range(len(day_slots)):
+            t_curr = day_slots[i]
+            curr_active = self.teacher_active[(teacher.id, t_curr.id)]
+            prev_active = 0
+            if i > 0:
+                t_prev = day_slots[i - 1]
+                prev_active = self.teacher_active[(teacher.id, t_prev.id)]
+            is_start = self.model.NewBoolVar(f"start_{teacher.id}_{t_curr.id}")
+            self.model.Add(is_start >= curr_active - prev_active)
+            penalties.append(is_start * 50)
+
+    def _apply_soft_constraints(self):
+        """Regras que custam pontos (Laranja e Buracos)."""
+        penalties = []
+        slots_by_day = self._get_slots_by_day()
 
         for teacher in self.teachers:
-            # 1. Penalidade por "Evitar" (Laranja)
-            for t in self.timeslots:
-                score = self.availability_map.get((teacher.id, t.id), 1)
-                
-                if score == 0: # AVOID
-                    # Se o professor trabalhar neste slot, paga multa
-                    # Custo: 20 pontos
-                    penalties.append(self.teacher_active[(teacher.id, t.id)] * 20)
+            self._apply_availability_preferences(teacher, penalties)
+            for day_slots in slots_by_day.values():
+                self._apply_gap_penalties(teacher, day_slots, penalties)
 
-                # 2. Bónus por PREFERÊNCIA (Verde/2)
-                # Como o solver minimiza, "bónus" é "evitar NÃO estar lá".
-                # Se score == 2, e ele NÃO estiver lá (active=0), paga multa.
-                if score == 2:
-                    is_missing = self.model.NewBoolVar(f"missing_{teacher.id}_{t.id}")
-                    # is_missing = 1 - teacher_active
-                    self.model.Add(is_missing == 1 - self.teacher_active[(teacher.id, t.id)])
-                    penalties.append(is_missing * 10) # Peso 10 para preferência
-            
-            # 3. Penalidade por Buracos (Compactação)
-            for day, day_slots in slots_by_day.items():
-                for i in range(len(day_slots)):
-                    t_curr = day_slots[i]
-                    curr_active = self.teacher_active[(teacher.id, t_curr.id)]
-                    
-                    prev_active = 0
-                    if i > 0:
-                        t_prev = day_slots[i-1]
-                        prev_active = self.teacher_active[(teacher.id, t_prev.id)]
-                    
-                    # Variável is_start: É 1 se começou um novo bloco de aulas
-                    # (0 -> 1) ou (0 -> 0 ... mas o solver minimiza)
-                    # Lógica: is_start >= curr - prev
-                    # Se curr=1, prev=0 -> is_start >= 1 -> Paga 50
-                    # Se curr=1, prev=1 -> is_start >= 0 -> Paga 0 (Continuação)
-                    is_start = self.model.NewBoolVar(f"start_{teacher.id}_{t_curr.id}")
-                    self.model.Add(is_start >= curr_active - prev_active)
-                    
-                    penalties.append(is_start * 50)
-
-        # Minimizar a dor total
         if penalties:
             self.model.Minimize(sum(penalties))
 

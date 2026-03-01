@@ -5,6 +5,15 @@ import {
 import CIcon from '@coreui/icons-react'
 import { cilArrowRight, cilArrowLeft, cilTrash, cilPlus, cilCheckCircle, cilWarning, cilInfo } from '@coreui/icons'
 
+const getStepBadgeColor = (step, s) => {
+  if (step === s) return 'primary'
+  if (step > s) return 'success'
+  return 'light'
+}
+
+const fieldErrorClass = (classError, ...keywords) =>
+  classError && keywords.some(kw => classError.includes(kw)) ? 'is-invalid' : ''
+
 const CourseForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
   // --- WIZARD STATE (2 passos: Info + Turmas) ---
   const [step, setStep] = useState(1)
@@ -179,7 +188,7 @@ const CourseForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
         {[1, 2].map(s => (
           <CBadge
             key={s}
-            color={step === s ? 'primary' : step > s ? 'success' : 'light'}
+            color={getStepBadgeColor(step, s)}
             shape="rounded-pill"
             className={`mx-1 px-3 py-2 ${step < s ? 'text-muted border' : ''}`}
           >
@@ -270,7 +279,7 @@ const CourseForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
                     placeholder="Ex: 10º TGEI"
                     value={newClass.name}
                     onChange={(e) => handleClassInputChange('name', e.target.value)}
-                    className={classError && classError.includes('Nome') ? 'is-invalid' : ''}
+                    className={fieldErrorClass(classError, 'Nome')}
                   />
                 </CCol>
                 <CCol xs={4}>
@@ -281,7 +290,7 @@ const CourseForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
                     min="10" max="12"
                     value={newClass.grade_level}
                     onChange={(e) => handleClassInputChange('grade_level', e.target.value)}
-                    className={classError && classError.includes('Ano escolar') ? 'is-invalid' : ''}
+                    className={fieldErrorClass(classError, 'Ano escolar')}
                   />
                 </CCol>
               </CRow>
@@ -296,7 +305,7 @@ const CourseForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
                     placeholder="2025"
                     value={newClass.start_year}
                     onChange={(e) => handleClassInputChange('start_year', e.target.value)}
-                    className={classError && (classError.includes('início') || classError.includes('Ano de início')) ? 'is-invalid' : ''}
+                    className={fieldErrorClass(classError, 'início', 'Ano de início')}
                   />
                 </CCol>
                 <CCol xs={4}>
@@ -307,7 +316,7 @@ const CourseForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
                     placeholder="2028"
                     value={newClass.end_year}
                     onChange={(e) => handleClassInputChange('end_year', e.target.value)}
-                    className={classError && (classError.includes('fim') || classError.includes('Ano de fim') || classError.includes('maior')) ? 'is-invalid' : ''}
+                    className={fieldErrorClass(classError, 'fim', 'Ano de fim', 'maior')}
                   />
                 </CCol>
                 <CCol xs={4}>
@@ -318,7 +327,7 @@ const CourseForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
                     min="1" max="100"
                     value={newClass.size}
                     onChange={(e) => handleClassInputChange('size', e.target.value)}
-                    className={classError && classError.includes('Tamanho') ? 'is-invalid' : ''}
+                    className={fieldErrorClass(classError, 'Tamanho')}
                   />
                 </CCol>
               </CRow>
@@ -343,8 +352,8 @@ const CourseForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
                 {formData.classes_config.length} turma{formData.classes_config.length !== 1 ? 's' : ''} configurada{formData.classes_config.length !== 1 ? 's' : ''}
               </h6>
               <ul className="list-group text-sm">
-                {formData.classes_config.map((cls, idx) => (
-                  <li key={idx} className="list-group-item d-flex justify-content-between align-items-center py-2">
+                {formData.classes_config.map((cls) => (
+                  <li key={cls.name} className="list-group-item d-flex justify-content-between align-items-center py-2">
                     <div>
                       <span className="fw-bold d-block">{cls.name}</span>
                       <span className="text-muted small">

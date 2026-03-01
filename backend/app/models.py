@@ -10,6 +10,14 @@ from sqlalchemy.types import JSON
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.database import Base
 
+# --- FK Reference Constants (SonarQube S1192) ---
+FK_ORG_ID = "organization.id"
+FK_TEACHER_ID = "teacher.id"
+FK_SUBJECT_ID = "subject.id"
+FK_CLASS_ID = "class.id"
+FK_TIMESLOT_ID = "timeslot.id"
+CASCADE_ALL_DELETE = "all, delete-orphan"
+
 class RoomType(str, enum.Enum):
     normal = "normal"
     lab = "lab"
@@ -45,15 +53,15 @@ course_subject_link = Table(
     "course_subject_link",
     Base.metadata,
     Column("course_id", ForeignKey("course.id", ondelete="CASCADE"), primary_key=True),
-    Column("subject_id", ForeignKey("subject.id", ondelete="CASCADE"), primary_key=True),
+    Column("subject_id", ForeignKey(FK_SUBJECT_ID, ondelete="CASCADE"), primary_key=True),
 )
 
 # Tabela Relacional entre Professores e Disciplinas
 teacher_subject_link = Table(
     "teacher_subject_link",
     Base.metadata,
-    Column("teacher_id", ForeignKey("teacher.id", ondelete="CASCADE"), primary_key=True),
-    Column("subject_id", ForeignKey("subject.id", ondelete="CASCADE"), primary_key=True),
+    Column("teacher_id", ForeignKey(FK_TEACHER_ID, ondelete="CASCADE"), primary_key=True),
+    Column("subject_id", ForeignKey(FK_SUBJECT_ID, ondelete="CASCADE"), primary_key=True),
 )
 
 # Tabela Relacional: Disciplinas de uma Turma (com professor opcional)
@@ -63,10 +71,10 @@ class ClassSubjectLink(Base):
     __tablename__ = "class_subject_link"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    class_id: Mapped[int] = mapped_column(ForeignKey("class.id", ondelete="CASCADE"), index=True)
-    subject_id: Mapped[int] = mapped_column(ForeignKey("subject.id", ondelete="CASCADE"), index=True)
+    class_id: Mapped[int] = mapped_column(ForeignKey(FK_CLASS_ID, ondelete="CASCADE"), index=True)
+    subject_id: Mapped[int] = mapped_column(ForeignKey(FK_SUBJECT_ID, ondelete="CASCADE"), index=True)
     grade_level: Mapped[int] = mapped_column(Integer, nullable=False)  # 10, 11, 12
-    teacher_id: Mapped[Optional[int]] = mapped_column(ForeignKey("teacher.id", ondelete="SET NULL"), nullable=True)
+    teacher_id: Mapped[Optional[int]] = mapped_column(ForeignKey(FK_TEACHER_ID, ondelete="SET NULL"), nullable=True)
 
     # Relacionamentos
     class_: Mapped["Class"] = relationship()
@@ -81,8 +89,8 @@ class Availability(Base):
     __tablename__ = "availability"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    teacher_id: Mapped[int] = mapped_column(ForeignKey("teacher.id"), index=True)
-    timeslot_id: Mapped[int] = mapped_column(ForeignKey("timeslot.id"), index=True)
+    teacher_id: Mapped[int] = mapped_column(ForeignKey(FK_TEACHER_ID), index=True)
+    timeslot_id: Mapped[int] = mapped_column(ForeignKey(FK_TIMESLOT_ID), index=True)
     
     # O Score (-1 a 2)
     score: Mapped[int] = mapped_column(Integer, default=PreferenceLevel.NEUTRAL.value, nullable=False)
@@ -103,7 +111,7 @@ class Organization(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(100), nullable=False)
 
-    courses: Mapped[List["Course"]] = relationship(back_populates="organization", cascade="all, delete-orphan")
+    courses: Mapped[List["Course"]] = relationship(back_populates="organization", cascade=CASCADE_ALL_DELETE)
     
     # Campo para o plano de subscrição (do Ponto 3.6 do Charter)
     plan_status: Mapped[str] = mapped_column(String(50), default="inactive")
@@ -132,8 +140,8 @@ class User(Base):
     # O Papel do utilizador (Admin por defeito)
     role: Mapped[UserRole] = mapped_column(SAEnum(UserRole), default=UserRole.admin, nullable=False)
     # Se for admin, isto fica NULL. Se for professor, aponta para o ID dele.
-    teacher_id: Mapped[Optional[int]] = mapped_column(ForeignKey("teacher.id"), nullable=True)
-    organization_id: Mapped[int] = mapped_column(ForeignKey("organization.id"))
+    teacher_id: Mapped[Optional[int]] = mapped_column(ForeignKey(FK_TEACHER_ID), nullable=True)
+    organization_id: Mapped[int] = mapped_column(ForeignKey(FK_ORG_ID))
     organization: Mapped["Organization"] = relationship(back_populates="users")
     # Atalho para aceder aos dados do professor (se existirem)
     teacher_profile: Mapped[Optional["Teacher"]] = relationship()
@@ -153,7 +161,7 @@ class Teacher(Base):
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     
     # Chave Estrangeira: Liga o Professor à sua Organization
-    organization_id: Mapped[int] = mapped_column(ForeignKey("organization.id"))
+    organization_id: Mapped[int] = mapped_column(ForeignKey(FK_ORG_ID))
     
     # Relacionamento: Permite-nos fazer my_teacher.organization
     organization: Mapped["Organization"] = relationship(back_populates="teachers")
@@ -171,7 +179,7 @@ class Teacher(Base):
         """
         return [s.id for s in self.subjects]
 
-    availabilities: Mapped[List["Availability"]] = relationship(back_populates="teacher", cascade="all, delete-orphan")
+    availabilities: Mapped[List["Availability"]] = relationship(back_populates="teacher", cascade=CASCADE_ALL_DELETE)
 
     def __repr__(self) -> str:
         return f"<Teacher(id={self.id}, name='{self.name}')>"
@@ -195,10 +203,10 @@ class Class(Base):
     course: Mapped["Course"] = relationship(back_populates="classes")
 
     # Histórico de progresso
-    progress_records: Mapped[List["ClassProgress"]] = relationship(back_populates="class_", cascade="all, delete-orphan")
+    progress_records: Mapped[List["ClassProgress"]] = relationship(back_populates="class_", cascade=CASCADE_ALL_DELETE)
 
     # Chave Estrangeira: Liga a Turma à sua Organization
-    organization_id: Mapped[int] = mapped_column(ForeignKey("organization.id"))
+    organization_id: Mapped[int] = mapped_column(ForeignKey(FK_ORG_ID))
     
     # Relacionamento: Permite-nos fazer my_class.organization
     organization: Mapped["Organization"] = relationship(back_populates="classes")
@@ -221,7 +229,7 @@ class Room(Base):
     type: Mapped[RoomType] = mapped_column(SAEnum(RoomType), nullable=False, default=RoomType.normal)
 
     # Chave Estrangeira: Liga a Sala à sua Organization
-    organization_id: Mapped[int] = mapped_column(ForeignKey("organization.id"))
+    organization_id: Mapped[int] = mapped_column(ForeignKey(FK_ORG_ID))
     
     # Relacionamento: Permite-nos fazer my_room.organization
     organization: Mapped["Organization"] = relationship(back_populates="rooms")
@@ -245,10 +253,10 @@ class Subject(Base):
         nullable=False
     )
 
-    modules: Mapped[List["Module"]] = relationship(back_populates="subject", cascade="all, delete-orphan")
+    modules: Mapped[List["Module"]] = relationship(back_populates="subject", cascade=CASCADE_ALL_DELETE)
 
     # Chave Estrangeira: Liga a Disciplina à sua Organization
-    organization_id: Mapped[int] = mapped_column(ForeignKey("organization.id"))
+    organization_id: Mapped[int] = mapped_column(ForeignKey(FK_ORG_ID))
     
     # Relacionamento: Permite-nos fazer my_subject.organization
     organization: Mapped["Organization"] = relationship(back_populates="subjects")
@@ -281,7 +289,7 @@ class Timeslot(Base):
 
     # Chave Estrangeira: Liga o Bloco Horário à sua Organization
     # Isto confirma a nossa decisão: cada escola define os seus próprios blocos
-    organization_id: Mapped[int] = mapped_column(ForeignKey("organization.id"))
+    organization_id: Mapped[int] = mapped_column(ForeignKey(FK_ORG_ID))
     
     # Relacionamento: Permite-nos fazer my_timeslot.organization
     organization: Mapped["Organization"] = relationship(back_populates="timeslots")
@@ -302,12 +310,12 @@ class Lesson(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     
     # A ligação à Organização
-    organization_id: Mapped[int] = mapped_column(ForeignKey("organization.id"))
+    organization_id: Mapped[int] = mapped_column(ForeignKey(FK_ORG_ID))
     
     # As "peças" da aula
-    class_id: Mapped[int] = mapped_column(ForeignKey("class.id"), index=True)
-    subject_id: Mapped[int] = mapped_column(ForeignKey("subject.id"), index=True)
-    teacher_id: Mapped[int] = mapped_column(ForeignKey("teacher.id"), index=True)
+    class_id: Mapped[int] = mapped_column(ForeignKey(FK_CLASS_ID), index=True)
+    subject_id: Mapped[int] = mapped_column(ForeignKey(FK_SUBJECT_ID), index=True)
+    teacher_id: Mapped[int] = mapped_column(ForeignKey(FK_TEACHER_ID), index=True)
     
     # --- Relacionamentos ---
     # (Para podermos aceder a lesson.class, lesson.teacher, etc.)
@@ -337,7 +345,7 @@ class Constraint(Base):
     __tablename__ = "constraint"
 
     id = Column(Integer, primary_key=True, index=True)
-    organization_id = Column(Integer, ForeignKey("organization.id"), index=True)
+    organization_id = Column(Integer, ForeignKey(FK_ORG_ID), index=True)
     # O tipo de regra, ex: 'teacher_unavailable', 'class_must_use_room'
     rule_type = Column(SAEnum(ConstraintType), nullable=False)
     
@@ -357,13 +365,13 @@ class ScheduleOutput(Base):
     __tablename__ = "schedule_output"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    organization_id: Mapped[int] = mapped_column(ForeignKey("organization.id"), index=True)
+    organization_id: Mapped[int] = mapped_column(ForeignKey(FK_ORG_ID), index=True)
 
     # A "aula" que foi agendada (ex: Matemática do 10A)
     lesson_id: Mapped[int] = mapped_column(ForeignKey("lesson.id"), index=True)
     
     # O "bloco" onde ela foi agendada (ex: Segunda 09:00)
-    timeslot_id: Mapped[int] = mapped_column(ForeignKey("timeslot.id"), index=True)
+    timeslot_id: Mapped[int] = mapped_column(ForeignKey(FK_TIMESLOT_ID), index=True)
     
     # A "sala" que foi usada (ex: Sala 1.1)
     room_id: Mapped[int] = mapped_column(ForeignKey("room.id"), index=True)
@@ -388,14 +396,14 @@ class Substitution(Base):
     
     # Qual é a aula original que vai sofrer alteração?
     lesson_id = Column(Integer, ForeignKey("lesson.id"), nullable=False)
-    timeslot_id = Column(Integer, ForeignKey("timeslot.id"), nullable=False)
+    timeslot_id = Column(Integer, ForeignKey(FK_TIMESLOT_ID), nullable=False)
     
     # A data específica (ex: 2026-03-12). Isto diferencia a mudança pontual da permanente.
     date = Column(Date, nullable=False, index=True)
     
     # Quem faltou e quem vai substituir
-    original_teacher_id = Column(Integer, ForeignKey("teacher.id"), nullable=False)
-    substitute_teacher_id = Column(Integer, ForeignKey("teacher.id"), nullable=False)
+    original_teacher_id = Column(Integer, ForeignKey(FK_TEACHER_ID), nullable=False)
+    substitute_teacher_id = Column(Integer, ForeignKey(FK_TEACHER_ID), nullable=False)
     
     # Auditoria e Estado
     status = Column(String, default="PENDING") # PENDING, CONFIRMED, CANCELLED
@@ -418,7 +426,7 @@ class Course(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(150), nullable=False)
     abbreviation: Mapped[str] = mapped_column(String(10), unique=True, nullable=False)  # Ex: "TGEI"
-    organization_id: Mapped[int] = mapped_column(ForeignKey("organization.id"))
+    organization_id: Mapped[int] = mapped_column(ForeignKey(FK_ORG_ID))
     
     organization: Mapped["Organization"] = relationship(back_populates="courses")
     classes: Mapped[List["Class"]] = relationship(back_populates="course")
@@ -451,7 +459,7 @@ class Module(Base):
     order: Mapped[int] = mapped_column(Integer, nullable=False)  # Sequência no currículo (1, 2, 3...)
     
     # Um módulo pertence a uma disciplina macro (ex: pertence a "Programação")
-    subject_id: Mapped[int] = mapped_column(ForeignKey("subject.id"))
+    subject_id: Mapped[int] = mapped_column(ForeignKey(FK_SUBJECT_ID))
     subject: Mapped["Subject"] = relationship(back_populates="modules")
 
     # Garante ordem única por disciplina
@@ -468,7 +476,7 @@ class ClassProgress(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     
-    class_id: Mapped[int] = mapped_column(ForeignKey("class.id"))
+    class_id: Mapped[int] = mapped_column(ForeignKey(FK_CLASS_ID))
     module_id: Mapped[int] = mapped_column(ForeignKey("module.id"))
     
     hours_completed: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
