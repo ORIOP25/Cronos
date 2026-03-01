@@ -50,10 +50,10 @@ const LessonForm = () => {
   const handleSubmit = (e) => {
     e.preventDefault()
     mutation.mutate({
-      class_id: parseInt(classId),
-      subject_id: parseInt(subjectId),
-      teacher_id: parseInt(teacherId),
-      num_per_week: parseInt(numPerWeek),
+      class_id: Number.parseInt(classId, 10),
+      subject_id: Number.parseInt(subjectId, 10),
+      teacher_id: Number.parseInt(teacherId, 10),
+      num_per_week: Number.parseInt(numPerWeek, 10),
       is_double: isDouble
     })
   }

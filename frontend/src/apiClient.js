@@ -31,7 +31,7 @@ apiClient.interceptors.response.use(
     const isAuthRefresh = originalRequest.url?.includes('/auth/refresh');
 
     // Se recebermos um 401 (Unauthorized), tentamos refresh uma vez
-    if (error.response && error.response.status === 401 && !originalRequest._retry && !isAuthRefresh) {
+    if (error?.response?.status === 401 && !originalRequest._retry && !isAuthRefresh) {
       originalRequest._retry = true;
       try {
         if (!refreshPromise) {

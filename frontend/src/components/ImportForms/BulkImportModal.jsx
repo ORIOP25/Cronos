@@ -1,5 +1,6 @@
 import React, { useState, useRef } from 'react'
 import * as XLSX from 'xlsx'
+import PropTypes from 'prop-types'
 import { 
   CModal, CModalHeader, CModalTitle, CModalBody, CModalFooter, 
   CButton, CFormInput, CProgress, CAlert, CTable, CTableHead, CTableRow, CTableHeaderCell, CTableBody, CTableDataCell, CBadge, CTooltip
@@ -12,7 +13,7 @@ const BulkImportModal = ({ visible, onClose, entityName, onProcessItem, template
   const [fileData, setFileData] = useState([])
   const [processing, setProcessing] = useState(false)
   const [progress, setProgress] = useState(0)
-  const [logs, setLogs] = useState([])
+  const [, setLogs] = useState([])
   const [hasValidationErrors, setHasValidationErrors] = useState(false)
 
   // 1. LER O FICHEIRO EXCEL E VALIDAR
@@ -147,9 +148,9 @@ const BulkImportModal = ({ visible, onClose, entityName, onProcessItem, template
                         const columns = Object.keys(fileData[0]).filter(k => k !== '_error');
                         
                         return (
-                            <CTableRow key={idx} color={row._error ? 'danger' : ''}>
-                              {columns.map((colKey, i) => (
-                                  <CTableDataCell key={i}>
+                            <CTableRow key={columns.map(k => String(row[k] ?? '')).join('|')} color={row._error ? 'danger' : ''}>
+                              {columns.map((colKey) => (
+                                  <CTableDataCell key={colKey}>
                                     {/* Se o dado não existir (undefined), mostramos vazio ou traço */}
                                     {row[colKey] || <span className="text-muted">-</span>}
                                   </CTableDataCell>
@@ -206,3 +207,12 @@ const BulkImportModal = ({ visible, onClose, entityName, onProcessItem, template
 }
 
 export default BulkImportModal
+
+BulkImportModal.propTypes = {
+  visible: PropTypes.bool.isRequired,
+  onClose: PropTypes.func.isRequired,
+  entityName: PropTypes.string.isRequired,
+  onProcessItem: PropTypes.func.isRequired,
+  templateExample: PropTypes.object,
+  validateRow: PropTypes.func,
+}

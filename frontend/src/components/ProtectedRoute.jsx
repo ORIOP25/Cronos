@@ -2,7 +2,8 @@
 
 import React from 'react'
 import { Navigate } from 'react-router-dom'
-import { useAuthStore } from '../store' // A nossa "caixa-forte"
+import { useAuthStore } from '../store'
+import PropTypes from 'prop-types'
 
 const ProtectedRoute = ({ children }) => {
   // 1. Estado de autenticacao
@@ -19,3 +20,7 @@ const ProtectedRoute = ({ children }) => {
 }
 
 export default ProtectedRoute
+
+ProtectedRoute.propTypes = {
+  children: PropTypes.node.isRequired,
+}

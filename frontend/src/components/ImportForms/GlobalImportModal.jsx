@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react'
 import * as XLSX from 'xlsx'
 import apiClient from '../../apiClient'
+import PropTypes from 'prop-types'
 import { 
   CModal, CModalHeader, CModalTitle, CModalBody, CModalFooter, 
   CButton, CFormInput, CProgress, CAlert, CTable, CTableHead, CTableRow, CTableHeaderCell, CTableBody, CTableDataCell, CBadge
@@ -46,7 +47,7 @@ const GlobalImportModal = ({ visible, onClose, onSuccess }) => {
     }
 
     // Tipos de sala permitidos (ESTRITO)
-    const ALLOWED_ROOM_TYPES = ['normal', 'lab', 'gym']
+    const ALLOWED_ROOM_TYPES = new Set(['normal', 'lab', 'gym'])
 
     rows.forEach((row, index) => {
       const rowNum = index + 2 // Excel começa na linha 1 + cabeçalho
@@ -77,7 +78,7 @@ const GlobalImportModal = ({ visible, onClose, onSuccess }) => {
             col: 'room_type', 
             msg: `A sala "${rName}" não tem tipo definido.` 
           })
-        } else if (!ALLOWED_ROOM_TYPES.includes(rType)) {
+        } else if (!ALLOWED_ROOM_TYPES.has(rType)) {
           newErrors.push({ 
             row: rowNum, 
             col: 'room_type', 
@@ -213,8 +214,8 @@ const GlobalImportModal = ({ visible, onClose, onSuccess }) => {
                             </CTableRow>
                         </CTableHead>
                         <CTableBody>
-                            {errors.map((err, idx) => (
-                                <CTableRow key={idx}>
+                            {errors.map((err) => (
+                                <CTableRow key={`${err.row}-${err.col}`}>
                                     <CTableDataCell>#{err.row}</CTableDataCell>
                                     <CTableDataCell className="fw-bold">{err.col}</CTableDataCell>
                                     <CTableDataCell className="text-danger">{err.msg}</CTableDataCell>
@@ -279,3 +280,9 @@ const GlobalImportModal = ({ visible, onClose, onSuccess }) => {
 }
 
 export default GlobalImportModal
+
+GlobalImportModal.propTypes = {
+  visible: PropTypes.bool.isRequired,
+  onClose: PropTypes.func.isRequired,
+  onSuccess: PropTypes.func,
+}

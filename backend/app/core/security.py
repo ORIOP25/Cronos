@@ -1,6 +1,5 @@
 # Ficheiro: backend/app/core/security.py
 from datetime import datetime, timedelta, timezone
-from typing import Optional, Union, Any
 import bcrypt
 from jose import jwt, JWTError
 from pydantic import ValidationError
@@ -43,7 +42,7 @@ def create_token(data: dict, expires_delta: timedelta) -> str:
     )
     return encoded_jwt
 
-def create_access_token(data: dict, expires_delta: Union[timedelta, None] = None) -> str:
+def create_access_token(data: dict, expires_delta: timedelta | None = None) -> str:
     """Cria um Access Token (curta duração)."""
     if expires_delta:
         expire_delta = expires_delta

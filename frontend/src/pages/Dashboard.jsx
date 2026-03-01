@@ -238,6 +238,35 @@ const Dashboard = () => {
     )
   }
 
+  const renderCalendarContent = () => {
+    if (isLoading) return <div className="text-center p-5"><CSpinner color="primary"/></div>
+    if (isError) return <div className="p-4 text-center text-danger">Erro: {error?.message || "Erro desconhecido"}</div>
+    return (
+      <div className="p-3">
+        <FullCalendar
+          plugins={[timeGridPlugin, dayGridPlugin, interactionPlugin]}
+          initialView="timeGridWeek"
+          headerToolbar={{
+            left: 'prev,next today',
+            center: 'title',
+            right: 'timeGridWeek'
+          }}
+          weekends={false}
+          slotMinTime="08:00:00"
+          slotMaxTime="19:00:00"
+          allDaySlot={false}
+          contentHeight="auto"
+          locale="pt"
+          events={calendarEvents}
+          eventClassNames={getEventClassNames}
+          eventContent={renderEventContent}
+          eventClick={(info) => setSelectedEvent(info.event)}
+          slotEventOverlap={false}
+        />
+      </div>
+    )
+  }
+
   return (
     <CContainer fluid>
       <div className="d-flex justify-content-between align-items-center mb-4">
@@ -284,37 +313,7 @@ const Dashboard = () => {
             <span className="fw-bold">Horário Escolar</span>
         </CCardHeader>
         <CCardBody className="p-0">
-            {isLoading ? (
-                <div className="text-center p-5"><CSpinner color="primary"/></div>
-            ) : isError ? (
-                <div className="p-4 text-center text-danger">Erro: {error?.message || "Erro desconhecido"}</div>
-            ) : (
-                <div className="p-3">
-                    <FullCalendar
-                        plugins={[timeGridPlugin, dayGridPlugin, interactionPlugin]}
-                        initialView="timeGridWeek"
-                        headerToolbar={{
-                            left: 'prev,next today',
-                            center: 'title',
-                            right: 'timeGridWeek'
-                        }}
-                        weekends={false}
-                        slotMinTime="08:00:00"
-                        slotMaxTime="19:00:00"
-                        allDaySlot={false}
-                        contentHeight="auto"
-                        locale="pt"
-                        events={calendarEvents}
-                        
-                        // AQUI LIGAMOS A NOVA LÓGICA DE OCULTAÇÃO
-                        eventClassNames={getEventClassNames} 
-                        
-                        eventContent={renderEventContent}
-                        eventClick={(info) => setSelectedEvent(info.event)}
-                        slotEventOverlap={false}
-                    />
-                </div>
-            )}
+            {renderCalendarContent()}
         </CCardBody>
       </CCard>
 

@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useCallback } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
+import PropTypes from 'prop-types'
 import {
   CCard, CCardBody, CCardHeader, CCol, CRow, CButton, CAlert,
   CBadge, CSpinner, CFormInput,
@@ -151,7 +152,7 @@ const CourseDetails = () => {
   }
 
   const handleDeleteCourse = () => {
-    if (window.confirm('Apagar este curso? Esta ação é irreversível e pode falhar se houver turmas.')) {
+    if (globalThis.confirm('Apagar este curso? Esta ação é irreversível e pode falhar se houver turmas.')) {
       deleteCourse.mutate(courseId, {
         onSuccess: () => navigate('/courses')
       })
@@ -197,7 +198,7 @@ const CourseDetails = () => {
   }
 
   const handleDeleteClass = (cls) => {
-    const confirmation = window.confirm(
+    const confirmation = globalThis.confirm(
       `Apagar a turma ${cls.name}? Esta ação elimina aulas, agendamentos e substituições associados.`
     )
 
@@ -418,3 +419,10 @@ const CourseDetails = () => {
 }
 
 export default CourseDetails
+
+ClassCard.propTypes = {
+  cls: PropTypes.object.isRequired,
+  onNavigate: PropTypes.func.isRequired,
+  onEdit: PropTypes.func.isRequired,
+  onDelete: PropTypes.func.isRequired,
+}

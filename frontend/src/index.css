@@ -126,13 +126,8 @@
   /* --- Selected Card --- */
   --rs-selected-card-bg: #fff5ea;
   --rs-selected-card-border: #be5103;
-}
 
-
-/* ===========================
-   COREUI VARIABLE OVERRIDES
-   =========================== */
-:root {
+  /* --- CoreUI Variable Overrides --- */
   --cui-primary: #be5103;
   --cui-primary-rgb: 190, 81, 3;
   --cui-info: #069494;

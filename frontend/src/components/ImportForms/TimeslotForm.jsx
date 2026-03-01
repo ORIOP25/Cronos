@@ -31,7 +31,7 @@ const TimeslotForm = () => {
     e.preventDefault()
     // O backend espera inteiros para o dia da semana
     mutation.mutate({ 
-        day_of_week: parseInt(day), 
+        day_of_week: Number.parseInt(day, 10), 
         start_time: start + ":00", // Formato HH:MM:SS
         end_time: end + ":00" 
     })

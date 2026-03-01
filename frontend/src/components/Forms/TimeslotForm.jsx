@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import PropTypes from 'prop-types'
 import {
   CForm, CCol, CRow, CFormInput, CButton, CModalFooter, CFormSelect
 } from '@coreui/react'
@@ -33,7 +34,7 @@ const TimeslotForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
     // Enviar hora com segundos para o backend (HH:MM:00)
     // Opcional, mas o Pydantic gosta de formatos completos
     const payload = {
-        day_of_week: parseInt(formData.day_of_week),
+        day_of_week: Number.parseInt(formData.day_of_week, 10),
         start_time: formData.start_time.length === 5 ? formData.start_time + ':00' : formData.start_time,
         end_time: formData.end_time.length === 5 ? formData.end_time + ':00' : formData.end_time,
     }
@@ -96,3 +97,10 @@ const TimeslotForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
 }
 
 export default TimeslotForm
+
+TimeslotForm.propTypes = {
+  initialData: PropTypes.object,
+  onSubmit: PropTypes.func.isRequired,
+  isLoading: PropTypes.bool,
+  onCancel: PropTypes.func.isRequired,
+}

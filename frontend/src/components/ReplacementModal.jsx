@@ -1,6 +1,7 @@
 import React from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import apiClient from '../apiClient'
+import PropTypes from 'prop-types'
 import {
   CModal, CModalHeader, CModalTitle, CModalBody, CModalFooter,
   CButton, CListGroup, CListGroupItem, CBadge, CSpinner, CAlert
@@ -51,7 +52,7 @@ const ReplacementModal = ({ visible, onClose, eventData }) => {
     mutationFn: async (newTeacherId) => {
       // Endpoint novo para criar a substituição
       await apiClient.post('/substitutions/', {
-        lesson_id: extendedProps.lesson_id,     // Backend precisa disto
+        lesson_id: extendedProps?.lesson_id,     // Backend precisa disto
         timeslot_id: extendedProps.timeslot_id,
         original_teacher_id: extendedProps.teacher_id,
         substitute_teacher_id: newTeacherId,
@@ -81,7 +82,7 @@ const ReplacementModal = ({ visible, onClose, eventData }) => {
       
       <CModalBody>
         <p className="mb-4">
-          A procurar substituto para <strong>{extendedProps.teacher_name}</strong><br/>
+          A procurar substituto para <strong>{extendedProps?.teacher_name}</strong><br/>
           Aula: <strong>{safeEventData.title}</strong><br/>
           Data: <CBadge color="info">{dateStr}</CBadge>
         </p>
@@ -138,3 +139,9 @@ const ReplacementModal = ({ visible, onClose, eventData }) => {
 }
 
 export default ReplacementModal
+
+ReplacementModal.propTypes = {
+  visible: PropTypes.bool.isRequired,
+  onClose: PropTypes.func.isRequired,
+  eventData: PropTypes.object,
+}

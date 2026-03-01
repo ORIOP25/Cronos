@@ -1,6 +1,6 @@
 # Ficheiro: app/config.py
 
-from typing import Literal, Optional
+from typing import Literal
 from pydantic import PostgresDsn, RedisDsn, computed_field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic_core import MultiHostUrl
@@ -53,10 +53,10 @@ class Settings(BaseSettings):
 
     # --- Infraestrutura (Redis & Celery) ---
     # Se não definires no .env, assume o default do Docker
-    REDIS_URL: RedisDsn = "redis://redis:6379/0"
+    REDIS_URL: str | RedisDsn = "redis://redis:6379/0"
 
-    # Permitimos que seja Optional para não obrigar a ter no .env
-    CELERY_BROKER_URL: Optional[str] = None
+    # Permitimos que seja None para não obrigar a ter no .env
+    CELERY_BROKER_URL: str | None = None
 
     # --- Lógica Inteligente: Validador ---
     # Este código corre DEPOIS de carregar o .env
@@ -69,7 +69,7 @@ class Settings(BaseSettings):
     
     # --- Monitorização (Opcional) ---
     # Pode ser None se estivermos em desenvolvimento local
-    SENTRY_DSN: Optional[str] = None
+    SENTRY_DSN: str | None = None
 
     # Configuração do Pydantic para ler do .env
     model_config = SettingsConfigDict(

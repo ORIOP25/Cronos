@@ -17,6 +17,16 @@ import {
   useDeleteEntity 
 } from '../hooks/useSchoolData'
 
+function mapRoomType(type) {
+  const map = {
+    'normal': 'Normal',
+    'lab': 'Laboratório',
+    'gym': 'Ginásio',
+    'art': 'Artes'
+  }
+  return map[type] || type
+}
+
 const Rooms = () => {
   const [modalVisible, setModalVisible] = useState(false)
   const [selectedItem, setSelectedItem] = useState(null)
@@ -41,16 +51,6 @@ const Rooms = () => {
     capacity_badge: <CBadge color="info">{r.capacity} alunos</CBadge>,
     type_label: mapRoomType(r.type)
   }))
-
-  function mapRoomType(type) {
-      const map = {
-          'normal': 'Normal',
-          'lab': 'Laboratório',
-          'gym': 'Ginásio',
-          'art': 'Artes'
-      }
-      return map[type] || type
-  }
 
   // --- Handlers ---
 

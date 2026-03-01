@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import PropTypes from 'prop-types'
 import {
   CForm, CCol, CRow, CFormInput, CButton, CModalFooter, CFormSelect
 } from '@coreui/react'
@@ -35,7 +36,7 @@ const ClassForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
     // Pequena proteção: converter string vazia em null para o backend
     const finalData = {
         ...formData,
-        course_id: formData.course_id ? parseInt(formData.course_id) : null
+        course_id: formData.course_id ? Number.parseInt(formData.course_id, 10) : null
     }
     onSubmit(finalData)
   }
@@ -98,3 +99,10 @@ const ClassForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
 }
 
 export default ClassForm
+
+ClassForm.propTypes = {
+  initialData: PropTypes.object,
+  onSubmit: PropTypes.func.isRequired,
+  isLoading: PropTypes.bool,
+  onCancel: PropTypes.func.isRequired,
+}

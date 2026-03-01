@@ -91,8 +91,8 @@ const Courses = () => {
               if (Array.isArray(detail)) {
                 return (
                   <ul className="mb-0 ps-3">
-                    {detail.map((err, i) => (
-                      <li key={i}>
+                    {detail.map((err) => (
+                      <li key={`${(err.loc || []).join('.')}-${err.msg}`}>
                         {err.msg} 
                         {err.loc ? <span className="opacity-75 ms-1">({err.loc.join(' -> ')})</span> : ''}
                       </li>

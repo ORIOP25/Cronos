@@ -62,7 +62,7 @@ async def get_current_user(
     return user
 
 # 3. Dependency: Verificar se está Ativo (Segurança Extra)
-async def get_current_active_user(
+def get_current_active_user(
     current_user: Annotated[models.User, Depends(get_current_user)],
 ) -> models.User:
     """
@@ -73,7 +73,7 @@ async def get_current_active_user(
     return current_user
 
 # 4. Dependency: Autorização de Admin (Apenas Diretores/Admins)
-async def get_current_active_admin(
+def get_current_active_admin(
     current_user: Annotated[models.User, Depends(get_current_active_user)],
 ) -> models.User:
     """

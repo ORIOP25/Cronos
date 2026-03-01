@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
+import PropTypes from 'prop-types'
 import {
   CButton, CForm, CFormInput, CAlert, CSpinner, CCard, CCardBody
 } from '@coreui/react'
@@ -106,3 +107,12 @@ const SimpleEntityForm = ({ title, subtitle, inputLabel, mutationFn, icon, onSuc
 }
 
 export default SimpleEntityForm
+
+SimpleEntityForm.propTypes = {
+  title: PropTypes.string.isRequired,
+  subtitle: PropTypes.string,
+  inputLabel: PropTypes.string.isRequired,
+  mutationFn: PropTypes.func.isRequired,
+  icon: PropTypes.oneOfType([PropTypes.string, PropTypes.object]),
+  onSuccessCallback: PropTypes.func,
+}

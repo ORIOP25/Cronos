@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import apiClient from '../../apiClient'
+import PropTypes from 'prop-types'
 import {
   CButton, CCol, CForm, CFormInput, CFormSelect, CAlert, CSpinner, CCard, CCardBody
 } from '@coreui/react'
@@ -122,3 +123,7 @@ const RoomForm = ({ onSuccessCallback }) => {
 }
 
 export default RoomForm
+
+RoomForm.propTypes = {
+  onSuccessCallback: PropTypes.func,
+}

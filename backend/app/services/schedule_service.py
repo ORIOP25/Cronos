@@ -106,8 +106,8 @@ async def create_lesson(db: AsyncSession, item: schemas.LessonCreate, org_id: in
     existing_result = await db.execute(existing_query)
     if existing_result.scalars().first():
         raise ValueError(
-            f"Já existe uma atribuição deste professor para esta disciplina/turma. "
-            f"Para mudar o professor, edite a atribuição existente."
+            "Já existe uma atribuição deste professor para esta disciplina/turma. "
+            "Para mudar o professor, edite a atribuição existente."
         )
     
     # 4. Criar a Lesson
