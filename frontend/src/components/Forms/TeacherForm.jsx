@@ -4,6 +4,7 @@ import {
   CFormCheck, CFormSwitch, CListGroup, CListGroupItem, CSpinner
 } from '@coreui/react'
 import { useSubjects } from '../../hooks/useSchoolData'
+import PropTypes from 'prop-types'
 
 const TeacherForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
   // 1. Estado Unificado (Removemos o 'createUser' separado)
@@ -78,6 +79,31 @@ const TeacherForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
     onSubmit(formData)
   }
 
+  const renderSubjectsList = () => {
+    if (subjectsLoading) return <div className="text-center p-3"><CSpinner size="sm"/></div>
+    if (subjects && subjects.length > 0) {
+      return (
+        <CListGroup flush>
+          {subjects.map(sub => (
+            <CListGroupItem key={sub.id} className="border-0 py-1">
+              <CFormCheck
+                id={`sub-${sub.id}`}
+                label={sub.name}
+                checked={formData.subject_ids.includes(sub.id)}
+                onChange={() => handleSubjectToggle(sub.id)}
+              />
+            </CListGroupItem>
+          ))}
+        </CListGroup>
+      )
+    }
+    return (
+      <div className="text-muted text-center small p-3">
+        Não há disciplinas criadas. Vá ao menu “Disciplinas” primeiro.
+      </div>
+    )
+  }
+
   return (
     <CForm onSubmit={handleSubmit}>
       <CRow className="g-3">
@@ -112,7 +138,7 @@ const TeacherForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
           <div className="mb-3">
             <CFormInput
               type="email"
-              // Email é SEMPRE obrigatório agora (todo professor tem User)
+              // Email é SEMPRE obrigatório agora (cada professor tem uma conta User)
               label="Email de Login (Obrigatório)"
               name="email"
               value={formData.email}
@@ -129,30 +155,11 @@ const TeacherForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
 
         {/* LADO DIREITO: Lista de Disciplinas (Competências) */}
         <CCol md={6}>
-          <label className="form-label fw-bold">Competências Pedagógicas</label>
+          <p className="form-label fw-bold mb-0">Competências Pedagógicas</p>
           <p className="text-muted small mb-2">Selecione as disciplinas que este professor pode lecionar:</p>
           
           <div className="border rounded p-2" style={{ maxHeight: '300px', overflowY: 'auto' }}>
-            {subjectsLoading ? (
-              <div className="text-center p-3"><CSpinner size="sm"/></div>
-            ) : subjects && subjects.length > 0 ? (
-              <CListGroup flush>
-                {subjects.map(sub => (
-                  <CListGroupItem key={sub.id} className="border-0 py-1">
-                    <CFormCheck 
-                      id={`sub-${sub.id}`}
-                      label={sub.name}
-                      checked={formData.subject_ids.includes(sub.id)}
-                      onChange={() => handleSubjectToggle(sub.id)}
-                    />
-                  </CListGroupItem>
-                ))}
-              </CListGroup>
-            ) : (
-              <div className="text-muted text-center small p-3">
-                Não há disciplinas criadas. Vá ao menu "Disciplinas" primeiro.
-              </div>
-            )}
+            {renderSubjectsList()}
           </div>
           
           <div className="mt-2 text-end">
@@ -174,6 +181,19 @@ const TeacherForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
       </CModalFooter>
     </CForm>
   )
+}
+
+TeacherForm.propTypes = {
+  initialData: PropTypes.shape({
+    name: PropTypes.string,
+    email: PropTypes.string,
+    login_email: PropTypes.string,
+    subject_ids: PropTypes.array,
+    subjects: PropTypes.array,
+  }),
+  onSubmit: PropTypes.func.isRequired,
+  isLoading: PropTypes.bool,
+  onCancel: PropTypes.func.isRequired,
 }
 
 export default TeacherForm

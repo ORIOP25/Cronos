@@ -4,6 +4,7 @@ import {
 } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
 import { cilX, cilPencil, cilCheckCircle } from '@coreui/icons'
+import PropTypes from 'prop-types'
 
 const SubjectForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
   // --- WIZARD STATE ---
@@ -72,7 +73,7 @@ const SubjectForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
         {
           ...currentModule,
           order: prev.modules.length, // Auto-ordenação
-          hours_total: parseInt(currentModule.hours_total, 10)
+          hours_total: Number.parseInt(currentModule.hours_total, 10)
           // Sem id = módulo novo
         }
       ]
@@ -113,7 +114,7 @@ const SubjectForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
       ...prev,
       modules: prev.modules.map((m, i) => 
         i === editingModuleIndex 
-          ? { ...m, name: editModuleData.name, code: editModuleData.code, hours_total: parseInt(editModuleData.hours_total, 10) }
+          ? { ...m, name: editModuleData.name, code: editModuleData.code, hours_total: Number.parseInt(editModuleData.hours_total, 10) }
           : m
       )
     }))
@@ -152,8 +153,9 @@ const SubjectForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
       {step === 1 && (
         <div className="animate-fade-in">
           <div className="mb-3">
-            <label className="form-label">Nome da Disciplina <span className="text-danger">*</span></label>
+            <label htmlFor="subjectName" className="form-label">Nome da Disciplina <span className="text-danger">*</span></label>
             <CFormInput
+              id="subjectName"
               name="name"
               placeholder="Ex: Matemática A"
               value={formData.name}
@@ -163,8 +165,9 @@ const SubjectForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
           </div>
 
           <div className="mb-3">
-            <label className="form-label">Sala Preferencial</label>
+            <label htmlFor="subjectRoomType" className="form-label">Sala Preferencial</label>
             <CFormSelect
+              id="subjectRoomType"
               name="required_room_type"
               value={formData.required_room_type}
               onChange={handleInputChange}
@@ -199,8 +202,9 @@ const SubjectForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
               <CRow className="g-2 align-items-end">
                 {/* Nome: Mais espaço */}
                 <CCol xs={12} sm={5}>
-                  <label className="form-label small mb-1">Nome Módulo</label>
+                  <label htmlFor="moduleName" className="form-label small mb-1">Nome Módulo</label>
                   <CFormInput
+                    id="moduleName"
                     size="sm"
                     name="name"
                     placeholder="Ex: Geometria"
@@ -211,8 +215,9 @@ const SubjectForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
                 
                 {/* Código: Espaço ajustado para não quebrar o título */}
                 <CCol xs={6} sm={3}>
-                  <label className="form-label small mb-1 text-nowrap">Cód. UFCD</label>
+                  <label htmlFor="moduleCode" className="form-label small mb-1 text-nowrap">Cód. UFCD</label>
                   <CFormInput
+                    id="moduleCode"
                     size="sm"
                     name="code"
                     placeholder="001"
@@ -223,8 +228,9 @@ const SubjectForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
                 
                 {/* Horas */}
                 <CCol xs={3} sm={2}>
-                  <label className="form-label small mb-1">Horas</label>
+                  <label htmlFor="moduleHours" className="form-label small mb-1">Horas</label>
                   <CFormInput
+                    id="moduleHours"
                     size="sm"
                     type="number"
                     name="hours_total"
@@ -267,7 +273,7 @@ const SubjectForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
                   </thead>
                   <tbody>
                     {formData.modules.map((mod, index) => (
-                      <tr key={index} className="align-middle">
+                      <tr key={mod.id ?? `${mod.name}-${mod.order}`} className="align-middle">
                         <td className="px-3 text-muted small">{index + 1}</td>
                         {editingModuleIndex === index ? (
                           <>
@@ -376,6 +382,17 @@ const SubjectForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
       )}
     </CForm>
   )
+}
+
+SubjectForm.propTypes = {
+  initialData: PropTypes.shape({
+    name: PropTypes.string,
+    required_room_type: PropTypes.string,
+    modules: PropTypes.array,
+  }),
+  onSubmit: PropTypes.func.isRequired,
+  isLoading: PropTypes.bool,
+  onCancel: PropTypes.func.isRequired,
 }
 
 export default SubjectForm

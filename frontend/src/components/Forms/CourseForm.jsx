@@ -4,6 +4,7 @@ import {
 } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
 import { cilArrowRight, cilArrowLeft, cilTrash, cilPlus, cilCheckCircle, cilWarning, cilInfo } from '@coreui/icons'
+import PropTypes from 'prop-types'
 
 const getStepBadgeColor = (step, s) => {
   if (step === s) return 'primary'
@@ -67,13 +68,13 @@ const CourseForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
 
   const handleNextStep = () => {
     // VALIDAÇÃO 1: Nome obrigatório
-    if (!formData.name || !formData.name.trim()) {
+    if (!formData.name?.trim()) {
       alert('Nome do curso é obrigatório')
       return
     }
 
     // VALIDAÇÃO 2: Sigla obrigatória
-    if (!formData.abbreviation || !formData.abbreviation.trim()) {
+    if (!formData.abbreviation?.trim()) {
       alert('Sigla do curso é obrigatória (ex: TGEI)')
       return
     }
@@ -96,28 +97,28 @@ const CourseForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
   // Lógica de Turmas (Atualizada com validação robusta)
   const addClassConfig = () => {
     // VALIDAÇÃO 1: Nome obrigatório
-    if (!newClass.name || !newClass.name.trim()) {
+    if (!newClass.name?.trim()) {
       setClassError('Nome da turma é obrigatório')
       return
     }
 
     // VALIDAÇÃO 2: Grade level (10-12)
-    const gradeLevel = parseInt(newClass.grade_level, 10)
-    if (isNaN(gradeLevel) || gradeLevel < 10 || gradeLevel > 12) {
+    const gradeLevel = Number.parseInt(newClass.grade_level, 10)
+    if (Number.isNaN(gradeLevel) || gradeLevel < 10 || gradeLevel > 12) {
       setClassError('Ano escolar deve ser 10, 11 ou 12')
       return
     }
 
     // VALIDAÇÃO 3: Start year obrigatório e válido
-    const startYear = parseInt(newClass.start_year, 10)
-    if (isNaN(startYear) || startYear < 2000 || startYear > 2100) {
+    const startYear = Number.parseInt(newClass.start_year, 10)
+    if (Number.isNaN(startYear) || startYear < 2000 || startYear > 2100) {
       setClassError('Ano de início deve ser entre 2000 e 2100')
       return
     }
 
     // VALIDAÇÃO 4: End year obrigatório e válido
-    const endYear = parseInt(newClass.end_year, 10)
-    if (isNaN(endYear) || endYear < 2000 || endYear > 2100) {
+    const endYear = Number.parseInt(newClass.end_year, 10)
+    if (Number.isNaN(endYear) || endYear < 2000 || endYear > 2100) {
       setClassError('Ano de fim deve ser entre 2000 e 2100')
       return
     }
@@ -136,8 +137,8 @@ const CourseForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
     }
 
     // VALIDAÇÃO 7: Tamanho válido (se editável)
-    const size = parseInt(newClass.size, 10)
-    if (isNaN(size) || size < 1 || size > 100) {
+    const size = Number.parseInt(newClass.size, 10)
+    if (Number.isNaN(size) || size < 1 || size > 100) {
       setClassError('Tamanho da turma deve ser entre 1 e 100')
       return
     }
@@ -204,7 +205,7 @@ const CourseForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
           <div className="mb-3 pb-3 border-bottom">
             <h5 className="mb-0">
               <span className="badge bg-primary me-2">1</span>
-              Informações Básicas
+              {' '}Informações Básicas
             </h5>
             <small className="text-muted">Nome e sigla do curso</small>
           </div>
@@ -255,7 +256,7 @@ const CourseForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
           <div className="mb-3 pb-3 border-bottom">
             <h5 className="mb-0">
               <span className="badge bg-primary me-2">2</span>
-              Gerar Turmas Iniciais
+              {' '}Gerar Turmas Iniciais
             </h5>
             <small className="text-muted">Configure as turmas e o ciclo de anos (ex: 2025-2028). Opcional.</small>
           </div>
@@ -273,8 +274,9 @@ const CourseForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
               {/* Linha 1: Nome e Ano Escolar */}
               <CRow className="g-2 align-items-end mb-2">
                 <CCol xs={8}>
-                  <label className="form-label small mb-1">Nome Turma <span className="text-danger">*</span></label>
+                  <label htmlFor="newClassName" className="form-label small mb-1">Nome Turma <span className="text-danger">*</span></label>
                   <CFormInput
+                    id="newClassName"
                     size="sm"
                     placeholder="Ex: 10º TGEI"
                     value={newClass.name}
@@ -283,8 +285,9 @@ const CourseForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
                   />
                 </CCol>
                 <CCol xs={4}>
-                  <label className="form-label small mb-1">Ano (10-12) <span className="text-danger">*</span></label>
+                  <label htmlFor="newClassGrade" className="form-label small mb-1">Ano (10-12) <span className="text-danger">*</span></label>
                   <CFormInput
+                    id="newClassGrade"
                     size="sm"
                     type="number"
                     min="10" max="12"
@@ -298,8 +301,9 @@ const CourseForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
               {/* Linha 2: Anos de Calendário + Tamanho */}
               <CRow className="g-2 align-items-end mb-3">
                 <CCol xs={4}>
-                  <label className="form-label small mb-1">Início (ex: 2025) <span className="text-danger">*</span></label>
+                  <label htmlFor="newClassStartYear" className="form-label small mb-1">Início (ex: 2025) <span className="text-danger">*</span></label>
                   <CFormInput
+                    id="newClassStartYear"
                     size="sm"
                     type="number"
                     placeholder="2025"
@@ -309,8 +313,9 @@ const CourseForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
                   />
                 </CCol>
                 <CCol xs={4}>
-                  <label className="form-label small mb-1">Fim (ex: 2028) <span className="text-danger">*</span></label>
+                  <label htmlFor="newClassEndYear" className="form-label small mb-1">Fim (ex: 2028) <span className="text-danger">*</span></label>
                   <CFormInput
+                    id="newClassEndYear"
                     size="sm"
                     type="number"
                     placeholder="2028"
@@ -320,8 +325,9 @@ const CourseForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
                   />
                 </CCol>
                 <CCol xs={4}>
-                  <label className="form-label small mb-1">Alunos</label>
+                  <label htmlFor="newClassSize" className="form-label small mb-1">Alunos</label>
                   <CFormInput
+                    id="newClassSize"
                     size="sm"
                     type="number"
                     min="1" max="100"
@@ -349,10 +355,10 @@ const CourseForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
             <div className="mb-3">
               <h6 className="mb-2 text-success">
                 <CIcon icon={cilCheckCircle} size="sm" className="me-1" />
-                {formData.classes_config.length} turma{formData.classes_config.length !== 1 ? 's' : ''} configurada{formData.classes_config.length !== 1 ? 's' : ''}
+                {formData.classes_config.length} turma{formData.classes_config.length === 1 ? '' : 's'} configurada{formData.classes_config.length === 1 ? '' : 's'}
               </h6>
               <ul className="list-group text-sm">
-                {formData.classes_config.map((cls) => (
+                {formData.classes_config.map((cls, index) => (
                   <li key={cls.name} className="list-group-item d-flex justify-content-between align-items-center py-2">
                     <div>
                       <span className="fw-bold d-block">{cls.name}</span>
@@ -360,7 +366,7 @@ const CourseForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
                         {cls.grade_level}º Ano ({cls.start_year}-{cls.end_year}) · {cls.size} alunos
                       </span>
                     </div>
-                    <CButton color="danger" variant="ghost" size="sm" onClick={() => removeClassConfig(idx)}>
+                    <CButton color="danger" variant="ghost" size="sm" onClick={() => removeClassConfig(index)}>
                       <CIcon icon={cilTrash} />
                     </CButton>
                   </li>
@@ -392,7 +398,7 @@ const CourseForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
               {isLoading ? (
                 <>
                   <span className="spinner-border spinner-border-sm me-2"></span>
-                  A processar...
+                  {' '}A processar...
                 </>
               ) : (
                 <span className="d-flex align-items-center">
@@ -406,6 +412,17 @@ const CourseForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
       )}
     </CForm>
   )
+}
+
+CourseForm.propTypes = {
+  initialData: PropTypes.shape({
+    name: PropTypes.string,
+    abbreviation: PropTypes.string,
+    classes: PropTypes.array,
+  }),
+  onSubmit: PropTypes.func.isRequired,
+  isLoading: PropTypes.bool,
+  onCancel: PropTypes.func.isRequired,
 }
 
 export default CourseForm

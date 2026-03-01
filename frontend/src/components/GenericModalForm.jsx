@@ -3,6 +3,7 @@ import {
   CModal, CModalHeader, CModalTitle, CModalBody,
   CAlert
 } from '@coreui/react'
+import PropTypes from 'prop-types'
 
 /**
  * Componente Genérico para Criar/Editar Entidades via Modal.
@@ -66,6 +67,18 @@ const GenericModalForm = ({
       </CModalBody>
     </CModal>
   )
+}
+
+GenericModalForm.propTypes = {
+  visible: PropTypes.bool.isRequired,
+  onClose: PropTypes.func.isRequired,
+  title: PropTypes.string.isRequired,
+  initialData: PropTypes.object,
+  FormComponent: PropTypes.elementType.isRequired,
+  onSubmit: PropTypes.func.isRequired,
+  isLoading: PropTypes.bool,
+  error: PropTypes.object,
+  size: PropTypes.string,
 }
 
 export default GenericModalForm

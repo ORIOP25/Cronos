@@ -312,3 +312,19 @@ Evaluate every line of code against these:
     A bare `except:` catches system-level exceptions like `SystemExit` or `KeyboardInterrupt`. Always specify the exception type, usually `except Exception as e:` or a more specific error class.
     Bad: `except:`
     Good: `except Exception as e:`
+
+- Use modern Union type expressions (SonarQube rule: python:S6546).
+    In Python 3.10+, use the `|` operator instead of `Union` or `Optional` from the `typing` module. This applies specifically to alembic migration files and type hints.
+    Bad: `def upgrade() -> None:` or `email: Optional[str] = None`
+    Good: `def upgrade() -> None:` (Actually, Alembic scripts usually trigger this on variables or return types, use `X | Y` syntax).
+
+- Prefer optional chaining expressions (SonarQube rule: javascript:S6582).
+    Use the `?.` operator to safely access nested object properties instead of using logical AND (`&&`).
+    Bad: `if (error && error.response && error.response.data)`
+    Good: `if (error?.response?.data)`
+
+- Move static functions to the outer scope (SonarQube rule: javascript:S7721).
+    Functions defined inside a React component that do not depend on the component's state or props should be moved outside the component to prevent unnecessary re-allocations on every render.
+
+- Use asynchronous features in async functions or remove the async keyword (SonarQube rule: python:S7503).
+    If a function is defined with `async def` but does not contain any `await` expressions, it should be changed to a normal synchronous `def` function (unless required by an interface, in which case returning a resolved value or yielding control might be needed).

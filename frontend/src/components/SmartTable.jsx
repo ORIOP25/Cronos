@@ -5,6 +5,7 @@ import {
 } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
 import { cilPencil, cilTrash, cilChevronRight } from '@coreui/icons'
+import PropTypes from 'prop-types'
 
 const SmartTable = ({ 
   columns, 
@@ -34,8 +35,8 @@ const SmartTable = ({
     <CTable hover responsive className="align-middle mb-0 border">
       <CTableHead color="light">
         <CTableRow>
-          {columns.map((col, index) => (
-            <CTableHeaderCell key={index} style={col._style}>
+          {columns.map((col) => (
+            <CTableHeaderCell key={col.key || col.label} style={col._style}>
               {col.label}
             </CTableHeaderCell>
           ))}
@@ -51,8 +52,8 @@ const SmartTable = ({
             style={isClickable ? { cursor: 'pointer' } : undefined}
             className={isClickable ? 'smart-table-clickable' : ''}
           >
-            {columns.map((col, colIndex) => (
-              <CTableDataCell key={colIndex}>
+            {columns.map((col) => (
+              <CTableDataCell key={col.key || col.label}>
                 {/* AQUI ESTÁ A CORREÇÃO MÁGICA:
                    Se a coluna tiver uma função 'render', executa-a.
                    Caso contrário, mostra o valor direto.
@@ -94,6 +95,21 @@ const SmartTable = ({
       </CTableBody>
     </CTable>
   )
+}
+
+SmartTable.propTypes = {
+  columns: PropTypes.arrayOf(PropTypes.shape({
+    key: PropTypes.string,
+    label: PropTypes.string.isRequired,
+    _style: PropTypes.object,
+    render: PropTypes.func,
+  })).isRequired,
+  data: PropTypes.array,
+  isLoading: PropTypes.bool,
+  actions: PropTypes.bool,
+  onEdit: PropTypes.func,
+  onDelete: PropTypes.func,
+  onRowClick: PropTypes.func,
 }
 
 export default SmartTable

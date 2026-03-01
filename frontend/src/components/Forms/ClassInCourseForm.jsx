@@ -7,6 +7,7 @@ import {
   CButton,
   CModalFooter,
 } from '@coreui/react'
+import PropTypes from 'prop-types'
 
 const defaultState = {
   name: '',
@@ -48,6 +49,10 @@ const ClassInCourseForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
       end_year: Number(formData.end_year),
     })
   }
+
+  let submitLabel = 'Criar Turma'
+  if (isLoading) submitLabel = 'A gravar...'
+  else if (initialData) submitLabel = 'Atualizar Turma'
 
   return (
     <CForm onSubmit={handleSubmit}>
@@ -120,11 +125,24 @@ const ClassInCourseForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
           Cancelar
         </CButton>
         <CButton color="primary" type="submit" disabled={isLoading}>
-          {isLoading ? 'A gravar...' : initialData ? 'Atualizar Turma' : 'Criar Turma'}
+          {submitLabel}
         </CButton>
       </CModalFooter>
     </CForm>
   )
+}
+
+ClassInCourseForm.propTypes = {
+  initialData: PropTypes.shape({
+    name: PropTypes.string,
+    size: PropTypes.number,
+    grade_level: PropTypes.number,
+    start_year: PropTypes.number,
+    end_year: PropTypes.number,
+  }),
+  onSubmit: PropTypes.func.isRequired,
+  isLoading: PropTypes.bool,
+  onCancel: PropTypes.func.isRequired,
 }
 
 export default ClassInCourseForm

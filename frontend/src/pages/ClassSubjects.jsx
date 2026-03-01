@@ -11,6 +11,7 @@ import {
   cilArrowLeft, cilBook, cilUserPlus, cilTrash, cilPeople,
   cilBookmark, cilCheckCircle, cilWarning,
 } from '@coreui/icons'
+import PropTypes from 'prop-types'
 
 import {
   useClassSubjects,
@@ -36,6 +37,10 @@ const RoomBadge = ({ type }) => {
   return <CBadge color={c.color} shape="rounded-pill" className={c.textClass || ''}>{c.label}</CBadge>
 }
 
+RoomBadge.propTypes = {
+  type: PropTypes.string.isRequired,
+}
+
 const gradeLabels = { 10: '10.º ano', 11: '11.º ano', 12: '12.º ano' }
 
 // ==========================================
@@ -51,7 +56,7 @@ const SubjectRow = ({
   const { data: eligibleTeachers, isLoading: teachersLoading } = useEligibleTeachers(subject.subject_id)
   
   const handleTeacherChange = (e) => {
-    const teacherId = e.target.value ? parseInt(e.target.value) : null
+    const teacherId = e.target.value ? Number.parseInt(e.target.value, 10) : null
     onTeacherChange(subject.subject_id, teacherId)
   }
 
@@ -126,6 +131,20 @@ const SubjectRow = ({
   )
 }
 
+SubjectRow.propTypes = {
+  subject: PropTypes.shape({
+    subject_id: PropTypes.number.isRequired,
+    subject_name: PropTypes.string.isRequired,
+    required_room_type: PropTypes.string,
+    teacher_id: PropTypes.number,
+    teacher_name: PropTypes.string,
+  }).isRequired,
+  classId: PropTypes.number.isRequired,
+  onRemove: PropTypes.func.isRequired,
+  onTeacherChange: PropTypes.func.isRequired,
+  isUpdating: PropTypes.bool,
+}
+
 // ==========================================
 //  COMPONENT PRINCIPAL: ClassSubjects
 // ==========================================
@@ -162,18 +181,48 @@ const ClassSubjects = () => {
   const handleAddSubject = () => {
     if (!selectedSubjectToAdd) return
     addSubject.mutate(
-      { classId: numClassId, subjectId: parseInt(selectedSubjectToAdd) },
+      { classId: numClassId, subjectId: Number.parseInt(selectedSubjectToAdd, 10) },
       { onSuccess: () => { setShowAddModal(false); setSelectedSubjectToAdd('') } }
     )
   }
 
   const handleRemoveSubject = (subjectId) => {
-    if (!window.confirm('Remover esta disciplina da turma?')) return
+    if (!globalThis.confirm('Remover esta disciplina da turma?')) return
     removeSubject.mutate({ classId: numClassId, subjectId })
   }
 
   const handleTeacherChange = (subjectId, teacherId) => {
     updateTeacher.mutate({ classId: numClassId, subjectId, teacherId })
+  }
+
+  const renderAddModalBody = () => {
+    if (availableLoading) {
+      return (
+        <div className="text-center py-3">
+          <CSpinner size="sm" /> A carregar disciplinas...
+        </div>
+      )
+    }
+    if (availableSubjects?.length === 0) {
+      return (
+        <CAlert color="info" className="mb-0">
+          Todas as disciplinas já estão associadas a esta turma.
+        </CAlert>
+      )
+    }
+    return (
+      <CFormSelect
+        value={selectedSubjectToAdd}
+        onChange={(e) => setSelectedSubjectToAdd(e.target.value)}
+      >
+        <option value="">Selecionar disciplina...</option>
+        {(availableSubjects || []).map(subject => (
+          <option key={subject.id} value={subject.id}>
+            {subject.name}
+          </option>
+        ))}
+      </CFormSelect>
+    )
   }
 
   // Loading state
@@ -322,27 +371,7 @@ const ClassSubjects = () => {
           <CModalTitle>Adicionar Disciplina</CModalTitle>
         </CModalHeader>
         <CModalBody>
-          {availableLoading ? (
-            <div className="text-center py-3">
-              <CSpinner size="sm" /> A carregar disciplinas...
-            </div>
-          ) : availableSubjects?.length === 0 ? (
-            <CAlert color="info" className="mb-0">
-              Todas as disciplinas já estão associadas a esta turma.
-            </CAlert>
-          ) : (
-            <CFormSelect
-              value={selectedSubjectToAdd}
-              onChange={(e) => setSelectedSubjectToAdd(e.target.value)}
-            >
-              <option value="">Selecionar disciplina...</option>
-              {(availableSubjects || []).map(subject => (
-                <option key={subject.id} value={subject.id}>
-                  {subject.name}
-                </option>
-              ))}
-            </CFormSelect>
-          )}
+          {renderAddModalBody()}
         </CModalBody>
         <CModalFooter>
           <CButton color="secondary" onClick={() => setShowAddModal(false)}>
