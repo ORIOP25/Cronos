@@ -91,11 +91,11 @@ const ReplacementModal = ({ visible, onClose, eventData }) => {
         
         {isError && <CAlert color="danger">Erro ao buscar sugestões.</CAlert>}
 
-        {suggestions && suggestions.length === 0 && (
+        {suggestions?.length === 0 && (
           <CAlert color="warning">Nenhum professor disponível neste dia/hora.</CAlert>
         )}
 
-        {suggestions && suggestions.length > 0 && (
+        {suggestions?.length > 0 && (
           <>
             <h5>Sugestões para esta data:</h5>
             <CListGroup>

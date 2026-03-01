@@ -286,8 +286,9 @@ const CourseDetails = () => {
             <div>
               <CRow className="g-3 align-items-end">
                 <CCol md={6}>
-                  <label className="form-label fw-semibold">Nome do Curso</label>
+                  <label htmlFor="courseNameInput" className="form-label fw-semibold">Nome do Curso</label>
                   <CFormInput
+                    id="courseNameInput"
                     value={headerForm.name}
                     onChange={(e) => setHeaderForm(prev => ({ ...prev, name: e.target.value }))}
                     placeholder="Nome completo do curso"
@@ -295,8 +296,9 @@ const CourseDetails = () => {
                   />
                 </CCol>
                 <CCol md={3}>
-                  <label className="form-label fw-semibold">Sigla</label>
+                  <label htmlFor="courseAbbreviationInput" className="form-label fw-semibold">Sigla</label>
                   <CFormInput
+                    id="courseAbbreviationInput"
                     value={headerForm.abbreviation}
                     onChange={(e) => setHeaderForm(prev => ({ ...prev, abbreviation: e.target.value }))}
                     placeholder="Ex: TGEI"

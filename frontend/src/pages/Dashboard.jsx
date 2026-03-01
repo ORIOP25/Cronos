@@ -88,7 +88,7 @@ const Dashboard = () => {
       const { status, result } = res.data 
 
       if (status === 'SUCCESS') {
-        if (result && result.status === 'Success') {
+        if (result?.status === 'Success') {
             setGenerationStatus('success')
             queryClient.invalidateQueries({ queryKey: ['schedule'] })
             queryClient.invalidateQueries({ queryKey: ['heatmap'] }) 

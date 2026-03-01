@@ -41,6 +41,10 @@ const ClassForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
     onSubmit(finalData)
   }
 
+  let submitLabel = 'Criar Turma'
+  if (isLoading) submitLabel = 'A gravar...'
+  else if (initialData) submitLabel = 'Atualizar Turma'
+
   return (
     <CForm onSubmit={handleSubmit}>
       <CRow className="g-3">
@@ -91,7 +95,7 @@ const ClassForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
           Cancelar
         </CButton>
         <CButton color="primary" type="submit" disabled={isLoading}>
-          {isLoading ? 'A gravar...' : (initialData ? 'Atualizar Turma' : 'Criar Turma')}
+          {submitLabel}
         </CButton>
       </CModalFooter>
     </CForm>

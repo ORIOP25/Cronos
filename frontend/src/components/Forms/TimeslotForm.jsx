@@ -41,6 +41,10 @@ const TimeslotForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
     onSubmit(payload)
   }
 
+  let submitLabel = 'Criar Bloco'
+  if (isLoading) submitLabel = 'A gravar...'
+  else if (initialData) submitLabel = 'Atualizar Bloco'
+
   return (
     <CForm onSubmit={handleSubmit}>
       <CRow className="g-3">
@@ -89,7 +93,7 @@ const TimeslotForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
           Cancelar
         </CButton>
         <CButton color="primary" type="submit" disabled={isLoading}>
-          {isLoading ? 'A gravar...' : (initialData ? 'Atualizar Bloco' : 'Criar Bloco')}
+          {submitLabel}
         </CButton>
       </CModalFooter>
     </CForm>
