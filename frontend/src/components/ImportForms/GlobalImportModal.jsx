@@ -19,21 +19,17 @@ const GlobalImportModal = ({ visible, onClose, onSuccess }) => {
   const [preparedData, setPreparedData] = useState(null) // Dados prontos a enviar se não houver erros
   const [stats, setStats] = useState(null) // Contagens para mostrar resumo
 
-  const handleFileUpload = (e) => {
+  const handleFileUpload = async (e) => {
     const file = e.target.files[0]
     if (!file) return
 
-    const reader = new FileReader()
-    reader.onload = (evt) => {
-      const bstr = evt.target.result
-      const wb = XLSX.read(bstr, { type: 'binary' })
-      const wsname = wb.SheetNames[0] // Lê apenas a primeira folha
-      const ws = wb.Sheets[wsname]
-      const data = XLSX.utils.sheet_to_json(ws)
-      
-      validateAndParse(data)
-    }
-    reader.readAsBinaryString(file)
+    const arrayBuffer = await file.arrayBuffer()
+    const wb = XLSX.read(arrayBuffer, { type: 'array' })
+    const wsname = wb.SheetNames[0] // Lê apenas a primeira folha
+    const ws = wb.Sheets[wsname]
+    const fileData = XLSX.utils.sheet_to_json(ws)
+    
+    validateAndParse(fileData)
   }
 
   // --- LÓGICA DE VALIDAÇÃO ESTRITA ---
@@ -78,15 +74,15 @@ const GlobalImportModal = ({ visible, onClose, onSuccess }) => {
             col: 'room_type', 
             msg: `A sala "${rName}" não tem tipo definido.` 
           })
-        } else if (!ALLOWED_ROOM_TYPES.has(rType)) {
+        } else if (ALLOWED_ROOM_TYPES.has(rType)) {
+          // Só adiciona se for válido
+          cleanData.rooms.push({ name: rName, type: rType })
+        } else {
           newErrors.push({ 
             row: rowNum, 
             col: 'room_type', 
             msg: `Tipo "${rType}" inválido. Use apenas: normal, lab, gym.` 
           })
-        } else {
-          // Só adiciona se for válido
-          cleanData.rooms.push({ name: rName, type: rType })
         }
       } else if (row.room_type) {
         // Se tem tipo mas não tem nome
@@ -129,22 +125,22 @@ const GlobalImportModal = ({ visible, onClose, onSuccess }) => {
     try {
       // Enviar Professores
       for (const item of preparedData.teachers) {
-        try { await apiClient.post('/import/teacher', item); } catch(e){}
+        try { await apiClient.post('/import/teacher', item); } catch(e){ console.error('Import teacher skipped:', e); }
         updateProgress()
       }
       // Enviar Turmas
       for (const item of preparedData.classes) {
-        try { await apiClient.post('/import/class', item); } catch(e){}
+        try { await apiClient.post('/import/class', item); } catch(e){ console.error('Import class skipped:', e); }
         updateProgress()
       }
       // Enviar Disciplinas
       for (const item of preparedData.subjects) {
-        try { await apiClient.post('/import/subject', item); } catch(e){}
+        try { await apiClient.post('/import/subject', item); } catch(e){ console.error('Import subject skipped:', e); }
         updateProgress()
       }
       // Enviar Salas
       for (const item of preparedData.rooms) {
-        try { await apiClient.post('/import/room', item); } catch(e){}
+        try { await apiClient.post('/import/room', item); } catch(e){ console.error('Import room skipped:', e); }
         updateProgress()
       }
 

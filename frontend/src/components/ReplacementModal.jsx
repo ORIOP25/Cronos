@@ -14,7 +14,7 @@ const formatDate = (dateObj) => {
 }
 
 const fetchSuggestions = async ({ queryKey }) => {
-  const [_, params] = queryKey
+  const [, params] = queryKey
   // Agora exigimos date_str também
   if (!params.timeslot_id || !params.date_str) return []
   

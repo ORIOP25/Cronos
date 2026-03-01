@@ -29,24 +29,8 @@ async def find_available_teachers(
     for teacher in all_teachers:
         # A. Verificar Horário Normal (Semana Tipo)
         # Se ele já tem aula fixa neste timeslot, está ocupado.
-        query_busy_normal = select(models.ScheduleOutput).where(
-            models.ScheduleOutput.timeslot_id == timeslot_id,
-            models.ScheduleOutput.generation_id == (
-                select(models.ScheduleOutput.generation_id)
-                .where(models.ScheduleOutput.organization_id == org_id)
-                .order_by(models.ScheduleOutput.id.desc())
-                .limit(1)
-                .scalar_subquery()
-            ),
-            # Precisamos de descobrir a aula para ver quem é o professor
-            # Nota: Isto assume que ScheduleOutput não guarda teacher_id direto,
-            # mas sim lesson_id. Faremos um JOIN simplificado ou verificação lógica.
-        )
-        
-        # Otimização: Vamos verificar se existe algum ScheduleOutput para este Timeslot
-        # onde a Lesson associada seja deste professor.
-        # (Para simplificar este passo no MVP, assumimos disponibilidade baseada em Hard Constraints
-        #  ou fazemos uma query mais complexa com Join. Vamos simplificar:)
+        # Nota: Verificação baseada em Hard Constraints do MVP.
+        # (Query direta ao ScheduleOutput requereria JOIN com Lesson para obter teacher_id)
         
         # B. Verificar Disponibilidade Declarada (-1)
         # Se o professor disse "Nunca posso à Segunda às 9h", respeitamos.

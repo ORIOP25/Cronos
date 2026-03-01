@@ -13,39 +13,35 @@ const BulkImportModal = ({ visible, onClose, entityName, onProcessItem, template
   const [fileData, setFileData] = useState([])
   const [processing, setProcessing] = useState(false)
   const [progress, setProgress] = useState(0)
-  const [, setLogs] = useState([])
+  const [logs, setLogs] = useState([])
   const [hasValidationErrors, setHasValidationErrors] = useState(false)
 
   // 1. LER O FICHEIRO EXCEL E VALIDAR
-  const handleFileUpload = (e) => {
+  const handleFileUpload = async (e) => {
     const file = e.target.files[0]
     if (!file) return
 
-    const reader = new FileReader()
-    reader.onload = (evt) => {
-      const bstr = evt.target.result
-      const wb = XLSX.read(bstr, { type: 'binary' })
-      const wsname = wb.SheetNames[0]
-      const ws = wb.Sheets[wsname]
-      const rawData = XLSX.utils.sheet_to_json(ws)
-      
-      // --- VALIDAÇÃO PRÉVIA ---
-      let errorFound = false
-      const validatedData = rawData.map(row => {
-        let error = null
-        if (validateRow) {
-            error = validateRow(row) // Retorna string de erro ou null
-        }
-        if (error) errorFound = true
-        return { ...row, _error: error } // Adiciona o erro ao objeto para mostrar na tabela
-      })
+    const arrayBuffer = await file.arrayBuffer()
+    const wb = XLSX.read(arrayBuffer, { type: 'array' })
+    const wsname = wb.SheetNames[0]
+    const ws = wb.Sheets[wsname]
+    const rawData = XLSX.utils.sheet_to_json(ws)
 
-      setFileData(validatedData)
-      setHasValidationErrors(errorFound)
-      setLogs([])
-      setProgress(0)
-    }
-    reader.readAsBinaryString(file)
+    // --- VALIDAÇÃO PRÉVIA ---
+    let errorFound = false
+    const validatedData = rawData.map(row => {
+      let error = null
+      if (validateRow) {
+        error = validateRow(row) // Retorna string de erro ou null
+      }
+      if (error) errorFound = true
+      return { ...row, _error: error } // Adiciona o erro ao objeto para mostrar na tabela
+    })
+
+    setFileData(validatedData)
+    setHasValidationErrors(errorFound)
+    setLogs([])
+    setProgress(0)
   }
 
   // 2. PROCESSAR DADOS
@@ -183,6 +179,9 @@ const BulkImportModal = ({ visible, onClose, entityName, onProcessItem, template
             <CProgress className="mb-3" height={20} value={progress} color="success" variant="striped" animated={processing}>
               {progress}%
             </CProgress>
+            {logs.length > 0 && (
+              <small className="text-danger">{logs.length} erro(s) encontrado(s)</small>
+            )}
           </div>
         )}
 

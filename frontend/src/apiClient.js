@@ -45,8 +45,8 @@ apiClient.interceptors.response.use(
         console.warn('⚠️ Sessão expirada ou inválida. A fazer logout...');
         useAuthStore.getState().logout();
         localStorage.clear();
-        if (window.location.pathname !== '/login') {
-          window.location.href = '/login';
+        if (globalThis.location.pathname !== '/login') {
+          globalThis.location.href = '/login';
         }
         return refreshError;
       }

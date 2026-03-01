@@ -71,7 +71,7 @@ async def create_substitution(
     if new_sub == "ORIGINAL_TEACHER_MISMATCH":
         raise HTTPException(status_code=400, detail="Professor original não corresponde à aula")
     
-    # TODO: Chamar Celery Task aqui para enviar email ao original e ao substituto
+    # Note: Celery Task para enviar email ao original e ao substituto pode ser adicionado aqui no futuro.
     
     return new_sub
 

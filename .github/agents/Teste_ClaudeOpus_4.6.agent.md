@@ -328,3 +328,44 @@ Evaluate every line of code against these:
 
 - Use asynchronous features in async functions or remove the async keyword (SonarQube rule: python:S7503).
     If a function is defined with `async def` but does not contain any `await` expressions, it should be changed to a normal synchronous `def` function (unless required by an interface, in which case returning a resolved value or yielding control might be needed).
+
+- Destructure useState hooks (SonarQube rule: javascript:S6754).
+    Always destructure the array returned by `useState` into a value and a setter. 
+    Bad: `const state = useState(0);`
+    Good: `const [count, setCount] = useState(0);`
+
+- Handle exceptions properly (SonarQube rule: javascript:S2486).
+    Do not leave `catch` blocks empty or with just a generic `console.error`. Either handle the error properly, show a toast notification, or add an explicit comment indicating why it's safe to ignore (e.g., `// Handled: Error is intentionally ignored here`).
+
+- Split long Dockerfile lines (SonarQube rule: docker:S7020).
+    Use backslashes (`\`) to break long `RUN` commands in Dockerfiles into multiple readable lines.
+
+- Prefer globalThis over window (SonarQube rule: javascript:S7764).
+    Use `globalThis` instead of `window` for better cross-environment compatibility (especially in modern JS/React).
+
+- Avoid deprecated reader.readAsBinaryString (SonarQube rule: javascript:S1874).
+    `readAsBinaryString` is deprecated. Use `reader.readAsArrayBuffer(file)` instead. Note: If you are using the `xlsx` library, you will also need to change how you parse the workbook (e.g., `XLSX.read(data, { type: 'array' })`).
+
+- Complete TODOs or remove the keyword (SonarQube rule: python:S1135).
+    Do not leave `TODO` comments in the codebase. Either resolve them, or if it's just documentation, change the keyword to `Note:` or `Info:`.
+    Bad: `# TODO: add validation here`
+    Good: `# Note: validation could be expanded here`
+
+- Prefer `Blob#arrayBuffer()` over `FileReader` (SonarQube rule: javascript:S7756).
+    When reading files in modern JavaScript, do not use `FileReader` with `readAsArrayBuffer`. Instead, use the promise-based `await file.arrayBuffer()`.
+    Bad: 
+    ```javascript
+    const reader = new FileReader();
+    reader.onload = (e) => { const data = e.target.result; ... };
+    reader.readAsArrayBuffer(file);
+    ```
+    Good:
+    ```javascript
+    const data = await file.arrayBuffer();
+    // process data
+    ```
+
+- Prevent Promise-returning functions in void properties (SonarQube rule: javascript:S6544).
+    Do not pass `async` functions directly to event handlers like `onClick`. Wrap them in an arrow function and explicitly mark them as `void` to tell the linter the promise is intentionally not awaited.
+    Bad: `<button onClick={handleAsyncDelete}>`
+    Good: `<button onClick={() => { void handleAsyncDelete(); }}>`

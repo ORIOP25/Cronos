@@ -154,7 +154,7 @@ const CourseDetails = () => {
   const handleDeleteCourse = () => {
     if (globalThis.confirm('Apagar este curso? Esta ação é irreversível e pode falhar se houver turmas.')) {
       deleteCourse.mutate(courseId, {
-        onSuccess: () => navigate('/courses')
+        onSuccess: () => { navigate('/courses') }
       })
     }
   }

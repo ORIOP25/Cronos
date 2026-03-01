@@ -13,7 +13,8 @@ const DefaultLayout = () => {
     try {
       await auth.logout();
     } catch (e) {
-      // Silenciar erro de logout (ex: cookie já expirado)
+      // Handled: Logout errors are safely ignored (e.g. cookie already expired)
+      console.error('Logout error (safely ignored):', e);
     }
     logout();
     navigate('/login');

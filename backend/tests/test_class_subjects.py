@@ -58,7 +58,7 @@ class TestClassSubjectLink:
     @pytest.mark.asyncio
     async def test_class_subject_link_default_values(self, db_session: AsyncSession):
         """✅ ClassSubjectLink criado com teacher_id=None por padrão"""
-        org, course, cls, subject, teacher = await self._create_base_data(db_session)
+        _, _, cls, subject, _ = await self._create_base_data(db_session)
 
         link = models.ClassSubjectLink(
             class_id=cls.id,
@@ -74,7 +74,7 @@ class TestClassSubjectLink:
     @pytest.mark.asyncio
     async def test_class_subject_link_custom_values(self, db_session: AsyncSession):
         """✅ ClassSubjectLink aceita professor atribuído"""
-        org, course, cls, subject, teacher = await self._create_base_data(db_session)
+        _, _, cls, subject, teacher = await self._create_base_data(db_session)
 
         link = models.ClassSubjectLink(
             class_id=cls.id,
@@ -91,7 +91,7 @@ class TestClassSubjectLink:
     @pytest.mark.asyncio
     async def test_class_subject_link_update_teacher(self, db_session: AsyncSession):
         """✅ ClassSubjectLink permite atualizar professor"""
-        org, course, cls, subject, teacher = await self._create_base_data(db_session)
+        _, _, cls, subject, teacher = await self._create_base_data(db_session)
 
         link = models.ClassSubjectLink(
             class_id=cls.id,
@@ -113,7 +113,7 @@ class TestClassSubjectLink:
         """🔐 Não pode haver 2 links para mesma turma+disciplina+grade_level"""
         from sqlalchemy import exc
 
-        org, course, cls, subject, teacher = await self._create_base_data(db_session)
+        _, _, cls, subject, _ = await self._create_base_data(db_session)
 
         link1 = models.ClassSubjectLink(
             class_id=cls.id,
@@ -136,7 +136,7 @@ class TestClassSubjectLink:
     @pytest.mark.asyncio
     async def test_class_subject_link_different_grade_levels(self, db_session: AsyncSession):
         """📈 Mesma turma+disciplina pode existir em grade_levels diferentes"""
-        org, course, cls, subject, teacher = await self._create_base_data(db_session)
+        _, _, cls, subject, _ = await self._create_base_data(db_session)
 
         link1 = models.ClassSubjectLink(
             class_id=cls.id,
