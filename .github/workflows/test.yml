@@ -21,7 +21,7 @@ jobs:
         image: postgres:15
         env:
           POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_TEST_PASSWORD }}
+          POSTGRES_PASSWORD: ci_only_pg_pass
           POSTGRES_DB: horario_zen_test_db
         ports:
           - 5432:5432
@@ -74,7 +74,7 @@ jobs:
       working-directory: ./backend
       env:
         ENVIRONMENT: local
-        DATABASE_URL: postgresql+asyncpg://postgres:${{ secrets.POSTGRES_TEST_PASSWORD }}@localhost:5432/horario_zen_test_db
+        DATABASE_URL: "postgresql+asyncpg://postgres:ci_only_pg_pass@localhost:5432/horario_zen_test_db"
         REDIS_URL: redis://localhost:6379/0
         SECRET_KEY: segredo_super_secreto_apenas_para_testes_ci
         ACCESS_TOKEN_EXPIRE_MINUTES: 60
