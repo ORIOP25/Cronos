@@ -11,12 +11,12 @@ on:
     branches: [ "main", "master" ]
 
 jobs:
-  test-backend:
+  test-and-scan:
+    name: Tests & SonarQube Scan
     runs-on: ubuntu-latest
-    
-    # Serviços Temporários (Sidecars) para o teste
+
+    # Serviços Temporários (Sidecars) para os testes backend
     services:
-      # 1. Postgres de Teste
       postgres:
         image: postgres:15
         env:
@@ -31,7 +31,6 @@ jobs:
           --health-timeout 5s
           --health-retries 5
 
-      # 2. Redis de Teste
       redis:
         image: redis:7
         ports:
@@ -44,6 +43,8 @@ jobs:
 
     steps:
     - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # Necessário para o SonarQube analisar histórico de commits
 
     - name: Configurar Python 3.12
       uses: actions/setup-python@v5
@@ -51,12 +52,23 @@ jobs:
         python-version: "3.12"
         cache: 'pip'
 
-    - name: Instalar Dependências
+    - name: Configurar Node.js 20
+      uses: actions/setup-node@v4
+      with:
+        node-version: "20"
+        cache: 'npm'
+        cache-dependency-path: frontend/package-lock.json
+
+    - name: Instalar Dependências Backend
       working-directory: ./backend
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
         pip install pytest pytest-asyncio httpx pytest-cov
+
+    - name: Instalar Dependências Frontend
+      working-directory: ./frontend
+      run: npm ci
 
     - name: Correr Testes Backend (Pytest + Coverage)
       working-directory: ./backend
@@ -69,62 +81,9 @@ jobs:
       run: |
         pytest --cov=app --cov-report=xml:coverage.xml --cov-branch -v -s
 
-    - name: Guardar Relatório de Coverage Backend
-      uses: actions/upload-artifact@v4
-      with:
-        name: backend-coverage
-        path: backend/coverage.xml
-        retention-days: 1
-
-  test-frontend:
-    runs-on: ubuntu-latest
-
-    steps:
-    - uses: actions/checkout@v4
-
-    - name: Configurar Node.js 20
-      uses: actions/setup-node@v4
-      with:
-        node-version: "20"
-        cache: 'npm'
-        cache-dependency-path: frontend/package-lock.json
-
-    - name: Instalar Dependências
-      working-directory: ./frontend
-      run: npm ci
-
     - name: Correr Testes Frontend (Vitest + Coverage)
       working-directory: ./frontend
       run: npx vitest run --coverage
-
-    - name: Guardar Relatório de Coverage Frontend
-      uses: actions/upload-artifact@v4
-      with:
-        name: frontend-coverage
-        path: frontend/coverage/lcov.info
-        retention-days: 1
-
-  sonarqube:
-    name: SonarQube Cloud Scan
-    runs-on: ubuntu-latest
-    needs: [test-backend, test-frontend]
-
-    steps:
-    - uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
-
-    - name: Descarregar Coverage Backend
-      uses: actions/download-artifact@v4
-      with:
-        name: backend-coverage
-        path: backend
-
-    - name: Descarregar Coverage Frontend
-      uses: actions/download-artifact@v4
-      with:
-        name: frontend-coverage
-        path: frontend/coverage
 
     - name: SonarQube Scan
       uses: SonarSource/sonarqube-scan-action@v5
