@@ -26,10 +26,8 @@ COPY . .
 RUN apt-get update && apt-get install -y --no-install-recommends \
     netcat-traditional \
     dos2unix \
-    && rm -rf /var/lib/apt/lists/*
-
-# 8. Converter line endings (CRLF → LF) e tornar o script executável
-RUN dos2unix /app/entrypoint.sh && chmod +x /app/entrypoint.sh
+    && rm -rf /var/lib/apt/lists/* \
+    && dos2unix /app/entrypoint.sh && chmod +x /app/entrypoint.sh
 
 # 9. Expor a porta 8000
 EXPOSE 8000

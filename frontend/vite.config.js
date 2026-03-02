@@ -9,6 +9,16 @@ export default defineConfig({
     environment: 'jsdom',
     setupFiles: './src/test/setup.js',
     css: false,
+    coverage: {
+      provider: 'v8',
+      reporter: ['lcov', 'text'],
+      reportsDirectory: './coverage',
+      exclude: [
+        'src/test/**',
+        'src/main.jsx',
+        'src/assets/**',
+      ],
+    },
   },
   server: {
     host: true, // Permite que o Docker aceda (0.0.0.0)
