@@ -29,6 +29,7 @@ class Token(BaseModel):
     access_token: str
     token_type: str
     organization_id: int
+    organization_name: str
     user_email: str  
     role: str 
     teacher_id: Optional[int] = None
@@ -42,11 +43,19 @@ class UserBase(BaseModel):
 class UserCreate(UserBase):
     password: str
 
+class RegisterRequest(BaseModel):
+    """Payload para registo de nova conta (Organização + Admin)."""
+    school_name: str = Field(..., min_length=2, max_length=100, description="Nome da instituição/escola")
+    admin_name: str = Field(..., min_length=2, max_length=150, description="Nome do administrador")
+    email: EmailStr
+    password: str = Field(..., min_length=6, description="Password (mínimo 6 caracteres)")
+
 class UserRead(UserBase):
     id: int
-    # Enviamos a role e o teacher_id para o frontend saber quem é
+    name: str | None = None
     role: UserRole
-    teacher_id: int | None = None 
+    teacher_id: int | None = None
+    organization_id: int
 
     model_config = model_config
 
@@ -81,7 +90,14 @@ class TeacherBase(BaseModel):
 class TeacherCreate(TeacherBase):
     # Email opcional — se fornecido, permite criar conta de acesso ao professor
     create_user_account: bool = False
+    password: str | None = Field(None, min_length=6, description="Password de acesso (obrigatória se create_user_account=True)")
     subject_ids: list[int] = Field(default_factory=list, description=DESC_SUBJECT_IDS)
+
+    @model_validator(mode='after')
+    def password_required_if_creating_account(self):
+        if self.create_user_account and not self.password:
+            raise ValueError('A password é obrigatória quando create_user_account é verdadeiro')
+        return self
 
 class TeacherRead(TeacherBase):
     id: int

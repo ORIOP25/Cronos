@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import apiClient from '../apiClient'
+import { useAuthStore } from '../store'
 
 /**
  * CONFIGURAÇÃO DE CACHE (A "Magia" da Performance)
@@ -25,70 +26,90 @@ const DYNAMIC_OPTS = {
 
 // --- HOOKS DE LEITURA (Read) ---
 
-export const useTeachers = () => useQuery({
-  queryKey: ['teachers'],
-  queryFn: async () => {
-    // Nota: Futuramente podes migrar de '/import/teachers' para '/teachers/'
-    const { data } = await apiClient.get('/import/teachers')
-    return data
-  },
-  ...STATIC_OPTS
-})
+export const useTeachers = () => {
+  const orgId = useAuthStore(state => state.user?.orgId)
+  return useQuery({
+    queryKey: ['teachers', orgId],
+    queryFn: async () => {
+      const { data } = await apiClient.get('/import/teachers')
+      return data
+    },
+    ...STATIC_OPTS
+  })
+}
 
-export const useRooms = () => useQuery({
-  queryKey: ['rooms'],
-  queryFn: async () => {
-    const { data } = await apiClient.get('/import/rooms')
-    return data
-  },
-  ...STATIC_OPTS
-})
+export const useRooms = () => {
+  const orgId = useAuthStore(state => state.user?.orgId)
+  return useQuery({
+    queryKey: ['rooms', orgId],
+    queryFn: async () => {
+      const { data } = await apiClient.get('/import/rooms')
+      return data
+    },
+    ...STATIC_OPTS
+  })
+}
 
-export const useSubjects = () => useQuery({
-  queryKey: ['subjects'],
-  queryFn: async () => {
-    const { data } = await apiClient.get('/import/subjects')
-    return data
-  },
-  ...STATIC_OPTS
-})
+export const useSubjects = () => {
+  const orgId = useAuthStore(state => state.user?.orgId)
+  return useQuery({
+    queryKey: ['subjects', orgId],
+    queryFn: async () => {
+      const { data } = await apiClient.get('/import/subjects')
+      return data
+    },
+    ...STATIC_OPTS
+  })
+}
 
-export const useClasses = () => useQuery({
-  queryKey: ['classes'],
-  queryFn: async () => {
-    const { data } = await apiClient.get('/classes/')
-    return data
-  },
-  ...STATIC_OPTS
-})
+export const useClasses = () => {
+  const orgId = useAuthStore(state => state.user?.orgId)
+  return useQuery({
+    queryKey: ['classes', orgId],
+    queryFn: async () => {
+      const { data } = await apiClient.get('/classes/')
+      return data
+    },
+    ...STATIC_OPTS
+  })
+}
 
-export const useLessons = () => useQuery({
-  queryKey: ['lessons'],
-  queryFn: async () => {
-    const { data } = await apiClient.get('/import/lessons')
-    return data
-  },
-  ...STATIC_OPTS
-})
+export const useLessons = () => {
+  const orgId = useAuthStore(state => state.user?.orgId)
+  return useQuery({
+    queryKey: ['lessons', orgId],
+    queryFn: async () => {
+      const { data } = await apiClient.get('/import/lessons')
+      return data
+    },
+    ...STATIC_OPTS
+  })
+}
 
-export const useTimeslots = () => useQuery({
-  queryKey: ['timeslots'],
-  queryFn: async () => {
-    const { data } = await apiClient.get('/timeslots/')
-    return data
-  },
-  ...STATIC_OPTS
-})
+export const useTimeslots = () => {
+  const orgId = useAuthStore(state => state.user?.orgId)
+  return useQuery({
+    queryKey: ['timeslots', orgId],
+    queryFn: async () => {
+      const { data } = await apiClient.get('/timeslots/')
+      return data
+    },
+    ...STATIC_OPTS
+  })
+}
 
 // --- CURSOS ---
-export const useCourses = () => useQuery({
-  queryKey: ['courses'],
-  queryFn: async () => {
-    const { data } = await apiClient.get('/courses/')
-    return data
-  },
-  ...STATIC_OPTS
-})
+export const useCourses = () => {
+  const orgId = useAuthStore(state => state.user?.orgId)
+  return useQuery({
+    queryKey: ['courses', orgId],
+    queryFn: async () => {
+      const { data } = await apiClient.get('/courses/')
+      return data
+    },
+    ...STATIC_OPTS
+  })
+}
 
 // --- CURRÍCULO DA TURMA (Dados Relacionados) ---
 /**
@@ -102,39 +123,46 @@ export const useCourses = () => useQuery({
  * Uso:
  * const { data: curriculum, isLoading } = useClassCurriculum(5)
  */
-export const useClassCurriculum = (classId) => useQuery({
-  queryKey: ['class-curriculum', classId],
-  queryFn: async () => {
-    // Proteção: Se classId é falsy, retorna array vazio
-    if (!classId) return []
-    const { data } = await apiClient.get(`/classes/${classId}/curriculum`)
-    return data
-  },
-  // OTIMIZAÇÃO: Só faz fetch se classId existir
-  enabled: !!classId,
-  ...STATIC_OPTS
-})
+export const useClassCurriculum = (classId) => {
+  const orgId = useAuthStore(state => state.user?.orgId)
+  return useQuery({
+    queryKey: ['class-curriculum', orgId, classId],
+    queryFn: async () => {
+      if (!classId) return []
+      const { data } = await apiClient.get(`/classes/${classId}/curriculum`)
+      return data
+    },
+    enabled: !!classId,
+    ...STATIC_OPTS
+  })
+}
 
 // --- HOOKS OPERACIONAIS (Dinâmicos) ---
 
-export const useSchedule = () => useQuery({
-  queryKey: ['schedule'],
-  queryFn: async () => {
-    const { data } = await apiClient.get('/schedule/latest')
-    return data
-  },
-  ...DYNAMIC_OPTS
-})
+export const useSchedule = () => {
+  const orgId = useAuthStore(state => state.user?.orgId)
+  return useQuery({
+    queryKey: ['schedule', orgId],
+    queryFn: async () => {
+      const { data } = await apiClient.get('/schedule/latest')
+      return data
+    },
+    ...DYNAMIC_OPTS
+  })
+}
 
-export const useSubstitutions = () => useQuery({
-  queryKey: ['substitutions'],
-  queryFn: async () => {
-    const { data } = await apiClient.get('/substitutions/')
-    return data
-  },
-  staleTime: 1000 * 60, // 1 minuto
-  refetchOnWindowFocus: true
-})
+export const useSubstitutions = () => {
+  const orgId = useAuthStore(state => state.user?.orgId)
+  return useQuery({
+    queryKey: ['substitutions', orgId],
+    queryFn: async () => {
+      const { data } = await apiClient.get('/substitutions/')
+      return data
+    },
+    staleTime: 1000 * 60,
+    refetchOnWindowFocus: true
+  })
+}
 
 // ==========================================
 //  HOOKS DE MUTAÇÃO GENÉRICOS (CRUD Factory)
@@ -147,16 +175,15 @@ export const useSubstitutions = () => useQuery({
  */
 export const useCreateEntity = (entityKey) => {
   const queryClient = useQueryClient()
+  const orgId = useAuthStore(state => state.user?.orgId)
 
   return useMutation({
     mutationFn: async (newItem) => {
-      // POST /teachers/
       const { data } = await apiClient.post(`/${entityKey}/`, newItem)
       return data
     },
     onSuccess: () => {
-      // Invalida a cache ['teachers'] para forçar recarregamento na tabela
-      queryClient.invalidateQueries({ queryKey: [entityKey] })
+      queryClient.invalidateQueries({ queryKey: [entityKey, orgId] })
     }
   })
 }
@@ -169,15 +196,15 @@ export const useCreateEntity = (entityKey) => {
  */
 export const useUpdateEntity = (entityKey) => {
   const queryClient = useQueryClient()
+  const orgId = useAuthStore(state => state.user?.orgId)
 
   return useMutation({
     mutationFn: async ({ id, ...updateData }) => {
-      // PATCH /courses/1 (atualização parcial - apenas os campos enviados)
       const { data } = await apiClient.patch(`/${entityKey}/${id}`, updateData)
       return data
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [entityKey] })
+      queryClient.invalidateQueries({ queryKey: [entityKey, orgId] })
     }
   })
 }
@@ -188,14 +215,14 @@ export const useUpdateEntity = (entityKey) => {
  */
 export const useDeleteEntity = (entityKey) => {
   const queryClient = useQueryClient()
+  const orgId = useAuthStore(state => state.user?.orgId)
 
   return useMutation({
     mutationFn: async (id) => {
-      // DELETE /teachers/1
       await apiClient.delete(`/${entityKey}/${id}`)
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [entityKey] })
+      queryClient.invalidateQueries({ queryKey: [entityKey, orgId] })
     }
   })
 }
@@ -218,16 +245,19 @@ export const useDeleteEntity = (entityKey) => {
  * course.subjects[0].name
  * course.classes[0].name
  */
-export const useCourseDetails = (courseId) => useQuery({
-  queryKey: ['courses', courseId],
-  queryFn: async () => {
-    const { data } = await apiClient.get(`/courses/${courseId}`)
-    return data
-  },
-  enabled: !!courseId,
-  staleTime: 0, // Sempre buscar dados frescos (disciplinas mudam via ClassSubjects)
-  refetchOnWindowFocus: true,
-})
+export const useCourseDetails = (courseId) => {
+  const orgId = useAuthStore(state => state.user?.orgId)
+  return useQuery({
+    queryKey: ['courses', orgId, courseId],
+    queryFn: async () => {
+      const { data } = await apiClient.get(`/courses/${courseId}`)
+      return data
+    },
+    enabled: !!courseId,
+    staleTime: 0,
+    refetchOnWindowFocus: true,
+  })
+}
 
 /**
  * Criar novo curso com turmas automáticas.
@@ -249,6 +279,7 @@ export const useCourseDetails = (courseId) => useQuery({
  */
 export const useCreateCourse = () => {
   const queryClient = useQueryClient()
+  const orgId = useAuthStore(state => state.user?.orgId)
 
   return useMutation({
     mutationFn: async (newCourse) => {
@@ -256,8 +287,7 @@ export const useCreateCourse = () => {
       return data
     },
     onSuccess: () => {
-      // Invalidar caches de listagem para forçar recarregamento
-      queryClient.invalidateQueries({ queryKey: ['courses'] })
+      queryClient.invalidateQueries({ queryKey: ['courses', orgId] })
     }
   })
 }
@@ -279,6 +309,7 @@ export const useCreateCourse = () => {
  */
 export const useUpdateCourse = () => {
   const queryClient = useQueryClient()
+  const orgId = useAuthStore(state => state.user?.orgId)
 
   return useMutation({
     mutationFn: async ({ courseId, data }) => {
@@ -286,10 +317,8 @@ export const useUpdateCourse = () => {
       return response
     },
     onSuccess: (data, variables) => {
-      // Invalidar listagem
-      queryClient.invalidateQueries({ queryKey: ['courses'] })
-      // Invalidar detalhe específico para garantir sincronização
-      queryClient.invalidateQueries({ queryKey: ['courses', variables.courseId] })
+      queryClient.invalidateQueries({ queryKey: ['courses', orgId] })
+      queryClient.invalidateQueries({ queryKey: ['courses', orgId, variables.courseId] })
     }
   })
 }
@@ -307,14 +336,14 @@ export const useUpdateCourse = () => {
  */
 export const useDeleteCourse = () => {
   const queryClient = useQueryClient()
+  const orgId = useAuthStore(state => state.user?.orgId)
 
   return useMutation({
     mutationFn: async (courseId) => {
       await apiClient.delete(`/courses/${courseId}`)
     },
     onSuccess: () => {
-      // Invalida caches de cursos (listagem e potenciais detalhes)
-      queryClient.invalidateQueries({ queryKey: ['courses'] })
+      queryClient.invalidateQueries({ queryKey: ['courses', orgId] })
     }
   })
 }
@@ -322,6 +351,7 @@ export const useDeleteCourse = () => {
 
 export const useCreateCourseClass = () => {
   const queryClient = useQueryClient()
+  const orgId = useAuthStore(state => state.user?.orgId)
 
   return useMutation({
     mutationFn: async ({ courseId, data }) => {
@@ -329,9 +359,9 @@ export const useCreateCourseClass = () => {
       return response
     },
     onSuccess: (_data, variables) => {
-      queryClient.invalidateQueries({ queryKey: ['courses'] })
-      queryClient.invalidateQueries({ queryKey: ['courses', variables.courseId] })
-      queryClient.invalidateQueries({ queryKey: ['classes'] })
+      queryClient.invalidateQueries({ queryKey: ['courses', orgId] })
+      queryClient.invalidateQueries({ queryKey: ['courses', orgId, variables.courseId] })
+      queryClient.invalidateQueries({ queryKey: ['classes', orgId] })
     }
   })
 }
@@ -339,6 +369,7 @@ export const useCreateCourseClass = () => {
 
 export const useUpdateCourseClass = () => {
   const queryClient = useQueryClient()
+  const orgId = useAuthStore(state => state.user?.orgId)
 
   return useMutation({
     mutationFn: async ({ courseId, classId, data }) => {
@@ -346,10 +377,10 @@ export const useUpdateCourseClass = () => {
       return response
     },
     onSuccess: (data, variables) => {
-      queryClient.invalidateQueries({ queryKey: ['courses'] })
-      queryClient.invalidateQueries({ queryKey: ['courses', variables.courseId] })
-      queryClient.invalidateQueries({ queryKey: ['classes'] })
-      queryClient.setQueryData(['classes', variables.classId], (previous) => (
+      queryClient.invalidateQueries({ queryKey: ['courses', orgId] })
+      queryClient.invalidateQueries({ queryKey: ['courses', orgId, variables.courseId] })
+      queryClient.invalidateQueries({ queryKey: ['classes', orgId] })
+      queryClient.setQueryData(['classes', orgId, variables.classId], (previous) => (
         previous ? { ...previous, ...data } : previous
       ))
     }
@@ -359,18 +390,19 @@ export const useUpdateCourseClass = () => {
 
 export const useDeleteCourseClass = () => {
   const queryClient = useQueryClient()
+  const orgId = useAuthStore(state => state.user?.orgId)
 
   return useMutation({
     mutationFn: async ({ courseId, classId }) => {
       await apiClient.delete(`/courses/${courseId}/classes/${classId}`)
     },
     onSuccess: (_data, variables) => {
-      queryClient.invalidateQueries({ queryKey: ['courses'] })
-      queryClient.invalidateQueries({ queryKey: ['courses', variables.courseId] })
-      queryClient.invalidateQueries({ queryKey: ['classes'] })
-      queryClient.removeQueries({ queryKey: ['classes', variables.classId] })
-      queryClient.removeQueries({ queryKey: ['class-subjects', variables.classId] })
-      queryClient.removeQueries({ queryKey: ['available-subjects', variables.classId] })
+      queryClient.invalidateQueries({ queryKey: ['courses', orgId] })
+      queryClient.invalidateQueries({ queryKey: ['courses', orgId, variables.courseId] })
+      queryClient.invalidateQueries({ queryKey: ['classes', orgId] })
+      queryClient.removeQueries({ queryKey: ['classes', orgId, variables.classId] })
+      queryClient.removeQueries({ queryKey: ['class-subjects', orgId, variables.classId] })
+      queryClient.removeQueries({ queryKey: ['available-subjects', orgId, variables.classId] })
     }
   })
 }
@@ -393,16 +425,19 @@ export const useDeleteCourseClass = () => {
  * - Stability: enabled flag previne queries desnecessárias
  * - Optimization: Backend retorna tudo em 2 queries (vs N+1)
  */
-export const useClassDetails = (classId) => useQuery({
-  queryKey: ['classes', classId],
-  queryFn: async () => {
-    const { data } = await apiClient.get(`/classes/${classId}`)
-    return data
-  },
-  enabled: !!classId,
-  staleTime: 0, // Sempre buscar dados frescos (progresso muda frequentemente)
-  refetchOnWindowFocus: true,
-})
+export const useClassDetails = (classId) => {
+  const orgId = useAuthStore(state => state.user?.orgId)
+  return useQuery({
+    queryKey: ['classes', orgId, classId],
+    queryFn: async () => {
+      const { data } = await apiClient.get(`/classes/${classId}`)
+      return data
+    },
+    enabled: !!classId,
+    staleTime: 0,
+    refetchOnWindowFocus: true,
+  })
+}
 
 /**
  * Atualizar progresso de módulos de uma turma.
@@ -423,6 +458,7 @@ export const useClassDetails = (classId) => useQuery({
  */
 export const useUpdateClassProgress = () => {
   const queryClient = useQueryClient()
+  const orgId = useAuthStore(state => state.user?.orgId)
 
   return useMutation({
     mutationFn: async ({ classId, progress }) => {
@@ -430,10 +466,8 @@ export const useUpdateClassProgress = () => {
       return data
     },
     onSuccess: (data, variables) => {
-      // Atualizar cache do detalhe com dados frescos do servidor
-      queryClient.setQueryData(['classes', variables.classId], data)
-      // Invalidar lista de turmas (progresso pode afetar UI da lista)
-      queryClient.invalidateQueries({ queryKey: ['classes'] })
+      queryClient.setQueryData(['classes', orgId, variables.classId], data)
+      queryClient.invalidateQueries({ queryKey: ['classes', orgId] })
     }
   })
 }
@@ -449,53 +483,63 @@ export const useUpdateClassProgress = () => {
  * 
  * Usado na página ClassSubjects.jsx
  */
-export const useClassSubjects = (classId) => useQuery({
-  queryKey: ['class-subjects', classId],
-  queryFn: async () => {
-    if (!classId) return null
-    const { data } = await apiClient.get(`/classes/${classId}/subjects`)
-    return data
-  },
-  enabled: !!classId,
-  staleTime: 1000 * 60 * 5,
-  refetchOnWindowFocus: false,
-})
+export const useClassSubjects = (classId) => {
+  const orgId = useAuthStore(state => state.user?.orgId)
+  return useQuery({
+    queryKey: ['class-subjects', orgId, classId],
+    queryFn: async () => {
+      if (!classId) return null
+      const { data } = await apiClient.get(`/classes/${classId}/subjects`)
+      return data
+    },
+    enabled: !!classId,
+    staleTime: 1000 * 60 * 5,
+    refetchOnWindowFocus: false,
+  })
+}
 
 /**
  * Lista disciplinas disponíveis para adicionar à turma.
  * (Disciplinas da org que ainda não estão associadas)
  */
-export const useAvailableSubjects = (classId) => useQuery({
-  queryKey: ['available-subjects', classId],
-  queryFn: async () => {
-    if (!classId) return []
-    const { data } = await apiClient.get(`/classes/${classId}/available-subjects`)
-    return data
-  },
-  enabled: !!classId,
-  staleTime: 1000 * 60 * 5,
-})
+export const useAvailableSubjects = (classId) => {
+  const orgId = useAuthStore(state => state.user?.orgId)
+  return useQuery({
+    queryKey: ['available-subjects', orgId, classId],
+    queryFn: async () => {
+      if (!classId) return []
+      const { data } = await apiClient.get(`/classes/${classId}/available-subjects`)
+      return data
+    },
+    enabled: !!classId,
+    staleTime: 1000 * 60 * 5,
+  })
+}
 
 /**
  * Lista professores elegíveis para lecionar uma disciplina.
  * (Professores que têm competência na disciplina)
  */
-export const useEligibleTeachers = (subjectId) => useQuery({
-  queryKey: ['eligible-teachers', subjectId],
-  queryFn: async () => {
-    if (!subjectId) return []
-    const { data } = await apiClient.get(`/classes/subjects/${subjectId}/eligible-teachers`)
-    return data
-  },
-  enabled: !!subjectId,
-  staleTime: 1000 * 60 * 5,
-})
+export const useEligibleTeachers = (subjectId) => {
+  const orgId = useAuthStore(state => state.user?.orgId)
+  return useQuery({
+    queryKey: ['eligible-teachers', orgId, subjectId],
+    queryFn: async () => {
+      if (!subjectId) return []
+      const { data } = await apiClient.get(`/classes/subjects/${subjectId}/eligible-teachers`)
+      return data
+    },
+    enabled: !!subjectId,
+    staleTime: 1000 * 60 * 5,
+  })
+}
 
 /**
  * Adiciona uma disciplina à turma.
  */
 export const useAddClassSubject = () => {
   const queryClient = useQueryClient()
+  const orgId = useAuthStore(state => state.user?.orgId)
 
   return useMutation({
     mutationFn: async ({ classId, subjectId }) => {
@@ -503,11 +547,10 @@ export const useAddClassSubject = () => {
       return data
     },
     onSuccess: (data, variables) => {
-      queryClient.setQueryData(['class-subjects', variables.classId], data)
-      queryClient.invalidateQueries({ queryKey: ['available-subjects', variables.classId] })
-      queryClient.invalidateQueries({ queryKey: ['classes', variables.classId] })
-      // Sync: atualizar contagem de disciplinas na página do curso
-      queryClient.invalidateQueries({ queryKey: ['courses'] })
+      queryClient.setQueryData(['class-subjects', orgId, variables.classId], data)
+      queryClient.invalidateQueries({ queryKey: ['available-subjects', orgId, variables.classId] })
+      queryClient.invalidateQueries({ queryKey: ['classes', orgId, variables.classId] })
+      queryClient.invalidateQueries({ queryKey: ['courses', orgId] })
     }
   })
 }
@@ -517,6 +560,7 @@ export const useAddClassSubject = () => {
  */
 export const useUpdateClassSubjectTeacher = () => {
   const queryClient = useQueryClient()
+  const orgId = useAuthStore(state => state.user?.orgId)
 
   return useMutation({
     mutationFn: async ({ classId, subjectId, teacherId }) => {
@@ -526,7 +570,7 @@ export const useUpdateClassSubjectTeacher = () => {
       return data
     },
     onSuccess: (data, variables) => {
-      queryClient.setQueryData(['class-subjects', variables.classId], data)
+      queryClient.setQueryData(['class-subjects', orgId, variables.classId], data)
     }
   })
 }
@@ -536,6 +580,7 @@ export const useUpdateClassSubjectTeacher = () => {
  */
 export const useRemoveClassSubject = () => {
   const queryClient = useQueryClient()
+  const orgId = useAuthStore(state => state.user?.orgId)
 
   return useMutation({
     mutationFn: async ({ classId, subjectId }) => {
@@ -543,11 +588,10 @@ export const useRemoveClassSubject = () => {
       return data
     },
     onSuccess: (data, variables) => {
-      queryClient.setQueryData(['class-subjects', variables.classId], data)
-      queryClient.invalidateQueries({ queryKey: ['available-subjects', variables.classId] })
-      queryClient.invalidateQueries({ queryKey: ['classes', variables.classId] })
-      // Sync: atualizar contagem de disciplinas na página do curso
-      queryClient.invalidateQueries({ queryKey: ['courses'] })
+      queryClient.setQueryData(['class-subjects', orgId, variables.classId], data)
+      queryClient.invalidateQueries({ queryKey: ['available-subjects', orgId, variables.classId] })
+      queryClient.invalidateQueries({ queryKey: ['classes', orgId, variables.classId] })
+      queryClient.invalidateQueries({ queryKey: ['courses', orgId] })
     }
   })
 }

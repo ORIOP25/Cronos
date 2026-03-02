@@ -16,7 +16,7 @@ router = APIRouter()
 # --- 1. Ler Professores ---
 @router.get("/", response_model=List[schemas.TeacherRead])
 async def read_teachers(
-    current_user: Annotated[models.User, Depends(deps.get_current_user)],
+    current_user: Annotated[models.User, Depends(deps.get_current_active_user)],
     db: Annotated[AsyncSession, Depends(deps.get_db)],
     skip: int = 0, 
     limit: int = 100,
@@ -33,7 +33,7 @@ async def read_teachers(
 async def create_teacher(
     teacher: schemas.TeacherCreate,
     db: Annotated[AsyncSession, Depends(deps.get_db)],
-    current_user: Annotated[models.User, Depends(deps.get_current_user)]
+    current_user: Annotated[models.User, Depends(deps.get_current_active_admin)]
 ):
     return await teacher_service.create_teacher(
         db,

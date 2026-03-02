@@ -11,8 +11,9 @@ const TeacherForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
   const [formData, setFormData] = useState({ 
     name: '', 
     email: '',
-    create_user_account: false, // Controla o switch e a lógica de envio
-    subject_ids: []             // Lista de IDs das disciplinas selecionadas
+    password: '',
+    create_user_account: false,
+    subject_ids: []
   })
 
   // 2. Carregar Disciplinas da API (O "Combustível" que faltava)
@@ -31,9 +32,8 @@ const TeacherForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
 
       setFormData({
         name: initialData.name || '',
-        // Se tiver login_email, usa esse. Se não, usa o email de contacto.
         email: initialData.login_email || initialData.email || '', 
-        // Se tiver login_email, significa que já tem conta ativa
+        password: '',
         create_user_account: !!initialData.login_email, 
         subject_ids: normalizedIds
       })
@@ -42,6 +42,7 @@ const TeacherForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
       setFormData({ 
         name: '', 
         email: '', 
+        password: '',
         create_user_account: false,
         subject_ids: []
       })
@@ -151,6 +152,24 @@ const TeacherForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
               Este email será usado para criar a conta de acesso (ativo ou inativo).
             </small>
           </div>
+
+          {formData.create_user_account && (
+            <div className="mb-3">
+              <CFormInput
+                type="password"
+                label={initialData ? 'Nova Password (deixe vazio para não alterar)' : 'Password de Acesso'}
+                name="password"
+                value={formData.password}
+                onChange={handleChange}
+                required={!initialData}
+                placeholder={initialData ? '••••••••' : 'Mínimo 6 caracteres'}
+                autoComplete="new-password"
+              />
+              <small className="text-muted d-block mt-1">
+                O professor usará esta password para entrar na plataforma.
+              </small>
+            </div>
+          )}
         </CCol>
 
         {/* LADO DIREITO: Lista de Disciplinas (Competências) */}
@@ -188,6 +207,7 @@ TeacherForm.propTypes = {
     name: PropTypes.string,
     email: PropTypes.string,
     login_email: PropTypes.string,
+    create_user_account: PropTypes.bool,
     subject_ids: PropTypes.array,
     subjects: PropTypes.array,
   }),

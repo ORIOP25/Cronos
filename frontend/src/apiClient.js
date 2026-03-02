@@ -8,9 +8,9 @@ import { useAuthStore } from './store';
 // ==========================================
 
 const apiClient = axios.create({
-  // MUDANÇA CRÍTICA: Usamos caminho relativo.
-  // O Nginx vai receber este pedido e encaminhar para o container do backend.
-  baseURL: '/api/v1', 
+  // Em produção (Render), VITE_API_BASE_URL aponta para o backend real.
+  // Localmente, usa-se caminho relativo — o Vite proxy/Nginx encaminha para o backend.
+  baseURL: import.meta.env.VITE_API_BASE_URL || '/api/v1',
   withCredentials: true,
   headers: {
     'Content-Type': 'application/json',
@@ -66,6 +66,7 @@ export const auth = {
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
     });
   },
+  register: (data) => apiClient.post('/auth/register', data),
   logout: () => apiClient.post('/auth/logout')
 };
 

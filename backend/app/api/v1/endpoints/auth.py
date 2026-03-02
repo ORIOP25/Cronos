@@ -1,7 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Request, Response
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
-from app import schemas
+from sqlalchemy import select
+from app import schemas, models
 from app.api import deps
 from app.services import user_service
 from app.core import security
@@ -10,6 +11,14 @@ from app.config import settings
 from typing import Annotated
 
 router = APIRouter()
+
+
+async def _get_org_name(db: AsyncSession, org_id: int | None) -> str:
+    """Obtém o nome da organização para incluir na resposta Token."""
+    if org_id is None:
+        return ""
+    org = await db.scalar(select(models.Organization).where(models.Organization.id == org_id))
+    return org.name if org else ""
 
 @router.post("/token", response_model=schemas.Token)
 @limiter.limit("5/minute")
@@ -62,29 +71,66 @@ async def login_for_access_token(
         path="/"
     )
 
-    # 6. Retornar Token + ID da Organização (compatibilidade frontend)
+    # 6. Retornar Token + ID e Nome da Organização (compatibilidade frontend)
     return {
         "access_token": access_token, 
         "token_type": "bearer",
         "organization_id": user.organization_id,
+        "organization_name": await _get_org_name(db, user.organization_id),
         "user_email": user.email,
         "role": user.role,
         "teacher_id": user.teacher_id
     }
 
-@router.post("/register", response_model=schemas.UserRead, responses={400: {"description": "Email already registered"}})
+@router.post("/register", response_model=schemas.Token, responses={400: {"description": "Email already registered"}})
 @limiter.limit("3/minute")
 async def register(
     request: Request,
-    user: schemas.UserCreate, 
-    db: Annotated[AsyncSession, Depends(deps.get_db)]
+    response: Response,
+    payload: schemas.RegisterRequest,
+    db: Annotated[AsyncSession, Depends(deps.get_db)],
 ):
-    # Verificar se email já existe
-    db_user = await user_service.get_user_by_email(db, email=user.email)
-    if db_user:
-        raise HTTPException(status_code=400, detail="Email already registered")
-    
-    return await user_service.create_user(db, user)
+    """
+    Regista uma nova conta (Organização + Admin) e devolve token para auto-login.
+    Transação atómica: se algo falhar, tudo é revertido.
+    """
+    try:
+        user = await user_service.register_account(db, payload)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+    # Auto-login: gerar tokens e definir cookies
+    access_token = security.create_access_token(data={"sub": user.email})
+    refresh_tok = security.create_refresh_token(user.email)
+
+    response.set_cookie(
+        key=settings.ACCESS_TOKEN_COOKIE_NAME,
+        value=access_token,
+        httponly=True,
+        secure=settings.ACCESS_TOKEN_COOKIE_SECURE,
+        samesite=settings.ACCESS_TOKEN_COOKIE_SAMESITE,
+        max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        path="/",
+    )
+    response.set_cookie(
+        key=settings.REFRESH_TOKEN_COOKIE_NAME,
+        value=refresh_tok,
+        httponly=True,
+        secure=settings.REFRESH_TOKEN_COOKIE_SECURE,
+        samesite=settings.REFRESH_TOKEN_COOKIE_SAMESITE,
+        max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,
+        path="/",
+    )
+
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "organization_id": user.organization_id,
+        "organization_name": await _get_org_name(db, user.organization_id),
+        "user_email": user.email,
+        "role": user.role,
+        "teacher_id": user.teacher_id,
+    }
 
 
 @router.post("/refresh", response_model=schemas.Token)
@@ -122,6 +168,7 @@ async def refresh_token(
         "access_token": access_token,
         "token_type": "bearer",
         "organization_id": user.organization_id,
+        "organization_name": await _get_org_name(db, user.organization_id),
         "user_email": user.email,
         "role": user.role,
         "teacher_id": user.teacher_id

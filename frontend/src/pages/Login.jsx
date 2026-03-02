@@ -2,7 +2,7 @@
 import React, { useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import apiClient from '../apiClient'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, Link } from 'react-router-dom'
 import { useAuthStore } from '../store'
 
 // UI Components
@@ -108,6 +108,11 @@ const Login = () => {
                         <CButton type="submit" color="primary" className="px-4" disabled={mutation.isPending}>
                           {mutation.isPending ? 'A entrar...' : 'Login'}
                         </CButton>
+                      </CCol>
+                      <CCol xs={6} className="text-end">
+                        <Link to="/register" style={{ color: 'var(--rs-muted)', textDecoration: 'none', fontSize: '0.9rem' }}>
+                          Criar nova conta
+                        </Link>
                       </CCol>
                     </CRow>
                   </CForm>

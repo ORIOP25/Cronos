@@ -1,4 +1,11 @@
 # Ficheiro: backend/tests/conftest.py
+#
+# CRÍTICO: RATELIMIT_ENABLED deve ser definido ANTES de qualquer import da app.
+# O slowapi lê esta variável uma vez, no momento da instanciação do Limiter.
+# Se for definida depois, o rate limiter fica ativo e dá 429 em CI.
+import os
+os.environ["RATELIMIT_ENABLED"] = "false"
+
 import pytest
 import pytest_asyncio
 from typing import AsyncGenerator

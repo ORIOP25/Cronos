@@ -1,6 +1,7 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import Login from './pages/Login';
+import Register from './pages/Register';
 import Dashboard from './pages/Dashboard';
 import MyAvailability from './pages/MyAvailability';
 import Teachers from './pages/Teachers';
@@ -20,6 +21,7 @@ function App() {
     <Router>
       <Routes>
         <Route path="/login" element={<Login />} />
+        <Route path="/register" element={<Register />} />
         
         {/* Rotas Protegidas (Só com Login) */}
         <Route path="/" element={<ProtectedRoute><DefaultLayout /></ProtectedRoute>}>

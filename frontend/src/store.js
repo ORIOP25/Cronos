@@ -19,7 +19,8 @@ export const useAuthStore = create(
             email: data.user_email,
             role: data.role,
             teacherId: data.teacher_id,
-            orgId: data.organization_id
+            orgId: data.organization_id,
+            orgName: data.organization_name
           }
         })
       },

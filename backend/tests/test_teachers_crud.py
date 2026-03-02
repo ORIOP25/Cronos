@@ -72,6 +72,7 @@ class TestTeachersCRUD:
             "name": "Prof. Ativo",
             "email": "ativo@escola.pt",
             "create_user_account": True,
+            "password": "Senha_Valida_123",  # Obrigatório quando create_user_account=True
         }
         resp = await async_client.post(
             f"{API}/teachers/", json=payload, headers=admin_token_headers

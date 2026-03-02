@@ -1,15 +1,17 @@
 import React, { useState } from 'react'
 import {
   CCard, CCardBody, CCardHeader, CCol, CRow, CForm, CFormInput, 
-  CFormCheck, CButton, CAlert
+  CFormCheck, CButton, CAlert, CBadge
 } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
 import { cilSettings, cilSave } from '@coreui/icons'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import apiClient from '../apiClient'
+import { useAuthStore } from '../store'
 
 const SchoolConfig = () => {
   const queryClient = useQueryClient()
+  const { user } = useAuthStore()
   const [successMsg, setSuccessMsg] = useState(null)
   
   // Estado inicial (Defaults comuns)
@@ -60,6 +62,12 @@ const SchoolConfig = () => {
         <CIcon icon={cilSettings} className="me-2" />
         Configuração da Escola
       </h2>
+
+      {user?.orgName && (
+        <CAlert color="primary" className="d-flex align-items-center gap-2 py-2 mb-4">
+          A gerir organização:{' '}<CBadge color="light" textColor="primary" className="fs-6">{user.orgName}</CBadge>
+        </CAlert>
+      )}
 
       {successMsg && <CAlert color="success">{successMsg}</CAlert>}
       {mutation.isError && <CAlert color="danger">Erro ao guardar configuração.</CAlert>}

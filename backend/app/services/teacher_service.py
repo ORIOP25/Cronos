@@ -54,7 +54,7 @@ async def create_teacher(db: AsyncSession, teacher_in: schemas.TeacherCreate, or
     subject_ids = teacher_in.subject_ids
 
     # Criamos os dados para a tabela Teacher, excluindo o que não é coluna dela
-    teacher_data = teacher_in.model_dump(exclude={'subject_ids', 'create_user_account', 'email'})
+    teacher_data = teacher_in.model_dump(exclude={'subject_ids', 'create_user_account', 'email', 'password'})
 
     # 2. Criar a Instância do Professor
     db_teacher = models.Teacher(**teacher_data, organization_id=org_id)
@@ -86,7 +86,7 @@ async def create_teacher(db: AsyncSession, teacher_in: schemas.TeacherCreate, or
             
             user_create_data = schemas.UserCreate(
                 email=teacher_in.email,
-                password="1234" 
+                password=teacher_in.password if teacher_in.password else "ChangeMeNow"
             )
             
             # Criar o utilizador (por defeito, create_user cria com is_active=True)

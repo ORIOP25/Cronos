@@ -12,11 +12,59 @@ from app.core.security import hash_password
 
 # --- CRUD: User (Utilizador) ---
 
+EMAIL_ALREADY_EXISTS_MSG = "Este email já está registado"
+
+
 async def get_user_by_email(db: AsyncSession, email: str) -> models.User | None:
     query = select(models.User).where(models.User.email == email)
     result = await db.execute(query)
     
     return result.scalars().first()
+
+
+async def register_account(
+    db: AsyncSession,
+    payload: schemas.RegisterRequest,
+) -> models.User:
+    """
+    Regista uma nova conta: cria Organization + User (Admin) numa única transação.
+    Se algo falhar, faz rollback de tudo.
+    """
+    # 1. Verificar e-mail duplicado
+    existing = await get_user_by_email(db, payload.email)
+    if existing:
+        raise ValueError(EMAIL_ALREADY_EXISTS_MSG)
+
+    # 2. Criar Organização
+    db_org = models.Organization(name=payload.school_name)
+    db.add(db_org)
+    await db.flush()  # Obtém o ID sem fazer commit
+
+    # 3. Criar perfil de Professor para o Admin (na mesma transação)
+    db_teacher = models.Teacher(
+        name=payload.admin_name,
+        organization_id=db_org.id,
+    )
+    db.add(db_teacher)
+    await db.flush()  # Obtém db_teacher.id
+
+    # 4. Criar Utilizador Admin (ligado ao perfil de Professor)
+    db_user = models.User(
+        name=payload.admin_name,
+        email=payload.email,
+        hashed_password=hash_password(payload.password),
+        organization_id=db_org.id,
+        role=models.UserRole.admin,
+        is_active=True,
+        teacher_id=db_teacher.id,
+    )
+    db.add(db_user)
+
+    # 5. Commit atómico (tudo ou nenhum)
+    await db.commit()
+    await db.refresh(db_user)
+
+    return db_user
 
 
 async def create_user(
