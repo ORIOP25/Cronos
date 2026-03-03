@@ -1,0 +1,74 @@
+name: CI — Backend Tests
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  backend-tests:
+    name: Pytest (Python 3.12)
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: mysecretpassword
+          POSTGRES_DB: horario_zen_db
+        ports:
+          - 5432:5432
+        # Espera até o Postgres estar pronto
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    defaults:
+      run:
+        working-directory: backend
+
+    env:
+      # Base de Dados (async para a API + sync para o Celery/testes sync)
+      DATABASE_URL: postgresql+asyncpg://postgres:mysecretpassword@localhost:5432/horario_zen_db
+      # Celery (apontar para o serviço Redis do workflow)
+      CELERY_BROKER_URL: redis://localhost:6379/0
+      REDIS_URL: redis://localhost:6379/0
+      # Segurança (chave fixa apenas para CI)
+      SECRET_KEY: ci-secret-key-not-used-in-production
+      ENVIRONMENT: local
+      # Desativar rate limiter em testes
+      RATELIMIT_ENABLED: "false"
+
+    steps:
+      - name: Checkout do repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Instalar dependências Python
+        run: pip install -r requirements.txt
+
+      - name: Correr migrações Alembic
+        run: alembic upgrade head
+
+      - name: Correr todos os testes
+        run: pytest --tb=short -q

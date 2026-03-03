@@ -18,6 +18,7 @@ logger = structlog.get_logger()
 MAX_HOURS_PER_WEEK_MINUTES = 900   # 15 horas × 60 minutos
 PENALTY_AVOID = 20
 PENALTY_PREFERRED_MISSING = 10
+PENALTY_REPAIR_CHANGE = 50         # Reparação: custo de mudar um slot em relação ao horário ativo
 SOLVER_MAX_SECONDS = 300           # 5 minutos — sem artificial time limit de qualidade
 
 
@@ -90,12 +91,14 @@ class ScheduleEngine:
         lessons: list[LessonInput],
         timeslots: list[TimeslotInput],
         rooms: list[RoomInput],
-        availability_map: dict,   # (teacher_id, ts_id) -> score  (-1, 0, 1, 2)
+        availability_map: dict,           # (teacher_id, ts_id) -> score  (-1, 0, 1, 2)
+        previous_pattern: dict | None = None,  # (lesson_id, ts_id) -> 1 (repair mode)
     ) -> None:
         self.lessons = lessons
         self.timeslots = timeslots
         self.rooms = rooms
         self.availability_map = availability_map
+        self.previous_pattern: dict = previous_pattern or {}
 
         self.model = cp_model.CpModel()
         self.solver = cp_model.CpSolver()
@@ -262,11 +265,13 @@ class ScheduleEngine:
     # ------------------------------------------------------------------
 
     def _build_soft_penalties(self) -> list:
-        """Penalidades por preferências de disponibilidade dos professores."""
+        """Penalidades por preferências de disponibilidade e modo de reparação."""
         penalties: list = []
         for lesson in self.lessons:
             for ts in self.timeslots:
                 self._add_availability_penalty(lesson, ts, penalties)
+                if self.previous_pattern:
+                    self._add_repair_penalty(lesson, ts, penalties)
         return penalties
 
     def _add_availability_penalty(
@@ -285,6 +290,24 @@ class ScheduleEngine:
             not_lat = self.model.NewBoolVar(f"noplat_{lesson.lesson_id}_{ts.ts_id}")
             self.model.Add(not_lat == 1 - lat)
             penalties.append(not_lat * PENALTY_PREFERRED_MISSING)
+
+    def _add_repair_penalty(
+        self,
+        lesson: LessonInput,
+        ts: TimeslotInput,
+        penalties: list,
+    ) -> None:
+        """Repair mode: penaliza qualquer desvio em relação ao horário ativo anterior."""
+        was_scheduled = self.previous_pattern.get((lesson.lesson_id, ts.ts_id), 0)
+        lat = self.lesson_at_ts[(lesson.lesson_id, ts.ts_id)]
+        if was_scheduled == 1:
+            # Era agendado — penalizar se agora não está
+            not_lat = self.model.NewBoolVar(f"rp_removed_{lesson.lesson_id}_{ts.ts_id}")
+            self.model.Add(not_lat == 1 - lat)
+            penalties.append(not_lat * PENALTY_REPAIR_CHANGE)
+        else:
+            # Não era agendado — penalizar se agora está (nova adição)
+            penalties.append(lat * PENALTY_REPAIR_CHANGE)
 
     # ------------------------------------------------------------------
     # Extração da solução

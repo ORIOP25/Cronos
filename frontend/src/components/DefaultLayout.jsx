@@ -1,11 +1,13 @@
 // Ficheiro: src/components/DefaultLayout.jsx
 import React from 'react';
 import { Outlet, Link, useNavigate } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import { auth } from '../apiClient';
 import { useAuthStore } from '../store';
 
 const DefaultLayout = () => {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const logout = useAuthStore((state) => state.logout);
   const user = useAuthStore((state) => state.user); // Objeto completo { email, role... }
 
@@ -16,6 +18,7 @@ const DefaultLayout = () => {
       // Handled: Logout errors are safely ignored (e.g. cookie already expired)
       console.error('Logout error (safely ignored):', e);
     }
+    queryClient.clear(); // Limpa cache de React Query para evitar data leak entre sessões
     logout();
     navigate('/login');
   };
@@ -55,6 +58,7 @@ const DefaultLayout = () => {
             <>
               <Link to="/dashboard" style={linkStyle}>Dashboard</Link>
               <Link to="/schedules" style={linkStyle}>Horários</Link>
+              <Link to="/absences" style={linkStyle}>Faltas</Link>
               
               {/* Separador de Secção */}
               <div style={sectionLabelStyle}>Pedagogia</div>

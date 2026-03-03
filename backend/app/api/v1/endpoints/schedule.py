@@ -239,3 +239,122 @@ async def reset_all_data(
         pass
 
     return {"msg": "Dados de horário apagados com sucesso."}
+
+
+# ==========================================
+#  RASCUNHOS — Sprint 3
+# ==========================================
+
+@router.get(
+    "/drafts",
+    response_model=list[schemas.ScheduleDraftRead],
+    summary="Listar rascunhos pendentes de aprovação",
+)
+async def list_drafts(
+    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    current_user: Annotated[models.User, Depends(deps.get_current_active_admin)],
+):
+    """Retorna todos os rascunhos (mode=repair) pendentes de aprovação."""
+
+    def _run(sync_db):
+        from app.services import schedule_service as svc
+        return svc.list_draft_gen_ids_sync(sync_db, current_user.organization_id)
+
+    rows = await db.run_sync(_run)
+    return [
+        schemas.ScheduleDraftRead(
+            generation_id=r["generation_id"],
+            count=r["count"],
+            earliest_date=r["earliest_date"],
+            latest_date=r["latest_date"],
+        )
+        for r in rows
+    ]
+
+
+@router.get(
+    "/drafts/{gen_id}/diff",
+    response_model=schemas.ScheduleDiffRead,
+    responses={404: {"description": "Rascunho não encontrado"}},
+    summary="Diff entre rascunho e horário ativo",
+)
+async def get_draft_diff(
+    gen_id: str,
+    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    current_user: Annotated[models.User, Depends(deps.get_current_active_admin)],
+):
+    """Calcula quantos blocos foram adicionados, removidos e mantidos."""
+
+    def _run(sync_db):
+        from app.services import schedule_service as svc
+        drafts = svc.list_draft_gen_ids_sync(sync_db, current_user.organization_id)
+        if not any(d["generation_id"] == gen_id for d in drafts):
+            return None
+        return svc.get_diff_sync(sync_db, current_user.organization_id, gen_id)
+
+    result = await db.run_sync(_run)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Rascunho não encontrado")
+    return schemas.ScheduleDiffRead(generation_id=gen_id, **result)
+
+
+@router.post(
+    "/drafts/{gen_id}/approve",
+    responses={
+        404: {"description": "Rascunho não encontrado"},
+        200: {"description": "Rascunho aprovado e ativado"},
+    },
+    summary="Aprovar e ativar rascunho de horário",
+)
+async def approve_draft(
+    gen_id: str,
+    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    current_user: Annotated[models.User, Depends(deps.get_current_active_admin)],
+):
+    """Promove o rascunho a horário ativo. Elimina o horário ativo anterior."""
+
+    def _run(sync_db):
+        from app.services import schedule_service as svc
+        drafts = svc.list_draft_gen_ids_sync(sync_db, current_user.organization_id)
+        if not any(d["generation_id"] == gen_id for d in drafts):
+            return None
+        count = svc.approve_draft_sync(sync_db, current_user.organization_id, gen_id)
+        return count
+
+    count = await db.run_sync(_run)
+    if count is None:
+        raise HTTPException(status_code=404, detail="Rascunho não encontrado")
+
+    # Invalidar cache após aprovação
+    try:
+        r = redis.Redis.from_url(str(settings.REDIS_URL))
+        r.delete(f"schedule_latest_data_{current_user.organization_id}")
+    except Exception:
+        pass
+
+    return {"msg": "Rascunho aprovado e ativado com sucesso.", "blocks_activated": count}
+
+
+@router.delete(
+    "/drafts/{gen_id}",
+    responses={404: {"description": "Rascunho não encontrado"}},
+    summary="Rejeitar e eliminar rascunho de horário",
+)
+async def reject_draft(
+    gen_id: str,
+    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    current_user: Annotated[models.User, Depends(deps.get_current_active_admin)],
+):
+    """Elimina o rascunho sem alterar o horário ativo."""
+
+    def _run(sync_db):
+        from app.services import schedule_service as svc
+        drafts = svc.list_draft_gen_ids_sync(sync_db, current_user.organization_id)
+        if not any(d["generation_id"] == gen_id for d in drafts):
+            return None
+        return svc.reject_draft_sync(sync_db, current_user.organization_id, gen_id)
+
+    count = await db.run_sync(_run)
+    if count is None:
+        raise HTTPException(status_code=404, detail="Rascunho não encontrado")
+    return {"msg": "Rascunho rejeitado e eliminado.", "blocks_deleted": count}

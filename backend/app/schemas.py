@@ -738,3 +738,25 @@ class AvailableSubstituteRead(BaseModel):
     subject_name: str
     class_id: int
     class_name: str
+
+
+# ==========================================
+#  SPRINT 3 — RASCUNHOS E DIFF DE HORÁRIOS
+# ==========================================
+
+class ScheduleDraftRead(BaseModel):
+    """Resumo de um rascunho de horário pendente de aprovação."""
+    generation_id: str
+    count: int
+    earliest_date: date | None = None
+    latest_date: date | None = None
+
+
+class ScheduleDiffRead(BaseModel):
+    """Résultat du diff entre rascunho e horário ativo."""
+    generation_id: str
+    added: int
+    removed: int
+    unchanged: int
+    total_draft: int
+    total_active: int

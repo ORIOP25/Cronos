@@ -192,6 +192,7 @@ def _save_results(
     org_id: int,
     gen_id: str,
     lesson_class_map: dict,
+    is_draft: bool = False,
 ) -> dict:
     """Guarda os ScheduleOutput e atualiza projected_end_date de cada turma."""
     for block in blocks:
@@ -203,14 +204,17 @@ def _save_results(
             output_date=block.output_date,
             org_id=org_id,
             gen_id=gen_id,
-            is_draft=False,
+            is_draft=is_draft,
         )
 
-    class_end_dates = _compute_class_end_dates(blocks, lesson_class_map)
-    for class_id, end_date in class_end_dates.items():
-        schedule_service.update_class_projected_end_date_sync(db, class_id, end_date)
+    # Só atualiza projected_end_date quando o horário é ativado (não draft)
+    if not is_draft:
+        class_end_dates = _compute_class_end_dates(blocks, lesson_class_map)
+        for class_id, end_date in class_end_dates.items():
+            schedule_service.update_class_projected_end_date_sync(db, class_id, end_date)
+        return class_end_dates
 
-    return class_end_dates
+    return {}
 
 
 def _invalidate_cache(org_id: int) -> None:
@@ -263,6 +267,13 @@ def generate_schedule_task(self: Task, org_id: int, mode: str = "full") -> dict:
         }
         blocked_dates = _build_blocked_dates(calendar_events)
 
+        # Repair mode: ler padrão ativo anterior para minimizar perturbações
+        is_repair = mode == "repair"
+        previous_pattern = (
+            schedule_service.get_active_future_pattern_sync(db, org_id)
+            if is_repair else None
+        )
+
         logger.info(
             "Dados carregados",
             lessons=len(lesson_inputs),
@@ -278,6 +289,7 @@ def generate_schedule_task(self: Task, org_id: int, mode: str = "full") -> dict:
             timeslots=_build_timeslot_inputs(raw_timeslots),
             rooms=_build_room_inputs(raw_rooms),
             availability_map=availability_map,
+            previous_pattern=previous_pattern,
         )
         assignments = engine.solve()
 
@@ -301,11 +313,26 @@ def generate_schedule_task(self: Task, org_id: int, mode: str = "full") -> dict:
         if not blocks:
             return {"status": "Error", "message": ERR_NO_EXPAND}
 
-        # 4. SAVE — limpa futuro e grava novos blocos
+        # 4. SAVE — comportamento depende do modo
         self.update_state(state="SAVING", meta={"detail": "A gravar solução..."})
 
+        if is_repair:
+            # Repair: guarda como rascunho (is_draft=True) sem apagar o ativo
+            _save_results(db, blocks, org_id, gen_id, lesson_class_map, is_draft=True)
+            db.commit()
+            _invalidate_cache(org_id)
+            logger.info("Rascunho de reparação criado", blocks=len(blocks), gen_id=gen_id)
+            return {
+                "status": "Success",
+                "generation_id": gen_id,
+                "mode": "repair",
+                "is_draft": True,
+                "count": len(blocks),
+            }
+
+        # Full: limpa futuro e grava novo horário ativo
         schedule_service.clear_future_schedule_sync(db, org_id)
-        class_end_dates = _save_results(db, blocks, org_id, gen_id, lesson_class_map)
+        class_end_dates = _save_results(db, blocks, org_id, gen_id, lesson_class_map, is_draft=False)
         db.commit()
 
         _invalidate_cache(org_id)
@@ -314,6 +341,8 @@ def generate_schedule_task(self: Task, org_id: int, mode: str = "full") -> dict:
         return {
             "status": "Success",
             "generation_id": gen_id,
+            "mode": "full",
+            "is_draft": False,
             "count": len(blocks),
             "classes_updated": len(class_end_dates),
         }

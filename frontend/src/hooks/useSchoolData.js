@@ -595,3 +595,202 @@ export const useRemoveClassSubject = () => {
     }
   })
 }
+
+// ==========================================
+//  SPRINT 2 — OCORRÊNCIAS & DÍVIDAS
+// ==========================================
+
+/**
+ * Lista ocorrências com filtros opcionais (classId, dateFrom, dateTo).
+ */
+export const useOccurrences = ({ classId, dateFrom, dateTo } = {}) => {
+  const orgId = useAuthStore(state => state.user?.orgId)
+  const params = new URLSearchParams()
+  if (classId) params.set('class_id', classId)
+  if (dateFrom) params.set('date_from', dateFrom)
+  if (dateTo) params.set('date_to', dateTo)
+  const qs = params.toString()
+
+  return useQuery({
+    queryKey: ['occurrences', orgId, classId, dateFrom, dateTo],
+    queryFn: async () => {
+      const { data } = await apiClient.get(`/occurrences/${qs ? `?${qs}` : ''}`)
+      return data
+    },
+    ...DYNAMIC_OPTS,
+  })
+}
+
+/**
+ * Lista de dívidas de horas agrupadas por turma/disciplina.
+ */
+export const useDebts = ({ classId } = {}) => {
+  const orgId = useAuthStore(state => state.user?.orgId)
+  const params = new URLSearchParams()
+  if (classId) params.set('class_id', classId)
+  const qs = params.toString()
+
+  return useQuery({
+    queryKey: ['debts', orgId, classId],
+    queryFn: async () => {
+      const { data } = await apiClient.get(`/occurrences/debts${qs ? `?${qs}` : ''}`)
+      return data
+    },
+    ...DYNAMIC_OPTS,
+  })
+}
+
+/**
+ * Professores disponíveis para substitição num slot/data específicos.
+ */
+export const useAvailableSubstitutes = ({ timeslotId, targetDate } = {}) => {
+  const orgId = useAuthStore(state => state.user?.orgId)
+  return useQuery({
+    queryKey: ['substitutes', orgId, timeslotId, targetDate],
+    queryFn: async () => {
+      const { data } = await apiClient.get('/occurrences/substitutes', {
+        params: { timeslot_id: timeslotId, target_date: targetDate },
+      })
+      return data
+    },
+    enabled: !!(timeslotId && targetDate),
+    ...DYNAMIC_OPTS,
+  })
+}
+
+/**
+ * Mutation para registar falta (GAP) ou substituição (SUBSTITUTED).
+ */
+export const useUpdateOccurrence = () => {
+  const queryClient = useQueryClient()
+  const orgId = useAuthStore(state => state.user?.orgId)
+
+  return useMutation({
+    mutationFn: async ({ id, status, substituteTeacherId, substituteSubjectId }) => {
+      const { data } = await apiClient.patch(`/occurrences/${id}`, {
+        status,
+        substitute_teacher_id: substituteTeacherId ?? null,
+        substitute_subject_id: substituteSubjectId ?? null,
+      })
+      return data
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['occurrences', orgId] })
+      void queryClient.invalidateQueries({ queryKey: ['debts', orgId] })
+    },
+  })
+}
+
+// ============================================================
+//  Sprint 3 — Rascunhos e Diff de Horários
+// ============================================================
+
+/**
+ * Lista rascunhos pendentes de aprovação para a organização do user.
+ */
+export const useDrafts = () => {
+  const orgId = useAuthStore(state => state.user?.orgId)
+  return useQuery({
+    queryKey: ['drafts', orgId],
+    queryFn: async () => {
+      const { data } = await apiClient.get('/schedule/drafts')
+      return data
+    },
+    ...DYNAMIC_OPTS,
+  })
+}
+
+/**
+ * Diff entre um rascunho e o horário ativo.
+ */
+export const useScheduleDiff = (genId) => {
+  const orgId = useAuthStore(state => state.user?.orgId)
+  return useQuery({
+    queryKey: ['schedule-diff', orgId, genId],
+    queryFn: async () => {
+      const { data } = await apiClient.get(`/schedule/drafts/${genId}/diff`)
+      return data
+    },
+    enabled: !!genId,
+    ...DYNAMIC_OPTS,
+  })
+}
+
+/**
+ * Aprovação de rascunho — substitui o horário ativo pelo rascunho.
+ */
+export const useApproveDraft = () => {
+  const queryClient = useQueryClient()
+  const orgId = useAuthStore(state => state.user?.orgId)
+
+  return useMutation({
+    mutationFn: async (genId) => {
+      const { data } = await apiClient.post(`/schedule/drafts/${genId}/approve`)
+      return data
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['drafts', orgId] })
+      void queryClient.invalidateQueries({ queryKey: ['schedule-diff', orgId] })
+    },
+  })
+}
+
+/**
+ * Rejeição de rascunho — elimina o rascunho sem alterar o ativo.
+ */
+export const useRejectDraft = () => {
+  const queryClient = useQueryClient()
+  const orgId = useAuthStore(state => state.user?.orgId)
+
+  return useMutation({
+    mutationFn: async (genId) => {
+      const { data } = await apiClient.delete(`/schedule/drafts/${genId}`)
+      return data
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['drafts', orgId] })
+      void queryClient.invalidateQueries({ queryKey: ['schedule-diff', orgId] })
+    },
+  })
+}
+
+/**
+ * Disparar geração de horário (full ou repair).
+ * Retorna { task_id, status }.
+ */
+export const useGenerateSchedule = () => {
+  const queryClient = useQueryClient()
+  const orgId = useAuthStore(state => state.user?.orgId)
+
+  return useMutation({
+    mutationFn: async (mode = 'full') => {
+      const { data } = await apiClient.post('/schedule/generate', { mode })
+      return data
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['drafts', orgId] })
+    },
+  })
+}
+
+/**
+ * Verificar estado de uma tarefa Celery de geração.
+ */
+export const useScheduleTaskStatus = (taskId) => {
+  const orgId = useAuthStore(state => state.user?.orgId)
+  return useQuery({
+    queryKey: ['schedule-task', orgId, taskId],
+    queryFn: async () => {
+      const { data } = await apiClient.get(`/schedule/status/${taskId}`)
+      return data
+    },
+    enabled: !!taskId,
+    refetchInterval: (query) => {
+      const status = query.state.data?.status
+      if (!status) return 3000
+      const terminal = ['SUCCESS', 'FAILURE', 'Success', 'Error', 'Impossible']
+      return terminal.some(s => status.includes(s)) ? false : 3000
+    },
+    ...DYNAMIC_OPTS,
+  })
+}

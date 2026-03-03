@@ -74,6 +74,23 @@ services:
       - redis
       - db
 
+  # 5. Celery Beat — Scheduler de tarefas periódicas (cron diário às 23:59)
+  beat:
+    build: ./backend
+    container_name: horario_zen_beat
+    command: ["celery", "-A", "app.celery_worker.celery_app", "beat", "--loglevel=info"]
+    env_file:
+      - ./backend/.env
+    environment:
+      - DATABASE_URL=postgresql+psycopg2://postgres:mysecretpassword@db:5432/horario_zen_db
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - REDIS_URL=redis://redis:6379/0
+    volumes:
+      - ./backend:/app
+    depends_on:
+      - redis
+      - db
+
   # 5. Frontend (Nginx Reverse Proxy) - O Porteiro
   frontend:
     build: 

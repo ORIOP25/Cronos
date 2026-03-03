@@ -331,3 +331,142 @@ def create_schedule_output_with_date_sync(
             is_draft=is_draft,
         )
     )
+
+
+# ---------------------------------------------------------------------------
+# Funções de gestão de rascunhos (Sprint 3)
+# ---------------------------------------------------------------------------
+
+def get_active_future_pattern_sync(db: Session, org_id: int) -> dict:
+    """Retorna o padrão semanal ativo como dict {(lesson_id, ts_id): 1}.
+
+    Usado pelo solver em modo 'repair' para minimizar perturbações.
+    Lê apenas ScheduleOutput futuros (date > hoje) não-draft.
+    """
+    today = date.today()
+    rows = (
+        db.query(models.ScheduleOutput.lesson_id, models.ScheduleOutput.timeslot_id)
+        .filter(
+            models.ScheduleOutput.organization_id == org_id,
+            models.ScheduleOutput.is_draft.is_(False),
+            models.ScheduleOutput.date > today,
+        )
+        .distinct()
+        .all()
+    )
+    return {(r.lesson_id, r.timeslot_id): 1 for r in rows}
+
+
+def list_draft_gen_ids_sync(db: Session, org_id: int) -> list[dict]:
+    """Lista rascunhos pendentes de aprovação para esta organização.
+
+    Retorna um registo por generation_id com contagem, intervalo de datas.
+    """
+    from sqlalchemy import func as sa_func
+
+    rows = (
+        db.query(
+            models.ScheduleOutput.generation_id,
+            sa_func.count(models.ScheduleOutput.id).label("count"),
+            sa_func.min(models.ScheduleOutput.date).label("earliest_date"),
+            sa_func.max(models.ScheduleOutput.date).label("latest_date"),
+        )
+        .filter(
+            models.ScheduleOutput.organization_id == org_id,
+            models.ScheduleOutput.is_draft.is_(True),
+        )
+        .group_by(models.ScheduleOutput.generation_id)
+        .all()
+    )
+    return [
+        {
+            "generation_id": r.generation_id,
+            "count": r.count,
+            "earliest_date": r.earliest_date,
+            "latest_date": r.latest_date,
+        }
+        for r in rows
+    ]
+
+
+def approve_draft_sync(db: Session, org_id: int, gen_id: str) -> int:
+    """Aprova um rascunho: elimina o horário ativo futuro e promove o rascunho.
+
+    Retorna o número de blocos promovidos.
+    """
+    today = date.today()
+    # 1. Apagar horário ativo futuro
+    db.query(models.ScheduleOutput).filter(
+        models.ScheduleOutput.organization_id == org_id,
+        models.ScheduleOutput.is_draft.is_(False),
+        (models.ScheduleOutput.date == None) | (models.ScheduleOutput.date > today),  # noqa: E711
+    ).delete(synchronize_session="fetch")
+
+    # 2. Promover rascunho a ativo
+    count = (
+        db.query(models.ScheduleOutput)
+        .filter(
+            models.ScheduleOutput.organization_id == org_id,
+            models.ScheduleOutput.generation_id == gen_id,
+            models.ScheduleOutput.is_draft.is_(True),
+        )
+        .update({"is_draft": False}, synchronize_session="fetch")
+    )
+    db.commit()
+    return count
+
+
+def reject_draft_sync(db: Session, org_id: int, gen_id: str) -> int:
+    """Rejeita e elimina um rascunho. Retorna o número de registos apagados."""
+    count = (
+        db.query(models.ScheduleOutput)
+        .filter(
+            models.ScheduleOutput.organization_id == org_id,
+            models.ScheduleOutput.generation_id == gen_id,
+            models.ScheduleOutput.is_draft.is_(True),
+        )
+        .delete(synchronize_session="fetch")
+    )
+    db.commit()
+    return count
+
+
+def get_diff_sync(db: Session, org_id: int, gen_id: str) -> dict:
+    """Computa o diff entre o rascunho e o horário ativo.
+
+    Retorna:
+      added   — blocos no rascunho mas não no ativo (mesmo timeslot+data)
+      removed — blocos no ativo mas não no rascunho
+      total_draft   — total de blocos no rascunho
+      total_active  — total de blocos ativos futuros
+    """
+    today = date.today()
+
+    def _fetch_set(is_draft_val: bool, generation_filter=None):
+        q = db.query(
+            models.ScheduleOutput.lesson_id,
+            models.ScheduleOutput.timeslot_id,
+            models.ScheduleOutput.room_id,
+            models.ScheduleOutput.date,
+        ).filter(
+            models.ScheduleOutput.organization_id == org_id,
+            models.ScheduleOutput.is_draft.is_(is_draft_val),
+            models.ScheduleOutput.date > today,
+        )
+        if generation_filter:
+            q = q.filter(models.ScheduleOutput.generation_id == generation_filter)
+        return {(r.lesson_id, r.timeslot_id, r.date) for r in q.all()}
+
+    draft_set = _fetch_set(True, gen_id)
+    active_set = _fetch_set(False)
+
+    added = len(draft_set - active_set)
+    removed = len(active_set - draft_set)
+
+    return {
+        "added": added,
+        "removed": removed,
+        "unchanged": len(draft_set & active_set),
+        "total_draft": len(draft_set),
+        "total_active": len(active_set),
+    }
