@@ -1,5 +1,5 @@
 import enum
-from datetime import datetime, time, timezone
+from datetime import datetime, time, timezone, date as date_type
 from typing import List, Optional
 from sqlalchemy import (
     Column, Integer, String, Boolean,
@@ -23,6 +23,16 @@ class RoomType(str, enum.Enum):
     lab = "lab"
     gym = "gym"
     art = "art"
+
+class CalendarEventType(str, enum.Enum):
+    national_holiday = "national_holiday"
+    school_break = "school_break"
+    exam_period = "exam_period"
+    other = "other"
+
+class CalendarEventSource(str, enum.Enum):
+    auto = "auto"
+    manual = "manual"
 
 class UserRole(str, enum.Enum):
     admin = "admin"
@@ -126,6 +136,9 @@ class Organization(Base):
     subjects: Mapped[List["Subject"]] = relationship(back_populates="organization")
     timeslots: Mapped[List["Timeslot"]] = relationship(back_populates="organization")
 
+    settings: Mapped[List["OrganizationSettings"]] = relationship(back_populates="organization", cascade=CASCADE_ALL_DELETE)
+    calendar_events: Mapped[List["SchoolCalendarEvent"]] = relationship(back_populates="organization", cascade=CASCADE_ALL_DELETE)
+
     def __repr__(self) -> str:
         return f"<Organization(id={self.id}, name='{self.name}')>"
 
@@ -198,6 +211,10 @@ class Class(Base):
     start_year: Mapped[int] = mapped_column(Integer, nullable=False)  # Ex: 2025
     end_year: Mapped[int] = mapped_column(Integer, nullable=False)  # Ex: 2028
     grade_level: Mapped[int] = mapped_column(Integer, nullable=False)  # 10, 11, 12
+
+    # Sprint 0: Dados de progresso do solver
+    projected_end_date: Mapped[Optional[date_type]] = mapped_column(Date, nullable=True)
+    is_archived: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     # Associação a um Curso
     course_id: Mapped[int] = mapped_column(ForeignKey("course.id"), nullable=False)
@@ -380,6 +397,10 @@ class ScheduleOutput(Base):
     # ID para versionar (ex: "Geração de Verão 2025")
     generation_id: Mapped[str] = mapped_column(String(100), index=True)
 
+    # Sprint 0: Data absoluta e flag de rascunho
+    date: Mapped[Optional[date_type]] = mapped_column(Date, nullable=True, index=True)
+    is_draft: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
     # Relacionamentos
     organization: Mapped["Organization"] = relationship()
     lesson: Mapped["Lesson"] = relationship()
@@ -389,6 +410,56 @@ class ScheduleOutput(Base):
     def __repr__(self) -> str:
         return f"<ScheduleOutput(lesson_id={self.lesson_id}, timeslot_id={self.timeslot_id})>"
     
+# --- CONFIGURAÇÕES DA ESCOLA (Sprint 0) ---
+
+class OrganizationSettings(Base):
+    """Configurações anuais da escola (uma por ano letivo).
+    Chave lógica: (org_id, academic_year) — vários ativos em simultâneo
+    porque os cursos profissionais duram 3 anos.
+    """
+    __tablename__ = "organization_settings"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    org_id: Mapped[int] = mapped_column(ForeignKey(FK_ORG_ID, ondelete="CASCADE"), index=True)
+    academic_year: Mapped[str] = mapped_column(String(10), nullable=False)  # Ex: "2025/2026"
+    school_start_date: Mapped[Optional[date_type]] = mapped_column(Date, nullable=True)
+    school_target_end_date: Mapped[Optional[date_type]] = mapped_column(Date, nullable=True)
+    region_code: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)  # Ex: "Lisboa"
+
+    organization: Mapped["Organization"] = relationship(back_populates="settings")
+
+    __table_args__ = (
+        UniqueConstraint("org_id", "academic_year", name="uq_org_academic_year"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<OrganizationSettings(org_id={self.org_id}, year='{self.academic_year}')>"
+
+
+class SchoolCalendarEvent(Base):
+    """Pausas letivas e feriados (hard constraint para o solver).
+    source=AUTO: importado via package holidays Python.
+    source=MANUAL: adicionado pelo diretor.
+    """
+    __tablename__ = "school_calendar_event"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    org_id: Mapped[int] = mapped_column(ForeignKey(FK_ORG_ID, ondelete="CASCADE"), index=True)
+    academic_year: Mapped[str] = mapped_column(String(10), nullable=False)
+    name: Mapped[str] = mapped_column(String(150), nullable=False)
+    start_date: Mapped[date_type] = mapped_column(Date, nullable=False)
+    end_date: Mapped[date_type] = mapped_column(Date, nullable=False)
+    event_type: Mapped[CalendarEventType] = mapped_column(SAEnum(CalendarEventType), nullable=False)
+    source: Mapped[CalendarEventSource] = mapped_column(
+        SAEnum(CalendarEventSource), nullable=False, default=CalendarEventSource.manual
+    )
+
+    organization: Mapped["Organization"] = relationship(back_populates="calendar_events")
+
+    def __repr__(self) -> str:
+        return f"<SchoolCalendarEvent(id={self.id}, name='{self.name}', date='{self.start_date}')>"
+
+
 # -- SUBSTITUIÇÕES --
 class Substitution(Base):
     __tablename__ = "substitutions"

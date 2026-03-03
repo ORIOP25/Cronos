@@ -1,192 +1,310 @@
-# Ficheiro: backend/app/core/solver_engine.py
+"""CP-SAT Solver Engine para Horário Zen — Ensino Profissional.
+
+Fase 1 (este módulo): Encontra o padrão semanal ótimo, ou seja, em que
+timeslots e salas cada lição ocorre *todas as semanas*.
+
+Fase 2 (solver_tasks.py): Expande esse padrão para datas absolutas,
+tendo em conta feriados e a conclusão progressiva dos módulos.
+"""
+from dataclasses import dataclass
+from collections import defaultdict
 
 from ortools.sat.python import cp_model
-from app.models import ConstraintType, PreferenceLevel
-import logging
+import structlog
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
+
+# Constantes SonarQube S1192
+MAX_HOURS_PER_WEEK_MINUTES = 900   # 15 horas × 60 minutos
+PENALTY_AVOID = 20
+PENALTY_PREFERRED_MISSING = 10
+SOLVER_MAX_SECONDS = 300           # 5 minutos — sem artificial time limit de qualidade
+
+
+# ---------------------------------------------------------------------------
+# Tipos de Entrada / Saída
+# ---------------------------------------------------------------------------
+
+@dataclass
+class LessonInput:
+    """Dados de uma lição para o solver (Class + Subject + Teacher)."""
+    lesson_id: int
+    class_id: int
+    subject_id: int
+    teacher_id: int
+    required_room_type: str    # Ex: "normal", "lab", "gym"
+    remaining_minutes: int     # Total de minutos restantes em todos os módulos
+
+
+@dataclass
+class TimeslotInput:
+    """Bloco horário semanal."""
+    ts_id: int
+    day_of_week: int          # 0=Segunda … 4=Sexta (igual a date.weekday())
+    duration_minutes: int
+
+
+@dataclass
+class RoomInput:
+    """Sala disponível."""
+    room_id: int
+    room_type: str             # Deve corresponder a LessonInput.required_room_type
+
+
+@dataclass
+class ScheduledAssignment:
+    """Resultado do solver: lição X vai à sala Y no timeslot Z toda a semana."""
+    lesson_id: int
+    ts_id: int
+    room_id: int
+    day_of_week: int
+    duration_minutes: int
+
+
+# ---------------------------------------------------------------------------
+# Motor CP-SAT
+# ---------------------------------------------------------------------------
 
 class ScheduleEngine:
-    def __init__(self, lessons, timeslots, rooms, teachers, classes, constraints, availabilities):
-        """
-        O Motor Matemático.
-        Recebe dados puros (Listas de objetos) e devolve a solução.
-        """
+    """
+    Motor CP-SAT que determina o padrão semanal ótimo para todas as turmas
+    ativas de uma organização.
+
+    Hard Constraints (HC1-HC7):
+        HC1  Sala com no máximo uma lição de cada vez.
+        HC2  Professor sem sobreposição de horário.
+        HC3  Turma sem sobreposição de horário.
+        HC4  Lição só em sala do tipo correto (ex: Informática → sala lab).
+        HC5  Professor não dá aulas em slots marcados como IMPOSSÍVEL (-1).
+        HC6  Limite de 15 h (900 min) por lição por semana.
+        HC7  Lições com horas pendentes têm ≥ 1 sessão/semana;
+             lições já completas não são agendadas.
+
+    Soft Constraints (função objetivo):
+        - Penalizar slots marcados como EVITAR (score=0).
+        - Penalizar a ausência de sessão em slots PREFERIDOS (score=2).
+    """
+
+    def __init__(
+        self,
+        lessons: list[LessonInput],
+        timeslots: list[TimeslotInput],
+        rooms: list[RoomInput],
+        availability_map: dict,   # (teacher_id, ts_id) -> score  (-1, 0, 1, 2)
+    ) -> None:
         self.lessons = lessons
         self.timeslots = timeslots
         self.rooms = rooms
-        self.teachers = teachers
-        self.classes = classes
-        self.constraints = constraints
-        
-        # Mapa de Disponibilidade Otimizado (Hash Map)
-        # Chave: (teacher_id, timeslot_id) -> Valor: Score (-1, 0, 1, 2)
-        # Se não existir entrada, assumimos 1 (Neutro)
-        self.availability_map = {
-            (a.teacher_id, a.timeslot_id): a.score 
-            for a in availabilities
-        }
-        
+        self.availability_map = availability_map
+
         self.model = cp_model.CpModel()
         self.solver = cp_model.CpSolver()
-        self.last_score = 0
-        
-        # Variáveis de Decisão
-        self.aula_agendada = {}   # (lesson_id, timeslot_id, room_id) -> Bool
-        self.teacher_active = {}  # (teacher_id, timeslot_id) -> Bool
 
-    def solve(self):
-        logger.info(f"🧠 Engine a iniciar... {len(self.availability_map)} regras de disponibilidade carregadas.")
-        """Executa a lógica de resolução."""
+        # Variáveis de decisão — criadas em _create_variables()
+        # x[(lesson_id, ts_id, room_id)] = BoolVar
+        self.x: dict = {}
+        # lesson_at_ts[(lesson_id, ts_id)] = BoolVar (agendada neste slot, qualquer sala)
+        self.lesson_at_ts: dict = {}
+
+    # ------------------------------------------------------------------
+    # Ponto de entrada público
+    # ------------------------------------------------------------------
+
+    def solve(self) -> list[ScheduledAssignment] | None:
+        """Resolve o modelo e retorna os assignments ou None se impossível."""
+        logger.info(
+            "🧠 Motor CP-SAT a iniciar",
+            lessons=len(self.lessons),
+            timeslots=len(self.timeslots),
+            rooms=len(self.rooms),
+        )
+
         self._create_variables()
         self._apply_hard_constraints()
-        self._apply_soft_constraints()
-        
-        # Configuração do Solver
-        self.solver.parameters.max_time_in_seconds = 60
-        self.solver.parameters.linearization_level = 0
-        
+
+        soft_penalties = self._build_soft_penalties()
+        if soft_penalties:
+            self.model.Minimize(sum(soft_penalties))
+
+        self.solver.parameters.max_time_in_seconds = SOLVER_MAX_SECONDS
+        self.solver.parameters.num_search_workers = 4
+        self.solver.parameters.log_search_progress = False
+
         status = self.solver.Solve(self.model)
-        
+
         if status in (cp_model.OPTIMAL, cp_model.FEASIBLE):
-            self.last_score = self.solver.ObjectiveValue()
-            return self._format_solution()
+            logger.info("✅ Solver: solução encontrada", objective=self.solver.ObjectiveValue())
+            return self._extract_assignments()
+
+        logger.warning("❌ Solver: sem solução viável", status=status)
         return None
 
-    def _link_teacher_active_var(self, teacher, t):
-        """Liga a variável teacher_active[…] às variáveis de aulas desse professor."""
-        lessons_of_teacher = [l for l in self.lessons if l.teacher_id == teacher.id]
-        relevant_vars = []
-        for l in lessons_of_teacher:
-            for r in self.rooms:
-                relevant_vars.append(self.aula_agendada[(l.id, t.id, r.id)])
-        if relevant_vars:
-            self.model.Add(self.teacher_active[(teacher.id, t.id)] == sum(relevant_vars))
-        else:
-            self.model.Add(self.teacher_active[(teacher.id, t.id)] == 0)
+    # ------------------------------------------------------------------
+    # Criação de variáveis
+    # ------------------------------------------------------------------
 
-    def _create_variables(self):
-        """Cria as variáveis do problema (X_ltr)."""
+    def _create_variables(self) -> None:
+        """Cria variáveis de decisão x e variáveis auxiliares lesson_at_ts."""
+        for lesson in self.lessons:
+            for ts in self.timeslots:
+                room_vars = []
+                for room in self.rooms:
+                    var = self.model.NewBoolVar(
+                        f"x_{lesson.lesson_id}_{ts.ts_id}_{room.room_id}"
+                    )
+                    self.x[(lesson.lesson_id, ts.ts_id, room.room_id)] = var
+                    room_vars.append(var)
 
-        # 1. Variável Principal: Aula L ocorre no Tempo T na Sala R?
-        for l in self.lessons:
-            for t in self.timeslots:
-                for r in self.rooms:
-                    self.aula_agendada[(l.id, t.id, r.id)] = self.model.NewBoolVar(
-                        f"aula_{l.id}_{t.id}_{r.id}"
+                # Auxiliar: lição agendada neste timeslot (independentemente da sala)
+                lat = self.model.NewBoolVar(f"lat_{lesson.lesson_id}_{ts.ts_id}")
+                self.model.Add(sum(room_vars) == lat)
+                self.lesson_at_ts[(lesson.lesson_id, ts.ts_id)] = lat
+
+    # ------------------------------------------------------------------
+    # Hard Constraints
+    # ------------------------------------------------------------------
+
+    def _apply_hard_constraints(self) -> None:
+        """Aplica HC1 a HC7."""
+        self._hc_room_conflict()
+        self._hc_teacher_conflict()
+        self._hc_class_conflict()
+        self._hc_room_type_match()
+        self._hc_teacher_availability()
+        self._hc_max_hours_per_lesson()
+        self._hc_active_lessons_need_sessions()
+
+    def _hc_room_conflict(self) -> None:
+        """HC1: Sala com no máximo uma lição de cada vez."""
+        for room in self.rooms:
+            for ts in self.timeslots:
+                self.model.Add(
+                    sum(
+                        self.x[(lesson.lesson_id, ts.ts_id, room.room_id)]
+                        for lesson in self.lessons
+                    ) <= 1
+                )
+
+    def _hc_teacher_conflict(self) -> None:
+        """HC2: Professor sem sobreposição de horário."""
+        teacher_lessons: dict[int, list[LessonInput]] = defaultdict(list)
+        for lesson in self.lessons:
+            teacher_lessons[lesson.teacher_id].append(lesson)
+
+        for t_lessons in teacher_lessons.values():
+            for ts in self.timeslots:
+                self.model.Add(
+                    sum(
+                        self.lesson_at_ts[(lesson.lesson_id, ts.ts_id)]
+                        for lesson in t_lessons
+                    ) <= 1
+                )
+
+    def _hc_class_conflict(self) -> None:
+        """HC3: Turma sem sobreposição de horário."""
+        class_lessons: dict[int, list[LessonInput]] = defaultdict(list)
+        for lesson in self.lessons:
+            class_lessons[lesson.class_id].append(lesson)
+
+        for c_lessons in class_lessons.values():
+            for ts in self.timeslots:
+                self.model.Add(
+                    sum(
+                        self.lesson_at_ts[(lesson.lesson_id, ts.ts_id)]
+                        for lesson in c_lessons
+                    ) <= 1
+                )
+
+    def _hc_room_type_match(self) -> None:
+        """HC4: Lição só em sala do tipo correto."""
+        for lesson in self.lessons:
+            for ts in self.timeslots:
+                for room in self.rooms:
+                    if room.room_type != lesson.required_room_type:
+                        self.model.Add(
+                            self.x[(lesson.lesson_id, ts.ts_id, room.room_id)] == 0
+                        )
+
+    def _hc_teacher_availability(self) -> None:
+        """HC5: Bloqueia slots marcados como IMPOSSÍVEL (-1)."""
+        for lesson in self.lessons:
+            for ts in self.timeslots:
+                score = self.availability_map.get((lesson.teacher_id, ts.ts_id), 1)
+                if score == -1:
+                    self.model.Add(
+                        self.lesson_at_ts[(lesson.lesson_id, ts.ts_id)] == 0
                     )
 
-        # 2. Variável Auxiliar: Professor P está a trabalhar no Tempo T?
-        for teacher in self.teachers:
-            for t in self.timeslots:
-                self.teacher_active[(teacher.id, t.id)] = self.model.NewBoolVar(
-                    f"teacher_active_{teacher.id}_{t.id}"
-                )
-                self._link_teacher_active_var(teacher, t)
-
-    def _apply_impossible_availability_constraints(self):
-        """Regra 5: Bloqueia slots onde o professor marcou IMPOSSÍVEL (-1)."""
-        for teacher in self.teachers:
-            for t in self.timeslots:
-                score = self.availability_map.get((teacher.id, t.id), 1)
-                if score == -1:
-                    self.model.Add(self.teacher_active[(teacher.id, t.id)] == 0)
-
-    def _apply_hard_constraints(self):
-        """Regras que NÃO podem ser quebradas (Vermelho)."""
-
-        # Regra 1: Cada aula tem de acontecer exatamente X vezes
-        for l in self.lessons:
-            slots_per_week = getattr(l, 'num_per_week', 1)
+    def _hc_max_hours_per_lesson(self) -> None:
+        """HC6: Lição não pode exceder 15 h (900 min) por semana."""
+        for lesson in self.lessons:
             self.model.Add(
-                sum(self.aula_agendada[(l.id, t.id, r.id)]
-                    for t in self.timeslots
-                    for r in self.rooms) == slots_per_week
+                sum(
+                    self.lesson_at_ts[(lesson.lesson_id, ts.ts_id)] * ts.duration_minutes
+                    for ts in self.timeslots
+                ) <= MAX_HOURS_PER_WEEK_MINUTES
             )
 
-        # Regra 2: Turma não pode estar em dois sítios ao mesmo tempo
-        for c in self.classes:
-            lessons_of_class = [l for l in self.lessons if l.class_id == c.id]
-            for t in self.timeslots:
-                self.model.Add(
-                    sum(self.aula_agendada[(l.id, t.id, r.id)]
-                        for l in lessons_of_class
-                        for r in self.rooms) <= 1
-                )
+    def _hc_active_lessons_need_sessions(self) -> None:
+        """HC7: Lições ativas ≥ 1 sessão/semana; lições completas = 0 sessões."""
+        for lesson in self.lessons:
+            total = sum(
+                self.lesson_at_ts[(lesson.lesson_id, ts.ts_id)]
+                for ts in self.timeslots
+            )
+            if lesson.remaining_minutes > 0:
+                self.model.Add(total >= 1)
+            else:
+                self.model.Add(total == 0)
 
-        # Regra 3: Professor não pode estar em dois sítios
-        for teacher in self.teachers:
-            for t in self.timeslots:
-                self.model.Add(self.teacher_active[(teacher.id, t.id)] <= 1)
+    # ------------------------------------------------------------------
+    # Soft Constraints (função objetivo)
+    # ------------------------------------------------------------------
 
-        # Regra 4: Sala não pode ter duas turmas
-        for r in self.rooms:
-            for t in self.timeslots:
-                self.model.Add(
-                    sum(self.aula_agendada[(l.id, t.id, r.id)]
-                        for l in self.lessons) <= 1
-                )
+    def _build_soft_penalties(self) -> list:
+        """Penalidades por preferências de disponibilidade dos professores."""
+        penalties: list = []
+        for lesson in self.lessons:
+            for ts in self.timeslots:
+                self._add_availability_penalty(lesson, ts, penalties)
+        return penalties
 
-        # Regra 5: Disponibilidade IMPOSSÍVEL (-1)
-        self._apply_impossible_availability_constraints()
+    def _add_availability_penalty(
+        self,
+        lesson: LessonInput,
+        ts: TimeslotInput,
+        penalties: list,
+    ) -> None:
+        """Penaliza EVITAR (score=0); penaliza ausência em PREFERIDO (score=2)."""
+        score = self.availability_map.get((lesson.teacher_id, ts.ts_id), 1)
+        lat = self.lesson_at_ts[(lesson.lesson_id, ts.ts_id)]
 
-    def _get_slots_by_day(self):
-        """Agrupa e ordena os timeslots por dia da semana."""
-        slots_by_day = {}
-        for t in self.timeslots:
-            if t.day_of_week not in slots_by_day:
-                slots_by_day[t.day_of_week] = []
-            slots_by_day[t.day_of_week].append(t)
-        for day in slots_by_day:
-            slots_by_day[day].sort(key=lambda x: x.start_time)
-        return slots_by_day
+        if score == 0:    # EVITAR
+            penalties.append(lat * PENALTY_AVOID)
+        elif score == 2:  # PREFERIDO — penalizar ausência
+            not_lat = self.model.NewBoolVar(f"noplat_{lesson.lesson_id}_{ts.ts_id}")
+            self.model.Add(not_lat == 1 - lat)
+            penalties.append(not_lat * PENALTY_PREFERRED_MISSING)
 
-    def _apply_availability_preferences(self, teacher, penalties):
-        """Adiciona penalidades por AVOID e recompensas por PREFERRED."""
-        for t in self.timeslots:
-            score = self.availability_map.get((teacher.id, t.id), 1)
-            if score == 0:  # AVOID
-                penalties.append(self.teacher_active[(teacher.id, t.id)] * 20)
-            if score == 2:  # PREFERRED
-                is_missing = self.model.NewBoolVar(f"missing_{teacher.id}_{t.id}")
-                self.model.Add(is_missing == 1 - self.teacher_active[(teacher.id, t.id)])
-                penalties.append(is_missing * 10)
+    # ------------------------------------------------------------------
+    # Extração da solução
+    # ------------------------------------------------------------------
 
-    def _apply_gap_penalties(self, teacher, day_slots, penalties):
-        """Adiciona penalidades por buracos no horário do professor."""
-        for i in range(len(day_slots)):
-            t_curr = day_slots[i]
-            curr_active = self.teacher_active[(teacher.id, t_curr.id)]
-            prev_active = 0
-            if i > 0:
-                t_prev = day_slots[i - 1]
-                prev_active = self.teacher_active[(teacher.id, t_prev.id)]
-            is_start = self.model.NewBoolVar(f"start_{teacher.id}_{t_curr.id}")
-            self.model.Add(is_start >= curr_active - prev_active)
-            penalties.append(is_start * 50)
-
-    def _apply_soft_constraints(self):
-        """Regras que custam pontos (Laranja e Buracos)."""
-        penalties = []
-        slots_by_day = self._get_slots_by_day()
-
-        for teacher in self.teachers:
-            self._apply_availability_preferences(teacher, penalties)
-            for day_slots in slots_by_day.values():
-                self._apply_gap_penalties(teacher, day_slots, penalties)
-
-        if penalties:
-            self.model.Minimize(sum(penalties))
-
-    def _format_solution(self):
-        solution = []
-        for l in self.lessons:
-            for t in self.timeslots:
-                for r in self.rooms:
-                    if self.solver.Value(self.aula_agendada[(l.id, t.id, r.id)]) == 1:
-                        solution.append({
-                            "lesson_id": l.id,
-                            "timeslot_id": t.id,
-                            "room_id": r.id
-                        })
-        return solution
+    def _extract_assignments(self) -> list[ScheduledAssignment]:
+        """Extrai os assignments vencedores do solver."""
+        assignments = []
+        for lesson in self.lessons:
+            for ts in self.timeslots:
+                for room in self.rooms:
+                    key = (lesson.lesson_id, ts.ts_id, room.room_id)
+                    if self.solver.Value(self.x[key]) == 1:
+                        assignments.append(
+                            ScheduledAssignment(
+                                lesson_id=lesson.lesson_id,
+                                ts_id=ts.ts_id,
+                                room_id=room.room_id,
+                                day_of_week=ts.day_of_week,
+                                duration_minutes=ts.duration_minutes,
+                            )
+                        )
+        return assignments

@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi_cache.decorator import cache
 from fastapi.encoders import jsonable_encoder
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import func, select as sa_select
 from celery.result import AsyncResult
 from typing import List, Annotated
 import json
@@ -44,18 +45,102 @@ async def delete_constraint(
     return {"ok": True}
 
 # --- GERAÇÃO (Celery) ---
-@router.post("/generate")
+
+async def _preflight_check(db: AsyncSession, org_id: int) -> list[str]:
+    """Valida pré-condições antes de iniciar o solver. Retorna lista de erros."""
+    errors: list[str] = []
+
+    # Verificar configurações com datas definidas
+    settings_result = await db.execute(
+        sa_select(models.OrganizationSettings).where(
+            models.OrganizationSettings.org_id == org_id,
+            models.OrganizationSettings.school_start_date.isnot(None),
+            models.OrganizationSettings.school_target_end_date.isnot(None),
+        )
+    )
+    if not settings_result.scalars().first():
+        errors.append(
+            "Nenhum ano letivo com 'data de início' e 'data de fim-alvo'. "
+            "Configure em Configurações > Anos Letivos."
+        )
+
+    # Verificar feriados importados
+    holiday_count = await db.scalar(
+        sa_select(func.count(models.SchoolCalendarEvent.id)).where(
+            models.SchoolCalendarEvent.org_id == org_id,
+            models.SchoolCalendarEvent.source == models.CalendarEventSource.auto,
+        )
+    )
+    if not holiday_count:
+        errors.append(
+            "Nenhum feriado importado. Aceda a Configurações > Calendário Escolar "
+            "e clique em 'Sincronizar Feriados'."
+        )
+
+    # Verificar lições activas
+    lesson_count = await db.scalar(
+        sa_select(func.count(models.Lesson.id))
+        .join(models.Class, models.Lesson.class_id == models.Class.id)
+        .where(
+            models.Lesson.organization_id == org_id,
+            models.Class.is_archived == False,  # noqa: E712
+        )
+    )
+    if not lesson_count:
+        errors.append(
+            "Nenhuma lição ativa. Crie turmas e atribua professores às disciplinas."
+        )
+
+    # Verificar timeslots
+    ts_count = await db.scalar(
+        sa_select(func.count(models.Timeslot.id)).where(
+            models.Timeslot.organization_id == org_id
+        )
+    )
+    if not ts_count:
+        errors.append(
+            "Nenhum período horário configurado. Configure em Configurações > Grelha Horária."
+        )
+
+    # Verificar salas
+    room_count = await db.scalar(
+        sa_select(func.count(models.Room.id)).where(
+            models.Room.organization_id == org_id
+        )
+    )
+    if not room_count:
+        errors.append("Nenhuma sala configurada.")
+
+    return errors
+
+
+@router.post(
+    "/generate",
+    responses={
+        400: {"description": "Preflight falhou — dados insuficientes para gerar horário"},
+    },
+)
 @limiter.limit("5/minute")
 async def trigger_generation(
     request: Request,
-    current_user: Annotated[models.User, Depends(deps.get_current_user)]
+    payload: schemas.ScheduleGenerateRequest,
+    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    current_user: Annotated[models.User, Depends(deps.get_current_active_admin)],
 ):
-    """Inicia a tarefa em background no Celery."""
-    task = generate_schedule_task.delay(current_user.organization_id)
-    # Guardar o org_id associado ao task_id (TTL 24h)
+    """Valida pré-condições e inicia a geração de horário em background."""
+    org_id = current_user.organization_id
+
+    preflight_errors = await _preflight_check(db, org_id)
+    if preflight_errors:
+        raise HTTPException(
+            status_code=400,
+            detail={"error": "preflight_failed", "problems": preflight_errors},
+        )
+
+    task = generate_schedule_task.delay(org_id, payload.mode)
     try:
         r = redis.Redis.from_url(str(settings.REDIS_URL))
-        r.setex(f"schedule_task_org:{task.id}", 60 * 60 * 24, str(current_user.organization_id))
+        r.setex(f"schedule_task_org:{task.id}", 60 * 60 * 24, str(org_id))
     except Exception:
         pass
     return {"task_id": task.id, "status": "Processing started"}

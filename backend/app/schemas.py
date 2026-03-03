@@ -1,7 +1,7 @@
 from pydantic import BaseModel, EmailStr, Field, ConfigDict, model_validator, computed_field
 from datetime import time, datetime, date
 from typing import Any, Optional
-from .models import RoomType, UserRole, ConstraintType, PreferenceLevel, List
+from .models import RoomType, UserRole, ConstraintType, PreferenceLevel, CalendarEventType, CalendarEventSource, List
 
 
 # --- CONFIGURAÇÃO GLOBAL ---
@@ -386,7 +386,19 @@ class ScheduleOutputBase(BaseModel):
 class ScheduleOutputRead(ScheduleOutputBase):
     id: int
     organization_id: int
-    model_config = model_config
+    lesson_date: Optional[date] = Field(None, alias="date")
+    is_draft: bool = False
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
+
+
+# --- GERADOR DE HORÁRIOS (Sprint 1) ---
+class ScheduleGenerateRequest(BaseModel):
+    """Pedido de geração de horário.
+
+    mode="full"   — gera de raiz para todas as turmas ativas.
+    mode="repair" — regenera com perturbação mínima face ao horário atual.
+    """
+    mode: str = "full"
 
 
 # --- SUBSTITUTIONS ---
@@ -533,6 +545,72 @@ class ClassProgressUpdate(BaseModel):
 class ClassProgressBulkUpdate(BaseModel):
     """Atualizar progresso de múltiplos módulos de uma vez"""
     progress: list[ClassProgressUpdate] = Field(..., min_length=1, description="Lista de atualizações")
+
+# ==========================================
+#  CONFIGURAÇÕES DA ESCOLA (Sprint 0)
+# ==========================================
+
+DESC_ACADEMIC_YEAR = "Ano letivo no formato 'AAAA/AAAA' (ex: '2025/2026')"
+DESC_REGION_CODE = "Município/distrito para feriados regionais (ex: 'Lisboa', 'Porto')"
+
+
+class OrganizationSettingsUpsert(BaseModel):
+    """Cria ou atualiza as configurações de um ano letivo.
+    Chave lógica: (org_id, academic_year).
+    """
+    academic_year: str = Field(..., pattern=r'^\d{4}/\d{4}$', description=DESC_ACADEMIC_YEAR)
+    school_start_date: date | None = Field(None, description="Primeiro dia de aulas")
+    school_target_end_date: date | None = Field(None, description="Data-alvo para fim das aulas (benchmark do solver)")
+    region_code: str | None = Field(None, description=DESC_REGION_CODE)
+
+
+class OrganizationSettingsRead(BaseModel):
+    id: int
+    org_id: int
+    academic_year: str
+    school_start_date: date | None = None
+    school_target_end_date: date | None = None
+    region_code: str | None = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class HolidaysSyncResponse(BaseModel):
+    academic_year: str
+    imported_count: int
+    message: str
+
+
+class AvailableRegionsResponse(BaseModel):
+    regions: list[str]
+
+
+class SchoolCalendarEventCreate(BaseModel):
+    academic_year: str = Field(..., pattern=r'^\d{4}/\d{4}$', description=DESC_ACADEMIC_YEAR)
+    name: str = Field(..., min_length=1, max_length=150)
+    start_date: date
+    end_date: date
+    event_type: CalendarEventType
+
+    @model_validator(mode='after')
+    def validate_date_range(self):
+        if self.end_date < self.start_date:
+            raise ValueError('A data de fim não pode ser anterior à data de início')
+        return self
+
+
+class SchoolCalendarEventRead(BaseModel):
+    id: int
+    org_id: int
+    academic_year: str
+    name: str
+    start_date: date
+    end_date: date
+    event_type: CalendarEventType
+    source: CalendarEventSource
+
+    model_config = ConfigDict(from_attributes=True)
+
 
 # --- GERADOR DE TIMESLOTS ---
 class TimeslotBulkCreate(BaseModel):

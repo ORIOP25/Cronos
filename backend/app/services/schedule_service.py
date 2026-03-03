@@ -1,5 +1,8 @@
+from collections import defaultdict
+from datetime import date
+
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy.future import select
 from sqlalchemy import delete, desc
 from app import models, schemas
@@ -223,3 +226,108 @@ def clear_schedule_sync(db: Session, org_id: int):
       .filter(models.ScheduleOutput.organization_id == org_id)\
       .delete()
     # Não fazemos commit aqui porque o solver_tasks.py faz commit no final de tudo.
+
+
+# ==========================================
+#  SYNC — Sprint 1: dados para o solver modular
+# ==========================================
+
+def get_active_lessons_with_subject_sync(db: Session, org_id: int):
+    """Lições de turmas não arquivadas, com Subject pré-carregado."""
+    return (
+        db.query(models.Lesson)
+        .join(models.Class, models.Lesson.class_id == models.Class.id)
+        .filter(
+            models.Lesson.organization_id == org_id,
+            models.Class.is_archived == False,  # noqa: E712
+        )
+        .options(joinedload(models.Lesson.subject))
+        .all()
+    )
+
+
+def get_modules_by_subject_sync(db: Session, org_id: int) -> dict:
+    """Retorna {subject_id: [Module ordenado]} para todos os subjects da org."""
+    modules = (
+        db.query(models.Module)
+        .join(models.Subject, models.Module.subject_id == models.Subject.id)
+        .filter(models.Subject.organization_id == org_id)
+        .order_by(models.Module.subject_id, models.Module.order)
+        .all()
+    )
+    result: dict = defaultdict(list)
+    for module in modules:
+        result[module.subject_id].append(module)
+    return dict(result)
+
+
+def get_class_progress_map_sync(db: Session, org_id: int) -> dict:
+    """Retorna {(class_id, module_id): hours_completed} para toda a org."""
+    records = (
+        db.query(models.ClassProgress)
+        .join(models.Class, models.ClassProgress.class_id == models.Class.id)
+        .filter(models.Class.organization_id == org_id)
+        .all()
+    )
+    return {(r.class_id, r.module_id): r.hours_completed for r in records}
+
+
+def get_org_settings_sync(db: Session, org_id: int):
+    """Retorna as OrganizationSettings desta org, da mais recente para a mais antiga."""
+    return (
+        db.query(models.OrganizationSettings)
+        .filter(models.OrganizationSettings.org_id == org_id)
+        .order_by(models.OrganizationSettings.id.desc())
+        .all()
+    )
+
+
+def get_calendar_events_sync(db: Session, org_id: int):
+    """Retorna todos os SchoolCalendarEvents desta org."""
+    return (
+        db.query(models.SchoolCalendarEvent)
+        .filter(models.SchoolCalendarEvent.org_id == org_id)
+        .all()
+    )
+
+
+def update_class_projected_end_date_sync(db: Session, class_id: int, end_date: date) -> None:
+    """Atualiza projected_end_date de uma turma."""
+    db.query(models.Class).filter(models.Class.id == class_id).update(
+        {"projected_end_date": end_date}
+    )
+
+
+def clear_future_schedule_sync(db: Session, org_id: int) -> None:
+    """Apaga apenas ScheduleOutput com date > hoje (imutabilidade do passado).
+    Registos sem data (legado) também são apagados para não quebrar FK consistency.
+    """
+    today = date.today()
+    db.query(models.ScheduleOutput).filter(
+        models.ScheduleOutput.organization_id == org_id,
+        (models.ScheduleOutput.date == None) | (models.ScheduleOutput.date > today),  # noqa: E711
+    ).delete(synchronize_session="fetch")
+
+
+def create_schedule_output_with_date_sync(
+    db: Session,
+    lesson_id: int,
+    timeslot_id: int,
+    room_id: int,
+    output_date: date,
+    org_id: int,
+    gen_id: str,
+    is_draft: bool = False,
+) -> None:
+    """Cria uma linha de ScheduleOutput com data absoluta."""
+    db.add(
+        models.ScheduleOutput(
+            lesson_id=lesson_id,
+            timeslot_id=timeslot_id,
+            room_id=room_id,
+            date=output_date,
+            organization_id=org_id,
+            generation_id=gen_id,
+            is_draft=is_draft,
+        )
+    )
