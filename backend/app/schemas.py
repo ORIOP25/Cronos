@@ -1,7 +1,10 @@
 from pydantic import BaseModel, EmailStr, Field, ConfigDict, model_validator, computed_field
 from datetime import time, datetime, date
 from typing import Any, Optional
-from .models import RoomType, UserRole, ConstraintType, PreferenceLevel, CalendarEventType, CalendarEventSource, List
+from .models import (
+    RoomType, UserRole, ConstraintType, PreferenceLevel,
+    CalendarEventType, CalendarEventSource, LessonOccurrenceStatus, List,
+)
 
 
 # --- CONFIGURAÇÃO GLOBAL ---
@@ -664,3 +667,74 @@ class EligibleTeacherRead(BaseModel):
     name: str
     is_assigned_elsewhere: bool = False  # True se já dá esta disciplina noutra turma
     current_classes_count: int = 0  # Quantas turmas já tem
+
+
+# ==========================================
+#  SPRINT 2 — OCORRÊNCIAS DE AULAS
+# ==========================================
+
+DESC_OCCURRENCE_STATUS = "Estado da ocorrência: GIVEN | GAP | SUBSTITUTED"
+
+
+class LessonOccurrenceRead(BaseModel):
+    """Registo histórico do que aconteceu numa aula agendada."""
+    id: int
+    org_id: int
+    schedule_output_id: Optional[int] = None
+    date: date
+    status: LessonOccurrenceStatus
+    substitute_teacher_id: Optional[int] = None
+    substitute_subject_id: Optional[int] = None
+    hours_given: float
+    created_at: datetime
+
+    model_config = model_config
+
+
+class LessonOccurrenceUpdate(BaseModel):
+    """Payload para o diretor registar uma falta ou substituição."""
+    status: LessonOccurrenceStatus = Field(..., description=DESC_OCCURRENCE_STATUS)
+    substitute_teacher_id: Optional[int] = Field(
+        None, description="ID do professor substituto (obrigatório se status=SUBSTITUTED)"
+    )
+    substitute_subject_id: Optional[int] = Field(
+        None, description="ID da disciplina dada pelo substituto"
+    )
+
+    @model_validator(mode="after")
+    def check_substituted_requires_teacher(self) -> "LessonOccurrenceUpdate":
+        if (
+            self.status == LessonOccurrenceStatus.substituted
+            and self.substitute_teacher_id is None
+        ):
+            raise ValueError("substitute_teacher_id é obrigatório quando status=SUBSTITUTED")
+        return self
+
+
+class DebtItem(BaseModel):
+    """Uma dívida de horas de aula para uma turma/disciplina."""
+    class_id: int
+    class_name: str
+    subject_id: int
+    subject_name: str
+    teacher_id: Optional[int] = None
+    teacher_name: Optional[str] = None
+    gap_occurrences: int
+    hours_owed: float
+
+
+class DebtListRead(BaseModel):
+    """Lista de dívidas de horas agrupadas por turma."""
+    total_gaps: int
+    total_hours_owed: float
+    items: list[DebtItem]
+
+
+class AvailableSubstituteRead(BaseModel):
+    """Professor disponível para substituir num slot específico."""
+    teacher_id: int
+    teacher_name: str
+    subject_id: int
+    subject_name: str
+    class_id: int
+    class_name: str

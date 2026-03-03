@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session
 from .celery_worker import celery_app
 from app.db.database import SessionLocalSync
 from app.config import settings
-from app.services import room_service, schedule_service
+from app.services import room_service, schedule_service, occurrence_service
 from app.core.solver_engine import (
     ScheduleEngine,
     LessonInput,
@@ -321,6 +321,63 @@ def generate_schedule_task(self: Task, org_id: int, mode: str = "full") -> dict:
     except Exception as exc:
         db.rollback()
         logger.error("Erro crítico na geração", error=str(exc), exc_info=True)
+        return {"status": "Error", "message": str(exc)}
+
+    finally:
+        db.close()
+
+
+# ---------------------------------------------------------------------------
+# Tarefa Celery Beat — Confirmação Automática Diária (Sprint 2)
+# ---------------------------------------------------------------------------
+
+@celery_app.task(name="app.solver_tasks.auto_confirm_occurrences_task")
+def auto_confirm_occurrences_task() -> dict:
+    """Corre todos os dias às 23:59 (Celery Beat).
+
+    Para cada organização com ScheduleOutputs planeados para hoje e sem
+    LessonOccurrence manual, cria automaticamente um registo GIVEN e
+    incrementa o ClassProgress correspondente.
+
+    Retorna um sumário com o total de registos criados por organização.
+    """
+    from datetime import date as date_type
+    from sqlalchemy import select as sa_select
+    from app import models
+
+    db: Session = SessionLocalSync()
+    today = date_type.today()
+    summary: dict[int, int] = {}
+
+    try:
+        # Descobrir todas as organizações com slots agendados para hoje
+        org_ids = [
+            row.organization_id
+            for row in db.execute(
+                sa_select(models.ScheduleOutput.organization_id)
+                .where(
+                    models.ScheduleOutput.date == today,
+                    models.ScheduleOutput.is_draft.is_(False),
+                )
+                .distinct()
+            ).all()
+        ]
+
+        for org_id in org_ids:
+            count = occurrence_service.auto_confirm_daily_sync(db, org_id, today)
+            summary[org_id] = count
+            logger.info(
+                "Auto-confirm diário concluído",
+                org_id=org_id,
+                registos_criados=count,
+                data=str(today),
+            )
+
+        return {"status": "OK", "date": str(today), "summary": summary}
+
+    except Exception as exc:
+        db.rollback()
+        logger.error("Erro no auto-confirm diário", error=str(exc), exc_info=True)
         return {"status": "Error", "message": str(exc)}
 
     finally:

@@ -34,6 +34,11 @@ class CalendarEventSource(str, enum.Enum):
     auto = "auto"
     manual = "manual"
 
+class LessonOccurrenceStatus(str, enum.Enum):
+    given = "GIVEN"
+    gap = "GAP"
+    substituted = "SUBSTITUTED"
+
 class UserRole(str, enum.Enum):
     admin = "admin"
     teacher = "teacher"
@@ -476,7 +481,8 @@ class Substitution(Base):
     # Quem faltou e quem vai substituir
     original_teacher_id = Column(Integer, ForeignKey(FK_TEACHER_ID), nullable=False)
     substitute_teacher_id = Column(Integer, ForeignKey(FK_TEACHER_ID), nullable=False)
-    
+    substitute_subject_id = Column(Integer, ForeignKey(FK_SUBJECT_ID), nullable=True)
+
     # Auditoria e Estado
     status = Column(String, default="PENDING") # PENDING, CONFIRMED, CANCELLED
     reason = Column(Text, nullable=True) # Ex: "Baixa médica"
@@ -487,6 +493,75 @@ class Substitution(Base):
     timeslot = relationship("Timeslot")
     original_teacher = relationship("Teacher", foreign_keys=[original_teacher_id])
     substitute_teacher = relationship("Teacher", foreign_keys=[substitute_teacher_id])
+    substitute_subject = relationship("Subject", foreign_keys=[substitute_subject_id])
+
+
+# --- OCORRÊNCIAS DE AULAS (Sprint 2) ---
+
+class LessonOccurrence(Base):
+    """Registo imutável do que aconteceu numa data específica.
+    NEVER delete — é histórico permanente (D24).
+    schedule_output_id usa ON DELETE SET NULL para preservar o registo
+    mesmo que o horário seja regenerado.
+    """
+    __tablename__ = "lesson_occurrence"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    org_id: Mapped[int] = mapped_column(ForeignKey(FK_ORG_ID, ondelete="CASCADE"), index=True)
+
+    # Liga ao slot planeado (pode ficar NULL se o horário for removido)
+    schedule_output_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("schedule_output.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
+    # Data em que deveria ter ocorrido
+    date: Mapped[date_type] = mapped_column(Date, nullable=False, index=True)
+
+    # O que aconteceu: GIVEN | GAP | SUBSTITUTED
+    status: Mapped[LessonOccurrenceStatus] = mapped_column(
+        SAEnum(LessonOccurrenceStatus), nullable=False
+    )
+
+    # Substituição (preenchido quando status=SUBSTITUTED)
+    substitute_teacher_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey(FK_TEACHER_ID, ondelete="SET NULL"), nullable=True
+    )
+    substitute_subject_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey(FK_SUBJECT_ID, ondelete="SET NULL"), nullable=True
+    )
+
+    # Horas efetivamente dadas (duração do timeslot em horas)
+    hours_given: Mapped[float] = mapped_column(nullable=False, default=0.0)
+
+    # Auditoria
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+
+    # Relacionamentos
+    organization: Mapped["Organization"] = relationship()
+    schedule_output: Mapped[Optional["ScheduleOutput"]] = relationship()
+    substitute_teacher: Mapped[Optional["Teacher"]] = relationship(
+        foreign_keys=[substitute_teacher_id]
+    )
+    substitute_subject: Mapped[Optional["Subject"]] = relationship(
+        foreign_keys=[substitute_subject_id]
+    )
+
+    # Uma ocorrência por slot planeado (evita duplicados do cron)
+    __table_args__ = (
+        UniqueConstraint(
+            "schedule_output_id", "date",
+            name="uq_lesson_occurrence_output_date",
+        ),
+    )
+
+    def __repr__(self) -> str:
+        return f"<LessonOccurrence(id={self.id}, date='{self.date}', status='{self.status}')>"
 
 
 # --- ENSINO PROFISSIONAL / MODULAR ---
