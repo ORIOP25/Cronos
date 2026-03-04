@@ -318,17 +318,20 @@ OccurrencesPanel.propTypes = {
 }
 
 // ---------------------------------------------------------------------------
+// Datas de filtro iniciais — calculadas uma vez no load do módulo
+// ---------------------------------------------------------------------------
+const INITIAL_DATE_TO = new Date().toISOString().split('T')[0]
+const INITIAL_DATE_FROM = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+  .toISOString()
+  .split('T')[0]
+
+// ---------------------------------------------------------------------------
 // Página principal
 // ---------------------------------------------------------------------------
 const Occurrences = () => {
-  const today = new Date().toISOString().split('T')[0]
-  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
-    .toISOString()
-    .split('T')[0]
-
   const [classFilter, setClassFilter] = useState('')
-  const [dateFrom, setDateFrom] = useState(thirtyDaysAgo)
-  const [dateTo, setDateTo] = useState(today)
+  const [dateFrom, setDateFrom] = useState(INITIAL_DATE_FROM)
+  const [dateTo, setDateTo] = useState(INITIAL_DATE_TO)
   const [activeTab, setActiveTab] = useState('debts')
 
   const { data: classes = [] } = useClasses()
@@ -388,7 +391,7 @@ const Occurrences = () => {
       </CCard>
 
       {/* Tabs */}
-      <CTabs activeItemKey={activeTab} onActiveItemKeyChange={(key) => setActiveTab(key)}>
+      <CTabs activeItemKey={activeTab} onActiveItemChange={(key) => setActiveTab(key)}>
         <CTabList variant="underline-border" className="mb-3">
           <CTab itemKey="debts">
             <CIcon icon={cilWarning} className="me-1" />
