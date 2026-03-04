@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException, Request
+from datetime import date
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi_cache.decorator import cache
 from fastapi.encoders import jsonable_encoder
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -358,3 +359,42 @@ async def reject_draft(
     if count is None:
         raise HTTPException(status_code=404, detail="Rascunho não encontrado")
     return {"msg": "Rascunho rejeitado e eliminado.", "blocks_deleted": count}
+
+
+# ==========================================
+#  SPRINT 4 — VISUALIZAÇÃO SEMANAL
+# ==========================================
+
+WEEK_FILTER_REQUIRED_MSG = "Indique class_id ou teacher_id para filtrar o horário."
+
+
+@router.get(
+    "/week",
+    response_model=list[schemas.WeekSlotRead],
+    responses={
+        400: {"description": WEEK_FILTER_REQUIRED_MSG},
+    },
+    summary="Horário de uma semana (turma ou professor)",
+)
+async def get_week_schedule(
+    week_start: Annotated[date, Query(description="Data de início da semana (segunda-feira, YYYY-MM-DD)")],
+    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    current_user: Annotated[models.User, Depends(deps.get_current_user)],
+    class_id: Annotated[int | None, Query(description="ID da turma")] = None,
+    teacher_id: Annotated[int | None, Query(description="ID do professor")] = None,
+):
+    """Retorna os slots da semana indicada, enriquecidos com o estado de ocorrência para dias passados."""
+    if class_id is None and teacher_id is None:
+        raise HTTPException(status_code=400, detail=WEEK_FILTER_REQUIRED_MSG)
+
+    def _run(sync_db):
+        from app.services import schedule_service as svc
+        return svc.get_week_schedule_sync(
+            sync_db,
+            org_id=current_user.organization_id,
+            week_start=week_start,
+            class_id=class_id,
+            teacher_id=teacher_id,
+        )
+
+    return await db.run_sync(_run)

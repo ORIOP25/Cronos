@@ -794,3 +794,26 @@ export const useScheduleTaskStatus = (taskId) => {
     ...DYNAMIC_OPTS,
   })
 }
+
+/**
+ * Sprint 4 — Horário de uma semana para uma turma ou professor.
+ *
+ * Retorna os slots planeados (ScheduleOutput) cruzados com as ocorrências reais
+ * (LessonOccurrence) para dias passados. Requer classId ou teacherId.
+ */
+export const useWeekSchedule = (classId, teacherId, weekStart) => {
+  const orgId = useAuthStore(state => state.user?.orgId)
+  const enabled = Boolean((classId || teacherId) && weekStart)
+  return useQuery({
+    queryKey: ['weekSchedule', orgId, classId, teacherId, weekStart],
+    queryFn: async () => {
+      const params = { week_start: weekStart }
+      if (classId) params.class_id = classId
+      if (teacherId) params.teacher_id = teacherId
+      const { data } = await apiClient.get('/schedule/week', { params })
+      return data
+    },
+    enabled,
+    ...DYNAMIC_OPTS,
+  })
+}

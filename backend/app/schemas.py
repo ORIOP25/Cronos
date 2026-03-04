@@ -760,3 +760,55 @@ class ScheduleDiffRead(BaseModel):
     unchanged: int
     total_draft: int
     total_active: int
+
+
+# ==========================================
+#  SPRINT 4 — VISUALIZAÇÃO SEMANAL
+# ==========================================
+
+class WeekTimeslotInfo(BaseModel):
+    id: int
+    day_of_week: int
+    start_time: str
+    end_time: str
+
+
+class WeekSubjectInfo(BaseModel):
+    id: int
+    name: str
+
+
+class WeekTeacherInfo(BaseModel):
+    id: int
+    name: str
+
+
+class WeekRoomInfo(BaseModel):
+    id: int
+    name: str
+
+
+class WeekClassInfo(BaseModel):
+    id: int
+    name: str
+
+
+class WeekModuleInfo(BaseModel):
+    id: int
+    name: str
+    hours_total: int
+
+
+class WeekSlotRead(BaseModel):
+    """Um bloco de aula numa semana: slot planeado + ocorrência real."""
+    schedule_output_id: int
+    date: Optional[str] = None
+    timeslot: WeekTimeslotInfo
+    subject: Optional[WeekSubjectInfo] = None
+    teacher: Optional[WeekTeacherInfo] = None
+    room: Optional[WeekRoomInfo] = None
+    class_info: Optional[WeekClassInfo] = None
+    module: Optional[WeekModuleInfo] = None
+    is_past: bool
+    occurrence_status: Optional[str] = None
+    hours_given: Optional[float] = None

@@ -431,6 +431,144 @@ def reject_draft_sync(db: Session, org_id: int, gen_id: str) -> int:
     return count
 
 
+# ==========================================
+#  SPRINT 4 — VISUALIZAÇÃO SEMANAL
+# ==========================================
+
+def _find_active_module(modules: list, progress_map: dict):
+    """Returns the first non-completed module, or the last if all done."""
+    for module in modules:
+        prog = progress_map.get(module.id)
+        if not prog or not prog.is_completed:
+            return module
+    return modules[-1] if modules else None
+
+
+def _fetch_active_modules(
+    db: Session, pairs: list[tuple]
+) -> dict[tuple, dict | None]:
+    """Fetches active module data per (class_id, subject_id) pair."""
+    active: dict[tuple, dict | None] = {}
+    for cls_id, subj_id in pairs:
+        modules = (
+            db.query(models.Module)
+            .filter(models.Module.subject_id == subj_id)
+            .order_by(models.Module.order)
+            .all()
+        )
+        if not modules:
+            active[(cls_id, subj_id)] = None
+            continue
+        progress_rows = db.query(models.ClassProgress).filter(
+            models.ClassProgress.class_id == cls_id,
+            models.ClassProgress.module_id.in_([m.id for m in modules]),
+        ).all()
+        progress_map = {p.module_id: p for p in progress_rows}
+        mod = _find_active_module(modules, progress_map)
+        active[(cls_id, subj_id)] = (
+            {"id": mod.id, "name": mod.name, "hours_total": mod.hours_total}
+            if mod else None
+        )
+    return active
+
+
+def _build_week_slot(
+    output: models.ScheduleOutput,
+    occurrences: dict,
+    active_modules: dict,
+    today: date,
+) -> dict:
+    """Builds a single WeekSlotRead dict from a ScheduleOutput row."""
+    occ = occurrences.get(output.id)
+    lesson = output.lesson
+    ts = output.timeslot
+    mod_data = active_modules.get((lesson.class_id, lesson.subject_id))
+    return {
+        "schedule_output_id": output.id,
+        "date": output.date.isoformat() if output.date else None,
+        "timeslot": {
+            "id": ts.id,
+            "day_of_week": ts.day_of_week,
+            "start_time": str(ts.start_time)[:5],
+            "end_time": str(ts.end_time)[:5],
+        },
+        "subject": (
+            {"id": lesson.subject.id, "name": lesson.subject.name}
+            if lesson.subject else None
+        ),
+        "teacher": (
+            {"id": lesson.teacher.id, "name": lesson.teacher.name}
+            if lesson.teacher else None
+        ),
+        "room": (
+            {"id": output.room.id, "name": output.room.name}
+            if output.room else None
+        ),
+        "class_info": (
+            {"id": lesson.class_model.id, "name": lesson.class_model.name}
+            if lesson.class_model else None
+        ),
+        "module": mod_data,
+        "is_past": output.date is not None and output.date < today,
+        "occurrence_status": occ.status.value if occ else None,
+        "hours_given": occ.hours_given if occ else None,
+    }
+
+
+def get_week_schedule_sync(
+    db: Session,
+    org_id: int,
+    week_start: date,
+    class_id: int | None = None,
+    teacher_id: int | None = None,
+) -> list[dict]:
+    """Returns active schedule slots for a given week, enriched with occurrence data."""
+    from datetime import timedelta
+    from sqlalchemy.orm import joinedload
+
+    week_end = week_start + timedelta(days=6)
+    today = date.today()
+
+    q = (
+        db.query(models.ScheduleOutput)
+        .join(models.Lesson, models.ScheduleOutput.lesson_id == models.Lesson.id)
+        .filter(
+            models.ScheduleOutput.organization_id == org_id,
+            models.ScheduleOutput.is_draft.is_(False),
+            models.ScheduleOutput.date.between(week_start, week_end),
+        )
+        .options(
+            joinedload(models.ScheduleOutput.lesson).joinedload(models.Lesson.subject),
+            joinedload(models.ScheduleOutput.lesson).joinedload(models.Lesson.teacher),
+            joinedload(models.ScheduleOutput.lesson).joinedload(models.Lesson.class_model),
+            joinedload(models.ScheduleOutput.timeslot),
+            joinedload(models.ScheduleOutput.room),
+        )
+    )
+    if class_id is not None:
+        q = q.filter(models.Lesson.class_id == class_id)
+    if teacher_id is not None:
+        q = q.filter(models.Lesson.teacher_id == teacher_id)
+
+    outputs = q.all()
+    if not outputs:
+        return []
+
+    output_ids = [o.id for o in outputs]
+    occ_rows = db.query(models.LessonOccurrence).filter(
+        models.LessonOccurrence.schedule_output_id.in_(output_ids)
+    ).all()
+    occurrences = {o.schedule_output_id: o for o in occ_rows}
+
+    pairs = list({(o.lesson.class_id, o.lesson.subject_id) for o in outputs})
+    active_modules = _fetch_active_modules(db, pairs)
+
+    return [
+        _build_week_slot(output, occurrences, active_modules, today)
+        for output in outputs
+    ]
+
+
 def get_diff_sync(db: Session, org_id: int, gen_id: str) -> dict:
     """Computa o diff entre o rascunho e o horário ativo.
 
