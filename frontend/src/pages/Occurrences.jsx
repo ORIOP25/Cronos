@@ -391,7 +391,7 @@ const Occurrences = () => {
       </CCard>
 
       {/* Tabs */}
-      <CTabs activeItemKey={activeTab} onActiveItemChange={(key) => setActiveTab(key)}>
+      <CTabs activeItemKey={activeTab} onChange={setActiveTab}>
         <CTabList variant="underline-border" className="mb-3">
           <CTab itemKey="debts">
             <CIcon icon={cilWarning} className="me-1" />
