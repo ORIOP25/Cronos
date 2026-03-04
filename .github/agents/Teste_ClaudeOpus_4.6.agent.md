@@ -369,3 +369,9 @@ Evaluate every line of code against these:
     Do not pass `async` functions directly to event handlers like `onClick`. Wrap them in an arrow function and explicitly mark them as `void` to tell the linter the promise is intentionally not awaited.
     Bad: `<button onClick={handleAsyncDelete}>`
     Good: `<button onClick={() => { void handleAsyncDelete(); }}>`
+
+- Do not use the `void` operator on non-Promise-returning functions (SonarQube rule: javascript:S3735).
+    The `void` operator should only be used when explicitly discarding a Promise (i.e., the function returns a Promise). React Query's `mutate()` returns `void`, NOT a Promise — `mutateAsync()` is the Promise variant. Applying `void` to a void-returning function is meaningless and triggers S3735. Only `invalidateQueries`, `mutateAsync`, and other async functions warrant `void`.
+    Bad: `onClick={() => { void mutation.mutate(id) }}`  ← mutate() returns void
+    Good: `onClick={() => { mutation.mutate(id) }}`
+    Good: `onSuccess: () => { void queryClient.invalidateQueries(...) }` ← invalidateQueries returns Promise

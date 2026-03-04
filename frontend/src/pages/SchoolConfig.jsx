@@ -69,6 +69,58 @@ const CalendarSection = ({ academicYears }) => {
     createMutation.mutate({ ...newEvent, academic_year: selectedYear })
   }
 
+  let eventListContent
+  if (isLoading) {
+    eventListContent = <div className="text-center py-4"><CSpinner /></div>
+  } else if (events.length === 0) {
+    eventListContent = (
+      <CAlert color="secondary">
+        Sem eventos para {selectedYear}. Sincronize os feriados ou adicione pausas manualmente.
+      </CAlert>
+    )
+  } else {
+    eventListContent = (
+      <CTable striped hover responsive>
+        <CTableHead>
+          <CTableRow>
+            <CTableHeaderCell>Nome</CTableHeaderCell>
+            <CTableHeaderCell>Início</CTableHeaderCell>
+            <CTableHeaderCell>Fim</CTableHeaderCell>
+            <CTableHeaderCell>Tipo</CTableHeaderCell>
+            <CTableHeaderCell>Origem</CTableHeaderCell>
+            <CTableHeaderCell />
+          </CTableRow>
+        </CTableHead>
+        <CTableBody>
+          {events.map((ev) => (
+            <CTableRow key={ev.id}>
+              <CTableDataCell>{ev.name}</CTableDataCell>
+              <CTableDataCell>{ev.start_date}</CTableDataCell>
+              <CTableDataCell>{ev.end_date}</CTableDataCell>
+              <CTableDataCell>{EVENT_TYPE_LABELS[ev.event_type] ?? ev.event_type}</CTableDataCell>
+              <CTableDataCell>
+                <CBadge color={ev.source === 'auto' ? 'info' : 'secondary'}>
+                  {ev.source === 'auto' ? 'Automático' : 'Manual'}
+                </CBadge>
+              </CTableDataCell>
+              <CTableDataCell>
+                <CButton
+                  color="danger"
+                  variant="ghost"
+                  size="sm"
+                  disabled={deleteMutation.isPending}
+                  onClick={() => { deleteMutation.mutate(ev.id) }}
+                >
+                  <CIcon icon={cilTrash} />
+                </CButton>
+              </CTableDataCell>
+            </CTableRow>
+          ))}
+        </CTableBody>
+      </CTable>
+    )
+  }
+
   return (
     <div>
       {successMsg && <CAlert color="success" className="mb-3">{successMsg}</CAlert>}
@@ -91,7 +143,7 @@ const CalendarSection = ({ academicYears }) => {
           variant="outline"
           size="sm"
           disabled={!selectedYear || syncMutation.isPending}
-          onClick={() => { void syncMutation.mutate() }}
+          onClick={() => { syncMutation.mutate() }}
         >
           <CIcon icon={cilCloudDownload} className="me-1" />
           {syncMutation.isPending ? 'A sincronizar...' : 'Sincronizar Feriados Nacionais'}
@@ -158,52 +210,7 @@ const CalendarSection = ({ academicYears }) => {
       </CCard>
 
       {/* Lista de eventos */}
-      {isLoading ? (
-        <div className="text-center py-4"><CSpinner /></div>
-      ) : events.length === 0 ? (
-        <CAlert color="secondary">
-          Sem eventos para {selectedYear}. Sincronize os feriados ou adicione pausas manualmente.
-        </CAlert>
-      ) : (
-        <CTable striped hover responsive>
-          <CTableHead>
-            <CTableRow>
-              <CTableHeaderCell>Nome</CTableHeaderCell>
-              <CTableHeaderCell>Início</CTableHeaderCell>
-              <CTableHeaderCell>Fim</CTableHeaderCell>
-              <CTableHeaderCell>Tipo</CTableHeaderCell>
-              <CTableHeaderCell>Origem</CTableHeaderCell>
-              <CTableHeaderCell />
-            </CTableRow>
-          </CTableHead>
-          <CTableBody>
-            {events.map((ev) => (
-              <CTableRow key={ev.id}>
-                <CTableDataCell>{ev.name}</CTableDataCell>
-                <CTableDataCell>{ev.start_date}</CTableDataCell>
-                <CTableDataCell>{ev.end_date}</CTableDataCell>
-                <CTableDataCell>{EVENT_TYPE_LABELS[ev.event_type] ?? ev.event_type}</CTableDataCell>
-                <CTableDataCell>
-                  <CBadge color={ev.source === 'auto' ? 'info' : 'secondary'}>
-                    {ev.source === 'auto' ? 'Automático' : 'Manual'}
-                  </CBadge>
-                </CTableDataCell>
-                <CTableDataCell>
-                  <CButton
-                    color="danger"
-                    variant="ghost"
-                    size="sm"
-                    disabled={deleteMutation.isPending}
-                    onClick={() => { void deleteMutation.mutate(ev.id) }}
-                  >
-                    <CIcon icon={cilTrash} />
-                  </CButton>
-                </CTableDataCell>
-              </CTableRow>
-            ))}
-          </CTableBody>
-        </CTable>
-      )}
+      {eventListContent}
     </div>
   )
 }
@@ -264,6 +271,48 @@ const SettingsSection = ({ regions, onYearsChange }) => {
       region_code: form.region_code || null,
     }
     upsertMutation.mutate(payload)
+  }
+
+  let settingsListContent
+  if (isLoading) {
+    settingsListContent = <div className="text-center py-4"><CSpinner /></div>
+  } else if (settingsList.length === 0) {
+    settingsListContent = <CAlert color="secondary">Sem anos letivos configurados. Adicione um acima.</CAlert>
+  } else {
+    settingsListContent = (
+      <CTable striped hover responsive>
+        <CTableHead>
+          <CTableRow>
+            <CTableHeaderCell>Ano Letivo</CTableHeaderCell>
+            <CTableHeaderCell>Início das Aulas</CTableHeaderCell>
+            <CTableHeaderCell>Data-Alvo Fim</CTableHeaderCell>
+            <CTableHeaderCell>Região</CTableHeaderCell>
+            <CTableHeaderCell />
+          </CTableRow>
+        </CTableHead>
+        <CTableBody>
+          {settingsList.map((s) => (
+            <CTableRow key={s.id}>
+              <CTableDataCell><CBadge color="primary">{s.academic_year}</CBadge></CTableDataCell>
+              <CTableDataCell>{s.school_start_date ?? '—'}</CTableDataCell>
+              <CTableDataCell>{s.school_target_end_date ?? '—'}</CTableDataCell>
+              <CTableDataCell>{s.region_code ?? '—'}</CTableDataCell>
+              <CTableDataCell>
+                <CButton
+                  color="danger"
+                  variant="ghost"
+                  size="sm"
+                  disabled={deleteMutation.isPending}
+                  onClick={() => { deleteMutation.mutate(s.academic_year) }}
+                >
+                  <CIcon icon={cilTrash} />
+                </CButton>
+              </CTableDataCell>
+            </CTableRow>
+          ))}
+        </CTableBody>
+      </CTable>
+    )
   }
 
   return (
@@ -335,44 +384,7 @@ const SettingsSection = ({ regions, onYearsChange }) => {
         </CCardBody>
       </CCard>
 
-      {isLoading ? (
-        <div className="text-center py-4"><CSpinner /></div>
-      ) : settingsList.length === 0 ? (
-        <CAlert color="secondary">Sem anos letivos configurados. Adicione um acima.</CAlert>
-      ) : (
-        <CTable striped hover responsive>
-          <CTableHead>
-            <CTableRow>
-              <CTableHeaderCell>Ano Letivo</CTableHeaderCell>
-              <CTableHeaderCell>Início das Aulas</CTableHeaderCell>
-              <CTableHeaderCell>Data-Alvo Fim</CTableHeaderCell>
-              <CTableHeaderCell>Região</CTableHeaderCell>
-              <CTableHeaderCell />
-            </CTableRow>
-          </CTableHead>
-          <CTableBody>
-            {settingsList.map((s) => (
-              <CTableRow key={s.id}>
-                <CTableDataCell><CBadge color="primary">{s.academic_year}</CBadge></CTableDataCell>
-                <CTableDataCell>{s.school_start_date ?? '—'}</CTableDataCell>
-                <CTableDataCell>{s.school_target_end_date ?? '—'}</CTableDataCell>
-                <CTableDataCell>{s.region_code ?? '—'}</CTableDataCell>
-                <CTableDataCell>
-                  <CButton
-                    color="danger"
-                    variant="ghost"
-                    size="sm"
-                    disabled={deleteMutation.isPending}
-                    onClick={() => { void deleteMutation.mutate(s.academic_year) }}
-                  >
-                    <CIcon icon={cilTrash} />
-                  </CButton>
-                </CTableDataCell>
-              </CTableRow>
-            ))}
-          </CTableBody>
-        </CTable>
-      )}
+      {settingsListContent}
     </div>
   )
 }
