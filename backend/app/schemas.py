@@ -704,7 +704,7 @@ class LessonOccurrenceUpdate(BaseModel):
     @model_validator(mode="after")
     def check_substituted_requires_teacher(self) -> "LessonOccurrenceUpdate":
         if (
-            self.status == LessonOccurrenceStatus.substituted
+            self.status == LessonOccurrenceStatus.SUBSTITUTED
             and self.substitute_teacher_id is None
         ):
             raise ValueError("substitute_teacher_id é obrigatório quando status=SUBSTITUTED")

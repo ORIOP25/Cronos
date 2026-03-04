@@ -154,7 +154,7 @@ def auto_confirm_daily_sync(db: Session, org_id: int, target_date: date) -> int:
             org_id=org_id,
             schedule_output_id=slot.id,
             date=target_date,
-            status=models.LessonOccurrenceStatus.given,
+            status=models.LessonOccurrenceStatus.GIVEN,
             hours_given=hours,
             created_at=datetime.now(timezone.utc),
         )
@@ -246,7 +246,7 @@ def get_debts_sync(
         .where(
             and_(
                 models.LessonOccurrence.org_id == org_id,
-                models.LessonOccurrence.status == models.LessonOccurrenceStatus.gap,
+                models.LessonOccurrence.status == models.LessonOccurrenceStatus.GAP,
                 models.LessonOccurrence.date <= today,
             )
         )

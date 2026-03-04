@@ -35,9 +35,9 @@ class CalendarEventSource(str, enum.Enum):
     manual = "manual"
 
 class LessonOccurrenceStatus(str, enum.Enum):
-    given = "GIVEN"
-    gap = "GAP"
-    substituted = "SUBSTITUTED"
+    GIVEN = "GIVEN"
+    GAP = "GAP"
+    SUBSTITUTED = "SUBSTITUTED"
 
 class UserRole(str, enum.Enum):
     admin = "admin"

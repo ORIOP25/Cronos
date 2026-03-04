@@ -329,6 +329,7 @@ const Occurrences = () => {
   const [classFilter, setClassFilter] = useState('')
   const [dateFrom, setDateFrom] = useState(thirtyDaysAgo)
   const [dateTo, setDateTo] = useState(today)
+  const [activeTab, setActiveTab] = useState('debts')
 
   const { data: classes = [] } = useClasses()
 
@@ -387,7 +388,7 @@ const Occurrences = () => {
       </CCard>
 
       {/* Tabs */}
-      <CTabs activeItemKey="debts">
+      <CTabs activeItemKey={activeTab} onActiveItemKeyChange={(key) => setActiveTab(key)}>
         <CTabList variant="underline-border" className="mb-3">
           <CTab itemKey="debts">
             <CIcon icon={cilWarning} className="me-1" />
