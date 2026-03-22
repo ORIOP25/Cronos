@@ -409,6 +409,33 @@ def _seed_classes(db, org, course_objs):
     return class_objs
 
 
+def _seed_organization_settings(db, org):
+    """Cria configuração mínima do ano letivo para desbloquear geração de horário."""
+    settings = models.OrganizationSettings(
+        org_id=org.id,
+        academic_year="2025/2026",
+        school_start_date=datetime.date(2025, 9, 15),
+        school_target_end_date=datetime.date(2026, 6, 15),
+        region_code="11",  # Lisboa no package holidays
+    )
+    db.add(settings)
+
+    # Evento AUTO inicial evita preflight bloqueado em instâncias sem acesso externo.
+    auto_holiday = models.SchoolCalendarEvent(
+        org_id=org.id,
+        academic_year="2025/2026",
+        name="Restauracao da Independencia",
+        start_date=datetime.date(2025, 12, 1),
+        end_date=datetime.date(2025, 12, 1),
+        event_type=models.CalendarEventType.national_holiday,
+        source=models.CalendarEventSource.auto,
+    )
+    db.add(auto_holiday)
+
+    db.commit()
+    print("[OK] Configuração de ano letivo + feriado base criados")
+
+
 def _seed_class_subject_links(db, class_objs, subject_objs, teacher_objs):
     """Cria atribuições professor → turma → disciplina."""
     csl_count = 0
@@ -600,6 +627,7 @@ def run_seed():
             db, org, course_objs, teacher_objs,
         )
         class_objs = _seed_classes(db, org, course_objs)
+        _seed_organization_settings(db, org)
         csl_count = _seed_class_subject_links(db, class_objs, subject_objs, teacher_objs)
         lesson_count = _seed_lessons(db, org, class_objs, subject_objs, teacher_objs)
         progress_count, overrides_applied = _seed_progress(

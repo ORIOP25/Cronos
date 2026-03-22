@@ -94,7 +94,10 @@ export const useTimeslots = () => {
       const { data } = await apiClient.get('/timeslots/')
       return data
     },
-    ...STATIC_OPTS
+    staleTime: 0,
+    refetchOnWindowFocus: true,
+    refetchOnMount: true,
+    retry: 1,
   })
 }
 
@@ -769,6 +772,8 @@ export const useGenerateSchedule = () => {
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['drafts', orgId] })
+      void queryClient.invalidateQueries({ queryKey: ['weekSchedule', orgId] })
+      void queryClient.invalidateQueries({ queryKey: ['schedule', orgId] })
     },
   })
 }
@@ -789,7 +794,7 @@ export const useScheduleTaskStatus = (taskId) => {
       const status = query.state.data?.status
       if (!status) return 3000
       const terminal = ['SUCCESS', 'FAILURE', 'Success', 'Error', 'Impossible']
-      return terminal.some(s => status.includes(s)) ? false : 3000
+      return terminal.some(s => status.includes(s)) ? 60000 : 3000
     },
     ...DYNAMIC_OPTS,
   })

@@ -177,14 +177,14 @@ class TestLessonOccurrenceSchemas:
 
     def test_update_status_gap_valid(self):
         """GAP não requer professor substituto."""
-        payload = schemas.LessonOccurrenceUpdate(status=LessonOccurrenceStatus.gap)
-        assert payload.status == LessonOccurrenceStatus.gap
+        payload = schemas.LessonOccurrenceUpdate(status=LessonOccurrenceStatus.GAP)
+        assert payload.status == LessonOccurrenceStatus.GAP
         assert payload.substitute_teacher_id is None
 
     def test_update_status_given_valid(self):
         """GIVEN não requer professor substituto."""
-        payload = schemas.LessonOccurrenceUpdate(status=LessonOccurrenceStatus.given)
-        assert payload.status == LessonOccurrenceStatus.given
+        payload = schemas.LessonOccurrenceUpdate(status=LessonOccurrenceStatus.GIVEN)
+        assert payload.status == LessonOccurrenceStatus.GIVEN
 
     def test_update_status_substituted_requires_teacher(self):
         """SUBSTITUTED sem professor → ValidationError."""
@@ -192,7 +192,7 @@ class TestLessonOccurrenceSchemas:
 
         with pytest.raises(ValidationError) as exc_info:
             schemas.LessonOccurrenceUpdate(
-                status=LessonOccurrenceStatus.substituted,
+                status=LessonOccurrenceStatus.SUBSTITUTED,
                 substitute_teacher_id=None,
             )
         errors = exc_info.value.errors()
@@ -201,7 +201,7 @@ class TestLessonOccurrenceSchemas:
     def test_update_status_substituted_with_teacher_valid(self):
         """SUBSTITUTED com professor → válido."""
         payload = schemas.LessonOccurrenceUpdate(
-            status=LessonOccurrenceStatus.substituted,
+            status=LessonOccurrenceStatus.SUBSTITUTED,
             substitute_teacher_id=42,
             substitute_subject_id=7,
         )
@@ -269,7 +269,7 @@ class TestAutoConfirmService:
         ).scalar_one_or_none()
 
         assert occurrence is not None
-        assert occurrence.status == LessonOccurrenceStatus.given
+        assert occurrence.status == LessonOccurrenceStatus.GIVEN
         assert occurrence.hours_given == pytest.approx(2.0)  # 09:00 → 11:00 = 2h
 
     def test_auto_confirm_skips_existing_occurrence(self, sync_db, full_setup):
@@ -283,7 +283,7 @@ class TestAutoConfirmService:
             org_id=org_id,
             schedule_output_id=output_id,
             date=today,
-            status=LessonOccurrenceStatus.gap,
+            status=LessonOccurrenceStatus.GAP,
             hours_given=0.0,
         )
         sync_db.add(manual)
@@ -303,7 +303,7 @@ class TestAutoConfirmService:
             ).scalars()
         )
         assert len(all_occurrences) == 1
-        assert all_occurrences[0].status == LessonOccurrenceStatus.gap
+        assert all_occurrences[0].status == LessonOccurrenceStatus.GAP
 
     def test_get_debts_empty_when_no_gaps(self, sync_db, full_setup):
         """Sem ocorrências GAP, as dívidas devem estar vazias."""
@@ -323,7 +323,7 @@ class TestAutoConfirmService:
             org_id=org_id,
             schedule_output_id=output_id,
             date=today,
-            status=LessonOccurrenceStatus.gap,
+            status=LessonOccurrenceStatus.GAP,
             hours_given=2.0,
         )
         sync_db.add(gap)

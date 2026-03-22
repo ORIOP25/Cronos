@@ -1,8 +1,63 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete
 from app import models, schemas
-from app.models import Availability, ScheduleOutput
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, timedelta, time
+
+
+async def _get_org_teacher_ids(db: AsyncSession, org_id: int) -> list[int]:
+    result = await db.execute(
+        select(models.Teacher.id).where(models.Teacher.organization_id == org_id)
+    )
+    return list(result.scalars().all())
+
+
+async def _get_availability_preferences_by_time(
+    db: AsyncSession,
+    org_id: int,
+) -> dict[tuple[int, int, time, time], int]:
+    """Snapshot preferences by (teacher, day, start, end) before timeslot reset."""
+    result = await db.execute(
+        select(
+            models.Availability.teacher_id,
+            models.Timeslot.day_of_week,
+            models.Timeslot.start_time,
+            models.Timeslot.end_time,
+            models.Availability.score,
+        )
+        .join(models.Timeslot, models.Timeslot.id == models.Availability.timeslot_id)
+        .where(models.Timeslot.organization_id == org_id)
+    )
+    return {
+        (teacher_id, day_of_week, start_time, end_time): score
+        for teacher_id, day_of_week, start_time, end_time, score in result.all()
+    }
+
+
+def _restore_availabilities_for_new_grid(
+    db: AsyncSession,
+    teacher_ids: list[int],
+    timeslots: list[models.Timeslot],
+    previous_preferences: dict[tuple[int, int, time, time], int],
+) -> None:
+    """Recreate availability matrix for all teachers in the new grid.
+
+    If a new slot matches a previous slot by day/start/end, reuse that score.
+    Otherwise default to NEUTRAL so schedule generation remains feasible.
+    """
+    neutral_score = models.PreferenceLevel.NEUTRAL.value
+    for teacher_id in teacher_ids:
+        for slot in timeslots:
+            score = previous_preferences.get(
+                (teacher_id, slot.day_of_week, slot.start_time, slot.end_time),
+                neutral_score,
+            )
+            db.add(
+                models.Availability(
+                    teacher_id=teacher_id,
+                    timeslot_id=slot.id,
+                    score=score,
+                )
+            )
 
 async def get_timeslots_by_org(db: AsyncSession, org_id: int):
     # Ordenar por Dia da Semana e depois Hora de Início
@@ -118,6 +173,9 @@ async def create_bulk_timeslots(
     """
     Executa o Hard Reset da grelha escolar.
     """
+    teacher_ids = await _get_org_teacher_ids(db, org_id)
+    previous_preferences = await _get_availability_preferences_by_time(db, org_id)
+
     # 1. Limpeza Profunda
     await _purge_all_dependencies(db, org_id)
     
@@ -126,6 +184,8 @@ async def create_bulk_timeslots(
     dummy_date = date.today()
     current_start_dt = datetime.combine(dummy_date, settings.start_time)
     end_limit_dt = datetime.combine(dummy_date, settings.end_time)
+
+    new_timeslots: list[models.Timeslot] = []
 
     while True:
         current_end_dt = current_start_dt + timedelta(minutes=settings.slot_duration_minutes)
@@ -141,9 +201,19 @@ async def create_bulk_timeslots(
                 organization_id=org_id
             )
             db.add(new_slot)
+            new_timeslots.append(new_slot)
             created_count += 1
         
         current_start_dt = current_end_dt + timedelta(minutes=settings.break_duration_minutes)
+
+    await db.flush()
+
+    _restore_availabilities_for_new_grid(
+        db,
+        teacher_ids,
+        new_timeslots,
+        previous_preferences,
+    )
 
     await db.commit()
     return created_count

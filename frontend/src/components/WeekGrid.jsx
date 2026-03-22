@@ -20,6 +20,15 @@ const OCCURRENCE_LABELS = {
   SUBSTITUTED: 'Substituído ↔',
 }
 
+function normalizeTimeLabel(value) {
+  if (!value) return ''
+  const text = String(value)
+  if (text.length >= 5) {
+    return text.slice(0, 5)
+  }
+  return text
+}
+
 // ---------------------------------------------------------------------------
 // Pure helpers — outside component (SonarQube S7721)
 // ---------------------------------------------------------------------------
@@ -28,7 +37,7 @@ const OCCURRENCE_LABELS = {
 function buildSlotMap(slots) {
   const map = {}
   slots.forEach(slot => {
-    const key = `${slot.timeslot.day_of_week}:${slot.timeslot.start_time}`
+    const key = `${slot.timeslot.day_of_week}:${normalizeTimeLabel(slot.timeslot.start_time)}`
     map[key] = slot
   })
   return map
@@ -63,6 +72,13 @@ function formatDateLabel(dateStr) {
   })
 }
 
+function getDateForDayFromWeekStart(weekStart, dayOfWeek) {
+  if (!weekStart) return ''
+  const date = new Date(`${weekStart}T12:00:00`)
+  date.setDate(date.getDate() + dayOfWeek)
+  return date.toISOString().split('T')[0]
+}
+
 // ---------------------------------------------------------------------------
 // SlotCell — individual table cell
 // ---------------------------------------------------------------------------
@@ -76,16 +92,19 @@ const SlotCell = ({ slot }) => {
   }
 
   const cellStyle = getCellStyle(slot)
-  const statusLabel = slot.occurrence_status
-    ? (OCCURRENCE_LABELS[slot.occurrence_status] ?? slot.occurrence_status)
-    : (slot.is_past ? 'Pendente' : 'Planeado')
+  let statusLabel = 'Planeado'
+  if (slot.occurrence_status) {
+    statusLabel = OCCURRENCE_LABELS[slot.occurrence_status] ?? slot.occurrence_status
+  } else if (slot.is_past) {
+    statusLabel = 'Pendente'
+  }
 
   const tooltipLines = [
     slot.module  ? `Módulo: ${slot.module.name} (${slot.module.hours_total}h)` : '',
     slot.teacher ? `Professor: ${slot.teacher.name}` : '',
     slot.room    ? `Sala: ${slot.room.name}` : '',
     slot.class_info ? `Turma: ${slot.class_info.name}` : '',
-    slot.hours_given != null ? `Horas dadas: ${slot.hours_given}h` : '',
+    slot.hours_given == null ? '' : `Horas dadas: ${slot.hours_given}h`,
   ].filter(Boolean)
 
   return (
@@ -139,32 +158,49 @@ SlotCell.propTypes = {
 // ---------------------------------------------------------------------------
 // WeekGrid — main component
 // ---------------------------------------------------------------------------
-const WeekGrid = ({ slots, isLoading }) => {
+const WeekGrid = ({ slots, isLoading, baseTimeslots = [], weekStart = '' }) => {
   const slotMap = useMemo(() => buildSlotMap(slots), [slots])
 
+  const referenceTimeslots = useMemo(() => {
+    if (baseTimeslots.length > 0) {
+      return baseTimeslots
+    }
+    return slots.map((s) => s.timeslot)
+  }, [baseTimeslots, slots])
+
   const uniqueTimes = useMemo(
-    () => [...new Set(slots.map(s => s.timeslot.start_time))].sort((a, b) => a.localeCompare(b)),
-    [slots],
+    () => [...new Set(referenceTimeslots.map(t => normalizeTimeLabel(t.start_time)))].sort((a, b) => a.localeCompare(b)),
+    [referenceTimeslots],
   )
 
   const activeDays = useMemo(
-    () => [...new Set(slots.map(s => s.timeslot.day_of_week))].sort((a, b) => a - b),
-    [slots],
+    () => [...new Set(referenceTimeslots.map(t => t.day_of_week))].sort((a, b) => a - b),
+    [referenceTimeslots],
   )
 
   // Map start_time → end_time (for the time column)
   const endTimeMap = useMemo(() => {
     const map = {}
-    slots.forEach(s => { map[s.timeslot.start_time] = s.timeslot.end_time })
+    referenceTimeslots.forEach(t => {
+      map[normalizeTimeLabel(t.start_time)] = normalizeTimeLabel(t.end_time)
+    })
     return map
-  }, [slots])
+  }, [referenceTimeslots])
 
   // Map day_of_week → date string (for column header)
-  const dayDateMap = useMemo(() => {
+  const dayDateMapFromSlots = useMemo(() => {
     const map = {}
     slots.forEach(s => { map[s.timeslot.day_of_week] = s.date })
     return map
   }, [slots])
+
+  const dayDateMap = useMemo(() => {
+    const map = {}
+    activeDays.forEach((day) => {
+      map[day] = dayDateMapFromSlots[day] ?? getDateForDayFromWeekStart(weekStart, day)
+    })
+    return map
+  }, [activeDays, dayDateMapFromSlots, weekStart])
 
   if (isLoading) {
     return (
@@ -191,7 +227,7 @@ const WeekGrid = ({ slots, isLoading }) => {
       >
         <thead className="table-light">
           <tr>
-            <th style={{ width: '96px', fontSize: '0.8rem' }}>Horário</th>
+            <th className="text-center align-middle" style={{ width: '96px', fontSize: '0.8rem' }}>Horário</th>
             {activeDays.map(d => (
               <th key={d} className="text-center" style={{ fontSize: '0.8rem' }}>
                 <div>{DAY_LABELS[d]}</div>
@@ -246,6 +282,14 @@ const slotShape = PropTypes.shape({
 WeekGrid.propTypes = {
   slots:     PropTypes.arrayOf(slotShape).isRequired,
   isLoading: PropTypes.bool,
+  weekStart: PropTypes.string,
+  baseTimeslots: PropTypes.arrayOf(
+    PropTypes.shape({
+      day_of_week: PropTypes.number.isRequired,
+      start_time: PropTypes.string.isRequired,
+      end_time: PropTypes.string.isRequired,
+    }),
+  ),
 }
 
 export default WeekGrid

@@ -19,6 +19,7 @@ MAX_HOURS_PER_WEEK_MINUTES = 900   # 15 horas × 60 minutos
 PENALTY_AVOID = 20
 PENALTY_PREFERRED_MISSING = 10
 PENALTY_REPAIR_CHANGE = 50         # Reparação: custo de mudar um slot em relação ao horário ativo
+PENALTY_CLASS_DAY_SPREAD = 3       # Penaliza turmas espalhadas por muitos dias
 SOLVER_MAX_SECONDS = 300           # 5 minutos — sem artificial time limit de qualidade
 
 
@@ -35,6 +36,7 @@ class LessonInput:
     teacher_id: int
     required_room_type: str    # Ex: "normal", "lab", "gym"
     remaining_minutes: int     # Total de minutos restantes em todos os módulos
+    target_weekly_minutes: int = 60  # Meta mínima semanal para terminar no horizonte
 
 
 @dataclass
@@ -249,16 +251,22 @@ class ScheduleEngine:
             )
 
     def _hc_active_lessons_need_sessions(self) -> None:
-        """HC7: Lições ativas ≥ 1 sessão/semana; lições completas = 0 sessões."""
+        """HC7: Lições ativas cumprem minutos mínimos semanais; lições completas = 0."""
         for lesson in self.lessons:
-            total = sum(
+            total_sessions = sum(
                 self.lesson_at_ts[(lesson.lesson_id, ts.ts_id)]
                 for ts in self.timeslots
             )
+            total_minutes = sum(
+                self.lesson_at_ts[(lesson.lesson_id, ts.ts_id)] * ts.duration_minutes
+                for ts in self.timeslots
+            )
             if lesson.remaining_minutes > 0:
-                self.model.Add(total >= 1)
+                self.model.Add(total_sessions >= 1)
+                required_minutes = min(lesson.remaining_minutes, lesson.target_weekly_minutes)
+                self.model.Add(total_minutes >= required_minutes)
             else:
-                self.model.Add(total == 0)
+                self.model.Add(total_sessions == 0)
 
     # ------------------------------------------------------------------
     # Soft Constraints (função objetivo)
@@ -272,6 +280,36 @@ class ScheduleEngine:
                 self._add_availability_penalty(lesson, ts, penalties)
                 if self.previous_pattern:
                     self._add_repair_penalty(lesson, ts, penalties)
+        penalties.extend(self._build_class_day_spread_penalties())
+        return penalties
+
+    def _build_class_day_spread_penalties(self) -> list:
+        """Penaliza horários excessivamente dispersos por muitos dias da semana."""
+        penalties: list = []
+
+        class_lessons: dict[int, list[LessonInput]] = defaultdict(list)
+        for lesson in self.lessons:
+            class_lessons[lesson.class_id].append(lesson)
+
+        days = sorted({ts.day_of_week for ts in self.timeslots})
+
+        for class_id, lessons in class_lessons.items():
+            for day in days:
+                day_slots = [
+                    self.lesson_at_ts[(lesson.lesson_id, ts.ts_id)]
+                    for lesson in lessons
+                    for ts in self.timeslots
+                    if ts.day_of_week == day
+                ]
+                if not day_slots:
+                    continue
+
+                day_active = self.model.NewBoolVar(f"class_{class_id}_day_{day}_active")
+                for var in day_slots:
+                    self.model.Add(day_active >= var)
+                self.model.Add(day_active <= sum(day_slots))
+                penalties.append(day_active * PENALTY_CLASS_DAY_SPREAD)
+
         return penalties
 
     def _add_availability_penalty(

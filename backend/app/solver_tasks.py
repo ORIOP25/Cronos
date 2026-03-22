@@ -7,6 +7,7 @@ Orquestra o fluxo completo:
   4. SAVE   — grava ScheduleOutput e atualiza projected_end_date.
 """
 import uuid
+import math
 import redis
 import structlog
 from dataclasses import dataclass
@@ -79,13 +80,23 @@ def _build_lesson_inputs(
     lessons: list,
     modules_by_subject: dict,
     progress_map: dict,
+    planning_weeks: int,
+    min_slot_minutes: int,
 ) -> list[LessonInput]:
     """Constrói lista de LessonInput filtrando lições já concluídas."""
     result = []
+    safe_weeks = max(1, planning_weeks)
+    safe_min_slot = max(1, min_slot_minutes)
+
     for lesson in lessons:
         remaining = _compute_remaining_minutes(lesson, modules_by_subject, progress_map)
         if remaining <= 0:
             continue
+
+        target_weekly_minutes = math.ceil(remaining / safe_weeks)
+        if target_weekly_minutes < safe_min_slot:
+            target_weekly_minutes = safe_min_slot
+
         result.append(
             LessonInput(
                 lesson_id=lesson.id,
@@ -94,6 +105,7 @@ def _build_lesson_inputs(
                 teacher_id=lesson.teacher_id,
                 required_room_type=lesson.subject.required_room_type.value,
                 remaining_minutes=remaining,
+                target_weekly_minutes=target_weekly_minutes,
             )
         )
     return result
@@ -121,6 +133,23 @@ def _select_org_settings(settings_list: list):
         if s.school_start_date and s.school_target_end_date:
             return s
     return None
+
+
+def _resolve_expansion_start_date(school_start_date: date) -> date:
+    """Start expansion from the current week to keep output focused on active planning."""
+    today = date.today()
+    current_week_monday = today - timedelta(days=today.weekday())
+    if school_start_date > current_week_monday:
+        return school_start_date
+    return current_week_monday
+
+
+def _compute_planning_weeks(start_date: date, target_end_date: date) -> int:
+    """Número de semanas úteis para distribuir carga até ao alvo."""
+    if target_end_date <= start_date:
+        return 1
+    total_days = (target_end_date - start_date).days + 1
+    return max(1, math.ceil(total_days / 7))
 
 
 # ---------------------------------------------------------------------------
@@ -246,18 +275,34 @@ def generate_schedule_task(self: Task, org_id: int, mode: str = "full") -> dict:
         if not org_settings:
             return {"status": "Error", "message": ERR_NO_DATES}
 
+        lesson_sync_stats = schedule_service.sync_lessons_from_class_subject_links_sync(db, org_id)
+
         raw_lessons = schedule_service.get_active_lessons_with_subject_sync(db, org_id)
         if not raw_lessons:
             return {"status": "Error", "message": ERR_NO_LESSONS}
 
+        raw_timeslots = schedule_service.get_timeslots_by_org_sync(db, org_id)
+        if not raw_timeslots:
+            return {"status": "Error", "message": "Não existem blocos horários configurados."}
+        timeslot_inputs = _build_timeslot_inputs(raw_timeslots)
+        min_slot_minutes = min(ts.duration_minutes for ts in timeslot_inputs if ts.duration_minutes > 0)
+
+        expansion_start_date = _resolve_expansion_start_date(org_settings.school_start_date)
+        planning_weeks = _compute_planning_weeks(expansion_start_date, org_settings.school_target_end_date)
+
         modules_by_subject = schedule_service.get_modules_by_subject_sync(db, org_id)
         progress_map = schedule_service.get_class_progress_map_sync(db, org_id)
-        lesson_inputs = _build_lesson_inputs(raw_lessons, modules_by_subject, progress_map)
+        lesson_inputs = _build_lesson_inputs(
+            raw_lessons,
+            modules_by_subject,
+            progress_map,
+            planning_weeks,
+            min_slot_minutes,
+        )
 
         if not lesson_inputs:
             return {"status": "Success", "message": ERR_ALL_DONE, "count": 0}
 
-        raw_timeslots = schedule_service.get_timeslots_by_org_sync(db, org_id)
         raw_rooms = room_service.get_rooms_by_org_sync(db, org_id)
         raw_availabilities = schedule_service.get_availabilities_by_org_sync(db, org_id)
         calendar_events = schedule_service.get_calendar_events_sync(db, org_id)
@@ -279,6 +324,10 @@ def generate_schedule_task(self: Task, org_id: int, mode: str = "full") -> dict:
             lessons=len(lesson_inputs),
             timeslots=len(raw_timeslots),
             rooms=len(raw_rooms),
+            planning_weeks=planning_weeks,
+            synced_lessons_created=lesson_sync_stats["created"],
+            synced_lessons_updated=lesson_sync_stats["updated"],
+            synced_lessons_deleted=lesson_sync_stats["deleted"],
         )
 
         # 2. SOLVE — CP-SAT encontra o padrão semanal ótimo
@@ -286,7 +335,7 @@ def generate_schedule_task(self: Task, org_id: int, mode: str = "full") -> dict:
 
         engine = ScheduleEngine(
             lessons=lesson_inputs,
-            timeslots=_build_timeslot_inputs(raw_timeslots),
+            timeslots=timeslot_inputs,
             rooms=_build_room_inputs(raw_rooms),
             availability_map=availability_map,
             previous_pattern=previous_pattern,
@@ -304,7 +353,7 @@ def generate_schedule_task(self: Task, org_id: int, mode: str = "full") -> dict:
 
         blocks = expand_to_dates(
             assignments=assignments,
-            school_start_date=org_settings.school_start_date,
+            school_start_date=expansion_start_date,
             school_target_end_date=org_settings.school_target_end_date,
             blocked_dates=blocked_dates,
             remaining_map=remaining_map,

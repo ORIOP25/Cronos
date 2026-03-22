@@ -23,6 +23,45 @@ const EVENT_TYPE_LABELS = {
   other: 'Outro',
 }
 
+const REGION_CODE_LABELS = {
+  '01': 'Aveiro',
+  '1': 'Aveiro',
+  '02': 'Beja',
+  '2': 'Beja',
+  '03': 'Braga',
+  '3': 'Braga',
+  '04': 'Braganca',
+  '4': 'Braganca',
+  '05': 'Castelo Branco',
+  '5': 'Castelo Branco',
+  '06': 'Coimbra',
+  '6': 'Coimbra',
+  '07': 'Evora',
+  '7': 'Evora',
+  '08': 'Faro',
+  '8': 'Faro',
+  '09': 'Guarda',
+  '9': 'Guarda',
+  '10': 'Leiria',
+  '11': 'Lisboa',
+  '12': 'Portalegre',
+  '13': 'Porto',
+  '14': 'Santarem',
+  '15': 'Setubal',
+  '16': 'Viana do Castelo',
+  '17': 'Vila Real',
+  '18': 'Viseu',
+  '20': 'Regiao Autonoma dos Acores',
+  '30': 'Regiao Autonoma da Madeira',
+}
+
+const formatRegionLabel = (code) => {
+  if (!code) return '—'
+  const label = REGION_CODE_LABELS[code]
+  if (label) return `${label} (${code})`
+  return `Regiao ${code}`
+}
+
 const CalendarSection = ({ academicYears }) => {
   const queryClient = useQueryClient()
   const [selectedYear, setSelectedYear] = useState(academicYears[0] ?? '')
@@ -296,7 +335,7 @@ const SettingsSection = ({ regions, onYearsChange }) => {
               <CTableDataCell><CBadge color="primary">{s.academic_year}</CBadge></CTableDataCell>
               <CTableDataCell>{s.school_start_date ?? '—'}</CTableDataCell>
               <CTableDataCell>{s.school_target_end_date ?? '—'}</CTableDataCell>
-              <CTableDataCell>{s.region_code ?? '—'}</CTableDataCell>
+              <CTableDataCell>{formatRegionLabel(s.region_code)}</CTableDataCell>
               <CTableDataCell>
                 <CButton
                   color="danger"
@@ -365,7 +404,7 @@ const SettingsSection = ({ regions, onYearsChange }) => {
               >
                 <option value="">— Apenas feriados nacionais —</option>
                 {regions.map((r) => (
-                  <option key={r} value={r}>{r}</option>
+                  <option key={r} value={r}>{formatRegionLabel(r)}</option>
                 ))}
               </CFormSelect>
             </CCol>
@@ -400,6 +439,7 @@ SettingsSection.propTypes = {
 
 const GridSection = () => {
   const queryClient = useQueryClient()
+  const orgId = useAuthStore(state => state.user?.orgId)
   const [successMsg, setSuccessMsg] = useState(null)
   const [formData, setFormData] = useState({
     start_time: '08:00',
@@ -413,7 +453,8 @@ const GridSection = () => {
     mutationFn: (payload) => apiClient.post('/timeslots/generate', payload),
     onSuccess: () => {
       setSuccessMsg('Configuração aplicada! A grelha de horários foi regenerada.')
-      void queryClient.invalidateQueries({ queryKey: ['timeslots'] })
+      void queryClient.invalidateQueries({ queryKey: ['timeslots', orgId] })
+      void queryClient.invalidateQueries({ queryKey: ['weekSchedule', orgId] })
       setTimeout(() => setSuccessMsg(null), 3000)
     },
   })
@@ -532,6 +573,7 @@ const GridSection = () => {
 const SchoolConfig = () => {
   const { user } = useAuthStore()
   const [academicYears, setAcademicYears] = useState([])
+  const [activeTab, setActiveTab] = useState('settings')
 
   const { data: regionsData } = useQuery({
     queryKey: ['available-regions'],
@@ -560,7 +602,7 @@ const SchoolConfig = () => {
         </CAlert>
       )}
 
-      <CTabs activeItemKey="settings">
+      <CTabs activeItemKey={activeTab} onChange={(key) => setActiveTab(key)}>
         <CTabList variant="tabs" className="mb-4">
           <CTab itemKey="settings">Anos Letivos</CTab>
           <CTab itemKey="calendar">Calendário Escolar</CTab>

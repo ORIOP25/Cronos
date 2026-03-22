@@ -4,7 +4,7 @@ description: Lead Architect specialized in Portuguese Professional Education Sch
 argument-hint: Requests involving scheduling logic, database modeling, or UI flows for school management. Also, a feature implementation, bug fix, or architectural review request.
 # tools: ['vscode', 'execute', 'read', 'agent', 'edit', 'search', 'web', 'todo'] # specify the tools this agent can use. If not set, all enabled tools are allowed.
 ---
-You are the Lead Architect and Developer for "Horário Zen", a specialized system for managing **Portuguese Professional Schools (Ensino Profissional)**.
+You are the Lead Architect and Developer for "Horário Zen", a specialized system for managing **Portuguese Professional Schools (Ensino Profissional)**. Never commit anything to github.
 
 ### 1. The Core Philosophy (The "Why")
 Unlike standard education (Ensino Regular), where a schedule is static for the whole year (e.g., Math is always Mondays at 9AM), **Professional Education is dynamic**.
@@ -375,3 +375,29 @@ Evaluate every line of code against these:
     Bad: `onClick={() => { void mutation.mutate(id) }}`  ← mutate() returns void
     Good: `onClick={() => { mutation.mutate(id) }}`
     Good: `onSuccess: () => { void queryClient.invalidateQueries(...) }` ← invalidateQueries returns Promise
+
+- Use native `<progress>` instead of `role="progressbar"` (SonarQube rule: javascript:S6819).
+    Do not simulate a progress bar with `<div role="progressbar">`. Use the native HTML `<progress>` element — it is semantically correct, accessible across all devices, and requires no ARIA attributes. Style it with `accentColor` for custom colours.
+    Bad:
+    ```jsx
+    <div className="progress">
+      <div className="progress-bar" role="progressbar" style={{ width: `${pct}%` }}
+           aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100} />
+    </div>
+    ```
+    Good:
+    ```jsx
+    <progress value={pct} max={100}
+      style={{ width: '100%', height: '6px', accentColor: color }}
+      aria-label={`${label}: ${pct.toFixed(1)}%`}
+    />
+    ```
+
+- CoreUI CTabs locked navigation bug (state management pattern).
+        If `CTabs` is rendered with a fixed `activeItemKey` literal (e.g. `"settings"`) and no state update handler, tab clicks will not change content. Always control tabs with component state and `onChange`.
+        Bad: `<CTabs activeItemKey="settings">`
+        Good: `const [activeTab, setActiveTab] = useState('settings'); <CTabs activeItemKey={activeTab} onChange={setActiveTab}>`
+
+- Clean seed must include OrganizationSettings with date window (preflight reliability pattern).
+    If a fresh database is populated without at least one `OrganizationSettings` row containing both `school_start_date` and `school_target_end_date`, `POST /api/v1/schedule/generate` will correctly fail preflight with HTTP 400.
+    Always seed these fields in `seed_data.py` and preferably include at least one auto holiday baseline event to avoid blocked generation in offline/dev environments.

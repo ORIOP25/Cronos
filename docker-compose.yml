@@ -1,8 +1,9 @@
+name: horario_zen
+
 services:
   # 1. Base de Dados (Igual ao antigo)
   db:
     image: postgres:15-alpine
-    container_name: horario_zen_db
     restart: always
     environment:
       POSTGRES_USER: postgres
@@ -21,7 +22,6 @@ services:
   # 2. Redis
   redis:
     image: redis:7-alpine
-    container_name: horario_zen_redis
     restart: always
     expose:
       - "6379"
@@ -34,7 +34,6 @@ services:
   # 3. Backend API
   backend: 
     build: ./backend
-    container_name: horario_zen_backend
     expose:
       - "8000" # A porta 8000 fica fechada para fora, só o Nginx a vê
     env_file:
@@ -43,6 +42,7 @@ services:
       - DATABASE_URL=postgresql+asyncpg://postgres:mysecretpassword@db:5432/horario_zen_db
       - CELERY_BROKER_URL=redis://redis:6379/0
       - REDIS_URL=redis://redis:6379/0
+      - RUN_MIGRATIONS=1
 
     ports:
       - "8000:8000"
@@ -59,7 +59,6 @@ services:
   # 4. Worker Celery
   worker:
     build: ./backend # Usa o mesmo Dockerfile do backend
-    container_name: horario_zen_worker
     command: ["celery", "-A", "app.celery_worker.celery_app", "worker", "--loglevel=info"]
     env_file:
       - ./backend/.env
@@ -67,6 +66,7 @@ services:
       - DATABASE_URL=postgresql+psycopg2://postgres:mysecretpassword@db:5432/horario_zen_db
       - CELERY_BROKER_URL=redis://redis:6379/0
       - REDIS_URL=redis://redis:6379/0
+      - RUN_MIGRATIONS=0
     volumes:
       - ./backend:/app
     depends_on:
@@ -77,14 +77,14 @@ services:
   # 5. Celery Beat — Scheduler de tarefas periódicas (cron diário às 23:59)
   beat:
     build: ./backend
-    container_name: horario_zen_beat
-    command: ["celery", "-A", "app.celery_worker.celery_app", "beat", "--loglevel=info"]
+    command: ["celery", "-A", "app.celery_worker.celery_app", "beat", "--loglevel=info", "--schedule", "/tmp/celerybeat-schedule"]
     env_file:
       - ./backend/.env
     environment:
       - DATABASE_URL=postgresql+psycopg2://postgres:mysecretpassword@db:5432/horario_zen_db
       - CELERY_BROKER_URL=redis://redis:6379/0
       - REDIS_URL=redis://redis:6379/0
+      - RUN_MIGRATIONS=0
     volumes:
       - ./backend:/app
     depends_on:
@@ -96,7 +96,6 @@ services:
     build: 
       context: ./frontend
       dockerfile: Dockerfile
-    container_name: horario_zen_frontend
     # Mapear a porta do Vite (5173) para o teu PC
     ports:
       - "5173:5173"
@@ -113,3 +112,4 @@ services:
 
 volumes:
   postgres_data:
+    name: horario_zen_postgres_data

@@ -246,6 +246,151 @@ def get_active_lessons_with_subject_sync(db: Session, org_id: int):
     )
 
 
+def _get_active_classes_sync(db: Session, org_id: int) -> list:
+    return (
+        db.query(models.Class)
+        .filter(
+            models.Class.organization_id == org_id,
+            models.Class.is_archived.is_(False),
+        )
+        .all()
+    )
+
+
+def _collect_desired_pairs_by_links(
+    db: Session,
+    active_class_ids: set[int],
+    class_grade_map: dict[int, int],
+) -> tuple[dict[tuple[int, int], int], set[int]]:
+    desired_pairs: dict[tuple[int, int], int] = {}
+    classes_with_links: set[int] = set()
+    link_rows = (
+        db.query(models.ClassSubjectLink)
+        .filter(
+            models.ClassSubjectLink.class_id.in_(active_class_ids),
+            models.ClassSubjectLink.teacher_id.isnot(None),
+        )
+        .all()
+    )
+
+    for link in link_rows:
+        class_grade = class_grade_map.get(link.class_id)
+        if class_grade is None or link.grade_level != class_grade:
+            continue
+        desired_pairs[(link.class_id, link.subject_id)] = link.teacher_id
+        classes_with_links.add(link.class_id)
+
+    return desired_pairs, classes_with_links
+
+
+def _sync_pair_lessons(
+    db: Session,
+    org_id: int,
+    desired_pairs: dict[tuple[int, int], int],
+    lessons_by_pair: dict[tuple[int, int], list],
+) -> tuple[int, int, int]:
+    created = 0
+    updated = 0
+    deleted = 0
+
+    for pair, teacher_id in desired_pairs.items():
+        pair_lessons = lessons_by_pair.get(pair, [])
+        if not pair_lessons:
+            db.add(
+                models.Lesson(
+                    organization_id=org_id,
+                    class_id=pair[0],
+                    subject_id=pair[1],
+                    teacher_id=teacher_id,
+                )
+            )
+            created += 1
+            continue
+
+        primary_lesson = pair_lessons[0]
+        if primary_lesson.teacher_id != teacher_id:
+            primary_lesson.teacher_id = teacher_id
+            updated += 1
+
+        for extra_lesson in pair_lessons[1:]:
+            db.delete(extra_lesson)
+            deleted += 1
+
+    return created, updated, deleted
+
+
+def _delete_stale_class_lessons(
+    db: Session,
+    lesson_rows: list,
+    classes_with_links: set[int],
+    desired_pairs: dict[tuple[int, int], int],
+) -> int:
+    deleted = 0
+    for lesson in lesson_rows:
+        if lesson.class_id not in classes_with_links:
+            continue
+        pair = (lesson.class_id, lesson.subject_id)
+        if pair in desired_pairs:
+            continue
+        db.delete(lesson)
+        deleted += 1
+    return deleted
+
+
+def sync_lessons_from_class_subject_links_sync(db: Session, org_id: int) -> dict:
+    """Sincroniza Lesson (legado) a partir de ClassSubjectLink (fonte de verdade).
+
+    Regras:
+      - Apenas turmas ativas (não arquivadas).
+      - Para turmas com links disciplina-professor, os links têm precedência.
+      - Turmas sem links mantêm fallback legado via Lesson existente.
+    """
+    active_classes = _get_active_classes_sync(db, org_id)
+    active_class_ids = {c.id for c in active_classes}
+    class_grade_map = {c.id: c.grade_level for c in active_classes}
+
+    if not active_class_ids:
+        return {"created": 0, "updated": 0, "deleted": 0}
+
+    desired_pairs, classes_with_links = _collect_desired_pairs_by_links(
+        db,
+        active_class_ids,
+        class_grade_map,
+    )
+
+    lesson_rows = (
+        db.query(models.Lesson)
+        .filter(
+            models.Lesson.organization_id == org_id,
+            models.Lesson.class_id.in_(active_class_ids),
+        )
+        .all()
+    )
+
+    lessons_by_pair: dict[tuple[int, int], list] = defaultdict(list)
+    for lesson in lesson_rows:
+        lessons_by_pair[(lesson.class_id, lesson.subject_id)].append(lesson)
+
+    created, updated, deleted = _sync_pair_lessons(
+        db,
+        org_id,
+        desired_pairs,
+        lessons_by_pair,
+    )
+
+    deleted += _delete_stale_class_lessons(
+        db,
+        lesson_rows,
+        classes_with_links,
+        desired_pairs,
+    )
+
+    if created or updated or deleted:
+        db.flush()
+
+    return {"created": created, "updated": updated, "deleted": deleted}
+
+
 def get_modules_by_subject_sync(db: Session, org_id: int) -> dict:
     """Retorna {subject_id: [Module ordenado]} para todos os subjects da org."""
     modules = (

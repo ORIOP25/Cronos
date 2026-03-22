@@ -3,19 +3,20 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi_cache.decorator import cache
 from fastapi.encoders import jsonable_encoder
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import func, select as sa_select
+from sqlalchemy import desc, func, select as sa_select
 from celery.result import AsyncResult
 from typing import List, Annotated
 import json
 import redis
 from app import schemas, models
 from app.api import deps
-from app.services import schedule_service
+from app.services import schedule_service, settings_service
 from app.solver_tasks import generate_schedule_task
 from app.config import settings
 from app.core.ratelimit import limiter
 
 router = APIRouter()
+ERR_DRAFT_NOT_FOUND = "Rascunho não encontrado"
 
 # --- CONSTRAINTS (Regras) ---
 @router.post("/constraints/", response_model=schemas.ConstraintRead)
@@ -47,38 +48,69 @@ async def delete_constraint(
 
 # --- GERAÇÃO (Celery) ---
 
-async def _preflight_check(db: AsyncSession, org_id: int) -> list[str]:
-    """Valida pré-condições antes de iniciar o solver. Retorna lista de erros."""
-    errors: list[str] = []
-
-    # Verificar configurações com datas definidas
+async def _get_latest_settings_with_dates(
+    db: AsyncSession,
+    org_id: int,
+) -> models.OrganizationSettings | None:
     settings_result = await db.execute(
         sa_select(models.OrganizationSettings).where(
             models.OrganizationSettings.org_id == org_id,
             models.OrganizationSettings.school_start_date.isnot(None),
             models.OrganizationSettings.school_target_end_date.isnot(None),
+        ).order_by(
+            desc(models.OrganizationSettings.academic_year),
+            desc(models.OrganizationSettings.id),
         )
     )
-    if not settings_result.scalars().first():
-        errors.append(
-            "Nenhum ano letivo com 'data de início' e 'data de fim-alvo'. "
-            "Configure em Configurações > Anos Letivos."
-        )
+    return settings_result.scalars().first()
 
-    # Verificar feriados importados
+
+async def _ensure_auto_holidays(
+    db: AsyncSession,
+    org_id: int,
+    org_settings: models.OrganizationSettings,
+) -> str | None:
     holiday_count = await db.scalar(
         sa_select(func.count(models.SchoolCalendarEvent.id)).where(
             models.SchoolCalendarEvent.org_id == org_id,
             models.SchoolCalendarEvent.source == models.CalendarEventSource.auto,
         )
     )
-    if not holiday_count:
-        errors.append(
-            "Nenhum feriado importado. Aceda a Configurações > Calendário Escolar "
-            "e clique em 'Sincronizar Feriados'."
+    if holiday_count:
+        return None
+
+    try:
+        imported = await settings_service.sync_holidays(
+            db,
+            org_id=org_id,
+            academic_year=org_settings.academic_year,
+            region_code=org_settings.region_code,
+        )
+    except Exception:
+        return (
+            "Falha ao sincronizar feriados automáticos. "
+            "Aceda a Configurações > Calendário Escolar e clique em 'Sincronizar Feriados'."
         )
 
-    # Verificar lições activas
+    if imported <= 0:
+        return (
+            "Não foi possível carregar feriados automáticos. "
+            "Aceda a Configurações > Calendário Escolar e clique em 'Sincronizar Feriados'."
+        )
+    return None
+
+
+async def _get_generation_workload_counts(db: AsyncSession, org_id: int) -> tuple[int, int]:
+    class_subject_count = await db.scalar(
+        sa_select(func.count(models.ClassSubjectLink.id))
+        .join(models.Class, models.ClassSubjectLink.class_id == models.Class.id)
+        .where(
+            models.Class.organization_id == org_id,
+            models.Class.is_archived == False,  # noqa: E712
+            models.ClassSubjectLink.teacher_id.isnot(None),
+            models.ClassSubjectLink.grade_level == models.Class.grade_level,
+        )
+    )
     lesson_count = await db.scalar(
         sa_select(func.count(models.Lesson.id))
         .join(models.Class, models.Lesson.class_id == models.Class.id)
@@ -87,30 +119,220 @@ async def _preflight_check(db: AsyncSession, org_id: int) -> list[str]:
             models.Class.is_archived == False,  # noqa: E712
         )
     )
-    if not lesson_count:
+    return class_subject_count or 0, lesson_count or 0
+
+
+async def _collect_generation_teacher_ids(db: AsyncSession, org_id: int) -> set[int]:
+    class_subject_teacher_rows = await db.execute(
+        sa_select(models.ClassSubjectLink.teacher_id)
+        .join(models.Class, models.ClassSubjectLink.class_id == models.Class.id)
+        .where(
+            models.Class.organization_id == org_id,
+            models.Class.is_archived == False,  # noqa: E712
+            models.ClassSubjectLink.teacher_id.isnot(None),
+            models.ClassSubjectLink.grade_level == models.Class.grade_level,
+        )
+        .distinct()
+    )
+    class_subject_teacher_ids = {row[0] for row in class_subject_teacher_rows.all()}
+
+    lesson_teacher_rows = await db.execute(
+        sa_select(models.Lesson.teacher_id)
+        .join(models.Class, models.Lesson.class_id == models.Class.id)
+        .where(
+            models.Lesson.organization_id == org_id,
+            models.Class.is_archived == False,  # noqa: E712
+        )
+        .distinct()
+    )
+    lesson_teacher_ids = {row[0] for row in lesson_teacher_rows.all()}
+    return class_subject_teacher_ids | lesson_teacher_ids
+
+
+async def _collect_generation_subject_ids(db: AsyncSession, org_id: int) -> set[int]:
+    class_subject_subject_rows = await db.execute(
+        sa_select(models.ClassSubjectLink.subject_id)
+        .join(models.Class, models.ClassSubjectLink.class_id == models.Class.id)
+        .where(
+            models.Class.organization_id == org_id,
+            models.Class.is_archived == False,  # noqa: E712
+            models.ClassSubjectLink.teacher_id.isnot(None),
+            models.ClassSubjectLink.grade_level == models.Class.grade_level,
+        )
+        .distinct()
+    )
+    class_subject_ids = {row[0] for row in class_subject_subject_rows.all()}
+
+    lesson_subject_rows = await db.execute(
+        sa_select(models.Lesson.subject_id)
+        .join(models.Class, models.Lesson.class_id == models.Class.id)
+        .where(
+            models.Lesson.organization_id == org_id,
+            models.Class.is_archived == False,  # noqa: E712
+        )
+        .distinct()
+    )
+    lesson_subject_ids = {row[0] for row in lesson_subject_rows.all()}
+    return class_subject_ids | lesson_subject_ids
+
+
+async def _validate_teacher_availabilities(
+    db: AsyncSession,
+    teacher_ids: set[int],
+) -> str | None:
+    if not teacher_ids:
+        return None
+
+    available_teacher_rows = await db.execute(
+        sa_select(models.Availability.teacher_id)
+        .where(models.Availability.teacher_id.in_(teacher_ids))
+        .distinct()
+    )
+    available_teacher_ids = {row[0] for row in available_teacher_rows.all()}
+    missing_availability_ids = teacher_ids - available_teacher_ids
+    if not missing_availability_ids:
+        return None
+
+    teacher_name_rows = await db.execute(
+        sa_select(models.Teacher.name)
+        .where(models.Teacher.id.in_(missing_availability_ids))
+        .order_by(models.Teacher.name)
+    )
+    missing_names = [row[0] for row in teacher_name_rows.all()]
+    return (
+        "Professores sem disponibilidade configurada: "
+        f"{', '.join(missing_names)}. "
+        "Configure em Professores > Disponibilidade."
+    )
+
+
+async def _validate_subject_requirements(
+    db: AsyncSession,
+    org_id: int,
+    subject_ids: set[int],
+) -> list[str]:
+    if not subject_ids:
+        return []
+
+    errors: list[str] = []
+    module_rows = await db.execute(
+        sa_select(models.Module.subject_id, models.Module.hours_total)
+        .where(models.Module.subject_id.in_(subject_ids))
+    )
+    modules_by_subject: dict[int, list[int]] = {}
+    for subject_id, hours_total in module_rows.all():
+        modules_by_subject.setdefault(subject_id, []).append(hours_total)
+
+    missing_module_subject_ids = {
+        subject_id
+        for subject_id in subject_ids
+        if subject_id not in modules_by_subject
+    }
+    invalid_module_subject_ids = {
+        subject_id
+        for subject_id, hours_list in modules_by_subject.items()
+        if any(hours <= 0 for hours in hours_list)
+    }
+    impacted_subject_ids = missing_module_subject_ids | invalid_module_subject_ids
+
+    if impacted_subject_ids:
+        subject_rows = await db.execute(
+            sa_select(models.Subject.id, models.Subject.name)
+            .where(models.Subject.id.in_(impacted_subject_ids))
+        )
+        subject_name_map = {row[0]: row[1] for row in subject_rows.all()}
+
+        if missing_module_subject_ids:
+            missing_names = sorted(
+                subject_name_map.get(sid, f"ID {sid}")
+                for sid in missing_module_subject_ids
+            )
+            errors.append(
+                "Disciplinas sem módulos definidos: "
+                f"{', '.join(missing_names)}. "
+                "Adicione módulos com horas > 0 em Disciplinas."
+            )
+
+        if invalid_module_subject_ids:
+            invalid_names = sorted(
+                subject_name_map.get(sid, f"ID {sid}")
+                for sid in invalid_module_subject_ids
+            )
+            errors.append(
+                "Disciplinas com módulos inválidos (hours_total <= 0): "
+                f"{', '.join(invalid_names)}. "
+                "Corrija a carga horária dos módulos."
+            )
+
+    required_type_rows = await db.execute(
+        sa_select(models.Subject.required_room_type)
+        .where(models.Subject.id.in_(subject_ids))
+        .distinct()
+    )
+    required_room_types = {row[0] for row in required_type_rows.all()}
+    available_type_rows = await db.execute(
+        sa_select(models.Room.type)
+        .where(models.Room.organization_id == org_id)
+        .distinct()
+    )
+    available_room_types = {row[0] for row in available_type_rows.all()}
+
+    missing_room_types = required_room_types - available_room_types
+    if missing_room_types:
+        missing_labels = sorted(rt.value for rt in missing_room_types)
         errors.append(
-            "Nenhuma lição ativa. Crie turmas e atribua professores às disciplinas."
+            "Não existem salas para os tipos exigidos: "
+            f"{', '.join(missing_labels)}. "
+            "Adicione salas desses tipos em Salas."
         )
 
-    # Verificar timeslots
-    ts_count = await db.scalar(
-        sa_select(func.count(models.Timeslot.id)).where(
-            models.Timeslot.organization_id == org_id
+    return errors
+
+
+async def _preflight_check(db: AsyncSession, org_id: int) -> list[str]:
+    """Valida pré-condições antes de iniciar o solver. Retorna lista de erros."""
+    errors: list[str] = []
+
+    org_settings = await _get_latest_settings_with_dates(db, org_id)
+    if not org_settings:
+        return [
+            "Nenhum ano letivo com 'data de início' e 'data de fim-alvo'. "
+            "Configure em Configurações > Anos Letivos."
+        ]
+
+    holiday_error = await _ensure_auto_holidays(db, org_id, org_settings)
+    if holiday_error:
+        errors.append(holiday_error)
+
+    class_subject_count, lesson_count = await _get_generation_workload_counts(db, org_id)
+    if not class_subject_count and not lesson_count:
+        errors.append(
+            "Nenhuma carga letiva ativa encontrada. "
+            "Atribua professores em Turmas > Disciplinas (modelo novo) "
+            "ou configure lições no fluxo legado."
         )
+
+    ts_count = await db.scalar(
+        sa_select(func.count(models.Timeslot.id)).where(models.Timeslot.organization_id == org_id)
     )
     if not ts_count:
         errors.append(
             "Nenhum período horário configurado. Configure em Configurações > Grelha Horária."
         )
 
-    # Verificar salas
     room_count = await db.scalar(
-        sa_select(func.count(models.Room.id)).where(
-            models.Room.organization_id == org_id
-        )
+        sa_select(func.count(models.Room.id)).where(models.Room.organization_id == org_id)
     )
     if not room_count:
         errors.append("Nenhuma sala configurada.")
+
+    teacher_ids = await _collect_generation_teacher_ids(db, org_id)
+    teacher_error = await _validate_teacher_availabilities(db, teacher_ids)
+    if teacher_error:
+        errors.append(teacher_error)
+
+    subject_ids = await _collect_generation_subject_ids(db, org_id)
+    errors.extend(await _validate_subject_requirements(db, org_id, subject_ids))
 
     return errors
 
@@ -276,7 +498,7 @@ async def list_drafts(
 @router.get(
     "/drafts/{gen_id}/diff",
     response_model=schemas.ScheduleDiffRead,
-    responses={404: {"description": "Rascunho não encontrado"}},
+    responses={404: {"description": ERR_DRAFT_NOT_FOUND}},
     summary="Diff entre rascunho e horário ativo",
 )
 async def get_draft_diff(
@@ -295,14 +517,14 @@ async def get_draft_diff(
 
     result = await db.run_sync(_run)
     if result is None:
-        raise HTTPException(status_code=404, detail="Rascunho não encontrado")
+        raise HTTPException(status_code=404, detail=ERR_DRAFT_NOT_FOUND)
     return schemas.ScheduleDiffRead(generation_id=gen_id, **result)
 
 
 @router.post(
     "/drafts/{gen_id}/approve",
     responses={
-        404: {"description": "Rascunho não encontrado"},
+        404: {"description": ERR_DRAFT_NOT_FOUND},
         200: {"description": "Rascunho aprovado e ativado"},
     },
     summary="Aprovar e ativar rascunho de horário",
@@ -324,7 +546,7 @@ async def approve_draft(
 
     count = await db.run_sync(_run)
     if count is None:
-        raise HTTPException(status_code=404, detail="Rascunho não encontrado")
+        raise HTTPException(status_code=404, detail=ERR_DRAFT_NOT_FOUND)
 
     # Invalidar cache após aprovação
     try:
@@ -338,7 +560,7 @@ async def approve_draft(
 
 @router.delete(
     "/drafts/{gen_id}",
-    responses={404: {"description": "Rascunho não encontrado"}},
+    responses={404: {"description": ERR_DRAFT_NOT_FOUND}},
     summary="Rejeitar e eliminar rascunho de horário",
 )
 async def reject_draft(
@@ -357,7 +579,7 @@ async def reject_draft(
 
     count = await db.run_sync(_run)
     if count is None:
-        raise HTTPException(status_code=404, detail="Rascunho não encontrado")
+        raise HTTPException(status_code=404, detail=ERR_DRAFT_NOT_FOUND)
     return {"msg": "Rascunho rejeitado e eliminado.", "blocks_deleted": count}
 
 

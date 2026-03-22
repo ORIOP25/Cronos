@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import PropTypes from 'prop-types'
+import { useQueryClient } from '@tanstack/react-query'
 import {
   CCard, CCardBody, CCardHeader, CAlert, CBadge, CSpinner,
   CButton, CButtonGroup, CFormSelect, CFormLabel, CRow, CCol, CProgress,
@@ -12,7 +13,7 @@ import {
 import {
   useDrafts, useScheduleDiff, useApproveDraft, useRejectDraft,
   useGenerateSchedule, useScheduleTaskStatus,
-  useClasses, useTeachers, useWeekSchedule, useClassDetails,
+  useClasses, useTeachers, useWeekSchedule, useClassDetails, useTimeslots,
 } from '../hooks/useSchoolData'
 import WeekGrid from '../components/WeekGrid'
 import { getSubjectColor } from '../utils/subjectColors'
@@ -68,6 +69,13 @@ function resolveAlertColor(status) {
   return 'info'
 }
 
+function resolveBusinessStatus(taskData) {
+  const resultStatus = taskData?.result?.status
+  if (resultStatus === 'Error' || resultStatus === 'Impossible') return 'danger'
+  if (resultStatus === 'Success') return 'success'
+  return null
+}
+
 // ---------------------------------------------------------------------------
 // KPI Sidebar — Sprint 4
 // ---------------------------------------------------------------------------
@@ -98,16 +106,12 @@ const KPISidebar = ({ subjects }) => {
                 {subj.completed_hours}h / {subj.total_hours}h
               </span>
             </div>
-            <div className="progress" style={{ height: '6px', borderRadius: '3px' }}>
-              <div
-                className="progress-bar"
-                role="progressbar"
-                style={{ width: `${pct}%`, backgroundColor: color }}
-                aria-valuenow={pct}
-                aria-valuemin={0}
-                aria-valuemax={100}
-              />
-            </div>
+            <progress
+              value={pct}
+              max={100}
+              style={{ width: '100%', height: '6px', accentColor: color, borderRadius: '3px' }}
+              aria-label={`${subj.name}: ${pct.toFixed(1)}%`}
+            />
             <div className="text-end text-muted" style={{ fontSize: '0.7rem', marginTop: '2px' }}>
               {pct.toFixed(1)}%
             </div>
@@ -170,7 +174,7 @@ const DraftPanel = ({ draft, onApprove, onReject, isApproving, isRejecting }) =>
           <CButton
             color="danger" variant="outline" size="sm"
             disabled={isWorking}
-            onClick={() => { void onReject(draft.generation_id) }}
+            onClick={() => { onReject(draft.generation_id) }}
           >
             {isRejecting
               ? <CSpinner size="sm" className="me-1" />
@@ -181,7 +185,7 @@ const DraftPanel = ({ draft, onApprove, onReject, isApproving, isRejecting }) =>
           <CButton
             color="success" size="sm"
             disabled={isWorking}
-            onClick={() => { void onApprove(draft.generation_id) }}
+            onClick={() => { onApprove(draft.generation_id) }}
           >
             {isApproving
               ? <CSpinner size="sm" className="me-1" />
@@ -225,8 +229,9 @@ const GenerationStatusPanel = ({ taskId }) => {
 
   const status     = taskData.status ?? ''
   const isRunning  = isPending(status)
-  const alertColor = resolveAlertColor(status)
-  const label      = GENERATION_STATUS_LABELS[status] ?? status
+  const businessColor = resolveBusinessStatus(taskData)
+  const alertColor = businessColor ?? resolveAlertColor(status)
+  const label = taskData?.result?.status ?? GENERATION_STATUS_LABELS[status] ?? status
   const result     = taskData.result
 
   return (
@@ -246,6 +251,9 @@ const GenerationStatusPanel = ({ taskId }) => {
         <div className="small mt-1">
           Horário ativo atualizado com{' '}<strong>{result.count}</strong>{' '}blocos.
         </div>
+      )}
+      {result?.message && (
+        <div className="small mt-1">{result.message}</div>
       )}
     </CAlert>
   )
@@ -275,6 +283,8 @@ PreflightErrorPanel.propTypes = {
 // Schedules — Main Page
 // ---------------------------------------------------------------------------
 const Schedules = () => {
+  const queryClient = useQueryClient()
+
   // Sprint 3 state
   const [mode, setMode]                       = useState('full')
   const [activeTaskId, setActiveTaskId]       = useState(null)
@@ -296,6 +306,7 @@ const Schedules = () => {
   // Sprint 4 hooks
   const { data: classes  = [] } = useClasses()
   const { data: teachers = [] } = useTeachers()
+  const { data: timeslots = [] } = useTimeslots()
 
   const classId   = viewMode === 'class'   && selectedClassId   ? Number.parseInt(selectedClassId, 10)   : null
   const teacherId = viewMode === 'teacher' && selectedTeacherId ? Number.parseInt(selectedTeacherId, 10) : null
@@ -310,8 +321,16 @@ const Schedules = () => {
     const status = taskData?.status ?? ''
     if (activeTaskId && TERMINAL_STATUSES.some(s => status.includes(s))) {
       void refetchDrafts()
+
+      const businessStatus = taskData?.result?.status
+      if (businessStatus === 'Success') {
+        // Task accepted != schedule persisted. Refresh only when business result confirms success.
+        void queryClient.invalidateQueries({ queryKey: ['weekSchedule'] })
+        void queryClient.invalidateQueries({ queryKey: ['schedule'] })
+        void queryClient.invalidateQueries({ queryKey: ['timeslots'] })
+      }
     }
-  }, [taskData?.status, activeTaskId, refetchDrafts])
+  }, [taskData, activeTaskId, refetchDrafts, queryClient])
 
   const handleGenerate = async () => {
     setPreflightErrors([])
@@ -504,7 +523,7 @@ const Schedules = () => {
                 Grelha Semanal
                 {drafts.length > 0 && (
                   <CBadge color="warning" className="ms-2">
-                    {drafts.length} rascunho{drafts.length !== 1 ? 's' : ''} pendente{drafts.length !== 1 ? 's' : ''}
+                    {drafts.length} rascunho{drafts.length === 1 ? '' : 's'} pendente{drafts.length === 1 ? '' : 's'}
                   </CBadge>
                 )}
               </span>
@@ -512,7 +531,7 @@ const Schedules = () => {
             </CCardHeader>
             <CCardBody className="p-0">
               {hasSelection
-                ? <WeekGrid slots={weekSlots} isLoading={loadingWeek} />
+                ? <WeekGrid slots={weekSlots} isLoading={loadingWeek} baseTimeslots={timeslots} weekStart={weekStart} />
                 : (
                   <div className="text-center p-5 text-muted">
                     <CIcon icon={cilCalendar} style={{ fontSize: '2rem', opacity: 0.35 }} />
