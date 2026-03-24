@@ -20,6 +20,13 @@ PENALTY_AVOID = 20
 PENALTY_PREFERRED_MISSING = 10
 PENALTY_REPAIR_CHANGE = 50         # Reparação: custo de mudar um slot em relação ao horário ativo
 PENALTY_CLASS_DAY_SPREAD = 3       # Penaliza turmas espalhadas por muitos dias
+PENALTY_CLASS_GAP = 15             # Penaliza furos internos nas turmas
+PENALTY_TEACHER_GAP = 10           # Penaliza furos internos dos professores
+REWARD_SCHEDULED_SESSION = 3       # Recompensa por cada sessão agendada (empurra preenchimento)
+PENALTY_WEEKLY_SHORTAGE = 40       # Penaliza falta de minutos semanais face ao objetivo
+PENALTY_CLASS_TARGET_SHORTAGE = 18  # Penaliza desvio negativo da meta agregada da turma
+PENALTY_CLASS_TARGET_EXCESS = 4     # Penaliza excesso semanal agregado da turma
+PENALTY_CLASS_FAIRNESS_SPREAD = 1   # Penaliza diferenças normalizadas entre turmas
 SOLVER_MAX_SECONDS = 300           # 5 minutos — sem artificial time limit de qualidade
 
 
@@ -45,6 +52,8 @@ class TimeslotInput:
     ts_id: int
     day_of_week: int          # 0=Segunda … 4=Sexta (igual a date.weekday())
     duration_minutes: int
+    start_minutes: int = 0
+    end_minutes: int = 0
 
 
 @dataclass
@@ -80,8 +89,8 @@ class ScheduleEngine:
         HC4  Lição só em sala do tipo correto (ex: Informática → sala lab).
         HC5  Professor não dá aulas em slots marcados como IMPOSSÍVEL (-1).
         HC6  Limite de 15 h (900 min) por lição por semana.
-        HC7  Lições com horas pendentes têm ≥ 1 sessão/semana;
-             lições já completas não são agendadas.
+           HC7  Lições já completas não são agendadas.
+        HC8  Cada turma e professor têm pausa mínima dentro da janela de almoço.
 
     Soft Constraints (função objetivo):
         - Penalizar slots marcados como EVITAR (score=0).
@@ -95,12 +104,18 @@ class ScheduleEngine:
         rooms: list[RoomInput],
         availability_map: dict,           # (teacher_id, ts_id) -> score  (-1, 0, 1, 2)
         previous_pattern: dict | None = None,  # (lesson_id, ts_id) -> 1 (repair mode)
+        lunch_window_start_minutes: int | None = None,
+        lunch_window_end_minutes: int | None = None,
+        lunch_min_duration_minutes: int = 60,
     ) -> None:
         self.lessons = lessons
         self.timeslots = timeslots
         self.rooms = rooms
         self.availability_map = availability_map
         self.previous_pattern: dict = previous_pattern or {}
+        self.lunch_window_start_minutes = lunch_window_start_minutes
+        self.lunch_window_end_minutes = lunch_window_end_minutes
+        self.lunch_min_duration_minutes = max(1, lunch_min_duration_minutes)
 
         self.model = cp_model.CpModel()
         self.solver = cp_model.CpSolver()
@@ -178,6 +193,7 @@ class ScheduleEngine:
         self._hc_teacher_availability()
         self._hc_max_hours_per_lesson()
         self._hc_active_lessons_need_sessions()
+        self._hc_lunch_break_inside_window()
 
     def _hc_room_conflict(self) -> None:
         """HC1: Sala com no máximo uma lição de cada vez."""
@@ -251,22 +267,65 @@ class ScheduleEngine:
             )
 
     def _hc_active_lessons_need_sessions(self) -> None:
-        """HC7: Lições ativas cumprem minutos mínimos semanais; lições completas = 0."""
+        """HC7: Lições completas não são agendadas; lições ativas ficam livres para otimização."""
         for lesson in self.lessons:
             total_sessions = sum(
                 self.lesson_at_ts[(lesson.lesson_id, ts.ts_id)]
                 for ts in self.timeslots
             )
-            total_minutes = sum(
-                self.lesson_at_ts[(lesson.lesson_id, ts.ts_id)] * ts.duration_minutes
-                for ts in self.timeslots
-            )
-            if lesson.remaining_minutes > 0:
-                self.model.Add(total_sessions >= 1)
-                required_minutes = min(lesson.remaining_minutes, lesson.target_weekly_minutes)
-                self.model.Add(total_minutes >= required_minutes)
-            else:
+            if lesson.remaining_minutes <= 0:
                 self.model.Add(total_sessions == 0)
+
+    def _hc_lunch_break_inside_window(self) -> None:
+        """HC8: Garante pausa mínima de almoço dentro da janela para turmas e professores."""
+        if self.lunch_window_start_minutes is None or self.lunch_window_end_minutes is None:
+            return
+
+        class_lessons: dict[int, list[LessonInput]] = defaultdict(list)
+        teacher_lessons: dict[int, list[LessonInput]] = defaultdict(list)
+        for lesson in self.lessons:
+            class_lessons[lesson.class_id].append(lesson)
+            teacher_lessons[lesson.teacher_id].append(lesson)
+
+        self._apply_lunch_break_for_entities(class_lessons)
+        self._apply_lunch_break_for_entities(teacher_lessons)
+
+    def _apply_lunch_break_for_entities(self, entity_lessons: dict[int, list[LessonInput]]) -> None:
+        days = sorted({ts.day_of_week for ts in self.timeslots})
+
+        for entity_id, lessons in entity_lessons.items():
+            for day in days:
+                lunch_slots = [
+                    ts
+                    for ts in self.timeslots
+                    if ts.day_of_week == day
+                    and ts.start_minutes < self.lunch_window_end_minutes
+                    and ts.end_minutes > self.lunch_window_start_minutes
+                ]
+                if not lunch_slots:
+                    continue
+
+                overlap_by_slot = {
+                    ts.ts_id: self._slot_lunch_overlap_minutes(ts)
+                    for ts in lunch_slots
+                }
+                total_overlap = sum(overlap_by_slot.values())
+                required_break = min(self.lunch_min_duration_minutes, total_overlap)
+                if required_break <= 0:
+                    continue
+
+                occupied_lunch_minutes = sum(
+                    self.lesson_at_ts[(lesson.lesson_id, ts.ts_id)] * overlap_by_slot[ts.ts_id]
+                    for lesson in lessons
+                    for ts in lunch_slots
+                )
+                max_occupied = total_overlap - required_break
+                self.model.Add(occupied_lunch_minutes <= max_occupied)
+
+    def _slot_lunch_overlap_minutes(self, ts: TimeslotInput) -> int:
+        overlap_start = max(ts.start_minutes, self.lunch_window_start_minutes)
+        overlap_end = min(ts.end_minutes, self.lunch_window_end_minutes)
+        return max(0, overlap_end - overlap_start)
 
     # ------------------------------------------------------------------
     # Soft Constraints (função objetivo)
@@ -281,7 +340,241 @@ class ScheduleEngine:
                 if self.previous_pattern:
                     self._add_repair_penalty(lesson, ts, penalties)
         penalties.extend(self._build_class_day_spread_penalties())
+        penalties.extend(self._build_gap_penalties())
+        penalties.extend(self._build_fill_rewards())
+        penalties.extend(self._build_weekly_shortage_penalties())
+        penalties.extend(self._build_class_fairness_penalties())
         return penalties
+
+    def _build_class_fairness_penalties(self) -> list:
+        """Penaliza desequilíbrios de carga semanal entre turmas (fairness explícito)."""
+        penalties: list = []
+
+        class_lessons: dict[int, list[LessonInput]] = defaultdict(list)
+        for lesson in self.lessons:
+            if lesson.remaining_minutes > 0:
+                class_lessons[lesson.class_id].append(lesson)
+
+        if len(class_lessons) < 2:
+            return penalties
+
+        class_target_map = {
+            class_id: self._compute_class_target_minutes(lessons)
+            for class_id, lessons in class_lessons.items()
+        }
+        max_class_minutes = sum(ts.duration_minutes for ts in self.timeslots)
+        if max_class_minutes <= 0:
+            return penalties
+
+        class_actual_vars = self._build_class_actual_minute_vars(class_lessons, max_class_minutes)
+        penalties.extend(
+            self._build_class_target_deviation_penalties(
+                class_target_map,
+                class_actual_vars,
+                max_class_minutes,
+            )
+        )
+        penalties.extend(
+            self._build_interclass_spread_penalties(
+                class_target_map,
+                class_actual_vars,
+                max_class_minutes,
+            )
+        )
+        return penalties
+
+    def _compute_class_target_minutes(self, lessons: list[LessonInput]) -> int:
+        return sum(
+            min(lesson.remaining_minutes, lesson.target_weekly_minutes)
+            for lesson in lessons
+        )
+
+    def _build_class_actual_minute_vars(self, class_lessons: dict[int, list[LessonInput]], max_class_minutes: int) -> dict[int, cp_model.IntVar]:
+        actual_vars: dict[int, cp_model.IntVar] = {}
+        for class_id, lessons in class_lessons.items():
+            actual = self.model.NewIntVar(0, max_class_minutes, f"class_{class_id}_weekly_minutes")
+            self.model.Add(
+                actual == sum(
+                    self.lesson_at_ts[(lesson.lesson_id, ts.ts_id)] * ts.duration_minutes
+                    for lesson in lessons
+                    for ts in self.timeslots
+                )
+            )
+            actual_vars[class_id] = actual
+        return actual_vars
+
+    def _build_class_target_deviation_penalties(
+        self,
+        class_target_map: dict[int, int],
+        class_actual_vars: dict[int, cp_model.IntVar],
+        max_class_minutes: int,
+    ) -> list:
+        penalties: list = []
+        for class_id, target_minutes in class_target_map.items():
+            if target_minutes <= 0:
+                continue
+
+            actual = class_actual_vars[class_id]
+            shortage = self.model.NewIntVar(0, target_minutes, f"class_{class_id}_shortage")
+            excess = self.model.NewIntVar(0, max_class_minutes, f"class_{class_id}_excess")
+
+            self.model.Add(shortage >= target_minutes - actual)
+            self.model.Add(excess >= actual - target_minutes)
+
+            penalties.append(shortage * PENALTY_CLASS_TARGET_SHORTAGE)
+            penalties.append(excess * PENALTY_CLASS_TARGET_EXCESS)
+        return penalties
+
+    def _build_interclass_spread_penalties(
+        self,
+        class_target_map: dict[int, int],
+        class_actual_vars: dict[int, cp_model.IntVar],
+        max_class_minutes: int,
+    ) -> list:
+        penalties: list = []
+        class_ids = sorted(class_actual_vars.keys())
+
+        for idx, first_class_id in enumerate(class_ids):
+            first_actual = class_actual_vars[first_class_id]
+
+            for second_class_id in class_ids[idx + 1:]:
+                second_actual = class_actual_vars[second_class_id]
+
+                _ = (class_target_map, first_class_id, second_class_id)
+                pair_gap = self.model.NewIntVar(
+                    0,
+                    max_class_minutes,
+                    f"class_pair_gap_{first_class_id}_{second_class_id}",
+                )
+                spread_expr = first_actual - second_actual
+                self.model.Add(pair_gap >= spread_expr)
+                self.model.Add(pair_gap >= -spread_expr)
+                penalties.append(pair_gap * PENALTY_CLASS_FAIRNESS_SPREAD)
+
+        return penalties
+
+    def _build_weekly_shortage_penalties(self) -> list:
+        """Penaliza minutos em falta por lição, mas sem tornar o modelo infeasible."""
+        penalties: list = []
+        for lesson in self.lessons:
+            if lesson.remaining_minutes <= 0:
+                continue
+
+            target_minutes = min(lesson.remaining_minutes, lesson.target_weekly_minutes)
+            total_minutes = sum(
+                self.lesson_at_ts[(lesson.lesson_id, ts.ts_id)] * ts.duration_minutes
+                for ts in self.timeslots
+            )
+            shortage = self.model.NewIntVar(0, target_minutes, f"weekly_shortage_{lesson.lesson_id}")
+            self.model.Add(shortage >= target_minutes - total_minutes)
+            penalties.append(shortage * PENALTY_WEEKLY_SHORTAGE)
+
+        return penalties
+
+    def _build_gap_penalties(self) -> list:
+        """Penaliza furos internos (slots vazios entre slots ocupados) por turma e professor."""
+        penalties: list = []
+
+        class_lessons: dict[int, list[LessonInput]] = defaultdict(list)
+        teacher_lessons: dict[int, list[LessonInput]] = defaultdict(list)
+        for lesson in self.lessons:
+            class_lessons[lesson.class_id].append(lesson)
+            teacher_lessons[lesson.teacher_id].append(lesson)
+
+        penalties.extend(self._build_entity_gap_penalties("class", class_lessons, PENALTY_CLASS_GAP))
+        penalties.extend(self._build_entity_gap_penalties("teacher", teacher_lessons, PENALTY_TEACHER_GAP))
+        return penalties
+
+    def _build_entity_gap_penalties(self, label: str, entities: dict[int, list[LessonInput]], weight: int) -> list:
+        """Cria penalidades de furos para uma entidade (turma/professor)."""
+        penalties: list = []
+        days = sorted({ts.day_of_week for ts in self.timeslots})
+
+        for entity_id, lessons in entities.items():
+            for day in days:
+                day_slots = self._get_day_slots(day)
+                if len(day_slots) < 3:
+                    continue
+
+                occupied_by_slot = self._build_entity_occupancy_vars(label, entity_id, day, day_slots, lessons)
+                penalties.extend(
+                    self._build_day_gap_penalties(label, entity_id, day, occupied_by_slot, weight)
+                )
+
+        return penalties
+
+    def _get_day_slots(self, day: int) -> list[TimeslotInput]:
+        return sorted(
+            [ts for ts in self.timeslots if ts.day_of_week == day],
+            key=lambda ts: ts.start_minutes,
+        )
+
+    def _build_entity_occupancy_vars(
+        self,
+        label: str,
+        entity_id: int,
+        day: int,
+        day_slots: list[TimeslotInput],
+        lessons: list[LessonInput],
+    ) -> list:
+        occupied_by_slot: list = []
+        for ts in day_slots:
+            occupied = self.model.NewBoolVar(f"{label}_{entity_id}_{day}_{ts.ts_id}_occ")
+            self.model.Add(
+                occupied == sum(self.lesson_at_ts[(lesson.lesson_id, ts.ts_id)] for lesson in lessons)
+            )
+            occupied_by_slot.append(occupied)
+        return occupied_by_slot
+
+    def _build_day_gap_penalties(
+        self,
+        label: str,
+        entity_id: int,
+        day: int,
+        occupied_by_slot: list,
+        weight: int,
+    ) -> list:
+        penalties: list = []
+        for idx in range(1, len(occupied_by_slot) - 1):
+            has_before = self._build_or_var(
+                f"{label}_{entity_id}_{day}_{idx}_before",
+                occupied_by_slot[:idx],
+            )
+            has_after = self._build_or_var(
+                f"{label}_{entity_id}_{day}_{idx}_after",
+                occupied_by_slot[idx + 1:],
+            )
+            is_gap = self._build_gap_var(label, entity_id, day, idx, occupied_by_slot[idx], has_before, has_after)
+            penalties.append(is_gap * weight)
+        return penalties
+
+    def _build_or_var(self, name: str, vars_list: list):
+        or_var = self.model.NewBoolVar(name)
+        for var in vars_list:
+            self.model.Add(or_var >= var)
+        self.model.Add(or_var <= sum(vars_list))
+        return or_var
+
+    def _build_gap_var(self, label: str, entity_id: int, day: int, idx: int, occupied, has_before, has_after):
+        is_empty = self.model.NewBoolVar(f"{label}_{entity_id}_{day}_{idx}_empty")
+        self.model.Add(is_empty == 1 - occupied)
+
+        is_gap = self.model.NewBoolVar(f"{label}_{entity_id}_{day}_{idx}_gap")
+        self.model.Add(is_gap <= has_before)
+        self.model.Add(is_gap <= has_after)
+        self.model.Add(is_gap <= is_empty)
+        self.model.Add(is_gap >= has_before + has_after + is_empty - 2)
+        return is_gap
+
+    def _build_fill_rewards(self) -> list:
+        """Recompensa sessões válidas para aumentar preenchimento semanal viável."""
+        rewards: list = []
+        for lesson in self.lessons:
+            if lesson.remaining_minutes <= 0:
+                continue
+            for ts in self.timeslots:
+                rewards.append(-self.lesson_at_ts[(lesson.lesson_id, ts.ts_id)] * REWARD_SCHEDULED_SESSION)
+        return rewards
 
     def _build_class_day_spread_penalties(self) -> list:
         """Penaliza horários excessivamente dispersos por muitos dias da semana."""

@@ -555,6 +555,12 @@ class ClassProgressBulkUpdate(BaseModel):
 
 DESC_ACADEMIC_YEAR = "Ano letivo no formato 'AAAA/AAAA' (ex: '2025/2026')"
 DESC_REGION_CODE = "Município/distrito para feriados regionais (ex: 'Lisboa', 'Porto')"
+DESC_LUNCH_START = "Hora de início da janela de almoço (ex: 12:00)"
+DESC_LUNCH_END = "Hora de fim da janela de almoço (ex: 14:00)"
+DESC_LUNCH_MIN = "Duração mínima de almoço em minutos dentro da janela"
+ERR_LUNCH_WINDOW_PAIR = "Defina início e fim da janela de almoço em conjunto"
+ERR_LUNCH_WINDOW_ORDER = "A hora de fim da janela de almoço deve ser posterior ao início"
+ERR_LUNCH_WINDOW_DURATION = "A duração mínima de almoço excede a janela configurada"
 
 
 class OrganizationSettingsUpsert(BaseModel):
@@ -565,6 +571,38 @@ class OrganizationSettingsUpsert(BaseModel):
     school_start_date: date | None = Field(None, description="Primeiro dia de aulas")
     school_target_end_date: date | None = Field(None, description="Data-alvo para fim das aulas (benchmark do solver)")
     region_code: str | None = Field(None, description=DESC_REGION_CODE)
+    lunch_window_start: time | None = Field(None, description=DESC_LUNCH_START)
+    lunch_window_end: time | None = Field(None, description=DESC_LUNCH_END)
+    lunch_min_duration_minutes: int | None = Field(None, ge=1, description=DESC_LUNCH_MIN)
+
+    @staticmethod
+    def _validate_school_dates(start_date: date | None, end_date: date | None) -> None:
+        if start_date and end_date and end_date < start_date:
+            raise ValueError('A data-alvo de fim não pode ser anterior ao início das aulas')
+
+    @staticmethod
+    def _validate_lunch_inputs(start: time | None, end: time | None, minimum: int | None) -> None:
+        if (start is None) != (end is None):
+            raise ValueError(ERR_LUNCH_WINDOW_PAIR)
+        if start is None or end is None:
+            return
+
+        start_minutes = start.hour * 60 + start.minute
+        end_minutes = end.hour * 60 + end.minute
+        if end_minutes <= start_minutes:
+            raise ValueError(ERR_LUNCH_WINDOW_ORDER)
+        if minimum is not None and minimum > (end_minutes - start_minutes):
+            raise ValueError(ERR_LUNCH_WINDOW_DURATION)
+
+    @model_validator(mode='after')
+    def validate_lunch_window(self):
+        self._validate_school_dates(self.school_start_date, self.school_target_end_date)
+        self._validate_lunch_inputs(
+            self.lunch_window_start,
+            self.lunch_window_end,
+            self.lunch_min_duration_minutes,
+        )
+        return self
 
 
 class OrganizationSettingsRead(BaseModel):
@@ -574,6 +612,9 @@ class OrganizationSettingsRead(BaseModel):
     school_start_date: date | None = None
     school_target_end_date: date | None = None
     region_code: str | None = None
+    lunch_window_start: time | None = None
+    lunch_window_end: time | None = None
+    lunch_min_duration_minutes: int | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -760,6 +801,41 @@ class ScheduleDiffRead(BaseModel):
     unchanged: int
     total_draft: int
     total_active: int
+
+
+class AuditGenerationSummaryRead(BaseModel):
+    """Resumo de uma geração ativa para seleção no dashboard técnico."""
+    generation_id: str
+    blocks_count: int
+    start_date: date | None = None
+    end_date: date | None = None
+
+
+class AuditRoomUsageRead(BaseModel):
+    room_type: str
+    blocks_count: int
+
+
+class ScheduleGenerationAuditRead(BaseModel):
+    """Métricas técnicas de auditoria por geração."""
+    generation_id: str
+    blocks_count: int
+    start_date: date | None = None
+    end_date: date | None = None
+    classes_total: int
+    classes_with_week_slots: int
+    classes_empty_week: int
+    week_slots_min: int
+    week_slots_max: int
+    week_slots_avg: float
+    weekly_fairness_spread: float
+    duplicate_teacher_slots: int
+    duplicate_class_slots: int
+    teachers_with_week_slots: int
+    teacher_week_slots_min: int
+    teacher_week_slots_max: int
+    teacher_week_slots_avg: float
+    room_type_usage: list[AuditRoomUsageRead]
 
 
 # ==========================================

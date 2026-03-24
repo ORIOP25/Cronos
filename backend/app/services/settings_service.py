@@ -60,6 +60,12 @@ async def upsert_settings(
             existing.school_target_end_date = data.school_target_end_date
         if data.region_code is not None:
             existing.region_code = data.region_code
+        if data.lunch_window_start is not None:
+            existing.lunch_window_start = data.lunch_window_start
+        if data.lunch_window_end is not None:
+            existing.lunch_window_end = data.lunch_window_end
+        if data.lunch_min_duration_minutes is not None:
+            existing.lunch_min_duration_minutes = data.lunch_min_duration_minutes
         await db.commit()
         await db.refresh(existing)
         return existing
@@ -70,6 +76,9 @@ async def upsert_settings(
         school_start_date=data.school_start_date,
         school_target_end_date=data.school_target_end_date,
         region_code=data.region_code,
+        lunch_window_start=data.lunch_window_start,
+        lunch_window_end=data.lunch_window_end,
+        lunch_min_duration_minutes=data.lunch_min_duration_minutes,
     )
     db.add(new_settings)
     await db.commit()

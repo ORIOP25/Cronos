@@ -1,4 +1,5 @@
-from datetime import date
+from datetime import date, timedelta
+from statistics import mean, pstdev
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi_cache.decorator import cache
 from fastapi.encoders import jsonable_encoder
@@ -391,10 +392,15 @@ async def get_status(
         raise HTTPException(status_code=503, detail="Validação de task indisponível")
 
     task_result = AsyncResult(task_id)
+    task_payload = task_result.result if isinstance(task_result.result, dict) else {}
+    progress = task_payload.get("progress") if isinstance(task_payload, dict) else None
     response = {
         "task_id": task_id,
         "status": task_result.status,
         "result": task_result.result,
+        "detail": task_payload.get("detail") if isinstance(task_payload, dict) else None,
+        "phase": task_payload.get("phase") if isinstance(task_payload, dict) else None,
+        "progress": progress,
     }
     return response
 
@@ -620,3 +626,226 @@ async def get_week_schedule(
         )
 
     return await db.run_sync(_run)
+
+
+# ==========================================
+#  AUDITORIA TÉCNICA POR GERAÇÃO
+# ==========================================
+
+GENERATION_NOT_FOUND_MSG = "Geração não encontrada para esta organização."
+
+
+def _build_distribution_stats(values: list[int]) -> tuple[int, int, float, float]:
+    if not values:
+        return (0, 0, 0.0, 0.0)
+    return (
+        min(values),
+        max(values),
+        round(float(mean(values)), 2),
+        round(float(pstdev(values)), 2),
+    )
+
+
+@router.get(
+    "/audit/generations",
+    response_model=list[schemas.AuditGenerationSummaryRead],
+    summary="Listar gerações ativas para auditoria técnica",
+)
+async def list_generation_audit_entries(
+    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    current_user: Annotated[models.User, Depends(deps.get_current_active_admin)],
+):
+    rows = await db.execute(
+        sa_select(
+            models.ScheduleOutput.generation_id,
+            func.count(models.ScheduleOutput.id).label("blocks_count"),
+            func.min(models.ScheduleOutput.date).label("start_date"),
+            func.max(models.ScheduleOutput.date).label("end_date"),
+            func.max(models.ScheduleOutput.id).label("max_id"),
+        )
+        .where(
+            models.ScheduleOutput.organization_id == current_user.organization_id,
+            models.ScheduleOutput.is_draft.is_(False),
+        )
+        .group_by(models.ScheduleOutput.generation_id)
+        .order_by(func.max(models.ScheduleOutput.id).desc())
+        .limit(50)
+    )
+
+    return [
+        schemas.AuditGenerationSummaryRead(
+            generation_id=row.generation_id,
+            blocks_count=row.blocks_count,
+            start_date=row.start_date,
+            end_date=row.end_date,
+        )
+        for row in rows.all()
+    ]
+
+
+@router.get(
+    "/audit/summary",
+    response_model=schemas.ScheduleGenerationAuditRead,
+    responses={404: {"description": GENERATION_NOT_FOUND_MSG}},
+    summary="Métricas técnicas de auditoria por geração",
+)
+async def get_generation_audit_summary(
+    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    current_user: Annotated[models.User, Depends(deps.get_current_active_admin)],
+    generation_id: Annotated[str | None, Query(description="ID da geração a auditar")] = None,
+):
+    org_id = current_user.organization_id
+
+    if generation_id is None:
+        latest_row = await db.execute(
+            sa_select(models.ScheduleOutput.generation_id)
+            .where(
+                models.ScheduleOutput.organization_id == org_id,
+                models.ScheduleOutput.is_draft.is_(False),
+            )
+            .order_by(desc(models.ScheduleOutput.id))
+            .limit(1)
+        )
+        generation_id = latest_row.scalar_one_or_none()
+
+    if generation_id is None:
+        raise HTTPException(status_code=404, detail=GENERATION_NOT_FOUND_MSG)
+
+    generation_exists = await db.scalar(
+        sa_select(func.count(models.ScheduleOutput.id)).where(
+            models.ScheduleOutput.organization_id == org_id,
+            models.ScheduleOutput.is_draft.is_(False),
+            models.ScheduleOutput.generation_id == generation_id,
+        )
+    )
+    if not generation_exists:
+        raise HTTPException(status_code=404, detail=GENERATION_NOT_FOUND_MSG)
+
+    overview_row = await db.execute(
+        sa_select(
+            func.count(models.ScheduleOutput.id).label("blocks_count"),
+            func.min(models.ScheduleOutput.date).label("start_date"),
+            func.max(models.ScheduleOutput.date).label("end_date"),
+        ).where(
+            models.ScheduleOutput.organization_id == org_id,
+            models.ScheduleOutput.is_draft.is_(False),
+            models.ScheduleOutput.generation_id == generation_id,
+        )
+    )
+    overview = overview_row.one()
+
+    week_start = date.today() - timedelta(days=date.today().weekday())
+    week_end = week_start + timedelta(days=6)
+
+    class_ids_result = await db.execute(
+        sa_select(models.Class.id).where(
+            models.Class.organization_id == org_id,
+            models.Class.is_archived == False,  # noqa: E712
+        )
+    )
+    class_ids = [row[0] for row in class_ids_result.all()]
+    classes_total = len(class_ids)
+
+    class_week_rows = await db.execute(
+        sa_select(models.Lesson.class_id, func.count(models.ScheduleOutput.id).label("slots_count"))
+        .join(models.ScheduleOutput, models.ScheduleOutput.lesson_id == models.Lesson.id)
+        .where(
+            models.ScheduleOutput.organization_id == org_id,
+            models.ScheduleOutput.is_draft.is_(False),
+            models.ScheduleOutput.generation_id == generation_id,
+            models.ScheduleOutput.date.between(week_start, week_end),
+        )
+        .group_by(models.Lesson.class_id)
+    )
+    class_week_map = {row.class_id: row.slots_count for row in class_week_rows.all()}
+    class_week_values = [class_week_map.get(class_id, 0) for class_id in class_ids] if class_ids else []
+    week_slots_min, week_slots_max, week_slots_avg, week_fairness_spread = _build_distribution_stats(class_week_values)
+    classes_with_week_slots = sum(1 for value in class_week_values if value > 0)
+    classes_empty_week = classes_total - classes_with_week_slots
+
+    duplicate_teacher_rows = await db.execute(
+        sa_select(
+            models.Lesson.teacher_id,
+            models.ScheduleOutput.date,
+            models.ScheduleOutput.timeslot_id,
+            func.count(models.ScheduleOutput.id).label("dup_count"),
+        )
+        .join(models.Lesson, models.ScheduleOutput.lesson_id == models.Lesson.id)
+        .where(
+            models.ScheduleOutput.organization_id == org_id,
+            models.ScheduleOutput.is_draft.is_(False),
+            models.ScheduleOutput.generation_id == generation_id,
+        )
+        .group_by(models.Lesson.teacher_id, models.ScheduleOutput.date, models.ScheduleOutput.timeslot_id)
+        .having(func.count(models.ScheduleOutput.id) > 1)
+    )
+    duplicate_teacher_slots = len(duplicate_teacher_rows.all())
+
+    duplicate_class_rows = await db.execute(
+        sa_select(
+            models.Lesson.class_id,
+            models.ScheduleOutput.date,
+            models.ScheduleOutput.timeslot_id,
+            func.count(models.ScheduleOutput.id).label("dup_count"),
+        )
+        .join(models.Lesson, models.ScheduleOutput.lesson_id == models.Lesson.id)
+        .where(
+            models.ScheduleOutput.organization_id == org_id,
+            models.ScheduleOutput.is_draft.is_(False),
+            models.ScheduleOutput.generation_id == generation_id,
+        )
+        .group_by(models.Lesson.class_id, models.ScheduleOutput.date, models.ScheduleOutput.timeslot_id)
+        .having(func.count(models.ScheduleOutput.id) > 1)
+    )
+    duplicate_class_slots = len(duplicate_class_rows.all())
+
+    teacher_week_rows = await db.execute(
+        sa_select(models.Lesson.teacher_id, func.count(models.ScheduleOutput.id).label("slots_count"))
+        .join(models.ScheduleOutput, models.ScheduleOutput.lesson_id == models.Lesson.id)
+        .where(
+            models.ScheduleOutput.organization_id == org_id,
+            models.ScheduleOutput.is_draft.is_(False),
+            models.ScheduleOutput.generation_id == generation_id,
+            models.ScheduleOutput.date.between(week_start, week_end),
+        )
+        .group_by(models.Lesson.teacher_id)
+    )
+    teacher_week_values = [row.slots_count for row in teacher_week_rows.all()]
+    teacher_week_slots_min, teacher_week_slots_max, teacher_week_slots_avg, _ = _build_distribution_stats(teacher_week_values)
+    teachers_with_week_slots = len(teacher_week_values)
+
+    room_usage_rows = await db.execute(
+        sa_select(models.Room.type, func.count(models.ScheduleOutput.id).label("blocks_count"))
+        .join(models.ScheduleOutput, models.ScheduleOutput.room_id == models.Room.id)
+        .where(
+            models.ScheduleOutput.organization_id == org_id,
+            models.ScheduleOutput.is_draft.is_(False),
+            models.ScheduleOutput.generation_id == generation_id,
+        )
+        .group_by(models.Room.type)
+    )
+    room_type_usage = [
+        schemas.AuditRoomUsageRead(room_type=row.type.value, blocks_count=row.blocks_count)
+        for row in room_usage_rows.all()
+    ]
+
+    return schemas.ScheduleGenerationAuditRead(
+        generation_id=generation_id,
+        blocks_count=overview.blocks_count,
+        start_date=overview.start_date,
+        end_date=overview.end_date,
+        classes_total=classes_total,
+        classes_with_week_slots=classes_with_week_slots,
+        classes_empty_week=classes_empty_week,
+        week_slots_min=week_slots_min,
+        week_slots_max=week_slots_max,
+        week_slots_avg=week_slots_avg,
+        weekly_fairness_spread=week_fairness_spread,
+        duplicate_teacher_slots=duplicate_teacher_slots,
+        duplicate_class_slots=duplicate_class_slots,
+        teachers_with_week_slots=teachers_with_week_slots,
+        teacher_week_slots_min=teacher_week_slots_min,
+        teacher_week_slots_max=teacher_week_slots_max,
+        teacher_week_slots_avg=teacher_week_slots_avg,
+        room_type_usage=room_type_usage,
+    )

@@ -37,6 +37,10 @@ ERR_NO_LESSONS = "Nenhuma lição ativa encontrada. Atribua professores às disc
 ERR_ALL_DONE = "Todos os módulos já estão concluídos! Nada a agendar."
 ERR_NO_EXPAND = "A expansão para datas não produziu blocos de horário."
 MSG_IMPOSSIBLE = "Sem solução válida com as restrições atuais. Verifique as disponibilidades dos professores e as salas."
+DEFAULT_LUNCH_WINDOW_START_MINUTES = 12 * 60
+DEFAULT_LUNCH_WINDOW_END_MINUTES = 14 * 60
+DEFAULT_LUNCH_MIN_DURATION_MINUTES = 60
+GENERATION_TOTAL_STEPS = 10
 
 
 # ---------------------------------------------------------------------------
@@ -118,7 +122,15 @@ def _build_timeslot_inputs(timeslots: list) -> list[TimeslotInput]:
         start_min = ts.start_time.hour * 60 + ts.start_time.minute
         end_min = ts.end_time.hour * 60 + ts.end_time.minute
         duration = max(0, end_min - start_min)
-        result.append(TimeslotInput(ts_id=ts.id, day_of_week=ts.day_of_week, duration_minutes=duration))
+        result.append(
+            TimeslotInput(
+                ts_id=ts.id,
+                day_of_week=ts.day_of_week,
+                duration_minutes=duration,
+                start_minutes=start_min,
+                end_minutes=end_min,
+            )
+        )
     return result
 
 
@@ -136,12 +148,8 @@ def _select_org_settings(settings_list: list):
 
 
 def _resolve_expansion_start_date(school_start_date: date) -> date:
-    """Start expansion from the current week to keep output focused on active planning."""
-    today = date.today()
-    current_week_monday = today - timedelta(days=today.weekday())
-    if school_start_date > current_week_monday:
-        return school_start_date
-    return current_week_monday
+    """Expande sempre desde o início do ano letivo para planeamento completo."""
+    return school_start_date
 
 
 def _compute_planning_weeks(start_date: date, target_end_date: date) -> int:
@@ -150,6 +158,48 @@ def _compute_planning_weeks(start_date: date, target_end_date: date) -> int:
         return 1
     total_days = (target_end_date - start_date).days + 1
     return max(1, math.ceil(total_days / 7))
+
+
+def _resolve_lunch_constraints(org_settings) -> tuple[int, int, int]:
+    """Resolve janela de almoço e pausa mínima (com defaults seguros)."""
+    start = org_settings.lunch_window_start
+    end = org_settings.lunch_window_end
+    min_duration = org_settings.lunch_min_duration_minutes
+
+    if min_duration is None or min_duration <= 0:
+        min_duration = DEFAULT_LUNCH_MIN_DURATION_MINUTES
+
+    if start is None or end is None:
+        return (
+            DEFAULT_LUNCH_WINDOW_START_MINUTES,
+            DEFAULT_LUNCH_WINDOW_END_MINUTES,
+            min_duration,
+        )
+
+    start_minutes = start.hour * 60 + start.minute
+    end_minutes = end.hour * 60 + end.minute
+    if end_minutes <= start_minutes:
+        return (
+            DEFAULT_LUNCH_WINDOW_START_MINUTES,
+            DEFAULT_LUNCH_WINDOW_END_MINUTES,
+            min_duration,
+        )
+
+    window_size = end_minutes - start_minutes
+    bounded_min_duration = min(min_duration, window_size)
+    return (start_minutes, end_minutes, bounded_min_duration)
+
+
+def _task_progress_meta(step: int, detail: str, phase: str) -> dict:
+    """Meta comum de progresso para monitorização no frontend."""
+    return {
+        "phase": phase,
+        "detail": detail,
+        "progress": {
+            "current": step,
+            "total": GENERATION_TOTAL_STEPS,
+        },
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -268,15 +318,18 @@ def generate_schedule_task(self: Task, org_id: int, mode: str = "full") -> dict:
 
     try:
         # 1. FETCH — configurações e dados curriculares
-        self.update_state(state="FETCHING", meta={"detail": "A ler dados..."})
+        self.update_state(state="FETCHING", meta=_task_progress_meta(1, "A iniciar pré-processamento...", "FETCHING"))
 
+        self.update_state(state="FETCHING", meta=_task_progress_meta(2, "A ler configurações da escola...", "FETCHING"))
         settings_list = schedule_service.get_org_settings_sync(db, org_id)
         org_settings = _select_org_settings(settings_list)
         if not org_settings:
             return {"status": "Error", "message": ERR_NO_DATES}
 
+        self.update_state(state="FETCHING", meta=_task_progress_meta(3, "A sincronizar lições da matriz turma-disciplina...", "FETCHING"))
         lesson_sync_stats = schedule_service.sync_lessons_from_class_subject_links_sync(db, org_id)
 
+        self.update_state(state="FETCHING", meta=_task_progress_meta(4, "A preparar inputs curriculares e carga remanescente...", "FETCHING"))
         raw_lessons = schedule_service.get_active_lessons_with_subject_sync(db, org_id)
         if not raw_lessons:
             return {"status": "Error", "message": ERR_NO_LESSONS}
@@ -286,6 +339,7 @@ def generate_schedule_task(self: Task, org_id: int, mode: str = "full") -> dict:
             return {"status": "Error", "message": "Não existem blocos horários configurados."}
         timeslot_inputs = _build_timeslot_inputs(raw_timeslots)
         min_slot_minutes = min(ts.duration_minutes for ts in timeslot_inputs if ts.duration_minutes > 0)
+        lunch_start_minutes, lunch_end_minutes, lunch_min_duration = _resolve_lunch_constraints(org_settings)
 
         expansion_start_date = _resolve_expansion_start_date(org_settings.school_start_date)
         planning_weeks = _compute_planning_weeks(expansion_start_date, org_settings.school_target_end_date)
@@ -303,6 +357,7 @@ def generate_schedule_task(self: Task, org_id: int, mode: str = "full") -> dict:
         if not lesson_inputs:
             return {"status": "Success", "message": ERR_ALL_DONE, "count": 0}
 
+        self.update_state(state="FETCHING", meta=_task_progress_meta(5, "A carregar salas, disponibilidades e calendário...", "FETCHING"))
         raw_rooms = room_service.get_rooms_by_org_sync(db, org_id)
         raw_availabilities = schedule_service.get_availabilities_by_org_sync(db, org_id)
         calendar_events = schedule_service.get_calendar_events_sync(db, org_id)
@@ -331,7 +386,7 @@ def generate_schedule_task(self: Task, org_id: int, mode: str = "full") -> dict:
         )
 
         # 2. SOLVE — CP-SAT encontra o padrão semanal ótimo
-        self.update_state(state="SOLVING", meta={"detail": "A otimizar com CP-SAT..."})
+        self.update_state(state="SOLVING", meta=_task_progress_meta(6, "A otimizar com CP-SAT (fase intensiva)...", "SOLVING"))
 
         engine = ScheduleEngine(
             lessons=lesson_inputs,
@@ -339,6 +394,9 @@ def generate_schedule_task(self: Task, org_id: int, mode: str = "full") -> dict:
             rooms=_build_room_inputs(raw_rooms),
             availability_map=availability_map,
             previous_pattern=previous_pattern,
+            lunch_window_start_minutes=lunch_start_minutes,
+            lunch_window_end_minutes=lunch_end_minutes,
+            lunch_min_duration_minutes=lunch_min_duration,
         )
         assignments = engine.solve()
 
@@ -346,7 +404,7 @@ def generate_schedule_task(self: Task, org_id: int, mode: str = "full") -> dict:
             return {"status": "Impossible", "message": MSG_IMPOSSIBLE}
 
         # 3. EXPAND — padrão semanal → datas absolutas
-        self.update_state(state="EXPANDING", meta={"detail": "A expandir para datas reais..."})
+        self.update_state(state="EXPANDING", meta=_task_progress_meta(7, "A expandir padrão semanal para datas reais...", "EXPANDING"))
 
         remaining_map = {li.lesson_id: li.remaining_minutes for li in lesson_inputs}
         lesson_class_map = {lesson.id: lesson.class_id for lesson in raw_lessons}
@@ -362,8 +420,10 @@ def generate_schedule_task(self: Task, org_id: int, mode: str = "full") -> dict:
         if not blocks:
             return {"status": "Error", "message": ERR_NO_EXPAND}
 
+        self.update_state(state="EXPANDING", meta=_task_progress_meta(8, "A validar blocos gerados e projeções...", "EXPANDING"))
+
         # 4. SAVE — comportamento depende do modo
-        self.update_state(state="SAVING", meta={"detail": "A gravar solução..."})
+        self.update_state(state="SAVING", meta=_task_progress_meta(9, "A gravar solução em base de dados...", "SAVING"))
 
         if is_repair:
             # Repair: guarda como rascunho (is_draft=True) sem apagar o ativo
@@ -377,10 +437,16 @@ def generate_schedule_task(self: Task, org_id: int, mode: str = "full") -> dict:
                 "mode": "repair",
                 "is_draft": True,
                 "count": len(blocks),
+                "progress": {
+                    "current": GENERATION_TOTAL_STEPS,
+                    "total": GENERATION_TOTAL_STEPS,
+                },
             }
 
         # Full: limpa futuro e grava novo horário ativo
-        schedule_service.clear_future_schedule_sync(db, org_id)
+        start_window = min(block.output_date for block in blocks)
+        end_window = max(block.output_date for block in blocks)
+        schedule_service.clear_schedule_window_sync(db, org_id, start_window, end_window)
         class_end_dates = _save_results(db, blocks, org_id, gen_id, lesson_class_map, is_draft=False)
         db.commit()
 
@@ -394,6 +460,10 @@ def generate_schedule_task(self: Task, org_id: int, mode: str = "full") -> dict:
             "is_draft": False,
             "count": len(blocks),
             "classes_updated": len(class_end_dates),
+            "progress": {
+                "current": GENERATION_TOTAL_STEPS,
+                "total": GENERATION_TOTAL_STEPS,
+            },
         }
 
     except Exception as exc:

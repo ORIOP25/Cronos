@@ -454,6 +454,111 @@ def clear_future_schedule_sync(db: Session, org_id: int) -> None:
     ).delete(synchronize_session="fetch")
 
 
+def clear_schedule_window_sync(
+    db: Session,
+    org_id: int,
+    start_date: date,
+    end_date: date,
+) -> int:
+    """Apaga outputs ativos numa janela [start_date, end_date], preservando slots com ocorrencias.
+
+    Esta funcao garante idempotencia da regeneracao numa janela concreta sem remover
+    historico ja confirmado em LessonOccurrence.
+    """
+    if end_date < start_date:
+        return 0
+
+    output_ids = [
+        row[0]
+        for row in db.query(models.ScheduleOutput.id)
+        .filter(
+            models.ScheduleOutput.organization_id == org_id,
+            models.ScheduleOutput.is_draft.is_(False),
+            models.ScheduleOutput.date.between(start_date, end_date),
+        )
+        .all()
+    ]
+
+    if not output_ids:
+        return 0
+
+    locked_ids = {
+        row[0]
+        for row in db.query(models.LessonOccurrence.schedule_output_id)
+        .filter(models.LessonOccurrence.schedule_output_id.in_(output_ids))
+        .all()
+    }
+
+    deletable_ids = [output_id for output_id in output_ids if output_id not in locked_ids]
+    if not deletable_ids:
+        return 0
+
+    deleted = (
+        db.query(models.ScheduleOutput)
+        .filter(models.ScheduleOutput.id.in_(deletable_ids))
+        .delete(synchronize_session="fetch")
+    )
+    return deleted
+
+
+def _get_lesson_identity_sync(db: Session, lesson_id: int) -> tuple[int, int] | None:
+    lesson = (
+        db.query(models.Lesson.class_id, models.Lesson.teacher_id)
+        .filter(models.Lesson.id == lesson_id)
+        .first()
+    )
+    if lesson is None:
+        return None
+    return (lesson.class_id, lesson.teacher_id)
+
+
+def _find_conflicting_active_output_ids_sync(
+    db: Session,
+    org_id: int,
+    lesson_id: int,
+    timeslot_id: int,
+    output_date: date,
+) -> list[int]:
+    identity = _get_lesson_identity_sync(db, lesson_id)
+    if identity is None:
+        return []
+
+    class_id, teacher_id = identity
+    rows = (
+        db.query(models.ScheduleOutput.id)
+        .join(models.Lesson, models.ScheduleOutput.lesson_id == models.Lesson.id)
+        .filter(
+            models.ScheduleOutput.organization_id == org_id,
+            models.ScheduleOutput.is_draft.is_(False),
+            models.ScheduleOutput.timeslot_id == timeslot_id,
+            models.ScheduleOutput.date == output_date,
+            (
+                (models.ScheduleOutput.lesson_id == lesson_id)
+                | (models.Lesson.class_id == class_id)
+                | (models.Lesson.teacher_id == teacher_id)
+            ),
+        )
+        .all()
+    )
+    return [row[0] for row in rows]
+
+
+def _split_locked_output_ids(db: Session, output_ids: list[int]) -> tuple[list[int], list[int]]:
+    if not output_ids:
+        return ([], [])
+
+    locked_ids = {
+        row[0]
+        for row in db.query(models.LessonOccurrence.schedule_output_id)
+        .filter(models.LessonOccurrence.schedule_output_id.in_(output_ids))
+        .all()
+    }
+
+    deletable_ids = [output_id for output_id in output_ids if output_id not in locked_ids]
+    blocked_ids = [output_id for output_id in output_ids if output_id in locked_ids]
+    return (deletable_ids, blocked_ids)
+
+
 def create_schedule_output_with_date_sync(
     db: Session,
     lesson_id: int,
@@ -465,6 +570,39 @@ def create_schedule_output_with_date_sync(
     is_draft: bool = False,
 ) -> None:
     """Cria uma linha de ScheduleOutput com data absoluta."""
+    existing_same = (
+        db.query(models.ScheduleOutput.id)
+        .filter(
+            models.ScheduleOutput.organization_id == org_id,
+            models.ScheduleOutput.lesson_id == lesson_id,
+            models.ScheduleOutput.timeslot_id == timeslot_id,
+            models.ScheduleOutput.date == output_date,
+            models.ScheduleOutput.is_draft.is_(is_draft),
+        )
+        .first()
+    )
+    if existing_same is not None:
+        return
+
+    if not is_draft:
+        conflicting_ids = _find_conflicting_active_output_ids_sync(
+            db,
+            org_id,
+            lesson_id,
+            timeslot_id,
+            output_date,
+        )
+        deletable_ids, blocked_ids = _split_locked_output_ids(db, conflicting_ids)
+
+        if deletable_ids:
+            db.query(models.ScheduleOutput).filter(
+                models.ScheduleOutput.id.in_(deletable_ids)
+            ).delete(synchronize_session="fetch")
+
+        if blocked_ids:
+            # Mantem histórico confirmado; evita criar novo conflito no mesmo slot.
+            return
+
     db.add(
         models.ScheduleOutput(
             lesson_id=lesson_id,

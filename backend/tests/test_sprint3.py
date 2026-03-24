@@ -319,6 +319,275 @@ class TestDraftServices:
         drafts = schedule_service.list_draft_gen_ids_sync(sync_db, org_id)
         assert len(drafts) == 0
 
+    def test_clear_schedule_window_sync_deletes_only_unconfirmed_outputs(self, sync_db, draft_setup):
+        org_id = draft_setup["org_id"]
+
+        active = (
+            sync_db.query(models.ScheduleOutput)
+            .filter(
+                models.ScheduleOutput.organization_id == org_id,
+                models.ScheduleOutput.is_draft.is_(False),
+            )
+            .first()
+        )
+        assert active is not None
+
+        # Mantem este output protegido por ocorrencia
+        protected_occurrence = models.LessonOccurrence(
+            org_id=org_id,
+            schedule_output_id=active.id,
+            date=active.date,
+            status=models.LessonOccurrenceStatus.GIVEN,
+            hours_given=2.0,
+        )
+        sync_db.add(protected_occurrence)
+
+        # Novo output sem ocorrencia dentro da mesma janela
+        removable_output = models.ScheduleOutput(
+            lesson_id=active.lesson_id,
+            timeslot_id=active.timeslot_id,
+            room_id=active.room_id,
+            date=active.date + timedelta(days=1),
+            organization_id=org_id,
+            generation_id="gen-window-delete",
+            is_draft=False,
+        )
+        sync_db.add(removable_output)
+        sync_db.commit()
+        removable_output_id = removable_output.id
+
+        deleted = schedule_service.clear_schedule_window_sync(
+            sync_db,
+            org_id,
+            active.date,
+            active.date + timedelta(days=1),
+        )
+        sync_db.commit()
+
+        assert deleted == 1
+
+        remaining_ids = {
+            row.id
+            for row in sync_db.query(models.ScheduleOutput)
+            .filter(
+                models.ScheduleOutput.organization_id == org_id,
+                models.ScheduleOutput.is_draft.is_(False),
+            )
+            .all()
+        }
+        assert active.id in remaining_ids
+        assert removable_output_id not in remaining_ids
+
+    def test_clear_schedule_window_sync_scoped_by_org(self, sync_db, draft_setup):
+        org_id = draft_setup["org_id"]
+
+        other_org = models.Organization(name="Outra Org", plan_status="active")
+        sync_db.add(other_org)
+        sync_db.flush()
+
+        teacher = models.Teacher(name="Prof Outra", organization_id=other_org.id)
+        subject = models.Subject(
+            name="Outra Disciplina",
+            organization_id=other_org.id,
+            required_room_type=models.RoomType.normal,
+        )
+        course = models.Course(name="Curso O", abbreviation="CO", organization_id=other_org.id)
+        sync_db.add_all([teacher, subject, course])
+        sync_db.flush()
+
+        klass = models.Class(
+            name="Outra Turma",
+            organization_id=other_org.id,
+            course_id=course.id,
+            grade_level=10,
+            size=20,
+            start_year=2024,
+            end_year=2027,
+            is_archived=False,
+        )
+        room = models.Room(
+            name="Sala O1",
+            capacity=20,
+            type=models.RoomType.normal,
+            organization_id=other_org.id,
+        )
+        ts = models.Timeslot(
+            day_of_week=0,
+            start_time=time(8, 0),
+            end_time=time(10, 0),
+            organization_id=other_org.id,
+        )
+
+        sync_db.add_all([klass, room, ts])
+        sync_db.flush()
+
+        lesson = models.Lesson(
+            class_id=klass.id,
+            subject_id=subject.id,
+            teacher_id=teacher.id,
+            organization_id=other_org.id,
+        )
+        sync_db.add(lesson)
+        sync_db.flush()
+
+        other_output = models.ScheduleOutput(
+            lesson_id=lesson.id,
+            timeslot_id=ts.id,
+            room_id=room.id,
+            date=FUTURE,
+            organization_id=other_org.id,
+            generation_id="gen-other-org",
+            is_draft=False,
+        )
+        sync_db.add(other_output)
+        sync_db.commit()
+
+        deleted = schedule_service.clear_schedule_window_sync(
+            sync_db,
+            org_id,
+            FUTURE,
+            FUTURE + timedelta(days=1),
+        )
+        sync_db.commit()
+
+        assert deleted >= 0
+        assert (
+            sync_db.query(models.ScheduleOutput)
+            .filter(models.ScheduleOutput.id == other_output.id)
+            .first()
+            is not None
+        )
+
+    def test_create_schedule_output_with_date_sync_replaces_unconfirmed_conflict(self, sync_db, draft_setup):
+        org_id = draft_setup["org_id"]
+
+        active = (
+            sync_db.query(models.ScheduleOutput)
+            .filter(
+                models.ScheduleOutput.organization_id == org_id,
+                models.ScheduleOutput.is_draft.is_(False),
+            )
+            .first()
+        )
+        assert active is not None
+
+        source_lesson = sync_db.query(models.Lesson).filter(models.Lesson.id == active.lesson_id).first()
+        assert source_lesson is not None
+
+        replacement_subject = models.Subject(
+            name="Disciplina Substituta",
+            organization_id=org_id,
+            required_room_type=models.RoomType.normal,
+        )
+        sync_db.add(replacement_subject)
+        sync_db.flush()
+
+        replacement_lesson = models.Lesson(
+            class_id=source_lesson.class_id,
+            subject_id=replacement_subject.id,
+            teacher_id=source_lesson.teacher_id,
+            organization_id=org_id,
+        )
+        sync_db.add(replacement_lesson)
+        sync_db.commit()
+
+        schedule_service.create_schedule_output_with_date_sync(
+            db=sync_db,
+            lesson_id=replacement_lesson.id,
+            timeslot_id=active.timeslot_id,
+            room_id=active.room_id,
+            output_date=active.date,
+            org_id=org_id,
+            gen_id="gen-replace-conflict",
+            is_draft=False,
+        )
+        sync_db.commit()
+
+        same_slot_outputs = (
+            sync_db.query(models.ScheduleOutput)
+            .join(models.Lesson, models.ScheduleOutput.lesson_id == models.Lesson.id)
+            .filter(
+                models.ScheduleOutput.organization_id == org_id,
+                models.ScheduleOutput.is_draft.is_(False),
+                models.ScheduleOutput.date == active.date,
+                models.ScheduleOutput.timeslot_id == active.timeslot_id,
+                models.Lesson.class_id == source_lesson.class_id,
+            )
+            .all()
+        )
+
+        assert len(same_slot_outputs) == 1
+        assert same_slot_outputs[0].lesson_id == replacement_lesson.id
+
+    def test_create_schedule_output_with_date_sync_does_not_override_confirmed_conflict(self, sync_db, draft_setup):
+        org_id = draft_setup["org_id"]
+
+        active = (
+            sync_db.query(models.ScheduleOutput)
+            .filter(
+                models.ScheduleOutput.organization_id == org_id,
+                models.ScheduleOutput.is_draft.is_(False),
+            )
+            .first()
+        )
+        assert active is not None
+
+        source_lesson = sync_db.query(models.Lesson).filter(models.Lesson.id == active.lesson_id).first()
+        assert source_lesson is not None
+
+        sync_db.add(models.LessonOccurrence(
+            org_id=org_id,
+            schedule_output_id=active.id,
+            date=active.date,
+            status=models.LessonOccurrenceStatus.GIVEN,
+            hours_given=2.0,
+        ))
+
+        replacement_subject = models.Subject(
+            name="Disciplina Bloqueada",
+            organization_id=org_id,
+            required_room_type=models.RoomType.normal,
+        )
+        sync_db.add(replacement_subject)
+        sync_db.flush()
+
+        replacement_lesson = models.Lesson(
+            class_id=source_lesson.class_id,
+            subject_id=replacement_subject.id,
+            teacher_id=source_lesson.teacher_id,
+            organization_id=org_id,
+        )
+        sync_db.add(replacement_lesson)
+        sync_db.commit()
+
+        schedule_service.create_schedule_output_with_date_sync(
+            db=sync_db,
+            lesson_id=replacement_lesson.id,
+            timeslot_id=active.timeslot_id,
+            room_id=active.room_id,
+            output_date=active.date,
+            org_id=org_id,
+            gen_id="gen-blocked-conflict",
+            is_draft=False,
+        )
+        sync_db.commit()
+
+        same_slot_outputs = (
+            sync_db.query(models.ScheduleOutput)
+            .join(models.Lesson, models.ScheduleOutput.lesson_id == models.Lesson.id)
+            .filter(
+                models.ScheduleOutput.organization_id == org_id,
+                models.ScheduleOutput.is_draft.is_(False),
+                models.ScheduleOutput.date == active.date,
+                models.ScheduleOutput.timeslot_id == active.timeslot_id,
+                models.Lesson.class_id == source_lesson.class_id,
+            )
+            .all()
+        )
+
+        assert len(same_slot_outputs) == 1
+        assert same_slot_outputs[0].id == active.id
+
 
 # ===========================================================================
 # 4. Endpoints HTTP

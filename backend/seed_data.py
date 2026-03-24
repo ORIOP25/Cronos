@@ -417,6 +417,9 @@ def _seed_organization_settings(db, org):
         school_start_date=datetime.date(2025, 9, 15),
         school_target_end_date=datetime.date(2026, 6, 15),
         region_code="11",  # Lisboa no package holidays
+        lunch_window_start=datetime.time(12, 0),
+        lunch_window_end=datetime.time(14, 0),
+        lunch_min_duration_minutes=60,
     )
     db.add(settings)
 

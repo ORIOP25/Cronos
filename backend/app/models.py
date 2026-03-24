@@ -430,6 +430,9 @@ class OrganizationSettings(Base):
     school_start_date: Mapped[Optional[date_type]] = mapped_column(Date, nullable=True)
     school_target_end_date: Mapped[Optional[date_type]] = mapped_column(Date, nullable=True)
     region_code: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)  # Ex: "Lisboa"
+    lunch_window_start: Mapped[Optional[time]] = mapped_column(Time, nullable=True)
+    lunch_window_end: Mapped[Optional[time]] = mapped_column(Time, nullable=True)
+    lunch_min_duration_minutes: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
 
     organization: Mapped["Organization"] = relationship(back_populates="settings")
 
