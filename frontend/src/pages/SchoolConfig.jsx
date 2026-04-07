@@ -269,7 +269,11 @@ const SettingsSection = ({ regions, onYearsChange }) => {
     academic_year: '',
     school_start_date: '',
     school_target_end_date: '',
+    school_hard_end_date: '',
     region_code: '',
+    lunch_window_start: '',
+    lunch_window_end: '',
+    lunch_min_duration_minutes: '60',
   })
 
   const { data: settingsList = [], isLoading } = useQuery({
@@ -290,7 +294,16 @@ const SettingsSection = ({ regions, onYearsChange }) => {
     mutationFn: (payload) => apiClient.post('/school/settings/', payload),
     onSuccess: () => {
       setSuccessMsg('Configuração guardada com sucesso.')
-      setForm({ academic_year: '', school_start_date: '', school_target_end_date: '', region_code: '' })
+      setForm({
+        academic_year: '',
+        school_start_date: '',
+        school_target_end_date: '',
+        school_hard_end_date: '',
+        region_code: '',
+        lunch_window_start: '',
+        lunch_window_end: '',
+        lunch_min_duration_minutes: '60',
+      })
       void queryClient.invalidateQueries({ queryKey: ['org-settings'] })
       setTimeout(() => setSuccessMsg(null), 3000)
     },
@@ -307,7 +320,13 @@ const SettingsSection = ({ regions, onYearsChange }) => {
       academic_year: form.academic_year,
       school_start_date: form.school_start_date || null,
       school_target_end_date: form.school_target_end_date || null,
+      school_hard_end_date: form.school_hard_end_date || null,
       region_code: form.region_code || null,
+      lunch_window_start: form.lunch_window_start || null,
+      lunch_window_end: form.lunch_window_end || null,
+      lunch_min_duration_minutes: form.lunch_min_duration_minutes
+        ? Number.parseInt(form.lunch_min_duration_minutes, 10)
+        : null,
     }
     upsertMutation.mutate(payload)
   }
@@ -325,7 +344,9 @@ const SettingsSection = ({ regions, onYearsChange }) => {
             <CTableHeaderCell>Ano Letivo</CTableHeaderCell>
             <CTableHeaderCell>Início das Aulas</CTableHeaderCell>
             <CTableHeaderCell>Data-Alvo Fim</CTableHeaderCell>
+            <CTableHeaderCell>Limite Rígido</CTableHeaderCell>
             <CTableHeaderCell>Região</CTableHeaderCell>
+            <CTableHeaderCell>Janela de Almoço</CTableHeaderCell>
             <CTableHeaderCell />
           </CTableRow>
         </CTableHead>
@@ -335,7 +356,13 @@ const SettingsSection = ({ regions, onYearsChange }) => {
               <CTableDataCell><CBadge color="primary">{s.academic_year}</CBadge></CTableDataCell>
               <CTableDataCell>{s.school_start_date ?? '—'}</CTableDataCell>
               <CTableDataCell>{s.school_target_end_date ?? '—'}</CTableDataCell>
+              <CTableDataCell>{s.school_hard_end_date ?? '—'}</CTableDataCell>
               <CTableDataCell>{formatRegionLabel(s.region_code)}</CTableDataCell>
+              <CTableDataCell>
+                {s.lunch_window_start && s.lunch_window_end
+                  ? `${s.lunch_window_start.slice(0, 5)}-${s.lunch_window_end.slice(0, 5)} (${s.lunch_min_duration_minutes ?? 0} min)`
+                  : '—'}
+              </CTableDataCell>
               <CTableDataCell>
                 <CButton
                   color="danger"
@@ -395,6 +422,16 @@ const SettingsSection = ({ regions, onYearsChange }) => {
                 text="Benchmark para o solver"
               />
             </CCol>
+            <CCol md={2}>
+              <CFormLabel htmlFor="hardEndDate">Limite Rígido</CFormLabel>
+              <CFormInput
+                id="hardEndDate"
+                type="date"
+                value={form.school_hard_end_date}
+                onChange={(e) => setForm((p) => ({ ...p, school_hard_end_date: e.target.value }))}
+                text="Hard stop: as aulas não passam desta data"
+              />
+            </CCol>
             <CCol md={4}>
               <CFormLabel htmlFor="regionCode">Região (Feriados Municipais)</CFormLabel>
               <CFormSelect
@@ -407,6 +444,34 @@ const SettingsSection = ({ regions, onYearsChange }) => {
                   <option key={r} value={r}>{formatRegionLabel(r)}</option>
                 ))}
               </CFormSelect>
+            </CCol>
+            <CCol md={2}>
+              <CFormLabel htmlFor="lunchStart">Almoço Início</CFormLabel>
+              <CFormInput
+                id="lunchStart"
+                type="time"
+                value={form.lunch_window_start}
+                onChange={(e) => setForm((p) => ({ ...p, lunch_window_start: e.target.value }))}
+              />
+            </CCol>
+            <CCol md={2}>
+              <CFormLabel htmlFor="lunchEnd">Almoço Fim</CFormLabel>
+              <CFormInput
+                id="lunchEnd"
+                type="time"
+                value={form.lunch_window_end}
+                onChange={(e) => setForm((p) => ({ ...p, lunch_window_end: e.target.value }))}
+              />
+            </CCol>
+            <CCol md={2}>
+              <CFormLabel htmlFor="lunchMin">Almoço Mínimo (min)</CFormLabel>
+              <CFormInput
+                id="lunchMin"
+                type="number"
+                min={1}
+                value={form.lunch_min_duration_minutes}
+                onChange={(e) => setForm((p) => ({ ...p, lunch_min_duration_minutes: e.target.value }))}
+              />
             </CCol>
             <CCol md={2} className="d-flex align-items-end">
               <CButton

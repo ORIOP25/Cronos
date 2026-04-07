@@ -17,6 +17,7 @@ FK_SUBJECT_ID = "subject.id"
 FK_CLASS_ID = "class.id"
 FK_TIMESLOT_ID = "timeslot.id"
 CASCADE_ALL_DELETE = "all, delete-orphan"
+ON_DELETE_SET_NULL = "SET NULL"
 
 class RoomType(str, enum.Enum):
     normal = "normal"
@@ -89,7 +90,7 @@ class ClassSubjectLink(Base):
     class_id: Mapped[int] = mapped_column(ForeignKey(FK_CLASS_ID, ondelete="CASCADE"), index=True)
     subject_id: Mapped[int] = mapped_column(ForeignKey(FK_SUBJECT_ID, ondelete="CASCADE"), index=True)
     grade_level: Mapped[int] = mapped_column(Integer, nullable=False)  # 10, 11, 12
-    teacher_id: Mapped[Optional[int]] = mapped_column(ForeignKey(FK_TEACHER_ID, ondelete="SET NULL"), nullable=True)
+    teacher_id: Mapped[Optional[int]] = mapped_column(ForeignKey(FK_TEACHER_ID, ondelete=ON_DELETE_SET_NULL), nullable=True)
 
     # Relacionamentos
     class_: Mapped["Class"] = relationship()
@@ -429,6 +430,7 @@ class OrganizationSettings(Base):
     academic_year: Mapped[str] = mapped_column(String(10), nullable=False)  # Ex: "2025/2026"
     school_start_date: Mapped[Optional[date_type]] = mapped_column(Date, nullable=True)
     school_target_end_date: Mapped[Optional[date_type]] = mapped_column(Date, nullable=True)
+    school_hard_end_date: Mapped[Optional[date_type]] = mapped_column(Date, nullable=True)
     region_code: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)  # Ex: "Lisboa"
     lunch_window_start: Mapped[Optional[time]] = mapped_column(Time, nullable=True)
     lunch_window_end: Mapped[Optional[time]] = mapped_column(Time, nullable=True)
@@ -514,7 +516,7 @@ class LessonOccurrence(Base):
 
     # Liga ao slot planeado (pode ficar NULL se o horário for removido)
     schedule_output_id: Mapped[Optional[int]] = mapped_column(
-        ForeignKey("schedule_output.id", ondelete="SET NULL"),
+        ForeignKey("schedule_output.id", ondelete=ON_DELETE_SET_NULL),
         nullable=True,
         index=True,
     )
@@ -529,10 +531,10 @@ class LessonOccurrence(Base):
 
     # Substituição (preenchido quando status=SUBSTITUTED)
     substitute_teacher_id: Mapped[Optional[int]] = mapped_column(
-        ForeignKey(FK_TEACHER_ID, ondelete="SET NULL"), nullable=True
+        ForeignKey(FK_TEACHER_ID, ondelete=ON_DELETE_SET_NULL), nullable=True
     )
     substitute_subject_id: Mapped[Optional[int]] = mapped_column(
-        ForeignKey(FK_SUBJECT_ID, ondelete="SET NULL"), nullable=True
+        ForeignKey(FK_SUBJECT_ID, ondelete=ON_DELETE_SET_NULL), nullable=True
     )
 
     # Horas efetivamente dadas (duração do timeslot em horas)

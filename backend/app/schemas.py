@@ -555,12 +555,16 @@ class ClassProgressBulkUpdate(BaseModel):
 
 DESC_ACADEMIC_YEAR = "Ano letivo no formato 'AAAA/AAAA' (ex: '2025/2026')"
 DESC_REGION_CODE = "Município/distrito para feriados regionais (ex: 'Lisboa', 'Porto')"
+DESC_HARD_END_DATE = "Data-limite rígida para término das aulas (hard stop do gerador)"
 DESC_LUNCH_START = "Hora de início da janela de almoço (ex: 12:00)"
 DESC_LUNCH_END = "Hora de fim da janela de almoço (ex: 14:00)"
 DESC_LUNCH_MIN = "Duração mínima de almoço em minutos dentro da janela"
 ERR_LUNCH_WINDOW_PAIR = "Defina início e fim da janela de almoço em conjunto"
 ERR_LUNCH_WINDOW_ORDER = "A hora de fim da janela de almoço deve ser posterior ao início"
 ERR_LUNCH_WINDOW_DURATION = "A duração mínima de almoço excede a janela configurada"
+ERR_TARGET_BEFORE_START = "A data-alvo de fim não pode ser anterior ao início das aulas"
+ERR_HARD_BEFORE_START = "A data-limite rígida não pode ser anterior ao início das aulas"
+ERR_HARD_BEFORE_TARGET = "A data-limite rígida não pode ser anterior à data-alvo de fim"
 
 
 class OrganizationSettingsUpsert(BaseModel):
@@ -570,15 +574,24 @@ class OrganizationSettingsUpsert(BaseModel):
     academic_year: str = Field(..., pattern=r'^\d{4}/\d{4}$', description=DESC_ACADEMIC_YEAR)
     school_start_date: date | None = Field(None, description="Primeiro dia de aulas")
     school_target_end_date: date | None = Field(None, description="Data-alvo para fim das aulas (benchmark do solver)")
+    school_hard_end_date: date | None = Field(None, description=DESC_HARD_END_DATE)
     region_code: str | None = Field(None, description=DESC_REGION_CODE)
     lunch_window_start: time | None = Field(None, description=DESC_LUNCH_START)
     lunch_window_end: time | None = Field(None, description=DESC_LUNCH_END)
     lunch_min_duration_minutes: int | None = Field(None, ge=1, description=DESC_LUNCH_MIN)
 
     @staticmethod
-    def _validate_school_dates(start_date: date | None, end_date: date | None) -> None:
-        if start_date and end_date and end_date < start_date:
-            raise ValueError('A data-alvo de fim não pode ser anterior ao início das aulas')
+    def _validate_school_dates(
+        start_date: date | None,
+        target_end_date: date | None,
+        hard_end_date: date | None,
+    ) -> None:
+        if start_date and target_end_date and target_end_date < start_date:
+            raise ValueError(ERR_TARGET_BEFORE_START)
+        if start_date and hard_end_date and hard_end_date < start_date:
+            raise ValueError(ERR_HARD_BEFORE_START)
+        if target_end_date and hard_end_date and hard_end_date < target_end_date:
+            raise ValueError(ERR_HARD_BEFORE_TARGET)
 
     @staticmethod
     def _validate_lunch_inputs(start: time | None, end: time | None, minimum: int | None) -> None:
@@ -596,7 +609,11 @@ class OrganizationSettingsUpsert(BaseModel):
 
     @model_validator(mode='after')
     def validate_lunch_window(self):
-        self._validate_school_dates(self.school_start_date, self.school_target_end_date)
+        self._validate_school_dates(
+            self.school_start_date,
+            self.school_target_end_date,
+            self.school_hard_end_date,
+        )
         self._validate_lunch_inputs(
             self.lunch_window_start,
             self.lunch_window_end,
@@ -611,6 +628,7 @@ class OrganizationSettingsRead(BaseModel):
     academic_year: str
     school_start_date: date | None = None
     school_target_end_date: date | None = None
+    school_hard_end_date: date | None = None
     region_code: str | None = None
     lunch_window_start: time | None = None
     lunch_window_end: time | None = None

@@ -613,11 +613,12 @@ export const useOccurrences = ({ classId, dateFrom, dateTo } = {}) => {
   if (dateFrom) params.set('date_from', dateFrom)
   if (dateTo) params.set('date_to', dateTo)
   const qs = params.toString()
+  const endpoint = qs ? `/occurrences/?${qs}` : '/occurrences/'
 
   return useQuery({
     queryKey: ['occurrences', orgId, classId, dateFrom, dateTo],
     queryFn: async () => {
-      const { data } = await apiClient.get(`/occurrences/${qs ? `?${qs}` : ''}`)
+      const { data } = await apiClient.get(endpoint)
       return data
     },
     ...DYNAMIC_OPTS,
@@ -632,11 +633,12 @@ export const useDebts = ({ classId } = {}) => {
   const params = new URLSearchParams()
   if (classId) params.set('class_id', classId)
   const qs = params.toString()
+  const endpoint = qs ? `/occurrences/debts?${qs}` : '/occurrences/debts'
 
   return useQuery({
     queryKey: ['debts', orgId, classId],
     queryFn: async () => {
-      const { data } = await apiClient.get(`/occurrences/debts${qs ? `?${qs}` : ''}`)
+      const { data } = await apiClient.get(endpoint)
       return data
     },
     ...DYNAMIC_OPTS,
@@ -792,9 +794,9 @@ export const useScheduleTaskStatus = (taskId) => {
     enabled: !!taskId,
     refetchInterval: (query) => {
       const status = query.state.data?.status
-      if (!status) return 3000
+      if (!status) return 5000
       const terminal = ['SUCCESS', 'FAILURE', 'Success', 'Error', 'Impossible']
-      return terminal.some(s => status.includes(s)) ? 60000 : 3000
+      return terminal.some(s => status.includes(s)) ? 60000 : 5000
     },
     ...DYNAMIC_OPTS,
   })
@@ -819,6 +821,40 @@ export const useWeekSchedule = (classId, teacherId, weekStart) => {
       return data
     },
     enabled,
+    staleTime: 0,
+    refetchOnWindowFocus: true,
+    refetchOnMount: true,
+    retry: 1,
+  })
+}
+
+/**
+ * Dashboard técnico — lista gerações disponíveis para auditoria.
+ */
+export const useAuditGenerations = () => {
+  const orgId = useAuthStore(state => state.user?.orgId)
+  return useQuery({
+    queryKey: ['schedule-audit-generations', orgId],
+    queryFn: async () => {
+      const { data } = await apiClient.get('/schedule/audit/generations')
+      return data
+    },
+    ...DYNAMIC_OPTS,
+  })
+}
+
+/**
+ * Dashboard técnico — métricas de auditoria por geração.
+ */
+export const useAuditSummary = (generationId) => {
+  const orgId = useAuthStore(state => state.user?.orgId)
+  return useQuery({
+    queryKey: ['schedule-audit-summary', orgId, generationId],
+    queryFn: async () => {
+      const params = generationId ? { generation_id: generationId } : {}
+      const { data } = await apiClient.get('/schedule/audit/summary', { params })
+      return data
+    },
     ...DYNAMIC_OPTS,
   })
 }

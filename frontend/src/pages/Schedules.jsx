@@ -33,6 +33,16 @@ const GENERATION_STATUS_LABELS = {
   FAILURE:   'Erro na geração.',
 }
 
+const STEP_BY_STATUS = {
+  PENDING: 1,
+  FETCHING: 2,
+  SOLVING: 6,
+  EXPANDING: 7,
+  SAVING: 9,
+  SUCCESS: 10,
+}
+const DEFAULT_TOTAL_STEPS = 10
+
 // ---------------------------------------------------------------------------
 // Module-scope helpers (SonarQube S7721)
 // ---------------------------------------------------------------------------
@@ -73,6 +83,26 @@ function resolveBusinessStatus(taskData) {
   const resultStatus = taskData?.result?.status
   if (resultStatus === 'Error' || resultStatus === 'Impossible') return 'danger'
   if (resultStatus === 'Success') return 'success'
+  return null
+}
+
+function resolveProgress(taskData) {
+  const serverProgress = taskData?.progress ?? taskData?.result?.progress
+  if (serverProgress?.current && serverProgress?.total) {
+    return {
+      current: serverProgress.current,
+      total: serverProgress.total,
+    }
+  }
+
+  const status = taskData?.status ?? ''
+  const fallbackCurrent = STEP_BY_STATUS[status]
+  if (fallbackCurrent) {
+    return {
+      current: fallbackCurrent,
+      total: DEFAULT_TOTAL_STEPS,
+    }
+  }
   return null
 }
 
@@ -232,6 +262,11 @@ const GenerationStatusPanel = ({ taskId }) => {
   const businessColor = resolveBusinessStatus(taskData)
   const alertColor = businessColor ?? resolveAlertColor(status)
   const label = taskData?.result?.status ?? GENERATION_STATUS_LABELS[status] ?? status
+  const detail = taskData?.detail ?? taskData?.result?.detail
+  const progress = resolveProgress(taskData)
+  const progressValue = progress
+    ? (progress.current / progress.total) * 100
+    : 0
   const result     = taskData.result
 
   return (
@@ -240,7 +275,22 @@ const GenerationStatusPanel = ({ taskId }) => {
         {isRunning && <CSpinner size="sm" />}
         <strong>{label}</strong>
       </div>
-      {isRunning && <CProgress animated value={100} className="mb-2" style={{ height: '4px' }} />}
+      {progress && (
+        <div className="small mb-1">
+          Etapa {progress.current}/{progress.total}
+        </div>
+      )}
+      {isRunning && (
+        <CProgress
+          animated
+          value={progressValue}
+          className="mb-2"
+          style={{ height: '6px' }}
+        />
+      )}
+      {detail && (
+        <div className="small mt-1">{detail}</div>
+      )}
       {result?.is_draft && (
         <div className="small mt-1">
           Rascunho criado com{' '}<strong>{result.count}</strong>{' '}blocos.
@@ -311,7 +361,11 @@ const Schedules = () => {
   const classId   = viewMode === 'class'   && selectedClassId   ? Number.parseInt(selectedClassId, 10)   : null
   const teacherId = viewMode === 'teacher' && selectedTeacherId ? Number.parseInt(selectedTeacherId, 10) : null
 
-  const { data: weekSlots = [], isFetching: loadingWeek } = useWeekSchedule(classId, teacherId, weekStart)
+  const {
+    data: weekSlots = [],
+    isFetching: loadingWeek,
+    isError: weekLoadError,
+  } = useWeekSchedule(classId, teacherId, weekStart)
   const { data: classDetails } = useClassDetails(classId)
 
   const classSubjects = classDetails?.subjects ?? []
@@ -349,6 +403,27 @@ const Schedules = () => {
   const hasSelection = Boolean(classId || teacherId)
   const showKPI      = viewMode === 'class' && Boolean(classId)
   const gridCols     = showKPI ? 8 : 12
+
+  let weekGridContent = (
+    <div className="text-center p-5 text-muted">
+      <CIcon icon={cilCalendar} style={{ fontSize: '2rem', opacity: 0.35 }} />
+      <div className="mt-2">
+        Selecione uma turma ou professor para visualizar o horário da semana.
+      </div>
+    </div>
+  )
+
+  if (hasSelection) {
+    weekGridContent = <WeekGrid slots={weekSlots} isLoading={loadingWeek} baseTimeslots={timeslots} weekStart={weekStart} />
+  }
+
+  if (hasSelection && weekLoadError) {
+    weekGridContent = (
+      <div className="text-center p-5 text-danger" style={{ fontSize: '0.9rem' }}>
+        Erro ao carregar o horário da semana. Tente novamente.
+      </div>
+    )
+  }
 
   return (
     <div className="p-4">
@@ -530,17 +605,7 @@ const Schedules = () => {
               {loadingWeek && <CSpinner size="sm" className="text-secondary" />}
             </CCardHeader>
             <CCardBody className="p-0">
-              {hasSelection
-                ? <WeekGrid slots={weekSlots} isLoading={loadingWeek} baseTimeslots={timeslots} weekStart={weekStart} />
-                : (
-                  <div className="text-center p-5 text-muted">
-                    <CIcon icon={cilCalendar} style={{ fontSize: '2rem', opacity: 0.35 }} />
-                    <div className="mt-2">
-                      Selecione uma turma ou professor para visualizar o horário da semana.
-                    </div>
-                  </div>
-                )
-              }
+              {weekGridContent}
             </CCardBody>
           </CCard>
         </CCol>

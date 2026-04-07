@@ -36,10 +36,14 @@ ERR_NO_DATES = "Nenhum ano letivo tem 'data de início' e 'data de fim-alvo' con
 ERR_NO_LESSONS = "Nenhuma lição ativa encontrada. Atribua professores às disciplinas das turmas."
 ERR_ALL_DONE = "Todos os módulos já estão concluídos! Nada a agendar."
 ERR_NO_EXPAND = "A expansão para datas não produziu blocos de horário."
+ERR_INVALID_HARD_END = "A data-limite rígida é anterior ao início do ano letivo. Corrija em Configurações > Anos Letivos."
 MSG_IMPOSSIBLE = "Sem solução válida com as restrições atuais. Verifique as disponibilidades dos professores e as salas."
+HARD_LIMIT_REACHED_DETAIL = "Data-limite rígida atingida; carga remanescente ficou por agendar."
 DEFAULT_LUNCH_WINDOW_START_MINUTES = 12 * 60
 DEFAULT_LUNCH_WINDOW_END_MINUTES = 14 * 60
 DEFAULT_LUNCH_MIN_DURATION_MINUTES = 60
+DEFAULT_HARD_END_MONTH = 7
+DEFAULT_HARD_END_DAY = 31
 GENERATION_TOTAL_STEPS = 10
 
 
@@ -160,6 +164,40 @@ def _compute_planning_weeks(start_date: date, target_end_date: date) -> int:
     return max(1, math.ceil(total_days / 7))
 
 
+def _parse_academic_year_end_year(academic_year: str | None) -> int | None:
+    if not academic_year:
+        return None
+    parts = academic_year.split("/")
+    if len(parts) != 2:
+        return None
+    try:
+        return int(parts[1])
+    except ValueError:
+        return None
+
+
+def _resolve_hard_end_date(org_settings) -> date | None:
+    if org_settings.school_hard_end_date is not None:
+        return org_settings.school_hard_end_date
+
+    fallback_year = None
+    if org_settings.school_target_end_date is not None:
+        fallback_year = org_settings.school_target_end_date.year
+    else:
+        fallback_year = _parse_academic_year_end_year(org_settings.academic_year)
+
+    if fallback_year is None:
+        return None
+
+    return date(fallback_year, DEFAULT_HARD_END_MONTH, DEFAULT_HARD_END_DAY)
+
+
+def _resolve_planning_target_end_date(target_end_date: date, hard_end_date: date) -> date:
+    if target_end_date <= hard_end_date:
+        return target_end_date
+    return hard_end_date
+
+
 def _resolve_lunch_constraints(org_settings) -> tuple[int, int, int]:
     """Resolve janela de almoço e pausa mínima (com defaults seguros)."""
     start = org_settings.lunch_window_start
@@ -210,15 +248,17 @@ def expand_to_dates(
     assignments: list[ScheduledAssignment],
     school_start_date: date,
     school_target_end_date: date,
+    school_hard_end_date: date,
     blocked_dates: set,
     remaining_map: dict,
-) -> list[ScheduledBlock]:
+) -> tuple[list[ScheduledBlock], int]:
     """Expande o padrão semanal para blocos com datas absolutas.
 
     Para cada dia útil não bloqueado, agenda os blocos cujas lições ainda
     têm horas pendentes. Para quando todos os remaining_map chegam a 0
-    ou ultrapassamos o horizonte de segurança (target + 365 dias).
+    ou quando é atingida a data-limite rígida da escola.
     """
+    _ = school_target_end_date
     by_dow: dict = defaultdict(list)
     for assignment in assignments:
         by_dow[assignment.day_of_week].append(assignment)
@@ -226,7 +266,7 @@ def expand_to_dates(
     remaining = dict(remaining_map)
     result: list[ScheduledBlock] = []
     current = school_start_date
-    max_date = school_target_end_date + timedelta(days=365)
+    max_date = school_hard_end_date
 
     while current <= max_date:
         if all(v <= 0 for v in remaining.values()):
@@ -246,7 +286,8 @@ def expand_to_dates(
                     )
         current = current + timedelta(days=1)
 
-    return result
+    remaining_minutes = sum(max(0, value) for value in remaining.values())
+    return result, remaining_minutes
 
 
 def _compute_class_end_dates(blocks: list[ScheduledBlock], lesson_class_map: dict) -> dict:
@@ -342,7 +383,17 @@ def generate_schedule_task(self: Task, org_id: int, mode: str = "full") -> dict:
         lunch_start_minutes, lunch_end_minutes, lunch_min_duration = _resolve_lunch_constraints(org_settings)
 
         expansion_start_date = _resolve_expansion_start_date(org_settings.school_start_date)
-        planning_weeks = _compute_planning_weeks(expansion_start_date, org_settings.school_target_end_date)
+        hard_end_date = _resolve_hard_end_date(org_settings)
+        if hard_end_date is None:
+            return {"status": "Error", "message": ERR_NO_DATES}
+        if hard_end_date < expansion_start_date:
+            return {"status": "Error", "message": ERR_INVALID_HARD_END}
+
+        planning_target_end_date = _resolve_planning_target_end_date(
+            org_settings.school_target_end_date,
+            hard_end_date,
+        )
+        planning_weeks = _compute_planning_weeks(expansion_start_date, planning_target_end_date)
 
         modules_by_subject = schedule_service.get_modules_by_subject_sync(db, org_id)
         progress_map = schedule_service.get_class_progress_map_sync(db, org_id)
@@ -409,10 +460,11 @@ def generate_schedule_task(self: Task, org_id: int, mode: str = "full") -> dict:
         remaining_map = {li.lesson_id: li.remaining_minutes for li in lesson_inputs}
         lesson_class_map = {lesson.id: lesson.class_id for lesson in raw_lessons}
 
-        blocks = expand_to_dates(
+        blocks, remaining_after_expand = expand_to_dates(
             assignments=assignments,
             school_start_date=expansion_start_date,
             school_target_end_date=org_settings.school_target_end_date,
+            school_hard_end_date=hard_end_date,
             blocked_dates=blocked_dates,
             remaining_map=remaining_map,
         )
@@ -431,12 +483,17 @@ def generate_schedule_task(self: Task, org_id: int, mode: str = "full") -> dict:
             db.commit()
             _invalidate_cache(org_id)
             logger.info("Rascunho de reparação criado", blocks=len(blocks), gen_id=gen_id)
+            detail = None
+            if remaining_after_expand > 0:
+                remaining_hours = round(remaining_after_expand / 60, 1)
+                detail = f"{HARD_LIMIT_REACHED_DETAIL} Restam {remaining_hours}h além de {hard_end_date.isoformat()}."
             return {
                 "status": "Success",
                 "generation_id": gen_id,
                 "mode": "repair",
                 "is_draft": True,
                 "count": len(blocks),
+                "detail": detail,
                 "progress": {
                     "current": GENERATION_TOTAL_STEPS,
                     "total": GENERATION_TOTAL_STEPS,
@@ -453,6 +510,10 @@ def generate_schedule_task(self: Task, org_id: int, mode: str = "full") -> dict:
         _invalidate_cache(org_id)
 
         logger.info("Geração concluída", blocks=len(blocks), classes=len(class_end_dates))
+        detail = None
+        if remaining_after_expand > 0:
+            remaining_hours = round(remaining_after_expand / 60, 1)
+            detail = f"{HARD_LIMIT_REACHED_DETAIL} Restam {remaining_hours}h além de {hard_end_date.isoformat()}."
         return {
             "status": "Success",
             "generation_id": gen_id,
@@ -460,6 +521,7 @@ def generate_schedule_task(self: Task, org_id: int, mode: str = "full") -> dict:
             "is_draft": False,
             "count": len(blocks),
             "classes_updated": len(class_end_dates),
+            "detail": detail,
             "progress": {
                 "current": GENERATION_TOTAL_STEPS,
                 "total": GENERATION_TOTAL_STEPS,

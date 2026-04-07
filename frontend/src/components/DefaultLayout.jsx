@@ -58,6 +58,7 @@ const DefaultLayout = () => {
             <>
               <Link to="/dashboard" style={linkStyle}>Dashboard</Link>
               <Link to="/schedules" style={linkStyle}>Horários</Link>
+              <Link to="/schedules/audit" style={linkStyle}>Auditoria Técnica</Link>
               <Link to="/absences" style={linkStyle}>Faltas</Link>
               
               {/* Separador de Secção */}

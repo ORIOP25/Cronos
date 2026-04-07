@@ -33,14 +33,40 @@ function normalizeTimeLabel(value) {
 // Pure helpers — outside component (SonarQube S7721)
 // ---------------------------------------------------------------------------
 
-/** Build a lookup map: "dayOfWeek:startTime" → slot */
+/** Build a lookup map: "dayOfWeek:startTime" → [slots]. */
 function buildSlotMap(slots) {
   const map = {}
   slots.forEach(slot => {
     const key = `${slot.timeslot.day_of_week}:${normalizeTimeLabel(slot.timeslot.start_time)}`
-    map[key] = slot
+    if (!map[key]) {
+      map[key] = []
+    }
+    map[key].push(slot)
   })
   return map
+}
+
+function buildTooltipLines(slot) {
+  return [
+    slot.module ? `Modulo: ${slot.module.name} (${slot.module.hours_total}h)` : '',
+    slot.teacher ? `Professor: ${slot.teacher.name}` : '',
+    slot.room ? `Sala: ${slot.room.name}` : '',
+    slot.class_info ? `Turma: ${slot.class_info.name}` : '',
+    slot.hours_given == null ? '' : `Horas dadas: ${slot.hours_given}h`,
+  ].filter(Boolean)
+}
+
+function buildCellTitle(slotEntries) {
+  if (slotEntries.length <= 1) {
+    return buildTooltipLines(slotEntries[0]).join('\n')
+  }
+
+  const sections = slotEntries.map((entry, idx) => {
+    const lessonLabel = entry.subject?.name ?? `Aula ${idx + 1}`
+    const details = buildTooltipLines(entry)
+    return [`[${idx + 1}] ${lessonLabel}`, ...details].join('\n')
+  })
+  return sections.join('\n\n')
 }
 
 /** Compute the CSS style for a cell based on occurrence status. */
@@ -82,14 +108,17 @@ function getDateForDayFromWeekStart(weekStart, dayOfWeek) {
 // ---------------------------------------------------------------------------
 // SlotCell — individual table cell
 // ---------------------------------------------------------------------------
-const SlotCell = ({ slot }) => {
-  if (!slot) {
+const SlotCell = ({ slotEntries }) => {
+  if (!slotEntries || slotEntries.length === 0) {
     return (
       <td className="bg-light text-center align-middle" style={{ padding: '4px' }}>
         <span className="text-black-50" style={{ fontSize: '0.75rem' }}>—</span>
       </td>
     )
   }
+
+  const slot = slotEntries[0]
+  const hasCollision = slotEntries.length > 1
 
   const cellStyle = getCellStyle(slot)
   let statusLabel = 'Planeado'
@@ -99,16 +128,10 @@ const SlotCell = ({ slot }) => {
     statusLabel = 'Pendente'
   }
 
-  const tooltipLines = [
-    slot.module  ? `Módulo: ${slot.module.name} (${slot.module.hours_total}h)` : '',
-    slot.teacher ? `Professor: ${slot.teacher.name}` : '',
-    slot.room    ? `Sala: ${slot.room.name}` : '',
-    slot.class_info ? `Turma: ${slot.class_info.name}` : '',
-    slot.hours_given == null ? '' : `Horas dadas: ${slot.hours_given}h`,
-  ].filter(Boolean)
+  const titleText = buildCellTitle(slotEntries)
 
   return (
-    <td title={tooltipLines.join('\n')} style={{ padding: '4px', verticalAlign: 'top' }}>
+    <td title={titleText} style={{ padding: '4px', verticalAlign: 'top' }}>
       <div
         style={{
           ...cellStyle,
@@ -127,6 +150,11 @@ const SlotCell = ({ slot }) => {
         <div className="text-muted text-truncate" style={{ fontSize: '0.72rem' }}>
           {slot.room?.name ?? ''}
         </div>
+        {hasCollision ? (
+          <div className="badge text-bg-danger mt-1" style={{ fontSize: '0.66rem' }}>
+            Conflito x{slotEntries.length}
+          </div>
+        ) : null}
         <div
           style={{
             fontSize: '0.7rem',
@@ -143,16 +171,18 @@ const SlotCell = ({ slot }) => {
 }
 
 SlotCell.propTypes = {
-  slot: PropTypes.shape({
-    subject:    PropTypes.shape({ id: PropTypes.number, name: PropTypes.string }),
-    teacher:    PropTypes.shape({ name: PropTypes.string }),
-    room:       PropTypes.shape({ name: PropTypes.string }),
-    class_info: PropTypes.shape({ name: PropTypes.string }),
-    module:     PropTypes.shape({ name: PropTypes.string, hours_total: PropTypes.number }),
-    occurrence_status: PropTypes.string,
-    is_past:    PropTypes.bool,
-    hours_given: PropTypes.number,
-  }),
+  slotEntries: PropTypes.arrayOf(
+    PropTypes.shape({
+      subject: PropTypes.shape({ id: PropTypes.number, name: PropTypes.string }),
+      teacher: PropTypes.shape({ name: PropTypes.string }),
+      room: PropTypes.shape({ name: PropTypes.string }),
+      class_info: PropTypes.shape({ name: PropTypes.string }),
+      module: PropTypes.shape({ name: PropTypes.string, hours_total: PropTypes.number }),
+      occurrence_status: PropTypes.string,
+      is_past: PropTypes.bool,
+      hours_given: PropTypes.number,
+    }),
+  ),
 }
 
 // ---------------------------------------------------------------------------
@@ -250,7 +280,7 @@ const WeekGrid = ({ slots, isLoading, baseTimeslots = [], weekStart = '' }) => {
                 <span className="fw-normal text-black-50">{endTimeMap[time] ?? ''}</span>
               </td>
               {activeDays.map(dayIdx => (
-                <SlotCell key={`${dayIdx}:${time}`} slot={slotMap[`${dayIdx}:${time}`] ?? null} />
+                <SlotCell key={`${dayIdx}:${time}`} slotEntries={slotMap[`${dayIdx}:${time}`] ?? []} />
               ))}
             </tr>
           ))}

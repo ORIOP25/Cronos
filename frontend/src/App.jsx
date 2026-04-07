@@ -10,6 +10,7 @@ import Subjects from './pages/Subjects';
 import SchoolConfig from './pages/SchoolConfig';
 import Schedules from './pages/Schedules';
 import Occurrences from './pages/Occurrences';
+import ScheduleAuditDashboard from './pages/ScheduleAuditDashboard';
 import Courses from './pages/Courses';
 import CourseDetails from './pages/CourseDetails';
 import ClassDetails from './pages/ClassDetails';
@@ -42,6 +43,7 @@ function App() {
           
           <Route path="config" element={<SchoolConfig />} />
           <Route path="schedules" element={<Schedules />} />
+          <Route path="schedules/audit" element={<ScheduleAuditDashboard />} />
           <Route path="absences" element={<Occurrences />} />
           <Route path="my-availability" element={<MyAvailability />} />
         </Route>

@@ -58,6 +58,8 @@ async def upsert_settings(
             existing.school_start_date = data.school_start_date
         if data.school_target_end_date is not None:
             existing.school_target_end_date = data.school_target_end_date
+        if data.school_hard_end_date is not None:
+            existing.school_hard_end_date = data.school_hard_end_date
         if data.region_code is not None:
             existing.region_code = data.region_code
         if data.lunch_window_start is not None:
@@ -75,6 +77,7 @@ async def upsert_settings(
         academic_year=data.academic_year,
         school_start_date=data.school_start_date,
         school_target_end_date=data.school_target_end_date,
+        school_hard_end_date=data.school_hard_end_date,
         region_code=data.region_code,
         lunch_window_start=data.lunch_window_start,
         lunch_window_end=data.lunch_window_end,

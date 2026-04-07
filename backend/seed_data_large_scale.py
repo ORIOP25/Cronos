@@ -19,17 +19,16 @@ from app.models import UserRole, PreferenceLevel, RoomType
 # Requisito A: assumir dia de referência como 15 de setembro.
 ASSUMED_TODAY = datetime.date(2025, 9, 15)
 SCHOOL_TARGET_END = datetime.date(2026, 6, 30)
+SCHOOL_HARD_END = datetime.date(2026, 7, 31)
 
 ORG_COUNT = 3
 COURSES_PER_ORG = 10
-SUBJECTS_PER_CLASS = 8
-MODULES_PER_SUBJECT_MIN = 5
-MODULES_PER_SUBJECT_MAX = 6
+SUBJECTS_PER_CLASS_MIN = 8
+SUBJECTS_PER_CLASS_MAX = 9
+MODULES_PER_SUBJECT_MIN = 6
+MODULES_PER_SUBJECT_MAX = 7
 MODULE_HOURS_MIN = 25
 MODULE_HOURS_MAX = 35
-ROOMS_NORMAL_COUNT = 22
-ROOMS_LAB_COUNT = 7
-ROOMS_GYM_COUNT = 2
 
 CLASS_BLUEPRINTS = [
     {"grade": 10, "start": 2025, "end": 2028, "suffix": "25/28", "size": 26},
@@ -37,11 +36,18 @@ CLASS_BLUEPRINTS = [
     {"grade": 12, "start": 2023, "end": 2026, "suffix": "23/26", "size": 22},
 ]
 
-# Regra: 1 professor para cada 6 disciplinas
+# Regra: 1 professor para cada 8 turmas, por disciplina.
 CLASSES_PER_ORG = COURSES_PER_ORG * len(CLASS_BLUEPRINTS)
-DISCIPLINES_PER_ORG = CLASSES_PER_ORG * SUBJECTS_PER_CLASS
-TEACHER_DISCIPLINE_RATIO = 6
-TEACHERS_PER_ORG = math.ceil(DISCIPLINES_PER_ORG / TEACHER_DISCIPLINE_RATIO)
+TEACHER_CLASS_RATIO = 8
+TEACHERS_PER_SUBJECT_POOL = math.ceil(CLASSES_PER_ORG / TEACHER_CLASS_RATIO)
+TEACHERS_PER_ORG = SUBJECTS_PER_CLASS_MAX * TEACHERS_PER_SUBJECT_POOL
+
+# Regra: 1 sala para cada 1.5 turmas
+ROOMS_PER_CLASS_RATIO = 1.5
+ROOMS_PER_ORG = math.ceil(CLASSES_PER_ORG / ROOMS_PER_CLASS_RATIO)
+ROOMS_GYM_COUNT = max(1, math.ceil(ROOMS_PER_ORG * 0.05))
+ROOMS_LAB_COUNT = max(2, math.ceil(ROOMS_PER_ORG * 0.25))
+ROOMS_NORMAL_COUNT = max(1, ROOMS_PER_ORG - ROOMS_LAB_COUNT - ROOMS_GYM_COUNT)
 
 ROOMS_TEMPLATE = (
     [
@@ -59,6 +65,18 @@ ROOMS_TEMPLATE = (
 )
 
 ROOM_TYPE_CYCLE = [RoomType.normal, RoomType.lab, RoomType.normal, RoomType.lab, RoomType.gym, RoomType.normal]
+
+DISCIPLINE_CATALOG = [
+    "Matematica",
+    "Portugues",
+    "Ingles",
+    "Programacao",
+    "Redes",
+    "Sistemas",
+    "Fisica",
+    "Educacao_Fisica",
+    "Area_Integracao",
+]
 
 
 # =====================================================================
@@ -149,6 +167,12 @@ def _room_type_for_subject(index: int) -> RoomType:
     return ROOM_TYPE_CYCLE[index % len(ROOM_TYPE_CYCLE)]
 
 
+def _discipline_name_for_index(index: int) -> str:
+    if 1 <= index <= len(DISCIPLINE_CATALOG):
+        return DISCIPLINE_CATALOG[index - 1]
+    return f"Disciplina_{index:02d}"
+
+
 def _module_progress_for_grade(grade_level: int, module_order: int, seed_value: int) -> tuple[int, bool]:
     _ = (grade_level, module_order, seed_value)
     return (0, False)
@@ -157,6 +181,11 @@ def _module_progress_for_grade(grade_level: int, module_order: int, seed_value: 
 def _module_count_for_subject(subject_seq: int, class_counter: int) -> int:
     span = MODULES_PER_SUBJECT_MAX - MODULES_PER_SUBJECT_MIN + 1
     return MODULES_PER_SUBJECT_MIN + ((subject_seq + class_counter) % span)
+
+
+def _subject_count_for_class(class_counter: int) -> int:
+    span = SUBJECTS_PER_CLASS_MAX - SUBJECTS_PER_CLASS_MIN + 1
+    return SUBJECTS_PER_CLASS_MIN + (class_counter % span)
 
 
 def _module_hours_for_subject(subject_seq: int, module_order: int, class_counter: int) -> int:
@@ -169,16 +198,19 @@ def _seed_subject_bundle_for_class(
     org,
     course,
     klass,
-    teacher_objs,
+    teacher_pools: dict[int, list[models.Teacher]],
     class_counter: int,
     subject_seq: int,
     counters: dict,
 ) -> int:
-    for subject_index in range(1, SUBJECTS_PER_CLASS + 1):
-        subject_name = f"Disciplina U{subject_seq:04d}"
-        subject_code = f"S{subject_seq:04d}"
+    subject_count = _subject_count_for_class(class_counter)
+    for subject_index in range(1, subject_count + 1):
+        discipline_name = _discipline_name_for_index(subject_index)
+        subject_name = f"{discipline_name} U{subject_seq:04d}"
+        subject_code = f"D{subject_index:02d}S{subject_seq:04d}"
         room_type = _room_type_for_subject(subject_seq)
-        assigned_teacher = teacher_objs[(class_counter + subject_index - 2) % len(teacher_objs)]
+        subject_teacher_pool = teacher_pools[subject_index]
+        assigned_teacher = subject_teacher_pool[(class_counter - 1) % len(subject_teacher_pool)]
 
         subject = models.Subject(
             name=subject_name,
@@ -265,6 +297,7 @@ def _seed_single_organization(db, org_idx: int, subject_seq: int, counters: dict
         academic_year="2025/2026",
         school_start_date=ASSUMED_TODAY,
         school_target_end_date=SCHOOL_TARGET_END,
+        school_hard_end_date=SCHOOL_HARD_END,
         region_code="11",
         lunch_window_start=datetime.time(12, 0),
         lunch_window_end=datetime.time(14, 0),
@@ -292,28 +325,32 @@ def _seed_single_organization(db, org_idx: int, subject_seq: int, counters: dict
     db.flush()
     ts_map = _create_timeslots(db, org.id)
 
-    teacher_objs = []
-    for teacher_idx in range(1, TEACHERS_PER_ORG + 1):
-        teacher = models.Teacher(
-            name=f"Prof E{org_idx}-{teacher_idx:02d}",
-            organization_id=org.id,
-        )
-        db.add(teacher)
-        db.flush()
+    teacher_pools: dict[int, list[models.Teacher]] = {}
+    all_teachers: list[models.Teacher] = []
+    for subject_index in range(1, SUBJECTS_PER_CLASS_MAX + 1):
+        teacher_pools[subject_index] = []
+        for pool_idx in range(1, TEACHERS_PER_SUBJECT_POOL + 1):
+            teacher = models.Teacher(
+                name=f"Prof E{org_idx} D{subject_index:02d} P{pool_idx:02d}",
+                organization_id=org.id,
+            )
+            db.add(teacher)
+            db.flush()
 
-        db.add(models.User(
-            name=f"Prof E{org_idx}-{teacher_idx:02d}",
-            email=f"prof.e{org_idx}.{teacher_idx:02d}@cluster.pt",
-            hashed_password=hash_password("1234"),
-            role=UserRole.teacher,
-            teacher_id=teacher.id,
-            organization_id=org.id,
-            is_active=True,
-        ))
-        teacher_objs.append(teacher)
-        counters["teachers"] += 1
+            db.add(models.User(
+                name=f"Prof E{org_idx} D{subject_index:02d} P{pool_idx:02d}",
+                email=f"prof.e{org_idx}.d{subject_index:02d}.{pool_idx:02d}@cluster.pt",
+                hashed_password=hash_password("1234"),
+                role=UserRole.teacher,
+                teacher_id=teacher.id,
+                organization_id=org.id,
+                is_active=True,
+            ))
+            teacher_pools[subject_index].append(teacher)
+            all_teachers.append(teacher)
+            counters["teachers"] += 1
 
-    counters["availability"] += _seed_teacher_availability(db, teacher_objs, ts_map)
+    counters["availability"] += _seed_teacher_availability(db, all_teachers, ts_map)
 
     class_counter = 0
     for course_idx in range(1, COURSES_PER_ORG + 1):
@@ -346,7 +383,7 @@ def _seed_single_organization(db, org_idx: int, subject_seq: int, counters: dict
                 org,
                 course,
                 klass,
-                teacher_objs,
+                teacher_pools,
                 class_counter,
                 subject_seq,
                 counters,
@@ -394,6 +431,12 @@ def run_seed():
         print(f"  Professores:               {counters['teachers']}")
         print(f"  Cursos:                    {counters['courses']}")
         print(f"  Turmas:                    {counters['classes']}")
+        print(f"  Disciplinas por turma:     {SUBJECTS_PER_CLASS_MIN}-{SUBJECTS_PER_CLASS_MAX}")
+        print(f"  Módulos por disciplina:    {MODULES_PER_SUBJECT_MIN}-{MODULES_PER_SUBJECT_MAX}")
+        print(f"  Horas por módulo:          {MODULE_HOURS_MIN}-{MODULE_HOURS_MAX}")
+        print(f"  Rácio docente/turmas:      1/{TEACHER_CLASS_RATIO}")
+        print(f"  Pools docentes/disciplina: {TEACHERS_PER_SUBJECT_POOL}")
+        print(f"  Rácio salas/turmas:        1/{ROOMS_PER_CLASS_RATIO}")
         print(f"  Disciplinas (únicas):      {counters['subjects']}")
         print(f"  Módulos (únicos):          {counters['modules']}")
         print(f"  ClassSubjectLinks:         {counters['links']}")
@@ -406,7 +449,7 @@ def run_seed():
         print("\n  LOGINS PEDIDOS (1 admin + 1 professor por organização):")
         for org_idx in range(1, ORG_COUNT + 1):
             print(f"   Escola {org_idx} -> admin{org_idx}@cluster.pt / 1234")
-            print(f"   Escola {org_idx} -> prof.e{org_idx}.01@cluster.pt / 1234")
+            print(f"   Escola {org_idx} -> prof.e{org_idx}.d01.01@cluster.pt / 1234")
 
     except Exception as exc:
         print(f"\n[ERRO] Erro crítico no seed: {exc}")
