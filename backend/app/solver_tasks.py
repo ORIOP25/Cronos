@@ -37,6 +37,7 @@ ERR_NO_LESSONS = "Nenhuma lição ativa encontrada. Atribua professores às disc
 ERR_ALL_DONE = "Todos os módulos já estão concluídos! Nada a agendar."
 ERR_NO_EXPAND = "A expansão para datas não produziu blocos de horário."
 ERR_INVALID_HARD_END = "A data-limite rígida é anterior ao início do ano letivo. Corrija em Configurações > Anos Letivos."
+ERR_REPAIR_WINDOW_NO_FUTURE = "Modo repair bloqueado: não existe horizonte fora da janela de estabilidade antes do hard end date."
 MSG_IMPOSSIBLE = "Sem solução válida com as restrições atuais. Verifique as disponibilidades dos professores e as salas."
 HARD_LIMIT_REACHED_DETAIL = "Data-limite rígida atingida; carga remanescente ficou por agendar."
 DEFAULT_LUNCH_WINDOW_START_MINUTES = 12 * 60
@@ -44,6 +45,7 @@ DEFAULT_LUNCH_WINDOW_END_MINUTES = 14 * 60
 DEFAULT_LUNCH_MIN_DURATION_MINUTES = 60
 DEFAULT_HARD_END_MONTH = 7
 DEFAULT_HARD_END_DAY = 31
+DEFAULT_REPAIR_STABILITY_WINDOW_DAYS = 14
 GENERATION_TOTAL_STEPS = 10
 
 
@@ -151,9 +153,25 @@ def _select_org_settings(settings_list: list):
     return None
 
 
-def _resolve_expansion_start_date(school_start_date: date) -> date:
-    """Expande sempre desde o início do ano letivo para planeamento completo."""
-    return school_start_date
+def _resolve_repair_window_days(org_settings) -> int:
+    value = org_settings.repair_stability_window_days
+    if value is None:
+        return DEFAULT_REPAIR_STABILITY_WINDOW_DAYS
+    return max(1, int(value))
+
+
+def _resolve_expansion_start_date(
+    school_start_date: date,
+    *,
+    mode: str,
+    repair_window_days: int,
+) -> date:
+    """Define início da expansão; em repair, só fora da janela de estabilidade."""
+    if mode != "repair":
+        return school_start_date
+
+    frozen_until = date.today() + timedelta(days=max(1, repair_window_days))
+    return max(school_start_date, frozen_until + timedelta(days=1))
 
 
 def _compute_planning_weeks(start_date: date, target_end_date: date) -> int:
@@ -196,6 +214,14 @@ def _resolve_planning_target_end_date(target_end_date: date, hard_end_date: date
     if target_end_date <= hard_end_date:
         return target_end_date
     return hard_end_date
+
+
+def _build_repair_window_block_detail(repair_window_days: int, hard_end_date: date) -> str:
+    frozen_until = date.today() + timedelta(days=repair_window_days)
+    return (
+        f"Janela de estabilidade ativa até {frozen_until.isoformat()} e hard end date "
+        f"em {hard_end_date.isoformat()}."
+    )
 
 
 def _resolve_lunch_constraints(org_settings) -> tuple[int, int, int]:
@@ -367,6 +393,9 @@ def generate_schedule_task(self: Task, org_id: int, mode: str = "full") -> dict:
         if not org_settings:
             return {"status": "Error", "message": ERR_NO_DATES}
 
+        is_repair = mode == "repair"
+        repair_window_days = _resolve_repair_window_days(org_settings) if is_repair else 0
+
         self.update_state(state="FETCHING", meta=_task_progress_meta(3, "A sincronizar lições da matriz turma-disciplina...", "FETCHING"))
         lesson_sync_stats = schedule_service.sync_lessons_from_class_subject_links_sync(db, org_id)
 
@@ -382,11 +411,21 @@ def generate_schedule_task(self: Task, org_id: int, mode: str = "full") -> dict:
         min_slot_minutes = min(ts.duration_minutes for ts in timeslot_inputs if ts.duration_minutes > 0)
         lunch_start_minutes, lunch_end_minutes, lunch_min_duration = _resolve_lunch_constraints(org_settings)
 
-        expansion_start_date = _resolve_expansion_start_date(org_settings.school_start_date)
+        expansion_start_date = _resolve_expansion_start_date(
+            org_settings.school_start_date,
+            mode=mode,
+            repair_window_days=repair_window_days,
+        )
         hard_end_date = _resolve_hard_end_date(org_settings)
         if hard_end_date is None:
             return {"status": "Error", "message": ERR_NO_DATES}
         if hard_end_date < expansion_start_date:
+            if is_repair:
+                return {
+                    "status": "Error",
+                    "message": ERR_REPAIR_WINDOW_NO_FUTURE,
+                    "detail": _build_repair_window_block_detail(repair_window_days, hard_end_date),
+                }
             return {"status": "Error", "message": ERR_INVALID_HARD_END}
 
         planning_target_end_date = _resolve_planning_target_end_date(
@@ -419,7 +458,6 @@ def generate_schedule_task(self: Task, org_id: int, mode: str = "full") -> dict:
         blocked_dates = _build_blocked_dates(calendar_events)
 
         # Repair mode: ler padrão ativo anterior para minimizar perturbações
-        is_repair = mode == "repair"
         previous_pattern = (
             schedule_service.get_active_future_pattern_sync(db, org_id)
             if is_repair else None

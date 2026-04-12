@@ -4,7 +4,7 @@ from typing import List, Optional
 from sqlalchemy import (
     Column, Integer, String, Boolean,
     ForeignKey, Date, DateTime, Time,
-    Text, Enum as SAEnum, UniqueConstraint, Table,
+    Text, Enum as SAEnum, UniqueConstraint, Table, Float, event,
 )
 from sqlalchemy.types import JSON
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -435,6 +435,7 @@ class OrganizationSettings(Base):
     lunch_window_start: Mapped[Optional[time]] = mapped_column(Time, nullable=True)
     lunch_window_end: Mapped[Optional[time]] = mapped_column(Time, nullable=True)
     lunch_min_duration_minutes: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    repair_stability_window_days: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
 
     organization: Mapped["Organization"] = relationship(back_populates="settings")
 
@@ -529,6 +530,9 @@ class LessonOccurrence(Base):
         SAEnum(LessonOccurrenceStatus), nullable=False
     )
 
+    # Horas planeadas do bloco (preservadas mesmo se o slot for removido)
+    planned_hours: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+
     # Substituição (preenchido quando status=SUBSTITUTED)
     substitute_teacher_id: Mapped[Optional[int]] = mapped_column(
         ForeignKey(FK_TEACHER_ID, ondelete=ON_DELETE_SET_NULL), nullable=True
@@ -537,8 +541,30 @@ class LessonOccurrence(Base):
         ForeignKey(FK_SUBJECT_ID, ondelete=ON_DELETE_SET_NULL), nullable=True
     )
 
-    # Horas efetivamente dadas (duração do timeslot em horas)
-    hours_given: Mapped[float] = mapped_column(nullable=False, default=0.0)
+    # Docente previsto e docente que efetivamente executou
+    planned_teacher_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey(FK_TEACHER_ID, ondelete=ON_DELETE_SET_NULL), nullable=True
+    )
+    executed_teacher_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey(FK_TEACHER_ID, ondelete=ON_DELETE_SET_NULL), nullable=True
+    )
+
+    # Módulo planeado e módulo efetivamente executado
+    planned_module_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("module.id", ondelete=ON_DELETE_SET_NULL), nullable=True
+    )
+    executed_module_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("module.id", ondelete=ON_DELETE_SET_NULL), nullable=True
+    )
+
+    # Horas efetivamente dadas na execução (0.0 quando GAP)
+    hours_given: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+
+    # Quem decidiu e quando decidiu o estado final
+    decided_by_user_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("user.id", ondelete=ON_DELETE_SET_NULL), nullable=True
+    )
+    decided_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Auditoria
     created_at: Mapped[datetime] = mapped_column(
@@ -556,6 +582,21 @@ class LessonOccurrence(Base):
     substitute_subject: Mapped[Optional["Subject"]] = relationship(
         foreign_keys=[substitute_subject_id]
     )
+    planned_teacher: Mapped[Optional["Teacher"]] = relationship(
+        foreign_keys=[planned_teacher_id]
+    )
+    executed_teacher: Mapped[Optional["Teacher"]] = relationship(
+        foreign_keys=[executed_teacher_id]
+    )
+    planned_module: Mapped[Optional["Module"]] = relationship(
+        foreign_keys=[planned_module_id]
+    )
+    executed_module: Mapped[Optional["Module"]] = relationship(
+        foreign_keys=[executed_module_id]
+    )
+    decided_by_user: Mapped[Optional["User"]] = relationship(
+        foreign_keys=[decided_by_user_id]
+    )
 
     # Uma ocorrência por slot planeado (evita duplicados do cron)
     __table_args__ = (
@@ -567,6 +608,11 @@ class LessonOccurrence(Base):
 
     def __repr__(self) -> str:
         return f"<LessonOccurrence(id={self.id}, date='{self.date}', status='{self.status}')>"
+
+
+@event.listens_for(LessonOccurrence, "before_delete")
+def _prevent_lesson_occurrence_delete(mapper, connection, target) -> None:  # noqa: ARG001
+    raise ValueError("LessonOccurrence é histórico imutável e não pode ser removida")
 
 
 # --- ENSINO PROFISSIONAL / MODULAR ---
@@ -631,7 +677,8 @@ class ClassProgress(Base):
     class_id: Mapped[int] = mapped_column(ForeignKey(FK_CLASS_ID))
     module_id: Mapped[int] = mapped_column(ForeignKey("module.id"))
     
-    hours_completed: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    hours_completed: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    hours_debt: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
     is_completed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), nullable=False)
 

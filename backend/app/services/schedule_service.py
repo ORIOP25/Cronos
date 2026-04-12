@@ -1,11 +1,13 @@
 from collections import defaultdict
-from datetime import date
+from datetime import date, timedelta
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy.future import select
 from sqlalchemy import delete, desc
 from app import models, schemas
+
+DEFAULT_REPAIR_STABILITY_WINDOW_DAYS = 14
 
 # ==========================================
 #  ASYNC (API / FRONTEND)
@@ -672,26 +674,50 @@ def list_draft_gen_ids_sync(db: Session, org_id: int) -> list[dict]:
     ]
 
 
+def _resolve_repair_window_days_sync(db: Session, org_id: int) -> int:
+    row = (
+        db.query(models.OrganizationSettings.repair_stability_window_days)
+        .filter(models.OrganizationSettings.org_id == org_id)
+        .order_by(models.OrganizationSettings.id.desc())
+        .first()
+    )
+    if row is None or row[0] is None:
+        return DEFAULT_REPAIR_STABILITY_WINDOW_DAYS
+    return max(1, int(row[0]))
+
+
 def approve_draft_sync(db: Session, org_id: int, gen_id: str) -> int:
     """Aprova um rascunho: elimina o horário ativo futuro e promove o rascunho.
 
     Retorna o número de blocos promovidos.
     """
     today = date.today()
+    repair_window_days = _resolve_repair_window_days_sync(db, org_id)
+    frozen_until = today + timedelta(days=repair_window_days)
+
     # 1. Apagar horário ativo futuro
     db.query(models.ScheduleOutput).filter(
         models.ScheduleOutput.organization_id == org_id,
         models.ScheduleOutput.is_draft.is_(False),
-        (models.ScheduleOutput.date == None) | (models.ScheduleOutput.date > today),  # noqa: E711
+        (models.ScheduleOutput.date == None) | (models.ScheduleOutput.date > frozen_until),  # noqa: E711
     ).delete(synchronize_session="fetch")
 
-    # 2. Promover rascunho a ativo
+    # 2. Limpar blocos de rascunho dentro da janela congelada (não podem ser ativados)
+    db.query(models.ScheduleOutput).filter(
+        models.ScheduleOutput.organization_id == org_id,
+        models.ScheduleOutput.generation_id == gen_id,
+        models.ScheduleOutput.is_draft.is_(True),
+        (models.ScheduleOutput.date == None) | (models.ScheduleOutput.date <= frozen_until),  # noqa: E711
+    ).delete(synchronize_session="fetch")
+
+    # 3. Promover apenas rascunho fora da janela de estabilidade
     count = (
         db.query(models.ScheduleOutput)
         .filter(
             models.ScheduleOutput.organization_id == org_id,
             models.ScheduleOutput.generation_id == gen_id,
             models.ScheduleOutput.is_draft.is_(True),
+            models.ScheduleOutput.date > frozen_until,
         )
         .update({"is_draft": False}, synchronize_session="fetch")
     )

@@ -3,6 +3,7 @@
 Rotas:
   GET  /occurrences/         — listar ocorrências (com filtros)
   GET  /occurrences/debts    — dívidas de horas agrupadas
+    GET  /occurrences/{id}/substitutes/recommendations — ranking de elegíveis
   GET  /occurrences/{id}     — detalhe de uma ocorrência
   PATCH /occurrences/{id}    — registar falta (GAP) ou substituição
   GET  /occurrences/substitutes — professores disponíveis num slot/data
@@ -93,7 +94,7 @@ async def list_debts(
 )
 async def list_available_substitutes(
     db: Annotated[AsyncSession, Depends(deps.get_db)],
-    current_user: Annotated[models.User, Depends(deps.get_current_user)],
+    current_user: Annotated[models.User, Depends(deps.get_current_active_admin)],
     timeslot_id: int = Query(..., description="ID do timeslot afetado"),
     target_date: date = Query(..., description="Data da aula (YYYY-MM-DD)"),
 ):
@@ -107,6 +108,35 @@ async def list_available_substitutes(
 
     results = await db.run_sync(_run)
     return results
+
+
+@router.get(
+    "/{occurrence_id}/substitutes/recommendations",
+    response_model=list[schemas.SubstituteRecommendationRead],
+    summary="Ranking de elegíveis para substituição",
+    responses={
+        404: {"description": OCCURRENCE_NOT_FOUND_MSG},
+        422: {"description": "Ocorrência sem contexto válido para recomendação"},
+    },
+)
+async def get_substitute_recommendations(
+    occurrence_id: int,
+    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    current_user: Annotated[models.User, Depends(deps.get_current_active_admin)],
+):
+    org_id = current_user.organization_id
+
+    def _run(sync_db):
+        return occurrence_service.get_substitute_recommendations_sync(
+            sync_db,
+            org_id=org_id,
+            occurrence_id=occurrence_id,
+        )
+
+    try:
+        return await db.run_sync(_run)
+    except occurrence_service.OccurrenceServiceError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
 
 @router.get(
@@ -139,25 +169,30 @@ async def get_occurrence(
     responses={
         404: {"description": OCCURRENCE_NOT_FOUND_MSG},
         422: {"description": "Dados inválidos (ex: substituto obrigatório em SUBSTITUTED)"},
+        409: {"description": "Transição inválida ou tentativa de sobrescrever histórico"},
     },
 )
 async def update_occurrence(
     occurrence_id: int,
     payload: schemas.LessonOccurrenceUpdate,
     db: Annotated[AsyncSession, Depends(deps.get_db)],
-    current_user: Annotated[models.User, Depends(deps.get_current_user)],
+    current_user: Annotated[models.User, Depends(deps.get_current_active_admin)],
 ):
     """Permite ao diretor marcar uma ocorrência como GAP ou SUBSTITUTED."""
     org_id = current_user.organization_id
 
     def _run(sync_db):
         return occurrence_service.update_occurrence_sync(
-            sync_db, occurrence_id, org_id, payload
+            sync_db,
+            occurrence_id,
+            org_id,
+            payload,
+            decided_by_user_id=current_user.id,
         )
 
     try:
         updated = await db.run_sync(_run)
-    except ValueError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except occurrence_service.OccurrenceServiceError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
     return updated

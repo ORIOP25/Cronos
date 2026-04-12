@@ -18,6 +18,9 @@ from app.core.ratelimit import limiter
 
 router = APIRouter()
 ERR_DRAFT_NOT_FOUND = "Rascunho não encontrado"
+DEFAULT_REPAIR_WINDOW_DAYS = 14
+DEFAULT_HARD_END_MONTH = 7
+DEFAULT_HARD_END_DAY = 31
 
 # --- CONSTRAINTS (Regras) ---
 @router.post("/constraints/", response_model=schemas.ConstraintRead)
@@ -64,6 +67,36 @@ async def _get_latest_settings_with_dates(
         )
     )
     return settings_result.scalars().first()
+
+
+def _resolve_repair_window_days(org_settings: models.OrganizationSettings) -> int:
+    value = org_settings.repair_stability_window_days
+    if value is None:
+        return DEFAULT_REPAIR_WINDOW_DAYS
+    return max(1, int(value))
+
+
+def _resolve_preflight_hard_end_date(org_settings: models.OrganizationSettings) -> date | None:
+    if org_settings.school_hard_end_date is not None:
+        return org_settings.school_hard_end_date
+    if org_settings.school_target_end_date is None:
+        return None
+    return date(org_settings.school_target_end_date.year, DEFAULT_HARD_END_MONTH, DEFAULT_HARD_END_DAY)
+
+
+def _validate_repair_generation_window(org_settings: models.OrganizationSettings) -> str | None:
+    repair_window_days = _resolve_repair_window_days(org_settings)
+    frozen_until = date.today() + timedelta(days=repair_window_days)
+    hard_end_date = _resolve_preflight_hard_end_date(org_settings)
+    if hard_end_date is None:
+        return None
+    if hard_end_date <= frozen_until:
+        return (
+            "Regeneração em modo repair bloqueada: não existe horizonte fora da janela "
+            f"de estabilidade (até {frozen_until.isoformat()}) antes do hard end date "
+            f"({hard_end_date.isoformat()})."
+        )
+    return None
 
 
 async def _ensure_auto_holidays(
@@ -290,7 +323,7 @@ async def _validate_subject_requirements(
     return errors
 
 
-async def _preflight_check(db: AsyncSession, org_id: int) -> list[str]:
+async def _preflight_check(db: AsyncSession, org_id: int, mode: str = "full") -> list[str]:
     """Valida pré-condições antes de iniciar o solver. Retorna lista de erros."""
     errors: list[str] = []
 
@@ -300,6 +333,11 @@ async def _preflight_check(db: AsyncSession, org_id: int) -> list[str]:
             "Nenhum ano letivo com 'data de início' e 'data de fim-alvo'. "
             "Configure em Configurações > Anos Letivos."
         ]
+
+    if mode == "repair":
+        window_error = _validate_repair_generation_window(org_settings)
+        if window_error:
+            errors.append(window_error)
 
     holiday_error = await _ensure_auto_holidays(db, org_id, org_settings)
     if holiday_error:
@@ -354,7 +392,7 @@ async def trigger_generation(
     """Valida pré-condições e inicia a geração de horário em background."""
     org_id = current_user.organization_id
 
-    preflight_errors = await _preflight_check(db, org_id)
+    preflight_errors = await _preflight_check(db, org_id, payload.mode)
     if preflight_errors:
         raise HTTPException(
             status_code=400,

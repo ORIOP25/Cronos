@@ -68,6 +68,8 @@ async def upsert_settings(
             existing.lunch_window_end = data.lunch_window_end
         if data.lunch_min_duration_minutes is not None:
             existing.lunch_min_duration_minutes = data.lunch_min_duration_minutes
+        if data.repair_stability_window_days is not None:
+            existing.repair_stability_window_days = data.repair_stability_window_days
         await db.commit()
         await db.refresh(existing)
         return existing
@@ -82,6 +84,7 @@ async def upsert_settings(
         lunch_window_start=data.lunch_window_start,
         lunch_window_end=data.lunch_window_end,
         lunch_min_duration_minutes=data.lunch_min_duration_minutes,
+        repair_stability_window_days=data.repair_stability_window_days,
     )
     db.add(new_settings)
     await db.commit()

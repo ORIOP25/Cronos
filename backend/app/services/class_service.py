@@ -242,8 +242,9 @@ def _build_module_data(module, progress_map: dict) -> dict:
     """Constrói dados de um módulo com o seu progresso atual."""
     progress = progress_map.get(module.id)
     hours_done = progress.hours_completed if progress else 0
+    hours_debt = progress.hours_debt if progress else 0
     completed = progress.is_completed if progress else False
-    pct = round((hours_done / module.hours_total) * 100, 1) if module.hours_total > 0 else 0.0
+    pct = min(100.0, round((hours_done / module.hours_total) * 100, 1)) if module.hours_total > 0 else 0.0
 
     return {
         "id": module.id,
@@ -252,6 +253,7 @@ def _build_module_data(module, progress_map: dict) -> dict:
         "hours_total": module.hours_total,
         "order": module.order,
         "hours_completed": hours_done,
+        "hours_debt": hours_debt,
         "is_completed": completed,
         "percentage": pct,
     }
@@ -269,7 +271,7 @@ def _build_subject_with_progress(subject, progress_map: dict) -> dict:
         subject_total += module.hours_total
         subject_completed += module_data["hours_completed"]
 
-    overall_pct = round((subject_completed / subject_total) * 100, 1) if subject_total > 0 else 0.0
+    overall_pct = min(100.0, round((subject_completed / subject_total) * 100, 1)) if subject_total > 0 else 0.0
 
     return {
         "id": subject.id,

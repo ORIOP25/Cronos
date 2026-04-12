@@ -8,7 +8,7 @@ from sqlalchemy import text
 
 from app.db.database import SessionLocalSync, engine_sync, Base
 from app import models
-from app.core.security import hash_password
+from app.core.security import hash_password, verify_password
 from app.models import UserRole, PreferenceLevel, RoomType
 
 
@@ -103,6 +103,26 @@ def clean_database():
                 conn.rollback()
                 print(f"   x Erro ao dropar {table}: {str(exc)[:80]}")
 
+        # Limpar tipos ENUM órfãos para evitar conflito em migrations Alembic.
+        enum_result = conn.execute(text(
+            """
+            SELECT t.typname
+            FROM pg_type t
+            JOIN pg_namespace n ON n.oid = t.typnamespace
+            WHERE n.nspname = 'public' AND t.typtype = 'e'
+            """
+        ))
+        enum_types = [row[0] for row in enum_result.fetchall()]
+
+        for enum_name in enum_types:
+            try:
+                conn.execute(text(f'DROP TYPE IF EXISTS "{enum_name}" CASCADE;'))
+                conn.commit()
+                print(f"   + enum {enum_name}")
+            except Exception as exc:
+                conn.rollback()
+                print(f"   x Erro ao dropar enum {enum_name}: {str(exc)[:80]}")
+
         try:
             conn.execute(text("SET session_replication_role = DEFAULT;"))
             conn.commit()
@@ -113,10 +133,16 @@ def clean_database():
 
 
 def create_tables():
-    """CREATE tabelas a partir de models.py."""
-    print("\n2/3  A criar tabelas novas...")
+    """Cria tabelas pelo metadata atual do modelo.
+
+    Nota operacional:
+    o schema de runtime do projeto está alinhado ao ORM atual usado pela aplicação
+    e pelos testes de regressão. Mantemos create_all aqui para garantir seed
+    consistente com o servidor em execução.
+    """
+    print("\n2/3  A criar tabelas novas (metadata atual)...")
     Base.metadata.create_all(bind=engine_sync)
-    print("   Todas as tabelas criadas!")
+    print("   Tabelas criadas com sucesso!")
 
 
 def _create_timeslots(db, org_id: int):
@@ -298,6 +324,7 @@ def _seed_single_organization(db, org_idx: int, subject_seq: int, counters: dict
         school_start_date=ASSUMED_TODAY,
         school_target_end_date=SCHOOL_TARGET_END,
         school_hard_end_date=SCHOOL_HARD_END,
+        repair_stability_window_days=14,
         region_code="11",
         lunch_window_start=datetime.time(12, 0),
         lunch_window_end=datetime.time(14, 0),
@@ -397,6 +424,32 @@ def _seed_single_organization(db, org_idx: int, subject_seq: int, counters: dict
     return subject_seq
 
 
+def _validate_seed_admin_credentials(db) -> None:
+    """Valida consistência mínima dos logins admin seedados."""
+    for org_idx in range(1, ORG_COUNT + 1):
+        email = f"admin{org_idx}@cluster.pt"
+        user = db.execute(
+            text(
+                """
+                SELECT email, hashed_password, is_active
+                FROM \"user\"
+                WHERE email = :email
+                """
+            ),
+            {"email": email},
+        ).first()
+
+        if user is None:
+            raise RuntimeError(f"Login admin esperado não encontrado: {email}")
+
+        hashed_password = str(user[1])
+        is_active = bool(user[2])
+        if not is_active:
+            raise RuntimeError(f"Login admin inativo no seed: {email}")
+        if not verify_password("1234", hashed_password):
+            raise RuntimeError(f"Password seed inválida para admin: {email}")
+
+
 # =====================================================================
 #  SEED PRINCIPAL
 # =====================================================================
@@ -422,6 +475,8 @@ def run_seed():
         subject_seq = 1
         for org_idx in range(1, ORG_COUNT + 1):
             subject_seq = _seed_single_organization(db, org_idx, subject_seq, counters)
+
+        _validate_seed_admin_credentials(db)
 
         print("\n" + "=" * 72)
         print("  RESUMO DO SEED (ESCALA ALARGADA)")
@@ -450,12 +505,15 @@ def run_seed():
         for org_idx in range(1, ORG_COUNT + 1):
             print(f"   Escola {org_idx} -> admin{org_idx}@cluster.pt / 1234")
             print(f"   Escola {org_idx} -> prof.e{org_idx}.d01.01@cluster.pt / 1234")
+        print("\n  [OK] Credenciais admin seed validadas após carga")
+        print("  [INFO] Após reset de schema, reinicie o serviço backend para limpar cache asyncpg.")
 
     except Exception as exc:
         print(f"\n[ERRO] Erro crítico no seed: {exc}")
         import traceback
         traceback.print_exc()
         db.rollback()
+        raise
     finally:
         db.close()
         print("\nSeed terminado.")

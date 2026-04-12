@@ -312,6 +312,55 @@ class TestDraftServices:
         drafts = schedule_service.list_draft_gen_ids_sync(sync_db, org_id)
         assert len(drafts) == 0
 
+    def test_approve_draft_preserves_published_inside_stability_window(self, sync_db, draft_setup):
+        org_id = draft_setup["org_id"]
+
+        sync_db.add(models.OrganizationSettings(
+            org_id=org_id,
+            academic_year="2025/2026",
+            school_start_date=TODAY - timedelta(days=60),
+            school_target_end_date=TODAY + timedelta(days=120),
+            school_hard_end_date=TODAY + timedelta(days=120),
+            repair_stability_window_days=14,
+        ))
+
+        lesson_id = draft_setup["lesson_id"]
+        timeslot_id = draft_setup["timeslot_id"]
+        room_id = draft_setup["room_id"]
+
+        # Draft adicional dentro da janela congelada: não pode ser ativado
+        in_window_draft = models.ScheduleOutput(
+            lesson_id=lesson_id,
+            timeslot_id=timeslot_id,
+            room_id=room_id,
+            date=TODAY + timedelta(days=3),
+            organization_id=org_id,
+            generation_id=GEN_DRAFT,
+            is_draft=True,
+        )
+        sync_db.add(in_window_draft)
+        sync_db.commit()
+
+        count = schedule_service.approve_draft_sync(sync_db, org_id, GEN_DRAFT)
+        assert count == 1
+
+        active_dates = {
+            row.date
+            for row in sync_db.query(models.ScheduleOutput)
+            .filter(
+                models.ScheduleOutput.organization_id == org_id,
+                models.ScheduleOutput.is_draft.is_(False),
+            )
+            .all()
+        }
+
+        assert FUTURE in active_dates  # mantido (dentro da janela)
+        assert FUTURE + timedelta(days=7) in active_dates  # promovido (fora da janela)
+        assert TODAY + timedelta(days=3) not in active_dates  # bloqueado por janela
+
+        drafts = schedule_service.list_draft_gen_ids_sync(sync_db, org_id)
+        assert drafts == []
+
     def test_reject_draft_deletes_it(self, sync_db, draft_setup):
         org_id = draft_setup["org_id"]
         count = schedule_service.reject_draft_sync(sync_db, org_id, GEN_DRAFT)

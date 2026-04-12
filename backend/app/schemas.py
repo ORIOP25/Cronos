@@ -510,7 +510,8 @@ class ModuleProgressRead(BaseModel):
     code: Optional[str] = None
     hours_total: int
     order: int
-    hours_completed: int = 0
+    hours_completed: float = 0.0
+    hours_debt: float = 0.0
     is_completed: bool = False
     percentage: float = 0.0
 
@@ -543,7 +544,7 @@ class ClassFullDetailRead(ClassRead):
 class ClassProgressUpdate(BaseModel):
     """Atualizar horas completadas de um módulo para uma turma"""
     module_id: int
-    hours_completed: int = Field(..., ge=0, description="Horas já lecionadas")
+    hours_completed: float = Field(..., ge=0, description="Horas já lecionadas")
 
 class ClassProgressBulkUpdate(BaseModel):
     """Atualizar progresso de múltiplos módulos de uma vez"""
@@ -559,6 +560,7 @@ DESC_HARD_END_DATE = "Data-limite rígida para término das aulas (hard stop do 
 DESC_LUNCH_START = "Hora de início da janela de almoço (ex: 12:00)"
 DESC_LUNCH_END = "Hora de fim da janela de almoço (ex: 14:00)"
 DESC_LUNCH_MIN = "Duração mínima de almoço em minutos dentro da janela"
+DESC_REPAIR_WINDOW_DAYS = "Janela fixa de estabilidade (em dias) para o modo de reparação"
 ERR_LUNCH_WINDOW_PAIR = "Defina início e fim da janela de almoço em conjunto"
 ERR_LUNCH_WINDOW_ORDER = "A hora de fim da janela de almoço deve ser posterior ao início"
 ERR_LUNCH_WINDOW_DURATION = "A duração mínima de almoço excede a janela configurada"
@@ -579,6 +581,11 @@ class OrganizationSettingsUpsert(BaseModel):
     lunch_window_start: time | None = Field(None, description=DESC_LUNCH_START)
     lunch_window_end: time | None = Field(None, description=DESC_LUNCH_END)
     lunch_min_duration_minutes: int | None = Field(None, ge=1, description=DESC_LUNCH_MIN)
+    repair_stability_window_days: int | None = Field(
+        None,
+        ge=1,
+        description=DESC_REPAIR_WINDOW_DAYS,
+    )
 
     @staticmethod
     def _validate_school_dates(
@@ -633,6 +640,7 @@ class OrganizationSettingsRead(BaseModel):
     lunch_window_start: time | None = None
     lunch_window_end: time | None = None
     lunch_min_duration_minutes: int | None = None
+    repair_stability_window_days: int | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -742,9 +750,16 @@ class LessonOccurrenceRead(BaseModel):
     schedule_output_id: Optional[int] = None
     date: date
     status: LessonOccurrenceStatus
+    planned_hours: float
+    planned_teacher_id: Optional[int] = None
+    executed_teacher_id: Optional[int] = None
+    planned_module_id: Optional[int] = None
+    executed_module_id: Optional[int] = None
     substitute_teacher_id: Optional[int] = None
     substitute_subject_id: Optional[int] = None
     hours_given: float
+    decided_by_user_id: Optional[int] = None
+    decided_at: Optional[datetime] = None
     created_at: datetime
 
     model_config = model_config
@@ -760,13 +775,19 @@ class LessonOccurrenceUpdate(BaseModel):
         None, description="ID da disciplina dada pelo substituto"
     )
 
+    model_config = ConfigDict(extra="forbid")
+
     @model_validator(mode="after")
-    def check_substituted_requires_teacher(self) -> "LessonOccurrenceUpdate":
-        if (
-            self.status == LessonOccurrenceStatus.SUBSTITUTED
-            and self.substitute_teacher_id is None
-        ):
-            raise ValueError("substitute_teacher_id é obrigatório quando status=SUBSTITUTED")
+    def check_substituted_requirements(self) -> "LessonOccurrenceUpdate":
+        if self.status == LessonOccurrenceStatus.SUBSTITUTED:
+            if self.substitute_teacher_id is None:
+                raise ValueError("substitute_teacher_id é obrigatório quando status=SUBSTITUTED")
+            if self.substitute_subject_id is None:
+                raise ValueError("substitute_subject_id é obrigatório quando status=SUBSTITUTED")
+            return self
+
+        if self.substitute_teacher_id is not None or self.substitute_subject_id is not None:
+            raise ValueError("substitute_teacher_id e substitute_subject_id só podem ser enviados com status=SUBSTITUTED")
         return self
 
 
@@ -797,6 +818,21 @@ class AvailableSubstituteRead(BaseModel):
     subject_name: str
     class_id: int
     class_name: str
+
+
+class SubstituteRecommendationRead(BaseModel):
+    """Candidato elegível para substituição com ranking e critérios objetivos."""
+    rank: int
+    teacher_id: int
+    teacher_name: str
+    subject_id: int
+    subject_name: str
+    class_id: int
+    class_name: str
+    substitutions_in_period: int
+    daily_load_hours: float
+    days_since_last_substitution: Optional[int] = None
+    justification: str
 
 
 # ==========================================

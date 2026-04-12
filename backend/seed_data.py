@@ -416,6 +416,8 @@ def _seed_organization_settings(db, org):
         academic_year="2025/2026",
         school_start_date=datetime.date(2025, 9, 15),
         school_target_end_date=datetime.date(2026, 6, 15),
+        # Valor de teste: 2 semanas (14 dias). Em produção será definido por escola.
+        repair_stability_window_days=14,
         region_code="11",  # Lisboa no package holidays
         lunch_window_start=datetime.time(12, 0),
         lunch_window_end=datetime.time(14, 0),

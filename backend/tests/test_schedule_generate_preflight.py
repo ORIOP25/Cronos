@@ -1,5 +1,5 @@
 import asyncio
-from datetime import date, time
+from datetime import date, time, timedelta
 from types import SimpleNamespace
 
 import pytest
@@ -15,11 +15,32 @@ async def _get_org_id(db_session):
 
 
 async def _seed_minimal_generation_data(db_session, org_id: int):
+    await _seed_minimal_generation_data_with_settings(
+        db_session,
+        org_id,
+        school_start_date=date(2025, 9, 15),
+        school_target_end_date=date(2026, 6, 15),
+        school_hard_end_date=None,
+        repair_window_days=None,
+    )
+
+
+async def _seed_minimal_generation_data_with_settings(
+    db_session,
+    org_id: int,
+    *,
+    school_start_date: date,
+    school_target_end_date: date,
+    school_hard_end_date: date | None,
+    repair_window_days: int | None,
+):
     settings = models.OrganizationSettings(
         org_id=org_id,
         academic_year="2025/2026",
-        school_start_date=date(2025, 9, 15),
-        school_target_end_date=date(2026, 6, 15),
+        school_start_date=school_start_date,
+        school_target_end_date=school_target_end_date,
+        school_hard_end_date=school_hard_end_date,
+        repair_stability_window_days=repair_window_days,
         region_code="Lisboa",
     )
     db_session.add(settings)
@@ -181,3 +202,76 @@ async def test_generate_returns_task_id_with_minimal_valid_data(
     payload = response.json()
     assert payload["task_id"] == "task-test-123"
     assert payload["status"] == "Processing started"
+
+
+@pytest.mark.asyncio
+async def test_repair_generate_fails_when_window_blocks_all_future(
+    async_client,
+    db_session,
+    admin_token_headers,
+    monkeypatch,
+):
+    org_id = await _get_org_id(db_session)
+    today = date.today()
+    await _seed_minimal_generation_data_with_settings(
+        db_session,
+        org_id,
+        school_start_date=today - timedelta(days=30),
+        school_target_end_date=today + timedelta(days=5),
+        school_hard_end_date=today + timedelta(days=5),
+        repair_window_days=14,
+    )
+
+    called = {"value": False}
+
+    def fake_delay(_org_id, _mode):
+        called["value"] = True
+        return SimpleNamespace(id="task-should-not-run")
+
+    monkeypatch.setattr(schedule_endpoint.generate_schedule_task, "delay", fake_delay)
+
+    response = await async_client.post(
+        "/api/v1/schedule/generate",
+        json={"mode": "repair"},
+        headers=admin_token_headers,
+    )
+
+    assert response.status_code == 400
+    payload = response.json()
+    assert payload["detail"]["error"] == "preflight_failed"
+    assert any("janela de estabilidade" in msg.lower() for msg in payload["detail"]["problems"])
+    assert called["value"] is False
+
+
+@pytest.mark.asyncio
+async def test_repair_generate_succeeds_when_horizon_exists_outside_window(
+    async_client,
+    db_session,
+    admin_token_headers,
+    monkeypatch,
+):
+    org_id = await _get_org_id(db_session)
+    today = date.today()
+    await _seed_minimal_generation_data_with_settings(
+        db_session,
+        org_id,
+        school_start_date=today - timedelta(days=30),
+        school_target_end_date=today + timedelta(days=60),
+        school_hard_end_date=today + timedelta(days=60),
+        repair_window_days=14,
+    )
+
+    def fake_delay(_org_id, _mode):
+        return SimpleNamespace(id="task-repair-allowed")
+
+    monkeypatch.setattr(schedule_endpoint.generate_schedule_task, "delay", fake_delay)
+
+    response = await async_client.post(
+        "/api/v1/schedule/generate",
+        json={"mode": "repair"},
+        headers=admin_token_headers,
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["task_id"] == "task-repair-allowed"

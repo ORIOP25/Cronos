@@ -1,7 +1,8 @@
 # Ficheiro: app/api/endpoints/health.py
 
 import redis
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, status
+from fastapi.responses import JSONResponse
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.api import deps
@@ -53,9 +54,9 @@ async def health_check(
 
     # Decisão Final
     if health_status["status"] == "error":
-        raise HTTPException(
+        return JSONResponse(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=health_status
+            content=health_status,
         )
     
     return health_status
