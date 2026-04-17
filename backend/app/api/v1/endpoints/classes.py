@@ -12,7 +12,7 @@ router = APIRouter()
 @router.get("/", response_model=List[schemas.ClassRead])
 async def read_classes(
     db: Annotated[AsyncSession, Depends(deps.get_db)],
-    current_user: Annotated[models.User, Depends(deps.get_current_active_user)]
+    current_user: Annotated[models.User, Depends(deps.get_current_active_admin)]
 ):
     return await class_service.get_classes_by_org(db, current_user.organization_id)
 
@@ -20,7 +20,7 @@ async def read_classes(
 async def read_class(
     class_id: int,
     db: Annotated[AsyncSession, Depends(deps.get_db)],
-    current_user: Annotated[models.User, Depends(deps.get_current_active_user)],
+    current_user: Annotated[models.User, Depends(deps.get_current_active_admin)],
 ) -> Any:
     """
     Retorna dashboard completo da turma: Curso + Disciplinas + Módulos + Progresso.
@@ -85,7 +85,7 @@ async def delete_class(
 async def get_class_curriculum(
     class_id: int,
     db: Annotated[AsyncSession, Depends(deps.get_db)],
-    current_user: Annotated[models.User, Depends(deps.get_current_active_user)]
+    current_user: Annotated[models.User, Depends(deps.get_current_active_admin)]
 ):
     """
     Retorna o currículo (disciplinas) da turma.

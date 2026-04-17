@@ -48,9 +48,21 @@ Comportamento esperado:
 - nenhum efeito colateral em dados;
 - log/erro suficiente para auditoria tecnica.
 
-## Pontos ainda a definir (nao fechados)
-- matriz formal de risco por severidade de negocio;
-- evidencias de conformidade exigidas por ciclo de release.
+## Decisao fechada para Alpha V1 (sem pendencias)
+
+### Matriz formal de risco por severidade de negocio
+- P0 Critico: violacao hard, risco de tenant isolation, acesso indevido a dados.
+- P1 Alto: quebra de autorizacao por role, falha transacional com impacto operacional relevante.
+- P2 Medio: inconsistencias sem violacao hard e com workaround operacional.
+- P3 Baixo: melhoria de robustez/manutencao sem impacto funcional imediato.
+
+### Evidencias minimas de conformidade por ciclo de release
+- P0/P1: teste de regressao focado + evidencias de fix + revisao tecnica obrigatoria.
+- P2: teste funcional do fluxo impactado + registo da validacao.
+- P3: validacao local/documentada + backlog priorizado.
+
+Gate de release:
+- nenhuma issue P0/P1 aberta para fluxos criticos (geracao, ocorrencias, substituicoes, tenant isolation).
 
 ## Impacto por layer
 

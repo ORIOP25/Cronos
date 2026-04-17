@@ -4,6 +4,7 @@ import { useMutation } from '@tanstack/react-query'
 import apiClient from '../apiClient'
 import { useNavigate, Link } from 'react-router-dom'
 import { useAuthStore } from '../store'
+import { getDefaultRouteForRole } from '../roleAccess'
 
 // UI Components
 import {
@@ -39,14 +40,7 @@ const Login = () => {
       setLogin(data)
 
       // 2. Redirecionar Inteligente
-      const role = data.role
-      if (role === 'admin') {
-        navigate('/dashboard')
-      } else if (role === 'teacher') {
-        navigate('/my-availability')
-      } else {
-        navigate('/') // Fallback
-      }
+      navigate(getDefaultRouteForRole(data.role))
     },
     onError: (err) => {
       console.error("Login falhou:", err)

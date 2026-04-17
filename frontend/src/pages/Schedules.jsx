@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react'
 import PropTypes from 'prop-types'
+import { useNavigate } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import {
   CCard, CCardBody, CCardHeader, CAlert, CBadge, CSpinner,
   CButton, CButtonGroup, CFormSelect, CFormLabel, CRow, CCol, CProgress,
+  CModal, CModalHeader, CModalTitle, CModalBody, CModalFooter,
 } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
 import {
@@ -12,16 +14,18 @@ import {
 } from '@coreui/icons'
 import {
   useDrafts, useScheduleDiff, useApproveDraft, useRejectDraft,
-  useGenerateSchedule, useScheduleTaskStatus,
-  useClasses, useTeachers, useWeekSchedule, useClassDetails, useTimeslots,
+  useGenerateSchedule, useScheduleTaskStatus, useCancelScheduleTask,
+  useClasses, useTeachers, useWeekSchedule, useClassDetails, useTimeslots, useCreateOccurrence,
 } from '../hooks/useSchoolData'
 import WeekGrid from '../components/WeekGrid'
 import { getSubjectColor } from '../utils/subjectColors'
+import { useAuthStore } from '../store'
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
-const TERMINAL_STATUSES = ['SUCCESS', 'FAILURE', 'Success', 'Error', 'Impossible', 'REVOKED']
+const TERMINAL_STATUSES = ['SUCCESS', 'FAILURE', 'Success', 'Error', 'Impossible', 'REVOKED', 'CANCELED']
+const ACTIVE_TASK_STORAGE_KEY_PREFIX = 'hz-schedule-active-task-org-'
 
 const GENERATION_STATUS_LABELS = {
   PENDING:   'A aguardar worker…',
@@ -29,6 +33,8 @@ const GENERATION_STATUS_LABELS = {
   SOLVING:   'CP-SAT a otimizar (pode demorar alguns minutos)…',
   EXPANDING: 'A expandir para datas reais…',
   SAVING:    'A guardar solução…',
+  REVOKED:   'Cancelado.',
+  CANCELED:  'Cancelado.',
   SUCCESS:   'Concluído!',
   FAILURE:   'Erro na geração.',
 }
@@ -73,17 +79,73 @@ function formatWeekRange(weekStart) {
   return `${start.toLocaleDateString('pt-PT', short)} – ${end.toLocaleDateString('pt-PT', full)}`
 }
 
+function formatOperationalDate(dateStr) {
+  if (!dateStr) return '—'
+  const dateValue = new Date(`${dateStr}T12:00:00`)
+  if (Number.isNaN(dateValue.getTime())) return dateStr
+  return dateValue.toLocaleDateString('pt-PT', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  })
+}
+
+function buildCreateOccurrenceErrorMessage(error) {
+  const detail = error?.response?.data?.detail
+  if (Array.isArray(detail) && detail.length > 0 && typeof detail[0]?.msg === 'string') {
+    return detail[0].msg
+  }
+  if (typeof detail === 'string' && detail.trim()) {
+    return detail
+  }
+  return 'Não foi possível criar a ocorrência para este bloco. Tente novamente.'
+}
+
 function resolveAlertColor(status) {
   if (status.includes('SUCCESS') || status.includes('Success')) return 'success'
+  if (status.includes('REVOKED') || status.includes('CANCELED')) return 'warning'
   if (status.includes('FAILURE') || status.includes('Error') || status.includes('Impossible')) return 'danger'
   return 'info'
 }
 
 function resolveBusinessStatus(taskData) {
   const resultStatus = taskData?.result?.status
+  if (resultStatus === 'Canceled') return 'warning'
   if (resultStatus === 'Error' || resultStatus === 'Impossible') return 'danger'
   if (resultStatus === 'Success') return 'success'
   return null
+}
+
+function getTaskStorageKey(orgId) {
+  if (!orgId) return null
+  return `${ACTIVE_TASK_STORAGE_KEY_PREFIX}${orgId}`
+}
+
+function readStoredTaskId(storageKey) {
+  if (!storageKey) return null
+  try {
+    return localStorage.getItem(storageKey)
+  } catch {
+    return null
+  }
+}
+
+function writeStoredTaskId(storageKey, taskId) {
+  if (!storageKey || !taskId) return
+  try {
+    localStorage.setItem(storageKey, taskId)
+  } catch {
+    // no-op for environments without storage access
+  }
+}
+
+function clearStoredTaskId(storageKey) {
+  if (!storageKey) return
+  try {
+    localStorage.removeItem(storageKey)
+  } catch {
+    // no-op for environments without storage access
+  }
 }
 
 function resolveProgress(taskData) {
@@ -329,11 +391,92 @@ PreflightErrorPanel.propTypes = {
   problems: PropTypes.arrayOf(PropTypes.string).isRequired,
 }
 
+const CreateOccurrenceModal = ({
+  slot,
+  onClose,
+  onCreate,
+  isCreating,
+  errorMessage,
+}) => {
+  if (!slot) return null
+
+  const shouldCreateOccurrence = slot.can_create_occurrence !== false
+
+  const slotTime = slot.timeslot
+    ? `${slot.timeslot.start_time} - ${slot.timeslot.end_time}`
+    : '—'
+
+  return (
+    <CModal visible onClose={onClose} alignment="center">
+      <CModalHeader>
+        <CModalTitle>{shouldCreateOccurrence ? 'Criar Ocorrência' : 'Gerir Ocorrência'}</CModalTitle>
+      </CModalHeader>
+      <CModalBody>
+        <CAlert color="light" className="mb-3">
+          <div><strong>Data:</strong> {formatOperationalDate(slot.date)}</div>
+          <div><strong>Horário:</strong> {slotTime}</div>
+          <div><strong>Turma:</strong> {slot.class_info?.name ?? '—'}</div>
+          <div><strong>Disciplina:</strong> {slot.subject?.name ?? '—'}</div>
+          <div><strong>Docente previsto:</strong> {slot.teacher?.name ?? '—'}</div>
+          <div><strong>Sala:</strong> {slot.room?.name ?? '—'}</div>
+        </CAlert>
+
+        {errorMessage ? (
+          <CAlert color="danger" className="mb-0">{errorMessage}</CAlert>
+        ) : null}
+      </CModalBody>
+      <CModalFooter>
+        <CButton color="secondary" variant="outline" onClick={onClose}>
+          Cancelar
+        </CButton>
+        <CButton color="primary" onClick={onCreate} disabled={shouldCreateOccurrence && isCreating}>
+          {shouldCreateOccurrence && isCreating ? (
+            <>
+              <CSpinner size="sm" className="me-2" />
+              A criar...
+            </>
+          ) : (shouldCreateOccurrence ? 'Criar Ocorrência' : 'Ir para Faltas')}
+        </CButton>
+      </CModalFooter>
+    </CModal>
+  )
+}
+
+CreateOccurrenceModal.propTypes = {
+  slot: PropTypes.shape({
+    schedule_output_id: PropTypes.number,
+    occurrence_id: PropTypes.number,
+    can_create_occurrence: PropTypes.bool,
+    can_decide_occurrence: PropTypes.bool,
+    date: PropTypes.string,
+    timeslot: PropTypes.shape({
+      start_time: PropTypes.string,
+      end_time: PropTypes.string,
+    }),
+    class_info: PropTypes.shape({ name: PropTypes.string, id: PropTypes.number }),
+    subject: PropTypes.shape({ name: PropTypes.string }),
+    teacher: PropTypes.shape({ name: PropTypes.string }),
+    room: PropTypes.shape({ name: PropTypes.string }),
+  }),
+  onClose: PropTypes.func.isRequired,
+  onCreate: PropTypes.func.isRequired,
+  isCreating: PropTypes.bool,
+  errorMessage: PropTypes.string,
+}
+
 // ---------------------------------------------------------------------------
 // Schedules — Main Page
 // ---------------------------------------------------------------------------
 const Schedules = () => {
+  const navigate = useNavigate()
   const queryClient = useQueryClient()
+  const user = useAuthStore((state) => state.user)
+  const orgId = user?.orgId ?? null
+  const isAdmin = user?.role === 'admin'
+  const isTeacher = user?.role === 'teacher'
+  const teacherOwnId = user?.teacherId ?? null
+  const canConsultSchedule = isAdmin || (isTeacher && Boolean(teacherOwnId))
+  const taskStorageKey = getTaskStorageKey(orgId)
 
   // Sprint 3 state
   const [mode, setMode]                       = useState('full')
@@ -341,21 +484,28 @@ const Schedules = () => {
   const [preflightErrors, setPreflightErrors] = useState([])
 
   // Sprint 4 state
-  const [viewMode, setViewMode]                   = useState('class')
+  const [viewMode, setViewMode]                   = useState(isTeacher ? 'teacher' : 'class')
   const [selectedClassId, setSelectedClassId]     = useState('')
-  const [selectedTeacherId, setSelectedTeacherId] = useState('')
+  const [selectedTeacherId, setSelectedTeacherId] = useState(
+    isTeacher && teacherOwnId ? String(teacherOwnId) : ''
+  )
   const [weekStart, setWeekStart]                 = useState(getCurrentWeekMonday)
+  const [selectedOperationalSlot, setSelectedOperationalSlot] = useState(null)
+  const [createOccurrenceError, setCreateOccurrenceError] = useState('')
+  const [generationActionError, setGenerationActionError] = useState('')
 
   // Sprint 3 hooks
   const { data: drafts = [], refetch: refetchDrafts } = useDrafts()
   const generateMutation = useGenerateSchedule()
+  const cancelGenerationMutation = useCancelScheduleTask()
   const approveMutation  = useApproveDraft()
   const rejectMutation   = useRejectDraft()
+  const createOccurrenceMutation = useCreateOccurrence()
   const { data: taskData } = useScheduleTaskStatus(activeTaskId)
 
   // Sprint 4 hooks
-  const { data: classes  = [] } = useClasses()
-  const { data: teachers = [] } = useTeachers()
+  const { data: classes  = [] } = useClasses({ enabled: isAdmin })
+  const { data: teachers = [] } = useTeachers({ enabled: isAdmin })
   const { data: timeslots = [] } = useTimeslots()
 
   const classId   = viewMode === 'class'   && selectedClassId   ? Number.parseInt(selectedClassId, 10)   : null
@@ -375,6 +525,7 @@ const Schedules = () => {
     const status = taskData?.status ?? ''
     if (activeTaskId && TERMINAL_STATUSES.some(s => status.includes(s))) {
       void refetchDrafts()
+      clearStoredTaskId(taskStorageKey)
 
       const businessStatus = taskData?.result?.status
       if (businessStatus === 'Success') {
@@ -384,9 +535,41 @@ const Schedules = () => {
         void queryClient.invalidateQueries({ queryKey: ['timeslots'] })
       }
     }
-  }, [taskData, activeTaskId, refetchDrafts, queryClient])
+  }, [taskData, activeTaskId, refetchDrafts, queryClient, taskStorageKey])
+
+  useEffect(() => {
+    if (!isAdmin || activeTaskId) {
+      return
+    }
+
+    const storedTaskId = readStoredTaskId(taskStorageKey)
+    if (storedTaskId) {
+      setActiveTaskId(storedTaskId)
+    }
+  }, [isAdmin, activeTaskId, taskStorageKey])
+
+  useEffect(() => {
+    if (!isAdmin) {
+      return
+    }
+
+    if (activeTaskId) {
+      writeStoredTaskId(taskStorageKey, activeTaskId)
+    }
+  }, [isAdmin, activeTaskId, taskStorageKey])
+
+  useEffect(() => {
+    if (!isTeacher || !teacherOwnId) {
+      return
+    }
+
+    setViewMode('teacher')
+    setSelectedClassId('')
+    setSelectedTeacherId(String(teacherOwnId))
+  }, [isTeacher, teacherOwnId])
 
   const handleGenerate = async () => {
+    setGenerationActionError('')
     setPreflightErrors([])
     setActiveTaskId(null)
     try {
@@ -398,11 +581,92 @@ const Schedules = () => {
     }
   }
 
+  const handleCancelGeneration = () => {
+    if (!activeTaskId) {
+      return
+    }
+
+    setGenerationActionError('')
+    cancelGenerationMutation.mutate(activeTaskId, {
+      onSuccess: () => {
+        void queryClient.invalidateQueries({ queryKey: ['schedule-task', orgId, activeTaskId] })
+      },
+      onError: () => {
+        setGenerationActionError('Não foi possível cancelar a geração. Tente novamente.')
+      },
+    })
+  }
+
   const isGenerating = isPending(taskData?.status)
   const weekLabel    = formatWeekRange(weekStart)
   const hasSelection = Boolean(classId || teacherId)
   const showKPI      = viewMode === 'class' && Boolean(classId)
   const gridCols     = showKPI ? 8 : 12
+
+  const closeCreateOccurrenceModal = () => {
+    setSelectedOperationalSlot(null)
+    setCreateOccurrenceError('')
+  }
+
+  const navigateToAbsencesWithSlotContext = ({ occurrenceId, slotContext }) => {
+    const params = new URLSearchParams()
+    if (occurrenceId) {
+      params.set('occurrence_id', String(occurrenceId))
+    }
+    if (slotContext?.class_info?.id) {
+      params.set('class_id', String(slotContext.class_info.id))
+    }
+    if (slotContext?.date) {
+      params.set('date_from', slotContext.date)
+      params.set('date_to', slotContext.date)
+    }
+
+    const query = params.toString()
+    navigate(query ? `/absences?${query}` : '/absences')
+  }
+
+  const openCreateOccurrenceModal = (slot) => {
+    if (!isAdmin) {
+      return
+    }
+    setSelectedOperationalSlot(slot)
+    setCreateOccurrenceError('')
+  }
+
+  const handleCreateOccurrence = () => {
+    const scheduleOutputId = selectedOperationalSlot?.schedule_output_id
+    if (!scheduleOutputId) {
+      return
+    }
+
+    const canCreateOccurrence = selectedOperationalSlot?.can_create_occurrence !== false
+    const canDecideOccurrence = Boolean(selectedOperationalSlot?.can_decide_occurrence)
+    if (!canCreateOccurrence && canDecideOccurrence) {
+      navigateToAbsencesWithSlotContext({
+        occurrenceId: selectedOperationalSlot?.occurrence_id,
+        slotContext: selectedOperationalSlot,
+      })
+      closeCreateOccurrenceModal()
+      return
+    }
+
+    setCreateOccurrenceError('')
+    createOccurrenceMutation.mutate(
+      { scheduleOutputId },
+      {
+        onSuccess: (occurrence) => {
+          navigateToAbsencesWithSlotContext({
+            occurrenceId: occurrence?.id,
+            slotContext: selectedOperationalSlot,
+          })
+          closeCreateOccurrenceModal()
+        },
+        onError: (error) => {
+          setCreateOccurrenceError(buildCreateOccurrenceErrorMessage(error))
+        },
+      }
+    )
+  }
 
   let weekGridContent = (
     <div className="text-center p-5 text-muted">
@@ -414,7 +678,16 @@ const Schedules = () => {
   )
 
   if (hasSelection) {
-    weekGridContent = <WeekGrid slots={weekSlots} isLoading={loadingWeek} baseTimeslots={timeslots} weekStart={weekStart} />
+    weekGridContent = (
+      <WeekGrid
+        slots={weekSlots}
+        isLoading={loadingWeek}
+        baseTimeslots={timeslots}
+        weekStart={weekStart}
+        isOperationalEnabled={isAdmin}
+        onOpenOperationalAction={openCreateOccurrenceModal}
+      />
+    )
   }
 
   if (hasSelection && weekLoadError) {
@@ -425,8 +698,28 @@ const Schedules = () => {
     )
   }
 
+  if (!canConsultSchedule) {
+    return (
+      <div className="p-4">
+        <CAlert color="danger" className="mb-0">
+          Conta de professor sem perfil associado. Contacte um admin para associar o perfil docente.
+        </CAlert>
+      </div>
+    )
+  }
+
   return (
     <div className="p-4">
+
+      {selectedOperationalSlot ? (
+        <CreateOccurrenceModal
+          slot={selectedOperationalSlot}
+          onClose={closeCreateOccurrenceModal}
+          onCreate={handleCreateOccurrence}
+          isCreating={createOccurrenceMutation.isPending}
+          errorMessage={createOccurrenceError}
+        />
+      ) : null}
 
       {/* ── Page header ── */}
       <div className="d-flex justify-content-between align-items-start mb-4 flex-wrap gap-3">
@@ -436,59 +729,86 @@ const Schedules = () => {
             Horários Escolares
           </h2>
           <small className="text-muted">
-            Visualize e gere horários por CP-SAT.
+            {isAdmin ? 'Visualize e gere horários por CP-SAT.' : 'Visualize o seu horário semanal.'}
             {' '}Verde = dado · Vermelho = furo · Amarelo = substituído · Cor = planeado.
           </small>
         </div>
 
         {/* Generation controls */}
-        <CCard className="border-0 shadow-sm">
-          <CCardBody className="py-2 px-3">
-            <CRow className="g-2 align-items-end">
-              <CCol xs="auto">
-                <CFormLabel htmlFor="modeSelect" className="small mb-1 text-muted">Modo</CFormLabel>
-                <CFormSelect
-                  id="modeSelect"
-                  size="sm"
-                  value={mode}
-                  onChange={(e) => setMode(e.target.value)}
-                  disabled={isGenerating}
-                  style={{ minWidth: '160px' }}
-                >
-                  <option value="full">Completo (de raiz)</option>
-                  <option value="repair">Reparação (mín. alterações)</option>
-                </CFormSelect>
-              </CCol>
-              <CCol xs="auto">
-                <CButton
-                  color="primary" size="sm"
-                  disabled={isGenerating || generateMutation.isPending}
-                  onClick={() => { void handleGenerate() }}
-                >
-                  {isGenerating
-                    ? <><CSpinner size="sm" className="me-1" />A gerar…</>
-                    : <><CIcon icon={cilReload} className="me-1" />Gerar Horário</>
-                  }
-                </CButton>
-              </CCol>
-            </CRow>
-          </CCardBody>
-        </CCard>
+        {isAdmin ? (
+          <CCard className="border-0 shadow-sm">
+            <CCardBody className="py-2 px-3">
+              <CRow className="g-2 align-items-end">
+                <CCol xs="auto">
+                  <CFormLabel htmlFor="modeSelect" className="small mb-1 text-muted">Modo</CFormLabel>
+                  <CFormSelect
+                    id="modeSelect"
+                    size="sm"
+                    value={mode}
+                    onChange={(e) => setMode(e.target.value)}
+                    disabled={isGenerating}
+                    style={{ minWidth: '160px' }}
+                  >
+                    <option value="full">Completo (de raiz)</option>
+                    <option value="repair">Reparação (mín. alterações)</option>
+                  </CFormSelect>
+                </CCol>
+                <CCol xs="auto">
+                  <CButton
+                    color="primary" size="sm"
+                    disabled={isGenerating || generateMutation.isPending}
+                    onClick={() => { void handleGenerate() }}
+                  >
+                    {isGenerating
+                      ? <><CSpinner size="sm" className="me-1" />A gerar…</>
+                      : <><CIcon icon={cilReload} className="me-1" />Gerar Horário</>
+                    }
+                  </CButton>
+                </CCol>
+                {activeTaskId && isGenerating && (
+                  <CCol xs="auto">
+                    <CButton
+                      color="danger"
+                      variant="outline"
+                      size="sm"
+                      disabled={cancelGenerationMutation.isPending}
+                      onClick={handleCancelGeneration}
+                    >
+                      {cancelGenerationMutation.isPending
+                        ? <><CSpinner size="sm" className="me-1" />A cancelar…</>
+                        : <><CIcon icon={cilBan} className="me-1" />Cancelar geração</>
+                      }
+                    </CButton>
+                  </CCol>
+                )}
+              </CRow>
+            </CCardBody>
+          </CCard>
+        ) : null}
       </div>
 
       {/* ── Sprint 3: preflight / status / drafts ── */}
-      {preflightErrors.length > 0 && <PreflightErrorPanel problems={preflightErrors} />}
-      {activeTaskId && <GenerationStatusPanel taskId={activeTaskId} />}
-      {[...drafts].sort((a, b) => a.generation_id.localeCompare(b.generation_id)).map(draft => (
-        <DraftPanel
-          key={draft.generation_id}
-          draft={draft}
-          onApprove={(genId) => approveMutation.mutateAsync(genId)}
-          onReject={(genId) => rejectMutation.mutateAsync(genId)}
-          isApproving={approveMutation.isPending}
-          isRejecting={rejectMutation.isPending}
-        />
-      ))}
+      {isAdmin ? (
+        <>
+          {preflightErrors.length > 0 && <PreflightErrorPanel problems={preflightErrors} />}
+          {generationActionError && (
+            <CAlert color="danger" className="mb-4">
+              {generationActionError}
+            </CAlert>
+          )}
+          {activeTaskId && <GenerationStatusPanel taskId={activeTaskId} />}
+          {[...drafts].sort((a, b) => a.generation_id.localeCompare(b.generation_id)).map(draft => (
+            <DraftPanel
+              key={draft.generation_id}
+              draft={draft}
+              onApprove={(genId) => approveMutation.mutateAsync(genId)}
+              onReject={(genId) => rejectMutation.mutateAsync(genId)}
+              isApproving={approveMutation.isPending}
+              isRejecting={rejectMutation.isPending}
+            />
+          ))}
+        </>
+      ) : null}
 
       {/* ── Sprint 4: View controls ── */}
       <CCard className="border-0 shadow-sm mb-4">
@@ -496,28 +816,35 @@ const Schedules = () => {
           <CRow className="g-3 align-items-end flex-wrap">
 
             {/* View mode toggle */}
-            <CCol xs="auto">
-              <div className="small text-muted mb-1">Vista por</div>
-              <CButtonGroup size="sm">
-                <CButton
-                  color={viewMode === 'class' ? 'primary' : 'outline-secondary'}
-                  onClick={() => setViewMode('class')}
-                >
-                  <CIcon icon={cilPeople} className="me-1" />
-                  Turma
-                </CButton>
-                <CButton
-                  color={viewMode === 'teacher' ? 'primary' : 'outline-secondary'}
-                  onClick={() => setViewMode('teacher')}
-                >
-                  <CIcon icon={cilUser} className="me-1" />
-                  Professor
-                </CButton>
-              </CButtonGroup>
-            </CCol>
+            {isAdmin ? (
+              <CCol xs="auto">
+                <div className="small text-muted mb-1">Vista por</div>
+                <CButtonGroup size="sm">
+                  <CButton
+                    color={viewMode === 'class' ? 'primary' : 'outline-secondary'}
+                    onClick={() => setViewMode('class')}
+                  >
+                    <CIcon icon={cilPeople} className="me-1" />
+                    Turma
+                  </CButton>
+                  <CButton
+                    color={viewMode === 'teacher' ? 'primary' : 'outline-secondary'}
+                    onClick={() => setViewMode('teacher')}
+                  >
+                    <CIcon icon={cilUser} className="me-1" />
+                    Professor
+                  </CButton>
+                </CButtonGroup>
+              </CCol>
+            ) : (
+              <CCol xs="auto">
+                <div className="small text-muted mb-1">Vista</div>
+                <CBadge color="info">Professor (somente próprio horário)</CBadge>
+              </CCol>
+            )}
 
             {/* Class selector */}
-            {viewMode === 'class' && (
+            {isAdmin && viewMode === 'class' && (
               <CCol xs="auto">
                 <CFormLabel htmlFor="classSelect" className="small mb-1 text-muted">Turma</CFormLabel>
                 <CFormSelect
@@ -536,7 +863,7 @@ const Schedules = () => {
             )}
 
             {/* Teacher selector */}
-            {viewMode === 'teacher' && (
+            {isAdmin && viewMode === 'teacher' && (
               <CCol xs="auto">
                 <CFormLabel htmlFor="teacherSelect" className="small mb-1 text-muted">Professor</CFormLabel>
                 <CFormSelect

@@ -1,5 +1,6 @@
 from datetime import date, timedelta
 from statistics import mean, pstdev
+from time import perf_counter
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi_cache.decorator import cache
 from fastapi.encoders import jsonable_encoder
@@ -9,18 +10,111 @@ from celery.result import AsyncResult
 from typing import List, Annotated
 import json
 import redis
+import structlog
 from app import schemas, models
 from app.api import deps
-from app.services import schedule_service, settings_service
+from app.services import schedule_service, settings_service, teacher_observability_service
 from app.solver_tasks import generate_schedule_task
 from app.config import settings
 from app.core.ratelimit import limiter
 
 router = APIRouter()
+logger = structlog.get_logger(__name__)
 ERR_DRAFT_NOT_FOUND = "Rascunho não encontrado"
 DEFAULT_REPAIR_WINDOW_DAYS = 14
 DEFAULT_HARD_END_MONTH = 7
 DEFAULT_HARD_END_DAY = 31
+ERR_TEACHER_PROFILE_REQUIRED = "Professor sem perfil associado"
+ERR_TEACHER_OWN_SCHEDULE_ONLY = "Professor só pode consultar o próprio horário"
+ERR_TEACHER_HORIZON_NOT_FOUND = "Não existe horizonte semanal configurado para a organização"
+ERR_SCHEDULE_RESET_FORBIDDEN = "Sem permissões para apagar os dados de horário"
+TASK_KEY_TTL_SECONDS = 60 * 60 * 24
+TASK_ORG_KEY_PREFIX = "schedule_task_org:"
+TASK_CANCEL_KEY_PREFIX = "schedule_task_cancel:"
+ACTIVE_TASK_BY_ORG_KEY_PREFIX = "schedule_active_task_org:"
+
+
+def _task_org_key(task_id: str) -> str:
+    return f"{TASK_ORG_KEY_PREFIX}{task_id}"
+
+
+def _task_cancel_key(task_id: str) -> str:
+    return f"{TASK_CANCEL_KEY_PREFIX}{task_id}"
+
+
+def _active_task_by_org_key(org_id: int) -> str:
+    return f"{ACTIVE_TASK_BY_ORG_KEY_PREFIX}{org_id}"
+
+
+def _get_redis_client() -> redis.Redis:
+    return redis.Redis.from_url(str(settings.REDIS_URL))
+
+
+def _extract_request_id(request: Request) -> str | None:
+    return (
+        request.headers.get("x-request-id")
+        or request.headers.get("x-correlation-id")
+    )
+
+
+def _log_schedule_reset_audit(
+    request: Request,
+    *,
+    org_id: int | None,
+    user_id: int | None,
+    role: str | None,
+    status_code: int,
+    detail: str,
+) -> None:
+    logger.info(
+        "schedule_reset_audit",
+        org_id=org_id,
+        actor_user_id=user_id,
+        actor_role=role,
+        method=request.method,
+        path=str(request.url.path),
+        request_id=_extract_request_id(request),
+        http_status=status_code,
+        detail=detail,
+    )
+
+
+async def _require_admin_for_schedule_reset(
+    request: Request,
+    current_user: Annotated[models.User, Depends(deps.get_current_user)],
+) -> models.User:
+    """Aplica gate admin-only com trilho de auditoria para tentativas negadas."""
+    try:
+        active_user = deps.get_current_active_user(current_user)
+        return deps.get_current_active_admin(active_user)
+    except HTTPException as exc:
+        detail = str(exc.detail)
+        if exc.status_code == 403:
+            detail = ERR_SCHEDULE_RESET_FORBIDDEN
+        _log_schedule_reset_audit(
+            request,
+            org_id=getattr(current_user, "organization_id", None),
+            user_id=getattr(current_user, "id", None),
+            role=getattr(getattr(current_user, "role", None), "value", getattr(current_user, "role", None)),
+            status_code=exc.status_code,
+            detail=detail,
+        )
+        raise HTTPException(status_code=exc.status_code, detail=detail)
+
+
+def _validate_task_ownership(task_id: str, org_id: int) -> redis.Redis:
+    try:
+        r = _get_redis_client()
+        org_value = r.get(_task_org_key(task_id))
+        if not org_value:
+            raise HTTPException(status_code=404, detail="Task não encontrada")
+        if org_value.decode("utf-8") != str(org_id):
+            raise HTTPException(status_code=403, detail="Sem permissões para esta task")
+        return r
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=503, detail="Validação de task indisponível")
 
 # --- CONSTRAINTS (Regras) ---
 @router.post("/constraints/", response_model=schemas.ConstraintRead)
@@ -401,8 +495,9 @@ async def trigger_generation(
 
     task = generate_schedule_task.delay(org_id, payload.mode)
     try:
-        r = redis.Redis.from_url(str(settings.REDIS_URL))
-        r.setex(f"schedule_task_org:{task.id}", 60 * 60 * 24, str(org_id))
+        r = _get_redis_client()
+        r.setex(_task_org_key(task.id), TASK_KEY_TTL_SECONDS, str(org_id))
+        r.setex(_active_task_by_org_key(org_id), TASK_KEY_TTL_SECONDS, task.id)
     except Exception:
         pass
     return {"task_id": task.id, "status": "Processing started"}
@@ -415,32 +510,74 @@ async def get_status(
     current_user: Annotated[models.User, Depends(deps.get_current_user)]
 ):
     """Verifica o progresso da geração."""
-    # Validar se o task_id pertence à organização
-    try:
-        r = redis.Redis.from_url(str(settings.REDIS_URL))
-        org_value = r.get(f"schedule_task_org:{task_id}")
-        if not org_value:
-            raise HTTPException(status_code=404, detail="Task não encontrada")
-        if org_value.decode("utf-8") != str(current_user.organization_id):
-            raise HTTPException(status_code=403, detail="Sem permissões para esta task")
-    except HTTPException:
-        raise
-    except Exception:
-        # Se Redis falhar, negar por segurança
-        raise HTTPException(status_code=503, detail="Validação de task indisponível")
+    r = _validate_task_ownership(task_id, current_user.organization_id)
 
     task_result = AsyncResult(task_id)
     task_payload = task_result.result if isinstance(task_result.result, dict) else {}
     progress = task_payload.get("progress") if isinstance(task_payload, dict) else None
+    cancel_requested = bool(r.get(_task_cancel_key(task_id)))
+
+    if task_result.status in {"SUCCESS", "FAILURE", "REVOKED"}:
+        active_key = _active_task_by_org_key(current_user.organization_id)
+        active_task_value = r.get(active_key)
+        if active_task_value and active_task_value.decode("utf-8") == task_id:
+            r.delete(active_key)
+        r.delete(_task_cancel_key(task_id))
+
+    detail = task_payload.get("detail") if isinstance(task_payload, dict) else None
+    if task_result.status == "REVOKED" and not detail:
+        detail = "Geração cancelada pelo utilizador."
+
     response = {
         "task_id": task_id,
         "status": task_result.status,
         "result": task_result.result,
-        "detail": task_payload.get("detail") if isinstance(task_payload, dict) else None,
+        "detail": detail,
         "phase": task_payload.get("phase") if isinstance(task_payload, dict) else None,
         "progress": progress,
+        "cancel_requested": cancel_requested,
     }
     return response
+
+
+@router.post(
+    "/cancel/{task_id}",
+    responses={
+        404: {"description": "Task não encontrada"},
+        403: {"description": "Sem permissões para esta task"},
+        503: {"description": "Validação de task indisponível"},
+    },
+    summary="Solicitar cancelamento da geração de horário",
+)
+@limiter.limit("20/minute")
+async def cancel_generation(
+    request: Request,
+    task_id: str,
+    current_user: Annotated[models.User, Depends(deps.get_current_active_admin)],
+):
+    """Cancela uma geração em curso sem deixar resultados parciais persistidos."""
+    r = _validate_task_ownership(task_id, current_user.organization_id)
+
+    task_result = AsyncResult(task_id)
+    if task_result.status in {"SUCCESS", "FAILURE", "REVOKED"}:
+        return {
+            "task_id": task_id,
+            "status": "Already finished",
+            "current_status": task_result.status,
+        }
+
+    r.setex(_task_cancel_key(task_id), TASK_KEY_TTL_SECONDS, "1")
+    try:
+        # terminate=True interrompe rapidamente fases longas (ex.: CP-SAT).
+        task_result.revoke(terminate=True, signal="SIGTERM")
+    except Exception:
+        # Se o revoke falhar, a task ainda será cancelada por flag cooperativa.
+        pass
+
+    return {
+        "task_id": task_id,
+        "status": "Cancel requested",
+    }
 
 # --- RESULTADOS ---
 @router.get("/latest", response_model=List[schemas.ScheduleOutputRead])
@@ -490,22 +627,48 @@ async def get_schedule(
 
     return latest_schedule
 
-@router.delete("/reset")
+@router.delete(
+    "/reset",
+    responses={
+        200: {"description": "Dados de horário apagados com sucesso"},
+        401: {"description": "Credenciais inválidas"},
+        403: {"description": ERR_SCHEDULE_RESET_FORBIDDEN},
+    },
+    summary="Apagar dados operacionais de horário (admin-only)",
+)
 async def reset_all_data(
+    request: Request,
     db: Annotated[AsyncSession, Depends(deps.get_db)],
-    current_user: Annotated[models.User, Depends(deps.get_current_user)]
+    current_user: Annotated[models.User, Depends(_require_admin_for_schedule_reset)],
 ):
-    await schedule_service.delete_all_schedule_data(db, current_user.organization_id)
-    
-    # [EXTRA] Se apagamos os dados, também devemos limpar a cache!
-    try:
-        r = redis.Redis.from_url(str(settings.REDIS_URL))
-        CACHE_KEY = f"schedule_latest_data_{current_user.organization_id}"
-        r.delete(CACHE_KEY)
-    except Exception:
-        pass
+    status_code = 200
+    detail = "Dados de horário apagados com sucesso."
 
-    return {"msg": "Dados de horário apagados com sucesso."}
+    try:
+        await schedule_service.delete_all_schedule_data(db, current_user.organization_id)
+
+        # Se apagamos os dados, também devemos limpar a cache.
+        try:
+            r = redis.Redis.from_url(str(settings.REDIS_URL))
+            cache_key = f"schedule_latest_data_{current_user.organization_id}"
+            r.delete(cache_key)
+        except Exception as cache_exc:
+            detail = f"Dados apagados, mas falhou a invalidação de cache: {cache_exc}"
+
+        return {"msg": "Dados de horário apagados com sucesso."}
+    except Exception as exc:
+        status_code = 500
+        detail = f"Falha ao apagar dados de horário: {exc}"
+        raise
+    finally:
+        _log_schedule_reset_audit(
+            request,
+            org_id=current_user.organization_id,
+            user_id=current_user.id,
+            role=getattr(current_user.role, "value", str(current_user.role)),
+            status_code=status_code,
+            detail=detail,
+        )
 
 
 # ==========================================
@@ -634,6 +797,158 @@ async def reject_draft(
 WEEK_FILTER_REQUIRED_MSG = "Indique class_id ou teacher_id para filtrar o horário."
 
 
+def _to_week_monday(target_date: date) -> date:
+    return target_date - timedelta(days=target_date.weekday())
+
+
+def _resolve_teacher_horizon_payload(
+    settings_rows: list[models.OrganizationSettings],
+) -> dict[str, date] | None:
+    if not settings_rows:
+        return None
+
+    today = date.today()
+    today_monday = _to_week_monday(today)
+    candidates: list[tuple[date, date]] = []
+
+    for org_settings in settings_rows:
+        hard_end_date = _resolve_preflight_hard_end_date(org_settings)
+        if hard_end_date is None:
+            continue
+
+        start_reference = (
+            org_settings.school_start_date
+            or org_settings.school_target_end_date
+            or hard_end_date
+        )
+        if start_reference > hard_end_date:
+            continue
+
+        candidates.append((start_reference, hard_end_date))
+
+    if not candidates:
+        return None
+
+    selected_start_reference: date | None = None
+    selected_hard_end_date: date | None = None
+
+    for start_reference, hard_end_date in candidates:
+        if start_reference <= today <= hard_end_date:
+            selected_start_reference = start_reference
+            selected_hard_end_date = hard_end_date
+            break
+
+    if selected_start_reference is None or selected_hard_end_date is None:
+        future_candidates = [item for item in candidates if today < item[0]]
+        if future_candidates:
+            selected_start_reference, selected_hard_end_date = min(
+                future_candidates,
+                key=lambda item: item[0],
+            )
+
+    if selected_start_reference is None or selected_hard_end_date is None:
+        selected_start_reference, selected_hard_end_date = max(
+            candidates,
+            key=lambda item: item[1],
+        )
+
+    min_week_start = _to_week_monday(selected_start_reference)
+    max_week_start = _to_week_monday(selected_hard_end_date)
+    recommended_week_start = today_monday
+
+    if recommended_week_start < min_week_start:
+        recommended_week_start = min_week_start
+    if recommended_week_start > max_week_start:
+        recommended_week_start = max_week_start
+
+    return {
+        "min_week_start": min_week_start,
+        "week_start_recommended": recommended_week_start,
+        "hard_end_date": selected_hard_end_date,
+    }
+
+
+@router.get(
+    "/me/horizon",
+    response_model=schemas.TeacherScheduleHorizonRead,
+    responses={
+        403: {"description": ERR_TEACHER_OWN_SCHEDULE_ONLY},
+        404: {"description": ERR_TEACHER_HORIZON_NOT_FOUND},
+    },
+    summary="Metadados de horizonte semanal para o professor autenticado",
+)
+@limiter.limit("300/hour")
+async def get_teacher_schedule_horizon(
+    request: Request,
+    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    current_user: Annotated[models.User, Depends(deps.get_current_active_user)],
+):
+    start_ts = perf_counter()
+    status_code = 200
+    active_generation_id = None
+
+    try:
+        if current_user.role != models.UserRole.teacher:
+            status_code = 403
+            raise HTTPException(status_code=403, detail=ERR_TEACHER_OWN_SCHEDULE_ONLY)
+        if current_user.teacher_id is None:
+            status_code = 403
+            raise HTTPException(status_code=403, detail=ERR_TEACHER_PROFILE_REQUIRED)
+
+        def _run(sync_db):
+            settings_rows = (
+                sync_db.query(models.OrganizationSettings)
+                .filter(models.OrganizationSettings.org_id == current_user.organization_id)
+                .order_by(models.OrganizationSettings.id.desc())
+                .all()
+            )
+            payload = _resolve_teacher_horizon_payload(settings_rows)
+            if payload is None:
+                return None
+
+            latest_generation_row = (
+                sync_db.query(models.ScheduleOutput.generation_id)
+                .filter(
+                    models.ScheduleOutput.organization_id == current_user.organization_id,
+                    models.ScheduleOutput.is_draft.is_(False),
+                )
+                .order_by(models.ScheduleOutput.id.desc())
+                .first()
+            )
+            payload["active_generation_id"] = latest_generation_row[0] if latest_generation_row else None
+            return payload
+
+        horizon_payload = await db.run_sync(_run)
+        if horizon_payload is None:
+            status_code = 404
+            raise HTTPException(status_code=404, detail=ERR_TEACHER_HORIZON_NOT_FOUND)
+
+        active_generation_id = horizon_payload.get("active_generation_id")
+        return horizon_payload
+    except HTTPException as exc:
+        status_code = exc.status_code
+        raise
+    except Exception:
+        status_code = 500
+        raise
+    finally:
+        elapsed_ms = max(1, int((perf_counter() - start_ts) * 1000))
+
+        def _emit(sync_db):
+            teacher_observability_service.log_teacher_endpoint_event_safe_sync(
+                sync_db,
+                org_id=current_user.organization_id,
+                actor_user_id=current_user.id,
+                actor_role=current_user.role,
+                endpoint_key=teacher_observability_service.ENDPOINT_SCHEDULE_ME_HORIZON_READ,
+                http_status=status_code,
+                latency_ms=elapsed_ms,
+                active_generation_id=active_generation_id,
+            )
+
+        await db.run_sync(_emit)
+
+
 @router.get(
     "/week",
     response_model=list[schemas.WeekSlotRead],
@@ -645,25 +960,76 @@ WEEK_FILTER_REQUIRED_MSG = "Indique class_id ou teacher_id para filtrar o horár
 async def get_week_schedule(
     week_start: Annotated[date, Query(description="Data de início da semana (segunda-feira, YYYY-MM-DD)")],
     db: Annotated[AsyncSession, Depends(deps.get_db)],
-    current_user: Annotated[models.User, Depends(deps.get_current_user)],
+    current_user: Annotated[models.User, Depends(deps.get_current_active_user)],
     class_id: Annotated[int | None, Query(description="ID da turma")] = None,
     teacher_id: Annotated[int | None, Query(description="ID do professor")] = None,
 ):
     """Retorna os slots da semana indicada, enriquecidos com o estado de ocorrência para dias passados."""
-    if class_id is None and teacher_id is None:
-        raise HTTPException(status_code=400, detail=WEEK_FILTER_REQUIRED_MSG)
+    start_ts = perf_counter()
+    status_code = 200
+    should_log_teacher_observability = current_user.role == models.UserRole.teacher
 
-    def _run(sync_db):
-        from app.services import schedule_service as svc
-        return svc.get_week_schedule_sync(
-            sync_db,
-            org_id=current_user.organization_id,
-            week_start=week_start,
-            class_id=class_id,
-            teacher_id=teacher_id,
-        )
+    effective_class_id = class_id
+    effective_teacher_id = teacher_id
 
-    return await db.run_sync(_run)
+    try:
+        is_admin = bool(current_user.is_superuser or current_user.role == models.UserRole.admin)
+        is_teacher = current_user.role == models.UserRole.teacher
+
+        if not is_admin and not is_teacher:
+            status_code = 403
+            raise HTTPException(status_code=403, detail=ERR_TEACHER_OWN_SCHEDULE_ONLY)
+
+        if current_user.role == models.UserRole.teacher:
+            if current_user.teacher_id is None:
+                status_code = 403
+                raise HTTPException(status_code=403, detail=ERR_TEACHER_PROFILE_REQUIRED)
+            if class_id is not None:
+                status_code = 403
+                raise HTTPException(status_code=403, detail=ERR_TEACHER_OWN_SCHEDULE_ONLY)
+            if teacher_id is not None and teacher_id != current_user.teacher_id:
+                status_code = 403
+                raise HTTPException(status_code=403, detail=ERR_TEACHER_OWN_SCHEDULE_ONLY)
+            effective_teacher_id = current_user.teacher_id
+
+        if effective_class_id is None and effective_teacher_id is None:
+            status_code = 400
+            raise HTTPException(status_code=400, detail=WEEK_FILTER_REQUIRED_MSG)
+
+        def _run(sync_db):
+            from app.services import schedule_service as svc
+            return svc.get_week_schedule_sync(
+                sync_db,
+                org_id=current_user.organization_id,
+                week_start=week_start,
+                class_id=effective_class_id,
+                teacher_id=effective_teacher_id,
+            )
+
+        return await db.run_sync(_run)
+    except HTTPException as exc:
+        status_code = exc.status_code
+        raise
+    except Exception:
+        status_code = 500
+        raise
+    finally:
+        if should_log_teacher_observability:
+            elapsed_ms = max(1, int((perf_counter() - start_ts) * 1000))
+
+            def _emit(sync_db):
+                teacher_observability_service.log_teacher_endpoint_event_safe_sync(
+                    sync_db,
+                    org_id=current_user.organization_id,
+                    actor_user_id=current_user.id,
+                    actor_role=current_user.role,
+                    endpoint_key=teacher_observability_service.ENDPOINT_SCHEDULE_WEEK_TEACHER_READ,
+                    http_status=status_code,
+                    latency_ms=elapsed_ms,
+                    active_generation_id=None,
+                )
+
+            await db.run_sync(_emit)
 
 
 # ==========================================

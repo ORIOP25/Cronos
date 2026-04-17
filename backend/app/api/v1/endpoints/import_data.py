@@ -17,7 +17,7 @@ router = APIRouter()
 @router.get("/timeslots", response_model=List[schemas.TimeslotRead])
 async def get_import_timeslots(
     db: Annotated[AsyncSession, Depends(deps.get_db)],
-    current_user: Annotated[models.User, Depends(deps.get_current_user)]
+    current_user: Annotated[models.User, Depends(deps.get_current_active_admin)]
 ):
     # O Frontend usa isto para saber que tempos existem
     return await schedule_service.get_timeslots_by_org(db, current_user.organization_id)
@@ -26,7 +26,7 @@ async def get_import_timeslots(
 @router.get("/teachers", response_model=List[schemas.TeacherRead])
 async def get_import_teachers(
     db: Annotated[AsyncSession, Depends(deps.get_db)],
-    current_user: Annotated[models.User, Depends(deps.get_current_user)]
+    current_user: Annotated[models.User, Depends(deps.get_current_active_admin)]
 ):
     return await teacher_service.get_teachers_by_org(db, current_user.organization_id)
 
@@ -34,7 +34,7 @@ async def get_import_teachers(
 @router.get("/rooms", response_model=List[schemas.RoomRead])
 async def get_import_rooms(
     db: Annotated[AsyncSession, Depends(deps.get_db)],
-    current_user: Annotated[models.User, Depends(deps.get_current_user)]
+    current_user: Annotated[models.User, Depends(deps.get_current_active_admin)]
 ):
     return await room_service.get_rooms_by_org(db, current_user.organization_id)
 
@@ -42,7 +42,7 @@ async def get_import_rooms(
 @router.get("/classes", response_model=List[schemas.ClassRead])
 async def get_import_classes(
     db: Annotated[AsyncSession, Depends(deps.get_db)],
-    current_user: Annotated[models.User, Depends(deps.get_current_user)]
+    current_user: Annotated[models.User, Depends(deps.get_current_active_admin)]
 ):
     return await class_service.get_classes_by_org(db, current_user.organization_id)
 
@@ -50,7 +50,7 @@ async def get_import_classes(
 @router.get("/subjects", response_model=List[schemas.SubjectRead])
 async def get_import_subjects(
     db: Annotated[AsyncSession, Depends(deps.get_db)],
-    current_user: Annotated[models.User, Depends(deps.get_current_user)]
+    current_user: Annotated[models.User, Depends(deps.get_current_active_admin)]
 ):
     return await subject_service.get_subjects_by_org(db, current_user.organization_id)
 
@@ -58,6 +58,6 @@ async def get_import_subjects(
 @router.get("/lessons", response_model=List[schemas.LessonRead])
 async def get_import_lessons(
     db: Annotated[AsyncSession, Depends(deps.get_db)],
-    current_user: Annotated[models.User, Depends(deps.get_current_user)]
+    current_user: Annotated[models.User, Depends(deps.get_current_active_admin)]
 ):
     return await schedule_service.get_lessons_by_org(db, current_user.organization_id)

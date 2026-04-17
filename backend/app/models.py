@@ -4,7 +4,7 @@ from typing import List, Optional
 from sqlalchemy import (
     Column, Integer, String, Boolean,
     ForeignKey, Date, DateTime, Time,
-    Text, Enum as SAEnum, UniqueConstraint, Table, Float, event,
+    Text, Enum as SAEnum, UniqueConstraint, Table, Float, Index, event,
 )
 from sqlalchemy.types import JSON
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -608,6 +608,100 @@ class LessonOccurrence(Base):
 
     def __repr__(self) -> str:
         return f"<LessonOccurrence(id={self.id}, date='{self.date}', status='{self.status}')>"
+
+
+class OccurrenceOperationalEvent(Base):
+    """Evento operacional de ocorrências para observabilidade interna (pilot baseline)."""
+    __tablename__ = "occurrence_operational_event"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    org_id: Mapped[int] = mapped_column(ForeignKey(FK_ORG_ID, ondelete="CASCADE"), index=True)
+
+    occurrence_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("lesson_occurrence.id", ondelete=ON_DELETE_SET_NULL),
+        nullable=True,
+        index=True,
+    )
+    schedule_output_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("schedule_output.id", ondelete=ON_DELETE_SET_NULL),
+        nullable=True,
+        index=True,
+    )
+    actor_user_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("user.id", ondelete=ON_DELETE_SET_NULL),
+        nullable=True,
+        index=True,
+    )
+
+    event_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    result: Mapped[str] = mapped_column(String(50), nullable=False)
+    decision_status: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    detail: Mapped[Optional[str]] = mapped_column(String(240), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+        index=True,
+    )
+
+    organization: Mapped["Organization"] = relationship()
+    occurrence: Mapped[Optional["LessonOccurrence"]] = relationship()
+    schedule_output: Mapped[Optional["ScheduleOutput"]] = relationship()
+    actor_user: Mapped[Optional["User"]] = relationship()
+
+    __table_args__ = (
+        Index("ix_occ_event_org_created", "org_id", "created_at"),
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<OccurrenceOperationalEvent(id={self.id}, org_id={self.org_id}, "
+            f"event_type='{self.event_type}', result='{self.result}')>"
+        )
+
+
+class TeacherEndpointOperationalEvent(Base):
+    """Evento operacional por endpoint crítico de professor (Passo 9)."""
+
+    __tablename__ = "teacher_endpoint_operational_event"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    org_id: Mapped[int] = mapped_column(ForeignKey(FK_ORG_ID, ondelete="CASCADE"), index=True)
+    actor_user_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("user.id", ondelete=ON_DELETE_SET_NULL),
+        nullable=True,
+        index=True,
+    )
+    actor_role: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    endpoint_key: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
+    http_status: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    latency_ms: Mapped[int] = mapped_column(Integer, nullable=False)
+    active_generation_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+        index=True,
+    )
+
+    organization: Mapped["Organization"] = relationship()
+    actor_user: Mapped[Optional["User"]] = relationship()
+
+    __table_args__ = (
+        Index("ix_teacher_endpoint_event_org_created", "org_id", "created_at"),
+        Index(
+            "ix_teacher_endpoint_event_org_endpoint_created",
+            "org_id",
+            "endpoint_key",
+            "created_at",
+        ),
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<TeacherEndpointOperationalEvent(id={self.id}, org_id={self.org_id}, "
+            f"endpoint_key='{self.endpoint_key}', http_status={self.http_status})>"
+        )
 
 
 @event.listens_for(LessonOccurrence, "before_delete")

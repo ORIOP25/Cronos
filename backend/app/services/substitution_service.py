@@ -1,9 +1,81 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from sqlalchemy.orm import selectinload
-from sqlalchemy import and_, or_
+from sqlalchemy.orm import joinedload, selectinload
+from sqlalchemy import and_
 from app import models, schemas
 from datetime import date
+from app.models import LessonOccurrenceStatus
+from app.services import occurrence_service
+
+
+ERR_INVALID_LESSON = "Aula invalida ou fora da organizacao"
+ERR_INVALID_TIMESLOT = "Timeslot invalido ou fora da organizacao"
+ERR_INVALID_TEACHER = "Professor invalido ou fora da organizacao"
+ERR_ORIGINAL_TEACHER_MISMATCH = "Professor original nao corresponde a aula"
+ERR_SUBSTITUTE_NOT_ELIGIBLE = "Professor substituto nao elegivel para esta ocorrencia"
+
+
+class SubstitutionServiceError(Exception):
+    def __init__(self, *, status_code: int, detail: str):
+        self.status_code = status_code
+        self.detail = detail
+
+
+def _select_substitute_subject_from_recommendations(
+    recommendations: list[schemas.SubstituteRecommendationRead],
+    substitute_teacher_id: int,
+) -> int:
+    teacher_items = [
+        rec for rec in recommendations if rec.teacher_id == substitute_teacher_id
+    ]
+    if not teacher_items:
+        raise SubstitutionServiceError(status_code=409, detail=ERR_SUBSTITUTE_NOT_ELIGIBLE)
+
+    # Determinismo para professor com mais de uma disciplina elegivel.
+    selected = sorted(teacher_items, key=lambda rec: (rec.rank, rec.subject_id))[0]
+    return int(selected.subject_id)
+
+
+def _upsert_legacy_substitution_sync(
+    sync_db,
+    *,
+    data: schemas.SubstitutionCreate,
+    substitute_subject_id: int,
+):
+    existing = sync_db.execute(
+        select(models.Substitution)
+        .where(
+            and_(
+                models.Substitution.lesson_id == data.lesson_id,
+                models.Substitution.timeslot_id == data.timeslot_id,
+                models.Substitution.date == data.date,
+                models.Substitution.original_teacher_id == data.original_teacher_id,
+            )
+        )
+        .order_by(models.Substitution.id.desc())
+    ).scalars().first()
+
+    if existing is None:
+        existing = models.Substitution(
+            lesson_id=data.lesson_id,
+            timeslot_id=data.timeslot_id,
+            original_teacher_id=data.original_teacher_id,
+            substitute_teacher_id=data.substitute_teacher_id,
+            substitute_subject_id=substitute_subject_id,
+            date=data.date,
+            reason=data.reason,
+            status="CONFIRMED",
+        )
+        sync_db.add(existing)
+    else:
+        existing.substitute_teacher_id = data.substitute_teacher_id
+        existing.substitute_subject_id = substitute_subject_id
+        existing.reason = data.reason
+        existing.status = "CONFIRMED"
+
+    sync_db.commit()
+    sync_db.refresh(existing)
+    return existing
 
 async def find_available_teachers(
     db: AsyncSession, 
@@ -66,52 +138,132 @@ async def find_available_teachers(
     return suggestions
 
 async def create_substitution(db: AsyncSession, data: schemas.SubstitutionCreate, org_id: int):
-    # 1. Validar lesson pertence à organização
-    lesson_query = select(models.Lesson).where(
-        models.Lesson.id == data.lesson_id,
-        models.Lesson.organization_id == org_id
-    )
-    lesson_result = await db.execute(lesson_query)
-    db_lesson = lesson_result.scalars().first()
-    if not db_lesson:
-        return "INVALID_LESSON"
+    def _run(sync_db):
+        schedule_output = sync_db.execute(
+            select(models.ScheduleOutput)
+            .options(joinedload(models.ScheduleOutput.lesson))
+            .where(
+                and_(
+                    models.ScheduleOutput.organization_id == org_id,
+                    models.ScheduleOutput.lesson_id == data.lesson_id,
+                    models.ScheduleOutput.timeslot_id == data.timeslot_id,
+                    models.ScheduleOutput.date == data.date,
+                    models.ScheduleOutput.is_draft.is_(False),
+                )
+            )
+            .order_by(models.ScheduleOutput.id.desc())
+        ).scalars().first()
 
-    # 2. Validar timeslot pertence à organização
-    timeslot_query = select(models.Timeslot).where(
-        models.Timeslot.id == data.timeslot_id,
-        models.Timeslot.organization_id == org_id
-    )
-    timeslot_result = await db.execute(timeslot_query)
-    if not timeslot_result.scalars().first():
-        return "INVALID_TIMESLOT"
+        if schedule_output is None:
+            raise SubstitutionServiceError(status_code=400, detail=ERR_INVALID_LESSON)
 
-    # 3. Validar professores pertencem à organização
-    teacher_query = select(models.Teacher).where(
-        models.Teacher.id.in_([data.original_teacher_id, data.substitute_teacher_id]),
-        models.Teacher.organization_id == org_id
-    )
-    teacher_result = await db.execute(teacher_query)
-    teachers = teacher_result.scalars().all()
-    if len(teachers) != 2:
-        return "INVALID_TEACHER"
+        timeslot = sync_db.execute(
+            select(models.Timeslot).where(
+                and_(
+                    models.Timeslot.id == data.timeslot_id,
+                    models.Timeslot.organization_id == org_id,
+                )
+            )
+        ).scalar_one_or_none()
+        if timeslot is None:
+            raise SubstitutionServiceError(status_code=400, detail=ERR_INVALID_TIMESLOT)
 
-    # 4. Validar que o teacher original corresponde à aula (lesson)
-    if db_lesson.teacher_id != data.original_teacher_id:
-        return "ORIGINAL_TEACHER_MISMATCH"
+        teachers = sync_db.execute(
+            select(models.Teacher).where(
+                and_(
+                    models.Teacher.id.in_([data.original_teacher_id, data.substitute_teacher_id]),
+                    models.Teacher.organization_id == org_id,
+                )
+            )
+        ).scalars().all()
+        if len(teachers) != 2:
+            raise SubstitutionServiceError(status_code=400, detail=ERR_INVALID_TEACHER)
 
-    db_sub = models.Substitution(
-        lesson_id=data.lesson_id,
-        timeslot_id=data.timeslot_id,
-        original_teacher_id=data.original_teacher_id,
-        substitute_teacher_id=data.substitute_teacher_id,
-        date=data.date,
-        reason=data.reason,
-        status="CONFIRMED" # Assumimos confirmado direto pelo diretor
-    )
-    db.add(db_sub)
-    await db.commit()
-    await db.refresh(db_sub)
-    return db_sub
+        if schedule_output.lesson is None:
+            raise SubstitutionServiceError(status_code=400, detail=ERR_INVALID_LESSON)
+
+        if schedule_output.lesson.teacher_id != data.original_teacher_id:
+            raise SubstitutionServiceError(status_code=400, detail=ERR_ORIGINAL_TEACHER_MISMATCH)
+
+        try:
+            occurrence, _ = occurrence_service.create_occurrence_from_block_sync(
+                sync_db,
+                org_id=org_id,
+                schedule_output_id=schedule_output.id,
+            )
+            occurrence_service.log_occurrence_event_safe_sync(
+                sync_db,
+                org_id=org_id,
+                event_type=occurrence_service.OBS_EVENT_CREATE,
+                result=occurrence_service.OBS_RESULT_SUCCESS,
+                occurrence_id=occurrence.id,
+                schedule_output_id=occurrence.schedule_output_id,
+                detail="legacy_substitution_adapter",
+            )
+        except occurrence_service.OccurrenceServiceError as exc:
+            occurrence_service.log_occurrence_event_safe_sync(
+                sync_db,
+                org_id=org_id,
+                event_type=occurrence_service.OBS_EVENT_CREATE,
+                result=occurrence_service.classify_occurrence_error_result(exc.status_code),
+                occurrence_id=None,
+                schedule_output_id=schedule_output.id,
+                detail=f"legacy_substitution_adapter: {exc.detail}",
+            )
+            raise SubstitutionServiceError(status_code=exc.status_code, detail=exc.detail) from exc
+
+        recommendations = occurrence_service.get_substitute_recommendations_sync(
+            sync_db,
+            org_id=org_id,
+            occurrence_id=occurrence.id,
+        )
+        substitute_subject_id = _select_substitute_subject_from_recommendations(
+            recommendations,
+            data.substitute_teacher_id,
+        )
+
+        payload = schemas.LessonOccurrenceUpdate(
+            status=LessonOccurrenceStatus.SUBSTITUTED,
+            substitute_teacher_id=data.substitute_teacher_id,
+            substitute_subject_id=substitute_subject_id,
+        )
+
+        try:
+            updated = occurrence_service.update_occurrence_sync(
+                sync_db,
+                occurrence_id=occurrence.id,
+                org_id=org_id,
+                payload=payload,
+            )
+            occurrence_service.log_occurrence_event_safe_sync(
+                sync_db,
+                org_id=org_id,
+                event_type=occurrence_service.OBS_EVENT_DECIDE,
+                result=occurrence_service.OBS_RESULT_SUCCESS,
+                occurrence_id=updated.id,
+                schedule_output_id=updated.schedule_output_id,
+                decision_status=updated.status,
+                detail="legacy_substitution_adapter",
+            )
+        except occurrence_service.OccurrenceServiceError as exc:
+            occurrence_service.log_occurrence_event_safe_sync(
+                sync_db,
+                org_id=org_id,
+                event_type=occurrence_service.OBS_EVENT_DECIDE,
+                result=occurrence_service.classify_occurrence_error_result(exc.status_code),
+                occurrence_id=occurrence.id,
+                schedule_output_id=occurrence.schedule_output_id,
+                detail=f"legacy_substitution_adapter: {exc.detail}",
+            )
+            raise SubstitutionServiceError(status_code=exc.status_code, detail=exc.detail) from exc
+
+        return _upsert_legacy_substitution_sync(
+            sync_db,
+            data=data,
+            substitute_subject_id=substitute_subject_id,
+        )
+
+    return await db.run_sync(_run)
 
 async def get_active_substitutions(db: AsyncSession, org_id: int, skip: int = 0, limit: int = 100):
     query = (

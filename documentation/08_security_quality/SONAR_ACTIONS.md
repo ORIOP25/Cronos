@@ -51,6 +51,16 @@ Acao:
 - validar com teste de nao vazamento entre orgs;
 - anexar evidencias e fechar item.
 
-## Pontos ainda a definir (nao fechados)
-- SLA numerico por severidade para resolucao;
-- formato unico de report de fecho para toda equipa.
+## Decisao fechada para Alpha V1 (sem pendencias)
+
+Tempos-alvo internos por severidade:
+- Critico/High com impacto em seguranca ou tenant isolation: triagem em ate 24h, correcao em ate 72h.
+- Medium: triagem em ate 3 dias uteis, correcao em ate 10 dias uteis.
+- Low: triagem em ate 5 dias uteis, correcao por lote no ciclo seguinte.
+
+Formato unico de report de fecho:
+1. id do finding e severidade;
+2. causa raiz resumida;
+3. alteracao aplicada (ficheiro/endpoint afetado);
+4. evidencia de validacao (teste, analise Sonar, regressao);
+5. estado final (fechado / reaberto com motivo).

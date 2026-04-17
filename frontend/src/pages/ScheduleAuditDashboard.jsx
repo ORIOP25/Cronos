@@ -49,13 +49,14 @@ const AuditStatCard = ({ title, value, subtitle, color = 'secondary' }) => (
 const AuditDashboard = () => {
   const { data: generations = [], isLoading: loadingGenerations, error: generationsError } = useAuditGenerations()
   const [selectedGeneration, setSelectedGeneration] = useState('')
+  const hasGenerations = generations.length > 0
   const effectiveGeneration = selectedGeneration || generations[0]?.generation_id || ''
 
   const {
     data: summary,
     isLoading: loadingSummary,
     error: summaryError,
-  } = useAuditSummary(effectiveGeneration || undefined)
+  } = useAuditSummary(effectiveGeneration || undefined, { enabled: hasGenerations })
 
   const roomUsageTotal = useMemo(
     () => (summary?.room_type_usage ?? []).reduce((acc, item) => acc + item.blocks_count, 0),
@@ -87,7 +88,8 @@ const AuditDashboard = () => {
                 value={selectedGeneration}
                 onChange={(event) => setSelectedGeneration(event.target.value)}
               >
-                {!selectedGeneration && generations.length > 0 ? (
+                {!hasGenerations ? <option value="">Sem gerações disponíveis</option> : null}
+                {!selectedGeneration && hasGenerations ? (
                   <option value="">Selecionar (mais recente: {generations[0].generation_id})</option>
                 ) : null}
                 {generations.map((item) => (
@@ -101,13 +103,19 @@ const AuditDashboard = () => {
         </CCardBody>
       </CCard>
 
-      {loadingSummary ? (
+      {!hasGenerations ? (
+        <CAlert color="info">
+          Ainda não existem gerações ativas para auditoria nesta organização. Gere um horário e volte a esta página.
+        </CAlert>
+      ) : null}
+
+      {hasGenerations && loadingSummary ? (
         <div className="text-center py-5">
           <CSpinner />
         </div>
       ) : null}
 
-      {summaryError ? (
+      {hasGenerations && summaryError ? (
         <CAlert color="danger">Não foi possível carregar as métricas da geração selecionada.</CAlert>
       ) : null}
 

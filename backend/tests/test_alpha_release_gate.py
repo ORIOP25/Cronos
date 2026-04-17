@@ -126,7 +126,7 @@ async def _seed_operational(db_session) -> dict:
     return await db_session.run_sync(lambda sync_db: seed_operational_scenarios_sync(sync_db))
 
 
-async def _create_auto_confirmed_occurrence(
+async def _create_open_occurrence(
     db_session,
     *,
     runtime: dict,
@@ -151,14 +151,11 @@ async def _create_auto_confirmed_occurrence(
         sync_db.add(generated)
         sync_db.commit()
 
-        occurrence_service.auto_confirm_daily_sync(sync_db, runtime["org_a_id"], target_date)
-
-        occurrence = sync_db.execute(
-            select(models.LessonOccurrence).where(
-                models.LessonOccurrence.schedule_output_id == generated.id,
-                models.LessonOccurrence.date == target_date,
-            )
-        ).scalar_one()
+        occurrence, _ = occurrence_service.create_occurrence_from_block_sync(
+            sync_db,
+            runtime["org_a_id"],
+            generated.id,
+        )
 
         return occurrence.id
 
@@ -249,7 +246,7 @@ async def test_alpha_regression_occurrences_substitutions_auth_and_tenant(async_
     payload = await _seed_operational(db_session)
     runtime = payload["runtime"]
 
-    occurrence_id = await _create_auto_confirmed_occurrence(
+    occurrence_id = await _create_open_occurrence(
         db_session,
         runtime=runtime,
         target_date=REFERENCE_DATE + timedelta(days=5),
@@ -342,8 +339,12 @@ async def test_alpha_edge_weekly_simulation_and_audit_trail(db_session):
 
         sync_db.commit()
 
-        for target_date in week_dates:
-            occurrence_service.auto_confirm_daily_sync(sync_db, runtime["org_a_id"], target_date)
+        for schedule_id in schedule_ids:
+            occurrence_service.create_occurrence_from_block_sync(
+                sync_db,
+                runtime["org_a_id"],
+                schedule_id,
+            )
 
         week_occurrences = list(
             sync_db.execute(
@@ -475,7 +476,7 @@ async def test_alpha_edge_rollback_after_unexpected_error(db_session, monkeypatc
     payload = await _seed_operational(db_session)
     runtime = payload["runtime"]
 
-    occurrence_id = await _create_auto_confirmed_occurrence(
+    occurrence_id = await _create_open_occurrence(
         db_session,
         runtime=runtime,
         target_date=REFERENCE_DATE + timedelta(days=9),
@@ -484,13 +485,13 @@ async def test_alpha_edge_rollback_after_unexpected_error(db_session, monkeypatc
     original = occurrence_service._apply_state_accounting
     calls = {"count": 0}
 
-    def _explode_on_second_call(*args, **kwargs):
+    def _explode_on_first_call(*args, **kwargs):
         calls["count"] += 1
-        if calls["count"] == 2:
+        if calls["count"] == 1:
             raise RuntimeError("forced-mid-operation-error")
         return original(*args, **kwargs)
 
-    monkeypatch.setattr(occurrence_service, "_apply_state_accounting", _explode_on_second_call)
+    monkeypatch.setattr(occurrence_service, "_apply_state_accounting", _explode_on_first_call)
 
     def _run_rollback(sync_db):
         occurrence_before = sync_db.get(models.LessonOccurrence, occurrence_id)
@@ -500,6 +501,16 @@ async def test_alpha_edge_rollback_after_unexpected_error(db_session, monkeypatc
         assert schedule_output is not None
         lesson = sync_db.get(models.Lesson, schedule_output.lesson_id)
         assert lesson is not None
+
+        progress_before = sync_db.execute(
+            select(models.ClassProgress).where(
+                models.ClassProgress.class_id == lesson.class_id,
+                models.ClassProgress.module_id == occurrence_before.planned_module_id,
+            )
+        ).scalar_one_or_none()
+
+        before_completed = float(progress_before.hours_completed) if progress_before is not None else 0.0
+        before_debt = float(progress_before.hours_debt) if progress_before is not None else 0.0
 
         raised = False
         try:
@@ -518,23 +529,30 @@ async def test_alpha_edge_rollback_after_unexpected_error(db_session, monkeypatc
         occurrence_after = sync_db.get(models.LessonOccurrence, occurrence_id)
         assert occurrence_after is not None
 
-        progress = sync_db.execute(
+        progress_after = sync_db.execute(
             select(models.ClassProgress).where(
                 models.ClassProgress.class_id == lesson.class_id,
                 models.ClassProgress.module_id == occurrence_after.planned_module_id,
             )
-        ).scalar_one()
+        ).scalar_one_or_none()
+
+        after_completed = float(progress_after.hours_completed) if progress_after is not None else 0.0
+        after_debt = float(progress_after.hours_debt) if progress_after is not None else 0.0
 
         return {
             "raised": raised,
             "status": occurrence_after.status.value,
-            "hours_completed": float(progress.hours_completed),
-            "hours_debt": float(progress.hours_debt),
+            "decided_at": occurrence_after.decided_at,
+            "before_hours_completed": before_completed,
+            "before_hours_debt": before_debt,
+            "after_hours_completed": after_completed,
+            "after_hours_debt": after_debt,
         }
 
     result = await db_session.run_sync(_run_rollback)
 
     assert result["raised"] is True
     assert result["status"] == LessonOccurrenceStatus.GIVEN.value
-    assert result["hours_completed"] == pytest.approx(2.0)
-    assert result["hours_debt"] == pytest.approx(0.0)
+    assert result["decided_at"] is None
+    assert result["after_hours_completed"] == pytest.approx(result["before_hours_completed"])
+    assert result["after_hours_debt"] == pytest.approx(result["before_hours_debt"])

@@ -1,6 +1,6 @@
 from pydantic import BaseModel, EmailStr, Field, ConfigDict, model_validator, computed_field
 from datetime import time, datetime, date
-from typing import Any, Optional
+from typing import Any, Optional, Literal
 from .models import (
     RoomType, UserRole, ConstraintType, PreferenceLevel,
     CalendarEventType, CalendarEventSource, LessonOccurrenceStatus, List,
@@ -374,6 +374,12 @@ class AvailabilitySelfCreate(BaseModel):
     timeslot_id: int
     score: PreferenceLevel = PreferenceLevel.NEUTRAL
 
+
+class AvailabilitySelfRead(BaseModel):
+    """Leitura self-service de disponibilidade do professor autenticado."""
+    timeslot_id: int
+    score: PreferenceLevel = PreferenceLevel.NEUTRAL
+
 class AvailabilityRead(AvailabilityBase):
     id: int
     
@@ -741,6 +747,7 @@ class EligibleTeacherRead(BaseModel):
 # ==========================================
 
 DESC_OCCURRENCE_STATUS = "Estado da ocorrência: GIVEN | GAP | SUBSTITUTED"
+DESC_OCCURRENCE_CREATE_SCHEDULE_OUTPUT_ID = "ID do bloco planeado (ScheduleOutput) para iniciar ocorrência operacional"
 
 
 class LessonOccurrenceRead(BaseModel):
@@ -763,6 +770,16 @@ class LessonOccurrenceRead(BaseModel):
     created_at: datetime
 
     model_config = model_config
+
+
+class LessonOccurrenceCreate(BaseModel):
+    """Payload para criar ocorrência operacional a partir de um bloco do horário."""
+    action: Literal["CREATE_OCCURRENCE"] = "CREATE_OCCURRENCE"
+    schedule_output_id: int = Field(..., gt=0, description=DESC_OCCURRENCE_CREATE_SCHEDULE_OUTPUT_ID)
+    mode: str = Field(default="manual_admin", max_length=50)
+    reason: Optional[str] = Field(None, max_length=250)
+
+    model_config = ConfigDict(extra="forbid")
 
 
 class LessonOccurrenceUpdate(BaseModel):
@@ -833,6 +850,46 @@ class SubstituteRecommendationRead(BaseModel):
     daily_load_hours: float
     days_since_last_substitution: Optional[int] = None
     justification: str
+
+
+class OccurrenceObservabilitySummaryRead(BaseModel):
+    """Contadores operacionais mínimos de ocorrências por organização."""
+    window_days: int
+    total_events: int
+    decisions_success: int
+    validation_failures: int
+    conflicts: int
+
+
+class TeacherEndpointObservabilityEndpointRead(BaseModel):
+    """Métricas agregadas por endpoint crítico do fluxo professor."""
+
+    endpoint_key: str
+    total_requests: int
+    status_2xx: int
+    status_403: int
+    status_5xx: int
+    error_rate_percent: float
+    p95_latency_ms: int
+
+
+class TeacherEndpointAlertRead(BaseModel):
+    """Alerta operacional calculado para o período analisado."""
+
+    endpoint_key: str
+    alert_code: str
+    severity: str
+    threshold: str
+    observed_value: str
+
+
+class TeacherEndpointObservabilitySummaryRead(BaseModel):
+    """Resumo mínimo de monitorização de endpoints do professor."""
+
+    window_minutes: int
+    total_events: int
+    endpoints: list[TeacherEndpointObservabilityEndpointRead]
+    alerts: list[TeacherEndpointAlertRead]
 
 
 # ==========================================
@@ -922,6 +979,14 @@ class WeekClassInfo(BaseModel):
     id: int
     name: str
 
+    
+class TeacherScheduleHorizonRead(BaseModel):
+    """Metadados mínimos para a visão semanal do professor autenticado."""
+    min_week_start: date
+    week_start_recommended: date
+    hard_end_date: date
+    active_generation_id: Optional[str] = None
+    
 
 class WeekModuleInfo(BaseModel):
     id: int
@@ -942,3 +1007,7 @@ class WeekSlotRead(BaseModel):
     is_past: bool
     occurrence_status: Optional[str] = None
     hours_given: Optional[float] = None
+    occurrence_id: Optional[int] = None
+    occurrence_decided_at: Optional[datetime] = None
+    can_create_occurrence: bool
+    can_decide_occurrence: bool

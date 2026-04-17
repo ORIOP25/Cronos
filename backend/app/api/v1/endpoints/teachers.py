@@ -1,11 +1,13 @@
 # Ficheiro: backend/app/api/endpoints/teachers.py
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from time import perf_counter
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Annotated
 from app import schemas
 from app.api import deps
-from app.services import teacher_service
+from app.services import teacher_observability_service, teacher_service
 from app.core.ratelimit import limiter
 from app import models
 
@@ -13,10 +15,85 @@ TEACHER_NOT_FOUND_MSG = "Professor não encontrado"
 
 router = APIRouter()
 
+
+@router.get(
+    "/me/availability",
+    response_model=List[schemas.AvailabilitySelfRead],
+    responses={403: {"description": "Sem permissões"}, 404: {"description": TEACHER_NOT_FOUND_MSG}},
+)
+async def read_my_availability(
+    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    current_user: Annotated[models.User, Depends(deps.get_current_active_user)],
+):
+    """Lê disponibilidade do professor autenticado (self-service)."""
+    start_ts = perf_counter()
+    status_code = 200
+
+    try:
+        if current_user.role != models.UserRole.teacher:
+            status_code = 403
+            raise HTTPException(status_code=403, detail="Sem permissões para este endpoint")
+
+        if current_user.teacher_id is None:
+            status_code = 403
+            raise HTTPException(status_code=403, detail="Professor sem perfil associado")
+
+        result = await teacher_service.get_teacher_availability(
+            db,
+            teacher_id=current_user.teacher_id,
+            org_id=current_user.organization_id,
+        )
+        if result == "NOT_FOUND":
+            status_code = 404
+            raise HTTPException(status_code=404, detail=TEACHER_NOT_FOUND_MSG)
+
+        return result
+    except HTTPException as exc:
+        status_code = exc.status_code
+        raise
+    except Exception:
+        status_code = 500
+        raise
+    finally:
+        elapsed_ms = max(1, int((perf_counter() - start_ts) * 1000))
+
+        def _emit(sync_db):
+            teacher_observability_service.log_teacher_endpoint_event_safe_sync(
+                sync_db,
+                org_id=current_user.organization_id,
+                actor_user_id=current_user.id,
+                actor_role=current_user.role,
+                endpoint_key=teacher_observability_service.ENDPOINT_TEACHERS_ME_AVAILABILITY_READ,
+                http_status=status_code,
+                latency_ms=elapsed_ms,
+            )
+
+        await db.run_sync(_emit)
+
+
+@router.get(
+    "/observability/summary",
+    response_model=schemas.TeacherEndpointObservabilitySummaryRead,
+    summary="Resumo operacional dos endpoints críticos do professor",
+)
+async def get_teacher_endpoints_observability_summary(
+    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    current_user: Annotated[models.User, Depends(deps.get_current_active_admin)],
+    window_minutes: int = Query(15, ge=5, le=1440, description="Janela de agregação em minutos"),
+):
+    def _run(sync_db):
+        return teacher_observability_service.get_teacher_endpoint_observability_summary_sync(
+            sync_db,
+            org_id=current_user.organization_id,
+            window_minutes=window_minutes,
+        )
+
+    return await db.run_sync(_run)
+
 # --- 1. Ler Professores ---
 @router.get("/", response_model=List[schemas.TeacherRead])
 async def read_teachers(
-    current_user: Annotated[models.User, Depends(deps.get_current_active_user)],
+    current_user: Annotated[models.User, Depends(deps.get_current_active_admin)],
     db: Annotated[AsyncSession, Depends(deps.get_db)],
     skip: int = 0, 
     limit: int = 100,
@@ -55,24 +132,63 @@ async def update_teacher_availability(
     """
     Grava as preferências de horário chamando o serviço dedicado.
     """
-    # Professores só podem atualizar a própria disponibilidade
-    if current_user.role == models.UserRole.teacher and current_user.teacher_id != teacher_id:
-        raise HTTPException(status_code=403, detail="Sem permissões para atualizar outro professor")
+    start_ts = perf_counter()
+    status_code = 200
 
-    result = await teacher_service.set_teacher_availability(
-        db, 
-        teacher_id, 
-        availability_data,
-        org_id=current_user.organization_id
-    )
+    try:
+        # Default deny: apenas admin e professor podem operar este endpoint
+        is_admin = bool(current_user.is_superuser or current_user.role == models.UserRole.admin)
+        is_teacher = current_user.role == models.UserRole.teacher
+        if not is_admin and not is_teacher:
+            status_code = 403
+            raise HTTPException(status_code=403, detail="Sem permissões para este endpoint")
 
-    if result == "NOT_FOUND":
-        raise HTTPException(status_code=404, detail=TEACHER_NOT_FOUND_MSG)
+        # Professores só podem atualizar a própria disponibilidade
+        if current_user.role == models.UserRole.teacher and current_user.teacher_id != teacher_id:
+            status_code = 403
+            raise HTTPException(status_code=403, detail="Sem permissões para atualizar outro professor")
 
-    if result == "INVALID_TIMESLOT":
-        raise HTTPException(status_code=400, detail="Timeslot inválido ou fora da organização")
+        result = await teacher_service.set_teacher_availability(
+            db,
+            teacher_id,
+            availability_data,
+            org_id=current_user.organization_id
+        )
 
-    return result
+        if result == "NOT_FOUND":
+            status_code = 404
+            raise HTTPException(status_code=404, detail=TEACHER_NOT_FOUND_MSG)
+
+        if result == "INVALID_TIMESLOT":
+            status_code = 400
+            raise HTTPException(status_code=400, detail="Timeslot inválido ou fora da organização")
+
+        if result == "DUPLICATE_TIMESLOT":
+            status_code = 400
+            raise HTTPException(status_code=400, detail="Payload inválido: timeslot_id duplicado")
+
+        return result
+    except HTTPException as exc:
+        status_code = exc.status_code
+        raise
+    except Exception:
+        status_code = 500
+        raise
+    finally:
+        elapsed_ms = max(1, int((perf_counter() - start_ts) * 1000))
+
+        def _emit(sync_db):
+            teacher_observability_service.log_teacher_endpoint_event_safe_sync(
+                sync_db,
+                org_id=current_user.organization_id,
+                actor_user_id=current_user.id,
+                actor_role=current_user.role,
+                endpoint_key=teacher_observability_service.ENDPOINT_TEACHERS_AVAILABILITY_UPDATE,
+                http_status=status_code,
+                latency_ms=elapsed_ms,
+            )
+
+        await db.run_sync(_emit)
 
 # --- 3. Atualizar Professor (PATCH) ---
 @router.patch("/{teacher_id}", response_model=schemas.TeacherRead, responses={404: {"description": TEACHER_NOT_FOUND_MSG}})

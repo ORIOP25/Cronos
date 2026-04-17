@@ -7,11 +7,13 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.api import deps
 from app.config import settings
+from app.core.ratelimit import limiter
 from typing import Annotated
 
 router = APIRouter()
 
 @router.get("/health", status_code=status.HTTP_200_OK)
+@limiter.exempt
 async def health_check(
     db: Annotated[AsyncSession, Depends(deps.get_db)]
 ):

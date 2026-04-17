@@ -1,10 +1,65 @@
-// src/pages/MyAvailability.jsx 
-
 import React, { useState, useEffect } from 'react';
 import apiClient from '../apiClient';
 import AvailabilityGrid from '../components/AvailabilityGrid';
 import { useAuthStore } from '../store';
 import { PREFERENCE_LEVELS, DEFAULT_PREFERENCE } from '../constants';
+
+const FEEDBACK_STYLES = {
+  success: {
+    backgroundColor: '#e6f5ec',
+    border: '1px solid #8bc5a2',
+    color: '#1d5c35',
+  },
+  error: {
+    backgroundColor: '#fde8e8',
+    border: '1px solid #e7a6a6',
+    color: '#7f1d1d',
+  },
+  info: {
+    backgroundColor: '#e8f1fb',
+    border: '1px solid #9ec2e6',
+    color: '#123b66',
+  },
+};
+
+const mapAvailabilityApiMessage = (err, context) => {
+  const status = err?.response?.status;
+
+  if (status === 403) {
+    if (context === 'load') {
+      return 'Sem permissões para consultar preferências de disponibilidade.';
+    }
+    return 'Sem permissões para gravar disponibilidade desta conta.';
+  }
+
+  if (status === 404) {
+    return 'Perfil de professor não encontrado na organização autenticada.';
+  }
+
+  if (status === 400) {
+    return 'Dados de disponibilidade inválidos. Atualize a página e tente novamente.';
+  }
+
+  if (context === 'load') {
+    return 'Falha ao carregar preferências de disponibilidade. Tente novamente.';
+  }
+  return 'Erro ao gravar disponibilidade. Tente novamente.';
+};
+
+const buildAvailabilityMap = (rows, validTimeslotIds) => {
+  const nextMap = {};
+  let ignoredCount = 0;
+
+  for (const row of rows) {
+    if (validTimeslotIds.has(row.timeslot_id)) {
+      nextMap[row.timeslot_id] = Number(row.score);
+    } else {
+      ignoredCount += 1;
+    }
+  }
+
+  return { map: nextMap, ignoredCount };
+};
 
 const MyAvailability = () => {
   const [timeslots, setTimeslots] = useState([]);
@@ -12,77 +67,113 @@ const MyAvailability = () => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
+  const [feedback, setFeedback] = useState(null);
   const [selectedMode, setSelectedMode] = useState(DEFAULT_PREFERENCE);
   const teacherId = useAuthStore((state) => state.user?.teacherId);
 
-  // 1. Carregar Dados Iniciais
   useEffect(() => {
     const fetchData = async () => {
       try {
-        // Carregar slots de tempo
-        const timeslotsRes = await apiClient.get('/timeslots/');
-        setTimeslots(timeslotsRes.data);
+        setError(null);
+        setFeedback(null);
 
-        // Carregar disponibilidades já salvas do professor logado
-        // (Assumindo que temos um endpoint 'me' ou usamos o ID do user)
-        // Nota: Por agora, vamos simular que começamos do zero ou implementar o fetch depois
-        // const myAvailRes = await apiClient.get('/teachers/me/availability');
-        // setAvailabilityMap(converteParaMapa(myAvailRes.data)); 
-        
+        const timeslotsRes = await apiClient.get('/timeslots/');
+        const fetchedTimeslots = Array.isArray(timeslotsRes.data) ? timeslotsRes.data : [];
+        setTimeslots(fetchedTimeslots);
+
+        const myAvailabilityRes = await apiClient.get('/teachers/me/availability');
+        const persistedRows = Array.isArray(myAvailabilityRes.data) ? myAvailabilityRes.data : [];
+        const validTimeslotIds = new Set(fetchedTimeslots.map((slot) => slot.id));
+
+        const { map, ignoredCount } = buildAvailabilityMap(persistedRows, validTimeslotIds);
+        setAvailabilityMap(map);
+
+        if (ignoredCount > 0) {
+          setFeedback({
+            type: 'info',
+            message: `Foram ignoradas ${ignoredCount} preferências antigas em blocos já removidos.`,
+          });
+        } else if (persistedRows.length === 0) {
+          setFeedback({
+            type: 'info',
+            message: 'Sem preferências gravadas. Pode começar a pintar a grelha.',
+          });
+        }
       } catch (err) {
-        console.error("Erro ao carregar dados", err);
-        setError("Falha ao carregar horários. O backend está ligado?");
+        setError(mapAvailabilityApiMessage(err, 'load'));
       } finally {
         setLoading(false);
       }
     };
-    fetchData();
+
+    void fetchData();
   }, []);
 
-  // 2. Lógica de Mudança (State Local)
   const handleGridChange = (timeslotId, newScore) => {
-    setAvailabilityMap(prev => ({
+    if (saving) {
+      return;
+    }
+
+    setFeedback(null);
+    setAvailabilityMap((prev) => ({
       ...prev,
-      [timeslotId]: newScore
+      [timeslotId]: newScore,
     }));
   };
 
-  // 3. Gravar no Backend
   const handleSave = async () => {
-    // PROTEÇÃO: Se não houver ID (ex: é um Admin sem perfil de prof), avisa
     if (!teacherId) {
-        alert("Erro: Esta conta não está associada a um perfil de Professor.");
-        return;
+      setFeedback({
+        type: 'error',
+        message: 'Esta conta não está associada a um perfil de professor.',
+      });
+      return;
     }
 
     setSaving(true);
-    try {
-      // Transformar o mapa {1: 2, 5: -1} numa lista para a API
-      const payload = Object.entries(availabilityMap).map(([tsId, score]) => ({
-        timeslot_id: Number.parseInt(tsId, 10),
-        score: score,
-      }));
+    setFeedback(null);
 
-      // Enviar para o endpoint de Bulk Update
+    try {
+      const validTimeslotIds = new Set(timeslots.map((slot) => slot.id));
+      const payload = Object.entries(availabilityMap)
+        .map(([tsId, score]) => ({
+          timeslot_id: Number.parseInt(tsId, 10),
+          score,
+        }))
+        .filter((item) => validTimeslotIds.has(item.timeslot_id));
+
       await apiClient.post(`/teachers/${teacherId}/availability`, payload);
-      alert("Disponibilidade gravada com sucesso!");
+      setFeedback({ type: 'success', message: 'Disponibilidade gravada com sucesso.' });
     } catch (err) {
-      console.error(err);
-      alert("Erro ao gravar. Tente novamente.");
+      setFeedback({ type: 'error', message: mapAvailabilityApiMessage(err, 'save') });
     } finally {
       setSaving(false);
     }
   };
 
   if (loading) return <div style={{ padding: '32px', color: 'var(--rs-muted)' }}>A carregar grelha...</div>;
-  if (error) return <div style={{color: 'var(--rs-deep)', padding: '32px'}}>{error}</div>;
+  if (error) return <div style={{color: 'var(--rs-deep)', padding: '32px'}} role="alert">{error}</div>;
 
   return (
     <div>
       <h2 style={{ color: 'var(--rs-heading)', fontWeight: '700', marginBottom: '4px' }}>Minhas Preferências</h2>
       <p style={{ color: 'var(--rs-muted)', marginBottom: '16px' }}>Selecione uma ferramenta e clique (ou arraste) nas células para pintar.</p>
+
+      {feedback ? (
+        <div
+          role={feedback.type === 'error' ? 'alert' : 'status'}
+          style={{
+            marginBottom: '16px',
+            padding: '10px 12px',
+            borderRadius: '8px',
+            fontWeight: 500,
+            ...FEEDBACK_STYLES[feedback.type],
+          }}
+        >
+          {feedback.message}
+        </div>
+      ) : null}
       
-      {/* Seletor de Modo (Paintbrush Toolbar) — Ordem: Impossível → Evitar → Neutro → Preferencial */}
       <div style={{ display: 'flex', gap: '8px', marginBottom: '20px', flexWrap: 'wrap' }}>
         {['-1', '0', '1', '2'].map((score) => {
           const info = PREFERENCE_LEVELS[score];
@@ -93,6 +184,7 @@ const MyAvailability = () => {
               key={score}
               type="button"
               onClick={() => setSelectedMode(numScore)}
+              disabled={saving}
               style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -101,11 +193,11 @@ const MyAvailability = () => {
                 border: isActive ? '2px solid var(--rs-primary)' : '2px solid var(--rs-grid-cell-border)',
                 borderRadius: '8px',
                 backgroundColor: isActive ? info.color : 'transparent',
-                cursor: 'pointer',
+                cursor: saving ? 'not-allowed' : 'pointer',
                 fontWeight: isActive ? '700' : '500',
                 fontSize: '0.9rem',
                 transition: 'all 0.15s ease',
-                opacity: isActive ? 1 : 0.7,
+                opacity: saving ? 0.5 : (isActive ? 1 : 0.7),
                 boxShadow: isActive ? '0 2px 8px rgba(0,0,0,0.12)' : 'none',
               }}
             >
@@ -116,12 +208,14 @@ const MyAvailability = () => {
         })}
       </div>
 
-      <AvailabilityGrid 
-        timeslots={timeslots} 
-        availabilityMap={availabilityMap} 
-        onChange={handleGridChange}
-        selectedMode={selectedMode}
-      />
+      <div style={{ opacity: saving ? 0.7 : 1, pointerEvents: saving ? 'none' : 'auto' }}>
+        <AvailabilityGrid 
+          timeslots={timeslots} 
+          availabilityMap={availabilityMap} 
+          onChange={handleGridChange}
+          selectedMode={selectedMode}
+        />
+      </div>
 
       <div style={{ marginTop: '24px', textAlign: 'right' }}>
         <button 

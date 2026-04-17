@@ -1,7 +1,7 @@
-"""Seed runner for Alpha V1 operational scenarios (Step 6).
+"""Legacy seed runner for Alpha V1 operational scenarios (Step 6).
 
 Usage:
-    python seed_data_operational.py
+    python seed_data.py --profile operational --reset
 """
 
 from __future__ import annotations

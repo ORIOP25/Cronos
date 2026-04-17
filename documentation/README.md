@@ -65,3 +65,15 @@ Ficheiros principais:
 - Quando um topico nao estiver fechado, marcar explicitamente como "a definir".
 - Evitar detalhes especulativos.
 - Priorizar rastreabilidade entre decisao de negocio e impacto tecnico.
+
+## Planeamento de entrega
+
+- WBS oficial da Alpha V1: 01_product_strategy/WBS_ALPHA_V1_ENTREGA.md
+
+## Fonte canonica para implementacao da Alpha V1
+
+Para implementacao e validacao da Alpha V1, considerar como fonte oficial:
+- estrutura por layers em 00_governance ate 09_ops_observability;
+- WBS oficial em 01_product_strategy/WBS_ALPHA_V1_ENTREGA.md.
+
+Documentos fora desta estrutura podem existir como historico/contexto e nao substituem as decisoes fechadas da Alpha V1.

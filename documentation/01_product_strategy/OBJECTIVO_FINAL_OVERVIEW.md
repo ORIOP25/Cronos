@@ -3,6 +3,7 @@
 ## Posicionamento
 Horario Zen e um SaaS premium para escolas profissionais privadas em Portugal.
 O foco comercial nao e ser a opcao mais barata, mas ser a opcao mais confiavel para resolver a dor operacional de horarios.
+Modelo de adocao: self-service, com utilizacao autonoma da plataforma e contacto humano apenas em suporte ao cliente quando necessario.
 
 ## 5 Ws do produto
 
@@ -88,6 +89,8 @@ Pratica:
 - distingue plano previsto de ocorrencia real;
 - preserva historico imutavel do executado;
 - prepara acao para faltas/substituicoes quando necessario.
+- em substituicoes, aplica regra de elegibilidade por turma (docente de outra disciplina da mesma turma afetada).
+- em substituicoes com multiplos elegiveis, sistema recomenda candidatos e admin toma a decisao final.
 
 Resultado esperado:
 - confianca nos dados de execucao;
@@ -98,6 +101,7 @@ Ator principal: admin.
 
 Pratica:
 - replaneia apenas futuro quando contexto muda;
+- respeita janela fixa de estabilidade configurada por escola;
 - nunca altera historico passado para "corrigir" metricas.
 
 Resultado esperado:
@@ -118,6 +122,7 @@ Estes criterios derivam de regras ja confirmadas.
 ### Criterios de controlo operacional
 - capacidade de distinguir planeado vs executado;
 - historico de execucao tratado como imutavel;
+- formula deterministica de progresso/divida por estado (GIVEN, GAP, SUBSTITUTED);
 - para faltas/substituicoes: caminho operacional sem quebrar consistencia.
 
 ## Limites de escopo explicitamente assumidos

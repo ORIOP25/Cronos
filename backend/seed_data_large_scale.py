@@ -1,6 +1,6 @@
 # Ficheiro: backend/seed_data_large_scale.py
-# Seed de escala alargada para validar o gerador em cenário realista multi-escola.
-# Corre: docker compose exec backend python seed_data_large_scale.py
+# Perfil legacy de seed em escala alargada.
+# Entry point canonico recomendado: docker compose exec backend python seed_data.py --profile stress --reset
 import math
 import sys
 import datetime

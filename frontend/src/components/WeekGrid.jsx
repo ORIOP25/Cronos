@@ -108,7 +108,7 @@ function getDateForDayFromWeekStart(weekStart, dayOfWeek) {
 // ---------------------------------------------------------------------------
 // SlotCell — individual table cell
 // ---------------------------------------------------------------------------
-const SlotCell = ({ slotEntries }) => {
+const SlotCell = ({ slotEntries, isOperationalEnabled, onOpenOperationalAction }) => {
   if (!slotEntries || slotEntries.length === 0) {
     return (
       <td className="bg-light text-center align-middle" style={{ padding: '4px' }}>
@@ -119,6 +119,18 @@ const SlotCell = ({ slotEntries }) => {
 
   const slot = slotEntries[0]
   const hasCollision = slotEntries.length > 1
+  const canCreateOccurrence = slot.can_create_occurrence !== false
+  const canDecideOccurrence = Boolean(slot.can_decide_occurrence)
+
+  const canOpenOperationalAction = Boolean(
+    isOperationalEnabled
+    && !hasCollision
+    && !slot.is_past
+    && slot.schedule_output_id
+    && slot.date
+    && typeof onOpenOperationalAction === 'function'
+    && (canCreateOccurrence || canDecideOccurrence)
+  )
 
   const cellStyle = getCellStyle(slot)
   let statusLabel = 'Planeado'
@@ -130,42 +142,83 @@ const SlotCell = ({ slotEntries }) => {
 
   const titleText = buildCellTitle(slotEntries)
 
-  return (
-    <td title={titleText} style={{ padding: '4px', verticalAlign: 'top' }}>
+  const handleOpenOperationalAction = () => {
+    if (!canOpenOperationalAction) {
+      return
+    }
+    onOpenOperationalAction({
+      schedule_output_id: slot.schedule_output_id,
+      date: slot.date,
+      occurrence_id: slot.occurrence_id,
+      can_create_occurrence: canCreateOccurrence,
+      can_decide_occurrence: canDecideOccurrence,
+      timeslot: slot.timeslot,
+      subject: slot.subject,
+      teacher: slot.teacher,
+      room: slot.room,
+      class_info: slot.class_info,
+      occurrence_status: slot.occurrence_status,
+    })
+  }
+
+  const cardContent = (
+    <div
+      style={{
+        ...cellStyle,
+        padding: '6px 8px',
+        borderRadius: '4px',
+        fontSize: '0.78rem',
+        minHeight: '60px',
+      }}
+    >
+      <div className="fw-semibold text-truncate" style={{ fontSize: '0.8rem' }}>
+        {slot.subject?.name ?? '—'}
+      </div>
+      <div className="text-muted text-truncate" style={{ fontSize: '0.72rem' }}>
+        {slot.teacher?.name ?? ''}
+      </div>
+      <div className="text-muted text-truncate" style={{ fontSize: '0.72rem' }}>
+        {slot.room?.name ?? ''}
+      </div>
+      {hasCollision ? (
+        <div className="badge text-bg-danger mt-1" style={{ fontSize: '0.66rem' }}>
+          Conflito x{slotEntries.length}
+        </div>
+      ) : null}
       <div
         style={{
-          ...cellStyle,
-          padding: '6px 8px',
-          borderRadius: '4px',
-          fontSize: '0.78rem',
-          minHeight: '60px',
+          fontSize: '0.7rem',
+          marginTop: '3px',
+          fontWeight: 600,
+          opacity: 0.8,
         }}
       >
-        <div className="fw-semibold text-truncate" style={{ fontSize: '0.8rem' }}>
-          {slot.subject?.name ?? '—'}
-        </div>
-        <div className="text-muted text-truncate" style={{ fontSize: '0.72rem' }}>
-          {slot.teacher?.name ?? ''}
-        </div>
-        <div className="text-muted text-truncate" style={{ fontSize: '0.72rem' }}>
-          {slot.room?.name ?? ''}
-        </div>
-        {hasCollision ? (
-          <div className="badge text-bg-danger mt-1" style={{ fontSize: '0.66rem' }}>
-            Conflito x{slotEntries.length}
-          </div>
-        ) : null}
-        <div
-          style={{
-            fontSize: '0.7rem',
-            marginTop: '3px',
-            fontWeight: 600,
-            opacity: 0.8,
-          }}
-        >
-          {statusLabel}
-        </div>
+        {statusLabel}
       </div>
+      {canOpenOperationalAction ? (
+        <div className="mt-1 text-primary fw-semibold" style={{ fontSize: '0.68rem' }}>
+          {canCreateOccurrence ? 'Criar Ocorrência' : 'Ir para Faltas'}
+        </div>
+      ) : null}
+    </div>
+  )
+
+  return (
+    <td title={titleText} style={{ padding: '4px', verticalAlign: 'top' }}>
+      <button
+        type="button"
+        onClick={handleOpenOperationalAction}
+        disabled={!canOpenOperationalAction}
+        className="w-100 text-start"
+        style={{
+          border: 'none',
+          background: 'transparent',
+          padding: 0,
+          cursor: canOpenOperationalAction ? 'pointer' : 'default',
+        }}
+      >
+        {cardContent}
+      </button>
     </td>
   )
 }
@@ -178,17 +231,31 @@ SlotCell.propTypes = {
       room: PropTypes.shape({ name: PropTypes.string }),
       class_info: PropTypes.shape({ name: PropTypes.string }),
       module: PropTypes.shape({ name: PropTypes.string, hours_total: PropTypes.number }),
+      schedule_output_id: PropTypes.number,
+      date: PropTypes.string,
+      occurrence_id: PropTypes.number,
+      can_create_occurrence: PropTypes.bool,
+      can_decide_occurrence: PropTypes.bool,
       occurrence_status: PropTypes.string,
       is_past: PropTypes.bool,
       hours_given: PropTypes.number,
     }),
   ),
+  isOperationalEnabled: PropTypes.bool,
+  onOpenOperationalAction: PropTypes.func,
 }
 
 // ---------------------------------------------------------------------------
 // WeekGrid — main component
 // ---------------------------------------------------------------------------
-const WeekGrid = ({ slots, isLoading, baseTimeslots = [], weekStart = '' }) => {
+const WeekGrid = ({
+  slots,
+  isLoading,
+  baseTimeslots = [],
+  weekStart = '',
+  isOperationalEnabled = false,
+  onOpenOperationalAction,
+}) => {
   const slotMap = useMemo(() => buildSlotMap(slots), [slots])
 
   const referenceTimeslots = useMemo(() => {
@@ -280,7 +347,12 @@ const WeekGrid = ({ slots, isLoading, baseTimeslots = [], weekStart = '' }) => {
                 <span className="fw-normal text-black-50">{endTimeMap[time] ?? ''}</span>
               </td>
               {activeDays.map(dayIdx => (
-                <SlotCell key={`${dayIdx}:${time}`} slotEntries={slotMap[`${dayIdx}:${time}`] ?? []} />
+                <SlotCell
+                  key={`${dayIdx}:${time}`}
+                  slotEntries={slotMap[`${dayIdx}:${time}`] ?? []}
+                  isOperationalEnabled={isOperationalEnabled}
+                  onOpenOperationalAction={onOpenOperationalAction}
+                />
               ))}
             </tr>
           ))}
@@ -305,6 +377,9 @@ const slotShape = PropTypes.shape({
   class_info: PropTypes.shape({ id: PropTypes.number, name: PropTypes.string }),
   module:     PropTypes.shape({ id: PropTypes.number, name: PropTypes.string, hours_total: PropTypes.number }),
   is_past:    PropTypes.bool.isRequired,
+  occurrence_id: PropTypes.number,
+  can_create_occurrence: PropTypes.bool,
+  can_decide_occurrence: PropTypes.bool,
   occurrence_status: PropTypes.string,
   hours_given: PropTypes.number,
 })
@@ -313,6 +388,8 @@ WeekGrid.propTypes = {
   slots:     PropTypes.arrayOf(slotShape).isRequired,
   isLoading: PropTypes.bool,
   weekStart: PropTypes.string,
+  isOperationalEnabled: PropTypes.bool,
+  onOpenOperationalAction: PropTypes.func,
   baseTimeslots: PropTypes.arrayOf(
     PropTypes.shape({
       day_of_week: PropTypes.number.isRequired,

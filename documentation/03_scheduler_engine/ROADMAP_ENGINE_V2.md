@@ -25,6 +25,7 @@ Evitar regressao de regras hard enquanto novas capacidades operacionais entram e
 ### Fase 1 - Consolidacao da baseline
 - manter hard constraints estaveis;
 - manter bloqueio absoluto por hard end date;
+- consolidar repair mode conservador com janela fixa configuravel por escola;
 - melhorar transparencia de resultados quando ha carga remanescente.
 
 ### Fase 2 - Operacao de faltas e substituicoes
@@ -54,10 +55,28 @@ Evitar regressao de regras hard enquanto novas capacidades operacionais entram e
 ## Validacao e seguranca de evolucao
 
 1. Testes focados por organizacao.
-2. Validacao de zero violacoes hard em cada entrega.
-3. Comparacao de metricas soft entre versoes quando aplicavel.
-4. Comunicacao transparente de limitacoes quando hard end date impossibilitar conclusao total.
+2. Testes de repair mode com janela fixa configurada em 2 semanas.
+3. Validacao de zero violacoes hard em cada entrega.
+4. Comparacao de metricas soft entre versoes quando aplicavel.
+5. Comunicacao transparente de limitacoes quando hard end date impossibilitar conclusao total.
 
-## Pontos ainda a definir (nao fechados)
-- estrategia detalhada de rollback por tipo de incidente;
-- limiares numericos para promocao automatica entre ambientes.
+## Decisao fechada para Alpha V1 (sem pendencias)
+
+### Estrategia de rollback por tipo de incidente
+1. Violacao hard ou risco de tenant isolation:
+- rollback imediato para a ultima versao estavel;
+- congelar operacoes de escrita do fluxo afetado ate correcao validada.
+
+2. Falha operacional em faltas/substituicoes sem violacao hard:
+- rollback do pacote funcional afetado na release seguinte;
+- manter operacao restante disponivel com comunicacao transparente.
+
+3. Degradacao apenas de objetivos soft:
+- sem rollback imediato;
+- abrir correcao priorizada e comparar metricas antes/depois.
+
+### Limiares numericos para promocao entre ambientes
+- zero violacoes hard na suite de regressao;
+- zero falhas de tenant isolation na suite multi-tenant;
+- 100% de passagem na suite critica da Alpha V1 (unitarios + integracao + regressao hard);
+- zero incidente P0/P1 aberto no fluxo de ocorrencias/substituicoes no momento da promocao.

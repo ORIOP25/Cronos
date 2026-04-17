@@ -48,11 +48,11 @@ apiClient.interceptors.response.use(
         if (globalThis.location.pathname !== '/login') {
           globalThis.location.href = '/login';
         }
-        return refreshError;
+        return Promise.reject(refreshError);
       }
     }
 
-    return error;
+    return Promise.reject(error);
   }
 );
 

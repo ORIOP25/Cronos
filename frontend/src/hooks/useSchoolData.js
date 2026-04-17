@@ -26,7 +26,7 @@ const DYNAMIC_OPTS = {
 
 // --- HOOKS DE LEITURA (Read) ---
 
-export const useTeachers = () => {
+export const useTeachers = ({ enabled = true } = {}) => {
   const orgId = useAuthStore(state => state.user?.orgId)
   return useQuery({
     queryKey: ['teachers', orgId],
@@ -34,6 +34,7 @@ export const useTeachers = () => {
       const { data } = await apiClient.get('/import/teachers')
       return data
     },
+    enabled,
     ...STATIC_OPTS
   })
 }
@@ -62,7 +63,7 @@ export const useSubjects = () => {
   })
 }
 
-export const useClasses = () => {
+export const useClasses = ({ enabled = true } = {}) => {
   const orgId = useAuthStore(state => state.user?.orgId)
   return useQuery({
     queryKey: ['classes', orgId],
@@ -70,6 +71,7 @@ export const useClasses = () => {
       const { data } = await apiClient.get('/classes/')
       return data
     },
+    enabled,
     ...STATIC_OPTS
   })
 }
@@ -664,6 +666,48 @@ export const useAvailableSubstitutes = ({ timeslotId, targetDate } = {}) => {
 }
 
 /**
+ * Ranking de recomendações para uma ocorrência específica.
+ */
+export const useSubstituteRecommendations = ({ occurrenceId } = {}) => {
+  const orgId = useAuthStore(state => state.user?.orgId)
+  return useQuery({
+    queryKey: ['substitute-recommendations', orgId, occurrenceId],
+    queryFn: async () => {
+      const { data } = await apiClient.get(`/occurrences/${occurrenceId}/substitutes/recommendations`)
+      return data
+    },
+    enabled: !!occurrenceId,
+    ...DYNAMIC_OPTS,
+  })
+}
+
+/**
+ * Cria (ou reutiliza) uma ocorrência operacional a partir de um bloco do horário.
+ */
+export const useCreateOccurrence = () => {
+  const queryClient = useQueryClient()
+  const orgId = useAuthStore(state => state.user?.orgId)
+
+  return useMutation({
+    mutationFn: async ({ scheduleOutputId, reason } = {}) => {
+      const payload = {
+        schedule_output_id: scheduleOutputId,
+      }
+      if (reason) {
+        payload.reason = reason
+      }
+      const { data } = await apiClient.post('/occurrences/', payload)
+      return data
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['occurrences', orgId] })
+      void queryClient.invalidateQueries({ queryKey: ['weekSchedule', orgId] })
+      void queryClient.invalidateQueries({ queryKey: ['schedule', orgId] })
+    },
+  })
+}
+
+/**
  * Mutation para registar falta (GAP) ou substituição (SUBSTITUTED).
  */
 export const useUpdateOccurrence = () => {
@@ -682,6 +726,8 @@ export const useUpdateOccurrence = () => {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['occurrences', orgId] })
       void queryClient.invalidateQueries({ queryKey: ['debts', orgId] })
+      void queryClient.invalidateQueries({ queryKey: ['weekSchedule', orgId] })
+      void queryClient.invalidateQueries({ queryKey: ['classes', orgId] })
     },
   })
 }
@@ -803,11 +849,41 @@ export const useScheduleTaskStatus = (taskId) => {
 }
 
 /**
+ * Solicita cancelamento de uma tarefa de geração em curso.
+ */
+export const useCancelScheduleTask = () => {
+  return useMutation({
+    mutationFn: async (taskId) => {
+      const { data } = await apiClient.post(`/schedule/cancel/${taskId}`)
+      return data
+    },
+  })
+}
+
+/**
  * Sprint 4 — Horário de uma semana para uma turma ou professor.
  *
  * Retorna os slots planeados (ScheduleOutput) cruzados com as ocorrências reais
  * (LessonOccurrence) para dias passados. Requer classId ou teacherId.
  */
+export const useTeacherScheduleHorizon = ({ enabled = true, refetchInterval = false } = {}) => {
+  const orgId = useAuthStore(state => state.user?.orgId)
+  return useQuery({
+    queryKey: ['teacherScheduleHorizon', orgId],
+    queryFn: async () => {
+      const { data } = await apiClient.get('/schedule/me/horizon')
+      return data
+    },
+    enabled,
+    refetchInterval,
+    refetchIntervalInBackground: Boolean(refetchInterval),
+    staleTime: 0,
+    refetchOnWindowFocus: true,
+    refetchOnMount: true,
+    retry: 1,
+  })
+}
+
 export const useWeekSchedule = (classId, teacherId, weekStart) => {
   const orgId = useAuthStore(state => state.user?.orgId)
   const enabled = Boolean((classId || teacherId) && weekStart)
@@ -846,7 +922,7 @@ export const useAuditGenerations = () => {
 /**
  * Dashboard técnico — métricas de auditoria por geração.
  */
-export const useAuditSummary = (generationId) => {
+export const useAuditSummary = (generationId, { enabled = true } = {}) => {
   const orgId = useAuthStore(state => state.user?.orgId)
   return useQuery({
     queryKey: ['schedule-audit-summary', orgId, generationId],
@@ -855,6 +931,7 @@ export const useAuditSummary = (generationId) => {
       const { data } = await apiClient.get('/schedule/audit/summary', { params })
       return data
     },
+    enabled,
     ...DYNAMIC_OPTS,
   })
 }

@@ -348,6 +348,40 @@ async def find_replacement_teacher(
     suggestions.sort(key=lambda x: (x['priority'], x['teacher_name']))
     return suggestions
 
+
+async def get_teacher_availability(
+    db: AsyncSession,
+    teacher_id: int,
+    org_id: int,
+) -> list[dict] | str:
+    """Lê disponibilidades de um professor dentro da organização autenticada."""
+    teacher_query = select(models.Teacher).where(
+        models.Teacher.id == teacher_id,
+        models.Teacher.organization_id == org_id,
+    )
+    teacher_result = await db.execute(teacher_query)
+    db_teacher = teacher_result.scalars().first()
+    if not db_teacher:
+        return "NOT_FOUND"
+
+    rows = await db.execute(
+        select(models.Availability.timeslot_id, models.Availability.score)
+        .join(models.Timeslot, models.Availability.timeslot_id == models.Timeslot.id)
+        .where(
+            models.Availability.teacher_id == teacher_id,
+            models.Timeslot.organization_id == org_id,
+        )
+        .order_by(models.Timeslot.day_of_week, models.Timeslot.start_time, models.Availability.id)
+    )
+
+    return [
+        {
+            "timeslot_id": row.timeslot_id,
+            "score": row.score,
+        }
+        for row in rows.all()
+    ]
+
 async def set_teacher_availability(
     db: AsyncSession, 
     teacher_id: int, 
@@ -370,13 +404,13 @@ async def set_teacher_availability(
     if not db_teacher:
         return "NOT_FOUND"
 
-    # 2. Limpar disponibilidades antigas deste professor
-    # (Ou apenas as que colidirem, mas limpar tudo é mais seguro para garantir consistência)
-    await db.execute(delete(Availability).where(Availability.teacher_id == teacher_id))
+    # 2. Validar payload antes de qualquer mutação (evita alterações parciais em erro)
+    timeslot_ids = [item.timeslot_id for item in availabilities]
+    if len(timeslot_ids) != len(set(timeslot_ids)):
+        return "DUPLICATE_TIMESLOT"
 
     # 3. Validar que todos os timeslots pertencem à organização
     if availabilities:
-        timeslot_ids = [item.timeslot_id for item in availabilities]
         timeslot_query = select(models.Timeslot.id).where(
             models.Timeslot.id.in_(timeslot_ids),
             models.Timeslot.organization_id == org_id
@@ -385,21 +419,27 @@ async def set_teacher_availability(
         valid_ids = {row[0] for row in timeslot_result.all()}
         if len(valid_ids) != len(set(timeslot_ids)):
             return "INVALID_TIMESLOT"
-    
-    # 4. Preparar novos objetos
-    new_records = [
-        Availability(
-            teacher_id=teacher_id,
-            timeslot_id=item.timeslot_id,
-            score=item.score.value # Guardamos o inteiro (-1, 0, 1, 2)
-        )
-        for item in availabilities
-    ]
-    
-    # 5. Inserir em massa
-    db.add_all(new_records)
-    await db.commit()
-    return {"status": "success", "count": len(new_records)}
+
+    # 4. Mutação transacional
+    try:
+        # (outras estratégias são possíveis, mas replace-all mantém consistência simples)
+        await db.execute(delete(Availability).where(Availability.teacher_id == teacher_id))
+
+        new_records = [
+            Availability(
+                teacher_id=teacher_id,
+                timeslot_id=item.timeslot_id,
+                score=item.score.value  # Guardamos o inteiro (-1, 0, 1, 2)
+            )
+            for item in availabilities
+        ]
+
+        db.add_all(new_records)
+        await db.commit()
+        return {"status": "success", "count": len(new_records)}
+    except Exception:
+        await db.rollback()
+        raise
 
 # ==========================================
 #  FUNÇÕES SÍNCRONAS (Para usar no Solver/Celery)

@@ -1,18 +1,20 @@
-import React, { useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import PropTypes from 'prop-types'
+import { useSearchParams } from 'react-router-dom'
 import {
   CCard, CCardBody, CCardHeader, CCol, CRow, CAlert, CBadge, CSpinner,
   CButton, CFormSelect, CFormInput, CFormLabel, CTabs, CTabList, CTab,
   CTabContent, CTabPanel, CTable, CTableHead, CTableRow, CTableHeaderCell,
   CTableBody, CTableDataCell, CModal, CModalHeader, CModalTitle,
-  CModalBody, CModalFooter,
+  CModalBody, CModalFooter, CButtonGroup, CFormCheck,
 } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
 import { cilWarning, cilCheckCircle, cilBan, cilPeople, cilClock } from '@coreui/icons'
 import {
   useOccurrences, useDebts, useUpdateOccurrence,
-  useAvailableSubstitutes, useClasses,
+  useSubstituteRecommendations, useClasses, useTeachers, useSubjects,
 } from '../hooks/useSchoolData'
+import { useAuthStore } from '../store'
 
 // ---------------------------------------------------------------------------
 // Constantes
@@ -35,111 +37,309 @@ const STATUS_ICONS = {
   SUBSTITUTED: cilWarning,
 }
 
+const RESOLUTION_FILTERS = {
+  pending: 'Pendentes',
+  resolved: 'Resolvidas',
+  all: 'Todas',
+}
+
 const formatDate = (dateStr) => {
   if (!dateStr) return '—'
   const [year, month, day] = dateStr.split('-')
   return `${day}/${month}/${year}`
 }
 
+const formatDateTime = (dateTimeStr) => {
+  if (!dateTimeStr) return '—'
+  const dateValue = new Date(dateTimeStr)
+  if (Number.isNaN(dateValue.getTime())) return dateTimeStr
+  return dateValue.toLocaleString('pt-PT', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+const formatHours = (hours) => {
+  if (hours === null || hours === undefined) return '0'
+  const value = Number(hours)
+  if (Number.isNaN(value)) return '0'
+  return value.toLocaleString('pt-PT', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  })
+}
+
+const buildUpdateErrorMessage = (error) => {
+  const detail = error?.response?.data?.detail
+  if (Array.isArray(detail) && detail.length > 0) {
+    const firstItem = detail[0]
+    if (typeof firstItem?.msg === 'string') return firstItem.msg
+  }
+  if (typeof detail === 'string' && detail.trim()) return detail
+  return 'Erro ao guardar decisão operacional. Tente novamente.'
+}
+
+const resolveName = (byIdMap, id, fallbackPrefix) => {
+  if (!id) return '—'
+  const mappedName = byIdMap.get(id)
+  if (mappedName) return mappedName
+  return `${fallbackPrefix} #${id}`
+}
+
+const buildExecutionSummary = (occurrence, teacherById, subjectById) => {
+  if (occurrence.status === 'GAP') {
+    return 'Sem execução (GAP)'
+  }
+
+  if (occurrence.status === 'SUBSTITUTED') {
+    const teacherName = resolveName(teacherById, occurrence.substitute_teacher_id, 'Prof.')
+    const subjectName = resolveName(subjectById, occurrence.substitute_subject_id, 'Disciplina')
+    return `${teacherName} (${subjectName})`
+  }
+
+  const effectiveTeacherId = occurrence.executed_teacher_id ?? occurrence.planned_teacher_id
+  return resolveName(teacherById, effectiveTeacherId, 'Prof.')
+}
+
+const buildDecisionSummary = (occurrence) => {
+  if (!occurrence.decided_at) {
+    return 'Pendente de decisão do admin'
+  }
+
+  const decidedBy = occurrence.decided_by_user_id
+    ? `admin #${occurrence.decided_by_user_id}`
+    : 'admin'
+
+  return `Decidida em ${formatDateTime(occurrence.decided_at)} por ${decidedBy}`
+}
+
 // ---------------------------------------------------------------------------
 // Modal de edição de ocorrência
 // ---------------------------------------------------------------------------
-const EditOccurrenceModal = ({ occurrence, onClose, onSave }) => {
+const EditOccurrenceModal = ({
+  occurrence,
+  onClose,
+  onSave,
+  isSaving,
+  teacherById,
+  subjectById,
+  errorMessage,
+}) => {
   const [status, setStatus] = useState(occurrence.status)
-  const [substituteTeacherId, setSubstituteTeacherId] = useState(
-    occurrence.substitute_teacher_id ?? ''
+  const [selectedRecommendation, setSelectedRecommendation] = useState(
+    occurrence.substitute_teacher_id && occurrence.substitute_subject_id
+      ? `${occurrence.substitute_teacher_id}:${occurrence.substitute_subject_id}`
+      : ''
   )
-  const [substituteSubjectId, setSubstituteSubjectId] = useState(
-    occurrence.substitute_subject_id ?? ''
-  )
+  const [isDecisionConfirmed, setIsDecisionConfirmed] = useState(false)
+  const [showAllRecommendations, setShowAllRecommendations] = useState(false)
 
-  const { data: substitutes = [], isLoading: loadingSubs } = useAvailableSubstitutes({
-    timeslotId: occurrence.timeslot_id,
-    targetDate: occurrence.date,
+  const {
+    data: recommendations = [],
+    isLoading: loadingRecommendations,
+    isError: recommendationsError,
+  } = useSubstituteRecommendations({
+    occurrenceId: occurrence.id,
   })
 
+  useEffect(() => {
+    if (status !== 'SUBSTITUTED') {
+      return
+    }
+    if (selectedRecommendation) {
+      return
+    }
+    if (recommendations.length === 0) {
+      return
+    }
+    const first = recommendations[0]
+    setSelectedRecommendation(`${first.teacher_id}:${first.subject_id}`)
+  }, [status, selectedRecommendation, recommendations])
+
+  useEffect(() => {
+    setIsDecisionConfirmed(false)
+  }, [status, selectedRecommendation])
+
+  useEffect(() => {
+    if (status !== 'SUBSTITUTED') {
+      setShowAllRecommendations(false)
+    }
+  }, [status])
+
+  const orderedRecommendations = useMemo(() => (
+    [...recommendations].sort((a, b) => {
+      if (a.rank !== b.rank) return a.rank - b.rank
+      return a.teacher_id - b.teacher_id
+    })
+  ), [recommendations])
+
+  const topRecommendations = useMemo(
+    () => orderedRecommendations.slice(0, 3),
+    [orderedRecommendations]
+  )
+
+  const displayedRecommendations = useMemo(() => {
+    const base = showAllRecommendations ? orderedRecommendations : topRecommendations
+    if (!selectedRecommendation) return base
+    const alreadyVisible = base.some(
+      rec => `${rec.teacher_id}:${rec.subject_id}` === selectedRecommendation
+    )
+    if (alreadyVisible) return base
+    const selected = orderedRecommendations.find(
+      rec => `${rec.teacher_id}:${rec.subject_id}` === selectedRecommendation
+    )
+    if (!selected) return base
+    return [...base, selected]
+  }, [showAllRecommendations, orderedRecommendations, topRecommendations, selectedRecommendation])
+
   const handleSave = () => {
+    if (!isDecisionConfirmed) {
+      return
+    }
     onSave({
       id: occurrence.id,
       status,
-      substituteTeacherId: status === 'SUBSTITUTED' ? Number.parseInt(substituteTeacherId, 10) : null,
-      substituteSubjectId: status === 'SUBSTITUTED' && substituteSubjectId
-        ? Number.parseInt(substituteSubjectId, 10)
-        : null,
+      substituteTeacherId: status === 'SUBSTITUTED' ? selectedRecommendationData?.teacher_id ?? null : null,
+      substituteSubjectId: status === 'SUBSTITUTED' ? selectedRecommendationData?.subject_id ?? null : null,
     })
   }
 
-  const uniqueSubjects = substitutes.reduce((acc, sub) => {
-    if (!acc.some(s => s.subject_id === sub.subject_id)) acc.push(sub)
-    return acc
-  }, [])
+  const selectedRecommendationData = recommendations.find(
+    rec => `${rec.teacher_id}:${rec.subject_id}` === selectedRecommendation
+  )
+
+  const cannotConfirmSubstituted = status === 'SUBSTITUTED' && !selectedRecommendationData
+  const plannedTeacherName = resolveName(teacherById, occurrence.planned_teacher_id, 'Prof.')
+  const executionSummary = buildExecutionSummary(occurrence, teacherById, subjectById)
 
   return (
     <CModal visible onClose={onClose} alignment="center">
       <CModalHeader>
-        <CModalTitle>Editar Ocorrência — {formatDate(occurrence.date)}</CModalTitle>
+        <CModalTitle>Decisão Operacional — {formatDate(occurrence.date)}</CModalTitle>
       </CModalHeader>
       <CModalBody>
+        <CAlert color="light" className="mb-3">
+          <div><strong>Docente previsto:</strong> {plannedTeacherName}</div>
+          <div><strong>Execução atual:</strong> {executionSummary}</div>
+          <div><strong>Decisão final:</strong> {buildDecisionSummary(occurrence)}</div>
+        </CAlert>
+
+        {errorMessage && (
+          <CAlert color="danger" className="mb-3">
+            {errorMessage}
+          </CAlert>
+        )}
+
         <div className="mb-3">
-          <CFormLabel htmlFor="occurrenceStatus">Estado da aula</CFormLabel>
-          <CFormSelect
-            id="occurrenceStatus"
-            value={status}
-            onChange={(e) => setStatus(e.target.value)}
-          >
-            <option value="GIVEN">Dada (aula decorreu normalmente)</option>
-            <option value="GAP">Furo (professor faltou, sem substituto)</option>
-            <option value="SUBSTITUTED">Substituída (outro professor cobriu)</option>
-          </CFormSelect>
+          <CFormLabel>Decisão operacional</CFormLabel>
+          <CButtonGroup className="w-100" role="group" aria-label="Estado da aula">
+            <CButton
+              color={status === 'GIVEN' ? 'success' : 'secondary'}
+              variant={status === 'GIVEN' ? undefined : 'outline'}
+              onClick={() => setStatus('GIVEN')}
+            >
+              Dada
+            </CButton>
+            <CButton
+              color={status === 'GAP' ? 'danger' : 'secondary'}
+              variant={status === 'GAP' ? undefined : 'outline'}
+              onClick={() => setStatus('GAP')}
+            >
+              Furo
+            </CButton>
+            <CButton
+              color={status === 'SUBSTITUTED' ? 'warning' : 'secondary'}
+              variant={status === 'SUBSTITUTED' ? undefined : 'outline'}
+              onClick={() => setStatus('SUBSTITUTED')}
+            >
+              Substituída
+            </CButton>
+          </CButtonGroup>
         </div>
 
         {status === 'SUBSTITUTED' && (
           <>
             <div className="mb-3">
-              <CFormLabel htmlFor="substituteTeacher">Professor substituto</CFormLabel>
-              {loadingSubs ? (
-                <div className="text-muted small">A carregar professores disponíveis…</div>
-              ) : (
-                <CFormSelect
-                  id="substituteTeacher"
-                  value={substituteTeacherId}
-                  onChange={(e) => setSubstituteTeacherId(e.target.value)}
-                >
-                  <option value="">— Selecionar professor —</option>
-                  {[...new Map(substitutes.map(s => [s.teacher_id, s])).values()].map(sub => (
-                    <option key={sub.teacher_id} value={sub.teacher_id}>
-                      {sub.teacher_name} ({sub.class_name})
-                    </option>
-                  ))}
-                </CFormSelect>
+              <CFormLabel htmlFor="substituteRecommendation">Candidato recomendado (ranking)</CFormLabel>
+              {loadingRecommendations && (
+                <div className="d-flex align-items-center gap-2 text-muted small">
+                  <CSpinner size="sm" />
+                  <span>A carregar recomendações…</span>
+                </div>
+              )}
+              {!loadingRecommendations && recommendationsError && (
+                <CAlert color="danger" className="mb-0">
+                  Erro ao carregar ranking de elegíveis. Tente novamente.
+                </CAlert>
+              )}
+              {!loadingRecommendations && !recommendationsError && recommendations.length === 0 && (
+                <CAlert color="warning" className="mb-0">
+                  Sem elegíveis para este slot. Registe como GAP.
+                </CAlert>
+              )}
+              {!loadingRecommendations && !recommendationsError && recommendations.length > 0 && (
+                <>
+                  <CAlert color="info" className="mb-2 py-2">
+                    A mostrar top 3 para decisão rápida.
+                  </CAlert>
+                  <CFormSelect
+                    id="substituteRecommendation"
+                    value={selectedRecommendation}
+                    onChange={(e) => setSelectedRecommendation(e.target.value)}
+                  >
+                    <option value="">— Selecionar candidato —</option>
+                    {displayedRecommendations.map(rec => (
+                      <option
+                        key={`${rec.teacher_id}-${rec.subject_id}`}
+                        value={`${rec.teacher_id}:${rec.subject_id}`}
+                      >
+                        #{rec.rank} {rec.teacher_name} — {rec.subject_name}
+                      </option>
+                    ))}
+                  </CFormSelect>
+                  {orderedRecommendations.length > 3 && (
+                    <div className="mt-2 text-end">
+                      <CButton
+                        color="link"
+                        className="p-0"
+                        onClick={() => setShowAllRecommendations(prev => !prev)}
+                      >
+                        {showAllRecommendations ? 'Mostrar apenas top 3' : 'Ver lista completa'}
+                      </CButton>
+                    </div>
+                  )}
+                </>
               )}
             </div>
-            <div className="mb-3">
-              <CFormLabel htmlFor="substituteSubject">Disciplina dada pelo substituto</CFormLabel>
-              <CFormSelect
-                id="substituteSubject"
-                value={substituteSubjectId}
-                onChange={(e) => setSubstituteSubjectId(e.target.value)}
-              >
-                <option value="">— Selecionar disciplina (opcional) —</option>
-                {uniqueSubjects.map(sub => (
-                  <option key={sub.subject_id} value={sub.subject_id}>
-                    {sub.subject_name}
-                  </option>
-                ))}
-              </CFormSelect>
-            </div>
+
+            {selectedRecommendationData && (
+              <CAlert color="info" className="mb-0">
+                {selectedRecommendationData.justification}
+              </CAlert>
+            )}
           </>
         )}
+
+        <div className="mt-3">
+          <CFormCheck
+            id="confirmOperationalDecision"
+            checked={isDecisionConfirmed}
+            onChange={(e) => setIsDecisionConfirmed(e.target.checked)}
+            label="Confirmo esta decisão operacional para a ocorrência selecionada."
+          />
+        </div>
       </CModalBody>
       <CModalFooter>
         <CButton color="secondary" variant="outline" onClick={onClose}>Cancelar</CButton>
         <CButton
           color="primary"
           onClick={handleSave}
-          disabled={status === 'SUBSTITUTED' && !substituteTeacherId}
+          disabled={!isDecisionConfirmed || cannotConfirmSubstituted || isSaving}
         >
-          Guardar
+          Confirmar decisão
         </CButton>
       </CModalFooter>
     </CModal>
@@ -152,11 +352,19 @@ EditOccurrenceModal.propTypes = {
     date: PropTypes.string,
     status: PropTypes.string.isRequired,
     timeslot_id: PropTypes.number,
+    planned_teacher_id: PropTypes.number,
+    executed_teacher_id: PropTypes.number,
+    decided_by_user_id: PropTypes.number,
+    decided_at: PropTypes.string,
     substitute_teacher_id: PropTypes.number,
     substitute_subject_id: PropTypes.number,
   }).isRequired,
   onClose: PropTypes.func.isRequired,
   onSave: PropTypes.func.isRequired,
+  isSaving: PropTypes.bool,
+  teacherById: PropTypes.instanceOf(Map).isRequired,
+  subjectById: PropTypes.instanceOf(Map).isRequired,
+  errorMessage: PropTypes.string,
 }
 
 // ---------------------------------------------------------------------------
@@ -230,23 +438,122 @@ DebtsPanel.propTypes = {
 // ---------------------------------------------------------------------------
 // Painel de Ocorrências
 // ---------------------------------------------------------------------------
-const OccurrencesPanel = ({ classId, dateFrom, dateTo }) => {
+const OccurrencesPanel = ({ classId, dateFrom, dateTo, initialOccurrenceId }) => {
+  const user = useAuthStore((state) => state.user)
+  const isAdmin = user?.role === 'admin'
   const [editingOccurrence, setEditingOccurrence] = useState(null)
+  const [resolutionFilter, setResolutionFilter] = useState('pending')
+  const [saveErrorMessage, setSaveErrorMessage] = useState('')
+  const [hasAppliedInitialFocus, setHasAppliedInitialFocus] = useState(false)
   const { data: occurrences = [], isLoading, isError } = useOccurrences({
     classId: classId || undefined,
     dateFrom: dateFrom || undefined,
     dateTo: dateTo || undefined,
   })
+  const { data: teachers = [] } = useTeachers()
+  const { data: subjects = [] } = useSubjects()
   const updateMutation = useUpdateOccurrence()
 
+  const teacherById = useMemo(
+    () => new Map(teachers.map((teacher) => [teacher.id, teacher.name])),
+    [teachers]
+  )
+  const subjectById = useMemo(
+    () => new Map(subjects.map((subject) => [subject.id, subject.name])),
+    [subjects]
+  )
+
+  const sortedOccurrences = useMemo(() => [...occurrences], [occurrences])
+
+  const pendingCount = useMemo(
+    () => sortedOccurrences.filter((occ) => !occ.decided_at).length,
+    [sortedOccurrences]
+  )
+  const resolvedCount = sortedOccurrences.length - pendingCount
+
+  const visibleOccurrences = useMemo(() => {
+    if (resolutionFilter === 'pending') {
+      return sortedOccurrences.filter((occ) => !occ.decided_at)
+    }
+    if (resolutionFilter === 'resolved') {
+      return sortedOccurrences.filter((occ) => Boolean(occ.decided_at))
+    }
+    return sortedOccurrences
+  }, [resolutionFilter, sortedOccurrences])
+
+  useEffect(() => {
+    if (!editingOccurrence) return
+    const stillExists = occurrences.some((occ) => occ.id === editingOccurrence.id)
+    if (!stillExists) {
+      setEditingOccurrence(null)
+      setSaveErrorMessage('')
+    }
+  }, [editingOccurrence, occurrences])
+
+  useEffect(() => {
+    setHasAppliedInitialFocus(false)
+    setEditingOccurrence(null)
+    setSaveErrorMessage('')
+  }, [initialOccurrenceId])
+
+  useEffect(() => {
+    if (!initialOccurrenceId || hasAppliedInitialFocus) {
+      return
+    }
+    if (isLoading) {
+      return
+    }
+
+    setResolutionFilter('all')
+    const targetOccurrence = occurrences.find((occ) => occ.id === initialOccurrenceId)
+    if (targetOccurrence && isAdmin) {
+      setEditingOccurrence(targetOccurrence)
+    }
+    setHasAppliedInitialFocus(true)
+  }, [
+    initialOccurrenceId,
+    hasAppliedInitialFocus,
+    isLoading,
+    occurrences,
+    isAdmin,
+  ])
+
+  const closeEditModal = () => {
+    setEditingOccurrence(null)
+    setSaveErrorMessage('')
+  }
+
+  const openEditModal = (occurrence) => {
+    if (!isAdmin || occurrence.decided_at) return
+    setEditingOccurrence(occurrence)
+    setSaveErrorMessage('')
+  }
+
   const handleSave = (payload) => {
+    setSaveErrorMessage('')
     updateMutation.mutate(payload, {
-      onSuccess: () => setEditingOccurrence(null),
+      onSuccess: () => closeEditModal(),
+      onError: (error) => setSaveErrorMessage(buildUpdateErrorMessage(error)),
     })
   }
 
-  if (isLoading) return <div className="text-center p-4"><CSpinner /></div>
-  if (isError) return <CAlert color="danger">Erro ao carregar ocorrências.</CAlert>
+  if (isLoading) {
+    return (
+      <div className="text-center p-4 d-flex justify-content-center align-items-center gap-2">
+        <CSpinner />
+        <span className="text-muted">A carregar ocorrências...</span>
+      </div>
+    )
+  }
+
+  if (isError) {
+    return (
+      <CAlert color="danger" className="mb-0">
+        Erro ao carregar ocorrências. Atualize a página para voltar a tentar.
+      </CAlert>
+    )
+  }
+
   if (occurrences.length === 0) {
     return (
       <CAlert color="info">
@@ -257,30 +564,79 @@ const OccurrencesPanel = ({ classId, dateFrom, dateTo }) => {
 
   return (
     <>
+      {!isAdmin && (
+        <CAlert color="warning" className="mb-3">
+          Modo de leitura: apenas admin pode confirmar decisões operacionais.
+        </CAlert>
+      )}
+
       {editingOccurrence && (
         <EditOccurrenceModal
           occurrence={editingOccurrence}
-          onClose={() => setEditingOccurrence(null)}
+          onClose={closeEditModal}
           onSave={handleSave}
+          isSaving={updateMutation.isPending}
+          teacherById={teacherById}
+          subjectById={subjectById}
+          errorMessage={saveErrorMessage}
         />
       )}
-      {updateMutation.isError && (
-        <CAlert color="danger" className="mb-3">
-          Erro ao guardar. Verifique se o professor substituto foi selecionado.
+
+      <div className="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+        <div className="text-muted small">
+          {pendingCount} pendentes, {resolvedCount} resolvidas
+        </div>
+        <CButtonGroup size="sm" role="group" aria-label="Filtro de resolução">
+          <CButton
+            color={resolutionFilter === 'pending' ? 'primary' : 'secondary'}
+            variant={resolutionFilter === 'pending' ? undefined : 'outline'}
+            onClick={() => setResolutionFilter('pending')}
+          >
+            {RESOLUTION_FILTERS.pending} ({pendingCount})
+          </CButton>
+          <CButton
+            color={resolutionFilter === 'resolved' ? 'primary' : 'secondary'}
+            variant={resolutionFilter === 'resolved' ? undefined : 'outline'}
+            onClick={() => setResolutionFilter('resolved')}
+          >
+            {RESOLUTION_FILTERS.resolved} ({resolvedCount})
+          </CButton>
+          <CButton
+            color={resolutionFilter === 'all' ? 'primary' : 'secondary'}
+            variant={resolutionFilter === 'all' ? undefined : 'outline'}
+            onClick={() => setResolutionFilter('all')}
+          >
+            {RESOLUTION_FILTERS.all} ({sortedOccurrences.length})
+          </CButton>
+        </CButtonGroup>
+      </div>
+
+      {visibleOccurrences.length === 0 && (
+        <CAlert color="light" className="mb-0">
+          {resolutionFilter === 'pending' && 'Sem ocorrências pendentes com os filtros atuais.'}
+          {resolutionFilter === 'resolved' && 'Sem ocorrências resolvidas com os filtros atuais.'}
+          {resolutionFilter === 'all' && 'Sem ocorrências para apresentar.'}
         </CAlert>
       )}
-      <CTable hover responsive className="mb-0">
+
+      {visibleOccurrences.length > 0 && (
+        <CTable hover responsive className="mb-0">
         <CTableHead color="light">
           <CTableRow>
             <CTableHeaderCell>Data</CTableHeaderCell>
             <CTableHeaderCell>Estado</CTableHeaderCell>
+            <CTableHeaderCell>Docente Previsto</CTableHeaderCell>
+            <CTableHeaderCell>Execução / Decisão Final</CTableHeaderCell>
             <CTableHeaderCell className="text-center">Horas Dadas</CTableHeaderCell>
-            <CTableHeaderCell>Substituto</CTableHeaderCell>
-            <CTableHeaderCell />
+            <CTableHeaderCell className="text-end">Ação</CTableHeaderCell>
           </CTableRow>
         </CTableHead>
         <CTableBody>
-          {[...occurrences].sort((a, b) => b.date.localeCompare(a.date)).map(occ => (
+          {visibleOccurrences.map((occ) => {
+            const plannedTeacherName = resolveName(teacherById, occ.planned_teacher_id, 'Prof.')
+            const executionSummary = buildExecutionSummary(occ, teacherById, subjectById)
+            const decisionSummary = buildDecisionSummary(occ)
+            return (
             <CTableRow key={occ.id}>
               <CTableDataCell className="fw-semibold">{formatDate(occ.date)}</CTableDataCell>
               <CTableDataCell>
@@ -289,24 +645,29 @@ const OccurrencesPanel = ({ classId, dateFrom, dateTo }) => {
                   {STATUS_LABELS[occ.status] ?? occ.status}
                 </CBadge>
               </CTableDataCell>
-              <CTableDataCell className="text-center">{occ.hours_given}h</CTableDataCell>
-              <CTableDataCell className="text-muted">
-                {occ.substitute_teacher_id ? `Prof. ID ${occ.substitute_teacher_id}` : '—'}
+              <CTableDataCell>{plannedTeacherName}</CTableDataCell>
+              <CTableDataCell>
+                <div className="fw-semibold">{executionSummary}</div>
+                <small className="text-muted">{decisionSummary}</small>
               </CTableDataCell>
+              <CTableDataCell className="text-center">{formatHours(occ.hours_given)}h</CTableDataCell>
               <CTableDataCell className="text-end">
                 <CButton
                   color="primary"
                   size="sm"
                   variant="outline"
-                  onClick={() => setEditingOccurrence(occ)}
+                  onClick={() => openEditModal(occ)}
+                  disabled={!isAdmin || Boolean(occ.decided_at)}
                 >
-                  Editar
+                  {!isAdmin ? 'Sem permissão' : (occ.decided_at ? 'Fechada' : 'Decidir')}
                 </CButton>
               </CTableDataCell>
             </CTableRow>
-          ))}
+            )
+          })}
         </CTableBody>
       </CTable>
+      )}
     </>
   )
 }
@@ -315,6 +676,7 @@ OccurrencesPanel.propTypes = {
   classId: PropTypes.oneOfType([PropTypes.number, PropTypes.string]),
   dateFrom: PropTypes.string,
   dateTo: PropTypes.string,
+  initialOccurrenceId: PropTypes.number,
 }
 
 // ---------------------------------------------------------------------------
@@ -329,10 +691,25 @@ const INITIAL_DATE_FROM = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
 // Página principal
 // ---------------------------------------------------------------------------
 const Occurrences = () => {
-  const [classFilter, setClassFilter] = useState('')
-  const [dateFrom, setDateFrom] = useState(INITIAL_DATE_FROM)
-  const [dateTo, setDateTo] = useState(INITIAL_DATE_TO)
-  const [activeTab, setActiveTab] = useState('debts')
+  const [searchParams] = useSearchParams()
+
+  const initialClassFilter = searchParams.get('class_id') ?? ''
+  const initialDateFrom = searchParams.get('date_from') ?? INITIAL_DATE_FROM
+  const initialDateTo = searchParams.get('date_to') ?? INITIAL_DATE_TO
+  const parsedOccurrenceId = Number.parseInt(searchParams.get('occurrence_id') ?? '', 10)
+  const initialOccurrenceId = Number.isNaN(parsedOccurrenceId) ? undefined : parsedOccurrenceId
+
+  const [classFilter, setClassFilter] = useState(initialClassFilter)
+  const [dateFrom, setDateFrom] = useState(initialDateFrom)
+  const [dateTo, setDateTo] = useState(initialDateTo)
+  const [activeTab, setActiveTab] = useState('occurrences')
+
+  useEffect(() => {
+    setClassFilter(initialClassFilter)
+    setDateFrom(initialDateFrom)
+    setDateTo(initialDateTo)
+    setActiveTab('occurrences')
+  }, [initialClassFilter, initialDateFrom, initialDateTo, initialOccurrenceId])
 
   const { data: classes = [] } = useClasses()
 
@@ -346,7 +723,7 @@ const Occurrences = () => {
             Gestão de Faltas e Ocorrências
           </h2>
           <small className="text-muted">
-            Registe faltas, substituições e consulte dívidas de horas.
+            Registe faltas, confirme substituições e consulte dívidas de horas.
           </small>
         </div>
       </div>
@@ -427,6 +804,7 @@ const Occurrences = () => {
                   classId={classFilter}
                   dateFrom={dateFrom}
                   dateTo={dateTo}
+                  initialOccurrenceId={initialOccurrenceId}
                 />
               </CCardBody>
             </CCard>

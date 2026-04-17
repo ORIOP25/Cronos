@@ -47,6 +47,12 @@ DEFAULT_HARD_END_MONTH = 7
 DEFAULT_HARD_END_DAY = 31
 DEFAULT_REPAIR_STABILITY_WINDOW_DAYS = 14
 GENERATION_TOTAL_STEPS = 10
+TASK_CANCEL_KEY_PREFIX = "schedule_task_cancel:"
+ACTIVE_TASK_BY_ORG_KEY_PREFIX = "schedule_active_task_org:"
+
+
+class GenerationCancelledError(Exception):
+    """Raised when a schedule generation task receives a cancel request."""
 
 
 # ---------------------------------------------------------------------------
@@ -266,6 +272,54 @@ def _task_progress_meta(step: int, detail: str, phase: str) -> dict:
     }
 
 
+def _task_cancel_key(task_id: str) -> str:
+    return f"{TASK_CANCEL_KEY_PREFIX}{task_id}"
+
+
+def _active_task_by_org_key(org_id: int) -> str:
+    return f"{ACTIVE_TASK_BY_ORG_KEY_PREFIX}{org_id}"
+
+
+def _is_cancel_requested(task_id: str | None) -> bool:
+    if not task_id:
+        return False
+
+    try:
+        r = redis.Redis.from_url(str(settings.REDIS_URL))
+        flag = r.get(_task_cancel_key(task_id))
+        return bool(flag and flag.decode("utf-8") == "1")
+    except Exception:
+        return False
+
+
+def _raise_if_cancel_requested(task: Task, *, step: int, phase: str) -> None:
+    task_id = getattr(task.request, "id", None)
+    if not _is_cancel_requested(task_id):
+        return
+
+    task.update_state(
+        state="CANCELED",
+        meta=_task_progress_meta(step, "Cancelamento solicitado pelo utilizador.", phase),
+    )
+    raise GenerationCancelledError("Geração cancelada pelo utilizador.")
+
+
+def _cleanup_task_runtime_flags(task_id: str | None, org_id: int) -> None:
+    if not task_id:
+        return
+
+    try:
+        r = redis.Redis.from_url(str(settings.REDIS_URL))
+        r.delete(_task_cancel_key(task_id))
+
+        active_key = _active_task_by_org_key(org_id)
+        active_task = r.get(active_key)
+        if active_task and active_task.decode("utf-8") == task_id:
+            r.delete(active_key)
+    except Exception:
+        pass
+
+
 # ---------------------------------------------------------------------------
 # Fase 2 — Expansão do padrão semanal para datas absolutas
 # ---------------------------------------------------------------------------
@@ -339,9 +393,13 @@ def _save_results(
     gen_id: str,
     lesson_class_map: dict,
     is_draft: bool = False,
+    cancel_checker=None,
 ) -> dict:
     """Guarda os ScheduleOutput e atualiza projected_end_date de cada turma."""
-    for block in blocks:
+    for index, block in enumerate(blocks):
+        if cancel_checker and index % 250 == 0:
+            cancel_checker()
+
         schedule_service.create_schedule_output_with_date_sync(
             db=db,
             lesson_id=block.lesson_id,
@@ -355,6 +413,8 @@ def _save_results(
 
     # Só atualiza projected_end_date quando o horário é ativado (não draft)
     if not is_draft:
+        if cancel_checker:
+            cancel_checker()
         class_end_dates = _compute_class_end_dates(blocks, lesson_class_map)
         for class_id, end_date in class_end_dates.items():
             schedule_service.update_class_projected_end_date_sync(db, class_id, end_date)
@@ -381,13 +441,16 @@ def generate_schedule_task(self: Task, org_id: int, mode: str = "full") -> dict:
     """Orquestrador completo: FETCH → SOLVE → EXPAND → SAVE."""
     logger.info("Iniciando geração de horário", org_id=org_id, mode=mode)
     gen_id = str(uuid.uuid4())
+    task_id = getattr(self.request, "id", None)
     db = SessionLocalSync()
 
     try:
         # 1. FETCH — configurações e dados curriculares
         self.update_state(state="FETCHING", meta=_task_progress_meta(1, "A iniciar pré-processamento...", "FETCHING"))
+        _raise_if_cancel_requested(self, step=1, phase="FETCHING")
 
         self.update_state(state="FETCHING", meta=_task_progress_meta(2, "A ler configurações da escola...", "FETCHING"))
+        _raise_if_cancel_requested(self, step=2, phase="FETCHING")
         settings_list = schedule_service.get_org_settings_sync(db, org_id)
         org_settings = _select_org_settings(settings_list)
         if not org_settings:
@@ -397,9 +460,11 @@ def generate_schedule_task(self: Task, org_id: int, mode: str = "full") -> dict:
         repair_window_days = _resolve_repair_window_days(org_settings) if is_repair else 0
 
         self.update_state(state="FETCHING", meta=_task_progress_meta(3, "A sincronizar lições da matriz turma-disciplina...", "FETCHING"))
+        _raise_if_cancel_requested(self, step=3, phase="FETCHING")
         lesson_sync_stats = schedule_service.sync_lessons_from_class_subject_links_sync(db, org_id)
 
         self.update_state(state="FETCHING", meta=_task_progress_meta(4, "A preparar inputs curriculares e carga remanescente...", "FETCHING"))
+        _raise_if_cancel_requested(self, step=4, phase="FETCHING")
         raw_lessons = schedule_service.get_active_lessons_with_subject_sync(db, org_id)
         if not raw_lessons:
             return {"status": "Error", "message": ERR_NO_LESSONS}
@@ -448,6 +513,7 @@ def generate_schedule_task(self: Task, org_id: int, mode: str = "full") -> dict:
             return {"status": "Success", "message": ERR_ALL_DONE, "count": 0}
 
         self.update_state(state="FETCHING", meta=_task_progress_meta(5, "A carregar salas, disponibilidades e calendário...", "FETCHING"))
+        _raise_if_cancel_requested(self, step=5, phase="FETCHING")
         raw_rooms = room_service.get_rooms_by_org_sync(db, org_id)
         raw_availabilities = schedule_service.get_availabilities_by_org_sync(db, org_id)
         calendar_events = schedule_service.get_calendar_events_sync(db, org_id)
@@ -476,6 +542,7 @@ def generate_schedule_task(self: Task, org_id: int, mode: str = "full") -> dict:
 
         # 2. SOLVE — CP-SAT encontra o padrão semanal ótimo
         self.update_state(state="SOLVING", meta=_task_progress_meta(6, "A otimizar com CP-SAT (fase intensiva)...", "SOLVING"))
+        _raise_if_cancel_requested(self, step=6, phase="SOLVING")
 
         engine = ScheduleEngine(
             lessons=lesson_inputs,
@@ -488,12 +555,14 @@ def generate_schedule_task(self: Task, org_id: int, mode: str = "full") -> dict:
             lunch_min_duration_minutes=lunch_min_duration,
         )
         assignments = engine.solve()
+        _raise_if_cancel_requested(self, step=6, phase="SOLVING")
 
         if assignments is None:
             return {"status": "Impossible", "message": MSG_IMPOSSIBLE}
 
         # 3. EXPAND — padrão semanal → datas absolutas
         self.update_state(state="EXPANDING", meta=_task_progress_meta(7, "A expandir padrão semanal para datas reais...", "EXPANDING"))
+        _raise_if_cancel_requested(self, step=7, phase="EXPANDING")
 
         remaining_map = {li.lesson_id: li.remaining_minutes for li in lesson_inputs}
         lesson_class_map = {lesson.id: lesson.class_id for lesson in raw_lessons}
@@ -511,13 +580,24 @@ def generate_schedule_task(self: Task, org_id: int, mode: str = "full") -> dict:
             return {"status": "Error", "message": ERR_NO_EXPAND}
 
         self.update_state(state="EXPANDING", meta=_task_progress_meta(8, "A validar blocos gerados e projeções...", "EXPANDING"))
+        _raise_if_cancel_requested(self, step=8, phase="EXPANDING")
 
         # 4. SAVE — comportamento depende do modo
         self.update_state(state="SAVING", meta=_task_progress_meta(9, "A gravar solução em base de dados...", "SAVING"))
+        _raise_if_cancel_requested(self, step=9, phase="SAVING")
 
         if is_repair:
             # Repair: guarda como rascunho (is_draft=True) sem apagar o ativo
-            _save_results(db, blocks, org_id, gen_id, lesson_class_map, is_draft=True)
+            _save_results(
+                db,
+                blocks,
+                org_id,
+                gen_id,
+                lesson_class_map,
+                is_draft=True,
+                cancel_checker=lambda: _raise_if_cancel_requested(self, step=9, phase="SAVING"),
+            )
+            _raise_if_cancel_requested(self, step=9, phase="SAVING")
             db.commit()
             _invalidate_cache(org_id)
             logger.info("Rascunho de reparação criado", blocks=len(blocks), gen_id=gen_id)
@@ -539,10 +619,20 @@ def generate_schedule_task(self: Task, org_id: int, mode: str = "full") -> dict:
             }
 
         # Full: limpa futuro e grava novo horário ativo
+        _raise_if_cancel_requested(self, step=9, phase="SAVING")
         start_window = min(block.output_date for block in blocks)
         end_window = max(block.output_date for block in blocks)
         schedule_service.clear_schedule_window_sync(db, org_id, start_window, end_window)
-        class_end_dates = _save_results(db, blocks, org_id, gen_id, lesson_class_map, is_draft=False)
+        class_end_dates = _save_results(
+            db,
+            blocks,
+            org_id,
+            gen_id,
+            lesson_class_map,
+            is_draft=False,
+            cancel_checker=lambda: _raise_if_cancel_requested(self, step=9, phase="SAVING"),
+        )
+        _raise_if_cancel_requested(self, step=9, phase="SAVING")
         db.commit()
 
         _invalidate_cache(org_id)
@@ -566,12 +656,31 @@ def generate_schedule_task(self: Task, org_id: int, mode: str = "full") -> dict:
             },
         }
 
+    except GenerationCancelledError as exc:
+        db.rollback()
+        logger.warning(
+            "Geração cancelada pelo utilizador",
+            org_id=org_id,
+            mode=mode,
+            task_id=task_id,
+        )
+        return {
+            "status": "Canceled",
+            "message": str(exc),
+            "detail": "Cancelamento solicitado pelo utilizador.",
+            "progress": {
+                "current": 9,
+                "total": GENERATION_TOTAL_STEPS,
+            },
+        }
+
     except Exception as exc:
         db.rollback()
         logger.error("Erro crítico na geração", error=str(exc), exc_info=True)
         return {"status": "Error", "message": str(exc)}
 
     finally:
+        _cleanup_task_runtime_flags(task_id, org_id)
         db.close()
 
 

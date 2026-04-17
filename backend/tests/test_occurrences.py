@@ -12,18 +12,18 @@ from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 import pytest_asyncio
-from datetime import date, time, timedelta
+from datetime import date, datetime, time, timedelta, timezone
 from typing import AsyncGenerator
 
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, event, func, select
 from sqlalchemy.orm import sessionmaker
 
 from app.db.database import ASYNC_DB_URL
 from app import models, schemas
 from app.models import LessonOccurrenceStatus
-from app.services import occurrence_service
+from app.services import occurrence_service, schedule_service
 from app.core.security import create_access_token, hash_password
 
 # ---------------------------------------------------------------------------
@@ -433,6 +433,97 @@ def substitution_setup(sync_db, full_setup):
 class TestLessonOccurrenceSchemas:
     """Validação das regras Pydantic dos schemas de Sprint 2."""
 
+    def test_create_occurrence_command_default_action_valid(self):
+        payload = schemas.LessonOccurrenceCreate(schedule_output_id=10)
+        assert payload.action == "CREATE_OCCURRENCE"
+
+    def test_create_occurrence_command_rejects_unknown_action(self):
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError):
+            schemas.LessonOccurrenceCreate(
+                action="OPEN_OCCURRENCE",
+                schedule_output_id=10,
+            )
+
+
+class TestWeekSchedulePerformance:
+    """Valida leitura semanal com custo estável (sem padrão N+1)."""
+
+    def test_get_week_schedule_sync_avoids_n_plus_one_for_active_modules(self, sync_db, full_setup):
+        org_id = full_setup["org_id"]
+        class_id = full_setup["class_id"]
+        room_id = full_setup["room_id"]
+        timeslot_id = full_setup["timeslot_id"]
+        week_start = date.today() - timedelta(days=date.today().weekday())
+
+        # Amplia pares (class_id, subject_id) para stressar resolução de módulo ativo.
+        for idx in range(12):
+            teacher = models.Teacher(
+                name=f"Perf Prof {idx}",
+                organization_id=org_id,
+            )
+            sync_db.add(teacher)
+            sync_db.flush()
+
+            subject = models.Subject(
+                name=f"Perf Subject {idx}",
+                organization_id=org_id,
+                required_room_type=models.RoomType.normal,
+            )
+            sync_db.add(subject)
+            sync_db.flush()
+
+            sync_db.add(models.Module(
+                name=f"Perf Module {idx}",
+                hours_total=20,
+                order=1,
+                subject_id=subject.id,
+            ))
+            sync_db.flush()
+
+            lesson = models.Lesson(
+                organization_id=org_id,
+                class_id=class_id,
+                subject_id=subject.id,
+                teacher_id=teacher.id,
+            )
+            sync_db.add(lesson)
+            sync_db.flush()
+
+            sync_db.add(models.ScheduleOutput(
+                organization_id=org_id,
+                lesson_id=lesson.id,
+                timeslot_id=timeslot_id,
+                room_id=room_id,
+                generation_id=f"perf-gen-{idx}",
+                date=week_start + timedelta(days=idx % 5),
+                is_draft=False,
+            ))
+
+        sync_db.commit()
+
+        bind = sync_db.get_bind()
+        counter = {"count": 0}
+
+        def _before_cursor_execute(*_args, **_kwargs):
+            counter["count"] += 1
+
+        event.listen(bind, "before_cursor_execute", _before_cursor_execute)
+        try:
+            slots = schedule_service.get_week_schedule_sync(
+                sync_db,
+                org_id=org_id,
+                week_start=week_start,
+                class_id=class_id,
+            )
+        finally:
+            event.remove(bind, "before_cursor_execute", _before_cursor_execute)
+
+        assert len(slots) >= 10
+        # Custo esperado estável: 1 query outputs + 1 occurrences + 1 modules + 1 progress.
+        assert counter["count"] <= 8
+
     def test_update_status_gap_valid(self):
         """GAP não requer professor substituto."""
         payload = schemas.LessonOccurrenceUpdate(status=LessonOccurrenceStatus.GAP)
@@ -634,10 +725,52 @@ class TestOccurrenceStateMachineAndAccounting:
             )
         ).scalar_one()
 
+    def _prepare_open_occurrence(self, sync_db, full_setup):
+        occurrence, _ = occurrence_service.create_occurrence_from_block_sync(
+            sync_db,
+            full_setup["org_id"],
+            full_setup["schedule_output_id"],
+        )
+        return occurrence
+
+    def test_concurrent_create_occurrence_command_keeps_single_row(self, full_setup):
+        org_id = full_setup["org_id"]
+        schedule_output_id = full_setup["schedule_output_id"]
+
+        def _attempt_create():
+            db_local = SyncTestSession()
+            try:
+                occurrence, created_now = occurrence_service.create_occurrence_from_block_sync(
+                    db_local,
+                    org_id=org_id,
+                    schedule_output_id=schedule_output_id,
+                )
+                return {"id": occurrence.id, "created_now": created_now}
+            finally:
+                db_local.close()
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            results = [pool.submit(_attempt_create).result() for _ in range(2)]
+
+        created_count = sum(1 for item in results if item["created_now"])
+        assert created_count == 1
+        assert results[0]["id"] == results[1]["id"]
+
+        verify_db = SyncTestSession()
+        try:
+            occurrences = verify_db.execute(
+                select(models.LessonOccurrence).where(
+                    models.LessonOccurrence.org_id == org_id,
+                    models.LessonOccurrence.schedule_output_id == schedule_output_id,
+                )
+            ).scalars().all()
+            assert len(occurrences) == 1
+        finally:
+            verify_db.close()
+
     def test_given_to_gap_updates_accounting_and_audit(self, sync_db, full_setup):
         org_id = full_setup["org_id"]
-        occurrence_service.auto_confirm_daily_sync(sync_db, org_id, date.today())
-        occurrence = self._load_occurrence(sync_db, full_setup["schedule_output_id"])
+        occurrence = self._prepare_open_occurrence(sync_db, full_setup)
 
         updated = occurrence_service.update_occurrence_sync(
             sync_db,
@@ -666,8 +799,7 @@ class TestOccurrenceStateMachineAndAccounting:
 
     def test_given_to_substituted_moves_progress_and_creates_debt(self, sync_db, full_setup):
         org_id = full_setup["org_id"]
-        occurrence_service.auto_confirm_daily_sync(sync_db, org_id, date.today())
-        occurrence = self._load_occurrence(sync_db, full_setup["schedule_output_id"])
+        occurrence = self._prepare_open_occurrence(sync_db, full_setup)
 
         updated = occurrence_service.update_occurrence_sync(
             sync_db,
@@ -709,8 +841,7 @@ class TestOccurrenceStateMachineAndAccounting:
 
     def test_invalid_transition_gap_to_substituted_fails(self, sync_db, full_setup):
         org_id = full_setup["org_id"]
-        occurrence_service.auto_confirm_daily_sync(sync_db, org_id, date.today())
-        occurrence = self._load_occurrence(sync_db, full_setup["schedule_output_id"])
+        occurrence = self._prepare_open_occurrence(sync_db, full_setup)
 
         occurrence_service.update_occurrence_sync(
             sync_db,
@@ -737,8 +868,7 @@ class TestOccurrenceStateMachineAndAccounting:
 
     def test_idempotent_duplicate_submission_does_not_duplicate_accounting(self, sync_db, full_setup):
         org_id = full_setup["org_id"]
-        occurrence_service.auto_confirm_daily_sync(sync_db, org_id, date.today())
-        occurrence = self._load_occurrence(sync_db, full_setup["schedule_output_id"])
+        occurrence = self._prepare_open_occurrence(sync_db, full_setup)
         payload = schemas.LessonOccurrenceUpdate(status=LessonOccurrenceStatus.GAP)
 
         occurrence_service.update_occurrence_sync(
@@ -768,8 +898,7 @@ class TestOccurrenceStateMachineAndAccounting:
 
     def test_update_occurrence_blocks_cross_tenant_access(self, sync_db, full_setup):
         org_id = full_setup["org_id"]
-        occurrence_service.auto_confirm_daily_sync(sync_db, org_id, date.today())
-        occurrence = self._load_occurrence(sync_db, full_setup["schedule_output_id"])
+        occurrence = self._prepare_open_occurrence(sync_db, full_setup)
 
         with pytest.raises(occurrence_service.OccurrenceServiceError) as exc_info:
             occurrence_service.update_occurrence_sync(
@@ -784,47 +913,55 @@ class TestOccurrenceStateMachineAndAccounting:
 
     def test_update_occurrence_rolls_back_on_mid_operation_error(self, sync_db, full_setup, monkeypatch):
         org_id = full_setup["org_id"]
-        occurrence_service.auto_confirm_daily_sync(sync_db, org_id, date.today())
-        occurrence = self._load_occurrence(sync_db, full_setup["schedule_output_id"])
+        occurrence = self._prepare_open_occurrence(sync_db, full_setup)
 
-        original = occurrence_service._apply_state_accounting
+        original = occurrence_service._apply_module_delta
         calls = {"count": 0}
 
-        def _explode_on_second_call(*args, **kwargs):
+        def _explode_on_second_module_delta(*args, **kwargs):
             calls["count"] += 1
             if calls["count"] == 2:
                 raise RuntimeError("forced-mid-operation-error")
             return original(*args, **kwargs)
 
-        monkeypatch.setattr(occurrence_service, "_apply_state_accounting", _explode_on_second_call)
+        monkeypatch.setattr(occurrence_service, "_apply_module_delta", _explode_on_second_module_delta)
 
         with pytest.raises(RuntimeError):
             occurrence_service.update_occurrence_sync(
                 sync_db,
                 occurrence.id,
                 org_id,
-                schemas.LessonOccurrenceUpdate(status=LessonOccurrenceStatus.GAP),
+                schemas.LessonOccurrenceUpdate(
+                    status=LessonOccurrenceStatus.SUBSTITUTED,
+                    substitute_teacher_id=full_setup["substitute_teacher_id"],
+                    substitute_subject_id=full_setup["substitute_subject_id"],
+                ),
                 decided_by_user_id=full_setup["admin_id"],
             )
 
         sync_db.expire_all()
 
         reloaded_occurrence = self._load_occurrence(sync_db, full_setup["schedule_output_id"])
-        reloaded_progress = sync_db.execute(
+        reloaded_planned_progress = sync_db.execute(
             select(models.ClassProgress).where(
                 models.ClassProgress.class_id == full_setup["class_id"],
                 models.ClassProgress.module_id == full_setup["module_id"],
             )
-        ).scalar_one()
+        ).scalar_one_or_none()
+        reloaded_executed_progress = sync_db.execute(
+            select(models.ClassProgress).where(
+                models.ClassProgress.class_id == full_setup["class_id"],
+                models.ClassProgress.module_id == full_setup["substitute_module_id"],
+            )
+        ).scalar_one_or_none()
 
         assert reloaded_occurrence.status == LessonOccurrenceStatus.GIVEN
-        assert reloaded_progress.hours_completed == pytest.approx(2.0)
-        assert reloaded_progress.hours_debt == pytest.approx(0.0)
+        assert reloaded_occurrence.decided_at is None
+        assert reloaded_planned_progress is None
+        assert reloaded_executed_progress is None
 
     def test_cannot_delete_occurrence_history(self, sync_db, full_setup):
-        org_id = full_setup["org_id"]
-        occurrence_service.auto_confirm_daily_sync(sync_db, org_id, date.today())
-        occurrence = self._load_occurrence(sync_db, full_setup["schedule_output_id"])
+        occurrence = self._prepare_open_occurrence(sync_db, full_setup)
 
         sync_db.delete(occurrence)
         with pytest.raises(ValueError):
@@ -839,12 +976,12 @@ class TestSubstitutionEligibilityAndRanking:
     """Cobre WBS 2.1 e 2.2: elegibilidade e ranking determinístico."""
 
     def _prepare_occurrence(self, sync_db, setup):
-        occurrence_service.auto_confirm_daily_sync(sync_db, setup["org_id"], date.today())
-        return sync_db.execute(
-            select(models.LessonOccurrence).where(
-                models.LessonOccurrence.schedule_output_id == setup["schedule_output_id"]
-            )
-        ).scalar_one()
+        occurrence, _ = occurrence_service.create_occurrence_from_block_sync(
+            sync_db,
+            setup["org_id"],
+            setup["schedule_output_id"],
+        )
+        return occurrence
 
     def test_valid_substitution_same_class_different_subject(self, sync_db, substitution_setup):
         occurrence = self._prepare_occurrence(sync_db, substitution_setup)
@@ -900,6 +1037,70 @@ class TestSubstitutionEligibilityAndRanking:
 
         assert exc_info.value.status_code == 409
         assert "conflito" in exc_info.value.detail.lower()
+
+    def test_invalid_substitution_when_teacher_already_substituting_same_slot(
+        self,
+        sync_db,
+        substitution_setup,
+    ):
+        occurrence = self._prepare_occurrence(sync_db, substitution_setup)
+        source_output = sync_db.get(models.ScheduleOutput, substitution_setup["schedule_output_id"])
+        assert source_output is not None
+
+        blocking_lesson = models.Lesson(
+            organization_id=substitution_setup["org_id"],
+            class_id=substitution_setup["class_id"],
+            subject_id=substitution_setup["substitute_subject_id"],
+            teacher_id=substitution_setup["substitute_teacher_id"],
+        )
+        sync_db.add(blocking_lesson)
+        sync_db.flush()
+
+        blocking_output = models.ScheduleOutput(
+            organization_id=substitution_setup["org_id"],
+            lesson_id=blocking_lesson.id,
+            timeslot_id=source_output.timeslot_id,
+            room_id=source_output.room_id,
+            generation_id="gen-block-existing-substitution",
+            date=source_output.date,
+            is_draft=False,
+        )
+        sync_db.add(blocking_output)
+        sync_db.flush()
+
+        sync_db.add(models.LessonOccurrence(
+            org_id=substitution_setup["org_id"],
+            schedule_output_id=blocking_output.id,
+            date=source_output.date,
+            status=LessonOccurrenceStatus.SUBSTITUTED,
+            planned_hours=2.0,
+            substitute_teacher_id=substitution_setup["substitute_teacher_id"],
+            substitute_subject_id=substitution_setup["substitute_subject_id"],
+            planned_teacher_id=substitution_setup["substitute_teacher_id"],
+            executed_teacher_id=substitution_setup["substitute_teacher_id"],
+            planned_module_id=substitution_setup["substitute_module_id"],
+            executed_module_id=substitution_setup["substitute_module_id"],
+            hours_given=2.0,
+            decided_at=datetime.now(timezone.utc),
+            created_at=datetime.now(timezone.utc),
+        ))
+        sync_db.commit()
+
+        with pytest.raises(occurrence_service.OccurrenceServiceError) as exc_info:
+            occurrence_service.update_occurrence_sync(
+                sync_db,
+                occurrence.id,
+                substitution_setup["org_id"],
+                schemas.LessonOccurrenceUpdate(
+                    status=LessonOccurrenceStatus.SUBSTITUTED,
+                    substitute_teacher_id=substitution_setup["substitute_teacher_id"],
+                    substitute_subject_id=substitution_setup["substitute_subject_id"],
+                ),
+                decided_by_user_id=substitution_setup["admin_id"],
+            )
+
+        assert exc_info.value.status_code == 409
+        assert exc_info.value.detail == occurrence_service.ERR_SUBSTITUTE_SLOT_CONFLICT
 
     def test_invalid_substitution_different_tenant(self, sync_db, substitution_setup):
         occurrence = self._prepare_occurrence(sync_db, substitution_setup)
@@ -1047,12 +1248,11 @@ class TestSubstitutionEligibilityAndRanking:
 
         seed_db = SyncTestSession()
         try:
-            occurrence_service.auto_confirm_daily_sync(seed_db, org_id, date.today())
-            occurrence = seed_db.execute(
-                select(models.LessonOccurrence).where(
-                    models.LessonOccurrence.schedule_output_id == substitution_setup["schedule_output_id"]
-                )
-            ).scalar_one()
+            occurrence, _ = occurrence_service.create_occurrence_from_block_sync(
+                seed_db,
+                org_id,
+                substitution_setup["schedule_output_id"],
+            )
             occurrence_id = occurrence.id
         finally:
             seed_db.close()
@@ -1156,6 +1356,20 @@ class TestOccurrenceEndpoints:
         token = create_access_token(data={"sub": substitution_setup["teacher_user_email"]})
         return {"Authorization": f"Bearer {token}"}
 
+    async def _create_open_occurrence(
+        self,
+        async_client: AsyncClient,
+        auth_headers: dict,
+        schedule_output_id: int,
+    ) -> int:
+        response = await async_client.post(
+            "/api/v1/occurrences/",
+            headers=auth_headers,
+            json={"schedule_output_id": schedule_output_id},
+        )
+        assert response.status_code in (200, 201)
+        return int(response.json()["id"])
+
     @pytest.mark.asyncio
     async def test_list_occurrences_empty(
         self, async_client: AsyncClient, full_setup, auth_headers
@@ -1201,6 +1415,703 @@ class TestOccurrenceEndpoints:
             json={"status": "GAP"},
         )
         assert response.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_create_occurrence_from_block_returns_201_then_200(
+        self,
+        async_client: AsyncClient,
+        full_setup,
+        auth_headers,
+    ):
+        create_response = await async_client.post(
+            "/api/v1/occurrences/",
+            headers=auth_headers,
+            json={"schedule_output_id": full_setup["schedule_output_id"]},
+        )
+        assert create_response.status_code == 201
+        created = create_response.json()
+        assert created["schedule_output_id"] == full_setup["schedule_output_id"]
+        assert created["decided_at"] is None
+
+        second_response = await async_client.post(
+            "/api/v1/occurrences/",
+            headers=auth_headers,
+            json={"schedule_output_id": full_setup["schedule_output_id"]},
+        )
+        assert second_response.status_code == 200
+        reused = second_response.json()
+        assert reused["id"] == created["id"]
+
+    @pytest.mark.asyncio
+    async def test_create_occurrence_then_first_decision_applies_accounting_once(
+        self,
+        async_client: AsyncClient,
+        sync_db,
+        full_setup,
+        auth_headers,
+    ):
+        create_response = await async_client.post(
+            "/api/v1/occurrences/",
+            headers=auth_headers,
+            json={"schedule_output_id": full_setup["schedule_output_id"]},
+        )
+        assert create_response.status_code == 201
+        occurrence_id = create_response.json()["id"]
+
+        patch_response = await async_client.patch(
+            f"/api/v1/occurrences/{occurrence_id}",
+            headers=auth_headers,
+            json={"status": "GAP"},
+        )
+        assert patch_response.status_code == 200
+        body = patch_response.json()
+        assert body["status"] == "GAP"
+        assert body["decided_at"] is not None
+
+        progress = sync_db.execute(
+            select(models.ClassProgress).where(
+                models.ClassProgress.class_id == full_setup["class_id"],
+                models.ClassProgress.module_id == full_setup["module_id"],
+            )
+        ).scalar_one()
+        assert float(progress.hours_debt) == pytest.approx(2.0)
+        assert float(progress.hours_completed) == pytest.approx(0.0)
+
+    @pytest.mark.asyncio
+    async def test_create_occurrence_teacher_forbidden(
+        self,
+        async_client: AsyncClient,
+        substitution_setup,
+        teacher_auth_headers,
+    ):
+        response = await async_client.post(
+            "/api/v1/occurrences/",
+            headers=teacher_auth_headers,
+            json={"schedule_output_id": substitution_setup["schedule_output_id"]},
+        )
+        assert response.status_code == 403
+
+    @pytest.mark.asyncio
+    async def test_list_occurrences_teacher_forbidden(
+        self,
+        async_client: AsyncClient,
+        substitution_setup,
+        teacher_auth_headers,
+    ):
+        response = await async_client.get(
+            "/api/v1/occurrences/",
+            headers=teacher_auth_headers,
+        )
+        assert response.status_code == 403
+
+    @pytest.mark.asyncio
+    async def test_get_debts_teacher_forbidden(
+        self,
+        async_client: AsyncClient,
+        substitution_setup,
+        teacher_auth_headers,
+    ):
+        response = await async_client.get(
+            "/api/v1/occurrences/debts",
+            headers=teacher_auth_headers,
+        )
+        assert response.status_code == 403
+
+    @pytest.mark.asyncio
+    async def test_get_occurrence_teacher_forbidden(
+        self,
+        async_client: AsyncClient,
+        substitution_setup,
+        auth_headers,
+        teacher_auth_headers,
+    ):
+        occurrence_id = await self._create_open_occurrence(
+            async_client,
+            auth_headers,
+            substitution_setup["schedule_output_id"],
+        )
+
+        response = await async_client.get(
+            f"/api/v1/occurrences/{occurrence_id}",
+            headers=teacher_auth_headers,
+        )
+        assert response.status_code == 403
+
+    @pytest.mark.asyncio
+    async def test_create_occurrence_emits_success_event_with_correlation(
+        self,
+        async_client: AsyncClient,
+        sync_db,
+        full_setup,
+        auth_headers,
+    ):
+        response = await async_client.post(
+            "/api/v1/occurrences/",
+            headers=auth_headers,
+            json={"schedule_output_id": full_setup["schedule_output_id"]},
+        )
+        assert response.status_code == 201
+        occurrence_id = response.json()["id"]
+
+        event = sync_db.execute(
+            select(models.OccurrenceOperationalEvent)
+            .where(
+                models.OccurrenceOperationalEvent.org_id == full_setup["org_id"],
+                models.OccurrenceOperationalEvent.event_type == occurrence_service.OBS_EVENT_CREATE,
+                models.OccurrenceOperationalEvent.result == occurrence_service.OBS_RESULT_SUCCESS,
+            )
+            .order_by(models.OccurrenceOperationalEvent.id.desc())
+        ).scalars().first()
+
+        assert event is not None
+        assert event.occurrence_id == occurrence_id
+        assert event.schedule_output_id == full_setup["schedule_output_id"]
+
+    @pytest.mark.asyncio
+    async def test_create_occurrence_not_found_emits_validation_failure_event(
+        self,
+        async_client: AsyncClient,
+        sync_db,
+        full_setup,
+        auth_headers,
+    ):
+        response = await async_client.post(
+            "/api/v1/occurrences/",
+            headers=auth_headers,
+            json={"schedule_output_id": 999999},
+        )
+        assert response.status_code == 404
+
+        event = sync_db.execute(
+            select(models.OccurrenceOperationalEvent)
+            .where(
+                models.OccurrenceOperationalEvent.org_id == full_setup["org_id"],
+                models.OccurrenceOperationalEvent.event_type == occurrence_service.OBS_EVENT_CREATE,
+                models.OccurrenceOperationalEvent.result == occurrence_service.OBS_RESULT_VALIDATION_FAILURE,
+            )
+            .order_by(models.OccurrenceOperationalEvent.id.desc())
+        ).scalars().first()
+
+        assert event is not None
+        assert event.occurrence_id is None
+        assert event.schedule_output_id is None
+        assert "schedule_output_id=999999" in (event.detail or "")
+
+    @pytest.mark.asyncio
+    async def test_patch_occurrence_conflict_emits_conflict_event(
+        self,
+        async_client: AsyncClient,
+        sync_db,
+        full_setup,
+        auth_headers,
+    ):
+        occurrence_id = await self._create_open_occurrence(
+            async_client,
+            auth_headers,
+            full_setup["schedule_output_id"],
+        )
+
+        first = await async_client.patch(
+            f"/api/v1/occurrences/{occurrence_id}",
+            headers=auth_headers,
+            json={"status": "GAP"},
+        )
+        assert first.status_code == 200
+
+        second = await async_client.patch(
+            f"/api/v1/occurrences/{occurrence_id}",
+            headers=auth_headers,
+            json={
+                "status": "SUBSTITUTED",
+                "substitute_teacher_id": full_setup["substitute_teacher_id"],
+                "substitute_subject_id": full_setup["substitute_subject_id"],
+            },
+        )
+        assert second.status_code == 409
+
+        event = sync_db.execute(
+            select(models.OccurrenceOperationalEvent)
+            .where(
+                models.OccurrenceOperationalEvent.org_id == full_setup["org_id"],
+                models.OccurrenceOperationalEvent.event_type == occurrence_service.OBS_EVENT_DECIDE,
+                models.OccurrenceOperationalEvent.result == occurrence_service.OBS_RESULT_CONFLICT,
+                models.OccurrenceOperationalEvent.occurrence_id == occurrence_id,
+            )
+            .order_by(models.OccurrenceOperationalEvent.id.desc())
+        ).scalars().first()
+
+        assert event is not None
+
+    @pytest.mark.asyncio
+    async def test_observability_summary_counts_operational_outcomes(
+        self,
+        async_client: AsyncClient,
+        full_setup,
+        auth_headers,
+    ):
+        create_response = await async_client.post(
+            "/api/v1/occurrences/",
+            headers=auth_headers,
+            json={"schedule_output_id": full_setup["schedule_output_id"]},
+        )
+        assert create_response.status_code == 201
+        occurrence_id = create_response.json()["id"]
+
+        gap_response = await async_client.patch(
+            f"/api/v1/occurrences/{occurrence_id}",
+            headers=auth_headers,
+            json={"status": "GAP"},
+        )
+        assert gap_response.status_code == 200
+
+        conflict_response = await async_client.patch(
+            f"/api/v1/occurrences/{occurrence_id}",
+            headers=auth_headers,
+            json={
+                "status": "SUBSTITUTED",
+                "substitute_teacher_id": full_setup["substitute_teacher_id"],
+                "substitute_subject_id": full_setup["substitute_subject_id"],
+            },
+        )
+        assert conflict_response.status_code == 409
+
+        invalid_create = await async_client.post(
+            "/api/v1/occurrences/",
+            headers=auth_headers,
+            json={"schedule_output_id": 999999},
+        )
+        assert invalid_create.status_code == 404
+
+        summary_response = await async_client.get(
+            "/api/v1/occurrences/observability/summary",
+            headers=auth_headers,
+            params={"window_days": 30},
+        )
+        assert summary_response.status_code == 200
+
+        summary = summary_response.json()
+        assert summary["decisions_success"] == 1
+        assert summary["conflicts"] == 1
+        assert summary["validation_failures"] == 1
+        assert summary["total_events"] == 4
+
+    @pytest.mark.asyncio
+    async def test_observability_summary_is_tenant_scoped(
+        self,
+        async_client: AsyncClient,
+        sync_db,
+        full_setup,
+        auth_headers,
+    ):
+        create_response = await async_client.post(
+            "/api/v1/occurrences/",
+            headers=auth_headers,
+            json={"schedule_output_id": full_setup["schedule_output_id"]},
+        )
+        assert create_response.status_code == 201
+
+        other_org = models.Organization(name="Escola Isolada", plan_status="active")
+        sync_db.add(other_org)
+        sync_db.flush()
+
+        sync_db.add(models.OccurrenceOperationalEvent(
+            org_id=other_org.id,
+            event_type=occurrence_service.OBS_EVENT_DECIDE,
+            result=occurrence_service.OBS_RESULT_SUCCESS,
+            created_at=datetime.now(timezone.utc),
+        ))
+        sync_db.commit()
+
+        expected_org_events = sync_db.execute(
+            select(func.count(models.OccurrenceOperationalEvent.id)).where(
+                models.OccurrenceOperationalEvent.org_id == full_setup["org_id"]
+            )
+        ).scalar_one()
+
+        response = await async_client.get(
+            "/api/v1/occurrences/observability/summary",
+            headers=auth_headers,
+            params={"window_days": 30},
+        )
+        assert response.status_code == 200
+        assert response.json()["total_events"] == int(expected_org_events)
+
+    @pytest.mark.asyncio
+    async def test_create_occurrence_command_invalid_action_returns_422(
+        self,
+        async_client: AsyncClient,
+        full_setup,
+        auth_headers,
+    ):
+        response = await async_client.post(
+            "/api/v1/occurrences/",
+            headers=auth_headers,
+            json={
+                "action": "OPEN_OCCURRENCE",
+                "schedule_output_id": full_setup["schedule_output_id"],
+            },
+        )
+        assert response.status_code == 422
+
+    @pytest.mark.asyncio
+    async def test_create_occurrence_then_recommendation_and_patch_flow_works(
+        self,
+        async_client: AsyncClient,
+        sync_db,
+        substitution_setup,
+        auth_headers,
+    ):
+        create_resp = await async_client.post(
+            "/api/v1/occurrences/",
+            headers=auth_headers,
+            json={"schedule_output_id": substitution_setup["schedule_output_id"]},
+        )
+        assert create_resp.status_code == 201
+        occurrence_id = create_resp.json()["id"]
+
+        recs_resp = await async_client.get(
+            f"/api/v1/occurrences/{occurrence_id}/substitutes/recommendations",
+            headers=auth_headers,
+        )
+        assert recs_resp.status_code == 200
+        recommendation = recs_resp.json()[0]
+
+        patch_resp = await async_client.patch(
+            f"/api/v1/occurrences/{occurrence_id}",
+            headers=auth_headers,
+            json={
+                "status": "SUBSTITUTED",
+                "substitute_teacher_id": recommendation["teacher_id"],
+                "substitute_subject_id": recommendation["subject_id"],
+            },
+        )
+        assert patch_resp.status_code == 200
+        assert patch_resp.json()["status"] == "SUBSTITUTED"
+
+        persisted = sync_db.get(models.LessonOccurrence, occurrence_id)
+        assert persisted is not None
+        assert persisted.executed_teacher_id == recommendation["teacher_id"]
+
+    @pytest.mark.asyncio
+    async def test_legacy_substitution_post_uses_occurrence_source_of_truth_and_is_idempotent(
+        self,
+        async_client: AsyncClient,
+        sync_db,
+        full_setup,
+        auth_headers,
+    ):
+        payload = {
+            "lesson_id": full_setup["lesson_id"],
+            "timeslot_id": full_setup["timeslot_id"],
+            "original_teacher_id": full_setup["teacher_id"],
+            "substitute_teacher_id": full_setup["substitute_teacher_id"],
+            "date": date.today().isoformat(),
+            "reason": "Falta imprevista",
+        }
+
+        first = await async_client.post(
+            "/api/v1/substitutions/",
+            headers=auth_headers,
+            json=payload,
+        )
+        assert first.status_code == 200
+
+        second = await async_client.post(
+            "/api/v1/substitutions/",
+            headers=auth_headers,
+            json=payload,
+        )
+        assert second.status_code == 200
+
+        occurrences = sync_db.execute(
+            select(models.LessonOccurrence).where(
+                models.LessonOccurrence.org_id == full_setup["org_id"],
+                models.LessonOccurrence.schedule_output_id == full_setup["schedule_output_id"],
+            )
+        ).scalars().all()
+        assert len(occurrences) == 1
+
+        occurrence = occurrences[0]
+        assert occurrence.status == models.LessonOccurrenceStatus.SUBSTITUTED
+        assert occurrence.substitute_teacher_id == full_setup["substitute_teacher_id"]
+        assert occurrence.substitute_subject_id == full_setup["substitute_subject_id"]
+
+        substitutions = sync_db.execute(
+            select(models.Substitution).where(
+                models.Substitution.lesson_id == full_setup["lesson_id"],
+                models.Substitution.timeslot_id == full_setup["timeslot_id"],
+                models.Substitution.date == date.today(),
+                models.Substitution.original_teacher_id == full_setup["teacher_id"],
+            )
+        ).scalars().all()
+        assert len(substitutions) == 1
+        assert substitutions[0].substitute_teacher_id == full_setup["substitute_teacher_id"]
+
+        planned_progress = sync_db.execute(
+            select(models.ClassProgress).where(
+                models.ClassProgress.class_id == full_setup["class_id"],
+                models.ClassProgress.module_id == full_setup["module_id"],
+            )
+        ).scalar_one()
+        executed_progress = sync_db.execute(
+            select(models.ClassProgress).where(
+                models.ClassProgress.class_id == full_setup["class_id"],
+                models.ClassProgress.module_id == full_setup["substitute_module_id"],
+            )
+        ).scalar_one()
+        assert float(planned_progress.hours_debt) == pytest.approx(2.0)
+        assert float(executed_progress.hours_completed) == pytest.approx(2.0)
+
+    @pytest.mark.asyncio
+    async def test_legacy_and_new_occurrence_calls_keep_consistent_final_state(
+        self,
+        async_client: AsyncClient,
+        sync_db,
+        substitution_setup,
+        auth_headers,
+    ):
+        create_resp = await async_client.post(
+            "/api/v1/occurrences/",
+            headers=auth_headers,
+            json={"schedule_output_id": substitution_setup["schedule_output_id"]},
+        )
+        assert create_resp.status_code == 201
+        occurrence_id = create_resp.json()["id"]
+
+        recs_resp = await async_client.get(
+            f"/api/v1/occurrences/{occurrence_id}/substitutes/recommendations",
+            headers=auth_headers,
+        )
+        assert recs_resp.status_code == 200
+        top = recs_resp.json()[0]
+
+        patch_resp = await async_client.patch(
+            f"/api/v1/occurrences/{occurrence_id}",
+            headers=auth_headers,
+            json={
+                "status": "SUBSTITUTED",
+                "substitute_teacher_id": top["teacher_id"],
+                "substitute_subject_id": top["subject_id"],
+            },
+        )
+        assert patch_resp.status_code == 200
+
+        legacy_resp = await async_client.post(
+            "/api/v1/substitutions/",
+            headers=auth_headers,
+            json={
+                "lesson_id": substitution_setup["lesson_id"],
+                "timeslot_id": substitution_setup["timeslot_id"],
+                "original_teacher_id": substitution_setup["teacher_id"],
+                "substitute_teacher_id": top["teacher_id"],
+                "date": date.today().isoformat(),
+                "reason": "Reforço compatibilidade",
+            },
+        )
+        assert legacy_resp.status_code == 200
+
+        persisted = sync_db.get(models.LessonOccurrence, occurrence_id)
+        assert persisted is not None
+        assert persisted.status == models.LessonOccurrenceStatus.SUBSTITUTED
+        assert persisted.substitute_teacher_id == top["teacher_id"]
+        assert persisted.substitute_subject_id == top["subject_id"]
+
+    @pytest.mark.asyncio
+    async def test_legacy_substitution_teacher_forbidden(
+        self,
+        async_client: AsyncClient,
+        substitution_setup,
+        teacher_auth_headers,
+    ):
+        response = await async_client.post(
+            "/api/v1/substitutions/",
+            headers=teacher_auth_headers,
+            json={
+                "lesson_id": substitution_setup["lesson_id"],
+                "timeslot_id": substitution_setup["timeslot_id"],
+                "original_teacher_id": substitution_setup["teacher_id"],
+                "substitute_teacher_id": substitution_setup["substitute_teacher_id"],
+                "date": date.today().isoformat(),
+                "reason": "Sem permissao",
+            },
+        )
+        assert response.status_code == 403
+
+    @pytest.mark.asyncio
+    async def test_legacy_substitution_cross_tenant_rejected(
+        self,
+        async_client: AsyncClient,
+        sync_db,
+        full_setup,
+    ):
+        other_org = models.Organization(name="Escola B", plan_status="active")
+        sync_db.add(other_org)
+        sync_db.flush()
+
+        other_admin_email = "admin_cross_tenant@escola.com"
+        other_admin = models.User(
+            email=other_admin_email,
+            hashed_password=hash_password("pass123"),
+            is_active=True,
+            role=models.UserRole.admin,
+            organization_id=other_org.id,
+        )
+        sync_db.add(other_admin)
+        sync_db.commit()
+
+        token = create_access_token(data={"sub": other_admin_email})
+        headers = {"Authorization": f"Bearer {token}"}
+
+        response = await async_client.post(
+            "/api/v1/substitutions/",
+            headers=headers,
+            json={
+                "lesson_id": full_setup["lesson_id"],
+                "timeslot_id": full_setup["timeslot_id"],
+                "original_teacher_id": full_setup["teacher_id"],
+                "substitute_teacher_id": full_setup["substitute_teacher_id"],
+                "date": date.today().isoformat(),
+                "reason": "Tentativa cross-tenant",
+            },
+        )
+        assert response.status_code == 400
+
+    @pytest.mark.asyncio
+    async def test_create_occurrence_past_block_compatible_with_update_flow(
+        self,
+        async_client: AsyncClient,
+        sync_db,
+        full_setup,
+        auth_headers,
+    ):
+        output = sync_db.get(models.ScheduleOutput, full_setup["schedule_output_id"])
+        assert output is not None
+        output.date = date.today() - timedelta(days=1)
+        sync_db.commit()
+
+        create_resp = await async_client.post(
+            "/api/v1/occurrences/",
+            headers=auth_headers,
+            json={"schedule_output_id": full_setup["schedule_output_id"]},
+        )
+        assert create_resp.status_code == 201
+        occurrence_id = create_resp.json()["id"]
+
+        patch_resp = await async_client.patch(
+            f"/api/v1/occurrences/{occurrence_id}",
+            headers=auth_headers,
+            json={"status": "GAP"},
+        )
+        assert patch_resp.status_code == 200
+        assert patch_resp.json()["status"] == "GAP"
+
+    @pytest.mark.asyncio
+    async def test_week_schedule_payload_exposes_additive_occurrence_fields_without_occurrence(
+        self,
+        async_client: AsyncClient,
+        full_setup,
+        auth_headers,
+    ):
+        week_start = date.today() - timedelta(days=date.today().weekday())
+        response = await async_client.get(
+            "/api/v1/schedule/week",
+            headers=auth_headers,
+            params={"week_start": week_start.isoformat(), "class_id": full_setup["class_id"]},
+        )
+        assert response.status_code == 200
+        payload = response.json()
+        assert len(payload) >= 1
+
+        target = next(
+            slot for slot in payload
+            if slot["schedule_output_id"] == full_setup["schedule_output_id"]
+        )
+        assert "occurrence_id" in target
+        assert "occurrence_decided_at" in target
+        assert "can_create_occurrence" in target
+        assert "can_decide_occurrence" in target
+
+        assert target["occurrence_id"] is None
+        assert target["occurrence_decided_at"] is None
+        assert target["can_create_occurrence"] is True
+        assert target["can_decide_occurrence"] is False
+
+    @pytest.mark.asyncio
+    async def test_week_schedule_payload_sets_flags_and_occurrence_context_when_occurrence_exists(
+        self,
+        async_client: AsyncClient,
+        full_setup,
+        auth_headers,
+    ):
+        create_resp = await async_client.post(
+            "/api/v1/occurrences/",
+            headers=auth_headers,
+            json={"schedule_output_id": full_setup["schedule_output_id"]},
+        )
+        assert create_resp.status_code == 201
+        occurrence_id = create_resp.json()["id"]
+
+        patch_resp = await async_client.patch(
+            f"/api/v1/occurrences/{occurrence_id}",
+            headers=auth_headers,
+            json={"status": "GAP"},
+        )
+        assert patch_resp.status_code == 200
+
+        week_start = date.today() - timedelta(days=date.today().weekday())
+        response = await async_client.get(
+            "/api/v1/schedule/week",
+            headers=auth_headers,
+            params={"week_start": week_start.isoformat(), "class_id": full_setup["class_id"]},
+        )
+        assert response.status_code == 200
+        payload = response.json()
+
+        target = next(
+            slot for slot in payload
+            if slot["schedule_output_id"] == full_setup["schedule_output_id"]
+        )
+        assert target["occurrence_id"] == occurrence_id
+        assert target["occurrence_status"] == "GAP"
+        assert target["occurrence_decided_at"] is not None
+        assert target["can_create_occurrence"] is False
+        assert target["can_decide_occurrence"] is True
+
+    @pytest.mark.asyncio
+    async def test_week_schedule_teacher_can_only_query_own_scope(
+        self,
+        async_client: AsyncClient,
+        substitution_setup,
+        teacher_auth_headers,
+    ):
+        week_start = date.today() - timedelta(days=date.today().weekday())
+
+        own_response = await async_client.get(
+            "/api/v1/schedule/week",
+            headers=teacher_auth_headers,
+            params={"week_start": week_start.isoformat()},
+        )
+        assert own_response.status_code == 200
+
+        class_scope = await async_client.get(
+            "/api/v1/schedule/week",
+            headers=teacher_auth_headers,
+            params={
+                "week_start": week_start.isoformat(),
+                "class_id": substitution_setup["class_id"],
+            },
+        )
+        assert class_scope.status_code == 403
+
+        other_teacher_scope = await async_client.get(
+            "/api/v1/schedule/week",
+            headers=teacher_auth_headers,
+            params={
+                "week_start": week_start.isoformat(),
+                "teacher_id": substitution_setup["teacher_id"],
+            },
+        )
+        assert other_teacher_scope.status_code == 403
 
     @pytest.mark.asyncio
     async def test_patch_substituted_without_teacher_returns_422(
@@ -1262,28 +2173,25 @@ class TestOccurrenceEndpoints:
     async def test_patch_invalid_state_transition_returns_409(
         self,
         async_client: AsyncClient,
-        sync_db,
         full_setup,
         auth_headers,
     ):
         """GAP -> SUBSTITUTED deve falhar por sobrescrita destrutiva do histórico."""
-        org_id = full_setup["org_id"]
-        occurrence_service.auto_confirm_daily_sync(sync_db, org_id, date.today())
-        occurrence = sync_db.execute(
-            select(models.LessonOccurrence).where(
-                models.LessonOccurrence.schedule_output_id == full_setup["schedule_output_id"]
-            )
-        ).scalar_one()
+        occurrence_id = await self._create_open_occurrence(
+            async_client,
+            auth_headers,
+            full_setup["schedule_output_id"],
+        )
 
         first = await async_client.patch(
-            f"/api/v1/occurrences/{occurrence.id}",
+            f"/api/v1/occurrences/{occurrence_id}",
             headers=auth_headers,
             json={"status": "GAP"},
         )
         assert first.status_code == 200
 
         second = await async_client.patch(
-            f"/api/v1/occurrences/{occurrence.id}",
+            f"/api/v1/occurrences/{occurrence_id}",
             headers=auth_headers,
             json={
                 "status": "SUBSTITUTED",
@@ -1398,26 +2306,24 @@ class TestOccurrenceEndpoints:
     async def test_patch_substitution_confirm_success_with_revalidation(
         self,
         async_client: AsyncClient,
-        sync_db,
         substitution_setup,
         auth_headers,
     ):
-        occurrence_service.auto_confirm_daily_sync(sync_db, substitution_setup["org_id"], date.today())
-        occurrence = sync_db.execute(
-            select(models.LessonOccurrence).where(
-                models.LessonOccurrence.schedule_output_id == substitution_setup["schedule_output_id"]
-            )
-        ).scalar_one()
+        occurrence_id = await self._create_open_occurrence(
+            async_client,
+            auth_headers,
+            substitution_setup["schedule_output_id"],
+        )
 
         recs_resp = await async_client.get(
-            f"/api/v1/occurrences/{occurrence.id}/substitutes/recommendations",
+            f"/api/v1/occurrences/{occurrence_id}/substitutes/recommendations",
             headers=auth_headers,
         )
         assert recs_resp.status_code == 200
         rec = recs_resp.json()[0]
 
         patch_resp = await async_client.patch(
-            f"/api/v1/occurrences/{occurrence.id}",
+            f"/api/v1/occurrences/{occurrence_id}",
             headers=auth_headers,
             json={
                 "status": "SUBSTITUTED",
@@ -1440,15 +2346,16 @@ class TestOccurrenceEndpoints:
         substitution_setup,
         auth_headers,
     ):
-        occurrence_service.auto_confirm_daily_sync(sync_db, substitution_setup["org_id"], date.today())
-        occurrence = sync_db.execute(
-            select(models.LessonOccurrence).where(
-                models.LessonOccurrence.schedule_output_id == substitution_setup["schedule_output_id"]
-            )
-        ).scalar_one()
+        occurrence_id = await self._create_open_occurrence(
+            async_client,
+            auth_headers,
+            substitution_setup["schedule_output_id"],
+        )
+        occurrence = sync_db.get(models.LessonOccurrence, occurrence_id)
+        assert occurrence is not None
 
         recs_resp = await async_client.get(
-            f"/api/v1/occurrences/{occurrence.id}/substitutes/recommendations",
+            f"/api/v1/occurrences/{occurrence_id}/substitutes/recommendations",
             headers=auth_headers,
         )
         assert recs_resp.status_code == 200
@@ -1478,7 +2385,7 @@ class TestOccurrenceEndpoints:
         sync_db.commit()
 
         patch_resp = await async_client.patch(
-            f"/api/v1/occurrences/{occurrence.id}",
+            f"/api/v1/occurrences/{occurrence_id}",
             headers=auth_headers,
             json={
                 "status": "SUBSTITUTED",
@@ -1511,6 +2418,48 @@ class TestOccurrenceEndpoints:
         )
 
         assert response.status_code == 403
+
+    @pytest.mark.asyncio
+    async def test_patch_closed_auto_confirmed_occurrence_returns_409(
+        self,
+        async_client: AsyncClient,
+        sync_db,
+        full_setup,
+        auth_headers,
+    ):
+        occurrence_service.auto_confirm_daily_sync(sync_db, full_setup["org_id"], date.today())
+        occurrence = sync_db.execute(
+            select(models.LessonOccurrence).where(
+                models.LessonOccurrence.schedule_output_id == full_setup["schedule_output_id"]
+            )
+        ).scalar_one()
+
+        response = await async_client.patch(
+            f"/api/v1/occurrences/{occurrence.id}",
+            headers=auth_headers,
+            json={"status": "GAP"},
+        )
+
+        assert response.status_code == 409
+
+    @pytest.mark.asyncio
+    async def test_legacy_substitution_suggestions_returns_410(
+        self,
+        async_client: AsyncClient,
+        full_setup,
+        auth_headers,
+    ):
+        response = await async_client.get(
+            "/api/v1/substitutions/suggestions",
+            headers=auth_headers,
+            params={
+                "timeslot_id": full_setup["timeslot_id"],
+                "date_str": date.today().isoformat(),
+                "original_teacher_id": full_setup["teacher_id"],
+            },
+        )
+
+        assert response.status_code == 410
 
     @pytest.mark.asyncio
     async def test_list_occurrences_requires_auth(

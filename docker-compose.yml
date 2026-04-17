@@ -43,6 +43,11 @@ services:
       - CELERY_BROKER_URL=redis://redis:6379/0
       - REDIS_URL=redis://redis:6379/0
       - RUN_MIGRATIONS=1
+      - BOOTSTRAP_DEFAULT_ADMIN=0
+      - BOOTSTRAP_ADMIN_EMAIL=admin@horariozen.local
+      - BOOTSTRAP_ADMIN_PASSWORD=admin1234
+      - BOOTSTRAP_ADMIN_NAME=Admin Horario Zen
+      - BOOTSTRAP_ORG_NAME=Escola Demo Horario Zen
 
     ports:
       - "8000:8000"
@@ -55,6 +60,12 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health', timeout=2)\""]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 20s
 
   # 4. Worker Celery
   worker:
@@ -70,9 +81,12 @@ services:
     volumes:
       - ./backend:/app
     depends_on:
-      - backend
-      - redis
-      - db
+      backend:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      db:
+        condition: service_healthy
 
   # 5. Celery Beat — Scheduler de tarefas periódicas (cron diário às 23:59)
   beat:
@@ -88,8 +102,12 @@ services:
     volumes:
       - ./backend:/app
     depends_on:
-      - redis
-      - db
+      backend:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      db:
+        condition: service_healthy
 
   # 5. Frontend (Nginx Reverse Proxy) - O Porteiro
   frontend:
@@ -108,7 +126,8 @@ services:
     environment:
       - CHOKIDAR_USEPOLLING=true # Ajuda o Windows a detetar saves
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
 
 volumes:
   postgres_data:

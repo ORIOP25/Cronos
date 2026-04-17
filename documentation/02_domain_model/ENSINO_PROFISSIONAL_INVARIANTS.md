@@ -37,6 +37,10 @@ Sem estes invariantes, o motor pode gerar resultado visualmente aceitavel mas op
 4. Geracao de horario ocorre a nivel organizacional, nao por turma isolada.
 5. Isolamento por organization_id e obrigatorio em leitura e escrita.
 6. Historico de execucao e imutavel.
+7. Substituicao de aula da turma X so pode usar docente de outra disciplina da propria turma X.
+8. Docente da mesma disciplina, mas de outra turma, nao e elegivel para substituicao da turma X.
+9. Em caso de multiplos elegiveis, o sistema recomenda candidatos por ranking deterministico.
+10. A decisao final da substituicao e sempre aprovada pelo admin.
 
 ## Regras de autorizacao confirmadas
 
@@ -48,6 +52,42 @@ Sem estes invariantes, o motor pode gerar resultado visualmente aceitavel mas op
 - marca disponibilidade;
 - consulta o proprio horario;
 - sem permissao para gerir horarios de outros ou aprovar operacao global.
+
+## Invariantes de role e sincronismo professor-admin (Alpha V1 - Ponto 10)
+
+### What
+Fecho dos invariantes funcionais para a experiencia professor/acessos:
+- fronteira self-service por role;
+- sincronismo entre horario publicado e vista do professor;
+- observabilidade tecnica sem mutacao de estado de negocio.
+
+### Who
+- admin: governa publicacao e monitorizacao operacional;
+- professor: atua apenas no proprio contexto autenticado;
+- equipa tecnica: garante consistencia entre interface, regras e API.
+
+### Where
+- interface: menu e rotas por role;
+- regras de negocio/API: contratos `teachers` e `schedule` para self-service;
+- base de dados: leituras tenant-scoped e historico de eventos operacionais.
+
+### When
+- em cada login/navegacao por role;
+- em cada leitura semanal do professor;
+- em cada publicacao ativa refletida no fluxo `Meus Horarios`.
+
+### Why
+- garantir least privilege real para professor;
+- impedir divergencia entre horario publicado e horario consultado;
+- manter triagem operacional com dados objetivos sem alterar o dominio executado.
+
+Regras de negocio fechadas:
+1. Professor so consome contratos self-service do proprio contexto autenticado.
+2. Professor nao consulta horario de outra turma/professor por manipulacao de parametros.
+3. Endpoints self-service do professor sao explicitamente negados para role admin.
+4. Vista semanal do professor usa sempre horario publicado ativo (is_draft=false) como fonte de verdade.
+5. Sincronismo professor-admin segue alvo operacional de 30s (p95) e tolerancia de 60s (p99) na Alpha.
+6. Observabilidade de endpoints do professor e sinal tecnico; nao altera estado funcional de ocorrencias/progresso.
 
 ## Explicacao teorica
 

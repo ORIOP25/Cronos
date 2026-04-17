@@ -1,15 +1,27 @@
 // Ficheiro: src/components/DefaultLayout.jsx
 import React from 'react';
-import { Outlet, Link, useNavigate } from 'react-router-dom';
+import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { auth } from '../apiClient';
 import { useAuthStore } from '../store';
+import { ROUTE_MY_SCHEDULES } from '../roleAccess';
 
 const DefaultLayout = () => {
+  const location = useLocation();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const logout = useAuthStore((state) => state.logout);
   const user = useAuthStore((state) => state.user); // Objeto completo { email, role... }
+  const isAdmin = user?.role === 'admin'
+  const isTeacher = user?.role === 'teacher'
+  const accessDeniedMessage = location?.state?.accessDeniedMessage ?? ''
+
+  React.useEffect(() => {
+    if (!accessDeniedMessage) {
+      return
+    }
+    window.history.replaceState({}, document.title, `${location.pathname}${location.search}`)
+  }, [accessDeniedMessage, location.pathname, location.search])
 
   const handleLogout = async () => {
     try {
@@ -54,7 +66,7 @@ const DefaultLayout = () => {
         <nav style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
           
           {/* Menu para DIRETORES */}
-          {user?.role === 'admin' && (
+          {isAdmin && (
             <>
               <Link to="/dashboard" style={linkStyle}>Dashboard</Link>
               <Link to="/schedules" style={linkStyle}>Horários</Link>
@@ -73,8 +85,13 @@ const DefaultLayout = () => {
             </>
           )}
 
-          {/* Menu para TODOS */}
-          <Link to="/my-availability" style={linkStyle}>Minhas Preferências</Link>
+          {/* Menu para PROFESSORES */}
+          {isTeacher && (
+            <>
+              <Link to="/my-availability" style={linkStyle}>Minhas Preferências</Link>
+              <Link to={ROUTE_MY_SCHEDULES} style={linkStyle}>Meus Horários</Link>
+            </>
+          )}
         </nav>
 
         {/* Rodapé da Sidebar */}
@@ -93,6 +110,23 @@ const DefaultLayout = () => {
 
       {/* --- MAIN CONTENT --- */}
       <main style={{ flex: 1, backgroundColor: 'var(--rs-body-bg)', padding: '32px', overflowY: 'auto' }}>
+        {accessDeniedMessage ? (
+          <div
+            role="alert"
+            style={{
+              marginBottom: '12px',
+              borderRadius: '8px',
+              border: '1px solid #ef9f4a',
+              backgroundColor: '#fff4e5',
+              color: '#7f3b08',
+              padding: '10px 12px',
+              fontWeight: 600,
+              fontSize: '0.9rem',
+            }}
+          >
+            {accessDeniedMessage}
+          </div>
+        ) : null}
         <Outlet />
       </main>
     </div>

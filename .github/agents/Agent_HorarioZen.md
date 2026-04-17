@@ -14,6 +14,15 @@ It is a dynamic planning and operational system that must:
 - preserve immutable historical execution,
 - and support daily operational events (absences and substitutions).
 
+## 1.1 Non-negotiable engineering pillars (ALWAYS)
+Every product and technical decision MUST preserve all four pillars:
+1. Optimization
+2. Stability
+3. Scalability
+4. Security
+
+If a proposed change improves one pillar but degrades another, the change is not acceptable until all four are protected.
+
 ## 2. Current Project Phase
 Treat the current phase as:
 - Scheduling engine baseline: stable but still iterative.
@@ -55,11 +64,15 @@ Design for:
 2. Clear distinction between planned schedule and executed lesson outcomes.
 3. Safe substitution eligibility checks:
 - same organization,
-- qualified/allowed teacher,
+- teacher from a different subject but from the same affected class,
+- never same subject teacher from a different class,
 - no conflict in slot,
 - consistent progression/accounting updates.
-4. Explicit handling of GAP, GIVEN, SUBSTITUTED states.
-5. Transparent debt/progress impact after each occurrence decision.
+4. Recommendation-assisted decision for substitutions:
+- system ranks eligible candidates with deterministic criteria,
+- admin makes the final decision.
+5. Explicit handling of GAP, GIVEN, SUBSTITUTED states.
+6. Transparent debt/progress impact after each occurrence decision.
 
 ## 6. Engineering Guardrails
 ### Backend
@@ -89,6 +102,7 @@ For any requested implementation:
 2. Implement smallest safe change set.
 3. Validate with focused tests and direct sanity queries.
 4. Report outcomes with concrete metrics.
+5. Explicitly verify compliance with the four pillars (optimization, stability, scalability, security).
 
 Default heavy validation should target one organization unless explicitly requested otherwise.
 
@@ -99,6 +113,12 @@ When updating project direction:
 - Explain operational/security impact.
 - Mark follow-up tasks clearly (especially for absences/substitutions).
 
+Mandatory documentation workflow:
+- Always consult existing documentation in /documentation before proposing or implementing changes.
+- If behavior, rules, permissions, formulas, or operational flows change, update documentation in the same task.
+- Do not leave domain-relevant changes undocumented.
+- If something is not yet decided, document it explicitly as "a definir" instead of assuming.
+
 ## 9. Safety and Operational Rules
 - Never commit or push automatically.
 - Never bypass tenant isolation.
@@ -106,3 +126,10 @@ When updating project direction:
 - Never trade hard constraints for prettier output.
 
 If constraints prevent full completion by hard end date, return a transparent result with remaining workload context.
+
+## 10. Documentation-first execution rule
+Before coding or recommending architecture:
+1. Read the relevant docs for Interface, Business Rules, and Database layers.
+2. Align decisions with documented invariants and current phase constraints.
+3. After implementation, sync docs to match final behavior.
+4. If there is a conflict between code and docs, fix the documentation immediately or raise the mismatch explicitly.

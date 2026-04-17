@@ -1,8 +1,10 @@
 """Endpoints para gestão de ocorrências de aulas (Sprint 2).
 
 Rotas:
+    POST /occurrences/        — criar/reutilizar ocorrência por bloco planeado
   GET  /occurrences/         — listar ocorrências (com filtros)
   GET  /occurrences/debts    — dívidas de horas agrupadas
+    GET  /occurrences/observability/summary — contadores operacionais por organização
     GET  /occurrences/{id}/substitutes/recommendations — ranking de elegíveis
   GET  /occurrences/{id}     — detalhe de uma ocorrência
   PATCH /occurrences/{id}    — registar falta (GAP) ou substituição
@@ -13,7 +15,7 @@ from __future__ import annotations
 from datetime import date
 from typing import Annotated, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api import deps
@@ -51,7 +53,7 @@ def _get_sync_db():
 )
 async def list_occurrences(
     db: Annotated[AsyncSession, Depends(deps.get_db)],
-    current_user: Annotated[models.User, Depends(deps.get_current_user)],
+    current_user: Annotated[models.User, Depends(deps.get_current_active_admin)],
     class_id: Optional[int] = Query(None, description="Filtrar por turma"),
     date_from: Optional[date] = Query(None, description="Data de início (YYYY-MM-DD)"),
     date_to: Optional[date] = Query(None, description="Data de fim (YYYY-MM-DD)"),
@@ -67,6 +69,70 @@ async def list_occurrences(
     return await db.run_sync(_run)
 
 
+@router.post(
+    "/",
+    response_model=schemas.LessonOccurrenceRead,
+    status_code=status.HTTP_201_CREATED,
+    summary="Criar ocorrência operacional por bloco planeado",
+    responses={
+        404: {"description": "Bloco planeado não encontrado"},
+        409: {"description": "Bloco inválido para criação operacional"},
+        422: {"description": "Contexto de bloco inválido"},
+    },
+)
+async def create_occurrence(
+    payload: schemas.LessonOccurrenceCreate,
+    response: Response,
+    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    current_user: Annotated[models.User, Depends(deps.get_current_active_admin)],
+):
+    """Executa comando CREATE_OCCURRENCE (cria/reutiliza) para um bloco do horário."""
+    org_id = current_user.organization_id
+
+    def _run(sync_db):
+        return occurrence_service.create_occurrence_from_block_sync(
+            sync_db,
+            org_id=org_id,
+            schedule_output_id=payload.schedule_output_id,
+        )
+
+    try:
+        occurrence, created_now = await db.run_sync(_run)
+    except occurrence_service.OccurrenceServiceError as exc:
+        def _emit_failure(sync_db):
+            occurrence_service.log_occurrence_event_safe_sync(
+                sync_db,
+                org_id=org_id,
+                event_type=occurrence_service.OBS_EVENT_CREATE,
+                result=occurrence_service.classify_occurrence_error_result(exc.status_code),
+                actor_user_id=current_user.id,
+                occurrence_id=None,
+                schedule_output_id=None,
+                detail=f"{exc.detail} (schedule_output_id={payload.schedule_output_id})",
+            )
+
+        await db.run_sync(_emit_failure)
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
+    if not created_now:
+        response.status_code = status.HTTP_200_OK
+
+    def _emit_success(sync_db):
+        occurrence_service.log_occurrence_event_safe_sync(
+            sync_db,
+            org_id=org_id,
+            event_type=occurrence_service.OBS_EVENT_CREATE,
+            result=occurrence_service.OBS_RESULT_SUCCESS,
+            actor_user_id=current_user.id,
+            occurrence_id=occurrence.id,
+            schedule_output_id=occurrence.schedule_output_id,
+            detail=None,
+        )
+
+    await db.run_sync(_emit_success)
+    return occurrence
+
+
 @router.get(
     "/debts",
     response_model=schemas.DebtListRead,
@@ -74,7 +140,7 @@ async def list_occurrences(
 )
 async def list_debts(
     db: Annotated[AsyncSession, Depends(deps.get_db)],
-    current_user: Annotated[models.User, Depends(deps.get_current_user)],
+    current_user: Annotated[models.User, Depends(deps.get_current_active_admin)],
     class_id: Optional[int] = Query(None, description="Filtrar por turma"),
 ):
     """Devolve as horas em dívida (faltas não recuperadas) agrupadas por turma/disciplina."""
@@ -82,6 +148,28 @@ async def list_debts(
 
     def _run(sync_db):
         return occurrence_service.get_debts_sync(sync_db, org_id, class_id=class_id)
+
+    return await db.run_sync(_run)
+
+
+@router.get(
+    "/observability/summary",
+    response_model=schemas.OccurrenceObservabilitySummaryRead,
+    summary="Resumo de observabilidade operacional de ocorrências",
+)
+async def get_occurrence_observability_summary(
+    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    current_user: Annotated[models.User, Depends(deps.get_current_active_admin)],
+    window_days: int = Query(7, ge=1, le=90, description="Janela de agregação em dias"),
+):
+    org_id = current_user.organization_id
+
+    def _run(sync_db):
+        return occurrence_service.get_occurrence_observability_summary_sync(
+            sync_db,
+            org_id=org_id,
+            window_days=window_days,
+        )
 
     return await db.run_sync(_run)
 
@@ -148,7 +236,7 @@ async def get_substitute_recommendations(
 async def get_occurrence(
     occurrence_id: int,
     db: Annotated[AsyncSession, Depends(deps.get_db)],
-    current_user: Annotated[models.User, Depends(deps.get_current_user)],
+    current_user: Annotated[models.User, Depends(deps.get_current_active_admin)],
 ):
     """Devolve uma ocorrência pelo ID."""
     org_id = current_user.organization_id
@@ -193,6 +281,34 @@ async def update_occurrence(
     try:
         updated = await db.run_sync(_run)
     except occurrence_service.OccurrenceServiceError as exc:
+        def _emit_failure(sync_db):
+            occurrence_service.log_occurrence_event_safe_sync(
+                sync_db,
+                org_id=org_id,
+                event_type=occurrence_service.OBS_EVENT_DECIDE,
+                result=occurrence_service.classify_occurrence_error_result(exc.status_code),
+                actor_user_id=current_user.id,
+                occurrence_id=occurrence_id,
+                schedule_output_id=None,
+                detail=exc.detail,
+            )
+
+        await db.run_sync(_emit_failure)
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
+    def _emit_success(sync_db):
+        occurrence_service.log_occurrence_event_safe_sync(
+            sync_db,
+            org_id=org_id,
+            event_type=occurrence_service.OBS_EVENT_DECIDE,
+            result=occurrence_service.OBS_RESULT_SUCCESS,
+            actor_user_id=current_user.id,
+            occurrence_id=updated.id,
+            schedule_output_id=updated.schedule_output_id,
+            decision_status=updated.status,
+            detail=None,
+        )
+
+    await db.run_sync(_emit_success)
 
     return updated

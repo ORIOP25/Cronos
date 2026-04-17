@@ -12,7 +12,9 @@ from collections import defaultdict
 from datetime import date, datetime, timezone, timedelta
 from typing import Optional
 
+import structlog
 from sqlalchemy import select, and_, func
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
 from app import models
@@ -34,6 +36,9 @@ ERR_SUBSTITUTE_SLOT_CONFLICT = "Candidato em conflito de horário no mesmo slot"
 ERR_SUBSTITUTE_IMPOSSIBLE_AVAILABILITY = "Candidato indisponível para o slot (IMPOSSIBLE)"
 ERR_SUBSTITUTE_ROOM_MISMATCH = "Tipo de sala incompatível com a disciplina substituta"
 ERR_SUBSTITUTE_SAME_PLANNED_TEACHER = "Docente previsto não pode ser confirmado como substituto"
+ERR_SCHEDULE_OUTPUT_NOT_FOUND = "Bloco planeado não encontrado"
+ERR_SCHEDULE_OUTPUT_IS_DRAFT = "Bloco de rascunho não pode iniciar ocorrência operacional"
+ERR_SCHEDULE_OUTPUT_NO_DATE = "Bloco sem data válida para criação de ocorrência"
 
 ALLOWED_STATE_TRANSITIONS: dict[models.LessonOccurrenceStatus, set[models.LessonOccurrenceStatus]] = {
     models.LessonOccurrenceStatus.GIVEN: {
@@ -51,6 +56,17 @@ DEBT_STATUSES = {
 }
 
 DEFAULT_REPAIR_WINDOW_DAYS = 14
+MAX_EVENT_DETAIL_LENGTH = 240
+
+OBS_EVENT_CREATE = "CREATE_OCCURRENCE"
+OBS_EVENT_DECIDE = "DECIDE_OCCURRENCE"
+
+OBS_RESULT_SUCCESS = "SUCCESS"
+OBS_RESULT_VALIDATION_FAILURE = "VALIDATION_FAILURE"
+OBS_RESULT_CONFLICT = "CONFLICT"
+OBS_RESULT_ERROR = "ERROR"
+
+logger = structlog.get_logger(__name__)
 
 
 class OccurrenceServiceError(Exception):
@@ -58,6 +74,110 @@ class OccurrenceServiceError(Exception):
         super().__init__(detail)
         self.status_code = status_code
         self.detail = detail
+
+
+def classify_occurrence_error_result(status_code: int) -> str:
+    if status_code == 409:
+        return OBS_RESULT_CONFLICT
+    if status_code in (400, 404, 422):
+        return OBS_RESULT_VALIDATION_FAILURE
+    return OBS_RESULT_ERROR
+
+
+def _sanitize_event_detail(detail: Optional[str]) -> Optional[str]:
+    if detail is None:
+        return None
+    text = str(detail).strip()
+    if not text:
+        return None
+    return text[:MAX_EVENT_DETAIL_LENGTH]
+
+
+def log_occurrence_event_safe_sync(
+    db: Session,
+    *,
+    org_id: int,
+    event_type: str,
+    result: str,
+    actor_user_id: Optional[int] = None,
+    occurrence_id: Optional[int] = None,
+    schedule_output_id: Optional[int] = None,
+    decision_status: Optional[models.LessonOccurrenceStatus] = None,
+    detail: Optional[str] = None,
+) -> None:
+    """Regista evento operacional sem bloquear o fluxo principal em caso de falha."""
+    try:
+        event = models.OccurrenceOperationalEvent(
+            org_id=org_id,
+            occurrence_id=occurrence_id,
+            schedule_output_id=schedule_output_id,
+            actor_user_id=actor_user_id,
+            event_type=event_type,
+            result=result,
+            decision_status=decision_status.value if decision_status is not None else None,
+            detail=_sanitize_event_detail(detail),
+            created_at=datetime.now(timezone.utc),
+        )
+        db.add(event)
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        logger.warning(
+            "occurrence_observability_emit_failed",
+            org_id=org_id,
+            event_type=event_type,
+            result=result,
+            error=str(exc),
+        )
+
+
+def get_occurrence_observability_summary_sync(
+    db: Session,
+    *,
+    org_id: int,
+    window_days: int,
+) -> dict:
+    window_days = max(1, int(window_days))
+    start_at = datetime.now(timezone.utc) - timedelta(days=window_days)
+
+    rows = db.execute(
+        select(
+            models.OccurrenceOperationalEvent.event_type,
+            models.OccurrenceOperationalEvent.result,
+            func.count(models.OccurrenceOperationalEvent.id),
+        ).where(
+            and_(
+                models.OccurrenceOperationalEvent.org_id == org_id,
+                models.OccurrenceOperationalEvent.created_at >= start_at,
+            )
+        ).group_by(
+            models.OccurrenceOperationalEvent.event_type,
+            models.OccurrenceOperationalEvent.result,
+        )
+    ).all()
+
+    total_events = 0
+    decisions_success = 0
+    validation_failures = 0
+    conflicts = 0
+
+    for event_type, result, count in rows:
+        count_value = int(count)
+        total_events += count_value
+        if event_type == OBS_EVENT_DECIDE and result == OBS_RESULT_SUCCESS:
+            decisions_success += count_value
+        if result == OBS_RESULT_VALIDATION_FAILURE:
+            validation_failures += count_value
+        if result == OBS_RESULT_CONFLICT:
+            conflicts += count_value
+
+    return {
+        "window_days": window_days,
+        "total_events": total_events,
+        "decisions_success": decisions_success,
+        "validation_failures": validation_failures,
+        "conflicts": conflicts,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -185,7 +305,36 @@ def _teacher_is_busy_in_slot(
     if exclude_schedule_output_id is not None:
         stmt = stmt.where(models.ScheduleOutput.id != exclude_schedule_output_id)
 
-    return db.execute(stmt).first() is not None
+    has_planned_conflict = db.execute(stmt).first() is not None
+    if has_planned_conflict:
+        return True
+
+    # Also block teachers already confirmed as substitutes in the same slot/date.
+    substitution_stmt = (
+        select(models.LessonOccurrence.id)
+        .join(
+            models.ScheduleOutput,
+            models.LessonOccurrence.schedule_output_id == models.ScheduleOutput.id,
+        )
+        .where(
+            and_(
+                models.LessonOccurrence.org_id == org_id,
+                models.LessonOccurrence.status == models.LessonOccurrenceStatus.SUBSTITUTED,
+                models.LessonOccurrence.substitute_teacher_id == teacher_id,
+                models.ScheduleOutput.organization_id == org_id,
+                models.ScheduleOutput.is_draft.is_(False),
+                models.ScheduleOutput.timeslot_id == timeslot_id,
+                models.ScheduleOutput.date == target_date,
+            )
+        )
+    )
+
+    if exclude_schedule_output_id is not None:
+        substitution_stmt = substitution_stmt.where(
+            models.ScheduleOutput.id != exclude_schedule_output_id
+        )
+
+    return db.execute(substitution_stmt).first() is not None
 
 
 def _is_subject_room_compatible(
@@ -541,6 +690,9 @@ def _is_idempotent_payload(
     occurrence: models.LessonOccurrence,
     payload: schemas.LessonOccurrenceUpdate,
 ) -> bool:
+    if occurrence.decided_at is None:
+        return False
+
     return (
         occurrence.status == payload.status
         and occurrence.substitute_teacher_id == payload.substitute_teacher_id
@@ -552,19 +704,107 @@ def _validate_state_transition(
     occurrence: models.LessonOccurrence,
     payload: schemas.LessonOccurrenceUpdate,
 ) -> None:
-    current_status = occurrence.status
-    allowed = ALLOWED_STATE_TRANSITIONS.get(current_status, set())
+    if occurrence.decided_at is None:
+        return
 
-    if payload.status not in allowed:
-        raise OccurrenceServiceError(
-            status_code=409,
-            detail=(
-                f"{ERR_INVALID_TRANSITION}: {current_status.value} -> {payload.status.value}"
-            ),
+    # Closed occurrences are immutable; only idempotent retries are accepted.
+    raise OccurrenceServiceError(status_code=409, detail=ERR_DESTRUCTIVE_OVERWRITE)
+
+
+def create_occurrence_from_block_sync(
+    db: Session,
+    org_id: int,
+    schedule_output_id: int,
+) -> tuple[models.LessonOccurrence, bool]:
+    """Cria (ou reutiliza) ocorrência operacional para um bloco planeado.
+
+    Retorna (occurrence, created_now).
+    """
+    schedule_output = db.execute(
+        select(models.ScheduleOutput)
+        .options(
+            joinedload(models.ScheduleOutput.lesson).joinedload(models.Lesson.subject),
+            joinedload(models.ScheduleOutput.lesson).joinedload(models.Lesson.teacher),
+            joinedload(models.ScheduleOutput.timeslot),
         )
+        .where(
+            and_(
+                models.ScheduleOutput.id == schedule_output_id,
+                models.ScheduleOutput.organization_id == org_id,
+            )
+        )
+    ).unique().scalar_one_or_none()
 
-    if current_status == payload.status and not _is_idempotent_payload(occurrence, payload):
-        raise OccurrenceServiceError(status_code=409, detail=ERR_DESTRUCTIVE_OVERWRITE)
+    if schedule_output is None:
+        raise OccurrenceServiceError(status_code=404, detail=ERR_SCHEDULE_OUTPUT_NOT_FOUND)
+
+    if schedule_output.is_draft:
+        raise OccurrenceServiceError(status_code=409, detail=ERR_SCHEDULE_OUTPUT_IS_DRAFT)
+
+    if schedule_output.date is None:
+        raise OccurrenceServiceError(status_code=409, detail=ERR_SCHEDULE_OUTPUT_NO_DATE)
+
+    existing = db.execute(
+        select(models.LessonOccurrence).where(
+            and_(
+                models.LessonOccurrence.org_id == org_id,
+                models.LessonOccurrence.schedule_output_id == schedule_output.id,
+                models.LessonOccurrence.date == schedule_output.date,
+            )
+        )
+    ).scalar_one_or_none()
+
+    if existing is not None:
+        return existing, False
+
+    if schedule_output.lesson is None or schedule_output.lesson.subject is None:
+        raise OccurrenceServiceError(status_code=422, detail=ERR_MISSING_SCHEDULE_CONTEXT)
+
+    planned_hours = _duration_hours(schedule_output.date, schedule_output.timeslot)
+    planned_module_id = _resolve_active_module_id_for_subject(
+        db,
+        class_id=schedule_output.lesson.class_id,
+        subject=schedule_output.lesson.subject,
+    )
+
+    occurrence = models.LessonOccurrence(
+        org_id=org_id,
+        schedule_output_id=schedule_output.id,
+        date=schedule_output.date,
+        status=models.LessonOccurrenceStatus.GIVEN,
+        planned_hours=planned_hours,
+        planned_teacher_id=schedule_output.lesson.teacher_id,
+        executed_teacher_id=None,
+        planned_module_id=planned_module_id,
+        executed_module_id=None,
+        substitute_teacher_id=None,
+        substitute_subject_id=None,
+        hours_given=0.0,
+        decided_by_user_id=None,
+        decided_at=None,
+        created_at=datetime.now(timezone.utc),
+    )
+
+    db.add(occurrence)
+
+    try:
+        db.commit()
+        db.refresh(occurrence)
+        return occurrence, True
+    except IntegrityError:
+        db.rollback()
+        existing_after_race = db.execute(
+            select(models.LessonOccurrence).where(
+                and_(
+                    models.LessonOccurrence.org_id == org_id,
+                    models.LessonOccurrence.schedule_output_id == schedule_output.id,
+                    models.LessonOccurrence.date == schedule_output.date,
+                )
+            )
+        ).scalar_one_or_none()
+        if existing_after_race is not None:
+            return existing_after_race, False
+        raise
 
 
 def list_occurrences_sync(
@@ -584,11 +824,17 @@ def list_occurrences_sync(
         )
         .where(models.LessonOccurrence.org_id == org_id)
     )
+
+    stmt = stmt.outerjoin(
+        models.ScheduleOutput,
+        models.LessonOccurrence.schedule_output_id == models.ScheduleOutput.id,
+    ).outerjoin(
+        models.Timeslot,
+        models.ScheduleOutput.timeslot_id == models.Timeslot.id,
+    )
+
     if class_id is not None:
         stmt = stmt.join(
-            models.ScheduleOutput,
-            models.LessonOccurrence.schedule_output_id == models.ScheduleOutput.id,
-        ).join(
             models.Lesson,
             models.ScheduleOutput.lesson_id == models.Lesson.id,
         ).where(models.Lesson.class_id == class_id)
@@ -596,7 +842,12 @@ def list_occurrences_sync(
         stmt = stmt.where(models.LessonOccurrence.date >= date_from)
     if date_to is not None:
         stmt = stmt.where(models.LessonOccurrence.date <= date_to)
-    stmt = stmt.order_by(models.LessonOccurrence.date.desc())
+
+    stmt = stmt.order_by(
+        models.LessonOccurrence.date.asc(),
+        models.Timeslot.start_time.asc().nulls_last(),
+        models.LessonOccurrence.id.asc(),
+    )
     return list(db.execute(stmt).scalars().unique())
 
 
@@ -670,15 +921,16 @@ def update_occurrence_sync(
         hours_given = planned_hours
 
     try:
-        _apply_state_accounting(
-            db,
-            class_id=class_id,
-            status=occurrence.status,
-            planned_module_id=planned_module_id,
-            executed_module_id=occurrence.executed_module_id,
-            planned_hours=planned_hours,
-            direction=-1,
-        )
+        if occurrence.decided_at is not None:
+            _apply_state_accounting(
+                db,
+                class_id=class_id,
+                status=occurrence.status,
+                planned_module_id=planned_module_id,
+                executed_module_id=occurrence.executed_module_id,
+                planned_hours=planned_hours,
+                direction=-1,
+            )
 
         _apply_state_accounting(
             db,

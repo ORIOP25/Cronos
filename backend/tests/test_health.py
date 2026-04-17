@@ -17,3 +17,11 @@ async def test_health_check(async_client: AsyncClient):
     
     data = response.json()
     assert "status" in data
+
+
+@pytest.mark.asyncio
+async def test_health_check_not_rate_limited(async_client: AsyncClient):
+    """Health endpoint deve permanecer elegivel para probes frequentes sem 429."""
+    for _ in range(60):
+        response = await async_client.get("/api/v1/health")
+        assert response.status_code in [200, 503]

@@ -756,28 +756,55 @@ def _find_active_module(modules: list, progress_map: dict):
 def _fetch_active_modules(
     db: Session, pairs: list[tuple]
 ) -> dict[tuple, dict | None]:
-    """Fetches active module data per (class_id, subject_id) pair."""
+    """Fetches active module data per (class_id, subject_id) pair without N+1 queries."""
     active: dict[tuple, dict | None] = {}
-    for cls_id, subj_id in pairs:
-        modules = (
-            db.query(models.Module)
-            .filter(models.Module.subject_id == subj_id)
-            .order_by(models.Module.order)
-            .all()
-        )
+    if not pairs:
+        return active
+
+    unique_pairs = list(set(pairs))
+    subject_ids = {subject_id for _, subject_id in unique_pairs}
+    class_ids = {class_id for class_id, _ in unique_pairs}
+
+    modules_rows = (
+        db.query(models.Module)
+        .filter(models.Module.subject_id.in_(subject_ids))
+        .order_by(models.Module.subject_id, models.Module.order)
+        .all()
+    )
+
+    modules_by_subject: dict[int, list[models.Module]] = {}
+    module_ids: list[int] = []
+    for module in modules_rows:
+        modules_by_subject.setdefault(module.subject_id, []).append(module)
+        module_ids.append(module.id)
+
+    progress_lookup: dict[tuple[int, int], models.ClassProgress] = {}
+    if module_ids and class_ids:
+        progress_rows = db.query(models.ClassProgress).filter(
+            models.ClassProgress.class_id.in_(class_ids),
+            models.ClassProgress.module_id.in_(module_ids),
+        ).all()
+        progress_lookup = {
+            (row.class_id, row.module_id): row
+            for row in progress_rows
+        }
+
+    for cls_id, subj_id in unique_pairs:
+        modules = modules_by_subject.get(subj_id, [])
         if not modules:
             active[(cls_id, subj_id)] = None
             continue
-        progress_rows = db.query(models.ClassProgress).filter(
-            models.ClassProgress.class_id == cls_id,
-            models.ClassProgress.module_id.in_([m.id for m in modules]),
-        ).all()
-        progress_map = {p.module_id: p for p in progress_rows}
+
+        progress_map = {
+            module.id: progress_lookup.get((cls_id, module.id))
+            for module in modules
+        }
         mod = _find_active_module(modules, progress_map)
         active[(cls_id, subj_id)] = (
             {"id": mod.id, "name": mod.name, "hours_total": mod.hours_total}
             if mod else None
         )
+
     return active
 
 
@@ -792,6 +819,7 @@ def _build_week_slot(
     lesson = output.lesson
     ts = output.timeslot
     mod_data = active_modules.get((lesson.class_id, lesson.subject_id))
+    has_occurrence = occ is not None
     return {
         "schedule_output_id": output.id,
         "date": output.date.isoformat() if output.date else None,
@@ -821,6 +849,10 @@ def _build_week_slot(
         "is_past": output.date is not None and output.date < today,
         "occurrence_status": occ.status.value if occ else None,
         "hours_given": occ.hours_given if occ else None,
+        "occurrence_id": occ.id if occ else None,
+        "occurrence_decided_at": occ.decided_at if occ else None,
+        "can_create_occurrence": not has_occurrence,
+        "can_decide_occurrence": has_occurrence,
     }
 
 
@@ -865,6 +897,7 @@ def get_week_schedule_sync(
 
     output_ids = [o.id for o in outputs]
     occ_rows = db.query(models.LessonOccurrence).filter(
+        models.LessonOccurrence.org_id == org_id,
         models.LessonOccurrence.schedule_output_id.in_(output_ids)
     ).all()
     occurrences = {o.schedule_output_id: o for o in occ_rows}
