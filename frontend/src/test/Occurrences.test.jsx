@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { fireEvent, screen } from '@testing-library/react'
+import { fireEvent, screen, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import Occurrences from '../pages/Occurrences'
 import { renderWithProviders } from './testUtils'
@@ -113,7 +113,61 @@ describe('Occurrences page (Passo 5)', () => {
     fireEvent.click(screen.getByRole('button', { name: /Resolvidas \(1\)/i }))
 
     expect(screen.getByText(/Decidida em/i)).toBeInTheDocument()
-    expect(screen.getByText(/admin #7/i)).toBeInTheDocument()
+    expect(screen.getByText(/Utilizador #7/i)).toBeInTheDocument()
+  })
+
+  it('mostra contexto de turma/disciplina e copy atualizado da grelha', () => {
+    schoolHooks.useOccurrences.mockReturnValue({
+      data: [
+        {
+          ...defaultOccurrence,
+          class_name: '10TGPSI',
+          subject_name: 'Português',
+          status: 'GAP',
+          decided_by_user_id: 7,
+          decided_at: '2026-04-11T10:00:00Z',
+        },
+      ],
+      isLoading: false,
+      isError: false,
+    })
+
+    renderPage()
+
+    expect(screen.getByRole('columnheader', { name: 'Turma' })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: 'Disciplina' })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: 'Docente Definitivo' })).toBeInTheDocument()
+    expect(screen.queryByText('Horas Dadas')).not.toBeInTheDocument()
+    const occurrencesTable = screen.getByRole('table')
+    expect(within(occurrencesTable).getByText('10TGPSI')).toBeInTheDocument()
+    expect(within(occurrencesTable).getByText('Português')).toBeInTheDocument()
+  })
+
+  it('abre sem filtros implícitos de data e mostra todas as ocorrências por defeito', () => {
+    schoolHooks.useOccurrences.mockReturnValue({
+      data: [
+        {
+          ...defaultOccurrence,
+          id: 102,
+          status: 'GAP',
+          decided_by_user_id: 7,
+          decided_at: '2026-04-11T10:00:00Z',
+        },
+        defaultOccurrence,
+      ],
+      isLoading: false,
+      isError: false,
+    })
+
+    renderPage()
+
+    expect(schoolHooks.useOccurrences).toHaveBeenCalledWith({
+      classId: undefined,
+      dateFrom: undefined,
+      dateTo: undefined,
+    })
+    expect(screen.getByText(/Decidida em/i)).toBeInTheDocument()
+    expect(screen.getByText('Pendente de decisão do admin')).toBeInTheDocument()
   })
 
   it('mostra feedback claro quando não há elegíveis para substituição', () => {
@@ -282,5 +336,44 @@ describe('Occurrences page (Passo 5)', () => {
     fireEvent.click(screen.getByRole('button', { name: /Resolvidas \(1\)/i }))
     const closedButton = screen.getByRole('button', { name: 'Fechada' })
     expect(closedButton).toBeDisabled()
+  })
+
+  it('aplica ordenação determinística por data e id', () => {
+    schoolHooks.useOccurrences.mockReturnValue({
+      data: [
+        {
+          ...defaultOccurrence,
+          id: 200,
+          date: '2026-04-10',
+          planned_teacher_id: 11,
+          executed_teacher_id: 11,
+        },
+        {
+          ...defaultOccurrence,
+          id: 100,
+          date: '2026-04-10',
+          planned_teacher_id: 10,
+          executed_teacher_id: 10,
+        },
+        {
+          ...defaultOccurrence,
+          id: 300,
+          date: '2026-04-12',
+          planned_teacher_id: 10,
+          executed_teacher_id: 10,
+        },
+      ],
+      isLoading: false,
+      isError: false,
+    })
+
+    renderPage()
+
+    const dataRows = screen.getAllByRole('row').slice(1)
+    const orderedDates = dataRows.map((row) => row.querySelector('td:nth-child(1)')?.textContent?.trim())
+    const orderedTeachers = dataRows.map((row) => row.querySelector('td:nth-child(5)')?.textContent?.trim())
+
+    expect(orderedDates).toEqual(['10/04/2026', '10/04/2026', '12/04/2026'])
+    expect(orderedTeachers).toEqual(['Prof. Ana', 'Prof. Bruno', 'Prof. Ana'])
   })
 })

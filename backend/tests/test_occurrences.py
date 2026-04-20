@@ -594,12 +594,15 @@ class TestWeekSchedulePerformance:
             hours_owed=6.0,
         )
         assert item.hours_owed == pytest.approx(6.0)
+        assert item.gap_occurrences_overdue == 0
+        assert item.hours_owed_overdue == pytest.approx(0.0)
 
     def test_debt_list_read_schema(self):
         """DebtListRead agrega corretamente."""
         debt_list = schemas.DebtListRead(
             total_gaps=2,
             total_hours_owed=4.0,
+            as_of_date=date.today(),
             items=[],
         )
         assert debt_list.total_gaps == 2
@@ -685,6 +688,8 @@ class TestAutoConfirmService:
         result = occurrence_service.get_debts_sync(sync_db, org_id)
         assert result.total_gaps == 0
         assert result.total_hours_owed == pytest.approx(0.0)
+        assert result.total_gaps_overdue == 0
+        assert result.total_hours_owed_overdue == pytest.approx(0.0)
         assert result.items == []
 
     def test_get_debts_counts_gap_occurrences(self, sync_db, full_setup):
@@ -707,6 +712,8 @@ class TestAutoConfirmService:
 
         assert result.total_gaps == 1
         assert result.total_hours_owed == pytest.approx(2.0)
+        assert result.total_gaps_overdue == 1
+        assert result.total_hours_owed_overdue == pytest.approx(2.0)
         assert len(result.items) == 1
 
     def test_get_occurrence_returns_none_for_wrong_org(self, sync_db, full_setup):
@@ -838,6 +845,48 @@ class TestOccurrenceStateMachineAndAccounting:
         debts = occurrence_service.get_debts_sync(sync_db, org_id)
         assert debts.total_gaps == 1
         assert debts.total_hours_owed == pytest.approx(2.0)
+        assert debts.total_gaps_overdue == 1
+        assert debts.total_hours_owed_overdue == pytest.approx(2.0)
+
+    def test_future_gap_is_counted_immediately_in_debts(self, sync_db, full_setup):
+        """GAP futuro decidido deve aparecer de imediato na lista de dívida."""
+        org_id = full_setup["org_id"]
+        future_date = date.today() + timedelta(days=7)
+
+        future_output = models.ScheduleOutput(
+            organization_id=org_id,
+            lesson_id=full_setup["lesson_id"],
+            timeslot_id=full_setup["timeslot_id"],
+            room_id=full_setup["room_id"],
+            generation_id="future-gap-debt-001",
+            date=future_date,
+            is_draft=False,
+        )
+        sync_db.add(future_output)
+        sync_db.commit()
+
+        occurrence, _ = occurrence_service.create_occurrence_from_block_sync(
+            sync_db,
+            org_id,
+            future_output.id,
+        )
+
+        updated = occurrence_service.update_occurrence_sync(
+            sync_db,
+            occurrence.id,
+            org_id,
+            schemas.LessonOccurrenceUpdate(status=LessonOccurrenceStatus.GAP),
+            decided_by_user_id=full_setup["admin_id"],
+        )
+
+        assert updated.date == future_date
+        assert updated.status == LessonOccurrenceStatus.GAP
+
+        debts = occurrence_service.get_debts_sync(sync_db, org_id)
+        assert debts.total_gaps == 1
+        assert debts.total_hours_owed == pytest.approx(2.0)
+        assert debts.total_gaps_overdue == 0
+        assert debts.total_hours_owed_overdue == pytest.approx(0.0)
 
     def test_invalid_transition_gap_to_substituted_fails(self, sync_db, full_setup):
         org_id = full_setup["org_id"]
@@ -1392,7 +1441,57 @@ class TestOccurrenceEndpoints:
         assert response.status_code == 200
         data = response.json()
         assert data["total_gaps"] == 0
+        assert data["total_gaps_overdue"] == 0
+        assert data["total_hours_owed_overdue"] == pytest.approx(0.0)
+        assert isinstance(data["as_of_date"], str)
         assert data["items"] == []
+
+    @pytest.mark.asyncio
+    async def test_get_debts_includes_future_decided_gap(
+        self,
+        async_client: AsyncClient,
+        sync_db,
+        full_setup,
+        auth_headers,
+    ):
+        future_date = date.today() + timedelta(days=5)
+        future_output = models.ScheduleOutput(
+            organization_id=full_setup["org_id"],
+            lesson_id=full_setup["lesson_id"],
+            timeslot_id=full_setup["timeslot_id"],
+            room_id=full_setup["room_id"],
+            generation_id="future-gap-api-001",
+            date=future_date,
+            is_draft=False,
+        )
+        sync_db.add(future_output)
+        sync_db.commit()
+
+        create_response = await async_client.post(
+            "/api/v1/occurrences/",
+            headers=auth_headers,
+            json={"schedule_output_id": future_output.id},
+        )
+        assert create_response.status_code == 201
+        occurrence_id = int(create_response.json()["id"])
+
+        patch_response = await async_client.patch(
+            f"/api/v1/occurrences/{occurrence_id}",
+            headers=auth_headers,
+            json={"status": "GAP"},
+        )
+        assert patch_response.status_code == 200
+
+        debts_response = await async_client.get(
+            "/api/v1/occurrences/debts",
+            headers=auth_headers,
+        )
+        assert debts_response.status_code == 200
+        debt_data = debts_response.json()
+        assert debt_data["total_gaps"] == 1
+        assert debt_data["total_hours_owed"] == pytest.approx(2.0)
+        assert debt_data["total_gaps_overdue"] == 0
+        assert debt_data["total_hours_owed_overdue"] == pytest.approx(0.0)
 
     @pytest.mark.asyncio
     async def test_get_occurrence_not_found(
@@ -1476,6 +1575,51 @@ class TestOccurrenceEndpoints:
         ).scalar_one()
         assert float(progress.hours_debt) == pytest.approx(2.0)
         assert float(progress.hours_completed) == pytest.approx(0.0)
+
+    @pytest.mark.asyncio
+    async def test_occurrence_payload_includes_context_and_decider_name(
+        self,
+        async_client: AsyncClient,
+        full_setup,
+        auth_headers,
+    ):
+        create_response = await async_client.post(
+            "/api/v1/occurrences/",
+            headers=auth_headers,
+            json={"schedule_output_id": full_setup["schedule_output_id"]},
+        )
+        assert create_response.status_code == 201
+        created = create_response.json()
+        assert created["class_id"] == full_setup["class_id"]
+        assert created["class_name"] == "TINF 24/27"
+        assert created["subject_id"] == full_setup["subject_id"]
+        assert created["subject_name"] == "Programação"
+        assert created["planned_teacher_name"] == "Prof. Teste"
+        assert created["decided_by_user_name"] is None
+
+        occurrence_id = int(created["id"])
+        patch_response = await async_client.patch(
+            f"/api/v1/occurrences/{occurrence_id}",
+            headers=auth_headers,
+            json={"status": "GAP"},
+        )
+        assert patch_response.status_code == 200
+        patched = patch_response.json()
+        assert patched["decided_by_user_id"] is not None
+        assert patched["decided_by_user_name"] == full_setup["admin_email"]
+        assert patched["class_id"] == full_setup["class_id"]
+        assert patched["subject_id"] == full_setup["subject_id"]
+
+        list_response = await async_client.get(
+            "/api/v1/occurrences/",
+            headers=auth_headers,
+        )
+        assert list_response.status_code == 200
+        rows = list_response.json()
+        target = next(row for row in rows if row["id"] == occurrence_id)
+        assert target["class_name"] == "TINF 24/27"
+        assert target["subject_name"] == "Programação"
+        assert target["decided_by_user_name"] == full_setup["admin_email"]
 
     @pytest.mark.asyncio
     async def test_create_occurrence_teacher_forbidden(

@@ -191,6 +191,7 @@ Resposta minima (`200`):
 	- `200` sucesso no proprio escopo;
 	- `403` role fora da matriz permitida (ex.: student);
 	- `403` tentativa com `class_id` ou `teacher_id` de outro professor;
+	- `429` limite temporario de protecao do endpoint excedido;
 	- `422` `week_start` ausente/invalido.
 5. `GET /api/v1/teachers/observability/summary`:
 	- `200` admin;
@@ -480,6 +481,7 @@ Objetivo funcional:
 	- admin: pode consultar por `class_id` ou `teacher_id`;
 	- professor: apenas consulta do proprio horario (escopo forçado para `teacher_id == current_user.teacher_id`);
 - filtro obrigatorio: `class_id` ou `teacher_id`;
+- rate limit dedicado: `30/minute;360/hour` para suportar navegacao semanal normal sem colidir com o limite global de `50/hour`;
 - semantica: payload additive-first (campos antigos preservados + novos campos operacionais).
 
 Guardas obrigatorias para professor:
@@ -496,6 +498,12 @@ Garantias de compatibilidade:
 - campos historicos (`schedule_output_id`, `occurrence_status`, `hours_given`, etc.) mantidos sem quebra;
 - consumidores antigos continuam funcionais;
 - consumidores novos podem tomar decisao de UX com os flags sem inferencia implícita.
+
+Regra de consumo frontend (2026-04-17):
+- estado operacional aberto/fechado deve priorizar `occurrence_decided_at`:
+	- `occurrence_decided_at = null` => ocorrencia aberta (pendente de decisao);
+	- `occurrence_decided_at != null` => ocorrencia fechada (resultado final em `occurrence_status`).
+- disponibilidade de acao operacional no bloco deve seguir `can_create_occurrence` e `can_decide_occurrence` (sem bloqueio local por `is_past`).
 
 ## Clean architecture na API
 
@@ -526,3 +534,30 @@ Contrato esperado:
 
 ### Base de dados
 - persistencia com isolamento por organization_id e consistencia transacional.
+
+## Addendum de contrato (2026-04-20)
+
+### GET /api/v1/occurrences/debts
+Semantica consolidada:
+- divida e reconhecida no momento da decisao (`GAP`/`SUBSTITUTED`), sem filtro implicito de data passada.
+
+Campos de resposta:
+1. visao operacional total (retrocompativel):
+	- `total_gaps`, `total_hours_owed`;
+	- por item: `gap_occurrences`, `hours_owed`.
+2. visao vencida ate data de referencia:
+	- `total_gaps_overdue`, `total_hours_owed_overdue`, `as_of_date`;
+	- por item: `gap_occurrences_overdue`, `hours_owed_overdue`.
+
+Garantia de compatibilidade:
+- consumidores existentes continuam a funcionar com `total_gaps`/`total_hours_owed` e `items[*].gap_occurrences`/`hours_owed`.
+
+### LessonOccurrenceRead (create/list/get/patch)
+Payload enriquecido para triagem operacional sem lookups obrigatorios:
+- contexto letivo: `class_id`, `class_name`, `subject_id`, `subject_name`;
+- contexto temporal do slot: `timeslot_id`, `timeslot_start_time`, `timeslot_end_time`;
+- nomes de intervenientes: `planned_teacher_name`, `executed_teacher_name`, `decided_by_user_name`.
+
+Regra de decisor:
+- `decided_by_user_name` usa nome do utilizador quando disponivel;
+- fallback para email quando `name` estiver vazio.

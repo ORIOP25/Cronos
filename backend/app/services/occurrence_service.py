@@ -188,14 +188,11 @@ def get_occurrence_sync(
     db: Session, occurrence_id: int, org_id: int
 ) -> Optional[models.LessonOccurrence]:
     """Devolve uma ocorrência pelo ID, validando o tenant."""
-    return db.execute(
-        select(models.LessonOccurrence).where(
-            and_(
-                models.LessonOccurrence.id == occurrence_id,
-                models.LessonOccurrence.org_id == org_id,
-            )
-        )
-    ).scalar_one_or_none()
+    occurrence = _get_occurrence_with_context_sync(db, occurrence_id, org_id)
+    if occurrence is None:
+        return None
+    _attach_occurrence_read_context(occurrence)
+    return occurrence
 
 
 def _get_occurrence_for_update_sync(
@@ -237,6 +234,10 @@ def _get_occurrence_with_context_sync(
             joinedload(models.LessonOccurrence.schedule_output).joinedload(
                 models.ScheduleOutput.room
             ),
+            joinedload(models.LessonOccurrence.decided_by_user),
+            joinedload(models.LessonOccurrence.planned_teacher),
+            joinedload(models.LessonOccurrence.executed_teacher),
+            joinedload(models.LessonOccurrence.substitute_teacher),
         )
         .where(
             and_(
@@ -245,6 +246,41 @@ def _get_occurrence_with_context_sync(
             )
         )
     ).scalar_one_or_none()
+
+
+def _attach_occurrence_read_context(occurrence: models.LessonOccurrence) -> None:
+    """Anexa campos derivados para o response model sem alterar a fonte de verdade."""
+    schedule_output = occurrence.schedule_output
+    lesson = schedule_output.lesson if schedule_output is not None else None
+    timeslot = schedule_output.timeslot if schedule_output is not None else None
+
+    class_model = lesson.class_model if lesson is not None else None
+    subject = lesson.subject if lesson is not None else None
+
+    planned_teacher = occurrence.planned_teacher
+    if planned_teacher is None and lesson is not None:
+        planned_teacher = lesson.teacher
+
+    executed_teacher = occurrence.executed_teacher
+    if executed_teacher is None:
+        executed_teacher = occurrence.substitute_teacher
+
+    decided_by_user = occurrence.decided_by_user
+    if decided_by_user is not None:
+        decided_by_name = decided_by_user.name or decided_by_user.email
+    else:
+        decided_by_name = None
+
+    occurrence.class_id = lesson.class_id if lesson is not None else None
+    occurrence.class_name = class_model.name if class_model is not None else None
+    occurrence.subject_id = lesson.subject_id if lesson is not None else None
+    occurrence.subject_name = subject.name if subject is not None else None
+    occurrence.timeslot_id = schedule_output.timeslot_id if schedule_output is not None else None
+    occurrence.timeslot_start_time = timeslot.start_time if timeslot is not None else None
+    occurrence.timeslot_end_time = timeslot.end_time if timeslot is not None else None
+    occurrence.planned_teacher_name = planned_teacher.name if planned_teacher is not None else None
+    occurrence.executed_teacher_name = executed_teacher.name if executed_teacher is not None else None
+    occurrence.decided_by_user_name = decided_by_name
 
 
 def _resolve_repair_window_days(db: Session, org_id: int) -> int:
@@ -755,6 +791,10 @@ def create_occurrence_from_block_sync(
     ).scalar_one_or_none()
 
     if existing is not None:
+        existing_with_context = _get_occurrence_with_context_sync(db, existing.id, org_id)
+        if existing_with_context is not None:
+            _attach_occurrence_read_context(existing_with_context)
+            return existing_with_context, False
         return existing, False
 
     if schedule_output.lesson is None or schedule_output.lesson.subject is None:
@@ -790,6 +830,10 @@ def create_occurrence_from_block_sync(
     try:
         db.commit()
         db.refresh(occurrence)
+        occurrence_with_context = _get_occurrence_with_context_sync(db, occurrence.id, org_id)
+        if occurrence_with_context is not None:
+            _attach_occurrence_read_context(occurrence_with_context)
+            return occurrence_with_context, True
         return occurrence, True
     except IntegrityError:
         db.rollback()
@@ -803,6 +847,10 @@ def create_occurrence_from_block_sync(
             )
         ).scalar_one_or_none()
         if existing_after_race is not None:
+            existing_with_context = _get_occurrence_with_context_sync(db, existing_after_race.id, org_id)
+            if existing_with_context is not None:
+                _attach_occurrence_read_context(existing_with_context)
+                return existing_with_context, False
             return existing_after_race, False
         raise
 
@@ -818,9 +866,22 @@ def list_occurrences_sync(
     stmt = (
         select(models.LessonOccurrence)
         .options(
+            joinedload(models.LessonOccurrence.schedule_output)
+            .joinedload(models.ScheduleOutput.lesson)
+            .joinedload(models.Lesson.class_model),
+            joinedload(models.LessonOccurrence.schedule_output)
+            .joinedload(models.ScheduleOutput.lesson)
+            .joinedload(models.Lesson.subject),
+            joinedload(models.LessonOccurrence.schedule_output)
+            .joinedload(models.ScheduleOutput.lesson)
+            .joinedload(models.Lesson.teacher),
             joinedload(models.LessonOccurrence.schedule_output).joinedload(
-                models.ScheduleOutput.lesson
-            )
+                models.ScheduleOutput.timeslot
+            ),
+            joinedload(models.LessonOccurrence.decided_by_user),
+            joinedload(models.LessonOccurrence.planned_teacher),
+            joinedload(models.LessonOccurrence.executed_teacher),
+            joinedload(models.LessonOccurrence.substitute_teacher),
         )
         .where(models.LessonOccurrence.org_id == org_id)
     )
@@ -848,7 +909,10 @@ def list_occurrences_sync(
         models.Timeslot.start_time.asc().nulls_last(),
         models.LessonOccurrence.id.asc(),
     )
-    return list(db.execute(stmt).scalars().unique())
+    occurrences = list(db.execute(stmt).scalars().unique())
+    for occurrence in occurrences:
+        _attach_occurrence_read_context(occurrence)
+    return occurrences
 
 
 # ---------------------------------------------------------------------------
@@ -868,6 +932,10 @@ def update_occurrence_sync(
         raise OccurrenceServiceError(status_code=404, detail=OCCURRENCE_NOT_FOUND)
 
     if _is_idempotent_payload(occurrence, payload):
+        occurrence_with_context = _get_occurrence_with_context_sync(db, occurrence.id, org_id)
+        if occurrence_with_context is not None:
+            _attach_occurrence_read_context(occurrence_with_context)
+            return occurrence_with_context
         return occurrence
 
     _validate_state_transition(occurrence, payload)
@@ -960,6 +1028,10 @@ def update_occurrence_sync(
         db.rollback()
         raise
 
+    occurrence_with_context = _get_occurrence_with_context_sync(db, occurrence.id, org_id)
+    if occurrence_with_context is not None:
+        _attach_occurrence_read_context(occurrence_with_context)
+        return occurrence_with_context
     return occurrence
 
 
@@ -1066,9 +1138,12 @@ def auto_confirm_daily_sync(db: Session, org_id: int, target_date: date) -> int:
 def get_debts_sync(
     db: Session, org_id: int, class_id: Optional[int] = None
 ) -> schemas.DebtListRead:
-    """Calcula dívidas: GAP e SUBSTITUTED em slots passados por turma/disciplina."""
-    # Buscar ocorrências com dívida (GAP/SUBSTITUTED) com data ≤ hoje
-    today = date.today()
+    """Calcula dívidas operacionais por turma/disciplina.
+
+    Regra: dívida é reconhecida no momento da decisão (GAP/SUBSTITUTED),
+    sem depender de a data da aula já ter passado.
+    """
+    # Buscar ocorrências com dívida (GAP/SUBSTITUTED), sem corte por data.
     stmt = (
         select(models.LessonOccurrence)
         .options(
@@ -1089,7 +1164,6 @@ def get_debts_sync(
             and_(
                 models.LessonOccurrence.org_id == org_id,
                 models.LessonOccurrence.status.in_(DEBT_STATUSES),
-                models.LessonOccurrence.date <= today,
             )
         )
     )
@@ -1106,9 +1180,13 @@ def get_debts_sync(
 
     occurrences = list(db.execute(stmt).scalars().unique())
 
+    today = date.today()
+
     # Agregar por (class_id, subject_id)
     key_counts: dict[tuple[int, int], int] = defaultdict(int)
     key_hours: dict[tuple[int, int], float] = defaultdict(float)
+    key_overdue_counts: dict[tuple[int, int], int] = defaultdict(int)
+    key_overdue_hours: dict[tuple[int, int], float] = defaultdict(float)
     key_meta: dict[tuple[int, int], dict] = {}
 
     for occ in occurrences:
@@ -1127,6 +1205,9 @@ def get_debts_sync(
         key = (lesson.class_id, lesson.subject_id)
         key_counts[key] += 1
         key_hours[key] += debt_hours
+        if occ.date <= today:
+            key_overdue_counts[key] += 1
+            key_overdue_hours[key] += debt_hours
         if key not in key_meta:
             key_meta[key] = {
                 "class_name": lesson.class_model.name if lesson.class_model else "—",
@@ -1145,6 +1226,8 @@ def get_debts_sync(
             teacher_name=key_meta[k]["teacher_name"],
             gap_occurrences=key_counts[k],
             hours_owed=round(key_hours[k], 2),
+            gap_occurrences_overdue=key_overdue_counts[k],
+            hours_owed_overdue=round(key_overdue_hours[k], 2),
         )
         for k in sorted(key_counts.keys())
     ]
@@ -1152,6 +1235,9 @@ def get_debts_sync(
     return schemas.DebtListRead(
         total_gaps=sum(key_counts.values()),
         total_hours_owed=round(sum(key_hours.values()), 2),
+        total_gaps_overdue=sum(key_overdue_counts.values()),
+        total_hours_owed_overdue=round(sum(key_overdue_hours.values()), 2),
+        as_of_date=today,
         items=items,
     )
 

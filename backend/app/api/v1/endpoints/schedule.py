@@ -795,6 +795,7 @@ async def reject_draft(
 # ==========================================
 
 WEEK_FILTER_REQUIRED_MSG = "Indique class_id ou teacher_id para filtrar o horário."
+WEEK_SCHEDULE_RATE_LIMIT = "30/minute;360/hour"
 
 
 def _to_week_monday(target_date: date) -> date:
@@ -954,11 +955,15 @@ async def get_teacher_schedule_horizon(
     response_model=list[schemas.WeekSlotRead],
     responses={
         400: {"description": WEEK_FILTER_REQUIRED_MSG},
+        403: {"description": ERR_TEACHER_OWN_SCHEDULE_ONLY},
+        429: {"description": "Limite temporário de proteção do endpoint excedido."},
     },
     summary="Horário de uma semana (turma ou professor)",
 )
+@limiter.limit(WEEK_SCHEDULE_RATE_LIMIT)
 async def get_week_schedule(
     week_start: Annotated[date, Query(description="Data de início da semana (segunda-feira, YYYY-MM-DD)")],
+    request: Request,
     db: Annotated[AsyncSession, Depends(deps.get_db)],
     current_user: Annotated[models.User, Depends(deps.get_current_active_user)],
     class_id: Annotated[int | None, Query(description="ID da turma")] = None,

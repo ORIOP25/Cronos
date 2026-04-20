@@ -14,6 +14,8 @@ const OCCURRENCE_STYLES = {
   SUBSTITUTED: { backgroundColor: '#fff3cd', borderLeft: '3px solid #ffc107' },
 }
 
+const OPEN_OCCURRENCE_STYLE = { backgroundColor: '#dbeafe', borderLeft: '3px solid #0d6efd' }
+
 const OCCURRENCE_LABELS = {
   GIVEN:       'Dado ✓',
   GAP:         'Furo ✗',
@@ -81,7 +83,11 @@ function getCellStyle(slot) {
     }
   }
 
-  if (slot.occurrence_status && OCCURRENCE_STYLES[slot.occurrence_status]) {
+  if (slot.occurrence_id && !slot.occurrence_decided_at) {
+    return OPEN_OCCURRENCE_STYLE
+  }
+
+  if (slot.occurrence_status && slot.occurrence_decided_at && OCCURRENCE_STYLES[slot.occurrence_status]) {
     return OCCURRENCE_STYLES[slot.occurrence_status]
   }
 
@@ -125,16 +131,32 @@ const SlotCell = ({ slotEntries, isOperationalEnabled, onOpenOperationalAction }
   const canOpenOperationalAction = Boolean(
     isOperationalEnabled
     && !hasCollision
-    && !slot.is_past
     && slot.schedule_output_id
     && slot.date
     && typeof onOpenOperationalAction === 'function'
     && (canCreateOccurrence || canDecideOccurrence)
   )
 
+  let operationalBlockReason = ''
+  if (isOperationalEnabled && !canOpenOperationalAction) {
+    if (hasCollision) {
+      operationalBlockReason = 'Conflito no slot. Use a página de Faltas para análise.'
+    } else if (!slot.schedule_output_id || !slot.date) {
+      operationalBlockReason = 'Este bloco não tem contexto operacional completo.'
+    } else if (!(canCreateOccurrence || canDecideOccurrence)) {
+      if (slot.occurrence_id && slot.occurrence_decided_at) {
+        operationalBlockReason = 'Ocorrência já fechada.'
+      } else {
+        operationalBlockReason = 'Sem ação operacional disponível para este bloco.'
+      }
+    }
+  }
+
   const cellStyle = getCellStyle(slot)
   let statusLabel = 'Planeado'
-  if (slot.occurrence_status) {
+  if (slot.occurrence_id && !slot.occurrence_decided_at) {
+    statusLabel = 'Pendente de decisão'
+  } else if (slot.occurrence_status) {
     statusLabel = OCCURRENCE_LABELS[slot.occurrence_status] ?? slot.occurrence_status
   } else if (slot.is_past) {
     statusLabel = 'Pendente'
@@ -200,6 +222,11 @@ const SlotCell = ({ slotEntries, isOperationalEnabled, onOpenOperationalAction }
           {canCreateOccurrence ? 'Criar Ocorrência' : 'Ir para Faltas'}
         </div>
       ) : null}
+      {!canOpenOperationalAction && operationalBlockReason ? (
+        <div className="mt-1 text-muted" style={{ fontSize: '0.66rem' }}>
+          {operationalBlockReason}
+        </div>
+      ) : null}
     </div>
   )
 
@@ -237,6 +264,7 @@ SlotCell.propTypes = {
       can_create_occurrence: PropTypes.bool,
       can_decide_occurrence: PropTypes.bool,
       occurrence_status: PropTypes.string,
+      occurrence_decided_at: PropTypes.string,
       is_past: PropTypes.bool,
       hours_given: PropTypes.number,
     }),

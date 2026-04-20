@@ -234,6 +234,34 @@ class TestTeacherRoleRegressionContracts:
             )
             assert response.status_code == 200
 
+    async def test_teacher_week_navigation_volume_does_not_trip_old_global_limit(
+        self,
+        async_client: AsyncClient,
+        admin_token_headers: dict,
+        db_session,
+    ):
+        teacher_resp = await async_client.post(
+            f"{API}/teachers/",
+            json={"name": "Prof. Week Navigation", "email": f"weeknav.{uuid4().hex[:8]}@escola.pt"},
+            headers=admin_token_headers,
+        )
+        assert teacher_resp.status_code == 200
+
+        teacher_headers = await _create_teacher_auth_headers(
+            db_session,
+            org_id=1,
+            teacher_id=teacher_resp.json()["id"],
+        )
+
+        # 70 pedidos simulam navegação semanal ativa acima do limite global antigo (50/hour).
+        for _ in range(70):
+            response = await async_client.get(
+                f"{API}/schedule/week",
+                params={"week_start": "2026-04-20"},
+                headers=teacher_headers,
+            )
+            assert response.status_code == 200
+
     async def test_teacher_week_schedule_contract_403_and_422(self, async_client: AsyncClient, admin_token_headers: dict, db_session):
         teacher_resp = await async_client.post(
             f"{API}/teachers/",

@@ -102,4 +102,59 @@ describe('WeekGrid (Ponto 8.1)', () => {
       })
     )
   })
+
+  it('permite ação operacional em bloco passado quando há ação válida', () => {
+    const onOpenOperationalAction = vi.fn()
+    const pastSlot = {
+      ...baseSlot,
+      is_past: true,
+      can_create_occurrence: true,
+      can_decide_occurrence: false,
+    }
+
+    render(
+      <WeekGrid
+        slots={[pastSlot]}
+        isLoading={false}
+        baseTimeslots={[pastSlot.timeslot]}
+        weekStart="2026-04-20"
+        isOperationalEnabled
+        onOpenOperationalAction={onOpenOperationalAction}
+      />
+    )
+
+    const slotButton = screen.getByRole('button', { name: /programação/i })
+    fireEvent.click(slotButton)
+
+    expect(onOpenOperationalAction).toHaveBeenCalledTimes(1)
+    expect(screen.getByText('Criar Ocorrência')).toBeInTheDocument()
+  })
+
+  it('mostra orientação quando ocorrência já está fechada', () => {
+    const onOpenOperationalAction = vi.fn()
+    const closedOccurrenceSlot = {
+      ...baseSlot,
+      is_past: true,
+      occurrence_id: 777,
+      occurrence_status: 'GIVEN',
+      occurrence_decided_at: '2026-04-20T10:00:00Z',
+      can_create_occurrence: false,
+      can_decide_occurrence: false,
+    }
+
+    render(
+      <WeekGrid
+        slots={[closedOccurrenceSlot]}
+        isLoading={false}
+        baseTimeslots={[closedOccurrenceSlot.timeslot]}
+        weekStart="2026-04-20"
+        isOperationalEnabled
+        onOpenOperationalAction={onOpenOperationalAction}
+      />
+    )
+
+    const slotButton = screen.getByRole('button', { name: /programação/i })
+    expect(slotButton).toBeDisabled()
+    expect(screen.getByText('Ocorrência já fechada.')).toBeInTheDocument()
+  })
 })

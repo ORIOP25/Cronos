@@ -389,3 +389,86 @@ Why:
 - Estabilidade: estado persistido por tenant reduz inconsistencias de UI em remount.
 - Escalabilidade: padrao funciona para multiplos admins sem acoplamento a um unico ecrã.
 - Seguranca: controlo de acao sensivel restrito a admin, sem elevar permissao no frontend.
+
+## Delta de UX para operacao real (Alpha V1 - 2026-04-17)
+
+### What mudou
+- ocorrencias abertas passaram a ter estado visual explicito `Pendente de decisao`;
+- badges de resultado final (`Dada`, `Furo`, `Substituida`) passaram a aparecer apenas para ocorrencias fechadas;
+- lista de ocorrencias passou a usar ordenacao deterministica no cliente (data, hora quando disponivel, id);
+- acao operacional em bloco passado passou a ser permitida quando os flags da API indicam acao valida;
+- quando um bloco nao permite acao, a interface passou a mostrar motivo de bloqueio em linguagem operacional;
+- copy tecnica foi simplificada em ecras de operacao (`Schedules`, `MySchedules`, `SchoolConfig`, `Occurrences`, `ScheduleAuditDashboard`).
+
+### Who
+- admin: reduz ambiguidade na triagem de faltas/substituicoes e ganha previsibilidade de ordenacao;
+- professor: recebe mensagens mais claras na consulta semanal;
+- suporte escolar: reduz interpretacao errada de estado pendente como estado final fechado.
+
+### Where
+- `Occurrences`: estado operacional aberto/fechado + detalhe de decisao final;
+- `WeekGrid`: estado pendente para ocorrencia aberta e acao operacional sem bloqueio por passado;
+- `Schedules` e `MySchedules`: substituicao de termos tecnicos por linguagem orientada a tarefa;
+- `SchoolConfig` e `ScheduleAuditDashboard`: cabecalhos e hints com terminologia funcional.
+
+### When
+- durante triagem diaria de ocorrencias;
+- durante navegacao semanal (admin/professor);
+- durante acompanhamento de geracao de horario em curso.
+
+### Why
+- evitar erro operacional por leitura ambigua de estado;
+- reduzir carga cognitiva da equipa administrativa;
+- manter consistencia entre Interface e regra de negocio (`decided_at` define aberto/fechado).
+
+### Regras UX obrigatorias deste delta
+1. ocorrencia com `decided_at = null` nunca pode parecer decisao final fechada.
+2. resultado final (`GIVEN/GAP/SUBSTITUTED`) so aparece com `decided_at != null`.
+3. acao operacional no bloco deve seguir flags API (`can_create_occurrence`, `can_decide_occurrence`) sem bloqueio local por `is_past`.
+4. lista de ocorrencias deve manter ordenacao deterministica para triagem previsivel.
+5. textos visiveis ao utilizador final devem evitar jargao tecnico quando existir equivalente operacional claro.
+
+### Criterios de aceite UX deste delta
+1. ocorrencia aberta aparece como `Pendente de decisao` em painel e grelha.
+2. lista de ocorrencias preserva ordem reproduzivel em recarregamentos com mesmo dataset.
+3. bloco passado elegivel permite iniciar fluxo operacional.
+4. bloco sem acao valida mostra orientacao clara ao operador.
+5. termos tecnicos mapeados (ex.: CP-SAT, hard end date, hard stop) deixam de aparecer nos ecras operacionais alvo.
+
+### 4 pilares (verificacao)
+- Otimizacao: menos retrabalho por triagem errada e menos tempo de interpretacao de mensagens.
+- Estabilidade: contrato aberto/fechado consistente reduz contradicoes visuais.
+- Escalabilidade: ordenacao deterministica e estados padronizados suportam volume real da escola piloto.
+- Seguranca: sem alteracao de permissao; frontend continua a respeitar role boundaries e flags backend.
+
+## Delta de UX para operacao real (2026-04-20)
+
+### What mudou
+- tab de `Ocorrencias Registadas` passa a abrir em `Todas` por defeito (sem filtro implícito de resolucao);
+- filtros de data deixam de ser aplicados por defeito (vazios), evitando esconder ocorrencias em refresh/reentrada;
+- grelha de ocorrencias passa a exibir `Turma`, `Disciplina`, `Docente Definitivo` e `Decisao Final`;
+- coluna `Horas Dadas` foi removida da tabela de registos para reduzir ambiguidade operacional;
+- resumo de decisao final passa a mostrar o decisor real (`decided_by_user_name`, com fallback adequado);
+- navegacao `Schedules -> Absences` deixa de injetar `date_from/date_to` automaticamente.
+
+### Why
+- evitar desaparecimento aparente de registos por filtros escondidos;
+- reduzir duvida operacional sobre quem decidiu e qual foi o docente efetivo;
+- manter foco em triagem global sem perder contexto da ocorrencia selecionada.
+
+### Regras UX obrigatorias deste delta
+1. filtros de estado/data devem ser sempre explicitos para o utilizador.
+2. contexto minimo por linha de ocorrencia: data, turma, disciplina, estado, docente previsto, docente definitivo, decisao final.
+3. abertura contextual a partir do horario nao pode bloquear a listagem global por data do bloco.
+
+### Criterios de aceite UX deste delta
+1. ao abrir `Ocorrencias`, pendentes e resolvidas podem coexistir sem acao extra do utilizador.
+2. ocorrencia decidida mostra explicitamente `Decidida em ... por <utilizador>`.
+3. coluna `Horas Dadas` nao aparece na grelha de registos.
+4. navegacao a partir de bloco com ocorrencia usa apenas contexto necessario (`occurrence_id`/`class_id`).
+
+### 4 pilares (verificacao)
+- Otimizacao: menos cliques de correccao de filtros e menor tempo de triagem.
+- Estabilidade: elimina variabilidade causada por filtros implícitos ao refrescar.
+- Escalabilidade: grelha com contexto completo evita roundtrips e lookup manual em volume alto.
+- Seguranca: sem alteracao de permissoes; continua admin-only para decisao operacional.

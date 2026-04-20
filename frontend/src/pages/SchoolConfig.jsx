@@ -419,7 +419,7 @@ const SettingsSection = ({ regions, onYearsChange }) => {
                 type="date"
                 value={form.school_target_end_date}
                 onChange={(e) => setForm((p) => ({ ...p, school_target_end_date: e.target.value }))}
-                text="Benchmark para o solver"
+                text="Data de referência para concluir o planeamento"
               />
             </CCol>
             <CCol md={2}>
@@ -429,7 +429,7 @@ const SettingsSection = ({ regions, onYearsChange }) => {
                 type="date"
                 value={form.school_hard_end_date}
                 onChange={(e) => setForm((p) => ({ ...p, school_hard_end_date: e.target.value }))}
-                text="Hard stop: as aulas não passam desta data"
+                text="Limite obrigatório: não há aulas após esta data"
               />
             </CCol>
             <CCol md={4}>

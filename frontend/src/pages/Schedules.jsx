@@ -28,9 +28,9 @@ const TERMINAL_STATUSES = ['SUCCESS', 'FAILURE', 'Success', 'Error', 'Impossible
 const ACTIVE_TASK_STORAGE_KEY_PREFIX = 'hz-schedule-active-task-org-'
 
 const GENERATION_STATUS_LABELS = {
-  PENDING:   'A aguardar worker…',
+  PENDING:   'A preparar cálculo do horário…',
   FETCHING:  'A ler dados da escola…',
-  SOLVING:   'CP-SAT a otimizar (pode demorar alguns minutos)…',
+  SOLVING:   'A calcular o melhor horário para a escola (pode demorar alguns minutos)…',
   EXPANDING: 'A expandir para datas reais…',
   SAVING:    'A guardar solução…',
   REVOKED:   'Cancelado.',
@@ -88,6 +88,16 @@ function formatOperationalDate(dateStr) {
     month: '2-digit',
     year: 'numeric',
   })
+}
+
+function humanizeOperationalDetail(detail) {
+  if (typeof detail !== 'string' || !detail.trim()) {
+    return detail
+  }
+  return detail
+    .replace(/CP-SAT/gi, 'motor de cálculo')
+    .replace(/solver/gi, 'motor de cálculo')
+    .replace(/worker/gi, 'servidor de processamento')
 }
 
 function buildCreateOccurrenceErrorMessage(error) {
@@ -324,7 +334,8 @@ const GenerationStatusPanel = ({ taskId }) => {
   const businessColor = resolveBusinessStatus(taskData)
   const alertColor = businessColor ?? resolveAlertColor(status)
   const label = taskData?.result?.status ?? GENERATION_STATUS_LABELS[status] ?? status
-  const detail = taskData?.detail ?? taskData?.result?.detail
+  const rawDetail = taskData?.detail ?? taskData?.result?.detail
+  const detail = humanizeOperationalDetail(rawDetail)
   const progress = resolveProgress(taskData)
   const progressValue = progress
     ? (progress.current / progress.total) * 100
@@ -616,10 +627,6 @@ const Schedules = () => {
     if (slotContext?.class_info?.id) {
       params.set('class_id', String(slotContext.class_info.id))
     }
-    if (slotContext?.date) {
-      params.set('date_from', slotContext.date)
-      params.set('date_to', slotContext.date)
-    }
 
     const query = params.toString()
     navigate(query ? `/absences?${query}` : '/absences')
@@ -729,7 +736,7 @@ const Schedules = () => {
             Horários Escolares
           </h2>
           <small className="text-muted">
-            {isAdmin ? 'Visualize e gere horários por CP-SAT.' : 'Visualize o seu horário semanal.'}
+            {isAdmin ? 'Consulte e atualize os horários da escola.' : 'Visualize o seu horário semanal.'}
             {' '}Verde = dado · Vermelho = furo · Amarelo = substituído · Cor = planeado.
           </small>
         </div>

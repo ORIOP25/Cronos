@@ -22,6 +22,24 @@ Sem seeds consistentes, resultados de teste ficam pouco reproduziveis.
 
 ## Perfis de seed
 
+### Small-realistic (perfil canonico)
+Foco:
+- facilitar testes manuais de navegacao e operacao com dados legiveis;
+- manter modelo de dados completo em escala menor;
+- reduzir ruido de nomes tecnicos em validacao manual.
+
+Caracteristicas:
+- 1 organizacao;
+- 3 cursos completos (10, 11, 12);
+- salas, professores, disponibilidades, disciplinas, modulos, links, lessons e progresso;
+- nomes realistas para escola, cursos, turmas e professores.
+
+Comando:
+- `python seed_data.py --profile small-realistic --reset`
+
+Nota:
+- `seed_data_small_realistic.py` e o modulo auxiliar deste perfil (execucao direta mantida apenas para compatibilidade local).
+
 ### Baseline
 Foco:
 - validar regras hard basicas;
@@ -36,6 +54,15 @@ Foco:
 	- caso sem elegivel com fallback GAP;
 - validar isolamento entre pelo menos 2 tenants com cenarios em paralelo;
 - manter dataset pequeno e deterministico para execucao rapida em CI.
+
+### Large-scale
+Foco:
+- validar comportamento padrao em escala elevada multi-tenant;
+- servir como perfil de referencia por omissao no runner canonico;
+- suportar validacoes de performance e robustez em carga realista alargada.
+
+Comando:
+- `python seed_data.py --profile large-scale --reset`
 
 ### Stress
 Foco:
@@ -64,8 +91,10 @@ Validacao esperada:
 
 Volumes de referencia por perfil:
 - baseline: usar `seed_data.py --profile baseline --reset` (1 organizacao, 6 turmas, conjunto funcional minimo completo);
+- small-realistic: usar `seed_data.py --profile small-realistic --reset` (1 organizacao, 3 cursos completos, nomenclatura realista para validacao manual);
+- large-scale: usar `seed_data.py --profile large-scale --reset` (perfil de referencia em escala elevada com cobertura multi-tenant);
 - operacional alpha: usar `seed_data.py --profile operational --reset` (2 organizacoes, cenarios deterministas de ocorrencias/substituicoes para validacao do passo 6);
-- stress: usar `seed_data.py --profile stress --reset` (3 organizacoes, 30 turmas por organizacao, carga elevada multi-tenant).
+- stress: usar `seed_data.py --profile stress --reset` (atualmente equivalente ao large-scale em volume, reservado para evolucao futura de carga maxima).
 
 Seed canonico (nao destrutivo por omissao):
 - `python seed_data.py` preserva dados existentes e apenas sincroniza alias de login necessario.

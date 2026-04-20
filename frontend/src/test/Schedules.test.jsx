@@ -144,13 +144,13 @@ describe('Schedules operational flow (Ponto 13 pacote G)', () => {
 
     await waitFor(() => {
       expect(mockNavigate).toHaveBeenCalledWith(
-        '/absences?occurrence_id=321&class_id=1&date_from=2026-04-21&date_to=2026-04-21'
+        '/absences?occurrence_id=321&class_id=1'
       )
     })
     expect(createOccurrenceMutation.mutate).not.toHaveBeenCalled()
   })
 
-  it('creates occurrence from block and navigates with contextual filters', async () => {
+  it('creates occurrence from block and navigates with contextual params', async () => {
     const createOccurrenceMutation = {
       mutate: vi.fn((variables, options) => {
         expect(variables).toEqual({ scheduleOutputId: 501 })
@@ -178,7 +178,7 @@ describe('Schedules operational flow (Ponto 13 pacote G)', () => {
     await waitFor(() => {
       expect(createOccurrenceMutation.mutate).toHaveBeenCalledTimes(1)
       expect(mockNavigate).toHaveBeenCalledWith(
-        '/absences?occurrence_id=777&class_id=1&date_from=2026-04-21&date_to=2026-04-21'
+        '/absences?occurrence_id=777&class_id=1'
       )
     })
   })
@@ -216,7 +216,7 @@ describe('Schedules operational flow (Ponto 13 pacote G)', () => {
 
     renderPage()
 
-    expect(await screen.findByText(/CP-SAT a otimizar/i)).toBeInTheDocument()
+    expect(await screen.findByText(/A calcular o melhor horário para a escola/i)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Cancelar geração/i })).toBeInTheDocument()
   })
 

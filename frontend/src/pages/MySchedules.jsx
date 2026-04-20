@@ -8,15 +8,15 @@ import { useTeacherScheduleHorizon, useTimeslots, useWeekSchedule } from '../hoo
 import { useAuthStore } from '../store'
 
 const HORIZON_NOT_CONFIGURED_MESSAGE =
-  'Não existe horizonte semanal configurado para a organização. Contacte um admin para validar o ano letivo ativo.'
+  'Não existe período semanal configurado para a escola. Contacte a equipa administrativa para validar o ano letivo ativo.'
 const HORIZON_SYNC_POLLING_INTERVAL_MS = 30000
 const HORIZON_NO_ACTIVE_GENERATION_KEY = '__no_active_generation__'
 const HORIZON_SYNC_FEEDBACK_MESSAGE =
-  'Horário sincronizado com a publicação ativa mais recente.'
+  'Horário atualizado com a versão mais recente publicada pela escola.'
 const HORIZON_DEGRADED_FEEDBACK_MESSAGE =
-  'Sincronização do horizonte indisponível temporariamente. A mostrar último estado válido.'
+  'Atualização semanal temporariamente indisponível. A mostrar o último estado válido.'
 const WEEK_DEGRADED_FEEDBACK_MESSAGE =
-  'Falha temporária ao carregar a semana. A mostrar último estado válido.'
+  'Falha temporária ao carregar esta semana. A mostrar o último estado válido.'
 
 function toGenerationCacheKey(activeGenerationId) {
   return activeGenerationId || HORIZON_NO_ACTIVE_GENERATION_KEY
@@ -77,15 +77,15 @@ function formatDatePt(dateStr) {
 function resolveHorizonErrorMessage(error) {
   const status = error?.response?.status
   if (status === 403) {
-    return 'Sem permissões para consultar o seu horizonte semanal de horários.'
+    return 'Sem permissões para consultar o seu horário semanal.'
   }
   if (status === 429) {
-    return 'Sincronização temporariamente limitada por excesso de pedidos. Aguarde alguns minutos e volte a tentar.'
+    return 'Atualização temporariamente limitada por excesso de pedidos. Aguarde alguns minutos e volte a tentar.'
   }
   if (status === 404) {
     return HORIZON_NOT_CONFIGURED_MESSAGE
   }
-  return 'Não foi possível carregar o horizonte semanal. Tente novamente em alguns minutos.'
+  return 'Não foi possível carregar o período semanal. Tente novamente em alguns minutos.'
 }
 
 function MySchedules() {
@@ -140,7 +140,7 @@ function MySchedules() {
     }
     if (hardEndDate && isAfterDate(weekStart, hardEndDate)) {
       setWeekStart(toWeekMonday(hardEndDate))
-      setLimitFeedback(`A navegação foi limitada ao hard end date (${formatDatePt(hardEndDate)}).`)
+      setLimitFeedback(`A navegação foi limitada à data limite do ano letivo (${formatDatePt(hardEndDate)}).`)
     }
   }, [hardEndDate, minWeekStart, weekStart])
 
@@ -228,7 +228,7 @@ function MySchedules() {
     const currentWeek = getCurrentWeekMonday()
     if (hardEndDate && isAfterDate(currentWeek, hardEndDate)) {
       setWeekStart(toWeekMonday(hardEndDate))
-      setLimitFeedback(`A semana atual está após o hard end date (${formatDatePt(hardEndDate)}).`)
+      setLimitFeedback(`A semana atual está após a data limite do ano letivo (${formatDatePt(hardEndDate)}).`)
       return
     }
     setLimitFeedback('')
@@ -261,7 +261,7 @@ function MySchedules() {
         <CCard className="border-0 shadow-sm">
           <CCardBody className="py-4 d-flex align-items-center gap-2 text-muted">
             <CSpinner size="sm" />
-            A carregar o seu horizonte semanal...
+            A carregar o seu horário semanal...
           </CCardBody>
         </CCard>
       </div>
@@ -314,17 +314,17 @@ function MySchedules() {
             Meus Horários
           </h2>
           <small className="text-muted">
-            Vista pessoal semanal do professor autenticado. Verde = dado · Vermelho = furo · Amarelo = substituído.
+            Vista pessoal semanal do professor. Verde = dado · Vermelho = furo · Amarelo = substituído.
           </small>
         </div>
         <div className="d-flex gap-2 align-items-center flex-wrap">
           {horizon?.active_generation_id ? (
             <CBadge color="success" className="px-3 py-2">
-              Geração ativa: {horizon.active_generation_id.slice(0, 8)}...
+              Versão ativa: {horizon.active_generation_id.slice(0, 8)}...
             </CBadge>
           ) : (
             <CBadge color="secondary" className="px-3 py-2">
-              Sem geração ativa
+              Sem versão ativa
             </CBadge>
           )}
         </div>

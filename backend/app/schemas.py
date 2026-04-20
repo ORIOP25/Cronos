@@ -757,15 +757,25 @@ class LessonOccurrenceRead(BaseModel):
     schedule_output_id: Optional[int] = None
     date: date
     status: LessonOccurrenceStatus
+    class_id: Optional[int] = None
+    class_name: Optional[str] = None
+    subject_id: Optional[int] = None
+    subject_name: Optional[str] = None
+    timeslot_id: Optional[int] = None
+    timeslot_start_time: Optional[time] = None
+    timeslot_end_time: Optional[time] = None
     planned_hours: float
     planned_teacher_id: Optional[int] = None
+    planned_teacher_name: Optional[str] = None
     executed_teacher_id: Optional[int] = None
+    executed_teacher_name: Optional[str] = None
     planned_module_id: Optional[int] = None
     executed_module_id: Optional[int] = None
     substitute_teacher_id: Optional[int] = None
     substitute_subject_id: Optional[int] = None
     hours_given: float
     decided_by_user_id: Optional[int] = None
+    decided_by_user_name: Optional[str] = None
     decided_at: Optional[datetime] = None
     created_at: datetime
 
@@ -809,7 +819,12 @@ class LessonOccurrenceUpdate(BaseModel):
 
 
 class DebtItem(BaseModel):
-    """Uma dívida de horas de aula para uma turma/disciplina."""
+    """Dívida de horas por turma/disciplina.
+
+    Compatibilidade:
+    - gap_occurrences / hours_owed = visão operacional total (inclui futuro decidido).
+    - *_overdue = subconjunto vencido até a data de referência (as_of_date).
+    """
     class_id: int
     class_name: str
     subject_id: int
@@ -818,12 +833,22 @@ class DebtItem(BaseModel):
     teacher_name: Optional[str] = None
     gap_occurrences: int
     hours_owed: float
+    gap_occurrences_overdue: int = 0
+    hours_owed_overdue: float = 0.0
 
 
 class DebtListRead(BaseModel):
-    """Lista de dívidas de horas agrupadas por turma."""
+    """Lista de dívidas agrupadas por turma/disciplina.
+
+    Compatibilidade:
+    - total_gaps / total_hours_owed mantêm a visão operacional total.
+    - total_*_overdue expõem a visão vencida até as_of_date.
+    """
     total_gaps: int
     total_hours_owed: float
+    total_gaps_overdue: int = 0
+    total_hours_owed_overdue: float = 0.0
+    as_of_date: date
     items: list[DebtItem]
 
 

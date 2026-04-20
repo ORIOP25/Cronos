@@ -167,7 +167,7 @@ describe('MySchedules page (Ponto 4)', () => {
 
     await waitFor(() => {
       expect(invalidateSpy).toHaveBeenCalled()
-      expect(screen.getByText('Horário sincronizado com a publicação ativa mais recente.')).toBeInTheDocument()
+      expect(screen.getByText('Horário atualizado com a versão mais recente publicada pela escola.')).toBeInTheDocument()
     })
 
     invalidateSpy.mockRestore()
@@ -218,7 +218,7 @@ describe('MySchedules page (Ponto 4)', () => {
 
     expect(
       screen.getByText(
-        'Não existe horizonte semanal configurado para a organização. Contacte um admin para validar o ano letivo ativo.'
+        'Não existe período semanal configurado para a escola. Contacte a equipa administrativa para validar o ano letivo ativo.'
       )
     ).toBeInTheDocument()
   })
@@ -234,7 +234,7 @@ describe('MySchedules page (Ponto 4)', () => {
 
     expect(
       screen.getByText(
-        'Sincronização temporariamente limitada por excesso de pedidos. Aguarde alguns minutos e volte a tentar.'
+        'Atualização temporariamente limitada por excesso de pedidos. Aguarde alguns minutos e volte a tentar.'
       )
     ).toBeInTheDocument()
   })
@@ -314,7 +314,7 @@ describe('MySchedules page (Ponto 4)', () => {
 
     await waitFor(() => {
       expect(
-        screen.getByText('Sincronização do horizonte indisponível temporariamente. A mostrar último estado válido.')
+        screen.getByText('Atualização semanal temporariamente indisponível. A mostrar o último estado válido.')
       ).toBeInTheDocument()
       expect(screen.getByText('Programacao')).toBeInTheDocument()
     })

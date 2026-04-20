@@ -37,6 +37,21 @@ const STATUS_ICONS = {
   SUBSTITUTED: cilWarning,
 }
 
+const OPERATIONAL_STATE_LABELS = {
+  OPEN_PENDING: 'Pendente de decisão',
+  CLOSED: 'Resolvida',
+}
+
+const OPERATIONAL_STATE_COLORS = {
+  OPEN_PENDING: 'info',
+  CLOSED: 'secondary',
+}
+
+const OPERATIONAL_STATE_ICONS = {
+  OPEN_PENDING: cilClock,
+  CLOSED: cilCheckCircle,
+}
+
 const RESOLUTION_FILTERS = {
   pending: 'Pendentes',
   resolved: 'Resolvidas',
@@ -62,14 +77,34 @@ const formatDateTime = (dateTimeStr) => {
   })
 }
 
-const formatHours = (hours) => {
-  if (hours === null || hours === undefined) return '0'
-  const value = Number(hours)
-  if (Number.isNaN(value)) return '0'
-  return value.toLocaleString('pt-PT', {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 2,
-  })
+const resolveOccurrenceStartTime = (occurrence) => {
+  if (typeof occurrence?.timeslot?.start_time === 'string') {
+    return occurrence.timeslot.start_time
+  }
+  if (typeof occurrence?.timeslot_start_time === 'string') {
+    return occurrence.timeslot_start_time
+  }
+  return '99:99'
+}
+
+const compareOccurrences = (left, right) => {
+  const leftDate = left?.date ?? ''
+  const rightDate = right?.date ?? ''
+  const dateComparison = leftDate.localeCompare(rightDate)
+  if (dateComparison !== 0) {
+    return dateComparison
+  }
+
+  const leftStart = resolveOccurrenceStartTime(left)
+  const rightStart = resolveOccurrenceStartTime(right)
+  const startComparison = leftStart.localeCompare(rightStart)
+  if (startComparison !== 0) {
+    return startComparison
+  }
+
+  const leftId = Number(left?.id ?? 0)
+  const rightId = Number(right?.id ?? 0)
+  return leftId - rightId
 }
 
 const buildUpdateErrorMessage = (error) => {
@@ -91,17 +126,29 @@ const resolveName = (byIdMap, id, fallbackPrefix) => {
 
 const buildExecutionSummary = (occurrence, teacherById, subjectById) => {
   if (occurrence.status === 'GAP') {
-    return 'Sem execução (GAP)'
+    return 'Aula não realizada'
   }
 
   if (occurrence.status === 'SUBSTITUTED') {
-    const teacherName = resolveName(teacherById, occurrence.substitute_teacher_id, 'Prof.')
+    const teacherName = occurrence.executed_teacher_name
+      ?? resolveName(teacherById, occurrence.substitute_teacher_id, 'Prof.')
     const subjectName = resolveName(subjectById, occurrence.substitute_subject_id, 'Disciplina')
     return `${teacherName} (${subjectName})`
   }
 
   const effectiveTeacherId = occurrence.executed_teacher_id ?? occurrence.planned_teacher_id
-  return resolveName(teacherById, effectiveTeacherId, 'Prof.')
+  return occurrence.executed_teacher_name
+    ?? resolveName(teacherById, effectiveTeacherId, 'Prof.')
+}
+
+const buildDeciderDisplayName = (occurrence) => {
+  if (occurrence.decided_by_user_name) {
+    return occurrence.decided_by_user_name
+  }
+  if (occurrence.decided_by_user_id) {
+    return `Utilizador #${occurrence.decided_by_user_id}`
+  }
+  return 'Admin'
 }
 
 const buildDecisionSummary = (occurrence) => {
@@ -109,11 +156,14 @@ const buildDecisionSummary = (occurrence) => {
     return 'Pendente de decisão do admin'
   }
 
-  const decidedBy = occurrence.decided_by_user_id
-    ? `admin #${occurrence.decided_by_user_id}`
-    : 'admin'
+  return `Decidida em ${formatDateTime(occurrence.decided_at)} por ${buildDeciderDisplayName(occurrence)}`
+}
 
-  return `Decidida em ${formatDateTime(occurrence.decided_at)} por ${decidedBy}`
+const getOperationalState = (occurrence) => {
+  if (!occurrence.decided_at) {
+    return 'OPEN_PENDING'
+  }
+  return 'CLOSED'
 }
 
 // ---------------------------------------------------------------------------
@@ -351,10 +401,17 @@ EditOccurrenceModal.propTypes = {
     id: PropTypes.number.isRequired,
     date: PropTypes.string,
     status: PropTypes.string.isRequired,
+    class_id: PropTypes.number,
+    class_name: PropTypes.string,
+    subject_id: PropTypes.number,
+    subject_name: PropTypes.string,
     timeslot_id: PropTypes.number,
     planned_teacher_id: PropTypes.number,
+    planned_teacher_name: PropTypes.string,
     executed_teacher_id: PropTypes.number,
+    executed_teacher_name: PropTypes.string,
     decided_by_user_id: PropTypes.number,
+    decided_by_user_name: PropTypes.string,
     decided_at: PropTypes.string,
     substitute_teacher_id: PropTypes.number,
     substitute_subject_id: PropTypes.number,
@@ -442,7 +499,7 @@ const OccurrencesPanel = ({ classId, dateFrom, dateTo, initialOccurrenceId }) =>
   const user = useAuthStore((state) => state.user)
   const isAdmin = user?.role === 'admin'
   const [editingOccurrence, setEditingOccurrence] = useState(null)
-  const [resolutionFilter, setResolutionFilter] = useState('pending')
+  const [resolutionFilter, setResolutionFilter] = useState('all')
   const [saveErrorMessage, setSaveErrorMessage] = useState('')
   const [hasAppliedInitialFocus, setHasAppliedInitialFocus] = useState(false)
   const { data: occurrences = [], isLoading, isError } = useOccurrences({
@@ -463,7 +520,10 @@ const OccurrencesPanel = ({ classId, dateFrom, dateTo, initialOccurrenceId }) =>
     [subjects]
   )
 
-  const sortedOccurrences = useMemo(() => [...occurrences], [occurrences])
+  const sortedOccurrences = useMemo(
+    () => [...occurrences].sort(compareOccurrences),
+    [occurrences]
+  )
 
   const pendingCount = useMemo(
     () => sortedOccurrences.filter((occ) => !occ.decided_at).length,
@@ -624,10 +684,12 @@ const OccurrencesPanel = ({ classId, dateFrom, dateTo, initialOccurrenceId }) =>
         <CTableHead color="light">
           <CTableRow>
             <CTableHeaderCell>Data</CTableHeaderCell>
+            <CTableHeaderCell>Turma</CTableHeaderCell>
+            <CTableHeaderCell>Disciplina</CTableHeaderCell>
             <CTableHeaderCell>Estado</CTableHeaderCell>
             <CTableHeaderCell>Docente Previsto</CTableHeaderCell>
-            <CTableHeaderCell>Execução / Decisão Final</CTableHeaderCell>
-            <CTableHeaderCell className="text-center">Horas Dadas</CTableHeaderCell>
+            <CTableHeaderCell>Docente Definitivo</CTableHeaderCell>
+            <CTableHeaderCell>Decisão Final</CTableHeaderCell>
             <CTableHeaderCell className="text-end">Ação</CTableHeaderCell>
           </CTableRow>
         </CTableHead>
@@ -636,21 +698,37 @@ const OccurrencesPanel = ({ classId, dateFrom, dateTo, initialOccurrenceId }) =>
             const plannedTeacherName = resolveName(teacherById, occ.planned_teacher_id, 'Prof.')
             const executionSummary = buildExecutionSummary(occ, teacherById, subjectById)
             const decisionSummary = buildDecisionSummary(occ)
+            const operationalState = getOperationalState(occ)
+            const outcomeLabel = occ.decided_at ? (STATUS_LABELS[occ.status] ?? occ.status) : null
+            const outcomeColor = STATUS_COLORS[occ.status] ?? 'secondary'
+            const outcomeIcon = STATUS_ICONS[occ.status] ?? cilClock
+            const classLabel = occ.class_name ?? '—'
+            const subjectLabel = occ.subject_name
+              ?? resolveName(subjectById, occ.subject_id, 'Disciplina')
             return (
             <CTableRow key={occ.id}>
               <CTableDataCell className="fw-semibold">{formatDate(occ.date)}</CTableDataCell>
+              <CTableDataCell className="fw-semibold">{classLabel}</CTableDataCell>
+              <CTableDataCell>{subjectLabel}</CTableDataCell>
               <CTableDataCell>
-                <CBadge color={STATUS_COLORS[occ.status] ?? 'secondary'}>
-                  <CIcon icon={STATUS_ICONS[occ.status] ?? cilClock} className="me-1" />
-                  {STATUS_LABELS[occ.status] ?? occ.status}
+                <CBadge color={OPERATIONAL_STATE_COLORS[operationalState] ?? 'secondary'}>
+                  <CIcon icon={OPERATIONAL_STATE_ICONS[operationalState] ?? cilClock} className="me-1" />
+                  {OPERATIONAL_STATE_LABELS[operationalState] ?? operationalState}
                 </CBadge>
+                {outcomeLabel ? (
+                  <div className="mt-1">
+                    <CBadge color={outcomeColor}>
+                      <CIcon icon={outcomeIcon} className="me-1" />
+                      {outcomeLabel}
+                    </CBadge>
+                  </div>
+                ) : null}
               </CTableDataCell>
               <CTableDataCell>{plannedTeacherName}</CTableDataCell>
+              <CTableDataCell className="fw-semibold">{executionSummary}</CTableDataCell>
               <CTableDataCell>
-                <div className="fw-semibold">{executionSummary}</div>
                 <small className="text-muted">{decisionSummary}</small>
               </CTableDataCell>
-              <CTableDataCell className="text-center">{formatHours(occ.hours_given)}h</CTableDataCell>
               <CTableDataCell className="text-end">
                 <CButton
                   color="primary"
@@ -680,22 +758,14 @@ OccurrencesPanel.propTypes = {
 }
 
 // ---------------------------------------------------------------------------
-// Datas de filtro iniciais — calculadas uma vez no load do módulo
-// ---------------------------------------------------------------------------
-const INITIAL_DATE_TO = new Date().toISOString().split('T')[0]
-const INITIAL_DATE_FROM = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
-  .toISOString()
-  .split('T')[0]
-
-// ---------------------------------------------------------------------------
 // Página principal
 // ---------------------------------------------------------------------------
 const Occurrences = () => {
   const [searchParams] = useSearchParams()
 
   const initialClassFilter = searchParams.get('class_id') ?? ''
-  const initialDateFrom = searchParams.get('date_from') ?? INITIAL_DATE_FROM
-  const initialDateTo = searchParams.get('date_to') ?? INITIAL_DATE_TO
+  const initialDateFrom = searchParams.get('date_from') ?? ''
+  const initialDateTo = searchParams.get('date_to') ?? ''
   const parsedOccurrenceId = Number.parseInt(searchParams.get('occurrence_id') ?? '', 10)
   const initialOccurrenceId = Number.isNaN(parsedOccurrenceId) ? undefined : parsedOccurrenceId
 

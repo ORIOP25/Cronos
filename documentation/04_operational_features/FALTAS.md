@@ -85,6 +85,12 @@ Como a ocorrencia pode nascer agora:
 2. via confirmacao automatica diaria (Celery Beat, 23:59) para aulas decorridas sem registo manual;
 3. via dados de seed/testes (cenarios tecnicos).
 
+Decisao UX/API fechada (2026-04-17) para bloco passado:
+- a acao operacional no frontend pode ser iniciada tambem em blocos passados;
+- o frontend deve respeitar `can_create_occurrence` e `can_decide_occurrence` devolvidos pela API semanal, sem bloqueio local por `is_past`;
+- ocorrencia fechada (`decided_at != null`) continua imutavel e sem reabertura destrutiva;
+- quando nao houver acao valida no bloco, a interface deve mostrar orientacao explicita ao operador.
+
 ## Workflow operacional aprovado para Alpha (implementado)
 
 1. Professor avisa admin que nao vai conseguir dar a aula programada.
@@ -190,3 +196,27 @@ Objetivo da decisao:
 ### Base de dados
 - deve registar ocorrencia de modo imutavel e tenant-scoped;
 - deve garantir unicidade por bloco/data e transacao atomica na primeira decisao.
+
+## Delta operacional (2026-04-20)
+
+### What mudou
+- divida operacional passou a ser reconhecida no momento da decisao `GAP` ou `SUBSTITUTED`, mesmo quando a aula tem data futura;
+- visao de divida passou a expor dois planos sem ambiguidade:
+    - operacional total (inclui futuro decidido),
+    - vencida ate hoje (`overdue`);
+- payload de ocorrencia para triagem passou a incluir contexto direto de turma/disciplina e nome do decisor;
+- navegacao de `Schedules` para pagina de faltas deixou de impor filtro de data do dia, evitando ocultacao involuntaria de registos.
+
+### Regra de divida consolidada
+1. `GIVEN`: sem nova divida.
+2. `GAP`: cria divida imediata no modulo planeado.
+3. `SUBSTITUTED`: cria divida imediata no modulo planeado e progresso no modulo executado.
+
+### Contrato operacional consolidado
+- endpoint `GET /api/v1/occurrences/debts`:
+    - `total_gaps` e `total_hours_owed`: visao operacional total;
+    - `total_gaps_overdue` e `total_hours_owed_overdue`: subconjunto vencido ate `as_of_date`.
+
+### Observacao de consistencia
+- janela de estabilidade de repair (`repair_stability_window_days`) permanece regra de geracao/reparacao de horario;
+- esta janela nao limita o reconhecimento da divida operacional de ocorrencias decididas.

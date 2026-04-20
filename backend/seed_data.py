@@ -8,6 +8,7 @@ Usage examples:
     docker compose exec backend python seed_data.py
     docker compose exec backend python seed_data.py --reset
     docker compose exec backend python seed_data.py --profile baseline --reset
+    docker compose exec backend python seed_data.py --profile small-realistic --reset
     docker compose exec backend python seed_data.py --profile operational --reset
     docker compose exec backend python seed_data.py --profile stress --reset
 """
@@ -26,11 +27,13 @@ from app.db.database import Base, SessionLocalSync, engine_sync
 from app.services.operational_seed_service import seed_operational_scenarios_sync
 
 import seed_data_large_scale as large_scale_seed
+import seed_data_small_realistic as small_realistic_seed
 
 PROFILE_LARGE_SCALE = "large-scale"
 PROFILE_OPERATIONAL = "operational"
 PROFILE_BASELINE = "baseline"
 PROFILE_STRESS = "stress"
+PROFILE_SMALL_REALISTIC = "small-realistic"
 
 _LARGE_SCALE_DEFAULTS = {
     "ORG_COUNT": large_scale_seed.ORG_COUNT,
@@ -176,7 +179,8 @@ def _assert_schema_compatible_for_seed() -> None:
     raise RuntimeError(
         "Schema incompatível com os modelos atuais para seed sem reset. "
         "Execute 'docker compose exec backend alembic upgrade head' "
-        "ou use 'python seed_data.py --profile large-scale --reset'. "
+        "ou use 'python seed_data.py --profile <perfil> --reset' "
+        "(ex.: large-scale ou small-realistic). "
         f"Colunas em falta: {preview}"
     )
 
@@ -312,6 +316,30 @@ def _run_operational_profile(*, reset: bool) -> None:
         db.close()
 
 
+def _run_small_realistic_profile(*, reset: bool) -> None:
+    if reset:
+        small_realistic_seed.clean_database()
+        small_realistic_seed.create_tables()
+    else:
+        _ensure_core_schema()
+
+    db = SessionLocalSync()
+    try:
+        org_count = _count_organizations(db)
+    finally:
+        db.close()
+
+    if org_count > 0 and not reset:
+        print("[seed] Existing organizations detected. Preserving data (no reset).")
+    else:
+        if not reset:
+            _assert_schema_compatible_for_seed()
+        print("[seed] Running small-realistic profile...")
+        small_realistic_seed.run_seed()
+
+    _ensure_alias_logins()
+
+
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
@@ -321,7 +349,13 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--profile",
-        choices=[PROFILE_BASELINE, PROFILE_OPERATIONAL, PROFILE_LARGE_SCALE, PROFILE_STRESS],
+        choices=[
+            PROFILE_BASELINE,
+            PROFILE_OPERATIONAL,
+            PROFILE_LARGE_SCALE,
+            PROFILE_STRESS,
+            PROFILE_SMALL_REALISTIC,
+        ],
         default=PROFILE_LARGE_SCALE,
         help="Seed profile to execute.",
     )
@@ -346,6 +380,8 @@ def main() -> None:
             _run_large_scale_profile(reset=args.reset, profile=args.profile)
         elif args.profile == PROFILE_OPERATIONAL:
             _run_operational_profile(reset=args.reset)
+        elif args.profile == PROFILE_SMALL_REALISTIC:
+            _run_small_realistic_profile(reset=args.reset)
         else:
             raise SystemExit(f"Unsupported profile: {args.profile}")
 

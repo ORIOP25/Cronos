@@ -78,7 +78,7 @@ const AuditDashboard = () => {
   return (
     <div className="d-flex flex-column gap-3">
       <CCard>
-        <CCardHeader className="fw-semibold">Dashboard Técnico de Auditoria por Geração</CCardHeader>
+        <CCardHeader className="fw-semibold">Painel de verificação de horários por versão</CCardHeader>
         <CCardBody>
           <CRow className="g-3 align-items-end">
             <CCol md={8} lg={6}>
