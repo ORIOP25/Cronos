@@ -336,12 +336,14 @@ def _create_base_entities(db) -> tuple[models.Organization, dict[tuple[int, int]
 
     db.add(models.OrganizationSettings(
         org_id=organization.id,
-        academic_year=ACADEMIC_YEAR,
         school_start_date=ASSUMED_TODAY,
         school_target_end_date=SCHOOL_TARGET_END,
         school_hard_end_date=SCHOOL_HARD_END,
-        repair_stability_window_days=14,
-        region_code="13",
+        repair_stability_window_days=1,
+    ))
+
+    db.add(models.OrganizationGridSettings(
+        org_id=organization.id,
         lunch_window_start=datetime.time(12, 30),
         lunch_window_end=datetime.time(14, 0),
         lunch_min_duration_minutes=60,
@@ -349,7 +351,6 @@ def _create_base_entities(db) -> tuple[models.Organization, dict[tuple[int, int]
 
     db.add(models.SchoolCalendarEvent(
         org_id=organization.id,
-        academic_year=ACADEMIC_YEAR,
         name="Dia da Restauracao da Independencia",
         start_date=datetime.date(2025, 12, 1),
         end_date=datetime.date(2025, 12, 1),

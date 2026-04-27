@@ -287,7 +287,7 @@ def _resolve_repair_window_days(db: Session, org_id: int) -> int:
     row = db.execute(
         select(models.OrganizationSettings.repair_stability_window_days)
         .where(models.OrganizationSettings.org_id == org_id)
-        .order_by(models.OrganizationSettings.academic_year.desc(), models.OrganizationSettings.id.desc())
+        .order_by(models.OrganizationSettings.id.desc())
     ).first()
 
     if row is None or row[0] is None:

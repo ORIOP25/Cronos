@@ -36,18 +36,15 @@ async def _seed_minimal_generation_context(
 ) -> None:
     settings = models.OrganizationSettings(
         org_id=org_id,
-        academic_year="2025/2026",
         school_start_date=school_start_date,
         school_target_end_date=school_target_end_date,
         school_hard_end_date=school_hard_end_date,
         repair_stability_window_days=repair_window_days,
-        region_code="Lisboa",
     )
     db_session.add(settings)
 
     holiday = models.SchoolCalendarEvent(
         org_id=org_id,
-        academic_year="2025/2026",
         name="Feriado Nacional",
         start_date=date(2025, 12, 1),
         end_date=date(2025, 12, 1),
@@ -81,7 +78,7 @@ async def _seed_minimal_generation_context(
     module = models.Module(
         name="Modulo Alpha",
         code="ALPHA-M1",
-        hours_total=25,
+        hours_total=5,
         order=1,
         subject_id=subject.id,
     )

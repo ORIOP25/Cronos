@@ -798,7 +798,6 @@ class TestTeacherAvailability:
 
         settings_org2 = models.OrganizationSettings(
             org_id=org2.id,
-            academic_year="2027/2028",
             school_start_date=date(2027, 9, 1),
             school_target_end_date=date(2028, 6, 30),
             school_hard_end_date=date(2028, 7, 31),

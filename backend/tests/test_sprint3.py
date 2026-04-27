@@ -317,7 +317,6 @@ class TestDraftServices:
 
         sync_db.add(models.OrganizationSettings(
             org_id=org_id,
-            academic_year="2025/2026",
             school_start_date=TODAY - timedelta(days=60),
             school_target_end_date=TODAY + timedelta(days=120),
             school_hard_end_date=TODAY + timedelta(days=120),

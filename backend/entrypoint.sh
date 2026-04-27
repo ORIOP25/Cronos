@@ -150,7 +150,6 @@ if not base_url:
     raise SystemExit("[entrypoint] ERROR: DATABASE_URL is empty; cannot bootstrap default admin.")
 
 today = date.today()
-academic_year = f"{today.year}/{today.year + 1}"
 
 engine = create_engine(base_url)
 with Session(engine) as db:
@@ -174,17 +173,25 @@ with Session(engine) as db:
     if org_settings is None:
         org_settings = models.OrganizationSettings(
             org_id=org.id,
-            academic_year=academic_year,
             school_start_date=date(today.year, 9, 1),
             school_target_end_date=date(today.year + 1, 6, 30),
             school_hard_end_date=date(today.year + 1, 7, 31),
             repair_stability_window_days=14,
-            region_code="11",
+        )
+        db.add(org_settings)
+        db.flush()
+
+    grid_settings = db.execute(
+        select(models.OrganizationGridSettings).where(models.OrganizationGridSettings.org_id == org.id)
+    ).scalar_one_or_none()
+    if grid_settings is None:
+        grid_settings = models.OrganizationGridSettings(
+            org_id=org.id,
             lunch_window_start=time(12, 0),
             lunch_window_end=time(14, 0),
             lunch_min_duration_minutes=60,
         )
-        db.add(org_settings)
+        db.add(grid_settings)
 
     default_admin = models.User(
         name=admin_name,

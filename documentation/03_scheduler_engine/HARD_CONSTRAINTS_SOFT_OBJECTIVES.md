@@ -65,6 +65,10 @@ Aplicacao efetiva no backend:
 	- nao apaga ativo dentro da janela;
 	- nao ativa blocos de draft dentro da janela;
 	- promove apenas blocos de draft fora da janela.
+6. Calculo de remanescente em repair aplica reconciliacao operacional ate `frozen_until`:
+	- credita blocos publicados em estado `NONE` e `GIVEN`;
+	- nao credita blocos com ocorrencia `GAP` ou `SUBSTITUTED`;
+	- objetivo: evitar inflacao de carga remanescente quando o publicado ja representa compromisso operacional.
 
 Fallback de seguranca:
 - quando `repair_stability_window_days` nao esta configurado, aplica-se default conservador de 14 dias.

@@ -58,6 +58,16 @@ const buildSlot = (overrides = {}) => ({
 const setupBaseHooks = ({
   weekSlots,
   createOccurrenceMutation,
+  drafts = [],
+  scheduleDiff = null,
+  approveDraftMutation = {
+    mutateAsync: vi.fn(),
+    isPending: false,
+  },
+  rejectDraftMutation = {
+    mutateAsync: vi.fn(),
+    isPending: false,
+  },
   generateMutation = {
     mutateAsync: vi.fn(),
     isPending: false,
@@ -65,17 +75,12 @@ const setupBaseHooks = ({
   taskStatusData = null,
   cancelGenerationMutation = { mutate: vi.fn(), isPending: false },
 }) => {
-  schoolHooks.useDrafts.mockReturnValue({ data: [], refetch: vi.fn() })
+  schoolHooks.useDrafts.mockReturnValue({ data: drafts, refetch: vi.fn() })
+  schoolHooks.useScheduleDiff.mockReturnValue({ data: scheduleDiff, isLoading: false })
   schoolHooks.useGenerateSchedule.mockReturnValue(generateMutation)
   schoolHooks.useCancelScheduleTask.mockReturnValue(cancelGenerationMutation)
-  schoolHooks.useApproveDraft.mockReturnValue({
-    mutateAsync: vi.fn(),
-    isPending: false,
-  })
-  schoolHooks.useRejectDraft.mockReturnValue({
-    mutateAsync: vi.fn(),
-    isPending: false,
-  })
+  schoolHooks.useApproveDraft.mockReturnValue(approveDraftMutation)
+  schoolHooks.useRejectDraft.mockReturnValue(rejectDraftMutation)
   schoolHooks.useScheduleTaskStatus.mockImplementation((taskId) => ({
     data: taskId ? taskStatusData : null,
   }))
@@ -261,5 +266,65 @@ describe('Schedules operational flow (Ponto 13 pacote G)', () => {
     expect(calledTaskId).toBe(taskId)
     expect(typeof callbackOptions?.onSuccess).toBe('function')
     expect(typeof callbackOptions?.onError).toBe('function')
+  })
+
+  it('approves draft after user clicks the button in draft panel', async () => {
+    const approveDraftMutation = {
+      mutateAsync: vi.fn().mockResolvedValue({ blocks_activated: 8 }),
+      isPending: false,
+    }
+
+    setupBaseHooks({
+      weekSlots: [],
+      createOccurrenceMutation: { mutate: vi.fn(), isPending: false },
+      drafts: [
+        {
+          generation_id: 'gen-draft-human-001',
+          count: 12,
+          earliest_date: '2026-05-10',
+          latest_date: '2026-06-20',
+        },
+      ],
+      scheduleDiff: { added: 3, removed: 1, unchanged: 20 },
+      approveDraftMutation,
+    })
+
+    renderPage()
+
+    fireEvent.click(screen.getByRole('button', { name: /Aprovar e Ativar/i }))
+
+    await waitFor(() => {
+      expect(approveDraftMutation.mutateAsync).toHaveBeenCalledWith('gen-draft-human-001')
+    })
+  })
+
+  it('rejects draft after user clicks the reject button', async () => {
+    const rejectDraftMutation = {
+      mutateAsync: vi.fn().mockResolvedValue({ blocks_deleted: 12 }),
+      isPending: false,
+    }
+
+    setupBaseHooks({
+      weekSlots: [],
+      createOccurrenceMutation: { mutate: vi.fn(), isPending: false },
+      drafts: [
+        {
+          generation_id: 'gen-draft-human-002',
+          count: 12,
+          earliest_date: '2026-05-10',
+          latest_date: '2026-06-20',
+        },
+      ],
+      scheduleDiff: { added: 2, removed: 4, unchanged: 11 },
+      rejectDraftMutation,
+    })
+
+    renderPage()
+
+    fireEvent.click(screen.getByRole('button', { name: /Rejeitar/i }))
+
+    await waitFor(() => {
+      expect(rejectDraftMutation.mutateAsync).toHaveBeenCalledWith('gen-draft-human-002')
+    })
   })
 })

@@ -50,17 +50,20 @@ def _create_organization(
 
     settings = models.OrganizationSettings(
         org_id=org.id,
-        academic_year=ACADEMIC_YEAR,
         school_start_date=date(2025, 9, 15),
         school_target_end_date=date(2026, 6, 15),
         school_hard_end_date=date(2026, 7, 31),
         repair_stability_window_days=14,
-        region_code="11",
+    )
+    db.add(settings)
+
+    grid_settings = models.OrganizationGridSettings(
+        org_id=org.id,
         lunch_window_start=time(12, 0),
         lunch_window_end=time(14, 0),
         lunch_min_duration_minutes=60,
     )
-    db.add(settings)
+    db.add(grid_settings)
     db.flush()
 
     return org, admin

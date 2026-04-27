@@ -55,6 +55,12 @@ class Settings(BaseSettings):
     # Se não definires no .env, assume o default do Docker
     REDIS_URL: str | RedisDsn = "redis://redis:6379/0"
 
+    # --- Solver (roadmap V2) ---
+    # Fallback seguro: manter V1 por omissão até ativação explícita.
+    SOLVER_ENGINE_VERSION: Literal["v1", "v2"] = "v1"
+    SOLVER_V2_ROLLING_WEEKS: int = 8
+    SOLVER_V2_OBJECTIVE_MODE: Literal["lexicographic"] = "lexicographic"
+
     # Permitimos que seja None para não obrigar a ter no .env
     CELERY_BROKER_URL: str | None = None
 
@@ -65,6 +71,9 @@ class Settings(BaseSettings):
         # Se o CELERY_BROKER_URL não estiver no .env, usamos o REDIS_URL
         if not self.CELERY_BROKER_URL:
             self.CELERY_BROKER_URL = str(self.REDIS_URL)
+        # Guardrail de configuração para V2.
+        if self.SOLVER_V2_ROLLING_WEEKS < 1:
+            self.SOLVER_V2_ROLLING_WEEKS = 8
         return self
     
     # --- Monitorização (Opcional) ---

@@ -20,6 +20,11 @@ Consumidores principais:
 ### Where
 Execucao em ambiente local e CI, com BD de teste isolada por run.
 
+Regra operacional de isolamento:
+- a suite usa base de dados de teste dedicada (por defeito, sufixo `_test` a partir de `DATABASE_URL`);
+- opcionalmente, pode ser definida via `TEST_DATABASE_URL`;
+- configuracoes que apontem testes para a BD principal sao bloqueadas para evitar perda de dados de desenvolvimento.
+
 ### When
 Obrigatorio antes de decisao go/no-go da escola piloto e apos alteracoes nos fluxos criticos.
 

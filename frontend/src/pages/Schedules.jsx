@@ -259,16 +259,45 @@ const DraftPanel = ({ draft, onApprove, onReject, isApproving, isRejecting }) =>
           </div>
           {isLoading && <CSpinner size="sm" />}
           {!isLoading && diff && (
-            <div className="d-flex gap-3 flex-wrap">
-              <span className="badge bg-success-subtle text-success border border-success">
-                +{diff.added} blocos adicionados
-              </span>
-              <span className="badge bg-danger-subtle text-danger border border-danger">
-                -{diff.removed} blocos removidos
-              </span>
-              <span className="badge bg-secondary-subtle text-secondary border border-secondary">
-                {diff.unchanged} sem alteração
-              </span>
+            <div className="d-flex flex-column gap-2 mt-3">
+              <div className="d-flex gap-3 flex-wrap">
+                <span className="badge bg-success-subtle text-success border border-success">
+                  +{diff.added} blocos adicionados
+                </span>
+                <span className="badge bg-danger-subtle text-danger border border-danger">
+                  -{diff.removed} blocos removidos
+                </span>
+                <span className="badge bg-secondary-subtle text-secondary border border-secondary">
+                  {diff.unchanged} sem alteração
+                </span>
+              </div>
+              {diff.statistics && (
+                <div className="bg-white p-2 rounded border small text-muted">
+                  <strong>Resumo Estatístico (vs Atual):</strong>
+                  <div className="d-flex flex-wrap gap-4 mt-2">
+                    <div>
+                      <div><strong>{diff.statistics.delta_projected_end_date_days > 0 ? '+' : ''}{diff.statistics.delta_projected_end_date_days} dias</strong></div>
+                      <div style={{ fontSize: '0.75rem' }}>Fim das aulas</div>
+                    </div>
+                    <div>
+                      <div><strong>{diff.statistics.backlog_remaining_hours}h</strong></div>
+                      <div style={{ fontSize: '0.75rem' }}>Por agendar</div>
+                    </div>
+                    <div>
+                      <div><strong>{diff.statistics.aggregate_gap_variation > 0 ? '+' : ''}{diff.statistics.aggregate_gap_variation}</strong></div>
+                      <div style={{ fontSize: '0.75rem' }}>Furos</div>
+                    </div>
+                    <div>
+                      <div><strong>{(diff.statistics.churn_outside_frozen_ratio * 100).toFixed(1)}%</strong></div>
+                      <div style={{ fontSize: '0.75rem' }}>Churn (futuro)</div>
+                    </div>
+                    <div>
+                      <div><strong>{diff.statistics.end_date_spread_days} dias</strong></div>
+                      <div style={{ fontSize: '0.75rem' }}>Dispersão fim</div>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>

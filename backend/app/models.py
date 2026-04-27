@@ -142,7 +142,8 @@ class Organization(Base):
     subjects: Mapped[List["Subject"]] = relationship(back_populates="organization")
     timeslots: Mapped[List["Timeslot"]] = relationship(back_populates="organization")
 
-    settings: Mapped[List["OrganizationSettings"]] = relationship(back_populates="organization", cascade=CASCADE_ALL_DELETE)
+    settings: Mapped[Optional["OrganizationSettings"]] = relationship(back_populates="organization", cascade=CASCADE_ALL_DELETE, uselist=False)
+    grid_settings: Mapped[Optional["OrganizationGridSettings"]] = relationship(back_populates="organization", cascade=CASCADE_ALL_DELETE, uselist=False)
     calendar_events: Mapped[List["SchoolCalendarEvent"]] = relationship(back_populates="organization", cascade=CASCADE_ALL_DELETE)
 
     def __repr__(self) -> str:
@@ -419,32 +420,35 @@ class ScheduleOutput(Base):
 # --- CONFIGURAÇÕES DA ESCOLA (Sprint 0) ---
 
 class OrganizationSettings(Base):
-    """Configurações anuais da escola (uma por ano letivo).
-    Chave lógica: (org_id, academic_year) — vários ativos em simultâneo
-    porque os cursos profissionais duram 3 anos.
-    """
+    """Configurações da escola (única por organização)."""
     __tablename__ = "organization_settings"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    org_id: Mapped[int] = mapped_column(ForeignKey(FK_ORG_ID, ondelete="CASCADE"), index=True)
-    academic_year: Mapped[str] = mapped_column(String(10), nullable=False)  # Ex: "2025/2026"
+    org_id: Mapped[int] = mapped_column(ForeignKey(FK_ORG_ID, ondelete="CASCADE"), unique=True, index=True)
     school_start_date: Mapped[Optional[date_type]] = mapped_column(Date, nullable=True)
     school_target_end_date: Mapped[Optional[date_type]] = mapped_column(Date, nullable=True)
     school_hard_end_date: Mapped[Optional[date_type]] = mapped_column(Date, nullable=True)
-    region_code: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)  # Ex: "Lisboa"
-    lunch_window_start: Mapped[Optional[time]] = mapped_column(Time, nullable=True)
-    lunch_window_end: Mapped[Optional[time]] = mapped_column(Time, nullable=True)
-    lunch_min_duration_minutes: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     repair_stability_window_days: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
 
     organization: Mapped["Organization"] = relationship(back_populates="settings")
 
-    __table_args__ = (
-        UniqueConstraint("org_id", "academic_year", name="uq_org_academic_year"),
-    )
+    def __repr__(self) -> str:
+        return f"<OrganizationSettings(org_id={self.org_id})>"
+
+class OrganizationGridSettings(Base):
+    """Configurações da grelha horária da organização."""
+    __tablename__ = "organization_grid_settings"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    org_id: Mapped[int] = mapped_column(ForeignKey(FK_ORG_ID, ondelete="CASCADE"), unique=True, index=True)
+    lunch_window_start: Mapped[Optional[time]] = mapped_column(Time, nullable=True)
+    lunch_window_end: Mapped[Optional[time]] = mapped_column(Time, nullable=True)
+    lunch_min_duration_minutes: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+
+    organization: Mapped["Organization"] = relationship(back_populates="grid_settings")
 
     def __repr__(self) -> str:
-        return f"<OrganizationSettings(org_id={self.org_id}, year='{self.academic_year}')>"
+        return f"<OrganizationGridSettings(org_id={self.org_id})>"
 
 
 class SchoolCalendarEvent(Base):
@@ -456,7 +460,6 @@ class SchoolCalendarEvent(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     org_id: Mapped[int] = mapped_column(ForeignKey(FK_ORG_ID, ondelete="CASCADE"), index=True)
-    academic_year: Mapped[str] = mapped_column(String(10), nullable=False)
     name: Mapped[str] = mapped_column(String(150), nullable=False)
     start_date: Mapped[date_type] = mapped_column(Date, nullable=False)
     end_date: Mapped[date_type] = mapped_column(Date, nullable=False)

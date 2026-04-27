@@ -384,10 +384,10 @@ class ScheduleEngine:
         return penalties
 
     def _compute_class_target_minutes(self, lessons: list[LessonInput]) -> int:
-        return sum(
-            min(lesson.remaining_minutes, lesson.target_weekly_minutes)
+        return int(round(sum(
+            min(float(lesson.remaining_minutes), float(lesson.target_weekly_minutes))
             for lesson in lessons
-        )
+        )))
 
     def _build_class_actual_minute_vars(self, class_lessons: dict[int, list[LessonInput]], max_class_minutes: int) -> dict[int, cp_model.IntVar]:
         actual_vars: dict[int, cp_model.IntVar] = {}
@@ -411,6 +411,7 @@ class ScheduleEngine:
     ) -> list:
         penalties: list = []
         for class_id, target_minutes in class_target_map.items():
+            target_minutes = int(round(target_minutes))
             if target_minutes <= 0:
                 continue
 
@@ -460,7 +461,9 @@ class ScheduleEngine:
             if lesson.remaining_minutes <= 0:
                 continue
 
-            target_minutes = min(lesson.remaining_minutes, lesson.target_weekly_minutes)
+            target_minutes = int(round(min(float(lesson.remaining_minutes), float(lesson.target_weekly_minutes))))
+            if target_minutes <= 0:
+                continue
             total_minutes = sum(
                 self.lesson_at_ts[(lesson.lesson_id, ts.ts_id)] * ts.duration_minutes
                 for ts in self.timeslots

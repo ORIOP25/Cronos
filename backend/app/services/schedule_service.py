@@ -4,7 +4,7 @@ from datetime import date, timedelta
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy.future import select
-from sqlalchemy import delete, desc
+from sqlalchemy import and_, delete, desc
 from app import models, schemas
 
 DEFAULT_REPAIR_STABILITY_WINDOW_DAYS = 14
@@ -417,6 +417,63 @@ def get_class_progress_map_sync(db: Session, org_id: int) -> dict:
         .all()
     )
     return {(r.class_id, r.module_id): r.hours_completed for r in records}
+
+
+def get_repair_committed_minutes_by_lesson_sync(
+    db: Session,
+    org_id: int,
+    frozen_until: date,
+) -> dict[int, int]:
+    """Retorna minutos comprometidos por lição até ao limite congelado do repair.
+
+    Regra:
+      - conta blocos ativos não-draft com date <= frozen_until em estado NONE/GIVEN;
+      - não conta blocos com ocorrência GAP/SUBSTITUTED;
+      - ignora blocos sem data (legado).
+    """
+    rows = (
+        db.query(
+            models.ScheduleOutput.lesson_id,
+            models.Timeslot.start_time,
+            models.Timeslot.end_time,
+            models.LessonOccurrence.status,
+        )
+        .join(models.Timeslot, models.ScheduleOutput.timeslot_id == models.Timeslot.id)
+        .outerjoin(
+            models.LessonOccurrence,
+            and_(
+                models.LessonOccurrence.schedule_output_id == models.ScheduleOutput.id,
+                models.LessonOccurrence.date == models.ScheduleOutput.date,
+            ),
+        )
+        .filter(
+            models.ScheduleOutput.organization_id == org_id,
+            models.ScheduleOutput.is_draft.is_(False),
+            models.ScheduleOutput.date.isnot(None),
+            models.ScheduleOutput.date <= frozen_until,
+        )
+        .all()
+    )
+
+    blocked_statuses = {
+        models.LessonOccurrenceStatus.GAP,
+        models.LessonOccurrenceStatus.SUBSTITUTED,
+    }
+    committed_minutes: dict[int, int] = defaultdict(int)
+
+    for lesson_id, start_time, end_time, status in rows:
+        if status in blocked_statuses:
+            continue
+
+        start_minutes = start_time.hour * 60 + start_time.minute
+        end_minutes = end_time.hour * 60 + end_time.minute
+        duration_minutes = max(0, end_minutes - start_minutes)
+        if duration_minutes <= 0:
+            continue
+
+        committed_minutes[lesson_id] += duration_minutes
+
+    return dict(committed_minutes)
 
 
 def get_org_settings_sync(db: Session, org_id: int):
@@ -917,10 +974,13 @@ def get_diff_sync(db: Session, org_id: int, gen_id: str) -> dict:
     Retorna:
       added   — blocos no rascunho mas não no ativo (mesmo timeslot+data)
       removed — blocos no ativo mas não no rascunho
-      total_draft   — total de blocos no rascunho
-      total_active  — total de blocos ativos futuros
+      total_draft   — total de blocos no rascunho após janela frozen
+      total_active  — total de blocos ativos após janela frozen
     """
     today = date.today()
+    repair_window_days = _resolve_repair_window_days_sync(db, org_id)
+    frozen_until = today + timedelta(days=repair_window_days)
+    compared_from_date = frozen_until + timedelta(days=1)
 
     def _fetch_set(is_draft_val: bool, generation_filter=None):
         q = db.query(
@@ -931,7 +991,7 @@ def get_diff_sync(db: Session, org_id: int, gen_id: str) -> dict:
         ).filter(
             models.ScheduleOutput.organization_id == org_id,
             models.ScheduleOutput.is_draft.is_(is_draft_val),
-            models.ScheduleOutput.date > today,
+            models.ScheduleOutput.date >= compared_from_date,
         )
         if generation_filter:
             q = q.filter(models.ScheduleOutput.generation_id == generation_filter)
@@ -949,4 +1009,7 @@ def get_diff_sync(db: Session, org_id: int, gen_id: str) -> dict:
         "unchanged": len(draft_set & active_set),
         "total_draft": len(draft_set),
         "total_active": len(active_set),
+        "repair_window_days": repair_window_days,
+        "frozen_until": frozen_until,
+        "compared_from_date": compared_from_date,
     }

@@ -410,6 +410,37 @@ class ScheduleGenerateRequest(BaseModel):
     mode: str = "full"
 
 
+class SchedulePreflightPrimaryWindow(BaseModel):
+    rolling_weeks: int
+    start_date: date
+    end_date: date
+    total_days: int
+    blocked_days: int
+    usable_days: int
+
+
+class SchedulePreflightHardEndFeasibility(BaseModel):
+    start_date: date
+    hard_end_date: date
+    backlog_hours: float
+    capacity_hours: float
+    expected_residual_hours: float
+    feasible_until_hard_end: bool
+
+
+class SchedulePreflightSummary(BaseModel):
+    mode: str
+    primary_window: Optional[SchedulePreflightPrimaryWindow] = None
+    hard_end_feasibility: Optional[SchedulePreflightHardEndFeasibility] = None
+
+
+class ScheduleGenerateResponse(BaseModel):
+    task_id: str
+    status: str
+    solver_version: str
+    preflight: SchedulePreflightSummary
+
+
 # --- SUBSTITUTIONS ---
 
 class SubstitutionBase(BaseModel):
@@ -576,17 +607,10 @@ ERR_HARD_BEFORE_TARGET = "A data-limite rígida não pode ser anterior à data-a
 
 
 class OrganizationSettingsUpsert(BaseModel):
-    """Cria ou atualiza as configurações de um ano letivo.
-    Chave lógica: (org_id, academic_year).
-    """
-    academic_year: str = Field(..., pattern=r'^\d{4}/\d{4}$', description=DESC_ACADEMIC_YEAR)
+    """Cria ou atualiza as configurações da escola."""
     school_start_date: date | None = Field(None, description="Primeiro dia de aulas")
     school_target_end_date: date | None = Field(None, description="Data-alvo para fim das aulas (benchmark do solver)")
     school_hard_end_date: date | None = Field(None, description=DESC_HARD_END_DATE)
-    region_code: str | None = Field(None, description=DESC_REGION_CODE)
-    lunch_window_start: time | None = Field(None, description=DESC_LUNCH_START)
-    lunch_window_end: time | None = Field(None, description=DESC_LUNCH_END)
-    lunch_min_duration_minutes: int | None = Field(None, ge=1, description=DESC_LUNCH_MIN)
     repair_stability_window_days: int | None = Field(
         None,
         ge=1,
@@ -606,6 +630,31 @@ class OrganizationSettingsUpsert(BaseModel):
         if target_end_date and hard_end_date and hard_end_date < target_end_date:
             raise ValueError(ERR_HARD_BEFORE_TARGET)
 
+    @model_validator(mode='after')
+    def validate_school_dates_only(self):
+        self._validate_school_dates(
+            self.school_start_date,
+            self.school_target_end_date,
+            self.school_hard_end_date,
+        )
+        return self
+
+
+class OrganizationSettingsRead(BaseModel):
+    id: int
+    org_id: int
+    school_start_date: date | None = None
+    school_target_end_date: date | None = None
+    school_hard_end_date: date | None = None
+    repair_stability_window_days: int | None = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+class OrganizationGridSettingsUpsert(BaseModel):
+    lunch_window_start: time | None = Field(None, description=DESC_LUNCH_START)
+    lunch_window_end: time | None = Field(None, description=DESC_LUNCH_END)
+    lunch_min_duration_minutes: int | None = Field(None, ge=1, description=DESC_LUNCH_MIN)
+
     @staticmethod
     def _validate_lunch_inputs(start: time | None, end: time | None, minimum: int | None) -> None:
         if (start is None) != (end is None):
@@ -622,11 +671,6 @@ class OrganizationSettingsUpsert(BaseModel):
 
     @model_validator(mode='after')
     def validate_lunch_window(self):
-        self._validate_school_dates(
-            self.school_start_date,
-            self.school_target_end_date,
-            self.school_hard_end_date,
-        )
         self._validate_lunch_inputs(
             self.lunch_window_start,
             self.lunch_window_end,
@@ -634,35 +678,22 @@ class OrganizationSettingsUpsert(BaseModel):
         )
         return self
 
-
-class OrganizationSettingsRead(BaseModel):
+class OrganizationGridSettingsRead(BaseModel):
     id: int
     org_id: int
-    academic_year: str
-    school_start_date: date | None = None
-    school_target_end_date: date | None = None
-    school_hard_end_date: date | None = None
-    region_code: str | None = None
     lunch_window_start: time | None = None
     lunch_window_end: time | None = None
     lunch_min_duration_minutes: int | None = None
-    repair_stability_window_days: int | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
 
 class HolidaysSyncResponse(BaseModel):
-    academic_year: str
     imported_count: int
     message: str
 
 
-class AvailableRegionsResponse(BaseModel):
-    regions: list[str]
-
-
 class SchoolCalendarEventCreate(BaseModel):
-    academic_year: str = Field(..., pattern=r'^\d{4}/\d{4}$', description=DESC_ACADEMIC_YEAR)
     name: str = Field(..., min_length=1, max_length=150)
     start_date: date
     end_date: date
@@ -678,7 +709,6 @@ class SchoolCalendarEventCreate(BaseModel):
 class SchoolCalendarEventRead(BaseModel):
     id: int
     org_id: int
-    academic_year: str
     name: str
     start_date: date
     end_date: date
@@ -929,6 +959,15 @@ class ScheduleDraftRead(BaseModel):
     latest_date: date | None = None
 
 
+class DraftComparisonSummaryRead(BaseModel):
+    """Estatísticas agregadas de comparação entre o rascunho e o publicado."""
+    delta_projected_end_date_days: int
+    end_date_spread_days: int
+    churn_outside_frozen_ratio: float
+    total_blocks_changed: int
+    backlog_remaining_hours: float
+    aggregate_gap_variation: int
+
 class ScheduleDiffRead(BaseModel):
     """Résultat du diff entre rascunho e horário ativo."""
     generation_id: str
@@ -937,6 +976,11 @@ class ScheduleDiffRead(BaseModel):
     unchanged: int
     total_draft: int
     total_active: int
+    repair_window_days: int | None = None
+    frozen_until: date | None = None
+    compared_from_date: date | None = None
+    statistics: DraftComparisonSummaryRead | None = None
+
 
 
 class AuditGenerationSummaryRead(BaseModel):

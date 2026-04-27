@@ -43,18 +43,15 @@ async def _seed_minimal_generation_data_with_settings(
 ):
     settings = models.OrganizationSettings(
         org_id=org_id,
-        academic_year="2025/2026",
         school_start_date=school_start_date,
         school_target_end_date=school_target_end_date,
         school_hard_end_date=school_hard_end_date,
         repair_stability_window_days=repair_window_days,
-        region_code="Lisboa",
     )
     db_session.add(settings)
 
     holiday = models.SchoolCalendarEvent(
         org_id=org_id,
-        academic_year="2025/2026",
         name="Feriado Nacional",
         start_date=date(2025, 12, 1),
         end_date=date(2025, 12, 1),
@@ -154,17 +151,15 @@ async def test_generate_auto_sync_holidays_is_attempted(
     db_session.add(
         models.OrganizationSettings(
             org_id=org_id,
-            academic_year="2025/2026",
             school_start_date=date(2025, 9, 15),
             school_target_end_date=date(2026, 6, 15),
-            region_code="Lisboa",
         )
     )
     await db_session.commit()
 
     called = {"value": False}
 
-    async def fake_sync_holidays(db, org_id, academic_year, region_code):
+    async def fake_sync_holidays(db, org_id):
         await asyncio.sleep(0)
         called["value"] = True
         return 3

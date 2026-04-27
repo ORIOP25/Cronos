@@ -14,7 +14,15 @@ import structlog
 from app import schemas, models
 from app.api import deps
 from app.services import schedule_service, settings_service, teacher_observability_service
-from app.solver_tasks import generate_schedule_task
+from app.solver_tasks import (
+    generate_schedule_task,
+    _build_blocked_dates,
+    _build_primary_rolling_window,
+    _compute_remaining_minutes,
+    _estimate_capacity_minutes_in_range,
+    _resolve_expansion_start_date,
+    _resolve_solver_v2_rolling_weeks,
+)
 from app.config import settings
 from app.core.ratelimit import limiter
 
@@ -32,6 +40,11 @@ TASK_KEY_TTL_SECONDS = 60 * 60 * 24
 TASK_ORG_KEY_PREFIX = "schedule_task_org:"
 TASK_CANCEL_KEY_PREFIX = "schedule_task_cancel:"
 ACTIVE_TASK_BY_ORG_KEY_PREFIX = "schedule_active_task_org:"
+
+
+def _resolve_solver_engine_version() -> str:
+    version = str(getattr(settings, "SOLVER_ENGINE_VERSION", "v1")).lower()
+    return version if version in {"v1", "v2"} else "v1"
 
 
 def _task_org_key(task_id: str) -> str:
@@ -155,9 +168,6 @@ async def _get_latest_settings_with_dates(
             models.OrganizationSettings.org_id == org_id,
             models.OrganizationSettings.school_start_date.isnot(None),
             models.OrganizationSettings.school_target_end_date.isnot(None),
-        ).order_by(
-            desc(models.OrganizationSettings.academic_year),
-            desc(models.OrganizationSettings.id),
         )
     )
     return settings_result.scalars().first()
@@ -211,8 +221,6 @@ async def _ensure_auto_holidays(
         imported = await settings_service.sync_holidays(
             db,
             org_id=org_id,
-            academic_year=org_settings.academic_year,
-            region_code=org_settings.region_code,
         )
     except Exception:
         return (
@@ -417,16 +425,178 @@ async def _validate_subject_requirements(
     return errors
 
 
-async def _preflight_check(db: AsyncSession, org_id: int, mode: str = "full") -> list[str]:
-    """Valida pré-condições antes de iniciar o solver. Retorna lista de erros."""
+async def _validate_repair_capacity_feasibility(
+    db: AsyncSession,
+    org_id: int,
+    org_settings: models.OrganizationSettings,
+    room_count: int,
+) -> str | None:
+    """Mantido por compatibilidade: usar preflight hibrido em _build_hard_end_feasibility."""
+    _ = (db, org_id, org_settings, room_count)
+    return None
+
+
+def _build_preflight_primary_window(
+    *,
+    org_settings: models.OrganizationSettings,
+    mode: str,
+    blocked_dates: set[date],
+) -> dict | None:
+    hard_end_date = _resolve_preflight_hard_end_date(org_settings)
+    if hard_end_date is None:
+        return None
+
+    repair_window_days = _resolve_repair_window_days(org_settings) if mode == "repair" else 0
+    window_start = _resolve_expansion_start_date(
+        org_settings.school_start_date,
+        mode=mode,
+        repair_window_days=repair_window_days,
+    )
+
+    primary_window = _build_primary_rolling_window(
+        window_start_date=window_start,
+        hard_end_date=hard_end_date,
+        blocked_dates=blocked_dates,
+        rolling_weeks=_resolve_solver_v2_rolling_weeks(),
+    )
+    return {
+        "rolling_weeks": int(primary_window["rolling_weeks"]),
+        "start_date": primary_window["window_start_date"],
+        "end_date": primary_window["window_end_date"],
+        "total_days": int(primary_window["window_total_days"]),
+        "blocked_days": int(primary_window["window_blocked_days"]),
+        "usable_days": int(primary_window["window_usable_days"]),
+    }
+
+
+async def _build_hard_end_feasibility(
+    db: AsyncSession,
+    org_id: int,
+    org_settings: models.OrganizationSettings,
+    mode: str,
+    room_count: int,
+    blocked_dates: set[date],
+) -> dict | None:
+    hard_end_date = _resolve_preflight_hard_end_date(org_settings)
+    if hard_end_date is None:
+        return None
+
+    repair_window_days = _resolve_repair_window_days(org_settings) if mode == "repair" else 0
+    horizon_start = _resolve_expansion_start_date(
+        org_settings.school_start_date,
+        mode=mode,
+        repair_window_days=repair_window_days,
+    )
+
+    def _run(sync_db) -> tuple[int, int]:
+        lessons = schedule_service.get_active_lessons_with_subject_sync(sync_db, org_id)
+        modules_by_subject = schedule_service.get_modules_by_subject_sync(sync_db, org_id)
+        progress_map = schedule_service.get_class_progress_map_sync(sync_db, org_id)
+
+        committed_minutes_by_lesson: dict[int, int] = {}
+        if mode == "repair":
+            frozen_until = horizon_start - timedelta(days=1)
+            committed_minutes_by_lesson = schedule_service.get_repair_committed_minutes_by_lesson_sync(
+                sync_db,
+                org_id,
+                frozen_until,
+            )
+
+        remaining_minutes = 0
+        if lessons:
+            for lesson in lessons:
+                remaining = _compute_remaining_minutes(lesson, modules_by_subject, progress_map)
+                if mode == "repair":
+                    remaining -= max(0, int(committed_minutes_by_lesson.get(lesson.id, 0)))
+                remaining_minutes += max(0, int(remaining))
+        else:
+            link_rows = (
+                sync_db.query(
+                    models.ClassSubjectLink.class_id,
+                    models.ClassSubjectLink.subject_id,
+                )
+                .join(models.Class, models.ClassSubjectLink.class_id == models.Class.id)
+                .filter(
+                    models.Class.organization_id == org_id,
+                    models.Class.is_archived == False,  # noqa: E712
+                    models.ClassSubjectLink.teacher_id.isnot(None),
+                    models.ClassSubjectLink.grade_level == models.Class.grade_level,
+                )
+                .distinct()
+                .all()
+            )
+
+            for class_id, subject_id in link_rows:
+                for module in modules_by_subject.get(subject_id, []):
+                    hours_done = float(progress_map.get((class_id, module.id), 0) or 0)
+                    remaining_hours = max(0.0, float(module.hours_total) - hours_done)
+                    remaining_minutes += int(round(remaining_hours * 60))
+
+        if remaining_minutes <= 0:
+            return (0, 0)
+
+        timeslots = schedule_service.get_timeslots_by_org_sync(sync_db, org_id)
+        capacity_minutes = _estimate_capacity_minutes_in_range(
+            timeslots=timeslots,
+            room_count=max(0, int(room_count)),
+            blocked_dates=blocked_dates,
+            start_date=horizon_start,
+            end_date=hard_end_date,
+        )
+        return (remaining_minutes, capacity_minutes)
+
+    backlog_minutes, capacity_minutes = await db.run_sync(_run)
+    expected_residual_minutes = max(0, backlog_minutes - max(0, capacity_minutes))
+
+    return {
+        "start_date": horizon_start,
+        "hard_end_date": hard_end_date,
+        "backlog_hours": round(max(0, backlog_minutes) / 60, 1),
+        "capacity_hours": round(max(0, capacity_minutes) / 60, 1),
+        "expected_residual_hours": round(expected_residual_minutes / 60, 1),
+        "feasible_until_hard_end": expected_residual_minutes == 0,
+    }
+
+
+def _build_repair_infeasible_error(feasibility: dict) -> str:
+    return (
+        "Regeneracao em modo repair bloqueada: carga reconciliada estimada "
+        f"({feasibility['backlog_hours']}h) excede a capacidade teorica maxima "
+        f"({feasibility['capacity_hours']}h) no horizonte "
+        f"{feasibility['start_date'].isoformat()} a {feasibility['hard_end_date'].isoformat()}. "
+        f"Residual esperado ate hard end: {feasibility['expected_residual_hours']}h."
+    )
+
+
+async def _preflight_check(db: AsyncSession, org_id: int, mode: str = "full") -> tuple[list[str], dict]:
+    """Valida pré-condições e devolve erros + resumo de preflight híbrido."""
     errors: list[str] = []
+    preflight_summary: dict = {
+        "mode": mode,
+        "primary_window": None,
+        "hard_end_feasibility": None,
+    }
+
+    from app.services import schedule_service
+    drafts = await db.run_sync(lambda sync_db: schedule_service.list_draft_gen_ids_sync(sync_db, org_id))
+    if drafts:
+        return (
+            [
+                "Existe um rascunho pendente de aprovação. "
+                "Por favor, aprove ou rejeite o rascunho atual antes de iniciar uma nova geração."
+            ],
+            preflight_summary,
+        )
 
     org_settings = await _get_latest_settings_with_dates(db, org_id)
     if not org_settings:
-        return [
-            "Nenhum ano letivo com 'data de início' e 'data de fim-alvo'. "
-            "Configure em Configurações > Anos Letivos."
-        ]
+        return (
+            [
+                "Nenhum ano letivo com 'data de início' e 'data de fim-alvo'. "
+                "Configure em Configurações > Anos Letivos."
+            ],
+            preflight_summary,
+        )
 
     if mode == "repair":
         window_error = _validate_repair_generation_window(org_settings)
@@ -459,6 +629,16 @@ async def _preflight_check(db: AsyncSession, org_id: int, mode: str = "full") ->
     if not room_count:
         errors.append("Nenhuma sala configurada.")
 
+    calendar_events = await db.execute(
+        sa_select(models.SchoolCalendarEvent).where(models.SchoolCalendarEvent.org_id == org_id)
+    )
+    blocked_dates = _build_blocked_dates(calendar_events.scalars().all())
+    preflight_summary["primary_window"] = _build_preflight_primary_window(
+        org_settings=org_settings,
+        mode=mode,
+        blocked_dates=blocked_dates,
+    )
+
     teacher_ids = await _collect_generation_teacher_ids(db, org_id)
     teacher_error = await _validate_teacher_availabilities(db, teacher_ids)
     if teacher_error:
@@ -467,11 +647,30 @@ async def _preflight_check(db: AsyncSession, org_id: int, mode: str = "full") ->
     subject_ids = await _collect_generation_subject_ids(db, org_id)
     errors.extend(await _validate_subject_requirements(db, org_id, subject_ids))
 
-    return errors
+    if not errors:
+        feasibility = await _build_hard_end_feasibility(
+            db,
+            org_id,
+            org_settings,
+            mode,
+            int(room_count or 0),
+            blocked_dates,
+        )
+        preflight_summary["hard_end_feasibility"] = feasibility
+
+        if (
+            mode == "repair"
+            and feasibility is not None
+            and not feasibility["feasible_until_hard_end"]
+        ):
+            errors.append(_build_repair_infeasible_error(feasibility))
+
+    return errors, preflight_summary
 
 
 @router.post(
     "/generate",
+    response_model=schemas.ScheduleGenerateResponse,
     responses={
         400: {"description": "Preflight falhou — dados insuficientes para gerar horário"},
     },
@@ -486,12 +685,19 @@ async def trigger_generation(
     """Valida pré-condições e inicia a geração de horário em background."""
     org_id = current_user.organization_id
 
-    preflight_errors = await _preflight_check(db, org_id, payload.mode)
+    preflight_errors, preflight_summary = await _preflight_check(db, org_id, payload.mode)
+    encoded_preflight = jsonable_encoder(preflight_summary)
     if preflight_errors:
         raise HTTPException(
             status_code=400,
-            detail={"error": "preflight_failed", "problems": preflight_errors},
+            detail={
+                "error": "preflight_failed",
+                "problems": preflight_errors,
+                "preflight": encoded_preflight,
+            },
         )
+
+    solver_version = _resolve_solver_engine_version()
 
     task = generate_schedule_task.delay(org_id, payload.mode)
     try:
@@ -500,7 +706,12 @@ async def trigger_generation(
         r.setex(_active_task_by_org_key(org_id), TASK_KEY_TTL_SECONDS, task.id)
     except Exception:
         pass
-    return {"task_id": task.id, "status": "Processing started"}
+    return {
+        "task_id": task.id,
+        "status": "Processing started",
+        "solver_version": solver_version,
+        "preflight": encoded_preflight,
+    }
 
 @router.get("/status/{task_id}", responses={404: {"description": "Task não encontrada"}, 403: {"description": "Sem permissões para esta task"}, 503: {"description": "Validação de task indisponível"}})
 @limiter.limit("60/minute")
@@ -516,6 +727,9 @@ async def get_status(
     task_payload = task_result.result if isinstance(task_result.result, dict) else {}
     progress = task_payload.get("progress") if isinstance(task_payload, dict) else None
     cancel_requested = bool(r.get(_task_cancel_key(task_id)))
+    solver_version = _resolve_solver_engine_version()
+    if isinstance(task_payload, dict):
+        solver_version = task_payload.get("solver_version", solver_version)
 
     if task_result.status in {"SUCCESS", "FAILURE", "REVOKED"}:
         active_key = _active_task_by_org_key(current_user.organization_id)
@@ -536,6 +750,7 @@ async def get_status(
         "phase": task_payload.get("phase") if isinstance(task_payload, dict) else None,
         "progress": progress,
         "cancel_requested": cancel_requested,
+        "solver_version": solver_version,
     }
     return response
 
@@ -717,10 +932,14 @@ async def get_draft_diff(
 
     def _run(sync_db):
         from app.services import schedule_service as svc
+        from app.services import solver_v2_diff_service as diff_svc
         drafts = svc.list_draft_gen_ids_sync(sync_db, current_user.organization_id)
         if not any(d["generation_id"] == gen_id for d in drafts):
             return None
-        return svc.get_diff_sync(sync_db, current_user.organization_id, gen_id)
+        base_diff = svc.get_diff_sync(sync_db, current_user.organization_id, gen_id)
+        stats = diff_svc.get_diff_summary_sync(sync_db, current_user.organization_id, gen_id)
+        base_diff["statistics"] = stats
+        return base_diff
 
     result = await db.run_sync(_run)
     if result is None:

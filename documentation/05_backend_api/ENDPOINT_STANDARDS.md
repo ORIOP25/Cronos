@@ -364,6 +364,9 @@ Comportamento especifico para `mode=repair`:
 1. preflight valida se existe horizonte fora da janela de estabilidade.
 2. se `frozen_until >= hard_end_date`, resposta e erro de preflight e a task nao e enfileirada.
 3. quando valido, a regeneracao considera apenas periodo fora da janela congelada.
+4. antes de construir carga remanescente do solver, o backend reconcilia compromissos publicados ate `frozen_until`:
+	- conta blocos ativos `NONE/GIVEN` como carga comprometida;
+	- exclui do credito blocos `GAP/SUBSTITUTED` (mantem divida no planeado).
 
 Status esperados no trigger:
 - `200`: task aceite para processamento;
@@ -379,6 +382,11 @@ Regra obrigatoria de estabilidade:
 
 Objetivo funcional:
 - garantir que ajustes de curto prazo dentro da janela sao tratados por ocorrencias (GAP/GIVEN/SUBSTITUTED), e nao por substituicao estrutural do publicado.
+
+### Diff de draft (horizonte efetivo)
+- rota: `GET /api/v1/schedule/drafts/{gen_id}/diff`.
+- o diff compara apenas blocos com `date >= frozen_until + 1 dia`.
+- resposta inclui metadados: `repair_window_days`, `frozen_until`, `compared_from_date`.
 
 ## Contrato operacional de geracao assincrona e cancelamento (Alpha V1 - Ponto 14)
 
@@ -409,6 +417,17 @@ Objetivo funcional:
 ### Semantica de status
 - `GET /schedule/status/{task_id}` retorna:
 	- `task_id`, `status`, `result`, `detail`, `phase`, `progress`, `cancel_requested`.
+- quando `result.status=Success`, o backend inclui `remaining_summary` para transparencia operacional:
+	- `raw_remaining_hours`;
+	- `reconciled_remaining_hours`;
+	- `committed_credited_hours`;
+	- `post_expand_remaining_hours`.
+- quando `solver_version=v2`, o backend inclui tambem `candidate_pruning` no resultado da task:
+	- `candidates_before`;
+	- `candidates_after`;
+	- `removed_total`;
+	- `removed_ratio`;
+	- `removed_by_reason`.
 - quando status e terminal (`SUCCESS`, `FAILURE`, `REVOKED`), o backend limpa estado temporario de task ativa por organizacao.
 - em `REVOKED` sem detalhe tecnico, backend devolve detalhe operacional explicito de cancelamento.
 

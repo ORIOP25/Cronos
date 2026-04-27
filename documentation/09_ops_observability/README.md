@@ -4,6 +4,8 @@ Esta secao define sinais minimos de saude operacional.
 
 ## Conteudo principal
 - METRICS_AND_ALERTS.md
+- REPAIR_OPERATIONS_RUNBOOK.md
+- SOLVER_V2_CAPACITY_MULTI_ESCOLA.md
 
 ## Arranque deterministico local (Docker)
 - backend aplica migracoes antes de expor healthcheck de prontidao;
