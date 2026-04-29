@@ -8,16 +8,17 @@ import { getSubjectColor } from '../utils/subjectColors'
 // ---------------------------------------------------------------------------
 const DAY_LABELS = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo']
 
-const OCCURRENCE_STYLES = {
-  GIVEN:       { backgroundColor: '#d1e7dd', borderLeft: '3px solid #198754' },
-  GAP:         { backgroundColor: '#f8d7da', borderLeft: '3px solid #dc3545' },
-  SUBSTITUTED: { backgroundColor: '#fff3cd', borderLeft: '3px solid #ffc107' },
+const OCCURRENCE_CLASSES = {
+  GIVEN:       'zen-state-given',
+  GAP:         'zen-state-gap',
+  SUBSTITUTED: 'zen-state-substituted',
 }
 
-const OPEN_OCCURRENCE_STYLE = { backgroundColor: '#dbeafe', borderLeft: '3px solid #0d6efd' }
+const OPEN_OCCURRENCE_CLASS = 'zen-state-open'
+const PLANNED_CLASS = 'zen-state-planned'
 
 const OCCURRENCE_LABELS = {
-  GIVEN:       'Dado ✓',
+  GIVEN:       'Dada ✓',
   GAP:         'Furo ✗',
   SUBSTITUTED: 'Substituído ↔',
 }
@@ -71,28 +72,37 @@ function buildCellTitle(slotEntries) {
   return sections.join('\n\n')
 }
 
-/** Compute the CSS style for a cell based on occurrence status. */
-function getCellStyle(slot) {
-  if (!slot) return {}
+/** Compute the CSS class and style for a cell based on occurrence status. */
+function getCellVisuals(slot) {
+  if (!slot) return { className: '', style: {} }
   const color = getSubjectColor(slot.subject?.id ?? 0)
 
+  // Future/Current slots: Use subject color with opacity
   if (!slot.is_past) {
     return {
-      backgroundColor: `${color}26`,   // ~15% opacity
-      borderLeft: `3px solid ${color}`,
+      className: 'zen-state-card',
+      style: {
+        backgroundColor: `${color}26`, // ~15% opacity
+        borderLeftColor: color,
+      },
     }
   }
 
+  // Past slots with active (undecided) occurrence
   if (slot.occurrence_id && !slot.occurrence_decided_at) {
-    return OPEN_OCCURRENCE_STYLE
+    return { className: `zen-state-card ${OPEN_OCCURRENCE_CLASS}`, style: {} }
   }
 
-  if (slot.occurrence_status && slot.occurrence_decided_at && OCCURRENCE_STYLES[slot.occurrence_status]) {
-    return OCCURRENCE_STYLES[slot.occurrence_status]
+  // Past slots with decided occurrence
+  if (slot.occurrence_status && slot.occurrence_decided_at && OCCURRENCE_CLASSES[slot.occurrence_status]) {
+    return { className: `zen-state-card ${OCCURRENCE_CLASSES[slot.occurrence_status]}`, style: {} }
   }
 
-  // Past but no occurrence registered yet
-  return { backgroundColor: '#e9ecef', borderLeft: `3px solid ${color}` }
+  // Past but no occurrence registered yet (Planned/Pending)
+  return {
+    className: `zen-state-card ${PLANNED_CLASS}`,
+    style: { borderLeftColor: color },
+  }
 }
 
 /** Format a date string as "04 Mar" for column headers. */
@@ -152,7 +162,7 @@ const SlotCell = ({ slotEntries, isOperationalEnabled, onOpenOperationalAction }
     }
   }
 
-  const cellStyle = getCellStyle(slot)
+  const { className: cellClassName, style: cellStyle } = getCellVisuals(slot)
   let statusLabel = 'Planeado'
   if (slot.occurrence_id && !slot.occurrence_decided_at) {
     statusLabel = 'Pendente de decisão'
@@ -185,10 +195,9 @@ const SlotCell = ({ slotEntries, isOperationalEnabled, onOpenOperationalAction }
 
   const cardContent = (
     <div
+      className={cellClassName}
       style={{
         ...cellStyle,
-        padding: '6px 8px',
-        borderRadius: '4px',
         fontSize: '0.78rem',
         minHeight: '60px',
       }}

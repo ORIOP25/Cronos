@@ -300,7 +300,7 @@ function MySchedules() {
   if (hasWeekError && !hasWeekFallback) {
     weekContent = (
       <div className="text-center p-5 text-danger" style={{ fontSize: '0.9rem' }}>
-        Erro ao carregar o seu horário semanal. Tente novamente.
+        Não foi possível carregar o seu horário semanal. Verifique a ligação e volte a tentar dentro de alguns minutos.
       </div>
     )
   }
@@ -314,7 +314,7 @@ function MySchedules() {
             Meus Horários
           </h2>
           <small className="text-muted">
-            Vista pessoal semanal do professor. Verde = dado · Vermelho = furo · Amarelo = substituído.
+            Vista pessoal semanal do professor. Verde = dada · Vermelho = furo · Amarelo = substituída.
           </small>
         </div>
         <div className="d-flex gap-2 align-items-center flex-wrap">

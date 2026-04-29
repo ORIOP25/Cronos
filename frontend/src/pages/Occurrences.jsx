@@ -609,7 +609,7 @@ const OccurrencesPanel = ({ classId, dateFrom, dateTo, initialOccurrenceId }) =>
   if (isError) {
     return (
       <CAlert color="danger" className="mb-0">
-        Erro ao carregar ocorrências. Atualize a página para voltar a tentar.
+        Não foi possível carregar as ocorrências. Verifique a ligação e volte a tentar.
       </CAlert>
     )
   }
@@ -699,7 +699,6 @@ const OccurrencesPanel = ({ classId, dateFrom, dateTo, initialOccurrenceId }) =>
             const executionSummary = buildExecutionSummary(occ, teacherById, subjectById)
             const decisionSummary = buildDecisionSummary(occ)
             const operationalState = getOperationalState(occ)
-            const outcomeLabel = occ.decided_at ? (STATUS_LABELS[occ.status] ?? occ.status) : null
             const outcomeColor = STATUS_COLORS[occ.status] ?? 'secondary'
             const outcomeIcon = STATUS_ICONS[occ.status] ?? cilClock
             const classLabel = occ.class_name ?? '—'
@@ -715,14 +714,6 @@ const OccurrencesPanel = ({ classId, dateFrom, dateTo, initialOccurrenceId }) =>
                   <CIcon icon={OPERATIONAL_STATE_ICONS[operationalState] ?? cilClock} className="me-1" />
                   {OPERATIONAL_STATE_LABELS[operationalState] ?? operationalState}
                 </CBadge>
-                {outcomeLabel ? (
-                  <div className="mt-1">
-                    <CBadge color={outcomeColor}>
-                      <CIcon icon={outcomeIcon} className="me-1" />
-                      {outcomeLabel}
-                    </CBadge>
-                  </div>
-                ) : null}
               </CTableDataCell>
               <CTableDataCell>{plannedTeacherName}</CTableDataCell>
               <CTableDataCell className="fw-semibold">{executionSummary}</CTableDataCell>

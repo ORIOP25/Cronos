@@ -486,6 +486,15 @@ def get_org_settings_sync(db: Session, org_id: int):
     )
 
 
+def get_grid_settings_sync(db: Session, org_id: int):
+    """Retorna as OrganizationGridSettings desta org (única por org), ou None."""
+    return (
+        db.query(models.OrganizationGridSettings)
+        .filter(models.OrganizationGridSettings.org_id == org_id)
+        .first()
+    )
+
+
 def get_calendar_events_sync(db: Session, org_id: int):
     """Retorna todos os SchoolCalendarEvents desta org."""
     return (

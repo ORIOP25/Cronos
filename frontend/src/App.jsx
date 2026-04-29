@@ -1,5 +1,5 @@
 import React from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, Outlet } from 'react-router-dom';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import Dashboard from './pages/Dashboard';
@@ -19,11 +19,11 @@ import ClassSubjects from './pages/ClassSubjects';
 import DefaultLayout from './components/DefaultLayout';
 import ProtectedRoute from './components/ProtectedRoute';
 import { useAuthStore } from './store';
+import { PublicHomeGate } from './pages/MarketingSite';
 import {
   USER_ROLE_ADMIN,
   USER_ROLE_TEACHER,
   ROUTE_MY_SCHEDULES,
-  getDefaultRouteForRole,
   getForbiddenRedirectRoute,
 } from './roleAccess';
 
@@ -55,9 +55,8 @@ export function TeacherOnlyRoute({ children }) {
   return children
 }
 
-function RoleIndexRedirect() {
-  const role = useAuthStore((state) => state.user?.role)
-  return <Navigate to={getDefaultRouteForRole(role)} replace />
+function RootLayout() {
+  return <Outlet />
 }
 
 function App() {
@@ -66,10 +65,11 @@ function App() {
       <Routes>
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
-        
-        {/* Rotas Protegidas (Só com Login) */}
-        <Route path="/" element={<ProtectedRoute><DefaultLayout /></ProtectedRoute>}>
-          <Route index element={<RoleIndexRedirect />} />
+
+        <Route element={<RootLayout />}>
+          <Route index element={<PublicHomeGate />} />
+          {/* Rotas Protegidas (Só com Login) */}
+          <Route path="/" element={<ProtectedRoute><DefaultLayout /></ProtectedRoute>}>
           <Route path="dashboard" element={<AdminOnlyRoute><Dashboard /></AdminOnlyRoute>} />
           
         {/* Novas Rotas */}
@@ -89,6 +89,7 @@ function App() {
           <Route path="schedules/audit" element={<AdminOnlyRoute><ScheduleAuditDashboard /></AdminOnlyRoute>} />
           <Route path="absences" element={<AdminOnlyRoute><Occurrences /></AdminOnlyRoute>} />
           <Route path="my-availability" element={<TeacherOnlyRoute><MyAvailability /></TeacherOnlyRoute>} />
+          </Route>
         </Route>
       </Routes>
     </Router>

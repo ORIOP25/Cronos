@@ -243,7 +243,7 @@ const SubjectForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
                 {/* Botão: Texto "Adicionar" completo e alinhado */}
                 <CCol xs={3} sm={2} className="d-grid">
                   <CButton 
-                    color="success" 
+                    color="primary" 
                     size="sm" 
                     className="text-white text-nowrap"
                     onClick={handleAddModule}
@@ -302,7 +302,7 @@ const SubjectForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
                             </td>
                             <td className="text-end pe-3">
                               <CButton 
-                                color="success" 
+                                color="primary" 
                                 variant="ghost" 
                                 size="sm" 
                                 onClick={handleSaveEditModule}
@@ -373,7 +373,7 @@ const SubjectForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
               <CButton color="secondary" variant="ghost" onClick={onCancel} className="me-2">
                 Cancelar
               </CButton>
-              <CButton color="success" type="submit" className="text-white" disabled={isLoading}>
+              <CButton color="primary" type="submit" disabled={isLoading}>
                 {isLoading ? 'A gravar...' : `Gravar (${formData.modules.length} mód.)`}
               </CButton>
             </div>

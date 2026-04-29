@@ -13,6 +13,8 @@ const GlobalImportModal = ({ visible, onClose, onSuccess }) => {
   const fileInputRef = useRef()
   const [processing, setProcessing] = useState(false)
   const [progress, setProgress] = useState(0)
+  const [feedback, setFeedback] = useState(null)
+  const [completedImport, setCompletedImport] = useState(false)
   
   // Estados de Validação
   const [errors, setErrors] = useState([]) // Lista de erros encontrados
@@ -22,6 +24,9 @@ const GlobalImportModal = ({ visible, onClose, onSuccess }) => {
   const handleFileUpload = async (e) => {
     const file = e.target.files[0]
     if (!file) return
+
+    setFeedback(null)
+    setCompletedImport(false)
 
     const arrayBuffer = await file.arrayBuffer()
     const wb = XLSX.read(arrayBuffer, { type: 'array' })
@@ -144,13 +149,13 @@ const GlobalImportModal = ({ visible, onClose, onSuccess }) => {
         updateProgress()
       }
 
-      alert("Importação concluída com sucesso!")
+      setFeedback({ color: 'success', message: 'Importação concluída com sucesso.' })
+      setCompletedImport(true)
       if (onSuccess) onSuccess()
-      handleClose()
 
     } catch (err) {
       console.error(err)
-      alert("Ocorreu um erro inesperado durante a importação.")
+      setFeedback({ color: 'danger', message: 'Ocorreu um erro inesperado durante a importação.' })
     } finally {
       setProcessing(false)
     }
@@ -161,6 +166,8 @@ const GlobalImportModal = ({ visible, onClose, onSuccess }) => {
     setPreparedData(null)
     setStats(null)
     setProgress(0)
+    setFeedback(null)
+    setCompletedImport(false)
     if (fileInputRef.current) fileInputRef.current.value = ""
     onClose()
   }
@@ -171,7 +178,37 @@ const GlobalImportModal = ({ visible, onClose, onSuccess }) => {
         <CModalTitle>Importação Global (Ficheiro Único)</CModalTitle>
       </CModalHeader>
       <CModalBody>
-        
+        {feedback && (
+          <CAlert color={feedback.color} className="mb-4">
+            {feedback.message}
+          </CAlert>
+        )}
+
+        {completedImport ? (
+          <div className="text-center py-4">
+            <CIcon icon={cilCheckCircle} size="4xl" className="text-success mb-3" />
+            <h4>Importação concluída</h4>
+            <p className="text-muted">Os dados foram importados e a organização já foi atualizada.</p>
+
+            {stats && (
+              <div className="d-flex justify-content-center gap-3 mt-4 flex-wrap">
+                <CBadge color="primary" shape="rounded-pill" className="p-2 px-3 fs-6">
+                  {stats.teachers} Professores
+                </CBadge>
+                <CBadge color="info" shape="rounded-pill" className="p-2 px-3 fs-6">
+                  {stats.classes} Turmas
+                </CBadge>
+                <CBadge color="warning" shape="rounded-pill" className="p-2 px-3 fs-6 text-dark">
+                  {stats.subjects} Disciplinas
+                </CBadge>
+                <CBadge color="secondary" shape="rounded-pill" className="p-2 px-3 fs-6">
+                  {stats.rooms} Salas
+                </CBadge>
+              </div>
+            )}
+          </div>
+        ) : (
+          <>
         {/* FASE 1: UPLOAD */}
         {!processing && !preparedData && errors.length === 0 && (
             <div className="mb-4">
@@ -256,15 +293,17 @@ const GlobalImportModal = ({ visible, onClose, onSuccess }) => {
                 </CProgress>
             </div>
         )}
+          </>
+        )}
 
       </CModalBody>
       <CModalFooter>
         <CButton color="secondary" onClick={handleClose} disabled={processing}>
-          {errors.length > 0 ? 'Fechar e Corrigir' : 'Cancelar'}
+          {completedImport ? 'Fechar' : (errors.length > 0 ? 'Fechar e Corrigir' : 'Cancelar')}
         </CButton>
         
         {/* Botão Importar só aparece se houver dados preparados e zero erros */}
-        {preparedData && !processing && (
+        {preparedData && !processing && !completedImport && (
           <CButton color="success" className="text-white" onClick={handleImport}>
             <CIcon icon={cilCloudUpload} className="me-2"/>
             Confirmar e Importar

@@ -1014,7 +1014,7 @@ async def reject_draft(
 # ==========================================
 
 WEEK_FILTER_REQUIRED_MSG = "Indique class_id ou teacher_id para filtrar o horário."
-WEEK_SCHEDULE_RATE_LIMIT = "30/minute;360/hour"
+WEEK_SCHEDULE_RATE_LIMIT = "60/minute;600/hour"
 
 
 def _to_week_monday(target_date: date) -> date:

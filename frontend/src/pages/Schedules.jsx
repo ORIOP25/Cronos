@@ -766,12 +766,12 @@ const Schedules = () => {
           </h2>
           <small className="text-muted">
             {isAdmin ? 'Consulte e atualize os horários da escola.' : 'Visualize o seu horário semanal.'}
-            {' '}Verde = dado · Vermelho = furo · Amarelo = substituído · Cor = planeado.
+            {' '}Verde = dada · Vermelho = furo · Amarelo = substituída · Cor = planeado.
           </small>
         </div>
 
         {/* Generation controls */}
-        {isAdmin ? (
+            Rascunho de ajuste pendente
           <CCard className="border-0 shadow-sm">
             <CCardBody className="py-2 px-3">
               <CRow className="g-2 align-items-end">
@@ -823,7 +823,7 @@ const Schedules = () => {
         ) : null}
       </div>
 
-      {/* ── Sprint 3: preflight / status / drafts ── */}
+                      <div style={{ fontSize: '0.75rem' }}>Alterações fora da janela</div>
       {isAdmin ? (
         <>
           {preflightErrors.length > 0 && <PreflightErrorPanel problems={preflightErrors} />}

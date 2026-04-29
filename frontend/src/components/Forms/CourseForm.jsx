@@ -18,6 +18,7 @@ const fieldErrorClass = (classError, ...keywords) =>
 const CourseForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
   // --- WIZARD STATE (2 passos: Info + Turmas) ---
   const [step, setStep] = useState(1)
+  const [formError, setFormError] = useState(null)
 
   // --- FORM DATA STATE ---
   const [formData, setFormData] = useState({
@@ -64,27 +65,29 @@ const CourseForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
   const handleInputChange = (e) => {
     const { name, value } = e.target
     setFormData(prev => ({ ...prev, [name]: value }))
+    setFormError(null)
   }
 
   const handleNextStep = () => {
     // VALIDAÇÃO 1: Nome obrigatório
     if (!formData.name?.trim()) {
-      alert('Nome do curso é obrigatório')
+      setFormError('Nome do curso é obrigatório.')
       return
     }
 
     // VALIDAÇÃO 2: Sigla obrigatória
     if (!formData.abbreviation?.trim()) {
-      alert('Sigla do curso é obrigatória (ex: TGEI)')
+      setFormError('Sigla do curso é obrigatória (ex: TGEI).')
       return
     }
 
     // VALIDAÇÃO 3: Sigla com comprimento razoável
     if (formData.abbreviation.trim().length < 2) {
-      alert('Sigla deve ter pelo menos 2 caracteres')
+      setFormError('A sigla deve ter pelo menos 2 caracteres.')
       return
     }
 
+    setFormError(null)
     setStep(2)
   }
 
@@ -202,6 +205,12 @@ const CourseForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
       {/* PASSO 1: INFORMAÇÃO BÁSICA */}
       {step === 1 && (
         <>
+          {formError && (
+            <CAlert color="danger" className="mb-3">
+              {formError}
+            </CAlert>
+          )}
+
           <div className="mb-3 pb-3 border-bottom">
             <h5 className="mb-0">
               <span className="badge bg-primary me-2">1</span>

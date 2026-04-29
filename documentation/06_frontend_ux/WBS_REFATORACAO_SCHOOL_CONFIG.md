@@ -61,6 +61,17 @@
     *   Ajustar o botão "Guardar e Regenerar Grelha" para tamanho normal (`size="md"` em vez de `lg`), melhorando o aspeto geral.
     *   Garantir validação de obrigatoriedade: todos os campos têm de estar preenchidos.
 
+## 4. Estabilização pós-refatoração
+
+### 4.1 Feedback de erro visível em "Interrupções"
+* O frontend normaliza a mensagem de erro devolvida pela API antes de a renderizar no `CAlert`.
+* Isto evita ecrãs brancos quando o backend devolve `422` com o formato padrão do FastAPI (`detail` estruturado em lista).
+* O utilizador passa a ver a causa operacional real ao tentar criar eventos fora da janela do ano letivo.
+
+### 4.2 Alinhamento visual do campo "Janela de Reparação (Dias)"
+* Os rótulos da tab "Calendário" passam a usar altura mínima consistente para impedir que labels longas empurrem o input para baixo.
+* O alinhamento por linha mantém-se com `align-items-start`, mas a uniformização do label garante a grelha visual estável.
+
 ### Fase 3: Validação e Testes
 **Objetivo:** Assegurar que nenhuma regra de negócio do motor (Solver) quebra com estas alterações. **[CONCLUÍDO]**
 

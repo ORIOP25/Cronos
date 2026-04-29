@@ -4,23 +4,6 @@ import AvailabilityGrid from '../components/AvailabilityGrid';
 import { useAuthStore } from '../store';
 import { PREFERENCE_LEVELS, DEFAULT_PREFERENCE } from '../constants';
 
-const FEEDBACK_STYLES = {
-  success: {
-    backgroundColor: '#e6f5ec',
-    border: '1px solid #8bc5a2',
-    color: '#1d5c35',
-  },
-  error: {
-    backgroundColor: '#fde8e8',
-    border: '1px solid #e7a6a6',
-    color: '#7f1d1d',
-  },
-  info: {
-    backgroundColor: '#e8f1fb',
-    border: '1px solid #9ec2e6',
-    color: '#123b66',
-  },
-};
 
 const mapAvailabilityApiMessage = (err, context) => {
   const status = err?.response?.status;
@@ -162,13 +145,7 @@ const MyAvailability = () => {
       {feedback ? (
         <div
           role={feedback.type === 'error' ? 'alert' : 'status'}
-          style={{
-            marginBottom: '16px',
-            padding: '10px 12px',
-            borderRadius: '8px',
-            fontWeight: 500,
-            ...FEEDBACK_STYLES[feedback.type],
-          }}
+          className={`zen-alert zen-alert-${feedback.type === 'error' ? 'danger' : feedback.type}`}
         >
           {feedback.message}
         </div>
@@ -225,7 +202,7 @@ const MyAvailability = () => {
             padding: '10px 24px',
             fontSize: '15px',
             backgroundColor: 'var(--rs-primary)',
-            color: '#ffffff',
+            color: 'var(--color-text-inverse)',
             border: 'none',
             borderRadius: '8px',
             cursor: saving ? 'not-allowed' : 'pointer',

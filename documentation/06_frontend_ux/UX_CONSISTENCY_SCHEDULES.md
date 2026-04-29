@@ -239,6 +239,9 @@ A interface nao deve sugerir capacidades alem do role autenticado.
 - evitar nested ternaries;
 - usar compare function explicita em ordenacao;
 - manter comportamento consistente de selecao/troca de contexto.
+- em fluxos criticos, feedback de sucesso/erro deve aparecer dentro da pagina e nao via `alert()` do browser.
+- estados de ocorrencia devem usar a mesma copy em toda a interface: `Dada`, `Furo` e `Substituída`.
+- confirmacoes de alteracoes criticas devem acontecer dentro da pagina, com aviso inline e sem `window.confirm()`.
 
 ## Direcao visual premium (confirmada no posicionamento)
 

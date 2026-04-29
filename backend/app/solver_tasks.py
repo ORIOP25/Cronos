@@ -441,11 +441,21 @@ def _build_repair_window_block_detail(repair_window_days: int, hard_end_date: da
     )
 
 
-def _resolve_lunch_constraints(org_settings) -> tuple[int, int, int]:
-    """Resolve janela de almoço e pausa mínima (com defaults seguros)."""
-    start = org_settings.lunch_window_start
-    end = org_settings.lunch_window_end
-    min_duration = org_settings.lunch_min_duration_minutes
+def _resolve_lunch_constraints(grid_settings) -> tuple[int, int, int]:
+    """Resolve janela de almoço e pausa mínima (com defaults seguros).
+
+    Lê de OrganizationGridSettings (tab 'Grelha Horária');
+    usa defaults seguros quando grid_settings é None ou campos estão vazios.
+    """
+    if grid_settings is None:
+        return (
+            DEFAULT_LUNCH_WINDOW_START_MINUTES,
+            DEFAULT_LUNCH_WINDOW_END_MINUTES,
+            DEFAULT_LUNCH_MIN_DURATION_MINUTES,
+        )
+    start = grid_settings.lunch_window_start
+    end = grid_settings.lunch_window_end
+    min_duration = grid_settings.lunch_min_duration_minutes
 
     if min_duration is None or min_duration <= 0:
         min_duration = DEFAULT_LUNCH_MIN_DURATION_MINUTES
@@ -727,7 +737,8 @@ def generate_schedule_task(self: Task, org_id: int, mode: str = "full") -> dict:
             return _task_result(status="Error", message="Não existem blocos horários configurados.")
         timeslot_inputs = _build_timeslot_inputs(raw_timeslots)
         min_slot_minutes = min(ts.duration_minutes for ts in timeslot_inputs if ts.duration_minutes > 0)
-        lunch_start_minutes, lunch_end_minutes, lunch_min_duration = _resolve_lunch_constraints(org_settings)
+        grid_settings = schedule_service.get_grid_settings_sync(db, org_id)
+        lunch_start_minutes, lunch_end_minutes, lunch_min_duration = _resolve_lunch_constraints(grid_settings)
 
         expansion_start_date = _resolve_expansion_start_date(
             org_settings.school_start_date,

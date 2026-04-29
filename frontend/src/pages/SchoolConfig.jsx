@@ -24,6 +24,46 @@ const formatDate = (dateStr) => {
   return `${day}-${month}-${year}`
 }
 
+const getApiErrorMessage = (error, fallbackMessage) => {
+  const detail = error?.response?.data?.detail
+
+  if (typeof detail === 'string' && detail.trim()) {
+    return detail
+  }
+
+  if (Array.isArray(detail)) {
+    const messages = detail
+      .map((item) => {
+        if (typeof item === 'string') return item
+        if (item && typeof item === 'object') {
+          return item.msg || item.message || item.detail || ''
+        }
+        return ''
+      })
+      .filter(Boolean)
+
+    if (messages.length > 0) {
+      return messages.join(' ')
+    }
+  }
+
+  if (detail && typeof detail === 'object') {
+    if (typeof detail.message === 'string' && detail.message.trim()) {
+      return detail.message
+    }
+
+    if (typeof detail.msg === 'string' && detail.msg.trim()) {
+      return detail.msg
+    }
+  }
+
+  if (typeof error?.message === 'string' && error.message.trim()) {
+    return error.message
+  }
+
+  return fallbackMessage
+}
+
 const CalendarSection = () => {
   const queryClient = useQueryClient()
   const [newEvent, setNewEvent] = useState({
@@ -121,10 +161,14 @@ const CalendarSection = () => {
   return (
     <div>
       {successMsg && <CAlert color="success" className="mb-3">{successMsg}</CAlert>}
-      {syncMutation.isError && <CAlert color="danger">Erro ao sincronizar feriados.</CAlert>}
+      {syncMutation.isError && (
+        <CAlert color="danger">
+          {getApiErrorMessage(syncMutation.error, 'Erro ao sincronizar feriados.')}
+        </CAlert>
+      )}
       {createMutation.isError && (
         <CAlert color="danger">
-          {createMutation.error?.response?.data?.detail || 'Erro ao adicionar evento.'}
+          {getApiErrorMessage(createMutation.error, 'Erro ao adicionar evento.')}
         </CAlert>
       )}
 
@@ -203,6 +247,8 @@ const CalendarSection = () => {
 const SettingsSection = () => {
   const queryClient = useQueryClient()
   const [successMsg, setSuccessMsg] = useState(null)
+  const [savePromptMsg, setSavePromptMsg] = useState(null)
+  const [saveConfirmationPending, setSaveConfirmationPending] = useState(false)
   const [form, setForm] = useState({
     school_start_date: '',
     school_target_end_date: '',
@@ -229,10 +275,17 @@ const SettingsSection = () => {
     }
   }, [settings])
 
+  useEffect(() => {
+    setSaveConfirmationPending(false)
+    setSavePromptMsg(null)
+  }, [form.school_start_date, form.school_target_end_date, form.school_hard_end_date, form.repair_stability_window_days])
+
   const upsertMutation = useMutation({
     mutationFn: (payload) => apiClient.post('/school/settings/', payload),
     onSuccess: () => {
       setSuccessMsg('Configuração guardada com sucesso.')
+      setSavePromptMsg(null)
+      setSaveConfirmationPending(false)
       void queryClient.invalidateQueries({ queryKey: ['org-settings'] })
       setTimeout(() => setSuccessMsg(null), 3000)
     },
@@ -240,12 +293,16 @@ const SettingsSection = () => {
 
   const handleSave = () => {
     if (!form.school_start_date || !form.school_target_end_date || !form.school_hard_end_date) {
-      alert("Por favor, preencha todas as datas.");
+      setSavePromptMsg('Por favor, preencha todas as datas antes de guardar.')
+      setSaveConfirmationPending(false)
       return;
     }
 
-    const confirmed = window.confirm("Ao atualizar estas definições, o ano letivo em vigor será sobrescrito. Tem a certeza?");
-    if (!confirmed) return;
+    if (!saveConfirmationPending) {
+      setSavePromptMsg('Ao guardar estas definições, o ano letivo em vigor será sobrescrito. Volte a carregar em guardar para confirmar.')
+      setSaveConfirmationPending(true)
+      return
+    }
 
     const payload = {
       school_start_date: form.school_start_date || null,
@@ -261,11 +318,16 @@ const SettingsSection = () => {
   return (
     <div>
       {successMsg && <CAlert color="success" className="mb-3">{successMsg}</CAlert>}
-      {upsertMutation.isError && <CAlert color="danger">Erro ao guardar configuração.</CAlert>}
+      {savePromptMsg && <CAlert color="warning" className="mb-3">{savePromptMsg}</CAlert>}
+      {upsertMutation.isError && (
+        <CAlert color="danger">
+          {getApiErrorMessage(upsertMutation.error, 'Erro ao guardar configuração.')}
+        </CAlert>
+      )}
       
       <CRow className="g-3 mb-3 align-items-start">
         <CCol md={3}>
-          <CFormLabel htmlFor="startDate">Início das Aulas</CFormLabel>
+          <CFormLabel htmlFor="startDate" className="school-config-field-label">Início das Aulas</CFormLabel>
           <CFormInput
             id="startDate"
             type="date"
@@ -275,7 +337,7 @@ const SettingsSection = () => {
           />
         </CCol>
         <CCol md={3}>
-          <CFormLabel htmlFor="targetDate">Data-Alvo Fim</CFormLabel>
+          <CFormLabel htmlFor="targetDate" className="school-config-field-label">Data-Alvo Fim</CFormLabel>
           <CFormInput
             id="targetDate"
             type="date"
@@ -285,24 +347,24 @@ const SettingsSection = () => {
           />
         </CCol>
         <CCol md={3}>
-          <CFormLabel htmlFor="hardEndDate">Limite Rígido</CFormLabel>
+          <CFormLabel htmlFor="hardEndDate" className="school-config-field-label">Data limite final</CFormLabel>
           <CFormInput
             id="hardEndDate"
             type="date"
             value={form.school_hard_end_date}
             onChange={(e) => setForm({ ...form, school_hard_end_date: e.target.value })}
-            text="Limite obrigatório: não há aulas após esta data"
+            text="Não há aulas após esta data"
           />
         </CCol>
         <CCol md={3}>
-          <CFormLabel htmlFor="repairWindow">Janela de Reparação (Dias)</CFormLabel>
+          <CFormLabel htmlFor="repairWindow" className="school-config-field-label">Janela de estabilidade (dias)</CFormLabel>
           <CFormInput
             id="repairWindow"
             type="number"
             min={1}
             value={form.repair_stability_window_days}
             onChange={(e) => setForm({ ...form, repair_stability_window_days: e.target.value })}
-            text="Período congelado onde não se refazem horários"
+            text="Período em que se evita refazer horários"
           />
         </CCol>
       </CRow>
@@ -310,7 +372,7 @@ const SettingsSection = () => {
       <div className="d-grid gap-2 d-md-flex justify-content-md-end">
         <CButton color="primary" onClick={handleSave} disabled={upsertMutation.isPending}>
           <CIcon icon={cilSave} className="me-1" />
-          {upsertMutation.isPending ? 'A guardar...' : 'Guardar Configurações Gerais'}
+          {upsertMutation.isPending ? 'A guardar...' : (saveConfirmationPending ? 'Confirmar guarda' : 'Guardar Configurações Gerais')}
         </CButton>
       </div>
     </div>

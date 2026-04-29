@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import apiClient from '../apiClient'
 import PropTypes from 'prop-types'
@@ -27,6 +27,7 @@ const fetchSuggestions = async ({ queryKey }) => {
 
 const ReplacementModal = ({ visible, onClose, eventData }) => {
   const queryClient = useQueryClient()
+  const [feedback, setFeedback] = useState(null)
 
   // 1. EXTRAIR DADOS (Incluindo a DATA do evento clicado)
   const safeEventData = eventData || { extendedProps: {} }
@@ -61,14 +62,13 @@ const ReplacementModal = ({ visible, onClose, eventData }) => {
       })
     },
     onSuccess: () => {
-      alert("Substituição agendada com sucesso!")
+      setFeedback({ color: 'success', message: 'Substituição agendada com sucesso.' })
       // Invalidar queries para atualizar o calendário visualmente
       queryClient.invalidateQueries({ queryKey: ['substitutions'] })
-      onClose()
     },
     onError: (err) => {
       const msg = err.response?.data?.detail || "Erro ao trocar."
-      alert(msg)
+      setFeedback({ color: 'danger', message: msg })
     }
   })
 
@@ -81,6 +81,12 @@ const ReplacementModal = ({ visible, onClose, eventData }) => {
       </CModalHeader>
       
       <CModalBody>
+        {feedback && (
+          <CAlert color={feedback.color} className="mb-3">
+            {feedback.message}
+          </CAlert>
+        )}
+
         <p className="mb-4">
           A procurar substituto para <strong>{extendedProps?.teacher_name}</strong><br/>
           Aula: <strong>{safeEventData.title}</strong><br/>
@@ -89,7 +95,7 @@ const ReplacementModal = ({ visible, onClose, eventData }) => {
 
         {isLoading && <div className="text-center"><CSpinner/> A analisar horários para dia {dateStr}...</div>}
         
-        {isError && <CAlert color="danger">Erro ao buscar sugestões.</CAlert>}
+        {isError && <CAlert color="danger">Não foi possível carregar as sugestões de substituição. Verifique a data e o horário e volte a tentar.</CAlert>}
 
         {suggestions?.length === 0 && (
           <CAlert color="warning">Nenhum professor disponível neste dia/hora.</CAlert>

@@ -110,7 +110,8 @@ const ModuleRow = ({ module, isEditing, editValue, onChangeHours }) => {
           )}
           <CBadge
             shape="rounded-pill"
-            style={{ minWidth: '48px', textAlign: 'center', backgroundColor: getProgressColor(displayPct), color: '#fff' }}
+            className="zen-badge-progress"
+            style={{ backgroundColor: getProgressColor(displayPct) }}
           >
             {displayPct}%
           </CBadge>
@@ -158,7 +159,8 @@ const SubjectCard = ({ subject, isEditing, editMap, onChangeHours }) => {
             </span>
             <CBadge
               shape="rounded-pill"
-              style={{ minWidth: '48px', textAlign: 'center', backgroundColor: getProgressColor(pct), color: '#fff' }}
+              className="zen-badge-progress"
+              style={{ backgroundColor: getProgressColor(pct) }}
             >
               {pct}%
             </CBadge>
@@ -465,7 +467,8 @@ const ClassDetails = () => {
               <strong style={{ fontSize: '0.9rem' }}>Progresso Global</strong>
               <CBadge
                 shape="rounded-pill"
-                style={{ fontSize: '0.85rem', backgroundColor: getProgressColor(globalStats.pct), color: '#fff' }}
+                className="zen-badge-progress"
+                style={{ fontSize: '0.85rem', backgroundColor: getProgressColor(globalStats.pct) }}
               >
                 {globalStats.pct}%
               </CBadge>
@@ -473,7 +476,7 @@ const ClassDetails = () => {
             {/* Barra nativa — substitui CProgress/CProgressBar que não renderizava */}
             <div
               className="mb-1"
-              style={{ height: '12px', borderRadius: '6px', backgroundColor: '#e9ecef', overflow: 'hidden' }}
+              style={{ height: '12px', borderRadius: '6px', backgroundColor: 'var(--color-bg-muted)', overflow: 'hidden' }}
             >
               <div
                 style={{

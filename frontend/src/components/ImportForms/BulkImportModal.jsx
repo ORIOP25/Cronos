@@ -15,11 +15,14 @@ const BulkImportModal = ({ visible, onClose, entityName, onProcessItem, template
   const [progress, setProgress] = useState(0)
   const [logs, setLogs] = useState([])
   const [hasValidationErrors, setHasValidationErrors] = useState(false)
+  const [feedback, setFeedback] = useState(null)
 
   // 1. LER O FICHEIRO EXCEL E VALIDAR
   const handleFileUpload = async (e) => {
     const file = e.target.files[0]
     if (!file) return
+
+    setFeedback(null)
 
     const arrayBuffer = await file.arrayBuffer()
     const wb = XLSX.read(arrayBuffer, { type: 'array' })
@@ -70,10 +73,9 @@ const BulkImportModal = ({ visible, onClose, entityName, onProcessItem, template
 
     setProcessing(false)
     if (errorCount === 0) {
-      alert(`Sucesso! ${successCount} registos importados.`)
-      handleClose()
+      setFeedback({ color: 'success', message: `Sucesso! ${successCount} registos importados.` })
     } else {
-      alert(`Concluído com avisos. ${successCount} sucessos, ${errorCount} erros.`)
+      setFeedback({ color: 'warning', message: `Concluído com avisos. ${successCount} sucessos, ${errorCount} erros.` })
     }
   }
 
@@ -82,6 +84,7 @@ const BulkImportModal = ({ visible, onClose, entityName, onProcessItem, template
     setProgress(0)
     setLogs([])
     setHasValidationErrors(false)
+    setFeedback(null)
     if (fileInputRef.current) fileInputRef.current.value = ""
     onClose()
   }
@@ -93,6 +96,12 @@ const BulkImportModal = ({ visible, onClose, entityName, onProcessItem, template
       </CModalHeader>
       
       <CModalBody>
+        {feedback && (
+          <CAlert color={feedback.color} className="mb-4">
+            {feedback.message}
+          </CAlert>
+        )}
+
         {!processing && progress === 0 && (
           <>
             <div className="mb-4 p-3 bg-light border rounded">
@@ -188,7 +197,7 @@ const BulkImportModal = ({ visible, onClose, entityName, onProcessItem, template
       </CModalBody>
       <CModalFooter>
         <CButton color="secondary" onClick={handleClose} disabled={processing}>
-          Cancelar
+          {progress > 0 ? 'Fechar' : 'Cancelar'}
         </CButton>
         {fileData.length > 0 && progress === 0 && (
           <CButton 
