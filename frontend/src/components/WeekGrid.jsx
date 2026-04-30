@@ -77,6 +77,16 @@ function getCellVisuals(slot) {
   if (!slot) return { className: '', style: {} }
   const color = getSubjectColor(slot.subject?.id ?? 0)
 
+  // 1. If it has a completed lesson log:
+  if (slot.lesson_log_status === 'COMPLETED') {
+    return { className: `zen-state-card zen-state-given`, style: {} }
+  }
+
+  // 2. If the teacher registered a self-absence (OCCURRENCE via LessonLog):
+  if (slot.lesson_log_status === 'OCCURRENCE') {
+    return { className: `zen-state-card zen-state-gap`, style: {} }
+  }
+
   // Future/Current slots: Use subject color with opacity
   if (!slot.is_past) {
     return {
@@ -164,7 +174,11 @@ const SlotCell = ({ slotEntries, isOperationalEnabled, onOpenOperationalAction }
 
   const { className: cellClassName, style: cellStyle } = getCellVisuals(slot)
   let statusLabel = 'Planeado'
-  if (slot.occurrence_id && !slot.occurrence_decided_at) {
+  if (slot.lesson_log_status === 'COMPLETED') {
+    statusLabel = 'Concluída ✓'
+  } else if (slot.lesson_log_status === 'OCCURRENCE') {
+    statusLabel = 'Falta ✗'
+  } else if (slot.occurrence_id && !slot.occurrence_decided_at) {
     statusLabel = 'Pendente de decisão'
   } else if (slot.occurrence_status) {
     statusLabel = OCCURRENCE_LABELS[slot.occurrence_status] ?? slot.occurrence_status
@@ -190,6 +204,10 @@ const SlotCell = ({ slotEntries, isOperationalEnabled, onOpenOperationalAction }
       room: slot.room,
       class_info: slot.class_info,
       occurrence_status: slot.occurrence_status,
+      lesson_log_id: slot.lesson_log_id,
+      lesson_log_status: slot.lesson_log_status,
+      lesson_log_summary: slot.lesson_log_summary,
+      lesson_log_notes: slot.lesson_log_notes,
     })
   }
 
@@ -228,7 +246,7 @@ const SlotCell = ({ slotEntries, isOperationalEnabled, onOpenOperationalAction }
       </div>
       {canOpenOperationalAction ? (
         <div className="mt-1 text-primary fw-semibold" style={{ fontSize: '0.68rem' }}>
-          {canCreateOccurrence ? 'Criar Ocorrência' : 'Ir para Faltas'}
+          Registar
         </div>
       ) : null}
       {!canOpenOperationalAction && operationalBlockReason ? (

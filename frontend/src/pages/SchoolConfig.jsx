@@ -3,7 +3,8 @@ import {
   CCard, CCardBody, CCardHeader, CCol, CRow, CForm, CFormInput,
   CFormCheck, CFormLabel, CButton, CAlert, CBadge,
   CSpinner, CTable, CTableHead, CTableRow, CTableHeaderCell,
-  CTableBody, CTableDataCell, CTabs, CTabList, CTab, CTabContent, CTabPanel, CFormSelect
+  CTableBody, CTableDataCell, CTabs, CTabList, CTab, CTabContent, CTabPanel, CFormSelect,
+  CModal, CModalHeader, CModalTitle, CModalBody, CModalFooter
 } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
 import { cilSettings, cilSave, cilTrash, cilCloudDownload, cilCalendar } from '@coreui/icons'
@@ -256,6 +257,33 @@ const SettingsSection = () => {
     repair_stability_window_days: '14',
   })
 
+  // Soft-Reset state
+  const [showResetModal, setShowResetModal] = useState(false)
+  const [resetConfirmText, setResetConfirmText] = useState('')
+  const [resetChecked, setResetChecked] = useState(false)
+  const [resetError, setResetError] = useState('')
+
+  const resetMutation = useMutation({
+    mutationFn: (payload) => apiClient.post('/school/settings/soft-reset', payload),
+    onSuccess: () => {
+      setSuccessMsg('Ano letivo recomeçado com sucesso. Todas as gerações, ocorrências e registos foram apagados.')
+      setShowResetModal(false)
+      setResetConfirmText('')
+      setResetChecked(false)
+      window.scrollTo(0, 0)
+      setTimeout(() => setSuccessMsg(null), 5000)
+    },
+    onError: (err) => {
+      setResetError(getApiErrorMessage(err, 'Erro ao recomeçar ano letivo.'))
+    }
+  })
+
+  const handleSoftReset = () => {
+    setResetError('')
+    if (resetConfirmText !== 'Confirmo' || !resetChecked) return
+    resetMutation.mutate({ confirm_phrase: resetConfirmText })
+  }
+
   const { data: settings, isLoading } = useQuery({
     queryKey: ['org-settings'],
     queryFn: async () => {
@@ -369,12 +397,65 @@ const SettingsSection = () => {
         </CCol>
       </CRow>
       
-      <div className="d-grid gap-2 d-md-flex justify-content-md-end">
+      <div className="d-flex justify-content-between align-items-center mt-3">
+        <CButton
+          color="danger"
+          variant="outline"
+          size="sm"
+          onClick={() => setShowResetModal(true)}
+        >
+          Recomeçar Ano Letivo
+        </CButton>
         <CButton color="primary" onClick={handleSave} disabled={upsertMutation.isPending}>
           <CIcon icon={cilSave} className="me-1" />
           {upsertMutation.isPending ? 'A guardar...' : (saveConfirmationPending ? 'Confirmar guarda' : 'Guardar Configurações Gerais')}
         </CButton>
       </div>
+
+      <CModal visible={showResetModal} onClose={() => { setShowResetModal(false); setResetError(''); setResetConfirmText(''); setResetChecked(false); }} backdrop="static">
+        <CModalHeader>
+          <CModalTitle className="text-danger fw-bold">Confirmar Ação Destrutiva</CModalTitle>
+        </CModalHeader>
+        <CModalBody>
+          <CAlert color="warning">
+            Esta ação não pode ser desfeita. Todos os dados dinâmicos do ano letivo anterior serão apagados permanentemente.
+          </CAlert>
+          
+          {resetError && <CAlert color="danger">{resetError}</CAlert>}
+
+          <div className="mb-3 mt-4">
+            <CFormCheck 
+              id="resetCheck"
+              label="Compreendo que irei apagar todos os horários e registos."
+              checked={resetChecked}
+              onChange={(e) => setResetChecked(e.target.checked)}
+            />
+          </div>
+
+          <div className="mb-3">
+            <CFormLabel htmlFor="confirmWord">Para confirmar, digite exatamente a palavra: <strong>Confirmo</strong></CFormLabel>
+            <CFormInput 
+              id="confirmWord"
+              value={resetConfirmText}
+              onChange={(e) => setResetConfirmText(e.target.value)}
+              placeholder="Confirmo"
+            />
+          </div>
+        </CModalBody>
+        <CModalFooter>
+          <CButton color="secondary" variant="outline" onClick={() => setShowResetModal(false)}>
+            Cancelar
+          </CButton>
+          <CButton 
+            color="danger" 
+            className="text-white"
+            disabled={resetConfirmText !== 'Confirmo' || !resetChecked || resetMutation.isPending}
+            onClick={handleSoftReset}
+          >
+            {resetMutation.isPending ? 'A apagar...' : 'Apagar Dados e Recomeçar'}
+          </CButton>
+        </CModalFooter>
+      </CModal>
     </div>
   )
 }

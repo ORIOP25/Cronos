@@ -287,7 +287,7 @@ const EditOccurrenceModal = ({
           <CFormLabel>Decisão operacional</CFormLabel>
           <CButtonGroup className="w-100" role="group" aria-label="Estado da aula">
             <CButton
-              color={status === 'GIVEN' ? 'success' : 'secondary'}
+              color={status === 'GIVEN' ? 'primary' : 'secondary'}
               variant={status === 'GIVEN' ? undefined : 'outline'}
               onClick={() => setStatus('GIVEN')}
             >

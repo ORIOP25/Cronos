@@ -1474,6 +1474,50 @@ async def get_generation_audit_summary(
         teachers_with_week_slots=teachers_with_week_slots,
         teacher_week_slots_min=teacher_week_slots_min,
         teacher_week_slots_max=teacher_week_slots_max,
-        teacher_week_slots_avg=teacher_week_slots_avg,
         room_type_usage=room_type_usage,
     )
+
+
+# ==========================================
+#  WBS FASE 1/2 — REGISTO DE AULAS (LESSON LOG)
+# ==========================================
+
+@router.put(
+    "/outputs/{schedule_output_id}/log",
+    response_model=schemas.LessonLogRead,
+    summary="Registar execução de aula",
+)
+async def upsert_lesson_log(
+    schedule_output_id: int,
+    payload: schemas.LessonLogCreate,
+    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    current_user: Annotated[models.User, Depends(deps.get_current_active_user)],
+):
+    """Atualiza o estado de execução (LessonLog) de um bloco de aula."""
+    is_admin = bool(current_user.is_superuser or current_user.role == models.UserRole.admin)
+    is_teacher = current_user.role == models.UserRole.teacher
+
+    if not is_admin and not is_teacher:
+        raise HTTPException(status_code=403, detail="Acesso negado.")
+        
+    def _run(sync_db):
+        from app.services import lesson_log_service
+        
+        # 1. Verificar permissões sobre o bloco se for professor
+        output = sync_db.get(models.ScheduleOutput, schedule_output_id)
+        if not output:
+            raise HTTPException(status_code=404, detail="Bloco planeado não encontrado.")
+            
+        if is_teacher and output.lesson.teacher_id != current_user.teacher_id:
+            raise HTTPException(status_code=403, detail="Não pode alterar registos de outros professores.")
+            
+        # 2. Executar o upsert e a contabilidade do progresso
+        return lesson_log_service.upsert_lesson_log_sync(
+            sync_db,
+            org_id=current_user.organization_id,
+            user_id=current_user.id,
+            schedule_output_id=schedule_output_id,
+            payload=payload
+        )
+
+    return await db.run_sync(_run)

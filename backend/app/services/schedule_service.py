@@ -877,11 +877,13 @@ def _fetch_active_modules(
 def _build_week_slot(
     output: models.ScheduleOutput,
     occurrences: dict,
+    lesson_logs: dict,
     active_modules: dict,
     today: date,
 ) -> dict:
     """Builds a single WeekSlotRead dict from a ScheduleOutput row."""
     occ = occurrences.get(output.id)
+    llog = lesson_logs.get(output.id)
     lesson = output.lesson
     ts = output.timeslot
     mod_data = active_modules.get((lesson.class_id, lesson.subject_id))
@@ -919,6 +921,12 @@ def _build_week_slot(
         "occurrence_decided_at": occ.decided_at if occ else None,
         "can_create_occurrence": not has_occurrence,
         "can_decide_occurrence": has_occurrence,
+        # WBS Fase 1: campos de registo de execução
+        "lesson_log_id": llog.id if llog else None,
+        "lesson_log_status": llog.status.value if llog else None,
+        "lesson_log_summary": llog.summary if llog else None,
+        "lesson_log_notes": llog.notes if llog else None,
+        "lesson_log_logged_at": llog.logged_at if llog else None,
     }
 
 
@@ -968,11 +976,17 @@ def get_week_schedule_sync(
     ).all()
     occurrences = {o.schedule_output_id: o for o in occ_rows}
 
+    llog_rows = db.query(models.LessonLog).filter(
+        models.LessonLog.org_id == org_id,
+        models.LessonLog.schedule_output_id.in_(output_ids)
+    ).all()
+    lesson_logs = {ll.schedule_output_id: ll for ll in llog_rows}
+
     pairs = list({(o.lesson.class_id, o.lesson.subject_id) for o in outputs})
     active_modules = _fetch_active_modules(db, pairs)
 
     return [
-        _build_week_slot(output, occurrences, active_modules, today)
+        _build_week_slot(output, occurrences, lesson_logs, active_modules, today)
         for output in outputs
     ]
 

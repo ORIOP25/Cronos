@@ -16,6 +16,7 @@ FK_TEACHER_ID = "teacher.id"
 FK_SUBJECT_ID = "subject.id"
 FK_CLASS_ID = "class.id"
 FK_TIMESLOT_ID = "timeslot.id"
+FK_SCHEDULE_OUTPUT_ID = "schedule_output.id"
 CASCADE_ALL_DELETE = "all, delete-orphan"
 ON_DELETE_SET_NULL = "SET NULL"
 
@@ -39,6 +40,18 @@ class LessonOccurrenceStatus(str, enum.Enum):
     GIVEN = "GIVEN"
     GAP = "GAP"
     SUBSTITUTED = "SUBSTITUTED"
+
+class LessonLogStatus(str, enum.Enum):
+    """Estado de execução de um bloco de aula gerado pelo Solver."""
+    PENDING = "PENDING"        # Aula ainda não registada (padrão)
+    COMPLETED = "COMPLETED"    # Professor confirmou que a aula foi dada
+    OCCURRENCE = "OCCURRENCE"  # Falta/Ocorrência registada para este bloco
+
+class TimesheetStatus(str, enum.Enum):
+    """Estado do ciclo de vida do fecho semanal de um professor."""
+    OPEN = "OPEN"            # Semana aberta — professor pode editar
+    SUBMITTED = "SUBMITTED"  # Professor submeteu — aguarda aprovação do admin
+    APPROVED = "APPROVED"    # Admin aprovou — semana congelada
 
 class UserRole(str, enum.Enum):
     admin = "admin"
@@ -201,6 +214,7 @@ class Teacher(Base):
         return [s.id for s in self.subjects]
 
     availabilities: Mapped[List["Availability"]] = relationship(back_populates="teacher", cascade=CASCADE_ALL_DELETE)
+    timesheets: Mapped[List["TeacherWeeklyTimesheet"]] = relationship(back_populates="teacher", cascade=CASCADE_ALL_DELETE)
 
     def __repr__(self) -> str:
         return f"<Teacher(id={self.id}, name='{self.name}')>"
@@ -710,6 +724,136 @@ class TeacherEndpointOperationalEvent(Base):
 @event.listens_for(LessonOccurrence, "before_delete")
 def _prevent_lesson_occurrence_delete(mapper, connection, target) -> None:  # noqa: ARG001
     raise ValueError("LessonOccurrence é histórico imutável e não pode ser removida")
+
+
+# --- REGISTO DE EXECUÇÃO DE AULAS (WBS Fase 1) ---
+
+class LessonLog(Base):
+    """Registo de execução de um bloco de aula gerado pelo Solver.
+
+    Relação 1-para-1 com ScheduleOutput. Criado automaticamente quando
+    o professor ou admin interage com um bloco pela primeira vez.
+    É a nova fonte de verdade para o progresso da disciplina
+    (substituindo o acoplamento a LessonOccurrence para aulas normais).
+    """
+    __tablename__ = "lesson_log"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+
+    # Tenant isolation — obrigatório em todas as tabelas
+    org_id: Mapped[int] = mapped_column(
+        ForeignKey(FK_ORG_ID, ondelete="CASCADE"), nullable=False, index=True
+    )
+
+    # Ligação 1-para-1 ao bloco gerado pelo Solver
+    schedule_output_id: Mapped[int] = mapped_column(
+        ForeignKey(FK_SCHEDULE_OUTPUT_ID, ondelete="CASCADE"),
+        nullable=False,
+        unique=True,  # Garante relação 1-para-1
+        index=True,
+    )
+
+    # Estado de execução da aula
+    status: Mapped[LessonLogStatus] = mapped_column(
+        SAEnum(LessonLogStatus), nullable=False, default=LessonLogStatus.PENDING
+    )
+
+    # Conteúdo pedagógico (ambos opcionais)
+    summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)   # Sumário da aula
+    notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)     # Notas livres
+
+    # Auditoria — quem registou e quando
+    logged_by_user_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("user.id", ondelete=ON_DELETE_SET_NULL), nullable=True
+    )
+    logged_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+
+    # Relacionamentos
+    organization: Mapped["Organization"] = relationship()
+    schedule_output: Mapped["ScheduleOutput"] = relationship()
+    logged_by_user: Mapped[Optional["User"]] = relationship(foreign_keys=[logged_by_user_id])
+
+    def __repr__(self) -> str:
+        return f"<LessonLog(id={self.id}, schedule_output_id={self.schedule_output_id}, status='{self.status}')>"
+
+
+class TeacherWeeklyTimesheet(Base):
+    """Fecho semanal de um professor (workflow tipo Atlassian Tempo).
+
+    Ciclo de vida:
+      OPEN → (professor preenche todos os blocos) → SUBMITTED
+      SUBMITTED → (admin aprova) → APPROVED
+      APPROVED → (admin reabre) → OPEN
+
+    Regra: só pode ser submetida quando todos os LessonLog da semana
+    tiverem status != PENDING E nenhum bloco da semana for futuro.
+    """
+    __tablename__ = "teacher_weekly_timesheet"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+
+    # Tenant isolation
+    org_id: Mapped[int] = mapped_column(
+        ForeignKey(FK_ORG_ID, ondelete="CASCADE"), nullable=False, index=True
+    )
+
+    teacher_id: Mapped[int] = mapped_column(
+        ForeignKey(FK_TEACHER_ID, ondelete="CASCADE"), nullable=False, index=True
+    )
+
+    # Identificação da semana (segunda-feira a domingo)
+    week_start_date: Mapped[date_type] = mapped_column(Date, nullable=False)
+    week_end_date: Mapped[date_type] = mapped_column(Date, nullable=False)
+
+    # Estado do ciclo de vida
+    status: Mapped[TimesheetStatus] = mapped_column(
+        SAEnum(TimesheetStatus), nullable=False, default=TimesheetStatus.OPEN
+    )
+
+    # Datas de transição de estado (auditoria)
+    submitted_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    approved_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    approved_by_user_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("user.id", ondelete=ON_DELETE_SET_NULL), nullable=True
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+
+    # Relacionamentos
+    organization: Mapped["Organization"] = relationship()
+    teacher: Mapped["Teacher"] = relationship(back_populates="timesheets")
+    approved_by_user: Mapped[Optional["User"]] = relationship(foreign_keys=[approved_by_user_id])
+
+    # Uma única timesheet por professor por semana
+    __table_args__ = (
+        UniqueConstraint(
+            "teacher_id", "week_start_date",
+            name="uq_teacher_weekly_timesheet",
+        ),
+        Index("ix_timesheet_org_week", "org_id", "week_start_date"),
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<TeacherWeeklyTimesheet(id={self.id}, teacher_id={self.teacher_id}, "
+            f"week='{self.week_start_date}', status='{self.status}')>"
+        )
 
 
 # --- ENSINO PROFISSIONAL / MODULAR ---

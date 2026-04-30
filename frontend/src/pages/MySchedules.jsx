@@ -4,7 +4,14 @@ import { CAlert, CBadge, CButton, CCard, CCardBody, CCardHeader, CSpinner } from
 import CIcon from '@coreui/icons-react'
 import { cilArrowLeft, cilArrowRight, cilCalendar } from '@coreui/icons'
 import WeekGrid from '../components/WeekGrid'
-import { useTeacherScheduleHorizon, useTimeslots, useWeekSchedule } from '../hooks/useSchoolData'
+import LessonLogModal from '../components/LessonLogModal'
+import {
+  useTeacherScheduleHorizon,
+  useTimeslots,
+  useWeekSchedule,
+  useMyTimesheet,
+  useSubmitMyTimesheet
+} from '../hooks/useSchoolData'
 import { useAuthStore } from '../store'
 
 const HORIZON_NOT_CONFIGURED_MESSAGE =
@@ -98,6 +105,7 @@ function MySchedules() {
   const [syncFeedback, setSyncFeedback] = useState('')
   const [lastHealthyHorizon, setLastHealthyHorizon] = useState(null)
   const [lastHealthyWeekSlots, setLastHealthyWeekSlots] = useState([])
+  const [selectedSlot, setSelectedSlot] = useState(null)
   const hasInitializedGenerationRef = useRef(false)
   const generationKeyRef = useRef(HORIZON_NO_ACTIVE_GENERATION_KEY)
 
@@ -213,6 +221,42 @@ function MySchedules() {
 
   const { data: timeslots = [] } = useTimeslots()
 
+  const { data: timesheet, isLoading: isLoadingTimesheet } = useMyTimesheet(weekStart)
+  const submitMutation = useSubmitMyTimesheet()
+
+  const canSubmit = useMemo(() => {
+    if (weekSlots.length === 0) return false
+    if (timesheet && timesheet.status !== 'OPEN') return false
+    
+    const now = new Date()
+    for (const slot of weekSlots) {
+      if (slot.date && slot.timeslot?.end_time) {
+        const endDateTime = new Date(`${slot.date}T${slot.timeslot.end_time}`)
+        if (endDateTime > now) return false
+      } else if (!slot.is_past) {
+        return false
+      }
+      
+      const hasLessonLog = slot.lesson_log_status === 'COMPLETED' || slot.lesson_log_status === 'OCCURRENCE'
+      const hasOccurrence = slot.occurrence_status != null
+      if (!hasLessonLog && !hasOccurrence) {
+        return false
+      }
+    }
+    return true
+  }, [weekSlots, timesheet])
+
+  const handleSubmitWeek = async () => {
+    if (!window.confirm('Tem a certeza que deseja submeter esta semana? Não poderá fazer mais alterações.')) {
+      return
+    }
+    try {
+      await submitMutation.mutateAsync(weekStart)
+    } catch (err) {
+      alert(err.response?.data?.detail || 'Erro ao submeter a semana.')
+    }
+  }
+
   const handlePrevWeek = () => {
     setSyncFeedback('')
     if (prevWeekBlocked && minWeekStart) {
@@ -284,7 +328,8 @@ function MySchedules() {
       isLoading={isLoadingWeek}
       baseTimeslots={timeslots}
       weekStart={weekStart}
-      isOperationalEnabled={false}
+      isOperationalEnabled={!timesheet || timesheet.status === 'OPEN'}
+      onOpenOperationalAction={setSelectedSlot}
     />
   )
 
@@ -333,7 +378,25 @@ function MySchedules() {
       <CCard className="border-0 shadow-sm mb-4">
         <CCardHeader className="bg-light border-0 d-flex justify-content-between align-items-center flex-wrap gap-2">
           <div className="fw-semibold">Semana: {formatWeekRange(weekStart)}</div>
-          <div className="d-flex gap-2">
+          <div className="d-flex gap-2 align-items-center">
+            {timesheet && timesheet.status === 'SUBMITTED' && (
+              <CBadge color="info" className="me-2 px-3 py-2">Semana Submetida</CBadge>
+            )}
+            {timesheet && timesheet.status === 'APPROVED' && (
+              <CBadge color="success" className="me-2 px-3 py-2">Semana Aprovada</CBadge>
+            )}
+            
+            <CButton
+              color="primary"
+              size="sm"
+              onClick={handleSubmitWeek}
+              disabled={!canSubmit || submitMutation.isPending}
+              title={!canSubmit ? "Apenas pode submeter a semana quando todas as aulas estiverem dadas e no passado." : ""}
+            >
+              {submitMutation.isPending ? <CSpinner size="sm" className="me-1" /> : <CIcon icon={cilCalendar} className="me-1" />}
+              Submeter Semana
+            </CButton>
+
             <CButton color="secondary" variant="outline" size="sm" onClick={handlePrevWeek}>
               <CIcon icon={cilArrowLeft} className="me-1" />
               Semana anterior
@@ -379,6 +442,12 @@ function MySchedules() {
           {weekContent}
         </CCardBody>
       </CCard>
+
+      <LessonLogModal
+        visible={Boolean(selectedSlot)}
+        onClose={() => setSelectedSlot(null)}
+        slot={selectedSlot}
+      />
     </div>
   )
 }

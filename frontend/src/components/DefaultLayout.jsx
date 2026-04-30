@@ -100,6 +100,7 @@ const DefaultLayout = () => {
               <SidebarLink to="/schedules" icon={cilCalendar}>Horários</SidebarLink>
               <SidebarLink to="/schedules/audit" icon={cilHistory}>Auditoria</SidebarLink>
               <SidebarLink to="/absences" icon={cilCheckCircle}>Faltas</SidebarLink>
+              <SidebarLink to="/timesheets" icon={cilCalendar}>Fecho Semanal</SidebarLink>
               
               <div className="text-editorial" style={sectionLabelStyle}>Pedagogia</div>
               <SidebarLink to="/courses" icon={cilEducation}>Cursos</SidebarLink>

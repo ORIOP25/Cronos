@@ -16,6 +16,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from pydantic import BaseModel
 from app import models, schemas
 from app.api import deps
 from app.services import settings_service
@@ -53,6 +54,24 @@ async def upsert_org_settings(
 ) -> schemas.OrganizationSettingsRead:
     return await settings_service.upsert_settings(db, current_user.organization_id, payload)
 
+
+class SoftResetRequest(BaseModel):
+    confirm_phrase: str
+
+@router.post(
+    "/settings/soft-reset",
+    summary="Soft-Reset do Ano Letivo",
+)
+async def soft_reset_year_endpoint(
+    payload: SoftResetRequest,
+    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    current_user: Annotated[models.User, Depends(deps.get_current_active_admin)],
+):
+    if payload.confirm_phrase != "Confirmo":
+        raise HTTPException(status_code=400, detail="A frase de confirmação deve ser exatamente 'Confirmo'.")
+        
+    await settings_service.soft_reset_year(db, current_user.organization_id)
+    return {"message": "Soft-reset efetuado com sucesso."}
 
 # ==========================================
 #  ORGANIZATION GRID SETTINGS

@@ -3,7 +3,8 @@ from datetime import time, datetime, date
 from typing import Any, Optional, Literal
 from .models import (
     RoomType, UserRole, ConstraintType, PreferenceLevel,
-    CalendarEventType, CalendarEventSource, LessonOccurrenceStatus, List,
+    CalendarEventType, CalendarEventSource, LessonOccurrenceStatus,
+    LessonLogStatus, TimesheetStatus, List,
 )
 
 
@@ -1080,3 +1081,62 @@ class WeekSlotRead(BaseModel):
     occurrence_decided_at: Optional[datetime] = None
     can_create_occurrence: bool
     can_decide_occurrence: bool
+    # WBS Fase 1: campos de registo de execução
+    lesson_log_id: Optional[int] = None
+    lesson_log_status: Optional[LessonLogStatus] = None
+    lesson_log_summary: Optional[str] = None
+    lesson_log_notes: Optional[str] = None
+    lesson_log_logged_at: Optional[datetime] = None
+
+
+# ==========================================
+#  WBS FASE 1 — LESSON LOG (REGISTO DE EXECUÇÃO)
+# ==========================================
+
+class LessonLogCreate(BaseModel):
+    """Payload para registar/atualizar o estado de execução de uma aula."""
+    status: LessonLogStatus
+    summary: Optional[str] = Field(None, max_length=2000, description="Sumário da aula (opcional)")
+    notes: Optional[str] = Field(None, max_length=1000, description="Notas livres (opcional)")
+
+
+class LessonLogRead(BaseModel):
+    """Leitura completa de um registo de execução de aula."""
+    id: int
+    org_id: int
+    schedule_output_id: int
+    status: LessonLogStatus
+    summary: Optional[str] = None
+    notes: Optional[str] = None
+    logged_by_user_id: Optional[int] = None
+    logged_at: Optional[datetime] = None
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+# ==========================================
+#  WBS FASE 1 — TEACHER WEEKLY TIMESHEET
+# ==========================================
+
+class TimesheetStatusUpdate(BaseModel):
+    """Payload para mudar o estado de uma timesheet semanal."""
+    status: TimesheetStatus
+
+
+class TeacherWeeklyTimesheetRead(BaseModel):
+    """Leitura de uma timesheet semanal (usada no painel admin e no horario do professor)."""
+    id: int
+    org_id: int
+    teacher_id: int
+    teacher_name: Optional[str] = None
+    week_start_date: date
+    week_end_date: date
+    status: TimesheetStatus
+    submitted_at: Optional[datetime] = None
+    approved_at: Optional[datetime] = None
+    approved_by_user_id: Optional[int] = None
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)

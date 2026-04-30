@@ -11,6 +11,7 @@ import Subjects from './pages/Subjects';
 import SchoolConfig from './pages/SchoolConfig';
 import Schedules from './pages/Schedules';
 import Occurrences from './pages/Occurrences';
+import Timesheets from './pages/Timesheets';
 import ScheduleAuditDashboard from './pages/ScheduleAuditDashboard';
 import Courses from './pages/Courses';
 import CourseDetails from './pages/CourseDetails';
@@ -88,6 +89,7 @@ function App() {
           <Route path={ROUTE_MY_SCHEDULES.slice(1)} element={<TeacherOnlyRoute><MySchedules /></TeacherOnlyRoute>} />
           <Route path="schedules/audit" element={<AdminOnlyRoute><ScheduleAuditDashboard /></AdminOnlyRoute>} />
           <Route path="absences" element={<AdminOnlyRoute><Occurrences /></AdminOnlyRoute>} />
+          <Route path="timesheets" element={<AdminOnlyRoute><Timesheets /></AdminOnlyRoute>} />
           <Route path="my-availability" element={<TeacherOnlyRoute><MyAvailability /></TeacherOnlyRoute>} />
           </Route>
         </Route>

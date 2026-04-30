@@ -18,6 +18,7 @@ import {
   useClasses, useTeachers, useWeekSchedule, useClassDetails, useTimeslots, useCreateOccurrence,
 } from '../hooks/useSchoolData'
 import WeekGrid from '../components/WeekGrid'
+import LessonLogModal from '../components/LessonLogModal'
 import { getSubjectColor } from '../utils/subjectColors'
 import { useAuthStore } from '../store'
 
@@ -531,6 +532,7 @@ const Schedules = () => {
   )
   const [weekStart, setWeekStart]                 = useState(getCurrentWeekMonday)
   const [selectedOperationalSlot, setSelectedOperationalSlot] = useState(null)
+  const [adminLessonLogSlot, setAdminLessonLogSlot] = useState(null)
   const [createOccurrenceError, setCreateOccurrenceError] = useState('')
   const [generationActionError, setGenerationActionError] = useState('')
 
@@ -665,6 +667,12 @@ const Schedules = () => {
     if (!isAdmin) {
       return
     }
+    // If the slot is past and can receive a lesson log (no occurrence yet decided),
+    // open the LessonLogModal for admin to log it on behalf of the teacher.
+    if (slot.is_past && slot.schedule_output_id && !slot.occurrence_decided_at && slot.can_create_occurrence !== false) {
+      setAdminLessonLogSlot(slot)
+      return
+    }
     setSelectedOperationalSlot(slot)
     setCreateOccurrenceError('')
   }
@@ -754,6 +762,14 @@ const Schedules = () => {
           onCreate={handleCreateOccurrence}
           isCreating={createOccurrenceMutation.isPending}
           errorMessage={createOccurrenceError}
+        />
+      ) : null}
+
+      {adminLessonLogSlot ? (
+        <LessonLogModal
+          visible={Boolean(adminLessonLogSlot)}
+          onClose={() => setAdminLessonLogSlot(null)}
+          slot={adminLessonLogSlot}
         />
       ) : null}
 

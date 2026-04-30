@@ -732,6 +732,91 @@ export const useUpdateOccurrence = () => {
   })
 }
 
+/**
+ * Registar execução de aula (LessonLog).
+ */
+export const useUpsertLessonLog = () => {
+  const queryClient = useQueryClient()
+  const orgId = useAuthStore(state => state.user?.orgId)
+
+  return useMutation({
+    mutationFn: async ({ scheduleOutputId, payload }) => {
+      const { data } = await apiClient.put(`/schedule/outputs/${scheduleOutputId}/log`, payload)
+      return data
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['weekSchedule', orgId] })
+      void queryClient.invalidateQueries({ queryKey: ['classes', orgId] })
+    },
+  })
+}
+
+// ============================================================
+//  Fase 3 — Timesheets (Fecho Semanal)
+// ============================================================
+
+export const useMyTimesheet = (weekStartDate) => {
+  const orgId = useAuthStore(state => state.user?.orgId)
+  return useQuery({
+    queryKey: ['my-timesheet', orgId, weekStartDate],
+    queryFn: async () => {
+      const { data } = await apiClient.get(`/timesheets/me/${weekStartDate}`)
+      return data
+    },
+    enabled: !!weekStartDate,
+    ...DYNAMIC_OPTS,
+  })
+}
+
+export const useSubmitMyTimesheet = () => {
+  const queryClient = useQueryClient()
+  const orgId = useAuthStore(state => state.user?.orgId)
+
+  return useMutation({
+    mutationFn: async (weekStartDate) => {
+      const { data } = await apiClient.post(`/timesheets/me/${weekStartDate}/submit`)
+      return data
+    },
+    onSuccess: (_, weekStartDate) => {
+      void queryClient.invalidateQueries({ queryKey: ['my-timesheet', orgId, weekStartDate] })
+      void queryClient.invalidateQueries({ queryKey: ['weekSchedule', orgId] })
+    },
+  })
+}
+
+export const useTimesheets = (weekStartDate, status) => {
+  const orgId = useAuthStore(state => state.user?.orgId)
+  const params = new URLSearchParams()
+  if (weekStartDate) params.set('week_start_date', weekStartDate)
+  if (status) params.set('status', status)
+  const qs = params.toString()
+  const endpoint = qs ? `/timesheets/?${qs}` : '/timesheets/'
+
+  return useQuery({
+    queryKey: ['timesheets', orgId, weekStartDate, status],
+    queryFn: async () => {
+      const { data } = await apiClient.get(endpoint)
+      return data
+    },
+    ...DYNAMIC_OPTS,
+  })
+}
+
+export const useUpdateTimesheetStatus = () => {
+  const queryClient = useQueryClient()
+  const orgId = useAuthStore(state => state.user?.orgId)
+
+  return useMutation({
+    mutationFn: async ({ timesheetId, status }) => {
+      const { data } = await apiClient.patch(`/timesheets/${timesheetId}/status`, { status })
+      return data
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['timesheets', orgId] })
+    },
+  })
+}
+
 // ============================================================
 //  Sprint 3 — Rascunhos e Diff de Horários
 // ============================================================
