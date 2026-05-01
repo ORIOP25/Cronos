@@ -667,12 +667,12 @@ const Schedules = () => {
     if (!isAdmin) {
       return
     }
-    // If the slot is past and can receive a lesson log (no occurrence yet decided),
-    // open the LessonLogModal for admin to log it on behalf of the teacher.
-    if (slot.is_past && slot.schedule_output_id && !slot.occurrence_decided_at && slot.can_create_occurrence !== false) {
+    // Admin: always open LessonLogModal for past slots (unified interface)
+    if (slot.is_past && slot.schedule_output_id) {
       setAdminLessonLogSlot(slot)
       return
     }
+    // Future slots or other edge cases: legacy CreateOccurrenceModal
     setSelectedOperationalSlot(slot)
     setCreateOccurrenceError('')
   }
@@ -770,6 +770,7 @@ const Schedules = () => {
           visible={Boolean(adminLessonLogSlot)}
           onClose={() => setAdminLessonLogSlot(null)}
           slot={adminLessonLogSlot}
+          isAdmin={isAdmin}
         />
       ) : null}
 
@@ -787,7 +788,7 @@ const Schedules = () => {
         </div>
 
         {/* Generation controls */}
-            Rascunho de ajuste pendente
+        {isAdmin && (
           <CCard className="border-0 shadow-sm">
             <CCardBody className="py-2 px-3">
               <CRow className="g-2 align-items-end">
@@ -836,10 +837,9 @@ const Schedules = () => {
               </CRow>
             </CCardBody>
           </CCard>
-        ) : null}
+        )}
       </div>
 
-                      <div style={{ fontSize: '0.75rem' }}>Alterações fora da janela</div>
       {isAdmin ? (
         <>
           {preflightErrors.length > 0 && <PreflightErrorPanel problems={preflightErrors} />}
