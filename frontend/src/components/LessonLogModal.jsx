@@ -14,7 +14,7 @@ import {
 } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
 import { cilCheckCircle, cilXCircle, cilActionUndo, cilWarning, cilPeople } from '@coreui/icons'
-import { useUpsertLessonLog, useCreateOccurrence, useUpdateOccurrence } from '../hooks/useSchoolData'
+import { useUpsertLessonLog, useCreateOccurrence, useUpdateOccurrence, useUpdateTimesheetStatus } from '../hooks/useSchoolData'
 import SubstitutionStep from './SubstitutionStep'
 
 const STATUS_INFO = {
@@ -49,6 +49,7 @@ const LessonLogModal = ({ visible, onClose, slot, isAdmin = false }) => {
   const upsertLogMutation = useUpsertLessonLog()
   const createOccurrenceMutation = useCreateOccurrence()
   const updateOccurrenceMutation = useUpdateOccurrence()
+  const updateTimesheetStatusMutation = useUpdateTimesheetStatus()
 
   // Reset state when modal opens/closes
   useEffect(() => {
@@ -141,6 +142,25 @@ const LessonLogModal = ({ visible, onClose, slot, isAdmin = false }) => {
     setSubstitutionError('')
   }
 
+  const handleReopenWeek = async () => {
+    setErrorMessage('')
+    if (!slot.timesheet_id) {
+      setErrorMessage('Não foi possível identificar a timesheet desta semana.')
+      return
+    }
+    try {
+      await updateTimesheetStatusMutation.mutateAsync({
+        timesheetId: slot.timesheet_id,
+        status: 'OPEN',
+      })
+      // The hook invalidates weekSchedule cache; close modal so user re-opens with fresh data
+      onClose()
+    } catch (err) {
+      const msg = err.response?.data?.detail || 'Não foi possível reabrir a semana. Tente novamente.'
+      setErrorMessage(msg)
+    }
+  }
+
   if (!slot) return null
 
   const currentStatus = slot.lesson_log_status || 'PENDING'
@@ -225,6 +245,31 @@ const LessonLogModal = ({ visible, onClose, slot, isAdmin = false }) => {
         {isFuture && (
           <CAlert color="warning" className="mb-3">
             Esta aula ainda não terminou. O registo apenas estará disponível após a hora de término.
+          </CAlert>
+        )}
+
+        {/* Week locked banner */}
+        {!isFuture && (slot.week_timesheet_status === 'SUBMITTED' || slot.week_timesheet_status === 'APPROVED') && (
+          <CAlert color="warning" className="mb-3 d-flex align-items-center justify-content-between flex-wrap gap-2">
+            <span>
+              <strong>Semana {slot.week_timesheet_status === 'SUBMITTED' ? 'submetida' : 'aprovada'}</strong>
+              {' '}por {slot.teacher?.name ?? 'o professor'}.
+              {isAdmin
+                ? ' Os campos estão bloqueados até reabrir.'
+                : ' Os campos estão bloqueados para edição.'}
+            </span>
+            {isAdmin && (
+              <CButton
+                color="warning"
+                variant="outline"
+                size="sm"
+                onClick={handleReopenWeek}
+                disabled={updateTimesheetStatusMutation.isPending}
+              >
+                {updateTimesheetStatusMutation.isPending && <CSpinner size="sm" className="me-1" />}
+                Reabrir Semana
+              </CButton>
+            )}
           </CAlert>
         )}
 

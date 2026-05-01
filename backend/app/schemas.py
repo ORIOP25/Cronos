@@ -1087,6 +1087,9 @@ class WeekSlotRead(BaseModel):
     lesson_log_summary: Optional[str] = None
     lesson_log_notes: Optional[str] = None
     lesson_log_logged_at: Optional[datetime] = None
+    # WBS Fase 6: estado do fecho semanal do professor
+    week_timesheet_status: Optional[str] = None
+    timesheet_id: Optional[int] = None
 
 
 # ==========================================

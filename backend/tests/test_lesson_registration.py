@@ -512,3 +512,289 @@ class TestAdminOpensLessonLogModal:
         assert slot["lesson_log_notes"] == "Notas de teste"
         assert slot["is_past"] is True
 
+
+class TestWeekScheduleTimesheetStatus:
+    def test_week_schedule_includes_timesheet_status(self, sync_db, base_setup):
+        """T 6.1.1: Submeter timesheet → endpoint deve devolver week_timesheet_status=SUBMITTED."""
+        from app.services import schedule_service
+        org_id = base_setup["org_id"]
+        teacher_id = base_setup["teacher_id"]
+        class_id = base_setup["class_id"]
+        week_start = base_setup["date"] - timedelta(days=base_setup["date"].weekday())
+
+        # Pre-register the lesson log so submission is allowed
+        lesson_log_service.upsert_lesson_log_sync(
+            sync_db, org_id, base_setup["user_id"], base_setup["schedule_output_id"],
+            schemas.LessonLogCreate(status=models.LessonLogStatus.COMPLETED, summary="Aula", notes="")
+        )
+
+        # Submit timesheet via service
+        timesheet = timesheet_service.submit_timesheet_sync(
+            sync_db, org_id, teacher_id, week_start
+        )
+        assert timesheet.status == models.TimesheetStatus.SUBMITTED
+
+        # Fetch week schedule
+        slots = schedule_service.get_week_schedule_sync(
+            sync_db, org_id, week_start, class_id=class_id
+        )
+        assert len(slots) == 1
+        slot = slots[0]
+        assert slot["week_timesheet_status"] == "SUBMITTED"
+        assert slot["timesheet_id"] == timesheet.id
+
+    def test_week_schedule_different_teachers_different_statuses(self, sync_db, base_setup):
+        """T 6.1.2: Dois professores na mesma semana com estados diferentes.
+        Cada slot deve refletir o estado correto do seu professor."""
+        from app.services import schedule_service
+        org_id = base_setup["org_id"]
+        teacher1_id = base_setup["teacher_id"]
+        class_id = base_setup["class_id"]
+        week_start = base_setup["date"] - timedelta(days=base_setup["date"].weekday())
+
+        # Pre-register lesson log for teacher1 so submission is allowed
+        lesson_log_service.upsert_lesson_log_sync(
+            sync_db, org_id, base_setup["user_id"], base_setup["schedule_output_id"],
+            schemas.LessonLogCreate(status=models.LessonLogStatus.COMPLETED, summary="Aula T1", notes="")
+        )
+
+        # Create second teacher with lesson in same class/week
+        teacher2 = models.Teacher(name="Prof. Segundo", organization_id=org_id)
+        sync_db.add(teacher2)
+        sync_db.flush()
+
+        # Get existing timeslot and subject
+        timeslot = sync_db.execute(
+            select(models.Timeslot).where(models.Timeslot.organization_id == org_id)
+        ).scalar_one()
+        subject = sync_db.execute(
+            select(models.Subject).where(models.Subject.organization_id == org_id)
+        ).scalar_one()
+        room = sync_db.execute(
+            select(models.Room).where(models.Room.organization_id == org_id)
+        ).scalar_one()
+
+        lesson2 = models.Lesson(
+            organization_id=org_id,
+            class_id=class_id,
+            subject_id=subject.id,
+            teacher_id=teacher2.id,
+        )
+        sync_db.add(lesson2)
+        sync_db.flush()
+
+        output2 = models.ScheduleOutput(
+            organization_id=org_id,
+            lesson_id=lesson2.id,
+            timeslot_id=timeslot.id,
+            room_id=room.id,
+            generation_id="test-gen-2",
+            date=base_setup["date"],
+            is_draft=False,
+        )
+        sync_db.add(output2)
+        sync_db.commit()
+
+        # Submit timesheet for teacher1 only
+        timesheet1 = timesheet_service.submit_timesheet_sync(
+            sync_db, org_id, teacher1_id, week_start
+        )
+        assert timesheet1.status == models.TimesheetStatus.SUBMITTED
+
+        # Fetch week schedule by class (gets both teachers)
+        slots = schedule_service.get_week_schedule_sync(
+            sync_db, org_id, week_start, class_id=class_id
+        )
+        assert len(slots) == 2
+
+        statuses_by_teacher = {
+            s["teacher"]["id"]: (s["week_timesheet_status"], s["timesheet_id"])
+            for s in slots
+        }
+        assert statuses_by_teacher[teacher1_id] == ("SUBMITTED", timesheet1.id)
+        assert statuses_by_teacher[teacher2.id] == ("OPEN", None)
+
+    def test_week_grid_returns_timesheet_summary(self, sync_db, base_setup):
+        """T 6.3.1: Todos os slots do mesmo professor na mesma semana partilham o mesmo week_timesheet_status."""
+        from app.services import schedule_service
+        org_id = base_setup["org_id"]
+        teacher_id = base_setup["teacher_id"]
+        week_start = base_setup["date"] - timedelta(days=base_setup["date"].weekday())
+
+        # Pre-register lesson log for existing slot
+        lesson_log_service.upsert_lesson_log_sync(
+            sync_db, org_id, base_setup["user_id"], base_setup["schedule_output_id"],
+            schemas.LessonLogCreate(status=models.LessonLogStatus.COMPLETED, summary="Aula 1", notes="")
+        )
+
+        # Create a second timeslot and schedule output for the same teacher+lesson
+        room = sync_db.execute(
+            select(models.Room).where(models.Room.organization_id == org_id)
+        ).scalar_one()
+        timeslot2 = models.Timeslot(
+            day_of_week=1,
+            start_time=time(11, 0),
+            end_time=time(13, 0),
+            organization_id=org_id,
+        )
+        sync_db.add(timeslot2)
+        sync_db.flush()
+
+        lesson = sync_db.execute(
+            select(models.Lesson).where(
+                models.Lesson.organization_id == org_id,
+                models.Lesson.teacher_id == teacher_id,
+            )
+        ).scalar_one()
+
+        output2 = models.ScheduleOutput(
+            organization_id=org_id,
+            lesson_id=lesson.id,
+            timeslot_id=timeslot2.id,
+            room_id=room.id,
+            generation_id="test-gen-3",
+            date=base_setup["date"],
+            is_draft=False,
+        )
+        sync_db.add(output2)
+        sync_db.flush()
+
+        # Pre-register lesson log for second slot too
+        lesson_log_service.upsert_lesson_log_sync(
+            sync_db, org_id, base_setup["user_id"], output2.id,
+            schemas.LessonLogCreate(status=models.LessonLogStatus.COMPLETED, summary="Aula 2", notes="")
+        )
+
+        # Submit timesheet
+        timesheet = timesheet_service.submit_timesheet_sync(
+            sync_db, org_id, teacher_id, week_start
+        )
+
+        # Fetch by teacher (gets both slots)
+        slots = schedule_service.get_week_schedule_sync(
+            sync_db, org_id, week_start, teacher_id=teacher_id
+        )
+        assert len(slots) == 2
+        for slot in slots:
+            assert slot["week_timesheet_status"] == "SUBMITTED"
+            assert slot["timesheet_id"] == timesheet.id
+
+
+class TestTimesheetReopen:
+    def test_admin_reopens_submitted_week_from_modal(self, sync_db, base_setup):
+        """T 6.2.1: Submeter semana → Admin reabre via API → Verificar que o estado é OPEN."""
+        org_id = base_setup["org_id"]
+        teacher_id = base_setup["teacher_id"]
+        week_start = base_setup["date"] - timedelta(days=base_setup["date"].weekday())
+
+        # Pre-register lesson log so submission is allowed
+        lesson_log_service.upsert_lesson_log_sync(
+            sync_db, org_id, base_setup["user_id"], base_setup["schedule_output_id"],
+            schemas.LessonLogCreate(status=models.LessonLogStatus.COMPLETED, summary="Aula", notes="")
+        )
+
+        # Submit
+        timesheet = timesheet_service.submit_timesheet_sync(
+            sync_db, org_id, teacher_id, week_start
+        )
+        assert timesheet.status == models.TimesheetStatus.SUBMITTED
+
+        # Reopen by admin
+        reopened = timesheet_service.update_timesheet_status_sync(
+            sync_db, org_id, timesheet.id, models.TimesheetStatus.OPEN, base_setup["user_id"]
+        )
+        assert reopened["status"] == models.TimesheetStatus.OPEN
+
+    def test_reopen_preserves_lesson_logs(self, sync_db, base_setup):
+        """T 6.2.3: Reabrir a semana e verificar que os LessonLogs existentes não são apagados."""
+        org_id = base_setup["org_id"]
+        teacher_id = base_setup["teacher_id"]
+        output_id = base_setup["schedule_output_id"]
+        week_start = base_setup["date"] - timedelta(days=base_setup["date"].weekday())
+
+        # Create lesson log
+        payload = schemas.LessonLogCreate(
+            status=models.LessonLogStatus.COMPLETED,
+            summary="Aula antes do fecho",
+            notes="",
+        )
+        lesson_log_service.upsert_lesson_log_sync(
+            sync_db, org_id, base_setup["user_id"], output_id, payload
+        )
+
+        # Submit and approve
+        timesheet = timesheet_service.submit_timesheet_sync(
+            sync_db, org_id, teacher_id, week_start
+        )
+        timesheet_service.update_timesheet_status_sync(
+            sync_db, org_id, timesheet.id, models.TimesheetStatus.APPROVED, base_setup["user_id"]
+        )
+
+        # Reopen
+        timesheet_service.update_timesheet_status_sync(
+            sync_db, org_id, timesheet.id, models.TimesheetStatus.OPEN, base_setup["user_id"]
+        )
+
+        # Verify lesson log still exists
+        llog = sync_db.execute(
+            select(models.LessonLog).where(models.LessonLog.schedule_output_id == output_id)
+        ).scalar_one()
+        assert llog.status == models.LessonLogStatus.COMPLETED
+        assert llog.summary == "Aula antes do fecho"
+
+
+# ---------------------------------------------------------------------------
+# Endpoint-level permission test (async)
+# ---------------------------------------------------------------------------
+@pytest.mark.asyncio
+class TestTimesheetReopenPermissions:
+    async def test_teacher_cannot_reopen_week(self, async_client, db_session):
+        """T 6.2.2: Professor tenta chamar o endpoint de reabertura → HTTP 403."""
+        from app.core.security import hash_password, create_access_token
+
+        # Create org
+        org = models.Organization(name="Test Org Reopen", plan_status="active")
+        db_session.add(org)
+        await db_session.flush()
+
+        # Create teacher
+        teacher = models.Teacher(name="Prof. Reopen", organization_id=org.id)
+        db_session.add(teacher)
+        await db_session.flush()
+
+        # Create teacher user
+        teacher_user = models.User(
+            email="teacher_reopen@test.com",
+            hashed_password=hash_password("pass123"),
+            is_active=True,
+            role=models.UserRole.teacher,
+            organization_id=org.id,
+            teacher_id=teacher.id,
+        )
+        db_session.add(teacher_user)
+        await db_session.flush()
+
+        # Create timesheet
+        week_start = date.today() - timedelta(days=date.today().weekday())
+        timesheet = models.TeacherWeeklyTimesheet(
+            org_id=org.id,
+            teacher_id=teacher.id,
+            week_start_date=week_start,
+            week_end_date=week_start + timedelta(days=6),
+            status=models.TimesheetStatus.SUBMITTED,
+        )
+        db_session.add(timesheet)
+        await db_session.commit()
+
+        # Teacher token
+        token = create_access_token(data={"sub": teacher_user.email})
+        headers = {"Authorization": f"Bearer {token}"}
+
+        response = await async_client.patch(
+            f"/api/v1/timesheets/{timesheet.id}/status",
+            json={"status": "OPEN"},
+            headers=headers,
+        )
+        assert response.status_code == 403
+        assert "Apenas admins" in response.json()["detail"]
+

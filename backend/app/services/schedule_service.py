@@ -880,6 +880,7 @@ def _build_week_slot(
     lesson_logs: dict,
     active_modules: dict,
     today: date,
+    timesheet_map: dict | None = None,
 ) -> dict:
     """Builds a single WeekSlotRead dict from a ScheduleOutput row."""
     occ = occurrences.get(output.id)
@@ -888,6 +889,10 @@ def _build_week_slot(
     ts = output.timeslot
     mod_data = active_modules.get((lesson.class_id, lesson.subject_id))
     has_occurrence = occ is not None
+    teacher_id = lesson.teacher_id if lesson else None
+    timesheet_status, timesheet_id = ("OPEN", None)
+    if timesheet_map and teacher_id is not None:
+        timesheet_status, timesheet_id = timesheet_map.get(teacher_id, ("OPEN", None))
     return {
         "schedule_output_id": output.id,
         "date": output.date.isoformat() if output.date else None,
@@ -927,6 +932,9 @@ def _build_week_slot(
         "lesson_log_summary": llog.summary if llog else None,
         "lesson_log_notes": llog.notes if llog else None,
         "lesson_log_logged_at": llog.logged_at if llog else None,
+        # WBS Fase 6: estado do fecho semanal do professor
+        "week_timesheet_status": timesheet_status,
+        "timesheet_id": timesheet_id,
     }
 
 
@@ -985,8 +993,26 @@ def get_week_schedule_sync(
     pairs = list({(o.lesson.class_id, o.lesson.subject_id) for o in outputs})
     active_modules = _fetch_active_modules(db, pairs)
 
+    # WBS Fase 6: buscar timesheets dos professores para esta semana
+    teacher_ids = {o.lesson.teacher_id for o in outputs if o.lesson and o.lesson.teacher_id}
+    timesheet_map: dict[int, tuple[str, int | None]] = {}
+    if teacher_ids:
+        timesheet_rows = db.query(
+            models.TeacherWeeklyTimesheet.teacher_id,
+            models.TeacherWeeklyTimesheet.status,
+            models.TeacherWeeklyTimesheet.id,
+        ).filter(
+            models.TeacherWeeklyTimesheet.org_id == org_id,
+            models.TeacherWeeklyTimesheet.teacher_id.in_(list(teacher_ids)),
+            models.TeacherWeeklyTimesheet.week_start_date == week_start,
+        ).all()
+        timesheet_map = {
+            row.teacher_id: (row.status.value, row.id)
+            for row in timesheet_rows
+        }
+
     return [
-        _build_week_slot(output, occurrences, lesson_logs, active_modules, today)
+        _build_week_slot(output, occurrences, lesson_logs, active_modules, today, timesheet_map)
         for output in outputs
     ]
 

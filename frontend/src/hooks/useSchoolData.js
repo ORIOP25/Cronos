@@ -813,6 +813,8 @@ export const useUpdateTimesheetStatus = () => {
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['timesheets', orgId] })
+      void queryClient.invalidateQueries({ queryKey: ['weekSchedule', orgId] })
+      void queryClient.invalidateQueries({ queryKey: ['my-timesheet', orgId] })
     },
   })
 }

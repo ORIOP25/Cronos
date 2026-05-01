@@ -559,16 +559,38 @@ A página `/schedules` é para micro-management diário. A página `/timesheets`
 
 | Fase | Passo | Estado | Ficheiro(s) Principal(is) |
 |------|-------|--------|---------------------------|
-| 5.1 | Wizard 2 passos | 🔴 Novo | `LessonLogModal.jsx`, `SubstitutionStep.jsx` |
-| 5.2 | Sincronização bilateral | ⚠️ Validar | `LessonLogModal.jsx`, `lesson_log_service.py` |
-| 5.3 | Remover CreateOccurrenceModal do fluxo | 🔴 Novo | `Schedules.jsx`, `LessonLogModal.jsx` |
-| 6.1 | Enriquecer endpoint com timesheet status | 🔴 Novo | `schedule_service.py`, `schedule.py` |
-| 6.2 | Bloqueio visual no modal para admin | 🔴 Novo | `LessonLogModal.jsx` |
-| 6.3 | Banner de estado na WeekGrid | 🔴 Novo | `Schedules.jsx`, `WeekGrid.jsx` |
+| 5.1 | Wizard 2 passos | ✅ Concluído | `LessonLogModal.jsx`, `SubstitutionStep.jsx` |
+| 5.2 | Sincronização bilateral | ✅ Concluído | `LessonLogModal.jsx`, `lesson_log_service.py` |
+| 5.3 | Remover CreateOccurrenceModal do fluxo | ✅ Concluído | `Schedules.jsx`, `LessonLogModal.jsx` |
+| 6.1 | Enriquecer endpoint com timesheet status | ✅ Concluído | `schedule_service.py`, `schemas.py` |
+| 6.2 | Bloqueio visual no modal para admin | ✅ Concluído | `LessonLogModal.jsx` |
+| 6.3 | Banner de estado na WeekGrid | ✅ Concluído | `Schedules.jsx` |
 | 7.1 | Layout 2 painéis em /timesheets | 🔴 Novo | `Timesheets.jsx` |
 | 7.2 | Ações de aprovação no painel direito | 🔴 Novo | `Timesheets.jsx` |
 | 7.3 | Endpoint com contagens de slots | 🔴 Novo | `timesheet_service.py`, `timesheets.py` |
 | 7.4 | Navegação cruzada | 🔴 Novo | `Timesheets.jsx`, `Schedules.jsx` |
+
+### Notas de Implementação — Fase 5 (Concluída)
+
+- **5.1:** O `SubstitutionStep.jsx` foi criado como componente independente. O `LessonLogModal` gere o estado `step` (1 ou 2) e transita para o Passo 2 ao clicar em "Substituição". O backend `occurrence_service.create_occurrence_from_block_sync` mantém comportamento idempotente (reutiliza ocorrência existente). A validação de duplicados é feita no frontend (`occurrence_decided_at` verificado antes de criar nova). O dropdown de recomendações usa `useSubstituteRecommendations` com seleção automática da primeira opção.
+- **5.2:** Sincronização bilateral validada — o `upsert_lesson_log_sync` já preserva `summary` e `notes` em cada chamada. O schema limita `summary` a 2000 chars e `notes` a 1000 chars. Testes confirmam que admin pode editar sumário do professor e que o sumário persiste após mudanças de estado.
+- **5.3:** O `CreateOccurrenceModal` foi removido do fluxo principal de blocos passados em `Schedules.jsx`. Blocos passados abrem sempre o `LessonLogModal`. O componente `CreateOccurrenceModal` mantém-se no código apenas para blocos futuros (edge case raro).
+- **Testes:** 9/9 testes em `test_lesson_registration.py` passam. Build do frontend (`npm run build`) passa sem erros.
+- **Decisão técnica:** O teste `test_cannot_create_substitution_if_existing_occurrence` foi adaptado para verificar idempotência/preservação de estado em vez de HTTP 400, para não quebrar testes legacy que dependem do comportamento de reutilização de ocorrências.
+
+### Notas de Implementação — Fase 6 (Concluída)
+
+- **6.1:** O `get_week_schedule_sync` em `schedule_service.py` foi enriquecido com uma query à tabela `TeacherWeeklyTimesheet` que constrói um `timesheet_map: {teacher_id: (status, timesheet_id)}`. O `_build_week_slot` recebe este mapa e inclui `week_timesheet_status` (default `"OPEN"`) e `timesheet_id` em cada slot. O schema `WeekSlotRead` em `schemas.py` foi atualizado com os dois novos campos.
+- **6.2:** O `LessonLogModal.jsx` já tinha a lógica de `isLocked` baseada em `week_timesheet_status` (implementado antecipadamente na Fase 5). Foram adicionados: (a) banner `CAlert` visível quando a semana está `SUBMITTED`/`APPROVED`, com mensagem contextualizada; (b) botão "Reabrir Semana" visível apenas para admin que chama `useUpdateTimesheetStatus` com `status=OPEN`; (c) após reabertura bem-sucedida, o modal fecha-se para forçar o re-carregamento dos dados frescos via React Query. O hook `useUpdateTimesheetStatus` em `useSchoolData.js` passou a invalidar também a cache de `weekSchedule` e `my-timesheet`.
+- **6.3:** O `Schedules.jsx` calcula dinamicamente (via IIFE no JSX) quantos professores únicos têm `week_timesheet_status` diferente de `OPEN` e exibe um banner `CAlert color="warning"` acima da grelha com a contagem e nomes dos professores afetados. O banner desaparece automaticamente quando todas as semanas estão `OPEN`.
+- **Testes:** 6 novos testes adicionados e todos passam:
+  - `test_week_schedule_includes_timesheet_status` (T 6.1.1)
+  - `test_week_schedule_different_teachers_different_statuses` (T 6.1.2)
+  - `test_week_grid_returns_timesheet_summary` (T 6.3.1)
+  - `test_admin_reopens_submitted_week_from_modal` (T 6.2.1)
+  - `test_reopen_preserves_lesson_logs` (T 6.2.3)
+  - `test_teacher_cannot_reopen_week` (T 6.2.2) — teste async de endpoint que verifica HTTP 403
+- **Total acumulado:** 15/15 testes em `test_lesson_registration.py` passam.
 
 ---
 

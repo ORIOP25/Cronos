@@ -971,6 +971,25 @@ const Schedules = () => {
 
         {/* Week Grid */}
         <CCol lg={gridCols}>
+          {/* WBS Fase 6.3: Banner de semanas fechadas */}
+          {(() => {
+            const closedTeachers = new Set()
+            weekSlots.forEach((s) => {
+              if (s.week_timesheet_status === 'SUBMITTED' || s.week_timesheet_status === 'APPROVED') {
+                if (s.teacher?.name) closedTeachers.add(s.teacher.name)
+              }
+            })
+            if (closedTeachers.size === 0) return null
+            return (
+              <CAlert color="warning" className="mb-3 d-flex align-items-center gap-2">
+                <CIcon icon={cilWarning} />
+                <span>
+                  Esta semana tem <strong>{closedTeachers.size}</strong> semana{closedTeachers.size === 1 ? '' : 's'} submetida{closedTeachers.size === 1 ? '' : 's'}/aprovada{closedTeachers.size === 1 ? '' : 's'} ({Array.from(closedTeachers).sort().join(', ')}). Os blocos correspondentes estão bloqueados para edição.
+                </span>
+              </CAlert>
+            )
+          })()}
+
           <CCard className="border-0 shadow-sm h-100">
             <CCardHeader className="bg-transparent fw-semibold d-flex align-items-center justify-content-between">
               <span>
