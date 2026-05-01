@@ -1141,5 +1141,10 @@ class TeacherWeeklyTimesheetRead(BaseModel):
     approved_at: Optional[datetime] = None
     approved_by_user_id: Optional[int] = None
     created_at: datetime
+    # WBS Fase 7.3: contagens de slots para o painel esquerdo
+    total_slots: int = 0
+    registered_slots: int = 0
+    completed_slots: int = 0
+    occurrence_slots: int = 0
 
     model_config = ConfigDict(from_attributes=True)

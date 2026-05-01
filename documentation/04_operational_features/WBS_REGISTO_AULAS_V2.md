@@ -565,10 +565,10 @@ A página `/schedules` é para micro-management diário. A página `/timesheets`
 | 6.1 | Enriquecer endpoint com timesheet status | ✅ Concluído | `schedule_service.py`, `schemas.py` |
 | 6.2 | Bloqueio visual no modal para admin | ✅ Concluído | `LessonLogModal.jsx` |
 | 6.3 | Banner de estado na WeekGrid | ✅ Concluído | `Schedules.jsx` |
-| 7.1 | Layout 2 painéis em /timesheets | 🔴 Novo | `Timesheets.jsx` |
-| 7.2 | Ações de aprovação no painel direito | 🔴 Novo | `Timesheets.jsx` |
-| 7.3 | Endpoint com contagens de slots | 🔴 Novo | `timesheet_service.py`, `timesheets.py` |
-| 7.4 | Navegação cruzada | 🔴 Novo | `Timesheets.jsx`, `Schedules.jsx` |
+| 7.1 | Layout 2 painéis em /timesheets | ✅ Concluído | `Timesheets.jsx` |
+| 7.2 | Ações de aprovação no painel direito | ✅ Concluído | `Timesheets.jsx` |
+| 7.3 | Endpoint com contagens de slots | ✅ Concluído | `timesheet_service.py`, `timesheets.py` |
+| 7.4 | Navegação cruzada | ✅ Concluído | `Timesheets.jsx`, `Schedules.jsx` |
 
 ### Notas de Implementação — Fase 5 (Concluída)
 
@@ -591,6 +591,22 @@ A página `/schedules` é para micro-management diário. A página `/timesheets`
   - `test_reopen_preserves_lesson_logs` (T 6.2.3)
   - `test_teacher_cannot_reopen_week` (T 6.2.2) — teste async de endpoint que verifica HTTP 403
 - **Total acumulado:** 15/15 testes em `test_lesson_registration.py` passam.
+
+### Notas de Implementação — Fase 7 (Concluída)
+
+- **7.1:** A página `/timesheets` foi completamente redesenhada de uma tabela simples para um layout de dois painéis. O painel esquerdo (30%, `CCol md={4} lg={3}`) mostra uma lista scrollável de cards compactos para cada professor, com nome, badge de estado e contagens (`registered_slots/total_slots`). O painel direito (70%, `CCol md={8} lg={9}`) mostra o `WeekGrid` do professor selecionado com o `LessonLogModal` integrado para interação direta nos blocos. A navegação de semana (←/→/Hoje) e o filtro de estado mantêm-se no topo. Auto-seleção do primeiro professor ao carregar a lista.
+- **7.2:** No painel direito, acima do `WeekGrid`, são exibidos botões de ação contextualizados: "Aprovar" (se SUBMITTED), "Reabrir" (se SUBMITTED ou APPROVED), ou "Aguardar submissão do professor" (se OPEN). As ações chamam `useUpdateTimesheetStatus` e invalidam as caches via React Query. Também é mostrado um resumo de contagens: registadas, dadas, ocorrências, pendentes.
+- **7.3:** O `timesheet_service.py` foi enriquecido com `_compute_slot_counts_for_teachers()` que faz uma query agregada SQL (usando `func.sum(case(...))`) para calcular `total_slots`, `registered_slots`, `completed_slots` e `occurrence_slots` por professor numa semana. Blocos `is_draft=True` são excluídos das contagens. O schema `TeacherWeeklyTimesheetRead` em `schemas.py` recebeu os 4 novos campos com default 0. A função `list_timesheets_sync` chama a query de contagens quando `week_start_date` é fornecido.
+- **7.4:** Navegação cruzada implementada: (a) Em `/timesheets`, cada painel direito tem botão "Ver em Horários" que navega para `/schedules?teacherId=X&weekStart=Y`; (b) Em `/schedules`, o admin vê botão "Ver Aprovações" que navega para `/timesheets?weekStart=Y`; (c) O `Schedules.jsx` lê query params `teacherId` e `weekStart` da URL via `useLocation` e pré-seleciona o professor/semana automaticamente.
+- **Testes:** 6 novos testes adicionados e todos passam:
+  - `test_timesheets_list_with_slot_counts` (T 7.3.1)
+  - `test_timesheets_excludes_draft_slots` (T 7.3.2)
+  - `test_approve_from_timesheets_detail` (T 7.2.1)
+  - `test_reopen_from_timesheets_detail` (T 7.2.2)
+  - `test_timesheets_list_endpoint_returns_teacher_summary` (T 7.1.1)
+  - `test_timesheets_detail_endpoint_returns_week_slots` (T 7.1.2)
+- **Total acumulado:** 21/21 testes em `test_lesson_registration.py` passam.
+- **Build frontend:** `npm run build` passa sem erros.
 
 ---
 

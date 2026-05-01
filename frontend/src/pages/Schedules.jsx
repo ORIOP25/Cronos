@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import PropTypes from 'prop-types'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import {
   CCard, CCardBody, CCardHeader, CAlert, CBadge, CSpinner,
@@ -10,7 +10,7 @@ import {
 import CIcon from '@coreui/icons-react'
 import {
   cilCalendar, cilReload, cilCheckCircle, cilBan, cilWarning,
-  cilArrowLeft, cilArrowRight, cilPeople, cilUser,
+  cilArrowLeft, cilArrowRight, cilPeople, cilUser, cilCalendarCheck,
 } from '@coreui/icons'
 import {
   useDrafts, useScheduleDiff, useApproveDraft, useRejectDraft,
@@ -510,6 +510,7 @@ CreateOccurrenceModal.propTypes = {
 // ---------------------------------------------------------------------------
 const Schedules = () => {
   const navigate = useNavigate()
+  const location = useLocation()
   const queryClient = useQueryClient()
   const user = useAuthStore((state) => state.user)
   const orgId = user?.orgId ?? null
@@ -518,6 +519,11 @@ const Schedules = () => {
   const teacherOwnId = user?.teacherId ?? null
   const canConsultSchedule = isAdmin || (isTeacher && Boolean(teacherOwnId))
   const taskStorageKey = getTaskStorageKey(orgId)
+
+  // Parse query params for cross-navigation (Fase 7.4)
+  const urlParams = new URLSearchParams(location.search)
+  const urlTeacherId = urlParams.get('teacherId')
+  const urlWeekStart = urlParams.get('weekStart')
 
   // Sprint 3 state
   const [mode, setMode]                       = useState('full')
@@ -530,7 +536,12 @@ const Schedules = () => {
   const [selectedTeacherId, setSelectedTeacherId] = useState(
     isTeacher && teacherOwnId ? String(teacherOwnId) : ''
   )
-  const [weekStart, setWeekStart]                 = useState(getCurrentWeekMonday)
+  const [weekStart, setWeekStart]                 = useState(() => {
+    if (urlWeekStart && /^\d{4}-\d{2}-\d{2}$/.test(urlWeekStart)) {
+      return urlWeekStart
+    }
+    return getCurrentWeekMonday()
+  })
   const [selectedOperationalSlot, setSelectedOperationalSlot] = useState(null)
   const [adminLessonLogSlot, setAdminLessonLogSlot] = useState(null)
   const [createOccurrenceError, setCreateOccurrenceError] = useState('')
@@ -549,6 +560,17 @@ const Schedules = () => {
   const { data: classes  = [] } = useClasses({ enabled: isAdmin })
   const { data: teachers = [] } = useTeachers({ enabled: isAdmin })
   const { data: timeslots = [] } = useTimeslots()
+
+  // Apply URL query params for cross-navigation (Fase 7.4)
+  useEffect(() => {
+    if (!isAdmin || !urlTeacherId) return
+    const teacherExists = teachers.some((t) => String(t.id) === urlTeacherId)
+    if (teacherExists) {
+      setViewMode('teacher')
+      setSelectedTeacherId(urlTeacherId)
+      setSelectedClassId('')
+    }
+  }, [isAdmin, urlTeacherId, teachers])
 
   const classId   = viewMode === 'class'   && selectedClassId   ? Number.parseInt(selectedClassId, 10)   : null
   const teacherId = viewMode === 'teacher' && selectedTeacherId ? Number.parseInt(selectedTeacherId, 10) : null
@@ -786,6 +808,18 @@ const Schedules = () => {
             {' '}Verde = dada · Vermelho = furo · Amarelo = substituída · Cor = planeado.
           </small>
         </div>
+
+        {isAdmin && (
+          <CButton
+            color="primary"
+            variant="outline"
+            size="sm"
+            onClick={() => navigate(`/timesheets?weekStart=${weekStart}`)}
+          >
+            <CIcon icon={cilCalendarCheck} className="me-1" />
+            Ver Aprovações
+          </CButton>
+        )}
 
         {/* Generation controls */}
         {isAdmin && (

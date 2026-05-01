@@ -798,3 +798,340 @@ class TestTimesheetReopenPermissions:
         assert response.status_code == 403
         assert "Apenas admins" in response.json()["detail"]
 
+
+# ---------------------------------------------------------------------------
+# Fase 7.3 — Slot counts in timesheet list
+# ---------------------------------------------------------------------------
+@pytest.fixture
+def slot_counts_setup(sync_db, base_setup):
+    """Extende base_setup com múltiplos slots na mesma semana para testar contagens."""
+    org_id = base_setup["org_id"]
+    teacher_id = base_setup["teacher_id"]
+    user_id = base_setup["user_id"]
+    week_start = base_setup["date"] - timedelta(days=base_setup["date"].weekday())
+
+    # Get existing room
+    room = sync_db.execute(
+        select(models.Room).where(models.Room.organization_id == org_id)
+    ).scalar_one()
+
+    # Create 2 more timeslots
+    ts2 = models.Timeslot(day_of_week=1, start_time=time(11, 0), end_time=time(13, 0), organization_id=org_id)
+    ts3 = models.Timeslot(day_of_week=2, start_time=time(14, 0), end_time=time(16, 0), organization_id=org_id)
+    sync_db.add(ts2)
+    sync_db.add(ts3)
+    sync_db.flush()
+
+    # Get existing lesson
+    lesson = sync_db.execute(
+        select(models.Lesson).where(models.Lesson.organization_id == org_id, models.Lesson.teacher_id == teacher_id)
+    ).scalar_one()
+
+    # Slot 2 — COMPLETED
+    out2 = models.ScheduleOutput(
+        organization_id=org_id, lesson_id=lesson.id, timeslot_id=ts2.id,
+        room_id=room.id, generation_id="test-gen-2", date=base_setup["date"], is_draft=False,
+    )
+    sync_db.add(out2)
+    sync_db.flush()
+    lesson_log_service.upsert_lesson_log_sync(
+        sync_db, org_id, user_id, out2.id,
+        schemas.LessonLogCreate(status=models.LessonLogStatus.COMPLETED, summary="Aula 2", notes="")
+    )
+
+    # Slot 3 — OCCURRENCE
+    out3 = models.ScheduleOutput(
+        organization_id=org_id, lesson_id=lesson.id, timeslot_id=ts3.id,
+        room_id=room.id, generation_id="test-gen-3", date=base_setup["date"], is_draft=False,
+    )
+    sync_db.add(out3)
+    sync_db.flush()
+    lesson_log_service.upsert_lesson_log_sync(
+        sync_db, org_id, user_id, out3.id,
+        schemas.LessonLogCreate(status=models.LessonLogStatus.OCCURRENCE, summary="Falta", notes="")
+    )
+
+    # Slot 4 — DRAFT (should NOT be counted)
+    out4 = models.ScheduleOutput(
+        organization_id=org_id, lesson_id=lesson.id, timeslot_id=ts2.id,
+        room_id=room.id, generation_id="test-gen-4", date=base_setup["date"], is_draft=True,
+    )
+    sync_db.add(out4)
+    sync_db.commit()
+
+    base_setup["output_2_id"] = out2.id
+    base_setup["output_3_id"] = out3.id
+    base_setup["output_4_id"] = out4.id
+    base_setup["week_start"] = week_start
+    return base_setup
+
+
+class TestTimesheetListSlotCounts:
+    def test_timesheets_list_with_slot_counts(self, sync_db, slot_counts_setup):
+        """T 7.3.1: Criar aulas, registar algumas, chamar list_timesheets_sync e verificar as contagens."""
+        org_id = slot_counts_setup["org_id"]
+        teacher_id = slot_counts_setup["teacher_id"]
+        week_start = slot_counts_setup["week_start"]
+
+        # Create timesheet so it appears in the list
+        timesheet = timesheet_service.get_or_create_timesheet_sync(
+            sync_db, org_id, teacher_id, week_start
+        )
+
+        results = timesheet_service.list_timesheets_sync(
+            sync_db, org_id, week_start_date=week_start
+        )
+        assert len(results) == 1
+        result = results[0]
+        assert result["teacher_id"] == teacher_id
+        # 3 non-draft slots (base + out2 + out3), out4 is draft and excluded
+        assert result["total_slots"] == 3
+        # 2 registered (COMPLETED + OCCURRENCE); base_setup slot has no log
+        assert result["registered_slots"] == 2
+        # 1 completed (out2); base_setup has no log, out3 is OCCURRENCE
+        assert result["completed_slots"] == 1
+        assert result["occurrence_slots"] == 1
+
+    def test_timesheets_excludes_draft_slots(self, sync_db, slot_counts_setup):
+        """T 7.3.2: Verificar que blocos draft não são contabilizados nas contagens."""
+        org_id = slot_counts_setup["org_id"]
+        teacher_id = slot_counts_setup["teacher_id"]
+        week_start = slot_counts_setup["week_start"]
+
+        timesheet_service.get_or_create_timesheet_sync(
+            sync_db, org_id, teacher_id, week_start
+        )
+
+        results = timesheet_service.list_timesheets_sync(
+            sync_db, org_id, week_start_date=week_start
+        )
+        result = results[0]
+        # The draft output (out4) uses the same timeslot as out2 but should not count
+        assert result["total_slots"] == 3
+
+
+# ---------------------------------------------------------------------------
+# Fase 7.2 — Approval / Reopen via endpoint
+# ---------------------------------------------------------------------------
+@pytest.mark.asyncio
+class TestTimesheetApprovalEndpoints:
+    async def test_approve_from_timesheets_detail(self, async_client, db_session):
+        """T 7.2.1: Admin aprova uma timesheet SUBMITTED via endpoint → estado APPROVED."""
+        from app.core.security import hash_password, create_access_token
+
+        org = models.Organization(name="Test Org Approve", plan_status="active")
+        db_session.add(org)
+        await db_session.flush()
+
+        teacher = models.Teacher(name="Prof. Approve", organization_id=org.id)
+        db_session.add(teacher)
+        await db_session.flush()
+
+        admin_user = models.User(
+            email="admin_approve@test.com",
+            hashed_password=hash_password("pass123"),
+            is_active=True,
+            role=models.UserRole.admin,
+            organization_id=org.id,
+        )
+        db_session.add(admin_user)
+        await db_session.flush()
+
+        week_start = date.today() - timedelta(days=date.today().weekday())
+        timesheet = models.TeacherWeeklyTimesheet(
+            org_id=org.id,
+            teacher_id=teacher.id,
+            week_start_date=week_start,
+            week_end_date=week_start + timedelta(days=6),
+            status=models.TimesheetStatus.SUBMITTED,
+            submitted_at=datetime.now(timezone.utc),
+        )
+        db_session.add(timesheet)
+        await db_session.commit()
+
+        token = create_access_token(data={"sub": admin_user.email})
+        headers = {"Authorization": f"Bearer {token}"}
+
+        response = await async_client.patch(
+            f"/api/v1/timesheets/{timesheet.id}/status",
+            json={"status": "APPROVED"},
+            headers=headers,
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "APPROVED"
+        assert data["approved_at"] is not None
+
+    async def test_reopen_from_timesheets_detail(self, async_client, db_session):
+        """T 7.2.2: Admin reabre uma timesheet APPROVED via endpoint → estado OPEN."""
+        from app.core.security import hash_password, create_access_token
+
+        org = models.Organization(name="Test Org Reopen2", plan_status="active")
+        db_session.add(org)
+        await db_session.flush()
+
+        teacher = models.Teacher(name="Prof. Reopen2", organization_id=org.id)
+        db_session.add(teacher)
+        await db_session.flush()
+
+        admin_user = models.User(
+            email="admin_reopen2@test.com",
+            hashed_password=hash_password("pass123"),
+            is_active=True,
+            role=models.UserRole.admin,
+            organization_id=org.id,
+        )
+        db_session.add(admin_user)
+        await db_session.flush()
+
+        week_start = date.today() - timedelta(days=date.today().weekday())
+        timesheet = models.TeacherWeeklyTimesheet(
+            org_id=org.id,
+            teacher_id=teacher.id,
+            week_start_date=week_start,
+            week_end_date=week_start + timedelta(days=6),
+            status=models.TimesheetStatus.APPROVED,
+            approved_at=datetime.now(timezone.utc),
+        )
+        db_session.add(timesheet)
+        await db_session.commit()
+
+        token = create_access_token(data={"sub": admin_user.email})
+        headers = {"Authorization": f"Bearer {token}"}
+
+        response = await async_client.patch(
+            f"/api/v1/timesheets/{timesheet.id}/status",
+            json={"status": "OPEN"},
+            headers=headers,
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "OPEN"
+        assert data["approved_at"] is None
+        assert data["submitted_at"] is None
+
+
+# ---------------------------------------------------------------------------
+# Fase 7.1 — Endpoint enriched list
+# ---------------------------------------------------------------------------
+@pytest.mark.asyncio
+class TestTimesheetsListEndpoint:
+    async def test_timesheets_list_endpoint_returns_teacher_summary(self, async_client, db_session):
+        """T 7.1.1: Verificar que o endpoint devolve a lista de professores com contagens."""
+        from app.core.security import hash_password, create_access_token
+
+        org = models.Organization(name="Test Org List", plan_status="active")
+        db_session.add(org)
+        await db_session.flush()
+
+        teacher = models.Teacher(name="Prof. List", organization_id=org.id)
+        db_session.add(teacher)
+        await db_session.flush()
+
+        admin_user = models.User(
+            email="admin_list@test.com",
+            hashed_password=hash_password("pass123"),
+            is_active=True,
+            role=models.UserRole.admin,
+            organization_id=org.id,
+        )
+        db_session.add(admin_user)
+        await db_session.flush()
+
+        week_start = date.today() - timedelta(days=date.today().weekday())
+        timesheet = models.TeacherWeeklyTimesheet(
+            org_id=org.id,
+            teacher_id=teacher.id,
+            week_start_date=week_start,
+            week_end_date=week_start + timedelta(days=6),
+            status=models.TimesheetStatus.SUBMITTED,
+        )
+        db_session.add(timesheet)
+        await db_session.commit()
+
+        token = create_access_token(data={"sub": admin_user.email})
+        headers = {"Authorization": f"Bearer {token}"}
+
+        response = await async_client.get(
+            f"/api/v1/timesheets/?week_start_date={week_start.isoformat()}",
+            headers=headers,
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data) == 1
+        assert data[0]["teacher_name"] == "Prof. List"
+        assert data[0]["status"] == "SUBMITTED"
+        assert "total_slots" in data[0]
+        assert "registered_slots" in data[0]
+
+    async def test_timesheets_detail_endpoint_returns_week_slots(self, async_client, db_session):
+        """T 7.1.2: Verificar que o endpoint devolve os slots do professor para a semana."""
+        from app.core.security import hash_password, create_access_token
+
+        org = models.Organization(name="Test Org Detail", plan_status="active")
+        db_session.add(org)
+        await db_session.flush()
+
+        teacher = models.Teacher(name="Prof. Detail", organization_id=org.id)
+        db_session.add(teacher)
+        await db_session.flush()
+
+        # Create timeslot, room, class, subject
+        room = models.Room(name="Sala D", capacity=30, type=models.RoomType.normal, organization_id=org.id)
+        db_session.add(room)
+        subject = models.Subject(name="Disc D", organization_id=org.id, required_room_type=models.RoomType.normal)
+        db_session.add(subject)
+        course = models.Course(name="Curso D", abbreviation="CD", organization_id=org.id)
+        db_session.add(course)
+        await db_session.flush()
+        class_ = models.Class(name="10D", size=20, start_year=2024, end_year=2027, grade_level=10, course_id=course.id, organization_id=org.id)
+        db_session.add(class_)
+        await db_session.flush()
+        ts = models.Timeslot(day_of_week=0, start_time=time(9, 0), end_time=time(11, 0), organization_id=org.id)
+        db_session.add(ts)
+        await db_session.flush()
+
+        lesson = models.Lesson(organization_id=org.id, class_id=class_.id, subject_id=subject.id, teacher_id=teacher.id)
+        db_session.add(lesson)
+        await db_session.flush()
+
+        yesterday = date.today() - timedelta(days=1)
+        output = models.ScheduleOutput(
+            organization_id=org.id, lesson_id=lesson.id, timeslot_id=ts.id,
+            room_id=room.id, generation_id="test-gen-d", date=yesterday, is_draft=False,
+        )
+        db_session.add(output)
+        await db_session.flush()
+
+        # Create log
+        llog = models.LessonLog(
+            org_id=org.id, schedule_output_id=output.id,
+            status=models.LessonLogStatus.COMPLETED, summary="Aula D",
+        )
+        db_session.add(llog)
+        await db_session.commit()
+
+        admin_user = models.User(
+            email="admin_detail@test.com",
+            hashed_password=hash_password("pass123"),
+            is_active=True,
+            role=models.UserRole.admin,
+            organization_id=org.id,
+        )
+        db_session.add(admin_user)
+        await db_session.commit()
+
+        token = create_access_token(data={"sub": admin_user.email})
+        headers = {"Authorization": f"Bearer {token}"}
+
+        week_start = yesterday - timedelta(days=yesterday.weekday())
+        response = await async_client.get(
+            f"/api/v1/schedule/week?week_start={week_start.isoformat()}&teacher_id={teacher.id}",
+            headers=headers,
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data) == 1
+        assert data[0]["lesson_log_status"] == "COMPLETED"
+        assert data[0]["lesson_log_summary"] == "Aula D"
+

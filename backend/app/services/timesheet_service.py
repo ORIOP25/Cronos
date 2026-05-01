@@ -89,6 +89,85 @@ def submit_timesheet_sync(
     
     return timesheet
 
+def _compute_slot_counts_for_teachers(
+    db: Session,
+    org_id: int,
+    teacher_ids: list[int],
+    week_start_date: date,
+) -> dict[int, dict]:
+    """Retorna contagens de slots por teacher_id para uma semana específica.
+
+    total_slots: outputs não-draft do professor na semana
+    registered_slots: com LessonLog.status != PENDING
+    completed_slots: com LessonLog.status == COMPLETED
+    occurrence_slots: com LessonLog.status == OCCURRENCE OU LessonOccurrence ativa
+    """
+    from sqlalchemy import case, func
+    week_end_date = week_start_date + timedelta(days=6)
+
+    registered_expr = func.sum(
+        case(
+            (
+                models.LessonLog.status.isnot(None)
+                & (models.LessonLog.status != models.LessonLogStatus.PENDING),
+                1,
+            ),
+            else_=0,
+        )
+    ).label("registered")
+
+    completed_expr = func.sum(
+        case(
+            (models.LessonLog.status == models.LessonLogStatus.COMPLETED, 1),
+            else_=0,
+        )
+    ).label("completed")
+
+    occurrence_expr = func.sum(
+        case(
+            (
+                (models.LessonLog.status == models.LessonLogStatus.OCCURRENCE)
+                | (models.LessonOccurrence.id.isnot(None)),
+                1,
+            ),
+            else_=0,
+        )
+    ).label("occurrence")
+
+    rows = db.query(
+        models.Lesson.teacher_id,
+        func.count(models.ScheduleOutput.id).label("total"),
+        registered_expr,
+        completed_expr,
+        occurrence_expr,
+    ).join(
+        models.Lesson, models.ScheduleOutput.lesson_id == models.Lesson.id
+    ).outerjoin(
+        models.LessonLog,
+        models.LessonLog.schedule_output_id == models.ScheduleOutput.id,
+    ).outerjoin(
+        models.LessonOccurrence,
+        models.LessonOccurrence.schedule_output_id == models.ScheduleOutput.id,
+    ).filter(
+        models.ScheduleOutput.organization_id == org_id,
+        models.Lesson.teacher_id.in_(teacher_ids),
+        models.ScheduleOutput.is_draft.is_(False),
+        models.ScheduleOutput.date.between(week_start_date, week_end_date),
+    ).group_by(
+        models.Lesson.teacher_id
+    ).all()
+
+    return {
+        row.teacher_id: {
+            "total_slots": row.total or 0,
+            "registered_slots": row.registered or 0,
+            "completed_slots": row.completed or 0,
+            "occurrence_slots": row.occurrence or 0,
+        }
+        for row in rows
+    }
+
+
 def list_timesheets_sync(
     db: Session,
     org_id: int,
@@ -106,9 +185,18 @@ def list_timesheets_sync(
         query = query.filter(models.TeacherWeeklyTimesheet.status == status)
         
     timesheets = query.all()
+
+    # WBS Fase 7.3: enriquecer com contagens de slots
+    slot_counts: dict[int, dict] = {}
+    if timesheets and week_start_date:
+        teacher_ids = [t.teacher_id for t in timesheets]
+        slot_counts = _compute_slot_counts_for_teachers(
+            db, org_id, teacher_ids, week_start_date
+        )
     
     result = []
     for t in timesheets:
+        counts = slot_counts.get(t.teacher_id, {})
         result.append({
             "id": t.id,
             "org_id": t.org_id,
@@ -121,6 +209,10 @@ def list_timesheets_sync(
             "approved_at": t.approved_at,
             "approved_by_user_id": t.approved_by_user_id,
             "created_at": t.created_at,
+            "total_slots": counts.get("total_slots", 0),
+            "registered_slots": counts.get("registered_slots", 0),
+            "completed_slots": counts.get("completed_slots", 0),
+            "occurrence_slots": counts.get("occurrence_slots", 0),
         })
     return result
 
