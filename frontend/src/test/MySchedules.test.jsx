@@ -103,7 +103,7 @@ describe('MySchedules page (Ponto 4)', () => {
       expect(screen.getByText('Programacao')).toBeInTheDocument()
     })
 
-    expect(screen.getByText('OPERATIONAL_false')).toBeInTheDocument()
+    expect(screen.getByText('OPERATIONAL_true')).toBeInTheDocument()
     expect(screen.queryByLabelText('Turma')).not.toBeInTheDocument()
     expect(screen.queryByLabelText('Professor')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Gerar Horário/i })).not.toBeInTheDocument()
