@@ -65,7 +65,7 @@ async def read_substitutions(
     # Precisamos de criar esta função no service (ver passo seguinte)
     substitutions = await substitution_service.get_active_substitutions(
         db,
-        org_id=current_user.organization_id,
+        organization_id=current_user.organization_id,
         skip=skip,
         limit=limit
     )

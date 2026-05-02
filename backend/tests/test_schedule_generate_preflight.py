@@ -42,7 +42,7 @@ async def _seed_minimal_generation_data_with_settings(
     repair_window_days: int | None,
 ):
     settings = models.OrganizationSettings(
-        org_id=org_id,
+        organization_id=org_id,
         school_start_date=school_start_date,
         school_target_end_date=school_target_end_date,
         school_hard_end_date=school_hard_end_date,
@@ -51,7 +51,7 @@ async def _seed_minimal_generation_data_with_settings(
     db_session.add(settings)
 
     holiday = models.SchoolCalendarEvent(
-        org_id=org_id,
+        organization_id=org_id,
         name="Feriado Nacional",
         start_date=date(2025, 12, 1),
         end_date=date(2025, 12, 1),
@@ -150,7 +150,7 @@ async def test_generate_auto_sync_holidays_is_attempted(
     org_id = await _get_org_id(db_session)
     db_session.add(
         models.OrganizationSettings(
-            org_id=org_id,
+            organization_id=org_id,
             school_start_date=date(2025, 9, 15),
             school_target_end_date=date(2026, 6, 15),
         )

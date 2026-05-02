@@ -797,7 +797,7 @@ class TestTeacherAvailability:
         await db_session.flush()
 
         settings_org2 = models.OrganizationSettings(
-            org_id=org2.id,
+            organization_id=org2.id,
             school_start_date=date(2027, 9, 1),
             school_target_end_date=date(2028, 6, 30),
             school_hard_end_date=date(2028, 7, 31),
@@ -853,7 +853,7 @@ class TestTeacherAvailability:
         teacher_headers = await _create_teacher_auth_headers(
             db_session,
             teacher_id=teacher.id,
-            org_id=org.id,
+            organization_id=org.id,
         )
 
         resp = await async_client.get(
@@ -897,7 +897,7 @@ class TestTeacherAvailability:
         mismatched_headers = await _create_teacher_auth_headers(
             db_session,
             teacher_id=teacher_a.id,
-            org_id=org_b.id,
+            organization_id=org_b.id,
         )
 
         resp = await async_client.get(
@@ -999,7 +999,7 @@ class TestTeacherAvailability:
         mismatched_headers = await _create_teacher_auth_headers(
             db_session,
             teacher_id=teacher_a.id,
-            org_id=org_b.id,
+            organization_id=org_b.id,
         )
 
         resp = await async_client.get(
@@ -1040,7 +1040,7 @@ class TestTenantIsolation:
         await db_session.commit()
 
         token = create_access_token(data={"sub": email})
-        return {"headers": {"Authorization": f"Bearer {token}"}, "org_id": org.id}
+        return {"headers": {"Authorization": f"Bearer {token}"}, "organization_id": org.id}
 
     async def test_org_a_cannot_see_org_b_rooms(
         self, async_client: AsyncClient, db_session

@@ -137,7 +137,7 @@ async def draft_setup(db_session: AsyncSession):
 
     token = create_access_token({"sub": admin.email})
     return {
-        "org_id": org.id,
+        "organization_id": org.id,
         "admin_email": admin.email,
         "admin_token": token,
         "lesson_id": lesson.id,
@@ -290,7 +290,7 @@ class TestDraftServices:
         org_id = draft_setup["org_id"]
 
         sync_db.add(models.OrganizationSettings(
-            org_id=org_id,
+            organization_id=org_id,
             school_start_date=TODAY - timedelta(days=60),
             school_target_end_date=TODAY + timedelta(days=120),
             school_hard_end_date=TODAY + timedelta(days=120),
@@ -356,7 +356,7 @@ class TestDraftServices:
 
         # Mantem este output protegido por ocorrencia
         protected_occurrence = models.LessonOccurrence(
-            org_id=org_id,
+            organization_id=org_id,
             schedule_output_id=active.id,
             date=active.date,
             status=models.LessonOccurrenceStatus.GIVEN,
@@ -519,7 +519,7 @@ class TestDraftServices:
             timeslot_id=active.timeslot_id,
             room_id=active.room_id,
             output_date=active.date,
-            org_id=org_id,
+            organization_id=org_id,
             gen_id="gen-replace-conflict",
             is_draft=False,
         )
@@ -558,7 +558,7 @@ class TestDraftServices:
         assert source_lesson is not None
 
         sync_db.add(models.LessonOccurrence(
-            org_id=org_id,
+            organization_id=org_id,
             schedule_output_id=active.id,
             date=active.date,
             status=models.LessonOccurrenceStatus.GIVEN,
@@ -588,7 +588,7 @@ class TestDraftServices:
             timeslot_id=active.timeslot_id,
             room_id=active.room_id,
             output_date=active.date,
-            org_id=org_id,
+            organization_id=org_id,
             gen_id="gen-blocked-conflict",
             is_draft=False,
         )

@@ -65,11 +65,11 @@ def bootstrap_admin() -> None:
             print(f"[bootstrap_admin] Organization criada: {org_name} (id={org.id}).")
 
         org_settings = db.execute(
-            select(models.OrganizationSettings).where(models.OrganizationSettings.org_id == org.id)
+            select(models.OrganizationSettings).where(models.OrganizationSettings.organization_id == org.id)
         ).scalar_one_or_none()
         if org_settings is None:
             org_settings = models.OrganizationSettings(
-                org_id=org.id,
+                organization_id=org.id,
                 school_start_date=date(today.year, 9, 1),
                 school_target_end_date=date(today.year + 1, 6, 30),
                 school_hard_end_date=date(today.year + 1, 7, 31),
@@ -79,11 +79,11 @@ def bootstrap_admin() -> None:
             db.flush()
 
         grid_settings = db.execute(
-            select(models.OrganizationGridSettings).where(models.OrganizationGridSettings.org_id == org.id)
+            select(models.OrganizationGridSettings).where(models.OrganizationGridSettings.organization_id == org.id)
         ).scalar_one_or_none()
         if grid_settings is None:
             grid_settings = models.OrganizationGridSettings(
-                org_id=org.id,
+                organization_id=org.id,
                 lunch_window_start=time(12, 0),
                 lunch_window_end=time(14, 0),
                 lunch_min_duration_minutes=60,

@@ -640,7 +640,7 @@ class OrganizationSettingsUpsert(BaseModel):
 
 class OrganizationSettingsRead(BaseModel):
     id: int
-    org_id: int
+    organization_id: int
     school_start_date: date | None = None
     school_target_end_date: date | None = None
     school_hard_end_date: date | None = None
@@ -678,7 +678,7 @@ class OrganizationGridSettingsUpsert(BaseModel):
 
 class OrganizationGridSettingsRead(BaseModel):
     id: int
-    org_id: int
+    organization_id: int
     lunch_window_start: time | None = None
     lunch_window_end: time | None = None
     lunch_min_duration_minutes: int | None = None
@@ -706,7 +706,7 @@ class SchoolCalendarEventCreate(BaseModel):
 
 class SchoolCalendarEventRead(BaseModel):
     id: int
-    org_id: int
+    organization_id: int
     name: str
     start_date: date
     end_date: date
@@ -781,7 +781,7 @@ DESC_OCCURRENCE_CREATE_SCHEDULE_OUTPUT_ID = "ID do bloco planeado (ScheduleOutpu
 class LessonOccurrenceRead(BaseModel):
     """Registo histórico do que aconteceu numa aula agendada."""
     id: int
-    org_id: int
+    organization_id: int
     schedule_output_id: Optional[int] = None
     date: date
     status: LessonOccurrenceStatus
@@ -1103,7 +1103,7 @@ class LessonLogCreate(BaseModel):
 class LessonLogRead(BaseModel):
     """Leitura completa de um registo de execução de aula."""
     id: int
-    org_id: int
+    organization_id: int
     schedule_output_id: int
     status: LessonLogStatus
     summary: Optional[str] = None
@@ -1128,7 +1128,7 @@ class TimesheetStatusUpdate(BaseModel):
 class TeacherWeeklyTimesheetRead(BaseModel):
     """Leitura de uma timesheet semanal (usada no painel admin e no horario do professor)."""
     id: int
-    org_id: int
+    organization_id: int
     teacher_id: int
     teacher_name: Optional[str] = None
     week_start_date: date

@@ -132,7 +132,7 @@ class TestTeacherRoleRegressionContracts:
 
         mismatched_headers = await _create_teacher_auth_headers(
             db_session,
-            org_id=org_b.id,
+            organization_id=org_b.id,
             teacher_id=teacher_a.id,
         )
 
@@ -188,7 +188,7 @@ class TestTeacherRoleRegressionContracts:
 
         no_settings_headers = await _create_teacher_auth_headers(
             db_session,
-            org_id=org_without_settings.id,
+            organization_id=org_without_settings.id,
             teacher_id=teacher_without_settings.id,
         )
 

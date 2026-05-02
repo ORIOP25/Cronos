@@ -188,12 +188,12 @@ async def create_substitution(db: AsyncSession, data: schemas.SubstitutionCreate
         try:
             occurrence, _ = occurrence_service.create_occurrence_from_block_sync(
                 sync_db,
-                org_id=org_id,
+                organization_id=org_id,
                 schedule_output_id=schedule_output.id,
             )
             occurrence_service.log_occurrence_event_safe_sync(
                 sync_db,
-                org_id=org_id,
+                organization_id=org_id,
                 event_type=occurrence_service.OBS_EVENT_CREATE,
                 result=occurrence_service.OBS_RESULT_SUCCESS,
                 occurrence_id=occurrence.id,
@@ -203,7 +203,7 @@ async def create_substitution(db: AsyncSession, data: schemas.SubstitutionCreate
         except occurrence_service.OccurrenceServiceError as exc:
             occurrence_service.log_occurrence_event_safe_sync(
                 sync_db,
-                org_id=org_id,
+                organization_id=org_id,
                 event_type=occurrence_service.OBS_EVENT_CREATE,
                 result=occurrence_service.classify_occurrence_error_result(exc.status_code),
                 occurrence_id=None,
@@ -214,7 +214,7 @@ async def create_substitution(db: AsyncSession, data: schemas.SubstitutionCreate
 
         recommendations = occurrence_service.get_substitute_recommendations_sync(
             sync_db,
-            org_id=org_id,
+            organization_id=org_id,
             occurrence_id=occurrence.id,
         )
         substitute_subject_id = _select_substitute_subject_from_recommendations(
@@ -232,12 +232,12 @@ async def create_substitution(db: AsyncSession, data: schemas.SubstitutionCreate
             updated = occurrence_service.update_occurrence_sync(
                 sync_db,
                 occurrence_id=occurrence.id,
-                org_id=org_id,
+                organization_id=org_id,
                 payload=payload,
             )
             occurrence_service.log_occurrence_event_safe_sync(
                 sync_db,
-                org_id=org_id,
+                organization_id=org_id,
                 event_type=occurrence_service.OBS_EVENT_DECIDE,
                 result=occurrence_service.OBS_RESULT_SUCCESS,
                 occurrence_id=updated.id,
@@ -248,7 +248,7 @@ async def create_substitution(db: AsyncSession, data: schemas.SubstitutionCreate
         except occurrence_service.OccurrenceServiceError as exc:
             occurrence_service.log_occurrence_event_safe_sync(
                 sync_db,
-                org_id=org_id,
+                organization_id=org_id,
                 event_type=occurrence_service.OBS_EVENT_DECIDE,
                 result=occurrence_service.classify_occurrence_error_result(exc.status_code),
                 occurrence_id=occurrence.id,

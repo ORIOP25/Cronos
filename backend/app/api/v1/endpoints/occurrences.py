@@ -83,7 +83,7 @@ async def create_occurrence(
     def _run(sync_db):
         return occurrence_service.create_occurrence_from_block_sync(
             sync_db,
-            org_id=org_id,
+            organization_id=org_id,
             schedule_output_id=payload.schedule_output_id,
         )
 
@@ -93,7 +93,7 @@ async def create_occurrence(
         def _emit_failure(sync_db):
             occurrence_service.log_occurrence_event_safe_sync(
                 sync_db,
-                org_id=org_id,
+                organization_id=org_id,
                 event_type=occurrence_service.OBS_EVENT_CREATE,
                 result=occurrence_service.classify_occurrence_error_result(exc.status_code),
                 actor_user_id=current_user.id,
@@ -111,7 +111,7 @@ async def create_occurrence(
     def _emit_success(sync_db):
         occurrence_service.log_occurrence_event_safe_sync(
             sync_db,
-            org_id=org_id,
+            organization_id=org_id,
             event_type=occurrence_service.OBS_EVENT_CREATE,
             result=occurrence_service.OBS_RESULT_SUCCESS,
             actor_user_id=current_user.id,
@@ -158,7 +158,7 @@ async def get_occurrence_observability_summary(
     def _run(sync_db):
         return occurrence_service.get_occurrence_observability_summary_sync(
             sync_db,
-            org_id=org_id,
+            organization_id=org_id,
             window_days=window_days,
         )
 
@@ -208,7 +208,7 @@ async def get_substitute_recommendations(
     def _run(sync_db):
         return occurrence_service.get_substitute_recommendations_sync(
             sync_db,
-            org_id=org_id,
+            organization_id=org_id,
             occurrence_id=occurrence_id,
         )
 
@@ -275,7 +275,7 @@ async def update_occurrence(
         def _emit_failure(sync_db):
             occurrence_service.log_occurrence_event_safe_sync(
                 sync_db,
-                org_id=org_id,
+                organization_id=org_id,
                 event_type=occurrence_service.OBS_EVENT_DECIDE,
                 result=occurrence_service.classify_occurrence_error_result(exc.status_code),
                 actor_user_id=current_user.id,
@@ -290,7 +290,7 @@ async def update_occurrence(
     def _emit_success(sync_db):
         occurrence_service.log_occurrence_event_safe_sync(
             sync_db,
-            org_id=org_id,
+            organization_id=org_id,
             event_type=occurrence_service.OBS_EVENT_DECIDE,
             result=occurrence_service.OBS_RESULT_SUCCESS,
             actor_user_id=current_user.id,

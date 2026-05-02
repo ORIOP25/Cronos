@@ -654,7 +654,7 @@ def _save_results(
             timeslot_id=block.ts_id,
             room_id=block.room_id,
             output_date=block.output_date,
-            org_id=org_id,
+            organization_id=org_id,
             gen_id=gen_id,
             is_draft=is_draft,
         )
@@ -699,7 +699,7 @@ def generate_schedule_task(self: Task, org_id: int, mode: str = "full") -> dict:
 
     logger.info(
         "Iniciando geração de horário",
-        org_id=org_id,
+        organization_id=org_id,
         mode=mode,
         solver_version=solver_meta["solver_version"],
     )
@@ -1189,7 +1189,7 @@ def generate_schedule_task(self: Task, org_id: int, mode: str = "full") -> dict:
         db.rollback()
         logger.warning(
             "Geração cancelada pelo utilizador",
-            org_id=org_id,
+            organization_id=org_id,
             mode=mode,
             task_id=task_id,
         )
@@ -1254,7 +1254,7 @@ def auto_confirm_occurrences_task() -> dict:
             summary[org_id] = count
             logger.info(
                 "Auto-confirm diário concluído",
-                org_id=org_id,
+                organization_id=org_id,
                 registos_criados=count,
                 data=str(today),
             )

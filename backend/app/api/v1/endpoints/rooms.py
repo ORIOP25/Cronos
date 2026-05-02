@@ -15,7 +15,7 @@ async def read_rooms(
 ):
     return await room_service.get_rooms_by_org(
         db,
-        org_id=current_user.organization_id,
+        organization_id=current_user.organization_id,
     )
 
 @router.post("/", response_model=schemas.RoomRead)
@@ -32,7 +32,7 @@ async def create_room(
     return await room_service.create_room(
         db, 
         room, 
-        org_id=current_user.organization_id # <--- Passamos o ID aqui internamente
+        organization_id=current_user.organization_id # <--- Passamos o ID aqui internamente
     )
 
 @router.patch("/{room_id}", response_model=schemas.RoomRead, responses={404: {"description": "Sala não encontrada"}})

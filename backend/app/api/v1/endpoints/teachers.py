@@ -41,7 +41,7 @@ async def read_my_availability(
         result = await teacher_service.get_teacher_availability(
             db,
             teacher_id=current_user.teacher_id,
-            org_id=current_user.organization_id,
+            organization_id=current_user.organization_id,
         )
         if result == "NOT_FOUND":
             status_code = 404
@@ -60,7 +60,7 @@ async def read_my_availability(
         def _emit(sync_db):
             teacher_observability_service.log_teacher_endpoint_event_safe_sync(
                 sync_db,
-                org_id=current_user.organization_id,
+                organization_id=current_user.organization_id,
                 actor_user_id=current_user.id,
                 actor_role=current_user.role,
                 endpoint_key=teacher_observability_service.ENDPOINT_TEACHERS_ME_AVAILABILITY_READ,
@@ -84,7 +84,7 @@ async def get_teacher_endpoints_observability_summary(
     def _run(sync_db):
         return teacher_observability_service.get_teacher_endpoint_observability_summary_sync(
             sync_db,
-            org_id=current_user.organization_id,
+            organization_id=current_user.organization_id,
             window_minutes=window_minutes,
         )
 
@@ -100,7 +100,7 @@ async def read_teachers(
 ):
     return await teacher_service.get_teachers_by_org(
         db, 
-        org_id=current_user.organization_id, 
+        organization_id=current_user.organization_id, 
         skip=skip, 
         limit=limit
     )
@@ -115,7 +115,7 @@ async def create_teacher(
     return await teacher_service.create_teacher(
         db,
         teacher,
-        org_id=current_user.organization_id
+        organization_id=current_user.organization_id
     )
 
 # --- 4. NOVO ENDPOINT: Gravar Disponibilidades ---
@@ -152,7 +152,7 @@ async def update_teacher_availability(
             db,
             teacher_id,
             availability_data,
-            org_id=current_user.organization_id
+            organization_id=current_user.organization_id
         )
 
         if result == "NOT_FOUND":
@@ -180,7 +180,7 @@ async def update_teacher_availability(
         def _emit(sync_db):
             teacher_observability_service.log_teacher_endpoint_event_safe_sync(
                 sync_db,
-                org_id=current_user.organization_id,
+                organization_id=current_user.organization_id,
                 actor_user_id=current_user.id,
                 actor_role=current_user.role,
                 endpoint_key=teacher_observability_service.ENDPOINT_TEACHERS_AVAILABILITY_UPDATE,
@@ -205,7 +205,7 @@ async def update_teacher(
         db, 
         teacher_id, 
         teacher_in, 
-        org_id=current_user.organization_id
+        organization_id=current_user.organization_id
     )
     if not teacher:
         raise HTTPException(status_code=404, detail=TEACHER_NOT_FOUND_MSG)
@@ -224,7 +224,7 @@ async def delete_teacher(
     status_result = await teacher_service.delete_teacher(
         db, 
         teacher_id, 
-        org_id=current_user.organization_id
+        organization_id=current_user.organization_id
     )
     
     if status_result == "NOT_FOUND":

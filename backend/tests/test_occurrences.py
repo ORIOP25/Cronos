@@ -188,7 +188,7 @@ async def full_setup(db_session: AsyncSession):
     await db_session.commit()
 
     return {
-        "org_id": org.id,
+        "organization_id": org.id,
         "admin_id": admin.id,
         "teacher_id": teacher.id,
         "substitute_teacher_id": substitute_teacher.id,
@@ -498,7 +498,7 @@ class TestWeekSchedulePerformance:
         try:
             slots = schedule_service.get_week_schedule_sync(
                 sync_db,
-                org_id=org_id,
+                organization_id=org_id,
                 week_start=week_start,
                 class_id=class_id,
             )
@@ -642,7 +642,7 @@ class TestAutoConfirmService:
 
         # Criar ocorrência manual GAP antes do cron
         manual = models.LessonOccurrence(
-            org_id=org_id,
+            organization_id=org_id,
             schedule_output_id=output_id,
             date=today,
             status=LessonOccurrenceStatus.GAP,
@@ -684,7 +684,7 @@ class TestAutoConfirmService:
         output_id = full_setup["schedule_output_id"]
 
         gap = models.LessonOccurrence(
-            org_id=org_id,
+            organization_id=org_id,
             schedule_output_id=output_id,
             date=today,
             status=LessonOccurrenceStatus.GAP,
@@ -734,7 +734,7 @@ class TestOccurrenceStateMachineAndAccounting:
             try:
                 occurrence, created_now = occurrence_service.create_occurrence_from_block_sync(
                     db_local,
-                    org_id=org_id,
+                    organization_id=org_id,
                     schedule_output_id=schedule_output_id,
                 )
                 return {"id": occurrence.id, "created_now": created_now}
@@ -752,7 +752,7 @@ class TestOccurrenceStateMachineAndAccounting:
         try:
             occurrences = verify_db.execute(
                 select(models.LessonOccurrence).where(
-                    models.LessonOccurrence.org_id == org_id,
+                    models.LessonOccurrence.organization_id == org_id,
                     models.LessonOccurrence.schedule_output_id == schedule_output_id,
                 )
             ).scalars().all()
@@ -1103,7 +1103,7 @@ class TestSubstitutionEligibilityAndRanking:
         sync_db.flush()
 
         sync_db.add(models.LessonOccurrence(
-            org_id=substitution_setup["org_id"],
+            organization_id=substitution_setup["org_id"],
             schedule_output_id=blocking_output.id,
             date=source_output.date,
             status=LessonOccurrenceStatus.SUBSTITUTED,
@@ -1159,12 +1159,12 @@ class TestSubstitutionEligibilityAndRanking:
 
         first = occurrence_service.get_substitute_recommendations_sync(
             sync_db,
-            org_id=substitution_setup["org_id"],
+            organization_id=substitution_setup["org_id"],
             occurrence_id=occurrence.id,
         )
         second = occurrence_service.get_substitute_recommendations_sync(
             sync_db,
-            org_id=substitution_setup["org_id"],
+            organization_id=substitution_setup["org_id"],
             occurrence_id=occurrence.id,
         )
 
@@ -1176,7 +1176,7 @@ class TestSubstitutionEligibilityAndRanking:
         occurrence = self._prepare_occurrence(sync_db, substitution_setup)
         recs = occurrence_service.get_substitute_recommendations_sync(
             sync_db,
-            org_id=substitution_setup["org_id"],
+            organization_id=substitution_setup["org_id"],
             occurrence_id=occurrence.id,
         )
 
@@ -1223,7 +1223,7 @@ class TestSubstitutionEligibilityAndRanking:
         sync_db.flush()
 
         sync_db.add(models.LessonOccurrence(
-            org_id=substitution_setup["org_id"],
+            organization_id=substitution_setup["org_id"],
             schedule_output_id=so_old.id,
             date=older_date,
             status=LessonOccurrenceStatus.SUBSTITUTED,
@@ -1237,7 +1237,7 @@ class TestSubstitutionEligibilityAndRanking:
             hours_given=2.0,
         ))
         sync_db.add(models.LessonOccurrence(
-            org_id=substitution_setup["org_id"],
+            organization_id=substitution_setup["org_id"],
             schedule_output_id=so_new.id,
             date=newer_date,
             status=LessonOccurrenceStatus.SUBSTITUTED,
@@ -1254,7 +1254,7 @@ class TestSubstitutionEligibilityAndRanking:
 
         recs = occurrence_service.get_substitute_recommendations_sync(
             sync_db,
-            org_id=substitution_setup["org_id"],
+            organization_id=substitution_setup["org_id"],
             occurrence_id=occurrence.id,
         )
 
@@ -1270,7 +1270,7 @@ class TestSubstitutionEligibilityAndRanking:
 
         recs = occurrence_service.get_substitute_recommendations_sync(
             sync_db,
-            org_id=substitution_setup["org_id"],
+            organization_id=substitution_setup["org_id"],
             occurrence_id=occurrence.id,
         )
 
@@ -1685,7 +1685,7 @@ class TestOccurrenceEndpoints:
         event = sync_db.execute(
             select(models.OccurrenceOperationalEvent)
             .where(
-                models.OccurrenceOperationalEvent.org_id == full_setup["org_id"],
+                models.OccurrenceOperationalEvent.organization_id == full_setup["org_id"],
                 models.OccurrenceOperationalEvent.event_type == occurrence_service.OBS_EVENT_CREATE,
                 models.OccurrenceOperationalEvent.result == occurrence_service.OBS_RESULT_SUCCESS,
             )
@@ -1714,7 +1714,7 @@ class TestOccurrenceEndpoints:
         event = sync_db.execute(
             select(models.OccurrenceOperationalEvent)
             .where(
-                models.OccurrenceOperationalEvent.org_id == full_setup["org_id"],
+                models.OccurrenceOperationalEvent.organization_id == full_setup["org_id"],
                 models.OccurrenceOperationalEvent.event_type == occurrence_service.OBS_EVENT_CREATE,
                 models.OccurrenceOperationalEvent.result == occurrence_service.OBS_RESULT_VALIDATION_FAILURE,
             )
@@ -1761,7 +1761,7 @@ class TestOccurrenceEndpoints:
         event = sync_db.execute(
             select(models.OccurrenceOperationalEvent)
             .where(
-                models.OccurrenceOperationalEvent.org_id == full_setup["org_id"],
+                models.OccurrenceOperationalEvent.organization_id == full_setup["org_id"],
                 models.OccurrenceOperationalEvent.event_type == occurrence_service.OBS_EVENT_DECIDE,
                 models.OccurrenceOperationalEvent.result == occurrence_service.OBS_RESULT_CONFLICT,
                 models.OccurrenceOperationalEvent.occurrence_id == occurrence_id,
@@ -1844,7 +1844,7 @@ class TestOccurrenceEndpoints:
         sync_db.flush()
 
         sync_db.add(models.OccurrenceOperationalEvent(
-            org_id=other_org.id,
+            organization_id=other_org.id,
             event_type=occurrence_service.OBS_EVENT_DECIDE,
             result=occurrence_service.OBS_RESULT_SUCCESS,
             created_at=datetime.now(timezone.utc),
@@ -1853,7 +1853,7 @@ class TestOccurrenceEndpoints:
 
         expected_org_events = sync_db.execute(
             select(func.count(models.OccurrenceOperationalEvent.id)).where(
-                models.OccurrenceOperationalEvent.org_id == full_setup["org_id"]
+                models.OccurrenceOperationalEvent.organization_id == full_setup["org_id"]
             )
         ).scalar_one()
 
@@ -1954,7 +1954,7 @@ class TestOccurrenceEndpoints:
 
         occurrences = sync_db.execute(
             select(models.LessonOccurrence).where(
-                models.LessonOccurrence.org_id == full_setup["org_id"],
+                models.LessonOccurrence.organization_id == full_setup["org_id"],
                 models.LessonOccurrence.schedule_output_id == full_setup["schedule_output_id"],
             )
         ).scalars().all()
@@ -2392,7 +2392,7 @@ class TestOccurrenceEndpoints:
         auth_headers,
     ):
         broken_occurrence = models.LessonOccurrence(
-            org_id=full_setup["org_id"],
+            organization_id=full_setup["org_id"],
             schedule_output_id=None,
             date=date.today(),
             status=LessonOccurrenceStatus.GIVEN,

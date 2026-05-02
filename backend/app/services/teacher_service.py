@@ -93,7 +93,7 @@ async def create_teacher(db: AsyncSession, teacher_in: schemas.TeacherCreate, or
             new_user = await user_service.create_user(
                 db, 
                 user_create_data, 
-                org_id=org_id, 
+                organization_id=org_id, 
                 role=UserRole.teacher,
                 teacher_id=db_teacher.id 
             )
@@ -240,7 +240,7 @@ async def update_teacher(
             )
             # Criar o user (por defeito is_active=True, que é o que queremos)
             await user_service.create_user(
-                db, user_create_data, org_id=org_id, 
+                db, user_create_data, organization_id=org_id, 
                 role=UserRole.teacher, teacher_id=teacher.id
             )
         # Caso 3: Quer desativar (create_user_account=False) mas não tem user

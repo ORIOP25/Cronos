@@ -135,7 +135,7 @@ def base_setup(sync_db):
     sync_db.commit()
 
     return {
-        "org_id": org.id,
+        "organization_id": org.id,
         "teacher_id": teacher.id,
         "user_id": admin.id,
         "class_id": class_.id,
@@ -247,7 +247,7 @@ class TestSoftReset:
             # Assert Timesheet deleted
             ts_result = await async_session.execute(
                 select(models.TeacherWeeklyTimesheet).where(
-                    models.TeacherWeeklyTimesheet.org_id == org_id
+                    models.TeacherWeeklyTimesheet.organization_id == org_id
                 )
             )
             assert len(ts_result.scalars().all()) == 0
@@ -756,7 +756,7 @@ class TestTimesheetReopenPermissions:
         # Create timesheet
         week_start = date.today() - timedelta(days=date.today().weekday())
         timesheet = models.TeacherWeeklyTimesheet(
-            org_id=org.id,
+            organization_id=org.id,
             teacher_id=teacher.id,
             week_start_date=week_start,
             week_end_date=week_start + timedelta(days=6),
@@ -918,7 +918,7 @@ class TestTimesheetApprovalEndpoints:
 
         week_start = date.today() - timedelta(days=date.today().weekday())
         timesheet = models.TeacherWeeklyTimesheet(
-            org_id=org.id,
+            organization_id=org.id,
             teacher_id=teacher.id,
             week_start_date=week_start,
             week_end_date=week_start + timedelta(days=6),
@@ -965,7 +965,7 @@ class TestTimesheetApprovalEndpoints:
 
         week_start = date.today() - timedelta(days=date.today().weekday())
         timesheet = models.TeacherWeeklyTimesheet(
-            org_id=org.id,
+            organization_id=org.id,
             teacher_id=teacher.id,
             week_start_date=week_start,
             week_end_date=week_start + timedelta(days=6),
@@ -1019,7 +1019,7 @@ class TestTimesheetsListEndpoint:
 
         week_start = date.today() - timedelta(days=date.today().weekday())
         timesheet = models.TeacherWeeklyTimesheet(
-            org_id=org.id,
+            organization_id=org.id,
             teacher_id=teacher.id,
             week_start_date=week_start,
             week_end_date=week_start + timedelta(days=6),
@@ -1084,7 +1084,7 @@ class TestTimesheetsListEndpoint:
 
         # Create log
         llog = models.LessonLog(
-            org_id=org.id, schedule_output_id=output.id,
+            organization_id=org.id, schedule_output_id=output.id,
             status=models.LessonLogStatus.COMPLETED, summary="Aula D",
         )
         db_session.add(llog)

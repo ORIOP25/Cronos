@@ -26,7 +26,7 @@ async def list_timesheets(
     def _run(sync_db):
         return timesheet_service.list_timesheets_sync(
             sync_db,
-            org_id=current_user.organization_id,
+            organization_id=current_user.organization_id,
             week_start_date=week_start_date,
             status=status
         )
@@ -49,7 +49,7 @@ async def get_my_timesheet(
     def _run(sync_db):
         return timesheet_service.get_or_create_timesheet_sync(
             sync_db,
-            org_id=current_user.organization_id,
+            organization_id=current_user.organization_id,
             teacher_id=current_user.teacher_id,
             week_start_date=week_start_date
         )
@@ -72,7 +72,7 @@ async def submit_my_timesheet(
     def _run(sync_db):
         return timesheet_service.submit_timesheet_sync(
             sync_db,
-            org_id=current_user.organization_id,
+            organization_id=current_user.organization_id,
             teacher_id=current_user.teacher_id,
             week_start_date=week_start_date
         )
@@ -96,7 +96,7 @@ async def update_timesheet_status(
     def _run(sync_db):
         return timesheet_service.update_timesheet_status_sync(
             sync_db,
-            org_id=current_user.organization_id,
+            organization_id=current_user.organization_id,
             timesheet_id=timesheet_id,
             status=payload.status,
             admin_user_id=current_user.id

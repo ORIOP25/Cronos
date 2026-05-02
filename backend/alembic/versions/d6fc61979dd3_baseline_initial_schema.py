@@ -1,8 +1,8 @@
 """baseline_initial_schema
 
-Revision ID: 2a4cfb399360
+Revision ID: d6fc61979dd3
 Revises: 
-Create Date: 2026-05-02 21:25:30.010171
+Create Date: 2026-05-02 22:35:00.731916
 
 """
 from typing import Sequence, Union
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = '2a4cfb399360'
+revision: str = 'd6fc61979dd3'
 down_revision: Union[str, None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -23,7 +23,7 @@ def upgrade() -> None:
     op.create_table('organization',
     sa.Column('id', sa.Integer(), nullable=False),
     sa.Column('name', sa.String(length=100), nullable=False),
-    sa.Column('plan_status', sa.String(length=50), nullable=False),
+    sa.Column('plan_status', sa.Enum('inactive', 'active', 'suspended', name='organizationplanstatus'), nullable=False),
     sa.PrimaryKeyConstraint('id')
     )
     op.create_table('constraint',
@@ -31,7 +31,7 @@ def upgrade() -> None:
     sa.Column('organization_id', sa.Integer(), nullable=False),
     sa.Column('rule_type', sa.Enum('specific_room', 'lock_time', 'teacher_unavailable', 'teacher_preferred', 'min_gap', 'max_days', name='constrainttype'), nullable=False),
     sa.Column('rule_payload', sa.JSON(), nullable=False),
-    sa.ForeignKeyConstraint(['organization_id'], ['organization.id'], ),
+    sa.ForeignKeyConstraint(['organization_id'], ['organization.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id')
     )
     op.create_index(op.f('ix_constraint_organization_id'), 'constraint', ['organization_id'], unique=False)
@@ -42,29 +42,29 @@ def upgrade() -> None:
     sa.Column('organization_id', sa.Integer(), nullable=False),
     sa.ForeignKeyConstraint(['organization_id'], ['organization.id'], ),
     sa.PrimaryKeyConstraint('id'),
-    sa.UniqueConstraint('abbreviation')
+    sa.UniqueConstraint('organization_id', 'abbreviation', name='uq_course_org_abbreviation')
     )
     op.create_table('organization_grid_settings',
     sa.Column('id', sa.Integer(), nullable=False),
-    sa.Column('org_id', sa.Integer(), nullable=False),
+    sa.Column('organization_id', sa.Integer(), nullable=False),
     sa.Column('lunch_window_start', sa.Time(), nullable=True),
     sa.Column('lunch_window_end', sa.Time(), nullable=True),
     sa.Column('lunch_min_duration_minutes', sa.Integer(), nullable=True),
-    sa.ForeignKeyConstraint(['org_id'], ['organization.id'], ondelete='CASCADE'),
+    sa.ForeignKeyConstraint(['organization_id'], ['organization.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id')
     )
-    op.create_index(op.f('ix_organization_grid_settings_org_id'), 'organization_grid_settings', ['org_id'], unique=True)
+    op.create_index(op.f('ix_organization_grid_settings_organization_id'), 'organization_grid_settings', ['organization_id'], unique=True)
     op.create_table('organization_settings',
     sa.Column('id', sa.Integer(), nullable=False),
-    sa.Column('org_id', sa.Integer(), nullable=False),
+    sa.Column('organization_id', sa.Integer(), nullable=False),
     sa.Column('school_start_date', sa.Date(), nullable=True),
     sa.Column('school_target_end_date', sa.Date(), nullable=True),
     sa.Column('school_hard_end_date', sa.Date(), nullable=True),
     sa.Column('repair_stability_window_days', sa.Integer(), nullable=True),
-    sa.ForeignKeyConstraint(['org_id'], ['organization.id'], ondelete='CASCADE'),
+    sa.ForeignKeyConstraint(['organization_id'], ['organization.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id')
     )
-    op.create_index(op.f('ix_organization_settings_org_id'), 'organization_settings', ['org_id'], unique=True)
+    op.create_index(op.f('ix_organization_settings_organization_id'), 'organization_settings', ['organization_id'], unique=True)
     op.create_table('room',
     sa.Column('id', sa.Integer(), nullable=False),
     sa.Column('name', sa.String(length=100), nullable=False),
@@ -76,16 +76,16 @@ def upgrade() -> None:
     )
     op.create_table('school_calendar_event',
     sa.Column('id', sa.Integer(), nullable=False),
-    sa.Column('org_id', sa.Integer(), nullable=False),
+    sa.Column('organization_id', sa.Integer(), nullable=False),
     sa.Column('name', sa.String(length=150), nullable=False),
     sa.Column('start_date', sa.Date(), nullable=False),
     sa.Column('end_date', sa.Date(), nullable=False),
     sa.Column('event_type', sa.Enum('national_holiday', 'school_break', 'exam_period', 'other', name='calendareventtype'), nullable=False),
     sa.Column('source', sa.Enum('auto', 'manual', name='calendareventsource'), nullable=False),
-    sa.ForeignKeyConstraint(['org_id'], ['organization.id'], ondelete='CASCADE'),
+    sa.ForeignKeyConstraint(['organization_id'], ['organization.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id')
     )
-    op.create_index(op.f('ix_school_calendar_event_org_id'), 'school_calendar_event', ['org_id'], unique=False)
+    op.create_index(op.f('ix_school_calendar_event_organization_id'), 'school_calendar_event', ['organization_id'], unique=False)
     op.create_table('subject',
     sa.Column('id', sa.Integer(), nullable=False),
     sa.Column('name', sa.String(length=100), nullable=False),
@@ -205,6 +205,7 @@ def upgrade() -> None:
     )
     op.create_index(op.f('ix_class_subject_link_class_id'), 'class_subject_link', ['class_id'], unique=False)
     op.create_index(op.f('ix_class_subject_link_subject_id'), 'class_subject_link', ['subject_id'], unique=False)
+    op.create_index(op.f('ix_class_subject_link_teacher_id'), 'class_subject_link', ['teacher_id'], unique=False)
     op.create_table('lesson',
     sa.Column('id', sa.Integer(), nullable=False),
     sa.Column('organization_id', sa.Integer(), nullable=False),
@@ -219,11 +220,12 @@ def upgrade() -> None:
     sa.UniqueConstraint('organization_id', 'class_id', 'subject_id', 'teacher_id', name='uq_lesson_definition')
     )
     op.create_index(op.f('ix_lesson_class_id'), 'lesson', ['class_id'], unique=False)
+    op.create_index(op.f('ix_lesson_organization_id'), 'lesson', ['organization_id'], unique=False)
     op.create_index(op.f('ix_lesson_subject_id'), 'lesson', ['subject_id'], unique=False)
     op.create_index(op.f('ix_lesson_teacher_id'), 'lesson', ['teacher_id'], unique=False)
     op.create_table('teacher_endpoint_operational_event',
     sa.Column('id', sa.Integer(), nullable=False),
-    sa.Column('org_id', sa.Integer(), nullable=False),
+    sa.Column('organization_id', sa.Integer(), nullable=False),
     sa.Column('actor_user_id', sa.Integer(), nullable=True),
     sa.Column('actor_role', sa.String(length=20), nullable=True),
     sa.Column('endpoint_key', sa.String(length=80), nullable=False),
@@ -232,36 +234,35 @@ def upgrade() -> None:
     sa.Column('active_generation_id', sa.String(length=100), nullable=True),
     sa.Column('created_at', sa.DateTime(timezone=True), nullable=False),
     sa.ForeignKeyConstraint(['actor_user_id'], ['user.id'], ondelete='SET NULL'),
-    sa.ForeignKeyConstraint(['org_id'], ['organization.id'], ondelete='CASCADE'),
+    sa.ForeignKeyConstraint(['organization_id'], ['organization.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id')
     )
-    op.create_index('ix_teacher_endpoint_event_org_created', 'teacher_endpoint_operational_event', ['org_id', 'created_at'], unique=False)
-    op.create_index('ix_teacher_endpoint_event_org_endpoint_created', 'teacher_endpoint_operational_event', ['org_id', 'endpoint_key', 'created_at'], unique=False)
+    op.create_index('ix_teacher_endpoint_event_org_created', 'teacher_endpoint_operational_event', ['organization_id', 'created_at'], unique=False)
+    op.create_index('ix_teacher_endpoint_event_org_endpoint_created', 'teacher_endpoint_operational_event', ['organization_id', 'endpoint_key', 'created_at'], unique=False)
     op.create_index(op.f('ix_teacher_endpoint_operational_event_actor_user_id'), 'teacher_endpoint_operational_event', ['actor_user_id'], unique=False)
     op.create_index(op.f('ix_teacher_endpoint_operational_event_created_at'), 'teacher_endpoint_operational_event', ['created_at'], unique=False)
     op.create_index(op.f('ix_teacher_endpoint_operational_event_endpoint_key'), 'teacher_endpoint_operational_event', ['endpoint_key'], unique=False)
     op.create_index(op.f('ix_teacher_endpoint_operational_event_http_status'), 'teacher_endpoint_operational_event', ['http_status'], unique=False)
-    op.create_index(op.f('ix_teacher_endpoint_operational_event_org_id'), 'teacher_endpoint_operational_event', ['org_id'], unique=False)
+    op.create_index(op.f('ix_teacher_endpoint_operational_event_organization_id'), 'teacher_endpoint_operational_event', ['organization_id'], unique=False)
     op.create_table('teacher_weekly_timesheet',
     sa.Column('id', sa.Integer(), nullable=False),
-    sa.Column('org_id', sa.Integer(), nullable=False),
+    sa.Column('organization_id', sa.Integer(), nullable=False),
     sa.Column('teacher_id', sa.Integer(), nullable=False),
     sa.Column('week_start_date', sa.Date(), nullable=False),
-    sa.Column('week_end_date', sa.Date(), nullable=False),
     sa.Column('status', sa.Enum('OPEN', 'SUBMITTED', 'APPROVED', name='timesheetstatus'), nullable=False),
     sa.Column('submitted_at', sa.DateTime(timezone=True), nullable=True),
     sa.Column('approved_at', sa.DateTime(timezone=True), nullable=True),
     sa.Column('approved_by_user_id', sa.Integer(), nullable=True),
     sa.Column('created_at', sa.DateTime(timezone=True), nullable=False),
     sa.ForeignKeyConstraint(['approved_by_user_id'], ['user.id'], ondelete='SET NULL'),
-    sa.ForeignKeyConstraint(['org_id'], ['organization.id'], ondelete='CASCADE'),
+    sa.ForeignKeyConstraint(['organization_id'], ['organization.id'], ondelete='CASCADE'),
     sa.ForeignKeyConstraint(['teacher_id'], ['teacher.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id'),
     sa.UniqueConstraint('teacher_id', 'week_start_date', name='uq_teacher_weekly_timesheet')
     )
-    op.create_index(op.f('ix_teacher_weekly_timesheet_org_id'), 'teacher_weekly_timesheet', ['org_id'], unique=False)
+    op.create_index(op.f('ix_teacher_weekly_timesheet_organization_id'), 'teacher_weekly_timesheet', ['organization_id'], unique=False)
     op.create_index(op.f('ix_teacher_weekly_timesheet_teacher_id'), 'teacher_weekly_timesheet', ['teacher_id'], unique=False)
-    op.create_index('ix_timesheet_org_week', 'teacher_weekly_timesheet', ['org_id', 'week_start_date'], unique=False)
+    op.create_index('ix_timesheet_org_week', 'teacher_weekly_timesheet', ['organization_id', 'week_start_date'], unique=False)
     op.create_table('schedule_output',
     sa.Column('id', sa.Integer(), nullable=False),
     sa.Column('organization_id', sa.Integer(), nullable=False),
@@ -285,16 +286,18 @@ def upgrade() -> None:
     op.create_index(op.f('ix_schedule_output_timeslot_id'), 'schedule_output', ['timeslot_id'], unique=False)
     op.create_table('substitutions',
     sa.Column('id', sa.Integer(), nullable=False),
+    sa.Column('organization_id', sa.Integer(), nullable=False),
     sa.Column('lesson_id', sa.Integer(), nullable=False),
     sa.Column('timeslot_id', sa.Integer(), nullable=False),
     sa.Column('date', sa.Date(), nullable=False),
     sa.Column('original_teacher_id', sa.Integer(), nullable=False),
     sa.Column('substitute_teacher_id', sa.Integer(), nullable=False),
     sa.Column('substitute_subject_id', sa.Integer(), nullable=True),
-    sa.Column('status', sa.String(length=20), nullable=False),
+    sa.Column('status', sa.Enum('PENDING', 'CONFIRMED', 'CANCELLED', name='substitutionstatus'), nullable=False),
     sa.Column('reason', sa.Text(), nullable=True),
     sa.Column('created_at', sa.DateTime(timezone=True), nullable=False),
     sa.ForeignKeyConstraint(['lesson_id'], ['lesson.id'], ),
+    sa.ForeignKeyConstraint(['organization_id'], ['organization.id'], ondelete='CASCADE'),
     sa.ForeignKeyConstraint(['original_teacher_id'], ['teacher.id'], ),
     sa.ForeignKeyConstraint(['substitute_subject_id'], ['subject.id'], ),
     sa.ForeignKeyConstraint(['substitute_teacher_id'], ['teacher.id'], ),
@@ -302,9 +305,10 @@ def upgrade() -> None:
     sa.PrimaryKeyConstraint('id')
     )
     op.create_index(op.f('ix_substitutions_date'), 'substitutions', ['date'], unique=False)
+    op.create_index(op.f('ix_substitutions_organization_id'), 'substitutions', ['organization_id'], unique=False)
     op.create_table('lesson_log',
     sa.Column('id', sa.Integer(), nullable=False),
-    sa.Column('org_id', sa.Integer(), nullable=False),
+    sa.Column('organization_id', sa.Integer(), nullable=False),
     sa.Column('schedule_output_id', sa.Integer(), nullable=False),
     sa.Column('status', sa.Enum('PENDING', 'COMPLETED', 'OCCURRENCE', name='lessonlogstatus'), nullable=False),
     sa.Column('summary', sa.Text(), nullable=True),
@@ -314,17 +318,19 @@ def upgrade() -> None:
     sa.Column('created_at', sa.DateTime(timezone=True), nullable=False),
     sa.Column('updated_at', sa.DateTime(timezone=True), nullable=False),
     sa.ForeignKeyConstraint(['logged_by_user_id'], ['user.id'], ondelete='SET NULL'),
-    sa.ForeignKeyConstraint(['org_id'], ['organization.id'], ondelete='CASCADE'),
+    sa.ForeignKeyConstraint(['organization_id'], ['organization.id'], ondelete='CASCADE'),
     sa.ForeignKeyConstraint(['schedule_output_id'], ['schedule_output.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id')
     )
-    op.create_index(op.f('ix_lesson_log_org_id'), 'lesson_log', ['org_id'], unique=False)
+    op.create_index(op.f('ix_lesson_log_organization_id'), 'lesson_log', ['organization_id'], unique=False)
     op.create_index(op.f('ix_lesson_log_schedule_output_id'), 'lesson_log', ['schedule_output_id'], unique=True)
     op.create_table('lesson_occurrence',
     sa.Column('id', sa.Integer(), nullable=False),
-    sa.Column('org_id', sa.Integer(), nullable=False),
+    sa.Column('organization_id', sa.Integer(), nullable=False),
     sa.Column('schedule_output_id', sa.Integer(), nullable=True),
     sa.Column('date', sa.Date(), nullable=False),
+    sa.Column('class_id', sa.Integer(), nullable=True),
+    sa.Column('subject_id', sa.Integer(), nullable=True),
     sa.Column('status', sa.Enum('GIVEN', 'GAP', 'SUBSTITUTED', name='lessonoccurrencestatus'), nullable=False),
     sa.Column('planned_hours', sa.Float(), nullable=False),
     sa.Column('substitute_teacher_id', sa.Integer(), nullable=True),
@@ -337,24 +343,26 @@ def upgrade() -> None:
     sa.Column('decided_by_user_id', sa.Integer(), nullable=True),
     sa.Column('decided_at', sa.DateTime(timezone=True), nullable=True),
     sa.Column('created_at', sa.DateTime(timezone=True), nullable=False),
+    sa.ForeignKeyConstraint(['class_id'], ['class.id'], ondelete='SET NULL'),
     sa.ForeignKeyConstraint(['decided_by_user_id'], ['user.id'], ondelete='SET NULL'),
     sa.ForeignKeyConstraint(['executed_module_id'], ['module.id'], ondelete='SET NULL'),
     sa.ForeignKeyConstraint(['executed_teacher_id'], ['teacher.id'], ondelete='SET NULL'),
-    sa.ForeignKeyConstraint(['org_id'], ['organization.id'], ondelete='CASCADE'),
+    sa.ForeignKeyConstraint(['organization_id'], ['organization.id'], ondelete='CASCADE'),
     sa.ForeignKeyConstraint(['planned_module_id'], ['module.id'], ondelete='SET NULL'),
     sa.ForeignKeyConstraint(['planned_teacher_id'], ['teacher.id'], ondelete='SET NULL'),
     sa.ForeignKeyConstraint(['schedule_output_id'], ['schedule_output.id'], ondelete='SET NULL'),
+    sa.ForeignKeyConstraint(['subject_id'], ['subject.id'], ondelete='SET NULL'),
     sa.ForeignKeyConstraint(['substitute_subject_id'], ['subject.id'], ondelete='SET NULL'),
     sa.ForeignKeyConstraint(['substitute_teacher_id'], ['teacher.id'], ondelete='SET NULL'),
     sa.PrimaryKeyConstraint('id'),
     sa.UniqueConstraint('schedule_output_id', 'date', name='uq_lesson_occurrence_output_date')
     )
     op.create_index(op.f('ix_lesson_occurrence_date'), 'lesson_occurrence', ['date'], unique=False)
-    op.create_index(op.f('ix_lesson_occurrence_org_id'), 'lesson_occurrence', ['org_id'], unique=False)
+    op.create_index(op.f('ix_lesson_occurrence_organization_id'), 'lesson_occurrence', ['organization_id'], unique=False)
     op.create_index(op.f('ix_lesson_occurrence_schedule_output_id'), 'lesson_occurrence', ['schedule_output_id'], unique=False)
     op.create_table('occurrence_operational_event',
     sa.Column('id', sa.Integer(), nullable=False),
-    sa.Column('org_id', sa.Integer(), nullable=False),
+    sa.Column('organization_id', sa.Integer(), nullable=False),
     sa.Column('occurrence_id', sa.Integer(), nullable=True),
     sa.Column('schedule_output_id', sa.Integer(), nullable=True),
     sa.Column('actor_user_id', sa.Integer(), nullable=True),
@@ -365,15 +373,15 @@ def upgrade() -> None:
     sa.Column('created_at', sa.DateTime(timezone=True), nullable=False),
     sa.ForeignKeyConstraint(['actor_user_id'], ['user.id'], ondelete='SET NULL'),
     sa.ForeignKeyConstraint(['occurrence_id'], ['lesson_occurrence.id'], ondelete='SET NULL'),
-    sa.ForeignKeyConstraint(['org_id'], ['organization.id'], ondelete='CASCADE'),
+    sa.ForeignKeyConstraint(['organization_id'], ['organization.id'], ondelete='CASCADE'),
     sa.ForeignKeyConstraint(['schedule_output_id'], ['schedule_output.id'], ondelete='SET NULL'),
     sa.PrimaryKeyConstraint('id')
     )
-    op.create_index('ix_occ_event_org_created', 'occurrence_operational_event', ['org_id', 'created_at'], unique=False)
+    op.create_index('ix_occ_event_org_created', 'occurrence_operational_event', ['organization_id', 'created_at'], unique=False)
     op.create_index(op.f('ix_occurrence_operational_event_actor_user_id'), 'occurrence_operational_event', ['actor_user_id'], unique=False)
     op.create_index(op.f('ix_occurrence_operational_event_created_at'), 'occurrence_operational_event', ['created_at'], unique=False)
     op.create_index(op.f('ix_occurrence_operational_event_occurrence_id'), 'occurrence_operational_event', ['occurrence_id'], unique=False)
-    op.create_index(op.f('ix_occurrence_operational_event_org_id'), 'occurrence_operational_event', ['org_id'], unique=False)
+    op.create_index(op.f('ix_occurrence_operational_event_organization_id'), 'occurrence_operational_event', ['organization_id'], unique=False)
     op.create_index(op.f('ix_occurrence_operational_event_schedule_output_id'), 'occurrence_operational_event', ['schedule_output_id'], unique=False)
     # ### end Alembic commands ###
 
@@ -381,19 +389,20 @@ def upgrade() -> None:
 def downgrade() -> None:
     # ### commands auto generated by Alembic - please adjust! ###
     op.drop_index(op.f('ix_occurrence_operational_event_schedule_output_id'), table_name='occurrence_operational_event')
-    op.drop_index(op.f('ix_occurrence_operational_event_org_id'), table_name='occurrence_operational_event')
+    op.drop_index(op.f('ix_occurrence_operational_event_organization_id'), table_name='occurrence_operational_event')
     op.drop_index(op.f('ix_occurrence_operational_event_occurrence_id'), table_name='occurrence_operational_event')
     op.drop_index(op.f('ix_occurrence_operational_event_created_at'), table_name='occurrence_operational_event')
     op.drop_index(op.f('ix_occurrence_operational_event_actor_user_id'), table_name='occurrence_operational_event')
     op.drop_index('ix_occ_event_org_created', table_name='occurrence_operational_event')
     op.drop_table('occurrence_operational_event')
     op.drop_index(op.f('ix_lesson_occurrence_schedule_output_id'), table_name='lesson_occurrence')
-    op.drop_index(op.f('ix_lesson_occurrence_org_id'), table_name='lesson_occurrence')
+    op.drop_index(op.f('ix_lesson_occurrence_organization_id'), table_name='lesson_occurrence')
     op.drop_index(op.f('ix_lesson_occurrence_date'), table_name='lesson_occurrence')
     op.drop_table('lesson_occurrence')
     op.drop_index(op.f('ix_lesson_log_schedule_output_id'), table_name='lesson_log')
-    op.drop_index(op.f('ix_lesson_log_org_id'), table_name='lesson_log')
+    op.drop_index(op.f('ix_lesson_log_organization_id'), table_name='lesson_log')
     op.drop_table('lesson_log')
+    op.drop_index(op.f('ix_substitutions_organization_id'), table_name='substitutions')
     op.drop_index(op.f('ix_substitutions_date'), table_name='substitutions')
     op.drop_table('substitutions')
     op.drop_index(op.f('ix_schedule_output_timeslot_id'), table_name='schedule_output')
@@ -405,9 +414,9 @@ def downgrade() -> None:
     op.drop_table('schedule_output')
     op.drop_index('ix_timesheet_org_week', table_name='teacher_weekly_timesheet')
     op.drop_index(op.f('ix_teacher_weekly_timesheet_teacher_id'), table_name='teacher_weekly_timesheet')
-    op.drop_index(op.f('ix_teacher_weekly_timesheet_org_id'), table_name='teacher_weekly_timesheet')
+    op.drop_index(op.f('ix_teacher_weekly_timesheet_organization_id'), table_name='teacher_weekly_timesheet')
     op.drop_table('teacher_weekly_timesheet')
-    op.drop_index(op.f('ix_teacher_endpoint_operational_event_org_id'), table_name='teacher_endpoint_operational_event')
+    op.drop_index(op.f('ix_teacher_endpoint_operational_event_organization_id'), table_name='teacher_endpoint_operational_event')
     op.drop_index(op.f('ix_teacher_endpoint_operational_event_http_status'), table_name='teacher_endpoint_operational_event')
     op.drop_index(op.f('ix_teacher_endpoint_operational_event_endpoint_key'), table_name='teacher_endpoint_operational_event')
     op.drop_index(op.f('ix_teacher_endpoint_operational_event_created_at'), table_name='teacher_endpoint_operational_event')
@@ -417,8 +426,10 @@ def downgrade() -> None:
     op.drop_table('teacher_endpoint_operational_event')
     op.drop_index(op.f('ix_lesson_teacher_id'), table_name='lesson')
     op.drop_index(op.f('ix_lesson_subject_id'), table_name='lesson')
+    op.drop_index(op.f('ix_lesson_organization_id'), table_name='lesson')
     op.drop_index(op.f('ix_lesson_class_id'), table_name='lesson')
     op.drop_table('lesson')
+    op.drop_index(op.f('ix_class_subject_link_teacher_id'), table_name='class_subject_link')
     op.drop_index(op.f('ix_class_subject_link_subject_id'), table_name='class_subject_link')
     op.drop_index(op.f('ix_class_subject_link_class_id'), table_name='class_subject_link')
     op.drop_table('class_subject_link')
@@ -435,12 +446,12 @@ def downgrade() -> None:
     op.drop_table('timeslot')
     op.drop_table('teacher')
     op.drop_table('subject')
-    op.drop_index(op.f('ix_school_calendar_event_org_id'), table_name='school_calendar_event')
+    op.drop_index(op.f('ix_school_calendar_event_organization_id'), table_name='school_calendar_event')
     op.drop_table('school_calendar_event')
     op.drop_table('room')
-    op.drop_index(op.f('ix_organization_settings_org_id'), table_name='organization_settings')
+    op.drop_index(op.f('ix_organization_settings_organization_id'), table_name='organization_settings')
     op.drop_table('organization_settings')
-    op.drop_index(op.f('ix_organization_grid_settings_org_id'), table_name='organization_grid_settings')
+    op.drop_index(op.f('ix_organization_grid_settings_organization_id'), table_name='organization_grid_settings')
     op.drop_table('organization_grid_settings')
     op.drop_table('course')
     op.drop_index(op.f('ix_constraint_organization_id'), table_name='constraint')

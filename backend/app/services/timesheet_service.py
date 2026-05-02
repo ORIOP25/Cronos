@@ -14,7 +14,7 @@ def get_or_create_timesheet_sync(
 ) -> models.TeacherWeeklyTimesheet:
     """Obtém ou cria a timesheet de uma determinada semana para o professor."""
     timesheet = db.query(models.TeacherWeeklyTimesheet).filter(
-        models.TeacherWeeklyTimesheet.org_id == org_id,
+        models.TeacherWeeklyTimesheet.organization_id == org_id,
         models.TeacherWeeklyTimesheet.teacher_id == teacher_id,
         models.TeacherWeeklyTimesheet.week_start_date == week_start_date
     ).first()
@@ -22,7 +22,7 @@ def get_or_create_timesheet_sync(
     if not timesheet:
         week_end_date = week_start_date + timedelta(days=6)
         timesheet = models.TeacherWeeklyTimesheet(
-            org_id=org_id,
+            organization_id=org_id,
             teacher_id=teacher_id,
             week_start_date=week_start_date,
             week_end_date=week_end_date,
@@ -177,7 +177,7 @@ def list_timesheets_sync(
     """Admin lista as timesheets, podendo filtrar por semana ou estado."""
     query = db.query(models.TeacherWeeklyTimesheet).join(
         models.Teacher, models.TeacherWeeklyTimesheet.teacher_id == models.Teacher.id
-    ).filter(models.TeacherWeeklyTimesheet.org_id == org_id)
+    ).filter(models.TeacherWeeklyTimesheet.organization_id == org_id)
     
     if week_start_date:
         query = query.filter(models.TeacherWeeklyTimesheet.week_start_date == week_start_date)
@@ -199,7 +199,7 @@ def list_timesheets_sync(
         counts = slot_counts.get(t.teacher_id, {})
         result.append({
             "id": t.id,
-            "org_id": t.org_id,
+            "organization_id": t.org_id,
             "teacher_id": t.teacher_id,
             "teacher_name": t.teacher.name,
             "week_start_date": t.week_start_date,
@@ -233,7 +233,7 @@ def update_timesheet_status_sync(
 ) -> dict:
     timesheet = db.query(models.TeacherWeeklyTimesheet).filter(
         models.TeacherWeeklyTimesheet.id == timesheet_id,
-        models.TeacherWeeklyTimesheet.org_id == org_id
+        models.TeacherWeeklyTimesheet.organization_id == org_id
     ).first()
 
     if not timesheet:
@@ -264,7 +264,7 @@ def update_timesheet_status_sync(
     
     return {
         "id": timesheet.id,
-        "org_id": timesheet.org_id,
+        "organization_id": timesheet.org_id,
         "teacher_id": timesheet.teacher_id,
         "teacher_name": timesheet.teacher.name if timesheet.teacher else None,
         "week_start_date": timesheet.week_start_date,

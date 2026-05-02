@@ -119,7 +119,7 @@ async def sync_holidays(
     """
     count = await settings_service.sync_holidays(
         db,
-        org_id=current_user.organization_id,
+        organization_id=current_user.organization_id,
     )
     return schemas.HolidaysSyncResponse(
         imported_count=count,

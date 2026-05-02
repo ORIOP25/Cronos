@@ -81,7 +81,7 @@ def _log_schedule_reset_audit(
 ) -> None:
     logger.info(
         "schedule_reset_audit",
-        org_id=org_id,
+        organization_id=org_id,
         actor_user_id=user_id,
         actor_role=role,
         method=request.method,
@@ -106,7 +106,7 @@ async def _require_admin_for_schedule_reset(
             detail = ERR_SCHEDULE_RESET_FORBIDDEN
         _log_schedule_reset_audit(
             request,
-            org_id=getattr(current_user, "organization_id", None),
+            organization_id=getattr(current_user, "organization_id", None),
             user_id=getattr(current_user, "id", None),
             role=getattr(getattr(current_user, "role", None), "value", getattr(current_user, "role", None)),
             status_code=exc.status_code,
@@ -165,7 +165,7 @@ async def _get_latest_settings_with_dates(
 ) -> models.OrganizationSettings | None:
     settings_result = await db.execute(
         sa_select(models.OrganizationSettings).where(
-            models.OrganizationSettings.org_id == org_id,
+            models.OrganizationSettings.organization_id == org_id,
             models.OrganizationSettings.school_start_date.isnot(None),
             models.OrganizationSettings.school_target_end_date.isnot(None),
         )
@@ -210,7 +210,7 @@ async def _ensure_auto_holidays(
 ) -> str | None:
     holiday_count = await db.scalar(
         sa_select(func.count(models.SchoolCalendarEvent.id)).where(
-            models.SchoolCalendarEvent.org_id == org_id,
+            models.SchoolCalendarEvent.organization_id == org_id,
             models.SchoolCalendarEvent.source == models.CalendarEventSource.auto,
         )
     )
@@ -220,7 +220,7 @@ async def _ensure_auto_holidays(
     try:
         imported = await settings_service.sync_holidays(
             db,
-            org_id=org_id,
+            organization_id=org_id,
         )
     except Exception:
         return (
@@ -630,7 +630,7 @@ async def _preflight_check(db: AsyncSession, org_id: int, mode: str = "full") ->
         errors.append("Nenhuma sala configurada.")
 
     calendar_events = await db.execute(
-        sa_select(models.SchoolCalendarEvent).where(models.SchoolCalendarEvent.org_id == org_id)
+        sa_select(models.SchoolCalendarEvent).where(models.SchoolCalendarEvent.organization_id == org_id)
     )
     blocked_dates = _build_blocked_dates(calendar_events.scalars().all())
     preflight_summary["primary_window"] = _build_preflight_primary_window(
@@ -881,7 +881,7 @@ async def reset_all_data(
     finally:
         _log_schedule_reset_audit(
             request,
-            org_id=current_user.organization_id,
+            organization_id=current_user.organization_id,
             user_id=current_user.id,
             role=getattr(current_user.role, "value", str(current_user.role)),
             status_code=status_code,
@@ -1121,7 +1121,7 @@ async def get_teacher_schedule_horizon(
         def _run(sync_db):
             settings_rows = (
                 sync_db.query(models.OrganizationSettings)
-                .filter(models.OrganizationSettings.org_id == current_user.organization_id)
+                .filter(models.OrganizationSettings.organization_id == current_user.organization_id)
                 .order_by(models.OrganizationSettings.id.desc())
                 .all()
             )
@@ -1160,7 +1160,7 @@ async def get_teacher_schedule_horizon(
         def _emit(sync_db):
             teacher_observability_service.log_teacher_endpoint_event_safe_sync(
                 sync_db,
-                org_id=current_user.organization_id,
+                organization_id=current_user.organization_id,
                 actor_user_id=current_user.id,
                 actor_role=current_user.role,
                 endpoint_key=teacher_observability_service.ENDPOINT_SCHEDULE_ME_HORIZON_READ,
@@ -1227,7 +1227,7 @@ async def get_week_schedule(
             from app.services import schedule_service as svc
             return svc.get_week_schedule_sync(
                 sync_db,
-                org_id=current_user.organization_id,
+                organization_id=current_user.organization_id,
                 week_start=week_start,
                 class_id=effective_class_id,
                 teacher_id=effective_teacher_id,
@@ -1247,7 +1247,7 @@ async def get_week_schedule(
             def _emit(sync_db):
                 teacher_observability_service.log_teacher_endpoint_event_safe_sync(
                     sync_db,
-                    org_id=current_user.organization_id,
+                    organization_id=current_user.organization_id,
                     actor_user_id=current_user.id,
                     actor_role=current_user.role,
                     endpoint_key=teacher_observability_service.ENDPOINT_SCHEDULE_WEEK_TEACHER_READ,
@@ -1517,7 +1517,7 @@ async def upsert_lesson_log(
         # 2. Executar o upsert e a contabilidade do progresso
         return lesson_log_service.upsert_lesson_log_sync(
             sync_db,
-            org_id=current_user.organization_id,
+            organization_id=current_user.organization_id,
             user_id=current_user.id,
             schedule_output_id=schedule_output_id,
             payload=payload

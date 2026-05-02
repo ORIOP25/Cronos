@@ -108,7 +108,7 @@ def log_occurrence_event_safe_sync(
     """Regista evento operacional sem bloquear o fluxo principal em caso de falha."""
     try:
         event = models.OccurrenceOperationalEvent(
-            org_id=org_id,
+            organization_id=org_id,
             occurrence_id=occurrence_id,
             schedule_output_id=schedule_output_id,
             actor_user_id=actor_user_id,
@@ -124,7 +124,7 @@ def log_occurrence_event_safe_sync(
         db.rollback()
         logger.warning(
             "occurrence_observability_emit_failed",
-            org_id=org_id,
+            organization_id=org_id,
             event_type=event_type,
             result=result,
             error=str(exc),
@@ -147,7 +147,7 @@ def get_occurrence_observability_summary_sync(
             func.count(models.OccurrenceOperationalEvent.id),
         ).where(
             and_(
-                models.OccurrenceOperationalEvent.org_id == org_id,
+                models.OccurrenceOperationalEvent.organization_id == org_id,
                 models.OccurrenceOperationalEvent.created_at >= start_at,
             )
         ).group_by(
@@ -204,7 +204,7 @@ def _get_occurrence_for_update_sync(
         select(models.LessonOccurrence).where(
             and_(
                 models.LessonOccurrence.id == occurrence_id,
-                models.LessonOccurrence.org_id == org_id,
+                models.LessonOccurrence.organization_id == org_id,
             )
         )
         .with_for_update()
@@ -242,7 +242,7 @@ def _get_occurrence_with_context_sync(
         .where(
             and_(
                 models.LessonOccurrence.id == occurrence_id,
-                models.LessonOccurrence.org_id == org_id,
+                models.LessonOccurrence.organization_id == org_id,
             )
         )
     ).scalar_one_or_none()
@@ -286,7 +286,7 @@ def _attach_occurrence_read_context(occurrence: models.LessonOccurrence) -> None
 def _resolve_repair_window_days(db: Session, org_id: int) -> int:
     row = db.execute(
         select(models.OrganizationSettings.repair_stability_window_days)
-        .where(models.OrganizationSettings.org_id == org_id)
+        .where(models.OrganizationSettings.organization_id == org_id)
         .order_by(models.OrganizationSettings.id.desc())
     ).first()
 
@@ -354,7 +354,7 @@ def _teacher_is_busy_in_slot(
         )
         .where(
             and_(
-                models.LessonOccurrence.org_id == org_id,
+                models.LessonOccurrence.organization_id == org_id,
                 models.LessonOccurrence.status == models.LessonOccurrenceStatus.SUBSTITUTED,
                 models.LessonOccurrence.substitute_teacher_id == teacher_id,
                 models.ScheduleOutput.organization_id == org_id,
@@ -430,7 +430,7 @@ def _validate_substitute_for_occurrence(
 
     if _teacher_is_busy_in_slot(
         db,
-        org_id=org_id,
+        organization_id=org_id,
         teacher_id=substitute_teacher_id,
         timeslot_id=schedule_output.timeslot_id,
         target_date=occurrence.date,
@@ -490,7 +490,7 @@ def _compute_substitution_counts_in_period(
         .join(models.Lesson, models.ScheduleOutput.lesson_id == models.Lesson.id)
         .where(
             and_(
-                models.LessonOccurrence.org_id == org_id,
+                models.LessonOccurrence.organization_id == org_id,
                 models.LessonOccurrence.status == models.LessonOccurrenceStatus.SUBSTITUTED,
                 models.LessonOccurrence.substitute_teacher_id.in_(teacher_ids),
                 models.LessonOccurrence.date >= date_from,
@@ -523,7 +523,7 @@ def _compute_last_substitution_dates(
         .join(models.Lesson, models.ScheduleOutput.lesson_id == models.Lesson.id)
         .where(
             and_(
-                models.LessonOccurrence.org_id == org_id,
+                models.LessonOccurrence.organization_id == org_id,
                 models.LessonOccurrence.status == models.LessonOccurrenceStatus.SUBSTITUTED,
                 models.LessonOccurrence.substitute_teacher_id.in_(teacher_ids),
                 models.LessonOccurrence.date <= date_to,
@@ -784,7 +784,7 @@ def create_occurrence_from_block_sync(
     existing = db.execute(
         select(models.LessonOccurrence).where(
             and_(
-                models.LessonOccurrence.org_id == org_id,
+                models.LessonOccurrence.organization_id == org_id,
                 models.LessonOccurrence.schedule_output_id == schedule_output.id,
                 models.LessonOccurrence.date == schedule_output.date,
             )
@@ -809,7 +809,7 @@ def create_occurrence_from_block_sync(
     )
 
     occurrence = models.LessonOccurrence(
-        org_id=org_id,
+        organization_id=org_id,
         schedule_output_id=schedule_output.id,
         date=schedule_output.date,
         status=models.LessonOccurrenceStatus.GIVEN,
@@ -841,7 +841,7 @@ def create_occurrence_from_block_sync(
         existing_after_race = db.execute(
             select(models.LessonOccurrence).where(
                 and_(
-                    models.LessonOccurrence.org_id == org_id,
+                    models.LessonOccurrence.organization_id == org_id,
                     models.LessonOccurrence.schedule_output_id == schedule_output.id,
                     models.LessonOccurrence.date == schedule_output.date,
                 )
@@ -886,7 +886,7 @@ def list_occurrences_sync(
             joinedload(models.LessonOccurrence.executed_teacher),
             joinedload(models.LessonOccurrence.substitute_teacher),
         )
-        .where(models.LessonOccurrence.org_id == org_id)
+        .where(models.LessonOccurrence.organization_id == org_id)
     )
 
     stmt = stmt.outerjoin(
@@ -967,7 +967,7 @@ def update_occurrence_sync(
     if payload.status == models.LessonOccurrenceStatus.SUBSTITUTED:
         _validate_substitute_for_occurrence(
             db,
-            org_id=org_id,
+            organization_id=org_id,
             occurrence=occurrence,
             substitute_teacher_id=payload.substitute_teacher_id,
             substitute_subject_id=payload.substitute_subject_id,
@@ -975,7 +975,7 @@ def update_occurrence_sync(
 
         executed_module_id = _resolve_active_module_id_by_subject_id(
             db,
-            org_id=org_id,
+            organization_id=org_id,
             class_id=class_id,
             subject_id=payload.substitute_subject_id,
         )
@@ -1102,7 +1102,7 @@ def auto_confirm_daily_sync(db: Session, org_id: int, target_date: date) -> int:
 
         # 4. Criar ocorrência GIVEN
         occurrence = models.LessonOccurrence(
-            org_id=org_id,
+            organization_id=org_id,
             schedule_output_id=slot.id,
             date=target_date,
             status=models.LessonOccurrenceStatus.GIVEN,
@@ -1166,7 +1166,7 @@ def get_debts_sync(
         )
         .where(
             and_(
-                models.LessonOccurrence.org_id == org_id,
+                models.LessonOccurrence.organization_id == org_id,
                 models.LessonOccurrence.status.in_(DEBT_STATUSES),
             )
         )
@@ -1317,7 +1317,7 @@ def get_substitute_recommendations_sync(
 
         if _teacher_is_busy_in_slot(
             db,
-            org_id=org_id,
+            organization_id=org_id,
             teacher_id=teacher_id,
             timeslot_id=timeslot_id,
             target_date=target_date,
@@ -1345,7 +1345,7 @@ def get_substitute_recommendations_sync(
 
     substitutions_in_period = _compute_substitution_counts_in_period(
         db,
-        org_id=org_id,
+        organization_id=org_id,
         class_id=class_id,
         teacher_ids=teacher_ids,
         date_from=period_start,
@@ -1353,13 +1353,13 @@ def get_substitute_recommendations_sync(
     )
     daily_load_hours = _compute_daily_load_hours(
         db,
-        org_id=org_id,
+        organization_id=org_id,
         teacher_ids=teacher_ids,
         target_date=target_date,
     )
     last_substitution_dates = _compute_last_substitution_dates(
         db,
-        org_id=org_id,
+        organization_id=org_id,
         class_id=class_id,
         teacher_ids=teacher_ids,
         date_to=target_date,

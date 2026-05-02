@@ -35,7 +35,7 @@ async def _seed_minimal_generation_context(
     repair_window_days: int | None,
 ) -> None:
     settings = models.OrganizationSettings(
-        org_id=org_id,
+        organization_id=org_id,
         school_start_date=school_start_date,
         school_target_end_date=school_target_end_date,
         school_hard_end_date=school_hard_end_date,
@@ -44,7 +44,7 @@ async def _seed_minimal_generation_context(
     db_session.add(settings)
 
     holiday = models.SchoolCalendarEvent(
-        org_id=org_id,
+        organization_id=org_id,
         name="Feriado Nacional",
         start_date=date(2025, 12, 1),
         end_date=date(2025, 12, 1),
@@ -170,7 +170,7 @@ async def test_alpha_regression_generation_full_and_repair_allowed(
     today = date.today()
     await _seed_minimal_generation_context(
         db_session,
-        org_id=org_id,
+        organization_id=org_id,
         school_start_date=today - timedelta(days=30),
         school_target_end_date=today + timedelta(days=60),
         school_hard_end_date=today + timedelta(days=60),
@@ -210,7 +210,7 @@ async def test_alpha_regression_repair_blocks_near_hard_end(
     today = date.today()
     await _seed_minimal_generation_context(
         db_session,
-        org_id=org_id,
+        organization_id=org_id,
         school_start_date=today - timedelta(days=30),
         school_target_end_date=today + timedelta(days=5),
         school_hard_end_date=today + timedelta(days=5),
@@ -348,7 +348,7 @@ async def test_alpha_edge_weekly_simulation_and_audit_trail(db_session):
                 select(models.LessonOccurrence)
                 .where(
                     models.LessonOccurrence.schedule_output_id.in_(schedule_ids),
-                    models.LessonOccurrence.org_id == runtime["org_a_id"],
+                    models.LessonOccurrence.organization_id == runtime["org_a_id"],
                 )
                 .order_by(models.LessonOccurrence.date.asc(), models.LessonOccurrence.id.asc())
             ).scalars()
@@ -366,7 +366,7 @@ async def test_alpha_edge_weekly_simulation_and_audit_trail(db_session):
 
         recommendations = occurrence_service.get_substitute_recommendations_sync(
             sync_db,
-            org_id=runtime["org_a_id"],
+            organization_id=runtime["org_a_id"],
             occurrence_id=week_occurrences[2].id,
         )
         assert recommendations
@@ -449,7 +449,7 @@ async def test_alpha_edge_moderate_load_critical_window(db_session):
         total_for_date = sync_db.execute(
             select(models.LessonOccurrence)
             .where(
-                models.LessonOccurrence.org_id == runtime["org_a_id"],
+                models.LessonOccurrence.organization_id == runtime["org_a_id"],
                 models.LessonOccurrence.date == load_date,
             )
         ).scalars().all()

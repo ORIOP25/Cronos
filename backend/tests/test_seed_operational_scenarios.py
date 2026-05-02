@@ -34,7 +34,7 @@ def test_operational_seed_covers_required_step6_scenarios():
 
         multi_recommendations = occurrence_service.get_substitute_recommendations_sync(
             db,
-            org_id=runtime["org_a_id"],
+            organization_id=runtime["org_a_id"],
             occurrence_id=runtime["multi_eligible_occurrence_id"],
         )
         assert len(multi_recommendations) >= 2
@@ -42,7 +42,7 @@ def test_operational_seed_covers_required_step6_scenarios():
 
         no_eligible_recommendations = occurrence_service.get_substitute_recommendations_sync(
             db,
-            org_id=runtime["org_a_id"],
+            organization_id=runtime["org_a_id"],
             occurrence_id=runtime["no_eligible_occurrence_id"],
         )
         assert no_eligible_recommendations == []
@@ -54,7 +54,7 @@ def test_operational_seed_covers_required_step6_scenarios():
         with pytest.raises(occurrence_service.OccurrenceServiceError) as exc_info:
             occurrence_service.get_substitute_recommendations_sync(
                 db,
-                org_id=runtime["org_b_id"],
+                organization_id=runtime["org_b_id"],
                 occurrence_id=runtime["multi_eligible_occurrence_id"],
             )
         assert exc_info.value.status_code == 404

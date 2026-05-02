@@ -58,6 +58,16 @@ class UserRole(str, enum.Enum):
     teacher = "teacher"
     student = "student"
 
+class OrganizationPlanStatus(str, enum.Enum):
+    inactive = "inactive"
+    active = "active"
+    suspended = "suspended"
+
+class SubstitutionStatus(str, enum.Enum):
+    PENDING = "PENDING"
+    CONFIRMED = "CONFIRMED"
+    CANCELLED = "CANCELLED"
+
 class ConstraintType(str, enum.Enum):
     # Regras de Sala/Tempo
     specific_room = "specific_room"
@@ -103,7 +113,7 @@ class ClassSubjectLink(Base):
     class_id: Mapped[int] = mapped_column(ForeignKey(FK_CLASS_ID, ondelete="CASCADE"), index=True)
     subject_id: Mapped[int] = mapped_column(ForeignKey(FK_SUBJECT_ID, ondelete="CASCADE"), index=True)
     grade_level: Mapped[int] = mapped_column(Integer, nullable=False)  # 10, 11, 12
-    teacher_id: Mapped[Optional[int]] = mapped_column(ForeignKey(FK_TEACHER_ID, ondelete=ON_DELETE_SET_NULL), nullable=True)
+    teacher_id: Mapped[Optional[int]] = mapped_column(ForeignKey(FK_TEACHER_ID, ondelete=ON_DELETE_SET_NULL), nullable=True, index=True)
 
     # Relacionamentos
     class_: Mapped["Class"] = relationship()
@@ -143,7 +153,9 @@ class Organization(Base):
     courses: Mapped[List["Course"]] = relationship(back_populates="organization", cascade=CASCADE_ALL_DELETE)
     
     # Campo para o plano de subscrição (do Ponto 3.6 do Charter)
-    plan_status: Mapped[str] = mapped_column(String(50), default="inactive")
+    plan_status: Mapped[OrganizationPlanStatus] = mapped_column(
+        SAEnum(OrganizationPlanStatus), default=OrganizationPlanStatus.inactive, nullable=False
+    )
 
     # --- Relacionamentos ---
     # Isto cria "atalhos" em Python para aceder aos dados ligados.
@@ -347,11 +359,8 @@ class Lesson(Base):
     __tablename__ = "lesson"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    
-    # A ligação à Organização
-    organization_id: Mapped[int] = mapped_column(ForeignKey(FK_ORG_ID))
-    
-    # As "peças" da aula
+    organization_id: Mapped[int] = mapped_column(ForeignKey(FK_ORG_ID), index=True)
+
     class_id: Mapped[int] = mapped_column(ForeignKey(FK_CLASS_ID), index=True)
     subject_id: Mapped[int] = mapped_column(ForeignKey(FK_SUBJECT_ID), index=True)
     teacher_id: Mapped[int] = mapped_column(ForeignKey(FK_TEACHER_ID), index=True)
@@ -384,7 +393,7 @@ class Constraint(Base):
     __tablename__ = "constraint"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    organization_id: Mapped[int] = mapped_column(ForeignKey(FK_ORG_ID), index=True)
+    organization_id: Mapped[int] = mapped_column(ForeignKey(FK_ORG_ID, ondelete="CASCADE"), index=True)
     rule_type: Mapped[ConstraintType] = mapped_column(SAEnum(ConstraintType), nullable=False)
     rule_payload: Mapped[dict] = mapped_column(JSON, nullable=False)
 
@@ -433,7 +442,7 @@ class OrganizationSettings(Base):
     __tablename__ = "organization_settings"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    org_id: Mapped[int] = mapped_column(ForeignKey(FK_ORG_ID, ondelete="CASCADE"), unique=True, index=True)
+    organization_id: Mapped[int] = mapped_column(ForeignKey(FK_ORG_ID, ondelete="CASCADE"), unique=True, index=True)
     school_start_date: Mapped[Optional[date_type]] = mapped_column(Date, nullable=True)
     school_target_end_date: Mapped[Optional[date_type]] = mapped_column(Date, nullable=True)
     school_hard_end_date: Mapped[Optional[date_type]] = mapped_column(Date, nullable=True)
@@ -442,14 +451,14 @@ class OrganizationSettings(Base):
     organization: Mapped["Organization"] = relationship(back_populates="settings")
 
     def __repr__(self) -> str:
-        return f"<OrganizationSettings(org_id={self.org_id})>"
+        return f"<OrganizationSettings(organization_id={self.organization_id})>"
 
 class OrganizationGridSettings(Base):
     """Configurações da grelha horária da organização."""
     __tablename__ = "organization_grid_settings"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    org_id: Mapped[int] = mapped_column(ForeignKey(FK_ORG_ID, ondelete="CASCADE"), unique=True, index=True)
+    organization_id: Mapped[int] = mapped_column(ForeignKey(FK_ORG_ID, ondelete="CASCADE"), unique=True, index=True)
     lunch_window_start: Mapped[Optional[time]] = mapped_column(Time, nullable=True)
     lunch_window_end: Mapped[Optional[time]] = mapped_column(Time, nullable=True)
     lunch_min_duration_minutes: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
@@ -457,7 +466,7 @@ class OrganizationGridSettings(Base):
     organization: Mapped["Organization"] = relationship(back_populates="grid_settings")
 
     def __repr__(self) -> str:
-        return f"<OrganizationGridSettings(org_id={self.org_id})>"
+        return f"<OrganizationGridSettings(organization_id={self.organization_id})>"
 
 
 class SchoolCalendarEvent(Base):
@@ -468,7 +477,7 @@ class SchoolCalendarEvent(Base):
     __tablename__ = "school_calendar_event"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    org_id: Mapped[int] = mapped_column(ForeignKey(FK_ORG_ID, ondelete="CASCADE"), index=True)
+    organization_id: Mapped[int] = mapped_column(ForeignKey(FK_ORG_ID, ondelete="CASCADE"), index=True)
     name: Mapped[str] = mapped_column(String(150), nullable=False)
     start_date: Mapped[date_type] = mapped_column(Date, nullable=False)
     end_date: Mapped[date_type] = mapped_column(Date, nullable=False)
@@ -488,6 +497,7 @@ class Substitution(Base):
     __tablename__ = "substitutions"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    organization_id: Mapped[int] = mapped_column(ForeignKey(FK_ORG_ID, ondelete="CASCADE"), index=True)
     lesson_id: Mapped[int] = mapped_column(ForeignKey("lesson.id"), nullable=False)
     timeslot_id: Mapped[int] = mapped_column(ForeignKey(FK_TIMESLOT_ID), nullable=False)
     date: Mapped[date_type] = mapped_column(Date, nullable=False, index=True)
@@ -495,13 +505,16 @@ class Substitution(Base):
     substitute_teacher_id: Mapped[int] = mapped_column(ForeignKey(FK_TEACHER_ID), nullable=False)
     substitute_subject_id: Mapped[Optional[int]] = mapped_column(ForeignKey(FK_SUBJECT_ID), nullable=True)
 
-    status: Mapped[str] = mapped_column(String(20), default="PENDING")
+    status: Mapped[SubstitutionStatus] = mapped_column(
+        SAEnum(SubstitutionStatus), default=SubstitutionStatus.PENDING, nullable=False
+    )
     reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
     )
 
+    organization: Mapped["Organization"] = relationship()
     lesson: Mapped["Lesson"] = relationship()
     timeslot: Mapped["Timeslot"] = relationship()
     original_teacher: Mapped["Teacher"] = relationship(foreign_keys=[original_teacher_id])
@@ -520,7 +533,7 @@ class LessonOccurrence(Base):
     __tablename__ = "lesson_occurrence"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    org_id: Mapped[int] = mapped_column(ForeignKey(FK_ORG_ID, ondelete="CASCADE"), index=True)
+    organization_id: Mapped[int] = mapped_column(ForeignKey(FK_ORG_ID, ondelete="CASCADE"), index=True)
 
     # Liga ao slot planeado (pode ficar NULL se o horário for removido)
     schedule_output_id: Mapped[Optional[int]] = mapped_column(
@@ -531,6 +544,10 @@ class LessonOccurrence(Base):
 
     # Data em que deveria ter ocorrido
     date: Mapped[date_type] = mapped_column(Date, nullable=False, index=True)
+
+    # Contexto imutável de turma/disciplina (preservado mesmo se schedule_output for NULL)
+    class_id: Mapped[Optional[int]] = mapped_column(ForeignKey(FK_CLASS_ID, ondelete=ON_DELETE_SET_NULL), nullable=True)
+    subject_id: Mapped[Optional[int]] = mapped_column(ForeignKey(FK_SUBJECT_ID, ondelete=ON_DELETE_SET_NULL), nullable=True)
 
     # O que aconteceu: GIVEN | GAP | SUBSTITUTED
     status: Mapped[LessonOccurrenceStatus] = mapped_column(
@@ -583,6 +600,8 @@ class LessonOccurrence(Base):
     # Relacionamentos
     organization: Mapped["Organization"] = relationship()
     schedule_output: Mapped[Optional["ScheduleOutput"]] = relationship()
+    class_: Mapped[Optional["Class"]] = relationship(foreign_keys=[class_id])
+    subject: Mapped[Optional["Subject"]] = relationship(foreign_keys=[subject_id])
     substitute_teacher: Mapped[Optional["Teacher"]] = relationship(
         foreign_keys=[substitute_teacher_id]
     )
@@ -622,7 +641,7 @@ class OccurrenceOperationalEvent(Base):
     __tablename__ = "occurrence_operational_event"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    org_id: Mapped[int] = mapped_column(ForeignKey(FK_ORG_ID, ondelete="CASCADE"), index=True)
+    organization_id: Mapped[int] = mapped_column(ForeignKey(FK_ORG_ID, ondelete="CASCADE"), index=True)
 
     occurrence_id: Mapped[Optional[int]] = mapped_column(
         ForeignKey("lesson_occurrence.id", ondelete=ON_DELETE_SET_NULL),
@@ -657,12 +676,12 @@ class OccurrenceOperationalEvent(Base):
     actor_user: Mapped[Optional["User"]] = relationship()
 
     __table_args__ = (
-        Index("ix_occ_event_org_created", "org_id", "created_at"),
+        Index("ix_occ_event_org_created", "organization_id", "created_at"),
     )
 
     def __repr__(self) -> str:
         return (
-            f"<OccurrenceOperationalEvent(id={self.id}, org_id={self.org_id}, "
+            f"<OccurrenceOperationalEvent(id={self.id}, organization_id={self.organization_id}, "
             f"event_type='{self.event_type}', result='{self.result}')>"
         )
 
@@ -673,7 +692,7 @@ class TeacherEndpointOperationalEvent(Base):
     __tablename__ = "teacher_endpoint_operational_event"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    org_id: Mapped[int] = mapped_column(ForeignKey(FK_ORG_ID, ondelete="CASCADE"), index=True)
+    organization_id: Mapped[int] = mapped_column(ForeignKey(FK_ORG_ID, ondelete="CASCADE"), index=True)
     actor_user_id: Mapped[Optional[int]] = mapped_column(
         ForeignKey("user.id", ondelete=ON_DELETE_SET_NULL),
         nullable=True,
@@ -695,10 +714,10 @@ class TeacherEndpointOperationalEvent(Base):
     actor_user: Mapped[Optional["User"]] = relationship()
 
     __table_args__ = (
-        Index("ix_teacher_endpoint_event_org_created", "org_id", "created_at"),
+        Index("ix_teacher_endpoint_event_org_created", "organization_id", "created_at"),
         Index(
             "ix_teacher_endpoint_event_org_endpoint_created",
-            "org_id",
+            "organization_id",
             "endpoint_key",
             "created_at",
         ),
@@ -706,7 +725,7 @@ class TeacherEndpointOperationalEvent(Base):
 
     def __repr__(self) -> str:
         return (
-            f"<TeacherEndpointOperationalEvent(id={self.id}, org_id={self.org_id}, "
+            f"<TeacherEndpointOperationalEvent(id={self.id}, organization_id={self.organization_id}, "
             f"endpoint_key='{self.endpoint_key}', http_status={self.http_status})>"
         )
 
@@ -731,7 +750,7 @@ class LessonLog(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
 
     # Tenant isolation — obrigatório em todas as tabelas
-    org_id: Mapped[int] = mapped_column(
+    organization_id: Mapped[int] = mapped_column(
         ForeignKey(FK_ORG_ID, ondelete="CASCADE"), nullable=False, index=True
     )
 
@@ -795,7 +814,7 @@ class TeacherWeeklyTimesheet(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
 
     # Tenant isolation
-    org_id: Mapped[int] = mapped_column(
+    organization_id: Mapped[int] = mapped_column(
         ForeignKey(FK_ORG_ID, ondelete="CASCADE"), nullable=False, index=True
     )
 
@@ -805,9 +824,7 @@ class TeacherWeeklyTimesheet(Base):
 
     # Identificação da semana (segunda-feira a domingo)
     week_start_date: Mapped[date_type] = mapped_column(Date, nullable=False)
-    week_end_date: Mapped[date_type] = mapped_column(Date, nullable=False)
 
-    # Estado do ciclo de vida
     status: Mapped[TimesheetStatus] = mapped_column(
         SAEnum(TimesheetStatus), nullable=False, default=TimesheetStatus.OPEN
     )
@@ -836,7 +853,7 @@ class TeacherWeeklyTimesheet(Base):
             "teacher_id", "week_start_date",
             name="uq_teacher_weekly_timesheet",
         ),
-        Index("ix_timesheet_org_week", "org_id", "week_start_date"),
+        Index("ix_timesheet_org_week", "organization_id", "week_start_date"),
     )
 
     def __repr__(self) -> str:
@@ -854,16 +871,19 @@ class Course(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(150), nullable=False)
-    abbreviation: Mapped[str] = mapped_column(String(10), unique=True, nullable=False)  # Ex: "TGEI"
+    abbreviation: Mapped[str] = mapped_column(String(10), nullable=False)
     organization_id: Mapped[int] = mapped_column(ForeignKey(FK_ORG_ID))
     
     organization: Mapped["Organization"] = relationship(back_populates="courses")
     classes: Mapped[List["Class"]] = relationship(back_populates="course")
     
-    # Relação N:M com Subject - Define a Matriz Curricular
     subjects: Mapped[List["Subject"]] = relationship(
         secondary=course_subject_link,
         back_populates="courses"
+    )
+
+    __table_args__ = (
+        UniqueConstraint("organization_id", "abbreviation", name="uq_course_org_abbreviation"),
     )
 
     @property

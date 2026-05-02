@@ -49,7 +49,7 @@ def _create_organization(
     db.add(admin)
 
     settings = models.OrganizationSettings(
-        org_id=org.id,
+        organization_id=org.id,
         school_start_date=date(2025, 9, 15),
         school_target_end_date=date(2026, 6, 15),
         school_hard_end_date=date(2026, 7, 31),
@@ -58,7 +58,7 @@ def _create_organization(
     db.add(settings)
 
     grid_settings = models.OrganizationGridSettings(
-        org_id=org.id,
+        organization_id=org.id,
         lunch_window_start=time(12, 0),
         lunch_window_end=time(14, 0),
         lunch_min_duration_minutes=60,
@@ -249,7 +249,7 @@ def _create_occurrence(
     decided_at: datetime | None = None,
 ) -> models.LessonOccurrence:
     occurrence = models.LessonOccurrence(
-        org_id=org_id,
+        organization_id=org_id,
         schedule_output_id=schedule_output.id,
         date=target_date,
         status=status,
@@ -295,60 +295,60 @@ def seed_operational_scenarios_sync(db: Session) -> dict[str, Any]:
         admin_email="admin.operacional.b@seed.pt",
     )
 
-    _, class_a = _create_course_and_class(db, org_id=org_a.id, suffix="A")
-    _, class_b = _create_course_and_class(db, org_id=org_b.id, suffix="B")
+    _, class_a = _create_course_and_class(db, organization_id=org_a.id, suffix="A")
+    _, class_b = _create_course_and_class(db, organization_id=org_b.id, suffix="B")
 
-    room_a, slot_a_multi, slot_a_gap = _create_room_and_timeslots(db, org_id=org_a.id, suffix="A")
-    room_b, slot_b_multi, _ = _create_room_and_timeslots(db, org_id=org_b.id, suffix="B")
+    room_a, slot_a_multi, slot_a_gap = _create_room_and_timeslots(db, organization_id=org_a.id, suffix="A")
+    room_b, slot_b_multi, _ = _create_room_and_timeslots(db, organization_id=org_b.id, suffix="B")
 
-    planned_teacher_a = _create_teacher(db, org_id=org_a.id, name="Prof Planeado A")
-    candidate_a1 = _create_teacher(db, org_id=org_a.id, name="Prof Candidato A1")
-    candidate_a2 = _create_teacher(db, org_id=org_a.id, name="Prof Candidato A2")
-    blocked_a = _create_teacher(db, org_id=org_a.id, name="Prof Sem Elegibilidade A")
+    planned_teacher_a = _create_teacher(db, organization_id=org_a.id, name="Prof Planeado A")
+    candidate_a1 = _create_teacher(db, organization_id=org_a.id, name="Prof Candidato A1")
+    candidate_a2 = _create_teacher(db, organization_id=org_a.id, name="Prof Candidato A2")
+    blocked_a = _create_teacher(db, organization_id=org_a.id, name="Prof Sem Elegibilidade A")
 
-    planned_teacher_b = _create_teacher(db, org_id=org_b.id, name="Prof Planeado B")
-    candidate_b1 = _create_teacher(db, org_id=org_b.id, name="Prof Candidato B1")
+    planned_teacher_b = _create_teacher(db, organization_id=org_b.id, name="Prof Planeado B")
+    candidate_b1 = _create_teacher(db, organization_id=org_b.id, name="Prof Candidato B1")
 
     planned_subject_a, planned_module_a = _create_subject_and_module(
         db,
-        org_id=org_a.id,
+        organization_id=org_a.id,
         name="Programacao A",
         code="OPA-PROG-01",
     )
     planned_gap_subject_a, planned_gap_module_a = _create_subject_and_module(
         db,
-        org_id=org_a.id,
+        organization_id=org_a.id,
         name="Arquitetura A",
         code="OPA-ARQ-01",
     )
     alt_subject_a1, alt_module_a1 = _create_subject_and_module(
         db,
-        org_id=org_a.id,
+        organization_id=org_a.id,
         name="Redes A",
         code="OPA-RED-01",
     )
     alt_subject_a2, _ = _create_subject_and_module(
         db,
-        org_id=org_a.id,
+        organization_id=org_a.id,
         name="Ingles Tecnico A",
         code="OPA-ING-01",
     )
     blocked_subject_a, _ = _create_subject_and_module(
         db,
-        org_id=org_a.id,
+        organization_id=org_a.id,
         name="Fisica A",
         code="OPA-FIS-01",
     )
 
     planned_subject_b, planned_module_b = _create_subject_and_module(
         db,
-        org_id=org_b.id,
+        organization_id=org_b.id,
         name="Programacao B",
         code="OPB-PROG-01",
     )
     alt_subject_b1, _ = _create_subject_and_module(
         db,
-        org_id=org_b.id,
+        organization_id=org_b.id,
         name="Redes B",
         code="OPB-RED-01",
     )
@@ -376,14 +376,14 @@ def seed_operational_scenarios_sync(db: Session) -> dict[str, Any]:
 
     lesson_multi = _create_lesson(
         db,
-        org_id=org_a.id,
+        organization_id=org_a.id,
         klass=class_a,
         subject=planned_subject_a,
         teacher=planned_teacher_a,
     )
     lesson_gap = _create_lesson(
         db,
-        org_id=org_a.id,
+        organization_id=org_a.id,
         klass=class_a,
         subject=planned_gap_subject_a,
         teacher=planned_teacher_a,
@@ -391,7 +391,7 @@ def seed_operational_scenarios_sync(db: Session) -> dict[str, Any]:
 
     lesson_b = _create_lesson(
         db,
-        org_id=org_b.id,
+        organization_id=org_b.id,
         klass=class_b,
         subject=planned_subject_b,
         teacher=planned_teacher_b,
@@ -399,7 +399,7 @@ def seed_operational_scenarios_sync(db: Session) -> dict[str, Any]:
 
     schedule_multi = _create_schedule_output(
         db,
-        org_id=org_a.id,
+        organization_id=org_a.id,
         lesson=lesson_multi,
         slot=slot_a_multi,
         room=room_a,
@@ -408,7 +408,7 @@ def seed_operational_scenarios_sync(db: Session) -> dict[str, Any]:
     )
     schedule_gap = _create_schedule_output(
         db,
-        org_id=org_a.id,
+        organization_id=org_a.id,
         lesson=lesson_gap,
         slot=slot_a_gap,
         room=room_a,
@@ -417,7 +417,7 @@ def seed_operational_scenarios_sync(db: Session) -> dict[str, Any]:
     )
     schedule_historical = _create_schedule_output(
         db,
-        org_id=org_a.id,
+        organization_id=org_a.id,
         lesson=lesson_multi,
         slot=slot_a_multi,
         room=room_a,
@@ -427,7 +427,7 @@ def seed_operational_scenarios_sync(db: Session) -> dict[str, Any]:
 
     schedule_b = _create_schedule_output(
         db,
-        org_id=org_b.id,
+        organization_id=org_b.id,
         lesson=lesson_b,
         slot=slot_b_multi,
         room=room_b,
@@ -437,7 +437,7 @@ def seed_operational_scenarios_sync(db: Session) -> dict[str, Any]:
 
     multi_occurrence = _create_occurrence(
         db,
-        org_id=org_a.id,
+        organization_id=org_a.id,
         schedule_output=schedule_multi,
         target_date=REFERENCE_DATE,
         status=models.LessonOccurrenceStatus.GIVEN,
@@ -448,7 +448,7 @@ def seed_operational_scenarios_sync(db: Session) -> dict[str, Any]:
 
     no_eligible_occurrence = _create_occurrence(
         db,
-        org_id=org_a.id,
+        organization_id=org_a.id,
         schedule_output=schedule_gap,
         target_date=REFERENCE_DATE,
         status=models.LessonOccurrenceStatus.GAP,
@@ -461,7 +461,7 @@ def seed_operational_scenarios_sync(db: Session) -> dict[str, Any]:
 
     _create_occurrence(
         db,
-        org_id=org_a.id,
+        organization_id=org_a.id,
         schedule_output=schedule_historical,
         target_date=HISTORICAL_DATE,
         status=models.LessonOccurrenceStatus.SUBSTITUTED,
@@ -478,7 +478,7 @@ def seed_operational_scenarios_sync(db: Session) -> dict[str, Any]:
 
     org_b_occurrence = _create_occurrence(
         db,
-        org_id=org_b.id,
+        organization_id=org_b.id,
         schedule_output=schedule_b,
         target_date=REFERENCE_DATE,
         status=models.LessonOccurrenceStatus.GIVEN,

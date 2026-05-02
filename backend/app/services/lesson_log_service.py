@@ -51,7 +51,7 @@ def upsert_lesson_log_sync(
     # 3. Check if the timesheet for this week is submitted/approved
     week_start_date = output.date - timedelta(days=output.date.weekday())
     timesheet = db.query(models.TeacherWeeklyTimesheet).filter(
-        models.TeacherWeeklyTimesheet.org_id == org_id,
+        models.TeacherWeeklyTimesheet.organization_id == org_id,
         models.TeacherWeeklyTimesheet.teacher_id == output.lesson.teacher_id,
         models.TeacherWeeklyTimesheet.week_start_date == week_start_date
     ).first()
@@ -81,7 +81,7 @@ def upsert_lesson_log_sync(
 
     if not llog:
         llog = models.LessonLog(
-            org_id=org_id,
+            organization_id=org_id,
             schedule_output_id=schedule_output_id,
             status=payload.status,
             summary=payload.summary,

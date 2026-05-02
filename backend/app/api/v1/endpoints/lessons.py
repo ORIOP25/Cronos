@@ -17,7 +17,7 @@ async def read_lessons(
     """
     return await schedule_service.get_lessons_by_org(
         db, 
-        org_id=current_user.organization_id
+        organization_id=current_user.organization_id
     )
 
 @router.post("/", response_model=schemas.LessonRead)
@@ -32,5 +32,5 @@ async def create_lesson(
     return await schedule_service.create_lesson(
         db, 
         lesson, 
-        org_id=current_user.organization_id
+        organization_id=current_user.organization_id
     )

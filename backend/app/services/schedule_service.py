@@ -480,7 +480,7 @@ def get_org_settings_sync(db: Session, org_id: int):
     """Retorna as OrganizationSettings desta org, da mais recente para a mais antiga."""
     return (
         db.query(models.OrganizationSettings)
-        .filter(models.OrganizationSettings.org_id == org_id)
+        .filter(models.OrganizationSettings.organization_id == org_id)
         .order_by(models.OrganizationSettings.id.desc())
         .all()
     )
@@ -490,7 +490,7 @@ def get_grid_settings_sync(db: Session, org_id: int):
     """Retorna as OrganizationGridSettings desta org (única por org), ou None."""
     return (
         db.query(models.OrganizationGridSettings)
-        .filter(models.OrganizationGridSettings.org_id == org_id)
+        .filter(models.OrganizationGridSettings.organization_id == org_id)
         .first()
     )
 
@@ -499,7 +499,7 @@ def get_calendar_events_sync(db: Session, org_id: int):
     """Retorna todos os SchoolCalendarEvents desta org."""
     return (
         db.query(models.SchoolCalendarEvent)
-        .filter(models.SchoolCalendarEvent.org_id == org_id)
+        .filter(models.SchoolCalendarEvent.organization_id == org_id)
         .all()
     )
 
@@ -743,7 +743,7 @@ def list_draft_gen_ids_sync(db: Session, org_id: int) -> list[dict]:
 def _resolve_repair_window_days_sync(db: Session, org_id: int) -> int:
     row = (
         db.query(models.OrganizationSettings.repair_stability_window_days)
-        .filter(models.OrganizationSettings.org_id == org_id)
+        .filter(models.OrganizationSettings.organization_id == org_id)
         .order_by(models.OrganizationSettings.id.desc())
         .first()
     )
@@ -1004,13 +1004,13 @@ def get_week_schedule_sync(
 
     output_ids = [o.id for o in outputs]
     occ_rows = db.query(models.LessonOccurrence).filter(
-        models.LessonOccurrence.org_id == org_id,
+        models.LessonOccurrence.organization_id == org_id,
         models.LessonOccurrence.schedule_output_id.in_(output_ids)
     ).all()
     occurrences = {o.schedule_output_id: o for o in occ_rows}
 
     llog_rows = db.query(models.LessonLog).filter(
-        models.LessonLog.org_id == org_id,
+        models.LessonLog.organization_id == org_id,
         models.LessonLog.schedule_output_id.in_(output_ids)
     ).all()
     lesson_logs = {ll.schedule_output_id: ll for ll in llog_rows}
@@ -1027,7 +1027,7 @@ def get_week_schedule_sync(
             models.TeacherWeeklyTimesheet.status,
             models.TeacherWeeklyTimesheet.id,
         ).filter(
-            models.TeacherWeeklyTimesheet.org_id == org_id,
+            models.TeacherWeeklyTimesheet.organization_id == org_id,
             models.TeacherWeeklyTimesheet.teacher_id.in_(list(teacher_ids)),
             models.TeacherWeeklyTimesheet.week_start_date == week_start,
         ).all()
