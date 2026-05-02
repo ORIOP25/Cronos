@@ -7,13 +7,17 @@ import { renderWithProviders } from './testUtils'
 import { useAuthStore } from '../store'
 import * as schoolHooks from '../hooks/useSchoolData'
 
-vi.mock('../hooks/useSchoolData', () => ({
-  useTeacherScheduleHorizon: vi.fn(),
-  useWeekSchedule: vi.fn(),
-  useTimeslots: vi.fn(),
-  useMyTimesheet: vi.fn(() => ({ data: null, isLoading: false })),
-  useSubmitMyTimesheet: vi.fn(() => ({ mutate: vi.fn() })),
-}))
+vi.mock(import('../hooks/useSchoolData'), async (importOriginal) => {
+  const actual = await importOriginal()
+  return {
+    ...actual,
+    useTeacherScheduleHorizon: vi.fn(),
+    useWeekSchedule: vi.fn(),
+    useTimeslots: vi.fn(),
+    useMyTimesheet: vi.fn(() => ({ data: null, isLoading: false })),
+    useSubmitMyTimesheet: vi.fn(() => ({ mutate: vi.fn() })),
+  }
+})
 
 vi.mock('../components/WeekGrid', () => ({
   default: ({ slots, weekStart, isOperationalEnabled }) => (
