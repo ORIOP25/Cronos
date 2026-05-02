@@ -5,39 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
 
-from app.db.database import ASYNC_DB_URL
-from app import models, schemas
-from app.services import lesson_log_service, timesheet_service, settings_service, occurrence_service
-from app.core.security import hash_password
-
-SYNC_TEST_URL = ASYNC_DB_URL.replace("postgresql+asyncpg://", "postgresql+psycopg2://")
-sync_test_engine = create_engine(SYNC_TEST_URL, echo=False)
-SyncTestSession = sessionmaker(bind=sync_test_engine, autocommit=False, autoflush=False)
-
-def _ensure_sync_tables():
-    from app.db.database import Base
-    from sqlalchemy import inspect
-    inspector = inspect(sync_test_engine)
-    if inspector.has_table("organization"):
-        return
-    # Async tests dropped tables; recreate only tables (not enums) to avoid conflicts
-    for table in Base.metadata.sorted_tables:
-        try:
-            table.create(sync_test_engine, checkfirst=True)
-        except Exception:
-            pass
-
-
-@pytest.fixture
-def sync_db():
-    _ensure_sync_tables()
-    db = SyncTestSession()
-    db.begin_nested()  # Create a savepoint so commits inside tests are isolated
-    try:
-        yield db
-    finally:
-        db.rollback()  # Rollback the outer transaction to clean up
-        db.close()
+# sync_db fixture is provided by conftest.py (shared across all test files)
 
 @pytest.fixture
 def base_setup(sync_db):

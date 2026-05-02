@@ -1,11 +1,6 @@
-# Ficheiro: backend/tests/test_sprint3.py
+# Ficheiro: backend/tests/test_schedule_draft_lifecycle.py
 #
 # Testes para Sprint 3: Repair Mode, Rascunhos e Diff de Horários.
-# Cobre:
-#   1. Validação de schemas Pydantic
-#   2. Serviços síncronos de rascunho (draft)
-#   3. Solver engine em modo repair (previous_pattern)
-#   4. Endpoints HTTP para gestão de rascunhos
 import os
 os.environ["RATELIMIT_ENABLED"] = "false"
 
@@ -16,8 +11,6 @@ from typing import AsyncGenerator
 
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
 
 from app.db.database import ASYNC_DB_URL
 from app import models, schemas
@@ -25,29 +18,12 @@ from app.services import schedule_service
 from app.core.security import create_access_token, hash_password
 from app.core.solver_engine import ScheduleEngine, LessonInput, TimeslotInput, RoomInput
 
-# ---------------------------------------------------------------------------
-# Sessão síncrona para testes de serviço
-# ---------------------------------------------------------------------------
-SYNC_TEST_URL = ASYNC_DB_URL.replace("postgresql+asyncpg://", "postgresql+psycopg2://")
-sync_test_engine = create_engine(SYNC_TEST_URL, echo=False)
-SyncTestSession = sessionmaker(bind=sync_test_engine, autocommit=False, autoflush=False)
+# sync_db fixture is provided by conftest.py (shared across all test files)
 
 TODAY = date.today()
 FUTURE = TODAY + timedelta(days=10)
 GEN_ACTIVE = "gen-active-111"
 GEN_DRAFT = "gen-draft-222"
-
-
-@pytest.fixture
-def sync_db(db_session):
-    """Sessão síncrona apontada para a mesma BD de teste."""
-    db = SyncTestSession()
-    try:
-        yield db
-    finally:
-        db.close()
-
-
 # ---------------------------------------------------------------------------
 # Fixture de dados mínimos para testes de rascunho
 # ---------------------------------------------------------------------------

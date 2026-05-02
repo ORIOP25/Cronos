@@ -1,17 +1,15 @@
-// Ficheiro: frontend/src/test/store.test.js
-/**
- * TESTES — Zustand Store (useAuthStore)
- * ======================================
- * Verifica estado de autenticação: login, logout, persistência.
- */
+"""Testes para o Zustand auth store do frontend."""
 
 import { describe, it, expect, beforeEach } from 'vitest'
 import { useAuthStore } from '../store'
 
 describe('useAuthStore', () => {
   beforeEach(() => {
-    // Reset store state
-    useAuthStore.getState().logout()
+    useAuthStore.setState({
+      isAuthenticated: false,
+      user: null,
+    })
+    localStorage.clear()
   })
 
   it('estado inicial: não autenticado', () => {
@@ -22,29 +20,27 @@ describe('useAuthStore', () => {
 
   it('login define user e isAuthenticated', () => {
     useAuthStore.getState().login({
-      user_email: 'admin@escola.pt',
+      user_email: 'admin@test.com',
       role: 'admin',
       teacher_id: null,
       organization_id: 1,
+      organization_name: 'Escola Teste',
     })
     const state = useAuthStore.getState()
     expect(state.isAuthenticated).toBe(true)
-    expect(state.user.email).toBe('admin@escola.pt')
+    expect(state.user.email).toBe('admin@test.com')
     expect(state.user.role).toBe('admin')
     expect(state.user.orgId).toBe(1)
   })
 
   it('logout limpa estado', () => {
-    // Login primeiro
     useAuthStore.getState().login({
-      user_email: 'prof@escola.pt',
-      role: 'teacher',
-      teacher_id: 5,
-      organization_id: 2,
+      user_email: 'admin@test.com',
+      role: 'admin',
+      teacher_id: null,
+      organization_id: 1,
+      organization_name: 'Escola Teste',
     })
-    expect(useAuthStore.getState().isAuthenticated).toBe(true)
-
-    // Logout
     useAuthStore.getState().logout()
     const state = useAuthStore.getState()
     expect(state.isAuthenticated).toBe(false)
@@ -53,12 +49,24 @@ describe('useAuthStore', () => {
 
   it('login com professor inclui teacherId', () => {
     useAuthStore.getState().login({
-      user_email: 'prof@escola.pt',
+      user_email: 'prof@test.com',
       role: 'teacher',
       teacher_id: 42,
-      organization_id: 3,
+      organization_id: 1,
+      organization_name: 'Escola Teste',
     })
-    const state = useAuthStore.getState()
-    expect(state.user.teacherId).toBe(42)
+    expect(useAuthStore.getState().user.teacherId).toBe(42)
+  })
+
+  it('persiste estado em localStorage', () => {
+    useAuthStore.getState().login({
+      user_email: 'admin@test.com',
+      role: 'admin',
+      teacher_id: null,
+      organization_id: 1,
+      organization_name: 'Escola Teste',
+    })
+    const stored = JSON.parse(localStorage.getItem('horario-zen-storage'))
+    expect(stored.state.isAuthenticated).toBe(true)
   })
 })

@@ -1,10 +1,6 @@
 # Ficheiro: backend/tests/test_occurrences.py
 #
 # Testes para Sprint 2: LessonOccurrence, auto-confirmação e dívidas de horas.
-# Cobre:
-#   1. Validação de schemas Pydantic (sem BD)
-#   2. Serviço de auto-confirmação diária (com BD síncrona)
-#   3. Endpoints HTTP (via async_client)
 import os
 os.environ["RATELIMIT_ENABLED"] = "false"
 
@@ -26,24 +22,7 @@ from app.models import LessonOccurrenceStatus
 from app.services import occurrence_service, schedule_service
 from app.core.security import create_access_token, hash_password
 
-# ---------------------------------------------------------------------------
-# Sessão síncrona para testes do serviço
-# ---------------------------------------------------------------------------
-SYNC_TEST_URL = ASYNC_DB_URL.replace("postgresql+asyncpg://", "postgresql+psycopg2://")
-sync_test_engine = create_engine(SYNC_TEST_URL, echo=False)
-SyncTestSession = sessionmaker(bind=sync_test_engine, autocommit=False, autoflush=False)
-
-
-@pytest.fixture
-def sync_db(db_session):
-    """Fornece uma sessão síncrona apontada para a mesma BD de teste."""
-    db = SyncTestSession()
-    try:
-        yield db
-    finally:
-        db.close()
-
-
+# sync_db fixture is provided by conftest.py (shared across all test files)
 # ---------------------------------------------------------------------------
 # Fixture para construir a cadeia completa de entidades necessárias
 # ---------------------------------------------------------------------------
