@@ -7,11 +7,11 @@ import {
 import CIcon from '@coreui/icons-react'
 import {
   cilCalendar, cilCheckCircle, cilActionUndo, cilArrowLeft, cilArrowRight,
-  cilPeople, cilExternalLink, cilCalendarCheck,
+  cilPeople, cilExternalLink, cilCalendarCheck, cilXCircle,
 } from '@coreui/icons'
 import {
   useTimesheets, useUpdateTimesheetStatus, useWeekSchedule,
-  useTimeslots, useTeachers,
+  useTimeslots,
 } from '../hooks/useSchoolData'
 import WeekGrid from '../components/WeekGrid'
 import LessonLogModal from '../components/LessonLogModal'
@@ -120,7 +120,6 @@ const Timesheets = () => {
     isError: timesheetsError,
   } = useTimesheets(weekFilter || undefined, statusParam)
 
-  const { data: teachers = [] } = useTeachers()
   const { data: timeslots = [] } = useTimeslots()
 
   const {
@@ -325,36 +324,39 @@ const Timesheets = () => {
                       </div>
                     </div>
 
-                    {/* Action buttons (7.2) */}
+                    {/* Action buttons */}
                     <div className="d-flex gap-2 align-items-center">
-                      <CButton
-                        color="primary"
-                        variant="outline"
-                        size="sm"
-                        onClick={handleNavigateToSchedules}
-                        title="Ver horário deste professor em /schedules"
-                      >
-                        <CIcon icon={cilExternalLink} className="me-1" />
-                        Ver em Horários
-                      </CButton>
-
                       {selectedTeacher.status === 'SUBMITTED' && (
-                        <CButton
-                          color="success"
-                          size="sm"
-                          className="text-white"
-                          disabled={updateMutation.isPending}
-                          onClick={handleApprove}
-                        >
-                          <CIcon icon={cilCheckCircle} className="me-1" />
-                          Aprovar
-                        </CButton>
+                        <>
+                          <CButton
+                            color="success"
+                            size="sm"
+                            className="text-white"
+                            disabled={updateMutation.isPending}
+                            onClick={handleApprove}
+                          >
+                            <CIcon icon={cilCheckCircle} className="me-1" />
+                            Aprovar
+                          </CButton>
+                          <CButton
+                            color="danger"
+                            size="sm"
+                            className="text-white"
+                            disabled={updateMutation.isPending}
+                            onClick={handleReopen}
+                            title="Recusar a semana submetida — o professor poderá editar novamente"
+                          >
+                            <CIcon icon={cilXCircle} className="me-1" />
+                            Recusar
+                          </CButton>
+                        </>
                       )}
 
-                      {(selectedTeacher.status === 'SUBMITTED' || selectedTeacher.status === 'APPROVED') && (
+                      {selectedTeacher.status === 'APPROVED' && (
                         <CButton
                           color="warning"
                           size="sm"
+                          className="text-white"
                           disabled={updateMutation.isPending}
                           onClick={handleReopen}
                         >
@@ -368,6 +370,18 @@ const Timesheets = () => {
                           Aguardar submissão do professor
                         </span>
                       )}
+
+                      <CButton
+                        color="primary"
+                        variant="outline"
+                        size="sm"
+                        className="ms-auto"
+                        onClick={handleNavigateToSchedules}
+                        title="Ver horário deste professor em /schedules"
+                      >
+                        <CIcon icon={cilExternalLink} className="me-1" />
+                        Ver em Horários
+                      </CButton>
                     </div>
                   </div>
 

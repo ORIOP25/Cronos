@@ -148,12 +148,12 @@ const LessonLogModal = ({ visible, onClose, slot, isAdmin = false }) => {
       setErrorMessage('Não foi possível identificar a timesheet desta semana.')
       return
     }
+    if (!window.confirm('Tem a certeza que deseja reabrir esta semana? O professor poderá editar as aulas novamente.')) return
     try {
       await updateTimesheetStatusMutation.mutateAsync({
         timesheetId: slot.timesheet_id,
         status: 'OPEN',
       })
-      // The hook invalidates weekSchedule cache; close modal so user re-opens with fresh data
       onClose()
     } catch (err) {
       const msg = err.response?.data?.detail || 'Não foi possível reabrir a semana. Tente novamente.'
@@ -168,14 +168,6 @@ const LessonLogModal = ({ visible, onClose, slot, isAdmin = false }) => {
   const isOccurrence = currentStatus === 'OCCURRENCE'
   const isRegistered = isCompleted || isOccurrence
 
-  // Occurrence data (LessonOccurrence — created via admin /absences flow)
-  const hasOccurrence = Boolean(slot.occurrence_id)
-  const occurrenceDecided = Boolean(slot.occurrence_decided_at)
-  const occurrenceStatusLabel = OCCURRENCE_STATUS_LABELS[slot.occurrence_status] ?? slot.occurrence_status
-
-  // Whether admin can show substitution button for this slot
-  const canShowSubstitution = isAdmin && slot.is_past && slot.schedule_output_id && !occurrenceDecided
-
   // Calculate if the slot is truly in the future (combining date and end_time)
   let isFuture = false
   if (slot.date && slot.timeslot?.end_time) {
@@ -187,6 +179,14 @@ const LessonLogModal = ({ visible, onClose, slot, isAdmin = false }) => {
 
   // Editing is locked when the timesheet is submitted/approved for the week
   const isLocked = isFuture || (slot.week_timesheet_status === 'SUBMITTED' || slot.week_timesheet_status === 'APPROVED')
+
+  // Occurrence data (LessonOccurrence — created via admin /absences flow)
+  const hasOccurrence = Boolean(slot.occurrence_id)
+  const occurrenceDecided = Boolean(slot.occurrence_decided_at)
+  const occurrenceStatusLabel = OCCURRENCE_STATUS_LABELS[slot.occurrence_status] ?? slot.occurrence_status
+
+  // Whether admin can show substitution button for this slot
+  const canShowSubstitution = isAdmin && slot.is_past && slot.schedule_output_id && !occurrenceDecided && !isLocked
 
   const statusInfo = STATUS_INFO[currentStatus] ?? STATUS_INFO.PENDING
 
@@ -248,25 +248,24 @@ const LessonLogModal = ({ visible, onClose, slot, isAdmin = false }) => {
           </CAlert>
         )}
 
-        {/* Week locked banner */}
+        {/* Locked week — read-only mode */}
         {!isFuture && (slot.week_timesheet_status === 'SUBMITTED' || slot.week_timesheet_status === 'APPROVED') && (
-          <CAlert color="warning" className="mb-3 d-flex align-items-center justify-content-between flex-wrap gap-2">
+          <CAlert color="secondary" className="mb-3 d-flex align-items-center justify-content-between flex-wrap gap-2">
             <span>
               <strong>Semana {slot.week_timesheet_status === 'SUBMITTED' ? 'submetida' : 'aprovada'}</strong>
-              {' '}por {slot.teacher?.name ?? 'o professor'}.
-              {isAdmin
-                ? ' Os campos estão bloqueados até reabrir.'
-                : ' Os campos estão bloqueados para edição.'}
+              {' — Modo de consulta.'}
+              {!isAdmin && ' Os campos estão bloqueados para edição.'}
             </span>
             {isAdmin && (
               <CButton
                 color="warning"
-                variant="outline"
                 size="sm"
+                className="text-white"
                 onClick={handleReopenWeek}
                 disabled={updateTimesheetStatusMutation.isPending}
               >
                 {updateTimesheetStatusMutation.isPending && <CSpinner size="sm" className="me-1" />}
+                <CIcon icon={cilActionUndo} className="me-1" />
                 Reabrir Semana
               </CButton>
             )}

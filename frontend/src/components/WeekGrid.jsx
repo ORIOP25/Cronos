@@ -148,17 +148,19 @@ const SlotCell = ({ slotEntries, isOperationalEnabled, onOpenOperationalAction }
   const canCreateOccurrence = slot.can_create_occurrence !== false
   const canDecideOccurrence = Boolean(slot.can_decide_occurrence)
 
+  const isWeekLocked = slot.week_timesheet_status === 'SUBMITTED' || slot.week_timesheet_status === 'APPROVED'
+
   const canOpenOperationalAction = Boolean(
     isOperationalEnabled
     && !hasCollision
     && slot.schedule_output_id
     && slot.date
     && typeof onOpenOperationalAction === 'function'
-    && (canCreateOccurrence || canDecideOccurrence)
+    && ((canCreateOccurrence || canDecideOccurrence) || isWeekLocked)
   )
 
   let operationalBlockReason = ''
-  if (isOperationalEnabled && !canOpenOperationalAction) {
+  if (isOperationalEnabled && !canOpenOperationalAction && !isWeekLocked) {
     if (hasCollision) {
       operationalBlockReason = 'Conflito no slot. Use a página de Faltas para análise.'
     } else if (!slot.schedule_output_id || !slot.date) {
@@ -195,7 +197,9 @@ const SlotCell = ({ slotEntries, isOperationalEnabled, onOpenOperationalAction }
     onOpenOperationalAction({
       schedule_output_id: slot.schedule_output_id,
       date: slot.date,
+      is_past: slot.is_past,
       occurrence_id: slot.occurrence_id,
+      occurrence_decided_at: slot.occurrence_decided_at,
       can_create_occurrence: canCreateOccurrence,
       can_decide_occurrence: canDecideOccurrence,
       timeslot: slot.timeslot,
@@ -204,10 +208,14 @@ const SlotCell = ({ slotEntries, isOperationalEnabled, onOpenOperationalAction }
       room: slot.room,
       class_info: slot.class_info,
       occurrence_status: slot.occurrence_status,
+      hours_given: slot.hours_given,
       lesson_log_id: slot.lesson_log_id,
       lesson_log_status: slot.lesson_log_status,
       lesson_log_summary: slot.lesson_log_summary,
       lesson_log_notes: slot.lesson_log_notes,
+      // WBS Fase 6: campos de fecho semanal
+      week_timesheet_status: slot.week_timesheet_status,
+      timesheet_id: slot.timesheet_id,
     })
   }
 
@@ -218,6 +226,7 @@ const SlotCell = ({ slotEntries, isOperationalEnabled, onOpenOperationalAction }
         ...cellStyle,
         fontSize: '0.78rem',
         minHeight: '60px',
+        ...(isWeekLocked ? { opacity: 0.55, filter: 'grayscale(0.5)' } : {}),
       }}
     >
       <div className="fw-semibold text-truncate" style={{ fontSize: '0.8rem' }}>
@@ -245,8 +254,14 @@ const SlotCell = ({ slotEntries, isOperationalEnabled, onOpenOperationalAction }
         {statusLabel}
       </div>
       {canOpenOperationalAction ? (
-        <div className="mt-1 text-primary fw-semibold" style={{ fontSize: '0.68rem' }}>
-          Registar
+        <div
+          className="mt-1 fw-semibold"
+          style={{
+            fontSize: '0.68rem',
+            color: isWeekLocked ? 'var(--cui-secondary)' : 'var(--cui-primary)',
+          }}
+        >
+          {isWeekLocked ? 'Consultar' : 'Registar'}
         </div>
       ) : null}
       {!canOpenOperationalAction && operationalBlockReason ? (

@@ -608,6 +608,13 @@ A página `/schedules` é para micro-management diário. A página `/timesheets`
 - **Total acumulado:** 21/21 testes em `test_lesson_registration.py` passam.
 - **Build frontend:** `npm run build` passa sem erros.
 
+### Bugs Corrigidos na Revisão Final (Fases 5+6+7)
+
+- **BUG CRÍTICO (WeekGrid):** O `handleOpenOperationalAction` no `WeekGrid.jsx` não passava `week_timesheet_status`, `timesheet_id`, `is_past`, `occurrence_decided_at` e `hours_given` ao callback. Isto fazia com que o `LessonLogModal` não recebesse estes campos quando aberto a partir da grelha, resultando no banner de semana fechada e botão "Reabrir" não aparecerem. Corrigido adicionando todos os campos em falta ao objeto passado ao callback.
+- **BUG (Timesheets):** O `Timesheets.jsx` importava e chamava `useTeachers()` sem o utilizar, causando uma query desnecessária ao servidor. Removido.
+- **BUG (LessonLogModal):** O botão "Substituição" não era `disabled` quando a semana estava fechada (`isLocked`). O admin podia clicar no botão e só recebia o erro depois (no `handleStartSubstitution`). Corrigido adicionando `&& !isLocked` à condição `canShowSubstitution`.
+- **NOTA:** O plano original (secção 5.1) descrevia "Dropdown de Sala Alternativa" e "Dropdown de Módulo a Lecionar" no `SubstitutionStep`. Estes campos não foram implementados porque o backend atual não suporta seleção de sala alternativa nas substituições. O componente simplificado usa um único dropdown de recomendações (professor+disciplina) que é suficiente para o fluxo funcional. Esta é uma redução de escopo aceitável.
+
 ---
 
 ## 5. Mapa de Testes GitHub Actions
