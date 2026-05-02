@@ -275,6 +275,8 @@ async def soft_reset_year(db: AsyncSession, org_id: int) -> bool:
         )
         .values(
             hours_completed=0.0,
+            hours_debt=0.0,
+            is_completed=False,
             updated_at=datetime.now(timezone.utc)
         )
     )

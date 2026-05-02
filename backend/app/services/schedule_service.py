@@ -886,6 +886,31 @@ def _build_week_slot(
     occ = occurrences.get(output.id)
     llog = lesson_logs.get(output.id)
     lesson = output.lesson
+    if not lesson:
+        return {
+            "schedule_output_id": output.id,
+            "date": output.date.isoformat() if output.date else None,
+            "timeslot": None,
+            "subject": None,
+            "teacher": None,
+            "room": None,
+            "class_info": None,
+            "module": None,
+            "is_past": output.date is not None and output.date < today,
+            "occurrence_status": None,
+            "hours_given": None,
+            "occurrence_id": None,
+            "occurrence_decided_at": None,
+            "can_create_occurrence": True,
+            "can_decide_occurrence": False,
+            "lesson_log_id": None,
+            "lesson_log_status": None,
+            "lesson_log_summary": None,
+            "lesson_log_notes": None,
+            "lesson_log_logged_at": None,
+            "week_timesheet_status": "OPEN",
+            "timesheet_id": None,
+        }
     ts = output.timeslot
     mod_data = active_modules.get((lesson.class_id, lesson.subject_id))
     has_occurrence = occ is not None

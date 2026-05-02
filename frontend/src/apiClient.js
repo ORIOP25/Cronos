@@ -30,6 +30,15 @@ apiClient.interceptors.response.use(
     const originalRequest = error.config || {};
     const isAuthRefresh = originalRequest.url?.includes('/auth/refresh');
 
+    // Se o retry original também falhou com 401, forçar logout imediato
+    if (error?.response?.status === 401 && originalRequest._retry) {
+      useAuthStore.getState().logout();
+      if (globalThis.location.pathname !== '/login') {
+        globalThis.location.href = '/login';
+      }
+      return Promise.reject(error);
+    }
+
     // Se recebermos um 401 (Unauthorized), tentamos refresh uma vez
     if (error?.response?.status === 401 && !originalRequest._retry && !isAuthRefresh) {
       originalRequest._retry = true;
@@ -44,7 +53,7 @@ apiClient.interceptors.response.use(
         refreshPromise = null;
         console.warn('⚠️ Sessão expirada ou inválida. A fazer logout...');
         useAuthStore.getState().logout();
-        localStorage.clear();
+        localStorage.removeItem('horario-zen-storage');
         if (globalThis.location.pathname !== '/login') {
           globalThis.location.href = '/login';
         }

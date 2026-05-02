@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import {
   CCard, CCardBody, CAlert, CBadge, CSpinner, CButton,
   CFormSelect, CRow, CCol,
+  CModal, CModalHeader, CModalTitle, CModalBody, CModalFooter,
 } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
 import {
@@ -112,6 +113,8 @@ const Timesheets = () => {
   const [statusFilter, setStatusFilter] = useState('ALL')
   const [selectedTeacherId, setSelectedTeacherId] = useState(null)
   const [modalSlot, setModalSlot] = useState(null)
+  const [statusActionError, setStatusActionError] = useState('')
+  const [showReopenConfirm, setShowReopenConfirm] = useState(false)
 
   const statusParam = statusFilter === 'ALL' ? undefined : statusFilter
   const {
@@ -150,10 +153,11 @@ const Timesheets = () => {
   }, [timesheets, selectedTeacherId])
 
   const handleUpdateStatus = async (timesheetId, status) => {
+    setStatusActionError('')
     try {
       await updateMutation.mutateAsync({ timesheetId, status })
     } catch (err) {
-      alert(err.response?.data?.detail || 'Erro ao alterar estado.')
+      setStatusActionError(err.response?.data?.detail || 'Erro ao alterar estado. Tente novamente.')
     }
   }
 
@@ -165,9 +169,14 @@ const Timesheets = () => {
 
   const handleReopen = () => {
     if (selectedTeacher && (selectedTeacher.status === 'SUBMITTED' || selectedTeacher.status === 'APPROVED')) {
-      if (window.confirm('Tem a certeza que deseja reabrir esta semana? O professor poderá editar as aulas novamente.')) {
-        handleUpdateStatus(selectedTeacher.id, 'OPEN')
-      }
+      setShowReopenConfirm(true)
+    }
+  }
+
+  const handleConfirmReopen = () => {
+    setShowReopenConfirm(false)
+    if (selectedTeacher) {
+      handleUpdateStatus(selectedTeacher.id, 'OPEN')
     }
   }
 
@@ -247,6 +256,12 @@ const Timesheets = () => {
           </div>
         </CCardBody>
       </CCard>
+
+      {statusActionError && (
+        <CAlert color="danger" className="mb-4">
+          {statusActionError}
+        </CAlert>
+      )}
 
       {timesheetsError && (
         <CAlert color="danger" className="mb-4">
@@ -418,6 +433,30 @@ const Timesheets = () => {
           </CCard>
         </CCol>
       </CRow>
+
+      {/* Confirmation modal for reopen */}
+      <CModal visible={showReopenConfirm} onClose={() => setShowReopenConfirm(false)} alignment="center">
+        <CModalHeader>
+          <CModalTitle>Confirmar Reabertura</CModalTitle>
+        </CModalHeader>
+        <CModalBody>
+          Tem a certeza que deseja reabrir esta semana? O professor poderá editar as aulas novamente.
+        </CModalBody>
+        <CModalFooter>
+          <CButton color="secondary" variant="outline" onClick={() => setShowReopenConfirm(false)}>
+            Cancelar
+          </CButton>
+          <CButton
+            color="warning"
+            className="text-white"
+            onClick={handleConfirmReopen}
+            disabled={updateMutation.isPending}
+          >
+            {updateMutation.isPending && <CSpinner size="sm" className="me-1" />}
+            Sim, reabrir
+          </CButton>
+        </CModalFooter>
+      </CModal>
 
       {/* LessonLogModal for direct interaction */}
       <LessonLogModal

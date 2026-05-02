@@ -34,7 +34,7 @@ export const useTeachers = ({ enabled = true } = {}) => {
       const { data } = await apiClient.get('/import/teachers')
       return data
     },
-    enabled,
+    enabled: Boolean(orgId) && enabled,
     ...STATIC_OPTS
   })
 }
@@ -47,6 +47,7 @@ export const useRooms = () => {
       const { data } = await apiClient.get('/import/rooms')
       return data
     },
+    enabled: Boolean(orgId),
     ...STATIC_OPTS
   })
 }
@@ -59,6 +60,7 @@ export const useSubjects = () => {
       const { data } = await apiClient.get('/import/subjects')
       return data
     },
+    enabled: Boolean(orgId),
     ...STATIC_OPTS
   })
 }
@@ -71,7 +73,7 @@ export const useClasses = ({ enabled = true } = {}) => {
       const { data } = await apiClient.get('/classes/')
       return data
     },
-    enabled,
+    enabled: Boolean(orgId) && enabled,
     ...STATIC_OPTS
   })
 }
@@ -84,6 +86,7 @@ export const useLessons = () => {
       const { data } = await apiClient.get('/import/lessons')
       return data
     },
+    enabled: Boolean(orgId),
     ...STATIC_OPTS
   })
 }

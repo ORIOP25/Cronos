@@ -42,9 +42,10 @@ def upsert_lesson_log_sync(
 
     # 2. Bloqueio no tempo (Viagens ao futuro)
     timeslot = output.timeslot
-    end_datetime = datetime.combine(output.date, timeslot.end_time)
+    from datetime import timezone
+    end_datetime = datetime.combine(output.date, timeslot.end_time, tzinfo=timezone.utc)
     if payload.status in (models.LessonLogStatus.COMPLETED, models.LessonLogStatus.OCCURRENCE):
-        if end_datetime > datetime.now():
+        if end_datetime > datetime.now(timezone.utc):
             raise HTTPException(status_code=400, detail="Não é possível registar estado para uma aula que ainda não terminou.")
 
     # 3. Check if the timesheet for this week is submitted/approved

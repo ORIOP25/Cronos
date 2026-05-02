@@ -219,6 +219,8 @@ const SlotCell = ({ slotEntries, isOperationalEnabled, onOpenOperationalAction }
     })
   }
 
+  const isDraft = slot.is_draft === true
+
   const cardContent = (
     <div
       className={cellClassName}
@@ -227,6 +229,7 @@ const SlotCell = ({ slotEntries, isOperationalEnabled, onOpenOperationalAction }
         fontSize: '0.78rem',
         minHeight: '60px',
         ...(isWeekLocked ? { opacity: 0.55, filter: 'grayscale(0.5)' } : {}),
+        ...(isDraft ? { borderStyle: 'dashed', borderWidth: '2px', borderColor: 'var(--cui-secondary)' } : {}),
       }}
     >
       <div className="fw-semibold text-truncate" style={{ fontSize: '0.8rem' }}>
@@ -241,6 +244,11 @@ const SlotCell = ({ slotEntries, isOperationalEnabled, onOpenOperationalAction }
       {hasCollision ? (
         <div className="badge text-bg-danger mt-1" style={{ fontSize: '0.66rem' }}>
           Conflito x{slotEntries.length}
+        </div>
+      ) : null}
+      {isDraft ? (
+        <div className="badge text-bg-secondary mt-1" style={{ fontSize: '0.66rem' }}>
+          Rascunho
         </div>
       ) : null}
       <div
@@ -272,13 +280,23 @@ const SlotCell = ({ slotEntries, isOperationalEnabled, onOpenOperationalAction }
     </div>
   )
 
+  const ariaLabel = slot
+    ? `${slot.subject?.name ?? 'Sem disciplina'}, ${slot.teacher?.name ?? ''}, ${slot.room?.name ?? ''}, ${statusLabel}`
+    : 'Célula vazia'
+
   return (
-    <td title={titleText} style={{ padding: '4px', verticalAlign: 'top' }}>
+    <td
+      title={titleText}
+      style={{ padding: '4px', verticalAlign: 'top' }}
+      role="gridcell"
+      aria-label={ariaLabel}
+    >
       <button
         type="button"
         onClick={handleOpenOperationalAction}
         disabled={!canOpenOperationalAction}
         className="w-100 text-start"
+        aria-label={canOpenOperationalAction ? `Abrir registo de ${slot.subject?.name ?? 'aula'}` : undefined}
         style={{
           border: 'none',
           background: 'transparent',
@@ -391,12 +409,26 @@ const WeekGrid = ({
       <table
         className="table table-bordered table-sm align-middle mb-0"
         style={{ tableLayout: 'fixed' }}
+        role="grid"
+        aria-label="Grelha semanal de horários"
       >
         <thead className="table-light">
           <tr>
-            <th className="text-center align-middle" style={{ width: '96px', fontSize: '0.8rem' }}>Horário</th>
+            <th
+              className="text-center align-middle"
+              style={{ width: '96px', fontSize: '0.8rem' }}
+              scope="col"
+            >
+              Horário
+            </th>
             {activeDays.map(d => (
-              <th key={d} className="text-center" style={{ fontSize: '0.8rem' }}>
+              <th
+                key={d}
+                className="text-center"
+                style={{ fontSize: '0.8rem' }}
+                scope="col"
+                aria-label={`${DAY_LABELS[d]} ${formatDateLabel(dayDateMap[d])}`}
+              >
                 <div>{DAY_LABELS[d]}</div>
                 <div className="text-muted fw-normal" style={{ fontSize: '0.72rem' }}>
                   {formatDateLabel(dayDateMap[d])}
@@ -411,6 +443,8 @@ const WeekGrid = ({
               <td
                 className="fw-bold text-muted bg-light text-center"
                 style={{ fontSize: '0.75rem', whiteSpace: 'nowrap', verticalAlign: 'middle' }}
+                scope="row"
+                aria-label={`${time} – ${endTimeMap[time] ?? ''}`}
               >
                 {time}
                 <br />

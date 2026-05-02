@@ -1500,7 +1500,7 @@ button:focus-visible {
    GENERAL POLISH
    =========================== */
 body {
-  font-family: 'Inter', 'Segoe UI', -apple-system, sans-serif;
+  font-family: var(--font-body);
   -webkit-font-smoothing: antialiased;
   background-color: var(--rs-body-bg);
 }

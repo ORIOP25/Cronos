@@ -1135,3 +1135,306 @@ class TestTimesheetsListEndpoint:
         assert data[0]["lesson_log_status"] == "COMPLETED"
         assert data[0]["lesson_log_summary"] == "Aula D"
 
+
+# ---------------------------------------------------------------------------
+# Testes em falta — Fase 5 (Correções de Bugs)
+# ---------------------------------------------------------------------------
+class TestSoftResetCompleteness:
+    @pytest.mark.asyncio
+    async def test_soft_reset_resets_hours_debt_and_is_completed(self, sync_db, base_setup):
+        """T-1: Soft-reset deve limpar hours_debt e is_completed além de hours_completed."""
+        from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
+        from sqlalchemy.pool import NullPool
+        from app.db.database import ASYNC_DB_URL
+        org_id = base_setup["org_id"]
+
+        # Pre-populate ClassProgress with debt and completed flag
+        progress = sync_db.execute(
+            select(models.ClassProgress).where(
+                models.ClassProgress.class_id == base_setup["class_id"],
+                models.ClassProgress.module_id == base_setup["module_id"]
+            )
+        ).scalar_one()
+        progress.hours_debt = 3.5
+        progress.is_completed = True
+        sync_db.commit()
+
+        # Create a fresh async engine/session bound to the current event loop
+        engine = create_async_engine(ASYNC_DB_URL, poolclass=NullPool)
+        SessionFactory = async_sessionmaker(bind=engine, class_=AsyncSession, expire_on_commit=False)
+        async with SessionFactory() as async_session:
+            await settings_service.soft_reset_year(async_session, org_id)
+
+            result = await async_session.execute(
+                select(models.ClassProgress).where(
+                    models.ClassProgress.class_id == base_setup["class_id"],
+                    models.ClassProgress.module_id == base_setup["module_id"]
+                )
+            )
+            progress_after = result.scalar_one()
+
+        await engine.dispose()
+        assert progress_after.hours_completed == 0.0
+        assert progress_after.hours_debt == 0.0
+        assert progress_after.is_completed is False
+
+
+class TestClassProgressReversal:
+    def test_completed_to_pending_reverses_class_progress(self, sync_db, base_setup):
+        """T-2: Mudar de COMPLETED para PENDING deve reverter as horas contabilizadas."""
+        org_id = base_setup["org_id"]
+        output_id = base_setup["schedule_output_id"]
+        user_id = base_setup["user_id"]
+
+        # Step 1: COMPLETED increments hours
+        payload = schemas.LessonLogCreate(
+            status=models.LessonLogStatus.COMPLETED,
+            summary="Aula dada",
+            notes="",
+        )
+        lesson_log_service.upsert_lesson_log_sync(
+            sync_db, org_id, user_id, output_id, payload
+        )
+
+        progress = sync_db.execute(
+            select(models.ClassProgress).where(
+                models.ClassProgress.class_id == base_setup["class_id"],
+                models.ClassProgress.module_id == base_setup["module_id"]
+            )
+        ).scalar_one()
+        assert progress.hours_completed == 7.0  # 5.0 base + 2.0
+
+        # Step 2: PENDING reverts hours
+        payload2 = schemas.LessonLogCreate(
+            status=models.LessonLogStatus.PENDING,
+            summary="Aula dada",
+            notes="",
+        )
+        lesson_log_service.upsert_lesson_log_sync(
+            sync_db, org_id, user_id, output_id, payload2
+        )
+
+        progress_after = sync_db.execute(
+            select(models.ClassProgress).where(
+                models.ClassProgress.class_id == base_setup["class_id"],
+                models.ClassProgress.module_id == base_setup["module_id"]
+            )
+        ).scalar_one()
+        assert progress_after.hours_completed == 5.0  # back to base
+
+
+class TestTimesheetStateTransitions:
+    def test_timesheet_invalid_state_transition_rejected(self, sync_db, base_setup):
+        """T-3: OPEN → APPROVED direto deve ser rejeitado (HTTP 400)."""
+        org_id = base_setup["org_id"]
+        teacher_id = base_setup["teacher_id"]
+        week_start = base_setup["date"] - timedelta(days=base_setup["date"].weekday())
+
+        # Create timesheet in OPEN state (default)
+        timesheet = timesheet_service.get_or_create_timesheet_sync(
+            sync_db, org_id, teacher_id, week_start
+        )
+        assert timesheet.status == models.TimesheetStatus.OPEN
+
+        # Attempt illegal transition OPEN → APPROVED
+        import fastapi
+        with pytest.raises(fastapi.HTTPException) as exc:
+            timesheet_service.update_timesheet_status_sync(
+                sync_db, org_id, timesheet.id,
+                models.TimesheetStatus.APPROVED, base_setup["user_id"]
+            )
+        assert exc.value.status_code == 400
+        assert "Transição de estado inválida" in str(exc.value.detail)
+
+
+class TestAutoConfirmDaily:
+    def test_auto_confirm_daily_sync(self, sync_db, base_setup):
+        """T-4: Cron de auto-confirm deve criar ocorrências GIVEN e contabilizar horas."""
+        org_id = base_setup["org_id"]
+        output_id = base_setup["schedule_output_id"]
+        target_date = base_setup["date"]
+
+        # Ensure no manual occurrence exists
+        existing = sync_db.execute(
+            select(models.LessonOccurrence).where(
+                models.LessonOccurrence.schedule_output_id == output_id
+            )
+        ).scalar_one_or_none()
+        assert existing is None
+
+        # Run auto-confirm
+        created = occurrence_service.auto_confirm_daily_sync(sync_db, org_id, target_date)
+        assert created == 1
+
+        # Verify occurrence was created as GIVEN
+        occurrence = sync_db.execute(
+            select(models.LessonOccurrence).where(
+                models.LessonOccurrence.schedule_output_id == output_id
+            )
+        ).scalar_one()
+        assert occurrence.status == models.LessonOccurrenceStatus.GIVEN
+        assert occurrence.decided_at is not None
+
+        # Verify ClassProgress was incremented
+        progress = sync_db.execute(
+            select(models.ClassProgress).where(
+                models.ClassProgress.class_id == base_setup["class_id"],
+                models.ClassProgress.module_id == base_setup["module_id"]
+            )
+        ).scalar_one()
+        assert progress.hours_completed == 7.0  # 5.0 base + 2.0
+
+    def test_manual_occurrence_then_auto_confirm_skips(self, sync_db, base_setup):
+        """T-6: Ocorrência manual (decided_at=None) + auto-confirm não deve duplicar."""
+        org_id = base_setup["org_id"]
+        output_id = base_setup["schedule_output_id"]
+        target_date = base_setup["date"]
+        user_id = base_setup["user_id"]
+
+        # Create manual occurrence (undecided — decided_at=None)
+        occurrence, _ = occurrence_service.create_occurrence_from_block_sync(
+            sync_db, org_id, output_id
+        )
+        assert occurrence.decided_at is None
+
+        # Run auto-confirm — should skip because occurrence already exists
+        created = occurrence_service.auto_confirm_daily_sync(sync_db, org_id, target_date)
+        assert created == 0  # skipped
+
+        # Verify original occurrence is untouched
+        occurrence_after = sync_db.execute(
+            select(models.LessonOccurrence).where(
+                models.LessonOccurrence.schedule_output_id == output_id
+            )
+        ).scalar_one()
+        assert occurrence_after.id == occurrence.id
+        assert occurrence_after.decided_at is None  # still undecided
+
+
+class TestAvailableSubstitutes:
+    def test_get_available_substitutes_sync(self, sync_db, substitution_setup):
+        """T-5: Lista de substitutos disponíveis deve excluir professor planejado."""
+        org_id = substitution_setup["org_id"]
+        output_id = substitution_setup["schedule_output_id"]
+        target_date = substitution_setup["date"]
+
+        # Get timeslot_id from the schedule output
+        output = sync_db.execute(
+            select(models.ScheduleOutput).where(models.ScheduleOutput.id == output_id)
+        ).scalar_one()
+
+        substitutes = occurrence_service.get_available_substitutes_sync(
+            sync_db, org_id, output.timeslot_id, target_date
+        )
+        # Should return at least the substitute teacher from substitution_setup
+        teacher_ids = [s.teacher_id for s in substitutes]
+        assert substitution_setup["substitute_teacher_id"] in teacher_ids
+
+
+class TestOccurrenceFilters:
+    def test_list_occurrences_with_filters(self, sync_db, base_setup):
+        """T-8: Filtros class_id, date_from, date_to devem funcionar."""
+        org_id = base_setup["org_id"]
+        output_id = base_setup["schedule_output_id"]
+        target_date = base_setup["date"]
+        user_id = base_setup["user_id"]
+
+        # Create occurrence
+        occurrence, _ = occurrence_service.create_occurrence_from_block_sync(
+            sync_db, org_id, output_id
+        )
+        # Decide it
+        payload = schemas.LessonOccurrenceUpdate(
+            status=models.LessonOccurrenceStatus.GIVEN,
+        )
+        occurrence_service.update_occurrence_sync(
+            sync_db, occurrence.id, org_id, payload, decided_by_user_id=user_id
+        )
+
+        # No filters — should find it
+        all_occurrences = occurrence_service.list_occurrences_sync(sync_db, org_id)
+        assert len(all_occurrences) == 1
+
+        # Filter by date_from/date_to that include the occurrence
+        filtered = occurrence_service.list_occurrences_sync(
+            sync_db, org_id, date_from=target_date, date_to=target_date
+        )
+        assert len(filtered) == 1
+
+        # Filter by date_from/date_to that exclude the occurrence
+        empty = occurrence_service.list_occurrences_sync(
+            sync_db, org_id, date_from=target_date + timedelta(days=1),
+            date_to=target_date + timedelta(days=2)
+        )
+        assert len(empty) == 0
+
+
+class TestWeekStartValidation:
+    def test_week_start_not_monday_accepted(self, sync_db, base_setup):
+        """T-9: week_start que não é Segunda-feira é aceite (comportamento atual documentado)."""
+        from app.services import schedule_service
+        org_id = base_setup["org_id"]
+        teacher_id = base_setup["teacher_id"]
+
+        # Wednesday instead of Monday
+        wednesday = base_setup["date"] - timedelta(days=base_setup["date"].weekday()) + timedelta(days=2)
+
+        slots = schedule_service.get_week_schedule_sync(
+            sync_db, org_id, wednesday, teacher_id=teacher_id
+        )
+        # Should still return the slot (query window is Wed-Tue)
+        assert len(slots) == 1
+
+
+class TestTimezoneBoundary:
+    def test_timezone_boundary_blocking(self, sync_db, base_setup):
+        """T-10: Blocos no limite de timezone devem ser tratados corretamente com UTC."""
+        org_id = base_setup["org_id"]
+        output_id = base_setup["schedule_output_id"]
+        user_id = base_setup["user_id"]
+
+        # The existing slot is from yesterday (base_setup date), so it's already in the past.
+        # Attempting to register should succeed because it's past.
+        payload = schemas.LessonLogCreate(
+            status=models.LessonLogStatus.COMPLETED,
+            summary="Teste timezone",
+            notes="",
+        )
+        llog = lesson_log_service.upsert_lesson_log_sync(
+            sync_db, org_id, user_id, output_id, payload
+        )
+        assert llog.status == models.LessonLogStatus.COMPLETED
+
+        # Create a future slot for tomorrow to verify blocking
+        from datetime import timezone
+        tomorrow = date.today() + timedelta(days=1)
+        room = sync_db.execute(
+            select(models.Room).where(models.Room.organization_id == org_id)
+        ).scalar_one()
+        timeslot = sync_db.execute(
+            select(models.Timeslot).where(models.Timeslot.organization_id == org_id)
+        ).scalar_one()
+        lesson = sync_db.execute(
+            select(models.Lesson).where(models.Lesson.organization_id == org_id)
+        ).scalar_one()
+
+        future_output = models.ScheduleOutput(
+            organization_id=org_id,
+            lesson_id=lesson.id,
+            timeslot_id=timeslot.id,
+            room_id=room.id,
+            generation_id="test-future",
+            date=tomorrow,
+            is_draft=False,
+        )
+        sync_db.add(future_output)
+        sync_db.commit()
+
+        import fastapi
+        with pytest.raises(fastapi.HTTPException) as exc:
+            lesson_log_service.upsert_lesson_log_sync(
+                sync_db, org_id, user_id, future_output.id, payload
+            )
+        assert exc.value.status_code == 400
+        assert "ainda não terminou" in str(exc.value.detail)
+

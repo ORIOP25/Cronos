@@ -45,6 +45,7 @@ const LessonLogModal = ({ visible, onClose, slot, isAdmin = false }) => {
   const [step, setStep] = useState(1)
   const [occurrenceId, setOccurrenceId] = useState(null)
   const [substitutionError, setSubstitutionError] = useState('')
+  const [showReopenConfirm, setShowReopenConfirm] = useState(false)
 
   const upsertLogMutation = useUpsertLessonLog()
   const createOccurrenceMutation = useCreateOccurrence()
@@ -67,8 +68,19 @@ const LessonLogModal = ({ visible, onClose, slot, isAdmin = false }) => {
     }
   }, [visible, slot])
 
+  const MAX_SUMMARY_LENGTH = 2000
+  const MAX_NOTES_LENGTH = 1000
+
   const handleSubmit = async (status) => {
     setErrorMessage('')
+    if (summary.length > MAX_SUMMARY_LENGTH) {
+      setErrorMessage(`O sumário excede o tamanho máximo permitido (${MAX_SUMMARY_LENGTH} caracteres).`)
+      return
+    }
+    if (notes.length > MAX_NOTES_LENGTH) {
+      setErrorMessage(`As notas excedem o tamanho máximo permitido (${MAX_NOTES_LENGTH} caracteres).`)
+      return
+    }
     try {
       await upsertLogMutation.mutateAsync({
         scheduleOutputId: slot.schedule_output_id,
@@ -148,7 +160,11 @@ const LessonLogModal = ({ visible, onClose, slot, isAdmin = false }) => {
       setErrorMessage('Não foi possível identificar a timesheet desta semana.')
       return
     }
-    if (!window.confirm('Tem a certeza que deseja reabrir esta semana? O professor poderá editar as aulas novamente.')) return
+    setShowReopenConfirm(true)
+  }
+
+  const handleConfirmReopen = async () => {
+    setShowReopenConfirm(false)
     try {
       await updateTimesheetStatusMutation.mutateAsync({
         timesheetId: slot.timesheet_id,
@@ -284,28 +300,67 @@ const LessonLogModal = ({ visible, onClose, slot, isAdmin = false }) => {
           <>
             {/* Lesson log form */}
             <div className="mb-3">
-              <label className="form-label fw-semibold">Sumário</label>
+              <label htmlFor="lessonSummary" className="form-label fw-semibold">Sumário</label>
               <CFormTextarea
+                id="lessonSummary"
                 rows={3}
                 placeholder="Sumário descritivo da aula..."
                 value={summary}
                 onChange={(e) => setSummary(e.target.value)}
                 disabled={isLocked}
+                maxLength={MAX_SUMMARY_LENGTH}
               />
+              <div className="text-muted text-end small mt-1" style={{ fontSize: '0.7rem' }}>
+                {summary.length}/{MAX_SUMMARY_LENGTH}
+              </div>
             </div>
             <div className="mb-3">
-              <label className="form-label fw-semibold">Notas Opcionais</label>
+              <label htmlFor="lessonNotes" className="form-label fw-semibold">Notas Opcionais</label>
               <CFormTextarea
+                id="lessonNotes"
                 rows={2}
                 placeholder="Anotações para uso interno ou partilha com direção..."
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
                 disabled={isLocked}
+                maxLength={MAX_NOTES_LENGTH}
               />
+              <div className="text-muted text-end small mt-1" style={{ fontSize: '0.7rem' }}>
+                {notes.length}/{MAX_NOTES_LENGTH}
+              </div>
             </div>
           </>
         )}
       </CModalBody>
+
+      {showReopenConfirm && (
+        <CAlert color="warning" className="mx-3 mb-0 d-flex align-items-center justify-content-between flex-wrap gap-2">
+          <span>
+            <strong>Reabrir semana?</strong>{' '}
+            O professor poderá editar as aulas novamente.
+          </span>
+          <div className="d-flex gap-2">
+            <CButton
+              color="secondary"
+              variant="outline"
+              size="sm"
+              onClick={() => setShowReopenConfirm(false)}
+            >
+              Cancelar
+            </CButton>
+            <CButton
+              color="warning"
+              size="sm"
+              className="text-white"
+              onClick={handleConfirmReopen}
+              disabled={updateTimesheetStatusMutation.isPending}
+            >
+              {updateTimesheetStatusMutation.isPending && <CSpinner size="sm" className="me-1" />}
+              Sim, reabrir
+            </CButton>
+          </div>
+        </CAlert>
+      )}
 
       {step === 1 && (
         <CModalFooter>

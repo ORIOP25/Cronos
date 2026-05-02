@@ -400,8 +400,9 @@ def _validate_substitute_for_occurrence(
     if substitute_teacher_id == lesson.teacher_id:
         raise OccurrenceServiceError(status_code=409, detail=ERR_SUBSTITUTE_SAME_PLANNED_TEACHER)
 
-    if substitute_subject_id == planned_subject_id:
-        raise OccurrenceServiceError(status_code=409, detail=ERR_SUBSTITUTE_NOT_ELIGIBLE)
+    # Nota: permitir substituição com a mesma disciplina é um cenário válido
+    # (ex: prof. de Matemática falta → outro prof. de Matemática substitui).
+    # A validação de elegibilidade é feita pela query de link abaixo.
 
     link = db.execute(
         select(models.ClassSubjectLink)
@@ -861,6 +862,8 @@ def list_occurrences_sync(
     class_id: Optional[int] = None,
     date_from: Optional[date] = None,
     date_to: Optional[date] = None,
+    skip: int = 0,
+    limit: int = 100,
 ) -> list[models.LessonOccurrence]:
     """Lista ocorrências com filtros opcionais."""
     stmt = (
@@ -909,6 +912,7 @@ def list_occurrences_sync(
         models.Timeslot.start_time.asc().nulls_last(),
         models.LessonOccurrence.id.asc(),
     )
+    stmt = stmt.offset(skip).limit(limit)
     occurrences = list(db.execute(stmt).scalars().unique())
     for occurrence in occurrences:
         _attach_occurrence_read_context(occurrence)

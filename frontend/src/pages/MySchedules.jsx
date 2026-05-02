@@ -246,14 +246,17 @@ function MySchedules() {
     return true
   }, [weekSlots, timesheet])
 
+  const [submitError, setSubmitError] = useState('')
+
   const handleSubmitWeek = async () => {
     if (!window.confirm('Tem a certeza que deseja submeter esta semana? Não poderá fazer mais alterações.')) {
       return
     }
+    setSubmitError('')
     try {
       await submitMutation.mutateAsync(weekStart)
     } catch (err) {
-      alert(err.response?.data?.detail || 'Erro ao submeter a semana.')
+      setSubmitError(err.response?.data?.detail || 'Erro ao submeter a semana. Tente novamente.')
     }
   }
 
@@ -420,6 +423,12 @@ function MySchedules() {
               {HORIZON_DEGRADED_FEEDBACK_MESSAGE}
             </CAlert>
           ) : null}
+
+          {submitError && (
+            <CAlert color="danger" className="mb-3">
+              {submitError}
+            </CAlert>
+          )}
 
           {hasWeekFallback ? (
             <CAlert color="warning" className="mb-3">

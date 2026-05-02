@@ -216,6 +216,14 @@ def list_timesheets_sync(
         })
     return result
 
+# Transições válidas do ciclo de vida do fecho semanal
+ALLOWED_TIMESHEET_TRANSITIONS = {
+    models.TimesheetStatus.OPEN: {models.TimesheetStatus.OPEN, models.TimesheetStatus.SUBMITTED},
+    models.TimesheetStatus.SUBMITTED: {models.TimesheetStatus.SUBMITTED, models.TimesheetStatus.APPROVED, models.TimesheetStatus.OPEN},
+    models.TimesheetStatus.APPROVED: {models.TimesheetStatus.APPROVED, models.TimesheetStatus.OPEN},
+}
+
+
 def update_timesheet_status_sync(
     db: Session,
     org_id: int,
@@ -227,19 +235,26 @@ def update_timesheet_status_sync(
         models.TeacherWeeklyTimesheet.id == timesheet_id,
         models.TeacherWeeklyTimesheet.org_id == org_id
     ).first()
-    
+
     if not timesheet:
         raise HTTPException(status_code=404, detail="Timesheet não encontrada.")
-        
+
+    current = timesheet.status
+    allowed = ALLOWED_TIMESHEET_TRANSITIONS.get(current, set())
+    if status not in allowed:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Transição de estado inválida: {current.value} → {status.value}."
+        )
+
     timesheet.status = status
     if status == models.TimesheetStatus.APPROVED:
         timesheet.approved_at = datetime.now(timezone.utc)
         timesheet.approved_by_user_id = admin_user_id
     elif status == models.TimesheetStatus.OPEN:
-        # Se for reaberta, limpa os campos de auditoria
+        # Se for reaberta, limpa os campos de aprovação mas preserva a data de submissão
         timesheet.approved_at = None
         timesheet.approved_by_user_id = None
-        timesheet.submitted_at = None
         
     db.commit()
     db.refresh(timesheet)

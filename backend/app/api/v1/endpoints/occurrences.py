@@ -30,18 +30,6 @@ router = APIRouter()
 
 
 # ---------------------------------------------------------------------------
-# Helpers síncronos executados via run_sync
-# ---------------------------------------------------------------------------
-
-def _get_sync_db():
-    """Cria uma sessão síncrona para as operações do serviço."""
-    db = SessionLocalSync()
-    try:
-        yield db
-    finally:
-        db.close()
-
-
 # ---------------------------------------------------------------------------
 # Rotas
 # ---------------------------------------------------------------------------
@@ -57,13 +45,16 @@ async def list_occurrences(
     class_id: Optional[int] = Query(None, description="Filtrar por turma"),
     date_from: Optional[date] = Query(None, description="Data de início (YYYY-MM-DD)"),
     date_to: Optional[date] = Query(None, description="Data de fim (YYYY-MM-DD)"),
+    skip: int = Query(0, ge=0, description="Registos a saltar"),
+    limit: int = Query(100, ge=1, le=500, description="Máximo de registos a devolver"),
 ):
     """Devolve ocorrências de aulas com filtros opcionais."""
     org_id = current_user.organization_id
 
     def _run(sync_db):
         return occurrence_service.list_occurrences_sync(
-            sync_db, org_id, class_id=class_id, date_from=date_from, date_to=date_to
+            sync_db, org_id, class_id=class_id, date_from=date_from, date_to=date_to,
+            skip=skip, limit=limit,
         )
 
     return await db.run_sync(_run)

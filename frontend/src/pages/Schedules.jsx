@@ -641,7 +641,11 @@ const Schedules = () => {
       if (result?.task_id) setActiveTaskId(result.task_id)
     } catch (err) {
       const problems = err?.response?.data?.detail?.problems
-      if (Array.isArray(problems)) setPreflightErrors(problems)
+      if (Array.isArray(problems)) {
+        setPreflightErrors(problems)
+      } else {
+        setGenerationActionError(err?.response?.data?.detail || err?.message || 'Erro ao iniciar a geração. Verifique a ligação e tente novamente.')
+      }
     }
   }
 
@@ -887,8 +891,14 @@ const Schedules = () => {
             <DraftPanel
               key={draft.generation_id}
               draft={draft}
-              onApprove={(genId) => approveMutation.mutateAsync(genId)}
-              onReject={(genId) => rejectMutation.mutateAsync(genId)}
+              onApprove={async (genId) => {
+                try { await approveMutation.mutateAsync(genId) }
+                catch (err) { setGenerationActionError(err.response?.data?.detail || 'Erro ao aprovar rascunho.') }
+              }}
+              onReject={async (genId) => {
+                try { await rejectMutation.mutateAsync(genId) }
+                catch (err) { setGenerationActionError(err.response?.data?.detail || 'Erro ao rejeitar rascunho.') }
+              }}
               isApproving={approveMutation.isPending}
               isRejecting={rejectMutation.isPending}
             />

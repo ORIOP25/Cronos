@@ -704,8 +704,11 @@ async def trigger_generation(
         r = _get_redis_client()
         r.setex(_task_org_key(task.id), TASK_KEY_TTL_SECONDS, str(org_id))
         r.setex(_active_task_by_org_key(org_id), TASK_KEY_TTL_SECONDS, task.id)
-    except Exception:
-        pass
+    except Exception as redis_err:
+        import logging
+        logging.getLogger("horariozen.schedule").warning(
+            "Redis indisponível ao registar task %s: %s", task.id, redis_err
+        )
     return {
         "task_id": task.id,
         "status": "Processing started",
