@@ -1,12 +1,23 @@
-# Ficheiros candidatos a apagar (apos migracao)
-Nenhum ficheiro foi apagado agora.
+# Ficheiros Candidatos a Apagar
 
-## Candidatos (apenas depois de extrair conteudo util)
-- documentation/GERADOR_HORARIOS_PLANO.md (conteudo muito grande e parcialmente desatualizado; pode ser substituido por docs tematicos)
-- documentation/ANALISE_ENDPOINT_RESUMO.md (possivel duplicacao com BEST_PRACTICES_ENDPOINTS.md)
-- documentation/sonar_low_issues.json (se backlog consolidado em markdown)
-- documentation/sonar_medium_issues.json (se backlog consolidado em markdown)
-- documentation/sonar_high_issues.json (se backlog consolidado em markdown)
+## ✅ Já Apagados (Auditoria Alpha 1.0)
+- `documentation/GERADOR_HORARIOS_PLANO.md` — removido (legacy, conteúdo desatualizado)
+- `documentation/ANALISE_ENDPOINT_RESUMO.md` — removido (duplicação com BEST_PRACTICES_ENDPOINTS.md)
+- `documentation/sonar_low_issues.json` — removido
+- `documentation/sonar_medium_issues.json` — removido
+- `documentation/sonar_high_issues.json` — removido
+- `frontend/src/components/ImportForms/LessonForm.jsx` — removido (deprecado)
+- `frontend/src/pages/ServiceDistribution.jsx` — removido (deprecado)
+- `frontend/src/assets/marketing/` — removido (diretório vazio)
+- `frontend/src/components/luxury/` — removido (diretório vazio)
+- `backend/scripts/` — repovoado com scripts de manutenção
 
-## Observacao
-Apagar so apos: migracao concluida, validacao de cobertura e aprovacao manual.
+## ✅ Já Movidos
+- `plan.md` → `documentation/10_migration_map/plan.md`
+
+## ✅ Já Arquivados
+- Reports Fase A-G do Solver V2 → `03_scheduler_engine/archive/`
+- WBS Solver V2 (3 ficheiros) → `03_scheduler_engine/archive/`
+- IMPLEMENTACAO_OCORRENCIAS_DIVIDA_E_REGISTOS → `04_operational_features/archive/`
+
+## Nenhum ficheiro pendente de limpeza.

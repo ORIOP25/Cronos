@@ -11,10 +11,10 @@ import {
 
 // Importar componentes
 import SimpleEntityForm from '../components/ImportForms/SimpleEntityForm'
-import TimeslotForm from '../components/ImportForms/TimeslotForm'
+import TimeslotImportForm from '../components/ImportForms/TimeslotImportForm'
 import SmartTable from '../components/SmartTable'
 import BulkImportModal from '../components/ImportForms/BulkImportModal'
-import RoomForm from '../components/ImportForms/RoomForm'
+import RoomImportForm from '../components/ImportForms/RoomImportForm'
 import GlobalImportModal from '../components/ImportForms/GlobalImportModal' // <--- 1. IMPORTAÇÃO DO MODAL
 
 // --- Funções API para criação (já existiam) ---
@@ -221,7 +221,7 @@ const RoomsManager = () => {
         </CButton>
       </div>
 
-      <RoomForm onSuccessCallback={() => queryClient.invalidateQueries(['roomsList'])} />
+      <RoomImportForm onSuccessCallback={() => queryClient.invalidateQueries(['roomsList'])} />
       <hr className="my-4"/>
       <SmartTable isLoading={isLoading} data={list} columns={[{ key: 'name', label: 'Sala' }, { key: 'type', label: 'Tipo' }]} onDelete={(id) => deleteMut.mutate(id)} />
 
@@ -289,7 +289,7 @@ const ImportWizard = () => {
             
             <CTabPane visible={activeKey === 5}>
                 {/* Nota: Timeslots ainda não têm Gestor (apenas form), podemos fazer no futuro */}
-                <TimeslotForm />
+                <TimeslotImportForm />
             </CTabPane>
           </CTabContent>
         </CCol>

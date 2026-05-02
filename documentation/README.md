@@ -66,6 +66,11 @@ Ficheiros principais:
 - Evitar detalhes especulativos.
 - Priorizar rastreabilidade entre decisao de negocio e impacto tecnico.
 
+## Documentos Transversais
+
+- [CONTRIBUTING.md](00_governance/CONTRIBUTING.md) — Guia de contribuicao (Alembic, estilo, CI)
+- [AUDITORIA_ARQUITETURAL_ALPHA_1.0.md](08_security_quality/AUDITORIA_ARQUITETURAL_ALPHA_1.0.md) — Auditoria de qualidade (28 findings, Maio 2026)
+
 ## Planeamento de entrega
 
 - WBS oficial da Alpha V1: 01_product_strategy/WBS_ALPHA_V1_ENTREGA.md

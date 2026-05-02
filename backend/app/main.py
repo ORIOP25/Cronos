@@ -57,11 +57,9 @@ if settings.SENTRY_DSN:
         environment=settings.ENVIRONMENT, # 'local' ou 'production'
         
         # --- Performance & Profiling ---
-        # Em produção real, baixa isto para 0.1 (10%) ou 0.2 para poupar quota.
-        # Para testes agora, deixa a 1.0 (100%).
-        traces_sample_rate=1.0, 
+        traces_sample_rate=settings.SENTRY_TRACES_SAMPLE_RATE,
         _experiments={
-            "profiles_sample_rate": 1.0, # Profiling (ver que funções demoram mais)
+            "profiles_sample_rate": settings.SENTRY_TRACES_SAMPLE_RATE,
         },
         
         # Dados extra

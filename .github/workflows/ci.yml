@@ -1,14 +1,18 @@
-name: CI — Backend Tests
+name: CI — Tests & SonarQube
 
 on:
   push:
-    branches: ["main"]
+    branches: ["main", "master"]
   pull_request:
-    branches: ["main"]
+    branches: ["main", "master"]
+
+env:
+  PYTHON_VERSION: "3.12"
+  NODE_VERSION: "20"
 
 jobs:
-  backend-tests:
-    name: Pytest (Python 3.12)
+  test-and-scan:
+    name: Backend + Frontend Tests & SonarQube
     runs-on: ubuntu-latest
 
     services:
@@ -16,16 +20,15 @@ jobs:
         image: postgres:15-alpine
         env:
           POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: mysecretpassword
-          POSTGRES_DB: horario_zen_db
+          POSTGRES_PASSWORD: ci_pg_pass
+          POSTGRES_DB: horario_zen_test_db
         ports:
           - 5432:5432
-        # Espera até o Postgres estar pronto
         options: >-
-          --health-cmd "pg_isready -U postgres"
-          --health-interval 5s
+          --health-cmd pg_isready
+          --health-interval 10s
           --health-timeout 5s
-          --health-retries 10
+          --health-retries 5
 
       redis:
         image: redis:7-alpine
@@ -33,42 +36,57 @@ jobs:
           - 6379:6379
         options: >-
           --health-cmd "redis-cli ping"
-          --health-interval 5s
+          --health-interval 10s
           --health-timeout 5s
-          --health-retries 10
-
-    defaults:
-      run:
-        working-directory: backend
-
-    env:
-      # Base de Dados (async para a API + sync para o Celery/testes sync)
-      DATABASE_URL: postgresql+asyncpg://postgres:mysecretpassword@localhost:5432/horario_zen_db
-      # Celery (apontar para o serviço Redis do workflow)
-      CELERY_BROKER_URL: redis://localhost:6379/0
-      REDIS_URL: redis://localhost:6379/0
-      # Segurança (chave fixa apenas para CI)
-      SECRET_KEY: ci-secret-key-not-used-in-production
-      ENVIRONMENT: local
-      # Desativar rate limiter em testes
-      RATELIMIT_ENABLED: "false"
+          --health-retries 5
 
     steps:
-      - name: Checkout do repositório
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - name: Configurar Python 3.12
+      - name: Setup Python ${{ env.PYTHON_VERSION }}
         uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
-          cache: "pip"
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
           cache-dependency-path: backend/requirements.txt
 
-      - name: Instalar dependências Python
-        run: pip install -r requirements.txt
+      - name: Setup Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
 
-      - name: Correr migrações Alembic
-        run: alembic upgrade head
+      - name: Install Backend Dependencies
+        working-directory: backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest-cov
 
-      - name: Correr todos os testes
-        run: pytest --tb=short -q
+      - name: Install Frontend Dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Run Backend Tests (Pytest + Coverage)
+        working-directory: backend
+        env:
+          ENVIRONMENT: local
+          DATABASE_URL: "postgresql+asyncpg://postgres:ci_pg_pass@localhost:5432/horario_zen_test_db"
+          REDIS_URL: redis://localhost:6379/0
+          SECRET_KEY: ci-test-secret-key-not-for-production
+          RATELIMIT_ENABLED: "false"
+        run: |
+          alembic upgrade head
+          pytest --cov=app --cov-report=xml:coverage.xml --cov-branch --tb=short
+
+      - name: Run Frontend Tests (Vitest + Coverage)
+        working-directory: frontend
+        run: npx vitest run --coverage
+
+      - name: SonarQube Scan
+        uses: SonarSource/sonarqube-scan-action@v5
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}

@@ -79,6 +79,7 @@ class Settings(BaseSettings):
     # --- Monitorização (Opcional) ---
     # Pode ser None se estivermos em desenvolvimento local
     SENTRY_DSN: str | None = None
+    SENTRY_TRACES_SAMPLE_RATE: float = 1.0
 
     # Configuração do Pydantic para ler do .env
     model_config = SettingsConfigDict(

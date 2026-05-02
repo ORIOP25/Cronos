@@ -307,11 +307,8 @@ class TimeslotUpdate(BaseModel):
 
     @model_validator(mode='after')
     def check_times(self):
-        # Apenas valida se ambos os campos estiverem presentes no update
-        # (Para updates parciais complexos, a lógica seria mais extensa, 
-        # mas para este MVP assume-se que se mudas horas, deves ter cuidado)
-        if self.start_time and self.end_time:
-             if self.end_time <= self.start_time:
+        if self.start_time is not None and self.end_time is not None:
+            if self.end_time <= self.start_time:
                 raise ValueError('A hora de fim deve ser posterior à hora de início')
         return self
 

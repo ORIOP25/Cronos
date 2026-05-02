@@ -383,16 +383,11 @@ class Lesson(Base):
 class Constraint(Base):
     __tablename__ = "constraint"
 
-    id = Column(Integer, primary_key=True, index=True)
-    organization_id = Column(Integer, ForeignKey(FK_ORG_ID), index=True)
-    # O tipo de regra, ex: 'teacher_unavailable', 'class_must_use_room'
-    rule_type = Column(SAEnum(ConstraintType), nullable=False)
-    
-    # O "payload" da regra (um JSON flexível)
-    # Ex: {"teacher_id": 1, "day": 2, "period": "morning"}
-    rule_payload = Column(JSON, nullable=False)
-    
-    # Relacionamento
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    organization_id: Mapped[int] = mapped_column(ForeignKey(FK_ORG_ID), index=True)
+    rule_type: Mapped[ConstraintType] = mapped_column(SAEnum(ConstraintType), nullable=False)
+    rule_payload: Mapped[dict] = mapped_column(JSON, nullable=False)
+
     organization: Mapped["Organization"] = relationship()
 
     def __repr__(self) -> str:
@@ -492,31 +487,26 @@ class SchoolCalendarEvent(Base):
 class Substitution(Base):
     __tablename__ = "substitutions"
 
-    id = Column(Integer, primary_key=True, index=True)
-    
-    # Qual é a aula original que vai sofrer alteração?
-    lesson_id = Column(Integer, ForeignKey("lesson.id"), nullable=False)
-    timeslot_id = Column(Integer, ForeignKey(FK_TIMESLOT_ID), nullable=False)
-    
-    # A data específica (ex: 2026-03-12). Isto diferencia a mudança pontual da permanente.
-    date = Column(Date, nullable=False, index=True)
-    
-    # Quem faltou e quem vai substituir
-    original_teacher_id = Column(Integer, ForeignKey(FK_TEACHER_ID), nullable=False)
-    substitute_teacher_id = Column(Integer, ForeignKey(FK_TEACHER_ID), nullable=False)
-    substitute_subject_id = Column(Integer, ForeignKey(FK_SUBJECT_ID), nullable=True)
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    lesson_id: Mapped[int] = mapped_column(ForeignKey("lesson.id"), nullable=False)
+    timeslot_id: Mapped[int] = mapped_column(ForeignKey(FK_TIMESLOT_ID), nullable=False)
+    date: Mapped[date_type] = mapped_column(Date, nullable=False, index=True)
+    original_teacher_id: Mapped[int] = mapped_column(ForeignKey(FK_TEACHER_ID), nullable=False)
+    substitute_teacher_id: Mapped[int] = mapped_column(ForeignKey(FK_TEACHER_ID), nullable=False)
+    substitute_subject_id: Mapped[Optional[int]] = mapped_column(ForeignKey(FK_SUBJECT_ID), nullable=True)
 
-    # Auditoria e Estado
-    status = Column(String, default="PENDING") # PENDING, CONFIRMED, CANCELLED
-    reason = Column(Text, nullable=True) # Ex: "Baixa médica"
-    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
-    
-    # Relacionamentos
-    lesson = relationship("Lesson")
-    timeslot = relationship("Timeslot")
-    original_teacher = relationship("Teacher", foreign_keys=[original_teacher_id])
-    substitute_teacher = relationship("Teacher", foreign_keys=[substitute_teacher_id])
-    substitute_subject = relationship("Subject", foreign_keys=[substitute_subject_id])
+    status: Mapped[str] = mapped_column(String(20), default="PENDING")
+    reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+    )
+
+    lesson: Mapped["Lesson"] = relationship()
+    timeslot: Mapped["Timeslot"] = relationship()
+    original_teacher: Mapped["Teacher"] = relationship(foreign_keys=[original_teacher_id])
+    substitute_teacher: Mapped["Teacher"] = relationship(foreign_keys=[substitute_teacher_id])
+    substitute_subject: Mapped[Optional["Subject"]] = relationship(foreign_keys=[substitute_subject_id])
 
 
 # --- OCORRÊNCIAS DE AULAS (Sprint 2) ---
