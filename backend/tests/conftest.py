@@ -41,10 +41,11 @@ async def db_session() -> AsyncGenerator[AsyncSession, None]:
     async with test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
 
-# --- Fixture: BD Síncrona (partilhada — usa a mesma BD de teste) ---
+# --- Fixture: BD Síncrona (partilhada — depende de db_session para garantir tabelas) ---
 @pytest.fixture
-def sync_db():
-    """Sessão síncrona isolada com savepoint (rollback no teardown)."""
+def sync_db(db_session):
+    """Sessão síncrona isolada com savepoint (rollback no teardown).
+    Depende de db_session para garantir que as tabelas foram criadas."""
     db = SyncTestSession()
     db.begin_nested()
     try:
