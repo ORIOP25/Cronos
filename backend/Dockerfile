@@ -4,6 +4,7 @@ FROM python:3.12-slim
 # 2. Configurações para Python em Docker (logs imediatos, sem .pyc)
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
+ENV PYTHONPATH=/app
 
 # 3. Criar pasta de trabalho dentro do Docker
 WORKDIR /app

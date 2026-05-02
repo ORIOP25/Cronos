@@ -383,7 +383,7 @@ class Lesson(Base):
 class Constraint(Base):
     __tablename__ = "constraint"
 
-    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    id: Mapped[int] = mapped_column(primary_key=True)
     organization_id: Mapped[int] = mapped_column(ForeignKey(FK_ORG_ID), index=True)
     rule_type: Mapped[ConstraintType] = mapped_column(SAEnum(ConstraintType), nullable=False)
     rule_payload: Mapped[dict] = mapped_column(JSON, nullable=False)
@@ -487,7 +487,7 @@ class SchoolCalendarEvent(Base):
 class Substitution(Base):
     __tablename__ = "substitutions"
 
-    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    id: Mapped[int] = mapped_column(primary_key=True)
     lesson_id: Mapped[int] = mapped_column(ForeignKey("lesson.id"), nullable=False)
     timeslot_id: Mapped[int] = mapped_column(ForeignKey(FK_TIMESLOT_ID), nullable=False)
     date: Mapped[date_type] = mapped_column(Date, nullable=False, index=True)
