@@ -1,4 +1,4 @@
-"""Testes para o Zustand auth store do frontend."""
+// Testes para o Zustand auth store do frontend.
 
 import { describe, it, expect, beforeEach } from 'vitest'
 import { useAuthStore } from '../store'

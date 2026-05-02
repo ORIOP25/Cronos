@@ -11,6 +11,8 @@ vi.mock('../hooks/useSchoolData', () => ({
   useTeacherScheduleHorizon: vi.fn(),
   useWeekSchedule: vi.fn(),
   useTimeslots: vi.fn(),
+  useMyTimesheet: vi.fn(() => ({ data: null, isLoading: false })),
+  useSubmitMyTimesheet: vi.fn(() => ({ mutate: vi.fn() })),
 }))
 
 vi.mock('../components/WeekGrid', () => ({

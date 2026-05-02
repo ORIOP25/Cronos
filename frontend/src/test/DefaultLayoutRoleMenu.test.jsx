@@ -58,7 +58,7 @@ describe('DefaultLayout role menu', () => {
 
     renderLayout()
 
-    expect(screen.getByRole('link', { name: 'Minhas Preferências' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Preferências' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Meus Horários' })).toBeInTheDocument()
 
     expect(screen.queryByRole('link', { name: 'Dashboard' })).not.toBeInTheDocument()

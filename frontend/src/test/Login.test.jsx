@@ -1,4 +1,4 @@
-"""Testes para a página de Login."""
+// Testes para a página de Login.
 
 import React from 'react'
 import { describe, it, expect, beforeEach, vi } from 'vitest'

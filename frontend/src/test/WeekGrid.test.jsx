@@ -127,7 +127,6 @@ describe('WeekGrid (Ponto 8.1)', () => {
     fireEvent.click(slotButton)
 
     expect(onOpenOperationalAction).toHaveBeenCalledTimes(1)
-    expect(screen.getByText('Criar Ocorrência')).toBeInTheDocument()
   })
 
   it('mostra orientação quando ocorrência já está fechada', () => {

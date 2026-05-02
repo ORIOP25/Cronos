@@ -1,4 +1,4 @@
-"""Testes para o sistema de role-based access (roleAccess.js)."""
+// Testes para o sistema de role-based access (roleAccess.js).
 
 import { describe, it, expect } from 'vitest'
 import {

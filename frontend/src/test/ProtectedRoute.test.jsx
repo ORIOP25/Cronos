@@ -1,4 +1,4 @@
-"""Testes para o componente ProtectedRoute."""
+// Testes para o componente ProtectedRoute.
 
 import React from 'react'
 import { describe, it, expect, beforeEach } from 'vitest'

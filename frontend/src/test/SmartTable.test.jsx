@@ -1,4 +1,4 @@
-"""Testes para o componente SmartTable."""
+// Testes para o componente SmartTable.
 
 import React from 'react'
 import { describe, it, expect, vi } from 'vitest'
