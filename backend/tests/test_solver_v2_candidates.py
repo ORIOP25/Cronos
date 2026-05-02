@@ -198,7 +198,7 @@ class TestBuildCandidateUniverse:
     def test_deterministic_ordering(self):
         lessons = [_make_lesson(1), _make_lesson(2)]
         ts = [_make_ts(day_of_week=0, ts_id=1)]
-        rooms = [_make_room(1, room_id=1)]
+        rooms = [_make_room(room_id=1)]
         result = build_candidate_universe(
             lessons=lessons, timeslots=ts, rooms=rooms,
             window_start_date=date(2026, 1, 5),
@@ -217,7 +217,7 @@ class TestBuildCandidateUniverse:
                 _make_ts(day_of_week=0, ts_id=1),
                 _make_ts(day_of_week=0, ts_id=2),
             ],
-            rooms=[_make_room(1, room_id=1)],
+            rooms=[_make_room(room_id=1)],
             window_start_date=date(2026, 1, 5),
             window_end_date=date(2026, 1, 5),
             blocked_dates=set(),
