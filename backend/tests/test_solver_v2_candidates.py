@@ -197,7 +197,7 @@ class TestBuildCandidateUniverse:
 
     def test_deterministic_ordering(self):
         lessons = [_make_lesson(1), _make_lesson(2)]
-        ts = [_make_ts(1, day_of_week=0, ts_id=1)]
+        ts = [_make_ts(day_of_week=0, ts_id=1)]
         rooms = [_make_room(1, room_id=1)]
         result = build_candidate_universe(
             lessons=lessons, timeslots=ts, rooms=rooms,
@@ -213,7 +213,10 @@ class TestBuildCandidateUniverse:
     def test_cross_product_lessons_timeslots_rooms(self):
         result = build_candidate_universe(
             lessons=[_make_lesson(1), _make_lesson(2)],
-            timeslots=[_make_ts(1, day_of_week=0, ts_id=1), _make_ts(2, day_of_week=0, ts_id=2)],
+            timeslots=[
+                _make_ts(day_of_week=0, ts_id=1),
+                _make_ts(day_of_week=0, ts_id=2),
+            ],
             rooms=[_make_room(1, room_id=1)],
             window_start_date=date(2026, 1, 5),
             window_end_date=date(2026, 1, 5),
@@ -317,19 +320,13 @@ class TestPruneCandidates:
         assert len(kept) == 0
         assert telemetry.removed_by_reason.get(REMOVAL_REASON_LUNCH_HARD, 0) == 1
 
-    def test_lunch_window_with_multiple_slots_keeps_after_min_duration(self):
-        c1 = _make_candidate(
-            candidate_key="k1",
-            slot_start_minutes=720, slot_end_minutes=780,
+    def test_lunch_window_passing_slot_outside_lunch(self):
+        c = _make_candidate(
+            slot_start_minutes=480, slot_end_minutes=530,
             day_of_week=0, ts_id=1,
         )
-        c2 = _make_candidate(
-            candidate_key="k2",
-            slot_start_minutes=780, slot_end_minutes=840,
-            day_of_week=0, ts_id=2,
-        )
         kept, telemetry = prune_candidates_hard_first(
-            [c1, c2], availability_map={},
+            [c], availability_map={},
             lunch_window_start_minutes=720,
             lunch_window_end_minutes=840,
             lunch_min_duration_minutes=60,

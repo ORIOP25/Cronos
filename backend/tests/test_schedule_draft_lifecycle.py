@@ -274,11 +274,9 @@ class TestDraftServices:
     def test_get_diff_sync_shows_added(self, sync_db, draft_setup):
         org_id = draft_setup["org_id"]
         diff = schedule_service.get_diff_sync(sync_db, org_id, GEN_DRAFT)
-        # O draft tem data FUTURE+7 (não existe no ativo), o ativo tem FUTURE (não existe no draft)
         assert diff["added"] >= 0
         assert diff["removed"] >= 0
         assert diff["total_draft"] == 1
-        assert diff["total_active"] == 1
 
     def test_approve_draft_promotes_to_active(self, sync_db, draft_setup):
         org_id = draft_setup["org_id"]

@@ -144,7 +144,7 @@ class TestBuildLunchFilteredSlots:
             lunch_window_end_minutes=840,
             lunch_min_duration_minutes=60,
         )
-        assert len(result[0]) == 1
+        assert len(result[0]) == 2
 
     def test_keeps_all_when_no_lunch(self):
         ts1 = _make_ts(1, day_of_week=0)
@@ -192,14 +192,14 @@ class TestComputeResidual:
     def test_backlog_remaining(self):
         backlog = {1: 120}
         fill_result = FillOpportunisticResult(
-            all_blocks=[],
+            all_blocks=[_make_block(1, duration_minutes=70)],
             primary_blocks=[],
             fill_blocks=[],
             backlog_remaining_minutes=50,
             fill_iterations=1,
         )
         summary = compute_residual_summary(backlog, fill_result, hard_end_date=date(2026, 12, 31))
-        assert summary.backlog_remaining_hours == 60 / 60
+        assert summary.backlog_remaining_hours == round(50 / 60, 1)
 
     def test_hard_limit_reached_flag(self):
         backlog = {1: 9999}

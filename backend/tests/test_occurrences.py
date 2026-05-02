@@ -23,6 +23,12 @@ from app.services import occurrence_service, schedule_service
 from app.core.security import create_access_token, hash_password
 
 # sync_db fixture is provided by conftest.py (shared across all test files)
+# SyncTestSession kept locally for concurrent thread tests that need separate sessions
+from sqlalchemy import create_engine as _ce
+from sqlalchemy.orm import sessionmaker as _sm
+from app.db.database import SYNC_DB_URL
+SyncTestSession = _sm(bind=_ce(SYNC_DB_URL, echo=False), autocommit=False, autoflush=False)
+
 # ---------------------------------------------------------------------------
 # Fixture para construir a cadeia completa de entidades necessárias
 # ---------------------------------------------------------------------------

@@ -44,14 +44,13 @@ async def db_session() -> AsyncGenerator[AsyncSession, None]:
 # --- Fixture: BD Síncrona (partilhada — depende de db_session para garantir tabelas) ---
 @pytest.fixture
 def sync_db(db_session):
-    """Sessão síncrona isolada com savepoint (rollback no teardown).
-    Depende de db_session para garantir que as tabelas foram criadas."""
+    """Sessão síncrona apontada para a mesma BD de teste.
+    Depende de db_session para garantir que as tabelas foram criadas.
+    O cleanup é feito pelo drop_all do db_session no teardown."""
     db = SyncTestSession()
-    db.begin_nested()
     try:
         yield db
     finally:
-        db.rollback()
         db.close()
 
 # --- Fixture: Cliente API ---

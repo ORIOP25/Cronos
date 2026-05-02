@@ -7,12 +7,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
 
-from app import models
+from app import models, schemas
 from app.core.security import hash_password
 from app.services import (
     lesson_log_service,
     timesheet_service,
     occurrence_service,
+    settings_service,
 )
 
 # sync_db fixture is provided by conftest.py (shared across all test files)
