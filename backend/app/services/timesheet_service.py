@@ -20,12 +20,10 @@ def get_or_create_timesheet_sync(
     ).first()
 
     if not timesheet:
-        week_end_date = week_start_date + timedelta(days=6)
         timesheet = models.TeacherWeeklyTimesheet(
             organization_id=organization_id,
             teacher_id=teacher_id,
             week_start_date=week_start_date,
-            week_end_date=week_end_date,
             status=models.TimesheetStatus.OPEN,
         )
         db.add(timesheet)

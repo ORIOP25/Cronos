@@ -209,7 +209,7 @@ async def full_setup(db_session: AsyncSession):
 @pytest.fixture
 def substitution_setup(sync_db, full_setup):
     """Contexto rico para passo 2: elegíveis, não elegíveis e conflito de slot."""
-    org_id = full_setup["organization_id"]
+    organization_id = full_setup["organization_id"]
     class_id = full_setup["class_id"]
     course_id = full_setup["course_id"]
     room_id = full_setup["room_id"]
@@ -220,13 +220,13 @@ def substitution_setup(sync_db, full_setup):
     assert class_row is not None
 
     # Segundo candidato elegível (para ranking/tie-break)
-    candidate_b_teacher = models.Teacher(name="Prof. Candidato B", organization_id=org_id)
+    candidate_b_teacher = models.Teacher(name="Prof. Candidato B", organization_id=organization_id)
     sync_db.add(candidate_b_teacher)
     sync_db.flush()
 
     candidate_b_subject = models.Subject(
         name="Área Integradora B",
-        organization_id=org_id,
+        organization_id=organization_id,
         required_room_type=models.RoomType.normal,
     )
     sync_db.add(candidate_b_subject)
@@ -254,7 +254,7 @@ def substitution_setup(sync_db, full_setup):
     # Docente da mesma disciplina, mas noutra turma (não elegível)
     teacher_same_subject_other_class = models.Teacher(
         name="Prof. Mesmo Assunto Outra Turma",
-        organization_id=org_id,
+        organization_id=organization_id,
     )
     sync_db.add(teacher_same_subject_other_class)
     sync_db.flush()
@@ -266,7 +266,7 @@ def substitution_setup(sync_db, full_setup):
         end_year=2027,
         grade_level=10,
         course_id=course_id,
-        organization_id=org_id,
+        organization_id=organization_id,
     )
     sync_db.add(class_other)
     sync_db.flush()
@@ -284,13 +284,13 @@ def substitution_setup(sync_db, full_setup):
     ))
 
     # Candidato com conflito de slot
-    conflict_teacher = models.Teacher(name="Prof. Conflito", organization_id=org_id)
+    conflict_teacher = models.Teacher(name="Prof. Conflito", organization_id=organization_id)
     sync_db.add(conflict_teacher)
     sync_db.flush()
 
     conflict_subject = models.Subject(
         name="Área Conflito",
-        organization_id=org_id,
+        organization_id=organization_id,
         required_room_type=models.RoomType.normal,
     )
     sync_db.add(conflict_subject)
@@ -316,7 +316,7 @@ def substitution_setup(sync_db, full_setup):
     ))
 
     lesson_conflict = models.Lesson(
-        organization_id=org_id,
+        organization_id=organization_id,
         class_id=class_other.id,
         subject_id=conflict_subject.id,
         teacher_id=conflict_teacher.id,
@@ -325,7 +325,7 @@ def substitution_setup(sync_db, full_setup):
     sync_db.flush()
 
     schedule_output_conflict = models.ScheduleOutput(
-        organization_id=org_id,
+        organization_id=organization_id,
         lesson_id=lesson_conflict.id,
         timeslot_id=timeslot_id,
         room_id=room_id,
@@ -391,7 +391,7 @@ def substitution_setup(sync_db, full_setup):
         hashed_password=hash_password("pass123"),
         is_active=True,
         role=models.UserRole.teacher,
-        organization_id=org_id,
+        organization_id=organization_id,
         teacher_id=full_setup["substitute_teacher_id"],
     )
     sync_db.add(teacher_user)
@@ -436,7 +436,7 @@ class TestWeekSchedulePerformance:
     """Valida leitura semanal com custo estável (sem padrão N+1)."""
 
     def test_get_week_schedule_sync_avoids_n_plus_one_for_active_modules(self, sync_db, full_setup):
-        org_id = full_setup["organization_id"]
+        organization_id = full_setup["organization_id"]
         class_id = full_setup["class_id"]
         room_id = full_setup["room_id"]
         timeslot_id = full_setup["timeslot_id"]
@@ -446,14 +446,14 @@ class TestWeekSchedulePerformance:
         for idx in range(12):
             teacher = models.Teacher(
                 name=f"Perf Prof {idx}",
-                organization_id=org_id,
+                organization_id=organization_id,
             )
             sync_db.add(teacher)
             sync_db.flush()
 
             subject = models.Subject(
                 name=f"Perf Subject {idx}",
-                organization_id=org_id,
+                organization_id=organization_id,
                 required_room_type=models.RoomType.normal,
             )
             sync_db.add(subject)
@@ -468,7 +468,7 @@ class TestWeekSchedulePerformance:
             sync_db.flush()
 
             lesson = models.Lesson(
-                organization_id=org_id,
+                organization_id=organization_id,
                 class_id=class_id,
                 subject_id=subject.id,
                 teacher_id=teacher.id,
@@ -477,7 +477,7 @@ class TestWeekSchedulePerformance:
             sync_db.flush()
 
             sync_db.add(models.ScheduleOutput(
-                organization_id=org_id,
+                organization_id=organization_id,
                 lesson_id=lesson.id,
                 timeslot_id=timeslot_id,
                 room_id=room_id,
@@ -498,7 +498,7 @@ class TestWeekSchedulePerformance:
         try:
             slots = schedule_service.get_week_schedule_sync(
                 sync_db,
-                organization_id=org_id,
+                organization_id=organization_id,
                 week_start=week_start,
                 class_id=class_id,
             )
@@ -614,10 +614,10 @@ class TestAutoConfirmService:
 
     def test_auto_confirm_creates_given_record(self, sync_db, full_setup):
         """Deve criar LessonOccurrence GIVEN para slots de hoje sem ocorrência."""
-        org_id = full_setup["organization_id"]
+        organization_id = full_setup["organization_id"]
         today = date.today()
 
-        count = occurrence_service.auto_confirm_daily_sync(sync_db, org_id, today)
+        count = occurrence_service.auto_confirm_daily_sync(sync_db, organization_id, today)
 
         assert count == 1
 
@@ -636,13 +636,13 @@ class TestAutoConfirmService:
 
     def test_auto_confirm_skips_existing_occurrence(self, sync_db, full_setup):
         """Se já existe uma ocorrência manual, o cron não cria outra."""
-        org_id = full_setup["organization_id"]
+        organization_id = full_setup["organization_id"]
         today = date.today()
         output_id = full_setup["schedule_output_id"]
 
         # Criar ocorrência manual GAP antes do cron
         manual = models.LessonOccurrence(
-            organization_id=org_id,
+            organization_id=organization_id,
             schedule_output_id=output_id,
             date=today,
             status=LessonOccurrenceStatus.GAP,
@@ -652,7 +652,7 @@ class TestAutoConfirmService:
         sync_db.commit()
 
         # Cron deve ignorar este slot
-        count = occurrence_service.auto_confirm_daily_sync(sync_db, org_id, today)
+        count = occurrence_service.auto_confirm_daily_sync(sync_db, organization_id, today)
         assert count == 0
 
         # Verificar que continua a existir apenas 1 ocorrência
@@ -669,8 +669,8 @@ class TestAutoConfirmService:
 
     def test_get_debts_empty_when_no_gaps(self, sync_db, full_setup):
         """Sem ocorrências GAP, as dívidas devem estar vazias."""
-        org_id = full_setup["organization_id"]
-        result = occurrence_service.get_debts_sync(sync_db, org_id)
+        organization_id = full_setup["organization_id"]
+        result = occurrence_service.get_debts_sync(sync_db, organization_id)
         assert result.total_gaps == 0
         assert result.total_hours_owed == pytest.approx(0.0)
         assert result.total_gaps_overdue == 0
@@ -679,12 +679,12 @@ class TestAutoConfirmService:
 
     def test_get_debts_counts_gap_occurrences(self, sync_db, full_setup):
         """Uma ocorrência GAP deve aparecer nas dívidas."""
-        org_id = full_setup["organization_id"]
+        organization_id = full_setup["organization_id"]
         today = date.today()
         output_id = full_setup["schedule_output_id"]
 
         gap = models.LessonOccurrence(
-            organization_id=org_id,
+            organization_id=organization_id,
             schedule_output_id=output_id,
             date=today,
             status=LessonOccurrenceStatus.GAP,
@@ -693,7 +693,7 @@ class TestAutoConfirmService:
         sync_db.add(gap)
         sync_db.commit()
 
-        result = occurrence_service.get_debts_sync(sync_db, org_id)
+        result = occurrence_service.get_debts_sync(sync_db, organization_id)
 
         assert result.total_gaps == 1
         assert result.total_hours_owed == pytest.approx(2.0)
@@ -703,7 +703,7 @@ class TestAutoConfirmService:
 
     def test_get_occurrence_returns_none_for_wrong_org(self, sync_db, full_setup):
         """Não deve retornar ocorrências de outra organização (tenant isolation)."""
-        result = occurrence_service.get_occurrence_sync(sync_db, 9999, org_id=9999)
+        result = occurrence_service.get_occurrence_sync(sync_db, 9999, organization_id=9999)
         assert result is None
 
 
@@ -726,7 +726,7 @@ class TestOccurrenceStateMachineAndAccounting:
         return occurrence
 
     def test_concurrent_create_occurrence_command_keeps_single_row(self, full_setup):
-        org_id = full_setup["organization_id"]
+        organization_id = full_setup["organization_id"]
         schedule_output_id = full_setup["schedule_output_id"]
 
         def _attempt_create():
@@ -734,7 +734,7 @@ class TestOccurrenceStateMachineAndAccounting:
             try:
                 occurrence, created_now = occurrence_service.create_occurrence_from_block_sync(
                     db_local,
-                    organization_id=org_id,
+                    organization_id=organization_id,
                     schedule_output_id=schedule_output_id,
                 )
                 return {"id": occurrence.id, "created_now": created_now}
@@ -752,7 +752,7 @@ class TestOccurrenceStateMachineAndAccounting:
         try:
             occurrences = verify_db.execute(
                 select(models.LessonOccurrence).where(
-                    models.LessonOccurrence.organization_id == org_id,
+                    models.LessonOccurrence.organization_id == organization_id,
                     models.LessonOccurrence.schedule_output_id == schedule_output_id,
                 )
             ).scalars().all()
@@ -761,13 +761,13 @@ class TestOccurrenceStateMachineAndAccounting:
             verify_db.close()
 
     def test_given_to_gap_updates_accounting_and_audit(self, sync_db, full_setup):
-        org_id = full_setup["organization_id"]
+        organization_id = full_setup["organization_id"]
         occurrence = self._prepare_open_occurrence(sync_db, full_setup)
 
         updated = occurrence_service.update_occurrence_sync(
             sync_db,
             occurrence.id,
-            org_id,
+            organization_id,
             schemas.LessonOccurrenceUpdate(status=LessonOccurrenceStatus.GAP),
             decided_by_user_id=full_setup["admin_id"],
         )
@@ -790,13 +790,13 @@ class TestOccurrenceStateMachineAndAccounting:
         assert progress.hours_debt == pytest.approx(2.0)
 
     def test_given_to_substituted_moves_progress_and_creates_debt(self, sync_db, full_setup):
-        org_id = full_setup["organization_id"]
+        organization_id = full_setup["organization_id"]
         occurrence = self._prepare_open_occurrence(sync_db, full_setup)
 
         updated = occurrence_service.update_occurrence_sync(
             sync_db,
             occurrence.id,
-            org_id,
+            organization_id,
             schemas.LessonOccurrenceUpdate(
                 status=LessonOccurrenceStatus.SUBSTITUTED,
                 substitute_teacher_id=full_setup["substitute_teacher_id"],
@@ -827,7 +827,7 @@ class TestOccurrenceStateMachineAndAccounting:
         assert substitute_progress.hours_completed == pytest.approx(2.0)
         assert substitute_progress.hours_debt == pytest.approx(0.0)
 
-        debts = occurrence_service.get_debts_sync(sync_db, org_id)
+        debts = occurrence_service.get_debts_sync(sync_db, organization_id)
         assert debts.total_gaps == 1
         assert debts.total_hours_owed == pytest.approx(2.0)
         assert debts.total_gaps_overdue == 1
@@ -835,11 +835,11 @@ class TestOccurrenceStateMachineAndAccounting:
 
     def test_future_gap_is_counted_immediately_in_debts(self, sync_db, full_setup):
         """GAP futuro decidido deve aparecer de imediato na lista de dívida."""
-        org_id = full_setup["organization_id"]
+        organization_id = full_setup["organization_id"]
         future_date = date.today() + timedelta(days=7)
 
         future_output = models.ScheduleOutput(
-            organization_id=org_id,
+            organization_id=organization_id,
             lesson_id=full_setup["lesson_id"],
             timeslot_id=full_setup["timeslot_id"],
             room_id=full_setup["room_id"],
@@ -852,14 +852,14 @@ class TestOccurrenceStateMachineAndAccounting:
 
         occurrence, _ = occurrence_service.create_occurrence_from_block_sync(
             sync_db,
-            org_id,
+            organization_id,
             future_output.id,
         )
 
         updated = occurrence_service.update_occurrence_sync(
             sync_db,
             occurrence.id,
-            org_id,
+            organization_id,
             schemas.LessonOccurrenceUpdate(status=LessonOccurrenceStatus.GAP),
             decided_by_user_id=full_setup["admin_id"],
         )
@@ -867,20 +867,20 @@ class TestOccurrenceStateMachineAndAccounting:
         assert updated.date == future_date
         assert updated.status == LessonOccurrenceStatus.GAP
 
-        debts = occurrence_service.get_debts_sync(sync_db, org_id)
+        debts = occurrence_service.get_debts_sync(sync_db, organization_id)
         assert debts.total_gaps == 1
         assert debts.total_hours_owed == pytest.approx(2.0)
         assert debts.total_gaps_overdue == 0
         assert debts.total_hours_owed_overdue == pytest.approx(0.0)
 
     def test_invalid_transition_gap_to_substituted_fails(self, sync_db, full_setup):
-        org_id = full_setup["organization_id"]
+        organization_id = full_setup["organization_id"]
         occurrence = self._prepare_open_occurrence(sync_db, full_setup)
 
         occurrence_service.update_occurrence_sync(
             sync_db,
             occurrence.id,
-            org_id,
+            organization_id,
             schemas.LessonOccurrenceUpdate(status=LessonOccurrenceStatus.GAP),
             decided_by_user_id=full_setup["admin_id"],
         )
@@ -889,7 +889,7 @@ class TestOccurrenceStateMachineAndAccounting:
             occurrence_service.update_occurrence_sync(
                 sync_db,
                 occurrence.id,
-                org_id,
+                organization_id,
                 schemas.LessonOccurrenceUpdate(
                     status=LessonOccurrenceStatus.SUBSTITUTED,
                     substitute_teacher_id=full_setup["substitute_teacher_id"],
@@ -901,21 +901,21 @@ class TestOccurrenceStateMachineAndAccounting:
         assert exc_info.value.status_code == 409
 
     def test_idempotent_duplicate_submission_does_not_duplicate_accounting(self, sync_db, full_setup):
-        org_id = full_setup["organization_id"]
+        organization_id = full_setup["organization_id"]
         occurrence = self._prepare_open_occurrence(sync_db, full_setup)
         payload = schemas.LessonOccurrenceUpdate(status=LessonOccurrenceStatus.GAP)
 
         occurrence_service.update_occurrence_sync(
             sync_db,
             occurrence.id,
-            org_id,
+            organization_id,
             payload,
             decided_by_user_id=full_setup["admin_id"],
         )
         occurrence_service.update_occurrence_sync(
             sync_db,
             occurrence.id,
-            org_id,
+            organization_id,
             payload,
             decided_by_user_id=full_setup["admin_id"],
         )
@@ -931,14 +931,14 @@ class TestOccurrenceStateMachineAndAccounting:
         assert progress.hours_debt == pytest.approx(2.0)
 
     def test_update_occurrence_blocks_cross_tenant_access(self, sync_db, full_setup):
-        org_id = full_setup["organization_id"]
+        organization_id = full_setup["organization_id"]
         occurrence = self._prepare_open_occurrence(sync_db, full_setup)
 
         with pytest.raises(occurrence_service.OccurrenceServiceError) as exc_info:
             occurrence_service.update_occurrence_sync(
                 sync_db,
                 occurrence.id,
-                org_id + 999,
+                organization_id + 999,
                 schemas.LessonOccurrenceUpdate(status=LessonOccurrenceStatus.GAP),
                 decided_by_user_id=full_setup["admin_id"],
             )
@@ -946,7 +946,7 @@ class TestOccurrenceStateMachineAndAccounting:
         assert exc_info.value.status_code == 404
 
     def test_update_occurrence_rolls_back_on_mid_operation_error(self, sync_db, full_setup, monkeypatch):
-        org_id = full_setup["organization_id"]
+        organization_id = full_setup["organization_id"]
         occurrence = self._prepare_open_occurrence(sync_db, full_setup)
 
         original = occurrence_service._apply_module_delta
@@ -964,7 +964,7 @@ class TestOccurrenceStateMachineAndAccounting:
             occurrence_service.update_occurrence_sync(
                 sync_db,
                 occurrence.id,
-                org_id,
+                organization_id,
                 schemas.LessonOccurrenceUpdate(
                     status=LessonOccurrenceStatus.SUBSTITUTED,
                     substitute_teacher_id=full_setup["substitute_teacher_id"],
@@ -1277,14 +1277,14 @@ class TestSubstitutionEligibilityAndRanking:
         assert recs == []
 
     def test_concurrent_substitution_confirmations_only_one_wins(self, substitution_setup):
-        org_id = substitution_setup["organization_id"]
+        organization_id = substitution_setup["organization_id"]
         admin_id = substitution_setup["admin_id"]
 
         seed_db = SyncTestSession()
         try:
             occurrence, _ = occurrence_service.create_occurrence_from_block_sync(
                 seed_db,
-                org_id,
+                organization_id,
                 substitution_setup["schedule_output_id"],
             )
             occurrence_id = occurrence.id
@@ -1309,7 +1309,7 @@ class TestSubstitutionEligibilityAndRanking:
                 updated = occurrence_service.update_occurrence_sync(
                     db_local,
                     occurrence_id,
-                    org_id,
+                    organization_id,
                     schemas.LessonOccurrenceUpdate(
                         status=LessonOccurrenceStatus.SUBSTITUTED,
                         substitute_teacher_id=teacher_id,

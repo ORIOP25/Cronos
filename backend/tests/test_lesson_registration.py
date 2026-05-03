@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import pytest
 import pytest_asyncio
@@ -159,7 +159,7 @@ class TestLessonRegistration:
             notes=""
         )
         llog = lesson_log_service.upsert_lesson_log_sync(
-            sync_db, org_id, base_setup["user_id"], output_id, payload
+            sync_db, organization_id, base_setup["user_id"], output_id, payload
         )
         
         # Assert
@@ -189,12 +189,12 @@ class TestLessonRegistration:
             notes=""
         )
         lesson_log_service.upsert_lesson_log_sync(
-            sync_db, org_id, base_setup["user_id"], output_id, payload
+            sync_db, organization_id, base_setup["user_id"], output_id, payload
         )
         
         # Submeter semana
         timesheet = timesheet_service.submit_timesheet_sync(
-            sync_db, org_id, teacher_id, week_start
+            sync_db, organization_id, teacher_id, week_start
         )
         assert timesheet.status == models.TimesheetStatus.SUBMITTED
         
@@ -202,16 +202,16 @@ class TestLessonRegistration:
         import fastapi
         with pytest.raises(fastapi.HTTPException) as exc:
             lesson_log_service.upsert_lesson_log_sync(
-                sync_db, org_id, base_setup["user_id"], output_id, payload
+                sync_db, organization_id, base_setup["user_id"], output_id, payload
             )
         assert exc.value.status_code == 400
         assert "Esta semana já foi submetida" in str(exc.value.detail)
         
         # Aprovar semana
         timesheet_service.update_timesheet_status_sync(
-            sync_db, org_id, timesheet.id, models.TimesheetStatus.APPROVED, base_setup["user_id"]
+            sync_db, organization_id, timesheet.id, models.TimesheetStatus.APPROVED, base_setup["user_id"]
         )
-        timesheet_updated = timesheet_service.get_or_create_timesheet_sync(sync_db, org_id, teacher_id, week_start)
+        timesheet_updated = timesheet_service.get_or_create_timesheet_sync(sync_db, organization_id, teacher_id, week_start)
         assert timesheet_updated.status == models.TimesheetStatus.APPROVED
 
 
@@ -224,7 +224,7 @@ class TestSoftReset:
         from sqlalchemy.ext.asyncio import AsyncSession
         from app.db.database import SessionLocal
         async with SessionLocal() as async_session:
-            await settings_service.soft_reset_year(async_session, org_id)
+            await settings_service.soft_reset_year(async_session, organization_id)
             
             # Assert ClassProgress is 0.0
             result = await async_session.execute(
@@ -239,7 +239,7 @@ class TestSoftReset:
             # Assert ScheduleOutput is deleted
             out_result = await async_session.execute(
                 select(models.ScheduleOutput).where(
-                    models.ScheduleOutput.organization_id == org_id
+                    models.ScheduleOutput.organization_id == organization_id
                 )
             )
             assert len(out_result.scalars().all()) == 0
@@ -247,7 +247,7 @@ class TestSoftReset:
             # Assert Timesheet deleted
             ts_result = await async_session.execute(
                 select(models.TeacherWeeklyTimesheet).where(
-                    models.TeacherWeeklyTimesheet.organization_id == org_id
+                    models.TeacherWeeklyTimesheet.organization_id == organization_id
                 )
             )
             assert len(ts_result.scalars().all()) == 0
@@ -262,7 +262,7 @@ def substitution_setup(sync_db, base_setup):
     # Create second subject & module
     subject2 = models.Subject(
         name="Bases de Dados",
-        organization_id=org_id,
+        organization_id=organization_id,
         required_room_type=models.RoomType.normal,
     )
     sync_db.add(subject2)
@@ -286,7 +286,7 @@ def substitution_setup(sync_db, base_setup):
     course.subjects.append(subject2)
 
     # Create substitute teacher
-    sub_teacher = models.Teacher(name="Prof. Substituto", organization_id=org_id)
+    sub_teacher = models.Teacher(name="Prof. Substituto", organization_id=organization_id)
     sub_teacher.subjects.append(subject2)
     sync_db.add(sub_teacher)
     sync_db.flush()
@@ -303,7 +303,7 @@ def substitution_setup(sync_db, base_setup):
     # Availability for substitute in same timeslot
     timeslot = sync_db.execute(
         select(models.Timeslot).where(
-            models.Timeslot.organization_id == org_id
+            models.Timeslot.organization_id == organization_id
         ).order_by(models.Timeslot.id)
     ).scalar_one()
 
@@ -330,12 +330,12 @@ class TestSubstitutionFromModal:
 
         # Create occurrence
         occurrence, _ = occurrence_service.create_occurrence_from_block_sync(
-            sync_db, org_id, output_id
+            sync_db, organization_id, output_id
         )
 
         # Get recommendations
         recommendations = occurrence_service.get_substitute_recommendations_sync(
-            sync_db, org_id, occurrence.id
+            sync_db, organization_id, occurrence.id
         )
 
         assert len(recommendations) >= 1
@@ -351,7 +351,7 @@ class TestSubstitutionFromModal:
 
         # Step 1: Create occurrence
         occurrence, created = occurrence_service.create_occurrence_from_block_sync(
-            sync_db, org_id, output_id
+            sync_db, organization_id, output_id
         )
         assert created is True
         assert occurrence.status == models.LessonOccurrenceStatus.GIVEN
@@ -363,7 +363,7 @@ class TestSubstitutionFromModal:
             substitute_subject_id=substitution_setup["substitute_subject_id"],
         )
         updated = occurrence_service.update_occurrence_sync(
-            sync_db, occurrence.id, org_id, payload, decided_by_user_id=user_id
+            sync_db, occurrence.id, organization_id, payload, decided_by_user_id=user_id
         )
 
         assert updated.status == models.LessonOccurrenceStatus.SUBSTITUTED
@@ -382,7 +382,7 @@ class TestSubstitutionFromModal:
 
         # Create and decide occurrence as SUBSTITUTED
         occurrence, _ = occurrence_service.create_occurrence_from_block_sync(
-            sync_db, org_id, output_id
+            sync_db, organization_id, output_id
         )
         payload = schemas.LessonOccurrenceUpdate(
             status=models.LessonOccurrenceStatus.SUBSTITUTED,
@@ -390,12 +390,12 @@ class TestSubstitutionFromModal:
             substitute_subject_id=substitution_setup["substitute_subject_id"],
         )
         occurrence_service.update_occurrence_sync(
-            sync_db, occurrence.id, org_id, payload, decided_by_user_id=user_id
+            sync_db, occurrence.id, organization_id, payload, decided_by_user_id=user_id
         )
 
         # Try to create again — should reuse existing, not create duplicate
         existing, created_now = occurrence_service.create_occurrence_from_block_sync(
-            sync_db, org_id, output_id
+            sync_db, organization_id, output_id
         )
         assert created_now is False
         assert existing.id == occurrence.id
@@ -416,7 +416,7 @@ class TestSummarySynchronization:
             notes="Notas do professor",
         )
         llog = lesson_log_service.upsert_lesson_log_sync(
-            sync_db, org_id, teacher_user_id, output_id, payload
+            sync_db, organization_id, teacher_user_id, output_id, payload
         )
         assert llog.summary == "Sumário do professor"
 
@@ -427,7 +427,7 @@ class TestSummarySynchronization:
             notes="Notas atualizadas pelo admin",
         )
         updated = lesson_log_service.upsert_lesson_log_sync(
-            sync_db, org_id, teacher_user_id, output_id, admin_payload
+            sync_db, organization_id, teacher_user_id, output_id, admin_payload
         )
         assert updated.summary == "Sumário atualizado pelo admin"
         assert updated.notes == "Notas atualizadas pelo admin"
@@ -445,7 +445,7 @@ class TestSummarySynchronization:
             notes="Notas importantes",
         )
         lesson_log_service.upsert_lesson_log_sync(
-            sync_db, org_id, user_id, output_id, payload
+            sync_db, organization_id, user_id, output_id, payload
         )
 
         # Change to OCCURRENCE keeping same summary
@@ -455,7 +455,7 @@ class TestSummarySynchronization:
             notes="Notas importantes",
         )
         updated = lesson_log_service.upsert_lesson_log_sync(
-            sync_db, org_id, user_id, output_id, payload2
+            sync_db, organization_id, user_id, output_id, payload2
         )
         assert updated.status == models.LessonLogStatus.OCCURRENCE
         assert updated.summary == "Sumário importante"
@@ -477,12 +477,12 @@ class TestAdminOpensLessonLogModal:
             notes="Notas de teste",
         )
         lesson_log_service.upsert_lesson_log_sync(
-            sync_db, org_id, base_setup["user_id"], base_setup["schedule_output_id"], payload
+            sync_db, organization_id, base_setup["user_id"], base_setup["schedule_output_id"], payload
         )
 
         # Fetch week schedule
         slots = schedule_service.get_week_schedule_sync(
-            sync_db, org_id, week_start, class_id=class_id
+            sync_db, organization_id, week_start, class_id=class_id
         )
         assert len(slots) == 1
         slot = slots[0]
@@ -503,19 +503,19 @@ class TestWeekScheduleTimesheetStatus:
 
         # Pre-register the lesson log so submission is allowed
         lesson_log_service.upsert_lesson_log_sync(
-            sync_db, org_id, base_setup["user_id"], base_setup["schedule_output_id"],
+            sync_db, organization_id, base_setup["user_id"], base_setup["schedule_output_id"],
             schemas.LessonLogCreate(status=models.LessonLogStatus.COMPLETED, summary="Aula", notes="")
         )
 
         # Submit timesheet via service
         timesheet = timesheet_service.submit_timesheet_sync(
-            sync_db, org_id, teacher_id, week_start
+            sync_db, organization_id, teacher_id, week_start
         )
         assert timesheet.status == models.TimesheetStatus.SUBMITTED
 
         # Fetch week schedule
         slots = schedule_service.get_week_schedule_sync(
-            sync_db, org_id, week_start, class_id=class_id
+            sync_db, organization_id, week_start, class_id=class_id
         )
         assert len(slots) == 1
         slot = slots[0]
@@ -533,28 +533,28 @@ class TestWeekScheduleTimesheetStatus:
 
         # Pre-register lesson log for teacher1 so submission is allowed
         lesson_log_service.upsert_lesson_log_sync(
-            sync_db, org_id, base_setup["user_id"], base_setup["schedule_output_id"],
+            sync_db, organization_id, base_setup["user_id"], base_setup["schedule_output_id"],
             schemas.LessonLogCreate(status=models.LessonLogStatus.COMPLETED, summary="Aula T1", notes="")
         )
 
         # Create second teacher with lesson in same class/week
-        teacher2 = models.Teacher(name="Prof. Segundo", organization_id=org_id)
+        teacher2 = models.Teacher(name="Prof. Segundo", organization_id=organization_id)
         sync_db.add(teacher2)
         sync_db.flush()
 
         # Get existing timeslot and subject
         timeslot = sync_db.execute(
-            select(models.Timeslot).where(models.Timeslot.organization_id == org_id)
+            select(models.Timeslot).where(models.Timeslot.organization_id == organization_id)
         ).scalar_one()
         subject = sync_db.execute(
-            select(models.Subject).where(models.Subject.organization_id == org_id)
+            select(models.Subject).where(models.Subject.organization_id == organization_id)
         ).scalar_one()
         room = sync_db.execute(
-            select(models.Room).where(models.Room.organization_id == org_id)
+            select(models.Room).where(models.Room.organization_id == organization_id)
         ).scalar_one()
 
         lesson2 = models.Lesson(
-            organization_id=org_id,
+            organization_id=organization_id,
             class_id=class_id,
             subject_id=subject.id,
             teacher_id=teacher2.id,
@@ -563,7 +563,7 @@ class TestWeekScheduleTimesheetStatus:
         sync_db.flush()
 
         output2 = models.ScheduleOutput(
-            organization_id=org_id,
+            organization_id=organization_id,
             lesson_id=lesson2.id,
             timeslot_id=timeslot.id,
             room_id=room.id,
@@ -576,13 +576,13 @@ class TestWeekScheduleTimesheetStatus:
 
         # Submit timesheet for teacher1 only
         timesheet1 = timesheet_service.submit_timesheet_sync(
-            sync_db, org_id, teacher1_id, week_start
+            sync_db, organization_id, teacher1_id, week_start
         )
         assert timesheet1.status == models.TimesheetStatus.SUBMITTED
 
         # Fetch week schedule by class (gets both teachers)
         slots = schedule_service.get_week_schedule_sync(
-            sync_db, org_id, week_start, class_id=class_id
+            sync_db, organization_id, week_start, class_id=class_id
         )
         assert len(slots) == 2
 
@@ -602,32 +602,32 @@ class TestWeekScheduleTimesheetStatus:
 
         # Pre-register lesson log for existing slot
         lesson_log_service.upsert_lesson_log_sync(
-            sync_db, org_id, base_setup["user_id"], base_setup["schedule_output_id"],
+            sync_db, organization_id, base_setup["user_id"], base_setup["schedule_output_id"],
             schemas.LessonLogCreate(status=models.LessonLogStatus.COMPLETED, summary="Aula 1", notes="")
         )
 
         # Create a second timeslot and schedule output for the same teacher+lesson
         room = sync_db.execute(
-            select(models.Room).where(models.Room.organization_id == org_id)
+            select(models.Room).where(models.Room.organization_id == organization_id)
         ).scalar_one()
         timeslot2 = models.Timeslot(
             day_of_week=1,
             start_time=time(11, 0),
             end_time=time(13, 0),
-            organization_id=org_id,
+            organization_id=organization_id,
         )
         sync_db.add(timeslot2)
         sync_db.flush()
 
         lesson = sync_db.execute(
             select(models.Lesson).where(
-                models.Lesson.organization_id == org_id,
+                models.Lesson.organization_id == organization_id,
                 models.Lesson.teacher_id == teacher_id,
             )
         ).scalar_one()
 
         output2 = models.ScheduleOutput(
-            organization_id=org_id,
+            organization_id=organization_id,
             lesson_id=lesson.id,
             timeslot_id=timeslot2.id,
             room_id=room.id,
@@ -640,18 +640,18 @@ class TestWeekScheduleTimesheetStatus:
 
         # Pre-register lesson log for second slot too
         lesson_log_service.upsert_lesson_log_sync(
-            sync_db, org_id, base_setup["user_id"], output2.id,
+            sync_db, organization_id, base_setup["user_id"], output2.id,
             schemas.LessonLogCreate(status=models.LessonLogStatus.COMPLETED, summary="Aula 2", notes="")
         )
 
         # Submit timesheet
         timesheet = timesheet_service.submit_timesheet_sync(
-            sync_db, org_id, teacher_id, week_start
+            sync_db, organization_id, teacher_id, week_start
         )
 
         # Fetch by teacher (gets both slots)
         slots = schedule_service.get_week_schedule_sync(
-            sync_db, org_id, week_start, teacher_id=teacher_id
+            sync_db, organization_id, week_start, teacher_id=teacher_id
         )
         assert len(slots) == 2
         for slot in slots:
@@ -668,19 +668,19 @@ class TestTimesheetReopen:
 
         # Pre-register lesson log so submission is allowed
         lesson_log_service.upsert_lesson_log_sync(
-            sync_db, org_id, base_setup["user_id"], base_setup["schedule_output_id"],
+            sync_db, organization_id, base_setup["user_id"], base_setup["schedule_output_id"],
             schemas.LessonLogCreate(status=models.LessonLogStatus.COMPLETED, summary="Aula", notes="")
         )
 
         # Submit
         timesheet = timesheet_service.submit_timesheet_sync(
-            sync_db, org_id, teacher_id, week_start
+            sync_db, organization_id, teacher_id, week_start
         )
         assert timesheet.status == models.TimesheetStatus.SUBMITTED
 
         # Reopen by admin
         reopened = timesheet_service.update_timesheet_status_sync(
-            sync_db, org_id, timesheet.id, models.TimesheetStatus.OPEN, base_setup["user_id"]
+            sync_db, organization_id, timesheet.id, models.TimesheetStatus.OPEN, base_setup["user_id"]
         )
         assert reopened["status"] == models.TimesheetStatus.OPEN
 
@@ -698,20 +698,20 @@ class TestTimesheetReopen:
             notes="",
         )
         lesson_log_service.upsert_lesson_log_sync(
-            sync_db, org_id, base_setup["user_id"], output_id, payload
+            sync_db, organization_id, base_setup["user_id"], output_id, payload
         )
 
         # Submit and approve
         timesheet = timesheet_service.submit_timesheet_sync(
-            sync_db, org_id, teacher_id, week_start
+            sync_db, organization_id, teacher_id, week_start
         )
         timesheet_service.update_timesheet_status_sync(
-            sync_db, org_id, timesheet.id, models.TimesheetStatus.APPROVED, base_setup["user_id"]
+            sync_db, organization_id, timesheet.id, models.TimesheetStatus.APPROVED, base_setup["user_id"]
         )
 
         # Reopen
         timesheet_service.update_timesheet_status_sync(
-            sync_db, org_id, timesheet.id, models.TimesheetStatus.OPEN, base_setup["user_id"]
+            sync_db, organization_id, timesheet.id, models.TimesheetStatus.OPEN, base_setup["user_id"]
         )
 
         # Verify lesson log still exists
@@ -791,48 +791,48 @@ def slot_counts_setup(sync_db, base_setup):
 
     # Get existing room
     room = sync_db.execute(
-        select(models.Room).where(models.Room.organization_id == org_id)
+        select(models.Room).where(models.Room.organization_id == organization_id)
     ).scalar_one()
 
     # Create 2 more timeslots
-    ts2 = models.Timeslot(day_of_week=1, start_time=time(11, 0), end_time=time(13, 0), organization_id=org_id)
-    ts3 = models.Timeslot(day_of_week=2, start_time=time(14, 0), end_time=time(16, 0), organization_id=org_id)
+    ts2 = models.Timeslot(day_of_week=1, start_time=time(11, 0), end_time=time(13, 0), organization_id=organization_id)
+    ts3 = models.Timeslot(day_of_week=2, start_time=time(14, 0), end_time=time(16, 0), organization_id=organization_id)
     sync_db.add(ts2)
     sync_db.add(ts3)
     sync_db.flush()
 
     # Get existing lesson
     lesson = sync_db.execute(
-        select(models.Lesson).where(models.Lesson.organization_id == org_id, models.Lesson.teacher_id == teacher_id)
+        select(models.Lesson).where(models.Lesson.organization_id == organization_id, models.Lesson.teacher_id == teacher_id)
     ).scalar_one()
 
     # Slot 2 — COMPLETED
     out2 = models.ScheduleOutput(
-        organization_id=org_id, lesson_id=lesson.id, timeslot_id=ts2.id,
+        organization_id=organization_id, lesson_id=lesson.id, timeslot_id=ts2.id,
         room_id=room.id, generation_id="test-gen-2", date=base_setup["date"], is_draft=False,
     )
     sync_db.add(out2)
     sync_db.flush()
     lesson_log_service.upsert_lesson_log_sync(
-        sync_db, org_id, user_id, out2.id,
+        sync_db, organization_id, user_id, out2.id,
         schemas.LessonLogCreate(status=models.LessonLogStatus.COMPLETED, summary="Aula 2", notes="")
     )
 
     # Slot 3 — OCCURRENCE
     out3 = models.ScheduleOutput(
-        organization_id=org_id, lesson_id=lesson.id, timeslot_id=ts3.id,
+        organization_id=organization_id, lesson_id=lesson.id, timeslot_id=ts3.id,
         room_id=room.id, generation_id="test-gen-3", date=base_setup["date"], is_draft=False,
     )
     sync_db.add(out3)
     sync_db.flush()
     lesson_log_service.upsert_lesson_log_sync(
-        sync_db, org_id, user_id, out3.id,
+        sync_db, organization_id, user_id, out3.id,
         schemas.LessonLogCreate(status=models.LessonLogStatus.OCCURRENCE, summary="Falta", notes="")
     )
 
     # Slot 4 — DRAFT (should NOT be counted)
     out4 = models.ScheduleOutput(
-        organization_id=org_id, lesson_id=lesson.id, timeslot_id=ts2.id,
+        organization_id=organization_id, lesson_id=lesson.id, timeslot_id=ts2.id,
         room_id=room.id, generation_id="test-gen-4", date=base_setup["date"], is_draft=True,
     )
     sync_db.add(out4)
@@ -854,11 +854,11 @@ class TestTimesheetListSlotCounts:
 
         # Create timesheet so it appears in the list
         timesheet = timesheet_service.get_or_create_timesheet_sync(
-            sync_db, org_id, teacher_id, week_start
+            sync_db, organization_id, teacher_id, week_start
         )
 
         results = timesheet_service.list_timesheets_sync(
-            sync_db, org_id, week_start_date=week_start
+            sync_db, organization_id, week_start_date=week_start
         )
         assert len(results) == 1
         result = results[0]
@@ -878,11 +878,11 @@ class TestTimesheetListSlotCounts:
         week_start = slot_counts_setup["week_start"]
 
         timesheet_service.get_or_create_timesheet_sync(
-            sync_db, org_id, teacher_id, week_start
+            sync_db, organization_id, teacher_id, week_start
         )
 
         results = timesheet_service.list_timesheets_sync(
-            sync_db, org_id, week_start_date=week_start
+            sync_db, organization_id, week_start_date=week_start
         )
         result = results[0]
         # The draft output (out4) uses the same timeslot as out2 but should not count
@@ -1142,7 +1142,7 @@ class TestSoftResetCompleteness:
         engine = create_async_engine(ASYNC_DB_URL, poolclass=NullPool)
         SessionFactory = async_sessionmaker(bind=engine, class_=AsyncSession, expire_on_commit=False)
         async with SessionFactory() as async_session:
-            await settings_service.soft_reset_year(async_session, org_id)
+            await settings_service.soft_reset_year(async_session, organization_id)
 
             result = await async_session.execute(
                 select(models.ClassProgress).where(
@@ -1172,7 +1172,7 @@ class TestClassProgressReversal:
             notes="",
         )
         lesson_log_service.upsert_lesson_log_sync(
-            sync_db, org_id, user_id, output_id, payload
+            sync_db, organization_id, user_id, output_id, payload
         )
 
         progress = sync_db.execute(
@@ -1190,7 +1190,7 @@ class TestClassProgressReversal:
             notes="",
         )
         lesson_log_service.upsert_lesson_log_sync(
-            sync_db, org_id, user_id, output_id, payload2
+            sync_db, organization_id, user_id, output_id, payload2
         )
 
         progress_after = sync_db.execute(
@@ -1211,7 +1211,7 @@ class TestTimesheetStateTransitions:
 
         # Create timesheet in OPEN state (default)
         timesheet = timesheet_service.get_or_create_timesheet_sync(
-            sync_db, org_id, teacher_id, week_start
+            sync_db, organization_id, teacher_id, week_start
         )
         assert timesheet.status == models.TimesheetStatus.OPEN
 
@@ -1219,7 +1219,7 @@ class TestTimesheetStateTransitions:
         import fastapi
         with pytest.raises(fastapi.HTTPException) as exc:
             timesheet_service.update_timesheet_status_sync(
-                sync_db, org_id, timesheet.id,
+                sync_db, organization_id, timesheet.id,
                 models.TimesheetStatus.APPROVED, base_setup["user_id"]
             )
         assert exc.value.status_code == 400
@@ -1242,7 +1242,7 @@ class TestAutoConfirmDaily:
         assert existing is None
 
         # Run auto-confirm
-        created = occurrence_service.auto_confirm_daily_sync(sync_db, org_id, target_date)
+        created = occurrence_service.auto_confirm_daily_sync(sync_db, organization_id, target_date)
         assert created == 1
 
         # Verify occurrence was created as GIVEN
@@ -1272,12 +1272,12 @@ class TestAutoConfirmDaily:
 
         # Create manual occurrence (undecided — decided_at=None)
         occurrence, _ = occurrence_service.create_occurrence_from_block_sync(
-            sync_db, org_id, output_id
+            sync_db, organization_id, output_id
         )
         assert occurrence.decided_at is None
 
         # Run auto-confirm — should skip because occurrence already exists
-        created = occurrence_service.auto_confirm_daily_sync(sync_db, org_id, target_date)
+        created = occurrence_service.auto_confirm_daily_sync(sync_db, organization_id, target_date)
         assert created == 0  # skipped
 
         # Verify original occurrence is untouched
@@ -1303,7 +1303,7 @@ class TestAvailableSubstitutes:
         ).scalar_one()
 
         substitutes = occurrence_service.get_available_substitutes_sync(
-            sync_db, org_id, output.timeslot_id, target_date
+            sync_db, organization_id, output.timeslot_id, target_date
         )
         # Should return at least the substitute teacher from substitution_setup
         teacher_ids = [s.teacher_id for s in substitutes]
@@ -1320,29 +1320,29 @@ class TestOccurrenceFilters:
 
         # Create occurrence
         occurrence, _ = occurrence_service.create_occurrence_from_block_sync(
-            sync_db, org_id, output_id
+            sync_db, organization_id, output_id
         )
         # Decide it
         payload = schemas.LessonOccurrenceUpdate(
             status=models.LessonOccurrenceStatus.GIVEN,
         )
         occurrence_service.update_occurrence_sync(
-            sync_db, occurrence.id, org_id, payload, decided_by_user_id=user_id
+            sync_db, occurrence.id, organization_id, payload, decided_by_user_id=user_id
         )
 
         # No filters — should find it
-        all_occurrences = occurrence_service.list_occurrences_sync(sync_db, org_id)
+        all_occurrences = occurrence_service.list_occurrences_sync(sync_db, organization_id)
         assert len(all_occurrences) == 1
 
         # Filter by date_from/date_to that include the occurrence
         filtered = occurrence_service.list_occurrences_sync(
-            sync_db, org_id, date_from=target_date, date_to=target_date
+            sync_db, organization_id, date_from=target_date, date_to=target_date
         )
         assert len(filtered) == 1
 
         # Filter by date_from/date_to that exclude the occurrence
         empty = occurrence_service.list_occurrences_sync(
-            sync_db, org_id, date_from=target_date + timedelta(days=1),
+            sync_db, organization_id, date_from=target_date + timedelta(days=1),
             date_to=target_date + timedelta(days=2)
         )
         assert len(empty) == 0
@@ -1359,7 +1359,7 @@ class TestWeekStartValidation:
         wednesday = base_setup["date"] - timedelta(days=base_setup["date"].weekday()) + timedelta(days=2)
 
         slots = schedule_service.get_week_schedule_sync(
-            sync_db, org_id, wednesday, teacher_id=teacher_id
+            sync_db, organization_id, wednesday, teacher_id=teacher_id
         )
         # Should still return the slot (query window is Wed-Tue)
         assert len(slots) == 1
@@ -1380,7 +1380,7 @@ class TestTimezoneBoundary:
             notes="",
         )
         llog = lesson_log_service.upsert_lesson_log_sync(
-            sync_db, org_id, user_id, output_id, payload
+            sync_db, organization_id, user_id, output_id, payload
         )
         assert llog.status == models.LessonLogStatus.COMPLETED
 
@@ -1388,17 +1388,17 @@ class TestTimezoneBoundary:
         from datetime import timezone
         tomorrow = date.today() + timedelta(days=1)
         room = sync_db.execute(
-            select(models.Room).where(models.Room.organization_id == org_id)
+            select(models.Room).where(models.Room.organization_id == organization_id)
         ).scalar_one()
         timeslot = sync_db.execute(
-            select(models.Timeslot).where(models.Timeslot.organization_id == org_id)
+            select(models.Timeslot).where(models.Timeslot.organization_id == organization_id)
         ).scalar_one()
         lesson = sync_db.execute(
-            select(models.Lesson).where(models.Lesson.organization_id == org_id)
+            select(models.Lesson).where(models.Lesson.organization_id == organization_id)
         ).scalar_one()
 
         future_output = models.ScheduleOutput(
-            organization_id=org_id,
+            organization_id=organization_id,
             lesson_id=lesson.id,
             timeslot_id=timeslot.id,
             room_id=room.id,
@@ -1412,7 +1412,7 @@ class TestTimezoneBoundary:
         import fastapi
         with pytest.raises(fastapi.HTTPException) as exc:
             lesson_log_service.upsert_lesson_log_sync(
-                sync_db, org_id, user_id, future_output.id, payload
+                sync_db, organization_id, user_id, future_output.id, payload
             )
         assert exc.value.status_code == 400
         assert "ainda não terminou" in str(exc.value.detail)

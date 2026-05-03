@@ -138,6 +138,7 @@ class TestCourseClassesEndpoints:
             generation_id="gen-1",
         )
         substitution = models.Substitution(
+            organization_id=org.id,
             lesson_id=lesson.id,
             timeslot_id=timeslot.id,
             date=date(2026, 2, 10),

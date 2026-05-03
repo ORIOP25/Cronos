@@ -67,7 +67,7 @@ async def test_register_creates_org_teacher_and_admin_atomically(
     POST /auth/register deve criar, numa única transação atómica:
       - 1 Organization com o nome da escola
       - 1 Teacher (perfil do administrador)
-      - 1 User (admin) ligado à mesma org_id e com teacher_id válido
+      - 1 User (admin) ligado à mesma organization_id e com teacher_id válido
 
     Verifica a resposta Token E o estado directo na BD.
     """
@@ -81,14 +81,14 @@ async def test_register_creates_org_teacher_and_admin_atomically(
     # --- Verificações no Token ---
     assert token_data["role"] == "admin"
     assert token_data["organization_name"] == "Escola Alfa"
-    org_id = token_data["organization_id"]
+    organization_id = token_data["organization_id"]
     teacher_id = token_data["teacher_id"]
-    assert org_id is not None
+    assert organization_id is not None
     assert teacher_id is not None
 
     # --- Verificações directas na BD ---
     org = await db_session.scalar(
-        select(models.Organization).where(models.Organization.id == org_id)
+        select(models.Organization).where(models.Organization.id == organization_id)
     )
     assert org is not None
     assert org.name == "Escola Alfa"
@@ -97,7 +97,7 @@ async def test_register_creates_org_teacher_and_admin_atomically(
         select(models.User).where(models.User.email == "silva@escolaalfa.pt")
     )
     assert user is not None
-    assert user.organization_id == org_id
+    assert user.organization_id == organization_id
     assert user.role == models.UserRole.admin
     assert user.teacher_id == teacher_id
     assert user.is_active is True
@@ -106,7 +106,7 @@ async def test_register_creates_org_teacher_and_admin_atomically(
         select(models.Teacher).where(models.Teacher.id == teacher_id)
     )
     assert teacher is not None
-    assert teacher.organization_id == org_id
+    assert teacher.organization_id == organization_id
     assert teacher.name == "Diretor Silva"
 
 

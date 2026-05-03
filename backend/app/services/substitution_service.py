@@ -57,6 +57,7 @@ def _upsert_legacy_substitution_sync(
 
     if existing is None:
         existing = models.Substitution(
+            organization_id=organization_id,
             lesson_id=data.lesson_id,
             timeslot_id=data.timeslot_id,
             original_teacher_id=data.original_teacher_id,
