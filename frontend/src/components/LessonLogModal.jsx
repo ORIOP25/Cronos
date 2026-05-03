@@ -374,8 +374,8 @@ const LessonLogModal = ({ visible, onClose, slot, isAdmin = false }) => {
             {canShowSubstitution && (
               <CButton
                 color="warning"
-                variant="outline"
                 size="sm"
+                className="text-white"
                 onClick={handleStartSubstitution}
                 disabled={createOccurrenceMutation.isPending || upsertLogMutation.isPending}
                 title="Criar substituição para este bloco"

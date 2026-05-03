@@ -134,7 +134,7 @@ const DefaultLayout = () => {
               HZ
             </h2>
           )}
-          {isAdmin && (
+          {!isAdmin && (
             <button
               type="button"
               onClick={() => setCollapsed(prev => !prev)}

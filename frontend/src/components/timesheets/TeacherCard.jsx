@@ -49,18 +49,10 @@ const TeacherCard = ({ teacher, isSelected, onClick }) => {
       </div>
       <div className="text-muted" style={{ fontSize: '0.78rem' }}>
         {total > 0 ? (
-          <>
-            <strong>{registered}</strong>/{total} registadas
-            {teacher.completed_slots > 0 && (
-              <span className="ms-2 text-success">{teacher.completed_slots} dadas</span>
-            )}
-            {teacher.occurrence_slots > 0 && (
-              <span className="ms-2 text-danger">{teacher.occurrence_slots} ocorrências</span>
-            )}
-          </>
+          <strong>{registered}</strong>
         ) : (
-          'Sem aulas nesta semana'
-        )}
+          <span>—</span>
+        )}/{total} registadas
       </div>
     </button>
   )
