@@ -143,7 +143,7 @@ const Subjects = () => {
       <GenericModalForm
         visible={modalVisible}
         onClose={() => setModalVisible(false)}
-        title={selectedItem ? "Editar Disciplina" : "Nova Disciplina (Wizard)"}
+        title="Disciplina"
         initialData={selectedItem}
         FormComponent={SubjectForm}
         onSubmit={handleFormSubmit}

@@ -4,59 +4,35 @@ import { useNavigate, useLocation } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import {
   CCard, CCardBody, CCardHeader, CAlert, CBadge, CSpinner,
-  CButton, CButtonGroup, CFormSelect, CFormLabel, CRow, CCol, CProgress,
+  CButton, CButtonGroup, CFormSelect, CFormLabel, CRow, CCol,
   CModal, CModalHeader, CModalTitle, CModalBody, CModalFooter,
 } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
 import {
-  cilCalendar, cilReload, cilCheckCircle, cilBan, cilWarning,
+  cilCalendar, cilReload, cilBan,
   cilArrowLeft, cilArrowRight, cilPeople, cilUser, cilCalendarCheck,
 } from '@coreui/icons'
 import {
-  useDrafts, useScheduleDiff, useApproveDraft, useRejectDraft,
+  useDrafts, useApproveDraft, useRejectDraft,
   useGenerateSchedule, useScheduleTaskStatus, useCancelScheduleTask,
   useClasses, useTeachers, useWeekSchedule, useClassDetails, useTimeslots, useCreateOccurrence,
 } from '../hooks/useSchoolData'
 import WeekGrid from '../components/WeekGrid'
 import LessonLogModal from '../components/LessonLogModal'
-import { getSubjectColor } from '../utils/subjectColors'
+import KPISidebar from '../components/schedules/KPISidebar'
+import DraftPanel from '../components/schedules/DraftPanel'
+import GenerationStatusPanel, { isPending, TERMINAL_STATUSES } from '../components/schedules/GenerationStatusPanel'
+import PreflightErrorPanel from '../components/schedules/PreflightErrorPanel'
 import { useAuthStore } from '../store'
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
-const TERMINAL_STATUSES = ['SUCCESS', 'FAILURE', 'Success', 'Error', 'Impossible', 'REVOKED', 'CANCELED']
 const ACTIVE_TASK_STORAGE_KEY_PREFIX = 'hz-schedule-active-task-org-'
-
-const GENERATION_STATUS_LABELS = {
-  PENDING:   'A preparar cálculo do horário…',
-  FETCHING:  'A ler dados da escola…',
-  SOLVING:   'A calcular o melhor horário para a escola (pode demorar alguns minutos)…',
-  EXPANDING: 'A expandir para datas reais…',
-  SAVING:    'A guardar solução…',
-  REVOKED:   'Cancelado.',
-  CANCELED:  'Cancelado.',
-  SUCCESS:   'Concluído!',
-  FAILURE:   'Erro na geração.',
-}
-
-const STEP_BY_STATUS = {
-  PENDING: 1,
-  FETCHING: 2,
-  SOLVING: 6,
-  EXPANDING: 7,
-  SAVING: 9,
-  SUCCESS: 10,
-}
-const DEFAULT_TOTAL_STEPS = 10
 
 // ---------------------------------------------------------------------------
 // Module-scope helpers (SonarQube S7721)
 // ---------------------------------------------------------------------------
-function isPending(status) {
-  return !!status && !TERMINAL_STATUSES.some(s => status.includes(s))
-}
-
 function getCurrentWeekMonday() {
   const today = new Date()
   const dayOfWeek = today.getDay()
@@ -91,16 +67,6 @@ function formatOperationalDate(dateStr) {
   })
 }
 
-function humanizeOperationalDetail(detail) {
-  if (typeof detail !== 'string' || !detail.trim()) {
-    return detail
-  }
-  return detail
-    .replace(/CP-SAT/gi, 'motor de cálculo')
-    .replace(/solver/gi, 'motor de cálculo')
-    .replace(/worker/gi, 'servidor de processamento')
-}
-
 function buildCreateOccurrenceErrorMessage(error) {
   const detail = error?.response?.data?.detail
   if (Array.isArray(detail) && detail.length > 0 && typeof detail[0]?.msg === 'string') {
@@ -110,21 +76,6 @@ function buildCreateOccurrenceErrorMessage(error) {
     return detail
   }
   return 'Não foi possível criar a ocorrência para este bloco. Tente novamente.'
-}
-
-function resolveAlertColor(status) {
-  if (status.includes('SUCCESS') || status.includes('Success')) return 'success'
-  if (status.includes('REVOKED') || status.includes('CANCELED')) return 'warning'
-  if (status.includes('FAILURE') || status.includes('Error') || status.includes('Impossible')) return 'danger'
-  return 'info'
-}
-
-function resolveBusinessStatus(taskData) {
-  const resultStatus = taskData?.result?.status
-  if (resultStatus === 'Canceled') return 'warning'
-  if (resultStatus === 'Error' || resultStatus === 'Impossible') return 'danger'
-  if (resultStatus === 'Success') return 'success'
-  return null
 }
 
 function getTaskStorageKey(orgId) {
@@ -159,279 +110,9 @@ function clearStoredTaskId(storageKey) {
   }
 }
 
-function resolveProgress(taskData) {
-  const serverProgress = taskData?.progress ?? taskData?.result?.progress
-  if (serverProgress?.current && serverProgress?.total) {
-    return {
-      current: serverProgress.current,
-      total: serverProgress.total,
-    }
-  }
-
-  const status = taskData?.status ?? ''
-  const fallbackCurrent = STEP_BY_STATUS[status]
-  if (fallbackCurrent) {
-    return {
-      current: fallbackCurrent,
-      total: DEFAULT_TOTAL_STEPS,
-    }
-  }
-  return null
-}
-
 // ---------------------------------------------------------------------------
-// KPI Sidebar — Sprint 4
+// CreateOccurrenceModal — kept inline (uses local state from Schedules)
 // ---------------------------------------------------------------------------
-const KPISidebar = ({ subjects }) => {
-  if (!subjects || subjects.length === 0) {
-    return (
-      <div className="text-muted text-center p-3" style={{ fontSize: '0.85rem' }}>
-        Nenhuma disciplina com progresso disponível.
-      </div>
-    )
-  }
-
-  return (
-    <div className="d-flex flex-column gap-3">
-      {subjects.map(subj => {
-        const pct   = subj.overall_percentage ?? 0
-        const color = getSubjectColor(subj.id)
-        return (
-          <div key={subj.id}>
-            <div className="d-flex justify-content-between align-items-center mb-1">
-              <div
-                className="fw-semibold text-truncate me-2"
-                style={{ fontSize: '0.8rem', borderLeft: `3px solid ${color}`, paddingLeft: '6px' }}
-              >
-                {subj.name}
-              </div>
-              <span className="text-muted" style={{ fontSize: '0.75rem', whiteSpace: 'nowrap' }}>
-                {subj.completed_hours}h / {subj.total_hours}h
-              </span>
-            </div>
-            <progress
-              value={pct}
-              max={100}
-              style={{ width: '100%', height: '6px', accentColor: color, borderRadius: '3px' }}
-              aria-label={`${subj.name}: ${pct.toFixed(1)}%`}
-            />
-            <div className="text-end text-muted" style={{ fontSize: '0.7rem', marginTop: '2px' }}>
-              {pct.toFixed(1)}%
-            </div>
-          </div>
-        )
-      })}
-    </div>
-  )
-}
-
-KPISidebar.propTypes = {
-  subjects: PropTypes.arrayOf(
-    PropTypes.shape({
-      id:                 PropTypes.number.isRequired,
-      name:               PropTypes.string.isRequired,
-      completed_hours:    PropTypes.number,
-      total_hours:        PropTypes.number,
-      overall_percentage: PropTypes.number,
-    }),
-  ),
-}
-
-// ---------------------------------------------------------------------------
-// DraftPanel — Sprint 3
-// ---------------------------------------------------------------------------
-const DraftPanel = ({ draft, onApprove, onReject, isApproving, isRejecting }) => {
-  const { data: diff, isLoading } = useScheduleDiff(draft.generation_id)
-  const isWorking = isApproving || isRejecting
-
-  return (
-    <CAlert color="warning" className="border border-warning mb-4">
-      <div className="d-flex align-items-start justify-content-between flex-wrap gap-3">
-        <div>
-          <div className="fw-bold mb-1">
-            <CIcon icon={cilWarning} className="me-2" />
-            Rascunho de Reparação Pendente
-          </div>
-          <div className="text-muted small mb-2">
-            Geração{' '}<code>{draft.generation_id.substring(0, 8)}…</code>
-            {draft.earliest_date && (
-              <span>{' '}·{' '}{draft.earliest_date} → {draft.latest_date}</span>
-            )}
-          </div>
-          {isLoading && <CSpinner size="sm" />}
-          {!isLoading && diff && (
-            <div className="d-flex flex-column gap-2 mt-3">
-              <div className="d-flex gap-3 flex-wrap">
-                <span className="badge bg-success-subtle text-success border border-success">
-                  +{diff.added} blocos adicionados
-                </span>
-                <span className="badge bg-danger-subtle text-danger border border-danger">
-                  -{diff.removed} blocos removidos
-                </span>
-                <span className="badge bg-secondary-subtle text-secondary border border-secondary">
-                  {diff.unchanged} sem alteração
-                </span>
-              </div>
-              {diff.statistics && (
-                <div className="bg-white p-2 rounded border small text-muted">
-                  <strong>Resumo Estatístico (vs Atual):</strong>
-                  <div className="d-flex flex-wrap gap-4 mt-2">
-                    <div>
-                      <div><strong>{diff.statistics.delta_projected_end_date_days > 0 ? '+' : ''}{diff.statistics.delta_projected_end_date_days} dias</strong></div>
-                      <div style={{ fontSize: '0.75rem' }}>Fim das aulas</div>
-                    </div>
-                    <div>
-                      <div><strong>{diff.statistics.backlog_remaining_hours}h</strong></div>
-                      <div style={{ fontSize: '0.75rem' }}>Por agendar</div>
-                    </div>
-                    <div>
-                      <div><strong>{diff.statistics.aggregate_gap_variation > 0 ? '+' : ''}{diff.statistics.aggregate_gap_variation}</strong></div>
-                      <div style={{ fontSize: '0.75rem' }}>Furos</div>
-                    </div>
-                    <div>
-                      <div><strong>{(diff.statistics.churn_outside_frozen_ratio * 100).toFixed(1)}%</strong></div>
-                      <div style={{ fontSize: '0.75rem' }}>Churn (futuro)</div>
-                    </div>
-                    <div>
-                      <div><strong>{diff.statistics.end_date_spread_days} dias</strong></div>
-                      <div style={{ fontSize: '0.75rem' }}>Dispersão fim</div>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-        <div className="d-flex gap-2 align-self-center">
-          <CButton
-            color="danger" variant="outline" size="sm"
-            disabled={isWorking}
-            onClick={() => { onReject(draft.generation_id) }}
-          >
-            {isRejecting
-              ? <CSpinner size="sm" className="me-1" />
-              : <CIcon icon={cilBan} className="me-1" />
-            }
-            Rejeitar
-          </CButton>
-          <CButton
-            color="success" size="sm"
-            disabled={isWorking}
-            onClick={() => { onApprove(draft.generation_id) }}
-          >
-            {isApproving
-              ? <CSpinner size="sm" className="me-1" />
-              : <CIcon icon={cilCheckCircle} className="me-1" />
-            }
-            Aprovar e Ativar
-          </CButton>
-        </div>
-      </div>
-    </CAlert>
-  )
-}
-
-DraftPanel.propTypes = {
-  draft: PropTypes.shape({
-    generation_id: PropTypes.string.isRequired,
-    count:         PropTypes.number,
-    earliest_date: PropTypes.string,
-    latest_date:   PropTypes.string,
-  }).isRequired,
-  onApprove:   PropTypes.func.isRequired,
-  onReject:    PropTypes.func.isRequired,
-  isApproving: PropTypes.bool,
-  isRejecting: PropTypes.bool,
-}
-
-// ---------------------------------------------------------------------------
-// GenerationStatusPanel — Sprint 3
-// ---------------------------------------------------------------------------
-const GenerationStatusPanel = ({ taskId }) => {
-  const { data: taskData } = useScheduleTaskStatus(taskId)
-
-  if (!taskData) {
-    return (
-      <CAlert color="info" className="d-flex align-items-center gap-2 mb-4">
-        <CSpinner size="sm" />
-        A aguardar resposta do servidor…
-      </CAlert>
-    )
-  }
-
-  const status     = taskData.status ?? ''
-  const isRunning  = isPending(status)
-  const businessColor = resolveBusinessStatus(taskData)
-  const alertColor = businessColor ?? resolveAlertColor(status)
-  const label = taskData?.result?.status ?? GENERATION_STATUS_LABELS[status] ?? status
-  const rawDetail = taskData?.detail ?? taskData?.result?.detail
-  const detail = humanizeOperationalDetail(rawDetail)
-  const progress = resolveProgress(taskData)
-  const progressValue = progress
-    ? (progress.current / progress.total) * 100
-    : 0
-  const result     = taskData.result
-
-  return (
-    <CAlert color={alertColor} className="mb-4">
-      <div className="d-flex align-items-center gap-2 mb-2">
-        {isRunning && <CSpinner size="sm" />}
-        <strong>{label}</strong>
-      </div>
-      {progress && (
-        <div className="small mb-1">
-          Etapa {progress.current}/{progress.total}
-        </div>
-      )}
-      {isRunning && (
-        <CProgress
-          animated
-          value={progressValue}
-          className="mb-2"
-          style={{ height: '6px' }}
-        />
-      )}
-      {detail && (
-        <div className="small mt-1">{detail}</div>
-      )}
-      {result?.is_draft && (
-        <div className="small mt-1">
-          Rascunho criado com{' '}<strong>{result.count}</strong>{' '}blocos.
-          Reveja o diff acima e aprove ou rejeite.
-        </div>
-      )}
-      {result?.mode === 'full' && result?.count && (
-        <div className="small mt-1">
-          Horário ativo atualizado com{' '}<strong>{result.count}</strong>{' '}blocos.
-        </div>
-      )}
-      {result?.message && (
-        <div className="small mt-1">{result.message}</div>
-      )}
-    </CAlert>
-  )
-}
-
-GenerationStatusPanel.propTypes = {
-  taskId: PropTypes.string.isRequired,
-}
-
-// ---------------------------------------------------------------------------
-// PreflightErrorPanel — Sprint 3
-// ---------------------------------------------------------------------------
-const PreflightErrorPanel = ({ problems }) => (
-  <CAlert color="danger" className="mb-4">
-    <strong>Não é possível gerar o horário — pré-validação falhou:</strong>
-    <ul className="mb-0 mt-2">
-      {problems.map(p => <li key={p}>{p}</li>)}
-    </ul>
-  </CAlert>
-)
-
-PreflightErrorPanel.propTypes = {
-  problems: PropTypes.arrayOf(PropTypes.string).isRequired,
-}
-
 const CreateOccurrenceModal = ({
   slot,
   onClose,
@@ -981,7 +662,7 @@ const Schedules = () => {
             <CCol xs="auto" className="ms-auto">
               <div className="d-flex align-items-center gap-2">
                 <CButton
-                  color="outline-secondary" size="sm"
+                  color="secondary" variant="outline" size="sm"
                   onClick={() => setWeekStart(prev => addDays(prev, -7))}
                   title="Semana anterior"
                 >
@@ -991,14 +672,14 @@ const Schedules = () => {
                   {weekLabel}
                 </span>
                 <CButton
-                  color="outline-secondary" size="sm"
+                  color="secondary" variant="outline" size="sm"
                   onClick={() => setWeekStart(prev => addDays(prev, 7))}
                   title="Próxima semana"
                 >
                   <CIcon icon={cilArrowRight} />
                 </CButton>
                 <CButton
-                  color="outline-primary" size="sm"
+                  color="primary" variant="outline" size="sm"
                   onClick={() => setWeekStart(getCurrentWeekMonday())}
                   title="Ir para a semana atual"
                 >

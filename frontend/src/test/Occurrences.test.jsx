@@ -108,7 +108,7 @@ describe('Occurrences page (Passo 5)', () => {
 
     expect(screen.getByText('Pendentes (1)')).toBeInTheDocument()
     expect(screen.getByText('Resolvidas (1)')).toBeInTheDocument()
-    expect(screen.getByText('Pendente de decisão do admin')).toBeInTheDocument()
+    expect(screen.getAllByText('Pendente de decisão').length).toBeGreaterThanOrEqual(2)
 
     fireEvent.click(screen.getByRole('button', { name: /Resolvidas \(1\)/i }))
 
@@ -167,7 +167,7 @@ describe('Occurrences page (Passo 5)', () => {
       dateTo: undefined,
     })
     expect(screen.getByText(/Decidida em/i)).toBeInTheDocument()
-    expect(screen.getByText('Pendente de decisão do admin')).toBeInTheDocument()
+    expect(screen.getAllByText('Pendente de decisão').length).toBeGreaterThanOrEqual(1)
   })
 
   it('mostra feedback claro quando não há elegíveis para substituição', () => {

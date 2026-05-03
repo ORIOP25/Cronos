@@ -3,7 +3,7 @@ import {
   CForm, CCol, CRow, CFormInput, CButton, CModalFooter, CFormSelect, CCard, CCardBody, CAlert, CBadge
 } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
-import { cilX, cilPencil, cilCheckCircle } from '@coreui/icons'
+import { cilX, cilPencil, cilCheckCircle, cilTrash } from '@coreui/icons'
 import PropTypes from 'prop-types'
 
 const SubjectForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
@@ -250,7 +250,7 @@ const SubjectForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
                     disabled={!currentModule.name || !currentModule.hours_total}
                     title="Adicionar à lista"
                   >
-                    Add
+                    Adicionar
                   </CButton>
                 </CCol>
               </CRow>
@@ -347,7 +347,7 @@ const SubjectForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
                                 className="p-1"
                                 title="Remover módulo"
                               >
-                                <CIcon icon={cilX} />
+                                <CIcon icon={cilTrash} />
                               </CButton>
                             </td>
                           </>
@@ -361,7 +361,7 @@ const SubjectForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
           ) : (
             <CAlert color="info" className="d-flex align-items-center sm py-2">
               <CIcon icon={cilX} className="me-2" />
-              <div>Sem módulos. Podes criar a disciplina vazia.</div>
+              <div>Sem módulos. Pode criar a disciplina sem estrutura modular — adicione módulos mais tarde.</div>
             </CAlert>
           )}
 
@@ -374,7 +374,7 @@ const SubjectForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
                 Cancelar
               </CButton>
               <CButton color="primary" type="submit" disabled={isLoading}>
-                {isLoading ? 'A gravar...' : `Gravar (${formData.modules.length} mód.)`}
+                {isLoading ? 'A guardar...' : `Guardar (${formData.modules.length} mód.)`}
               </CButton>
             </div>
           </CModalFooter>

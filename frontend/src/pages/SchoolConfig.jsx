@@ -11,19 +11,8 @@ import { cilSettings, cilSave, cilTrash, cilCloudDownload, cilCalendar } from '@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import apiClient from '../apiClient'
 import { useAuthStore } from '../store'
-
-const EVENT_TYPE_LABELS = {
-  national_holiday: 'Feriado Nacional',
-  school_break: 'Pausa Escolar',
-  exam_period: 'Período de Exames',
-  other: 'Outro',
-}
-
-const formatDate = (dateStr) => {
-  if (!dateStr) return '-'
-  const [year, month, day] = dateStr.split('-')
-  return `${day}-${month}-${year}`
-}
+import { formatDate } from '../utils/formatUtils'
+import { TXT, EVENT_TYPE_LABELS } from '../utils/terminology'
 
 const getApiErrorMessage = (error, fallbackMessage) => {
   const detail = error?.response?.data?.detail
@@ -113,7 +102,7 @@ const CalendarSection = () => {
   } else if (events.length === 0) {
     eventListContent = (
       <CAlert color="secondary">
-        Sem eventos registados. Sincronize os feriados ou adicione pausas manualmente.
+        Sem eventos registados. Pode sincronizar os feriados nacionais ou adicionar pausas letivas manualmente.
       </CAlert>
     )
   } else {
@@ -169,7 +158,7 @@ const CalendarSection = () => {
       )}
       {createMutation.isError && (
         <CAlert color="danger">
-          {getApiErrorMessage(createMutation.error, 'Erro ao adicionar evento.')}
+          {getApiErrorMessage(createMutation.error, 'Erro ao adicionar evento. Verifique as datas e tente novamente.')}
         </CAlert>
       )}
 
@@ -233,7 +222,7 @@ const CalendarSection = () => {
             </CCol>
             <CCol md={1} className="d-flex align-items-end">
               <CButton color="primary" onClick={handleCreate} disabled={createMutation.isPending}>
-                +
+                {TXT.ADD}
               </CButton>
             </CCol>
           </CRow>
@@ -311,7 +300,7 @@ const SettingsSection = () => {
   const upsertMutation = useMutation({
     mutationFn: (payload) => apiClient.post('/school/settings/', payload),
     onSuccess: () => {
-      setSuccessMsg('Configuração guardada com sucesso.')
+      setSuccessMsg('Período letivo guardado com sucesso.')
       setSavePromptMsg(null)
       setSaveConfirmationPending(false)
       void queryClient.invalidateQueries({ queryKey: ['org-settings'] })
@@ -341,7 +330,7 @@ const SettingsSection = () => {
     upsertMutation.mutate(payload)
   }
 
-  if (isLoading) return <CSpinner />
+  if (isLoading) return <div className="d-flex justify-content-center p-5"><CSpinner /></div>
 
   return (
     <div>
@@ -418,8 +407,8 @@ const SettingsSection = () => {
         </CModalHeader>
         <CModalBody>
           <CAlert color="warning">
-            Esta ação não pode ser desfeita. Todos os dados dinâmicos do ano letivo anterior serão apagados permanentemente.
-          </CAlert>
+              Esta ação não pode ser desfeita. Todos os dados do ano letivo anterior, incluindo horários, ocorrências e registos de aulas, serão removidos permanentemente.
+            </CAlert>
           
           {resetError && <CAlert color="danger">{resetError}</CAlert>}
 
@@ -444,7 +433,7 @@ const SettingsSection = () => {
         </CModalBody>
         <CModalFooter>
           <CButton color="secondary" variant="outline" onClick={() => setShowResetModal(false)}>
-            Cancelar
+            {TXT.CANCEL}
           </CButton>
           <CButton 
             color="danger" 
@@ -452,7 +441,7 @@ const SettingsSection = () => {
             disabled={resetConfirmText !== 'Confirmo' || !resetChecked || resetMutation.isPending}
             onClick={handleSoftReset}
           >
-            {resetMutation.isPending ? 'A apagar...' : 'Apagar Dados e Recomeçar'}
+            {resetMutation.isPending ? 'A apagar...' : 'Remover Dados e Recomeçar'}
           </CButton>
         </CModalFooter>
       </CModal>
@@ -617,15 +606,15 @@ const SchoolConfig = () => {
 
       <CTabs activeItemKey={activeTab} onChange={(key) => setActiveTab(key)}>
         <CTabList variant="tabs" className="mb-4">
-          <CTab itemKey="settings">Calendário</CTab>
-          <CTab itemKey="calendar">Interrupções</CTab>
+          <CTab itemKey="settings">Período Letivo</CTab>
+          <CTab itemKey="calendar">Calendário e Interrupções</CTab>
           <CTab itemKey="grid">Grelha Horária</CTab>
         </CTabList>
 
         <CTabContent>
           <CTabPanel itemKey="settings">
-            <CCard className="border-0 shadow-sm">
-              <CCardHeader className="bg-white fw-bold py-3">Configurações Gerais do Calendário</CCardHeader>
+          <CCard className="border-0 shadow-sm">
+                <CCardHeader className="bg-white fw-bold py-3">Definição do Período Letivo</CCardHeader>
               <CCardBody className="p-4">
                 <SettingsSection />
               </CCardBody>
@@ -633,8 +622,8 @@ const SchoolConfig = () => {
           </CTabPanel>
 
           <CTabPanel itemKey="calendar">
-            <CCard className="border-0 shadow-sm">
-              <CCardHeader className="bg-white fw-bold py-3">Interrupções (Feriados e Pausas)</CCardHeader>
+          <CCard className="border-0 shadow-sm">
+                <CCardHeader className="bg-white fw-bold py-3">Calendário (Feriados e Pausas)</CCardHeader>
               <CCardBody className="p-4">
                 <CalendarSection />
               </CCardBody>

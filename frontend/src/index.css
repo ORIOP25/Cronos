@@ -1288,7 +1288,7 @@ textarea {
     padding: 14px 30px !important;
   }
 
-  .zen-role-card {
+   .zen-role-card {
     padding: 2rem;
   }
 
@@ -1296,6 +1296,77 @@ textarea {
   .zen-after-block {
     padding: 1.5rem;
   }
+}
+
+/* ===========================
+   MOBILE: Professor (< 768px)
+   =========================== */
+@media (max-width: 768px) {
+  .mobile-week-nav {
+    flex-wrap: wrap;
+    gap: 8px !important;
+    justify-content: center !important;
+  }
+
+  .mobile-week-nav .btn {
+    font-size: 0.75rem !important;
+    padding: 6px 10px !important;
+  }
+
+  .mobile-week-nav .week-label {
+    width: 100%;
+    text-align: center;
+    order: -1;
+  }
+
+  .mobile-availability-toolbar {
+    gap: 4px !important;
+    justify-content: center !important;
+  }
+
+  .mobile-availability-toolbar button {
+    font-size: 0.7rem !important;
+    padding: 6px 8px !important;
+    gap: 4px !important;
+  }
+
+  .mobile-availability-toolbar button span:first-child {
+    width: 10px !important;
+    height: 10px !important;
+  }
+
+  .mobile-full-width-btn {
+    width: 100% !important;
+  }
+
+  .mobile-sidebar-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.4);
+    z-index: 49;
+  }
+
+  .table-responsive-mobile {
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+/* ===========================
+   UTILITY: table responsive with shadow hint
+   =========================== */
+.table-responsive-shadow {
+  position: relative;
+}
+
+.table-responsive-shadow::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 30px;
+  background: linear-gradient(to left, rgba(251, 244, 231, 0.9), transparent);
+  pointer-events: none;
 }
 
 @media (prefers-reduced-motion: no-preference) {

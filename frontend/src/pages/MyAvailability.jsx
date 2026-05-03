@@ -198,19 +198,9 @@ const MyAvailability = () => {
         <button 
           onClick={handleSave} 
           disabled={saving}
-          style={{
-            padding: '10px 24px',
-            fontSize: '15px',
-            backgroundColor: 'var(--rs-primary)',
-            color: 'var(--color-text-inverse)',
-            border: 'none',
-            borderRadius: '8px',
-            cursor: saving ? 'not-allowed' : 'pointer',
-            fontWeight: '600',
-            transition: 'all 0.2s ease',
-          }}
+          className="btn-zen btn-zen-primary"
         >
-          {saving ? 'A gravar...' : 'Gravar Alterações'}
+          {saving ? 'A guardar...' : 'Guardar Alterações'}
         </button>
       </div>
     </div>

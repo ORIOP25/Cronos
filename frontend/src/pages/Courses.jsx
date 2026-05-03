@@ -122,7 +122,7 @@ const Courses = () => {
       <GenericModalForm
         visible={modalVisible}
         onClose={() => setModalVisible(false)}
-        title="Novo Curso Profissional"
+        title="Curso Profissional"
         size="lg"
         FormComponent={CourseForm}
         onSubmit={handleFormSubmit}

@@ -5,6 +5,8 @@ import CIcon from '@coreui/icons-react'
 import { cilArrowLeft, cilArrowRight, cilCalendar } from '@coreui/icons'
 import WeekGrid from '../components/WeekGrid'
 import LessonLogModal from '../components/LessonLogModal'
+import ConfirmationModal from '../components/ConfirmationModal'
+import { TXT } from '../utils/terminology'
 import {
   useTeacherScheduleHorizon,
   useTimeslots,
@@ -106,6 +108,7 @@ function MySchedules() {
   const [lastHealthyHorizon, setLastHealthyHorizon] = useState(null)
   const [lastHealthyWeekSlots, setLastHealthyWeekSlots] = useState([])
   const [selectedSlot, setSelectedSlot] = useState(null)
+  const [showSubmitConfirm, setShowSubmitConfirm] = useState(false)
   const hasInitializedGenerationRef = useRef(false)
   const generationKeyRef = useRef(HORIZON_NO_ACTIVE_GENERATION_KEY)
 
@@ -249,9 +252,11 @@ function MySchedules() {
   const [submitError, setSubmitError] = useState('')
 
   const handleSubmitWeek = async () => {
-    if (!window.confirm('Tem a certeza que deseja submeter esta semana? Não poderá fazer mais alterações.')) {
-      return
-    }
+    setShowSubmitConfirm(true)
+  }
+
+  const handleConfirmSubmit = async () => {
+    setShowSubmitConfirm(false)
     setSubmitError('')
     try {
       await submitMutation.mutateAsync(weekStart)
@@ -456,6 +461,17 @@ function MySchedules() {
         visible={Boolean(selectedSlot)}
         onClose={() => setSelectedSlot(null)}
         slot={selectedSlot}
+      />
+
+      <ConfirmationModal
+        visible={showSubmitConfirm}
+        onClose={() => setShowSubmitConfirm(false)}
+        onConfirm={handleConfirmSubmit}
+        title="Submeter Semana"
+        message={TXT.WEEK_SUBMIT_CONFIRM}
+        confirmText="Submeter"
+        isLoading={submitMutation.isPending}
+        variant="primary"
       />
     </div>
   )

@@ -70,7 +70,7 @@ describe('MyAvailability page (Ponto 3)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Evitar' }))
     fireEvent.click(screen.getByTitle('Evitar: Segunda às 08:00:00'))
 
-    fireEvent.click(screen.getByRole('button', { name: 'Gravar Alterações' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar Alterações' }))
 
     await waitFor(() => {
       expect(apiClient.post).toHaveBeenCalledWith('/teachers/42/availability', [
@@ -94,7 +94,7 @@ describe('MyAvailability page (Ponto 3)', () => {
       expect(screen.queryByText('A carregar grelha...')).not.toBeInTheDocument()
     })
 
-    fireEvent.click(screen.getByRole('button', { name: 'Gravar Alterações' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar Alterações' }))
 
     await waitFor(() => {
       expect(screen.getByRole('alert')).toHaveTextContent(expectedMessage)
@@ -130,14 +130,14 @@ describe('MyAvailability page (Ponto 3)', () => {
       expect(screen.queryByText('A carregar grelha...')).not.toBeInTheDocument()
     })
 
-    fireEvent.click(screen.getByRole('button', { name: 'Gravar Alterações' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar Alterações' }))
 
-    expect(screen.getByRole('button', { name: 'A gravar...' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'A guardar...' })).toBeDisabled()
 
     resolveSave({ data: { status: 'success', count: 0 } })
 
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: 'Gravar Alterações' })).not.toBeDisabled()
+      expect(screen.getByRole('button', { name: 'Guardar Alterações' })).not.toBeDisabled()
     })
   })
 })

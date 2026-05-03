@@ -15,6 +15,8 @@ import {
   useSubstituteRecommendations, useClasses, useTeachers, useSubjects,
 } from '../hooks/useSchoolData'
 import { useAuthStore } from '../store'
+import { formatDate, formatDateTime } from '../utils/formatUtils'
+import { TXT } from '../utils/terminology'
 
 // ---------------------------------------------------------------------------
 // Constantes
@@ -58,25 +60,6 @@ const RESOLUTION_FILTERS = {
   all: 'Todas',
 }
 
-const formatDate = (dateStr) => {
-  if (!dateStr) return '—'
-  const [year, month, day] = dateStr.split('-')
-  return `${day}/${month}/${year}`
-}
-
-const formatDateTime = (dateTimeStr) => {
-  if (!dateTimeStr) return '—'
-  const dateValue = new Date(dateTimeStr)
-  if (Number.isNaN(dateValue.getTime())) return dateTimeStr
-  return dateValue.toLocaleString('pt-PT', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
-}
-
 const resolveOccurrenceStartTime = (occurrence) => {
   if (typeof occurrence?.timeslot?.start_time === 'string') {
     return occurrence.timeslot.start_time
@@ -114,7 +97,7 @@ const buildUpdateErrorMessage = (error) => {
     if (typeof firstItem?.msg === 'string') return firstItem.msg
   }
   if (typeof detail === 'string' && detail.trim()) return detail
-  return 'Erro ao guardar decisão operacional. Tente novamente.'
+  return TXT.ERROR_SAVING
 }
 
 const resolveName = (byIdMap, id, fallbackPrefix) => {
@@ -153,7 +136,7 @@ const buildDeciderDisplayName = (occurrence) => {
 
 const buildDecisionSummary = (occurrence) => {
   if (!occurrence.decided_at) {
-    return 'Pendente de decisão do admin'
+    return TXT.OCCURRENCE_PENDING_DECISION
   }
 
   return `Decidida em ${formatDateTime(occurrence.decided_at)} por ${buildDeciderDisplayName(occurrence)}`
@@ -383,7 +366,7 @@ const EditOccurrenceModal = ({
         </div>
       </CModalBody>
       <CModalFooter>
-        <CButton color="secondary" variant="outline" onClick={onClose}>Cancelar</CButton>
+        <CButton color="secondary" variant="outline" onClick={onClose}>{TXT.CANCEL}</CButton>
         <CButton
           color="primary"
           onClick={handleSave}
@@ -431,7 +414,7 @@ const DebtsPanel = ({ classId }) => {
   const { data: debtData, isLoading, isError } = useDebts({ classId: classId || undefined })
 
   if (isLoading) return <div className="text-center p-4"><CSpinner /></div>
-  if (isError) return <CAlert color="danger">Erro ao carregar dívidas.</CAlert>
+  if (isError) return <CAlert color="danger">{TXT.ERROR_LOADING}</CAlert>
   if (!debtData || debtData.total_gaps === 0) {
     return (
       <CAlert color="success" className="d-flex align-items-center gap-2">
@@ -601,7 +584,7 @@ const OccurrencesPanel = ({ classId, dateFrom, dateTo, initialOccurrenceId }) =>
     return (
       <div className="text-center p-4 d-flex justify-content-center align-items-center gap-2">
         <CSpinner />
-        <span className="text-muted">A carregar ocorrências...</span>
+        <span className="text-muted">{TXT.LOADING}</span>
       </div>
     )
   }

@@ -16,6 +16,9 @@ import {
 } from '../hooks/useSchoolData'
 import WeekGrid from '../components/WeekGrid'
 import LessonLogModal from '../components/LessonLogModal'
+import TeacherCard from '../components/timesheets/TeacherCard'
+import { formatWeekRange, addDays, toWeekMonday } from '../utils/formatUtils'
+import { TXT } from '../utils/terminology'
 
 const STATUS_LABELS = {
   OPEN: 'Aberta',
@@ -27,84 +30,6 @@ const STATUS_COLORS = {
   OPEN: 'secondary',
   SUBMITTED: 'info',
   APPROVED: 'success',
-}
-
-const STATUS_BG_COLORS = {
-  OPEN: '#f8f9fa',
-  SUBMITTED: '#fff3cd',
-  APPROVED: '#d1e7dd',
-}
-
-function toWeekMonday(dateValue) {
-  const d = new Date(dateValue.getTime())
-  const dayOfWeek = d.getDay()
-  const offset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek
-  d.setDate(d.getDate() + offset)
-  const year = d.getFullYear()
-  const month = String(d.getMonth() + 1).padStart(2, '0')
-  const day = String(d.getDate()).padStart(2, '0')
-  return `${year}-${month}-${day}`
-}
-
-function addDays(dateStr, days) {
-  const d = new Date(`${dateStr}T12:00:00`)
-  d.setDate(d.getDate() + days)
-  return d.toISOString().split('T')[0]
-}
-
-function formatWeekRange(weekStart) {
-  const start = new Date(`${weekStart}T12:00:00`)
-  const end = new Date(`${weekStart}T12:00:00`)
-  end.setDate(end.getDate() + 4)
-  const short = { day: '2-digit', month: 'short' }
-  const full = { day: '2-digit', month: 'short', year: 'numeric' }
-  return `${start.toLocaleDateString('pt-PT', short)} – ${end.toLocaleDateString('pt-PT', full)}`
-}
-
-const TeacherCard = ({ teacher, isSelected, onClick }) => {
-  const color = STATUS_COLORS[teacher.status] || 'secondary'
-  const bg = isSelected ? (STATUS_BG_COLORS[teacher.status] || '#e7f1ff') : '#fff'
-  const registered = teacher.registered_slots ?? 0
-  const total = teacher.total_slots ?? 0
-
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="w-100 text-start border-0 mb-2 p-3 rounded"
-      style={{
-        backgroundColor: bg,
-        borderLeft: `4px solid var(--cui-${color})`,
-        cursor: 'pointer',
-        transition: 'all 0.15s ease',
-        boxShadow: isSelected ? '0 0 0 2px var(--cui-primary)' : '0 1px 3px rgba(0,0,0,0.08)',
-      }}
-    >
-      <div className="d-flex justify-content-between align-items-center mb-1">
-        <span className="fw-semibold" style={{ fontSize: '0.9rem' }}>
-          {teacher.teacher_name || `Prof. #${teacher.teacher_id}`}
-        </span>
-        <CBadge color={color} style={{ fontSize: '0.7rem' }}>
-          {STATUS_LABELS[teacher.status] || teacher.status}
-        </CBadge>
-      </div>
-      <div className="text-muted" style={{ fontSize: '0.78rem' }}>
-        {total > 0 ? (
-          <>
-            <strong>{registered}</strong>/{total} registadas
-            {teacher.completed_slots > 0 && (
-              <span className="ms-2 text-success">{teacher.completed_slots} dadas</span>
-            )}
-            {teacher.occurrence_slots > 0 && (
-              <span className="ms-2 text-danger">{teacher.occurrence_slots} ocorrências</span>
-            )}
-          </>
-        ) : (
-          'Sem aulas nesta semana'
-        )}
-      </div>
-    </button>
-  )
 }
 
 const Timesheets = () => {
@@ -439,12 +364,12 @@ const Timesheets = () => {
         <CModalHeader>
           <CModalTitle>Confirmar Reabertura</CModalTitle>
         </CModalHeader>
-        <CModalBody>
-          Tem a certeza que deseja reabrir esta semana? O professor poderá editar as aulas novamente.
+          <CModalBody>
+          {TXT.WEEK_REOPEN_CONFIRM}
         </CModalBody>
         <CModalFooter>
           <CButton color="secondary" variant="outline" onClick={() => setShowReopenConfirm(false)}>
-            Cancelar
+            {TXT.CANCEL}
           </CButton>
           <CButton
             color="warning"
