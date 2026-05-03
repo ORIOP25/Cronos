@@ -2,7 +2,8 @@
 
 ## Estado deste documento
 Documento de planeamento tecnico-operacional.
-Nesta tarefa nao foram aplicadas alteracoes de codigo.
+✅ **Todas as correções planeadas neste WBS foram aplicadas a 03 Maio 2026.**
+Ver `documentation/auditoria-frontend-ui-ux.md` para o registo completo de 46 correções implementadas.
 
 ## Objetivo
 Definir um plano WBS para corrigir bugs de experiencia real (UI/UX) que criam ambiguidade operacional para admin e professores, com foco em:

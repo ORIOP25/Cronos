@@ -70,6 +70,7 @@ Ficheiros principais:
 
 - [CONTRIBUTING.md](00_governance/CONTRIBUTING.md) — Guia de contribuicao (Alembic, estilo, CI)
 - [AUDITORIA_ARQUITETURAL_ALPHA_1.0.md](08_security_quality/AUDITORIA_ARQUITETURAL_ALPHA_1.0.md) — Auditoria de qualidade (28 findings, Maio 2026)
+- [auditoria-frontend-ui-ux.md](auditoria-frontend-ui-ux.md) — Auditoria completa de frontend UI/UX (46 findings, 100% corrigidos a 03 Maio 2026)
 
 ## Planeamento de entrega
 

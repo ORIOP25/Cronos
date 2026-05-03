@@ -1349,6 +1349,39 @@ textarea {
   .table-responsive-mobile {
     -webkit-overflow-scrolling: touch;
   }
+
+  /* Login/Register brand panel -> horizontal banner */
+  .zen-login-brand-panel {
+    min-height: auto !important;
+    padding: 32px 24px !important;
+    order: -1;
+  }
+
+  .zen-login-brand-panel > div:last-child {
+    padding: 0 !important;
+  }
+}
+
+/* ===========================
+   LINK UNDERLINE ANIMATION
+   =========================== */
+.zen-link-underline {
+  position: relative;
+}
+
+.zen-link-underline::after {
+  content: '';
+  position: absolute;
+  bottom: -2px;
+  left: 0;
+  width: 0;
+  height: 1px;
+  background: var(--brand-500);
+  transition: width 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.zen-link-underline:hover::after {
+  width: 100%;
 }
 
 /* ===========================

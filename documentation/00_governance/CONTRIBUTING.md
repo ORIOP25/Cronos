@@ -62,6 +62,12 @@ alembic upgrade head   # voltar a aplicar
 - Zustand para estado de UI/autenticação
 - Evitar ternários aninhados
 - Usar elementos HTML semânticos (`<button>`, `<progress>`, etc.)
+- **Datas e números**: usar `src/utils/formatUtils.js` (nunca formatar datas manualmente)
+- **Textos e labels**: usar `src/utils/terminology.js` (`TXT`) para todo o copy da interface (nunca hardcoded strings PT-PT)
+- **Confirmações**: usar `ConfirmationModal` em vez de `window.confirm()`
+- **Erros de renderização**: toda a app está envolvida por `ErrorBoundary`
+- **CSP**: sem `eval()` — não adicionar `'unsafe-eval'` ao script-src
+- **Estilos**: preferir classes CSS do design system; evitar estilos inline excessivos
 
 ## CI/CD
 

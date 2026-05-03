@@ -467,6 +467,21 @@ Why:
 ### Criterios de aceite UX deste delta
 1. ao abrir `Ocorrencias`, pendentes e resolvidas podem coexistir sem acao extra do utilizador.
 2. ocorrencia decidida mostra explicitamente `Decidida em ... por <utilizador>`.
+
+## Novas regras transversais de UX (Maio 2026)
+
+Apos a auditoria de 03 Maio 2026, as seguintes regras aplicam-se a TODO o frontend:
+
+1. **Terminologia centralizada**: todo o copy da interface deve usar `src/utils/terminology.js` (`TXT`). Nao usar strings hardcoded em PT-PT.
+2. **Formatacao de datas**: usar `src/utils/formatUtils.js` (`formatDate`, `formatDateTime`, `formatWeekRange`, etc.). Nunca formatar datas manualmente com `split` ou `toLocaleDateString` inline.
+3. **Confirmacoes**: usar `ConfirmationModal` (substitui `window.confirm()` em toda a app).
+4. **Erros de renderizacao**: usar `ErrorBoundary` (envolvido em `main.jsx`).
+5. **Termos tecnicos**: `CP-SAT` → "motor de calculo", `solver` → "motor de calculo", `worker` → "servidor de processamento", `churn` → "alteracoes", `backlog` → "por agendar".
+6. **Tratamento formal**: "Pode" (nao "Podes"), "Guardar" (nao "Gravar"), "Remover" (nao "Apagar").
+7. **Icones de remocao**: usar `cilTrash` para todas as acoes de remocao (nao `cilX`).
+8. **Sidebar**: colapsavel com toggle, estado persistido em localStorage (`hz-sidebar-collapsed`). Admin desktop-first, professor mobile-first.
+9. **Botoes CoreUI**: usar `color="primary" variant="outline"` (nao `color="outline-primary"`).
+10. **Modais de confirmacao**: usar `ConfirmationModal` com `variant` adequado (`danger` para remocoes, `primary` para submissoes).
 3. coluna `Horas Dadas` nao aparece na grelha de registos.
 4. navegacao a partir de bloco com ocorrencia usa apenas contexto necessario (`occurrence_id`/`class_id`).
 

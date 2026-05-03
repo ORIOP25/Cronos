@@ -58,10 +58,22 @@ O ecossistema roda de forma coesa utilizando contentores (Docker Compose):
 
 ### 2.2. Frontend (React SPA)
 O Frontend obedece a uma lógica rígida de separação por Role e consistência visual:
-- **Tecnologias Core**: React, Vite, CoreUI, e Tailwind (quando aplicável).
+- **Tecnologias Core**: React 19, Vite, CoreUI 5.
 - **State Management**: `zustand` centraliza o estado global de utilizador e sessão persistente (e.g. `useAuthStore`).
-- **Comunicação Assíncrona**: Baseada fortemente no padrão de React Query ou chamadas encapsuladas de API (com centralização de outputs de erro, evitando `alert()` nativos).
-- **Controlo de Acesso (Routing)**: `react-router-dom` segmentado em `AdminOnlyRoute` e `TeacherOnlyRoute` para garantir segurança e UX específicos (e.g., *ScheduleAuditDashboard* exclusivo para Admin, *MySchedules* focado no Teacher).
+- **Comunicação Assíncrona**: React Query (TanStack Query v5) com cache configurado por perfil de mutabilidade (STATIC_OPTS para metadados, DYNAMIC_OPTS para dados operacionais). Sem `alert()` ou `window.confirm()` nativos.
+- **Controlo de Acesso (Routing)**: `react-router-dom v7` segmentado em `AdminOnlyRoute` e `TeacherOnlyRoute` com redirecionamento e feedback de acesso negado.
+- **Estrutura de Diretórios** (pós-auditoria Maio 2026):
+  - `src/utils/` — `formatUtils.js` (datas PT-PT), `terminology.js` (textos padronizados), `subjectColors.js` (paleta de disciplinas)
+  - `src/components/` — `ErrorBoundary.jsx`, `ConfirmationModal.jsx`, `SmartTable.jsx`, `GenericModalForm.jsx`, `WeekGrid.jsx`, `AvailabilityGrid.jsx`, `AnalyticsHeatmap.jsx`, `LessonLogModal.jsx`, `ReplacementModal.jsx`, `SubstitutionStep.jsx`
+  - `src/components/Forms/` — formulários CRUD (Teacher, Subject, Course, Class, Room, Timeslot)
+  - `src/components/schedules/` — KPISidebar, DraftPanel, GenerationStatusPanel, PreflightErrorPanel
+  - `src/components/timesheets/` — TeacherCard
+  - `src/components/ImportForms/` — formulários de importação em massa
+  - `src/pages/` — 18 páginas (Login, Register, MarketingSite, Dashboard, Schedules, MySchedules, MyAvailability, Teachers, Subjects, Rooms, Classes, Courses, CourseDetails, ClassDetails, ClassSubjects, SchoolConfig, Timesheets, Timeslots, Occurrences, ScheduleAuditDashboard)
+  - `src/hooks/` — `useSchoolData.js` (todos os hooks React Query)
+- **Sidebar**: Colapsável (280px/72px) com toggle para admin e professor. Estado persistido em localStorage. Admin: experiência desktop-first. Professor: mobile-first com padding adaptativo.
+- **Terminologia**: Centralizada em `src/utils/terminology.js` (`TXT`). Padronizada para PT-PT com tratamento formal. Termos técnicos do motor (`CP-SAT`, `solver`, `worker`) traduzidos para vocabulário do domínio escolar.
+- **CSP**: `script-src 'self' 'unsafe-inline'` (sem `'unsafe-eval'`).
 
 ### 2.3. Backend API (FastAPI)
 - **Estruturação Funcional (Clean Architecture):** Separa os Controllers (rotas), Serviços (lógica comercial e de acesso) e Modelos (estruturas da BD e Pydantic).
