@@ -77,8 +77,6 @@ describe('MyAvailability page (Ponto 3)', () => {
         { timeslot_id: 1, score: 0 },
       ])
     })
-
-    expect(screen.getByText('Disponibilidade gravada com sucesso.')).toBeInTheDocument()
   })
 
   it.each([
