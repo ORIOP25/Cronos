@@ -69,11 +69,11 @@ def _create_organization(
     return org, admin
 
 
-def _create_course_and_class(db: Session, *, org_id: int, suffix: str) -> tuple[models.Course, models.Class]:
+def _create_course_and_class(db: Session, *, organization_id: int, suffix: str) -> tuple[models.Course, models.Class]:
     course = models.Course(
         name=f"Curso Operacional {suffix}",
         abbreviation=f"COP{suffix}",
-        organization_id=org_id,
+        organization_id=organization_id,
     )
     db.add(course)
     db.flush()
@@ -85,7 +85,7 @@ def _create_course_and_class(db: Session, *, org_id: int, suffix: str) -> tuple[
         end_year=2028,
         grade_level=10,
         course_id=course.id,
-        organization_id=org_id,
+        organization_id=organization_id,
     )
     db.add(klass)
     db.flush()
@@ -93,12 +93,12 @@ def _create_course_and_class(db: Session, *, org_id: int, suffix: str) -> tuple[
     return course, klass
 
 
-def _create_room_and_timeslots(db: Session, *, org_id: int, suffix: str) -> tuple[models.Room, models.Timeslot, models.Timeslot]:
+def _create_room_and_timeslots(db: Session, *, organization_id: int, suffix: str) -> tuple[models.Room, models.Timeslot, models.Timeslot]:
     room = models.Room(
         name=f"Sala Operacional {suffix}",
         capacity=30,
         type=models.RoomType.normal,
-        organization_id=org_id,
+        organization_id=organization_id,
     )
     db.add(room)
     db.flush()
@@ -107,7 +107,7 @@ def _create_room_and_timeslots(db: Session, *, org_id: int, suffix: str) -> tupl
         day_of_week=0,
         start_time=time(9, 0),
         end_time=time(11, 0),
-        organization_id=org_id,
+        organization_id=organization_id,
     )
     db.add(slot_multi)
 
@@ -115,7 +115,7 @@ def _create_room_and_timeslots(db: Session, *, org_id: int, suffix: str) -> tupl
         day_of_week=1,
         start_time=time(9, 0),
         end_time=time(11, 0),
-        organization_id=org_id,
+        organization_id=organization_id,
     )
     db.add(slot_gap)
     db.flush()
@@ -123,8 +123,8 @@ def _create_room_and_timeslots(db: Session, *, org_id: int, suffix: str) -> tupl
     return room, slot_multi, slot_gap
 
 
-def _create_teacher(db: Session, *, org_id: int, name: str) -> models.Teacher:
-    teacher = models.Teacher(name=name, organization_id=org_id)
+def _create_teacher(db: Session, *, organization_id: int, name: str) -> models.Teacher:
+    teacher = models.Teacher(name=name, organization_id=organization_id)
     db.add(teacher)
     db.flush()
     return teacher
@@ -133,7 +133,7 @@ def _create_teacher(db: Session, *, org_id: int, name: str) -> models.Teacher:
 def _create_subject_and_module(
     db: Session,
     *,
-    org_id: int,
+    organization_id: int,
     name: str,
     code: str,
     hours_total: int = 30,
@@ -141,7 +141,7 @@ def _create_subject_and_module(
     subject = models.Subject(
         name=name,
         required_room_type=models.RoomType.normal,
-        organization_id=org_id,
+        organization_id=organization_id,
     )
     db.add(subject)
     db.flush()
@@ -191,13 +191,13 @@ def _set_availability(
 def _create_lesson(
     db: Session,
     *,
-    org_id: int,
+    organization_id: int,
     klass: models.Class,
     subject: models.Subject,
     teacher: models.Teacher,
 ) -> models.Lesson:
     lesson = models.Lesson(
-        organization_id=org_id,
+        organization_id=organization_id,
         class_id=klass.id,
         subject_id=subject.id,
         teacher_id=teacher.id,
@@ -210,7 +210,7 @@ def _create_lesson(
 def _create_schedule_output(
     db: Session,
     *,
-    org_id: int,
+    organization_id: int,
     lesson: models.Lesson,
     slot: models.Timeslot,
     room: models.Room,
@@ -218,7 +218,7 @@ def _create_schedule_output(
     generation_id: str,
 ) -> models.ScheduleOutput:
     schedule_output = models.ScheduleOutput(
-        organization_id=org_id,
+        organization_id=organization_id,
         lesson_id=lesson.id,
         timeslot_id=slot.id,
         room_id=room.id,
@@ -234,7 +234,7 @@ def _create_schedule_output(
 def _create_occurrence(
     db: Session,
     *,
-    org_id: int,
+    organization_id: int,
     schedule_output: models.ScheduleOutput,
     target_date: date,
     status: models.LessonOccurrenceStatus,
@@ -249,7 +249,7 @@ def _create_occurrence(
     decided_at: datetime | None = None,
 ) -> models.LessonOccurrence:
     occurrence = models.LessonOccurrence(
-        organization_id=org_id,
+        organization_id=organization_id,
         schedule_output_id=schedule_output.id,
         date=target_date,
         status=status,

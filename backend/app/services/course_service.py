@@ -4,7 +4,7 @@ from sqlalchemy import select, insert, delete
 from app import models, schemas
 
 # --- LEITURA ---
-async def get_courses_by_org(db: AsyncSession, org_id: int, skip: int = 0, limit: int = 100):
+async def get_courses_by_org(db: AsyncSession, organization_id: int, skip: int = 0, limit: int = 100):
     """
     Lista cursos da organização com paginação offset/limit.
     
@@ -21,7 +21,7 @@ async def get_courses_by_org(db: AsyncSession, org_id: int, skip: int = 0, limit
     skip = max(skip, 0)
     
     query = select(models.Course)\
-        .where(models.Course.organization_id == org_id)\
+        .where(models.Course.organization_id == organization_id)\
         .options(
             selectinload(models.Course.subjects),
             selectinload(models.Course.classes)
@@ -32,11 +32,11 @@ async def get_courses_by_org(db: AsyncSession, org_id: int, skip: int = 0, limit
     result = await db.execute(query)
     return result.scalars().all()
 
-async def get_course_details(db: AsyncSession, course_id: int, org_id: int):
+async def get_course_details(db: AsyncSession, course_id: int, organization_id: int):
     """Retorna a árvore completa do curso para a Dashboard"""
     query = select(models.Course).where(
         models.Course.id == course_id, 
-        models.Course.organization_id == org_id
+        models.Course.organization_id == organization_id
     ).options(
         selectinload(models.Course.subjects),
         selectinload(models.Course.classes) # Carregar turmas
@@ -45,7 +45,7 @@ async def get_course_details(db: AsyncSession, course_id: int, org_id: int):
     return result.scalars().first()
 
 # --- CRIAÇÃO (O MOTOR NOVO) ---
-async def create_course(db: AsyncSession, item: schemas.CourseCreate, org_id: int):
+async def create_course(db: AsyncSession, item: schemas.CourseCreate, organization_id: int):
     """
     Cria Curso + Associa Disciplinas + Define Professores + Gera Turmas
     Tudo numa transação atómica.
@@ -53,7 +53,7 @@ async def create_course(db: AsyncSession, item: schemas.CourseCreate, org_id: in
     # 1. Validar Abreviatura Única (Regra de Negócio)
     q_check = select(models.Course).where(
         models.Course.abbreviation == item.abbreviation.upper(),
-        models.Course.organization_id == org_id
+        models.Course.organization_id == organization_id
     )
     if (await db.execute(q_check)).scalars().first():
         return "ABBREVIATION_EXISTS"
@@ -64,7 +64,7 @@ async def create_course(db: AsyncSession, item: schemas.CourseCreate, org_id: in
     if item.subject_ids:
         q_subjects = select(models.Subject).where(
             models.Subject.id.in_(item.subject_ids),
-            models.Subject.organization_id == org_id 
+            models.Subject.organization_id == organization_id 
         )
         subjects_to_link = (await db.execute(q_subjects)).scalars().all()
         
@@ -78,7 +78,7 @@ async def create_course(db: AsyncSession, item: schemas.CourseCreate, org_id: in
     
     db_course = models.Course(
         **course_data, 
-        organization_id=org_id,
+        organization_id=organization_id,
         abbreviation=item.abbreviation.upper()
         # ❌ NÃO atribuir subjects aqui (trigga lazy loading em async)
     )
@@ -109,7 +109,7 @@ async def create_course(db: AsyncSession, item: schemas.CourseCreate, org_id: in
             name=class_name,
             size=cls_conf.size,
             course_id=db_course.id,
-            organization_id=org_id,
+            organization_id=organization_id,
             grade_level=cls_conf.grade_level,
             start_year=cls_conf.start_year,
             end_year=cls_conf.end_year
@@ -121,16 +121,16 @@ async def create_course(db: AsyncSession, item: schemas.CourseCreate, org_id: in
     
     # 6. Retornar com eager load (selectinload) para evitar lazy loading em async
     # ⚠️ NÃO usar .refresh() com relacionamentos - causa MissingGreenlet
-    return await get_course_details(db, db_course.id, org_id)
+    return await get_course_details(db, db_course.id, organization_id)
 
 # --- UPDATE E DELETE ---
-async def update_course(db: AsyncSession, course_id: int, item: schemas.CourseUpdate, org_id: int):
+async def update_course(db: AsyncSession, course_id: int, item: schemas.CourseUpdate, organization_id: int):
     """
     Atualiza um curso (PATCH - apenas campos enviados).
     """
     query = select(models.Course).where(
         models.Course.id == course_id, 
-        models.Course.organization_id == org_id
+        models.Course.organization_id == organization_id
     )
     
     result = await db.execute(query)
@@ -143,7 +143,7 @@ async def update_course(db: AsyncSession, course_id: int, item: schemas.CourseUp
     if item.abbreviation is not None and item.abbreviation.upper() != db_item.abbreviation:
         q_check = select(models.Course).where(
             models.Course.abbreviation == item.abbreviation.upper(),
-            models.Course.organization_id == org_id,
+            models.Course.organization_id == organization_id,
             models.Course.id != course_id
         )
         if (await db.execute(q_check)).scalars().first():
@@ -170,7 +170,7 @@ async def update_course(db: AsyncSession, course_id: int, item: schemas.CourseUp
         # Validar IDs
         stmt_subjects = select(models.Subject).where(
             models.Subject.id.in_(item.subject_ids),
-            models.Subject.organization_id == org_id
+            models.Subject.organization_id == organization_id
         )
         new_subjects = (await db.execute(stmt_subjects)).scalars().all()
         
@@ -194,11 +194,11 @@ async def update_course(db: AsyncSession, course_id: int, item: schemas.CourseUp
     await db.commit()
     
     # Retornar com eager load fresco
-    return await get_course_details(db, course_id, org_id)
+    return await get_course_details(db, course_id, organization_id)
 
-async def delete_course(db: AsyncSession, course_id: int, org_id: int):
+async def delete_course(db: AsyncSession, course_id: int, organization_id: int):
     # 1. Verificar existência
-    result = await db.execute(select(models.Course).where(models.Course.id == course_id, models.Course.organization_id == org_id))
+    result = await db.execute(select(models.Course).where(models.Course.id == course_id, models.Course.organization_id == organization_id))
     course = result.scalars().first()
     if not course:
         return "NOT_FOUND"

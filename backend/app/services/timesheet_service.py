@@ -8,13 +8,13 @@ from typing import List, Optional
 
 def get_or_create_timesheet_sync(
     db: Session,
-    org_id: int,
+    organization_id: int,
     teacher_id: int,
     week_start_date: date
 ) -> models.TeacherWeeklyTimesheet:
     """Obtém ou cria a timesheet de uma determinada semana para o professor."""
     timesheet = db.query(models.TeacherWeeklyTimesheet).filter(
-        models.TeacherWeeklyTimesheet.organization_id == org_id,
+        models.TeacherWeeklyTimesheet.organization_id == organization_id,
         models.TeacherWeeklyTimesheet.teacher_id == teacher_id,
         models.TeacherWeeklyTimesheet.week_start_date == week_start_date
     ).first()
@@ -22,7 +22,7 @@ def get_or_create_timesheet_sync(
     if not timesheet:
         week_end_date = week_start_date + timedelta(days=6)
         timesheet = models.TeacherWeeklyTimesheet(
-            organization_id=org_id,
+            organization_id=organization_id,
             teacher_id=teacher_id,
             week_start_date=week_start_date,
             week_end_date=week_end_date,
@@ -36,12 +36,12 @@ def get_or_create_timesheet_sync(
 
 def submit_timesheet_sync(
     db: Session,
-    org_id: int,
+    organization_id: int,
     teacher_id: int,
     week_start_date: date
 ) -> models.TeacherWeeklyTimesheet:
     """O professor submete a sua semana."""
-    timesheet = get_or_create_timesheet_sync(db, org_id, teacher_id, week_start_date)
+    timesheet = get_or_create_timesheet_sync(db, organization_id, teacher_id, week_start_date)
     
     if timesheet.status != models.TimesheetStatus.OPEN:
         raise HTTPException(status_code=400, detail="A semana já não está aberta para submissão.")
@@ -53,7 +53,7 @@ def submit_timesheet_sync(
     outputs = db.query(models.ScheduleOutput).join(
         models.Lesson, models.ScheduleOutput.lesson_id == models.Lesson.id
     ).filter(
-        models.ScheduleOutput.organization_id == org_id,
+        models.ScheduleOutput.organization_id == organization_id,
         models.Lesson.teacher_id == teacher_id,
         models.ScheduleOutput.is_draft == False,
         models.ScheduleOutput.date.between(week_start_date, week_end_date)
@@ -91,7 +91,7 @@ def submit_timesheet_sync(
 
 def _compute_slot_counts_for_teachers(
     db: Session,
-    org_id: int,
+    organization_id: int,
     teacher_ids: list[int],
     week_start_date: date,
 ) -> dict[int, dict]:
@@ -149,7 +149,7 @@ def _compute_slot_counts_for_teachers(
         models.LessonOccurrence,
         models.LessonOccurrence.schedule_output_id == models.ScheduleOutput.id,
     ).filter(
-        models.ScheduleOutput.organization_id == org_id,
+        models.ScheduleOutput.organization_id == organization_id,
         models.Lesson.teacher_id.in_(teacher_ids),
         models.ScheduleOutput.is_draft.is_(False),
         models.ScheduleOutput.date.between(week_start_date, week_end_date),
@@ -170,14 +170,14 @@ def _compute_slot_counts_for_teachers(
 
 def list_timesheets_sync(
     db: Session,
-    org_id: int,
+    organization_id: int,
     week_start_date: Optional[date] = None,
     status: Optional[models.TimesheetStatus] = None
 ) -> List[dict]:
     """Admin lista as timesheets, podendo filtrar por semana ou estado."""
     query = db.query(models.TeacherWeeklyTimesheet).join(
         models.Teacher, models.TeacherWeeklyTimesheet.teacher_id == models.Teacher.id
-    ).filter(models.TeacherWeeklyTimesheet.organization_id == org_id)
+    ).filter(models.TeacherWeeklyTimesheet.organization_id == organization_id)
     
     if week_start_date:
         query = query.filter(models.TeacherWeeklyTimesheet.week_start_date == week_start_date)
@@ -191,7 +191,7 @@ def list_timesheets_sync(
     if timesheets and week_start_date:
         teacher_ids = [t.teacher_id for t in timesheets]
         slot_counts = _compute_slot_counts_for_teachers(
-            db, org_id, teacher_ids, week_start_date
+            db, organization_id, teacher_ids, week_start_date
         )
     
     result = []
@@ -199,7 +199,7 @@ def list_timesheets_sync(
         counts = slot_counts.get(t.teacher_id, {})
         result.append({
             "id": t.id,
-            "organization_id": t.org_id,
+            "organization_id": t.organization_id,
             "teacher_id": t.teacher_id,
             "teacher_name": t.teacher.name,
             "week_start_date": t.week_start_date,
@@ -226,14 +226,14 @@ ALLOWED_TIMESHEET_TRANSITIONS = {
 
 def update_timesheet_status_sync(
     db: Session,
-    org_id: int,
+    organization_id: int,
     timesheet_id: int,
     status: models.TimesheetStatus,
     admin_user_id: int
 ) -> dict:
     timesheet = db.query(models.TeacherWeeklyTimesheet).filter(
         models.TeacherWeeklyTimesheet.id == timesheet_id,
-        models.TeacherWeeklyTimesheet.organization_id == org_id
+        models.TeacherWeeklyTimesheet.organization_id == organization_id
     ).first()
 
     if not timesheet:
@@ -264,7 +264,7 @@ def update_timesheet_status_sync(
     
     return {
         "id": timesheet.id,
-        "organization_id": timesheet.org_id,
+        "organization_id": timesheet.organization_id,
         "teacher_id": timesheet.teacher_id,
         "teacher_name": timesheet.teacher.name if timesheet.teacher else None,
         "week_start_date": timesheet.week_start_date,

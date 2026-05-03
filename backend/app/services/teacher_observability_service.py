@@ -42,7 +42,7 @@ def _to_role_value(role: Optional[models.UserRole]) -> Optional[str]:
 def log_teacher_endpoint_event_safe_sync(
     db: Session,
     *,
-    org_id: int,
+    organization_id: int,
     actor_user_id: Optional[int],
     actor_role: Optional[models.UserRole],
     endpoint_key: str,
@@ -53,7 +53,7 @@ def log_teacher_endpoint_event_safe_sync(
     """Regista evento sem bloquear o fluxo principal em caso de falha de observabilidade."""
     try:
         event = models.TeacherEndpointOperationalEvent(
-            organization_id=org_id,
+            organization_id=organization_id,
             actor_user_id=actor_user_id,
             actor_role=_to_role_value(actor_role),
             endpoint_key=endpoint_key,
@@ -68,7 +68,7 @@ def log_teacher_endpoint_event_safe_sync(
         db.rollback()
         logger.warning(
             "teacher_endpoint_observability_emit_failed",
-            organization_id=org_id,
+            organization_id=organization_id,
             endpoint_key=endpoint_key,
             http_status=http_status,
             error=str(exc),
@@ -78,7 +78,7 @@ def log_teacher_endpoint_event_safe_sync(
 def get_teacher_endpoint_observability_summary_sync(
     db: Session,
     *,
-    org_id: int,
+    organization_id: int,
     window_minutes: int,
 ) -> dict:
     """Agrega eventos por endpoint com taxas de erro e alertas operacionais."""
@@ -89,7 +89,7 @@ def get_teacher_endpoint_observability_summary_sync(
         select(models.TeacherEndpointOperationalEvent)
         .where(
             and_(
-                models.TeacherEndpointOperationalEvent.organization_id == org_id,
+                models.TeacherEndpointOperationalEvent.organization_id == organization_id,
                 models.TeacherEndpointOperationalEvent.created_at >= start_at,
             )
         )

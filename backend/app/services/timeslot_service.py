@@ -4,16 +4,16 @@ from app import models, schemas
 from datetime import datetime, date, timedelta, time
 
 
-async def _get_org_teacher_ids(db: AsyncSession, org_id: int) -> list[int]:
+async def _get_org_teacher_ids(db: AsyncSession, organization_id: int) -> list[int]:
     result = await db.execute(
-        select(models.Teacher.id).where(models.Teacher.organization_id == org_id)
+        select(models.Teacher.id).where(models.Teacher.organization_id == organization_id)
     )
     return list(result.scalars().all())
 
 
 async def _get_availability_preferences_by_time(
     db: AsyncSession,
-    org_id: int,
+    organization_id: int,
 ) -> dict[tuple[int, int, time, time], int]:
     """Snapshot preferences by (teacher, day, start, end) before timeslot reset."""
     result = await db.execute(
@@ -25,7 +25,7 @@ async def _get_availability_preferences_by_time(
             models.Availability.score,
         )
         .join(models.Timeslot, models.Timeslot.id == models.Availability.timeslot_id)
-        .where(models.Timeslot.organization_id == org_id)
+        .where(models.Timeslot.organization_id == organization_id)
     )
     return {
         (teacher_id, day_of_week, start_time, end_time): score
@@ -59,15 +59,15 @@ def _restore_availabilities_for_new_grid(
                 )
             )
 
-async def get_timeslots_by_org(db: AsyncSession, org_id: int):
+async def get_timeslots_by_org(db: AsyncSession, organization_id: int):
     # Ordenar por Dia da Semana e depois Hora de Início
-    stmt = select(models.Timeslot).where(models.Timeslot.organization_id == org_id)\
+    stmt = select(models.Timeslot).where(models.Timeslot.organization_id == organization_id)\
         .order_by(models.Timeslot.day_of_week, models.Timeslot.start_time)
     result = await db.execute(stmt)
     return result.scalars().all()
 
-async def create_timeslot(db: AsyncSession, item: schemas.TimeslotCreate, org_id: int):
-    db_item = models.Timeslot(**item.model_dump(), organization_id=org_id)
+async def create_timeslot(db: AsyncSession, item: schemas.TimeslotCreate, organization_id: int):
+    db_item = models.Timeslot(**item.model_dump(), organization_id=organization_id)
     db.add(db_item)
     await db.commit()
     await db.refresh(db_item)
@@ -77,11 +77,11 @@ async def update_timeslot(
     db: AsyncSession, 
     timeslot_id: int, 
     item: schemas.TimeslotUpdate, 
-    org_id: int
+    organization_id: int
 ):
     query = select(models.Timeslot).where(
         models.Timeslot.id == timeslot_id,
-        models.Timeslot.organization_id == org_id
+        models.Timeslot.organization_id == organization_id
     )
     result = await db.execute(query)
     db_item = result.scalars().first()
@@ -98,12 +98,12 @@ async def update_timeslot(
     await db.refresh(db_item)
     return db_item
 
-async def delete_timeslot(db: AsyncSession, timeslot_id: int, org_id: int):
+async def delete_timeslot(db: AsyncSession, timeslot_id: int, organization_id: int):
     """
     Remove um bloco horário individual.
     Lógica 'Soft': Limpa dependências fracas (Availability) mas bloqueia se houver dados críticos.
     """
-    result = await db.execute(select(models.Timeslot).where(models.Timeslot.id == timeslot_id, models.Timeslot.organization_id == org_id))
+    result = await db.execute(select(models.Timeslot).where(models.Timeslot.id == timeslot_id, models.Timeslot.organization_id == organization_id))
     item = result.scalars().first()
     
     if not item:
@@ -130,14 +130,14 @@ async def delete_timeslot(db: AsyncSession, timeslot_id: int, org_id: int):
 
 # --- GERAÇÃO EM MASSA (RESET ESTRUTURAL) ---
 
-async def _purge_all_dependencies(db: AsyncSession, org_id: int):
+async def _purge_all_dependencies(db: AsyncSession, organization_id: int):
     """
     FUNÇÃO CRÍTICA: Prepara a escola para uma redefinição de horários.
     Remove TODOS os dados que dependem da grelha de tempos.
     A ordem é vital para respeitar as Foreign Keys.
     """
     # Identificar timeslots desta org
-    timeslot_ids_subquery = select(models.Timeslot.id).where(models.Timeslot.organization_id == org_id)
+    timeslot_ids_subquery = select(models.Timeslot.id).where(models.Timeslot.organization_id == organization_id)
 
     # 1. Substituições (Dependem de Timeslot)
     # Se a grelha muda, as substituições passadas/futuras para tempos antigos perdem o sentido.
@@ -162,22 +162,22 @@ async def _purge_all_dependencies(db: AsyncSession, org_id: int):
     )
 
     # 4. Timeslots (A grelha antiga)
-    await db.execute(delete(models.Timeslot).where(models.Timeslot.organization_id == org_id))
+    await db.execute(delete(models.Timeslot).where(models.Timeslot.organization_id == organization_id))
 
 
 async def create_bulk_timeslots(
     db: AsyncSession, 
     settings: schemas.TimeslotBulkCreate, 
-    org_id: int
+    organization_id: int
 ):
     """
     Executa o Hard Reset da grelha escolar.
     """
-    teacher_ids = await _get_org_teacher_ids(db, org_id)
-    previous_preferences = await _get_availability_preferences_by_time(db, org_id)
+    teacher_ids = await _get_org_teacher_ids(db, organization_id)
+    previous_preferences = await _get_availability_preferences_by_time(db, organization_id)
 
     # 1. Limpeza Profunda
-    await _purge_all_dependencies(db, org_id)
+    await _purge_all_dependencies(db, organization_id)
     
     # 2. Reconstrução
     created_count = 0
@@ -198,7 +198,7 @@ async def create_bulk_timeslots(
                 day_of_week=day,
                 start_time=current_start_dt.time(),
                 end_time=current_end_dt.time(),
-                organization_id=org_id
+                organization_id=organization_id
             )
             db.add(new_slot)
             new_timeslots.append(new_slot)

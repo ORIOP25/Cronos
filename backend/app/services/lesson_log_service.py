@@ -20,7 +20,7 @@ def _get_timeslot_duration_hours(timeslot: models.Timeslot) -> float:
 
 def upsert_lesson_log_sync(
     db: Session,
-    org_id: int,
+    organization_id: int,
     user_id: int,
     schedule_output_id: int,
     payload: schemas.LessonLogCreate
@@ -30,7 +30,7 @@ def upsert_lesson_log_sync(
     # 1. Obter o ScheduleOutput e garantir que é da Org e não draft
     output = db.query(models.ScheduleOutput).filter(
         models.ScheduleOutput.id == schedule_output_id,
-        models.ScheduleOutput.organization_id == org_id,
+        models.ScheduleOutput.organization_id == organization_id,
         models.ScheduleOutput.is_draft == False
     ).first()
     
@@ -51,7 +51,7 @@ def upsert_lesson_log_sync(
     # 3. Check if the timesheet for this week is submitted/approved
     week_start_date = output.date - timedelta(days=output.date.weekday())
     timesheet = db.query(models.TeacherWeeklyTimesheet).filter(
-        models.TeacherWeeklyTimesheet.organization_id == org_id,
+        models.TeacherWeeklyTimesheet.organization_id == organization_id,
         models.TeacherWeeklyTimesheet.teacher_id == output.lesson.teacher_id,
         models.TeacherWeeklyTimesheet.week_start_date == week_start_date
     ).first()
@@ -81,7 +81,7 @@ def upsert_lesson_log_sync(
 
     if not llog:
         llog = models.LessonLog(
-            organization_id=org_id,
+            organization_id=organization_id,
             schedule_output_id=schedule_output_id,
             status=payload.status,
             summary=payload.summary,

@@ -3,22 +3,22 @@ from sqlalchemy.orm import selectinload
 from sqlalchemy import select
 from app import models, schemas
 
-async def get_modules_by_org(db: AsyncSession, org_id: int):
+async def get_modules_by_org(db: AsyncSession, organization_id: int):
     stmt = (
         select(models.Module)
         .join(models.Subject)
-        .where(models.Subject.organization_id == org_id)
+        .where(models.Subject.organization_id == organization_id)
         .options(selectinload(models.Module.subject))  # ✅ ADICIONAR
         .order_by(models.Module.name)
     )
     result = await db.execute(stmt)
     return result.scalars().all()
 
-async def create_module(db: AsyncSession, item: schemas.ModuleCreate, org_id: int):
+async def create_module(db: AsyncSession, item: schemas.ModuleCreate, organization_id: int):
     # Validar se o subject_id pertence à organização
     subject_query = select(models.Subject).where(
         models.Subject.id == item.subject_id,
-        models.Subject.organization_id == org_id
+        models.Subject.organization_id == organization_id
     )
     subject_result = await db.execute(subject_query)
     if not subject_result.scalars().first():
@@ -30,14 +30,14 @@ async def create_module(db: AsyncSession, item: schemas.ModuleCreate, org_id: in
     await db.refresh(db_item)
     return db_item
 
-async def update_module(db: AsyncSession, module_id: int, item: schemas.ModuleUpdate, org_id: int):
+async def update_module(db: AsyncSession, module_id: int, item: schemas.ModuleUpdate, organization_id: int):
     # Garantir que o módulo pertence à organização
     result = await db.execute(
         select(models.Module)
         .join(models.Subject)
         .where(
             models.Module.id == module_id,
-            models.Subject.organization_id == org_id
+            models.Subject.organization_id == organization_id
         )
     )
     db_item = result.scalars().first()
@@ -49,7 +49,7 @@ async def update_module(db: AsyncSession, module_id: int, item: schemas.ModuleUp
     if item.subject_id is not None:
         subject_query = select(models.Subject).where(
             models.Subject.id == item.subject_id,
-            models.Subject.organization_id == org_id
+            models.Subject.organization_id == organization_id
         )
         subject_result = await db.execute(subject_query)
         if not subject_result.scalars().first():
@@ -63,14 +63,14 @@ async def update_module(db: AsyncSession, module_id: int, item: schemas.ModuleUp
     await db.refresh(db_item)
     return db_item
 
-async def delete_module(db: AsyncSession, module_id: int, org_id: int):
+async def delete_module(db: AsyncSession, module_id: int, organization_id: int):
     # 1. Verificar existência + org
     result = await db.execute(
         select(models.Module)
         .join(models.Subject)
         .where(
             models.Module.id == module_id,
-            models.Subject.organization_id == org_id
+            models.Subject.organization_id == organization_id
         )
     )
     db_item = result.scalars().first()

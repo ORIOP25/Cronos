@@ -23,20 +23,20 @@ SETTINGS_NOT_FOUND = "Configurações da escola não encontradas"
 #  ORGANIZATION SETTINGS
 # ==========================================
 
-async def get_settings(db: AsyncSession, org_id: int) -> models.OrganizationSettings | None:
+async def get_settings(db: AsyncSession, organization_id: int) -> models.OrganizationSettings | None:
     """Retorna a configuração única da escola."""
     result = await db.execute(
         select(models.OrganizationSettings).where(
-            models.OrganizationSettings.organization_id == org_id
+            models.OrganizationSettings.organization_id == organization_id
         )
     )
     return result.scalar_one_or_none()
 
 async def upsert_settings(
-    db: AsyncSession, org_id: int, data: schemas.OrganizationSettingsUpsert
+    db: AsyncSession, organization_id: int, data: schemas.OrganizationSettingsUpsert
 ) -> models.OrganizationSettings:
     """Cria ou actualiza o registo único de configuração."""
-    existing = await get_settings(db, org_id)
+    existing = await get_settings(db, organization_id)
     if existing:
         if data.school_start_date is not None:
             existing.school_start_date = data.school_start_date
@@ -51,7 +51,7 @@ async def upsert_settings(
         return existing
 
     new_settings = models.OrganizationSettings(
-        organization_id=org_id,
+        organization_id=organization_id,
         school_start_date=data.school_start_date,
         school_target_end_date=data.school_target_end_date,
         school_hard_end_date=data.school_hard_end_date,
@@ -66,20 +66,20 @@ async def upsert_settings(
 #  ORGANIZATION GRID SETTINGS
 # ==========================================
 
-async def get_grid_settings(db: AsyncSession, org_id: int) -> models.OrganizationGridSettings | None:
+async def get_grid_settings(db: AsyncSession, organization_id: int) -> models.OrganizationGridSettings | None:
     """Retorna as configurações únicas da grelha da escola."""
     result = await db.execute(
         select(models.OrganizationGridSettings).where(
-            models.OrganizationGridSettings.organization_id == org_id
+            models.OrganizationGridSettings.organization_id == organization_id
         )
     )
     return result.scalar_one_or_none()
 
 async def upsert_grid_settings(
-    db: AsyncSession, org_id: int, data: schemas.OrganizationGridSettingsUpsert
+    db: AsyncSession, organization_id: int, data: schemas.OrganizationGridSettingsUpsert
 ) -> models.OrganizationGridSettings:
     """Cria ou actualiza as configurações únicas da grelha."""
-    existing = await get_grid_settings(db, org_id)
+    existing = await get_grid_settings(db, organization_id)
     if existing:
         if data.lunch_window_start is not None:
             existing.lunch_window_start = data.lunch_window_start
@@ -92,7 +92,7 @@ async def upsert_grid_settings(
         return existing
 
     new_settings = models.OrganizationGridSettings(
-        organization_id=org_id,
+        organization_id=organization_id,
         lunch_window_start=data.lunch_window_start,
         lunch_window_end=data.lunch_window_end,
         lunch_min_duration_minutes=data.lunch_min_duration_minutes,
@@ -109,13 +109,13 @@ async def upsert_grid_settings(
 
 async def list_calendar_events(
     db: AsyncSession,
-    org_id: int,
+    organization_id: int,
     from_date: date | None = None,
     to_date: date | None = None,
 ) -> Sequence[models.SchoolCalendarEvent]:
     """Lista eventos do calendário, opcionalmente filtrados por intervalo de datas."""
     query = select(models.SchoolCalendarEvent).where(
-        models.SchoolCalendarEvent.organization_id == org_id
+        models.SchoolCalendarEvent.organization_id == organization_id
     )
     if from_date:
         query = query.where(models.SchoolCalendarEvent.end_date >= from_date)
@@ -127,9 +127,9 @@ async def list_calendar_events(
 
 
 async def create_calendar_event(
-    db: AsyncSession, org_id: int, data: schemas.SchoolCalendarEventCreate
+    db: AsyncSession, organization_id: int, data: schemas.SchoolCalendarEventCreate
 ) -> models.SchoolCalendarEvent:
-    settings = await get_settings(db, org_id)
+    settings = await get_settings(db, organization_id)
     if settings:
         min_date = settings.school_start_date
         max_date = settings.school_hard_end_date
@@ -140,7 +140,7 @@ async def create_calendar_event(
             raise ValueError(f"Evento fora do intervalo permitido. O calendário escolar termina a {max_date.isoformat()}.")
 
     event = models.SchoolCalendarEvent(
-        organization_id=org_id,
+        organization_id=organization_id,
         name=data.name,
         start_date=data.start_date,
         end_date=data.end_date,
@@ -153,12 +153,12 @@ async def create_calendar_event(
     return event
 
 
-async def delete_calendar_event(db: AsyncSession, org_id: int, event_id: int) -> bool:
+async def delete_calendar_event(db: AsyncSession, organization_id: int, event_id: int) -> bool:
     result = await db.execute(
         select(models.SchoolCalendarEvent).where(
             and_(
                 models.SchoolCalendarEvent.id == event_id,
-                models.SchoolCalendarEvent.organization_id == org_id,
+                models.SchoolCalendarEvent.organization_id == organization_id,
             )
         )
     )
@@ -181,7 +181,7 @@ def _get_pt_holidays(years: list[int]) -> dict[date, str]:
 
 async def sync_holidays(
     db: AsyncSession,
-    org_id: int,
+    organization_id: int,
 ) -> int:
     """Importa feriados nacionais para o calendário da escola.
 
@@ -189,7 +189,7 @@ async def sync_holidays(
     Garante idempotência: pode ser chamado várias vezes sem duplicados.
     Retorna o número de feriados importados.
     """
-    settings = await get_settings(db, org_id)
+    settings = await get_settings(db, organization_id)
     if not settings or not settings.school_start_date:
         current_year = date.today().year
         years = [current_year, current_year + 1]
@@ -201,7 +201,7 @@ async def sync_holidays(
     await db.execute(
         delete(models.SchoolCalendarEvent).where(
             and_(
-                models.SchoolCalendarEvent.organization_id == org_id,
+                models.SchoolCalendarEvent.organization_id == organization_id,
                 models.SchoolCalendarEvent.source == models.CalendarEventSource.auto,
             )
         )
@@ -221,7 +221,7 @@ async def sync_holidays(
             continue
 
         event = models.SchoolCalendarEvent(
-            organization_id=org_id,
+            organization_id=organization_id,
             name=holiday_name,
             start_date=holiday_date,
             end_date=holiday_date,
@@ -238,39 +238,39 @@ async def sync_holidays(
 #  SOFT-RESET DO ANO LETIVO
 # ==========================================
 
-async def soft_reset_year(db: AsyncSession, org_id: int) -> bool:
+async def soft_reset_year(db: AsyncSession, organization_id: int) -> bool:
     """Limpa todas as instâncias dinâmicas e reinicia o progresso,
     mantendo professores, turmas, cursos, disciplinas, módulos e salas.
     """
     # 1. Apagar Timesheets semanais
-    await db.execute(delete(models.TeacherWeeklyTimesheet).where(models.TeacherWeeklyTimesheet.organization_id == org_id))
+    await db.execute(delete(models.TeacherWeeklyTimesheet).where(models.TeacherWeeklyTimesheet.organization_id == organization_id))
 
     # 2. Apagar Eventos Operacionais e Ocorrências
-    await db.execute(delete(models.OccurrenceOperationalEvent).where(models.OccurrenceOperationalEvent.organization_id == org_id))
-    await db.execute(delete(models.TeacherEndpointOperationalEvent).where(models.TeacherEndpointOperationalEvent.organization_id == org_id))
-    await db.execute(delete(models.LessonOccurrence).where(models.LessonOccurrence.organization_id == org_id))
+    await db.execute(delete(models.OccurrenceOperationalEvent).where(models.OccurrenceOperationalEvent.organization_id == organization_id))
+    await db.execute(delete(models.TeacherEndpointOperationalEvent).where(models.TeacherEndpointOperationalEvent.organization_id == organization_id))
+    await db.execute(delete(models.LessonOccurrence).where(models.LessonOccurrence.organization_id == organization_id))
 
-    # 3. Apagar Substituições (não têm org_id direto, usar lesson_id como pivot)
+    # 3. Apagar Substituições (não têm organization_id direto, usar lesson_id como pivot)
     await db.execute(
         delete(models.Substitution).where(
             models.Substitution.lesson_id.in_(
-                select(models.Lesson.id).where(models.Lesson.organization_id == org_id)
+                select(models.Lesson.id).where(models.Lesson.organization_id == organization_id)
             )
         )
     )
 
-    # 4. Apagar Registos de Aulas (LessonLog tem org_id direto)
-    await db.execute(delete(models.LessonLog).where(models.LessonLog.organization_id == org_id))
+    # 4. Apagar Registos de Aulas (LessonLog tem organization_id direto)
+    await db.execute(delete(models.LessonLog).where(models.LessonLog.organization_id == organization_id))
 
     # 5. Apagar ScheduleOutput (blocos gerados pelo Solver)
-    await db.execute(delete(models.ScheduleOutput).where(models.ScheduleOutput.organization_id == org_id))
+    await db.execute(delete(models.ScheduleOutput).where(models.ScheduleOutput.organization_id == organization_id))
 
     # 6. Resetar ClassProgress (hours_completed = 0.0) — preserva a estrutura de turmas/módulos
     await db.execute(
         update(models.ClassProgress)
         .where(
             models.ClassProgress.class_id.in_(
-                select(models.Class.id).where(models.Class.organization_id == org_id)
+                select(models.Class.id).where(models.Class.organization_id == organization_id)
             )
         )
         .values(

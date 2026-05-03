@@ -10,10 +10,10 @@ from app import models
 from app.services.schedule_service import _resolve_repair_window_days_sync
 
 
-def get_diff_summary_sync(db: Session, org_id: int, gen_id: str) -> dict:
+def get_diff_summary_sync(db: Session, organization_id: int, gen_id: str) -> dict:
     """Computes the 6 statistical indicators for Phase H."""
     today = date.today()
-    repair_window_days = _resolve_repair_window_days_sync(db, org_id)
+    repair_window_days = _resolve_repair_window_days_sync(db, organization_id)
     frozen_until = today + timedelta(days=repair_window_days)
     compared_from_date = frozen_until + timedelta(days=1)
 
@@ -25,7 +25,7 @@ def get_diff_summary_sync(db: Session, org_id: int, gen_id: str) -> dict:
         ).join(
             models.Lesson, models.Lesson.id == models.ScheduleOutput.lesson_id
         ).filter(
-            models.ScheduleOutput.organization_id == org_id,
+            models.ScheduleOutput.organization_id == organization_id,
             models.ScheduleOutput.is_draft.is_(is_draft),
             models.ScheduleOutput.date >= compared_from_date
         )
@@ -56,7 +56,7 @@ def get_diff_summary_sync(db: Session, org_id: int, gen_id: str) -> dict:
             models.ScheduleOutput.timeslot_id,
             models.ScheduleOutput.date,
         ).filter(
-            models.ScheduleOutput.organization_id == org_id,
+            models.ScheduleOutput.organization_id == organization_id,
             models.ScheduleOutput.is_draft.is_(is_draft),
             models.ScheduleOutput.date >= compared_from_date,
         )
@@ -78,7 +78,7 @@ def get_diff_summary_sync(db: Session, org_id: int, gen_id: str) -> dict:
 
     # 5. Backlog Remaining Hours (Formula 2: Theoretical demand - Draft scheduled)
     class_subject_pairs = db.query(models.ClassSubjectLink).join(models.Class).filter(
-        models.Class.organization_id == org_id,
+        models.Class.organization_id == organization_id,
         models.Class.is_archived.is_(False)
     ).all()
     
@@ -90,7 +90,7 @@ def get_diff_summary_sync(db: Session, org_id: int, gen_id: str) -> dict:
         total_demand_hours += subj_hours
 
     q_scheduled = db.query(func.count(models.ScheduleOutput.id)).filter(
-        models.ScheduleOutput.organization_id == org_id,
+        models.ScheduleOutput.organization_id == organization_id,
         (
             (models.ScheduleOutput.is_draft.is_(False) & (models.ScheduleOutput.date <= frozen_until)) |
             (models.ScheduleOutput.is_draft.is_(True) & (models.ScheduleOutput.generation_id == gen_id))
@@ -101,7 +101,7 @@ def get_diff_summary_sync(db: Session, org_id: int, gen_id: str) -> dict:
 
     # 6. Aggregate Gap Variation
     def calculate_gaps(is_draft: bool) -> int:
-        ts_rows = db.query(models.Timeslot).filter(models.Timeslot.organization_id == org_id).all()
+        ts_rows = db.query(models.Timeslot).filter(models.Timeslot.organization_id == organization_id).all()
         ts_rows.sort(key=lambda t: (t.day_of_week, t.start_time))
         ts_order = {ts.id: idx for idx, ts in enumerate(ts_rows)}
 
@@ -112,7 +112,7 @@ def get_diff_summary_sync(db: Session, org_id: int, gen_id: str) -> dict:
         ).join(
             models.Lesson, models.Lesson.id == models.ScheduleOutput.lesson_id
         ).filter(
-            models.ScheduleOutput.organization_id == org_id
+            models.ScheduleOutput.organization_id == organization_id
         )
         if is_draft:
             q = q.filter(

@@ -5,12 +5,12 @@ from app import models, schemas
 from app.models import ScheduleOutput
 
 # --- ASYNC (API) ---
-async def get_rooms_by_org(db: AsyncSession, org_id: int):
-    result = await db.execute(select(models.Room).where(models.Room.organization_id == org_id))
+async def get_rooms_by_org(db: AsyncSession, organization_id: int):
+    result = await db.execute(select(models.Room).where(models.Room.organization_id == organization_id))
     return result.scalars().all()
 
-async def create_room(db: AsyncSession, item: schemas.RoomCreate, org_id: int):
-    db_item = models.Room(name=item.name, type=item.type, organization_id=org_id)
+async def create_room(db: AsyncSession, item: schemas.RoomCreate, organization_id: int):
+    db_item = models.Room(name=item.name, type=item.type, organization_id=organization_id)
     db.add(db_item)
     await db.commit()
     await db.refresh(db_item)
@@ -20,11 +20,11 @@ async def update_room(
     db: AsyncSession, 
     room_id: int, 
     room_in: schemas.RoomUpdate,
-    org_id: int
+    organization_id: int
 ):
     query = select(models.Room).where(
         models.Room.id == room_id,
-        models.Room.organization_id == org_id
+        models.Room.organization_id == organization_id
     )
     result = await db.execute(query)
     room = result.scalars().first()
@@ -44,7 +44,7 @@ async def update_room(
 async def delete_room(
     db: AsyncSession, 
     room_id: int,
-    org_id: int
+    organization_id: int
 ) -> str:
     """
     Remove uma sala. Protege se houver aulas agendadas nela.
@@ -52,7 +52,7 @@ async def delete_room(
     # 1. Buscar sala
     query = select(models.Room).where(
         models.Room.id == room_id,
-        models.Room.organization_id == org_id
+        models.Room.organization_id == organization_id
     )
     result = await db.execute(query)
     room = result.scalars().first()
@@ -75,5 +75,5 @@ async def delete_room(
     return "SUCCESS"
 
 # --- SYNC (SOLVER) ---
-def get_rooms_by_org_sync(db: Session, org_id: int):
-    return db.query(models.Room).filter(models.Room.organization_id == org_id).all()
+def get_rooms_by_org_sync(db: Session, organization_id: int):
+    return db.query(models.Room).filter(models.Room.organization_id == organization_id).all()

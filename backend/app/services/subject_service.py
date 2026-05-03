@@ -4,8 +4,8 @@ from sqlalchemy import select, delete
 from app import models, schemas
 
 # --- ASYNC (API) ---
-async def get_subjects_by_org(db: AsyncSession, org_id: int):
-    stmt = select(models.Subject).where(models.Subject.organization_id == org_id).order_by(models.Subject.name).options(selectinload(models.Subject.modules))
+async def get_subjects_by_org(db: AsyncSession, organization_id: int):
+    stmt = select(models.Subject).where(models.Subject.organization_id == organization_id).order_by(models.Subject.name).options(selectinload(models.Subject.modules))
     result = await db.execute(stmt)
     return result.scalars().all()
 
@@ -111,11 +111,11 @@ def _upsert_modules(db: AsyncSession, incoming_modules: list, existing_modules: 
             db.add(new_mod)
 
 
-async def update_subject(db: AsyncSession, subject_id: int, subject_in: schemas.SubjectUpdate, org_id: int):
+async def update_subject(db: AsyncSession, subject_id: int, subject_in: schemas.SubjectUpdate, organization_id: int):
     # 1. Buscar a disciplina com módulos
     query = select(models.Subject).where(
         models.Subject.id == subject_id,
-        models.Subject.organization_id == org_id
+        models.Subject.organization_id == organization_id
     ).options(selectinload(models.Subject.modules))
     result = await db.execute(query)
     subject = result.scalars().first()
@@ -127,7 +127,7 @@ async def update_subject(db: AsyncSession, subject_id: int, subject_in: schemas.
     if subject_in.name and subject_in.name != subject.name:
         q_check = select(models.Subject).where(
             models.Subject.name == subject_in.name,
-            models.Subject.organization_id == org_id,
+            models.Subject.organization_id == organization_id,
             models.Subject.id != subject_id
         )
         if (await db.execute(q_check)).scalars().first():
@@ -152,12 +152,12 @@ async def update_subject(db: AsyncSession, subject_id: int, subject_in: schemas.
     result = await db.execute(stmt)
     return result.scalars().first()
 
-async def delete_subject(db: AsyncSession, subject_id: int, org_id: int):
+async def delete_subject(db: AsyncSession, subject_id: int, organization_id: int):
     """
     Remove uma disciplina. Protege se existirem aulas associadas.
     """
     # 1. Buscar disciplina
-    result = await db.execute(select(models.Subject).where(models.Subject.id == subject_id, models.Subject.organization_id == org_id))
+    result = await db.execute(select(models.Subject).where(models.Subject.id == subject_id, models.Subject.organization_id == organization_id))
     item = result.scalars().first()
     
     if not item:
@@ -177,5 +177,5 @@ async def delete_subject(db: AsyncSession, subject_id: int, org_id: int):
     return "SUCCESS"
 
 # --- SYNC (SOLVER) ---
-def get_subjects_by_org_sync(db: Session, org_id: int):
-    return db.query(models.Subject).filter(models.Subject.organization_id == org_id).all()
+def get_subjects_by_org_sync(db: Session, organization_id: int):
+    return db.query(models.Subject).filter(models.Subject.organization_id == organization_id).all()

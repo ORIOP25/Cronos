@@ -7,49 +7,49 @@ from app import models, schemas
 
 
 # --- HELPERS INTERNOS ---
-async def _get_class_by_org(db: AsyncSession, class_id: int, org_id: int):
-    """Busca uma turma por id + org_id (isolamento de tenant)."""
+async def _get_class_by_org(db: AsyncSession, class_id: int, organization_id: int):
+    """Busca uma turma por id + organization_id (isolamento de tenant)."""
     result = await db.execute(
         select(models.Class).where(
             models.Class.id == class_id,
-            models.Class.organization_id == org_id
+            models.Class.organization_id == organization_id
         )
     )
     return result.scalars().first()
 
 
-async def _get_course_by_org(db: AsyncSession, course_id: int, org_id: int):
+async def _get_course_by_org(db: AsyncSession, course_id: int, organization_id: int):
     result = await db.execute(
         select(models.Course).where(
             models.Course.id == course_id,
-            models.Course.organization_id == org_id
+            models.Course.organization_id == organization_id
         )
     )
     return result.scalars().first()
 
 
-async def _get_class_by_course_and_org(db: AsyncSession, class_id: int, course_id: int, org_id: int):
+async def _get_class_by_course_and_org(db: AsyncSession, class_id: int, course_id: int, organization_id: int):
     result = await db.execute(
         select(models.Class).where(
             models.Class.id == class_id,
             models.Class.course_id == course_id,
-            models.Class.organization_id == org_id
+            models.Class.organization_id == organization_id
         )
     )
     return result.scalars().first()
 
 
 # --- ASYNC (API) ---
-async def get_classes_by_org(db: AsyncSession, org_id: int):
+async def get_classes_by_org(db: AsyncSession, organization_id: int):
     # Ordenar por nome
-    result = await db.execute(select(models.Class).where(models.Class.organization_id == org_id).order_by(models.Class.name))
+    result = await db.execute(select(models.Class).where(models.Class.organization_id == organization_id).order_by(models.Class.name))
     return result.scalars().all()
 
-async def get_class_details(db: AsyncSession, class_id: int, org_id: int):
+async def get_class_details(db: AsyncSession, class_id: int, organization_id: int):
     """
     Busca turma com o curso associado (Eager Load).
     
-    🔐 Security: Filtra por org_id - cada organização só vê suas turmas
+    🔐 Security: Filtra por organization_id - cada organização só vê suas turmas
     ⚙️ Stability: selectinload previne N+1 queries e lazy loading em async context
     ⚡ Optimization: Uma query com JOIN retorna tudo de uma vez
     📈 Scalability: Padrão aplicável a qualquer entity com relationships
@@ -58,7 +58,7 @@ async def get_class_details(db: AsyncSession, class_id: int, org_id: int):
     """
     query = select(models.Class).where(
         models.Class.id == class_id,
-        models.Class.organization_id == org_id
+        models.Class.organization_id == organization_id
     ).options(
         selectinload(models.Class.course)  # Carrega o curso associado
     )
@@ -66,12 +66,12 @@ async def get_class_details(db: AsyncSession, class_id: int, org_id: int):
     result = await db.execute(query)
     return result.scalars().first()
 
-async def create_class(db: AsyncSession, item: schemas.ClassCreate, org_id: int):
-    db_course = await _get_course_by_org(db, item.course_id, org_id)
+async def create_class(db: AsyncSession, item: schemas.ClassCreate, organization_id: int):
+    db_course = await _get_course_by_org(db, item.course_id, organization_id)
     if not db_course:
         return "COURSE_NOT_FOUND"
 
-    db_item = models.Class(**item.model_dump(), organization_id=org_id)
+    db_item = models.Class(**item.model_dump(), organization_id=organization_id)
     db.add(db_item)
     await db.commit()
     await db.refresh(db_item)
@@ -81,9 +81,9 @@ async def update_class(
     db: AsyncSession, 
     class_id: int, 
     class_in: schemas.ClassUpdate,
-    org_id: int
+    organization_id: int
 ):
-    db_class = await _get_class_by_org(db, class_id, org_id)
+    db_class = await _get_class_by_org(db, class_id, organization_id)
     
     if not db_class:
         return None
@@ -100,9 +100,9 @@ async def update_class(
     await db.refresh(db_class)
     return db_class
 
-async def delete_class(db: AsyncSession, class_id: int, org_id: int):
+async def delete_class(db: AsyncSession, class_id: int, organization_id: int):
     """Remove uma turma e dependências associadas (cascade explícito)."""
-    item = await _get_class_by_org(db, class_id, org_id)
+    item = await _get_class_by_org(db, class_id, organization_id)
     
     if not item:
         return "NOT_FOUND"
@@ -112,12 +112,12 @@ async def delete_class(db: AsyncSession, class_id: int, org_id: int):
     return "SUCCESS"
 
 
-async def get_classes_by_course(db: AsyncSession, course_id: int, org_id: int):
+async def get_classes_by_course(db: AsyncSession, course_id: int, organization_id: int):
     query = (
         select(models.Class)
         .where(
             models.Class.course_id == course_id,
-            models.Class.organization_id == org_id
+            models.Class.organization_id == organization_id
         )
         .order_by(models.Class.grade_level, models.Class.name)
     )
@@ -125,15 +125,15 @@ async def get_classes_by_course(db: AsyncSession, course_id: int, org_id: int):
     return result.scalars().all()
 
 
-async def create_class_in_course(db: AsyncSession, course_id: int, item: schemas.ClassCreateInCourse, org_id: int):
-    db_course = await _get_course_by_org(db, course_id, org_id)
+async def create_class_in_course(db: AsyncSession, course_id: int, item: schemas.ClassCreateInCourse, organization_id: int):
+    db_course = await _get_course_by_org(db, course_id, organization_id)
     if not db_course:
         return "COURSE_NOT_FOUND"
 
     db_item = models.Class(
         **item.model_dump(),
         course_id=course_id,
-        organization_id=org_id
+        organization_id=organization_id
     )
     db.add(db_item)
     await db.commit()
@@ -146,9 +146,9 @@ async def update_class_in_course(
     course_id: int,
     class_id: int,
     class_in: schemas.ClassUpdateInCourse,
-    org_id: int,
+    organization_id: int,
 ):
-    db_class = await _get_class_by_course_and_org(db, class_id, course_id, org_id)
+    db_class = await _get_class_by_course_and_org(db, class_id, course_id, organization_id)
     if not db_class:
         return "NOT_FOUND"
 
@@ -165,8 +165,8 @@ async def update_class_in_course(
     return db_class
 
 
-async def delete_class_in_course(db: AsyncSession, course_id: int, class_id: int, org_id: int):
-    db_class = await _get_class_by_course_and_org(db, class_id, course_id, org_id)
+async def delete_class_in_course(db: AsyncSession, course_id: int, class_id: int, organization_id: int):
+    db_class = await _get_class_by_course_and_org(db, class_id, course_id, organization_id)
     if not db_class:
         return "NOT_FOUND"
 
@@ -193,7 +193,7 @@ async def _delete_class_with_dependencies(db: AsyncSession, class_id: int):
     await db.execute(delete(models.Lesson).where(models.Lesson.class_id == class_id))
     await db.execute(delete(models.Class).where(models.Class.id == class_id))
 
-async def get_class_curriculum(db: AsyncSession, class_id: int, org_id: int):
+async def get_class_curriculum(db: AsyncSession, class_id: int, organization_id: int):
     """
     Retorna a lista de disciplinas que a turma precisa ter.
     
@@ -205,7 +205,7 @@ async def get_class_curriculum(db: AsyncSession, class_id: int, org_id: int):
     Retorna: List[SubjectRead]
     """
     # 1. Buscar a Turma
-    db_class = await _get_class_by_org(db, class_id, org_id)
+    db_class = await _get_class_by_org(db, class_id, organization_id)
     
     if not db_class:
         return []
@@ -230,8 +230,8 @@ async def get_class_curriculum(db: AsyncSession, class_id: int, org_id: int):
     return course.subjects if course.subjects else []
 
 # --- SYNC (SOLVER) ---
-def get_classes_by_org_sync(db: Session, org_id: int):
-    return db.query(models.Class).filter(models.Class.organization_id == org_id).all()
+def get_classes_by_org_sync(db: Session, organization_id: int):
+    return db.query(models.Class).filter(models.Class.organization_id == organization_id).all()
 
 
 # ==========================================
@@ -284,7 +284,7 @@ def _build_subject_with_progress(subject, progress_map: dict) -> dict:
     }
 
 
-async def get_class_full_details(db: AsyncSession, class_id: int, org_id: int):
+async def get_class_full_details(db: AsyncSession, class_id: int, organization_id: int):
     """
     Busca turma com curso, disciplinas, módulos e progresso.
     Retorna a árvore completa para o dashboard da turma (ClassDetails.jsx).
@@ -294,7 +294,7 @@ async def get_class_full_details(db: AsyncSession, class_id: int, org_id: int):
     disciplinas diferentes, refletindo a gestão feita na página ClassSubjects.
     
     4 Pilares:
-    🔐 Security: Filtra por org_id — cada organização só vê suas turmas
+    🔐 Security: Filtra por organization_id — cada organização só vê suas turmas
     ⚡ Optimization: 2 queries com selectinload (vs N+1 de lazy loading)
     ⚙️ Stability: Progresso calculado server-side como fonte de verdade única
     📈 Scalability: Padrão extensível para futuras features (alunos, notas)
@@ -302,7 +302,7 @@ async def get_class_full_details(db: AsyncSession, class_id: int, org_id: int):
     # 1. Buscar turma com curso
     query = select(models.Class).where(
         models.Class.id == class_id,
-        models.Class.organization_id == org_id
+        models.Class.organization_id == organization_id
     ).options(
         selectinload(models.Class.course),
     )
@@ -363,7 +363,7 @@ async def update_class_progress(
     db: AsyncSession, 
     class_id: int, 
     progress_updates: list[schemas.ClassProgressUpdate],
-    org_id: int
+    organization_id: int
 ):
     """
     Atualiza o progresso de módulos para uma turma (upsert).
@@ -381,7 +381,7 @@ async def update_class_progress(
     from datetime import datetime, timezone
     
     # 1. Validar turma existe e pertence à org
-    db_class = await _get_class_by_org(db, class_id, org_id)
+    db_class = await _get_class_by_org(db, class_id, organization_id)
     
     if not db_class:
         return "NOT_FOUND"
@@ -444,7 +444,7 @@ async def update_class_progress(
 #  Gestão curso-cêntrica de professores
 # ==========================================
 
-async def get_class_subjects(db: AsyncSession, class_id: int, org_id: int):
+async def get_class_subjects(db: AsyncSession, class_id: int, organization_id: int):
     """
     Lista disciplinas associadas à turma (para o grade_level atual).
     Inclui professor atribuído (se houver).
@@ -454,7 +454,7 @@ async def get_class_subjects(db: AsyncSession, class_id: int, org_id: int):
     # 1. Buscar turma com curso
     class_query = select(models.Class).where(
         models.Class.id == class_id,
-        models.Class.organization_id == org_id
+        models.Class.organization_id == organization_id
     ).options(selectinload(models.Class.course))
     
     result = await db.execute(class_query)
@@ -502,7 +502,7 @@ async def add_class_subject(
     db: AsyncSession, 
     class_id: int, 
     subject_id: int, 
-    org_id: int
+    organization_id: int
 ):
     """
     Adiciona uma disciplina à turma (para o grade_level atual).
@@ -513,7 +513,7 @@ async def add_class_subject(
     - Disciplina não está já associada à turma neste grade_level
     """
     # 1. Buscar turma
-    db_class = await _get_class_by_org(db, class_id, org_id)
+    db_class = await _get_class_by_org(db, class_id, organization_id)
     
     if not db_class:
         return "CLASS_NOT_FOUND"
@@ -521,7 +521,7 @@ async def add_class_subject(
     # 2. Buscar disciplina
     subject_query = select(models.Subject).where(
         models.Subject.id == subject_id,
-        models.Subject.organization_id == org_id
+        models.Subject.organization_id == organization_id
     )
     subject_result = await db.execute(subject_query)
     db_subject = subject_result.scalars().first()
@@ -574,7 +574,7 @@ async def update_class_subject_teacher(
     class_id: int,
     subject_id: int,
     payload: schemas.ClassSubjectUpdate,
-    org_id: int
+    organization_id: int
 ):
     """
     Atualiza uma associação disciplina-turma: professor.
@@ -587,7 +587,7 @@ async def update_class_subject_teacher(
     update_data = payload.model_dump(exclude_unset=True)
     
     # 1. Buscar turma para obter grade_level
-    db_class = await _get_class_by_org(db, class_id, org_id)
+    db_class = await _get_class_by_org(db, class_id, organization_id)
     
     if not db_class:
         return "CLASS_NOT_FOUND"
@@ -611,7 +611,7 @@ async def update_class_subject_teacher(
             # Validar professor existe e pertence à org
             teacher_query = select(models.Teacher).where(
                 models.Teacher.id == teacher_id,
-                models.Teacher.organization_id == org_id
+                models.Teacher.organization_id == organization_id
             ).options(selectinload(models.Teacher.subjects))
             
             teacher_result = await db.execute(teacher_query)
@@ -639,13 +639,13 @@ async def remove_class_subject(
     db: AsyncSession,
     class_id: int,
     subject_id: int,
-    org_id: int
+    organization_id: int
 ):
     """
     Remove uma disciplina da turma (para o grade_level atual).
     """
     # 1. Buscar turma
-    db_class = await _get_class_by_org(db, class_id, org_id)
+    db_class = await _get_class_by_org(db, class_id, organization_id)
     
     if not db_class:
         return "CLASS_NOT_FOUND"
@@ -692,14 +692,14 @@ async def remove_class_subject(
 async def get_available_subjects_for_class(
     db: AsyncSession,
     class_id: int,
-    org_id: int
+    organization_id: int
 ):
     """
     Lista disciplinas disponíveis para adicionar à turma.
     (Disciplinas da org que ainda não estão associadas à turma neste grade_level)
     """
     # 1. Buscar turma
-    db_class = await _get_class_by_org(db, class_id, org_id)
+    db_class = await _get_class_by_org(db, class_id, organization_id)
     
     if not db_class:
         return []
@@ -717,14 +717,14 @@ async def get_available_subjects_for_class(
         subjects_query = select(models.Subject).options(
             selectinload(models.Subject.modules)
         ).where(
-            models.Subject.organization_id == org_id,
+            models.Subject.organization_id == organization_id,
             models.Subject.id.notin_(existing_ids)
         ).order_by(models.Subject.name)
     else:
         subjects_query = select(models.Subject).options(
             selectinload(models.Subject.modules)
         ).where(
-            models.Subject.organization_id == org_id
+            models.Subject.organization_id == organization_id
         ).order_by(models.Subject.name)
     
     subjects_result = await db.execute(subjects_query)
@@ -734,7 +734,7 @@ async def get_available_subjects_for_class(
 async def get_eligible_teachers_for_subject(
     db: AsyncSession,
     subject_id: int,
-    org_id: int
+    organization_id: int
 ):
     """
     Lista professores elegíveis para lecionar uma disciplina.
@@ -750,7 +750,7 @@ async def get_eligible_teachers_for_subject(
     # 1. Buscar disciplina para validar que pertence à org
     subject_query = select(models.Subject).where(
         models.Subject.id == subject_id,
-        models.Subject.organization_id == org_id
+        models.Subject.organization_id == organization_id
     )
     subject_result = await db.execute(subject_query)
     db_subject = subject_result.scalars().first()
@@ -767,7 +767,7 @@ async def get_eligible_teachers_for_subject(
         )
         .where(
             models.teacher_subject_link.c.subject_id == subject_id,
-            models.Teacher.organization_id == org_id,
+            models.Teacher.organization_id == organization_id,
         )
         .order_by(models.Teacher.name)
     )

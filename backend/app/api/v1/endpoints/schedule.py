@@ -55,8 +55,8 @@ def _task_cancel_key(task_id: str) -> str:
     return f"{TASK_CANCEL_KEY_PREFIX}{task_id}"
 
 
-def _active_task_by_org_key(org_id: int) -> str:
-    return f"{ACTIVE_TASK_BY_ORG_KEY_PREFIX}{org_id}"
+def _active_task_by_org_key(organization_id: int) -> str:
+    return f"{ACTIVE_TASK_BY_ORG_KEY_PREFIX}{organization_id}"
 
 
 def _get_redis_client() -> redis.Redis:
@@ -73,7 +73,7 @@ def _extract_request_id(request: Request) -> str | None:
 def _log_schedule_reset_audit(
     request: Request,
     *,
-    org_id: int | None,
+    organization_id: int | None,
     user_id: int | None,
     role: str | None,
     status_code: int,
@@ -81,7 +81,7 @@ def _log_schedule_reset_audit(
 ) -> None:
     logger.info(
         "schedule_reset_audit",
-        organization_id=org_id,
+        organization_id=organization_id,
         actor_user_id=user_id,
         actor_role=role,
         method=request.method,
@@ -115,13 +115,13 @@ async def _require_admin_for_schedule_reset(
         raise HTTPException(status_code=exc.status_code, detail=detail)
 
 
-def _validate_task_ownership(task_id: str, org_id: int) -> redis.Redis:
+def _validate_task_ownership(task_id: str, organization_id: int) -> redis.Redis:
     try:
         r = _get_redis_client()
         org_value = r.get(_task_org_key(task_id))
         if not org_value:
             raise HTTPException(status_code=404, detail="Task não encontrada")
-        if org_value.decode("utf-8") != str(org_id):
+        if org_value.decode("utf-8") != str(organization_id):
             raise HTTPException(status_code=403, detail="Sem permissões para esta task")
         return r
     except HTTPException:
@@ -136,7 +136,7 @@ async def create_constraint(
     db: Annotated[AsyncSession, Depends(deps.get_db)],
     current_user: Annotated[models.User, Depends(deps.get_current_user)]
 ):
-    # Garante que usamos o org_id do utilizador logado
+    # Garante que usamos o organization_id do utilizador logado
     return await schedule_service.create_constraint(db, item, current_user.organization_id)
 
 @router.get("/constraints/", response_model=List[schemas.ConstraintRead])
@@ -161,11 +161,11 @@ async def delete_constraint(
 
 async def _get_latest_settings_with_dates(
     db: AsyncSession,
-    org_id: int,
+    organization_id: int,
 ) -> models.OrganizationSettings | None:
     settings_result = await db.execute(
         sa_select(models.OrganizationSettings).where(
-            models.OrganizationSettings.organization_id == org_id,
+            models.OrganizationSettings.organization_id == organization_id,
             models.OrganizationSettings.school_start_date.isnot(None),
             models.OrganizationSettings.school_target_end_date.isnot(None),
         )
@@ -205,12 +205,12 @@ def _validate_repair_generation_window(org_settings: models.OrganizationSettings
 
 async def _ensure_auto_holidays(
     db: AsyncSession,
-    org_id: int,
+    organization_id: int,
     org_settings: models.OrganizationSettings,
 ) -> str | None:
     holiday_count = await db.scalar(
         sa_select(func.count(models.SchoolCalendarEvent.id)).where(
-            models.SchoolCalendarEvent.organization_id == org_id,
+            models.SchoolCalendarEvent.organization_id == organization_id,
             models.SchoolCalendarEvent.source == models.CalendarEventSource.auto,
         )
     )
@@ -220,7 +220,7 @@ async def _ensure_auto_holidays(
     try:
         imported = await settings_service.sync_holidays(
             db,
-            organization_id=org_id,
+            organization_id=organization_id,
         )
     except Exception:
         return (
@@ -236,12 +236,12 @@ async def _ensure_auto_holidays(
     return None
 
 
-async def _get_generation_workload_counts(db: AsyncSession, org_id: int) -> tuple[int, int]:
+async def _get_generation_workload_counts(db: AsyncSession, organization_id: int) -> tuple[int, int]:
     class_subject_count = await db.scalar(
         sa_select(func.count(models.ClassSubjectLink.id))
         .join(models.Class, models.ClassSubjectLink.class_id == models.Class.id)
         .where(
-            models.Class.organization_id == org_id,
+            models.Class.organization_id == organization_id,
             models.Class.is_archived == False,  # noqa: E712
             models.ClassSubjectLink.teacher_id.isnot(None),
             models.ClassSubjectLink.grade_level == models.Class.grade_level,
@@ -251,19 +251,19 @@ async def _get_generation_workload_counts(db: AsyncSession, org_id: int) -> tupl
         sa_select(func.count(models.Lesson.id))
         .join(models.Class, models.Lesson.class_id == models.Class.id)
         .where(
-            models.Lesson.organization_id == org_id,
+            models.Lesson.organization_id == organization_id,
             models.Class.is_archived == False,  # noqa: E712
         )
     )
     return class_subject_count or 0, lesson_count or 0
 
 
-async def _collect_generation_teacher_ids(db: AsyncSession, org_id: int) -> set[int]:
+async def _collect_generation_teacher_ids(db: AsyncSession, organization_id: int) -> set[int]:
     class_subject_teacher_rows = await db.execute(
         sa_select(models.ClassSubjectLink.teacher_id)
         .join(models.Class, models.ClassSubjectLink.class_id == models.Class.id)
         .where(
-            models.Class.organization_id == org_id,
+            models.Class.organization_id == organization_id,
             models.Class.is_archived == False,  # noqa: E712
             models.ClassSubjectLink.teacher_id.isnot(None),
             models.ClassSubjectLink.grade_level == models.Class.grade_level,
@@ -276,7 +276,7 @@ async def _collect_generation_teacher_ids(db: AsyncSession, org_id: int) -> set[
         sa_select(models.Lesson.teacher_id)
         .join(models.Class, models.Lesson.class_id == models.Class.id)
         .where(
-            models.Lesson.organization_id == org_id,
+            models.Lesson.organization_id == organization_id,
             models.Class.is_archived == False,  # noqa: E712
         )
         .distinct()
@@ -285,12 +285,12 @@ async def _collect_generation_teacher_ids(db: AsyncSession, org_id: int) -> set[
     return class_subject_teacher_ids | lesson_teacher_ids
 
 
-async def _collect_generation_subject_ids(db: AsyncSession, org_id: int) -> set[int]:
+async def _collect_generation_subject_ids(db: AsyncSession, organization_id: int) -> set[int]:
     class_subject_subject_rows = await db.execute(
         sa_select(models.ClassSubjectLink.subject_id)
         .join(models.Class, models.ClassSubjectLink.class_id == models.Class.id)
         .where(
-            models.Class.organization_id == org_id,
+            models.Class.organization_id == organization_id,
             models.Class.is_archived == False,  # noqa: E712
             models.ClassSubjectLink.teacher_id.isnot(None),
             models.ClassSubjectLink.grade_level == models.Class.grade_level,
@@ -303,7 +303,7 @@ async def _collect_generation_subject_ids(db: AsyncSession, org_id: int) -> set[
         sa_select(models.Lesson.subject_id)
         .join(models.Class, models.Lesson.class_id == models.Class.id)
         .where(
-            models.Lesson.organization_id == org_id,
+            models.Lesson.organization_id == organization_id,
             models.Class.is_archived == False,  # noqa: E712
         )
         .distinct()
@@ -344,7 +344,7 @@ async def _validate_teacher_availabilities(
 
 async def _validate_subject_requirements(
     db: AsyncSession,
-    org_id: int,
+    organization_id: int,
     subject_ids: set[int],
 ) -> list[str]:
     if not subject_ids:
@@ -408,7 +408,7 @@ async def _validate_subject_requirements(
     required_room_types = {row[0] for row in required_type_rows.all()}
     available_type_rows = await db.execute(
         sa_select(models.Room.type)
-        .where(models.Room.organization_id == org_id)
+        .where(models.Room.organization_id == organization_id)
         .distinct()
     )
     available_room_types = {row[0] for row in available_type_rows.all()}
@@ -427,12 +427,12 @@ async def _validate_subject_requirements(
 
 async def _validate_repair_capacity_feasibility(
     db: AsyncSession,
-    org_id: int,
+    organization_id: int,
     org_settings: models.OrganizationSettings,
     room_count: int,
 ) -> str | None:
     """Mantido por compatibilidade: usar preflight hibrido em _build_hard_end_feasibility."""
-    _ = (db, org_id, org_settings, room_count)
+    _ = (db, organization_id, org_settings, room_count)
     return None
 
 
@@ -471,7 +471,7 @@ def _build_preflight_primary_window(
 
 async def _build_hard_end_feasibility(
     db: AsyncSession,
-    org_id: int,
+    organization_id: int,
     org_settings: models.OrganizationSettings,
     mode: str,
     room_count: int,
@@ -489,16 +489,16 @@ async def _build_hard_end_feasibility(
     )
 
     def _run(sync_db) -> tuple[int, int]:
-        lessons = schedule_service.get_active_lessons_with_subject_sync(sync_db, org_id)
-        modules_by_subject = schedule_service.get_modules_by_subject_sync(sync_db, org_id)
-        progress_map = schedule_service.get_class_progress_map_sync(sync_db, org_id)
+        lessons = schedule_service.get_active_lessons_with_subject_sync(sync_db, organization_id)
+        modules_by_subject = schedule_service.get_modules_by_subject_sync(sync_db, organization_id)
+        progress_map = schedule_service.get_class_progress_map_sync(sync_db, organization_id)
 
         committed_minutes_by_lesson: dict[int, int] = {}
         if mode == "repair":
             frozen_until = horizon_start - timedelta(days=1)
             committed_minutes_by_lesson = schedule_service.get_repair_committed_minutes_by_lesson_sync(
                 sync_db,
-                org_id,
+                organization_id,
                 frozen_until,
             )
 
@@ -517,7 +517,7 @@ async def _build_hard_end_feasibility(
                 )
                 .join(models.Class, models.ClassSubjectLink.class_id == models.Class.id)
                 .filter(
-                    models.Class.organization_id == org_id,
+                    models.Class.organization_id == organization_id,
                     models.Class.is_archived == False,  # noqa: E712
                     models.ClassSubjectLink.teacher_id.isnot(None),
                     models.ClassSubjectLink.grade_level == models.Class.grade_level,
@@ -535,7 +535,7 @@ async def _build_hard_end_feasibility(
         if remaining_minutes <= 0:
             return (0, 0)
 
-        timeslots = schedule_service.get_timeslots_by_org_sync(sync_db, org_id)
+        timeslots = schedule_service.get_timeslots_by_org_sync(sync_db, organization_id)
         capacity_minutes = _estimate_capacity_minutes_in_range(
             timeslots=timeslots,
             room_count=max(0, int(room_count)),
@@ -568,7 +568,7 @@ def _build_repair_infeasible_error(feasibility: dict) -> str:
     )
 
 
-async def _preflight_check(db: AsyncSession, org_id: int, mode: str = "full") -> tuple[list[str], dict]:
+async def _preflight_check(db: AsyncSession, organization_id: int, mode: str = "full") -> tuple[list[str], dict]:
     """Valida pré-condições e devolve erros + resumo de preflight híbrido."""
     errors: list[str] = []
     preflight_summary: dict = {
@@ -578,7 +578,7 @@ async def _preflight_check(db: AsyncSession, org_id: int, mode: str = "full") ->
     }
 
     from app.services import schedule_service
-    drafts = await db.run_sync(lambda sync_db: schedule_service.list_draft_gen_ids_sync(sync_db, org_id))
+    drafts = await db.run_sync(lambda sync_db: schedule_service.list_draft_gen_ids_sync(sync_db, organization_id))
     if drafts:
         return (
             [
@@ -588,7 +588,7 @@ async def _preflight_check(db: AsyncSession, org_id: int, mode: str = "full") ->
             preflight_summary,
         )
 
-    org_settings = await _get_latest_settings_with_dates(db, org_id)
+    org_settings = await _get_latest_settings_with_dates(db, organization_id)
     if not org_settings:
         return (
             [
@@ -603,11 +603,11 @@ async def _preflight_check(db: AsyncSession, org_id: int, mode: str = "full") ->
         if window_error:
             errors.append(window_error)
 
-    holiday_error = await _ensure_auto_holidays(db, org_id, org_settings)
+    holiday_error = await _ensure_auto_holidays(db, organization_id, org_settings)
     if holiday_error:
         errors.append(holiday_error)
 
-    class_subject_count, lesson_count = await _get_generation_workload_counts(db, org_id)
+    class_subject_count, lesson_count = await _get_generation_workload_counts(db, organization_id)
     if not class_subject_count and not lesson_count:
         errors.append(
             "Nenhuma carga letiva ativa encontrada. "
@@ -616,7 +616,7 @@ async def _preflight_check(db: AsyncSession, org_id: int, mode: str = "full") ->
         )
 
     ts_count = await db.scalar(
-        sa_select(func.count(models.Timeslot.id)).where(models.Timeslot.organization_id == org_id)
+        sa_select(func.count(models.Timeslot.id)).where(models.Timeslot.organization_id == organization_id)
     )
     if not ts_count:
         errors.append(
@@ -624,13 +624,13 @@ async def _preflight_check(db: AsyncSession, org_id: int, mode: str = "full") ->
         )
 
     room_count = await db.scalar(
-        sa_select(func.count(models.Room.id)).where(models.Room.organization_id == org_id)
+        sa_select(func.count(models.Room.id)).where(models.Room.organization_id == organization_id)
     )
     if not room_count:
         errors.append("Nenhuma sala configurada.")
 
     calendar_events = await db.execute(
-        sa_select(models.SchoolCalendarEvent).where(models.SchoolCalendarEvent.organization_id == org_id)
+        sa_select(models.SchoolCalendarEvent).where(models.SchoolCalendarEvent.organization_id == organization_id)
     )
     blocked_dates = _build_blocked_dates(calendar_events.scalars().all())
     preflight_summary["primary_window"] = _build_preflight_primary_window(
@@ -639,18 +639,18 @@ async def _preflight_check(db: AsyncSession, org_id: int, mode: str = "full") ->
         blocked_dates=blocked_dates,
     )
 
-    teacher_ids = await _collect_generation_teacher_ids(db, org_id)
+    teacher_ids = await _collect_generation_teacher_ids(db, organization_id)
     teacher_error = await _validate_teacher_availabilities(db, teacher_ids)
     if teacher_error:
         errors.append(teacher_error)
 
-    subject_ids = await _collect_generation_subject_ids(db, org_id)
-    errors.extend(await _validate_subject_requirements(db, org_id, subject_ids))
+    subject_ids = await _collect_generation_subject_ids(db, organization_id)
+    errors.extend(await _validate_subject_requirements(db, organization_id, subject_ids))
 
     if not errors:
         feasibility = await _build_hard_end_feasibility(
             db,
-            org_id,
+            organization_id,
             org_settings,
             mode,
             int(room_count or 0),
@@ -683,9 +683,9 @@ async def trigger_generation(
     current_user: Annotated[models.User, Depends(deps.get_current_active_admin)],
 ):
     """Valida pré-condições e inicia a geração de horário em background."""
-    org_id = current_user.organization_id
+    organization_id = current_user.organization_id
 
-    preflight_errors, preflight_summary = await _preflight_check(db, org_id, payload.mode)
+    preflight_errors, preflight_summary = await _preflight_check(db, organization_id, payload.mode)
     encoded_preflight = jsonable_encoder(preflight_summary)
     if preflight_errors:
         raise HTTPException(
@@ -699,11 +699,11 @@ async def trigger_generation(
 
     solver_version = _resolve_solver_engine_version()
 
-    task = generate_schedule_task.delay(org_id, payload.mode)
+    task = generate_schedule_task.delay(organization_id, payload.mode)
     try:
         r = _get_redis_client()
-        r.setex(_task_org_key(task.id), TASK_KEY_TTL_SECONDS, str(org_id))
-        r.setex(_active_task_by_org_key(org_id), TASK_KEY_TTL_SECONDS, task.id)
+        r.setex(_task_org_key(task.id), TASK_KEY_TTL_SECONDS, str(organization_id))
+        r.setex(_active_task_by_org_key(organization_id), TASK_KEY_TTL_SECONDS, task.id)
     except Exception as redis_err:
         import logging
         logging.getLogger("horariozen.schedule").warning(
@@ -1325,13 +1325,13 @@ async def get_generation_audit_summary(
     current_user: Annotated[models.User, Depends(deps.get_current_active_admin)],
     generation_id: Annotated[str | None, Query(description="ID da geração a auditar")] = None,
 ):
-    org_id = current_user.organization_id
+    organization_id = current_user.organization_id
 
     if generation_id is None:
         latest_row = await db.execute(
             sa_select(models.ScheduleOutput.generation_id)
             .where(
-                models.ScheduleOutput.organization_id == org_id,
+                models.ScheduleOutput.organization_id == organization_id,
                 models.ScheduleOutput.is_draft.is_(False),
             )
             .order_by(desc(models.ScheduleOutput.id))
@@ -1344,7 +1344,7 @@ async def get_generation_audit_summary(
 
     generation_exists = await db.scalar(
         sa_select(func.count(models.ScheduleOutput.id)).where(
-            models.ScheduleOutput.organization_id == org_id,
+            models.ScheduleOutput.organization_id == organization_id,
             models.ScheduleOutput.is_draft.is_(False),
             models.ScheduleOutput.generation_id == generation_id,
         )
@@ -1358,7 +1358,7 @@ async def get_generation_audit_summary(
             func.min(models.ScheduleOutput.date).label("start_date"),
             func.max(models.ScheduleOutput.date).label("end_date"),
         ).where(
-            models.ScheduleOutput.organization_id == org_id,
+            models.ScheduleOutput.organization_id == organization_id,
             models.ScheduleOutput.is_draft.is_(False),
             models.ScheduleOutput.generation_id == generation_id,
         )
@@ -1370,7 +1370,7 @@ async def get_generation_audit_summary(
 
     class_ids_result = await db.execute(
         sa_select(models.Class.id).where(
-            models.Class.organization_id == org_id,
+            models.Class.organization_id == organization_id,
             models.Class.is_archived == False,  # noqa: E712
         )
     )
@@ -1381,7 +1381,7 @@ async def get_generation_audit_summary(
         sa_select(models.Lesson.class_id, func.count(models.ScheduleOutput.id).label("slots_count"))
         .join(models.ScheduleOutput, models.ScheduleOutput.lesson_id == models.Lesson.id)
         .where(
-            models.ScheduleOutput.organization_id == org_id,
+            models.ScheduleOutput.organization_id == organization_id,
             models.ScheduleOutput.is_draft.is_(False),
             models.ScheduleOutput.generation_id == generation_id,
             models.ScheduleOutput.date.between(week_start, week_end),
@@ -1403,7 +1403,7 @@ async def get_generation_audit_summary(
         )
         .join(models.Lesson, models.ScheduleOutput.lesson_id == models.Lesson.id)
         .where(
-            models.ScheduleOutput.organization_id == org_id,
+            models.ScheduleOutput.organization_id == organization_id,
             models.ScheduleOutput.is_draft.is_(False),
             models.ScheduleOutput.generation_id == generation_id,
         )
@@ -1421,7 +1421,7 @@ async def get_generation_audit_summary(
         )
         .join(models.Lesson, models.ScheduleOutput.lesson_id == models.Lesson.id)
         .where(
-            models.ScheduleOutput.organization_id == org_id,
+            models.ScheduleOutput.organization_id == organization_id,
             models.ScheduleOutput.is_draft.is_(False),
             models.ScheduleOutput.generation_id == generation_id,
         )
@@ -1434,7 +1434,7 @@ async def get_generation_audit_summary(
         sa_select(models.Lesson.teacher_id, func.count(models.ScheduleOutput.id).label("slots_count"))
         .join(models.ScheduleOutput, models.ScheduleOutput.lesson_id == models.Lesson.id)
         .where(
-            models.ScheduleOutput.organization_id == org_id,
+            models.ScheduleOutput.organization_id == organization_id,
             models.ScheduleOutput.is_draft.is_(False),
             models.ScheduleOutput.generation_id == generation_id,
             models.ScheduleOutput.date.between(week_start, week_end),
@@ -1449,7 +1449,7 @@ async def get_generation_audit_summary(
         sa_select(models.Room.type, func.count(models.ScheduleOutput.id).label("blocks_count"))
         .join(models.ScheduleOutput, models.ScheduleOutput.room_id == models.Room.id)
         .where(
-            models.ScheduleOutput.organization_id == org_id,
+            models.ScheduleOutput.organization_id == organization_id,
             models.ScheduleOutput.is_draft.is_(False),
             models.ScheduleOutput.generation_id == generation_id,
         )

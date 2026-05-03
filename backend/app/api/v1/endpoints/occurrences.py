@@ -49,11 +49,11 @@ async def list_occurrences(
     limit: int = Query(100, ge=1, le=500, description="Máximo de registos a devolver"),
 ):
     """Devolve ocorrências de aulas com filtros opcionais."""
-    org_id = current_user.organization_id
+    organization_id = current_user.organization_id
 
     def _run(sync_db):
         return occurrence_service.list_occurrences_sync(
-            sync_db, org_id, class_id=class_id, date_from=date_from, date_to=date_to,
+            sync_db, organization_id, class_id=class_id, date_from=date_from, date_to=date_to,
             skip=skip, limit=limit,
         )
 
@@ -78,12 +78,12 @@ async def create_occurrence(
     current_user: Annotated[models.User, Depends(deps.get_current_active_admin)],
 ):
     """Executa comando CREATE_OCCURRENCE (cria/reutiliza) para um bloco do horário."""
-    org_id = current_user.organization_id
+    organization_id = current_user.organization_id
 
     def _run(sync_db):
         return occurrence_service.create_occurrence_from_block_sync(
             sync_db,
-            organization_id=org_id,
+            organization_id=organization_id,
             schedule_output_id=payload.schedule_output_id,
         )
 
@@ -93,7 +93,7 @@ async def create_occurrence(
         def _emit_failure(sync_db):
             occurrence_service.log_occurrence_event_safe_sync(
                 sync_db,
-                organization_id=org_id,
+                organization_id=organization_id,
                 event_type=occurrence_service.OBS_EVENT_CREATE,
                 result=occurrence_service.classify_occurrence_error_result(exc.status_code),
                 actor_user_id=current_user.id,
@@ -111,7 +111,7 @@ async def create_occurrence(
     def _emit_success(sync_db):
         occurrence_service.log_occurrence_event_safe_sync(
             sync_db,
-            organization_id=org_id,
+            organization_id=organization_id,
             event_type=occurrence_service.OBS_EVENT_CREATE,
             result=occurrence_service.OBS_RESULT_SUCCESS,
             actor_user_id=current_user.id,
@@ -135,10 +135,10 @@ async def list_debts(
     class_id: Optional[int] = Query(None, description="Filtrar por turma"),
 ):
     """Devolve as horas em dívida (faltas não recuperadas) agrupadas por turma/disciplina."""
-    org_id = current_user.organization_id
+    organization_id = current_user.organization_id
 
     def _run(sync_db):
-        return occurrence_service.get_debts_sync(sync_db, org_id, class_id=class_id)
+        return occurrence_service.get_debts_sync(sync_db, organization_id, class_id=class_id)
 
     return await db.run_sync(_run)
 
@@ -153,12 +153,12 @@ async def get_occurrence_observability_summary(
     current_user: Annotated[models.User, Depends(deps.get_current_active_admin)],
     window_days: int = Query(7, ge=1, le=90, description="Janela de agregação em dias"),
 ):
-    org_id = current_user.organization_id
+    organization_id = current_user.organization_id
 
     def _run(sync_db):
         return occurrence_service.get_occurrence_observability_summary_sync(
             sync_db,
-            organization_id=org_id,
+            organization_id=organization_id,
             window_days=window_days,
         )
 
@@ -178,11 +178,11 @@ async def list_available_substitutes(
     target_date: date = Query(..., description="Data da aula (YYYY-MM-DD)"),
 ):
     """Devolve professores da organização que estão disponíveis num dado timeslot/data."""
-    org_id = current_user.organization_id
+    organization_id = current_user.organization_id
 
     def _run(sync_db):
         return occurrence_service.get_available_substitutes_sync(
-            sync_db, org_id, timeslot_id, target_date
+            sync_db, organization_id, timeslot_id, target_date
         )
 
     results = await db.run_sync(_run)
@@ -203,12 +203,12 @@ async def get_substitute_recommendations(
     db: Annotated[AsyncSession, Depends(deps.get_db)],
     current_user: Annotated[models.User, Depends(deps.get_current_active_admin)],
 ):
-    org_id = current_user.organization_id
+    organization_id = current_user.organization_id
 
     def _run(sync_db):
         return occurrence_service.get_substitute_recommendations_sync(
             sync_db,
-            organization_id=org_id,
+            organization_id=organization_id,
             occurrence_id=occurrence_id,
         )
 
@@ -230,10 +230,10 @@ async def get_occurrence(
     current_user: Annotated[models.User, Depends(deps.get_current_active_admin)],
 ):
     """Devolve uma ocorrência pelo ID."""
-    org_id = current_user.organization_id
+    organization_id = current_user.organization_id
 
     def _run(sync_db):
-        return occurrence_service.get_occurrence_sync(sync_db, occurrence_id, org_id)
+        return occurrence_service.get_occurrence_sync(sync_db, occurrence_id, organization_id)
 
     occurrence = await db.run_sync(_run)
     if occurrence is None:
@@ -258,13 +258,13 @@ async def update_occurrence(
     current_user: Annotated[models.User, Depends(deps.get_current_active_admin)],
 ):
     """Permite ao diretor marcar uma ocorrência como GAP ou SUBSTITUTED."""
-    org_id = current_user.organization_id
+    organization_id = current_user.organization_id
 
     def _run(sync_db):
         return occurrence_service.update_occurrence_sync(
             sync_db,
             occurrence_id,
-            org_id,
+            organization_id,
             payload,
             decided_by_user_id=current_user.id,
         )
@@ -275,7 +275,7 @@ async def update_occurrence(
         def _emit_failure(sync_db):
             occurrence_service.log_occurrence_event_safe_sync(
                 sync_db,
-                organization_id=org_id,
+                organization_id=organization_id,
                 event_type=occurrence_service.OBS_EVENT_DECIDE,
                 result=occurrence_service.classify_occurrence_error_result(exc.status_code),
                 actor_user_id=current_user.id,
@@ -290,7 +290,7 @@ async def update_occurrence(
     def _emit_success(sync_db):
         occurrence_service.log_occurrence_event_safe_sync(
             sync_db,
-            organization_id=org_id,
+            organization_id=organization_id,
             event_type=occurrence_service.OBS_EVENT_DECIDE,
             result=occurrence_service.OBS_RESULT_SUCCESS,
             actor_user_id=current_user.id,

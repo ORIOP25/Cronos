@@ -14,7 +14,7 @@ from app.schemas import AvailabilitySelfCreate
 
 async def get_teachers_by_org(
     db: AsyncSession, 
-    org_id: int, 
+    organization_id: int, 
     skip: int = 0, 
     limit: int = 100
 ):
@@ -26,7 +26,7 @@ async def get_teachers_by_org(
     stmt = (
         select(models.Teacher, models.User.email, models.User.is_active)
         .outerjoin(models.User, models.User.teacher_id == models.Teacher.id)
-        .where(models.Teacher.organization_id == org_id)
+        .where(models.Teacher.organization_id == organization_id)
         .options(selectinload(models.Teacher.subjects))
         .order_by(models.Teacher.name)
         .offset(skip)
@@ -48,7 +48,7 @@ async def get_teachers_by_org(
         
     return final_list
 
-async def create_teacher(db: AsyncSession, teacher_in: schemas.TeacherCreate, org_id: int):
+async def create_teacher(db: AsyncSession, teacher_in: schemas.TeacherCreate, organization_id: int):
     # 1. Separar dados: O que é do Professor vs O que é da Relação
     # Retiramos os IDs das disciplinas para uma lista à parte
     subject_ids = teacher_in.subject_ids
@@ -57,13 +57,13 @@ async def create_teacher(db: AsyncSession, teacher_in: schemas.TeacherCreate, or
     teacher_data = teacher_in.model_dump(exclude={'subject_ids', 'create_user_account', 'email', 'password'})
 
     # 2. Criar a Instância do Professor
-    db_teacher = models.Teacher(**teacher_data, organization_id=org_id)
+    db_teacher = models.Teacher(**teacher_data, organization_id=organization_id)
 
     # 3. Tratar as Disciplinas (Relação N:M)
     if subject_ids:
         query_subs = select(models.Subject).where(
             models.Subject.id.in_(subject_ids),
-            models.Subject.organization_id == org_id
+            models.Subject.organization_id == organization_id
         )
         result_subs = await db.execute(query_subs)
         subjects_objects = result_subs.scalars().all()
@@ -93,7 +93,7 @@ async def create_teacher(db: AsyncSession, teacher_in: schemas.TeacherCreate, or
             new_user = await user_service.create_user(
                 db, 
                 user_create_data, 
-                organization_id=org_id, 
+                organization_id=organization_id, 
                 role=UserRole.teacher,
                 teacher_id=db_teacher.id 
             )
@@ -109,13 +109,13 @@ async def create_teacher(db: AsyncSession, teacher_in: schemas.TeacherCreate, or
         raise
 
     # 7. Retornar o Professor com dados atualizados (Single Source of Truth)
-    return await get_teacher_details(db, db_teacher.id, org_id)
+    return await get_teacher_details(db, db_teacher.id, organization_id)
 
 # Helper Function
-async def get_teacher_with_subjects(db: AsyncSession, teacher_id: int, org_id: int):
+async def get_teacher_with_subjects(db: AsyncSession, teacher_id: int, organization_id: int):
     query = select(models.Teacher).where(
         models.Teacher.id == teacher_id,
-        models.Teacher.organization_id == org_id
+        models.Teacher.organization_id == organization_id
     ).options(selectinload(models.Teacher.subjects))
     
     result = await db.execute(query)
@@ -124,7 +124,7 @@ async def get_teacher_with_subjects(db: AsyncSession, teacher_id: int, org_id: i
 async def delete_teacher(
     db: AsyncSession, 
     teacher_id: int,
-    org_id: int
+    organization_id: int
 ) -> str:
     """
     Remove um professor. 
@@ -135,7 +135,7 @@ async def delete_teacher(
     # 1. Buscar o professor
     query = select(models.Teacher).where(
         models.Teacher.id == teacher_id,
-        models.Teacher.organization_id == org_id
+        models.Teacher.organization_id == organization_id
     )
     result = await db.execute(query)
     teacher = result.scalars().first()
@@ -168,7 +168,7 @@ async def update_teacher(
     db: AsyncSession, 
     teacher_id: int, 
     teacher_in: schemas.TeacherUpdate,
-    org_id: int
+    organization_id: int
 ):
     """
     Atualiza um professor. Permite:
@@ -178,7 +178,7 @@ async def update_teacher(
     # 1. Buscar Teacher + Disciplinas (Eager Loading)
     query = select(models.Teacher).where(
         models.Teacher.id == teacher_id,
-        models.Teacher.organization_id == org_id
+        models.Teacher.organization_id == organization_id
     ).options(selectinload(models.Teacher.subjects))
 
     result = await db.execute(query)
@@ -201,7 +201,7 @@ async def update_teacher(
     if teacher_in.subject_ids is not None and len(teacher_in.subject_ids) > 0:
         query_subjects = select(models.Subject).where(
             models.Subject.id.in_(teacher_in.subject_ids),
-            models.Subject.organization_id == org_id
+            models.Subject.organization_id == organization_id
         )
         result_subjects = await db.execute(query_subjects)
         new_subjects = result_subjects.scalars().all()
@@ -240,7 +240,7 @@ async def update_teacher(
             )
             # Criar o user (por defeito is_active=True, que é o que queremos)
             await user_service.create_user(
-                db, user_create_data, organization_id=org_id, 
+                db, user_create_data, organization_id=organization_id, 
                 role=UserRole.teacher, teacher_id=teacher.id
             )
         # Caso 3: Quer desativar (create_user_account=False) mas não tem user
@@ -251,16 +251,16 @@ async def update_teacher(
     await db.commit()
     
     # 7. Retornar dados frescos (Single Source of Truth)
-    return await get_teacher_details(db, teacher_id, org_id)
+    return await get_teacher_details(db, teacher_id, organization_id)
 
-async def get_teacher_details(db: AsyncSession, teacher_id: int, org_id: int):
+async def get_teacher_details(db: AsyncSession, teacher_id: int, organization_id: int):
     # 1. Query: Selecionamos também o campo is_active do User
     stmt = (
         select(models.Teacher, models.User.email, models.User.is_active)
         .outerjoin(models.User, models.User.teacher_id == models.Teacher.id)
         .where(
             models.Teacher.id == teacher_id,
-            models.Teacher.organization_id == org_id
+            models.Teacher.organization_id == organization_id
         )
         .options(selectinload(models.Teacher.subjects))
     )
@@ -284,7 +284,7 @@ async def get_teacher_details(db: AsyncSession, teacher_id: int, org_id: int):
 
 async def find_replacement_teacher(
     db: AsyncSession, 
-    org_id: int, 
+    organization_id: int, 
     unavailable_slot_id: int, 
     exclude_teacher_id: int
 ):
@@ -297,7 +297,7 @@ async def find_replacement_teacher(
     Excluídos: Impossível (Score -1)
     """
     # 1. Buscar todos os professores
-    all_teachers = await get_teachers_by_org(db, org_id)
+    all_teachers = await get_teachers_by_org(db, organization_id)
     
     # 2. Buscar as preferências de TODOS os professores para este slot específico
     avail_stmt = select(Availability).where(
@@ -352,12 +352,12 @@ async def find_replacement_teacher(
 async def get_teacher_availability(
     db: AsyncSession,
     teacher_id: int,
-    org_id: int,
+    organization_id: int,
 ) -> list[dict] | str:
     """Lê disponibilidades de um professor dentro da organização autenticada."""
     teacher_query = select(models.Teacher).where(
         models.Teacher.id == teacher_id,
-        models.Teacher.organization_id == org_id,
+        models.Teacher.organization_id == organization_id,
     )
     teacher_result = await db.execute(teacher_query)
     db_teacher = teacher_result.scalars().first()
@@ -369,7 +369,7 @@ async def get_teacher_availability(
         .join(models.Timeslot, models.Availability.timeslot_id == models.Timeslot.id)
         .where(
             models.Availability.teacher_id == teacher_id,
-            models.Timeslot.organization_id == org_id,
+            models.Timeslot.organization_id == organization_id,
         )
         .order_by(models.Timeslot.day_of_week, models.Timeslot.start_time, models.Availability.id)
     )
@@ -386,7 +386,7 @@ async def set_teacher_availability(
     db: AsyncSession, 
     teacher_id: int, 
     availabilities: list[AvailabilitySelfCreate],
-    org_id: int
+    organization_id: int
 ):
     """
     Define as disponibilidades de um professor.
@@ -396,7 +396,7 @@ async def set_teacher_availability(
     # 1. Validar que o professor pertence a esta organização
     teacher_query = select(models.Teacher).where(
         models.Teacher.id == teacher_id,
-        models.Teacher.organization_id == org_id
+        models.Teacher.organization_id == organization_id
     )
     teacher_result = await db.execute(teacher_query)
     db_teacher = teacher_result.scalars().first()
@@ -413,7 +413,7 @@ async def set_teacher_availability(
     if availabilities:
         timeslot_query = select(models.Timeslot.id).where(
             models.Timeslot.id.in_(timeslot_ids),
-            models.Timeslot.organization_id == org_id
+            models.Timeslot.organization_id == organization_id
         )
         timeslot_result = await db.execute(timeslot_query)
         valid_ids = {row[0] for row in timeslot_result.all()}
@@ -445,6 +445,6 @@ async def set_teacher_availability(
 #  FUNÇÕES SÍNCRONAS (Para usar no Solver/Celery)
 # ==========================================
 
-def get_teachers_by_org_sync(db: Session, org_id: int):
+def get_teachers_by_org_sync(db: Session, organization_id: int):
     """Retorna todos os professores (Sync - Bloqueante)."""
-    return db.query(models.Teacher).filter(models.Teacher.organization_id == org_id).all()
+    return db.query(models.Teacher).filter(models.Teacher.organization_id == organization_id).all()

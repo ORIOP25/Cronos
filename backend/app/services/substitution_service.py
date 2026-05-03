@@ -82,7 +82,7 @@ async def find_available_teachers(
     timeslot_id: int, 
     date_of_substitution: date,
     exclude_teacher_id: int,
-    org_id: int
+    organization_id: int
 ) -> list[schemas.ReplacementSuggestion]:
     """
     Encontra professores que NÃO têm aulas nem substituições naquele slot e data.
@@ -90,7 +90,7 @@ async def find_available_teachers(
     
     # 1. Buscar todos os professores da organização (menos o que faltou)
     query_teachers = select(models.Teacher).where(
-        models.Teacher.organization_id == org_id,
+        models.Teacher.organization_id == organization_id,
         models.Teacher.id != exclude_teacher_id
     )
     result_teachers = await db.execute(query_teachers)
@@ -137,14 +137,14 @@ async def find_available_teachers(
     suggestions.sort(key=lambda x: x.priority)
     return suggestions
 
-async def create_substitution(db: AsyncSession, data: schemas.SubstitutionCreate, org_id: int):
+async def create_substitution(db: AsyncSession, data: schemas.SubstitutionCreate, organization_id: int):
     def _run(sync_db):
         schedule_output = sync_db.execute(
             select(models.ScheduleOutput)
             .options(joinedload(models.ScheduleOutput.lesson))
             .where(
                 and_(
-                    models.ScheduleOutput.organization_id == org_id,
+                    models.ScheduleOutput.organization_id == organization_id,
                     models.ScheduleOutput.lesson_id == data.lesson_id,
                     models.ScheduleOutput.timeslot_id == data.timeslot_id,
                     models.ScheduleOutput.date == data.date,
@@ -161,7 +161,7 @@ async def create_substitution(db: AsyncSession, data: schemas.SubstitutionCreate
             select(models.Timeslot).where(
                 and_(
                     models.Timeslot.id == data.timeslot_id,
-                    models.Timeslot.organization_id == org_id,
+                    models.Timeslot.organization_id == organization_id,
                 )
             )
         ).scalar_one_or_none()
@@ -172,7 +172,7 @@ async def create_substitution(db: AsyncSession, data: schemas.SubstitutionCreate
             select(models.Teacher).where(
                 and_(
                     models.Teacher.id.in_([data.original_teacher_id, data.substitute_teacher_id]),
-                    models.Teacher.organization_id == org_id,
+                    models.Teacher.organization_id == organization_id,
                 )
             )
         ).scalars().all()
@@ -188,12 +188,12 @@ async def create_substitution(db: AsyncSession, data: schemas.SubstitutionCreate
         try:
             occurrence, _ = occurrence_service.create_occurrence_from_block_sync(
                 sync_db,
-                organization_id=org_id,
+                organization_id=organization_id,
                 schedule_output_id=schedule_output.id,
             )
             occurrence_service.log_occurrence_event_safe_sync(
                 sync_db,
-                organization_id=org_id,
+                organization_id=organization_id,
                 event_type=occurrence_service.OBS_EVENT_CREATE,
                 result=occurrence_service.OBS_RESULT_SUCCESS,
                 occurrence_id=occurrence.id,
@@ -203,7 +203,7 @@ async def create_substitution(db: AsyncSession, data: schemas.SubstitutionCreate
         except occurrence_service.OccurrenceServiceError as exc:
             occurrence_service.log_occurrence_event_safe_sync(
                 sync_db,
-                organization_id=org_id,
+                organization_id=organization_id,
                 event_type=occurrence_service.OBS_EVENT_CREATE,
                 result=occurrence_service.classify_occurrence_error_result(exc.status_code),
                 occurrence_id=None,
@@ -214,7 +214,7 @@ async def create_substitution(db: AsyncSession, data: schemas.SubstitutionCreate
 
         recommendations = occurrence_service.get_substitute_recommendations_sync(
             sync_db,
-            organization_id=org_id,
+            organization_id=organization_id,
             occurrence_id=occurrence.id,
         )
         substitute_subject_id = _select_substitute_subject_from_recommendations(
@@ -232,12 +232,12 @@ async def create_substitution(db: AsyncSession, data: schemas.SubstitutionCreate
             updated = occurrence_service.update_occurrence_sync(
                 sync_db,
                 occurrence_id=occurrence.id,
-                organization_id=org_id,
+                organization_id=organization_id,
                 payload=payload,
             )
             occurrence_service.log_occurrence_event_safe_sync(
                 sync_db,
-                organization_id=org_id,
+                organization_id=organization_id,
                 event_type=occurrence_service.OBS_EVENT_DECIDE,
                 result=occurrence_service.OBS_RESULT_SUCCESS,
                 occurrence_id=updated.id,
@@ -248,7 +248,7 @@ async def create_substitution(db: AsyncSession, data: schemas.SubstitutionCreate
         except occurrence_service.OccurrenceServiceError as exc:
             occurrence_service.log_occurrence_event_safe_sync(
                 sync_db,
-                organization_id=org_id,
+                organization_id=organization_id,
                 event_type=occurrence_service.OBS_EVENT_DECIDE,
                 result=occurrence_service.classify_occurrence_error_result(exc.status_code),
                 occurrence_id=occurrence.id,
@@ -265,7 +265,7 @@ async def create_substitution(db: AsyncSession, data: schemas.SubstitutionCreate
 
     return await db.run_sync(_run)
 
-async def get_active_substitutions(db: AsyncSession, org_id: int, skip: int = 0, limit: int = 100):
+async def get_active_substitutions(db: AsyncSession, organization_id: int, skip: int = 0, limit: int = 100):
     query = (
         select(models.Substitution)
         # Dizemos ao SQL: "Traz logo os dados dos professores, não esperes que eu peça"
@@ -276,7 +276,7 @@ async def get_active_substitutions(db: AsyncSession, org_id: int, skip: int = 0,
             selectinload(models.Substitution.timeslot)
         )
         .join(models.Substitution.original_teacher)
-        .where(models.Teacher.organization_id == org_id)
+        .where(models.Teacher.organization_id == organization_id)
         .order_by(models.Substitution.date.desc())
         .offset(skip)
         .limit(limit)
