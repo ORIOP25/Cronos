@@ -41,6 +41,7 @@ def _upsert_legacy_substitution_sync(
     *,
     data: schemas.SubstitutionCreate,
     substitute_subject_id: int,
+    organization_id: int,
 ):
     existing = sync_db.execute(
         select(models.Substitution)
@@ -262,6 +263,7 @@ async def create_substitution(db: AsyncSession, data: schemas.SubstitutionCreate
             sync_db,
             data=data,
             substitute_subject_id=substitute_subject_id,
+            organization_id=organization_id,
         )
 
     return await db.run_sync(_run)
