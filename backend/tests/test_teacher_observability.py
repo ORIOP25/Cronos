@@ -17,7 +17,7 @@ API = settings.API_V1_STR
 async def _create_user_headers(
     db_session,
     *,
-    org_id: int,
+    organization_id: int,
     teacher_id: int | None,
     role: UserRole,
     is_active: bool = True,
@@ -28,7 +28,7 @@ async def _create_user_headers(
         hashed_password=hash_password("pass123"),
         is_active=is_active,
         role=role,
-        organization_id=org_id,
+        organization_id=organization_id,
         teacher_id=teacher_id,
     )
     db_session.add(user)
@@ -54,7 +54,7 @@ async def test_teacher_self_availability_logs_observability_event(
 
     teacher_headers = await _create_user_headers(
         db_session,
-        org_id=1,
+        organization_id=1,
         teacher_id=teacher_id,
         role=UserRole.teacher,
     )
@@ -94,7 +94,7 @@ async def test_teacher_observability_summary_is_admin_only(
 
     teacher_headers = await _create_user_headers(
         db_session,
-        org_id=1,
+        organization_id=1,
         teacher_id=teacher_resp.json()["id"],
         role=UserRole.teacher,
     )
@@ -116,7 +116,7 @@ async def test_teacher_observability_summary_detects_403_alert_and_recovery(
 
     failure_events = [
         models.TeacherEndpointOperationalEvent(
-            org_id=1,
+            organization_id=1,
             actor_user_id=None,
             actor_role=UserRole.admin.value,
             endpoint_key=teacher_observability_service.ENDPOINT_TEACHERS_ME_AVAILABILITY_READ,
@@ -146,7 +146,7 @@ async def test_teacher_observability_summary_detects_403_alert_and_recovery(
 
     recovery_events = [
         models.TeacherEndpointOperationalEvent(
-            org_id=1,
+            organization_id=1,
             actor_user_id=None,
             actor_role=UserRole.teacher.value,
             endpoint_key=teacher_observability_service.ENDPOINT_TEACHERS_ME_AVAILABILITY_READ,
@@ -185,7 +185,7 @@ async def test_teacher_observability_summary_detects_high_5xx_rate(
 
     db_session.add(
         models.TeacherEndpointOperationalEvent(
-            org_id=1,
+            organization_id=1,
             actor_user_id=None,
             actor_role=UserRole.teacher.value,
             endpoint_key=teacher_observability_service.ENDPOINT_SCHEDULE_ME_HORIZON_READ,
@@ -198,7 +198,7 @@ async def test_teacher_observability_summary_detects_high_5xx_rate(
 
     success_events = [
         models.TeacherEndpointOperationalEvent(
-            org_id=1,
+            organization_id=1,
             actor_user_id=None,
             actor_role=UserRole.teacher.value,
             endpoint_key=teacher_observability_service.ENDPOINT_SCHEDULE_ME_HORIZON_READ,

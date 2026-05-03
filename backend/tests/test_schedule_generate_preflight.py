@@ -21,10 +21,10 @@ async def _get_org_id(db_session):
     return org.id
 
 
-async def _seed_minimal_generation_data(db_session, org_id: int):
+async def _seed_minimal_generation_data(db_session, organization_id: int):
     await _seed_minimal_generation_data_with_settings(
         db_session,
-        org_id,
+        organization_id,
         school_start_date=date(2025, 9, 15),
         school_target_end_date=date(2026, 6, 15),
         school_hard_end_date=None,
@@ -34,7 +34,7 @@ async def _seed_minimal_generation_data(db_session, org_id: int):
 
 async def _seed_minimal_generation_data_with_settings(
     db_session,
-    org_id: int,
+    organization_id: int,
     *,
     school_start_date: date,
     school_target_end_date: date,
@@ -42,7 +42,7 @@ async def _seed_minimal_generation_data_with_settings(
     repair_window_days: int | None,
 ):
     settings = models.OrganizationSettings(
-        organization_id=org_id,
+        organization_id=organization_id,
         school_start_date=school_start_date,
         school_target_end_date=school_target_end_date,
         school_hard_end_date=school_hard_end_date,
@@ -51,7 +51,7 @@ async def _seed_minimal_generation_data_with_settings(
     db_session.add(settings)
 
     holiday = models.SchoolCalendarEvent(
-        organization_id=org_id,
+        organization_id=organization_id,
         name="Feriado Nacional",
         start_date=date(2025, 12, 1),
         end_date=date(2025, 12, 1),
@@ -60,7 +60,7 @@ async def _seed_minimal_generation_data_with_settings(
     )
     db_session.add(holiday)
 
-    course = models.Course(name="Curso Teste", abbreviation="CT", organization_id=org_id)
+    course = models.Course(name="Curso Teste", abbreviation="CT", organization_id=organization_id)
     db_session.add(course)
     await db_session.flush()
 
@@ -71,14 +71,14 @@ async def _seed_minimal_generation_data_with_settings(
         end_year=2028,
         grade_level=10,
         course_id=course.id,
-        organization_id=org_id,
+        organization_id=organization_id,
     )
     db_session.add(class_)
 
-    teacher = models.Teacher(name="Prof. Teste", organization_id=org_id)
+    teacher = models.Teacher(name="Prof. Teste", organization_id=organization_id)
     db_session.add(teacher)
 
-    subject = models.Subject(name="Disciplina Teste", organization_id=org_id)
+    subject = models.Subject(name="Disciplina Teste", organization_id=organization_id)
     db_session.add(subject)
     await db_session.flush()
 
@@ -103,7 +103,7 @@ async def _seed_minimal_generation_data_with_settings(
         name="Sala 101",
         capacity=30,
         type=models.RoomType.normal,
-        organization_id=org_id,
+        organization_id=organization_id,
     )
     db_session.add(room)
 
@@ -111,7 +111,7 @@ async def _seed_minimal_generation_data_with_settings(
         day_of_week=0,
         start_time=time(9, 0),
         end_time=time(10, 0),
-        organization_id=org_id,
+        organization_id=organization_id,
     )
     db_session.add(timeslot)
     await db_session.flush()
@@ -147,10 +147,10 @@ async def test_generate_auto_sync_holidays_is_attempted(
     admin_token_headers,
     monkeypatch,
 ):
-    org_id = await _get_org_id(db_session)
+    organization_id = await _get_org_id(db_session)
     db_session.add(
         models.OrganizationSettings(
-            organization_id=org_id,
+            organization_id=organization_id,
             school_start_date=date(2025, 9, 15),
             school_target_end_date=date(2026, 6, 15),
         )
@@ -159,7 +159,7 @@ async def test_generate_auto_sync_holidays_is_attempted(
 
     called = {"value": False}
 
-    async def fake_sync_holidays(db, org_id):
+    async def fake_sync_holidays(db, organization_id):
         await asyncio.sleep(0)
         called["value"] = True
         return 3
@@ -186,8 +186,8 @@ async def test_generate_returns_task_id_with_minimal_valid_data(
     admin_token_headers,
     monkeypatch,
 ):
-    org_id = await _get_org_id(db_session)
-    await _seed_minimal_generation_data(db_session, org_id)
+    organization_id = await _get_org_id(db_session)
+    await _seed_minimal_generation_data(db_session, organization_id)
 
     def fake_delay(_org_id, _mode):
         return SimpleNamespace(id="task-test-123")
@@ -213,11 +213,11 @@ async def test_repair_generate_fails_when_window_blocks_all_future(
     admin_token_headers,
     monkeypatch,
 ):
-    org_id = await _get_org_id(db_session)
+    organization_id = await _get_org_id(db_session)
     today = date.today()
     await _seed_minimal_generation_data_with_settings(
         db_session,
-        org_id,
+        organization_id,
         school_start_date=today - timedelta(days=30),
         school_target_end_date=today + timedelta(days=5),
         school_hard_end_date=today + timedelta(days=5),
@@ -252,11 +252,11 @@ async def test_repair_generate_succeeds_when_horizon_exists_outside_window(
     admin_token_headers,
     monkeypatch,
 ):
-    org_id = await _get_org_id(db_session)
+    organization_id = await _get_org_id(db_session)
     today = date.today()
     await _seed_minimal_generation_data_with_settings(
         db_session,
-        org_id,
+        organization_id,
         school_start_date=today - timedelta(days=30),
         school_target_end_date=today + timedelta(days=60),
         school_hard_end_date=today + timedelta(days=60),
@@ -392,7 +392,7 @@ def test_validate_task_ownership_rejects_task_from_another_org(monkeypatch):
     monkeypatch.setattr(schedule_endpoint, "_get_redis_client", lambda: FakeRedis())
 
     with pytest.raises(HTTPException) as exc_info:
-        schedule_endpoint._validate_task_ownership("task-foreign", org_id=1)
+        schedule_endpoint._validate_task_ownership("task-foreign", organization_id=1)
 
     assert exc_info.value.status_code == 403
     assert exc_info.value.detail == "Sem permissões para esta task"
@@ -400,9 +400,9 @@ def test_validate_task_ownership_rejects_task_from_another_org(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_schedule_reset_requires_admin_role(async_client, db_session):
-    org_id = await _get_org_id(db_session)
+    organization_id = await _get_org_id(db_session)
 
-    teacher = models.Teacher(name="Prof. Reset Guard", organization_id=org_id)
+    teacher = models.Teacher(name="Prof. Reset Guard", organization_id=organization_id)
     db_session.add(teacher)
     await db_session.flush()
 
@@ -412,7 +412,7 @@ async def test_schedule_reset_requires_admin_role(async_client, db_session):
         hashed_password=hash_password("pass123"),
         is_active=True,
         role=models.UserRole.teacher,
-        organization_id=org_id,
+        organization_id=organization_id,
         teacher_id=teacher.id,
     )
     db_session.add(teacher_user)
@@ -431,9 +431,9 @@ async def test_schedule_reset_requires_admin_role(async_client, db_session):
 
 @pytest.mark.asyncio
 async def test_schedule_reset_logs_audit_on_forbidden_attempt(async_client, db_session, monkeypatch):
-    org_id = await _get_org_id(db_session)
+    organization_id = await _get_org_id(db_session)
 
-    teacher = models.Teacher(name="Prof. Reset Audit", organization_id=org_id)
+    teacher = models.Teacher(name="Prof. Reset Audit", organization_id=organization_id)
     db_session.add(teacher)
     await db_session.flush()
 
@@ -443,7 +443,7 @@ async def test_schedule_reset_logs_audit_on_forbidden_attempt(async_client, db_s
         hashed_password=hash_password("pass123"),
         is_active=True,
         role=models.UserRole.teacher,
-        organization_id=org_id,
+        organization_id=organization_id,
         teacher_id=teacher.id,
     )
     db_session.add(teacher_user)

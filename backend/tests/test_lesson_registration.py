@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import pytest
 import pytest_asyncio
@@ -149,7 +149,7 @@ def base_setup(sync_db):
 
 class TestLessonRegistration:
     def test_upsert_lesson_log(self, sync_db, base_setup):
-        org_id = base_setup["org_id"]
+        org_id = base_setup["organization_id"]
         output_id = base_setup["schedule_output_id"]
         
         # Act
@@ -177,7 +177,7 @@ class TestLessonRegistration:
         assert progress.hours_completed == 7.0
 
     def test_timesheet_submission_workflow(self, sync_db, base_setup):
-        org_id = base_setup["org_id"]
+        org_id = base_setup["organization_id"]
         output_id = base_setup["schedule_output_id"]
         teacher_id = base_setup["teacher_id"]
         week_start = base_setup["date"] - timedelta(days=base_setup["date"].weekday())
@@ -218,7 +218,7 @@ class TestLessonRegistration:
 @pytest.mark.asyncio
 class TestSoftReset:
     async def test_soft_reset_clears_data_and_resets_progress(self, sync_db, base_setup):
-        org_id = base_setup["org_id"]
+        org_id = base_setup["organization_id"]
         
         # Using a new async session to test async function soft_reset_year
         from sqlalchemy.ext.asyncio import AsyncSession
@@ -256,7 +256,7 @@ class TestSoftReset:
 @pytest.fixture
 def substitution_setup(sync_db, base_setup):
     """Extende base_setup com um segundo professor elegível para substituição."""
-    org_id = base_setup["org_id"]
+    org_id = base_setup["organization_id"]
     class_id = base_setup["class_id"]
 
     # Create second subject & module
@@ -325,7 +325,7 @@ def substitution_setup(sync_db, base_setup):
 class TestSubstitutionFromModal:
     def test_substitution_step_recommends_teachers(self, sync_db, substitution_setup):
         """T 5.1.1: Verificar que o endpoint de recomendações devolve professores elegíveis para o slot."""
-        org_id = substitution_setup["org_id"]
+        org_id = substitution_setup["organization_id"]
         output_id = substitution_setup["schedule_output_id"]
 
         # Create occurrence
@@ -345,7 +345,7 @@ class TestSubstitutionFromModal:
 
     def test_substitution_creation_from_modal(self, sync_db, substitution_setup):
         """T 5.1.2: Criar uma substituição via endpoint e verificar que a LessonOccurrence é criada corretamente com status=SUBSTITUTED."""
-        org_id = substitution_setup["org_id"]
+        org_id = substitution_setup["organization_id"]
         output_id = substitution_setup["schedule_output_id"]
         user_id = substitution_setup["user_id"]
 
@@ -376,7 +376,7 @@ class TestSubstitutionFromModal:
         O backend reutiliza a ocorrência existente (idempotente), garantindo
         que não há duplicados e que o estado decidido é preservado.
         """
-        org_id = substitution_setup["org_id"]
+        org_id = substitution_setup["organization_id"]
         output_id = substitution_setup["schedule_output_id"]
         user_id = substitution_setup["user_id"]
 
@@ -405,7 +405,7 @@ class TestSubstitutionFromModal:
 class TestSummarySynchronization:
     def test_admin_can_update_teacher_summary(self, sync_db, base_setup):
         """T 5.2.1: Professor cria log com sumário → Admin atualiza o sumário → Verificar que o valor foi alterado."""
-        org_id = base_setup["org_id"]
+        org_id = base_setup["organization_id"]
         output_id = base_setup["schedule_output_id"]
         teacher_user_id = base_setup["user_id"]
 
@@ -434,7 +434,7 @@ class TestSummarySynchronization:
 
     def test_summary_persists_after_status_change(self, sync_db, base_setup):
         """T 5.2.2: Alterar o estado de COMPLETED para OCCURRENCE e verificar que o sumário não é apagado."""
-        org_id = base_setup["org_id"]
+        org_id = base_setup["organization_id"]
         output_id = base_setup["schedule_output_id"]
         user_id = base_setup["user_id"]
 
@@ -466,7 +466,7 @@ class TestAdminOpensLessonLogModal:
     def test_admin_opens_lesson_log_modal_for_past_slot(self, sync_db, base_setup):
         """T 5.3.1: Verificar que o endpoint devolve os campos lesson_log_* corretos para o admin."""
         from app.services import schedule_service
-        org_id = base_setup["org_id"]
+        org_id = base_setup["organization_id"]
         class_id = base_setup["class_id"]
         week_start = base_setup["date"] - timedelta(days=base_setup["date"].weekday())
 
@@ -496,7 +496,7 @@ class TestWeekScheduleTimesheetStatus:
     def test_week_schedule_includes_timesheet_status(self, sync_db, base_setup):
         """T 6.1.1: Submeter timesheet → endpoint deve devolver week_timesheet_status=SUBMITTED."""
         from app.services import schedule_service
-        org_id = base_setup["org_id"]
+        org_id = base_setup["organization_id"]
         teacher_id = base_setup["teacher_id"]
         class_id = base_setup["class_id"]
         week_start = base_setup["date"] - timedelta(days=base_setup["date"].weekday())
@@ -526,7 +526,7 @@ class TestWeekScheduleTimesheetStatus:
         """T 6.1.2: Dois professores na mesma semana com estados diferentes.
         Cada slot deve refletir o estado correto do seu professor."""
         from app.services import schedule_service
-        org_id = base_setup["org_id"]
+        org_id = base_setup["organization_id"]
         teacher1_id = base_setup["teacher_id"]
         class_id = base_setup["class_id"]
         week_start = base_setup["date"] - timedelta(days=base_setup["date"].weekday())
@@ -596,7 +596,7 @@ class TestWeekScheduleTimesheetStatus:
     def test_week_grid_returns_timesheet_summary(self, sync_db, base_setup):
         """T 6.3.1: Todos os slots do mesmo professor na mesma semana partilham o mesmo week_timesheet_status."""
         from app.services import schedule_service
-        org_id = base_setup["org_id"]
+        org_id = base_setup["organization_id"]
         teacher_id = base_setup["teacher_id"]
         week_start = base_setup["date"] - timedelta(days=base_setup["date"].weekday())
 
@@ -662,7 +662,7 @@ class TestWeekScheduleTimesheetStatus:
 class TestTimesheetReopen:
     def test_admin_reopens_submitted_week_from_modal(self, sync_db, base_setup):
         """T 6.2.1: Submeter semana → Admin reabre via API → Verificar que o estado é OPEN."""
-        org_id = base_setup["org_id"]
+        org_id = base_setup["organization_id"]
         teacher_id = base_setup["teacher_id"]
         week_start = base_setup["date"] - timedelta(days=base_setup["date"].weekday())
 
@@ -686,7 +686,7 @@ class TestTimesheetReopen:
 
     def test_reopen_preserves_lesson_logs(self, sync_db, base_setup):
         """T 6.2.3: Reabrir a semana e verificar que os LessonLogs existentes não são apagados."""
-        org_id = base_setup["org_id"]
+        org_id = base_setup["organization_id"]
         teacher_id = base_setup["teacher_id"]
         output_id = base_setup["schedule_output_id"]
         week_start = base_setup["date"] - timedelta(days=base_setup["date"].weekday())
@@ -784,7 +784,7 @@ class TestTimesheetReopenPermissions:
 @pytest.fixture
 def slot_counts_setup(sync_db, base_setup):
     """Extende base_setup com múltiplos slots na mesma semana para testar contagens."""
-    org_id = base_setup["org_id"]
+    org_id = base_setup["organization_id"]
     teacher_id = base_setup["teacher_id"]
     user_id = base_setup["user_id"]
     week_start = base_setup["date"] - timedelta(days=base_setup["date"].weekday())
@@ -848,7 +848,7 @@ def slot_counts_setup(sync_db, base_setup):
 class TestTimesheetListSlotCounts:
     def test_timesheets_list_with_slot_counts(self, sync_db, slot_counts_setup):
         """T 7.3.1: Criar aulas, registar algumas, chamar list_timesheets_sync e verificar as contagens."""
-        org_id = slot_counts_setup["org_id"]
+        org_id = slot_counts_setup["organization_id"]
         teacher_id = slot_counts_setup["teacher_id"]
         week_start = slot_counts_setup["week_start"]
 
@@ -873,7 +873,7 @@ class TestTimesheetListSlotCounts:
 
     def test_timesheets_excludes_draft_slots(self, sync_db, slot_counts_setup):
         """T 7.3.2: Verificar que blocos draft não são contabilizados nas contagens."""
-        org_id = slot_counts_setup["org_id"]
+        org_id = slot_counts_setup["organization_id"]
         teacher_id = slot_counts_setup["teacher_id"]
         week_start = slot_counts_setup["week_start"]
 
@@ -1125,7 +1125,7 @@ class TestSoftResetCompleteness:
         from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
         from sqlalchemy.pool import NullPool
         from app.db.database import ASYNC_DB_URL
-        org_id = base_setup["org_id"]
+        org_id = base_setup["organization_id"]
 
         # Pre-populate ClassProgress with debt and completed flag
         progress = sync_db.execute(
@@ -1161,7 +1161,7 @@ class TestSoftResetCompleteness:
 class TestClassProgressReversal:
     def test_completed_to_pending_reverses_class_progress(self, sync_db, base_setup):
         """T-2: Mudar de COMPLETED para PENDING deve reverter as horas contabilizadas."""
-        org_id = base_setup["org_id"]
+        org_id = base_setup["organization_id"]
         output_id = base_setup["schedule_output_id"]
         user_id = base_setup["user_id"]
 
@@ -1205,7 +1205,7 @@ class TestClassProgressReversal:
 class TestTimesheetStateTransitions:
     def test_timesheet_invalid_state_transition_rejected(self, sync_db, base_setup):
         """T-3: OPEN → APPROVED direto deve ser rejeitado (HTTP 400)."""
-        org_id = base_setup["org_id"]
+        org_id = base_setup["organization_id"]
         teacher_id = base_setup["teacher_id"]
         week_start = base_setup["date"] - timedelta(days=base_setup["date"].weekday())
 
@@ -1229,7 +1229,7 @@ class TestTimesheetStateTransitions:
 class TestAutoConfirmDaily:
     def test_auto_confirm_daily_sync(self, sync_db, base_setup):
         """T-4: Cron de auto-confirm deve criar ocorrências GIVEN e contabilizar horas."""
-        org_id = base_setup["org_id"]
+        org_id = base_setup["organization_id"]
         output_id = base_setup["schedule_output_id"]
         target_date = base_setup["date"]
 
@@ -1265,7 +1265,7 @@ class TestAutoConfirmDaily:
 
     def test_manual_occurrence_then_auto_confirm_skips(self, sync_db, base_setup):
         """T-6: Ocorrência manual (decided_at=None) + auto-confirm não deve duplicar."""
-        org_id = base_setup["org_id"]
+        org_id = base_setup["organization_id"]
         output_id = base_setup["schedule_output_id"]
         target_date = base_setup["date"]
         user_id = base_setup["user_id"]
@@ -1293,7 +1293,7 @@ class TestAutoConfirmDaily:
 class TestAvailableSubstitutes:
     def test_get_available_substitutes_sync(self, sync_db, substitution_setup):
         """T-5: Lista de substitutos disponíveis deve excluir professor planejado."""
-        org_id = substitution_setup["org_id"]
+        org_id = substitution_setup["organization_id"]
         output_id = substitution_setup["schedule_output_id"]
         target_date = substitution_setup["date"]
 
@@ -1313,7 +1313,7 @@ class TestAvailableSubstitutes:
 class TestOccurrenceFilters:
     def test_list_occurrences_with_filters(self, sync_db, base_setup):
         """T-8: Filtros class_id, date_from, date_to devem funcionar."""
-        org_id = base_setup["org_id"]
+        org_id = base_setup["organization_id"]
         output_id = base_setup["schedule_output_id"]
         target_date = base_setup["date"]
         user_id = base_setup["user_id"]
@@ -1352,7 +1352,7 @@ class TestWeekStartValidation:
     def test_week_start_not_monday_accepted(self, sync_db, base_setup):
         """T-9: week_start que não é Segunda-feira é aceite (comportamento atual documentado)."""
         from app.services import schedule_service
-        org_id = base_setup["org_id"]
+        org_id = base_setup["organization_id"]
         teacher_id = base_setup["teacher_id"]
 
         # Wednesday instead of Monday
@@ -1368,7 +1368,7 @@ class TestWeekStartValidation:
 class TestTimezoneBoundary:
     def test_timezone_boundary_blocking(self, sync_db, base_setup):
         """T-10: Blocos no limite de timezone devem ser tratados corretamente com UTC."""
-        org_id = base_setup["org_id"]
+        org_id = base_setup["organization_id"]
         output_id = base_setup["schedule_output_id"]
         user_id = base_setup["user_id"]
 

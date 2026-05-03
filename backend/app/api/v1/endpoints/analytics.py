@@ -21,12 +21,12 @@ async def get_availability_heatmap(
     - Disponíveis = Total - Impossíveis.
     - 'Evitar' (0) conta como DISPONÍVEL para efeitos de cobertura.
     """
-    org_id = current_user.organization_id
+    organization_id = current_user.organization_id
 
     # 1. Total de Professores
     result_total = await db.execute(
         select(func.count(models.Teacher.id))
-        .where(models.Teacher.organization_id == org_id)
+        .where(models.Teacher.organization_id == organization_id)
     )
     total_teachers = result_total.scalar() or 0
 
@@ -35,7 +35,7 @@ async def get_availability_heatmap(
 
     # 2. Todos os Timeslots
     result_slots = await db.execute(
-        select(models.Timeslot).where(models.Timeslot.organization_id == org_id)
+        select(models.Timeslot).where(models.Timeslot.organization_id == organization_id)
     )
     timeslots = result_slots.scalars().all()
 
@@ -47,7 +47,7 @@ async def get_availability_heatmap(
             func.count(models.Availability.teacher_id)
         )
         .join(models.Teacher)
-        .where(models.Teacher.organization_id == org_id)
+        .where(models.Teacher.organization_id == organization_id)
         .where(models.Availability.score == -1) # <--- MUDANÇA AQUI (Era <= 0)
         .group_by(models.Availability.timeslot_id)
     )

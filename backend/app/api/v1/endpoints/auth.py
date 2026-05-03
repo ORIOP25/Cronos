@@ -13,11 +13,11 @@ from typing import Annotated
 router = APIRouter()
 
 
-async def _get_org_name(db: AsyncSession, org_id: int | None) -> str:
+async def _get_org_name(db: AsyncSession, organization_id: int | None) -> str:
     """Obtém o nome da organização para incluir na resposta Token."""
     if org_id is None:
         return ""
-    org = await db.scalar(select(models.Organization).where(models.Organization.id == org_id))
+    org = await db.scalar(select(models.Organization).where(models.Organization.id == organization_id))
     return org.name if org else ""
 
 @router.post("/token", response_model=schemas.Token)

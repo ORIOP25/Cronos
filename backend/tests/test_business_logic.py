@@ -26,7 +26,7 @@ from app.models import UserRole
 API = settings.API_V1_STR
 
 
-async def _create_teacher_auth_headers(db_session, *, teacher_id: int, org_id: int) -> dict:
+async def _create_teacher_auth_headers(db_session, *, teacher_id: int, organization_id: int) -> dict:
     """Cria utilizador teacher autenticado para testes de self-service."""
     email = f"teacher.avail.{uuid4().hex[:8]}@escola.pt"
     teacher_user = models.User(
@@ -34,7 +34,7 @@ async def _create_teacher_auth_headers(db_session, *, teacher_id: int, org_id: i
         hashed_password=hash_password("pass123"),
         is_active=True,
         role=UserRole.teacher,
-        organization_id=org_id,
+        organization_id=organization_id,
         teacher_id=teacher_id,
     )
     db_session.add(teacher_user)
@@ -550,7 +550,7 @@ class TestTeacherAvailability:
         teacher_headers = await _create_teacher_auth_headers(
             db_session,
             teacher_id=teacher_id,
-            org_id=1,
+            organization_id=1,
         )
         read_resp = await async_client.get(
             f"{API}/teachers/me/availability",
@@ -660,7 +660,7 @@ class TestTeacherAvailability:
         teacher_headers = await _create_teacher_auth_headers(
             db_session,
             teacher_id=teacher_id,
-            org_id=1,
+            organization_id=1,
         )
         resp = await async_client.get(
             f"{API}/teachers/",
@@ -697,7 +697,7 @@ class TestTeacherAvailability:
         teacher_headers = await _create_teacher_auth_headers(
             db_session,
             teacher_id=teacher_id,
-            org_id=1,
+            organization_id=1,
         )
         horizon_resp = await async_client.get(
             f"{API}/schedule/me/horizon",
@@ -782,7 +782,7 @@ class TestTeacherAvailability:
         teacher_org1_headers = await _create_teacher_auth_headers(
             db_session,
             teacher_id=teacher_org1_id,
-            org_id=1,
+            organization_id=1,
         )
 
         org2 = models.Organization(name=f"Escola B {uuid4().hex[:6]}", plan_status="active")

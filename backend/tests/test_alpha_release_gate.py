@@ -28,14 +28,14 @@ async def _get_first_org_id(db_session) -> int:
 async def _seed_minimal_generation_context(
     db_session,
     *,
-    org_id: int,
+    organization_id: int,
     school_start_date: date,
     school_target_end_date: date,
     school_hard_end_date: date | None,
     repair_window_days: int | None,
 ) -> None:
     settings = models.OrganizationSettings(
-        organization_id=org_id,
+        organization_id=organization_id,
         school_start_date=school_start_date,
         school_target_end_date=school_target_end_date,
         school_hard_end_date=school_hard_end_date,
@@ -44,7 +44,7 @@ async def _seed_minimal_generation_context(
     db_session.add(settings)
 
     holiday = models.SchoolCalendarEvent(
-        organization_id=org_id,
+        organization_id=organization_id,
         name="Feriado Nacional",
         start_date=date(2025, 12, 1),
         end_date=date(2025, 12, 1),
@@ -53,7 +53,7 @@ async def _seed_minimal_generation_context(
     )
     db_session.add(holiday)
 
-    course = models.Course(name="Curso Alpha", abbreviation="CA", organization_id=org_id)
+    course = models.Course(name="Curso Alpha", abbreviation="CA", organization_id=organization_id)
     db_session.add(course)
     await db_session.flush()
 
@@ -64,14 +64,14 @@ async def _seed_minimal_generation_context(
         end_year=2028,
         grade_level=10,
         course_id=course.id,
-        organization_id=org_id,
+        organization_id=organization_id,
     )
     db_session.add(klass)
 
-    teacher = models.Teacher(name="Prof Alpha", organization_id=org_id)
+    teacher = models.Teacher(name="Prof Alpha", organization_id=organization_id)
     db_session.add(teacher)
 
-    subject = models.Subject(name="Disciplina Alpha", organization_id=org_id)
+    subject = models.Subject(name="Disciplina Alpha", organization_id=organization_id)
     db_session.add(subject)
     await db_session.flush()
 
@@ -96,7 +96,7 @@ async def _seed_minimal_generation_context(
         name="Sala Alpha",
         capacity=30,
         type=models.RoomType.normal,
-        organization_id=org_id,
+        organization_id=organization_id,
     )
     db_session.add(room)
 
@@ -104,7 +104,7 @@ async def _seed_minimal_generation_context(
         day_of_week=0,
         start_time=time(9, 0),
         end_time=time(10, 0),
-        organization_id=org_id,
+        organization_id=organization_id,
     )
     db_session.add(timeslot)
     await db_session.flush()
@@ -166,11 +166,11 @@ async def test_alpha_regression_generation_full_and_repair_allowed(
     admin_token_headers,
     monkeypatch,
 ):
-    org_id = await _get_first_org_id(db_session)
+    organization_id = await _get_first_org_id(db_session)
     today = date.today()
     await _seed_minimal_generation_context(
         db_session,
-        organization_id=org_id,
+        organization_id=organization_id,
         school_start_date=today - timedelta(days=30),
         school_target_end_date=today + timedelta(days=60),
         school_hard_end_date=today + timedelta(days=60),
@@ -206,11 +206,11 @@ async def test_alpha_regression_repair_blocks_near_hard_end(
     admin_token_headers,
     monkeypatch,
 ):
-    org_id = await _get_first_org_id(db_session)
+    organization_id = await _get_first_org_id(db_session)
     today = date.today()
     await _seed_minimal_generation_context(
         db_session,
-        organization_id=org_id,
+        organization_id=organization_id,
         school_start_date=today - timedelta(days=30),
         school_target_end_date=today + timedelta(days=5),
         school_hard_end_date=today + timedelta(days=5),

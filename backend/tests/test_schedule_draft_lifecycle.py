@@ -254,7 +254,7 @@ class TestDraftServices:
     """Testa os serviços de gestão de rascunhos com BD real."""
 
     def test_list_draft_gen_ids_returns_draft(self, sync_db, draft_setup):
-        org_id = draft_setup["org_id"]
+        org_id = draft_setup["organization_id"]
         drafts = schedule_service.list_draft_gen_ids_sync(sync_db, org_id)
         assert len(drafts) == 1
         assert drafts[0]["generation_id"] == GEN_DRAFT
@@ -265,21 +265,21 @@ class TestDraftServices:
         assert drafts == []
 
     def test_get_active_future_pattern_returns_active(self, sync_db, draft_setup):
-        org_id = draft_setup["org_id"]
+        org_id = draft_setup["organization_id"]
         lesson_id = draft_setup["lesson_id"]
         timeslot_id = draft_setup["timeslot_id"]
         pattern = schedule_service.get_active_future_pattern_sync(sync_db, org_id)
         assert (lesson_id, timeslot_id) in pattern
 
     def test_get_diff_sync_shows_added(self, sync_db, draft_setup):
-        org_id = draft_setup["org_id"]
+        org_id = draft_setup["organization_id"]
         diff = schedule_service.get_diff_sync(sync_db, org_id, GEN_DRAFT)
         assert diff["added"] >= 0
         assert diff["removed"] >= 0
         assert diff["total_draft"] == 1
 
     def test_approve_draft_promotes_to_active(self, sync_db, draft_setup):
-        org_id = draft_setup["org_id"]
+        org_id = draft_setup["organization_id"]
         count = schedule_service.approve_draft_sync(sync_db, org_id, GEN_DRAFT)
         assert count == 1
         # Após aprovação, não deve existir rascunho
@@ -287,7 +287,7 @@ class TestDraftServices:
         assert len(drafts) == 0
 
     def test_approve_draft_preserves_published_inside_stability_window(self, sync_db, draft_setup):
-        org_id = draft_setup["org_id"]
+        org_id = draft_setup["organization_id"]
 
         sync_db.add(models.OrganizationSettings(
             organization_id=org_id,
@@ -335,14 +335,14 @@ class TestDraftServices:
         assert drafts == []
 
     def test_reject_draft_deletes_it(self, sync_db, draft_setup):
-        org_id = draft_setup["org_id"]
+        org_id = draft_setup["organization_id"]
         count = schedule_service.reject_draft_sync(sync_db, org_id, GEN_DRAFT)
         assert count == 1
         drafts = schedule_service.list_draft_gen_ids_sync(sync_db, org_id)
         assert len(drafts) == 0
 
     def test_clear_schedule_window_sync_deletes_only_unconfirmed_outputs(self, sync_db, draft_setup):
-        org_id = draft_setup["org_id"]
+        org_id = draft_setup["organization_id"]
 
         active = (
             sync_db.query(models.ScheduleOutput)
@@ -401,7 +401,7 @@ class TestDraftServices:
         assert removable_output_id not in remaining_ids
 
     def test_clear_schedule_window_sync_scoped_by_org(self, sync_db, draft_setup):
-        org_id = draft_setup["org_id"]
+        org_id = draft_setup["organization_id"]
 
         other_org = models.Organization(name="Outra Org", plan_status="active")
         sync_db.add(other_org)
@@ -481,7 +481,7 @@ class TestDraftServices:
         )
 
     def test_create_schedule_output_with_date_sync_replaces_unconfirmed_conflict(self, sync_db, draft_setup):
-        org_id = draft_setup["org_id"]
+        org_id = draft_setup["organization_id"]
 
         active = (
             sync_db.query(models.ScheduleOutput)
@@ -542,7 +542,7 @@ class TestDraftServices:
         assert same_slot_outputs[0].lesson_id == replacement_lesson.id
 
     def test_create_schedule_output_with_date_sync_does_not_override_confirmed_conflict(self, sync_db, draft_setup):
-        org_id = draft_setup["org_id"]
+        org_id = draft_setup["organization_id"]
 
         active = (
             sync_db.query(models.ScheduleOutput)

@@ -16,7 +16,7 @@ API = settings.API_V1_STR
 async def _create_teacher_auth_headers(
     db_session,
     *,
-    org_id: int,
+    organization_id: int,
     teacher_id: int | None,
     is_active: bool = True,
     role: UserRole = UserRole.teacher,
@@ -27,7 +27,7 @@ async def _create_teacher_auth_headers(
         hashed_password=hash_password("pass123"),
         is_active=is_active,
         role=role,
-        organization_id=org_id,
+        organization_id=organization_id,
         teacher_id=teacher_id,
     )
     db_session.add(user)
@@ -71,7 +71,7 @@ class TestTeacherRoleRegressionContracts:
 
         teacher_headers = await _create_teacher_auth_headers(
             db_session,
-            org_id=1,
+            organization_id=1,
             teacher_id=teacher_id,
         )
         read_resp = await async_client.get(
@@ -95,7 +95,7 @@ class TestTeacherRoleRegressionContracts:
 
         teacher_without_profile_headers = await _create_teacher_auth_headers(
             db_session,
-            org_id=1,
+            organization_id=1,
             teacher_id=None,
         )
         no_profile_resp = await async_client.get(
@@ -163,7 +163,7 @@ class TestTeacherRoleRegressionContracts:
         assert teacher_resp.status_code == 200
         teacher_headers = await _create_teacher_auth_headers(
             db_session,
-            org_id=1,
+            organization_id=1,
             teacher_id=teacher_resp.json()["id"],
         )
 
@@ -222,7 +222,7 @@ class TestTeacherRoleRegressionContracts:
 
         teacher_headers = await _create_teacher_auth_headers(
             db_session,
-            org_id=1,
+            organization_id=1,
             teacher_id=teacher_resp.json()["id"],
         )
 
@@ -249,7 +249,7 @@ class TestTeacherRoleRegressionContracts:
 
         teacher_headers = await _create_teacher_auth_headers(
             db_session,
-            org_id=1,
+            organization_id=1,
             teacher_id=teacher_resp.json()["id"],
         )
 
@@ -273,7 +273,7 @@ class TestTeacherRoleRegressionContracts:
 
         teacher_headers = await _create_teacher_auth_headers(
             db_session,
-            org_id=1,
+            organization_id=1,
             teacher_id=teacher_id,
         )
 
@@ -320,7 +320,7 @@ class TestTeacherRoleRegressionContracts:
 
         student_headers = await _create_teacher_auth_headers(
             db_session,
-            org_id=1,
+            organization_id=1,
             teacher_id=None,
             role=UserRole.student,
         )
@@ -387,7 +387,7 @@ class TestTeacherRoleRegressionContracts:
 
         teacher_headers = await _create_teacher_auth_headers(
             db_session,
-            org_id=1,
+            organization_id=1,
             teacher_id=teacher_id,
         )
         persisted_resp = await async_client.get(

@@ -70,18 +70,18 @@ async def register_account(
 async def create_user(
     db: AsyncSession, 
     user: schemas.UserCreate, 
-    org_id: int | None = None,     # <--- Agora é opcional (pode ser None)
+    organization_id: int | None = None,     # <--- Agora é opcional (pode ser None)
     role: UserRole | None = None,
     teacher_id: int | None = None
 ):
     """
     Cria um utilizador.
-    - Se org_id for None: Cria uma NOVA organização (cenário de Registo).
-    - Se org_id for passado: Adiciona o user à organização existente (cenário de Admin criar profs).
+    - Se organization_id for None: Cria uma NOVA organização (cenário de Registo).
+    - Se organization_id for passado: Adiciona o user à organização existente (cenário de Admin criar profs).
     """
     hashed_pwd = hash_password(user.password)
     
-    final_org_id = org_id
+    final_org_id = organization_id
 
     # 1. Se não temos organização, criamos uma (Lógica de /register)
     if final_org_id is None:
@@ -93,7 +93,7 @@ async def create_user(
 
     # Definir role por defeito dependendo do contexto
     if role is None:
-        role = UserRole.admin if org_id is None else UserRole.teacher
+        role = UserRole.admin if organization_id is None else UserRole.teacher
     
     # 2. Criar Utilizador
     db_user = models.User(

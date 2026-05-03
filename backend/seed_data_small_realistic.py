@@ -198,7 +198,7 @@ def create_tables() -> None:
     print("   Tabelas criadas com sucesso!")
 
 
-def _create_timeslots(db, org_id: int) -> dict[tuple[int, int], models.Timeslot]:
+def _create_timeslots(db, organization_id: int) -> dict[tuple[int, int], models.Timeslot]:
     """Grelha padrao: Seg-Sex, 08:30-16:30 (8 blocos)."""
     ts_map: dict[tuple[int, int], models.Timeslot] = {}
     for day in range(5):
@@ -207,7 +207,7 @@ def _create_timeslots(db, org_id: int) -> dict[tuple[int, int], models.Timeslot]
                 day_of_week=day,
                 start_time=datetime.time(hour, 30),
                 end_time=datetime.time(hour + 1, 30),
-                organization_id=org_id,
+                organization_id=organization_id,
             )
             db.add(timeslot)
             ts_map[(day, hour)] = timeslot
