@@ -758,7 +758,7 @@ class TestTimesheetReopenPermissions:
         timesheet = models.TeacherWeeklyTimesheet(
             organization_id=org.id,
             teacher_id=teacher.id,
-            week_start_date=week_start),
+            week_start_date=week_start,
             status=models.TimesheetStatus.SUBMITTED,
         )
         db_session.add(timesheet)
@@ -919,7 +919,7 @@ class TestTimesheetApprovalEndpoints:
         timesheet = models.TeacherWeeklyTimesheet(
             organization_id=org.id,
             teacher_id=teacher.id,
-            week_start_date=week_start),
+            week_start_date=week_start,
             status=models.TimesheetStatus.SUBMITTED,
             submitted_at=datetime.now(timezone.utc),
         )
@@ -965,7 +965,7 @@ class TestTimesheetApprovalEndpoints:
         timesheet = models.TeacherWeeklyTimesheet(
             organization_id=org.id,
             teacher_id=teacher.id,
-            week_start_date=week_start),
+            week_start_date=week_start,
             status=models.TimesheetStatus.APPROVED,
             approved_at=datetime.now(timezone.utc),
         )
@@ -1018,7 +1018,7 @@ class TestTimesheetsListEndpoint:
         timesheet = models.TeacherWeeklyTimesheet(
             organization_id=org.id,
             teacher_id=teacher.id,
-            week_start_date=week_start),
+            week_start_date=week_start,
             status=models.TimesheetStatus.SUBMITTED,
         )
         db_session.add(timesheet)
