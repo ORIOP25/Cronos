@@ -254,6 +254,8 @@
 .zen-stagger-2 { animation-delay: 0.2s; }
 .zen-stagger-3 { animation-delay: 0.3s; }
 .zen-stagger-4 { animation-delay: 0.4s; }
+.zen-stagger-5 { animation-delay: 0.5s; }
+.zen-stagger-6 { animation-delay: 0.6s; }
 
 .text-display {
   font-family: var(--font-display);

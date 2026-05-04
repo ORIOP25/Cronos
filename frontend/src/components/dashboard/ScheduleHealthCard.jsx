@@ -2,11 +2,6 @@ import React from 'react'
 import { useNavigate } from 'react-router-dom'
 import { CButton } from '@coreui/react'
 
-function getColor(value) {
-  if (value === 0) return 'var(--rs-teal)'
-  return 'var(--rs-deep)'
-}
-
 function MetricSkeleton() {
   return (
     <div className="col-6 col-md-4 mb-3 text-center">
@@ -106,7 +101,7 @@ export default function ScheduleHealthCard({ health, isLoading }) {
             ))}
           </div>
           <div style={{ fontSize: '0.7rem', color: 'var(--rs-muted)', textAlign: 'center', marginTop: 8 }}>
-            {health.blocks_count} blocos no total · Geração #{health.generation_id?.slice(0, 12)}...
+            {health.blocks_count} blocos no total{health.generation_id ? ` · Geração #${health.generation_id.slice(0, 12)}...` : ''}
           </div>
         </div>
       </div>

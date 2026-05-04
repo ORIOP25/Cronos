@@ -52,6 +52,7 @@ def _get_alert_counts(
             and_(
                 models.LessonOccurrence.organization_id == organization_id,
                 models.LessonOccurrence.date == today,
+                models.LessonOccurrence.status == models.LessonOccurrenceStatus.PENDING,
             )
         )
     ) or 0
@@ -75,10 +76,11 @@ def _get_alert_counts(
     ) or 0
 
     active_substitutions_today = db.scalar(
-        select(func.count(models.Substitution.id)).where(
+        select(func.count(models.LessonOccurrence.id)).where(
             and_(
-                models.Substitution.organization_id == organization_id,
-                models.Substitution.date == today,
+                models.LessonOccurrence.organization_id == organization_id,
+                models.LessonOccurrence.date == today,
+                models.LessonOccurrence.status == models.LessonOccurrenceStatus.SUBSTITUTED,
             )
         )
     ) or 0
@@ -182,7 +184,12 @@ def _get_schedule_health(
     ) or 0
 
     classes_total = db.scalar(
-        select(func.count(distinct(models.ScheduleOutput.lesson_id))).where(
+        select(func.count(distinct(models.Lesson.class_id))).select_from(
+            models.ScheduleOutput
+        ).join(
+            models.Lesson,
+            models.ScheduleOutput.lesson_id == models.Lesson.id,
+        ).where(
             and_(
                 models.ScheduleOutput.organization_id == organization_id,
                 models.ScheduleOutput.is_draft.is_(False),

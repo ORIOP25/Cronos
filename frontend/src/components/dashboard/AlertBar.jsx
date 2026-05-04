@@ -2,7 +2,7 @@ import React from 'react'
 import { useNavigate } from 'react-router-dom'
 import { CCol, CRow } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
-import { cilWarning, cilCheckCircle, cilClock, cilSwapHorizontal } from '@coreui/icons'
+import { cilWarning, cilClock, cilSwapHorizontal } from '@coreui/icons'
 
 const alertCards = [
   {
@@ -16,12 +16,6 @@ const alertCards = [
     label: 'Timesheets',
     icon: cilClock,
     route: '/timesheets?status=submitted',
-  },
-  {
-    key: 'drafts',
-    label: 'Rascunhos',
-    icon: cilCheckCircle,
-    route: '/schedules?tab=drafts',
   },
   {
     key: 'substituicoes',
@@ -39,7 +33,7 @@ function getColor(value) {
 
 function SkeletonCard() {
   return (
-    <CCol xs={6} md={3} className="mb-3">
+    <CCol xs={6} md={4} className="mb-3">
       <div
         style={{
           background: 'var(--color-bg-surface)',
@@ -84,7 +78,6 @@ export default function AlertBar({ alerts, isLoading }) {
           <SkeletonCard />
           <SkeletonCard />
           <SkeletonCard />
-          <SkeletonCard />
         </CRow>
       </div>
     )
@@ -97,7 +90,7 @@ export default function AlertBar({ alerts, isLoading }) {
           const value = alerts?.[`pending_${card.key === 'ocorrencias' ? 'occurrences_today' : card.key === 'substituicoes' ? 'active_substitutions_today' : `pending_${card.key}`}`] ?? 0
           const color = getColor(value)
           return (
-            <CCol key={card.key} xs={6} md={3} className="mb-3">
+            <CCol key={card.key} xs={6} md={4} className="mb-3">
               <button
                 data-testid={`alert-${card.key}`}
                 onClick={() => navigate(card.route)}
