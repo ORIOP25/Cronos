@@ -43,7 +43,46 @@ Esta secção define a interface e experiência de utilizador do Horário Zen.
 - Larguras: 280px (expandida) / 72px (colapsada).
 - Admin: experiência desktop-first. Professor: mobile-first com padding reduzido.
 
-### Páginas de Autenticação (Maio 2026)
+## Melhorias Estruturais (Maio 2026)
+
+### Code Splitting
+Todas as páginas protegidas usam `React.lazy()` + `Suspense`. Apenas Login/Register são carregadas no bundle inicial. Redução do bundle principal: 621KB → 381KB (39%).
+
+### Sistema de Toasts
+- `contexts/ToastContext.jsx`: `ToastProvider` + hook `useToast()`.
+- Toasts com auto-dismiss (4s), posicionados no canto superior direito.
+- Substitui `CAlert` inline por feedback não-bloqueante.
+- Variantes: `toast.success()`, `toast.error()`, `toast.warning()`, `toast.info()`.
+
+### Focus Trap em Modais
+- `hooks/useFocusTrap.js`: hook que aprisiona o foco dentro do modal ativo.
+- Deteta automaticamente o `.modal-content` no DOM (compatível com portal do CoreUI).
+- Restaura o foco ao elemento original quando o modal fecha.
+- Integrado em: `GenericModalForm`, `ConfirmationModal`, `LessonLogModal`.
+
+### BrandPanel Partilhado
+- `components/auth/BrandPanel.jsx`: painel de marca reutilizável entre Login e Register.
+- Props: `tagline` (texto descritivo), `stats` (array de {value, label}).
+- Reduziu duplicação de ~80 linhas de JSX em cada página.
+
+### Skeleton Loaders
+- `components/SkeletonTable.jsx`: placeholder animado para tabelas (usa `rows` e `columns`).
+- `components/SkeletonGrid.jsx`: placeholder animado para grelhas (usa `rows` e `cols`).
+- `components/Skeleton.css`: animação shimmer com `@keyframes`.
+- Integração futura: substituir spinners no `SmartTable` e `WeekGrid`.
+
+### Breadcrumbs
+- `components/Breadcrumbs.jsx`: navegação hierárquica para páginas de cursos.
+- Integrado em: `CourseDetails`, `ClassDetails`, `ClassSubjects`.
+- Substitui breadcrumbs manuais inline (‹ como separador, último item ativo).
+
+### Testes Adicionais
+| Ficheiro | Cobertura |
+|----------|-----------|
+| `test/formatUtils.test.js` | 16 testes: formatDate, formatDateTime, formatWeekRange, formatNumber, addDays, etc. |
+| `test/terminology.test.js` | 10 testes: TXT, humanizeOperationalDetail, EVENT_TYPE_LABELS |
+| `test/ErrorBoundary.test.jsx` | 4 testes: render normal, erro, fallback, botão painel |
+| `test/ConfirmationModal.test.jsx` | 7 testes: título/mensagem, callbacks, loading, variant |
 - **Login e Register** redesenhados com layout "Editorial Authority":
   - Layout dividido: formulário (60%) + painel de marca escuro (40%) com textura de grão.
   - Painel de marca com fundo `brand-950`, monograma HZ dourado, elementos decorativos e estatísticas.

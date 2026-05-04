@@ -1,9 +1,11 @@
 import React from 'react'
-
-// Componentes do Projeto
+import { CButton } from '@coreui/react'
 import AnalyticsHeatmap from '../components/AnalyticsHeatmap'
+import { useToast } from '../contexts/ToastContext'
 
 const Dashboard = () => {
+  const toast = useToast()
+
   return (
     <div className="zen-reveal">
       <div className="d-flex justify-content-between align-items-end mb-5">

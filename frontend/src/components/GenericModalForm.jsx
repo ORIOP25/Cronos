@@ -4,6 +4,7 @@ import {
   CAlert
 } from '@coreui/react'
 import PropTypes from 'prop-types'
+import { useFocusTrap } from '../hooks/useFocusTrap'
 
 /**
  * Componente Genérico para Criar/Editar Entidades via Modal.
@@ -19,6 +20,8 @@ const GenericModalForm = ({
   error,
   size
 }) => {
+
+  useFocusTrap(visible)
 
   const isEditing = !!initialData
   const modalTitle = isEditing ? `Editar ${title}` : `Novo ${title}`

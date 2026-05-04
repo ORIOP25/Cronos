@@ -18,6 +18,7 @@ import {
   useUpdateClassProgress,
   useClassSubjects,
 } from '../hooks/useSchoolData'
+import Breadcrumbs from '../components/Breadcrumbs'
 
 // ==========================================
 //  HELPERS
@@ -352,16 +353,11 @@ const ClassDetails = () => {
   // ==========================================
   return (
     <div className="p-4">
-      {/* ---- BREADCRUMB ---- */}
-      <div className="mb-3 d-flex align-items-center gap-1" style={{ fontSize: '0.9rem' }}>
-        <Link to="/courses" className="text-decoration-none text-muted">Cursos</Link>
-        <span className="text-muted">/</span>
-        <Link to={`/courses/${numCourseId}`} className="text-decoration-none text-muted">
-          {classData.course?.abbreviation || classData.course?.name || `Curso ${numCourseId}`}
-        </Link>
-        <span className="text-muted">/</span>
-        <span className="fw-medium text-dark">{classData.name}</span>
-      </div>
+      <Breadcrumbs items={[
+        { label: 'Cursos', to: '/courses' },
+        { label: classData.course?.abbreviation || classData.course?.name || `Curso ${numCourseId}`, to: `/courses/${numCourseId}` },
+        { label: classData.name },
+      ]} />
 
       {/* ---- ALERTAS ---- */}
       {updateClass.isError && (

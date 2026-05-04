@@ -12,6 +12,7 @@ import {
 import CIcon from '@coreui/icons-react'
 import { cilWarning } from '@coreui/icons'
 import { TXT } from '../utils/terminology'
+import { useFocusTrap } from '../hooks/useFocusTrap'
 
 /**
  * Modal de confirmação reutilizável para ações destrutivas.
@@ -28,6 +29,8 @@ const ConfirmationModal = ({
   isLoading = false,
   variant = 'danger',
 }) => {
+  useFocusTrap(visible)
+
   return (
     <CModal visible={visible} onClose={onClose} alignment="center">
       <CModalHeader>

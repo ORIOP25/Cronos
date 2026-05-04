@@ -21,6 +21,7 @@ import {
   useUpdateClassSubjectTeacher,
   useRemoveClassSubject,
 } from '../hooks/useSchoolData'
+import Breadcrumbs from '../components/Breadcrumbs'
 
 // ==========================================
 //  HELPERS
@@ -251,20 +252,12 @@ const ClassSubjects = () => {
 
   return (
     <div className="p-4">
-      {/* Breadcrumb */}
-      <div className="mb-3 d-flex align-items-center gap-1" style={{ fontSize: '0.9rem' }}>
-        <Link to="/courses" className="text-decoration-none text-muted">Cursos</Link>
-        <span className="text-muted">/</span>
-        <Link to={`/courses/${numCourseId}`} className="text-decoration-none text-muted">
-          {classSubjects.course_abbreviation || classSubjects.course_name || `Curso ${numCourseId}`}
-        </Link>
-        <span className="text-muted">/</span>
-        <Link to={`/courses/${numCourseId}/classes/${numClassId}`} className="text-decoration-none text-muted">
-          {classSubjects.class_name}
-        </Link>
-        <span className="text-muted">/</span>
-        <span className="fw-medium text-dark">Disciplinas</span>
-      </div>
+      <Breadcrumbs items={[
+        { label: 'Cursos', to: '/courses' },
+        { label: classSubjects.course_abbreviation || classSubjects.course_name || `Curso ${numCourseId}`, to: `/courses/${numCourseId}` },
+        { label: classSubjects.class_name, to: `/courses/${numCourseId}/classes/${numClassId}` },
+        { label: 'Disciplinas' },
+      ]} />
 
       {/* Alertas de erro */}
       {addSubject.isError && (

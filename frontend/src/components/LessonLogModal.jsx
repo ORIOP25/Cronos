@@ -16,6 +16,7 @@ import CIcon from '@coreui/icons-react'
 import { cilCheckCircle, cilXCircle, cilActionUndo, cilWarning, cilPeople } from '@coreui/icons'
 import { useUpsertLessonLog, useCreateOccurrence, useUpdateOccurrence, useUpdateTimesheetStatus } from '../hooks/useSchoolData'
 import SubstitutionStep from './SubstitutionStep'
+import { useFocusTrap } from '../hooks/useFocusTrap'
 
 const STATUS_INFO = {
   COMPLETED: { label: 'Aula Dada', badge: 'success' },
@@ -39,6 +40,8 @@ const OCCURRENCE_STATUS_LABELS = {
  *   isAdmin       — whether the current user is an admin (unlocks extra actions)
  */
 const LessonLogModal = ({ visible, onClose, slot, isAdmin = false }) => {
+  useFocusTrap(visible)
+
   const [summary, setSummary] = useState('')
   const [notes, setNotes] = useState('')
   const [errorMessage, setErrorMessage] = useState('')

@@ -21,6 +21,7 @@ import {
   useUpdateCourseClass,
   useDeleteCourseClass,
 } from '../hooks/useSchoolData'
+import Breadcrumbs from '../components/Breadcrumbs'
 
 // ==========================================
 //  HELPER: Card de turma (grade_level agrupado)
@@ -239,13 +240,10 @@ const CourseDetails = () => {
 
   return (
     <div className="p-4">
-      {/* ---- BREADCRUMB + BACK ---- */}
-      <div className="mb-3">
-        <Link to="/courses" className="text-decoration-none text-muted d-inline-flex align-items-center gap-1" style={{ fontSize: '0.9rem' }}>
-          <CIcon icon={cilArrowLeft} size="sm" />
-          Cursos
-        </Link>
-      </div>
+      <Breadcrumbs items={[
+        { label: 'Cursos', to: '/courses' },
+        { label: course?.name || `Curso #${courseId}` },
+      ]} />
 
       {/* ---- ALERTAS DE MUTAÇÕES ---- */}
       {updateCourse.isError && (
