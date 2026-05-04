@@ -1145,3 +1145,64 @@ class TeacherWeeklyTimesheetRead(BaseModel):
     occurrence_slots: int = 0
 
     model_config = ConfigDict(from_attributes=True)
+
+
+# ==========================================
+#  DASHBOARD V1 — COMMAND CENTER
+# ==========================================
+
+class AlertCounts(BaseModel):
+    pending_occurrences_today: int = Field(ge=0, description="Ocorrências de hoje por decidir")
+    pending_timesheets: int = Field(ge=0, description="Timesheets SUBMITTED por aprovar")
+    pending_drafts: int = Field(ge=0, description="Rascunhos de horário pendentes")
+    active_substitutions_today: int = Field(ge=0, description="Substituições ativas hoje")
+
+
+class ResourceCounts(BaseModel):
+    teachers_count: int = Field(ge=0)
+    classes_count: int = Field(ge=0)
+    courses_count: int = Field(ge=0)
+    subjects_count: int = Field(ge=0)
+    rooms_count: int = Field(ge=0)
+    rooms_by_type: dict[str, int] = Field(default_factory=dict)
+
+
+class ScheduleHealthWidget(BaseModel):
+    generation_id: Optional[str] = Field(None, description="None se não houver geração ativa")
+    blocks_count: int = 0
+    classes_total: int = 0
+    classes_empty_week: int = 0
+    week_slots_avg: float = 0.0
+    duplicate_teacher_slots: int = 0
+    duplicate_class_slots: int = 0
+    weekly_fairness_spread: float = 0.0
+    teacher_week_slots_avg: float = 0.0
+
+
+class ClassProgressSummary(BaseModel):
+    class_id: int
+    class_name: str
+    course_id: Optional[int] = None
+    course_name: Optional[str] = None
+    grade_level: int
+    overall_percentage: float = Field(ge=0.0, le=100.0)
+    completed_hours: float = 0.0
+    total_hours: float = 0.0
+
+
+class DebtSummary(BaseModel):
+    total_gaps: int = 0
+    total_hours_owed: float = 0.0
+    total_gaps_overdue: int = 0
+    total_hours_owed_overdue: float = 0.0
+    affected_classes_count: int = 0
+    as_of_date: date
+
+
+class DashboardV1Response(BaseModel):
+    alerts: AlertCounts
+    resources: ResourceCounts
+    schedule_health: Optional[ScheduleHealthWidget] = None
+    class_progress: list[ClassProgressSummary] = Field(default_factory=list)
+    debts: DebtSummary
+    organization_name: str

@@ -1025,3 +1025,20 @@ export const useAuditSummary = (generationId, { enabled = true } = {}) => {
     ...DYNAMIC_OPTS,
   })
 }
+
+/**
+ * Dashboard V1 — Command Center. Agrega alertas, saúde do horário,
+ * progresso curricular, contagens de recursos e resumo de dívidas.
+ */
+export const useDashboard = ({ enabled = true } = {}) => {
+  const orgId = useAuthStore(state => state.user?.orgId)
+  return useQuery({
+    queryKey: ['dashboard', orgId],
+    queryFn: async () => {
+      const { data } = await apiClient.get('/dashboard')
+      return data
+    },
+    enabled: Boolean(orgId) && enabled,
+    ...DYNAMIC_OPTS,
+  })
+}

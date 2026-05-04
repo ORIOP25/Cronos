@@ -65,6 +65,7 @@ O Frontend obedece a uma lógica rígida de separação por Role e consistência
 - **Estrutura de Diretórios** (pós-auditoria Maio 2026):
   - `src/utils/` — `formatUtils.js` (datas PT-PT), `terminology.js` (textos padronizados), `subjectColors.js` (paleta de disciplinas)
   - `src/components/` — `ErrorBoundary.jsx`, `ConfirmationModal.jsx`, `SmartTable.jsx`, `GenericModalForm.jsx`, `WeekGrid.jsx`, `AvailabilityGrid.jsx`, `AnalyticsHeatmap.jsx`, `LessonLogModal.jsx`, `ReplacementModal.jsx`, `SubstitutionStep.jsx`
+  - `src/components/dashboard/` — Widgets do Command Center (AlertBar, ResourceCounts, ScheduleHealthCard, ClassProgressOverview, DebtSummaryCard, QuickActions)
   - `src/components/Forms/` — formulários CRUD (Teacher, Subject, Course, Class, Room, Timeslot)
   - `src/components/schedules/` — KPISidebar, DraftPanel, GenerationStatusPanel, PreflightErrorPanel
   - `src/components/timesheets/` — TeacherCard
@@ -83,6 +84,7 @@ O Frontend obedece a uma lógica rígida de separação por Role e consistência
   - Segurança nativa `CORSMiddleware`.
   - Tratamento unificado (`HTTPException`s standardizadas).
 - **API Routers principais**:
+  - `/dashboard`: Endpoint agregador do Command Center (alertas, saúde do horário, progresso curricular, recursos, dívidas).
   - `/schedule`, `/occurrences`, `/substitutions`: Centro nervoso da operação de ensino e do planeamento.
   - CRUD Tradicional: `/courses`, `/classes`, `/teachers`, `/rooms`.
 
