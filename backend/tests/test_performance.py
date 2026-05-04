@@ -214,4 +214,5 @@ class TestPerformanceRealisticLoad:
         elapsed = perf_time.monotonic() - start
 
         assert elapsed < 5, f"Cálculo de dívidas demorou {elapsed:.1f}s"
-        assert isinstance(debts, dict)
+        from app.schemas import DebtListRead
+        assert isinstance(debts, DebtListRead)
