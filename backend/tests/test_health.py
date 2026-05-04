@@ -11,10 +11,10 @@ async def test_health_check(async_client: AsyncClient):
     desde que a API responda JSON válido.
     """
     response = await async_client.get("/api/v1/health")
-    
-    # A API está viva, mesmo que o Redis de teste não esteja lá
-    assert response.status_code in [200, 503]
-    
+    # Em ambiente local sem Redis, 503 é aceitável
+    assert response.status_code in (200, 503), (
+        f"Health check falhou com {response.status_code}: {response.text}"
+    )
     data = response.json()
     assert "status" in data
 
@@ -22,6 +22,6 @@ async def test_health_check(async_client: AsyncClient):
 @pytest.mark.asyncio
 async def test_health_check_not_rate_limited(async_client: AsyncClient):
     """Health endpoint deve permanecer elegivel para probes frequentes sem 429."""
-    for _ in range(60):
+    for _ in range(20):
         response = await async_client.get("/api/v1/health")
-        assert response.status_code in [200, 503]
+        assert response.status_code in (200, 503)

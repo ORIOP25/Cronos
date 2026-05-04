@@ -7,6 +7,7 @@ os.environ["RATELIMIT_ENABLED"] = "false"
 import pytest
 import pytest_asyncio
 from typing import AsyncGenerator
+from uuid import uuid4
 from httpx import AsyncClient, ASGITransport
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -96,3 +97,37 @@ async def admin_token_headers(async_client: AsyncClient, db_session: AsyncSessio
 
     access_token = create_access_token(data={"sub": "admin@escola.com"})
     return {"Authorization": f"Bearer {access_token}"}
+
+
+# ============================================================
+# HELPERS PARTILHADOS (unificados para evitar duplicação)
+# ============================================================
+
+
+async def create_teacher_auth_headers(
+    db_session,
+    *,
+    organization_id: int,
+    teacher_id: int | None,
+    is_active: bool = True,
+    role: UserRole = UserRole.teacher,
+) -> dict:
+    """Cria utilizador teacher autenticado e devolve headers.
+    Helper unificado — usar em vez de redefinir em cada ficheiro."""
+    from app import models as m
+    from app.core.security import hash_password
+
+    email = f"teacher.{role.value}.{uuid4().hex[:8]}@escola.pt"
+    user = m.User(
+        email=email,
+        hashed_password=hash_password("pass123"),
+        is_active=is_active,
+        role=role,
+        organization_id=organization_id,
+        teacher_id=teacher_id,
+    )
+    db_session.add(user)
+    await db_session.commit()
+
+    token = create_access_token(data={"sub": email})
+    return {"Authorization": f"Bearer {token}"}

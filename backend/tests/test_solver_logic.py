@@ -1,3 +1,7 @@
+# DEPRECATED: Este ficheiro testa o ScheduleEngine V1 (obsoleto).
+# O motor ativo é ScheduleEngineV2 (ver test_solver_v2_lexicographic.py).
+# Manter apenas para referência histórica até migração completa.
+# TODO: Migrar estes cenários para V2 ou remover após validação.
 import pytest
 from app.core.solver_engine import ScheduleEngine, LessonInput, TimeslotInput, RoomInput
 

@@ -1,0 +1,177 @@
+"""
+TESTES DE RATE LIMITING
+=======================
+Valida que os endpoints com rate limits documentados respeitam
+os limites configurados e devolvem 429 quando excedidos.
+
+Documentação de referência: ENDPOINT_STANDARDS.md
+"""
+
+import pytest
+from httpx import AsyncClient
+from app.config import settings
+
+API = settings.API_V1_STR
+
+
+@pytest.mark.asyncio
+class TestHealthNotRateLimited:
+    """Health endpoint NUNCA deve ser rate limited."""
+
+    async def test_health_never_429(self, async_client: AsyncClient):
+        for _ in range(20):
+            response = await async_client.get(f"{API}/health")
+            assert response.status_code in (200, 503)
+
+
+@pytest.mark.asyncio
+class TestGlobalRateLimit:
+    """Rate limit global de 50/hour. Requer Redis funcional."""
+
+    async def test_global_limit_returns_429(
+        self, async_client: AsyncClient, admin_token_headers: dict
+    ):
+        r = await async_client.get(f"{API}/health")
+        if r.status_code == 503:
+            pytest.skip("Redis não disponível — rate limit test skipado")
+
+        responses_ok = 0
+        responses_429 = 0
+
+        for _ in range(60):
+            response = await async_client.get(
+                f"{API}/teachers/", headers=admin_token_headers
+            )
+            if response.status_code == 429:
+                responses_429 += 1
+            elif response.status_code == 200:
+                responses_ok += 1
+
+        assert responses_429 > 0, (
+            f"Esperado pelo menos um 429, mas nenhum ocorreu em 60 pedidos. "
+            f"Respostas OK: {responses_ok}"
+        )
+
+
+@pytest.mark.asyncio
+class TestTeacherHorizonRateLimit:
+    """GET /schedule/me/horizon tem limite dedicado de 300/hour."""
+
+    async def test_horizon_volume_within_dedicated_limit(
+        self, async_client: AsyncClient, admin_token_headers: dict, db_session
+    ):
+        from app import models
+        from app.core.security import create_access_token, hash_password
+        from uuid import uuid4
+
+        settings_resp = await async_client.post(
+            f"{API}/school/settings/",
+            json={
+                "academic_year": "2025/2026",
+                "school_start_date": "2025-09-01",
+                "school_target_end_date": "2026-06-30",
+                "school_hard_end_date": "2026-07-31",
+            },
+            headers=admin_token_headers,
+        )
+        assert settings_resp.status_code == 200
+
+        teacher_resp = await async_client.post(
+            f"{API}/teachers/",
+            json={
+                "name": "Prof. RateLimit",
+                "email": f"ratelimit.horizon.{uuid4().hex[:8]}@escola.pt",
+            },
+            headers=admin_token_headers,
+        )
+        assert teacher_resp.status_code == 200
+        teacher_id = teacher_resp.json()["id"]
+
+        teacher_email = f"ratelimit.t.{uuid4().hex[:8]}@escola.pt"
+        teacher_user = models.User(
+            email=teacher_email,
+            hashed_password=hash_password("pass123"),
+            is_active=True,
+            role=models.UserRole.teacher,
+            organization_id=1,
+            teacher_id=teacher_id,
+        )
+        db_session.add(teacher_user)
+        await db_session.commit()
+
+        token = create_access_token(data={"sub": teacher_email})
+        teacher_headers = {"Authorization": f"Bearer {token}"}
+
+        for _ in range(55):
+            response = await async_client.get(
+                f"{API}/schedule/me/horizon",
+                headers=teacher_headers,
+            )
+            assert response.status_code == 200, (
+                f"Rate limit do horizon não devia ter disparado com 55 pedidos. "
+                f"Status: {response.status_code}"
+            )
+
+
+@pytest.mark.asyncio
+class TestWeekScheduleRateLimit:
+    """GET /schedule/week tem limite dedicado 30/min;360/hour."""
+
+    async def test_week_schedule_volume_within_limit(
+        self, async_client: AsyncClient, admin_token_headers: dict, db_session
+    ):
+        from app import models
+        from app.core.security import create_access_token, hash_password
+        from uuid import uuid4
+
+        teacher_resp = await async_client.post(
+            f"{API}/teachers/",
+            json={
+                "name": "Prof. Week RL",
+                "email": f"ratelimit.week.{uuid4().hex[:8]}@escola.pt",
+            },
+            headers=admin_token_headers,
+        )
+        assert teacher_resp.status_code == 200
+        teacher_id = teacher_resp.json()["id"]
+
+        teacher_email = f"ratelimit.wk.{uuid4().hex[:8]}@escola.pt"
+        teacher_user = models.User(
+            email=teacher_email,
+            hashed_password=hash_password("pass123"),
+            is_active=True,
+            role=models.UserRole.teacher,
+            organization_id=1,
+            teacher_id=teacher_id,
+        )
+        db_session.add(teacher_user)
+        await db_session.commit()
+
+        token = create_access_token(data={"sub": teacher_email})
+        teacher_headers = {"Authorization": f"Bearer {token}"}
+
+        for _ in range(25):
+            response = await async_client.get(
+                f"{API}/schedule/week",
+                params={"week_start": "2026-04-20"},
+                headers=teacher_headers,
+            )
+            assert response.status_code == 200, (
+                f"Rate limit semanal não devia ter disparado com 25 pedidos. "
+                f"Status: {response.status_code}"
+            )
+
+
+@pytest.mark.asyncio
+class TestAuthEndpointsRateLimit:
+    """Auth endpoints devem ser protegidos mas não devem bloquear uso legítimo."""
+
+    async def test_login_not_rate_limited_under_normal_use(
+        self, async_client: AsyncClient
+    ):
+        for _ in range(5):
+            response = await async_client.post(
+                f"{API}/auth/token",
+                data={"username": "notfound@test.pt", "password": "wrong"},
+            )
+            assert response.status_code in (401, 403)

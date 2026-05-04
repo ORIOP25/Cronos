@@ -66,8 +66,8 @@ class TestSubjectCreateValidation:
         assert "[0, 1, 2]" in error_msg
         assert "[0, 2, 4]" in error_msg
     
-    def test_subject_with_out_of_order_modules_invalid(self):
-        """❌ Subject com módulos fora de ordem [1, 0, 2] deve ser rejeitado"""
+    def test_subject_with_out_of_order_modules_accepted_and_ordered(self):
+        """✅ Subject com módulos fora de ordem [1, 0, 2] é aceite pois o schema reordena"""
         subject_data = {
             "name": "Programação",
             "required_room_type": RoomType.lab,
@@ -77,13 +77,10 @@ class TestSubjectCreateValidation:
                 {"name": "Projetos", "code": "P003", "hours_total": 20, "order": 2},
             ]
         }
-        
-        # MUDANÇA: Já não usamos pytest.raises, pois esperamos sucesso
+
         subject = SubjectCreate(**subject_data)
-        
-        # Validamos se ele ordenou ou se aceitou os dados
+
         assert len(subject.modules) == 3
-        # O set de ordens tem de estar completo
         assert {m.order for m in subject.modules} == {0, 1, 2}
     
     def test_subject_with_duplicate_order_invalid(self):

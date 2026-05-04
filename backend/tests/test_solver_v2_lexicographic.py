@@ -126,4 +126,14 @@ class TestScheduleEngineV2Basics:
         assert len(result.blocks) == 1
 
     def test_infeasible_when_no_room_type_match_but_pruning_removes_all(self):
-        pass
+        from app.core.solver_v2_candidates import (
+            prune_candidates_hard_first,
+            REMOVAL_REASON_ROOM_TYPE,
+        )
+        candidates = [
+            _make_candidate(candidate_key="k1", required_room_type="lab", room_type="normal"),
+            _make_candidate(candidate_key="k2", required_room_type="gym", room_type="normal"),
+        ]
+        kept, telemetry = prune_candidates_hard_first(candidates, availability_map={})
+        assert len(kept) == 0
+        assert telemetry.removed_by_reason.get(REMOVAL_REASON_ROOM_TYPE, 0) == 2
