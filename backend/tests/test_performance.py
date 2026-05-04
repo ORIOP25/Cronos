@@ -105,10 +105,12 @@ def _seed_realistic_school(sync_db):
             (8, 30), (9, 20), (10, 20), (11, 10),
             (12, 0), (13, 30), (14, 20), (15, 10),
         ]):
+            end_h = start_h + (start_m + 50) // 60
+            end_m = (start_m + 50) % 60
             ts = models.Timeslot(
                 day_of_week=day,
                 start_time=time(start_h, start_m),
-                end_time=time(start_h, start_m + 50),
+                end_time=time(end_h, end_m),
                 organization_id=org.id,
             )
             sync_db.add(ts)

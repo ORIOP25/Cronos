@@ -29,9 +29,10 @@ class TestAnalyticsHeatmap:
         r = await async_client.get(f"{API}/analytics/availability-heatmap")
         assert r.status_code == 401
 
-    async def test_heatmap_requires_admin(
+    async def test_heatmap_accessible_to_teacher(
         self, async_client: AsyncClient, db_session
     ):
+        """Heatmap é acessível a qualquer utilizador autenticado (não requer admin)."""
         from app.core.security import create_access_token, hash_password
 
         org = models.Organization(name="Heatmap Teacher Org", plan_status="active")
@@ -43,7 +44,7 @@ class TestAnalyticsHeatmap:
         await db_session.flush()
 
         teacher_user = models.User(
-            email="heatmap.prof@escola.pt",
+            email="heatmap.prof.ci@escola.pt",
             hashed_password=hash_password("pass123"),
             is_active=True,
             role=models.UserRole.teacher,
@@ -53,24 +54,20 @@ class TestAnalyticsHeatmap:
         db_session.add(teacher_user)
         await db_session.commit()
 
-        token = create_access_token(data={"sub": "heatmap.prof@escola.pt"})
+        token = create_access_token(data={"sub": "heatmap.prof.ci@escola.pt"})
         teacher_headers = {"Authorization": f"Bearer {token}"}
 
         r = await async_client.get(
             f"{API}/analytics/availability-heatmap", headers=teacher_headers
         )
-        assert r.status_code == 403
+        assert r.status_code == 200
 
     async def test_heatmap_with_teachers_and_timeslots(
         self, async_client: AsyncClient, admin_token_headers: dict, db_session
     ):
         from datetime import time
 
-        org = models.Organization(name="Heatmap Data", plan_status="active")
-        db_session.add(org)
-        await db_session.flush()
-
-        teacher = models.Teacher(name="Prof. Dados", organization_id=org.id)
+        teacher = models.Teacher(name="Prof. Dados Heatmap", organization_id=1)
         db_session.add(teacher)
         await db_session.flush()
 
@@ -78,7 +75,7 @@ class TestAnalyticsHeatmap:
             day_of_week=0,
             start_time=time(8, 0),
             end_time=time(9, 0),
-            organization_id=org.id,
+            organization_id=1,
         )
         db_session.add(timeslot)
         await db_session.flush()

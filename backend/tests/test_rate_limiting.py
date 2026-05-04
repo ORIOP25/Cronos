@@ -35,6 +35,10 @@ class TestGlobalRateLimit:
         if r.status_code == 503:
             pytest.skip("Redis não disponível — rate limit test skipado")
 
+        import os
+        if os.environ.get("RATELIMIT_ENABLED", "").lower() == "false":
+            pytest.skip("RATELIMIT_ENABLED=false — rate limit desligado nos testes")
+
         responses_ok = 0
         responses_429 = 0
 
