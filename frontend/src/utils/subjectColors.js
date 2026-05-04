@@ -5,16 +5,16 @@
  * regardless of list order or which component renders first.
  */
 export const SUBJECT_COLORS = [
-  '#4b2e19', // Deep Brown (Brand Primary)
-  '#164a39', // Forest Green (Brand Success)
-  '#d4af37', // Gold (Brand Accent)
-  '#be5103', // Burnt Orange
-  '#a97142', // Medium Brown (Brand Info)
-  '#8ba88e', // Warm Sage
-  '#b7410e', // Deep Terracotta
-  '#c4a882', // Sandy Taupe
-  '#8a7060', // Muted Brown
-  '#5c3f2b', // Espresso
+  '#5c3d2e', // Brown Medium (Brand Primary)
+  '#15803d', // Green (Success)
+  '#2563eb', // Blue (Info)
+  '#d4940b', // Amber Yellow (Accent)
+  '#9333ea', // Purple
+  '#0891b2', // Cyan
+  '#c2410c', // Burnt Orange
+  '#4f46e5', // Indigo
+  '#0d9488', // Teal
+  '#be185d', // Deep Pink
 ]
 
 /** Returns a deterministic hex color for a subject ID. */

@@ -13,7 +13,7 @@ const alertCards = [
   },
   {
     key: 'timesheets',
-    label: 'Timesheets',
+    label: 'Submissões Pendentes',
     icon: cilClock,
     route: '/timesheets?status=submitted',
   },

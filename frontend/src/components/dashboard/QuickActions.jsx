@@ -4,13 +4,6 @@ import { CButton } from '@coreui/react'
 
 const ACTIONS = [
   {
-    key: 'ocorrencias',
-    label: 'Gerir ocorrências de hoje',
-    route: '/absences?date=today',
-    condition: (alerts) => (alerts?.pending_occurrences_today ?? 0) > 0,
-    count: (alerts) => alerts?.pending_occurrences_today ?? 0,
-  },
-  {
     key: 'timesheets',
     label: 'Aprovar timesheets',
     route: '/timesheets?status=submitted',
@@ -23,13 +16,6 @@ const ACTIONS = [
     route: '/schedules?tab=drafts',
     condition: (alerts) => (alerts?.pending_drafts ?? 0) > 0,
     count: (alerts) => alerts?.pending_drafts ?? 0,
-  },
-  {
-    key: 'gerar-horario',
-    label: 'Gerar novo horário',
-    route: '/schedules?action=new',
-    condition: () => true,
-    count: () => null,
   },
 ]
 

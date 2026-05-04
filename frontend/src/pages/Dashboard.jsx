@@ -52,7 +52,7 @@ const Dashboard = () => {
               background: 'var(--color-bg-surface)',
               border: '1px solid var(--brand-500)',
               borderLeft: '4px solid var(--brand-500)',
-              color: 'var(--brand-900)',
+              color: 'var(--brand-600)',
               fontSize: '0.85rem',
               borderRadius: 8,
             }}
@@ -65,7 +65,7 @@ const Dashboard = () => {
               style={{
                 background: 'none',
                 border: 'none',
-                color: 'var(--brand-700)',
+                color: 'var(--brand-800)',
                 fontSize: '0.8rem',
                 fontWeight: 600,
                 cursor: 'pointer',
@@ -91,12 +91,9 @@ const Dashboard = () => {
           <div className="zen-stagger-4 mb-4">
             <div className="zen-card">
               <div className="zen-card-header">
-                <div className="d-flex align-items-center gap-2">
-                  <div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: 'var(--brand-500)' }} />
-                  <h3 className="mb-0" style={{ fontSize: '0.95rem', fontWeight: 600, color: 'var(--brand-800)' }}>
-                    Visão de Recursos
-                  </h3>
-                </div>
+                <h3 className="mb-0" style={{ fontSize: '0.95rem', fontWeight: 600, color: 'var(--brand-800)' }}>
+                  Visão de Recursos
+                </h3>
               </div>
               <div className="zen-card-body">
                 <ResourceCounts resources={data?.resources} isLoading={isLoading} />
@@ -110,13 +107,9 @@ const Dashboard = () => {
       <div className="zen-stagger-5 mb-4">
         <div className="zen-card">
           <div className="zen-card-header">
-            <div className="d-flex align-items-center gap-2">
-              <div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: 'var(--brand-500)' }} />
-              <h3 className="mb-0" style={{ fontSize: '0.95rem', fontWeight: 600, color: 'var(--brand-800)' }}>
-                Raio-X de Disponibilidade
-              </h3>
-            </div>
-            <span className="text-muted" style={{ fontSize: '0.7rem' }}>Atualizado em tempo real</span>
+            <h3 className="mb-0" style={{ fontSize: '0.95rem', fontWeight: 600, color: 'var(--brand-800)' }}>
+              Raio-X de Disponibilidade
+            </h3>
           </div>
           <div className="zen-card-body">
             <AnalyticsHeatmap />

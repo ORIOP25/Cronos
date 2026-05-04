@@ -40,19 +40,7 @@ const AnalyticsHeatmap = () => {
   })
 
   return (
-    <div className="mb-2">
-      <div className="d-flex justify-content-between align-items-end mb-3">
-        <div>
-          <h6 className="m-0 fw-bold text-dark">Raio-X de Disponibilidade</h6>
-          <small className="text-muted">Capacidade da escola para alocar aulas</small>
-        </div>
-        <div className="d-flex gap-2 small">
-          <span className="d-flex align-items-center gap-1"><div style={{width: 8, height: 8, background: 'var(--rs-heat-good-border)', borderRadius: '50%'}}></div> Bom</span>
-          <span className="d-flex align-items-center gap-1"><div style={{width: 8, height: 8, background: 'var(--rs-heat-medium-border)', borderRadius: '50%'}}></div> Médio</span>
-          <span className="d-flex align-items-center gap-1"><div style={{width: 8, height: 8, background: 'var(--rs-heat-critical-border)', borderRadius: '50%'}}></div> Crítico</span>
-        </div>
-      </div>
-
+    <div>
       <div className="d-flex gap-2 overflow-auto pb-2">
         {[0, 1, 2, 3, 4, 5].map(dayIndex => {
           const daySlots = slotsByDay[dayIndex]

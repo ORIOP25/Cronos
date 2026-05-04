@@ -20,7 +20,7 @@ const SidebarLink = ({ to, icon, children, collapsed }) => (
     to={to} 
     className={({ isActive }) => `zen-sidebar-item ${isActive ? 'active' : ''}`}
     style={({ isActive }) => ({
-      color: isActive ? 'var(--brand-500)' : 'var(--rs-sidebar-link)',
+      color: isActive ? 'var(--rs-sidebar-brand)' : 'var(--rs-sidebar-link)',
       textDecoration: 'none',
       padding: collapsed ? '12px' : '12px 16px',
       borderRadius: '4px',
@@ -30,7 +30,7 @@ const SidebarLink = ({ to, icon, children, collapsed }) => (
       fontSize: '0.88rem',
       fontWeight: isActive ? '600' : '500',
       transition: 'all 0.3s cubic-bezier(0.2, 0.8, 0.2, 1)',
-      backgroundColor: isActive ? 'rgba(214, 176, 112, 0.08)' : 'transparent',
+      backgroundColor: isActive ? 'rgba(255, 255, 255, 0.1)' : 'transparent',
       marginBottom: '2px',
       justifyContent: collapsed ? 'center' : 'flex-start',
       overflow: 'hidden',
@@ -123,14 +123,14 @@ const DefaultLayout = () => {
         }}>
           {!collapsed && (
             <div>
-              <h2 className="text-display" style={{ color: 'var(--brand-50)', fontSize: '1.6rem', margin: 0 }}>
-                {TXT.SIDEBAR_BRAND} <span style={{ color: 'var(--brand-500)' }}>{TXT.SIDEBAR_BRAND_ACCENT}</span>
+              <h2 className="text-display" style={{ color: '#ffffff', fontSize: '1.6rem', margin: 0 }}>
+                {TXT.SIDEBAR_BRAND} <span style={{ color: 'var(--rs-sidebar-brand)' }}>{TXT.SIDEBAR_BRAND_ACCENT}</span>
               </h2>
               <div className="luxury-line" style={{ width: '40px', margin: '12px 0' }} />
             </div>
           )}
           {collapsed && (
-            <h2 className="text-display" style={{ color: 'var(--brand-500)', fontSize: '1.3rem', margin: 0 }}>
+            <h2 className="text-display" style={{ color: '#ffffff', fontSize: '1.3rem', margin: 0 }}>
               HZ
             </h2>
           )}
@@ -207,7 +207,7 @@ const DefaultLayout = () => {
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                color: 'var(--brand-500)',
+                color: '#ffffff',
                 fontWeight: '700',
                 flexShrink: 0,
               }}>
@@ -217,7 +217,7 @@ const DefaultLayout = () => {
                 <p style={{ fontSize: '0.85rem', color: 'var(--brand-50)', fontWeight: '600', margin: 0, textOverflow: 'ellipsis', whiteSpace: 'nowrap', overflow: 'hidden' }}>
                   {user ? user.email.split('@')[0] : 'Convidado'}
                 </p>
-                <span className="zen-caps" style={{ color: 'var(--brand-600)', fontSize: '0.6rem' }}>
+                <span className="zen-caps" style={{ color: 'var(--rs-sidebar-section)', fontSize: '0.6rem' }}>
                   {getRoleLabel()}
                 </span>
               </div>
@@ -237,7 +237,7 @@ const DefaultLayout = () => {
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                color: 'var(--brand-500)',
+                color: '#ffffff',
                 fontWeight: '700',
               }}>
                 {user?.email?.[0].toUpperCase()}
@@ -278,7 +278,7 @@ const DefaultLayout = () => {
 
 const sectionLabelStyle = {
   fontSize: '0.7rem',
-  color: 'var(--brand-600)',
+  color: 'var(--rs-sidebar-section)',
   letterSpacing: '0.1em',
   marginTop: '24px',
   marginBottom: '8px',

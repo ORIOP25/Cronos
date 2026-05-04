@@ -122,22 +122,9 @@ export default function ClassProgressOverview({ progress, isLoading }) {
                     </span>
                   </div>
                 </div>
-                {isLow && (
-                  <span
-                    data-testid="warning-icon"
-                    style={{ fontSize: '0.75rem', color: 'var(--brand-500)', flexShrink: 0 }}
-                  >
-                    ⚠
-                  </span>
-                )}
               </button>
             )
           })}
-          {progress.length > 1 && (
-            <div style={{ fontSize: '0.65rem', color: 'var(--rs-muted)', textAlign: 'center', paddingTop: 8 }}>
-              {progress.length} turmas com dados
-            </div>
-          )}
         </div>
       </div>
     </div>
