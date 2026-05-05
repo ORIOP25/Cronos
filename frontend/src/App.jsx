@@ -9,6 +9,7 @@ import Register from './pages/Register'
 // Páginas protegidas com code splitting
 const Dashboard = React.lazy(() => import('./pages/Dashboard'))
 const MyAvailability = React.lazy(() => import('./pages/MyAvailability'))
+const MyProgress = React.lazy(() => import('./pages/MyProgress'))
 const MySchedules = React.lazy(() => import('./pages/MySchedules'))
 const Teachers = React.lazy(() => import('./pages/Teachers'))
 const Rooms = React.lazy(() => import('./pages/Rooms'))
@@ -97,6 +98,7 @@ function App() {
             <Route path="config" element={<AdminOnlyRoute><LazyPage><SchoolConfig /></LazyPage></AdminOnlyRoute>} />
             <Route path="schedules" element={<AdminOnlyRoute><LazyPage><Schedules /></LazyPage></AdminOnlyRoute>} />
             <Route path={ROUTE_MY_SCHEDULES.slice(1)} element={<TeacherOnlyRoute><LazyPage><MySchedules /></LazyPage></TeacherOnlyRoute>} />
+            <Route path="my-progress" element={<TeacherOnlyRoute><LazyPage><MyProgress /></LazyPage></TeacherOnlyRoute>} />
             <Route path="schedules/audit" element={<AdminOnlyRoute><LazyPage><ScheduleAuditDashboard /></LazyPage></AdminOnlyRoute>} />
             <Route path="absences" element={<AdminOnlyRoute><LazyPage><Occurrences /></LazyPage></AdminOnlyRoute>} />
             <Route path="timesheets" element={<AdminOnlyRoute><LazyPage><Timesheets /></LazyPage></AdminOnlyRoute>} />

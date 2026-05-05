@@ -736,6 +736,28 @@ export const useUpdateOccurrence = () => {
 }
 
 /**
+ * Cancelar uma ocorrência (OPEN ou decidida), revertendo LessonLog → PENDING.
+ * WBS V3 Fase 3.
+ */
+export const useCancelOccurrence = () => {
+  const queryClient = useQueryClient()
+  const orgId = useAuthStore(state => state.user?.orgId)
+
+  return useMutation({
+    mutationFn: async (id) => {
+      const { data } = await apiClient.post(`/occurrences/${id}/cancel`)
+      return data
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['occurrences', orgId] })
+      void queryClient.invalidateQueries({ queryKey: ['debts', orgId] })
+      void queryClient.invalidateQueries({ queryKey: ['weekSchedule', orgId] })
+      void queryClient.invalidateQueries({ queryKey: ['my-timesheet', orgId] })
+    },
+  })
+}
+
+/**
  * Registar execução de aula (LessonLog).
  */
 export const useUpsertLessonLog = () => {
@@ -1036,6 +1058,23 @@ export const useDashboard = ({ enabled = true } = {}) => {
     queryKey: ['dashboard', orgId],
     queryFn: async () => {
       const { data } = await apiClient.get('/dashboard')
+      return data
+    },
+    enabled: Boolean(orgId) && enabled,
+    ...DYNAMIC_OPTS,
+  })
+}
+
+/**
+ * Progresso curricular do professor autenticado.
+ * Retorna turmas com disciplinas e módulos + progresso.
+ */
+export const useTeacherProgress = ({ enabled = true } = {}) => {
+  const orgId = useAuthStore(state => state.user?.orgId)
+  return useQuery({
+    queryKey: ['teacher-progress', orgId],
+    queryFn: async () => {
+      const { data } = await apiClient.get('/teachers/me/progress')
       return data
     },
     enabled: Boolean(orgId) && enabled,

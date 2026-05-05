@@ -52,6 +52,16 @@ def _get_alert_counts(
             and_(
                 models.LessonOccurrence.organization_id == organization_id,
                 models.LessonOccurrence.date == today,
+                models.LessonOccurrence.decided_at.is_(None),
+            )
+        )
+    ) or 0
+
+    pending_occurrences_total = db.scalar(
+        select(func.count(models.LessonOccurrence.id)).where(
+            and_(
+                models.LessonOccurrence.organization_id == organization_id,
+                models.LessonOccurrence.decided_at.is_(None),
             )
         )
     ) or 0
@@ -86,6 +96,7 @@ def _get_alert_counts(
 
     return schemas.AlertCounts(
         pending_occurrences_today=pending_occurrences_today,
+        pending_occurrences_total=pending_occurrences_total,
         pending_timesheets=pending_timesheets,
         pending_drafts=pending_drafts,
         active_substitutions_today=active_substitutions_today,

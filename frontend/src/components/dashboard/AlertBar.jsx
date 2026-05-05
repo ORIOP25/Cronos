@@ -7,9 +7,10 @@ import { cilWarning, cilClock, cilSwapHorizontal } from '@coreui/icons'
 const alertCards = [
   {
     key: 'ocorrencias',
-    label: 'Ocorrências hoje',
+    label: 'Ocorrências por decidir',
     icon: cilWarning,
-    route: '/absences?date=today&status=PENDING',
+    route: '/absences?status=OPEN',
+    showTotal: true,
   },
   {
     key: 'timesheets',
@@ -21,7 +22,7 @@ const alertCards = [
     key: 'substituicoes',
     label: 'Substituições hoje',
     icon: cilSwapHorizontal,
-    route: '/absences?view=substitutions&date=today',
+    route: '/absences?status=SUBSTITUTED',
   },
 ]
 
@@ -87,8 +88,9 @@ export default function AlertBar({ alerts, isLoading }) {
     <div data-testid="alert-bar">
       <CRow>
         {alertCards.map((card) => {
-          const value = alerts?.[`pending_${card.key === 'ocorrencias' ? 'occurrences_today' : card.key === 'substituicoes' ? 'active_substitutions_today' : `pending_${card.key}`}`] ?? 0
-          const color = getColor(value)
+          const value = alerts?.[`pending_${card.key === 'ocorrencias' ? 'occurrences_today' : card.key === 'substituicoes' ? 'active_substitutions_today' : card.key}`] ?? 0
+          const totalValue = card.showTotal ? (alerts?.pending_occurrences_total ?? 0) : null
+          const color = getColor(totalValue ?? value)
           return (
             <CCol key={card.key} xs={6} md={4} className="mb-3">
               <button
@@ -134,7 +136,13 @@ export default function AlertBar({ alerts, isLoading }) {
                     transition: 'color 0.3s ease',
                   }}
                 >
-                  {value}
+                  {totalValue != null ? (
+                    <span title={`${value} hoje, ${totalValue} total`}>
+                      {value}/{totalValue}
+                    </span>
+                  ) : (
+                    value
+                  )}
                 </span>
                 <span
                   style={{

@@ -72,6 +72,24 @@ def upsert_lesson_log_sync(
     if payload.status == models.LessonLogStatus.COMPLETED and occurrence:
         raise HTTPException(status_code=400, detail="Não pode concluir uma aula que tem uma Falta/Substituição registada.")
 
+    # 5. WBS V3 Fase 4: Bloquear registo em blocos de substituição (read-only)
+    # Estes blocos foram criados para o professor substituto. A contabilidade
+    # já foi aplicada pelo admin ao decidir SUBSTITUTED.
+    # Detectamos verificando se há uma LessonOccurrence noutro bloco
+    # onde este professor é o substitute_teacher_id.
+    is_substitution_block = db.query(models.LessonOccurrence).filter(
+        models.LessonOccurrence.substitute_teacher_id == output.lesson.teacher_id,
+        models.LessonOccurrence.date == output.date,
+        models.LessonOccurrence.organization_id == organization_id,
+        models.LessonOccurrence.status == models.LessonOccurrenceStatus.SUBSTITUTED,
+    ).first() is not None
+
+    if is_substitution_block:
+        raise HTTPException(
+            status_code=400,
+            detail="Este é um bloco de substituição. O registo da aula já foi contabilizado pelo administrador.",
+        )
+
     # 5. Obter ou criar LessonLog
     llog = db.query(models.LessonLog).filter(
         models.LessonLog.schedule_output_id == schedule_output_id
@@ -126,6 +144,27 @@ def upsert_lesson_log_sync(
                 executed_module_id=planned_module_id,
                 planned_hours=planned_hours,
                 direction=-1
+            )
+
+        # WBS V3 Fase 1.1: Auto-create LessonOccurrence OPEN when teacher marks OCCURRENCE
+        if payload.status == models.LessonLogStatus.OCCURRENCE:
+            db.flush()  # ensure the LessonLog status change is visible to downstream queries
+            existing_occ = db.query(models.LessonOccurrence).filter(
+                models.LessonOccurrence.schedule_output_id == schedule_output_id,
+            ).first()
+            if existing_occ is None:
+                occurrence_service.create_occurrence_from_block_sync(
+                    db,
+                    organization_id=organization_id,
+                    schedule_output_id=schedule_output_id,
+                )
+
+        # WBS V3 Fase 1.2: Cleanup OPEN occurrence when reverting from OCCURRENCE
+        if old_status == models.LessonLogStatus.OCCURRENCE and payload.status != models.LessonLogStatus.OCCURRENCE:
+            occurrence_service.cancel_open_occurrence_for_block_sync(
+                db,
+                organization_id=organization_id,
+                schedule_output_id=schedule_output_id,
             )
 
     db.commit()

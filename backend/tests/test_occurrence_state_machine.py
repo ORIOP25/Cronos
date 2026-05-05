@@ -164,27 +164,29 @@ class TestOccurrenceStateMachineAndAccounting:
         assert debts.total_gaps_overdue == 0
         assert debts.total_hours_owed_overdue == pytest.approx(0.0)
 
-    def test_invalid_transition_gap_to_substituted_fails(self, sync_db, full_setup):
+    def test_redecision_gap_to_substituted_allowed(self, sync_db, full_setup):
+        """WBS V3 Fase 2: GAP→SUBSTITUTED now allowed (re-decision)."""
         organization_id = full_setup["organization_id"]
         occurrence = self._prepare_open_occurrence(sync_db, full_setup)
 
+        # First decide as GAP
         occurrence_service.update_occurrence_sync(
             sync_db, occurrence.id, organization_id,
             schemas.LessonOccurrenceUpdate(status=LessonOccurrenceStatus.GAP),
             decided_by_user_id=full_setup["admin_id"],
         )
 
-        with pytest.raises(occurrence_service.OccurrenceServiceError) as exc_info:
-            occurrence_service.update_occurrence_sync(
-                sync_db, occurrence.id, organization_id,
-                schemas.LessonOccurrenceUpdate(
-                    status=LessonOccurrenceStatus.SUBSTITUTED,
-                    substitute_teacher_id=full_setup["substitute_teacher_id"],
-                    substitute_subject_id=full_setup["substitute_subject_id"],
-                ),
-                decided_by_user_id=full_setup["admin_id"],
-            )
-        assert exc_info.value.status_code == 409
+        # Re-decide as SUBSTITUTED — should succeed
+        updated = occurrence_service.update_occurrence_sync(
+            sync_db, occurrence.id, organization_id,
+            schemas.LessonOccurrenceUpdate(
+                status=LessonOccurrenceStatus.SUBSTITUTED,
+                substitute_teacher_id=full_setup["substitute_teacher_id"],
+                substitute_subject_id=full_setup["substitute_subject_id"],
+            ),
+            decided_by_user_id=full_setup["admin_id"],
+        )
+        assert updated.status == LessonOccurrenceStatus.SUBSTITUTED
 
     def test_idempotent_duplicate_submission_does_not_duplicate_accounting(self, sync_db, full_setup):
         organization_id = full_setup["organization_id"]

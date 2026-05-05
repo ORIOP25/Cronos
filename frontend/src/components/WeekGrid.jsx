@@ -20,7 +20,7 @@ const PLANNED_CLASS = 'zen-state-planned'
 const OCCURRENCE_LABELS = {
   GIVEN:       'Dada ✓',
   GAP:         'Furo ✗',
-  SUBSTITUTED: 'Substituído ↔',
+  SUBSTITUTED: 'Substituída ↔',
 }
 
 function normalizeTimeLabel(value) {
@@ -105,7 +105,15 @@ function getCellVisuals(slot) {
 
   // Past slots with decided occurrence
   if (slot.occurrence_status && slot.occurrence_decided_at && OCCURRENCE_CLASSES[slot.occurrence_status]) {
-    return { className: `zen-state-card ${OCCURRENCE_CLASSES[slot.occurrence_status]}`, style: {} }
+    const cls = OCCURRENCE_CLASSES[slot.occurrence_status]
+    // WBS V3 Fase 4: original substituted block gets grayed out
+    if (slot.occurrence_status === 'SUBSTITUTED') {
+      return {
+        className: `zen-state-card ${cls}`,
+        style: { opacity: 0.45, filter: 'grayscale(0.6)' },
+      }
+    }
+    return { className: `zen-state-card ${cls}`, style: {} }
   }
 
   // Past but no occurrence registered yet (Planned/Pending)
@@ -155,6 +163,7 @@ const SlotCell = ({ slotEntries, isOperationalEnabled, onOpenOperationalAction }
     && !hasCollision
     && slot.schedule_output_id
     && slot.date
+    && !slot.is_substituted_block
     && typeof onOpenOperationalAction === 'function'
     && ((canCreateOccurrence || canDecideOccurrence) || isWeekLocked)
   )
@@ -176,7 +185,9 @@ const SlotCell = ({ slotEntries, isOperationalEnabled, onOpenOperationalAction }
 
   const { className: cellClassName, style: cellStyle } = getCellVisuals(slot)
   let statusLabel = 'Planeado'
-  if (slot.lesson_log_status === 'COMPLETED') {
+  if (slot.is_substituted_block) {
+    statusLabel = 'Substituição'
+  } else if (slot.lesson_log_status === 'COMPLETED') {
     statusLabel = 'Concluída ✓'
   } else if (slot.lesson_log_status === 'OCCURRENCE') {
     statusLabel = 'Falta ✗'

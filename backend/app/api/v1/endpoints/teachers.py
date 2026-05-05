@@ -90,6 +90,58 @@ async def get_teacher_endpoints_observability_summary(
 
     return await db.run_sync(_run)
 
+
+@router.get(
+    "/me/progress",
+    response_model=list[schemas.TeacherClassProgressRead],
+    summary="Progresso curricular do professor autenticado",
+    responses={403: {"description": "Sem permissões"}},
+)
+async def read_my_progress(
+    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    current_user: Annotated[models.User, Depends(deps.get_current_active_user)],
+):
+    """Retorna o progresso das disciplinas do professor nas turmas assignadas."""
+    start_ts = perf_counter()
+    status_code = 200
+
+    try:
+        if current_user.role != models.UserRole.teacher:
+            status_code = 403
+            raise HTTPException(status_code=403, detail="Sem permissões para este endpoint")
+
+        if current_user.teacher_id is None:
+            status_code = 403
+            raise HTTPException(status_code=403, detail="Professor sem perfil associado")
+
+        result = await teacher_service.get_teacher_progress(
+            db,
+            teacher_id=current_user.teacher_id,
+            organization_id=current_user.organization_id,
+        )
+        return result
+    except HTTPException as exc:
+        status_code = exc.status_code
+        raise
+    except Exception:
+        status_code = 500
+        raise
+    finally:
+        elapsed_ms = max(1, int((perf_counter() - start_ts) * 1000))
+
+        def _emit(sync_db):
+            teacher_observability_service.log_teacher_endpoint_event_safe_sync(
+                sync_db,
+                organization_id=current_user.organization_id,
+                actor_user_id=current_user.id,
+                actor_role=current_user.role,
+                endpoint_key=teacher_observability_service.ENDPOINT_TEACHERS_ME_PROGRESS_READ,
+                http_status=status_code,
+                latency_ms=elapsed_ms,
+            )
+
+        await db.run_sync(_emit)
+
 # --- 1. Ler Professores ---
 @router.get("/", response_model=List[schemas.TeacherRead])
 async def read_teachers(

@@ -1087,6 +1087,8 @@ class WeekSlotRead(BaseModel):
     # WBS Fase 6: estado do fecho semanal do professor
     week_timesheet_status: Optional[str] = None
     timesheet_id: Optional[int] = None
+    # WBS V3 Fase 4: indicador de bloco de substituição
+    is_substituted_block: bool = False
 
 
 # ==========================================
@@ -1148,11 +1150,48 @@ class TeacherWeeklyTimesheetRead(BaseModel):
 
 
 # ==========================================
+#  PROGRESSO DO PROFESSOR (Visão Privada)
+# ==========================================
+
+class TeacherModuleProgressRead(BaseModel):
+    """Progresso de um módulo numa disciplina de uma turma do professor."""
+    module_id: int
+    module_name: str
+    module_code: Optional[str] = None
+    hours_total: int
+    hours_completed: float
+    hours_debt: float
+    is_completed: bool
+    percentage: float
+
+
+class TeacherSubjectProgressRead(BaseModel):
+    """Disciplina com módulos e progresso agregado para uma turma do professor."""
+    subject_id: int
+    subject_name: str
+    required_room_type: RoomType
+    modules: list[TeacherModuleProgressRead] = []
+    total_hours: int = 0
+    completed_hours: float = 0.0
+    overall_percentage: float = 0.0
+
+
+class TeacherClassProgressRead(BaseModel):
+    """Turma com disciplinas e progresso do professor autenticado."""
+    class_id: int
+    class_name: str
+    course_name: Optional[str] = None
+    grade_level: int
+    subjects: list[TeacherSubjectProgressRead] = []
+
+
+# ==========================================
 #  DASHBOARD V1 — COMMAND CENTER
 # ==========================================
 
 class AlertCounts(BaseModel):
     pending_occurrences_today: int = Field(ge=0, description="Ocorrências de hoje por decidir")
+    pending_occurrences_total: int = Field(ge=0, description="Total de ocorrências por decidir (qualquer data)")
     pending_timesheets: int = Field(ge=0, description="Timesheets SUBMITTED por aprovar")
     pending_drafts: int = Field(ge=0, description="Rascunhos de horário pendentes")
     active_substitutions_today: int = Field(ge=0, description="Substituições ativas hoje")

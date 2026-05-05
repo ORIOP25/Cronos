@@ -14,7 +14,7 @@ import {
 } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
 import { cilCheckCircle, cilXCircle, cilActionUndo, cilWarning, cilPeople } from '@coreui/icons'
-import { useUpsertLessonLog, useCreateOccurrence, useUpdateOccurrence, useUpdateTimesheetStatus } from '../hooks/useSchoolData'
+import { useUpsertLessonLog, useCreateOccurrence, useUpdateOccurrence, useUpdateTimesheetStatus, useCancelOccurrence } from '../hooks/useSchoolData'
 import SubstitutionStep from './SubstitutionStep'
 import { useFocusTrap } from '../hooks/useFocusTrap'
 
@@ -55,6 +55,7 @@ const LessonLogModal = ({ visible, onClose, slot, isAdmin = false }) => {
   const createOccurrenceMutation = useCreateOccurrence()
   const updateOccurrenceMutation = useUpdateOccurrence()
   const updateTimesheetStatusMutation = useUpdateTimesheetStatus()
+  const cancelOccurrenceMutation = useCancelOccurrence()
 
   // Reset state when modal opens/closes
   useEffect(() => {
@@ -208,6 +209,34 @@ const LessonLogModal = ({ visible, onClose, slot, isAdmin = false }) => {
   // Whether admin can show substitution button for this slot
   const canShowSubstitution = isAdmin && slot.is_past && slot.schedule_output_id && !occurrenceDecided && !isLocked
 
+  // WBS V3: Admin sees decision buttons when there's an OPEN (undecided) occurrence
+  const hasOpenOccurrence = isAdmin && hasOccurrence && !occurrenceDecided
+
+  const handleMarkGap = async () => {
+    setErrorMessage('')
+    if (!slot.occurrence_id) return
+    try {
+      await updateOccurrenceMutation.mutateAsync({
+        id: slot.occurrence_id,
+        status: 'GAP',
+      })
+      onClose()
+    } catch (err) {
+      setErrorMessage(err.response?.data?.detail || 'Erro ao marcar como furo.')
+    }
+  }
+
+  const handleCancelOccurrenceAction = async () => {
+    setErrorMessage('')
+    if (!slot.occurrence_id) return
+    try {
+      await cancelOccurrenceMutation.mutateAsync(slot.occurrence_id)
+      onClose()
+    } catch (err) {
+      setErrorMessage(err.response?.data?.detail || 'Erro ao cancelar ocorrência.')
+    }
+  }
+
   const statusInfo = STATUS_INFO[currentStatus] ?? STATUS_INFO.PENDING
 
   const formatDate = (dateStr) => {
@@ -246,13 +275,15 @@ const LessonLogModal = ({ visible, onClose, slot, isAdmin = false }) => {
           {slot.room && <div><strong>Sala:</strong> {slot.room?.name}</div>}
         </div>
 
-        {/* Occurrence status banner (admin only — shows when there's an admin-created occurrence) */}
+        {/* Occurrence status banner (admin only) */}
         {hasOccurrence && (
           <CAlert color={occurrenceDecided ? 'secondary' : 'warning'} className="mb-3 small py-2">
             <CIcon icon={cilWarning} className="me-1" />
             {occurrenceDecided
               ? `Ocorrência decidida: ${occurrenceStatusLabel}`
-              : 'Ocorrência aberta — aguarda decisão em Faltas & Ocorrências.'}
+              : isAdmin
+                ? 'Ocorrência aberta — decida abaixo.'
+                : 'Ocorrência aberta — aguarda decisão.'}
           </CAlert>
         )}
 
@@ -425,41 +456,79 @@ const LessonLogModal = ({ visible, onClose, slot, isAdmin = false }) => {
           <div className="d-flex gap-2">
             {upsertLogMutation.isPending && <CSpinner size="sm" className="align-self-center" />}
 
-            {isRegistered && (
-              <CButton
-                color="secondary"
-                variant="outline"
-                onClick={() => setShowRevertConfirm(true)}
-                disabled={upsertLogMutation.isPending || isLocked}
-                title="Reverter para pendente"
-              >
-                <CIcon icon={cilActionUndo} className="me-1" />
-                Reverter
-              </CButton>
-            )}
+            {/* WBS V3 Fase 3: Admin decision buttons for OPEN occurrences */}
+            {hasOpenOccurrence ? (
+              <>
+                <CButton
+                  style={{ backgroundColor: 'var(--color-state-gap)', borderColor: 'var(--color-state-gap)', color: '#fff' }}
+                  onClick={handleMarkGap}
+                  disabled={updateOccurrenceMutation.isPending || isLocked}
+                  title="Marcar esta falta como furo"
+                >
+                  <CIcon icon={cilXCircle} className="me-1" />
+                  {updateOccurrenceMutation.isPending ? <CSpinner size="sm" /> : 'Furo'}
+                </CButton>
+                <CButton
+                  color="warning"
+                  size="sm"
+                  className="text-white"
+                  onClick={handleStartSubstitution}
+                  disabled={createOccurrenceMutation.isPending || isLocked}
+                  title="Encontrar professor substituto"
+                >
+                  <CIcon icon={cilPeople} className="me-1" />
+                  Substituição
+                </CButton>
+                <CButton
+                  color="secondary"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleCancelOccurrenceAction}
+                  disabled={cancelOccurrenceMutation.isPending || isLocked}
+                  title="Cancelar esta ocorrência e voltar ao estado pendente"
+                >
+                  Cancelar
+                </CButton>
+              </>
+            ) : (
+              <>
+                {isRegistered && (
+                  <CButton
+                    color="secondary"
+                    variant="outline"
+                    onClick={() => setShowRevertConfirm(true)}
+                    disabled={upsertLogMutation.isPending || isLocked}
+                    title="Reverter para pendente"
+                  >
+                    <CIcon icon={cilActionUndo} className="me-1" />
+                    Reverter
+                  </CButton>
+                )}
 
-            {!isOccurrence && (
-              <CButton
-                style={{ backgroundColor: 'var(--color-state-gap)', borderColor: 'var(--color-state-gap)', color: '#fff' }}
-                onClick={() => handleSubmit('OCCURRENCE')}
-                disabled={isFuture || upsertLogMutation.isPending || isLocked}
-                title="Registar que a aula não foi dada"
-              >
-                <CIcon icon={cilXCircle} className="me-1" />
-                Registar Falta
-              </CButton>
-            )}
+                {!isOccurrence && (
+                  <CButton
+                    style={{ backgroundColor: 'var(--color-state-gap)', borderColor: 'var(--color-state-gap)', color: '#fff' }}
+                    onClick={() => handleSubmit('OCCURRENCE')}
+                    disabled={isFuture || upsertLogMutation.isPending || isLocked}
+                    title="Registar que a aula não foi dada"
+                  >
+                    <CIcon icon={cilXCircle} className="me-1" />
+                    Registar Falta
+                  </CButton>
+                )}
 
-            {!isCompleted && (
-              <CButton
-                style={{ backgroundColor: 'var(--color-state-given)', borderColor: 'var(--color-state-given)', color: '#fff' }}
-                onClick={() => handleSubmit('COMPLETED')}
-                disabled={isFuture || upsertLogMutation.isPending || isLocked}
-                title="Marcar aula como dada"
-              >
-                <CIcon icon={cilCheckCircle} className="me-1" />
-                Aula Dada
-              </CButton>
+                {!isCompleted && !hasOpenOccurrence && (
+                  <CButton
+                    style={{ backgroundColor: 'var(--color-state-given)', borderColor: 'var(--color-state-given)', color: '#fff' }}
+                    onClick={() => handleSubmit('COMPLETED')}
+                    disabled={isFuture || upsertLogMutation.isPending || isLocked}
+                    title="Marcar aula como dada"
+                  >
+                    <CIcon icon={cilCheckCircle} className="me-1" />
+                    Aula Dada
+                  </CButton>
+                )}
+              </>
             )}
           </div>
         </CModalFooter>

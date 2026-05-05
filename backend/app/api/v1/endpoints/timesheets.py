@@ -104,6 +104,28 @@ async def submit_my_timesheet(
         
     return await db.run_sync(_run)
 
+@router.get(
+    "/{timesheet_id}/pending-occurrences",
+    summary="Listar ocorrências por decidir na semana de uma timesheet",
+)
+async def get_pending_occurrences_for_timesheet(
+    timesheet_id: int,
+    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    current_user: Annotated[models.User, Depends(deps.get_current_active_user)],
+):
+    """Devolve as ocorrências OPEN na semana associada à timesheet."""
+    if current_user.role != models.UserRole.admin and not current_user.is_superuser:
+        raise HTTPException(status_code=403, detail="Acesso negado.")
+
+    def _run(sync_db):
+        return timesheet_service.get_open_occurrences_for_timesheet_sync(
+            sync_db,
+            organization_id=current_user.organization_id,
+            timesheet_id=timesheet_id,
+        )
+
+    return await db.run_sync(_run)
+
 @router.patch(
     "/{timesheet_id}/status",
     response_model=schemas.TeacherWeeklyTimesheetRead,

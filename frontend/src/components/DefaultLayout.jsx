@@ -9,7 +9,7 @@ import CIcon from '@coreui/icons-react'
 import { 
   cilSpeedometer, cilCalendar, cilCheckCircle, cilPeople, 
   cilLibrary, cilEducation, cilRoom, cilSettings, cilUser,
-  cilAccountLogout, cilHistory, cilMenu
+  cilAccountLogout, cilHistory, cilMenu, cilChartPie
 } from '@coreui/icons'
 
 const SIDEBAR_WIDTH = 280
@@ -183,6 +183,7 @@ const DefaultLayout = () => {
             <>
               <SidebarLink to="/my-availability" icon={cilUser} collapsed={collapsed}>Preferências</SidebarLink>
               <SidebarLink to={ROUTE_MY_SCHEDULES} icon={cilCalendar} collapsed={collapsed}>Meus Horários</SidebarLink>
+              <SidebarLink to="/my-progress" icon={cilChartPie} collapsed={collapsed}>Meu Progresso</SidebarLink>
             </>
           )}
         </nav>

@@ -5,6 +5,7 @@ export const ROUTE_LOGIN = '/login'
 export const ROUTE_DASHBOARD = '/dashboard'
 export const ROUTE_MY_AVAILABILITY = '/my-availability'
 export const ROUTE_MY_SCHEDULES = '/my-schedules'
+export const ROUTE_MY_PROGRESS = '/my-progress'
 
 export const ROLE_DEFAULT_ROUTE = Object.freeze({
   [USER_ROLE_ADMIN]: ROUTE_DASHBOARD,
@@ -26,6 +27,7 @@ export const ROLE_ALLOWED_APP_ROUTES = Object.freeze({
   [USER_ROLE_TEACHER]: Object.freeze([
     ROUTE_MY_AVAILABILITY,
     ROUTE_MY_SCHEDULES,
+    ROUTE_MY_PROGRESS,
   ]),
 })
 

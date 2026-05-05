@@ -448,3 +448,80 @@ async def set_teacher_availability(
 def get_teachers_by_org_sync(db: Session, organization_id: int):
     """Retorna todos os professores (Sync - Bloqueante)."""
     return db.query(models.Teacher).filter(models.Teacher.organization_id == organization_id).all()
+
+
+# ==========================================
+#  PROGRESSO DO PROFESSOR (Visão Privada)
+# ==========================================
+
+async def get_teacher_progress(
+    db: AsyncSession,
+    teacher_id: int,
+    organization_id: int,
+) -> list[dict]:
+    """
+    Retorna o progresso curricular das disciplinas do professor
+    nas turmas em que está assignado.
+
+    Fonte de verdade: ClassSubjectLink (disciplinas atribuídas à turma
+    com professor assignado).
+    """
+    from app.services.class_service import _build_subject_with_progress
+
+    # 1. Buscar todas as atribuições do professor às turmas
+    links_query = (
+        select(models.ClassSubjectLink)
+        .where(
+            models.ClassSubjectLink.teacher_id == teacher_id,
+        )
+        .options(
+            selectinload(models.ClassSubjectLink.class_),
+            selectinload(models.ClassSubjectLink.subject).selectinload(models.Subject.modules),
+        )
+    )
+    links_result = await db.execute(links_query)
+    links = links_result.scalars().all()
+
+    if not links:
+        return []
+
+    # 2. Agrupar links por turma
+    classes_map: dict[int, dict] = {}
+    class_ids = set()
+    for link in links:
+        if not link.class_ or not link.subject:
+            continue
+        class_ids.add(link.class_id)
+        if link.class_id not in classes_map:
+            classes_map[link.class_id] = {
+                "class_id": link.class_id,
+                "class_name": link.class_.name,
+                "course_name": link.class_.course.name if link.class_.course else None,
+                "grade_level": link.class_.grade_level,
+                "subjects": [],
+            }
+
+    # 3. Buscar progresso de todas as turmas relevantes de uma vez
+    if class_ids:
+        progress_query = select(models.ClassProgress).where(
+            models.ClassProgress.class_id.in_(class_ids)
+        )
+        progress_result = await db.execute(progress_query)
+        progress_records = progress_result.scalars().all()
+        progress_map = {p.module_id: p for p in progress_records}
+    else:
+        progress_map = {}
+
+    # 4. Construir dados de disciplinas com progresso por turma
+    for link in links:
+        if not link.class_ or not link.subject:
+            continue
+        subject_data = _build_subject_with_progress(link.subject, progress_map)
+        classes_map[link.class_id]["subjects"].append(subject_data)
+
+    # 5. Ordenar disciplinas alfabeticamente dentro de cada turma
+    for class_data in classes_map.values():
+        class_data["subjects"].sort(key=lambda s: s["name"])
+
+    # 6. Retornar lista ordenada por nome da turma
+    return sorted(classes_map.values(), key=lambda c: c["class_name"])

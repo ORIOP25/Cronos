@@ -344,3 +344,54 @@ def update_timesheet_status_sync(
         "approved_by_user_id": timesheet.approved_by_user_id,
         "created_at": timesheet.created_at,
     }
+
+
+def get_open_occurrences_for_timesheet_sync(
+    db: Session,
+    organization_id: int,
+    timesheet_id: int,
+) -> list[dict]:
+    """Devolve ocorrências OPEN (decided_at IS NULL) na semana de uma timesheet.
+
+    Usado pelo frontend para o modal de confirmação ao aprovar.
+    Cada item inclui dados do slot para identificação visual.
+    """
+    timesheet = db.query(models.TeacherWeeklyTimesheet).filter(
+        models.TeacherWeeklyTimesheet.id == timesheet_id,
+        models.TeacherWeeklyTimesheet.organization_id == organization_id,
+    ).first()
+
+    if timesheet is None:
+        raise HTTPException(status_code=404, detail="Timesheet não encontrada.")
+
+    week_end_date = timesheet.week_start_date + timedelta(days=6)
+
+    occurrences = db.query(models.LessonOccurrence).join(
+        models.ScheduleOutput,
+        models.LessonOccurrence.schedule_output_id == models.ScheduleOutput.id,
+    ).join(
+        models.Lesson,
+        models.ScheduleOutput.lesson_id == models.Lesson.id,
+    ).filter(
+        models.LessonOccurrence.organization_id == organization_id,
+        models.Lesson.teacher_id == timesheet.teacher_id,
+        models.LessonOccurrence.date.between(timesheet.week_start_date, week_end_date),
+        models.LessonOccurrence.decided_at.is_(None),
+        models.ScheduleOutput.is_draft.is_(False),
+    ).all()
+
+    result = []
+    for occ in occurrences:
+        output = occ.schedule_output
+        lesson = output.lesson if output else None
+        subject = lesson.subject if lesson else None
+        result.append({
+            "occurrence_id": occ.id,
+            "schedule_output_id": output.id if output else None,
+            "date": occ.date.isoformat() if occ.date else None,
+            "subject_name": subject.name if subject else None,
+            "teacher_name": lesson.teacher.name if lesson and lesson.teacher else None,
+            "created_at": occ.created_at.isoformat() if occ.created_at else None,
+        })
+
+    return result

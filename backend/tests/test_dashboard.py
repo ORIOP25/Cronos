@@ -365,7 +365,7 @@ class TestDashboardEndpoint:
         expected_keys = {"alerts", "resources", "schedule_health", "class_progress", "debts", "organization_name"}
         assert set(data.keys()) == expected_keys
 
-        alert_keys = {"pending_occurrences_today", "pending_timesheets", "pending_drafts", "active_substitutions_today"}
+        alert_keys = {"pending_occurrences_today", "pending_occurrences_total", "pending_timesheets", "pending_drafts", "active_substitutions_today"}
         assert set(data["alerts"].keys()) == alert_keys
 
         resource_keys = {"teachers_count", "classes_count", "courses_count", "subjects_count", "rooms_count", "rooms_by_type"}

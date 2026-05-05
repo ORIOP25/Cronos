@@ -824,6 +824,7 @@ def _build_week_slot(
     active_modules: dict,
     today: date,
     timesheet_map: dict | None = None,
+    substituted_blocks: set | None = None,
 ) -> dict:
     """Builds a single WeekSlotRead dict from a ScheduleOutput row."""
     occ = occurrences.get(output.id)
@@ -853,6 +854,7 @@ def _build_week_slot(
             "lesson_log_logged_at": None,
             "week_timesheet_status": "OPEN",
             "timesheet_id": None,
+            "is_substituted_block": False,
         }
     ts = output.timeslot
     mod_data = active_modules.get((lesson.class_id, lesson.subject_id))
@@ -861,6 +863,11 @@ def _build_week_slot(
     timesheet_status, timesheet_id = ("OPEN", None)
     if timesheet_map and teacher_id is not None:
         timesheet_status, timesheet_id = timesheet_map.get(teacher_id, ("OPEN", None))
+
+    is_substituted_block = False
+    if substituted_blocks and teacher_id is not None and output.date is not None and output.timeslot_id is not None:
+        is_substituted_block = (teacher_id, output.date, output.timeslot_id) in substituted_blocks
+
     return {
         "schedule_output_id": output.id,
         "date": output.date.isoformat() if output.date else None,
@@ -903,6 +910,8 @@ def _build_week_slot(
         # WBS Fase 6: estado do fecho semanal do professor
         "week_timesheet_status": timesheet_status,
         "timesheet_id": timesheet_id,
+        # WBS V3 Fase 4: indicador de bloco de substituição
+        "is_substituted_block": is_substituted_block,
     }
 
 
@@ -961,6 +970,19 @@ def get_week_schedule_sync(
     pairs = list({(o.lesson.class_id, o.lesson.subject_id) for o in outputs})
     active_modules = _fetch_active_modules(db, pairs)
 
+    # WBS V3 Fase 4: identify substitute blocks
+    substituted_blocks: set[tuple[int | None, date, int]] = set()
+    for occ in occ_rows:
+        if occ.status == models.LessonOccurrenceStatus.SUBSTITUTED \
+                and occ.substitute_teacher_id is not None \
+                and occ.date is not None \
+                and occ.schedule_output is not None:
+            substituted_blocks.add((
+                occ.substitute_teacher_id,
+                occ.date,
+                occ.schedule_output.timeslot_id,
+            ))
+
     # WBS Fase 6: buscar timesheets dos professores para esta semana
     teacher_ids = {o.lesson.teacher_id for o in outputs if o.lesson and o.lesson.teacher_id}
     timesheet_map: dict[int, tuple[str, int | None]] = {}
@@ -980,7 +1002,7 @@ def get_week_schedule_sync(
         }
 
     return [
-        _build_week_slot(output, occurrences, lesson_logs, active_modules, today, timesheet_map)
+        _build_week_slot(output, occurrences, lesson_logs, active_modules, today, timesheet_map, substituted_blocks)
         for output in outputs
     ]
 

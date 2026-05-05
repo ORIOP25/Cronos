@@ -46,8 +46,15 @@ ALLOWED_STATE_TRANSITIONS: dict[models.LessonOccurrenceStatus, set[models.Lesson
         models.LessonOccurrenceStatus.GAP,
         models.LessonOccurrenceStatus.SUBSTITUTED,
     },
-    models.LessonOccurrenceStatus.GAP: {models.LessonOccurrenceStatus.GAP},
-    models.LessonOccurrenceStatus.SUBSTITUTED: {models.LessonOccurrenceStatus.SUBSTITUTED},
+    models.LessonOccurrenceStatus.GAP: {
+        models.LessonOccurrenceStatus.GAP,
+        models.LessonOccurrenceStatus.SUBSTITUTED,
+    },
+    models.LessonOccurrenceStatus.SUBSTITUTED: {
+        models.LessonOccurrenceStatus.SUBSTITUTED,
+        models.LessonOccurrenceStatus.GAP,
+        models.LessonOccurrenceStatus.GIVEN,
+    },
 }
 
 DEBT_STATUSES = {
@@ -744,6 +751,45 @@ def _ensure_substitute_schedule_output(
     return sub_output
 
 
+def _remove_substitute_schedule_output(
+    db: Session,
+    organization_id: int,
+    original_output: models.ScheduleOutput,
+    substitute_teacher_id: Optional[int],
+    substitute_subject_id: Optional[int],
+) -> None:
+    """Remove o ScheduleOutput criado para o professor substituto ao re-decidir."""
+    if not substitute_teacher_id or not substitute_subject_id:
+        return
+    if original_output is None:
+        return
+
+    class_id = original_output.lesson.class_id if original_output.lesson else None
+    if class_id is None:
+        return
+
+    lesson = db.query(models.Lesson).filter(
+        models.Lesson.organization_id == organization_id,
+        models.Lesson.class_id == class_id,
+        models.Lesson.subject_id == substitute_subject_id,
+        models.Lesson.teacher_id == substitute_teacher_id,
+    ).first()
+
+    if lesson is None:
+        return
+
+    sub_output = db.query(models.ScheduleOutput).filter(
+        models.ScheduleOutput.organization_id == organization_id,
+        models.ScheduleOutput.lesson_id == lesson.id,
+        models.ScheduleOutput.date == original_output.date,
+        models.ScheduleOutput.timeslot_id == original_output.timeslot_id,
+    ).first()
+
+    if sub_output is not None:
+        db.delete(sub_output)
+        db.flush()
+
+
 def _apply_state_accounting(
     db: Session,
     class_id: int,
@@ -820,8 +866,13 @@ def _validate_state_transition(
     if occurrence.decided_at is None:
         return
 
-    # Closed occurrences are immutable; only idempotent retries are accepted.
-    raise OccurrenceServiceError(status_code=409, detail=ERR_DESTRUCTIVE_OVERWRITE)
+    # WBS V3 Fase 2.1: Permitir re-decisão. Ocorrências já decididas podem
+    # mudar de estado (ex: GAP→SUBSTITUTED, SUBSTITUTED→GAP). A contabilidade
+    # é revertida e re-aplicada pelo caller (update_occurrence_sync).
+    if occurrence.status != payload.status:
+        return
+
+    # Mesmo estado → idempotent retry, já tratado por _is_idempotent_payload
 
 
 def create_occurrence_from_block_sync(
@@ -856,6 +907,17 @@ def create_occurrence_from_block_sync(
 
     if schedule_output.date is None:
         raise OccurrenceServiceError(status_code=409, detail=ERR_SCHEDULE_OUTPUT_NO_DATE)
+
+    # WBS V3 Fase 1.4: Rejeitar criação de ocorrência sobre LessonLog COMPLETED
+    completed_log = db.query(models.LessonLog).filter(
+        models.LessonLog.schedule_output_id == schedule_output_id,
+        models.LessonLog.status == models.LessonLogStatus.COMPLETED,
+    ).first()
+    if completed_log is not None:
+        raise OccurrenceServiceError(
+            status_code=409,
+            detail="Esta aula já foi registada como dada. Reverta o registo primeiro.",
+        )
 
     existing = db.execute(
         select(models.LessonOccurrence).where(
@@ -932,6 +994,110 @@ def create_occurrence_from_block_sync(
         raise
 
 
+def cancel_open_occurrence_for_block_sync(
+    db: Session,
+    organization_id: int,
+    schedule_output_id: int,
+) -> bool:
+    """Remove uma LessonOccurrence não decidida associada a um bloco.
+
+    Apenas atua sobre ocorrências com decided_at IS NULL (OPEN/indecisas).
+    Ocorrências já decididas (GAP, SUBSTITUTED, GIVEN com decided_at preenchido)
+    NÃO são afetadas — essas requerem a ação de "Cancelar" do admin (Fase 3).
+
+    Retorna True se removeu alguma ocorrência, False caso contrário.
+    """
+    occurrence = db.query(models.LessonOccurrence).filter(
+        models.LessonOccurrence.organization_id == organization_id,
+        models.LessonOccurrence.schedule_output_id == schedule_output_id,
+        models.LessonOccurrence.decided_at.is_(None),
+    ).first()
+
+    if occurrence is None:
+        return False
+
+    db.delete(occurrence)
+    db.flush()
+    return True
+
+
+def cancel_occurrence_sync(
+    db: Session,
+    organization_id: int,
+    occurrence_id: int,
+    cancelled_by_user_id: int,
+) -> dict:
+    """Cancela uma LessonOccurrence (OPEN ou decidida) e reverte o LessonLog.
+
+    - Se a ocorrência já foi decidida: reverte a contabilidade
+    - Remove a LessonOccurrence
+    - Reverte o LessonLog associado para PENDING
+
+    Retorna {"cancelled": True, "schedule_output_id": int}
+    """
+    occurrence = db.query(models.LessonOccurrence).filter(
+        models.LessonOccurrence.id == occurrence_id,
+        models.LessonOccurrence.organization_id == organization_id,
+    ).first()
+
+    if occurrence is None:
+        raise OccurrenceServiceError(status_code=404, detail="Ocorrência não encontrada.")
+
+    schedule_output_id = occurrence.schedule_output_id
+
+    # Reverter contabilidade se a ocorrência foi decidida
+    if occurrence.decided_at is not None:
+        schedule_output = occurrence.schedule_output
+        if schedule_output is not None and schedule_output.lesson is not None:
+            class_id = schedule_output.lesson.class_id
+            planned_module_id = occurrence.planned_module_id
+            executed_module_id = occurrence.executed_module_id
+            planned_hours = occurrence.planned_hours or 0.0
+
+            if planned_module_id is None and schedule_output.lesson.subject is not None:
+                planned_module_id = _resolve_active_module_id_for_subject(
+                    db,
+                    class_id=class_id,
+                    subject=schedule_output.lesson.subject,
+                )
+
+            if planned_hours > 0 and planned_module_id is not None:
+                _apply_state_accounting(
+                    db,
+                    class_id=class_id,
+                    status=occurrence.status,
+                    planned_module_id=planned_module_id,
+                    executed_module_id=executed_module_id,
+                    planned_hours=planned_hours,
+                    direction=-1,
+                )
+
+        # Se era SUBSTITUTED, remove o ScheduleOutput do substituto
+        if occurrence.status == models.LessonOccurrenceStatus.SUBSTITUTED:
+            _remove_substitute_schedule_output(
+                db,
+                organization_id=organization_id,
+                original_output=occurrence.schedule_output,
+                substitute_teacher_id=occurrence.substitute_teacher_id,
+                substitute_subject_id=occurrence.substitute_subject_id,
+            )
+
+    # Reverter LessonLog para PENDING
+    lesson_log = db.query(models.LessonLog).filter(
+        models.LessonLog.schedule_output_id == schedule_output_id,
+    ).first()
+    if lesson_log is not None:
+        lesson_log.status = models.LessonLogStatus.PENDING
+        lesson_log.logged_by_user_id = cancelled_by_user_id
+        lesson_log.logged_at = datetime.now(timezone.utc)
+
+    # Remover a ocorrência
+    db.delete(occurrence)
+    db.commit()
+
+    return {"cancelled": True, "schedule_output_id": schedule_output_id}
+
+
 def list_occurrences_sync(
     db: Session,
     organization_id: int,
@@ -940,6 +1106,7 @@ def list_occurrences_sync(
     date_to: Optional[date] = None,
     skip: int = 0,
     limit: int = 100,
+    status_filter: Optional[str] = None,
 ) -> list[models.LessonOccurrence]:
     """Lista ocorrências com filtros opcionais."""
     stmt = (
@@ -982,6 +1149,16 @@ def list_occurrences_sync(
         stmt = stmt.where(models.LessonOccurrence.date >= date_from)
     if date_to is not None:
         stmt = stmt.where(models.LessonOccurrence.date <= date_to)
+    # WBS V3 Fase 6: filter by status. OPEN = decided_at IS NULL
+    if status_filter is not None:
+        if status_filter.upper() == 'OPEN':
+            stmt = stmt.where(models.LessonOccurrence.decided_at.is_(None))
+        else:
+            try:
+                enum_val = models.LessonOccurrenceStatus(status_filter.upper())
+                stmt = stmt.where(models.LessonOccurrence.status == enum_val)
+            except ValueError:
+                pass  # invalid status, return empty
 
     stmt = stmt.order_by(
         models.LessonOccurrence.date.asc(),
@@ -1067,6 +1244,19 @@ def update_occurrence_sync(
         executed_module_id = planned_module_id
         executed_teacher_id = lesson.teacher_id
         hours_given = planned_hours
+
+    # WBS V3 Fase 2.3: Ao re-decidir de SUBSTITUTED → não-SUBSTITUTED,
+    # remove o ScheduleOutput criado para o professor substituto.
+    if occurrence.decided_at is not None \
+            and occurrence.status == models.LessonOccurrenceStatus.SUBSTITUTED \
+            and payload.status != models.LessonOccurrenceStatus.SUBSTITUTED:
+        _remove_substitute_schedule_output(
+            db,
+            organization_id=organization_id,
+            original_output=occurrence.schedule_output,
+            substitute_teacher_id=occurrence.substitute_teacher_id,
+            substitute_subject_id=occurrence.substitute_subject_id,
+        )
 
     try:
         if occurrence.decided_at is not None:

@@ -45,6 +45,7 @@ async def list_occurrences(
     class_id: Optional[int] = Query(None, description="Filtrar por turma"),
     date_from: Optional[date] = Query(None, description="Data de início (YYYY-MM-DD)"),
     date_to: Optional[date] = Query(None, description="Data de fim (YYYY-MM-DD)"),
+    status: Optional[str] = Query(None, description="Filtrar por estado: OPEN, GIVEN, GAP, SUBSTITUTED"),
     skip: int = Query(0, ge=0, description="Registos a saltar"),
     limit: int = Query(100, ge=1, le=500, description="Máximo de registos a devolver"),
 ):
@@ -54,7 +55,7 @@ async def list_occurrences(
     def _run(sync_db):
         return occurrence_service.list_occurrences_sync(
             sync_db, organization_id, class_id=class_id, date_from=date_from, date_to=date_to,
-            skip=skip, limit=limit,
+            skip=skip, limit=limit, status_filter=status,
         )
 
     return await db.run_sync(_run)
@@ -303,3 +304,30 @@ async def update_occurrence(
     await db.run_sync(_emit_success)
 
     return updated
+
+
+@router.post(
+    "/{occurrence_id}/cancel",
+    summary="Cancelar uma ocorrência",
+    responses={404: {"description": "Ocorrência não encontrada."}},
+)
+async def cancel_occurrence(
+    occurrence_id: int,
+    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    current_user: Annotated[models.User, Depends(deps.get_current_active_admin)],
+):
+    """Cancela uma ocorrência (OPEN ou decidida), revertendo o LessonLog para PENDING."""
+    organization_id = current_user.organization_id
+
+    def _run(sync_db):
+        return occurrence_service.cancel_occurrence_sync(
+            sync_db,
+            organization_id=organization_id,
+            occurrence_id=occurrence_id,
+            cancelled_by_user_id=current_user.id,
+        )
+
+    try:
+        return await db.run_sync(_run)
+    except occurrence_service.OccurrenceServiceError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
