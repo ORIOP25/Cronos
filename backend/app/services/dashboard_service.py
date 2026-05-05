@@ -52,7 +52,6 @@ def _get_alert_counts(
             and_(
                 models.LessonOccurrence.organization_id == organization_id,
                 models.LessonOccurrence.date == today,
-                models.LessonOccurrence.status == models.LessonOccurrenceStatus.PENDING,
             )
         )
     ) or 0

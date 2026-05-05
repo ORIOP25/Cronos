@@ -49,6 +49,7 @@ const LessonLogModal = ({ visible, onClose, slot, isAdmin = false }) => {
   const [occurrenceId, setOccurrenceId] = useState(null)
   const [substitutionError, setSubstitutionError] = useState('')
   const [showReopenConfirm, setShowReopenConfirm] = useState(false)
+  const [showRevertConfirm, setShowRevertConfirm] = useState(false)
 
   const upsertLogMutation = useUpsertLessonLog()
   const createOccurrenceMutation = useCreateOccurrence()
@@ -365,6 +366,33 @@ const LessonLogModal = ({ visible, onClose, slot, isAdmin = false }) => {
         </CAlert>
       )}
 
+      {showRevertConfirm && (
+        <CAlert color="warning" className="mx-3 mb-0 d-flex align-items-center justify-content-between flex-wrap gap-2">
+          <span>
+            <strong>Reverter registo?</strong>{' '}
+            O estado da aula voltará a Pendente e as horas serão deduzidas do progresso.
+          </span>
+          <div className="d-flex gap-2">
+            <CButton
+              color="secondary"
+              variant="outline"
+              size="sm"
+              onClick={() => setShowRevertConfirm(false)}
+            >
+              Cancelar
+            </CButton>
+            <CButton
+              color="danger"
+              size="sm"
+              className="text-white"
+              onClick={() => { setShowRevertConfirm(false); handleSubmit('PENDING') }}
+            >
+              Sim, reverter
+            </CButton>
+          </div>
+        </CAlert>
+      )}
+
       {step === 1 && (
         <CModalFooter>
           {/* Left side: cancel + admin substitution action */}
@@ -401,7 +429,7 @@ const LessonLogModal = ({ visible, onClose, slot, isAdmin = false }) => {
               <CButton
                 color="secondary"
                 variant="outline"
-                onClick={() => handleSubmit('PENDING')}
+                onClick={() => setShowRevertConfirm(true)}
                 disabled={upsertLogMutation.isPending || isLocked}
                 title="Reverter para pendente"
               >

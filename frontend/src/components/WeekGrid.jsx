@@ -269,7 +269,11 @@ const SlotCell = ({ slotEntries, isOperationalEnabled, onOpenOperationalAction }
             color: isWeekLocked ? 'var(--cui-secondary)' : 'var(--cui-primary)',
           }}
         >
-          {isWeekLocked ? 'Consultar' : 'Registar'}
+          {isWeekLocked
+            ? 'Consultar'
+            : slot.lesson_log_status === 'COMPLETED' || slot.lesson_log_status === 'OCCURRENCE' || slot.occurrence_decided_at
+              ? 'Gerir'
+              : 'Registar'}
         </div>
       ) : null}
       {!canOpenOperationalAction && operationalBlockReason ? (

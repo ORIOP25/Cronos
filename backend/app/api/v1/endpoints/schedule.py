@@ -493,21 +493,10 @@ async def _build_hard_end_feasibility(
         modules_by_subject = schedule_service.get_modules_by_subject_sync(sync_db, organization_id)
         progress_map = schedule_service.get_class_progress_map_sync(sync_db, organization_id)
 
-        committed_minutes_by_lesson: dict[int, int] = {}
-        if mode == "repair":
-            frozen_until = horizon_start - timedelta(days=1)
-            committed_minutes_by_lesson = schedule_service.get_repair_committed_minutes_by_lesson_sync(
-                sync_db,
-                organization_id,
-                frozen_until,
-            )
-
         remaining_minutes = 0
         if lessons:
             for lesson in lessons:
                 remaining = _compute_remaining_minutes(lesson, modules_by_subject, progress_map)
-                if mode == "repair":
-                    remaining -= max(0, int(committed_minutes_by_lesson.get(lesson.id, 0)))
                 remaining_minutes += max(0, int(remaining))
         else:
             link_rows = (

@@ -774,14 +774,7 @@ def generate_schedule_task(self: Task, organization_id: int, mode: str = "full")
 
         modules_by_subject = schedule_service.get_modules_by_subject_sync(db, organization_id)
         progress_map = schedule_service.get_class_progress_map_sync(db, organization_id)
-        committed_minutes_by_lesson: dict[int, int] | None = None
-        if is_repair:
-            committed_until = expansion_start_date - timedelta(days=1)
-            committed_minutes_by_lesson = schedule_service.get_repair_committed_minutes_by_lesson_sync(
-                db,
-                organization_id,
-                committed_until,
-            )
+
         raw_lesson_inputs = _build_lesson_inputs(
             raw_lessons,
             modules_by_subject,
@@ -796,16 +789,13 @@ def generate_schedule_task(self: Task, organization_id: int, mode: str = "full")
             progress_map,
             planning_weeks,
             min_slot_minutes,
-            committed_minutes_by_lesson=committed_minutes_by_lesson,
             target_end_date=planning_target_end_date,
         )
         raw_remaining_minutes = sum(li.remaining_minutes for li in raw_lesson_inputs)
         reconciled_remaining_minutes = sum(li.remaining_minutes for li in lesson_inputs)
-        committed_minutes = (
-            sum(max(0, int(value)) for value in (committed_minutes_by_lesson or {}).values())
-            if is_repair
-            else 0
-        )
+        committed_minutes = sum(
+            int(round(max(0.0, float(v)) * 60)) for v in progress_map.values()
+        ) if is_repair else 0
 
         if not lesson_inputs:
             return _task_result(

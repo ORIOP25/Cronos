@@ -223,6 +223,12 @@ const Schedules = () => {
     }
     return getCurrentWeekMonday()
   })
+  // Bug #4: Keep weekStart in sync with URL query param changes (cross-navigation)
+  useEffect(() => {
+    if (urlWeekStart && /^\d{4}-\d{2}-\d{2}$/.test(urlWeekStart) && urlWeekStart !== weekStart) {
+      setWeekStart(urlWeekStart)
+    }
+  }, [urlWeekStart, weekStart])
   const [selectedOperationalSlot, setSelectedOperationalSlot] = useState(null)
   const [adminLessonLogSlot, setAdminLessonLogSlot] = useState(null)
   const [createOccurrenceError, setCreateOccurrenceError] = useState('')
@@ -374,13 +380,7 @@ const Schedules = () => {
     if (!isAdmin) {
       return
     }
-    // Admin: always open LessonLogModal for past slots (unified interface)
-    if (slot.is_past && slot.schedule_output_id) {
-      setAdminLessonLogSlot(slot)
-      return
-    }
-    // Future slots or other edge cases: legacy CreateOccurrenceModal
-    setSelectedOperationalSlot(slot)
+    setAdminLessonLogSlot(slot)
     setCreateOccurrenceError('')
   }
 
@@ -461,16 +461,6 @@ const Schedules = () => {
 
   return (
     <div className="p-4">
-
-      {selectedOperationalSlot ? (
-        <CreateOccurrenceModal
-          slot={selectedOperationalSlot}
-          onClose={closeCreateOccurrenceModal}
-          onCreate={handleCreateOccurrence}
-          isCreating={createOccurrenceMutation.isPending}
-          errorMessage={createOccurrenceError}
-        />
-      ) : null}
 
       {adminLessonLogSlot ? (
         <LessonLogModal

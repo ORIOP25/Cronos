@@ -249,6 +249,77 @@ def update_timesheet_status_sync(
     if status == models.TimesheetStatus.APPROVED:
         timesheet.approved_at = datetime.now(timezone.utc)
         timesheet.approved_by_user_id = admin_user_id
+
+        # Bug #1: Auto-create GAP LessonOccurrence for every LessonLog OCCURRENCE
+        # that does not already have a LessonOccurrence. This closes the gap where
+        # a teacher reports an absence (OCCURRENCE), admin approves the week, but
+        # no hours_debt was ever created.
+        week_end_date = timesheet.week_start_date + timedelta(days=6)
+        outputs_with_occurrence = db.query(models.ScheduleOutput).join(
+            models.Lesson, models.ScheduleOutput.lesson_id == models.Lesson.id
+        ).join(
+            models.LessonLog, models.LessonLog.schedule_output_id == models.ScheduleOutput.id
+        ).filter(
+            models.ScheduleOutput.organization_id == organization_id,
+            models.Lesson.teacher_id == timesheet.teacher_id,
+            models.ScheduleOutput.is_draft == False,
+            models.ScheduleOutput.date.between(timesheet.week_start_date, week_end_date),
+            models.LessonLog.status == models.LessonLogStatus.OCCURRENCE,
+        ).all()
+
+        for output in outputs_with_occurrence:
+            existing = db.query(models.LessonOccurrence).filter(
+                models.LessonOccurrence.schedule_output_id == output.id,
+            ).first()
+            if existing is not None:
+                continue
+
+            if output.lesson is None or output.lesson.subject is None:
+                continue
+
+            from app.services.occurrence_service import (
+                _duration_hours,
+                _resolve_active_module_id_for_subject,
+                _apply_state_accounting,
+            )
+            planned_hours = _duration_hours(output.date, output.timeslot)
+            planned_module_id = _resolve_active_module_id_for_subject(
+                db,
+                class_id=output.lesson.class_id,
+                subject=output.lesson.subject,
+            )
+            if planned_module_id is None:
+                continue
+
+            occurrence = models.LessonOccurrence(
+                organization_id=organization_id,
+                schedule_output_id=output.id,
+                date=output.date,
+                status=models.LessonOccurrenceStatus.GAP,
+                planned_hours=planned_hours,
+                planned_teacher_id=output.lesson.teacher_id,
+                executed_teacher_id=None,
+                planned_module_id=planned_module_id,
+                executed_module_id=None,
+                substitute_teacher_id=None,
+                substitute_subject_id=None,
+                hours_given=0.0,
+                decided_by_user_id=admin_user_id,
+                decided_at=datetime.now(timezone.utc),
+                created_at=datetime.now(timezone.utc),
+            )
+            db.add(occurrence)
+
+            _apply_state_accounting(
+                db,
+                class_id=output.lesson.class_id,
+                status=models.LessonOccurrenceStatus.GAP,
+                planned_module_id=planned_module_id,
+                executed_module_id=None,
+                planned_hours=planned_hours,
+                direction=1,
+            )
+
     elif status == models.TimesheetStatus.OPEN:
         # Se for reaberta, limpa os campos de aprovação mas preserva a data de submissão
         timesheet.approved_at = None

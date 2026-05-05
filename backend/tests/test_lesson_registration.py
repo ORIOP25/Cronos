@@ -1351,8 +1351,11 @@ class TestWeekStartValidation:
         organization_id = base_setup["organization_id"]
         teacher_id = base_setup["teacher_id"]
 
-        # Wednesday instead of Monday
+        # Update the schedule_output's date to be inside the query window
         wednesday = base_setup["date"] - timedelta(days=base_setup["date"].weekday()) + timedelta(days=2)
+        output = sync_db.get(models.ScheduleOutput, base_setup["schedule_output_id"])
+        output.date = wednesday
+        sync_db.flush()
 
         slots = schedule_service.get_week_schedule_sync(
             sync_db, organization_id, wednesday, teacher_id=teacher_id

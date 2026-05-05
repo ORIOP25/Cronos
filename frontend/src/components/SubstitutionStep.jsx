@@ -96,7 +96,7 @@ const SubstitutionStep = ({
 
         {!loadingRecommendations && !recommendationsError && recommendations.length === 0 && (
           <CAlert color="warning" className="mb-0">
-            Sem elegíveis para este slot. Registe como falta ou volte atrás.
+            Nenhum professor elegível encontrado. Volte atrás para registar como falta.
           </CAlert>
         )}
 

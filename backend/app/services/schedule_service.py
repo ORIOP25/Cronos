@@ -419,63 +419,6 @@ def get_class_progress_map_sync(db: Session, organization_id: int) -> dict:
     return {(r.class_id, r.module_id): r.hours_completed for r in records}
 
 
-def get_repair_committed_minutes_by_lesson_sync(
-    db: Session,
-    organization_id: int,
-    frozen_until: date,
-) -> dict[int, int]:
-    """Retorna minutos comprometidos por lição até ao limite congelado do repair.
-
-    Regra:
-      - conta blocos ativos não-draft com date <= frozen_until em estado NONE/GIVEN;
-      - não conta blocos com ocorrência GAP/SUBSTITUTED;
-      - ignora blocos sem data (legado).
-    """
-    rows = (
-        db.query(
-            models.ScheduleOutput.lesson_id,
-            models.Timeslot.start_time,
-            models.Timeslot.end_time,
-            models.LessonOccurrence.status,
-        )
-        .join(models.Timeslot, models.ScheduleOutput.timeslot_id == models.Timeslot.id)
-        .outerjoin(
-            models.LessonOccurrence,
-            and_(
-                models.LessonOccurrence.schedule_output_id == models.ScheduleOutput.id,
-                models.LessonOccurrence.date == models.ScheduleOutput.date,
-            ),
-        )
-        .filter(
-            models.ScheduleOutput.organization_id == organization_id,
-            models.ScheduleOutput.is_draft.is_(False),
-            models.ScheduleOutput.date.isnot(None),
-            models.ScheduleOutput.date <= frozen_until,
-        )
-        .all()
-    )
-
-    blocked_statuses = {
-        models.LessonOccurrenceStatus.GAP,
-        models.LessonOccurrenceStatus.SUBSTITUTED,
-    }
-    committed_minutes: dict[int, int] = defaultdict(int)
-
-    for lesson_id, start_time, end_time, status in rows:
-        if status in blocked_statuses:
-            continue
-
-        start_minutes = start_time.hour * 60 + start_time.minute
-        end_minutes = end_time.hour * 60 + end_time.minute
-        duration_minutes = max(0, end_minutes - start_minutes)
-        if duration_minutes <= 0:
-            continue
-
-        committed_minutes[lesson_id] += duration_minutes
-
-    return dict(committed_minutes)
-
-
 def get_org_settings_sync(db: Session, organization_id: int):
     """Retorna as OrganizationSettings desta org, da mais recente para a mais antiga."""
     return (

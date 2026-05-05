@@ -660,12 +660,88 @@ def _apply_module_delta(
 
     new_completed = float(progress.hours_completed) + completed_delta
     new_debt = float(progress.hours_debt) + debt_delta
+
+    # Bug #3: Reconcilia dívida pendente quando horas são completadas.
+    # Cada hora completada "reembolsa" uma hora de dívida no mesmo módulo.
+    if completed_delta > 0 and new_debt > 0:
+        debt_reduction = min(new_debt, completed_delta)
+        new_debt -= debt_reduction
+
     if new_completed < 0 or new_debt < 0:
         raise OccurrenceServiceError(status_code=409, detail=ERR_NEGATIVE_ACCOUNTING)
 
     progress.hours_completed = round(new_completed, 4)
     progress.hours_debt = round(new_debt, 4)
     progress.is_completed = progress.hours_completed >= float(module.hours_total)
+
+
+def _ensure_substitute_schedule_output(
+    db: Session,
+    organization_id: int,
+    class_id: int,
+    substitute_teacher_id: int,
+    substitute_subject_id: int,
+    source_output: models.ScheduleOutput,
+) -> Optional[models.ScheduleOutput]:
+    """Cria um ScheduleOutput para o professor substituto, espelhando o bloco original.
+
+    Isto garante que o professor substituto vê a substituição no seu próprio
+    horário semanal, em vez de a substituição ficar invisível.
+    """
+    if not substitute_teacher_id or not substitute_subject_id:
+        return None
+
+    from sqlalchemy.exc import IntegrityError
+
+    lesson = db.query(models.Lesson).filter(
+        models.Lesson.organization_id == organization_id,
+        models.Lesson.class_id == class_id,
+        models.Lesson.subject_id == substitute_subject_id,
+        models.Lesson.teacher_id == substitute_teacher_id,
+    ).first()
+
+    if lesson is None:
+        lesson = models.Lesson(
+            organization_id=organization_id,
+            class_id=class_id,
+            subject_id=substitute_subject_id,
+            teacher_id=substitute_teacher_id,
+        )
+        db.add(lesson)
+        try:
+            db.flush()
+        except IntegrityError:
+            db.rollback()
+            lesson = db.query(models.Lesson).filter(
+                models.Lesson.organization_id == organization_id,
+                models.Lesson.class_id == class_id,
+                models.Lesson.subject_id == substitute_subject_id,
+                models.Lesson.teacher_id == substitute_teacher_id,
+            ).first()
+            if lesson is None:
+                return None
+
+    existing = db.query(models.ScheduleOutput).filter(
+        models.ScheduleOutput.organization_id == organization_id,
+        models.ScheduleOutput.lesson_id == lesson.id,
+        models.ScheduleOutput.date == source_output.date,
+        models.ScheduleOutput.timeslot_id == source_output.timeslot_id,
+    ).first()
+
+    if existing is not None:
+        return existing
+
+    sub_output = models.ScheduleOutput(
+        organization_id=organization_id,
+        lesson_id=lesson.id,
+        timeslot_id=source_output.timeslot_id,
+        room_id=source_output.room_id,
+        date=source_output.date,
+        generation_id=source_output.generation_id,
+        is_draft=False,
+    )
+    db.add(sub_output)
+    return sub_output
 
 
 def _apply_state_accounting(
@@ -1025,6 +1101,18 @@ def update_occurrence_sync(
         occurrence.hours_given = hours_given
         occurrence.decided_by_user_id = decided_by_user_id
         occurrence.decided_at = datetime.now(timezone.utc)
+
+        # Bug #2: Create a ScheduleOutput for the substitute teacher so they
+        # can see the substituted block in their own weekly schedule.
+        if payload.status == models.LessonOccurrenceStatus.SUBSTITUTED:
+            _ensure_substitute_schedule_output(
+                db,
+                organization_id=organization_id,
+                class_id=class_id,
+                substitute_teacher_id=payload.substitute_teacher_id,
+                substitute_subject_id=payload.substitute_subject_id,
+                source_output=occurrence.schedule_output,
+            )
 
         db.commit()
         db.refresh(occurrence)

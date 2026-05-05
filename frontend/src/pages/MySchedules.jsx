@@ -249,6 +249,39 @@ function MySchedules() {
     return true
   }, [weekSlots, timesheet])
 
+  const blockingSlots = useMemo(() => {
+    if (!timesheet || timesheet.status !== 'OPEN') return []
+    const now = new Date()
+    const blockers = []
+    for (const slot of weekSlots) {
+      const reasons = []
+      if (slot.date && slot.timeslot?.end_time) {
+        const endDateTime = new Date(`${slot.date}T${slot.timeslot.end_time}`)
+        if (endDateTime > now) reasons.push('aula futura')
+      }
+      const hasLessonLog = slot.lesson_log_status === 'COMPLETED' || slot.lesson_log_status === 'OCCURRENCE'
+      const hasOccurrence = slot.occurrence_status != null
+      if (!hasLessonLog && !hasOccurrence) reasons.push('não registada')
+      if (reasons.length > 0) {
+        const day = slot.date ? new Date(`${slot.date}T12:00:00`).toLocaleDateString('pt-PT', { weekday: 'short', day: 'numeric', month: 'short' }) : '?'
+        const subject = slot.subject?.name ?? '?'
+        blockers.push(`${day} — ${subject} (${reasons.join(', ')})`)
+      }
+    }
+    return blockers
+  }, [weekSlots, timesheet])
+
+  const submitTooltip = useMemo(() => {
+    if (canSubmit) return ''
+    if (weekSlots.length === 0) return 'Sem aulas para submeter.'
+    if (!timesheet || timesheet.status === 'OPEN') {
+      return `Bloqueios:\n${blockingSlots.join('\n')}`
+    }
+    if (timesheet.status === 'SUBMITTED') return 'Semana já submetida.'
+    if (timesheet.status === 'APPROVED') return 'Semana já aprovada.'
+    return ''
+  }, [canSubmit, blockingSlots, timesheet, weekSlots])
+
   const [submitError, setSubmitError] = useState('')
 
   const handleSubmitWeek = async () => {
@@ -399,7 +432,7 @@ function MySchedules() {
               size="sm"
               onClick={handleSubmitWeek}
               disabled={!canSubmit || submitMutation.isPending}
-              title={!canSubmit ? "Apenas pode submeter a semana quando todas as aulas estiverem dadas e no passado." : ""}
+              title={submitTooltip}
             >
               {submitMutation.isPending ? <CSpinner size="sm" className="me-1" /> : <CIcon icon={cilCalendar} className="me-1" />}
               Submeter Semana

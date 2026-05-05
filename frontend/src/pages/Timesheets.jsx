@@ -279,15 +279,15 @@ const Timesheets = () => {
                             Aprovar
                           </CButton>
                           <CButton
-                            color="danger"
+                            color="warning"
                             size="sm"
                             className="text-white"
                             disabled={updateMutation.isPending}
                             onClick={handleReopen}
-                            title="Recusar a semana submetida — o professor poderá editar novamente"
+                            title="Reabrir a semana — o professor poderá editar novamente"
                           >
-                            <CIcon icon={cilXCircle} className="me-1" />
-                            Recusar
+                            <CIcon icon={cilActionUndo} className="me-1" />
+                            Reabrir
                           </CButton>
                         </>
                       )}

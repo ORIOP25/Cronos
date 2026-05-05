@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 from typing import Annotated, List, Optional
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -8,6 +8,27 @@ from app.api import deps
 from app.services import timesheet_service
 
 router = APIRouter()
+
+
+def _model_to_read_dict(t: models.TeacherWeeklyTimesheet) -> dict:
+    return {
+        "id": t.id,
+        "organization_id": t.organization_id,
+        "teacher_id": t.teacher_id,
+        "teacher_name": t.teacher.name if t.teacher else None,
+        "week_start_date": t.week_start_date,
+        "week_end_date": t.week_start_date + timedelta(days=6),
+        "status": t.status,
+        "submitted_at": t.submitted_at,
+        "approved_at": t.approved_at,
+        "approved_by_user_id": t.approved_by_user_id,
+        "created_at": t.created_at,
+        "total_slots": 0,
+        "registered_slots": 0,
+        "completed_slots": 0,
+        "occurrence_slots": 0,
+    }
+
 
 @router.get(
     "/",
@@ -47,12 +68,14 @@ async def get_my_timesheet(
         raise HTTPException(status_code=403, detail="Apenas professores podem consultar a sua timesheet.")
         
     def _run(sync_db):
-        return timesheet_service.get_or_create_timesheet_sync(
+        t = timesheet_service.get_or_create_timesheet_sync(
             sync_db,
             organization_id=current_user.organization_id,
             teacher_id=current_user.teacher_id,
             week_start_date=week_start_date
         )
+        sync_db.refresh(t, ['teacher'])
+        return _model_to_read_dict(t)
         
     return await db.run_sync(_run)
 
@@ -70,12 +93,14 @@ async def submit_my_timesheet(
         raise HTTPException(status_code=403, detail="Apenas professores podem submeter a sua timesheet.")
         
     def _run(sync_db):
-        return timesheet_service.submit_timesheet_sync(
+        t = timesheet_service.submit_timesheet_sync(
             sync_db,
             organization_id=current_user.organization_id,
             teacher_id=current_user.teacher_id,
             week_start_date=week_start_date
         )
+        sync_db.refresh(t, ['teacher'])
+        return _model_to_read_dict(t)
         
     return await db.run_sync(_run)
 
