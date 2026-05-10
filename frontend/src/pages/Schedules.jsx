@@ -330,29 +330,14 @@ const Schedules = () => {
       ) : null}
 
       {/* ── Page header ── */}
-      <div className="d-flex justify-content-between align-items-start mb-4 flex-wrap gap-3">
+      <div className="d-flex justify-content-between align-items-end mb-5 flex-wrap gap-3">
         <div>
-          <h2 className="mb-0 fw-bold text-dark">
-            <CIcon icon={cilCalendar} className="me-2 text-primary" />
-            Horários Escolares
-          </h2>
-          <small className="text-muted">
-            {isAdmin ? 'Consulte e atualize os horários da escola.' : 'Visualize o seu horário semanal.'}
-            {' '}Verde = dada · Vermelho = furo · Amarelo = substituída · Cor = planeado.
-          </small>
+          <span className="zen-caps" style={{ color: 'var(--brand-600)' }}>Horários</span>
+          <h1 className="text-display mt-2" style={{ fontSize: '3rem', color: 'var(--brand-950)' }}>
+            Horários <span className="text-editorial">Escolares</span>
+          </h1>
         </div>
-
-        {isAdmin && (
-          <CButton
-            color="primary"
-            variant="outline"
-            size="sm"
-            onClick={() => navigate(`/timesheets?weekStart=${weekStart}`)}
-          >
-            <CIcon icon={cilCalendarCheck} className="me-1" />
-            Ver Aprovações
-          </CButton>
-        )}
+        <div className="luxury-line" style={{ width: '100px', marginBottom: '14px' }} />
 
         {/* Generation controls */}
         {isAdmin && (

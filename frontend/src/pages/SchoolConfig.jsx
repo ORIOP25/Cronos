@@ -593,10 +593,15 @@ const SchoolConfig = () => {
 
   return (
     <div className="p-4">
-      <h2 className="mb-4 fw-bold text-dark">
-        <CIcon icon={cilSettings} className="me-2" />
-        Configuração da Escola
-      </h2>
+      <div className="d-flex justify-content-between align-items-end mb-5 flex-wrap gap-3">
+        <div>
+          <span className="zen-caps" style={{ color: 'var(--brand-600)' }}>Configuração</span>
+          <h1 className="text-display mt-2" style={{ fontSize: '3rem', color: 'var(--brand-950)' }}>
+            <span className="text-editorial">Escola</span>
+          </h1>
+        </div>
+        <div className="luxury-line" style={{ width: '100px', marginBottom: '14px' }} />
+      </div>
 
       {user?.orgName && (
         <CAlert color="primary" className="d-flex align-items-center gap-2 py-2 mb-4">

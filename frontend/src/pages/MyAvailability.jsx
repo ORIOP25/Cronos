@@ -139,8 +139,16 @@ const MyAvailability = () => {
 
   return (
     <div>
-      <h2 style={{ color: 'var(--rs-heading)', fontWeight: '700', marginBottom: '4px' }}>Minhas Preferências</h2>
-      <p style={{ color: 'var(--rs-muted)', marginBottom: '16px' }}>Selecione uma ferramenta e clique (ou arraste) nas células para pintar.</p>
+      <div className="d-flex justify-content-between align-items-end mb-5 flex-wrap gap-3">
+        <div>
+          <span className="zen-caps" style={{ color: 'var(--brand-600)' }}>Professor</span>
+          <h1 className="text-display mt-2" style={{ fontSize: '3rem', color: 'var(--brand-950)' }}>
+            Minhas <span className="text-editorial">Preferências</span>
+          </h1>
+        </div>
+        <div className="luxury-line" style={{ width: '100px', marginBottom: '14px' }} />
+      </div>
+      <p style={{ color: 'var(--rs-muted)', marginBottom: '16px', marginTop: '-1rem' }}>Selecione uma ferramenta e clique (ou arraste) nas células para pintar.</p>
 
       {feedback ? (
         <div

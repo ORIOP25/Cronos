@@ -393,16 +393,17 @@ function MySchedules() {
 
   return (
     <div className="p-4">
-      <div className="d-flex justify-content-between align-items-start mb-4 flex-wrap gap-3">
+      <div className="d-flex justify-content-between align-items-end mb-5 flex-wrap gap-3">
         <div>
-          <h2 className="mb-0 fw-bold text-dark">
-            <CIcon icon={cilCalendar} className="me-2 text-primary" />
-            Meus Horários
-          </h2>
-          <small className="text-muted">
-            Vista pessoal semanal do professor. Verde = dada · Vermelho = furo · Amarelo = substituída.
-          </small>
+          <span className="zen-caps" style={{ color: 'var(--brand-600)' }}>Professor</span>
+          <h1 className="text-display mt-2" style={{ fontSize: '3rem', color: 'var(--brand-950)' }}>
+            Meus <span className="text-editorial">Horários</span>
+          </h1>
         </div>
+        <div className="luxury-line" style={{ width: '100px', marginBottom: '14px' }} />
+      </div>
+      <div className="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3">
+        <div></div>
         <div className="d-flex gap-2 align-items-center flex-wrap">
           {horizon?.active_generation_id ? (
             <CBadge color="success" className="px-3 py-2">

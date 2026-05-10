@@ -66,17 +66,19 @@ const Timeslots = () => {
 
   return (
     <div className="p-4">
-      <CRow className="mb-4 align-items-center">
-        <CCol>
-          <h2 className="mb-0 fw-bold text-dark">
-            <CIcon icon={cilClock} className="me-2 text-warning" />
-            Blocos Horários
-          </h2>
-          <small className="text-muted">Defina a grelha de tempos (ex: 08:30 - 09:15).</small>
-        </CCol>
-        
-        {/* ALTERAÇÃO 1: Adicionar classes flex para alinhar os dois botões */}
-        <CCol className="text-end d-flex gap-2 justify-content-end">
+      <div className="d-flex justify-content-between align-items-end mb-5 flex-wrap gap-3">
+        <div>
+          <span className="zen-caps" style={{ color: 'var(--brand-600)' }}>Configuração</span>
+          <h1 className="text-display mt-2" style={{ fontSize: '3rem', color: 'var(--brand-950)' }}>
+            Blocos <span className="text-editorial">Horários</span>
+          </h1>
+        </div>
+        <div className="luxury-line" style={{ width: '100px', marginBottom: '14px' }} />
+      </div>
+      
+      <div className="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3">
+        <div></div>
+        <div className="d-flex gap-2">
           
           {/* ALTERAÇÃO 2: O Novo Botão "Gerar Auto" */}
           <CButton color="success" variant="outline" onClick={() => setGenModalVisible(true)}>
@@ -87,8 +89,8 @@ const Timeslots = () => {
             <CIcon icon={cilPlus} />
             Novo Bloco
           </CButton>
-        </CCol>
-      </CRow>
+        </div>
+      </div>
 
       {/* Tratamento de Erros ROBUSTO */}
       {deleteMutation.isError && (

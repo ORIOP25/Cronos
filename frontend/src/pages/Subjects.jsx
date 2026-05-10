@@ -97,21 +97,21 @@ const Subjects = () => {
 
   return (
     <div className="p-4">
-      <CRow className="mb-4 align-items-center">
-        <CCol>
-          <h2 className="mb-0 fw-bold text-dark">
-            <CIcon icon={cilBook} className="me-2 text-info" />
-            Gestão de Disciplinas
-          </h2>
-          <small className="text-muted">Defina as unidades curriculares, tipos de sala e módulos associados.</small>
-        </CCol>
-        <CCol className="text-end">
-          <CButton color="primary" onClick={handleCreate} className="d-flex align-items-center gap-2 ms-auto">
-            <CIcon icon={cilPlus} />
-            Nova Disciplina
-          </CButton>
-        </CCol>
-      </CRow>
+      <div className="d-flex justify-content-between align-items-end mb-5 flex-wrap gap-3">
+        <div>
+          <span className="zen-caps" style={{ color: 'var(--brand-600)' }}>Gestão</span>
+          <h1 className="text-display mt-2" style={{ fontSize: '3rem', color: 'var(--brand-950)' }}>
+            <span className="text-editorial">Disciplinas</span>
+          </h1>
+        </div>
+        <div className="luxury-line" style={{ width: '100px', marginBottom: '14px' }} />
+      </div>
+      <div className="d-flex justify-content-end mb-4">
+        <CButton color="primary" onClick={handleCreate} className="d-flex align-items-center gap-2">
+          <CIcon icon={cilPlus} />
+          Nova Disciplina
+        </CButton>
+      </div>
 
       {/* Tratamento de Erros de Criação/Eliminação */}
       {createMutation.isError && (

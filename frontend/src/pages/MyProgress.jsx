@@ -173,16 +173,16 @@ function MyProgress() {
 
   return (
     <div className="p-4">
-      <div className="d-flex justify-content-between align-items-start mb-4 flex-wrap gap-3">
+      <div className="d-flex justify-content-between align-items-end mb-5 flex-wrap gap-3">
         <div>
-          <h2 className="mb-0 fw-bold text-dark">
-            <CIcon icon={cilChartPie} className="me-2 text-primary" />
-            Meu Progresso
-          </h2>
-          <small className="text-muted">
-            Vista privada do progresso curricular nas turmas e disciplinas em que está assignado.
-          </small>
+          <span className="zen-caps" style={{ color: 'var(--brand-600)' }}>Professor</span>
+          <h1 className="text-display mt-2" style={{ fontSize: '3rem', color: 'var(--brand-950)' }}>
+            Meu <span className="text-editorial">Progresso</span>
+          </h1>
         </div>
+        <div className="luxury-line" style={{ width: '100px', marginBottom: '14px' }} />
+      </div>
+      <div className="d-flex justify-content-end mb-4">
         <CBadge color="info" className="px-3 py-2">
           {classes.length} turma{classes.length !== 1 ? 's' : ''}
         </CBadge>

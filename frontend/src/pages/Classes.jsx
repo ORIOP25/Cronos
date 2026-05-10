@@ -81,21 +81,21 @@ const Classes = () => {
 
   return (
     <div className="p-4">
-      <CRow className="mb-4 align-items-center">
-        <CCol>
-          <h2 className="mb-0 fw-bold text-dark">
-            <CIcon icon={cilPeople} className="me-2 text-primary" />
-            Gestão de Turmas
-          </h2>
-          <small className="text-muted">Gerir grupos de alunos e dimensões das turmas.</small>
-        </CCol>
-        <CCol className="text-end">
-          <CButton color="primary" onClick={handleCreate} className="d-flex align-items-center gap-2 ms-auto">
-            <CIcon icon={cilPlus} />
-            Nova Turma
-          </CButton>
-        </CCol>
-      </CRow>
+      <div className="d-flex justify-content-between align-items-end mb-5 flex-wrap gap-3">
+        <div>
+          <span className="zen-caps" style={{ color: 'var(--brand-600)' }}>Gestão</span>
+          <h1 className="text-display mt-2" style={{ fontSize: '3rem', color: 'var(--brand-950)' }}>
+            <span className="text-editorial">Turmas</span>
+          </h1>
+        </div>
+        <div className="luxury-line" style={{ width: '100px', marginBottom: '14px' }} />
+      </div>
+      <div className="d-flex justify-content-end mb-4">
+        <CButton color="primary" onClick={handleCreate} className="d-flex align-items-center gap-2">
+          <CIcon icon={cilPlus} />
+          Nova Turma
+        </CButton>
+      </div>
 
       {/* Tratamento de Erros de Eliminação */}
       {deleteMutation.isError && (
