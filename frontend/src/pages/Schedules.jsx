@@ -15,7 +15,7 @@ import {
 import {
   useDrafts, useApproveDraft, useRejectDraft,
   useGenerateSchedule, useScheduleTaskStatus, useCancelScheduleTask,
-  useClasses, useTeachers, useWeekSchedule, useClassDetails, useTimeslots, useCreateOccurrence,
+  useClasses, useTeachers, useWeekSchedule, useClassDetails, useTimeslots,
 } from '../hooks/useSchoolData'
 import WeekGrid from '../components/WeekGrid'
 import LessonLogModal from '../components/LessonLogModal'
@@ -67,16 +67,7 @@ function formatOperationalDate(dateStr) {
   })
 }
 
-function buildCreateOccurrenceErrorMessage(error) {
-  const detail = error?.response?.data?.detail
-  if (Array.isArray(detail) && detail.length > 0 && typeof detail[0]?.msg === 'string') {
-    return detail[0].msg
-  }
-  if (typeof detail === 'string' && detail.trim()) {
-    return detail
-  }
-  return 'Não foi possível criar a ocorrência para este bloco. Tente novamente.'
-}
+
 
 function getTaskStorageKey(orgId) {
   if (!orgId) return null
@@ -108,82 +99,6 @@ function clearStoredTaskId(storageKey) {
   } catch {
     // no-op for environments without storage access
   }
-}
-
-// ---------------------------------------------------------------------------
-// CreateOccurrenceModal — kept inline (uses local state from Schedules)
-// ---------------------------------------------------------------------------
-const CreateOccurrenceModal = ({
-  slot,
-  onClose,
-  onCreate,
-  isCreating,
-  errorMessage,
-}) => {
-  if (!slot) return null
-
-  const shouldCreateOccurrence = slot.can_create_occurrence !== false
-
-  const slotTime = slot.timeslot
-    ? `${slot.timeslot.start_time} - ${slot.timeslot.end_time}`
-    : '—'
-
-  return (
-    <CModal visible onClose={onClose} alignment="center">
-      <CModalHeader>
-        <CModalTitle>{shouldCreateOccurrence ? 'Criar Ocorrência' : 'Gerir Ocorrência'}</CModalTitle>
-      </CModalHeader>
-      <CModalBody>
-        <CAlert color="light" className="mb-3">
-          <div><strong>Data:</strong> {formatOperationalDate(slot.date)}</div>
-          <div><strong>Horário:</strong> {slotTime}</div>
-          <div><strong>Turma:</strong> {slot.class_info?.name ?? '—'}</div>
-          <div><strong>Disciplina:</strong> {slot.subject?.name ?? '—'}</div>
-          <div><strong>Docente previsto:</strong> {slot.teacher?.name ?? '—'}</div>
-          <div><strong>Sala:</strong> {slot.room?.name ?? '—'}</div>
-        </CAlert>
-
-        {errorMessage ? (
-          <CAlert color="danger" className="mb-0">{errorMessage}</CAlert>
-        ) : null}
-      </CModalBody>
-      <CModalFooter>
-        <CButton color="secondary" variant="outline" onClick={onClose}>
-          Cancelar
-        </CButton>
-        <CButton color="primary" onClick={onCreate} disabled={shouldCreateOccurrence && isCreating}>
-          {shouldCreateOccurrence && isCreating ? (
-            <>
-              <CSpinner size="sm" className="me-2" />
-              A criar...
-            </>
-          ) : (shouldCreateOccurrence ? 'Criar Ocorrência' : 'Ir para Faltas')}
-        </CButton>
-      </CModalFooter>
-    </CModal>
-  )
-}
-
-CreateOccurrenceModal.propTypes = {
-  slot: PropTypes.shape({
-    schedule_output_id: PropTypes.number,
-    occurrence_id: PropTypes.number,
-    can_create_occurrence: PropTypes.bool,
-    can_decide_occurrence: PropTypes.bool,
-    date: PropTypes.string,
-    timeslot: PropTypes.shape({
-      start_time: PropTypes.string,
-      end_time: PropTypes.string,
-    }),
-    class_info: PropTypes.shape({ name: PropTypes.string, id: PropTypes.number }),
-    subject: PropTypes.shape({ name: PropTypes.string }),
-    teacher: PropTypes.shape({ name: PropTypes.string }),
-    room: PropTypes.shape({ name: PropTypes.string }),
-  }),
-  onClose: PropTypes.func.isRequired,
-  onCreate: PropTypes.func.isRequired,
-  isCreating: PropTypes.bool,
-  errorMessage: PropTypes.string,
 }
 
 // ---------------------------------------------------------------------------
@@ -229,9 +144,7 @@ const Schedules = () => {
       setWeekStart(urlWeekStart)
     }
   }, [urlWeekStart, weekStart])
-  const [selectedOperationalSlot, setSelectedOperationalSlot] = useState(null)
   const [adminLessonLogSlot, setAdminLessonLogSlot] = useState(null)
-  const [createOccurrenceError, setCreateOccurrenceError] = useState('')
   const [generationActionError, setGenerationActionError] = useState('')
 
   // Sprint 3 hooks
@@ -240,7 +153,6 @@ const Schedules = () => {
   const cancelGenerationMutation = useCancelScheduleTask()
   const approveMutation  = useApproveDraft()
   const rejectMutation   = useRejectDraft()
-  const createOccurrenceMutation = useCreateOccurrence()
   const { data: taskData } = useScheduleTaskStatus(activeTaskId)
 
   // Sprint 4 hooks
@@ -358,65 +270,11 @@ const Schedules = () => {
   const showKPI      = viewMode === 'class' && Boolean(classId)
   const gridCols     = showKPI ? 8 : 12
 
-  const closeCreateOccurrenceModal = () => {
-    setSelectedOperationalSlot(null)
-    setCreateOccurrenceError('')
-  }
-
-  const navigateToAbsencesWithSlotContext = ({ occurrenceId, slotContext }) => {
-    const params = new URLSearchParams()
-    if (occurrenceId) {
-      params.set('occurrence_id', String(occurrenceId))
-    }
-    if (slotContext?.class_info?.id) {
-      params.set('class_id', String(slotContext.class_info.id))
-    }
-
-    const query = params.toString()
-    navigate(query ? `/absences?${query}` : '/absences')
-  }
-
   const openCreateOccurrenceModal = (slot) => {
     if (!isAdmin) {
       return
     }
     setAdminLessonLogSlot(slot)
-    setCreateOccurrenceError('')
-  }
-
-  const handleCreateOccurrence = () => {
-    const scheduleOutputId = selectedOperationalSlot?.schedule_output_id
-    if (!scheduleOutputId) {
-      return
-    }
-
-    const canCreateOccurrence = selectedOperationalSlot?.can_create_occurrence !== false
-    const canDecideOccurrence = Boolean(selectedOperationalSlot?.can_decide_occurrence)
-    if (!canCreateOccurrence && canDecideOccurrence) {
-      navigateToAbsencesWithSlotContext({
-        occurrenceId: selectedOperationalSlot?.occurrence_id,
-        slotContext: selectedOperationalSlot,
-      })
-      closeCreateOccurrenceModal()
-      return
-    }
-
-    setCreateOccurrenceError('')
-    createOccurrenceMutation.mutate(
-      { scheduleOutputId },
-      {
-        onSuccess: (occurrence) => {
-          navigateToAbsencesWithSlotContext({
-            occurrenceId: occurrence?.id,
-            slotContext: selectedOperationalSlot,
-          })
-          closeCreateOccurrenceModal()
-        },
-        onError: (error) => {
-          setCreateOccurrenceError(buildCreateOccurrenceErrorMessage(error))
-        },
-      }
-    )
   }
 
   let weekGridContent = (

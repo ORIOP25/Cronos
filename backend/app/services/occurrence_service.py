@@ -41,20 +41,20 @@ ERR_SCHEDULE_OUTPUT_IS_DRAFT = "Bloco de rascunho não pode iniciar ocorrência 
 ERR_SCHEDULE_OUTPUT_NO_DATE = "Bloco sem data válida para criação de ocorrência"
 
 ALLOWED_STATE_TRANSITIONS: dict[models.LessonOccurrenceStatus, set[models.LessonOccurrenceStatus]] = {
+    # Undecided (decided_at IS NULL): any transition allowed (handled by early return)
+    # Decided states below — only re-decision to allowed targets
     models.LessonOccurrenceStatus.GIVEN: {
-        models.LessonOccurrenceStatus.GIVEN,
-        models.LessonOccurrenceStatus.GAP,
-        models.LessonOccurrenceStatus.SUBSTITUTED,
+        models.LessonOccurrenceStatus.GIVEN,        # idempotent retry only
     },
     models.LessonOccurrenceStatus.GAP: {
-        models.LessonOccurrenceStatus.GAP,
-        models.LessonOccurrenceStatus.SUBSTITUTED,
+        models.LessonOccurrenceStatus.GAP,           # idempotent retry
+        models.LessonOccurrenceStatus.SUBSTITUTED,   # re-decision
     },
     models.LessonOccurrenceStatus.SUBSTITUTED: {
-        models.LessonOccurrenceStatus.SUBSTITUTED,
-        models.LessonOccurrenceStatus.GAP,
-        models.LessonOccurrenceStatus.GIVEN,
+        models.LessonOccurrenceStatus.SUBSTITUTED,   # idempotent retry
+        models.LessonOccurrenceStatus.GAP,           # re-decision
     },
+    models.LessonOccurrenceStatus.REVOKED: set(),   # terminal — imutável
 }
 
 DEBT_STATUSES = {
@@ -835,13 +835,9 @@ def _apply_state_accounting(
             completed_delta=0.0,
             debt_delta=delta,
         )
-        _apply_module_delta(
-            db,
-            class_id=class_id,
-            module_id=executed_module_id,
-            completed_delta=delta,
-            debt_delta=0.0,
-        )
+        # V4: O módulo do substituto NÃO é creditado aqui.
+        # As horas são creditadas quando o professor substituto regista "Aula Dada"
+        # no bloco de substituição, via LessonLog COMPLETED → _apply_state_accounting(GIVEN).
         return
 
 
@@ -863,16 +859,21 @@ def _validate_state_transition(
     occurrence: models.LessonOccurrence,
     payload: schemas.LessonOccurrenceUpdate,
 ) -> None:
+    # V4: REVOKED é terminal — imutável
+    if occurrence.status == models.LessonOccurrenceStatus.REVOKED:
+        raise OccurrenceServiceError(status_code=409, detail="Ocorrência revertida não pode ser alterada.")
+
     if occurrence.decided_at is None:
         return
 
-    # WBS V3 Fase 2.1: Permitir re-decisão. Ocorrências já decididas podem
-    # mudar de estado (ex: GAP→SUBSTITUTED, SUBSTITUTED→GAP). A contabilidade
-    # é revertida e re-aplicada pelo caller (update_occurrence_sync).
-    if occurrence.status != payload.status:
-        return
+    # V4: Enforce ALLOWED_STATE_TRANSITIONS for re-decisions
+    allowed_targets = ALLOWED_STATE_TRANSITIONS.get(occurrence.status, set())
+    if payload.status not in allowed_targets:
+        raise OccurrenceServiceError(
+            status_code=422,
+            detail=f"Transição de {occurrence.status.value} para {payload.status.value} não é permitida.",
+        )
 
-    # Mesmo estado → idempotent retry, já tratado por _is_idempotent_payload
 
 
 def create_occurrence_from_block_sync(
@@ -999,13 +1000,13 @@ def cancel_open_occurrence_for_block_sync(
     organization_id: int,
     schedule_output_id: int,
 ) -> bool:
-    """Remove uma LessonOccurrence não decidida associada a um bloco.
+    """Marca como REVOKED uma LessonOccurrence não decidida associada a um bloco.
 
     Apenas atua sobre ocorrências com decided_at IS NULL (OPEN/indecisas).
     Ocorrências já decididas (GAP, SUBSTITUTED, GIVEN com decided_at preenchido)
-    NÃO são afetadas — essas requerem a ação de "Cancelar" do admin (Fase 3).
+    NÃO são afetadas — essas requerem a ação de "Reverter" do admin em /absences.
 
-    Retorna True se removeu alguma ocorrência, False caso contrário.
+    Retorna True se marcou alguma ocorrência, False caso contrário.
     """
     occurrence = db.query(models.LessonOccurrence).filter(
         models.LessonOccurrence.organization_id == organization_id,
@@ -1016,7 +1017,8 @@ def cancel_open_occurrence_for_block_sync(
     if occurrence is None:
         return False
 
-    db.delete(occurrence)
+    occurrence.status = models.LessonOccurrenceStatus.REVOKED
+    occurrence.decided_at = datetime.now(timezone.utc)
     db.flush()
     return True
 
@@ -1027,10 +1029,11 @@ def cancel_occurrence_sync(
     occurrence_id: int,
     cancelled_by_user_id: int,
 ) -> dict:
-    """Cancela uma LessonOccurrence (OPEN ou decidida) e reverte o LessonLog.
+    """Marca uma LessonOccurrence como REVOKED e reverte o LessonLog.
 
     - Se a ocorrência já foi decidida: reverte a contabilidade
-    - Remove a LessonOccurrence
+    - Se era SUBSTITUTED: remove o ScheduleOutput do substituto
+    - Marca a ocorrência como REVOKED (persiste para auditoria)
     - Reverte o LessonLog associado para PENDING
 
     Retorna {"cancelled": True, "schedule_output_id": int}
@@ -1042,6 +1045,10 @@ def cancel_occurrence_sync(
 
     if occurrence is None:
         raise OccurrenceServiceError(status_code=404, detail="Ocorrência não encontrada.")
+
+    # V4: REVOKED é imutável
+    if occurrence.status == models.LessonOccurrenceStatus.REVOKED:
+        raise OccurrenceServiceError(status_code=409, detail="Ocorrência revertida não pode ser alterada.")
 
     schedule_output_id = occurrence.schedule_output_id
 
@@ -1072,6 +1079,21 @@ def cancel_occurrence_sync(
                     direction=-1,
                 )
 
+            # V4: Pre-V4 SUBSTITUTED occurrences had _apply_module_delta on the executed
+            # module (credit removed in V3.1). Reverse that legacy credit if it exists.
+            if occurrence.status == models.LessonOccurrenceStatus.SUBSTITUTED \
+                    and executed_module_id is not None \
+                    and planned_hours > 0:
+                executed_progress = _get_or_create_progress(db, class_id, executed_module_id)
+                if float(executed_progress.hours_completed) >= planned_hours:
+                    _apply_module_delta(
+                        db,
+                        class_id=class_id,
+                        module_id=executed_module_id,
+                        completed_delta=-planned_hours,
+                        debt_delta=0.0,
+                    )
+
         # Se era SUBSTITUTED, remove o ScheduleOutput do substituto
         if occurrence.status == models.LessonOccurrenceStatus.SUBSTITUTED:
             _remove_substitute_schedule_output(
@@ -1091,8 +1113,10 @@ def cancel_occurrence_sync(
         lesson_log.logged_by_user_id = cancelled_by_user_id
         lesson_log.logged_at = datetime.now(timezone.utc)
 
-    # Remover a ocorrência
-    db.delete(occurrence)
+    # V4: Marcar REVOKED em vez de apagar (auditoria)
+    occurrence.status = models.LessonOccurrenceStatus.REVOKED
+    occurrence.decided_at = datetime.now(timezone.utc)
+    occurrence.decided_by_user_id = cancelled_by_user_id
     db.commit()
 
     return {"cancelled": True, "schedule_output_id": schedule_output_id}

@@ -3,14 +3,18 @@
 # Objetivo: testes manuais com nomes claros e dados completos do modelo.
 # Entrada canonica recomendada:
 #   docker compose exec backend python seed_data.py --profile small-realistic --reset
-# Entrada direta (legacy/helper):
+# Entrada direta (equivale ao comando canonico):
 #   docker compose exec backend python seed_data_small_realistic.py
+#
+# ATENCAO: este script APAGA todos os dados existentes e recria a BD.
+# Usa DROP SCHEMA + Alembic para garantir consistencia do estado de migracoes.
 
 import datetime
 import sys
+import subprocess
 from sqlalchemy import text
 
-from app.db.database import SessionLocalSync, engine_sync, Base
+from app.db.database import SessionLocalSync, engine_sync
 from app import models
 from app.core.security import hash_password, verify_password
 from app.models import UserRole, PreferenceLevel, RoomType
@@ -142,61 +146,6 @@ MODULE_TEMPLATES = [
 # =====================================================================
 #  UTILITARIOS
 # =====================================================================
-
-def clean_database() -> None:
-    """Drop de todas as tabelas public + enums orfaos (PostgreSQL)."""
-    print("\n1/3  A eliminar todas as tabelas (PostgreSQL)...")
-
-    with engine_sync.connect() as conn:
-        conn.execute(text("SET session_replication_role = replica;"))
-        conn.commit()
-
-        table_result = conn.execute(text("SELECT tablename FROM pg_tables WHERE schemaname = 'public'"))
-        tables = [row[0] for row in table_result.fetchall()]
-
-        for table in tables:
-            try:
-                conn.execute(text(f'DROP TABLE IF EXISTS "{table}" CASCADE;'))
-                conn.commit()
-                print(f"   + {table}")
-            except Exception as exc:
-                conn.rollback()
-                print(f"   x Erro ao dropar {table}: {str(exc)[:80]}")
-
-        enum_result = conn.execute(text(
-            """
-            SELECT t.typname
-            FROM pg_type t
-            JOIN pg_namespace n ON n.oid = t.typnamespace
-            WHERE n.nspname = 'public' AND t.typtype = 'e'
-            """
-        ))
-        enum_types = [row[0] for row in enum_result.fetchall()]
-
-        for enum_name in enum_types:
-            try:
-                conn.execute(text(f'DROP TYPE IF EXISTS "{enum_name}" CASCADE;'))
-                conn.commit()
-                print(f"   + enum {enum_name}")
-            except Exception as exc:
-                conn.rollback()
-                print(f"   x Erro ao dropar enum {enum_name}: {str(exc)[:80]}")
-
-        try:
-            conn.execute(text("SET session_replication_role = DEFAULT;"))
-            conn.commit()
-        except Exception:
-            conn.rollback()
-
-    print("   Todas as tabelas eliminadas!")
-
-
-def create_tables() -> None:
-    """Cria tabelas a partir do metadata atual do ORM."""
-    print("\n2/3  A criar tabelas novas (metadata atual)...")
-    Base.metadata.create_all(bind=engine_sync)
-    print("   Tabelas criadas com sucesso!")
-
 
 def _create_timeslots(db, organization_id: int) -> dict[tuple[int, int], models.Timeslot]:
     """Grelha padrao: Seg-Sex, 08:30-16:30 (8 blocos)."""
@@ -589,12 +538,21 @@ def run_seed() -> None:
 
 def main() -> None:
     print("=" * 72)
-    print("  SMALL-REALISTIC HELPER (LEGACY ENTRYPOINT)")
+    print("  SMALL-REALISTIC SEED (via Alembic)")
+    print("  ATENCAO: todos os dados existentes serao APAGADOS!")
     print("=" * 72)
 
     try:
-        clean_database()
-        create_tables()
+        print("\n1/3  A resetar base de dados (DROP SCHEMA public)...")
+        with engine_sync.connect() as conn:
+            conn.execute(text("DROP SCHEMA public CASCADE; CREATE SCHEMA public;"))
+            conn.commit()
+        print("   Schema public recriado com sucesso!")
+
+        print("\n2/3  A executar migracoes Alembic...")
+        subprocess.run(["alembic", "upgrade", "head"], check=True)
+        print("   Migracoes concluidas!")
+
         run_seed()
 
         print("\n" + "=" * 72)

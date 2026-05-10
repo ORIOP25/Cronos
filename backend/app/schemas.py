@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr, Field, ConfigDict, model_validator, computed_field
+from pydantic import BaseModel, EmailStr, Field, ConfigDict, model_validator, computed_field, AliasChoices
 from datetime import time, datetime, date
 from typing import Any, Optional, Literal
 from .models import (
@@ -1155,9 +1155,9 @@ class TeacherWeeklyTimesheetRead(BaseModel):
 
 class TeacherModuleProgressRead(BaseModel):
     """Progresso de um módulo numa disciplina de uma turma do professor."""
-    module_id: int
-    module_name: str
-    module_code: Optional[str] = None
+    module_id: int = Field(validation_alias=AliasChoices("module_id", "id"))
+    module_name: str = Field(validation_alias=AliasChoices("module_name", "name"))
+    module_code: Optional[str] = Field(default=None, validation_alias=AliasChoices("module_code", "code"))
     hours_total: int
     hours_completed: float
     hours_debt: float
@@ -1167,8 +1167,8 @@ class TeacherModuleProgressRead(BaseModel):
 
 class TeacherSubjectProgressRead(BaseModel):
     """Disciplina com módulos e progresso agregado para uma turma do professor."""
-    subject_id: int
-    subject_name: str
+    subject_id: int = Field(validation_alias=AliasChoices("subject_id", "id"))
+    subject_name: str = Field(validation_alias=AliasChoices("subject_name", "name"))
     required_room_type: RoomType
     modules: list[TeacherModuleProgressRead] = []
     total_hours: int = 0

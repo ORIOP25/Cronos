@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect } from 'react'
 import PropTypes from 'prop-types'
 import {
   CModal,
@@ -13,14 +13,13 @@ import {
   CSpinner,
 } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
-import { cilCheckCircle, cilXCircle, cilActionUndo, cilWarning, cilPeople } from '@coreui/icons'
-import { useUpsertLessonLog, useCreateOccurrence, useUpdateOccurrence, useUpdateTimesheetStatus, useCancelOccurrence } from '../hooks/useSchoolData'
-import SubstitutionStep from './SubstitutionStep'
+import { cilCheckCircle, cilXCircle, cilActionUndo, cilWarning } from '@coreui/icons'
+import { useUpsertLessonLog, useUpdateTimesheetStatus } from '../hooks/useSchoolData'
 import { useFocusTrap } from '../hooks/useFocusTrap'
 
 const STATUS_INFO = {
   COMPLETED: { label: 'Aula Dada', badge: 'success' },
-  OCCURRENCE: { label: 'Falta Registada', badge: 'danger' },
+  OCCURRENCE: { label: 'Ocorrência', badge: 'warning' },
   PENDING: { label: 'Pendente', badge: 'secondary' },
 }
 
@@ -28,16 +27,14 @@ const OCCURRENCE_STATUS_LABELS = {
   GIVEN:       'Dada ✓',
   GAP:         'Furo ✗',
   SUBSTITUTED: 'Substituída ↔',
+  REVOKED:     'Revertida',
 }
 
 /**
- * LessonLogModal — unified lesson registration modal for both teachers and admins.
- *
- * Props:
- *   visible       — whether the modal is open
- *   onClose       — callback to close the modal
- *   slot          — the WeekSlot data object from the API
- *   isAdmin       — whether the current user is an admin (unlocks extra actions)
+ * LessonLogModal — V4 simplified registration modal.
+ * PENDING  → 3 buttons: Cancelar, Criar Ocorrência (c/ confirmação), Aula Dada
+ * COMPLETED → editable if week OPEN, readonly if locked
+ * OCCURRENCE → readonly (always)
  */
 const LessonLogModal = ({ visible, onClose, slot, isAdmin = false }) => {
   useFocusTrap(visible)
@@ -45,31 +42,19 @@ const LessonLogModal = ({ visible, onClose, slot, isAdmin = false }) => {
   const [summary, setSummary] = useState('')
   const [notes, setNotes] = useState('')
   const [errorMessage, setErrorMessage] = useState('')
-  const [step, setStep] = useState(1)
-  const [occurrenceId, setOccurrenceId] = useState(null)
-  const [substitutionError, setSubstitutionError] = useState('')
   const [showReopenConfirm, setShowReopenConfirm] = useState(false)
-  const [showRevertConfirm, setShowRevertConfirm] = useState(false)
+  const [showOccurrenceConfirm, setShowOccurrenceConfirm] = useState(false)
 
   const upsertLogMutation = useUpsertLessonLog()
-  const createOccurrenceMutation = useCreateOccurrence()
-  const updateOccurrenceMutation = useUpdateOccurrence()
   const updateTimesheetStatusMutation = useUpdateTimesheetStatus()
-  const cancelOccurrenceMutation = useCancelOccurrence()
 
-  // Reset state when modal opens/closes
   useEffect(() => {
     if (visible && slot) {
       setSummary(slot.lesson_log_summary || '')
       setNotes(slot.lesson_log_notes || '')
       setErrorMessage('')
-      setSubstitutionError('')
-      setStep(1)
-      setOccurrenceId(slot.occurrence_id || null)
-    }
-    if (!visible) {
-      setStep(1)
-      setOccurrenceId(null)
+      setShowOccurrenceConfirm(false)
+      setShowReopenConfirm(false)
     }
   }, [visible, slot])
 
@@ -96,67 +81,6 @@ const LessonLogModal = ({ visible, onClose, slot, isAdmin = false }) => {
       const msg = err.response?.data?.detail || 'Erro ao guardar o registo. Tente novamente.'
       setErrorMessage(msg)
     }
-  }
-
-  const handleStartSubstitution = async () => {
-    setErrorMessage('')
-    setSubstitutionError('')
-
-    // Edge-case: already has a decided occurrence
-    if (slot.occurrence_id && slot.occurrence_decided_at) {
-      setErrorMessage('Já existe uma ocorrência registada para este bloco. Consulte Faltas & Ocorrências para a gerir.')
-      return
-    }
-
-    // Edge-case: timesheet closed
-    if (slot.week_timesheet_status === 'SUBMITTED' || slot.week_timesheet_status === 'APPROVED') {
-      setErrorMessage('A semana já foi submetida ou aprovada. Não é possível criar substituições.')
-      return
-    }
-
-    // If occurrence already exists but not decided, reuse it
-    if (slot.occurrence_id && !slot.occurrence_decided_at) {
-      setOccurrenceId(slot.occurrence_id)
-      setStep(2)
-      return
-    }
-
-    // Create occurrence
-    try {
-      const occurrence = await createOccurrenceMutation.mutateAsync({
-        scheduleOutputId: slot.schedule_output_id,
-      })
-      if (occurrence?.id) {
-        setOccurrenceId(occurrence.id)
-        setStep(2)
-      } else {
-        setErrorMessage('Não foi possível iniciar a substituição. Tente novamente.')
-      }
-    } catch (err) {
-      const msg = err.response?.data?.detail || 'Erro ao criar ocorrência. Tente novamente.'
-      setErrorMessage(msg)
-    }
-  }
-
-  const handleConfirmSubstitution = useCallback(async ({ substituteTeacherId, substituteSubjectId }) => {
-    setSubstitutionError('')
-    try {
-      await updateOccurrenceMutation.mutateAsync({
-        id: occurrenceId,
-        status: 'SUBSTITUTED',
-        substituteTeacherId,
-        substituteSubjectId,
-      })
-      onClose()
-    } catch (err) {
-      const msg = err.response?.data?.detail || 'Erro ao confirmar substituição. Tente novamente.'
-      setSubstitutionError(msg)
-    }
-  }, [occurrenceId, updateOccurrenceMutation, onClose])
-
-  const handleBackToStep1 = () => {
-    setStep(1)
-    setSubstitutionError('')
   }
 
   const handleReopenWeek = async () => {
@@ -187,9 +111,12 @@ const LessonLogModal = ({ visible, onClose, slot, isAdmin = false }) => {
   const currentStatus = slot.lesson_log_status || 'PENDING'
   const isCompleted = currentStatus === 'COMPLETED'
   const isOccurrence = currentStatus === 'OCCURRENCE'
-  const isRegistered = isCompleted || isOccurrence
+  const isPending = currentStatus === 'PENDING'
 
-  // Calculate if the slot is truly in the future (combining date and end_time)
+  const hasActiveOccurrence = Boolean(slot.occurrence_id) && slot.occurrence_status !== 'REVOKED'
+  const occurrenceDecided = Boolean(slot.occurrence_decided_at)
+  const occurrenceStatusLabel = OCCURRENCE_STATUS_LABELS[slot.occurrence_status] ?? slot.occurrence_status
+
   let isFuture = false
   if (slot.date && slot.timeslot?.end_time) {
     const endDateTime = new Date(`${slot.date}T${slot.timeslot.end_time}`)
@@ -198,44 +125,8 @@ const LessonLogModal = ({ visible, onClose, slot, isAdmin = false }) => {
     isFuture = !slot.is_past
   }
 
-  // Editing is locked when the timesheet is submitted/approved for the week
-  const isLocked = isFuture || (slot.week_timesheet_status === 'SUBMITTED' || slot.week_timesheet_status === 'APPROVED')
-
-  // Occurrence data (LessonOccurrence — created via admin /absences flow)
-  const hasOccurrence = Boolean(slot.occurrence_id)
-  const occurrenceDecided = Boolean(slot.occurrence_decided_at)
-  const occurrenceStatusLabel = OCCURRENCE_STATUS_LABELS[slot.occurrence_status] ?? slot.occurrence_status
-
-  // Whether admin can show substitution button for this slot
-  const canShowSubstitution = isAdmin && slot.is_past && slot.schedule_output_id && !occurrenceDecided && !isLocked
-
-  // WBS V3: Admin sees decision buttons when there's an OPEN (undecided) occurrence
-  const hasOpenOccurrence = isAdmin && hasOccurrence && !occurrenceDecided
-
-  const handleMarkGap = async () => {
-    setErrorMessage('')
-    if (!slot.occurrence_id) return
-    try {
-      await updateOccurrenceMutation.mutateAsync({
-        id: slot.occurrence_id,
-        status: 'GAP',
-      })
-      onClose()
-    } catch (err) {
-      setErrorMessage(err.response?.data?.detail || 'Erro ao marcar como furo.')
-    }
-  }
-
-  const handleCancelOccurrenceAction = async () => {
-    setErrorMessage('')
-    if (!slot.occurrence_id) return
-    try {
-      await cancelOccurrenceMutation.mutateAsync(slot.occurrence_id)
-      onClose()
-    } catch (err) {
-      setErrorMessage(err.response?.data?.detail || 'Erro ao cancelar ocorrência.')
-    }
-  }
+  const isWeekLocked = slot.week_timesheet_status === 'SUBMITTED' || slot.week_timesheet_status === 'APPROVED'
+  const canEdit = isCompleted && !isWeekLocked
 
   const statusInfo = STATUS_INFO[currentStatus] ?? STATUS_INFO.PENDING
 
@@ -249,8 +140,7 @@ const LessonLogModal = ({ visible, onClose, slot, isAdmin = false }) => {
     <CModal visible={visible} onClose={onClose} alignment="center">
       <CModalHeader>
         <CModalTitle>
-          {step === 1 ? 'Registo de Aula' : 'Substituição de Aula'}
-          {' '}
+          Registo de Aula{' '}
           <CBadge
             color={statusInfo.badge}
             className="ms-2"
@@ -275,15 +165,25 @@ const LessonLogModal = ({ visible, onClose, slot, isAdmin = false }) => {
           {slot.room && <div><strong>Sala:</strong> {slot.room?.name}</div>}
         </div>
 
-        {/* Occurrence status banner (admin only) */}
-        {hasOccurrence && (
-          <CAlert color={occurrenceDecided ? 'secondary' : 'warning'} className="mb-3 small py-2">
+        {/* Informative banner for occurrences */}
+        {hasActiveOccurrence && !occurrenceDecided && (
+          <CAlert color="warning" className="mb-3 small py-2">
             <CIcon icon={cilWarning} className="me-1" />
-            {occurrenceDecided
-              ? `Ocorrência decidida: ${occurrenceStatusLabel}`
-              : isAdmin
-                ? 'Ocorrência aberta — decida abaixo.'
-                : 'Ocorrência aberta — aguarda decisão.'}
+            Ocorrência registada. Geria em Faltas &amp; Ocorrências.
+          </CAlert>
+        )}
+        {hasActiveOccurrence && occurrenceDecided && (
+          <CAlert color="secondary" className="mb-3 small py-2">
+            <CIcon icon={cilWarning} className="me-1" />
+            Ocorrência decidida: {occurrenceStatusLabel}. Consulte Faltas &amp; Ocorrências.
+          </CAlert>
+        )}
+
+        {/* OCCURRENCE read-only banner */}
+        {isOccurrence && !hasActiveOccurrence && (
+          <CAlert color="warning" className="mb-3 small py-2">
+            <CIcon icon={cilWarning} className="me-1" />
+            Esta aula tem uma ocorrência registada. Contacte um administrador para reverter.
           </CAlert>
         )}
 
@@ -293,14 +193,14 @@ const LessonLogModal = ({ visible, onClose, slot, isAdmin = false }) => {
           </CAlert>
         )}
 
-        {isFuture && (
-          <CAlert color="warning" className="mb-3">
-            Esta aula ainda não terminou. O registo apenas estará disponível após a hora de término.
+        {isFuture && isPending && (
+          <CAlert color="info" className="mb-3 small">
+            Esta aula ainda não terminou. Pode preencher o sumário e criar ocorrência antecipadamente.
           </CAlert>
         )}
 
         {/* Locked week — read-only mode */}
-        {!isFuture && (slot.week_timesheet_status === 'SUBMITTED' || slot.week_timesheet_status === 'APPROVED') && (
+        {!isFuture && isWeekLocked && (
           <CAlert color="secondary" className="mb-3 d-flex align-items-center justify-content-between flex-wrap gap-2">
             <span>
               <strong>Semana {slot.week_timesheet_status === 'SUBMITTED' ? 'submetida' : 'aprovada'}</strong>
@@ -323,49 +223,61 @@ const LessonLogModal = ({ visible, onClose, slot, isAdmin = false }) => {
           </CAlert>
         )}
 
-        {step === 2 ? (
-          <SubstitutionStep
-            occurrenceId={occurrenceId}
-            onConfirm={handleConfirmSubstitution}
-            onBack={handleBackToStep1}
-            isLoading={updateOccurrenceMutation.isPending}
-            errorMessage={substitutionError}
-          />
-        ) : (
-          <>
-            {/* Lesson log form */}
-            <div className="mb-3">
-              <label htmlFor="lessonSummary" className="form-label fw-semibold">Sumário</label>
-              <CFormTextarea
-                id="lessonSummary"
-                rows={3}
-                placeholder="Sumário descritivo da aula..."
-                value={summary}
-                onChange={(e) => setSummary(e.target.value)}
-                disabled={isLocked}
-                maxLength={MAX_SUMMARY_LENGTH}
-              />
-              <div className="text-muted text-end small mt-1" style={{ fontSize: '0.7rem' }}>
-                {summary.length}/{MAX_SUMMARY_LENGTH}
-              </div>
-            </div>
-            <div className="mb-3">
-              <label htmlFor="lessonNotes" className="form-label fw-semibold">Notas Opcionais</label>
-              <CFormTextarea
-                id="lessonNotes"
-                rows={2}
-                placeholder="Anotações para uso interno ou partilha com direção..."
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                disabled={isLocked}
-                maxLength={MAX_NOTES_LENGTH}
-              />
-              <div className="text-muted text-end small mt-1" style={{ fontSize: '0.7rem' }}>
-                {notes.length}/{MAX_NOTES_LENGTH}
-              </div>
-            </div>
-          </>
+        {/* COMPLETED editable banner */}
+        {canEdit && (
+          <CAlert color="success" className="mb-3 small py-2">
+            <CIcon icon={cilCheckCircle} className="me-1" />
+            Aula registada. Pode editar o sumário e notas.
+          </CAlert>
         )}
+
+        {/* COMPLETED read-only banner (locked week) */}
+        {isCompleted && isWeekLocked && (
+          <CAlert color="success" className="mb-3 small py-2">
+            <CIcon icon={cilCheckCircle} className="me-1" />
+            Aula registada. Semana {slot.week_timesheet_status === 'SUBMITTED' ? 'submetida' : 'aprovada'} — modo de consulta.
+          </CAlert>
+        )}
+
+        {/* OCCURRENCE read-only banner */}
+        {isOccurrence && (
+          <CAlert color="warning" className="mb-3 small py-2">
+            <CIcon icon={cilXCircle} className="me-1" />
+            Ocorrência registada. Não é possível alterar. Contacte um administrador para reverter em Faltas &amp; Ocorrências.
+          </CAlert>
+        )}
+
+        {/* Lesson log form */}
+        <div className="mb-3">
+          <label htmlFor="lessonSummary" className="form-label fw-semibold">Sumário</label>
+          <CFormTextarea
+            id="lessonSummary"
+            rows={3}
+            placeholder="Sumário descritivo da aula..."
+            value={summary}
+            onChange={(e) => setSummary(e.target.value)}
+            disabled={!canEdit && !isPending}
+            maxLength={MAX_SUMMARY_LENGTH}
+          />
+          <div className="text-muted text-end small mt-1" style={{ fontSize: '0.7rem' }}>
+            {summary.length}/{MAX_SUMMARY_LENGTH}
+          </div>
+        </div>
+        <div className="mb-3">
+          <label htmlFor="lessonNotes" className="form-label fw-semibold">Notas Opcionais</label>
+          <CFormTextarea
+            id="lessonNotes"
+            rows={2}
+            placeholder="Anotações para uso interno ou partilha com direção..."
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            disabled={!canEdit && !isPending}
+            maxLength={MAX_NOTES_LENGTH}
+          />
+          <div className="text-muted text-end small mt-1" style={{ fontSize: '0.7rem' }}>
+            {notes.length}/{MAX_NOTES_LENGTH}
+          </div>
+        </div>
       </CModalBody>
 
       {showReopenConfirm && (
@@ -375,18 +287,11 @@ const LessonLogModal = ({ visible, onClose, slot, isAdmin = false }) => {
             O professor poderá editar as aulas novamente.
           </span>
           <div className="d-flex gap-2">
-            <CButton
-              color="secondary"
-              variant="outline"
-              size="sm"
-              onClick={() => setShowReopenConfirm(false)}
-            >
+            <CButton color="secondary" variant="outline" size="sm" onClick={() => setShowReopenConfirm(false)}>
               Cancelar
             </CButton>
             <CButton
-              color="warning"
-              size="sm"
-              className="text-white"
+              color="warning" size="sm" className="text-white"
               onClick={handleConfirmReopen}
               disabled={updateTimesheetStatusMutation.isPending}
             >
@@ -397,142 +302,77 @@ const LessonLogModal = ({ visible, onClose, slot, isAdmin = false }) => {
         </CAlert>
       )}
 
-      {showRevertConfirm && (
+      {showOccurrenceConfirm && (
         <CAlert color="warning" className="mx-3 mb-0 d-flex align-items-center justify-content-between flex-wrap gap-2">
           <span>
-            <strong>Reverter registo?</strong>{' '}
-            O estado da aula voltará a Pendente e as horas serão deduzidas do progresso.
+            <strong>Criar ocorrência?</strong>{' '}
+            Esta ação irá gerar uma ocorrência que requer intervenção administrativa. Tem a certeza?
           </span>
           <div className="d-flex gap-2">
-            <CButton
-              color="secondary"
-              variant="outline"
-              size="sm"
-              onClick={() => setShowRevertConfirm(false)}
-            >
+            <CButton color="secondary" variant="outline" size="sm" onClick={() => setShowOccurrenceConfirm(false)}>
               Cancelar
             </CButton>
             <CButton
-              color="danger"
-              size="sm"
-              className="text-white"
-              onClick={() => { setShowRevertConfirm(false); handleSubmit('PENDING') }}
+              color="warning" size="sm" className="text-white"
+              onClick={() => { setShowOccurrenceConfirm(false); handleSubmit('OCCURRENCE') }}
+              disabled={upsertLogMutation.isPending}
             >
-              Sim, reverter
+              {upsertLogMutation.isPending && <CSpinner size="sm" className="me-1" />}
+              Sim, criar ocorrência
             </CButton>
           </div>
         </CAlert>
       )}
 
-      {step === 1 && (
-        <CModalFooter>
-          {/* Left side: cancel + admin substitution action */}
-          <div className="d-flex gap-2">
-            <CButton color="secondary" variant="outline" onClick={onClose}>
-              Cancelar
-            </CButton>
+      <CModalFooter>
+        <div className="d-flex gap-2">
+          <CButton color="secondary" variant="outline" onClick={onClose}>
+            Cancelar
+          </CButton>
+        </div>
 
-            {/* Admin-only: start substitution wizard */}
-            {canShowSubstitution && (
+        <div className="d-flex gap-2">
+          {upsertLogMutation.isPending && <CSpinner size="sm" className="align-self-center" />}
+
+          {/* PENDING — 3 buttons */}
+          {isPending && (
+            <>
               <CButton
-                color="warning"
-                size="sm"
-                className="text-white"
-                onClick={handleStartSubstitution}
-                disabled={createOccurrenceMutation.isPending || upsertLogMutation.isPending}
-                title="Criar substituição para este bloco"
+                style={{ backgroundColor: 'var(--color-state-gap)', borderColor: 'var(--color-state-gap)', color: '#fff' }}
+                onClick={() => setShowOccurrenceConfirm(true)}
+                disabled={isWeekLocked || upsertLogMutation.isPending}
+                title="Criar ocorrência para este bloco"
               >
-                {createOccurrenceMutation.isPending ? (
-                  <CSpinner size="sm" className="me-1" />
-                ) : (
-                  <CIcon icon={cilPeople} className="me-1" />
-                )}
-                Substituição
+                <CIcon icon={cilXCircle} className="me-1" />
+                Criar Ocorrência
               </CButton>
-            )}
-          </div>
 
-          {/* Right side: lesson log action buttons */}
-          <div className="d-flex gap-2">
-            {upsertLogMutation.isPending && <CSpinner size="sm" className="align-self-center" />}
+              <CButton
+                style={{ backgroundColor: 'var(--color-state-given)', borderColor: 'var(--color-state-given)', color: '#fff' }}
+                onClick={() => handleSubmit('COMPLETED')}
+                disabled={isFuture || isWeekLocked || upsertLogMutation.isPending}
+                title="Marcar aula como dada"
+              >
+                <CIcon icon={cilCheckCircle} className="me-1" />
+                Aula Dada
+              </CButton>
+            </>
+          )}
 
-            {/* WBS V3 Fase 3: Admin decision buttons for OPEN occurrences */}
-            {hasOpenOccurrence ? (
-              <>
-                <CButton
-                  style={{ backgroundColor: 'var(--color-state-gap)', borderColor: 'var(--color-state-gap)', color: '#fff' }}
-                  onClick={handleMarkGap}
-                  disabled={updateOccurrenceMutation.isPending || isLocked}
-                  title="Marcar esta falta como furo"
-                >
-                  <CIcon icon={cilXCircle} className="me-1" />
-                  {updateOccurrenceMutation.isPending ? <CSpinner size="sm" /> : 'Furo'}
-                </CButton>
-                <CButton
-                  color="warning"
-                  size="sm"
-                  className="text-white"
-                  onClick={handleStartSubstitution}
-                  disabled={createOccurrenceMutation.isPending || isLocked}
-                  title="Encontrar professor substituto"
-                >
-                  <CIcon icon={cilPeople} className="me-1" />
-                  Substituição
-                </CButton>
-                <CButton
-                  color="secondary"
-                  variant="outline"
-                  size="sm"
-                  onClick={handleCancelOccurrenceAction}
-                  disabled={cancelOccurrenceMutation.isPending || isLocked}
-                  title="Cancelar esta ocorrência e voltar ao estado pendente"
-                >
-                  Cancelar
-                </CButton>
-              </>
-            ) : (
-              <>
-                {isRegistered && (
-                  <CButton
-                    color="secondary"
-                    variant="outline"
-                    onClick={() => setShowRevertConfirm(true)}
-                    disabled={upsertLogMutation.isPending || isLocked}
-                    title="Reverter para pendente"
-                  >
-                    <CIcon icon={cilActionUndo} className="me-1" />
-                    Reverter
-                  </CButton>
-                )}
-
-                {!isOccurrence && (
-                  <CButton
-                    style={{ backgroundColor: 'var(--color-state-gap)', borderColor: 'var(--color-state-gap)', color: '#fff' }}
-                    onClick={() => handleSubmit('OCCURRENCE')}
-                    disabled={isFuture || upsertLogMutation.isPending || isLocked}
-                    title="Registar que a aula não foi dada"
-                  >
-                    <CIcon icon={cilXCircle} className="me-1" />
-                    Registar Falta
-                  </CButton>
-                )}
-
-                {!isCompleted && !hasOpenOccurrence && (
-                  <CButton
-                    style={{ backgroundColor: 'var(--color-state-given)', borderColor: 'var(--color-state-given)', color: '#fff' }}
-                    onClick={() => handleSubmit('COMPLETED')}
-                    disabled={isFuture || upsertLogMutation.isPending || isLocked}
-                    title="Marcar aula como dada"
-                  >
-                    <CIcon icon={cilCheckCircle} className="me-1" />
-                    Aula Dada
-                  </CButton>
-                )}
-              </>
-            )}
-          </div>
-        </CModalFooter>
-      )}
+          {/* COMPLETED + OPEN — Guardar alterações */}
+          {canEdit && (
+            <CButton
+              color="primary"
+              onClick={() => handleSubmit('COMPLETED')}
+              disabled={upsertLogMutation.isPending}
+              title="Guardar alterações ao sumário e notas"
+            >
+              <CIcon icon={cilCheckCircle} className="me-1" />
+              Guardar alterações
+            </CButton>
+          )}
+        </div>
+      </CModalFooter>
     </CModal>
   )
 }

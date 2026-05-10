@@ -40,6 +40,7 @@ class LessonOccurrenceStatus(str, enum.Enum):
     GIVEN = "GIVEN"
     GAP = "GAP"
     SUBSTITUTED = "SUBSTITUTED"
+    REVOKED = "REVOKED"
 
 class LessonLogStatus(str, enum.Enum):
     """Estado de execução de um bloco de aula gerado pelo Solver."""

@@ -3,7 +3,7 @@
 Casos tratados:
   1. Tabelas reais existem mas alembic_version não → stamp head.
   2. alembic_version existe mas tabelas core (user) nunca foram criadas
-     e não há outras tabelas → stamp base e re-upgrade.
+     e não há outras tabelas → erro com instruções para re-seed.
   3. alembic_version existe, tabelas core faltam e há schema parcial → erro manual.
 """
 
@@ -74,9 +74,16 @@ def repair_migrations() -> None:
     if has_version and not has_user:
         non_version_count = _count_non_version_tables(engine)
         if non_version_count == 0:
-            print("[repair_migrations] BD inconsistente detetada — a fazer reset para base.")
-            subprocess.run(["alembic", "stamp", "base"], check=True)
-            return
+            print(
+                "[repair_migrations] ERRO: alembic_version existe mas nenhuma tabela core foi encontrada.\n"
+                "    Isto acontece tipicamente após executar um script de seed que apagou\n"
+                "    manualmente as tabelas (ex: seed_data_small_realistic.py).\n"
+                "    Corra o seed_data.py com --reset para reconstruir a BD corretamente:\n"
+                "      docker compose exec backend python seed_data.py --profile small-realistic --reset\n"
+            )
+            raise SystemExit(
+                "[repair_migrations] ERRO: BD inconsistente — alembic_version sem tabelas core."
+            )
         else:
             raise SystemExit(
                 "[repair_migrations] ERRO: alembic_version existe mas tabelas core faltam "

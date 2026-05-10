@@ -475,7 +475,7 @@ async def get_teacher_progress(
             models.ClassSubjectLink.teacher_id == teacher_id,
         )
         .options(
-            selectinload(models.ClassSubjectLink.class_),
+            selectinload(models.ClassSubjectLink.class_).selectinload(models.Class.course),
             selectinload(models.ClassSubjectLink.subject).selectinload(models.Subject.modules),
         )
     )
@@ -508,15 +508,18 @@ async def get_teacher_progress(
         )
         progress_result = await db.execute(progress_query)
         progress_records = progress_result.scalars().all()
-        progress_map = {p.module_id: p for p in progress_records}
-    else:
-        progress_map = {}
+        progress_map = {(p.class_id, p.module_id): p for p in progress_records}
 
     # 4. Construir dados de disciplinas com progresso por turma
     for link in links:
         if not link.class_ or not link.subject:
             continue
-        subject_data = _build_subject_with_progress(link.subject, progress_map)
+        progress_map_for_class = {
+            module_id: p
+            for (c_id, module_id), p in progress_map.items()
+            if c_id == link.class_id
+        }
+        subject_data = _build_subject_with_progress(link.subject, progress_map_for_class)
         classes_map[link.class_id]["subjects"].append(subject_data)
 
     # 5. Ordenar disciplinas alfabeticamente dentro de cada turma

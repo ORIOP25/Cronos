@@ -44,7 +44,7 @@ def upsert_lesson_log_sync(
     timeslot = output.timeslot
     from datetime import timezone
     end_datetime = datetime.combine(output.date, timeslot.end_time, tzinfo=timezone.utc)
-    if payload.status in (models.LessonLogStatus.COMPLETED, models.LessonLogStatus.OCCURRENCE):
+    if payload.status == models.LessonLogStatus.COMPLETED:
         if end_datetime > datetime.now(timezone.utc):
             raise HTTPException(status_code=400, detail="Não é possível registar estado para uma aula que ainda não terminou.")
 
@@ -72,23 +72,7 @@ def upsert_lesson_log_sync(
     if payload.status == models.LessonLogStatus.COMPLETED and occurrence:
         raise HTTPException(status_code=400, detail="Não pode concluir uma aula que tem uma Falta/Substituição registada.")
 
-    # 5. WBS V3 Fase 4: Bloquear registo em blocos de substituição (read-only)
-    # Estes blocos foram criados para o professor substituto. A contabilidade
-    # já foi aplicada pelo admin ao decidir SUBSTITUTED.
-    # Detectamos verificando se há uma LessonOccurrence noutro bloco
-    # onde este professor é o substitute_teacher_id.
-    is_substitution_block = db.query(models.LessonOccurrence).filter(
-        models.LessonOccurrence.substitute_teacher_id == output.lesson.teacher_id,
-        models.LessonOccurrence.date == output.date,
-        models.LessonOccurrence.organization_id == organization_id,
-        models.LessonOccurrence.status == models.LessonOccurrenceStatus.SUBSTITUTED,
-    ).first() is not None
-
-    if is_substitution_block:
-        raise HTTPException(
-            status_code=400,
-            detail="Este é um bloco de substituição. O registo da aula já foi contabilizado pelo administrador.",
-        )
+    # V4: Blocos de substituição são interativos — o substituto pode registar normalmente.
 
     # 5. Obter ou criar LessonLog
     llog = db.query(models.LessonLog).filter(
@@ -151,6 +135,7 @@ def upsert_lesson_log_sync(
             db.flush()  # ensure the LessonLog status change is visible to downstream queries
             existing_occ = db.query(models.LessonOccurrence).filter(
                 models.LessonOccurrence.schedule_output_id == schedule_output_id,
+                models.LessonOccurrence.status != models.LessonOccurrenceStatus.REVOKED,
             ).first()
             if existing_occ is None:
                 occurrence_service.create_occurrence_from_block_sync(

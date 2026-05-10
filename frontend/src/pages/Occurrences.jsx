@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import PropTypes from 'prop-types'
 import { useSearchParams } from 'react-router-dom'
+import { useQueryClient } from '@tanstack/react-query'
 import {
   CCard, CCardBody, CCardHeader, CCol, CRow, CAlert, CBadge, CSpinner,
   CButton, CFormSelect, CFormInput, CFormLabel, CTabs, CTabList, CTab,
@@ -11,7 +12,7 @@ import {
 import CIcon from '@coreui/icons-react'
 import { cilWarning, cilCheckCircle, cilBan, cilPeople, cilClock } from '@coreui/icons'
 import {
-  useOccurrences, useDebts, useUpdateOccurrence,
+  useOccurrences, useDebts, useUpdateOccurrence, useCancelOccurrence,
   useSubstituteRecommendations, useClasses, useTeachers, useSubjects,
 } from '../hooks/useSchoolData'
 import { useAuthStore } from '../store'
@@ -25,38 +26,44 @@ const STATUS_LABELS = {
   GIVEN: 'Dada',
   GAP: 'Furo',
   SUBSTITUTED: 'Substituída',
+  REVOKED: 'Revertida',
 }
 
 const STATUS_COLORS = {
   GIVEN: 'success',
   GAP: 'danger',
   SUBSTITUTED: 'warning',
+  REVOKED: 'secondary',
 }
 
 const STATUS_ICONS = {
   GIVEN: cilCheckCircle,
   GAP: cilBan,
   SUBSTITUTED: cilWarning,
+  REVOKED: cilClock,
 }
 
 const OPERATIONAL_STATE_LABELS = {
-  OPEN_PENDING: 'Pendente de decisão',
+  OPEN_PENDING: 'Pendente',
   CLOSED: 'Resolvida',
+  REVOKED: 'Revertida',
 }
 
 const OPERATIONAL_STATE_COLORS = {
-  OPEN_PENDING: 'info',
+  OPEN_PENDING: 'warning',
   CLOSED: 'secondary',
+  REVOKED: 'secondary',
 }
 
 const OPERATIONAL_STATE_ICONS = {
   OPEN_PENDING: cilClock,
   CLOSED: cilCheckCircle,
+  REVOKED: cilClock,
 }
 
 const RESOLUTION_FILTERS = {
-  pending: 'Pendentes',
-  resolved: 'Resolvidas',
+  pending: 'Decisões Pendentes',
+  historical: 'Histórico',
   all: 'Todas',
 }
 
@@ -143,6 +150,9 @@ const buildDecisionSummary = (occurrence) => {
 }
 
 const getOperationalState = (occurrence) => {
+  if (occurrence.status === 'REVOKED') {
+    return 'REVOKED'
+  }
   if (!occurrence.decided_at) {
     return 'OPEN_PENDING'
   }
@@ -156,12 +166,15 @@ const EditOccurrenceModal = ({
   occurrence,
   onClose,
   onSave,
+  onRevert,
   isSaving,
   teacherById,
   subjectById,
   errorMessage,
 }) => {
-  const [status, setStatus] = useState(occurrence.status)
+  const [status, setStatus] = useState(
+    occurrence.status === 'GIVEN' ? 'GAP' : (occurrence.status || 'GAP')
+  )
   const [selectedRecommendation, setSelectedRecommendation] = useState(
     occurrence.substitute_teacher_id && occurrence.substitute_subject_id
       ? `${occurrence.substitute_teacher_id}:${occurrence.substitute_subject_id}`
@@ -270,13 +283,6 @@ const EditOccurrenceModal = ({
           <CFormLabel>Decisão operacional</CFormLabel>
           <CButtonGroup className="w-100" role="group" aria-label="Estado da aula">
             <CButton
-              color={status === 'GIVEN' ? 'primary' : 'secondary'}
-              variant={status === 'GIVEN' ? undefined : 'outline'}
-              onClick={() => setStatus('GIVEN')}
-            >
-              Dada
-            </CButton>
-            <CButton
               color={status === 'GAP' ? 'danger' : 'secondary'}
               variant={status === 'GAP' ? undefined : 'outline'}
               onClick={() => setStatus('GAP')}
@@ -367,6 +373,11 @@ const EditOccurrenceModal = ({
       </CModalBody>
       <CModalFooter>
         <CButton color="secondary" variant="outline" onClick={onClose}>{TXT.CANCEL}</CButton>
+        {onRevert && (
+          <CButton color="secondary" variant="outline" onClick={onRevert} disabled={isSaving}>
+            Reverter
+          </CButton>
+        )}
         <CButton
           color="primary"
           onClick={handleSave}
@@ -401,6 +412,7 @@ EditOccurrenceModal.propTypes = {
   }).isRequired,
   onClose: PropTypes.func.isRequired,
   onSave: PropTypes.func.isRequired,
+  onRevert: PropTypes.func,
   isSaving: PropTypes.bool,
   teacherById: PropTypes.instanceOf(Map).isRequired,
   subjectById: PropTypes.instanceOf(Map).isRequired,
@@ -478,11 +490,11 @@ DebtsPanel.propTypes = {
 // ---------------------------------------------------------------------------
 // Painel de Ocorrências
 // ---------------------------------------------------------------------------
-const OccurrencesPanel = ({ classId, dateFrom, dateTo, initialOccurrenceId }) => {
+const OccurrencesPanel = ({ classId, dateFrom, dateTo, initialOccurrenceId, forcedFilter }) => {
   const user = useAuthStore((state) => state.user)
   const isAdmin = user?.role === 'admin'
   const [editingOccurrence, setEditingOccurrence] = useState(null)
-  const [resolutionFilter, setResolutionFilter] = useState('all')
+  const [resolutionFilter, setResolutionFilter] = useState(forcedFilter || 'all')
   const [saveErrorMessage, setSaveErrorMessage] = useState('')
   const [hasAppliedInitialFocus, setHasAppliedInitialFocus] = useState(false)
   const { data: occurrences = [], isLoading, isError } = useOccurrences({
@@ -493,6 +505,9 @@ const OccurrencesPanel = ({ classId, dateFrom, dateTo, initialOccurrenceId }) =>
   const { data: teachers = [] } = useTeachers()
   const { data: subjects = [] } = useSubjects()
   const updateMutation = useUpdateOccurrence()
+  const cancelMutation = useCancelOccurrence()
+  const queryClient = useQueryClient()
+  const [expandedId, setExpandedId] = useState(null)
 
   const teacherById = useMemo(
     () => new Map(teachers.map((teacher) => [teacher.id, teacher.name])),
@@ -516,10 +531,10 @@ const OccurrencesPanel = ({ classId, dateFrom, dateTo, initialOccurrenceId }) =>
 
   const visibleOccurrences = useMemo(() => {
     if (resolutionFilter === 'pending') {
-      return sortedOccurrences.filter((occ) => !occ.decided_at)
+      return sortedOccurrences.filter((occ) => !occ.decided_at && occ.status !== 'REVOKED')
     }
-    if (resolutionFilter === 'resolved') {
-      return sortedOccurrences.filter((occ) => Boolean(occ.decided_at))
+    if (resolutionFilter === 'historical') {
+      return sortedOccurrences.filter((occ) => Boolean(occ.decided_at) || occ.status === 'REVOKED')
     }
     return sortedOccurrences
   }, [resolutionFilter, sortedOccurrences])
@@ -538,6 +553,12 @@ const OccurrencesPanel = ({ classId, dateFrom, dateTo, initialOccurrenceId }) =>
     setEditingOccurrence(null)
     setSaveErrorMessage('')
   }, [initialOccurrenceId])
+
+  useEffect(() => {
+    if (forcedFilter) {
+      setResolutionFilter(forcedFilter)
+    }
+  }, [forcedFilter])
 
   useEffect(() => {
     if (!initialOccurrenceId || hasAppliedInitialFocus) {
@@ -567,15 +588,52 @@ const OccurrencesPanel = ({ classId, dateFrom, dateTo, initialOccurrenceId }) =>
   }
 
   const openEditModal = (occurrence) => {
-    if (!isAdmin || occurrence.decided_at) return
+    if (!isAdmin) return
+    // V4: REVOKED and GIVEN (decided) are read-only
+    if (occurrence.status === 'REVOKED' || (occurrence.decided_at && occurrence.status === 'GIVEN')) return
     setEditingOccurrence(occurrence)
     setSaveErrorMessage('')
+  }
+
+  const handleMarkGap = (occurrence) => {
+    if (!isAdmin) return
+    updateMutation.mutate(
+      { id: occurrence.id, status: 'GAP' },
+      {
+        onSuccess: () => {
+          void queryClient.invalidateQueries({ queryKey: ['occurrences'] })
+          void queryClient.invalidateQueries({ queryKey: ['weekSchedule'] })
+        },
+        onError: (error) => setSaveErrorMessage(buildUpdateErrorMessage(error)),
+      },
+    )
+  }
+
+  const handleStartSubstitution = (occurrence) => {
+    // Opens the decision modal for substitution — user selects substitute
+    setEditingOccurrence(occurrence)
+    setSaveErrorMessage('')
+  }
+
+  const handleRevert = (occurrence) => {
+    if (!isAdmin) return
+    cancelMutation.mutate(occurrence.id, {
+      onSuccess: () => {
+        void queryClient.invalidateQueries({ queryKey: ['occurrences'] })
+        void queryClient.invalidateQueries({ queryKey: ['weekSchedule'] })
+      },
+      onError: (error) => setSaveErrorMessage(buildUpdateErrorMessage(error)),
+    })
   }
 
   const handleSave = (payload) => {
     setSaveErrorMessage('')
     updateMutation.mutate(payload, {
-      onSuccess: () => closeEditModal(),
+      onSuccess: () => {
+        closeEditModal()
+        void queryClient.invalidateQueries({ queryKey: ['occurrences'] })
+        void queryClient.invalidateQueries({ queryKey: ['weekSchedule'] })
+      },
       onError: (error) => setSaveErrorMessage(buildUpdateErrorMessage(error)),
     })
   }
@@ -618,7 +676,8 @@ const OccurrencesPanel = ({ classId, dateFrom, dateTo, initialOccurrenceId }) =>
           occurrence={editingOccurrence}
           onClose={closeEditModal}
           onSave={handleSave}
-          isSaving={updateMutation.isPending}
+          onRevert={() => { closeEditModal(); handleRevert(editingOccurrence) }}
+          isSaving={updateMutation.isPending || cancelMutation.isPending}
           teacherById={teacherById}
           subjectById={subjectById}
           errorMessage={saveErrorMessage}
@@ -627,37 +686,42 @@ const OccurrencesPanel = ({ classId, dateFrom, dateTo, initialOccurrenceId }) =>
 
       <div className="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
         <div className="text-muted small">
-          {pendingCount} pendentes, {resolvedCount} resolvidas
+          {forcedFilter === 'pending' && `${pendingCount} pendentes`}
+          {forcedFilter === 'historical' && `${resolvedCount} no histórico`}
+          {!forcedFilter && `${pendingCount} pendentes, ${resolvedCount} resolvidas`}
         </div>
-        <CButtonGroup size="sm" role="group" aria-label="Filtro de resolução">
-          <CButton
-            color={resolutionFilter === 'pending' ? 'primary' : 'secondary'}
-            variant={resolutionFilter === 'pending' ? undefined : 'outline'}
-            onClick={() => setResolutionFilter('pending')}
-          >
-            {RESOLUTION_FILTERS.pending} ({pendingCount})
-          </CButton>
-          <CButton
-            color={resolutionFilter === 'resolved' ? 'primary' : 'secondary'}
-            variant={resolutionFilter === 'resolved' ? undefined : 'outline'}
-            onClick={() => setResolutionFilter('resolved')}
-          >
-            {RESOLUTION_FILTERS.resolved} ({resolvedCount})
-          </CButton>
-          <CButton
-            color={resolutionFilter === 'all' ? 'primary' : 'secondary'}
-            variant={resolutionFilter === 'all' ? undefined : 'outline'}
-            onClick={() => setResolutionFilter('all')}
-          >
-            {RESOLUTION_FILTERS.all} ({sortedOccurrences.length})
-          </CButton>
-        </CButtonGroup>
+        {/* Show filter buttons only when no forcedFilter (standalone mode) */}
+        {!forcedFilter && (
+          <CButtonGroup size="sm" role="group" aria-label="Filtro de resolução">
+            <CButton
+              color={resolutionFilter === 'pending' ? 'primary' : 'secondary'}
+              variant={resolutionFilter === 'pending' ? undefined : 'outline'}
+              onClick={() => setResolutionFilter('pending')}
+            >
+              {RESOLUTION_FILTERS.pending} ({pendingCount})
+            </CButton>
+            <CButton
+              color={resolutionFilter === 'historical' ? 'primary' : 'secondary'}
+              variant={resolutionFilter === 'historical' ? undefined : 'outline'}
+              onClick={() => setResolutionFilter('historical')}
+            >
+              {RESOLUTION_FILTERS.historical} ({resolvedCount})
+            </CButton>
+            <CButton
+              color={resolutionFilter === 'all' ? 'primary' : 'secondary'}
+              variant={resolutionFilter === 'all' ? undefined : 'outline'}
+              onClick={() => setResolutionFilter('all')}
+            >
+              {RESOLUTION_FILTERS.all} ({sortedOccurrences.length})
+            </CButton>
+          </CButtonGroup>
+        )}
       </div>
 
       {visibleOccurrences.length === 0 && (
         <CAlert color="light" className="mb-0">
           {resolutionFilter === 'pending' && 'Sem ocorrências pendentes com os filtros atuais.'}
-          {resolutionFilter === 'resolved' && 'Sem ocorrências resolvidas com os filtros atuais.'}
+          {resolutionFilter === 'historical' && 'Sem ocorrências no histórico com os filtros atuais.'}
           {resolutionFilter === 'all' && 'Sem ocorrências para apresentar.'}
         </CAlert>
       )}
@@ -666,30 +730,47 @@ const OccurrencesPanel = ({ classId, dateFrom, dateTo, initialOccurrenceId }) =>
         <CTable hover responsive className="mb-0">
         <CTableHead color="light">
           <CTableRow>
-            <CTableHeaderCell>Data</CTableHeaderCell>
+            <CTableHeaderCell>Data/Hora</CTableHeaderCell>
             <CTableHeaderCell>Turma</CTableHeaderCell>
             <CTableHeaderCell>Disciplina</CTableHeaderCell>
             <CTableHeaderCell>Estado</CTableHeaderCell>
+            <CTableHeaderCell>Sumário</CTableHeaderCell>
             <CTableHeaderCell>Docente Previsto</CTableHeaderCell>
-            <CTableHeaderCell>Docente Definitivo</CTableHeaderCell>
-            <CTableHeaderCell>Decisão Final</CTableHeaderCell>
-            <CTableHeaderCell className="text-end">Ação</CTableHeaderCell>
+            <CTableHeaderCell>Docente Efetivo</CTableHeaderCell>
+            <CTableHeaderCell className="text-end">Ações</CTableHeaderCell>
           </CTableRow>
         </CTableHead>
         <CTableBody>
           {visibleOccurrences.map((occ) => {
             const plannedTeacherName = resolveName(teacherById, occ.planned_teacher_id, 'Prof.')
             const executionSummary = buildExecutionSummary(occ, teacherById, subjectById)
-            const decisionSummary = buildDecisionSummary(occ)
             const operationalState = getOperationalState(occ)
-            const outcomeColor = STATUS_COLORS[occ.status] ?? 'secondary'
-            const outcomeIcon = STATUS_ICONS[occ.status] ?? cilClock
             const classLabel = occ.class_name ?? '—'
             const subjectLabel = occ.subject_name
               ?? resolveName(subjectById, occ.subject_id, 'Disciplina')
+            const timeRange = occ.timeslot_start_time && occ.timeslot_end_time
+              ? `${occ.timeslot_start_time.slice(0,5)}–${occ.timeslot_end_time.slice(0,5)}`
+              : ''
+            const summaryPreview = occ.lesson_log_summary
+              ? (occ.lesson_log_summary.length > 80 ? occ.lesson_log_summary.slice(0, 80) + '…' : occ.lesson_log_summary)
+              : '—'
+            const isUndecided = !occ.decided_at && occ.status !== 'REVOKED'
+            const isDecided = occ.decided_at && occ.status !== 'REVOKED' && occ.status !== 'GIVEN'
+            const isExpanded = expandedId === occ.id
+            const hasDetail = occ.lesson_log_summary || occ.lesson_log_notes
+            const decisionSummary = buildDecisionSummary(occ)
             return (
-            <CTableRow key={occ.id}>
-              <CTableDataCell className="fw-semibold">{formatDate(occ.date)}</CTableDataCell>
+            <React.Fragment key={occ.id}>
+            <CTableRow
+              className={`${occ.status === 'REVOKED' ? 'opacity-50' : ''} ${hasDetail ? 'cursor-pointer' : ''}`}
+              onClick={() => hasDetail && setExpandedId(isExpanded ? null : occ.id)}
+              role={hasDetail ? 'button' : undefined}
+              tabIndex={hasDetail ? 0 : undefined}
+              onKeyDown={(e) => { if (hasDetail && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); setExpandedId(isExpanded ? null : occ.id) }}}
+            >
+              <CTableDataCell className="fw-semibold">
+                {formatDate(occ.date)}{timeRange ? `, ${timeRange}` : ''}
+              </CTableDataCell>
               <CTableDataCell className="fw-semibold">{classLabel}</CTableDataCell>
               <CTableDataCell>{subjectLabel}</CTableDataCell>
               <CTableDataCell>
@@ -698,23 +779,75 @@ const OccurrencesPanel = ({ classId, dateFrom, dateTo, initialOccurrenceId }) =>
                   {OPERATIONAL_STATE_LABELS[operationalState] ?? operationalState}
                 </CBadge>
               </CTableDataCell>
+              <CTableDataCell>
+                <small className={`text-muted ${hasDetail ? 'text-decoration-underline' : ''}`}>
+                  {summaryPreview}
+                  {hasDetail && (
+                    <span className="ms-1">{isExpanded ? '▲' : '▼'}</span>
+                  )}
+                </small>
+              </CTableDataCell>
               <CTableDataCell>{plannedTeacherName}</CTableDataCell>
               <CTableDataCell className="fw-semibold">{executionSummary}</CTableDataCell>
-              <CTableDataCell>
-                <small className="text-muted">{decisionSummary}</small>
-              </CTableDataCell>
-              <CTableDataCell className="text-end">
-                <CButton
-                  color="primary"
-                  size="sm"
-                  variant="outline"
-                  onClick={() => openEditModal(occ)}
-                  disabled={!isAdmin || Boolean(occ.decided_at)}
-                >
-                  {!isAdmin ? 'Sem permissão' : (occ.decided_at ? 'Fechada' : 'Decidir')}
-                </CButton>
+              <CTableDataCell className="text-end" onClick={(e) => e.stopPropagation()}>
+                <div className="d-flex gap-1 justify-content-end">
+                  {isUndecided && (
+                    <CButton color="primary" size="sm" variant="outline" onClick={() => openEditModal(occ)}>
+                      Decidir
+                    </CButton>
+                  )}
+                  {isDecided && (
+                    <CButton color="secondary" size="sm" variant="outline" onClick={() => handleRevert(occ)}>
+                      Reverter
+                    </CButton>
+                  )}
+                  {!isUndecided && !isDecided && (
+                    <span className="text-muted small">—</span>
+                  )}
+                </div>
               </CTableDataCell>
             </CTableRow>
+            {isExpanded && (
+              <CTableRow key={`${occ.id}-detail`} className="bg-light">
+                <CTableDataCell colSpan={8} className="py-3">
+                  <div style={{ fontSize: '0.85rem' }}>
+                    {occ.lesson_log_summary && (
+                      <div className="mb-2">
+                        <strong>Sumário completo:</strong>
+                        <p className="mb-1 mt-1 text-muted">{occ.lesson_log_summary}</p>
+                      </div>
+                    )}
+                    {occ.lesson_log_notes && (
+                      <div className="mb-2">
+                        <strong>Notas:</strong>
+                        <p className="mb-1 mt-1 text-muted">{occ.lesson_log_notes}</p>
+                      </div>
+                    )}
+                    <div className="d-flex flex-wrap gap-4">
+                      {occ.created_at && (
+                        <div>
+                          <strong>Criada:</strong>{' '}
+                          <span className="text-muted">{formatDateTime(occ.created_at)}</span>
+                        </div>
+                      )}
+                      {occ.decided_at && (
+                        <div>
+                          <strong>Decidida:</strong>{' '}
+                          <span className="text-muted">{formatDateTime(occ.decided_at)}</span>
+                        </div>
+                      )}
+                      {occ.decided_by_user_id && (
+                        <div>
+                          <strong>Decisor:</strong>{' '}
+                          <span className="text-muted">{buildDeciderDisplayName(occ)}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </CTableDataCell>
+              </CTableRow>
+            )}
+            </React.Fragment>
             )
           })}
         </CTableBody>
@@ -729,6 +862,7 @@ OccurrencesPanel.propTypes = {
   dateFrom: PropTypes.string,
   dateTo: PropTypes.string,
   initialOccurrenceId: PropTypes.number,
+  forcedFilter: PropTypes.string,
 }
 
 // ---------------------------------------------------------------------------
@@ -742,18 +876,19 @@ const Occurrences = () => {
   const initialDateTo = searchParams.get('date_to') ?? ''
   const parsedOccurrenceId = Number.parseInt(searchParams.get('occurrence_id') ?? '', 10)
   const initialOccurrenceId = Number.isNaN(parsedOccurrenceId) ? undefined : parsedOccurrenceId
+  const statusParam = searchParams.get('status') ?? ''
 
   const [classFilter, setClassFilter] = useState(initialClassFilter)
   const [dateFrom, setDateFrom] = useState(initialDateFrom)
   const [dateTo, setDateTo] = useState(initialDateTo)
-  const [activeTab, setActiveTab] = useState('occurrences')
+  const [activeTab, setActiveTab] = useState(statusParam === 'OPEN' ? 'occurrences' : 'occurrences')
 
   useEffect(() => {
     setClassFilter(initialClassFilter)
     setDateFrom(initialDateFrom)
     setDateTo(initialDateTo)
     setActiveTab('occurrences')
-  }, [initialClassFilter, initialDateFrom, initialDateTo, initialOccurrenceId])
+  }, [initialClassFilter, initialDateFrom, initialDateTo])
 
   const { data: classes = [] } = useClasses()
 
@@ -814,17 +949,57 @@ const Occurrences = () => {
       {/* Tabs */}
       <CTabs activeItemKey={activeTab} onChange={setActiveTab}>
         <CTabList variant="underline-border" className="mb-3">
+          <CTab itemKey="occurrences">
+            <CIcon icon={cilClock} className="me-1" />
+            Decisões Pendentes
+          </CTab>
+          <CTab itemKey="historical">
+            <CIcon icon={cilCheckCircle} className="me-1" />
+            Histórico
+          </CTab>
           <CTab itemKey="debts">
             <CIcon icon={cilWarning} className="me-1" />
             Dívidas de Horas
           </CTab>
-          <CTab itemKey="occurrences">
-            <CIcon icon={cilClock} className="me-1" />
-            Ocorrências Registadas
-          </CTab>
         </CTabList>
 
         <CTabContent>
+          {/* Tab: Decisões Pendentes */}
+          <CTabPanel className="p-0" itemKey="occurrences">
+            <CCard className="border-0 shadow-sm">
+              <CCardHeader className="bg-transparent fw-semibold">
+                Decisões Pendentes
+              </CCardHeader>
+              <CCardBody>
+                <OccurrencesPanel
+                  classId={classFilter}
+                  dateFrom={dateFrom}
+                  dateTo={dateTo}
+                  initialOccurrenceId={initialOccurrenceId}
+                  forcedFilter="pending"
+                />
+              </CCardBody>
+            </CCard>
+          </CTabPanel>
+
+          {/* Tab: Histórico */}
+          <CTabPanel className="p-0" itemKey="historical">
+            <CCard className="border-0 shadow-sm">
+              <CCardHeader className="bg-transparent fw-semibold">
+                Histórico de Ocorrências
+              </CCardHeader>
+              <CCardBody>
+                <OccurrencesPanel
+                  classId={classFilter}
+                  dateFrom={dateFrom}
+                  dateTo={dateTo}
+                  initialOccurrenceId={initialOccurrenceId}
+                  forcedFilter="historical"
+                />
+              </CCardBody>
+            </CCard>
+          </CTabPanel>
+
           {/* Tab: Dívidas */}
           <CTabPanel className="p-0" itemKey="debts">
             <CCard className="border-0 shadow-sm">
@@ -833,23 +1008,6 @@ const Occurrences = () => {
               </CCardHeader>
               <CCardBody>
                 <DebtsPanel classId={classFilter} />
-              </CCardBody>
-            </CCard>
-          </CTabPanel>
-
-          {/* Tab: Ocorrências */}
-          <CTabPanel className="p-0" itemKey="occurrences">
-            <CCard className="border-0 shadow-sm">
-              <CCardHeader className="bg-transparent fw-semibold">
-                Ocorrências Registadas
-              </CCardHeader>
-              <CCardBody>
-                <OccurrencesPanel
-                  classId={classFilter}
-                  dateFrom={dateFrom}
-                  dateTo={dateTo}
-                  initialOccurrenceId={initialOccurrenceId}
-                />
               </CCardBody>
             </CCard>
           </CTabPanel>

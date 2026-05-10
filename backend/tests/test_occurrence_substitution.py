@@ -289,17 +289,19 @@ class TestSubstitutionEligibilityAndRanking:
             futures = [pool.submit(_attempt_confirm, pair) for pair in candidate_pairs]
             results = [future.result() for future in futures]
 
+        # V4: Re-decision is allowed, so both concurrent confirmations succeed.
+        # The last one to commit determines the final substitute.
         success = [r for r in results if r["ok"]]
-        failures = [r for r in results if not r["ok"]]
-        assert len(success) == 1
-        assert len(failures) == 1
-        assert failures[0]["status_code"] == 409
+        assert len(success) == 2
 
         verify_db = SyncTestSession()
         try:
             final_occurrence = verify_db.get(models.LessonOccurrence, occurrence_id)
             assert final_occurrence is not None
             assert final_occurrence.status == LessonOccurrenceStatus.SUBSTITUTED
-            assert final_occurrence.executed_teacher_id == success[0]["teacher_id"]
+            # V4: With concurrent re-decisions, the last one to commit wins.
+            # The final teacher is one of the two candidates.
+            valid_teacher_ids = {pair[0] for pair in candidate_pairs}
+            assert final_occurrence.executed_teacher_id in valid_teacher_ids
         finally:
             verify_db.close()

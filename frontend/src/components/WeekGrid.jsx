@@ -12,6 +12,7 @@ const OCCURRENCE_CLASSES = {
   GIVEN:       'zen-state-given',
   GAP:         'zen-state-gap',
   SUBSTITUTED: 'zen-state-substituted',
+  REVOKED:     'zen-state-planned',
 }
 
 const OPEN_OCCURRENCE_CLASS = 'zen-state-open'
@@ -19,8 +20,9 @@ const PLANNED_CLASS = 'zen-state-planned'
 
 const OCCURRENCE_LABELS = {
   GIVEN:       'Dada ✓',
-  GAP:         'Furo ✗',
+  GAP:         'Falta ✗',
   SUBSTITUTED: 'Substituída ↔',
+  REVOKED:     'Revertida',
 }
 
 function normalizeTimeLabel(value) {
@@ -77,14 +79,20 @@ function getCellVisuals(slot) {
   if (!slot) return { className: '', style: {} }
   const color = getSubjectColor(slot.subject?.id ?? 0)
 
-  // 1. If it has a completed lesson log:
+  // 1. Completed lesson log
   if (slot.lesson_log_status === 'COMPLETED') {
-    return { className: `zen-state-card zen-state-given`, style: {} }
+    return {
+      className: 'zen-state-card zen-state-given',
+      style: { opacity: 0.55, filter: 'grayscale(0.5)' },
+    }
   }
 
-  // 2. If the teacher registered a self-absence (OCCURRENCE via LessonLog):
+  // 2. Teacher registered OCCURRENCE (undecided)
   if (slot.lesson_log_status === 'OCCURRENCE') {
-    return { className: `zen-state-card zen-state-gap`, style: {} }
+    return {
+      className: 'zen-state-card zen-state-gap',
+      style: { opacity: 0.55, filter: 'grayscale(0.5)' },
+    }
   }
 
   // Future/Current slots: Use subject color with opacity
@@ -92,7 +100,7 @@ function getCellVisuals(slot) {
     return {
       className: 'zen-state-card',
       style: {
-        backgroundColor: `${color}26`, // ~15% opacity
+        backgroundColor: `${color}26`,
         borderLeftColor: color,
       },
     }
@@ -100,20 +108,25 @@ function getCellVisuals(slot) {
 
   // Past slots with active (undecided) occurrence
   if (slot.occurrence_id && !slot.occurrence_decided_at) {
-    return { className: `zen-state-card ${OPEN_OCCURRENCE_CLASS}`, style: {} }
+    return {
+      className: `zen-state-card ${OPEN_OCCURRENCE_CLASS}`,
+      style: { opacity: 0.55, filter: 'grayscale(0.5)' },
+    }
   }
 
   // Past slots with decided occurrence
   if (slot.occurrence_status && slot.occurrence_decided_at && OCCURRENCE_CLASSES[slot.occurrence_status]) {
     const cls = OCCURRENCE_CLASSES[slot.occurrence_status]
-    // WBS V3 Fase 4: original substituted block gets grayed out
-    if (slot.occurrence_status === 'SUBSTITUTED') {
+    if (slot.occurrence_status === 'REVOKED') {
       return {
         className: `zen-state-card ${cls}`,
         style: { opacity: 0.45, filter: 'grayscale(0.6)' },
       }
     }
-    return { className: `zen-state-card ${cls}`, style: {} }
+    return {
+      className: `zen-state-card ${cls}`,
+      style: { opacity: 0.55, filter: 'grayscale(0.5)' },
+    }
   }
 
   // Past but no occurrence registered yet (Planned/Pending)
@@ -158,14 +171,14 @@ const SlotCell = ({ slotEntries, isOperationalEnabled, onOpenOperationalAction }
 
   const isWeekLocked = slot.week_timesheet_status === 'SUBMITTED' || slot.week_timesheet_status === 'APPROVED'
 
+  // V4.1: All slots with valid context are clickable.
+  // The LessonLogModal handles read-only/edit mode based on slot state.
   const canOpenOperationalAction = Boolean(
     isOperationalEnabled
     && !hasCollision
     && slot.schedule_output_id
     && slot.date
-    && !slot.is_substituted_block
     && typeof onOpenOperationalAction === 'function'
-    && ((canCreateOccurrence || canDecideOccurrence) || isWeekLocked)
   )
 
   let operationalBlockReason = ''
@@ -184,17 +197,18 @@ const SlotCell = ({ slotEntries, isOperationalEnabled, onOpenOperationalAction }
   }
 
   const { className: cellClassName, style: cellStyle } = getCellVisuals(slot)
+  const isSubstituteBlock = slot.is_substituted_block === true
   let statusLabel = 'Planeado'
-  if (slot.is_substituted_block) {
+  if (isSubstituteBlock) {
     statusLabel = 'Substituição'
   } else if (slot.lesson_log_status === 'COMPLETED') {
     statusLabel = 'Concluída ✓'
   } else if (slot.lesson_log_status === 'OCCURRENCE') {
-    statusLabel = 'Falta ✗'
-  } else if (slot.occurrence_id && !slot.occurrence_decided_at) {
-    statusLabel = 'Pendente de decisão'
-  } else if (slot.occurrence_status) {
+    statusLabel = 'Ocorrência'
+  } else if (slot.occurrence_status && slot.occurrence_decided_at) {
     statusLabel = OCCURRENCE_LABELS[slot.occurrence_status] ?? slot.occurrence_status
+  } else if (slot.occurrence_id && !slot.occurrence_decided_at) {
+    statusLabel = 'Ocorrência'
   } else if (slot.is_past) {
     statusLabel = 'Pendente'
   }
@@ -280,11 +294,7 @@ const SlotCell = ({ slotEntries, isOperationalEnabled, onOpenOperationalAction }
             color: isWeekLocked ? 'var(--cui-secondary)' : 'var(--cui-primary)',
           }}
         >
-          {isWeekLocked
-            ? 'Consultar'
-            : slot.lesson_log_status === 'COMPLETED' || slot.lesson_log_status === 'OCCURRENCE' || slot.occurrence_decided_at
-              ? 'Gerir'
-              : 'Registar'}
+          {isWeekLocked ? 'Consultar' : 'Registar'}
         </div>
       ) : null}
       {!canOpenOperationalAction && operationalBlockReason ? (

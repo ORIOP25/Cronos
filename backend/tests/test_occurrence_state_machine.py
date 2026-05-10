@@ -113,17 +113,19 @@ class TestOccurrenceStateMachineAndAccounting:
                 models.ClassProgress.module_id == full_setup["module_id"],
             )
         ).scalar_one()
+        # V4: substitute module no longer gets ClassProgress row on SUBSTITUTED decision.
+        # Hours are credited when the substitute teacher registers "Aula Dada" via LessonLog COMPLETED.
         substitute_progress = sync_db.execute(
             select(models.ClassProgress).where(
                 models.ClassProgress.class_id == full_setup["class_id"],
                 models.ClassProgress.module_id == full_setup["substitute_module_id"],
             )
-        ).scalar_one()
+        ).scalar_one_or_none()
 
         assert planned_progress.hours_completed == pytest.approx(0.0)
         assert planned_progress.hours_debt == pytest.approx(2.0)
-        assert substitute_progress.hours_completed == pytest.approx(2.0)
-        assert substitute_progress.hours_debt == pytest.approx(0.0)
+        # V4: substitute module should not have any progress yet
+        assert substitute_progress is None or substitute_progress.hours_completed == pytest.approx(0.0)
 
         debts = occurrence_service.get_debts_sync(sync_db, organization_id)
         assert debts.total_gaps == 1
@@ -228,15 +230,11 @@ class TestOccurrenceStateMachineAndAccounting:
         occurrence = self._prepare_open_occurrence(sync_db, full_setup)
 
         original = occurrence_service._apply_module_delta
-        calls = {"count": 0}
 
-        def _explode_on_second_module_delta(*args, **kwargs):
-            calls["count"] += 1
-            if calls["count"] == 2:
-                raise RuntimeError("forced-mid-operation-error")
-            return original(*args, **kwargs)
+        def _explode_on_first_module_delta(*args, **kwargs):
+            raise RuntimeError("forced-mid-operation-error")
 
-        monkeypatch.setattr(occurrence_service, "_apply_module_delta", _explode_on_second_module_delta)
+        monkeypatch.setattr(occurrence_service, "_apply_module_delta", _explode_on_first_module_delta)
 
         with pytest.raises(RuntimeError):
             occurrence_service.update_occurrence_sync(

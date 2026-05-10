@@ -136,7 +136,7 @@ export default function AlertBar({ alerts, isLoading }) {
                     transition: 'color 0.3s ease',
                   }}
                 >
-                  {totalValue != null ? (
+                  {totalValue != null && value > 0 ? (
                     <span title={`${value} hoje, ${totalValue} total`}>
                       {value}/{totalValue}
                     </span>
