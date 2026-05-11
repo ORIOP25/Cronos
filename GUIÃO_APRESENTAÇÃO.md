@@ -1,4 +1,4 @@
-# Guião de Apresentação — Aperius
+# Guião de Apresentação — Apérius
 ## Demo informal para Professor / Cliente Piloto
 
 ---
@@ -34,13 +34,13 @@
 
 **NÃO ABRAS O PORTÁTIL AINDA.**
 
-> "Obrigado por teres aceitado ser o primeiro a ver isto. Isto é o Aperius."
+> "Obrigado por teres aceitado ser o primeiro a ver isto. Isto é o Apérius."
 
 Conta a história em 3 frases:
 
 1. **O problema**: "As escolas profissionais têm um problema único — os horários não são grelhas fixas semanais. As UFCDs têm durações diferentes, há módulos que acabam a meio do ano, as turmas avançam a ritmos diferentes, e andam a gerir tudo em Excel."
 
-2. **A solução**: "O Aperius não é um gerador de horários. É um sistema operacional para a escola — gera horários, mas também gere o que realmente acontece durante o ano. Regista aulas dadas, faltas, substituições, e pode regenerar o horário quando as coisas mudam."
+2. **A solução**: "O Apérius não é um gerador de horários. É um sistema operacional para a escola — gera horários, mas também gere o que realmente acontece durante o ano. Regista aulas dadas, faltas, substituições, e pode regenerar o horário quando as coisas mudam."
 
 3. **O gancho**: "O que te vou mostrar é uma escola fictícia mas realista, com 3 cursos e 9 turmas, completamente funcional."
 

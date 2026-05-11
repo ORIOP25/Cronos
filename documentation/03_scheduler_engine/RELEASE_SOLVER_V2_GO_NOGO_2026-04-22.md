@@ -1,4 +1,4 @@
-# Aperius — Zen Scheduler V2: Relatório Final de GO/NO-GO
+# Apérius — Zen Scheduler V2: Relatório Final de GO/NO-GO
 
 **Data:** 22 de Abril de 2026
 **Assunto:** Conclusão da Implementação Local da V2 Engine (WBS de A a I)

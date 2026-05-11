@@ -1,4 +1,4 @@
-# Website Institucional Aperius
+# Website Institucional Apérius
 
 ## Objetivo
 Definir o site publico institucional separado da aplicação operacional.

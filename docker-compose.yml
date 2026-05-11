@@ -57,8 +57,8 @@ services:
       - BOOTSTRAP_DEFAULT_ADMIN=0
       - BOOTSTRAP_ADMIN_EMAIL=admin@horariozen.local
       - BOOTSTRAP_ADMIN_PASSWORD=${BOOTSTRAP_ADMIN_PASSWORD:-admin1234}
-      - BOOTSTRAP_ADMIN_NAME=Admin Aperius
-      - BOOTSTRAP_ORG_NAME=Escola Demo Aperius
+      - BOOTSTRAP_ADMIN_NAME=Admin Apérius
+      - BOOTSTRAP_ORG_NAME=Escola Demo Apérius
 
     ports:
       - "8000:8000"

@@ -82,7 +82,7 @@ const Login = () => {
               A
             </span>
             <span className="zen-caps" style={{ color: 'var(--brand-600)', fontSize: '0.65rem' }}>
-              Aperius
+              Apérius
             </span>
           </Link>
 

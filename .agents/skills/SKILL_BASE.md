@@ -1,12 +1,12 @@
----
+﻿---
 name: zen-base
-description: Base rules shared by ALL Aperius skills. ALWAYS load this together with any domain skill.
+description: Base rules shared by ALL Apérius skills. ALWAYS load this together with any domain skill.
 argument-hint: Shared rules: 4 engineering pillars, delivery protocol, documentation workflow, safety rules.
 ---
 
-# Aperius — Base Rules (ALL Skills)
+# Apérius — Base Rules (ALL Skills)
 
-These rules apply to EVERY task in Aperius, regardless of the domain skill in use.
+These rules apply to EVERY task in Apérius, regardless of the domain skill in use.
 
 ## 1. Non-negotiable engineering pillars (ALWAYS)
 Every product and technical decision MUST preserve all four pillars:

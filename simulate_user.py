@@ -1,5 +1,5 @@
 """
-Simulacao completa de comportamento admin no Aperius (Solver V2).
+Simulacao completa de comportamento admin no Apérius (Solver V2).
 Fluxo:
   1. Login admin
   2. Gerar horario completo (full, Solver V2)

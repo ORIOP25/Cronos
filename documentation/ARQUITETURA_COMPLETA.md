@@ -1,6 +1,6 @@
-# Arquitetura Completa - Aperius
+# Arquitetura Completa - Apérius
 
-Este documento descreve detalhadamente a arquitetura completa da aplicação **Aperius**, abrangendo desde a infraestrutura até as camadas de backend, frontend e motor de otimização de horários. Todo o sistema assenta numa arquitetura limpa, multitenant e isolada.
+Este documento descreve detalhadamente a arquitetura completa da aplicação **Apérius**, abrangendo desde a infraestrutura até as camadas de backend, frontend e motor de otimização de horários. Todo o sistema assenta numa arquitetura limpa, multitenant e isolada.
 
 ## 1. Diagrama de Arquitetura (Mermaid)
 
@@ -102,4 +102,4 @@ Inteiramente desenhado para refletir as normativas do Ensino Profissional:
 - **Eventos Dinâmicos**: `Substitution` e Occurrences, refletindo o caráter não-estático do planeamento escolar (absorvendo as necessidades de faltas/substituições pontuais).
 
 ---
-*Este documento reflete a versão atual estabelecida segundo as restrições arquitetónicas dos pilares de Otimização, Estabilidade, Escalabilidade e Segurança definidos no projeto Aperius.*
+*Este documento reflete a versão atual estabelecida segundo as restrições arquitetónicas dos pilares de Otimização, Estabilidade, Escalabilidade e Segurança definidos no projeto Apérius.*

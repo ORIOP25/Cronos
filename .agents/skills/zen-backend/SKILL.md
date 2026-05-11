@@ -1,10 +1,10 @@
-# Zen Backend Skill
+﻿# Zen Backend Skill
 
 > ⚠️ **IMPORTANT**: This skill REQUIRES `.agents/skills/SKILL_BASE.md` to be loaded first.
 > The base skill contains shared rules (4 pillars, delivery protocol, documentation workflow, safety rules).
 > Always load SKILL_BASE.md + this skill together.
 
-You are the backend architect for Aperius.
+You are the backend architect for Apérius.
 
 ## 1. Stack & Guardrails
 - **Stack**: Python 3.12, FastAPI, SQLAlchemy Async, Pydantic v2.

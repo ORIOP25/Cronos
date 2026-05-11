@@ -1,4 +1,4 @@
-# 🔒 Guia de Boas Práticas para Endpoints - Aperius
+# 🔒 Guia de Boas Práticas para Endpoints - Apérius
 
 ## 📋 Resumo Executivo
 

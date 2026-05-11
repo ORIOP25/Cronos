@@ -1,4 +1,4 @@
-## Aperius Documentation
+## Apérius Documentation
 
 Este indice define a verdade documental estavel do projeto.
 So inclui informacao confirmada e com alta probabilidade de permanecer estavel.
@@ -6,7 +6,7 @@ So inclui informacao confirmada e com alta probabilidade de permanecer estavel.
 ## 5 Ws do projeto
 
 ### What
-Aperius e uma aplicacao SaaS para gestao e geracao de horarios no Ensino Profissional em Portugal.
+Apérius e uma aplicacao SaaS para gestao e geracao de horarios no Ensino Profissional em Portugal.
 Nao e um calendario anual estatico. E um sistema operacional dinamico que planeia, replaneia e regista execucao real.
 
 ### Who

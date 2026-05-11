@@ -1,4 +1,4 @@
-# Guia de Contribuição — Aperius
+# Guia de Contribuição — Apérius
 
 ## Princípios
 

@@ -1,5 +1,5 @@
 /**
- * Utilitários centralizados de formatação para o Aperius.
+ * Utilitários centralizados de formatação para o Apérius.
  * Todas as datas e números devem passar por estas funções para garantir consistência.
  */
 

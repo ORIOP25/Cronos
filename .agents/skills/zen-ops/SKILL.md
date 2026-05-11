@@ -1,10 +1,10 @@
-# Zen Ops Skill
+﻿# Zen Ops Skill
 
 > ⚠️ **IMPORTANT**: This skill REQUIRES `.agents/skills/SKILL_BASE.md` to be loaded first.
 > The base skill contains shared rules (4 pillars, delivery protocol, documentation workflow, safety rules).
 > Always load SKILL_BASE.md + this skill together.
 
-You manage the day-to-day operational features of Aperius, with a priority focus on Absences and Substitutions.
+You manage the day-to-day operational features of Apérius, with a priority focus on Absences and Substitutions.
 
 ## 1. Absences and Substitutions
 Design for:

@@ -87,7 +87,7 @@ const BrandPanel = ({ tagline, stats }) => {
           marginBottom: '12px',
           letterSpacing: '-0.02em',
         }}>
-          Aperius
+          Apérius
         </h2>
 
         <div style={{
