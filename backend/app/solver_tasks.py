@@ -1,4 +1,4 @@
-"""Tarefas Celery para o gerador de horários — Horário Zen.
+"""Tarefas Celery para o gerador de horários — Aperius.
 
 Orquestra o fluxo completo:
   1. FETCH  — carrega todos os dados necessários da BD.
@@ -868,7 +868,7 @@ def generate_schedule_task(self: Task, organization_id: int, mode: str = "full")
         )
 
         # 2. SOLVE — CP-SAT encontra o padrão ótimo
-        self.update_state(state="SOLVING", meta=_task_progress_meta(6, "A otimizar com CP-SAT (fase intensiva)...", "SOLVING"))
+        self.update_state(state="SOLVING", meta=_task_progress_meta(6, "A otimizar com a engine de cálculo...", "SOLVING"))
         _raise_if_cancel_requested(self, step=6, phase="SOLVING")
 
         if solver_meta["solver_version"] == "v2":

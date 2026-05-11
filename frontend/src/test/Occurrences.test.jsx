@@ -310,7 +310,6 @@ describe('Occurrences page (Passo 5)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Decidir' }))
     fireEvent.click(screen.getByRole('button', { name: 'Substituída' }))
 
-    expect(screen.getByText('A mostrar top 3 para decisão rápida.')).toBeInTheDocument()
     expect(screen.queryByText(/#4 Prof\. Eduardo — TIC/)).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'Ver lista completa' }))

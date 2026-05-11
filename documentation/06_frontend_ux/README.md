@@ -1,6 +1,6 @@
 # Frontend UX
 
-Esta secção define a interface e experiência de utilizador do Horário Zen.
+Esta secção define a interface e experiência de utilizador do Aperius.
 
 ## Conteúdo Principal
 - [**BRAND_GUIDELINES.md**](./BRAND_GUIDELINES.md): Diretrizes de design, paleta premium e governação de tokens.

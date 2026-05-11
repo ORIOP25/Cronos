@@ -1,4 +1,4 @@
-# AUDITORIA ARQUITETURAL COMPLETA — Horário Zen Alpha 1.0
+# AUDITORIA ARQUITETURAL COMPLETA — Aperius Alpha 1.0
 
 *(Auditoria de raiz focada em risco sistémico e capacidade de crescimento)*
 

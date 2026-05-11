@@ -29,6 +29,32 @@ import { useAuthStore } from '../store'
 // Constants
 // ---------------------------------------------------------------------------
 const ACTIVE_TASK_STORAGE_KEY_PREFIX = 'hz-schedule-active-task-org-'
+const VIEW_STORAGE_KEY_PREFIX = 'hz-schedule-view-org-'
+
+function getViewStorageKey(orgId) {
+  if (!orgId) return null
+  return `${VIEW_STORAGE_KEY_PREFIX}${orgId}`
+}
+
+function readStoredView(storageKey) {
+  if (!storageKey) return null
+  try {
+    const raw = localStorage.getItem(storageKey)
+    if (!raw) return null
+    return JSON.parse(raw)
+  } catch {
+    return null
+  }
+}
+
+function writeStoredView(storageKey, viewState) {
+  if (!storageKey) return
+  try {
+    localStorage.setItem(storageKey, JSON.stringify(viewState))
+  } catch {
+    // no-op
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Module-scope helpers (SonarQube S7721)
@@ -115,11 +141,16 @@ const Schedules = () => {
   const teacherOwnId = user?.teacherId ?? null
   const canConsultSchedule = isAdmin || (isTeacher && Boolean(teacherOwnId))
   const taskStorageKey = getTaskStorageKey(orgId)
+  const viewStorageKey = getViewStorageKey(orgId)
 
   // Parse query params for cross-navigation (Fase 7.4)
   const urlParams = new URLSearchParams(location.search)
   const urlTeacherId = urlParams.get('teacherId')
   const urlWeekStart = urlParams.get('weekStart')
+  const hasUrlParams = Boolean(urlTeacherId || urlWeekStart)
+
+  // Restore persisted view state (admin only, URL params take priority)
+  const storedView = !hasUrlParams && isAdmin ? readStoredView(viewStorageKey) : null
 
   // Sprint 3 state
   const [mode, setMode]                       = useState('full')
@@ -127,16 +158,21 @@ const Schedules = () => {
   const [preflightErrors, setPreflightErrors] = useState([])
 
   // Sprint 4 state
-  const [viewMode, setViewMode]                   = useState(isTeacher ? 'teacher' : 'class')
-  const [selectedClassId, setSelectedClassId]     = useState('')
-  const [selectedTeacherId, setSelectedTeacherId] = useState(
-    isTeacher && teacherOwnId ? String(teacherOwnId) : ''
+  const [viewMode, setViewMode]                   = useState(
+    isTeacher ? 'teacher' : (storedView?.viewMode || 'class')
   )
+  const [selectedClassId, setSelectedClassId]     = useState(
+    storedView?.selectedClassId || ''
+  )
+  const [selectedTeacherId, setSelectedTeacherId] = useState(() => {
+    if (isTeacher && teacherOwnId) return String(teacherOwnId)
+    return storedView?.selectedTeacherId || ''
+  })
   const [weekStart, setWeekStart]                 = useState(() => {
     if (urlWeekStart && /^\d{4}-\d{2}-\d{2}$/.test(urlWeekStart)) {
       return urlWeekStart
     }
-    return getCurrentWeekMonday()
+    return storedView?.weekStart || getCurrentWeekMonday()
   })
   // Bug #4: Keep weekStart in sync with URL query param changes (cross-navigation)
   useEffect(() => {
@@ -170,6 +206,17 @@ const Schedules = () => {
       setSelectedClassId('')
     }
   }, [isAdmin, urlTeacherId, teachers])
+
+  // Persist view state so the user returns to the same class/teacher
+  useEffect(() => {
+    if (!isAdmin || hasUrlParams) return
+    writeStoredView(viewStorageKey, {
+      viewMode,
+      selectedClassId,
+      selectedTeacherId,
+      weekStart,
+    })
+  }, [isAdmin, hasUrlParams, viewStorageKey, viewMode, selectedClassId, selectedTeacherId, weekStart])
 
   const classId   = viewMode === 'class'   && selectedClassId   ? Number.parseInt(selectedClassId, 10)   : null
   const teacherId = viewMode === 'teacher' && selectedTeacherId ? Number.parseInt(selectedTeacherId, 10) : null

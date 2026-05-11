@@ -12,7 +12,7 @@ export function isPending(status) {
 const GENERATION_STATUS_LABELS = {
   PENDING:   'A preparar cálculo do horário…',
   FETCHING:  'A ler dados da escola…',
-  SOLVING:   'A calcular o melhor horário para a escola (pode demorar alguns minutos)…',
+  SOLVING:   'A calcular o melhor horário para a escola…',
   EXPANDING: 'A expandir para datas reais…',
   SAVING:    'A guardar solução…',
   REVOKED:   'Cancelado.',
@@ -91,12 +91,17 @@ const GenerationStatusPanel = ({ taskId }) => {
     : 0
   const result     = taskData.result
 
+  const isSolving = status === 'SOLVING'
+
   return (
     <CAlert color={alertColor} className="mb-4">
       <div className="d-flex align-items-center gap-2 mb-2">
         {isRunning && <CSpinner size="sm" />}
         <strong>{label}</strong>
       </div>
+      {isSolving && (
+        <div className="small text-muted mb-1">Pode demorar alguns minutos.</div>
+      )}
       {progress && (
         <div className="small mb-1">
           Etapa {progress.current}/{progress.total}

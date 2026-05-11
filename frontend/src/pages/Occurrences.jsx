@@ -302,7 +302,7 @@ const EditOccurrenceModal = ({
         {status === 'SUBSTITUTED' && (
           <>
             <div className="mb-3">
-              <CFormLabel htmlFor="substituteRecommendation">Candidato recomendado (ranking)</CFormLabel>
+              <CFormLabel htmlFor="substituteRecommendation">Candidato recomendado</CFormLabel>
               {loadingRecommendations && (
                 <div className="d-flex align-items-center gap-2 text-muted small">
                   <CSpinner size="sm" />
@@ -321,9 +321,6 @@ const EditOccurrenceModal = ({
               )}
               {!loadingRecommendations && !recommendationsError && recommendations.length > 0 && (
                 <>
-                  <CAlert color="info" className="mb-2 py-2">
-                    A mostrar top 3 para decisão rápida.
-                  </CAlert>
                   <CFormSelect
                     id="substituteRecommendation"
                     value={selectedRecommendation}
@@ -353,12 +350,6 @@ const EditOccurrenceModal = ({
                 </>
               )}
             </div>
-
-            {selectedRecommendationData && (
-              <CAlert color="info" className="mb-0">
-                {selectedRecommendationData.justification}
-              </CAlert>
-            )}
           </>
         )}
 

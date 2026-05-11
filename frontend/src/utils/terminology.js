@@ -1,5 +1,5 @@
 /**
- * Terminologia padronizada para toda a interface do Horário Zen.
+ * Terminologia padronizada para toda a interface do Aperius.
  * Centraliza as palavras usadas em botões, labels e mensagens.
  * Idioma: PT-PT (Português de Portugal), tratamento formal.
  */
@@ -54,7 +54,8 @@ export const TXT = {
   // Geração de Horários
   GENERATION_PENDING: 'A preparar cálculo do horário…',
   GENERATION_FETCHING: 'A ler dados da escola…',
-  GENERATION_SOLVING: 'A calcular o melhor horário para a escola (pode demorar alguns minutos)…',
+  GENERATION_SOLVING: 'A calcular o melhor horário para a escola…',
+  GENERATION_SOLVING_SUBTITLE: 'Pode demorar alguns minutos.',
   GENERATION_EXPANDING: 'A expandir para datas reais…',
   GENERATION_SAVING: 'A guardar solução…',
   GENERATION_CANCELED: 'Cancelado.',
@@ -105,8 +106,8 @@ export const TXT = {
   // Geral
   HOME: 'Painel de Controlo',
   BRAND_TAGLINE: 'Gestão escolar inteligente e sem stress.',
-  SIDEBAR_BRAND: 'Horário',
-  SIDEBAR_BRAND_ACCENT: 'Zen',
+  SIDEBAR_BRAND: 'Aperius',
+  SIDEBAR_BRAND_ACCENT: '',
 }
 
 /**
@@ -117,6 +118,7 @@ export const TXT = {
 export function humanizeOperationalDetail(detail) {
   if (typeof detail !== 'string' || !detail.trim()) return detail
   return detail
+    .replace(/\(fase intensiva\)/gi, '')
     .replace(/CP-SAT/gi, TXT.GENERATION_MOTOR)
     .replace(/solver/gi, TXT.GENERATION_MOTOR)
     .replace(/worker/gi, TXT.GENERATION_SERVER)

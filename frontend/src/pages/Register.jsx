@@ -215,10 +215,10 @@ const Register = () => {
               fontWeight: 700,
               letterSpacing: '0.08em',
             }}>
-              HZ
+              A
             </span>
             <span className="zen-caps" style={{ color: 'var(--brand-600)', fontSize: '0.65rem' }}>
-              Horário Zen
+              Aperius
             </span>
           </Link>
 

@@ -1,4 +1,4 @@
-# Website Institucional Horário Zen
+# Website Institucional Aperius
 
 ## Objetivo
 Definir o site publico institucional separado da aplicação operacional.

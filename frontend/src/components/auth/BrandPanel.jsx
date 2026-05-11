@@ -3,7 +3,7 @@ import PropTypes from 'prop-types'
 
 /**
  * BrandPanel — painel de marca partilhado entre Login e Register.
- * Mostra o monograma HZ, nome da marca, tagline e estatísticas.
+ * Mostra o monograma, nome da marca, tagline e estatísticas.
  *
  * Props:
  *   tagline — texto descritivo abaixo do nome da marca
@@ -77,7 +77,7 @@ const BrandPanel = ({ tagline, stats }) => {
             color: 'var(--brand-500)',
             letterSpacing: '0.06em',
           }}>
-            HZ
+            A
           </span>
         </div>
 
@@ -87,8 +87,7 @@ const BrandPanel = ({ tagline, stats }) => {
           marginBottom: '12px',
           letterSpacing: '-0.02em',
         }}>
-          Horário{' '}
-          <span style={{ color: 'var(--brand-500)' }}>Zen</span>
+          Aperius
         </h2>
 
         <div style={{

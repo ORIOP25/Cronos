@@ -16,7 +16,7 @@ def run_migrations():
     subprocess.run(["alembic", "upgrade", "head"], check=True)
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Horario Zen Seed Data Dispatcher")
+    parser = argparse.ArgumentParser(description="Aperius Seed Data Dispatcher")
     parser.add_argument("--profile", required=True, choices=["small-realistic", "large-scale", "operational"], help="Seed profile to run")
     parser.add_argument("--reset", action="store_true", help="Reset database before seeding")
     args = parser.parse_args()

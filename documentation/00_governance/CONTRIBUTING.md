@@ -1,4 +1,4 @@
-# Guia de Contribuição — Horário Zen
+# Guia de Contribuição — Aperius
 
 ## Princípios
 

@@ -476,9 +476,11 @@
 
 .btn-zen-ghost {
   background: transparent;
+  border: none;
   color: var(--brand-800);
   padding-left: 0;
   padding-right: 0;
+  cursor: pointer;
   position: relative;
 }
 

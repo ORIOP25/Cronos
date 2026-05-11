@@ -1,6 +1,6 @@
 # Ficheiro: backend/tests/test_multi_tenant.py
 """
-Testes de Multi-Tenancy para o Horário Zen.
+Testes de Multi-Tenancy para o Aperius.
 
 Cobre dois cenários críticos de segurança:
   Parte 1 — Registo e Transação Atómica

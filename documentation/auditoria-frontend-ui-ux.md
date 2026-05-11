@@ -1,4 +1,4 @@
-# Auditoria Frontend & UI/UX — Horário Zen
+# Auditoria Frontend & UI/UX — Aperius
 
 **Data**: 03 Maio 2026  
 **Âmbito**: Análise completa ao frontend (componentes, páginas, formulários, modais, tabelas, acessibilidade, cores, texto, ícones, formatação)  

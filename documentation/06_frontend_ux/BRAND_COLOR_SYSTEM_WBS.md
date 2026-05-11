@@ -286,7 +286,7 @@ O site público agora segue o padrão de reutilização de tokens definido no Po
  **Estado do ponto 7:** concluído.
  
  #### Ações executadas no ponto 7
- - ✅ Alinhamento final da paleta de cores: migração completa do interim "Retro Sunset" para a paleta "Horário Zen Premium" (#4b2e19, #d4af37, #120c08).
+ - ✅ Alinhamento final da paleta de cores: migração completa do interim "Retro Sunset" para a paleta "Aperius Premium" (#4b2e19, #d4af37, #120c08).
  - ✅ Atualização dos tokens de raiz (`--brand-*`) e mapeamento para variáveis semânticas e CoreUI.
  - ✅ Verificação global de hardcodes: confirmada a ausência de hex codes dispersos fora dos ficheiros de definição centralizada (`index.css`, `subjectColors.js`).
  - ✅ Validação de consistência: as páginas de login, dashboard, horários e landing pública agora partilham a mesma base cromática de autoridade e sobriedade.

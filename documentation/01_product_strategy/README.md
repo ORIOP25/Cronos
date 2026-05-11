@@ -1,6 +1,6 @@
 # Product Strategy
 
-Esta secao fixa compromissos estrategicos estaveis do Horario Zen.
+Esta secao fixa compromissos estrategicos estaveis do Aperius.
 
 ## Conteudo principal
 - OBJECTIVO_FINAL_OVERVIEW.md: 5 Ws oficiais, operacao diaria ponta a ponta e criterios minimos da fase atual.

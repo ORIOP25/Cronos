@@ -1,4 +1,4 @@
-"""CP-SAT Solver Engine para Horário Zen — Ensino Profissional.
+"""CP-SAT Solver Engine para Aperius — Ensino Profissional.
 
 Fase 1 (este módulo): Encontra o padrão semanal ótimo, ou seja, em que
 timeslots e salas cada lição ocorre *todas as semanas*.

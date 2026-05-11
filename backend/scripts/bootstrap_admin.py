@@ -33,8 +33,8 @@ def bootstrap_admin() -> None:
 
     admin_email = os.environ.get("BOOTSTRAP_ADMIN_EMAIL", "admin@horariozen.local").strip().lower()
     admin_password = os.environ.get("BOOTSTRAP_ADMIN_PASSWORD", "admin1234")
-    admin_name = os.environ.get("BOOTSTRAP_ADMIN_NAME", "Admin Horario Zen").strip() or "Admin Horario Zen"
-    org_name = os.environ.get("BOOTSTRAP_ORG_NAME", "Escola Demo Horario Zen").strip() or "Escola Demo Horario Zen"
+    admin_name = os.environ.get("BOOTSTRAP_ADMIN_NAME", "Admin Aperius").strip() or "Admin Aperius"
+    org_name = os.environ.get("BOOTSTRAP_ORG_NAME", "Escola Demo Aperius").strip() or "Escola Demo Aperius"
 
     if len(admin_password) < 6:
         raise SystemExit("[bootstrap_admin] ERRO: BOOTSTRAP_ADMIN_PASSWORD deve ter pelo menos 6 caracteres.")

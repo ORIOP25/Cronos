@@ -1,6 +1,6 @@
-# Horário Zen - Brand & Design Guidelines
+# Aperius - Brand & Design Guidelines
 
-Este documento define a identidade visual e o sistema de design do Horário Zen, garantindo consistência entre a página pública e a aplicação operacional.
+Este documento define a identidade visual e o sistema de design do Aperius, garantindo consistência entre a página pública e a aplicação operacional.
 
 ## 1. Paleta de Cores (Premium Palette)
 

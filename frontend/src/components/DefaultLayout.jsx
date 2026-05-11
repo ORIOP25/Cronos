@@ -131,7 +131,7 @@ const DefaultLayout = () => {
           )}
           {collapsed && (
             <h2 className="text-display" style={{ color: '#ffffff', fontSize: '1.3rem', margin: 0 }}>
-              HZ
+              A
             </h2>
           )}
           {!isAdmin && (

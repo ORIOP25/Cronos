@@ -1,4 +1,4 @@
-# 🔒 Guia de Boas Práticas para Endpoints - Horário Zen
+# 🔒 Guia de Boas Práticas para Endpoints - Aperius
 
 ## 📋 Resumo Executivo
 
