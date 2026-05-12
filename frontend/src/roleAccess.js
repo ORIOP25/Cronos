@@ -1,5 +1,5 @@
-export const USER_ROLE_ADMIN = 'admin'
-export const USER_ROLE_TEACHER = 'teacher'
+export const USER_ROLE_ADMIN = 'org:admin'
+export const USER_ROLE_TEACHER = 'org:member'
 
 export const ROUTE_LOGIN = '/login'
 export const ROUTE_DASHBOARD = '/dashboard'

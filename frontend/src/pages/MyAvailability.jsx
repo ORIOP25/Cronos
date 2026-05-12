@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import apiClient from '../apiClient';
 import AvailabilityGrid from '../components/AvailabilityGrid';
-import { useAuthStore } from '../store';
+import { useUser } from '@clerk/react';
 import { PREFERENCE_LEVELS, DEFAULT_PREFERENCE } from '../constants';
 
 
@@ -52,7 +52,8 @@ const MyAvailability = () => {
   const [error, setError] = useState(null);
   const [feedback, setFeedback] = useState(null);
   const [selectedMode, setSelectedMode] = useState(DEFAULT_PREFERENCE);
-  const teacherId = useAuthStore((state) => state.user?.teacherId);
+  const { user } = useUser();
+  const teacherId = user?.publicMetadata?.teacherId;
 
   useEffect(() => {
     const fetchData = async () => {

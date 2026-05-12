@@ -1,12 +1,12 @@
 import React, { Suspense } from 'react'
-import { BrowserRouter as Router, Routes, Route, Navigate, Outlet } from 'react-router-dom'
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
 import { CSpinner } from '@coreui/react'
+import { Show, RedirectToSignIn, useAuth, useOrganization } from '@clerk/react'
 
-// Páginas públicas (sem lazy — carregamento imediato)
-import Login from './pages/Login'
-import Register from './pages/Register'
+import SignInPage from './pages/SignInPage'
+import SignUpPage from './pages/SignUpPage'
+import CreateOrgPage from './pages/CreateOrgPage'
 
-// Páginas protegidas com code splitting
 const Dashboard = React.lazy(() => import('./pages/Dashboard'))
 const MyAvailability = React.lazy(() => import('./pages/MyAvailability'))
 const MyProgress = React.lazy(() => import('./pages/MyProgress'))
@@ -25,15 +25,8 @@ const ClassDetails = React.lazy(() => import('./pages/ClassDetails'))
 const ClassSubjects = React.lazy(() => import('./pages/ClassSubjects'))
 
 import DefaultLayout from './components/DefaultLayout'
-import ProtectedRoute from './components/ProtectedRoute'
-import { useAuthStore } from './store'
-import { PublicHomeGate } from './pages/MarketingSite'
-import {
-  USER_ROLE_ADMIN,
-  USER_ROLE_TEACHER,
-  ROUTE_MY_SCHEDULES,
-  getForbiddenRedirectRoute,
-} from './roleAccess'
+import { MarketingSite } from './pages/MarketingSite'
+import { ROUTE_MY_SCHEDULES } from './roleAccess'
 
 const PageLoader = () => (
   <div className="d-flex justify-content-center align-items-center" style={{ minHeight: '40vh' }}>
@@ -45,65 +38,69 @@ function LazyPage({ children }) {
   return <Suspense fallback={<PageLoader />}>{children}</Suspense>
 }
 
-export function AdminOnlyRoute({ children }) {
-  const role = useAuthStore((state) => state.user?.role)
-  if (role !== USER_ROLE_ADMIN) {
-    return (
-      <Navigate
-        to={getForbiddenRedirectRoute(role)}
-        replace
-        state={{ accessDeniedMessage: 'Acesso bloqueado: esta área é exclusiva para admin.' }}
-      />
-    )
-  }
+function RequireAuth({ children }) {
+  const { isSignedIn, isLoaded } = useAuth()
+  if (!isLoaded) return <PageLoader />
+  if (!isSignedIn) return <RedirectToSignIn />
   return children
 }
 
-export function TeacherOnlyRoute({ children }) {
-  const role = useAuthStore((state) => state.user?.role)
-  if (role !== USER_ROLE_TEACHER) {
-    return (
-      <Navigate
-        to={getForbiddenRedirectRoute(role)}
-        replace
-        state={{ accessDeniedMessage: 'Acesso bloqueado: esta área é exclusiva para professor.' }}
-      />
-    )
-  }
+function RequireAdmin({ children }) {
+  const { isSignedIn, isLoaded } = useAuth()
+  const { membership } = useOrganization()
+  if (!isLoaded) return <PageLoader />
+  if (!isSignedIn) return <RedirectToSignIn />
+  if (membership?.role !== 'org:admin') return <Navigate to="/login" />
   return children
 }
 
-function RootLayout() {
-  return <Outlet />
+function RequireTeacher({ children }) {
+  const { isSignedIn, isLoaded } = useAuth()
+  const { membership } = useOrganization()
+  if (!isLoaded) return <PageLoader />
+  if (!isSignedIn) return <RedirectToSignIn />
+  if (membership?.role !== 'org:member') return <Navigate to="/login" />
+  return children
 }
 
 function App() {
   return (
     <Router>
       <Routes>
-        <Route path="/login" element={<Login />} />
-        <Route path="/register" element={<Register />} />
+        <Route path="/" element={
+          <Show when="signed-out" fallback={<Navigate to="/dashboard" />}>
+            <MarketingSite />
+          </Show>
+        } />
 
-        <Route element={<RootLayout />}>
-          <Route index element={<PublicHomeGate />} />
-          <Route path="/" element={<ProtectedRoute><DefaultLayout /></ProtectedRoute>}>
-            <Route path="dashboard" element={<AdminOnlyRoute><LazyPage><Dashboard /></LazyPage></AdminOnlyRoute>} />
-            <Route path="teachers" element={<AdminOnlyRoute><LazyPage><Teachers /></LazyPage></AdminOnlyRoute>} />
-            <Route path="rooms" element={<AdminOnlyRoute><LazyPage><Rooms /></LazyPage></AdminOnlyRoute>} />
-            <Route path="subjects" element={<AdminOnlyRoute><LazyPage><Subjects /></LazyPage></AdminOnlyRoute>} />
-            <Route path="courses" element={<AdminOnlyRoute><LazyPage><Courses /></LazyPage></AdminOnlyRoute>} />
-            <Route path="courses/:id" element={<AdminOnlyRoute><LazyPage><CourseDetails /></LazyPage></AdminOnlyRoute>} />
-            <Route path="courses/:courseId/classes/:classId" element={<AdminOnlyRoute><LazyPage><ClassDetails /></LazyPage></AdminOnlyRoute>} />
-            <Route path="courses/:courseId/classes/:classId/subjects" element={<AdminOnlyRoute><LazyPage><ClassSubjects /></LazyPage></AdminOnlyRoute>} />
-            <Route path="config" element={<AdminOnlyRoute><LazyPage><SchoolConfig /></LazyPage></AdminOnlyRoute>} />
-            <Route path="schedules" element={<AdminOnlyRoute><LazyPage><Schedules /></LazyPage></AdminOnlyRoute>} />
-            <Route path={ROUTE_MY_SCHEDULES.slice(1)} element={<TeacherOnlyRoute><LazyPage><MySchedules /></LazyPage></TeacherOnlyRoute>} />
-            <Route path="my-progress" element={<TeacherOnlyRoute><LazyPage><MyProgress /></LazyPage></TeacherOnlyRoute>} />
-            <Route path="schedules/audit" element={<AdminOnlyRoute><LazyPage><ScheduleAuditDashboard /></LazyPage></AdminOnlyRoute>} />
-            <Route path="absences" element={<AdminOnlyRoute><LazyPage><Occurrences /></LazyPage></AdminOnlyRoute>} />
-            <Route path="timesheets" element={<AdminOnlyRoute><LazyPage><Timesheets /></LazyPage></AdminOnlyRoute>} />
-            <Route path="my-availability" element={<TeacherOnlyRoute><LazyPage><MyAvailability /></LazyPage></TeacherOnlyRoute>} />
-          </Route>
+        <Route path="/login" element={<SignInPage />} />
+        <Route path="/register" element={<SignUpPage />} />
+
+        <Route path="/create-org" element={
+          <RequireAuth><CreateOrgPage /></RequireAuth>
+        } />
+
+        <Route path="/onboarding" element={
+          <RequireAdmin><LazyPage><div>Onboarding (WIP)</div></LazyPage></RequireAdmin>
+        } />
+
+        <Route element={<RequireAuth><DefaultLayout /></RequireAuth>}>
+          <Route path="dashboard" element={<RequireAdmin><LazyPage><Dashboard /></LazyPage></RequireAdmin>} />
+          <Route path="teachers" element={<RequireAdmin><LazyPage><Teachers /></LazyPage></RequireAdmin>} />
+          <Route path="rooms" element={<RequireAdmin><LazyPage><Rooms /></LazyPage></RequireAdmin>} />
+          <Route path="subjects" element={<RequireAdmin><LazyPage><Subjects /></LazyPage></RequireAdmin>} />
+          <Route path="courses" element={<RequireAdmin><LazyPage><Courses /></LazyPage></RequireAdmin>} />
+          <Route path="courses/:id" element={<RequireAdmin><LazyPage><CourseDetails /></LazyPage></RequireAdmin>} />
+          <Route path="courses/:courseId/classes/:classId" element={<RequireAdmin><LazyPage><ClassDetails /></LazyPage></RequireAdmin>} />
+          <Route path="courses/:courseId/classes/:classId/subjects" element={<RequireAdmin><LazyPage><ClassSubjects /></LazyPage></RequireAdmin>} />
+          <Route path="config" element={<RequireAdmin><LazyPage><SchoolConfig /></LazyPage></RequireAdmin>} />
+          <Route path="schedules" element={<RequireAdmin><LazyPage><Schedules /></LazyPage></RequireAdmin>} />
+          <Route path={ROUTE_MY_SCHEDULES.slice(1)} element={<RequireTeacher><LazyPage><MySchedules /></LazyPage></RequireTeacher>} />
+          <Route path="my-progress" element={<RequireTeacher><LazyPage><MyProgress /></LazyPage></RequireTeacher>} />
+          <Route path="schedules/audit" element={<RequireAdmin><LazyPage><ScheduleAuditDashboard /></LazyPage></RequireAdmin>} />
+          <Route path="absences" element={<RequireAdmin><LazyPage><Occurrences /></LazyPage></RequireAdmin>} />
+          <Route path="timesheets" element={<RequireAdmin><LazyPage><Timesheets /></LazyPage></RequireAdmin>} />
+          <Route path="my-availability" element={<RequireTeacher><LazyPage><MyAvailability /></LazyPage></RequireTeacher>} />
         </Route>
       </Routes>
     </Router>

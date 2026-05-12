@@ -1,5 +1,6 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
+import { ClerkProvider } from '@clerk/react'
 import App from './App.jsx'
 import ErrorBoundary from './components/ErrorBoundary'
 import { ToastProvider } from './contexts/ToastContext'
@@ -16,7 +17,9 @@ ReactDOM.createRoot(document.getElementById('root')).render(
     <ErrorBoundary>
       <ToastProvider>
         <QueryClientProvider client={queryClient}>
-          <App />
+          <ClerkProvider afterSignOutUrl="/">
+            <App />
+          </ClerkProvider>
         </QueryClientProvider>
       </ToastProvider>
     </ErrorBoundary>

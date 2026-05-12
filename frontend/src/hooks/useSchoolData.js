@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import apiClient from '../apiClient'
-import { useAuthStore } from '../store'
+import { useOrganization } from '@clerk/react'
 
 /**
  * CONFIGURAÇÃO DE CACHE (A "Magia" da Performance)
@@ -27,7 +27,7 @@ const DYNAMIC_OPTS = {
 // --- HOOKS DE LEITURA (Read) ---
 
 export const useTeachers = ({ enabled = true } = {}) => {
-  const orgId = useAuthStore(state => state.user?.orgId)
+  const orgId = useOrganization().organization?.id
   return useQuery({
     queryKey: ['teachers', orgId],
     queryFn: async () => {
@@ -40,7 +40,7 @@ export const useTeachers = ({ enabled = true } = {}) => {
 }
 
 export const useRooms = () => {
-  const orgId = useAuthStore(state => state.user?.orgId)
+  const orgId = useOrganization().organization?.id
   return useQuery({
     queryKey: ['rooms', orgId],
     queryFn: async () => {
@@ -53,7 +53,7 @@ export const useRooms = () => {
 }
 
 export const useSubjects = () => {
-  const orgId = useAuthStore(state => state.user?.orgId)
+  const orgId = useOrganization().organization?.id
   return useQuery({
     queryKey: ['subjects', orgId],
     queryFn: async () => {
@@ -66,7 +66,7 @@ export const useSubjects = () => {
 }
 
 export const useClasses = ({ enabled = true } = {}) => {
-  const orgId = useAuthStore(state => state.user?.orgId)
+  const orgId = useOrganization().organization?.id
   return useQuery({
     queryKey: ['classes', orgId],
     queryFn: async () => {
@@ -79,7 +79,7 @@ export const useClasses = ({ enabled = true } = {}) => {
 }
 
 export const useLessons = () => {
-  const orgId = useAuthStore(state => state.user?.orgId)
+  const orgId = useOrganization().organization?.id
   return useQuery({
     queryKey: ['lessons', orgId],
     queryFn: async () => {
@@ -92,7 +92,7 @@ export const useLessons = () => {
 }
 
 export const useTimeslots = () => {
-  const orgId = useAuthStore(state => state.user?.orgId)
+  const orgId = useOrganization().organization?.id
   return useQuery({
     queryKey: ['timeslots', orgId],
     queryFn: async () => {
@@ -108,7 +108,7 @@ export const useTimeslots = () => {
 
 // --- CURSOS ---
 export const useCourses = () => {
-  const orgId = useAuthStore(state => state.user?.orgId)
+  const orgId = useOrganization().organization?.id
   return useQuery({
     queryKey: ['courses', orgId],
     queryFn: async () => {
@@ -132,7 +132,7 @@ export const useCourses = () => {
  * const { data: curriculum, isLoading } = useClassCurriculum(5)
  */
 export const useClassCurriculum = (classId) => {
-  const orgId = useAuthStore(state => state.user?.orgId)
+  const orgId = useOrganization().organization?.id
   return useQuery({
     queryKey: ['class-curriculum', orgId, classId],
     queryFn: async () => {
@@ -148,7 +148,7 @@ export const useClassCurriculum = (classId) => {
 // --- HOOKS OPERACIONAIS (Dinâmicos) ---
 
 export const useSchedule = () => {
-  const orgId = useAuthStore(state => state.user?.orgId)
+  const orgId = useOrganization().organization?.id
   return useQuery({
     queryKey: ['schedule', orgId],
     queryFn: async () => {
@@ -160,7 +160,7 @@ export const useSchedule = () => {
 }
 
 export const useSubstitutions = () => {
-  const orgId = useAuthStore(state => state.user?.orgId)
+  const orgId = useOrganization().organization?.id
   return useQuery({
     queryKey: ['substitutions', orgId],
     queryFn: async () => {
@@ -183,7 +183,7 @@ export const useSubstitutions = () => {
  */
 export const useCreateEntity = (entityKey) => {
   const queryClient = useQueryClient()
-  const orgId = useAuthStore(state => state.user?.orgId)
+  const orgId = useOrganization().organization?.id
 
   return useMutation({
     mutationFn: async (newItem) => {
@@ -204,7 +204,7 @@ export const useCreateEntity = (entityKey) => {
  */
 export const useUpdateEntity = (entityKey) => {
   const queryClient = useQueryClient()
-  const orgId = useAuthStore(state => state.user?.orgId)
+  const orgId = useOrganization().organization?.id
 
   return useMutation({
     mutationFn: async ({ id, ...updateData }) => {
@@ -223,7 +223,7 @@ export const useUpdateEntity = (entityKey) => {
  */
 export const useDeleteEntity = (entityKey) => {
   const queryClient = useQueryClient()
-  const orgId = useAuthStore(state => state.user?.orgId)
+  const orgId = useOrganization().organization?.id
 
   return useMutation({
     mutationFn: async (id) => {
@@ -254,7 +254,7 @@ export const useDeleteEntity = (entityKey) => {
  * course.classes[0].name
  */
 export const useCourseDetails = (courseId) => {
-  const orgId = useAuthStore(state => state.user?.orgId)
+  const orgId = useOrganization().organization?.id
   return useQuery({
     queryKey: ['courses', orgId, courseId],
     queryFn: async () => {
@@ -287,7 +287,7 @@ export const useCourseDetails = (courseId) => {
  */
 export const useCreateCourse = () => {
   const queryClient = useQueryClient()
-  const orgId = useAuthStore(state => state.user?.orgId)
+  const orgId = useOrganization().organization?.id
 
   return useMutation({
     mutationFn: async (newCourse) => {
@@ -317,7 +317,7 @@ export const useCreateCourse = () => {
  */
 export const useUpdateCourse = () => {
   const queryClient = useQueryClient()
-  const orgId = useAuthStore(state => state.user?.orgId)
+  const orgId = useOrganization().organization?.id
 
   return useMutation({
     mutationFn: async ({ courseId, data }) => {
@@ -344,7 +344,7 @@ export const useUpdateCourse = () => {
  */
 export const useDeleteCourse = () => {
   const queryClient = useQueryClient()
-  const orgId = useAuthStore(state => state.user?.orgId)
+  const orgId = useOrganization().organization?.id
 
   return useMutation({
     mutationFn: async (courseId) => {
@@ -359,7 +359,7 @@ export const useDeleteCourse = () => {
 
 export const useCreateCourseClass = () => {
   const queryClient = useQueryClient()
-  const orgId = useAuthStore(state => state.user?.orgId)
+  const orgId = useOrganization().organization?.id
 
   return useMutation({
     mutationFn: async ({ courseId, data }) => {
@@ -377,7 +377,7 @@ export const useCreateCourseClass = () => {
 
 export const useUpdateCourseClass = () => {
   const queryClient = useQueryClient()
-  const orgId = useAuthStore(state => state.user?.orgId)
+  const orgId = useOrganization().organization?.id
 
   return useMutation({
     mutationFn: async ({ courseId, classId, data }) => {
@@ -398,7 +398,7 @@ export const useUpdateCourseClass = () => {
 
 export const useDeleteCourseClass = () => {
   const queryClient = useQueryClient()
-  const orgId = useAuthStore(state => state.user?.orgId)
+  const orgId = useOrganization().organization?.id
 
   return useMutation({
     mutationFn: async ({ courseId, classId }) => {
@@ -434,7 +434,7 @@ export const useDeleteCourseClass = () => {
  * - Optimization: Backend retorna tudo em 2 queries (vs N+1)
  */
 export const useClassDetails = (classId) => {
-  const orgId = useAuthStore(state => state.user?.orgId)
+  const orgId = useOrganization().organization?.id
   return useQuery({
     queryKey: ['classes', orgId, classId],
     queryFn: async () => {
@@ -466,7 +466,7 @@ export const useClassDetails = (classId) => {
  */
 export const useUpdateClassProgress = () => {
   const queryClient = useQueryClient()
-  const orgId = useAuthStore(state => state.user?.orgId)
+  const orgId = useOrganization().organization?.id
 
   return useMutation({
     mutationFn: async ({ classId, progress }) => {
@@ -492,7 +492,7 @@ export const useUpdateClassProgress = () => {
  * Usado na página ClassSubjects.jsx
  */
 export const useClassSubjects = (classId) => {
-  const orgId = useAuthStore(state => state.user?.orgId)
+  const orgId = useOrganization().organization?.id
   return useQuery({
     queryKey: ['class-subjects', orgId, classId],
     queryFn: async () => {
@@ -511,7 +511,7 @@ export const useClassSubjects = (classId) => {
  * (Disciplinas da org que ainda não estão associadas)
  */
 export const useAvailableSubjects = (classId) => {
-  const orgId = useAuthStore(state => state.user?.orgId)
+  const orgId = useOrganization().organization?.id
   return useQuery({
     queryKey: ['available-subjects', orgId, classId],
     queryFn: async () => {
@@ -529,7 +529,7 @@ export const useAvailableSubjects = (classId) => {
  * (Professores que têm competência na disciplina)
  */
 export const useEligibleTeachers = (subjectId) => {
-  const orgId = useAuthStore(state => state.user?.orgId)
+  const orgId = useOrganization().organization?.id
   return useQuery({
     queryKey: ['eligible-teachers', orgId, subjectId],
     queryFn: async () => {
@@ -547,7 +547,7 @@ export const useEligibleTeachers = (subjectId) => {
  */
 export const useAddClassSubject = () => {
   const queryClient = useQueryClient()
-  const orgId = useAuthStore(state => state.user?.orgId)
+  const orgId = useOrganization().organization?.id
 
   return useMutation({
     mutationFn: async ({ classId, subjectId }) => {
@@ -568,7 +568,7 @@ export const useAddClassSubject = () => {
  */
 export const useUpdateClassSubjectTeacher = () => {
   const queryClient = useQueryClient()
-  const orgId = useAuthStore(state => state.user?.orgId)
+  const orgId = useOrganization().organization?.id
 
   return useMutation({
     mutationFn: async ({ classId, subjectId, teacherId }) => {
@@ -588,7 +588,7 @@ export const useUpdateClassSubjectTeacher = () => {
  */
 export const useRemoveClassSubject = () => {
   const queryClient = useQueryClient()
-  const orgId = useAuthStore(state => state.user?.orgId)
+  const orgId = useOrganization().organization?.id
 
   return useMutation({
     mutationFn: async ({ classId, subjectId }) => {
@@ -612,7 +612,7 @@ export const useRemoveClassSubject = () => {
  * Lista ocorrências com filtros opcionais (classId, dateFrom, dateTo).
  */
 export const useOccurrences = ({ classId, dateFrom, dateTo } = {}) => {
-  const orgId = useAuthStore(state => state.user?.orgId)
+  const orgId = useOrganization().organization?.id
   const params = new URLSearchParams()
   if (classId) params.set('class_id', classId)
   if (dateFrom) params.set('date_from', dateFrom)
@@ -634,7 +634,7 @@ export const useOccurrences = ({ classId, dateFrom, dateTo } = {}) => {
  * Lista de dívidas de horas agrupadas por turma/disciplina.
  */
 export const useDebts = ({ classId } = {}) => {
-  const orgId = useAuthStore(state => state.user?.orgId)
+  const orgId = useOrganization().organization?.id
   const params = new URLSearchParams()
   if (classId) params.set('class_id', classId)
   const qs = params.toString()
@@ -654,7 +654,7 @@ export const useDebts = ({ classId } = {}) => {
  * Professores disponíveis para substitição num slot/data específicos.
  */
 export const useAvailableSubstitutes = ({ timeslotId, targetDate } = {}) => {
-  const orgId = useAuthStore(state => state.user?.orgId)
+  const orgId = useOrganization().organization?.id
   return useQuery({
     queryKey: ['substitutes', orgId, timeslotId, targetDate],
     queryFn: async () => {
@@ -672,7 +672,7 @@ export const useAvailableSubstitutes = ({ timeslotId, targetDate } = {}) => {
  * Ranking de recomendações para uma ocorrência específica.
  */
 export const useSubstituteRecommendations = ({ occurrenceId } = {}) => {
-  const orgId = useAuthStore(state => state.user?.orgId)
+  const orgId = useOrganization().organization?.id
   return useQuery({
     queryKey: ['substitute-recommendations', orgId, occurrenceId],
     queryFn: async () => {
@@ -689,7 +689,7 @@ export const useSubstituteRecommendations = ({ occurrenceId } = {}) => {
  */
 export const useCreateOccurrence = () => {
   const queryClient = useQueryClient()
-  const orgId = useAuthStore(state => state.user?.orgId)
+  const orgId = useOrganization().organization?.id
 
   return useMutation({
     mutationFn: async ({ scheduleOutputId, reason } = {}) => {
@@ -715,7 +715,7 @@ export const useCreateOccurrence = () => {
  */
 export const useUpdateOccurrence = () => {
   const queryClient = useQueryClient()
-  const orgId = useAuthStore(state => state.user?.orgId)
+  const orgId = useOrganization().organization?.id
 
   return useMutation({
     mutationFn: async ({ id, status, substituteTeacherId, substituteSubjectId }) => {
@@ -741,7 +741,7 @@ export const useUpdateOccurrence = () => {
  */
 export const useCancelOccurrence = () => {
   const queryClient = useQueryClient()
-  const orgId = useAuthStore(state => state.user?.orgId)
+  const orgId = useOrganization().organization?.id
 
   return useMutation({
     mutationFn: async (id) => {
@@ -762,7 +762,7 @@ export const useCancelOccurrence = () => {
  */
 export const useUpsertLessonLog = () => {
   const queryClient = useQueryClient()
-  const orgId = useAuthStore(state => state.user?.orgId)
+  const orgId = useOrganization().organization?.id
 
   return useMutation({
     mutationFn: async ({ scheduleOutputId, payload }) => {
@@ -781,7 +781,7 @@ export const useUpsertLessonLog = () => {
 // ============================================================
 
 export const useMyTimesheet = (weekStartDate) => {
-  const orgId = useAuthStore(state => state.user?.orgId)
+  const orgId = useOrganization().organization?.id
   return useQuery({
     queryKey: ['my-timesheet', orgId, weekStartDate],
     queryFn: async () => {
@@ -795,7 +795,7 @@ export const useMyTimesheet = (weekStartDate) => {
 
 export const useSubmitMyTimesheet = () => {
   const queryClient = useQueryClient()
-  const orgId = useAuthStore(state => state.user?.orgId)
+  const orgId = useOrganization().organization?.id
 
   return useMutation({
     mutationFn: async (weekStartDate) => {
@@ -810,7 +810,7 @@ export const useSubmitMyTimesheet = () => {
 }
 
 export const useTimesheets = (weekStartDate, status) => {
-  const orgId = useAuthStore(state => state.user?.orgId)
+  const orgId = useOrganization().organization?.id
   const params = new URLSearchParams()
   if (weekStartDate) params.set('week_start_date', weekStartDate)
   if (status) params.set('status', status)
@@ -829,7 +829,7 @@ export const useTimesheets = (weekStartDate, status) => {
 
 export const useUpdateTimesheetStatus = () => {
   const queryClient = useQueryClient()
-  const orgId = useAuthStore(state => state.user?.orgId)
+  const orgId = useOrganization().organization?.id
 
   return useMutation({
     mutationFn: async ({ timesheetId, status }) => {
@@ -852,7 +852,7 @@ export const useUpdateTimesheetStatus = () => {
  * Lista rascunhos pendentes de aprovação para a organização do user.
  */
 export const useDrafts = () => {
-  const orgId = useAuthStore(state => state.user?.orgId)
+  const orgId = useOrganization().organization?.id
   return useQuery({
     queryKey: ['drafts', orgId],
     queryFn: async () => {
@@ -867,7 +867,7 @@ export const useDrafts = () => {
  * Diff entre um rascunho e o horário ativo.
  */
 export const useScheduleDiff = (genId) => {
-  const orgId = useAuthStore(state => state.user?.orgId)
+  const orgId = useOrganization().organization?.id
   return useQuery({
     queryKey: ['schedule-diff', orgId, genId],
     queryFn: async () => {
@@ -884,7 +884,7 @@ export const useScheduleDiff = (genId) => {
  */
 export const useApproveDraft = () => {
   const queryClient = useQueryClient()
-  const orgId = useAuthStore(state => state.user?.orgId)
+  const orgId = useOrganization().organization?.id
 
   return useMutation({
     mutationFn: async (genId) => {
@@ -903,7 +903,7 @@ export const useApproveDraft = () => {
  */
 export const useRejectDraft = () => {
   const queryClient = useQueryClient()
-  const orgId = useAuthStore(state => state.user?.orgId)
+  const orgId = useOrganization().organization?.id
 
   return useMutation({
     mutationFn: async (genId) => {
@@ -923,7 +923,7 @@ export const useRejectDraft = () => {
  */
 export const useGenerateSchedule = () => {
   const queryClient = useQueryClient()
-  const orgId = useAuthStore(state => state.user?.orgId)
+  const orgId = useOrganization().organization?.id
 
   return useMutation({
     mutationFn: async (mode = 'full') => {
@@ -942,7 +942,7 @@ export const useGenerateSchedule = () => {
  * Verificar estado de uma tarefa Celery de geração.
  */
 export const useScheduleTaskStatus = (taskId) => {
-  const orgId = useAuthStore(state => state.user?.orgId)
+  const orgId = useOrganization().organization?.id
   return useQuery({
     queryKey: ['schedule-task', orgId, taskId],
     queryFn: async () => {
@@ -979,7 +979,7 @@ export const useCancelScheduleTask = () => {
  * (LessonOccurrence) para dias passados. Requer classId ou teacherId.
  */
 export const useTeacherScheduleHorizon = ({ enabled = true, refetchInterval = false } = {}) => {
-  const orgId = useAuthStore(state => state.user?.orgId)
+  const orgId = useOrganization().organization?.id
   return useQuery({
     queryKey: ['teacherScheduleHorizon', orgId],
     queryFn: async () => {
@@ -997,7 +997,7 @@ export const useTeacherScheduleHorizon = ({ enabled = true, refetchInterval = fa
 }
 
 export const useWeekSchedule = (classId, teacherId, weekStart) => {
-  const orgId = useAuthStore(state => state.user?.orgId)
+  const orgId = useOrganization().organization?.id
   const enabled = Boolean((classId || teacherId) && weekStart)
   return useQuery({
     queryKey: ['weekSchedule', orgId, classId, teacherId, weekStart],
@@ -1020,7 +1020,7 @@ export const useWeekSchedule = (classId, teacherId, weekStart) => {
  * Dashboard técnico — lista gerações disponíveis para auditoria.
  */
 export const useAuditGenerations = () => {
-  const orgId = useAuthStore(state => state.user?.orgId)
+  const orgId = useOrganization().organization?.id
   return useQuery({
     queryKey: ['schedule-audit-generations', orgId],
     queryFn: async () => {
@@ -1035,7 +1035,7 @@ export const useAuditGenerations = () => {
  * Dashboard técnico — métricas de auditoria por geração.
  */
 export const useAuditSummary = (generationId, { enabled = true } = {}) => {
-  const orgId = useAuthStore(state => state.user?.orgId)
+  const orgId = useOrganization().organization?.id
   return useQuery({
     queryKey: ['schedule-audit-summary', orgId, generationId],
     queryFn: async () => {
@@ -1053,7 +1053,7 @@ export const useAuditSummary = (generationId, { enabled = true } = {}) => {
  * progresso curricular, contagens de recursos e resumo de dívidas.
  */
 export const useDashboard = ({ enabled = true } = {}) => {
-  const orgId = useAuthStore(state => state.user?.orgId)
+  const orgId = useOrganization().organization?.id
   return useQuery({
     queryKey: ['dashboard', orgId],
     queryFn: async () => {
@@ -1070,7 +1070,7 @@ export const useDashboard = ({ enabled = true } = {}) => {
  * Retorna turmas com disciplinas e módulos + progresso.
  */
 export const useTeacherProgress = ({ enabled = true } = {}) => {
-  const orgId = useAuthStore(state => state.user?.orgId)
+  const orgId = useOrganization().organization?.id
   return useQuery({
     queryKey: ['teacher-progress', orgId],
     queryFn: async () => {

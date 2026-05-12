@@ -39,4 +39,24 @@ describe('roleAccess', () => {
       expect(getForbiddenRedirectRoute(USER_ROLE_TEACHER)).toBe('/my-availability')
     })
   })
+
+  describe('Clerk role-based access (T26-T28)', () => {
+    it('org:admin tem acesso a /dashboard, /teachers (T26)', () => {
+      const { ROLE_ALLOWED_APP_ROUTES } = require('../roleAccess')
+      expect(ROLE_ALLOWED_APP_ROUTES['org:admin']).toContain('/dashboard')
+      expect(ROLE_ALLOWED_APP_ROUTES['org:admin']).toContain('/teachers')
+    })
+
+    it('org:member tem acesso a /my-availability, /my-schedules (T27)', () => {
+      const { ROLE_ALLOWED_APP_ROUTES } = require('../roleAccess')
+      expect(ROLE_ALLOWED_APP_ROUTES['org:member']).toContain('/my-availability')
+      expect(ROLE_ALLOWED_APP_ROUTES['org:member']).toContain('/my-schedules')
+    })
+
+    it('org:member NÃO tem acesso a /dashboard (T28)', () => {
+      const { ROLE_ALLOWED_APP_ROUTES } = require('../roleAccess')
+      expect(ROLE_ALLOWED_APP_ROUTES['org:member']).not.toContain('/dashboard')
+      expect(ROLE_ALLOWED_APP_ROUTES['org:member']).not.toContain('/config')
+    })
+  })
 })

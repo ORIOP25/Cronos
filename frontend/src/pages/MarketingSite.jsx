@@ -1,7 +1,7 @@
 import React from 'react'
 import { Navigate, Link } from 'react-router-dom'
 import { CButton, CContainer, CRow, CCol } from '@coreui/react'
-import { useAuthStore } from '../store'
+import { useAuth, useOrganization } from '@clerk/react'
 import { getDefaultRouteForRole } from '../roleAccess'
 
 /* -------- ILLUSTRAÇÕES (SVG inline, sem imagens) -------- */
@@ -225,10 +225,11 @@ const steps = [
 /* -------- COMPONENTE PRINCIPAL -------- */
 
 export function PublicHomeGate() {
-  const isAuthenticated = useAuthStore((state) => state.isAuthenticated)
-  const role = useAuthStore((state) => state.user?.role)
+  const { isSignedIn } = useAuth()
+  const { membership } = useOrganization()
+  const role = membership?.role
 
-  if (isAuthenticated) {
+  if (isSignedIn) {
     return <Navigate to={getDefaultRouteForRole(role)} replace />
   }
   return <MarketingSite />

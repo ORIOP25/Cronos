@@ -14,6 +14,7 @@
     "test:e2e:ui": "playwright test --ui"
   },
   "dependencies": {
+    "@clerk/react": "^6.6.2",
     "@coreui/coreui": "^5.4.3",
     "@coreui/icons": "^3.0.1",
     "@coreui/icons-react": "^2.3.0",

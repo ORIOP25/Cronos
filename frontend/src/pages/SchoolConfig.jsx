@@ -10,7 +10,7 @@ import CIcon from '@coreui/icons-react'
 import { cilSettings, cilSave, cilTrash, cilCloudDownload, cilCalendar } from '@coreui/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import apiClient from '../apiClient'
-import { useAuthStore } from '../store'
+import { useUser, useOrganization } from '@clerk/react'
 import { formatDate } from '../utils/formatUtils'
 import { TXT, EVENT_TYPE_LABELS } from '../utils/terminology'
 
@@ -451,7 +451,7 @@ const SettingsSection = () => {
 
 const GridSection = () => {
   const queryClient = useQueryClient()
-  const orgId = useAuthStore(state => state.user?.orgId)
+  const orgId = useOrganization().organization?.id
   const [successMsg, setSuccessMsg] = useState(null)
   
   const [formData, setFormData] = useState({
@@ -588,7 +588,8 @@ const GridSection = () => {
 }
 
 const SchoolConfig = () => {
-  const { user } = useAuthStore()
+  const { user } = useUser()
+  const { organization } = useOrganization()
   const [activeTab, setActiveTab] = useState('settings')
 
   return (
@@ -603,9 +604,9 @@ const SchoolConfig = () => {
         <div className="luxury-line" style={{ width: '100px', marginBottom: '14px' }} />
       </div>
 
-      {user?.orgName && (
+      {organization?.name && (
         <CAlert color="primary" className="d-flex align-items-center gap-2 py-2 mb-4">
-          A gerir organização: <CBadge color="light" textColor="primary" className="fs-6">{user.orgName}</CBadge>
+          A gerir organização: <CBadge color="light" textColor="primary" className="fs-6">{organization?.name}</CBadge>
         </CAlert>
       )}
 

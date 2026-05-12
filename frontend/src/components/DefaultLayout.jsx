@@ -1,15 +1,14 @@
 import React, { useState, useEffect } from 'react'
 import { Outlet, NavLink, useLocation, useNavigate } from 'react-router-dom'
-import { useQueryClient } from '@tanstack/react-query'
-import { auth } from '../apiClient'
-import { useAuthStore } from '../store'
+import { useUser, useOrganization } from '@clerk/react'
+import { UserButton, OrganizationSwitcher } from '@clerk/react'
 import { ROUTE_MY_SCHEDULES } from '../roleAccess'
 import { TXT } from '../utils/terminology'
 import CIcon from '@coreui/icons-react'
 import { 
   cilSpeedometer, cilCalendar, cilCheckCircle, cilPeople, 
   cilLibrary, cilEducation, cilRoom, cilSettings, cilUser,
-  cilAccountLogout, cilHistory, cilMenu, cilChartPie
+  cilHistory, cilMenu, cilChartPie
 } from '@coreui/icons'
 
 const SIDEBAR_WIDTH = 280
@@ -45,13 +44,13 @@ const SidebarLink = ({ to, icon, children, collapsed }) => (
 
 const DefaultLayout = () => {
   const location = useLocation()
-  const navigate = useNavigate()
-  const queryClient = useQueryClient()
-  const logout = useAuthStore((state) => state.logout)
-  const user = useAuthStore((state) => state.user)
-  const isAdmin = user?.role === 'admin'
-  const isTeacher = user?.role === 'teacher'
+  const { user } = useUser()
+  const { organization, membership } = useOrganization()
+  
+  const isAdmin = membership?.role === 'org:admin'
+  const isTeacher = membership?.role === 'org:member'
   const accessDeniedMessage = location?.state?.accessDeniedMessage ?? ''
+  
   const [collapsed, setCollapsed] = useState(() => {
     try {
       return localStorage.getItem('hz-sidebar-collapsed') === 'true'
@@ -73,22 +72,10 @@ const DefaultLayout = () => {
     window.history.replaceState({}, document.title, `${location.pathname}${location.search}`)
   }, [accessDeniedMessage, location.pathname, location.search])
 
-  const handleLogout = async () => {
-    try {
-      await auth.logout()
-    } catch (e) {
-      console.error('Logout error:', e)
-    }
-    queryClient.clear()
-    logout()
-    navigate('/login')
-  }
-
   const getRoleLabel = () => {
-    if (!user) return ''
-    if (user.role === 'admin') return 'Diretor'
-    if (user.role === 'teacher') return 'Professor'
-    return user.role
+    if (isAdmin) return 'Diretor'
+    if (isTeacher) return 'Professor'
+    return ''
   }
 
   const currentWidth = collapsed ? SIDEBAR_COLLAPSED_WIDTH : SIDEBAR_WIDTH
@@ -113,49 +100,53 @@ const DefaultLayout = () => {
         transition: 'width 0.3s cubic-bezier(0.2, 0.8, 0.2, 1), padding 0.3s ease',
         zIndex: 10,
       }}>
-        {/* Toggle + Brand */}
+        {/* Toggle + Brand + OrgSwitcher */}
         <div style={{
           display: 'flex',
-          alignItems: 'center',
-          justifyContent: collapsed ? 'center' : 'space-between',
-          marginBottom: collapsed ? '32px' : '48px',
-          paddingLeft: collapsed ? '0' : '8px',
+          flexDirection: 'column',
+          gap: collapsed ? '8px' : '16px',
+          marginBottom: collapsed ? '32px' : '32px',
         }}>
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: collapsed ? 'center' : 'space-between',
+            paddingLeft: collapsed ? '0' : '8px',
+          }}>
+            {!collapsed && (
+              <div>
+                <h2 className="text-display" style={{ color: '#ffffff', fontSize: '1.6rem', margin: 0 }}>
+                  {TXT.SIDEBAR_BRAND} <span style={{ color: 'var(--rs-sidebar-brand)' }}>{TXT.SIDEBAR_BRAND_ACCENT}</span>
+                </h2>
+                <div className="luxury-line" style={{ width: '40px', margin: '12px 0' }} />
+              </div>
+            )}
+            {collapsed && (
+              <h2 className="text-display" style={{ color: '#ffffff', fontSize: '1.3rem', margin: 0 }}>A</h2>
+            )}
+            {!isAdmin && (
+              <button
+                type="button"
+                onClick={() => setCollapsed(prev => !prev)}
+                style={{
+                  background: 'none', border: 'none', color: 'var(--rs-sidebar-link)',
+                  cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center',
+                  opacity: 0.6, transition: 'opacity 0.2s ease',
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.opacity = '1' }}
+                onMouseLeave={(e) => { e.currentTarget.style.opacity = '0.6' }}
+                title={collapsed ? 'Expandir menu' : 'Colapsar menu'}
+                aria-label={collapsed ? 'Expandir menu' : 'Colapsar menu'}
+              >
+                <CIcon icon={cilMenu} size="sm" />
+              </button>
+            )}
+          </div>
           {!collapsed && (
-            <div>
-              <h2 className="text-display" style={{ color: '#ffffff', fontSize: '1.6rem', margin: 0 }}>
-                {TXT.SIDEBAR_BRAND} <span style={{ color: 'var(--rs-sidebar-brand)' }}>{TXT.SIDEBAR_BRAND_ACCENT}</span>
-              </h2>
-              <div className="luxury-line" style={{ width: '40px', margin: '12px 0' }} />
-            </div>
-          )}
-          {collapsed && (
-            <h2 className="text-display" style={{ color: '#ffffff', fontSize: '1.3rem', margin: 0 }}>
-              A
-            </h2>
-          )}
-          {!isAdmin && (
-            <button
-              type="button"
-              onClick={() => setCollapsed(prev => !prev)}
-              style={{
-                background: 'none',
-                border: 'none',
-                color: 'var(--rs-sidebar-link)',
-                cursor: 'pointer',
-                padding: '4px',
-                display: 'flex',
-                alignItems: 'center',
-                opacity: 0.6,
-                transition: 'opacity 0.2s ease',
-              }}
-              onMouseEnter={(e) => { e.currentTarget.style.opacity = '1' }}
-              onMouseLeave={(e) => { e.currentTarget.style.opacity = '0.6' }}
-              title={collapsed ? 'Expandir menu' : 'Colapsar menu'}
-              aria-label={collapsed ? 'Expandir menu' : 'Colapsar menu'}
-            >
-              <CIcon icon={cilMenu} size="sm" />
-            </button>
+            <OrganizationSwitcher
+              afterCreateOrganizationUrl="/dashboard"
+              afterSelectOrganizationUrl="/dashboard"
+            />
           )}
         </div>
         
@@ -212,11 +203,11 @@ const DefaultLayout = () => {
                 fontWeight: '700',
                 flexShrink: 0,
               }}>
-                {user?.email?.[0].toUpperCase()}
+                {user?.primaryEmailAddress?.emailAddress?.[0]?.toUpperCase() || '?'}
               </div>
               <div style={{ overflow: 'hidden' }}>
                 <p style={{ fontSize: '0.85rem', color: 'var(--brand-50)', fontWeight: '600', margin: 0, textOverflow: 'ellipsis', whiteSpace: 'nowrap', overflow: 'hidden' }}>
-                  {user ? user.email.split('@')[0] : 'Convidado'}
+                  {user?.primaryEmailAddress?.emailAddress?.split('@')[0] || 'Convidado'}
                 </p>
                 <span className="zen-caps" style={{ color: 'var(--rs-sidebar-section)', fontSize: '0.6rem' }}>
                   {getRoleLabel()}
@@ -241,19 +232,11 @@ const DefaultLayout = () => {
                 color: '#ffffff',
                 fontWeight: '700',
               }}>
-                {user?.email?.[0].toUpperCase()}
+                {user?.primaryEmailAddress?.emailAddress?.[0]?.toUpperCase() || '?'}
               </div>
             </div>
           )}
-          <button 
-            onClick={handleLogout} 
-            className="btn-zen btn-zen-outline" 
-            style={{ width: '100%', justifyContent: 'center', fontSize: '0.75rem', padding: '8px' }}
-            type="button"
-          >
-            <CIcon icon={cilAccountLogout} size="sm" />
-            {!collapsed && ' Sair'}
-          </button>
+          <UserButton afterSignOutUrl="/" />
         </div>
       </aside>
 
