@@ -150,6 +150,7 @@ class Organization(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(100), nullable=False)
+    clerk_org_id: Mapped[Optional[str]] = mapped_column(String(255), unique=True, nullable=True)
 
     courses: Mapped[List["Course"]] = relationship(back_populates="organization", cascade=CASCADE_ALL_DELETE)
     
@@ -183,12 +184,13 @@ class User(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[Optional[str]] = mapped_column(String(150), nullable=True)
     email: Mapped[str] = mapped_column(String(100), unique=True, index=True, nullable=False)
-    hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
+    clerk_user_id: Mapped[Optional[str]] = mapped_column(String(255), unique=True, nullable=True)
+    hashed_password: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     # O Papel do utilizador (Admin por defeito)
     role: Mapped[UserRole] = mapped_column(SAEnum(UserRole), default=UserRole.admin, nullable=False)
     # Se for admin, isto fica NULL. Se for professor, aponta para o ID dele.
     teacher_id: Mapped[Optional[int]] = mapped_column(ForeignKey(FK_TEACHER_ID), nullable=True)
-    organization_id: Mapped[int] = mapped_column(ForeignKey(FK_ORG_ID))
+    organization_id: Mapped[Optional[int]] = mapped_column(ForeignKey(FK_ORG_ID), nullable=True)
     organization: Mapped["Organization"] = relationship(back_populates="users")
     # Atalho para aceder aos dados do professor (se existirem)
     teacher_profile: Mapped[Optional["Teacher"]] = relationship()

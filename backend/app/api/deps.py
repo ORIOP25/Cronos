@@ -1,91 +1,91 @@
 # Ficheiro: backend/app/api/deps.py
-from typing import Generator, AsyncGenerator, Annotated
+from typing import AsyncGenerator, Annotated
 from fastapi import Depends, HTTPException, status, Request
-from fastapi.security import OAuth2PasswordBearer
-from jose import JWTError, jwt
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.future import select
 
-# Imports do Projeto
 from app.db.database import SessionLocal
-from app.config import settings
-from app.core import security # As ferramentas que criámos acima
-from app import models, schemas
-# Importamos o serviço AQUI. O deps conhece o serviço, mas o serviço não conhece o deps.
-from app.services import user_service 
-
-# Define onde o FastAPI vai buscar o token (Url do login)
-oauth2_scheme = OAuth2PasswordBearer(
-    tokenUrl=f"{settings.API_V1_STR}/auth/token",
-    auto_error=False
-)
+from app.core.clerk import verify_clerk_request
+from app.services import clerk_sync
+from app import models
 
 # --- DATABASE ---
 async def get_db() -> AsyncGenerator:
-    """Dependência para obter sessão de base de dados."""
     async with SessionLocal() as db:
         yield db
 
-# --- AUTH (Proteção de Rotas) ---
+
+# --- CLERK AUTH ---
+
+async def get_clerk_payload(request: Request) -> dict:
+    state = verify_clerk_request(request)
+    if not state.is_signed_in:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+        )
+    return state.payload
+
+
 async def get_current_user(
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
-    token: str | None = Depends(oauth2_scheme),
 ) -> models.User:
-    """
-    Valida o token e retorna o utilizador atual da BD.
-    """
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Não foi possível validar as credenciais",
-        headers={"WWW-Authenticate": "Bearer"},
+    payload = await get_clerk_payload(request)
+    clerk_user_id = payload.get("sub")
+    if not clerk_user_id:
+        raise HTTPException(status_code=401, detail="No user ID in token")
+
+    result = await db.execute(
+        select(models.User).where(models.User.clerk_user_id == clerk_user_id)
     )
-    
-    # 1. Buscar token do header Authorization ou do cookie (httpOnly)
-    if not token:
-        token = request.cookies.get(settings.ACCESS_TOKEN_COOKIE_NAME)
+    user = result.scalar_one_or_none()
 
-    if not token:
-        raise credentials_exception
+    if user:
+        return user
 
-    # 2. Validar estrutura do token (usando a função pura do core)
-    token_data = security.verify_token(token)
-    
-    if token_data is None:
-        raise credentials_exception
-    
-    # 3. Buscar utilizador à BD (usando o user_service)
-    user = await user_service.get_user_by_email(db, email=token_data.email)
-    
-    if user is None:
-        raise credentials_exception
-        
+    # Fallback: criar via BAPI (race condition com webhooks)
+    org_id = payload.get("o", {}).get("id") if "o" in payload else None
+    role = payload.get("o", {}).get("rol") if "o" in payload else None
+
+    if org_id:
+        await clerk_sync.sync_organization_from_clerk_api(db, org_id)
+
+    user = await clerk_sync.sync_user_from_clerk_api(db, clerk_user_id)
+
+    if not user:
+        raise HTTPException(status_code=401, detail="User not found")
+
+    if org_id and user.organization_id is None:
+        org_local_result = await db.execute(
+            select(models.Organization).where(models.Organization.clerk_org_id == org_id)
+        )
+        org_local = org_local_result.scalar_one_or_none()
+        if org_local:
+            user.organization_id = org_local.id
+        if role:
+            user.role = clerk_sync.parse_role(role)
+
     return user
 
-# 3. Dependency: Verificar se está Ativo (Segurança Extra)
+
 def get_current_active_user(
     current_user: Annotated[models.User, Depends(get_current_user)],
 ) -> models.User:
-    """
-    Garante que o utilizador não foi desativado/bloqueado.
-    """
     if not current_user.is_active:
-        raise HTTPException(status_code=400, detail="Utilizador inativo")
+        raise HTTPException(status_code=403, detail="Inactive user")
     return current_user
 
-# 4. Dependency: Autorização de Admin (Apenas Diretores/Admins)
+
 def get_current_active_admin(
     current_user: Annotated[models.User, Depends(get_current_active_user)],
 ) -> models.User:
-    """
-    Garante que o utilizador tem permissões de administração.
-    """
-    # Verifica se é superuser OU se tem role de 'admin'/'director'
-    # Ajusta a string "admin" conforme o que tens na tua base de dados na coluna 'role'
-    is_admin = current_user.is_superuser or (hasattr(current_user, 'role') and current_user.role in ['admin', 'director'])
-    
+    is_admin = current_user.is_superuser or (
+        hasattr(current_user, "role") and current_user.role in ("admin",)
+    )
     if not is_admin:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, 
-            detail="O utilizador não tem privilégios suficientes"
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required",
         )
     return current_user

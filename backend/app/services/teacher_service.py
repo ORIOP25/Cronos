@@ -102,7 +102,26 @@ async def create_teacher(db: AsyncSession, teacher_in: schemas.TeacherCreate, or
             new_user.is_active = is_active_status
             db.add(new_user)
 
-        # 6. Gravar tudo na BD
+        await db.flush()
+
+        # 6. Enviar convite Clerk se a org tiver clerk_org_id
+        if teacher_in.create_user_account and teacher_in.email:
+            org = await db.get(models.Organization, organization_id)
+            if org and org.clerk_org_id:
+                try:
+                    await invite_teacher_to_clerk(
+                        clerk_org_id=org.clerk_org_id,
+                        teacher_email=teacher_in.email,
+                        teacher_id=db_teacher.id,
+                    )
+                except Exception:
+                    import logging
+                    logging.getLogger(__name__).warning(
+                        "Falha ao enviar convite Clerk para %s (org %s)",
+                        teacher_in.email, org.clerk_org_id,
+                    )
+
+        # 7. Gravar tudo na BD
         await db.commit()
     except Exception:
         await db.rollback()
@@ -528,3 +547,22 @@ async def get_teacher_progress(
 
     # 6. Retornar lista ordenada por nome da turma
     return sorted(classes_map.values(), key=lambda c: c["class_name"])
+
+
+# ── Clerk Integration ─────────────────────────────────────────────
+
+async def invite_teacher_to_clerk(
+    clerk_org_id: str,
+    teacher_email: str,
+    teacher_id: int,
+) -> dict:
+    from app.core.clerk import get_clerk_sdk
+
+    sdk = get_clerk_sdk()
+    result = sdk.organization_invitations.create(
+        organization_id=clerk_org_id,
+        email_address=teacher_email,
+        role="org:member",
+        public_metadata={"teacher_id": teacher_id},
+    )
+    return {"invitation_id": result.id, "status": result.status}

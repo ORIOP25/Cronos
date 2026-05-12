@@ -45,7 +45,11 @@ class UserBase(BaseModel):
     email: EmailStr
 
 class UserCreate(UserBase):
-    password: str
+    password: Optional[str] = None  # Clerk gere passwords
+    clerk_user_id: Optional[str] = None
+    name: Optional[str] = None
+    role: Optional[UserRole] = None
+    teacher_id: Optional[int] = None
 
 class RegisterRequest(BaseModel):
     """Payload para registo de nova conta (Organização + Admin)."""
@@ -68,6 +72,18 @@ class UserResponse(UserBase):
     organization_id: int
     # role: UserRole = UserRole.ADMIN # Descomentar se usares roles no futuro
     
+    model_config = model_config
+
+class ClerkUserRead(BaseModel):
+    id: int
+    clerk_user_id: Optional[str] = None
+    email: str
+    name: str | None = None
+    role: str
+    organization_id: int
+    teacher_id: int | None = None
+    is_active: bool
+
     model_config = model_config
 
 # ==========================================
@@ -1245,3 +1261,55 @@ class DashboardV1Response(BaseModel):
     class_progress: list[ClassProgressSummary] = Field(default_factory=list)
     debts: DebtSummary
     organization_name: str
+
+
+# ── Clerk Webhooks ──────────────────────────────────────────────
+
+class ClerkWebhookEvent(BaseModel):
+    type: str
+    data: dict[str, Any]
+    object: str = "event"
+    timestamp: int
+    instance_id: Optional[str] = None
+
+
+class ClerkUserData(BaseModel):
+    id: str
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    email_addresses: list[dict[str, Any]] = []
+    created_at: Optional[int] = None
+    public_metadata: dict[str, Any] = {}
+    unsafe_metadata: dict[str, Any] = {}
+
+
+class ClerkOrganizationData(BaseModel):
+    id: str
+    name: str
+    slug: str
+    created_at: Optional[int] = None
+    public_metadata: dict[str, Any] = {}
+
+
+class ClerkMembershipData(BaseModel):
+    role: str
+    organization: dict[str, Any]
+    public_metadata: dict[str, Any] = {}
+    public_user_data: dict[str, Any] = {}
+    created_at: Optional[int] = None
+
+
+# ── Onboarding ─────────────────────────────────────────────────
+
+class OnboardingRequest(BaseModel):
+    school_start_date: date
+    school_target_end_date: date
+    school_hard_end_date: date
+    lunch_start: time
+    lunch_end: time
+    lunch_min_duration: int
+
+
+class OnboardingStatusResponse(BaseModel):
+    onboarding_complete: bool
+    organization_name: Optional[str] = None

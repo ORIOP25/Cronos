@@ -1,6 +1,5 @@
 #C:\Users\Hp\Desktop\AnoLetivo25_26\MeuProjeto\backend\app\services\user_service.py
 
-import bcrypt
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from typing import List
@@ -8,7 +7,6 @@ from sqlalchemy import desc, delete
 from app import models, schemas
 from app.services.teacher_service import get_teachers_by_org
 from app.models import UserRole
-from app.core.security import hash_password
 
 # --- CRUD: User (Utilizador) ---
 
@@ -52,7 +50,7 @@ async def register_account(
     db_user = models.User(
         name=payload.admin_name,
         email=payload.email,
-        hashed_password=hash_password(payload.password),
+        hashed_password=None,  # Clerk gere autenticação
         organization_id=db_org.id,
         role=models.UserRole.admin,
         is_active=True,
@@ -79,7 +77,7 @@ async def create_user(
     - Se organization_id for None: Cria uma NOVA organização (cenário de Registo).
     - Se organization_id for passado: Adiciona o user à organização existente (cenário de Admin criar profs).
     """
-    hashed_pwd = hash_password(user.password)
+    hashed_pwd = None  # Clerk gere autenticação; campo hashed_password é mantido para compatibilidade
     
     final_org_id = organization_id
 

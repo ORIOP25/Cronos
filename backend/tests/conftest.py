@@ -38,7 +38,10 @@ async def db_session() -> AsyncGenerator[AsyncSession, None]:
         await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
     async with TestingSessionLocal() as session:
+        # Override: a app usa a mesma sessão de teste, evitando conflitos de event loop
+        app.dependency_overrides[get_db] = lambda: session
         yield session
+        app.dependency_overrides.pop(get_db, None)
     async with test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
 

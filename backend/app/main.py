@@ -99,7 +99,28 @@ async def security_headers(request, call_next):
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Referrer-Policy"] = "no-referrer"
     response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
-    response.headers["Content-Security-Policy"] = "default-src 'none'"
+
+    if settings.ENVIRONMENT == "local":
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; "
+            "script-src 'self' 'unsafe-inline' https://*.clerk.accounts.dev; "
+            "connect-src 'self' https://*.clerk.accounts.dev; "
+            "img-src 'self' https://img.clerk.com data:; "
+            "style-src 'self' 'unsafe-inline' https://*.clerk.accounts.dev; "
+            "frame-src 'self' https://*.clerk.accounts.dev; "
+            "frame-ancestors 'self'"
+        )
+    else:
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; "
+            "script-src 'self' https://clerk.aperius.pt; "
+            "connect-src 'self' https://clerk.aperius.pt; "
+            "img-src 'self' https://img.clerk.com data:; "
+            "style-src 'self' 'unsafe-inline' https://clerk.aperius.pt; "
+            "frame-src 'self' https://clerk.aperius.pt; "
+            "frame-ancestors 'self'"
+        )
+
     if settings.ENVIRONMENT == "production":
         response.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains; preload"
     return response

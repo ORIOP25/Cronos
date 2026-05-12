@@ -27,6 +27,12 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 8
     REFRESH_TOKEN_EXPIRE_DAYS: int = 30
 
+    # --- Clerk Authentication ---
+    CLERK_SECRET_KEY: str = ""
+    CLERK_PUBLISHABLE_KEY: str = ""
+    CLERK_WEBHOOK_SECRET: str = ""
+    FRONTEND_URL: str = "http://localhost:5173"
+
     # --- Cookies (Auth) ---
     ACCESS_TOKEN_COOKIE_NAME: str = "hz_access"
     ACCESS_TOKEN_COOKIE_SECURE: bool = False
