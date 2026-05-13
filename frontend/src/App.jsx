@@ -23,6 +23,7 @@ const Courses = React.lazy(() => import('./pages/Courses'))
 const CourseDetails = React.lazy(() => import('./pages/CourseDetails'))
 const ClassDetails = React.lazy(() => import('./pages/ClassDetails'))
 const ClassSubjects = React.lazy(() => import('./pages/ClassSubjects'))
+const Onboarding = React.lazy(() => import('./pages/Onboarding'))
 
 import DefaultLayout from './components/DefaultLayout'
 import { MarketingSite } from './pages/MarketingSite'
@@ -73,15 +74,15 @@ function App() {
           </Show>
         } />
 
-        <Route path="/login" element={<SignInPage />} />
-        <Route path="/register" element={<SignUpPage />} />
+        <Route path="/login/*" element={<SignInPage />} />
+        <Route path="/register/*" element={<SignUpPage />} />
 
         <Route path="/create-org" element={
           <RequireAuth><CreateOrgPage /></RequireAuth>
         } />
 
         <Route path="/onboarding" element={
-          <RequireAdmin><LazyPage><div>Onboarding (WIP)</div></LazyPage></RequireAdmin>
+          <RequireAdmin><LazyPage><Onboarding /></LazyPage></RequireAdmin>
         } />
 
         <Route element={<RequireAuth><DefaultLayout /></RequireAuth>}>

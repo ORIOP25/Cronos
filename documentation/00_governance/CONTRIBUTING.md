@@ -59,7 +59,7 @@ alembic upgrade head   # voltar a aplicar
 ### Frontend (React)
 - Componentes funcionais com hooks
 - React Query para dados do servidor
-- Zustand para estado de UI/autenticação
+- Clerk para autenticação (auth)
 - Evitar ternários aninhados
 - Usar elementos HTML semânticos (`<button>`, `<progress>`, etc.)
 - **Datas e números**: usar `src/utils/formatUtils.js` (nunca formatar datas manualmente)

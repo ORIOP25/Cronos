@@ -15,7 +15,7 @@ Esta secção fornece todo o contexto necessário para compreender e executar o 
 | **Frontend** | React | 18+ |
 | **UI Framework** | CoreUI (Bootstrap 5) | — |
 | **State/Cache** | React Query (TanStack Query) | 5+ |
-| **Estado Global** | Zustand (auth store) | — |
+| **Estado Global** | Clerk (auth) + React Query (server state) | — |
 | **Routing** | React Router | 6+ |
 | **Task Queue** | Celery + Redis | — |
 | **CI/CD** | GitHub Actions | — |
@@ -93,13 +93,13 @@ MeuProjeto/
 
 ### 0.4. Sistema de Autenticação e Autorização
 
-- **Login:** O utilizador faz login via `POST /auth/login`. O backend devolve um JWT token.
-- **Store:** O frontend guarda o token e os dados do utilizador no Zustand store (`useAuthStore`).
-- **Campos do utilizador no store:**
-  - `user.orgId` — ID da organização (escola)
-  - `user.role` — `"admin"` ou `"teacher"`
-  - `user.teacherId` — ID do professor (apenas se role=teacher)
-  - `user.orgName` — Nome da organização
+- **Login:** O utilizador faz login via Clerk (`<SignIn />`). O Clerk geria o token de sessão automaticamente.
+- **Store:** O estado de auth é gerido pelo Clerk (`useAuth()`, `useUser()`, `useOrganization()`).
+- **Campos do utilizador:**
+  - `organization.id` — ID da organização (escola), via `useOrganization()`
+  - `membership.role` — `"org:admin"` ou `"org:member"`, via `useOrganization()`
+  - `user.publicMetadata.teacherId` — ID do professor (apenas se role=teacher), via `useUser()`
+  - `organization.name` — Nome da organização
 - **Multi-tenant:** TODOS os endpoints usam `current_user.organization_id` para filtrar dados. Nunca há dados cruzados entre organizações.
 - **Permissões:**
   - Admin: acesso total a todas as páginas e operações
@@ -133,7 +133,8 @@ Todos os hooks estão em `frontend/src/hooks/useSchoolData.js`. Seguem este padr
 ```js
 // Query (leitura)
 export const useWeekSchedule = (classId, teacherId, weekStart) => {
-  const orgId = useAuthStore(state => state.user?.orgId)
+  const { organization } = useOrganization()
+  const orgId = organization?.id
   return useQuery({
     queryKey: ['weekSchedule', orgId, classId, teacherId, weekStart],
     queryFn: async () => {
@@ -152,7 +153,8 @@ export const useWeekSchedule = (classId, teacherId, weekStart) => {
 // Mutation (escrita)
 export const useUpsertLessonLog = () => {
   const queryClient = useQueryClient()
-  const orgId = useAuthStore(state => state.user?.orgId)
+  const { organization } = useOrganization()
+  const orgId = organization?.id
   return useMutation({
     mutationFn: async ({ scheduleOutputId, payload }) => {
       const { data } = await apiClient.put(

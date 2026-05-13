@@ -50,7 +50,7 @@ Before coding or recommending architecture:
 
 ## 6. Stack Baseline
 - **Backend**: Python 3.12, FastAPI, SQLAlchemy Async (Mapped[T] style), Pydantic v2, Celery, Alembic.
-- **Frontend**: React + CoreUI + React Query + Zustand + React Router v7.
+- **Frontend**: React + CoreUI + React Query + Clerk (auth) + React Router v7.
 - **Infra**: Docker Compose, PostgreSQL 15, Redis 7.
 - **Tenant isolation**: Filtering by `organization_id` is mandatory in every query and mutation.
 - **Performance**: Prevent N+1 patterns; use `selectinload` / `joinedload`. Treat cache as optimization, never as source of truth.

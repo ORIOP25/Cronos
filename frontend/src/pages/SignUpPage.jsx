@@ -7,6 +7,7 @@ export default function SignUpPage() {
         routing="path"
         path="/register"
         signInUrl="/login"
+        afterSignUpUrl="/create-org"
       />
     </div>
   );

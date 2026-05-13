@@ -358,7 +358,8 @@ async def get_dashboard(
 **Especificação**:
 ```javascript
 export function useDashboard() {
-  const orgId = useAuthStore((s) => s.user?.orgId)
+  const { organization } = useOrganization()
+  const orgId = organization?.id
   return useQuery({
     queryKey: ['dashboard', orgId],
     queryFn: () => api.get('/dashboard').then(r => r.data),

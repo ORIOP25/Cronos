@@ -33,14 +33,6 @@ class Settings(BaseSettings):
     CLERK_WEBHOOK_SECRET: str = ""
     FRONTEND_URL: str = "http://localhost:5173"
 
-    # --- Cookies (Auth) ---
-    ACCESS_TOKEN_COOKIE_NAME: str = "hz_access"
-    ACCESS_TOKEN_COOKIE_SECURE: bool = False
-    ACCESS_TOKEN_COOKIE_SAMESITE: Literal["lax", "strict", "none"] = "lax"
-    REFRESH_TOKEN_COOKIE_NAME: str = "hz_refresh"
-    REFRESH_TOKEN_COOKIE_SECURE: bool = False
-    REFRESH_TOKEN_COOKIE_SAMESITE: Literal["lax", "strict", "none"] = "lax"
-
     # --- CORS ---
     # Lista separada por virgulas (ex: "https://app.exemplo.com,https://admin.exemplo.com")
     CORS_ORIGINS: str = ""

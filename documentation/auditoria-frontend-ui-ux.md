@@ -102,7 +102,7 @@ Não há padrão. O utilizador não percebe porquê.
 **Recomendação**: Implementar sidebar colapsável (com toggle) e, em mobile (< 768px), transformar em offcanvas/drawer com overlay.
 
 ### H07 — Formulário de Registo sem indicador de força da password
-**Ficheiro**: `pages/Register.jsx`  
+**Ficheiro**: `pages/SignUpPage.jsx` (substituiu `Register.jsx` na migração Clerk)
 **Problema**: O campo de password apenas valida `length >= 6`, sem feedback visual de força, requisitos (maiúsculas, números, símbolos), ou confirmação visual de match.  
 **Recomendação**: Adicionar uma barra de força da password (fraca/média/forte) e validação visual em tempo real (check verde quando passwords coincidem).
 
@@ -265,9 +265,8 @@ borderLeft: '4px solid var(--cui-${color})' // ❌ não interpola
 **Recomendação**: Adicionar PropTypes para documentar a API do componente.
 
 ### L06 — Sem separação de "preferências" do Zustand com seletores atómicos
-**Ficheiro**: `store.js`  
-**Problema**: O store usa `useAuthStore((state) => state.user)` que funciona, mas não é otimizado. Quando `user` muda, todos os componentes que subscrevem qualquer campo do `user` re-renderizam.  
-**Recomendação**: Usar seletores atómicos: `useAuthStore((s) => s.user?.role)`, `useAuthStore((s) => s.isAuthenticated)`. Zustand faz shallow comparison automaticamente.
+**Ficheiro**: `store.js` (removido na migração para Clerk — auth state é gerido pelo `@clerk/react` com `useAuth()`, `useUser()`, `useOrganization()`)
+**Problema**: [RESOLVIDO] O Clerk gere o estado de auth de forma otimizada internamente.
 
 ### L07 — `package.json` sem script de lint
 **Ficheiro**: `frontend/package.json` (assumido)  

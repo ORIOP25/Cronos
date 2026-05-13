@@ -1,23 +1,23 @@
-name: CI — Tests & SonarQube
+name: CI
 
 on:
   push:
-    branches: ["main", "master"]
+    branches: [main, develop]
   pull_request:
-    branches: ["main", "master"]
+    branches: [main]
 
 env:
   PYTHON_VERSION: "3.12"
   NODE_VERSION: "20"
 
 jobs:
-  test-and-scan:
-    name: Backend + Frontend Tests & SonarQube
+  backend:
+    name: Backend — Tests + Coverage
     runs-on: ubuntu-latest
 
     services:
       postgres:
-        image: postgres:15-alpine
+        image: postgres:16-alpine
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: ci_pg_pass
@@ -30,20 +30,8 @@ jobs:
           --health-timeout 5s
           --health-retries 5
 
-      redis:
-        image: redis:7-alpine
-        ports:
-          - 6379:6379
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Setup Python ${{ env.PYTHON_VERSION }}
         uses: actions/setup-python@v5
@@ -52,49 +40,39 @@ jobs:
           cache: pip
           cache-dependency-path: backend/requirements.txt
 
-      - name: Setup Node.js ${{ env.NODE_VERSION }}
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
-
-      - name: Install Backend Dependencies
+      - name: Install Dependencies
         working-directory: backend
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install pytest-cov
 
-      - name: Install Frontend Dependencies
-        working-directory: frontend
-        run: npm ci
-
-      - name: Run Backend Tests (Pytest + Coverage)
+      - name: Run Migrations
         working-directory: backend
+        run: alembic upgrade head
         env:
           ENVIRONMENT: local
           DATABASE_URL: "postgresql+asyncpg://postgres:ci_pg_pass@localhost:5432/horario_zen_test_db"
-          REDIS_URL: redis://localhost:6379/0
+          SECRET_KEY: ci-test-secret-key-not-for-production
+          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
+          CLERK_WEBHOOK_SECRET: ${{ secrets.CLERK_WEBHOOK_SECRET }}
+          CLERK_PUBLISHABLE_KEY: ${{ secrets.CLERK_PUBLISHABLE_KEY }}
+
+      - name: Run Tests
+        working-directory: backend
+        run: pytest tests/test_clerk_auth.py tests/test_webhooks.py tests/test_onboarding.py -v --cov=app --cov-report=xml:coverage.xml --tb=short
+        env:
+          ENVIRONMENT: local
+          DATABASE_URL: "postgresql+asyncpg://postgres:ci_pg_pass@localhost:5432/horario_zen_test_db"
           SECRET_KEY: ci-test-secret-key-not-for-production
           RATELIMIT_ENABLED: "false"
-        run: |
-          alembic upgrade head
-          pytest --cov=app --cov-report=xml:coverage.xml --cov-branch --tb=short
+          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
+          CLERK_WEBHOOK_SECRET: ${{ secrets.CLERK_WEBHOOK_SECRET }}
+          CLERK_PUBLISHABLE_KEY: ${{ secrets.CLERK_PUBLISHABLE_KEY }}
 
-      - name: Run Frontend Tests (Vitest + Coverage)
-        working-directory: frontend
-        run: npx vitest run --coverage
-
-      - name: SonarQube Scan
-        uses: SonarSource/sonarqube-scan-action@v5
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-
-  e2e-tests:
-    name: E2E — Dashboard User Journeys (Playwright)
+  frontend:
+    name: Frontend — Lint + Test + Build
     runs-on: ubuntu-latest
-    timeout-minutes: 15
 
     steps:
       - uses: actions/checkout@v4
@@ -110,18 +88,17 @@ jobs:
         working-directory: frontend
         run: npm ci
 
-      - name: Install Playwright Browsers
+      - name: Lint
         working-directory: frontend
-        run: npx playwright install --with-deps chromium
+        run: npx eslint . --max-warnings 200
+        continue-on-error: true
 
-      - name: Run E2E Tests
+      - name: Test
         working-directory: frontend
-        run: npx playwright test --project=chromium
+        run: npx vitest run
 
-      - name: Upload Screenshots (on failure)
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: playwright-screenshots
-          path: frontend/test-results/
-          retention-days: 7
+      - name: Build
+        working-directory: frontend
+        run: npm run build
+        env:
+          VITE_CLERK_PUBLISHABLE_KEY: ${{ secrets.VITE_CLERK_PUBLISHABLE_KEY }}

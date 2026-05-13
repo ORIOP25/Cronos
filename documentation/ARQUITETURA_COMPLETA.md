@@ -16,7 +16,7 @@ flowchart TB
 
     subgraph "Docker Compose Infrastructure"
         subgraph "Frontend Context"
-            SPA["Frontend (React + Vite)\nPorta: 5173\nZustand, React Query, CoreUI"]:::frontend
+            SPA["Frontend (React + Vite)\nPorta: 5173\nClerk, React Query, CoreUI"]:::frontend
         end
 
         subgraph "Backend Framework (FastAPI)"
@@ -59,7 +59,7 @@ O ecossistema roda de forma coesa utilizando contentores (Docker Compose):
 ### 2.2. Frontend (React SPA)
 O Frontend obedece a uma lógica rígida de separação por Role e consistência visual:
 - **Tecnologias Core**: React 19, Vite, CoreUI 5.
-- **State Management**: `zustand` centraliza o estado global de utilizador e sessão persistente (e.g. `useAuthStore`).
+- **State Management**: `Clerk` gere autenticação e sessão (`useAuth`, `useUser`, `useOrganization`). `React Query` gere estado de servidor.
 - **Comunicação Assíncrona**: React Query (TanStack Query v5) com cache configurado por perfil de mutabilidade (STATIC_OPTS para metadados, DYNAMIC_OPTS para dados operacionais). Sem `alert()` ou `window.confirm()` nativos.
 - **Controlo de Acesso (Routing)**: `react-router-dom v7` segmentado em `AdminOnlyRoute` e `TeacherOnlyRoute` com redirecionamento e feedback de acesso negado.
 - **Estrutura de Diretórios** (pós-auditoria Maio 2026):

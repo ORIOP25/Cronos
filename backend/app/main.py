@@ -103,11 +103,11 @@ async def security_headers(request, call_next):
     if settings.ENVIRONMENT == "local":
         response.headers["Content-Security-Policy"] = (
             "default-src 'self'; "
-            "script-src 'self' 'unsafe-inline' https://*.clerk.accounts.dev; "
-            "connect-src 'self' https://*.clerk.accounts.dev; "
+            "script-src 'self' 'unsafe-inline' https://*.clerk.accounts.dev https://challenges.cloudflare.com; "
+            "connect-src 'self' https://*.clerk.accounts.dev https://challenges.cloudflare.com; "
             "img-src 'self' https://img.clerk.com data:; "
             "style-src 'self' 'unsafe-inline' https://*.clerk.accounts.dev; "
-            "frame-src 'self' https://*.clerk.accounts.dev; "
+            "frame-src 'self' https://*.clerk.accounts.dev https://challenges.cloudflare.com; "
             "frame-ancestors 'self'"
         )
     else:

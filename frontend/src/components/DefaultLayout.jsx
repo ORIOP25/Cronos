@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { Outlet, NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { useUser, useOrganization } from '@clerk/react'
-import { UserButton, OrganizationSwitcher } from '@clerk/react'
+import { UserButton } from '@clerk/react'
 import { ROUTE_MY_SCHEDULES } from '../roleAccess'
 import { TXT } from '../utils/terminology'
 import CIcon from '@coreui/icons-react'
@@ -142,12 +142,6 @@ const DefaultLayout = () => {
               </button>
             )}
           </div>
-          {!collapsed && (
-            <OrganizationSwitcher
-              afterCreateOrganizationUrl="/dashboard"
-              afterSelectOrganizationUrl="/dashboard"
-            />
-          )}
         </div>
         
         <nav style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>

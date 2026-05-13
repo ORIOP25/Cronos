@@ -15,7 +15,6 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app import models
-from app.core.security import hash_password
 
 ACADEMIC_YEAR = "2025/2026"
 REFERENCE_DATE = date(2026, 4, 20)
@@ -41,7 +40,7 @@ def _create_organization(
     admin = models.User(
         name=f"Admin {org_name}",
         email=admin_email,
-        hashed_password=hash_password("1234"),
+        hashed_password=None,  # Clerk gere autenticação
         role=models.UserRole.admin,
         organization_id=org.id,
         is_active=True,

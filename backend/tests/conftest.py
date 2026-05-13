@@ -17,9 +17,7 @@ from sqlalchemy.pool import NullPool
 from app.db.database import Base, ASYNC_DB_URL, SYNC_DB_URL
 from app.api.deps import get_db
 from app.main import app
-from app.services import user_service
-from app.schemas import UserCreate
-from app.core.security import create_access_token
+from app import models
 from app.models import UserRole
 
 # --- Engines de Teste ---
@@ -38,19 +36,15 @@ async def db_session() -> AsyncGenerator[AsyncSession, None]:
         await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
     async with TestingSessionLocal() as session:
-        # Override: a app usa a mesma sessão de teste, evitando conflitos de event loop
         app.dependency_overrides[get_db] = lambda: session
         yield session
         app.dependency_overrides.pop(get_db, None)
     async with test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
 
-# --- Fixture: BD Síncrona (partilhada — depende de db_session para garantir tabelas) ---
+# --- Fixture: BD Síncrona ---
 @pytest.fixture
 def sync_db(db_session):
-    """Sessão síncrona apontada para a mesma BD de teste.
-    Depende de db_session para garantir que as tabelas foram criadas.
-    O cleanup é feito pelo drop_all do db_session no teardown."""
     db = SyncTestSession()
     try:
         yield db
@@ -67,70 +61,46 @@ async def async_client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient, 
         yield ac
     app.dependency_overrides.clear()
 
-# --- Fixture: Autenticação (User genérico) ---
-@pytest_asyncio.fixture(scope="function")
-async def authorized_client(async_client: AsyncClient, db_session: AsyncSession) -> AsyncClient:
-    email = "prof@teste.com"
-    password = "password123"
-    user_in = UserCreate(email=email, password=password)
-    await user_service.create_user(db_session, user_in)
-    access_token = create_access_token(data={"sub": email})
-    async_client.headers.update({"Authorization": f"Bearer {access_token}"})
-    return async_client
 
-# --- Fixture: Autenticação Admin ---
-@pytest_asyncio.fixture(scope="function")
-async def admin_token_headers(async_client: AsyncClient, db_session: AsyncSession) -> dict:
-    from app import models
-    from app.core.security import hash_password
+# ============================================================
+# HELPERS COM CLERK (mock get_clerk_payload)
+# ============================================================
 
-    org = models.Organization(name="Escola Teste", plan_status="active")
+async def create_org_and_user(
+    db_session: AsyncSession,
+    *,
+    clerk_user_id: str,
+    email: str | None = None,
+    name: str | None = None,
+    role: str = "admin",
+    org_name: str = "Escola Teste",
+    clerk_org_id: str | None = None,
+    teacher_id: int | None = None,
+) -> tuple[models.Organization, models.User]:
+    org = models.Organization(
+        name=org_name,
+        clerk_org_id=clerk_org_id or f"org_{uuid4().hex[:8]}",
+        plan_status="active",
+    )
     db_session.add(org)
     await db_session.flush()
 
-    admin_user = models.User(
-        email="admin@escola.com",
-        hashed_password=hash_password("adminpass"),
-        is_active=True,
-        role=UserRole.admin,
-        organization_id=org.id,
-    )
-    db_session.add(admin_user)
-    await db_session.commit()
-
-    access_token = create_access_token(data={"sub": "admin@escola.com"})
-    return {"Authorization": f"Bearer {access_token}"}
-
-
-# ============================================================
-# HELPERS PARTILHADOS (unificados para evitar duplicação)
-# ============================================================
-
-
-async def create_teacher_auth_headers(
-    db_session,
-    *,
-    organization_id: int,
-    teacher_id: int | None,
-    is_active: bool = True,
-    role: UserRole = UserRole.teacher,
-) -> dict:
-    """Cria utilizador teacher autenticado e devolve headers.
-    Helper unificado — usar em vez de redefinir em cada ficheiro."""
-    from app import models as m
-    from app.core.security import hash_password
-
-    email = f"teacher.{role.value}.{uuid4().hex[:8]}@escola.pt"
-    user = m.User(
-        email=email,
-        hashed_password=hash_password("pass123"),
-        is_active=is_active,
+    user = models.User(
+        clerk_user_id=clerk_user_id,
+        email=email or f"{clerk_user_id}@test.com",
+        name=name or "Test User",
         role=role,
-        organization_id=organization_id,
+        organization_id=org.id,
         teacher_id=teacher_id,
+        is_active=True,
     )
     db_session.add(user)
     await db_session.commit()
+    return org, user
 
-    token = create_access_token(data={"sub": email})
-    return {"Authorization": f"Bearer {token}"}
+
+def mock_clerk_payload(clerk_user_id: str, org_id: str | None = None, role: str = "admin") -> dict:
+    payload = {"sub": clerk_user_id}
+    if org_id:
+        payload["o"] = {"id": org_id, "rol": role}
+    return payload

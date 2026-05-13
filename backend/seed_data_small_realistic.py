@@ -16,7 +16,7 @@ from sqlalchemy import text
 
 from app.db.database import SessionLocalSync, engine_sync
 from app import models
-from app.core.security import hash_password, verify_password
+from app.core.clerk import get_clerk_sdk
 from app.models import UserRole, PreferenceLevel, RoomType
 
 
@@ -33,7 +33,7 @@ ORGANIZATION_INFO = {
     "name": "Escola Profissional do Norte",
     "admin_name": "Ana Silva",
     "admin_email": "ana.silva@escola.pt",
-    "admin_password": "1234",
+    "admin_password": "5s@jLiXz.",
 }
 
 COURSES = [
@@ -243,32 +243,82 @@ def _ensure_curricula_consistency() -> None:
         raise RuntimeError(f"Sem professor para disciplinas: {missing_teacher}")
 
 
-def _validate_seed_credentials(db) -> None:
-    admin_email = ORGANIZATION_INFO["admin_email"]
-    admin = db.execute(
-        text(
-            """
-            SELECT email, hashed_password, is_active
-            FROM "user"
-            WHERE email = :email
-            """
-        ),
-        {"email": admin_email},
-    ).first()
+def _setup_clerk_org_and_users() -> tuple[str, str, dict[str, str]]:
+    """Cria Organization + Users no Clerk via BAPI (max 5 members no free tier).
+    Limpa utilizadores existentes com os mesmos emails antes de criar."""
+    sdk = get_clerk_sdk()
 
-    if admin is None:
-        raise RuntimeError(f"Login admin esperado nao encontrado: {admin_email}")
+    # Limpar utilizadores existentes (de runs anteriores)
+    all_emails = [ORGANIZATION_INFO["admin_email"]] + [p["email"] for p in TEACHER_PROFILES]
+    print("   A limpar utilizadores Clerk existentes...")
+    existing_users = sdk.users.list(request={"limit": 500})
+    for user in existing_users:
+        user_emails = [e.email_address for e in (user.email_addresses or [])]
+        if any(e in all_emails for e in user_emails):
+            try:
+                sdk.users.delete(user_id=user.id)
+                print(f"   Removido: {user.id}")
+            except Exception:
+                pass  # já removido ou sem permissão
 
-    if not bool(admin[2]):
-        raise RuntimeError(f"Login admin inativo: {admin_email}")
+    print("   A criar organizacao no Clerk...")
+    org = sdk.organizations.create(
+        request={"name": ORGANIZATION_INFO["name"], "created_by": None}
+    )
+    clerk_org_id = org.id
+    print(f"   Organizacao Clerk: {clerk_org_id}")
 
-    if not verify_password(ORGANIZATION_INFO["admin_password"], str(admin[1])):
-        raise RuntimeError(f"Password seed invalida para admin: {admin_email}")
+    print("   A criar admin no Clerk...")
+    admin = sdk.users.create(
+        email_address=[ORGANIZATION_INFO["admin_email"]],
+        first_name=ORGANIZATION_INFO["admin_name"].split()[0],
+        last_name=ORGANIZATION_INFO["admin_name"].split()[1] if " " in ORGANIZATION_INFO["admin_name"] else "",
+        password=ORGANIZATION_INFO["admin_password"],
+        skip_password_checks=True,
+    )
+    admin_user_id = admin.id
+    print(f"   Admin Clerk: {admin_user_id} ({ORGANIZATION_INFO['admin_email']})")
+
+    sdk.organization_memberships.create(
+        organization_id=clerk_org_id,
+        user_id=admin_user_id,
+        role="org:admin",
+    )
+
+    # Apenas os primeiros 2 professores viram contas Clerk (limite free tier: 5 members)
+    MAX_CLERK_TEACHERS = 2
+    teacher_ids: dict[str, str] = {}
+    for i, profile in enumerate(TEACHER_PROFILES):
+        if i >= MAX_CLERK_TEACHERS:
+            print(f"   Professor DB-only (sem conta Clerk): {profile['email']}")
+            continue
+
+        print(f"   A criar professor no Clerk: {profile['email']}...")
+        parts = profile["name"].split(" ", 1)
+        first = parts[0]
+        last = parts[1] if len(parts) > 1 else ""
+        teacher = sdk.users.create(
+            email_address=[profile["email"]],
+            first_name=first,
+            last_name=last,
+            password="5s@jLiXz.",
+            skip_password_checks=True,
+        )
+        teacher_ids[profile["email"]] = teacher.id
+
+        sdk.organization_memberships.create(
+            organization_id=clerk_org_id,
+            user_id=teacher.id,
+            role="org:member",
+        )
+
+    return clerk_org_id, admin_user_id, teacher_ids
 
 
-def _create_base_entities(db) -> tuple[models.Organization, dict[tuple[int, int], models.Timeslot]]:
+def _create_base_entities(db, clerk_org_id: str, admin_clerk_user_id: str) -> tuple[models.Organization, dict[tuple[int, int], models.Timeslot]]:
     organization = models.Organization(
         name=ORGANIZATION_INFO["name"],
+        clerk_org_id=clerk_org_id,
         plan_status="active",
     )
     db.add(organization)
@@ -277,7 +327,8 @@ def _create_base_entities(db) -> tuple[models.Organization, dict[tuple[int, int]
     db.add(models.User(
         name=ORGANIZATION_INFO["admin_name"],
         email=ORGANIZATION_INFO["admin_email"],
-        hashed_password=hash_password(ORGANIZATION_INFO["admin_password"]),
+        clerk_user_id=admin_clerk_user_id,
+        hashed_password=None,
         role=UserRole.admin,
         organization_id=organization.id,
         is_active=True,
@@ -327,6 +378,11 @@ def run_seed() -> None:
         print("\n3/3  A preencher dados de teste (escala reduzida e realista)...\n")
         _ensure_curricula_consistency()
 
+        # 0. Criar Organization + Users no Clerk (BAPI)
+        print("   A configurar autenticacao no Clerk...")
+        clerk_org_id, admin_clerk_user_id, teacher_clerk_ids = _setup_clerk_org_and_users()
+        print("   Clerk configurado com sucesso!\n")
+
         counters = {
             "orgs": 0,
             "teachers": 0,
@@ -342,7 +398,7 @@ def run_seed() -> None:
             "timeslots": 0,
         }
 
-        organization, ts_map = _create_base_entities(db)
+        organization, ts_map = _create_base_entities(db, clerk_org_id, admin_clerk_user_id)
         counters["orgs"] = 1
         counters["rooms"] = len(ROOMS_TEMPLATE)
         counters["timeslots"] = len(ts_map)
@@ -360,15 +416,19 @@ def run_seed() -> None:
             db.add(teacher)
             db.flush()
 
-            db.add(models.User(
-                name=profile["name"],
-                email=profile["email"],
-                hashed_password=hash_password("1234"),
-                role=UserRole.teacher,
-                teacher_id=teacher.id,
-                organization_id=organization.id,
-                is_active=True,
-            ))
+            # Criar User row APENAS se o professor tem conta Clerk
+            clerk_id = teacher_clerk_ids.get(profile["email"])
+            if clerk_id:
+                db.add(models.User(
+                    name=profile["name"],
+                    email=profile["email"],
+                    clerk_user_id=clerk_id,
+                    hashed_password=None,
+                    role=UserRole.teacher,
+                    teacher_id=teacher.id,
+                    organization_id=organization.id,
+                    is_active=True,
+                ))
 
             teacher_by_email[profile["email"]] = teacher
             counters["teachers"] += 1
@@ -498,7 +558,6 @@ def run_seed() -> None:
                         counters["progress"] += 1
 
         db.commit()
-        _validate_seed_credentials(db)
 
         print("\n" + "=" * 72)
         print("  RESUMO DO SEED (ESCALA REDUZIDA E REALISTA)")
@@ -517,13 +576,12 @@ def run_seed() -> None:
         print(f"  Availabilities:            {counters['availability']}")
         print("=" * 72)
 
-        print("\n  LOGINS PRINCIPAIS:")
+        print("\n  LOGINS PRINCIPAIS (contas Clerk reais):")
         print(f"   Admin -> {ORGANIZATION_INFO['admin_email']} / {ORGANIZATION_INFO['admin_password']}")
-        print("   Professor -> ana.matos@epnorte.pt / 1234")
-        print("   Professor -> eduardo.pires@epnorte.pt / 1234")
+        print(f"   Professor -> ana.matos@epnorte.pt / 5s@jLiXz.")
+        print(f"   Professor -> bruno.costa@epnorte.pt / 5s@jLiXz.")
 
-        print("\n  [OK] Credenciais admin validadas apos carga")
-        print("  [INFO] Seed preparado para testes manuais de operacao e navegacao")
+        print("\n  [OK] Seed preparado para testes manuais de operacao e navegacao (auth via Clerk)")
 
     except Exception as exc:
         print(f"\n[ERRO] Erro critico no seed: {exc}")
