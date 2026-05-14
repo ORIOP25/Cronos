@@ -50,7 +50,7 @@ async def register_account(
     db_user = models.User(
         name=payload.admin_name,
         email=payload.email,
-        hashed_password=None,  # Clerk gere autenticação
+        clerk_user_id=None,
         organization_id=db_org.id,
         role=models.UserRole.admin,
         is_active=True,
@@ -77,8 +77,6 @@ async def create_user(
     - Se organization_id for None: Cria uma NOVA organização (cenário de Registo).
     - Se organization_id for passado: Adiciona o user à organização existente (cenário de Admin criar profs).
     """
-    hashed_pwd = None  # Clerk gere autenticação; campo hashed_password é mantido para compatibilidade
-    
     final_org_id = organization_id
 
     # 1. Se não temos organização, criamos uma (Lógica de /register)
@@ -96,7 +94,7 @@ async def create_user(
     # 2. Criar Utilizador
     db_user = models.User(
         email=user.email,
-        hashed_password=hashed_pwd,
+        clerk_user_id=None,
         organization_id=final_org_id,
         role=role,
         teacher_id=teacher_id

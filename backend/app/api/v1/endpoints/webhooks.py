@@ -49,6 +49,8 @@ async def handle_clerk_webhook(request: Request, db: AsyncSession = Depends(get_
             await _handle_organization_created(db, event.data)
         case "organization.updated":
             await _handle_organization_updated(db, event.data)
+        case "organization.deleted":
+            await _handle_organization_deleted(db, event.data)
         case "organizationMembership.created":
             await _handle_membership_created(db, event.data)
         case "organizationMembership.updated":
@@ -69,12 +71,17 @@ async def _handle_user_created(db: AsyncSession, data: dict):
         email = data["email_addresses"][0]["email_address"]
     name = f"{data.get('first_name', '')} {data.get('last_name', '')}".strip() or None
 
-    await clerk_sync.ensure_user_exists(
+    user = await clerk_sync.ensure_user_exists(
         db=db,
         clerk_user_id=clerk_user_id,
         email=email,
         name=name,
     )
+
+    if not user.is_active:
+        user.is_active = True
+        await db.flush()
+        logger.info("User reativado: %s", clerk_user_id)
 
 
 async def _handle_user_updated(db: AsyncSession, data: dict):
@@ -106,6 +113,18 @@ async def _handle_organization_updated(db: AsyncSession, data: dict):
     if org.name != data["name"]:
         org.name = data["name"]
         await db.flush()
+
+
+async def _handle_organization_deleted(db: AsyncSession, data: dict):
+    clerk_org_id = data.get("id")
+    if not clerk_org_id:
+        return
+    org = await clerk_sync.ensure_organization_exists(
+        db, clerk_org_id, data.get("name", "Desconhecida")
+    )
+    org.plan_status = "inactive"
+    await db.flush()
+    logger.info("Organization desativada localmente: %s", clerk_org_id)
 
 
 async def _handle_membership_created(db: AsyncSession, data: dict):

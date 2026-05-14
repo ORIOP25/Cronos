@@ -116,7 +116,7 @@ async def create_teacher(db: AsyncSession, teacher_in: schemas.TeacherCreate, or
                     )
                 except Exception:
                     import logging
-                    logging.getLogger(__name__).warning(
+                    logging.getLogger(__name__).error(
                         "Falha ao enviar convite Clerk para %s (org %s)",
                         teacher_in.email, org.clerk_org_id,
                     )
@@ -556,13 +556,16 @@ async def invite_teacher_to_clerk(
     teacher_email: str,
     teacher_id: int,
 ) -> dict:
+    import asyncio
     from app.core.clerk import get_clerk_sdk
 
     sdk = get_clerk_sdk()
-    result = sdk.organization_invitations.create(
-        organization_id=clerk_org_id,
-        email_address=teacher_email,
-        role="org:member",
-        public_metadata={"teacher_id": teacher_id},
+    result = await asyncio.to_thread(
+        lambda: sdk.organization_invitations.create(
+            organization_id=clerk_org_id,
+            email_address=teacher_email,
+            role="org:member",
+            public_metadata={"teacher_id": teacher_id},
+        )
     )
     return {"invitation_id": result.id, "status": result.status}

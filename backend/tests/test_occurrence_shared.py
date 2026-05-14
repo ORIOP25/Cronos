@@ -13,8 +13,7 @@ from sqlalchemy import select
 from app import models, schemas
 from app.models import LessonOccurrenceStatus
 from app.services import occurrence_service
-from app.core.security import create_access_token, hash_password
-
+from app.core.security import create_access_token
 # SyncTestSession para testes de concorrência
 from sqlalchemy import create_engine as _ce
 from sqlalchemy.orm import sessionmaker as _sm
@@ -44,7 +43,6 @@ async def full_setup(db_session: AsyncSession):
 
     admin = models.User(
         email="admin_s2@escola.com",
-        hashed_password=hash_password("pass123"),
         is_active=True,
         role=models.UserRole.admin,
         organization_id=org.id,
@@ -378,7 +376,6 @@ def substitution_setup(sync_db, full_setup):
     # User professor para testar bloqueio de confirmação
     teacher_user = models.User(
         email="teacher_s2@escola.com",
-        hashed_password=hash_password("pass123"),
         is_active=True,
         role=models.UserRole.teacher,
         organization_id=organization_id,

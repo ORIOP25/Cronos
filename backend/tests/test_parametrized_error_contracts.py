@@ -13,15 +13,14 @@ from uuid import uuid4
 
 from app import models
 from app.config import settings
-from app.core.security import create_access_token, hash_password
-
+from app.core.security import create_access_token
 API = settings.API_V1_STR
 
 
 async def _make_teacher_headers(db_session, org_id, teacher_id, role=models.UserRole.teacher):
     email = f"param.{uuid4().hex[:8]}@test.pt"
     user = models.User(
-        email=email, hashed_password=hash_password("pass"),
+        email=email,
         is_active=True, role=role,
         organization_id=org_id, teacher_id=teacher_id,
     )

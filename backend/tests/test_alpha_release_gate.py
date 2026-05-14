@@ -8,7 +8,7 @@ from sqlalchemy import select
 
 from app import models, schemas
 from app.api.v1.endpoints import schedule as schedule_endpoint
-from app.core.security import create_access_token, hash_password
+from app.core.security import create_access_token
 from app.models import LessonOccurrenceStatus
 from app.services import occurrence_service
 from app.services.operational_seed_service import REFERENCE_DATE, seed_operational_scenarios_sync
@@ -253,7 +253,6 @@ async def test_alpha_regression_occurrences_substitutions_auth_and_tenant(async_
         teacher_user_email = f"teacher.alpha.{uuid4().hex[:8]}@seed.pt"
         teacher_user = models.User(
             email=teacher_user_email,
-            hashed_password=hash_password("pass123"),
             is_active=True,
             role=models.UserRole.teacher,
             organization_id=runtime["org_a_id"],

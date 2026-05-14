@@ -36,7 +36,7 @@ async def get_onboarding_status(
     )
 
 
-@router.post("/onboarding")
+@router.post("/onboarding", status_code=201)
 async def submit_onboarding(
     data: OnboardingRequest,
     current_user: models.User = Depends(get_current_active_admin),

@@ -8,7 +8,7 @@ import pytest
 from httpx import AsyncClient
 
 from app.config import settings
-from app.core.security import create_access_token, hash_password
+from app.core.security import create_access_token
 from app import models
 
 API = settings.API_V1_STR
@@ -33,9 +33,8 @@ class TestAnalyticsHeatmap:
         self, async_client: AsyncClient, db_session
     ):
         """Heatmap é acessível a qualquer utilizador autenticado (não requer admin)."""
-        from app.core.security import create_access_token, hash_password
-
-        org = models.Organization(name="Heatmap Teacher Org", plan_status="active")
+        from app.core.security import create_access_token
+org = models.Organization(name="Heatmap Teacher Org", plan_status="active")
         db_session.add(org)
         await db_session.flush()
 
@@ -45,7 +44,6 @@ class TestAnalyticsHeatmap:
 
         teacher_user = models.User(
             email="heatmap.prof.ci@escola.pt",
-            hashed_password=hash_password("pass123"),
             is_active=True,
             role=models.UserRole.teacher,
             organization_id=org.id,

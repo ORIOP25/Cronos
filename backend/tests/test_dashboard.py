@@ -19,10 +19,8 @@ class TestDashboardEndpoint:
         db_session.add(org)
         await db_session.flush()
 
-        from app.core.security import hash_password
         admin = models.User(
             email="dashadmin@escola.com",
-            hashed_password=hash_password("adminpass"),
             is_active=True,
             role=models.UserRole.admin,
             organization_id=org.id,
@@ -267,10 +265,9 @@ class TestDashboardEndpoint:
         db_session.add(org)
         await db_session.flush()
 
-        from app.core.security import hash_password, create_access_token
-        teacher_user = models.User(
+        from app.core.security import create_access_token
+teacher_user = models.User(
             email="teacher@escola.com",
-            hashed_password=hash_password("teacherpass"),
             is_active=True,
             role=models.UserRole.teacher,
             organization_id=org.id,

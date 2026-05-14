@@ -9,8 +9,6 @@ from datetime import date, datetime, time, timedelta
 
 from app import models
 from app.services import schedule_service
-from app.core.security import hash_password
-
 pytestmark = pytest.mark.integration
 
 

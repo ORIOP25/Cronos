@@ -8,11 +8,31 @@ const apiClient = axios.create({
   },
 });
 
+let getClerkToken = null;
+
+export const setClerkTokenGetter = (fn) => {
+  getClerkToken = fn;
+};
+
+apiClient.interceptors.request.use(async (config) => {
+  if (getClerkToken) {
+    try {
+      const token = await getClerkToken();
+      if (token) {
+        config.headers.Authorization = `Bearer ${token}`;
+      }
+    } catch {
+      // token not ready yet, fall back to cookie
+    }
+  }
+  return config;
+});
+
 apiClient.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error?.response?.status === 401) {
-      console.warn('API: Unauthorized request');
+    if (error?.response?.status === 401 && !window.location.pathname.startsWith('/login')) {
+      window.location.href = '/login'
     }
     return Promise.reject(error);
   }

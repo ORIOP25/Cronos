@@ -8,7 +8,6 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
 
 from app import models, schemas
-from app.core.security import hash_password
 from app.services import (
     lesson_log_service,
     timesheet_service,
@@ -35,7 +34,6 @@ def base_setup(sync_db):
     # Create User (Admin)
     admin = models.User(
         email=f"admin_{uid}@escola.com",
-        hashed_password=hash_password("pass123"),
         is_active=True,
         role=models.UserRole.admin,
         organization_id=org.id,
@@ -729,9 +727,8 @@ class TestTimesheetReopen:
 class TestTimesheetReopenPermissions:
     async def test_teacher_cannot_reopen_week(self, async_client, db_session):
         """T 6.2.2: Professor tenta chamar o endpoint de reabertura → HTTP 403."""
-        from app.core.security import hash_password, create_access_token
-
-        # Create org
+        from app.core.security import create_access_token
+# Create org
         org = models.Organization(name="Test Org Reopen", plan_status="active")
         db_session.add(org)
         await db_session.flush()
@@ -744,7 +741,6 @@ class TestTimesheetReopenPermissions:
         # Create teacher user
         teacher_user = models.User(
             email="teacher_reopen@test.com",
-            hashed_password=hash_password("pass123"),
             is_active=True,
             role=models.UserRole.teacher,
             organization_id=org.id,
@@ -895,9 +891,8 @@ class TestTimesheetListSlotCounts:
 class TestTimesheetApprovalEndpoints:
     async def test_approve_from_timesheets_detail(self, async_client, db_session):
         """T 7.2.1: Admin aprova uma timesheet SUBMITTED via endpoint → estado APPROVED."""
-        from app.core.security import hash_password, create_access_token
-
-        org = models.Organization(name="Test Org Approve", plan_status="active")
+        from app.core.security import create_access_token
+org = models.Organization(name="Test Org Approve", plan_status="active")
         db_session.add(org)
         await db_session.flush()
 
@@ -907,7 +902,6 @@ class TestTimesheetApprovalEndpoints:
 
         admin_user = models.User(
             email="admin_approve@test.com",
-            hashed_password=hash_password("pass123"),
             is_active=True,
             role=models.UserRole.admin,
             organization_id=org.id,
@@ -941,9 +935,8 @@ class TestTimesheetApprovalEndpoints:
 
     async def test_reopen_from_timesheets_detail(self, async_client, db_session):
         """T 7.2.2: Admin reabre uma timesheet APPROVED via endpoint → estado OPEN."""
-        from app.core.security import hash_password, create_access_token
-
-        org = models.Organization(name="Test Org Reopen2", plan_status="active")
+        from app.core.security import create_access_token
+org = models.Organization(name="Test Org Reopen2", plan_status="active")
         db_session.add(org)
         await db_session.flush()
 
@@ -953,7 +946,6 @@ class TestTimesheetApprovalEndpoints:
 
         admin_user = models.User(
             email="admin_reopen2@test.com",
-            hashed_password=hash_password("pass123"),
             is_active=True,
             role=models.UserRole.admin,
             organization_id=org.id,
@@ -994,9 +986,8 @@ class TestTimesheetApprovalEndpoints:
 class TestTimesheetsListEndpoint:
     async def test_timesheets_list_endpoint_returns_teacher_summary(self, async_client, db_session):
         """T 7.1.1: Verificar que o endpoint devolve a lista de professores com contagens."""
-        from app.core.security import hash_password, create_access_token
-
-        org = models.Organization(name="Test Org List", plan_status="active")
+        from app.core.security import create_access_token
+org = models.Organization(name="Test Org List", plan_status="active")
         db_session.add(org)
         await db_session.flush()
 
@@ -1006,7 +997,6 @@ class TestTimesheetsListEndpoint:
 
         admin_user = models.User(
             email="admin_list@test.com",
-            hashed_password=hash_password("pass123"),
             is_active=True,
             role=models.UserRole.admin,
             organization_id=org.id,
@@ -1041,9 +1031,8 @@ class TestTimesheetsListEndpoint:
 
     async def test_timesheets_detail_endpoint_returns_week_slots(self, async_client, db_session):
         """T 7.1.2: Verificar que o endpoint devolve os slots do professor para a semana."""
-        from app.core.security import hash_password, create_access_token
-
-        org = models.Organization(name="Test Org Detail", plan_status="active")
+        from app.core.security import create_access_token
+org = models.Organization(name="Test Org Detail", plan_status="active")
         db_session.add(org)
         await db_session.flush()
 
@@ -1088,7 +1077,6 @@ class TestTimesheetsListEndpoint:
 
         admin_user = models.User(
             email="admin_detail@test.com",
-            hashed_password=hash_password("pass123"),
             is_active=True,
             role=models.UserRole.admin,
             organization_id=org.id,

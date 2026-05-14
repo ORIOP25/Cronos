@@ -185,7 +185,6 @@ class User(Base):
     name: Mapped[Optional[str]] = mapped_column(String(150), nullable=True)
     email: Mapped[str] = mapped_column(String(100), unique=True, index=True, nullable=False)
     clerk_user_id: Mapped[Optional[str]] = mapped_column(String(255), unique=True, nullable=True)
-    hashed_password: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     # O Papel do utilizador (Admin por defeito)
     role: Mapped[UserRole] = mapped_column(SAEnum(UserRole), default=UserRole.admin, nullable=False)
     # Se for admin, isto fica NULL. Se for professor, aponta para o ID dele.

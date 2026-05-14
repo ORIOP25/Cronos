@@ -40,7 +40,6 @@ def _create_organization(
     admin = models.User(
         name=f"Admin {org_name}",
         email=admin_email,
-        hashed_password=None,  # Clerk gere autenticação
         role=models.UserRole.admin,
         organization_id=org.id,
         is_active=True,

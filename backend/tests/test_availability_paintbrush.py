@@ -7,7 +7,7 @@ from httpx import AsyncClient
 from datetime import date, time, timedelta
 from uuid import uuid4
 from app import models
-from app.core.security import hash_password, create_access_token
+from app.core.security import create_access_token
 from app.models import UserRole
 from test_business_logic_shared import API, _create_teacher_auth_headers
 
@@ -165,7 +165,7 @@ class TestTeacherAvailability:
 
         email = f"teacher.noprofile.{uuid4().hex[:8]}@escola.pt"
         no_profile_user = models.User(
-            email=email, hashed_password=hash_password("pass123"),
+            email=email,
             is_active=True, role=UserRole.teacher,
             organization_id=org.id, teacher_id=None,
         )
@@ -189,7 +189,7 @@ class TestTeacherAvailability:
 
         email = f"teacher.inactive.{uuid4().hex[:8]}@escola.pt"
         inactive_user = models.User(
-            email=email, hashed_password=hash_password("pass123"),
+            email=email,
             is_active=False, role=UserRole.teacher,
             organization_id=1, teacher_id=teacher_id,
         )
@@ -264,7 +264,7 @@ class TestTeacherAvailability:
         await db_session.flush()
         email = f"teacher.horizon.noprofile.{uuid4().hex[:8]}@escola.pt"
         no_profile_user = models.User(
-            email=email, hashed_password=hash_password("pass123"),
+            email=email,
             is_active=True, role=UserRole.teacher,
             organization_id=org.id, teacher_id=None,
         )
@@ -316,7 +316,7 @@ class TestTeacherAvailability:
 
         org2_email = f"teacher.org2.{uuid4().hex[:8]}@escola.pt"
         org2_user = models.User(
-            email=org2_email, hashed_password=hash_password("pass123"),
+            email=org2_email,
             is_active=True, role=UserRole.teacher,
             organization_id=org2.id, teacher_id=teacher_org2.id,
         )

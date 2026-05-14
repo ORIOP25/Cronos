@@ -1,7 +1,9 @@
-import React, { Suspense } from 'react'
+import React, { Suspense, useEffect } from 'react'
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
 import { CSpinner } from '@coreui/react'
 import { Show, RedirectToSignIn, useAuth, useOrganization } from '@clerk/react'
+
+import { setClerkTokenGetter } from './apiClient'
 
 import SignInPage from './pages/SignInPage'
 import SignUpPage from './pages/SignUpPage'
@@ -27,7 +29,7 @@ const Onboarding = React.lazy(() => import('./pages/Onboarding'))
 
 import DefaultLayout from './components/DefaultLayout'
 import { MarketingSite } from './pages/MarketingSite'
-import { ROUTE_MY_SCHEDULES } from './roleAccess'
+import { ROUTE_MY_SCHEDULES, getDefaultRouteForRole } from './roleAccess'
 
 const PageLoader = () => (
   <div className="d-flex justify-content-center align-items-center" style={{ minHeight: '40vh' }}>
@@ -48,8 +50,8 @@ function RequireAuth({ children }) {
 
 function RequireAdmin({ children }) {
   const { isSignedIn, isLoaded } = useAuth()
-  const { membership } = useOrganization()
-  if (!isLoaded) return <PageLoader />
+  const { membership, isLoaded: orgLoaded } = useOrganization()
+  if (!isLoaded || !orgLoaded) return <PageLoader />
   if (!isSignedIn) return <RedirectToSignIn />
   if (membership?.role !== 'org:admin') return <Navigate to="/login" />
   return children
@@ -57,19 +59,34 @@ function RequireAdmin({ children }) {
 
 function RequireTeacher({ children }) {
   const { isSignedIn, isLoaded } = useAuth()
-  const { membership } = useOrganization()
-  if (!isLoaded) return <PageLoader />
+  const { membership, isLoaded: orgLoaded } = useOrganization()
+  if (!isLoaded || !orgLoaded) return <PageLoader />
   if (!isSignedIn) return <RedirectToSignIn />
   if (membership?.role !== 'org:member') return <Navigate to="/login" />
   return children
 }
 
+function SignedInRedirect() {
+  const { isLoaded } = useAuth()
+  const { membership, isLoaded: orgLoaded } = useOrganization()
+  if (!isLoaded || !orgLoaded) return <PageLoader />
+  return <Navigate to={getDefaultRouteForRole(membership?.role)} replace />
+}
+
 function App() {
+  const { getToken, isLoaded } = useAuth()
+
+  useEffect(() => {
+    if (isLoaded && getToken) {
+      setClerkTokenGetter(getToken)
+    }
+  }, [isLoaded, getToken])
+
   return (
     <Router>
       <Routes>
         <Route path="/" element={
-          <Show when="signed-out" fallback={<Navigate to="/dashboard" />}>
+          <Show when="signed-out" fallback={<SignedInRedirect />}>
             <MarketingSite />
           </Show>
         } />

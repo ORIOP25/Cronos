@@ -7,7 +7,7 @@ from sqlalchemy import select
 
 from app import models
 from app.config import settings
-from app.core.security import create_access_token, hash_password
+from app.core.security import create_access_token
 from app.models import UserRole
 from app.services import teacher_observability_service
 
@@ -25,7 +25,6 @@ async def _create_user_headers(
     email = f"obs.{role.value}.{uuid4().hex[:8]}@escola.pt"
     user = models.User(
         email=email,
-        hashed_password=hash_password("pass123"),
         is_active=is_active,
         role=role,
         organization_id=organization_id,

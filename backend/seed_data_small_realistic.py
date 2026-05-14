@@ -30,10 +30,10 @@ SCHOOL_HARD_END = datetime.date(2026, 7, 31)
 ACADEMIC_YEAR = "2025/2026"
 
 ORGANIZATION_INFO = {
-    "name": "Escola Profissional do Norte",
-    "admin_name": "Ana Silva",
-    "admin_email": "ana.silva@escola.pt",
-    "admin_password": "5s@jLiXz.",
+    "name": "Escola Profissional Mafrense",
+    "admin_name": "Admin Aperius",
+    "admin_email": "aperiusteste@gmail.com",
+    "admin_password": "Sporting.2026#$",
 }
 
 COURSES = [
@@ -123,8 +123,8 @@ COURSE_CURRICULA = {
 }
 
 TEACHER_PROFILES = [
-    {"name": "Ana Matos", "email": "ana.matos@epnorte.pt", "subjects": ["portugues"]},
-    {"name": "Bruno Costa", "email": "bruno.costa@epnorte.pt", "subjects": ["ingles"]},
+    {"name": "Professor Aperius 1", "email": "aperiusprofessor1@gmail.com", "subjects": ["portugues"]},
+    {"name": "Professor Aperius 2", "email": "aperiusprofessor2@gmail.com", "subjects": ["ingles"]},
     {"name": "Carla Sousa", "email": "carla.sousa@epnorte.pt", "subjects": ["matematica"]},
     {"name": "Diana Moreira", "email": "diana.moreira@epnorte.pt", "subjects": ["area_integracao", "direito"]},
     {"name": "Eduardo Pires", "email": "eduardo.pires@epnorte.pt", "subjects": ["programacao", "sistemas_operativos"]},
@@ -301,7 +301,7 @@ def _setup_clerk_org_and_users() -> tuple[str, str, dict[str, str]]:
             email_address=[profile["email"]],
             first_name=first,
             last_name=last,
-            password="5s@jLiXz.",
+            password="Sporting.2026#$",
             skip_password_checks=True,
         )
         teacher_ids[profile["email"]] = teacher.id
@@ -578,8 +578,8 @@ def run_seed() -> None:
 
         print("\n  LOGINS PRINCIPAIS (contas Clerk reais):")
         print(f"   Admin -> {ORGANIZATION_INFO['admin_email']} / {ORGANIZATION_INFO['admin_password']}")
-        print(f"   Professor -> ana.matos@epnorte.pt / 5s@jLiXz.")
-        print(f"   Professor -> bruno.costa@epnorte.pt / 5s@jLiXz.")
+        print(f"   Professor -> aperiusprofessor1@gmail.com / Sporting.2026#$")
+        print(f"   Professor -> aperiusprofessor2@gmail.com / Sporting.2026#$")
 
         print("\n  [OK] Seed preparado para testes manuais de operacao e navegacao (auth via Clerk)")
 

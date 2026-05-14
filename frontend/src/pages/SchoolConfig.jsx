@@ -10,7 +10,7 @@ import CIcon from '@coreui/icons-react'
 import { cilSettings, cilSave, cilTrash, cilCloudDownload, cilCalendar } from '@coreui/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import apiClient from '../apiClient'
-import { useUser, useOrganization } from '@clerk/react'
+import { useOrganization } from '@clerk/react'
 import { formatDate } from '../utils/formatUtils'
 import { TXT, EVENT_TYPE_LABELS } from '../utils/terminology'
 
@@ -588,7 +588,6 @@ const GridSection = () => {
 }
 
 const SchoolConfig = () => {
-  const { user } = useUser()
   const { organization } = useOrganization()
   const [activeTab, setActiveTab] = useState('settings')
 

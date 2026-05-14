@@ -14,7 +14,7 @@ import {
   useMyTimesheet,
   useSubmitMyTimesheet
 } from '../hooks/useSchoolData'
-import { useUser, useOrganization } from '@clerk/react'
+import { useOrganization } from '@clerk/react'
 
 const HORIZON_NOT_CONFIGURED_MESSAGE =
   'Não existe período semanal configurado para a escola. Contacte a equipa administrativa para validar o ano letivo ativo.'
@@ -99,9 +99,9 @@ function resolveHorizonErrorMessage(error) {
 
 function MySchedules() {
   const queryClient = useQueryClient()
-  const { user } = useUser()
-  const teacherId = user?.publicMetadata?.teacherId
-  const orgId = useOrganization().organization?.id
+  const { organization, membership } = useOrganization()
+  const teacherId = membership?.publicMetadata?.teacher_id
+  const orgId = organization?.id
   const [weekStart, setWeekStart] = useState(getCurrentWeekMonday)
   const [recommendedWeekApplied, setRecommendedWeekApplied] = useState(false)
   const [limitFeedback, setLimitFeedback] = useState('')

@@ -1,8 +1,6 @@
 import React from 'react'
-import { Navigate, Link } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 import { CButton, CContainer, CRow, CCol } from '@coreui/react'
-import { useAuth, useOrganization } from '@clerk/react'
-import { getDefaultRouteForRole } from '../roleAccess'
 
 /* -------- ILLUSTRAÇÕES (SVG inline, sem imagens) -------- */
 
@@ -224,17 +222,6 @@ const steps = [
 
 /* -------- COMPONENTE PRINCIPAL -------- */
 
-export function PublicHomeGate() {
-  const { isSignedIn } = useAuth()
-  const { membership } = useOrganization()
-  const role = membership?.role
-
-  if (isSignedIn) {
-    return <Navigate to={getDefaultRouteForRole(role)} replace />
-  }
-  return <MarketingSite />
-}
-
 export function MarketingSite() {
   return (
     <div className="marketing-page">
@@ -250,7 +237,30 @@ export function MarketingSite() {
           <a href="#ganhos">O que ganha</a>
           <a href="#investimento">Investimento</a>
         </div>
-        <CButton href="#contacto" className="zen-btn-primary">Falar connosco</CButton>
+        <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+          <Link to="/login" style={{
+            color: 'var(--brand-800)',
+            fontWeight: '600',
+            fontSize: '0.9rem',
+            textDecoration: 'none',
+            padding: '8px 20px',
+            borderRadius: '4px',
+            border: '1px solid var(--brand-800)',
+            transition: 'all 0.2s ease',
+          }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.backgroundColor = 'var(--brand-800)'
+              e.currentTarget.style.color = 'var(--brand-50)'
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.backgroundColor = 'transparent'
+              e.currentTarget.style.color = 'var(--brand-800)'
+            }}
+          >
+            Entrar
+          </Link>
+          <CButton href="#contacto" className="zen-btn-primary">Falar connosco</CButton>
+        </div>
       </nav>
 
       <main>

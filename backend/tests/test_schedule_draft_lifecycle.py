@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.database import ASYNC_DB_URL
 from app import models, schemas
 from app.services import schedule_service
-from app.core.security import create_access_token, hash_password
+from app.core.security import create_access_token
 from app.core.solver_engine import ScheduleEngine, LessonInput, TimeslotInput, RoomInput
 
 # sync_db fixture is provided by conftest.py (shared across all test files)
@@ -45,7 +45,6 @@ async def draft_setup(db_session: AsyncSession):
 
     admin = models.User(
         email="admin_s3@escola.com",
-        hashed_password=hash_password("pass123"),
         is_active=True,
         is_superuser=False,
         role=models.UserRole.admin,

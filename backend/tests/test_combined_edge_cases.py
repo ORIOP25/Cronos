@@ -107,7 +107,6 @@ def combined_setup(sync_db):
 
     admin_user = models.User(
         email="admin.edges@escola.com",
-        hashed_password="hashedpass",
         is_active=True,
         role=models.UserRole.admin,
         organization_id=org.id,

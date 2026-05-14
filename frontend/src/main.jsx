@@ -17,7 +17,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
     <ErrorBoundary>
       <ToastProvider>
         <QueryClientProvider client={queryClient}>
-          <ClerkProvider afterSignOutUrl="/">
+          <ClerkProvider publishableKey={import.meta.env.VITE_CLERK_PUBLISHABLE_KEY} afterSignOutUrl="/" localization={{ socialButtonsBlockButton: 'Continuar com {{provider}}', formFieldLabel__emailAddress: 'Email', formFieldLabel__password: 'Palavra-passe', formButtonPrimary: 'Entrar', footerActionLink__signIn: 'Já tem conta? Entrar', footerActionLink__signUp: 'Não tem conta? Registar' }}>
             <App />
           </ClerkProvider>
         </QueryClientProvider>

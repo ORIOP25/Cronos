@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { Outlet, NavLink, useLocation, useNavigate } from 'react-router-dom'
-import { useUser, useOrganization } from '@clerk/react'
-import { UserButton } from '@clerk/react'
+import { useUser, useOrganization, useClerk } from '@clerk/react'
 import { ROUTE_MY_SCHEDULES } from '../roleAccess'
 import { TXT } from '../utils/terminology'
 import CIcon from '@coreui/icons-react'
@@ -46,6 +45,7 @@ const DefaultLayout = () => {
   const location = useLocation()
   const { user } = useUser()
   const { organization, membership } = useOrganization()
+  const { openUserProfile, signOut } = useClerk()
   
   const isAdmin = membership?.role === 'org:admin'
   const isTeacher = membership?.role === 'org:member'
@@ -124,23 +124,21 @@ const DefaultLayout = () => {
             {collapsed && (
               <h2 className="text-display" style={{ color: '#ffffff', fontSize: '1.3rem', margin: 0 }}>A</h2>
             )}
-            {!isAdmin && (
-              <button
-                type="button"
-                onClick={() => setCollapsed(prev => !prev)}
-                style={{
-                  background: 'none', border: 'none', color: 'var(--rs-sidebar-link)',
-                  cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center',
-                  opacity: 0.6, transition: 'opacity 0.2s ease',
-                }}
-                onMouseEnter={(e) => { e.currentTarget.style.opacity = '1' }}
-                onMouseLeave={(e) => { e.currentTarget.style.opacity = '0.6' }}
-                title={collapsed ? 'Expandir menu' : 'Colapsar menu'}
-                aria-label={collapsed ? 'Expandir menu' : 'Colapsar menu'}
-              >
-                <CIcon icon={cilMenu} size="sm" />
-              </button>
-            )}
+            <button
+              type="button"
+              onClick={() => setCollapsed(prev => !prev)}
+              style={{
+                background: 'none', border: 'none', color: 'var(--rs-sidebar-link)',
+                cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center',
+                opacity: 0.6, transition: 'opacity 0.2s ease',
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.opacity = '1' }}
+              onMouseLeave={(e) => { e.currentTarget.style.opacity = '0.6' }}
+              title={collapsed ? 'Expandir menu' : 'Colapsar menu'}
+              aria-label={collapsed ? 'Expandir menu' : 'Colapsar menu'}
+            >
+              <CIcon icon={cilMenu} size="sm" />
+            </button>
           </div>
         </div>
         
@@ -176,15 +174,23 @@ const DefaultLayout = () => {
         {/* Rodapé da Sidebar */}
         <div style={{ marginTop: 'auto', paddingTop: '24px', borderTop: '1px solid rgba(255,255,255,0.05)' }}>
           {!collapsed && (
-            <div style={{ 
-              display: 'flex', 
-              alignItems: 'center', 
-              gap: '12px', 
-              padding: '12px',
-              backgroundColor: 'rgba(255,255,255,0.03)',
-              borderRadius: '8px',
-              marginBottom: '16px'
-            }}>
+            <div
+              onClick={() => openUserProfile()}
+              style={{ 
+                display: 'flex', 
+                alignItems: 'center', 
+                gap: '12px', 
+                padding: '12px',
+                backgroundColor: 'rgba(255,255,255,0.03)',
+                borderRadius: '8px',
+                marginBottom: '16px',
+                cursor: 'pointer',
+                transition: 'background-color 0.2s ease',
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.08)' }}
+              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.03)' }}
+              title="Gerir conta"
+            >
               <div style={{ 
                 width: '36px', 
                 height: '36px', 
@@ -199,7 +205,7 @@ const DefaultLayout = () => {
               }}>
                 {user?.primaryEmailAddress?.emailAddress?.[0]?.toUpperCase() || '?'}
               </div>
-              <div style={{ overflow: 'hidden' }}>
+              <div style={{ overflow: 'hidden', flex: 1 }}>
                 <p style={{ fontSize: '0.85rem', color: 'var(--brand-50)', fontWeight: '600', margin: 0, textOverflow: 'ellipsis', whiteSpace: 'nowrap', overflow: 'hidden' }}>
                   {user?.primaryEmailAddress?.emailAddress?.split('@')[0] || 'Convidado'}
                 </p>
@@ -210,11 +216,16 @@ const DefaultLayout = () => {
             </div>
           )}
           {collapsed && (
-            <div style={{
-              display: 'flex',
-              justifyContent: 'center',
-              marginBottom: '16px',
-            }}>
+            <div
+              onClick={() => openUserProfile()}
+              style={{
+                display: 'flex',
+                justifyContent: 'center',
+                marginBottom: '16px',
+                cursor: 'pointer',
+              }}
+              title="Gerir conta"
+            >
               <div style={{ 
                 width: '36px', 
                 height: '36px', 
@@ -230,7 +241,45 @@ const DefaultLayout = () => {
               </div>
             </div>
           )}
-          <UserButton afterSignOutUrl="/" />
+
+          <button
+            type="button"
+            onClick={() => signOut()}
+            title="Terminar sessão"
+            style={{
+              width: '100%',
+              background: 'none',
+              border: '1px solid rgba(255,255,255,0.08)',
+              color: 'rgba(251,244,231,0.5)',
+              cursor: 'pointer',
+              padding: collapsed ? '8px' : '8px 12px',
+              borderRadius: '4px',
+              fontSize: '0.78rem',
+              fontWeight: '500',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '6px',
+              transition: 'all 0.2s ease',
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.color = 'var(--brand-50)'
+              e.currentTarget.style.borderColor = 'rgba(255,255,255,0.15)'
+              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.04)'
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.color = 'rgba(251,244,231,0.5)'
+              e.currentTarget.style.borderColor = 'rgba(255,255,255,0.08)'
+              e.currentTarget.style.backgroundColor = 'transparent'
+            }}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+              <polyline points="16 17 21 12 16 7" />
+              <line x1="21" y1="12" x2="9" y2="12" />
+            </svg>
+            {!collapsed && 'Terminar sessão'}
+          </button>
         </div>
       </aside>
 

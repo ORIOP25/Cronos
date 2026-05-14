@@ -29,18 +29,6 @@ DESC_HOURS_TOTAL = "Carga horária total do módulo"
 #  AUTENTICAÇÃO & USERS
 # ==========================================
 
-class Token(BaseModel):
-    access_token: str
-    token_type: str
-    organization_id: int
-    organization_name: str
-    user_email: str  
-    role: str 
-    teacher_id: Optional[int] = None
-
-class TokenData(BaseModel):
-    email: str | None = None
-
 class UserBase(BaseModel):
     email: EmailStr
 
@@ -56,7 +44,6 @@ class RegisterRequest(BaseModel):
     school_name: str = Field(..., min_length=2, max_length=100, description="Nome da instituição/escola")
     admin_name: str = Field(..., min_length=2, max_length=150, description="Nome do administrador")
     email: EmailStr
-    password: str = Field(..., min_length=6, description="Password (mínimo 6 caracteres)")
 
 class UserRead(UserBase):
     id: int
@@ -1264,40 +1251,12 @@ class DashboardV1Response(BaseModel):
 
 
 # ── Clerk Webhooks ──────────────────────────────────────────────
-
-class ClerkWebhookEvent(BaseModel):
-    type: str
-    data: dict[str, Any]
-    object: str = "event"
-    timestamp: int
-    instance_id: Optional[str] = None
-
-
-class ClerkUserData(BaseModel):
-    id: str
-    first_name: Optional[str] = None
-    last_name: Optional[str] = None
-    email_addresses: list[dict[str, Any]] = []
-    created_at: Optional[int] = None
-    public_metadata: dict[str, Any] = {}
-    unsafe_metadata: dict[str, Any] = {}
-
-
-class ClerkOrganizationData(BaseModel):
-    id: str
-    name: str
-    slug: str
-    created_at: Optional[int] = None
-    public_metadata: dict[str, Any] = {}
-
-
-class ClerkMembershipData(BaseModel):
-    role: str
-    organization: dict[str, Any]
-    public_metadata: dict[str, Any] = {}
-    public_user_data: dict[str, Any] = {}
-    created_at: Optional[int] = None
-
+from app.schemas_webhooks import (
+    ClerkWebhookEvent,
+    ClerkUserData,
+    ClerkOrganizationData,
+    ClerkMembershipData,
+)
 
 # ── Onboarding ─────────────────────────────────────────────────
 
@@ -1308,6 +1267,20 @@ class OnboardingRequest(BaseModel):
     lunch_start: time
     lunch_end: time
     lunch_min_duration: int
+
+    @model_validator(mode='after')
+    def validate_dates(self):
+        if self.school_target_end_date <= self.school_start_date:
+            raise ValueError("Data de fim prevista deve ser posterior à data de início")
+        if self.school_hard_end_date <= self.school_start_date:
+            raise ValueError("Data de fim definitiva deve ser posterior à data de início")
+        if self.school_hard_end_date < self.school_target_end_date:
+            raise ValueError("Data de fim definitiva não pode ser anterior à data de fim prevista")
+        if self.lunch_end <= self.lunch_start:
+            raise ValueError("Hora de fim do almoço deve ser posterior à hora de início")
+        if self.lunch_min_duration < 1:
+            raise ValueError("Duração mínima do almoço deve ser pelo menos 1 minuto")
+        return self
 
 
 class OnboardingStatusResponse(BaseModel):

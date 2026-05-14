@@ -6,7 +6,7 @@ from httpx import AsyncClient
 
 from app import models
 from app.config import settings
-from app.core.security import create_access_token, hash_password
+from app.core.security import create_access_token
 from app.models import UserRole
 
 
@@ -24,7 +24,6 @@ async def _create_teacher_auth_headers(
     email = f"teacher.role.regression.{uuid4().hex[:8]}@escola.pt"
     user = models.User(
         email=email,
-        hashed_password=hash_password("pass123"),
         is_active=is_active,
         role=role,
         organization_id=organization_id,

@@ -8,7 +8,7 @@ from datetime import date, time, timedelta
 from uuid import uuid4
 from app.config import settings
 from app import models
-from app.core.security import hash_password, create_access_token
+from app.core.security import create_access_token
 from app.models import UserRole
 
 API = settings.API_V1_STR
@@ -19,7 +19,6 @@ async def _create_teacher_auth_headers(db_session, *, teacher_id: int, organizat
     email = f"teacher.avail.{uuid4().hex[:8]}@escola.pt"
     teacher_user = models.User(
         email=email,
-        hashed_password=hash_password("pass123"),
         is_active=True,
         role=UserRole.teacher,
         organization_id=organization_id,

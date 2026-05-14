@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
@@ -10,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 def parse_role(clerk_role: str | None) -> str:
     if not clerk_role:
-        return UserRole.admin.value
+        return UserRole.teacher.value
     role_map = {
         "admin": UserRole.admin.value,
         "member": UserRole.teacher.value,
@@ -88,7 +89,7 @@ async def sync_user_from_clerk_api(
 ) -> models.User | None:
     sdk = get_clerk_sdk()
     try:
-        clerk_user = sdk.users.get(user_id=clerk_user_id)
+        clerk_user = await asyncio.to_thread(sdk.users.get, clerk_user_id)
     except Exception as e:
         logger.error("BAPI users.get falhou para %s: %s", clerk_user_id, e)
         return None
@@ -112,7 +113,7 @@ async def sync_organization_from_clerk_api(
 ) -> models.Organization | None:
     sdk = get_clerk_sdk()
     try:
-        clerk_org = sdk.organizations.get(organization_id=clerk_org_id)
+        clerk_org = await asyncio.to_thread(sdk.organizations.get, clerk_org_id)
     except Exception as e:
         logger.error("BAPI organizations.get falhou para %s: %s", clerk_org_id, e)
         return None

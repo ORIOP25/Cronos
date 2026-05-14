@@ -15,7 +15,7 @@ import {
   useOccurrences, useDebts, useUpdateOccurrence, useCancelOccurrence,
   useSubstituteRecommendations, useClasses, useTeachers, useSubjects,
 } from '../hooks/useSchoolData'
-import { useUser } from '@clerk/react'
+import { useOrganization } from '@clerk/react'
 import { formatDate, formatDateTime } from '../utils/formatUtils'
 import { TXT } from '../utils/terminology'
 
@@ -482,8 +482,8 @@ DebtsPanel.propTypes = {
 // Painel de Ocorrências
 // ---------------------------------------------------------------------------
 const OccurrencesPanel = ({ classId, dateFrom, dateTo, initialOccurrenceId, forcedFilter }) => {
-  const { user } = useUser()
-  const isAdmin = user?.publicMetadata?.role === 'admin'
+  const { membership } = useOrganization()
+  const isAdmin = membership?.role === 'org:admin'
   const [editingOccurrence, setEditingOccurrence] = useState(null)
   const [resolutionFilter, setResolutionFilter] = useState(forcedFilter || 'all')
   const [saveErrorMessage, setSaveErrorMessage] = useState('')

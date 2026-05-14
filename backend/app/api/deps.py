@@ -18,7 +18,7 @@ async def get_db() -> AsyncGenerator:
 # --- CLERK AUTH ---
 
 async def get_clerk_payload(request: Request) -> dict:
-    state = verify_clerk_request(request)
+    state = await verify_clerk_request(request)
     if not state.is_signed_in:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -66,6 +66,8 @@ async def get_current_user(
         if role:
             user.role = clerk_sync.parse_role(role)
 
+    await db.commit()
+    await db.refresh(user)
     return user
 
 
@@ -81,7 +83,7 @@ def get_current_active_admin(
     current_user: Annotated[models.User, Depends(get_current_active_user)],
 ) -> models.User:
     is_admin = current_user.is_superuser or (
-        hasattr(current_user, "role") and current_user.role in ("admin",)
+        hasattr(current_user, "role") and str(current_user.role) == models.UserRole.admin.value
     )
     if not is_admin:
         raise HTTPException(

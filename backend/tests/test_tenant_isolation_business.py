@@ -5,7 +5,7 @@ Parte de test_business_logic.py (split).
 import pytest
 from httpx import AsyncClient
 from app import models
-from app.core.security import hash_password, create_access_token
+from app.core.security import create_access_token
 from app.models import UserRole
 from test_business_logic_shared import API
 
@@ -22,7 +22,7 @@ class TestTenantIsolation:
         db_session.add(org)
         await db_session.flush()
         user = models.User(
-            email=email, hashed_password=hash_password("pass123"),
+            email=email,
             is_active=True, role=UserRole.admin, organization_id=org.id,
         )
         db_session.add(user)

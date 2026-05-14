@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import apiClient from '../apiClient'
-import { useOrganization } from '@clerk/react'
+import { useOrganization, useAuth } from '@clerk/react'
 
 /**
  * CONFIGURAÇÃO DE CACHE (A "Magia" da Performance)
@@ -93,12 +93,14 @@ export const useLessons = () => {
 
 export const useTimeslots = () => {
   const orgId = useOrganization().organization?.id
+  const { isLoaded } = useAuth()
   return useQuery({
     queryKey: ['timeslots', orgId],
     queryFn: async () => {
       const { data } = await apiClient.get('/timeslots/')
       return data
     },
+    enabled: Boolean(orgId) && isLoaded,
     staleTime: 0,
     refetchOnWindowFocus: true,
     refetchOnMount: true,
@@ -853,12 +855,14 @@ export const useUpdateTimesheetStatus = () => {
  */
 export const useDrafts = () => {
   const orgId = useOrganization().organization?.id
+  const { isLoaded } = useAuth()
   return useQuery({
     queryKey: ['drafts', orgId],
     queryFn: async () => {
       const { data } = await apiClient.get('/schedule/drafts')
       return data
     },
+    enabled: Boolean(orgId) && isLoaded,
     ...DYNAMIC_OPTS,
   })
 }
@@ -1079,5 +1083,42 @@ export const useTeacherProgress = ({ enabled = true } = {}) => {
     },
     enabled: Boolean(orgId) && enabled,
     ...DYNAMIC_OPTS,
+  })
+}
+
+/**
+ * Disponibilidade do professor autenticado.
+ */
+export const useMyAvailability = ({ enabled = true } = {}) => {
+  const orgId = useOrganization().organization?.id
+  const { isLoaded } = useAuth()
+  return useQuery({
+    queryKey: ['my-availability', orgId],
+    queryFn: async () => {
+      const { data } = await apiClient.get('/teachers/me/availability')
+      return data
+    },
+    enabled: Boolean(orgId) && isLoaded && enabled,
+    staleTime: 0,
+    refetchOnWindowFocus: true,
+    refetchOnMount: true,
+    retry: 1,
+  })
+}
+
+/**
+ * Guardar disponibilidade do professor.
+ */
+export const useSaveAvailability = () => {
+  const queryClient = useQueryClient()
+  const orgId = useOrganization().organization?.id
+  return useMutation({
+    mutationFn: async ({ teacherId, payload }) => {
+      const { data } = await apiClient.post(`/teachers/${teacherId}/availability`, payload)
+      return data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['my-availability', orgId] })
+    },
   })
 }

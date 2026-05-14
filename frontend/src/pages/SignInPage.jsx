@@ -7,6 +7,7 @@ export default function SignInPage() {
         routing="path"
         path="/login"
         signUpUrl="/register"
+        afterSignInUrl="/onboarding"
       />
     </div>
   );

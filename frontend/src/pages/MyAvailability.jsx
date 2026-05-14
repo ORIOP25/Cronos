@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
-import apiClient from '../apiClient';
+import React, { useState, useEffect, useCallback } from 'react';
 import AvailabilityGrid from '../components/AvailabilityGrid';
-import { useUser } from '@clerk/react';
+import { useOrganization } from '@clerk/react';
+import { useTimeslots, useMyAvailability, useSaveAvailability } from '../hooks/useSchoolData';
 import { PREFERENCE_LEVELS, DEFAULT_PREFERENCE } from '../constants';
 
 
@@ -45,56 +45,40 @@ const buildAvailabilityMap = (rows, validTimeslotIds) => {
 };
 
 const MyAvailability = () => {
-  const [timeslots, setTimeslots] = useState([]);
   const [availabilityMap, setAvailabilityMap] = useState({});
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState(null);
   const [feedback, setFeedback] = useState(null);
   const [selectedMode, setSelectedMode] = useState(DEFAULT_PREFERENCE);
-  const { user } = useUser();
-  const teacherId = user?.publicMetadata?.teacherId;
+  const { membership } = useOrganization();
+  const teacherId = membership?.publicMetadata?.teacher_id;
+
+  const { data: timeslots = [], isLoading: loading } = useTimeslots();
+  const { data: persistedRows = [] } = useMyAvailability({ enabled: Boolean(teacherId) });
+
+  const saveMutation = useSaveAvailability();
 
   useEffect(() => {
-    const fetchData = async () => {
-      try {
-        setError(null);
-        setFeedback(null);
+    if (timeslots.length === 0 || loading) return;
+    const validTimeslotIds = new Set(timeslots.map((slot) => slot.id));
+    const rows = Array.isArray(persistedRows) ? persistedRows : [];
 
-        const timeslotsRes = await apiClient.get('/timeslots/');
-        const fetchedTimeslots = Array.isArray(timeslotsRes.data) ? timeslotsRes.data : [];
-        setTimeslots(fetchedTimeslots);
+    const { map, ignoredCount } = buildAvailabilityMap(rows, validTimeslotIds);
+    setAvailabilityMap(map);
 
-        const myAvailabilityRes = await apiClient.get('/teachers/me/availability');
-        const persistedRows = Array.isArray(myAvailabilityRes.data) ? myAvailabilityRes.data : [];
-        const validTimeslotIds = new Set(fetchedTimeslots.map((slot) => slot.id));
-
-        const { map, ignoredCount } = buildAvailabilityMap(persistedRows, validTimeslotIds);
-        setAvailabilityMap(map);
-
-        if (ignoredCount > 0) {
-          setFeedback({
-            type: 'info',
-            message: `Foram ignoradas ${ignoredCount} preferências antigas em blocos já removidos.`,
-          });
-        } else if (persistedRows.length === 0) {
-          setFeedback({
-            type: 'info',
-            message: 'Sem preferências gravadas. Pode começar a pintar a grelha.',
-          });
-        }
-      } catch (err) {
-        setError(mapAvailabilityApiMessage(err, 'load'));
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    void fetchData();
-  }, []);
+    if (ignoredCount > 0) {
+      setFeedback({
+        type: 'info',
+        message: `Foram ignoradas ${ignoredCount} preferências antigas em blocos já removidos.`,
+      });
+    } else if (rows.length === 0) {
+      setFeedback({
+        type: 'info',
+        message: 'Sem preferências gravadas. Pode começar a pintar a grelha.',
+      });
+    }
+  }, [timeslots, persistedRows, loading]);
 
   const handleGridChange = (timeslotId, newScore) => {
-    if (saving) {
+    if (saveMutation.isPending) {
       return;
     }
 
@@ -105,7 +89,7 @@ const MyAvailability = () => {
     }));
   };
 
-  const handleSave = async () => {
+  const handleSave = useCallback(async () => {
     if (!teacherId) {
       setFeedback({
         type: 'error',
@@ -114,29 +98,27 @@ const MyAvailability = () => {
       return;
     }
 
-    setSaving(true);
     setFeedback(null);
 
-    try {
-      const validTimeslotIds = new Set(timeslots.map((slot) => slot.id));
-      const payload = Object.entries(availabilityMap)
-        .map(([tsId, score]) => ({
-          timeslot_id: Number.parseInt(tsId, 10),
-          score,
-        }))
-        .filter((item) => validTimeslotIds.has(item.timeslot_id));
+    const validTimeslotIds = new Set(timeslots.map((slot) => slot.id));
+    const payload = Object.entries(availabilityMap)
+      .map(([tsId, score]) => ({
+        timeslot_id: Number.parseInt(tsId, 10),
+        score,
+      }))
+      .filter((item) => validTimeslotIds.has(item.timeslot_id));
 
-      await apiClient.post(`/teachers/${teacherId}/availability`, payload);
+    try {
+      await saveMutation.mutateAsync({ teacherId, payload });
       setFeedback({ type: 'success', message: 'Disponibilidade gravada com sucesso.' });
     } catch (err) {
       setFeedback({ type: 'error', message: mapAvailabilityApiMessage(err, 'save') });
-    } finally {
-      setSaving(false);
     }
-  };
+  }, [teacherId, timeslots, availabilityMap, saveMutation]);
 
   if (loading) return <div style={{ padding: '32px', color: 'var(--rs-muted)' }}>A carregar grelha...</div>;
-  if (error) return <div style={{color: 'var(--rs-deep)', padding: '32px'}} role="alert">{error}</div>;
+
+  const saving = saveMutation.isPending;
 
   return (
     <div>

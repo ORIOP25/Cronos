@@ -23,7 +23,7 @@ import KPISidebar from '../components/schedules/KPISidebar'
 import DraftPanel from '../components/schedules/DraftPanel'
 import GenerationStatusPanel, { isPending, TERMINAL_STATUSES } from '../components/schedules/GenerationStatusPanel'
 import PreflightErrorPanel from '../components/schedules/PreflightErrorPanel'
-import { useUser, useOrganization } from '@clerk/react'
+import { useOrganization } from '@clerk/react'
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -134,11 +134,11 @@ const Schedules = () => {
   const navigate = useNavigate()
   const location = useLocation()
   const queryClient = useQueryClient()
-  const { user } = useUser()
-  const orgId = useOrganization().organization?.id ?? null
-  const isAdmin = user?.publicMetadata?.role === 'admin'
-  const isTeacher = user?.publicMetadata?.role === 'teacher'
-  const teacherOwnId = user?.publicMetadata?.teacherId ?? null
+  const { organization, membership } = useOrganization()
+  const orgId = organization?.id ?? null
+  const isAdmin = membership?.role === 'org:admin'
+  const isTeacher = membership?.role === 'org:member'
+  const teacherOwnId = membership?.publicMetadata?.teacher_id ?? null
   const canConsultSchedule = isAdmin || (isTeacher && Boolean(teacherOwnId))
   const taskStorageKey = getTaskStorageKey(orgId)
   const viewStorageKey = getViewStorageKey(orgId)

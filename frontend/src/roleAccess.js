@@ -32,7 +32,7 @@ export const ROLE_ALLOWED_APP_ROUTES = Object.freeze({
 })
 
 export function getDefaultRouteForRole(role) {
-  return ROLE_DEFAULT_ROUTE[role] ?? ROUTE_LOGIN
+  return ROLE_DEFAULT_ROUTE[role] ?? '/create-org'
 }
 
 export function getForbiddenRedirectRoute(role) {

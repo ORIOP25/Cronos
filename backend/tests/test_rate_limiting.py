@@ -65,8 +65,8 @@ class TestTeacherHorizonRateLimit:
         self, async_client: AsyncClient, admin_token_headers: dict, db_session
     ):
         from app import models
-        from app.core.security import create_access_token, hash_password
-        from uuid import uuid4
+        from app.core.security import create_access_token
+from uuid import uuid4
 
         settings_resp = await async_client.post(
             f"{API}/school/settings/",
@@ -94,7 +94,6 @@ class TestTeacherHorizonRateLimit:
         teacher_email = f"ratelimit.t.{uuid4().hex[:8]}@escola.pt"
         teacher_user = models.User(
             email=teacher_email,
-            hashed_password=hash_password("pass123"),
             is_active=True,
             role=models.UserRole.teacher,
             organization_id=1,
@@ -125,8 +124,8 @@ class TestWeekScheduleRateLimit:
         self, async_client: AsyncClient, admin_token_headers: dict, db_session
     ):
         from app import models
-        from app.core.security import create_access_token, hash_password
-        from uuid import uuid4
+        from app.core.security import create_access_token
+from uuid import uuid4
 
         teacher_resp = await async_client.post(
             f"{API}/teachers/",
@@ -142,7 +141,6 @@ class TestWeekScheduleRateLimit:
         teacher_email = f"ratelimit.wk.{uuid4().hex[:8]}@escola.pt"
         teacher_user = models.User(
             email=teacher_email,
-            hashed_password=hash_password("pass123"),
             is_active=True,
             role=models.UserRole.teacher,
             organization_id=1,
