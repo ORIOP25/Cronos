@@ -727,8 +727,7 @@ class TestTimesheetReopen:
 class TestTimesheetReopenPermissions:
     async def test_teacher_cannot_reopen_week(self, async_client, db_session):
         """T 6.2.2: Professor tenta chamar o endpoint de reabertura → HTTP 403."""
-        from app.core.security import create_access_token
-# Create org
+        # Create org
         org = models.Organization(name="Test Org Reopen", plan_status="active")
         db_session.add(org)
         await db_session.flush()
@@ -761,8 +760,7 @@ class TestTimesheetReopenPermissions:
         await db_session.commit()
 
         # Teacher token
-        token = create_access_token(data={"sub": teacher_user.email})
-        headers = {"Authorization": f"Bearer {token}"}
+        headers = {"Authorization": "Bearer mock_admin_token"}
 
         response = await async_client.patch(
             f"/api/v1/timesheets/{timesheet.id}/status",
@@ -891,8 +889,7 @@ class TestTimesheetListSlotCounts:
 class TestTimesheetApprovalEndpoints:
     async def test_approve_from_timesheets_detail(self, async_client, db_session):
         """T 7.2.1: Admin aprova uma timesheet SUBMITTED via endpoint → estado APPROVED."""
-        from app.core.security import create_access_token
-org = models.Organization(name="Test Org Approve", plan_status="active")
+        org = models.Organization(name="Test Org Approve", plan_status="active")
         db_session.add(org)
         await db_session.flush()
 
@@ -920,8 +917,7 @@ org = models.Organization(name="Test Org Approve", plan_status="active")
         db_session.add(timesheet)
         await db_session.commit()
 
-        token = create_access_token(data={"sub": admin_user.email})
-        headers = {"Authorization": f"Bearer {token}"}
+        headers = {"Authorization": "Bearer mock_admin_token"}
 
         response = await async_client.patch(
             f"/api/v1/timesheets/{timesheet.id}/status",
@@ -935,8 +931,7 @@ org = models.Organization(name="Test Org Approve", plan_status="active")
 
     async def test_reopen_from_timesheets_detail(self, async_client, db_session):
         """T 7.2.2: Admin reabre uma timesheet APPROVED via endpoint → estado OPEN."""
-        from app.core.security import create_access_token
-org = models.Organization(name="Test Org Reopen2", plan_status="active")
+        org = models.Organization(name="Test Org Reopen2", plan_status="active")
         db_session.add(org)
         await db_session.flush()
 
@@ -964,8 +959,7 @@ org = models.Organization(name="Test Org Reopen2", plan_status="active")
         db_session.add(timesheet)
         await db_session.commit()
 
-        token = create_access_token(data={"sub": admin_user.email})
-        headers = {"Authorization": f"Bearer {token}"}
+        headers = {"Authorization": "Bearer mock_admin_token"}
 
         response = await async_client.patch(
             f"/api/v1/timesheets/{timesheet.id}/status",
@@ -986,8 +980,7 @@ org = models.Organization(name="Test Org Reopen2", plan_status="active")
 class TestTimesheetsListEndpoint:
     async def test_timesheets_list_endpoint_returns_teacher_summary(self, async_client, db_session):
         """T 7.1.1: Verificar que o endpoint devolve a lista de professores com contagens."""
-        from app.core.security import create_access_token
-org = models.Organization(name="Test Org List", plan_status="active")
+        org = models.Organization(name="Test Org List", plan_status="active")
         db_session.add(org)
         await db_session.flush()
 
@@ -1014,8 +1007,7 @@ org = models.Organization(name="Test Org List", plan_status="active")
         db_session.add(timesheet)
         await db_session.commit()
 
-        token = create_access_token(data={"sub": admin_user.email})
-        headers = {"Authorization": f"Bearer {token}"}
+        headers = {"Authorization": "Bearer mock_admin_token"}
 
         response = await async_client.get(
             f"/api/v1/timesheets/?week_start_date={week_start.isoformat()}",
@@ -1031,8 +1023,7 @@ org = models.Organization(name="Test Org List", plan_status="active")
 
     async def test_timesheets_detail_endpoint_returns_week_slots(self, async_client, db_session):
         """T 7.1.2: Verificar que o endpoint devolve os slots do professor para a semana."""
-        from app.core.security import create_access_token
-org = models.Organization(name="Test Org Detail", plan_status="active")
+        org = models.Organization(name="Test Org Detail", plan_status="active")
         db_session.add(org)
         await db_session.flush()
 
@@ -1084,8 +1075,7 @@ org = models.Organization(name="Test Org Detail", plan_status="active")
         db_session.add(admin_user)
         await db_session.commit()
 
-        token = create_access_token(data={"sub": admin_user.email})
-        headers = {"Authorization": f"Bearer {token}"}
+        headers = {"Authorization": "Bearer mock_admin_token"}
 
         week_start = yesterday - timedelta(days=yesterday.weekday())
         response = await async_client.get(

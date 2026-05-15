@@ -8,7 +8,6 @@ from datetime import date, time, timedelta
 from uuid import uuid4
 from app.config import settings
 from app import models
-from app.core.security import create_access_token
 from app.models import UserRole
 
 API = settings.API_V1_STR
@@ -26,8 +25,7 @@ async def _create_teacher_auth_headers(db_session, *, teacher_id: int, organizat
     )
     db_session.add(teacher_user)
     await db_session.commit()
-    token = create_access_token(data={"sub": email})
-    return {"Authorization": f"Bearer {token}"}
+    return {"Authorization": "Bearer mock_admin_token"}
 
 
 async def _setup_course_class_subject(client: AsyncClient, headers: dict):

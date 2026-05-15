@@ -28,15 +28,12 @@ class TestDashboardEndpoint:
         db_session.add(admin)
         await db_session.flush()
 
-        from app.core.security import create_access_token
-        token = create_access_token(data={"sub": "dashadmin@escola.com"})
-
         return {
             "org_id": org.id,
             "org_name": org.name,
             "admin_id": admin.id,
             "admin_email": admin.email,
-            "auth_headers": {"Authorization": f"Bearer {token}"},
+            "auth_headers": {"Authorization": "Bearer mock_admin_token"},
         }
 
     async def _seed_teacher(self, db_session: AsyncSession, org_id: int, name: str) -> models.Teacher:
@@ -265,8 +262,7 @@ class TestDashboardEndpoint:
         db_session.add(org)
         await db_session.flush()
 
-        from app.core.security import create_access_token
-teacher_user = models.User(
+        teacher_user = models.User(
             email="teacher@escola.com",
             is_active=True,
             role=models.UserRole.teacher,
@@ -275,8 +271,7 @@ teacher_user = models.User(
         db_session.add(teacher_user)
         await db_session.commit()
 
-        token = create_access_token(data={"sub": "teacher@escola.com"})
-        headers = {"Authorization": f"Bearer {token}"}
+        headers = {"Authorization": "Bearer mock_admin_token"}
 
         response = await async_client.get("/api/v1/dashboard", headers=headers)
         assert response.status_code == 403

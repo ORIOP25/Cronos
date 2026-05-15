@@ -4,12 +4,13 @@ from uuid import uuid4
 import pytest
 from httpx import AsyncClient
 from sqlalchemy import select
+from unittest.mock import patch
 
 from app import models
 from app.config import settings
-from app.core.security import create_access_token
 from app.models import UserRole
 from app.services import teacher_observability_service
+from tests.conftest import mock_clerk_payload, create_org_and_user
 
 API = settings.API_V1_STR
 
@@ -22,9 +23,10 @@ async def _create_user_headers(
     role: UserRole,
     is_active: bool = True,
 ) -> dict:
-    email = f"obs.{role.value}.{uuid4().hex[:8]}@escola.pt"
+    clerk_id = f"user_{role.value}_{uuid4().hex[:8]}"
     user = models.User(
-        email=email,
+        clerk_user_id=clerk_id,
+        email=f"obs.{role.value}.{uuid4().hex[:8]}@escola.pt",
         is_active=is_active,
         role=role,
         organization_id=organization_id,
@@ -32,9 +34,7 @@ async def _create_user_headers(
     )
     db_session.add(user)
     await db_session.commit()
-
-    token = create_access_token(data={"sub": email})
-    return {"Authorization": f"Bearer {token}"}
+    return {"Authorization": f"Bearer test_{clerk_id}"}
 
 
 @pytest.mark.asyncio
@@ -43,6 +43,7 @@ async def test_teacher_self_availability_logs_observability_event(
     admin_token_headers: dict,
     db_session,
 ):
+    org, _ = await create_org_and_user(db_session, clerk_user_id="user_admin_001", role="admin")
     teacher_resp = await async_client.post(
         f"{API}/teachers/",
         json={"name": "Prof. Obs", "email": f"obs.{uuid4().hex[:8]}@escola.pt"},
@@ -53,15 +54,18 @@ async def test_teacher_self_availability_logs_observability_event(
 
     teacher_headers = await _create_user_headers(
         db_session,
-        organization_id=1,
+        organization_id=org.id,
         teacher_id=teacher_id,
         role=UserRole.teacher,
     )
+    teacher_clerk_id = teacher_headers["Authorization"].replace("Bearer test_", "")
+    payload = mock_clerk_payload(teacher_clerk_id, org.clerk_org_id, "member")
 
-    response = await async_client.get(
-        f"{API}/teachers/me/availability",
-        headers=teacher_headers,
-    )
+    with patch("app.api.deps.get_clerk_payload", return_value=payload):
+        response = await async_client.get(
+            f"{API}/teachers/me/availability",
+            headers=teacher_headers,
+        )
     assert response.status_code == 200
 
     rows = (
@@ -84,6 +88,7 @@ async def test_teacher_observability_summary_is_admin_only(
     admin_token_headers: dict,
     db_session,
 ):
+    org, _ = await create_org_and_user(db_session, clerk_user_id="user_admin_001", role="admin")
     teacher_resp = await async_client.post(
         f"{API}/teachers/",
         json={"name": "Prof. Restrito", "email": f"restricted.{uuid4().hex[:8]}@escola.pt"},
@@ -93,24 +98,27 @@ async def test_teacher_observability_summary_is_admin_only(
 
     teacher_headers = await _create_user_headers(
         db_session,
-        organization_id=1,
+        organization_id=org.id,
         teacher_id=teacher_resp.json()["id"],
         role=UserRole.teacher,
     )
+    teacher_clerk_id = teacher_headers["Authorization"].replace("Bearer test_", "")
+    payload = mock_clerk_payload(teacher_clerk_id, org.clerk_org_id, "member")
 
-    response = await async_client.get(
-        f"{API}/teachers/observability/summary",
-        headers=teacher_headers,
-    )
+    with patch("app.api.deps.get_clerk_payload", return_value=payload):
+        response = await async_client.get(
+            f"{API}/teachers/observability/summary",
+            headers=teacher_headers,
+        )
     assert response.status_code == 403
 
 
 @pytest.mark.asyncio
 async def test_teacher_observability_summary_detects_403_alert_and_recovery(
     async_client: AsyncClient,
-    admin_token_headers: dict,
     db_session,
 ):
+    org, _ = await create_org_and_user(db_session, clerk_user_id="user_admin_001", role="admin")
     now = datetime.now(timezone.utc)
 
     failure_events = [
@@ -129,11 +137,13 @@ async def test_teacher_observability_summary_detects_403_alert_and_recovery(
     db_session.add_all(failure_events)
     await db_session.commit()
 
-    summary_failure = await async_client.get(
-        f"{API}/teachers/observability/summary",
-        headers=admin_token_headers,
-        params={"window_minutes": 15},
-    )
+    payload_admin = mock_clerk_payload("user_admin_001", org.clerk_org_id, "admin")
+    with patch("app.api.deps.get_clerk_payload", return_value=payload_admin):
+        summary_failure = await async_client.get(
+            f"{API}/teachers/observability/summary",
+            headers={"Authorization": "Bearer test_admin_token_001"},
+            params={"window_minutes": 15},
+        )
     assert summary_failure.status_code == 200
 
     alerts_failure = summary_failure.json()["alerts"]
@@ -159,11 +169,12 @@ async def test_teacher_observability_summary_detects_403_alert_and_recovery(
     db_session.add_all(recovery_events)
     await db_session.commit()
 
-    summary_recovered = await async_client.get(
-        f"{API}/teachers/observability/summary",
-        headers=admin_token_headers,
-        params={"window_minutes": 15},
-    )
+    with patch("app.api.deps.get_clerk_payload", return_value=payload_admin):
+        summary_recovered = await async_client.get(
+            f"{API}/teachers/observability/summary",
+            headers={"Authorization": "Bearer test_admin_token_001"},
+            params={"window_minutes": 15},
+        )
     assert summary_recovered.status_code == 200
 
     alerts_recovered = summary_recovered.json()["alerts"]
@@ -177,9 +188,9 @@ async def test_teacher_observability_summary_detects_403_alert_and_recovery(
 @pytest.mark.asyncio
 async def test_teacher_observability_summary_detects_high_5xx_rate(
     async_client: AsyncClient,
-    admin_token_headers: dict,
     db_session,
 ):
+    org, _ = await create_org_and_user(db_session, clerk_user_id="user_admin_001", role="admin")
     now = datetime.now(timezone.utc)
 
     db_session.add(
@@ -211,11 +222,13 @@ async def test_teacher_observability_summary_detects_high_5xx_rate(
     db_session.add_all(success_events)
     await db_session.commit()
 
-    response = await async_client.get(
-        f"{API}/teachers/observability/summary",
-        headers=admin_token_headers,
-        params={"window_minutes": 15},
-    )
+    payload_admin = mock_clerk_payload("user_admin_001", org.clerk_org_id, "admin")
+    with patch("app.api.deps.get_clerk_payload", return_value=payload_admin):
+        response = await async_client.get(
+            f"{API}/teachers/observability/summary",
+            headers={"Authorization": "Bearer test_admin_token_001"},
+            params={"window_minutes": 15},
+        )
     assert response.status_code == 200
 
     payload = response.json()

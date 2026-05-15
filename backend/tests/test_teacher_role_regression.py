@@ -6,7 +6,6 @@ from httpx import AsyncClient
 
 from app import models
 from app.config import settings
-from app.core.security import create_access_token
 from app.models import UserRole
 
 
@@ -32,8 +31,7 @@ async def _create_teacher_auth_headers(
     db_session.add(user)
     await db_session.commit()
 
-    token = create_access_token(data={"sub": email})
-    return {"Authorization": f"Bearer {token}"}
+    return {"Authorization": f"Bearer mock_{email}"}
 
 
 @pytest.mark.asyncio

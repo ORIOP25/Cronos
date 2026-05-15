@@ -40,7 +40,7 @@ async def test_onboarding_creates_settings(async_client, db_session):
         mock_payload.return_value = {"sub": "user_onb_001", "o": {"id": "org_onb_001", "rol": "admin"}}
         resp = await async_client.post("/api/v1/onboarding", json=data)
 
-    assert resp.status_code == 200
+    assert resp.status_code == 201
     resp_data = resp.json()
     assert resp_data["status"] == "ok"
 

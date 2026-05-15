@@ -5,7 +5,6 @@ Parte de test_business_logic.py (split).
 import pytest
 from httpx import AsyncClient
 from app import models
-from app.core.security import create_access_token
 from app.models import UserRole
 from test_business_logic_shared import API
 
@@ -27,8 +26,7 @@ class TestTenantIsolation:
         )
         db_session.add(user)
         await db_session.commit()
-        token = create_access_token(data={"sub": email})
-        return {"headers": {"Authorization": f"Bearer {token}"}, "organization_id": org.id}
+        return {"headers": {"Authorization": f"Bearer mock_{email}"}, "organization_id": org.id}
 
     async def test_org_a_cannot_see_org_b_rooms(
         self, async_client: AsyncClient, db_session,

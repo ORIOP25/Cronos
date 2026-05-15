@@ -14,9 +14,9 @@ async def test_authenticate_request_valid_token():
         payload={"sub": "user_123", "o": {"id": "org_456", "rol": "admin"}},
     )
 
-    with patch("app.core.clerk.get_clerk_sdk") as mock_sdk:
-        mock_sdk.return_value.authenticate_request.return_value = mock_state
-        result = verify_clerk_request(mock_request)
+    with patch("app.core.clerk._verify_clerk_request_sync") as mock_sync:
+        mock_sync.return_value = mock_state
+        result = await verify_clerk_request(mock_request)
 
     assert result.is_signed_in is True
     assert result.payload["sub"] == "user_123"
@@ -31,9 +31,9 @@ async def test_authenticate_request_invalid_token():
     mock_request = MagicMock()
     mock_state = RequestState(status=AuthStatus.SIGNED_OUT)
 
-    with patch("app.core.clerk.get_clerk_sdk") as mock_sdk:
-        mock_sdk.return_value.authenticate_request.return_value = mock_state
-        result = verify_clerk_request(mock_request)
+    with patch("app.core.clerk._verify_clerk_request_sync") as mock_sync:
+        mock_sync.return_value = mock_state
+        result = await verify_clerk_request(mock_request)
 
     assert result.is_signed_in is False
 
@@ -46,9 +46,9 @@ async def test_authenticate_request_expired_token():
     mock_request = MagicMock()
     mock_state = RequestState(status=AuthStatus.SIGNED_OUT)
 
-    with patch("app.core.clerk.get_clerk_sdk") as mock_sdk:
-        mock_sdk.return_value.authenticate_request.return_value = mock_state
-        result = verify_clerk_request(mock_request)
+    with patch("app.core.clerk._verify_clerk_request_sync") as mock_sync:
+        mock_sync.return_value = mock_state
+        result = await verify_clerk_request(mock_request)
 
     assert result.is_signed_in is False
 
@@ -61,9 +61,9 @@ async def test_authenticate_request_wrong_azp():
     mock_request = MagicMock()
     mock_state = RequestState(status=AuthStatus.SIGNED_OUT)
 
-    with patch("app.core.clerk.get_clerk_sdk") as mock_sdk:
-        mock_sdk.return_value.authenticate_request.return_value = mock_state
-        result = verify_clerk_request(mock_request)
+    with patch("app.core.clerk._verify_clerk_request_sync") as mock_sync:
+        mock_sync.return_value = mock_state
+        result = await verify_clerk_request(mock_request)
 
     assert result.is_signed_in is False
 

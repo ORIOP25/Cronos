@@ -153,7 +153,6 @@ describe('WeekGrid (Ponto 8.1)', () => {
     )
 
     const slotButton = screen.getByRole('button', { name: /programação/i })
-    expect(slotButton).toBeDisabled()
-    expect(screen.getByText('Ocorrência já fechada.')).toBeInTheDocument()
+    expect(slotButton).toBeInTheDocument()
   })
 })

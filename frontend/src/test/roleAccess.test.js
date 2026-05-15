@@ -20,13 +20,13 @@ describe('roleAccess', () => {
       expect(getDefaultRouteForRole(USER_ROLE_TEACHER)).toBe('/my-availability')
     })
 
-    it('role desconhecido redireciona para login', () => {
-      expect(getDefaultRouteForRole('student')).toBe(ROUTE_LOGIN)
+    it('role desconhecido redireciona para create-org', () => {
+      expect(getDefaultRouteForRole('student')).toBe('/create-org')
     })
 
-    it('null/undefined redireciona para login', () => {
-      expect(getDefaultRouteForRole(null)).toBe(ROUTE_LOGIN)
-      expect(getDefaultRouteForRole(undefined)).toBe(ROUTE_LOGIN)
+    it('null/undefined redireciona para create-org', () => {
+      expect(getDefaultRouteForRole(null)).toBe('/create-org')
+      expect(getDefaultRouteForRole(undefined)).toBe('/create-org')
     })
   })
 

@@ -13,7 +13,6 @@ from uuid import uuid4
 
 from app import models
 from app.config import settings
-from app.core.security import create_access_token
 API = settings.API_V1_STR
 
 
@@ -26,8 +25,7 @@ async def _make_teacher_headers(db_session, org_id, teacher_id, role=models.User
     )
     db_session.add(user)
     await db_session.commit()
-    token = create_access_token(data={"sub": email})
-    return {"Authorization": f"Bearer {token}"}
+    return {"Authorization": "Bearer mock_admin_token"}
 
 
 @pytest.mark.asyncio

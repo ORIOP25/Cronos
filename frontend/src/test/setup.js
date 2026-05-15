@@ -13,13 +13,15 @@ vi.mock('@clerk/react', () => ({
       id: 'user_test_123',
       primaryEmailAddress: { emailAddress: 'test@example.com' },
       fullName: 'Test User',
-      publicMetadata: { teacherId: 1, role: 'admin' },
     },
     isLoaded: true,
   }),
   useOrganization: () => ({
     organization: { id: 1, name: 'Test Org' },
-    membership: { role: 'org:admin' },
+    membership: {
+      role: 'org:admin',
+      publicMetadata: { teacher_id: null },
+    },
     isLoaded: true,
   }),
   useClerk: () => ({

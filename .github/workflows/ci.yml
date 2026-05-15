@@ -60,7 +60,7 @@ jobs:
 
       - name: Run Tests
         working-directory: backend
-        run: pytest tests/test_clerk_auth.py tests/test_webhooks.py tests/test_onboarding.py -v --cov=app --cov-report=xml:coverage.xml --tb=short
+        run: pytest tests/ -v --cov=app --cov-report=xml:coverage.xml --tb=short
         env:
           ENVIRONMENT: local
           DATABASE_URL: "postgresql+asyncpg://postgres:ci_pg_pass@localhost:5432/horario_zen_test_db"

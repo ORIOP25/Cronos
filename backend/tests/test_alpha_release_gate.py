@@ -8,15 +8,15 @@ from sqlalchemy import select
 
 from app import models, schemas
 from app.api.v1.endpoints import schedule as schedule_endpoint
-from app.core.security import create_access_token
 from app.models import LessonOccurrenceStatus
 from app.services import occurrence_service
 from app.services.operational_seed_service import REFERENCE_DATE, seed_operational_scenarios_sync
+from tests.conftest import create_org_and_user, mock_clerk_payload
+from unittest.mock import patch
 
 
 def _auth_headers(email: str) -> dict[str, str]:
-    token = create_access_token(data={"sub": email})
-    return {"Authorization": f"Bearer {token}"}
+        return {"Authorization": "Bearer mock_admin_token"}
 
 
 async def _get_first_org_id(db_session) -> int:
@@ -163,9 +163,9 @@ async def _create_open_occurrence(
 async def test_alpha_regression_generation_full_and_repair_allowed(
     async_client,
     db_session,
-    admin_token_headers,
     monkeypatch,
 ):
+    org, _ = await create_org_and_user(db_session, clerk_user_id="user_admin_001", role="admin")
     organization_id = await _get_first_org_id(db_session)
     today = date.today()
     await _seed_minimal_generation_context(
@@ -182,19 +182,23 @@ async def test_alpha_regression_generation_full_and_repair_allowed(
 
     monkeypatch.setattr(schedule_endpoint.generate_schedule_task, "delay", fake_delay)
 
-    full_response = await async_client.post(
-        "/api/v1/schedule/generate",
-        json={"mode": "full"},
-        headers=admin_token_headers,
-    )
+    payload = mock_clerk_payload("user_admin_001", org.clerk_org_id, "admin")
+    headers = {"Authorization": "Bearer test_admin_token_001"}
+    with patch("app.api.deps.get_clerk_payload", return_value=payload):
+        full_response = await async_client.post(
+            "/api/v1/schedule/generate",
+            json={"mode": "full"},
+            headers=headers,
+        )
     assert full_response.status_code == 200
     assert full_response.json()["task_id"] == "task-full"
 
-    repair_response = await async_client.post(
-        "/api/v1/schedule/generate",
-        json={"mode": "repair"},
-        headers=admin_token_headers,
-    )
+    with patch("app.api.deps.get_clerk_payload", return_value=payload):
+        repair_response = await async_client.post(
+            "/api/v1/schedule/generate",
+            json={"mode": "repair"},
+            headers=headers,
+        )
     assert repair_response.status_code == 200
     assert repair_response.json()["task_id"] == "task-repair"
 
@@ -203,9 +207,9 @@ async def test_alpha_regression_generation_full_and_repair_allowed(
 async def test_alpha_regression_repair_blocks_near_hard_end(
     async_client,
     db_session,
-    admin_token_headers,
     monkeypatch,
 ):
+    org, _ = await create_org_and_user(db_session, clerk_user_id="user_admin_001", role="admin")
     organization_id = await _get_first_org_id(db_session)
     today = date.today()
     await _seed_minimal_generation_context(
@@ -225,11 +229,13 @@ async def test_alpha_regression_repair_blocks_near_hard_end(
 
     monkeypatch.setattr(schedule_endpoint.generate_schedule_task, "delay", fake_delay)
 
-    response = await async_client.post(
-        "/api/v1/schedule/generate",
-        json={"mode": "repair"},
-        headers=admin_token_headers,
-    )
+    payload = mock_clerk_payload("user_admin_001", org.clerk_org_id, "admin")
+    with patch("app.api.deps.get_clerk_payload", return_value=payload):
+        response = await async_client.post(
+            "/api/v1/schedule/generate",
+            json={"mode": "repair"},
+            headers={"Authorization": "Bearer test_admin_token_001"},
+        )
 
     assert response.status_code == 400
     payload = response.json()
@@ -239,9 +245,24 @@ async def test_alpha_regression_repair_blocks_near_hard_end(
 
 
 @pytest.mark.asyncio
-async def test_alpha_regression_occurrences_substitutions_auth_and_tenant(async_client, db_session):
+async def test_alpha_regression_occurrences_substitutions_auth_and_tenant(
+    async_client, db_session, admin_token_headers
+):
     payload = await _seed_operational(db_session)
     runtime = payload["runtime"]
+
+    # Criar users admin com clerk_user_id na async session para corresponder ao mock
+    admin_a_user = (await db_session.execute(
+        select(models.User).where(models.User.email == "admin.operacional.a@seed.pt")
+    )).scalar_one_or_none()
+    admin_b_user = (await db_session.execute(
+        select(models.User).where(models.User.email == "admin.operacional.b@seed.pt")
+    )).scalar_one_or_none()
+    if admin_a_user:
+        admin_a_user.clerk_user_id = "user_admin_001"
+    if admin_b_user:
+        admin_b_user.clerk_user_id = "user_admin_b"
+    await db_session.commit()
 
     occurrence_id = await _create_open_occurrence(
         db_session,
@@ -253,6 +274,7 @@ async def test_alpha_regression_occurrences_substitutions_auth_and_tenant(async_
         teacher_user_email = f"teacher.alpha.{uuid4().hex[:8]}@seed.pt"
         teacher_user = models.User(
             email=teacher_user_email,
+            clerk_user_id=f"seed_{teacher_user_email}",
             is_active=True,
             role=models.UserRole.teacher,
             organization_id=runtime["org_a_id"],
@@ -263,42 +285,46 @@ async def test_alpha_regression_occurrences_substitutions_auth_and_tenant(async_
         return teacher_user_email
 
     teacher_email = await db_session.run_sync(_create_teacher_user)
+    # Sincronizar na async session
+    await db_session.commit()
 
-    admin_a_headers = _auth_headers("admin.operacional.a@seed.pt")
-    admin_b_headers = _auth_headers("admin.operacional.b@seed.pt")
-    teacher_headers = _auth_headers(teacher_email)
+    headers = {"Authorization": "Bearer test_token_admin_001"}
 
-    rec_response = await async_client.get(
-        f"/api/v1/occurrences/{occurrence_id}/substitutes/recommendations",
-        headers=admin_a_headers,
-    )
+    with patch("app.api.deps.get_clerk_payload", return_value=mock_clerk_payload("user_admin_001", "org_001", "admin")):
+        rec_response = await async_client.get(
+            f"/api/v1/occurrences/{occurrence_id}/substitutes/recommendations",
+            headers=headers,
+        )
     assert rec_response.status_code == 200
     recommendations = rec_response.json()
     assert len(recommendations) >= 2
 
-    teacher_forbidden = await async_client.patch(
-        f"/api/v1/occurrences/{occurrence_id}",
-        json={"status": "GAP"},
-        headers=teacher_headers,
-    )
+    with patch("app.api.deps.get_clerk_payload", return_value=mock_clerk_payload(f"seed_{teacher_email}", runtime.get("org_a_clerk_id"), "member")):
+        teacher_forbidden = await async_client.patch(
+            f"/api/v1/occurrences/{occurrence_id}",
+            json={"status": "GAP"},
+            headers=headers,
+        )
     assert teacher_forbidden.status_code == 403
 
-    tenant_hidden = await async_client.get(
-        f"/api/v1/occurrences/{occurrence_id}/substitutes/recommendations",
-        headers=admin_b_headers,
-    )
+    with patch("app.api.deps.get_clerk_payload", return_value=mock_clerk_payload("user_admin_b", "org_002", "admin")):
+        tenant_hidden = await async_client.get(
+            f"/api/v1/occurrences/{occurrence_id}/substitutes/recommendations",
+            headers=headers,
+        )
     assert tenant_hidden.status_code == 404
 
     top_candidate = recommendations[0]
-    admin_confirm = await async_client.patch(
-        f"/api/v1/occurrences/{occurrence_id}",
-        json={
-            "status": "SUBSTITUTED",
-            "substitute_teacher_id": top_candidate["teacher_id"],
-            "substitute_subject_id": top_candidate["subject_id"],
-        },
-        headers=admin_a_headers,
-    )
+    with patch("app.api.deps.get_clerk_payload", return_value=mock_clerk_payload("user_admin_001", "org_001", "admin")):
+        admin_confirm = await async_client.patch(
+            f"/api/v1/occurrences/{occurrence_id}",
+            json={
+                "status": "SUBSTITUTED",
+                "substitute_teacher_id": top_candidate["teacher_id"],
+                "substitute_subject_id": top_candidate["subject_id"],
+            },
+            headers=headers,
+        )
     assert admin_confirm.status_code == 200
     body = admin_confirm.json()
     assert body["status"] == "SUBSTITUTED"

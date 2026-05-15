@@ -65,8 +65,7 @@ class TestTeacherHorizonRateLimit:
         self, async_client: AsyncClient, admin_token_headers: dict, db_session
     ):
         from app import models
-        from app.core.security import create_access_token
-from uuid import uuid4
+        from uuid import uuid4
 
         settings_resp = await async_client.post(
             f"{API}/school/settings/",
@@ -102,8 +101,7 @@ from uuid import uuid4
         db_session.add(teacher_user)
         await db_session.commit()
 
-        token = create_access_token(data={"sub": teacher_email})
-        teacher_headers = {"Authorization": f"Bearer {token}"}
+        teacher_headers = {"Authorization": "Bearer mock_admin_token"}
 
         for _ in range(55):
             response = await async_client.get(
@@ -124,8 +122,7 @@ class TestWeekScheduleRateLimit:
         self, async_client: AsyncClient, admin_token_headers: dict, db_session
     ):
         from app import models
-        from app.core.security import create_access_token
-from uuid import uuid4
+        from uuid import uuid4
 
         teacher_resp = await async_client.post(
             f"{API}/teachers/",
@@ -149,8 +146,7 @@ from uuid import uuid4
         db_session.add(teacher_user)
         await db_session.commit()
 
-        token = create_access_token(data={"sub": teacher_email})
-        teacher_headers = {"Authorization": f"Bearer {token}"}
+        teacher_headers = {"Authorization": "Bearer mock_admin_token"}
 
         for _ in range(25):
             response = await async_client.get(

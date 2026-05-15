@@ -6,6 +6,7 @@ os.environ["RATELIMIT_ENABLED"] = "false"
 
 import pytest
 import pytest_asyncio
+from unittest.mock import patch
 from datetime import date, time, timedelta
 from typing import AsyncGenerator
 
@@ -13,9 +14,10 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.database import ASYNC_DB_URL
-from app import models, schemas
+from app import models
+from app import schemas
+from tests.conftest import mock_clerk_payload
 from app.services import schedule_service
-from app.core.security import create_access_token
 from app.core.solver_engine import ScheduleEngine, LessonInput, TimeslotInput, RoomInput
 
 # sync_db fixture is provided by conftest.py (shared across all test files)
@@ -134,7 +136,7 @@ async def draft_setup(db_session: AsyncSession):
     db_session.add(draft_out)
     await db_session.commit()
 
-    token = create_access_token({"sub": admin.email})
+    token = "mock_admin_token"
     return {
         "organization_id": org.id,
         "admin_email": admin.email,
@@ -618,11 +620,12 @@ class TestDraftEndpoints:
     """Testa os endpoints REST de gestão de rascunhos."""
 
     @pytest.mark.asyncio
+    @patch("app.api.deps.get_clerk_payload", return_value=mock_clerk_payload("admin@test.com", "org_001", "admin"))
     async def test_list_drafts_returns_one(self, async_client: AsyncClient, draft_setup):
         token = draft_setup["admin_token"]
         resp = await async_client.get(
             "/api/v1/schedule/drafts",
-            headers={"Authorization": f"Bearer {token}"},
+            headers={"Authorization": "Bearer mock_admin_token"},
         )
         assert resp.status_code == 200
         data = resp.json()
@@ -635,11 +638,12 @@ class TestDraftEndpoints:
         assert resp.status_code == 401
 
     @pytest.mark.asyncio
+    @patch("app.api.deps.get_clerk_payload", return_value=mock_clerk_payload("admin@test.com", "org_001", "admin"))
     async def test_get_diff_returns_stats(self, async_client: AsyncClient, draft_setup):
         token = draft_setup["admin_token"]
         resp = await async_client.get(
             f"/api/v1/schedule/drafts/{GEN_DRAFT}/diff",
-            headers={"Authorization": f"Bearer {token}"},
+            headers={"Authorization": "Bearer mock_admin_token"},
         )
         assert resp.status_code == 200
         data = resp.json()
@@ -649,11 +653,12 @@ class TestDraftEndpoints:
         assert data["generation_id"] == GEN_DRAFT
 
     @pytest.mark.asyncio
+    @patch("app.api.deps.get_clerk_payload", return_value=mock_clerk_payload("admin@test.com", "org_001", "admin"))
     async def test_get_diff_not_found(self, async_client: AsyncClient, draft_setup):
         token = draft_setup["admin_token"]
         resp = await async_client.get(
             "/api/v1/schedule/drafts/nonexistent-gen/diff",
-            headers={"Authorization": f"Bearer {token}"},
+            headers={"Authorization": "Bearer mock_admin_token"},
         )
         assert resp.status_code == 404
 
@@ -662,7 +667,7 @@ class TestDraftEndpoints:
         token = draft_setup["admin_token"]
         resp = await async_client.post(
             f"/api/v1/schedule/drafts/{GEN_DRAFT}/approve",
-            headers={"Authorization": f"Bearer {token}"},
+            headers={"Authorization": "Bearer mock_admin_token"},
         )
         assert resp.status_code == 200
         data = resp.json()
@@ -671,7 +676,7 @@ class TestDraftEndpoints:
         # Verificar que o rascunho desapareceu
         resp2 = await async_client.get(
             "/api/v1/schedule/drafts",
-            headers={"Authorization": f"Bearer {token}"},
+            headers={"Authorization": "Bearer mock_admin_token"},
         )
         assert resp2.json() == []
 
@@ -680,7 +685,7 @@ class TestDraftEndpoints:
         token = draft_setup["admin_token"]
         resp = await async_client.post(
             "/api/v1/schedule/drafts/nonexistent/approve",
-            headers={"Authorization": f"Bearer {token}"},
+            headers={"Authorization": "Bearer mock_admin_token"},
         )
         assert resp.status_code == 404
 
@@ -689,7 +694,7 @@ class TestDraftEndpoints:
         token = draft_setup["admin_token"]
         resp = await async_client.delete(
             f"/api/v1/schedule/drafts/{GEN_DRAFT}",
-            headers={"Authorization": f"Bearer {token}"},
+            headers={"Authorization": "Bearer mock_admin_token"},
         )
         assert resp.status_code == 200
         data = resp.json()
@@ -698,7 +703,7 @@ class TestDraftEndpoints:
         # Verificar que o rascunho desapareceu
         resp2 = await async_client.get(
             "/api/v1/schedule/drafts",
-            headers={"Authorization": f"Bearer {token}"},
+            headers={"Authorization": "Bearer mock_admin_token"},
         )
         assert resp2.json() == []
 
@@ -707,6 +712,6 @@ class TestDraftEndpoints:
         token = draft_setup["admin_token"]
         resp = await async_client.delete(
             "/api/v1/schedule/drafts/nonexistent",
-            headers={"Authorization": f"Bearer {token}"},
+            headers={"Authorization": "Bearer mock_admin_token"},
         )
         assert resp.status_code == 404

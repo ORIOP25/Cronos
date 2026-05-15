@@ -20,8 +20,6 @@ from sqlalchemy import select, func
 
 from app import models
 from app.config import settings
-from app.core.security import create_access_token
-
 API = settings.API_V1_STR
 
 

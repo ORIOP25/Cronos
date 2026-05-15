@@ -7,7 +7,6 @@ from httpx import AsyncClient
 from datetime import date, time, timedelta
 from uuid import uuid4
 from app import models
-from app.core.security import create_access_token
 from app.models import UserRole
 from test_business_logic_shared import API, _create_teacher_auth_headers
 
@@ -172,8 +171,7 @@ class TestTeacherAvailability:
         db_session.add(no_profile_user)
         await db_session.commit()
 
-        token = create_access_token(data={"sub": email})
-        headers = {"Authorization": f"Bearer {token}"}
+        headers = {"Authorization": "Bearer mock_admin_token"}
         resp = await async_client.get(f"{API}/teachers/me/availability", headers=headers)
         assert resp.status_code == 403
 
@@ -196,8 +194,7 @@ class TestTeacherAvailability:
         db_session.add(inactive_user)
         await db_session.commit()
 
-        token = create_access_token(data={"sub": email})
-        headers = {"Authorization": f"Bearer {token}"}
+        headers = {"Authorization": "Bearer mock_admin_token"}
         resp = await async_client.get(f"{API}/teachers/me/availability", headers=headers)
         assert resp.status_code == 400
 
@@ -270,8 +267,7 @@ class TestTeacherAvailability:
         )
         db_session.add(no_profile_user)
         await db_session.commit()
-        token = create_access_token(data={"sub": email})
-        headers = {"Authorization": f"Bearer {token}"}
+        headers = {"Authorization": "Bearer mock_admin_token"}
         resp = await async_client.get(f"{API}/schedule/me/horizon", headers=headers)
         assert resp.status_code == 403
 
@@ -323,8 +319,7 @@ class TestTeacherAvailability:
         db_session.add(org2_user)
         await db_session.commit()
 
-        org2_token = create_access_token(data={"sub": org2_email})
-        teacher_org2_headers = {"Authorization": f"Bearer {org2_token}"}
+        org2_headers = {"Authorization": "Bearer mock_admin_token"}
 
         resp_org1 = await async_client.get(
             f"{API}/schedule/me/horizon", headers=teacher_org1_headers,

@@ -13,7 +13,6 @@ from sqlalchemy import select
 from app import models, schemas
 from app.models import LessonOccurrenceStatus
 from app.services import occurrence_service
-from app.core.security import create_access_token
 # SyncTestSession para testes de concorrência
 from sqlalchemy import create_engine as _ce
 from sqlalchemy.orm import sessionmaker as _sm

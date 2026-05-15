@@ -8,7 +8,6 @@ from sqlalchemy import select
 
 from app import models
 from app.api.v1.endpoints import schedule as schedule_endpoint
-from app.core.security import create_access_token
 async def _get_org_id(db_session):
     org = (await db_session.execute(select(models.Organization))).scalars().first()
     if org is None:
@@ -415,8 +414,7 @@ async def test_schedule_reset_requires_admin_role(async_client, db_session):
     db_session.add(teacher_user)
     await db_session.commit()
 
-    teacher_token = create_access_token(data={"sub": teacher_email})
-    teacher_headers = {"Authorization": f"Bearer {teacher_token}"}
+    teacher_headers = {"Authorization": "Bearer mock_teacher_token"}
 
     response = await async_client.delete(
         "/api/v1/schedule/reset",
@@ -445,8 +443,7 @@ async def test_schedule_reset_logs_audit_on_forbidden_attempt(async_client, db_s
     db_session.add(teacher_user)
     await db_session.commit()
 
-    teacher_token = create_access_token(data={"sub": teacher_email})
-    teacher_headers = {"Authorization": f"Bearer {teacher_token}"}
+    teacher_headers = {"Authorization": "Bearer mock_teacher_token"}
 
     audit_events = []
 

@@ -40,6 +40,7 @@ def _create_organization(
     admin = models.User(
         name=f"Admin {org_name}",
         email=admin_email,
+        clerk_user_id=f"seed_{admin_email}",
         role=models.UserRole.admin,
         organization_id=org.id,
         is_active=True,

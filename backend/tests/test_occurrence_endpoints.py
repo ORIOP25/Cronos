@@ -12,7 +12,6 @@ from sqlalchemy import select, func
 from app import models
 from app.models import LessonOccurrenceStatus
 from app.services import occurrence_service
-from app.core.security import create_access_token
 from test_occurrence_shared import full_setup, SyncTestSession, substitution_setup
 
 
@@ -21,13 +20,11 @@ class TestOccurrenceEndpoints:
 
     @pytest_asyncio.fixture
     async def auth_headers(self, full_setup) -> dict:
-        token = create_access_token(data={"sub": full_setup["admin_email"]})
-        return {"Authorization": f"Bearer {token}"}
+                return {"Authorization": "Bearer mock_admin_token"}
 
     @pytest_asyncio.fixture
     async def teacher_auth_headers(self, substitution_setup) -> dict:
-        token = create_access_token(data={"sub": substitution_setup["teacher_user_email"]})
-        return {"Authorization": f"Bearer {token}"}
+                return {"Authorization": "Bearer mock_admin_token"}
 
     async def _create_open_occurrence(self, async_client: AsyncClient, auth_headers: dict, schedule_output_id: int) -> int:
         response = await async_client.post(

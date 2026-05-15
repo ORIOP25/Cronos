@@ -104,3 +104,67 @@ def mock_clerk_payload(clerk_user_id: str, org_id: str | None = None, role: str 
     if org_id:
         payload["o"] = {"id": org_id, "rol": role}
     return payload
+
+
+# ============================================================
+# FIXTURES DE AUTENTICAÇÃO (Fase 3 — com mock automático)
+# ============================================================
+
+@pytest_asyncio.fixture
+async def clerk_admin_headers():
+    """Headers de admin autenticado COM mock automático de get_clerk_payload.
+
+    USO: Basta adicionar `clerk_admin_headers` como parâmetro do teste.
+    O mock de get_clerk_payload é aplicado automaticamente.
+    """
+    from unittest.mock import patch
+    payload = mock_clerk_payload("user_admin_001", "org_001", "admin")
+    with patch("app.api.deps.get_clerk_payload", return_value=payload):
+        yield {"Authorization": "Bearer test_token_admin_001"}
+
+
+@pytest_asyncio.fixture
+async def clerk_teacher_headers():
+    """Headers de teacher autenticado COM mock automático de get_clerk_payload."""
+    from unittest.mock import patch
+    payload = mock_clerk_payload("user_teacher_001", "org_001", "member")
+    with patch("app.api.deps.get_clerk_payload", return_value=payload):
+        yield {"Authorization": "Bearer test_token_teacher_001"}
+
+
+@pytest.fixture
+def admin_token_headers(clerk_admin_headers) -> dict:
+    """Alias compatível com testes antigos que usam admin_token_headers: dict."""
+    return clerk_admin_headers
+
+
+@pytest.fixture
+def clerk_auth_headers(clerk_admin_headers):
+    """Factory de headers — compatível com código existente."""
+    def _headers(clerk_user_id="user_test_admin", org_id="org_test_1", role="admin"):
+        return clerk_admin_headers
+    return _headers
+
+
+async def create_teacher_user(
+    db_session: AsyncSession,
+    *,
+    clerk_user_id: str,
+    email: str | None = None,
+    name: str | None = None,
+    org_id: int,
+    teacher_id: int,
+) -> models.User:
+    """Cria um User com role=teacher e teacher_id vinculado — atalho para testes de professor."""
+    user = models.User(
+        clerk_user_id=clerk_user_id,
+        email=email or f"{clerk_user_id}@test.com",
+        name=name or "Teacher User",
+        role="teacher",
+        organization_id=org_id,
+        teacher_id=teacher_id,
+        is_active=True,
+    )
+    db_session.add(user)
+    await db_session.flush()
+    return user

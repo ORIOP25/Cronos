@@ -63,11 +63,12 @@ async def get_current_user(
         org_local = org_local_result.scalar_one_or_none()
         if org_local:
             user.organization_id = org_local.id
-        if role:
-            user.role = clerk_sync.parse_role(role)
+        await db.flush()
 
-    await db.commit()
-    await db.refresh(user)
+    if role:
+        user.role = clerk_sync.parse_role(role)
+        await db.flush()
+
     return user
 
 
@@ -83,7 +84,11 @@ def get_current_active_admin(
     current_user: Annotated[models.User, Depends(get_current_active_user)],
 ) -> models.User:
     is_admin = current_user.is_superuser or (
-        hasattr(current_user, "role") and str(current_user.role) == models.UserRole.admin.value
+        current_user.role is not None
+        and (
+            current_user.role == models.UserRole.admin
+            or str(current_user.role) == models.UserRole.admin.value
+        )
     )
     if not is_admin:
         raise HTTPException(
