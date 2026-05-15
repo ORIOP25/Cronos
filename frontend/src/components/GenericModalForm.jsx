@@ -14,7 +14,6 @@ const GenericModalForm = ({
   onClose, 
   title, 
   initialData, 
-  FormComponent, 
   onSubmit, 
   isLoading,
   error,

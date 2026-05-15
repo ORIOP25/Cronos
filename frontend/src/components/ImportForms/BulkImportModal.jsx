@@ -147,7 +147,7 @@ const BulkImportModal = ({ visible, onClose, entityName, onProcessItem, template
                       </CTableRow>
                     </CTableHead>
                     <CTableBody>
-                      {fileData.map((row, idx) => {
+                      {fileData.map((row) => {
                         // 2. Recuperamos as chaves da primeira linha para manter o alinhamento
                         // (Mesmo que esta linha específica não tenha esse dado)
                         const columns = Object.keys(fileData[0]).filter(k => k !== '_error');

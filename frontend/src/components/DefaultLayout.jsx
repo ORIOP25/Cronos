@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { Outlet, NavLink, useLocation, useNavigate } from 'react-router-dom'
+import { Outlet, NavLink, useLocation } from 'react-router-dom'
 import { useUser, useOrganization, useClerk } from '@clerk/react'
 import { ROUTE_MY_SCHEDULES } from '../roleAccess'
 import { TXT } from '../utils/terminology'
@@ -44,7 +44,7 @@ const SidebarLink = ({ to, icon, children, collapsed }) => (
 const DefaultLayout = () => {
   const location = useLocation()
   const { user } = useUser()
-  const { organization, membership } = useOrganization()
+  const { membership } = useOrganization()
   const { openUserProfile, signOut } = useClerk()
   
   const isAdmin = membership?.role === 'org:admin'

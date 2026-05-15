@@ -10,7 +10,7 @@
 import { test, expect } from '@playwright/test'
 import {
   dashboardComplete, dashboardWithAlerts, dashboardAllClear,
-  dashboardEmptyOrg, dashboardNoGeneration,
+  dashboardEmptyOrg,
   heatmapData, timeslotsData,
 } from './fixtures/dashboard-data.js'
 
