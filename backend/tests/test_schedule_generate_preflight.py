@@ -1,6 +1,7 @@
 import asyncio
 from datetime import date, time, timedelta
 from types import SimpleNamespace
+from unittest.mock import patch
 
 import pytest
 from fastapi import HTTPException
@@ -8,6 +9,7 @@ from sqlalchemy import select
 
 from app import models
 from app.api.v1.endpoints import schedule as schedule_endpoint
+from tests.conftest import mock_clerk_payload
 async def _get_org_id(db_session):
     org = (await db_session.execute(select(models.Organization))).scalars().first()
     if org is None:
@@ -403,9 +405,10 @@ async def test_schedule_reset_requires_admin_role(async_client, db_session):
     db_session.add(teacher)
     await db_session.flush()
 
-    teacher_email = "teacher.reset.guard@escola.pt"
+    teacher_cid = "teacher_reset_guard_001"
     teacher_user = models.User(
-        email=teacher_email,
+        email="teacher.reset.guard@escola.pt",
+        clerk_user_id=teacher_cid,
         is_active=True,
         role=models.UserRole.teacher,
         organization_id=organization_id,
@@ -414,12 +417,13 @@ async def test_schedule_reset_requires_admin_role(async_client, db_session):
     db_session.add(teacher_user)
     await db_session.commit()
 
-    teacher_headers = {"Authorization": "Bearer mock_teacher_token"}
+    teacher_headers = {"Authorization": f"Bearer test_{teacher_cid}"}
 
-    response = await async_client.delete(
-        "/api/v1/schedule/reset",
-        headers=teacher_headers,
-    )
+    with patch("app.api.deps.get_clerk_payload", return_value=mock_clerk_payload(teacher_cid, None, "teacher")):
+        response = await async_client.delete(
+            "/api/v1/schedule/reset",
+            headers=teacher_headers,
+        )
 
     assert response.status_code == 403
 
@@ -432,9 +436,10 @@ async def test_schedule_reset_logs_audit_on_forbidden_attempt(async_client, db_s
     db_session.add(teacher)
     await db_session.flush()
 
-    teacher_email = "teacher.reset.audit@escola.pt"
+    teacher_cid = "teacher_reset_audit_001"
     teacher_user = models.User(
-        email=teacher_email,
+        email="teacher.reset.audit@escola.pt",
+        clerk_user_id=teacher_cid,
         is_active=True,
         role=models.UserRole.teacher,
         organization_id=organization_id,
@@ -443,7 +448,7 @@ async def test_schedule_reset_logs_audit_on_forbidden_attempt(async_client, db_s
     db_session.add(teacher_user)
     await db_session.commit()
 
-    teacher_headers = {"Authorization": "Bearer mock_teacher_token"}
+    teacher_headers = {"Authorization": f"Bearer test_{teacher_cid}"}
 
     audit_events = []
 
@@ -452,10 +457,11 @@ async def test_schedule_reset_logs_audit_on_forbidden_attempt(async_client, db_s
 
     monkeypatch.setattr(schedule_endpoint.logger, "info", _capture_audit)
 
-    response = await async_client.delete(
-        "/api/v1/schedule/reset",
-        headers=teacher_headers,
-    )
+    with patch("app.api.deps.get_clerk_payload", return_value=mock_clerk_payload(teacher_cid, None, "teacher")):
+        response = await async_client.delete(
+            "/api/v1/schedule/reset",
+            headers=teacher_headers,
+        )
 
     assert response.status_code == 403
     assert len(audit_events) >= 1

@@ -1,183 +1,272 @@
-import { useState, useEffect } from "react";
-import { useOrganization } from "@clerk/react";
-import { useNavigate } from "react-router-dom";
-import apiClient from "../apiClient";
+import { useState, useEffect } from 'react'
+import { useOrganization } from '@clerk/react'
+import { useNavigate, Link } from 'react-router-dom'
+import apiClient from '../apiClient'
 
-const today = new Date().toISOString().slice(0, 10);
-const nextYear = new Date(new Date().setFullYear(new Date().getFullYear() + 1)).toISOString().slice(0, 10);
+const today = new Date().toISOString().slice(0, 10)
+const nextYear = new Date(new Date().setFullYear(new Date().getFullYear() + 1))
+  .toISOString()
+  .slice(0, 10)
+
+function IconCalendar() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="4" width="18" height="18" rx="2" />
+      <line x1="16" y1="2" x2="16" y2="6" />
+      <line x1="8" y1="2" x2="8" y2="6" />
+      <line x1="3" y1="10" x2="21" y2="10" />
+    </svg>
+  )
+}
+
+function IconClock() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="10" />
+      <polyline points="12 6 12 12 16 14" />
+    </svg>
+  )
+}
 
 export default function Onboarding() {
-  const { organization } = useOrganization();
-  const navigate = useNavigate();
+  const { organization } = useOrganization()
+  const navigate = useNavigate()
 
-  const [status, setStatus] = useState({ loading: true, complete: false });
+  const [status, setStatus] = useState({ loading: true, complete: false })
   const [form, setForm] = useState({
     school_start_date: today,
     school_target_end_date: nextYear,
     school_hard_end_date: nextYear,
-    lunch_start: "12:30",
-    lunch_end: "14:00",
+    lunch_start: '12:30',
+    lunch_end: '14:00',
     lunch_min_duration: 60,
-  });
-  const [error, setError] = useState(null);
-  const [submitting, setSubmitting] = useState(false);
+  })
+  const [error, setError] = useState(null)
+  const [submitting, setSubmitting] = useState(false)
 
   useEffect(() => {
-    apiClient.get("/onboarding/status")
+    apiClient
+      .get('/onboarding/status')
       .then((res) => {
-        setStatus({ loading: false, complete: res.data.onboarding_complete });
+        setStatus({ loading: false, complete: res.data.onboarding_complete })
         if (res.data.onboarding_complete) {
-          navigate("/dashboard", { replace: true });
+          navigate('/dashboard', { replace: true })
         }
       })
-      .catch(() => setStatus({ loading: false, complete: false }));
-  }, [navigate]);
+      .catch(() => setStatus({ loading: false, complete: false }))
+  }, [navigate])
 
   const handleSubmit = async (e) => {
-    e.preventDefault();
-    setError(null);
-    setSubmitting(true);
+    e.preventDefault()
+    setError(null)
+    setSubmitting(true)
     try {
-      await apiClient.post("/onboarding", form);
-      navigate("/dashboard", { replace: true });
+      await apiClient.post('/onboarding', form)
+      navigate('/dashboard', { replace: true })
     } catch (err) {
-      setError(err.response?.data?.detail || "Erro ao guardar configurações. Tente novamente.");
+      setError(
+        err.response?.data?.detail ||
+          'Erro ao guardar configurações. Tente novamente.'
+      )
     } finally {
-      setSubmitting(false);
+      setSubmitting(false)
     }
-  };
+  }
 
   if (status.loading) {
     return (
-      <div style={{ display: "flex", justifyContent: "center", alignItems: "center", minHeight: "60vh" }}>
-        <p style={{ color: "var(--rs-body-color)", fontSize: "1.1rem" }}>A preparar a sua escola...</p>
+      <div className="zen-onboarding-loading">
+        <div className="zen-onboarding-loading-text">
+          A preparar a sua escola&hellip;
+        </div>
+        <div className="zen-onboarding-progress">
+          <div className="zen-onboarding-progress-dot active" />
+          <div className="zen-onboarding-progress-line" />
+          <div className="zen-onboarding-progress-dot" />
+          <div className="zen-onboarding-progress-line" />
+          <div className="zen-onboarding-progress-dot" />
+        </div>
       </div>
-    );
+    )
   }
 
   if (status.complete) {
     return (
-      <div style={{ display: "flex", justifyContent: "center", alignItems: "center", minHeight: "60vh" }}>
-        <p style={{ color: "var(--rs-body-color)", fontSize: "1.1rem" }}>Configuração já concluída. A redirecionar...</p>
+      <div className="zen-onboarding-loading">
+        <div className="zen-onboarding-loading-text">
+          Configuração já concluída. A redirecionar&hellip;
+        </div>
       </div>
-    );
+    )
   }
 
   return (
-    <div style={{ maxWidth: 640, margin: "5vh auto", padding: "0 20px" }}>
-      <div style={{ marginBottom: 32 }}>
-        <h1 style={{ fontSize: "1.8rem", fontWeight: 700, margin: 0 }}>
-          Configurar a <span style={{ color: "var(--rs-sidebar-brand)" }}>{organization?.name || "escola"}</span>
-        </h1>
-        <p style={{ color: "var(--rs-body-color)", marginTop: 8, opacity: 0.7 }}>
-          Precisamos de algumas informações para começar a gerar horários.
-        </p>
-      </div>
+    <div className="zen-onboarding-page">
+      <div className="luxury-noise" style={{ opacity: 0.015 }} />
 
-      <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-        <fieldset style={fieldsetStyle}>
-          <legend style={legendStyle}>Ano Letivo</legend>
+      <section className="zen-onboarding-hero zen-reveal">
+        <div className="zen-onboarding-hero-inner">
+          <span className="zen-onboarding-hero-kicker">Configuração inicial</span>
+          <h1 className="zen-onboarding-hero-title">
+            Bem-vindo,&nbsp;
+            <span className="text-editorial" style={{ color: 'var(--brand-500)' }}>
+              {organization?.name || 'Escola'}
+            </span>
+          </h1>
+          <p className="zen-onboarding-hero-subtitle">
+            Precisamos de algumas informações sobre o ano letivo para começar a
+            gerar horários com precisão. São só dois passos.
+          </p>
+        </div>
+      </section>
 
-          <div style={fieldStyle}>
-            <label style={labelStyle}>Data de início</label>
-            <input type="date" value={form.school_start_date}
-              onChange={e => setForm({ ...form, school_start_date: e.target.value })}
-              style={inputStyle} required />
-          </div>
-
-          <div style={fieldStyle}>
-            <label style={labelStyle}>Fim previsto</label>
-            <input type="date" value={form.school_target_end_date}
-              onChange={e => setForm({ ...form, school_target_end_date: e.target.value })}
-              style={inputStyle} required />
-          </div>
-
-          <div style={fieldStyle}>
-            <label style={labelStyle}>Fim máximo (inclui exames / recuperações)</label>
-            <input type="date" value={form.school_hard_end_date}
-              onChange={e => setForm({ ...form, school_hard_end_date: e.target.value })}
-              style={inputStyle} required />
-          </div>
-        </fieldset>
-
-        <fieldset style={fieldsetStyle}>
-          <legend style={legendStyle}>Janela de Almoço</legend>
-
-          <div style={{ display: "flex", gap: 16 }}>
-            <div style={{ flex: 1 }}>
-              <label style={labelStyle}>Início</label>
-              <input type="time" value={form.lunch_start}
-                onChange={e => setForm({ ...form, lunch_start: e.target.value })}
-                style={inputStyle} required />
+      <form onSubmit={handleSubmit} className="zen-onboarding-form">
+        <div className="zen-onboarding-card zen-reveal zen-stagger-1">
+          <div className="zen-onboarding-card-header">
+            <div className="zen-onboarding-card-icon">
+              <IconCalendar />
             </div>
-            <div style={{ flex: 1 }}>
-              <label style={labelStyle}>Fim</label>
-              <input type="time" value={form.lunch_end}
-                onChange={e => setForm({ ...form, lunch_end: e.target.value })}
-                style={inputStyle} required />
+            <h2 className="zen-onboarding-card-title">Ano Letivo</h2>
+          </div>
+
+          <div className="zen-onboarding-field">
+            <label className="zen-onboarding-label">Data de início</label>
+            <input
+              type="date"
+              className="zen-onboarding-input"
+              value={form.school_start_date}
+              onChange={(e) =>
+                setForm({ ...form, school_start_date: e.target.value })
+              }
+              required
+            />
+          </div>
+
+          <div className="zen-onboarding-row">
+            <div className="zen-onboarding-field">
+              <label className="zen-onboarding-label">Fim previsto</label>
+              <input
+                type="date"
+                className="zen-onboarding-input"
+                value={form.school_target_end_date}
+                onChange={(e) =>
+                  setForm({ ...form, school_target_end_date: e.target.value })
+                }
+                required
+              />
+            </div>
+
+            <div className="zen-onboarding-field">
+              <label className="zen-onboarding-label">
+                Fim máximo{' '}
+                <span style={{ fontWeight: 400, opacity: 0.5, textTransform: 'none', letterSpacing: '0' }}>
+                  (exames | recuperações)
+                </span>
+              </label>
+              <input
+                type="date"
+                className="zen-onboarding-input"
+                value={form.school_hard_end_date}
+                onChange={(e) =>
+                  setForm({ ...form, school_hard_end_date: e.target.value })
+                }
+                required
+              />
+            </div>
+          </div>
+        </div>
+
+        <div className="zen-onboarding-card zen-reveal zen-stagger-2">
+          <div className="zen-onboarding-card-header">
+            <div className="zen-onboarding-card-icon">
+              <IconClock />
+            </div>
+            <h2 className="zen-onboarding-card-title">Janela de Almoço</h2>
+          </div>
+
+          <div className="zen-onboarding-row">
+            <div className="zen-onboarding-field">
+              <label className="zen-onboarding-label">Início</label>
+              <input
+                type="time"
+                className="zen-onboarding-input"
+                value={form.lunch_start}
+                onChange={(e) =>
+                  setForm({ ...form, lunch_start: e.target.value })
+                }
+                required
+              />
+            </div>
+
+            <div className="zen-onboarding-field">
+              <label className="zen-onboarding-label">Fim</label>
+              <input
+                type="time"
+                className="zen-onboarding-input"
+                value={form.lunch_end}
+                onChange={(e) =>
+                  setForm({ ...form, lunch_end: e.target.value })
+                }
+                required
+              />
             </div>
           </div>
 
-          <div style={fieldStyle}>
-            <label style={labelStyle}>Duração mínima (minutos)</label>
-            <input type="number" value={form.lunch_min_duration} min={30} max={120}
-              onChange={e => setForm({ ...form, lunch_min_duration: parseInt(e.target.value) || 60 })}
-              style={inputStyle} required />
+          <div className="zen-onboarding-field" style={{ marginTop: 8 }}>
+            <label className="zen-onboarding-label">Duração mínima (minutos)</label>
+            <input
+              type="number"
+              className="zen-onboarding-input"
+              style={{ maxWidth: 180 }}
+              value={form.lunch_min_duration}
+              min={30}
+              max={120}
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  lunch_min_duration: parseInt(e.target.value) || 60,
+                })
+              }
+              required
+            />
           </div>
-        </fieldset>
+        </div>
 
         {error && (
-          <div role="alert" style={{
-            padding: "12px 16px", borderRadius: 6,
-            backgroundColor: "rgba(229, 62, 62, 0.1)", color: "#e53e3e",
-            fontSize: "0.9rem", border: "1px solid rgba(229, 62, 62, 0.2)",
-          }}>
+          <div className="zen-onboarding-error zen-reveal" role="alert">
             {error}
           </div>
         )}
 
-        <button type="submit" disabled={submitting}
-          className="btn-zen btn-zen-primary"
-          style={{ padding: "12px 24px", fontSize: "1rem", fontWeight: 600, alignSelf: "flex-start" }}>
-          {submitting ? "A guardar..." : "Guardar e Começar"}
-        </button>
+        <div className="zen-onboarding-submit zen-reveal zen-stagger-3">
+          <button
+            type="submit"
+            className="zen-btn-primary"
+            disabled={submitting}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 10 }}
+          >
+            {submitting ? 'A guardar…' : 'Guardar e Começar'}
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              style={{ opacity: submitting ? 0.5 : 1 }}
+            >
+              <path d="M6 4 L10 8 L6 12" />
+            </svg>
+          </button>
+          <Link
+            to="/dashboard"
+            className="zen-auth-back-link"
+            style={{ marginLeft: 24, fontWeight: 400 }}
+          >
+            Saltar por agora
+          </Link>
+        </div>
       </form>
     </div>
-  );
+  )
 }
-
-const fieldsetStyle = {
-  border: "1px solid var(--rs-border-color, rgba(255,255,255,0.08))",
-  borderRadius: 8,
-  padding: "20px 24px",
-  background: "rgba(255,255,255,0.02)",
-};
-
-const legendStyle = {
-  fontSize: "0.95rem",
-  fontWeight: 600,
-  color: "var(--rs-sidebar-brand)",
-  padding: "0 8px",
-};
-
-const fieldStyle = {
-  display: "flex",
-  flexDirection: "column",
-  gap: 4,
-  marginTop: 12,
-};
-
-const labelStyle = {
-  fontSize: "0.85rem",
-  color: "var(--rs-body-color)",
-  opacity: 0.8,
-};
-
-const inputStyle = {
-  padding: "8px 12px",
-  borderRadius: 6,
-  border: "1px solid var(--rs-border-color, rgba(255,255,255,0.12))",
-  background: "var(--rs-input-bg, rgba(0,0,0,0.2))",
-  color: "var(--rs-body-color, #fff)",
-  fontSize: "0.95rem",
-};

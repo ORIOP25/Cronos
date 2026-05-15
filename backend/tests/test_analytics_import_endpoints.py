@@ -6,9 +6,11 @@ Cobre fluxos reais com dados, não apenas respostas vazias.
 
 import pytest
 from httpx import AsyncClient
+from unittest.mock import patch
 
 from app.config import settings
 from app import models
+from tests.conftest import mock_clerk_payload
 
 API = settings.API_V1_STR
 
@@ -40,8 +42,10 @@ class TestAnalyticsHeatmap:
         db_session.add(teacher)
         await db_session.flush()
 
+        teacher_cid = "heatmap_teacher_001"
         teacher_user = models.User(
             email="heatmap.prof.ci@escola.pt",
+            clerk_user_id=teacher_cid,
             is_active=True,
             role=models.UserRole.teacher,
             organization_id=org.id,
@@ -50,11 +54,12 @@ class TestAnalyticsHeatmap:
         db_session.add(teacher_user)
         await db_session.commit()
 
-        teacher_headers = {"Authorization": "Bearer mock_admin_token"}
+        teacher_headers = {"Authorization": f"Bearer test_{teacher_cid}"}
 
-        r = await async_client.get(
-            f"{API}/analytics/availability-heatmap", headers=teacher_headers
-        )
+        with patch("app.api.deps.get_clerk_payload", return_value=mock_clerk_payload(teacher_cid, None, "teacher")):
+            r = await async_client.get(
+                f"{API}/analytics/availability-heatmap", headers=teacher_headers
+            )
         assert r.status_code == 200
 
     async def test_heatmap_with_teachers_and_timeslots(

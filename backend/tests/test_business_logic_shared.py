@@ -13,11 +13,15 @@ from app.models import UserRole
 API = settings.API_V1_STR
 
 
-async def _create_teacher_auth_headers(db_session, *, teacher_id: int, organization_id: int) -> dict:
-    """Cria utilizador teacher autenticado para testes de self-service."""
-    email = f"teacher.avail.{uuid4().hex[:8]}@escola.pt"
+async def _create_teacher_auth_headers(db_session, *, teacher_id: int, organization_id: int) -> tuple[dict, str]:
+    """Cria utilizador teacher autenticado para testes de self-service.
+    Retorna (headers, clerk_user_id) — o clerk_user_id deve ser usado com
+    patch('app.api.deps.get_clerk_payload', return_value=mock_clerk_payload(clerk_user_id, ...)).
+    """
+    cid = f"teacher_avail_{uuid4().hex[:8]}"
     teacher_user = models.User(
-        email=email,
+        email=f"teacher.avail.{uuid4().hex[:8]}@escola.pt",
+        clerk_user_id=cid,
         is_active=True,
         role=UserRole.teacher,
         organization_id=organization_id,
@@ -25,7 +29,7 @@ async def _create_teacher_auth_headers(db_session, *, teacher_id: int, organizat
     )
     db_session.add(teacher_user)
     await db_session.commit()
-    return {"Authorization": "Bearer mock_admin_token"}
+    return {"Authorization": f"Bearer test_{cid}"}, cid
 
 
 async def _setup_course_class_subject(client: AsyncClient, headers: dict):

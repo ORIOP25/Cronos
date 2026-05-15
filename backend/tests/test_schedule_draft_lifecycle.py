@@ -47,6 +47,7 @@ async def draft_setup(db_session: AsyncSession):
 
     admin = models.User(
         email="admin_s3@escola.com",
+        clerk_user_id="draft_admin_001",
         is_active=True,
         is_superuser=False,
         role=models.UserRole.admin,
@@ -136,11 +137,10 @@ async def draft_setup(db_session: AsyncSession):
     db_session.add(draft_out)
     await db_session.commit()
 
-    token = "mock_admin_token"
     return {
         "organization_id": org.id,
         "admin_email": admin.email,
-        "admin_token": token,
+        "admin_clerk_id": "draft_admin_001",
         "lesson_id": lesson.id,
         "timeslot_id": timeslot.id,
         "room_id": room.id,
@@ -619,14 +619,20 @@ class TestDraftServices:
 class TestDraftEndpoints:
     """Testa os endpoints REST de gestão de rascunhos."""
 
+    async def _draft_call(self, async_client, endpoint, method="GET", json_data=None):
+        payload = mock_clerk_payload("draft_admin_001", "org_001", "admin")
+        headers = {"Authorization": "Bearer test_draft_admin_001"}
+        with patch("app.api.deps.get_clerk_payload", return_value=payload):
+            if method == "GET":
+                return await async_client.get(endpoint, headers=headers)
+            elif method == "POST":
+                return await async_client.post(endpoint, headers=headers, json=json_data)
+            elif method == "DELETE":
+                return await async_client.delete(endpoint, headers=headers)
+
     @pytest.mark.asyncio
-    @patch("app.api.deps.get_clerk_payload", return_value=mock_clerk_payload("admin@test.com", "org_001", "admin"))
     async def test_list_drafts_returns_one(self, async_client: AsyncClient, draft_setup):
-        token = draft_setup["admin_token"]
-        resp = await async_client.get(
-            "/api/v1/schedule/drafts",
-            headers={"Authorization": "Bearer mock_admin_token"},
-        )
+        resp = await self._draft_call(async_client, "/api/v1/schedule/drafts")
         assert resp.status_code == 200
         data = resp.json()
         assert len(data) == 1
@@ -638,13 +644,8 @@ class TestDraftEndpoints:
         assert resp.status_code == 401
 
     @pytest.mark.asyncio
-    @patch("app.api.deps.get_clerk_payload", return_value=mock_clerk_payload("admin@test.com", "org_001", "admin"))
     async def test_get_diff_returns_stats(self, async_client: AsyncClient, draft_setup):
-        token = draft_setup["admin_token"]
-        resp = await async_client.get(
-            f"/api/v1/schedule/drafts/{GEN_DRAFT}/diff",
-            headers={"Authorization": "Bearer mock_admin_token"},
-        )
+        resp = await self._draft_call(async_client, f"/api/v1/schedule/drafts/{GEN_DRAFT}/diff")
         assert resp.status_code == 200
         data = resp.json()
         assert "added" in data
@@ -653,65 +654,34 @@ class TestDraftEndpoints:
         assert data["generation_id"] == GEN_DRAFT
 
     @pytest.mark.asyncio
-    @patch("app.api.deps.get_clerk_payload", return_value=mock_clerk_payload("admin@test.com", "org_001", "admin"))
     async def test_get_diff_not_found(self, async_client: AsyncClient, draft_setup):
-        token = draft_setup["admin_token"]
-        resp = await async_client.get(
-            "/api/v1/schedule/drafts/nonexistent-gen/diff",
-            headers={"Authorization": "Bearer mock_admin_token"},
-        )
+        resp = await self._draft_call(async_client, "/api/v1/schedule/drafts/nonexistent-gen/diff")
         assert resp.status_code == 404
 
     @pytest.mark.asyncio
     async def test_approve_draft(self, async_client: AsyncClient, draft_setup):
-        token = draft_setup["admin_token"]
-        resp = await async_client.post(
-            f"/api/v1/schedule/drafts/{GEN_DRAFT}/approve",
-            headers={"Authorization": "Bearer mock_admin_token"},
-        )
+        resp = await self._draft_call(async_client, f"/api/v1/schedule/drafts/{GEN_DRAFT}/approve", "POST")
         assert resp.status_code == 200
         data = resp.json()
         assert data["blocks_activated"] == 1
-
-        # Verificar que o rascunho desapareceu
-        resp2 = await async_client.get(
-            "/api/v1/schedule/drafts",
-            headers={"Authorization": "Bearer mock_admin_token"},
-        )
+        resp2 = await self._draft_call(async_client, "/api/v1/schedule/drafts")
         assert resp2.json() == []
 
     @pytest.mark.asyncio
     async def test_approve_draft_not_found(self, async_client: AsyncClient, draft_setup):
-        token = draft_setup["admin_token"]
-        resp = await async_client.post(
-            "/api/v1/schedule/drafts/nonexistent/approve",
-            headers={"Authorization": "Bearer mock_admin_token"},
-        )
+        resp = await self._draft_call(async_client, "/api/v1/schedule/drafts/nonexistent/approve", "POST")
         assert resp.status_code == 404
 
     @pytest.mark.asyncio
     async def test_reject_draft(self, async_client: AsyncClient, draft_setup):
-        token = draft_setup["admin_token"]
-        resp = await async_client.delete(
-            f"/api/v1/schedule/drafts/{GEN_DRAFT}",
-            headers={"Authorization": "Bearer mock_admin_token"},
-        )
+        resp = await self._draft_call(async_client, f"/api/v1/schedule/drafts/{GEN_DRAFT}", "DELETE")
         assert resp.status_code == 200
         data = resp.json()
         assert data["blocks_deleted"] == 1
-
-        # Verificar que o rascunho desapareceu
-        resp2 = await async_client.get(
-            "/api/v1/schedule/drafts",
-            headers={"Authorization": "Bearer mock_admin_token"},
-        )
+        resp2 = await self._draft_call(async_client, "/api/v1/schedule/drafts")
         assert resp2.json() == []
 
     @pytest.mark.asyncio
     async def test_reject_draft_not_found(self, async_client: AsyncClient, draft_setup):
-        token = draft_setup["admin_token"]
-        resp = await async_client.delete(
-            "/api/v1/schedule/drafts/nonexistent",
-            headers={"Authorization": "Bearer mock_admin_token"},
-        )
+        resp = await self._draft_call(async_client, "/api/v1/schedule/drafts/nonexistent", "DELETE")
         assert resp.status_code == 404

@@ -9,23 +9,27 @@ Padrão a adotar para novos testes.
 
 import pytest
 from httpx import AsyncClient
+from unittest.mock import patch
 from uuid import uuid4
 
 from app import models
 from app.config import settings
+from tests.conftest import mock_clerk_payload
 API = settings.API_V1_STR
 
 
 async def _make_teacher_headers(db_session, org_id, teacher_id, role=models.UserRole.teacher):
+    cid = f"param_{uuid4().hex[:8]}"
     email = f"param.{uuid4().hex[:8]}@test.pt"
     user = models.User(
         email=email,
+        clerk_user_id=cid,
         is_active=True, role=role,
         organization_id=org_id, teacher_id=teacher_id,
     )
     db_session.add(user)
     await db_session.commit()
-    return {"Authorization": "Bearer mock_admin_token"}
+    return {"Authorization": f"Bearer test_{cid}"}, cid
 
 
 @pytest.mark.asyncio
@@ -68,10 +72,11 @@ class TestTeacherAvailabilityErrorContracts:
             assert resp.status_code == expected_status
 
         elif scenario == "teacher_without_profile":
-            headers = await _make_teacher_headers(db_session, 1, None)
-            resp = await async_client.get(
-                f"{API}/teachers/me/availability", headers=headers
-            )
+            headers, cid = await _make_teacher_headers(db_session, 1, None)
+            with patch("app.api.deps.get_clerk_payload", return_value=mock_clerk_payload(cid, None, "teacher")):
+                resp = await async_client.get(
+                    f"{API}/teachers/me/availability", headers=headers
+                )
             assert resp.status_code == expected_status
 
         elif scenario == "cross_tenant_profile":
@@ -83,10 +88,11 @@ class TestTeacherAvailabilityErrorContracts:
             db_session.add(teacher_a)
             await db_session.commit()
 
-            headers = await _make_teacher_headers(db_session, org_b.id, teacher_a.id)
-            resp = await async_client.get(
-                f"{API}/teachers/me/availability", headers=headers
-            )
+            headers, cid = await _make_teacher_headers(db_session, org_b.id, teacher_a.id)
+            with patch("app.api.deps.get_clerk_payload", return_value=mock_clerk_payload(cid, None, "teacher")):
+                resp = await async_client.get(
+                    f"{API}/teachers/me/availability", headers=headers
+                )
             assert resp.status_code == expected_status
 
 
@@ -114,10 +120,11 @@ class TestTeacherHorizonErrorContracts:
             assert resp.status_code == expected_status
 
         elif scenario == "teacher_without_profile":
-            headers = await _make_teacher_headers(db_session, 1, None)
-            resp = await async_client.get(
-                f"{API}/schedule/me/horizon", headers=headers
-            )
+            headers, cid = await _make_teacher_headers(db_session, 1, None)
+            with patch("app.api.deps.get_clerk_payload", return_value=mock_clerk_payload(cid, None, "teacher")):
+                resp = await async_client.get(
+                    f"{API}/schedule/me/horizon", headers=headers
+                )
             assert resp.status_code == expected_status
 
         elif scenario == "teacher_without_settings":
@@ -132,10 +139,11 @@ class TestTeacherHorizonErrorContracts:
             db_session.add(teacher)
             await db_session.commit()
 
-            headers = await _make_teacher_headers(db_session, org.id, teacher.id)
-            resp = await async_client.get(
-                f"{API}/schedule/me/horizon", headers=headers
-            )
+            headers, cid = await _make_teacher_headers(db_session, org.id, teacher.id)
+            with patch("app.api.deps.get_clerk_payload", return_value=mock_clerk_payload(cid, None, "teacher")):
+                resp = await async_client.get(
+                    f"{API}/schedule/me/horizon", headers=headers
+                )
             assert resp.status_code == expected_status
 
 
@@ -182,8 +190,9 @@ class TestWeekScheduleErrorContracts:
         assert teacher_resp.status_code == 200
         teacher_id = teacher_resp.json()["id"]
 
-        headers = await _make_teacher_headers(db_session, 1, teacher_id)
-        resp = await async_client.get(
-            f"{API}/schedule/week", params=query_params, headers=headers
-        )
+        headers, cid = await _make_teacher_headers(db_session, 1, teacher_id)
+        with patch("app.api.deps.get_clerk_payload", return_value=mock_clerk_payload(cid, None, "teacher")):
+            resp = await async_client.get(
+                f"{API}/schedule/week", params=query_params, headers=headers
+            )
         assert resp.status_code == expected_status

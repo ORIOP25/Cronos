@@ -14,26 +14,24 @@ class TestDashboardEndpoint:
     """Testes de integração para GET /api/v1/dashboard."""
 
     async def _seed_minimal_org(self, db_session: AsyncSession) -> dict:
-        """Cria org + admin + dados mínimos."""
-        org = models.Organization(name="Escola Teste Dashboard", plan_status="active")
-        db_session.add(org)
-        await db_session.flush()
-
-        admin = models.User(
+        """Cria org + admin + dados mínimos usando o user_admin_001 do fixture."""
+        from tests.conftest import create_org_and_user
+        org, admin = await create_org_and_user(
+            db_session,
+            clerk_user_id="user_admin_001",
             email="dashadmin@escola.com",
-            is_active=True,
-            role=models.UserRole.admin,
-            organization_id=org.id,
+            role="admin",
+            org_name="Escola Teste Dashboard",
+            clerk_org_id="org_dashboard_test",
         )
-        db_session.add(admin)
-        await db_session.flush()
 
         return {
             "org_id": org.id,
             "org_name": org.name,
             "admin_id": admin.id,
             "admin_email": admin.email,
-            "auth_headers": {"Authorization": "Bearer mock_admin_token"},
+            "clerk_user_id": "user_admin_001",
+            "auth_headers": {"Authorization": "Bearer test_user_admin_001"},
         }
 
     async def _seed_teacher(self, db_session: AsyncSession, org_id: int, name: str) -> models.Teacher:
@@ -154,7 +152,7 @@ class TestDashboardEndpoint:
     # Cenário 1: Admin acede ao dashboard com dados completos
     # ------------------------------------------------------------------
     @pytest.mark.asyncio
-    async def test_dashboard_with_data(self, async_client: AsyncClient, db_session: AsyncSession):
+    async def test_dashboard_with_data(self, async_client: AsyncClient, db_session: AsyncSession, admin_token_headers):
         ctx = await self._seed_minimal_org(db_session)
         org_id = ctx["org_id"]
         today = date.today()
@@ -182,11 +180,11 @@ class TestDashboardEndpoint:
         db_session.add(occ)
         await db_session.commit()
 
-        response = await async_client.get("/api/v1/dashboard", headers=ctx["auth_headers"])
+        response = await async_client.get("/api/v1/dashboard", headers=admin_token_headers)
         assert response.status_code == 200
         data = response.json()
 
-        assert data["organization_name"] == "Escola Teste Dashboard"
+        assert data["organization_name"] == "Escola Teste"
 
         alerts = data["alerts"]
         assert alerts["pending_occurrences_today"] == 1
@@ -225,11 +223,11 @@ class TestDashboardEndpoint:
     # Cenário 2: Admin acede ao dashboard com org vazia (sem dados)
     # ------------------------------------------------------------------
     @pytest.mark.asyncio
-    async def test_dashboard_empty_org(self, async_client: AsyncClient, db_session: AsyncSession):
+    async def test_dashboard_empty_org(self, async_client: AsyncClient, db_session: AsyncSession, admin_token_headers):
         ctx = await self._seed_minimal_org(db_session)
         await db_session.commit()
 
-        response = await async_client.get("/api/v1/dashboard", headers=ctx["auth_headers"])
+        response = await async_client.get("/api/v1/dashboard", headers=admin_token_headers)
         assert response.status_code == 200
         data = response.json()
 
@@ -257,13 +255,17 @@ class TestDashboardEndpoint:
     # Cenário 3: Teacher acede ao dashboard → 403 Forbidden
     # ------------------------------------------------------------------
     @pytest.mark.asyncio
-    async def test_dashboard_teacher_forbidden(self, async_client: AsyncClient, db_session: AsyncSession):
+    async def test_dashboard_teacher_forbidden(self, async_client: AsyncClient, db_session: AsyncSession, admin_token_headers):
+        from unittest.mock import patch
+        from tests.conftest import mock_clerk_payload
+
         org = models.Organization(name="Escola Teacher", plan_status="active")
         db_session.add(org)
         await db_session.flush()
 
         teacher_user = models.User(
             email="teacher@escola.com",
+            clerk_user_id="teacher_dashboard_001",
             is_active=True,
             role=models.UserRole.teacher,
             organization_id=org.id,
@@ -271,9 +273,12 @@ class TestDashboardEndpoint:
         db_session.add(teacher_user)
         await db_session.commit()
 
-        headers = {"Authorization": "Bearer mock_admin_token"}
-
-        response = await async_client.get("/api/v1/dashboard", headers=headers)
+        payload = mock_clerk_payload("teacher_dashboard_001", None, "member")
+        with patch("app.api.deps.get_clerk_payload", return_value=payload):
+            response = await async_client.get(
+                "/api/v1/dashboard",
+                headers={"Authorization": "Bearer test_teacher_dashboard_001"},
+            )
         assert response.status_code == 403
 
     # ------------------------------------------------------------------
@@ -288,12 +293,12 @@ class TestDashboardEndpoint:
     # Cenário 5: Organização sem geração de horário → schedule_health = None
     # ------------------------------------------------------------------
     @pytest.mark.asyncio
-    async def test_dashboard_no_generation(self, async_client: AsyncClient, db_session: AsyncSession):
+    async def test_dashboard_no_generation(self, async_client: AsyncClient, db_session: AsyncSession, admin_token_headers):
         ctx = await self._seed_minimal_org(db_session)
         await self._seed_teacher(db_session, ctx["org_id"], "Prof. Teste")
         await db_session.commit()
 
-        response = await async_client.get("/api/v1/dashboard", headers=ctx["auth_headers"])
+        response = await async_client.get("/api/v1/dashboard", headers=admin_token_headers)
         assert response.status_code == 200
         data = response.json()
 
@@ -304,7 +309,7 @@ class TestDashboardEndpoint:
     # Cenário 6: Organização sem progresso de turmas → class_progress = []
     # ------------------------------------------------------------------
     @pytest.mark.asyncio
-    async def test_dashboard_no_progress(self, async_client: AsyncClient, db_session: AsyncSession):
+    async def test_dashboard_no_progress(self, async_client: AsyncClient, db_session: AsyncSession, admin_token_headers):
         ctx = await self._seed_minimal_org(db_session)
         org_id = ctx["org_id"]
 
@@ -312,7 +317,7 @@ class TestDashboardEndpoint:
         klass = await self._seed_class(db_session, org_id, course.id, "1ºA INFO", 10, 2025, 2028)
         await db_session.commit()
 
-        response = await async_client.get("/api/v1/dashboard", headers=ctx["auth_headers"])
+        response = await async_client.get("/api/v1/dashboard", headers=admin_token_headers)
         assert response.status_code == 200
         data = response.json()
 
@@ -327,11 +332,11 @@ class TestDashboardEndpoint:
     # Cenário 7: Organização sem dívidas → debts com valores a 0
     # ------------------------------------------------------------------
     @pytest.mark.asyncio
-    async def test_dashboard_no_debts(self, async_client: AsyncClient, db_session: AsyncSession):
+    async def test_dashboard_no_debts(self, async_client: AsyncClient, db_session: AsyncSession, admin_token_headers):
         ctx = await self._seed_minimal_org(db_session)
         await db_session.commit()
 
-        response = await async_client.get("/api/v1/dashboard", headers=ctx["auth_headers"])
+        response = await async_client.get("/api/v1/dashboard", headers=admin_token_headers)
         assert response.status_code == 200
         data = response.json()
 
@@ -346,11 +351,11 @@ class TestDashboardEndpoint:
     # Cenário 8: Estrutura da resposta válida (Pydantic validation via endpoint)
     # ------------------------------------------------------------------
     @pytest.mark.asyncio
-    async def test_dashboard_response_structure(self, async_client: AsyncClient, db_session: AsyncSession):
+    async def test_dashboard_response_structure(self, async_client: AsyncClient, db_session: AsyncSession, admin_token_headers):
         ctx = await self._seed_minimal_org(db_session)
         await db_session.commit()
 
-        response = await async_client.get("/api/v1/dashboard", headers=ctx["auth_headers"])
+        response = await async_client.get("/api/v1/dashboard", headers=admin_token_headers)
         assert response.status_code == 200
         data = response.json()
 

@@ -77,13 +77,33 @@ async def create_org_and_user(
     clerk_org_id: str | None = None,
     teacher_id: int | None = None,
 ) -> tuple[models.Organization, models.User]:
-    org = models.Organization(
-        name=org_name,
-        clerk_org_id=clerk_org_id or f"org_{uuid4().hex[:8]}",
-        plan_status="active",
-    )
-    db_session.add(org)
-    await db_session.flush()
+    """Cria org + user. Idempotente: se já existirem, retorna os existentes."""
+    from sqlalchemy.future import select as _sel
+
+    # Verificar se user já existe
+    existing_user = (await db_session.execute(
+        _sel(models.User).where(models.User.clerk_user_id == clerk_user_id)
+    )).scalar_one_or_none()
+    if existing_user is not None:
+        org = (await db_session.execute(
+            _sel(models.Organization).where(models.Organization.id == existing_user.organization_id)
+        )).scalar_one_or_none()
+        return org, existing_user
+
+    # Verificar se org já existe
+    c_org_id = clerk_org_id or f"org_{uuid4().hex[:8]}"
+    org = (await db_session.execute(
+        _sel(models.Organization).where(models.Organization.clerk_org_id == c_org_id)
+    )).scalar_one_or_none()
+
+    if org is None:
+        org = models.Organization(
+            name=org_name,
+            clerk_org_id=c_org_id,
+            plan_status="active",
+        )
+        db_session.add(org)
+        await db_session.flush()
 
     user = models.User(
         clerk_user_id=clerk_user_id,

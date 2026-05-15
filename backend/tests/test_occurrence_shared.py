@@ -42,6 +42,7 @@ async def full_setup(db_session: AsyncSession):
 
     admin = models.User(
         email="admin_s2@escola.com",
+        clerk_user_id="occ_admin_001",
         is_active=True,
         role=models.UserRole.admin,
         organization_id=org.id,
@@ -375,6 +376,7 @@ def substitution_setup(sync_db, full_setup):
     # User professor para testar bloqueio de confirmação
     teacher_user = models.User(
         email="teacher_s2@escola.com",
+        clerk_user_id="occ_teacher_001",
         is_active=True,
         role=models.UserRole.teacher,
         organization_id=organization_id,

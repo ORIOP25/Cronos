@@ -1,137 +1,40 @@
 import React from 'react'
 import PropTypes from 'prop-types'
 
-/**
- * BrandPanel — painel de marca partilhado entre Login e Register.
- * Mostra o monograma, nome da marca, tagline e estatísticas.
- *
- * Props:
- *   tagline — texto descritivo abaixo do nome da marca
- *   stats  — array de { value, label } para as 3 métricas
- */
 const BrandPanel = ({ tagline, stats }) => {
   return (
-    <div className="zen-login-brand-panel" style={{
-      flex: '1 1 40%',
-      position: 'relative',
-      backgroundColor: 'var(--brand-950)',
-      display: 'flex',
-      flexDirection: 'column',
-      alignItems: 'center',
-      justifyContent: 'center',
-      padding: '64px 40px',
-      overflow: 'hidden',
-      minHeight: '100vh',
-    }}>
-      {/* Grain texture */}
-      <div className="luxury-noise" style={{ opacity: 0.03, zIndex: 1 }} />
+    <div className="zen-auth-brand-side">
+      <div className="luxury-noise" style={{ opacity: 0.025 }} />
 
-      {/* Decorative elements */}
-      <div style={{
-        position: 'absolute',
-        top: '15%',
-        right: '15%',
-        width: '180px',
-        height: '180px',
-        border: '1px solid rgba(214, 176, 112, 0.12)',
-        transform: 'rotate(15deg)',
-        zIndex: 1,
-      }} />
-      <div style={{
-        position: 'absolute',
-        bottom: '20%',
-        left: '10%',
-        width: '120px',
-        height: '120px',
-        border: '1px solid rgba(214, 176, 112, 0.08)',
-        transform: 'rotate(-10deg)',
-        zIndex: 1,
-      }} />
-      <div style={{
-        position: 'absolute',
-        top: '30%',
-        left: '20%',
-        width: '1px',
-        height: '80px',
-        background: 'var(--brand-500)',
-        opacity: 0.2,
-        zIndex: 1,
-      }} />
+      <div className="zen-auth-brand-geo">
+        <div className="zen-auth-brand-geo-line zen-auth-brand-geo-line-1" />
+        <div className="zen-auth-brand-geo-line zen-auth-brand-geo-line-2" />
+        <div className="zen-auth-brand-geo-line zen-auth-brand-geo-line-3" />
+        <div className="zen-auth-brand-geo-line zen-auth-brand-geo-line-4" />
+        <div className="zen-auth-brand-geo-square zen-auth-brand-geo-square-1" />
+        <div className="zen-auth-brand-geo-square zen-auth-brand-geo-square-2" />
+        <div className="zen-auth-brand-geo-dot zen-auth-brand-geo-dot-1" />
+        <div className="zen-auth-brand-geo-dot zen-auth-brand-geo-dot-2" />
+        <div className="zen-auth-brand-geo-dot zen-auth-brand-geo-dot-3" />
+        <div className="zen-auth-brand-geo-dot zen-auth-brand-geo-dot-4" />
+      </div>
 
-      {/* Content */}
-      <div style={{ position: 'relative', zIndex: 2, textAlign: 'center' }}>
-        <div style={{
-          width: '80px',
-          height: '80px',
-          display: 'inline-flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          border: '2px solid var(--brand-500)',
-          borderRadius: '50%',
-          marginBottom: '28px',
-        }}>
-          <span style={{
-            fontFamily: 'var(--font-display)',
-            fontSize: '1.4rem',
-            fontWeight: 700,
-            color: 'var(--brand-500)',
-            letterSpacing: '0.06em',
-          }}>
-            A
-          </span>
+      <div className="zen-auth-brand-inner">
+        <div className="zen-auth-monogram">
+          <span className="zen-auth-monogram-letter">C</span>
         </div>
 
-        <h2 className="text-display" style={{
-          color: 'var(--brand-50)',
-          fontSize: 'clamp(2rem, 4vw, 3rem)',
-          marginBottom: '12px',
-          letterSpacing: '-0.02em',
-        }}>
-          Apérius
-        </h2>
+        <h1 className="zen-auth-brand-name">Cronos</h1>
 
-        <div style={{
-          width: '40px',
-          height: '1px',
-          background: 'var(--brand-500)',
-          margin: '16px auto 20px',
-          opacity: 0.6,
-        }} />
+        <div className="zen-auth-divider" />
 
-        <p style={{
-          color: 'rgba(251, 244, 231, 0.5)',
-          fontSize: '0.9rem',
-          lineHeight: 1.7,
-          maxWidth: '280px',
-          margin: '0 auto 40px',
-        }}>
-          {tagline}
-        </p>
+        <p className="zen-auth-tagline">{tagline}</p>
 
-        <div style={{
-          display: 'flex',
-          gap: '24px',
-          justifyContent: 'center',
-        }}>
+        <div className="zen-auth-stats">
           {stats.map((stat) => (
             <div key={stat.label} style={{ textAlign: 'center' }}>
-              <div style={{
-                fontFamily: 'var(--font-display)',
-                fontSize: '1.5rem',
-                color: 'var(--brand-500)',
-                fontWeight: 700,
-              }}>
-                {stat.value}
-              </div>
-              <div style={{
-                fontSize: '0.65rem',
-                color: 'rgba(251, 244, 231, 0.35)',
-                textTransform: 'uppercase',
-                letterSpacing: '0.1em',
-                marginTop: '4px',
-              }}>
-                {stat.label}
-              </div>
+              <div className="zen-auth-stat-value">{stat.value}</div>
+              <div className="zen-auth-stat-label">{stat.label}</div>
             </div>
           ))}
         </div>

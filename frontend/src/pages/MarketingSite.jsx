@@ -229,8 +229,8 @@ export function MarketingSite() {
       {/* --- NAVEGAÇÃO --- */}
       <nav className="marketing-nav zen-reveal">
         <Link to="/" className="marketing-brand">
-          <span className="marketing-brand-mark">A</span>
-          <span className="text-display fw-bold" style={{ fontSize: '1.2rem', color: 'var(--brand-950)' }}>Apérius</span>
+           <span className="marketing-brand-mark">C</span>
+          <span className="text-display fw-bold" style={{ fontSize: '1.2rem', color: 'var(--brand-950)' }}>Cronos</span>
         </Link>
         <div className="marketing-nav-links d-none d-md-flex">
           <a href="#diferencial">O Diferencial</a>
@@ -276,7 +276,7 @@ export function MarketingSite() {
                 </h1>
                 <p className="zen-hero-lead">
                   No ensino profissional, um horário nunca está terminado. Módulos que fecham, turmas que se 
-                  reorganizam, professores que entram e saem. O Apérius recalcula apenas o que mudou, 
+                   reorganizam, professores que entram e saem. O Cronos recalcula apenas o que mudou, 
                   preservando o que já foi dado. Sem refazer tudo. Sem perder o fio à meada curricular.
                 </p>
               </CCol>
@@ -299,7 +299,7 @@ export function MarketingSite() {
                 Numa escola regular, o horário faz-se em setembro e dura o ano inteiro. Numa escola profissional, 
                 cada semana traz alterações: um módulo de 25 horas termina a meio da semana, uma turma divide-se 
                 em dois turnos, entra um formador externo. O que funciona para o regular <strong style={{ color: 'var(--brand-800)' }}>não funciona para si</strong>.
-                E é exatamente por isso que o Apérius foi construído de raiz para a sua realidade.
+                E é exatamente por isso que o Cronos foi construído de raiz para a sua realidade.
               </p>
             </div>
             <div className="d-none d-md-block zen-reveal" style={{ marginBottom: '3rem' }}>
@@ -467,7 +467,7 @@ export function MarketingSite() {
               <p className="zen-caps zen-testimonial-label">Quem usa, confirma</p>
               <blockquote className="text-display zen-testimonial-quote">
                 "Deixámos de passar semanas a fazer horários para nos focarmos no que interessa: 
-                a qualidade do ensino. O <span className="text-editorial zen-testimonial-highlight">Apérius</span> 
+                a qualidade do ensino. O <span className="text-editorial zen-testimonial-highlight">Cronos</span> 
                 trata da engenharia. Nós tratamos dos alunos."
               </blockquote>
             </div>
@@ -513,7 +513,7 @@ export function MarketingSite() {
             <div className="zen-contact-box text-center zen-reveal">
               <h2 className="text-display mb-3">Vamos conversar?</h2>
               <p className="mb-4" style={{ maxWidth: '500px', margin: '0 auto 2rem' }}>
-                Marque uma demonstração personalizada. Mostramos-lhe como o Apérius se adapta 
+                Marque uma demonstração personalizada. Mostramos-lhe como o Cronos se adapta 
                 à realidade da sua escola em menos de 30 minutos.
               </p>
               <CButton className="zen-btn-dark zen-btn-lg">
@@ -527,8 +527,8 @@ export function MarketingSite() {
       <footer className="zen-footer">
         <CContainer>
           <div className="zen-footer-inner">
-            <span className="zen-caps zen-footer-copy">Apérius © 2026</span>
-            <span className="text-editorial">Apérius — Feito para o Ensino Profissional.</span>
+            <span className="zen-caps zen-footer-copy">Cronos © 2026</span>
+            <span className="text-editorial">Cronos — Feito para o Ensino Profissional.</span>
           </div>
         </CContainer>
       </footer>

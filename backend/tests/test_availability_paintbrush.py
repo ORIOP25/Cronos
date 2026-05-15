@@ -3,12 +3,27 @@ Testes de Disponibilidade e Self-Service (Paintbrush)
 Parte de test_business_logic.py (split).
 """
 import pytest
+from unittest.mock import patch
 from httpx import AsyncClient
 from datetime import date, time, timedelta
 from uuid import uuid4
 from app import models
 from app.models import UserRole
 from test_business_logic_shared import API, _create_teacher_auth_headers
+from tests.conftest import mock_clerk_payload
+
+
+async def _make_teacher_call(async_client, db_session, teacher_id, org_id, clerk_id, endpoint, method="GET", json_data=None):
+    """Helper: aplica patch e faz chamada autenticada como teacher."""
+    headers = {"Authorization": f"Bearer test_{clerk_id}"}
+    payload = mock_clerk_payload(clerk_id, None, "member")
+    with patch("app.api.deps.get_clerk_payload", return_value=payload):
+        if method == "GET":
+            return await async_client.get(endpoint, headers=headers)
+        elif method == "PATCH":
+            return await async_client.patch(endpoint, json=json_data, headers=headers)
+        elif method == "POST":
+            return await async_client.post(endpoint, json=json_data, headers=headers)
 
 
 @pytest.mark.asyncio
@@ -134,16 +149,18 @@ class TestTeacherAvailability:
         )
         assert set_resp.status_code == 200
 
-        teacher_headers = await _create_teacher_auth_headers(
+        teacher_headers, cid = await _create_teacher_auth_headers(
             db_session, teacher_id=teacher_id, organization_id=1,
         )
-        read_resp = await async_client.get(
-            f"{API}/teachers/me/availability", headers=teacher_headers,
-        )
+        payload = mock_clerk_payload(cid, None, "member")
+        with patch("app.api.deps.get_clerk_payload", return_value=payload):
+            read_resp = await async_client.get(
+                f"{API}/teachers/me/availability", headers=teacher_headers,
+            )
         assert read_resp.status_code == 200
-        payload = read_resp.json()
-        assert len(payload) == 2
-        scores_by_slot = {item["timeslot_id"]: item["score"] for item in payload}
+        data = read_resp.json()
+        assert len(data) == 2
+        scores_by_slot = {item["timeslot_id"]: item["score"] for item in data}
         assert scores_by_slot[slot_ids[0]] == 2
         assert scores_by_slot[slot_ids[1]] == -1
 
@@ -162,17 +179,22 @@ class TestTeacherAvailability:
         db_session.add(org)
         await db_session.flush()
 
-        email = f"teacher.noprofile.{uuid4().hex[:8]}@escola.pt"
+        cid = f"noprofile_{uuid4().hex[:8]}"
         no_profile_user = models.User(
-            email=email,
+            email=f"teacher.noprofile.{uuid4().hex[:8]}@escola.pt",
+            clerk_user_id=cid,
             is_active=True, role=UserRole.teacher,
             organization_id=org.id, teacher_id=None,
         )
         db_session.add(no_profile_user)
         await db_session.commit()
 
-        headers = {"Authorization": "Bearer mock_admin_token"}
-        resp = await async_client.get(f"{API}/teachers/me/availability", headers=headers)
+        payload = mock_clerk_payload(cid, None, "member")
+        with patch("app.api.deps.get_clerk_payload", return_value=payload):
+            resp = await async_client.get(
+                f"{API}/teachers/me/availability",
+                headers={"Authorization": f"Bearer test_{cid}"},
+            )
         assert resp.status_code == 403
 
     async def test_inactive_teacher_cannot_read_self_availability(
@@ -185,18 +207,23 @@ class TestTeacherAvailability:
         )
         teacher_id = teacher_resp.json()["id"]
 
-        email = f"teacher.inactive.{uuid4().hex[:8]}@escola.pt"
+        cid = f"inactive_{uuid4().hex[:8]}"
         inactive_user = models.User(
-            email=email,
+            email=f"teacher.inactive.{uuid4().hex[:8]}@escola.pt",
+            clerk_user_id=cid,
             is_active=False, role=UserRole.teacher,
             organization_id=1, teacher_id=teacher_id,
         )
         db_session.add(inactive_user)
         await db_session.commit()
 
-        headers = {"Authorization": "Bearer mock_admin_token"}
-        resp = await async_client.get(f"{API}/teachers/me/availability", headers=headers)
-        assert resp.status_code == 400
+        payload = mock_clerk_payload(cid, None, "member")
+        with patch("app.api.deps.get_clerk_payload", return_value=payload):
+            resp = await async_client.get(
+                f"{API}/teachers/me/availability",
+                headers={"Authorization": f"Bearer test_{cid}"},
+            )
+        assert resp.status_code == 403
 
     async def test_teacher_cannot_read_admin_teacher_listing(
         self, async_client: AsyncClient, admin_token_headers: dict, db_session,
@@ -208,10 +235,12 @@ class TestTeacherAvailability:
         )
         teacher_id = teacher_resp.json()["id"]
 
-        teacher_headers = await _create_teacher_auth_headers(
+        teacher_headers, cid = await _create_teacher_auth_headers(
             db_session, teacher_id=teacher_id, organization_id=1,
         )
-        resp = await async_client.get(f"{API}/teachers/", headers=teacher_headers)
+        payload = mock_clerk_payload(cid, None, "member")
+        with patch("app.api.deps.get_clerk_payload", return_value=payload):
+            resp = await async_client.get(f"{API}/teachers/", headers=teacher_headers)
         assert resp.status_code == 403
 
     async def test_teacher_can_read_schedule_horizon_self_endpoint(
@@ -236,16 +265,18 @@ class TestTeacherAvailability:
         )
         teacher_id = teacher_resp.json()["id"]
 
-        teacher_headers = await _create_teacher_auth_headers(
+        teacher_headers, cid = await _create_teacher_auth_headers(
             db_session, teacher_id=teacher_id, organization_id=1,
         )
-        horizon_resp = await async_client.get(f"{API}/schedule/me/horizon", headers=teacher_headers)
+        payload = mock_clerk_payload(cid, None, "member")
+        with patch("app.api.deps.get_clerk_payload", return_value=payload):
+            horizon_resp = await async_client.get(f"{API}/schedule/me/horizon", headers=teacher_headers)
         assert horizon_resp.status_code == 200
-        payload = horizon_resp.json()
-        assert payload["hard_end_date"] == "2026-07-31"
-        assert "active_generation_id" in payload
-        assert payload["active_generation_id"] is None
-        assert date.fromisoformat(payload["week_start_recommended"]) <= date.fromisoformat(payload["hard_end_date"])
+        data = horizon_resp.json()
+        assert data["hard_end_date"] == "2026-07-31"
+        assert "active_generation_id" in data
+        assert data["active_generation_id"] is None
+        assert date.fromisoformat(data["week_start_recommended"]) <= date.fromisoformat(data["hard_end_date"])
 
     async def test_admin_cannot_read_teacher_schedule_horizon(
         self, async_client: AsyncClient, admin_token_headers: dict,
@@ -259,16 +290,21 @@ class TestTeacherAvailability:
         org = models.Organization(name=f"Org Horizon Sem Perfil {uuid4().hex[:6]}", plan_status="active")
         db_session.add(org)
         await db_session.flush()
-        email = f"teacher.horizon.noprofile.{uuid4().hex[:8]}@escola.pt"
+        cid = f"horizon_noprofile_{uuid4().hex[:8]}"
         no_profile_user = models.User(
-            email=email,
+            email=f"teacher.horizon.noprofile.{uuid4().hex[:8]}@escola.pt",
+            clerk_user_id=cid,
             is_active=True, role=UserRole.teacher,
             organization_id=org.id, teacher_id=None,
         )
         db_session.add(no_profile_user)
         await db_session.commit()
-        headers = {"Authorization": "Bearer mock_admin_token"}
-        resp = await async_client.get(f"{API}/schedule/me/horizon", headers=headers)
+        payload = mock_clerk_payload(cid, None, "member")
+        with patch("app.api.deps.get_clerk_payload", return_value=payload):
+            resp = await async_client.get(
+                f"{API}/schedule/me/horizon",
+                headers={"Authorization": f"Bearer test_{cid}"},
+            )
         assert resp.status_code == 403
 
     async def test_teacher_schedule_horizon_is_tenant_scoped(
@@ -292,7 +328,7 @@ class TestTeacherAvailability:
             headers=admin_token_headers,
         )
         teacher_org1_id = teacher_resp.json()["id"]
-        teacher_org1_headers = await _create_teacher_auth_headers(
+        teacher_org1_headers, cid1 = await _create_teacher_auth_headers(
             db_session, teacher_id=teacher_org1_id, organization_id=1,
         )
 
@@ -310,26 +346,30 @@ class TestTeacherAvailability:
         )
         db_session.add(settings_org2)
 
-        org2_email = f"teacher.org2.{uuid4().hex[:8]}@escola.pt"
+        cid2 = f"org2_{uuid4().hex[:8]}"
         org2_user = models.User(
-            email=org2_email,
+            email=f"teacher.org2.{uuid4().hex[:8]}@escola.pt",
+            clerk_user_id=cid2,
             is_active=True, role=UserRole.teacher,
             organization_id=org2.id, teacher_id=teacher_org2.id,
         )
         db_session.add(org2_user)
         await db_session.commit()
 
-        org2_headers = {"Authorization": "Bearer mock_admin_token"}
-
-        resp_org1 = await async_client.get(
-            f"{API}/schedule/me/horizon", headers=teacher_org1_headers,
-        )
+        payload1 = mock_clerk_payload(cid1, None, "member")
+        with patch("app.api.deps.get_clerk_payload", return_value=payload1):
+            resp_org1 = await async_client.get(
+                f"{API}/schedule/me/horizon", headers=teacher_org1_headers,
+            )
         assert resp_org1.status_code == 200
         assert resp_org1.json()["hard_end_date"] == "2026-07-31"
 
-        resp_org2 = await async_client.get(
-            f"{API}/schedule/me/horizon", headers=teacher_org2_headers,
-        )
+        payload2 = mock_clerk_payload(cid2, None, "member")
+        with patch("app.api.deps.get_clerk_payload", return_value=payload2):
+            resp_org2 = await async_client.get(
+                f"{API}/schedule/me/horizon",
+                headers={"Authorization": f"Bearer test_{cid2}"},
+            )
         assert resp_org2.status_code == 200
         assert resp_org2.json()["hard_end_date"] == "2028-07-31"
 
@@ -342,10 +382,12 @@ class TestTeacherAvailability:
         teacher = models.Teacher(name="Prof. Sem Settings", organization_id=org.id)
         db_session.add(teacher)
         await db_session.flush()
-        teacher_headers = await _create_teacher_auth_headers(
+        teacher_headers, cid = await _create_teacher_auth_headers(
             db_session, teacher_id=teacher.id, organization_id=org.id,
         )
-        resp = await async_client.get(f"{API}/schedule/me/horizon", headers=teacher_headers)
+        payload = mock_clerk_payload(cid, None, "member")
+        with patch("app.api.deps.get_clerk_payload", return_value=payload):
+            resp = await async_client.get(f"{API}/schedule/me/horizon", headers=teacher_headers)
         assert resp.status_code == 404
 
     async def test_teacher_self_availability_is_tenant_scoped_when_profile_id_belongs_to_other_org(
@@ -367,10 +409,12 @@ class TestTeacherAvailability:
         db_session.add(models.Availability(teacher_id=teacher_a.id, timeslot_id=timeslot_a.id, score=2))
         await db_session.commit()
 
-        mismatched_headers = await _create_teacher_auth_headers(
+        mismatched_headers, cid = await _create_teacher_auth_headers(
             db_session, teacher_id=teacher_a.id, organization_id=org_b.id,
         )
-        resp = await async_client.get(f"{API}/teachers/me/availability", headers=mismatched_headers)
+        payload = mock_clerk_payload(cid, None, "member")
+        with patch("app.api.deps.get_clerk_payload", return_value=payload):
+            resp = await async_client.get(f"{API}/teachers/me/availability", headers=mismatched_headers)
         assert resp.status_code == 404
 
     async def test_teacher_week_schedule_is_tenant_scoped_when_profile_id_belongs_to_other_org(
@@ -422,12 +466,14 @@ class TestTeacherAvailability:
         ))
         await db_session.commit()
 
-        mismatched_headers = await _create_teacher_auth_headers(
+        mismatched_headers, cid = await _create_teacher_auth_headers(
             db_session, teacher_id=teacher_a.id, organization_id=org_b.id,
         )
-        resp = await async_client.get(
-            f"{API}/schedule/week", headers=mismatched_headers,
-            params={"week_start": week_start.isoformat()},
-        )
+        payload = mock_clerk_payload(cid, None, "member")
+        with patch("app.api.deps.get_clerk_payload", return_value=payload):
+            resp = await async_client.get(
+                f"{API}/schedule/week", headers=mismatched_headers,
+                params={"week_start": week_start.isoformat()},
+            )
         assert resp.status_code == 200
         assert resp.json() == []

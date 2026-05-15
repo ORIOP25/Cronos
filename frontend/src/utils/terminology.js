@@ -1,5 +1,5 @@
 /**
- * Terminologia padronizada para toda a interface do Apérius.
+ * Terminologia padronizada para toda a interface do Cronos.
  * Centraliza as palavras usadas em botões, labels e mensagens.
  * Idioma: PT-PT (Português de Portugal), tratamento formal.
  */
@@ -106,8 +106,8 @@ export const TXT = {
   // Geral
   HOME: 'Painel de Controlo',
   BRAND_TAGLINE: 'Gestão escolar inteligente e sem stress.',
-  SIDEBAR_BRAND: 'Apérius',
-  SIDEBAR_BRAND_ACCENT: 'Zen',
+  SIDEBAR_BRAND: 'Cronos',
+  SIDEBAR_BRAND_ACCENT: '',
 }
 
 /**

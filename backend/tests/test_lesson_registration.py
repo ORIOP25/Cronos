@@ -3,9 +3,12 @@ from __future__ import annotations
 import pytest
 import pytest_asyncio
 from datetime import date, datetime, time, timedelta, timezone
+from unittest.mock import patch
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
+
+from tests.conftest import mock_clerk_payload
 
 from app import models, schemas
 from app.services import (
@@ -738,8 +741,10 @@ class TestTimesheetReopenPermissions:
         await db_session.flush()
 
         # Create teacher user
+        teacher_cid = "teacher_reopen_001"
         teacher_user = models.User(
             email="teacher_reopen@test.com",
+            clerk_user_id=teacher_cid,
             is_active=True,
             role=models.UserRole.teacher,
             organization_id=org.id,
@@ -759,14 +764,14 @@ class TestTimesheetReopenPermissions:
         db_session.add(timesheet)
         await db_session.commit()
 
-        # Teacher token
-        headers = {"Authorization": "Bearer mock_admin_token"}
+        headers = {"Authorization": f"Bearer test_{teacher_cid}"}
 
-        response = await async_client.patch(
-            f"/api/v1/timesheets/{timesheet.id}/status",
-            json={"status": "OPEN"},
-            headers=headers,
-        )
+        with patch("app.api.deps.get_clerk_payload", return_value=mock_clerk_payload(teacher_cid, None, "teacher")):
+            response = await async_client.patch(
+                f"/api/v1/timesheets/{timesheet.id}/status",
+                json={"status": "OPEN"},
+                headers=headers,
+            )
         assert response.status_code == 403
         assert "Apenas admins" in response.json()["detail"]
 
@@ -897,8 +902,10 @@ class TestTimesheetApprovalEndpoints:
         db_session.add(teacher)
         await db_session.flush()
 
+        admin_cid = "admin_approve_001"
         admin_user = models.User(
             email="admin_approve@test.com",
+            clerk_user_id=admin_cid,
             is_active=True,
             role=models.UserRole.admin,
             organization_id=org.id,
@@ -917,13 +924,14 @@ class TestTimesheetApprovalEndpoints:
         db_session.add(timesheet)
         await db_session.commit()
 
-        headers = {"Authorization": "Bearer mock_admin_token"}
+        headers = {"Authorization": f"Bearer test_{admin_cid}"}
 
-        response = await async_client.patch(
-            f"/api/v1/timesheets/{timesheet.id}/status",
-            json={"status": "APPROVED"},
-            headers=headers,
-        )
+        with patch("app.api.deps.get_clerk_payload", return_value=mock_clerk_payload(admin_cid, None, "admin")):
+            response = await async_client.patch(
+                f"/api/v1/timesheets/{timesheet.id}/status",
+                json={"status": "APPROVED"},
+                headers=headers,
+            )
         assert response.status_code == 200
         data = response.json()
         assert data["status"] == "APPROVED"
@@ -939,8 +947,10 @@ class TestTimesheetApprovalEndpoints:
         db_session.add(teacher)
         await db_session.flush()
 
+        admin_cid = "admin_reopen2_001"
         admin_user = models.User(
             email="admin_reopen2@test.com",
+            clerk_user_id=admin_cid,
             is_active=True,
             role=models.UserRole.admin,
             organization_id=org.id,
@@ -959,13 +969,14 @@ class TestTimesheetApprovalEndpoints:
         db_session.add(timesheet)
         await db_session.commit()
 
-        headers = {"Authorization": "Bearer mock_admin_token"}
+        headers = {"Authorization": f"Bearer test_{admin_cid}"}
 
-        response = await async_client.patch(
-            f"/api/v1/timesheets/{timesheet.id}/status",
-            json={"status": "OPEN"},
-            headers=headers,
-        )
+        with patch("app.api.deps.get_clerk_payload", return_value=mock_clerk_payload(admin_cid, None, "admin")):
+            response = await async_client.patch(
+                f"/api/v1/timesheets/{timesheet.id}/status",
+                json={"status": "OPEN"},
+                headers=headers,
+            )
         assert response.status_code == 200
         data = response.json()
         assert data["status"] == "OPEN"
@@ -988,8 +999,10 @@ class TestTimesheetsListEndpoint:
         db_session.add(teacher)
         await db_session.flush()
 
+        admin_cid = "admin_list_001"
         admin_user = models.User(
             email="admin_list@test.com",
+            clerk_user_id=admin_cid,
             is_active=True,
             role=models.UserRole.admin,
             organization_id=org.id,
@@ -1007,12 +1020,13 @@ class TestTimesheetsListEndpoint:
         db_session.add(timesheet)
         await db_session.commit()
 
-        headers = {"Authorization": "Bearer mock_admin_token"}
+        headers = {"Authorization": f"Bearer test_{admin_cid}"}
 
-        response = await async_client.get(
-            f"/api/v1/timesheets/?week_start_date={week_start.isoformat()}",
-            headers=headers,
-        )
+        with patch("app.api.deps.get_clerk_payload", return_value=mock_clerk_payload(admin_cid, None, "admin")):
+            response = await async_client.get(
+                f"/api/v1/timesheets/?week_start_date={week_start.isoformat()}",
+                headers=headers,
+            )
         assert response.status_code == 200
         data = response.json()
         assert len(data) == 1
@@ -1066,8 +1080,10 @@ class TestTimesheetsListEndpoint:
         db_session.add(llog)
         await db_session.commit()
 
+        admin_cid = "admin_detail_001"
         admin_user = models.User(
             email="admin_detail@test.com",
+            clerk_user_id=admin_cid,
             is_active=True,
             role=models.UserRole.admin,
             organization_id=org.id,
@@ -1075,13 +1091,14 @@ class TestTimesheetsListEndpoint:
         db_session.add(admin_user)
         await db_session.commit()
 
-        headers = {"Authorization": "Bearer mock_admin_token"}
+        headers = {"Authorization": f"Bearer test_{admin_cid}"}
 
         week_start = yesterday - timedelta(days=yesterday.weekday())
-        response = await async_client.get(
-            f"/api/v1/schedule/week?week_start={week_start.isoformat()}&teacher_id={teacher.id}",
-            headers=headers,
-        )
+        with patch("app.api.deps.get_clerk_payload", return_value=mock_clerk_payload(admin_cid, None, "admin")):
+            response = await async_client.get(
+                f"/api/v1/schedule/week?week_start={week_start.isoformat()}&teacher_id={teacher.id}",
+                headers=headers,
+            )
         assert response.status_code == 200
         data = response.json()
         assert len(data) == 1
