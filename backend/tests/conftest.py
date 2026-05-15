@@ -107,34 +107,53 @@ def mock_clerk_payload(clerk_user_id: str, org_id: str | None = None, role: str 
 
 
 # ============================================================
-# FIXTURES DE AUTENTICAÇÃO (Fase 3 — com mock automático)
+# FIXTURES DE AUTENTICAÇÃO (Fase 3 — com mock + user DB)
 # ============================================================
 
-@pytest_asyncio.fixture
-async def clerk_admin_headers():
-    """Headers de admin autenticado COM mock automático de get_clerk_payload.
-
-    USO: Basta adicionar `clerk_admin_headers` como parâmetro do teste.
-    O mock de get_clerk_payload é aplicado automaticamente.
-    """
-    from unittest.mock import patch
-    payload = mock_clerk_payload("user_admin_001", "org_001", "admin")
-    with patch("app.api.deps.get_clerk_payload", return_value=payload):
-        yield {"Authorization": "Bearer test_token_admin_001"}
+ADMIN_USER_ID = "user_admin_001"
+TEACHER_USER_ID = "user_teacher_001"
+MOCK_ORG_ID = "org_test_001"
 
 
 @pytest_asyncio.fixture
-async def clerk_teacher_headers():
-    """Headers de teacher autenticado COM mock automático de get_clerk_payload."""
+async def clerk_admin_headers(db_session: AsyncSession):
+    """Headers de admin com mock + user criado automaticamente na DB."""
     from unittest.mock import patch
-    payload = mock_clerk_payload("user_teacher_001", "org_001", "member")
-    with patch("app.api.deps.get_clerk_payload", return_value=payload):
-        yield {"Authorization": "Bearer test_token_teacher_001"}
+    org, user = await create_org_and_user(
+        db_session,
+        clerk_user_id=ADMIN_USER_ID,
+        email="admin@test.com",
+        role="admin",
+        clerk_org_id=MOCK_ORG_ID,
+    )
+    payload = mock_clerk_payload(ADMIN_USER_ID, org.clerk_org_id, "admin")
+    patcher = patch("app.api.deps.get_clerk_payload", return_value=payload)
+    patcher.start()
+    yield {"Authorization": f"Bearer test_{ADMIN_USER_ID}"}
+    patcher.stop()
+
+
+@pytest_asyncio.fixture
+async def clerk_teacher_headers(db_session: AsyncSession):
+    """Headers de teacher com mock + user criado automaticamente na DB."""
+    from unittest.mock import patch
+    org, user = await create_org_and_user(
+        db_session,
+        clerk_user_id=TEACHER_USER_ID,
+        email="teacher@test.com",
+        role="teacher",
+        clerk_org_id=MOCK_ORG_ID + "_t",
+    )
+    payload = mock_clerk_payload(TEACHER_USER_ID, org.clerk_org_id, "member")
+    patcher = patch("app.api.deps.get_clerk_payload", return_value=payload)
+    patcher.start()
+    yield {"Authorization": f"Bearer test_{TEACHER_USER_ID}"}
+    patcher.stop()
 
 
 @pytest.fixture
 def admin_token_headers(clerk_admin_headers) -> dict:
-    """Alias compatível com testes antigos que usam admin_token_headers: dict."""
+    """Alias compatível com testes que usam admin_token_headers: dict."""
     return clerk_admin_headers
 
 
