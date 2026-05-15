@@ -1,17 +1,18 @@
 import asyncio
-import logging
+import structlog
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from app import models
 from app.core.clerk import get_clerk_sdk
 from app.models import UserRole
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 
 def parse_role(clerk_role: str | None) -> str:
     if not clerk_role:
-        return UserRole.teacher.value
+        return UserRole.admin.value
     role_map = {
         "admin": UserRole.admin.value,
         "member": UserRole.teacher.value,
@@ -28,17 +29,30 @@ async def ensure_organization_exists(
     org = result.scalar_one_or_none()
 
     if not org:
-        org = models.Organization(
-            name=org_name,
-            clerk_org_id=clerk_org_id,
-            plan_status="active",
+        stmt = (
+            pg_insert(models.Organization)
+            .values(
+                name=org_name,
+                clerk_org_id=clerk_org_id,
+                plan_status="active",
+            )
+            .on_conflict_do_nothing()
         )
-        db.add(org)
+        await db.execute(stmt)
         await db.flush()
-        logger.info("Organization criada localmente: %s", clerk_org_id)
+
+        result = await db.execute(
+            select(models.Organization).where(models.Organization.clerk_org_id == clerk_org_id)
+        )
+        org = result.scalar_one_or_none()
+        if not org:
+            raise RuntimeError(f"Failed to ensure org: {clerk_org_id}")
+
+        logger.debug("Organization criada localmente", clerk_org_id=clerk_org_id)
     elif org.name != org_name:
         org.name = org_name
         await db.flush()
+        logger.debug("Organization actualizada", clerk_org_id=clerk_org_id)
 
     return org
 
@@ -58,28 +72,50 @@ async def ensure_user_exists(
     user = result.scalar_one_or_none()
 
     if not user:
-        user = models.User(
-            clerk_user_id=clerk_user_id,
-            email=email or "",
-            name=name,
-            role=parse_role(role),
-            organization_id=organization_id,
-            teacher_id=teacher_id,
+        stmt = (
+            pg_insert(models.User)
+            .values(
+                clerk_user_id=clerk_user_id,
+                email=email or "",
+                name=name,
+                role=parse_role(role),
+                organization_id=organization_id,
+                teacher_id=teacher_id,
+            )
+            .on_conflict_do_nothing()
         )
-        db.add(user)
+        await db.execute(stmt)
         await db.flush()
-        logger.info("User criado localmente: %s", clerk_user_id)
-    else:
-        if email:
-            user.email = email
-        if name:
-            user.name = name
-        if role:
-            user.role = parse_role(role)
-        if organization_id is not None:
-            user.organization_id = organization_id
-        if teacher_id is not None:
-            user.teacher_id = teacher_id
+
+        result = await db.execute(
+            select(models.User).where(models.User.clerk_user_id == clerk_user_id)
+        )
+        user = result.scalar_one_or_none()
+        if not user:
+            raise RuntimeError(f"Failed to ensure user: {clerk_user_id}")
+
+        logger.debug("User criado localmente", clerk_user_id=clerk_user_id)
+        return user
+
+    updated = False
+    if email and user.email != email:
+        user.email = email
+        updated = True
+    if name and user.name != name:
+        user.name = name
+        updated = True
+    if role and user.role != parse_role(role):
+        user.role = parse_role(role)
+        updated = True
+    if organization_id is not None and user.organization_id != organization_id:
+        user.organization_id = organization_id
+        updated = True
+    if teacher_id is not None and user.teacher_id != teacher_id:
+        user.teacher_id = teacher_id
+        updated = True
+
+    if updated:
+        logger.debug("User actualizado", clerk_user_id=clerk_user_id)
 
     return user
 

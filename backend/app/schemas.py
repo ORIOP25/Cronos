@@ -33,17 +33,10 @@ class UserBase(BaseModel):
     email: EmailStr
 
 class UserCreate(UserBase):
-    password: Optional[str] = None  # Clerk gere passwords
     clerk_user_id: Optional[str] = None
     name: Optional[str] = None
     role: Optional[UserRole] = None
     teacher_id: Optional[int] = None
-
-class RegisterRequest(BaseModel):
-    """Payload para registo de nova conta (Organização + Admin)."""
-    school_name: str = Field(..., min_length=2, max_length=100, description="Nome da instituição/escola")
-    admin_name: str = Field(..., min_length=2, max_length=150, description="Nome do administrador")
-    email: EmailStr
 
 class UserRead(UserBase):
     id: int
@@ -95,16 +88,8 @@ class TeacherBase(BaseModel):
     email: Optional[EmailStr] = None
 
 class TeacherCreate(TeacherBase):
-    # Email opcional — se fornecido, permite criar conta de acesso ao professor
     create_user_account: bool = False
-    password: str | None = Field(None, min_length=6, description="Password de acesso (obrigatória se create_user_account=True)")
     subject_ids: list[int] = Field(default_factory=list, description=DESC_SUBJECT_IDS)
-
-    @model_validator(mode='after')
-    def password_required_if_creating_account(self):
-        if self.create_user_account and not self.password:
-            raise ValueError('A password é obrigatória quando create_user_account é verdadeiro')
-        return self
 
 class TeacherRead(TeacherBase):
     id: int
@@ -1249,14 +1234,6 @@ class DashboardV1Response(BaseModel):
     debts: DebtSummary
     organization_name: str
 
-
-# ── Clerk Webhooks ──────────────────────────────────────────────
-from app.schemas_webhooks import (
-    ClerkWebhookEvent,
-    ClerkUserData,
-    ClerkOrganizationData,
-    ClerkMembershipData,
-)
 
 # ── Onboarding ─────────────────────────────────────────────────
 

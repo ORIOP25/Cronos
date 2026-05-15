@@ -1,7 +1,7 @@
 from datetime import datetime, date, timezone, timedelta
 from typing import Optional
 from sqlalchemy.orm import Session
-from fastapi import HTTPException
+from app.core.exceptions import DomainError, NotFoundError, ConflictError
 
 from app import models, schemas
 from app.services import occurrence_service, schedule_service
@@ -35,10 +35,10 @@ def upsert_lesson_log_sync(
     ).first()
     
     if not output:
-        raise HTTPException(status_code=404, detail="Bloco planeado não encontrado.")
+        raise NotFoundError("Bloco planeado não encontrado.")
         
     if not output.date:
-        raise HTTPException(status_code=400, detail="Bloco planeado não tem data válida.")
+        raise DomainError("Bloco planeado não tem data válida.", status_code=400)
 
     # 2. Bloqueio no tempo (Viagens ao futuro)
     timeslot = output.timeslot
@@ -46,7 +46,7 @@ def upsert_lesson_log_sync(
     end_datetime = datetime.combine(output.date, timeslot.end_time, tzinfo=timezone.utc)
     if payload.status == models.LessonLogStatus.COMPLETED:
         if end_datetime > datetime.now(timezone.utc):
-            raise HTTPException(status_code=400, detail="Não é possível registar estado para uma aula que ainda não terminou.")
+            raise DomainError("Não é possível registar estado para uma aula que ainda não terminou.", status_code=400)
 
     # 3. Check if the timesheet for this week is submitted/approved
     week_start_date = output.date - timedelta(days=output.date.weekday())
@@ -57,7 +57,7 @@ def upsert_lesson_log_sync(
     ).first()
     
     if timesheet and timesheet.status in (models.TimesheetStatus.SUBMITTED, models.TimesheetStatus.APPROVED):
-        raise HTTPException(status_code=400, detail="Esta semana já foi submetida ou aprovada. Não é possível alterar registos.")
+        raise DomainError("Esta semana já foi submetida ou aprovada. Não é possível alterar registos.", status_code=400)
 
     # 4. Proteção contra sobrescrita de Ocorrência existente (GAP / SUBSTITUTED)
     # Se o user tenta meter COMPLETED, e há uma Ocorrência GAP/SUBSTITUTED, bloquear.
@@ -70,7 +70,7 @@ def upsert_lesson_log_sync(
     ).first()
     
     if payload.status == models.LessonLogStatus.COMPLETED and occurrence:
-        raise HTTPException(status_code=400, detail="Não pode concluir uma aula que tem uma Falta/Substituição registada.")
+        raise ConflictError("Não pode concluir uma aula que tem uma Falta/Substituição registada.")
 
     # V4: Blocos de substituição são interativos — o substituto pode registar normalmente.
 

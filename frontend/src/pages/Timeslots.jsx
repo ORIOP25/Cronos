@@ -20,7 +20,7 @@ const Timeslots = () => {
   const [selectedItem, setSelectedItem] = useState(null)
   const [genModalVisible, setGenModalVisible] = useState(false)
 
-  const { data: timeslots, isLoading } = useTimeslots()
+  const { data: timeslots, isLoading, isError, error, refetch } = useTimeslots()
   const createMutation = useCreateEntity('timeslots')
   const updateMutation = useUpdateEntity('timeslots')
   const deleteMutation = useDeleteEntity('timeslots')
@@ -111,6 +111,9 @@ const Timeslots = () => {
             columns={columns}
             data={tableData}
             isLoading={isLoading}
+            isError={isError}
+            error={error}
+            onRetry={() => refetch()}
             actions={true}
             onEdit={handleEdit}
             onDelete={handleDelete}

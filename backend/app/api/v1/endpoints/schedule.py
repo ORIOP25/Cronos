@@ -60,7 +60,11 @@ def _active_task_by_org_key(organization_id: int) -> str:
 
 
 def _get_redis_client() -> redis.Redis:
-    return redis.Redis.from_url(str(settings.REDIS_URL))
+    if not hasattr(_get_redis_client, "_client"):
+        _get_redis_client._client = redis.Redis.from_url(
+            str(settings.REDIS_URL), decode_responses=True, socket_connect_timeout=2
+        )
+    return _get_redis_client._client
 
 
 def _extract_request_id(request: Request) -> str | None:
@@ -800,37 +804,27 @@ async def get_schedule(
     """
     # Definimos a chave única para esta organização
     CACHE_KEY = f"schedule_latest_data_{current_user.organization_id}"
-    
-    # 1. Tentar ligar ao Redis
+
     try:
-        r = redis.Redis.from_url(str(settings.REDIS_URL))
+        r = _get_redis_client()
         cached_data = r.get(CACHE_KEY)
-        
+
         if cached_data:
-            # [CACHE HIT] - Encontrámos dados!
-            print(f"⚡ Cache HIT para {CACHE_KEY}. A servir do Redis.")
+            logger.debug("Cache HIT", cache_key=CACHE_KEY)
             return json.loads(cached_data)
     except Exception as e:
-        print(f"⚠️ Erro ao ler cache Redis: {e}. A seguir para a BD.")
+        logger.warning("Erro ao ler cache Redis", error=str(e), cache_key=CACHE_KEY)
 
-    # 2. [CACHE MISS] - Não estava no Redis (ou foi apagado pelo Worker)
-    print(f"🐢 Cache MISS para {CACHE_KEY}. A ler da Base de Dados...")
-    
-    # Vamos buscar à base de dados (Lento)
+    logger.debug("Cache MISS", cache_key=CACHE_KEY)
+
     latest_schedule = await schedule_service.get_latest_schedule_by_org(db, current_user.organization_id)
-    
-    # 3. Guardar no Redis para a próxima vez
+
     if latest_schedule:
         try:
-            # Convertemos os objetos da BD para JSON puro
             json_data = jsonable_encoder(latest_schedule)
-            
-            # Guardamos no Redis com validade de 60 segundos (TTL)
-            # Se ninguém apagar, expira sozinho.
-            # Se o Worker gerar novo horário, ele apaga esta chave explicitamente.
             r.set(CACHE_KEY, json.dumps(json_data), ex=60)
         except Exception as e:
-            print(f"⚠️ Erro ao gravar cache Redis: {e}")
+            logger.warning("Erro ao gravar cache Redis", error=str(e))
 
     return latest_schedule
 

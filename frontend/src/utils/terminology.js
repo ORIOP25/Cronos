@@ -107,7 +107,7 @@ export const TXT = {
   HOME: 'Painel de Controlo',
   BRAND_TAGLINE: 'Gestão escolar inteligente e sem stress.',
   SIDEBAR_BRAND: 'Cronos',
-  SIDEBAR_BRAND_ACCENT: 'Zen',
+  SIDEBAR_BRAND_ACCENT: '',
 }
 
 /**

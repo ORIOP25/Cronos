@@ -25,7 +25,7 @@ const Teachers = () => {
   const [selectedItem, setSelectedItem] = useState(null) // Se null = Criação, Se obj = Edição
 
   // 2. Hooks de Dados (A "Magia" acontece aqui)
-  const { data: teachers, isLoading } = useTeachers()
+  const { data: teachers, isLoading, isError, error, refetch } = useTeachers()
   const { data: subjects } = useSubjects()
   const createMutation = useCreateEntity('teachers')
   const updateMutation = useUpdateEntity('teachers')
@@ -162,7 +162,10 @@ const Teachers = () => {
             columns={columns}
             data={tableData}
             isLoading={isLoading}
-            actions={true} // Ativa botões Editar/Apagar
+            isError={isError}
+            error={error}
+            onRetry={() => refetch()}
+            actions={true}
             onEdit={handleEdit}
             onDelete={handleDelete}
           />

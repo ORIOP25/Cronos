@@ -24,7 +24,7 @@ const Subjects = () => {
   const queryClient = useQueryClient()
 
   // 1. Acesso aos Dados
-  const { data: subjects, isLoading } = useSubjects()
+  const { data: subjects, isLoading, isError, error, refetch } = useSubjects()
   const createMutation = useCreateEntity('subjects')
   const updateMutation = useUpdateEntity('subjects')
   const deleteMutation = useDeleteEntity('subjects')
@@ -132,6 +132,9 @@ const Subjects = () => {
             columns={columns}
             data={tableData}
             isLoading={isLoading}
+            isError={isError}
+            error={error}
+            onRetry={() => refetch()}
             actions={true}
             onEdit={handleEdit}
             onDelete={handleDelete}

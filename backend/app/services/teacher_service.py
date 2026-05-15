@@ -54,7 +54,7 @@ async def create_teacher(db: AsyncSession, teacher_in: schemas.TeacherCreate, or
     subject_ids = teacher_in.subject_ids
 
     # Criamos os dados para a tabela Teacher, excluindo o que não é coluna dela
-    teacher_data = teacher_in.model_dump(exclude={'subject_ids', 'create_user_account', 'email', 'password'})
+    teacher_data = teacher_in.model_dump(exclude={'subject_ids', 'create_user_account', 'email'})
 
     # 2. Criar a Instância do Professor
     db_teacher = models.Teacher(**teacher_data, organization_id=organization_id)
@@ -80,26 +80,21 @@ async def create_teacher(db: AsyncSession, teacher_in: schemas.TeacherCreate, or
         if teacher_in.email:
             from app.services import user_service
             from app.models import UserRole
-            
-            # Determinar o estado da conta (Ativo/Inativo) conforme o switch
-            is_active_status = teacher_in.create_user_account
-            
+
             user_create_data = schemas.UserCreate(
                 email=teacher_in.email,
-                password=teacher_in.password if teacher_in.password else "ChangeMeNow"
+                clerk_user_id=None,
             )
-            
-            # Criar o utilizador (por defeito, create_user cria com is_active=True)
+
             new_user = await user_service.create_user(
-                db, 
-                user_create_data, 
-                organization_id=organization_id, 
+                db,
+                user_create_data,
+                organization_id=organization_id,
                 role=UserRole.teacher,
-                teacher_id=db_teacher.id 
+                teacher_id=db_teacher.id
             )
-            
-            # Forçar o estado correto (Ativo ou Inativo conforme o switch)
-            new_user.is_active = is_active_status
+
+            new_user.is_active = teacher_in.create_user_account
             db.add(new_user)
 
         await db.flush()
@@ -248,18 +243,15 @@ async def update_teacher(
             user.is_active = teacher_in.create_user_account
             db.add(user)
         elif teacher_in.create_user_account and teacher_in.email:
-            # Caso 2: Não tinha user, mas agora quer CRIAR (ativar)
-            # Precisamos do email para criar a conta
             from app.services import user_service
             from app.models import UserRole
-            
+
             user_create_data = schemas.UserCreate(
                 email=teacher_in.email,
-                password="1234"
+                clerk_user_id=None,
             )
-            # Criar o user (por defeito is_active=True, que é o que queremos)
             await user_service.create_user(
-                db, user_create_data, organization_id=organization_id, 
+                db, user_create_data, organization_id=organization_id,
                 role=UserRole.teacher, teacher_id=teacher.id
             )
         # Caso 3: Quer desativar (create_user_account=False) mas não tem user

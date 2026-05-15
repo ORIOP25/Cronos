@@ -21,7 +21,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api import deps
 from app import models, schemas
 from app.services import occurrence_service
-from app.db.database import SessionLocalSync
 
 # Constante reutilizada (SonarQube S1192)
 OCCURRENCE_NOT_FOUND_MSG = "Ocorrência não encontrada"

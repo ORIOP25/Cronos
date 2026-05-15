@@ -152,7 +152,9 @@ async def update_course(db: AsyncSession, course_id: int, item: schemas.CourseUp
     # 1. Aplicar updates Escalares (Campos simples)
     update_data = item.model_dump(exclude_unset=True, exclude={"subject_ids"})
     for field, value in update_data.items():
-        if field == "abbreviation" and value:
+        if value is None:
+            continue
+        if field == "abbreviation":
             setattr(db_item, field, value.upper())
         else:
             setattr(db_item, field, value)

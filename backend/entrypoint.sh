@@ -37,9 +37,6 @@ if [[ "$RUN_MIGRATIONS" == "1" ]]; then
     python -c "from scripts.repair_migrations import verify_migrations; verify_migrations()"
 
     echo "[entrypoint] Migrações Alembic concluídas."
-
-    # 4. Bootstrap opcional e idempotente de admin default (dev local apenas)
-    python scripts/bootstrap_admin.py
 else
     echo "[entrypoint] A saltar migrações Alembic (RUN_MIGRATIONS=${RUN_MIGRATIONS})."
 fi

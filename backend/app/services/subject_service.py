@@ -20,11 +20,10 @@ async def create_subject(db: AsyncSession, item: schemas.SubjectCreate, organiza
     )
     result_check = await db.execute(query_check)
     if result_check.scalars().first():
-        # Precisas de importar HTTPException do fastapi
-        from fastapi import HTTPException 
-        raise HTTPException(
-            status_code=400, 
-            detail=f"A disciplina '{item.name}' já existe nesta escola."
+        from app.core.exceptions import DomainError
+        raise DomainError(
+            f"A disciplina '{item.name}' já existe nesta escola.",
+            status_code=400,
         )
     # 1. Separar dados da Disciplina e dos Módulos
     # O 'pop' remove 'modules' do dicionário para não dar erro ao criar o objeto Subject

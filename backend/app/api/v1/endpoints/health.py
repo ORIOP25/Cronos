@@ -1,6 +1,7 @@
 # Ficheiro: app/api/endpoints/health.py
 
 import redis
+import structlog
 from fastapi import APIRouter, Depends, status
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
@@ -10,6 +11,7 @@ from app.config import settings
 from app.core.ratelimit import limiter
 from typing import Annotated
 
+logger = structlog.get_logger(__name__)
 router = APIRouter()
 
 @router.get("/health", status_code=status.HTTP_200_OK)
@@ -17,48 +19,35 @@ router = APIRouter()
 async def health_check(
     db: Annotated[AsyncSession, Depends(deps.get_db)]
 ):
-    """
-    Verifica a saúde vital do sistema:
-    1. Base de Dados (Postgres)
-    2. Cache/Queue (Redis)
-    
-    Se algum falhar, retorna 503 (Service Unavailable).
-    O Render/Kubernetes usa isto para reiniciar containers estragados.
-    """
     health_status = {
         "status": "ok",
         "postgres": "unknown",
         "redis": "unknown"
     }
-    
-    # 1. Testar Postgres (SELECT 1)
+
     try:
-        # Executa uma query simples e rápida
         await db.execute(text("SELECT 1"))
         health_status["postgres"] = "connected"
     except Exception as e:
         health_status["postgres"] = "disconnected"
         health_status["status"] = "error"
-        # Log do erro (futuramente usaremos structlog aqui)
-        print(f"❌ Health Check falhou no Postgres: {e}")
+        logger.warning("Health check: Postgres disconnected", error=str(e))
 
-    # 2. Testar Redis (PING)
     try:
         r = redis.Redis.from_url(str(settings.REDIS_URL), socket_connect_timeout=1)
         if r.ping():
             health_status["redis"] = "connected"
         else:
-            raise ValueError("Ping falhou")
+            raise ValueError("Ping failed")
     except Exception as e:
         health_status["redis"] = "disconnected"
         health_status["status"] = "error"
-        print(f"❌ Health Check falhou no Redis: {e}")
+        logger.warning("Health check: Redis disconnected", error=str(e))
 
-    # Decisão Final
     if health_status["status"] == "error":
         return JSONResponse(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             content=health_status,
         )
-    
+
     return health_status

@@ -165,6 +165,13 @@ def _link_class_subject(
     subject: models.Subject,
     teacher: models.Teacher,
 ) -> None:
+    existing = db.query(models.ClassSubjectLink).filter_by(
+        class_id=klass.id,
+        subject_id=subject.id,
+        grade_level=klass.grade_level,
+    ).first()
+    if existing:
+        return
     db.add(models.ClassSubjectLink(
         class_id=klass.id,
         subject_id=subject.id,

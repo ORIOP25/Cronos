@@ -4,6 +4,11 @@ import sys
 import structlog
 from app.config import settings
 
+
+class _HealthCheckFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        return "/health" not in record.getMessage()
+
 def setup_logging():
     """
     Configura o sistema de logs para ser 'Enterprise Grade'.
@@ -49,3 +54,9 @@ def setup_logging():
     # Define que estas bibliotecas só mostram logs se forem WARNING ou pior.
     logging.getLogger("urllib3").setLevel(logging.WARNING)
     logging.getLogger("sentry_sdk").setLevel(logging.WARNING)
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
+    logging.getLogger("clerk_backend_api").setLevel(logging.WARNING)
+
+    uvicorn_access = logging.getLogger("uvicorn.access")
+    uvicorn_access.addFilter(_HealthCheckFilter())

@@ -75,15 +75,14 @@ def repair_migrations() -> None:
         non_version_count = _count_non_version_tables(engine)
         if non_version_count == 0:
             print(
-                "[repair_migrations] ERRO: alembic_version existe mas nenhuma tabela core foi encontrada.\n"
-                "    Isto acontece tipicamente após executar um script de seed que apagou\n"
-                "    manualmente as tabelas (ex: seed_data_small_realistic.py).\n"
-                "    Corra o seed_data.py com --reset para reconstruir a BD corretamente:\n"
-                "      docker compose exec backend python seed_data.py --profile small-realistic --reset\n"
+                "[repair_migrations] alembic_version existe mas nenhuma tabela core encontrada."
             )
-            raise SystemExit(
-                "[repair_migrations] ERRO: BD inconsistente — alembic_version sem tabelas core."
-            )
+            print("[repair_migrations] A remover alembic_version para reconstrução limpa...")
+            with engine.connect() as conn:
+                conn.execute(text("DROP TABLE IF EXISTS alembic_version"))
+                conn.commit()
+            print("[repair_migrations] alembic_version removida. Migrações irão recriar tudo.")
+            return
         else:
             raise SystemExit(
                 "[repair_migrations] ERRO: alembic_version existe mas tabelas core faltam "

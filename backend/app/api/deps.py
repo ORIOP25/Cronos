@@ -3,16 +3,24 @@ from typing import AsyncGenerator, Annotated
 from fastapi import Depends, HTTPException, status, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
+import structlog
 
 from app.db.database import SessionLocal
 from app.core.clerk import verify_clerk_request
 from app.services import clerk_sync
 from app import models
 
+logger = structlog.get_logger(__name__)
+
 # --- DATABASE ---
 async def get_db() -> AsyncGenerator:
     async with SessionLocal() as db:
-        yield db
+        try:
+            yield db
+            await db.commit()
+        except Exception:
+            await db.rollback()
+            raise
 
 
 # --- CLERK AUTH ---
@@ -48,13 +56,33 @@ async def get_current_user(
     org_id = payload.get("o", {}).get("id") if "o" in payload else None
     role = payload.get("o", {}).get("rol") if "o" in payload else None
 
+    logger.info("Fallback síncrono ativado", clerk_user_id=clerk_user_id, clerk_org_id=org_id)
+
     if org_id:
-        await clerk_sync.sync_organization_from_clerk_api(db, org_id)
+        org = await clerk_sync.sync_organization_from_clerk_api(db, org_id)
+        if org is None:
+            logger.warning("BAPI sync_organization_from_clerk_api falhou", clerk_org_id=org_id)
 
     user = await clerk_sync.sync_user_from_clerk_api(db, clerk_user_id)
 
     if not user:
+        logger.error("Fallback síncrono falhou — user não criado", clerk_user_id=clerk_user_id)
         raise HTTPException(status_code=401, detail="User not found")
+
+    if org_id and user.organization_id is None:
+        org_local_result = await db.execute(
+            select(models.Organization).where(models.Organization.clerk_org_id == org_id)
+        )
+        org_local = org_local_result.scalar_one_or_none()
+        if org_local:
+            user.organization_id = org_local.id
+        await db.flush()
+
+    if role:
+        user.role = clerk_sync.parse_role(role)
+        await db.flush()
+
+    logger.info("Fallback síncrono concluído", clerk_user_id=clerk_user_id, role=user.role, org_id=user.organization_id)
 
     if org_id and user.organization_id is None:
         org_local_result = await db.execute(
@@ -83,14 +111,7 @@ def get_current_active_user(
 def get_current_active_admin(
     current_user: Annotated[models.User, Depends(get_current_active_user)],
 ) -> models.User:
-    is_admin = current_user.is_superuser or (
-        current_user.role is not None
-        and (
-            current_user.role == models.UserRole.admin
-            or str(current_user.role) == models.UserRole.admin.value
-        )
-    )
-    if not is_admin:
+    if not (current_user.is_superuser or current_user.role == models.UserRole.admin):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admin access required",

@@ -59,7 +59,7 @@ async def async_client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient, 
     app.dependency_overrides[get_db] = override_get_db
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         yield ac
-    app.dependency_overrides.clear()
+    app.dependency_overrides.pop(get_db, None)
 
 
 # ============================================================
@@ -136,9 +136,8 @@ MOCK_ORG_ID = "org_test_001"
 
 
 @pytest_asyncio.fixture
-async def clerk_admin_headers(db_session: AsyncSession):
+async def clerk_admin_headers(db_session: AsyncSession, monkeypatch):
     """Headers de admin com mock + user criado automaticamente na DB."""
-    from unittest.mock import patch
     org, user = await create_org_and_user(
         db_session,
         clerk_user_id=ADMIN_USER_ID,
@@ -147,16 +146,17 @@ async def clerk_admin_headers(db_session: AsyncSession):
         clerk_org_id=MOCK_ORG_ID,
     )
     payload = mock_clerk_payload(ADMIN_USER_ID, org.clerk_org_id, "admin")
-    patcher = patch("app.api.deps.get_clerk_payload", return_value=payload)
-    patcher.start()
+
+    async def _mock_payload(_request):
+        return payload
+
+    monkeypatch.setattr("app.api.deps.get_clerk_payload", _mock_payload)
     yield {"Authorization": f"Bearer test_{ADMIN_USER_ID}"}
-    patcher.stop()
 
 
 @pytest_asyncio.fixture
-async def clerk_teacher_headers(db_session: AsyncSession):
+async def clerk_teacher_headers(db_session: AsyncSession, monkeypatch):
     """Headers de teacher com mock + user criado automaticamente na DB."""
-    from unittest.mock import patch
     org, user = await create_org_and_user(
         db_session,
         clerk_user_id=TEACHER_USER_ID,
@@ -165,10 +165,12 @@ async def clerk_teacher_headers(db_session: AsyncSession):
         clerk_org_id=MOCK_ORG_ID + "_t",
     )
     payload = mock_clerk_payload(TEACHER_USER_ID, org.clerk_org_id, "member")
-    patcher = patch("app.api.deps.get_clerk_payload", return_value=payload)
-    patcher.start()
+
+    async def _mock_payload(_request):
+        return payload
+
+    monkeypatch.setattr("app.api.deps.get_clerk_payload", _mock_payload)
     yield {"Authorization": f"Bearer test_{TEACHER_USER_ID}"}
-    patcher.stop()
 
 
 @pytest.fixture

@@ -44,7 +44,8 @@ class Settings(BaseSettings):
                 "http://localhost:3000",
                 "http://localhost",
             ]
-        return []
+        # Production: fallback to FRONTEND_URL so CORS never breaks
+        return [self.FRONTEND_URL] if self.FRONTEND_URL else []
 
     # --- Infraestrutura (Redis & Celery) ---
     # Se não definires no .env, assume o default do Docker

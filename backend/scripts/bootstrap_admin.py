@@ -1,3 +1,2 @@
-# Bootstrap script removido — autenticação migrada para Clerk.
-# Este ficheiro existe apenas para compatibilidade com o entrypoint.
-print("[bootstrap_admin] Bootstrap desativado (Clerk gere autenticação).")
+# Bootstrap desativado — autenticação migrada para Clerk.
+# Este ficheiro é um stub para compatibilidade com o entrypoint.sh.

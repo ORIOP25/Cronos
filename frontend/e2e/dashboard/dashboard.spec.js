@@ -33,7 +33,7 @@ async function loginAsAdmin(page) {
       },
       version: 0,
     }
-    window.localStorage.setItem('horario-zen-storage', JSON.stringify(store))
+    window.localStorage.setItem('cronos-storage', JSON.stringify(store))
   })
 }
 

@@ -33,7 +33,7 @@ const Rooms = () => {
 
   // 1. Hooks de Dados
   // Nota: 'rooms' é a key que definimos no useSchoolData
-  const { data: rooms, isLoading } = useRooms()
+  const { data: rooms, isLoading, isError, error, refetch } = useRooms()
   const createMutation = useCreateEntity('rooms')
   const updateMutation = useUpdateEntity('rooms')
   const deleteMutation = useDeleteEntity('rooms')
@@ -109,6 +109,9 @@ const Rooms = () => {
             columns={columns}
             data={tableData}
             isLoading={isLoading}
+            isError={isError}
+            error={error}
+            onRetry={() => refetch()}
             actions={true}
             onEdit={handleEdit}
             onDelete={handleDelete}

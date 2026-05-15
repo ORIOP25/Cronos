@@ -23,7 +23,7 @@ const Classes = () => {
   const [selectedItem, setSelectedItem] = useState(null)
 
   // 1. Acesso aos Dados
-  const { data: classes, isLoading } = useClasses()
+  const { data: classes, isLoading, isError, error, refetch } = useClasses()
   const { data: courses } = useCourses()
   const createMutation = useCreateEntity('classes')
   const updateMutation = useUpdateEntity('classes')
@@ -118,6 +118,9 @@ const Classes = () => {
             columns={columns}
             data={tableData}
             isLoading={isLoading}
+            isError={isError}
+            error={error}
+            onRetry={() => refetch()}
             actions={true}
             onEdit={handleEdit}
             onDelete={handleDelete}

@@ -1,14 +1,14 @@
 import json
-import logging
+import structlog
 from fastapi import APIRouter, Request, HTTPException, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from svix.webhooks import Webhook, WebhookVerificationError
 from app.config import settings
 from app.api.deps import get_db
 from app.services import clerk_sync
-from app.schemas import ClerkWebhookEvent
+from app.schemas_webhooks import ClerkWebhookEvent
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 router = APIRouter(tags=["webhooks"])
 
 
@@ -36,7 +36,7 @@ async def handle_clerk_webhook(request: Request, db: AsyncSession = Depends(get_
     data = json.loads(payload)
     event = ClerkWebhookEvent(**data)
 
-    logger.info("Webhook recebido: %s", event.type)
+    logger.info("Webhook recebido", clerk_event=event.type)
 
     match event.type:
         case "user.created":
@@ -58,7 +58,7 @@ async def handle_clerk_webhook(request: Request, db: AsyncSession = Depends(get_
         case "organizationMembership.deleted":
             await _handle_membership_deleted(db, event.data)
         case _:
-            logger.info("Evento ignorado: %s", event.type)
+            logger.info("Evento ignorado", clerk_event=event.type)
 
     await db.commit()
     return {"status": "ok"}
@@ -71,17 +71,12 @@ async def _handle_user_created(db: AsyncSession, data: dict):
         email = data["email_addresses"][0]["email_address"]
     name = f"{data.get('first_name', '')} {data.get('last_name', '')}".strip() or None
 
-    user = await clerk_sync.ensure_user_exists(
+    await clerk_sync.ensure_user_exists(
         db=db,
         clerk_user_id=clerk_user_id,
         email=email,
         name=name,
     )
-
-    if not user.is_active:
-        user.is_active = True
-        await db.flush()
-        logger.info("User reativado: %s", clerk_user_id)
 
 
 async def _handle_user_updated(db: AsyncSession, data: dict):
@@ -124,7 +119,7 @@ async def _handle_organization_deleted(db: AsyncSession, data: dict):
     )
     org.plan_status = "inactive"
     await db.flush()
-    logger.info("Organization desativada localmente: %s", clerk_org_id)
+    logger.info("Organization desativada localmente", clerk_org_id=clerk_org_id)
 
 
 async def _handle_membership_created(db: AsyncSession, data: dict):

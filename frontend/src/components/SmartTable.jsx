@@ -10,6 +10,9 @@ const SmartTable = ({
   columns, 
   data, 
   isLoading, 
+  isError,
+  error,
+  onRetry,
   actions, 
   onEdit, 
   onDelete,
@@ -30,6 +33,20 @@ const SmartTable = ({
     }
   }
   
+  if (isError) {
+    const msg = error?.response?.data?.detail || error?.message || 'Erro ao carregar os dados'
+    return (
+      <div className="text-center p-5 zen-reveal">
+        <div style={{ color: 'var(--color-state-gap-text)', marginBottom: '16px', fontSize: '2rem' }}>!</div>
+        <p className="text-display" style={{ fontSize: '1.1rem', marginBottom: '8px' }}>Erro ao carregar</p>
+        <p style={{ color: 'var(--brand-600)', fontSize: '0.9rem', maxWidth: 400, margin: '0 auto 16px' }}>{msg}</p>
+        {onRetry && (
+          <button className="btn-zen btn-zen-outline" onClick={onRetry}>Tentar novamente</button>
+        )}
+      </div>
+    )
+  }
+
   if (isLoading) {
     return (
       <div className="text-center p-5 zen-reveal">
@@ -130,6 +147,9 @@ SmartTable.propTypes = {
   })).isRequired,
   data: PropTypes.array,
   isLoading: PropTypes.bool,
+  isError: PropTypes.bool,
+  error: PropTypes.object,
+  onRetry: PropTypes.func,
   actions: PropTypes.bool,
   onEdit: PropTypes.func,
   onDelete: PropTypes.func,

@@ -116,7 +116,7 @@ const DefaultLayout = () => {
             {!collapsed && (
               <div>
                 <h2 className="text-display" style={{ color: '#ffffff', fontSize: '1.6rem', margin: 0 }}>
-                  {TXT.SIDEBAR_BRAND} <span style={{ color: 'var(--rs-sidebar-brand)' }}>{TXT.SIDEBAR_BRAND_ACCENT}</span>
+                  {TXT.SIDEBAR_BRAND}{TXT.SIDEBAR_BRAND_ACCENT && <span style={{ color: 'var(--rs-sidebar-brand)' }}> {TXT.SIDEBAR_BRAND_ACCENT}</span>}
                 </h2>
                 <div className="luxury-line" style={{ width: '40px', margin: '12px 0' }} />
               </div>

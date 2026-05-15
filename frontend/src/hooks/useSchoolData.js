@@ -12,10 +12,10 @@ import { useOrganization, useAuth } from '@clerk/react'
  * - Mantemos refetchOnWindowFocus para garantir que o utilizador vê dados frescos se voltar à tab.
  */
 const STATIC_OPTS = {
-  staleTime: 1000 * 60 * 30, // 30 minutos sem pedir ao servidor
+  staleTime: 1000 * 60 * 30,
   refetchOnWindowFocus: false,
-  refetchOnMount: false, // Se o componente desmontar e montar, usa a cache
-  retry: 1
+  refetchOnMount: true,
+  retry: 3
 }
 
 const DYNAMIC_OPTS = {

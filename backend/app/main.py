@@ -1,8 +1,9 @@
 # Ficheiro: app/main.py
 
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from slowapi.middleware import SlowAPIMiddleware
 
 # --- Imports de Performance e Segurança ---
@@ -17,6 +18,7 @@ import sentry_sdk
 # --- Imports da Aplicação ---
 from app.config import settings
 from app.core.ratelimit import limiter
+from app.core.exceptions import DomainError
 from app.api.api import api_router
 from app.core.logging import setup_logging
 
@@ -91,10 +93,22 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# --- Domain Error Handler ---
+@app.exception_handler(DomainError)
+async def domain_error_handler(request: Request, exc: DomainError):
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"detail": exc.message},
+    )
+
 # --- Security Headers ---
+_HEALTH_PATHS = {"/health", "/api/v1/health"}
+
 @app.middleware("http")
 async def security_headers(request, call_next):
     response = await call_next(request)
+    if request.url.path.rstrip("/") in _HEALTH_PATHS:
+        return response
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Referrer-Policy"] = "no-referrer"
@@ -104,6 +118,7 @@ async def security_headers(request, call_next):
         response.headers["Content-Security-Policy"] = (
             "default-src 'self'; "
             "script-src 'self' 'unsafe-inline' https://*.clerk.accounts.dev https://challenges.cloudflare.com; "
+            "worker-src 'self' blob:; "
             "connect-src 'self' https://*.clerk.accounts.dev https://challenges.cloudflare.com; "
             "img-src 'self' https://img.clerk.com data:; "
             "style-src 'self' 'unsafe-inline' https://*.clerk.accounts.dev; "
@@ -114,11 +129,13 @@ async def security_headers(request, call_next):
         response.headers["Content-Security-Policy"] = (
             "default-src 'self'; "
             "script-src 'self' https://clerk.aperius.pt; "
+            "worker-src 'self' blob:; "
             "connect-src 'self' https://clerk.aperius.pt; "
             "img-src 'self' https://img.clerk.com data:; "
             "style-src 'self' 'unsafe-inline' https://clerk.aperius.pt; "
             "frame-src 'self' https://clerk.aperius.pt; "
-            "frame-ancestors 'self'"
+            "frame-ancestors 'self'; "
+            "upgrade-insecure-requests"
         )
 
     if settings.ENVIRONMENT == "production":

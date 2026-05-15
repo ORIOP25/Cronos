@@ -20,7 +20,7 @@ const Courses = () => {
   const [modalVisible, setModalVisible] = useState(false)
 
   // 1. Hooks de Dados
-  const { data: courses, isLoading } = useCourses()
+  const { data: courses, isLoading, isError, error, refetch } = useCourses()
   const createMutation = useCreateEntity('courses')
 
   // 2. Colunas da Tabela
@@ -113,6 +113,9 @@ const Courses = () => {
             columns={columns}
             data={tableData}
             isLoading={isLoading}
+            isError={isError}
+            error={error}
+            onRetry={() => refetch()}
             onRowClick={handleRowClick}
           />
         </CCardBody>

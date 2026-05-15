@@ -147,3 +147,45 @@ def test_get_current_active_admin_rejects_teacher():
     with pytest.raises(HTTPException) as exc:
         get_current_active_admin(mock_user)
     assert exc.value.status_code == 403
+
+
+# ── T6b: Fallback BAPI fails ────────────────────────────────────
+@pytest.mark.asyncio
+async def test_get_current_user_fallback_bapi_fails(db_session):
+    from fastapi import HTTPException
+    from app.api.deps import get_current_user
+    from app.services import clerk_sync
+
+    with patch("app.api.deps.get_clerk_payload") as mock_payload, \
+         patch.object(clerk_sync, "sync_organization_from_clerk_api") as mock_org, \
+         patch.object(clerk_sync, "sync_user_from_clerk_api") as mock_user:
+        mock_payload.return_value = {"sub": "user_fail", "o": {"id": "org_x", "rol": "admin"}}
+        mock_org.return_value = None
+        mock_user.return_value = None
+
+        mock_request = MagicMock()
+        with pytest.raises(HTTPException) as exc:
+            await get_current_user(mock_request, db_session)
+        assert exc.value.status_code == 401
+        assert "User not found" in str(exc.value.detail)
+
+
+# ── T20a: parse_role edge cases ─────────────────────────────────
+def test_parse_role_admin():
+    from app.services.clerk_sync import parse_role
+    assert parse_role("admin") == "admin"
+
+
+def test_parse_role_member():
+    from app.services.clerk_sync import parse_role
+    assert parse_role("member") == "teacher"
+
+
+def test_parse_role_none():
+    from app.services.clerk_sync import parse_role
+    assert parse_role(None) == "admin"
+
+
+def test_parse_role_unknown():
+    from app.services.clerk_sync import parse_role
+    assert parse_role("invalid_role") == "teacher"

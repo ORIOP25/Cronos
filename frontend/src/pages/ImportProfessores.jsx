@@ -32,7 +32,7 @@ const TeachersManager = () => {
   const queryClient = useQueryClient()
   const [showImportModal, setShowImportModal] = useState(false) // Estado do Modal
 
-  const { data: list, isLoading } = useQuery({ queryKey: ['teachersList'], queryFn: async () => (await apiClient.get('/import/teachers')).data })
+  const { data: list, isLoading, isError, error, refetch } = useQuery({ queryKey: ['teachersList'], queryFn: async () => (await apiClient.get('/import/teachers')).data, retry: 2 })
   
   const deleteMut = useMutation({ 
     mutationFn: (id) => apiClient.delete(`/import/teacher/${id}`), 
@@ -66,7 +66,7 @@ const TeachersManager = () => {
       
       <hr className="my-4"/>
       
-      <SmartTable isLoading={isLoading} data={list} columns={[{ key: 'name', label: 'Nome' }]} onDelete={(id) => deleteMut.mutate(id)} />
+      <SmartTable isLoading={isLoading} isError={isError} error={error} onRetry={() => refetch()} data={list} columns={[{ key: 'name', label: 'Nome' }]} onDelete={(id) => deleteMut.mutate(id)} />
 
       {/* O MODAL DE IMPORTAÇÃO */}
       <BulkImportModal 

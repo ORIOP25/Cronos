@@ -1,10 +1,13 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.future import select
 from app.api.deps import get_current_active_admin, get_db
 from app import models
 from app.schemas import OnboardingRequest, OnboardingStatusResponse
-from app.services.organization_service import complete_onboarding
+from app.services.organization_service import (
+    complete_onboarding,
+    get_onboarding_status as svc_get_status,
+    mark_onboarding_complete_in_clerk,
+)
 
 router = APIRouter(tags=["onboarding"])
 
@@ -18,25 +21,14 @@ async def get_onboarding_status(
     if not org_id:
         raise HTTPException(status_code=400, detail="No organization associated")
 
-    result = await db.execute(
-        select(models.OrganizationSettings).where(
-            models.OrganizationSettings.organization_id == org_id
-        )
-    )
-    settings = result.scalar_one_or_none()
-
-    org_result = await db.execute(
-        select(models.Organization).where(models.Organization.id == org_id)
-    )
-    org = org_result.scalar_one_or_none()
-
+    is_complete, org_name = await svc_get_status(db, org_id)
     return OnboardingStatusResponse(
-        onboarding_complete=settings is not None,
-        organization_name=org.name if org else None,
+        onboarding_complete=is_complete,
+        organization_name=org_name,
     )
 
 
-@router.post("/onboarding", status_code=201)
+@router.post("/onboarding")
 async def submit_onboarding(
     data: OnboardingRequest,
     current_user: models.User = Depends(get_current_active_admin),
@@ -48,5 +40,8 @@ async def submit_onboarding(
 
     await complete_onboarding(db, org_id, data)
     await db.commit()
+
+    if current_user.clerk_user_id:
+        await mark_onboarding_complete_in_clerk(current_user.clerk_user_id)
 
     return {"status": "ok", "organization_id": org_id, "message": "Onboarding completo"}

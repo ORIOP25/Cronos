@@ -1,7 +1,7 @@
 from datetime import date, datetime, timezone, timedelta
 from sqlalchemy.orm import Session
 from sqlalchemy import select, func, and_
-from fastapi import HTTPException
+from app.core.exceptions import DomainError, NotFoundError, ConflictError
 
 from app import models, schemas
 from typing import List, Optional
@@ -42,7 +42,7 @@ def submit_timesheet_sync(
     timesheet = get_or_create_timesheet_sync(db, organization_id, teacher_id, week_start_date)
     
     if timesheet.status != models.TimesheetStatus.OPEN:
-        raise HTTPException(status_code=400, detail="A semana já não está aberta para submissão.")
+        raise DomainError("A semana já não está aberta para submissão.", status_code=400)
 
     # Validate that all slots are logged and no future slots exist.
     # We fetch all schedule outputs for this teacher in this week.
@@ -58,7 +58,7 @@ def submit_timesheet_sync(
     ).all()
     
     if not outputs:
-        raise HTTPException(status_code=400, detail="Sem aulas planeadas nesta semana.")
+        raise DomainError("Sem aulas planeadas nesta semana.", status_code=400)
         
     output_ids = [o.id for o in outputs]
     
@@ -74,11 +74,11 @@ def submit_timesheet_sync(
         # Check if in future
         end_datetime = datetime.combine(o.date, o.timeslot.end_time)
         if end_datetime > now:
-            raise HTTPException(status_code=400, detail="Não pode submeter semanas com aulas no futuro.")
+            raise DomainError("Não pode submeter semanas com aulas no futuro.", status_code=400)
             
         status = log_map.get(o.id)
         if not status or status == models.LessonLogStatus.PENDING:
-            raise HTTPException(status_code=400, detail="Todas as aulas devem estar concluídas ou registadas como ocorrência.")
+            raise DomainError("Todas as aulas devem estar concluídas ou registadas como ocorrência.", status_code=400)
             
     timesheet.status = models.TimesheetStatus.SUBMITTED
     timesheet.submitted_at = datetime.now(timezone.utc)
@@ -235,14 +235,14 @@ def update_timesheet_status_sync(
     ).first()
 
     if not timesheet:
-        raise HTTPException(status_code=404, detail="Timesheet não encontrada.")
+        raise NotFoundError("Timesheet não encontrada.")
 
     current = timesheet.status
     allowed = ALLOWED_TIMESHEET_TRANSITIONS.get(current, set())
     if status not in allowed:
-        raise HTTPException(
+        raise DomainError(
+            f"Transição de estado inválida: {current.value} → {status.value}.",
             status_code=400,
-            detail=f"Transição de estado inválida: {current.value} → {status.value}."
         )
 
     timesheet.status = status
@@ -362,7 +362,7 @@ def get_open_occurrences_for_timesheet_sync(
     ).first()
 
     if timesheet is None:
-        raise HTTPException(status_code=404, detail="Timesheet não encontrada.")
+        raise NotFoundError("Timesheet não encontrada.")
 
     week_end_date = timesheet.week_start_date + timedelta(days=6)
 
