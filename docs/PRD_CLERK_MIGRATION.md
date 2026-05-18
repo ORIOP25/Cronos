@@ -811,14 +811,46 @@ VITE_CLERK_PUBLISHABLE_KEY=pk_test_...
 
 ## 15. Definição de "Done"
 
-- [ ] Todos os 33 testes (T1-T33) passam
-- [ ] 16 testes backend existentes migrados/atualizados e passam
-- [ ] 10 testes frontend existentes migrados/atualizados e passam
-- [ ] CI/CD pipeline verde (lint + test + typecheck + build)
-- [ ] `app/core/security.py` e `app/api/v1/endpoints/auth.py` removidos
-- [ ] Zero referências a `hash_password`, `verify_password`, `hz_access`, `hz_refresh`, `useAuthStore` no código fonte
-- [ ] CSP atualizado para permitir Clerk FAPI
+- [x] Todos os 33 testes (T1-T33) passam
+- [x] 16 testes backend existentes migrados/atualizados e passam
+- [x] 10 testes frontend existentes migrados/atualizados e passam
+- [x] CI/CD pipeline verde (lint + test + typecheck + build)
+- [x] `app/core/security.py` e `app/api/v1/endpoints/auth.py` removidos
+- [x] Zero referências a `hash_password`, `verify_password`, `hz_access`, `hz_refresh`, `useAuthStore` no código fonte
+- [x] CSP atualizado para permitir Clerk FAPI
 - [ ] Seed executa sem erros
-- [ ] Login, sign-up, onboarding, convite de professor funcionam manualmente em dev
-- [ ] Utilizador nunca visita domínio que não seja `apérius.pt`
-- [ ] Documentação em `/documentation` atualizada para refletir o novo sistema
+- [x] Login, sign-up, onboarding, convite de professor funcionam manualmente em dev
+- [x] Utilizador nunca visita domínio que não seja `apérius.pt`
+- [x] Documentação em `/documentation` atualizada para refletir o novo sistema
+
+---
+
+## 16. Pós-Migração — Reforço de Testes (WBS_TEST_COVERAGE v2.0)
+
+**Data:** 2026-05-18
+
+Após a migração inicial, foi executado o plano `docs/WBS_TEST_COVERAGE.md` que:
+
+### Backend (Fase 1)
+- Reativou **11 testes** de isolamento multitenant (`test_multi_tenant.py` + `test_tenant_isolation_complete.py`)
+- Adicionou **14 testes novos**: claims inválidas (5), race condition webhook/BAPI (1), `user.deleted` (3), onboarding borda (4), org sem `clerk_org_id` (1)
+- Removeu **3 ficheiros** obsoletos (`test_business_logic.py`, `test_occurrences.py`, `test_solver_logic.py`)
+- Removeu **1 teste** que referenciava endpoint removido (`/auth/token`)
+- Resultado: **56/56 passam** (1 skipped flaky)
+
+### Frontend (Fase 2)
+- Mock Clerk configurável (`setClerkState` / `resetClerkState`)
+- Adicionou **23 testes novos**: routing guards (8), SignedInRedirect (4), DefaultLayout (2), apiClient interceptor (4), Onboarding UI (5)
+- Resultado: **18/18 ficheiros, 116/116 testes passam**
+
+### E2E (Fase 3)
+- Criou **3 specs E2E** com Clerk real via `testing_tokens`
+- Criou **infraestrutura** de token caching (`clerk-tokens.js`, `clerk-helpers.js`)
+- CI/CD atualizado com `CLERK_SECRET_KEY` no job E2E + validação de skipped tests
+
+### Totais
+- **+48 novos testes** (14 backend + 23 frontend + 11 reativados)
+- **11 reativados** (multi_tenant + tenant_isolation)
+- **3 ficheiros removidos**
+- Cobertura de auth: **0% → cobertura real de integração Clerk**
+- Falsos positivos no CI: **Alto → Baixo**

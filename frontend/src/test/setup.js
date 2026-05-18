@@ -1,38 +1,70 @@
 import '@testing-library/jest-dom'
 import { vi } from 'vitest'
 
+const DEFAULT_STATE = {
+  isSignedIn: true,
+  isLoaded: true,
+  userId: 'user_test_123',
+  role: 'org:admin',
+  orgId: 1,
+  orgName: 'Test Org',
+  teacherId: null,
+}
+
+let _clerkState = { ...DEFAULT_STATE }
+
+export function setClerkState(overrides = {}) {
+  Object.assign(_clerkState, overrides)
+}
+
+export function resetClerkState() {
+  Object.assign(_clerkState, DEFAULT_STATE)
+}
+
 vi.mock('@clerk/react', () => ({
   useAuth: () => ({
-    isSignedIn: true,
-    isLoaded: true,
-    userId: 'user_test_123',
-    getToken: async () => 'test_token_123',
+    isSignedIn: _clerkState.isSignedIn,
+    isLoaded: _clerkState.isLoaded,
+    userId: _clerkState.isSignedIn ? _clerkState.userId : null,
+    getToken: async () => _clerkState.isSignedIn ? 'test_token_123' : null,
   }),
   useUser: () => ({
-    user: {
-      id: 'user_test_123',
-      primaryEmailAddress: { emailAddress: 'test@example.com' },
+    user: _clerkState.isSignedIn ? {
+      id: _clerkState.userId,
+      primaryEmailAddress: { emailAddress: 'test@cronos.pt' },
       fullName: 'Test User',
-    },
-    isLoaded: true,
+    } : null,
+    isLoaded: _clerkState.isLoaded,
   }),
   useOrganization: () => ({
-    organization: { id: 1, name: 'Test Org' },
-    membership: {
-      role: 'org:admin',
-      publicMetadata: { teacher_id: null },
-    },
-    isLoaded: true,
+    organization: _clerkState.orgId
+      ? { id: _clerkState.orgId, name: _clerkState.orgName, slug: 'test-org' }
+      : null,
+    membership: _clerkState.role ? {
+      role: _clerkState.role,
+      publicMetadata: { teacher_id: _clerkState.teacherId },
+    } : null,
+    isLoaded: _clerkState.isLoaded,
   }),
   useClerk: () => ({
-    openUserProfile: () => {},
-    openOrganizationProfile: () => {},
-    signOut: () => {},
+    openUserProfile: vi.fn(),
+    openOrganizationProfile: vi.fn(),
+    signOut: vi.fn(),
   }),
   ClerkProvider: ({ children }) => children,
   SignIn: () => null,
   SignUp: () => null,
   CreateOrganization: () => null,
-  Show: ({ children }) => children,
+  Show: ({ children, when, fallback }) => {
+    if (when === 'signed-out') return _clerkState.isSignedIn ? (fallback || null) : children
+    return children
+  },
   RedirectToSignIn: () => null,
+  UserButton: () => null,
+  OrganizationSwitcher: () => null,
+  Protect: ({ children, role, condition, fallback }) => {
+    if (role && _clerkState.role !== role) return fallback || null
+    if (condition && !condition({ role: _clerkState.role })) return fallback || null
+    return children
+  },
 }))

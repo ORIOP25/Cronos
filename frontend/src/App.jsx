@@ -70,7 +70,6 @@ function SignedInRedirect() {
   const { isLoaded } = useAuth()
   const { membership, isLoaded: orgLoaded } = useOrganization()
   if (!isLoaded || !orgLoaded) return <PageLoader />
-  if (membership?.role === 'org:admin') return <Navigate to="/onboarding" replace />
   return <Navigate to={getDefaultRouteForRole(membership?.role)} replace />
 }
 

@@ -200,13 +200,13 @@ class TestLessonRegistration:
         assert timesheet.status == models.TimesheetStatus.SUBMITTED
         
         # Alterar aula deve falhar
-        import fastapi
-        with pytest.raises(fastapi.HTTPException) as exc:
+        from app.core.exceptions import DomainError
+        with pytest.raises(DomainError) as exc:
             lesson_log_service.upsert_lesson_log_sync(
                 sync_db, organization_id, base_setup["user_id"], output_id, payload
             )
         assert exc.value.status_code == 400
-        assert "Esta semana já foi submetida" in str(exc.value.detail)
+        assert "Esta semana já foi submetida" in exc.value.message
         
         # Aprovar semana
         timesheet_service.update_timesheet_status_sync(
@@ -1207,14 +1207,14 @@ class TestTimesheetStateTransitions:
         assert timesheet.status == models.TimesheetStatus.OPEN
 
         # Attempt illegal transition OPEN → APPROVED
-        import fastapi
-        with pytest.raises(fastapi.HTTPException) as exc:
+        from app.core.exceptions import DomainError
+        with pytest.raises(DomainError) as exc:
             timesheet_service.update_timesheet_status_sync(
                 sync_db, organization_id, timesheet.id,
                 models.TimesheetStatus.APPROVED, base_setup["user_id"]
             )
         assert exc.value.status_code == 400
-        assert "Transição de estado inválida" in str(exc.value.detail)
+        assert "Transição de estado inválida" in exc.value.message
 
 
 class TestAutoConfirmDaily:
@@ -1403,11 +1403,11 @@ class TestTimezoneBoundary:
         sync_db.add(future_output)
         sync_db.commit()
 
-        import fastapi
-        with pytest.raises(fastapi.HTTPException) as exc:
+        from app.core.exceptions import DomainError
+        with pytest.raises(DomainError) as exc:
             lesson_log_service.upsert_lesson_log_sync(
                 sync_db, organization_id, user_id, future_output.id, payload
             )
         assert exc.value.status_code == 400
-        assert "ainda não terminou" in str(exc.value.detail)
+        assert "ainda não terminou" in exc.value.message
 

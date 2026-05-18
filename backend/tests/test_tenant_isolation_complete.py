@@ -1,75 +1,83 @@
 """
-TESTES DE TENANT ISOLATION — COBERTURA COMPLETA
-==============================================
-Valida isolamento entre organizações para TODAS as entidades:
-Rooms, Courses, Classes, Timeslots, Schedule, Occurrences, Drafts,
-Availability, Settings.
+TESTES DE TENANT ISOLATION — COBERTURA COMPLETA (CLERK)
+======================================================
+Valida isolamento entre organizacoes para TODAS as entidades:
+Rooms, Courses, Timeslots, Occurrences, Settings, IDOR.
+Reescrito para usar Clerk mock fixtures apos migracao.
 """
 
 import pytest
-pytestmark = pytest.mark.skip(reason="Migrar para Clerk - usa /auth/register removido")
-
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from unittest.mock import patch
 
 from app import models
 from app.config import settings
+from tests.conftest import create_org_and_user, mock_clerk_payload
+
 API = settings.API_V1_STR
 
 
-def _register_payload(school: str, admin: str, email: str) -> dict:
-    return {
-        "school_name": school,
-        "admin_name": admin,
-        "email": email,
-        "password": "senha_segura_123",
-    }
-
-
-async def _register(async_client: AsyncClient, school: str, admin: str, email: str) -> dict:
-    resp = await async_client.post(
-        f"{API}/auth/register",
-        json=_register_payload(school, admin, email),
+async def _setup_pair(
+    db_session: AsyncSession,
+    suffix: str,
+) -> tuple[tuple[models.Organization, models.User], tuple[models.Organization, models.User], dict, dict]:
+    """Cria duas orgs com admins e retorna (orgs, users, payloads)."""
+    org_a, user_a = await create_org_and_user(
+        db_session,
+        clerk_user_id=f"user_{suffix}_a",
+        email=f"{suffix}_a@test.pt",
+        role="admin",
+        org_name=f"Org {suffix} A",
+        clerk_org_id=f"org_{suffix}_a",
     )
-    assert resp.status_code == 200, f"Registo falhou: {resp.text}"
-    return resp.json()
+    org_b, user_b = await create_org_and_user(
+        db_session,
+        clerk_user_id=f"user_{suffix}_b",
+        email=f"{suffix}_b@test.pt",
+        role="admin",
+        org_name=f"Org {suffix} B",
+        clerk_org_id=f"org_{suffix}_b",
+    )
+    payload_a = mock_clerk_payload(f"user_{suffix}_a", f"org_{suffix}_a", "admin")
+    payload_b = mock_clerk_payload(f"user_{suffix}_b", f"org_{suffix}_b", "admin")
+    return (org_a, user_a), (org_b, user_b), payload_a, payload_b
 
 
-def _bearer(token_data: dict) -> dict:
-    return {"Authorization": f"Bearer {token_data['access_token']}"}
+def _hdr(user_id: str) -> dict:
+    return {"Authorization": f"Bearer test_{user_id}"}
 
 
 # ============================================================
 # ROOMS
 # ============================================================
 
-
 @pytest.mark.asyncio
-async def test_rooms_isolated_between_orgs(async_client: AsyncClient):
-    token_a = await _register(async_client, "Org Rooms A", "Admin A", "rooms_a@test.pt")
-    token_b = await _register(async_client, "Org Rooms B", "Admin B", "rooms_b@test.pt")
+async def test_rooms_isolated_between_orgs(
+    async_client: AsyncClient, db_session: AsyncSession
+):
+    (_org_a, _), (_org_b, _), p_a, p_b = await _setup_pair(db_session, "rooms")
 
-    async_client.headers.update(_bearer(token_a))
-    r = await async_client.post(f"{API}/rooms/", json={
-        "name": "Sala Exclusiva A", "type": "normal", "capacity": 30,
-    })
-    assert r.status_code == 200
+    with patch("app.api.deps.get_clerk_payload", return_value=p_a):
+        r = await async_client.post(f"{API}/rooms/", json={
+            "name": "Sala Exclusiva A", "type": "normal", "capacity": 30,
+        }, headers=_hdr("user_rooms_a"))
+        assert r.status_code == 200
 
-    async_client.headers.update(_bearer(token_b))
-    r = await async_client.post(f"{API}/rooms/", json={
-        "name": "Sala Exclusiva B", "type": "lab", "capacity": 20,
-    })
-    assert r.status_code == 200
+    with patch("app.api.deps.get_clerk_payload", return_value=p_b):
+        r = await async_client.post(f"{API}/rooms/", json={
+            "name": "Sala Exclusiva B", "type": "lab", "capacity": 20,
+        }, headers=_hdr("user_rooms_b"))
+        assert r.status_code == 200
 
-    async_client.headers.update(_bearer(token_a))
-    resp_a = await async_client.get(f"{API}/rooms/")
+    with patch("app.api.deps.get_clerk_payload", return_value=p_a):
+        resp_a = await async_client.get(f"{API}/rooms/", headers=_hdr("user_rooms_a"))
     names_a = [item["name"] for item in resp_a.json()]
     assert "Sala Exclusiva A" in names_a
     assert "Sala Exclusiva B" not in names_a
 
-    async_client.headers.update(_bearer(token_b))
-    resp_b = await async_client.get(f"{API}/rooms/")
+    with patch("app.api.deps.get_clerk_payload", return_value=p_b):
+        resp_b = await async_client.get(f"{API}/rooms/", headers=_hdr("user_rooms_b"))
     names_b = [item["name"] for item in resp_b.json()]
     assert "Sala Exclusiva B" in names_b
     assert "Sala Exclusiva A" not in names_b
@@ -79,32 +87,32 @@ async def test_rooms_isolated_between_orgs(async_client: AsyncClient):
 # COURSES
 # ============================================================
 
-
 @pytest.mark.asyncio
-async def test_courses_isolated_between_orgs(async_client: AsyncClient):
-    token_a = await _register(async_client, "Org Course A", "Admin A", "course_a@test.pt")
-    token_b = await _register(async_client, "Org Course B", "Admin B", "course_b@test.pt")
+async def test_courses_isolated_between_orgs(
+    async_client: AsyncClient, db_session: AsyncSession
+):
+    (_org_a, _), (_org_b, _), p_a, p_b = await _setup_pair(db_session, "courses")
 
-    async_client.headers.update(_bearer(token_a))
-    r = await async_client.post(f"{API}/courses/", json={
-        "name": "Curso Exclusivo A", "abbreviation": "CEA",
-    })
-    assert r.status_code == 200
+    with patch("app.api.deps.get_clerk_payload", return_value=p_a):
+        r = await async_client.post(f"{API}/courses/", json={
+            "name": "Curso Exclusivo A", "abbreviation": "CEA",
+        }, headers=_hdr("user_courses_a"))
+        assert r.status_code == 200
 
-    async_client.headers.update(_bearer(token_b))
-    r = await async_client.post(f"{API}/courses/", json={
-        "name": "Curso Exclusivo B", "abbreviation": "CEB",
-    })
-    assert r.status_code == 200
+    with patch("app.api.deps.get_clerk_payload", return_value=p_b):
+        r = await async_client.post(f"{API}/courses/", json={
+            "name": "Curso Exclusivo B", "abbreviation": "CEB",
+        }, headers=_hdr("user_courses_b"))
+        assert r.status_code == 200
 
-    async_client.headers.update(_bearer(token_a))
-    resp_a = await async_client.get(f"{API}/courses/")
+    with patch("app.api.deps.get_clerk_payload", return_value=p_a):
+        resp_a = await async_client.get(f"{API}/courses/", headers=_hdr("user_courses_a"))
     names_a = [c["name"] for c in resp_a.json()]
     assert "Curso Exclusivo A" in names_a
     assert "Curso Exclusivo B" not in names_a
 
-    async_client.headers.update(_bearer(token_b))
-    resp_b = await async_client.get(f"{API}/courses/")
+    with patch("app.api.deps.get_clerk_payload", return_value=p_b):
+        resp_b = await async_client.get(f"{API}/courses/", headers=_hdr("user_courses_b"))
     names_b = [c["name"] for c in resp_b.json()]
     assert "Curso Exclusivo B" in names_b
     assert "Curso Exclusivo A" not in names_b
@@ -114,125 +122,123 @@ async def test_courses_isolated_between_orgs(async_client: AsyncClient):
 # TIMESLOTS
 # ============================================================
 
-
 @pytest.mark.asyncio
-async def test_timeslots_isolated_between_orgs(async_client: AsyncClient):
-    token_a = await _register(async_client, "Org Slot A", "Admin A", "slot_a@test.pt")
-    token_b = await _register(async_client, "Org Slot B", "Admin B", "slot_b@test.pt")
+async def test_timeslots_isolated_between_orgs(
+    async_client: AsyncClient, db_session: AsyncSession
+):
+    (_org_a, _), (_org_b, _), p_a, p_b = await _setup_pair(db_session, "slots")
 
-    async_client.headers.update(_bearer(token_a))
-    r = await async_client.post(f"{API}/timeslots/generate", json={
-        "start_time": "08:00", "end_time": "10:00",
-        "slot_duration_minutes": 50, "break_duration_minutes": 10,
-        "days_of_week": [0],
-    })
-    assert r.status_code in (200, 201)
+    with patch("app.api.deps.get_clerk_payload", return_value=p_a):
+        r = await async_client.post(f"{API}/timeslots/generate", json={
+            "start_time": "08:00", "end_time": "10:00",
+            "slot_duration_minutes": 50, "break_duration_minutes": 10,
+            "days_of_week": [0],
+        }, headers=_hdr("user_slots_a"))
+        assert r.status_code in (200, 201)
 
-    async_client.headers.update(_bearer(token_b))
-    r = await async_client.post(f"{API}/timeslots/generate", json={
-        "start_time": "14:00", "end_time": "16:00",
-        "slot_duration_minutes": 50, "break_duration_minutes": 10,
-        "days_of_week": [1],
-    })
-    assert r.status_code in (200, 201)
+    with patch("app.api.deps.get_clerk_payload", return_value=p_b):
+        r = await async_client.post(f"{API}/timeslots/generate", json={
+            "start_time": "14:00", "end_time": "16:00",
+            "slot_duration_minutes": 50, "break_duration_minutes": 10,
+            "days_of_week": [1],
+        }, headers=_hdr("user_slots_b"))
+        assert r.status_code in (200, 201)
 
-    async_client.headers.update(_bearer(token_a))
-    resp_a = await async_client.get(f"{API}/timeslots/")
+    with patch("app.api.deps.get_clerk_payload", return_value=p_a):
+        resp_a = await async_client.get(f"{API}/timeslots/", headers=_hdr("user_slots_a"))
     day_a = {ts["day_of_week"] for ts in resp_a.json()}
     assert day_a == {0}
 
-    async_client.headers.update(_bearer(token_b))
-    resp_b = await async_client.get(f"{API}/timeslots/")
+    with patch("app.api.deps.get_clerk_payload", return_value=p_b):
+        resp_b = await async_client.get(f"{API}/timeslots/", headers=_hdr("user_slots_b"))
     day_b = {ts["day_of_week"] for ts in resp_b.json()}
     assert day_b == {1}
 
 
 # ============================================================
-# OCCURRENCES — cross-tenant access blocked
+# OCCURRENCES
 # ============================================================
-
 
 @pytest.mark.asyncio
 async def test_occurrences_not_visible_across_orgs(
     async_client: AsyncClient, db_session: AsyncSession
 ):
-    token_a = await _register(async_client, "Org Occ A", "Admin A", "occ_a@test.pt")
-    token_b = await _register(async_client, "Org Occ B", "Admin B", "occ_b@test.pt")
+    (_org_a, _), (_org_b, _), p_a, p_b = await _setup_pair(db_session, "occ")
 
-    async_client.headers.update(_bearer(token_b))
-    r = await async_client.get(f"{API}/occurrences/")
-    assert r.status_code == 200
-    assert len(r.json()) >= 0
+    with patch("app.api.deps.get_clerk_payload", return_value=p_b):
+        r = await async_client.get(f"{API}/occurrences/", headers=_hdr("user_occ_b"))
+        assert r.status_code == 200
+        assert len(r.json()) >= 0
 
-    resp_cross = await async_client.get(
-        f"{API}/occurrences/99999/substitutes/recommendations",
-        headers=_bearer(token_a),
-    )
-    assert resp_cross.status_code == 404
+    with patch("app.api.deps.get_clerk_payload", return_value=p_a):
+        resp_cross = await async_client.get(
+            f"{API}/occurrences/99999/substitutes/recommendations",
+            headers=_hdr("user_occ_a"),
+        )
+        assert resp_cross.status_code == 404
 
 
 # ============================================================
-# SETTINGS — org A doesn't see org B settings
+# SETTINGS
 # ============================================================
+
+@pytest.mark.asyncio
+async def test_settings_isolated_between_orgs(
+    async_client: AsyncClient, db_session: AsyncSession
+):
+    (_org_a, _), (_org_b, _), p_a, p_b = await _setup_pair(db_session, "set")
+
+    with patch("app.api.deps.get_clerk_payload", return_value=p_a):
+        r = await async_client.post(f"{API}/school/settings/", json={
+            "school_start_date": "2025-09-01",
+            "school_target_end_date": "2026-06-30",
+            "school_hard_end_date": "2026-07-31",
+        }, headers=_hdr("user_set_a"))
+        assert r.status_code == 200
+
+        resp_a = await async_client.get(f"{API}/school/settings/", headers=_hdr("user_set_a"))
+        assert resp_a.status_code == 200
+        data_a = resp_a.json()
+        assert "school_start_date" in data_a
+
+    with patch("app.api.deps.get_clerk_payload", return_value=p_b):
+        resp_b = await async_client.get(f"{API}/school/settings/", headers=_hdr("user_set_b"))
+        assert resp_b.status_code in (200, 404)
+
+
+# ============================================================
+# IDOR — Insecure Direct Object Reference
+# ============================================================
+
+@pytest.mark.asyncio
+async def test_cannot_access_room_from_other_org(
+    async_client: AsyncClient, db_session: AsyncSession
+):
+    (_org_a, _), (_org_b, _), p_a, p_b = await _setup_pair(db_session, "idor_room")
+
+    with patch("app.api.deps.get_clerk_payload", return_value=p_a):
+        r = await async_client.post(f"{API}/rooms/", json={
+            "name": "Sala IDOR", "type": "normal", "capacity": 30,
+        }, headers=_hdr("user_idor_room_a"))
+        room_id = r.json()["id"]
+
+    with patch("app.api.deps.get_clerk_payload", return_value=p_b):
+        r = await async_client.get(f"{API}/rooms/{room_id}", headers=_hdr("user_idor_room_b"))
+        assert r.status_code in (404, 405)
 
 
 @pytest.mark.asyncio
-async def test_settings_isolated_between_orgs(async_client: AsyncClient):
-    token_a = await _register(async_client, "Org Set A", "Admin A", "set_a@test.pt")
-    token_b = await _register(async_client, "Org Set B", "Admin B", "set_b@test.pt")
+async def test_cannot_access_course_from_other_org(
+    async_client: AsyncClient, db_session: AsyncSession
+):
+    (_org_a, _), (_org_b, _), p_a, p_b = await _setup_pair(db_session, "idor_course")
 
-    async_client.headers.update(_bearer(token_a))
-    r = await async_client.post(f"{API}/school/settings/", json={
-        "academic_year": "2025/2026",
-        "school_start_date": "2025-09-01",
-        "school_target_end_date": "2026-06-30",
-        "school_hard_end_date": "2026-07-31",
-    })
-    assert r.status_code == 200
+    with patch("app.api.deps.get_clerk_payload", return_value=p_a):
+        r = await async_client.post(f"{API}/courses/", json={
+            "name": "Curso IDOR", "abbreviation": "CID",
+        }, headers=_hdr("user_idor_course_a"))
+        course_id = r.json()["id"]
 
-    resp_a = await async_client.get(f"{API}/school/settings/")
-    assert resp_a.status_code == 200
-    data_a = resp_a.json()
-    assert "school_start_date" in data_a
-
-    async_client.headers.update(_bearer(token_b))
-    resp_b = await async_client.get(f"{API}/school/settings/")
-    # Org B não criou settings, portanto 404 é esperado (isolamento confirmado)
-    assert resp_b.status_code in (200, 404)
-
-
-# ============================================================
-# IDOR — não se pode aceder recurso de outra org por ID
-# ============================================================
-
-
-@pytest.mark.asyncio
-async def test_cannot_access_room_from_other_org(async_client: AsyncClient):
-    token_a = await _register(async_client, "Org IDOR A", "Admin A", "idor_a@test.pt")
-    token_b = await _register(async_client, "Org IDOR B", "Admin B", "idor_b@test.pt")
-
-    async_client.headers.update(_bearer(token_a))
-    r = await async_client.post(f"{API}/rooms/", json={
-        "name": "Sala IDOR", "type": "normal", "capacity": 30,
-    })
-    room_id = r.json()["id"]
-
-    async_client.headers.update(_bearer(token_b))
-    r = await async_client.get(f"{API}/rooms/{room_id}")
-    assert r.status_code in (404, 405)
-
-
-@pytest.mark.asyncio
-async def test_cannot_access_course_from_other_org(async_client: AsyncClient):
-    token_a = await _register(async_client, "Org IDOR C", "Admin A", "idor_c@test.pt")
-    token_b = await _register(async_client, "Org IDOR D", "Admin B", "idor_d@test.pt")
-
-    async_client.headers.update(_bearer(token_a))
-    r = await async_client.post(f"{API}/courses/", json={
-        "name": "Curso IDOR", "abbreviation": "CID",
-    })
-    course_id = r.json()["id"]
-
-    async_client.headers.update(_bearer(token_b))
-    r = await async_client.get(f"{API}/courses/{course_id}")
-    assert r.status_code == 404
+    with patch("app.api.deps.get_clerk_payload", return_value=p_b):
+        r = await async_client.get(f"{API}/courses/{course_id}", headers=_hdr("user_idor_course_b"))
+        assert r.status_code == 404

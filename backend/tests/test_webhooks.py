@@ -1,6 +1,7 @@
 import json
 import datetime
 import pytest
+from unittest.mock import patch, MagicMock
 from httpx import AsyncClient, ASGITransport
 from svix.webhooks import Webhook
 
@@ -306,3 +307,133 @@ async def test_webhook_missing_svix_headers(async_client):
         "/api/v1/webhooks/clerk", content=json.dumps(payload),
     )
     assert resp.status_code == 400
+
+
+# ── FASE 1.3: Race condition webhook vs fallback BAPI ───────────
+
+@pytest.mark.asyncio
+async def test_fallback_and_webhook_concurrent_insert(async_client, db_session):
+    """Webhook user.created + BAPI fallback → idempotente, 1 row (ON CONFLICT DO NOTHING)."""
+    from app.services import clerk_sync
+    from sqlalchemy.future import select as sa_select
+    from sqlalchemy import func
+    from app import models
+
+    clerk_user_id = "user_race_wb"
+
+    webhook_data = {
+        "id": clerk_user_id,
+        "email_addresses": [{"email_address": "race@test.com", "id": "idn_race"}],
+        "first_name": "Race",
+        "last_name": "Webhook",
+    }
+    payload = _mk_payload("user.created", webhook_data)
+    headers = _svix_headers(payload)
+
+    # Passo 1: Webhook cria o user
+    resp = await async_client.post(
+        "/api/v1/webhooks/clerk",
+        content=json.dumps(payload),
+        headers=headers,
+    )
+    assert resp.status_code == 200
+
+    # Verificar: 1 user criado
+    result = await db_session.execute(
+        sa_select(func.count()).select_from(models.User).where(
+            models.User.clerk_user_id == clerk_user_id
+        )
+    )
+    assert result.scalar() == 1
+
+    # Passo 2: BAPI fallback tenta criar o mesmo user
+    with patch.object(clerk_sync, "get_clerk_sdk") as mock_sdk:
+        mock_clerk_user = MagicMock()
+        mock_clerk_user.email_addresses = [MagicMock(email_address="race@test.com")]
+        mock_clerk_user.first_name = "Race"
+        mock_clerk_user.last_name = "Fallback"
+        mock_sdk.return_value.users.get.return_value = mock_clerk_user
+        result_user = await clerk_sync.sync_user_from_clerk_api(db_session, clerk_user_id)
+        assert result_user is not None
+
+    # Verificar: continua apenas 1 user (ON CONFLICT DO NOTHING)
+    result = await db_session.execute(
+        sa_select(func.count()).select_from(models.User).where(
+            models.User.clerk_user_id == clerk_user_id
+        )
+    )
+    assert result.scalar() == 1, "ON CONFLICT DO NOTHING falhou — user duplicado"
+
+
+# ── FASE 1.4: Webhook user.deleted ─────────────────────────────
+
+@pytest.mark.asyncio
+async def test_webhook_user_deleted_soft_deletes(async_client, db_session):
+    """user.deleted → is_active = False."""
+    from sqlalchemy.future import select as sa_select
+    from app import models
+
+    # Criar user ativo
+    user = models.User(
+        clerk_user_id="user_wb_del_soft",
+        email="softdel@test.com",
+        role="teacher",
+        is_active=True,
+    )
+    db_session.add(user)
+    await db_session.commit()
+
+    payload = _mk_payload("user.deleted", {"id": "user_wb_del_soft"})
+    headers = _svix_headers(payload)
+    resp = await async_client.post(
+        "/api/v1/webhooks/clerk", content=json.dumps(payload), headers=headers,
+    )
+    assert resp.status_code == 200
+
+    await db_session.refresh(user)
+    assert user.is_active is False
+
+
+@pytest.mark.asyncio
+async def test_webhook_user_deleted_idempotent(async_client, db_session):
+    """user.deleted 2x → não crasha, is_active permanece False."""
+    from sqlalchemy.future import select as sa_select
+    from app import models
+
+    user = models.User(
+        clerk_user_id="user_wb_del_idem",
+        email="idemdel@test.com",
+        role="teacher",
+        is_active=True,
+    )
+    db_session.add(user)
+    await db_session.commit()
+
+    payload = _mk_payload("user.deleted", {"id": "user_wb_del_idem"})
+    headers = _svix_headers(payload)
+
+    resp1 = await async_client.post(
+        "/api/v1/webhooks/clerk", content=json.dumps(payload), headers=headers,
+    )
+    assert resp1.status_code == 200
+    await db_session.refresh(user)
+    assert user.is_active is False
+
+    # Segundo user.deleted — não deve crashar
+    resp2 = await async_client.post(
+        "/api/v1/webhooks/clerk", content=json.dumps(payload), headers=headers,
+    )
+    assert resp2.status_code == 200
+    await db_session.refresh(user)
+    assert user.is_active is False
+
+
+@pytest.mark.asyncio
+async def test_webhook_user_deleted_nonexistent_user(async_client, db_session):
+    """user.deleted para user que não existe localmente → não crasha."""
+    payload = _mk_payload("user.deleted", {"id": "user_wb_nonexistent"})
+    headers = _svix_headers(payload)
+    resp = await async_client.post(
+        "/api/v1/webhooks/clerk", content=json.dumps(payload), headers=headers,
+    )
+    assert resp.status_code == 200

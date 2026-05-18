@@ -132,3 +132,15 @@ jobs:
         run: npx playwright test
         env:
           VITE_CLERK_PUBLISHABLE_KEY: ${{ secrets.VITE_CLERK_PUBLISHABLE_KEY }}
+          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
+
+      - name: Verify skipped test count (backend)
+        working-directory: backend
+        run: |
+          SKIPPED=$(pytest tests/ --collect-only -q 2>&1 | grep -oP '\d+ skipped' | grep -oP '\d+' || echo 0)
+          MAX_ALLOWED=3
+          if [ "$SKIPPED" -gt "$MAX_ALLOWED" ]; then
+            echo "ERROR: $SKIPPED skipped tests (max $MAX_ALLOWED allowed)"
+            exit 1
+          fi
+          echo "OK: $SKIPPED skipped tests (threshold: $MAX_ALLOWED)"

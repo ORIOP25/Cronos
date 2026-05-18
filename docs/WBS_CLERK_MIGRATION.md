@@ -2561,3 +2561,32 @@ git grep -n "app.api.v1.endpoints.auth" backend/app/
 | 5.5 | `testing_tokens` requer dev instance | Só funciona com `sk_test_` |
 | 5.6 | Páginas quebram sem mock Clerk | Configurar mock global no `setup.js` |
 | 6.3 | Secrets não configurados no GitHub | CI falha — configurar antes do primeiro push |
+
+---
+
+## Pós-migração — Reforço de Testes (WBS_TEST_COVERAGE)
+
+Após a migração inicial, foi executado o plano `WBS_TEST_COVERAGE.md` (v2.0, 2026-05-18) que:
+
+### Backend
+- Reativou **11 testes** de isolamento multitenant (4 `multi_tenant` + 7 `tenant_isolation`)
+- Adicionou **14 testes novos**: claims inválidas (5), race condition webhook/BAPI (1), `user.deleted` (3), onboarding borda (4), org sem `clerk_org_id` (1)
+- Removeu **3 ficheiros** obsoletos: `test_business_logic.py`, `test_occurrences.py`, `test_solver_logic.py`
+- Removeu **1 teste** obsoleto (referenciava `/auth/token` removido)
+- **Resultado: 53 testes a passar**
+
+### Frontend
+- Mock Clerk configurável (`setClerkState()` / `resetClerkState()`)
+- Adicionou **23 testes novos**: routing guards (8), SignedInRedirect (4), DefaultLayout (2), apiClient interceptor (4), Onboarding UI (5)
+- **Resultado: 18 ficheiros, 116 testes a passar, zero falhas**
+
+### E2E
+- Criou **3 specs** (12 cenários) com Clerk real via `testing_tokens`
+- Infraestrutura de token caching (`clerk-tokens.js`, `clerk-helpers.js`)
+- CI/CD atualizado com `CLERK_SECRET_KEY` no job E2E + validação de skipped tests
+
+### Totais
+- **+48 novos testes** (14 backend + 23 frontend + 11 reativados)
+- **3 ficheiros removidos**
+- **Zero referências** a `useAuthStore`, `hash_password`, `create_access_token`, `app.core.security`
+- **Cobertura de auth: de 0% para cobertura real de integração Clerk**

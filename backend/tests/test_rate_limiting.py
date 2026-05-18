@@ -169,17 +169,3 @@ class TestWeekScheduleRateLimit:
                 )
 
 
-@pytest.mark.asyncio
-class TestAuthEndpointsRateLimit:
-    """Auth endpoints devem ser protegidos mas não devem bloquear uso legítimo."""
-
-    @pytest.mark.skip(reason="/api/v1/auth/token endpoint not implemented yet")
-    async def test_login_not_rate_limited_under_normal_use(
-        self, async_client: AsyncClient
-    ):
-        for _ in range(5):
-            response = await async_client.post(
-                f"{API}/auth/token",
-                data={"username": "notfound@test.pt", "password": "wrong"},
-            )
-            assert response.status_code in (401, 403)
