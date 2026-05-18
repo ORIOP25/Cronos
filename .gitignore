@@ -10,6 +10,12 @@ venv/
 .env
 .env.local
 
+# --- Artefactos Gerados / Logs ---
+celerybeat-schedule
+test_output.txt
+frontend/playwright-report/
+frontend/test-results/
+
 # --- Frontend (Node) ---
 node_modules/
 frontend/node_modules/
