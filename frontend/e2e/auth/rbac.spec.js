@@ -12,6 +12,8 @@ import {
 import { clearTokenCache } from '../utils/clerk-tokens.js'
 
 test.describe('RBAC — Admin (Clerk real)', () => {
+  test.skip(!!process.env.CI, 'Requer Docker stack completa (backend porta 8000)')
+
   test.beforeEach(async ({ page }) => {
     clearTokenCache()
     await loginAsAdminReal(page)
@@ -34,6 +36,8 @@ test.describe('RBAC — Admin (Clerk real)', () => {
 })
 
 test.describe('RBAC — Teacher (Clerk real)', () => {
+  test.skip(!!process.env.CI, 'Requer Docker stack completa (backend porta 8000)')
+
   test.beforeEach(async ({ page }) => {
     clearTokenCache()
     await loginAsTeacherReal(page)

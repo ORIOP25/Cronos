@@ -9,6 +9,8 @@ import { loginAsAdminReal, goTo } from '../utils/clerk-helpers.js'
 import { clearTokenCache } from '../utils/clerk-tokens.js'
 
 test.describe('Session resilience', () => {
+  test.skip(!!process.env.CI, 'Requer Docker stack completa (backend porta 8000)')
+
   test.beforeEach(async ({ page }) => {
     clearTokenCache()
     await loginAsAdminReal(page)

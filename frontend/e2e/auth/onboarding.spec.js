@@ -5,12 +5,17 @@
  * O Vite proxy (/api → backend:8000) é gerido pelo Playwright webServer.
  *
  * CLERK_SECRET_KEY deve estar definida no .env ou GitHub Secrets.
+ *
+ * SKIP em CI: precisa da stack Docker completa (backend + frontend).
+ * Para correr localmente: docker compose up -d && npx playwright test e2e/auth/
  */
 import { test, expect } from '@playwright/test'
 import { loginAsAdminReal, goTo, expectText } from '../utils/clerk-helpers.js'
 import { clearTokenCache } from '../utils/clerk-tokens.js'
 
 test.describe('Onboarding — Clerk real', () => {
+  test.skip(!!process.env.CI, 'Requer Docker stack completa (backend porta 8000)')
+
   test.beforeEach(async ({ page }) => {
     clearTokenCache()
     await loginAsAdminReal(page)
