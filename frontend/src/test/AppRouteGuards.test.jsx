@@ -72,7 +72,7 @@ describe('RequireAdmin', () => {
 
   it('blocks org:member (redirects to /login)', () => {
     setClerkState({ role: 'org:member' })
-    const { container } = renderWithProviders(
+    renderWithProviders(
       <MemoryRouter><RequireAdmin><div>Admin</div></RequireAdmin></MemoryRouter>
     )
     expect(screen.queryByText('Admin')).toBeNull()

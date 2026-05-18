@@ -1,4 +1,4 @@
-"""Tarefas Celery para o gerador de horários — Apérius.
+"""Tarefas Celery para o gerador de horários — Cronos.
 
 Orquestra o fluxo completo:
   1. FETCH  — carrega todos os dados necessários da BD.

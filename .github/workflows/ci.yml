@@ -21,7 +21,7 @@ jobs:
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: ci_pg_pass
-          POSTGRES_DB: horario_zen_test_db
+          POSTGRES_DB: cronos_test_db
         ports:
           - 5432:5432
         options: >-
@@ -52,7 +52,7 @@ jobs:
         run: alembic upgrade head
         env:
           ENVIRONMENT: local
-          DATABASE_URL: "postgresql+asyncpg://postgres:ci_pg_pass@localhost:5432/horario_zen_test_db"
+          DATABASE_URL: "postgresql+asyncpg://postgres:ci_pg_pass@localhost:5432/cronos_test_db"
           SECRET_KEY: ci-test-secret-key-not-for-production
           CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
           CLERK_WEBHOOK_SECRET: ${{ secrets.CLERK_WEBHOOK_SECRET }}
@@ -63,7 +63,7 @@ jobs:
         run: pytest tests/ -v --cov=app --cov-report=xml:coverage.xml --tb=short
         env:
           ENVIRONMENT: local
-          DATABASE_URL: "postgresql+asyncpg://postgres:ci_pg_pass@localhost:5432/horario_zen_test_db"
+          DATABASE_URL: "postgresql+asyncpg://postgres:ci_pg_pass@localhost:5432/cronos_test_db"
           SECRET_KEY: ci-test-secret-key-not-for-production
           RATELIMIT_ENABLED: "false"
           CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}

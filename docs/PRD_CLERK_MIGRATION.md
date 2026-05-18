@@ -1,6 +1,6 @@
 # PRD — Migração de Autenticação para Clerk
 
-**Projeto:** Horário-Zen (Apérius)
+**Projeto:** Cronos
 **Data:** 2026-05-12
 **Versão:** 2.1 (com correções de revisão)
 **Status:** Aprovado para implementação

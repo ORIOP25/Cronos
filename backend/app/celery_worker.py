@@ -4,7 +4,7 @@ from .config import settings
 
 # 1. Cria a instância do Celery
 celery_app = Celery(
-    "horario_zen_worker",
+    "cronos_worker",
     broker=settings.CELERY_BROKER_URL,
     backend=settings.CELERY_BROKER_URL,
 )

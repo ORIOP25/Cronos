@@ -1,4 +1,4 @@
-"""CP-SAT Solver Engine V2 — Apérius (Fase E).
+"""CP-SAT Solver Engine V2 — Cronos (Fase E).
 
 Opera sobre datas absolutas (real calendar dates) em vez de padrão semanal.
 Resolve 5 objetivos em cascata lexicográfica:

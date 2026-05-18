@@ -1,7 +1,7 @@
 # Objetivo final do produto
 
 ## Posicionamento
-Apérius e um SaaS premium para escolas profissionais privadas em Portugal.
+Cronos e um SaaS premium para escolas profissionais privadas em Portugal.
 O foco comercial nao e ser a opcao mais barata, mas ser a opcao mais confiavel para resolver a dor operacional de horarios.
 Modelo de adocao: self-service, com utilizacao autonoma da plataforma e contacto humano apenas em suporte ao cliente quando necessario.
 

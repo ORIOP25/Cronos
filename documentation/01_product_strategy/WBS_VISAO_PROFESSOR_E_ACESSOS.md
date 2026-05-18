@@ -744,7 +744,7 @@ Foi identificada uma causa real e critica que permite perda de dados operacionai
 3. origem exata do pedido destrutivo no ambiente real (manual, script externo, chamada indevida, etc.): **a definir** ate ativar trilho de auditoria de requests destrutivos.
 
 ### Estado de persistencia da base de dados
-1. em `docker-compose.yml`, o Postgres usa volume nomeado `horario_zen_postgres_data`: **confirmado**;
+1. em `docker-compose.yml`, o Postgres usa volume nomeado `cronos_postgres_data`: **confirmado**;
 2. isto reduz probabilidade de "perda por idle" associada a volume efemero local;
 3. portanto, no estado atual, a causa principal de perda de dados identificada no codigo e a exposicao do endpoint destrutivo.
 

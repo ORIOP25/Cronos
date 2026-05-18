@@ -12,7 +12,7 @@ class Settings(BaseSettings):
     """
     
     # --- Constantes do Projeto ---
-    PROJECT_NAME: str = "Horário-Zen API"
+    PROJECT_NAME: str = "Cronos API"
     API_V1_STR: str = "/api/v1"
 
     # --- Ambiente (Validação: Só aceita estas 3 strings) ---

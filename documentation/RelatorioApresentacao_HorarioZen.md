@@ -1,6 +1,6 @@
 ---
 
-# **📘 Dossiê Técnico e Estratégico: Horário-Zen (v0.8)**
+# **📘 Dossiê Técnico e Estratégico: Cronos (v0.8)**
 
 Data: 07 de Janeiro de 2026
 
@@ -14,9 +14,9 @@ Autor: Rodrigo Manguinhas
 
 ## **1\. Sumário Executivo**
 
-O **Horário-Zen** é uma plataforma SaaS (*Software as a Service*) B2B desenhada para resolver o problema crítico da gestão temporal em instituições de ensino, com foco especializado em **Escolas Profissionais e Sistemas Modulares**.
+O **Cronos** é uma plataforma SaaS (*Software as a Service*) B2B desenhada para resolver o problema crítico da gestão temporal em instituições de ensino, com foco especializado em **Escolas Profissionais e Sistemas Modulares**.
 
-Ao contrário das soluções tradicionais que tratam o horário escolar como uma grelha estática semanal (Setembro a Junho), o Horário-Zen adota uma abordagem de **Agendamento Dinâmico (*Rolling Horizon*)**. O sistema reconhece que o ensino profissional requer flexibilidade para gerir cargas horárias modulares (UFCDs), compensar atrasos pedagógicos e adaptar-se à disponibilidade variável dos docentes ao longo do ano.
+Ao contrário das soluções tradicionais que tratam o horário escolar como uma grelha estática semanal (Setembro a Junho), o Cronos adota uma abordagem de **Agendamento Dinâmico (*Rolling Horizon*)**. O sistema reconhece que o ensino profissional requer flexibilidade para gerir cargas horárias modulares (UFCDs), compensar atrasos pedagógicos e adaptar-se à disponibilidade variável dos docentes ao longo do ano.
 
 A proposta de valor não é apenas "gerar um horário", mas sim oferecer um **Sistema Operativo de Gestão de Tempo** que garante o cumprimento dos planos curriculares, otimiza recursos e resolve imprevistos diários (substituições) em tempo real.
 
@@ -35,7 +35,7 @@ As escolas profissionais em Portugal enfrentam desafios únicos que o software "
 
 ### **2.2. A Solução (Unique Selling Proposition \- USP)**
 
-O Horário-Zen diferencia-se por três pilares:
+O Cronos diferencia-se por três pilares:
 
 1. **Agendamento Dinâmico:** O horário não é para "o ano todo". É gerado para períodos específicos (ex: mensal ou bimestral), tendo em conta o progresso real das turmas.  
 2. **Rastreio de Progresso (ClassProgress):** O sistema sabe que o Módulo A tem 50h e que já foram dadas 30h. O algoritmo prioriza automaticamente as disciplinas atrasadas na próxima geração de horário.  
@@ -193,5 +193,5 @@ Se o solver retornar INFEASIBLE:
 
 Conclusão Final:
 
-O Horário-Zen evoluiu de uma ferramenta académica para uma solução de engenharia robusta, atacando um nicho de mercado mal servido (Ensino Profissional). A arquitetura modular e o foco na gestão dinâmica de tempo posicionam o produto como um parceiro operacional indispensável para as escolas, garantindo não apenas a criação do horário, mas a viabilidade do ano letivo.
+O Cronos evoluiu de uma ferramenta académica para uma solução de engenharia robusta, atacando um nicho de mercado mal servido (Ensino Profissional). A arquitetura modular e o foco na gestão dinâmica de tempo posicionam o produto como um parceiro operacional indispensável para as escolas, garantindo não apenas a criação do horário, mas a viabilidade do ano letivo.
 

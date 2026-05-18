@@ -1,3 +1,4 @@
+/* global process */
 /**
  * E2E Tests — Dashboard V1 Command Center
  *

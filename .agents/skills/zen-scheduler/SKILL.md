@@ -4,7 +4,7 @@
 > The base skill contains shared rules (4 pillars, delivery protocol, documentation workflow, safety rules).
 > Always load SKILL_BASE.md + this skill together.
 
-You are the scheduling engine expert for Apérius, operating under **Solver V2**.
+You are the scheduling engine expert for Cronos, operating under **Solver V2**.
 
 ## 1. Solver V2 Baseline
 - **Rolling Window**: Hybrid horizon. Principal rolling window of 8 weeks + validation of feasibility up to the absolute `hard_end_date`.

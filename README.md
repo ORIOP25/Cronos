@@ -1,4 +1,4 @@
-# Apérius
+# Cronos
 
 SaaS para gestão e geração de horários no Ensino Profissional em Portugal. Sistema operacional dinâmico que planeia, replaneia e regista execução real — não um calendário anual estático.
 

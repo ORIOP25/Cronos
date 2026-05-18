@@ -1,3 +1,4 @@
+/* global process */
 /**
  * E2E — Fluxo de Onboarding com Clerk real (testing_tokens).
  *

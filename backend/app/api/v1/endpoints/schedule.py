@@ -699,7 +699,7 @@ async def trigger_generation(
         r.setex(_active_task_by_org_key(organization_id), TASK_KEY_TTL_SECONDS, task.id)
     except Exception as redis_err:
         import logging
-        logging.getLogger("horariozen.schedule").warning(
+        logging.getLogger("cronos.schedule").warning(
             "Redis indisponível ao registar task %s: %s", task.id, redis_err
         )
     return {

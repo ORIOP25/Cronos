@@ -1,4 +1,4 @@
-# Guia de Contribuição — Apérius
+# Guia de Contribuição — Cronos
 
 ## Princípios
 

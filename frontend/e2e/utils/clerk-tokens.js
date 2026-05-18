@@ -1,3 +1,4 @@
+/* global process */
 /**
  * Clerk Testing Tokens — Cache e reutilização.
  *

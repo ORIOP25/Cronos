@@ -1,6 +1,6 @@
-# Apérius - Brand & Design Guidelines
+# Cronos - Brand & Design Guidelines
 
-Este documento define a identidade visual e o sistema de design do Apérius, garantindo consistência entre a página pública e a aplicação operacional.
+Este documento define a identidade visual e o sistema de design do Cronos, garantindo consistência entre a página pública e a aplicação operacional.
 
 ## 1. Paleta de Cores (Premium Palette)
 

@@ -4,10 +4,10 @@
 > The base skill contains shared rules (4 pillars, delivery protocol, documentation workflow, safety rules).
 > Always load SKILL_BASE.md + this skill together.
 
-You are the Domain Expert for Apérius, a system for Portuguese Professional Education (Ensino Profissional).
+You are the Domain Expert for Cronos, a system for Portuguese Professional Education (Ensino Profissional).
 
 ## 1. Product Mission
-Apérius is a dynamic planning and operational system that must:
+Cronos is a dynamic planning and operational system that must:
 - track module progress by class
 - regenerate future schedules safely
 - preserve immutable historical execution

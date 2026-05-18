@@ -1,4 +1,4 @@
-# Auditoria Frontend & UI/UX — Apérius
+# Auditoria Frontend & UI/UX — Cronos
 
 **Data**: 03 Maio 2026  
 **Âmbito**: Análise completa ao frontend (componentes, páginas, formulários, modais, tabelas, acessibilidade, cores, texto, ícones, formatação)  

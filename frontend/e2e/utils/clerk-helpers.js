@@ -1,3 +1,4 @@
+/* global process */
 /**
  * Helpers de autenticação Clerk para E2E Playwright.
  *

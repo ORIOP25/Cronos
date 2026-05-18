@@ -1,6 +1,6 @@
 # WBS — Migração para Clerk: Guia de Implementação
 
-**Projeto:** Horário-Zen (Apérius)
+**Projeto:** Cronos
 **Versão:** 1.0
 **Base:** PRD v2.1
 

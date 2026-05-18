@@ -1,4 +1,4 @@
-# Website Institucional Apérius
+# Website Institucional Cronos
 
 ## Objetivo
 Definir o site publico institucional separado da aplicação operacional.

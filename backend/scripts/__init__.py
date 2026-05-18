@@ -1,2 +1,2 @@
-# Scripts de manutenção do Apérius.
+# Scripts de manutenção do Cronos.
 # Executados pelo entrypoint.sh durante o arranque do container.

@@ -128,12 +128,12 @@ async def security_headers(request, call_next):
     else:
         response.headers["Content-Security-Policy"] = (
             "default-src 'self'; "
-            "script-src 'self' https://clerk.aperius.pt; "
+            "script-src 'self' https://clerk.cronos.pt; "
             "worker-src 'self' blob:; "
-            "connect-src 'self' https://clerk.aperius.pt; "
+            "connect-src 'self' https://clerk.cronos.pt; "
             "img-src 'self' https://img.clerk.com data:; "
-            "style-src 'self' 'unsafe-inline' https://clerk.aperius.pt; "
-            "frame-src 'self' https://clerk.aperius.pt; "
+            "style-src 'self' 'unsafe-inline' https://clerk.cronos.pt; "
+            "frame-src 'self' https://clerk.cronos.pt; "
             "frame-ancestors 'self'; "
             "upgrade-insecure-requests"
         )
@@ -156,6 +156,6 @@ def root():
     return {
         "status": "online", 
         "version": "1.0.0", 
-        "system": "Horário-Zen",
+        "system": "Cronos",
         "docs": "/docs"
     }

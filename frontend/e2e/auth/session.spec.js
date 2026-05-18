@@ -1,3 +1,4 @@
+/* global process */
 /**
  * E2E — Resiliência de sessão.
  *

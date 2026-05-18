@@ -19,7 +19,7 @@ describe('SignedInRedirect', () => {
 
   it('redirects admin to /dashboard', () => {
     setClerkState({ role: 'org:admin' })
-    const { container } = renderWithProviders(
+    renderWithProviders(
       <MemoryRouter><SignedInRedirect /></MemoryRouter>
     )
     expect(screen.queryByTestId('loader')).toBeNull()
@@ -27,7 +27,7 @@ describe('SignedInRedirect', () => {
 
   it('redirects teacher to /my-availability', () => {
     setClerkState({ role: 'org:member' })
-    const { container } = renderWithProviders(
+    renderWithProviders(
       <MemoryRouter><SignedInRedirect /></MemoryRouter>
     )
     expect(screen.queryByTestId('loader')).toBeNull()
@@ -35,7 +35,7 @@ describe('SignedInRedirect', () => {
 
   it('redirects unknown role to /create-org', () => {
     setClerkState({ role: 'student' })
-    const { container } = renderWithProviders(
+    renderWithProviders(
       <MemoryRouter><SignedInRedirect /></MemoryRouter>
     )
     expect(screen.queryByTestId('loader')).toBeNull()

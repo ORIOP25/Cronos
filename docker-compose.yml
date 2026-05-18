@@ -1,10 +1,10 @@
-name: horario_zen
+name: cronos
 
 # Credenciais definidas via variáveis de ambiente ou ficheiro .env na raiz.
 # Exemplo de .env (NUNCA comitar):
 #   POSTGRES_USER=postgres
 #   POSTGRES_PASSWORD=<senha_segura>
-#   POSTGRES_DB=horario_zen_db
+#   POSTGRES_DB=cronos_db
 #   BOOTSTRAP_ADMIN_PASSWORD=<senha_admin_segura>
 #   REDIS_PASSWORD=<senha_redis_opcional>
 
@@ -16,7 +16,7 @@ services:
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD deve ser definida no .env}
-      POSTGRES_DB: ${POSTGRES_DB:-horario_zen_db}
+      POSTGRES_DB: ${POSTGRES_DB:-cronos_db}
     ports:
       - "5432:5432"
     volumes:
@@ -50,15 +50,15 @@ services:
     env_file:
       - ./backend/.env
     environment:
-      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-horario_zen_db}
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-cronos_db}
       - CELERY_BROKER_URL=redis://redis:6379/0
       - REDIS_URL=redis://redis:6379/0
       - RUN_MIGRATIONS=1
       - BOOTSTRAP_DEFAULT_ADMIN=0
-      - BOOTSTRAP_ADMIN_EMAIL=admin@horariozen.local
+      - BOOTSTRAP_ADMIN_EMAIL=admin@cronos.local
       - BOOTSTRAP_ADMIN_PASSWORD=${BOOTSTRAP_ADMIN_PASSWORD:-admin1234}
-      - BOOTSTRAP_ADMIN_NAME=Admin Apérius
-      - BOOTSTRAP_ORG_NAME=Escola Demo Apérius
+      - BOOTSTRAP_ADMIN_NAME=Admin Cronos
+      - BOOTSTRAP_ORG_NAME=Escola Demo Cronos
 
     ports:
       - "8000:8000"
@@ -85,7 +85,7 @@ services:
     env_file:
       - ./backend/.env
     environment:
-      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-horario_zen_db}
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-cronos_db}
       - CELERY_BROKER_URL=redis://redis:6379/0
       - REDIS_URL=redis://redis:6379/0
       - RUN_MIGRATIONS=0
@@ -106,7 +106,7 @@ services:
     env_file:
       - ./backend/.env
     environment:
-      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-horario_zen_db}
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-cronos_db}
       - CELERY_BROKER_URL=redis://redis:6379/0
       - REDIS_URL=redis://redis:6379/0
       - RUN_MIGRATIONS=0
@@ -139,6 +139,6 @@ services:
 
 volumes:
   postgres_data:
-    name: horario_zen_postgres_data
+    name: cronos_postgres_data
   redis_data:
-    name: horario_zen_redis_data
+    name: cronos_redis_data

@@ -36,7 +36,7 @@ const RoomForm = ({ onSuccessCallback }) => {
       if (onSuccessCallback) onSuccessCallback()
       setTimeout(() => setSuccessMsg(''), 3000)
     },
-    onError: (error) => {
+    onError: () => {
         // Limpa sucesso se houver erro
         setSuccessMsg('')
     }

@@ -14,7 +14,7 @@ const GenericModalForm = ({
   onClose, 
   title, 
   initialData, 
-  FormComponent,
+  FormComponent, // eslint-disable-line no-unused-vars
   onSubmit, 
   isLoading,
   error,

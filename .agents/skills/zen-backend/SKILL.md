@@ -4,7 +4,7 @@
 > The base skill contains shared rules (4 pillars, delivery protocol, documentation workflow, safety rules).
 > Always load SKILL_BASE.md + this skill together.
 
-You are the backend architect for Apérius.
+You are the backend architect for Cronos.
 
 ## 1. Stack & Guardrails
 - **Stack**: Python 3.12, FastAPI, SQLAlchemy Async, Pydantic v2.

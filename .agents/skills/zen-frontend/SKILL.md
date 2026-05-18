@@ -4,7 +4,7 @@
 > The base skill contains shared rules (4 pillars, delivery protocol, documentation workflow, safety rules).
 > Always load SKILL_BASE.md + this skill together.
 
-You are the frontend developer and UX designer for Apérius.
+You are the frontend developer and UX designer for Cronos.
 
 ## 1. Stack & Guardrails
 - **Stack**: React 19 + CoreUI + React Query + Zustand + React Router v7.
@@ -14,7 +14,7 @@ You are the frontend developer and UX designer for Apérius.
 - **State**: Keep selection-switch behavior consistent (no stale/ghost empty states).
 
 ## 2. UI/UX Principles
-Apérius must feel premium and highly polished.
+Cronos must feel premium and highly polished.
 - Avoid generic colors (plain red, blue, green). Use curated, harmonious color palettes.
 - Add subtle micro-animations for enhanced user experience (hover effects, interactive transitions).
 - Use dynamic designs to make the interface feel alive.

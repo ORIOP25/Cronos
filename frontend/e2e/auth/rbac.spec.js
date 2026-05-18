@@ -1,3 +1,4 @@
+/* global process */
 /**
  * E2E — RBAC com Clerk real (testing_tokens).
  *
@@ -7,7 +8,7 @@
 import { test, expect } from '@playwright/test'
 import {
   loginAsAdminReal, loginAsTeacherReal,
-  goTo, expectApiOk,
+  goTo,
 } from '../utils/clerk-helpers.js'
 import { clearTokenCache } from '../utils/clerk-tokens.js'
 

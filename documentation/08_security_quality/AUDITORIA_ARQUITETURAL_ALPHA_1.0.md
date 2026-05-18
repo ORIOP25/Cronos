@@ -1,4 +1,4 @@
-# AUDITORIA ARQUITETURAL COMPLETA — Apérius Alpha 1.0
+# AUDITORIA ARQUITETURAL COMPLETA — Cronos Alpha 1.0
 
 *(Auditoria de raiz focada em risco sistémico e capacidade de crescimento)*
 
@@ -37,7 +37,7 @@ No `docker-compose.yml:77`:
 ```yaml
 worker:
   environment:
-    - DATABASE_URL=postgresql+psycopg2://postgres:mysecretpassword@db:5432/horario_zen_db
+    - DATABASE_URL=postgresql+psycopg2://postgres:mysecretpassword@db:5432/cronos_db
 ```
 
 O backend usa `+asyncpg`, o worker/beat usam `+psycopg2`. A base de dados em `app/db/database.py` faz replace inteligente, mas os containers recebem URLs diferentes, o que invalida a lógica de fallback.
@@ -201,9 +201,9 @@ Estes diretórios foram criados para features planeadas mas mantêm-se vazios. G
 
 ---
 
-### 16. Skills: Duplicação de Conteúdo entre `.agents/skills/*/SKILL.md` e `.github/agents/Agent_HorarioZen.md`
+### 16. Skills: Duplicação de Conteúdo entre `.agents/skills/*/SKILL.md` e `.github/agents/Agent_Cronos.md`
 
-Os 6 ficheiros de skill (≈300 linhas cada, total ≈1800 linhas) e o `Agent_HorarioZen.md` (135 linhas) contêm **redundância massiva**:
+Os 6 ficheiros de skill (≈300 linhas cada, total ≈1800 linhas) e o `Agent_Cronos.md` (135 linhas) contêm **redundância massiva**:
 - Os 4 pilares de engenharia repetem-se em TODAS as skills
 - O Delivery Protocol repete-se em TODAS
 - O Documentation Protocol repete-se em TODAS
@@ -211,7 +211,7 @@ Os 6 ficheiros de skill (≈300 linhas cada, total ≈1800 linhas) e o `Agent_Ho
 
 **Impacto**: Para alterar uma regra global (ex: adicionar um 5º pilar), seria preciso editar 7 ficheiros. Isto é insustentável a médio prazo.
 
-**Recomendação**: Criar um `SKILL_BASE.md` partilhado com as regras comuns. Cada skill herda/importa (via prompt injection) a base + as suas especializações. Alternativa: consolidar `Agent_HorarioZen.md` (que já é o Lead Architect) como base e fazer as skills mais leves, apenas com especializações.
+**Recomendação**: Criar um `SKILL_BASE.md` partilhado com as regras comuns. Cada skill herda/importa (via prompt injection) a base + as suas especializações. Alternativa: consolidar `Agent_Cronos.md` (que já é o Lead Architect) como base e fazer as skills mais leves, apenas com especializações.
 
 ---
 

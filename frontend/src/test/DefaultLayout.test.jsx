@@ -1,9 +1,8 @@
 import React from 'react'
 import { describe, it, expect, vi } from 'vitest'
-import { screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { renderWithProviders } from './testUtils'
-import { setClerkState, resetClerkState } from './setup'
+import { setClerkState } from './setup'
 import DefaultLayout from '../components/DefaultLayout'
 
 vi.mock('../hooks/useSchoolData', () => ({

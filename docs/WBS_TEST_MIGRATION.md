@@ -1,6 +1,6 @@
 # WBS — Migração de Testes para Clerk
 
-**Projeto:** Horário-Zen (Apérius)
+**Projeto:** Cronos
 **Versão:** 1.0
 **Base:** PRD Clerk Migration v2.1 | WBS Clerk Migration v1.0
 **Data:** 2026-05-14

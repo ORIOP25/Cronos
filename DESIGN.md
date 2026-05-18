@@ -1,5 +1,5 @@
 ---
-name: Apérius
+name: Cronos
 description: |
   Warm, authoritative design system for a school schedule management SaaS.
   Built on a 60-30-10 rule: 60% warm white surfaces, 30% deep brown navigation
