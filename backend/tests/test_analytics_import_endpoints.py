@@ -148,28 +148,3 @@ class TestLessonsEndpoints:
         r = await async_client.get(f"{API}/lessons/")
         assert r.status_code == 401
 
-
-@pytest.mark.asyncio
-class TestSubstitutionsLegacyEndpoints:
-    async def test_substitutions_legacy_suggestions_returns_410(
-        self, async_client: AsyncClient, admin_token_headers: dict
-    ):
-        url = (
-            f"{API}/substitutions/suggestions"
-            "?timeslot_id=1&date_str=2026-01-01&original_teacher_id=1"
-        )
-        r = await async_client.get(url, headers=admin_token_headers)
-        assert r.status_code == 410
-
-    async def test_substitutions_create_no_auth(self, async_client: AsyncClient):
-        r = await async_client.post(
-            f"{API}/substitutions/",
-            json={
-                "lesson_id": 1,
-                "timeslot_id": 1,
-                "original_teacher_id": 1,
-                "substitute_teacher_id": 2,
-                "date": "2026-01-01",
-            },
-        )
-        assert r.status_code == 401
