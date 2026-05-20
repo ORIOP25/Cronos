@@ -125,7 +125,7 @@ def _validate_task_ownership(task_id: str, organization_id: int) -> redis.Redis:
         org_value = r.get(_task_org_key(task_id))
         if not org_value:
             raise HTTPException(status_code=404, detail="Task não encontrada")
-        if org_value.decode("utf-8") != str(organization_id):
+        if org_value != str(organization_id):
             raise HTTPException(status_code=403, detail="Sem permissões para esta task")
         return r
     except HTTPException:
@@ -730,7 +730,7 @@ async def get_status(
     if task_result.status in {"SUCCESS", "FAILURE", "REVOKED"}:
         active_key = _active_task_by_org_key(current_user.organization_id)
         active_task_value = r.get(active_key)
-        if active_task_value and active_task_value.decode("utf-8") == task_id:
+        if active_task_value and active_task_value == task_id:
             r.delete(active_key)
         r.delete(_task_cancel_key(task_id))
 

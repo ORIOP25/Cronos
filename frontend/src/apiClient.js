@@ -26,7 +26,7 @@ apiClient.interceptors.request.use(async (config) => {
   return config;
 });
 
-let _redirecting = false;
+
 
 apiClient.interceptors.response.use(
   (response) => response,
@@ -34,10 +34,6 @@ apiClient.interceptors.response.use(
     const status = error?.response?.status;
     if (status === 404) {
       return Promise.resolve(error.response);
-    }
-    if (status === 401 && !window.location.pathname.startsWith('/login') && !_redirecting) {
-      _redirecting = true;
-      window.location.replace('/login');
     }
     if (status === 403) {
       const detail = error?.response?.data?.detail;

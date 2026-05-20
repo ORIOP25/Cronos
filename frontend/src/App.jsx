@@ -29,7 +29,7 @@ const Onboarding = React.lazy(() => import('./pages/Onboarding'))
 
 import DefaultLayout from './components/DefaultLayout'
 import { MarketingSite } from './pages/MarketingSite'
-import { ROUTE_MY_SCHEDULES, getDefaultRouteForRole } from './roleAccess'
+import { ROUTE_MY_SCHEDULES, getDefaultRouteForRole, getForbiddenRedirectRoute } from './roleAccess'
 
 const PageLoader = () => (
   <div className="d-flex justify-content-center align-items-center" style={{ minHeight: '40vh' }}>
@@ -53,7 +53,7 @@ function RequireAdmin({ children }) {
   const { membership, isLoaded: orgLoaded } = useOrganization()
   if (!isLoaded || !orgLoaded) return <PageLoader />
   if (!isSignedIn) return <RedirectToSignIn />
-  if (membership?.role !== 'org:admin') return <Navigate to="/login" />
+  if (membership?.role !== 'org:admin') return <Navigate to={getForbiddenRedirectRoute(membership?.role)} />
   return children
 }
 
@@ -62,7 +62,7 @@ function RequireTeacher({ children }) {
   const { membership, isLoaded: orgLoaded } = useOrganization()
   if (!isLoaded || !orgLoaded) return <PageLoader />
   if (!isSignedIn) return <RedirectToSignIn />
-  if (membership?.role !== 'org:member') return <Navigate to="/login" />
+  if (membership?.role !== 'org:member') return <Navigate to={getForbiddenRedirectRoute(membership?.role)} />
   return children
 }
 

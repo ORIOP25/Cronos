@@ -32,7 +32,7 @@ ACADEMIC_YEAR = "2025/2026"
 ORGANIZATION_INFO = {
     "name": "Escola Profissional Mafrense",
     "admin_name": "Admin Aperius",
-    "admin_email": "cronosteste@gmail.com",
+    "admin_email": "aperiusteste@gmail.com",
     "admin_password": "Sporting.2026#$",
 }
 
@@ -123,7 +123,7 @@ COURSE_CURRICULA = {
 }
 
 TEACHER_PROFILES = [
-    {"name": "Professor Cronos 1", "email": "cronosprofessor1@gmail.com", "subjects": ["portugues"]},
+    {"name": "Rodrigo Manguninhas", "email": "rodrigommanguinhas@gmail.com", "subjects": ["portugues"]},
     {"name": "Professor Cronos 2", "email": "cronosprofessor2@gmail.com", "subjects": ["ingles"]},
     {"name": "Carla Sousa", "email": "carla.sousa@epnorte.pt", "subjects": ["matematica"]},
     {"name": "Diana Moreira", "email": "diana.moreira@epnorte.pt", "subjects": ["area_integracao", "direito"]},
@@ -328,7 +328,6 @@ def _create_base_entities(db, clerk_org_id: str, admin_clerk_user_id: str) -> tu
         name=ORGANIZATION_INFO["admin_name"],
         email=ORGANIZATION_INFO["admin_email"],
         clerk_user_id=admin_clerk_user_id,
-        hashed_password=None,
         role=UserRole.admin,
         organization_id=organization.id,
         is_active=True,
@@ -423,7 +422,6 @@ def run_seed() -> None:
                     name=profile["name"],
                     email=profile["email"],
                     clerk_user_id=clerk_id,
-                    hashed_password=None,
                     role=UserRole.teacher,
                     teacher_id=teacher.id,
                     organization_id=organization.id,
@@ -578,7 +576,7 @@ def run_seed() -> None:
 
         print("\n  LOGINS PRINCIPAIS (contas Clerk reais):")
         print(f"   Admin -> {ORGANIZATION_INFO['admin_email']} / {ORGANIZATION_INFO['admin_password']}")
-        print(f"   Professor -> cronosprofessor1@gmail.com / Sporting.2026#$")
+        print(f"   Professor -> rodrigommanguinhas@gmail.com / Sporting.2026#$")
         print(f"   Professor -> cronosprofessor2@gmail.com / Sporting.2026#$")
 
         print("\n  [OK] Seed preparado para testes manuais de operacao e navegacao (auth via Clerk)")

@@ -12,7 +12,6 @@ from app.api.v1.endpoints import (
     lessons,
     timeslots,
     health,
-    substitutions,
     courses,
     org_settings,
     occurrences,
@@ -37,7 +36,6 @@ api_router.include_router(timeslots.router, prefix="/timeslots", tags=["timeslot
 api_router.include_router(schedule.router, prefix="/schedule", tags=["Gerador de Horários"])
 api_router.include_router(analytics.router, prefix="/analytics", tags=["Analytics"])
 api_router.include_router(import_data.router, prefix="/import", tags=["Importação de Dados"])
-api_router.include_router(substitutions.router, prefix="/substitutions", tags=["substitutions"])
 api_router.include_router(courses.router, prefix="/courses", tags=["courses"])
 api_router.include_router(org_settings.router, prefix="/school", tags=["Configurações da Escola"])
 api_router.include_router(occurrences.router, prefix="/occurrences", tags=["Ocorrências de Aulas"])
