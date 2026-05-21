@@ -14,7 +14,7 @@ import {
   useMyTimesheet,
   useSubmitMyTimesheet
 } from '../hooks/useSchoolData'
-import { useOrganization } from '@clerk/react'
+import { useOrganization, useUser } from '@clerk/react'
 
 const HORIZON_NOT_CONFIGURED_MESSAGE =
   'Não existe período semanal configurado para a escola. Contacte a equipa administrativa para validar o ano letivo ativo.'
@@ -32,6 +32,10 @@ function toGenerationCacheKey(activeGenerationId) {
 }
 
 function parseDateAtNoon(dateStr) {
+  if (!dateStr) {
+    const today = new Date()
+    return new Date(today.getFullYear(), today.getMonth(), today.getDate(), 12, 0, 0, 0)
+  }
   const [year, month, day] = dateStr.split('-').map(Number)
   return new Date(year, month - 1, day, 12, 0, 0, 0)
 }
@@ -99,8 +103,9 @@ function resolveHorizonErrorMessage(error) {
 
 function MySchedules() {
   const queryClient = useQueryClient()
-  const { organization, membership } = useOrganization()
-  const teacherId = membership?.publicMetadata?.teacher_id
+  const { organization } = useOrganization()
+  const { user } = useUser()
+  const teacherId = user?.publicMetadata?.teacher_id
   const orgId = organization?.id
   const [weekStart, setWeekStart] = useState(getCurrentWeekMonday)
   const [recommendedWeekApplied, setRecommendedWeekApplied] = useState(false)
@@ -225,7 +230,7 @@ function MySchedules() {
 
   const { data: timeslots = [] } = useTimeslots()
 
-  const { data: timesheet, isLoading: isLoadingTimesheet } = useMyTimesheet(weekStart)
+  const { data: timesheet } = useMyTimesheet(weekStart)
   const submitMutation = useSubmitMyTimesheet()
 
   const canSubmit = useMemo(() => {

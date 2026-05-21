@@ -160,7 +160,7 @@ class ScheduleEngineV2:
         if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
             logger.warning("❌ Solver V2: sem solução", status=status)
             if status == cp_model.MODEL_INVALID:
-                print("Model Invalid Details:", self.model.Validate())
+                logger.error("Solver V2: modelo CP-SAT inválido", details=self.model.Validate())
             return SolverV2Result(
                 status="infeasible", blocks=[], makespan_days=None,
                 projected_end_date=None, end_date_spread_days=None,

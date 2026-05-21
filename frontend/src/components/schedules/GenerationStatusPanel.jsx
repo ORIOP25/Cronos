@@ -2,12 +2,7 @@ import PropTypes from 'prop-types'
 import { CAlert, CSpinner, CProgress } from '@coreui/react'
 import { useScheduleTaskStatus } from '../../hooks/useSchoolData'
 import { humanizeOperationalDetail } from '../../utils/terminology'
-
-export const TERMINAL_STATUSES = ['SUCCESS', 'FAILURE', 'Success', 'Error', 'Impossible', 'REVOKED', 'CANCELED']
-
-export function isPending(status) {
-  return !!status && !TERMINAL_STATUSES.some(s => status.includes(s))
-}
+import { isPending } from '../../utils/scheduleStatus'
 
 const GENERATION_STATUS_LABELS = {
   PENDING:   'A preparar cálculo do horário…',

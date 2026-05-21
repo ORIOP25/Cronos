@@ -1,11 +1,14 @@
 # Ficheiro: app/services/teacher_service.py
 
+import structlog
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session, selectinload
 from sqlalchemy import select, delete
 from app import models, schemas
 from app.models import Availability, Teacher
 from app.schemas import AvailabilitySelfCreate
+
+logger = structlog.get_logger(__name__)
 
 
 # ==========================================
@@ -110,10 +113,10 @@ async def create_teacher(db: AsyncSession, teacher_in: schemas.TeacherCreate, or
                         teacher_id=db_teacher.id,
                     )
                 except Exception:
-                    import logging
-                    logging.getLogger(__name__).error(
-                        "Falha ao enviar convite Clerk para %s (org %s)",
-                        teacher_in.email, org.clerk_org_id,
+                    logger.error(
+                        "Falha ao enviar convite Clerk",
+                        email=teacher_in.email,
+                        clerk_org_id=org.clerk_org_id,
                     )
 
         # 7. Gravar tudo na BD

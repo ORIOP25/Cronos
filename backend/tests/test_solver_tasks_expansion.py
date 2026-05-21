@@ -19,7 +19,6 @@ def test_expand_to_dates_respects_hard_end_date_limit():
     blocks, remaining_minutes = expand_to_dates(
         assignments=assignments,
         school_start_date=date(2025, 9, 15),
-        school_target_end_date=date(2026, 6, 15),
         school_hard_end_date=date(2026, 7, 31),
         blocked_dates=set(),
         remaining_map={1: 100000},

@@ -84,19 +84,6 @@ async def get_current_user(
 
     logger.info("Fallback síncrono concluído", clerk_user_id=clerk_user_id, role=user.role, org_id=user.organization_id)
 
-    if org_id and user.organization_id is None:
-        org_local_result = await db.execute(
-            select(models.Organization).where(models.Organization.clerk_org_id == org_id)
-        )
-        org_local = org_local_result.scalar_one_or_none()
-        if org_local:
-            user.organization_id = org_local.id
-        await db.flush()
-
-    if role:
-        user.role = clerk_sync.parse_role(role)
-        await db.flush()
-
     return user
 
 

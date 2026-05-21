@@ -4,7 +4,7 @@ import {
   CCard, CCardBody, CCol, CRow, CButton, CAlert, CBadge
 } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
-import { cilBookmark, cilPlus } from '@coreui/icons'
+import { cilPlus } from '@coreui/icons'
 
 import SmartTable from '../components/SmartTable'
 import GenericModalForm from '../components/GenericModalForm'

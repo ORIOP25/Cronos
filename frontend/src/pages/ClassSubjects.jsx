@@ -49,7 +49,6 @@ const gradeLabels = { 10: '10.º ano', 11: '11.º ano', 12: '12.º ano' }
 // ==========================================
 const SubjectRow = ({ 
   subject, 
-  classId,
   onRemove,
   onTeacherChange,
   isUpdating 
@@ -140,7 +139,6 @@ SubjectRow.propTypes = {
     teacher_id: PropTypes.number,
     teacher_name: PropTypes.string,
   }).isRequired,
-  classId: PropTypes.number.isRequired,
   onRemove: PropTypes.func.isRequired,
   onTeacherChange: PropTypes.func.isRequired,
   isUpdating: PropTypes.bool,
@@ -348,7 +346,6 @@ const ClassSubjects = () => {
               <SubjectRow
                 key={subject.id}
                 subject={subject}
-                classId={numClassId}
                 onRemove={handleRemoveSubject}
                 onTeacherChange={handleTeacherChange}
                 isUpdating={isUpdating}

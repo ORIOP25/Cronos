@@ -441,7 +441,6 @@ class ScheduleEngine:
             for second_class_id in class_ids[idx + 1:]:
                 second_actual = class_actual_vars[second_class_id]
 
-                _ = (class_target_map, first_class_id, second_class_id)
                 pair_gap = self.model.NewIntVar(
                     0,
                     max_class_minutes,

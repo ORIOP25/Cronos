@@ -17,7 +17,7 @@ const AvailabilityGrid = ({ timeslots, availabilityMap, onChange, selectedMode }
   const getScore = (timeslotId) => availabilityMap[timeslotId] ?? DEFAULT_PREFERENCE;
 
   const applyPaint = useCallback((timeslot) => {
-    const currentScore = getScore(timeslot.id);
+    const currentScore = availabilityMap[timeslot.id] ?? DEFAULT_PREFERENCE;
     if (currentScore !== selectedMode) {
       onChange(timeslot.id, selectedMode);
     }

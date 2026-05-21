@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from app import models
 from app import schemas
+from app.core.task_keys import DEFAULT_REPAIR_WINDOW_DAYS
 
 # ---------------------------------------------------------------------------
 # Constantes
@@ -62,7 +63,6 @@ DEBT_STATUSES = {
     models.LessonOccurrenceStatus.SUBSTITUTED,
 }
 
-DEFAULT_REPAIR_WINDOW_DAYS = 14
 MAX_EVENT_DETAIL_LENGTH = 240
 
 OBS_EVENT_CREATE = "CREATE_OCCURRENCE"

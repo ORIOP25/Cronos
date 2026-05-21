@@ -10,7 +10,7 @@ import {
   CModalBody, CModalFooter, CButtonGroup, CFormCheck,
 } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
-import { cilWarning, cilCheckCircle, cilBan, cilPeople, cilClock } from '@coreui/icons'
+import { cilWarning, cilCheckCircle, cilBan, cilClock } from '@coreui/icons'
 import {
   useOccurrences, useDebts, useUpdateOccurrence, useCancelOccurrence,
   useSubstituteRecommendations, useClasses, useTeachers, useSubjects,

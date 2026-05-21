@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import AvailabilityGrid from '../components/AvailabilityGrid';
-import { useOrganization } from '@clerk/react';
+import { useUser } from '@clerk/react';
 import { useTimeslots, useMyAvailability, useSaveAvailability } from '../hooks/useSchoolData';
 import { PREFERENCE_LEVELS, DEFAULT_PREFERENCE } from '../constants';
 
@@ -48,8 +48,8 @@ const MyAvailability = () => {
   const [availabilityMap, setAvailabilityMap] = useState({});
   const [feedback, setFeedback] = useState(null);
   const [selectedMode, setSelectedMode] = useState(DEFAULT_PREFERENCE);
-  const { membership } = useOrganization();
-  const teacherId = membership?.publicMetadata?.teacher_id;
+  const { user } = useUser()
+  const teacherId = user?.publicMetadata?.teacher_id;
 
   const { data: timeslots = [], isLoading: loading } = useTimeslots();
   const { data: persistedRows = [] } = useMyAvailability({ enabled: Boolean(teacherId) });

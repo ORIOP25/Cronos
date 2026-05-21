@@ -21,9 +21,10 @@ import WeekGrid from '../components/WeekGrid'
 import LessonLogModal from '../components/LessonLogModal'
 import KPISidebar from '../components/schedules/KPISidebar'
 import DraftPanel from '../components/schedules/DraftPanel'
-import GenerationStatusPanel, { isPending, TERMINAL_STATUSES } from '../components/schedules/GenerationStatusPanel'
+import GenerationStatusPanel from '../components/schedules/GenerationStatusPanel'
+import { isPending, TERMINAL_STATUSES } from '../utils/scheduleStatus'
 import PreflightErrorPanel from '../components/schedules/PreflightErrorPanel'
-import { useOrganization } from '@clerk/react'
+import { useOrganization, useUser } from '@clerk/react'
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -138,7 +139,8 @@ const Schedules = () => {
   const orgId = organization?.id ?? null
   const isAdmin = membership?.role === 'org:admin'
   const isTeacher = membership?.role === 'org:member'
-  const teacherOwnId = membership?.publicMetadata?.teacher_id ?? null
+  const { user } = useUser()
+  const teacherOwnId = user?.publicMetadata?.teacher_id ?? null
   const canConsultSchedule = isAdmin || (isTeacher && Boolean(teacherOwnId))
   const taskStorageKey = getTaskStorageKey(orgId)
   const viewStorageKey = getViewStorageKey(orgId)

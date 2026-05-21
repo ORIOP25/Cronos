@@ -6,8 +6,7 @@ from sqlalchemy.orm import Session, joinedload
 from sqlalchemy.future import select
 from sqlalchemy import and_, delete, desc
 from app import models, schemas
-
-DEFAULT_REPAIR_STABILITY_WINDOW_DAYS = 14
+from app.core.task_keys import DEFAULT_REPAIR_WINDOW_DAYS
 
 # ==========================================
 #  ASYNC (API / FRONTEND)
@@ -691,7 +690,7 @@ def _resolve_repair_window_days_sync(db: Session, organization_id: int) -> int:
         .first()
     )
     if row is None or row[0] is None:
-        return DEFAULT_REPAIR_STABILITY_WINDOW_DAYS
+        return DEFAULT_REPAIR_WINDOW_DAYS
     return max(1, int(row[0]))
 
 

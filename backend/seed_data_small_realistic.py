@@ -248,6 +248,20 @@ def _setup_clerk_org_and_users() -> tuple[str, str, dict[str, str]]:
     Limpa utilizadores existentes com os mesmos emails antes de criar."""
     sdk = get_clerk_sdk()
 
+    # Limpar organizações existentes com o mesmo nome (de runs anteriores)
+    print("   A limpar organizações Clerk existentes...")
+    try:
+        existing_orgs = sdk.organizations.list(request={"limit": 500})
+        for org in existing_orgs:
+            if org.name == ORGANIZATION_INFO["name"]:
+                try:
+                    sdk.organizations.delete(organization_id=org.id)
+                    print(f"   Organização removida: {org.id}")
+                except Exception:
+                    pass
+    except Exception:
+        pass  # organizações não disponíveis ou sem permissão
+
     # Limpar utilizadores existentes (de runs anteriores)
     all_emails = [ORGANIZATION_INFO["admin_email"]] + [p["email"] for p in TEACHER_PROFILES]
     print("   A limpar utilizadores Clerk existentes...")
@@ -331,14 +345,6 @@ def _create_base_entities(db, clerk_org_id: str, admin_clerk_user_id: str) -> tu
         role=UserRole.admin,
         organization_id=organization.id,
         is_active=True,
-    ))
-
-    db.add(models.OrganizationSettings(
-        organization_id=organization.id,
-        school_start_date=ASSUMED_TODAY,
-        school_target_end_date=SCHOOL_TARGET_END,
-        school_hard_end_date=SCHOOL_HARD_END,
-        repair_stability_window_days=1,
     ))
 
     db.add(models.OrganizationGridSettings(
@@ -430,6 +436,14 @@ def run_seed() -> None:
 
             teacher_by_email[profile["email"]] = teacher
             counters["teachers"] += 1
+
+            # Definir teacher_id no public_metadata do utilizador Clerk
+            if clerk_id:
+                try:
+                    sdk = get_clerk_sdk()
+                    sdk.users.update(user_id=clerk_id, public_metadata={"teacher_id": teacher.id})
+                except Exception as e:
+                    print(f"   ⚠️  Falha ao definir teacher_id no Clerk para {profile['email']}: {e}")
 
             for subject_key in profile["subjects"]:
                 subject_teacher_pool[subject_key].append(teacher)

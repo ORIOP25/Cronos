@@ -59,7 +59,7 @@ const CourseForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
       })
       setStep(1)
     }
-  }, [initialData])
+  }, [initialData, currentYear])
 
   // --- HANDLERS PASSO 1 ---
   const handleInputChange = (e) => {

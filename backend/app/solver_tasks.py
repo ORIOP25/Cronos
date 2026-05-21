@@ -20,6 +20,17 @@ from sqlalchemy.orm import Session
 from .celery_worker import celery_app
 from app.db.database import SessionLocalSync
 from app.config import settings
+from app.core.task_keys import (
+    DEFAULT_HARD_END_MONTH,
+    DEFAULT_HARD_END_DAY,
+    DEFAULT_REPAIR_WINDOW_DAYS,
+    TASK_CANCEL_KEY_PREFIX,
+    ACTIVE_TASK_BY_ORG_KEY_PREFIX,
+    resolve_solver_engine_version,
+    resolve_repair_window_days,
+    task_cancel_key as _task_cancel_key,
+    active_task_by_org_key as _active_task_by_org_key,
+)
 from app.services import room_service, schedule_service, occurrence_service
 from app.core.solver_engine import (
     ScheduleEngine,
@@ -55,15 +66,9 @@ HARD_LIMIT_REACHED_DETAIL = "Data-limite rígida atingida; carga remanescente fi
 DEFAULT_LUNCH_WINDOW_START_MINUTES = 12 * 60
 DEFAULT_LUNCH_WINDOW_END_MINUTES = 14 * 60
 DEFAULT_LUNCH_MIN_DURATION_MINUTES = 60
-DEFAULT_HARD_END_MONTH = 7
-DEFAULT_HARD_END_DAY = 31
-DEFAULT_REPAIR_STABILITY_WINDOW_DAYS = 14
-DEFAULT_SOLVER_ENGINE_VERSION = "v1"
 DEFAULT_SOLVER_V2_ROLLING_WEEKS = 8
 DEFAULT_SOLVER_V2_OBJECTIVE_MODE = "lexicographic"
 GENERATION_TOTAL_STEPS = 10
-TASK_CANCEL_KEY_PREFIX = "schedule_task_cancel:"
-ACTIVE_TASK_BY_ORG_KEY_PREFIX = "schedule_active_task_org:"
 
 
 class GenerationCancelledError(Exception):
@@ -278,10 +283,7 @@ def _select_org_settings(settings_list: list):
 
 
 def _resolve_repair_window_days(org_settings) -> int:
-    value = org_settings.repair_stability_window_days
-    if value is None:
-        return DEFAULT_REPAIR_STABILITY_WINDOW_DAYS
-    return max(1, int(value))
+    return resolve_repair_window_days(org_settings)
 
 
 def _resolve_expansion_start_date(
@@ -482,8 +484,7 @@ def _resolve_lunch_constraints(grid_settings) -> tuple[int, int, int]:
 
 
 def _resolve_solver_engine_version() -> str:
-    version = str(getattr(settings, "SOLVER_ENGINE_VERSION", DEFAULT_SOLVER_ENGINE_VERSION)).lower()
-    return version if version in {"v1", "v2"} else DEFAULT_SOLVER_ENGINE_VERSION
+    return resolve_solver_engine_version()
 
 
 def _resolve_solver_v2_rolling_weeks() -> int:
@@ -491,18 +492,11 @@ def _resolve_solver_v2_rolling_weeks() -> int:
     return max(1, value)
 
 
-def _resolve_solver_v2_objective_mode() -> str:
-    mode = str(getattr(settings, "SOLVER_V2_OBJECTIVE_MODE", DEFAULT_SOLVER_V2_OBJECTIVE_MODE)).lower()
-    if mode != DEFAULT_SOLVER_V2_OBJECTIVE_MODE:
-        return DEFAULT_SOLVER_V2_OBJECTIVE_MODE
-    return mode
-
-
 def _solver_execution_meta() -> dict[str, int | str]:
     return {
         "solver_version": _resolve_solver_engine_version(),
         "solver_v2_rolling_weeks": _resolve_solver_v2_rolling_weeks(),
-        "solver_v2_objective_mode": _resolve_solver_v2_objective_mode(),
+        "solver_v2_objective_mode": DEFAULT_SOLVER_V2_OBJECTIVE_MODE,
     }
 
 
@@ -520,12 +514,7 @@ def _task_progress_meta(step: int, detail: str, phase: str) -> dict:
     return meta
 
 
-def _task_cancel_key(task_id: str) -> str:
-    return f"{TASK_CANCEL_KEY_PREFIX}{task_id}"
-
-
-def _active_task_by_org_key(organization_id: int) -> str:
-    return f"{ACTIVE_TASK_BY_ORG_KEY_PREFIX}{organization_id}"
+# _task_cancel_key e _active_task_by_org_key estão importadas de app.core.task_keys
 
 
 def _is_cancel_requested(task_id: str | None) -> bool:
@@ -575,7 +564,6 @@ def _cleanup_task_runtime_flags(task_id: str | None, organization_id: int) -> No
 def expand_to_dates(
     assignments: list[ScheduledAssignment],
     school_start_date: date,
-    school_target_end_date: date,
     school_hard_end_date: date,
     blocked_dates: set,
     remaining_map: dict,
@@ -586,7 +574,6 @@ def expand_to_dates(
     têm horas pendentes. Para quando todos os remaining_map chegam a 0
     ou quando é atingida a data-limite rígida da escola.
     """
-    _ = school_target_end_date
     by_dow: dict = defaultdict(list)
     for assignment in assignments:
         by_dow[assignment.day_of_week].append(assignment)
@@ -775,14 +762,6 @@ def generate_schedule_task(self: Task, organization_id: int, mode: str = "full")
         modules_by_subject = schedule_service.get_modules_by_subject_sync(db, organization_id)
         progress_map = schedule_service.get_class_progress_map_sync(db, organization_id)
 
-        raw_lesson_inputs = _build_lesson_inputs(
-            raw_lessons,
-            modules_by_subject,
-            progress_map,
-            planning_weeks,
-            min_slot_minutes,
-            target_end_date=planning_target_end_date,
-        )
         lesson_inputs = _build_lesson_inputs(
             raw_lessons,
             modules_by_subject,
@@ -791,7 +770,7 @@ def generate_schedule_task(self: Task, organization_id: int, mode: str = "full")
             min_slot_minutes,
             target_end_date=planning_target_end_date,
         )
-        raw_remaining_minutes = sum(li.remaining_minutes for li in raw_lesson_inputs)
+        raw_remaining_minutes = sum(li.remaining_minutes for li in lesson_inputs)
         reconciled_remaining_minutes = sum(li.remaining_minutes for li in lesson_inputs)
         committed_minutes = sum(
             int(round(max(0.0, float(v)) * 60)) for v in progress_map.values()
@@ -876,13 +855,11 @@ def generate_schedule_task(self: Task, organization_id: int, mode: str = "full")
             frozen_until = (
                 date.today() + timedelta(days=repair_window_days) if is_repair else None
             )
+            # published_block_keys: reservado para churn tracking em modo repair.
+            # previous_pattern usa (lesson_id, ts_id) sem data — não é compatível
+            # com o formato (lesson_id, date, ts_id) esperado pelo engine V2.
+            # TODO: popular este set quando o repair V2 suportar date-keyed churn.
             published_block_keys: set[tuple[int, date, int]] = set()
-            if is_repair and previous_pattern:
-                # previous_pattern is {(lesson_id, ts_id): 1} — not date-keyed;
-                # churn comparison uses published blocks from repair context
-                published_block_keys = set()
-
-            backlog_by_lesson = {li.lesson_id: li.remaining_minutes for li in lesson_inputs}
 
             v2_engine = ScheduleEngineV2(
                 candidates=pruned_candidates,
@@ -910,7 +887,7 @@ def generate_schedule_task(self: Task, organization_id: int, mode: str = "full")
                 return _task_result(status="Error", message=ERR_NO_EXPAND)
 
             # Build backlog and relationship maps for fill
-            backlog_by_lesson = {li.lesson_id: li.remaining_minutes for li in lesson_inputs}
+            backlog_by_lesson: dict[int, int] = {li.lesson_id: li.remaining_minutes for li in lesson_inputs}
             lesson_class_map_fill = {lesson.id: lesson.class_id for lesson in raw_lessons}
             lesson_teacher_map_fill = {lesson.id: lesson.teacher_id for lesson in raw_lessons}
             lesson_room_type_fill = {li.lesson_id: li.required_room_type for li in lesson_inputs}
@@ -1081,7 +1058,6 @@ def generate_schedule_task(self: Task, organization_id: int, mode: str = "full")
         blocks, remaining_after_expand = expand_to_dates(
             assignments=assignments,
             school_start_date=expansion_start_date,
-            school_target_end_date=org_settings.school_target_end_date,
             school_hard_end_date=hard_end_date,
             blocked_dates=blocked_dates,
             remaining_map=remaining_map,
