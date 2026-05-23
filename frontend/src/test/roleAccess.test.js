@@ -4,7 +4,6 @@ import { describe, it, expect } from 'vitest'
 import {
   USER_ROLE_ADMIN,
   USER_ROLE_TEACHER,
-  ROUTE_LOGIN,
   ROUTE_DASHBOARD,
   getDefaultRouteForRole,
   getForbiddenRedirectRoute,

@@ -4,7 +4,7 @@ from time import perf_counter
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import List, Annotated
+from typing import Annotated, List, Annotated
 from app import schemas
 from app.api import deps
 from app.services import teacher_observability_service, teacher_service
@@ -79,7 +79,7 @@ async def read_my_availability(
 async def get_teacher_endpoints_observability_summary(
     db: Annotated[AsyncSession, Depends(deps.get_db)],
     current_user: Annotated[models.User, Depends(deps.get_current_active_admin)],
-    window_minutes: int = Query(15, ge=5, le=1440, description="Janela de agregação em minutos"),
+    window_minutes: Annotated[int, Query(ge=5, le=1440, description="Janela de agregação em minutos")] = 15,
 ):
     def _run(sync_db):
         return teacher_observability_service.get_teacher_endpoint_observability_summary_sync(

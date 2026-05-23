@@ -113,15 +113,20 @@ const DefaultLayout = () => {
             paddingLeft: collapsed ? '0' : '8px',
           }}>
             {!collapsed && (
-              <div>
-                <h2 className="text-display" style={{ color: '#ffffff', fontSize: '1.6rem', margin: 0 }}>
-                  {TXT.SIDEBAR_BRAND}
-                </h2>
-                <div className="luxury-line" style={{ width: '40px', margin: '12px 0' }} />
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <img src="/logo.png" alt="Cronos Logo" style={{ width: '32px', height: '32px', borderRadius: '6px', objectFit: 'contain' }} />
+                <div>
+                  <h2 className="text-display" style={{ color: '#ffffff', fontSize: '1.6rem', margin: 0 }}>
+                    {TXT.SIDEBAR_BRAND}
+                  </h2>
+                  <div className="luxury-line" style={{ width: '40px', marginTop: '6px' }} />
+                </div>
               </div>
             )}
             {collapsed && (
-              <h2 className="text-display" style={{ color: '#ffffff', fontSize: '1.3rem', margin: 0 }}>C</h2>
+              <div style={{ paddingBottom: '8px' }}>
+                <img src="/logo.png" alt="Cronos" style={{ width: '36px', height: '36px', borderRadius: '6px', objectFit: 'contain' }} />
+              </div>
             )}
             <button
               type="button"
@@ -173,10 +178,14 @@ const DefaultLayout = () => {
         {/* Rodapé da Sidebar */}
         <div style={{ marginTop: 'auto', paddingTop: '24px', borderTop: '1px solid rgba(255,255,255,0.05)' }}>
           {!collapsed && (
-            <div
+            <button
+              type="button"
               onClick={() => openUserProfile()}
               style={{ 
                 display: 'flex', 
+                border: 'none', 
+                textAlign: 'left', 
+                width: '100%',
                 alignItems: 'center', 
                 gap: '12px', 
                 padding: '12px',
@@ -212,13 +221,16 @@ const DefaultLayout = () => {
                   {getRoleLabel()}
                 </span>
               </div>
-            </div>
+            </button>
           )}
           {collapsed && (
-            <div
+            <button
+              type="button"
               onClick={() => openUserProfile()}
               style={{
                 display: 'flex',
+                border: 'none',
+                background: 'none',
                 justifyContent: 'center',
                 marginBottom: '16px',
                 cursor: 'pointer',
@@ -238,7 +250,7 @@ const DefaultLayout = () => {
               }}>
                 {user?.primaryEmailAddress?.emailAddress?.[0]?.toUpperCase() || '?'}
               </div>
-            </div>
+            </button>
           )}
 
           <button

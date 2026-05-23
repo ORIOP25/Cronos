@@ -29,7 +29,6 @@ router = APIRouter()
 
 @router.get(
     "/settings/",
-    response_model=schemas.OrganizationSettingsRead,
     summary="Obter configurações da escola",
 )
 async def get_org_settings(
@@ -44,7 +43,6 @@ async def get_org_settings(
 
 @router.post(
     "/settings/",
-    response_model=schemas.OrganizationSettingsRead,
     summary="Criar ou atualizar configuração da escola",
 )
 async def upsert_org_settings(
@@ -79,7 +77,6 @@ async def soft_reset_year_endpoint(
 
 @router.get(
     "/grid-settings/",
-    response_model=schemas.OrganizationGridSettingsRead,
     summary="Obter configurações da grelha horária",
 )
 async def get_grid_settings(
@@ -94,7 +91,6 @@ async def get_grid_settings(
 
 @router.post(
     "/grid-settings/",
-    response_model=schemas.OrganizationGridSettingsRead,
     summary="Criar ou atualizar configuração da grelha horária",
 )
 async def upsert_grid_settings(
@@ -107,7 +103,6 @@ async def upsert_grid_settings(
 
 @router.post(
     "/settings/sync-holidays",
-    response_model=schemas.HolidaysSyncResponse,
     summary="Importar feriados nacionais automaticamente",
 )
 async def sync_holidays(
@@ -133,14 +128,13 @@ async def sync_holidays(
 
 @router.get(
     "/calendar-events/",
-    response_model=list[schemas.SchoolCalendarEventRead],
     summary="Listar eventos do calendário escolar",
 )
 async def list_calendar_events(
     db: Annotated[AsyncSession, Depends(deps.get_db)],
     current_user: Annotated[models.User, Depends(deps.get_current_active_user)],
-    from_date: date | None = Query(None, description="Filtrar eventos a partir desta data"),
-    to_date: date | None = Query(None, description="Filtrar eventos até a esta data"),
+    from_date: Annotated[date | None, Query(description="Filtrar eventos a partir desta data")] = None,
+    to_date: Annotated[date | None, Query(description="Filtrar eventos até a esta data")] = None,
 ) -> list[schemas.SchoolCalendarEventRead]:
     return await settings_service.list_calendar_events(
         db, current_user.organization_id, from_date, to_date
@@ -149,7 +143,6 @@ async def list_calendar_events(
 
 @router.post(
     "/calendar-events/",
-    response_model=schemas.SchoolCalendarEventRead,
     summary="Criar evento manual (pausa escolar, exames, etc.)",
 )
 async def create_calendar_event(

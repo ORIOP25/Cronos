@@ -224,7 +224,7 @@ export default function Onboarding() {
               onChange={(e) =>
                 setForm({
                   ...form,
-                  lunch_min_duration: parseInt(e.target.value) || 60,
+                  lunch_min_duration: Number.parseInt(e.target.value) || 60,
                 })
               }
               required

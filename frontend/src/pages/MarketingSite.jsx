@@ -229,7 +229,7 @@ export function MarketingSite() {
       {/* --- NAVEGAÇÃO --- */}
       <nav className="marketing-nav zen-reveal">
         <Link to="/" className="marketing-brand">
-           <span className="marketing-brand-mark">C</span>
+           <img src="/logo.png" alt="Cronos Logo" style={{ width: '28px', height: '28px', borderRadius: '4px', objectFit: 'contain' }} />
           <span className="text-display fw-bold" style={{ fontSize: '1.2rem', color: 'var(--brand-950)' }}>Cronos</span>
         </Link>
         <div className="marketing-nav-links d-none d-md-flex">

@@ -89,8 +89,8 @@ const AuditDashboard = () => {
                 value={selectedGeneration}
                 onChange={(event) => setSelectedGeneration(event.target.value)}
               >
-                {!hasGenerations ? <option value="">Sem gerações disponíveis</option> : null}
-                {!selectedGeneration && hasGenerations ? (
+                {hasGenerations ? null : <option value="">Sem gerações disponíveis</option>}
+                {hasGenerations && !selectedGeneration ? (
                   <option value="">Selecionar (mais recente: {generations[0].generation_id})</option>
                 ) : null}
                 {generations.map((item) => (
@@ -104,11 +104,11 @@ const AuditDashboard = () => {
         </CCardBody>
       </CCard>
 
-      {!hasGenerations ? (
+      {hasGenerations ? null : (
         <CAlert color="info">
           Ainda não existem gerações ativas para auditoria nesta organização. Gere um horário e volte a esta página.
         </CAlert>
-      ) : null}
+      )}
 
       {hasGenerations && loadingSummary ? (
         <div className="text-center py-5">

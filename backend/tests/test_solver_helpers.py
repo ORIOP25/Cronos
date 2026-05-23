@@ -29,17 +29,17 @@ pytestmark = pytest.mark.unit
 
 class TestBlockedDates:
     def test_expands_single_day_event_to_set(self):
-        E = type("E", (), {"start_date": date(2026, 3, 15), "end_date": date(2026, 3, 15)})
+        _ = type("E", (), {"start_date": date(2026, 3, 15), "end_date": date(2026, 3, 15)})
         result = _build_blocked_dates([E])
         assert result == {date(2026, 3, 15)}
 
     def test_expands_multi_day_event_to_all_dates(self):
-        E = type("E", (), {"start_date": date(2026, 3, 15), "end_date": date(2026, 3, 17)})
+        _ = type("E", (), {"start_date": date(2026, 3, 15), "end_date": date(2026, 3, 17)})
         result = _build_blocked_dates([E])
         assert result == {date(2026, 3, 15), date(2026, 3, 16), date(2026, 3, 17)}
 
     def test_merges_multiple_events_in_one_set(self):
-        E = type("E", (), {})
+        _ = type("E", (), {})
         events = [
             type("E", (), {"start_date": date(2026, 3, 15), "end_date": date(2026, 3, 15)}),
             type("E", (), {"start_date": date(2026, 4, 1), "end_date": date(2026, 4, 2)}),

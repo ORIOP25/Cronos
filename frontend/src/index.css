@@ -729,7 +729,7 @@ textarea {
   border-radius: 0 !important;
   padding: 12px 28px !important;
   font-weight: 600 !important;
-  letter-spacing: 0.18em !important;
+  letter-spacing: 0.18em ;
   font-size: 0.75rem !important;
   text-transform: uppercase !important;
   transition: background 0.3s ease, transform 0.2s ease !important;
@@ -747,7 +747,7 @@ textarea {
   border-radius: 0 !important;
   padding: 10px 24px !important;
   font-weight: 700 !important;
-  letter-spacing: 0.14em !important;
+  letter-spacing: 0.14em ;
   font-size: 0.75rem !important;
   text-transform: uppercase !important;
   transition: background 0.3s ease, transform 0.2s ease !important;
@@ -765,7 +765,7 @@ textarea {
   border-radius: 0 !important;
   padding: 16px 40px !important;
   font-weight: 600 !important;
-  letter-spacing: 0.16em !important;
+  letter-spacing: 0.16em ;
   font-size: 0.82rem !important;
   text-transform: uppercase !important;
   transition: background 0.3s ease, transform 0.2s ease, box-shadow 0.3s ease !important;
@@ -804,7 +804,7 @@ textarea {
   font-weight: 700 !important;
   margin-bottom: 1.5rem !important;
   line-height: 0.94 !important;
-  letter-spacing: -0.05em !important;
+  letter-spacing: -0.05em ;
 }
 
 .zen-hero-lead {
@@ -969,7 +969,7 @@ textarea {
 .zen-outcome-title {
   font-size: 1.25rem !important;
   margin-bottom: 0.75rem !important;
-  letter-spacing: -0.02em !important;
+  letter-spacing: -0.02em;
   color: #1a1512;
 }
 
@@ -2010,7 +2010,7 @@ h1, h2, h3, h4, h5, h6 {
   font-size: 0.82rem !important;
   font-weight: 600 !important;
   text-transform: uppercase !important;
-  letter-spacing: 0.14em !important;
+  letter-spacing: 0.14em ;
   padding: 14px 28px !important;
   border-radius: 4px !important;
   border: none !important;
@@ -2043,7 +2043,7 @@ h1, h2, h3, h4, h5, h6 {
   font-size: 0.72rem !important;
   font-weight: 600 !important;
   text-transform: uppercase !important;
-  letter-spacing: 0.1em !important;
+  letter-spacing: 0.1em ;
   color: var(--brand-800) !important;
   margin-bottom: 6px !important;
 }

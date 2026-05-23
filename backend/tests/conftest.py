@@ -138,7 +138,7 @@ MOCK_ORG_ID = "org_test_001"
 @pytest_asyncio.fixture
 async def clerk_admin_headers(db_session: AsyncSession, monkeypatch):
     """Headers de admin com mock + user criado automaticamente na DB."""
-    org, user = await create_org_and_user(
+    org, _ = await create_org_and_user(
         db_session,
         clerk_user_id=ADMIN_USER_ID,
         email="admin@test.com",
@@ -157,7 +157,7 @@ async def clerk_admin_headers(db_session: AsyncSession, monkeypatch):
 @pytest_asyncio.fixture
 async def clerk_teacher_headers(db_session: AsyncSession, monkeypatch):
     """Headers de teacher com mock + user criado automaticamente na DB."""
-    org, user = await create_org_and_user(
+    org, _ = await create_org_and_user(
         db_session,
         clerk_user_id=TEACHER_USER_ID,
         email="teacher@test.com",

@@ -292,8 +292,7 @@ const EditOccurrenceModal = ({
         </div>
 
         {status === 'SUBSTITUTED' && (
-          <>
-            <div className="mb-3">
+          <div className="mb-3">
               <CFormLabel htmlFor="substituteRecommendation">Candidato recomendado</CFormLabel>
               {loadingRecommendations && (
                 <div className="d-flex align-items-center gap-2 text-muted small">
@@ -342,7 +341,6 @@ const EditOccurrenceModal = ({
                 </>
               )}
             </div>
-          </>
         )}
 
         <div className="mt-3">

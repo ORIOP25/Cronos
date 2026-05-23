@@ -37,9 +37,9 @@ apiClient.interceptors.response.use(
     }
     if (status === 403) {
       const detail = error?.response?.data?.detail;
-      if (detail && !window._403_toast_shown) {
-        window._403_toast_shown = true;
-        setTimeout(() => { window._403_toast_shown = false }, 3000);
+      if (detail && !globalThis._403_toast_shown) {
+        globalThis._403_toast_shown = true;
+        setTimeout(() => { globalThis._403_toast_shown = false }, 3000);
       }
     }
     return Promise.reject(error);

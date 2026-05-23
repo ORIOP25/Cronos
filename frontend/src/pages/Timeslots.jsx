@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import PageHeader from '../components/PageHeader'
-import { CCard, CCardBody, CCol, CRow, CButton, CAlert } from '@coreui/react'
+import { CCard, CCardBody, CButton, CAlert } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
 import { cilPlus, cilSync } from '@coreui/icons'
 

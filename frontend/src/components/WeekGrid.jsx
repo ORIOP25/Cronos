@@ -434,7 +434,6 @@ const WeekGrid = ({
       <table
         className="table table-bordered table-sm align-middle mb-0"
         style={{ tableLayout: 'fixed' }}
-        role="grid"
         aria-label="Grelha semanal de horários"
       >
         <thead className="table-light">

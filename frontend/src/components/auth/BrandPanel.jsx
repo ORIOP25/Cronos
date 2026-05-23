@@ -20,8 +20,8 @@ const BrandPanel = ({ tagline, stats }) => {
       </div>
 
       <div className="zen-auth-brand-inner">
-        <div className="zen-auth-monogram">
-          <span className="zen-auth-monogram-letter">C</span>
+        <div className="zen-auth-monogram" style={{ border: 'none', background: 'transparent' }}>
+          <img src="/logo.png" alt="Cronos Logo" style={{ width: '100%', height: '100%', objectFit: 'contain', borderRadius: '16px' }} />
         </div>
 
         <h1 className="zen-auth-brand-name">Cronos</h1>

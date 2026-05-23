@@ -81,7 +81,7 @@ class ErrorBoundary extends React.Component {
               type="button"
               className="btn-zen btn-zen-outline"
               onClick={() => {
-                window.location.href = '/dashboard'
+                globalThis.location.href = '/dashboard'
               }}
             >
               Ir para o painel

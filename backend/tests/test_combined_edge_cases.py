@@ -155,7 +155,7 @@ class TestCombinedRepairGapSubstitution:
         self, sync_db, combined_setup
     ):
         ctx = combined_setup
-        today = date.today()
+        
 
         base_date = today + timedelta(days=21)
         dates = [base_date + timedelta(weeks=w) for w in range(4)]
@@ -236,8 +236,7 @@ class TestCombinedRepairGapSubstitution:
             )
         ).scalars())
 
-        by_id = {occ.id: occ for occ in refreshed}
-        statuses = [occ.status for occ in refreshed]
+                statuses = [occ.status for occ in refreshed]
 
         assert LessonOccurrenceStatus.GAP in statuses
         assert LessonOccurrenceStatus.GIVEN in statuses
@@ -261,7 +260,7 @@ class TestOperationNearHardEndDate:
         self, sync_db, combined_setup
     ):
         ctx = combined_setup
-        today = date.today()
+        
 
         settings_obj = sync_db.get(models.OrganizationSettings, ctx["org_id"])
         assert settings_obj is not None

@@ -153,7 +153,7 @@ class TestDashboardEndpoint:
     # ------------------------------------------------------------------
     @pytest.mark.asyncio
     async def test_dashboard_with_data(self, async_client: AsyncClient, db_session: AsyncSession, admin_token_headers):
-        ctx = await self._seed_minimal_org(db_session)
+        _ = await self._seed_minimal_org(db_session)
         org_id = ctx["org_id"]
         today = date.today()
 
@@ -224,7 +224,7 @@ class TestDashboardEndpoint:
     # ------------------------------------------------------------------
     @pytest.mark.asyncio
     async def test_dashboard_empty_org(self, async_client: AsyncClient, db_session: AsyncSession, admin_token_headers):
-        ctx = await self._seed_minimal_org(db_session)
+        _ = await self._seed_minimal_org(db_session)
         await db_session.commit()
 
         response = await async_client.get("/api/v1/dashboard", headers=admin_token_headers)
@@ -294,7 +294,7 @@ class TestDashboardEndpoint:
     # ------------------------------------------------------------------
     @pytest.mark.asyncio
     async def test_dashboard_no_generation(self, async_client: AsyncClient, db_session: AsyncSession, admin_token_headers):
-        ctx = await self._seed_minimal_org(db_session)
+        _ = await self._seed_minimal_org(db_session)
         await self._seed_teacher(db_session, ctx["org_id"], "Prof. Teste")
         await db_session.commit()
 
@@ -310,7 +310,7 @@ class TestDashboardEndpoint:
     # ------------------------------------------------------------------
     @pytest.mark.asyncio
     async def test_dashboard_no_progress(self, async_client: AsyncClient, db_session: AsyncSession, admin_token_headers):
-        ctx = await self._seed_minimal_org(db_session)
+        _ = await self._seed_minimal_org(db_session)
         org_id = ctx["org_id"]
 
         course = await self._seed_course(db_session, org_id, "INFO", "INF")
@@ -333,7 +333,7 @@ class TestDashboardEndpoint:
     # ------------------------------------------------------------------
     @pytest.mark.asyncio
     async def test_dashboard_no_debts(self, async_client: AsyncClient, db_session: AsyncSession, admin_token_headers):
-        ctx = await self._seed_minimal_org(db_session)
+        _ = await self._seed_minimal_org(db_session)
         await db_session.commit()
 
         response = await async_client.get("/api/v1/dashboard", headers=admin_token_headers)
@@ -352,7 +352,7 @@ class TestDashboardEndpoint:
     # ------------------------------------------------------------------
     @pytest.mark.asyncio
     async def test_dashboard_response_structure(self, async_client: AsyncClient, db_session: AsyncSession, admin_token_headers):
-        ctx = await self._seed_minimal_org(db_session)
+        _ = await self._seed_minimal_org(db_session)
         await db_session.commit()
 
         response = await async_client.get("/api/v1/dashboard", headers=admin_token_headers)

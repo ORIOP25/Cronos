@@ -506,11 +506,11 @@ class ScheduleEngineV2:
 
     def _compute_result_metrics(self, blocks: list[ScheduledBlockV2]) -> dict:
         if not blocks:
-            return dict(
-                makespan_days=None, projected_end_date=None,
-                end_date_spread_days=None, target_drift_days=None,
-                churn_blocks=None, gaps_total=None,
-            )
+            return {
+                "makespan_days": None, "projected_end_date": None,
+                "end_date_spread_days": None, "target_drift_days": None,
+                "churn_blocks": None, "gaps_total": None,
+            }
 
         # makespan / projected_end
         max_date = max(b.output_date for b in blocks)
@@ -540,11 +540,11 @@ class ScheduleEngineV2:
         new_block_keys = {(b.lesson_id, b.output_date, b.ts_id) for b in blocks}
         churn = len(new_block_keys - self.published_blocks) if self.published_blocks else None
 
-        return dict(
-            makespan_days=makespan_days,
-            projected_end_date=projected_end_date,
-            end_date_spread_days=spread,
-            target_drift_days=drift,
-            churn_blocks=churn,
-            gaps_total=None,  # counted by model, not re-computed here
-        )
+        return {
+            "makespan_days": makespan_days,
+            "projected_end_date": projected_end_date,
+            "end_date_spread_days": spread,
+            "target_drift_days": drift,
+            "churn_blocks": churn,
+            "gaps_total": None,  # counted by model, not re-computed here
+        }

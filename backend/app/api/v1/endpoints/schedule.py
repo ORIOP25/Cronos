@@ -6,7 +6,7 @@ from fastapi.encoders import jsonable_encoder
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import desc, func, select as sa_select
 from celery.result import AsyncResult
-from typing import List, Annotated
+from typing import Annotated, List, Annotated
 import json
 import redis
 import structlog
@@ -912,7 +912,7 @@ async def get_generation_audit_summary(
         .group_by(models.Lesson.teacher_id)
     )
     teacher_week_values = [row.slots_count for row in teacher_week_rows.all()]
-    teacher_week_slots_min, teacher_week_slots_max, teacher_week_slots_avg, _ = _build_distribution_stats(teacher_week_values)
+    teacher_week_slots_min, teacher_week_slots_max, _, _ = _build_distribution_stats(teacher_week_values)
     teachers_with_week_slots = len(teacher_week_values)
 
     room_usage_rows = await db.execute(

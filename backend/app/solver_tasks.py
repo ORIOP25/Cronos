@@ -828,12 +828,6 @@ def generate_schedule_task(self: Task, organization_id: int, mode: str = "full")
             if not pruned_candidates:
                 return _task_result(status="Impossible", message=MSG_IMPOSSIBLE)
 
-        # Repair mode: ler padrão ativo anterior para minimizar perturbações
-        previous_pattern = (
-            schedule_service.get_active_future_pattern_sync(db, organization_id)
-            if is_repair else None
-        )
-
         logger.info(
             "Dados carregados",
             lessons=len(lesson_inputs),
@@ -876,7 +870,7 @@ def generate_schedule_task(self: Task, organization_id: int, mode: str = "full")
                 return _task_result(status="Impossible", message=MSG_IMPOSSIBLE)
 
             # F.01 — Validate blocks against calendar (safety net)
-            primary_v2_blocks, rejected_blocks = validate_v2_blocks_calendar(
+            primary_v2_blocks, _ = validate_v2_blocks_calendar(
                 v2_result.blocks,
                 blocked_dates=blocked_dates,
                 hard_end_date=hard_end_date,

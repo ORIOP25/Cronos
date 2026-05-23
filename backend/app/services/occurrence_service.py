@@ -402,7 +402,6 @@ def _validate_substitute_for_occurrence(
 
     lesson = schedule_output.lesson
     class_id = lesson.class_id
-    planned_subject_id = lesson.subject_id
 
     if substitute_teacher_id == lesson.teacher_id:
         raise OccurrenceServiceError(status_code=409, detail=ERR_SUBSTITUTE_SAME_PLANNED_TEACHER)
@@ -838,7 +837,7 @@ def _apply_state_accounting(
         # V4: O módulo do substituto NÃO é creditado aqui.
         # As horas são creditadas quando o professor substituto regista "Aula Dada"
         # no bloco de substituição, via LessonLog COMPLETED → _apply_state_accounting(GIVEN).
-        return
+        
 
 
 def _is_idempotent_payload(
@@ -1731,7 +1730,7 @@ def get_available_substitutes_sync(
 
     Retorna uma lista de candidatos com a disciplina que leccionam.
     """
-    # 1. Timeslot info (para saber o dia da semana)
+    # 1. Timeslot info
     ts = db.execute(
         select(models.Timeslot).where(
             and_(
@@ -1743,8 +1742,6 @@ def get_available_substitutes_sync(
 
     if ts is None:
         return []
-
-    day_of_week = ts.day_of_week
 
     # 2. Professores com availability score ≥ 0 (não impossível) para este timeslot
     available_teacher_ids = {

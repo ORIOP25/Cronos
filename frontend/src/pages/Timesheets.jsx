@@ -231,12 +231,7 @@ const Timesheets = () => {
         <CCol md={8} lg={9}>
           <CCard className="border-0 shadow-sm h-100">
             <CCardBody className="p-3">
-              {!selectedTeacher ? (
-                <div className="text-center p-5 text-muted">
-                  <CIcon icon={cilPeople} style={{ fontSize: '2rem', opacity: 0.35 }} />
-                  <div className="mt-2">Selecione um professor da lista para ver o detalhe.</div>
-                </div>
-              ) : (
+              {selectedTeacher ? (
                 <>
                   {/* Teacher header */}
                   <div className="d-flex justify-content-between align-items-start flex-wrap gap-3 mb-3">
@@ -346,6 +341,11 @@ const Timesheets = () => {
                     onOpenOperationalAction={handleOpenSlot}
                   />
                 </>
+              ) : (
+                <div className="text-center p-5 text-muted">
+                  <CIcon icon={cilPeople} style={{ fontSize: '2rem', opacity: 0.35 }} />
+                  <div className="mt-2">Selecione um professor da lista para ver o detalhe.</div>
+                </div>
               )}
             </CCardBody>
           </CCard>

@@ -41,12 +41,12 @@ router = APIRouter()
 async def list_occurrences(
     db: Annotated[AsyncSession, Depends(deps.get_db)],
     current_user: Annotated[models.User, Depends(deps.get_current_active_admin)],
-    class_id: Optional[int] = Query(None, description="Filtrar por turma"),
-    date_from: Optional[date] = Query(None, description="Data de início (YYYY-MM-DD)"),
-    date_to: Optional[date] = Query(None, description="Data de fim (YYYY-MM-DD)"),
-    status: Optional[str] = Query(None, description="Filtrar por estado: OPEN, GIVEN, GAP, SUBSTITUTED"),
-    skip: int = Query(0, ge=0, description="Registos a saltar"),
-    limit: int = Query(100, ge=1, le=500, description="Máximo de registos a devolver"),
+    class_id: Annotated[Optional[int], Query(description="Filtrar por turma")] = None,
+    date_from: Annotated[Optional[date], Query(description="Data de início (YYYY-MM-DD)")] = None,
+    date_to: Annotated[Optional[date], Query(description="Data de fim (YYYY-MM-DD)")] = None,
+    status: Annotated[Optional[str], Query(description="Filtrar por estado: OPEN, GIVEN, GAP, SUBSTITUTED")] = None,
+    skip: Annotated[int, Query(ge=0, description="Registos a saltar")] = 0,
+    limit: Annotated[int, Query(ge=1, le=500, description="Máximo de registos a devolver")] = 100,
 ):
     """Devolve ocorrências de aulas com filtros opcionais."""
     organization_id = current_user.organization_id
@@ -132,7 +132,7 @@ async def create_occurrence(
 async def list_debts(
     db: Annotated[AsyncSession, Depends(deps.get_db)],
     current_user: Annotated[models.User, Depends(deps.get_current_active_admin)],
-    class_id: Optional[int] = Query(None, description="Filtrar por turma"),
+    class_id: Annotated[Optional[int], Query(description="Filtrar por turma")] = None,
 ):
     """Devolve as horas em dívida (faltas não recuperadas) agrupadas por turma/disciplina."""
     organization_id = current_user.organization_id
@@ -151,7 +151,7 @@ async def list_debts(
 async def get_occurrence_observability_summary(
     db: Annotated[AsyncSession, Depends(deps.get_db)],
     current_user: Annotated[models.User, Depends(deps.get_current_active_admin)],
-    window_days: int = Query(7, ge=1, le=90, description="Janela de agregação em dias"),
+    window_days: Annotated[int, Query(ge=1, le=90, description="Janela de agregação em dias")] = 7,
 ):
     organization_id = current_user.organization_id
 
@@ -174,8 +174,8 @@ async def get_occurrence_observability_summary(
 async def list_available_substitutes(
     db: Annotated[AsyncSession, Depends(deps.get_db)],
     current_user: Annotated[models.User, Depends(deps.get_current_active_admin)],
-    timeslot_id: int = Query(..., description="ID do timeslot afetado"),
-    target_date: date = Query(..., description="Data da aula (YYYY-MM-DD)"),
+    timeslot_id: Annotated[int, Query(description="ID do timeslot afetado")],
+    target_date: Annotated[date, Query(description="Data da aula (YYYY-MM-DD)")],
 ):
     """Devolve professores da organização que estão disponíveis num dado timeslot/data."""
     organization_id = current_user.organization_id

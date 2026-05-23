@@ -194,7 +194,7 @@ class TestLessonRegistration:
         )
         
         # Submeter semana
-        timesheet = timesheet_service.submit_timesheet_sync(
+        _ = timesheet_service.submit_timesheet_sync(
             sync_db, organization_id, teacher_id, week_start
         )
         assert timesheet.status == models.TimesheetStatus.SUBMITTED
@@ -509,7 +509,7 @@ class TestWeekScheduleTimesheetStatus:
         )
 
         # Submit timesheet via service
-        timesheet = timesheet_service.submit_timesheet_sync(
+        _ = timesheet_service.submit_timesheet_sync(
             sync_db, organization_id, teacher_id, week_start
         )
         assert timesheet.status == models.TimesheetStatus.SUBMITTED
@@ -646,7 +646,7 @@ class TestWeekScheduleTimesheetStatus:
         )
 
         # Submit timesheet
-        timesheet = timesheet_service.submit_timesheet_sync(
+        _ = timesheet_service.submit_timesheet_sync(
             sync_db, organization_id, teacher_id, week_start
         )
 
@@ -674,7 +674,7 @@ class TestTimesheetReopen:
         )
 
         # Submit
-        timesheet = timesheet_service.submit_timesheet_sync(
+        _ = timesheet_service.submit_timesheet_sync(
             sync_db, organization_id, teacher_id, week_start
         )
         assert timesheet.status == models.TimesheetStatus.SUBMITTED
@@ -703,7 +703,7 @@ class TestTimesheetReopen:
         )
 
         # Submit and approve
-        timesheet = timesheet_service.submit_timesheet_sync(
+        _ = timesheet_service.submit_timesheet_sync(
             sync_db, organization_id, teacher_id, week_start
         )
         timesheet_service.update_timesheet_status_sync(
@@ -755,7 +755,7 @@ class TestTimesheetReopenPermissions:
 
         # Create timesheet
         week_start = date.today() - timedelta(days=date.today().weekday())
-        timesheet = models.TeacherWeeklyTimesheet(
+        _ = models.TeacherWeeklyTimesheet(
             organization_id=org.id,
             teacher_id=teacher.id,
             week_start_date=week_start,
@@ -851,7 +851,7 @@ class TestTimesheetListSlotCounts:
         week_start = slot_counts_setup["week_start"]
 
         # Create timesheet so it appears in the list
-        timesheet = timesheet_service.get_or_create_timesheet_sync(
+        _ = timesheet_service.get_or_create_timesheet_sync(
             sync_db, organization_id, teacher_id, week_start
         )
 
@@ -914,7 +914,7 @@ class TestTimesheetApprovalEndpoints:
         await db_session.flush()
 
         week_start = date.today() - timedelta(days=date.today().weekday())
-        timesheet = models.TeacherWeeklyTimesheet(
+        _ = models.TeacherWeeklyTimesheet(
             organization_id=org.id,
             teacher_id=teacher.id,
             week_start_date=week_start,
@@ -959,7 +959,7 @@ class TestTimesheetApprovalEndpoints:
         await db_session.flush()
 
         week_start = date.today() - timedelta(days=date.today().weekday())
-        timesheet = models.TeacherWeeklyTimesheet(
+        _ = models.TeacherWeeklyTimesheet(
             organization_id=org.id,
             teacher_id=teacher.id,
             week_start_date=week_start,
@@ -1011,7 +1011,7 @@ class TestTimesheetsListEndpoint:
         await db_session.flush()
 
         week_start = date.today() - timedelta(days=date.today().weekday())
-        timesheet = models.TeacherWeeklyTimesheet(
+        _ = models.TeacherWeeklyTimesheet(
             organization_id=org.id,
             teacher_id=teacher.id,
             week_start_date=week_start,
@@ -1131,8 +1131,8 @@ class TestSoftResetCompleteness:
 
         # Create a fresh async engine/session bound to the current event loop
         engine = create_async_engine(ASYNC_DB_URL, poolclass=NullPool)
-        SessionFactory = async_sessionmaker(bind=engine, class_=AsyncSession, expire_on_commit=False)
-        async with SessionFactory() as async_session:
+        session_factory = async_sessionmaker(bind=engine, class_=AsyncSession, expire_on_commit=False)
+        async with session_factory() as async_session:
             await settings_service.soft_reset_year(async_session, organization_id)
 
             result = await async_session.execute(
@@ -1201,7 +1201,7 @@ class TestTimesheetStateTransitions:
         week_start = base_setup["date"] - timedelta(days=base_setup["date"].weekday())
 
         # Create timesheet in OPEN state (default)
-        timesheet = timesheet_service.get_or_create_timesheet_sync(
+        _ = timesheet_service.get_or_create_timesheet_sync(
             sync_db, organization_id, teacher_id, week_start
         )
         assert timesheet.status == models.TimesheetStatus.OPEN

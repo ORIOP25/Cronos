@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import List, Annotated
+from typing import Annotated, List, Annotated
 from app.api import deps
 from app import models, schemas
 from app.services import (

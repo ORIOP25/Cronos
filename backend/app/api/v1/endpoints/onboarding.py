@@ -1,3 +1,4 @@
+from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_current_active_admin, get_db
@@ -14,8 +15,8 @@ router = APIRouter(tags=["onboarding"])
 
 @router.get("/onboarding/status", response_model=OnboardingStatusResponse)
 async def get_onboarding_status(
-    current_user: models.User = Depends(get_current_active_admin),
-    db: AsyncSession = Depends(get_db),
+    current_user: Annotated[models.User, Depends(get_current_active_admin)],
+    db: Annotated[AsyncSession, Depends(get_db)],
 ):
     org_id = current_user.organization_id
     if not org_id:
@@ -31,8 +32,8 @@ async def get_onboarding_status(
 @router.post("/onboarding")
 async def submit_onboarding(
     data: OnboardingRequest,
-    current_user: models.User = Depends(get_current_active_admin),
-    db: AsyncSession = Depends(get_db),
+    current_user: Annotated[models.User, Depends(get_current_active_admin)],
+    db: Annotated[AsyncSession, Depends(get_db)],
 ):
     org_id = current_user.organization_id
     if not org_id:

@@ -1,3 +1,4 @@
+from typing import Annotated
 import json
 import structlog
 from fastapi import APIRouter, Request, HTTPException, Depends
@@ -13,7 +14,7 @@ router = APIRouter(tags=["webhooks"])
 
 
 @router.post("/clerk")
-async def handle_clerk_webhook(request: Request, db: AsyncSession = Depends(get_db)):
+async def handle_clerk_webhook(request: Request, db: Annotated[AsyncSession, Depends(get_db)]):
     svix_id = request.headers.get("svix-id")
     svix_timestamp = request.headers.get("svix-timestamp")
     svix_signature = request.headers.get("svix-signature")

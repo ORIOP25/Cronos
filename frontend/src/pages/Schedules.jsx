@@ -5,8 +5,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import {
   CCard, CCardBody, CCardHeader, CAlert, CBadge, CSpinner,
   CButton, CButtonGroup, CFormSelect, CFormLabel, CRow, CCol,
-  CModal, CModalHeader, CModalTitle, CModalBody, CModalFooter,
-} from '@coreui/react'
+  } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
 import {
   cilCalendar, cilReload, cilBan,
