@@ -12,24 +12,7 @@ export const ROLE_DEFAULT_ROUTE = Object.freeze({
   [USER_ROLE_TEACHER]: ROUTE_MY_AVAILABILITY,
 })
 
-export const ROLE_ALLOWED_APP_ROUTES = Object.freeze({
-  [USER_ROLE_ADMIN]: Object.freeze([
-    ROUTE_DASHBOARD,
-    '/schedules',
-    '/schedules/audit',
-    '/absences',
-    '/courses',
-    '/teachers',
-    '/subjects',
-    '/rooms',
-    '/config',
-  ]),
-  [USER_ROLE_TEACHER]: Object.freeze([
-    ROUTE_MY_AVAILABILITY,
-    ROUTE_MY_SCHEDULES,
-    ROUTE_MY_PROGRESS,
-  ]),
-})
+
 
 export function getDefaultRouteForRole(role) {
   return ROLE_DEFAULT_ROUTE[role] ?? '/create-org'

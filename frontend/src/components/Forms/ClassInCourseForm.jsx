@@ -20,6 +20,7 @@ const defaultState = {
 const ClassInCourseForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
   const [formData, setFormData] = useState(defaultState)
 
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (initialData) {
       setFormData({
@@ -31,8 +32,16 @@ const ClassInCourseForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
       })
       return
     }
-    setFormData(defaultState)
+
+    setFormData({
+      name: '',
+      size: 25,
+      grade_level: 10,
+      start_year: new Date().getFullYear(),
+      end_year: new Date().getFullYear() + 3,
+    })
   }, [initialData])
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const handleChange = (e) => {
     const { name, value } = e.target

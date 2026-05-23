@@ -107,7 +107,6 @@ export const TXT = {
   HOME: 'Painel de Controlo',
   BRAND_TAGLINE: 'Gestão escolar inteligente e sem stress.',
   SIDEBAR_BRAND: 'Cronos',
-  SIDEBAR_BRAND_ACCENT: 'Gestão',
 }
 
 /**
@@ -138,11 +137,13 @@ export const EVENT_TYPE_LABELS = {
  * Cores de estado operacional (dada / furo / substituída).
  */
 export const OPERATIONAL_STATE_LABELS = {
-  OPEN_PENDING: 'Pendente de decisão',
+  OPEN_PENDING: 'Pendente',
   CLOSED: 'Resolvida',
+  REVOKED: 'Revertida',
 }
 
 export const OPERATIONAL_STATE_COLORS = {
-  OPEN_PENDING: 'info',
+  OPEN_PENDING: 'warning',
   CLOSED: 'secondary',
+  REVOKED: 'secondary',
 }

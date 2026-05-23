@@ -1,7 +1,8 @@
 import React, { useState } from 'react'
+import PageHeader from '../components/PageHeader'
 import { useNavigate } from 'react-router-dom'
 import { 
-  CCard, CCardBody, CCol, CRow, CButton, CAlert, CBadge
+  CCard, CCardBody, CButton, CAlert, CBadge
 } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
 import { cilPlus } from '@coreui/icons'
@@ -64,15 +65,7 @@ const Courses = () => {
 
   return (
     <div className="p-4">
-      <div className="d-flex justify-content-between align-items-end mb-5 flex-wrap gap-3">
-        <div>
-          <span className="zen-caps" style={{ color: 'var(--brand-600)' }}>Gestão</span>
-          <h1 className="text-display mt-2" style={{ fontSize: '3rem', color: 'var(--brand-950)' }}>
-            <span className="text-editorial">Cursos</span>
-          </h1>
-        </div>
-        <div className="luxury-line" style={{ width: '100px', marginBottom: '14px' }} />
-      </div>
+      <PageHeader preTitle="Gestão" title="Cursos" />
       <div className="d-flex justify-content-end mb-4">
         <CButton color="primary" onClick={handleCreate} className="d-flex align-items-center gap-2">
           <CIcon icon={cilPlus} />

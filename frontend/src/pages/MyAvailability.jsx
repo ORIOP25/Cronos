@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import AvailabilityGrid from '../components/AvailabilityGrid';
 import { useUser } from '@clerk/react';
 import { useTimeslots, useMyAvailability, useSaveAvailability } from '../hooks/useSchoolData';
@@ -45,45 +45,53 @@ const buildAvailabilityMap = (rows, validTimeslotIds) => {
 };
 
 const MyAvailability = () => {
-  const [availabilityMap, setAvailabilityMap] = useState({});
+  const [userEdits, setUserEdits] = useState({});
   const [feedback, setFeedback] = useState(null);
   const [selectedMode, setSelectedMode] = useState(DEFAULT_PREFERENCE);
   const { user } = useUser()
   const teacherId = user?.publicMetadata?.teacher_id;
 
   const { data: timeslots = [], isLoading: loading } = useTimeslots();
-  const { data: persistedRows = [] } = useMyAvailability({ enabled: Boolean(teacherId) });
+  const { data: persistedRows = [], isLoading: availLoading } = useMyAvailability({ enabled: Boolean(teacherId) });
 
   const saveMutation = useSaveAvailability();
 
-  useEffect(() => {
-    if (timeslots.length === 0 || loading) return;
+  const { dbMap, derivedFeedback } = useMemo(() => {
+    if (timeslots.length === 0 || loading || availLoading) {
+      return { dbMap: {}, derivedFeedback: null };
+    }
     const validTimeslotIds = new Set(timeslots.map((slot) => slot.id));
     const rows = Array.isArray(persistedRows) ? persistedRows : [];
 
     const { map, ignoredCount } = buildAvailabilityMap(rows, validTimeslotIds);
-    setAvailabilityMap(map);
 
+    let feedbackResult = null;
     if (ignoredCount > 0) {
-      setFeedback({
+      feedbackResult = {
         type: 'info',
         message: `Foram ignoradas ${ignoredCount} preferências antigas em blocos já removidos.`,
-      });
+      };
     } else if (rows.length === 0) {
-      setFeedback({
+      feedbackResult = {
         type: 'info',
         message: 'Sem preferências gravadas. Pode começar a pintar a grelha.',
-      });
+      };
     }
-  }, [timeslots, persistedRows, loading]);
+    return { dbMap: map, derivedFeedback: feedbackResult };
+  }, [timeslots, persistedRows, loading, availLoading]);
+
+  const availabilityMap = useMemo(
+    () => ({ ...dbMap, ...userEdits }),
+    [dbMap, userEdits],
+  );
+
+  const effectiveFeedback = feedback ?? derivedFeedback;
 
   const handleGridChange = (timeslotId, newScore) => {
-    if (saveMutation.isPending) {
-      return;
-    }
+    if (saveMutation.isPending) return;
 
     setFeedback(null);
-    setAvailabilityMap((prev) => ({
+    setUserEdits((prev) => ({
       ...prev,
       [timeslotId]: newScore,
     }));
@@ -122,23 +130,15 @@ const MyAvailability = () => {
 
   return (
     <div>
-      <div className="d-flex justify-content-between align-items-end mb-5 flex-wrap gap-3">
-        <div>
-          <span className="zen-caps" style={{ color: 'var(--brand-600)' }}>Professor</span>
-          <h1 className="text-display mt-2" style={{ fontSize: '3rem', color: 'var(--brand-950)' }}>
-            Minhas <span className="text-editorial">Preferências</span>
-          </h1>
-        </div>
-        <div className="luxury-line" style={{ width: '100px', marginBottom: '14px' }} />
-      </div>
+      <PageHeader preTitle="Professor" title={<span>Minhas <span className="text-editorial">Preferências</span></span>} />
       <p style={{ color: 'var(--rs-muted)', marginBottom: '16px', marginTop: '-1rem' }}>Selecione uma ferramenta e clique (ou arraste) nas células para pintar.</p>
 
-      {feedback ? (
+      {effectiveFeedback ? (
         <div
-          role={feedback.type === 'error' ? 'alert' : 'status'}
-          className={`zen-alert zen-alert-${feedback.type === 'error' ? 'danger' : feedback.type}`}
+          role={effectiveFeedback.type === 'error' ? 'alert' : 'status'}
+          className={`zen-alert zen-alert-${effectiveFeedback.type === 'error' ? 'danger' : effectiveFeedback.type}`}
         >
-          {feedback.message}
+          {effectiveFeedback.message}
         </div>
       ) : null}
       

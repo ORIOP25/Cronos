@@ -11,6 +11,7 @@ const RoomForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
     capacity: 30
   })
 
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (initialData) {
       setFormData({
@@ -22,6 +23,7 @@ const RoomForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
         setFormData({ name: '', type: 'normal', capacity: 30 })
     }
   }, [initialData])
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const handleChange = (e) => {
     const { name, value } = e.target

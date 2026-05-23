@@ -20,6 +20,7 @@ import {
   CTableRow,
 } from '@coreui/react'
 import { useAuditGenerations, useAuditSummary } from '../hooks/useSchoolData'
+import PageHeader from '../components/PageHeader'
 
 function normalizePercent(value) {
   if (value == null || Number.isNaN(value)) return 0
@@ -77,15 +78,7 @@ const AuditDashboard = () => {
 
   return (
     <div className="d-flex flex-column gap-3">
-      <div className="d-flex justify-content-between align-items-end mb-3 flex-wrap gap-3">
-        <div>
-          <span className="zen-caps" style={{ color: 'var(--brand-600)' }}>Auditoria</span>
-          <h1 className="text-display mt-2" style={{ fontSize: '3rem', color: 'var(--brand-950)' }}>
-            Painel de <span className="text-editorial">Verificação</span>
-          </h1>
-        </div>
-        <div className="luxury-line" style={{ width: '100px', marginBottom: '14px' }} />
-      </div>
+      <PageHeader preTitle="Auditoria" title="Painel de Verificação" />
       <CCard>
         <CCardBody>
           <CRow className="g-3 align-items-end">

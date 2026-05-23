@@ -1,9 +1,10 @@
 import React, { useState } from 'react'
+import PageHeader from '../components/PageHeader'
 import {
-  CCard, CCardBody, CCol, CRow, CButton, CAlert, CBadge 
+  CCard, CCardBody, CButton, CAlert, CBadge 
 } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
-import { cilBook, cilPlus } from '@coreui/icons'
+import { cilPlus } from '@coreui/icons'
 import { useQueryClient } from '@tanstack/react-query'
 
 import SmartTable from '../components/SmartTable'
@@ -69,27 +70,18 @@ const Subjects = () => {
     deleteMutation.mutate(id)
   }
 
-  const handleFormSubmit = (formData) => {
-    if (selectedItem) {
-      // --- MODO EDIÇÃO (Stability) ---
-      // Usa PUT/PATCH e envia o ID
-      updateMutation.mutate(
-        { id: selectedItem.id, ...formData },
-        { onSuccess: () => {
-          setModalVisible(false)
-          // Invalidar cache de cursos (incluem dados de disciplinas/módulos)
-          queryClient.invalidateQueries({ queryKey: ['courses'] })
-        }}
-      )
-    } else {
-      // --- MODO CRIAÇÃO ---
-      // Usa POST
-      createMutation.mutate(formData, {
-        onSuccess: () => {
-          setModalVisible(false)
-          queryClient.invalidateQueries({ queryKey: ['courses'] })
-        }
-      })
+  const handleFormSubmit = async (formData) => {
+    try {
+      if (selectedItem) {
+        await updateMutation.mutateAsync({ id: selectedItem.id, ...formData })
+      } else {
+        await createMutation.mutateAsync(formData)
+      }
+      setModalVisible(false)
+      // Invalidar cache de cursos (incluem dados de disciplinas/módulos)
+      queryClient.invalidateQueries({ queryKey: ['courses'] })
+    } catch {
+      // Erro é tratado pelo mutation (mostrado no GenericModalForm)
     }
   }
 
@@ -97,15 +89,7 @@ const Subjects = () => {
 
   return (
     <div className="p-4">
-      <div className="d-flex justify-content-between align-items-end mb-5 flex-wrap gap-3">
-        <div>
-          <span className="zen-caps" style={{ color: 'var(--brand-600)' }}>Gestão</span>
-          <h1 className="text-display mt-2" style={{ fontSize: '3rem', color: 'var(--brand-950)' }}>
-            <span className="text-editorial">Disciplinas</span>
-          </h1>
-        </div>
-        <div className="luxury-line" style={{ width: '100px', marginBottom: '14px' }} />
-      </div>
+      <PageHeader preTitle="Gestão" title="Disciplinas" />
       <div className="d-flex justify-content-end mb-4">
         <CButton color="primary" onClick={handleCreate} className="d-flex align-items-center gap-2">
           <CIcon icon={cilPlus} />

@@ -33,12 +33,12 @@ const SubjectForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
   })
 
   // ✅ Popular dados na Edição (Passo 1 e 2)
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (initialData) {
       setFormData({
         name: initialData.name || '',
         required_room_type: initialData.required_room_type || 'normal',
-        // Preservar id dos módulos existentes para o backend fazer smart diff
         modules: (initialData.modules || []).map(m => ({
           id: m.id || undefined,
           name: m.name,
@@ -49,6 +49,7 @@ const SubjectForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
       })
     }
   }, [initialData])
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   // --- HANDLERS ---
 

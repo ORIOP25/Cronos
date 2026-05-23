@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
-import { 
-  CCard, CCardBody, CCol, CRow, CButton, CAlert, CBadge 
+import PageHeader from '../components/PageHeader'
+import {
+  CCard, CCardBody, CButton, CAlert, CBadge 
 } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
 import { cilPlus } from '@coreui/icons'
@@ -81,15 +82,7 @@ const Classes = () => {
 
   return (
     <div className="p-4">
-      <div className="d-flex justify-content-between align-items-end mb-5 flex-wrap gap-3">
-        <div>
-          <span className="zen-caps" style={{ color: 'var(--brand-600)' }}>Gestão</span>
-          <h1 className="text-display mt-2" style={{ fontSize: '3rem', color: 'var(--brand-950)' }}>
-            <span className="text-editorial">Turmas</span>
-          </h1>
-        </div>
-        <div className="luxury-line" style={{ width: '100px', marginBottom: '14px' }} />
-      </div>
+      <PageHeader preTitle="Gestão" title="Turmas" />
       <div className="d-flex justify-content-end mb-4">
         <CButton color="primary" onClick={handleCreate} className="d-flex align-items-center gap-2">
           <CIcon icon={cilPlus} />

@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react'
+import PageHeader from '../components/PageHeader'
 import { useNavigate } from 'react-router-dom'
 import {
   CCard, CCardBody, CAlert, CBadge, CSpinner, CButton,
@@ -7,8 +8,8 @@ import {
 } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
 import {
-  cilCalendar, cilCheckCircle, cilActionUndo, cilArrowLeft, cilArrowRight,
-  cilPeople, cilExternalLink, cilCalendarCheck, cilXCircle,
+  cilCheckCircle, cilActionUndo, cilArrowLeft, cilArrowRight,
+  cilPeople, cilExternalLink,
 } from '@coreui/icons'
 import {
   useTimesheets, useUpdateTimesheetStatus, useWeekSchedule,
@@ -58,6 +59,7 @@ const Timesheets = () => {
   const updateMutation = useUpdateTimesheetStatus()
 
   // Auto-select first teacher when list loads or changes
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (timesheets.length > 0 && !selectedTeacherId) {
       setSelectedTeacherId(timesheets[0].teacher_id)
@@ -72,6 +74,7 @@ const Timesheets = () => {
       setSelectedTeacherId(null)
     }
   }, [timesheets, selectedTeacherId])
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const selectedTeacher = useMemo(() => {
     return timesheets.find((t) => t.teacher_id === selectedTeacherId) || null
@@ -119,15 +122,7 @@ const Timesheets = () => {
   return (
     <div className="p-4">
       {/* Header */}
-      <div className="d-flex justify-content-between align-items-end mb-5 flex-wrap gap-3">
-        <div>
-          <span className="zen-caps" style={{ color: 'var(--brand-600)' }}>Operações</span>
-          <h1 className="text-display mt-2" style={{ fontSize: '3rem', color: 'var(--brand-950)' }}>
-            Fecho <span className="text-editorial">Semanal</span>
-          </h1>
-        </div>
-        <div className="luxury-line" style={{ width: '100px', marginBottom: '14px' }} />
-      </div>
+      <PageHeader preTitle="Operações" title={<span>Fecho <span className="text-editorial">Semanal</span></span>} />
 
       {/* Filters */}
       <CCard className="border-0 shadow-sm mb-4">

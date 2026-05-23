@@ -41,6 +41,7 @@ const CourseForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
   const [classError, setClassError] = useState(null)
 
   // --- POPULAR DADOS NA EDIÇÃO ---
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (initialData) {
       setFormData({
@@ -60,6 +61,7 @@ const CourseForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
       setStep(1)
     }
   }, [initialData, currentYear])
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   // --- HANDLERS PASSO 1 ---
   const handleInputChange = (e) => {

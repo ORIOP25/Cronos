@@ -1,14 +1,16 @@
 import React, { useState } from 'react'
-import { 
-  CCard, CCardBody, CCol, CRow, CButton, CAlert
+import PageHeader from '../components/PageHeader'
+import {
+  CCard, CCardBody, CButton, CAlert
 } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
-import { cilUserPlus, cilPeople, cilUser } from '@coreui/icons'
+import { cilUserPlus, cilUser } from '@coreui/icons'
 
 // --- Arquitetura Limpa: Imports Padronizados ---
 import SmartTable from '../components/SmartTable'
 import GenericModalForm from '../components/GenericModalForm'
 import TeacherForm from '../components/Forms/TeacherForm' // O formulário que acabámos de criar
+import FormattedList from '../components/FormattedList'
 
 // Hooks de Dados (Read & Write)
 import { 
@@ -30,15 +32,6 @@ const Teachers = () => {
   const createMutation = useCreateEntity('teachers')
   const updateMutation = useUpdateEntity('teachers')
   const deleteMutation = useDeleteEntity('teachers')
-
-  // Função auxiliar para formatar listas (igual à de Courses)
-  const formatList = (names) => {
-    if (!names.length) return <span className="text-muted">-</span>;
-    if (names.length > 3) {
-      return <span title={names.join(', ')}>{names.slice(0, 3).join(', ')} (+{names.length - 3})</span>;
-    }
-    return names.join(', ');
-  }
 
   // 3. Definição das Colunas da Tabela
   const columns = [
@@ -89,7 +82,7 @@ const Teachers = () => {
             }).filter(Boolean); // Remove nulos
 
             // 4. Formatação bonita
-            return formatList(names);
+            return <FormattedList items={names} limit={3} />
         }
     },
   ]
@@ -132,15 +125,7 @@ const Teachers = () => {
   return (
     <div className="p-4">
       {/* Cabeçalho da Página */}
-      <div className="d-flex justify-content-between align-items-end mb-5 flex-wrap gap-3">
-        <div>
-          <span className="zen-caps" style={{ color: 'var(--brand-600)' }}>Gestão</span>
-          <h1 className="text-display mt-2" style={{ fontSize: '3rem', color: 'var(--brand-950)' }}>
-            <span className="text-editorial">Professores</span>
-          </h1>
-        </div>
-        <div className="luxury-line" style={{ width: '100px', marginBottom: '14px' }} />
-      </div>
+      <PageHeader preTitle="Gestão" title="Professores" />
       <div className="d-flex justify-content-end mb-4">
         <CButton color="primary" onClick={handleCreate} className="d-flex align-items-center gap-2">
           <CIcon icon={cilUserPlus} />

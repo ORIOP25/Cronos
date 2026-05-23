@@ -109,6 +109,7 @@ const CourseDetails = () => {
   const [selectedClass, setSelectedClass] = useState(null)
 
   // --- MEMOIZED: Turmas agrupadas por grade_level ---
+  // eslint-disable-next-line react-hooks/preserve-manual-memoization
   const classGroups = useMemo(() => {
     if (!course?.classes) return {}
     const groups = {}
@@ -122,7 +123,7 @@ const CourseDetails = () => {
       groups[grade].sort((a, b) => b.start_year - a.start_year)
     }
     return groups
-  }, [course?.classes])
+    }, [course?.classes])
 
   const sortedGrades = useMemo(
     () => Object.keys(classGroups).map(Number).sort((a, b) => a - b),

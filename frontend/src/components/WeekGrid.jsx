@@ -210,7 +210,7 @@ const SlotCell = ({ slotEntries, isOperationalEnabled, onOpenOperationalAction }
   } else if (slot.occurrence_id && !slot.occurrence_decided_at) {
     statusLabel = 'Ocorrência'
   } else if (slot.is_past) {
-    statusLabel = 'Pendente'
+    statusLabel = slot.class_info?.name || null
   }
 
   const titleText = buildCellTitle(slotEntries)

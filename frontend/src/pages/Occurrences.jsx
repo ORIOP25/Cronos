@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react'
+import PageHeader from '../components/PageHeader'
 import PropTypes from 'prop-types'
 import { useSearchParams } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
@@ -15,9 +16,9 @@ import {
   useOccurrences, useDebts, useUpdateOccurrence, useCancelOccurrence,
   useSubstituteRecommendations, useClasses, useTeachers, useSubjects,
 } from '../hooks/useSchoolData'
-import { useOrganization } from '@clerk/react'
 import { formatDate, formatDateTime } from '../utils/formatUtils'
-import { TXT } from '../utils/terminology'
+import { TXT, OPERATIONAL_STATE_LABELS, OPERATIONAL_STATE_COLORS } from '../utils/terminology'
+import { useRole } from '../hooks/useRole'
 
 // ---------------------------------------------------------------------------
 // Constantes
@@ -41,18 +42,6 @@ const STATUS_ICONS = {
   GAP: cilBan,
   SUBSTITUTED: cilWarning,
   REVOKED: cilClock,
-}
-
-const OPERATIONAL_STATE_LABELS = {
-  OPEN_PENDING: 'Pendente',
-  CLOSED: 'Resolvida',
-  REVOKED: 'Revertida',
-}
-
-const OPERATIONAL_STATE_COLORS = {
-  OPEN_PENDING: 'warning',
-  CLOSED: 'secondary',
-  REVOKED: 'secondary',
 }
 
 const OPERATIONAL_STATE_ICONS = {
@@ -202,15 +191,18 @@ const EditOccurrenceModal = ({
       return
     }
     const first = recommendations[0]
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setSelectedRecommendation(`${first.teacher_id}:${first.subject_id}`)
   }, [status, selectedRecommendation, recommendations])
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setIsDecisionConfirmed(false)
   }, [status, selectedRecommendation])
 
   useEffect(() => {
     if (status !== 'SUBSTITUTED') {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setShowAllRecommendations(false)
     }
   }, [status])
@@ -482,8 +474,7 @@ DebtsPanel.propTypes = {
 // Painel de Ocorrências
 // ---------------------------------------------------------------------------
 const OccurrencesPanel = ({ classId, dateFrom, dateTo, initialOccurrenceId, forcedFilter }) => {
-  const { membership } = useOrganization()
-  const isAdmin = membership?.role === 'org:admin'
+  const { isAdmin } = useRole()
   const [editingOccurrence, setEditingOccurrence] = useState(null)
   const [resolutionFilter, setResolutionFilter] = useState(forcedFilter || 'all')
   const [saveErrorMessage, setSaveErrorMessage] = useState('')
@@ -534,19 +525,25 @@ const OccurrencesPanel = ({ classId, dateFrom, dateTo, initialOccurrenceId, forc
     if (!editingOccurrence) return
     const stillExists = occurrences.some((occ) => occ.id === editingOccurrence.id)
     if (!stillExists) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setEditingOccurrence(null)
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setSaveErrorMessage('')
     }
   }, [editingOccurrence, occurrences])
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setHasAppliedInitialFocus(false)
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setEditingOccurrence(null)
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setSaveErrorMessage('')
   }, [initialOccurrenceId])
 
   useEffect(() => {
     if (forcedFilter) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setResolutionFilter(forcedFilter)
     }
   }, [forcedFilter])
@@ -559,9 +556,11 @@ const OccurrencesPanel = ({ classId, dateFrom, dateTo, initialOccurrenceId, forc
       return
     }
 
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setResolutionFilter('all')
     const targetOccurrence = occurrences.find((occ) => occ.id === initialOccurrenceId)
     if (targetOccurrence && isAdmin) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setEditingOccurrence(targetOccurrence)
     }
     setHasAppliedInitialFocus(true)
@@ -580,28 +579,7 @@ const OccurrencesPanel = ({ classId, dateFrom, dateTo, initialOccurrenceId, forc
 
   const openEditModal = (occurrence) => {
     if (!isAdmin) return
-    // V4: REVOKED and GIVEN (decided) are read-only
     if (occurrence.status === 'REVOKED' || (occurrence.decided_at && occurrence.status === 'GIVEN')) return
-    setEditingOccurrence(occurrence)
-    setSaveErrorMessage('')
-  }
-
-  const handleMarkGap = (occurrence) => {
-    if (!isAdmin) return
-    updateMutation.mutate(
-      { id: occurrence.id, status: 'GAP' },
-      {
-        onSuccess: () => {
-          void queryClient.invalidateQueries({ queryKey: ['occurrences'] })
-          void queryClient.invalidateQueries({ queryKey: ['weekSchedule'] })
-        },
-        onError: (error) => setSaveErrorMessage(buildUpdateErrorMessage(error)),
-      },
-    )
-  }
-
-  const handleStartSubstitution = (occurrence) => {
-    // Opens the decision modal for substitution — user selects substitute
     setEditingOccurrence(occurrence)
     setSaveErrorMessage('')
   }
@@ -749,7 +727,6 @@ const OccurrencesPanel = ({ classId, dateFrom, dateTo, initialOccurrenceId, forc
             const isDecided = occ.decided_at && occ.status !== 'REVOKED' && occ.status !== 'GIVEN'
             const isExpanded = expandedId === occ.id
             const hasDetail = occ.lesson_log_summary || occ.lesson_log_notes
-            const decisionSummary = buildDecisionSummary(occ)
             return (
             <React.Fragment key={occ.id}>
             <CTableRow
@@ -875,9 +852,13 @@ const Occurrences = () => {
   const [activeTab, setActiveTab] = useState(statusParam === 'OPEN' ? 'occurrences' : 'occurrences')
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setClassFilter(initialClassFilter)
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setDateFrom(initialDateFrom)
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setDateTo(initialDateTo)
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setActiveTab('occurrences')
   }, [initialClassFilter, initialDateFrom, initialDateTo])
 
@@ -886,15 +867,7 @@ const Occurrences = () => {
   return (
     <div className="p-4">
       {/* Cabeçalho */}
-      <div className="d-flex justify-content-between align-items-end mb-5 flex-wrap gap-3">
-        <div>
-          <span className="zen-caps" style={{ color: 'var(--brand-600)' }}>Operações</span>
-          <h1 className="text-display mt-2" style={{ fontSize: '3rem', color: 'var(--brand-950)' }}>
-            Faltas e <span className="text-editorial">Ocorrências</span>
-          </h1>
-        </div>
-        <div className="luxury-line" style={{ width: '100px', marginBottom: '14px' }} />
-      </div>
+      <PageHeader preTitle="Operações" title={<span>Faltas e <span className="text-editorial">Ocorrências</span></span>} />
 
       {/* Filtros globais */}
       <CCard className="border-0 shadow-sm mb-4">

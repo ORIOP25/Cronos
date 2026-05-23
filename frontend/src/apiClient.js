@@ -46,9 +46,6 @@ apiClient.interceptors.response.use(
   }
 );
 
-export const teachers = {
-  getAll: () => apiClient.get('/teachers/'),
-  create: (data) => apiClient.post('/teachers/', data),
-};
+
 
 export default apiClient;

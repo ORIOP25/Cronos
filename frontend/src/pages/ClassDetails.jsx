@@ -232,6 +232,7 @@ const ClassDetails = () => {
   const [progressEdit, setProgressEdit] = useState({})
 
   // --- MEMOIZED: Totais globais ---
+  // eslint-disable-next-line react-hooks/preserve-manual-memoization
   const globalStats = useMemo(() => {
     if (!classData?.subjects) return { totalHours: 0, completedHours: 0, pct: 0, totalModules: 0, completedModules: 0 }
     let totalH = 0, completedH = 0, totalM = 0, completedM = 0
@@ -250,7 +251,7 @@ const ClassDetails = () => {
       totalModules: totalM,
       completedModules: completedM,
     }
-  }, [classData?.subjects])
+    }, [classData?.subjects])
 
   // ==========================================
   //  HANDLERS: Header

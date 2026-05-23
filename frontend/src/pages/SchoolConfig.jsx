@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import PageHeader from '../components/PageHeader'
 import {
   CCard, CCardBody, CCardHeader, CCol, CRow, CForm, CFormInput,
   CFormCheck, CFormLabel, CButton, CAlert, CBadge,
@@ -7,7 +8,7 @@ import {
   CModal, CModalHeader, CModalTitle, CModalBody, CModalFooter
 } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
-import { cilSettings, cilSave, cilTrash, cilCloudDownload, cilCalendar } from '@coreui/icons'
+import { cilSave, cilTrash, cilCloudDownload, cilCalendar } from '@coreui/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import apiClient from '../apiClient'
 import { useOrganization } from '@clerk/react'
@@ -71,7 +72,7 @@ const CalendarSection = () => {
 
   const syncMutation = useMutation({
     mutationFn: () => apiClient.post('/school/settings/sync-holidays'),
-    onSuccess: (res) => {
+    onSuccess: () => {
       setSuccessMsg(`Feriados nacionais importados com sucesso.`)
       void queryClient.invalidateQueries({ queryKey: ['calendar-events'] })
       setTimeout(() => setSuccessMsg(null), 4000)
@@ -281,6 +282,7 @@ const SettingsSection = () => {
     },
   })
 
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (settings && Object.keys(settings).length > 0) {
       setForm({
@@ -296,6 +298,7 @@ const SettingsSection = () => {
     setSaveConfirmationPending(false)
     setSavePromptMsg(null)
   }, [form.school_start_date, form.school_target_end_date, form.school_hard_end_date, form.repair_stability_window_days])
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const upsertMutation = useMutation({
     mutationFn: (payload) => apiClient.post('/school/settings/', payload),
@@ -519,7 +522,7 @@ const GridSection = () => {
         break_duration_minutes: Number.parseInt(formData.break_duration_minutes, 10),
         days_of_week: selectedDays,
       })
-    } catch (e) {
+    } catch {
       // errors handled by React Query
     }
   }
@@ -593,15 +596,7 @@ const SchoolConfig = () => {
 
   return (
     <div className="p-4">
-      <div className="d-flex justify-content-between align-items-end mb-5 flex-wrap gap-3">
-        <div>
-          <span className="zen-caps" style={{ color: 'var(--brand-600)' }}>Configuração</span>
-          <h1 className="text-display mt-2" style={{ fontSize: '3rem', color: 'var(--brand-950)' }}>
-            <span className="text-editorial">Escola</span>
-          </h1>
-        </div>
-        <div className="luxury-line" style={{ width: '100px', marginBottom: '14px' }} />
-      </div>
+      <PageHeader preTitle="Configuração" title="Escola" />
 
       {organization?.name && (
         <CAlert color="primary" className="d-flex align-items-center gap-2 py-2 mb-4">

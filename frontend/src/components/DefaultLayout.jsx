@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react'
 import { Outlet, NavLink, useLocation } from 'react-router-dom'
-import { useUser, useOrganization, useClerk } from '@clerk/react'
+import { useUser, useClerk } from '@clerk/react'
 import { ROUTE_MY_SCHEDULES } from '../roleAccess'
+import { useRole } from '../hooks/useRole'
 import { TXT } from '../utils/terminology'
 import CIcon from '@coreui/icons-react'
 import { 
@@ -44,11 +45,9 @@ const SidebarLink = ({ to, icon, children, collapsed }) => (
 const DefaultLayout = () => {
   const location = useLocation()
   const { user } = useUser()
-  const { membership } = useOrganization()
   const { openUserProfile, signOut } = useClerk()
   
-  const isAdmin = membership?.role === 'org:admin'
-  const isTeacher = membership?.role === 'org:member'
+  const { isAdmin, isTeacher } = useRole()
   const accessDeniedMessage = location?.state?.accessDeniedMessage ?? ''
   
   const [collapsed, setCollapsed] = useState(() => {
@@ -116,13 +115,13 @@ const DefaultLayout = () => {
             {!collapsed && (
               <div>
                 <h2 className="text-display" style={{ color: '#ffffff', fontSize: '1.6rem', margin: 0 }}>
-                  {TXT.SIDEBAR_BRAND}{TXT.SIDEBAR_BRAND_ACCENT && <span style={{ color: 'var(--rs-sidebar-brand)' }}> {TXT.SIDEBAR_BRAND_ACCENT}</span>}
+                  {TXT.SIDEBAR_BRAND}
                 </h2>
                 <div className="luxury-line" style={{ width: '40px', margin: '12px 0' }} />
               </div>
             )}
             {collapsed && (
-              <h2 className="text-display" style={{ color: '#ffffff', fontSize: '1.3rem', margin: 0 }}>A</h2>
+              <h2 className="text-display" style={{ color: '#ffffff', fontSize: '1.3rem', margin: 0 }}>C</h2>
             )}
             <button
               type="button"

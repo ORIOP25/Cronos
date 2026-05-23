@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react'
+import PageHeader from '../components/PageHeader'
 import { CAlert, CBadge, CCard, CCardBody, CCardHeader, CSpinner } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
 import { cilBook, cilEducation } from '@coreui/icons'
@@ -174,15 +175,7 @@ function MyProgress() {
 
   return (
     <div className="p-4">
-      <div className="d-flex justify-content-between align-items-end mb-5 flex-wrap gap-3">
-        <div>
-          <span className="zen-caps" style={{ color: 'var(--brand-600)' }}>Professor</span>
-          <h1 className="text-display mt-2" style={{ fontSize: '3rem', color: 'var(--brand-950)' }}>
-            Meu <span className="text-editorial">Progresso</span>
-          </h1>
-        </div>
-        <div className="luxury-line" style={{ width: '100px', marginBottom: '14px' }} />
-      </div>
+      <PageHeader preTitle="Professor" title={<span>Meu <span className="text-editorial">Progresso</span></span>} />
       <div className="d-flex justify-content-end mb-4">
         <CBadge color="info" className="px-3 py-2">
           {classes.length} turma{classes.length !== 1 ? 's' : ''}

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import PropTypes from 'prop-types'
-import { useNavigate, useLocation } from 'react-router-dom'
+import { useLocation } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import {
   CCard, CCardBody, CCardHeader, CAlert, CBadge, CSpinner,
@@ -10,7 +10,7 @@ import {
 import CIcon from '@coreui/icons-react'
 import {
   cilCalendar, cilReload, cilBan,
-  cilArrowLeft, cilArrowRight, cilPeople, cilUser, cilCalendarCheck,
+  cilArrowLeft, cilArrowRight, cilPeople, cilUser,
 } from '@coreui/icons'
 import {
   useDrafts, useApproveDraft, useRejectDraft,
@@ -25,6 +25,8 @@ import GenerationStatusPanel from '../components/schedules/GenerationStatusPanel
 import { isPending, TERMINAL_STATUSES } from '../utils/scheduleStatus'
 import PreflightErrorPanel from '../components/schedules/PreflightErrorPanel'
 import { useOrganization, useUser } from '@clerk/react'
+import { useRole } from '../hooks/useRole'
+import { getCurrentWeekMonday, addDays, formatWeekRange } from '../utils/formatUtils'
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -56,45 +58,6 @@ function writeStoredView(storageKey, viewState) {
     // no-op
   }
 }
-
-// ---------------------------------------------------------------------------
-// Module-scope helpers (SonarQube S7721)
-// ---------------------------------------------------------------------------
-function getCurrentWeekMonday() {
-  const today = new Date()
-  const dayOfWeek = today.getDay()
-  const diff = dayOfWeek === 0 ? -6 : 1 - dayOfWeek
-  const monday = new Date(today.getTime() + diff * 24 * 60 * 60 * 1000)
-  return monday.toISOString().split('T')[0]
-}
-
-function addDays(dateStr, days) {
-  const d = new Date(`${dateStr}T12:00:00`)
-  d.setDate(d.getDate() + days)
-  return d.toISOString().split('T')[0]
-}
-
-function formatWeekRange(weekStart) {
-  const start = new Date(`${weekStart}T12:00:00`)
-  const end   = new Date(`${weekStart}T12:00:00`)
-  end.setDate(end.getDate() + 4)
-  const short = { day: '2-digit', month: 'short' }
-  const full  = { day: '2-digit', month: 'short', year: 'numeric' }
-  return `${start.toLocaleDateString('pt-PT', short)} – ${end.toLocaleDateString('pt-PT', full)}`
-}
-
-function formatOperationalDate(dateStr) {
-  if (!dateStr) return '—'
-  const dateValue = new Date(`${dateStr}T12:00:00`)
-  if (Number.isNaN(dateValue.getTime())) return dateStr
-  return dateValue.toLocaleDateString('pt-PT', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-  })
-}
-
-
 
 function getTaskStorageKey(orgId) {
   if (!orgId) return null
@@ -132,13 +95,11 @@ function clearStoredTaskId(storageKey) {
 // Schedules — Main Page
 // ---------------------------------------------------------------------------
 const Schedules = () => {
-  const navigate = useNavigate()
   const location = useLocation()
   const queryClient = useQueryClient()
-  const { organization, membership } = useOrganization()
+  const { organization } = useOrganization()
   const orgId = organization?.id ?? null
-  const isAdmin = membership?.role === 'org:admin'
-  const isTeacher = membership?.role === 'org:member'
+  const { isAdmin, isTeacher } = useRole()
   const { user } = useUser()
   const teacherOwnId = user?.publicMetadata?.teacher_id ?? null
   const canConsultSchedule = isAdmin || (isTeacher && Boolean(teacherOwnId))
@@ -177,11 +138,13 @@ const Schedules = () => {
     return storedView?.weekStart || getCurrentWeekMonday()
   })
   // Bug #4: Keep weekStart in sync with URL query param changes (cross-navigation)
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (urlWeekStart && /^\d{4}-\d{2}-\d{2}$/.test(urlWeekStart) && urlWeekStart !== weekStart) {
       setWeekStart(urlWeekStart)
     }
   }, [urlWeekStart, weekStart])
+  /* eslint-enable react-hooks/set-state-in-effect */
   const [adminLessonLogSlot, setAdminLessonLogSlot] = useState(null)
   const [generationActionError, setGenerationActionError] = useState('')
 
@@ -199,6 +162,7 @@ const Schedules = () => {
   const { data: timeslots = [] } = useTimeslots()
 
   // Apply URL query params for cross-navigation (Fase 7.4)
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (!isAdmin || !urlTeacherId) return
     const teacherExists = teachers.some((t) => String(t.id) === urlTeacherId)
@@ -208,6 +172,7 @@ const Schedules = () => {
       setSelectedClassId('')
     }
   }, [isAdmin, urlTeacherId, teachers])
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   // Persist view state so the user returns to the same class/teacher
   useEffect(() => {
@@ -249,6 +214,7 @@ const Schedules = () => {
     }
   }, [taskData, activeTaskId, refetchDrafts, queryClient, taskStorageKey])
 
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (!isAdmin || activeTaskId) {
       return
@@ -259,6 +225,7 @@ const Schedules = () => {
       setActiveTaskId(storedTaskId)
     }
   }, [isAdmin, activeTaskId, taskStorageKey])
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   useEffect(() => {
     if (!isAdmin) {
@@ -270,6 +237,7 @@ const Schedules = () => {
     }
   }, [isAdmin, activeTaskId, taskStorageKey])
 
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (!isTeacher || !teacherOwnId) {
       return
@@ -279,6 +247,7 @@ const Schedules = () => {
     setSelectedClassId('')
     setSelectedTeacherId(String(teacherOwnId))
   }, [isTeacher, teacherOwnId])
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const handleGenerate = async () => {
     setGenerationActionError('')

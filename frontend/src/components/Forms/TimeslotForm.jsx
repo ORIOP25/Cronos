@@ -11,18 +11,23 @@ const TimeslotForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
     end_time: '09:15'
   })
 
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (initialData) {
       setFormData({
         day_of_week: initialData.day_of_week,
-        // Cortar os segundos (HH:MM:SS -> HH:MM) para o input type="time" aceitar
         start_time: initialData.start_time.substring(0, 5),
         end_time: initialData.end_time.substring(0, 5)
       })
     } else {
-        setFormData({ day_of_week: 0, start_time: '08:30', end_time: '09:15' })
+      setFormData({
+        day_of_week: 0,
+        start_time: '08:00',
+        end_time: '08:45'
+      })
     }
   }, [initialData])
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const handleChange = (e) => {
     const { name, value } = e.target

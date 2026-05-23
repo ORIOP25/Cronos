@@ -4,6 +4,7 @@ import { CAlert } from '@coreui/react'
 import AnalyticsHeatmap from '../components/AnalyticsHeatmap'
 import { AlertBar, ResourceCounts, ClassProgressOverview, DebtSummaryCard, QuickActions } from '../components/dashboard'
 import { useDashboard } from '../hooks/useSchoolData'
+import PageHeader from '../components/PageHeader'
 
 const Dashboard = () => {
   const { data, isLoading, isError, error } = useDashboard()
@@ -11,15 +12,7 @@ const Dashboard = () => {
 
   // ── Header ──────────────────────────────────────
   const header = (
-    <div className="d-flex justify-content-between align-items-end mb-5">
-      <div>
-        <span className="zen-caps" style={{ color: 'var(--brand-600)' }}>Visão Geral</span>
-        <h1 className="text-display mt-2" style={{ fontSize: '3rem', color: 'var(--brand-950)' }}>
-          Painel de <span className="text-editorial">Controlo</span>
-        </h1>
-      </div>
-      <div className="luxury-line" style={{ width: '100px', marginBottom: '14px' }} />
-    </div>
+    <PageHeader preTitle="Visão Geral" title="Painel de Controlo" />
   )
 
   if (isError) {

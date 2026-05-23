@@ -14,6 +14,7 @@ const ClassForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
   })
 
   // Popula o formulário se estivermos a editar
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (initialData) {
       setFormData({
@@ -25,6 +26,7 @@ const ClassForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
         setFormData({ name: '', size: 25 })
     }
   }, [initialData])
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const handleChange = (e) => {
     const { name, value } = e.target

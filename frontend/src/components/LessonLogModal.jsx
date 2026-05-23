@@ -48,6 +48,7 @@ const LessonLogModal = ({ visible, onClose, slot, isAdmin = false }) => {
   const upsertLogMutation = useUpsertLessonLog()
   const updateTimesheetStatusMutation = useUpdateTimesheetStatus()
 
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (visible && slot) {
       setSummary(slot.lesson_log_summary || '')
@@ -57,6 +58,7 @@ const LessonLogModal = ({ visible, onClose, slot, isAdmin = false }) => {
       setShowReopenConfirm(false)
     }
   }, [visible, slot])
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const MAX_SUMMARY_LENGTH = 2000
   const MAX_NOTES_LENGTH = 1000

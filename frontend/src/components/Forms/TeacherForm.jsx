@@ -20,10 +20,10 @@ const TeacherForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
   const { data: subjects, isLoading: subjectsLoading } = useSubjects()
 
   // 3. Inicialização dos Dados
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (initialData) {
       let normalizedIds = [];
-      // Lógica de resiliência: aceita objetos ou IDs
       if (initialData.subject_ids && Array.isArray(initialData.subject_ids)) {
         normalizedIds = initialData.subject_ids;
       } else if (initialData.subjects && Array.isArray(initialData.subjects)) {
@@ -48,6 +48,7 @@ const TeacherForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
       })
     }
   }, [initialData])
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   // --- HANDLERS ---
 

@@ -27,7 +27,7 @@ describe('terminology', () => {
     })
 
     it('todas as chaves têm valores em PT-PT', () => {
-      for (const [key, value] of Object.entries(TXT)) {
+      for (const [, value] of Object.entries(TXT)) {
         expect(value).toBeTruthy()
         expect(typeof value).toBe('string')
         // Verifica que não contém palavras isoladas em inglês (word boundary)

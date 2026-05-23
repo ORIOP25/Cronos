@@ -78,18 +78,6 @@ export const useClasses = ({ enabled = true } = {}) => {
   })
 }
 
-export const useLessons = () => {
-  const orgId = useOrganization().organization?.id
-  return useQuery({
-    queryKey: ['lessons', orgId],
-    queryFn: async () => {
-      const { data } = await apiClient.get('/import/lessons')
-      return data
-    },
-    enabled: Boolean(orgId),
-    ...STATIC_OPTS
-  })
-}
 
 export const useTimeslots = () => {
   const orgId = useOrganization().organization?.id
@@ -122,57 +110,10 @@ export const useCourses = () => {
 }
 
 // --- CURRÍCULO DA TURMA (Dados Relacionados) ---
-/**
- * Hook para carregar o currículo (disciplinas) de uma turma.
- * 
- * Implementa o padrão de "Dados Relacionados":
- * - enabled=!!classId: Só faz fetch se classId existir
- * - queryKey inclui classId: Cache separada por turma
- * - STATIC_OPTS: Currículo muda raramente
- * 
- * Uso:
- * const { data: curriculum, isLoading } = useClassCurriculum(5)
- */
-export const useClassCurriculum = (classId) => {
-  const orgId = useOrganization().organization?.id
-  return useQuery({
-    queryKey: ['class-curriculum', orgId, classId],
-    queryFn: async () => {
-      if (!classId) return []
-      const { data } = await apiClient.get(`/classes/${classId}/curriculum`)
-      return data
-    },
-    enabled: !!classId,
-    ...STATIC_OPTS
-  })
-}
+
 
 // --- HOOKS OPERACIONAIS (Dinâmicos) ---
 
-export const useSchedule = () => {
-  const orgId = useOrganization().organization?.id
-  return useQuery({
-    queryKey: ['schedule', orgId],
-    queryFn: async () => {
-      const { data } = await apiClient.get('/schedule/latest')
-      return data
-    },
-    ...DYNAMIC_OPTS
-  })
-}
-
-export const useSubstitutions = () => {
-  const orgId = useOrganization().organization?.id
-  return useQuery({
-    queryKey: ['substitutions', orgId],
-    queryFn: async () => {
-      const { data } = await apiClient.get('/substitutions/')
-      return data
-    },
-    staleTime: 1000 * 60,
-    refetchOnWindowFocus: true
-  })
-}
 
 // ==========================================
 //  HOOKS DE MUTAÇÃO GENÉRICOS (CRUD Factory)
@@ -652,23 +593,6 @@ export const useDebts = ({ classId } = {}) => {
   })
 }
 
-/**
- * Professores disponíveis para substitição num slot/data específicos.
- */
-export const useAvailableSubstitutes = ({ timeslotId, targetDate } = {}) => {
-  const orgId = useOrganization().organization?.id
-  return useQuery({
-    queryKey: ['substitutes', orgId, timeslotId, targetDate],
-    queryFn: async () => {
-      const { data } = await apiClient.get('/occurrences/substitutes', {
-        params: { timeslot_id: timeslotId, target_date: targetDate },
-      })
-      return data
-    },
-    enabled: !!(timeslotId && targetDate),
-    ...DYNAMIC_OPTS,
-  })
-}
 
 /**
  * Ranking de recomendações para uma ocorrência específica.

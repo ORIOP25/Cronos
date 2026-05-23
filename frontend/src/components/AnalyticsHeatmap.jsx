@@ -2,14 +2,12 @@ import React from 'react'
 import { useQuery } from '@tanstack/react-query'
 import apiClient from '../apiClient'
 import { CSpinner, CTooltip } from '@coreui/react'
+import { useTimeslots } from '../hooks/useSchoolData'
 
 const daysOfWeek = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"] // Nomes curtos
 
 const AnalyticsHeatmap = () => {
-  const { data: timeslots } = useQuery({
-    queryKey: ['timeslots'],
-    queryFn: async () => (await apiClient.get('/import/timeslots')).data
-  })
+  const { data: timeslots } = useTimeslots()
 
   const { data: heatmapData, isLoading } = useQuery({
     queryKey: ['heatmap'],

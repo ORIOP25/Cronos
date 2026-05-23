@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
+import PageHeader from '../components/PageHeader'
 import { useQueryClient } from '@tanstack/react-query'
 import { CAlert, CBadge, CButton, CCard, CCardBody, CCardHeader, CSpinner } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
@@ -15,6 +16,7 @@ import {
   useSubmitMyTimesheet
 } from '../hooks/useSchoolData'
 import { useOrganization, useUser } from '@clerk/react'
+import { getCurrentWeekMonday, addDays, formatWeekRange, formatDate, toIsoDate, isAfterDate } from '../utils/formatUtils'
 
 const HORIZON_NOT_CONFIGURED_MESSAGE =
   'Não existe período semanal configurado para a escola. Contacte a equipa administrativa para validar o ano letivo ativo.'
@@ -40,51 +42,12 @@ function parseDateAtNoon(dateStr) {
   return new Date(year, month - 1, day, 12, 0, 0, 0)
 }
 
-function toIsoDate(value) {
-  const year = value.getFullYear()
-  const month = String(value.getMonth() + 1).padStart(2, '0')
-  const day = String(value.getDate()).padStart(2, '0')
-  return `${year}-${month}-${day}`
-}
-
 function toWeekMonday(dateStr) {
   const dateValue = parseDateAtNoon(dateStr)
   const dayOfWeek = dateValue.getDay()
   const offset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek
   dateValue.setDate(dateValue.getDate() + offset)
   return toIsoDate(dateValue)
-}
-
-function getCurrentWeekMonday() {
-  return toWeekMonday(toIsoDate(new Date()))
-}
-
-function addDays(dateStr, days) {
-  const dateValue = parseDateAtNoon(dateStr)
-  dateValue.setDate(dateValue.getDate() + days)
-  return toIsoDate(dateValue)
-}
-
-function isAfterDate(leftDate, rightDate) {
-  return parseDateAtNoon(leftDate).getTime() > parseDateAtNoon(rightDate).getTime()
-}
-
-function formatWeekRange(weekStart) {
-  const start = parseDateAtNoon(weekStart)
-  const end = parseDateAtNoon(weekStart)
-  end.setDate(end.getDate() + 4)
-
-  const short = { day: '2-digit', month: 'short' }
-  const full = { day: '2-digit', month: 'short', year: 'numeric' }
-  return `${start.toLocaleDateString('pt-PT', short)} – ${end.toLocaleDateString('pt-PT', full)}`
-}
-
-function formatDatePt(dateStr) {
-  return parseDateAtNoon(dateStr).toLocaleDateString('pt-PT', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-  })
 }
 
 function resolveHorizonErrorMessage(error) {
@@ -130,17 +93,21 @@ function MySchedules() {
     refetchInterval: HORIZON_SYNC_POLLING_INTERVAL_MS,
   })
 
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (!isLoadingHorizon && !hasHorizonError && horizon) {
       setLastHealthyHorizon(horizon)
     }
   }, [horizon, isLoadingHorizon, hasHorizonError])
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const effectiveHorizon = hasHorizonError ? lastHealthyHorizon : horizon
   const hardEndDate = effectiveHorizon?.hard_end_date ?? null
   const recommendedWeekStart = effectiveHorizon?.week_start_recommended ?? null
   const minWeekStart = effectiveHorizon?.min_week_start ?? recommendedWeekStart
 
+  // Sync week start from external recommendation (applied once per mount)
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (!recommendedWeekStart || recommendedWeekApplied) {
       return
@@ -148,19 +115,23 @@ function MySchedules() {
     setWeekStart(recommendedWeekStart)
     setRecommendedWeekApplied(true)
   }, [recommendedWeekApplied, recommendedWeekStart])
+  /* eslint-enable react-hooks/set-state-in-effect */
 
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (minWeekStart && isAfterDate(minWeekStart, weekStart)) {
       setWeekStart(minWeekStart)
-      setLimitFeedback(`A navegação foi limitada ao início do ano letivo (${formatDatePt(minWeekStart)}).`)
+      setLimitFeedback(`A navegação foi limitada ao início do ano letivo (${formatDate(minWeekStart)}).`)
       return
     }
     if (hardEndDate && isAfterDate(weekStart, hardEndDate)) {
       setWeekStart(toWeekMonday(hardEndDate))
-      setLimitFeedback(`A navegação foi limitada à data limite do ano letivo (${formatDatePt(hardEndDate)}).`)
+      setLimitFeedback(`A navegação foi limitada à data limite do ano letivo (${formatDate(hardEndDate)}).`)
     }
   }, [hardEndDate, minWeekStart, weekStart])
+  /* eslint-enable react-hooks/set-state-in-effect */
 
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (!effectiveTeacherId || isLoadingHorizon || hasHorizonError) {
       return
@@ -197,6 +168,7 @@ function MySchedules() {
     orgId,
     queryClient,
   ])
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const prevWeekStart = useMemo(() => addDays(weekStart, -7), [weekStart])
   const nextWeekStart = useMemo(() => addDays(weekStart, 7), [weekStart])
@@ -219,11 +191,13 @@ function MySchedules() {
     isError: hasWeekError,
   } = useWeekSchedule(null, effectiveTeacherId, weekStart)
 
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (!hasWeekError) {
       setLastHealthyWeekSlots(fetchedWeekSlots)
     }
   }, [fetchedWeekSlots, hasWeekError])
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const weekSlots = hasWeekError ? lastHealthyWeekSlots : fetchedWeekSlots
   const hasWeekFallback = hasWeekError && lastHealthyWeekSlots.length > 0
@@ -307,7 +281,7 @@ function MySchedules() {
   const handlePrevWeek = () => {
     setSyncFeedback('')
     if (prevWeekBlocked && minWeekStart) {
-      setLimitFeedback(`Semanas antes de ${formatDatePt(minWeekStart)} estão bloqueadas.`)
+      setLimitFeedback(`Semanas antes de ${formatDate(minWeekStart)} estão bloqueadas.`)
       return
     }
     setLimitFeedback('')
@@ -319,7 +293,7 @@ function MySchedules() {
     const currentWeek = getCurrentWeekMonday()
     if (hardEndDate && isAfterDate(currentWeek, hardEndDate)) {
       setWeekStart(toWeekMonday(hardEndDate))
-      setLimitFeedback(`A semana atual está após a data limite do ano letivo (${formatDatePt(hardEndDate)}).`)
+      setLimitFeedback(`A semana atual está após a data limite do ano letivo (${formatDate(hardEndDate)}).`)
       return
     }
     setLimitFeedback('')
@@ -329,7 +303,7 @@ function MySchedules() {
   const handleNextWeek = () => {
     setSyncFeedback('')
     if (nextWeekBlocked && hardEndDate) {
-      setLimitFeedback(`Semanas após ${formatDatePt(hardEndDate)} estão bloqueadas.`)
+      setLimitFeedback(`Semanas após ${formatDate(hardEndDate)} estão bloqueadas.`)
       return
     }
     setLimitFeedback('')
@@ -399,15 +373,7 @@ function MySchedules() {
 
   return (
     <div className="p-4">
-      <div className="d-flex justify-content-between align-items-end mb-5 flex-wrap gap-3">
-        <div>
-          <span className="zen-caps" style={{ color: 'var(--brand-600)' }}>Professor</span>
-          <h1 className="text-display mt-2" style={{ fontSize: '3rem', color: 'var(--brand-950)' }}>
-            Meus <span className="text-editorial">Horários</span>
-          </h1>
-        </div>
-        <div className="luxury-line" style={{ width: '100px', marginBottom: '14px' }} />
-      </div>
+      <PageHeader preTitle="Professor" title={<span>Meus <span className="text-editorial">Horários</span></span>} />
       <div className="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3">
         <div></div>
         <div className="d-flex gap-2 align-items-center flex-wrap">
@@ -460,7 +426,7 @@ function MySchedules() {
         </CCardHeader>
         <CCardBody>
           <div className="small text-muted mb-3">
-            Limite de navegação: {minWeekStart ? `de ${formatDatePt(minWeekStart)} ` : ''}até {formatDatePt(hardEndDate)}.
+            Limite de navegação: {minWeekStart ? `de ${formatDate(minWeekStart)} ` : ''}até {formatDate(hardEndDate)}.
           </div>
 
           {hasHorizonError && effectiveHorizon ? (
