@@ -18,7 +18,7 @@ from app import models
 from app import schemas
 from tests.conftest import mock_clerk_payload
 from app.services import schedule_service
-from app.core.solver_engine import ScheduleEngine, LessonInput, TimeslotInput, RoomInput
+from app.core.solver_schemas import ScheduleEngine, LessonInput, TimeslotInput, RoomInput
 
 # sync_db fixture is provided by conftest.py (shared across all test files)
 

@@ -4,7 +4,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 from datetime import date, timedelta
 
-from app.core.solver_engine import LessonInput, RoomInput, TimeslotInput
+from app.core.solver_schemas import LessonInput, RoomInput, TimeslotInput
 
 DEFAULT_AVAILABILITY_SCORE = 1
 IMPOSSIBLE_AVAILABILITY_SCORE = -1

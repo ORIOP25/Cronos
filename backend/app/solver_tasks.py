@@ -32,8 +32,7 @@ from app.core.task_keys import (
     active_task_by_org_key as _active_task_by_org_key,
 )
 from app.services import room_service, schedule_service, occurrence_service
-from app.core.solver_engine import (
-    ScheduleEngine,
+from app.core.solver_schemas import (
     LessonInput,
     TimeslotInput,
     RoomInput,
@@ -1031,22 +1030,8 @@ def generate_schedule_task(self: Task, organization_id: int, mode: str = "full")
                 progress={"current": GENERATION_TOTAL_STEPS, "total": GENERATION_TOTAL_STEPS},
             )
 
-        # --- Solver V1: original weekly-pattern engine ---
-        engine = ScheduleEngine(
-            lessons=lesson_inputs,
-            timeslots=timeslot_inputs,
-            rooms=room_inputs,
-            availability_map=availability_map,
-            previous_pattern=previous_pattern,
-            lunch_window_start_minutes=lunch_start_minutes,
-            lunch_window_end_minutes=lunch_end_minutes,
-            lunch_min_duration_minutes=lunch_min_duration,
-        )
-        assignments = engine.solve()
-        _raise_if_cancel_requested(self, step=6, phase="SOLVING")
-
-        if assignments is None:
-            return _task_result(status="Impossible", message=MSG_IMPOSSIBLE)
+        # --- Solver V1: original weekly-pattern engine (REMOVED) ---
+        return _task_result(status="Impossible", message="Motor V1 legado foi desativado e removido. Use o modo V2.")
 
         # 3. EXPAND — padrão semanal → datas absolutas
         self.update_state(state="EXPANDING", meta=_task_progress_meta(7, "A expandir padrão semanal para datas reais...", "EXPANDING"))

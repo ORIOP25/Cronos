@@ -3,7 +3,7 @@
 import pytest
 from datetime import date
 
-from app.core.solver_engine import LessonInput, TimeslotInput, RoomInput
+from app.core.solver_schemas import LessonInput, TimeslotInput, RoomInput
 from app.core.solver_v2_candidates import (
     SolverV2Candidate,
     CandidatePruningTelemetry,

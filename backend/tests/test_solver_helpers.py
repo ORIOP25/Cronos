@@ -18,7 +18,7 @@ from app.solver_tasks import (
     _estimate_capacity_minutes_in_range,
     _build_remaining_summary,
 )
-from app.core.solver_engine import LessonInput, TimeslotInput, RoomInput
+from app.core.solver_schemas import LessonInput, TimeslotInput, RoomInput
 
 pytestmark = pytest.mark.unit
 

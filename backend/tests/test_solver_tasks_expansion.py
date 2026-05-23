@@ -1,7 +1,7 @@
 from datetime import date
 from types import SimpleNamespace
 
-from app.core.solver_engine import ScheduledAssignment
+from app.core.solver_schemas import ScheduledAssignment
 from app.solver_tasks import expand_to_dates, _resolve_hard_end_date
 
 
