@@ -24,6 +24,7 @@ def upgrade() -> None:
     sa.Column('id', sa.Integer(), nullable=False),
     sa.Column('name', sa.String(length=100), nullable=False),
     sa.Column('plan_status', sa.Enum('inactive', 'active', 'suspended', name='organizationplanstatus'), nullable=False),
+    sa.Column('clerk_org_id', sa.String(length=255), nullable=True, unique=True),
     sa.PrimaryKeyConstraint('id')
     )
     op.create_table('constraint',
@@ -167,12 +168,13 @@ def upgrade() -> None:
     sa.Column('id', sa.Integer(), nullable=False),
     sa.Column('name', sa.String(length=150), nullable=True),
     sa.Column('email', sa.String(length=100), nullable=False),
-    sa.Column('hashed_password', sa.String(length=255), nullable=False),
+    sa.Column('hashed_password', sa.String(length=255), nullable=True),
     sa.Column('role', sa.Enum('admin', 'teacher', 'student', name='userrole'), nullable=False),
     sa.Column('teacher_id', sa.Integer(), nullable=True),
-    sa.Column('organization_id', sa.Integer(), nullable=False),
+    sa.Column('organization_id', sa.Integer(), nullable=True),
     sa.Column('is_active', sa.Boolean(), nullable=False),
     sa.Column('is_superuser', sa.Boolean(), nullable=False),
+    sa.Column('clerk_user_id', sa.String(length=255), nullable=True, unique=True),
     sa.ForeignKeyConstraint(['organization_id'], ['organization.id'], ),
     sa.ForeignKeyConstraint(['teacher_id'], ['teacher.id'], ),
     sa.PrimaryKeyConstraint('id')
@@ -331,7 +333,7 @@ def upgrade() -> None:
     sa.Column('date', sa.Date(), nullable=False),
     sa.Column('class_id', sa.Integer(), nullable=True),
     sa.Column('subject_id', sa.Integer(), nullable=True),
-    sa.Column('status', sa.Enum('GIVEN', 'GAP', 'SUBSTITUTED', name='lessonoccurrencestatus'), nullable=False),
+    sa.Column('status', sa.Enum('GIVEN', 'GAP', 'SUBSTITUTED', 'REVOKED', name='lessonoccurrencestatus'), nullable=False),
     sa.Column('planned_hours', sa.Float(), nullable=False),
     sa.Column('substitute_teacher_id', sa.Integer(), nullable=True),
     sa.Column('substitute_subject_id', sa.Integer(), nullable=True),
