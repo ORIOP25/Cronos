@@ -50,7 +50,10 @@ async def upsert_org_settings(
     db: Annotated[AsyncSession, Depends(deps.get_db)],
     current_user: Annotated[models.User, Depends(deps.get_current_active_admin)],
 ) -> schemas.OrganizationSettingsRead:
-    return await settings_service.upsert_settings(db, current_user.organization_id, payload)
+    try:
+        return await settings_service.upsert_settings(db, current_user.organization_id, payload)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
 
 
 class SoftResetRequest(BaseModel):
@@ -98,7 +101,10 @@ async def upsert_grid_settings(
     db: Annotated[AsyncSession, Depends(deps.get_db)],
     current_user: Annotated[models.User, Depends(deps.get_current_active_admin)],
 ) -> schemas.OrganizationGridSettingsRead:
-    return await settings_service.upsert_grid_settings(db, current_user.organization_id, payload)
+    try:
+        return await settings_service.upsert_grid_settings(db, current_user.organization_id, payload)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
 
 
 @router.post(

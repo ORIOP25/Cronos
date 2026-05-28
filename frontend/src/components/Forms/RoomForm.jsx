@@ -27,12 +27,18 @@ const RoomForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
 
   const handleChange = (e) => {
     const { name, value } = e.target
-    setFormData(prev => ({ ...prev, [name]: value }))
+    setFormData(prev => ({
+      ...prev,
+      [name]: name === 'capacity' && value !== '' ? Number(value) : value,
+    }))
   }
 
   const handleSubmit = (e) => {
     e.preventDefault()
-    onSubmit(formData)
+    onSubmit({
+      ...formData,
+      capacity: Number(formData.capacity),
+    })
   }
 
   let submitLabel = 'Criar Sala'
@@ -44,6 +50,7 @@ const RoomForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
       <CRow className="g-3">
         <CCol md={8}>
           <CFormInput
+            id="room-name"
             type="text"
             label="Nome da Sala"
             name="name"
@@ -56,6 +63,7 @@ const RoomForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
         
         <CCol md={4}>
           <CFormInput
+            id="room-capacity"
             type="number"
             label="Lotação"
             name="capacity"
@@ -68,6 +76,7 @@ const RoomForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
 
         <CCol md={12}>
           <CFormSelect 
+            id="room-type"
             label="Tipo de Sala" 
             name="type"
             value={formData.type}

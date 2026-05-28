@@ -1,14 +1,3 @@
-// Ficheiro: frontend/src/test/CourseForm.test.jsx
-/**
- * TESTES — CourseForm (Wizard 2 Passos)
- * ======================================
- * 1. Renderiza passo 1 (Informações) por defeito
- * 2. Navega para passo 2 (Turmas) quando campos preenchidos
- * 3. Não avança sem nome/sigla
- * 4. Passo 2 renderiza interface de adicionar turmas
- * 5. Botão "Anterior" volta ao passo 1
- */
-
 import { render, screen, fireEvent } from '@testing-library/react'
 import { describe, it, expect, vi } from 'vitest'
 import CourseForm from '../components/Forms/CourseForm'
@@ -20,85 +9,138 @@ const defaultProps = {
   onCancel: vi.fn(),
 }
 
-describe('CourseForm — Wizard', () => {
-  it('renderiza passo 1 (Informações) por defeito', () => {
-    render(<CourseForm {...defaultProps} />)
-    expect(screen.getByText('1. Informações')).toBeInTheDocument()
-    expect(screen.getByPlaceholderText(/Técnico em Informática/i)).toBeInTheDocument()
-    expect(screen.getByPlaceholderText(/TGEI/i)).toBeInTheDocument()
+function fillCourseBasics(name = 'Tecnico Informatica', abbreviation = 'TI') {
+  fireEvent.change(screen.getByLabelText(/nome do curso/i), {
+    target: { value: name },
   })
+  fireEvent.change(screen.getByLabelText(/sigla/i), {
+    target: { value: abbreviation },
+  })
+}
 
-  it('tem badge "2. Turmas" visível mas inativo', () => {
+function goToClassesStep() {
+  fireEvent.click(screen.getByRole('button', { name: /turmas/i }))
+}
+
+describe('CourseForm - Wizard', () => {
+  it('renderiza passo 1 por defeito', () => {
     render(<CourseForm {...defaultProps} />)
+
+    expect(screen.getByText(/1\. informa/i)).toBeInTheDocument()
+    expect(screen.getByLabelText(/nome do curso/i)).toBeInTheDocument()
+    expect(screen.getByLabelText(/sigla/i)).toHaveAttribute('maxLength', '10')
     expect(screen.getByText('2. Turmas')).toBeInTheDocument()
   })
 
-  it('avança para passo 2 quando nome e sigla preenchidos', () => {
+  it('nao avanca sem nome ou sigla validos', () => {
     render(<CourseForm {...defaultProps} />)
-    
-    // Preencher campos obrigatórios
-    fireEvent.change(screen.getByPlaceholderText(/Técnico em Informática/i), {
-      target: { value: 'Técnico Informática' },
-    })
-    fireEvent.change(screen.getByPlaceholderText(/TGEI/i), {
-      target: { value: 'TI' },
-    })
-    
-    // Clicar em "Próximo: Turmas"
-    fireEvent.click(screen.getByText(/Próximo: Turmas/i))
-    
-    // Deve mostrar interface de passo 2
-    expect(screen.getByText(/Gerar Turmas Iniciais/i)).toBeInTheDocument()
-  })
 
-  it('passo 2 tem formulário para adicionar turmas', () => {
-    render(<CourseForm {...defaultProps} />)
-    
-    fireEvent.change(screen.getByPlaceholderText(/Técnico em Informática/i), {
+    fireEvent.click(screen.getByRole('button', { name: /turmas/i }))
+    expect(screen.getByRole('alert')).toHaveTextContent(/nome do curso/i)
+
+    fireEvent.change(screen.getByLabelText(/nome do curso/i), {
       target: { value: 'Curso X' },
     })
-    fireEvent.change(screen.getByPlaceholderText(/TGEI/i), {
-      target: { value: 'CX' },
+    fireEvent.click(screen.getByRole('button', { name: /turmas/i }))
+    expect(screen.getByRole('alert')).toHaveTextContent(/sigla do curso/i)
+
+    fireEvent.change(screen.getByLabelText(/sigla/i), {
+      target: { value: 'A' },
     })
-    fireEvent.click(screen.getByText(/Próximo: Turmas/i))
-    
-    // Verifica campos de turma
-    expect(screen.getByPlaceholderText(/10º TGEI/i)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Adicionar Turma/i })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /turmas/i }))
+    expect(screen.getByText(/pelo menos 2 caracteres/i)).toBeInTheDocument()
   })
 
-  it('botão Anterior volta ao passo 1', () => {
+  it('adiciona turma e submete payload completo', () => {
+    const onSubmit = vi.fn()
+    render(<CourseForm {...defaultProps} onSubmit={onSubmit} />)
+
+    fillCourseBasics('  Tecnico Informatica  ', ' TI ')
+    goToClassesStep()
+
+    fireEvent.change(screen.getByLabelText(/nome turma/i), {
+      target: { value: '10 TI' },
+    })
+    fireEvent.change(screen.getByLabelText(/ano \(10-12\)/i), {
+      target: { value: '10' },
+    })
+    fireEvent.change(screen.getByLabelText(/2025/), {
+      target: { value: '2026' },
+    })
+    fireEvent.change(screen.getByLabelText(/2028/), {
+      target: { value: '2029' },
+    })
+    fireEvent.change(screen.getByLabelText(/alunos/i), {
+      target: { value: '24' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: /adicionar turma/i }))
+
+    expect(screen.getByText('10 TI')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /criar curso completo/i }))
+
+    expect(onSubmit).toHaveBeenCalledWith({
+      name: 'Tecnico Informatica',
+      abbreviation: 'TI',
+      subject_ids: [],
+      classes_config: [
+        {
+          name: '10 TI',
+          grade_level: 10,
+          start_year: 2026,
+          end_year: 2029,
+          size: 24,
+        },
+      ],
+    })
+  })
+
+  it('rejeita turma cujo ano de fim nao seja posterior ao inicio', () => {
     render(<CourseForm {...defaultProps} />)
-    
-    fireEvent.change(screen.getByPlaceholderText(/Técnico em Informática/i), {
-      target: { value: 'Curso Y' },
+
+    fillCourseBasics()
+    goToClassesStep()
+
+    fireEvent.change(screen.getByLabelText(/nome turma/i), {
+      target: { value: '10 TI' },
     })
-    fireEvent.change(screen.getByPlaceholderText(/TGEI/i), {
-      target: { value: 'CY' },
+    fireEvent.change(screen.getByLabelText(/2025/), {
+      target: { value: '2026' },
     })
-    fireEvent.click(screen.getByText(/Próximo: Turmas/i))
-    
-    // Voltar
-    fireEvent.click(screen.getByText(/Anterior/i))
-    expect(screen.getByText(/Informações Básicas/i)).toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText(/2028/), {
+      target: { value: '2026' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: /adicionar turma/i }))
+
+    expect(screen.getByText(/deve ser posterior/i)).toBeInTheDocument()
   })
 
-  it('popula campos na edição (initialData)', () => {
+  it('botao Anterior volta ao passo 1', () => {
+    render(<CourseForm {...defaultProps} />)
+
+    fillCourseBasics('Curso Y', 'CY')
+    goToClassesStep()
+
+    fireEvent.click(screen.getByText(/anterior/i))
+    expect(screen.getByLabelText(/nome do curso/i)).toBeInTheDocument()
+  })
+
+  it('popula campos na edicao', () => {
     const editData = {
       name: 'TGPSI',
       abbreviation: 'TGPS',
       classes: [{ name: 'Turma A', grade_level: 10, start_year: 2025, end_year: 2028, size: 25 }],
     }
     render(<CourseForm {...defaultProps} initialData={editData} />)
-    
-    expect(screen.getByDisplayValue('TGPSI')).toBeInTheDocument()
-    expect(screen.getByDisplayValue('TGPS')).toBeInTheDocument()
+
+    expect(screen.getByLabelText(/nome do curso/i)).toHaveValue('TGPSI')
+    expect(screen.getByLabelText(/sigla/i)).toHaveValue('TGPS')
   })
 
-  it('botão Cancelar chama onCancel', () => {
+  it('botao Cancelar chama onCancel', () => {
     const onCancel = vi.fn()
     render(<CourseForm {...defaultProps} onCancel={onCancel} />)
-    
+
     fireEvent.click(screen.getByText('Cancelar'))
     expect(onCancel).toHaveBeenCalledTimes(1)
   })

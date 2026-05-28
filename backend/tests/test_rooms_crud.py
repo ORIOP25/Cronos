@@ -79,6 +79,16 @@ class TestRoomsCRUD:
         )
         assert resp.status_code == 422
 
+    async def test_create_room_invalid_capacity_422(
+        self, async_client: AsyncClient, admin_token_headers: dict
+    ):
+        """❌ Capacidade zero ou negativa é rejeitada antes de gravar."""
+        payload = {"name": "Sala Sem Lugares", "type": "normal", "capacity": 0}
+        resp = await async_client.post(
+            f"{API}/rooms/", json=payload, headers=admin_token_headers
+        )
+        assert resp.status_code == 422
+
     # ---------- READ ----------
 
     async def test_list_rooms(
@@ -137,6 +147,24 @@ class TestRoomsCRUD:
         )
         assert resp.status_code == 200
         assert resp.json()["type"] == "lab"
+
+    async def test_update_room_invalid_capacity_422(
+        self, async_client: AsyncClient, admin_token_headers: dict
+    ):
+        """❌ PATCH não permite transformar uma sala válida numa sala inválida."""
+        create = await async_client.post(
+            f"{API}/rooms/",
+            json={"name": "Capacidade", "type": "normal", "capacity": 25},
+            headers=admin_token_headers,
+        )
+        rid = create.json()["id"]
+
+        resp = await async_client.patch(
+            f"{API}/rooms/{rid}",
+            json={"capacity": -1},
+            headers=admin_token_headers,
+        )
+        assert resp.status_code == 422
 
     async def test_update_room_not_found_404(
         self, async_client: AsyncClient, admin_token_headers: dict

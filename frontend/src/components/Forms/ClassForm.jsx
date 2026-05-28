@@ -7,10 +7,14 @@ import { useCourses } from '../../hooks/useSchoolData'
 
 const ClassForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
   const { data: courses } = useCourses()
+  const currentYear = new Date().getFullYear()
   const [formData, setFormData] = useState({ 
     name: '', 
     size: 25,
-    course_id: ''
+    course_id: '',
+    grade_level: 10,
+    start_year: currentYear,
+    end_year: currentYear + 3,
   })
 
   // Popula o formulário se estivermos a editar
@@ -20,12 +24,22 @@ const ClassForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
       setFormData({
         name: initialData.name || '',
         size: initialData.size || 25,
-        course_id: initialData.course_id ? String(initialData.course_id) : ''
+        course_id: initialData.course_id ? String(initialData.course_id) : '',
+        grade_level: initialData.grade_level || 10,
+        start_year: initialData.start_year || currentYear,
+        end_year: initialData.end_year || currentYear + 3,
       })
     } else {
-        setFormData({ name: '', size: 25 })
+        setFormData({
+          name: '',
+          size: 25,
+          course_id: '',
+          grade_level: 10,
+          start_year: currentYear,
+          end_year: currentYear + 3,
+        })
     }
-  }, [initialData])
+  }, [initialData, currentYear])
   /* eslint-enable react-hooks/set-state-in-effect */
 
   const handleChange = (e) => {
@@ -37,8 +51,12 @@ const ClassForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
     e.preventDefault()
     // Pequena proteção: converter string vazia em null para o backend
     const finalData = {
-        ...formData,
-        course_id: formData.course_id ? Number.parseInt(formData.course_id, 10) : null
+      ...formData,
+      size: Number(formData.size),
+      course_id: formData.course_id ? Number.parseInt(formData.course_id, 10) : null,
+      grade_level: Number(formData.grade_level),
+      start_year: Number(formData.start_year),
+      end_year: Number(formData.end_year),
     }
     onSubmit(finalData)
   }
@@ -52,6 +70,7 @@ const ClassForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
       <CRow className="g-3">
         <CCol md={8}>
           <CFormInput
+            id="class-name"
             type="text"
             label="Nome da Turma"
             name="name"
@@ -64,6 +83,7 @@ const ClassForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
         
         <CCol md={4}>
           <CFormInput
+            id="class-size"
             type="number"
             label="Nº Alunos"
             name="size"
@@ -77,6 +97,7 @@ const ClassForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
 
         <CCol md={12}>
           <CFormSelect
+            id="class-course"
             label="Curso Associado"
             name="course_id"
             value={formData.course_id}
@@ -89,6 +110,46 @@ const ClassForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
                 <option key={course.id} value={course.id}>{course.name}</option>
             ))}
           </CFormSelect>
+        </CCol>
+
+        <CCol md={4}>
+          <CFormInput
+            id="class-grade-level"
+            type="number"
+            label="Ano (10-12)"
+            name="grade_level"
+            value={formData.grade_level}
+            onChange={handleChange}
+            min="10"
+            max="12"
+            required
+          />
+        </CCol>
+
+        <CCol md={4}>
+          <CFormInput
+            id="class-start-year"
+            type="number"
+            label="Inicio"
+            name="start_year"
+            value={formData.start_year}
+            onChange={handleChange}
+            min="2000"
+            required
+          />
+        </CCol>
+
+        <CCol md={4}>
+          <CFormInput
+            id="class-end-year"
+            type="number"
+            label="Fim"
+            name="end_year"
+            value={formData.end_year}
+            onChange={handleChange}
+            min="2001"
+            required
+          />
         </CCol>
       </CRow>
 

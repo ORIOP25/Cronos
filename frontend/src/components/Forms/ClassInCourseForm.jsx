@@ -6,6 +6,7 @@ import {
   CFormInput,
   CButton,
   CModalFooter,
+  CAlert,
 } from '@coreui/react'
 import PropTypes from 'prop-types'
 
@@ -19,6 +20,7 @@ const defaultState = {
 
 const ClassInCourseForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
   const [formData, setFormData] = useState(defaultState)
+  const [error, setError] = useState('')
 
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
@@ -45,18 +47,38 @@ const ClassInCourseForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
 
   const handleChange = (e) => {
     const { name, value } = e.target
+    setError('')
     setFormData((prev) => ({ ...prev, [name]: value }))
   }
 
   const handleSubmit = (e) => {
     e.preventDefault()
-    onSubmit({
+    const payload = {
       name: String(formData.name).trim(),
       size: Number(formData.size),
       grade_level: Number(formData.grade_level),
       start_year: Number(formData.start_year),
       end_year: Number(formData.end_year),
-    })
+    }
+
+    if (!payload.name) {
+      setError('Indique o nome da turma.')
+      return
+    }
+    if (payload.size <= 0) {
+      setError('O numero de alunos tem de ser maior que zero.')
+      return
+    }
+    if (payload.grade_level < 10 || payload.grade_level > 12) {
+      setError('O ano tem de estar entre 10 e 12.')
+      return
+    }
+    if (payload.end_year <= payload.start_year) {
+      setError('O ano de fim tem de ser posterior ao ano de inicio.')
+      return
+    }
+
+    onSubmit(payload)
   }
 
   let submitLabel = 'Criar Turma'
@@ -65,9 +87,12 @@ const ClassInCourseForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
 
   return (
     <CForm onSubmit={handleSubmit}>
+      {error && <CAlert color="danger">{error}</CAlert>}
+
       <CRow className="g-3">
         <CCol md={8}>
           <CFormInput
+            id="classInCourseName"
             type="text"
             label="Nome da Turma"
             name="name"
@@ -80,6 +105,7 @@ const ClassInCourseForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
 
         <CCol md={4}>
           <CFormInput
+            id="classInCourseSize"
             type="number"
             label="Nº Alunos"
             name="size"
@@ -93,6 +119,7 @@ const ClassInCourseForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
 
         <CCol md={4}>
           <CFormInput
+            id="classInCourseGradeLevel"
             type="number"
             label="Ano (10-12)"
             name="grade_level"
@@ -106,6 +133,7 @@ const ClassInCourseForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
 
         <CCol md={4}>
           <CFormInput
+            id="classInCourseStartYear"
             type="number"
             label="Início"
             name="start_year"
@@ -118,6 +146,7 @@ const ClassInCourseForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
 
         <CCol md={4}>
           <CFormInput
+            id="classInCourseEndYear"
             type="number"
             label="Fim"
             name="end_year"

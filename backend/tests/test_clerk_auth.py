@@ -263,12 +263,13 @@ async def test_get_current_user_unknown_role_string(db_session):
     """Token com role desconhecida → parse_role retorna 'teacher' (default)."""
     from app.api.deps import get_current_user
     from app.services import clerk_sync
+    from app.models import UserRole
 
     mock_user = MagicMock()
     mock_user.clerk_user_id = "user_unknown_role"
     mock_user.email = "unknown@test.com"
     mock_user.is_active = True
-    mock_user.role = "teacher"
+    mock_user.role = UserRole.admin.value
 
     with patch("app.api.deps.get_clerk_payload") as mock_payload, \
          patch.object(clerk_sync, "sync_user_from_clerk_api") as mock_sync:
@@ -276,10 +277,10 @@ async def test_get_current_user_unknown_role_string(db_session):
         mock_sync.return_value = mock_user
 
         mock_request = MagicMock()
-        await get_current_user(mock_request, db_session)
+        result = await get_current_user(mock_request, db_session)
 
-    # parse_role("org:superadmin") → role_map.get() → fallback "teacher"
-    # O mock user já tem role='teacher', o que valida o comportamento esperado
+    assert result.role == UserRole.teacher.value
+    mock_sync.assert_called_once_with(db_session, "user_unknown_role")
 
 
 @pytest.mark.asyncio

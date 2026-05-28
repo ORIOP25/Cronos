@@ -134,7 +134,7 @@ async def test_timeslots_isolated_between_orgs(
             "slot_duration_minutes": 50, "break_duration_minutes": 10,
             "days_of_week": [0],
         }, headers=_hdr("user_slots_a"))
-        assert r.status_code in (200, 201)
+        assert r.status_code == 200
 
     with patch("app.api.deps.get_clerk_payload", return_value=p_b):
         r = await async_client.post(f"{API}/timeslots/generate", json={
@@ -142,7 +142,7 @@ async def test_timeslots_isolated_between_orgs(
             "slot_duration_minutes": 50, "break_duration_minutes": 10,
             "days_of_week": [1],
         }, headers=_hdr("user_slots_b"))
-        assert r.status_code in (200, 201)
+        assert r.status_code == 200
 
     with patch("app.api.deps.get_clerk_payload", return_value=p_a):
         resp_a = await async_client.get(f"{API}/timeslots/", headers=_hdr("user_slots_a"))
@@ -203,7 +203,7 @@ async def test_settings_isolated_between_orgs(
 
     with patch("app.api.deps.get_clerk_payload", return_value=p_b):
         resp_b = await async_client.get(f"{API}/school/settings/", headers=_hdr("user_set_b"))
-        assert resp_b.status_code in (200, 404)
+        assert resp_b.status_code == 404
 
 
 # ============================================================
@@ -224,7 +224,7 @@ async def test_cannot_access_room_from_other_org(
 
     with patch("app.api.deps.get_clerk_payload", return_value=p_b):
         r = await async_client.get(f"{API}/rooms/{room_id}", headers=_hdr("user_idor_room_b"))
-        assert r.status_code in (404, 405)
+        assert r.status_code == 405
 
 
 @pytest.mark.asyncio

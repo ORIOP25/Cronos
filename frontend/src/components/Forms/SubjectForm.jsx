@@ -65,7 +65,10 @@ const SubjectForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
 
   const handleAddModule = () => {
     // Validação simples
-    if (!currentModule.name || !currentModule.hours_total) return
+    const name = currentModule.name.trim()
+    const code = currentModule.code.trim()
+    const hoursTotal = Number.parseInt(currentModule.hours_total, 10)
+    if (!name || !Number.isInteger(hoursTotal) || hoursTotal <= 0) return
 
     setFormData(prev => ({
       ...prev,
@@ -73,8 +76,10 @@ const SubjectForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
         ...prev.modules,
         {
           ...currentModule,
+          name,
+          code,
           order: prev.modules.length, // Auto-ordenação
-          hours_total: Number.parseInt(currentModule.hours_total, 10)
+          hours_total: hoursTotal
           // Sem id = módulo novo
         }
       ]
@@ -110,12 +115,15 @@ const SubjectForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
   }
 
   const handleSaveEditModule = () => {
-    if (!editModuleData.name || !editModuleData.hours_total) return
+    const name = editModuleData.name.trim()
+    const code = editModuleData.code.trim()
+    const hoursTotal = Number.parseInt(editModuleData.hours_total, 10)
+    if (!name || !Number.isInteger(hoursTotal) || hoursTotal <= 0) return
     setFormData(prev => ({
       ...prev,
       modules: prev.modules.map((m, i) => 
         i === editingModuleIndex 
-          ? { ...m, name: editModuleData.name, code: editModuleData.code, hours_total: Number.parseInt(editModuleData.hours_total, 10) }
+          ? { ...m, name, code, hours_total: hoursTotal }
           : m
       )
     }))
@@ -127,14 +135,24 @@ const SubjectForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
   }
 
   const handleNextStep = () => {
-    if (formData.name) setStep(2)
+    if (formData.name.trim()) setStep(2)
   }
 
   const handlePreviousStep = () => setStep(1)
 
   const handleFormSubmit = (e) => {
     e.preventDefault()
-    onSubmit(formData)
+    onSubmit({
+      ...formData,
+      name: formData.name.trim(),
+      modules: formData.modules.map((module, index) => ({
+        ...module,
+        name: module.name.trim(),
+        code: module.code?.trim() || '',
+        hours_total: Number(module.hours_total),
+        order: index,
+      })),
+    })
   }
 
   return (
@@ -248,7 +266,7 @@ const SubjectForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
                     size="sm" 
                     className="text-white text-nowrap"
                     onClick={handleAddModule}
-                    disabled={!currentModule.name || !currentModule.hours_total}
+                    disabled={!currentModule.name.trim() || Number(currentModule.hours_total) <= 0}
                     title="Adicionar à lista"
                   >
                     Adicionar

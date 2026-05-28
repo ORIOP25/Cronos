@@ -3,10 +3,17 @@ import { useOrganization } from '@clerk/react'
 import { useNavigate, Link } from 'react-router-dom'
 import apiClient from '../apiClient'
 
-const today = new Date().toISOString().slice(0, 10)
-const nextYear = new Date(new Date().setFullYear(new Date().getFullYear() + 1))
-  .toISOString()
-  .slice(0, 10)
+function toLocalDateInputValue(dateValue) {
+  const year = dateValue.getFullYear()
+  const month = String(dateValue.getMonth() + 1).padStart(2, '0')
+  const day = String(dateValue.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+const today = toLocalDateInputValue(new Date())
+const nextYearDate = new Date()
+nextYearDate.setFullYear(nextYearDate.getFullYear() + 1)
+const nextYear = toLocalDateInputValue(nextYearDate)
 
 function IconCalendar() {
   return (
@@ -133,6 +140,7 @@ export default function Onboarding() {
             <label className="zen-onboarding-label">Data de início</label>
             <input
               type="date"
+              aria-label="Data de início"
               className="zen-onboarding-input"
               value={form.school_start_date}
               onChange={(e) =>
@@ -147,6 +155,7 @@ export default function Onboarding() {
               <label className="zen-onboarding-label">Fim previsto</label>
               <input
                 type="date"
+                aria-label="Fim previsto"
                 className="zen-onboarding-input"
                 value={form.school_target_end_date}
                 onChange={(e) =>
@@ -165,6 +174,7 @@ export default function Onboarding() {
               </label>
               <input
                 type="date"
+                aria-label="Fim máximo"
                 className="zen-onboarding-input"
                 value={form.school_hard_end_date}
                 onChange={(e) =>
@@ -189,6 +199,7 @@ export default function Onboarding() {
               <label className="zen-onboarding-label">Início</label>
               <input
                 type="time"
+                aria-label="Início do almoço"
                 className="zen-onboarding-input"
                 value={form.lunch_start}
                 onChange={(e) =>
@@ -202,6 +213,7 @@ export default function Onboarding() {
               <label className="zen-onboarding-label">Fim</label>
               <input
                 type="time"
+                aria-label="Fim do almoço"
                 className="zen-onboarding-input"
                 value={form.lunch_end}
                 onChange={(e) =>
@@ -216,6 +228,7 @@ export default function Onboarding() {
             <label className="zen-onboarding-label">Duração mínima (minutos)</label>
             <input
               type="number"
+              aria-label="Duração mínima"
               className="zen-onboarding-input"
               style={{ maxWidth: 180 }}
               value={form.lunch_min_duration}

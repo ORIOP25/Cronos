@@ -114,6 +114,7 @@ const TeacherForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
         <CCol md={6}>
           <div className="mb-3">
             <CFormInput
+              id="teacher-name"
               label="Nome Completo"
               name="name"
               value={formData.name}
@@ -139,6 +140,7 @@ const TeacherForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
 
           <div className="mb-3">
             <CFormInput
+              id="teacher-email"
               type="email"
               // Email é SEMPRE obrigatório agora (cada professor tem uma conta User)
               label="Email de Login (Obrigatório)"
@@ -157,6 +159,7 @@ const TeacherForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
           {formData.create_user_account && (
             <div className="mb-3">
               <CFormInput
+                id="teacher-password"
                 type="password"
                 label={initialData ? 'Nova Password (deixe vazio para não alterar)' : 'Password de Acesso'}
                 name="password"

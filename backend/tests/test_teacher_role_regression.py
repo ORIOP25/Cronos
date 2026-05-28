@@ -62,7 +62,7 @@ class TestTeacherRoleRegressionContracts:
             json={"start_time": "08:00", "end_time": "10:00", "slot_duration_minutes": 50, "break_duration_minutes": 10, "days_of_week": [0]},
             headers=admin_token_headers,
         )
-        assert timeslots_resp.status_code in (200, 201)
+        assert timeslots_resp.status_code == 200
         slot_rows = (await async_client.get(f"{API}/timeslots/", headers=admin_token_headers)).json()
         teacher_resp = await async_client.post(
             f"{API}/teachers/", json={"name": "Prof. Contract 200", "email": f"contract200.{uuid4().hex[:8]}@escola.pt"}, headers=admin_token_headers,
@@ -182,7 +182,7 @@ class TestTeacherRoleRegressionContracts:
         timeslots_resp = await async_client.post(
             f"{API}/timeslots/generate", json={"start_time": "08:00", "end_time": "10:00", "slot_duration_minutes": 50, "break_duration_minutes": 10, "days_of_week": [0]}, headers=admin_token_headers,
         )
-        assert timeslots_resp.status_code in (200, 201)
+        assert timeslots_resp.status_code == 200
         slot_rows = (await async_client.get(f"{API}/timeslots/", headers=admin_token_headers)).json()
         teacher_resp = await async_client.post(
             f"{API}/teachers/", json={"name": "Prof. Duplicate", "email": f"duplicate.{uuid4().hex[:8]}@escola.pt"}, headers=admin_token_headers,

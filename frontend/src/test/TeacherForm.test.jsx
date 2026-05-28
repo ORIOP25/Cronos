@@ -11,6 +11,16 @@ import { describe, it, expect, vi } from 'vitest'
 import TeacherForm from '../components/Forms/TeacherForm'
 import { renderWithProviders } from './testUtils'
 
+vi.mock('../hooks/useSchoolData', () => ({
+  useSubjects: () => ({
+    data: [
+      { id: 1, name: 'Matemática' },
+      { id: 2, name: 'Português' },
+    ],
+    isLoading: false,
+  }),
+}))
+
 const defaultProps = {
   initialData: null,
   onSubmit: vi.fn(),
@@ -19,9 +29,12 @@ const defaultProps = {
 }
 
 describe('TeacherForm', () => {
-  it('renderiza sem crash (com QueryClientProvider)', () => {
+  it('renderiza o formulário com ações principais', () => {
     renderWithProviders(<TeacherForm {...defaultProps} />)
+    expect(screen.getByLabelText(/nome completo/i)).toBeInTheDocument()
+    expect(screen.getByLabelText(/email de login/i)).toBeInTheDocument()
     expect(screen.getByText('Cancelar')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /guardar professor/i })).toBeInTheDocument()
   })
 
   it('tem campos de nome e email', () => {
@@ -53,7 +66,32 @@ describe('TeacherForm', () => {
 
   it('tem switch de conta de acesso', () => {
     renderWithProviders(<TeacherForm {...defaultProps} />)
-    const switches = screen.getAllByRole('checkbox')
-    expect(switches.length).toBeGreaterThanOrEqual(1)
+    expect(screen.getByRole('checkbox', { name: /criar conta de acesso/i })).toBeInTheDocument()
+  })
+
+  it('mostra password obrigatória quando a conta de acesso é ativada', () => {
+    renderWithProviders(<TeacherForm {...defaultProps} />)
+
+    fireEvent.click(screen.getByRole('checkbox', { name: /criar conta de acesso/i }))
+
+    expect(screen.getByLabelText(/password de acesso/i)).toBeRequired()
+  })
+
+  it('chama onSubmit com dados e competências selecionadas', () => {
+    const onSubmit = vi.fn()
+    renderWithProviders(<TeacherForm {...defaultProps} onSubmit={onSubmit} />)
+
+    fireEvent.change(screen.getByLabelText(/nome completo/i), { target: { value: 'Prof. Matos' } })
+    fireEvent.change(screen.getByLabelText(/email de login/i), { target: { value: 'matos@escola.pt' } })
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Matemática' }))
+    fireEvent.click(screen.getByRole('button', { name: /guardar professor/i }))
+
+    expect(onSubmit).toHaveBeenCalledWith({
+      name: 'Prof. Matos',
+      email: 'matos@escola.pt',
+      password: '',
+      create_user_account: false,
+      subject_ids: [1],
+    })
   })
 })

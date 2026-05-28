@@ -55,6 +55,7 @@ const TimeslotForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
       <CRow className="g-3">
         <CCol md={12}>
           <CFormSelect 
+            id="timeslot-day"
             label="Dia da Semana" 
             name="day_of_week"
             value={formData.day_of_week}
@@ -72,6 +73,7 @@ const TimeslotForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
         
         <CCol md={6}>
           <CFormInput
+            id="timeslot-start-time"
             type="time"
             label="Hora Início"
             name="start_time"
@@ -83,6 +85,7 @@ const TimeslotForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
         
         <CCol md={6}>
           <CFormInput
+            id="timeslot-end-time"
             type="time"
             label="Hora Fim"
             name="end_time"

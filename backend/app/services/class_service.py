@@ -89,11 +89,14 @@ async def update_class(
         return None
 
     update_data = class_in.model_dump(exclude_unset=True)
+    next_start_year = update_data.get("start_year", db_class.start_year)
+    next_end_year = update_data.get("end_year", db_class.end_year)
+
+    if next_end_year <= next_start_year:
+        return "INVALID_YEAR_RANGE"
+
     for field, value in update_data.items():
         setattr(db_class, field, value)
-
-    if db_class.end_year <= db_class.start_year:
-        return "INVALID_YEAR_RANGE"
 
     db.add(db_class)
     await db.commit()
@@ -153,11 +156,14 @@ async def update_class_in_course(
         return "NOT_FOUND"
 
     update_data = class_in.model_dump(exclude_unset=True)
+    next_start_year = update_data.get("start_year", db_class.start_year)
+    next_end_year = update_data.get("end_year", db_class.end_year)
+
+    if next_end_year <= next_start_year:
+        return "INVALID_YEAR_RANGE"
+
     for field, value in update_data.items():
         setattr(db_class, field, value)
-
-    if db_class.end_year <= db_class.start_year:
-        return "INVALID_YEAR_RANGE"
 
     db.add(db_class)
     await db.commit()

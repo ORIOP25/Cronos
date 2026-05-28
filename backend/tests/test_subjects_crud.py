@@ -128,6 +128,29 @@ class TestSubjectsCRUD:
         assert resp.status_code == 200
         assert resp.json()["name"] == "Nova"
 
+    async def test_update_subject_modules_gap_order_422(
+        self, async_client: AsyncClient, admin_token_headers: dict
+    ):
+        create_resp = await async_client.post(
+            f"{API}/subjects/",
+            json={"name": "Modular", "required_room_type": "normal"},
+            headers=admin_token_headers,
+        )
+        sid = create_resp.json()["id"]
+
+        resp = await async_client.patch(
+            f"{API}/subjects/{sid}",
+            json={
+                "modules": [
+                    {"name": "M1", "code": "T01", "hours_total": 10, "order": 0},
+                    {"name": "M2", "code": "T02", "hours_total": 10, "order": 2},
+                ]
+            },
+            headers=admin_token_headers,
+        )
+
+        assert resp.status_code == 422
+
     async def test_update_subject_not_found_404(
         self, async_client: AsyncClient, admin_token_headers: dict
     ):

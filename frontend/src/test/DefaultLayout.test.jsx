@@ -1,6 +1,6 @@
 import React from 'react'
 import { describe, it, expect, vi } from 'vitest'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { renderWithProviders } from './testUtils'
 import { setClerkState } from './setup'
 import DefaultLayout from '../components/DefaultLayout'
@@ -10,17 +10,20 @@ vi.mock('../hooks/useSchoolData', () => ({
 }))
 
 describe('DefaultLayout', () => {
-  it('can be imported without errors', () => {
-    expect(typeof DefaultLayout).toBe('function')
-  })
-
-  it('renders with Router and Clerk mock', () => {
+  it('renders navigation, account actions, and nested route content', () => {
     setClerkState({ role: 'org:admin', orgId: 1, orgName: 'Escola Teste', isSignedIn: true })
-    const { container } = renderWithProviders(
+    const { getByRole, getByText, getByTestId } = renderWithProviders(
       <MemoryRouter initialEntries={['/dashboard']}>
-        <DefaultLayout><span data-testid="child">Content</span></DefaultLayout>
+        <Routes>
+          <Route element={<DefaultLayout />}>
+            <Route path="/dashboard" element={<span data-testid="child">Content</span>} />
+          </Route>
+        </Routes>
       </MemoryRouter>
     )
-    expect(container).toBeTruthy()
+    expect(getByRole('navigation')).toBeInTheDocument()
+    expect(getByText('Dashboard')).toBeInTheDocument()
+    expect(getByRole('button', { name: /terminar sessão/i })).toBeInTheDocument()
+    expect(getByTestId('child')).toHaveTextContent('Content')
   })
 })

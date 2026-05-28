@@ -1,17 +1,22 @@
 import React from 'react'
 import { describe, it, expect, beforeEach } from 'vitest'
 import { screen } from '@testing-library/react'
-import { MemoryRouter, Navigate } from 'react-router-dom'
-import { useAuth, useOrganization } from '@clerk/react'
+import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { renderWithProviders } from './testUtils'
 import { setClerkState, resetClerkState } from './setup'
-import { getDefaultRouteForRole } from '../roleAccess'
+import { SignedInRedirect } from '../routeGuards'
 
-function SignedInRedirect() {
-  const { isLoaded } = useAuth()
-  const { membership, isLoaded: orgLoaded } = useOrganization()
-  if (!isLoaded || !orgLoaded) return <div data-testid="loader">Loading...</div>
-  return <Navigate to={getDefaultRouteForRole(membership?.role)} replace />
+function renderRedirect() {
+  return renderWithProviders(
+    <MemoryRouter initialEntries={['/']}>
+      <Routes>
+        <Route path="/" element={<SignedInRedirect />} />
+        <Route path="/dashboard" element={<div data-testid="dashboard-route">Dashboard</div>} />
+        <Route path="/my-availability" element={<div data-testid="teacher-route">Teacher</div>} />
+        <Route path="/create-org" element={<div data-testid="create-org-route">Create Org</div>} />
+      </Routes>
+    </MemoryRouter>
+  )
 }
 
 describe('SignedInRedirect', () => {
@@ -19,33 +24,25 @@ describe('SignedInRedirect', () => {
 
   it('redirects admin to /dashboard', () => {
     setClerkState({ role: 'org:admin' })
-    renderWithProviders(
-      <MemoryRouter><SignedInRedirect /></MemoryRouter>
-    )
-    expect(screen.queryByTestId('loader')).toBeNull()
+    renderRedirect()
+    expect(screen.getByTestId('dashboard-route')).toBeInTheDocument()
   })
 
   it('redirects teacher to /my-availability', () => {
     setClerkState({ role: 'org:member' })
-    renderWithProviders(
-      <MemoryRouter><SignedInRedirect /></MemoryRouter>
-    )
-    expect(screen.queryByTestId('loader')).toBeNull()
+    renderRedirect()
+    expect(screen.getByTestId('teacher-route')).toBeInTheDocument()
   })
 
   it('redirects unknown role to /create-org', () => {
     setClerkState({ role: 'student' })
-    renderWithProviders(
-      <MemoryRouter><SignedInRedirect /></MemoryRouter>
-    )
-    expect(screen.queryByTestId('loader')).toBeNull()
+    renderRedirect()
+    expect(screen.getByTestId('create-org-route')).toBeInTheDocument()
   })
 
   it('shows loader when Clerk not loaded', () => {
     setClerkState({ isLoaded: false })
-    renderWithProviders(
-      <MemoryRouter><SignedInRedirect /></MemoryRouter>
-    )
-    expect(screen.getByTestId('loader')).toBeTruthy()
+    renderRedirect()
+    expect(screen.getByRole('status', { hidden: true })).toBeInTheDocument()
   })
 })

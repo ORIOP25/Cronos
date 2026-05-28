@@ -16,7 +16,7 @@ describe('terminology', () => {
     it('contém chaves de estado', () => {
       expect(TXT.LOADING).toBe('A carregar…')
       expect(TXT.EMPTY_TABLE).toBe('Ainda sem registos.')
-      expect(TXT.ERROR_LOADING).toBeTruthy()
+      expect(TXT.ERROR_LOADING).toBe('Erro ao carregar os dados. Verifique a ligação e tente novamente.')
     })
 
     it('contém chaves de ocorrência', () => {
@@ -28,8 +28,8 @@ describe('terminology', () => {
 
     it('todas as chaves têm valores em PT-PT', () => {
       for (const [, value] of Object.entries(TXT)) {
-        expect(value).toBeTruthy()
         expect(typeof value).toBe('string')
+        expect(value.trim()).not.toBe('')
         // Verifica que não contém palavras isoladas em inglês (word boundary)
         expect(value).not.toMatch(/\bSave\b/)
         expect(value).not.toMatch(/\bDelete\b/)

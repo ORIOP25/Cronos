@@ -8,7 +8,15 @@ Valida regras de negócio em Pydantic schemas.
 
 import pytest
 from pydantic import ValidationError
-from app.schemas import SubjectCreate, ModuleCreate, ClassCreateInCourse, ClassUpdateInCourse
+from app.schemas import (
+    ClassCreateInCourse,
+    ClassUpdateInCourse,
+    CourseUpdate,
+    RoomCreate,
+    RoomUpdate,
+    SubjectCreate,
+    SubjectUpdate,
+)
 from app.models import RoomType
 
 
@@ -153,6 +161,36 @@ class TestSubjectCreateValidation:
         assert "[5, 6]" in error_msg
 
 
+class TestSubjectUpdateValidation:
+    def test_subject_update_without_modules_is_valid(self):
+        subject = SubjectUpdate(name="Nova disciplina")
+
+        assert subject.name == "Nova disciplina"
+        assert subject.modules is None
+
+    def test_subject_update_accepts_sequential_modules(self):
+        subject = SubjectUpdate(
+            modules=[
+                {"id": 1, "name": "M1", "code": "P001", "hours_total": 20, "order": 0},
+                {"name": "M2", "code": "P002", "hours_total": 30, "order": 1},
+            ]
+        )
+
+        assert [module.order for module in subject.modules] == [0, 1]
+
+    def test_subject_update_rejects_gap_in_module_order(self):
+        with pytest.raises(ValidationError) as exc_info:
+            SubjectUpdate(
+                modules=[
+                    {"id": 1, "name": "M1", "code": "P001", "hours_total": 20, "order": 0},
+                    {"name": "M2", "code": "P002", "hours_total": 30, "order": 2},
+                ]
+            )
+
+        assert "[0, 1]" in str(exc_info.value)
+        assert "[0, 2]" in str(exc_info.value)
+
+
 class TestClassInCourseValidation:
     def test_class_create_rejects_invalid_year_window(self):
         with pytest.raises(ValidationError):
@@ -172,3 +210,33 @@ class TestClassInCourseValidation:
     def test_class_update_rejects_invalid_year_window_when_both_present(self):
         with pytest.raises(ValidationError):
             ClassUpdateInCourse(start_year=2029, end_year=2028)
+
+
+class TestRoomValidation:
+    def test_room_create_accepts_positive_capacity(self):
+        room = RoomCreate(name="Lab 1", type=RoomType.lab, capacity=1)
+
+        assert room.capacity == 1
+
+    @pytest.mark.parametrize("capacity", [0, -1])
+    def test_room_create_rejects_non_positive_capacity(self, capacity):
+        with pytest.raises(ValidationError):
+            RoomCreate(name="Lab 1", type=RoomType.lab, capacity=capacity)
+
+    @pytest.mark.parametrize("capacity", [0, -5])
+    def test_room_update_rejects_non_positive_capacity(self, capacity):
+        with pytest.raises(ValidationError):
+            RoomUpdate(capacity=capacity)
+
+
+class TestCourseUpdateValidation:
+    @pytest.mark.parametrize("abbreviation", ["AI", "TGEI", "LONGTENCHR"])
+    def test_course_update_accepts_valid_abbreviation_length(self, abbreviation):
+        course = CourseUpdate(abbreviation=abbreviation)
+
+        assert course.abbreviation == abbreviation
+
+    @pytest.mark.parametrize("abbreviation", ["A", "TOO-LONG-CODE"])
+    def test_course_update_rejects_invalid_abbreviation_length(self, abbreviation):
+        with pytest.raises(ValidationError):
+            CourseUpdate(abbreviation=abbreviation)

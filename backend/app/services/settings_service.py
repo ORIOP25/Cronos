@@ -38,6 +38,27 @@ async def upsert_settings(
     """Cria ou actualiza o registo único de configuração."""
     existing = await get_settings(db, organization_id)
     if existing:
+        next_start_date = (
+            data.school_start_date
+            if data.school_start_date is not None
+            else existing.school_start_date
+        )
+        next_target_end_date = (
+            data.school_target_end_date
+            if data.school_target_end_date is not None
+            else existing.school_target_end_date
+        )
+        next_hard_end_date = (
+            data.school_hard_end_date
+            if data.school_hard_end_date is not None
+            else existing.school_hard_end_date
+        )
+        schemas.OrganizationSettingsUpsert._validate_school_dates(
+            next_start_date,
+            next_target_end_date,
+            next_hard_end_date,
+        )
+
         if data.school_start_date is not None:
             existing.school_start_date = data.school_start_date
         if data.school_target_end_date is not None:
@@ -81,6 +102,27 @@ async def upsert_grid_settings(
     """Cria ou actualiza as configurações únicas da grelha."""
     existing = await get_grid_settings(db, organization_id)
     if existing:
+        next_lunch_start = (
+            data.lunch_window_start
+            if data.lunch_window_start is not None
+            else existing.lunch_window_start
+        )
+        next_lunch_end = (
+            data.lunch_window_end
+            if data.lunch_window_end is not None
+            else existing.lunch_window_end
+        )
+        next_lunch_min = (
+            data.lunch_min_duration_minutes
+            if data.lunch_min_duration_minutes is not None
+            else existing.lunch_min_duration_minutes
+        )
+        schemas.OrganizationGridSettingsUpsert._validate_lunch_inputs(
+            next_lunch_start,
+            next_lunch_end,
+            next_lunch_min,
+        )
+
         if data.lunch_window_start is not None:
             existing.lunch_window_start = data.lunch_window_start
         if data.lunch_window_end is not None:

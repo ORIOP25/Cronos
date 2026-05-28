@@ -15,7 +15,8 @@ describe('setClerkTokenGetter', () => {
   it('accepts and stores a function', () => {
     const fn = async () => 'test_token'
     setClerkTokenGetter(fn)
-    expect(typeof fn).toBe('function')
+    const interceptor = apiClient.interceptors.request.handlers[0]?.fulfilled
+    expect(interceptor).toBeTypeOf('function')
   })
 })
 
@@ -23,31 +24,39 @@ describe('request interceptor', () => {
   it('attaches Bearer token when getter returns value', async () => {
     setClerkTokenGetter(async () => 'tk_test')
     const config = { headers: {} }
-    const interceptor = apiClient.interceptors.request.handlers[0]
-    if (interceptor?.fulfilled) {
-      const result = await interceptor.fulfilled(config)
-      expect(result.headers.Authorization).toBe('Bearer tk_test')
-    }
+    const interceptor = apiClient.interceptors.request.handlers[0]?.fulfilled
+    expect(interceptor).toBeTypeOf('function')
+
+    const result = await interceptor(config)
+    expect(result.headers.Authorization).toBe('Bearer tk_test')
   })
 
-  it('does not crash when getter throws', async () => {
+  it('continues without auth header when token getter throws', async () => {
     setClerkTokenGetter(async () => { throw new Error('fail') })
     const config = { headers: {} }
-    const interceptor = apiClient.interceptors.request.handlers[0]
-    if (interceptor?.fulfilled) {
-      const result = await interceptor.fulfilled(config)
-      expect(result).toBe(config)
-    }
+    const interceptor = apiClient.interceptors.request.handlers[0]?.fulfilled
+    expect(interceptor).toBeTypeOf('function')
+
+    const result = await interceptor(config)
+    expect(result).toBe(config)
+    expect(result.headers.Authorization).toBeUndefined()
   })
 })
 
 describe('response interceptor', () => {
   it('resolves 404 without throwing', async () => {
-    const interceptor = apiClient.interceptors.response.handlers[0]
-    if (interceptor?.rejected) {
-      const error = { response: { status: 404, data: null } }
-      const result = await interceptor.rejected(error)
-      expect(result.status).toBe(404)
-    }
+    const interceptor = apiClient.interceptors.response.handlers[0]?.rejected
+    expect(interceptor).toBeTypeOf('function')
+
+    const error = { response: { status: 404, data: null } }
+    const result = await interceptor(error)
+    expect(result.status).toBe(404)
+  })
+
+  it('rejects non-404 errors', async () => {
+    const interceptor = apiClient.interceptors.response.handlers[0]?.rejected
+    const error = { response: { status: 500, data: { detail: 'fail' } } }
+
+    await expect(interceptor(error)).rejects.toBe(error)
   })
 })

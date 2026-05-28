@@ -129,8 +129,8 @@ const CourseForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
     }
 
     // VALIDAÇÃO 5: CRÍTICO - Start <= End
-    if (startYear > endYear) {
-      setClassError(`Erro: Ano de início (${startYear}) não pode ser maior que ano de fim (${endYear})`)
+    if (endYear <= startYear) {
+      setClassError(`Erro: Ano de fim (${endYear}) deve ser posterior ao ano de inicio (${startYear})`)
       return
     }
 
@@ -181,8 +181,11 @@ const CourseForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
   // --- SUBMIT FINAL ---
   const handleSubmit = (e) => {
     e.preventDefault()
-    // Enviar tudo de uma vez (Atomic - Stability)
-    onSubmit(formData)
+    onSubmit({
+      ...formData,
+      name: formData.name.trim(),
+      abbreviation: formData.abbreviation.trim(),
+    })
   }
 
   // --- RENDER ---
@@ -224,6 +227,7 @@ const CourseForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
           <CRow className="g-3">
             <CCol md={8}>
               <CFormInput
+                id="course-name"
                 type="text"
                 label="Nome do Curso"
                 name="name"
@@ -237,6 +241,7 @@ const CourseForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
 
             <CCol md={4}>
               <CFormInput
+                id="course-abbreviation"
                 type="text"
                 label="Sigla"
                 name="abbreviation"

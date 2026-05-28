@@ -239,7 +239,33 @@ class TestClassesCRUD:
             headers=admin_token_headers,
         )
         # A service layer valida e devolve "INVALID_YEAR_RANGE" → 400
-        assert resp.status_code in (400, 422)
+        assert resp.status_code == 400
+
+    async def test_update_class_partial_year_range_invalid_400(
+        self, async_client: AsyncClient, admin_token_headers: dict
+    ):
+        """PATCH parcial não pode deixar end_year <= start_year."""
+        course_id = await _create_course(async_client, admin_token_headers)
+        create = await async_client.post(
+            f"{API}/classes/",
+            json={
+                "name": "Turma Parcial",
+                "course_id": course_id,
+                "grade_level": 10,
+                "start_year": 2025,
+                "end_year": 2028,
+            },
+            headers=admin_token_headers,
+        )
+        class_id = create.json()["id"]
+
+        resp = await async_client.patch(
+            f"{API}/classes/{class_id}",
+            json={"end_year": 2025},
+            headers=admin_token_headers,
+        )
+
+        assert resp.status_code == 400
 
     async def test_update_class_not_found_404(
         self, async_client: AsyncClient, admin_token_headers: dict

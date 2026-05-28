@@ -11,7 +11,7 @@
 export function formatDate(dateStr) {
   if (!dateStr) return '—'
   const d = new Date(`${dateStr}T12:00:00`)
-  if (Number.isNaN(d)) return dateStr
+  if (Number.isNaN(d.getTime())) return dateStr
   return d.toLocaleDateString('pt-PT', {
     day: '2-digit',
     month: '2-digit',
@@ -27,7 +27,7 @@ export function formatDate(dateStr) {
 export function formatDateShort(dateStr) {
   if (!dateStr) return ''
   const d = new Date(`${dateStr}T12:00:00`)
-  if (Number.isNaN(d)) return dateStr
+  if (Number.isNaN(d.getTime())) return dateStr
   return d.toLocaleDateString('pt-PT', {
     day: '2-digit',
     month: 'short',
@@ -42,7 +42,7 @@ export function formatDateShort(dateStr) {
 export function formatDateLong(dateStr) {
   if (!dateStr) return '—'
   const d = new Date(`${dateStr}T12:00:00`)
-  if (Number.isNaN(d)) return dateStr
+  if (Number.isNaN(d.getTime())) return dateStr
   return d.toLocaleDateString('pt-PT', {
     day: '2-digit',
     month: 'long',
@@ -58,7 +58,7 @@ export function formatDateLong(dateStr) {
 export function formatDateTime(dateTimeStr) {
   if (!dateTimeStr) return '—'
   const d = new Date(dateTimeStr)
-  if (Number.isNaN(d)) return dateTimeStr
+  if (Number.isNaN(d.getTime())) return dateTimeStr
   return d.toLocaleString('pt-PT', {
     day: '2-digit',
     month: '2-digit',
@@ -98,11 +98,7 @@ export function toIsoDate(dateValue) {
  * @returns {string} Data ISO
  */
 export function getCurrentWeekMonday() {
-  const today = new Date()
-  const dayOfWeek = today.getDay()
-  const diff = dayOfWeek === 0 ? -6 : 1 - dayOfWeek
-  const monday = new Date(today + diff * 24 * 60 * 60 * 1000)
-  return monday.toISOString().split('T')[0]
+  return toWeekMonday(new Date())
 }
 
 /**

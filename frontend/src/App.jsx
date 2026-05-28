@@ -1,7 +1,6 @@
-import React, { Suspense, useEffect } from 'react'
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
-import { CSpinner } from '@coreui/react'
-import { Show, RedirectToSignIn, useAuth, useOrganization } from '@clerk/react'
+import React, { useEffect } from 'react'
+import { BrowserRouter as Router, Routes, Route } from 'react-router-dom'
+import { Show, useAuth } from '@clerk/react'
 
 import { setClerkTokenGetter } from './apiClient'
 
@@ -29,49 +28,8 @@ const Onboarding = React.lazy(() => import('./pages/Onboarding'))
 
 import DefaultLayout from './components/DefaultLayout'
 import { MarketingSite } from './pages/MarketingSite'
-import { ROUTE_MY_SCHEDULES, getDefaultRouteForRole, getForbiddenRedirectRoute } from './roleAccess'
-
-const PageLoader = () => (
-  <div className="d-flex justify-content-center align-items-center" style={{ minHeight: '40vh' }}>
-    <CSpinner color="primary" />
-  </div>
-)
-
-function LazyPage({ children }) {
-  return <Suspense fallback={<PageLoader />}>{children}</Suspense>
-}
-
-function RequireAuth({ children }) {
-  const { isSignedIn, isLoaded } = useAuth()
-  if (!isLoaded) return <PageLoader />
-  if (!isSignedIn) return <RedirectToSignIn />
-  return children
-}
-
-function RequireAdmin({ children }) {
-  const { isSignedIn, isLoaded } = useAuth()
-  const { membership, isLoaded: orgLoaded } = useOrganization()
-  if (!isLoaded || !orgLoaded) return <PageLoader />
-  if (!isSignedIn) return <RedirectToSignIn />
-  if (membership?.role !== 'org:admin') return <Navigate to={getForbiddenRedirectRoute(membership?.role)} />
-  return children
-}
-
-function RequireTeacher({ children }) {
-  const { isSignedIn, isLoaded } = useAuth()
-  const { membership, isLoaded: orgLoaded } = useOrganization()
-  if (!isLoaded || !orgLoaded) return <PageLoader />
-  if (!isSignedIn) return <RedirectToSignIn />
-  if (membership?.role !== 'org:member') return <Navigate to={getForbiddenRedirectRoute(membership?.role)} />
-  return children
-}
-
-function SignedInRedirect() {
-  const { isLoaded } = useAuth()
-  const { membership, isLoaded: orgLoaded } = useOrganization()
-  if (!isLoaded || !orgLoaded) return <PageLoader />
-  return <Navigate to={getDefaultRouteForRole(membership?.role)} replace />
-}
+import { ROUTE_MY_SCHEDULES } from './roleAccess'
+import { LazyPage, RequireAdmin, RequireAuth, RequireTeacher, SignedInRedirect } from './routeGuards'
 
 function App() {
   const { getToken, isLoaded } = useAuth()

@@ -242,6 +242,19 @@ class SubjectUpdate(BaseModel):
     required_room_type: Optional[RoomType] = None
     modules: Optional[list[ModuleUpsert]] = None
 
+    @model_validator(mode='after')
+    def validate_module_order(self):
+        if self.modules is None:
+            return self
+        orders = sorted([m.order for m in self.modules])
+        expected = list(range(0, len(self.modules)))
+        if orders != expected:
+            raise ValueError(
+                f"Módulos devem ter ordem sequencial começando em 0 [0, 1, 2, ...]. "
+                f"Recebido: {orders}, Esperado: {expected}"
+            )
+        return self
+
 class SubjectRead(SubjectBase):
     id: int
     organization_id: int
@@ -252,7 +265,7 @@ class SubjectRead(SubjectBase):
 class RoomBase(BaseModel):
     name: str
     type: RoomType
-    capacity: int = 30
+    capacity: int = Field(30, gt=0)
 
 class RoomCreate(RoomBase):
     pass
@@ -260,7 +273,7 @@ class RoomCreate(RoomBase):
 class RoomUpdate(BaseModel):
     name: Optional[str] = None
     type: Optional[RoomType] = None
-    capacity: Optional[int] = None
+    capacity: Optional[int] = Field(None, gt=0)
 
 class RoomRead(RoomBase):
     id: int
@@ -484,7 +497,7 @@ class CourseCreate(CourseBase):
 
 class CourseUpdate(BaseModel):
     name: Optional[str] = None
-    abbreviation: Optional[str] = None
+    abbreviation: Optional[str] = Field(None, min_length=2, max_length=10)
     subject_ids: Optional[list[int]] = None
 
 class SubjectSimple(BaseModel):

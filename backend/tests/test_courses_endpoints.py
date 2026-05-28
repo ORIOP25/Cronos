@@ -76,6 +76,22 @@ class TestCoursesEndpoints:
         assert response.status_code == 400
         assert "já existe" in response.json()["detail"]
 
+    async def test_patch_course_abbreviation_invalid_length_422(self, async_client: AsyncClient, db_session: AsyncSession, admin_token_headers):
+        """
+        Stability: PATCH deve manter a mesma validação de sigla usada na criação.
+        """
+        course = models.Course(name="Curso A", abbreviation="AAA", organization_id=1)
+        db_session.add(course)
+        await db_session.commit()
+
+        response = await async_client.patch(
+            f"/api/v1/courses/{course.id}",
+            json={"abbreviation": "A"},
+            headers=admin_token_headers,
+        )
+
+        assert response.status_code == 422
+
     async def test_patch_course_subjects_replace(self, async_client: AsyncClient, db_session: AsyncSession, admin_token_headers):
         """
         ⚙️ Stability: Verifica se o PATCH substitui a lista de disciplinas.

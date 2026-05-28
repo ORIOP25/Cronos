@@ -1,7 +1,7 @@
 import React from 'react'
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { screen, waitFor } from '@testing-library/react'
-import { MemoryRouter } from 'react-router-dom'
+import { screen, waitFor, fireEvent } from '@testing-library/react'
+import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { renderWithProviders } from './testUtils'
 import { setClerkState, resetClerkState } from './setup'
 import Onboarding from '../pages/Onboarding'
@@ -18,6 +18,17 @@ vi.mock('../apiClient', () => ({
 
 import apiClient from '../apiClient'
 
+function renderOnboarding() {
+  return renderWithProviders(
+    <MemoryRouter initialEntries={['/onboarding']}>
+      <Routes>
+        <Route path="/onboarding" element={<Onboarding />} />
+        <Route path="/dashboard" element={<div data-testid="dashboard-route">Dashboard</div>} />
+      </Routes>
+    </MemoryRouter>
+  )
+}
+
 describe('Onboarding', () => {
   beforeEach(() => {
     resetClerkState()
@@ -27,21 +38,17 @@ describe('Onboarding', () => {
 
   it('shows form when onboarding is incomplete', async () => {
     apiClient.get.mockResolvedValueOnce({ data: { onboarding_complete: false, organization_name: 'Escola Onboard' } })
-    renderWithProviders(
-      <MemoryRouter><Onboarding /></MemoryRouter>
-    )
+    renderOnboarding()
     await waitFor(() => {
-      expect(screen.getByText('Escola Onboard')).toBeTruthy()
+      expect(screen.getByText('Escola Onboard')).toBeInTheDocument()
     })
-    expect(screen.getByText('Ano Letivo')).toBeTruthy()
-    expect(screen.getByText('Guardar e Começar')).toBeTruthy()
+    expect(screen.getByText('Ano Letivo')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /guardar e começar/i })).toBeInTheDocument()
   })
 
   it('calls status API on mount', async () => {
     apiClient.get.mockResolvedValueOnce({ data: { onboarding_complete: true, organization_name: 'Escola Onboard' } })
-    renderWithProviders(
-      <MemoryRouter><Onboarding /></MemoryRouter>
-    )
+    renderOnboarding()
     await waitFor(() => {
       expect(apiClient.get).toHaveBeenCalledWith('/onboarding/status')
     })
@@ -49,29 +56,46 @@ describe('Onboarding', () => {
 
   it('shows loading state while checking status', () => {
     apiClient.get.mockReturnValueOnce(new Promise(() => {}))
-    renderWithProviders(
-      <MemoryRouter><Onboarding /></MemoryRouter>
-    )
-    expect(screen.getByText(/preparar a sua escola/i)).toBeTruthy()
+    renderOnboarding()
+    expect(screen.getByText(/preparar a sua escola/i)).toBeInTheDocument()
   })
 
-  it('shows organization name in title', async () => {
-    apiClient.get.mockResolvedValueOnce({ data: { onboarding_complete: false, organization_name: 'Escola Onboard' } })
-    renderWithProviders(
-      <MemoryRouter><Onboarding /></MemoryRouter>
-    )
+  it('redirects to dashboard when onboarding is already complete', async () => {
+    apiClient.get.mockResolvedValueOnce({ data: { onboarding_complete: true, organization_name: 'Escola Onboard' } })
+    renderOnboarding()
+
     await waitFor(() => {
-      expect(screen.getByText('Escola Onboard')).toBeTruthy()
+      expect(screen.getByTestId('dashboard-route')).toBeInTheDocument()
     })
   })
 
-  it('has Guardar e Começar button', async () => {
+  it('submits school settings and redirects to dashboard', async () => {
     apiClient.get.mockResolvedValueOnce({ data: { onboarding_complete: false } })
-    renderWithProviders(
-      <MemoryRouter><Onboarding /></MemoryRouter>
-    )
+    apiClient.post.mockResolvedValueOnce({ data: { ok: true } })
+    renderOnboarding()
+
     await waitFor(() => {
-      expect(screen.getByText('Guardar e Começar')).toBeTruthy()
+      expect(screen.getByRole('button', { name: /guardar e começar/i })).toBeInTheDocument()
+    })
+
+    fireEvent.change(screen.getByLabelText(/data de início/i), { target: { value: '2026-09-15' } })
+    fireEvent.change(screen.getByLabelText(/fim previsto/i), { target: { value: '2027-06-30' } })
+    fireEvent.change(screen.getByLabelText(/fim máximo/i), { target: { value: '2027-07-31' } })
+    fireEvent.change(screen.getByLabelText(/início do almoço/i), { target: { value: '12:00' } })
+    fireEvent.change(screen.getByLabelText(/fim do almoço/i), { target: { value: '13:30' } })
+    fireEvent.change(screen.getByLabelText(/duração mínima/i), { target: { value: '45' } })
+    fireEvent.click(screen.getByRole('button', { name: /guardar e começar/i }))
+
+    await waitFor(() => {
+      expect(apiClient.post).toHaveBeenCalledWith('/onboarding', {
+        school_start_date: '2026-09-15',
+        school_target_end_date: '2027-06-30',
+        school_hard_end_date: '2027-07-31',
+        lunch_start: '12:00',
+        lunch_end: '13:30',
+        lunch_min_duration: 45,
+      })
+      expect(screen.getByTestId('dashboard-route')).toBeInTheDocument()
     })
   })
 })
