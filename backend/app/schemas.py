@@ -1,11 +1,20 @@
 from pydantic import BaseModel, EmailStr, Field, ConfigDict, model_validator, computed_field, AliasChoices
 from datetime import time, datetime, date
+from enum import Enum
 from typing import Any, Optional, Literal
 from .models import (
     RoomType, UserRole, ConstraintType, PreferenceLevel,
     CalendarEventType, CalendarEventSource, LessonOccurrenceStatus,
     LessonLogStatus, TimesheetStatus, List,
 )
+
+
+class OperationalOccurrenceState(str, Enum):
+    OPEN_PENDING = "OPEN_PENDING"
+    DECIDED_GIVEN = "DECIDED_GIVEN"
+    DECIDED_GAP = "DECIDED_GAP"
+    DECIDED_SUBSTITUTED = "DECIDED_SUBSTITUTED"
+    REVOKED = "REVOKED"
 
 
 # --- CONFIGURAÇÃO GLOBAL ---
@@ -785,7 +794,11 @@ class LessonOccurrenceRead(BaseModel):
     organization_id: int
     schedule_output_id: Optional[int] = None
     date: date
-    status: LessonOccurrenceStatus
+    status: Optional[LessonOccurrenceStatus] = None
+    operational_state: OperationalOccurrenceState
+    revision: int = 1
+    is_active: bool = True
+    version: int = 1
     class_id: Optional[int] = None
     class_name: Optional[str] = None
     subject_id: Optional[int] = None
@@ -806,9 +819,21 @@ class LessonOccurrenceRead(BaseModel):
     decided_by_user_id: Optional[int] = None
     decided_by_user_name: Optional[str] = None
     decided_at: Optional[datetime] = None
+    revoked_at: Optional[datetime] = None
+    revoked_by_user_id: Optional[int] = None
+    revoked_reason: Optional[str] = None
+    lesson_log_summary: Optional[str] = None
+    lesson_log_notes: Optional[str] = None
     created_at: datetime
 
     model_config = model_config
+
+
+class LessonOccurrenceListRead(BaseModel):
+    items: list[LessonOccurrenceRead]
+    total: int
+    limit: int
+    offset: int
 
 
 class LessonOccurrenceCreate(BaseModel):
@@ -824,6 +849,8 @@ class LessonOccurrenceCreate(BaseModel):
 class LessonOccurrenceUpdate(BaseModel):
     """Payload para o diretor registar uma falta ou substituição."""
     status: LessonOccurrenceStatus = Field(..., description=DESC_OCCURRENCE_STATUS)
+    version: int = Field(1, ge=1)
+    reason: Optional[str] = Field(None, max_length=250)
     substitute_teacher_id: Optional[int] = Field(
         None, description="ID do professor substituto (obrigatório se status=SUBSTITUTED)"
     )
@@ -835,6 +862,8 @@ class LessonOccurrenceUpdate(BaseModel):
 
     @model_validator(mode="after")
     def check_substituted_requirements(self) -> "LessonOccurrenceUpdate":
+        if self.status == LessonOccurrenceStatus.REVOKED:
+            raise ValueError("REVOKED usa o endpoint de cancelamento, nao PATCH normal")
         if self.status == LessonOccurrenceStatus.SUBSTITUTED:
             if self.substitute_teacher_id is None:
                 raise ValueError("substitute_teacher_id é obrigatório quando status=SUBSTITUTED")
@@ -845,6 +874,12 @@ class LessonOccurrenceUpdate(BaseModel):
         if self.substitute_teacher_id is not None or self.substitute_subject_id is not None:
             raise ValueError("substitute_teacher_id e substitute_subject_id só podem ser enviados com status=SUBSTITUTED")
         return self
+
+
+class LessonOccurrenceCancel(BaseModel):
+    version: int = Field(1, ge=1)
+    reason: str = Field("Reversao administrativa", min_length=1, max_length=250)
+    cancel_completed_substitute_log: bool = False
 
 
 class DebtItem(BaseModel):
@@ -1065,6 +1100,8 @@ class WeekModuleInfo(BaseModel):
 class WeekSlotRead(BaseModel):
     """Um bloco de aula numa semana: slot planeado + ocorrência real."""
     schedule_output_id: int
+    operational_block_id: Optional[int] = None
+    block_source: Literal["planned", "operational"] = "planned"
     date: Optional[str] = None
     timeslot: WeekTimeslotInfo
     subject: Optional[WeekSubjectInfo] = None
@@ -1107,7 +1144,8 @@ class LessonLogRead(BaseModel):
     """Leitura completa de um registo de execução de aula."""
     id: int
     organization_id: int
-    schedule_output_id: int
+    schedule_output_id: Optional[int] = None
+    operational_block_id: Optional[int] = None
     status: LessonLogStatus
     summary: Optional[str] = None
     notes: Optional[str] = None

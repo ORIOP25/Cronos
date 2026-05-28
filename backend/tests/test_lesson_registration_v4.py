@@ -41,11 +41,11 @@ class TestCancelMarksRevoked:
             )
         else:
             update = schemas.LessonOccurrenceUpdate(status=status)
-        occurrence_service.update_occurrence_sync(
+        decided = occurrence_service.update_occurrence_sync(
             sync_db, occurrence.id, organization_id, update,
             decided_by_user_id=full_setup["admin_id"],
         )
-        return occurrence
+        return decided
 
     def test_cancel_marks_revoked_gap(self, sync_db, full_setup):
         """T6a: cancel_occurrence_sync em GAP → REVOKED, linha persiste."""
@@ -53,7 +53,7 @@ class TestCancelMarksRevoked:
         occurrence = self._prepare_decided_occurrence(sync_db, full_setup, LessonOccurrenceStatus.GAP)
 
         result = occurrence_service.cancel_occurrence_sync(
-            sync_db, organization_id, occurrence.id, full_setup["admin_id"],
+            sync_db, organization_id, occurrence.id, full_setup["admin_id"], version=occurrence.version,
         )
         assert result["cancelled"] is True
 
@@ -68,7 +68,7 @@ class TestCancelMarksRevoked:
         occurrence = self._prepare_decided_occurrence(sync_db, full_setup, LessonOccurrenceStatus.SUBSTITUTED)
 
         result = occurrence_service.cancel_occurrence_sync(
-            sync_db, organization_id, occurrence.id, full_setup["admin_id"],
+            sync_db, organization_id, occurrence.id, full_setup["admin_id"], version=occurrence.version,
         )
         assert result["cancelled"] is True
 
@@ -91,7 +91,7 @@ class TestRevokedIsImmutable:
         )
 
         # Decide as GAP
-        occurrence_service.update_occurrence_sync(
+        decided = occurrence_service.update_occurrence_sync(
             sync_db, occurrence.id, organization_id,
             schemas.LessonOccurrenceUpdate(status=LessonOccurrenceStatus.GAP),
             decided_by_user_id=full_setup["admin_id"],
@@ -99,7 +99,7 @@ class TestRevokedIsImmutable:
 
         # Reverter → REVOKED
         occurrence_service.cancel_occurrence_sync(
-            sync_db, organization_id, occurrence.id, full_setup["admin_id"],
+            sync_db, organization_id, occurrence.id, full_setup["admin_id"], version=decided.version,
         )
 
         # Tentar alterar REVOKED → deve falhar

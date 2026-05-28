@@ -4,7 +4,7 @@ from typing import List, Optional
 from sqlalchemy import (
     Column, Integer, String, Boolean,
     ForeignKey, Date, DateTime, Time,
-    Text, Enum as SAEnum, UniqueConstraint, Table, Float, Index, event,
+    Text, Enum as SAEnum, UniqueConstraint, CheckConstraint, Table, Float, Index, event,
 )
 from sqlalchemy.types import JSON
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -47,6 +47,15 @@ class LessonLogStatus(str, enum.Enum):
     PENDING = "PENDING"        # Aula ainda não registada (padrão)
     COMPLETED = "COMPLETED"    # Professor confirmou que a aula foi dada
     OCCURRENCE = "OCCURRENCE"  # Falta/Ocorrência registada para este bloco
+
+class OperationalBlockStatus(str, enum.Enum):
+    ACTIVE = "ACTIVE"
+    CANCELLED = "CANCELLED"
+
+class OperationalBlockExecutionStatus(str, enum.Enum):
+    PENDING_LOG = "PENDING_LOG"
+    COMPLETED = "COMPLETED"
+    CANCELLED = "CANCELLED"
 
 class TimesheetStatus(str, enum.Enum):
     """Estado do ciclo de vida do fecho semanal de um professor."""
@@ -433,6 +442,7 @@ class ScheduleOutput(Base):
     lesson: Mapped["Lesson"] = relationship()
     timeslot: Mapped["Timeslot"] = relationship()
     room: Mapped["Room"] = relationship()
+    lesson_logs: Mapped[List["LessonLog"]] = relationship(viewonly=True)
 
     def __repr__(self) -> str:
         return f"<ScheduleOutput(lesson_id={self.lesson_id}, timeslot_id={self.timeslot_id})>"
@@ -551,10 +561,34 @@ class LessonOccurrence(Base):
     class_id: Mapped[Optional[int]] = mapped_column(ForeignKey(FK_CLASS_ID, ondelete=ON_DELETE_SET_NULL), nullable=True)
     subject_id: Mapped[Optional[int]] = mapped_column(ForeignKey(FK_SUBJECT_ID, ondelete=ON_DELETE_SET_NULL), nullable=True)
 
-    # O que aconteceu: GIVEN | GAP | SUBSTITUTED
-    status: Mapped[LessonOccurrenceStatus] = mapped_column(
-        SAEnum(LessonOccurrenceStatus), nullable=False
+    # Decisao final. NULL significa ocorrencia aberta/pendente.
+    status: Mapped[Optional[LessonOccurrenceStatus]] = mapped_column(
+        SAEnum(LessonOccurrenceStatus), nullable=True
     )
+
+    revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, index=True)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+
+    created_by_user_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("user.id", ondelete=ON_DELETE_SET_NULL), nullable=True
+    )
+    creation_source: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
+    reason: Mapped[Optional[str]] = mapped_column(String(250), nullable=True)
+
+    revoked_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    revoked_by_user_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("user.id", ondelete=ON_DELETE_SET_NULL), nullable=True
+    )
+    revoked_reason: Mapped[Optional[str]] = mapped_column(String(250), nullable=True)
+
+    planned_timeslot_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey(FK_TIMESLOT_ID, ondelete=ON_DELETE_SET_NULL), nullable=True
+    )
+    planned_room_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("room.id", ondelete=ON_DELETE_SET_NULL), nullable=True
+    )
+    planned_generation_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
 
     # Horas planeadas do bloco (preservadas mesmo se o slot for removido)
     planned_hours: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
@@ -596,7 +630,7 @@ class LessonOccurrence(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
-        nullable=False,
+        nullable=True,
     )
 
     # Relacionamentos
@@ -625,13 +659,26 @@ class LessonOccurrence(Base):
     decided_by_user: Mapped[Optional["User"]] = relationship(
         foreign_keys=[decided_by_user_id]
     )
+    created_by_user: Mapped[Optional["User"]] = relationship(
+        foreign_keys=[created_by_user_id]
+    )
+    revoked_by_user: Mapped[Optional["User"]] = relationship(
+        foreign_keys=[revoked_by_user_id]
+    )
+    planned_timeslot: Mapped[Optional["Timeslot"]] = relationship(
+        foreign_keys=[planned_timeslot_id]
+    )
+    planned_room: Mapped[Optional["Room"]] = relationship(
+        foreign_keys=[planned_room_id]
+    )
 
     # Uma ocorrência por slot planeado (evita duplicados do cron)
     __table_args__ = (
         UniqueConstraint(
-            "schedule_output_id", "date",
-            name="uq_lesson_occurrence_output_date",
+            "organization_id", "schedule_output_id", "date", "revision",
+            name="uq_lesson_occurrence_output_date_revision",
         ),
+        Index("ix_lesson_occurrence_org_active_date", "organization_id", "is_active", "date"),
     )
 
     def __repr__(self) -> str:
@@ -668,7 +715,7 @@ class OccurrenceOperationalEvent(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
-        nullable=False,
+        nullable=True,
         index=True,
     )
 
@@ -686,6 +733,53 @@ class OccurrenceOperationalEvent(Base):
             f"<OccurrenceOperationalEvent(id={self.id}, organization_id={self.organization_id}, "
             f"event_type='{self.event_type}', result='{self.result}')>"
         )
+
+
+class OperationalScheduleBlock(Base):
+    """Bloco operacional derivado de uma ocorrencia, separado do horario curricular."""
+    __tablename__ = "operational_schedule_block"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    organization_id: Mapped[int] = mapped_column(ForeignKey(FK_ORG_ID, ondelete="CASCADE"), nullable=False, index=True)
+    source_occurrence_id: Mapped[int] = mapped_column(ForeignKey("lesson_occurrence.id", ondelete="CASCADE"), nullable=False, index=True)
+    source_occurrence_revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    planned_schedule_output_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey(FK_SCHEDULE_OUTPUT_ID, ondelete=ON_DELETE_SET_NULL),
+        nullable=True,
+        index=True,
+    )
+    date: Mapped[date_type] = mapped_column(Date, nullable=False, index=True)
+    timeslot_id: Mapped[int] = mapped_column(ForeignKey(FK_TIMESLOT_ID), nullable=False, index=True)
+    room_id: Mapped[Optional[int]] = mapped_column(ForeignKey("room.id", ondelete=ON_DELETE_SET_NULL), nullable=True)
+    class_id: Mapped[int] = mapped_column(ForeignKey(FK_CLASS_ID), nullable=False, index=True)
+    teacher_id: Mapped[int] = mapped_column(ForeignKey(FK_TEACHER_ID), nullable=False, index=True)
+    subject_id: Mapped[int] = mapped_column(ForeignKey(FK_SUBJECT_ID), nullable=False, index=True)
+    module_id: Mapped[Optional[int]] = mapped_column(ForeignKey("module.id", ondelete=ON_DELETE_SET_NULL), nullable=True)
+    status: Mapped[OperationalBlockStatus] = mapped_column(
+        SAEnum(OperationalBlockStatus), nullable=False, default=OperationalBlockStatus.ACTIVE
+    )
+    execution_status: Mapped[OperationalBlockExecutionStatus] = mapped_column(
+        SAEnum(OperationalBlockExecutionStatus), nullable=False, default=OperationalBlockExecutionStatus.PENDING_LOG
+    )
+    created_by_user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("user.id", ondelete=ON_DELETE_SET_NULL), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
+    cancelled_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    organization: Mapped["Organization"] = relationship()
+    source_occurrence: Mapped["LessonOccurrence"] = relationship()
+    planned_schedule_output: Mapped[Optional["ScheduleOutput"]] = relationship()
+    timeslot: Mapped["Timeslot"] = relationship()
+    room: Mapped[Optional["Room"]] = relationship()
+    class_: Mapped["Class"] = relationship()
+    teacher: Mapped["Teacher"] = relationship()
+    subject: Mapped["Subject"] = relationship()
+    module: Mapped[Optional["Module"]] = relationship()
+    created_by_user: Mapped[Optional["User"]] = relationship()
+
+    __table_args__ = (
+        Index("ix_operational_block_org_teacher_date_slot", "organization_id", "teacher_id", "date", "timeslot_id"),
+        Index("ix_operational_block_org_class_date", "organization_id", "class_id", "date"),
+    )
 
 
 class TeacherEndpointOperationalEvent(Base):
@@ -757,14 +851,21 @@ class LessonLog(Base):
     )
 
     # Ligação 1-para-1 ao bloco gerado pelo Solver
-    schedule_output_id: Mapped[int] = mapped_column(
+    schedule_output_id: Mapped[Optional[int]] = mapped_column(
         ForeignKey(FK_SCHEDULE_OUTPUT_ID, ondelete="CASCADE"),
-        nullable=False,
+        nullable=True,
         unique=True,  # Garante relação 1-para-1
         index=True,
     )
 
     # Estado de execução da aula
+    operational_block_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("operational_schedule_block.id", ondelete="CASCADE"),
+        nullable=True,
+        unique=True,
+        index=True,
+    )
+
     status: Mapped[LessonLogStatus] = mapped_column(
         SAEnum(LessonLogStatus), nullable=False, default=LessonLogStatus.PENDING
     )
@@ -793,11 +894,23 @@ class LessonLog(Base):
 
     # Relacionamentos
     organization: Mapped["Organization"] = relationship()
-    schedule_output: Mapped["ScheduleOutput"] = relationship()
+    schedule_output: Mapped[Optional["ScheduleOutput"]] = relationship()
+    operational_block: Mapped[Optional["OperationalScheduleBlock"]] = relationship()
     logged_by_user: Mapped[Optional["User"]] = relationship(foreign_keys=[logged_by_user_id])
 
+    __table_args__ = (
+        CheckConstraint(
+            "(schedule_output_id IS NOT NULL AND operational_block_id IS NULL) OR "
+            "(schedule_output_id IS NULL AND operational_block_id IS NOT NULL)",
+            name="ck_lesson_log_exactly_one_target",
+        ),
+    )
+
     def __repr__(self) -> str:
-        return f"<LessonLog(id={self.id}, schedule_output_id={self.schedule_output_id}, status='{self.status}')>"
+        return (
+            f"<LessonLog(id={self.id}, schedule_output_id={self.schedule_output_id}, "
+            f"operational_block_id={self.operational_block_id}, status='{self.status}')>"
+        )
 
 
 class TeacherWeeklyTimesheet(Base):
@@ -942,4 +1055,36 @@ class ClassProgress(Base):
     # Garante uma entrada por turma/módulo
     __table_args__ = (
         UniqueConstraint("class_id", "module_id", name="uq_class_module"),
+    )
+
+
+class ProgressLedgerEntry(Base):
+    """Ledger idempotente dos deltas aplicados a progresso/divida curricular."""
+    __tablename__ = "progress_ledger_entry"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    organization_id: Mapped[int] = mapped_column(ForeignKey(FK_ORG_ID, ondelete="CASCADE"), nullable=False, index=True)
+    source_type: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
+    source_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    source_revision: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    class_id: Mapped[int] = mapped_column(ForeignKey(FK_CLASS_ID), nullable=False, index=True)
+    module_id: Mapped[int] = mapped_column(ForeignKey("module.id"), nullable=False, index=True)
+    completed_delta: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    debt_delta: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    idempotency_key: Mapped[str] = mapped_column(String(160), nullable=False, unique=True, index=True)
+    created_by_user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("user.id", ondelete=ON_DELETE_SET_NULL), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
+    reverses_ledger_entry_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("progress_ledger_entry.id", ondelete=ON_DELETE_SET_NULL),
+        nullable=True,
+    )
+
+    organization: Mapped["Organization"] = relationship()
+    class_: Mapped["Class"] = relationship()
+    module: Mapped["Module"] = relationship()
+    created_by_user: Mapped[Optional["User"]] = relationship()
+    reverses_ledger_entry: Mapped[Optional["ProgressLedgerEntry"]] = relationship(remote_side=[id])
+
+    __table_args__ = (
+        Index("ix_progress_ledger_org_source", "organization_id", "source_type", "source_id"),
     )

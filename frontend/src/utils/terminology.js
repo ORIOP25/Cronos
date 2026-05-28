@@ -138,12 +138,18 @@ export const EVENT_TYPE_LABELS = {
  */
 export const OPERATIONAL_STATE_LABELS = {
   OPEN_PENDING: 'Pendente',
+  DECIDED_GIVEN: 'Dada',
+  DECIDED_GAP: 'Furo',
+  DECIDED_SUBSTITUTED: 'SubstituÃ­da',
   CLOSED: 'Resolvida',
   REVOKED: 'Revertida',
 }
 
 export const OPERATIONAL_STATE_COLORS = {
   OPEN_PENDING: 'warning',
+  DECIDED_GIVEN: 'success',
+  DECIDED_GAP: 'danger',
+  DECIDED_SUBSTITUTED: 'warning',
   CLOSED: 'secondary',
   REVOKED: 'secondary',
 }

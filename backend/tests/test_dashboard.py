@@ -153,7 +153,7 @@ class TestDashboardEndpoint:
     # ------------------------------------------------------------------
     @pytest.mark.asyncio
     async def test_dashboard_with_data(self, async_client: AsyncClient, db_session: AsyncSession, admin_token_headers):
-        _ = await self._seed_minimal_org(db_session)
+        ctx = await self._seed_minimal_org(db_session)
         org_id = ctx["org_id"]
         today = date.today()
 
@@ -294,7 +294,7 @@ class TestDashboardEndpoint:
     # ------------------------------------------------------------------
     @pytest.mark.asyncio
     async def test_dashboard_no_generation(self, async_client: AsyncClient, db_session: AsyncSession, admin_token_headers):
-        _ = await self._seed_minimal_org(db_session)
+        ctx = await self._seed_minimal_org(db_session)
         await self._seed_teacher(db_session, ctx["org_id"], "Prof. Teste")
         await db_session.commit()
 
@@ -310,7 +310,7 @@ class TestDashboardEndpoint:
     # ------------------------------------------------------------------
     @pytest.mark.asyncio
     async def test_dashboard_no_progress(self, async_client: AsyncClient, db_session: AsyncSession, admin_token_headers):
-        _ = await self._seed_minimal_org(db_session)
+        ctx = await self._seed_minimal_org(db_session)
         org_id = ctx["org_id"]
 
         course = await self._seed_course(db_session, org_id, "INFO", "INF")

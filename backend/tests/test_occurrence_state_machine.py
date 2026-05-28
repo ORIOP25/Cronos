@@ -10,7 +10,7 @@ from sqlalchemy import select
 
 from app import models, schemas
 from app.models import LessonOccurrenceStatus
-from app.services import occurrence_service
+from app.services import lesson_log_service, occurrence_service
 from test_occurrence_shared import full_setup, SyncTestSession
 
 
@@ -131,6 +131,69 @@ class TestOccurrenceStateMachineAndAccounting:
         assert debts.total_gaps == 1
         assert debts.total_hours_owed == pytest.approx(2.0)
 
+    def test_cancel_completed_operational_substitution_compensates_log_progress(self, sync_db, full_setup):
+        organization_id = full_setup["organization_id"]
+        occurrence = self._prepare_open_occurrence(sync_db, full_setup)
+
+        updated = occurrence_service.update_occurrence_sync(
+            sync_db, occurrence.id, organization_id,
+            schemas.LessonOccurrenceUpdate(
+                status=LessonOccurrenceStatus.SUBSTITUTED,
+                substitute_teacher_id=full_setup["substitute_teacher_id"],
+                substitute_subject_id=full_setup["substitute_subject_id"],
+            ),
+            decided_by_user_id=full_setup["admin_id"],
+        )
+
+        block = sync_db.execute(
+            select(models.OperationalScheduleBlock).where(
+                models.OperationalScheduleBlock.source_occurrence_id == occurrence.id,
+                models.OperationalScheduleBlock.status == models.OperationalBlockStatus.ACTIVE,
+            )
+        ).scalar_one()
+
+        lesson_log_service.upsert_operational_lesson_log_sync(
+            sync_db,
+            organization_id,
+            full_setup["admin_id"],
+            block.id,
+            schemas.LessonLogCreate(status=models.LessonLogStatus.COMPLETED, summary="Substituicao", notes=""),
+        )
+
+        substitute_progress = sync_db.execute(
+            select(models.ClassProgress).where(
+                models.ClassProgress.class_id == full_setup["class_id"],
+                models.ClassProgress.module_id == full_setup["substitute_module_id"],
+            )
+        ).scalar_one()
+        assert substitute_progress.hours_completed == pytest.approx(2.0)
+
+        occurrence_service.cancel_occurrence_sync(
+            sync_db,
+            organization_id,
+            occurrence.id,
+            full_setup["admin_id"],
+            version=updated.version,
+            cancel_completed_substitute_log=True,
+        )
+        sync_db.expire_all()
+
+        cancelled_block = sync_db.get(models.OperationalScheduleBlock, block.id)
+        op_log = sync_db.execute(
+            select(models.LessonLog).where(models.LessonLog.operational_block_id == block.id)
+        ).scalar_one()
+        substitute_progress = sync_db.execute(
+            select(models.ClassProgress).where(
+                models.ClassProgress.class_id == full_setup["class_id"],
+                models.ClassProgress.module_id == full_setup["substitute_module_id"],
+            )
+        ).scalar_one()
+
+        assert cancelled_block.status == models.OperationalBlockStatus.CANCELLED
+        assert cancelled_block.execution_status == models.OperationalBlockExecutionStatus.CANCELLED
+        assert op_log.status == models.LessonLogStatus.PENDING
+        assert substitute_progress.hours_completed == pytest.approx(0.0)
+
     def test_future_gap_is_counted_immediately_in_debts(self, sync_db, full_setup):
         organization_id = full_setup["organization_id"]
         future_date = date.today() + timedelta(days=7)
@@ -172,7 +235,7 @@ class TestOccurrenceStateMachineAndAccounting:
         occurrence = self._prepare_open_occurrence(sync_db, full_setup)
 
         # First decide as GAP
-        occurrence_service.update_occurrence_sync(
+        decided_gap = occurrence_service.update_occurrence_sync(
             sync_db, occurrence.id, organization_id,
             schemas.LessonOccurrenceUpdate(status=LessonOccurrenceStatus.GAP),
             decided_by_user_id=full_setup["admin_id"],
@@ -183,6 +246,7 @@ class TestOccurrenceStateMachineAndAccounting:
             sync_db, occurrence.id, organization_id,
             schemas.LessonOccurrenceUpdate(
                 status=LessonOccurrenceStatus.SUBSTITUTED,
+                version=decided_gap.version,
                 substitute_teacher_id=full_setup["substitute_teacher_id"],
                 substitute_subject_id=full_setup["substitute_subject_id"],
             ),
@@ -263,7 +327,7 @@ class TestOccurrenceStateMachineAndAccounting:
             )
         ).scalar_one_or_none()
 
-        assert reloaded_occurrence.status == LessonOccurrenceStatus.GIVEN
+        assert reloaded_occurrence.status is None
         assert reloaded_occurrence.decided_at is None
         assert reloaded_planned_progress is None
         assert reloaded_executed_progress is None

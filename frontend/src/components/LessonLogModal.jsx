@@ -76,6 +76,7 @@ const LessonLogModal = ({ visible, onClose, slot, isAdmin = false }) => {
     try {
       await upsertLogMutation.mutateAsync({
         scheduleOutputId: slot.schedule_output_id,
+        operationalBlockId: slot.operational_block_id,
         payload: { status, summary, notes },
       })
       onClose()
@@ -116,6 +117,7 @@ const LessonLogModal = ({ visible, onClose, slot, isAdmin = false }) => {
   const isPending = currentStatus === 'PENDING'
 
   const hasActiveOccurrence = Boolean(slot.occurrence_id) && slot.occurrence_status !== 'REVOKED'
+  const isOperationalBlock = slot.block_source === 'operational' || Boolean(slot.operational_block_id)
   const occurrenceDecided = Boolean(slot.occurrence_decided_at)
   const occurrenceStatusLabel = OCCURRENCE_STATUS_LABELS[slot.occurrence_status] ?? slot.occurrence_status
 
@@ -342,7 +344,7 @@ const LessonLogModal = ({ visible, onClose, slot, isAdmin = false }) => {
               <CButton
                 style={{ backgroundColor: 'var(--color-state-gap)', borderColor: 'var(--color-state-gap)', color: '#fff' }}
                 onClick={() => setShowOccurrenceConfirm(true)}
-                disabled={isWeekLocked || upsertLogMutation.isPending}
+                disabled={isOperationalBlock || isWeekLocked || upsertLogMutation.isPending}
                 title="Criar ocorrência para este bloco"
               >
                 <CIcon icon={cilXCircle} className="me-1" />

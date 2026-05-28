@@ -63,6 +63,7 @@ def upsert_lesson_log_sync(
     # Se o user tenta meter COMPLETED, e há uma Ocorrência GAP/SUBSTITUTED, bloquear.
     occurrence = db.query(models.LessonOccurrence).filter(
         models.LessonOccurrence.schedule_output_id == schedule_output_id,
+        models.LessonOccurrence.is_active.is_(True),
         models.LessonOccurrence.status.in_([
             models.LessonOccurrenceStatus.GAP,
             models.LessonOccurrenceStatus.SUBSTITUTED
@@ -118,6 +119,21 @@ def upsert_lesson_log_sync(
                 planned_hours=planned_hours,
                 direction=1
             )
+            db.flush()
+            occurrence_service._record_progress_ledger_entries(
+                db,
+                organization_id=organization_id,
+                source_type="LESSON_LOG",
+                source_id=llog.id,
+                source_revision=None,
+                class_id=class_id,
+                status=models.LessonOccurrenceStatus.GIVEN,
+                planned_module_id=planned_module_id,
+                executed_module_id=planned_module_id,
+                planned_hours=planned_hours,
+                direction=1,
+                actor_user_id=user_id,
+            )
         # COMPLETED -> PENDING/OCCURRENCE (-1)
         elif old_status == models.LessonLogStatus.COMPLETED:
             occurrence_service._apply_state_accounting(
@@ -129,12 +145,27 @@ def upsert_lesson_log_sync(
                 planned_hours=planned_hours,
                 direction=-1
             )
+            occurrence_service._record_progress_ledger_entries(
+                db,
+                organization_id=organization_id,
+                source_type="LESSON_LOG",
+                source_id=llog.id,
+                source_revision=None,
+                class_id=class_id,
+                status=models.LessonOccurrenceStatus.GIVEN,
+                planned_module_id=planned_module_id,
+                executed_module_id=planned_module_id,
+                planned_hours=planned_hours,
+                direction=-1,
+                actor_user_id=user_id,
+            )
 
         # WBS V3 Fase 1.1: Auto-create LessonOccurrence OPEN when teacher marks OCCURRENCE
         if payload.status == models.LessonLogStatus.OCCURRENCE:
             db.flush()  # ensure the LessonLog status change is visible to downstream queries
             existing_occ = db.query(models.LessonOccurrence).filter(
                 models.LessonOccurrence.schedule_output_id == schedule_output_id,
+                models.LessonOccurrence.is_active.is_(True),
                 models.LessonOccurrence.status != models.LessonOccurrenceStatus.REVOKED,
             ).first()
             if existing_occ is None:
@@ -142,6 +173,8 @@ def upsert_lesson_log_sync(
                     db,
                     organization_id=organization_id,
                     schedule_output_id=schedule_output_id,
+                    created_by_user_id=user_id,
+                    creation_source="lesson_log",
                 )
 
         # WBS V3 Fase 1.2: Cleanup OPEN occurrence when reverting from OCCURRENCE
@@ -155,3 +188,115 @@ def upsert_lesson_log_sync(
     db.commit()
     db.refresh(llog)
     return llog
+
+
+def upsert_operational_lesson_log_sync(
+    db: Session,
+    organization_id: int,
+    user_id: int,
+    operational_block_id: int,
+    payload: schemas.LessonLogCreate,
+) -> models.LessonLog:
+    block = db.query(models.OperationalScheduleBlock).filter(
+        models.OperationalScheduleBlock.id == operational_block_id,
+        models.OperationalScheduleBlock.organization_id == organization_id,
+        models.OperationalScheduleBlock.status == models.OperationalBlockStatus.ACTIVE,
+    ).first()
+    if block is None:
+        raise NotFoundError("Bloco operacional nao encontrado.")
+
+    if payload.status == models.LessonLogStatus.OCCURRENCE:
+        raise DomainError(
+            "Blocos operacionais nao podem originar novas ocorrencias.",
+            status_code=422,
+        )
+
+    week_start_date = block.date - timedelta(days=block.date.weekday())
+    timesheet = db.query(models.TeacherWeeklyTimesheet).filter(
+        models.TeacherWeeklyTimesheet.organization_id == organization_id,
+        models.TeacherWeeklyTimesheet.teacher_id == block.teacher_id,
+        models.TeacherWeeklyTimesheet.week_start_date == week_start_date,
+    ).first()
+    if timesheet and timesheet.status in (models.TimesheetStatus.SUBMITTED, models.TimesheetStatus.APPROVED):
+        raise DomainError("Esta semana ja foi submetida ou aprovada. Nao e possivel alterar registos.", status_code=400)
+
+    old_log = db.query(models.LessonLog).filter(
+        models.LessonLog.operational_block_id == operational_block_id,
+    ).first()
+    old_status = old_log.status if old_log else models.LessonLogStatus.PENDING
+
+    if old_log is None:
+        old_log = models.LessonLog(
+            organization_id=organization_id,
+            operational_block_id=operational_block_id,
+            status=payload.status,
+            summary=payload.summary,
+            notes=payload.notes,
+            logged_by_user_id=user_id,
+            logged_at=datetime.now(timezone.utc),
+        )
+        db.add(old_log)
+    else:
+        old_log.status = payload.status
+        old_log.summary = payload.summary
+        old_log.notes = payload.notes
+        old_log.logged_by_user_id = user_id
+        old_log.logged_at = datetime.now(timezone.utc)
+
+    if old_status != payload.status:
+        planned_hours = _get_timeslot_duration_hours(block.timeslot)
+        if payload.status == models.LessonLogStatus.COMPLETED:
+            occurrence_service._apply_state_accounting(
+                db,
+                class_id=block.class_id,
+                status=models.LessonOccurrenceStatus.GIVEN,
+                planned_module_id=block.module_id,
+                executed_module_id=block.module_id,
+                planned_hours=planned_hours,
+                direction=1,
+            )
+            db.flush()
+            occurrence_service._record_progress_ledger_entries(
+                db,
+                organization_id=organization_id,
+                source_type="LESSON_LOG",
+                source_id=old_log.id,
+                source_revision=None,
+                class_id=block.class_id,
+                status=models.LessonOccurrenceStatus.GIVEN,
+                planned_module_id=block.module_id,
+                executed_module_id=block.module_id,
+                planned_hours=planned_hours,
+                direction=1,
+                actor_user_id=user_id,
+            )
+            block.execution_status = models.OperationalBlockExecutionStatus.COMPLETED
+        elif old_status == models.LessonLogStatus.COMPLETED:
+            occurrence_service._apply_state_accounting(
+                db,
+                class_id=block.class_id,
+                status=models.LessonOccurrenceStatus.GIVEN,
+                planned_module_id=block.module_id,
+                executed_module_id=block.module_id,
+                planned_hours=planned_hours,
+                direction=-1,
+            )
+            occurrence_service._record_progress_ledger_entries(
+                db,
+                organization_id=organization_id,
+                source_type="LESSON_LOG",
+                source_id=old_log.id,
+                source_revision=None,
+                class_id=block.class_id,
+                status=models.LessonOccurrenceStatus.GIVEN,
+                planned_module_id=block.module_id,
+                executed_module_id=block.module_id,
+                planned_hours=planned_hours,
+                direction=-1,
+                actor_user_id=user_id,
+            )
+            block.execution_status = models.OperationalBlockExecutionStatus.PENDING_LOG
+
+    db.commit()
+    db.refresh(old_log)
+    return old_log

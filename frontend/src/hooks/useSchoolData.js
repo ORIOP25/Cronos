@@ -567,7 +567,7 @@ export const useOccurrences = ({ classId, dateFrom, dateTo } = {}) => {
     queryKey: ['occurrences', orgId, classId, dateFrom, dateTo],
     queryFn: async () => {
       const { data } = await apiClient.get(endpoint)
-      return data
+      return Array.isArray(data) ? data : (data.items ?? [])
     },
     ...DYNAMIC_OPTS,
   })
@@ -644,9 +644,11 @@ export const useUpdateOccurrence = () => {
   const orgId = useOrganization().organization?.id
 
   return useMutation({
-    mutationFn: async ({ id, status, substituteTeacherId, substituteSubjectId }) => {
+    mutationFn: async ({ id, status, version, reason, substituteTeacherId, substituteSubjectId }) => {
       const { data } = await apiClient.patch(`/occurrences/${id}`, {
         status,
+        version,
+        reason,
         substitute_teacher_id: substituteTeacherId ?? null,
         substitute_subject_id: substituteSubjectId ?? null,
       })
@@ -670,8 +672,12 @@ export const useCancelOccurrence = () => {
   const orgId = useOrganization().organization?.id
 
   return useMutation({
-    mutationFn: async (id) => {
-      const { data } = await apiClient.post(`/occurrences/${id}/cancel`)
+    mutationFn: async ({ id, version, reason, cancelCompletedSubstituteLog = false }) => {
+      const { data } = await apiClient.post(`/occurrences/${id}/cancel`, {
+        version,
+        reason,
+        cancel_completed_substitute_log: cancelCompletedSubstituteLog,
+      })
       return data
     },
     onSuccess: () => {
@@ -691,8 +697,11 @@ export const useUpsertLessonLog = () => {
   const orgId = useOrganization().organization?.id
 
   return useMutation({
-    mutationFn: async ({ scheduleOutputId, payload }) => {
-      const { data } = await apiClient.put(`/schedule/outputs/${scheduleOutputId}/log`, payload)
+    mutationFn: async ({ scheduleOutputId, operationalBlockId, payload }) => {
+      const endpoint = operationalBlockId
+        ? `/schedule/operational-blocks/${operationalBlockId}/log`
+        : `/schedule/outputs/${scheduleOutputId}/log`
+      const { data } = await apiClient.put(endpoint, payload)
       return data
     },
     onSuccess: () => {

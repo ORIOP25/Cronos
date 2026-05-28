@@ -61,6 +61,7 @@ def _get_alert_counts(
         select(func.count(models.LessonOccurrence.id)).where(
             and_(
                 models.LessonOccurrence.organization_id == organization_id,
+                models.LessonOccurrence.is_active.is_(True),
                 models.LessonOccurrence.decided_at.is_(None),
             )
         )
@@ -88,6 +89,7 @@ def _get_alert_counts(
         select(func.count(models.LessonOccurrence.id)).where(
             and_(
                 models.LessonOccurrence.organization_id == organization_id,
+                models.LessonOccurrence.is_active.is_(True),
                 models.LessonOccurrence.date == today,
                 models.LessonOccurrence.status == models.LessonOccurrenceStatus.SUBSTITUTED,
             )

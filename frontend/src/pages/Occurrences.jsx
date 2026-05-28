@@ -46,6 +46,9 @@ const STATUS_ICONS = {
 
 const OPERATIONAL_STATE_ICONS = {
   OPEN_PENDING: cilClock,
+  DECIDED_GIVEN: cilCheckCircle,
+  DECIDED_GAP: cilBan,
+  DECIDED_SUBSTITUTED: cilWarning,
   CLOSED: cilCheckCircle,
   REVOKED: cilClock,
 }
@@ -139,6 +142,9 @@ const buildDecisionSummary = (occurrence) => {
 }
 
 const getOperationalState = (occurrence) => {
+  if (occurrence.operational_state) {
+    return occurrence.operational_state
+  }
   if (occurrence.status === 'REVOKED') {
     return 'REVOKED'
   }
@@ -162,7 +168,7 @@ const EditOccurrenceModal = ({
   errorMessage,
 }) => {
   const [status, setStatus] = useState(
-    occurrence.status === 'GIVEN' ? 'GAP' : (occurrence.status || 'GAP')
+    occurrence.status || 'GAP'
   )
   const [selectedRecommendation, setSelectedRecommendation] = useState(
     occurrence.substitute_teacher_id && occurrence.substitute_subject_id
@@ -240,6 +246,8 @@ const EditOccurrenceModal = ({
     onSave({
       id: occurrence.id,
       status,
+      version: occurrence.version,
+      reason: 'Decisao operacional',
       substituteTeacherId: status === 'SUBSTITUTED' ? selectedRecommendationData?.teacher_id ?? null : null,
       substituteSubjectId: status === 'SUBSTITUTED' ? selectedRecommendationData?.subject_id ?? null : null,
     })
@@ -274,6 +282,13 @@ const EditOccurrenceModal = ({
         <div className="mb-3">
           <CFormLabel>Decisão operacional</CFormLabel>
           <CButtonGroup className="w-100" role="group" aria-label="Estado da aula">
+            <CButton
+              color={status === 'GIVEN' ? 'success' : 'secondary'}
+              variant={status === 'GIVEN' ? undefined : 'outline'}
+              onClick={() => setStatus('GIVEN')}
+            >
+              Dada
+            </CButton>
             <CButton
               color={status === 'GAP' ? 'danger' : 'secondary'}
               variant={status === 'GAP' ? undefined : 'outline'}
@@ -375,7 +390,9 @@ EditOccurrenceModal.propTypes = {
   occurrence: PropTypes.shape({
     id: PropTypes.number.isRequired,
     date: PropTypes.string,
-    status: PropTypes.string.isRequired,
+    status: PropTypes.string,
+    operational_state: PropTypes.string,
+    version: PropTypes.number,
     class_id: PropTypes.number,
     class_name: PropTypes.string,
     subject_id: PropTypes.number,
@@ -525,7 +542,6 @@ const OccurrencesPanel = ({ classId, dateFrom, dateTo, initialOccurrenceId, forc
     if (!stillExists) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setEditingOccurrence(null)
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       setSaveErrorMessage('')
     }
   }, [editingOccurrence, occurrences])
@@ -533,9 +549,7 @@ const OccurrencesPanel = ({ classId, dateFrom, dateTo, initialOccurrenceId, forc
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setHasAppliedInitialFocus(false)
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setEditingOccurrence(null)
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setSaveErrorMessage('')
   }, [initialOccurrenceId])
 
@@ -558,7 +572,6 @@ const OccurrencesPanel = ({ classId, dateFrom, dateTo, initialOccurrenceId, forc
     setResolutionFilter('all')
     const targetOccurrence = occurrences.find((occ) => occ.id === initialOccurrenceId)
     if (targetOccurrence && isAdmin) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       setEditingOccurrence(targetOccurrence)
     }
     setHasAppliedInitialFocus(true)
@@ -577,15 +590,23 @@ const OccurrencesPanel = ({ classId, dateFrom, dateTo, initialOccurrenceId, forc
 
   const openEditModal = (occurrence) => {
     if (!isAdmin) return
-    if (occurrence.status === 'REVOKED' || (occurrence.decided_at && occurrence.status === 'GIVEN')) return
+    if (occurrence.status === 'REVOKED') return
     setEditingOccurrence(occurrence)
     setSaveErrorMessage('')
   }
 
   const handleRevert = (occurrence) => {
     if (!isAdmin) return
-    cancelMutation.mutate(occurrence.id, {
+    const confirmed = window.confirm('Reverter esta ocorrÃªncia? O histÃ³rico serÃ¡ preservado e poderÃ¡ criar uma nova revisÃ£o para o mesmo bloco.')
+    if (!confirmed) return
+    cancelMutation.mutate({
+      id: occurrence.id,
+      version: occurrence.version,
+      reason: 'Reversao administrativa',
+      cancelCompletedSubstituteLog: true,
+    }, {
       onSuccess: () => {
+        closeEditModal()
         void queryClient.invalidateQueries({ queryKey: ['occurrences'] })
         void queryClient.invalidateQueries({ queryKey: ['weekSchedule'] })
       },
@@ -643,7 +664,7 @@ const OccurrencesPanel = ({ classId, dateFrom, dateTo, initialOccurrenceId, forc
           occurrence={editingOccurrence}
           onClose={closeEditModal}
           onSave={handleSave}
-          onRevert={() => { closeEditModal(); handleRevert(editingOccurrence) }}
+          onRevert={() => { handleRevert(editingOccurrence) }}
           isSaving={updateMutation.isPending || cancelMutation.isPending}
           teacherById={teacherById}
           subjectById={subjectById}
@@ -721,8 +742,8 @@ const OccurrencesPanel = ({ classId, dateFrom, dateTo, initialOccurrenceId, forc
             const summaryPreview = occ.lesson_log_summary
               ? (occ.lesson_log_summary.length > 80 ? occ.lesson_log_summary.slice(0, 80) + '…' : occ.lesson_log_summary)
               : '—'
-            const isUndecided = !occ.decided_at && occ.status !== 'REVOKED'
-            const isDecided = occ.decided_at && occ.status !== 'REVOKED' && occ.status !== 'GIVEN'
+            const isUndecided = operationalState === 'OPEN_PENDING'
+            const isDecided = ['DECIDED_GIVEN', 'DECIDED_GAP', 'DECIDED_SUBSTITUTED'].includes(operationalState)
             const isExpanded = expandedId === occ.id
             const hasDetail = occ.lesson_log_summary || occ.lesson_log_notes
             return (
@@ -847,18 +868,23 @@ const Occurrences = () => {
   const [classFilter, setClassFilter] = useState(initialClassFilter)
   const [dateFrom, setDateFrom] = useState(initialDateFrom)
   const [dateTo, setDateTo] = useState(initialDateTo)
-  const [activeTab, setActiveTab] = useState(statusParam === 'OPEN' ? 'occurrences' : 'occurrences')
+  const [activeTab, setActiveTab] = useState(
+    ['GAP', 'SUBSTITUTED', 'GIVEN', 'REVOKED'].includes(statusParam.toUpperCase())
+      ? 'historical'
+      : 'occurrences'
+  )
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setClassFilter(initialClassFilter)
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setDateFrom(initialDateFrom)
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setDateTo(initialDateTo)
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setActiveTab('occurrences')
-  }, [initialClassFilter, initialDateFrom, initialDateTo])
+    setActiveTab(
+      ['GAP', 'SUBSTITUTED', 'GIVEN', 'REVOKED'].includes(statusParam.toUpperCase())
+        ? 'historical'
+        : 'occurrences'
+    )
+  }, [initialClassFilter, initialDateFrom, initialDateTo, statusParam])
 
   const { data: classes = [] } = useClasses()
 

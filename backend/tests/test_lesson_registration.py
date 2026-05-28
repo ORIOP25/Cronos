@@ -194,7 +194,7 @@ class TestLessonRegistration:
         )
         
         # Submeter semana
-        _ = timesheet_service.submit_timesheet_sync(
+        timesheet = timesheet_service.submit_timesheet_sync(
             sync_db, organization_id, teacher_id, week_start
         )
         assert timesheet.status == models.TimesheetStatus.SUBMITTED
@@ -355,7 +355,8 @@ class TestSubstitutionFromModal:
             sync_db, organization_id, output_id
         )
         assert created is True
-        assert occurrence.status == models.LessonOccurrenceStatus.GIVEN
+        assert occurrence.status is None
+        assert occurrence.decided_at is None
 
         # Step 2: Update to SUBSTITUTED
         payload = schemas.LessonOccurrenceUpdate(
@@ -509,7 +510,7 @@ class TestWeekScheduleTimesheetStatus:
         )
 
         # Submit timesheet via service
-        _ = timesheet_service.submit_timesheet_sync(
+        timesheet = timesheet_service.submit_timesheet_sync(
             sync_db, organization_id, teacher_id, week_start
         )
         assert timesheet.status == models.TimesheetStatus.SUBMITTED
@@ -646,7 +647,7 @@ class TestWeekScheduleTimesheetStatus:
         )
 
         # Submit timesheet
-        _ = timesheet_service.submit_timesheet_sync(
+        timesheet = timesheet_service.submit_timesheet_sync(
             sync_db, organization_id, teacher_id, week_start
         )
 
@@ -674,7 +675,7 @@ class TestTimesheetReopen:
         )
 
         # Submit
-        _ = timesheet_service.submit_timesheet_sync(
+        timesheet = timesheet_service.submit_timesheet_sync(
             sync_db, organization_id, teacher_id, week_start
         )
         assert timesheet.status == models.TimesheetStatus.SUBMITTED
@@ -703,7 +704,7 @@ class TestTimesheetReopen:
         )
 
         # Submit and approve
-        _ = timesheet_service.submit_timesheet_sync(
+        timesheet = timesheet_service.submit_timesheet_sync(
             sync_db, organization_id, teacher_id, week_start
         )
         timesheet_service.update_timesheet_status_sync(
@@ -755,7 +756,7 @@ class TestTimesheetReopenPermissions:
 
         # Create timesheet
         week_start = date.today() - timedelta(days=date.today().weekday())
-        _ = models.TeacherWeeklyTimesheet(
+        timesheet = models.TeacherWeeklyTimesheet(
             organization_id=org.id,
             teacher_id=teacher.id,
             week_start_date=week_start,
@@ -914,7 +915,7 @@ class TestTimesheetApprovalEndpoints:
         await db_session.flush()
 
         week_start = date.today() - timedelta(days=date.today().weekday())
-        _ = models.TeacherWeeklyTimesheet(
+        timesheet = models.TeacherWeeklyTimesheet(
             organization_id=org.id,
             teacher_id=teacher.id,
             week_start_date=week_start,
@@ -959,7 +960,7 @@ class TestTimesheetApprovalEndpoints:
         await db_session.flush()
 
         week_start = date.today() - timedelta(days=date.today().weekday())
-        _ = models.TeacherWeeklyTimesheet(
+        timesheet = models.TeacherWeeklyTimesheet(
             organization_id=org.id,
             teacher_id=teacher.id,
             week_start_date=week_start,
@@ -1011,7 +1012,7 @@ class TestTimesheetsListEndpoint:
         await db_session.flush()
 
         week_start = date.today() - timedelta(days=date.today().weekday())
-        _ = models.TeacherWeeklyTimesheet(
+        timesheet = models.TeacherWeeklyTimesheet(
             organization_id=org.id,
             teacher_id=teacher.id,
             week_start_date=week_start,
@@ -1201,7 +1202,7 @@ class TestTimesheetStateTransitions:
         week_start = base_setup["date"] - timedelta(days=base_setup["date"].weekday())
 
         # Create timesheet in OPEN state (default)
-        _ = timesheet_service.get_or_create_timesheet_sync(
+        timesheet = timesheet_service.get_or_create_timesheet_sync(
             sync_db, organization_id, teacher_id, week_start
         )
         assert timesheet.status == models.TimesheetStatus.OPEN

@@ -32,9 +32,6 @@ apiClient.interceptors.response.use(
   (response) => response,
   (error) => {
     const status = error?.response?.status;
-    if (status === 404) {
-      return Promise.resolve(error.response);
-    }
     if (status === 403) {
       const detail = error?.response?.data?.detail;
       if (detail && !globalThis._403_toast_shown) {

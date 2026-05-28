@@ -35,7 +35,7 @@ router = APIRouter()
 
 @router.get(
     "/",
-    response_model=list[schemas.LessonOccurrenceRead],
+    response_model=schemas.LessonOccurrenceListRead,
     summary="Listar ocorrências de aulas",
 )
 async def list_occurrences(
@@ -54,10 +54,13 @@ async def list_occurrences(
     def _run(sync_db):
         return occurrence_service.list_occurrences_sync(
             sync_db, organization_id, class_id=class_id, date_from=date_from, date_to=date_to,
-            skip=skip, limit=limit, status_filter=status,
+            skip=skip, limit=limit, status_filter=status, as_page=True,
         )
 
-    return await db.run_sync(_run)
+    try:
+        return await db.run_sync(_run)
+    except occurrence_service.OccurrenceServiceError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
 
 @router.post(
@@ -85,6 +88,9 @@ async def create_occurrence(
             sync_db,
             organization_id=organization_id,
             schedule_output_id=payload.schedule_output_id,
+            created_by_user_id=current_user.id,
+            creation_source=payload.mode,
+            reason=payload.reason,
         )
 
     try:
@@ -314,6 +320,7 @@ async def cancel_occurrence(
     occurrence_id: int,
     db: Annotated[AsyncSession, Depends(deps.get_db)],
     current_user: Annotated[models.User, Depends(deps.get_current_active_admin)],
+    payload: schemas.LessonOccurrenceCancel = schemas.LessonOccurrenceCancel(),
 ):
     """Cancela uma ocorrência (OPEN ou decidida), revertendo o LessonLog para PENDING."""
     organization_id = current_user.organization_id
@@ -324,6 +331,9 @@ async def cancel_occurrence(
             organization_id=organization_id,
             occurrence_id=occurrence_id,
             cancelled_by_user_id=current_user.id,
+            version=payload.version,
+            reason=payload.reason,
+            cancel_completed_substitute_log=payload.cancel_completed_substitute_log,
         )
 
     try:

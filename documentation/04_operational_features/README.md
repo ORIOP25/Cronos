@@ -3,6 +3,7 @@
 Esta secao cobre o comportamento operacional diario apos publicacao de horario.
 
 ## Conteudo principal
+- PRD_GESTAO_OCORRENCIAS_V5.md
 - FALTAS.md
 - SUBSTITUICOES.md
 

@@ -52,7 +52,7 @@ class TestOccurrenceEndpoints:
     async def test_list_occurrences_empty(        self, async_client: AsyncClient, full_setup, auth_headers, _patch_admin):
         response = await async_client.get("/api/v1/occurrences/", headers=auth_headers)
         assert response.status_code == 200
-        assert response.json() == []
+        assert response.json() == {"items": [], "total": 0, "limit": 100, "offset": 0}
 
     @pytest.mark.asyncio
     async def test_get_debts_empty(        self, async_client: AsyncClient, full_setup, auth_headers, _patch_admin):
@@ -122,6 +122,8 @@ class TestOccurrenceEndpoints:
         assert create_response.status_code == 201
         created = create_response.json()
         assert created["schedule_output_id"] == full_setup["schedule_output_id"]
+        assert created["status"] is None
+        assert created["operational_state"] == "OPEN_PENDING"
         assert created["decided_at"] is None
 
         second_response = await async_client.post(

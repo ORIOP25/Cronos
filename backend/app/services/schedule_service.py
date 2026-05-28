@@ -869,6 +869,8 @@ def _build_week_slot(
 
     return {
         "schedule_output_id": output.id,
+        "operational_block_id": None,
+        "block_source": "planned",
         "date": output.date.isoformat() if output.date else None,
         "timeslot": {
             "id": ts.id,
@@ -894,7 +896,7 @@ def _build_week_slot(
         ),
         "module": mod_data,
         "is_past": output.date is not None and output.date < today,
-        "occurrence_status": occ.status.value if occ else None,
+        "occurrence_status": occ.status.value if occ and occ.status is not None else None,
         "hours_given": occ.hours_given if occ else None,
         "occurrence_id": occ.id if occ else None,
         "occurrence_decided_at": occ.decided_at if occ else None,
@@ -911,6 +913,51 @@ def _build_week_slot(
         "timesheet_id": timesheet_id,
         # WBS V3 Fase 4: indicador de bloco de substituição
         "is_substituted_block": is_substituted_block,
+    }
+
+
+def _build_operational_week_slot(
+    block: models.OperationalScheduleBlock,
+    lesson_log: models.LessonLog | None,
+    active_modules: dict,
+    today: date,
+    timesheet_map: dict | None = None,
+) -> dict:
+    timesheet_status, timesheet_id = ("OPEN", None)
+    if timesheet_map:
+        timesheet_status, timesheet_id = timesheet_map.get(block.teacher_id, ("OPEN", None))
+
+    return {
+        "schedule_output_id": 0,
+        "operational_block_id": block.id,
+        "block_source": "operational",
+        "date": block.date.isoformat(),
+        "timeslot": {
+            "id": block.timeslot.id,
+            "day_of_week": block.timeslot.day_of_week,
+            "start_time": str(block.timeslot.start_time)[:5],
+            "end_time": str(block.timeslot.end_time)[:5],
+        },
+        "subject": {"id": block.subject.id, "name": block.subject.name} if block.subject else None,
+        "teacher": {"id": block.teacher.id, "name": block.teacher.name} if block.teacher else None,
+        "room": {"id": block.room.id, "name": block.room.name} if block.room else None,
+        "class_info": {"id": block.class_.id, "name": block.class_.name} if block.class_ else None,
+        "module": active_modules.get((block.class_id, block.subject_id)),
+        "is_past": block.date < today,
+        "occurrence_status": models.LessonOccurrenceStatus.SUBSTITUTED.value,
+        "hours_given": 0.0,
+        "occurrence_id": block.source_occurrence_id,
+        "occurrence_decided_at": block.source_occurrence.decided_at if block.source_occurrence else None,
+        "can_create_occurrence": False,
+        "can_decide_occurrence": False,
+        "lesson_log_id": lesson_log.id if lesson_log else None,
+        "lesson_log_status": lesson_log.status.value if lesson_log else None,
+        "lesson_log_summary": lesson_log.summary if lesson_log else None,
+        "lesson_log_notes": lesson_log.notes if lesson_log else None,
+        "lesson_log_logged_at": lesson_log.logged_at if lesson_log else None,
+        "week_timesheet_status": timesheet_status,
+        "timesheet_id": timesheet_id,
+        "is_substituted_block": True,
     }
 
 
@@ -950,23 +997,56 @@ def get_week_schedule_sync(
         q = q.filter(models.Lesson.teacher_id == teacher_id)
 
     outputs = q.all()
-    if not outputs:
-        return []
 
     output_ids = [o.id for o in outputs]
-    occ_rows = db.query(models.LessonOccurrence).filter(
-        models.LessonOccurrence.organization_id == organization_id,
-        models.LessonOccurrence.schedule_output_id.in_(output_ids)
-    ).all()
+    occ_rows = []
+    if output_ids:
+        occ_rows = db.query(models.LessonOccurrence).filter(
+            models.LessonOccurrence.organization_id == organization_id,
+            models.LessonOccurrence.schedule_output_id.in_(output_ids),
+            models.LessonOccurrence.is_active.is_(True),
+        ).all()
     occurrences = {o.schedule_output_id: o for o in occ_rows}
 
-    llog_rows = db.query(models.LessonLog).filter(
-        models.LessonLog.organization_id == organization_id,
-        models.LessonLog.schedule_output_id.in_(output_ids)
-    ).all()
+    llog_rows = []
+    if output_ids:
+        llog_rows = db.query(models.LessonLog).filter(
+            models.LessonLog.organization_id == organization_id,
+            models.LessonLog.schedule_output_id.in_(output_ids)
+        ).all()
     lesson_logs = {ll.schedule_output_id: ll for ll in llog_rows}
 
-    pairs = list({(o.lesson.class_id, o.lesson.subject_id) for o in outputs})
+    op_q = db.query(models.OperationalScheduleBlock).filter(
+        models.OperationalScheduleBlock.organization_id == organization_id,
+        models.OperationalScheduleBlock.status == models.OperationalBlockStatus.ACTIVE,
+        models.OperationalScheduleBlock.date.between(week_start, week_end),
+    ).options(
+        joinedload(models.OperationalScheduleBlock.timeslot),
+        joinedload(models.OperationalScheduleBlock.subject),
+        joinedload(models.OperationalScheduleBlock.teacher),
+        joinedload(models.OperationalScheduleBlock.class_),
+        joinedload(models.OperationalScheduleBlock.room),
+        joinedload(models.OperationalScheduleBlock.source_occurrence),
+    )
+    if class_id is not None:
+        op_q = op_q.filter(models.OperationalScheduleBlock.class_id == class_id)
+    if teacher_id is not None:
+        op_q = op_q.filter(models.OperationalScheduleBlock.teacher_id == teacher_id)
+    operational_blocks = op_q.all()
+
+    operational_logs = {}
+    if operational_blocks:
+        op_ids = [block.id for block in operational_blocks]
+        op_log_rows = db.query(models.LessonLog).filter(
+            models.LessonLog.organization_id == organization_id,
+            models.LessonLog.operational_block_id.in_(op_ids),
+        ).all()
+        operational_logs = {log.operational_block_id: log for log in op_log_rows}
+
+    pairs = list(
+        {(o.lesson.class_id, o.lesson.subject_id) for o in outputs}
+        | {(b.class_id, b.subject_id) for b in operational_blocks}
+    )
     active_modules = _fetch_active_modules(db, pairs)
 
     # WBS V3 Fase 4: identify substitute blocks
@@ -984,6 +1064,7 @@ def get_week_schedule_sync(
 
     # WBS Fase 6: buscar timesheets dos professores para esta semana
     teacher_ids = {o.lesson.teacher_id for o in outputs if o.lesson and o.lesson.teacher_id}
+    teacher_ids.update({b.teacher_id for b in operational_blocks if b.teacher_id})
     timesheet_map: dict[int, tuple[str, int | None]] = {}
     if teacher_ids:
         timesheet_rows = db.query(
@@ -1000,10 +1081,15 @@ def get_week_schedule_sync(
             for row in timesheet_rows
         }
 
-    return [
+    planned_slots = [
         _build_week_slot(output, occurrences, lesson_logs, active_modules, today, timesheet_map, substituted_blocks)
         for output in outputs
     ]
+    operational_slots = [
+        _build_operational_week_slot(block, operational_logs.get(block.id), active_modules, today, timesheet_map)
+        for block in operational_blocks
+    ]
+    return planned_slots + operational_slots
 
 
 def get_diff_sync(db: Session, organization_id: int, gen_id: str) -> dict:

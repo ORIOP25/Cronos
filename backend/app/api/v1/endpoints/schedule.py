@@ -994,3 +994,40 @@ async def upsert_lesson_log(
         )
 
     return await db.run_sync(_run)
+
+
+@router.put(
+    "/operational-blocks/{operational_block_id}/log",
+    response_model=schemas.LessonLogRead,
+    summary="Registar execucao de bloco operacional",
+)
+async def upsert_operational_lesson_log(
+    operational_block_id: int,
+    payload: schemas.LessonLogCreate,
+    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    current_user: Annotated[models.User, Depends(deps.get_current_active_user)],
+):
+    is_admin = bool(current_user.is_superuser or current_user.role == models.UserRole.admin)
+    is_teacher = current_user.role == models.UserRole.teacher
+
+    if not is_admin and not is_teacher:
+        raise HTTPException(status_code=403, detail="Acesso negado.")
+
+    def _run(sync_db):
+        from app.services import lesson_log_service
+
+        block = sync_db.get(models.OperationalScheduleBlock, operational_block_id)
+        if not block or block.organization_id != current_user.organization_id:
+            raise HTTPException(status_code=404, detail="Bloco operacional nao encontrado.")
+        if is_teacher and block.teacher_id != current_user.teacher_id:
+            raise HTTPException(status_code=403, detail="Nao pode alterar registos de outros professores.")
+
+        return lesson_log_service.upsert_operational_lesson_log_sync(
+            sync_db,
+            organization_id=current_user.organization_id,
+            user_id=current_user.id,
+            operational_block_id=operational_block_id,
+            payload=payload,
+        )
+
+    return await db.run_sync(_run)

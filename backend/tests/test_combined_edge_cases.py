@@ -157,7 +157,7 @@ class TestCombinedRepairGapSubstitution:
         ctx = combined_setup
         
 
-        base_date = today + timedelta(days=21)
+        base_date = date.today() + timedelta(days=21)
         dates = [base_date + timedelta(weeks=w) for w in range(4)]
 
         schedule_ids = []
@@ -236,10 +236,10 @@ class TestCombinedRepairGapSubstitution:
             )
         ).scalars())
 
-                statuses = [occ.status for occ in refreshed]
+        statuses = [occ.status for occ in refreshed]
 
         assert LessonOccurrenceStatus.GAP in statuses
-        assert LessonOccurrenceStatus.GIVEN in statuses
+        assert None in statuses
 
         for occ in refreshed:
             assert occ.created_at is not None
