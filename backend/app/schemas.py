@@ -624,6 +624,14 @@ class OrganizationSettingsUpsert(BaseModel):
         ge=1,
         description=DESC_REPAIR_WINDOW_DAYS,
     )
+    auto_confirm_enabled: bool | None = Field(
+        None,
+        description="Ativa a auto-confirmacao diaria de aulas sem registo",
+    )
+    auto_confirm_cutoff_time: time | None = Field(
+        None,
+        description="Hora a partir da qual a auto-confirmacao pode correr",
+    )
 
     @staticmethod
     def _validate_school_dates(
@@ -655,6 +663,8 @@ class OrganizationSettingsRead(BaseModel):
     school_target_end_date: date | None = None
     school_hard_end_date: date | None = None
     repair_stability_window_days: int | None = None
+    auto_confirm_enabled: bool = True
+    auto_confirm_cutoff_time: time | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -849,7 +859,7 @@ class LessonOccurrenceCreate(BaseModel):
 class LessonOccurrenceUpdate(BaseModel):
     """Payload para o diretor registar uma falta ou substituição."""
     status: LessonOccurrenceStatus = Field(..., description=DESC_OCCURRENCE_STATUS)
-    version: int = Field(1, ge=1)
+    version: int = Field(..., ge=1)
     reason: Optional[str] = Field(None, max_length=250)
     substitute_teacher_id: Optional[int] = Field(
         None, description="ID do professor substituto (obrigatório se status=SUBSTITUTED)"
@@ -877,8 +887,8 @@ class LessonOccurrenceUpdate(BaseModel):
 
 
 class LessonOccurrenceCancel(BaseModel):
-    version: int = Field(1, ge=1)
-    reason: str = Field("Reversao administrativa", min_length=1, max_length=250)
+    version: int = Field(..., ge=1)
+    reason: str = Field(..., min_length=1, max_length=250)
     cancel_completed_substitute_log: bool = False
 
 
@@ -1099,7 +1109,7 @@ class WeekModuleInfo(BaseModel):
 
 class WeekSlotRead(BaseModel):
     """Um bloco de aula numa semana: slot planeado + ocorrência real."""
-    schedule_output_id: int
+    schedule_output_id: Optional[int] = None
     operational_block_id: Optional[int] = None
     block_source: Literal["planned", "operational"] = "planned"
     date: Optional[str] = None

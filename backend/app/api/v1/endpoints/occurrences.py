@@ -41,10 +41,10 @@ router = APIRouter()
 async def list_occurrences(
     db: Annotated[AsyncSession, Depends(deps.get_db)],
     current_user: Annotated[models.User, Depends(deps.get_current_active_admin)],
-    class_id: Annotated[Optional[int], Query(description="Filtrar por turma")] = None,
+    class_id: Annotated[Optional[int], Query(gt=0, description="Filtrar por turma")] = None,
     date_from: Annotated[Optional[date], Query(description="Data de início (YYYY-MM-DD)")] = None,
     date_to: Annotated[Optional[date], Query(description="Data de fim (YYYY-MM-DD)")] = None,
-    status: Annotated[Optional[str], Query(description="Filtrar por estado: OPEN, GIVEN, GAP, SUBSTITUTED")] = None,
+    status: Annotated[Optional[str], Query(description="Filtrar por estado: OPEN_PENDING, GIVEN, GAP, SUBSTITUTED, REVOKED")] = None,
     skip: Annotated[int, Query(ge=0, description="Registos a saltar")] = 0,
     limit: Annotated[int, Query(ge=1, le=500, description="Máximo de registos a devolver")] = 100,
 ):
@@ -318,9 +318,9 @@ async def update_occurrence(
 )
 async def cancel_occurrence(
     occurrence_id: int,
+    payload: schemas.LessonOccurrenceCancel,
     db: Annotated[AsyncSession, Depends(deps.get_db)],
     current_user: Annotated[models.User, Depends(deps.get_current_active_admin)],
-    payload: schemas.LessonOccurrenceCancel = schemas.LessonOccurrenceCancel(),
 ):
     """Cancela uma ocorrência (OPEN ou decidida), revertendo o LessonLog para PENDING."""
     organization_id = current_user.organization_id

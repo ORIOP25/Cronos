@@ -459,6 +459,8 @@ class OrganizationSettings(Base):
     school_target_end_date: Mapped[Optional[date_type]] = mapped_column(Date, nullable=True)
     school_hard_end_date: Mapped[Optional[date_type]] = mapped_column(Date, nullable=True)
     repair_stability_window_days: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    auto_confirm_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    auto_confirm_cutoff_time: Mapped[Optional[time]] = mapped_column(Time, nullable=True)
 
     organization: Mapped["Organization"] = relationship(back_populates="settings")
 

@@ -386,7 +386,10 @@ async def test_alpha_edge_weekly_simulation_and_audit_trail(db_session):
             sync_db,
             week_occurrences[1].id,
             runtime["org_a_id"],
-            schemas.LessonOccurrenceUpdate(status=LessonOccurrenceStatus.GAP),
+            schemas.LessonOccurrenceUpdate(
+                status=LessonOccurrenceStatus.GAP,
+                version=week_occurrences[1].version,
+            ),
             decided_by_user_id=runtime["org_a_admin_user_id"],
         )
 
@@ -403,6 +406,7 @@ async def test_alpha_edge_weekly_simulation_and_audit_trail(db_session):
             runtime["org_a_id"],
             schemas.LessonOccurrenceUpdate(
                 status=LessonOccurrenceStatus.SUBSTITUTED,
+                version=week_occurrences[2].version,
                 substitute_teacher_id=recommendations[0].teacher_id,
                 substitute_subject_id=recommendations[0].subject_id,
             ),
@@ -541,7 +545,10 @@ async def test_alpha_edge_rollback_after_unexpected_error(db_session, monkeypatc
                 sync_db,
                 occurrence_id,
                 runtime["org_a_id"],
-                schemas.LessonOccurrenceUpdate(status=LessonOccurrenceStatus.GAP),
+                schemas.LessonOccurrenceUpdate(
+                    status=LessonOccurrenceStatus.GAP,
+                    version=occurrence_before.version,
+                ),
                 decided_by_user_id=runtime["org_a_admin_user_id"],
             )
         except RuntimeError:

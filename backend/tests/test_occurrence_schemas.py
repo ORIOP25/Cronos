@@ -88,19 +88,25 @@ class TestWeekSchedulePerformance:
         assert counter["count"] <= 8
 
     def test_update_status_gap_valid(self):
-        payload = schemas.LessonOccurrenceUpdate(status=LessonOccurrenceStatus.GAP)
+        payload = schemas.LessonOccurrenceUpdate(status=LessonOccurrenceStatus.GAP, version=1)
         assert payload.status == LessonOccurrenceStatus.GAP
         assert payload.substitute_teacher_id is None
 
     def test_update_status_given_valid(self):
-        payload = schemas.LessonOccurrenceUpdate(status=LessonOccurrenceStatus.GIVEN)
+        payload = schemas.LessonOccurrenceUpdate(status=LessonOccurrenceStatus.GIVEN, version=1)
         assert payload.status == LessonOccurrenceStatus.GIVEN
+
+    def test_update_status_requires_version(self):
+        from pydantic import ValidationError
+        with pytest.raises(ValidationError):
+            schemas.LessonOccurrenceUpdate(status=LessonOccurrenceStatus.GAP)
 
     def test_update_status_substituted_requires_teacher(self):
         from pydantic import ValidationError
         with pytest.raises(ValidationError) as exc_info:
             schemas.LessonOccurrenceUpdate(
                 status=LessonOccurrenceStatus.SUBSTITUTED,
+                version=1,
                 substitute_teacher_id=None, substitute_subject_id=7,
             )
         errors = exc_info.value.errors()
@@ -111,6 +117,7 @@ class TestWeekSchedulePerformance:
         with pytest.raises(ValidationError) as exc_info:
             schemas.LessonOccurrenceUpdate(
                 status=LessonOccurrenceStatus.SUBSTITUTED,
+                version=1,
                 substitute_teacher_id=42, substitute_subject_id=None,
             )
         errors = exc_info.value.errors()
@@ -119,6 +126,7 @@ class TestWeekSchedulePerformance:
     def test_update_status_substituted_with_teacher_valid(self):
         payload = schemas.LessonOccurrenceUpdate(
             status=LessonOccurrenceStatus.SUBSTITUTED,
+            version=1,
             substitute_teacher_id=42, substitute_subject_id=7,
         )
         assert payload.substitute_teacher_id == 42
@@ -128,6 +136,7 @@ class TestWeekSchedulePerformance:
         with pytest.raises(ValidationError):
             schemas.LessonOccurrenceUpdate(
                 status=LessonOccurrenceStatus.GAP,
+                version=1,
                 substitute_teacher_id=1, substitute_subject_id=2,
             )
 

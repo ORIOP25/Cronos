@@ -90,13 +90,15 @@ const compareOccurrences = (left, right) => {
 }
 
 const buildUpdateErrorMessage = (error) => {
+  const status = error?.response?.status
   const detail = error?.response?.data?.detail
+  const suffix = status === 409 ? ' Atualize os dados e tente novamente.' : ''
   if (Array.isArray(detail) && detail.length > 0) {
     const firstItem = detail[0]
-    if (typeof firstItem?.msg === 'string') return firstItem.msg
+    if (typeof firstItem?.msg === 'string') return `${firstItem.msg}${suffix}`
   }
-  if (typeof detail === 'string' && detail.trim()) return detail
-  return TXT.ERROR_SAVING
+  if (typeof detail === 'string' && detail.trim()) return `${detail}${suffix}`
+  return `${TXT.ERROR_SAVING}${suffix}`
 }
 
 const resolveName = (byIdMap, id, fallbackPrefix) => {
@@ -521,17 +523,17 @@ const OccurrencesPanel = ({ classId, dateFrom, dateTo, initialOccurrenceId, forc
   )
 
   const pendingCount = useMemo(
-    () => sortedOccurrences.filter((occ) => !occ.decided_at).length,
+    () => sortedOccurrences.filter((occ) => getOperationalState(occ) === 'OPEN_PENDING').length,
     [sortedOccurrences]
   )
   const resolvedCount = sortedOccurrences.length - pendingCount
 
   const visibleOccurrences = useMemo(() => {
     if (resolutionFilter === 'pending') {
-      return sortedOccurrences.filter((occ) => !occ.decided_at && occ.status !== 'REVOKED')
+      return sortedOccurrences.filter((occ) => getOperationalState(occ) === 'OPEN_PENDING')
     }
     if (resolutionFilter === 'historical') {
-      return sortedOccurrences.filter((occ) => Boolean(occ.decided_at) || occ.status === 'REVOKED')
+      return sortedOccurrences.filter((occ) => getOperationalState(occ) !== 'OPEN_PENDING')
     }
     return sortedOccurrences
   }, [resolutionFilter, sortedOccurrences])
@@ -590,7 +592,7 @@ const OccurrencesPanel = ({ classId, dateFrom, dateTo, initialOccurrenceId, forc
 
   const openEditModal = (occurrence) => {
     if (!isAdmin) return
-    if (occurrence.status === 'REVOKED') return
+    if (getOperationalState(occurrence) === 'REVOKED') return
     setEditingOccurrence(occurrence)
     setSaveErrorMessage('')
   }
@@ -784,7 +786,13 @@ const OccurrencesPanel = ({ classId, dateFrom, dateTo, initialOccurrenceId, forc
                     </CButton>
                   )}
                   {isDecided && (
-                    <CButton color="secondary" size="sm" variant="outline" onClick={() => handleRevert(occ)}>
+                    <CButton
+                      color="secondary"
+                      size="sm"
+                      variant="outline"
+                      disabled={cancelMutation.isPending}
+                      onClick={() => handleRevert(occ)}
+                    >
                       Reverter
                     </CButton>
                   )}

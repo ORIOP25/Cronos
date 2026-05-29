@@ -361,6 +361,7 @@ class TestSubstitutionFromModal:
         # Step 2: Update to SUBSTITUTED
         payload = schemas.LessonOccurrenceUpdate(
             status=models.LessonOccurrenceStatus.SUBSTITUTED,
+            version=occurrence.version,
             substitute_teacher_id=substitution_setup["substitute_teacher_id"],
             substitute_subject_id=substitution_setup["substitute_subject_id"],
         )
@@ -388,6 +389,7 @@ class TestSubstitutionFromModal:
         )
         payload = schemas.LessonOccurrenceUpdate(
             status=models.LessonOccurrenceStatus.SUBSTITUTED,
+            version=occurrence.version,
             substitute_teacher_id=substitution_setup["substitute_teacher_id"],
             substitute_subject_id=substitution_setup["substitute_subject_id"],
         )
@@ -1317,6 +1319,7 @@ class TestOccurrenceFilters:
         # Decide it
         payload = schemas.LessonOccurrenceUpdate(
             status=models.LessonOccurrenceStatus.GIVEN,
+            version=occurrence.version,
         )
         occurrence_service.update_occurrence_sync(
             sync_db, occurrence.id, organization_id, payload, decided_by_user_id=user_id

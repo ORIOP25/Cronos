@@ -44,13 +44,12 @@ describe('request interceptor', () => {
 })
 
 describe('response interceptor', () => {
-  it('resolves 404 without throwing', async () => {
+  it('rejects 404 errors instead of turning them into empty success', async () => {
     const interceptor = apiClient.interceptors.response.handlers[0]?.rejected
     expect(interceptor).toBeTypeOf('function')
 
     const error = { response: { status: 404, data: null } }
-    const result = await interceptor(error)
-    expect(result.status).toBe(404)
+    await expect(interceptor(error)).rejects.toBe(error)
   })
 
   it('rejects non-404 errors', async () => {

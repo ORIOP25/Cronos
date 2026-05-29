@@ -85,11 +85,12 @@ class TestOccurrenceEndpoints:
             json={"schedule_output_id": future_output.id},
         )
         assert create_response.status_code == 201
-        occurrence_id = int(create_response.json()["id"])
+        created_occurrence = create_response.json()
+        occurrence_id = int(created_occurrence["id"])
 
         patch_response = await async_client.patch(
             f"/api/v1/occurrences/{occurrence_id}", headers=auth_headers,
-            json={"status": "GAP"},
+            json={"status": "GAP", "version": created_occurrence["version"]},
         )
         assert patch_response.status_code == 200
 
@@ -109,9 +110,19 @@ class TestOccurrenceEndpoints:
     @pytest.mark.asyncio
     async def test_patch_occurrence_not_found(self, async_client, full_setup, auth_headers, _patch_admin):
         response = await async_client.patch(
-            "/api/v1/occurrences/9999", headers=auth_headers, json={"status": "GAP"},
+            "/api/v1/occurrences/9999", headers=auth_headers, json={"status": "GAP", "version": 1},
         )
         assert response.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_patch_occurrence_requires_version(self, async_client, full_setup, auth_headers, _patch_admin):
+        occurrence_id = await self._create_open_occurrence(
+            async_client, auth_headers, full_setup["schedule_output_id"],
+        )
+        response = await async_client.patch(
+            f"/api/v1/occurrences/{occurrence_id}", headers=auth_headers, json={"status": "GAP"},
+        )
+        assert response.status_code == 422
 
     @pytest.mark.asyncio
     async def test_create_occurrence_from_block_returns_201_then_200(self, async_client, full_setup, auth_headers, _patch_admin):
@@ -143,10 +154,13 @@ class TestOccurrenceEndpoints:
             json={"schedule_output_id": full_setup["schedule_output_id"]},
         )
         assert create_response.status_code == 201
-        occurrence_id = create_response.json()["id"]
+        created_occurrence = create_response.json()
+        occurrence_id = created_occurrence["id"]
 
         patch_response = await async_client.patch(
-            f"/api/v1/occurrences/{occurrence_id}", headers=auth_headers, json={"status": "GAP"},
+            f"/api/v1/occurrences/{occurrence_id}",
+            headers=auth_headers,
+            json={"status": "GAP", "version": created_occurrence["version"]},
         )
         assert patch_response.status_code == 200
         body = patch_response.json()

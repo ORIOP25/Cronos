@@ -199,11 +199,15 @@ class TestCombinedRepairGapSubstitution:
 
         assert len(occurrence_ids) == 4
 
+        first_occurrence = sync_db.get(models.LessonOccurrence, occurrence_ids[0])
         occurrence_service.update_occurrence_sync(
             sync_db,
             occurrence_ids[0],
             ctx["org_id"],
-            schemas.LessonOccurrenceUpdate(status=LessonOccurrenceStatus.GAP),
+            schemas.LessonOccurrenceUpdate(
+                status=LessonOccurrenceStatus.GAP,
+                version=first_occurrence.version,
+            ),
             decided_by_user_id=ctx["admin_user_id"],
         )
         sync_db.commit()
@@ -215,12 +219,14 @@ class TestCombinedRepairGapSubstitution:
         )
 
         if recommendations:
+            second_occurrence = sync_db.get(models.LessonOccurrence, occurrence_ids[1])
             occurrence_service.update_occurrence_sync(
                 sync_db,
                 occurrence_ids[1],
                 ctx["org_id"],
                 schemas.LessonOccurrenceUpdate(
                     status=LessonOccurrenceStatus.SUBSTITUTED,
+                    version=second_occurrence.version,
                     substitute_teacher_id=recommendations[0].teacher_id,
                     substitute_subject_id=recommendations[0].subject_id,
                 ),
@@ -299,7 +305,7 @@ class TestOperationNearHardEndDate:
             sync_db,
             occ.id,
             ctx["org_id"],
-            schemas.LessonOccurrenceUpdate(status=LessonOccurrenceStatus.GAP),
+            schemas.LessonOccurrenceUpdate(status=LessonOccurrenceStatus.GAP, version=occ.version),
             decided_by_user_id=ctx["admin_user_id"],
         )
         sync_db.commit()

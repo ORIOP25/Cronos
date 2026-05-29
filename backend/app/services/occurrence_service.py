@@ -288,6 +288,9 @@ def _get_occurrence_with_context_sync(
             joinedload(models.LessonOccurrence.planned_teacher),
             joinedload(models.LessonOccurrence.executed_teacher),
             joinedload(models.LessonOccurrence.substitute_teacher),
+            joinedload(models.LessonOccurrence.class_),
+            joinedload(models.LessonOccurrence.subject),
+            joinedload(models.LessonOccurrence.planned_timeslot),
         )
         .where(
             and_(
@@ -302,10 +305,10 @@ def _attach_occurrence_read_context(occurrence: models.LessonOccurrence) -> None
     """Anexa campos derivados para o response model sem alterar a fonte de verdade."""
     schedule_output = occurrence.schedule_output
     lesson = schedule_output.lesson if schedule_output is not None else None
-    timeslot = schedule_output.timeslot if schedule_output is not None else None
+    timeslot = schedule_output.timeslot if schedule_output is not None else occurrence.planned_timeslot
 
-    class_model = lesson.class_model if lesson is not None else None
-    subject = lesson.subject if lesson is not None else None
+    class_model = lesson.class_model if lesson is not None else occurrence.class_
+    subject = lesson.subject if lesson is not None else occurrence.subject
 
     planned_teacher = occurrence.planned_teacher
     if planned_teacher is None and lesson is not None:
@@ -350,6 +353,21 @@ def _resolve_repair_window_days(db: Session, organization_id: int) -> int:
         return DEFAULT_REPAIR_WINDOW_DAYS
 
     return max(1, int(row[0]))
+
+
+def _auto_confirm_allowed_now(db: Session, organization_id: int, now: datetime) -> bool:
+    settings = db.execute(
+        select(models.OrganizationSettings)
+        .where(models.OrganizationSettings.organization_id == organization_id)
+        .order_by(models.OrganizationSettings.id.desc())
+    ).scalars().first()
+    if settings is None:
+        return True
+    if settings.auto_confirm_enabled is False:
+        return False
+    if settings.auto_confirm_cutoff_time is None:
+        return True
+    return now.time() >= settings.auto_confirm_cutoff_time
 
 
 def _teacher_is_available_for_slot(
@@ -533,6 +551,27 @@ def _compute_daily_load_hours(
 
     hours_by_teacher: dict[int, float] = defaultdict(float)
     for teacher_id, start_time, end_time in rows:
+        start_dt = datetime.combine(target_date, start_time)
+        end_dt = datetime.combine(target_date, end_time)
+        hours_by_teacher[int(teacher_id)] += max(0.0, (end_dt - start_dt).total_seconds() / 3600.0)
+
+    operational_rows = db.execute(
+        select(
+            models.OperationalScheduleBlock.teacher_id,
+            models.Timeslot.start_time,
+            models.Timeslot.end_time,
+        )
+        .join(models.Timeslot, models.OperationalScheduleBlock.timeslot_id == models.Timeslot.id)
+        .where(
+            and_(
+                models.OperationalScheduleBlock.organization_id == organization_id,
+                models.OperationalScheduleBlock.status == models.OperationalBlockStatus.ACTIVE,
+                models.OperationalScheduleBlock.date == target_date,
+                models.OperationalScheduleBlock.teacher_id.in_(teacher_ids),
+            )
+        )
+    ).all()
+    for teacher_id, start_time, end_time in operational_rows:
         start_dt = datetime.combine(target_date, start_time)
         end_dt = datetime.combine(target_date, end_time)
         hours_by_teacher[int(teacher_id)] += max(0.0, (end_dt - start_dt).total_seconds() / 3600.0)
@@ -744,75 +783,6 @@ def _apply_module_delta(
     progress.is_completed = progress.hours_completed >= float(module.hours_total)
 
 
-def _ensure_substitute_schedule_output(
-    db: Session,
-    organization_id: int,
-    class_id: int,
-    substitute_teacher_id: int,
-    substitute_subject_id: int,
-    source_output: models.ScheduleOutput,
-) -> Optional[models.ScheduleOutput]:
-    """Cria um ScheduleOutput para o professor substituto, espelhando o bloco original.
-
-    Isto garante que o professor substituto vê a substituição no seu próprio
-    horário semanal, em vez de a substituição ficar invisível.
-    """
-    if not substitute_teacher_id or not substitute_subject_id:
-        return None
-
-    from sqlalchemy.exc import IntegrityError
-
-    lesson = db.query(models.Lesson).filter(
-        models.Lesson.organization_id == organization_id,
-        models.Lesson.class_id == class_id,
-        models.Lesson.subject_id == substitute_subject_id,
-        models.Lesson.teacher_id == substitute_teacher_id,
-    ).first()
-
-    if lesson is None:
-        lesson = models.Lesson(
-            organization_id=organization_id,
-            class_id=class_id,
-            subject_id=substitute_subject_id,
-            teacher_id=substitute_teacher_id,
-        )
-        db.add(lesson)
-        try:
-            db.flush()
-        except IntegrityError:
-            db.rollback()
-            lesson = db.query(models.Lesson).filter(
-                models.Lesson.organization_id == organization_id,
-                models.Lesson.class_id == class_id,
-                models.Lesson.subject_id == substitute_subject_id,
-                models.Lesson.teacher_id == substitute_teacher_id,
-            ).first()
-            if lesson is None:
-                return None
-
-    existing = db.query(models.ScheduleOutput).filter(
-        models.ScheduleOutput.organization_id == organization_id,
-        models.ScheduleOutput.lesson_id == lesson.id,
-        models.ScheduleOutput.date == source_output.date,
-        models.ScheduleOutput.timeslot_id == source_output.timeslot_id,
-    ).first()
-
-    if existing is not None:
-        return existing
-
-    sub_output = models.ScheduleOutput(
-        organization_id=organization_id,
-        lesson_id=lesson.id,
-        timeslot_id=source_output.timeslot_id,
-        room_id=source_output.room_id,
-        date=source_output.date,
-        generation_id=source_output.generation_id,
-        is_draft=False,
-    )
-    db.add(sub_output)
-    return sub_output
-
-
 def _ensure_operational_schedule_block(
     db: Session,
     *,
@@ -881,45 +851,6 @@ def _cancel_operational_blocks_for_occurrence(
         block.status = models.OperationalBlockStatus.CANCELLED
         block.execution_status = models.OperationalBlockExecutionStatus.CANCELLED
         block.cancelled_at = datetime.now(timezone.utc)
-
-
-def _remove_substitute_schedule_output(
-    db: Session,
-    organization_id: int,
-    original_output: models.ScheduleOutput,
-    substitute_teacher_id: Optional[int],
-    substitute_subject_id: Optional[int],
-) -> None:
-    """Remove o ScheduleOutput criado para o professor substituto ao re-decidir."""
-    if not substitute_teacher_id or not substitute_subject_id:
-        return
-    if original_output is None:
-        return
-
-    class_id = original_output.lesson.class_id if original_output.lesson else None
-    if class_id is None:
-        return
-
-    lesson = db.query(models.Lesson).filter(
-        models.Lesson.organization_id == organization_id,
-        models.Lesson.class_id == class_id,
-        models.Lesson.subject_id == substitute_subject_id,
-        models.Lesson.teacher_id == substitute_teacher_id,
-    ).first()
-
-    if lesson is None:
-        return
-
-    sub_output = db.query(models.ScheduleOutput).filter(
-        models.ScheduleOutput.organization_id == organization_id,
-        models.ScheduleOutput.lesson_id == lesson.id,
-        models.ScheduleOutput.date == original_output.date,
-        models.ScheduleOutput.timeslot_id == original_output.timeslot_id,
-    ).first()
-
-    if sub_output is not None:
-        db.delete(sub_output)
-        db.flush()
 
 
 def _apply_state_accounting(
@@ -1044,6 +975,10 @@ def _is_idempotent_payload(
     payload: schemas.LessonOccurrenceUpdate,
 ) -> bool:
     if occurrence.decided_at is None:
+        return False
+
+    current_version = int(occurrence.version or 1)
+    if int(payload.version) not in {current_version, current_version - 1}:
         return False
 
     return (
@@ -1280,6 +1215,34 @@ def cancel_occurrence_sync(
 
     schedule_output_id = occurrence.schedule_output_id
 
+    if occurrence.status == models.LessonOccurrenceStatus.SUBSTITUTED:
+        blocks_to_cancel = list(db.execute(
+            select(models.OperationalScheduleBlock).where(
+                and_(
+                    models.OperationalScheduleBlock.source_occurrence_id == occurrence.id,
+                    models.OperationalScheduleBlock.source_occurrence_revision == occurrence.revision,
+                    models.OperationalScheduleBlock.status == models.OperationalBlockStatus.ACTIVE,
+                )
+            )
+        ).scalars())
+        for block in blocks_to_cancel:
+            completed_operational_log = db.query(models.LessonLog.id).filter(
+                models.LessonLog.operational_block_id == block.id,
+                models.LessonLog.status == models.LessonLogStatus.COMPLETED,
+            ).first()
+            if completed_operational_log is None:
+                continue
+            week_start = block.date - timedelta(days=block.date.weekday())
+            timesheet = db.query(models.TeacherWeeklyTimesheet).filter(
+                models.TeacherWeeklyTimesheet.organization_id == organization_id,
+                models.TeacherWeeklyTimesheet.teacher_id == block.teacher_id,
+                models.TeacherWeeklyTimesheet.week_start_date == week_start,
+            ).first()
+            if timesheet and timesheet.status in (models.TimesheetStatus.SUBMITTED, models.TimesheetStatus.APPROVED):
+                raise OccurrenceServiceError(status_code=409, detail=ERR_SUBSTITUTE_LOG_LOCKED)
+            if not cancel_completed_substitute_log:
+                raise OccurrenceServiceError(status_code=409, detail=ERR_SUBSTITUTE_LOG_LOCKED)
+
     # Reverter contabilidade se a ocorrência foi decidida
     if occurrence.decided_at is not None:
         schedule_output = occurrence.schedule_output
@@ -1438,6 +1401,12 @@ def list_occurrences_sync(
     as_page: bool = False,
 ) -> dict | list[models.LessonOccurrence]:
     """Lista ocorrências com filtros opcionais."""
+    if date_from is not None and date_to is not None and date_from > date_to:
+        raise OccurrenceServiceError(status_code=422, detail="OCCURRENCE_INVALID_DATE_RANGE")
+
+    skip = max(0, int(skip))
+    limit = max(1, min(int(limit), 500))
+
     stmt = (
         select(models.LessonOccurrence)
         .options(
@@ -1457,6 +1426,9 @@ def list_occurrences_sync(
             joinedload(models.LessonOccurrence.planned_teacher),
             joinedload(models.LessonOccurrence.executed_teacher),
             joinedload(models.LessonOccurrence.substitute_teacher),
+            joinedload(models.LessonOccurrence.class_),
+            joinedload(models.LessonOccurrence.subject),
+            joinedload(models.LessonOccurrence.planned_timeslot),
         )
         .where(models.LessonOccurrence.organization_id == organization_id)
     )
@@ -1487,7 +1459,13 @@ def list_occurrences_sync(
     if status_filter is not None:
         normalized_status = status_filter.upper()
         if normalized_status in {"OPEN", OP_STATE_OPEN}:
-            stmt = stmt.where(models.LessonOccurrence.decided_at.is_(None))
+            stmt = stmt.where(
+                and_(
+                    models.LessonOccurrence.is_active.is_(True),
+                    models.LessonOccurrence.status.is_(None),
+                    models.LessonOccurrence.decided_at.is_(None),
+                )
+            )
         elif normalized_status in {"GIVEN", "GAP", "SUBSTITUTED", "REVOKED"}:
             enum_val = models.LessonOccurrenceStatus(normalized_status)
             stmt = stmt.where(models.LessonOccurrence.status == enum_val)
@@ -1499,9 +1477,11 @@ def list_occurrences_sync(
         models.Timeslot.start_time.asc().nulls_last(),
         models.LessonOccurrence.id.asc(),
     )
-    all_occurrences = list(db.execute(stmt).scalars().unique())
-    total = len(all_occurrences)
-    occurrences = all_occurrences[skip:skip + limit]
+    count_stmt = select(func.count()).select_from(
+        stmt.with_only_columns(models.LessonOccurrence.id).order_by(None).subquery()
+    )
+    total = int(db.execute(count_stmt).scalar_one())
+    occurrences = list(db.execute(stmt.offset(skip).limit(limit)).scalars().unique())
     for occurrence in occurrences:
         _attach_occurrence_read_context(occurrence)
     if not as_page:
@@ -1588,19 +1568,6 @@ def update_occurrence_sync(
         executed_module_id = planned_module_id
         executed_teacher_id = lesson.teacher_id
         hours_given = planned_hours
-
-    # WBS V3 Fase 2.3: Ao re-decidir de SUBSTITUTED → não-SUBSTITUTED,
-    # remove o ScheduleOutput criado para o professor substituto.
-    if occurrence.decided_at is not None \
-            and occurrence.status == models.LessonOccurrenceStatus.SUBSTITUTED \
-            and payload.status != models.LessonOccurrenceStatus.SUBSTITUTED:
-        _remove_substitute_schedule_output(
-            db,
-            organization_id=organization_id,
-            original_output=occurrence.schedule_output,
-            substitute_teacher_id=occurrence.substitute_teacher_id,
-            substitute_subject_id=occurrence.substitute_subject_id,
-        )
 
     try:
         if occurrence.decided_at is not None:
@@ -1698,12 +1665,21 @@ def update_occurrence_sync(
 # Confirmação automática diária (chamada pelo cron Celery Beat)
 # ---------------------------------------------------------------------------
 
-def auto_confirm_daily_sync(db: Session, organization_id: int, target_date: date) -> int:
+def auto_confirm_daily_sync(
+    db: Session,
+    organization_id: int,
+    target_date: date,
+    now: Optional[datetime] = None,
+) -> int:
     """Cria registos GIVEN para todos os ScheduleOutputs do dia sem ocorrência.
 
     Retorna o número de registos criados.
     Returns 0 se não houver slots planeados para essa data.
     """
+    now = now or datetime.now(timezone.utc)
+    if not _auto_confirm_allowed_now(db, organization_id, now):
+        return 0
+
     # 1. Buscar todos os ScheduleOutputs planeados para target_date
     scheduled_slots = list(
         db.execute(
@@ -1740,12 +1716,23 @@ def auto_confirm_daily_sync(db: Session, organization_id: int, target_date: date
             continue  # Diretor já registou manualmente — respeitar
 
         # 3. Calcular horas do timeslot
-        completed_log = db.query(models.LessonLog).filter(
+        existing_lesson_log = db.query(models.LessonLog).filter(
             models.LessonLog.organization_id == organization_id,
             models.LessonLog.schedule_output_id == slot.id,
-            models.LessonLog.status == models.LessonLogStatus.COMPLETED,
         ).first()
-        if completed_log is not None:
+        if existing_lesson_log is not None and existing_lesson_log.status == models.LessonLogStatus.COMPLETED:
+            continue
+        if existing_lesson_log is not None and existing_lesson_log.status == models.LessonLogStatus.OCCURRENCE:
+            try:
+                create_occurrence_from_block_sync(
+                    db,
+                    organization_id=organization_id,
+                    schedule_output_id=slot.id,
+                    created_by_user_id=existing_lesson_log.logged_by_user_id,
+                    creation_source="lesson_log",
+                )
+            except OccurrenceServiceError:
+                db.rollback()
             continue
 
         planned_hours = _duration_hours(target_date, slot.timeslot)
@@ -1761,12 +1748,22 @@ def auto_confirm_daily_sync(db: Session, organization_id: int, target_date: date
             )
 
         # 4. Criar ocorrência GIVEN
+        max_revision = db.execute(
+            select(func.max(models.LessonOccurrence.revision)).where(
+                and_(
+                    models.LessonOccurrence.organization_id == organization_id,
+                    models.LessonOccurrence.schedule_output_id == slot.id,
+                    models.LessonOccurrence.date == target_date,
+                )
+            )
+        ).scalar_one_or_none() or 0
+
         occurrence = models.LessonOccurrence(
             organization_id=organization_id,
             schedule_output_id=slot.id,
             date=target_date,
             status=models.LessonOccurrenceStatus.GIVEN,
-            revision=1,
+            revision=int(max_revision) + 1,
             is_active=True,
             version=1,
             class_id=slot.lesson.class_id if slot.lesson is not None else None,
@@ -2185,6 +2182,19 @@ def get_available_substitutes_sync(
             )
         ).all()
     }
+    busy_teacher_ids.update({
+        row.teacher_id
+        for row in db.execute(
+            select(models.OperationalScheduleBlock.teacher_id).where(
+                and_(
+                    models.OperationalScheduleBlock.organization_id == organization_id,
+                    models.OperationalScheduleBlock.status == models.OperationalBlockStatus.ACTIVE,
+                    models.OperationalScheduleBlock.timeslot_id == timeslot_id,
+                    models.OperationalScheduleBlock.date == target_date,
+                )
+            )
+        ).all()
+    })
 
     free_teacher_ids = available_teacher_ids - busy_teacher_ids
 

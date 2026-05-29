@@ -30,6 +30,7 @@ class TestSubstitutionEligibilityAndRanking:
             sync_db, occurrence.id, substitution_setup["organization_id"],
             schemas.LessonOccurrenceUpdate(
                 status=LessonOccurrenceStatus.SUBSTITUTED,
+                version=occurrence.version,
                 substitute_teacher_id=substitution_setup["substitute_teacher_id"],
                 substitute_subject_id=substitution_setup["substitute_subject_id"],
             ),
@@ -47,6 +48,7 @@ class TestSubstitutionEligibilityAndRanking:
                 sync_db, occurrence.id, substitution_setup["organization_id"],
                 schemas.LessonOccurrenceUpdate(
                     status=LessonOccurrenceStatus.SUBSTITUTED,
+                    version=occurrence.version,
                     substitute_teacher_id=substitution_setup["teacher_same_subject_other_class_id"],
                     substitute_subject_id=substitution_setup["subject_id"],
                 ),
@@ -62,6 +64,7 @@ class TestSubstitutionEligibilityAndRanking:
                 sync_db, occurrence.id, substitution_setup["organization_id"],
                 schemas.LessonOccurrenceUpdate(
                     status=LessonOccurrenceStatus.SUBSTITUTED,
+                    version=occurrence.version,
                     substitute_teacher_id=substitution_setup["conflict_teacher_id"],
                     substitute_subject_id=substitution_setup["conflict_subject_id"],
                 ),
@@ -121,6 +124,7 @@ class TestSubstitutionEligibilityAndRanking:
                 sync_db, occurrence.id, substitution_setup["organization_id"],
                 schemas.LessonOccurrenceUpdate(
                     status=LessonOccurrenceStatus.SUBSTITUTED,
+                    version=occurrence.version,
                     substitute_teacher_id=substitution_setup["substitute_teacher_id"],
                     substitute_subject_id=substitution_setup["substitute_subject_id"],
                 ),
@@ -137,6 +141,7 @@ class TestSubstitutionEligibilityAndRanking:
                 sync_db, occurrence.id, substitution_setup["organization_id"],
                 schemas.LessonOccurrenceUpdate(
                     status=LessonOccurrenceStatus.SUBSTITUTED,
+                    version=occurrence.version,
                     substitute_teacher_id=substitution_setup["other_tenant_teacher_id"],
                     substitute_subject_id=substitution_setup["other_tenant_subject_id"],
                 ),
@@ -275,6 +280,7 @@ class TestSubstitutionEligibilityAndRanking:
                     db_local, occurrence_id, organization_id,
                     schemas.LessonOccurrenceUpdate(
                         status=LessonOccurrenceStatus.SUBSTITUTED,
+                        version=1,
                         substitute_teacher_id=teacher_id, substitute_subject_id=subject_id,
                     ),
                     decided_by_user_id=admin_id,

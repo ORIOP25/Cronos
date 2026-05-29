@@ -69,7 +69,7 @@ class TestOccurrenceStateMachineAndAccounting:
 
         updated = occurrence_service.update_occurrence_sync(
             sync_db, occurrence.id, organization_id,
-            schemas.LessonOccurrenceUpdate(status=LessonOccurrenceStatus.GAP),
+            schemas.LessonOccurrenceUpdate(status=LessonOccurrenceStatus.GAP, version=occurrence.version),
             decided_by_user_id=full_setup["admin_id"],
         )
 
@@ -97,6 +97,7 @@ class TestOccurrenceStateMachineAndAccounting:
             sync_db, occurrence.id, organization_id,
             schemas.LessonOccurrenceUpdate(
                 status=LessonOccurrenceStatus.SUBSTITUTED,
+                version=occurrence.version,
                 substitute_teacher_id=full_setup["substitute_teacher_id"],
                 substitute_subject_id=full_setup["substitute_subject_id"],
             ),
@@ -139,6 +140,7 @@ class TestOccurrenceStateMachineAndAccounting:
             sync_db, occurrence.id, organization_id,
             schemas.LessonOccurrenceUpdate(
                 status=LessonOccurrenceStatus.SUBSTITUTED,
+                version=occurrence.version,
                 substitute_teacher_id=full_setup["substitute_teacher_id"],
                 substitute_subject_id=full_setup["substitute_subject_id"],
             ),
@@ -216,7 +218,7 @@ class TestOccurrenceStateMachineAndAccounting:
 
         updated = occurrence_service.update_occurrence_sync(
             sync_db, occurrence.id, organization_id,
-            schemas.LessonOccurrenceUpdate(status=LessonOccurrenceStatus.GAP),
+            schemas.LessonOccurrenceUpdate(status=LessonOccurrenceStatus.GAP, version=occurrence.version),
             decided_by_user_id=full_setup["admin_id"],
         )
 
@@ -237,7 +239,7 @@ class TestOccurrenceStateMachineAndAccounting:
         # First decide as GAP
         decided_gap = occurrence_service.update_occurrence_sync(
             sync_db, occurrence.id, organization_id,
-            schemas.LessonOccurrenceUpdate(status=LessonOccurrenceStatus.GAP),
+            schemas.LessonOccurrenceUpdate(status=LessonOccurrenceStatus.GAP, version=occurrence.version),
             decided_by_user_id=full_setup["admin_id"],
         )
 
@@ -257,7 +259,7 @@ class TestOccurrenceStateMachineAndAccounting:
     def test_idempotent_duplicate_submission_does_not_duplicate_accounting(self, sync_db, full_setup):
         organization_id = full_setup["organization_id"]
         occurrence = self._prepare_open_occurrence(sync_db, full_setup)
-        payload = schemas.LessonOccurrenceUpdate(status=LessonOccurrenceStatus.GAP)
+        payload = schemas.LessonOccurrenceUpdate(status=LessonOccurrenceStatus.GAP, version=occurrence.version)
 
         occurrence_service.update_occurrence_sync(
             sync_db, occurrence.id, organization_id, payload,
@@ -284,7 +286,7 @@ class TestOccurrenceStateMachineAndAccounting:
         with pytest.raises(occurrence_service.OccurrenceServiceError) as exc_info:
             occurrence_service.update_occurrence_sync(
                 sync_db, occurrence.id, organization_id + 999,
-                schemas.LessonOccurrenceUpdate(status=LessonOccurrenceStatus.GAP),
+                schemas.LessonOccurrenceUpdate(status=LessonOccurrenceStatus.GAP, version=occurrence.version),
                 decided_by_user_id=full_setup["admin_id"],
             )
         assert exc_info.value.status_code == 404
@@ -305,6 +307,7 @@ class TestOccurrenceStateMachineAndAccounting:
                 sync_db, occurrence.id, organization_id,
                 schemas.LessonOccurrenceUpdate(
                     status=LessonOccurrenceStatus.SUBSTITUTED,
+                    version=occurrence.version,
                     substitute_teacher_id=full_setup["substitute_teacher_id"],
                     substitute_subject_id=full_setup["substitute_subject_id"],
                 ),

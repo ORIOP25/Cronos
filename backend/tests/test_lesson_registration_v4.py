@@ -1,9 +1,9 @@
-"""
-WBS V4 — Testes novos para Registo de Aulas V4: Simplificação + Centralização
+﻿"""
+WBS V4 â€” Testes novos para Registo de Aulas V4: SimplificaÃ§Ã£o + CentralizaÃ§Ã£o
 
 Valida:
-- REVOKED state machine (imutável, persistência)
-- Contabilidade SUBSTITUTED corrigida (só debt no original)
+- REVOKED state machine (imutÃ¡vel, persistÃªncia)
+- Contabilidade SUBSTITUTED corrigida (sÃ³ debt no original)
 - Substituto ganha horas via LessonLog COMPLETED
 - Slots futuros aceitam OCCURRENCE mas bloqueiam COMPLETED
 - cancel_occurrence_sync marca REVOKED em vez de apagar
@@ -15,7 +15,7 @@ from datetime import date, timedelta, timezone, datetime
 from sqlalchemy import select
 
 from app import models, schemas
-from app.services import occurrence_service, lesson_log_service
+from app.services import occurrence_service, lesson_log_service, schedule_service
 from app.models import LessonOccurrenceStatus, LessonLogStatus, TimesheetStatus
 
 from test_occurrence_shared import full_setup, substitution_setup, SyncTestSession
@@ -25,7 +25,7 @@ from test_occurrence_shared import full_setup, substitution_setup, SyncTestSessi
 # T6: cancel_occurrence_sync marca REVOKED em vez de apagar
 # ---------------------------------------------------------------------------
 class TestCancelMarksRevoked:
-    """T6: cancel_occurrence_sync marca REVOKED, ocorrência persiste na BD."""
+    """T6: cancel_occurrence_sync marca REVOKED, ocorrÃªncia persiste na BD."""
 
     def _prepare_decided_occurrence(self, sync_db, full_setup, status):
         organization_id = full_setup["organization_id"]
@@ -36,11 +36,12 @@ class TestCancelMarksRevoked:
         if status == LessonOccurrenceStatus.SUBSTITUTED:
             update = schemas.LessonOccurrenceUpdate(
                 status=status,
+                version=occurrence.version,
                 substitute_teacher_id=full_setup["substitute_teacher_id"],
                 substitute_subject_id=full_setup["substitute_subject_id"],
             )
         else:
-            update = schemas.LessonOccurrenceUpdate(status=status)
+            update = schemas.LessonOccurrenceUpdate(status=status, version=occurrence.version)
         decided = occurrence_service.update_occurrence_sync(
             sync_db, occurrence.id, organization_id, update,
             decided_by_user_id=full_setup["admin_id"],
@@ -48,7 +49,7 @@ class TestCancelMarksRevoked:
         return decided
 
     def test_cancel_marks_revoked_gap(self, sync_db, full_setup):
-        """T6a: cancel_occurrence_sync em GAP → REVOKED, linha persiste."""
+        """T6a: cancel_occurrence_sync em GAP â†’ REVOKED, linha persiste."""
         organization_id = full_setup["organization_id"]
         occurrence = self._prepare_decided_occurrence(sync_db, full_setup, LessonOccurrenceStatus.GAP)
 
@@ -63,7 +64,7 @@ class TestCancelMarksRevoked:
         assert reloaded.decided_at is not None
 
     def test_cancel_marks_revoked_substituted(self, sync_db, full_setup):
-        """T6b: cancel_occurrence_sync em SUBSTITUTED → REVOKED, linha persiste."""
+        """T6b: cancel_occurrence_sync em SUBSTITUTED â†’ REVOKED, linha persiste."""
         organization_id = full_setup["organization_id"]
         occurrence = self._prepare_decided_occurrence(sync_db, full_setup, LessonOccurrenceStatus.SUBSTITUTED)
 
@@ -78,10 +79,10 @@ class TestCancelMarksRevoked:
 
 
 # ---------------------------------------------------------------------------
-# T7: REVOKED é imutável
+# T7: REVOKED Ã© imutÃ¡vel
 # ---------------------------------------------------------------------------
 class TestRevokedIsImmutable:
-    """T7: update_occurrence_sync em REVOKED → 409."""
+    """T7: update_occurrence_sync em REVOKED â†’ 409."""
 
     def test_revoked_occurrence_cannot_be_updated(self, sync_db, full_setup):
         organization_id = full_setup["organization_id"]
@@ -93,30 +94,33 @@ class TestRevokedIsImmutable:
         # Decide as GAP
         decided = occurrence_service.update_occurrence_sync(
             sync_db, occurrence.id, organization_id,
-            schemas.LessonOccurrenceUpdate(status=LessonOccurrenceStatus.GAP),
+            schemas.LessonOccurrenceUpdate(status=LessonOccurrenceStatus.GAP, version=occurrence.version),
             decided_by_user_id=full_setup["admin_id"],
         )
 
-        # Reverter → REVOKED
+        # Reverter â†’ REVOKED
         occurrence_service.cancel_occurrence_sync(
             sync_db, organization_id, occurrence.id, full_setup["admin_id"], version=decided.version,
         )
 
-        # Tentar alterar REVOKED → deve falhar
+        # Tentar alterar REVOKED â†’ deve falhar
         with pytest.raises(occurrence_service.OccurrenceServiceError) as exc_info:
             occurrence_service.update_occurrence_sync(
                 sync_db, occurrence.id, organization_id,
-                schemas.LessonOccurrenceUpdate(status=LessonOccurrenceStatus.GAP),
+                schemas.LessonOccurrenceUpdate(
+                    status=LessonOccurrenceStatus.GAP,
+                    version=decided.version + 1,
+                ),
                 decided_by_user_id=full_setup["admin_id"],
             )
         assert exc_info.value.status_code == 409
 
 
 # ---------------------------------------------------------------------------
-# T4: SUBSTITUTED só credita debt no original
+# T4: SUBSTITUTED sÃ³ credita debt no original
 # ---------------------------------------------------------------------------
 class TestSubstitutedAccountingOnlyDebtsOriginal:
-    """T4: SUBSTITUTED credita debt no original, NÃO credita executado."""
+    """T4: SUBSTITUTED credita debt no original, NÃƒO credita executado."""
 
     def test_substituted_only_creates_debt_on_planned_module(self, sync_db, full_setup):
         organization_id = full_setup["organization_id"]
@@ -129,6 +133,7 @@ class TestSubstitutedAccountingOnlyDebtsOriginal:
             sync_db, occurrence.id, organization_id,
             schemas.LessonOccurrenceUpdate(
                 status=LessonOccurrenceStatus.SUBSTITUTED,
+                version=occurrence.version,
                 substitute_teacher_id=full_setup["substitute_teacher_id"],
                 substitute_subject_id=full_setup["substitute_subject_id"],
             ),
@@ -156,10 +161,10 @@ class TestSubstitutedAccountingOnlyDebtsOriginal:
 
 
 # ---------------------------------------------------------------------------
-# T5: Substituto regista COMPLETED → hours_completed no módulo dele
+# T5: Substituto regista COMPLETED â†’ hours_completed no mÃ³dulo dele
 # ---------------------------------------------------------------------------
 class TestSubstituteCompletedCreditsExecutedModule:
-    """T5: Substituto regista Aula Dada → hours_completed sobe no módulo dele."""
+    """T5: Substituto regista Aula Dada â†’ hours_completed sobe no mÃ³dulo dele."""
 
     def test_substitute_lesson_log_completed_credits_executed_module(self, sync_db, full_setup, substitution_setup):
         organization_id = full_setup["organization_id"]
@@ -174,6 +179,7 @@ class TestSubstituteCompletedCreditsExecutedModule:
             sync_db, occurrence.id, organization_id,
             schemas.LessonOccurrenceUpdate(
                 status=LessonOccurrenceStatus.SUBSTITUTED,
+                version=occurrence.version,
                 substitute_teacher_id=substitute_teacher_id,
                 substitute_subject_id=substitution_setup["substitute_subject_id"],
             ),
@@ -204,7 +210,7 @@ class TestSubstituteCompletedCreditsExecutedModule:
 # T8: Slot futuro aceita OCCURRENCE
 # ---------------------------------------------------------------------------
 class TestFutureSlotAllowsOccurrence:
-    """T8: upsert_lesson_log com OCCURRENCE em slot futuro → sucesso."""
+    """T8: upsert_lesson_log com OCCURRENCE em slot futuro â†’ sucesso."""
 
     def test_future_slot_allows_occurrence_creation(self, sync_db, full_setup):
         organization_id = full_setup["organization_id"]
@@ -223,7 +229,7 @@ class TestFutureSlotAllowsOccurrence:
         sync_db.add(future_output)
         sync_db.commit()
 
-        # This should NOT raise — OCCURRENCE is allowed for future slots
+        # This should NOT raise â€” OCCURRENCE is allowed for future slots
         # Note: We can't call upsert_lesson_log_sync directly because it needs
         # a proper FastAPI Request context. Instead, we verify the validation logic.
         timeslot = sync_db.get(models.Timeslot, full_setup["timeslot_id"])
@@ -244,7 +250,7 @@ class TestFutureSlotAllowsOccurrence:
 # T9: Slot futuro bloqueia COMPLETED
 # ---------------------------------------------------------------------------
 class TestFutureSlotBlocksCompleted:
-    """T9: upsert_lesson_log com COMPLETED em slot futuro → 400."""
+    """T9: upsert_lesson_log com COMPLETED em slot futuro â†’ 400."""
 
     def test_future_slot_blocks_completed(self, sync_db, full_setup):
         organization_id = full_setup["organization_id"]
@@ -295,7 +301,7 @@ class TestAbsencesEndpointFiltersRevoked:
 # T11: Teacher self-revert marca REVOKED
 # ---------------------------------------------------------------------------
 class TestOpenOccurrenceSelfRevertMarksRevoked:
-    """T11: Teacher reverte OCCURRENCE → ocorrência fica REVOKED."""
+    """T11: Teacher reverte OCCURRENCE â†’ ocorrÃªncia fica REVOKED."""
 
     def test_self_revert_marks_revoked(self, sync_db, full_setup):
         organization_id = full_setup["organization_id"]
@@ -341,26 +347,48 @@ class TestSubstituteBlockAcceptsLessonLog:
         pre-V4) is gone. This test verifies no such restriction exists by ensuring
         the code path is clean.
         """
-        import inspect
-        from app.services import lesson_log_service as lls
-        
-        source = inspect.getsource(lls.upsert_lesson_log_sync)
-        assert 'is_substitution_block' not in source, (
-            "V4 should have removed the is_substitution_block check"
+        occurrence, _ = occurrence_service.create_occurrence_from_block_sync(
+            sync_db, full_setup["organization_id"], full_setup["schedule_output_id"],
         )
-        assert 'Este é um bloco de substituição' not in source, (
-            "V4 should have removed the substitution block error message"
+        occurrence_service.update_occurrence_sync(
+            sync_db,
+            occurrence.id,
+            full_setup["organization_id"],
+            schemas.LessonOccurrenceUpdate(
+                status=LessonOccurrenceStatus.SUBSTITUTED,
+                version=occurrence.version,
+                substitute_teacher_id=substitution_setup["substitute_teacher_id"],
+                substitute_subject_id=substitution_setup["substitute_subject_id"],
+            ),
+            decided_by_user_id=full_setup["admin_id"],
         )
+        block = sync_db.execute(
+            select(models.OperationalScheduleBlock).where(
+                models.OperationalScheduleBlock.source_occurrence_id == occurrence.id,
+                models.OperationalScheduleBlock.status == models.OperationalBlockStatus.ACTIVE,
+            )
+        ).scalar_one()
+
+        log = lesson_log_service.upsert_operational_lesson_log_sync(
+            sync_db,
+            full_setup["organization_id"],
+            full_setup["admin_id"],
+            block.id,
+            schemas.LessonLogCreate(status=LessonLogStatus.COMPLETED, summary="Substituicao", notes=None),
+        )
+        assert log.operational_block_id == block.id
+        assert log.schedule_output_id is None
+        assert log.status == LessonLogStatus.COMPLETED
 
 
 # ---------------------------------------------------------------------------
 # T12: test_substitute_block_lists_in_week_schedule
 # ---------------------------------------------------------------------------
 class TestSubstituteBlockListsInWeekSchedule:
-    """T12: GET /schedule/week?teacher_id=<sub> inclui bloco de substituição."""
+    """T12: GET /schedule/week?teacher_id=<sub> inclui bloco de substituiÃ§Ã£o."""
 
-    def test_substitute_schedule_output_created_on_decision(self, sync_db, full_setup, substitution_setup):
-        """Verify that substitute ScheduleOutput is created when SUBSTITUTED is decided."""
+    def test_operational_block_created_on_decision_without_structural_schedule_output(self, sync_db, full_setup, substitution_setup):
+        """SUBSTITUTED cria bloco operacional, nao ScheduleOutput curricular."""
         organization_id = full_setup["organization_id"]
 
         # 1. Create and decide SUBSTITUTED
@@ -372,6 +400,7 @@ class TestSubstituteBlockListsInWeekSchedule:
             sync_db, occurrence.id, organization_id,
             schemas.LessonOccurrenceUpdate(
                 status=LessonOccurrenceStatus.SUBSTITUTED,
+                version=occurrence.version,
                 substitute_teacher_id=substitution_setup["substitute_teacher_id"],
                 substitute_subject_id=substitution_setup["substitute_subject_id"],
             ),
@@ -380,17 +409,34 @@ class TestSubstituteBlockListsInWeekSchedule:
 
         assert updated.status == LessonOccurrenceStatus.SUBSTITUTED
 
-        # 2. Verify substitute ScheduleOutput was created
+        # 2. Verify no substitute ScheduleOutput was created for the same slot.
         substitute_outputs = sync_db.query(models.ScheduleOutput).filter(
             models.ScheduleOutput.organization_id == organization_id,
             models.ScheduleOutput.date == output.date,
             models.ScheduleOutput.timeslot_id == output.timeslot_id,
         ).all()
-
-        # The substitute output has a different lesson (the substitute's subject)
         substitute_lesson_ids = {
             so.lesson_id for so in substitute_outputs
             if so.lesson is not None
             and so.lesson.subject_id == substitution_setup["substitute_subject_id"]
         }
-        assert len(substitute_lesson_ids) >= 0  # At minimum, the original exists
+        assert substitute_lesson_ids == set()
+
+        block = sync_db.execute(
+            select(models.OperationalScheduleBlock).where(
+                models.OperationalScheduleBlock.source_occurrence_id == occurrence.id,
+                models.OperationalScheduleBlock.status == models.OperationalBlockStatus.ACTIVE,
+            )
+        ).scalar_one()
+        assert block.teacher_id == substitution_setup["substitute_teacher_id"]
+        assert block.subject_id == substitution_setup["substitute_subject_id"]
+
+        slots = schedule_service.get_week_schedule_sync(
+            sync_db,
+            organization_id=organization_id,
+            week_start=output.date - timedelta(days=output.date.weekday()),
+            teacher_id=substitution_setup["substitute_teacher_id"],
+        )
+        operational_slots = [slot for slot in slots if slot["block_source"] == "operational"]
+        assert [slot["operational_block_id"] for slot in operational_slots] == [block.id]
+        assert operational_slots[0]["schedule_output_id"] is None

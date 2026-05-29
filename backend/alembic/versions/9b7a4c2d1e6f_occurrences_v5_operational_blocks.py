@@ -18,6 +18,9 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
+    op.add_column("organization_settings", sa.Column("auto_confirm_enabled", sa.Boolean(), nullable=False, server_default=sa.true()))
+    op.add_column("organization_settings", sa.Column("auto_confirm_cutoff_time", sa.Time(), nullable=True))
+
     op.add_column("lesson_occurrence", sa.Column("revision", sa.Integer(), nullable=False, server_default="1"))
     op.add_column("lesson_occurrence", sa.Column("is_active", sa.Boolean(), nullable=False, server_default=sa.true()))
     op.add_column("lesson_occurrence", sa.Column("version", sa.Integer(), nullable=False, server_default="1"))
@@ -159,3 +162,5 @@ def downgrade() -> None:
     ]:
         op.drop_column("lesson_occurrence", column)
     op.alter_column("lesson_occurrence", "status", existing_type=sa.Enum("GIVEN", "GAP", "SUBSTITUTED", "REVOKED", name="lessonoccurrencestatus"), nullable=False)
+    op.drop_column("organization_settings", "auto_confirm_cutoff_time")
+    op.drop_column("organization_settings", "auto_confirm_enabled")

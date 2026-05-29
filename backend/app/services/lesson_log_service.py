@@ -164,9 +164,9 @@ def upsert_lesson_log_sync(
         if payload.status == models.LessonLogStatus.OCCURRENCE:
             db.flush()  # ensure the LessonLog status change is visible to downstream queries
             existing_occ = db.query(models.LessonOccurrence).filter(
+                models.LessonOccurrence.organization_id == organization_id,
                 models.LessonOccurrence.schedule_output_id == schedule_output_id,
                 models.LessonOccurrence.is_active.is_(True),
-                models.LessonOccurrence.status != models.LessonOccurrenceStatus.REVOKED,
             ).first()
             if existing_occ is None:
                 occurrence_service.create_occurrence_from_block_sync(

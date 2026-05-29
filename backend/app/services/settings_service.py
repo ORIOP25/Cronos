@@ -67,6 +67,10 @@ async def upsert_settings(
             existing.school_hard_end_date = data.school_hard_end_date
         if data.repair_stability_window_days is not None:
             existing.repair_stability_window_days = data.repair_stability_window_days
+        if data.auto_confirm_enabled is not None:
+            existing.auto_confirm_enabled = data.auto_confirm_enabled
+        if data.auto_confirm_cutoff_time is not None:
+            existing.auto_confirm_cutoff_time = data.auto_confirm_cutoff_time
         await db.commit()
         await db.refresh(existing)
         return existing
@@ -77,6 +81,10 @@ async def upsert_settings(
         school_target_end_date=data.school_target_end_date,
         school_hard_end_date=data.school_hard_end_date,
         repair_stability_window_days=data.repair_stability_window_days,
+        auto_confirm_enabled=(
+            True if data.auto_confirm_enabled is None else data.auto_confirm_enabled
+        ),
+        auto_confirm_cutoff_time=data.auto_confirm_cutoff_time,
     )
     db.add(new_settings)
     await db.commit()

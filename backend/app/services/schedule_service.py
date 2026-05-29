@@ -928,7 +928,7 @@ def _build_operational_week_slot(
         timesheet_status, timesheet_id = timesheet_map.get(block.teacher_id, ("OPEN", None))
 
     return {
-        "schedule_output_id": 0,
+        "schedule_output_id": None,
         "operational_block_id": block.id,
         "block_source": "operational",
         "date": block.date.isoformat(),
