@@ -1,16 +1,18 @@
 # Ficheiro: backend/app/api/deps.py
-from typing import AsyncGenerator, Annotated
-from fastapi import Depends, HTTPException, status, Request
+from typing import Annotated, AsyncGenerator
+
+import structlog
+from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-import structlog
 
-from app.db.database import SessionLocal
-from app.core.clerk import verify_clerk_request
-from app.services import clerk_sync
 from app import models
+from app.core.clerk import verify_clerk_request
+from app.db.database import SessionLocal
+from app.services import clerk_sync
 
 logger = structlog.get_logger(__name__)
+
 
 # --- DATABASE ---
 async def get_db() -> AsyncGenerator:
@@ -24,7 +26,6 @@ async def get_db() -> AsyncGenerator:
 
 
 # --- CLERK AUTH ---
-
 async def get_clerk_payload(request: Request) -> dict:
     state = await verify_clerk_request(request)
     if not state.is_signed_in:
@@ -33,6 +34,54 @@ async def get_clerk_payload(request: Request) -> dict:
             detail="Not authenticated",
         )
     return state.payload
+
+
+async def _get_token_organization(
+    db: AsyncSession,
+    clerk_org_id: str | None,
+) -> models.Organization | None:
+    if not clerk_org_id:
+        return None
+
+    result = await db.execute(
+        select(models.Organization).where(models.Organization.clerk_org_id == clerk_org_id)
+    )
+    org = result.scalar_one_or_none()
+    if org is not None:
+        return org
+
+    org = await clerk_sync.sync_organization_from_clerk_api(db, clerk_org_id)
+    if org is None:
+        logger.warning("BAPI sync_organization_from_clerk_api falhou", clerk_org_id=clerk_org_id)
+    return org
+
+
+async def _apply_token_membership(
+    db: AsyncSession,
+    user: models.User,
+    token_org: models.Organization | None,
+    token_role: str | None,
+    clerk_user_id: str,
+) -> None:
+    if token_org is not None:
+        if user.organization_id is None:
+            user.organization_id = token_org.id
+            await db.flush()
+        elif user.organization_id != token_org.id:
+            logger.warning(
+                "Token Clerk com organizacao diferente da organizacao local do user",
+                clerk_user_id=clerk_user_id,
+                user_organization_id=user.organization_id,
+                token_organization_id=token_org.id,
+                token_clerk_org_id=token_org.clerk_org_id,
+            )
+            raise HTTPException(status_code=403, detail="Organization mismatch")
+
+    if token_role:
+        parsed_role = clerk_sync.parse_role(token_role)
+        if user.role != parsed_role:
+            user.role = parsed_role
+            await db.flush()
 
 
 async def get_current_user(
@@ -44,46 +93,40 @@ async def get_current_user(
     if not clerk_user_id:
         raise HTTPException(status_code=401, detail="No user ID in token")
 
+    clerk_org_id = payload.get("o", {}).get("id") if "o" in payload else None
+    token_role = payload.get("o", {}).get("rol") if "o" in payload else None
+    token_org = await _get_token_organization(db, clerk_org_id)
+
     result = await db.execute(
         select(models.User).where(models.User.clerk_user_id == clerk_user_id)
     )
     user = result.scalar_one_or_none()
 
     if user:
+        if clerk_org_id and token_org is None and user.organization_id is not None:
+            raise HTTPException(status_code=403, detail="Organization mismatch")
+        await _apply_token_membership(db, user, token_org, token_role, clerk_user_id)
         return user
 
     # Fallback: criar via BAPI (race condition com webhooks)
-    org_id = payload.get("o", {}).get("id") if "o" in payload else None
-    role = payload.get("o", {}).get("rol") if "o" in payload else None
-
-    logger.info("Fallback síncrono ativado", clerk_user_id=clerk_user_id, clerk_org_id=org_id)
-
-    if org_id:
-        org = await clerk_sync.sync_organization_from_clerk_api(db, org_id)
-        if org is None:
-            logger.warning("BAPI sync_organization_from_clerk_api falhou", clerk_org_id=org_id)
-
+    logger.info("Fallback sincrono ativado", clerk_user_id=clerk_user_id, clerk_org_id=clerk_org_id)
     user = await clerk_sync.sync_user_from_clerk_api(db, clerk_user_id)
 
     if not user:
-        logger.error("Fallback síncrono falhou — user não criado", clerk_user_id=clerk_user_id)
+        logger.error("Fallback sincrono falhou - user nao criado", clerk_user_id=clerk_user_id)
         raise HTTPException(status_code=401, detail="User not found")
 
-    if org_id and user.organization_id is None:
-        org_local_result = await db.execute(
-            select(models.Organization).where(models.Organization.clerk_org_id == org_id)
-        )
-        org_local = org_local_result.scalar_one_or_none()
-        if org_local:
-            user.organization_id = org_local.id
-        await db.flush()
+    if clerk_org_id and token_org is None:
+        raise HTTPException(status_code=403, detail="Organization mismatch")
 
-    if role:
-        user.role = clerk_sync.parse_role(role)
-        await db.flush()
+    await _apply_token_membership(db, user, token_org, token_role, clerk_user_id)
 
-    logger.info("Fallback síncrono concluído", clerk_user_id=clerk_user_id, role=user.role, org_id=user.organization_id)
-
+    logger.info(
+        "Fallback sincrono concluido",
+        clerk_user_id=clerk_user_id,
+        role=user.role,
+        org_id=user.organization_id,
+    )
     return user
 
 

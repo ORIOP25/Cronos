@@ -206,7 +206,12 @@ async def delete_course(db: AsyncSession, course_id: int, organization_id: int):
         return "NOT_FOUND"
 
     # 2. Verificar dependências
-    result_classes = await db.execute(select(models.Class).where(models.Class.course_id == course_id))
+    result_classes = await db.execute(
+        select(models.Class).where(
+            models.Class.course_id == course_id,
+            models.Class.organization_id == organization_id,
+        )
+    )
     if result_classes.first():
         return "DEPENDENCY_ERROR"
 

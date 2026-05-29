@@ -162,14 +162,20 @@ async def delete_teacher(
 
     # 2. VERIFICAÇÃO DE INTEGRIDADE (Aulas)
     # Não podemos apagar se tiver aulas.
-    query_dependency = select(models.Lesson).where(models.Lesson.teacher_id == teacher_id)
+    query_dependency = select(models.Lesson).where(
+        models.Lesson.teacher_id == teacher_id,
+        models.Lesson.organization_id == organization_id,
+    )
     result_dependency = await db.execute(query_dependency)
     if result_dependency.first():
         return "DEPENDENCY_ERROR"
 
     # 3. LIMPEZA DE UTILIZADOR (Resolve o IntegrityError)
     # Antes de apagar o Teacher, temos de apagar o User que aponta para ele.
-    query_user = select(models.User).where(models.User.teacher_id == teacher_id)
+    query_user = select(models.User).where(
+        models.User.teacher_id == teacher_id,
+        models.User.organization_id == organization_id,
+    )
     result_user = await db.execute(query_user)
     user = result_user.scalars().first()
     
@@ -230,7 +236,10 @@ async def update_teacher(
     # 5. Lógica de User e Email (REFINADA)
     
     # 5.1 Buscar o user atual (se existir)
-    query_user = select(models.User).where(models.User.teacher_id == teacher_id)
+    query_user = select(models.User).where(
+        models.User.teacher_id == teacher_id,
+        models.User.organization_id == organization_id,
+    )
     result_user = await db.execute(query_user)
     user = result_user.scalars().first()
 
@@ -314,8 +323,12 @@ async def find_replacement_teacher(
     all_teachers = await get_teachers_by_org(db, organization_id)
     
     # 2. Buscar as preferências de TODOS os professores para este slot específico
-    avail_stmt = select(Availability).where(
-        Availability.timeslot_id == unavailable_slot_id
+    avail_stmt = select(Availability).join(
+        models.Timeslot,
+        Availability.timeslot_id == models.Timeslot.id,
+    ).where(
+        Availability.timeslot_id == unavailable_slot_id,
+        models.Timeslot.organization_id == organization_id,
     )
     avail_results = await db.execute(avail_stmt)
     
@@ -482,11 +495,21 @@ async def get_teacher_progress(
     """
     from app.services.class_service import _build_subject_with_progress
 
+    teacher_query = select(models.Teacher.id).where(
+        models.Teacher.id == teacher_id,
+        models.Teacher.organization_id == organization_id,
+    )
+    teacher_result = await db.execute(teacher_query)
+    if teacher_result.scalar_one_or_none() is None:
+        return []
+
     # 1. Buscar todas as atribuições do professor às turmas
     links_query = (
         select(models.ClassSubjectLink)
+        .join(models.Class, models.ClassSubjectLink.class_id == models.Class.id)
         .where(
             models.ClassSubjectLink.teacher_id == teacher_id,
+            models.Class.organization_id == organization_id,
         )
         .options(
             selectinload(models.ClassSubjectLink.class_).selectinload(models.Class.course),

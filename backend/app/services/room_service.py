@@ -10,7 +10,12 @@ async def get_rooms_by_org(db: AsyncSession, organization_id: int):
     return result.scalars().all()
 
 async def create_room(db: AsyncSession, item: schemas.RoomCreate, organization_id: int):
-    db_item = models.Room(name=item.name, type=item.type, organization_id=organization_id)
+    db_item = models.Room(
+        name=item.name,
+        type=item.type,
+        capacity=item.capacity,
+        organization_id=organization_id,
+    )
     db.add(db_item)
     await db.commit()
     await db.refresh(db_item)
@@ -63,7 +68,10 @@ async def delete_room(
     # 2. VERIFICAÇÃO DE INTEGRIDADE
     # Verificamos se a sala está atribuída em algum horário gerado (ScheduleOutput).
     # Se estiver, não deixamos apagar para não "esburacar" o horário visível.
-    query_dep = select(models.ScheduleOutput).where(models.ScheduleOutput.room_id == room_id)
+    query_dep = select(models.ScheduleOutput).where(
+        models.ScheduleOutput.room_id == room_id,
+        models.ScheduleOutput.organization_id == organization_id,
+    )
     result_dep = await db.execute(query_dep)
     
     if result_dep.first():

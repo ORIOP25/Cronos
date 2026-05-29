@@ -74,7 +74,7 @@ async def test_get_current_user_from_db(db_session):
     from app.api.deps import get_current_user
     from app import models
 
-    org = models.Organization(name="TestOrg", plan_status="active")
+    org = models.Organization(name="TestOrg", clerk_org_id="org_1", plan_status="active")
     db_session.add(org)
     await db_session.flush()
 
@@ -96,6 +96,39 @@ async def test_get_current_user_from_db(db_session):
     assert result.email == "test@example.com"
 
 
+@pytest.mark.asyncio
+async def test_get_current_user_rejects_token_org_mismatch(db_session):
+    from fastapi import HTTPException
+    from app.api.deps import get_current_user
+    from app import models
+
+    org_a = models.Organization(name="Org A", clerk_org_id="org_a", plan_status="active")
+    org_b = models.Organization(name="Org B", clerk_org_id="org_b", plan_status="active")
+    db_session.add_all([org_a, org_b])
+    await db_session.flush()
+
+    user = models.User(
+        clerk_user_id="user_mismatch",
+        email="mismatch@example.com",
+        role="admin",
+        organization_id=org_a.id,
+    )
+    db_session.add(user)
+    await db_session.commit()
+
+    with patch("app.api.deps.get_clerk_payload") as mock_payload:
+        mock_payload.return_value = {
+            "sub": "user_mismatch",
+            "o": {"id": "org_b", "rol": "admin"},
+        }
+        mock_request = MagicMock()
+        with pytest.raises(HTTPException) as exc:
+            await get_current_user(mock_request, db_session)
+
+    assert exc.value.status_code == 403
+    assert exc.value.detail == "Organization mismatch"
+
+
 # ── T6: User NOT in DB → fallback creates ───────────────────────
 @pytest.mark.asyncio
 async def test_get_current_user_fallback_creates_user(db_session):
@@ -107,12 +140,17 @@ async def test_get_current_user_fallback_creates_user(db_session):
     mock_user.email = "new@example.com"
     mock_user.is_active = True
     mock_user.role = "admin"
+    mock_user.organization_id = None
 
     with patch("app.api.deps.get_clerk_payload") as mock_payload, \
          patch.object(clerk_sync, "sync_user_from_clerk_api") as mock_sync, \
-         patch.object(clerk_sync, "sync_organization_from_clerk_api"):
+         patch.object(clerk_sync, "sync_organization_from_clerk_api") as mock_org_sync:
         mock_payload.return_value = {"sub": "user_new", "o": {"id": "org_1", "rol": "admin"}}
         mock_sync.return_value = mock_user
+        mock_org = MagicMock()
+        mock_org.id = 1
+        mock_org.clerk_org_id = "org_1"
+        mock_org_sync.return_value = mock_org
 
         mock_request = MagicMock()
         result = await get_current_user(mock_request, db_session)
@@ -270,11 +308,17 @@ async def test_get_current_user_unknown_role_string(db_session):
     mock_user.email = "unknown@test.com"
     mock_user.is_active = True
     mock_user.role = UserRole.admin.value
+    mock_user.organization_id = None
 
     with patch("app.api.deps.get_clerk_payload") as mock_payload, \
-         patch.object(clerk_sync, "sync_user_from_clerk_api") as mock_sync:
+         patch.object(clerk_sync, "sync_user_from_clerk_api") as mock_sync, \
+         patch.object(clerk_sync, "sync_organization_from_clerk_api") as mock_org_sync:
         mock_payload.return_value = {"sub": "user_unknown_role", "o": {"id": "org_1", "rol": "org:superadmin"}}
         mock_sync.return_value = mock_user
+        mock_org = MagicMock()
+        mock_org.id = 1
+        mock_org.clerk_org_id = "org_1"
+        mock_org_sync.return_value = mock_org
 
         mock_request = MagicMock()
         result = await get_current_user(mock_request, db_session)
@@ -328,7 +372,9 @@ async def test_get_current_user_org_without_clerk_org_id(db_session):
         }
 
         mock_org_result = MagicMock()
+        mock_org_result.id = org.id
         mock_org_result.name = "Org Pre-Migration Updated"
+        mock_org_result.clerk_org_id = "org_clerk_abc"
         mock_org_sync.return_value = mock_org_result
 
         mock_user_result = MagicMock()
@@ -336,6 +382,7 @@ async def test_get_current_user_org_without_clerk_org_id(db_session):
         mock_user_result.email = "pre@test.com"
         mock_user_result.is_active = True
         mock_user_result.role = "admin"
+        mock_user_result.organization_id = None
         mock_user_sync.return_value = mock_user_result
 
         mock_request = MagicMock()

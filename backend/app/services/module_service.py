@@ -79,7 +79,14 @@ async def delete_module(db: AsyncSession, module_id: int, organization_id: int):
 
     # 2. Verificar dependências (ClassProgress)
     # Não apagamos módulos que já estão a ser lecionados (têm progresso registado)
-    result_prog = await db.execute(select(models.ClassProgress).where(models.ClassProgress.module_id == module_id))
+    result_prog = await db.execute(
+        select(models.ClassProgress)
+        .join(models.Class, models.ClassProgress.class_id == models.Class.id)
+        .where(
+            models.ClassProgress.module_id == module_id,
+            models.Class.organization_id == organization_id,
+        )
+    )
     if result_prog.first():
         return "DEPENDENCY_ERROR"
 
