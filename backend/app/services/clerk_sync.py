@@ -1,10 +1,10 @@
 import asyncio
 import structlog
-from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.future import select
 from app import models
 from app.core.clerk import get_clerk_sdk
+from app.db.tenant import set_async_tenant_context
 from app.models import UserRole
 
 logger = structlog.get_logger(__name__)
@@ -12,7 +12,7 @@ logger = structlog.get_logger(__name__)
 
 def parse_role(clerk_role: str | None) -> str:
     if not clerk_role:
-        return UserRole.admin.value
+        return UserRole.teacher.value
     role_map = {
         "admin": UserRole.admin.value,
         "member": UserRole.teacher.value,
@@ -23,38 +23,24 @@ def parse_role(clerk_role: str | None) -> str:
 async def ensure_organization_exists(
     db: AsyncSession, clerk_org_id: str, org_name: str
 ) -> models.Organization:
-    result = await db.execute(
-        select(models.Organization).where(models.Organization.clerk_org_id == clerk_org_id)
+    helper = await db.execute(
+        text(
+            """
+            SELECT id
+            FROM app_security.ensure_organization(:clerk_org_id, :org_name)
+            """
+        ),
+        {"clerk_org_id": clerk_org_id, "org_name": org_name},
     )
-    org = result.scalar_one_or_none()
+    ensured = helper.mappings().first()
+    if ensured is not None:
+        await set_async_tenant_context(db, ensured["id"])
+        org = await db.get(models.Organization, ensured["id"])
+        if org is None:
+            raise RuntimeError(f"Failed to load ensured org: {clerk_org_id}")
+        return org
 
-    if not org:
-        stmt = (
-            pg_insert(models.Organization)
-            .values(
-                name=org_name,
-                clerk_org_id=clerk_org_id,
-                plan_status="active",
-            )
-            .on_conflict_do_nothing()
-        )
-        await db.execute(stmt)
-        await db.flush()
-
-        result = await db.execute(
-            select(models.Organization).where(models.Organization.clerk_org_id == clerk_org_id)
-        )
-        org = result.scalar_one_or_none()
-        if not org:
-            raise RuntimeError(f"Failed to ensure org: {clerk_org_id}")
-
-        logger.debug("Organization criada localmente", clerk_org_id=clerk_org_id)
-    elif org.name != org_name:
-        org.name = org_name
-        await db.flush()
-        logger.debug("Organization actualizada", clerk_org_id=clerk_org_id)
-
-    return org
+    raise RuntimeError(f"Failed to ensure org: {clerk_org_id}")
 
 
 async def ensure_user_exists(
@@ -65,63 +51,98 @@ async def ensure_user_exists(
     role: str | None = None,
     organization_id: int | None = None,
     teacher_id: int | None = None,
-) -> models.User:
-    result = await db.execute(
-        select(models.User).where(models.User.clerk_user_id == clerk_user_id)
-    )
-    user = result.scalar_one_or_none()
-
-    if not user:
-        stmt = (
-            pg_insert(models.User)
-            .values(
+) -> models.User | None:
+    if organization_id is None:
+        helper = await db.execute(
+            text(
+                """
+                SELECT id, organization_id
+                FROM app_security.update_user_profile(
+                    :clerk_user_id,
+                    :email,
+                    :name,
+                    :role,
+                    :teacher_id
+                )
+                """
+            ),
+            {
+                "clerk_user_id": clerk_user_id,
+                "email": email,
+                "name": name,
+                "role": role,
+                "teacher_id": teacher_id,
+            },
+        )
+        updated = helper.mappings().first()
+        if updated is None:
+            logger.info(
+                "Clerk user profile ignored until membership exists",
                 clerk_user_id=clerk_user_id,
-                email=email or "",
-                name=name,
-                role=parse_role(role),
-                organization_id=organization_id,
-                teacher_id=teacher_id,
             )
-            .on_conflict_do_nothing()
-        )
-        await db.execute(stmt)
-        await db.flush()
-
-        result = await db.execute(
-            select(models.User).where(models.User.clerk_user_id == clerk_user_id)
-        )
-        user = result.scalar_one_or_none()
-        if not user:
-            raise RuntimeError(f"Failed to ensure user: {clerk_user_id}")
-
-        logger.debug("User criado localmente", clerk_user_id=clerk_user_id)
+            return None
+        await set_async_tenant_context(db, updated["organization_id"])
+        user = await db.get(models.User, updated["id"])
+        if user is None:
+            raise RuntimeError(f"Failed to load updated user: {clerk_user_id}")
         return user
 
-    updated = False
-    if email and user.email != email:
-        user.email = email
-        updated = True
-    if name and user.name != name:
-        user.name = name
-        updated = True
-    if role and user.role != parse_role(role):
-        user.role = parse_role(role)
-        updated = True
-    if organization_id is not None and user.organization_id != organization_id:
-        user.organization_id = organization_id
-        updated = True
-    if teacher_id is not None and user.teacher_id != teacher_id:
-        user.teacher_id = teacher_id
-        updated = True
+    helper = await db.execute(
+        text(
+            """
+            SELECT id, organization_id
+            FROM app_security.ensure_user(
+                :clerk_user_id,
+                :email,
+                :name,
+                :role,
+                :organization_id,
+                :teacher_id
+            )
+            """
+        ),
+        {
+            "clerk_user_id": clerk_user_id,
+            "email": email,
+            "name": name,
+            "role": role,
+            "organization_id": organization_id,
+            "teacher_id": teacher_id,
+        },
+    )
+    ensured = helper.mappings().first()
+    if ensured is not None:
+        await set_async_tenant_context(db, ensured["organization_id"])
+        user = await db.get(models.User, ensured["id"])
+        if user is None:
+            raise RuntimeError(f"Failed to load ensured user: {clerk_user_id}")
+        return user
 
-    if updated:
-        logger.debug("User actualizado", clerk_user_id=clerk_user_id)
+    raise RuntimeError(f"Failed to ensure user: {clerk_user_id}")
 
-    return user
+
+async def deactivate_user_by_clerk_id(db: AsyncSession, clerk_user_id: str) -> bool:
+    result = await db.execute(
+        text("SELECT app_security.deactivate_user(:clerk_user_id) AS deactivated"),
+        {"clerk_user_id": clerk_user_id},
+    )
+    return bool(result.scalar_one())
+
+
+async def deactivate_organization_by_clerk_id(db: AsyncSession, clerk_org_id: str) -> bool:
+    result = await db.execute(
+        text("SELECT app_security.deactivate_organization(:clerk_org_id) AS deactivated"),
+        {"clerk_org_id": clerk_org_id},
+    )
+    return bool(result.scalar_one())
 
 
 async def sync_user_from_clerk_api(
-    db: AsyncSession, clerk_user_id: str
+    db: AsyncSession,
+    clerk_user_id: str,
+    organization_id: int | None = None,
+    role: str | None = None,
+    teacher_id: int | None = None,
 ) -> models.User | None:
     sdk = get_clerk_sdk()
     try:
@@ -141,6 +162,9 @@ async def sync_user_from_clerk_api(
         clerk_user_id=clerk_user_id,
         email=email,
         name=name,
+        role=role,
+        organization_id=organization_id,
+        teacher_id=teacher_id,
     )
 
 

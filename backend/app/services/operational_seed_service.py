@@ -146,6 +146,7 @@ def _create_subject_and_module(
     db.flush()
 
     module = models.Module(
+        organization_id=organization_id,
         name=f"Modulo {name}",
         code=code,
         hours_total=hours_total,
@@ -173,6 +174,7 @@ def _link_class_subject(
     if existing:
         return
     db.add(models.ClassSubjectLink(
+        organization_id=klass.organization_id,
         class_id=klass.id,
         subject_id=subject.id,
         grade_level=klass.grade_level,
@@ -188,6 +190,7 @@ def _set_availability(
     score: models.PreferenceLevel,
 ) -> None:
     db.add(models.Availability(
+        organization_id=teacher.organization_id,
         teacher_id=teacher.id,
         timeslot_id=slot.id,
         score=score.value,

@@ -1,17 +1,15 @@
 /* ==========================================================
-   CRONOS — Warm Brown · Yellow · White
+   CRONOS — Dark Brown · Yellow · White
    60-30-10 Rule:
-     60% White (background, surfaces)
-     30% Brown (sidebar, navigation, headings, primary actions)
-     10% Yellow (accents, highlights, interactive elements)
+     60% Light Yellow #fef9e7 (background, surfaces)
+     30% Dark Brown #3B2415 (navigation, headings, primary)
+     10% Yellow #d4940b (accents, highlights)
    Palette:
-     Brown Dark:   #3d2b1f  (sidebar, deepest brand)
-     Brown Medium: #5c3d2e  (buttons, headings, links)
-     Brown Light:  #8b6f5c  (secondary text, muted)
+     Brown Deep:   #3B2415  (main brand, dark backgrounds, primary)
+     Yellow Light: #fef9e7  (page background)
      Yellow Accent:#d4940b  (CTAs, highlights, active states)
-     White Warm:   #faf8f5  (page background — not pure white)
-     White Pure:   #ffffff  (card surfaces)
-     Text Primary: #1a1512  (warm dark — not pure black)
+     Text Light:   #ffffff  (text on dark backgrounds)
+     Text Dark:    #1a1512  (text on light backgrounds)
    ========================================================== */
 
 /* ===========================
@@ -25,13 +23,13 @@
 
 :root {
   /* ── 60% White · Background ── */
-  --brand-50:  #faf8f5; /* Warm off-white page background */
-  --brand-100: #f5f0eb; /* Warm light surface — card headers, alternating rows */
-  --brand-200: #ede5dd; /* Slightly deeper surface for hover / nested */
+  --brand-50:  #fef9e7; /* Light yellow page background */
+  --brand-100: #fffbef; /* Slightly lighter yellow surface — cards, containers */
+  --brand-200: #f5f0eb; /* Deeper surface for hover / nested */
 
-  /* ── 30% Brown · Navigation & Primary ── */
-  --brand-950: #3d2b1f; /* Deepest brown — sidebar background */
-  --brand-800: #5c3d2e; /* Medium brown — buttons, headings, links, brand mark */
+  /* ── 30% Dark Brown #3B2415 · Navigation & Primary ── */
+  --brand-950: #3B2415; /* Deepest brown — sidebar, dark backgrounds */
+  --brand-800: #3B2415; /* Dark brown — buttons, headings, links, brand mark */
   --brand-600: #8b6f5c; /* Light brown — secondary text, muted elements */
 
   /* ── 10% Yellow · Accent ── */
@@ -49,10 +47,10 @@
 
   /* ── Primary: Brown (main actions) ── */
   --rs-primary: var(--brand-800);
-  --rs-primary-hover: #4a2e1e;
+  --rs-primary-hover: #2a1a0e;
   --rs-primary-active: var(--brand-950);
   --rs-primary-light: var(--brand-100);
-  --rs-primary-rgb: 92, 61, 46;
+  --rs-primary-rgb: 59, 36, 21;
 
   /* ── Accent: Yellow (highlights, secondary CTAs) ── */
   --rs-accent: var(--brand-500);

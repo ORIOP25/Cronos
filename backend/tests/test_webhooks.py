@@ -44,7 +44,7 @@ def async_client():
 
 # ── T9: user.created ────────────────────────────────────────────
 @pytest.mark.asyncio
-async def test_webhook_user_created_creates_local_user(async_client, db_session):
+async def test_webhook_user_created_without_membership_does_not_create_orphan_user(async_client, db_session):
     payload = _mk_payload("user.created", {
         "id": "user_wb_001",
         "first_name": "Test",
@@ -66,9 +66,7 @@ async def test_webhook_user_created_creates_local_user(async_client, db_session)
         select(models.User).where(models.User.clerk_user_id == "user_wb_001")
     )
     user = result.scalar_one_or_none()
-    assert user is not None
-    assert user.email == "test@example.com"
-    assert user.name == "Test User"
+    assert user is None
 
 
 # ── T10: Idempotency ────────────────────────────────────────────
@@ -103,7 +101,7 @@ async def test_webhook_user_created_idempotent(async_client, db_session):
         )
     )
     count = result.scalar()
-    assert count == 1
+    assert count == 0
 
 
 # ── T11: organization.created ───────────────────────────────────
@@ -281,7 +279,8 @@ async def test_webhook_membership_deleted(async_client, db_session):
     assert resp.status_code == 200
 
     await db_session.refresh(user)
-    assert user.organization_id is None
+    assert user.organization_id == org.id
+    assert user.is_active is False
 
 
 # ── T17: Invalid signature → 401 ────────────────────────────────
@@ -330,7 +329,26 @@ async def test_fallback_and_webhook_concurrent_insert(async_client, db_session):
     payload = _mk_payload("user.created", webhook_data)
     headers = _svix_headers(payload)
 
-    # Passo 1: Webhook cria o user
+    org = models.Organization(name="Race Org", clerk_org_id="org_race_wb", plan_status="active")
+    db_session.add(org)
+    await db_session.commit()
+
+    # Passo 1: Membership cria o user com tenant obrigatorio
+    membership_payload = _mk_payload("organizationMembership.created", {
+        "role": "admin",
+        "organization": {"id": "org_race_wb", "name": "Race Org", "slug": "race-org"},
+        "public_user_data": {"user_id": clerk_user_id, "identifier": "race@test.com"},
+        "public_metadata": {},
+    })
+    membership_headers = _svix_headers(membership_payload)
+    resp = await async_client.post(
+        "/api/v1/webhooks/clerk",
+        content=json.dumps(membership_payload),
+        headers=membership_headers,
+    )
+    assert resp.status_code == 200
+
+    # Passo 2: user.created chega depois e apenas atualiza perfil do user existente
     resp = await async_client.post(
         "/api/v1/webhooks/clerk",
         content=json.dumps(payload),
@@ -345,15 +363,26 @@ async def test_fallback_and_webhook_concurrent_insert(async_client, db_session):
         )
     )
     assert result.scalar() == 1
+    result = await db_session.execute(
+        sa_select(models.User).where(models.User.clerk_user_id == clerk_user_id)
+    )
+    user = result.scalar_one()
+    assert user.email == "race@test.com"
+    assert user.name == "Race Webhook"
 
-    # Passo 2: BAPI fallback tenta criar o mesmo user
+    # Passo 3: BAPI fallback tenta garantir o mesmo user dentro da mesma org
     with patch.object(clerk_sync, "get_clerk_sdk") as mock_sdk:
         mock_clerk_user = MagicMock()
         mock_clerk_user.email_addresses = [MagicMock(email_address="race@test.com")]
         mock_clerk_user.first_name = "Race"
         mock_clerk_user.last_name = "Fallback"
         mock_sdk.return_value.users.get.return_value = mock_clerk_user
-        result_user = await clerk_sync.sync_user_from_clerk_api(db_session, clerk_user_id)
+        result_user = await clerk_sync.sync_user_from_clerk_api(
+            db_session,
+            clerk_user_id,
+            organization_id=org.id,
+            role="admin",
+        )
         assert result_user is not None
 
     # Verificar: continua apenas 1 user (ON CONFLICT DO NOTHING)
@@ -374,11 +403,15 @@ async def test_webhook_user_deleted_soft_deletes(async_client, db_session):
     from app import models
 
     # Criar user ativo
+    org = models.Organization(name="Soft Delete Org", clerk_org_id="org_wb_del_soft", plan_status="active")
+    db_session.add(org)
+    await db_session.flush()
     user = models.User(
         clerk_user_id="user_wb_del_soft",
         email="softdel@test.com",
         role="teacher",
         is_active=True,
+        organization_id=org.id,
     )
     db_session.add(user)
     await db_session.commit()
@@ -400,11 +433,15 @@ async def test_webhook_user_deleted_idempotent(async_client, db_session):
     from sqlalchemy.future import select as sa_select
     from app import models
 
+    org = models.Organization(name="Idem Delete Org", clerk_org_id="org_wb_del_idem", plan_status="active")
+    db_session.add(org)
+    await db_session.flush()
     user = models.User(
         clerk_user_id="user_wb_del_idem",
         email="idemdel@test.com",
         role="teacher",
         is_active=True,
+        organization_id=org.id,
     )
     db_session.add(user)
     await db_session.commit()

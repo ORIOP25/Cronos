@@ -23,6 +23,8 @@ import { useRole } from '../hooks/useRole'
 // ---------------------------------------------------------------------------
 // Constantes
 // ---------------------------------------------------------------------------
+const EMPTY_ARRAY = []
+
 const STATUS_LABELS = {
   GIVEN: 'Dada',
   GAP: 'Furo',
@@ -49,7 +51,6 @@ const OPERATIONAL_STATE_ICONS = {
   DECIDED_GIVEN: cilCheckCircle,
   DECIDED_GAP: cilBan,
   DECIDED_SUBSTITUTED: cilWarning,
-  CLOSED: cilCheckCircle,
   REVOKED: cilClock,
 }
 
@@ -153,7 +154,13 @@ const getOperationalState = (occurrence) => {
   if (!occurrence.decided_at) {
     return 'OPEN_PENDING'
   }
-  return 'CLOSED'
+  // Fallback: derive from status
+  const statusMap = {
+    GIVEN: 'DECIDED_GIVEN',
+    GAP: 'DECIDED_GAP',
+    SUBSTITUTED: 'DECIDED_SUBSTITUTED',
+  }
+  return statusMap[occurrence.status] ?? 'OPEN_PENDING'
 }
 
 // ---------------------------------------------------------------------------
@@ -181,7 +188,7 @@ const EditOccurrenceModal = ({
   const [showAllRecommendations, setShowAllRecommendations] = useState(false)
 
   const {
-    data: recommendations = [],
+    data: recommendations = EMPTY_ARRAY,
     isLoading: loadingRecommendations,
     isError: recommendationsError,
   } = useSubstituteRecommendations({
@@ -496,13 +503,16 @@ const OccurrencesPanel = ({ classId, dateFrom, dateTo, initialOccurrenceId, forc
   const [resolutionFilter, setResolutionFilter] = useState(forcedFilter || 'all')
   const [saveErrorMessage, setSaveErrorMessage] = useState('')
   const [hasAppliedInitialFocus, setHasAppliedInitialFocus] = useState(false)
-  const { data: occurrences = [], isLoading, isError } = useOccurrences({
+  const [revertingId, setRevertingId] = useState(null)
+  const { data: occurrencesPage, isLoading, isError } = useOccurrences({
     classId: classId || undefined,
     dateFrom: dateFrom || undefined,
     dateTo: dateTo || undefined,
+    status: forcedFilter === 'pending' ? 'OPEN_PENDING' : undefined,
   })
-  const { data: teachers = [] } = useTeachers()
-  const { data: subjects = [] } = useSubjects()
+  const occurrences = occurrencesPage?.items ?? EMPTY_ARRAY
+  const { data: teachers = EMPTY_ARRAY } = useTeachers()
+  const { data: subjects = EMPTY_ARRAY } = useSubjects()
   const updateMutation = useUpdateOccurrence()
   const cancelMutation = useCancelOccurrence()
   const queryClient = useQueryClient()
@@ -599,20 +609,29 @@ const OccurrencesPanel = ({ classId, dateFrom, dateTo, initialOccurrenceId, forc
 
   const handleRevert = (occurrence) => {
     if (!isAdmin) return
-    const confirmed = window.confirm('Reverter esta ocorrÃªncia? O histÃ³rico serÃ¡ preservado e poderÃ¡ criar uma nova revisÃ£o para o mesmo bloco.')
+    const hasSubstituteLog = occurrence.status === 'SUBSTITUTED'
+    const confirmMessage = hasSubstituteLog
+      ? 'Reverter esta ocorrência? O histórico será preservado e poderá criar uma nova revisão para o mesmo bloco. O registo do substituto será revertido se a semana estiver aberta.'
+      : 'Reverter esta ocorrência? O histórico será preservado e poderá criar uma nova revisão para o mesmo bloco.'
+    const confirmed = window.confirm(confirmMessage)
     if (!confirmed) return
+    setRevertingId(occurrence.id)
     cancelMutation.mutate({
       id: occurrence.id,
       version: occurrence.version,
       reason: 'Reversao administrativa',
-      cancelCompletedSubstituteLog: true,
+      cancelCompletedSubstituteLog: hasSubstituteLog,
     }, {
       onSuccess: () => {
+        setRevertingId(null)
         closeEditModal()
         void queryClient.invalidateQueries({ queryKey: ['occurrences'] })
         void queryClient.invalidateQueries({ queryKey: ['weekSchedule'] })
       },
-      onError: (error) => setSaveErrorMessage(buildUpdateErrorMessage(error)),
+      onError: (error) => {
+        setRevertingId(null)
+        setSaveErrorMessage(buildUpdateErrorMessage(error))
+      },
     })
   }
 
@@ -790,9 +809,10 @@ const OccurrencesPanel = ({ classId, dateFrom, dateTo, initialOccurrenceId, forc
                       color="secondary"
                       size="sm"
                       variant="outline"
-                      disabled={cancelMutation.isPending}
+                      disabled={revertingId === occ.id}
                       onClick={() => handleRevert(occ)}
                     >
+                      {revertingId === occ.id ? <CSpinner size="sm" className="me-1" /> : null}
                       Reverter
                     </CButton>
                   )}
@@ -864,7 +884,7 @@ OccurrencesPanel.propTypes = {
 // Página principal
 // ---------------------------------------------------------------------------
 const Occurrences = () => {
-  const [searchParams] = useSearchParams()
+  const [searchParams, setSearchParams] = useSearchParams()
 
   const initialClassFilter = searchParams.get('class_id') ?? ''
   const initialDateFrom = searchParams.get('date_from') ?? ''
@@ -872,29 +892,45 @@ const Occurrences = () => {
   const parsedOccurrenceId = Number.parseInt(searchParams.get('occurrence_id') ?? '', 10)
   const initialOccurrenceId = Number.isNaN(parsedOccurrenceId) ? undefined : parsedOccurrenceId
   const statusParam = searchParams.get('status') ?? ''
+  const tabParam = searchParams.get('tab') ?? ''
 
   const [classFilter, setClassFilter] = useState(initialClassFilter)
   const [dateFrom, setDateFrom] = useState(initialDateFrom)
   const [dateTo, setDateTo] = useState(initialDateTo)
   const [activeTab, setActiveTab] = useState(
-    ['GAP', 'SUBSTITUTED', 'GIVEN', 'REVOKED'].includes(statusParam.toUpperCase())
-      ? 'historical'
-      : 'occurrences'
+    tabParam && ['occurrences', 'historical', 'debts'].includes(tabParam)
+      ? tabParam
+      : ['GAP', 'SUBSTITUTED', 'GIVEN', 'REVOKED'].includes(statusParam.toUpperCase())
+        ? 'historical'
+        : 'occurrences'
   )
+
+  const handleTabChange = (tab) => {
+    setActiveTab(tab)
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev)
+      next.set('tab', tab)
+      return next
+    }, { replace: true })
+  }
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setClassFilter(initialClassFilter)
     setDateFrom(initialDateFrom)
     setDateTo(initialDateTo)
-    setActiveTab(
-      ['GAP', 'SUBSTITUTED', 'GIVEN', 'REVOKED'].includes(statusParam.toUpperCase())
-        ? 'historical'
-        : 'occurrences'
-    )
-  }, [initialClassFilter, initialDateFrom, initialDateTo, statusParam])
+    if (tabParam && ['occurrences', 'historical', 'debts'].includes(tabParam)) {
+      setActiveTab(tabParam)
+    } else {
+      setActiveTab(
+        ['GAP', 'SUBSTITUTED', 'GIVEN', 'REVOKED'].includes(statusParam.toUpperCase())
+          ? 'historical'
+          : 'occurrences'
+      )
+    }
+  }, [initialClassFilter, initialDateFrom, initialDateTo, statusParam, tabParam])
 
-  const { data: classes = [] } = useClasses()
+  const { data: classes = EMPTY_ARRAY } = useClasses()
 
   return (
     <div className="p-4">
@@ -941,7 +977,7 @@ const Occurrences = () => {
       </CCard>
 
       {/* Tabs */}
-      <CTabs activeItemKey={activeTab} onChange={setActiveTab}>
+      <CTabs activeItemKey={activeTab} onChange={handleTabChange}>
         <CTabList variant="underline-border" className="mb-3">
           <CTab itemKey="occurrences">
             <CIcon icon={cilClock} className="me-1" />

@@ -254,26 +254,14 @@ async def test_onboarding_status_complete_after_post(async_client, db_session):
 
 @pytest.mark.asyncio
 async def test_onboarding_requires_organization_association(async_client, db_session):
-    """User sem organization_id → 400."""
+    """User sem organization_id é rejeitado pela invariant final do schema."""
     from app import models
+    from sqlalchemy import exc
 
     user = models.User(
         clerk_user_id="user_no_org_assoc", email="noorg@onb.pt",
         role="admin", organization_id=None, is_active=True,
     )
     db_session.add(user)
-    await db_session.commit()
-
-    data = {
-        "school_start_date": "2025-09-15",
-        "school_target_end_date": "2026-06-30",
-        "school_hard_end_date": "2026-07-31",
-        "lunch_start": "12:30",
-        "lunch_end": "14:00",
-        "lunch_min_duration": 60,
-    }
-
-    with patch("app.api.deps.get_clerk_payload") as mock_payload:
-        mock_payload.return_value = {"sub": "user_no_org_assoc", "o": {"id": "org_x", "rol": "admin"}}
-        resp = await async_client.post("/api/v1/onboarding", json=data)
-        assert resp.status_code == 400
+    with pytest.raises(exc.IntegrityError):
+        await db_session.commit()

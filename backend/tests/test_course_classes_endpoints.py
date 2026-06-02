@@ -148,19 +148,22 @@ class TestCourseClassesEndpoints:
             reason="Baixa",
         )
         db_session.add_all([schedule_output, substitution])
+        course_id = course.id
+        class_id = db_class.id
+        lesson_id = lesson.id
         await db_session.commit()
 
         response = await async_client.delete(
-            f"/api/v1/courses/{course.id}/classes/{db_class.id}",
+            f"/api/v1/courses/{course_id}/classes/{class_id}",
             headers=admin_token_headers,
         )
 
         assert response.status_code == 200
 
-        class_exists = await db_session.execute(select(models.Class).where(models.Class.id == db_class.id))
-        lesson_exists = await db_session.execute(select(models.Lesson).where(models.Lesson.id == lesson.id))
-        schedule_exists = await db_session.execute(select(models.ScheduleOutput).where(models.ScheduleOutput.lesson_id == lesson.id))
-        substitution_exists = await db_session.execute(select(models.Substitution).where(models.Substitution.lesson_id == lesson.id))
+        class_exists = await db_session.execute(select(models.Class).where(models.Class.id == class_id))
+        lesson_exists = await db_session.execute(select(models.Lesson).where(models.Lesson.id == lesson_id))
+        schedule_exists = await db_session.execute(select(models.ScheduleOutput).where(models.ScheduleOutput.lesson_id == lesson_id))
+        substitution_exists = await db_session.execute(select(models.Substitution).where(models.Substitution.lesson_id == lesson_id))
 
         assert class_exists.scalars().first() is None
         assert lesson_exists.scalars().first() is None

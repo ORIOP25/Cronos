@@ -92,7 +92,7 @@ async def create_course(db: AsyncSession, item: schemas.CourseCreate, organizati
         # Inserir directamente na tabela de ligação
         stmt = insert(models.course_subject_link).values(
             [
-                {"course_id": db_course.id, "subject_id": subject.id}
+                {"organization_id": organization_id, "course_id": db_course.id, "subject_id": subject.id}
                 for subject in subjects_to_link
             ]
         )
@@ -179,7 +179,8 @@ async def update_course(db: AsyncSession, course_id: int, item: schemas.CourseUp
         # Remover antigas
         await db.execute(
             delete(models.course_subject_link).where(
-                models.course_subject_link.c.course_id == course_id
+                models.course_subject_link.c.organization_id == organization_id,
+                models.course_subject_link.c.course_id == course_id,
             )
         )
         
@@ -187,7 +188,11 @@ async def update_course(db: AsyncSession, course_id: int, item: schemas.CourseUp
         if new_subjects:
             stmt = insert(models.course_subject_link).values(
                 [
-                    {"course_id": course_id, "subject_id": subject.id}
+                    {
+                        "organization_id": organization_id,
+                        "course_id": course_id,
+                        "subject_id": subject.id,
+                    }
                     for subject in new_subjects
                 ]
             )

@@ -97,6 +97,7 @@ async def _get_generation_workload_counts(db: AsyncSession, organization_id: int
         .join(models.Class, models.ClassSubjectLink.class_id == models.Class.id)
         .where(
             models.Class.organization_id == organization_id,
+            models.ClassSubjectLink.organization_id == organization_id,
             models.Class.is_archived == False,  # noqa: E712
             models.ClassSubjectLink.teacher_id.isnot(None),
             models.ClassSubjectLink.grade_level == models.Class.grade_level,
@@ -119,6 +120,7 @@ async def _collect_generation_teacher_ids(db: AsyncSession, organization_id: int
         .join(models.Class, models.ClassSubjectLink.class_id == models.Class.id)
         .where(
             models.Class.organization_id == organization_id,
+            models.ClassSubjectLink.organization_id == organization_id,
             models.Class.is_archived == False,  # noqa: E712
             models.ClassSubjectLink.teacher_id.isnot(None),
             models.ClassSubjectLink.grade_level == models.Class.grade_level,
@@ -146,6 +148,7 @@ async def _collect_generation_subject_ids(db: AsyncSession, organization_id: int
         .join(models.Class, models.ClassSubjectLink.class_id == models.Class.id)
         .where(
             models.Class.organization_id == organization_id,
+            models.ClassSubjectLink.organization_id == organization_id,
             models.Class.is_archived == False,  # noqa: E712
             models.ClassSubjectLink.teacher_id.isnot(None),
             models.ClassSubjectLink.grade_level == models.Class.grade_level,
@@ -351,6 +354,7 @@ async def _build_hard_end_feasibility(
                 .join(models.Class, models.ClassSubjectLink.class_id == models.Class.id)
                 .filter(
                     models.Class.organization_id == organization_id,
+                    models.ClassSubjectLink.organization_id == organization_id,
                     models.Class.is_archived == False,  # noqa: E712
                     models.ClassSubjectLink.teacher_id.isnot(None),
                     models.ClassSubjectLink.grade_level == models.Class.grade_level,

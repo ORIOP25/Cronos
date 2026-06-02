@@ -363,3 +363,19 @@ Antes de ir para produção:
 **Última atualização:** 2026-01-08  
 **Autor:** Code Review  
 **Status:** Implementação em progresso
+## Tenant-Safe Database Access
+
+Use the authenticated organization from the dependency layer as the single
+source of tenant ownership. Do not accept trusted `organization_id` values from
+clients for creates or updates.
+
+For tenant-owned tables:
+
+- set DB tenant context before data access;
+- include `organization_id` in SELECT, UPDATE, DELETE, and UPSERT predicates;
+- populate `organization_id` on link and derived rows directly;
+- validate body reference IDs inside the same organization before mutation;
+- keep raw SQL rare and always tenant-context aware.
+
+RLS is the database backstop. Application filters are still required for clear
+code review, predictable query plans, and controlled API errors.

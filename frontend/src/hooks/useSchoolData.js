@@ -554,20 +554,22 @@ export const useRemoveClassSubject = () => {
 /**
  * Lista ocorrências com filtros opcionais (classId, dateFrom, dateTo).
  */
-export const useOccurrences = ({ classId, dateFrom, dateTo } = {}) => {
+export const useOccurrences = ({ classId, dateFrom, dateTo, status } = {}) => {
   const orgId = useOrganization().organization?.id
   const params = new URLSearchParams()
   if (classId) params.set('class_id', classId)
   if (dateFrom) params.set('date_from', dateFrom)
   if (dateTo) params.set('date_to', dateTo)
+  if (status) params.set('status', status)
   const qs = params.toString()
   const endpoint = qs ? `/occurrences/?${qs}` : '/occurrences/'
 
   return useQuery({
-    queryKey: ['occurrences', orgId, classId, dateFrom, dateTo],
+    queryKey: ['occurrences', orgId, classId, dateFrom, dateTo, status],
     queryFn: async () => {
       const { data } = await apiClient.get(endpoint)
-      return Array.isArray(data) ? data : (data.items ?? [])
+      if (Array.isArray(data)) return { items: data, total: data.length, limit: data.length, offset: 0 }
+      return { items: data.items ?? [], total: data.total ?? 0, limit: data.limit ?? 100, offset: data.offset ?? 0 }
     },
     ...DYNAMIC_OPTS,
   })
@@ -659,6 +661,7 @@ export const useUpdateOccurrence = () => {
       void queryClient.invalidateQueries({ queryKey: ['debts', orgId] })
       void queryClient.invalidateQueries({ queryKey: ['weekSchedule', orgId] })
       void queryClient.invalidateQueries({ queryKey: ['classes', orgId] })
+      void queryClient.invalidateQueries({ queryKey: ['substitute-recommendations', orgId] })
     },
   })
 }
@@ -707,6 +710,8 @@ export const useUpsertLessonLog = () => {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['weekSchedule', orgId] })
       void queryClient.invalidateQueries({ queryKey: ['classes', orgId] })
+      void queryClient.invalidateQueries({ queryKey: ['occurrences', orgId] })
+      void queryClient.invalidateQueries({ queryKey: ['debts', orgId] })
     },
   })
 }

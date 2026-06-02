@@ -85,3 +85,24 @@ Follow-up planning for this audit:
 
 - `PRD_DATABASE_TENANT_HARDENING_RLS.md`: complete product and technical requirements for tenant hardening and RLS.
 - `WBS_DATABASE_TENANT_HARDENING_RLS.md`: implementation work breakdown for the PRD.
+## Implementation Update: Tenant Hardening And RLS
+
+The hardening implementation introduces direct tenant ownership for the
+previously indirect tables identified by the audit:
+`availability`, `course_subject_link`, `teacher_subject_link`,
+`class_subject_link`, `module`, and `class_progress`.
+
+The Alembic RLS migration adds:
+
+- `app_security.current_organization_id()` with fail-closed parsing;
+- transaction-local tenant context contract through
+  `app.current_organization_id`;
+- forced RLS policies for tenant-owned tables;
+- an `organization` self-tenant policy;
+- same-tenant validation triggers for the highest-risk references;
+- a narrow `app_security.resolve_auth_context(...)` bootstrap function.
+
+Application writes and fixtures must now populate `organization_id` directly on
+tenant-owned link and derived rows. The tenant table registry lives in
+`backend/app/db/tenant.py` and should be kept aligned with future schema
+changes.

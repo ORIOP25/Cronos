@@ -651,7 +651,7 @@ def _save_results(
             cancel_checker()
         class_end_dates = _compute_class_end_dates(blocks, lesson_class_map)
         for class_id, end_date in class_end_dates.items():
-            schedule_service.update_class_projected_end_date_sync(db, class_id, end_date)
+            schedule_service.update_class_projected_end_date_sync(db, organization_id, class_id, end_date)
         return class_end_dates
 
     return {}

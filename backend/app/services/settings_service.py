@@ -319,6 +319,7 @@ async def soft_reset_year(db: AsyncSession, organization_id: int) -> bool:
     await db.execute(
         update(models.ClassProgress)
         .where(
+            models.ClassProgress.organization_id == organization_id,
             models.ClassProgress.class_id.in_(
                 select(models.Class.id).where(models.Class.organization_id == organization_id)
             )

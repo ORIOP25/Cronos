@@ -1,5 +1,6 @@
 import pytest
 from httpx import AsyncClient
+from sqlalchemy import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from app import models
 
@@ -43,9 +44,15 @@ class TestCoursesEndpoints:
         await db_session.commit()
         
         course = models.Course(name="Ciências", abbreviation="CT-CIE", organization_id=1)
-        # Usamos append aqui no setup, mas cuidado com a sessão em testes de update
-        course.subjects.append(subject)
         db_session.add(course)
+        await db_session.flush()
+        await db_session.execute(
+            insert(models.course_subject_link).values(
+                organization_id=1,
+                course_id=course.id,
+                subject_id=subject.id,
+            )
+        )
         await db_session.commit()
 
         cls = models.Class(name="CT-CIE 10A", course_id=course.id, organization_id=1, grade_level=10, start_year=2025, end_year=2026, size=25)
@@ -107,8 +114,13 @@ class TestCoursesEndpoints:
         await db_session.commit()
         
         # Associar S1 inicialmente
-        from sqlalchemy import insert
-        await db_session.execute(insert(models.course_subject_link).values(course_id=course.id, subject_id=s1.id))
+        await db_session.execute(
+            insert(models.course_subject_link).values(
+                organization_id=1,
+                course_id=course.id,
+                subject_id=s1.id,
+            )
+        )
         await db_session.commit()
 
         # PATCH: Enviar apenas [s2]

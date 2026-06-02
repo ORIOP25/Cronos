@@ -24,7 +24,7 @@ async def create_module(db: AsyncSession, item: schemas.ModuleCreate, organizati
     if not subject_result.scalars().first():
         return "INVALID_SUBJECT"
 
-    db_item = models.Module(**item.model_dump())
+    db_item = models.Module(**item.model_dump(), organization_id=organization_id)
     db.add(db_item)
     await db.commit()
     await db.refresh(db_item)
@@ -37,6 +37,7 @@ async def update_module(db: AsyncSession, module_id: int, item: schemas.ModuleUp
         .join(models.Subject)
         .where(
             models.Module.id == module_id,
+            models.Module.organization_id == organization_id,
             models.Subject.organization_id == organization_id
         )
     )
@@ -70,6 +71,7 @@ async def delete_module(db: AsyncSession, module_id: int, organization_id: int):
         .join(models.Subject)
         .where(
             models.Module.id == module_id,
+            models.Module.organization_id == organization_id,
             models.Subject.organization_id == organization_id
         )
     )

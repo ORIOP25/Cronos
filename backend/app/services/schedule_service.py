@@ -260,6 +260,7 @@ def _get_active_classes_sync(db: Session, organization_id: int) -> list:
 
 def _collect_desired_pairs_by_links(
     db: Session,
+    organization_id: int,
     active_class_ids: set[int],
     class_grade_map: dict[int, int],
 ) -> tuple[dict[tuple[int, int], int], set[int]]:
@@ -269,6 +270,7 @@ def _collect_desired_pairs_by_links(
         db.query(models.ClassSubjectLink)
         .filter(
             models.ClassSubjectLink.class_id.in_(active_class_ids),
+            models.ClassSubjectLink.organization_id == organization_id,
             models.ClassSubjectLink.teacher_id.isnot(None),
         )
         .all()
@@ -355,6 +357,7 @@ def sync_lessons_from_class_subject_links_sync(db: Session, organization_id: int
 
     desired_pairs, classes_with_links = _collect_desired_pairs_by_links(
         db,
+        organization_id,
         active_class_ids,
         class_grade_map,
     )
@@ -398,6 +401,7 @@ def get_modules_by_subject_sync(db: Session, organization_id: int) -> dict:
         db.query(models.Module)
         .join(models.Subject, models.Module.subject_id == models.Subject.id)
         .filter(models.Subject.organization_id == organization_id)
+        .filter(models.Module.organization_id == organization_id)
         .order_by(models.Module.subject_id, models.Module.order)
         .all()
     )
@@ -413,6 +417,7 @@ def get_class_progress_map_sync(db: Session, organization_id: int) -> dict:
         db.query(models.ClassProgress)
         .join(models.Class, models.ClassProgress.class_id == models.Class.id)
         .filter(models.Class.organization_id == organization_id)
+        .filter(models.ClassProgress.organization_id == organization_id)
         .all()
     )
     return {(r.class_id, r.module_id): r.hours_completed for r in records}
@@ -446,9 +451,12 @@ def get_calendar_events_sync(db: Session, organization_id: int):
     )
 
 
-def update_class_projected_end_date_sync(db: Session, class_id: int, end_date: date) -> None:
+def update_class_projected_end_date_sync(db: Session, organization_id: int, class_id: int, end_date: date) -> None:
     """Atualiza projected_end_date de uma turma."""
-    db.query(models.Class).filter(models.Class.id == class_id).update(
+    db.query(models.Class).filter(
+        models.Class.id == class_id,
+        models.Class.organization_id == organization_id,
+    ).update(
         {"projected_end_date": end_date}
     )
 

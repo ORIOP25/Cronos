@@ -12,7 +12,7 @@ import redis
 import structlog
 from app import schemas, models
 from app.api import deps
-from app.services import schedule_service, teacher_observability_service
+from app.services import schedule_service, settings_service, teacher_observability_service
 from app.services.preflight_service import (
     _preflight_check,
     _resolve_preflight_hard_end_date,
@@ -80,11 +80,12 @@ def _log_schedule_reset_audit(
 
 async def _require_admin_for_schedule_reset(
     request: Request,
+    db: Annotated[AsyncSession, Depends(deps.get_db)],
     current_user: Annotated[models.User, Depends(deps.get_current_user)],
 ) -> models.User:
     """Aplica gate admin-only com trilho de auditoria para tentativas negadas."""
     try:
-        active_user = deps.get_current_active_user(current_user)
+        active_user = await deps.get_current_active_user(db, current_user)
         return deps.get_current_active_admin(active_user)
     except HTTPException as exc:
         detail = str(exc.detail)

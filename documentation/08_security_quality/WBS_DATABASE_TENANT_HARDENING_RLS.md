@@ -48,6 +48,18 @@ Decision log template:
 | Tenant table registry | Required | Prevent policy drift | TBD | TBD | Low |
 | Auth bootstrap mechanism | Restricted `SECURITY DEFINER` resolver | Solves user/org bootstrap before tenant context | TBD | TBD | High |
 
+Current implementation decisions recorded on 2026-05-29:
+
+| Decision | Chosen Option | Rationale | Owner | Date | Reversal Cost |
+|---|---|---|---|---|---|
+| PostgreSQL target version | 15+ | Existing local/CI target supports forced RLS and transaction-local settings | Codex | 2026-05-29 | High |
+| RLS test schema setup | Alembic-created PostgreSQL | RLS objects are migration-only and cannot be proven by `create_all()` | Codex | 2026-05-29 | Medium |
+| Normal user organization ownership | Non-null `organization_id` | Tenant endpoints require exactly one active organization | Codex | 2026-05-29 | High |
+| Alembic strategy | Forward hardening migration for dev schema | Keeps current migration history while moving to final schema | Codex | 2026-05-29 | Medium |
+| Same-tenant enforcement default | Validation triggers | Avoids composite-FK churn while still rejecting direct SQL mismatches | Codex | 2026-05-29 | Medium |
+| Tenant table registry | `backend/app/db/tenant.py` | Shared source for app helpers and drift tests/docs | Codex | 2026-05-29 | Low |
+| Auth bootstrap mechanism | Restricted resolver function | Provides narrow pre-context user/org resolution path | Codex | 2026-05-29 | High |
+
 Acceptance criteria:
 
 - No critical implementation decision remains open.

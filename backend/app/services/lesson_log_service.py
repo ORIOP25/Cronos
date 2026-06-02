@@ -1,5 +1,6 @@
-from datetime import datetime, date, timezone, timedelta
+from datetime import datetime, timezone, timedelta
 from typing import Optional
+import uuid as _uuid
 from sqlalchemy.orm import Session
 from app.core.exceptions import DomainError, NotFoundError, ConflictError
 
@@ -32,7 +33,7 @@ def upsert_lesson_log_sync(
         models.ScheduleOutput.id == schedule_output_id,
         models.ScheduleOutput.organization_id == organization_id,
         models.ScheduleOutput.is_draft == False
-    ).first()
+    ).with_for_update().first()
     
     if not output:
         raise NotFoundError("Bloco planeado não encontrado.")
@@ -42,7 +43,6 @@ def upsert_lesson_log_sync(
 
     # 2. Bloqueio no tempo (Viagens ao futuro)
     timeslot = output.timeslot
-    from datetime import timezone
     end_datetime = datetime.combine(output.date, timeslot.end_time, tzinfo=timezone.utc)
     if payload.status == models.LessonLogStatus.COMPLETED:
         if end_datetime > datetime.now(timezone.utc):
@@ -59,26 +59,27 @@ def upsert_lesson_log_sync(
     if timesheet and timesheet.status in (models.TimesheetStatus.SUBMITTED, models.TimesheetStatus.APPROVED):
         raise DomainError("Esta semana já foi submetida ou aprovada. Não é possível alterar registos.", status_code=400)
 
-    # 4. Proteção contra sobrescrita de Ocorrência existente (GAP / SUBSTITUTED)
-    # Se o user tenta meter COMPLETED, e há uma Ocorrência GAP/SUBSTITUTED, bloquear.
+    # 4. Proteção contra sobrescrita de Ocorrência existente (GAP / SUBSTITUTED / GIVEN)
+    # Se o user tenta meter COMPLETED, e há uma Ocorrência ativa, bloquear.
     occurrence = db.query(models.LessonOccurrence).filter(
         models.LessonOccurrence.schedule_output_id == schedule_output_id,
         models.LessonOccurrence.is_active.is_(True),
         models.LessonOccurrence.status.in_([
             models.LessonOccurrenceStatus.GAP,
-            models.LessonOccurrenceStatus.SUBSTITUTED
+            models.LessonOccurrenceStatus.SUBSTITUTED,
+            models.LessonOccurrenceStatus.GIVEN,
         ])
     ).first()
     
     if payload.status == models.LessonLogStatus.COMPLETED and occurrence:
-        raise ConflictError("Não pode concluir uma aula que tem uma Falta/Substituição registada.")
+        raise ConflictError("Não pode concluir uma aula que tem uma ocorrência ativa registada.")
 
     # V4: Blocos de substituição são interativos — o substituto pode registar normalmente.
 
-    # 5. Obter ou criar LessonLog
+    # 5. Obter ou criar LessonLog (with row lock to prevent concurrent double-count)
     llog = db.query(models.LessonLog).filter(
         models.LessonLog.schedule_output_id == schedule_output_id
-    ).first()
+    ).with_for_update().first()
     
     old_status = llog.status if llog else models.LessonLogStatus.PENDING
 
@@ -91,9 +92,11 @@ def upsert_lesson_log_sync(
             notes=payload.notes,
             logged_by_user_id=user_id,
             logged_at=datetime.now(timezone.utc),
+            version=1,
         )
         db.add(llog)
     else:
+        llog.version = int(llog.version or 1) + 1
         llog.status = payload.status
         llog.summary = payload.summary
         llog.notes = payload.notes
@@ -103,6 +106,8 @@ def upsert_lesson_log_sync(
     # 6. Refatorizar o Progresso da Disciplina
     # Se mudou de estado, aplicar contabilidade
     if old_status != payload.status:
+        log_revision = int(llog.version or 1)
+        log_operation_id = str(_uuid.uuid5(_uuid.NAMESPACE_URL, f"lesson_log:{schedule_output_id}:{log_revision}:{old_status.value}->{payload.status.value}"))
         class_id = output.lesson.class_id
         subject_id = output.lesson.subject_id
         planned_module_id = _get_active_module_id(db, class_id, subject_id)
@@ -112,6 +117,7 @@ def upsert_lesson_log_sync(
         if payload.status == models.LessonLogStatus.COMPLETED:
             occurrence_service._apply_state_accounting(
                 db,
+                organization_id=organization_id,
                 class_id=class_id,
                 status=models.LessonOccurrenceStatus.GIVEN, # Usamos GIVEN para simular o delta positivo no modulo
                 planned_module_id=planned_module_id,
@@ -125,7 +131,7 @@ def upsert_lesson_log_sync(
                 organization_id=organization_id,
                 source_type="LESSON_LOG",
                 source_id=llog.id,
-                source_revision=None,
+                source_revision=log_revision,
                 class_id=class_id,
                 status=models.LessonOccurrenceStatus.GIVEN,
                 planned_module_id=planned_module_id,
@@ -133,13 +139,15 @@ def upsert_lesson_log_sync(
                 planned_hours=planned_hours,
                 direction=1,
                 actor_user_id=user_id,
+                operation_id=log_operation_id,
             )
         # COMPLETED -> PENDING/OCCURRENCE (-1)
         elif old_status == models.LessonLogStatus.COMPLETED:
             occurrence_service._apply_state_accounting(
                 db,
+                organization_id=organization_id,
                 class_id=class_id,
-                status=models.LessonOccurrenceStatus.GIVEN, 
+                status=models.LessonOccurrenceStatus.GIVEN,
                 planned_module_id=planned_module_id,
                 executed_module_id=planned_module_id,
                 planned_hours=planned_hours,
@@ -150,7 +158,7 @@ def upsert_lesson_log_sync(
                 organization_id=organization_id,
                 source_type="LESSON_LOG",
                 source_id=llog.id,
-                source_revision=None,
+                source_revision=log_revision,
                 class_id=class_id,
                 status=models.LessonOccurrenceStatus.GIVEN,
                 planned_module_id=planned_module_id,
@@ -158,6 +166,7 @@ def upsert_lesson_log_sync(
                 planned_hours=planned_hours,
                 direction=-1,
                 actor_user_id=user_id,
+                operation_id=log_operation_id,
             )
 
         # WBS V3 Fase 1.1: Auto-create LessonOccurrence OPEN when teacher marks OCCURRENCE
@@ -201,7 +210,7 @@ def upsert_operational_lesson_log_sync(
         models.OperationalScheduleBlock.id == operational_block_id,
         models.OperationalScheduleBlock.organization_id == organization_id,
         models.OperationalScheduleBlock.status == models.OperationalBlockStatus.ACTIVE,
-    ).first()
+    ).with_for_update().first()
     if block is None:
         raise NotFoundError("Bloco operacional nao encontrado.")
 
@@ -222,7 +231,7 @@ def upsert_operational_lesson_log_sync(
 
     old_log = db.query(models.LessonLog).filter(
         models.LessonLog.operational_block_id == operational_block_id,
-    ).first()
+    ).with_for_update().first()
     old_status = old_log.status if old_log else models.LessonLogStatus.PENDING
 
     if old_log is None:
@@ -234,9 +243,11 @@ def upsert_operational_lesson_log_sync(
             notes=payload.notes,
             logged_by_user_id=user_id,
             logged_at=datetime.now(timezone.utc),
+            version=1,
         )
         db.add(old_log)
     else:
+        old_log.version = int(old_log.version or 1) + 1
         old_log.status = payload.status
         old_log.summary = payload.summary
         old_log.notes = payload.notes
@@ -244,10 +255,13 @@ def upsert_operational_lesson_log_sync(
         old_log.logged_at = datetime.now(timezone.utc)
 
     if old_status != payload.status:
+        log_revision = int(old_log.version or 1)
+        op_log_operation_id = str(_uuid.uuid5(_uuid.NAMESPACE_URL, f"op_log:{operational_block_id}:{log_revision}:{old_status.value}->{payload.status.value}"))
         planned_hours = _get_timeslot_duration_hours(block.timeslot)
         if payload.status == models.LessonLogStatus.COMPLETED:
             occurrence_service._apply_state_accounting(
                 db,
+                organization_id=organization_id,
                 class_id=block.class_id,
                 status=models.LessonOccurrenceStatus.GIVEN,
                 planned_module_id=block.module_id,
@@ -261,7 +275,7 @@ def upsert_operational_lesson_log_sync(
                 organization_id=organization_id,
                 source_type="LESSON_LOG",
                 source_id=old_log.id,
-                source_revision=None,
+                source_revision=log_revision,
                 class_id=block.class_id,
                 status=models.LessonOccurrenceStatus.GIVEN,
                 planned_module_id=block.module_id,
@@ -269,11 +283,13 @@ def upsert_operational_lesson_log_sync(
                 planned_hours=planned_hours,
                 direction=1,
                 actor_user_id=user_id,
+                operation_id=op_log_operation_id,
             )
             block.execution_status = models.OperationalBlockExecutionStatus.COMPLETED
         elif old_status == models.LessonLogStatus.COMPLETED:
             occurrence_service._apply_state_accounting(
                 db,
+                organization_id=organization_id,
                 class_id=block.class_id,
                 status=models.LessonOccurrenceStatus.GIVEN,
                 planned_module_id=block.module_id,
@@ -286,7 +302,7 @@ def upsert_operational_lesson_log_sync(
                 organization_id=organization_id,
                 source_type="LESSON_LOG",
                 source_id=old_log.id,
-                source_revision=None,
+                source_revision=log_revision,
                 class_id=block.class_id,
                 status=models.LessonOccurrenceStatus.GIVEN,
                 planned_module_id=block.module_id,
@@ -294,6 +310,7 @@ def upsert_operational_lesson_log_sync(
                 planned_hours=planned_hours,
                 direction=-1,
                 actor_user_id=user_id,
+                operation_id=op_log_operation_id,
             )
             block.execution_status = models.OperationalBlockExecutionStatus.PENDING_LOG
 

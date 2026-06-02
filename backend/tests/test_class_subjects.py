@@ -48,7 +48,7 @@ class TestClassSubjectLink:
         from sqlalchemy import insert
         await db_session.execute(
             insert(models.teacher_subject_link).values(
-                teacher_id=teacher.id, subject_id=subject.id
+                organization_id=org.id, teacher_id=teacher.id, subject_id=subject.id
             )
         )
         await db_session.commit()
@@ -61,6 +61,7 @@ class TestClassSubjectLink:
         _, _, cls, subject, _ = await self._create_base_data(db_session)
 
         link = models.ClassSubjectLink(
+            organization_id=cls.organization_id,
             class_id=cls.id,
             subject_id=subject.id,
             grade_level=cls.grade_level
@@ -77,6 +78,7 @@ class TestClassSubjectLink:
         _, _, cls, subject, teacher = await self._create_base_data(db_session)
 
         link = models.ClassSubjectLink(
+            organization_id=cls.organization_id,
             class_id=cls.id,
             subject_id=subject.id,
             grade_level=cls.grade_level,
@@ -94,6 +96,7 @@ class TestClassSubjectLink:
         _, _, cls, subject, teacher = await self._create_base_data(db_session)
 
         link = models.ClassSubjectLink(
+            organization_id=cls.organization_id,
             class_id=cls.id,
             subject_id=subject.id,
             grade_level=cls.grade_level,
@@ -116,6 +119,7 @@ class TestClassSubjectLink:
         _, _, cls, subject, _ = await self._create_base_data(db_session)
 
         link1 = models.ClassSubjectLink(
+            organization_id=cls.organization_id,
             class_id=cls.id,
             subject_id=subject.id,
             grade_level=cls.grade_level
@@ -124,6 +128,7 @@ class TestClassSubjectLink:
         await db_session.commit()
 
         link2 = models.ClassSubjectLink(
+            organization_id=cls.organization_id,
             class_id=cls.id,
             subject_id=subject.id,
             grade_level=cls.grade_level
@@ -139,11 +144,13 @@ class TestClassSubjectLink:
         _, _, cls, subject, _ = await self._create_base_data(db_session)
 
         link1 = models.ClassSubjectLink(
+            organization_id=cls.organization_id,
             class_id=cls.id,
             subject_id=subject.id,
             grade_level=10,
         )
         link2 = models.ClassSubjectLink(
+            organization_id=cls.organization_id,
             class_id=cls.id,
             subject_id=subject.id,
             grade_level=11,

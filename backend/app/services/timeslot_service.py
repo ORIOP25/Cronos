@@ -35,6 +35,7 @@ async def _get_availability_preferences_by_time(
 
 def _restore_availabilities_for_new_grid(
     db: AsyncSession,
+    organization_id: int,
     teacher_ids: list[int],
     timeslots: list[models.Timeslot],
     previous_preferences: dict[tuple[int, int, time, time], int],
@@ -53,6 +54,7 @@ def _restore_availabilities_for_new_grid(
             )
             db.add(
                 models.Availability(
+                    organization_id=organization_id,
                     teacher_id=teacher_id,
                     timeslot_id=slot.id,
                     score=score,
@@ -210,6 +212,7 @@ async def create_bulk_timeslots(
 
     _restore_availabilities_for_new_grid(
         db,
+        organization_id,
         teacher_ids,
         new_timeslots,
         previous_preferences,

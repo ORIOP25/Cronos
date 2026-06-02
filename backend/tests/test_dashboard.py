@@ -178,6 +178,7 @@ class TestDashboardEndpoint:
             planned_hours=0.75,
         )
         db_session.add(occ)
+        klass_id = klass.id
         await db_session.commit()
 
         response = await async_client.get("/api/v1/dashboard", headers=admin_token_headers)
@@ -210,7 +211,7 @@ class TestDashboardEndpoint:
 
         progress = data["class_progress"]
         assert len(progress) >= 1
-        cp_entry = next(p for p in progress if p["class_id"] == klass.id)
+        cp_entry = next(p for p in progress if p["class_id"] == klass_id)
         assert cp_entry["class_name"] == "1ºA TGPSI"
         assert cp_entry["overall_percentage"] == 50.0
 
@@ -315,6 +316,7 @@ class TestDashboardEndpoint:
 
         course = await self._seed_course(db_session, org_id, "INFO", "INF")
         klass = await self._seed_class(db_session, org_id, course.id, "1ºA INFO", 10, 2025, 2028)
+        klass_id = klass.id
         await db_session.commit()
 
         response = await async_client.get("/api/v1/dashboard", headers=admin_token_headers)
@@ -324,7 +326,7 @@ class TestDashboardEndpoint:
         progress = data["class_progress"]
         assert len(progress) == 1
         cp = progress[0]
-        assert cp["class_id"] == klass.id
+        assert cp["class_id"] == klass_id
         assert cp["overall_percentage"] == 0.0
         assert cp["completed_hours"] == 0.0
 

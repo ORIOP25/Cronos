@@ -580,3 +580,20 @@ Payload enriquecido para triagem operacional sem lookups obrigatorios:
 Regra de decisor:
 - `decided_by_user_name` usa nome do utilizador quando disponivel;
 - fallback para email quando `name` estiver vazio.
+## Tenant Context And RLS
+
+Tenant endpoints must depend on the authenticated active user dependency so the
+database transaction has `app.current_organization_id` set before tenant-owned
+queries run. Endpoints must not trust `organization_id` from request bodies for
+tenant ownership; use the authenticated user organization and pass it into
+services explicitly.
+
+All tenant-owned queries and bulk mutations must still include an
+`organization_id` predicate even though PostgreSQL RLS is enabled. Invalid or
+cross-tenant path resources should return the same generic `404` shape as
+missing resources. Invalid body references should use the endpoint's generic
+invalid-reference response without revealing whether the ID exists in another
+tenant.
+
+Raw SQL touching tenant-owned tables must run only after tenant context is set,
+or inside an explicitly privileged migration/admin path.

@@ -3,12 +3,15 @@ from typing import Annotated, AsyncGenerator
 
 import structlog
 from fastapi import Depends, HTTPException, Request, status
+from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
 from app import models
 from app.core.clerk import verify_clerk_request
 from app.db.database import SessionLocal
+from app.db.tenant import set_async_tenant_context
 from app.services import clerk_sync
 
 logger = structlog.get_logger(__name__)
@@ -95,6 +98,51 @@ async def get_current_user(
 
     clerk_org_id = payload.get("o", {}).get("id") if "o" in payload else None
     token_role = payload.get("o", {}).get("rol") if "o" in payload else None
+    if clerk_org_id:
+        try:
+            async with db.begin_nested():
+                auth_context = await db.execute(
+                    text(
+                        """
+                        SELECT user_id, organization_id, role, is_active
+                        FROM app_security.resolve_auth_context(:clerk_user_id, :clerk_org_id)
+                        """
+                    ),
+                    {"clerk_user_id": clerk_user_id, "clerk_org_id": clerk_org_id},
+                )
+                resolved = auth_context.mappings().first()
+        except SQLAlchemyError:
+            logger.warning(
+                "Auth context resolver unavailable; falling back to Clerk sync",
+                clerk_user_id=clerk_user_id,
+                clerk_org_id=clerk_org_id,
+            )
+            resolved = None
+        if resolved is not None:
+            try:
+                async with db.begin_nested():
+                    await set_async_tenant_context(db, resolved["organization_id"])
+            except (SQLAlchemyError, ValueError):
+                logger.warning(
+                    "Failed to apply tenant context from resolver",
+                    clerk_user_id=clerk_user_id,
+                    organization_id=resolved["organization_id"],
+                )
+                resolved = None
+        if resolved is not None:
+            result = await db.execute(
+                select(models.User).where(models.User.id == resolved["user_id"])
+            )
+            user = result.scalar_one_or_none()
+            if user is None:
+                raise HTTPException(status_code=403, detail="Organization mismatch")
+            if token_role:
+                parsed_role = clerk_sync.parse_role(token_role)
+                if user.role != parsed_role:
+                    user.role = parsed_role
+                    await db.flush()
+            return user
+
     token_org = await _get_token_organization(db, clerk_org_id)
 
     result = await db.execute(
@@ -110,7 +158,17 @@ async def get_current_user(
 
     # Fallback: criar via BAPI (race condition com webhooks)
     logger.info("Fallback sincrono ativado", clerk_user_id=clerk_user_id, clerk_org_id=clerk_org_id)
-    user = await clerk_sync.sync_user_from_clerk_api(db, clerk_user_id)
+    if token_org is None:
+        if clerk_org_id:
+            raise HTTPException(status_code=403, detail="Organization mismatch")
+        raise HTTPException(status_code=403, detail="Organization required")
+
+    user = await clerk_sync.sync_user_from_clerk_api(
+        db,
+        clerk_user_id,
+        organization_id=token_org.id if token_org is not None else None,
+        role=token_role,
+    )
 
     if not user:
         logger.error("Fallback sincrono falhou - user nao criado", clerk_user_id=clerk_user_id)
@@ -130,11 +188,19 @@ async def get_current_user(
     return user
 
 
-def get_current_active_user(
+async def get_current_active_user(
+    db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[models.User, Depends(get_current_user)],
 ) -> models.User:
     if not current_user.is_active:
         raise HTTPException(status_code=403, detail="Inactive user")
+    if current_user.organization_id is None:
+        logger.warning(
+            "Missing tenant context for authenticated user",
+            actor_user_id=current_user.id,
+        )
+        raise HTTPException(status_code=403, detail="Organization required")
+    await set_async_tenant_context(db, current_user.organization_id)
     return current_user
 
 

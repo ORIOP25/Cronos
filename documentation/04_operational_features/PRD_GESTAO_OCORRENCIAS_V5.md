@@ -181,19 +181,20 @@ Ligacao a `LessonLog`:
 - unicidade de log deve existir por alvo: um log por `schedule_output_id` ou um log por `operational_block_id`;
 - respostas de horario devem expor `block_source=planned|operational` e o id correto para o modal de log.
 
-### 6.5 Mesma disciplina vs disciplina diferente
+### 6.5 Disciplina diferente obrigatória na substituição
 
-Substituicao por professor da mesma disciplina deve ser suportada quando o professor e elegivel, disponivel e pertence ao tenant.
+A substituição pressupõe que o professor em falta leccionava uma disciplina X na turma, e outro professor da mesma turma (que lecciona disciplina Y) assume o horário. Logo, a disciplina executada **deve ser diferente** da disciplina planeada.
 
 Regras:
 
 - o professor substituto nao pode ser o professor planeado;
-- o professor substituto deve ter ligacao valida a disciplina/turma ou qualificacao explicitamente permitida pelo dominio;
-- mesma disciplina/modulo: nao ha divida curricular no momento da decisao;
-- disciplina/modulo diferente: ha divida no modulo planeado no momento da decisao;
+- o professor substituto deve pertencer à mesma turma via `ClassSubjectLink` (grade_level correspondente);
+- a disciplina substituta deve ser **diferente** da disciplina planeada (`substitute_subject_id != planned_subject_id`);
+- o par (professor substituto, disciplina substituta) deve existir em `ClassSubjectLink` para a turma;
+- disciplina executada diferente da planeada: ha divida no modulo planeado no momento da decisao;
 - progresso do modulo executado so e creditado quando ha `LessonLog.COMPLETED` do bloco operacional.
 
-Esta regra corrige a contradicao anterior: decisao de substituicao nao pode contar progresso e depois o log do substituto contar outra vez.
+Nao e permitido que um professor de outra turma venha dar a mesma disciplina do professor em falta. A verificação de elegibilidade usa `ClassSubjectLink` para a turma em causa.
 
 ### 6.6 Accounting por ledger
 
@@ -220,7 +221,6 @@ Regras de accounting:
 - `LessonLog.COMPLETED` do bloco planeado: progresso no modulo planeado;
 - `GIVEN` decidido/auto-confirmado: progresso no modulo planeado apenas se nao existir log completed equivalente;
 - `GAP`: divida no modulo planeado;
-- `SUBSTITUTED` mesma disciplina/modulo: sem divida na decisao; progresso quando o substituto regista completed;
 - `SUBSTITUTED` disciplina/modulo diferente: divida no modulo planeado na decisao; progresso no modulo executado quando o substituto regista completed;
 - redecisao/reversao cria ledger compensatorio antes de aplicar novo efeito;
 - `ClassProgress` nunca pode ficar negativo apos compensacao.
@@ -382,7 +382,7 @@ Regras:
 ### RF3 - Recomendacoes de substitutos
 
 - Lista ordenada deterministicamente.
-- Inclui candidatos de mesma disciplina quando elegiveis.
+- Exclui candidatos da mesma disciplina planeada; apenas professores da mesma turma com disciplina diferente sao elegiveis.
 - Explica criterios de ranking.
 - Revalida tudo no momento da confirmacao.
 - Nunca cruza tenant.
@@ -570,9 +570,9 @@ Cada evento inclui:
 - Normalizacao `status=null` -> `OPEN_PENDING`.
 - Tabela de transicoes permitidas/proibidas.
 - Validacao de schemas create/update/cancel.
-- Elegibilidade de substituto incluindo mesma disciplina.
+- Elegibilidade de substituto rejeitando mesma disciplina.
 - Ledger idempotente e compensatorio.
-- Accounting para `GIVEN`, `GAP`, `SUBSTITUTED` mesma disciplina e `SUBSTITUTED` disciplina diferente.
+- Accounting para `GIVEN`, `GAP` e `SUBSTITUTED` com disciplina diferente.
 - Auto-confirm idempotente.
 
 ### Backend integracao/API
@@ -606,7 +606,7 @@ Cada evento inclui:
 ### E2E minimo
 
 1. Professor cria ocorrencia; admin decide `GAP`; divida aparece.
-2. Professor cria ocorrencia; admin decide `SUBSTITUTED` mesma disciplina; substituto completa; sem divida e com progresso uma vez.
+2. Professor cria ocorrencia; admin tenta `SUBSTITUTED` com mesma disciplina; backend rejeita a decisao.
 3. Professor cria ocorrencia; admin decide `SUBSTITUTED` disciplina diferente; divida planeada e progresso executado apos log.
 4. Admin reverte decisao; historico preserva revisao; nova ocorrencia pode ser criada.
 5. Dois admins abrem a mesma ocorrencia; segunda decisao recebe conflito.
@@ -701,7 +701,7 @@ Entregavel: state machine deterministica.
 
 4.1. Implementar helper unico de ledger + update de `ClassProgress`.
 4.2. Bloquear escrita direta em `ClassProgress` nos fluxos de ocorrencia/log.
-4.3. Implementar regras de `GIVEN`, `GAP`, `SUBSTITUTED` mesma disciplina e `SUBSTITUTED` disciplina diferente.
+4.3. Implementar regras de `GIVEN`, `GAP` e `SUBSTITUTED` com disciplina diferente.
 4.4. Implementar compensacao de redecisao/reversao.
 4.5. Garantir que `ClassProgress` nao fica negativo.
 4.6. Adicionar testes de idempotencia e compensacao.
@@ -723,7 +723,7 @@ Entregavel: substituicao visivel e executavel sem poluir `Lesson`.
 ## 6. Elegibilidade e Recomendacoes
 
 6.1. Rever query de candidatos com tenant scope explicito.
-6.2. Permitir mesma disciplina quando elegivel.
+6.2. Rejeitar mesma disciplina mesmo quando o docente pertence a turma.
 6.3. Validar conflito contra blocos planeados e operacionais.
 6.4. Manter ranking deterministico.
 6.5. Atualizar explicacoes de recomendacao.

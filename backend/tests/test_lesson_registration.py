@@ -5,7 +5,7 @@ import pytest_asyncio
 from datetime import date, datetime, time, timedelta, timezone
 from unittest.mock import patch
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, insert, select
 from sqlalchemy.orm import sessionmaker
 
 from tests.conftest import mock_clerk_payload
@@ -284,16 +284,29 @@ def substitution_setup(sync_db, base_setup):
             select(models.Class.course_id).where(models.Class.id == class_id)
         ).scalar_one())
     ).scalar_one()
-    course.subjects.append(subject2)
+    sync_db.execute(
+        insert(models.course_subject_link).values(
+            organization_id=organization_id,
+            course_id=course.id,
+            subject_id=subject2.id,
+        )
+    )
 
     # Create substitute teacher
     sub_teacher = models.Teacher(name="Prof. Substituto", organization_id=organization_id)
-    sub_teacher.subjects.append(subject2)
     sync_db.add(sub_teacher)
     sync_db.flush()
+    sync_db.execute(
+        insert(models.teacher_subject_link).values(
+            organization_id=organization_id,
+            teacher_id=sub_teacher.id,
+            subject_id=subject2.id,
+        )
+    )
 
     # ClassSubjectLink for substitute
     link = models.ClassSubjectLink(
+        organization_id=organization_id,
         class_id=class_id,
         subject_id=subject2.id,
         grade_level=10,
@@ -1194,6 +1207,45 @@ class TestClassProgressReversal:
             )
         ).scalar_one()
         assert progress_after.hours_completed == 5.0  # back to base
+
+    def test_recompleted_lesson_log_uses_new_ledger_revision(self, sync_db, base_setup):
+        organization_id = base_setup["organization_id"]
+        output_id = base_setup["schedule_output_id"]
+        user_id = base_setup["user_id"]
+
+        lesson_log_service.upsert_lesson_log_sync(
+            sync_db,
+            organization_id,
+            user_id,
+            output_id,
+            schemas.LessonLogCreate(status=models.LessonLogStatus.COMPLETED, summary="Aula 1", notes=""),
+        )
+        lesson_log_service.upsert_lesson_log_sync(
+            sync_db,
+            organization_id,
+            user_id,
+            output_id,
+            schemas.LessonLogCreate(status=models.LessonLogStatus.PENDING, summary="Reaberta", notes=""),
+        )
+        lesson_log = lesson_log_service.upsert_lesson_log_sync(
+            sync_db,
+            organization_id,
+            user_id,
+            output_id,
+            schemas.LessonLogCreate(status=models.LessonLogStatus.COMPLETED, summary="Aula 2", notes=""),
+        )
+
+        ledger_entries = sync_db.execute(
+            select(models.ProgressLedgerEntry).where(
+                models.ProgressLedgerEntry.source_type == "LESSON_LOG",
+                models.ProgressLedgerEntry.source_id == lesson_log.id,
+            )
+        ).scalars().all()
+        revisions = {entry.source_revision for entry in ledger_entries}
+
+        assert len(ledger_entries) == 3
+        assert revisions == {1, 2, 3}
+        assert lesson_log.version == 3
 
 
 class TestTimesheetStateTransitions:

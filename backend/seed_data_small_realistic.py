@@ -185,6 +185,7 @@ def _seed_teacher_availability(db, teacher_objs: list[models.Teacher], ts_map: d
     for teacher_idx, teacher in enumerate(teacher_objs, start=1):
         for timeslot in ts_map.values():
             db.add(models.Availability(
+                organization_id=teacher.organization_id,
                 teacher_id=teacher.id,
                 timeslot_id=timeslot.id,
                 score=_availability_score(teacher_idx, timeslot.day_of_week, timeslot.start_time.hour),
@@ -489,6 +490,7 @@ def run_seed() -> None:
             subject_modules: list[models.Module] = []
             for order, (module_label, module_hours) in enumerate(MODULE_TEMPLATES, start=1):
                 module = models.Module(
+                    organization_id=organization.id,
                     name=f"{subject_info['name']} - {module_label}",
                     code=f"{code_prefix}M{order}",
                     hours_total=module_hours,
@@ -502,17 +504,28 @@ def run_seed() -> None:
 
             modules_by_subject_id[subject.id] = subject_modules
 
+        teacher_subject_links: set[tuple[int, int]] = set()
         for course_abbreviation, curriculum_keys in COURSE_CURRICULA.items():
             course = course_by_abbreviation[course_abbreviation]
 
             for subject_key in curriculum_keys:
                 subject = subject_by_key[subject_key]
-                if subject not in course.subjects:
-                    course.subjects.append(subject)
+                db.execute(models.course_subject_link.insert().values(
+                    organization_id=organization.id,
+                    course_id=course.id,
+                    subject_id=subject.id,
+                ))
 
                 for teacher in subject_teacher_pool[subject_key]:
-                    if teacher not in subject.teachers:
-                        subject.teachers.append(teacher)
+                    teacher_subject_key = (teacher.id, subject.id)
+                    if teacher_subject_key in teacher_subject_links:
+                        continue
+                    db.execute(models.teacher_subject_link.insert().values(
+                        organization_id=organization.id,
+                        teacher_id=teacher.id,
+                        subject_id=subject.id,
+                    ))
+                    teacher_subject_links.add(teacher_subject_key)
 
             db.flush()
 
@@ -539,6 +552,7 @@ def run_seed() -> None:
                     assigned_teacher = teacher_pool[class_index % len(teacher_pool)]
 
                     db.add(models.ClassSubjectLink(
+                        organization_id=organization.id,
                         class_id=klass.id,
                         subject_id=subject.id,
                         grade_level=klass.grade_level,
@@ -561,6 +575,7 @@ def run_seed() -> None:
                             module.hours_total,
                         )
                         db.add(models.ClassProgress(
+                            organization_id=organization.id,
                             class_id=klass.id,
                             module_id=module.id,
                             hours_completed=hours_completed,

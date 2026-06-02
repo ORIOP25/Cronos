@@ -3,7 +3,7 @@
 import structlog
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session, selectinload
-from sqlalchemy import select, delete
+from sqlalchemy import select, delete, insert
 from app import models, schemas
 from app.models import Availability, Teacher
 from app.schemas import AvailabilitySelfCreate
@@ -61,6 +61,7 @@ async def create_teacher(db: AsyncSession, teacher_in: schemas.TeacherCreate, or
 
     # 2. Criar a Instância do Professor
     db_teacher = models.Teacher(**teacher_data, organization_id=organization_id)
+    subjects_objects = []
 
     # 3. Tratar as Disciplinas (Relação N:M)
     if subject_ids:
@@ -70,13 +71,24 @@ async def create_teacher(db: AsyncSession, teacher_in: schemas.TeacherCreate, or
         )
         result_subs = await db.execute(query_subs)
         subjects_objects = result_subs.scalars().all()
-        
-        db_teacher.subjects = list(subjects_objects)
 
     try:
         # 4. Adicionar à Sessão e Obter ID
         db.add(db_teacher)
         await db.flush() # Flush garante que db_teacher.id é gerado agora
+        if subjects_objects:
+            await db.execute(
+                insert(models.teacher_subject_link).values(
+                    [
+                        {
+                            "organization_id": organization_id,
+                            "teacher_id": db_teacher.id,
+                            "subject_id": subject.id,
+                        }
+                        for subject in subjects_objects
+                    ]
+                )
+            )
         await db.refresh(db_teacher)
 
         # 5. Lógica de User (Criar SEMPRE que tiver email)
@@ -221,6 +233,13 @@ async def update_teacher(
         setattr(teacher, field, value)
 
     # 4. Atualizar Disciplinas
+    if teacher_in.subject_ids is not None:
+        await db.execute(
+            delete(models.teacher_subject_link).where(
+                models.teacher_subject_link.c.organization_id == organization_id,
+                models.teacher_subject_link.c.teacher_id == teacher_id,
+            )
+        )
     if teacher_in.subject_ids is not None and len(teacher_in.subject_ids) > 0:
         query_subjects = select(models.Subject).where(
             models.Subject.id.in_(teacher_in.subject_ids),
@@ -228,10 +247,19 @@ async def update_teacher(
         )
         result_subjects = await db.execute(query_subjects)
         new_subjects = result_subjects.scalars().all()
-        teacher.subjects = list(new_subjects)
-    elif teacher_in.subject_ids is not None:
-        # Se enviou lista vazia, limpa as disciplinas
-        teacher.subjects = []
+        if new_subjects:
+            await db.execute(
+                insert(models.teacher_subject_link).values(
+                    [
+                        {
+                            "organization_id": organization_id,
+                            "teacher_id": teacher_id,
+                            "subject_id": subject.id,
+                        }
+                        for subject in new_subjects
+                    ]
+                )
+            )
 
     # 5. Lógica de User e Email (REFINADA)
     
@@ -272,6 +300,7 @@ async def update_teacher(
     # 6. Gravar tudo na BD
     db.add(teacher)
     await db.commit()
+    db.expire(teacher, ["subjects"])
     
     # 7. Retornar dados frescos (Single Source of Truth)
     return await get_teacher_details(db, teacher_id, organization_id)
@@ -286,6 +315,7 @@ async def get_teacher_details(db: AsyncSession, teacher_id: int, organization_id
             models.Teacher.organization_id == organization_id
         )
         .options(selectinload(models.Teacher.subjects))
+        .execution_options(populate_existing=True)
     )
     
     result = await db.execute(stmt)
@@ -450,10 +480,16 @@ async def set_teacher_availability(
     # 4. Mutação transacional
     try:
         # (outras estratégias são possíveis, mas replace-all mantém consistência simples)
-        await db.execute(delete(Availability).where(Availability.teacher_id == teacher_id))
+        await db.execute(
+            delete(Availability).where(
+                Availability.organization_id == organization_id,
+                Availability.teacher_id == teacher_id,
+            )
+        )
 
         new_records = [
             Availability(
+                organization_id=organization_id,
                 teacher_id=teacher_id,
                 timeslot_id=item.timeslot_id,
                 score=item.score.value  # Guardamos o inteiro (-1, 0, 1, 2)
@@ -508,6 +544,7 @@ async def get_teacher_progress(
         select(models.ClassSubjectLink)
         .join(models.Class, models.ClassSubjectLink.class_id == models.Class.id)
         .where(
+            models.ClassSubjectLink.organization_id == organization_id,
             models.ClassSubjectLink.teacher_id == teacher_id,
             models.Class.organization_id == organization_id,
         )
@@ -541,6 +578,7 @@ async def get_teacher_progress(
     # 3. Buscar progresso de todas as turmas relevantes de uma vez
     if class_ids:
         progress_query = select(models.ClassProgress).where(
+            models.ClassProgress.organization_id == organization_id,
             models.ClassProgress.class_id.in_(class_ids)
         )
         progress_result = await db.execute(progress_query)

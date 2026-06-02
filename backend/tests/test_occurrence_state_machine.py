@@ -11,7 +11,7 @@ from sqlalchemy import select
 from app import models, schemas
 from app.models import LessonOccurrenceStatus
 from app.services import lesson_log_service, occurrence_service
-from test_occurrence_shared import full_setup, SyncTestSession
+from test_occurrence_shared import full_setup, substitution_setup, SyncTestSession
 
 
 class TestOccurrenceStateMachineAndAccounting:
@@ -343,3 +343,252 @@ class TestOccurrenceStateMachineAndAccounting:
         sync_db.rollback()
         still_exists = self._load_occurrence(sync_db, full_setup["schedule_output_id"])
         assert still_exists is not None
+
+
+class TestGivenWithCompletedLogPreventsDoubleCredit:
+    """GIVEN decision must not double-credit when LessonLog.COMPLETED already exists."""
+
+    def test_given_does_not_double_credit_when_lesson_log_completed(self, sync_db, full_setup):
+        from app.models import LessonLogStatus
+        organization_id = full_setup["organization_id"]
+        output = sync_db.get(models.ScheduleOutput, full_setup["schedule_output_id"])
+
+        occurrence, _ = occurrence_service.create_occurrence_from_block_sync(
+            sync_db, organization_id, output.id,
+        )
+
+        # Simulate an equivalent completed LessonLog and its already-applied progress.
+        llog = models.LessonLog(
+            organization_id=organization_id,
+            schedule_output_id=output.id,
+            status=LessonLogStatus.COMPLETED,
+            summary="Aula dada",
+            logged_by_user_id=full_setup["teacher_id"],
+        )
+        sync_db.add(llog)
+        occurrence_service._apply_state_accounting(
+            sync_db,
+            organization_id=organization_id,
+            class_id=full_setup["class_id"],
+            status=LessonOccurrenceStatus.GIVEN,
+            planned_module_id=full_setup["module_id"],
+            executed_module_id=full_setup["module_id"],
+            planned_hours=2.0,
+            direction=1,
+        )
+        sync_db.flush()
+
+        # Record progress before admin decision
+        progress_before = sync_db.execute(
+            select(models.ClassProgress).where(
+                models.ClassProgress.class_id == full_setup["class_id"],
+                models.ClassProgress.module_id == full_setup["module_id"],
+            )
+        ).scalar_one_or_none()
+        hours_before = float(progress_before.hours_completed) if progress_before else 0.0
+
+        occurrence_service.update_occurrence_sync(
+            sync_db, occurrence.id, organization_id,
+            schemas.LessonOccurrenceUpdate(status=LessonOccurrenceStatus.GIVEN, version=occurrence.version),
+            decided_by_user_id=full_setup["admin_id"],
+        )
+
+        # Progress should NOT increase — the LessonLog.COMPLETED already credited it
+        progress_after = sync_db.execute(
+            select(models.ClassProgress).where(
+                models.ClassProgress.class_id == full_setup["class_id"],
+                models.ClassProgress.module_id == full_setup["module_id"],
+            )
+        ).scalar_one()
+        assert progress_after.hours_completed == pytest.approx(hours_before)
+
+
+class TestSubstitutedToGapRedecision:
+    """SUBSTITUTED -> GAP redecision cancels operational block and compensates accounting."""
+
+    def test_substituted_to_gap_redecision_cancels_block(self, sync_db, full_setup, substitution_setup):
+        organization_id = full_setup["organization_id"]
+        output = sync_db.get(models.ScheduleOutput, full_setup["schedule_output_id"])
+
+        # Create and decide SUBSTITUTED
+        occurrence, _ = occurrence_service.create_occurrence_from_block_sync(
+            sync_db, organization_id, output.id,
+        )
+        decided = occurrence_service.update_occurrence_sync(
+            sync_db, occurrence.id, organization_id,
+            schemas.LessonOccurrenceUpdate(
+                status=LessonOccurrenceStatus.SUBSTITUTED,
+                version=occurrence.version,
+                substitute_teacher_id=substitution_setup["substitute_teacher_id"],
+                substitute_subject_id=substitution_setup["substitute_subject_id"],
+            ),
+            decided_by_user_id=full_setup["admin_id"],
+        )
+
+        # Verify operational block exists
+        block = sync_db.execute(
+            select(models.OperationalScheduleBlock).where(
+                models.OperationalScheduleBlock.source_occurrence_id == occurrence.id,
+                models.OperationalScheduleBlock.status == models.OperationalBlockStatus.ACTIVE,
+            )
+        ).scalar_one_or_none()
+        assert block is not None
+
+        # Redecide to GAP
+        updated = occurrence_service.update_occurrence_sync(
+            sync_db, occurrence.id, organization_id,
+            schemas.LessonOccurrenceUpdate(
+                status=LessonOccurrenceStatus.GAP,
+                version=decided.version,
+            ),
+            decided_by_user_id=full_setup["admin_id"],
+        )
+        assert updated.status == LessonOccurrenceStatus.GAP
+
+        # Operational block should be cancelled
+        block_after = sync_db.execute(
+            select(models.OperationalScheduleBlock).where(
+                models.OperationalScheduleBlock.source_occurrence_id == occurrence.id,
+                models.OperationalScheduleBlock.source_occurrence_revision == occurrence.revision,
+            )
+        ).scalar_one()
+        assert block_after.status == models.OperationalBlockStatus.CANCELLED
+
+        # Debt should be on the planned module (GAP creates debt)
+        planned_progress = sync_db.execute(
+            select(models.ClassProgress).where(
+                models.ClassProgress.class_id == full_setup["class_id"],
+                models.ClassProgress.module_id == full_setup["module_id"],
+            )
+        ).scalar_one()
+        assert planned_progress.hours_debt == pytest.approx(2.0)
+
+    def test_substituted_to_gap_blocks_if_completed_log(self, sync_db, full_setup, substitution_setup):
+        """SUBSTITUTED->GAP should block if substitute already completed the log and timesheet is open."""
+        from app.models import LessonLogStatus
+        organization_id = full_setup["organization_id"]
+        output = sync_db.get(models.ScheduleOutput, full_setup["schedule_output_id"])
+
+        # Create and decide SUBSTITUTED
+        occurrence, _ = occurrence_service.create_occurrence_from_block_sync(
+            sync_db, organization_id, output.id,
+        )
+        decided = occurrence_service.update_occurrence_sync(
+            sync_db, occurrence.id, organization_id,
+            schemas.LessonOccurrenceUpdate(
+                status=LessonOccurrenceStatus.SUBSTITUTED,
+                version=occurrence.version,
+                substitute_teacher_id=substitution_setup["substitute_teacher_id"],
+                substitute_subject_id=substitution_setup["substitute_subject_id"],
+            ),
+            decided_by_user_id=full_setup["admin_id"],
+        )
+
+        # Substitute marks the operational block as COMPLETED
+        block = sync_db.execute(
+            select(models.OperationalScheduleBlock).where(
+                models.OperationalScheduleBlock.source_occurrence_id == occurrence.id,
+                models.OperationalScheduleBlock.status == models.OperationalBlockStatus.ACTIVE,
+            )
+        ).scalar_one()
+        from app.services import lesson_log_service
+        lesson_log_service.upsert_operational_lesson_log_sync(
+            sync_db, organization_id, full_setup["admin_id"], block.id,
+            schemas.LessonLogCreate(status=LessonLogStatus.COMPLETED, summary="Aula substituta"),
+        )
+
+        # Redecide to GAP without cancel_completed_substitute_log should fail
+        with pytest.raises(occurrence_service.OccurrenceServiceError) as exc_info:
+            occurrence_service.update_occurrence_sync(
+                sync_db, occurrence.id, organization_id,
+                schemas.LessonOccurrenceUpdate(
+                    status=LessonOccurrenceStatus.GAP,
+                    version=decided.version,
+                ),
+                decided_by_user_id=full_setup["admin_id"],
+            )
+        assert exc_info.value.status_code == 409
+        assert "SUBSTITUTE_LOG_LOCKED" in exc_info.value.detail
+
+
+class TestCompletedSubstitutionRedecision:
+    """Tests for redecision after substitution is already completed."""
+
+    def test_substituted_to_substituted_identical_is_idempotent(self, sync_db, full_setup, substitution_setup):
+        """SUBSTITUTED -> SUBSTITUTED with same teacher/subject is idempotent."""
+        organization_id = full_setup["organization_id"]
+        output = sync_db.get(models.ScheduleOutput, full_setup["schedule_output_id"])
+
+        occurrence, _ = occurrence_service.create_occurrence_from_block_sync(
+            sync_db, organization_id, output.id,
+        )
+        occurrence_service.update_occurrence_sync(
+            sync_db, occurrence.id, organization_id,
+            schemas.LessonOccurrenceUpdate(
+                status=LessonOccurrenceStatus.SUBSTITUTED,
+                version=occurrence.version,
+                substitute_teacher_id=substitution_setup["substitute_teacher_id"],
+                substitute_subject_id=substitution_setup["substitute_subject_id"],
+            ),
+            decided_by_user_id=full_setup["admin_id"],
+        )
+
+        # Idempotent retry with same payload
+        result = occurrence_service.update_occurrence_sync(
+            sync_db, occurrence.id, organization_id,
+            schemas.LessonOccurrenceUpdate(
+                status=LessonOccurrenceStatus.SUBSTITUTED,
+                version=occurrence.version,
+                substitute_teacher_id=substitution_setup["substitute_teacher_id"],
+                substitute_subject_id=substitution_setup["substitute_subject_id"],
+            ),
+            decided_by_user_id=full_setup["admin_id"],
+        )
+        assert result.status == LessonOccurrenceStatus.SUBSTITUTED
+
+    def test_substituted_to_substituted_different_teacher_blocked_if_completed(self, sync_db, full_setup, substitution_setup):
+        """SUBSTITUTED -> SUBSTITUTED with different teacher is blocked if completed log exists."""
+        from app.models import LessonLogStatus
+        organization_id = full_setup["organization_id"]
+        output = sync_db.get(models.ScheduleOutput, full_setup["schedule_output_id"])
+
+        occurrence, _ = occurrence_service.create_occurrence_from_block_sync(
+            sync_db, organization_id, output.id,
+        )
+        occurrence_service.update_occurrence_sync(
+            sync_db, occurrence.id, organization_id,
+            schemas.LessonOccurrenceUpdate(
+                status=LessonOccurrenceStatus.SUBSTITUTED,
+                version=occurrence.version,
+                substitute_teacher_id=substitution_setup["substitute_teacher_id"],
+                substitute_subject_id=substitution_setup["substitute_subject_id"],
+            ),
+            decided_by_user_id=full_setup["admin_id"],
+        )
+
+        # Substitute completes the block
+        block = sync_db.execute(
+            select(models.OperationalScheduleBlock).where(
+                models.OperationalScheduleBlock.source_occurrence_id == occurrence.id,
+                models.OperationalScheduleBlock.status == models.OperationalBlockStatus.ACTIVE,
+            )
+        ).scalar_one()
+        from app.services import lesson_log_service
+        lesson_log_service.upsert_operational_lesson_log_sync(
+            sync_db, organization_id, full_setup["admin_id"], block.id,
+            schemas.LessonLogCreate(status=LessonLogStatus.COMPLETED, summary="done"),
+        )
+
+        # Try to change to a different substitute → should be blocked
+        with pytest.raises(occurrence_service.OccurrenceServiceError) as exc_info:
+            occurrence_service.update_occurrence_sync(
+                sync_db, occurrence.id, organization_id,
+                schemas.LessonOccurrenceUpdate(
+                    status=LessonOccurrenceStatus.SUBSTITUTED,
+                    version=occurrence.version + 1,
+                    substitute_teacher_id=substitution_setup["candidate_b_teacher_id"],
+                    substitute_subject_id=substitution_setup["candidate_b_subject_id"],
+                ),
+                decided_by_user_id=full_setup["admin_id"],
+            )
+        assert exc_info.value.status_code == 409

@@ -10,6 +10,7 @@ from typing import AsyncGenerator
 from uuid import uuid4
 from httpx import AsyncClient, ASGITransport
 from sqlalchemy import create_engine
+from sqlalchemy import text
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.pool import NullPool
@@ -35,6 +36,21 @@ async def db_session() -> AsyncGenerator[AsyncSession, None]:
     async with test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
+        await conn.execute(
+            text(
+                """
+                DO $$
+                BEGIN
+                    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'cronos_auth_definer') THEN
+                        GRANT USAGE, SELECT
+                        ON SEQUENCE public.organization_id_seq, public.user_id_seq
+                        TO cronos_auth_definer;
+                    END IF;
+                END
+                $$;
+                """
+            )
+        )
     async with TestingSessionLocal() as session:
         app.dependency_overrides[get_db] = lambda: session
         yield session

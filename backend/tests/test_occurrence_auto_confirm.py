@@ -89,5 +89,13 @@ class TestAutoConfirmService:
         assert len(result.items) == 1
 
     def test_get_occurrence_returns_none_for_wrong_org(self, sync_db, full_setup):
-        result = occurrence_service.get_occurrence_sync(sync_db, 9999, organization_id=9999)
+        """Verify cross-tenant isolation: different org_id returns None."""
+        occurrence_id = full_setup.get("occurrence_id")
+        if occurrence_id is None:
+            # Create an occurrence first
+            occurrence, _ = occurrence_service.create_occurrence_from_block_sync(
+                sync_db, full_setup["organization_id"], full_setup["schedule_output_id"],
+            )
+            occurrence_id = occurrence.id
+        result = occurrence_service.get_occurrence_sync(sync_db, occurrence_id, organization_id=9999)
         assert result is None

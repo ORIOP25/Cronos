@@ -36,7 +36,7 @@ async def draft_setup(db_session: AsyncSession):
     Retorna dict com IDs e credenciais de admin.
     """
     # Organization
-    org = models.Organization(name="Escola Sprint 3", plan_status="active")
+    org = models.Organization(name="Escola Sprint 3", clerk_org_id="org_001", plan_status="active")
     db_session.add(org)
     await db_session.flush()
 

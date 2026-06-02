@@ -74,3 +74,23 @@ Gate de release:
 
 ### Base de dados
 - persistencia segura, transacional e auditavel.
+## Database Tenant Isolation
+
+Tenant-owned database access must use direct `organization_id` ownership plus
+PostgreSQL RLS. The canonical session setting is
+`app.current_organization_id`, set transaction-locally with
+`set_config(..., true)`. Missing, empty, malformed, zero, negative, or
+out-of-range tenant settings fail closed through
+`app_security.current_organization_id()`.
+
+Every tenant-owned table must either be `organization` itself or carry a
+non-null `organization_id`. Link and derived tables are not allowed to infer
+tenant ownership only through parent rows. Same-tenant references are enforced
+by database validation triggers in the RLS migration, with app-level tenant
+filters kept as defense in depth.
+
+Authenticated API dependencies must reject users without an organization before
+tenant data access and set the tenant context before normal ORM reads/writes.
+Worker jobs must do the same with the sync tenant helper before calling
+tenant-scoped services. Public endpoints must not set tenant context and must
+not query tenant-owned data.

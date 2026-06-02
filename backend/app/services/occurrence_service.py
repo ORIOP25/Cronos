@@ -8,6 +8,7 @@ Responsabilidades:
 """
 from __future__ import annotations
 
+import uuid as _uuid
 from collections import defaultdict
 from datetime import date, datetime, timezone, timedelta
 from types import SimpleNamespace
@@ -25,8 +26,8 @@ from app.core.task_keys import DEFAULT_REPAIR_WINDOW_DAYS
 # ---------------------------------------------------------------------------
 # Constantes
 # ---------------------------------------------------------------------------
-OCCURRENCE_NOT_FOUND = "Ocorrência não encontrada"
-ERR_INVALID_TRANSITION = "Transição inválida de estado da ocorrência"
+OCCURRENCE_NOT_FOUND = "OCCURRENCE_NOT_FOUND"
+ERR_INVALID_TRANSITION = "OCCURRENCE_INVALID_TRANSITION"
 ERR_DESTRUCTIVE_OVERWRITE = "Ocorrência já finalizada; alteração destrutiva bloqueada"
 ERR_MISSING_SCHEDULE_CONTEXT = "Ocorrência sem contexto de aula planeada"
 ERR_SUBJECT_OUTSIDE_ORG = "Disciplina substituta inválida para esta organização"
@@ -38,6 +39,7 @@ ERR_SUBSTITUTE_SLOT_CONFLICT = "Candidato em conflito de horário no mesmo slot"
 ERR_SUBSTITUTE_IMPOSSIBLE_AVAILABILITY = "Candidato indisponível para o slot (IMPOSSIBLE)"
 ERR_SUBSTITUTE_ROOM_MISMATCH = "Tipo de sala incompatível com a disciplina substituta"
 ERR_SUBSTITUTE_SAME_PLANNED_TEACHER = "Docente previsto não pode ser confirmado como substituto"
+ERR_SUBSTITUTE_SAME_SUBJECT = "Disciplina substituta não pode ser igual à disciplina planeada"
 ERR_SCHEDULE_OUTPUT_NOT_FOUND = "Bloco planeado não encontrado"
 ERR_SCHEDULE_OUTPUT_IS_DRAFT = "Bloco de rascunho não pode iniciar ocorrência operacional"
 ERR_SCHEDULE_OUTPUT_NO_DATE = "Bloco sem data válida para criação de ocorrência"
@@ -487,9 +489,10 @@ def _validate_substitute_for_occurrence(
     if substitute_teacher_id == lesson.teacher_id:
         raise OccurrenceServiceError(status_code=409, detail=ERR_SUBSTITUTE_SAME_PLANNED_TEACHER)
 
-    # Nota: permitir substituição com a mesma disciplina é um cenário válido
-    # (ex: prof. de Matemática falta → outro prof. de Matemática substitui).
-    # A validação de elegibilidade é feita pela query de link abaixo.
+    # Regra de domínio: substituição exige disciplina diferente da planeada.
+    # O substituto dá a sua própria disciplina na mesma turma.
+    if substitute_subject_id == lesson.subject_id:
+        raise OccurrenceServiceError(status_code=422, detail=ERR_SUBSTITUTE_SAME_SUBJECT)
 
     link = db.execute(
         select(models.ClassSubjectLink)
@@ -723,6 +726,7 @@ def _resolve_active_module_id_by_subject_id(
 
 def _get_or_create_progress(
     db: Session,
+    organization_id: int,
     class_id: int,
     module_id: int,
 ) -> models.ClassProgress:
@@ -739,6 +743,7 @@ def _get_or_create_progress(
         return progress
 
     progress = models.ClassProgress(
+        organization_id=organization_id,
         class_id=class_id,
         module_id=module_id,
         hours_completed=0.0,
@@ -752,6 +757,7 @@ def _get_or_create_progress(
 
 def _apply_module_delta(
     db: Session,
+    organization_id: int,
     class_id: int,
     module_id: Optional[int],
     completed_delta: float,
@@ -764,7 +770,7 @@ def _apply_module_delta(
     if module is None:
         raise OccurrenceServiceError(status_code=422, detail=ERR_MISSING_EXECUTED_MODULE)
 
-    progress = _get_or_create_progress(db, class_id, module_id)
+    progress = _get_or_create_progress(db, organization_id, class_id, module_id)
 
     new_completed = float(progress.hours_completed) + completed_delta
     new_debt = float(progress.hours_debt) + debt_delta
@@ -837,7 +843,15 @@ def _ensure_operational_schedule_block(
 def _cancel_operational_blocks_for_occurrence(
     db: Session,
     occurrence: models.LessonOccurrence,
+    *,
+    organization_id: int,
+    cancelled_by_user_id: Optional[int] = None,
+    cancel_completed_substitute_log: bool = False,
 ) -> None:
+    """Cancela blocos operacionais de uma ocorrência SUBSTITUTED.
+
+    Se houver LessonLog COMPLETED, verifica timesheet e compensa progresso.
+    """
     blocks = list(db.execute(
         select(models.OperationalScheduleBlock).where(
             and_(
@@ -847,14 +861,69 @@ def _cancel_operational_blocks_for_occurrence(
             )
         )
     ).scalars())
+    now = datetime.now(timezone.utc)
     for block in blocks:
+        block_operation_id = str(_uuid.uuid4())
+        op_log = db.execute(
+            select(models.LessonLog).where(
+                models.LessonLog.operational_block_id == block.id,
+            )
+        ).scalars().first()
+        if op_log is not None and op_log.status == models.LessonLogStatus.COMPLETED:
+            next_log_revision = int(op_log.version or 1) + 1
+            week_start = block.date - timedelta(days=block.date.weekday())
+            timesheet = db.execute(
+                select(models.TeacherWeeklyTimesheet).where(
+                    and_(
+                        models.TeacherWeeklyTimesheet.organization_id == organization_id,
+                        models.TeacherWeeklyTimesheet.teacher_id == block.teacher_id,
+                        models.TeacherWeeklyTimesheet.week_start_date == week_start,
+                    )
+                )
+            ).scalars().first()
+            if timesheet and timesheet.status in (models.TimesheetStatus.SUBMITTED, models.TimesheetStatus.APPROVED):
+                raise OccurrenceServiceError(status_code=409, detail=ERR_SUBSTITUTE_LOG_LOCKED)
+            if not cancel_completed_substitute_log:
+                raise OccurrenceServiceError(status_code=409, detail=ERR_SUBSTITUTE_LOG_LOCKED)
+            block_hours = _duration_hours(block.date, block.timeslot)
+            if block_hours > 0 and block.module_id is not None:
+                _apply_state_accounting(
+                    db,
+                    organization_id=organization_id,
+                    class_id=block.class_id,
+                    status=models.LessonOccurrenceStatus.GIVEN,
+                    planned_module_id=block.module_id,
+                    executed_module_id=block.module_id,
+                    planned_hours=block_hours,
+                    direction=-1,
+                )
+                _record_progress_ledger_entries(
+                    db,
+                    organization_id=organization_id,
+                    source_type="LESSON_LOG",
+                    source_id=op_log.id,
+                    source_revision=next_log_revision,
+                    class_id=block.class_id,
+                    status=models.LessonOccurrenceStatus.GIVEN,
+                    planned_module_id=block.module_id,
+                    executed_module_id=block.module_id,
+                    planned_hours=block_hours,
+                    direction=-1,
+                    actor_user_id=cancelled_by_user_id,
+                    operation_id=block_operation_id,
+                )
+            op_log.status = models.LessonLogStatus.PENDING
+            op_log.version = next_log_revision
+            op_log.logged_by_user_id = cancelled_by_user_id
+            op_log.logged_at = now
         block.status = models.OperationalBlockStatus.CANCELLED
         block.execution_status = models.OperationalBlockExecutionStatus.CANCELLED
-        block.cancelled_at = datetime.now(timezone.utc)
+        block.cancelled_at = now
 
 
 def _apply_state_accounting(
     db: Session,
+    organization_id: int,
     class_id: int,
     status: models.LessonOccurrenceStatus,
     planned_module_id: Optional[int],
@@ -870,6 +939,7 @@ def _apply_state_accounting(
     if status == models.LessonOccurrenceStatus.GIVEN:
         _apply_module_delta(
             db,
+            organization_id=organization_id,
             class_id=class_id,
             module_id=planned_module_id,
             completed_delta=delta,
@@ -880,6 +950,7 @@ def _apply_state_accounting(
     if status == models.LessonOccurrenceStatus.GAP:
         _apply_module_delta(
             db,
+            organization_id=organization_id,
             class_id=class_id,
             module_id=planned_module_id,
             completed_delta=0.0,
@@ -896,6 +967,7 @@ def _apply_state_accounting(
 
         _apply_module_delta(
             db,
+            organization_id=organization_id,
             class_id=class_id,
             module_id=planned_module_id,
             completed_delta=0.0,
@@ -940,7 +1012,10 @@ def _record_progress_ledger_entries(
     planned_hours: float,
     direction: int,
     actor_user_id: Optional[int] = None,
+    operation_id: Optional[str] = None,
 ) -> None:
+    op_id = operation_id or str(_uuid.uuid4())
+
     for index, (module_id, completed_delta, debt_delta) in enumerate(
         _ledger_deltas_for_state(status, planned_module_id, executed_module_id, planned_hours, direction)
     ):
@@ -948,7 +1023,8 @@ def _record_progress_ledger_entries(
             continue
         idempotency_key = (
             f"{organization_id}:{source_type}:{source_id}:"
-            f"{source_revision or 0}:{status.value}:{direction}:{module_id}:{index}"
+            f"{source_revision or 0}:{status.value}:{direction}:{module_id}:{index}:"
+            f"{op_id}"
         )
         exists = db.query(models.ProgressLedgerEntry).filter(
             models.ProgressLedgerEntry.idempotency_key == idempotency_key
@@ -977,15 +1053,21 @@ def _is_idempotent_payload(
     if occurrence.decided_at is None:
         return False
 
-    current_version = int(occurrence.version or 1)
-    if int(payload.version) not in {current_version, current_version - 1}:
-        return False
-
-    return (
+    decision_matches = (
         occurrence.status == payload.status
         and occurrence.substitute_teacher_id == payload.substitute_teacher_id
         and occurrence.substitute_subject_id == payload.substitute_subject_id
     )
+    if not decision_matches:
+        return False
+
+    current_version = int(occurrence.version or 1)
+    payload_version = int(payload.version)
+
+    # A retry can arrive after the first identical request committed and
+    # bumped the occurrence version. Accept only the current version or the
+    # immediately previous version for an identical payload.
+    return payload_version in {current_version, current_version - 1}
 
 
 def _validate_state_transition(
@@ -997,7 +1079,7 @@ def _validate_state_transition(
         raise OccurrenceServiceError(status_code=409, detail=ERR_INACTIVE)
 
     if occurrence.status == models.LessonOccurrenceStatus.REVOKED:
-        raise OccurrenceServiceError(status_code=409, detail="Ocorrência revertida não pode ser alterada.")
+        raise OccurrenceServiceError(status_code=409, detail="OCCURRENCE_REVOKED")
 
     if occurrence.decided_at is None:
         return
@@ -1164,6 +1246,7 @@ def cancel_open_occurrence_for_block_sync(
         models.LessonOccurrence.organization_id == organization_id,
         models.LessonOccurrence.schedule_output_id == schedule_output_id,
         models.LessonOccurrence.decided_at.is_(None),
+        models.LessonOccurrence.is_active.is_(True),
     ).first()
 
     if occurrence is None:
@@ -1171,8 +1254,8 @@ def cancel_open_occurrence_for_block_sync(
 
     occurrence.status = models.LessonOccurrenceStatus.REVOKED
     occurrence.is_active = False
-    occurrence.decided_at = datetime.now(timezone.utc)
     occurrence.revoked_at = datetime.now(timezone.utc)
+    occurrence.revoked_reason = "Revertido pelo professor"
     _touch_occurrence_version(occurrence)
     db.flush()
     return True
@@ -1190,23 +1273,22 @@ def cancel_occurrence_sync(
     """Marca uma LessonOccurrence como REVOKED e reverte o LessonLog.
 
     - Se a ocorrência já foi decidida: reverte a contabilidade
-    - Se era SUBSTITUTED: remove o ScheduleOutput do substituto
+    - Se era SUBSTITUTED: cancela blocos operacionais do substituto
     - Marca a ocorrência como REVOKED (persiste para auditoria)
     - Reverte o LessonLog associado para PENDING
 
     Retorna {"cancelled": True, "schedule_output_id": int}
     """
-    occurrence = db.query(models.LessonOccurrence).filter(
-        models.LessonOccurrence.id == occurrence_id,
-        models.LessonOccurrence.organization_id == organization_id,
-    ).first()
+    now = datetime.now(timezone.utc)
+
+    occurrence = _get_occurrence_for_update_sync(db, occurrence_id, organization_id)
 
     if occurrence is None:
-        raise OccurrenceServiceError(status_code=404, detail="Ocorrência não encontrada.")
+        raise OccurrenceServiceError(status_code=404, detail=OCCURRENCE_NOT_FOUND)
 
     # V4: REVOKED é imutável
     if occurrence.status == models.LessonOccurrenceStatus.REVOKED:
-        raise OccurrenceServiceError(status_code=409, detail="Ocorrência revertida não pode ser alterada.")
+        raise OccurrenceServiceError(status_code=409, detail="OCCURRENCE_REVOKED")
 
     _assert_occurrence_version(occurrence, version)
 
@@ -1215,176 +1297,88 @@ def cancel_occurrence_sync(
 
     schedule_output_id = occurrence.schedule_output_id
 
-    if occurrence.status == models.LessonOccurrenceStatus.SUBSTITUTED:
-        blocks_to_cancel = list(db.execute(
-            select(models.OperationalScheduleBlock).where(
-                and_(
-                    models.OperationalScheduleBlock.source_occurrence_id == occurrence.id,
-                    models.OperationalScheduleBlock.source_occurrence_revision == occurrence.revision,
-                    models.OperationalScheduleBlock.status == models.OperationalBlockStatus.ACTIVE,
-                )
-            )
-        ).scalars())
-        for block in blocks_to_cancel:
-            completed_operational_log = db.query(models.LessonLog.id).filter(
-                models.LessonLog.operational_block_id == block.id,
-                models.LessonLog.status == models.LessonLogStatus.COMPLETED,
-            ).first()
-            if completed_operational_log is None:
-                continue
-            week_start = block.date - timedelta(days=block.date.weekday())
-            timesheet = db.query(models.TeacherWeeklyTimesheet).filter(
-                models.TeacherWeeklyTimesheet.organization_id == organization_id,
-                models.TeacherWeeklyTimesheet.teacher_id == block.teacher_id,
-                models.TeacherWeeklyTimesheet.week_start_date == week_start,
-            ).first()
-            if timesheet and timesheet.status in (models.TimesheetStatus.SUBMITTED, models.TimesheetStatus.APPROVED):
-                raise OccurrenceServiceError(status_code=409, detail=ERR_SUBSTITUTE_LOG_LOCKED)
-            if not cancel_completed_substitute_log:
-                raise OccurrenceServiceError(status_code=409, detail=ERR_SUBSTITUTE_LOG_LOCKED)
+    try:
+        cancel_operation_id = str(_uuid.uuid4())
+        # Reverter contabilidade se a ocorrência foi decidida
+        if occurrence.decided_at is not None:
+            schedule_output = occurrence.schedule_output
+            if schedule_output is not None and schedule_output.lesson is not None:
+                class_id = schedule_output.lesson.class_id
+                planned_module_id = occurrence.planned_module_id
+                executed_module_id = occurrence.executed_module_id
+                planned_hours = occurrence.planned_hours or 0.0
 
-    # Reverter contabilidade se a ocorrência foi decidida
-    if occurrence.decided_at is not None:
-        schedule_output = occurrence.schedule_output
-        if schedule_output is not None and schedule_output.lesson is not None:
-            class_id = schedule_output.lesson.class_id
-            planned_module_id = occurrence.planned_module_id
-            executed_module_id = occurrence.executed_module_id
-            planned_hours = occurrence.planned_hours or 0.0
-
-            if planned_module_id is None and schedule_output.lesson.subject is not None:
-                planned_module_id = _resolve_active_module_id_for_subject(
-                    db,
-                    class_id=class_id,
-                    subject=schedule_output.lesson.subject,
-                )
-
-            if planned_hours > 0 and planned_module_id is not None:
-                _apply_state_accounting(
-                    db,
-                    class_id=class_id,
-                    status=occurrence.status,
-                    planned_module_id=planned_module_id,
-                    executed_module_id=executed_module_id,
-                    planned_hours=planned_hours,
-                    direction=-1,
-                )
-                _record_progress_ledger_entries(
-                    db,
-                    organization_id=organization_id,
-                    source_type="OCCURRENCE_REVERSAL",
-                    source_id=occurrence.id,
-                    source_revision=occurrence.revision,
-                    class_id=class_id,
-                    status=occurrence.status,
-                    planned_module_id=planned_module_id,
-                    executed_module_id=executed_module_id,
-                    planned_hours=planned_hours,
-                    direction=-1,
-                    actor_user_id=cancelled_by_user_id,
-                )
-
-            # V4: Pre-V4 SUBSTITUTED occurrences had _apply_module_delta on the executed
-            # module (credit removed in V3.1). Reverse that legacy credit if it exists.
-            has_completed_operational_log = db.query(models.LessonLog.id).join(
-                models.OperationalScheduleBlock,
-                models.LessonLog.operational_block_id == models.OperationalScheduleBlock.id,
-            ).filter(
-                models.OperationalScheduleBlock.source_occurrence_id == occurrence.id,
-                models.OperationalScheduleBlock.source_occurrence_revision == occurrence.revision,
-                models.LessonLog.status == models.LessonLogStatus.COMPLETED,
-            ).first() is not None
-            if occurrence.status == models.LessonOccurrenceStatus.SUBSTITUTED \
-                    and executed_module_id is not None \
-                    and not has_completed_operational_log \
-                    and planned_hours > 0:
-                executed_progress = _get_or_create_progress(db, class_id, executed_module_id)
-                if float(executed_progress.hours_completed) >= planned_hours:
-                    _apply_module_delta(
+                if planned_module_id is None and schedule_output.lesson.subject is not None:
+                    planned_module_id = _resolve_active_module_id_for_subject(
                         db,
                         class_id=class_id,
-                        module_id=executed_module_id,
-                        completed_delta=-planned_hours,
-                        debt_delta=0.0,
+                        subject=schedule_output.lesson.subject,
                     )
 
-        # Se era SUBSTITUTED, cancela os blocos operacionais do substituto.
-        if occurrence.status == models.LessonOccurrenceStatus.SUBSTITUTED:
-            blocks = list(db.execute(
-                select(models.OperationalScheduleBlock).where(
-                    and_(
-                        models.OperationalScheduleBlock.source_occurrence_id == occurrence.id,
-                        models.OperationalScheduleBlock.source_occurrence_revision == occurrence.revision,
-                        models.OperationalScheduleBlock.status == models.OperationalBlockStatus.ACTIVE,
+                if planned_hours > 0 and planned_module_id is not None:
+                    _apply_state_accounting(
+                        db,
+                        organization_id=organization_id,
+                        class_id=class_id,
+                        status=occurrence.status,
+                        planned_module_id=planned_module_id,
+                        executed_module_id=executed_module_id,
+                        planned_hours=planned_hours,
+                        direction=-1,
                     )
+                    _record_progress_ledger_entries(
+                        db,
+                        organization_id=organization_id,
+                        source_type="OCCURRENCE_REVERSAL",
+                        source_id=occurrence.id,
+                        source_revision=occurrence.revision,
+                        class_id=class_id,
+                        status=occurrence.status,
+                        planned_module_id=planned_module_id,
+                        executed_module_id=executed_module_id,
+                        planned_hours=planned_hours,
+                        direction=-1,
+                        actor_user_id=cancelled_by_user_id,
+                        operation_id=cancel_operation_id,
+                    )
+
+            # Se era SUBSTITUTED, cancela os blocos operacionais do substituto.
+            if occurrence.status == models.LessonOccurrenceStatus.SUBSTITUTED:
+                _cancel_operational_blocks_for_occurrence(
+                    db, occurrence,
+                    organization_id=organization_id,
+                    cancelled_by_user_id=cancelled_by_user_id,
+                    cancel_completed_substitute_log=cancel_completed_substitute_log,
                 )
-            ).scalars())
-            for block in blocks:
-                op_log = db.query(models.LessonLog).filter(
-                    models.LessonLog.operational_block_id == block.id,
-                ).first()
-                if op_log is not None and op_log.status == models.LessonLogStatus.COMPLETED:
-                    week_start = block.date - timedelta(days=block.date.weekday())
-                    timesheet = db.query(models.TeacherWeeklyTimesheet).filter(
-                        models.TeacherWeeklyTimesheet.organization_id == organization_id,
-                        models.TeacherWeeklyTimesheet.teacher_id == block.teacher_id,
-                        models.TeacherWeeklyTimesheet.week_start_date == week_start,
-                    ).first()
-                    if timesheet and timesheet.status in (models.TimesheetStatus.SUBMITTED, models.TimesheetStatus.APPROVED):
-                        raise OccurrenceServiceError(status_code=409, detail=ERR_SUBSTITUTE_LOG_LOCKED)
-                    if not cancel_completed_substitute_log:
-                        raise OccurrenceServiceError(status_code=409, detail=ERR_SUBSTITUTE_LOG_LOCKED)
-                    block_hours = _duration_hours(block.date, block.timeslot)
-                    if block_hours > 0 and block.module_id is not None:
-                        _apply_state_accounting(
-                            db,
-                            class_id=block.class_id,
-                            status=models.LessonOccurrenceStatus.GIVEN,
-                            planned_module_id=block.module_id,
-                            executed_module_id=block.module_id,
-                            planned_hours=block_hours,
-                            direction=-1,
-                        )
-                        _record_progress_ledger_entries(
-                            db,
-                            organization_id=organization_id,
-                            source_type="LESSON_LOG",
-                            source_id=op_log.id,
-                            source_revision=None,
-                            class_id=block.class_id,
-                            status=models.LessonOccurrenceStatus.GIVEN,
-                            planned_module_id=block.module_id,
-                            executed_module_id=block.module_id,
-                            planned_hours=block_hours,
-                            direction=-1,
-                            actor_user_id=cancelled_by_user_id,
-                        )
-                    op_log.status = models.LessonLogStatus.PENDING
-                    op_log.logged_by_user_id = cancelled_by_user_id
-                    op_log.logged_at = datetime.now(timezone.utc)
-                block.status = models.OperationalBlockStatus.CANCELLED
-                block.execution_status = models.OperationalBlockExecutionStatus.CANCELLED
-                block.cancelled_at = datetime.now(timezone.utc)
 
-    # Reverter LessonLog para PENDING
-    lesson_log = db.query(models.LessonLog).filter(
-        models.LessonLog.schedule_output_id == schedule_output_id,
-    ).first()
-    if lesson_log is not None:
-        lesson_log.status = models.LessonLogStatus.PENDING
-        lesson_log.logged_by_user_id = cancelled_by_user_id
-        lesson_log.logged_at = datetime.now(timezone.utc)
+        # Reverter LessonLog para PENDING
+        lesson_log = db.execute(
+            select(models.LessonLog).where(
+                models.LessonLog.schedule_output_id == schedule_output_id,
+            )
+        ).scalars().first()
+        if lesson_log is not None:
+            lesson_log.status = models.LessonLogStatus.PENDING
+            lesson_log.version = int(lesson_log.version or 1) + 1
+            lesson_log.logged_by_user_id = cancelled_by_user_id
+            lesson_log.logged_at = now
 
-    # V4: Marcar REVOKED em vez de apagar (auditoria)
-    occurrence.status = models.LessonOccurrenceStatus.REVOKED
-    occurrence.is_active = False
-    occurrence.decided_at = datetime.now(timezone.utc)
-    occurrence.decided_by_user_id = cancelled_by_user_id
-    occurrence.revoked_at = datetime.now(timezone.utc)
-    occurrence.revoked_by_user_id = cancelled_by_user_id
-    occurrence.revoked_reason = reason
-    _touch_occurrence_version(occurrence)
-    db.commit()
+        # V4: Marcar REVOKED em vez de apagar (auditoria)
+        occurrence.status = models.LessonOccurrenceStatus.REVOKED
+        occurrence.is_active = False
+        occurrence.decided_by_user_id = cancelled_by_user_id
+        occurrence.revoked_at = now
+        occurrence.revoked_by_user_id = cancelled_by_user_id
+        occurrence.revoked_reason = reason
+        _touch_occurrence_version(occurrence)
+        db.commit()
+
+    except OccurrenceServiceError:
+        db.rollback()
+        raise
+    except Exception:
+        db.rollback()
+        raise
 
     return {"cancelled": True, "schedule_output_id": schedule_output_id, "revision": occurrence.revision}
 
@@ -1521,6 +1515,34 @@ def update_occurrence_sync(
 
     _validate_state_transition(occurrence, payload)
 
+    # SUBSTITUTED -> SUBSTITUTED redecision: only allow if identical (idempotent retry).
+    # If teacher/subject differ and a completed operational log exists, block.
+    if (occurrence.status == models.LessonOccurrenceStatus.SUBSTITUTED
+            and occurrence.decided_at is not None
+            and payload.status == models.LessonOccurrenceStatus.SUBSTITUTED):
+        is_identical = (
+            occurrence.substitute_teacher_id == payload.substitute_teacher_id
+            and occurrence.substitute_subject_id == payload.substitute_subject_id
+        )
+        if not is_identical:
+            has_completed_log = db.execute(
+                select(models.LessonLog.id).join(
+                    models.OperationalScheduleBlock,
+                    models.LessonLog.operational_block_id == models.OperationalScheduleBlock.id,
+                ).where(
+                    and_(
+                        models.OperationalScheduleBlock.source_occurrence_id == occurrence.id,
+                        models.OperationalScheduleBlock.source_occurrence_revision == occurrence.revision,
+                        models.LessonLog.status == models.LessonLogStatus.COMPLETED,
+                    )
+                )
+            ).first() is not None
+            if has_completed_log:
+                raise OccurrenceServiceError(
+                    status_code=409,
+                    detail="SUBSTITUTE_LOG_LOCKED",
+                )
+
     if occurrence.schedule_output is None or occurrence.schedule_output.lesson is None:
         raise OccurrenceServiceError(status_code=422, detail=ERR_MISSING_SCHEDULE_CONTEXT)
 
@@ -1570,9 +1592,24 @@ def update_occurrence_sync(
         hours_given = planned_hours
 
     try:
+        decision_operation_id = str(_uuid.uuid4())
+        # PRD §6.6: GIVEN progresso apenas se nao existir log completed equivalente
+        has_completed_lesson_log = False
+        if payload.status == models.LessonOccurrenceStatus.GIVEN:
+            completed_log = db.execute(
+                select(models.LessonLog.id).where(
+                    and_(
+                        models.LessonLog.schedule_output_id == occurrence.schedule_output_id,
+                        models.LessonLog.status == models.LessonLogStatus.COMPLETED,
+                    )
+                )
+            ).first()
+            has_completed_lesson_log = completed_log is not None
+
         if occurrence.decided_at is not None:
             _apply_state_accounting(
                 db,
+                organization_id=organization_id,
                 class_id=class_id,
                 status=occurrence.status,
                 planned_module_id=planned_module_id,
@@ -1593,31 +1630,36 @@ def update_occurrence_sync(
                 planned_hours=planned_hours,
                 direction=-1,
                 actor_user_id=decided_by_user_id,
+                operation_id=decision_operation_id,
             )
 
-        _apply_state_accounting(
-            db,
-            class_id=class_id,
-            status=payload.status,
-            planned_module_id=planned_module_id,
-            executed_module_id=executed_module_id,
-            planned_hours=planned_hours,
-            direction=1,
-        )
-        _record_progress_ledger_entries(
-            db,
-            organization_id=organization_id,
-            source_type="OCCURRENCE_DECISION",
-            source_id=occurrence.id,
-            source_revision=occurrence.revision,
-            class_id=class_id,
-            status=payload.status,
-            planned_module_id=planned_module_id,
-            executed_module_id=executed_module_id,
-            planned_hours=planned_hours,
-            direction=1,
-            actor_user_id=decided_by_user_id,
-        )
+        # PRD §6.6: GIVEN progresso apenas se nao existir log completed equivalente
+        if not (payload.status == models.LessonOccurrenceStatus.GIVEN and has_completed_lesson_log):
+            _apply_state_accounting(
+                db,
+                organization_id=organization_id,
+                class_id=class_id,
+                status=payload.status,
+                planned_module_id=planned_module_id,
+                executed_module_id=executed_module_id,
+                planned_hours=planned_hours,
+                direction=1,
+            )
+            _record_progress_ledger_entries(
+                db,
+                organization_id=organization_id,
+                source_type="OCCURRENCE_DECISION",
+                source_id=occurrence.id,
+                source_revision=occurrence.revision,
+                class_id=class_id,
+                status=payload.status,
+                planned_module_id=planned_module_id,
+                executed_module_id=executed_module_id,
+                planned_hours=planned_hours,
+                direction=1,
+                actor_user_id=decided_by_user_id,
+                operation_id=decision_operation_id,
+            )
 
         occurrence.status = payload.status
         occurrence.planned_hours = planned_hours
@@ -1644,12 +1686,19 @@ def update_occurrence_sync(
                 created_by_user_id=decided_by_user_id,
             )
         else:
-            _cancel_operational_blocks_for_occurrence(db, occurrence)
+            _cancel_operational_blocks_for_occurrence(
+                db, occurrence,
+                organization_id=organization_id,
+                cancelled_by_user_id=decided_by_user_id,
+            )
 
         _touch_occurrence_version(occurrence)
 
         db.commit()
         db.refresh(occurrence)
+    except OccurrenceServiceError:
+        db.rollback()
+        raise
     except Exception:
         db.rollback()
         raise
@@ -1732,7 +1781,7 @@ def auto_confirm_daily_sync(
                     creation_source="lesson_log",
                 )
             except OccurrenceServiceError:
-                db.rollback()
+                pass
             continue
 
         planned_hours = _duration_hours(target_date, slot.timeslot)
@@ -1792,6 +1841,7 @@ def auto_confirm_daily_sync(
         if slot.lesson is not None:
             _apply_state_accounting(
                 db,
+                organization_id=organization_id,
                 class_id=slot.lesson.class_id,
                 status=models.LessonOccurrenceStatus.GIVEN,
                 planned_module_id=planned_module_id,
@@ -1812,6 +1862,7 @@ def auto_confirm_daily_sync(
                 executed_module_id=planned_module_id,
                 planned_hours=planned_hours,
                 direction=1,
+                operation_id=str(_uuid.uuid4()),
             )
 
         try:

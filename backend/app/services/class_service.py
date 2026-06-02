@@ -334,6 +334,7 @@ async def get_class_full_details(db: AsyncSession, class_id: int, organization_i
     
     # 3. Buscar disciplinas da turma via ClassSubjectLink (fonte de verdade)
     links_query = select(models.ClassSubjectLink).where(
+        models.ClassSubjectLink.organization_id == organization_id,
         models.ClassSubjectLink.class_id == class_id,
         models.ClassSubjectLink.grade_level == db_class.grade_level
     ).options(
@@ -349,6 +350,7 @@ async def get_class_full_details(db: AsyncSession, class_id: int, organization_i
     #    Query directa em vez de relationship para garantir que não há
     #    contaminação entre turmas via cache do ORM (identity map).
     progress_query = select(models.ClassProgress).where(
+        models.ClassProgress.organization_id == organization_id,
         models.ClassProgress.class_id == class_id
     )
     progress_result = await db.execute(progress_query)
@@ -394,6 +396,7 @@ async def update_class_progress(
     
     # 2. Buscar módulos válidos das disciplinas atribuídas à turma (ClassSubjectLink)
     links_query = select(models.ClassSubjectLink).where(
+        models.ClassSubjectLink.organization_id == organization_id,
         models.ClassSubjectLink.class_id == class_id,
         models.ClassSubjectLink.grade_level == db_class.grade_level
     ).options(
@@ -426,6 +429,7 @@ async def update_class_progress(
         is_done = hours >= hours_total
         
         stmt = pg_insert(models.ClassProgress).values(
+            organization_id=organization_id,
             class_id=class_id,
             module_id=update.module_id,
             hours_completed=hours,
@@ -471,6 +475,7 @@ async def get_class_subjects(db: AsyncSession, class_id: int, organization_id: i
     
     # 2. Buscar disciplinas associadas à turma para o grade_level atual
     links_query = select(models.ClassSubjectLink).where(
+        models.ClassSubjectLink.organization_id == organization_id,
         models.ClassSubjectLink.class_id == class_id,
         models.ClassSubjectLink.grade_level == db_class.grade_level
     ).options(
@@ -537,6 +542,7 @@ async def add_class_subject(
     
     # 3. Verificar se já existe
     existing_query = select(models.ClassSubjectLink).where(
+        models.ClassSubjectLink.organization_id == organization_id,
         models.ClassSubjectLink.class_id == class_id,
         models.ClassSubjectLink.subject_id == subject_id,
         models.ClassSubjectLink.grade_level == db_class.grade_level
@@ -548,6 +554,7 @@ async def add_class_subject(
     
     # 4. Criar associação
     link = models.ClassSubjectLink(
+        organization_id=organization_id,
         class_id=class_id,
         subject_id=subject_id,
         grade_level=db_class.grade_level,
@@ -558,6 +565,7 @@ async def add_class_subject(
     # 5. Sync currículo: garantir que a disciplina está no course_subject_link
     existing_cs = await db.execute(
         select(models.course_subject_link).where(
+            models.course_subject_link.c.organization_id == organization_id,
             models.course_subject_link.c.course_id == db_class.course_id,
             models.course_subject_link.c.subject_id == subject_id
         )
@@ -565,7 +573,7 @@ async def add_class_subject(
     if not existing_cs.first():
         await db.execute(
             models.course_subject_link.insert().values(
-                course_id=db_class.course_id, subject_id=subject_id
+                organization_id=organization_id, course_id=db_class.course_id, subject_id=subject_id
             )
         )
     
@@ -600,6 +608,7 @@ async def update_class_subject_teacher(
     
     # 2. Buscar associação
     link_query = select(models.ClassSubjectLink).where(
+        models.ClassSubjectLink.organization_id == organization_id,
         models.ClassSubjectLink.class_id == class_id,
         models.ClassSubjectLink.subject_id == subject_id,
         models.ClassSubjectLink.grade_level == db_class.grade_level
@@ -658,6 +667,7 @@ async def remove_class_subject(
     
     # 2. Buscar associação
     link_query = select(models.ClassSubjectLink).where(
+        models.ClassSubjectLink.organization_id == organization_id,
         models.ClassSubjectLink.class_id == class_id,
         models.ClassSubjectLink.subject_id == subject_id,
         models.ClassSubjectLink.grade_level == db_class.grade_level
@@ -674,9 +684,13 @@ async def remove_class_subject(
     # 4. Sync currículo: se nenhuma outra turma do curso usa esta disciplina, remover do currículo
     course_id = db_class.course_id
     # Subquery: IDs de turmas do mesmo curso
-    course_class_ids = select(models.Class.id).where(models.Class.course_id == course_id)
+    course_class_ids = select(models.Class.id).where(
+        models.Class.organization_id == organization_id,
+        models.Class.course_id == course_id,
+    )
     other_links = await db.execute(
         select(models.ClassSubjectLink.id).where(
+            models.ClassSubjectLink.organization_id == organization_id,
             models.ClassSubjectLink.subject_id == subject_id,
             models.ClassSubjectLink.class_id.in_(course_class_ids),
             models.ClassSubjectLink.id != link.id
@@ -685,6 +699,7 @@ async def remove_class_subject(
     if not other_links.scalars().first():
         await db.execute(
             models.course_subject_link.delete().where(
+                models.course_subject_link.c.organization_id == organization_id,
                 models.course_subject_link.c.course_id == course_id,
                 models.course_subject_link.c.subject_id == subject_id
             )
@@ -712,6 +727,7 @@ async def get_available_subjects_for_class(
     
     # 2. Buscar IDs das disciplinas já associadas
     existing_query = select(models.ClassSubjectLink.subject_id).where(
+        models.ClassSubjectLink.organization_id == organization_id,
         models.ClassSubjectLink.class_id == class_id,
         models.ClassSubjectLink.grade_level == db_class.grade_level
     )
@@ -773,6 +789,7 @@ async def get_eligible_teachers_for_subject(
         )
         .where(
             models.teacher_subject_link.c.subject_id == subject_id,
+            models.teacher_subject_link.c.organization_id == organization_id,
             models.Teacher.organization_id == organization_id,
         )
         .order_by(models.Teacher.name)
@@ -789,6 +806,7 @@ async def get_eligible_teachers_for_subject(
         models.ClassSubjectLink.teacher_id,
         func.count(models.ClassSubjectLink.id).label("count")
     ).where(
+        models.ClassSubjectLink.organization_id == organization_id,
         models.ClassSubjectLink.subject_id == subject_id,
         models.ClassSubjectLink.teacher_id.isnot(None)
     ).group_by(models.ClassSubjectLink.teacher_id)

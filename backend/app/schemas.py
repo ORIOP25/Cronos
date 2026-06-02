@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr, Field, ConfigDict, model_validator, computed_field, AliasChoices
+from pydantic import BaseModel, EmailStr, Field, ConfigDict, model_validator, AliasChoices
 from datetime import time, datetime, date
 from enum import Enum
 from typing import Any, Optional, Literal
@@ -143,13 +143,6 @@ class ClassUpdate(BaseModel):
     grade_level: Optional[int] = Field(None, ge=10, le=12, description=DESC_GRADE_LEVEL)
     start_year: Optional[int] = Field(None, description=DESC_START_YEAR)
     end_year: Optional[int] = Field(None, description=DESC_END_YEAR)
-
-    @model_validator(mode='after')
-    def validate_year_window_if_present(self):
-        if self.start_year is not None and self.end_year is not None and self.end_year <= self.start_year:
-            raise ValueError(ERR_YEAR_RANGE)
-        return self
-
 
 class ClassCreateInCourse(ClassBase):
     grade_level: int = Field(..., ge=10, le=12, description=DESC_GRADE_LEVEL)
@@ -478,8 +471,8 @@ class SubstitutionResponse(SubstitutionBase):
 class ReplacementSuggestion(BaseModel):
     teacher_id: int
     teacher_name: str
-    priority: int  # 1 (Mesma Disciplina), 2 (Mesma Área), 3 (Livre)
-    reason: str    # Ex: "Livre e da mesma disciplina"
+    priority: int  # 1 (Melhor disponibilidade), 2 (Mesma area), 3 (Livre)
+    reason: str    # Ex: "Livre e elegivel para a turma"
 
 # --- CURSOS ---
 # Classes Auxiliares
@@ -834,6 +827,8 @@ class LessonOccurrenceRead(BaseModel):
     revoked_reason: Optional[str] = None
     lesson_log_summary: Optional[str] = None
     lesson_log_notes: Optional[str] = None
+    reason: Optional[str] = None
+    creation_source: Optional[str] = None
     created_at: datetime
 
     model_config = model_config
@@ -850,10 +845,16 @@ class LessonOccurrenceCreate(BaseModel):
     """Payload para criar ocorrência operacional a partir de um bloco do horário."""
     action: Literal["CREATE_OCCURRENCE"] = "CREATE_OCCURRENCE"
     schedule_output_id: int = Field(..., gt=0, description=DESC_OCCURRENCE_CREATE_SCHEDULE_OUTPUT_ID)
-    mode: str = Field(default="manual_admin", max_length=50)
+    mode: Literal["manual_admin", "lesson_log", "auto_confirm"] = Field(default="manual_admin", max_length=50)
     reason: Optional[str] = Field(None, max_length=250)
 
     model_config = ConfigDict(extra="forbid")
+
+    @model_validator(mode="after")
+    def trim_reason(self) -> "LessonOccurrenceCreate":
+        if self.reason is not None:
+            self.reason = self.reason.strip() or None
+        return self
 
 
 class LessonOccurrenceUpdate(BaseModel):
@@ -862,13 +863,19 @@ class LessonOccurrenceUpdate(BaseModel):
     version: int = Field(..., ge=1)
     reason: Optional[str] = Field(None, max_length=250)
     substitute_teacher_id: Optional[int] = Field(
-        None, description="ID do professor substituto (obrigatório se status=SUBSTITUTED)"
+        None, gt=0, description="ID do professor substituto (obrigatório se status=SUBSTITUTED)"
     )
     substitute_subject_id: Optional[int] = Field(
-        None, description="ID da disciplina dada pelo substituto"
+        None, gt=0, description="ID da disciplina dada pelo substituto"
     )
 
     model_config = ConfigDict(extra="forbid")
+
+    @model_validator(mode="after")
+    def trim_reason(self) -> "LessonOccurrenceUpdate":
+        if self.reason is not None:
+            self.reason = self.reason.strip() or None
+        return self
 
     @model_validator(mode="after")
     def check_substituted_requirements(self) -> "LessonOccurrenceUpdate":
@@ -890,6 +897,13 @@ class LessonOccurrenceCancel(BaseModel):
     version: int = Field(..., ge=1)
     reason: str = Field(..., min_length=1, max_length=250)
     cancel_completed_substitute_log: bool = False
+
+    @model_validator(mode="after")
+    def trim_reason(self) -> "LessonOccurrenceCancel":
+        self.reason = self.reason.strip()
+        if not self.reason:
+            raise ValueError("reason não pode ser vazio após trim")
+        return self
 
 
 class DebtItem(BaseModel):

@@ -7,7 +7,7 @@ from sqlalchemy import (
     Text, Enum as SAEnum, UniqueConstraint, CheckConstraint, Table, Float, Index, event,
 )
 from sqlalchemy.types import JSON
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, Session, mapped_column, relationship
 from app.db.database import Base
 
 # --- FK Reference Constants (SonarQube S1192) ---
@@ -101,16 +101,20 @@ class PreferenceLevel(int, enum.Enum):
 course_subject_link = Table(
     "course_subject_link",
     Base.metadata,
+    Column("organization_id", ForeignKey(FK_ORG_ID, ondelete="CASCADE"), nullable=False, primary_key=True),
     Column("course_id", ForeignKey("course.id", ondelete="CASCADE"), primary_key=True),
     Column("subject_id", ForeignKey(FK_SUBJECT_ID, ondelete="CASCADE"), primary_key=True),
+    Index("ix_course_subject_link_organization_id", "organization_id"),
 )
 
 # Tabela Relacional entre Professores e Disciplinas
 teacher_subject_link = Table(
     "teacher_subject_link",
     Base.metadata,
+    Column("organization_id", ForeignKey(FK_ORG_ID, ondelete="CASCADE"), nullable=False, primary_key=True),
     Column("teacher_id", ForeignKey(FK_TEACHER_ID, ondelete="CASCADE"), primary_key=True),
     Column("subject_id", ForeignKey(FK_SUBJECT_ID, ondelete="CASCADE"), primary_key=True),
+    Index("ix_teacher_subject_link_organization_id", "organization_id"),
 )
 
 # Tabela Relacional: Disciplinas de uma Turma (com professor opcional)
@@ -120,6 +124,7 @@ class ClassSubjectLink(Base):
     __tablename__ = "class_subject_link"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    organization_id: Mapped[int] = mapped_column(ForeignKey(FK_ORG_ID, ondelete="CASCADE"), nullable=False, index=True)
     class_id: Mapped[int] = mapped_column(ForeignKey(FK_CLASS_ID, ondelete="CASCADE"), index=True)
     subject_id: Mapped[int] = mapped_column(ForeignKey(FK_SUBJECT_ID, ondelete="CASCADE"), index=True)
     grade_level: Mapped[int] = mapped_column(Integer, nullable=False)  # 10, 11, 12
@@ -131,13 +136,14 @@ class ClassSubjectLink(Base):
     teacher: Mapped[Optional["Teacher"]] = relationship()
 
     __table_args__ = (
-        UniqueConstraint("class_id", "subject_id", "grade_level", name="uq_class_subject_grade"),
+        UniqueConstraint("organization_id", "class_id", "subject_id", "grade_level", name="uq_class_subject_grade"),
     )
 
 class Availability(Base):
     __tablename__ = "availability"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    organization_id: Mapped[int] = mapped_column(ForeignKey(FK_ORG_ID, ondelete="CASCADE"), nullable=False, index=True)
     teacher_id: Mapped[int] = mapped_column(ForeignKey(FK_TEACHER_ID), index=True)
     timeslot_id: Mapped[int] = mapped_column(ForeignKey(FK_TIMESLOT_ID), index=True)
     
@@ -149,7 +155,7 @@ class Availability(Base):
     timeslot: Mapped["Timeslot"] = relationship()
 
     __table_args__ = (
-        UniqueConstraint('teacher_id', 'timeslot_id', name='uq_teacher_timeslot_availability'),
+        UniqueConstraint('organization_id', 'teacher_id', 'timeslot_id', name='uq_teacher_timeslot_availability'),
     )
 
 # Modelo "Organization" (O Colégio)
@@ -198,7 +204,7 @@ class User(Base):
     role: Mapped[UserRole] = mapped_column(SAEnum(UserRole), default=UserRole.admin, nullable=False)
     # Se for admin, isto fica NULL. Se for professor, aponta para o ID dele.
     teacher_id: Mapped[Optional[int]] = mapped_column(ForeignKey(FK_TEACHER_ID), nullable=True)
-    organization_id: Mapped[Optional[int]] = mapped_column(ForeignKey(FK_ORG_ID), nullable=True)
+    organization_id: Mapped[int] = mapped_column(ForeignKey(FK_ORG_ID), nullable=False, index=True)
     organization: Mapped["Organization"] = relationship(back_populates="users")
     # Atalho para aceder aos dados do professor (se existirem)
     teacher_profile: Mapped[Optional["Teacher"]] = relationship()
@@ -833,6 +839,30 @@ def _prevent_lesson_occurrence_delete(mapper, connection, target) -> None:  # no
     raise ValueError("LessonOccurrence é histórico imutável e não pode ser removida")
 
 
+@event.listens_for(Session, "before_flush")
+def _populate_direct_tenant_ownership(session, flush_context, instances) -> None:  # noqa: ARG001
+    """Populate direct tenant ownership from already tenant-owned parents."""
+    parent_rules = (
+        (Availability, "teacher_id", Teacher),
+        (ClassSubjectLink, "class_id", Class),
+        (Module, "subject_id", Subject),
+        (ClassProgress, "class_id", Class),
+    )
+    for obj in session.new:
+        if getattr(obj, "organization_id", None) is not None:
+            continue
+        for model, parent_attr, parent_model in parent_rules:
+            if not isinstance(obj, model):
+                continue
+            parent_id = getattr(obj, parent_attr, None)
+            if parent_id is None:
+                break
+            parent = session.get(parent_model, parent_id)
+            if parent is not None:
+                obj.organization_id = parent.organization_id
+            break
+
+
 # --- REGISTO DE EXECUÇÃO DE AULAS (WBS Fase 1) ---
 
 class LessonLog(Base):
@@ -871,6 +901,7 @@ class LessonLog(Base):
     status: Mapped[LessonLogStatus] = mapped_column(
         SAEnum(LessonLogStatus), nullable=False, default=LessonLogStatus.PENDING
     )
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
 
     # Conteúdo pedagógico (ambos opcionais)
     summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)   # Sumário da aula
@@ -967,7 +998,7 @@ class TeacherWeeklyTimesheet(Base):
     # Uma única timesheet por professor por semana
     __table_args__ = (
         UniqueConstraint(
-            "teacher_id", "week_start_date",
+            "organization_id", "teacher_id", "week_start_date",
             name="uq_teacher_weekly_timesheet",
         ),
         Index("ix_timesheet_org_week", "organization_id", "week_start_date"),
@@ -1019,6 +1050,7 @@ class Module(Base):
     __tablename__ = "module"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    organization_id: Mapped[int] = mapped_column(ForeignKey(FK_ORG_ID, ondelete="CASCADE"), nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(150), nullable=False)
     code: Mapped[Optional[str]] = mapped_column(String(50), nullable=True) # Ex: "0789"
     hours_total: Mapped[int] = mapped_column(Integer, nullable=False)  # Sem default - admin define
@@ -1030,7 +1062,7 @@ class Module(Base):
 
     # Garante ordem única por disciplina
     __table_args__ = (
-        UniqueConstraint("subject_id", "order", name="uq_module_order_per_subject"),
+        UniqueConstraint("organization_id", "subject_id", "order", name="uq_module_order_per_subject"),
     )
 
     def __repr__(self) -> str:
@@ -1041,6 +1073,7 @@ class ClassProgress(Base):
     __tablename__ = "class_progress"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    organization_id: Mapped[int] = mapped_column(ForeignKey(FK_ORG_ID, ondelete="CASCADE"), nullable=False, index=True)
     
     class_id: Mapped[int] = mapped_column(ForeignKey(FK_CLASS_ID))
     module_id: Mapped[int] = mapped_column(ForeignKey("module.id"))
@@ -1056,7 +1089,7 @@ class ClassProgress(Base):
     
     # Garante uma entrada por turma/módulo
     __table_args__ = (
-        UniqueConstraint("class_id", "module_id", name="uq_class_module"),
+        UniqueConstraint("organization_id", "class_id", "module_id", name="uq_class_module"),
     )
 
 

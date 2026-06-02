@@ -71,12 +71,14 @@ async def _handle_user_created(db: AsyncSession, data: dict):
     if data.get("email_addresses"):
         email = data["email_addresses"][0]["email_address"]
     name = f"{data.get('first_name', '')} {data.get('last_name', '')}".strip() or None
+    teacher_id = data.get("public_metadata", {}).get("teacher_id")
 
     await clerk_sync.ensure_user_exists(
         db=db,
         clerk_user_id=clerk_user_id,
         email=email,
         name=name,
+        teacher_id=teacher_id,
     )
 
 
@@ -86,10 +88,7 @@ async def _handle_user_updated(db: AsyncSession, data: dict):
 
 async def _handle_user_deleted(db: AsyncSession, data: dict):
     clerk_user_id = data["id"]
-    user = await clerk_sync.ensure_user_exists(db=db, clerk_user_id=clerk_user_id)
-    if user:
-        user.is_active = False
-        await db.flush()
+    await clerk_sync.deactivate_user_by_clerk_id(db, clerk_user_id)
 
 
 async def _handle_organization_created(db: AsyncSession, data: dict):
@@ -115,11 +114,7 @@ async def _handle_organization_deleted(db: AsyncSession, data: dict):
     clerk_org_id = data.get("id")
     if not clerk_org_id:
         return
-    org = await clerk_sync.ensure_organization_exists(
-        db, clerk_org_id, data.get("name", "Desconhecida")
-    )
-    org.plan_status = "inactive"
-    await db.flush()
+    await clerk_sync.deactivate_organization_by_clerk_id(db, clerk_org_id)
     logger.info("Organization desativada localmente", clerk_org_id=clerk_org_id)
 
 
@@ -159,7 +154,4 @@ async def _handle_membership_deleted(db: AsyncSession, data: dict):
     if not clerk_user_id:
         return
 
-    user = await clerk_sync.ensure_user_exists(db=db, clerk_user_id=clerk_user_id)
-    if user:
-        user.organization_id = None
-        await db.flush()
+    await clerk_sync.deactivate_user_by_clerk_id(db, clerk_user_id)

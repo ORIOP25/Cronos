@@ -94,6 +94,7 @@ def upgrade() -> None:
     op.create_index("ix_operational_block_org_class_date", "operational_schedule_block", ["organization_id", "class_id", "date"])
 
     op.add_column("lesson_log", sa.Column("operational_block_id", sa.Integer(), nullable=True))
+    op.add_column("lesson_log", sa.Column("version", sa.Integer(), nullable=False, server_default="1"))
     op.alter_column("lesson_log", "schedule_output_id", existing_type=sa.Integer(), nullable=True)
     op.create_foreign_key("fk_lesson_log_operational_block", "lesson_log", "operational_schedule_block", ["operational_block_id"], ["id"], ondelete="CASCADE")
     op.create_unique_constraint("uq_lesson_log_operational_block", "lesson_log", ["operational_block_id"])
@@ -135,6 +136,7 @@ def downgrade() -> None:
     op.drop_constraint("ck_lesson_log_exactly_one_target", "lesson_log", type_="check")
     op.drop_constraint("uq_lesson_log_operational_block", "lesson_log", type_="unique")
     op.drop_constraint("fk_lesson_log_operational_block", "lesson_log", type_="foreignkey")
+    op.drop_column("lesson_log", "version")
     op.drop_column("lesson_log", "operational_block_id")
     op.alter_column("lesson_log", "schedule_output_id", existing_type=sa.Integer(), nullable=False)
     op.drop_index("ix_operational_block_org_class_date", table_name="operational_schedule_block")

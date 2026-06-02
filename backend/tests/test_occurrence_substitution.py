@@ -54,7 +54,7 @@ class TestSubstitutionEligibilityAndRanking:
                 ),
                 decided_by_user_id=substitution_setup["admin_id"],
             )
-        assert exc_info.value.status_code == 409
+        assert exc_info.value.status_code == 422  # Same subject is now a validation error
 
     def test_invalid_substitution_slot_conflict(self, sync_db, substitution_setup):
         occurrence = self._prepare_occurrence(sync_db, substitution_setup)
