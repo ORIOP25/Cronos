@@ -1,5 +1,14 @@
 # Alpha Regression Suite
 
+> STATUS: HISTORICAL / SUPERSEDED FOR SCHEDULER REGRESSION.
+>
+> Scheduler regression coverage must now be derived from:
+> - `documentation/03_scheduler_engine/PRD_SCHEDULE_GENERATOR_NEW_BASELINE.md`
+> - `documentation/03_scheduler_engine/TECH_SPEC_SCHEDULE_GENERATOR_NEW_BASELINE.md`
+>
+> Legacy references to repair mode, full mode, target end date, or fixed
+> rolling windows are not current acceptance criteria.
+
 ## Objetivo
 Consolidar a suite minima de regressao da Alpha V1 para gate tecnico antes de go/no-go.
 

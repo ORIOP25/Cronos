@@ -1,65 +1,130 @@
-# Website Institucional Cronos
+# Cronos Marketing Site V3
 
-## Objetivo
-Definir o site publico institucional separado da aplicação operacional.
+## Estado
+Versao oficial atual do site publico do Cronos.
 
-## Direção de marca
-- Tom de voz simples, humano e orientado a dores reais de escolas profissionais.
-- Linguagem sem jargão técnico desnecessário.
-- Base visual premium, limpa e com muito whitespace.
-- Tipografia editorial alvo: Playfair Display para títulos e Inter para corpo.
-- Paleta editorial atual: alabaster, charcoal, taupe e dourado, sem cores saturadas.
-- Implementação feita com o stack já existente no frontend, sem novas dependências de UI.
+Esta versao substitui a landing V2 centrada em beneficio generico por uma pagina mais explicita, longa e orientada a rotina escolar. A mensagem principal passa a posicionar o Cronos como uma aplicacao para gerir horarios no ensino profissional portugues, ligando planeamento, execucao real, sumarios, ocorrencias e progresso de UFCDs.
 
-## Estrutura de conteúdo
-### Home
-- Hero com promessa clara: reduzir o caos da gestão de horários.
-- Bloco de dor: faltas de última hora, horários feitos à mão, módulos sem controlo claro, substituições sem memória.
-- Cenário prático: professor falta e o admin substitui em poucos cliques.
-- Secção de prova operacional: como o produto ajuda no dia a dia.
+## PRD
 
-### Produtos
-- Substituições rápidas.
-- Controlo por módulos.
-- Histórico transparente do que aconteceu.
+### Objetivo
+Criar uma homepage publica que permita a um decisor escolar perceber rapidamente:
+- o que e o Cronos;
+- para que tipo de escola foi construido;
+- que rotinas escolares cobre no trabalho diario;
+- porque a gestao de horarios no ensino profissional exige mais do que uma grelha semanal;
+- como a aplicacao ajuda a direcao, secretaria e professores no trabalho diario.
 
-### Brand principles
-- Secção editorial para "show, don't tell".
-- Sistema visual consistente entre landing e aplicação.
-- Bloco de narrativa curta sobre a origem do produto.
+### Publico-alvo
+- Diretores e administradores de escolas profissionais.
+- Coordenadores pedagogicos e coordenadores de curso.
+- Secretarias e equipas responsaveis por horarios.
+- Professores que registam aulas, sumarios e disponibilidade.
+- Escolas portuguesas com cursos profissionais, UFCDs, modulos e carga horaria variavel.
 
-### Pricing
-- Cartões simples e muito espaço em branco.
-- Estrutura por dimensão da escola.
-- Valores finais: a definir ou sob consulta conforme contexto.
+### Problema a resolver
+Muitas escolas gerem horarios, faltas, substituicoes, sumarios e progresso curricular em ficheiros separados. No ensino profissional, isto cria um problema adicional: nao basta saber que uma disciplina aparece no horario; e necessario saber que horas de cada UFCD/modulo ja foram dadas, que aulas ficaram por compensar e como ajustar o futuro sem apagar o historico operacional.
 
-### About
-- Missão focada em aliviar a sobrecarga administrativa.
-- Posicionamento centrado em escolas profissionais.
+### Posicionamento
+O Cronos e uma aplicacao para gerir horarios no ensino profissional portugues. Centraliza cursos, turmas, professores, salas, UFCDs/modulos, disponibilidade docente, horarios, sumarios, ocorrencias, substituicoes, fecho semanal e progresso curricular.
 
-### Contacto
-- CTA para apresentação do fluxo real.
-- Conteúdo orientado a próxima conversa, não a formulários longos.
+### Mensagem principal
+> Horarios do ensino profissional, controlados do plano a aula dada.
 
-## Regras UX
-- Visual premium sem exagero decorativo.
-- Mobile-first.
-- Microinterações subtis.
-- Não misturar a mensagem institucional com a operação autenticada da aplicação.
-- CTA discretos e poucos por página.
-- Consistência de tipografia, espaçamento e linguagem entre secções.
-- Storytelling curto, específico e ancorado em dores reais.
+Mensagem de apoio:
+> O Cronos gera horarios por turma e professor, adapta alteracoes de ultima hora, regista sumarios e acompanha horas de UFCDs, modulos e cursos num unico lugar.
 
-## Implementação atual
-- Hero com hierarquia editorial forte e chamada principal em destaque.
-- Secção de estatísticas curtas para reforço visual sem poluição.
-- Blocos de conteúdo com bordas finas, espaços amplos e alternância de fundo claro/escuro.
-- Fundo fixo e plano, sem gradientes decorativos nem grelhas verticais visíveis.
-- Acento visual azul/verde para equilibrar a identidade interna da aplicação.
-- Testemunhos curtos e FAQ editorial para fechar a narrativa com mais prova e mais clareza.
-- Texturas e efeitos visuais mantidos via CSS existente, sem dependências adicionais.
-- A landing publica foi ajustada para usar as classes CSS ja presentes no frontend, mantendo CoreUI e React como base e evitando utilitarios visuais externos.
+### Principios de copy
+- Explicar capacidades e rotinas reais antes de usar linguagem aspiracional.
+- Evitar frases vagas como "gestao fluida", "revolucao" ou "experiencia eficiente" sem contexto.
+- Evitar o modelo "nao e X, e Y".
+- Usar vocabulario escolar: horarios, turmas, professores, salas, sumarios, ocorrencias, substituicoes, UFCDs, modulos, horas dadas, horas por cumprir.
+- Traduzir conceitos tecnicos para linguagem operacional.
 
-## Decisão de navegação
-- A landing pública vive na raiz do site.
-- A aplicação operacional continua separada no fluxo autenticado.
+### Estrutura da pagina
+1. Header com navegacao curta, CTA de demonstracao e link "Entrar".
+2. Hero explicito: Cronos como aplicacao de horarios para ensino profissional.
+3. Faixa de areas principais: horarios, ocorrencias, sumarios/progresso e gerador.
+4. Secao "O que o Cronos faz" com modulos funcionais concretos.
+5. Secao de percurso: preparar, gerar, publicar, registar, ajustar e acompanhar.
+6. Secao dedicada ao gerador de horarios, explicada sem termos tecnicos.
+7. Secao narrativa da semana letiva, com preparacao, publicacao, imprevistos e fecho semanal.
+8. Secao de valor por perfil: direcao, secretaria e professores.
+9. Secao visual do produto.
+10. Testemunhos.
+11. Contacto e CTA para demonstracao.
+12. Footer.
+
+### Rotinas e capacidades obrigatorias a comunicar
+- Painel da direcao.
+- Gestao de horarios por turma e professor.
+- Geracao de horarios completa e ajuste das proximas semanas com minimo de alteracoes.
+- Propostas de horario, leitura do que muda e aprovacao antes de publicar.
+- Criacao e gestao de ocorrencias.
+- Faltas, furos, aulas dadas e substituicoes.
+- Recomendacoes de substitutos elegiveis.
+- Adaptacao do horario a ocorrencias e alteracoes de ultima hora.
+- Sumarios e notas de aula.
+- Fecho semanal por professor.
+- Disponibilidade/preferencias dos professores.
+- Acesso dos professores a horarios, sumarios, disponibilidade e progresso.
+- Acompanhamento de progresso de UFCDs, modulos, disciplinas, turmas e cursos.
+- Gestao de cursos profissionais, turmas, disciplinas, UFCDs/modulos.
+- Gestao de professores, competencias, salas, capacidade e tipo de sala.
+- Preparacao de calendario, pausas, feriados, grelha horaria, almoco e periodo letivo.
+- Separacao entre horario planeado e execucao real.
+- Historico e rastreabilidade das decisoes operacionais.
+
+### Criterios de aceitacao
+- A primeira dobra deve explicar que o Cronos gere horarios no ensino profissional portugues.
+- O site deve ficar mais completo do que a V2, com mais contexto sobre produto.
+- A pagina deve tornar visiveis rotinas reais da aplicacao, nao beneficios abstratos.
+- A explicacao do gerador deve ser nao tecnica e orientada a valor escolar.
+- O link "Entrar" deve continuar disponivel e apontar para `/login`.
+- O CTA de demonstracao deve continuar presente no header, hero e contacto.
+- O design deve manter as cores atuais: creme, castanho escuro e dourado.
+- O CSS deve continuar isolado em classes `cronos-*`.
+- A pagina deve ser responsiva sem sobreposicoes de texto.
+- `npm run lint` e `npm run build` devem passar.
+
+## WBS
+
+### 1. Planeamento e documentacao
+- Atualizar PRD/WBS oficial do marketing site para V3.
+- Atualizar README de UX e README do frontend para mencionar V3.
+- Atualizar guidelines de marca quando ainda referirem V2.
+
+### 2. Arquitetura de conteudo
+- Reestruturar navegacao para ancoras de produto.
+- Reescrever hero com posicionamento explicito.
+- Criar secoes adicionais para tornar a pagina mais completa.
+- Separar conteudo em arrays de dados para facilitar manutencao.
+
+### 3. Implementacao JSX
+- Atualizar `frontend/src/pages/MarketingSite.jsx`.
+- Rever `navItems`, service tiles, workflow, rotina semanal, perfis, testemunhos e contacto.
+- Manter link "Entrar" para `/login`.
+- Manter imagens existentes em `public/marketing/`.
+
+### 4. Implementacao CSS
+- Atualizar `frontend/src/pages/MarketingSite.css`.
+- Criar estilos para novas secoes:
+  - overview/product modules;
+  - workflow detalhado;
+  - gerador;
+  - rotina semanal em formato narrativo;
+  - roles/personas;
+- Ajustar espacamento para uma pagina mais longa e escaneavel.
+- Garantir responsividade desktop, tablet e mobile.
+
+### 5. QA
+- Executar `npm run lint`.
+- Executar `npm run build`.
+- Abrir homepage em browser local.
+- Verificar desktop e mobile.
+- Corrigir overflow, desalinhamentos ou texto cortado.
+
+### 6. Entrega
+- Reportar ficheiros alterados.
+- Reportar comandos de validacao.
+- Indicar que o rollback da pagina experimental ja foi mantido.

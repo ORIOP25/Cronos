@@ -353,40 +353,38 @@ Garantia de compatibilidade:
 - chamadas legacy e chamadas novas (`POST/PATCH /occurrences`) convergem para o mesmo estado final de ocorrencia;
 - retries com payload identico nao duplicam contabilizacao em `ClassProgress`.
 
-## Contrato operacional de repair mode (Alpha V1 - Passo 3)
+## Contrato operacional do schedule generator baseline
 
-### Trigger de regeneracao
-- rota: `POST /api/v1/schedule/generate`;
-- payload: `mode=full | repair`;
-- role: admin.
+Status: substitui o contrato antigo de `repair mode`.
 
-Comportamento especifico para `mode=repair`:
-1. preflight valida se existe horizonte fora da janela de estabilidade.
-2. se `frozen_until >= hard_end_date`, resposta e erro de preflight e a task nao e enfileirada.
-3. quando valido, a regeneracao considera apenas periodo fora da janela congelada.
-4. antes de construir carga remanescente do solver, o backend reconcilia compromissos publicados ate `frozen_until`:
-	- conta blocos ativos `NONE/GIVEN` como carga comprometida;
-	- exclui do credito blocos `GAP/SUBSTITUTED` (mantem divida no planeado).
+Fonte de verdade:
+- `documentation/03_scheduler_engine/PRD_SCHEDULE_GENERATOR_NEW_BASELINE.md`;
+- `documentation/03_scheduler_engine/TECH_SPEC_SCHEDULE_GENERATOR_NEW_BASELINE.md`.
 
-Status esperados no trigger:
-- `200`: task aceite para processamento;
-- `400`: `preflight_failed` (inclui problemas operacionais, incluindo bloqueio por janela de estabilidade sem horizonte valido).
+Regras obrigatorias:
+- a UI expoe uma unica acao `Generate Schedule`;
+- o payload nao deve aceitar `mode=full | repair`;
+- o backend escolhe automaticamente `Complete Generation` ou `Adaptive Repair`;
+- toda geracao bem-sucedida cria draft validado;
+- nenhum draft publica horario ativo sem aprovacao do admin;
+- apenas um draft pode estar pendente por ano letivo;
+- regenerar substitui o draft anterior apenas no commit final que cria o novo draft validado;
+- rejeitar draft remove apenas o estado pendente e preserva auditoria;
+- aprovacao valida fingerprints, hard constraints, tenant isolation e estado atual antes de commit;
+- target/preferred end date nao existe no contrato de API do gerador.
 
-### Aprovacao de draft
-- rota: `POST /api/v1/schedule/drafts/{gen_id}/approve`;
-- role: admin.
-
-Regra obrigatoria de estabilidade:
-- aprovacao nao pode reescrever horario publicado dentro da janela de estabilidade;
-- apenas blocos fora da janela sao promovidos para ativo.
-
-Objetivo funcional:
-- garantir que ajustes de curto prazo dentro da janela sao tratados por ocorrencias (GAP/GIVEN/SUBSTITUTED), e nao por substituicao estrutural do publicado.
-
-### Diff de draft (horizonte efetivo)
-- rota: `GET /api/v1/schedule/drafts/{gen_id}/diff`.
-- o diff compara apenas blocos com `date >= frozen_until + 1 dia`.
-- resposta inclui metadados: `repair_window_days`, `frozen_until`, `compared_from_date`.
+Endpoints alvo:
+1. `GET /api/v1/scheduler/status`
+2. `POST /api/v1/scheduler/generate`
+3. `GET /api/v1/scheduler/jobs/{job_id}`
+4. `POST /api/v1/scheduler/jobs/{job_id}/cancel`
+5. `GET /api/v1/scheduler/drafts/current`
+6. `GET /api/v1/scheduler/drafts/{draft_id}`
+7. `GET /api/v1/scheduler/drafts/{draft_id}/diff`
+8. `POST /api/v1/scheduler/drafts/{draft_id}/approve`
+9. `POST /api/v1/scheduler/drafts/{draft_id}/reject`
+10. `POST /api/v1/scheduler/drafts/{draft_id}/regenerate`
+11. `POST /api/v1/scheduler/reset-year`
 
 ## Contrato operacional de geracao assincrona e cancelamento (Alpha V1 - Ponto 14)
 

@@ -1,16 +1,47 @@
-# React + Vite
+# Cronos Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Frontend React/Vite do Cronos.
 
-Currently, two official plugins are available:
+## Stack
+- React 19
+- Vite 7
+- React Router
+- Clerk
+- CoreUI
+- React Query
+- Vitest
+- Playwright
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+## Scripts
+```bash
+npm run dev
+npm run build
+npm run lint
+npm run test
+npm run test:e2e
+```
 
-## React Compiler
+## Marketing site publico
+A homepage publica vive em:
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+- `src/pages/MarketingSite.jsx`
+- `src/pages/MarketingSite.css`
 
-## Expanding the ESLint configuration
+Assets publicos da landing:
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+- `public/marketing/hero-laptop.png`
+- `public/marketing/product-panorama.png`
+
+Esta e a versao oficial atual do site publico. A implementacao antiga foi substituida por uma landing editorial V3 orientada a produto, com copy explicita para gestao de horarios no ensino profissional portugues.
+
+## Rotas
+- `/`: marketing site para utilizadores signed-out.
+- `/login`: autenticacao.
+- `/register`: registo.
+- Rotas autenticadas: dashboard, horarios, cursos, professores, salas, sumarios, progresso e configuracao.
+
+## Notas de manutencao
+- O marketing site usa classes `cronos-*` para evitar conflitos com a aplicacao autenticada.
+- A app operacional continua a usar os tokens globais em `src/index.css`.
+- Evitar novas dependencias visuais sem necessidade clara.
+- Atualizar `documentation/06_frontend_ux/WEBSITE_INSTITUCIONAL_WBS.md` quando a estrutura publica mudar.

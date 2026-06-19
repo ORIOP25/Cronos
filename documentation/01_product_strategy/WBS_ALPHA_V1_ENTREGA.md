@@ -1,5 +1,13 @@
 # WBS Alpha V1 - Entrega para escola piloto
 
+> STATUS: HISTORICAL / SUPERSEDED FOR SCHEDULER IMPLEMENTATION.
+>
+> This WBS predates the new schedule generator baseline. Any item mentioning
+> repair mode, fixed repair windows, target/preferred end date, or legacy
+> scheduler behavior must be ignored or revalidated against:
+> - `documentation/03_scheduler_engine/PRD_SCHEDULE_GENERATOR_NEW_BASELINE.md`
+> - `documentation/03_scheduler_engine/TECH_SPEC_SCHEDULE_GENERATOR_NEW_BASELINE.md`
+
 ## Objetivo
 Este WBS define, com detalhe operacional, o que falta implementar para entregar uma Alpha V1 utilizavel por uma escola real.
 

@@ -5,9 +5,9 @@ Esta secção define a interface e experiência de utilizador do Cronos.
 ## Conteúdo Principal
 - [**BRAND_GUIDELINES.md**](./BRAND_GUIDELINES.md): Diretrizes de design, paleta premium e governação de tokens.
 - [**ACCESSIBILITY_REPORT.md**](./ACCESSIBILITY_REPORT.md): Relatório de conformidade WCAG e acessibilidade.
-- [**BRAND_COLOR_SYSTEM_WBS.md**](./BRAND_COLOR_SYSTEM_WBS.md): Plano de migração para o sistema de cores semântico.
+- [**BRAND_COLOR_SYSTEM_WBS.md**](./BRAND_COLOR_SYSTEM_WBS.md): Estado atual do sistema de cor e nota de migração concluída.
 - [**UX_CONSISTENCY_SCHEDULES.md**](./UX_CONSISTENCY_SCHEDULES.md): Padrões de experiência e consistência de estado nos horários.
-- [**WEBSITE_INSTITUCIONAL_WBS.md**](./WEBSITE_INSTITUCIONAL_WBS.md): Estrutura do site público e direção visual.
+- [**WEBSITE_INSTITUCIONAL_WBS.md**](./WEBSITE_INSTITUCIONAL_WBS.md): PRD/WBS do marketing site V3, fonte oficial da landing pública atual.
 - [**WBS_REFATORACAO_SCHOOL_CONFIG.md**](./WBS_REFATORACAO_SCHOOL_CONFIG.md): Refatoração da página de Configuração da Escola.
 - [**WBS_CORRECAO_BUGS_UI_UX_OPERACAO_REAL.md**](./WBS_CORRECAO_BUGS_UI_UX_OPERACAO_REAL.md): Correção de bugs UI/UX em operação real (✅ todas as correções aplicadas a 03 Maio 2026).
 

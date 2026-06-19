@@ -1,5 +1,13 @@
 # UX consistency schedules
 
+> STATUS NOTE FOR SCHEDULER UX.
+>
+> Any scheduler UX section in this document that mentions legacy repair mode,
+> mode selection, target/preferred end date, or fixed repair windows is
+> superseded by:
+> - `documentation/03_scheduler_engine/PRD_SCHEDULE_GENERATOR_NEW_BASELINE.md`
+> - `documentation/03_scheduler_engine/TECH_SPEC_SCHEDULE_GENERATOR_NEW_BASELINE.md`
+
 ## Objetivo
 Garantir experiencia premium e consistente na operacao diaria da escola.
 

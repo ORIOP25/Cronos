@@ -1,5 +1,14 @@
 # Plano de Correcao do Desbalanceamento e Execucao Guiada
 
+> STATUS: HISTORICAL / SUPERSEDED FOR SCHEDULER IMPLEMENTATION.
+>
+> This correction plan predates the new schedule generator baseline. Legacy
+> mentions of `mode=full`, target/preferred end date, old draft persistence, or
+> direct active schedule replacement are not current implementation guidance.
+> Use:
+> - `documentation/03_scheduler_engine/PRD_SCHEDULE_GENERATOR_NEW_BASELINE.md`
+> - `documentation/03_scheduler_engine/TECH_SPEC_SCHEDULE_GENERATOR_NEW_BASELINE.md`
+
 ## 1. Contexto e Problema
 
 O sistema de geracao de horarios em Ensino Profissional e dinamico por natureza. A cada semana, o agendamento deve refletir:

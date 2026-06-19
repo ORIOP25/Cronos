@@ -24,10 +24,11 @@ Arquitetura multi-tenant: cada escola opera isolada por organization_id.
 
 ### When
 Fase atual confirmada:
-- baseline do motor de horarios estavel e iterativo;
+- novo baseline do motor de horarios fechado em `03_scheduler_engine/PRD_SCHEDULE_GENERATOR_NEW_BASELINE.md`;
+- arquitetura tecnica fechada em `03_scheduler_engine/TECH_SPEC_SCHEDULE_GENERATOR_NEW_BASELINE.md`;
 - hard end date obrigatoria;
-- target end date como objetivo de otimizacao;
-- prioridade funcional seguinte: faltas e substituicoes.
+- sem target/preferred end date como objetivo de otimizacao;
+- prioridade funcional seguinte: implementar o novo schedule generator por WBS.
 
 ### Why
 Objetivo de negocio:
