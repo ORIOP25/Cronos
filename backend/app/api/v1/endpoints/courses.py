@@ -35,7 +35,10 @@ async def create_course(
     """
     Cria um novo curso e gera automaticamente a sua estrutura (turmas, matriz).
     """
-    result = await course_service.create_course(db, item, current_user.organization_id)
+    result = await course_service.create_course(
+        db, item, current_user.organization_id,
+        changed_by_user_id=current_user.id,
+    )
     
     if result == "ABBREVIATION_EXISTS":
         raise HTTPException(status_code=400, detail=f"A sigla '{item.abbreviation}' já existe nesta organização.")
@@ -81,7 +84,10 @@ async def create_course_class(
     db: Annotated[AsyncSession, Depends(deps.get_db)],
     current_user: Annotated[models.User, Depends(deps.get_current_active_admin)],
 ) -> Any:
-    result = await class_service.create_class_in_course(db, course_id, item, current_user.organization_id)
+    result = await class_service.create_class_in_course(
+        db, course_id, item, current_user.organization_id,
+        changed_by_user_id=current_user.id,
+    )
     if result == "COURSE_NOT_FOUND":
         raise HTTPException(status_code=404, detail=COURSE_NOT_FOUND_MSG)
     return result
@@ -96,7 +102,8 @@ async def update_course_class(
     current_user: Annotated[models.User, Depends(deps.get_current_active_admin)],
 ) -> Any:
     result = await class_service.update_class_in_course(
-        db, course_id, class_id, item, current_user.organization_id
+        db, course_id, class_id, item, current_user.organization_id,
+        changed_by_user_id=current_user.id,
     )
     if result == "NOT_FOUND":
         raise HTTPException(status_code=404, detail="Turma não encontrada neste curso")
@@ -113,7 +120,8 @@ async def delete_course_class(
     current_user: Annotated[models.User, Depends(deps.get_current_active_admin)],
 ) -> Any:
     status = await class_service.delete_class_in_course(
-        db, course_id, class_id, current_user.organization_id
+        db, course_id, class_id, current_user.organization_id,
+        changed_by_user_id=current_user.id,
     )
     if status == "NOT_FOUND":
         raise HTTPException(status_code=404, detail="Turma não encontrada neste curso")
@@ -137,7 +145,10 @@ async def update_course(
     
     4º Pilar - Stability: Rejeita se há classes (impede perda de dados)
     """
-    result = await course_service.update_course(db, course_id, item, current_user.organization_id)
+    result = await course_service.update_course(
+        db, course_id, item, current_user.organization_id,
+        changed_by_user_id=current_user.id,
+    )
     
     if result == "NOT_FOUND":
         raise HTTPException(status_code=404, detail=COURSE_NOT_FOUND_MSG)
@@ -153,7 +164,10 @@ async def delete_course(
     db: Annotated[AsyncSession, Depends(deps.get_db)],
     current_user: Annotated[models.User, Depends(deps.get_current_active_admin)],
 ) -> Any:
-    status = await course_service.delete_course(db, course_id, current_user.organization_id)
+    status = await course_service.delete_course(
+        db, course_id, current_user.organization_id,
+        changed_by_user_id=current_user.id,
+    )
     
     if status == "NOT_FOUND":
         raise HTTPException(status_code=404, detail=COURSE_NOT_FOUND_MSG)

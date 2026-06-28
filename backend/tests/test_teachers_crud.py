@@ -18,6 +18,17 @@ from app.config import settings
 API = settings.API_V1_STR
 
 
+@pytest.fixture(autouse=True)
+def _stub_clerk_teacher_invitation(monkeypatch):
+    async def _invite(**_kwargs):
+        return {"invitation_id": "inv_test", "status": "pending"}
+
+    monkeypatch.setattr(
+        "app.services.teacher_service.invite_teacher_to_clerk",
+        _invite,
+    )
+
+
 @pytest.mark.asyncio
 class TestTeachersCRUD:
 

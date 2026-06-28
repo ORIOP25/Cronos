@@ -176,7 +176,7 @@ const SlotCell = ({ slotEntries, isOperationalEnabled, onOpenOperationalAction }
   const canOpenOperationalAction = Boolean(
     isOperationalEnabled
     && !hasCollision
-    && (slot.schedule_output_id || slot.operational_block_id)
+    && (slot.schedule_output_id || slot.active_schedule_block_id || slot.operational_block_id)
     && slot.date
     && typeof onOpenOperationalAction === 'function'
   )
@@ -185,7 +185,7 @@ const SlotCell = ({ slotEntries, isOperationalEnabled, onOpenOperationalAction }
   if (isOperationalEnabled && !canOpenOperationalAction && !isWeekLocked) {
     if (hasCollision) {
       operationalBlockReason = 'Conflito no slot. Use a página de Faltas para análise.'
-    } else if (!(slot.schedule_output_id || slot.operational_block_id) || !slot.date) {
+    } else if (!(slot.schedule_output_id || slot.active_schedule_block_id || slot.operational_block_id) || !slot.date) {
       operationalBlockReason = 'Este bloco não tem contexto operacional completo.'
     } else if (!(canCreateOccurrence || canDecideOccurrence)) {
       if (slot.occurrence_id && slot.occurrence_decided_at) {
@@ -221,6 +221,7 @@ const SlotCell = ({ slotEntries, isOperationalEnabled, onOpenOperationalAction }
     }
     onOpenOperationalAction({
       schedule_output_id: slot.schedule_output_id,
+      active_schedule_block_id: slot.active_schedule_block_id,
       operational_block_id: slot.operational_block_id,
       block_source: slot.block_source,
       date: slot.date,
@@ -345,9 +346,10 @@ SlotCell.propTypes = {
       room: PropTypes.shape({ name: PropTypes.string }),
       class_info: PropTypes.shape({ name: PropTypes.string }),
       module: PropTypes.shape({ name: PropTypes.string, hours_total: PropTypes.number }),
-  schedule_output_id: PropTypes.number,
-  operational_block_id: PropTypes.number,
-  block_source: PropTypes.string,
+      schedule_output_id: PropTypes.number,
+      active_schedule_block_id: PropTypes.number,
+      operational_block_id: PropTypes.number,
+      block_source: PropTypes.string,
       date: PropTypes.string,
       occurrence_id: PropTypes.number,
       can_create_occurrence: PropTypes.bool,
@@ -495,7 +497,9 @@ const WeekGrid = ({
 }
 
 const slotShape = PropTypes.shape({
-  schedule_output_id: PropTypes.number.isRequired,
+  schedule_output_id: PropTypes.number,
+  active_schedule_block_id: PropTypes.number,
+  operational_block_id: PropTypes.number,
   date: PropTypes.string,
   timeslot: PropTypes.shape({
     id: PropTypes.number.isRequired,

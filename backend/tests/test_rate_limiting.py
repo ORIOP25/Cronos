@@ -75,9 +75,7 @@ class TestTeacherHorizonRateLimit:
         settings_resp = await async_client.post(
             f"{API}/school/settings/",
             json={
-                "academic_year": "2025/2026",
                 "school_start_date": "2025-09-01",
-                "school_target_end_date": "2026-06-30",
                 "school_hard_end_date": "2026-07-31",
             },
             headers=admin_token_headers,
@@ -167,5 +165,4 @@ class TestWeekScheduleRateLimit:
                     f"Rate limit semanal não devia ter disparado com 25 pedidos. "
                     f"Status: {response.status_code}"
                 )
-
 

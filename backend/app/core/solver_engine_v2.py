@@ -1,12 +1,11 @@
 """CP-SAT Solver Engine V2 — Cronos (Fase E).
 
 Opera sobre datas absolutas (real calendar dates) em vez de padrão semanal.
-Resolve 5 objetivos em cascata lexicográfica:
+Resolve objetivos em cascata lexicográfica:
   1. makespan_global        — minimizar data final global
   2. end_date_spread_classes — minimizar dispersão de fecho entre turmas
-  3. target_drift_total     — minimizar desvio da data-alvo da escola
-  4. churn_outside_frozen   — minimizar blocos alterados fora da janela congelada
-  5. class_gaps_total       — minimizar furos por turma/dia
+  3. churn_outside_frozen   — minimizar blocos alterados fora da janela congelada
+  4. class_gaps_total       — minimizar furos por turma/dia
 
 Hard Constraints (HC1–HC7) são verificadas no candidatos pré-prunados (Fase D)
 e reforçadas no modelo CP-SAT por data real.
@@ -57,7 +56,6 @@ class SolverV2Result:
     makespan_days: int | None            # dias desde window_start até último bloco
     projected_end_date: date | None      # data real do último bloco
     end_date_spread_days: int | None     # max_end - min_end entre turmas
-    target_drift_days: int | None        # desvio total da data-alvo
     churn_blocks: int | None             # blocos alterados vs publicado
     gaps_total: int | None               # furos totais
     objective_value: float | None
@@ -82,7 +80,6 @@ class ScheduleEngineV2:
         *,
         window_start_date: date,
         window_end_date: date,
-        school_target_end_date: date | None = None,
         hard_end_date: date | None = None,
         published_blocks: set[tuple[int, date, int]] | None = None,
         frozen_until: date | None = None,
@@ -91,7 +88,6 @@ class ScheduleEngineV2:
         self.candidates = candidates
         self.window_start_date = window_start_date
         self.window_end_date = window_end_date
-        self.school_target_end_date = school_target_end_date
         self.hard_end_date = hard_end_date or window_end_date
         # published_blocks: set of (lesson_id, date, ts_id) from current published plan
         self.published_blocks: set[tuple[int, date, int]] = published_blocks or set()
@@ -140,7 +136,7 @@ class ScheduleEngineV2:
             return SolverV2Result(
                 status="infeasible", blocks=[], makespan_days=None,
                 projected_end_date=None, end_date_spread_days=None,
-                target_drift_days=None, churn_blocks=None, gaps_total=None,
+                churn_blocks=None, gaps_total=None,
                 objective_value=None, solver_wall_time=None,
             )
 
@@ -164,7 +160,7 @@ class ScheduleEngineV2:
             return SolverV2Result(
                 status="infeasible", blocks=[], makespan_days=None,
                 projected_end_date=None, end_date_spread_days=None,
-                target_drift_days=None, churn_blocks=None, gaps_total=None,
+                churn_blocks=None, gaps_total=None,
                 objective_value=self.solver.ObjectiveValue() if status == cp_model.FEASIBLE else None,
                 solver_wall_time=self.solver.WallTime(),
             )
@@ -371,33 +367,6 @@ class ScheduleEngineV2:
         else:
             spread = None
 
-        # ---- Stage 3: target_drift_total ----
-        if self.school_target_end_date is not None:
-            target_idx = self._date_to_idx.get(self.school_target_end_date)
-            if target_idx is None:
-                # Clamp to window bounds
-                if self.school_target_end_date < self.window_start_date:
-                    target_idx = 0
-                else:
-                    target_idx = n - 1
-
-            drift_total = self.model.NewIntVar(0, max(n * len(self._class_ids), 1), "drift_total")
-            drift_parts = []
-            for class_id, ce in class_end_idx.items():
-                drift = self.model.NewIntVar(0, max(n - 1, 0), f"drift_{class_id}")
-                self.model.Add(drift >= ce - target_idx)
-                self.model.Add(drift >= target_idx - ce)
-                drift_parts.append(drift)
-
-            self.model.Add(drift_total == sum(drift_parts))
-            self.model.Minimize(drift_total)
-            status = self.solver.Solve(self.model)
-            if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
-                return status
-            self._hint_solution()
-            best_drift = int(self.solver.Value(drift_total))
-            self.model.Add(drift_total <= best_drift + 2)
-
         # ---- Stage 4: churn_outside_frozen ----
         if self.published_blocks:
             # Count new blocks NOT in published set
@@ -508,7 +477,7 @@ class ScheduleEngineV2:
         if not blocks:
             return {
                 "makespan_days": None, "projected_end_date": None,
-                "end_date_spread_days": None, "target_drift_days": None,
+                "end_date_spread_days": None,
                 "churn_blocks": None, "gaps_total": None,
             }
 
@@ -527,15 +496,6 @@ class ScheduleEngineV2:
         else:
             spread = 0
 
-        # target drift
-        if self.school_target_end_date and class_ends:
-            drift = sum(
-                abs((end - self.school_target_end_date).days)
-                for end in class_ends.values()
-            )
-        else:
-            drift = None
-
         # churn
         new_block_keys = {(b.lesson_id, b.output_date, b.ts_id) for b in blocks}
         churn = len(new_block_keys - self.published_blocks) if self.published_blocks else None
@@ -544,7 +504,6 @@ class ScheduleEngineV2:
             "makespan_days": makespan_days,
             "projected_end_date": projected_end_date,
             "end_date_spread_days": spread,
-            "target_drift_days": drift,
             "churn_blocks": churn,
             "gaps_total": None,  # counted by model, not re-computed here
         }

@@ -16,12 +16,12 @@ from test_occurrence_shared import full_setup
 class TestAutoConfirmService:
     """Testa o cron de confirmação automática diária."""
 
-    def test_auto_confirm_creates_given_record(self, sync_db, full_setup):
+    def test_auto_confirm_keeps_unregistered_lesson_open(self, sync_db, full_setup):
         organization_id = full_setup["organization_id"]
         today = date.today()
 
         count = occurrence_service.auto_confirm_daily_sync(sync_db, organization_id, today)
-        assert count == 1
+        assert count == 0
 
         occurrence = sync_db.execute(
             select(models.LessonOccurrence).where(
@@ -29,9 +29,10 @@ class TestAutoConfirmService:
             )
         ).scalar_one_or_none()
 
-        assert occurrence is not None
-        assert occurrence.status == LessonOccurrenceStatus.GIVEN
-        assert occurrence.hours_given == pytest.approx(2.0)
+        assert occurrence is None
+        debts = occurrence_service.get_debts_sync(sync_db, organization_id)
+        assert debts.total_gaps == 0
+        assert debts.total_hours_owed == pytest.approx(0.0)
 
     def test_auto_confirm_skips_existing_occurrence(self, sync_db, full_setup):
         organization_id = full_setup["organization_id"]

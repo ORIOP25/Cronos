@@ -12,7 +12,7 @@ import {
   cilArrowLeft, cilArrowRight, cilPeople, cilUser,
 } from '@coreui/icons'
 import {
-  useDrafts, useApproveDraft, useRejectDraft,
+  useSchedulerStatus, useCurrentDraftSummary, useApproveDraft, useRejectDraft,
   useGenerateSchedule, useScheduleTaskStatus, useCancelScheduleTask,
   useClasses, useTeachers, useWeekSchedule, useClassDetails, useTimeslots,
 } from '../hooks/useSchoolData'
@@ -21,7 +21,6 @@ import LessonLogModal from '../components/LessonLogModal'
 import KPISidebar from '../components/schedules/KPISidebar'
 import DraftPanel from '../components/schedules/DraftPanel'
 import GenerationStatusPanel from '../components/schedules/GenerationStatusPanel'
-import { isPending, TERMINAL_STATUSES } from '../utils/scheduleStatus'
 import PreflightErrorPanel from '../components/schedules/PreflightErrorPanel'
 import { useOrganization, useUser } from '@clerk/react'
 import { useRole } from '../hooks/useRole'
@@ -30,8 +29,18 @@ import { getCurrentWeekMonday, addDays, formatWeekRange } from '../utils/formatU
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
-const ACTIVE_TASK_STORAGE_KEY_PREFIX = 'hz-schedule-active-task-org-'
+const ACTIVE_JOB_STORAGE_KEY_PREFIX = 'hz-schedule-active-job-org-'
 const VIEW_STORAGE_KEY_PREFIX = 'hz-schedule-view-org-'
+const STALE_DRAFT_MESSAGE = (
+  'This draft is no longer current.\n\n'
+  + 'Schedule conditions changed after it was generated. Regenerate the draft to continue.'
+)
+
+function getDraftMutationErrorMessage(error, fallback) {
+  const detail = error?.response?.data?.detail
+  if (detail?.draft_state === 'STALE') return STALE_DRAFT_MESSAGE
+  return detail?.message || (typeof detail === 'string' ? detail : null) || fallback
+}
 
 function getViewStorageKey(orgId) {
   if (!orgId) return null
@@ -58,12 +67,12 @@ function writeStoredView(storageKey, viewState) {
   }
 }
 
-function getTaskStorageKey(orgId) {
+function getJobStorageKey(orgId) {
   if (!orgId) return null
-  return `${ACTIVE_TASK_STORAGE_KEY_PREFIX}${orgId}`
+  return `${ACTIVE_JOB_STORAGE_KEY_PREFIX}${orgId}`
 }
 
-function readStoredTaskId(storageKey) {
+function readStoredJobId(storageKey) {
   if (!storageKey) return null
   try {
     return localStorage.getItem(storageKey)
@@ -72,16 +81,16 @@ function readStoredTaskId(storageKey) {
   }
 }
 
-function writeStoredTaskId(storageKey, taskId) {
-  if (!storageKey || !taskId) return
+function writeStoredJobId(storageKey, jobId) {
+  if (!storageKey || !jobId) return
   try {
-    localStorage.setItem(storageKey, taskId)
+    localStorage.setItem(storageKey, String(jobId))
   } catch {
     // no-op for environments without storage access
   }
 }
 
-function clearStoredTaskId(storageKey) {
+function clearStoredJobId(storageKey) {
   if (!storageKey) return
   try {
     localStorage.removeItem(storageKey)
@@ -102,7 +111,7 @@ const Schedules = () => {
   const { user } = useUser()
   const teacherOwnId = user?.publicMetadata?.teacher_id ?? null
   const canConsultSchedule = isAdmin || (isTeacher && Boolean(teacherOwnId))
-  const taskStorageKey = getTaskStorageKey(orgId)
+  const jobStorageKey = getJobStorageKey(orgId)
   const viewStorageKey = getViewStorageKey(orgId)
 
   // Parse query params for cross-navigation (Fase 7.4)
@@ -115,8 +124,7 @@ const Schedules = () => {
   const storedView = !hasUrlParams && isAdmin ? readStoredView(viewStorageKey) : null
 
   // Sprint 3 state
-  const [mode, setMode]                       = useState('full')
-  const [activeTaskId, setActiveTaskId]       = useState(null)
+  const [activeJobId, setActiveJobId]         = useState(null)
   const [preflightErrors, setPreflightErrors] = useState([])
 
   // Sprint 4 state
@@ -148,12 +156,16 @@ const Schedules = () => {
   const [generationActionError, setGenerationActionError] = useState('')
 
   // Sprint 3 hooks
-  const { data: drafts = [], refetch: refetchDrafts } = useDrafts()
+  const { data: schedulerStatus, refetch: refetchSchedulerStatus } = useSchedulerStatus()
+  const hasPendingDraft = Boolean(schedulerStatus?.pending_draft_id)
+  const { data: currentDraft, refetch: refetchCurrentDraft } = useCurrentDraftSummary(
+    hasPendingDraft
+  )
   const generateMutation = useGenerateSchedule()
   const cancelGenerationMutation = useCancelScheduleTask()
   const approveMutation  = useApproveDraft()
   const rejectMutation   = useRejectDraft()
-  const { data: taskData } = useScheduleTaskStatus(activeTaskId)
+  const { data: jobData } = useScheduleTaskStatus(activeJobId)
 
   // Sprint 4 hooks
   const { data: classes  = [] } = useClasses({ enabled: isAdmin })
@@ -196,34 +208,30 @@ const Schedules = () => {
 
   const classSubjects = classDetails?.subjects ?? []
 
-  // Refresh drafts after a terminal generation task
+  // Refresh scheduler state after a durable generation job finishes.
   useEffect(() => {
-    const status = taskData?.status ?? ''
-    if (activeTaskId && TERMINAL_STATUSES.some(s => status.includes(s))) {
-      void refetchDrafts()
-      clearStoredTaskId(taskStorageKey)
-
-      const businessStatus = taskData?.result?.status
-      if (businessStatus === 'Success') {
-        // Task accepted != schedule persisted. Refresh only when business result confirms success.
-        void queryClient.invalidateQueries({ queryKey: ['weekSchedule'] })
-        void queryClient.invalidateQueries({ queryKey: ['schedule'] })
-        void queryClient.invalidateQueries({ queryKey: ['timeslots'] })
-      }
+    const status = jobData?.job_status
+    const terminal = ['SUCCEEDED', 'FAILED', 'CANCELED', 'NO_VALID_OUTPUT']
+    if (activeJobId && terminal.includes(status)) {
+      void refetchSchedulerStatus()
+      void refetchCurrentDraft()
+      clearStoredJobId(jobStorageKey)
+      void queryClient.invalidateQueries({ queryKey: ['weekSchedule'] })
+      void queryClient.invalidateQueries({ queryKey: ['schedule'] })
     }
-  }, [taskData, activeTaskId, refetchDrafts, queryClient, taskStorageKey])
+  }, [jobData, activeJobId, refetchSchedulerStatus, refetchCurrentDraft, queryClient, jobStorageKey])
 
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
-    if (!isAdmin || activeTaskId) {
+    if (!isAdmin || activeJobId) {
       return
     }
 
-    const storedTaskId = readStoredTaskId(taskStorageKey)
-    if (storedTaskId) {
-      setActiveTaskId(storedTaskId)
+    const storedJobId = readStoredJobId(jobStorageKey)
+    if (storedJobId) {
+      setActiveJobId(Number(storedJobId))
     }
-  }, [isAdmin, activeTaskId, taskStorageKey])
+  }, [isAdmin, activeJobId, jobStorageKey])
   /* eslint-enable react-hooks/set-state-in-effect */
 
   useEffect(() => {
@@ -231,10 +239,10 @@ const Schedules = () => {
       return
     }
 
-    if (activeTaskId) {
-      writeStoredTaskId(taskStorageKey, activeTaskId)
+    if (activeJobId) {
+      writeStoredJobId(jobStorageKey, activeJobId)
     }
-  }, [isAdmin, activeTaskId, taskStorageKey])
+  }, [isAdmin, activeJobId, jobStorageKey])
 
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
@@ -251,12 +259,36 @@ const Schedules = () => {
   const handleGenerate = async () => {
     setGenerationActionError('')
     setPreflightErrors([])
-    setActiveTaskId(null)
+    setActiveJobId(null)
     try {
-      const result = await generateMutation.mutateAsync(mode)
-      if (result?.task_id) setActiveTaskId(result.task_id)
+      const result = await generateMutation.mutateAsync()
+      if (result?.job_id) setActiveJobId(result.job_id)
     } catch (err) {
+      const detail = err?.response?.data?.detail
+      if (detail?.error === 'pending_draft_replacement_required') {
+        const confirmed = window.confirm(
+          'Já existe um rascunho pendente. Pretende substituí-lo por uma nova geração?'
+        )
+        if (confirmed) {
+          try {
+            const result = await generateMutation.mutateAsync({ replacePendingDraft: true })
+            if (result?.job_id) setActiveJobId(result.job_id)
+          } catch (replacementError) {
+            const replacementDetail = replacementError?.response?.data?.detail
+            setGenerationActionError(
+              replacementDetail?.message
+              || replacementError?.message
+              || 'Erro ao iniciar a geração de substituição.'
+            )
+          }
+        }
+        return
+      }
       const problems = err?.response?.data?.detail?.problems
+      if (!Array.isArray(problems) && detail?.message) {
+        setGenerationActionError(detail.message)
+        return
+      }
       if (Array.isArray(problems)) {
         setPreflightErrors(problems)
       } else {
@@ -265,15 +297,33 @@ const Schedules = () => {
     }
   }
 
+  const handleRegenerate = async () => {
+    const confirmed = window.confirm(
+      'Gerar novamente irá substituir o rascunho pendente apenas quando a nova geração terminar com sucesso. Continuar?'
+    )
+    if (!confirmed) return
+    setGenerationActionError('')
+    setPreflightErrors([])
+    try {
+      const result = await generateMutation.mutateAsync({ replacePendingDraft: true })
+      if (result?.job_id) setActiveJobId(result.job_id)
+    } catch (err) {
+      const detail = err?.response?.data?.detail
+      setGenerationActionError(
+        detail?.message || err?.message || 'Não foi possível iniciar a nova geração.'
+      )
+    }
+  }
+
   const handleCancelGeneration = () => {
-    if (!activeTaskId) {
+    if (!activeJobId) {
       return
     }
 
     setGenerationActionError('')
-    cancelGenerationMutation.mutate(activeTaskId, {
+    cancelGenerationMutation.mutate(activeJobId, {
       onSuccess: () => {
-        void queryClient.invalidateQueries({ queryKey: ['schedule-task', orgId, activeTaskId] })
+        void queryClient.invalidateQueries({ queryKey: ['scheduler-job', orgId, activeJobId] })
       },
       onError: () => {
         setGenerationActionError('Não foi possível cancelar a geração. Tente novamente.')
@@ -281,7 +331,9 @@ const Schedules = () => {
     })
   }
 
-  const isGenerating = isPending(taskData?.status)
+  const isGenerating = ['QUEUED', 'RUNNING', 'CANCEL_REQUESTED'].includes(
+    jobData?.job_status
+  )
   const weekLabel    = formatWeekRange(weekStart)
   const hasSelection = Boolean(classId || teacherId)
   const showKPI      = viewMode === 'class' && Boolean(classId)
@@ -347,35 +399,15 @@ const Schedules = () => {
       ) : null}
 
       {/* ── Page header ── */}
-      <div className="d-flex justify-content-between align-items-end mb-5 flex-wrap gap-3">
+      <div className="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3">
         <div>
-          <span className="zen-caps" style={{ color: 'var(--brand-600)' }}>Horários</span>
-          <h1 className="text-display mt-2" style={{ fontSize: '3rem', color: 'var(--brand-950)' }}>
-            Horários <span className="text-editorial">Escolares</span>
-          </h1>
+          <h1 className="h3 mb-1" style={{ color: 'var(--brand-950)' }}>Horários escolares</h1>
         </div>
-        <div className="luxury-line" style={{ width: '100px', marginBottom: '14px' }} />
 
-        {/* Generation controls */}
+        {/* Status-driven generation controls */}
         {isAdmin && (
-          <CCard className="border-0 shadow-sm">
-            <CCardBody className="py-2 px-3">
-              <CRow className="g-2 align-items-end">
-                <CCol xs="auto">
-                  <CFormLabel htmlFor="modeSelect" className="small mb-1 text-muted">Modo</CFormLabel>
-                  <CFormSelect
-                    id="modeSelect"
-                    size="sm"
-                    value={mode}
-                    onChange={(e) => setMode(e.target.value)}
-                    disabled={isGenerating}
-                    style={{ minWidth: '160px' }}
-                  >
-                    <option value="full">Completo (de raiz)</option>
-                    <option value="repair">Reparação (mín. alterações)</option>
-                  </CFormSelect>
-                </CCol>
-                <CCol xs="auto">
+          <div className="d-flex align-items-center gap-2 flex-wrap">
+                {!hasPendingDraft && schedulerStatus?.can_generate_new_draft && (
                   <CButton
                     color="primary" size="sm"
                     disabled={isGenerating || generateMutation.isPending}
@@ -386,9 +418,20 @@ const Schedules = () => {
                       : <><CIcon icon={cilReload} className="me-1" />Gerar Horário</>
                     }
                   </CButton>
-                </CCol>
-                {activeTaskId && isGenerating && (
-                  <CCol xs="auto">
+                )}
+                {hasPendingDraft && schedulerStatus?.can_regenerate_with_confirmation && (
+                    <CButton
+                      color="secondary"
+                      variant="outline"
+                      size="sm"
+                      disabled={isGenerating || generateMutation.isPending}
+                      onClick={() => { void handleRegenerate() }}
+                    >
+                      <CIcon icon={cilReload} className="me-1" />
+                      Gerar novamente
+                    </CButton>
+                )}
+                {activeJobId && isGenerating && (
                     <CButton
                       color="danger"
                       variant="outline"
@@ -401,11 +444,8 @@ const Schedules = () => {
                         : <><CIcon icon={cilBan} className="me-1" />Cancelar geração</>
                       }
                     </CButton>
-                  </CCol>
                 )}
-              </CRow>
-            </CCardBody>
-          </CCard>
+          </div>
         )}
       </div>
 
@@ -413,27 +453,39 @@ const Schedules = () => {
         <>
           {preflightErrors.length > 0 && <PreflightErrorPanel problems={preflightErrors} />}
           {generationActionError && (
-            <CAlert color="danger" className="mb-4">
+            <CAlert color="danger" className="mb-4" style={{ whiteSpace: 'pre-line' }}>
               {generationActionError}
             </CAlert>
           )}
-          {activeTaskId && <GenerationStatusPanel taskId={activeTaskId} />}
-          {[...drafts].sort((a, b) => a.generation_id.localeCompare(b.generation_id)).map(draft => (
+          {activeJobId && <GenerationStatusPanel jobId={activeJobId} />}
+          {!hasPendingDraft && schedulerStatus?.blocked_reason && !isGenerating && (
+            <CAlert color="secondary" className="mb-4" style={{ whiteSpace: 'pre-line' }}>
+              {schedulerStatus.blocked_reason}
+            </CAlert>
+          )}
+          {hasPendingDraft && currentDraft && (
             <DraftPanel
-              key={draft.generation_id}
-              draft={draft}
-              onApprove={async (genId) => {
-                try { await approveMutation.mutateAsync(genId) }
-                catch (err) { setGenerationActionError(err.response?.data?.detail || 'Erro ao aprovar rascunho.') }
+              draft={currentDraft}
+              onApprove={async (draftId) => {
+                try { await approveMutation.mutateAsync(draftId) }
+                catch (err) {
+                  setGenerationActionError(
+                    getDraftMutationErrorMessage(err, 'Erro ao aprovar rascunho.')
+                  )
+                }
               }}
-              onReject={async (genId) => {
-                try { await rejectMutation.mutateAsync(genId) }
-                catch (err) { setGenerationActionError(err.response?.data?.detail || 'Erro ao rejeitar rascunho.') }
+              onReject={async (draftId) => {
+                try { await rejectMutation.mutateAsync(draftId) }
+                catch (err) {
+                  setGenerationActionError(
+                    getDraftMutationErrorMessage(err, 'Erro ao rejeitar rascunho.')
+                  )
+                }
               }}
               isApproving={approveMutation.isPending}
               isRejecting={rejectMutation.isPending}
             />
-          ))}
+          )}
         </>
       ) : null}
 
@@ -550,9 +602,9 @@ const Schedules = () => {
             <CCardHeader className="bg-transparent fw-semibold d-flex align-items-center justify-content-between">
               <span>
                 Grelha Semanal
-                {drafts.length > 0 && (
+                {hasPendingDraft && (
                   <CBadge color="warning" className="ms-2">
-                    {drafts.length} rascunho{drafts.length === 1 ? '' : 's'} pendente{drafts.length === 1 ? '' : 's'}
+                    Rascunho pendente
                   </CBadge>
                 )}
               </span>

@@ -4,13 +4,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 import structlog
 from app import models
 from app.services import schedule_service, settings_service
-from app.solver_tasks import (
-    _build_blocked_dates,
-    _build_primary_rolling_window,
-    _compute_remaining_minutes,
-    _estimate_capacity_minutes_in_range,
-    _resolve_expansion_start_date,
-    _resolve_solver_v2_rolling_weeks,
+from app.services.scheduler_planning import (
+    build_blocked_dates as _build_blocked_dates,
+    build_primary_window as _build_primary_window,
+    compute_remaining_minutes as _compute_remaining_minutes,
+    estimate_capacity_minutes_in_range as _estimate_capacity_minutes_in_range,
+    resolve_expansion_start_date,
+    select_adaptive_near_future_weeks as _select_adaptive_near_future_weeks,
 )
 from app.core.task_keys import (
     DEFAULT_HARD_END_MONTH,
@@ -29,18 +29,14 @@ async def _get_latest_settings_with_dates(
         sa_select(models.OrganizationSettings).where(
             models.OrganizationSettings.organization_id == organization_id,
             models.OrganizationSettings.school_start_date.isnot(None),
-            models.OrganizationSettings.school_target_end_date.isnot(None),
+            models.OrganizationSettings.school_hard_end_date.isnot(None),
         )
     )
     return settings_result.scalars().first()
 
 
 def _resolve_preflight_hard_end_date(org_settings: models.OrganizationSettings) -> date | None:
-    if org_settings.school_hard_end_date is not None:
-        return org_settings.school_hard_end_date
-    if org_settings.school_target_end_date is None:
-        return None
-    return date(org_settings.school_target_end_date.year, DEFAULT_HARD_END_MONTH, DEFAULT_HARD_END_DAY)
+    return org_settings.school_hard_end_date
 
 
 def _validate_repair_generation_window(org_settings: models.OrganizationSettings) -> str | None:
@@ -51,7 +47,7 @@ def _validate_repair_generation_window(org_settings: models.OrganizationSettings
         return None
     if hard_end_date <= frozen_until:
         return (
-            "Regeneração em modo repair bloqueada: não existe horizonte fora da janela "
+            "Reparacao adaptativa bloqueada: nao existe horizonte fora da janela "
             f"de estabilidade (até {frozen_until.isoformat()}) antes do hard end date "
             f"({hard_end_date.isoformat()})."
         )
@@ -286,28 +282,42 @@ async def _validate_subject_requirements(
 def _build_preflight_primary_window(
     *,
     org_settings: models.OrganizationSettings,
-    mode: str,
+    adaptive_repair: bool,
     blocked_dates: set[date],
+    class_count: int,
+    teacher_count: int,
+    room_count: int,
+    timeslot_count: int,
+    lesson_count: int,
 ) -> dict | None:
     hard_end_date = _resolve_preflight_hard_end_date(org_settings)
     if hard_end_date is None:
         return None
 
-    repair_window_days = _resolve_repair_window_days(org_settings) if mode == "repair" else 0
-    window_start = _resolve_expansion_start_date(
+    repair_window_days = _resolve_repair_window_days(org_settings) if adaptive_repair else 0
+    window_start = resolve_expansion_start_date(
         org_settings.school_start_date,
-        mode=mode,
+        adaptive_repair=adaptive_repair,
         repair_window_days=repair_window_days,
     )
 
-    primary_window = _build_primary_rolling_window(
+    near_future_weeks = _select_adaptive_near_future_weeks(
+        class_count=class_count,
+        teacher_count=teacher_count,
+        room_count=room_count,
+        timeslot_count=timeslot_count,
+        lesson_count=lesson_count,
+        blocked_dates_count=len(blocked_dates),
+        remaining_days=(hard_end_date - window_start).days + 1,
+    )
+    primary_window = _build_primary_window(
         window_start_date=window_start,
         hard_end_date=hard_end_date,
         blocked_dates=blocked_dates,
-        rolling_weeks=_resolve_solver_v2_rolling_weeks(),
+        horizon_weeks=near_future_weeks,
     )
     return {
-        "rolling_weeks": int(primary_window["rolling_weeks"]),
+        "near_future_horizon_weeks": near_future_weeks,
         "start_date": primary_window["window_start_date"],
         "end_date": primary_window["window_end_date"],
         "total_days": int(primary_window["window_total_days"]),
@@ -320,7 +330,7 @@ async def _build_hard_end_feasibility(
     db: AsyncSession,
     organization_id: int,
     org_settings: models.OrganizationSettings,
-    mode: str,
+    adaptive_repair: bool,
     room_count: int,
     blocked_dates: set[date],
 ) -> dict | None:
@@ -328,10 +338,10 @@ async def _build_hard_end_feasibility(
     if hard_end_date is None:
         return None
 
-    repair_window_days = _resolve_repair_window_days(org_settings) if mode == "repair" else 0
-    horizon_start = _resolve_expansion_start_date(
+    repair_window_days = _resolve_repair_window_days(org_settings) if adaptive_repair else 0
+    horizon_start = resolve_expansion_start_date(
         org_settings.school_start_date,
-        mode=mode,
+        adaptive_repair=adaptive_repair,
         repair_window_days=repair_window_days,
     )
 
@@ -397,7 +407,7 @@ async def _build_hard_end_feasibility(
 
 def _build_repair_infeasible_error(feasibility: dict) -> str:
     return (
-        "Regeneracao em modo repair bloqueada: carga reconciliada estimada "
+        "Reparacao adaptativa bloqueada: carga reconciliada estimada "
         f"({feasibility['backlog_hours']}h) excede a capacidade teorica maxima "
         f"({feasibility['capacity_hours']}h) no horizonte "
         f"{feasibility['start_date'].isoformat()} a {feasibility['hard_end_date'].isoformat()}. "
@@ -405,17 +415,30 @@ def _build_repair_infeasible_error(feasibility: dict) -> str:
     )
 
 
-async def _preflight_check(db: AsyncSession, organization_id: int, mode: str = "full") -> tuple[list[str], dict]:
+async def _preflight_check(
+    db: AsyncSession,
+    organization_id: int,
+    strategy: models.ScheduleGenerationStrategy = (
+        models.ScheduleGenerationStrategy.COMPLETE_GENERATION
+    ),
+    *,
+    replace_pending_draft: bool = False,
+) -> tuple[list[str], dict]:
     """Valida pré-condições e devolve erros + resumo de preflight híbrido."""
     errors: list[str] = []
     preflight_summary: dict = {
-        "mode": mode,
+        "strategy": strategy.value,
         "primary_window": None,
         "hard_end_feasibility": None,
     }
 
-    drafts = await db.run_sync(lambda sync_db: schedule_service.list_draft_gen_ids_sync(sync_db, organization_id))
-    if drafts:
+    pending_draft_count = await db.scalar(
+        sa_select(func.count(models.ScheduleDraft.id)).where(
+            models.ScheduleDraft.organization_id == organization_id,
+            models.ScheduleDraft.draft_state == models.ScheduleDraftState.PENDING,
+        )
+    )
+    if pending_draft_count and not replace_pending_draft:
         return (
             [
                 "Existe um rascunho pendente de aprovação. "
@@ -428,13 +451,14 @@ async def _preflight_check(db: AsyncSession, organization_id: int, mode: str = "
     if not org_settings:
         return (
             [
-                "Nenhum ano letivo com 'data de início' e 'data de fim-alvo'. "
+                "Nenhum ano letivo com 'data de inicio' e 'data-limite rigida'. "
                 "Configure em Configurações > Anos Letivos."
             ],
             preflight_summary,
         )
 
-    if mode == "repair":
+    adaptive_repair = strategy == models.ScheduleGenerationStrategy.ADAPTIVE_REPAIR
+    if adaptive_repair:
         window_error = _validate_repair_generation_window(org_settings)
         if window_error:
             errors.append(window_error)
@@ -448,7 +472,7 @@ async def _preflight_check(db: AsyncSession, organization_id: int, mode: str = "
         errors.append(
             "Nenhuma carga letiva ativa encontrada. "
             "Atribua professores em Turmas > Disciplinas (modelo novo) "
-            "ou configure lições no fluxo legado."
+            "ou configure as licoes curriculares."
         )
 
     ts_count = await db.scalar(
@@ -469,13 +493,18 @@ async def _preflight_check(db: AsyncSession, organization_id: int, mode: str = "
         sa_select(models.SchoolCalendarEvent).where(models.SchoolCalendarEvent.organization_id == organization_id)
     )
     blocked_dates = _build_blocked_dates(calendar_events.scalars().all())
-    preflight_summary["primary_window"] = _build_preflight_primary_window(
-        org_settings=org_settings,
-        mode=mode,
-        blocked_dates=blocked_dates,
-    )
 
     teacher_ids = await _collect_generation_teacher_ids(db, organization_id)
+    preflight_summary["primary_window"] = _build_preflight_primary_window(
+        org_settings=org_settings,
+        adaptive_repair=adaptive_repair,
+        blocked_dates=blocked_dates,
+        class_count=int(class_subject_count or 0),
+        teacher_count=len(teacher_ids),
+        room_count=int(room_count or 0),
+        timeslot_count=int(ts_count or 0),
+        lesson_count=int(lesson_count or class_subject_count or 0),
+    )
     teacher_error = await _validate_teacher_availabilities(db, teacher_ids)
     if teacher_error:
         errors.append(teacher_error)
@@ -488,14 +517,14 @@ async def _preflight_check(db: AsyncSession, organization_id: int, mode: str = "
             db,
             organization_id,
             org_settings,
-            mode,
+            adaptive_repair,
             int(room_count or 0),
             blocked_dates,
         )
         preflight_summary["hard_end_feasibility"] = feasibility
 
         if (
-            mode == "repair"
+            adaptive_repair
             and feasibility is not None
             and not feasibility["feasible_until_hard_end"]
         ):

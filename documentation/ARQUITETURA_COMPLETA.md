@@ -1,5 +1,10 @@
 # Arquitetura Completa - Cronos
 
+> Nota historica: a descricao do scheduler neste snapshot antecede o novo baseline.
+> O contrato ativo esta em `03_scheduler_engine/PRD_SCHEDULE_GENERATOR_NEW_BASELINE.md`,
+> `TECH_SPEC_SCHEDULE_GENERATOR_NEW_BASELINE.md` e respetivo WBS. Referencias a
+> `app/solver_tasks.py` e publicacao direta em `ScheduleOutput` nao sao caminhos ativos.
+
 Este documento descreve detalhadamente a arquitetura completa da aplicação **Cronos**, abrangendo desde a infraestrutura até as camadas de backend, frontend e motor de otimização de horários. Todo o sistema assenta numa arquitetura limpa, multitenant e isolada.
 
 ## 1. Diagrama de Arquitetura (Mermaid)

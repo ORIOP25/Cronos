@@ -3,6 +3,17 @@ from unittest.mock import patch
 from datetime import date, time
 
 
+@pytest.fixture(autouse=True)
+def _stub_clerk_onboarding_metadata(monkeypatch):
+    async def _noop(_clerk_user_id: str) -> None:
+        return None
+
+    monkeypatch.setattr(
+        "app.api.v1.endpoints.onboarding.mark_onboarding_complete_in_clerk",
+        _noop,
+    )
+
+
 # ── T19: GET status without token → 401 ────────────────────────
 @pytest.mark.asyncio
 async def test_onboarding_status_requires_auth(async_client):
@@ -29,7 +40,6 @@ async def test_onboarding_creates_settings(async_client, db_session):
 
     data = {
         "school_start_date": "2025-09-15",
-        "school_target_end_date": "2026-06-30",
         "school_hard_end_date": "2026-07-31",
         "lunch_start": "12:30",
         "lunch_end": "14:00",
@@ -68,7 +78,6 @@ async def test_onboarding_creates_settings(async_client, db_session):
 async def test_onboarding_requires_auth(async_client):
     data = {
         "school_start_date": "2025-09-15",
-        "school_target_end_date": "2026-06-30",
         "school_hard_end_date": "2026-07-31",
         "lunch_start": "12:30",
         "lunch_end": "14:00",
@@ -96,7 +105,6 @@ async def test_onboarding_requires_admin(async_client, db_session):
 
     data = {
         "school_start_date": "2025-09-15",
-        "school_target_end_date": "2026-06-30",
         "school_hard_end_date": "2026-07-31",
         "lunch_start": "12:30",
         "lunch_end": "14:00",
@@ -170,7 +178,6 @@ async def test_onboarding_post_idempotent(async_client, db_session):
 
     data = {
         "school_start_date": "2025-09-15",
-        "school_target_end_date": "2026-06-30",
         "school_hard_end_date": "2026-07-31",
         "lunch_start": "12:30",
         "lunch_end": "14:00",
@@ -237,7 +244,6 @@ async def test_onboarding_status_complete_after_post(async_client, db_session):
 
     data = {
         "school_start_date": "2025-09-15",
-        "school_target_end_date": "2026-06-30",
         "school_hard_end_date": "2026-07-31",
         "lunch_start": "12:30",
         "lunch_end": "14:00",

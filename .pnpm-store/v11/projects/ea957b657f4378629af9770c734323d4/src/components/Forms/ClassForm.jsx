@@ -1,0 +1,175 @@
+import React, { useState, useEffect } from 'react'
+import PropTypes from 'prop-types'
+import {
+  CForm, CCol, CRow, CFormInput, CButton, CModalFooter, CFormSelect
+} from '@coreui/react'
+import { useCourses } from '../../hooks/useSchoolData'
+
+const ClassForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
+  const { data: courses } = useCourses()
+  const currentYear = new Date().getFullYear()
+  const [formData, setFormData] = useState({ 
+    name: '', 
+    size: 25,
+    course_id: '',
+    grade_level: 10,
+    start_year: currentYear,
+    end_year: currentYear + 3,
+  })
+
+  // Popula o formulário se estivermos a editar
+  /* eslint-disable react-hooks/set-state-in-effect */
+  useEffect(() => {
+    if (initialData) {
+      setFormData({
+        name: initialData.name || '',
+        size: initialData.size || 25,
+        course_id: initialData.course_id ? String(initialData.course_id) : '',
+        grade_level: initialData.grade_level || 10,
+        start_year: initialData.start_year || currentYear,
+        end_year: initialData.end_year || currentYear + 3,
+      })
+    } else {
+        setFormData({
+          name: '',
+          size: 25,
+          course_id: '',
+          grade_level: 10,
+          start_year: currentYear,
+          end_year: currentYear + 3,
+        })
+    }
+  }, [initialData, currentYear])
+  /* eslint-enable react-hooks/set-state-in-effect */
+
+  const handleChange = (e) => {
+    const { name, value } = e.target
+    setFormData(prev => ({ ...prev, [name]: value }))
+  }
+
+  const handleSubmit = (e) => {
+    e.preventDefault()
+    // Pequena proteção: converter string vazia em null para o backend
+    const finalData = {
+      ...formData,
+      size: Number(formData.size),
+      course_id: formData.course_id ? Number.parseInt(formData.course_id, 10) : null,
+      grade_level: Number(formData.grade_level),
+      start_year: Number(formData.start_year),
+      end_year: Number(formData.end_year),
+    }
+    onSubmit(finalData)
+  }
+
+  let submitLabel = 'Criar Turma'
+  if (isLoading) submitLabel = 'A gravar...'
+  else if (initialData) submitLabel = 'Atualizar Turma'
+
+  return (
+    <CForm onSubmit={handleSubmit}>
+      <CRow className="g-3">
+        <CCol md={8}>
+          <CFormInput
+            id="class-name"
+            type="text"
+            label="Nome da Turma"
+            name="name"
+            value={formData.name}
+            onChange={handleChange}
+            required
+            placeholder="Ex: 12º A"
+          />
+        </CCol>
+        
+        <CCol md={4}>
+          <CFormInput
+            id="class-size"
+            type="number"
+            label="Nº Alunos"
+            name="size"
+            value={formData.size}
+            onChange={handleChange}
+            min="1"
+            required
+            text="Usado para validar a lotação da sala."
+          />
+        </CCol>
+
+        <CCol md={12}>
+          <CFormSelect
+            id="class-course"
+            label="Curso Associado"
+            name="course_id"
+            value={formData.course_id}
+            onChange={handleChange}
+            text="Associe esta turma a um curso profissional para gerir disciplinas e professores na página da turma."
+          >
+            <option value="">-- Sem Curso --</option>
+            {/* Lista dinâmica de cursos */}
+            {courses?.map(course => (
+                <option key={course.id} value={course.id}>{course.name}</option>
+            ))}
+          </CFormSelect>
+        </CCol>
+
+        <CCol md={4}>
+          <CFormInput
+            id="class-grade-level"
+            type="number"
+            label="Ano (10-12)"
+            name="grade_level"
+            value={formData.grade_level}
+            onChange={handleChange}
+            min="10"
+            max="12"
+            required
+          />
+        </CCol>
+
+        <CCol md={4}>
+          <CFormInput
+            id="class-start-year"
+            type="number"
+            label="Inicio"
+            name="start_year"
+            value={formData.start_year}
+            onChange={handleChange}
+            min="2000"
+            required
+          />
+        </CCol>
+
+        <CCol md={4}>
+          <CFormInput
+            id="class-end-year"
+            type="number"
+            label="Fim"
+            name="end_year"
+            value={formData.end_year}
+            onChange={handleChange}
+            min="2001"
+            required
+          />
+        </CCol>
+      </CRow>
+
+      <CModalFooter className="px-0 mt-4 border-0 pb-0">
+        <CButton color="secondary" variant="ghost" onClick={onCancel}>
+          Cancelar
+        </CButton>
+        <CButton color="primary" type="submit" disabled={isLoading}>
+          {submitLabel}
+        </CButton>
+      </CModalFooter>
+    </CForm>
+  )
+}
+
+export default ClassForm
+
+ClassForm.propTypes = {
+  initialData: PropTypes.object,
+  onSubmit: PropTypes.func.isRequired,
+  isLoading: PropTypes.bool,
+  onCancel: PropTypes.func.isRequired,
+}

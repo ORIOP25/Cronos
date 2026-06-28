@@ -48,6 +48,35 @@ describe('WeekGrid (Ponto 8.1)', () => {
     )
   })
 
+  it('opens an active baseline block for operational registration', () => {
+    const onOpenOperationalAction = vi.fn()
+    const activeSlot = {
+      ...baseSlot,
+      schedule_output_id: null,
+      active_schedule_block_id: 902,
+      block_source: 'active',
+    }
+
+    render(
+      <WeekGrid
+        slots={[activeSlot]}
+        isLoading={false}
+        baseTimeslots={[activeSlot.timeslot]}
+        weekStart="2026-04-20"
+        isOperationalEnabled
+        onOpenOperationalAction={onOpenOperationalAction}
+      />
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: /abrir registo/i }))
+    expect(onOpenOperationalAction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        active_schedule_block_id: 902,
+        block_source: 'active',
+      })
+    )
+  })
+
   it('mantém bloco em modo leitura quando ação operacional está desativada', () => {
     const onOpenOperationalAction = vi.fn()
 

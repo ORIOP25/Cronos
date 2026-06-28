@@ -107,7 +107,7 @@ class TestTeacherRoleRegressionContracts:
 
     async def test_teacher_horizon_contract_200_403_404(self, async_client: AsyncClient, admin_token_headers: dict, db_session):
         settings_resp = await async_client.post(
-            f"{API}/school/settings/", json={"academic_year": "2025/2026", "school_start_date": "2025-09-01", "school_target_end_date": "2026-06-30", "school_hard_end_date": "2026-07-31"}, headers=admin_token_headers,
+            f"{API}/school/settings/", json={"school_start_date": "2025-09-01", "school_hard_end_date": "2026-07-31"}, headers=admin_token_headers,
         )
         assert settings_resp.status_code == 200
         teacher_resp = await async_client.post(
@@ -132,7 +132,7 @@ class TestTeacherRoleRegressionContracts:
 
     async def test_teacher_horizon_polling_volume_does_not_trip_old_global_limit(self, async_client: AsyncClient, admin_token_headers: dict, db_session):
         settings_resp = await async_client.post(
-            f"{API}/school/settings/", json={"academic_year": "2025/2026", "school_start_date": "2025-09-01", "school_target_end_date": "2026-06-30", "school_hard_end_date": "2026-07-31"}, headers=admin_token_headers,
+            f"{API}/school/settings/", json={"school_start_date": "2025-09-01", "school_hard_end_date": "2026-07-31"}, headers=admin_token_headers,
         )
         assert settings_resp.status_code == 200
         teacher_resp = await async_client.post(

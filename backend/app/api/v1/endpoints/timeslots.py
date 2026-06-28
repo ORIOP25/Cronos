@@ -23,5 +23,8 @@ async def generate_timeslots(
     current_user: Annotated[models.User, Depends(deps.get_current_active_admin)]
 ):
     # Chama o serviço que limpa os antigos e cria os novos
-    count = await timeslot_service.create_bulk_timeslots(db, settings, current_user.organization_id)
+    count = await timeslot_service.create_bulk_timeslots(
+        db, settings, current_user.organization_id,
+        changed_by_user_id=current_user.id,
+    )
     return {"message": f"{count} blocos horários gerados com sucesso."}

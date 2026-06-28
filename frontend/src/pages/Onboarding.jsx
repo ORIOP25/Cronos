@@ -42,7 +42,6 @@ export default function Onboarding() {
   const [status, setStatus] = useState({ loading: true, complete: false })
   const [form, setForm] = useState({
     school_start_date: today,
-    school_target_end_date: nextYear,
     school_hard_end_date: nextYear,
     lunch_start: '12:30',
     lunch_end: '14:00',
@@ -151,20 +150,6 @@ export default function Onboarding() {
           </div>
 
           <div className="zen-onboarding-row">
-            <div className="zen-onboarding-field">
-              <label className="zen-onboarding-label">Fim previsto</label>
-              <input
-                type="date"
-                aria-label="Fim previsto"
-                className="zen-onboarding-input"
-                value={form.school_target_end_date}
-                onChange={(e) =>
-                  setForm({ ...form, school_target_end_date: e.target.value })
-                }
-                required
-              />
-            </div>
-
             <div className="zen-onboarding-field">
               <label className="zen-onboarding-label">
                 Fim máximo{' '}

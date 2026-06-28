@@ -49,7 +49,10 @@ async def create_class(
     db: Annotated[AsyncSession, Depends(deps.get_db)],
     current_user: Annotated[models.User, Depends(deps.get_current_active_admin)]
 ):
-    result = await class_service.create_class(db, item, current_user.organization_id)
+    result = await class_service.create_class(
+        db, item, current_user.organization_id,
+        changed_by_user_id=current_user.id,
+    )
     if result == "COURSE_NOT_FOUND":
         raise HTTPException(status_code=404, detail="Curso não encontrado")
     return result
@@ -61,7 +64,10 @@ async def update_class(
     db: Annotated[AsyncSession, Depends(deps.get_db)],
     current_user: Annotated[models.User, Depends(deps.get_current_active_admin)]
 ):
-    updated = await class_service.update_class(db, class_id, item, current_user.organization_id)
+    updated = await class_service.update_class(
+        db, class_id, item, current_user.organization_id,
+        changed_by_user_id=current_user.id,
+    )
     if updated == "INVALID_YEAR_RANGE":
         raise HTTPException(status_code=400, detail="Ano de fim deve ser maior que o ano de início")
     if not updated:
@@ -74,7 +80,10 @@ async def delete_class(
     db: Annotated[AsyncSession, Depends(deps.get_db)],
     current_user: Annotated[models.User, Depends(deps.get_current_active_admin)]
 ):
-    status = await class_service.delete_class(db, class_id, current_user.organization_id)
+    status = await class_service.delete_class(
+        db, class_id, current_user.organization_id,
+        changed_by_user_id=current_user.id,
+    )
     
     if status == "NOT_FOUND":
         raise HTTPException(status_code=404, detail=CLASS_NOT_FOUND_MSG)
@@ -196,7 +205,8 @@ async def add_class_subject(
     - Disciplina não está já associada à turma
     """
     result = await class_service.add_class_subject(
-        db, class_id, payload.subject_id, current_user.organization_id
+        db, class_id, payload.subject_id, current_user.organization_id,
+        changed_by_user_id=current_user.id,
     )
     
     if result == "CLASS_NOT_FOUND":
@@ -230,7 +240,8 @@ async def update_class_subject_teacher(
     Enviar teacher_id=null para remover a atribuição.
     """
     result = await class_service.update_class_subject_teacher(
-        db, class_id, subject_id, payload, current_user.organization_id
+        db, class_id, subject_id, payload, current_user.organization_id,
+        changed_by_user_id=current_user.id,
     )
     
     if result == "CLASS_NOT_FOUND":
@@ -263,7 +274,8 @@ async def remove_class_subject(
     Remove uma disciplina da turma (para o grade_level atual).
     """
     result = await class_service.remove_class_subject(
-        db, class_id, subject_id, current_user.organization_id
+        db, class_id, subject_id, current_user.organization_id,
+        changed_by_user_id=current_user.id,
     )
     
     if result == "CLASS_NOT_FOUND":

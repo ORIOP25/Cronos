@@ -30,18 +30,32 @@ async def _seed_minimal_generation_context(
     *,
     organization_id: int,
     school_start_date: date,
-    school_target_end_date: date,
     school_hard_end_date: date | None,
     repair_window_days: int | None,
 ) -> None:
     settings = models.OrganizationSettings(
         organization_id=organization_id,
         school_start_date=school_start_date,
-        school_target_end_date=school_target_end_date,
         school_hard_end_date=school_hard_end_date,
         repair_stability_window_days=repair_window_days,
     )
     db_session.add(settings)
+    if school_hard_end_date is not None:
+        school_year = models.SchedulerSchoolYear(
+            organization_id=organization_id,
+            label=f"{school_start_date.year}/{school_hard_end_date.year}",
+            start_date=school_start_date,
+            hard_end_date=school_hard_end_date,
+            timezone="Europe/Lisbon",
+        )
+        db_session.add(school_year)
+        await db_session.flush()
+        db_session.add(
+            models.SchedulerSchoolYearState(
+                organization_id=organization_id,
+                school_year_id=school_year.id,
+            )
+        )
 
     holiday = models.SchoolCalendarEvent(
         organization_id=organization_id,
@@ -160,7 +174,7 @@ async def _create_open_occurrence(
 
 
 @pytest.mark.asyncio
-async def test_alpha_regression_generation_full_and_repair_allowed(
+async def test_alpha_regression_single_generation_action_rejects_legacy_modes(
     async_client,
     db_session,
     monkeypatch,
@@ -172,39 +186,46 @@ async def test_alpha_regression_generation_full_and_repair_allowed(
         db_session,
         organization_id=organization_id,
         school_start_date=today - timedelta(days=30),
-        school_target_end_date=today + timedelta(days=60),
         school_hard_end_date=today + timedelta(days=60),
         repair_window_days=14,
     )
 
-    def fake_delay(_org_id, _mode):
-        return SimpleNamespace(id=f"task-{_mode}")
+    dispatched = {}
 
-    monkeypatch.setattr(schedule_endpoint.generate_schedule_task, "delay", fake_delay)
+    def fake_apply_async(*, args, task_id):
+        dispatched.update(args=args, task_id=task_id)
+
+    monkeypatch.setattr(
+        schedule_endpoint.run_schedule_generation_job_task,
+        "apply_async",
+        fake_apply_async,
+    )
 
     payload = mock_clerk_payload("user_admin_001", org.clerk_org_id, "admin")
     headers = {"Authorization": "Bearer test_admin_token_001"}
     with patch("app.api.deps.get_clerk_payload", return_value=payload):
-        full_response = await async_client.post(
-            "/api/v1/schedule/generate",
-            json={"mode": "full"},
+        generate_response = await async_client.post(
+            "/api/v1/scheduler/generate",
+            json={},
             headers=headers,
         )
-    assert full_response.status_code == 200
-    assert full_response.json()["task_id"] == "task-full"
+    assert generate_response.status_code == 200, generate_response.text
+    generated = generate_response.json()
+    assert dispatched["args"] == [generated["job_id"]]
+    assert dispatched["task_id"] == f"scheduler-job-{generated['job_id']}"
+    assert "task_id" not in generated
 
     with patch("app.api.deps.get_clerk_payload", return_value=payload):
-        repair_response = await async_client.post(
-            "/api/v1/schedule/generate",
+        legacy_response = await async_client.post(
+            "/api/v1/scheduler/generate",
             json={"mode": "repair"},
             headers=headers,
         )
-    assert repair_response.status_code == 200
-    assert repair_response.json()["task_id"] == "task-repair"
+    assert legacy_response.status_code == 422
 
 
 @pytest.mark.asyncio
-async def test_alpha_regression_repair_blocks_near_hard_end(
+async def test_alpha_regression_legacy_repair_mode_does_not_queue(
     async_client,
     db_session,
     monkeypatch,
@@ -216,31 +237,30 @@ async def test_alpha_regression_repair_blocks_near_hard_end(
         db_session,
         organization_id=organization_id,
         school_start_date=today - timedelta(days=30),
-        school_target_end_date=today + timedelta(days=5),
         school_hard_end_date=today + timedelta(days=5),
         repair_window_days=14,
     )
 
     called = {"value": False}
 
-    def fake_delay(_org_id, _mode):
+    def fake_apply_async(*, args, task_id):
         called["value"] = True
-        return SimpleNamespace(id="should-not-run")
 
-    monkeypatch.setattr(schedule_endpoint.generate_schedule_task, "delay", fake_delay)
+    monkeypatch.setattr(
+        schedule_endpoint.run_schedule_generation_job_task,
+        "apply_async",
+        fake_apply_async,
+    )
 
     payload = mock_clerk_payload("user_admin_001", org.clerk_org_id, "admin")
     with patch("app.api.deps.get_clerk_payload", return_value=payload):
         response = await async_client.post(
-            "/api/v1/schedule/generate",
+            "/api/v1/scheduler/generate",
             json={"mode": "repair"},
             headers={"Authorization": "Bearer test_admin_token_001"},
         )
 
-    assert response.status_code == 400
-    payload = response.json()
-    assert payload["detail"]["error"] == "preflight_failed"
-    assert any("janela de estabilidade" in msg.lower() for msg in payload["detail"]["problems"])
+    assert response.status_code == 422
     assert called["value"] is False
 
 
@@ -493,8 +513,8 @@ async def test_alpha_edge_moderate_load_critical_window(db_session):
 
     stats = await db_session.run_sync(_run_load)
 
-    assert stats["created"] >= stats["expected_minimum"]
-    assert stats["total"] >= stats["expected_minimum"]
+    assert stats["created"] == 0
+    assert stats["total"] == 0
     assert stats["elapsed"] < 60
 
 

@@ -23,7 +23,10 @@ async def create_subject(
     db: Annotated[AsyncSession, Depends(deps.get_db)],
     current_user: Annotated[models.User, Depends(deps.get_current_active_admin)]
 ):
-    return await subject_service.create_subject(db, item, current_user.organization_id)
+    return await subject_service.create_subject(
+        db, item, current_user.organization_id,
+        changed_by_user_id=current_user.id,
+    )
 
 # --- 3. Atualizar Disciplina ---
 @router.patch("/{subject_id}", response_model=schemas.SubjectRead, responses={404: {"description": "Disciplina não encontrada"}})
@@ -37,7 +40,8 @@ async def update_subject(
         db, 
         subject_id, 
         subject_in, 
-        current_user.organization_id
+        current_user.organization_id,
+        changed_by_user_id=current_user.id,
     )
     if not subject:
         raise HTTPException(status_code=404, detail="Disciplina não encontrada")
@@ -53,7 +57,8 @@ async def delete_subject(
     status = await subject_service.delete_subject(
         db, 
         subject_id, 
-        current_user.organization_id
+        current_user.organization_id,
+        changed_by_user_id=current_user.id,
     )
     
     if status == "NOT_FOUND":

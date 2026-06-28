@@ -4,6 +4,7 @@ Esta secao fixa compromissos estrategicos estaveis do Cronos.
 
 ## Conteudo principal
 - OBJECTIVO_FINAL_OVERVIEW.md: 5 Ws oficiais, operacao diaria ponta a ponta e criterios minimos da fase atual.
+- PRD_CLERK_TEACHER_USER_CREATION.md: requisitos para tornar a criacao de professores em `/teachers` compativel com Clerk como fonte de verdade de identidade e convites.
 - WBS_ALPHA_V1_ENTREGA.md: work breakdown structure detalhado para fechar a Alpha V1 (implementacao, testes e edge cases).
 - WBS_VISAO_PROFESSOR_E_ACESSOS.md: plano detalhado para separar experiencia admin/professor no menu, rotas e sincronismo de horarios do professor.
 - ALPHA_PILOT_GO_NO_GO.md: checklist de prontidao, suporte reativo e recolha de feedback para decisao final do piloto.

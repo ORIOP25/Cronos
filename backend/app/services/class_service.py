@@ -4,6 +4,27 @@ from sqlalchemy.future import select
 from sqlalchemy import delete
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from app import models, schemas
+from app.services.scheduler_state_service import record_scheduler_change
+
+
+def _class_demand_snapshot(item: models.Class) -> dict:
+    return {
+        "size": item.size,
+        "start_year": item.start_year,
+        "end_year": item.end_year,
+        "grade_level": item.grade_level,
+        "course_id": item.course_id,
+        "is_archived": item.is_archived,
+    }
+
+
+def _class_subject_snapshot(link: models.ClassSubjectLink) -> dict:
+    return {
+        "class_id": link.class_id,
+        "subject_id": link.subject_id,
+        "grade_level": link.grade_level,
+        "teacher_id": link.teacher_id,
+    }
 
 
 # --- HELPERS INTERNOS ---
@@ -66,13 +87,30 @@ async def get_class_details(db: AsyncSession, class_id: int, organization_id: in
     result = await db.execute(query)
     return result.scalars().first()
 
-async def create_class(db: AsyncSession, item: schemas.ClassCreate, organization_id: int):
+async def create_class(
+    db: AsyncSession,
+    item: schemas.ClassCreate,
+    organization_id: int,
+    changed_by_user_id: int | None = None,
+):
     db_course = await _get_course_by_org(db, item.course_id, organization_id)
     if not db_course:
         return "COURSE_NOT_FOUND"
 
     db_item = models.Class(**item.model_dump(), organization_id=organization_id)
     db.add(db_item)
+    await db.flush()
+    await record_scheduler_change(
+        db,
+        organization_id,
+        entity_type="CLASS_DEMAND",
+        entity_id=db_item.id,
+        operation=models.SchedulerStateChangeOperation.CREATE,
+        before=None,
+        after=_class_demand_snapshot(db_item),
+        changed_by_user_id=changed_by_user_id,
+        active_resource=not db_item.is_archived,
+    )
     await db.commit()
     await db.refresh(db_item)
     return db_item
@@ -81,13 +119,13 @@ async def update_class(
     db: AsyncSession, 
     class_id: int, 
     class_in: schemas.ClassUpdate,
-    organization_id: int
+    organization_id: int,
+    changed_by_user_id: int | None = None,
 ):
     db_class = await _get_class_by_org(db, class_id, organization_id)
     
     if not db_class:
         return None
-
     update_data = class_in.model_dump(exclude_unset=True)
     next_start_year = update_data.get("start_year", db_class.start_year)
     next_end_year = update_data.get("end_year", db_class.end_year)
@@ -95,22 +133,51 @@ async def update_class(
     if next_end_year <= next_start_year:
         return "INVALID_YEAR_RANGE"
 
+    before = _class_demand_snapshot(db_class)
     for field, value in update_data.items():
         setattr(db_class, field, value)
 
     db.add(db_class)
+    await record_scheduler_change(
+        db,
+        organization_id,
+        entity_type="CLASS_DEMAND",
+        entity_id=db_class.id,
+        operation=models.SchedulerStateChangeOperation.UPDATE,
+        before=before,
+        after=_class_demand_snapshot(db_class),
+        changed_by_user_id=changed_by_user_id,
+        active_resource=not db_class.is_archived,
+    )
     await db.commit()
     await db.refresh(db_class)
     return db_class
 
-async def delete_class(db: AsyncSession, class_id: int, organization_id: int):
+async def delete_class(
+    db: AsyncSession,
+    class_id: int,
+    organization_id: int,
+    changed_by_user_id: int | None = None,
+):
     """Remove uma turma e dependências associadas (cascade explícito)."""
     item = await _get_class_by_org(db, class_id, organization_id)
     
     if not item:
         return "NOT_FOUND"
 
+    before = _class_demand_snapshot(item)
     await _delete_class_with_dependencies(db, item.id)
+    await record_scheduler_change(
+        db,
+        organization_id,
+        entity_type="CLASS_DEMAND",
+        entity_id=item.id,
+        operation=models.SchedulerStateChangeOperation.DELETE,
+        before=before,
+        after=None,
+        changed_by_user_id=changed_by_user_id,
+        active_resource=not item.is_archived,
+    )
     await db.commit()
     return "SUCCESS"
 
@@ -128,7 +195,13 @@ async def get_classes_by_course(db: AsyncSession, course_id: int, organization_i
     return result.scalars().all()
 
 
-async def create_class_in_course(db: AsyncSession, course_id: int, item: schemas.ClassCreateInCourse, organization_id: int):
+async def create_class_in_course(
+    db: AsyncSession,
+    course_id: int,
+    item: schemas.ClassCreateInCourse,
+    organization_id: int,
+    changed_by_user_id: int | None = None,
+):
     db_course = await _get_course_by_org(db, course_id, organization_id)
     if not db_course:
         return "COURSE_NOT_FOUND"
@@ -139,6 +212,18 @@ async def create_class_in_course(db: AsyncSession, course_id: int, item: schemas
         organization_id=organization_id
     )
     db.add(db_item)
+    await db.flush()
+    await record_scheduler_change(
+        db,
+        organization_id,
+        entity_type="CLASS_DEMAND",
+        entity_id=db_item.id,
+        operation=models.SchedulerStateChangeOperation.CREATE,
+        before=None,
+        after=_class_demand_snapshot(db_item),
+        changed_by_user_id=changed_by_user_id,
+        active_resource=not db_item.is_archived,
+    )
     await db.commit()
     await db.refresh(db_item)
     return db_item
@@ -150,11 +235,11 @@ async def update_class_in_course(
     class_id: int,
     class_in: schemas.ClassUpdateInCourse,
     organization_id: int,
+    changed_by_user_id: int | None = None,
 ):
     db_class = await _get_class_by_course_and_org(db, class_id, course_id, organization_id)
     if not db_class:
         return "NOT_FOUND"
-
     update_data = class_in.model_dump(exclude_unset=True)
     next_start_year = update_data.get("start_year", db_class.start_year)
     next_end_year = update_data.get("end_year", db_class.end_year)
@@ -162,21 +247,51 @@ async def update_class_in_course(
     if next_end_year <= next_start_year:
         return "INVALID_YEAR_RANGE"
 
+    before = _class_demand_snapshot(db_class)
     for field, value in update_data.items():
         setattr(db_class, field, value)
 
     db.add(db_class)
+    await record_scheduler_change(
+        db,
+        organization_id,
+        entity_type="CLASS_DEMAND",
+        entity_id=db_class.id,
+        operation=models.SchedulerStateChangeOperation.UPDATE,
+        before=before,
+        after=_class_demand_snapshot(db_class),
+        changed_by_user_id=changed_by_user_id,
+        active_resource=not db_class.is_archived,
+    )
     await db.commit()
     await db.refresh(db_class)
     return db_class
 
 
-async def delete_class_in_course(db: AsyncSession, course_id: int, class_id: int, organization_id: int):
+async def delete_class_in_course(
+    db: AsyncSession,
+    course_id: int,
+    class_id: int,
+    organization_id: int,
+    changed_by_user_id: int | None = None,
+):
     db_class = await _get_class_by_course_and_org(db, class_id, course_id, organization_id)
     if not db_class:
         return "NOT_FOUND"
 
+    before = _class_demand_snapshot(db_class)
     await _delete_class_with_dependencies(db, db_class.id)
+    await record_scheduler_change(
+        db,
+        organization_id,
+        entity_type="CLASS_DEMAND",
+        entity_id=db_class.id,
+        operation=models.SchedulerStateChangeOperation.DELETE,
+        before=before,
+        after=None,
+        changed_by_user_id=changed_by_user_id,
+        active_resource=not db_class.is_archived,
+    )
     await db.commit()
     return "SUCCESS"
 
@@ -513,7 +628,8 @@ async def add_class_subject(
     db: AsyncSession, 
     class_id: int, 
     subject_id: int, 
-    organization_id: int
+    organization_id: int,
+    changed_by_user_id: int | None = None,
 ):
     """
     Adiciona uma disciplina à turma (para o grade_level atual).
@@ -577,6 +693,18 @@ async def add_class_subject(
             )
         )
     
+    await db.flush()
+    await record_scheduler_change(
+        db,
+        organization_id,
+        entity_type="CLASS_SUBJECT_ASSIGNMENT",
+        entity_id=link.id,
+        operation=models.SchedulerStateChangeOperation.CREATE,
+        before=None,
+        after=_class_subject_snapshot(link),
+        changed_by_user_id=changed_by_user_id,
+        active_resource=not db_class.is_archived,
+    )
     await db.commit()
     await db.refresh(link)
     
@@ -588,7 +716,8 @@ async def update_class_subject_teacher(
     class_id: int,
     subject_id: int,
     payload: schemas.ClassSubjectUpdate,
-    organization_id: int
+    organization_id: int,
+    changed_by_user_id: int | None = None,
 ):
     """
     Atualiza uma associação disciplina-turma: professor.
@@ -618,6 +747,7 @@ async def update_class_subject_teacher(
     
     if not link:
         return "LINK_NOT_FOUND"
+    before = _class_subject_snapshot(link)
     
     # 3. Se teacher_id foi enviado, validar
     if "teacher_id" in update_data:
@@ -643,7 +773,18 @@ async def update_class_subject_teacher(
     # 4. Aplicar alterações
     for field, value in update_data.items():
         setattr(link, field, value)
-    
+
+    await record_scheduler_change(
+        db,
+        organization_id,
+        entity_type="TEACHER_ASSIGNMENT",
+        entity_id=link.id,
+        operation=models.SchedulerStateChangeOperation.UPDATE,
+        before=before,
+        after=_class_subject_snapshot(link),
+        changed_by_user_id=changed_by_user_id,
+        active_resource=not db_class.is_archived,
+    )
     await db.commit()
     await db.refresh(link)
     
@@ -654,7 +795,8 @@ async def remove_class_subject(
     db: AsyncSession,
     class_id: int,
     subject_id: int,
-    organization_id: int
+    organization_id: int,
+    changed_by_user_id: int | None = None,
 ):
     """
     Remove uma disciplina da turma (para o grade_level atual).
@@ -677,7 +819,7 @@ async def remove_class_subject(
     
     if not link:
         return "NOT_FOUND"
-    
+    before = _class_subject_snapshot(link)
     # 3. Remover
     await db.delete(link)
     
@@ -705,6 +847,17 @@ async def remove_class_subject(
             )
         )
     
+    await record_scheduler_change(
+        db,
+        organization_id,
+        entity_type="CLASS_SUBJECT_ASSIGNMENT",
+        entity_id=link.id,
+        operation=models.SchedulerStateChangeOperation.DELETE,
+        before=before,
+        after=None,
+        changed_by_user_id=changed_by_user_id,
+        active_resource=not db_class.is_archived,
+    )
     await db.commit()
     
     return "SUCCESS"

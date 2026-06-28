@@ -39,7 +39,9 @@ async def submit_onboarding(
     if not org_id:
         raise HTTPException(status_code=400, detail="No organization associated")
 
-    await complete_onboarding(db, org_id, data)
+    await complete_onboarding(
+        db, org_id, data, changed_by_user_id=current_user.id
+    )
     await db.commit()
 
     if current_user.clerk_user_id:

@@ -1,0 +1,1490 @@
+.cronos-marketing {
+  --cronos-cream: #fbf6e6;
+  --cronos-cream-2: #fffaf0;
+  --cronos-paper: #fffdf7;
+  --cronos-brown: #3b2415;
+  --cronos-brown-2: #24150d;
+  --cronos-muted: #806e5f;
+  --cronos-line: rgba(59, 36, 21, 0.14);
+  --cronos-line-strong: rgba(59, 36, 21, 0.28);
+  --cronos-accent: #f2a20c;
+  --cronos-green: #2f7d63;
+  --cronos-blue: #476da8;
+  --cronos-red: #a4573e;
+  --cronos-shadow: 0 10px 30px rgba(59, 36, 21, 0.08);
+
+  min-height: 100vh;
+  overflow-x: hidden;
+  background: var(--cronos-cream);
+  color: var(--cronos-brown);
+  font-family: var(--font-body);
+}
+
+.cronos-marketing *,
+.cronos-marketing *::before,
+.cronos-marketing *::after {
+  box-sizing: border-box;
+}
+
+.cronos-marketing a {
+  color: inherit;
+}
+
+.cronos-layout {
+  width: min(1180px, calc(100% - 48px));
+  margin: 0 auto;
+}
+
+.cronos-header {
+  position: relative;
+  border-top: 3px solid var(--cronos-brown-2);
+  border-bottom: 1px solid var(--cronos-line);
+  background: rgba(251, 246, 230, 0.94);
+}
+
+.cronos-header__inner {
+  width: min(1180px, calc(100% - 48px));
+  height: 124px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: 170px 1fr auto;
+  align-items: center;
+  gap: 26px;
+}
+
+.cronos-header__line {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  width: 76px;
+  height: 12px;
+  border-top: 2px solid var(--cronos-brown);
+  transform: rotate(-6deg);
+  transform-origin: right center;
+}
+
+.cronos-header__line::after {
+  content: '';
+  position: absolute;
+  top: -4px;
+  right: -6px;
+  width: 5px;
+  height: 5px;
+  background: var(--cronos-brown);
+}
+
+.cronos-brand {
+  display: inline-flex;
+  min-height: 42px;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 12px;
+  text-decoration: none;
+}
+
+.cronos-brand__image {
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  object-fit: contain;
+}
+
+.cronos-brand__text {
+  color: var(--cronos-brown);
+  font-size: 0.84rem;
+  font-weight: 900;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.cronos-nav {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: var(--cronos-brown);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.cronos-nav a {
+  text-decoration: none;
+  transition: color 180ms ease;
+}
+
+.cronos-nav a:hover,
+.cronos-nav a:focus-visible {
+  color: var(--cronos-accent);
+}
+
+.cronos-nav span {
+  color: var(--cronos-accent);
+}
+
+.cronos-header__actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 14px;
+}
+
+.cronos-login-link {
+  display: inline-flex;
+  min-height: 48px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 18px;
+  border: 1px solid var(--cronos-line-strong);
+  color: var(--cronos-brown);
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-decoration: none;
+  text-transform: uppercase;
+  transition: border-color 180ms ease, color 180ms ease, background 180ms ease;
+}
+
+.cronos-login-link:hover,
+.cronos-login-link:focus-visible {
+  border-color: var(--cronos-brown);
+  background: rgba(59, 36, 21, 0.04);
+  color: var(--cronos-brown);
+}
+
+.cronos-button {
+  display: inline-flex;
+  min-height: 48px;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 0 28px;
+  border: 1px solid var(--cronos-brown);
+  border-radius: 0;
+  background: var(--cronos-brown);
+  color: var(--cronos-cream-2);
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-decoration: none;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background 180ms ease, border-color 180ms ease, color 180ms ease;
+}
+
+.cronos-marketing .cronos-button {
+  color: var(--cronos-cream-2);
+}
+
+.cronos-button:hover,
+.cronos-button:focus-visible {
+  background: var(--cronos-accent);
+  border-color: var(--cronos-accent);
+  color: var(--cronos-brown);
+}
+
+.cronos-marketing .cronos-button:hover,
+.cronos-marketing .cronos-button:focus-visible {
+  color: var(--cronos-brown);
+}
+
+.cronos-button--header {
+  min-width: 210px;
+}
+
+.cronos-button--secondary {
+  border-color: var(--cronos-line-strong);
+  background: transparent;
+  color: var(--cronos-brown);
+}
+
+.cronos-marketing .cronos-button--secondary {
+  color: var(--cronos-brown);
+}
+
+.cronos-button--secondary:hover,
+.cronos-button--secondary:focus-visible {
+  border-color: var(--cronos-brown);
+  background: rgba(59, 36, 21, 0.04);
+  color: var(--cronos-brown);
+}
+
+.cronos-button--form {
+  width: 100%;
+}
+
+.cronos-arrow-icon {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: square;
+  stroke-linejoin: miter;
+  stroke-width: 2;
+}
+
+.cronos-hero {
+  padding: 86px 0 104px;
+}
+
+.cronos-hero__grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 480px;
+  align-items: center;
+  gap: 116px;
+}
+
+.cronos-hero__copy h1 {
+  max-width: 620px;
+  margin: 0;
+  color: var(--cronos-brown);
+  font-family: var(--font-body);
+  font-size: 4.15rem;
+  font-weight: 400;
+  line-height: 1;
+  letter-spacing: 0;
+}
+
+.cronos-hero__copy h1 em {
+  font-family: var(--font-display);
+  font-style: italic;
+  font-weight: 400;
+}
+
+.cronos-title-rule {
+  display: block;
+  width: 284px;
+  height: 2px;
+  margin: 22px 0 28px;
+  background: linear-gradient(90deg, var(--cronos-line-strong), var(--cronos-line-strong) calc(100% - 4px), var(--cronos-accent) calc(100% - 4px));
+}
+
+.cronos-hero__copy p {
+  max-width: 590px;
+  margin: 0 0 28px;
+  color: var(--cronos-muted);
+  font-size: 1.02rem;
+  line-height: 1.75;
+}
+
+.cronos-hero__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+
+.cronos-hero__visual {
+  position: relative;
+  margin: 0;
+}
+
+.cronos-hero__visual::before,
+.cronos-hero__visual::after {
+  content: '';
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  border-top: 1px solid var(--cronos-accent);
+  border-right: 1px solid var(--cronos-accent);
+  pointer-events: none;
+}
+
+.cronos-hero__visual::before {
+  top: -2px;
+  right: -2px;
+}
+
+.cronos-hero__visual::after {
+  bottom: -2px;
+  right: -2px;
+  transform: rotate(90deg);
+}
+
+.cronos-hero__visual img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 0.82;
+  object-fit: cover;
+  border: 1px solid rgba(242, 162, 12, 0.2);
+}
+
+.cronos-service-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-top: 92px;
+  border-top: 1px solid var(--cronos-line);
+  border-bottom: 1px solid var(--cronos-line);
+}
+
+.cronos-service-tile {
+  position: relative;
+  min-height: 176px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 30px 28px;
+  color: var(--cronos-brown);
+  text-decoration: none;
+  transition: background 180ms ease;
+}
+
+.cronos-service-tile + .cronos-service-tile {
+  border-left: 1px solid var(--cronos-line);
+}
+
+.cronos-service-tile span {
+  max-width: 250px;
+  width: 100%;
+  font-size: 1.34rem;
+  line-height: 1.1;
+}
+
+.cronos-service-tile small {
+  display: block;
+  width: 100%;
+  color: var(--cronos-muted);
+  font-size: 0.82rem;
+  line-height: 1.55;
+}
+
+.cronos-service-tile svg {
+  position: absolute;
+  top: 34px;
+  right: 24px;
+  width: 15px;
+  height: 15px;
+  opacity: 0.45;
+}
+
+.cronos-service-tile:hover,
+.cronos-service-tile:focus-visible {
+  background: rgba(242, 162, 12, 0.08);
+}
+
+.cronos-product,
+.cronos-routine,
+.cronos-roles {
+  padding: 112px 0 104px;
+  border-top: 1px solid var(--cronos-line);
+}
+
+.cronos-section-heading {
+  max-width: 790px;
+  margin: 0 0 54px;
+}
+
+.cronos-section-heading--split {
+  max-width: none;
+  display: grid;
+  grid-template-columns: minmax(0, 0.96fr) minmax(340px, 0.62fr);
+  gap: 96px;
+  align-items: end;
+}
+
+.cronos-section-heading--center {
+  margin-right: auto;
+  margin-left: auto;
+  text-align: center;
+}
+
+.cronos-section-heading h2 {
+  margin: 0;
+  color: var(--cronos-brown);
+  font-family: var(--font-body);
+  font-size: 4rem;
+  font-weight: 900;
+  line-height: 0.96;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.cronos-section-heading p {
+  margin: 20px 0 0;
+  color: var(--cronos-muted);
+  font-size: 1.04rem;
+  line-height: 1.75;
+}
+
+.cronos-section-heading--split p {
+  margin-top: 0;
+}
+
+.cronos-product-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  border-top: 1px solid var(--cronos-line);
+  border-bottom: 1px solid var(--cronos-line);
+}
+
+.cronos-module-card {
+  min-height: 250px;
+  padding: 36px 28px;
+  background: rgba(255, 253, 247, 0.34);
+}
+
+.cronos-module-card + .cronos-module-card {
+  border-left: 1px solid var(--cronos-line);
+}
+
+.cronos-module-card h3 {
+  margin: 0 0 16px;
+  color: var(--cronos-brown);
+  font-size: 1.34rem;
+  font-weight: 900;
+  line-height: 1.1;
+}
+
+.cronos-module-card p {
+  margin: 0;
+  color: var(--cronos-muted);
+  font-size: 0.94rem;
+  line-height: 1.68;
+}
+
+.cronos-process {
+  padding: 112px 0 96px;
+  border-top: 1px solid var(--cronos-line);
+}
+
+.cronos-process__intro {
+  display: grid;
+  grid-template-columns: 1fr 430px;
+  gap: 120px;
+  align-items: start;
+  margin-bottom: 88px;
+}
+
+.cronos-process__intro h2 {
+  margin: 0;
+  color: var(--cronos-brown);
+  font-family: var(--font-body);
+  font-size: 3.8rem;
+  font-weight: 900;
+  line-height: 0.96;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.cronos-process__intro h2 span {
+  display: block;
+}
+
+.cronos-process__intro h2 strong {
+  display: block;
+  color: transparent;
+  -webkit-text-stroke: 1.4px var(--cronos-brown);
+  font-weight: 900;
+}
+
+.cronos-process__intro > p {
+  margin: 36px 0 0;
+  color: var(--cronos-brown);
+  font-size: 1.1rem;
+  font-style: italic;
+  line-height: 1.7;
+}
+
+.cronos-process__cards {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 28px;
+}
+
+.cronos-process__cards--six {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.cronos-process-card {
+  position: relative;
+  min-height: 360px;
+  display: flex;
+  flex-direction: column;
+  padding: 28px 22px 30px;
+  border: 1px solid var(--cronos-line);
+  background: var(--cronos-paper);
+  box-shadow: var(--cronos-shadow);
+}
+
+.cronos-process-card:not(:last-child)::after {
+  content: '';
+  position: absolute;
+  top: 216px;
+  right: -30px;
+  width: 32px;
+  height: 1px;
+  background: var(--cronos-line-strong);
+}
+
+.cronos-process__cards--six .cronos-process-card::after {
+  display: none;
+}
+
+.cronos-process-card__top {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 46px;
+}
+
+.cronos-process-card__top span {
+  color: var(--cronos-muted);
+  font-size: 0.64rem;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.cronos-process-card__top strong {
+  color: transparent;
+  -webkit-text-stroke: 1.5px var(--cronos-muted);
+  font-family: var(--font-body);
+  font-size: 3rem;
+  font-weight: 900;
+  line-height: 0.8;
+}
+
+.cronos-process-card svg {
+  width: 70px;
+  height: 70px;
+  margin: 0 auto 34px;
+  fill: none;
+  stroke: var(--cronos-brown);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 3;
+}
+
+.cronos-process-card h3 {
+  min-height: 62px;
+  margin: 0 0 20px;
+  color: var(--cronos-brown);
+  font-family: var(--font-body);
+  font-size: 1.36rem;
+  font-weight: 900;
+  line-height: 1.05;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.cronos-process-card p {
+  margin: 0;
+  color: var(--cronos-muted);
+  font-size: 0.92rem;
+  font-style: italic;
+  line-height: 1.65;
+}
+
+.cronos-generator {
+  padding: 118px 0;
+  border-top: 1px solid rgba(251, 246, 230, 0.1);
+  border-bottom: 1px solid rgba(251, 246, 230, 0.1);
+  background: var(--cronos-brown-2);
+  color: var(--cronos-cream-2);
+}
+
+.cronos-generator__grid {
+  display: grid;
+  grid-template-columns: minmax(0, 0.78fr) minmax(0, 1fr);
+  gap: 74px;
+  align-items: start;
+}
+
+.cronos-generator__copy h2 {
+  margin: 0 0 30px;
+  color: var(--cronos-cream-2);
+  font-family: var(--font-body);
+  font-size: 3.9rem;
+  font-weight: 900;
+  line-height: 0.98;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.cronos-generator__copy p {
+  max-width: 520px;
+  margin: 0 0 22px;
+  color: rgba(251, 246, 230, 0.72);
+  font-size: 1rem;
+  line-height: 1.75;
+}
+
+.cronos-generator__panel {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  border: 1px solid rgba(251, 246, 230, 0.16);
+  background: rgba(251, 246, 230, 0.04);
+}
+
+.cronos-generator__panel > div {
+  padding: 36px 34px;
+}
+
+.cronos-generator__panel > div + div {
+  border-left: 1px solid rgba(251, 246, 230, 0.16);
+}
+
+.cronos-generator__panel h3 {
+  margin: 0 0 26px;
+  color: var(--cronos-accent);
+  font-size: 0.78rem;
+  font-weight: 900;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.cronos-generator__panel ul {
+  display: grid;
+  gap: 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cronos-generator__panel li {
+  position: relative;
+  padding-left: 24px;
+  color: rgba(251, 246, 230, 0.76);
+  font-size: 0.92rem;
+  line-height: 1.55;
+}
+
+.cronos-generator__panel li::before {
+  content: '';
+  position: absolute;
+  top: 0.58em;
+  left: 0;
+  width: 9px;
+  height: 9px;
+  border: 1px solid var(--cronos-accent);
+  background: transparent;
+}
+
+.cronos-routine-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px;
+}
+
+.cronos-routine-card {
+  min-height: 390px;
+  display: grid;
+  grid-template-columns: minmax(0, 0.88fr) minmax(0, 1fr);
+  border: 1px solid var(--cronos-line);
+  background: var(--cronos-paper);
+  box-shadow: var(--cronos-shadow);
+}
+
+.cronos-routine-card__scene {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  padding: 32px;
+  background:
+    linear-gradient(180deg, rgba(59, 36, 21, 0.78), rgba(59, 36, 21, 0.98)),
+    var(--cronos-brown);
+  color: var(--cronos-cream-2);
+}
+
+.cronos-routine-card__scene span {
+  margin-bottom: auto;
+  color: var(--cronos-accent);
+  font-size: 0.68rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  line-height: 1.35;
+  text-transform: uppercase;
+}
+
+.cronos-routine-card__scene h3 {
+  margin: 0 0 18px;
+  color: var(--cronos-cream-2);
+  font-size: 2rem;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.cronos-routine-card__scene p {
+  margin: 0;
+  color: rgba(255, 250, 240, 0.78);
+  font-size: 0.95rem;
+  line-height: 1.65;
+}
+
+.cronos-routine-card__details {
+  position: relative;
+  padding: 32px 34px;
+}
+
+.cronos-routine-card__details strong {
+  display: block;
+  margin: 0 0 22px;
+  color: var(--cronos-brown);
+  font-size: 1.1rem;
+  font-weight: 900;
+  line-height: 1.25;
+}
+
+.cronos-routine-card__details ul {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cronos-routine-card__details li {
+  position: relative;
+  padding-left: 24px;
+  color: var(--cronos-muted);
+  font-size: 0.94rem;
+  line-height: 1.55;
+}
+
+.cronos-routine-card__details li::before {
+  content: '';
+  position: absolute;
+  top: 0.58em;
+  left: 0;
+  width: 9px;
+  height: 9px;
+  border: 1px solid var(--cronos-accent);
+  background: rgba(242, 162, 12, 0.12);
+}
+
+.cronos-roles {
+  border-bottom: 1px solid var(--cronos-line);
+}
+
+.cronos-role-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 24px;
+}
+
+.cronos-role-card {
+  min-height: 270px;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  padding: 34px;
+  border: 1px solid var(--cronos-line);
+  background:
+    linear-gradient(180deg, rgba(255, 253, 247, 0.12), rgba(255, 253, 247, 0.62)),
+    var(--cronos-paper);
+}
+
+.cronos-role-card h3 {
+  margin: 0 0 16px;
+  color: var(--cronos-brown);
+  font-size: 1.8rem;
+  font-weight: 900;
+  line-height: 1.05;
+}
+
+.cronos-role-card p {
+  margin: 0;
+  color: var(--cronos-muted);
+  font-size: 0.96rem;
+  line-height: 1.65;
+}
+
+.cronos-product-panorama {
+  height: 640px;
+  overflow: hidden;
+  border-top: 1px solid var(--cronos-line);
+  border-bottom: 1px solid var(--cronos-line);
+  background: var(--cronos-cream);
+}
+
+.cronos-product-panorama img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center center;
+}
+
+.cronos-testimonials {
+  position: relative;
+  padding: 116px 0 112px;
+  overflow: hidden;
+}
+
+.cronos-testimonials__heading {
+  text-align: center;
+}
+
+.cronos-testimonials__heading h2 {
+  margin: 0 0 78px;
+  color: var(--cronos-brown);
+  font-family: var(--font-body);
+  font-size: 2.6rem;
+  font-weight: 900;
+  line-height: 1.2;
+  letter-spacing: 0;
+}
+
+.cronos-testimonials__heading em {
+  display: block;
+  color: var(--cronos-accent);
+  font-family: var(--font-body);
+  font-style: italic;
+}
+
+.cronos-testimonials__wrap {
+  display: grid;
+  grid-template-columns: 38px 1fr 38px;
+  align-items: center;
+  gap: 18px;
+}
+
+.cronos-testimonial-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 24px;
+}
+
+.cronos-testimonial-card {
+  min-height: 430px;
+  padding: 40px 38px 36px;
+  border: 1px solid var(--cronos-line);
+  background: var(--cronos-paper);
+  text-align: center;
+  box-shadow: 0 6px 18px rgba(59, 36, 21, 0.04);
+}
+
+.cronos-avatar {
+  width: 78px;
+  height: 78px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 20px;
+  border: 3px solid var(--cronos-accent);
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 38% 28%, rgba(255, 255, 255, 0.65), transparent 26%),
+    linear-gradient(135deg, var(--cronos-blue), var(--cronos-green));
+  color: var(--cronos-paper);
+  font-size: 1.7rem;
+  font-weight: 900;
+}
+
+.cronos-testimonial-card h3 {
+  margin: 0 0 6px;
+  color: var(--cronos-brown);
+  font-size: 1rem;
+  font-weight: 900;
+}
+
+.cronos-testimonial-card__role {
+  margin: 0 0 16px;
+  color: var(--cronos-muted);
+  font-size: 0.66rem;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.cronos-stars {
+  display: flex;
+  justify-content: center;
+  gap: 3px;
+  margin-bottom: 26px;
+  color: var(--cronos-accent);
+  font-size: 1rem;
+}
+
+.cronos-testimonial-card blockquote {
+  margin: 0;
+  color: var(--cronos-brown);
+  font-size: 1.05rem;
+  font-style: italic;
+  font-weight: 600;
+  line-height: 1.55;
+}
+
+.cronos-testimonial-card blockquote span {
+  color: var(--cronos-accent);
+  font-size: 1.4rem;
+}
+
+.cronos-carousel-button {
+  width: 38px;
+  height: 38px;
+  border: 0;
+  border-radius: 0;
+  background: var(--cronos-brown);
+  color: var(--cronos-paper);
+  font-size: 1.6rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 180ms ease, color 180ms ease;
+}
+
+.cronos-carousel-button:hover,
+.cronos-carousel-button:focus-visible {
+  background: var(--cronos-accent);
+  color: var(--cronos-brown);
+}
+
+.cronos-carousel-dots {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 36px;
+}
+
+.cronos-carousel-dots button {
+  width: 7px;
+  height: 5px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: rgba(242, 162, 12, 0.18);
+  cursor: pointer;
+  transition: width 180ms ease, background 180ms ease;
+}
+
+.cronos-carousel-dots button:hover,
+.cronos-carousel-dots button:focus-visible {
+  background: rgba(242, 162, 12, 0.55);
+}
+
+.cronos-carousel-dots button.is-active {
+  width: 24px;
+  background: var(--cronos-accent);
+}
+
+.cronos-testimonials__scribble {
+  position: absolute;
+  top: 250px;
+  right: 30px;
+  width: 110px;
+  height: 430px;
+  opacity: 0.16;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse at 70% 10%, transparent 40%, var(--cronos-muted) 41%, transparent 43%),
+    radial-gradient(ellipse at 25% 42%, transparent 40%, var(--cronos-muted) 41%, transparent 43%),
+    radial-gradient(ellipse at 75% 73%, transparent 40%, var(--cronos-muted) 41%, transparent 43%);
+  border-right: 1px solid var(--cronos-muted);
+  transform: rotate(11deg);
+}
+
+.cronos-contact {
+  padding: 24px 0 138px;
+}
+
+.cronos-contact__grid {
+  display: grid;
+  grid-template-columns: 460px minmax(0, 1fr);
+  gap: 58px;
+  align-items: stretch;
+}
+
+.cronos-contact__content {
+  display: flex;
+  flex-direction: column;
+}
+
+.cronos-contact__content h2 {
+  max-width: 390px;
+  margin: 0 0 28px;
+  color: var(--cronos-brown);
+  font-family: var(--font-body);
+  font-size: 3rem;
+  font-weight: 900;
+  line-height: 1.06;
+  letter-spacing: 0;
+}
+
+.cronos-contact__content > p {
+  max-width: 430px;
+  margin: 0 0 50px;
+  color: var(--cronos-muted);
+  font-size: 1rem;
+  line-height: 1.65;
+}
+
+.cronos-contact-cards {
+  display: grid;
+  gap: 16px;
+  margin-top: auto;
+}
+
+.cronos-contact-card {
+  display: grid;
+  grid-template-columns: 42px 1fr;
+  align-items: center;
+  gap: 18px;
+  min-height: 74px;
+  padding: 14px;
+  border: 1px solid var(--cronos-line);
+  background: rgba(255, 253, 247, 0.32);
+}
+
+.cronos-contact-card__icon {
+  width: 42px;
+  height: 42px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(242, 162, 12, 0.12);
+}
+
+.cronos-contact-card svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: var(--cronos-brown);
+  stroke-linecap: square;
+  stroke-linejoin: miter;
+  stroke-width: 1.8;
+}
+
+.cronos-contact-card strong {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--cronos-brown);
+  font-size: 0.9rem;
+  font-weight: 900;
+}
+
+.cronos-contact-card span {
+  color: var(--cronos-muted);
+  font-size: 0.84rem;
+}
+
+.cronos-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 22px;
+  row-gap: 22px;
+  height: 100%;
+  padding: 44px;
+  border: 1px solid var(--cronos-line);
+  background: var(--cronos-paper);
+  box-shadow: 0 4px 16px rgba(59, 36, 21, 0.08);
+}
+
+.cronos-field {
+  display: grid;
+  gap: 10px;
+}
+
+.cronos-field--full {
+  grid-column: 1 / -1;
+}
+
+.cronos-field span {
+  color: var(--cronos-muted);
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.cronos-field input,
+.cronos-field select,
+.cronos-field textarea {
+  width: 100%;
+  min-height: 42px;
+  padding: 0 0 10px;
+  border: 0;
+  border-bottom: 2px solid var(--cronos-line-strong);
+  border-radius: 0;
+  background: transparent;
+  color: var(--cronos-brown);
+  font: inherit;
+  font-size: 0.92rem;
+  outline: none;
+}
+
+.cronos-field textarea {
+  resize: vertical;
+  min-height: 72px;
+}
+
+.cronos-field input:focus,
+.cronos-field select:focus,
+.cronos-field textarea:focus {
+  border-bottom-color: var(--cronos-accent);
+  box-shadow: none !important;
+}
+
+.cronos-checkbox {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--cronos-brown);
+  font-size: 0.82rem;
+}
+
+.cronos-checkbox input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--cronos-brown);
+}
+
+.cronos-form__note {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--cronos-muted);
+  font-size: 0.76rem;
+  font-weight: 700;
+  text-align: center;
+}
+
+.cronos-footer {
+  padding: 110px 0 62px;
+  background: var(--cronos-brown-2);
+  color: var(--cronos-cream-2);
+}
+
+.cronos-footer__brand {
+  margin-bottom: 28px;
+  color: var(--cronos-cream-2);
+  font-family: var(--font-body);
+  font-size: 8.8rem;
+  font-weight: 300;
+  line-height: 0.9;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.cronos-footer__brand::after {
+  content: '';
+  display: inline-block;
+  width: 360px;
+  max-width: 20%;
+  height: 1px;
+  margin-left: 28px;
+  background: rgba(251, 246, 230, 0.16);
+  vertical-align: middle;
+}
+
+.cronos-footer__grid {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr 1fr 1fr;
+  gap: 68px;
+}
+
+.cronos-footer h2 {
+  margin: 0 0 24px;
+  color: rgba(242, 162, 12, 0.25);
+  font-size: 0.66rem;
+  font-weight: 900;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.cronos-footer p,
+.cronos-footer a {
+  display: block;
+  margin: 0 0 10px;
+  color: rgba(251, 246, 230, 0.72);
+  font-size: 0.82rem;
+  line-height: 1.45;
+  text-decoration: none;
+}
+
+.cronos-footer a {
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.cronos-footer a:hover,
+.cronos-footer a:focus-visible {
+  color: var(--cronos-accent);
+}
+
+@media (max-width: 1180px) {
+  .cronos-hero {
+    padding-top: 92px;
+  }
+
+  .cronos-hero__grid {
+    grid-template-columns: minmax(0, 1fr) 420px;
+    gap: 64px;
+  }
+
+  .cronos-hero__copy h1 {
+    font-size: 3.8rem;
+  }
+
+  .cronos-service-tile span {
+    font-size: 1.45rem;
+  }
+
+  .cronos-service-strip,
+  .cronos-product-grid,
+  .cronos-role-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .cronos-service-tile:nth-child(3) {
+    border-left: 0;
+    border-top: 1px solid var(--cronos-line);
+  }
+
+  .cronos-service-tile:nth-child(4) {
+    border-top: 1px solid var(--cronos-line);
+  }
+
+  .cronos-section-heading h2,
+  .cronos-generator__copy h2 {
+    font-size: 3.35rem;
+  }
+
+  .cronos-section-heading--split {
+    gap: 64px;
+  }
+
+  .cronos-process__cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .cronos-routine-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .cronos-process-card:not(:last-child)::after {
+    display: none;
+  }
+
+  .cronos-footer__brand {
+    font-size: 6.4rem;
+  }
+}
+
+@media (max-width: 900px) {
+  .cronos-header__inner {
+    height: auto;
+    min-height: 92px;
+    grid-template-columns: 170px 1fr;
+  }
+
+  .cronos-nav {
+    justify-content: flex-end;
+    gap: 10px;
+    font-size: 0.66rem;
+  }
+
+  .cronos-header__actions {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
+  }
+
+  .cronos-hero {
+    padding: 86px 0 82px;
+  }
+
+  .cronos-hero__grid,
+  .cronos-process__intro,
+  .cronos-section-heading--split,
+  .cronos-generator__grid,
+  .cronos-contact__grid {
+    grid-template-columns: 1fr;
+    gap: 46px;
+  }
+
+  .cronos-hero__copy h1 {
+    font-size: 3.2rem;
+  }
+
+  .cronos-hero__visual {
+    max-width: 520px;
+  }
+
+  .cronos-service-strip,
+  .cronos-product-grid,
+  .cronos-routine-grid,
+  .cronos-role-grid,
+  .cronos-generator__panel,
+  .cronos-testimonial-grid,
+  .cronos-footer__grid {
+    grid-template-columns: 1fr;
+  }
+
+  .cronos-service-strip {
+    margin-top: 72px;
+  }
+
+  .cronos-section-heading--split p {
+    margin-top: 20px;
+  }
+
+  .cronos-service-tile + .cronos-service-tile,
+  .cronos-module-card + .cronos-module-card {
+    border-left: 0;
+    border-top: 1px solid var(--cronos-line);
+  }
+
+  .cronos-service-tile:nth-child(3),
+  .cronos-service-tile:nth-child(4) {
+    border-top: 1px solid var(--cronos-line);
+  }
+
+  .cronos-generator__panel > div + div {
+    border-left: 0;
+    border-top: 1px solid rgba(251, 246, 230, 0.16);
+  }
+
+  .cronos-process,
+  .cronos-product,
+  .cronos-routine,
+  .cronos-roles,
+  .cronos-testimonials {
+    padding-top: 86px;
+    padding-bottom: 86px;
+  }
+
+  .cronos-product-panorama {
+    height: 520px;
+  }
+
+  .cronos-testimonials__wrap {
+    grid-template-columns: 1fr;
+  }
+
+  .cronos-testimonials__wrap {
+    grid-template-columns: 42px 1fr 42px;
+    gap: 10px;
+  }
+
+  .cronos-testimonials__scribble {
+    display: none;
+  }
+
+  .cronos-contact {
+    padding-bottom: 86px;
+  }
+
+  .cronos-form {
+    height: auto;
+  }
+
+  .cronos-footer__brand {
+    font-size: 4.6rem;
+  }
+}
+
+@media (max-width: 640px) {
+  .cronos-layout,
+  .cronos-header__inner {
+    width: min(100% - 32px, 1180px);
+  }
+
+  .cronos-header__inner {
+    grid-template-columns: 1fr;
+    gap: 16px;
+    padding: 20px 0;
+  }
+
+  .cronos-nav {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .cronos-header__line {
+    display: none;
+  }
+
+  .cronos-hero__copy h1,
+  .cronos-section-heading h2,
+  .cronos-generator__copy h2,
+  .cronos-contact__content h2 {
+    font-size: 2.55rem;
+  }
+
+  .cronos-title-rule {
+    width: 210px;
+  }
+
+  .cronos-hero__actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .cronos-hero__actions .cronos-button {
+    width: 100%;
+  }
+
+  .cronos-service-tile {
+    min-height: 96px;
+    padding: 0 20px;
+  }
+
+  .cronos-service-tile span {
+    font-size: 1.28rem;
+  }
+
+  .cronos-process__intro h2,
+  .cronos-testimonials__heading h2 {
+    font-size: 2.4rem;
+  }
+
+  .cronos-product,
+  .cronos-routine,
+  .cronos-roles,
+  .cronos-generator {
+    padding-top: 72px;
+    padding-bottom: 72px;
+  }
+
+  .cronos-process__cards {
+    grid-template-columns: 1fr;
+  }
+
+  .cronos-process-card {
+    min-height: 320px;
+  }
+
+  .cronos-module-card,
+  .cronos-routine-card__scene,
+  .cronos-routine-card__details,
+  .cronos-role-card,
+  .cronos-generator__panel > div {
+    padding: 26px;
+  }
+
+  .cronos-routine-card {
+    min-height: auto;
+    grid-template-columns: 1fr;
+  }
+
+  .cronos-routine-card__scene {
+    min-height: 250px;
+  }
+
+  .cronos-module-card,
+  .cronos-role-card {
+    min-height: auto;
+  }
+
+  .cronos-product-panorama {
+    height: 420px;
+  }
+
+  .cronos-product-panorama img {
+    object-position: 44% center;
+  }
+
+  .cronos-form {
+    grid-template-columns: 1fr;
+    padding: 26px;
+  }
+
+  .cronos-footer__brand {
+    font-size: 3.3rem;
+  }
+
+  .cronos-footer__brand::after {
+    width: 80px;
+    max-width: 80px;
+  }
+}

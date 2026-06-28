@@ -2,6 +2,41 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session, selectinload
 from sqlalchemy import select, delete
 from app import models, schemas
+from app.services.scheduler_state_service import record_scheduler_change
+
+
+def _subject_demand_snapshot(subject: models.Subject) -> dict:
+    return {
+        "required_room_type": subject.required_room_type,
+        "module_sequence": [
+            {
+                "id": module.id,
+                "order": module.order,
+                "hours_total": module.hours_total,
+            }
+            for module in sorted(subject.modules, key=lambda item: (item.order, item.id or 0))
+        ],
+    }
+
+
+async def _subject_is_scheduled(
+    db: AsyncSession, organization_id: int, subject_id: int
+) -> bool:
+    class_link = await db.scalar(
+        select(models.ClassSubjectLink.id).where(
+            models.ClassSubjectLink.organization_id == organization_id,
+            models.ClassSubjectLink.subject_id == subject_id,
+        ).limit(1)
+    )
+    if class_link is not None:
+        return True
+    course_link = await db.execute(
+        select(models.course_subject_link.c.subject_id).where(
+            models.course_subject_link.c.organization_id == organization_id,
+            models.course_subject_link.c.subject_id == subject_id,
+        ).limit(1)
+    )
+    return course_link.first() is not None
 
 # --- ASYNC (API) ---
 async def get_subjects_by_org(db: AsyncSession, organization_id: int):
@@ -9,7 +44,12 @@ async def get_subjects_by_org(db: AsyncSession, organization_id: int):
     result = await db.execute(stmt)
     return result.scalars().all()
 
-async def create_subject(db: AsyncSession, item: schemas.SubjectCreate, organization_id: int):
+async def create_subject(
+    db: AsyncSession,
+    item: schemas.SubjectCreate,
+    organization_id: int,
+    changed_by_user_id: int | None = None,
+):
     """
     Cria uma disciplina e os seus módulos (Library) atomicamente.
     """
@@ -46,6 +86,20 @@ async def create_subject(db: AsyncSession, item: schemas.SubjectCreate, organiza
             subject_id=db_subject.id  # Ligação ao Pai
         )
         db.add(db_module)
+
+    await db.flush()
+    await db.refresh(db_subject, ["modules"])
+    await record_scheduler_change(
+        db,
+        organization_id,
+        entity_type="SUBJECT_DEMAND",
+        entity_id=db_subject.id,
+        operation=models.SchedulerStateChangeOperation.CREATE,
+        before=None,
+        after=_subject_demand_snapshot(db_subject),
+        changed_by_user_id=changed_by_user_id,
+        active_resource=False,
+    )
 
     # 4. Commit Atómico (Grava tudo ou nada)
     await db.commit()
@@ -113,7 +167,13 @@ def _upsert_modules(db: AsyncSession, incoming_modules: list, existing_modules: 
             db.add(new_mod)
 
 
-async def update_subject(db: AsyncSession, subject_id: int, subject_in: schemas.SubjectUpdate, organization_id: int):
+async def update_subject(
+    db: AsyncSession,
+    subject_id: int,
+    subject_in: schemas.SubjectUpdate,
+    organization_id: int,
+    changed_by_user_id: int | None = None,
+):
     # 1. Buscar a disciplina com módulos
     query = select(models.Subject).where(
         models.Subject.id == subject_id,
@@ -124,6 +184,8 @@ async def update_subject(db: AsyncSession, subject_id: int, subject_in: schemas.
     
     if not subject:
         return None
+    before = _subject_demand_snapshot(subject)
+    active_resource = await _subject_is_scheduled(db, organization_id, subject_id)
 
     # 2. Validar Nome Único (Security)
     if subject_in.name and subject_in.name != subject.name:
@@ -148,18 +210,44 @@ async def update_subject(db: AsyncSession, subject_id: int, subject_in: schemas.
         await _reset_module_orders(db, subject_in.modules, existing_modules)
         _upsert_modules(db, subject_in.modules, existing_modules, subject_id, organization_id)
 
+    await db.flush()
+    await db.refresh(subject, ["modules"])
+    await record_scheduler_change(
+        db,
+        organization_id,
+        entity_type="SUBJECT_DEMAND",
+        entity_id=subject.id,
+        operation=models.SchedulerStateChangeOperation.UPDATE,
+        before=before,
+        after=_subject_demand_snapshot(subject),
+        changed_by_user_id=changed_by_user_id,
+        active_resource=active_resource,
+    )
+
     # subject já está tracked pela sessão — commit grava todas as alterações
     await db.commit()
     stmt = select(models.Subject).options(selectinload(models.Subject.modules)).where(models.Subject.id == subject.id)
     result = await db.execute(stmt)
     return result.scalars().first()
 
-async def delete_subject(db: AsyncSession, subject_id: int, organization_id: int):
+async def delete_subject(
+    db: AsyncSession,
+    subject_id: int,
+    organization_id: int,
+    changed_by_user_id: int | None = None,
+):
     """
     Remove uma disciplina. Protege se existirem aulas associadas.
     """
     # 1. Buscar disciplina
-    result = await db.execute(select(models.Subject).where(models.Subject.id == subject_id, models.Subject.organization_id == organization_id))
+    result = await db.execute(
+        select(models.Subject)
+        .where(
+            models.Subject.id == subject_id,
+            models.Subject.organization_id == organization_id,
+        )
+        .options(selectinload(models.Subject.modules))
+    )
     item = result.scalars().first()
     
     if not item:
@@ -177,7 +265,20 @@ async def delete_subject(db: AsyncSession, subject_id: int, organization_id: int
         return "DEPENDENCY_ERROR"
 
     # 3. Apagar
+    before = _subject_demand_snapshot(item)
+    active_resource = await _subject_is_scheduled(db, organization_id, subject_id)
     await db.delete(item)
+    await record_scheduler_change(
+        db,
+        organization_id,
+        entity_type="SUBJECT_DEMAND",
+        entity_id=item.id,
+        operation=models.SchedulerStateChangeOperation.DELETE,
+        before=before,
+        after=None,
+        changed_by_user_id=changed_by_user_id,
+        active_resource=active_resource,
+    )
     await db.commit()
     return "SUCCESS"
 

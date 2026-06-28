@@ -16,8 +16,13 @@ from app.services import occurrence_service
 # SyncTestSession para testes de concorrência
 from sqlalchemy import create_engine as _ce
 from sqlalchemy.orm import sessionmaker as _sm
+from sqlalchemy.pool import NullPool
 from app.db.database import SYNC_DB_URL
-SyncTestSession = _sm(bind=_ce(SYNC_DB_URL, echo=False), autocommit=False, autoflush=False)
+SyncTestSession = _sm(
+    bind=_ce(SYNC_DB_URL, echo=False, poolclass=NullPool),
+    autocommit=False,
+    autoflush=False,
+)
 
 
 @pytest_asyncio.fixture

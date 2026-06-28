@@ -2,6 +2,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete
 from app import models, schemas
 from datetime import datetime, date, timedelta, time
+from app.services.scheduler_state_service import record_scheduler_change
+
+
+def _timeslot_snapshot(slot: models.Timeslot) -> dict:
+    return {
+        "day_of_week": slot.day_of_week,
+        "start_time": slot.start_time,
+        "end_time": slot.end_time,
+    }
 
 
 async def _get_org_teacher_ids(db: AsyncSession, organization_id: int) -> list[int]:
@@ -68,9 +77,25 @@ async def get_timeslots_by_org(db: AsyncSession, organization_id: int):
     result = await db.execute(stmt)
     return result.scalars().all()
 
-async def create_timeslot(db: AsyncSession, item: schemas.TimeslotCreate, organization_id: int):
+async def create_timeslot(
+    db: AsyncSession,
+    item: schemas.TimeslotCreate,
+    organization_id: int,
+    changed_by_user_id: int | None = None,
+):
     db_item = models.Timeslot(**item.model_dump(), organization_id=organization_id)
     db.add(db_item)
+    await db.flush()
+    await record_scheduler_change(
+        db,
+        organization_id,
+        entity_type="TIMESLOT",
+        entity_id=db_item.id,
+        operation=models.SchedulerStateChangeOperation.CREATE,
+        before=None,
+        after=_timeslot_snapshot(db_item),
+        changed_by_user_id=changed_by_user_id,
+    )
     await db.commit()
     await db.refresh(db_item)
     return db_item
@@ -79,7 +104,8 @@ async def update_timeslot(
     db: AsyncSession, 
     timeslot_id: int, 
     item: schemas.TimeslotUpdate, 
-    organization_id: int
+    organization_id: int,
+    changed_by_user_id: int | None = None,
 ):
     query = select(models.Timeslot).where(
         models.Timeslot.id == timeslot_id,
@@ -91,16 +117,32 @@ async def update_timeslot(
     if not db_item:
         return None
 
+    before = _timeslot_snapshot(db_item)
     update_data = item.model_dump(exclude_unset=True)
     for field, value in update_data.items():
         setattr(db_item, field, value)
 
     db.add(db_item)
+    await record_scheduler_change(
+        db,
+        organization_id,
+        entity_type="TIMESLOT",
+        entity_id=db_item.id,
+        operation=models.SchedulerStateChangeOperation.UPDATE,
+        before=before,
+        after=_timeslot_snapshot(db_item),
+        changed_by_user_id=changed_by_user_id,
+    )
     await db.commit()
     await db.refresh(db_item)
     return db_item
 
-async def delete_timeslot(db: AsyncSession, timeslot_id: int, organization_id: int):
+async def delete_timeslot(
+    db: AsyncSession,
+    timeslot_id: int,
+    organization_id: int,
+    changed_by_user_id: int | None = None,
+):
     """
     Remove um bloco horário individual.
     Lógica 'Soft': Limpa dependências fracas (Availability) mas bloqueia se houver dados críticos.
@@ -126,7 +168,18 @@ async def delete_timeslot(db: AsyncSession, timeslot_id: int, organization_id: i
     # Limpeza de dependências fracas (Availability)
     await db.execute(delete(models.Availability).where(models.Availability.timeslot_id == timeslot_id))
 
+    before = _timeslot_snapshot(item)
     await db.delete(item)
+    await record_scheduler_change(
+        db,
+        organization_id,
+        entity_type="TIMESLOT",
+        entity_id=item.id,
+        operation=models.SchedulerStateChangeOperation.DELETE,
+        before=before,
+        after=None,
+        changed_by_user_id=changed_by_user_id,
+    )
     await db.commit()
     return "SUCCESS"
 
@@ -170,13 +223,16 @@ async def _purge_all_dependencies(db: AsyncSession, organization_id: int):
 async def create_bulk_timeslots(
     db: AsyncSession, 
     settings: schemas.TimeslotBulkCreate, 
-    organization_id: int
+    organization_id: int,
+    changed_by_user_id: int | None = None,
 ):
     """
     Executa o Hard Reset da grelha escolar.
     """
     teacher_ids = await _get_org_teacher_ids(db, organization_id)
     previous_preferences = await _get_availability_preferences_by_time(db, organization_id)
+    previous_slots = await get_timeslots_by_org(db, organization_id)
+    before_grid = [_timeslot_snapshot(slot) for slot in previous_slots]
 
     # 1. Limpeza Profunda
     await _purge_all_dependencies(db, organization_id)
@@ -216,6 +272,18 @@ async def create_bulk_timeslots(
         teacher_ids,
         new_timeslots,
         previous_preferences,
+    )
+
+    await record_scheduler_change(
+        db,
+        organization_id,
+        entity_type="TIMETABLE_GRID",
+        entity_id=None,
+        operation=models.SchedulerStateChangeOperation.BULK_IMPORT,
+        before=before_grid,
+        after=[_timeslot_snapshot(slot) for slot in new_timeslots],
+        changed_by_user_id=changed_by_user_id,
+        metadata={"created_count": created_count},
     )
 
     await db.commit()

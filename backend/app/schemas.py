@@ -116,7 +116,7 @@ class TeacherRead(TeacherBase):
 class TeacherUpdate(BaseModel):
     name: Optional[str] = None
     email: Optional[EmailStr] = None
-    subject_ids: list[int] = Field(default_factory=list, description=DESC_SUBJECT_IDS)
+    subject_ids: Optional[list[int]] = Field(None, description=DESC_SUBJECT_IDS)
     # NOVO: Para permitir ativar/desativar a conta de acesso via API
     create_user_account: Optional[bool] = None
 
@@ -386,12 +386,13 @@ class AvailabilityRead(AvailabilityBase):
     
     model_config = ConfigDict(from_attributes=True)
 
-# --- SCHEDULE OUTPUT (O RESULTADO FINAL) ---
+
 class ScheduleOutputBase(BaseModel):
     lesson_id: int
     timeslot_id: int
     room_id: int
     generation_id: str
+
 
 class ScheduleOutputRead(ScheduleOutputBase):
     id: int
@@ -403,43 +404,165 @@ class ScheduleOutputRead(ScheduleOutputBase):
 
 # --- GERADOR DE HORÁRIOS (Sprint 1) ---
 class ScheduleGenerateRequest(BaseModel):
-    """Pedido de geração de horário.
+    """Pedido publico de geração de horário.
 
-    mode="full"   — gera de raiz para todas as turmas ativas.
-    mode="repair" — regenera com perturbação mínima face ao horário atual.
+    A estratégia é escolhida internamente pelo estado de publicação do ano letivo.
     """
-    mode: str = "full"
+    model_config = ConfigDict(extra="forbid")
+
+    replace_pending_draft: bool = False
+    idempotency_key: str | None = Field(None, min_length=1, max_length=100)
 
 
-class SchedulePreflightPrimaryWindow(BaseModel):
-    rolling_weeks: int
-    start_date: date
-    end_date: date
-    total_days: int
-    blocked_days: int
-    usable_days: int
-
-
-class SchedulePreflightHardEndFeasibility(BaseModel):
-    start_date: date
-    hard_end_date: date
-    backlog_hours: float
-    capacity_hours: float
-    expected_residual_hours: float
-    feasible_until_hard_end: bool
-
-
-class SchedulePreflightSummary(BaseModel):
-    mode: str
-    primary_window: Optional[SchedulePreflightPrimaryWindow] = None
-    hard_end_feasibility: Optional[SchedulePreflightHardEndFeasibility] = None
-
-
-class ScheduleGenerateResponse(BaseModel):
-    task_id: str
+class SchedulerGenerateResponse(BaseModel):
+    job_id: int
+    strategy: Literal["COMPLETE_GENERATION", "ADAPTIVE_REPAIR"]
+    trigger_type: Literal[
+        "FIRST_GENERATION", "EXPLICIT_DEBT", "SCHEDULER_CHANGE", "MIXED"
+    ]
     status: str
-    solver_version: str
-    preflight: SchedulePreflightSummary
+
+
+class SchedulerStatusResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    school_year_id: int | None
+    school_year_publication_state: Literal["UNPUBLISHED", "PUBLISHED"] | None
+    pending_draft_id: int | None
+    primary_action: Literal[
+        "REVIEW_PENDING_DRAFT",
+        "GENERATE_SCHEDULE",
+        "GENERATION_UNAVAILABLE",
+    ]
+    can_generate_new_draft: bool
+    can_regenerate_with_confirmation: bool
+    blocked_reason: str | None
+    trigger_type: Literal[
+        "FIRST_GENERATION",
+        "EXPLICIT_DEBT",
+        "SCHEDULER_CHANGE",
+        "MIXED",
+    ] | None
+    unresolved_debt_hours: float = Field(ge=0)
+    scheduler_state_version: int | None = Field(default=None, ge=0)
+    approved_scheduler_state_version: int | None = Field(default=None, ge=0)
+
+
+class ScheduleGenerationJobResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    strategy: Literal["COMPLETE_GENERATION", "ADAPTIVE_REPAIR"]
+    trigger_type: Literal[
+        "FIRST_GENERATION", "EXPLICIT_DEBT", "SCHEDULER_CHANGE", "MIXED"
+    ] | None
+    job_status: Literal[
+        "QUEUED",
+        "RUNNING",
+        "CANCEL_REQUESTED",
+        "CANCELED",
+        "SUCCEEDED",
+        "FAILED",
+        "NO_VALID_OUTPUT",
+    ]
+    result_category: Literal[
+        "COMPLETE_SUCCESS", "PARTIAL_RECOVERY", "NO_VALID_OUTPUT"
+    ] | None
+    queued_at: datetime
+    started_at: datetime | None
+    finished_at: datetime | None
+    deadline_at: datetime | None
+    duration_ms: int | None
+    failure_code: str | None
+    failure_message: str | None
+
+
+class ScheduleGenerationCancelResponse(BaseModel):
+    job_id: int
+    job_status: str
+
+
+class ScheduleDraftSummaryResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    draft_id: int
+    strategy: Literal["COMPLETE_GENERATION", "ADAPTIVE_REPAIR"]
+    draft_state: Literal[
+        "PENDING", "APPROVED", "REJECTED", "REPLACED", "STALE", "INVALIDATED"
+    ]
+    result_category: Literal["COMPLETE_SUCCESS", "PARTIAL_RECOVERY"]
+    trigger_type: Literal[
+        "FIRST_GENERATION", "EXPLICIT_DEBT", "SCHEDULER_CHANGE", "MIXED"
+    ]
+    recovery_escalation_level: str | None
+    adaptation_level: str | None
+    projected_completion_date: date
+    hard_end_date: date
+    debt_hours_before: float = Field(ge=0)
+    debt_hours_recovered: float = Field(ge=0)
+    debt_hours_remaining: float = Field(ge=0)
+    partial_recovery_blocker_type: str | None
+    main_blocker_message: str | None
+    recommended_actions: list[str] | tuple[str, ...]
+    changed_blocks: int = Field(ge=0)
+    affected_classes: int = Field(ge=0)
+    affected_teachers: int = Field(ge=0)
+    affected_days: int = Field(ge=0)
+    disruption_score: float = Field(ge=0)
+    warnings: list[str] | tuple[str, ...]
+    can_approve: bool
+
+
+class ScheduleDraftDiffEntryResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    change_type: Literal["ADDED", "MOVED", "CHANGED", "REMOVED", "UNCHANGED_IMPACTED"]
+    impact_scope: Literal["AFFECTED", "RELATED", "UNRELATED"]
+    class_id: int
+    subject_id: int
+    teacher_id: int
+    before_active_block_id: int | None
+    after_draft_block_id: int | None
+    before_snapshot: dict[str, Any] | None
+    after_snapshot: dict[str, Any] | None
+    reason_code: str | None
+    reason_message: str | None
+    recovery_link_impact: dict[str, Any] | None
+
+
+class ScheduleDraftApprovalResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    draft_id: int
+    draft_state: Literal["APPROVED"]
+    school_year_publication_state: Literal["PUBLISHED"]
+    active_schedule_version_id: str
+    active_block_count: int = Field(ge=0)
+
+
+class ScheduleDraftRejectionResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    draft_id: int
+    draft_state: Literal["REJECTED"]
+
+
+class SchedulerResetYearRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    confirmed: bool
+
+
+class SchedulerResetYearResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    school_year_id: int
+    school_year_publication_state: Literal["UNPUBLISHED"]
+    canceled_jobs: int = Field(ge=0)
+    invalidated_drafts: int = Field(ge=0)
+    canceled_active_blocks: int = Field(ge=0)
+    canceled_recovery_links: int = Field(ge=0)
 
 
 # --- SUBSTITUTIONS ---
@@ -609,41 +732,28 @@ ERR_HARD_BEFORE_TARGET = "A data-limite rígida não pode ser anterior à data-a
 
 class OrganizationSettingsUpsert(BaseModel):
     """Cria ou atualiza as configurações da escola."""
+    model_config = ConfigDict(extra="forbid")
+
     school_start_date: date | None = Field(None, description="Primeiro dia de aulas")
-    school_target_end_date: date | None = Field(None, description="Data-alvo para fim das aulas (benchmark do solver)")
     school_hard_end_date: date | None = Field(None, description=DESC_HARD_END_DATE)
     repair_stability_window_days: int | None = Field(
         None,
-        ge=1,
+        ge=0,
         description=DESC_REPAIR_WINDOW_DAYS,
-    )
-    auto_confirm_enabled: bool | None = Field(
-        None,
-        description="Ativa a auto-confirmacao diaria de aulas sem registo",
-    )
-    auto_confirm_cutoff_time: time | None = Field(
-        None,
-        description="Hora a partir da qual a auto-confirmacao pode correr",
     )
 
     @staticmethod
     def _validate_school_dates(
         start_date: date | None,
-        target_end_date: date | None,
         hard_end_date: date | None,
     ) -> None:
-        if start_date and target_end_date and target_end_date < start_date:
-            raise ValueError(ERR_TARGET_BEFORE_START)
         if start_date and hard_end_date and hard_end_date < start_date:
             raise ValueError(ERR_HARD_BEFORE_START)
-        if target_end_date and hard_end_date and hard_end_date < target_end_date:
-            raise ValueError(ERR_HARD_BEFORE_TARGET)
 
     @model_validator(mode='after')
     def validate_school_dates_only(self):
         self._validate_school_dates(
             self.school_start_date,
-            self.school_target_end_date,
             self.school_hard_end_date,
         )
         return self
@@ -653,12 +763,8 @@ class OrganizationSettingsRead(BaseModel):
     id: int
     organization_id: int
     school_start_date: date | None = None
-    school_target_end_date: date | None = None
     school_hard_end_date: date | None = None
     repair_stability_window_days: int | None = None
-    auto_confirm_enabled: bool = True
-    auto_confirm_cutoff_time: time | None = None
-
     model_config = ConfigDict(from_attributes=True)
 
 class OrganizationGridSettingsUpsert(BaseModel):
@@ -796,6 +902,7 @@ class LessonOccurrenceRead(BaseModel):
     id: int
     organization_id: int
     schedule_output_id: Optional[int] = None
+    active_schedule_block_id: Optional[int] = None
     date: date
     status: Optional[LessonOccurrenceStatus] = None
     operational_state: OperationalOccurrenceState
@@ -1026,8 +1133,9 @@ class DraftComparisonSummaryRead(BaseModel):
     backlog_remaining_hours: float
     aggregate_gap_variation: int
 
+
 class ScheduleDiffRead(BaseModel):
-    """Résultat du diff entre rascunho e horário ativo."""
+    """Resultado do diff entre rascunho e horário ativo."""
     generation_id: str
     added: int
     removed: int
@@ -1038,7 +1146,6 @@ class ScheduleDiffRead(BaseModel):
     frozen_until: date | None = None
     compared_from_date: date | None = None
     statistics: DraftComparisonSummaryRead | None = None
-
 
 
 class AuditGenerationSummaryRead(BaseModel):
@@ -1124,8 +1231,9 @@ class WeekModuleInfo(BaseModel):
 class WeekSlotRead(BaseModel):
     """Um bloco de aula numa semana: slot planeado + ocorrência real."""
     schedule_output_id: Optional[int] = None
+    active_schedule_block_id: Optional[int] = None
     operational_block_id: Optional[int] = None
-    block_source: Literal["planned", "operational"] = "planned"
+    block_source: Literal["planned", "active", "operational"] = "planned"
     date: Optional[str] = None
     timeslot: WeekTimeslotInfo
     subject: Optional[WeekSubjectInfo] = None
@@ -1169,6 +1277,7 @@ class LessonLogRead(BaseModel):
     id: int
     organization_id: int
     schedule_output_id: Optional[int] = None
+    active_schedule_block_id: Optional[int] = None
     operational_block_id: Optional[int] = None
     status: LessonLogStatus
     summary: Optional[str] = None
@@ -1313,8 +1422,9 @@ class DashboardV1Response(BaseModel):
 # ── Onboarding ─────────────────────────────────────────────────
 
 class OnboardingRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     school_start_date: date
-    school_target_end_date: date
     school_hard_end_date: date
     lunch_start: time
     lunch_end: time
@@ -1322,12 +1432,8 @@ class OnboardingRequest(BaseModel):
 
     @model_validator(mode='after')
     def validate_dates(self):
-        if self.school_target_end_date <= self.school_start_date:
-            raise ValueError("Data de fim prevista deve ser posterior à data de início")
         if self.school_hard_end_date <= self.school_start_date:
             raise ValueError("Data de fim definitiva deve ser posterior à data de início")
-        if self.school_hard_end_date < self.school_target_end_date:
-            raise ValueError("Data de fim definitiva não pode ser anterior à data de fim prevista")
         if self.lunch_end <= self.lunch_start:
             raise ValueError("Hora de fim do almoço deve ser posterior à hora de início")
         if self.lunch_min_duration < 1:

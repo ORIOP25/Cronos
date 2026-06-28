@@ -50,7 +50,6 @@ def _create_organization(
     settings = models.OrganizationSettings(
         organization_id=org.id,
         school_start_date=date(2025, 9, 15),
-        school_target_end_date=date(2026, 6, 15),
         school_hard_end_date=date(2026, 7, 31),
         repair_stability_window_days=14,
     )

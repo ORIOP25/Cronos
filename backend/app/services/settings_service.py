@@ -16,8 +16,95 @@ from sqlalchemy import select, and_, delete, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models, schemas
+from app.services.scheduler_state_service import (
+    SchedulerStateService,
+    record_scheduler_change,
+)
 
 SETTINGS_NOT_FOUND = "Configurações da escola não encontradas"
+
+def _calendar_settings_snapshot(settings: models.OrganizationSettings) -> dict:
+    return {
+        "start_date": settings.school_start_date,
+        "hard_end_date": settings.school_hard_end_date,
+    }
+
+
+def _repair_policy_snapshot(settings: models.OrganizationSettings) -> dict:
+    return {"stability_window_days": settings.repair_stability_window_days}
+
+
+def _grid_settings_snapshot(settings: models.OrganizationGridSettings) -> dict:
+    return {
+        "lunch_window_start": settings.lunch_window_start,
+        "lunch_window_end": settings.lunch_window_end,
+        "lunch_min_duration_minutes": settings.lunch_min_duration_minutes,
+    }
+
+
+def _calendar_event_snapshot(event: models.SchoolCalendarEvent) -> dict:
+    return {
+        "name": event.name,
+        "start_date": event.start_date,
+        "end_date": event.end_date,
+        "event_type": event.event_type,
+        "source": event.source,
+    }
+
+
+def _sorted_calendar_snapshots(events) -> list[dict]:
+    return sorted(
+        (_calendar_event_snapshot(event) for event in events),
+        key=lambda item: (item["start_date"], item["end_date"], item["name"]),
+    )
+
+
+async def _sync_school_year_and_record_settings_changes(
+    db: AsyncSession,
+    organization_id: int,
+    settings: models.OrganizationSettings,
+    *,
+    before_calendar: dict | None,
+    before_policy: dict | None,
+    changed_by_user_id: int | None,
+) -> None:
+    state_service = SchedulerStateService(db)
+    if settings.school_start_date is not None and settings.school_hard_end_date is not None:
+        school_year, _ = await state_service.get_or_create_active_state(
+            organization_id,
+            start_date=settings.school_start_date,
+            hard_end_date=settings.school_hard_end_date,
+        )
+        school_year.start_date = settings.school_start_date
+        school_year.hard_end_date = settings.school_hard_end_date
+
+    operation = (
+        models.SchedulerStateChangeOperation.CREATE
+        if before_calendar is None
+        else models.SchedulerStateChangeOperation.UPDATE
+    )
+    await record_scheduler_change(
+        db,
+        organization_id,
+        entity_type="SCHOOL_YEAR_CALENDAR",
+        entity_id=settings.id,
+        operation=operation,
+        before=before_calendar,
+        after=_calendar_settings_snapshot(settings),
+        changed_by_user_id=changed_by_user_id,
+    )
+    await record_scheduler_change(
+        db,
+        organization_id,
+        entity_type="REPAIR_POLICY",
+        entity_id=settings.id,
+        operation=operation,
+        before=before_policy,
+        after=_repair_policy_snapshot(settings),
+        changed_by_user_id=changed_by_user_id,
+        repair_policy_change=True,
+    )
+
 
 # ==========================================
 #  ORGANIZATION SETTINGS
@@ -33,20 +120,20 @@ async def get_settings(db: AsyncSession, organization_id: int) -> models.Organiz
     return result.scalar_one_or_none()
 
 async def upsert_settings(
-    db: AsyncSession, organization_id: int, data: schemas.OrganizationSettingsUpsert
+    db: AsyncSession,
+    organization_id: int,
+    data: schemas.OrganizationSettingsUpsert,
+    changed_by_user_id: int | None = None,
 ) -> models.OrganizationSettings:
     """Cria ou actualiza o registo único de configuração."""
     existing = await get_settings(db, organization_id)
     if existing:
+        before_calendar = _calendar_settings_snapshot(existing)
+        before_policy = _repair_policy_snapshot(existing)
         next_start_date = (
             data.school_start_date
             if data.school_start_date is not None
             else existing.school_start_date
-        )
-        next_target_end_date = (
-            data.school_target_end_date
-            if data.school_target_end_date is not None
-            else existing.school_target_end_date
         )
         next_hard_end_date = (
             data.school_hard_end_date
@@ -55,22 +142,24 @@ async def upsert_settings(
         )
         schemas.OrganizationSettingsUpsert._validate_school_dates(
             next_start_date,
-            next_target_end_date,
             next_hard_end_date,
         )
 
         if data.school_start_date is not None:
             existing.school_start_date = data.school_start_date
-        if data.school_target_end_date is not None:
-            existing.school_target_end_date = data.school_target_end_date
         if data.school_hard_end_date is not None:
             existing.school_hard_end_date = data.school_hard_end_date
         if data.repair_stability_window_days is not None:
             existing.repair_stability_window_days = data.repair_stability_window_days
-        if data.auto_confirm_enabled is not None:
-            existing.auto_confirm_enabled = data.auto_confirm_enabled
-        if data.auto_confirm_cutoff_time is not None:
-            existing.auto_confirm_cutoff_time = data.auto_confirm_cutoff_time
+        await db.flush()
+        await _sync_school_year_and_record_settings_changes(
+            db,
+            organization_id,
+            existing,
+            before_calendar=before_calendar,
+            before_policy=before_policy,
+            changed_by_user_id=changed_by_user_id,
+        )
         await db.commit()
         await db.refresh(existing)
         return existing
@@ -78,15 +167,20 @@ async def upsert_settings(
     new_settings = models.OrganizationSettings(
         organization_id=organization_id,
         school_start_date=data.school_start_date,
-        school_target_end_date=data.school_target_end_date,
         school_hard_end_date=data.school_hard_end_date,
         repair_stability_window_days=data.repair_stability_window_days,
-        auto_confirm_enabled=(
-            True if data.auto_confirm_enabled is None else data.auto_confirm_enabled
-        ),
-        auto_confirm_cutoff_time=data.auto_confirm_cutoff_time,
+        auto_confirm_enabled=False,
     )
     db.add(new_settings)
+    await db.flush()
+    await _sync_school_year_and_record_settings_changes(
+        db,
+        organization_id,
+        new_settings,
+        before_calendar=None,
+        before_policy=None,
+        changed_by_user_id=changed_by_user_id,
+    )
     await db.commit()
     await db.refresh(new_settings)
     return new_settings
@@ -105,11 +199,15 @@ async def get_grid_settings(db: AsyncSession, organization_id: int) -> models.Or
     return result.scalar_one_or_none()
 
 async def upsert_grid_settings(
-    db: AsyncSession, organization_id: int, data: schemas.OrganizationGridSettingsUpsert
+    db: AsyncSession,
+    organization_id: int,
+    data: schemas.OrganizationGridSettingsUpsert,
+    changed_by_user_id: int | None = None,
 ) -> models.OrganizationGridSettings:
     """Cria ou actualiza as configurações únicas da grelha."""
     existing = await get_grid_settings(db, organization_id)
     if existing:
+        before = _grid_settings_snapshot(existing)
         next_lunch_start = (
             data.lunch_window_start
             if data.lunch_window_start is not None
@@ -137,6 +235,16 @@ async def upsert_grid_settings(
             existing.lunch_window_end = data.lunch_window_end
         if data.lunch_min_duration_minutes is not None:
             existing.lunch_min_duration_minutes = data.lunch_min_duration_minutes
+        await record_scheduler_change(
+            db,
+            organization_id,
+            entity_type="LUNCH_SETTINGS",
+            entity_id=existing.id,
+            operation=models.SchedulerStateChangeOperation.UPDATE,
+            before=before,
+            after=_grid_settings_snapshot(existing),
+            changed_by_user_id=changed_by_user_id,
+        )
         await db.commit()
         await db.refresh(existing)
         return existing
@@ -148,6 +256,17 @@ async def upsert_grid_settings(
         lunch_min_duration_minutes=data.lunch_min_duration_minutes,
     )
     db.add(new_settings)
+    await db.flush()
+    await record_scheduler_change(
+        db,
+        organization_id,
+        entity_type="LUNCH_SETTINGS",
+        entity_id=new_settings.id,
+        operation=models.SchedulerStateChangeOperation.CREATE,
+        before=None,
+        after=_grid_settings_snapshot(new_settings),
+        changed_by_user_id=changed_by_user_id,
+    )
     await db.commit()
     await db.refresh(new_settings)
     return new_settings
@@ -177,7 +296,10 @@ async def list_calendar_events(
 
 
 async def create_calendar_event(
-    db: AsyncSession, organization_id: int, data: schemas.SchoolCalendarEventCreate
+    db: AsyncSession,
+    organization_id: int,
+    data: schemas.SchoolCalendarEventCreate,
+    changed_by_user_id: int | None = None,
 ) -> models.SchoolCalendarEvent:
     settings = await get_settings(db, organization_id)
     if settings:
@@ -198,12 +320,28 @@ async def create_calendar_event(
         source=models.CalendarEventSource.manual,
     )
     db.add(event)
+    await db.flush()
+    await record_scheduler_change(
+        db,
+        organization_id,
+        entity_type="CALENDAR_EVENT",
+        entity_id=event.id,
+        operation=models.SchedulerStateChangeOperation.CREATE,
+        before=None,
+        after=_calendar_event_snapshot(event),
+        changed_by_user_id=changed_by_user_id,
+    )
     await db.commit()
     await db.refresh(event)
     return event
 
 
-async def delete_calendar_event(db: AsyncSession, organization_id: int, event_id: int) -> bool:
+async def delete_calendar_event(
+    db: AsyncSession,
+    organization_id: int,
+    event_id: int,
+    changed_by_user_id: int | None = None,
+) -> bool:
     result = await db.execute(
         select(models.SchoolCalendarEvent).where(
             and_(
@@ -215,7 +353,18 @@ async def delete_calendar_event(db: AsyncSession, organization_id: int, event_id
     event = result.scalar_one_or_none()
     if not event:
         return False
+    before = _calendar_event_snapshot(event)
     await db.delete(event)
+    await record_scheduler_change(
+        db,
+        organization_id,
+        entity_type="CALENDAR_EVENT",
+        entity_id=event.id,
+        operation=models.SchedulerStateChangeOperation.DELETE,
+        before=before,
+        after=None,
+        changed_by_user_id=changed_by_user_id,
+    )
     await db.commit()
     return True
 
@@ -232,6 +381,7 @@ def _get_pt_holidays(years: list[int]) -> dict[date, str]:
 async def sync_holidays(
     db: AsyncSession,
     organization_id: int,
+    changed_by_user_id: int | None = None,
 ) -> int:
     """Importa feriados nacionais para o calendário da escola.
 
@@ -248,6 +398,13 @@ async def sync_holidays(
         end_year = settings.school_hard_end_date.year if settings.school_hard_end_date else start_year + 1
         years = list(range(start_year, end_year + 1))
 
+    existing_auto_events = await db.scalars(
+        select(models.SchoolCalendarEvent).where(
+            models.SchoolCalendarEvent.organization_id == organization_id,
+            models.SchoolCalendarEvent.source == models.CalendarEventSource.auto,
+        )
+    )
+    before = _sorted_calendar_snapshots(existing_auto_events.all())
     await db.execute(
         delete(models.SchoolCalendarEvent).where(
             and_(
@@ -264,6 +421,7 @@ async def sync_holidays(
     max_date = settings.school_hard_end_date if settings and settings.school_hard_end_date else None
 
     count = 0
+    created_events: list[models.SchoolCalendarEvent] = []
     for holiday_date, holiday_name in sorted(holiday_map.items()):
         if min_date and holiday_date < min_date:
             continue
@@ -279,8 +437,21 @@ async def sync_holidays(
             source=models.CalendarEventSource.auto,
         )
         db.add(event)
+        created_events.append(event)
         count += 1
 
+    await db.flush()
+    await record_scheduler_change(
+        db,
+        organization_id,
+        entity_type="CALENDAR_EVENT",
+        entity_id=None,
+        operation=models.SchedulerStateChangeOperation.BULK_IMPORT,
+        before=before,
+        after=_sorted_calendar_snapshots(created_events),
+        changed_by_user_id=changed_by_user_id,
+        metadata={"imported_count": count, "source": "AUTO"},
+    )
     await db.commit()
     return count
 

@@ -36,7 +36,7 @@ Garantir previsibilidade operacional no arranque e reduzir risco de bloqueio fun
 ### B. Regras de negocio criticas
 1. Maquina de estados de ocorrencias valida e auditavel.
 2. Ranking de recomendacao deterministico com decisao final humana.
-3. Repair mode respeita janela de estabilidade e hard end date.
+3. Reparacao adaptativa respeita a janela de estabilidade e a data-limite rigida.
 4. Tenant isolation validado em leitura e escrita.
 
 ### C. Operacao funcional

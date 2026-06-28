@@ -1,0 +1,1011 @@
+﻿diff --git a/backend/app/models.py b/backend/app/models.py
+index 768f2c3..99aaf83 100644
+--- a/backend/app/models.py
++++ b/backend/app/models.py
+@@ -4,7 +4,8 @@ from typing import List, Optional
+ from sqlalchemy import (
+     Column, Integer, String, Boolean,
+     ForeignKey, Date, DateTime, Time,
+-    Text, Enum as SAEnum, UniqueConstraint, CheckConstraint, Table, Float, Index, event,
++    Text, Enum as SAEnum, UniqueConstraint, CheckConstraint, ForeignKeyConstraint,
++    Table, Float, Index, event,
+ )
+ from sqlalchemy.types import JSON
+ from sqlalchemy.orm import Mapped, Session, mapped_column, relationship
+@@ -57,6 +58,97 @@ class OperationalBlockExecutionStatus(str, enum.Enum):
+     COMPLETED = "COMPLETED"
+     CANCELLED = "CANCELLED"
+ 
++
++class SchoolYearPublicationState(str, enum.Enum):
++    UNPUBLISHED = "UNPUBLISHED"
++    PUBLISHED = "PUBLISHED"
++
++
++class ScheduleGenerationStrategy(str, enum.Enum):
++    COMPLETE_GENERATION = "COMPLETE_GENERATION"
++    ADAPTIVE_REPAIR = "ADAPTIVE_REPAIR"
++
++
++class ScheduleGenerationTrigger(str, enum.Enum):
++    FIRST_GENERATION = "FIRST_GENERATION"
++    EXPLICIT_DEBT = "EXPLICIT_DEBT"
++    SCHEDULER_CHANGE = "SCHEDULER_CHANGE"
++    MIXED = "MIXED"
++
++
++class ScheduleGenerationJobStatus(str, enum.Enum):
++    QUEUED = "QUEUED"
++    RUNNING = "RUNNING"
++    CANCEL_REQUESTED = "CANCEL_REQUESTED"
++    CANCELED = "CANCELED"
++    SUCCEEDED = "SUCCEEDED"
++    FAILED = "FAILED"
++    NO_VALID_OUTPUT = "NO_VALID_OUTPUT"
++
++
++class ScheduleGenerationResultCategory(str, enum.Enum):
++    COMPLETE_SUCCESS = "COMPLETE_SUCCESS"
++    PARTIAL_RECOVERY = "PARTIAL_RECOVERY"
++    NO_VALID_OUTPUT = "NO_VALID_OUTPUT"
++
++
++class ScheduleDraftState(str, enum.Enum):
++    PENDING = "PENDING"
++    APPROVED = "APPROVED"
++    REJECTED = "REJECTED"
++    REPLACED = "REPLACED"
++    STALE = "STALE"
++    INVALIDATED = "INVALIDATED"
++
++
++class ScheduleDraftBlockChangeType(str, enum.Enum):
++    UNCHANGED = "UNCHANGED"
++    ADDED = "ADDED"
++    MOVED = "MOVED"
++    ROOM_ONLY = "ROOM_ONLY"
++    REPLACED = "REPLACED"
++
++
++class ScheduleDiffChangeType(str, enum.Enum):
++    ADDED = "ADDED"
++    MOVED = "MOVED"
++    CHANGED = "CHANGED"
++    REMOVED = "REMOVED"
++    UNCHANGED_IMPACTED = "UNCHANGED_IMPACTED"
++
++
++class ScheduleDiffScope(str, enum.Enum):
++    AFFECTED = "AFFECTED"
++    RELATED = "RELATED"
++    UNRELATED = "UNRELATED"
++
++
++class ActiveScheduleBlockStatus(str, enum.Enum):
++    ACTIVE = "ACTIVE"
++    REMOVED = "REMOVED"
++    CANCELED = "CANCELED"
++
++
++class PlannedRecoveryLinkStatus(str, enum.Enum):
++    PLANNED = "PLANNED"
++    DELIVERED = "DELIVERED"
++    CANCELED = "CANCELED"
++    REPLACED = "REPLACED"
++
++
++class SchedulerStateChangeOperation(str, enum.Enum):
++    CREATE = "CREATE"
++    UPDATE = "UPDATE"
++    DELETE = "DELETE"
++    BULK_IMPORT = "BULK_IMPORT"
++
++
++class SchedulerStateChangeScope(str, enum.Enum):
++    FUTURE_IMPACTING = "FUTURE_IMPACTING"
++    PAST_ONLY = "PAST_ONLY"
++    NO_OP = "NO_OP"
++    INACTIVE_RESOURCE = "INACTIVE_RESOURCE"
++
+ class TimesheetStatus(str, enum.Enum):
+     """Estado do ciclo de vida do fecho semanal de um professor."""
+     OPEN = "OPEN"            # Semana aberta ÔÇö professor pode editar
+@@ -462,7 +554,6 @@ class OrganizationSettings(Base):
+     id: Mapped[int] = mapped_column(primary_key=True)
+     organization_id: Mapped[int] = mapped_column(ForeignKey(FK_ORG_ID, ondelete="CASCADE"), unique=True, index=True)
+     school_start_date: Mapped[Optional[date_type]] = mapped_column(Date, nullable=True)
+-    school_target_end_date: Mapped[Optional[date_type]] = mapped_column(Date, nullable=True)
+     school_hard_end_date: Mapped[Optional[date_type]] = mapped_column(Date, nullable=True)
+     repair_stability_window_days: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+     auto_confirm_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+@@ -473,6 +564,840 @@ class OrganizationSettings(Base):
+     def __repr__(self) -> str:
+         return f"<OrganizationSettings(organization_id={self.organization_id})>"
+ 
++
++class SchedulerSchoolYear(Base):
++    """Stable tenant-scoped identity for one scheduler school year."""
++    __tablename__ = "scheduler_school_year"
++
++    id: Mapped[int] = mapped_column(primary_key=True)
++    organization_id: Mapped[int] = mapped_column(
++        ForeignKey(FK_ORG_ID, ondelete="CASCADE"),
++        nullable=False,
++        index=True,
++    )
++    label: Mapped[str] = mapped_column(String(20), nullable=False)
++    start_date: Mapped[date_type] = mapped_column(Date, nullable=False)
++    hard_end_date: Mapped[date_type] = mapped_column(Date, nullable=False)
++    timezone: Mapped[str] = mapped_column(String(64), nullable=False, default="Europe/Lisbon")
++    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
++    created_at: Mapped[datetime] = mapped_column(
++        DateTime(timezone=True),
++        nullable=False,
++        default=lambda: datetime.now(timezone.utc),
++    )
++    updated_at: Mapped[datetime] = mapped_column(
++        DateTime(timezone=True),
++        nullable=False,
++        default=lambda: datetime.now(timezone.utc),
++        onupdate=lambda: datetime.now(timezone.utc),
++    )
++
++    __table_args__ = (
++        UniqueConstraint(
++            "id", "organization_id", name="uq_scheduler_school_year_id_org"
++        ),
++        UniqueConstraint("organization_id", "label", name="uq_scheduler_school_year_org_label"),
++        CheckConstraint("hard_end_date >= start_date", name="ck_scheduler_school_year_date_order"),
++        Index(
++            "uq_scheduler_school_year_active_org",
++            "organization_id",
++            unique=True,
++            postgresql_where=(is_active.is_(True)),
++        ),
++    )
++
++
++class SchedulerSchoolYearState(Base):
++    """Publication lifecycle state for one tenant and school year."""
++    __tablename__ = "scheduler_school_year_state"
++
++    id: Mapped[int] = mapped_column(primary_key=True)
++    organization_id: Mapped[int] = mapped_column(
++        ForeignKey(FK_ORG_ID, ondelete="CASCADE"),
++        nullable=False,
++        index=True,
++    )
++    school_year_id: Mapped[int] = mapped_column(
++        nullable=False,
++        index=True,
++    )
++    school_year_publication_state: Mapped[SchoolYearPublicationState] = mapped_column(
++        SAEnum(SchoolYearPublicationState),
++        nullable=False,
++        default=SchoolYearPublicationState.UNPUBLISHED,
++    )
++    active_schedule_version_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
++    pending_draft_id: Mapped[Optional[int]] = mapped_column(
++        nullable=True,
++    )
++    scheduler_state_version: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
++    approved_scheduler_state_version: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
++    reset_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
++    reset_by_user_id: Mapped[Optional[int]] = mapped_column(
++        ForeignKey("user.id", ondelete=ON_DELETE_SET_NULL),
++        nullable=True,
++    )
++    lock_version: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
++    created_at: Mapped[datetime] = mapped_column(
++        DateTime(timezone=True),
++        nullable=False,
++        default=lambda: datetime.now(timezone.utc),
++    )
++    updated_at: Mapped[datetime] = mapped_column(
++        DateTime(timezone=True),
++        nullable=False,
++        default=lambda: datetime.now(timezone.utc),
++        onupdate=lambda: datetime.now(timezone.utc),
++    )
++
++    __table_args__ = (
++        ForeignKeyConstraint(
++            ["school_year_id", "organization_id"],
++            ["scheduler_school_year.id", "scheduler_school_year.organization_id"],
++            name="fk_scheduler_school_year_state_year_scope",
++            ondelete="CASCADE",
++        ),
++        UniqueConstraint(
++            "organization_id",
++            "school_year_id",
++            name="uq_scheduler_school_year_state_org_year",
++        ),
++        CheckConstraint(
++            "scheduler_state_version >= 0",
++            name="ck_scheduler_school_year_state_version_nonnegative",
++        ),
++        CheckConstraint(
++            "lock_version >= 0",
++            name="ck_scheduler_school_year_state_lock_version_nonnegative",
++        ),
++        CheckConstraint(
++            "school_year_publication_state <> 'PUBLISHED' OR active_schedule_version_id IS NOT NULL",
++            name="ck_scheduler_school_year_state_published_has_version",
++        ),
++        ForeignKeyConstraint(
++            ["pending_draft_id", "organization_id", "school_year_id"],
++            [
++                "schedule_drafts.id",
++                "schedule_drafts.organization_id",
++                "schedule_drafts.school_year_id",
++            ],
++            name="fk_scheduler_school_year_state_pending_draft_scope",
++        ),
++    )
++
++
++class ScheduleGenerationJob(Base):
++    """Auditable execution record for one bounded generation attempt."""
++    __tablename__ = "schedule_generation_job"
++
++    id: Mapped[int] = mapped_column(primary_key=True)
++    organization_id: Mapped[int] = mapped_column(
++        ForeignKey(FK_ORG_ID, ondelete="CASCADE"),
++        nullable=False,
++        index=True,
++    )
++    school_year_id: Mapped[int] = mapped_column(
++        nullable=False,
++        index=True,
++    )
++    requested_by_user_id: Mapped[Optional[int]] = mapped_column(
++        ForeignKey("user.id", ondelete=ON_DELETE_SET_NULL),
++        nullable=True,
++    )
++    strategy: Mapped[ScheduleGenerationStrategy] = mapped_column(
++        SAEnum(ScheduleGenerationStrategy),
++        nullable=False,
++    )
++    trigger_type: Mapped[Optional[ScheduleGenerationTrigger]] = mapped_column(
++        SAEnum(ScheduleGenerationTrigger),
++        nullable=True,
++    )
++    job_status: Mapped[ScheduleGenerationJobStatus] = mapped_column(
++        SAEnum(ScheduleGenerationJobStatus),
++        nullable=False,
++        default=ScheduleGenerationJobStatus.QUEUED,
++    )
++    result_category: Mapped[Optional[ScheduleGenerationResultCategory]] = mapped_column(
++        SAEnum(ScheduleGenerationResultCategory),
++        nullable=True,
++    )
++    generation_input_fingerprint: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
++    debt_basis_fingerprint: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
++    scheduler_state_version_used: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
++    repair_policy_snapshot_hash: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
++    input_snapshot_json: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
++    queued_at: Mapped[datetime] = mapped_column(
++        DateTime(timezone=True),
++        nullable=False,
++        default=lambda: datetime.now(timezone.utc),
++    )
++    started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
++    finished_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
++    deadline_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
++    duration_ms: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
++    cancellation_requested_at: Mapped[Optional[datetime]] = mapped_column(
++        DateTime(timezone=True),
++        nullable=True,
++    )
++    failure_code: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
++    failure_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
++    idempotency_key: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
++
++    __table_args__ = (
++        ForeignKeyConstraint(
++            ["school_year_id", "organization_id"],
++            ["scheduler_school_year.id", "scheduler_school_year.organization_id"],
++            name="fk_schedule_generation_job_year_scope",
++            ondelete="CASCADE",
++        ),
++        UniqueConstraint(
++            "id",
++            "organization_id",
++            "school_year_id",
++            name="uq_schedule_generation_job_id_scope",
++        ),
++        UniqueConstraint(
++            "organization_id",
++            "school_year_id",
++            "idempotency_key",
++            name="uq_schedule_generation_job_idempotency",
++        ),
++        CheckConstraint(
++            "duration_ms IS NULL OR duration_ms >= 0",
++            name="ck_schedule_generation_job_duration_nonnegative",
++        ),
++        CheckConstraint(
++            "(job_status = 'SUCCEEDED' AND result_category IN "
++            "('COMPLETE_SUCCESS', 'PARTIAL_RECOVERY')) OR "
++            "(job_status = 'NO_VALID_OUTPUT' AND result_category = 'NO_VALID_OUTPUT') OR "
++            "(job_status NOT IN ('SUCCEEDED', 'NO_VALID_OUTPUT') AND result_category IS NULL)",
++            name="ck_schedule_generation_job_result_consistency",
++        ),
++        CheckConstraint(
++            "(job_status IN ('CANCELED', 'SUCCEEDED', 'FAILED', 'NO_VALID_OUTPUT') "
++            "AND finished_at IS NOT NULL) OR "
++            "(job_status NOT IN ('CANCELED', 'SUCCEEDED', 'FAILED', 'NO_VALID_OUTPUT') "
++            "AND finished_at IS NULL)",
++            name="ck_schedule_generation_job_terminal_finished",
++        ),
++        CheckConstraint(
++            "started_at IS NULL OR started_at >= queued_at",
++            name="ck_schedule_generation_job_started_after_queued",
++        ),
++        CheckConstraint(
++            "finished_at IS NULL OR (started_at IS NOT NULL AND finished_at >= started_at)",
++            name="ck_schedule_generation_job_finished_after_started",
++        ),
++        Index(
++            "uq_schedule_generation_job_active_year",
++            "organization_id",
++            "school_year_id",
++            unique=True,
++            postgresql_where=job_status.in_((
++                ScheduleGenerationJobStatus.QUEUED,
++                ScheduleGenerationJobStatus.RUNNING,
++                ScheduleGenerationJobStatus.CANCEL_REQUESTED,
++            )),
++        ),
++    )
++
++
++class ScheduleDraft(Base):
++    """Auditable proposed schedule state produced by a successful generation job."""
++    __tablename__ = "schedule_drafts"
++
++    id: Mapped[int] = mapped_column(primary_key=True)
++    organization_id: Mapped[int] = mapped_column(
++        ForeignKey(FK_ORG_ID, ondelete="CASCADE"),
++        nullable=False,
++        index=True,
++    )
++    school_year_id: Mapped[int] = mapped_column(
++        ForeignKey("scheduler_school_year.id", ondelete="CASCADE"),
++        nullable=False,
++        index=True,
++    )
++    generation_job_id: Mapped[int] = mapped_column(
++        nullable=False,
++    )
++    strategy: Mapped[ScheduleGenerationStrategy] = mapped_column(
++        SAEnum(ScheduleGenerationStrategy),
++        nullable=False,
++    )
++    draft_state: Mapped[ScheduleDraftState] = mapped_column(
++        SAEnum(ScheduleDraftState),
++        nullable=False,
++        default=ScheduleDraftState.PENDING,
++    )
++    result_category: Mapped[ScheduleGenerationResultCategory] = mapped_column(
++        SAEnum(ScheduleGenerationResultCategory),
++        nullable=False,
++    )
++    trigger_type: Mapped[ScheduleGenerationTrigger] = mapped_column(
++        SAEnum(ScheduleGenerationTrigger),
++        nullable=False,
++    )
++    generation_input_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
++    scheduler_state_version_used: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
++    debt_basis_fingerprint: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
++    repair_policy_snapshot_json: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
++    repair_policy_snapshot_hash: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
++    editable_start_date: Mapped[Optional[date_type]] = mapped_column(Date, nullable=True)
++    recovery_escalation_level: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
++    adaptation_level: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
++    projected_completion_date: Mapped[date_type] = mapped_column(Date, nullable=False)
++    hard_end_date: Mapped[date_type] = mapped_column(Date, nullable=False)
++    summary_json: Mapped[dict] = mapped_column(JSON, nullable=False)
++    partial_recovery_blocker_type: Mapped[Optional[str]] = mapped_column(
++        String(50), nullable=True
++    )
++    main_blocker_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
++    recommended_actions_json: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
++    warnings_json: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
++    metrics_json: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
++    stale_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
++    invalidated_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
++    created_by_user_id: Mapped[int] = mapped_column(
++        ForeignKey("user.id", ondelete="RESTRICT"),
++        nullable=False,
++    )
++    created_at: Mapped[datetime] = mapped_column(
++        DateTime(timezone=True),
++        nullable=False,
++        default=lambda: datetime.now(timezone.utc),
++    )
++    decided_by_user_id: Mapped[Optional[int]] = mapped_column(
++        ForeignKey("user.id", ondelete=ON_DELETE_SET_NULL),
++        nullable=True,
++    )
++    decided_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
++
++    __table_args__ = (
++        ForeignKeyConstraint(
++            ["generation_job_id", "organization_id", "school_year_id"],
++            [
++                "schedule_generation_job.id",
++                "schedule_generation_job.organization_id",
++                "schedule_generation_job.school_year_id",
++            ],
++            name="fk_schedule_drafts_generation_job_scope",
++            ondelete="RESTRICT",
++        ),
++        UniqueConstraint(
++            "generation_job_id",
++            name="uq_schedule_drafts_generation_job",
++        ),
++        UniqueConstraint(
++            "id",
++            "organization_id",
++            "school_year_id",
++            name="uq_schedule_drafts_id_scope",
++        ),
++        UniqueConstraint(
++            "id",
++            "generation_job_id",
++            "organization_id",
++            "school_year_id",
++            name="uq_schedule_drafts_id_job_scope",
++        ),
++        CheckConstraint(
++            "projected_completion_date <= hard_end_date",
++            name="ck_schedule_drafts_completion_by_hard_end",
++        ),
++        CheckConstraint(
++            "result_category <> 'NO_VALID_OUTPUT'",
++            name="ck_schedule_drafts_has_valid_output",
++        ),
++        CheckConstraint(
++            "scheduler_state_version_used IS NULL OR scheduler_state_version_used >= 0",
++            name="ck_schedule_drafts_state_version_nonnegative",
++        ),
++        CheckConstraint(
++            "strategy = 'COMPLETE_GENERATION' OR editable_start_date IS NOT NULL",
++            name="ck_schedule_drafts_adaptive_editable_start",
++        ),
++        CheckConstraint(
++            "(draft_state = 'PENDING' AND decided_at IS NULL AND decided_by_user_id IS NULL) "
++            "OR (draft_state <> 'PENDING' AND decided_at IS NOT NULL)",
++            name="ck_schedule_drafts_decision_consistency",
++        ),
++        CheckConstraint(
++            "(draft_state = 'STALE' AND stale_reason IS NOT NULL) OR "
++            "(draft_state <> 'STALE' AND stale_reason IS NULL)",
++            name="ck_schedule_drafts_stale_reason",
++        ),
++        CheckConstraint(
++            "(draft_state = 'INVALIDATED' AND invalidated_reason IS NOT NULL) OR "
++            "(draft_state <> 'INVALIDATED' AND invalidated_reason IS NULL)",
++            name="ck_schedule_drafts_invalidated_reason",
++        ),
++        Index(
++            "uq_schedule_drafts_pending_year",
++            "organization_id",
++            "school_year_id",
++            unique=True,
++            postgresql_where=(draft_state == ScheduleDraftState.PENDING),
++        ),
++    )
++
++
++class ScheduleDraftBlock(Base):
++    """One concrete target block in a draft's complete editable-future state."""
++    __tablename__ = "schedule_draft_blocks"
++
++    id: Mapped[int] = mapped_column(primary_key=True)
++    organization_id: Mapped[int] = mapped_column(
++        ForeignKey(FK_ORG_ID, ondelete="CASCADE"), nullable=False, index=True
++    )
++    school_year_id: Mapped[int] = mapped_column(
++        ForeignKey("scheduler_school_year.id", ondelete="CASCADE"),
++        nullable=False,
++        index=True,
++    )
++    draft_id: Mapped[int] = mapped_column(
++        nullable=False, index=True
++    )
++    source_active_block_id: Mapped[Optional[int]] = mapped_column(
++        ForeignKey(FK_SCHEDULE_OUTPUT_ID, ondelete=ON_DELETE_SET_NULL), nullable=True
++    )
++    stable_block_key: Mapped[str] = mapped_column(String(64), nullable=False)
++    class_id: Mapped[int] = mapped_column(ForeignKey(FK_CLASS_ID), nullable=False)
++    subject_id: Mapped[int] = mapped_column(ForeignKey(FK_SUBJECT_ID), nullable=False)
++    teacher_id: Mapped[int] = mapped_column(ForeignKey(FK_TEACHER_ID), nullable=False)
++    room_id: Mapped[int] = mapped_column(ForeignKey("room.id"), nullable=False)
++    room_type_id: Mapped[Optional[RoomType]] = mapped_column(SAEnum(RoomType), nullable=True)
++    date: Mapped[date_type] = mapped_column(Date, nullable=False)
++    timeslot_id: Mapped[int] = mapped_column(ForeignKey(FK_TIMESLOT_ID), nullable=False)
++    duration_minutes: Mapped[int] = mapped_column(Integer, nullable=False)
++    module_sequence_index: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
++    is_recovery_block: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
++    recovery_source_occurrence_id: Mapped[Optional[int]] = mapped_column(
++        ForeignKey("lesson_occurrence.id", ondelete="RESTRICT"), nullable=True
++    )
++    recovery_source_occurrence_revision: Mapped[Optional[int]] = mapped_column(
++        Integer, nullable=True
++    )
++    change_type: Mapped[ScheduleDraftBlockChangeType] = mapped_column(
++        SAEnum(ScheduleDraftBlockChangeType), nullable=False
++    )
++    reason_code: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
++    created_at: Mapped[datetime] = mapped_column(
++        DateTime(timezone=True),
++        nullable=False,
++        default=lambda: datetime.now(timezone.utc),
++    )
++
++    __table_args__ = (
++        ForeignKeyConstraint(
++            ["draft_id", "organization_id", "school_year_id"],
++            [
++                "schedule_drafts.id",
++                "schedule_drafts.organization_id",
++                "schedule_drafts.school_year_id",
++            ],
++            name="fk_schedule_draft_blocks_draft_scope",
++            ondelete="CASCADE",
++        ),
++        UniqueConstraint(
++            "draft_id", "stable_block_key", name="uq_schedule_draft_blocks_stable_key"
++        ),
++        UniqueConstraint(
++            "id", "organization_id", "school_year_id",
++            name="uq_schedule_draft_blocks_id_scope",
++        ),
++        UniqueConstraint(
++            "draft_id", "class_id", "date", "timeslot_id",
++            name="uq_schedule_draft_blocks_class_slot",
++        ),
++        UniqueConstraint(
++            "draft_id", "teacher_id", "date", "timeslot_id",
++            name="uq_schedule_draft_blocks_teacher_slot",
++        ),
++        UniqueConstraint(
++            "draft_id", "room_id", "date", "timeslot_id",
++            name="uq_schedule_draft_blocks_room_slot",
++        ),
++        CheckConstraint(
++            "duration_minutes > 0", name="ck_schedule_draft_blocks_duration_positive"
++        ),
++        CheckConstraint(
++            "module_sequence_index IS NULL OR module_sequence_index >= 0",
++            name="ck_schedule_draft_blocks_module_sequence_nonnegative",
++        ),
++        CheckConstraint(
++            "(is_recovery_block AND recovery_source_occurrence_id IS NOT NULL AND "
++            "recovery_source_occurrence_revision IS NOT NULL) OR "
++            "(NOT is_recovery_block AND recovery_source_occurrence_id IS NULL AND "
++            "recovery_source_occurrence_revision IS NULL)",
++            name="ck_schedule_draft_blocks_recovery_source",
++        ),
++        CheckConstraint(
++            "recovery_source_occurrence_revision IS NULL "
++            "OR recovery_source_occurrence_revision > 0",
++            name="ck_schedule_draft_blocks_recovery_revision_positive",
++        ),
++        CheckConstraint(
++            "(change_type = 'ADDED' AND source_active_block_id IS NULL) OR "
++            "(change_type <> 'ADDED' AND source_active_block_id IS NOT NULL)",
++            name="ck_schedule_draft_blocks_change_source",
++        ),
++        CheckConstraint(
++            "length(trim(stable_block_key)) > 0",
++            name="ck_schedule_draft_blocks_stable_key_nonempty",
++        ),
++    )
++
++
++class ScheduleDiffEntry(Base):
++    """Optional immutable explanation of one before/after draft difference."""
++    __tablename__ = "schedule_diff_entries"
++
++    id: Mapped[int] = mapped_column(primary_key=True)
++    organization_id: Mapped[int] = mapped_column(
++        ForeignKey(FK_ORG_ID, ondelete="CASCADE"), nullable=False, index=True
++    )
++    school_year_id: Mapped[int] = mapped_column(
++        ForeignKey("scheduler_school_year.id", ondelete="CASCADE"),
++        nullable=False,
++        index=True,
++    )
++    generation_job_id: Mapped[int] = mapped_column(nullable=False)
++    draft_id: Mapped[int] = mapped_column(nullable=False, index=True)
++    class_id: Mapped[int] = mapped_column(ForeignKey(FK_CLASS_ID), nullable=False)
++    subject_id: Mapped[int] = mapped_column(ForeignKey(FK_SUBJECT_ID), nullable=False)
++    teacher_id: Mapped[int] = mapped_column(ForeignKey(FK_TEACHER_ID), nullable=False)
++    before_active_block_id: Mapped[Optional[int]] = mapped_column(
++        ForeignKey(FK_SCHEDULE_OUTPUT_ID, ondelete=ON_DELETE_SET_NULL), nullable=True
++    )
++    after_draft_block_id: Mapped[Optional[int]] = mapped_column(
++        ForeignKey("schedule_draft_blocks.id", ondelete=ON_DELETE_SET_NULL), nullable=True
++    )
++    before_date: Mapped[Optional[date_type]] = mapped_column(Date, nullable=True)
++    before_timeslot_id: Mapped[Optional[int]] = mapped_column(
++        ForeignKey(FK_TIMESLOT_ID, ondelete=ON_DELETE_SET_NULL), nullable=True
++    )
++    before_room_id: Mapped[Optional[int]] = mapped_column(
++        ForeignKey("room.id", ondelete=ON_DELETE_SET_NULL), nullable=True
++    )
++    after_date: Mapped[Optional[date_type]] = mapped_column(Date, nullable=True)
++    after_timeslot_id: Mapped[Optional[int]] = mapped_column(
++        ForeignKey(FK_TIMESLOT_ID, ondelete=ON_DELETE_SET_NULL), nullable=True
++    )
++    after_room_id: Mapped[Optional[int]] = mapped_column(
++        ForeignKey("room.id", ondelete=ON_DELETE_SET_NULL), nullable=True
++    )
++    before_snapshot_json: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
++    after_snapshot_json: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
++    change_type: Mapped[ScheduleDiffChangeType] = mapped_column(
++        SAEnum(ScheduleDiffChangeType), nullable=False
++    )
++    impact_scope: Mapped[ScheduleDiffScope] = mapped_column(
++        SAEnum(ScheduleDiffScope), nullable=False, default=ScheduleDiffScope.AFFECTED
++    )
++    reason_code: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
++    reason_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
++    recovery_link_impact_json: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
++    created_at: Mapped[datetime] = mapped_column(
++        DateTime(timezone=True),
++        nullable=False,
++        default=lambda: datetime.now(timezone.utc),
++    )
++
++    __table_args__ = (
++        ForeignKeyConstraint(
++            ["draft_id", "generation_job_id", "organization_id", "school_year_id"],
++            [
++                "schedule_drafts.id",
++                "schedule_drafts.generation_job_id",
++                "schedule_drafts.organization_id",
++                "schedule_drafts.school_year_id",
++            ],
++            name="fk_schedule_diff_entries_draft_job_scope",
++            ondelete="CASCADE",
++        ),
++        CheckConstraint(
++            "(change_type = 'ADDED' AND before_snapshot_json IS NULL "
++            "AND after_snapshot_json IS NOT NULL) OR "
++            "(change_type = 'REMOVED' AND before_snapshot_json IS NOT NULL "
++            "AND after_snapshot_json IS NULL) OR "
++            "(change_type NOT IN ('ADDED', 'REMOVED') "
++            "AND before_snapshot_json IS NOT NULL AND after_snapshot_json IS NOT NULL)",
++            name="ck_schedule_diff_entries_sides",
++        ),
++    )
++
++
++class ActiveScheduleBlock(Base):
++    """Versioned published schedule block created from an approved draft target."""
++    __tablename__ = "active_schedule_blocks"
++
++    id: Mapped[int] = mapped_column(primary_key=True)
++    organization_id: Mapped[int] = mapped_column(
++        ForeignKey(FK_ORG_ID, ondelete="CASCADE"), nullable=False, index=True
++    )
++    school_year_id: Mapped[int] = mapped_column(
++        ForeignKey("scheduler_school_year.id", ondelete="CASCADE"),
++        nullable=False,
++        index=True,
++    )
++    schedule_version_id: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
++    stable_block_key: Mapped[str] = mapped_column(String(64), nullable=False)
++    class_id: Mapped[int] = mapped_column(ForeignKey(FK_CLASS_ID), nullable=False)
++    subject_id: Mapped[int] = mapped_column(ForeignKey(FK_SUBJECT_ID), nullable=False)
++    teacher_id: Mapped[int] = mapped_column(ForeignKey(FK_TEACHER_ID), nullable=False)
++    room_id: Mapped[int] = mapped_column(ForeignKey("room.id"), nullable=False)
++    date: Mapped[date_type] = mapped_column(Date, nullable=False)
++    timeslot_id: Mapped[int] = mapped_column(ForeignKey(FK_TIMESLOT_ID), nullable=False)
++    duration_minutes: Mapped[int] = mapped_column(Integer, nullable=False)
++    source_draft_block_id: Mapped[int] = mapped_column(nullable=False)
++    is_recovery_block: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
++    status: Mapped[ActiveScheduleBlockStatus] = mapped_column(
++        SAEnum(ActiveScheduleBlockStatus),
++        nullable=False,
++        default=ActiveScheduleBlockStatus.ACTIVE,
++    )
++    created_at: Mapped[datetime] = mapped_column(
++        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc)
++    )
++    updated_at: Mapped[datetime] = mapped_column(
++        DateTime(timezone=True),
++        nullable=False,
++        default=lambda: datetime.now(timezone.utc),
++        onupdate=lambda: datetime.now(timezone.utc),
++    )
++
++    __table_args__ = (
++        ForeignKeyConstraint(
++            ["source_draft_block_id", "organization_id", "school_year_id"],
++            [
++                "schedule_draft_blocks.id",
++                "schedule_draft_blocks.organization_id",
++                "schedule_draft_blocks.school_year_id",
++            ],
++            name="fk_active_schedule_blocks_draft_block_scope",
++            ondelete="RESTRICT",
++        ),
++        UniqueConstraint(
++            "id", "organization_id", "school_year_id",
++            name="uq_active_schedule_blocks_id_scope",
++        ),
++        UniqueConstraint(
++            "source_draft_block_id",
++            name="uq_active_schedule_blocks_source_draft_block",
++        ),
++        UniqueConstraint(
++            "organization_id", "school_year_id", "schedule_version_id", "stable_block_key",
++            name="uq_active_schedule_blocks_version_stable_key",
++        ),
++        CheckConstraint(
++            "duration_minutes > 0", name="ck_active_schedule_blocks_duration_positive"
++        ),
++        CheckConstraint(
++            "length(trim(stable_block_key)) > 0",
++            name="ck_active_schedule_blocks_stable_key_nonempty",
++        ),
++        Index(
++            "uq_active_schedule_blocks_class_slot",
++            "organization_id", "school_year_id", "class_id", "date", "timeslot_id",
++            unique=True,
++            postgresql_where=(status == ActiveScheduleBlockStatus.ACTIVE),
++        ),
++        Index(
++            "uq_active_schedule_blocks_teacher_slot",
++            "organization_id", "school_year_id", "teacher_id", "date", "timeslot_id",
++            unique=True,
++            postgresql_where=(status == ActiveScheduleBlockStatus.ACTIVE),
++        ),
++        Index(
++            "uq_active_schedule_blocks_room_slot",
++            "organization_id", "school_year_id", "room_id", "date", "timeslot_id",
++            unique=True,
++            postgresql_where=(status == ActiveScheduleBlockStatus.ACTIVE),
++        ),
++    )
++
++
++class PlannedRecoveryLink(Base):
++    """Idempotent accounting link from debt evidence to planned and delivered recovery."""
++    __tablename__ = "planned_recovery_links"
++
++    id: Mapped[int] = mapped_column(primary_key=True)
++    organization_id: Mapped[int] = mapped_column(
++        ForeignKey(FK_ORG_ID, ondelete="CASCADE"), nullable=False, index=True
++    )
++    school_year_id: Mapped[int] = mapped_column(
++        ForeignKey("scheduler_school_year.id", ondelete="CASCADE"),
++        nullable=False,
++        index=True,
++    )
++    debt_occurrence_id: Mapped[int] = mapped_column(nullable=False)
++    debt_occurrence_revision: Mapped[int] = mapped_column(Integer, nullable=False)
++    planned_active_block_id: Mapped[Optional[int]] = mapped_column(nullable=True)
++    planned_draft_block_id: Mapped[Optional[int]] = mapped_column(nullable=True)
++    planned_recovery_minutes: Mapped[int] = mapped_column(Integer, nullable=False)
++    delivered_recovery_minutes: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
++    delivered_lesson_log_id: Mapped[Optional[int]] = mapped_column(
++        nullable=True
++    )
++    delivered_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
++    class_id: Mapped[int] = mapped_column(ForeignKey(FK_CLASS_ID), nullable=False)
++    subject_id: Mapped[int] = mapped_column(ForeignKey(FK_SUBJECT_ID), nullable=False)
++    teacher_id: Mapped[Optional[int]] = mapped_column(
++        ForeignKey(FK_TEACHER_ID, ondelete=ON_DELETE_SET_NULL), nullable=True
++    )
++    status: Mapped[PlannedRecoveryLinkStatus] = mapped_column(
++        SAEnum(PlannedRecoveryLinkStatus),
++        nullable=False,
++        default=PlannedRecoveryLinkStatus.PLANNED,
++    )
++    created_at: Mapped[datetime] = mapped_column(
++        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc)
++    )
++    updated_at: Mapped[datetime] = mapped_column(
++        DateTime(timezone=True),
++        nullable=False,
++        default=lambda: datetime.now(timezone.utc),
++        onupdate=lambda: datetime.now(timezone.utc),
++    )
++
++    __table_args__ = (
++        ForeignKeyConstraint(
++            ["debt_occurrence_id", "organization_id", "debt_occurrence_revision"],
++            [
++                "lesson_occurrence.id",
++                "lesson_occurrence.organization_id",
++                "lesson_occurrence.revision",
++            ],
++            name="fk_planned_recovery_links_debt_scope",
++            ondelete="RESTRICT",
++        ),
++        ForeignKeyConstraint(
++            ["planned_active_block_id", "organization_id", "school_year_id"],
++            [
++                "active_schedule_blocks.id",
++                "active_schedule_blocks.organization_id",
++                "active_schedule_blocks.school_year_id",
++            ],
++            name="fk_planned_recovery_links_active_block_scope",
++            ondelete="RESTRICT",
++        ),
++        ForeignKeyConstraint(
++            ["planned_draft_block_id", "organization_id", "school_year_id"],
++            [
++                "schedule_draft_blocks.id",
++                "schedule_draft_blocks.organization_id",
++                "schedule_draft_blocks.school_year_id",
++            ],
++            name="fk_planned_recovery_links_draft_block_scope",
++            ondelete="RESTRICT",
++        ),
++        ForeignKeyConstraint(
++            ["delivered_lesson_log_id", "organization_id", "planned_active_block_id"],
++            [
++                "lesson_log.id",
++                "lesson_log.organization_id",
++                "lesson_log.active_schedule_block_id",
++            ],
++            name="fk_planned_recovery_links_delivery_evidence",
++            ondelete="RESTRICT",
++        ),
++        UniqueConstraint(
++            "planned_active_block_id", name="uq_planned_recovery_links_active_block"
++        ),
++        UniqueConstraint(
++            "planned_draft_block_id", name="uq_planned_recovery_links_draft_block"
++        ),
++        UniqueConstraint(
++            "delivered_lesson_log_id", name="uq_planned_recovery_links_delivery_log"
++        ),
++        CheckConstraint(
++            "planned_recovery_minutes > 0",
++            name="ck_planned_recovery_links_planned_minutes_positive",
++        ),
++        CheckConstraint(
++            "delivered_recovery_minutes >= 0 AND "
++            "delivered_recovery_minutes <= planned_recovery_minutes",
++            name="ck_planned_recovery_links_delivered_minutes_range",
++        ),
++        CheckConstraint(
++            "planned_active_block_id IS NOT NULL OR planned_draft_block_id IS NOT NULL",
++            name="ck_planned_recovery_links_has_target",
++        ),
++        CheckConstraint(
++            "(status = 'DELIVERED' AND planned_active_block_id IS NOT NULL "
++            "AND delivered_recovery_minutes > 0 "
++            "AND delivered_lesson_log_id IS NOT NULL AND delivered_at IS NOT NULL) OR "
++            "(status <> 'DELIVERED' AND delivered_recovery_minutes = 0 "
++            "AND delivered_lesson_log_id IS NULL AND delivered_at IS NULL)",
++            name="ck_planned_recovery_links_delivery_evidence",
++        ),
++        CheckConstraint(
++            "debt_occurrence_revision > 0",
++            name="ck_planned_recovery_links_debt_revision_positive",
++        ),
++    )
++
++
++class SchedulerStateVersionEvent(Base):
++    """Append-only audit event explaining a scheduler state version decision."""
++    __tablename__ = "scheduler_state_version_events"
++
++    id: Mapped[int] = mapped_column(primary_key=True)
++    organization_id: Mapped[int] = mapped_column(nullable=False, index=True)
++    school_year_id: Mapped[int] = mapped_column(nullable=False, index=True)
++    version_before: Mapped[int] = mapped_column(Integer, nullable=False)
++    version_after: Mapped[int] = mapped_column(Integer, nullable=False)
++    entity_type: Mapped[str] = mapped_column(String(80), nullable=False)
++    entity_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
++    operation: Mapped[SchedulerStateChangeOperation] = mapped_column(
++        SAEnum(SchedulerStateChangeOperation), nullable=False
++    )
++    change_scope: Mapped[SchedulerStateChangeScope] = mapped_column(
++        SAEnum(SchedulerStateChangeScope), nullable=False
++    )
++    changed_by_user_id: Mapped[Optional[int]] = mapped_column(
++        ForeignKey("user.id", ondelete=ON_DELETE_SET_NULL), nullable=True
++    )
++    changed_at: Mapped[datetime] = mapped_column(
++        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc)
++    )
++    before_metadata_json: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
++    after_metadata_json: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
++    metadata_json: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
++
++    __table_args__ = (
++        ForeignKeyConstraint(
++            ["organization_id", "school_year_id"],
++            [
++                "scheduler_school_year_state.organization_id",
++                "scheduler_school_year_state.school_year_id",
++            ],
++            name="fk_scheduler_state_version_events_state_scope",
++            ondelete="CASCADE",
++        ),
++        CheckConstraint(
++            "version_before >= 0 AND version_after >= 0",
++            name="ck_scheduler_state_version_events_versions_nonnegative",
++        ),
++        CheckConstraint(
++            "(change_scope = 'FUTURE_IMPACTING' AND version_after = version_before + 1) OR "
++            "(change_scope <> 'FUTURE_IMPACTING' AND version_after = version_before)",
++            name="ck_scheduler_state_version_events_increment",
++        ),
++        CheckConstraint(
++            "length(trim(entity_type)) > 0",
++            name="ck_scheduler_state_version_events_entity_type_nonempty",
++        ),
++        Index(
++            "uq_scheduler_state_version_events_increment",
++            "organization_id", "school_year_id", "version_after",
++            unique=True,
++            postgresql_where=(
++                change_scope == SchedulerStateChangeScope.FUTURE_IMPACTING
++            ),
++        ),
++    )
++
+ class OrganizationGridSettings(Base):
+     """Configura├º├Áes da grelha hor├íria da organiza├º├úo."""
+     __tablename__ = "organization_grid_settings"
+@@ -682,6 +1607,10 @@ class LessonOccurrence(Base):
+ 
+     # Uma ocorr├¬ncia por slot planeado (evita duplicados do cron)
+     __table_args__ = (
++        UniqueConstraint(
++            "id", "organization_id", "revision",
++            name="uq_lesson_occurrence_id_org_revision",
++        ),
+         UniqueConstraint(
+             "organization_id", "schedule_output_id", "date", "revision",
+             name="uq_lesson_occurrence_output_date_revision",
+@@ -897,6 +1826,11 @@ class LessonLog(Base):
+         unique=True,
+         index=True,
+     )
++    active_schedule_block_id: Mapped[Optional[int]] = mapped_column(
++        ForeignKey("active_schedule_blocks.id", ondelete="RESTRICT"),
++        nullable=True,
++        index=True,
++    )
+ 
+     status: Mapped[LessonLogStatus] = mapped_column(
+         SAEnum(LessonLogStatus), nullable=False, default=LessonLogStatus.PENDING
+@@ -929,14 +1863,24 @@ class LessonLog(Base):
+     organization: Mapped["Organization"] = relationship()
+     schedule_output: Mapped[Optional["ScheduleOutput"]] = relationship()
+     operational_block: Mapped[Optional["OperationalScheduleBlock"]] = relationship()
++    active_schedule_block: Mapped[Optional["ActiveScheduleBlock"]] = relationship()
+     logged_by_user: Mapped[Optional["User"]] = relationship(foreign_keys=[logged_by_user_id])
+ 
+     __table_args__ = (
+         CheckConstraint(
+-            "(schedule_output_id IS NOT NULL AND operational_block_id IS NULL) OR "
+-            "(schedule_output_id IS NULL AND operational_block_id IS NOT NULL)",
++            "(CASE WHEN schedule_output_id IS NOT NULL THEN 1 ELSE 0 END + "
++            "CASE WHEN operational_block_id IS NOT NULL THEN 1 ELSE 0 END + "
++            "CASE WHEN active_schedule_block_id IS NOT NULL THEN 1 ELSE 0 END) = 1",
+             name="ck_lesson_log_exactly_one_target",
+         ),
++        UniqueConstraint(
++            "id", "organization_id", "active_schedule_block_id",
++            name="uq_lesson_log_id_org_active_block",
++        ),
++        UniqueConstraint(
++            "active_schedule_block_id",
++            name="uq_lesson_log_active_schedule_block",
++        ),
+     )
+ 
+     def __repr__(self) -> str:

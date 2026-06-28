@@ -18,7 +18,6 @@ class _NoopDb:
 async def test_upsert_settings_accepts_lunch_window(async_client, admin_token_headers):
     payload = {
         "school_start_date": "2025-09-15",
-        "school_target_end_date": "2026-06-15",
         "school_hard_end_date": "2026-07-31",
         "repair_stability_window_days": 14,
     }
@@ -71,11 +70,10 @@ async def test_upsert_settings_rejects_invalid_lunch_window(async_client, admin_
 
 
 @pytest.mark.asyncio
-async def test_upsert_settings_rejects_hard_end_before_target(async_client, admin_token_headers):
+async def test_upsert_settings_rejects_hard_end_before_start(async_client, admin_token_headers):
     payload = {
         "school_start_date": "2025-09-15",
-        "school_target_end_date": "2026-06-15",
-        "school_hard_end_date": "2026-06-01",
+        "school_hard_end_date": "2025-09-01",
     }
 
     response = await async_client.post(
@@ -88,10 +86,10 @@ async def test_upsert_settings_rejects_hard_end_before_target(async_client, admi
 
 
 @pytest.mark.asyncio
-async def test_upsert_settings_rejects_invalid_repair_window(async_client, admin_token_headers):
+async def test_upsert_settings_accepts_zero_repair_window(async_client, admin_token_headers):
     payload = {
         "school_start_date": "2025-09-15",
-        "school_target_end_date": "2026-06-15",
+        "school_hard_end_date": "2026-07-31",
         "repair_stability_window_days": 0,
     }
 
@@ -101,7 +99,8 @@ async def test_upsert_settings_rejects_invalid_repair_window(async_client, admin
         headers=admin_token_headers,
     )
 
-    assert response.status_code == 422
+    assert response.status_code == 200
+    assert response.json()["repair_stability_window_days"] == 0
 
 
 @pytest.mark.asyncio
@@ -111,7 +110,6 @@ async def test_upsert_settings_rejects_partial_update_that_breaks_existing_dates
 ):
     valid_payload = {
         "school_start_date": "2025-09-15",
-        "school_target_end_date": "2026-06-15",
         "school_hard_end_date": "2026-07-31",
     }
     create_response = await async_client.post(
@@ -123,7 +121,7 @@ async def test_upsert_settings_rejects_partial_update_that_breaks_existing_dates
 
     response = await async_client.post(
         "/api/v1/school/settings/",
-        json={"school_hard_end_date": "2026-06-01"},
+        json={"school_hard_end_date": "2025-09-01"},
         headers=admin_token_headers,
     )
 
@@ -160,7 +158,6 @@ async def test_upsert_grid_settings_rejects_partial_update_that_breaks_existing_
 async def test_settings_service_validates_combined_partial_date_update(monkeypatch):
     existing = SimpleNamespace(
         school_start_date=date(2025, 9, 15),
-        school_target_end_date=date(2026, 6, 15),
         school_hard_end_date=date(2026, 7, 31),
         repair_stability_window_days=14,
     )
@@ -174,7 +171,7 @@ async def test_settings_service_validates_combined_partial_date_update(monkeypat
         await settings_service.upsert_settings(
             _NoopDb(),
             1,
-            schemas.OrganizationSettingsUpsert(school_hard_end_date=date(2026, 6, 1)),
+            schemas.OrganizationSettingsUpsert(school_hard_end_date=date(2025, 9, 1)),
         )
 
     assert existing.school_hard_end_date == date(2026, 7, 31)

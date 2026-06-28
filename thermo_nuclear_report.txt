@@ -1,0 +1,36 @@
+CRITICAL: backend/alembic/versions/c2f6a8d4e1b9_scheduler_school_year_state.py has 1443 lines (>1k lines threshold).
+WARNING: backend/alembic/versions/c2f6a8d4e1b9_scheduler_school_year_state.py adds 12 conditional branches. Check for spaghetti.
+NOTE: backend/alembic/versions/c2f6a8d4e1b9_scheduler_school_year_state.py added 1443 lines of code. Needs architectural review.
+CRITICAL: backend/app/api/v1/endpoints/schedule.py has 1170 lines (>1k lines threshold).
+WARNING: backend/app/api/v1/endpoints/schedule.py adds 7 type casts or Optional/Any usages. Check boundary cleanliness.
+CRITICAL: backend/app/models.py has 2069 lines (>1k lines threshold).
+WARNING: backend/app/models.py adds 70 type casts or Optional/Any usages. Check boundary cleanliness.
+NOTE: backend/app/models.py added 948 lines of code. Needs architectural review.
+CRITICAL: backend/app/schemas.py has 1327 lines (>1k lines threshold).
+CRITICAL: backend/app/services/occurrence_service.py has 2216 lines (>1k lines threshold).
+WARNING: backend/app/services/occurrence_service.py adds 14 conditional branches. Check for spaghetti.
+CRITICAL: backend/app/services/schedule_service.py has 1217 lines (>1k lines threshold).
+WARNING: backend/app/services/scheduler_fingerprint_service.py adds 25 conditional branches. Check for spaghetti.
+NOTE: backend/app/services/scheduler_fingerprint_service.py added 597 lines of code. Needs architectural review.
+WARNING: backend/app/services/scheduler_generation_service.py adds 12 conditional branches. Check for spaghetti.
+WARNING: backend/app/services/scheduler_job_runtime.py adds 37 conditional branches. Check for spaghetti.
+WARNING: backend/app/services/scheduler_job_runtime.py adds 10 type casts or Optional/Any usages. Check boundary cleanliness.
+NOTE: backend/app/services/scheduler_job_runtime.py added 520 lines of code. Needs architectural review.
+WARNING: backend/app/services/scheduler_job_service.py adds 16 conditional branches. Check for spaghetti.
+NOTE: backend/app/services/scheduler_job_service.py added 209 lines of code. Needs architectural review.
+WARNING: backend/app/services/scheduler_recovery_service.py adds 20 conditional branches. Check for spaghetti.
+NOTE: backend/app/services/scheduler_recovery_service.py added 264 lines of code. Needs architectural review.
+WARNING: backend/app/services/scheduler_state_service.py adds 30 conditional branches. Check for spaghetti.
+WARNING: backend/app/services/scheduler_state_service.py adds 8 type casts or Optional/Any usages. Check boundary cleanliness.
+NOTE: backend/app/services/scheduler_state_service.py added 408 lines of code. Needs architectural review.
+CRITICAL: backend/app/solver_tasks.py has 1185 lines (>1k lines threshold).
+NOTE: backend/tests/test_debt_basis_fingerprint.py added 304 lines of code. Needs architectural review.
+CRITICAL: backend/tests/test_lesson_registration.py has 1468 lines (>1k lines threshold).
+NOTE: backend/tests/test_scheduler_change_integration.py added 230 lines of code. Needs architectural review.
+NOTE: backend/tests/test_scheduler_fingerprint_service.py added 381 lines of code. Needs architectural review.
+NOTE: backend/tests/test_scheduler_generation_service.py added 264 lines of code. Needs architectural review.
+NOTE: backend/tests/test_scheduler_job_runtime.py added 313 lines of code. Needs architectural review.
+WARNING: backend/tests/test_scheduler_school_year_state_models.py adds 10 type casts or Optional/Any usages. Check boundary cleanliness.
+NOTE: backend/tests/test_scheduler_school_year_state_models.py added 458 lines of code. Needs architectural review.
+NOTE: backend/tests/test_scheduler_state_service.py added 298 lines of code. Needs architectural review.
+CRITICAL: frontend/src/hooks/useSchoolData.js has 1064 lines (>1k lines threshold).

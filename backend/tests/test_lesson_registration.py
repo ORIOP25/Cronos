@@ -221,10 +221,15 @@ class TestSoftReset:
     async def test_soft_reset_clears_data_and_resets_progress(self, sync_db, base_setup):
         organization_id = base_setup["organization_id"]
         
-        # Using a new async session to test async function soft_reset_year
-        from sqlalchemy.ext.asyncio import AsyncSession
-        from app.db.database import SessionLocal
-        async with SessionLocal() as async_session:
+        # Use an engine owned by this test loop; the application engine is pooled
+        # across pytest's function-scoped event loops.
+        from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
+        from sqlalchemy.pool import NullPool
+        from app.db.database import ASYNC_DB_URL
+
+        engine = create_async_engine(ASYNC_DB_URL, poolclass=NullPool)
+        session_factory = async_sessionmaker(bind=engine, class_=AsyncSession, expire_on_commit=False)
+        async with session_factory() as async_session:
             await settings_service.soft_reset_year(async_session, organization_id)
             
             # Assert ClassProgress is 0.0
@@ -252,6 +257,7 @@ class TestSoftReset:
                 )
             )
             assert len(ts_result.scalars().all()) == 0
+        await engine.dispose()
 
 
 @pytest.fixture
@@ -1274,7 +1280,7 @@ class TestTimesheetStateTransitions:
 
 class TestAutoConfirmDaily:
     def test_auto_confirm_daily_sync(self, sync_db, base_setup):
-        """T-4: Cron de auto-confirm deve criar ocorrências GIVEN e contabilizar horas."""
+        """Unregistered lessons remain undecided and do not credit progress."""
         organization_id = base_setup["organization_id"]
         output_id = base_setup["schedule_output_id"]
         target_date = base_setup["date"]
@@ -1289,16 +1295,15 @@ class TestAutoConfirmDaily:
 
         # Run auto-confirm
         created = occurrence_service.auto_confirm_daily_sync(sync_db, organization_id, target_date)
-        assert created == 1
+        assert created == 0
 
         # Verify occurrence was created as GIVEN
         occurrence = sync_db.execute(
             select(models.LessonOccurrence).where(
                 models.LessonOccurrence.schedule_output_id == output_id
             )
-        ).scalar_one()
-        assert occurrence.status == models.LessonOccurrenceStatus.GIVEN
-        assert occurrence.decided_at is not None
+        ).scalar_one_or_none()
+        assert occurrence is None
 
         # Verify ClassProgress was incremented
         progress = sync_db.execute(
@@ -1307,7 +1312,7 @@ class TestAutoConfirmDaily:
                 models.ClassProgress.module_id == base_setup["module_id"]
             )
         ).scalar_one()
-        assert progress.hours_completed == 7.0  # 5.0 base + 2.0
+        assert progress.hours_completed == 5.0
 
     def test_manual_occurrence_then_auto_confirm_skips(self, sync_db, base_setup):
         """T-6: Ocorrência manual (decided_at=None) + auto-confirm não deve duplicar."""
@@ -1466,4 +1471,396 @@ class TestTimezoneBoundary:
             )
         assert exc.value.status_code == 400
         assert "ainda não terminou" in exc.value.message
+
+
+def _create_active_baseline_block(sync_db, base_setup, *, is_recovery=False):
+    organization_id = base_setup["organization_id"]
+    class_ = sync_db.get(models.Class, base_setup["class_id"])
+    subject = sync_db.execute(
+        select(models.Subject).where(models.Subject.organization_id == organization_id)
+    ).scalar_one()
+    teacher = sync_db.get(models.Teacher, base_setup["teacher_id"])
+    room = sync_db.execute(
+        select(models.Room).where(models.Room.organization_id == organization_id)
+    ).scalar_one()
+    timeslot = sync_db.execute(
+        select(models.Timeslot).where(models.Timeslot.organization_id == organization_id)
+    ).scalar_one()
+    school_year = models.SchedulerSchoolYear(
+        organization_id=organization_id,
+        label=f"cutover-{organization_id}",
+        start_date=base_setup["date"] - timedelta(days=30),
+        hard_end_date=base_setup["date"] + timedelta(days=30),
+        timezone="Europe/Lisbon",
+    )
+    sync_db.add(school_year)
+    sync_db.flush()
+    job = models.ScheduleGenerationJob(
+        organization_id=organization_id,
+        school_year_id=school_year.id,
+        requested_by_user_id=base_setup["user_id"],
+        strategy=models.ScheduleGenerationStrategy.COMPLETE_GENERATION,
+    )
+    sync_db.add(job)
+    sync_db.flush()
+    draft = models.ScheduleDraft(
+        organization_id=organization_id,
+        school_year_id=school_year.id,
+        generation_job_id=job.id,
+        strategy=models.ScheduleGenerationStrategy.COMPLETE_GENERATION,
+        result_category=models.ScheduleGenerationResultCategory.COMPLETE_SUCCESS,
+        trigger_type=models.ScheduleGenerationTrigger.FIRST_GENERATION,
+        generation_input_fingerprint="a" * 64,
+        projected_completion_date=school_year.hard_end_date,
+        hard_end_date=school_year.hard_end_date,
+        summary_json={},
+        created_by_user_id=base_setup["user_id"],
+    )
+    sync_db.add(draft)
+    sync_db.flush()
+    debt_occurrence = None
+    if is_recovery:
+        debt_occurrence = models.LessonOccurrence(
+            organization_id=organization_id,
+            date=base_setup["date"] - timedelta(days=1),
+            class_id=class_.id,
+            subject_id=subject.id,
+            status=models.LessonOccurrenceStatus.GAP,
+            revision=1,
+            is_active=True,
+            planned_timeslot_id=timeslot.id,
+            planned_teacher_id=teacher.id,
+            planned_hours=2.0,
+            hours_given=0.0,
+            decided_at=datetime.now(timezone.utc),
+        )
+        sync_db.add(debt_occurrence)
+        sync_db.flush()
+    draft_block = models.ScheduleDraftBlock(
+        organization_id=organization_id,
+        school_year_id=school_year.id,
+        draft_id=draft.id,
+        stable_block_key="cutover-block",
+        class_id=class_.id,
+        subject_id=subject.id,
+        teacher_id=teacher.id,
+        room_id=room.id,
+        room_type_id=models.RoomType.normal,
+        date=base_setup["date"],
+        timeslot_id=timeslot.id,
+        duration_minutes=120,
+        is_recovery_block=is_recovery,
+        recovery_source_occurrence_id=(debt_occurrence.id if debt_occurrence else None),
+        recovery_source_occurrence_revision=(debt_occurrence.revision if debt_occurrence else None),
+        change_type=models.ScheduleDraftBlockChangeType.ADDED,
+    )
+    sync_db.add(draft_block)
+    sync_db.flush()
+    block = models.ActiveScheduleBlock(
+        organization_id=organization_id,
+        school_year_id=school_year.id,
+        schedule_version_id="cutover-v1",
+        stable_block_key=draft_block.stable_block_key,
+        class_id=class_.id,
+        subject_id=subject.id,
+        teacher_id=teacher.id,
+        room_id=room.id,
+        date=draft_block.date,
+        timeslot_id=timeslot.id,
+        duration_minutes=120,
+        source_draft_block_id=draft_block.id,
+        is_recovery_block=is_recovery,
+    )
+    sync_db.add(block)
+    sync_db.flush()
+    if is_recovery:
+        sync_db.add(models.PlannedRecoveryLink(
+            organization_id=organization_id,
+            school_year_id=school_year.id,
+            debt_occurrence_id=debt_occurrence.id,
+            debt_occurrence_revision=debt_occurrence.revision,
+            planned_active_block_id=block.id,
+            planned_draft_block_id=draft_block.id,
+            planned_recovery_minutes=120,
+            delivered_recovery_minutes=0,
+            class_id=class_.id,
+            subject_id=subject.id,
+            teacher_id=teacher.id,
+            status=models.PlannedRecoveryLinkStatus.PLANNED,
+        ))
+    sync_db.commit()
+    return block
+
+
+class TestActiveBaselineOperationalCutover:
+    def test_week_uses_active_block_instead_of_legacy_output(self, sync_db, base_setup):
+        from app.services import schedule_service
+
+        block = _create_active_baseline_block(sync_db, base_setup)
+        week_start = block.date - timedelta(days=block.date.weekday())
+        slots = schedule_service.get_week_schedule_sync(
+            sync_db,
+            base_setup["organization_id"],
+            week_start,
+            teacher_id=base_setup["teacher_id"],
+        )
+
+        assert len(slots) == 1
+        assert slots[0]["block_source"] == "active"
+        assert slots[0]["active_schedule_block_id"] == block.id
+        assert slots[0]["schedule_output_id"] is None
+
+    def test_active_block_completion_updates_progress(self, sync_db, base_setup):
+        block = _create_active_baseline_block(sync_db, base_setup)
+        log = lesson_log_service.upsert_active_lesson_log_sync(
+            sync_db,
+            base_setup["organization_id"],
+            base_setup["user_id"],
+            block.id,
+            schemas.LessonLogCreate(
+                status=models.LessonLogStatus.COMPLETED,
+                summary="Active baseline lesson",
+            ),
+        )
+
+        progress = sync_db.execute(
+            select(models.ClassProgress).where(
+                models.ClassProgress.class_id == base_setup["class_id"],
+                models.ClassProgress.module_id == base_setup["module_id"],
+            )
+        ).scalar_one()
+        assert log.active_schedule_block_id == block.id
+        assert log.schedule_output_id is None
+        assert progress.hours_completed == 7.0
+
+    def test_active_block_occurrence_creates_debt_evidence(self, sync_db, base_setup):
+        block = _create_active_baseline_block(sync_db, base_setup)
+        log = lesson_log_service.upsert_active_lesson_log_sync(
+            sync_db,
+            base_setup["organization_id"],
+            base_setup["user_id"],
+            block.id,
+            schemas.LessonLogCreate(status=models.LessonLogStatus.OCCURRENCE),
+        )
+        occurrence = sync_db.execute(
+            select(models.LessonOccurrence).where(
+                models.LessonOccurrence.active_schedule_block_id == block.id,
+                models.LessonOccurrence.is_active.is_(True),
+            )
+        ).scalar_one()
+
+        assert log.status == models.LessonLogStatus.OCCURRENCE
+        assert occurrence.schedule_output_id is None
+        assert occurrence.class_id == base_setup["class_id"]
+        assert occurrence.planned_hours == 2.0
+
+    def test_active_occurrence_can_be_decided_and_canceled(self, sync_db, base_setup):
+        block = _create_active_baseline_block(sync_db, base_setup)
+        lesson_log_service.upsert_active_lesson_log_sync(
+            sync_db,
+            base_setup["organization_id"],
+            base_setup["user_id"],
+            block.id,
+            schemas.LessonLogCreate(status=models.LessonLogStatus.OCCURRENCE),
+        )
+        occurrence = sync_db.execute(
+            select(models.LessonOccurrence).where(
+                models.LessonOccurrence.active_schedule_block_id == block.id,
+                models.LessonOccurrence.is_active.is_(True),
+            )
+        ).scalar_one()
+        decided = occurrence_service.update_occurrence_sync(
+            sync_db,
+            occurrence.id,
+            base_setup["organization_id"],
+            schemas.LessonOccurrenceUpdate(
+                status=models.LessonOccurrenceStatus.GAP,
+                version=occurrence.version,
+            ),
+            decided_by_user_id=base_setup["user_id"],
+        )
+        assert decided.status == models.LessonOccurrenceStatus.GAP
+
+        result = occurrence_service.cancel_occurrence_sync(
+            sync_db,
+            base_setup["organization_id"],
+            occurrence.id,
+            base_setup["user_id"],
+            version=decided.version,
+        )
+        log = sync_db.execute(
+            select(models.LessonLog).where(
+                models.LessonLog.active_schedule_block_id == block.id
+            )
+        ).scalar_one()
+        progress = sync_db.execute(
+            select(models.ClassProgress).where(
+                models.ClassProgress.class_id == base_setup["class_id"],
+                models.ClassProgress.module_id == base_setup["module_id"],
+            )
+        ).scalar_one()
+        assert result["active_schedule_block_id"] == block.id
+        assert log.status == models.LessonLogStatus.PENDING
+        assert progress.hours_debt == 0.0
+
+    def test_active_block_participates_in_timesheet_workflow(self, sync_db, base_setup):
+        block = _create_active_baseline_block(sync_db, base_setup)
+        lesson_log_service.upsert_active_lesson_log_sync(
+            sync_db,
+            base_setup["organization_id"],
+            base_setup["user_id"],
+            block.id,
+            schemas.LessonLogCreate(status=models.LessonLogStatus.COMPLETED),
+        )
+        week_start = block.date - timedelta(days=block.date.weekday())
+        submitted = timesheet_service.submit_timesheet_sync(
+            sync_db,
+            base_setup["organization_id"],
+            base_setup["teacher_id"],
+            week_start,
+        )
+        counts = timesheet_service._compute_slot_counts_for_teachers(
+            sync_db,
+            base_setup["organization_id"],
+            [base_setup["teacher_id"]],
+            week_start,
+        )[base_setup["teacher_id"]]
+
+        assert submitted.status == models.TimesheetStatus.SUBMITTED
+        assert counts == {
+            "total_slots": 1,
+            "registered_slots": 1,
+            "completed_slots": 1,
+            "occurrence_slots": 0,
+        }
+
+    def test_active_open_occurrence_is_visible_to_timesheet_admin(self, sync_db, base_setup):
+        block = _create_active_baseline_block(sync_db, base_setup)
+        lesson_log_service.upsert_active_lesson_log_sync(
+            sync_db,
+            base_setup["organization_id"],
+            base_setup["user_id"],
+            block.id,
+            schemas.LessonLogCreate(status=models.LessonLogStatus.OCCURRENCE),
+        )
+        week_start = block.date - timedelta(days=block.date.weekday())
+        timesheet = timesheet_service.get_or_create_timesheet_sync(
+            sync_db,
+            base_setup["organization_id"],
+            base_setup["teacher_id"],
+            week_start,
+        )
+        occurrences = timesheet_service.get_open_occurrences_for_timesheet_sync(
+            sync_db,
+            base_setup["organization_id"],
+            timesheet.id,
+        )
+
+        assert len(occurrences) == 1
+        assert occurrences[0]["active_schedule_block_id"] == block.id
+
+    def test_recovery_delivery_tracks_completed_active_log(self, sync_db, base_setup):
+        block = _create_active_baseline_block(sync_db, base_setup, is_recovery=True)
+        log = lesson_log_service.upsert_active_lesson_log_sync(
+            sync_db,
+            base_setup["organization_id"],
+            base_setup["user_id"],
+            block.id,
+            schemas.LessonLogCreate(status=models.LessonLogStatus.COMPLETED),
+        )
+        link = sync_db.execute(
+            select(models.PlannedRecoveryLink).where(
+                models.PlannedRecoveryLink.planned_active_block_id == block.id
+            )
+        ).scalar_one()
+        assert link.status == models.PlannedRecoveryLinkStatus.DELIVERED
+        assert link.delivered_lesson_log_id == log.id
+        assert link.delivered_recovery_minutes == 120
+
+        lesson_log_service.upsert_active_lesson_log_sync(
+            sync_db,
+            base_setup["organization_id"],
+            base_setup["user_id"],
+            block.id,
+            schemas.LessonLogCreate(status=models.LessonLogStatus.PENDING),
+        )
+        sync_db.refresh(link)
+        assert link.status == models.PlannedRecoveryLinkStatus.PLANNED
+        assert link.delivered_lesson_log_id is None
+        assert link.delivered_recovery_minutes == 0
+
+    def test_active_occurrence_supports_substitution(self, sync_db, base_setup):
+        block = _create_active_baseline_block(sync_db, base_setup)
+        organization_id = base_setup["organization_id"]
+        substitute = models.Teacher(
+            organization_id=organization_id, name="Active Substitute"
+        )
+        substitute_subject = models.Subject(
+            organization_id=organization_id,
+            name="Active Substitute Subject",
+            required_room_type=models.RoomType.normal,
+        )
+        sync_db.add_all([substitute, substitute_subject])
+        sync_db.flush()
+        substitute_module = models.Module(
+            organization_id=organization_id,
+            subject_id=substitute_subject.id,
+            name="Substitute module",
+            hours_total=10,
+            order=1,
+        )
+        link = models.ClassSubjectLink(
+            organization_id=organization_id,
+            class_id=base_setup["class_id"],
+            subject_id=substitute_subject.id,
+            grade_level=10,
+            teacher_id=substitute.id,
+        )
+        availability = models.Availability(
+            organization_id=organization_id,
+            teacher_id=substitute.id,
+            timeslot_id=block.timeslot_id,
+            score=1,
+        )
+        sync_db.add_all([substitute_module, link, availability])
+        sync_db.commit()
+
+        lesson_log_service.upsert_active_lesson_log_sync(
+            sync_db,
+            organization_id,
+            base_setup["user_id"],
+            block.id,
+            schemas.LessonLogCreate(status=models.LessonLogStatus.OCCURRENCE),
+        )
+        occurrence = sync_db.execute(
+            select(models.LessonOccurrence).where(
+                models.LessonOccurrence.active_schedule_block_id == block.id,
+                models.LessonOccurrence.is_active.is_(True),
+            )
+        ).scalar_one()
+        recommendations = occurrence_service.get_substitute_recommendations_sync(
+            sync_db, organization_id, occurrence.id
+        )
+        assert [item.teacher_id for item in recommendations] == [substitute.id]
+
+        decided = occurrence_service.update_occurrence_sync(
+            sync_db,
+            occurrence.id,
+            organization_id,
+            schemas.LessonOccurrenceUpdate(
+                status=models.LessonOccurrenceStatus.SUBSTITUTED,
+                version=occurrence.version,
+                substitute_teacher_id=substitute.id,
+                substitute_subject_id=substitute_subject.id,
+            ),
+            decided_by_user_id=base_setup["user_id"],
+        )
+        operational = sync_db.execute(
+            select(models.OperationalScheduleBlock).where(
+                models.OperationalScheduleBlock.source_occurrence_id == occurrence.id
+            )
+        ).scalar_one()
+        assert decided.status == models.LessonOccurrenceStatus.SUBSTITUTED
+        assert operational.planned_schedule_output_id is None
+        assert operational.teacher_id == substitute.id
 

@@ -6,6 +6,19 @@ from app.core.exceptions import DomainError, NotFoundError, ConflictError
 from app import models, schemas
 from typing import List, Optional
 
+
+def _week_has_active_baseline(
+    db: Session,
+    organization_id: int,
+    week_start_date: date,
+) -> bool:
+    week_end_date = week_start_date + timedelta(days=6)
+    return db.query(models.ActiveScheduleBlock.id).filter(
+        models.ActiveScheduleBlock.organization_id == organization_id,
+        models.ActiveScheduleBlock.status == models.ActiveScheduleBlockStatus.ACTIVE,
+        models.ActiveScheduleBlock.date.between(week_start_date, week_end_date),
+    ).first() is not None
+
 def get_or_create_timesheet_sync(
     db: Session,
     organization_id: int,
@@ -48,6 +61,46 @@ def submit_timesheet_sync(
     # We fetch all schedule outputs for this teacher in this week.
     week_end_date = week_start_date + timedelta(days=6)
     
+    if _week_has_active_baseline(db, organization_id, week_start_date):
+        active_rows = db.query(
+            models.ActiveScheduleBlock,
+            models.Timeslot,
+            models.LessonLog,
+        ).join(
+            models.Timeslot,
+            models.ActiveScheduleBlock.timeslot_id == models.Timeslot.id,
+        ).outerjoin(
+            models.LessonLog,
+            and_(
+                models.LessonLog.organization_id == organization_id,
+                models.LessonLog.active_schedule_block_id
+                == models.ActiveScheduleBlock.id,
+            ),
+        ).filter(
+            models.ActiveScheduleBlock.organization_id == organization_id,
+            models.ActiveScheduleBlock.teacher_id == teacher_id,
+            models.ActiveScheduleBlock.status == models.ActiveScheduleBlockStatus.ACTIVE,
+            models.ActiveScheduleBlock.date.between(week_start_date, week_end_date),
+        ).all()
+        if not active_rows:
+            raise DomainError("Sem aulas planeadas nesta semana.", status_code=400)
+        now = datetime.now()
+        for block, timeslot, lesson_log in active_rows:
+            if datetime.combine(block.date, timeslot.end_time) > now:
+                raise DomainError(
+                    "Nao pode submeter semanas com aulas no futuro.", status_code=400
+                )
+            if lesson_log is None or lesson_log.status == models.LessonLogStatus.PENDING:
+                raise DomainError(
+                    "Todas as aulas devem estar concluidas ou registadas como ocorrencia.",
+                    status_code=400,
+                )
+        timesheet.status = models.TimesheetStatus.SUBMITTED
+        timesheet.submitted_at = datetime.now(timezone.utc)
+        db.commit()
+        db.refresh(timesheet)
+        return timesheet
+
     outputs = db.query(models.ScheduleOutput).join(
         models.Lesson, models.ScheduleOutput.lesson_id == models.Lesson.id
     ).filter(
@@ -102,6 +155,61 @@ def _compute_slot_counts_for_teachers(
     """
     from sqlalchemy import case, func
     week_end_date = week_start_date + timedelta(days=6)
+
+    if _week_has_active_baseline(db, organization_id, week_start_date):
+        rows = db.query(
+            models.ActiveScheduleBlock.teacher_id,
+            models.ActiveScheduleBlock.id,
+            models.LessonLog.status,
+            models.LessonOccurrence.id.label("occurrence_id"),
+        ).outerjoin(
+            models.LessonLog,
+            and_(
+                models.LessonLog.organization_id == organization_id,
+                models.LessonLog.active_schedule_block_id
+                == models.ActiveScheduleBlock.id,
+            ),
+        ).outerjoin(
+            models.LessonOccurrence,
+            and_(
+                models.LessonOccurrence.organization_id == organization_id,
+                models.LessonOccurrence.active_schedule_block_id
+                == models.ActiveScheduleBlock.id,
+                models.LessonOccurrence.is_active.is_(True),
+            ),
+        ).filter(
+            models.ActiveScheduleBlock.organization_id == organization_id,
+            models.ActiveScheduleBlock.teacher_id.in_(teacher_ids),
+            models.ActiveScheduleBlock.status == models.ActiveScheduleBlockStatus.ACTIVE,
+            models.ActiveScheduleBlock.date.between(week_start_date, week_end_date),
+        ).all()
+        counts = {
+            teacher_id: {
+                "total_slots": 0,
+                "registered_slots": 0,
+                "completed_slots": 0,
+                "occurrence_slots": 0,
+            }
+            for teacher_id in teacher_ids
+        }
+        seen: set[tuple[int, int]] = set()
+        for row in rows:
+            key = (row.teacher_id, row.id)
+            if key in seen:
+                continue
+            seen.add(key)
+            item = counts[row.teacher_id]
+            item["total_slots"] += 1
+            if row.status is not None and row.status != models.LessonLogStatus.PENDING:
+                item["registered_slots"] += 1
+            if row.status == models.LessonLogStatus.COMPLETED:
+                item["completed_slots"] += 1
+            if (
+                row.status == models.LessonLogStatus.OCCURRENCE
+                or row.occurrence_id is not None
+            ):
+                item["occurrence_slots"] += 1
+        return counts
 
     registered_expr = func.sum(
         case(
@@ -296,6 +404,40 @@ def get_open_occurrences_for_timesheet_sync(
         raise NotFoundError("Timesheet não encontrada.")
 
     week_end_date = timesheet.week_start_date + timedelta(days=6)
+
+    if _week_has_active_baseline(db, organization_id, timesheet.week_start_date):
+        occurrences = db.query(models.LessonOccurrence).join(
+            models.ActiveScheduleBlock,
+            models.LessonOccurrence.active_schedule_block_id
+            == models.ActiveScheduleBlock.id,
+        ).filter(
+            models.LessonOccurrence.organization_id == organization_id,
+            models.ActiveScheduleBlock.organization_id == organization_id,
+            models.ActiveScheduleBlock.teacher_id == timesheet.teacher_id,
+            models.ActiveScheduleBlock.status == models.ActiveScheduleBlockStatus.ACTIVE,
+            models.LessonOccurrence.date.between(
+                timesheet.week_start_date, week_end_date
+            ),
+            models.LessonOccurrence.decided_at.is_(None),
+            models.LessonOccurrence.is_active.is_(True),
+        ).all()
+        result = []
+        for occurrence in occurrences:
+            subject = db.get(models.Subject, occurrence.subject_id)
+            teacher = db.get(models.Teacher, occurrence.planned_teacher_id)
+            result.append({
+                "occurrence_id": occurrence.id,
+                "schedule_output_id": None,
+                "active_schedule_block_id": occurrence.active_schedule_block_id,
+                "date": occurrence.date.isoformat(),
+                "subject_name": subject.name if subject else None,
+                "teacher_name": teacher.name if teacher else None,
+                "created_at": (
+                    occurrence.created_at.isoformat()
+                    if occurrence.created_at else None
+                ),
+            })
+        return result
 
     occurrences = db.query(models.LessonOccurrence).join(
         models.ScheduleOutput,

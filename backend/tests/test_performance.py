@@ -31,7 +31,6 @@ def _seed_realistic_school(sync_db):
     sync_db.add(models.OrganizationSettings(
         organization_id=org.id,
         school_start_date=date.today() - timedelta(days=120),
-        school_target_end_date=date.today() + timedelta(days=180),
         school_hard_end_date=date.today() + timedelta(days=180),
         repair_stability_window_days=14,
     ))

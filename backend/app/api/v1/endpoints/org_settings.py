@@ -51,7 +51,10 @@ async def upsert_org_settings(
     current_user: Annotated[models.User, Depends(deps.get_current_active_admin)],
 ) -> schemas.OrganizationSettingsRead:
     try:
-        return await settings_service.upsert_settings(db, current_user.organization_id, payload)
+        return await settings_service.upsert_settings(
+            db, current_user.organization_id, payload,
+            changed_by_user_id=current_user.id,
+        )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
 
@@ -102,7 +105,10 @@ async def upsert_grid_settings(
     current_user: Annotated[models.User, Depends(deps.get_current_active_admin)],
 ) -> schemas.OrganizationGridSettingsRead:
     try:
-        return await settings_service.upsert_grid_settings(db, current_user.organization_id, payload)
+        return await settings_service.upsert_grid_settings(
+            db, current_user.organization_id, payload,
+            changed_by_user_id=current_user.id,
+        )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
 
@@ -121,6 +127,7 @@ async def sync_holidays(
     count = await settings_service.sync_holidays(
         db,
         organization_id=current_user.organization_id,
+        changed_by_user_id=current_user.id,
     )
     return schemas.HolidaysSyncResponse(
         imported_count=count,
@@ -157,7 +164,10 @@ async def create_calendar_event(
     current_user: Annotated[models.User, Depends(deps.get_current_active_admin)],
 ) -> schemas.SchoolCalendarEventRead:
     try:
-        return await settings_service.create_calendar_event(db, current_user.organization_id, payload)
+        return await settings_service.create_calendar_event(
+            db, current_user.organization_id, payload,
+            changed_by_user_id=current_user.id,
+        )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -172,7 +182,10 @@ async def delete_calendar_event(
     db: Annotated[AsyncSession, Depends(deps.get_db)],
     current_user: Annotated[models.User, Depends(deps.get_current_active_admin)],
 ) -> dict:
-    success = await settings_service.delete_calendar_event(db, current_user.organization_id, event_id)
+    success = await settings_service.delete_calendar_event(
+        db, current_user.organization_id, event_id,
+        changed_by_user_id=current_user.id,
+    )
     if not success:
         raise HTTPException(status_code=404, detail="Evento não encontrado")
     return {"ok": True}

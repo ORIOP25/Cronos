@@ -4,6 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from app import models
 from app.schemas import OnboardingRequest
+from app.services.scheduler_state_service import SchedulerStateService
 
 logger = structlog.get_logger(__name__)
 
@@ -43,6 +44,7 @@ async def complete_onboarding(
     db: AsyncSession,
     organization_id: int,
     data: OnboardingRequest,
+    changed_by_user_id: int | None = None,
 ) -> None:
     existing = await db.execute(
         select(models.OrganizationSettings).where(
@@ -52,19 +54,42 @@ async def complete_onboarding(
     if existing.scalar_one_or_none():
         return
 
-    db.add(models.OrganizationSettings(
+    settings = models.OrganizationSettings(
         organization_id=organization_id,
         school_start_date=data.school_start_date,
-        school_target_end_date=data.school_target_end_date,
         school_hard_end_date=data.school_hard_end_date,
         repair_stability_window_days=1,
-    ))
+    )
+    db.add(settings)
 
-    db.add(models.OrganizationGridSettings(
+    grid_settings = models.OrganizationGridSettings(
         organization_id=organization_id,
         lunch_window_start=data.lunch_start,
         lunch_window_end=data.lunch_end,
         lunch_min_duration_minutes=data.lunch_min_duration,
-    ))
+    )
+    db.add(grid_settings)
 
     await db.flush()
+    state_service = SchedulerStateService(db)
+    await state_service.get_or_create_active_state(
+        organization_id,
+        start_date=data.school_start_date,
+        hard_end_date=data.school_hard_end_date,
+    )
+    await state_service.record_change(
+        organization_id,
+        entity_type="ONBOARDING_CONFIGURATION",
+        entity_id=settings.id,
+        operation=models.SchedulerStateChangeOperation.BULK_IMPORT,
+        before=None,
+        after={
+            "school_start_date": settings.school_start_date,
+            "school_hard_end_date": settings.school_hard_end_date,
+            "lunch_window_start": grid_settings.lunch_window_start,
+            "lunch_window_end": grid_settings.lunch_window_end,
+            "lunch_min_duration_minutes": grid_settings.lunch_min_duration_minutes,
+        },
+        changed_by_user_id=changed_by_user_id,
+        metadata={"repair_stability_window_days": settings.repair_stability_window_days},
+    )

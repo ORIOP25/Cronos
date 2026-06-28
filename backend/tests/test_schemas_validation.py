@@ -14,10 +14,45 @@ from app.schemas import (
     CourseUpdate,
     RoomCreate,
     RoomUpdate,
+    OrganizationSettingsUpsert,
+    OnboardingRequest,
+    ScheduleGenerateRequest,
     SubjectCreate,
     SubjectUpdate,
 )
 from app.models import RoomType
+
+
+class TestSchedulerBaselineContract:
+    def test_generate_request_rejects_public_mode_selection(self):
+        with pytest.raises(ValidationError):
+            ScheduleGenerateRequest(mode="repair")
+
+    def test_settings_reject_target_end_date_and_accept_zero_stability_window(self):
+        with pytest.raises(ValidationError):
+            OrganizationSettingsUpsert(
+                school_start_date="2025-09-15",
+                school_target_end_date="2026-06-15",
+                school_hard_end_date="2026-07-31",
+            )
+
+        settings = OrganizationSettingsUpsert(
+            school_start_date="2025-09-15",
+            school_hard_end_date="2026-07-31",
+            repair_stability_window_days=0,
+        )
+        assert settings.repair_stability_window_days == 0
+
+    def test_onboarding_rejects_target_end_date(self):
+        with pytest.raises(ValidationError):
+            OnboardingRequest(
+                school_start_date="2025-09-15",
+                school_target_end_date="2026-06-15",
+                school_hard_end_date="2026-07-31",
+                lunch_start="12:30",
+                lunch_end="14:00",
+                lunch_min_duration=60,
+            )
 
 
 class TestSubjectCreateValidation:

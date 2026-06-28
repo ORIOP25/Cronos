@@ -42,6 +42,10 @@ async def db_session() -> AsyncGenerator[AsyncSession, None]:
                 DO $$
                 BEGIN
                     IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'cronos_auth_definer') THEN
+                        GRANT USAGE ON SCHEMA public, app_security TO cronos_auth_definer;
+                        GRANT SELECT, INSERT, UPDATE
+                        ON TABLE public.organization, public."user"
+                        TO cronos_auth_definer;
                         GRANT USAGE, SELECT
                         ON SEQUENCE public.organization_id_seq, public.user_id_seq
                         TO cronos_auth_definer;

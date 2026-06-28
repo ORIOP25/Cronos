@@ -34,20 +34,20 @@ async def lifespan(app: FastAPI):
     setup_logging()
     
     # Substituir print por logger.info
-    logger.info("🚀 Servidor a arrancar...", version="0.5", env=settings.ENVIRONMENT)
+    logger.info("-> Servidor a arrancar...", version="0.5", env=settings.ENVIRONMENT)
     
     try:
         redis = aioredis.from_url(str(settings.REDIS_URL))
         FastAPICache.init(RedisBackend(redis), prefix="fastapi-cache")
-        logger.info("✅ Sistema de Cache: LIGADO", url=str(settings.REDIS_URL))
+        logger.info("[OK] Sistema de Cache: LIGADO", url=str(settings.REDIS_URL))
     except Exception as e:
-        logger.error("❌ Falha no Redis", error=str(e)) # Log de erro estruturado
+        logger.error("[ERROR] Falha no Redis", error=str(e)) # Log de erro estruturado
 
-    logger.info("✅ Rate Limit: LIGADO")
+    logger.info("[OK] Rate Limit: LIGADO")
     
     yield
     
-    logger.info("💤 Servidor a desligar...")
+    logger.info("ZZZ Servidor a desligar...")
 
 # ==========================================
 # INICIALIZAÇÃO DA APP
@@ -67,9 +67,11 @@ if settings.SENTRY_DSN:
         # Dados extra
         send_default_pii=settings.ENVIRONMENT != "production", # Evita PII em produção
     )
-    logger.info("✅ Sentry: LIGADO")
+    logger.info("[OK] Sentry: LIGADO")
 else:
-    logger.warning("⚠️ Sentry: DESLIGADO (DSN não configurado)")
+    logger.warning("[WARN] Sentry: DESLIGADO (DSN não configurado)")
+
+import traceback
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -77,6 +79,17 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan
 )
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    try:
+        with open("C:/Users/Hp/Desktop/AnoLetivo25_26/MeuProjeto/backend/500_traceback.log", "a", encoding="utf-8") as f:
+            f.write(f"Exception on {request.url.path}:\n")
+            f.write(traceback.format_exc())
+            f.write("\n" + "="*50 + "\n")
+    except Exception:
+        pass
+    return JSONResponse(status_code=500, content={"detail": str(exc)})
 
 # --- Configuração do Rate Limiter ---
 app.state.limiter = limiter

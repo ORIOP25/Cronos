@@ -2,6 +2,42 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from sqlalchemy import select, insert, delete
 from app import models, schemas
+from app.services.scheduler_state_service import record_scheduler_change
+
+
+async def _course_demand_snapshot(
+    db: AsyncSession, organization_id: int, course_id: int
+) -> dict:
+    subject_ids = await db.scalars(
+        select(models.course_subject_link.c.subject_id).where(
+            models.course_subject_link.c.organization_id == organization_id,
+            models.course_subject_link.c.course_id == course_id,
+        )
+    )
+    classes = await db.scalars(
+        select(models.Class).where(
+            models.Class.organization_id == organization_id,
+            models.Class.course_id == course_id,
+        )
+    )
+    return {
+        "subject_ids": sorted(subject_ids.all()),
+        "classes": sorted(
+            (
+                {
+                    "size": item.size,
+                    "start_year": item.start_year,
+                    "end_year": item.end_year,
+                    "grade_level": item.grade_level,
+                    "is_archived": item.is_archived,
+                }
+                for item in classes.all()
+            ),
+            key=lambda item: (
+                item["start_year"], item["end_year"], item["grade_level"], item["size"]
+            ),
+        ),
+    }
 
 # --- LEITURA ---
 async def get_courses_by_org(db: AsyncSession, organization_id: int, skip: int = 0, limit: int = 100):
@@ -45,7 +81,12 @@ async def get_course_details(db: AsyncSession, course_id: int, organization_id: 
     return result.scalars().first()
 
 # --- CRIAÇÃO (O MOTOR NOVO) ---
-async def create_course(db: AsyncSession, item: schemas.CourseCreate, organization_id: int):
+async def create_course(
+    db: AsyncSession,
+    item: schemas.CourseCreate,
+    organization_id: int,
+    changed_by_user_id: int | None = None,
+):
     """
     Cria Curso + Associa Disciplinas + Define Professores + Gera Turmas
     Tudo numa transação atómica.
@@ -116,6 +157,19 @@ async def create_course(db: AsyncSession, item: schemas.CourseCreate, organizati
         )
         db.add(new_class)
 
+    await db.flush()
+    await record_scheduler_change(
+        db,
+        organization_id,
+        entity_type="COURSE_DEMAND",
+        entity_id=db_course.id,
+        operation=models.SchedulerStateChangeOperation.BULK_IMPORT,
+        before=None,
+        after=await _course_demand_snapshot(db, organization_id, db_course.id),
+        changed_by_user_id=changed_by_user_id,
+        metadata={"class_count": len(item.classes_config)},
+    )
+
     # 5. Commit Final
     await db.commit()
     
@@ -124,7 +178,13 @@ async def create_course(db: AsyncSession, item: schemas.CourseCreate, organizati
     return await get_course_details(db, db_course.id, organization_id)
 
 # --- UPDATE E DELETE ---
-async def update_course(db: AsyncSession, course_id: int, item: schemas.CourseUpdate, organization_id: int):
+async def update_course(
+    db: AsyncSession,
+    course_id: int,
+    item: schemas.CourseUpdate,
+    organization_id: int,
+    changed_by_user_id: int | None = None,
+):
     """
     Atualiza um curso (PATCH - apenas campos enviados).
     """
@@ -138,6 +198,7 @@ async def update_course(db: AsyncSession, course_id: int, item: schemas.CourseUp
     
     if not db_item:
         return None # Alterado para retornar None (o endpoint trata o 404)
+    before = await _course_demand_snapshot(db, organization_id, course_id)
 
     # SECURITY: Se estão a mudar abbreviation, validar uniqueness
     if item.abbreviation is not None and item.abbreviation.upper() != db_item.abbreviation:
@@ -198,12 +259,27 @@ async def update_course(db: AsyncSession, course_id: int, item: schemas.CourseUp
             )
             await db.execute(stmt)
 
+    await record_scheduler_change(
+        db,
+        organization_id,
+        entity_type="COURSE_DEMAND",
+        entity_id=course_id,
+        operation=models.SchedulerStateChangeOperation.UPDATE,
+        before=before,
+        after=await _course_demand_snapshot(db, organization_id, course_id),
+        changed_by_user_id=changed_by_user_id,
+    )
     await db.commit()
     
     # Retornar com eager load fresco
     return await get_course_details(db, course_id, organization_id)
 
-async def delete_course(db: AsyncSession, course_id: int, organization_id: int):
+async def delete_course(
+    db: AsyncSession,
+    course_id: int,
+    organization_id: int,
+    changed_by_user_id: int | None = None,
+):
     # 1. Verificar existência
     result = await db.execute(select(models.Course).where(models.Course.id == course_id, models.Course.organization_id == organization_id))
     course = result.scalars().first()
@@ -220,6 +296,18 @@ async def delete_course(db: AsyncSession, course_id: int, organization_id: int):
     if result_classes.first():
         return "DEPENDENCY_ERROR"
 
+    before = await _course_demand_snapshot(db, organization_id, course_id)
     await db.delete(course)
+    await record_scheduler_change(
+        db,
+        organization_id,
+        entity_type="COURSE_DEMAND",
+        entity_id=course_id,
+        operation=models.SchedulerStateChangeOperation.DELETE,
+        before=before,
+        after=None,
+        changed_by_user_id=changed_by_user_id,
+        active_resource=bool(before["subject_ids"]),
+    )
     await db.commit()
     return "SUCCESS"

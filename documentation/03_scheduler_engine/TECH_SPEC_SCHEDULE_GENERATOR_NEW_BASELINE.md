@@ -454,7 +454,7 @@ Required reset behavior:
 ## 4. Generation Pipeline
 
 ### 4.1 API Entry
-`POST /api/v1/schedule/generate`
+`POST /api/v1/scheduler/generate`
 
 Request body should not include `mode`.
 
@@ -945,7 +945,8 @@ POST   /api/v1/scheduler/drafts/{draft_id}/regenerate
 POST   /api/v1/scheduler/reset-year
 ```
 
-Existing `/api/v1/schedule/generate` can be retained as a compatibility route only if it follows the new contract and ignores/removes `mode`.
+The former `/api/v1/schedule/generate` compatibility route is retired. The only
+active generation entry point is `/api/v1/scheduler/generate`.
 
 ### 8.2 `GET /scheduler/status`
 Response:

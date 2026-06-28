@@ -1,0 +1,526 @@
+﻿diff --git a/backend/app/services/scheduler_job_runtime.py b/backend/app/services/scheduler_job_runtime.py
+new file mode 100644
+index 0000000..0367d0d
+--- /dev/null
++++ b/backend/app/services/scheduler_job_runtime.py
+@@ -0,0 +1,520 @@
++from __future__ import annotations
++
++import asyncio
++from collections.abc import Awaitable, Callable
++from dataclasses import dataclass, field
++from datetime import date, datetime, timedelta, timezone
++from time import monotonic
++from typing import Any
++
++from sqlalchemy import select
++from sqlalchemy.ext.asyncio import AsyncSession
++
++from app import models
++from app.services.scheduler_fingerprint_service import SchedulerFingerprintService
++from app.services.scheduler_recovery_service import SchedulerRecoveryService
++
++
++GENERATION_CAP_SECONDS = 5 * 60
++FINAL_COMMIT_RESERVE_SECONDS = 15
++
++FAILURE_CANCELED = "CANCELED"
++FAILURE_TIMED_OUT = "TIMED_OUT"
++FAILURE_NO_VALID_OUTPUT = "NO_VALID_OUTPUT"
++FAILURE_VALIDATION = "FAILED_VALIDATION"
++FAILURE_SYSTEM = "SYSTEM_ERROR"
++
++
++class GenerationRuntimeError(RuntimeError):
++    pass
++
++
++class GenerationCanceledError(GenerationRuntimeError):
++    pass
++
++
++class GenerationTimedOutError(GenerationRuntimeError):
++    pass
++
++
++class GenerationValidationError(GenerationRuntimeError):
++    pass
++
++
++@dataclass(frozen=True)
++class DraftBlockSpec:
++    stable_block_key: str
++    class_id: int
++    subject_id: int
++    teacher_id: int
++    room_id: int
++    room_type_id: models.RoomType | None
++    date: date
++    timeslot_id: int
++    duration_minutes: int
++    change_type: models.ScheduleDraftBlockChangeType
++    source_active_block_id: int | None = None
++    module_sequence_index: int | None = None
++    is_recovery_block: bool = False
++    recovery_source_occurrence_id: int | None = None
++    recovery_source_occurrence_revision: int | None = None
++    reason_code: str | None = None
++
++
++@dataclass(frozen=True)
++class ValidatedGenerationResult:
++    result_category: models.ScheduleGenerationResultCategory
++    projected_completion_date: date
++    hard_end_date: date
++    blocks: tuple[DraftBlockSpec, ...]
++    summary: dict[str, Any]
++    recovery_escalation_level: str | None = None
++    adaptation_level: str | None = None
++    partial_recovery_blocker_type: str | None = None
++    main_blocker_message: str | None = None
++    recommended_actions: tuple[str, ...] = ()
++    warnings: tuple[str, ...] = ()
++    metrics: dict[str, Any] = field(default_factory=dict)
++
++
++@dataclass(frozen=True)
++class GenerationExecutionContext:
++    job_id: int
++    organization_id: int
++    school_year_id: int
++    strategy: models.ScheduleGenerationStrategy
++    trigger_type: models.ScheduleGenerationTrigger
++    immutable_snapshot: dict[str, Any]
++    started_at: datetime
++    deadline_at: datetime
++
++    @property
++    def solve_deadline_at(self) -> datetime:
++        return self.deadline_at - timedelta(seconds=FINAL_COMMIT_RESERVE_SECONDS)
++
++
++GenerationEngine = Callable[
++    [GenerationExecutionContext], Awaitable[ValidatedGenerationResult | None]
++]
++
++
++class SchedulerJobRuntime:
++    def __init__(
++        self,
++        db: AsyncSession,
++        *,
++        clock: Callable[[], datetime] | None = None,
++        elapsed_clock: Callable[[], float] | None = None,
++    ):
++        self._db = db
++        self._clock = clock or (lambda: datetime.now(timezone.utc))
++        self._elapsed_clock = elapsed_clock or monotonic
++
++    async def execute(
++        self,
++        job_id: int,
++        engine: GenerationEngine,
++    ) -> models.ScheduleGenerationJob:
++        elapsed_start = self._elapsed_clock()
++        try:
++            context = await self._start_and_snapshot(job_id)
++            await self._assert_can_continue(job_id, context.deadline_at)
++            solve_seconds = (
++                context.solve_deadline_at - self._aware_now()
++            ).total_seconds()
++            if solve_seconds <= 0:
++                raise GenerationTimedOutError(
++                    "Generation snapshot exhausted the solver time budget."
++                )
++            try:
++                result = await asyncio.wait_for(
++                    engine(context),
++                    timeout=solve_seconds,
++                )
++            except TimeoutError as exc:
++                raise GenerationTimedOutError(
++                    "Generation exceeded its solver time budget."
++                ) from exc
++            await self._assert_can_continue(job_id, context.deadline_at)
++            if result is None:
++                return await self._finish_without_output(job_id, elapsed_start)
++            await self._validate_result(context, result)
++            await self._assert_can_continue(job_id, context.deadline_at)
++            return await self._commit_validated_draft(
++                context,
++                result,
++                elapsed_start,
++            )
++        except GenerationCanceledError as exc:
++            return await self._finish_failure(
++                job_id,
++                models.ScheduleGenerationJobStatus.CANCELED,
++                FAILURE_CANCELED,
++                str(exc),
++                elapsed_start,
++            )
++        except GenerationTimedOutError as exc:
++            return await self._finish_failure(
++                job_id,
++                models.ScheduleGenerationJobStatus.FAILED,
++                FAILURE_TIMED_OUT,
++                str(exc),
++                elapsed_start,
++            )
++        except GenerationValidationError as exc:
++            return await self._finish_failure(
++                job_id,
++                models.ScheduleGenerationJobStatus.FAILED,
++                FAILURE_VALIDATION,
++                str(exc),
++                elapsed_start,
++            )
++        except GenerationRuntimeError:
++            await self._db.rollback()
++            raise
++        except Exception as exc:
++            await self._db.rollback()
++            return await self._finish_failure(
++                job_id,
++                models.ScheduleGenerationJobStatus.FAILED,
++                FAILURE_SYSTEM,
++                str(exc),
++                elapsed_start,
++            )
++
++    async def _start_and_snapshot(self, job_id: int) -> GenerationExecutionContext:
++        job = await self._locked_job(job_id)
++        if job.job_status == models.ScheduleGenerationJobStatus.CANCEL_REQUESTED:
++            raise GenerationCanceledError("Generation cancellation was requested before start.")
++        if job.job_status != models.ScheduleGenerationJobStatus.QUEUED:
++            raise GenerationRuntimeError("Only a queued generation job can start.")
++        started_at = self._aware_now()
++        deadline_at = started_at + timedelta(seconds=GENERATION_CAP_SECONDS)
++        job.job_status = models.ScheduleGenerationJobStatus.RUNNING
++        job.started_at = started_at
++        job.deadline_at = deadline_at
++        await self._db.commit()
++
++        fingerprints = SchedulerFingerprintService(self._db)
++        generation = await fingerprints.generation_input_fingerprint(
++            job.organization_id,
++            job.school_year_id,
++            job.strategy,
++        )
++        debt = None
++        policy = None
++        if job.strategy == models.ScheduleGenerationStrategy.ADAPTIVE_REPAIR:
++            debt = await fingerprints.debt_basis_fingerprint(
++                job.organization_id,
++                job.school_year_id,
++            )
++            policy = await fingerprints.repair_policy_snapshot(
++                job.organization_id,
++                job.school_year_id,
++                now=started_at,
++            )
++
++        job = await self._locked_job(job_id)
++        request_metadata = (job.input_snapshot_json or {}).get("request", {})
++        immutable_snapshot = {
++            "generation_input": generation.snapshot,
++            "generation_input_fingerprint": generation.value,
++            "debt_basis": None if debt is None else debt.snapshot,
++            "debt_basis_fingerprint": None if debt is None else debt.value,
++            "repair_policy": None if policy is None else policy.snapshot,
++            "repair_policy_snapshot_hash": None if policy is None else policy.value,
++            "request": request_metadata,
++        }
++        job.generation_input_fingerprint = generation.value
++        job.debt_basis_fingerprint = None if debt is None else debt.value
++        job.repair_policy_snapshot_hash = None if policy is None else policy.value
++        job.input_snapshot_json = immutable_snapshot
++        await self._db.commit()
++
++        return GenerationExecutionContext(
++            job_id=job.id,
++            organization_id=job.organization_id,
++            school_year_id=job.school_year_id,
++            strategy=job.strategy,
++            trigger_type=job.trigger_type,
++            immutable_snapshot=immutable_snapshot,
++            started_at=started_at,
++            deadline_at=deadline_at,
++        )
++
++    async def _validate_result(
++        self,
++        context: GenerationExecutionContext,
++        result: ValidatedGenerationResult,
++    ) -> None:
++        if result.result_category == models.ScheduleGenerationResultCategory.NO_VALID_OUTPUT:
++            raise GenerationValidationError("No Valid Output cannot be persisted as a draft.")
++        if (
++            context.strategy == models.ScheduleGenerationStrategy.COMPLETE_GENERATION
++            and result.result_category
++            != models.ScheduleGenerationResultCategory.COMPLETE_SUCCESS
++        ):
++            raise GenerationValidationError(
++                "Complete Generation must produce a complete-success draft."
++            )
++        if not result.blocks:
++            raise GenerationValidationError("A validated draft must contain schedule blocks.")
++        if result.projected_completion_date > result.hard_end_date:
++            raise GenerationValidationError("Projected completion exceeds the hard end date.")
++
++        generation_input = context.immutable_snapshot["generation_input"]
++        start_date = date.fromisoformat(generation_input["start_date"])
++        hard_end_date = date.fromisoformat(generation_input["hard_end_date"])
++        if result.hard_end_date != hard_end_date:
++            raise GenerationValidationError("Result hard end date differs from its snapshot.")
++
++        stable_keys: set[str] = set()
++        class_slots: set[tuple[int, date, int]] = set()
++        teacher_slots: set[tuple[int, date, int]] = set()
++        room_slots: set[tuple[int, date, int]] = set()
++        for block in result.blocks:
++            if not block.stable_block_key.strip() or block.stable_block_key in stable_keys:
++                raise GenerationValidationError("Draft stable block keys must be non-empty and unique.")
++            stable_keys.add(block.stable_block_key)
++            if block.date < start_date or block.date > hard_end_date:
++                raise GenerationValidationError("Draft block lies outside the school year.")
++            if block.duration_minutes <= 0:
++                raise GenerationValidationError("Draft block duration must be positive.")
++            keys = (
++                (class_slots, (block.class_id, block.date, block.timeslot_id)),
++                (teacher_slots, (block.teacher_id, block.date, block.timeslot_id)),
++                (room_slots, (block.room_id, block.date, block.timeslot_id)),
++            )
++            for seen, key in keys:
++                if key in seen:
++                    raise GenerationValidationError("Draft contains a resource slot conflict.")
++                seen.add(key)
++            if block.is_recovery_block != (
++                block.recovery_source_occurrence_id is not None
++                and block.recovery_source_occurrence_revision is not None
++            ):
++                raise GenerationValidationError("Recovery block source metadata is incomplete.")
++
++        await self._validate_resource_scope(context, result.blocks)
++
++    async def _validate_resource_scope(
++        self,
++        context: GenerationExecutionContext,
++        blocks: tuple[DraftBlockSpec, ...],
++    ) -> None:
++        checks = (
++            (models.Class, {block.class_id for block in blocks}),
++            (models.Subject, {block.subject_id for block in blocks}),
++            (models.Teacher, {block.teacher_id for block in blocks}),
++            (models.Room, {block.room_id for block in blocks}),
++            (models.Timeslot, {block.timeslot_id for block in blocks}),
++        )
++        for model, ids in checks:
++            found = set(
++                await self._db.scalars(
++                    select(model.id).where(
++                        model.organization_id == context.organization_id,
++                        model.id.in_(ids),
++                    )
++                )
++            )
++            if found != ids:
++                raise GenerationValidationError(
++                    f"Draft references a cross-tenant or missing {model.__name__}."
++                )
++
++    async def _commit_validated_draft(
++        self,
++        context: GenerationExecutionContext,
++        result: ValidatedGenerationResult,
++        elapsed_start: float,
++    ) -> models.ScheduleGenerationJob:
++        job = await self._locked_job(context.job_id)
++        state = await self._db.scalar(
++            select(models.SchedulerSchoolYearState)
++            .where(
++                models.SchedulerSchoolYearState.organization_id
++                == context.organization_id,
++                models.SchedulerSchoolYearState.school_year_id == context.school_year_id,
++            )
++            .with_for_update()
++        )
++        if state is None:
++            raise GenerationValidationError("Scheduler state disappeared before commit.")
++        if job.requested_by_user_id is None:
++            raise GenerationValidationError(
++                "A user-owned generation job is required to create a draft."
++            )
++        request_metadata = context.immutable_snapshot.get("request", {})
++        replaced_draft_id = request_metadata.get("replace_pending_draft_id")
++        if state.pending_draft_id != replaced_draft_id:
++            raise GenerationValidationError("Pending draft changed before final commit.")
++
++        now = self._aware_now()
++        if replaced_draft_id is not None:
++            old_draft = await self._db.scalar(
++                select(models.ScheduleDraft)
++                .where(
++                    models.ScheduleDraft.id == replaced_draft_id,
++                    models.ScheduleDraft.organization_id == context.organization_id,
++                    models.ScheduleDraft.school_year_id == context.school_year_id,
++                    models.ScheduleDraft.draft_state == models.ScheduleDraftState.PENDING,
++                )
++                .with_for_update()
++            )
++            if old_draft is None:
++                raise GenerationValidationError("Replacement draft is no longer pending.")
++            old_draft.draft_state = models.ScheduleDraftState.REPLACED
++            old_draft.decided_by_user_id = job.requested_by_user_id
++            old_draft.decided_at = now
++            await self._db.flush()
++
++        policy_snapshot = context.immutable_snapshot.get("repair_policy")
++        draft = models.ScheduleDraft(
++            organization_id=context.organization_id,
++            school_year_id=context.school_year_id,
++            generation_job_id=job.id,
++            strategy=context.strategy,
++            result_category=result.result_category,
++            trigger_type=context.trigger_type,
++            generation_input_fingerprint=job.generation_input_fingerprint,
++            scheduler_state_version_used=job.scheduler_state_version_used,
++            debt_basis_fingerprint=job.debt_basis_fingerprint,
++            repair_policy_snapshot_json=policy_snapshot,
++            repair_policy_snapshot_hash=job.repair_policy_snapshot_hash,
++            editable_start_date=(
++                None
++                if policy_snapshot is None
++                else date.fromisoformat(policy_snapshot["editable_start_date"])
++            ),
++            recovery_escalation_level=result.recovery_escalation_level,
++            adaptation_level=result.adaptation_level,
++            projected_completion_date=result.projected_completion_date,
++            hard_end_date=result.hard_end_date,
++            summary_json=result.summary,
++            partial_recovery_blocker_type=result.partial_recovery_blocker_type,
++            main_blocker_message=result.main_blocker_message,
++            recommended_actions_json=list(result.recommended_actions) or None,
++            warnings_json=list(result.warnings) or None,
++            metrics_json=result.metrics or None,
++            created_by_user_id=job.requested_by_user_id,
++        )
++        self._db.add(draft)
++        await self._db.flush()
++
++        draft_blocks: list[models.ScheduleDraftBlock] = []
++        for spec in result.blocks:
++            block = models.ScheduleDraftBlock(
++                organization_id=context.organization_id,
++                school_year_id=context.school_year_id,
++                draft_id=draft.id,
++                source_active_block_id=spec.source_active_block_id,
++                stable_block_key=spec.stable_block_key,
++                class_id=spec.class_id,
++                subject_id=spec.subject_id,
++                teacher_id=spec.teacher_id,
++                room_id=spec.room_id,
++                room_type_id=spec.room_type_id,
++                date=spec.date,
++                timeslot_id=spec.timeslot_id,
++                duration_minutes=spec.duration_minutes,
++                module_sequence_index=spec.module_sequence_index,
++                is_recovery_block=spec.is_recovery_block,
++                recovery_source_occurrence_id=spec.recovery_source_occurrence_id,
++                recovery_source_occurrence_revision=spec.recovery_source_occurrence_revision,
++                change_type=spec.change_type,
++                reason_code=spec.reason_code,
++            )
++            self._db.add(block)
++            draft_blocks.append(block)
++        await self._db.flush()
++
++        recovery = SchedulerRecoveryService(self._db)
++        for block in draft_blocks:
++            if block.is_recovery_block:
++                await recovery.plan_draft_recovery(
++                    context.organization_id,
++                    context.school_year_id,
++                    block.id,
++                )
++
++        state.pending_draft_id = draft.id
++        state.lock_version += 1
++        job.job_status = models.ScheduleGenerationJobStatus.SUCCEEDED
++        job.result_category = result.result_category
++        job.finished_at = now
++        job.duration_ms = self._elapsed_ms(elapsed_start)
++        await self._db.commit()
++        return job
++
++    async def _assert_can_continue(self, job_id: int, deadline_at: datetime) -> None:
++        job = await self._db.get(models.ScheduleGenerationJob, job_id)
++        if job is None:
++            raise GenerationRuntimeError("Generation job no longer exists.")
++        await self._db.refresh(job)
++        if job.job_status == models.ScheduleGenerationJobStatus.CANCEL_REQUESTED:
++            raise GenerationCanceledError("Generation cancellation was requested.")
++        if self._aware_now() >= deadline_at:
++            raise GenerationTimedOutError("Generation exceeded its five-minute deadline.")
++
++    async def _finish_without_output(
++        self,
++        job_id: int,
++        elapsed_start: float,
++    ) -> models.ScheduleGenerationJob:
++        job = await self._locked_job(job_id)
++        job.job_status = models.ScheduleGenerationJobStatus.NO_VALID_OUTPUT
++        job.result_category = models.ScheduleGenerationResultCategory.NO_VALID_OUTPUT
++        job.failure_code = FAILURE_NO_VALID_OUTPUT
++        job.failure_message = "No validated draft could be produced."
++        job.finished_at = self._aware_now()
++        job.duration_ms = self._elapsed_ms(elapsed_start)
++        await self._db.commit()
++        return job
++
++    async def _finish_failure(
++        self,
++        job_id: int,
++        status: models.ScheduleGenerationJobStatus,
++        code: str,
++        message: str,
++        elapsed_start: float,
++    ) -> models.ScheduleGenerationJob:
++        await self._db.rollback()
++        job = await self._locked_job(job_id)
++        if job.job_status not in (
++            models.ScheduleGenerationJobStatus.QUEUED,
++            models.ScheduleGenerationJobStatus.RUNNING,
++            models.ScheduleGenerationJobStatus.CANCEL_REQUESTED,
++        ):
++            return job
++        finished_at = self._aware_now()
++        job.job_status = status
++        job.result_category = None
++        job.failure_code = code
++        job.failure_message = message[:2000]
++        if job.started_at is None:
++            job.started_at = finished_at
++        job.finished_at = finished_at
++        job.duration_ms = self._elapsed_ms(elapsed_start)
++        await self._db.commit()
++        return job
++
++    async def _locked_job(self, job_id: int) -> models.ScheduleGenerationJob:
++        job = await self._db.scalar(
++            select(models.ScheduleGenerationJob)
++            .where(models.ScheduleGenerationJob.id == job_id)
++            .with_for_update()
++        )
++        if job is None:
++            raise GenerationRuntimeError("Generation job was not found.")
++        return job
++
++    def _aware_now(self) -> datetime:
++        value = self._clock()
++        if value.tzinfo is None or value.utcoffset() is None:
++            raise GenerationRuntimeError("Generation runtime clock must be timezone-aware.")
++        return value
++
++    def _elapsed_ms(self, started: float) -> int:
++        return max(0, int(round((self._elapsed_clock() - started) * 1000)))

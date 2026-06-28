@@ -700,10 +700,12 @@ export const useUpsertLessonLog = () => {
   const orgId = useOrganization().organization?.id
 
   return useMutation({
-    mutationFn: async ({ scheduleOutputId, operationalBlockId, payload }) => {
+    mutationFn: async ({ scheduleOutputId, activeScheduleBlockId, operationalBlockId, payload }) => {
       const endpoint = operationalBlockId
         ? `/schedule/operational-blocks/${operationalBlockId}/log`
-        : `/schedule/outputs/${scheduleOutputId}/log`
+        : activeScheduleBlockId
+          ? `/schedule/active-blocks/${activeScheduleBlockId}/log`
+          : `/schedule/outputs/${scheduleOutputId}/log`
       const { data } = await apiClient.put(endpoint, payload)
       return data
     },
@@ -791,13 +793,13 @@ export const useUpdateTimesheetStatus = () => {
 /**
  * Lista rascunhos pendentes de aprovação para a organização do user.
  */
-export const useDrafts = () => {
+export const useSchedulerStatus = () => {
   const orgId = useOrganization().organization?.id
   const { isLoaded } = useAuth()
   return useQuery({
-    queryKey: ['drafts', orgId],
+    queryKey: ['scheduler-status', orgId],
     queryFn: async () => {
-      const { data } = await apiClient.get('/schedule/drafts')
+      const { data } = await apiClient.get('/scheduler/status')
       return data
     },
     enabled: Boolean(orgId) && isLoaded,
@@ -805,18 +807,32 @@ export const useDrafts = () => {
   })
 }
 
+export const useCurrentDraftSummary = (enabled = true) => {
+  const orgId = useOrganization().organization?.id
+  const { isLoaded } = useAuth()
+  return useQuery({
+    queryKey: ['scheduler-current-draft', orgId],
+    queryFn: async () => {
+      const { data } = await apiClient.get('/scheduler/drafts/current')
+      return data
+    },
+    enabled: Boolean(orgId) && isLoaded && enabled,
+    ...DYNAMIC_OPTS,
+  })
+}
+
 /**
  * Diff entre um rascunho e o horário ativo.
  */
-export const useScheduleDiff = (genId) => {
+export const useScheduleDiff = (draftId, enabled = true) => {
   const orgId = useOrganization().organization?.id
   return useQuery({
-    queryKey: ['schedule-diff', orgId, genId],
+    queryKey: ['schedule-diff', orgId, draftId],
     queryFn: async () => {
-      const { data } = await apiClient.get(`/schedule/drafts/${genId}/diff`)
+      const { data } = await apiClient.get(`/scheduler/drafts/${draftId}/diff`)
       return data
     },
-    enabled: !!genId,
+    enabled: Boolean(draftId) && enabled,
     ...DYNAMIC_OPTS,
   })
 }
@@ -829,13 +845,15 @@ export const useApproveDraft = () => {
   const orgId = useOrganization().organization?.id
 
   return useMutation({
-    mutationFn: async (genId) => {
-      const { data } = await apiClient.post(`/schedule/drafts/${genId}/approve`)
+    mutationFn: async (draftId) => {
+      const { data } = await apiClient.post(`/scheduler/drafts/${draftId}/approve`)
       return data
     },
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['drafts', orgId] })
+      void queryClient.invalidateQueries({ queryKey: ['scheduler-status', orgId] })
+      void queryClient.invalidateQueries({ queryKey: ['scheduler-current-draft', orgId] })
       void queryClient.invalidateQueries({ queryKey: ['schedule-diff', orgId] })
+      void queryClient.invalidateQueries({ queryKey: ['weekSchedule', orgId] })
     },
   })
 }
@@ -848,32 +866,36 @@ export const useRejectDraft = () => {
   const orgId = useOrganization().organization?.id
 
   return useMutation({
-    mutationFn: async (genId) => {
-      const { data } = await apiClient.delete(`/schedule/drafts/${genId}`)
+    mutationFn: async (draftId) => {
+      const { data } = await apiClient.post(`/scheduler/drafts/${draftId}/reject`)
       return data
     },
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['drafts', orgId] })
+      void queryClient.invalidateQueries({ queryKey: ['scheduler-status', orgId] })
+      void queryClient.invalidateQueries({ queryKey: ['scheduler-current-draft', orgId] })
       void queryClient.invalidateQueries({ queryKey: ['schedule-diff', orgId] })
     },
   })
 }
 
 /**
- * Disparar geração de horário (full ou repair).
- * Retorna { task_id, status }.
+ * Disparar geração com estratégia escolhida pelo servidor.
+ * Retorna o job persistente, a estratégia e o motivo escolhidos pelo servidor.
  */
 export const useGenerateSchedule = () => {
   const queryClient = useQueryClient()
   const orgId = useOrganization().organization?.id
 
   return useMutation({
-    mutationFn: async (mode = 'full') => {
-      const { data } = await apiClient.post('/schedule/generate', { mode })
+    mutationFn: async ({ replacePendingDraft = false } = {}) => {
+      const { data } = await apiClient.post('/scheduler/generate', {
+        replace_pending_draft: replacePendingDraft,
+      })
       return data
     },
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['drafts', orgId] })
+      void queryClient.invalidateQueries({ queryKey: ['scheduler-status', orgId] })
+      void queryClient.invalidateQueries({ queryKey: ['scheduler-current-draft', orgId] })
       void queryClient.invalidateQueries({ queryKey: ['weekSchedule', orgId] })
       void queryClient.invalidateQueries({ queryKey: ['schedule', orgId] })
     },
@@ -883,20 +905,20 @@ export const useGenerateSchedule = () => {
 /**
  * Verificar estado de uma tarefa Celery de geração.
  */
-export const useScheduleTaskStatus = (taskId) => {
+export const useScheduleTaskStatus = (jobId) => {
   const orgId = useOrganization().organization?.id
   return useQuery({
-    queryKey: ['schedule-task', orgId, taskId],
+    queryKey: ['scheduler-job', orgId, jobId],
     queryFn: async () => {
-      const { data } = await apiClient.get(`/schedule/status/${taskId}`)
+      const { data } = await apiClient.get(`/scheduler/jobs/${jobId}`)
       return data
     },
-    enabled: !!taskId,
+    enabled: Boolean(jobId),
     refetchInterval: (query) => {
-      const status = query.state.data?.status
+      const status = query.state.data?.job_status
       if (!status) return 5000
-      const terminal = ['SUCCESS', 'FAILURE', 'Success', 'Error', 'Impossible']
-      return terminal.some(s => status.includes(s)) ? 60000 : 5000
+      const terminal = ['SUCCEEDED', 'FAILED', 'CANCELED', 'NO_VALID_OUTPUT']
+      return terminal.includes(status) ? false : 5000
     },
     ...DYNAMIC_OPTS,
   })
@@ -907,8 +929,8 @@ export const useScheduleTaskStatus = (taskId) => {
  */
 export const useCancelScheduleTask = () => {
   return useMutation({
-    mutationFn: async (taskId) => {
-      const { data } = await apiClient.post(`/schedule/cancel/${taskId}`)
+    mutationFn: async (jobId) => {
+      const { data } = await apiClient.post(`/scheduler/jobs/${jobId}/cancel`)
       return data
     },
   })
@@ -917,8 +939,8 @@ export const useCancelScheduleTask = () => {
 /**
  * Sprint 4 — Horário de uma semana para uma turma ou professor.
  *
- * Retorna os slots planeados (ScheduleOutput) cruzados com as ocorrências reais
- * (LessonOccurrence) para dias passados. Requer classId ou teacherId.
+ * Retorna os blocos publicados cruzados com as ocorrencias reais.
+ * Requer classId ou teacherId.
  */
 export const useTeacherScheduleHorizon = ({ enabled = true, refetchInterval = false } = {}) => {
   const orgId = useOrganization().organization?.id

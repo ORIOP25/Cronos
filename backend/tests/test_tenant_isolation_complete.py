@@ -191,7 +191,6 @@ async def test_settings_isolated_between_orgs(
     with patch("app.api.deps.get_clerk_payload", return_value=p_a):
         r = await async_client.post(f"{API}/school/settings/", json={
             "school_start_date": "2025-09-01",
-            "school_target_end_date": "2026-06-30",
             "school_hard_end_date": "2026-07-31",
         }, headers=_hdr("user_set_a"))
         assert r.status_code == 200

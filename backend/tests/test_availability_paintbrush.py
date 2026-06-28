@@ -249,9 +249,7 @@ class TestTeacherAvailability:
         settings_resp = await async_client.post(
             f"{API}/school/settings/",
             json={
-                "academic_year": "2025/2026",
                 "school_start_date": "2025-09-01",
-                "school_target_end_date": "2026-06-30",
                 "school_hard_end_date": "2026-07-31",
             },
             headers=admin_token_headers,
@@ -313,9 +311,7 @@ class TestTeacherAvailability:
         settings_org1 = await async_client.post(
             f"{API}/school/settings/",
             json={
-                "academic_year": "2025/2026",
                 "school_start_date": "2025-09-01",
-                "school_target_end_date": "2026-06-30",
                 "school_hard_end_date": "2026-07-31",
             },
             headers=admin_token_headers,
@@ -341,7 +337,6 @@ class TestTeacherAvailability:
         settings_org2 = models.OrganizationSettings(
             organization_id=org2.id,
             school_start_date=date(2027, 9, 1),
-            school_target_end_date=date(2028, 6, 30),
             school_hard_end_date=date(2028, 7, 31),
         )
         db_session.add(settings_org2)

@@ -25,17 +25,25 @@ class _NoopDb:
 @pytest.mark.asyncio
 async def test_update_class_rejects_partial_year_update_without_mutating(monkeypatch):
     db_class = SimpleNamespace(
+        id=1,
         name="TGPSI 10A",
         size=25,
         grade_level=10,
         start_year=2025,
         end_year=2028,
+        course_id=1,
+        is_archived=False,
     )
 
     async def fake_get_class_by_org(*_args):
         return db_class
 
     monkeypatch.setattr(class_service, "_get_class_by_org", fake_get_class_by_org)
+
+    async def fake_record_scheduler_change(*_args, **_kwargs):
+        return None
+
+    monkeypatch.setattr(class_service, "record_scheduler_change", fake_record_scheduler_change)
 
     db = _NoopDb()
     result = await class_service.update_class(
@@ -53,17 +61,25 @@ async def test_update_class_rejects_partial_year_update_without_mutating(monkeyp
 @pytest.mark.asyncio
 async def test_update_class_applies_valid_partial_year_update(monkeypatch):
     db_class = SimpleNamespace(
+        id=1,
         name="TGPSI 10A",
         size=25,
         grade_level=10,
         start_year=2025,
         end_year=2028,
+        course_id=1,
+        is_archived=False,
     )
 
     async def fake_get_class_by_org(*_args):
         return db_class
 
     monkeypatch.setattr(class_service, "_get_class_by_org", fake_get_class_by_org)
+
+    async def fake_record_scheduler_change(*_args, **_kwargs):
+        return None
+
+    monkeypatch.setattr(class_service, "record_scheduler_change", fake_record_scheduler_change)
 
     db = _NoopDb()
     result = await class_service.update_class(

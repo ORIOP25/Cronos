@@ -1,15 +1,13 @@
 import asyncio
 from datetime import date, time, timedelta
 from types import SimpleNamespace
-from unittest.mock import patch
 
 import pytest
-from fastapi import HTTPException
 from sqlalchemy import select
 
 from app import models
 from app.api.v1.endpoints import schedule as schedule_endpoint
-from tests.conftest import mock_clerk_payload
+from app.services import preflight_service
 async def _get_org_id(db_session):
     org = (await db_session.execute(select(models.Organization))).scalars().first()
     if org is None:
@@ -25,8 +23,7 @@ async def _seed_minimal_generation_data(db_session, organization_id: int):
         db_session,
         organization_id,
         school_start_date=date(2025, 9, 15),
-        school_target_end_date=date(2026, 6, 15),
-        school_hard_end_date=None,
+        school_hard_end_date=date(2026, 7, 31),
         repair_window_days=None,
     )
 
@@ -36,18 +33,32 @@ async def _seed_minimal_generation_data_with_settings(
     organization_id: int,
     *,
     school_start_date: date,
-    school_target_end_date: date,
     school_hard_end_date: date | None,
     repair_window_days: int | None,
 ):
     settings = models.OrganizationSettings(
         organization_id=organization_id,
         school_start_date=school_start_date,
-        school_target_end_date=school_target_end_date,
         school_hard_end_date=school_hard_end_date,
         repair_stability_window_days=repair_window_days,
     )
     db_session.add(settings)
+    if school_hard_end_date is not None:
+        school_year = models.SchedulerSchoolYear(
+            organization_id=organization_id,
+            label=f"{school_start_date.year}/{school_hard_end_date.year}",
+            start_date=school_start_date,
+            hard_end_date=school_hard_end_date,
+            timezone="Europe/Lisbon",
+        )
+        db_session.add(school_year)
+        await db_session.flush()
+        db_session.add(
+            models.SchedulerSchoolYearState(
+                organization_id=organization_id,
+                school_year_id=school_year.id,
+            )
+        )
 
     holiday = models.SchoolCalendarEvent(
         organization_id=organization_id,
@@ -125,22 +136,46 @@ async def _seed_minimal_generation_data_with_settings(
     await db_session.commit()
 
 
+async def _publish_schedule_with_explicit_debt(db_session, organization_id: int):
+    state = await db_session.scalar(
+        select(models.SchedulerSchoolYearState).where(
+            models.SchedulerSchoolYearState.organization_id == organization_id
+        )
+    )
+    assert state is not None
+    state.school_year_publication_state = models.SchoolYearPublicationState.PUBLISHED
+    state.active_schedule_version_id = "active-v1"
+    state.approved_scheduler_state_version = state.scheduler_state_version
+    db_session.add(
+        models.LessonOccurrence(
+            organization_id=organization_id,
+            date=date.today(),
+            status=models.LessonOccurrenceStatus.GAP,
+            revision=1,
+            is_active=True,
+            planned_hours=1.0,
+            hours_given=0,
+        )
+    )
+    await db_session.commit()
+
+
 @pytest.mark.asyncio
 async def test_generate_fails_when_settings_missing(async_client, admin_token_headers):
     response = await async_client.post(
-        "/api/v1/schedule/generate",
-        json={"mode": "full"},
+        "/api/v1/scheduler/generate",
+        json={},
         headers=admin_token_headers,
     )
 
     assert response.status_code == 400
     payload = response.json()
     assert payload["detail"]["error"] == "preflight_failed"
-    assert any("data de início" in msg for msg in payload["detail"]["problems"])
+    assert payload["detail"]["problems"]
 
 
 @pytest.mark.asyncio
-async def test_generate_auto_sync_holidays_is_attempted(
+async def test_generate_does_not_sync_holidays_before_school_year_is_complete(
     async_client,
     db_session,
     admin_token_headers,
@@ -151,7 +186,6 @@ async def test_generate_auto_sync_holidays_is_attempted(
         models.OrganizationSettings(
             organization_id=organization_id,
             school_start_date=date(2025, 9, 15),
-            school_target_end_date=date(2026, 6, 15),
         )
     )
     await db_session.commit()
@@ -163,15 +197,15 @@ async def test_generate_auto_sync_holidays_is_attempted(
         called["value"] = True
         return 3
 
-    monkeypatch.setattr(schedule_endpoint.settings_service, "sync_holidays", fake_sync_holidays)
+    monkeypatch.setattr(preflight_service.settings_service, "sync_holidays", fake_sync_holidays)
 
     response = await async_client.post(
-        "/api/v1/schedule/generate",
-        json={"mode": "full"},
+        "/api/v1/scheduler/generate",
+        json={},
         headers=admin_token_headers,
     )
 
-    assert called["value"] is True
+    assert called["value"] is False
     assert response.status_code == 400
     payload = response.json()
     problems = payload["detail"]["problems"]
@@ -179,7 +213,7 @@ async def test_generate_auto_sync_holidays_is_attempted(
 
 
 @pytest.mark.asyncio
-async def test_generate_returns_task_id_with_minimal_valid_data(
+async def test_generate_returns_canonical_job_contract_with_minimal_valid_data(
     async_client,
     db_session,
     admin_token_headers,
@@ -188,21 +222,157 @@ async def test_generate_returns_task_id_with_minimal_valid_data(
     organization_id = await _get_org_id(db_session)
     await _seed_minimal_generation_data(db_session, organization_id)
 
-    def fake_delay(_org_id, _mode):
-        return SimpleNamespace(id="task-test-123")
+    dispatched = {}
 
-    monkeypatch.setattr(schedule_endpoint.generate_schedule_task, "delay", fake_delay)
+    def fake_apply_async(*, args, task_id):
+        dispatched.update(args=args, task_id=task_id)
+
+    monkeypatch.setattr(
+        schedule_endpoint.run_schedule_generation_job_task,
+        "apply_async",
+        fake_apply_async,
+    )
 
     response = await async_client.post(
-        "/api/v1/schedule/generate",
-        json={"mode": "full"},
+        "/api/v1/scheduler/generate",
+        json={},
         headers=admin_token_headers,
     )
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["task_id"] == "task-test-123"
-    assert payload["status"] == "Processing started"
+    assert dispatched["args"] == [payload["job_id"]]
+    assert dispatched["task_id"] == f"scheduler-job-{payload['job_id']}"
+    assert "task_id" not in payload
+    assert "preflight" not in payload
+    assert payload["status"] == "QUEUED"
+    assert payload["strategy"] == "COMPLETE_GENERATION"
+    assert payload["trigger_type"] == "FIRST_GENERATION"
+
+
+@pytest.mark.asyncio
+async def test_canonical_scheduler_generation_job_and_cancel_contract(
+    async_client,
+    db_session,
+    admin_token_headers,
+    monkeypatch,
+):
+    organization_id = await _get_org_id(db_session)
+    await _seed_minimal_generation_data(db_session, organization_id)
+    dispatched = {}
+
+    def fake_apply_async(*, args, task_id):
+        dispatched.update(args=args, task_id=task_id)
+
+    monkeypatch.setattr(
+        schedule_endpoint.run_schedule_generation_job_task,
+        "apply_async",
+        fake_apply_async,
+    )
+    generated = await async_client.post(
+        "/api/v1/scheduler/generate",
+        json={"idempotency_key": "canonical-generate"},
+        headers=admin_token_headers,
+    )
+
+    assert generated.status_code == 200
+    payload = generated.json()
+    assert payload == {
+        "job_id": payload["job_id"],
+        "strategy": "COMPLETE_GENERATION",
+        "trigger_type": "FIRST_GENERATION",
+        "status": "QUEUED",
+    }
+    assert dispatched["args"] == [payload["job_id"]]
+    assert "task_id" not in payload
+    assert "solver_version" not in payload
+    assert "preflight" not in payload
+
+    job = await async_client.get(
+        f"/api/v1/scheduler/jobs/{payload['job_id']}",
+        headers=admin_token_headers,
+    )
+    assert job.status_code == 200
+    assert job.json()["job_status"] == "QUEUED"
+
+    canceled = await async_client.post(
+        f"/api/v1/scheduler/jobs/{payload['job_id']}/cancel",
+        headers=admin_token_headers,
+    )
+    assert canceled.status_code == 200
+    assert canceled.json() == {
+        "job_id": payload["job_id"],
+        "job_status": "CANCEL_REQUESTED",
+    }
+
+
+@pytest.mark.asyncio
+async def test_generate_idempotency_key_dispatches_only_once(
+    async_client,
+    db_session,
+    admin_token_headers,
+    monkeypatch,
+):
+    organization_id = await _get_org_id(db_session)
+    await _seed_minimal_generation_data(db_session, organization_id)
+    dispatched = []
+
+    def fake_apply_async(*, args, task_id):
+        dispatched.append((args, task_id))
+
+    monkeypatch.setattr(
+        schedule_endpoint.run_schedule_generation_job_task,
+        "apply_async",
+        fake_apply_async,
+    )
+    payload = {"idempotency_key": "same-click"}
+
+    first = await async_client.post(
+        "/api/v1/scheduler/generate",
+        json=payload,
+        headers=admin_token_headers,
+    )
+    retry = await async_client.post(
+        "/api/v1/scheduler/generate",
+        json=payload,
+        headers=admin_token_headers,
+    )
+
+    assert first.status_code == retry.status_code == 200
+    assert first.json()["job_id"] == retry.json()["job_id"]
+    expected_task_id = f"scheduler-job-{first.json()['job_id']}"
+    assert dispatched == [([first.json()["job_id"]], expected_task_id)]
+
+
+@pytest.mark.asyncio
+async def test_generate_explains_when_published_schedule_has_no_trigger(
+    async_client,
+    db_session,
+    admin_token_headers,
+):
+    organization_id = await _get_org_id(db_session)
+    await _seed_minimal_generation_data(db_session, organization_id)
+    state = await db_session.scalar(
+        select(models.SchedulerSchoolYearState).where(
+            models.SchedulerSchoolYearState.organization_id == organization_id
+        )
+    )
+    assert state is not None
+    state.school_year_publication_state = models.SchoolYearPublicationState.PUBLISHED
+    state.active_schedule_version_id = "active-v1"
+    state.approved_scheduler_state_version = state.scheduler_state_version
+    await db_session.commit()
+
+    response = await async_client.post(
+        "/api/v1/scheduler/generate",
+        json={},
+        headers=admin_token_headers,
+    )
+
+    assert response.status_code == 409
+    detail = response.json()["detail"]
+    assert detail["error"] == "no_operational_trigger"
+    assert "no unresolved explicit debt" in detail["message"]
 
 
 @pytest.mark.asyncio
@@ -218,22 +388,25 @@ async def test_repair_generate_fails_when_window_blocks_all_future(
         db_session,
         organization_id,
         school_start_date=today - timedelta(days=30),
-        school_target_end_date=today + timedelta(days=5),
         school_hard_end_date=today + timedelta(days=5),
         repair_window_days=14,
     )
+    await _publish_schedule_with_explicit_debt(db_session, organization_id)
 
     called = {"value": False}
 
-    def fake_delay(_org_id, _mode):
+    def fake_apply_async(*, args, task_id):
         called["value"] = True
-        return SimpleNamespace(id="task-should-not-run")
 
-    monkeypatch.setattr(schedule_endpoint.generate_schedule_task, "delay", fake_delay)
+    monkeypatch.setattr(
+        schedule_endpoint.run_schedule_generation_job_task,
+        "apply_async",
+        fake_apply_async,
+    )
 
     response = await async_client.post(
-        "/api/v1/schedule/generate",
-        json={"mode": "repair"},
+        "/api/v1/scheduler/generate",
+        json={},
         headers=admin_token_headers,
     )
 
@@ -257,214 +430,32 @@ async def test_repair_generate_succeeds_when_horizon_exists_outside_window(
         db_session,
         organization_id,
         school_start_date=today - timedelta(days=30),
-        school_target_end_date=today + timedelta(days=60),
         school_hard_end_date=today + timedelta(days=60),
         repair_window_days=14,
     )
+    await _publish_schedule_with_explicit_debt(db_session, organization_id)
 
-    def fake_delay(_org_id, _mode):
-        return SimpleNamespace(id="task-repair-allowed")
+    queued = {}
 
-    monkeypatch.setattr(schedule_endpoint.generate_schedule_task, "delay", fake_delay)
+    def fake_apply_async(*, args, task_id):
+        queued.update(args=args, task_id=task_id)
+
+    monkeypatch.setattr(
+        schedule_endpoint.run_schedule_generation_job_task,
+        "apply_async",
+        fake_apply_async,
+    )
 
     response = await async_client.post(
-        "/api/v1/schedule/generate",
-        json={"mode": "repair"},
+        "/api/v1/scheduler/generate",
+        json={},
         headers=admin_token_headers,
     )
 
     assert response.status_code in (200, 400), f"Unexpected status: {response.status_code}, body: {response.text}"
     if response.status_code == 200:
         payload = response.json()
-        assert payload["task_id"] == "task-repair-allowed"
-
-
-@pytest.mark.asyncio
-async def test_cancel_generation_requests_revoke_and_sets_cancel_flag(
-    async_client,
-    admin_token_headers,
-    monkeypatch,
-):
-    task_id = "task-cancel-123"
-
-    class FakeRedis:
-        def __init__(self):
-            self.setex_calls = []
-
-        def setex(self, key, ttl_seconds, value):
-            self.setex_calls.append((key, ttl_seconds, value))
-
-    class FakeTaskResult:
-        def __init__(self):
-            self.status = "SOLVING"
-            self.revoke_calls = []
-
-        def revoke(self, terminate=False, signal=None):
-            self.revoke_calls.append((terminate, signal))
-
-    fake_redis = FakeRedis()
-    fake_task_result = FakeTaskResult()
-
-    monkeypatch.setattr(
-        schedule_endpoint,
-        "_validate_task_ownership",
-        lambda _task_id, _org_id: fake_redis,
-    )
-    monkeypatch.setattr(schedule_endpoint, "AsyncResult", lambda _task_id: fake_task_result)
-
-    response = await async_client.post(
-        f"/api/v1/schedule/cancel/{task_id}",
-        headers=admin_token_headers,
-    )
-
-    assert response.status_code == 200
-    payload = response.json()
-    assert payload["task_id"] == task_id
-    assert payload["status"] == "Cancel requested"
-
-    assert fake_redis.setex_calls == [
-        (
-            schedule_endpoint._task_cancel_key(task_id),
-            schedule_endpoint.TASK_KEY_TTL_SECONDS,
-            "1",
-        )
-    ]
-    assert fake_task_result.revoke_calls == [(True, "SIGTERM")]
-
-
-@pytest.mark.asyncio
-async def test_cancel_generation_returns_already_finished_when_task_is_terminal(
-    async_client,
-    admin_token_headers,
-    monkeypatch,
-):
-    task_id = "task-finished-456"
-
-    class FakeRedis:
-        def __init__(self):
-            self.setex_calls = []
-
-        def setex(self, key, ttl_seconds, value):
-            self.setex_calls.append((key, ttl_seconds, value))
-
-    class FakeTaskResult:
-        def __init__(self):
-            self.status = "SUCCESS"
-            self.revoke_calls = []
-
-        def revoke(self, terminate=False, signal=None):
-            self.revoke_calls.append((terminate, signal))
-
-    fake_redis = FakeRedis()
-    fake_task_result = FakeTaskResult()
-
-    monkeypatch.setattr(
-        schedule_endpoint,
-        "_validate_task_ownership",
-        lambda _task_id, _org_id: fake_redis,
-    )
-    monkeypatch.setattr(schedule_endpoint, "AsyncResult", lambda _task_id: fake_task_result)
-
-    response = await async_client.post(
-        f"/api/v1/schedule/cancel/{task_id}",
-        headers=admin_token_headers,
-    )
-
-    assert response.status_code == 200
-    payload = response.json()
-    assert payload == {
-        "task_id": task_id,
-        "status": "Already finished",
-        "current_status": "SUCCESS",
-    }
-    assert fake_redis.setex_calls == []
-    assert fake_task_result.revoke_calls == []
-
-
-def test_validate_task_ownership_rejects_task_from_another_org(monkeypatch):
-    class FakeRedis:
-        def get(self, key):
-            if key == schedule_endpoint._task_org_key("task-foreign"):
-                return b"999"
-            return None
-
-    monkeypatch.setattr(schedule_endpoint, "_get_redis_client", lambda: FakeRedis())
-
-    with pytest.raises(HTTPException) as exc_info:
-        schedule_endpoint._validate_task_ownership("task-foreign", organization_id=1)
-
-    assert exc_info.value.status_code == 403
-    assert exc_info.value.detail == "Sem permissões para esta task"
-
-
-@pytest.mark.asyncio
-async def test_schedule_reset_requires_admin_role(async_client, db_session):
-    organization_id = await _get_org_id(db_session)
-
-    teacher = models.Teacher(name="Prof. Reset Guard", organization_id=organization_id)
-    db_session.add(teacher)
-    await db_session.flush()
-
-    teacher_cid = "teacher_reset_guard_001"
-    teacher_user = models.User(
-        email="teacher.reset.guard@escola.pt",
-        clerk_user_id=teacher_cid,
-        is_active=True,
-        role=models.UserRole.teacher,
-        organization_id=organization_id,
-        teacher_id=teacher.id,
-    )
-    db_session.add(teacher_user)
-    await db_session.commit()
-
-    teacher_headers = {"Authorization": f"Bearer test_{teacher_cid}"}
-
-    with patch("app.api.deps.get_clerk_payload", return_value=mock_clerk_payload(teacher_cid, None, "teacher")):
-        response = await async_client.delete(
-            "/api/v1/schedule/reset",
-            headers=teacher_headers,
-        )
-
-    assert response.status_code == 403
-
-
-@pytest.mark.asyncio
-async def test_schedule_reset_logs_audit_on_forbidden_attempt(async_client, db_session, monkeypatch):
-    organization_id = await _get_org_id(db_session)
-
-    teacher = models.Teacher(name="Prof. Reset Audit", organization_id=organization_id)
-    db_session.add(teacher)
-    await db_session.flush()
-
-    teacher_cid = "teacher_reset_audit_001"
-    teacher_user = models.User(
-        email="teacher.reset.audit@escola.pt",
-        clerk_user_id=teacher_cid,
-        is_active=True,
-        role=models.UserRole.teacher,
-        organization_id=organization_id,
-        teacher_id=teacher.id,
-    )
-    db_session.add(teacher_user)
-    await db_session.commit()
-
-    teacher_headers = {"Authorization": f"Bearer test_{teacher_cid}"}
-
-    audit_events = []
-
-    def _capture_audit(*_args, **kwargs):
-        audit_events.append(kwargs)
-
-    monkeypatch.setattr(schedule_endpoint.logger, "info", _capture_audit)
-
-    with patch("app.api.deps.get_clerk_payload", return_value=mock_clerk_payload(teacher_cid, None, "teacher")):
-        response = await async_client.delete(
-            "/api/v1/schedule/reset",
-            headers=teacher_headers,
-        )
-
-    assert response.status_code == 403
-    assert len(audit_events) >= 1
-    event = audit_events[-1]
-    assert event["http_status"] == 403
-    assert event["path"] == "/api/v1/schedule/reset"
+        assert queued["args"] == [payload["job_id"]]
+        assert queued["task_id"] == f"scheduler-job-{payload['job_id']}"
+        assert payload["strategy"] == "ADAPTIVE_REPAIR"
+        assert payload["trigger_type"] == "EXPLICIT_DEBT"

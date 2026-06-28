@@ -78,8 +78,6 @@ export const TXT = {
   CALENDAR_OTHER: 'Outro',
 
   // Modo
-  MODE_FULL: 'Completo (de raiz)',
-  MODE_REPAIR: 'Reparação (mín. alterações)',
   MODE_CLASS_VIEW: 'Turma',
   MODE_TEACHER_VIEW: 'Professor',
 

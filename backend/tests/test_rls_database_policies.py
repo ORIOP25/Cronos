@@ -10,6 +10,19 @@ from app.db.database import SYNC_DB_URL
 pytestmark = pytest.mark.postgresql
 
 
+PHASE1_SCHEDULER_TABLES = (
+    "scheduler_school_year",
+    "scheduler_school_year_state",
+    "schedule_generation_job",
+    "schedule_drafts",
+    "schedule_draft_blocks",
+    "schedule_diff_entries",
+    "active_schedule_blocks",
+    "planned_recovery_links",
+    "scheduler_state_version_events",
+)
+
+
 def _has_rls_objects(conn) -> bool:
     return bool(
         conn.execute(text("SELECT to_regproc('app_security.current_organization_id')")).scalar()
@@ -26,6 +39,96 @@ def _set_role_cronos_app_or_skip(conn) -> None:
         pytest.skip(f"current database user cannot SET ROLE cronos_app: {exc}")
     else:
         savepoint.commit()
+
+
+def _has_phase1_scheduler_schema(conn) -> bool:
+    return all(
+        conn.execute(text("SELECT to_regclass(:table_name)"), {"table_name": table}).scalar()
+        for table in PHASE1_SCHEDULER_TABLES
+    )
+
+
+def test_phase1_scheduler_tables_force_rls_and_reject_cross_tenant_years():
+    engine = create_engine(SYNC_DB_URL)
+    marker = uuid.uuid4().hex[:12]
+    with engine.begin() as conn:
+        if not _has_phase1_scheduler_schema(conn):
+            pytest.skip("Phase 1 scheduler migration is not applied to this PostgreSQL schema")
+
+        policy_rows = conn.execute(
+            text(
+                """
+                SELECT c.relname, c.relrowsecurity, c.relforcerowsecurity,
+                       EXISTS (
+                           SELECT 1
+                           FROM pg_policy p
+                           WHERE p.polrelid = c.oid AND p.polname = 'tenant_isolation'
+                       ) AS has_policy
+                FROM pg_class c
+                WHERE c.relname = ANY(:tables)
+                """
+            ),
+            {"tables": list(PHASE1_SCHEDULER_TABLES)},
+        ).mappings().all()
+        assert len(policy_rows) == len(PHASE1_SCHEDULER_TABLES)
+        assert all(row["relrowsecurity"] and row["relforcerowsecurity"] for row in policy_rows)
+        assert all(row["has_policy"] for row in policy_rows)
+        for append_only_table in (
+            "schedule_draft_blocks",
+            "schedule_diff_entries",
+            "scheduler_state_version_events",
+        ):
+            assert conn.execute(
+                text("SELECT has_table_privilege('cronos_app', :table, 'UPDATE')"),
+                {"table": f"public.{append_only_table}"},
+            ).scalar_one() is False
+            assert conn.execute(
+                text("SELECT has_table_privilege('cronos_app', :table, 'DELETE')"),
+                {"table": f"public.{append_only_table}"},
+            ).scalar_one() is False
+
+        org_a = conn.execute(
+            text("INSERT INTO organization (name, plan_status) VALUES (:name, 'active') RETURNING id"),
+            {"name": f"Scheduler RLS A {marker}"},
+        ).scalar_one()
+        org_b = conn.execute(
+            text("INSERT INTO organization (name, plan_status) VALUES (:name, 'active') RETURNING id"),
+            {"name": f"Scheduler RLS B {marker}"},
+        ).scalar_one()
+        year_b = conn.execute(
+            text(
+                """
+                INSERT INTO scheduler_school_year (
+                    organization_id, label, start_date, hard_end_date, timezone, is_active
+                ) VALUES (:org, :label, DATE '2025-09-01', DATE '2026-07-15',
+                          'Europe/Lisbon', TRUE)
+                RETURNING id
+                """
+            ),
+            {"org": org_b, "label": f"2025/{marker}"},
+        ).scalar_one()
+
+        _set_role_cronos_app_or_skip(conn)
+        conn.execute(
+            text("SELECT set_config('app.current_organization_id', :org, true)"),
+            {"org": str(org_a)},
+        )
+        assert conn.execute(text("SELECT count(*) FROM scheduler_school_year")).scalar_one() == 0
+
+        savepoint = conn.begin_nested()
+        with pytest.raises(Exception):
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO schedule_generation_job (
+                        organization_id, school_year_id, strategy
+                    ) VALUES (:org, :year, 'COMPLETE_GENERATION')
+                    """
+                ),
+                {"org": org_a, "year": year_b},
+            )
+        savepoint.rollback()
+        conn.execute(text("RESET ROLE"))
 
 
 def test_current_organization_id_helper_fails_closed_and_parses_valid_values():
@@ -125,7 +228,7 @@ def test_auth_definer_helpers_work_without_tenant_context_and_preserve_alembic_t
             ),
             {
                 "clerk_user_id": f"user_{marker}",
-                "email": "first@example.com",
+                "email": f"first-{marker}@example.com",
                 "display_name": "First Name",
                 "role": "member",
                 "organization_id": org_id,
@@ -152,7 +255,7 @@ def test_auth_definer_helpers_work_without_tenant_context_and_preserve_alembic_t
             ),
             {
                 "clerk_user_id": f"user_{marker}",
-                "email": "second@example.com",
+                "email": f"second-{marker}@example.com",
                 "display_name": "Second Name",
                 "role": "org:member",
                 "teacher_id": None,
@@ -178,7 +281,7 @@ def test_auth_definer_helpers_work_without_tenant_context_and_preserve_alembic_t
             {"id": user_row["id"]},
         ).mappings().one()
         assert dict(profile) == {
-            "email": "second@example.com",
+            "email": f"second-{marker}@example.com",
             "name": "Second Name",
             "role": "teacher",
             "is_active": False,
@@ -213,7 +316,7 @@ def test_deactivate_user_preserves_last_active_admin():
             ),
             {
                 "clerk_user_id": f"admin_{marker}",
-                "email": "admin@example.com",
+                "email": f"admin-{marker}@example.com",
                 "display_name": "Only Admin",
                 "organization_id": org_id,
             },

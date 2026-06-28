@@ -152,7 +152,8 @@ def _get_resource_counts(
 
     rooms_by_type: dict[str, int] = {}
     for room_type, count in rooms_by_type_rows:
-        rooms_by_type[room_type.value] = count
+        key = room_type.value if hasattr(room_type, "value") else str(room_type)
+        rooms_by_type[key] = count
 
     return schemas.ResourceCounts(
         teachers_count=teachers_count,

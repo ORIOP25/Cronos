@@ -1,5 +1,8 @@
 # WBS - Visao Professor e Controlo de Acessos
 
+> Documento historico de entrega. Referencias ao antigo `DELETE /schedule/reset`
+> descrevem a fase anterior; o reset ativo e `POST /api/v1/scheduler/reset-year`.
+
 ## Objetivo
 Definir um plano tecnico detalhado para consolidar a experiencia por role na aplicacao:
 - admin sem tab de preferencias pessoais de disponibilidade;

@@ -167,7 +167,8 @@ async def create_teacher(
     return await teacher_service.create_teacher(
         db,
         teacher,
-        organization_id=current_user.organization_id
+        organization_id=current_user.organization_id,
+        changed_by_user_id=current_user.id,
     )
 
 # --- 4. NOVO ENDPOINT: Gravar Disponibilidades ---
@@ -204,7 +205,8 @@ async def update_teacher_availability(
             db,
             teacher_id,
             availability_data,
-            organization_id=current_user.organization_id
+            organization_id=current_user.organization_id,
+            changed_by_user_id=current_user.id,
         )
 
         if result == "NOT_FOUND":
@@ -257,7 +259,8 @@ async def update_teacher(
         db, 
         teacher_id, 
         teacher_in, 
-        organization_id=current_user.organization_id
+        organization_id=current_user.organization_id,
+        changed_by_user_id=current_user.id,
     )
     if not teacher:
         raise HTTPException(status_code=404, detail=TEACHER_NOT_FOUND_MSG)
@@ -276,7 +279,8 @@ async def delete_teacher(
     status_result = await teacher_service.delete_teacher(
         db, 
         teacher_id, 
-        organization_id=current_user.organization_id
+        organization_id=current_user.organization_id,
+        changed_by_user_id=current_user.id,
     )
     
     if status_result == "NOT_FOUND":

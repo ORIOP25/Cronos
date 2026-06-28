@@ -117,7 +117,6 @@ def combined_setup(sync_db):
     sync_db.add(models.OrganizationSettings(
         organization_id=org.id,
         school_start_date=date.today() - timedelta(days=30),
-        school_target_end_date=date.today() + timedelta(days=90),
         school_hard_end_date=date.today() + timedelta(days=90),
         repair_stability_window_days=14,
     ))

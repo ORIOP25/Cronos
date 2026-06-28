@@ -41,7 +41,7 @@ class TestSolverV2Result:
         result = SolverV2Result(
             status="infeasible", blocks=[],
             makespan_days=None, projected_end_date=None,
-            end_date_spread_days=None, target_drift_days=None,
+            end_date_spread_days=None,
             churn_blocks=None, gaps_total=None,
             objective_value=None, solver_wall_time=None,
         )
@@ -53,7 +53,7 @@ class TestSolverV2Result:
             status="optimal",
             blocks=[ScheduledBlockV2(1, 10, 1, 1, date(2026, 6, 30), 50)],
             makespan_days=176, projected_end_date=date(2026, 6, 30),
-            end_date_spread_days=5, target_drift_days=10,
+            end_date_spread_days=5,
             churn_blocks=3, gaps_total=2,
             objective_value=42.0, solver_wall_time=1.5,
         )

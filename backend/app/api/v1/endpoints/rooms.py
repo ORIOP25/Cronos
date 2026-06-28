@@ -32,7 +32,8 @@ async def create_room(
     return await room_service.create_room(
         db, 
         room, 
-        organization_id=current_user.organization_id # <--- Passamos o ID aqui internamente
+        organization_id=current_user.organization_id, # <--- Passamos o ID aqui internamente
+        changed_by_user_id=current_user.id,
     )
 
 @router.patch("/{room_id}", response_model=schemas.RoomRead, responses={404: {"description": "Sala não encontrada"}})
@@ -42,7 +43,10 @@ async def update_room(
     db: Annotated[AsyncSession, Depends(deps.get_db)],
     current_user: Annotated[models.User, Depends(deps.get_current_active_admin)]
 ):
-    room = await room_service.update_room(db, room_id, room_in, current_user.organization_id)
+    room = await room_service.update_room(
+        db, room_id, room_in, current_user.organization_id,
+        changed_by_user_id=current_user.id,
+    )
     if not room:
         raise HTTPException(status_code=404, detail="Sala não encontrada")
     return room
@@ -53,7 +57,10 @@ async def delete_room(
     db: Annotated[AsyncSession, Depends(deps.get_db)],
     current_user: Annotated[models.User, Depends(deps.get_current_active_admin)]
 ):
-    status = await room_service.delete_room(db, room_id, current_user.organization_id)
+    status = await room_service.delete_room(
+        db, room_id, current_user.organization_id,
+        changed_by_user_id=current_user.id,
+    )
     
     if status == "NOT_FOUND":
         raise HTTPException(status_code=404, detail="Sala não encontrada")

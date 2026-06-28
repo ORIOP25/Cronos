@@ -242,7 +242,6 @@ const SettingsSection = () => {
   const [saveConfirmationPending, setSaveConfirmationPending] = useState(false)
   const [form, setForm] = useState({
     school_start_date: '',
-    school_target_end_date: '',
     school_hard_end_date: '',
     repair_stability_window_days: '14',
   })
@@ -287,7 +286,6 @@ const SettingsSection = () => {
     if (settings && Object.keys(settings).length > 0) {
       setForm({
         school_start_date: settings.school_start_date || '',
-        school_target_end_date: settings.school_target_end_date || '',
         school_hard_end_date: settings.school_hard_end_date || '',
         repair_stability_window_days: settings.repair_stability_window_days?.toString() || '14',
       })
@@ -297,7 +295,7 @@ const SettingsSection = () => {
   useEffect(() => {
     setSaveConfirmationPending(false)
     setSavePromptMsg(null)
-  }, [form.school_start_date, form.school_target_end_date, form.school_hard_end_date, form.repair_stability_window_days])
+  }, [form.school_start_date, form.school_hard_end_date, form.repair_stability_window_days])
   /* eslint-enable react-hooks/set-state-in-effect */
 
   const upsertMutation = useMutation({
@@ -312,7 +310,7 @@ const SettingsSection = () => {
   })
 
   const handleSave = () => {
-    if (!form.school_start_date || !form.school_target_end_date || !form.school_hard_end_date) {
+    if (!form.school_start_date || !form.school_hard_end_date) {
       setSavePromptMsg('Por favor, preencha todas as datas antes de guardar.')
       setSaveConfirmationPending(false)
       return;
@@ -326,7 +324,6 @@ const SettingsSection = () => {
 
     const payload = {
       school_start_date: form.school_start_date || null,
-      school_target_end_date: form.school_target_end_date || null,
       school_hard_end_date: form.school_hard_end_date || null,
       repair_stability_window_days: form.repair_stability_window_days ? Number.parseInt(form.repair_stability_window_days, 10) : null,
     }
@@ -357,16 +354,6 @@ const SettingsSection = () => {
           />
         </CCol>
         <CCol md={3}>
-          <CFormLabel htmlFor="targetDate" className="school-config-field-label">Data-Alvo Fim</CFormLabel>
-          <CFormInput
-            id="targetDate"
-            type="date"
-            value={form.school_target_end_date}
-            onChange={(e) => setForm({ ...form, school_target_end_date: e.target.value })}
-            text="Data de referência para concluir o planeamento"
-          />
-        </CCol>
-        <CCol md={3}>
           <CFormLabel htmlFor="hardEndDate" className="school-config-field-label">Data limite final</CFormLabel>
           <CFormInput
             id="hardEndDate"
@@ -381,7 +368,7 @@ const SettingsSection = () => {
           <CFormInput
             id="repairWindow"
             type="number"
-            min={1}
+            min={0}
             value={form.repair_stability_window_days}
             onChange={(e) => setForm({ ...form, repair_stability_window_days: e.target.value })}
             text="Período em que se evita refazer horários"

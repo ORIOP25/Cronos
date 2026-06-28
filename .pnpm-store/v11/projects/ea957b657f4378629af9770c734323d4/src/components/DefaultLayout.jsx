@@ -1,0 +1,326 @@
+import React, { useState, useEffect } from 'react'
+import { Outlet, NavLink, useLocation } from 'react-router-dom'
+import { useUser, useClerk } from '@clerk/react'
+import { ROUTE_MY_SCHEDULES } from '../roleAccess'
+import { useRole } from '../hooks/useRole'
+import { TXT } from '../utils/terminology'
+import CIcon from '@coreui/icons-react'
+import { 
+  cilSpeedometer, cilCalendar, cilCheckCircle, cilPeople, 
+  cilLibrary, cilEducation, cilRoom, cilSettings, cilUser,
+  cilHistory, cilMenu, cilChartPie
+} from '@coreui/icons'
+
+const SIDEBAR_WIDTH = 280
+const SIDEBAR_COLLAPSED_WIDTH = 72
+
+const SidebarLink = ({ to, icon, children, collapsed }) => (
+  <NavLink 
+    to={to} 
+    className={({ isActive }) => `zen-sidebar-item ${isActive ? 'active' : ''}`}
+    style={({ isActive }) => ({
+      color: isActive ? 'var(--rs-sidebar-brand)' : 'var(--rs-sidebar-link)',
+      textDecoration: 'none',
+      padding: collapsed ? '12px' : '12px 16px',
+      borderRadius: '4px',
+      display: 'flex',
+      alignItems: 'center',
+      gap: '12px',
+      fontSize: '0.88rem',
+      fontWeight: isActive ? '600' : '500',
+      transition: 'all 0.3s cubic-bezier(0.2, 0.8, 0.2, 1)',
+      backgroundColor: isActive ? 'rgba(255, 255, 255, 0.1)' : 'transparent',
+      marginBottom: '2px',
+      justifyContent: collapsed ? 'center' : 'flex-start',
+      overflow: 'hidden',
+      whiteSpace: 'nowrap',
+    })}
+    title={collapsed ? children : undefined}
+  >
+    <CIcon icon={icon} size="sm" style={{ opacity: 0.8, flexShrink: 0 }} />
+    {!collapsed && children}
+  </NavLink>
+)
+
+const DefaultLayout = () => {
+  const location = useLocation()
+  const { user } = useUser()
+  const { openUserProfile, signOut } = useClerk()
+  
+  const { isAdmin, isTeacher } = useRole()
+  const accessDeniedMessage = location?.state?.accessDeniedMessage ?? ''
+  
+  const [collapsed, setCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem('hz-sidebar-collapsed') === 'true'
+    } catch {
+      return false
+    }
+  })
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('hz-sidebar-collapsed', String(collapsed))
+    } catch {
+      // no-op
+    }
+  }, [collapsed])
+
+  useEffect(() => {
+    if (!accessDeniedMessage) return
+    window.history.replaceState({}, document.title, `${location.pathname}${location.search}`)
+  }, [accessDeniedMessage, location.pathname, location.search])
+
+  const getRoleLabel = () => {
+    if (isAdmin) return 'Diretor'
+    if (isTeacher) return 'Professor'
+    return ''
+  }
+
+  const currentWidth = collapsed ? SIDEBAR_COLLAPSED_WIDTH : SIDEBAR_WIDTH
+
+  return (
+    <div style={{ display: 'flex', minHeight: '100vh', backgroundColor: 'var(--rs-body-bg)' }}>
+      {/* --- SIDEBAR --- */}
+      <aside style={{
+        width: `${currentWidth}px`,
+        backgroundColor: 'var(--brand-950)',
+        color: 'var(--rs-sidebar-text)',
+        padding: collapsed ? '24px 8px' : '32px 20px',
+        display: 'flex',
+        flexDirection: 'column',
+        position: 'sticky',
+        top: 0,
+        height: '100vh',
+        overflowY: 'auto',
+        overflowX: 'hidden',
+        flexShrink: 0,
+        borderRight: '1px solid rgba(255, 255, 255, 0.03)',
+        transition: 'width 0.3s cubic-bezier(0.2, 0.8, 0.2, 1), padding 0.3s ease',
+        zIndex: 10,
+      }}>
+        {/* Toggle + Brand + OrgSwitcher */}
+        <div style={{
+          display: 'flex',
+          flexDirection: 'column',
+          gap: collapsed ? '8px' : '16px',
+          marginBottom: collapsed ? '32px' : '32px',
+        }}>
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: collapsed ? 'center' : 'space-between',
+            paddingLeft: collapsed ? '0' : '8px',
+          }}>
+            {!collapsed && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <img src="/logo.png" alt="Cronos Logo" style={{ width: '32px', height: '32px', borderRadius: '6px', objectFit: 'contain' }} />
+                <div>
+                  <h2 className="text-display" style={{ color: '#ffffff', fontSize: '1.6rem', margin: 0 }}>
+                    {TXT.SIDEBAR_BRAND}
+                  </h2>
+                  <div className="luxury-line" style={{ width: '40px', marginTop: '6px' }} />
+                </div>
+              </div>
+            )}
+            {collapsed && (
+              <div style={{ paddingBottom: '8px' }}>
+                <img src="/logo.png" alt="Cronos" style={{ width: '36px', height: '36px', borderRadius: '6px', objectFit: 'contain' }} />
+              </div>
+            )}
+            <button
+              type="button"
+              onClick={() => setCollapsed(prev => !prev)}
+              style={{
+                background: 'none', border: 'none', color: 'var(--rs-sidebar-link)',
+                cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center',
+                opacity: 0.6, transition: 'opacity 0.2s ease',
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.opacity = '1' }}
+              onMouseLeave={(e) => { e.currentTarget.style.opacity = '0.6' }}
+              title={collapsed ? 'Expandir menu' : 'Colapsar menu'}
+              aria-label={collapsed ? 'Expandir menu' : 'Colapsar menu'}
+            >
+              <CIcon icon={cilMenu} size="sm" />
+            </button>
+          </div>
+        </div>
+        
+        <nav style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+          {isAdmin && (
+            <>
+              <SidebarLink to="/dashboard" icon={cilSpeedometer} collapsed={collapsed}>Dashboard</SidebarLink>
+              <SidebarLink to="/schedules" icon={cilCalendar} collapsed={collapsed}>Horários</SidebarLink>
+              <SidebarLink to="/schedules/audit" icon={cilHistory} collapsed={collapsed}>Auditoria</SidebarLink>
+              <SidebarLink to="/absences" icon={cilCheckCircle} collapsed={collapsed}>Faltas</SidebarLink>
+              <SidebarLink to="/timesheets" icon={cilCalendar} collapsed={collapsed}>Fecho Semanal</SidebarLink>
+              
+              {!collapsed && <div className="text-editorial" style={sectionLabelStyle}>Pedagogia</div>}
+              <SidebarLink to="/courses" icon={cilEducation} collapsed={collapsed}>Cursos</SidebarLink>
+              <SidebarLink to="/teachers" icon={cilPeople} collapsed={collapsed}>Professores</SidebarLink>
+              <SidebarLink to="/subjects" icon={cilLibrary} collapsed={collapsed}>Disciplinas</SidebarLink>
+              
+              {!collapsed && <div className="text-editorial" style={sectionLabelStyle}>Recursos</div>}
+              <SidebarLink to="/rooms" icon={cilRoom} collapsed={collapsed}>Salas</SidebarLink>
+              <SidebarLink to="/config" icon={cilSettings} collapsed={collapsed}>Configuração</SidebarLink>
+            </>
+          )}
+
+          {isTeacher && (
+            <>
+              <SidebarLink to="/my-availability" icon={cilUser} collapsed={collapsed}>Preferências</SidebarLink>
+              <SidebarLink to={ROUTE_MY_SCHEDULES} icon={cilCalendar} collapsed={collapsed}>Meus Horários</SidebarLink>
+              <SidebarLink to="/my-progress" icon={cilChartPie} collapsed={collapsed}>Meu Progresso</SidebarLink>
+            </>
+          )}
+        </nav>
+
+        {/* Rodapé da Sidebar */}
+        <div style={{ marginTop: 'auto', paddingTop: '24px', borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+          {!collapsed && (
+            <button
+              type="button"
+              onClick={() => openUserProfile()}
+              style={{ 
+                display: 'flex', 
+                border: 'none', 
+                textAlign: 'left', 
+                width: '100%',
+                alignItems: 'center', 
+                gap: '12px', 
+                padding: '12px',
+                backgroundColor: 'rgba(255,255,255,0.03)',
+                borderRadius: '8px',
+                marginBottom: '16px',
+                cursor: 'pointer',
+                transition: 'background-color 0.2s ease',
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.08)' }}
+              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.03)' }}
+              title="Gerir conta"
+            >
+              <div style={{ 
+                width: '36px', 
+                height: '36px', 
+                borderRadius: '4px', 
+                backgroundColor: 'var(--brand-800)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: '#ffffff',
+                fontWeight: '700',
+                flexShrink: 0,
+              }}>
+                {user?.primaryEmailAddress?.emailAddress?.[0]?.toUpperCase() || '?'}
+              </div>
+              <div style={{ overflow: 'hidden', flex: 1 }}>
+                <p style={{ fontSize: '0.85rem', color: 'var(--brand-50)', fontWeight: '600', margin: 0, textOverflow: 'ellipsis', whiteSpace: 'nowrap', overflow: 'hidden' }}>
+                  {user?.primaryEmailAddress?.emailAddress?.split('@')[0] || 'Convidado'}
+                </p>
+                <span className="zen-caps" style={{ color: 'var(--rs-sidebar-section)', fontSize: '0.6rem' }}>
+                  {getRoleLabel()}
+                </span>
+              </div>
+            </button>
+          )}
+          {collapsed && (
+            <button
+              type="button"
+              onClick={() => openUserProfile()}
+              style={{
+                display: 'flex',
+                border: 'none',
+                background: 'none',
+                justifyContent: 'center',
+                marginBottom: '16px',
+                cursor: 'pointer',
+              }}
+              title="Gerir conta"
+            >
+              <div style={{ 
+                width: '36px', 
+                height: '36px', 
+                borderRadius: '4px', 
+                backgroundColor: 'var(--brand-800)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: '#ffffff',
+                fontWeight: '700',
+              }}>
+                {user?.primaryEmailAddress?.emailAddress?.[0]?.toUpperCase() || '?'}
+              </div>
+            </button>
+          )}
+
+          <button
+            type="button"
+            onClick={() => signOut()}
+            title="Terminar sessão"
+            style={{
+              width: '100%',
+              background: 'none',
+              border: '1px solid rgba(255,255,255,0.08)',
+              color: 'rgba(251,244,231,0.5)',
+              cursor: 'pointer',
+              padding: collapsed ? '8px' : '8px 12px',
+              borderRadius: '4px',
+              fontSize: '0.78rem',
+              fontWeight: '500',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '6px',
+              transition: 'all 0.2s ease',
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.color = 'var(--brand-50)'
+              e.currentTarget.style.borderColor = 'rgba(255,255,255,0.15)'
+              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.04)'
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.color = 'rgba(251,244,231,0.5)'
+              e.currentTarget.style.borderColor = 'rgba(255,255,255,0.08)'
+              e.currentTarget.style.backgroundColor = 'transparent'
+            }}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+              <polyline points="16 17 21 12 16 7" />
+              <line x1="21" y1="12" x2="9" y2="12" />
+            </svg>
+            {!collapsed && 'Terminar sessão'}
+          </button>
+        </div>
+      </aside>
+
+      {/* --- MAIN CONTENT --- */}
+      <main style={{
+        flex: 1,
+        padding: isTeacher ? '24px 16px' : '48px',
+        overflowY: 'auto',
+        maxWidth: isTeacher ? '100%' : '1400px',
+        margin: '0 auto',
+        width: '100%',
+      }}>
+        {accessDeniedMessage && (
+          <div role="alert" className="zen-toast zen-toast-warning" style={{ position: 'relative', marginBottom: '32px', animation: 'none' }}>
+             {accessDeniedMessage}
+          </div>
+        )}
+        <Outlet />
+      </main>
+    </div>
+  )
+}
+
+const sectionLabelStyle = {
+  fontSize: '0.7rem',
+  color: 'var(--rs-sidebar-section)',
+  letterSpacing: '0.1em',
+  marginTop: '24px',
+  marginBottom: '8px',
+  paddingLeft: '16px',
+}
+
+export default DefaultLayout

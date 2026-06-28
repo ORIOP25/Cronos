@@ -43,7 +43,8 @@ describe('Onboarding', () => {
       expect(screen.getByText('Escola Onboard')).toBeInTheDocument()
     })
     expect(screen.getByText('Ano Letivo')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /guardar e começar/i })).toBeInTheDocument()
+    expect(screen.queryByLabelText(/fim previsto/i)).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /guardar e come.ar/i })).toBeInTheDocument()
   })
 
   it('calls status API on mount', async () => {
@@ -75,21 +76,19 @@ describe('Onboarding', () => {
     renderOnboarding()
 
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: /guardar e começar/i })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /guardar e come.ar/i })).toBeInTheDocument()
     })
 
-    fireEvent.change(screen.getByLabelText(/data de início/i), { target: { value: '2026-09-15' } })
-    fireEvent.change(screen.getByLabelText(/fim previsto/i), { target: { value: '2027-06-30' } })
-    fireEvent.change(screen.getByLabelText(/fim máximo/i), { target: { value: '2027-07-31' } })
-    fireEvent.change(screen.getByLabelText(/início do almoço/i), { target: { value: '12:00' } })
-    fireEvent.change(screen.getByLabelText(/fim do almoço/i), { target: { value: '13:30' } })
-    fireEvent.change(screen.getByLabelText(/duração mínima/i), { target: { value: '45' } })
-    fireEvent.click(screen.getByRole('button', { name: /guardar e começar/i }))
+    fireEvent.change(screen.getByLabelText(/data de in.cio/i), { target: { value: '2026-09-15' } })
+    fireEvent.change(screen.getByLabelText(/fim m.ximo/i), { target: { value: '2027-07-31' } })
+    fireEvent.change(screen.getByLabelText(/in.cio do almo.o/i), { target: { value: '12:00' } })
+    fireEvent.change(screen.getByLabelText(/fim do almo.o/i), { target: { value: '13:30' } })
+    fireEvent.change(screen.getByLabelText(/dura..o m.nima/i), { target: { value: '45' } })
+    fireEvent.click(screen.getByRole('button', { name: /guardar e come.ar/i }))
 
     await waitFor(() => {
       expect(apiClient.post).toHaveBeenCalledWith('/onboarding', {
         school_start_date: '2026-09-15',
-        school_target_end_date: '2027-06-30',
         school_hard_end_date: '2027-07-31',
         lunch_start: '12:00',
         lunch_end: '13:30',

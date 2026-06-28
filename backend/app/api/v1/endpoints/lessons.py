@@ -32,5 +32,6 @@ async def create_lesson(
     return await schedule_service.create_lesson(
         db, 
         lesson, 
-        organization_id=current_user.organization_id
+        organization_id=current_user.organization_id,
+        changed_by_user_id=current_user.id,
     )

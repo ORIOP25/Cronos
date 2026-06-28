@@ -1,7 +1,7 @@
 """Constantes e utilitários partilhados de gestão de tasks do solver.
 
 Este módulo centraliza valores e funções simples que antes estavam
-duplicados em `solver_tasks.py` e `app/api/v1/endpoints/schedule.py`,
+duplicados entre o worker e os endpoints do scheduler,
 eliminando o risco de dessincronização entre os dois.
 """
 
@@ -46,7 +46,7 @@ def resolve_repair_window_days(org_settings) -> int:
     value = org_settings.repair_stability_window_days
     if value is None:
         return DEFAULT_REPAIR_WINDOW_DAYS
-    return max(1, int(value))
+    return max(0, int(value))
 
 
 def task_cancel_key(task_id: str) -> str:

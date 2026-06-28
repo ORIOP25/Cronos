@@ -1,0 +1,240 @@
+﻿diff --git a/backend/app/api/v1/endpoints/schedule.py b/backend/app/api/v1/endpoints/schedule.py
+index af28c2b..08e4660 100644
+--- a/backend/app/api/v1/endpoints/schedule.py
++++ b/backend/app/api/v1/endpoints/schedule.py
+@@ -6,7 +6,7 @@ from fastapi.encoders import jsonable_encoder
+ from sqlalchemy.ext.asyncio import AsyncSession
+ from sqlalchemy import desc, func, select as sa_select
+ from celery.result import AsyncResult
+-from typing import Annotated, List, Annotated
++from typing import Annotated, List
+ import json
+ import redis
+ import structlog
+@@ -17,7 +17,18 @@ from app.services.preflight_service import (
+     _preflight_check,
+     _resolve_preflight_hard_end_date,
+ )
+-from app.solver_tasks import generate_schedule_task
++from app.services.scheduler_generation_service import (
++    GenerationConfigurationError,
++    GenerationSelectionError,
++    SchedulerGenerationService,
++)
++from app.services.scheduler_state_service import SchedulerStateError
++from app.services.scheduler_job_service import (
++    SchedulerJobError,
++    SchedulerJobNotFoundError,
++    SchedulerJobService,
++)
++from app.scheduler_worker import run_schedule_generation_job_task
+ from app.config import settings
+ from app.core.ratelimit import limiter
+ from app.core.task_keys import (
+@@ -124,7 +135,10 @@ async def create_constraint(
+     current_user: Annotated[models.User, Depends(deps.get_current_user)]
+ ):
+     # Garante que usamos o organization_id do utilizador logado
+-    return await schedule_service.create_constraint(db, item, current_user.organization_id)
++    return await schedule_service.create_constraint(
++        db, item, current_user.organization_id,
++        changed_by_user_id=current_user.id,
++    )
+ 
+ @router.get("/constraints/", response_model=List[schemas.ConstraintRead])
+ async def read_constraints(
+@@ -139,7 +153,10 @@ async def delete_constraint(
+     db: Annotated[AsyncSession, Depends(deps.get_db)],
+     current_user: Annotated[models.User, Depends(deps.get_current_user)]
+ ):
+-    success = await schedule_service.delete_constraint(db, constraint_id, current_user.organization_id)
++    success = await schedule_service.delete_constraint(
++        db, constraint_id, current_user.organization_id,
++        changed_by_user_id=current_user.id,
++    )
+     if not success:
+         raise HTTPException(status_code=404, detail="Regra n├úo encontrada")
+     return {"ok": True}
+@@ -165,7 +182,50 @@ async def trigger_generation(
+     """Valida pr├®-condi├º├Áes e inicia a gera├º├úo de hor├írio em background."""
+     organization_id = current_user.organization_id
+ 
+-    preflight_errors, preflight_summary = await _preflight_check(db, organization_id, payload.mode)
++    try:
++        selection = await SchedulerGenerationService(db).select_strategy(
++            organization_id,
++            replace_pending_draft=payload.replace_pending_draft,
++        )
++    except GenerationConfigurationError as exc:
++        preflight_errors, preflight_summary = await _preflight_check(
++            db,
++            organization_id,
++        )
++        raise HTTPException(
++            status_code=400,
++            detail={
++                "error": "preflight_failed",
++                "problems": preflight_errors or [str(exc)],
++                "preflight": jsonable_encoder(preflight_summary),
++            },
++        ) from exc
++    except GenerationSelectionError as exc:
++        raise HTTPException(
++            status_code=409,
++            detail={
++                "error": exc.code,
++                "message": str(exc),
++                "pending_draft_id": exc.pending_draft_id,
++            },
++        ) from exc
++    except SchedulerStateError as exc:
++        raise HTTPException(
++            status_code=409,
++            detail={"error": "scheduler_state_invalid", "message": str(exc)},
++        ) from exc
++
++    internal_mode = (
++        "repair"
++        if selection.strategy == models.ScheduleGenerationStrategy.ADAPTIVE_REPAIR
++        else "full"
++    )
++    preflight_errors, preflight_summary = await _preflight_check(
++        db,
++        organization_id,
++        internal_mode,
++        replace_pending_draft=payload.replace_pending_draft,
++    )
+     encoded_preflight = jsonable_encoder(preflight_summary)
+     if preflight_errors:
+         raise HTTPException(
+@@ -179,21 +239,62 @@ async def trigger_generation(
+ 
+     solver_version = _resolve_solver_engine_version()
+ 
+-    task = generate_schedule_task.delay(organization_id, payload.mode)
++    jobs = SchedulerJobService(db)
++    try:
++        handle = await jobs.create_or_get_job(
++            selection,
++            requested_by_user_id=current_user.id,
++            idempotency_key=payload.idempotency_key,
++        )
++        await db.commit()
++    except SchedulerJobError as exc:
++        await db.rollback()
++        raise HTTPException(
++            status_code=409,
++            detail={"error": exc.code, "message": str(exc)},
++        ) from exc
++
++    task_id = jobs.worker_task_id(handle.job.id)
++    if handle.created:
++        try:
++            run_schedule_generation_job_task.apply_async(
++                args=[handle.job.id],
++                task_id=task_id,
++            )
++        except Exception as dispatch_error:
++            await jobs.mark_dispatch_failed(
++                organization_id,
++                handle.job.id,
++                f"Could not dispatch generation job: {dispatch_error}",
++            )
++            await db.commit()
++            raise HTTPException(
++                status_code=503,
++                detail={
++                    "error": "generation_dispatch_failed",
++                    "message": "Generation could not be queued.",
++                    "job_id": handle.job.id,
++                },
++            ) from dispatch_error
+     try:
+         r = _get_redis_client()
+-        r.setex(_task_org_key(task.id), TASK_KEY_TTL_SECONDS, str(organization_id))
+-        r.setex(_active_task_by_org_key(organization_id), TASK_KEY_TTL_SECONDS, task.id)
++        r.setex(_task_org_key(task_id), TASK_KEY_TTL_SECONDS, str(organization_id))
++        r.setex(_active_task_by_org_key(organization_id), TASK_KEY_TTL_SECONDS, task_id)
+     except Exception as redis_err:
+         logger.warning(
+             "Redis indispon├¡vel ao registar task",
+-            task_id=task.id,
++            task_id=task_id,
+             error=str(redis_err),
+         )
+     return {
+-        "task_id": task.id,
++        "job_id": handle.job.id,
++        "task_id": task_id,
+         "status": "Processing started",
+         "solver_version": solver_version,
++        "strategy": selection.strategy.value,
++        "trigger_type": selection.trigger_type.value,
++        "selection_reason": selection.reason,
++        "replaces_pending_draft": selection.replaces_pending_draft,
+         "preflight": encoded_preflight,
+     }
+ 
+@@ -252,9 +353,45 @@ async def get_status(
+ async def cancel_generation(
+     request: Request,
+     task_id: str,
++    db: Annotated[AsyncSession, Depends(deps.get_db)],
+     current_user: Annotated[models.User, Depends(deps.get_current_active_admin)],
+ ):
+     """Cancela uma gera├º├úo em curso sem deixar resultados parciais persistidos."""
++    if task_id.startswith("scheduler-job-"):
++        try:
++            job_id = int(task_id.removeprefix("scheduler-job-"))
++        except ValueError as exc:
++            raise HTTPException(status_code=404, detail="Task n├úo encontrada") from exc
++        try:
++            job = await SchedulerJobService(db).request_cancellation(
++                current_user.organization_id,
++                job_id,
++            )
++            await db.commit()
++        except SchedulerJobNotFoundError as exc:
++            await db.rollback()
++            raise HTTPException(status_code=404, detail="Task n├úo encontrada") from exc
++        if job.job_status != models.ScheduleGenerationJobStatus.CANCEL_REQUESTED:
++            return {
++                "task_id": task_id,
++                "job_id": job.id,
++                "status": "Already finished",
++                "current_status": job.job_status.value,
++            }
++        try:
++            _get_redis_client().setex(
++                _task_cancel_key(task_id),
++                TASK_KEY_TTL_SECONDS,
++                "1",
++            )
++        except Exception:
++            pass
++        return {
++            "task_id": task_id,
++            "job_id": job.id,
++            "status": "Cancel requested",
++        }
++
+     r = _validate_task_ownership(task_id, current_user.organization_id)
+ 
+     task_result = AsyncResult(task_id)
+@@ -373,7 +510,7 @@ async def list_drafts(
+     db: Annotated[AsyncSession, Depends(deps.get_db)],
+     current_user: Annotated[models.User, Depends(deps.get_current_active_admin)],
+ ):
+-    """Retorna todos os rascunhos (mode=repair) pendentes de aprova├º├úo."""
++    """Retorna todos os rascunhos pendentes de aprova├º├úo."""
+ 
+     def _run(sync_db):
+         from app.services import schedule_service as svc
+@@ -512,7 +649,6 @@ def _resolve_teacher_horizon_payload(
+ 
+         start_reference = (
+             org_settings.school_start_date
+-            or org_settings.school_target_end_date
+             or hard_end_date
+         )
+         if start_reference > hard_end_date:

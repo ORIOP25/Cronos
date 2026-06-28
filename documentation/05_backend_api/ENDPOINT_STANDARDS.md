@@ -203,17 +203,19 @@ Resposta minima (`200`):
 3. Alertas `ABNORMAL_403_RATE` e `HIGH_5XX_RATE` sao calculados por endpoint dentro do tenant.
 4. Observabilidade nao substitui fonte de verdade funcional; e apenas mecanismo de sinal tecnico.
 
-## Contrato de seguranca para operacao destrutiva de horario (Addendum 2026-04-17)
+## Contrato de seguranca para reset do ano letivo
 
 ### Endpoint de reset operacional
-- rota: `DELETE /api/v1/schedule/reset`;
+- rota: `POST /api/v1/scheduler/reset-year`;
 - role: admin-only;
-- objetivo: operacao destrutiva controlada para cenarios administrativos validos.
+- payload: `{"confirmed": true}`;
+- objetivo: regressar intencionalmente o ano a `UNPUBLISHED`, limpando estado ativo, draft pendente e triggers de reparacao.
 
 Semantica de resposta:
-- `200`: dados operacionais de horario removidos no tenant autenticado;
+- `200`: estado do ano reiniciado no tenant autenticado;
 - `401`: credenciais invalidas/ausentes;
 - `403`: role sem permissao para operacao destrutiva.
+- `409`: confirmacao ausente ou estado incompativel.
 
 Regras de seguranca obrigatorias:
 1. endpoint usa gate admin-only com default deny para qualquer role nao admin.
@@ -383,79 +385,18 @@ Endpoints alvo:
 7. `GET /api/v1/scheduler/drafts/{draft_id}/diff`
 8. `POST /api/v1/scheduler/drafts/{draft_id}/approve`
 9. `POST /api/v1/scheduler/drafts/{draft_id}/reject`
-10. `POST /api/v1/scheduler/drafts/{draft_id}/regenerate`
-11. `POST /api/v1/scheduler/reset-year`
+10. `POST /api/v1/scheduler/reset-year`
 
-## Contrato operacional de geracao assincrona e cancelamento (Alpha V1 - Ponto 14)
+## Contrato operacional de geracao assincrona e cancelamento
 
-### What mudou
-- geracao passou a ter contrato explicito de continuidade assincrona por task;
-- status da task passou a expor sinal de cancelamento solicitado;
-- novo endpoint admin para cancelar geracao em curso;
-- ownership da task e validado por tenant antes de status/cancel;
-- contrato de persistencia reforca all-or-nothing (sem gravacao parcial em cancelamento/erro).
-
-### Why mudou
-- evitar perda de controlo operacional quando o utilizador navega para outra pagina;
-- permitir cancelamento explicito com seguranca multi-tenant;
-- garantir estabilidade de dados: ou publica horario completo, ou nao publica nada.
-
-### Endpoints do fluxo
-1. `POST /api/v1/schedule/generate`
-2. `GET /api/v1/schedule/status/{task_id}`
-3. `POST /api/v1/schedule/cancel/{task_id}`
-
-### Regras de autorizacao e ownership
-- `POST /schedule/generate`: admin-only.
-- `POST /schedule/cancel/{task_id}`: admin-only.
-- `GET /schedule/status/{task_id}`: utilizador autenticado da mesma organizacao da task.
-- validacao de ownership obrigatoria por mapeamento `task_id -> organization_id`.
-- task de outra organizacao deve falhar com `403`.
-
-### Semantica de status
-- `GET /schedule/status/{task_id}` retorna:
-	- `task_id`, `status`, `result`, `detail`, `phase`, `progress`, `cancel_requested`.
-- quando `result.status=Success`, o backend inclui `remaining_summary` para transparencia operacional:
-	- `raw_remaining_hours`;
-	- `reconciled_remaining_hours`;
-	- `committed_credited_hours`;
-	- `post_expand_remaining_hours`.
-- quando `solver_version=v2`, o backend inclui tambem `candidate_pruning` no resultado da task:
-	- `candidates_before`;
-	- `candidates_after`;
-	- `removed_total`;
-	- `removed_ratio`;
-	- `removed_by_reason`.
-- quando status e terminal (`SUCCESS`, `FAILURE`, `REVOKED`), o backend limpa estado temporario de task ativa por organizacao.
-- em `REVOKED` sem detalhe tecnico, backend devolve detalhe operacional explicito de cancelamento.
-
-### Semantica de cancelamento
-- `POST /schedule/cancel/{task_id}`:
-	- marca flag cooperativa de cancelamento para a task;
-	- tenta revoke imediato no worker para reduzir latencia;
-	- se task ja terminou, devolve `Already finished` sem alterar estado historico.
-
-### Matriz de respostas esperadas
-- `POST /schedule/cancel/{task_id}`:
-	- `200`: pedido de cancelamento aceite (`Cancel requested`) ou task ja terminal (`Already finished`);
-	- `403`: task existe mas pertence a outro tenant;
-	- `404`: task nao encontrada no mapeamento de ownership;
-	- `503`: camada de validacao de ownership indisponivel.
-
-### Garantia transacional (all-or-nothing)
-- em modo `full`: limpeza de janela futura + escrita do novo horario + atualizacao de `projected_end_date` no mesmo commit.
-- em modo `repair`: escrita de draft apenas no commit final.
-- em erro/cancelamento durante o fluxo: rollback total da transacao em curso.
-- historico executado de ocorrencias nao e reescrito para "corrigir" metricas.
-
-### 4 pilares (verificacao)
-- Otimizacao: cancelamento reduz consumo inutil de CPU em geracoes sem interesse operacional.
-- Estabilidade: rollback evita estados parciais e corrupcao funcional.
-- Escalabilidade: tracking de task por tenant permite monitorizacao consistente em execucao concorrente.
-- Seguranca: ownership por organizacao bloqueia acesso cruzado a status/cancel.
-
-### Itens ainda a definir
-- politica final de retencao/TTL das chaves operacionais de task por tenant (valor atual tecnico existe, politica de governance ainda "a definir").
+- `POST /api/v1/scheduler/generate` e admin-only e devolve `job_id`, estrategia interna e trigger.
+- `GET /api/v1/scheduler/jobs/{job_id}` permite polling autenticado, sempre limitado ao tenant.
+- `POST /api/v1/scheduler/jobs/{job_id}/cancel` e admin-only e solicita cancelamento cooperativo.
+- `GET /api/v1/scheduler/status` devolve o estado agregado do ano, job ativo e draft pendente.
+- IDs de jobs sao inteiros persistidos; nao existe contrato publico baseado em task IDs Redis.
+- jobs terminais usam `SUCCEEDED`, `FAILED`, `CANCELED` ou `NO_VALID_OUTPUT` e preservam diagnostico.
+- erro, timeout ou cancelamento nao cria draft parcial e nao substitui o draft pendente anterior.
+- ownership incorreto e recurso inexistente usam a resposta tenant-safe definida pelo endpoint.
 
 ## Contrato operacional API e transacao (Alpha V1 - Passo 4)
 

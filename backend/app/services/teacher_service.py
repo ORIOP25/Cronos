@@ -7,8 +7,43 @@ from sqlalchemy import select, delete, insert
 from app import models, schemas
 from app.models import Availability, Teacher
 from app.schemas import AvailabilitySelfCreate
+from app.services.scheduler_state_service import record_scheduler_change
 
 logger = structlog.get_logger(__name__)
+
+
+def _teacher_capacity_snapshot(subject_ids) -> dict:
+    return {"subject_ids": sorted(int(subject_id) for subject_id in subject_ids)}
+
+
+def _availability_snapshot(rows) -> list[dict]:
+    return sorted(
+        (
+            {"timeslot_id": int(row[0]), "score": int(row[1])}
+            for row in rows
+        ),
+        key=lambda item: item["timeslot_id"],
+    )
+
+
+async def _teacher_is_scheduled(
+    db: AsyncSession, organization_id: int, teacher_id: int
+) -> bool:
+    lesson_id = await db.scalar(
+        select(models.Lesson.id).where(
+            models.Lesson.organization_id == organization_id,
+            models.Lesson.teacher_id == teacher_id,
+        ).limit(1)
+    )
+    if lesson_id is not None:
+        return True
+    assignment_id = await db.scalar(
+        select(models.ClassSubjectLink.id).where(
+            models.ClassSubjectLink.organization_id == organization_id,
+            models.ClassSubjectLink.teacher_id == teacher_id,
+        ).limit(1)
+    )
+    return assignment_id is not None
 
 
 # ==========================================
@@ -51,7 +86,12 @@ async def get_teachers_by_org(
         
     return final_list
 
-async def create_teacher(db: AsyncSession, teacher_in: schemas.TeacherCreate, organization_id: int):
+async def create_teacher(
+    db: AsyncSession,
+    teacher_in: schemas.TeacherCreate,
+    organization_id: int,
+    changed_by_user_id: int | None = None,
+):
     # 1. Separar dados: O que é do Professor vs O que é da Relação
     # Retiramos os IDs das disciplinas para uma lista à parte
     subject_ids = teacher_in.subject_ids
@@ -113,6 +153,17 @@ async def create_teacher(db: AsyncSession, teacher_in: schemas.TeacherCreate, or
             db.add(new_user)
 
         await db.flush()
+        await record_scheduler_change(
+            db,
+            organization_id,
+            entity_type="TEACHER_RESOURCE",
+            entity_id=db_teacher.id,
+            operation=models.SchedulerStateChangeOperation.CREATE,
+            before=None,
+            after=_teacher_capacity_snapshot(subject.id for subject in subjects_objects),
+            changed_by_user_id=changed_by_user_id,
+            active_resource=False,
+        )
 
         # 6. Enviar convite Clerk se a org tiver clerk_org_id
         if teacher_in.create_user_account and teacher_in.email:
@@ -153,7 +204,8 @@ async def get_teacher_with_subjects(db: AsyncSession, teacher_id: int, organizat
 async def delete_teacher(
     db: AsyncSession, 
     teacher_id: int,
-    organization_id: int
+    organization_id: int,
+    changed_by_user_id: int | None = None,
 ) -> str:
     """
     Remove um professor. 
@@ -165,7 +217,7 @@ async def delete_teacher(
     query = select(models.Teacher).where(
         models.Teacher.id == teacher_id,
         models.Teacher.organization_id == organization_id
-    )
+    ).options(selectinload(models.Teacher.subjects))
     result = await db.execute(query)
     teacher = result.scalars().first()
     
@@ -195,7 +247,20 @@ async def delete_teacher(
         await db.delete(user) # Apaga o login primeiro
 
     # 4. Apagar o Professor
+    before = _teacher_capacity_snapshot(subject.id for subject in teacher.subjects)
+    active_resource = await _teacher_is_scheduled(db, organization_id, teacher_id)
     await db.delete(teacher)
+    await record_scheduler_change(
+        db,
+        organization_id,
+        entity_type="TEACHER_RESOURCE",
+        entity_id=teacher.id,
+        operation=models.SchedulerStateChangeOperation.DELETE,
+        before=before,
+        after=None,
+        changed_by_user_id=changed_by_user_id,
+        active_resource=active_resource,
+    )
     await db.commit()
     return "SUCCESS"
 
@@ -203,7 +268,8 @@ async def update_teacher(
     db: AsyncSession, 
     teacher_id: int, 
     teacher_in: schemas.TeacherUpdate,
-    organization_id: int
+    organization_id: int,
+    changed_by_user_id: int | None = None,
 ):
     """
     Atualiza um professor. Permite:
@@ -221,6 +287,8 @@ async def update_teacher(
     
     if not teacher:
         return None
+    before = _teacher_capacity_snapshot(subject.id for subject in teacher.subjects)
+    active_resource = await _teacher_is_scheduled(db, organization_id, teacher_id)
 
     # 2. Preparar dados (Excluir email e create_user_account porque têm lógica especial)
     update_data = teacher_in.model_dump(
@@ -299,6 +367,22 @@ async def update_teacher(
 
     # 6. Gravar tudo na BD
     db.add(teacher)
+    next_subject_ids = (
+        teacher_in.subject_ids
+        if teacher_in.subject_ids is not None
+        else [subject.id for subject in teacher.subjects]
+    )
+    await record_scheduler_change(
+        db,
+        organization_id,
+        entity_type="TEACHER_RESOURCE",
+        entity_id=teacher.id,
+        operation=models.SchedulerStateChangeOperation.UPDATE,
+        before=before,
+        after=_teacher_capacity_snapshot(next_subject_ids),
+        changed_by_user_id=changed_by_user_id,
+        active_resource=active_resource,
+    )
     await db.commit()
     db.expire(teacher, ["subjects"])
     
@@ -443,7 +527,8 @@ async def set_teacher_availability(
     db: AsyncSession, 
     teacher_id: int, 
     availabilities: list[AvailabilitySelfCreate],
-    organization_id: int
+    organization_id: int,
+    changed_by_user_id: int | None = None,
 ):
     """
     Define as disponibilidades de um professor.
@@ -460,6 +545,15 @@ async def set_teacher_availability(
 
     if not db_teacher:
         return "NOT_FOUND"
+    active_resource = await _teacher_is_scheduled(db, organization_id, teacher_id)
+
+    existing_rows = await db.execute(
+        select(Availability.timeslot_id, Availability.score).where(
+            Availability.organization_id == organization_id,
+            Availability.teacher_id == teacher_id,
+        )
+    )
+    before = _availability_snapshot(existing_rows.all())
 
     # 2. Validar payload antes de qualquer mutação (evita alterações parciais em erro)
     timeslot_ids = [item.timeslot_id for item in availabilities]
@@ -498,6 +592,20 @@ async def set_teacher_availability(
         ]
 
         db.add_all(new_records)
+        await record_scheduler_change(
+            db,
+            organization_id,
+            entity_type="TEACHER_AVAILABILITY",
+            entity_id=teacher_id,
+            operation=models.SchedulerStateChangeOperation.BULK_IMPORT,
+            before=before,
+            after=_availability_snapshot(
+                (item.timeslot_id, item.score.value) for item in availabilities
+            ),
+            changed_by_user_id=changed_by_user_id,
+            metadata={"item_count": len(new_records)},
+            active_resource=active_resource,
+        )
         await db.commit()
         return {"status": "success", "count": len(new_records)}
     except Exception:

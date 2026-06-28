@@ -4,9 +4,9 @@ from datetime import date, timedelta
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy.future import select
-from sqlalchemy import and_, delete, desc
+from sqlalchemy import and_
 from app import models, schemas
-from app.core.task_keys import DEFAULT_REPAIR_WINDOW_DAYS
+from app.services.scheduler_state_service import record_scheduler_change
 
 # ==========================================
 #  ASYNC (API / FRONTEND)
@@ -17,10 +17,26 @@ async def get_timeslots_by_org(db: AsyncSession, organization_id: int):
     result = await db.execute(select(models.Timeslot).where(models.Timeslot.organization_id == organization_id))
     return result.scalars().all()
 
-async def create_timeslot(db: AsyncSession, item: schemas.TimeslotCreate, organization_id: int):
+async def create_timeslot(
+    db: AsyncSession,
+    item: schemas.TimeslotCreate,
+    organization_id: int,
+    changed_by_user_id: int | None = None,
+):
     # O item.model_dump() já vai ter 'start_time' como objeto time.
     db_item = models.Timeslot(**item.model_dump(), organization_id=organization_id)
     db.add(db_item)
+    await db.flush()
+    await record_scheduler_change(
+        db,
+        organization_id,
+        entity_type="TIMESLOT",
+        entity_id=db_item.id,
+        operation=models.SchedulerStateChangeOperation.CREATE,
+        before=None,
+        after=item.model_dump(),
+        changed_by_user_id=changed_by_user_id,
+    )
     await db.commit()
     await db.refresh(db_item)
     return db_item
@@ -30,7 +46,12 @@ async def get_lessons_by_org(db: AsyncSession, organization_id: int):
     result = await db.execute(select(models.Lesson).where(models.Lesson.organization_id == organization_id))
     return result.scalars().all()
 
-async def create_lesson(db: AsyncSession, item: schemas.LessonCreate, organization_id: int):
+async def create_lesson(
+    db: AsyncSession,
+    item: schemas.LessonCreate,
+    organization_id: int,
+    changed_by_user_id: int | None = None,
+):
     """
     Cria uma atribuição de professor a uma disciplina/turma.
     
@@ -117,14 +138,46 @@ async def create_lesson(db: AsyncSession, item: schemas.LessonCreate, organizati
     # 4. Criar a Lesson
     db_item = models.Lesson(**item.model_dump(), organization_id=organization_id)
     db.add(db_item)
+    await db.flush()
+    await record_scheduler_change(
+        db,
+        organization_id,
+        entity_type="TEACHER_ASSIGNMENT",
+        entity_id=db_item.id,
+        operation=models.SchedulerStateChangeOperation.CREATE,
+        before=None,
+        after={
+            "class_id": db_item.class_id,
+            "subject_id": db_item.subject_id,
+            "teacher_id": db_item.teacher_id,
+        },
+        changed_by_user_id=changed_by_user_id,
+        active_resource=not db_class.is_archived,
+    )
     await db.commit()
     await db.refresh(db_item)
     return db_item
 
 # --- CONSTRAINTS ---
-async def create_constraint(db: AsyncSession, item: schemas.ConstraintCreate, organization_id: int):
+async def create_constraint(
+    db: AsyncSession,
+    item: schemas.ConstraintCreate,
+    organization_id: int,
+    changed_by_user_id: int | None = None,
+):
     db_item = models.Constraint(**item.dict(), organization_id=organization_id)
     db.add(db_item)
+    await db.flush()
+    await record_scheduler_change(
+        db,
+        organization_id,
+        entity_type="SCHEDULER_CONSTRAINT",
+        entity_id=db_item.id,
+        operation=models.SchedulerStateChangeOperation.CREATE,
+        before=None,
+        after={"rule_type": db_item.rule_type, "rule_payload": db_item.rule_payload},
+        changed_by_user_id=changed_by_user_id,
+    )
     await db.commit()
     await db.refresh(db_item)
     return db_item
@@ -134,7 +187,12 @@ async def get_constraints_by_org(db: AsyncSession, organization_id: int):
     result = await db.execute(select(models.Constraint).where(models.Constraint.organization_id == organization_id))
     return result.scalars().all()
 
-async def delete_constraint(db: AsyncSession, constraint_id: int, organization_id: int):
+async def delete_constraint(
+    db: AsyncSession,
+    constraint_id: int,
+    organization_id: int,
+    changed_by_user_id: int | None = None,
+):
     """Apaga uma regra de horário."""
     query = select(models.Constraint).where(
         models.Constraint.id == constraint_id,
@@ -144,44 +202,21 @@ async def delete_constraint(db: AsyncSession, constraint_id: int, organization_i
     item = result.scalars().first()
     
     if item:
+        before = {"rule_type": item.rule_type, "rule_payload": item.rule_payload}
         await db.delete(item)
+        await record_scheduler_change(
+            db,
+            organization_id,
+            entity_type="SCHEDULER_CONSTRAINT",
+            entity_id=item.id,
+            operation=models.SchedulerStateChangeOperation.DELETE,
+            before=before,
+            after=None,
+            changed_by_user_id=changed_by_user_id,
+        )
         await db.commit()
         return True
     return False
-
-# --- OUTPUT (RESULTADOS) ---
-async def get_latest_schedule_by_org(db: AsyncSession, organization_id: int):
-    """Vai buscar o horário gerado mais recente."""
-    
-    # 1. Descobrir qual é o último generation_id
-    gen_query = select(models.ScheduleOutput.generation_id)\
-        .where(models.ScheduleOutput.organization_id == organization_id)\
-        .order_by(desc(models.ScheduleOutput.id))\
-        .limit(1)
-    
-    gen_res = await db.execute(gen_query)
-    latest_gen_id = gen_res.scalars().first()
-    
-    if not latest_gen_id:
-        return []
-        
-    # 2. Buscar tudo desse ID
-    lines_query = select(models.ScheduleOutput).where(
-        models.ScheduleOutput.organization_id == organization_id,
-        models.ScheduleOutput.generation_id == latest_gen_id
-    )
-    lines_res = await db.execute(lines_query)
-    return lines_res.scalars().all()
-
-# --- LIMPEZA GERAL (Reset) ---
-async def delete_all_schedule_data(db: AsyncSession, organization_id: int):
-    """Apaga Outputs, Constraints, Aulas e Slots de uma organização."""
-    # Ordem importa por causa das Foreign Keys
-    await db.execute(delete(models.ScheduleOutput).where(models.ScheduleOutput.organization_id == organization_id))
-    await db.execute(delete(models.Constraint).where(models.Constraint.organization_id == organization_id))
-    await db.execute(delete(models.Lesson).where(models.Lesson.organization_id == organization_id))
-    await db.execute(delete(models.Timeslot).where(models.Timeslot.organization_id == organization_id))
-    await db.commit()
 
 # ==========================================
 #  SYNC (SOLVER / CELERY)
@@ -226,7 +261,7 @@ def clear_schedule_sync(db: Session, organization_id: int):
     db.query(models.ScheduleOutput)\
       .filter(models.ScheduleOutput.organization_id == organization_id)\
       .delete()
-    # Não fazemos commit aqui porque o solver_tasks.py faz commit no final de tudo.
+    # The caller owns the generation transaction.
 
 
 # ==========================================
@@ -634,128 +669,6 @@ def create_schedule_output_with_date_sync(
     )
 
 
-# ---------------------------------------------------------------------------
-# Funções de gestão de rascunhos (Sprint 3)
-# ---------------------------------------------------------------------------
-
-def get_active_future_pattern_sync(db: Session, organization_id: int) -> dict:
-    """Retorna o padrão semanal ativo como dict {(lesson_id, ts_id): 1}.
-
-    Usado pelo solver em modo 'repair' para minimizar perturbações.
-    Lê apenas ScheduleOutput futuros (date > hoje) não-draft.
-    """
-    today = date.today()
-    rows = (
-        db.query(models.ScheduleOutput.lesson_id, models.ScheduleOutput.timeslot_id)
-        .filter(
-            models.ScheduleOutput.organization_id == organization_id,
-            models.ScheduleOutput.is_draft.is_(False),
-            models.ScheduleOutput.date > today,
-        )
-        .distinct()
-        .all()
-    )
-    return {(r.lesson_id, r.timeslot_id): 1 for r in rows}
-
-
-def list_draft_gen_ids_sync(db: Session, organization_id: int) -> list[dict]:
-    """Lista rascunhos pendentes de aprovação para esta organização.
-
-    Retorna um registo por generation_id com contagem, intervalo de datas.
-    """
-    from sqlalchemy import func as sa_func
-
-    rows = (
-        db.query(
-            models.ScheduleOutput.generation_id,
-            sa_func.count(models.ScheduleOutput.id).label("count"),
-            sa_func.min(models.ScheduleOutput.date).label("earliest_date"),
-            sa_func.max(models.ScheduleOutput.date).label("latest_date"),
-        )
-        .filter(
-            models.ScheduleOutput.organization_id == organization_id,
-            models.ScheduleOutput.is_draft.is_(True),
-        )
-        .group_by(models.ScheduleOutput.generation_id)
-        .all()
-    )
-    return [
-        {
-            "generation_id": r.generation_id,
-            "count": r.count,
-            "earliest_date": r.earliest_date,
-            "latest_date": r.latest_date,
-        }
-        for r in rows
-    ]
-
-
-def _resolve_repair_window_days_sync(db: Session, organization_id: int) -> int:
-    row = (
-        db.query(models.OrganizationSettings.repair_stability_window_days)
-        .filter(models.OrganizationSettings.organization_id == organization_id)
-        .order_by(models.OrganizationSettings.id.desc())
-        .first()
-    )
-    if row is None or row[0] is None:
-        return DEFAULT_REPAIR_WINDOW_DAYS
-    return max(1, int(row[0]))
-
-
-def approve_draft_sync(db: Session, organization_id: int, gen_id: str) -> int:
-    """Aprova um rascunho: elimina o horário ativo futuro e promove o rascunho.
-
-    Retorna o número de blocos promovidos.
-    """
-    today = date.today()
-    repair_window_days = _resolve_repair_window_days_sync(db, organization_id)
-    frozen_until = today + timedelta(days=repair_window_days)
-
-    # 1. Apagar horário ativo futuro
-    db.query(models.ScheduleOutput).filter(
-        models.ScheduleOutput.organization_id == organization_id,
-        models.ScheduleOutput.is_draft.is_(False),
-        (models.ScheduleOutput.date == None) | (models.ScheduleOutput.date > frozen_until),  # noqa: E711
-    ).delete(synchronize_session="fetch")
-
-    # 2. Limpar blocos de rascunho dentro da janela congelada (não podem ser ativados)
-    db.query(models.ScheduleOutput).filter(
-        models.ScheduleOutput.organization_id == organization_id,
-        models.ScheduleOutput.generation_id == gen_id,
-        models.ScheduleOutput.is_draft.is_(True),
-        (models.ScheduleOutput.date == None) | (models.ScheduleOutput.date <= frozen_until),  # noqa: E711
-    ).delete(synchronize_session="fetch")
-
-    # 3. Promover apenas rascunho fora da janela de estabilidade
-    count = (
-        db.query(models.ScheduleOutput)
-        .filter(
-            models.ScheduleOutput.organization_id == organization_id,
-            models.ScheduleOutput.generation_id == gen_id,
-            models.ScheduleOutput.is_draft.is_(True),
-            models.ScheduleOutput.date > frozen_until,
-        )
-        .update({"is_draft": False}, synchronize_session="fetch")
-    )
-    db.commit()
-    return count
-
-
-def reject_draft_sync(db: Session, organization_id: int, gen_id: str) -> int:
-    """Rejeita e elimina um rascunho. Retorna o número de registos apagados."""
-    count = (
-        db.query(models.ScheduleOutput)
-        .filter(
-            models.ScheduleOutput.organization_id == organization_id,
-            models.ScheduleOutput.generation_id == gen_id,
-            models.ScheduleOutput.is_draft.is_(True),
-        )
-        .delete(synchronize_session="fetch")
-    )
-    db.commit()
-    return count
-
-
 # ==========================================
 #  SPRINT 4 — VISUALIZAÇÃO SEMANAL
 # ==========================================
@@ -923,7 +836,6 @@ def _build_week_slot(
         "is_substituted_block": is_substituted_block,
     }
 
-
 def _build_operational_week_slot(
     block: models.OperationalScheduleBlock,
     lesson_log: models.LessonLog | None,
@@ -969,6 +881,62 @@ def _build_operational_week_slot(
     }
 
 
+def _build_active_week_slot(
+    row: tuple,
+    occurrences: dict[int, models.LessonOccurrence],
+    lesson_logs: dict[int, models.LessonLog],
+    active_modules: dict,
+    today: date,
+    timesheet_map: dict | None = None,
+) -> dict:
+    block, timeslot, subject, teacher, class_model, room = row
+    occurrence = occurrences.get(block.id)
+    lesson_log = lesson_logs.get(block.id)
+    timesheet_status, timesheet_id = ("OPEN", None)
+    if timesheet_map:
+        timesheet_status, timesheet_id = timesheet_map.get(
+            block.teacher_id, ("OPEN", None)
+        )
+
+    return {
+        "schedule_output_id": None,
+        "active_schedule_block_id": block.id,
+        "operational_block_id": None,
+        "block_source": "active",
+        "date": block.date.isoformat(),
+        "timeslot": {
+            "id": timeslot.id,
+            "day_of_week": timeslot.day_of_week,
+            "start_time": str(timeslot.start_time)[:5],
+            "end_time": str(timeslot.end_time)[:5],
+        },
+        "subject": {"id": subject.id, "name": subject.name},
+        "teacher": {"id": teacher.id, "name": teacher.name},
+        "room": {"id": room.id, "name": room.name},
+        "class_info": {"id": class_model.id, "name": class_model.name},
+        "module": active_modules.get((block.class_id, block.subject_id)),
+        "is_past": block.date < today,
+        "occurrence_status": (
+            occurrence.status.value
+            if occurrence and occurrence.status is not None
+            else None
+        ),
+        "hours_given": occurrence.hours_given if occurrence else None,
+        "occurrence_id": occurrence.id if occurrence else None,
+        "occurrence_decided_at": occurrence.decided_at if occurrence else None,
+        "can_create_occurrence": occurrence is None,
+        "can_decide_occurrence": occurrence is not None,
+        "lesson_log_id": lesson_log.id if lesson_log else None,
+        "lesson_log_status": lesson_log.status.value if lesson_log else None,
+        "lesson_log_summary": lesson_log.summary if lesson_log else None,
+        "lesson_log_notes": lesson_log.notes if lesson_log else None,
+        "lesson_log_logged_at": lesson_log.logged_at if lesson_log else None,
+        "week_timesheet_status": timesheet_status,
+        "timesheet_id": timesheet_id,
+        "is_substituted_block": False,
+    }
+
+
 def get_week_schedule_sync(
     db: Session,
     organization_id: int,
@@ -982,6 +950,39 @@ def get_week_schedule_sync(
 
     week_end = week_start + timedelta(days=6)
     today = date.today()
+
+    active_q = (
+        db.query(
+            models.ActiveScheduleBlock,
+            models.Timeslot,
+            models.Subject,
+            models.Teacher,
+            models.Class,
+            models.Room,
+        )
+        .join(models.Timeslot, models.ActiveScheduleBlock.timeslot_id == models.Timeslot.id)
+        .join(models.Subject, models.ActiveScheduleBlock.subject_id == models.Subject.id)
+        .join(models.Teacher, models.ActiveScheduleBlock.teacher_id == models.Teacher.id)
+        .join(models.Class, models.ActiveScheduleBlock.class_id == models.Class.id)
+        .join(models.Room, models.ActiveScheduleBlock.room_id == models.Room.id)
+        .filter(
+            models.ActiveScheduleBlock.organization_id == organization_id,
+            models.ActiveScheduleBlock.status == models.ActiveScheduleBlockStatus.ACTIVE,
+            models.ActiveScheduleBlock.date.between(week_start, week_end),
+            models.Timeslot.organization_id == organization_id,
+            models.Subject.organization_id == organization_id,
+            models.Teacher.organization_id == organization_id,
+            models.Class.organization_id == organization_id,
+            models.Room.organization_id == organization_id,
+        )
+    )
+    all_active_rows = active_q.all()
+    active_baseline_owns_week = bool(all_active_rows)
+    active_rows = [
+        row for row in all_active_rows
+        if (class_id is None or row[0].class_id == class_id)
+        and (teacher_id is None or row[0].teacher_id == teacher_id)
+    ]
 
     q = (
         db.query(models.ScheduleOutput)
@@ -1004,7 +1005,8 @@ def get_week_schedule_sync(
     if teacher_id is not None:
         q = q.filter(models.Lesson.teacher_id == teacher_id)
 
-    outputs = q.all()
+    # Once the new baseline owns a week, legacy rows must not be rendered beside it.
+    outputs = [] if active_baseline_owns_week else q.all()
 
     output_ids = [o.id for o in outputs]
     occ_rows = []
@@ -1023,6 +1025,27 @@ def get_week_schedule_sync(
             models.LessonLog.schedule_output_id.in_(output_ids)
         ).all()
     lesson_logs = {ll.schedule_output_id: ll for ll in llog_rows}
+
+    active_block_ids = [row[0].id for row in active_rows]
+    active_occurrence_rows = []
+    active_lesson_logs = {}
+    if active_block_ids:
+        active_occurrence_rows = db.query(models.LessonOccurrence).filter(
+            models.LessonOccurrence.organization_id == organization_id,
+            models.LessonOccurrence.active_schedule_block_id.in_(active_block_ids),
+            models.LessonOccurrence.is_active.is_(True),
+        ).all()
+        active_log_rows = db.query(models.LessonLog).filter(
+            models.LessonLog.organization_id == organization_id,
+            models.LessonLog.active_schedule_block_id.in_(active_block_ids),
+        ).all()
+        active_lesson_logs = {
+            log.active_schedule_block_id: log for log in active_log_rows
+        }
+    active_occurrences = {
+        occurrence.active_schedule_block_id: occurrence
+        for occurrence in active_occurrence_rows
+    }
 
     op_q = db.query(models.OperationalScheduleBlock).filter(
         models.OperationalScheduleBlock.organization_id == organization_id,
@@ -1053,6 +1076,7 @@ def get_week_schedule_sync(
 
     pairs = list(
         {(o.lesson.class_id, o.lesson.subject_id) for o in outputs}
+        | {(row[0].class_id, row[0].subject_id) for row in active_rows}
         | {(b.class_id, b.subject_id) for b in operational_blocks}
     )
     active_modules = _fetch_active_modules(db, pairs)
@@ -1072,6 +1096,7 @@ def get_week_schedule_sync(
 
     # WBS Fase 6: buscar timesheets dos professores para esta semana
     teacher_ids = {o.lesson.teacher_id for o in outputs if o.lesson and o.lesson.teacher_id}
+    teacher_ids.update({row[0].teacher_id for row in active_rows})
     teacher_ids.update({b.teacher_id for b in operational_blocks if b.teacher_id})
     timesheet_map: dict[int, tuple[str, int | None]] = {}
     if teacher_ids:
@@ -1093,55 +1118,19 @@ def get_week_schedule_sync(
         _build_week_slot(output, occurrences, lesson_logs, active_modules, today, timesheet_map, substituted_blocks)
         for output in outputs
     ]
+    active_slots = [
+        _build_active_week_slot(
+            row,
+            active_occurrences,
+            active_lesson_logs,
+            active_modules,
+            today,
+            timesheet_map,
+        )
+        for row in active_rows
+    ]
     operational_slots = [
         _build_operational_week_slot(block, operational_logs.get(block.id), active_modules, today, timesheet_map)
         for block in operational_blocks
     ]
-    return planned_slots + operational_slots
-
-
-def get_diff_sync(db: Session, organization_id: int, gen_id: str) -> dict:
-    """Computa o diff entre o rascunho e o horário ativo.
-
-    Retorna:
-      added   — blocos no rascunho mas não no ativo (mesmo timeslot+data)
-      removed — blocos no ativo mas não no rascunho
-      total_draft   — total de blocos no rascunho após janela frozen
-      total_active  — total de blocos ativos após janela frozen
-    """
-    today = date.today()
-    repair_window_days = _resolve_repair_window_days_sync(db, organization_id)
-    frozen_until = today + timedelta(days=repair_window_days)
-    compared_from_date = frozen_until + timedelta(days=1)
-
-    def _fetch_set(is_draft_val: bool, generation_filter=None):
-        q = db.query(
-            models.ScheduleOutput.lesson_id,
-            models.ScheduleOutput.timeslot_id,
-            models.ScheduleOutput.room_id,
-            models.ScheduleOutput.date,
-        ).filter(
-            models.ScheduleOutput.organization_id == organization_id,
-            models.ScheduleOutput.is_draft.is_(is_draft_val),
-            models.ScheduleOutput.date >= compared_from_date,
-        )
-        if generation_filter:
-            q = q.filter(models.ScheduleOutput.generation_id == generation_filter)
-        return {(r.lesson_id, r.timeslot_id, r.date) for r in q.all()}
-
-    draft_set = _fetch_set(True, gen_id)
-    active_set = _fetch_set(False)
-
-    added = len(draft_set - active_set)
-    removed = len(active_set - draft_set)
-
-    return {
-        "added": added,
-        "removed": removed,
-        "unchanged": len(draft_set & active_set),
-        "total_draft": len(draft_set),
-        "total_active": len(active_set),
-        "repair_window_days": repair_window_days,
-        "frozen_until": frozen_until,
-        "compared_from_date": compared_from_date,
-    }
+    return planned_slots + active_slots + operational_slots
