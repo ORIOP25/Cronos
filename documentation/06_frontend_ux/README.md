@@ -93,6 +93,7 @@ Todas as páginas protegidas usam `React.lazy()` + `Suspense`. Apenas Login/Regi
 - CSS: classes `.zen-link-underline` e `.zen-login-brand-panel` em `index.css`.
 
 ## Compromisso
+- Para o baseline de lancamento, a area admin visivel de staff management chama-se `Equipa`; o CRUD admin visivel de `Professores` e legado e deve ser substituido pelo fluxo `Adicionar Membro`.
 - UX consistente com autorização por role, foco operacional e estética premium de autoridade.
 - Terminologia padronizada em PT-PT (tratamento formal).
 - Zero `window.confirm()` — usar `ConfirmationModal`.

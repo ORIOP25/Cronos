@@ -71,11 +71,11 @@ O Frontend obedece a uma lógica rígida de separação por Role e consistência
   - `src/utils/` — `formatUtils.js` (datas PT-PT), `terminology.js` (textos padronizados), `subjectColors.js` (paleta de disciplinas)
   - `src/components/` — `ErrorBoundary.jsx`, `ConfirmationModal.jsx`, `SmartTable.jsx`, `GenericModalForm.jsx`, `WeekGrid.jsx`, `AvailabilityGrid.jsx`, `AnalyticsHeatmap.jsx`, `LessonLogModal.jsx`, `ReplacementModal.jsx`, `SubstitutionStep.jsx`
   - `src/components/dashboard/` — Widgets do Command Center (AlertBar, ResourceCounts, ScheduleHealthCard, ClassProgressOverview, DebtSummaryCard, QuickActions)
-  - `src/components/Forms/` — formulários CRUD (Teacher, Subject, Course, Class, Room, Timeslot)
+  - `src/components/Forms/` — formulários de entidades de domínio e, no baseline de lançamento, formulário transacional de membros em `Equipa`
   - `src/components/schedules/` — KPISidebar, DraftPanel, GenerationStatusPanel, PreflightErrorPanel
   - `src/components/timesheets/` — TeacherCard
   - `src/components/ImportForms/` — formulários de importação em massa
-  - `src/pages/` — 18 páginas (Login, Register, MarketingSite, Dashboard, Schedules, MySchedules, MyAvailability, Teachers, Subjects, Rooms, Classes, Courses, CourseDetails, ClassDetails, ClassSubjects, SchoolConfig, Timesheets, Timeslots, Occurrences, ScheduleAuditDashboard)
+  - `src/pages/` — páginas de autenticação, marketing, dashboard, horários, self-service do professor, `Equipa`, recursos pedagógicos, cursos/turmas, configuração, fecho semanal, ocorrências e auditoria.
   - `src/hooks/` — `useSchoolData.js` (todos os hooks React Query)
 - **Sidebar**: Colapsável (280px/72px) com toggle para admin e professor. Estado persistido em localStorage. Admin: experiência desktop-first. Professor: mobile-first com padding adaptativo.
 - **Terminologia**: Centralizada em `src/utils/terminology.js` (`TXT`). Padronizada para PT-PT com tratamento formal. Termos técnicos do motor (`CP-SAT`, `solver`, `worker`) traduzidos para vocabulário do domínio escolar.
@@ -91,7 +91,9 @@ O Frontend obedece a uma lógica rígida de separação por Role e consistência
 - **API Routers principais**:
   - `/dashboard`: Endpoint agregador do Command Center (alertas, saúde do horário, progresso curricular, recursos, dívidas).
   - `/schedule`, `/occurrences`, `/substitutions`: Centro nervoso da operação de ensino e do planeamento.
-  - CRUD Tradicional: `/courses`, `/classes`, `/teachers`, `/rooms`.
+  - CRUD de domínio: `/courses`, `/classes`, `/rooms` e recursos pedagógicos.
+  - Staff management: `Equipa` usa `/members` como fronteira canónica para membros, capacidades, convites Clerk e estado de acesso.
+  - Teacher self-service e domínio: endpoints `/teachers/me/...` e recursos de `teacher_id` continuam apenas para disponibilidade, horários, progresso e operação/scheduler. O CRUD admin visível em `/teachers` é legado e não pertence ao baseline de lançamento.
 
 ### 2.4. Motor de Agendamento Assíncrono (Scheduler Engine CP-SAT)
 Localizado principalmente nos workers do Celery (`app/solver_tasks.py`). É executado como background job devido ao seu elevado tempo computacional. Funciona por fases rígidas:
@@ -102,7 +104,7 @@ Localizado principalmente nos workers do Celery (`app/solver_tasks.py`). É exec
 
 ### 2.5. Modelo de Dados (PostgreSQL + SQLAlchemy)
 Inteiramente desenhado para refletir as normativas do Ensino Profissional:
-- **Entidades Físicas**: `Organization`, `User`, `Teacher`, `Course`, `Subject`, `Room`, `Class`. Associadas via tabelas cruzadas (e.g., `teacher_subject_link`).
+- **Entidades Físicas**: `Organization`, conta global, membership de organização, teacher profile, `Course`, `Subject`, `Room`, `Class`. Associadas via tabelas cruzadas quando aplicável (e.g., `teacher_subject_link`).
 - **Horário de Registo (Real vs Projetado)**: Trabalha com `Timeslot` (blocos horários) e assenta resultados nas ocorrências em `ScheduleOutput`.
 - **Eventos Dinâmicos**: `Substitution` e Occurrences, refletindo o caráter não-estático do planeamento escolar (absorvendo as necessidades de faltas/substituições pontuais).
 

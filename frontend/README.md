@@ -38,7 +38,9 @@ Esta e a versao oficial atual do site publico. A implementacao antiga foi substi
 - `/`: marketing site para utilizadores signed-out.
 - `/login`: autenticacao.
 - `/register`: registo.
-- Rotas autenticadas: dashboard, horarios, cursos, professores, salas, sumarios, progresso e configuracao.
+- Rotas autenticadas: dashboard, horarios, cursos, Equipa/membros, salas, sumarios, progresso, self-service do professor e configuracao.
+
+Nota de baseline: o lancamento substitui o CRUD admin visivel de `Professores` por `Equipa` e pela API `/members`. Endpoints/paginas de professor continuam apenas para self-service e operacao de dominio.
 
 ## Notas de manutencao
 - O marketing site usa classes `cronos-*` para evitar conflitos com a aplicacao autenticada.

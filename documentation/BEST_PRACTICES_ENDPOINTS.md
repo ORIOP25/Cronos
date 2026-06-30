@@ -299,30 +299,30 @@ async def add_security_headers(request: Request, call_next):
 
 Cada endpoint deve ter:
 ```python
-# tests/test_teachers.py
+# tests/test_members.py
 
 @pytest.mark.asyncio
-async def test_get_teachers_unauthorized(client):
-    response = client.get("/api/v1/teachers/")
+async def test_get_members_unauthorized(client):
+    response = client.get("/api/v1/members/")
     assert response.status_code == 401
 
 @pytest.mark.asyncio
-async def test_get_teachers_pagination(client, auth_header):
+async def test_get_members_pagination(client, auth_header):
     response = client.get(
-        "/api/v1/teachers/?skip=0&limit=10",
+        "/api/v1/members/?skip=0&limit=10",
         headers=auth_header
     )
     assert response.status_code == 200
     data = response.json()
-    assert "data" in data
+    assert "items" in data
     assert "total" in data
-    assert len(data["data"]) <= 10
+    assert len(data["items"]) <= 10
 
 @pytest.mark.asyncio
-async def test_create_teacher_validation(client, auth_header):
+async def test_create_member_validation(client, auth_header):
     response = client.post(
-        "/api/v1/teachers/",
-        json={"name": ""},  # Invalid
+        "/api/v1/members/",
+        json={"name": "", "email": "invalid", "capabilities": []},
         headers=auth_header
     )
     assert response.status_code == 422

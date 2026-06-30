@@ -77,11 +77,15 @@ Ficheiros principais:
 ## Planeamento de entrega
 
 - WBS oficial da Alpha V1: 01_product_strategy/WBS_ALPHA_V1_ENTREGA.md
+- Baseline fechado para Equipa/membros/Clerk: 01_product_strategy/PRD_CLERK_TEACHER_USER_CREATION.md
+- Especificacao tecnica do baseline Equipa/membros/Clerk: 01_product_strategy/TECH_SPEC_CLERK_BACKED_EQUIPA_MEMBER_MANAGEMENT.md
+- WBS de implementacao Equipa/membros/Clerk: 01_product_strategy/WBS_CLERK_BACKED_EQUIPA_MEMBER_MANAGEMENT.md
 
 ## Fonte canonica para implementacao da Alpha V1
 
 Para implementacao e validacao da Alpha V1, considerar como fonte oficial:
 - estrutura por layers em 00_governance ate 09_ops_observability;
-- WBS oficial em 01_product_strategy/WBS_ALPHA_V1_ENTREGA.md.
+- WBS oficial em 01_product_strategy/WBS_ALPHA_V1_ENTREGA.md;
+- para gestao de membros, acessos, convites Clerk e substituicao do CRUD admin de professores, o PRD, a Tech Spec e o WBS de Equipa acima sao a baseline normativa.
 
 Documentos fora desta estrutura podem existir como historico/contexto e nao substituem as decisoes fechadas da Alpha V1.
