@@ -1,11 +1,14 @@
 import asyncio
+from datetime import datetime, timezone
 import structlog
+from sqlalchemy import select
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from app import models
 from app.core.clerk import get_clerk_sdk
 from app.db.tenant import set_async_tenant_context
 from app.models import UserRole
+from app.services import member_reconciliation_service
 
 logger = structlog.get_logger(__name__)
 
@@ -87,38 +90,18 @@ async def ensure_user_exists(
             raise RuntimeError(f"Failed to load updated user: {clerk_user_id}")
         return user
 
-    helper = await db.execute(
-        text(
-            """
-            SELECT id, organization_id
-            FROM app_security.ensure_user(
-                :clerk_user_id,
-                :email,
-                :name,
-                :role,
-                :organization_id,
-                :teacher_id
-            )
-            """
-        ),
-        {
-            "clerk_user_id": clerk_user_id,
-            "email": email,
-            "name": name,
-            "role": role,
-            "organization_id": organization_id,
-            "teacher_id": teacher_id,
-        },
-    )
-    ensured = helper.mappings().first()
-    if ensured is not None:
-        await set_async_tenant_context(db, ensured["organization_id"])
-        user = await db.get(models.User, ensured["id"])
-        if user is None:
-            raise RuntimeError(f"Failed to load ensured user: {clerk_user_id}")
+    user = await db.scalar(select(models.User).where(models.User.clerk_user_id == clerk_user_id))
+    if user is not None:
+        user.clerk_profile_name = name or user.clerk_profile_name
+        user.last_clerk_sync_at = datetime.now(timezone.utc)
         return user
 
-    raise RuntimeError(f"Failed to ensure user: {clerk_user_id}")
+    logger.info(
+        "Clerk user ignored until a pending membership can be reconciled",
+        clerk_user_id=clerk_user_id,
+        organization_id=organization_id,
+    )
+    return None
 
 
 async def deactivate_user_by_clerk_id(db: AsyncSession, clerk_user_id: str) -> bool:
@@ -156,6 +139,19 @@ async def sync_user_from_clerk_api(
         email = clerk_user.email_addresses[0].email_address
 
     name = f"{clerk_user.first_name or ''} {clerk_user.last_name or ''}".strip() or None
+
+    if organization_id is not None:
+        organization = await db.get(models.Organization, organization_id)
+        if organization is None:
+            return None
+        return await member_reconciliation_service.reconcile_first_login_by_email(
+            db,
+            clerk_user_id=clerk_user_id,
+            email=email,
+            name=name,
+            organization=organization,
+            token_role=role,
+        )
 
     return await ensure_user_exists(
         db=db,

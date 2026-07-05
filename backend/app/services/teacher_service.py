@@ -92,12 +92,14 @@ async def create_teacher(
     organization_id: int,
     changed_by_user_id: int | None = None,
 ):
+    raise RuntimeError("Legacy admin teacher creation is disabled. Use member_service.create_member.")
+
     # 1. Separar dados: O que é do Professor vs O que é da Relação
     # Retiramos os IDs das disciplinas para uma lista à parte
     subject_ids = teacher_in.subject_ids
 
     # Criamos os dados para a tabela Teacher, excluindo o que não é coluna dela
-    teacher_data = teacher_in.model_dump(exclude={'subject_ids', 'create_user_account', 'email'})
+    teacher_data = teacher_in.model_dump(exclude={'subject_ids', 'email'})
 
     # 2. Criar a Instância do Professor
     db_teacher = models.Teacher(**teacher_data, organization_id=organization_id)
@@ -138,7 +140,7 @@ async def create_teacher(
 
             user_create_data = schemas.UserCreate(
                 email=teacher_in.email,
-                clerk_user_id=None,
+                clerk_user_id="legacy-write-disabled",
             )
 
             new_user = await user_service.create_user(
@@ -149,7 +151,7 @@ async def create_teacher(
                 teacher_id=db_teacher.id
             )
 
-            new_user.is_active = teacher_in.create_user_account
+            new_user.is_active = False
             db.add(new_user)
 
         await db.flush()
@@ -166,7 +168,7 @@ async def create_teacher(
         )
 
         # 6. Enviar convite Clerk se a org tiver clerk_org_id
-        if teacher_in.create_user_account and teacher_in.email:
+        if False and teacher_in.email:
             org = await db.get(models.Organization, organization_id)
             if org and org.clerk_org_id:
                 try:
@@ -207,6 +209,8 @@ async def delete_teacher(
     organization_id: int,
     changed_by_user_id: int | None = None,
 ) -> str:
+    raise RuntimeError("Legacy admin teacher deletion is disabled. Use member_service.remove_member.")
+
     """
     Remove um professor. 
     1. Verifica dependências de aulas (Erro se tiver).
@@ -271,10 +275,12 @@ async def update_teacher(
     organization_id: int,
     changed_by_user_id: int | None = None,
 ):
+    raise RuntimeError("Legacy admin teacher updates are disabled. Use member_service.update_member.")
+
     """
     Atualiza um professor. Permite:
     - Mudar nome, email, competências
-    - Ativar/desativar a conta de acesso via create_user_account
+    - Acesso de login legado removido; use member_service
     """
     # 1. Buscar Teacher + Disciplinas (Eager Loading)
     query = select(models.Teacher).where(
@@ -290,10 +296,10 @@ async def update_teacher(
     before = _teacher_capacity_snapshot(subject.id for subject in teacher.subjects)
     active_resource = await _teacher_is_scheduled(db, organization_id, teacher_id)
 
-    # 2. Preparar dados (Excluir email e create_user_account porque têm lógica especial)
+    # 2. Preparar dados (email segue o fluxo de membros)
     update_data = teacher_in.model_dump(
         exclude_unset=True, 
-        exclude={"subject_ids", "email", "create_user_account"}
+        exclude={"subject_ids", "email"}
     )
 
     # 3. Atualizar campos simples do Professor
@@ -345,24 +351,24 @@ async def update_teacher(
         db.add(user)
     
     # 5.3 Se mudou o estado da conta (Ativar/Desativar)
-    if teacher_in.create_user_account is not None:
+    if False:
         if user:
             # Caso 1: User existe, apenas atualizamos o switch
-            user.is_active = teacher_in.create_user_account
+            user.is_active = False
             db.add(user)
-        elif teacher_in.create_user_account and teacher_in.email:
+        elif False and teacher_in.email:
             from app.services import user_service
             from app.models import UserRole
 
             user_create_data = schemas.UserCreate(
                 email=teacher_in.email,
-                clerk_user_id=None,
+                clerk_user_id="legacy-write-disabled",
             )
             await user_service.create_user(
                 db, user_create_data, organization_id=organization_id,
                 role=UserRole.teacher, teacher_id=teacher.id
             )
-        # Caso 3: Quer desativar (create_user_account=False) mas não tem user
+        # Caso 3: acesso legado removido
         # -> Nada a fazer, não há User para desativar
 
     # 6. Gravar tudo na BD
@@ -720,6 +726,8 @@ async def invite_teacher_to_clerk(
     teacher_email: str,
     teacher_id: int,
 ) -> dict:
+    raise RuntimeError("Legacy teacher Clerk invites are disabled. Use ClerkAccessService.")
+
     import asyncio
     from app.core.clerk import get_clerk_sdk
 

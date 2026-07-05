@@ -28,6 +28,8 @@ class Settings(BaseSettings):
     CLERK_SECRET_KEY: str = ""
     CLERK_PUBLISHABLE_KEY: str = ""
     CLERK_WEBHOOK_SECRET: str = ""
+    CLERK_WEBHOOK_MAX_ATTEMPTS: int = 5
+    CLERK_WEBHOOK_RETRY_BASE_SECONDS: int = 60
     FRONTEND_URL: str = "http://localhost:5173"
 
     # --- CORS ---

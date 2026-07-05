@@ -19,6 +19,7 @@ frontend/test-results/
 # --- Frontend (Node) ---
 node_modules/
 frontend/node_modules/
+.pnpm-store/
 dist/
 build/
 .npm

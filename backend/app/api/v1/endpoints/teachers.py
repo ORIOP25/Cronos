@@ -30,10 +30,6 @@ async def read_my_availability(
     status_code = 200
 
     try:
-        if current_user.role != models.UserRole.teacher:
-            status_code = 403
-            raise HTTPException(status_code=403, detail="Sem permissões para este endpoint")
-
         if current_user.teacher_id is None:
             status_code = 403
             raise HTTPException(status_code=403, detail="Professor sem perfil associado")
@@ -106,10 +102,6 @@ async def read_my_progress(
     status_code = 200
 
     try:
-        if current_user.role != models.UserRole.teacher:
-            status_code = 403
-            raise HTTPException(status_code=403, detail="Sem permissões para este endpoint")
-
         if current_user.teacher_id is None:
             status_code = 403
             raise HTTPException(status_code=403, detail="Professor sem perfil associado")
@@ -164,11 +156,9 @@ async def create_teacher(
     db: Annotated[AsyncSession, Depends(deps.get_db)],
     current_user: Annotated[models.User, Depends(deps.get_current_active_admin)]
 ):
-    return await teacher_service.create_teacher(
-        db,
-        teacher,
-        organization_id=current_user.organization_id,
-        changed_by_user_id=current_user.id,
+    raise HTTPException(
+        status_code=410,
+        detail="Legacy admin teacher creation is disabled. Use /api/v1/members for Equipa staff management.",
     )
 
 # --- 4. NOVO ENDPOINT: Gravar Disponibilidades ---
@@ -191,13 +181,13 @@ async def update_teacher_availability(
     try:
         # Default deny: apenas admin e professor podem operar este endpoint
         is_admin = bool(current_user.is_superuser or current_user.role == models.UserRole.admin)
-        is_teacher = current_user.role == models.UserRole.teacher
+        is_teacher = current_user.teacher_id is not None
         if not is_admin and not is_teacher:
             status_code = 403
             raise HTTPException(status_code=403, detail="Sem permissões para este endpoint")
 
         # Professores só podem atualizar a própria disponibilidade
-        if current_user.role == models.UserRole.teacher and current_user.teacher_id != teacher_id:
+        if not is_admin and current_user.teacher_id != teacher_id:
             status_code = 403
             raise HTTPException(status_code=403, detail="Sem permissões para atualizar outro professor")
 
@@ -255,16 +245,10 @@ async def update_teacher(
     """
     Atualiza dados do professor (ex: Nome).
     """
-    teacher = await teacher_service.update_teacher(
-        db, 
-        teacher_id, 
-        teacher_in, 
-        organization_id=current_user.organization_id,
-        changed_by_user_id=current_user.id,
+    raise HTTPException(
+        status_code=410,
+        detail="Legacy admin teacher updates are disabled. Use /api/v1/members for Equipa staff management.",
     )
-    if not teacher:
-        raise HTTPException(status_code=404, detail=TEACHER_NOT_FOUND_MSG)
-    return teacher
 
 # --- 4. Apagar Professor (DELETE) ---
 @router.delete("/{teacher_id}", responses={404: {"description": TEACHER_NOT_FOUND_MSG}, 400: {"description": "Dependências existentes"}})
@@ -276,21 +260,7 @@ async def delete_teacher(
     """
     Remove um professor. Falha se o professor tiver aulas atribuídas.
     """
-    status_result = await teacher_service.delete_teacher(
-        db, 
-        teacher_id, 
-        organization_id=current_user.organization_id,
-        changed_by_user_id=current_user.id,
+    raise HTTPException(
+        status_code=410,
+        detail="Legacy admin teacher deletion is disabled. Use /api/v1/members for Equipa staff management.",
     )
-    
-    if status_result == "NOT_FOUND":
-        raise HTTPException(status_code=404, detail=TEACHER_NOT_FOUND_MSG)
-    
-    if status_result == "DEPENDENCY_ERROR":
-        # Erro 400 ou 409 (Conflict) é adequado aqui.
-        raise HTTPException(
-            status_code=400, 
-            detail="Não é possível apagar este professor pois ele tem aulas atribuídas. Remova as aulas primeiro."
-        )
-    
-    return {"message": "Professor removido com sucesso"}

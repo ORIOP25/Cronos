@@ -3,6 +3,7 @@
 from fastapi import APIRouter
 from app.api.v1.endpoints import (
     teachers,
+    members,
     classes,
     subjects,
     rooms,
@@ -27,7 +28,8 @@ api_router = APIRouter()
 # Nota: Aqui definimos apenas o "caminho relativo".
 # O prefixo "/api/v1" será adicionado no main.py, garantindo centralização.
 
-api_router.include_router(teachers.router, prefix="/teachers", tags=["Professores"])
+api_router.include_router(members.router, prefix="/members", tags=["Equipa"])
+api_router.include_router(teachers.router, prefix="/teachers", tags=["Teacher self-service/domain"])
 api_router.include_router(classes.router, prefix="/classes", tags=["Turmas"])
 api_router.include_router(subjects.router, prefix="/subjects", tags=["Disciplinas"])
 api_router.include_router(rooms.router, prefix="/rooms", tags=["Salas"])

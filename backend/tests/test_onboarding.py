@@ -120,7 +120,7 @@ async def test_onboarding_requires_admin(async_client, db_session):
 
 # ── T23: Create teacher → sends Clerk invitation ───────────────
 @pytest.mark.asyncio
-async def test_create_teacher_invites_to_clerk(async_client, db_session):
+async def test_create_teacher_write_is_quarantined(async_client, db_session):
     from app import models
 
     org = models.Organization(
@@ -137,24 +137,17 @@ async def test_create_teacher_invites_to_clerk(async_client, db_session):
     db_session.add(user)
     await db_session.commit()
 
-    with patch("app.services.teacher_service.invite_teacher_to_clerk") as mock_invite, \
-         patch("app.api.deps.get_clerk_payload") as mock_payload:
-        mock_invite.return_value = {"invitation_id": "inv_123", "status": "pending"}
+    with patch("app.api.deps.get_clerk_payload") as mock_payload:
         mock_payload.return_value = {"sub": "user_admin_inv", "o": {"id": "org_inv_001", "rol": "admin"}}
 
         resp = await async_client.post("/api/v1/teachers/", json={
             "name": "Prof Teste",
             "email": "prof@invite.pt",
-            "create_user_account": True,
             "subject_ids": [],
         })
 
-    assert resp.status_code == 200
-    mock_invite.assert_called_once()
-    call_kwargs = mock_invite.call_args.kwargs
-    assert call_kwargs["clerk_org_id"] == "org_inv_001"
-    assert call_kwargs["teacher_email"] == "prof@invite.pt"
-    assert call_kwargs["teacher_id"] is not None
+    assert resp.status_code == 410
+    assert "/api/v1/members" in resp.json()["detail"]
 
 
 # ── FASE 1.5: Onboarding fluxos de borda ──────────────────────
@@ -259,15 +252,14 @@ async def test_onboarding_status_complete_after_post(async_client, db_session):
 
 
 @pytest.mark.asyncio
-async def test_onboarding_requires_organization_association(async_client, db_session):
+async def test_global_account_can_exist_without_organization_membership(async_client, db_session):
     """User sem organization_id é rejeitado pela invariant final do schema."""
     from app import models
-    from sqlalchemy import exc
 
     user = models.User(
         clerk_user_id="user_no_org_assoc", email="noorg@onb.pt",
-        role="admin", organization_id=None, is_active=True,
+        role=None, organization_id=None, is_active=None,
     )
     db_session.add(user)
-    with pytest.raises(exc.IntegrityError):
-        await db_session.commit()
+    await db_session.commit()
+    assert user.id is not None

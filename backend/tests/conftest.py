@@ -100,6 +100,36 @@ async def create_org_and_user(
     """Cria org + user. Idempotente: se já existirem, retorna os existentes."""
     from sqlalchemy.future import select as _sel
 
+    async def _ensure_membership(org: models.Organization, user: models.User) -> None:
+        membership = (await db_session.execute(
+            _sel(models.OrganizationMembership).where(
+                models.OrganizationMembership.organization_id == org.id,
+                models.OrganizationMembership.account_id == user.id,
+            )
+        )).scalar_one_or_none()
+        if membership is None:
+            capability = models.MembershipCapability.admin if role == "admin" else models.MembershipCapability.teacher
+            expected_role = models.ClerkOrganizationRole.admin if role == "admin" else models.ClerkOrganizationRole.member
+            membership = models.OrganizationMembership(
+                organization_id=org.id,
+                account_id=user.id,
+                organization_display_name=user.name or user.email,
+                lifecycle_status=models.MembershipLifecycleStatus.active,
+                access_status=models.MembershipAccessStatus.active,
+                teacher_access_mode=models.TeacherAccessMode.platform if capability == models.MembershipCapability.teacher else None,
+                expected_clerk_role=expected_role,
+            )
+            db_session.add(membership)
+            await db_session.flush()
+            db_session.add(models.OrganizationMembershipCapability(
+                organization_membership_id=membership.id,
+                capability=capability,
+            ))
+        if user.teacher_id:
+            teacher = await db_session.get(models.Teacher, user.teacher_id)
+            if teacher is not None and teacher.organization_membership_id is None:
+                teacher.organization_membership_id = membership.id
+
     # Verificar se user já existe
     existing_user = (await db_session.execute(
         _sel(models.User).where(models.User.clerk_user_id == clerk_user_id)
@@ -108,6 +138,9 @@ async def create_org_and_user(
         org = (await db_session.execute(
             _sel(models.Organization).where(models.Organization.id == existing_user.organization_id)
         )).scalar_one_or_none()
+        if org is not None:
+            await _ensure_membership(org, existing_user)
+            await db_session.commit()
         return org, existing_user
 
     # Verificar se org já existe
@@ -135,6 +168,8 @@ async def create_org_and_user(
         is_active=True,
     )
     db_session.add(user)
+    await db_session.flush()
+    await _ensure_membership(org, user)
     await db_session.commit()
     return org, user
 

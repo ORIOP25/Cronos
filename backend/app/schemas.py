@@ -97,7 +97,6 @@ class TeacherBase(BaseModel):
     email: Optional[EmailStr] = None
 
 class TeacherCreate(TeacherBase):
-    create_user_account: bool = False
     subject_ids: list[int] = Field(default_factory=list, description=DESC_SUBJECT_IDS)
 
 class TeacherRead(TeacherBase):
@@ -117,8 +116,148 @@ class TeacherUpdate(BaseModel):
     name: Optional[str] = None
     email: Optional[EmailStr] = None
     subject_ids: Optional[list[int]] = Field(None, description=DESC_SUBJECT_IDS)
-    # NOVO: Para permitir ativar/desativar a conta de acesso via API
-    create_user_account: Optional[bool] = None
+
+
+# --- EQuipa / Members ---
+
+MemberCapabilityLiteral = Literal["teacher", "admin"]
+TeacherAccessModeLiteral = Literal["platform", "scheduler_only"]
+LifecycleStatusLiteral = Literal["active", "archived"]
+AccessStatusLiteral = Literal[
+    "none",
+    "pending_invite",
+    "invite_expired",
+    "active",
+    "blocked",
+    "sync_error",
+]
+
+
+class MemberErrorEnvelope(BaseModel):
+    code: str
+    category: Optional[str] = None
+    message: str
+    retryable: bool = False
+    support_required: bool = False
+    fields: dict[str, str] = Field(default_factory=dict)
+
+
+class MemberCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    organization_display_name: str = Field(..., min_length=1, max_length=150)
+    email: EmailStr
+    capabilities: list[MemberCapabilityLiteral] = Field(..., min_length=1)
+    teacher_access_mode: Optional[TeacherAccessModeLiteral] = None
+    subject_ids: list[int] = Field(default_factory=list, description=DESC_SUBJECT_IDS)
+
+    @model_validator(mode="after")
+    def validate_member_shape(self):
+        caps = set(self.capabilities)
+        if not caps.issubset({"teacher", "admin"}):
+            raise ValueError("Capacidade invÃ¡lida")
+        if "teacher" in caps and self.teacher_access_mode is None:
+            raise ValueError("teacher_access_mode Ã© obrigatÃ³rio para professores")
+        if "teacher" not in caps and self.teacher_access_mode is not None:
+            raise ValueError("teacher_access_mode sÃ³ pode ser usado para professores")
+        if "admin" in caps and self.teacher_access_mode == "scheduler_only":
+            raise ValueError("Administrador requer acesso Ã  plataforma")
+        return self
+
+
+class MemberUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    organization_display_name: Optional[str] = Field(None, min_length=1, max_length=150)
+    email: Optional[EmailStr] = None
+    capabilities: Optional[list[MemberCapabilityLiteral]] = Field(None, min_length=1)
+    teacher_access_mode: Optional[TeacherAccessModeLiteral] = None
+    subject_ids: Optional[list[int]] = Field(None, description=DESC_SUBJECT_IDS)
+    lock_version: Optional[int] = Field(None, ge=1)
+
+    @model_validator(mode="after")
+    def validate_member_update_shape(self):
+        if self.capabilities is not None:
+            caps = set(self.capabilities)
+            if not caps.issubset({"teacher", "admin"}):
+                raise ValueError("Capacidade invÃ¡lida")
+            if "admin" in caps and self.teacher_access_mode == "scheduler_only":
+                raise ValueError("Administrador requer acesso Ã  plataforma")
+        return self
+
+
+class MemberRestore(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    restore_access: bool = True
+    capabilities: Optional[list[MemberCapabilityLiteral]] = Field(None, min_length=1)
+    teacher_access_mode: Optional[TeacherAccessModeLiteral] = None
+    subject_ids: Optional[list[int]] = Field(None, description=DESC_SUBJECT_IDS)
+
+    @model_validator(mode="after")
+    def validate_member_restore_shape(self):
+        if self.capabilities is not None:
+            caps = set(self.capabilities)
+            if not caps.issubset({"teacher", "admin"}):
+                raise ValueError("Capacidade invalida")
+            if "admin" in caps and self.teacher_access_mode == "scheduler_only":
+                raise ValueError("Administrador requer acesso a plataforma")
+        return self
+
+
+class MemberActionFlags(BaseModel):
+    can_edit: bool = True
+    can_remove: bool = True
+    remove_effect: Literal["hard_delete", "archive"] = "archive"
+    can_restore: bool = False
+    can_resend_invite: bool = False
+    can_retry_sync: bool = False
+    provider_state: Literal["confirmed", "unconfirmed", "not_required"] = "confirmed"
+
+
+class MemberRead(BaseModel):
+    id: int
+    account_id: int
+    organization_id: int
+    organization_display_name: str
+    email: EmailStr
+    capabilities: list[MemberCapabilityLiteral]
+    lifecycle_status: LifecycleStatusLiteral
+    access_status: AccessStatusLiteral
+    teacher_access_mode: Optional[TeacherAccessModeLiteral] = None
+    expected_clerk_role: Optional[Literal["org:member", "org:admin"]] = None
+    clerk_user_id: Optional[str] = None
+    clerk_membership_id: Optional[str] = None
+    clerk_invitation_id: Optional[str] = None
+    clerk_invitation_status: Optional[Literal["pending", "accepted", "revoked", "expired"]] = None
+    invitation_expires_at: Optional[datetime] = None
+    teacher_id: Optional[int] = None
+    subject_ids: list[int] = Field(default_factory=list)
+    access_error_category: Optional[str] = None
+    access_error_safe_message: Optional[str] = None
+    provider_state: Literal["confirmed", "unconfirmed", "not_required"] = "confirmed"
+    remove_effect: Literal["hard_delete", "archive"] = "archive"
+    actions: MemberActionFlags = Field(default_factory=MemberActionFlags)
+    lock_version: int
+
+
+class MemberListRead(BaseModel):
+    items: list[MemberRead]
+    total: int
+    limit: int
+    offset: int
+
+
+class CurrentMemberRead(BaseModel):
+    member_id: int
+    account_id: int
+    organization_id: int
+    capabilities: list[MemberCapabilityLiteral]
+    access_status: AccessStatusLiteral
+    lifecycle_status: LifecycleStatusLiteral
+    teacher_id: Optional[int] = None
+    default_mode: Literal["admin", "teacher"]
+    available_modes: list[Literal["admin", "teacher"]]
 
 # --- Class (Turma) ---
 class ClassBase(BaseModel):

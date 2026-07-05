@@ -160,6 +160,72 @@ class UserRole(str, enum.Enum):
     teacher = "teacher"
     student = "student"
 
+
+class MembershipLifecycleStatus(str, enum.Enum):
+    active = "active"
+    archived = "archived"
+
+
+class MembershipAccessStatus(str, enum.Enum):
+    none = "none"
+    pending_invite = "pending_invite"
+    invite_expired = "invite_expired"
+    active = "active"
+    blocked = "blocked"
+    sync_error = "sync_error"
+
+
+class TeacherAccessMode(str, enum.Enum):
+    platform = "platform"
+    scheduler_only = "scheduler_only"
+
+
+class MembershipCapability(str, enum.Enum):
+    teacher = "teacher"
+    admin = "admin"
+
+
+class ClerkOrganizationRole(str, enum.Enum):
+    member = "org:member"
+    admin = "org:admin"
+
+
+class ClerkInvitationStatus(str, enum.Enum):
+    pending = "pending"
+    accepted = "accepted"
+    revoked = "revoked"
+    expired = "expired"
+
+
+class MemberAccessOperationType(str, enum.Enum):
+    create_invitation = "create_invitation"
+    revoke_invitation = "revoke_invitation"
+    revoke_membership = "revoke_membership"
+    change_role = "change_role"
+    resend_invitation = "resend_invitation"
+    restore_access = "restore_access"
+    block_access = "block_access"
+
+
+class MemberAccessOperationStatus(str, enum.Enum):
+    pending = "pending"
+    clerk_succeeded = "clerk_succeeded"
+    local_committed = "local_committed"
+    failed = "failed"
+    compensated = "compensated"
+    compensation_failed = "compensation_failed"
+    support_required = "support_required"
+
+
+class ClerkWebhookProcessingStatus(str, enum.Enum):
+    received = "received"
+    processing = "processing"
+    processed = "processed"
+    ignored = "ignored"
+    retryable_failed = "retryable_failed"
+    sync_error = "sync_error"
+    dead_letter = "dead_letter"
+
 class OrganizationPlanStatus(str, enum.Enum):
     inactive = "inactive"
     active = "active"
@@ -293,16 +359,34 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(100), unique=True, index=True, nullable=False)
     clerk_user_id: Mapped[Optional[str]] = mapped_column(String(255), unique=True, nullable=True)
     # O Papel do utilizador (Admin por defeito)
-    role: Mapped[UserRole] = mapped_column(SAEnum(UserRole), default=UserRole.admin, nullable=False)
+    role: Mapped[Optional[UserRole]] = mapped_column(SAEnum(UserRole), default=None, nullable=True)
     # Se for admin, isto fica NULL. Se for professor, aponta para o ID dele.
-    teacher_id: Mapped[Optional[int]] = mapped_column(ForeignKey(FK_TEACHER_ID), nullable=True)
-    organization_id: Mapped[int] = mapped_column(ForeignKey(FK_ORG_ID), nullable=False, index=True)
+    teacher_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey(FK_TEACHER_ID, name="fk_user_teacher", use_alter=True),
+        nullable=True,
+    )
+    organization_id: Mapped[Optional[int]] = mapped_column(ForeignKey(FK_ORG_ID), nullable=True, index=True)
     organization: Mapped["Organization"] = relationship(back_populates="users")
     # Atalho para aceder aos dados do professor (se existirem)
     teacher_profile: Mapped[Optional["Teacher"]] = relationship()
     # Permite bloquear utilizadores sem apagar o histórico (Soft Delete)
-    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    is_active: Mapped[Optional[bool]] = mapped_column(Boolean, default=None, nullable=True)
     is_superuser: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    clerk_primary_email_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    clerk_profile_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    last_clerk_sync_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+
+    memberships: Mapped[List["OrganizationMembership"]] = relationship(
+        back_populates="account",
+        foreign_keys="OrganizationMembership.account_id",
+    )
 
     def __repr__(self) -> str:
         return f"<User(id={self.id}, email='{self.email}', role='{self.role}')>"
@@ -317,9 +401,22 @@ class Teacher(Base):
     
     # Chave Estrangeira: Liga o Professor à sua Organization
     organization_id: Mapped[int] = mapped_column(ForeignKey(FK_ORG_ID))
+    organization_membership_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey(
+            "organization_membership.id",
+            ondelete=ON_DELETE_SET_NULL,
+            name="fk_teacher_organization_membership",
+            use_alter=True,
+        ),
+        nullable=True,
+        unique=True,
+        index=True,
+    )
+    archived_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     
     # Relacionamento: Permite-nos fazer my_teacher.organization
     organization: Mapped["Organization"] = relationship(back_populates="teachers")
+    organization_membership: Mapped[Optional["OrganizationMembership"]] = relationship(back_populates="teacher_profile")
 
     subjects: Mapped[List["Subject"]] = relationship(
         secondary=teacher_subject_link,
@@ -339,6 +436,140 @@ class Teacher(Base):
 
     def __repr__(self) -> str:
         return f"<Teacher(id={self.id}, name='{self.name}')>"
+
+
+class OrganizationMembership(Base):
+    __tablename__ = "organization_membership"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    organization_id: Mapped[int] = mapped_column(ForeignKey(FK_ORG_ID, ondelete="CASCADE"), nullable=False, index=True)
+    account_id: Mapped[int] = mapped_column(ForeignKey("user.id", ondelete="CASCADE"), nullable=False, index=True)
+    organization_display_name: Mapped[str] = mapped_column(String(150), nullable=False)
+    lifecycle_status: Mapped[MembershipLifecycleStatus] = mapped_column(
+        SAEnum(MembershipLifecycleStatus), default=MembershipLifecycleStatus.active, nullable=False, index=True
+    )
+    access_status: Mapped[MembershipAccessStatus] = mapped_column(
+        SAEnum(MembershipAccessStatus), default=MembershipAccessStatus.none, nullable=False, index=True
+    )
+    teacher_access_mode: Mapped[Optional[TeacherAccessMode]] = mapped_column(SAEnum(TeacherAccessMode), nullable=True)
+    expected_clerk_role: Mapped[Optional[ClerkOrganizationRole]] = mapped_column(
+        SAEnum(ClerkOrganizationRole, values_callable=lambda enum_cls: [item.value for item in enum_cls]),
+        nullable=True,
+    )
+    clerk_membership_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, index=True)
+    clerk_invitation_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, index=True)
+    clerk_invitation_status: Mapped[Optional[ClerkInvitationStatus]] = mapped_column(SAEnum(ClerkInvitationStatus), nullable=True)
+    invitation_expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    access_error_category: Mapped[Optional[str]] = mapped_column(String(80), nullable=True)
+    access_error_safe_message: Mapped[Optional[str]] = mapped_column(String(240), nullable=True)
+    access_block_reason: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
+    created_by_user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("user.id", ondelete=ON_DELETE_SET_NULL), nullable=True)
+    updated_by_user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("user.id", ondelete=ON_DELETE_SET_NULL), nullable=True)
+    lock_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+
+    organization: Mapped["Organization"] = relationship()
+    account: Mapped["User"] = relationship(back_populates="memberships", foreign_keys=[account_id])
+    capabilities: Mapped[List["OrganizationMembershipCapability"]] = relationship(
+        back_populates="membership", cascade=CASCADE_ALL_DELETE
+    )
+    teacher_profile: Mapped[Optional["Teacher"]] = relationship(back_populates="organization_membership", uselist=False)
+    created_by_user: Mapped[Optional["User"]] = relationship(foreign_keys=[created_by_user_id])
+    updated_by_user: Mapped[Optional["User"]] = relationship(foreign_keys=[updated_by_user_id])
+
+    __table_args__ = (
+        UniqueConstraint("organization_id", "account_id", name="uq_org_membership_account"),
+        CheckConstraint(
+            "access_status != 'active' OR account_id IS NOT NULL",
+            name="ck_membership_active_has_account",
+        ),
+    )
+
+
+class OrganizationMembershipCapability(Base):
+    __tablename__ = "organization_membership_capability"
+
+    organization_membership_id: Mapped[int] = mapped_column(
+        ForeignKey("organization_membership.id", ondelete="CASCADE"), primary_key=True
+    )
+    capability: Mapped[MembershipCapability] = mapped_column(SAEnum(MembershipCapability), primary_key=True)
+
+    membership: Mapped["OrganizationMembership"] = relationship(back_populates="capabilities")
+
+    __table_args__ = (
+        UniqueConstraint("organization_membership_id", "capability", name="uq_org_membership_capability"),
+    )
+
+
+class MemberAccessOperation(Base):
+    __tablename__ = "member_access_operation"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    organization_id: Mapped[int] = mapped_column(ForeignKey(FK_ORG_ID, ondelete="CASCADE"), nullable=False, index=True)
+    membership_id: Mapped[Optional[int]] = mapped_column(ForeignKey("organization_membership.id", ondelete=ON_DELETE_SET_NULL), nullable=True, index=True)
+    account_id: Mapped[Optional[int]] = mapped_column(ForeignKey("user.id", ondelete=ON_DELETE_SET_NULL), nullable=True, index=True)
+    target_email: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    operation_type: Mapped[MemberAccessOperationType] = mapped_column(SAEnum(MemberAccessOperationType), nullable=False)
+    operation_status: Mapped[MemberAccessOperationStatus] = mapped_column(
+        SAEnum(MemberAccessOperationStatus), default=MemberAccessOperationStatus.pending, nullable=False, index=True
+    )
+    idempotency_key: Mapped[str] = mapped_column(String(160), nullable=False, unique=True, index=True)
+    intended_capabilities_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    intended_clerk_role: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
+    previous_access_snapshot_json: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    draft_payload_json: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    clerk_org_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    clerk_user_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    clerk_membership_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    clerk_invitation_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    provider_error_category: Mapped[Optional[str]] = mapped_column(String(80), nullable=True)
+    provider_error_safe_message: Mapped[Optional[str]] = mapped_column(String(240), nullable=True)
+    provider_error_reference: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
+    compensation_attempted_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    support_required_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    support_resolution_action: Mapped[Optional[str]] = mapped_column(String(80), nullable=True)
+    support_resolved_by_user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("user.id", ondelete=ON_DELETE_SET_NULL), nullable=True)
+    support_resolved_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    support_resolution_note: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    created_by_user_id: Mapped[int] = mapped_column(ForeignKey("user.id", ondelete="RESTRICT"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+
+
+class ClerkWebhookEvent(Base):
+    __tablename__ = "clerk_webhook_event"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    svix_id: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
+    event_type: Mapped[str] = mapped_column(String(120), nullable=False, index=True)
+    clerk_object_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, index=True)
+    clerk_org_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, index=True)
+    clerk_user_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, index=True)
+    payload_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    processing_status: Mapped[ClerkWebhookProcessingStatus] = mapped_column(
+        SAEnum(ClerkWebhookProcessingStatus), default=ClerkWebhookProcessingStatus.received, nullable=False, index=True
+    )
+    error_category: Mapped[Optional[str]] = mapped_column(String(80), nullable=True)
+    support_resolution_action: Mapped[Optional[str]] = mapped_column(String(80), nullable=True)
+    support_resolved_by_user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("user.id", ondelete=ON_DELETE_SET_NULL), nullable=True)
+    support_resolved_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    support_resolution_note: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    last_attempt_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    next_retry_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
+    processed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 # 6. Modelo "Class" (Turma)

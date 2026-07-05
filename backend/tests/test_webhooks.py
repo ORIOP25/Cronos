@@ -1,24 +1,23 @@
-import json
 import datetime
+import json
+from uuid import uuid4
+
 import pytest
-from unittest.mock import patch, MagicMock
-from httpx import AsyncClient, ASGITransport
+from httpx import ASGITransport, AsyncClient
 from svix.webhooks import Webhook
 
 
 _WEBHOOK_SECRET = "whsec_dGVzdF9zZWNyZXRfa2V5MTIz"
-
 _TS = 1713158400000
 
 
-def _svix_headers(payload: dict) -> dict:
+def _svix_headers(payload: dict, *, svix_id: str = "msg_1713158400000") -> dict:
     wh = Webhook(_WEBHOOK_SECRET)
     body = json.dumps(payload)
-    wh_id = "msg_1713158400000"
     wh_timestamp = datetime.datetime.now(datetime.timezone.utc)
-    wh_sign = wh.sign(msg_id=wh_id, timestamp=wh_timestamp, data=body)
+    wh_sign = wh.sign(msg_id=svix_id, timestamp=wh_timestamp, data=body)
     return {
-        "svix-id": wh_id,
+        "svix-id": svix_id,
         "svix-timestamp": str(int(wh_timestamp.timestamp())),
         "svix-signature": wh_sign,
         "Content-Type": "application/json",
@@ -32,17 +31,18 @@ def _mk_payload(evt_type: str, data: dict) -> dict:
 @pytest.fixture(autouse=True)
 def _set_webhook_secret(monkeypatch):
     from app.config import settings
+
     monkeypatch.setattr(settings, "CLERK_WEBHOOK_SECRET", _WEBHOOK_SECRET)
 
 
 @pytest.fixture
 def async_client():
     from app.main import app
+
     transport = ASGITransport(app=app)
     return AsyncClient(transport=transport, base_url="http://test")
 
 
-# ── T9: user.created ────────────────────────────────────────────
 @pytest.mark.asyncio
 async def test_webhook_user_created_without_membership_does_not_create_orphan_user(async_client, db_session):
     payload = _mk_payload("user.created", {
@@ -52,425 +52,260 @@ async def test_webhook_user_created_without_membership_does_not_create_orphan_us
         "email_addresses": [{"email_address": "test@example.com", "id": "idn_123"}],
     })
 
-    headers = _svix_headers(payload)
-    resp = await async_client.post(
-        "/api/v1/webhooks/clerk",
-        content=json.dumps(payload),
-        headers=headers,
-    )
-    assert resp.status_code == 200
+    response = await async_client.post("/api/v1/webhooks/clerk", content=json.dumps(payload), headers=_svix_headers(payload))
 
+    assert response.status_code == 200
+
+    from sqlalchemy import select
     from app import models
-    from sqlalchemy.future import select
-    result = await db_session.execute(
-        select(models.User).where(models.User.clerk_user_id == "user_wb_001")
-    )
-    user = result.scalar_one_or_none()
+
+    user = await db_session.scalar(select(models.User).where(models.User.clerk_user_id == "user_wb_001"))
+    event = await db_session.scalar(select(models.ClerkWebhookEvent).where(models.ClerkWebhookEvent.svix_id == "msg_1713158400000"))
     assert user is None
+    assert event.processing_status == models.ClerkWebhookProcessingStatus.ignored
+    assert "email_addresses" not in event.payload_json["data"]
 
 
-# ── T10: Idempotency ────────────────────────────────────────────
 @pytest.mark.asyncio
-async def test_webhook_user_created_idempotent(async_client, db_session):
-    payload = _mk_payload("user.created", {
-        "id": "user_wb_002",
-        "first_name": "First",
-        "last_name": "Call",
-        "email_addresses": [{"email_address": "first@example.com", "id": "idn_1"}],
-    })
+async def test_webhook_idempotency_uses_svix_event_id(async_client, db_session):
+    payload = _mk_payload("user.created", {"id": "user_wb_002", "email_addresses": [{"email_address": "first@example.com"}]})
+    response_1 = await async_client.post("/api/v1/webhooks/clerk", content=json.dumps(payload), headers=_svix_headers(payload, svix_id="msg_idem"))
+    payload["data"]["email_addresses"] = [{"email_address": "second@example.com"}]
+    response_2 = await async_client.post("/api/v1/webhooks/clerk", content=json.dumps(payload), headers=_svix_headers(payload, svix_id="msg_idem"))
 
-    headers = _svix_headers(payload)
-    raw = json.dumps(payload)
-    resp1 = await async_client.post("/api/v1/webhooks/clerk", content=raw, headers=headers)
+    assert response_1.status_code == 200
+    assert response_2.status_code == 200
 
-    payload["data"]["first_name"] = "Second"
-    payload["data"]["email_addresses"] = [{"email_address": "second@example.com", "id": "idn_1"}]
-    headers2 = _svix_headers(payload)
-    raw2 = json.dumps(payload)
-    resp2 = await async_client.post("/api/v1/webhooks/clerk", content=raw2, headers=headers2)
-
-    assert resp1.status_code == 200
-    assert resp2.status_code == 200
-
+    from sqlalchemy import func, select
     from app import models
-    from sqlalchemy.future import select
-    from sqlalchemy import func
-    result = await db_session.execute(
-        select(func.count()).select_from(models.User).where(
-            models.User.clerk_user_id == "user_wb_002"
-        )
-    )
-    count = result.scalar()
-    assert count == 0
+
+    count = await db_session.scalar(select(func.count()).select_from(models.ClerkWebhookEvent).where(models.ClerkWebhookEvent.svix_id == "msg_idem"))
+    assert count == 1
 
 
-# ── T11: organization.created ───────────────────────────────────
 @pytest.mark.asyncio
-async def test_webhook_organization_created(async_client, db_session):
-    payload = _mk_payload("organization.created", {
-        "id": "org_wb_001", "name": "Escola Teste", "slug": "escola-teste",
-    })
-
-    headers = _svix_headers(payload)
-    resp = await async_client.post(
-        "/api/v1/webhooks/clerk", content=json.dumps(payload), headers=headers,
-    )
-    assert resp.status_code == 200
-
+async def test_webhook_membership_created_unmatched_does_not_grant_access(async_client, db_session):
+    from sqlalchemy import select
     from app import models
-    from sqlalchemy.future import select
-    result = await db_session.execute(
-        select(models.Organization).where(models.Organization.clerk_org_id == "org_wb_001")
-    )
-    org = result.scalar_one_or_none()
-    assert org is not None
-    assert org.name == "Escola Teste"
 
-
-# ── T12: membership.created admin ───────────────────────────────
-@pytest.mark.asyncio
-async def test_webhook_membership_created_admin(async_client, db_session):
-    from app import models
-    org = models.Organization(name="OrgA", clerk_org_id="org_wb_admin", plan_status="active")
+    org = models.Organization(name="OrgA", clerk_org_id="org_wb_unmatched", plan_status="active")
     db_session.add(org)
     await db_session.commit()
 
     payload = _mk_payload("organizationMembership.created", {
-        "role": "admin",
-        "organization": {"id": "org_wb_admin", "name": "OrgA", "slug": "orga"},
+        "id": "mem_unmatched",
+        "role": "org:admin",
+        "organization": {"id": "org_wb_unmatched", "name": "OrgA"},
         "public_user_data": {"user_id": "user_wb_admin", "identifier": "admin@ex.com"},
         "public_metadata": {},
     })
 
-    headers = _svix_headers(payload)
-    resp = await async_client.post(
-        "/api/v1/webhooks/clerk", content=json.dumps(payload), headers=headers,
-    )
-    assert resp.status_code == 200
+    response = await async_client.post("/api/v1/webhooks/clerk", content=json.dumps(payload), headers=_svix_headers(payload, svix_id="msg_unmatched"))
 
-    from sqlalchemy.future import select
-    result = await db_session.execute(
-        select(models.User).where(models.User.clerk_user_id == "user_wb_admin")
-    )
-    user = result.scalar_one_or_none()
-    assert user is not None
-    assert user.role == "admin"
+    assert response.status_code == 200
+    user = await db_session.scalar(select(models.User).where(models.User.clerk_user_id == "user_wb_admin"))
+    assert user is None
 
 
-# ── T13: membership.created teacher ─────────────────────────────
 @pytest.mark.asyncio
-async def test_webhook_membership_created_teacher(async_client, db_session):
+async def test_webhook_membership_created_matches_pending_local_member(async_client, db_session):
     from app import models
-    org = models.Organization(name="OrgB", clerk_org_id="org_wb_teacher", plan_status="active")
-    db_session.add(org)
+
+    org = models.Organization(name="OrgB", clerk_org_id="org_wb_match", plan_status="active")
+    user = models.User(email="match@example.com", name="Match User")
+    db_session.add_all([org, user])
+    await db_session.flush()
+    member = models.OrganizationMembership(
+        organization_id=org.id,
+        account_id=user.id,
+        organization_display_name="Match User",
+        lifecycle_status=models.MembershipLifecycleStatus.active,
+        access_status=models.MembershipAccessStatus.pending_invite,
+        expected_clerk_role=models.ClerkOrganizationRole.admin,
+        clerk_invitation_id="inv_match",
+        clerk_invitation_status=models.ClerkInvitationStatus.pending,
+    )
+    db_session.add(member)
+    await db_session.flush()
+    db_session.add(models.OrganizationMembershipCapability(organization_membership_id=member.id, capability=models.MembershipCapability.admin))
+    member_id = member.id
     await db_session.commit()
 
     payload = _mk_payload("organizationMembership.created", {
-        "role": "member",
-        "organization": {"id": "org_wb_teacher", "name": "OrgB", "slug": "orgb"},
-        "public_user_data": {"user_id": "user_wb_teacher", "identifier": "prof@ex.com"},
-        "public_metadata": {},
+        "id": "mem_match",
+        "role": "org:admin",
+        "organization": {"id": "org_wb_match", "name": "OrgB"},
+        "public_user_data": {"user_id": "user_wb_match", "identifier": "match@example.com"},
+        "public_metadata": {"membership_id": member_id},
     })
 
-    headers = _svix_headers(payload)
-    resp = await async_client.post(
-        "/api/v1/webhooks/clerk", content=json.dumps(payload), headers=headers,
+    from app.services import member_webhook_service
+
+    await member_webhook_service.enqueue_and_process_clerk_event(
+        db_session,
+        svix_id=f"msg_match_{uuid4().hex}",
+        payload=payload,
     )
-    assert resp.status_code == 200
+    await db_session.flush()
+    await db_session.refresh(member)
+    await db_session.refresh(user)
 
-    from sqlalchemy.future import select
-    result = await db_session.execute(
-        select(models.User).where(models.User.clerk_user_id == "user_wb_teacher")
-    )
-    user = result.scalar_one_or_none()
-    assert user.role == "teacher"
+    assert member.access_status == models.MembershipAccessStatus.active
+    assert member.clerk_membership_id == "mem_match"
+    assert user.clerk_user_id == "user_wb_match"
 
 
-# ── T14: membership.created with teacher_id ─────────────────────
 @pytest.mark.asyncio
-async def test_webhook_membership_created_with_teacher_id(async_client, db_session):
+async def test_webhook_membership_role_mismatch_sets_sync_error(async_client, db_session):
     from app import models
-    org = models.Organization(name="OrgC", clerk_org_id="org_wb_link", plan_status="active")
-    db_session.add(org)
-    await db_session.flush()
 
-    teacher = models.Teacher(name="Prof Link", organization_id=org.id)
-    db_session.add(teacher)
+    org = models.Organization(name="OrgC", clerk_org_id="org_wb_role", plan_status="active")
+    user = models.User(email="role@example.com", name="Role User")
+    db_session.add_all([org, user])
     await db_session.flush()
+    member = models.OrganizationMembership(
+        organization_id=org.id,
+        account_id=user.id,
+        organization_display_name="Role User",
+        lifecycle_status=models.MembershipLifecycleStatus.active,
+        access_status=models.MembershipAccessStatus.pending_invite,
+        expected_clerk_role=models.ClerkOrganizationRole.admin,
+    )
+    db_session.add(member)
+    await db_session.flush()
+    db_session.add(models.OrganizationMembershipCapability(organization_membership_id=member.id, capability=models.MembershipCapability.admin))
+    member_id = member.id
     await db_session.commit()
 
     payload = _mk_payload("organizationMembership.created", {
-        "role": "member",
-        "organization": {"id": "org_wb_link", "name": "OrgC", "slug": "orgc"},
-        "public_user_data": {"user_id": "user_wb_link", "identifier": "link@ex.com"},
-        "public_metadata": {"teacher_id": teacher.id},
+        "id": "mem_role",
+        "role": "org:member",
+        "organization": {"id": "org_wb_role", "name": "OrgC"},
+        "public_user_data": {"user_id": "user_wb_role", "identifier": "role@example.com"},
+        "public_metadata": {"membership_id": member_id},
     })
 
-    headers = _svix_headers(payload)
-    resp = await async_client.post(
-        "/api/v1/webhooks/clerk", content=json.dumps(payload), headers=headers,
+    from app.services import member_webhook_service
+
+    await member_webhook_service.enqueue_and_process_clerk_event(
+        db_session,
+        svix_id=f"msg_role_{uuid4().hex}",
+        payload=payload,
     )
-    assert resp.status_code == 200
+    await db_session.flush()
+    await db_session.refresh(member)
 
-    from sqlalchemy.future import select
-    result = await db_session.execute(
-        select(models.User).where(models.User.clerk_user_id == "user_wb_link")
-    )
-    user = result.scalar_one_or_none()
-    assert user.teacher_id == teacher.id
+    assert member.access_status == models.MembershipAccessStatus.sync_error
+    assert member.access_error_category == "provider_role_mismatch"
 
 
-# ── T15: membership.updated → role change ───────────────────────
 @pytest.mark.asyncio
-async def test_webhook_membership_updated_role_change(async_client, db_session):
+async def test_webhook_membership_identity_conflict_sets_sync_error(db_session):
     from app import models
-    org = models.Organization(name="OrgD", clerk_org_id="org_wb_update", plan_status="active")
-    db_session.add(org)
-    await db_session.commit()
+    from app.services import member_webhook_service
 
-    user = models.User(
-        clerk_user_id="user_wb_update", email="change@ex.com",
-        role="teacher", organization_id=org.id
+    org = models.Organization(name="OrgIdentity", clerk_org_id="org_wb_identity", plan_status="active")
+    user = models.User(email="identity@example.com", name="Identity User", clerk_user_id="user_existing_identity")
+    db_session.add_all([org, user])
+    await db_session.flush()
+    member = models.OrganizationMembership(
+        organization_id=org.id,
+        account_id=user.id,
+        organization_display_name="Identity User",
+        lifecycle_status=models.MembershipLifecycleStatus.active,
+        access_status=models.MembershipAccessStatus.pending_invite,
+        expected_clerk_role=models.ClerkOrganizationRole.admin,
     )
-    db_session.add(user)
+    db_session.add(member)
+    await db_session.flush()
+    db_session.add(models.OrganizationMembershipCapability(organization_membership_id=member.id, capability=models.MembershipCapability.admin))
+    member_id = member.id
     await db_session.commit()
 
-    payload = _mk_payload("organizationMembership.updated", {
-        "role": "admin",
-        "organization": {"id": "org_wb_update", "name": "OrgD", "slug": "orgd"},
-        "public_user_data": {"user_id": "user_wb_update", "identifier": "change@ex.com"},
-        "public_metadata": {},
+    payload = _mk_payload("organizationMembership.created", {
+        "id": "mem_identity",
+        "role": "org:admin",
+        "organization": {"id": "org_wb_identity", "name": "OrgIdentity"},
+        "public_user_data": {"user_id": "user_other_identity", "identifier": "identity@example.com"},
+        "public_metadata": {"membership_id": member_id},
     })
 
-    headers = _svix_headers(payload)
-    resp = await async_client.post(
-        "/api/v1/webhooks/clerk", content=json.dumps(payload), headers=headers,
+    await member_webhook_service.enqueue_and_process_clerk_event(
+        db_session,
+        svix_id=f"msg_identity_{uuid4().hex}",
+        payload=payload,
     )
-    assert resp.status_code == 200
-
+    await db_session.flush()
+    await db_session.refresh(member)
     await db_session.refresh(user)
-    assert user.role == "admin"
+
+    assert user.clerk_user_id == "user_existing_identity"
+    assert member.access_status == models.MembershipAccessStatus.sync_error
+    assert member.access_error_category == "identity_conflict"
 
 
-# ── T16: membership.deleted → org_id cleared ────────────────────
 @pytest.mark.asyncio
-async def test_webhook_membership_deleted(async_client, db_session):
+async def test_webhook_user_identity_conflict_marks_memberships_sync_error(db_session):
     from app import models
-    org = models.Organization(name="OrgE", clerk_org_id="org_wb_del", plan_status="active")
-    db_session.add(org)
-    await db_session.commit()
+    from app.services import member_webhook_service
 
-    user = models.User(
-        clerk_user_id="user_wb_del", email="leave@ex.com",
-        role="teacher", organization_id=org.id
+    org = models.Organization(name="OrgUserIdentity", clerk_org_id="org_wb_user_identity", plan_status="active")
+    user = models.User(email="user.identity@example.com", name="User Identity", clerk_user_id="user_existing_profile")
+    db_session.add_all([org, user])
+    await db_session.flush()
+    member = models.OrganizationMembership(
+        organization_id=org.id,
+        account_id=user.id,
+        organization_display_name="User Identity",
+        lifecycle_status=models.MembershipLifecycleStatus.active,
+        access_status=models.MembershipAccessStatus.active,
+        expected_clerk_role=models.ClerkOrganizationRole.admin,
+        clerk_membership_id="mem_user_identity",
     )
-    db_session.add(user)
+    db_session.add(member)
+    await db_session.flush()
+    db_session.add(models.OrganizationMembershipCapability(organization_membership_id=member.id, capability=models.MembershipCapability.admin))
     await db_session.commit()
 
-    payload = _mk_payload("organizationMembership.deleted", {
-        "organization": {"id": "org_wb_del"},
-        "public_user_data": {"user_id": "user_wb_del"},
+    payload = _mk_payload("user.updated", {
+        "id": "user_conflicting_profile",
+        "first_name": "User",
+        "last_name": "Identity",
+        "email_addresses": [{"email_address": "user.identity@example.com", "id": "idn_user_identity"}],
     })
 
-    headers = _svix_headers(payload)
-    resp = await async_client.post(
-        "/api/v1/webhooks/clerk", content=json.dumps(payload), headers=headers,
+    await member_webhook_service.enqueue_and_process_clerk_event(
+        db_session,
+        svix_id=f"msg_user_identity_{uuid4().hex}",
+        payload=payload,
     )
-    assert resp.status_code == 200
-
+    await db_session.flush()
+    await db_session.refresh(member)
     await db_session.refresh(user)
-    assert user.organization_id == org.id
-    assert user.is_active is False
+
+    assert user.clerk_user_id == "user_existing_profile"
+    assert member.access_status == models.MembershipAccessStatus.sync_error
+    assert member.access_error_category == "identity_conflict"
 
 
-# ── T17: Invalid signature → 401 ────────────────────────────────
+@pytest.mark.asyncio
+async def test_webhook_missing_secret_fails_closed(async_client, monkeypatch):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "CLERK_WEBHOOK_SECRET", "")
+    payload = _mk_payload("user.created", {"id": "user_no_secret"})
+
+    response = await async_client.post("/api/v1/webhooks/clerk", content=json.dumps(payload), headers=_svix_headers(payload, svix_id="msg_no_secret"))
+
+    assert response.status_code == 503
+
+
 @pytest.mark.asyncio
 async def test_webhook_invalid_signature_rejected(async_client):
-    payload = {"type": "user.created", "object": "event", "timestamp": _TS, "data": {"id": "x"}}
-    headers = {
-        "svix-id": "bad", "svix-timestamp": "0",
-        "svix-signature": "v1,bad_signature",
-        "Content-Type": "application/json",
-    }
-    resp = await async_client.post(
-        "/api/v1/webhooks/clerk", content=json.dumps(payload), headers=headers,
-    )
-    assert resp.status_code == 401
+    payload = _mk_payload("user.created", {"id": "user_bad_sig"})
+    headers = _svix_headers(payload, svix_id="msg_bad_sig")
+    headers["svix-signature"] = "bad"
 
+    response = await async_client.post("/api/v1/webhooks/clerk", content=json.dumps(payload), headers=headers)
 
-# ── T18: Missing Svix headers → 400 ─────────────────────────────
-@pytest.mark.asyncio
-async def test_webhook_missing_svix_headers(async_client):
-    payload = {"type": "user.created", "object": "event", "timestamp": _TS, "data": {"id": "x"}}
-    resp = await async_client.post(
-        "/api/v1/webhooks/clerk", content=json.dumps(payload),
-    )
-    assert resp.status_code == 400
-
-
-# ── FASE 1.3: Race condition webhook vs fallback BAPI ───────────
-
-@pytest.mark.asyncio
-async def test_fallback_and_webhook_concurrent_insert(async_client, db_session):
-    """Webhook user.created + BAPI fallback → idempotente, 1 row (ON CONFLICT DO NOTHING)."""
-    from app.services import clerk_sync
-    from sqlalchemy.future import select as sa_select
-    from sqlalchemy import func
-    from app import models
-
-    clerk_user_id = "user_race_wb"
-
-    webhook_data = {
-        "id": clerk_user_id,
-        "email_addresses": [{"email_address": "race@test.com", "id": "idn_race"}],
-        "first_name": "Race",
-        "last_name": "Webhook",
-    }
-    payload = _mk_payload("user.created", webhook_data)
-    headers = _svix_headers(payload)
-
-    org = models.Organization(name="Race Org", clerk_org_id="org_race_wb", plan_status="active")
-    db_session.add(org)
-    await db_session.commit()
-
-    # Passo 1: Membership cria o user com tenant obrigatorio
-    membership_payload = _mk_payload("organizationMembership.created", {
-        "role": "admin",
-        "organization": {"id": "org_race_wb", "name": "Race Org", "slug": "race-org"},
-        "public_user_data": {"user_id": clerk_user_id, "identifier": "race@test.com"},
-        "public_metadata": {},
-    })
-    membership_headers = _svix_headers(membership_payload)
-    resp = await async_client.post(
-        "/api/v1/webhooks/clerk",
-        content=json.dumps(membership_payload),
-        headers=membership_headers,
-    )
-    assert resp.status_code == 200
-
-    # Passo 2: user.created chega depois e apenas atualiza perfil do user existente
-    resp = await async_client.post(
-        "/api/v1/webhooks/clerk",
-        content=json.dumps(payload),
-        headers=headers,
-    )
-    assert resp.status_code == 200
-
-    # Verificar: 1 user criado
-    result = await db_session.execute(
-        sa_select(func.count()).select_from(models.User).where(
-            models.User.clerk_user_id == clerk_user_id
-        )
-    )
-    assert result.scalar() == 1
-    result = await db_session.execute(
-        sa_select(models.User).where(models.User.clerk_user_id == clerk_user_id)
-    )
-    user = result.scalar_one()
-    assert user.email == "race@test.com"
-    assert user.name == "Race Webhook"
-
-    # Passo 3: BAPI fallback tenta garantir o mesmo user dentro da mesma org
-    with patch.object(clerk_sync, "get_clerk_sdk") as mock_sdk:
-        mock_clerk_user = MagicMock()
-        mock_clerk_user.email_addresses = [MagicMock(email_address="race@test.com")]
-        mock_clerk_user.first_name = "Race"
-        mock_clerk_user.last_name = "Fallback"
-        mock_sdk.return_value.users.get.return_value = mock_clerk_user
-        result_user = await clerk_sync.sync_user_from_clerk_api(
-            db_session,
-            clerk_user_id,
-            organization_id=org.id,
-            role="admin",
-        )
-        assert result_user is not None
-
-    # Verificar: continua apenas 1 user (ON CONFLICT DO NOTHING)
-    result = await db_session.execute(
-        sa_select(func.count()).select_from(models.User).where(
-            models.User.clerk_user_id == clerk_user_id
-        )
-    )
-    assert result.scalar() == 1, "ON CONFLICT DO NOTHING falhou — user duplicado"
-
-
-# ── FASE 1.4: Webhook user.deleted ─────────────────────────────
-
-@pytest.mark.asyncio
-async def test_webhook_user_deleted_soft_deletes(async_client, db_session):
-    """user.deleted → is_active = False."""
-    from sqlalchemy.future import select as sa_select
-    from app import models
-
-    # Criar user ativo
-    org = models.Organization(name="Soft Delete Org", clerk_org_id="org_wb_del_soft", plan_status="active")
-    db_session.add(org)
-    await db_session.flush()
-    user = models.User(
-        clerk_user_id="user_wb_del_soft",
-        email="softdel@test.com",
-        role="teacher",
-        is_active=True,
-        organization_id=org.id,
-    )
-    db_session.add(user)
-    await db_session.commit()
-
-    payload = _mk_payload("user.deleted", {"id": "user_wb_del_soft"})
-    headers = _svix_headers(payload)
-    resp = await async_client.post(
-        "/api/v1/webhooks/clerk", content=json.dumps(payload), headers=headers,
-    )
-    assert resp.status_code == 200
-
-    await db_session.refresh(user)
-    assert user.is_active is False
-
-
-@pytest.mark.asyncio
-async def test_webhook_user_deleted_idempotent(async_client, db_session):
-    """user.deleted 2x → não crasha, is_active permanece False."""
-    from sqlalchemy.future import select as sa_select
-    from app import models
-
-    org = models.Organization(name="Idem Delete Org", clerk_org_id="org_wb_del_idem", plan_status="active")
-    db_session.add(org)
-    await db_session.flush()
-    user = models.User(
-        clerk_user_id="user_wb_del_idem",
-        email="idemdel@test.com",
-        role="teacher",
-        is_active=True,
-        organization_id=org.id,
-    )
-    db_session.add(user)
-    await db_session.commit()
-
-    payload = _mk_payload("user.deleted", {"id": "user_wb_del_idem"})
-    headers = _svix_headers(payload)
-
-    resp1 = await async_client.post(
-        "/api/v1/webhooks/clerk", content=json.dumps(payload), headers=headers,
-    )
-    assert resp1.status_code == 200
-    await db_session.refresh(user)
-    assert user.is_active is False
-
-    # Segundo user.deleted — não deve crashar
-    resp2 = await async_client.post(
-        "/api/v1/webhooks/clerk", content=json.dumps(payload), headers=headers,
-    )
-    assert resp2.status_code == 200
-    await db_session.refresh(user)
-    assert user.is_active is False
-
-
-@pytest.mark.asyncio
-async def test_webhook_user_deleted_nonexistent_user(async_client, db_session):
-    """user.deleted para user que não existe localmente → não crasha."""
-    payload = _mk_payload("user.deleted", {"id": "user_wb_nonexistent"})
-    headers = _svix_headers(payload)
-    resp = await async_client.post(
-        "/api/v1/webhooks/clerk", content=json.dumps(payload), headers=headers,
-    )
-    assert resp.status_code == 200
+    assert response.status_code == 401

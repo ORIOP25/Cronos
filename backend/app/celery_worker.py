@@ -20,12 +20,17 @@ celery_app.conf.update(
     # ----------------------------------------------------------------
     # Celery Beat — Tarefas periódicas (Sprint 2)
     # ----------------------------------------------------------------
-    beat_schedule={},
-    imports=("app.scheduler_worker",),
+    beat_schedule={
+        "members-scheduled-reconciliation-hourly": {
+            "task": "members.run_scheduled_reconciliation",
+            "schedule": 3600.0,
+        },
+    },
+    imports=("app.scheduler_worker", "app.member_reconciliation_worker"),
 )
 
 # 3. Diz ao Celery onde encontrar as tarefas
-celery_app.autodiscover_tasks(["app.scheduler_worker"])
+celery_app.autodiscover_tasks(["app.scheduler_worker", "app.member_reconciliation_worker"])
 
 if __name__ == "__main__":
     celery_app.start()
