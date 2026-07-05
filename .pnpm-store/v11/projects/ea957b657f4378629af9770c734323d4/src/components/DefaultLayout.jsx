@@ -8,7 +8,7 @@ import CIcon from '@coreui/icons-react'
 import { 
   cilSpeedometer, cilCalendar, cilCheckCircle, cilPeople, 
   cilLibrary, cilEducation, cilRoom, cilSettings, cilUser,
-  cilHistory, cilMenu, cilChartPie
+  cilMenu, cilChartPie
 } from '@coreui/icons'
 
 const SIDEBAR_WIDTH = 280
@@ -151,7 +151,6 @@ const DefaultLayout = () => {
             <>
               <SidebarLink to="/dashboard" icon={cilSpeedometer} collapsed={collapsed}>Dashboard</SidebarLink>
               <SidebarLink to="/schedules" icon={cilCalendar} collapsed={collapsed}>Horários</SidebarLink>
-              <SidebarLink to="/schedules/audit" icon={cilHistory} collapsed={collapsed}>Auditoria</SidebarLink>
               <SidebarLink to="/absences" icon={cilCheckCircle} collapsed={collapsed}>Faltas</SidebarLink>
               <SidebarLink to="/timesheets" icon={cilCalendar} collapsed={collapsed}>Fecho Semanal</SidebarLink>
               

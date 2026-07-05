@@ -1,4 +1,4 @@
-from datetime import date, timedelta
+from datetime import date
 from sqlalchemy import func, select as sa_select
 from sqlalchemy.ext.asyncio import AsyncSession
 import structlog
@@ -41,14 +41,18 @@ def _resolve_preflight_hard_end_date(org_settings: models.OrganizationSettings) 
 
 def _validate_repair_generation_window(org_settings: models.OrganizationSettings) -> str | None:
     repair_window_days = _resolve_repair_window_days(org_settings)
-    frozen_until = date.today() + timedelta(days=repair_window_days)
+    editable_start_date = resolve_expansion_start_date(
+        org_settings.school_start_date,
+        adaptive_repair=True,
+        repair_window_days=repair_window_days,
+    )
     hard_end_date = _resolve_preflight_hard_end_date(org_settings)
     if hard_end_date is None:
         return None
-    if hard_end_date <= frozen_until:
+    if hard_end_date < editable_start_date:
         return (
             "Reparacao adaptativa bloqueada: nao existe horizonte fora da janela "
-            f"de estabilidade (até {frozen_until.isoformat()}) antes do hard end date "
+            f"de estabilidade (até {editable_start_date.isoformat()}) antes do hard end date "
             f"({hard_end_date.isoformat()})."
         )
     return None

@@ -172,8 +172,7 @@ async def delete_constraint(
         400: {"description": "Preflight falhou — dados insuficientes para gerar horário"},
     },
 )
-@limiter.limit("5/minute")
-async def trigger_generation(
+async def start_generation_request(
     request: Request,
     payload: schemas.ScheduleGenerateRequest,
     db: Annotated[AsyncSession, Depends(deps.get_db)],
@@ -215,15 +214,10 @@ async def trigger_generation(
             detail={"error": "scheduler_state_invalid", "message": str(exc)},
         ) from exc
 
-    internal_mode = (
-        "repair"
-        if selection.strategy == models.ScheduleGenerationStrategy.ADAPTIVE_REPAIR
-        else "full"
-    )
     preflight_errors, preflight_summary = await _preflight_check(
         db,
         organization_id,
-        internal_mode,
+        selection.strategy,
         replace_pending_draft=payload.replace_pending_draft,
     )
     encoded_preflight = jsonable_encoder(preflight_summary)
@@ -236,8 +230,6 @@ async def trigger_generation(
                 "preflight": encoded_preflight,
             },
         )
-
-    solver_version = _resolve_solver_engine_version()
 
     jobs = SchedulerJobService(db)
     try:
@@ -288,14 +280,9 @@ async def trigger_generation(
         )
     return {
         "job_id": handle.job.id,
-        "task_id": task_id,
-        "status": "Processing started",
-        "solver_version": solver_version,
         "strategy": selection.strategy.value,
         "trigger_type": selection.trigger_type.value,
-        "selection_reason": selection.reason,
-        "replaces_pending_draft": selection.replaces_pending_draft,
-        "preflight": encoded_preflight,
+        "status": handle.job.job_status.value,
     }
 
 @router.get("/status/{task_id}", responses={404: {"description": "Task não encontrada"}, 403: {"description": "Sem permissões para esta task"}, 503: {"description": "Validação de task indisponível"}})

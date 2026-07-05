@@ -19,7 +19,6 @@ const SchoolConfig = React.lazy(() => import('./pages/SchoolConfig'))
 const Schedules = React.lazy(() => import('./pages/Schedules'))
 const Occurrences = React.lazy(() => import('./pages/Occurrences'))
 const Timesheets = React.lazy(() => import('./pages/Timesheets'))
-const ScheduleAuditDashboard = React.lazy(() => import('./pages/ScheduleAuditDashboard'))
 const Courses = React.lazy(() => import('./pages/Courses'))
 const CourseDetails = React.lazy(() => import('./pages/CourseDetails'))
 const ClassDetails = React.lazy(() => import('./pages/ClassDetails'))
@@ -73,7 +72,6 @@ function App() {
           <Route path="schedules" element={<RequireAdmin><LazyPage><Schedules /></LazyPage></RequireAdmin>} />
           <Route path={ROUTE_MY_SCHEDULES.slice(1)} element={<RequireTeacher><LazyPage><MySchedules /></LazyPage></RequireTeacher>} />
           <Route path="my-progress" element={<RequireTeacher><LazyPage><MyProgress /></LazyPage></RequireTeacher>} />
-          <Route path="schedules/audit" element={<RequireAdmin><LazyPage><ScheduleAuditDashboard /></LazyPage></RequireAdmin>} />
           <Route path="absences" element={<RequireAdmin><LazyPage><Occurrences /></LazyPage></RequireAdmin>} />
           <Route path="timesheets" element={<RequireAdmin><LazyPage><Timesheets /></LazyPage></RequireAdmin>} />
           <Route path="my-availability" element={<RequireTeacher><LazyPage><MyAvailability /></LazyPage></RequireTeacher>} />

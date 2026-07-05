@@ -51,8 +51,8 @@ def resolve_expansion_start_date(
 ) -> date:
     if not adaptive_repair:
         return school_start_date
-    frozen_until = date.today() + timedelta(days=max(1, repair_window_days))
-    return max(school_start_date, frozen_until + timedelta(days=1))
+    editable_start_date = date.today() + timedelta(days=max(0, repair_window_days))
+    return max(school_start_date, editable_start_date)
 
 
 def build_primary_window(

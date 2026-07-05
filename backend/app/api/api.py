@@ -8,6 +8,7 @@ from app.api.v1.endpoints import (
     subjects,
     rooms,
     schedule,
+    scheduler,
     analytics,
     import_data,
     lessons,
@@ -35,6 +36,25 @@ api_router.include_router(subjects.router, prefix="/subjects", tags=["Disciplina
 api_router.include_router(rooms.router, prefix="/rooms", tags=["Salas"])
 api_router.include_router(lessons.router, prefix="/lessons", tags=["Aulas"])
 api_router.include_router(timeslots.router, prefix="/timeslots", tags=["timeslots"])
+api_router.include_router(scheduler.router, prefix="/scheduler", tags=["Scheduler"])
+
+# Keep non-generator schedule reads/logging routes while retiring legacy lifecycle APIs.
+_RETIRED_SCHEDULE_PATHS = {
+    "/generate",
+    "/status/{task_id}",
+    "/cancel/{task_id}",
+    "/drafts",
+    "/drafts/{gen_id}/diff",
+    "/drafts/{gen_id}/approve",
+    "/drafts/{gen_id}",
+    "/audit/generations",
+    "/audit/summary",
+}
+schedule.router.routes = [
+    route
+    for route in schedule.router.routes
+    if getattr(route, "path", None) not in _RETIRED_SCHEDULE_PATHS
+]
 api_router.include_router(schedule.router, prefix="/schedule", tags=["Gerador de Horários"])
 api_router.include_router(analytics.router, prefix="/analytics", tags=["Analytics"])
 api_router.include_router(import_data.router, prefix="/import", tags=["Importação de Dados"])

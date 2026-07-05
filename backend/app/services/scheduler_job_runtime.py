@@ -261,7 +261,10 @@ class SchedulerJobRuntime:
             "repair_policy_snapshot_hash": None if policy is None else policy.value,
             "request": request_metadata,
         }
+        snapshot_state_version = generation.snapshot.get("scheduler_state_version")
         job.generation_input_fingerprint = generation.value
+        if snapshot_state_version is not None:
+            job.scheduler_state_version_used = int(snapshot_state_version)
         job.debt_basis_fingerprint = None if debt is None else debt.value
         job.repair_policy_snapshot_hash = None if policy is None else policy.value
         job.input_snapshot_json = immutable_snapshot
