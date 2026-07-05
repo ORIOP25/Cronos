@@ -365,3 +365,6 @@ Quando a implementacao comecar:
 2. atualizar `documentation/04_operational_features/FALTAS.md` se UX-03 for decidido.
 3. atualizar `documentation/05_backend_api/ENDPOINT_STANDARDS.md` se houver ajuste contratual de payload/resposta.
 4. manter itens nao fechados marcados como "a definir".
+# Historical UI/UX WBS
+
+This document is retained as pre-beta history. References to `ScheduleAuditDashboard` are not current beta behavior; the page was removed in the 2026-07-05 baseline cleanup.

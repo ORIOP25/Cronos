@@ -169,27 +169,10 @@ class SchedulerFingerprintService:
                 )
             )
         ).all() if class_ids else []
-        legacy_lesson_rows = (
-            await self._db.execute(
-                select(
-                    models.Lesson.id,
-                    models.Lesson.class_id,
-                    models.Lesson.subject_id,
-                    models.Lesson.teacher_id,
-                ).where(
-                    models.Lesson.organization_id == organization_id,
-                    models.Lesson.class_id.in_(class_ids),
-                )
-            )
-        ).all() if class_ids else []
         subject_ids = {row.subject_id for row in assignment_rows}
-        subject_ids.update(row.subject_id for row in legacy_lesson_rows)
         teacher_ids = {
             row.teacher_id for row in assignment_rows if row.teacher_id is not None
         }
-        teacher_ids.update(
-            row.teacher_id for row in legacy_lesson_rows if row.teacher_id is not None
-        )
         teacher_rows = (
             await self._db.execute(
                 select(models.Teacher.id).where(
@@ -390,15 +373,6 @@ class SchedulerFingerprintService:
                         -1 if row.teacher_id is None else row.teacher_id,
                     ),
                 )
-            ],
-            "legacy_lesson_assignments": [
-                {
-                    "id": row.id,
-                    "class_id": row.class_id,
-                    "subject_id": row.subject_id,
-                    "teacher_id": row.teacher_id,
-                }
-                for row in sorted(legacy_lesson_rows, key=lambda row: row.id)
             ],
             "teacher_availability": [
                 {

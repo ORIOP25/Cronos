@@ -1,5 +1,7 @@
 # Clerk-Backed Equipa Cutover Inventory
 
+Historical inventory note: the beta cleanup audit on 2026-07-05 executed the visible `/teachers` admin cleanup, membership-capability guard cleanup, old migration removal, and tracked `.pnpm-store` removal. Current cleanup authority is `BETA_BASELINE_LEGACY_CLEANUP_AUDIT.md`.
+
 Source of truth: `documentation/01_product_strategy/PRD_CLERK_TEACHER_USER_CREATION.md`,
 `documentation/01_product_strategy/TECH_SPEC_CLERK_BACKED_EQUIPA_MEMBER_MANAGEMENT.md`, and
 `documentation/01_product_strategy/WBS_CLERK_BACKED_EQUIPA_MEMBER_MANAGEMENT.md`.
@@ -15,7 +17,7 @@ Source of truth: `documentation/01_product_strategy/PRD_CLERK_TEACHER_USER_CREAT
 - `backend/app/services/teacher_service.py`: legacy local login stub creation and best-effort Clerk invite path. Stop using it for canonical staff management; `/members` owns launch member writes.
 - `backend/app/schemas.py`: `TeacherCreate.create_user_account` and `TeacherUpdate.create_user_account` are legacy teacher CRUD fields, not valid in `/members`.
 - `backend/app/api/deps.py`: legacy authorization currently resolves through `user.role`, `user.teacher_id`, and `is_active`. Rewrite to membership-aware auth during WBS 1.
-- RLS migration `f4a9b2c8d1e7_tenant_hardening_rls.py`: contains old role mapping from Clerk roles. Replace in the membership cutover migration.
+- Alembic baseline `20260705_beta_baseline.py`: owns current RLS and membership-aware auth context helpers.
 - Tests referencing `TeacherForm`, `create_user_account`, local active teacher users, or admin `/api/v1/teachers` writes: rewrite under WBS 11/12 to assert `/members`.
 - Documentation outside the three source-of-truth docs that presents visible admin `Professores` CRUD or password setup as launch behavior: update, mark historical, or delete during WBS 14.
 

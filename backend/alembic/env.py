@@ -12,7 +12,6 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 # 2. Configuração do URL Real (Database)
 from app.db.database import SYNC_DB_URL
 config = context.config
-print(f"[Alembic] A usar URL: {SYNC_DB_URL}")
 config.set_main_option("sqlalchemy.url", SYNC_DB_URL)
 
 # Configurar Logs

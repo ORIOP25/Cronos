@@ -149,7 +149,6 @@ def _build_fixture(
             {tuple(sorted(row.items())): row for row in eligibility}.values()
         ),
         "class_subject_requirements": requirements,
-        "legacy_lesson_assignments": [],
         "teacher_availability": [
             {"teacher_id": 1, "timeslot_id": 1, "score": -1},
             {"teacher_id": 2, "timeslot_id": 2, "score": 0},

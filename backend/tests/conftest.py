@@ -139,6 +139,7 @@ async def create_org_and_user(
             _sel(models.Organization).where(models.Organization.id == existing_user.organization_id)
         )).scalar_one_or_none()
         if org is not None:
+            CLERK_ORG_BY_USER[clerk_user_id] = org.clerk_org_id
             await _ensure_membership(org, existing_user)
             await db_session.commit()
         return org, existing_user
@@ -169,13 +170,111 @@ async def create_org_and_user(
     )
     db_session.add(user)
     await db_session.flush()
+    CLERK_ORG_BY_USER[clerk_user_id] = org.clerk_org_id
     await _ensure_membership(org, user)
     await db_session.commit()
     return org, user
 
 
+async def ensure_membership_capabilities(
+    db_session: AsyncSession,
+    *,
+    organization_id: int,
+    user: models.User,
+    capabilities: list[models.MembershipCapability],
+    display_name: str | None = None,
+    expected_clerk_role: models.ClerkOrganizationRole | None = None,
+    teacher_access_mode: models.TeacherAccessMode | None = None,
+) -> models.OrganizationMembership:
+    """Create or update the local membership shape used by the Clerk baseline."""
+    from sqlalchemy.future import select as _sel
+
+    organization = await db_session.get(models.Organization, organization_id)
+    if organization is not None and not organization.clerk_org_id:
+        organization.clerk_org_id = f"org_test_{organization_id}"
+        await db_session.flush()
+    if organization is not None and user.clerk_user_id:
+        CLERK_ORG_BY_USER[user.clerk_user_id] = organization.clerk_org_id
+
+    membership = (await db_session.execute(
+        _sel(models.OrganizationMembership).where(
+            models.OrganizationMembership.organization_id == organization_id,
+            models.OrganizationMembership.account_id == user.id,
+        )
+    )).scalar_one_or_none()
+    if membership is None:
+        membership = models.OrganizationMembership(
+            organization_id=organization_id,
+            account_id=user.id,
+            organization_display_name=display_name or user.name or user.email,
+            lifecycle_status=models.MembershipLifecycleStatus.active,
+            access_status=models.MembershipAccessStatus.active,
+            teacher_access_mode=teacher_access_mode,
+            expected_clerk_role=expected_clerk_role,
+        )
+        db_session.add(membership)
+        await db_session.flush()
+    else:
+        membership.lifecycle_status = models.MembershipLifecycleStatus.active
+        membership.access_status = models.MembershipAccessStatus.active
+        membership.teacher_access_mode = teacher_access_mode
+        membership.expected_clerk_role = expected_clerk_role
+
+    existing = set((await db_session.execute(
+        _sel(models.OrganizationMembershipCapability.capability).where(
+            models.OrganizationMembershipCapability.organization_membership_id == membership.id,
+        )
+    )).scalars().all())
+    for capability in capabilities:
+        if capability not in existing:
+            db_session.add(models.OrganizationMembershipCapability(
+                organization_membership_id=membership.id,
+                capability=capability,
+            ))
+    await db_session.flush()
+    return membership
+
+
+async def create_teacher_profile(
+    db_session: AsyncSession,
+    *,
+    organization_id: int,
+    name: str = "Prof. Teste",
+    subject_ids: list[int] | None = None,
+    organization_membership_id: int | None = None,
+) -> models.Teacher:
+    """Create a teacher domain profile directly for tests that are not member-CRUD tests."""
+    from sqlalchemy.future import select as _sel
+
+    teacher = models.Teacher(
+        name=name,
+        organization_id=organization_id,
+        organization_membership_id=organization_membership_id,
+    )
+    db_session.add(teacher)
+    await db_session.flush()
+    if subject_ids:
+        valid_subject_ids = set((await db_session.execute(
+            _sel(models.Subject.id).where(
+                models.Subject.organization_id == organization_id,
+                models.Subject.id.in_(subject_ids),
+            )
+        )).scalars().all())
+        for subject_id in valid_subject_ids:
+            await db_session.execute(
+                models.teacher_subject_link.insert().values(
+                    organization_id=organization_id,
+                    teacher_id=teacher.id,
+                    subject_id=subject_id,
+                )
+            )
+    return teacher
+
+
 def mock_clerk_payload(clerk_user_id: str, org_id: str | None = None, role: str = "admin") -> dict:
     payload = {"sub": clerk_user_id}
+    if org_id is None:
+        org_id = CLERK_ORG_BY_USER.get(clerk_user_id)
     if org_id:
         payload["o"] = {"id": org_id, "rol": role}
     return payload
@@ -188,6 +287,7 @@ def mock_clerk_payload(clerk_user_id: str, org_id: str | None = None, role: str 
 ADMIN_USER_ID = "user_admin_001"
 TEACHER_USER_ID = "user_teacher_001"
 MOCK_ORG_ID = "org_test_001"
+CLERK_ORG_BY_USER: dict[str, str] = {}
 
 
 @pytest_asyncio.fixture
@@ -262,5 +362,17 @@ async def create_teacher_user(
         is_active=True,
     )
     db_session.add(user)
+    await db_session.flush()
+    membership = await ensure_membership_capabilities(
+        db_session,
+        organization_id=org_id,
+        user=user,
+        capabilities=[models.MembershipCapability.teacher],
+        expected_clerk_role=models.ClerkOrganizationRole.member,
+        teacher_access_mode=models.TeacherAccessMode.platform,
+    )
+    teacher = await db_session.get(models.Teacher, teacher_id)
+    if teacher is not None and teacher.organization_membership_id is None:
+        teacher.organization_membership_id = membership.id
     await db_session.flush()
     return user

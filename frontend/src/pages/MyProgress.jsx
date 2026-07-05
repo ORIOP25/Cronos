@@ -3,8 +3,7 @@ import PageHeader from '../components/PageHeader'
 import { CAlert, CBadge, CCard, CCardBody, CCardHeader, CSpinner } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
 import { cilBook, cilEducation } from '@coreui/icons'
-import { useTeacherProgress } from '../hooks/useSchoolData'
-import { useUser } from '@clerk/react'
+import { useCurrentMember, useTeacherProgress } from '../hooks/useSchoolData'
 
 function SubjectRow({ subject }) {
   const isLow = subject.overall_percentage < 50
@@ -130,8 +129,8 @@ function ClassCard({ classData }) {
 }
 
 function MyProgress() {
-  const { user } = useUser()
-  const teacherId = user?.publicMetadata?.teacher_id
+  const { data: currentMember } = useCurrentMember()
+  const teacherId = currentMember?.teacher_id
   const { data: progressData, isLoading, isError, error } = useTeacherProgress({
     enabled: Boolean(teacherId),
   })

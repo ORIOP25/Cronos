@@ -152,8 +152,6 @@ async def read_teachers(
 # --- 2. Criar Professor ---
 @router.post("/", response_model=schemas.TeacherRead)
 async def create_teacher(
-    teacher: schemas.TeacherCreate,
-    db: Annotated[AsyncSession, Depends(deps.get_db)],
     current_user: Annotated[models.User, Depends(deps.get_current_active_admin)]
 ):
     raise HTTPException(
@@ -180,8 +178,8 @@ async def update_teacher_availability(
 
     try:
         # Default deny: apenas admin e professor podem operar este endpoint
-        is_admin = bool(current_user.is_superuser or current_user.role == models.UserRole.admin)
-        is_teacher = current_user.teacher_id is not None
+        is_admin = deps.user_has_admin_capability(current_user)
+        is_teacher = deps.user_has_teacher_capability(current_user)
         if not is_admin and not is_teacher:
             status_code = 403
             raise HTTPException(status_code=403, detail="Sem permissões para este endpoint")
@@ -238,8 +236,6 @@ async def update_teacher_availability(
 @router.patch("/{teacher_id}", response_model=schemas.TeacherRead, responses={404: {"description": TEACHER_NOT_FOUND_MSG}})
 async def update_teacher(
     teacher_id: int,
-    teacher_in: schemas.TeacherUpdate,
-    db: Annotated[AsyncSession, Depends(deps.get_db)],
     current_user: Annotated[models.User, Depends(deps.get_current_active_admin)] # Apenas Admins
 ):
     """
@@ -254,7 +250,6 @@ async def update_teacher(
 @router.delete("/{teacher_id}", responses={404: {"description": TEACHER_NOT_FOUND_MSG}, 400: {"description": "Dependências existentes"}})
 async def delete_teacher(
     teacher_id: int,
-    db: Annotated[AsyncSession, Depends(deps.get_db)],
     current_user: Annotated[models.User, Depends(deps.get_current_active_admin)] # Apenas Admins
 ):
     """

@@ -1171,3 +1171,6 @@ O dashboard V1 está concluído quando:
 - [x] Documentação atualizada (ARQUITETURA_COMPLETA.md + READMEs)
 - [x] Validação manual com seed data passou em todos os checkpoints do WBS 5.2
 - [x] Screenshots de E2E falhados são uploaded como artifact no CI
+# Historical Dashboard WBS
+
+This document is retained as pre-beta history. References to `/schedule/audit/*` are not current beta behavior; those routes were removed in the 2026-07-05 baseline cleanup.

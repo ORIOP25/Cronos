@@ -93,15 +93,15 @@ Primary evidence: `test_alpha_release_gate.py`,
 - Frontend lint: passed (dependency-data freshness warning only).
 - Frontend production build: passed.
 - Python compile: passed.
-- Alembic empty-schema upgrade: passed to `d3a7e5b9c2f1 (head)`.
-- Alembic downgrade to `c2f6a8d4e1b9` and re-upgrade: passed.
+- Historical note: the old multi-revision Alembic chain was replaced on 2026-07-05 by the pre-launch beta baseline revision `20260705_beta_baseline`.
+- Re-run Alembic verification on a disposable database with `alembic upgrade head`.
 - `git diff --check`: passed.
 - Required legacy scans: runtime/UI clear; remaining matches are negative rules,
   migrations, rejection tests, or documents explicitly marked historical.
 
 ## Release Notes
 
-- Apply Alembic through `d3a7e5b9c2f1` before deploying backend workers.
+- Apply Alembic through `20260705_beta_baseline` before deploying backend workers.
 - Deploy API and scheduler worker from the same revision.
 - Execute the manual QA script in the release environment with a representative
   tenant before enabling generation for pilot users.

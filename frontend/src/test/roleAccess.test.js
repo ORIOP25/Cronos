@@ -2,40 +2,40 @@
 
 import { describe, it, expect } from 'vitest'
 import {
-  USER_ROLE_ADMIN,
-  USER_ROLE_TEACHER,
   ROUTE_DASHBOARD,
-  getDefaultRouteForRole,
+  ROUTE_CREATE_ORG,
+  ROUTE_MY_AVAILABILITY,
+  getDefaultRouteForMember,
   getForbiddenRedirectRoute,
 } from '../roleAccess'
 
 describe('roleAccess', () => {
-  describe('getDefaultRouteForRole', () => {
+  describe('getDefaultRouteForMember', () => {
     it('admin vai para dashboard', () => {
-      expect(getDefaultRouteForRole(USER_ROLE_ADMIN)).toBe(ROUTE_DASHBOARD)
+      expect(getDefaultRouteForMember({ default_mode: 'admin' })).toBe(ROUTE_DASHBOARD)
     })
 
     it('teacher vai para my-availability', () => {
-      expect(getDefaultRouteForRole(USER_ROLE_TEACHER)).toBe('/my-availability')
+      expect(getDefaultRouteForMember({ default_mode: 'teacher' })).toBe(ROUTE_MY_AVAILABILITY)
     })
 
-    it('role desconhecido redireciona para create-org', () => {
-      expect(getDefaultRouteForRole('student')).toBe('/create-org')
+    it('modo desconhecido redireciona para create-org', () => {
+      expect(getDefaultRouteForMember({ default_mode: 'student' })).toBe(ROUTE_CREATE_ORG)
     })
 
     it('null/undefined redireciona para create-org', () => {
-      expect(getDefaultRouteForRole(null)).toBe('/create-org')
-      expect(getDefaultRouteForRole(undefined)).toBe('/create-org')
+      expect(getDefaultRouteForMember(null)).toBe(ROUTE_CREATE_ORG)
+      expect(getDefaultRouteForMember(undefined)).toBe(ROUTE_CREATE_ORG)
     })
   })
 
   describe('getForbiddenRedirectRoute', () => {
     it('admin redirecionado para dashboard', () => {
-      expect(getForbiddenRedirectRoute(USER_ROLE_ADMIN)).toBe(ROUTE_DASHBOARD)
+      expect(getForbiddenRedirectRoute({ default_mode: 'admin' })).toBe(ROUTE_DASHBOARD)
     })
 
     it('teacher redirecionado para my-availability', () => {
-      expect(getForbiddenRedirectRoute(USER_ROLE_TEACHER)).toBe('/my-availability')
+      expect(getForbiddenRedirectRoute({ default_mode: 'teacher' })).toBe(ROUTE_MY_AVAILABILITY)
     })
   })
 

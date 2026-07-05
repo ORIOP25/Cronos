@@ -280,8 +280,8 @@ async def test_repair_policy_change_has_separate_hash_from_generation_inputs(db_
 
 
 @pytest.mark.asyncio
-async def test_legacy_lessons_include_scheduler_inputs_and_ignore_other_year_events(db_session):
-    organization = models.Organization(name="Legacy Inputs", plan_status="active")
+async def test_class_subject_requirements_include_scheduler_inputs_and_ignore_other_year_events(db_session):
+    organization = models.Organization(name="Canonical Inputs", plan_status="active")
     db_session.add(organization)
     await db_session.flush()
     school_year = models.SchedulerSchoolYear(
@@ -293,15 +293,15 @@ async def test_legacy_lessons_include_scheduler_inputs_and_ignore_other_year_eve
     )
     course = models.Course(
         organization_id=organization.id,
-        name="Legacy Course",
+        name="Canonical Course",
         abbreviation="LEG",
     )
     subject = models.Subject(
         organization_id=organization.id,
-        name="Legacy Subject",
+        name="Canonical Subject",
         required_room_type=models.RoomType.normal,
     )
-    teacher = models.Teacher(organization_id=organization.id, name="Legacy Teacher")
+    teacher = models.Teacher(organization_id=organization.id, name="Canonical Teacher")
     slot = models.Timeslot(
         organization_id=organization.id,
         day_of_week=1,
@@ -316,7 +316,7 @@ async def test_legacy_lessons_include_scheduler_inputs_and_ignore_other_year_eve
     )
     class_ = models.Class(
         organization_id=organization.id,
-        name="Legacy Class",
+        name="Canonical Class",
         size=20,
         start_year=2025,
         end_year=2026,
@@ -326,17 +326,18 @@ async def test_legacy_lessons_include_scheduler_inputs_and_ignore_other_year_eve
     module = models.Module(
         organization_id=organization.id,
         subject_id=subject.id,
-        name="Legacy Module",
+        name="Canonical Module",
         code="LM1",
         hours_total=10,
         order=1,
     )
     db_session.add_all([state, class_, module])
     await db_session.flush()
-    lesson = models.Lesson(
+    assignment = models.ClassSubjectLink(
         organization_id=organization.id,
         class_id=class_.id,
         subject_id=subject.id,
+        grade_level=class_.grade_level,
         teacher_id=teacher.id,
     )
     availability = models.Availability(
@@ -353,7 +354,7 @@ async def test_legacy_lessons_include_scheduler_inputs_and_ignore_other_year_eve
         event_type=models.CalendarEventType.national_holiday,
         source=models.CalendarEventSource.auto,
     )
-    db_session.add_all([lesson, availability, old_event])
+    db_session.add_all([assignment, availability, old_event])
     await db_session.commit()
 
     service = SchedulerFingerprintService(db_session)
@@ -364,6 +365,14 @@ async def test_legacy_lessons_include_scheduler_inputs_and_ignore_other_year_eve
     )
     assert first.snapshot["subjects"] == [
         {"id": subject.id, "required_room_type": "normal"}
+    ]
+    assert first.snapshot["class_subject_requirements"] == [
+        {
+            "class_id": class_.id,
+            "subject_id": subject.id,
+            "grade_level": class_.grade_level,
+            "teacher_id": teacher.id,
+        }
     ]
     assert first.snapshot["module_accounting"][0]["id"] == module.id
     assert first.snapshot["teacher_availability"] == [

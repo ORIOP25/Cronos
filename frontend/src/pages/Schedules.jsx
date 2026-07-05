@@ -15,6 +15,7 @@ import {
   useSchedulerStatus, useCurrentDraftSummary, useApproveDraft, useRejectDraft,
   useGenerateSchedule, useScheduleTaskStatus, useCancelScheduleTask,
   useClasses, useTeachers, useWeekSchedule, useClassDetails, useTimeslots,
+  useCurrentMember,
 } from '../hooks/useSchoolData'
 import WeekGrid from '../components/WeekGrid'
 import LessonLogModal from '../components/LessonLogModal'
@@ -22,7 +23,7 @@ import KPISidebar from '../components/schedules/KPISidebar'
 import DraftPanel from '../components/schedules/DraftPanel'
 import GenerationStatusPanel from '../components/schedules/GenerationStatusPanel'
 import PreflightErrorPanel from '../components/schedules/PreflightErrorPanel'
-import { useOrganization, useUser } from '@clerk/react'
+import { useOrganization } from '@clerk/react'
 import { useRole } from '../hooks/useRole'
 import { getCurrentWeekMonday, addDays, formatWeekRange } from '../utils/formatUtils'
 
@@ -108,8 +109,8 @@ const Schedules = () => {
   const { organization } = useOrganization()
   const orgId = organization?.id ?? null
   const { isAdmin, isTeacher } = useRole()
-  const { user } = useUser()
-  const teacherOwnId = user?.publicMetadata?.teacher_id ?? null
+  const { data: currentMember } = useCurrentMember()
+  const teacherOwnId = currentMember?.teacher_id ?? null
   const canConsultSchedule = isAdmin || (isTeacher && Boolean(teacherOwnId))
   const jobStorageKey = getJobStorageKey(orgId)
   const viewStorageKey = getViewStorageKey(orgId)

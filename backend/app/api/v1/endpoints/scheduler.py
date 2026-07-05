@@ -26,7 +26,7 @@ from app.services.scheduler_job_service import (
     SchedulerJobService,
 )
 from app.services.scheduler_observability import emit_scheduler_job_event
-from app.api.v1.endpoints.schedule import start_generation_request
+from app.services.scheduler_request_service import start_generation_request
 from app.core.ratelimit import limiter
 
 
@@ -41,7 +41,7 @@ async def generate_schedule(
     db: Annotated[AsyncSession, Depends(deps.get_db)],
     current_user: Annotated[models.User, Depends(deps.get_current_active_admin)],
 ):
-    return await start_generation_request(request, payload, db, current_user)
+    return await start_generation_request(payload, db, current_user)
 
 
 @router.get(

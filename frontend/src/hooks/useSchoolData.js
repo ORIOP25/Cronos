@@ -39,6 +39,115 @@ export const useTeachers = ({ enabled = true } = {}) => {
   })
 }
 
+export const useCurrentMember = ({ enabled = true } = {}) => {
+  const orgId = useOrganization().organization?.id
+  const { isLoaded, isSignedIn } = useAuth()
+  return useQuery({
+    queryKey: ['current-member', orgId],
+    queryFn: async () => {
+      const { data } = await apiClient.get('/members/me')
+      return data
+    },
+    enabled: Boolean(orgId) && Boolean(isSignedIn) && isLoaded && enabled,
+    staleTime: 1000 * 60,
+    refetchOnWindowFocus: true,
+    retry: 1,
+  })
+}
+
+export const useMembers = ({ includeArchived = false, enabled = true } = {}) => {
+  const orgId = useOrganization().organization?.id
+  return useQuery({
+    queryKey: ['members', orgId, includeArchived],
+    queryFn: async () => {
+      const { data } = await apiClient.get('/members', {
+        params: { include_archived: includeArchived },
+      })
+      return data
+    },
+    enabled: Boolean(orgId) && enabled,
+    ...DYNAMIC_OPTS,
+  })
+}
+
+const invalidateMemberQueries = (queryClient, orgId) => {
+  void queryClient.invalidateQueries({ queryKey: ['members', orgId] })
+  void queryClient.invalidateQueries({ queryKey: ['current-member', orgId] })
+  void queryClient.invalidateQueries({ queryKey: ['teachers', orgId] })
+}
+
+export const useCreateMember = () => {
+  const queryClient = useQueryClient()
+  const orgId = useOrganization().organization?.id
+  return useMutation({
+    mutationFn: async (payload) => {
+      const { data } = await apiClient.post('/members', payload)
+      return data
+    },
+    onSuccess: () => invalidateMemberQueries(queryClient, orgId),
+  })
+}
+
+export const useUpdateMember = () => {
+  const queryClient = useQueryClient()
+  const orgId = useOrganization().organization?.id
+  return useMutation({
+    mutationFn: async ({ id, ...payload }) => {
+      const { data } = await apiClient.patch(`/members/${id}`, payload)
+      return data
+    },
+    onSuccess: () => invalidateMemberQueries(queryClient, orgId),
+  })
+}
+
+export const useRemoveMember = () => {
+  const queryClient = useQueryClient()
+  const orgId = useOrganization().organization?.id
+  return useMutation({
+    mutationFn: async (id) => {
+      const { data } = await apiClient.post(`/members/${id}/remove`)
+      return data
+    },
+    onSuccess: () => invalidateMemberQueries(queryClient, orgId),
+  })
+}
+
+export const useResendMemberInvitation = () => {
+  const queryClient = useQueryClient()
+  const orgId = useOrganization().organization?.id
+  return useMutation({
+    mutationFn: async (id) => {
+      const { data } = await apiClient.post(`/members/${id}/resend-invitation`)
+      return data
+    },
+    onSuccess: () => invalidateMemberQueries(queryClient, orgId),
+  })
+}
+
+export const useRetryMemberSync = () => {
+  const queryClient = useQueryClient()
+  const orgId = useOrganization().organization?.id
+  return useMutation({
+    mutationFn: async (id) => {
+      const { data } = await apiClient.post(`/members/${id}/retry-sync`)
+      return data
+    },
+    onSuccess: () => invalidateMemberQueries(queryClient, orgId),
+  })
+}
+
+export const useRestoreMember = () => {
+  const queryClient = useQueryClient()
+  const orgId = useOrganization().organization?.id
+  return useMutation({
+    mutationFn: async ({ id, payload }) => {
+      const { data } = await apiClient.post(`/members/${id}/restore`, payload)
+      return data
+    },
+    onSuccess: () => invalidateMemberQueries(queryClient, orgId),
+  })
+}
+
 export const useRooms = () => {
   const orgId = useOrganization().organization?.id
   return useQuery({
@@ -122,7 +231,7 @@ export const useCourses = () => {
 
 /**
  * Cria uma nova entidade.
- * @param {string} entityKey - O nome da entidade (ex: 'teachers'). Define o URL (/teachers/) e a Cache Key.
+ * @param {string} entityKey - O nome da entidade (ex: 'rooms'). Define o URL e a Cache Key.
  */
 export const useCreateEntity = (entityKey) => {
   const queryClient = useQueryClient()
@@ -980,37 +1089,6 @@ export const useWeekSchedule = (classId, teacherId, weekStart) => {
   })
 }
 
-/**
- * Dashboard técnico — lista gerações disponíveis para auditoria.
- */
-export const useAuditGenerations = () => {
-  const orgId = useOrganization().organization?.id
-  return useQuery({
-    queryKey: ['schedule-audit-generations', orgId],
-    queryFn: async () => {
-      const { data } = await apiClient.get('/schedule/audit/generations')
-      return data
-    },
-    ...DYNAMIC_OPTS,
-  })
-}
-
-/**
- * Dashboard técnico — métricas de auditoria por geração.
- */
-export const useAuditSummary = (generationId, { enabled = true } = {}) => {
-  const orgId = useOrganization().organization?.id
-  return useQuery({
-    queryKey: ['schedule-audit-summary', orgId, generationId],
-    queryFn: async () => {
-      const params = generationId ? { generation_id: generationId } : {}
-      const { data } = await apiClient.get('/schedule/audit/summary', { params })
-      return data
-    },
-    enabled,
-    ...DYNAMIC_OPTS,
-  })
-}
 
 /**
  * Dashboard V1 — Command Center. Agrega alertas, saúde do horário,

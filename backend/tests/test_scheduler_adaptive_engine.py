@@ -40,7 +40,6 @@ def _snapshot(*, hard_end: str) -> dict:
         "class_subject_requirements": [
             {"class_id": 1, "subject_id": 2, "teacher_id": 3}
         ],
-        "legacy_lesson_assignments": [],
         "teacher_availability": [],
         "rooms": [{"id": 4, "capacity": 30, "type": "normal"}],
         "module_accounting": [],

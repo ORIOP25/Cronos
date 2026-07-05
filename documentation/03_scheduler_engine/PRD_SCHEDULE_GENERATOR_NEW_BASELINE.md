@@ -5,6 +5,8 @@
 - Scope: new baseline for schedule generation behavior.
 - Legacy policy: existing implementation must be adapted to this PRD or removed.
 - User-facing model: the user has one generation action; internal strategy is automatic.
+- Baseline audit: `documentation/10_migration_map/BETA_BASELINE_LEGACY_CLEANUP_AUDIT.md`.
+- Implementation note: solver V2 modules, legacy schedule compatibility routes, and schedule audit UI are removed from the beta baseline.
 
 ## Supersession
 This PRD is the source of truth for the schedule generator baseline.

@@ -41,7 +41,7 @@ async def list_timesheets(
     week_start_date: Optional[date] = None,
     status: Optional[models.TimesheetStatus] = None,
 ):
-    if current_user.role != models.UserRole.admin and not current_user.is_superuser:
+    if not deps.user_has_admin_capability(current_user):
         raise HTTPException(status_code=403, detail="Acesso negado.")
         
     def _run(sync_db):
@@ -64,7 +64,7 @@ async def get_my_timesheet(
     db: Annotated[AsyncSession, Depends(deps.get_db)],
     current_user: Annotated[models.User, Depends(deps.get_current_active_user)],
 ):
-    if current_user.role != models.UserRole.teacher:
+    if not deps.user_has_teacher_capability(current_user):
         raise HTTPException(status_code=403, detail="Apenas professores podem consultar a sua timesheet.")
         
     def _run(sync_db):
@@ -89,7 +89,7 @@ async def submit_my_timesheet(
     db: Annotated[AsyncSession, Depends(deps.get_db)],
     current_user: Annotated[models.User, Depends(deps.get_current_active_user)],
 ):
-    if current_user.role != models.UserRole.teacher:
+    if not deps.user_has_teacher_capability(current_user):
         raise HTTPException(status_code=403, detail="Apenas professores podem submeter a sua timesheet.")
         
     def _run(sync_db):
@@ -114,7 +114,7 @@ async def get_pending_occurrences_for_timesheet(
     current_user: Annotated[models.User, Depends(deps.get_current_active_user)],
 ):
     """Devolve as ocorrências OPEN na semana associada à timesheet."""
-    if current_user.role != models.UserRole.admin and not current_user.is_superuser:
+    if not deps.user_has_admin_capability(current_user):
         raise HTTPException(status_code=403, detail="Acesso negado.")
 
     def _run(sync_db):
@@ -137,7 +137,7 @@ async def update_timesheet_status(
     db: Annotated[AsyncSession, Depends(deps.get_db)],
     current_user: Annotated[models.User, Depends(deps.get_current_active_user)],
 ):
-    if current_user.role != models.UserRole.admin and not current_user.is_superuser:
+    if not deps.user_has_admin_capability(current_user):
         raise HTTPException(status_code=403, detail="Apenas admins podem aprovar ou reabrir timesheets.")
         
     def _run(sync_db):

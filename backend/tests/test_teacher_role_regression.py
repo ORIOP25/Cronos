@@ -8,7 +8,7 @@ from httpx import AsyncClient
 from app import models
 from app.config import settings
 from app.models import UserRole
-from tests.conftest import mock_clerk_payload
+from tests.conftest import create_teacher_profile, create_teacher_user, ensure_membership_capabilities, mock_clerk_payload
 
 
 API = settings.API_V1_STR
@@ -23,15 +23,44 @@ async def _create_teacher_auth_headers(
     role: UserRole = UserRole.teacher,
 ) -> tuple[dict, str]:
     cid = f"role_reg_{uuid4().hex[:8]}"
-    user = models.User(
-        email=f"teacher.role.regression.{uuid4().hex[:8]}@escola.pt",
-        clerk_user_id=cid,
-        is_active=is_active,
-        role=role,
-        organization_id=organization_id,
-        teacher_id=teacher_id,
-    )
-    db_session.add(user)
+    if role == UserRole.teacher and teacher_id is not None:
+        user = await create_teacher_user(
+            db_session,
+            clerk_user_id=cid,
+            email=f"teacher.role.regression.{uuid4().hex[:8]}@escola.pt",
+            name="Teacher Role Regression",
+            org_id=organization_id,
+            teacher_id=teacher_id,
+        )
+    else:
+        user = models.User(
+            email=f"teacher.role.regression.{uuid4().hex[:8]}@escola.pt",
+            clerk_user_id=cid,
+            is_active=is_active,
+            role=role,
+            organization_id=organization_id,
+            teacher_id=teacher_id,
+        )
+        db_session.add(user)
+        await db_session.flush()
+        capabilities = [models.MembershipCapability.teacher] if role == UserRole.teacher else []
+        await ensure_membership_capabilities(
+            db_session,
+            organization_id=organization_id,
+            user=user,
+            capabilities=capabilities,
+            expected_clerk_role=models.ClerkOrganizationRole.member,
+            teacher_access_mode=models.TeacherAccessMode.platform if capabilities else None,
+        )
+    if not is_active:
+        from sqlalchemy.future import select as _sel
+        membership = (await db_session.execute(
+            _sel(models.OrganizationMembership).where(
+                models.OrganizationMembership.organization_id == organization_id,
+                models.OrganizationMembership.account_id == user.id,
+            )
+        )).scalar_one()
+        membership.access_status = models.MembershipAccessStatus.none
     await db_session.commit()
     return {"Authorization": f"Bearer test_{cid}"}, cid
 
@@ -64,11 +93,9 @@ class TestTeacherRoleRegressionContracts:
         )
         assert timeslots_resp.status_code == 200
         slot_rows = (await async_client.get(f"{API}/timeslots/", headers=admin_token_headers)).json()
-        teacher_resp = await async_client.post(
-            f"{API}/teachers/", json={"name": "Prof. Contract 200", "email": f"contract200.{uuid4().hex[:8]}@escola.pt"}, headers=admin_token_headers,
-        )
-        assert teacher_resp.status_code == 200
-        teacher_id = teacher_resp.json()["id"]
+        teacher = await create_teacher_profile(db_session, organization_id=1, name="Prof. Contract 200")
+        await db_session.commit()
+        teacher_id = teacher.id
         write_resp = await async_client.post(
             f"{API}/teachers/{teacher_id}/availability", json=[{"timeslot_id": slot_rows[0]["id"], "score": 2}], headers=admin_token_headers,
         )
@@ -110,11 +137,9 @@ class TestTeacherRoleRegressionContracts:
             f"{API}/school/settings/", json={"school_start_date": "2025-09-01", "school_hard_end_date": "2026-07-31"}, headers=admin_token_headers,
         )
         assert settings_resp.status_code == 200
-        teacher_resp = await async_client.post(
-            f"{API}/teachers/", json={"name": "Prof. Horizon 200", "email": f"horizon200.{uuid4().hex[:8]}@escola.pt"}, headers=admin_token_headers,
-        )
-        assert teacher_resp.status_code == 200
-        teacher_headers, cid = await _create_teacher_auth_headers(db_session, organization_id=1, teacher_id=teacher_resp.json()["id"])
+        teacher = await create_teacher_profile(db_session, organization_id=1, name="Prof. Horizon 200")
+        await db_session.commit()
+        teacher_headers, cid = await _create_teacher_auth_headers(db_session, organization_id=1, teacher_id=teacher.id)
         ok_resp = await _patch_and_call(cid, teacher_headers, f"{API}/schedule/me/horizon", async_client)
         assert ok_resp.status_code == 200
         assert "active_generation_id" in ok_resp.json()
@@ -135,27 +160,21 @@ class TestTeacherRoleRegressionContracts:
             f"{API}/school/settings/", json={"school_start_date": "2025-09-01", "school_hard_end_date": "2026-07-31"}, headers=admin_token_headers,
         )
         assert settings_resp.status_code == 200
-        teacher_resp = await async_client.post(
-            f"{API}/teachers/", json={"name": "Prof. Horizon Polling", "email": f"horizonpoll.{uuid4().hex[:8]}@escola.pt"}, headers=admin_token_headers,
-        )
-        assert teacher_resp.status_code == 200
-        teacher_headers, cid = await _create_teacher_auth_headers(db_session, organization_id=1, teacher_id=teacher_resp.json()["id"])
+        teacher = await create_teacher_profile(db_session, organization_id=1, name="Prof. Horizon Polling")
+        await db_session.commit()
+        teacher_headers, cid = await _create_teacher_auth_headers(db_session, organization_id=1, teacher_id=teacher.id)
         await _patch_loop(cid, teacher_headers, f"{API}/schedule/me/horizon", async_client, 55)
 
     async def test_teacher_week_navigation_volume_does_not_trip_old_global_limit(self, async_client: AsyncClient, admin_token_headers: dict, db_session):
-        teacher_resp = await async_client.post(
-            f"{API}/teachers/", json={"name": "Prof. Week Navigation", "email": f"weeknav.{uuid4().hex[:8]}@escola.pt"}, headers=admin_token_headers,
-        )
-        assert teacher_resp.status_code == 200
-        teacher_headers, cid = await _create_teacher_auth_headers(db_session, organization_id=1, teacher_id=teacher_resp.json()["id"])
+        teacher = await create_teacher_profile(db_session, organization_id=1, name="Prof. Week Navigation")
+        await db_session.commit()
+        teacher_headers, cid = await _create_teacher_auth_headers(db_session, organization_id=1, teacher_id=teacher.id)
         await _patch_loop(cid, teacher_headers, f"{API}/schedule/week", async_client, 70, params={"week_start": "2026-04-20"})
 
     async def test_teacher_week_schedule_contract_403_and_422(self, async_client: AsyncClient, admin_token_headers: dict, db_session):
-        teacher_resp = await async_client.post(
-            f"{API}/teachers/", json={"name": "Prof. Week Scope", "email": f"weekscope.{uuid4().hex[:8]}@escola.pt"}, headers=admin_token_headers,
-        )
-        assert teacher_resp.status_code == 200
-        teacher_id = teacher_resp.json()["id"]
+        teacher = await create_teacher_profile(db_session, organization_id=1, name="Prof. Week Scope")
+        await db_session.commit()
+        teacher_id = teacher.id
         teacher_headers, cid = await _create_teacher_auth_headers(db_session, organization_id=1, teacher_id=teacher_id)
         missing_week_resp = await _patch_and_call(cid, teacher_headers, f"{API}/schedule/week", async_client)
         assert missing_week_resp.status_code == 422
@@ -167,11 +186,9 @@ class TestTeacherRoleRegressionContracts:
         assert other_teacher_resp.status_code == 403
 
     async def test_student_is_denied_on_teacher_self_service_and_week_schedule(self, async_client: AsyncClient, admin_token_headers: dict, db_session):
-        teacher_resp = await async_client.post(
-            f"{API}/teachers/", json={"name": "Prof. Student Deny", "email": f"deny.student.{uuid4().hex[:8]}@escola.pt"}, headers=admin_token_headers,
-        )
-        assert teacher_resp.status_code == 200
-        teacher_id = teacher_resp.json()["id"]
+        teacher = await create_teacher_profile(db_session, organization_id=1, name="Prof. Student Deny")
+        await db_session.commit()
+        teacher_id = teacher.id
         student_headers, cid = await _create_teacher_auth_headers(db_session, organization_id=1, teacher_id=None, role=UserRole.student)
         availability_resp = await _patch_and_call(cid, student_headers, f"{API}/teachers/{teacher_id}/availability", async_client, "POST", json=[])
         assert availability_resp.status_code == 403
@@ -184,11 +201,9 @@ class TestTeacherRoleRegressionContracts:
         )
         assert timeslots_resp.status_code == 200
         slot_rows = (await async_client.get(f"{API}/timeslots/", headers=admin_token_headers)).json()
-        teacher_resp = await async_client.post(
-            f"{API}/teachers/", json={"name": "Prof. Duplicate", "email": f"duplicate.{uuid4().hex[:8]}@escola.pt"}, headers=admin_token_headers,
-        )
-        assert teacher_resp.status_code == 200
-        teacher_id = teacher_resp.json()["id"]
+        teacher = await create_teacher_profile(db_session, organization_id=1, name="Prof. Duplicate")
+        await db_session.commit()
+        teacher_id = teacher.id
         baseline_resp = await async_client.post(
             f"{API}/teachers/{teacher_id}/availability", json=[{"timeslot_id": slot_rows[0]["id"], "score": 2}], headers=admin_token_headers,
         )

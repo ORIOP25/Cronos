@@ -12,7 +12,7 @@ const Dashboard = React.lazy(() => import('./pages/Dashboard'))
 const MyAvailability = React.lazy(() => import('./pages/MyAvailability'))
 const MyProgress = React.lazy(() => import('./pages/MyProgress'))
 const MySchedules = React.lazy(() => import('./pages/MySchedules'))
-const Teachers = React.lazy(() => import('./pages/Teachers'))
+const Members = React.lazy(() => import('./pages/Members'))
 const Rooms = React.lazy(() => import('./pages/Rooms'))
 const Subjects = React.lazy(() => import('./pages/Subjects'))
 const SchoolConfig = React.lazy(() => import('./pages/SchoolConfig'))
@@ -61,7 +61,7 @@ function App() {
 
         <Route element={<RequireAuth><DefaultLayout /></RequireAuth>}>
           <Route path="dashboard" element={<RequireAdmin><LazyPage><Dashboard /></LazyPage></RequireAdmin>} />
-          <Route path="teachers" element={<RequireAdmin><LazyPage><Teachers /></LazyPage></RequireAdmin>} />
+          <Route path="members" element={<RequireAdmin><LazyPage><Members /></LazyPage></RequireAdmin>} />
           <Route path="rooms" element={<RequireAdmin><LazyPage><Rooms /></LazyPage></RequireAdmin>} />
           <Route path="subjects" element={<RequireAdmin><LazyPage><Subjects /></LazyPage></RequireAdmin>} />
           <Route path="courses" element={<RequireAdmin><LazyPage><Courses /></LazyPage></RequireAdmin>} />

@@ -10,7 +10,7 @@ from uuid import uuid4
 from app import models
 from app.models import UserRole
 from test_business_logic_shared import API, _create_teacher_auth_headers
-from tests.conftest import mock_clerk_payload
+from tests.conftest import create_teacher_profile, create_teacher_user, ensure_membership_capabilities, mock_clerk_payload
 
 
 async def _make_teacher_call(async_client, db_session, teacher_id, org_id, clerk_id, endpoint, method="GET", json_data=None):
@@ -29,7 +29,7 @@ async def _make_teacher_call(async_client, db_session, teacher_id, org_id, clerk
 @pytest.mark.asyncio
 class TestTeacherAvailability:
 
-    async def test_set_availability(self, async_client: AsyncClient, admin_token_headers: dict):
+    async def test_set_availability(self, async_client: AsyncClient, admin_token_headers: dict, db_session):
         await async_client.post(
             f"{API}/timeslots/generate",
             json={
@@ -43,12 +43,9 @@ class TestTeacherAvailability:
         slot_ids = [s["id"] for s in slots_resp.json()]
         assert len(slot_ids) >= 2
 
-        teacher_resp = await async_client.post(
-            f"{API}/teachers/",
-            json={"name": "Prof. Disp", "email": "disp@escola.pt"},
-            headers=admin_token_headers,
-        )
-        teacher_id = teacher_resp.json()["id"]
+        teacher = await create_teacher_profile(db_session, organization_id=1, name="Prof. Disp")
+        await db_session.commit()
+        teacher_id = teacher.id
 
         payload = [
             {"timeslot_id": slot_ids[0], "score": 2},
@@ -64,13 +61,10 @@ class TestTeacherAvailability:
         assert data["status"] == "success"
         assert data["count"] == 2
 
-    async def test_availability_invalid_timeslot_400(self, async_client: AsyncClient, admin_token_headers: dict):
-        teacher_resp = await async_client.post(
-            f"{API}/teachers/",
-            json={"name": "Prof. Bad", "email": "bad@escola.pt"},
-            headers=admin_token_headers,
-        )
-        teacher_id = teacher_resp.json()["id"]
+    async def test_availability_invalid_timeslot_400(self, async_client: AsyncClient, admin_token_headers: dict, db_session):
+        teacher = await create_teacher_profile(db_session, organization_id=1, name="Prof. Bad")
+        await db_session.commit()
+        teacher_id = teacher.id
         resp = await async_client.post(
             f"{API}/teachers/{teacher_id}/availability",
             json=[{"timeslot_id": 99999, "score": 1}],
@@ -84,7 +78,7 @@ class TestTeacherAvailability:
         )
         assert resp.status_code == 404
 
-    async def test_availability_overwrite(self, async_client: AsyncClient, admin_token_headers: dict):
+    async def test_availability_overwrite(self, async_client: AsyncClient, admin_token_headers: dict, db_session):
         await async_client.post(
             f"{API}/timeslots/generate",
             json={
@@ -97,12 +91,9 @@ class TestTeacherAvailability:
         slots = (await async_client.get(f"{API}/timeslots/", headers=admin_token_headers)).json()
         slot_id = slots[0]["id"]
 
-        teacher_resp = await async_client.post(
-            f"{API}/teachers/",
-            json={"name": "Prof. Over", "email": "over@escola.pt"},
-            headers=admin_token_headers,
-        )
-        teacher_id = teacher_resp.json()["id"]
+        teacher = await create_teacher_profile(db_session, organization_id=1, name="Prof. Over")
+        await db_session.commit()
+        teacher_id = teacher.id
 
         await async_client.post(
             f"{API}/teachers/{teacher_id}/availability",
@@ -132,12 +123,9 @@ class TestTeacherAvailability:
         slots = (await async_client.get(f"{API}/timeslots/", headers=admin_token_headers)).json()
         slot_ids = [s["id"] for s in slots]
 
-        teacher_resp = await async_client.post(
-            f"{API}/teachers/",
-            json={"name": "Prof. Self", "email": "self@escola.pt"},
-            headers=admin_token_headers,
-        )
-        teacher_id = teacher_resp.json()["id"]
+        teacher = await create_teacher_profile(db_session, organization_id=1, name="Prof. Self")
+        await db_session.commit()
+        teacher_id = teacher.id
 
         set_resp = await async_client.post(
             f"{API}/teachers/{teacher_id}/availability",
@@ -187,6 +175,15 @@ class TestTeacherAvailability:
             organization_id=org.id, teacher_id=None,
         )
         db_session.add(no_profile_user)
+        await db_session.flush()
+        await ensure_membership_capabilities(
+            db_session,
+            organization_id=org.id,
+            user=no_profile_user,
+            capabilities=[models.MembershipCapability.teacher],
+            expected_clerk_role=models.ClerkOrganizationRole.member,
+            teacher_access_mode=models.TeacherAccessMode.platform,
+        )
         await db_session.commit()
 
         payload = mock_clerk_payload(cid, None, "member")
@@ -200,12 +197,9 @@ class TestTeacherAvailability:
     async def test_inactive_teacher_cannot_read_self_availability(
         self, async_client: AsyncClient, admin_token_headers: dict, db_session,
     ):
-        teacher_resp = await async_client.post(
-            f"{API}/teachers/",
-            json={"name": "Prof. Inativo", "email": f"inactive.{uuid4().hex[:8]}@escola.pt"},
-            headers=admin_token_headers,
-        )
-        teacher_id = teacher_resp.json()["id"]
+        teacher = await create_teacher_profile(db_session, organization_id=1, name="Prof. Inativo")
+        await db_session.commit()
+        teacher_id = teacher.id
 
         cid = f"inactive_{uuid4().hex[:8]}"
         inactive_user = models.User(
@@ -215,6 +209,16 @@ class TestTeacherAvailability:
             organization_id=1, teacher_id=teacher_id,
         )
         db_session.add(inactive_user)
+        await db_session.flush()
+        membership = await ensure_membership_capabilities(
+            db_session,
+            organization_id=1,
+            user=inactive_user,
+            capabilities=[models.MembershipCapability.teacher],
+            expected_clerk_role=models.ClerkOrganizationRole.member,
+            teacher_access_mode=models.TeacherAccessMode.platform,
+        )
+        membership.access_status = models.MembershipAccessStatus.none
         await db_session.commit()
 
         payload = mock_clerk_payload(cid, None, "member")
@@ -228,12 +232,9 @@ class TestTeacherAvailability:
     async def test_teacher_cannot_read_admin_teacher_listing(
         self, async_client: AsyncClient, admin_token_headers: dict, db_session,
     ):
-        teacher_resp = await async_client.post(
-            f"{API}/teachers/",
-            json={"name": "Prof. Scoped", "email": f"scoped.{uuid4().hex[:8]}@escola.pt"},
-            headers=admin_token_headers,
-        )
-        teacher_id = teacher_resp.json()["id"]
+        teacher = await create_teacher_profile(db_session, organization_id=1, name="Prof. Scoped")
+        await db_session.commit()
+        teacher_id = teacher.id
 
         teacher_headers, cid = await _create_teacher_auth_headers(
             db_session, teacher_id=teacher_id, organization_id=1,
@@ -256,12 +257,9 @@ class TestTeacherAvailability:
         )
         assert settings_resp.status_code == 200
 
-        teacher_resp = await async_client.post(
-            f"{API}/teachers/",
-            json={"name": "Prof. Horizon", "email": f"horizon.{uuid4().hex[:8]}@escola.pt"},
-            headers=admin_token_headers,
-        )
-        teacher_id = teacher_resp.json()["id"]
+        teacher = await create_teacher_profile(db_session, organization_id=1, name="Prof. Horizon")
+        await db_session.commit()
+        teacher_id = teacher.id
 
         teacher_headers, cid = await _create_teacher_auth_headers(
             db_session, teacher_id=teacher_id, organization_id=1,
@@ -296,6 +294,15 @@ class TestTeacherAvailability:
             organization_id=org.id, teacher_id=None,
         )
         db_session.add(no_profile_user)
+        await db_session.flush()
+        await ensure_membership_capabilities(
+            db_session,
+            organization_id=org.id,
+            user=no_profile_user,
+            capabilities=[models.MembershipCapability.teacher],
+            expected_clerk_role=models.ClerkOrganizationRole.member,
+            teacher_access_mode=models.TeacherAccessMode.platform,
+        )
         await db_session.commit()
         payload = mock_clerk_payload(cid, None, "member")
         with patch("app.api.deps.get_clerk_payload", return_value=payload):
@@ -318,12 +325,9 @@ class TestTeacherAvailability:
         )
         assert settings_org1.status_code == 200
 
-        teacher_resp = await async_client.post(
-            f"{API}/teachers/",
-            json={"name": "Prof. Org1", "email": f"org1.{uuid4().hex[:8]}@escola.pt"},
-            headers=admin_token_headers,
-        )
-        teacher_org1_id = teacher_resp.json()["id"]
+        teacher_org1 = await create_teacher_profile(db_session, organization_id=1, name="Prof. Org1")
+        await db_session.commit()
+        teacher_org1_id = teacher_org1.id
         teacher_org1_headers, cid1 = await _create_teacher_auth_headers(
             db_session, teacher_id=teacher_org1_id, organization_id=1,
         )
@@ -342,13 +346,13 @@ class TestTeacherAvailability:
         db_session.add(settings_org2)
 
         cid2 = f"org2_{uuid4().hex[:8]}"
-        org2_user = models.User(
-            email=f"teacher.org2.{uuid4().hex[:8]}@escola.pt",
+        await create_teacher_user(
+            db_session,
             clerk_user_id=cid2,
-            is_active=True, role=UserRole.teacher,
-            organization_id=org2.id, teacher_id=teacher_org2.id,
+            email=f"teacher.org2.{uuid4().hex[:8]}@escola.pt",
+            org_id=org2.id,
+            teacher_id=teacher_org2.id,
         )
-        db_session.add(org2_user)
         await db_session.commit()
 
         payload1 = mock_clerk_payload(cid1, None, "member")

@@ -6,7 +6,7 @@ import pytest
 from sqlalchemy import select
 
 from app import models
-from app.api.v1.endpoints import schedule as schedule_endpoint
+from app.services import scheduler_request_service
 from app.services import preflight_service
 async def _get_org_id(db_session):
     org = (await db_session.execute(select(models.Organization))).scalars().first()
@@ -228,7 +228,7 @@ async def test_generate_returns_canonical_job_contract_with_minimal_valid_data(
         dispatched.update(args=args, task_id=task_id)
 
     monkeypatch.setattr(
-        schedule_endpoint.run_schedule_generation_job_task,
+        scheduler_request_service.run_schedule_generation_job_task,
         "apply_async",
         fake_apply_async,
     )
@@ -265,7 +265,7 @@ async def test_canonical_scheduler_generation_job_and_cancel_contract(
         dispatched.update(args=args, task_id=task_id)
 
     monkeypatch.setattr(
-        schedule_endpoint.run_schedule_generation_job_task,
+        scheduler_request_service.run_schedule_generation_job_task,
         "apply_async",
         fake_apply_async,
     )
@@ -321,7 +321,7 @@ async def test_generate_idempotency_key_dispatches_only_once(
         dispatched.append((args, task_id))
 
     monkeypatch.setattr(
-        schedule_endpoint.run_schedule_generation_job_task,
+        scheduler_request_service.run_schedule_generation_job_task,
         "apply_async",
         fake_apply_async,
     )
@@ -399,7 +399,7 @@ async def test_repair_generate_fails_when_window_blocks_all_future(
         called["value"] = True
 
     monkeypatch.setattr(
-        schedule_endpoint.run_schedule_generation_job_task,
+        scheduler_request_service.run_schedule_generation_job_task,
         "apply_async",
         fake_apply_async,
     )
@@ -441,7 +441,7 @@ async def test_repair_generate_succeeds_when_horizon_exists_outside_window(
         queued.update(args=args, task_id=task_id)
 
     monkeypatch.setattr(
-        schedule_endpoint.run_schedule_generation_job_task,
+        scheduler_request_service.run_schedule_generation_job_task,
         "apply_async",
         fake_apply_async,
     )

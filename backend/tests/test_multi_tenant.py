@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 from app import models
 from app.config import settings
-from tests.conftest import create_org_and_user, mock_clerk_payload
+from tests.conftest import create_org_and_user, create_teacher_profile, mock_clerk_payload
 
 API = settings.API_V1_STR
 
@@ -157,23 +157,11 @@ async def test_teachers_endpoint_isolates_data_between_orgs(
     payload_a = mock_clerk_payload("user_iso_a", "org_iso_a", "admin")
     payload_b = mock_clerk_payload("user_iso_b", "org_iso_b", "admin")
 
-    # Criar professor extra em Org A
-    with patch("app.api.deps.get_clerk_payload", return_value=payload_a):
-        headers_a = {"Authorization": "Bearer test_user_iso_a"}
-        r = await async_client.post(
-            f"{API}/teachers/", json={"name": "Prof Exclusivo A"},
-            headers=headers_a,
-        )
-        assert r.status_code == 200, f"Falhou criar teacher A: {r.text}"
-
-    # Criar professor extra em Org B
-    with patch("app.api.deps.get_clerk_payload", return_value=payload_b):
-        headers_b = {"Authorization": "Bearer test_user_iso_b"}
-        r = await async_client.post(
-            f"{API}/teachers/", json={"name": "Prof Exclusivo B"},
-            headers=headers_b,
-        )
-        assert r.status_code == 200, f"Falhou criar teacher B: {r.text}"
+    headers_a = {"Authorization": "Bearer test_user_iso_a"}
+    headers_b = {"Authorization": "Bearer test_user_iso_b"}
+    await create_teacher_profile(db_session, organization_id=org_a.id, name="Prof Exclusivo A")
+    await create_teacher_profile(db_session, organization_id=org_b.id, name="Prof Exclusivo B")
+    await db_session.commit()
 
     # Verificação: Admin A vê apenas professores da Org A
     with patch("app.api.deps.get_clerk_payload", return_value=payload_a):

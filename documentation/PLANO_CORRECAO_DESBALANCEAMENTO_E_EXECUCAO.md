@@ -401,3 +401,6 @@ Frontend:
 
 Navegacao:
 - nova entrada de menu: "Auditoria Tecnica".
+# Historical Correction Plan
+
+This document is retained as planning history. References to `/schedule/audit/*` are not current beta behavior; those routes were removed in the 2026-07-05 baseline cleanup.

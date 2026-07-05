@@ -13,9 +13,10 @@ import {
   useTimeslots,
   useWeekSchedule,
   useMyTimesheet,
-  useSubmitMyTimesheet
+  useSubmitMyTimesheet,
+  useCurrentMember
 } from '../hooks/useSchoolData'
-import { useOrganization, useUser } from '@clerk/react'
+import { useOrganization } from '@clerk/react'
 import { getCurrentWeekMonday, addDays, formatWeekRange, formatDate, toIsoDate, isAfterDate } from '../utils/formatUtils'
 
 const HORIZON_NOT_CONFIGURED_MESSAGE =
@@ -67,8 +68,8 @@ function resolveHorizonErrorMessage(error) {
 function MySchedules() {
   const queryClient = useQueryClient()
   const { organization } = useOrganization()
-  const { user } = useUser()
-  const teacherId = user?.publicMetadata?.teacher_id
+  const { data: currentMember } = useCurrentMember()
+  const teacherId = currentMember?.teacher_id
   const orgId = organization?.id
   const [weekStart, setWeekStart] = useState(getCurrentWeekMonday)
   const [recommendedWeekApplied, setRecommendedWeekApplied] = useState(false)

@@ -7,7 +7,7 @@ import pytest
 from sqlalchemy import select
 
 from app import models, schemas
-from app.api.v1.endpoints import schedule as schedule_endpoint
+from app.services import scheduler_request_service
 from app.models import LessonOccurrenceStatus
 from app.services import occurrence_service
 from app.services.operational_seed_service import REFERENCE_DATE, seed_operational_scenarios_sync
@@ -196,7 +196,7 @@ async def test_alpha_regression_single_generation_action_rejects_legacy_modes(
         dispatched.update(args=args, task_id=task_id)
 
     monkeypatch.setattr(
-        schedule_endpoint.run_schedule_generation_job_task,
+        scheduler_request_service.run_schedule_generation_job_task,
         "apply_async",
         fake_apply_async,
     )
@@ -247,7 +247,7 @@ async def test_alpha_regression_legacy_repair_mode_does_not_queue(
         called["value"] = True
 
     monkeypatch.setattr(
-        schedule_endpoint.run_schedule_generation_job_task,
+        scheduler_request_service.run_schedule_generation_job_task,
         "apply_async",
         fake_apply_async,
     )

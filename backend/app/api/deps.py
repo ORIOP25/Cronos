@@ -207,6 +207,8 @@ async def get_current_active_user(
     if membership is not None:
         await _confirm_current_clerk_role(db, membership, token_role=token_role)
         capabilities = {cap.capability for cap in membership.capabilities}
+        setattr(current_user, "_membership_id", membership.id)
+        setattr(current_user, "_membership_capabilities", capabilities)
         if models.MembershipCapability.admin in capabilities:
             set_committed_value(current_user, "role", models.UserRole.admin)
         elif models.MembershipCapability.teacher in capabilities:
@@ -220,10 +222,32 @@ async def get_current_active_user(
     return current_user
 
 
+def user_has_capability(
+    current_user: models.User,
+    capability: models.MembershipCapability,
+) -> bool:
+    capabilities = getattr(current_user, "_membership_capabilities", set())
+    return capability in capabilities
+
+
+def user_has_admin_capability(current_user: models.User) -> bool:
+    return bool(
+        current_user.is_superuser
+        or user_has_capability(current_user, models.MembershipCapability.admin)
+    )
+
+
+def user_has_teacher_capability(current_user: models.User) -> bool:
+    return bool(
+        user_has_capability(current_user, models.MembershipCapability.teacher)
+        and current_user.teacher_id is not None
+    )
+
+
 def get_current_active_admin(
     current_user: Annotated[models.User, Depends(get_current_active_user)],
 ) -> models.User:
-    if not (current_user.is_superuser or current_user.role == models.UserRole.admin):
+    if not user_has_admin_capability(current_user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admin access required",

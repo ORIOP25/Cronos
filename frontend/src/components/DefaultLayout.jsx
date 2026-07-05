@@ -156,7 +156,7 @@ const DefaultLayout = () => {
               
               {!collapsed && <div className="text-editorial" style={sectionLabelStyle}>Pedagogia</div>}
               <SidebarLink to="/courses" icon={cilEducation} collapsed={collapsed}>Cursos</SidebarLink>
-              <SidebarLink to="/teachers" icon={cilPeople} collapsed={collapsed}>Professores</SidebarLink>
+              <SidebarLink to="/members" icon={cilPeople} collapsed={collapsed}>Equipa</SidebarLink>
               <SidebarLink to="/subjects" icon={cilLibrary} collapsed={collapsed}>Disciplinas</SidebarLink>
               
               {!collapsed && <div className="text-editorial" style={sectionLabelStyle}>Recursos</div>}

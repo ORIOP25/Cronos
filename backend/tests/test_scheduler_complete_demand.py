@@ -1,5 +1,3 @@
-from copy import deepcopy
-
 from app.services.scheduler_complete_demand import CompleteDemandLedgerBuilder
 
 
@@ -12,7 +10,6 @@ def _snapshot() -> dict:
         "class_subject_requirements": [
             {"class_id": 1, "subject_id": 2, "grade_level": 10, "teacher_id": 3}
         ],
-        "legacy_lesson_assignments": [],
         "rooms": [
             {"id": 4, "capacity": 30, "type": "normal"},
             {"id": 5, "capacity": 20, "type": "normal"},
@@ -61,17 +58,3 @@ def test_complete_demand_reports_teacher_and_room_ineligibility():
     assert ledger.is_complete is False
     assert any("not eligible" in blocker for blocker in ledger.blockers)
     assert any("No eligible room" in blocker for blocker in ledger.blockers)
-
-
-def test_complete_demand_legacy_fallback_rejects_ambiguous_teachers():
-    snapshot = deepcopy(_snapshot())
-    snapshot["class_subject_requirements"] = []
-    snapshot["legacy_lesson_assignments"] = [
-        {"id": 1, "class_id": 1, "subject_id": 2, "teacher_id": 3},
-        {"id": 2, "class_id": 1, "subject_id": 2, "teacher_id": 9},
-    ]
-
-    ledger = CompleteDemandLedgerBuilder().build(snapshot)
-
-    assert ledger.is_complete is False
-    assert any("ambiguous" in blocker for blocker in ledger.blockers)

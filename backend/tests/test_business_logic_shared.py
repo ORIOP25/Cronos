@@ -9,6 +9,7 @@ from uuid import uuid4
 from app.config import settings
 from app import models
 from app.models import UserRole
+from tests.conftest import create_teacher_user
 
 API = settings.API_V1_STR
 
@@ -19,15 +20,14 @@ async def _create_teacher_auth_headers(db_session, *, teacher_id: int, organizat
     patch('app.api.deps.get_clerk_payload', return_value=mock_clerk_payload(clerk_user_id, ...)).
     """
     cid = f"teacher_avail_{uuid4().hex[:8]}"
-    teacher_user = models.User(
-        email=f"teacher.avail.{uuid4().hex[:8]}@escola.pt",
+    await create_teacher_user(
+        db_session,
         clerk_user_id=cid,
-        is_active=True,
-        role=UserRole.teacher,
-        organization_id=organization_id,
+        email=f"teacher.avail.{uuid4().hex[:8]}@escola.pt",
+        name="Teacher Availability User",
+        org_id=organization_id,
         teacher_id=teacher_id,
     )
-    db_session.add(teacher_user)
     await db_session.commit()
     return {"Authorization": f"Bearer test_{cid}"}, cid
 

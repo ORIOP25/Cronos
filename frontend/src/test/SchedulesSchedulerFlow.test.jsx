@@ -23,6 +23,7 @@ vi.mock('../hooks/useSchoolData', () => ({
   useGenerateSchedule: () => ({ mutateAsync: mocks.generate, isPending: false }),
   useScheduleTaskStatus: () => ({ data: null }),
   useCancelScheduleTask: () => ({ mutate: vi.fn(), isPending: false }),
+  useCurrentMember: () => ({ data: { teacher_id: null } }),
   useClasses: () => ({ data: [] }),
   useTeachers: () => ({ data: [] }),
   useWeekSchedule: () => ({ data: [], isFetching: false, isError: false }),

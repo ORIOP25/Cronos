@@ -1082,3 +1082,6 @@ The schedule generator new baseline is done when:
 - the five-minute cap is enforced from job snapshot/verification start through validation/commit;
 - large-school, small-school, partial-recovery, stale-draft, and replacement-failure scenarios pass;
 - final legacy scans show no active conflicting behavior.
+# Historical Implementation WBS
+
+This document is retained as implementation history. The beta baseline cleanup on 2026-07-05 removed solver V2 experiment modules and retired schedule compatibility/audit routes. Current cleanup and verification authority is `documentation/10_migration_map/BETA_BASELINE_LEGACY_CLEANUP_AUDIT.md`; current behavior authority is `PRD_SCHEDULE_GENERATOR_NEW_BASELINE.md`.

@@ -139,28 +139,7 @@ class CompleteDemandLedgerBuilder:
         blockers: list[str],
     ) -> list[dict[str, Any]]:
         canonical = snapshot.get("class_subject_requirements", [])
-        if canonical:
-            return list(canonical)
-        grouped: dict[tuple[int, int], list[dict[str, Any]]] = {}
-        for row in snapshot.get("legacy_lesson_assignments", []):
-            grouped.setdefault((row["class_id"], row["subject_id"]), []).append(row)
-        assignments = []
-        for (class_id, subject_id), rows in sorted(grouped.items()):
-            teacher_ids = {row["teacher_id"] for row in rows}
-            if len(teacher_ids) != 1:
-                blockers.append(
-                    f"Legacy assignments are ambiguous for class {class_id}, subject {subject_id}."
-                )
-                continue
-            assignments.append(
-                {
-                    "class_id": class_id,
-                    "subject_id": subject_id,
-                    "teacher_id": next(iter(teacher_ids)),
-                    "grade_level": None,
-                }
-            )
-        return assignments
+        return list(canonical)
 
     @staticmethod
     def _enum_value(value: Any) -> str:

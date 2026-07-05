@@ -1,10 +1,14 @@
-import { useOrganization } from '@clerk/react'
-import { USER_ROLE_ADMIN, USER_ROLE_TEACHER } from '../roleAccess'
+import { useCurrentMember } from './useSchoolData'
 
 export function useRole() {
-  const { membership } = useOrganization()
+  const { data: member, isLoading, isError } = useCurrentMember()
+  const capabilities = new Set(member?.capabilities ?? [])
+  const hasActiveAccess = member?.access_status === 'active' && member?.lifecycle_status === 'active'
   return {
-    isAdmin: membership?.role === USER_ROLE_ADMIN,
-    isTeacher: membership?.role === USER_ROLE_TEACHER,
+    member,
+    isLoading,
+    isError,
+    isAdmin: hasActiveAccess && capabilities.has('admin'),
+    isTeacher: hasActiveAccess && capabilities.has('teacher') && Boolean(member?.teacher_id),
   }
 }

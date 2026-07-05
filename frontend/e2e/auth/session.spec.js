@@ -34,10 +34,10 @@ test.describe('Session resilience', () => {
   })
 
   test('API 403 mostra estado de erro', async ({ page }) => {
-    await page.route('**/api/v1/teachers/**', (route) => {
+    await page.route('**/api/v1/members**', (route) => {
       route.fulfill({ status: 403, contentType: 'application/json', body: '{"detail":"Admin access required"}' })
     })
-    await goTo(page, '/teachers')
+    await goTo(page, '/members')
     await page.waitForTimeout(2000)
   })
 })

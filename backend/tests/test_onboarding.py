@@ -26,17 +26,16 @@ async def test_onboarding_status_requires_auth(async_client):
 async def test_onboarding_creates_settings(async_client, db_session):
     from app import models
     from sqlalchemy.future import select
+    from tests.conftest import create_org_and_user
 
-    org = models.Organization(name="Escola Onboard", clerk_org_id="org_onb_001", plan_status="active")
-    db_session.add(org)
-    await db_session.flush()
-
-    user = models.User(
-        clerk_user_id="user_onb_001", email="admin@onboard.pt",
-        role="admin", organization_id=org.id, is_active=True,
+    org, _ = await create_org_and_user(
+        db_session,
+        clerk_user_id="user_onb_001",
+        email="admin@onboard.pt",
+        role="admin",
+        org_name="Escola Onboard",
+        clerk_org_id="org_onb_001",
     )
-    db_session.add(user)
-    await db_session.commit()
 
     data = {
         "school_start_date": "2025-09-15",
@@ -90,18 +89,16 @@ async def test_onboarding_requires_auth(async_client):
 # ── T22: Teacher rejected → 403 ───────────────────────────────
 @pytest.mark.asyncio
 async def test_onboarding_requires_admin(async_client, db_session):
-    from app import models
+    from tests.conftest import create_org_and_user
 
-    org = models.Organization(name="Escola T", clerk_org_id="org_t_001", plan_status="active")
-    db_session.add(org)
-    await db_session.flush()
-
-    user = models.User(
-        clerk_user_id="user_t_001", email="teacher@t.pt",
-        role="teacher", organization_id=org.id, is_active=True,
+    await create_org_and_user(
+        db_session,
+        clerk_user_id="user_t_001",
+        email="teacher@t.pt",
+        role="teacher",
+        org_name="Escola T",
+        clerk_org_id="org_t_001",
     )
-    db_session.add(user)
-    await db_session.commit()
 
     data = {
         "school_start_date": "2025-09-15",
@@ -121,21 +118,16 @@ async def test_onboarding_requires_admin(async_client, db_session):
 # ── T23: Create teacher → sends Clerk invitation ───────────────
 @pytest.mark.asyncio
 async def test_create_teacher_write_is_quarantined(async_client, db_session):
-    from app import models
+    from tests.conftest import create_org_and_user
 
-    org = models.Organization(
-        name="Escola Invite", clerk_org_id="org_inv_001", plan_status="active"
+    await create_org_and_user(
+        db_session,
+        clerk_user_id="user_admin_inv",
+        email="admin@invite.pt",
+        role="admin",
+        org_name="Escola Invite",
+        clerk_org_id="org_inv_001",
     )
-    db_session.add(org)
-    await db_session.flush()
-    await db_session.commit()
-
-    user = models.User(
-        clerk_user_id="user_admin_inv", email="admin@invite.pt",
-        role="admin", organization_id=org.id, is_active=True,
-    )
-    db_session.add(user)
-    await db_session.commit()
 
     with patch("app.api.deps.get_clerk_payload") as mock_payload:
         mock_payload.return_value = {"sub": "user_admin_inv", "o": {"id": "org_inv_001", "rol": "admin"}}
@@ -157,17 +149,16 @@ async def test_onboarding_post_idempotent(async_client, db_session):
     """POST 2x → segunda vez é no-op, retorna 200 em ambas."""
     from app import models
     from sqlalchemy.future import select as sa_select
+    from tests.conftest import create_org_and_user
 
-    org = models.Organization(name="Escola Idemp", clerk_org_id="org_onb_idem", plan_status="active")
-    db_session.add(org)
-    await db_session.flush()
-
-    user = models.User(
-        clerk_user_id="user_onb_idem", email="idem@onb.pt",
-        role="admin", organization_id=org.id, is_active=True,
+    org, _ = await create_org_and_user(
+        db_session,
+        clerk_user_id="user_onb_idem",
+        email="idem@onb.pt",
+        role="admin",
+        org_name="Escola Idemp",
+        clerk_org_id="org_onb_idem",
     )
-    db_session.add(user)
-    await db_session.commit()
 
     data = {
         "school_start_date": "2025-09-15",
@@ -197,18 +188,16 @@ async def test_onboarding_post_idempotent(async_client, db_session):
 @pytest.mark.asyncio
 async def test_onboarding_status_incomplete(async_client, db_session):
     """GET /onboarding/status sem settings → onboarding_complete: false."""
-    from app import models
+    from tests.conftest import create_org_and_user
 
-    org = models.Organization(name="Escola Incomp", clerk_org_id="org_onb_inc", plan_status="active")
-    db_session.add(org)
-    await db_session.flush()
-
-    user = models.User(
-        clerk_user_id="user_onb_inc", email="inc@onb.pt",
-        role="admin", organization_id=org.id, is_active=True,
+    await create_org_and_user(
+        db_session,
+        clerk_user_id="user_onb_inc",
+        email="inc@onb.pt",
+        role="admin",
+        org_name="Escola Incomp",
+        clerk_org_id="org_onb_inc",
     )
-    db_session.add(user)
-    await db_session.commit()
 
     with patch("app.api.deps.get_clerk_payload") as mock_payload:
         mock_payload.return_value = {"sub": "user_onb_inc", "o": {"id": "org_onb_inc", "rol": "admin"}}
@@ -222,18 +211,16 @@ async def test_onboarding_status_incomplete(async_client, db_session):
 @pytest.mark.asyncio
 async def test_onboarding_status_complete_after_post(async_client, db_session):
     """POST onboarding → GET status → onboarding_complete: true."""
-    from app import models
+    from tests.conftest import create_org_and_user
 
-    org = models.Organization(name="Escola Comp", clerk_org_id="org_onb_comp", plan_status="active")
-    db_session.add(org)
-    await db_session.flush()
-
-    user = models.User(
-        clerk_user_id="user_onb_comp", email="comp@onb.pt",
-        role="admin", organization_id=org.id, is_active=True,
+    await create_org_and_user(
+        db_session,
+        clerk_user_id="user_onb_comp",
+        email="comp@onb.pt",
+        role="admin",
+        org_name="Escola Comp",
+        clerk_org_id="org_onb_comp",
     )
-    db_session.add(user)
-    await db_session.commit()
 
     data = {
         "school_start_date": "2025-09-15",

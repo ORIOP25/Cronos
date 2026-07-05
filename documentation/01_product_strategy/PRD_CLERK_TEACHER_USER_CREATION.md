@@ -8,6 +8,8 @@
 - Primary user: school admin.
 - Secondary users: teachers and admins invited to the platform.
 - Owner context: solo developer, pre-launch product in final launch stage.
+- Baseline audit: `documentation/10_migration_map/BETA_BASELINE_LEGACY_CLEANUP_AUDIT.md`.
+- Implementation note: sections that describe the old `/teachers` admin flow are historical problem statements, not current beta behavior.
 
 ## 2. Problem
 
@@ -25,7 +27,7 @@ The target behavior is that the admin manages organization members normally from
 
 ## 3. Current Behavior Baseline
 
-### 3.1 Admin UX
+### 3.1 Historical Admin UX Removed From Beta
 
 1. Admin signs in through Clerk.
 2. Admin must have the current Clerk organization role `org:admin` to access `/teachers`.

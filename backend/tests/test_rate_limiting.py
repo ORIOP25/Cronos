@@ -14,7 +14,7 @@ from uuid import uuid4
 
 from app.config import settings
 from app import models
-from tests.conftest import mock_clerk_payload
+from tests.conftest import create_teacher_profile, create_teacher_user, mock_clerk_payload
 
 API = settings.API_V1_STR
 
@@ -82,27 +82,18 @@ class TestTeacherHorizonRateLimit:
         )
         assert settings_resp.status_code == 200
 
-        teacher_resp = await async_client.post(
-            f"{API}/teachers/",
-            json={
-                "name": "Prof. RateLimit",
-                "email": f"ratelimit.horizon.{uuid4().hex[:8]}@escola.pt",
-            },
-            headers=admin_token_headers,
-        )
-        assert teacher_resp.status_code == 200
-        teacher_id = teacher_resp.json()["id"]
+        teacher = await create_teacher_profile(db_session, organization_id=1, name="Prof. RateLimit")
+        await db_session.commit()
+        teacher_id = teacher.id
 
         teacher_cid = f"ratelimit_horizon_{uuid4().hex[:8]}"
-        teacher_user = models.User(
-            email=f"ratelimit.t.{uuid4().hex[:8]}@escola.pt",
+        await create_teacher_user(
+            db_session,
             clerk_user_id=teacher_cid,
-            is_active=True,
-            role=models.UserRole.teacher,
-            organization_id=1,
+            email=f"ratelimit.t.{uuid4().hex[:8]}@escola.pt",
+            org_id=1,
             teacher_id=teacher_id,
         )
-        db_session.add(teacher_user)
         await db_session.commit()
 
         teacher_headers = {"Authorization": f"Bearer test_{teacher_cid}"}
@@ -129,27 +120,18 @@ class TestWeekScheduleRateLimit:
         from app import models
         from uuid import uuid4
 
-        teacher_resp = await async_client.post(
-            f"{API}/teachers/",
-            json={
-                "name": "Prof. Week RL",
-                "email": f"ratelimit.week.{uuid4().hex[:8]}@escola.pt",
-            },
-            headers=admin_token_headers,
-        )
-        assert teacher_resp.status_code == 200
-        teacher_id = teacher_resp.json()["id"]
+        teacher = await create_teacher_profile(db_session, organization_id=1, name="Prof. Week RL")
+        await db_session.commit()
+        teacher_id = teacher.id
 
         teacher_cid = f"ratelimit_week_{uuid4().hex[:8]}"
-        teacher_user = models.User(
-            email=f"ratelimit.wk.{uuid4().hex[:8]}@escola.pt",
+        await create_teacher_user(
+            db_session,
             clerk_user_id=teacher_cid,
-            is_active=True,
-            role=models.UserRole.teacher,
-            organization_id=1,
+            email=f"ratelimit.wk.{uuid4().hex[:8]}@escola.pt",
+            org_id=1,
             teacher_id=teacher_id,
         )
-        db_session.add(teacher_user)
         await db_session.commit()
 
         teacher_headers = {"Authorization": f"Bearer test_{teacher_cid}"}
@@ -165,4 +147,3 @@ class TestWeekScheduleRateLimit:
                     f"Rate limit semanal não devia ter disparado com 25 pedidos. "
                     f"Status: {response.status_code}"
                 )
-

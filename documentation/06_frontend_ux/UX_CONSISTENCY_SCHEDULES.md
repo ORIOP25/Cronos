@@ -498,3 +498,6 @@ Apos a auditoria de 03 Maio 2026, as seguintes regras aplicam-se a TODO o fronte
 - Estabilidade: elimina variabilidade causada por filtros implícitos ao refrescar.
 - Escalabilidade: grelha com contexto completo evita roundtrips e lookup manual em volume alto.
 - Seguranca: sem alteracao de permissoes; continua admin-only para decisao operacional.
+# Historical UX Consistency Notes
+
+This document contains pre-cleanup references to `ScheduleAuditDashboard` and `/schedule/audit/*`. Those audit UI/routes were removed from the beta baseline on 2026-07-05. Current cleanup authority is `documentation/10_migration_map/BETA_BASELINE_LEGACY_CLEANUP_AUDIT.md`.

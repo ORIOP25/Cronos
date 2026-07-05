@@ -9,6 +9,10 @@ vi.mock('../hooks/useSchoolData', () => ({
   useDashboard: () => ({ data: null, isLoading: false }),
 }))
 
+vi.mock('../hooks/useRole', () => ({
+  useRole: () => ({ isAdmin: true, isTeacher: false }),
+}))
+
 describe('DefaultLayout', () => {
   it('renders navigation, account actions, and nested route content', () => {
     setClerkState({ role: 'org:admin', orgId: 1, orgName: 'Escola Teste', isSignedIn: true })
@@ -23,6 +27,7 @@ describe('DefaultLayout', () => {
     )
     expect(getByRole('navigation')).toBeInTheDocument()
     expect(getByText('Dashboard')).toBeInTheDocument()
+    expect(getByText('Equipa')).toBeInTheDocument()
     expect(getByRole('button', { name: /terminar sessão/i })).toBeInTheDocument()
     expect(getByTestId('child')).toHaveTextContent('Content')
   })

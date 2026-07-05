@@ -1,10 +1,25 @@
 import React from 'react'
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { screen } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { renderWithProviders } from './testUtils'
 import { setClerkState, resetClerkState } from './setup'
 import { SignedInRedirect } from '../routeGuards'
+
+const memberState = vi.hoisted(() => ({
+  value: {
+    access_status: 'active',
+    lifecycle_status: 'active',
+    capabilities: ['admin'],
+    default_mode: 'admin',
+    teacher_id: null,
+  },
+  loading: false,
+}))
+
+vi.mock('../hooks/useSchoolData', () => ({
+  useCurrentMember: () => ({ data: memberState.value, isLoading: memberState.loading }),
+}))
 
 function renderRedirect() {
   return renderWithProviders(
@@ -20,22 +35,37 @@ function renderRedirect() {
 }
 
 describe('SignedInRedirect', () => {
-  beforeEach(() => resetClerkState())
+  beforeEach(() => {
+    resetClerkState()
+    memberState.loading = false
+    memberState.value = {
+      access_status: 'active',
+      lifecycle_status: 'active',
+      capabilities: ['admin'],
+      default_mode: 'admin',
+      teacher_id: null,
+    }
+  })
 
   it('redirects admin to /dashboard', () => {
-    setClerkState({ role: 'org:admin' })
     renderRedirect()
     expect(screen.getByTestId('dashboard-route')).toBeInTheDocument()
   })
 
   it('redirects teacher to /my-availability', () => {
-    setClerkState({ role: 'org:member' })
+    memberState.value = {
+      access_status: 'active',
+      lifecycle_status: 'active',
+      capabilities: ['teacher'],
+      default_mode: 'teacher',
+      teacher_id: 10,
+    }
     renderRedirect()
     expect(screen.getByTestId('teacher-route')).toBeInTheDocument()
   })
 
-  it('redirects unknown role to /create-org', () => {
-    setClerkState({ role: 'student' })
+  it('redirects missing member to /create-org', () => {
+    memberState.value = null
     renderRedirect()
     expect(screen.getByTestId('create-org-route')).toBeInTheDocument()
   })

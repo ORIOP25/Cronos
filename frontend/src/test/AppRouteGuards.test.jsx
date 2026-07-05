@@ -1,10 +1,25 @@
 import React from 'react'
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { screen } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { renderWithProviders } from './testUtils'
 import { setClerkState, resetClerkState } from './setup'
 import { RequireAdmin, RequireAuth, RequireTeacher } from '../routeGuards'
+
+const memberState = vi.hoisted(() => ({
+  value: {
+    access_status: 'active',
+    lifecycle_status: 'active',
+    capabilities: ['admin'],
+    default_mode: 'admin',
+    teacher_id: null,
+  },
+  loading: false,
+}))
+
+vi.mock('../hooks/useSchoolData', () => ({
+  useCurrentMember: () => ({ data: memberState.value, isLoading: memberState.loading }),
+}))
 
 function renderGuard(ui, initialEntries = ['/protected']) {
   return renderWithProviders(
@@ -42,16 +57,31 @@ describe('RequireAuth', () => {
 })
 
 describe('RequireAdmin', () => {
-  beforeEach(() => resetClerkState())
+  beforeEach(() => {
+    resetClerkState()
+    memberState.loading = false
+    memberState.value = {
+      access_status: 'active',
+      lifecycle_status: 'active',
+      capabilities: ['admin'],
+      default_mode: 'admin',
+      teacher_id: null,
+    }
+  })
 
-  it('allows org:admin', () => {
-    setClerkState({ role: 'org:admin' })
+  it('allows active local admin capability', () => {
     renderGuard(<RequireAdmin><div data-testid="admin-content">Admin</div></RequireAdmin>)
     expect(screen.getByTestId('admin-content')).toBeInTheDocument()
   })
 
-  it('blocks org:member and redirects to teacher default route', () => {
-    setClerkState({ role: 'org:member' })
+  it('blocks teacher-only member and redirects to teacher default route', () => {
+    memberState.value = {
+      access_status: 'active',
+      lifecycle_status: 'active',
+      capabilities: ['teacher'],
+      default_mode: 'teacher',
+      teacher_id: 10,
+    }
     renderGuard(<RequireAdmin><div>Admin</div></RequireAdmin>)
     expect(screen.queryByText('Admin')).toBeNull()
     expect(screen.getByTestId('teacher-route')).toBeInTheDocument()
@@ -65,16 +95,44 @@ describe('RequireAdmin', () => {
 })
 
 describe('RequireTeacher', () => {
-  beforeEach(() => resetClerkState())
+  beforeEach(() => {
+    resetClerkState()
+    memberState.loading = false
+    memberState.value = {
+      access_status: 'active',
+      lifecycle_status: 'active',
+      capabilities: ['teacher'],
+      default_mode: 'teacher',
+      teacher_id: 10,
+    }
+  })
 
-  it('allows org:member', () => {
-    setClerkState({ role: 'org:member' })
+  it('allows active local teacher capability with teacher profile', () => {
     renderGuard(<RequireTeacher><div data-testid="teacher-content">Teacher</div></RequireTeacher>)
     expect(screen.getByTestId('teacher-content')).toBeInTheDocument()
   })
 
-  it('blocks org:admin and redirects to admin default route', () => {
+  it('allows mixed admin plus teacher capability even when Clerk role is org:admin', () => {
     setClerkState({ role: 'org:admin' })
+    memberState.value = {
+      access_status: 'active',
+      lifecycle_status: 'active',
+      capabilities: ['admin', 'teacher'],
+      default_mode: 'admin',
+      teacher_id: 10,
+    }
+    renderGuard(<RequireTeacher><div data-testid="teacher-content">Teacher</div></RequireTeacher>)
+    expect(screen.getByTestId('teacher-content')).toBeInTheDocument()
+  })
+
+  it('blocks admin-only member and redirects to admin default route', () => {
+    memberState.value = {
+      access_status: 'active',
+      lifecycle_status: 'active',
+      capabilities: ['admin'],
+      default_mode: 'admin',
+      teacher_id: null,
+    }
     renderGuard(<RequireTeacher><div>Teacher</div></RequireTeacher>)
     expect(screen.queryByText('Teacher')).toBeNull()
     expect(screen.getByTestId('dashboard-route')).toBeInTheDocument()

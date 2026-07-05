@@ -14,20 +14,39 @@ from uuid import uuid4
 
 from app import models
 from app.config import settings
-from tests.conftest import mock_clerk_payload
+from tests.conftest import create_teacher_profile, create_teacher_user, ensure_membership_capabilities, mock_clerk_payload
 API = settings.API_V1_STR
 
 
 async def _make_teacher_headers(db_session, org_id, teacher_id, role=models.UserRole.teacher):
     cid = f"param_{uuid4().hex[:8]}"
     email = f"param.{uuid4().hex[:8]}@test.pt"
-    user = models.User(
-        email=email,
-        clerk_user_id=cid,
-        is_active=True, role=role,
-        organization_id=org_id, teacher_id=teacher_id,
-    )
-    db_session.add(user)
+    if role == models.UserRole.teacher and teacher_id is not None:
+        await create_teacher_user(
+            db_session,
+            clerk_user_id=cid,
+            email=email,
+            org_id=org_id,
+            teacher_id=teacher_id,
+        )
+    else:
+        user = models.User(
+            email=email,
+            clerk_user_id=cid,
+            is_active=True, role=role,
+            organization_id=org_id, teacher_id=teacher_id,
+        )
+        db_session.add(user)
+        await db_session.flush()
+        capabilities = [models.MembershipCapability.teacher] if role == models.UserRole.teacher else []
+        await ensure_membership_capabilities(
+            db_session,
+            organization_id=org_id,
+            user=user,
+            capabilities=capabilities,
+            expected_clerk_role=models.ClerkOrganizationRole.member,
+            teacher_access_mode=models.TeacherAccessMode.platform if capabilities else None,
+        )
     await db_session.commit()
     return {"Authorization": f"Bearer test_{cid}"}, cid
 
@@ -182,13 +201,13 @@ class TestWeekScheduleErrorContracts:
         admin_token_headers: dict,
         db_session,
     ):
-        teacher_resp = await async_client.post(
-            f"{API}/teachers/",
-            json={"name": f"Prof. Week Param {scenario}", "email": f"week.param.{uuid4().hex[:8]}@test.pt"},
-            headers=admin_token_headers,
+        teacher = await create_teacher_profile(
+            db_session,
+            organization_id=1,
+            name=f"Prof. Week Param {scenario}",
         )
-        assert teacher_resp.status_code == 200
-        teacher_id = teacher_resp.json()["id"]
+        await db_session.commit()
+        teacher_id = teacher.id
 
         headers, cid = await _make_teacher_headers(db_session, 1, teacher_id)
         with patch("app.api.deps.get_clerk_payload", return_value=mock_clerk_payload(cid, None, "teacher")):

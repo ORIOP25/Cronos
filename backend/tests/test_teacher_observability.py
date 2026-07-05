@@ -10,7 +10,13 @@ from app import models
 from app.config import settings
 from app.models import UserRole
 from app.services import teacher_observability_service
-from tests.conftest import mock_clerk_payload, create_org_and_user
+from tests.conftest import (
+    create_org_and_user,
+    create_teacher_profile,
+    create_teacher_user,
+    ensure_membership_capabilities,
+    mock_clerk_payload,
+)
 
 API = settings.API_V1_STR
 
@@ -24,15 +30,36 @@ async def _create_user_headers(
     is_active: bool = True,
 ) -> dict:
     clerk_id = f"user_{role.value}_{uuid4().hex[:8]}"
-    user = models.User(
-        clerk_user_id=clerk_id,
-        email=f"obs.{role.value}.{uuid4().hex[:8]}@escola.pt",
-        is_active=is_active,
-        role=role,
-        organization_id=organization_id,
-        teacher_id=teacher_id,
-    )
-    db_session.add(user)
+    if role == UserRole.teacher and teacher_id is not None:
+        user = await create_teacher_user(
+            db_session,
+            clerk_user_id=clerk_id,
+            email=f"obs.{role.value}.{uuid4().hex[:8]}@escola.pt",
+            org_id=organization_id,
+            teacher_id=teacher_id,
+        )
+        if not is_active:
+            user.is_active = False
+    else:
+        user = models.User(
+            clerk_user_id=clerk_id,
+            email=f"obs.{role.value}.{uuid4().hex[:8]}@escola.pt",
+            is_active=is_active,
+            role=role,
+            organization_id=organization_id,
+            teacher_id=teacher_id,
+        )
+        db_session.add(user)
+        await db_session.flush()
+        capabilities = [models.MembershipCapability.teacher] if role == UserRole.teacher else []
+        await ensure_membership_capabilities(
+            db_session,
+            organization_id=organization_id,
+            user=user,
+            capabilities=capabilities,
+            expected_clerk_role=models.ClerkOrganizationRole.member,
+            teacher_access_mode=models.TeacherAccessMode.platform if capabilities else None,
+        )
     await db_session.commit()
     return {"Authorization": f"Bearer test_{clerk_id}"}
 
@@ -44,13 +71,9 @@ async def test_teacher_self_availability_logs_observability_event(
     db_session,
 ):
     org, _ = await create_org_and_user(db_session, clerk_user_id="user_admin_001", role="admin")
-    teacher_resp = await async_client.post(
-        f"{API}/teachers/",
-        json={"name": "Prof. Obs", "email": f"obs.{uuid4().hex[:8]}@escola.pt"},
-        headers=admin_token_headers,
-    )
-    assert teacher_resp.status_code == 200
-    teacher_id = teacher_resp.json()["id"]
+    teacher = await create_teacher_profile(db_session, organization_id=org.id, name="Prof. Obs")
+    await db_session.commit()
+    teacher_id = teacher.id
 
     teacher_headers = await _create_user_headers(
         db_session,
@@ -89,17 +112,13 @@ async def test_teacher_observability_summary_is_admin_only(
     db_session,
 ):
     org, _ = await create_org_and_user(db_session, clerk_user_id="user_admin_001", role="admin")
-    teacher_resp = await async_client.post(
-        f"{API}/teachers/",
-        json={"name": "Prof. Restrito", "email": f"restricted.{uuid4().hex[:8]}@escola.pt"},
-        headers=admin_token_headers,
-    )
-    assert teacher_resp.status_code == 200
+    teacher = await create_teacher_profile(db_session, organization_id=org.id, name="Prof. Restrito")
+    await db_session.commit()
 
     teacher_headers = await _create_user_headers(
         db_session,
         organization_id=org.id,
-        teacher_id=teacher_resp.json()["id"],
+        teacher_id=teacher.id,
         role=UserRole.teacher,
     )
     teacher_clerk_id = teacher_headers["Authorization"].replace("Bearer test_", "")

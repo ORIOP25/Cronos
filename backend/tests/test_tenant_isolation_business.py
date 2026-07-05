@@ -8,7 +8,7 @@ from httpx import AsyncClient
 from app import models
 from app.models import UserRole
 from test_business_logic_shared import API
-from tests.conftest import create_org_and_user, mock_clerk_payload
+from tests.conftest import create_org_and_user, create_teacher_profile, mock_clerk_payload
 
 
 @pytest.mark.asyncio
@@ -58,10 +58,8 @@ class TestTenantIsolation:
         payload_a = mock_clerk_payload("tenant_iso_a", None, "admin")
         payload_b = mock_clerk_payload("tenant_iso_b", None, "admin")
 
-        with patch("app.api.deps.get_clerk_payload", return_value=payload_a):
-            await async_client.post(
-                f"{API}/teachers/", json={"name": "Prof. A", "email": "profa@escola.pt"}, headers=org_a["headers"],
-            )
+        await create_teacher_profile(db_session, organization_id=org_a["organization_id"], name="Prof. A")
+        await db_session.commit()
         with patch("app.api.deps.get_clerk_payload", return_value=payload_b):
             resp = await async_client.get(f"{API}/teachers/", headers=org_b["headers"])
         assert resp.status_code == 200
