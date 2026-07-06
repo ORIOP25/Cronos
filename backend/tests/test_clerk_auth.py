@@ -97,10 +97,11 @@ async def test_get_current_user_from_db(db_session):
 
 
 @pytest.mark.asyncio
-async def test_get_current_user_rejects_token_org_mismatch(db_session):
+async def test_get_current_active_user_rejects_token_org_without_membership(db_session):
     from fastapi import HTTPException
-    from app.api.deps import get_current_user
+    from app.api.deps import get_current_active_user
     from app import models
+    from tests.conftest import ensure_membership_capabilities
 
     org_a = models.Organization(name="Org A", clerk_org_id="org_a", plan_status="active")
     org_b = models.Organization(name="Org B", clerk_org_id="org_b", plan_status="active")
@@ -114,19 +115,24 @@ async def test_get_current_user_rejects_token_org_mismatch(db_session):
         organization_id=org_a.id,
     )
     db_session.add(user)
+    await db_session.flush()
+    await ensure_membership_capabilities(
+        db_session,
+        organization_id=org_a.id,
+        user=user,
+        capabilities=[models.MembershipCapability.admin],
+        expected_clerk_role=models.ClerkOrganizationRole.admin,
+    )
     await db_session.commit()
 
-    with patch("app.api.deps.get_clerk_payload") as mock_payload:
-        mock_payload.return_value = {
-            "sub": "user_mismatch",
-            "o": {"id": "org_b", "rol": "admin"},
-        }
-        mock_request = MagicMock()
-        with pytest.raises(HTTPException) as exc:
-            await get_current_user(mock_request, db_session)
+    mock_request = MagicMock()
+    mock_request.state.current_organization_id = org_b.id
+    mock_request.state.current_clerk_org_role = "admin"
+    with pytest.raises(HTTPException) as exc:
+        await get_current_active_user(mock_request, db_session, user)
 
     assert exc.value.status_code == 403
-    assert exc.value.detail == "Organization mismatch"
+    assert exc.value.detail == "Active organization membership required"
 
 
 # ── T6: User NOT in DB → fallback creates ───────────────────────
@@ -167,11 +173,13 @@ async def test_get_current_user_fallback_creates_user(db_session):
 # ── T7: Admin access ────────────────────────────────────────────
 def test_get_current_active_admin():
     from app.api.deps import get_current_active_admin
+    from app import models
 
     mock_user = MagicMock()
     mock_user.role = "admin"
     mock_user.is_active = True
     mock_user.is_superuser = False
+    mock_user._membership_capabilities = {models.MembershipCapability.admin}
 
     result = get_current_active_admin(mock_user)
     assert result == mock_user
@@ -181,11 +189,13 @@ def test_get_current_active_admin():
 def test_get_current_active_admin_rejects_teacher():
     from fastapi import HTTPException
     from app.api.deps import get_current_active_admin
+    from app import models
 
     mock_user = MagicMock()
     mock_user.role = "teacher"
     mock_user.is_active = True
     mock_user.is_superuser = False
+    mock_user._membership_capabilities = {models.MembershipCapability.teacher}
 
     with pytest.raises(HTTPException) as exc:
         get_current_active_admin(mock_user)
@@ -304,7 +314,7 @@ async def test_get_current_user_unknown_role_string(db_session):
     mock_user.clerk_user_id = "user_unknown_role"
     mock_user.email = "unknown@test.com"
     mock_user.is_active = True
-    mock_user.role = UserRole.admin.value
+    mock_user.role = UserRole.teacher.value
     mock_user.organization_id = 1
 
     with patch("app.api.deps.get_clerk_payload") as mock_payload, \

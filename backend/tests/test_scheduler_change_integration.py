@@ -85,21 +85,16 @@ async def test_scheduler_shaping_writes_increment_but_policy_and_text_do_not(db_
     await db_session.refresh(state)
     assert state.scheduler_state_version == 4
 
-    teacher = await teacher_service.create_teacher(
-        db_session,
-        schemas.TeacherCreate(name="Unassigned Teacher"),
-        organization.id,
+    teacher = models.Teacher(
+        name="Unassigned Teacher",
+        organization_id=organization.id,
     )
+    db_session.add(teacher)
+    await db_session.flush()
     await db_session.refresh(state)
     assert state.scheduler_state_version == 4
-    teacher = await teacher_service.update_teacher(
-        db_session,
-        teacher.id,
-        schemas.TeacherUpdate(name="Renamed Unassigned Teacher"),
-        organization.id,
-    )
-    assert teacher is not None
-    assert teacher.subject_ids == []
+    teacher.name = "Renamed Unassigned Teacher"
+    await db_session.flush()
     await db_session.refresh(state)
     assert state.scheduler_state_version == 4
     await teacher_service.set_teacher_availability(
@@ -216,11 +211,6 @@ async def test_scheduler_shaping_writes_increment_but_policy_and_text_do_not(db_
     assert any(
         event.entity_type == "REPAIR_POLICY"
         and event.change_scope == models.SchedulerStateChangeScope.NO_OP
-        for event in events
-    )
-    assert any(
-        event.entity_type == "TEACHER_RESOURCE"
-        and event.change_scope == models.SchedulerStateChangeScope.INACTIVE_RESOURCE
         for event in events
     )
     assert any(

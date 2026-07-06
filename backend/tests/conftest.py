@@ -235,6 +235,65 @@ async def ensure_membership_capabilities(
     return membership
 
 
+def ensure_membership_capabilities_sync(
+    db_session,
+    *,
+    organization_id: int,
+    user: models.User,
+    capabilities: list[models.MembershipCapability],
+    display_name: str | None = None,
+    expected_clerk_role: models.ClerkOrganizationRole | None = None,
+    teacher_access_mode: models.TeacherAccessMode | None = None,
+) -> models.OrganizationMembership:
+    """Synchronous twin for legacy service tests that now need Clerk memberships."""
+    from sqlalchemy import select as _sel
+
+    organization = db_session.get(models.Organization, organization_id)
+    if organization is not None and not organization.clerk_org_id:
+        organization.clerk_org_id = f"org_test_{organization_id}"
+        db_session.flush()
+    if organization is not None and user.clerk_user_id:
+        CLERK_ORG_BY_USER[user.clerk_user_id] = organization.clerk_org_id
+
+    membership = db_session.execute(
+        _sel(models.OrganizationMembership).where(
+            models.OrganizationMembership.organization_id == organization_id,
+            models.OrganizationMembership.account_id == user.id,
+        )
+    ).scalar_one_or_none()
+    if membership is None:
+        membership = models.OrganizationMembership(
+            organization_id=organization_id,
+            account_id=user.id,
+            organization_display_name=display_name or user.name or user.email,
+            lifecycle_status=models.MembershipLifecycleStatus.active,
+            access_status=models.MembershipAccessStatus.active,
+            teacher_access_mode=teacher_access_mode,
+            expected_clerk_role=expected_clerk_role,
+        )
+        db_session.add(membership)
+        db_session.flush()
+    else:
+        membership.lifecycle_status = models.MembershipLifecycleStatus.active
+        membership.access_status = models.MembershipAccessStatus.active
+        membership.teacher_access_mode = teacher_access_mode
+        membership.expected_clerk_role = expected_clerk_role
+
+    existing = set(db_session.execute(
+        _sel(models.OrganizationMembershipCapability.capability).where(
+            models.OrganizationMembershipCapability.organization_membership_id == membership.id,
+        )
+    ).scalars().all())
+    for capability in capabilities:
+        if capability not in existing:
+            db_session.add(models.OrganizationMembershipCapability(
+                organization_membership_id=membership.id,
+                capability=capability,
+            ))
+    db_session.flush()
+    return membership
+
+
 async def create_teacher_profile(
     db_session: AsyncSession,
     *,

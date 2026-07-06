@@ -538,7 +538,7 @@ async def test_approval_rejects_recovery_link_on_non_recovery_target(db_session)
 
 
 @pytest.mark.asyncio
-async def test_repair_approval_reconciles_moved_added_and_removed_blocks(db_session):
+async def test_repair_approval_reconciles_moved_added_and_removed_blocks(db_session, monkeypatch):
     ctx = await _runtime_context(db_session)
     source_job = await _queue_job(db_session, ctx, "repair-reconcile-source")
     await SchedulerJobRuntime(db_session).execute(source_job.id, run_complete_generation)
@@ -620,6 +620,22 @@ async def test_repair_approval_reconciles_moved_added_and_removed_blocks(db_sess
     await db_session.commit()
 
     repair_job = await _queue_job(db_session, ctx, "repair-reconcile-target")
+    fixed_now = datetime(2026, 6, 23, 12, tzinfo=timezone.utc)
+    original_policy_snapshot = SchedulerFingerprintService.repair_policy_snapshot
+
+    async def fixed_policy_snapshot(service, organization_id, school_year_id, **_kwargs):
+        return await original_policy_snapshot(
+            service,
+            organization_id,
+            school_year_id,
+            now=fixed_now,
+        )
+
+    monkeypatch.setattr(
+        SchedulerFingerprintService,
+        "repair_policy_snapshot",
+        fixed_policy_snapshot,
+    )
 
     async def changed_target(execution):
         return ValidatedGenerationResult(

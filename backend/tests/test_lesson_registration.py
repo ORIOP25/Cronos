@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import create_engine, insert, select
 from sqlalchemy.orm import sessionmaker
 
-from tests.conftest import mock_clerk_payload
+from tests.conftest import ensure_membership_capabilities, mock_clerk_payload
 
 from app import models, schemas
 from app.services import (
@@ -774,6 +774,15 @@ class TestTimesheetReopenPermissions:
         )
         db_session.add(teacher_user)
         await db_session.flush()
+        membership = await ensure_membership_capabilities(
+            db_session,
+            organization_id=org.id,
+            user=teacher_user,
+            capabilities=[models.MembershipCapability.teacher],
+            expected_clerk_role=models.ClerkOrganizationRole.member,
+            teacher_access_mode=models.TeacherAccessMode.platform,
+        )
+        teacher.organization_membership_id = membership.id
 
         # Create timesheet
         week_start = date.today() - timedelta(days=date.today().weekday())
@@ -934,6 +943,13 @@ class TestTimesheetApprovalEndpoints:
         )
         db_session.add(admin_user)
         await db_session.flush()
+        await ensure_membership_capabilities(
+            db_session,
+            organization_id=org.id,
+            user=admin_user,
+            capabilities=[models.MembershipCapability.admin],
+            expected_clerk_role=models.ClerkOrganizationRole.admin,
+        )
 
         week_start = date.today() - timedelta(days=date.today().weekday())
         timesheet = models.TeacherWeeklyTimesheet(
@@ -979,6 +995,13 @@ class TestTimesheetApprovalEndpoints:
         )
         db_session.add(admin_user)
         await db_session.flush()
+        await ensure_membership_capabilities(
+            db_session,
+            organization_id=org.id,
+            user=admin_user,
+            capabilities=[models.MembershipCapability.admin],
+            expected_clerk_role=models.ClerkOrganizationRole.admin,
+        )
 
         week_start = date.today() - timedelta(days=date.today().weekday())
         timesheet = models.TeacherWeeklyTimesheet(
@@ -1031,6 +1054,13 @@ class TestTimesheetsListEndpoint:
         )
         db_session.add(admin_user)
         await db_session.flush()
+        await ensure_membership_capabilities(
+            db_session,
+            organization_id=org.id,
+            user=admin_user,
+            capabilities=[models.MembershipCapability.admin],
+            expected_clerk_role=models.ClerkOrganizationRole.admin,
+        )
 
         week_start = date.today() - timedelta(days=date.today().weekday())
         timesheet = models.TeacherWeeklyTimesheet(
@@ -1111,6 +1141,14 @@ class TestTimesheetsListEndpoint:
             organization_id=org.id,
         )
         db_session.add(admin_user)
+        await db_session.flush()
+        await ensure_membership_capabilities(
+            db_session,
+            organization_id=org.id,
+            user=admin_user,
+            capabilities=[models.MembershipCapability.admin],
+            expected_clerk_role=models.ClerkOrganizationRole.admin,
+        )
         await db_session.commit()
 
         headers = {"Authorization": f"Bearer test_{admin_cid}"}

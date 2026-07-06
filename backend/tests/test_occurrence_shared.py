@@ -13,6 +13,7 @@ from sqlalchemy import select
 from app import models, schemas
 from app.models import LessonOccurrenceStatus
 from app.services import occurrence_service
+from tests.conftest import ensure_membership_capabilities, ensure_membership_capabilities_sync
 # SyncTestSession para testes de concorrência
 from sqlalchemy import create_engine as _ce
 from sqlalchemy.orm import sessionmaker as _sm
@@ -54,6 +55,13 @@ async def full_setup(db_session: AsyncSession):
     )
     db_session.add(admin)
     await db_session.flush()
+    await ensure_membership_capabilities(
+        db_session,
+        organization_id=org.id,
+        user=admin,
+        capabilities=[models.MembershipCapability.admin],
+        expected_clerk_role=models.ClerkOrganizationRole.admin,
+    )
 
     # 3. Subject & Module
     subject = models.Subject(
@@ -388,6 +396,18 @@ def substitution_setup(sync_db, full_setup):
         teacher_id=full_setup["substitute_teacher_id"],
     )
     sync_db.add(teacher_user)
+    sync_db.flush()
+    teacher_membership = ensure_membership_capabilities_sync(
+        sync_db,
+        organization_id=organization_id,
+        user=teacher_user,
+        capabilities=[models.MembershipCapability.teacher],
+        expected_clerk_role=models.ClerkOrganizationRole.member,
+        teacher_access_mode=models.TeacherAccessMode.platform,
+    )
+    substitute_teacher = sync_db.get(models.Teacher, full_setup["substitute_teacher_id"])
+    if substitute_teacher is not None:
+        substitute_teacher.organization_membership_id = teacher_membership.id
 
     sync_db.commit()
 
