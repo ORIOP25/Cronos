@@ -5,9 +5,10 @@ Revises:
 Create Date: 2026-07-05
 """
 
-from typing import Sequence, Union
+from typing import Mapping, Sequence, Union
 
 from alembic import op
+from sqlalchemy import MetaData
 
 from app.db.database import Base
 from app import models  # noqa: F401 - registers SQLAlchemy metadata
@@ -61,6 +62,13 @@ TENANT_TABLES = (
 )
 
 
+APPEND_ONLY_TABLES = (
+    "schedule_draft_blocks",
+    "schedule_diff_entries",
+    "scheduler_state_version_events",
+)
+
+
 SAME_TENANT_REFS = {
     "availability": {"teacher_id": "teacher", "timeslot_id": "timeslot"},
     "course_subject_link": {"course_id": "course", "subject_id": "subject"},
@@ -107,18 +115,16 @@ SAME_TENANT_REFS = {
     "schedule_drafts": {
         "generation_job_id": "schedule_generation_job",
         "created_by_user_id": '"user"',
-        "approved_by_user_id": '"user"',
+        "decided_by_user_id": '"user"',
     },
     "schedule_draft_blocks": {
         "draft_id": "schedule_drafts",
         "class_id": '"class"',
         "subject_id": "subject",
-        "module_id": "module",
         "teacher_id": "teacher",
         "timeslot_id": "timeslot",
         "room_id": "room",
         "source_active_block_id": "active_schedule_blocks",
-        "source_occurrence_id": "lesson_occurrence",
         "recovery_source_occurrence_id": "lesson_occurrence",
     },
     "schedule_diff_entries": {
@@ -126,23 +132,23 @@ SAME_TENANT_REFS = {
         "class_id": '"class"',
         "subject_id": "subject",
         "teacher_id": "teacher",
-        "room_id": "room",
-        "timeslot_id": "timeslot",
+        "before_room_id": "room",
+        "after_room_id": "room",
+        "before_timeslot_id": "timeslot",
+        "after_timeslot_id": "timeslot",
     },
     "active_schedule_blocks": {
-        "draft_id": "schedule_drafts",
-        "draft_block_id": "schedule_draft_blocks",
+        "source_draft_block_id": "schedule_draft_blocks",
         "class_id": '"class"',
         "subject_id": "subject",
-        "module_id": "module",
         "teacher_id": "teacher",
         "timeslot_id": "timeslot",
         "room_id": "room",
-        "source_occurrence_id": "lesson_occurrence",
     },
     "planned_recovery_links": {
         "debt_occurrence_id": "lesson_occurrence",
-        "recovery_block_id": "active_schedule_blocks",
+        "planned_active_block_id": "active_schedule_blocks",
+        "planned_draft_block_id": "schedule_draft_blocks",
     },
     "scheduler_state_version_events": {
         "school_year_id": "scheduler_school_year",
@@ -165,6 +171,65 @@ def _q(identifier: str) -> str:
     if identifier.startswith('"') and identifier.endswith('"'):
         return identifier
     return f'"{identifier}"'
+
+
+def _normalize_table_name(identifier: str) -> str:
+    if identifier.startswith('"') and identifier.endswith('"'):
+        return identifier[1:-1].replace('""', '"')
+    return identifier
+
+
+def _tenant_ref_contract_errors(
+    refs: Mapping[str, Mapping[str, str]] | None = None,
+    metadata: MetaData | None = None,
+) -> list[str]:
+    refs = SAME_TENANT_REFS if refs is None else refs
+    metadata = Base.metadata if metadata is None else metadata
+    tables = metadata.tables
+    errors: list[str] = []
+
+    for table, local_refs in refs.items():
+        table_name = _normalize_table_name(table)
+        table_obj = tables.get(table_name)
+        if table_obj is None:
+            errors.append(
+                f"SAME_TENANT_REFS references missing local table public.{table_name}"
+            )
+            continue
+
+        local_columns = set(table_obj.c.keys())
+        for column, ref_table in local_refs.items():
+            if column not in local_columns:
+                errors.append(
+                    f"SAME_TENANT_REFS[{table_name}].{column} is not a column on public.{table_name}"
+                )
+
+            ref_table_name = _normalize_table_name(ref_table)
+            ref_table_obj = tables.get(ref_table_name)
+            if ref_table_obj is None:
+                errors.append(
+                    f"SAME_TENANT_REFS[{table_name}].{column} references missing table public.{ref_table_name}"
+                )
+                continue
+
+            ref_columns = set(ref_table_obj.c.keys())
+            if "id" not in ref_columns:
+                errors.append(
+                    f"SAME_TENANT_REFS[{table_name}].{column} references public.{ref_table_name} without an id column"
+                )
+            if ref_table_name != "organization" and "organization_id" not in ref_columns:
+                errors.append(
+                    f"SAME_TENANT_REFS[{table_name}].{column} references public.{ref_table_name} without an organization_id column"
+                )
+
+    return errors
+
+
+def _validate_same_tenant_refs() -> None:
+    errors = _tenant_ref_contract_errors()
+    if errors:
+        detail = "\n- ".join(errors)
+        raise RuntimeError(f"Invalid SAME_TENANT_REFS contract:\n- {detail}")
 
 
 def _create_same_tenant_trigger(table: str, refs: dict[str, str]) -> None:
@@ -205,6 +270,7 @@ def _create_same_tenant_trigger(table: str, refs: dict[str, str]) -> None:
 
 
 def _install_security_objects() -> None:
+    _validate_same_tenant_refs()
     op.execute("CREATE SCHEMA IF NOT EXISTS app_security")
     op.execute(
         """
@@ -220,13 +286,12 @@ def _install_security_objects() -> None:
         $$;
         GRANT cronos_app TO CURRENT_USER;
         GRANT USAGE ON SCHEMA public, app_security TO cronos_app;
+        GRANT USAGE ON SCHEMA public, app_security TO cronos_auth_definer;
         GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO cronos_app;
-        ALTER DEFAULT PRIVILEGES IN SCHEMA public
-            GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO cronos_app;
         ALTER DEFAULT PRIVILEGES IN SCHEMA public
             GRANT USAGE, SELECT ON SEQUENCES TO cronos_app;
         ALTER DEFAULT PRIVILEGES IN SCHEMA public
-            GRANT SELECT, INSERT, UPDATE ON TABLES TO cronos_auth_definer;
+            GRANT USAGE, SELECT ON SEQUENCES TO cronos_auth_definer;
         DO $grant_tables$
         DECLARE
             table_name text;
@@ -247,10 +312,19 @@ def _install_security_objects() -> None:
         END
         $grant_tables$;
         REVOKE ALL ON public.alembic_version FROM cronos_app;
-        GRANT SELECT, INSERT, UPDATE ON public.organization, public."user" TO cronos_auth_definer;
-        GRANT USAGE, SELECT ON SEQUENCE public.organization_id_seq, public.user_id_seq TO cronos_auth_definer;
+        GRANT SELECT, INSERT, UPDATE ON
+            public.organization,
+            public."user",
+            public.organization_membership
+        TO cronos_auth_definer;
+        GRANT SELECT, INSERT, UPDATE, DELETE ON
+            public.organization_membership_capability
+        TO cronos_auth_definer;
+        GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO cronos_auth_definer;
         """
     )
+    for table in APPEND_ONLY_TABLES:
+        op.execute(f"REVOKE UPDATE, DELETE ON public.{_q(table)} FROM cronos_app")
     op.execute(
         """
         CREATE OR REPLACE FUNCTION app_security.current_organization_id()
@@ -310,7 +384,7 @@ def _install_security_objects() -> None:
                     ) THEN 'teacher'
                     ELSE NULL
                 END,
-                true
+                coalesce(u.is_active, false)
             FROM public.organization_membership om
             JOIN public."user" u ON u.id = om.account_id
             JOIN public.organization o ON o.id = om.organization_id
@@ -320,6 +394,7 @@ def _install_security_objects() -> None:
               AND length(resolve_auth_context.clerk_org_id) BETWEEN 1 AND 255
               AND u.clerk_user_id = resolve_auth_context.clerk_user_id
               AND o.clerk_org_id = resolve_auth_context.clerk_org_id
+              AND u.is_active = true
               AND om.lifecycle_status = 'active'
               AND om.access_status = 'active'
             LIMIT 1;
@@ -366,6 +441,188 @@ def _install_security_objects() -> None:
                 WHERE public.organization.clerk_org_id = p_clerk_org_id;
             END IF;
 
+            RETURN NEXT;
+        END;
+        $$;
+
+        CREATE OR REPLACE FUNCTION app_security.ensure_user(
+            p_clerk_user_id text,
+            p_email text,
+            p_display_name text,
+            p_app_role text,
+            p_organization_id integer,
+            p_teacher_id integer
+        )
+        RETURNS TABLE(id integer, organization_id integer)
+        LANGUAGE plpgsql
+        SECURITY DEFINER
+        SET search_path = pg_catalog, public
+        AS $$
+        DECLARE
+            normalized_clerk_user_id text := nullif(btrim(p_clerk_user_id), '');
+            normalized_email text := lower(nullif(btrim(p_email), ''));
+            normalized_display_name text := nullif(btrim(p_display_name), '');
+            parsed_role public.userrole;
+            desired_capability public.membershipcapability;
+            desired_clerk_role public.clerkorganizationrole;
+            desired_teacher_mode public.teacheraccessmode;
+            conflicting_user_id integer;
+            ensured_user_id integer;
+            ensured_organization_id integer;
+            ensured_membership_id integer;
+        BEGIN
+            IF normalized_clerk_user_id IS NULL OR length(normalized_clerk_user_id) > 255 THEN
+                RAISE EXCEPTION 'clerk_user_id is required';
+            END IF;
+            IF normalized_email IS NULL THEN
+                RAISE EXCEPTION 'email is required';
+            END IF;
+            IF p_organization_id IS NULL OR NOT EXISTS (
+                SELECT 1 FROM public.organization WHERE public.organization.id = p_organization_id
+            ) THEN
+                RAISE EXCEPTION 'organization_id is required';
+            END IF;
+
+            CASE coalesce(nullif(p_app_role, ''), '')
+                WHEN 'admin' THEN
+                    parsed_role := 'admin'::public.userrole;
+                    desired_capability := 'admin'::public.membershipcapability;
+                    desired_clerk_role := 'org:admin'::public.clerkorganizationrole;
+                    desired_teacher_mode := NULL;
+                WHEN 'org:admin' THEN
+                    parsed_role := 'admin'::public.userrole;
+                    desired_capability := 'admin'::public.membershipcapability;
+                    desired_clerk_role := 'org:admin'::public.clerkorganizationrole;
+                    desired_teacher_mode := NULL;
+                WHEN 'member' THEN
+                    parsed_role := 'teacher'::public.userrole;
+                    desired_capability := 'teacher'::public.membershipcapability;
+                    desired_clerk_role := 'org:member'::public.clerkorganizationrole;
+                    desired_teacher_mode := 'platform'::public.teacheraccessmode;
+                WHEN 'teacher' THEN
+                    parsed_role := 'teacher'::public.userrole;
+                    desired_capability := 'teacher'::public.membershipcapability;
+                    desired_clerk_role := 'org:member'::public.clerkorganizationrole;
+                    desired_teacher_mode := 'platform'::public.teacheraccessmode;
+                WHEN 'org:member' THEN
+                    parsed_role := 'teacher'::public.userrole;
+                    desired_capability := 'teacher'::public.membershipcapability;
+                    desired_clerk_role := 'org:member'::public.clerkorganizationrole;
+                    desired_teacher_mode := 'platform'::public.teacheraccessmode;
+                ELSE
+                    RAISE EXCEPTION 'unsupported app_role';
+            END CASE;
+
+            SELECT public."user".id, public."user".organization_id
+            INTO ensured_user_id, ensured_organization_id
+            FROM public."user"
+            WHERE public."user".clerk_user_id = normalized_clerk_user_id;
+
+            SELECT public."user".id
+            INTO conflicting_user_id
+            FROM public."user"
+            WHERE lower(public."user".email) = normalized_email
+              AND (ensured_user_id IS NULL OR public."user".id <> ensured_user_id)
+            LIMIT 1;
+
+            IF conflicting_user_id IS NOT NULL THEN
+                RAISE EXCEPTION 'email is already linked to a different user';
+            END IF;
+
+            IF ensured_user_id IS NULL THEN
+                INSERT INTO public."user" (
+                    email,
+                    name,
+                    role,
+                    teacher_id,
+                    organization_id,
+                    clerk_user_id,
+                    clerk_profile_name,
+                    is_active,
+                    is_superuser,
+                    last_clerk_sync_at,
+                    created_at,
+                    updated_at
+                )
+                VALUES (
+                    normalized_email,
+                    coalesce(normalized_display_name, normalized_email),
+                    parsed_role,
+                    p_teacher_id,
+                    p_organization_id,
+                    normalized_clerk_user_id,
+                    normalized_display_name,
+                    true,
+                    false,
+                    CURRENT_TIMESTAMP,
+                    CURRENT_TIMESTAMP,
+                    CURRENT_TIMESTAMP
+                )
+                RETURNING public."user".id, public."user".organization_id
+                INTO ensured_user_id, ensured_organization_id;
+            ELSE
+                UPDATE public."user"
+                SET email = normalized_email,
+                    name = coalesce(normalized_display_name, public."user".name, normalized_email),
+                    role = parsed_role,
+                    teacher_id = p_teacher_id,
+                    organization_id = p_organization_id,
+                    clerk_profile_name = coalesce(normalized_display_name, public."user".clerk_profile_name),
+                    is_active = true,
+                    last_clerk_sync_at = CURRENT_TIMESTAMP,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE public."user".id = ensured_user_id
+                RETURNING public."user".id, public."user".organization_id
+                INTO ensured_user_id, ensured_organization_id;
+            END IF;
+
+            INSERT INTO public.organization_membership (
+                organization_id,
+                account_id,
+                organization_display_name,
+                lifecycle_status,
+                access_status,
+                teacher_access_mode,
+                expected_clerk_role,
+                lock_version,
+                created_at,
+                updated_at
+            )
+            VALUES (
+                p_organization_id,
+                ensured_user_id,
+                coalesce(normalized_display_name, normalized_email),
+                'active',
+                'active',
+                desired_teacher_mode,
+                desired_clerk_role,
+                1,
+                CURRENT_TIMESTAMP,
+                CURRENT_TIMESTAMP
+            )
+            ON CONFLICT ON CONSTRAINT uq_org_membership_account DO UPDATE
+            SET organization_display_name = EXCLUDED.organization_display_name,
+                lifecycle_status = 'active',
+                access_status = 'active',
+                teacher_access_mode = EXCLUDED.teacher_access_mode,
+                expected_clerk_role = EXCLUDED.expected_clerk_role,
+                updated_at = CURRENT_TIMESTAMP
+            RETURNING public.organization_membership.id
+            INTO ensured_membership_id;
+
+            DELETE FROM public.organization_membership_capability
+            WHERE organization_membership_id = ensured_membership_id
+              AND capability <> desired_capability;
+
+            INSERT INTO public.organization_membership_capability (
+                organization_membership_id,
+                capability
+            )
+            VALUES (ensured_membership_id, desired_capability)
+            ON CONFLICT DO NOTHING;
+
+            id := ensured_user_id;
+            organization_id := ensured_organization_id;
             RETURN NEXT;
         END;
         $$;
@@ -450,11 +707,49 @@ def _install_security_objects() -> None:
         SET search_path = pg_catalog, public
         AS $$
         DECLARE
+            target_user_id integer;
+            target_is_superuser boolean;
             affected_count integer;
         BEGIN
+            SELECT public."user".id, public."user".is_superuser
+            INTO target_user_id, target_is_superuser
+            FROM public."user"
+            WHERE public."user".clerk_user_id = p_clerk_user_id;
+
+            IF target_user_id IS NULL OR target_is_superuser THEN
+                RETURN false;
+            END IF;
+
+            IF EXISTS (
+                SELECT 1
+                FROM public.organization_membership om
+                JOIN public.organization_membership_capability omc
+                  ON omc.organization_membership_id = om.id
+                 AND omc.capability = 'admin'
+                WHERE om.account_id = target_user_id
+                  AND om.lifecycle_status = 'active'
+                  AND om.access_status = 'active'
+                  AND NOT EXISTS (
+                    SELECT 1
+                    FROM public.organization_membership other_om
+                    JOIN public.organization_membership_capability other_omc
+                      ON other_omc.organization_membership_id = other_om.id
+                     AND other_omc.capability = 'admin'
+                    JOIN public."user" other_user
+                      ON other_user.id = other_om.account_id
+                    WHERE other_om.organization_id = om.organization_id
+                      AND other_om.lifecycle_status = 'active'
+                      AND other_om.access_status = 'active'
+                      AND other_user.is_active = true
+                      AND other_user.id <> target_user_id
+                  )
+            ) THEN
+                RETURN false;
+            END IF;
+
             UPDATE public."user"
             SET is_active = false
-            WHERE public."user".clerk_user_id = p_clerk_user_id
+            WHERE public."user".id = target_user_id
               AND public."user".is_active = true
               AND public."user".is_superuser = false;
             GET DIAGNOSTICS affected_count = ROW_COUNT;
@@ -468,17 +763,20 @@ def _install_security_objects() -> None:
         REVOKE ALL ON FUNCTION app_security.current_organization_id() FROM PUBLIC;
         REVOKE ALL ON FUNCTION app_security.resolve_auth_context(text, text) FROM PUBLIC;
         REVOKE ALL ON FUNCTION app_security.ensure_organization(text, text) FROM PUBLIC;
+        REVOKE ALL ON FUNCTION app_security.ensure_user(text, text, text, text, integer, integer) FROM PUBLIC;
         REVOKE ALL ON FUNCTION app_security.update_user_profile(text, text, text, text, integer) FROM PUBLIC;
         REVOKE ALL ON FUNCTION app_security.deactivate_organization(text) FROM PUBLIC;
         REVOKE ALL ON FUNCTION app_security.deactivate_user(text) FROM PUBLIC;
         ALTER FUNCTION app_security.resolve_auth_context(text, text) OWNER TO cronos_auth_definer;
         ALTER FUNCTION app_security.ensure_organization(text, text) OWNER TO cronos_auth_definer;
+        ALTER FUNCTION app_security.ensure_user(text, text, text, text, integer, integer) OWNER TO cronos_auth_definer;
         ALTER FUNCTION app_security.update_user_profile(text, text, text, text, integer) OWNER TO cronos_auth_definer;
         ALTER FUNCTION app_security.deactivate_organization(text) OWNER TO cronos_auth_definer;
         ALTER FUNCTION app_security.deactivate_user(text) OWNER TO cronos_auth_definer;
         GRANT EXECUTE ON FUNCTION app_security.current_organization_id() TO cronos_app;
         GRANT EXECUTE ON FUNCTION app_security.resolve_auth_context(text, text) TO cronos_app;
         GRANT EXECUTE ON FUNCTION app_security.ensure_organization(text, text) TO cronos_app;
+        GRANT EXECUTE ON FUNCTION app_security.ensure_user(text, text, text, text, integer, integer) TO cronos_app;
         GRANT EXECUTE ON FUNCTION app_security.update_user_profile(text, text, text, text, integer) TO cronos_app;
         GRANT EXECUTE ON FUNCTION app_security.deactivate_organization(text) TO cronos_app;
         GRANT EXECUTE ON FUNCTION app_security.deactivate_user(text) TO cronos_app;
@@ -518,6 +816,7 @@ def _drop_security_objects() -> None:
     op.execute("DROP FUNCTION IF EXISTS app_security.deactivate_user(text)")
     op.execute("DROP FUNCTION IF EXISTS app_security.deactivate_organization(text)")
     op.execute("DROP FUNCTION IF EXISTS app_security.update_user_profile(text, text, text, text, integer)")
+    op.execute("DROP FUNCTION IF EXISTS app_security.ensure_user(text, text, text, text, integer, integer)")
     op.execute("DROP FUNCTION IF EXISTS app_security.ensure_organization(text, text)")
     op.execute("DROP FUNCTION IF EXISTS app_security.resolve_auth_context(text, text)")
     op.execute("DROP FUNCTION IF EXISTS app_security.current_organization_id()")

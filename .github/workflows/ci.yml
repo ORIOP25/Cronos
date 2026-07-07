@@ -53,7 +53,21 @@ jobs:
         env:
           ENVIRONMENT: local
           DATABASE_URL: "postgresql+asyncpg://postgres:ci_pg_pass@localhost:5432/cronos_test_db"
+          DATABASE_POOLING_ENABLED: "false"
           SECRET_KEY: ci-test-secret-key-not-for-production
+          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
+          CLERK_WEBHOOK_SECRET: ${{ secrets.CLERK_WEBHOOK_SECRET }}
+          CLERK_PUBLISHABLE_KEY: ${{ secrets.CLERK_PUBLISHABLE_KEY }}
+
+      - name: Run DB contract tests
+        working-directory: backend
+        run: pytest tests/test_runtime_reality.py tests/test_rls_database_policies.py -m postgresql -v --tb=short
+        env:
+          ENVIRONMENT: local
+          DATABASE_URL: "postgresql+asyncpg://postgres:ci_pg_pass@localhost:5432/cronos_test_db"
+          DATABASE_POOLING_ENABLED: "false"
+          SECRET_KEY: ci-test-secret-key-not-for-production
+          RATELIMIT_ENABLED: "false"
           CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
           CLERK_WEBHOOK_SECRET: ${{ secrets.CLERK_WEBHOOK_SECRET }}
           CLERK_PUBLISHABLE_KEY: ${{ secrets.CLERK_PUBLISHABLE_KEY }}
@@ -64,6 +78,7 @@ jobs:
         env:
           ENVIRONMENT: local
           DATABASE_URL: "postgresql+asyncpg://postgres:ci_pg_pass@localhost:5432/cronos_test_db"
+          DATABASE_POOLING_ENABLED: "false"
           SECRET_KEY: ci-test-secret-key-not-for-production
           RATELIMIT_ENABLED: "false"
           CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
@@ -76,6 +91,7 @@ jobs:
         env:
           ENVIRONMENT: local
           DATABASE_URL: "postgresql+asyncpg://postgres:ci_pg_pass@localhost:5432/cronos_test_db"
+          DATABASE_POOLING_ENABLED: "false"
           SECRET_KEY: ci-test-secret-key-not-for-production
           RATELIMIT_ENABLED: "false"
           CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
@@ -92,6 +108,15 @@ jobs:
             exit 1
           fi
           echo "OK: $SKIPPED skipped tests (threshold: $MAX_ALLOWED)"
+        env:
+          ENVIRONMENT: local
+          DATABASE_URL: "postgresql+asyncpg://postgres:ci_pg_pass@localhost:5432/cronos_test_db"
+          DATABASE_POOLING_ENABLED: "false"
+          SECRET_KEY: ci-test-secret-key-not-for-production
+          RATELIMIT_ENABLED: "false"
+          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
+          CLERK_WEBHOOK_SECRET: ${{ secrets.CLERK_WEBHOOK_SECRET }}
+          CLERK_PUBLISHABLE_KEY: ${{ secrets.CLERK_PUBLISHABLE_KEY }}
 
   frontend:
     name: Frontend - Lint + Test + Build

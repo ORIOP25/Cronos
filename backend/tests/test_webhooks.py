@@ -3,6 +3,7 @@ import json
 from uuid import uuid4
 
 import pytest
+import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from svix.webhooks import Webhook
 
@@ -35,12 +36,12 @@ def _set_webhook_secret(monkeypatch):
     monkeypatch.setattr(settings, "CLERK_WEBHOOK_SECRET", _WEBHOOK_SECRET)
 
 
-@pytest.fixture
-def async_client():
+@pytest_asyncio.fixture
+async def async_client():
     from app.main import app
 
-    transport = ASGITransport(app=app)
-    return AsyncClient(transport=transport, base_url="http://test")
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        yield client
 
 
 @pytest.mark.asyncio

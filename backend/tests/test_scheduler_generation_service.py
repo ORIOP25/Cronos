@@ -5,7 +5,6 @@ from dataclasses import replace
 import pytest
 
 from app import models
-from app.db.database import SessionLocal
 from app.services.scheduler_generation_service import (
     NoOperationalTriggerError,
     PendingDraftReplacementRequiredError,
@@ -15,6 +14,7 @@ from app.services.scheduler_job_service import (
     SchedulerJobIdempotencyConflictError,
     SchedulerJobService,
 )
+from tests.conftest import TestingSessionLocal
 
 
 pytestmark = pytest.mark.integration
@@ -245,15 +245,17 @@ async def test_simultaneous_job_admission_reuses_one_active_job(db_session):
     )
     db_session.add(user)
     await db_session.commit()
+    organization_id = organization.id
+    user_id = user.id
     selection = await SchedulerGenerationService(db_session).select_strategy(
-        organization.id
+        organization_id
     )
 
     async def admit() -> tuple[int, bool]:
-        async with SessionLocal() as session:
+        async with TestingSessionLocal() as session:
             handle = await SchedulerJobService(session).create_or_get_job(
                 selection,
-                requested_by_user_id=user.id,
+                requested_by_user_id=user_id,
             )
             await session.commit()
             return handle.job.id, handle.created

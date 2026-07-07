@@ -3,6 +3,7 @@
 # CRÍTICO: RATELIMIT_ENABLED deve ser definido ANTES de qualquer import da app.
 import os
 os.environ["RATELIMIT_ENABLED"] = "false"
+os.environ["DATABASE_POOLING_ENABLED"] = "false"
 
 import pytest
 import pytest_asyncio
@@ -74,7 +75,7 @@ def _truncate_public_tables() -> None:
             conn.execute(text(f"TRUNCATE TABLE {table_list} RESTART IDENTITY CASCADE"))
 
 
-@pytest.fixture(scope="session", autouse=True)
+@pytest.fixture(scope="session")
 def migrated_test_database():
     """Build the test schema through Alembic so triggers/RLS/functions exist."""
     _assert_safe_test_database()
@@ -85,6 +86,13 @@ def migrated_test_database():
     command.upgrade(_alembic_config(), "head")
     yield
     _truncate_public_tables()
+
+
+@pytest.fixture(autouse=True)
+def _migrate_database_for_non_unit_tests(request):
+    if request.node.get_closest_marker("unit"):
+        return
+    request.getfixturevalue("migrated_test_database")
 
 # --- Fixture: BD Assíncrona ---
 @pytest_asyncio.fixture(scope="function")

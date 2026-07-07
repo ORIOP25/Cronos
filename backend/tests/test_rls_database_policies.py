@@ -99,9 +99,10 @@ def test_phase1_scheduler_tables_force_rls_and_reject_cross_tenant_years():
             text(
                 """
                 INSERT INTO scheduler_school_year (
-                    organization_id, label, start_date, hard_end_date, timezone, is_active
+                    organization_id, label, start_date, hard_end_date, timezone, is_active,
+                    created_at, updated_at
                 ) VALUES (:org, :label, DATE '2025-09-01', DATE '2026-07-15',
-                          'Europe/Lisbon', TRUE)
+                          'Europe/Lisbon', TRUE, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
                 RETURNING id
                 """
             ),

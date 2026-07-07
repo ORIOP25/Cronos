@@ -78,7 +78,7 @@ async def test_scheduler_state_event_trigger_executes_after_alembic_migration(db
     org, user = await create_org_and_user(
         db_session,
         clerk_user_id="user_trigger_reality",
-        email="trigger.reality@test.local",
+        email="trigger.reality@example.com",
         role="admin",
         clerk_org_id="org_trigger_reality",
     )
@@ -113,7 +113,7 @@ async def test_fresh_session_requests_cover_core_beta_surfaces(
     org, user = await create_org_and_user(
         db_session,
         clerk_user_id="user_fresh_session_admin",
-        email="fresh.session.admin@test.local",
+        email="fresh.session.admin@example.com",
         role="admin",
         clerk_org_id="org_fresh_session",
     )

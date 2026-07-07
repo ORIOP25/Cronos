@@ -20,6 +20,7 @@ class Settings(BaseSettings):
 
    # --- Base de Dados (Validação: Tem de ser um URL Postgres real) ---
     DATABASE_URL: PostgresDsn
+    DATABASE_POOLING_ENABLED: bool = True
 
     # --- Configuração de Segurança ---
     SECRET_KEY: str

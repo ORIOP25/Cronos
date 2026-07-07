@@ -90,18 +90,43 @@ async def ensure_user_exists(
             raise RuntimeError(f"Failed to load updated user: {clerk_user_id}")
         return user
 
-    user = await db.scalar(select(models.User).where(models.User.clerk_user_id == clerk_user_id))
-    if user is not None:
-        user.clerk_profile_name = name or user.clerk_profile_name
-        user.last_clerk_sync_at = datetime.now(timezone.utc)
-        return user
-
-    logger.info(
-        "Clerk user ignored until a pending membership can be reconciled",
-        clerk_user_id=clerk_user_id,
-        organization_id=organization_id,
+    helper = await db.execute(
+        text(
+            """
+            SELECT id, organization_id
+            FROM app_security.ensure_user(
+                :clerk_user_id,
+                :email,
+                :name,
+                :role,
+                :organization_id,
+                :teacher_id
+            )
+            """
+        ),
+        {
+            "clerk_user_id": clerk_user_id,
+            "email": email,
+            "name": name,
+            "role": role,
+            "organization_id": organization_id,
+            "teacher_id": teacher_id,
+        },
     )
-    return None
+    ensured = helper.mappings().first()
+    if ensured is None:
+        logger.info(
+            "Clerk user ignored until a pending membership can be reconciled",
+            clerk_user_id=clerk_user_id,
+            organization_id=organization_id,
+        )
+        return None
+
+    await set_async_tenant_context(db, ensured["organization_id"])
+    user = await db.get(models.User, ensured["id"])
+    if user is None:
+        raise RuntimeError(f"Failed to load ensured user: {clerk_user_id}")
+    return user
 
 
 async def deactivate_user_by_clerk_id(db: AsyncSession, clerk_user_id: str) -> bool:

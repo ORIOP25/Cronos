@@ -218,6 +218,36 @@ async def delete_constraint(
         return True
     return False
 
+
+async def get_latest_schedule_by_org(db: AsyncSession, organization_id: int):
+    latest_generation_id = await db.scalar(
+        select(models.ScheduleOutput.generation_id)
+        .where(
+            models.ScheduleOutput.organization_id == organization_id,
+            models.ScheduleOutput.is_draft.is_(False),
+        )
+        .order_by(models.ScheduleOutput.id.desc())
+        .limit(1)
+    )
+    if latest_generation_id is None:
+        return []
+
+    result = await db.execute(
+        select(models.ScheduleOutput)
+        .where(
+            models.ScheduleOutput.organization_id == organization_id,
+            models.ScheduleOutput.generation_id == latest_generation_id,
+            models.ScheduleOutput.is_draft.is_(False),
+        )
+        .order_by(
+            models.ScheduleOutput.date.asc().nulls_last(),
+            models.ScheduleOutput.timeslot_id.asc(),
+            models.ScheduleOutput.id.asc(),
+        )
+    )
+    return result.scalars().all()
+
+
 # ==========================================
 #  SYNC (SOLVER / CELERY)
 # ==========================================
