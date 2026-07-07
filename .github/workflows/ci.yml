@@ -9,6 +9,7 @@ on:
 env:
   PYTHON_VERSION: "3.12"
   NODE_VERSION: "20"
+  CI_CLERK_PUBLISHABLE_KEY: "pk_test_d2VsY29tZWQtY2F0LTgzLmNsZXJrLmFjY291bnRzLmRldiQ"
 
 jobs:
   backend:
@@ -57,7 +58,7 @@ jobs:
           SECRET_KEY: ci-test-secret-key-not-for-production
           CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
           CLERK_WEBHOOK_SECRET: ${{ secrets.CLERK_WEBHOOK_SECRET }}
-          CLERK_PUBLISHABLE_KEY: ${{ secrets.CLERK_PUBLISHABLE_KEY }}
+          CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_PUBLISHABLE_KEY || vars.VITE_CLERK_PUBLISHABLE_KEY || secrets.CLERK_PUBLISHABLE_KEY || secrets.VITE_CLERK_PUBLISHABLE_KEY || env.CI_CLERK_PUBLISHABLE_KEY }}
 
       - name: Run DB contract tests
         working-directory: backend
@@ -70,7 +71,7 @@ jobs:
           RATELIMIT_ENABLED: "false"
           CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
           CLERK_WEBHOOK_SECRET: ${{ secrets.CLERK_WEBHOOK_SECRET }}
-          CLERK_PUBLISHABLE_KEY: ${{ secrets.CLERK_PUBLISHABLE_KEY }}
+          CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_PUBLISHABLE_KEY || vars.VITE_CLERK_PUBLISHABLE_KEY || secrets.CLERK_PUBLISHABLE_KEY || secrets.VITE_CLERK_PUBLISHABLE_KEY || env.CI_CLERK_PUBLISHABLE_KEY }}
 
       - name: Run Tests
         working-directory: backend
@@ -83,7 +84,7 @@ jobs:
           RATELIMIT_ENABLED: "false"
           CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
           CLERK_WEBHOOK_SECRET: ${{ secrets.CLERK_WEBHOOK_SECRET }}
-          CLERK_PUBLISHABLE_KEY: ${{ secrets.CLERK_PUBLISHABLE_KEY }}
+          CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_PUBLISHABLE_KEY || vars.VITE_CLERK_PUBLISHABLE_KEY || secrets.CLERK_PUBLISHABLE_KEY || secrets.VITE_CLERK_PUBLISHABLE_KEY || env.CI_CLERK_PUBLISHABLE_KEY }}
 
       - name: Run PostgreSQL reality tests
         working-directory: backend
@@ -96,7 +97,7 @@ jobs:
           RATELIMIT_ENABLED: "false"
           CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
           CLERK_WEBHOOK_SECRET: ${{ secrets.CLERK_WEBHOOK_SECRET }}
-          CLERK_PUBLISHABLE_KEY: ${{ secrets.CLERK_PUBLISHABLE_KEY }}
+          CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_PUBLISHABLE_KEY || vars.VITE_CLERK_PUBLISHABLE_KEY || secrets.CLERK_PUBLISHABLE_KEY || secrets.VITE_CLERK_PUBLISHABLE_KEY || env.CI_CLERK_PUBLISHABLE_KEY }}
 
       - name: Verify skipped test count
         working-directory: backend
@@ -116,7 +117,7 @@ jobs:
           RATELIMIT_ENABLED: "false"
           CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
           CLERK_WEBHOOK_SECRET: ${{ secrets.CLERK_WEBHOOK_SECRET }}
-          CLERK_PUBLISHABLE_KEY: ${{ secrets.CLERK_PUBLISHABLE_KEY }}
+          CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_PUBLISHABLE_KEY || vars.VITE_CLERK_PUBLISHABLE_KEY || secrets.CLERK_PUBLISHABLE_KEY || secrets.VITE_CLERK_PUBLISHABLE_KEY || env.CI_CLERK_PUBLISHABLE_KEY }}
 
   frontend:
     name: Frontend - Lint + Test + Build
@@ -149,7 +150,7 @@ jobs:
         working-directory: frontend
         run: npm run build
         env:
-          VITE_CLERK_PUBLISHABLE_KEY: ${{ vars.VITE_CLERK_PUBLISHABLE_KEY || vars.CLERK_PUBLISHABLE_KEY || secrets.VITE_CLERK_PUBLISHABLE_KEY || secrets.CLERK_PUBLISHABLE_KEY }}
+          VITE_CLERK_PUBLISHABLE_KEY: ${{ vars.VITE_CLERK_PUBLISHABLE_KEY || vars.CLERK_PUBLISHABLE_KEY || secrets.VITE_CLERK_PUBLISHABLE_KEY || secrets.CLERK_PUBLISHABLE_KEY || env.CI_CLERK_PUBLISHABLE_KEY }}
 
   e2e:
     name: E2E - Full Docker Stack + Playwright
@@ -178,10 +179,10 @@ jobs:
       - name: Validate E2E Clerk config
         working-directory: frontend
         run: |
-          export CLERK_PUBLISHABLE_KEY="${CLERK_PUBLISHABLE_KEY:-$VITE_CLERK_PUBLISHABLE_KEY}"
+          export CLERK_PUBLISHABLE_KEY="${CLERK_PUBLISHABLE_KEY:-${VITE_CLERK_PUBLISHABLE_KEY:-$CI_CLERK_PUBLISHABLE_KEY}}"
           if [ -z "$CLERK_PUBLISHABLE_KEY" ]; then
             echo "ERROR: Missing Clerk publishable key for E2E."
-            echo "Set repository variable VITE_CLERK_PUBLISHABLE_KEY or CLERK_PUBLISHABLE_KEY."
+            echo "Set repository variable VITE_CLERK_PUBLISHABLE_KEY or CLERK_PUBLISHABLE_KEY, or update CI_CLERK_PUBLISHABLE_KEY."
             echo "The Clerk publishable key is public config and does not need to be a GitHub secret."
             exit 1
           fi
@@ -196,10 +197,10 @@ jobs:
             exit 1
           fi
         env:
-          CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_PUBLISHABLE_KEY || vars.VITE_CLERK_PUBLISHABLE_KEY || secrets.CLERK_PUBLISHABLE_KEY || secrets.VITE_CLERK_PUBLISHABLE_KEY }}
+          CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_PUBLISHABLE_KEY || vars.VITE_CLERK_PUBLISHABLE_KEY || secrets.CLERK_PUBLISHABLE_KEY || secrets.VITE_CLERK_PUBLISHABLE_KEY || env.CI_CLERK_PUBLISHABLE_KEY }}
           CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
           CLERK_TESTING_TOKEN: ${{ secrets.CLERK_TESTING_TOKEN }}
-          VITE_CLERK_PUBLISHABLE_KEY: ${{ vars.VITE_CLERK_PUBLISHABLE_KEY || vars.CLERK_PUBLISHABLE_KEY || secrets.VITE_CLERK_PUBLISHABLE_KEY || secrets.CLERK_PUBLISHABLE_KEY }}
+          VITE_CLERK_PUBLISHABLE_KEY: ${{ vars.VITE_CLERK_PUBLISHABLE_KEY || vars.CLERK_PUBLISHABLE_KEY || secrets.VITE_CLERK_PUBLISHABLE_KEY || secrets.CLERK_PUBLISHABLE_KEY || env.CI_CLERK_PUBLISHABLE_KEY }}
           E2E_CLERK_ADMIN_EMAIL: ${{ secrets.E2E_CLERK_ADMIN_EMAIL }}
           E2E_CLERK_TEACHER_EMAIL: ${{ secrets.E2E_CLERK_TEACHER_EMAIL }}
 
@@ -212,8 +213,8 @@ jobs:
           SECRET_KEY: ci-test-secret-key-not-for-production
           CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
           CLERK_WEBHOOK_SECRET: ${{ secrets.CLERK_WEBHOOK_SECRET }}
-          CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_PUBLISHABLE_KEY || vars.VITE_CLERK_PUBLISHABLE_KEY || secrets.CLERK_PUBLISHABLE_KEY || secrets.VITE_CLERK_PUBLISHABLE_KEY }}
-          VITE_CLERK_PUBLISHABLE_KEY: ${{ vars.VITE_CLERK_PUBLISHABLE_KEY || vars.CLERK_PUBLISHABLE_KEY || secrets.VITE_CLERK_PUBLISHABLE_KEY || secrets.CLERK_PUBLISHABLE_KEY }}
+          CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_PUBLISHABLE_KEY || vars.VITE_CLERK_PUBLISHABLE_KEY || secrets.CLERK_PUBLISHABLE_KEY || secrets.VITE_CLERK_PUBLISHABLE_KEY || env.CI_CLERK_PUBLISHABLE_KEY }}
+          VITE_CLERK_PUBLISHABLE_KEY: ${{ vars.VITE_CLERK_PUBLISHABLE_KEY || vars.CLERK_PUBLISHABLE_KEY || secrets.VITE_CLERK_PUBLISHABLE_KEY || secrets.CLERK_PUBLISHABLE_KEY || env.CI_CLERK_PUBLISHABLE_KEY }}
 
       - name: Verify stale Alembic repair through backend entrypoint
         run: |
@@ -226,6 +227,7 @@ jobs:
               echo "Backend health is green after stale Alembic repair."
               exit 0
             fi
+            echo "Waiting for backend health after stale Alembic repair (attempt ${attempt}/30)."
             sleep 2
           done
           docker compose -f docker-compose.ci.yml logs --no-color backend
@@ -236,16 +238,16 @@ jobs:
       - name: Run E2E Tests
         working-directory: frontend
         run: |
-          export CLERK_PUBLISHABLE_KEY="${CLERK_PUBLISHABLE_KEY:-$VITE_CLERK_PUBLISHABLE_KEY}"
+          export CLERK_PUBLISHABLE_KEY="${CLERK_PUBLISHABLE_KEY:-${VITE_CLERK_PUBLISHABLE_KEY:-$CI_CLERK_PUBLISHABLE_KEY}}"
           npx playwright test --project=chromium
         env:
           COMPOSE_PROJECT_NAME: cronos-ci-${{ github.run_id }}-${{ github.run_attempt }}
           BASE_URL: http://localhost:5173
           PLAYWRIGHT_SKIP_WEB_SERVER: "1"
-          CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_PUBLISHABLE_KEY || vars.VITE_CLERK_PUBLISHABLE_KEY || secrets.CLERK_PUBLISHABLE_KEY || secrets.VITE_CLERK_PUBLISHABLE_KEY }}
+          CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_PUBLISHABLE_KEY || vars.VITE_CLERK_PUBLISHABLE_KEY || secrets.CLERK_PUBLISHABLE_KEY || secrets.VITE_CLERK_PUBLISHABLE_KEY || env.CI_CLERK_PUBLISHABLE_KEY }}
           CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
           CLERK_TESTING_TOKEN: ${{ secrets.CLERK_TESTING_TOKEN }}
-          VITE_CLERK_PUBLISHABLE_KEY: ${{ vars.VITE_CLERK_PUBLISHABLE_KEY || vars.CLERK_PUBLISHABLE_KEY || secrets.VITE_CLERK_PUBLISHABLE_KEY || secrets.CLERK_PUBLISHABLE_KEY }}
+          VITE_CLERK_PUBLISHABLE_KEY: ${{ vars.VITE_CLERK_PUBLISHABLE_KEY || vars.CLERK_PUBLISHABLE_KEY || secrets.VITE_CLERK_PUBLISHABLE_KEY || secrets.CLERK_PUBLISHABLE_KEY || env.CI_CLERK_PUBLISHABLE_KEY }}
           E2E_CLERK_ADMIN_EMAIL: ${{ secrets.E2E_CLERK_ADMIN_EMAIL }}
           E2E_CLERK_TEACHER_EMAIL: ${{ secrets.E2E_CLERK_TEACHER_EMAIL }}
 
