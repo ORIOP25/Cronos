@@ -78,5 +78,5 @@ websockets==15.0.1
 wrapt==2.0.1
 structlog==24.1.0
 sentry-sdk[fastapi]==2.48.0
-clerk-backend-api>=2.2.0
+clerk-backend-api==5.0.6
 svix>=1.0.0

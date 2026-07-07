@@ -56,6 +56,26 @@ function hasAbortablePath(url, baseUrl) {
   return ABORTABLE_FILE_EXTENSIONS.has(extension)
 }
 
+function isGoogleFontsUrl(parsedUrl) {
+  return parsedUrl.hostname === 'fonts.googleapis.com'
+    || parsedUrl.hostname === 'fonts.gstatic.com'
+}
+
+function isClerkBrowserBundleUrl(parsedUrl) {
+  return parsedUrl.hostname.endsWith('.clerk.accounts.dev')
+    && parsedUrl.pathname.startsWith('/npm/@clerk/clerk-js')
+    && parsedUrl.pathname.endsWith('/clerk.browser.js')
+}
+
+export function isBenignAbortedRequest(url, { baseUrl }) {
+  const parsedUrl = parseUrl(url, baseUrl)
+  if (!parsedUrl) return false
+  if (isSameOrigin(url, baseUrl) && hasAbortablePath(url, baseUrl)) {
+    return true
+  }
+  return isGoogleFontsUrl(parsedUrl) || isClerkBrowserBundleUrl(parsedUrl)
+}
+
 function normalizedText(value) {
   return String(value || '')
 }
@@ -81,8 +101,7 @@ export function getRequestFailureError(requestFailure, { baseUrl }) {
   const errorText = normalizedText(requestFailure.errorText || 'unknown error')
   if (
     errorText.includes(ABORTED_ERROR)
-    && isSameOrigin(url, baseUrl)
-    && hasAbortablePath(url, baseUrl)
+    && isBenignAbortedRequest(url, { baseUrl })
   ) {
     return null
   }

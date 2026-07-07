@@ -1,4 +1,3 @@
-/* global process */
 import { clerk } from '@clerk/testing/playwright'
 import { expect } from '@playwright/test'
 import {

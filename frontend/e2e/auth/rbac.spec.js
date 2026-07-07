@@ -51,7 +51,6 @@ test.describe('RBAC — Teacher (Clerk real)', () => {
 
   test('T28: teacher bloqueado de dashboard admin', async ({ page }) => {
     await goTo(page, '/dashboard')
-    await expect(page).not.toHaveURL(/\/dashboard$/)
-    await expectNoAppCrash(page)
+    await expectRouteReady(page, '/my-availability')
   })
 })

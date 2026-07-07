@@ -27,9 +27,9 @@ services:
       ENVIRONMENT: local
       DATABASE_URL: postgresql+asyncpg://postgres:${POSTGRES_PASSWORD:-ci_pg_pass}@db:5432/${POSTGRES_DB:-cronos_ci_db}
       SECRET_KEY: ${SECRET_KEY:-ci-test-secret-key-not-for-production}
-      CLERK_SECRET_KEY: ${CLERK_SECRET_KEY}
-      CLERK_WEBHOOK_SECRET: ${CLERK_WEBHOOK_SECRET}
-      CLERK_PUBLISHABLE_KEY: ${CLERK_PUBLISHABLE_KEY}
+      CLERK_SECRET_KEY: ${CLERK_SECRET_KEY:-}
+      CLERK_WEBHOOK_SECRET: ${CLERK_WEBHOOK_SECRET:-}
+      CLERK_PUBLISHABLE_KEY: ${CLERK_PUBLISHABLE_KEY:-}
       FRONTEND_URL: http://localhost:5173
       CELERY_BROKER_URL: redis://redis:6379/0
       REDIS_URL: redis://redis:6379/0
@@ -57,9 +57,9 @@ services:
       ENVIRONMENT: local
       DATABASE_URL: postgresql+asyncpg://postgres:${POSTGRES_PASSWORD:-ci_pg_pass}@db:5432/${POSTGRES_DB:-cronos_ci_db}
       SECRET_KEY: ${SECRET_KEY:-ci-test-secret-key-not-for-production}
-      CLERK_SECRET_KEY: ${CLERK_SECRET_KEY}
-      CLERK_WEBHOOK_SECRET: ${CLERK_WEBHOOK_SECRET}
-      CLERK_PUBLISHABLE_KEY: ${CLERK_PUBLISHABLE_KEY}
+      CLERK_SECRET_KEY: ${CLERK_SECRET_KEY:-}
+      CLERK_WEBHOOK_SECRET: ${CLERK_WEBHOOK_SECRET:-}
+      CLERK_PUBLISHABLE_KEY: ${CLERK_PUBLISHABLE_KEY:-}
       CELERY_BROKER_URL: redis://redis:6379/0
       REDIS_URL: redis://redis:6379/0
       RUN_MIGRATIONS: "0"
@@ -79,9 +79,9 @@ services:
       ENVIRONMENT: local
       DATABASE_URL: postgresql+asyncpg://postgres:${POSTGRES_PASSWORD:-ci_pg_pass}@db:5432/${POSTGRES_DB:-cronos_ci_db}
       SECRET_KEY: ${SECRET_KEY:-ci-test-secret-key-not-for-production}
-      CLERK_SECRET_KEY: ${CLERK_SECRET_KEY}
-      CLERK_WEBHOOK_SECRET: ${CLERK_WEBHOOK_SECRET}
-      CLERK_PUBLISHABLE_KEY: ${CLERK_PUBLISHABLE_KEY}
+      CLERK_SECRET_KEY: ${CLERK_SECRET_KEY:-}
+      CLERK_WEBHOOK_SECRET: ${CLERK_WEBHOOK_SECRET:-}
+      CLERK_PUBLISHABLE_KEY: ${CLERK_PUBLISHABLE_KEY:-}
       CELERY_BROKER_URL: redis://redis:6379/0
       REDIS_URL: redis://redis:6379/0
       RUN_MIGRATIONS: "0"
@@ -99,7 +99,7 @@ services:
     command: npm run dev -- --host 0.0.0.0
     environment:
       CHOKIDAR_USEPOLLING: "true"
-      VITE_CLERK_PUBLISHABLE_KEY: ${VITE_CLERK_PUBLISHABLE_KEY}
+      VITE_CLERK_PUBLISHABLE_KEY: ${VITE_CLERK_PUBLISHABLE_KEY:-}
     ports:
       - "5173:5173"
     depends_on:

@@ -38,12 +38,13 @@ test.describe('Session resilience', () => {
     await expectNoAppCrash(page)
   })
 
-  test('API 403 mostra estado de erro', async ({ page }) => {
+  test('API 403 na listagem de membros mostra alerta', async ({ page }) => {
     allowApiFailure(page, { status: 403, url: '/api/v1/members' })
-    await page.route('**/api/v1/members**', (route) => {
+    await page.route((url) => url.pathname === '/api/v1/members', (route) => {
       route.fulfill({ status: 403, contentType: 'application/json', body: '{"detail":"Admin access required"}' })
     })
     await goTo(page, '/members')
+    await expect(page).toHaveURL(/\/members(?:[?#].*)?$/)
     await expect(page.getByText(/Admin access required/i).first()).toBeVisible({ timeout: 10000 })
     await expectNoAppCrash(page)
   })

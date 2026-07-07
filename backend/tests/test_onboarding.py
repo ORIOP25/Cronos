@@ -13,6 +13,38 @@ def _stub_clerk_onboarding_metadata(monkeypatch):
         _noop,
     )
 
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_onboarding_clerk_metadata_uses_update_metadata(monkeypatch):
+    from app.services.organization_service import mark_onboarding_complete_in_clerk
+
+    class FakeUsers:
+        def __init__(self):
+            self.calls = []
+
+        def update_metadata(self, *, user_id, public_metadata):
+            self.calls.append({
+                "user_id": user_id,
+                "public_metadata": public_metadata,
+            })
+
+    class FakeSdk:
+        def __init__(self):
+            self.users = FakeUsers()
+
+    fake_sdk = FakeSdk()
+    monkeypatch.setattr(
+        "app.core.clerk.get_clerk_sdk",
+        lambda: fake_sdk,
+    )
+
+    await mark_onboarding_complete_in_clerk("user_onb_metadata")
+
+    assert fake_sdk.users.calls == [{
+        "user_id": "user_onb_metadata",
+        "public_metadata": {"onboardingComplete": True},
+    }]
+
 
 # ── T19: GET status without token → 401 ────────────────────────
 @pytest.mark.asyncio

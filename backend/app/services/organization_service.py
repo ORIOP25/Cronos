@@ -9,6 +9,13 @@ from app.services.scheduler_state_service import SchedulerStateService
 logger = structlog.get_logger(__name__)
 
 
+def update_clerk_public_metadata(sdk, user_id: str, public_metadata: dict) -> None:
+    sdk.users.update_metadata(
+        user_id=user_id,
+        public_metadata=public_metadata,
+    )
+
+
 async def get_onboarding_status(db: AsyncSession, organization_id: int) -> tuple[bool, str | None]:
     result = await db.execute(
         select(models.OrganizationSettings).where(
@@ -30,10 +37,10 @@ async def mark_onboarding_complete_in_clerk(clerk_user_id: str) -> None:
     sdk = get_clerk_sdk()
     try:
         await asyncio.to_thread(
-            lambda: sdk.users.update(
-                user_id=clerk_user_id,
-                public_metadata={"onboardingComplete": True},
-            )
+            update_clerk_public_metadata,
+            sdk,
+            clerk_user_id,
+            {"onboardingComplete": True},
         )
         logger.info("Clerk public_metadata actualizado", clerk_user_id=clerk_user_id)
     except Exception as e:

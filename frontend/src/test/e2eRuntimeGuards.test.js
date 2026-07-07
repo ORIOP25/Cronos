@@ -22,9 +22,22 @@ describe('E2E runtime guard classifiers', () => {
   })
 
   it.each([
+    ['Google Fonts stylesheet', 'https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap'],
+    ['Google Fonts file', 'https://fonts.gstatic.com/s/inter/v18/UcCO3FwrK3iLTcviYwYZ8UA3.woff2'],
+    ['Clerk browser bundle', 'https://welcome-cat-83.clerk.accounts.dev/npm/@clerk/clerk-js@5/dist/clerk.browser.js'],
+  ])('ignores benign external browser-cancelled %s', (_label, url) => {
+    expect(getRequestFailureError({
+      method: 'GET',
+      url,
+      errorText: 'net::ERR_ABORTED',
+    }, { baseUrl })).toBeNull()
+  })
+
+  it.each([
     ['connection refused', `${baseUrl}/api/v1/dashboard`, 'net::ERR_CONNECTION_REFUSED'],
     ['DNS failure', 'https://missing.invalid/api/v1/dashboard', 'net::ERR_NAME_NOT_RESOLVED'],
     ['SSL failure', 'https://example.test/api/v1/dashboard', 'net::ERR_CERT_AUTHORITY_INVALID'],
+    ['aborted third-party script', 'https://cdn.example.test/widget.js', 'net::ERR_ABORTED'],
   ])('still fails real network errors: %s', (_label, url, errorText) => {
     expect(getRequestFailureError({
       method: 'GET',
