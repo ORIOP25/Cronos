@@ -1,5 +1,13 @@
 # Algoritmo do Gerador de Horários (Ensino Profissional)
 
+> Historical note: this document describes the legacy weekly-pattern scheduler and
+> is not authoritative for the current beta scheduler. Use
+> `documentation/03_scheduler_engine/PRD_SCHEDULE_GENERATOR_NEW_BASELINE.md` and
+> `documentation/03_scheduler_engine/TECH_SPEC_SCHEDULE_GENERATOR_NEW_BASELINE.md`
+> for current generation behavior. In particular, current generation is
+> draft-first, school-year scoped, and schedules subject-level remaining demand;
+> module/UFCD metadata is sequential accounting, not a placement driver.
+
 ## Objetivo de Negócio
 Gerar um padrão semanal viável para Ensino Profissional, respeitando progressão por módulos (UFCD/Módulos), disponibilidade docente, tipo de sala e regras operacionais da escola.
 

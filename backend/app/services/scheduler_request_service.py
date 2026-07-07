@@ -60,6 +60,7 @@ async def start_generation_request(
         organization_id,
         selection.strategy,
         replace_pending_draft=payload.replace_pending_draft,
+        school_year_id=selection.school_year_id,
     )
     encoded_preflight = jsonable_encoder(preflight_summary)
     if preflight_errors:

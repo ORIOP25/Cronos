@@ -73,7 +73,7 @@ class CompleteDemandLedgerBuilder:
             if teacher_id not in teachers:
                 blockers.append(f"Assigned teacher is missing or cross-tenant for {label}.")
                 continue
-            if qualifications and (teacher_id, subject_id) not in qualifications:
+            if (teacher_id, subject_id) not in qualifications:
                 blockers.append(f"Teacher {teacher_id} is not eligible for subject {subject_id}.")
 
             module_rows = sorted(
@@ -82,25 +82,31 @@ class CompleteDemandLedgerBuilder:
             )
             demand_modules: list[DemandModule] = []
             seen_sequences: set[int] = set()
+            progress_by_module = self._progress_by_module(snapshot, class_id)
             for module in module_rows:
                 hours = module.get("hours_total", 0)
                 sequence = module.get("sequence")
                 if not isinstance(hours, (int, float)) or hours <= 0:
                     blockers.append(f"Module {module['id']} has no positive required hours.")
                     continue
-                if not isinstance(sequence, int) or sequence <= 0 or sequence in seen_sequences:
+                if not isinstance(sequence, int) or sequence < 0 or sequence in seen_sequences:
                     blockers.append(f"Module sequence is invalid for subject {subject_id}.")
                     continue
                 seen_sequences.add(sequence)
+                completed_minutes = progress_by_module.get(module["id"], 0)
                 demand_modules.append(
                     DemandModule(
                         module_id=module["id"],
                         sequence=sequence,
-                        required_minutes=int(round(hours * 60)),
+                        required_minutes=max(0, int(round(hours * 60)) - completed_minutes),
                     )
                 )
             if not demand_modules:
                 blockers.append(f"No required module demand is configured for {label}.")
+                continue
+            subject_required_minutes = sum(row.required_minutes for row in demand_modules)
+            if subject_required_minutes <= 0:
+                blockers.append(f"No remaining subject demand is configured for {label}.")
                 continue
 
             room_type = self._enum_value(subject_row["required_room_type"])
@@ -122,7 +128,7 @@ class CompleteDemandLedgerBuilder:
                     required_room_type=room_type,
                     eligible_room_ids=eligible_rooms,
                     modules=tuple(demand_modules),
-                    required_minutes=sum(row.required_minutes for row in demand_modules),
+                    required_minutes=subject_required_minutes,
                 )
             )
 
@@ -144,3 +150,18 @@ class CompleteDemandLedgerBuilder:
     @staticmethod
     def _enum_value(value: Any) -> str:
         return str(getattr(value, "value", value))
+
+    @staticmethod
+    def _progress_by_module(
+        snapshot: dict[str, Any],
+        class_id: int,
+    ) -> dict[int, int]:
+        progress: dict[int, int] = {}
+        for row in snapshot.get("class_progress", []):
+            if row.get("class_id") != class_id:
+                continue
+            hours_completed = row.get("hours_completed", 0)
+            if not isinstance(hours_completed, (int, float)):
+                continue
+            progress[int(row["module_id"])] = max(0, int(round(hours_completed * 60)))
+        return progress

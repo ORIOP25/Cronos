@@ -85,6 +85,40 @@ def test_candidates_prune_impossible_availability_and_fixed_conflicts():
     assert conflicted.removed_by_reason["teacher_conflict"] == 1
 
 
+def test_candidates_apply_hard_scheduler_constraints():
+    snapshot = _snapshot()
+    snapshot["rooms"].append({"id": 9, "capacity": 30, "type": "normal"})
+    snapshot["constraints"] = [
+        {
+            "rule_type": "specific_room",
+            "rule_payload": {"class_id": 1, "subject_id": 2, "room_id": 9},
+        },
+        {
+            "rule_type": "teacher_unavailable",
+            "rule_payload": {"teacher_id": 3, "date": "2025-09-01"},
+        },
+    ]
+
+    universe = _build(snapshot)
+
+    assert universe.is_usable is True
+    assert {row.room_id for row in universe.candidates} == {9}
+    assert {row.output_date for row in universe.candidates} == {date(2025, 9, 15)}
+    assert universe.removed_by_reason["scheduler_constraint"] == 3
+
+
+def test_candidates_block_unsupported_scheduler_constraints():
+    snapshot = _snapshot()
+    snapshot["constraints"] = [
+        {"rule_type": "min_gap", "rule_payload": {"class_id": 1, "minutes": 30}}
+    ]
+
+    universe = _build(snapshot)
+
+    assert universe.is_usable is False
+    assert any("not supported" in blocker for blocker in universe.blockers)
+
+
 def test_candidates_reject_overlapping_or_invalid_timetable_grid():
     snapshot = _snapshot()
     snapshot["timetable_grid"].append(

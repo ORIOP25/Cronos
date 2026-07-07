@@ -35,6 +35,32 @@ def test_complete_demand_ledger_preserves_module_sequence_and_full_hours():
     assert [module.sequence for module in item.modules] == [1, 2]
 
 
+def test_complete_demand_uses_subject_remaining_after_module_progress():
+    snapshot = _snapshot()
+    snapshot["class_progress"] = [
+        {"class_id": 1, "module_id": 7, "hours_completed": 25}
+    ]
+
+    ledger = CompleteDemandLedgerBuilder().build(snapshot)
+
+    assert ledger.is_complete is True
+    assert ledger.required_minutes == 65 * 60
+    assert [module.required_minutes for module in ledger.items[0].modules] == [
+        25 * 60,
+        40 * 60,
+    ]
+
+
+def test_complete_demand_requires_explicit_teacher_eligibility():
+    snapshot = _snapshot()
+    snapshot["teacher_subject_eligibility"] = []
+
+    ledger = CompleteDemandLedgerBuilder().build(snapshot)
+
+    assert ledger.is_complete is False
+    assert any("not eligible" in blocker for blocker in ledger.blockers)
+
+
 def test_complete_demand_cannot_pass_with_missing_required_modules():
     snapshot = _snapshot()
     snapshot["module_accounting"] = []

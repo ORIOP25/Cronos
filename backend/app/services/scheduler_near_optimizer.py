@@ -45,9 +45,8 @@ class NearFutureOptimizer:
 
         minimum_duration = min(row.duration_minutes for row in candidates)
         target_by_demand = {
-            (item.class_id, item.subject_id): sum(
-                ceil(module.required_minutes / minimum_duration)
-                for module in item.modules
+            (item.class_id, item.subject_id): ceil(
+                item.required_minutes / minimum_duration
             )
             for item in ledger.items
         }

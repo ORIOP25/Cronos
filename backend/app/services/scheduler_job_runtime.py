@@ -11,6 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models
+from app.services.scheduler_constraint_rules import SchedulerConstraintRules
 from app.services.scheduler_fingerprint_service import SchedulerFingerprintService
 from app.services.scheduler_recovery_service import SchedulerRecoveryService
 from app.services.scheduler_complete_demand import CompleteDemandLedgerBuilder
@@ -309,6 +310,13 @@ class SchedulerJobRuntime:
         if result.hard_end_date != hard_end_date:
             raise GenerationValidationError("Result hard end date differs from its snapshot.")
 
+        constraint_rules = SchedulerConstraintRules.from_snapshot(generation_input)
+        if constraint_rules.blockers:
+            raise GenerationValidationError(
+                "Scheduler constraints are invalid or unsupported: "
+                + "; ".join(constraint_rules.blockers)
+            )
+
         stable_keys: set[str] = set()
         grid = {
             row["id"]: (
@@ -351,6 +359,9 @@ class SchedulerJobRuntime:
                 and block.recovery_source_occurrence_revision is not None
             ):
                 raise GenerationValidationError("Recovery block source metadata is incomplete.")
+            violation = constraint_rules.violation_for_block(block)
+            if violation is not None:
+                raise GenerationValidationError(violation)
 
         await self._validate_resource_scope(context, result.blocks)
         if context.strategy == models.ScheduleGenerationStrategy.COMPLETE_GENERATION:
@@ -408,7 +419,7 @@ class SchedulerJobRuntime:
                 class_row is None
                 or subject_row is None
                 or assignments.get((block.class_id, block.subject_id)) != block.teacher_id
-                or (qualifications and (block.teacher_id, block.subject_id) not in qualifications)
+                or (block.teacher_id, block.subject_id) not in qualifications
                 or room_row is None
                 or int(room_row.get("capacity") or 0) < int(class_row["size"])
                 or actual_room_type != required_room_type
@@ -513,7 +524,7 @@ class SchedulerJobRuntime:
                 "Complete draft was produced from an incomplete demand ledger."
             )
         items = {(item.class_id, item.subject_id): item for item in ledger.items}
-        actual: dict[tuple[int, int, int], int] = {}
+        actual: dict[tuple[int, int], int] = {}
         for block in blocks:
             item = items.get((block.class_id, block.subject_id))
             if item is None or item.teacher_id != block.teacher_id:
@@ -524,12 +535,11 @@ class SchedulerJobRuntime:
                 module.sequence for module in item.modules
             }:
                 raise GenerationValidationError("Draft module sequence is invalid.")
-            key = (block.class_id, block.subject_id, block.module_sequence_index)
+            key = (block.class_id, block.subject_id)
             actual[key] = actual.get(key, 0) + block.duration_minutes
         expected = {
-            (item.class_id, item.subject_id, module.sequence): module.required_minutes
+            (item.class_id, item.subject_id): item.required_minutes
             for item in ledger.items
-            for module in item.modules
         }
         if actual != expected:
             raise GenerationValidationError(

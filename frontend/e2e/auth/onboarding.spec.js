@@ -1,4 +1,3 @@
-/* global process */
 /**
  * E2E — Fluxo de Onboarding com Clerk real (testing_tokens).
  *
@@ -11,14 +10,11 @@
  * Para correr localmente: docker compose up -d && npx playwright test e2e/auth/
  */
 import { test, expect } from '@playwright/test'
-import { loginAsAdminReal, goTo, expectText } from '../utils/clerk-helpers.js'
-import { clearTokenCache } from '../utils/clerk-tokens.js'
+import { attachRuntimeGuards, loginAsAdminReal, goTo, expectText } from '../utils/clerk-helpers.js'
 
 test.describe('Onboarding — Clerk real', () => {
-  test.skip(!!process.env.CI, 'Requer Docker stack completa (backend porta 8000)')
-
   test.beforeEach(async ({ page }) => {
-    clearTokenCache()
+    attachRuntimeGuards(page)
     await loginAsAdminReal(page)
   })
 

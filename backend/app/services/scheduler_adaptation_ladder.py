@@ -86,9 +86,8 @@ class SchedulerChangeImpactAnalyzer:
                 reasons.append("Class-subject teacher assignment changed.")
                 category = "ASSIGNMENT"
             if block["teacher_id"] not in teachers or (
-                qualifications
-                and (block["teacher_id"], block["subject_id"]) not in qualifications
-            ):
+                block["teacher_id"], block["subject_id"]
+            ) not in qualifications:
                 reasons.append("Assigned teacher is no longer eligible.")
             if (block["teacher_id"], block["timeslot_id"]) in impossible:
                 reasons.append("Teacher availability is now impossible at this time.")

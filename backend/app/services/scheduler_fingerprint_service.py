@@ -215,6 +215,20 @@ class SchedulerFingerprintService:
                 )
             )
         ).all() if subject_ids else []
+        module_ids = {row.id for row in module_rows}
+        progress_rows = (
+            await self._db.execute(
+                select(
+                    models.ClassProgress.class_id,
+                    models.ClassProgress.module_id,
+                    models.ClassProgress.hours_completed,
+                ).where(
+                    models.ClassProgress.organization_id == organization_id,
+                    models.ClassProgress.class_id.in_(class_ids),
+                    models.ClassProgress.module_id.in_(module_ids),
+                )
+            )
+        ).all() if class_ids and module_ids else []
 
         timeslot_rows = (
             await self._db.execute(
@@ -397,6 +411,17 @@ class SchedulerFingerprintService:
                     "sequence": row.order,
                 }
                 for row in sorted(module_rows, key=lambda row: row.id)
+            ],
+            "class_progress": [
+                {
+                    "class_id": row.class_id,
+                    "module_id": row.module_id,
+                    "hours_completed": row.hours_completed,
+                }
+                for row in sorted(
+                    progress_rows,
+                    key=lambda row: (row.class_id, row.module_id),
+                )
             ],
         }
 

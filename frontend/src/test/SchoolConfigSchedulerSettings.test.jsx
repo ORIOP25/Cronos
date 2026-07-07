@@ -50,4 +50,26 @@ describe('SchoolConfig scheduler settings', () => {
       })
     })
   })
+
+  it('submits grid generation settings as numbers', async () => {
+    renderWithProviders(<SchoolConfig />)
+
+    fireEvent.click(await screen.findByRole('tab', { name: /grelha/i }))
+    fireEvent.click(screen.getByRole('button', { name: /guardar e regenerar/i }))
+
+    await waitFor(() => {
+      expect(apiClient.post).toHaveBeenCalledWith('/school/grid-settings/', {
+        lunch_window_start: '12:00:00',
+        lunch_window_end: '14:00:00',
+        lunch_min_duration_minutes: 60,
+      })
+      expect(apiClient.post).toHaveBeenCalledWith('/timeslots/generate', {
+        start_time: '08:00:00',
+        end_time: '18:00:00',
+        slot_duration_minutes: 50,
+        break_duration_minutes: 10,
+        days_of_week: [0, 1, 2, 3, 4],
+      })
+    })
+  })
 })

@@ -415,10 +415,7 @@ class AdaptiveRepairEngine:
                 class_row is None
                 or subject_row is None
                 or task.teacher_id not in teachers
-                or (
-                    qualifications
-                    and (task.teacher_id, task.subject_id) not in qualifications
-                )
+                or (task.teacher_id, task.subject_id) not in qualifications
             ):
                 if task.is_recovery:
                     continue

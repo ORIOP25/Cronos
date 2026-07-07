@@ -61,7 +61,7 @@ class FarFutureFiller:
         ]
         items = {(row.class_id, row.subject_id): row for row in ledger.items}
         remaining = {
-            key: [module.required_minutes for module in item.modules]
+            key: item.required_minutes
             for key, item in items.items()
         }
         blocks: list[AssembledScheduleBlock] = []
@@ -115,7 +115,7 @@ class FarFutureFiller:
                 blockers.append("Far-future fill exhausted its time budget.")
                 break
             key = (candidate.class_id, candidate.subject_id)
-            if not self._remaining_minutes(remaining.get(key, [])):
+            if not remaining.get(key, 0):
                 continue
             if not self._resources_available(candidate, occupied):
                 continue
@@ -131,11 +131,11 @@ class FarFutureFiller:
                 lunch,
                 preferred_room,
             )
-            if all(not self._remaining_minutes(value) for value in remaining.values()):
+            if all(value <= 0 for value in remaining.values()):
                 break
 
-        for key, module_minutes in sorted(remaining.items()):
-            residual = self._remaining_minutes(module_minutes)
+        for key, subject_minutes in sorted(remaining.items()):
+            residual = max(0, subject_minutes)
             if residual:
                 blockers.append(
                     f"Residual demand of {residual} minutes remains for class {key[0]}, subject {key[1]}."
@@ -168,7 +168,7 @@ class FarFutureFiller:
         candidate: PlacementCandidate,
         source: str,
         items: dict[tuple[int, int], CompleteDemandItem],
-        remaining: dict[tuple[int, int], list[int]],
+        remaining: dict[tuple[int, int], int],
         blocks: list[AssembledScheduleBlock],
         occupied: dict[tuple[str, int, date], list[tuple[int, int]]],
         lunch: tuple[int, int, int] | None,
@@ -176,25 +176,17 @@ class FarFutureFiller:
     ) -> bool:
         key = (candidate.class_id, candidate.subject_id)
         item = items.get(key)
-        module_remaining = remaining.get(key)
-        if item is None or module_remaining is None:
+        subject_remaining = remaining.get(key)
+        if item is None or subject_remaining is None or subject_remaining <= 0:
             return False
-        module_index = next(
-            (index for index, minutes in enumerate(module_remaining) if minutes > 0),
-            None,
-        )
-        if module_index is None:
-            return False
-        curriculum_minutes = min(
-            candidate.duration_minutes,
-            module_remaining[module_index],
-        )
-        module_remaining[module_index] -= curriculum_minutes
-        module = item.modules[module_index]
+        scheduled_so_far = item.required_minutes - subject_remaining
+        module_sequence = self._module_sequence_for_offset(item, scheduled_so_far)
+        curriculum_minutes = min(candidate.duration_minutes, subject_remaining)
+        remaining[key] = subject_remaining - curriculum_minutes
         blocks.append(
             AssembledScheduleBlock(
                 stable_block_key=(
-                    f"{candidate.candidate_key}-M{module.sequence}"
+                    f"{candidate.candidate_key}-A{scheduled_so_far}"
                 ),
                 class_id=candidate.class_id,
                 subject_id=candidate.subject_id,
@@ -205,7 +197,7 @@ class FarFutureFiller:
                 start_minute=candidate.start_minute,
                 end_minute=candidate.end_minute,
                 duration_minutes=curriculum_minutes,
-                module_sequence_index=module.sequence,
+                module_sequence_index=module_sequence,
                 availability_score=candidate.availability_score,
                 source=source,
             )
@@ -276,13 +268,13 @@ class FarFutureFiller:
     def _scarcity(
         candidate: PlacementCandidate,
         items: dict[tuple[int, int], CompleteDemandItem],
-        remaining: dict[tuple[int, int], list[int]],
+        remaining: dict[tuple[int, int], int],
         candidate_counts: dict[tuple[int, int], int],
         minimum_duration: int,
     ) -> float:
         key = (candidate.class_id, candidate.subject_id)
         sessions = ceil(
-            FarFutureFiller._remaining_minutes(remaining.get(key, []))
+            max(0, remaining.get(key, 0))
             / max(1, minimum_duration)
         )
         return candidate_counts.get(key, 0) / max(1, sessions)
@@ -298,8 +290,16 @@ class FarFutureFiller:
         )
 
     @staticmethod
-    def _remaining_minutes(values: list[int]) -> int:
-        return sum(max(0, value) for value in values)
+    def _module_sequence_for_offset(item: CompleteDemandItem, scheduled_minutes: int) -> int:
+        cumulative = 0
+        fallback = item.modules[-1].sequence
+        for module in item.modules:
+            if module.required_minutes <= 0:
+                continue
+            cumulative += module.required_minutes
+            if scheduled_minutes < cumulative:
+                return module.sequence
+        return fallback
 
     @staticmethod
     def _lunch_rule(row: dict[str, Any] | None) -> tuple[int, int, int] | None:

@@ -5,6 +5,7 @@ from datetime import date, datetime, time, timedelta, timezone
 from typing import Any
 
 from app.services.scheduler_complete_demand import CompleteDemandLedger
+from app.services.scheduler_constraint_rules import SchedulerConstraintRules
 
 
 @dataclass(frozen=True)
@@ -60,6 +61,8 @@ class CandidateUniverseBuilder:
         blockers.extend(grid_blockers)
         if not slots:
             blockers.append("No valid timetable slots are configured.")
+        constraint_rules = SchedulerConstraintRules.from_snapshot(snapshot)
+        blockers.extend(constraint_rules.blockers)
         blocked_dates = self._blocked_dates(snapshot.get("calendar_events", []))
         availability = {
             (row["teacher_id"], row["timeslot_id"]): row["score"]
@@ -97,24 +100,32 @@ class CandidateUniverseBuilder:
                             if (room_id, current, slot["id"]) in room_conflicts:
                                 self._removed(removed, "room_conflict")
                                 continue
-                            candidates.append(
-                                PlacementCandidate(
-                                    candidate_key=(
-                                        f"C{item.class_id}-S{item.subject_id}-"
-                                        f"D{current.isoformat()}-T{slot['id']}-R{room_id}"
-                                    ),
-                                    class_id=item.class_id,
-                                    subject_id=item.subject_id,
-                                    teacher_id=item.teacher_id,
-                                    room_id=room_id,
-                                    output_date=current,
-                                    timeslot_id=slot["id"],
-                                    start_minute=slot["start_minute"],
-                                    end_minute=slot["end_minute"],
-                                    duration_minutes=slot["duration_minutes"],
-                                    availability_score=score,
-                                )
+                            candidate = PlacementCandidate(
+                                candidate_key=(
+                                    f"C{item.class_id}-S{item.subject_id}-"
+                                    f"D{current.isoformat()}-T{slot['id']}-R{room_id}"
+                                ),
+                                class_id=item.class_id,
+                                subject_id=item.subject_id,
+                                teacher_id=item.teacher_id,
+                                room_id=room_id,
+                                output_date=current,
+                                timeslot_id=slot["id"],
+                                start_minute=slot["start_minute"],
+                                end_minute=slot["end_minute"],
+                                duration_minutes=slot["duration_minutes"],
+                                availability_score=(
+                                    score
+                                    + constraint_rules.preference_bonus(
+                                        item.teacher_id,
+                                        slot["id"],
+                                    )
+                                ),
                             )
+                            if not constraint_rules.is_candidate_allowed(candidate):
+                                self._removed(removed, "scheduler_constraint")
+                                continue
+                            candidates.append(candidate)
                             if len(candidates) >= max_candidates:
                                 blockers.append(
                                     "Candidate universe exceeds the safe solve-size limit."

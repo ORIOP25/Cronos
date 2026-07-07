@@ -8,9 +8,12 @@ import pytest
 import pytest_asyncio
 from typing import AsyncGenerator
 from uuid import uuid4
+from alembic import command
+from alembic.config import Config
 from httpx import AsyncClient, ASGITransport
 from sqlalchemy import create_engine
 from sqlalchemy import text
+from sqlalchemy.engine import make_url
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.pool import NullPool
@@ -30,37 +33,80 @@ TestingSessionLocal = async_sessionmaker(
     bind=test_engine, class_=AsyncSession, expire_on_commit=False
 )
 
+
+def _assert_safe_test_database() -> None:
+    db_name = make_url(SYNC_DB_URL).database or ""
+    if os.environ.get("ALLOW_NON_TEST_DATABASE") == "1":
+        return
+    if any(marker in db_name.lower() for marker in ("test", "ci")):
+        return
+    raise RuntimeError(
+        "Refusing to run destructive tests against a non-test database. "
+        f"Current database is {db_name!r}. Use a dedicated *_test database "
+        "or set ALLOW_NON_TEST_DATABASE=1 intentionally."
+    )
+
+
+def _alembic_config() -> Config:
+    backend_root = os.path.dirname(os.path.dirname(__file__))
+    return Config(os.path.join(backend_root, "alembic.ini"))
+
+
+def _quote_identifier(identifier: str) -> str:
+    return '"' + identifier.replace('"', '""') + '"'
+
+
+def _truncate_public_tables() -> None:
+    with sync_test_engine.begin() as conn:
+        rows = conn.execute(
+            text(
+                """
+                SELECT tablename
+                FROM pg_tables
+                WHERE schemaname = 'public'
+                  AND tablename <> 'alembic_version'
+                ORDER BY tablename
+                """
+            )
+        ).scalars().all()
+        if rows:
+            table_list = ", ".join(f"public.{_quote_identifier(table)}" for table in rows)
+            conn.execute(text(f"TRUNCATE TABLE {table_list} RESTART IDENTITY CASCADE"))
+
+
+@pytest.fixture(scope="session", autouse=True)
+def migrated_test_database():
+    """Build the test schema through Alembic so triggers/RLS/functions exist."""
+    _assert_safe_test_database()
+    with sync_test_engine.begin() as conn:
+        conn.execute(text("DROP SCHEMA IF EXISTS public CASCADE"))
+        conn.execute(text("CREATE SCHEMA public"))
+        conn.execute(text("GRANT ALL ON SCHEMA public TO public"))
+    command.upgrade(_alembic_config(), "head")
+    yield
+    _truncate_public_tables()
+
 # --- Fixture: BD Assíncrona ---
 @pytest_asyncio.fixture(scope="function")
 async def db_session() -> AsyncGenerator[AsyncSession, None]:
+    _truncate_public_tables()
+    async with TestingSessionLocal() as session:
+        yield session
+    _truncate_public_tables()
+
+
+@pytest_asyncio.fixture(scope="function")
+async def orm_schema_session() -> AsyncGenerator[AsyncSession, None]:
+    """Opt-in ORM-only fixture for tests that intentionally bypass Alembic."""
     async with test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
-        await conn.execute(
-            text(
-                """
-                DO $$
-                BEGIN
-                    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'cronos_auth_definer') THEN
-                        GRANT USAGE ON SCHEMA public, app_security TO cronos_auth_definer;
-                        GRANT SELECT, INSERT, UPDATE
-                        ON TABLE public.organization, public."user"
-                        TO cronos_auth_definer;
-                        GRANT USAGE, SELECT
-                        ON SEQUENCE public.organization_id_seq, public.user_id_seq
-                        TO cronos_auth_definer;
-                    END IF;
-                END
-                $$;
-                """
-            )
-        )
     async with TestingSessionLocal() as session:
-        app.dependency_overrides[get_db] = lambda: session
         yield session
-        app.dependency_overrides.pop(get_db, None)
     async with test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
+        await conn.execute(text("DROP TABLE IF EXISTS alembic_version"))
+    command.upgrade(_alembic_config(), "head")
 
 # --- Fixture: BD Síncrona ---
 @pytest.fixture
@@ -80,6 +126,13 @@ async def async_client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient, 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         yield ac
     app.dependency_overrides.pop(get_db, None)
+
+
+@pytest_asyncio.fixture(scope="function")
+async def real_async_client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
+    """ASGI client that uses the app's real SessionLocal per request."""
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        yield ac
 
 
 # ============================================================

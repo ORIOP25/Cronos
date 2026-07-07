@@ -110,6 +110,13 @@ async def _runtime_context(db_session):
             ),
         ]
     )
+    await db_session.execute(
+        models.teacher_subject_link.insert().values(
+            organization_id=organization.id,
+            teacher_id=teacher.id,
+            subject_id=subject.id,
+        )
+    )
     await db_session.commit()
     return {
         "organization": organization,

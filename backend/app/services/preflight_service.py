@@ -427,6 +427,7 @@ async def _preflight_check(
     ),
     *,
     replace_pending_draft: bool = False,
+    school_year_id: int | None = None,
 ) -> tuple[list[str], dict]:
     """Valida pré-condições e devolve erros + resumo de preflight híbrido."""
     errors: list[str] = []
@@ -436,11 +437,14 @@ async def _preflight_check(
         "hard_end_feasibility": None,
     }
 
+    pending_conditions = [
+        models.ScheduleDraft.organization_id == organization_id,
+        models.ScheduleDraft.draft_state == models.ScheduleDraftState.PENDING,
+    ]
+    if school_year_id is not None:
+        pending_conditions.append(models.ScheduleDraft.school_year_id == school_year_id)
     pending_draft_count = await db.scalar(
-        sa_select(func.count(models.ScheduleDraft.id)).where(
-            models.ScheduleDraft.organization_id == organization_id,
-            models.ScheduleDraft.draft_state == models.ScheduleDraftState.PENDING,
-        )
+        sa_select(func.count(models.ScheduleDraft.id)).where(*pending_conditions)
     )
     if pending_draft_count and not replace_pending_draft:
         return (

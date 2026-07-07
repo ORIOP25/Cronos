@@ -5,6 +5,7 @@ from datetime import date, time, timedelta
 from typing import Any
 
 from app import models
+from app.services.scheduler_constraint_rules import SchedulerConstraintRules
 from app.services.scheduler_job_runtime import (
     DraftBlockSpec,
     GenerationValidationError,
@@ -50,6 +51,12 @@ class SchedulerTargetValidator:
             for row in snapshot.get("teacher_availability", [])
             if int(row.get("score", 0)) == -1
         }
+        constraint_rules = SchedulerConstraintRules.from_snapshot(snapshot)
+        if constraint_rules.blockers:
+            raise SchedulerTargetValidationError(
+                "Scheduler constraints are invalid or unsupported: "
+                + "; ".join(constraint_rules.blockers)
+            )
         intervals: dict[tuple[str, int, date], list[tuple[int, int]]] = defaultdict(list)
         stable_keys: set[str] = set()
         school_start = date.fromisoformat(snapshot["start_date"])
@@ -72,7 +79,7 @@ class SchedulerTargetValidator:
                 or subject_row is None
                 or room_row is None
                 or assignments.get((block.class_id, block.subject_id)) != block.teacher_id
-                or (qualifications and (block.teacher_id, block.subject_id) not in qualifications)
+                or (block.teacher_id, block.subject_id) not in qualifications
                 or int(room_row.get("capacity") or 0) < int(class_row["size"])
                 or cls._value(room_row.get("type"))
                 != cls._value(subject_row.get("required_room_type"))
@@ -86,6 +93,9 @@ class SchedulerTargetValidator:
                 raise SchedulerTargetValidationError(
                     "The draft target no longer satisfies hard scheduler constraints."
                 )
+            violation = constraint_rules.violation_for_block(block)
+            if violation is not None:
+                raise SchedulerTargetValidationError(violation)
             stable_keys.add(block.stable_block_key)
             cls._add_resource_intervals(block, slot, intervals)
         cls._validate_lunch(snapshot.get("lunch_rules"), specs, grid)

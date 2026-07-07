@@ -12,7 +12,7 @@ env:
 
 jobs:
   backend:
-    name: Backend — Tests + Coverage
+    name: Backend - Tests + Coverage
     runs-on: ubuntu-latest
 
     services:
@@ -70,8 +70,31 @@ jobs:
           CLERK_WEBHOOK_SECRET: ${{ secrets.CLERK_WEBHOOK_SECRET }}
           CLERK_PUBLISHABLE_KEY: ${{ secrets.CLERK_PUBLISHABLE_KEY }}
 
+      - name: Run PostgreSQL reality tests
+        working-directory: backend
+        run: pytest tests/ -m postgresql -v --tb=short
+        env:
+          ENVIRONMENT: local
+          DATABASE_URL: "postgresql+asyncpg://postgres:ci_pg_pass@localhost:5432/cronos_test_db"
+          SECRET_KEY: ci-test-secret-key-not-for-production
+          RATELIMIT_ENABLED: "false"
+          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
+          CLERK_WEBHOOK_SECRET: ${{ secrets.CLERK_WEBHOOK_SECRET }}
+          CLERK_PUBLISHABLE_KEY: ${{ secrets.CLERK_PUBLISHABLE_KEY }}
+
+      - name: Verify skipped test count
+        working-directory: backend
+        run: |
+          SKIPPED=$(pytest tests/ --collect-only -q 2>&1 | grep -oP '\d+ skipped' | grep -oP '\d+' || echo 0)
+          MAX_ALLOWED=3
+          if [ "$SKIPPED" -gt "$MAX_ALLOWED" ]; then
+            echo "ERROR: $SKIPPED skipped tests (max $MAX_ALLOWED allowed)"
+            exit 1
+          fi
+          echo "OK: $SKIPPED skipped tests (threshold: $MAX_ALLOWED)"
+
   frontend:
-    name: Frontend — Lint + Test + Build
+    name: Frontend - Lint + Test + Build
     runs-on: ubuntu-latest
 
     steps:
@@ -104,10 +127,10 @@ jobs:
           VITE_CLERK_PUBLISHABLE_KEY: ${{ secrets.VITE_CLERK_PUBLISHABLE_KEY }}
 
   e2e:
-    name: E2E — Playwright
+    name: E2E - Full Docker Stack + Playwright
     needs: [backend, frontend]
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
 
     steps:
       - uses: actions/checkout@v4
@@ -127,20 +150,72 @@ jobs:
         working-directory: frontend
         run: npx playwright install --with-deps chromium
 
+      - name: Start full application stack
+        run: docker compose -f docker-compose.ci.yml up -d --build --wait
+        env:
+          COMPOSE_PROJECT_NAME: cronos-ci-${{ github.run_id }}-${{ github.run_attempt }}
+          POSTGRES_PASSWORD: ci_pg_pass
+          POSTGRES_DB: cronos_ci_db
+          SECRET_KEY: ci-test-secret-key-not-for-production
+          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
+          CLERK_WEBHOOK_SECRET: ${{ secrets.CLERK_WEBHOOK_SECRET }}
+          CLERK_PUBLISHABLE_KEY: ${{ secrets.CLERK_PUBLISHABLE_KEY }}
+          VITE_CLERK_PUBLISHABLE_KEY: ${{ secrets.VITE_CLERK_PUBLISHABLE_KEY }}
+
+      - name: Verify stale Alembic repair through backend entrypoint
+        run: |
+          docker compose -f docker-compose.ci.yml exec -T db \
+            psql -U postgres -d cronos_ci_db \
+            -c "UPDATE alembic_version SET version_num = 'e7b8c9d0a1f2';"
+          docker compose -f docker-compose.ci.yml restart backend
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://localhost:8000/api/v1/health >/dev/null; then
+              echo "Backend health is green after stale Alembic repair."
+              exit 0
+            fi
+            sleep 2
+          done
+          docker compose -f docker-compose.ci.yml logs --no-color backend
+          exit 1
+        env:
+          COMPOSE_PROJECT_NAME: cronos-ci-${{ github.run_id }}-${{ github.run_attempt }}
+
       - name: Run E2E Tests
         working-directory: frontend
-        run: npx playwright test
+        run: npx playwright test --project=chromium
         env:
-          VITE_CLERK_PUBLISHABLE_KEY: ${{ secrets.VITE_CLERK_PUBLISHABLE_KEY }}
+          COMPOSE_PROJECT_NAME: cronos-ci-${{ github.run_id }}-${{ github.run_attempt }}
+          BASE_URL: http://localhost:5173
+          PLAYWRIGHT_SKIP_WEB_SERVER: "1"
+          CLERK_PUBLISHABLE_KEY: ${{ secrets.CLERK_PUBLISHABLE_KEY }}
           CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
+          VITE_CLERK_PUBLISHABLE_KEY: ${{ secrets.VITE_CLERK_PUBLISHABLE_KEY }}
+          E2E_CLERK_ADMIN_EMAIL: ${{ secrets.E2E_CLERK_ADMIN_EMAIL }}
+          E2E_CLERK_TEACHER_EMAIL: ${{ secrets.E2E_CLERK_TEACHER_EMAIL }}
 
-      - name: Verify skipped test count (backend)
-        working-directory: backend
+      - name: Verify E2E reality gates
         run: |
-          SKIPPED=$(pytest tests/ --collect-only -q 2>&1 | grep -oP '\d+ skipped' | grep -oP '\d+' || echo 0)
-          MAX_ALLOWED=3
-          if [ "$SKIPPED" -gt "$MAX_ALLOWED" ]; then
-            echo "ERROR: $SKIPPED skipped tests (max $MAX_ALLOWED allowed)"
+          if grep -R -E "test\.skip|describe\.skip|test\.only|describe\.only" frontend/e2e; then
+            echo "ERROR: skipped or focused E2E tests are not allowed in the beta gate."
             exit 1
           fi
-          echo "OK: $SKIPPED skipped tests (threshold: $MAX_ALLOWED)"
+          if grep -R "waitForTimeout" frontend/e2e; then
+            echo "ERROR: E2E tests must wait on observable app state."
+            exit 1
+          fi
+          if grep -R -E "locator\(['\"]body['\"]\)" frontend/e2e; then
+            echo "ERROR: Body-level E2E assertions are not meaningful enough for the beta gate."
+            exit 1
+          fi
+
+      - name: Dump compose logs
+        if: failure()
+        run: docker compose -f docker-compose.ci.yml logs --no-color
+        env:
+          COMPOSE_PROJECT_NAME: cronos-ci-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: Stop full application stack
+        if: always()
+        run: docker compose -f docker-compose.ci.yml down -v --remove-orphans
+        env:
+          COMPOSE_PROJECT_NAME: cronos-ci-${{ github.run_id }}-${{ github.run_attempt }}

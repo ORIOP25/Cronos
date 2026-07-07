@@ -146,9 +146,7 @@ SAME_TENANT_REFS = {
     },
     "scheduler_state_version_events": {
         "school_year_id": "scheduler_school_year",
-        "job_id": "schedule_generation_job",
-        "draft_id": "schedule_drafts",
-        "actor_user_id": '"user"',
+        "changed_by_user_id": '"user"',
     },
     "lesson_log": {
         "schedule_output_id": "schedule_output",
