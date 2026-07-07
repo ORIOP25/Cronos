@@ -36,20 +36,20 @@ const serviceTiles = [
 
 const productModules = [
   {
-    title: 'Painel da direção',
-    text: 'A direção vê alertas, propostas de horário por rever, progresso curricular, horas por cumprir e recursos disponíveis sem pedir ficheiros à equipa.',
+    title: 'Visão clara para a direção',
+    text: 'Tome decisões com tranquilidade. Acompanhe o progresso das turmas, horas por cumprir e alertas da escola em tempo real, sem precisar de pedir ficheiros à equipa.',
   },
   {
-    title: 'Gestão de horários',
-    text: 'Horários semanais por turma ou professor, com navegação por semanas, salas, disciplinas, docentes e estado real de cada bloco.',
+    title: 'Horários sempre acessíveis',
+    text: 'Cada professor acede ao seu horário no telemóvel ou computador. Se a sala mudar, toda a gente fica a saber no mesmo segundo.',
   },
   {
-    title: 'Ocorrências operacionais',
-    text: 'Quando uma aula muda, o Cronos regista a decisão: dada, furo, substituída ou revertida, mantendo histórico e contexto.',
+    title: 'Imprevistos resolvidos sem stress',
+    text: 'Faltou um professor às 8h15? Encontre logo um substituto disponível ou registe a alteração com um clique.',
   },
   {
-    title: 'Sumários e fecho semanal',
-    text: 'Professores registam sumários e notas, submetem a semana e a escola acompanha o que ficou concluído, pendente ou bloqueado.',
+    title: 'O fim das folhas de sumários perdidas',
+    text: 'Os docentes fecham a semana em poucos minutos, e a coordenação acompanha o cumprimento das UFCDs.',
   },
 ]
 
@@ -102,12 +102,8 @@ const generatorInputs = [
 ]
 
 const generatorOutputs = [
-  'Horário por turma e professor sem conflitos de sala, turma ou docente',
-  'Proposta de horário para rever antes de chegar à equipa',
-  'Leitura clara do que muda no horário',
-  'Ajuste do futuro com poucas mexidas no que já estava combinado',
-  'Planeamento que respeita a data limite do ano letivo',
-  'Visão das horas que ainda ficam por encaixar quando o ano letivo já está apertado',
+  'Horários harmoniosos e prontos a usar, sem choques de salas ou professores sobrecarregados',
+  'Facilidade em fazer pequenos ajustes a meio da semana sem desmoronar tudo o resto',
 ]
 
 const routineChapters = [
@@ -169,15 +165,15 @@ const routineChapters = [
 const roleCards = [
   {
     title: 'Direção',
-    text: 'Acompanha horários publicados, propostas pendentes, progresso curricular, horas por cumprir e decisões operacionais sem depender de mapas dispersos.',
+    text: 'Durma com a tranquilidade de saber que todas as turmas estão a cumprir as horas exigidas e que a escola está em dia, com dados fiáveis à distância de um clique.',
   },
   {
     title: 'Secretaria e coordenação',
-    text: 'Gere cursos, turmas, professores, salas, ocorrências e substituições com dados consistentes e menos validações manuais.',
+    text: 'Esqueça o cruzamento manual de 5 ficheiros Excel diferentes. Resolva furos, trocas e salas em segundos.',
   },
   {
     title: 'Professores',
-    text: 'Consultam o seu horário, registam sumários, criam ocorrências, submetem a semana e atualizam a sua disponibilidade.',
+    text: 'Um horário que cabe no bolso. Consulte a sua rotina, submeta sumários e indique a sua disponibilidade de forma intuitiva.',
   },
 ]
 
@@ -185,13 +181,13 @@ const testimonials = [
   {
     name: 'Professor Ricardo',
     role: 'Coordenador pedagógico',
-    quote: 'Conseguimos ver rapidamente que aulas foram dadas, que ocorrências ficaram pendentes e que UFCDs precisam de atenção.',
+    quote: 'Antes, quando um docente faltava à primeira hora, a secretaria parava completamente. Hoje abrimos o Cronos, vemos quem está livre no edifício e resolvemos a substituição em 2 minutos.',
     avatar: 'R',
   },
   {
     name: 'Secretária Sofia',
     role: 'Administrativa',
-    quote: 'A gestão de faltas, substituições e horários deixou de depender de vários ficheiros. A equipa trabalha sobre a mesma informação.',
+    quote: "O maior alívio foi parar de perguntar 'qual é a versão mais recente do ficheiro?'. Agora toda a escola olha exatamente para o mesmo horário atualizado.",
     avatar: 'S',
   },
   {
@@ -364,18 +360,18 @@ export function MarketingSite() {
           <div className="cronos-layout cronos-hero__grid">
             <div className="cronos-hero__copy">
               <h1 id="cronos-hero-title">
-                Horários do ensino profissional, do plano à aula dada.
+                Horários para o ensino profissional português.
               </h1>
               <span className="cronos-title-rule" aria-hidden="true" />
               <p>
-                O Cronos é uma aplicação para escolas profissionais portuguesas: gera horários por turma e professor, adapta alterações de última hora, regista sumários e acompanha horas de UFCDs, módulos e cursos num único lugar.
+                O Cronos é uma aplicação para escolas portuguesas com ensino profissional. Criámo-lo para aliviar a direção, a secretaria e os professores. Geramos horários sem conflitos em minutos, resolvemos furos de última hora e acompanhamos as horas das UFCDs num único lugar, de forma simples e transparente.
               </p>
               <div className="cronos-hero__actions">
                 <a href="#contacto" className="cronos-button">
-                  Agendar demonstração <ArrowIcon />
+                  Marcar conversa de 15 minutos! <ArrowIcon />
                 </a>
                 <a href="#rotina" className="cronos-button cronos-button--secondary">
-                  Seguir a semana
+                  Ver como funcionará o meu dia a dia
                 </a>
               </div>
             </div>
@@ -399,9 +395,9 @@ export function MarketingSite() {
         <section className="cronos-product" id="produto" aria-labelledby="cronos-product-title">
           <div className="cronos-layout">
             <div className="cronos-section-heading cronos-section-heading--split">
-              <h2 id="cronos-product-title">O que o Cronos faz.</h2>
+              <h2 id="cronos-product-title">Porque o Cronos é uma mais-valia?</h2>
               <p>
-                Liga a preparação do ano letivo à execução diária. A escola sabe o que estava planeado, o que foi realmente lecionado, que aulas falharam e que UFCDs ainda precisam de horas.
+                Sabemos que o ensino profissional é dinâmico e exigente. O Cronos liga o planeamento à sala de aula para que toda a equipa saiba exatamente onde está a cada momento.
               </p>
             </div>
 
@@ -426,7 +422,7 @@ export function MarketingSite() {
                 </h2>
               </div>
               <p>
-                O ensino profissional exige controlo de carga horária real. O Cronos acompanha o caminho inteiro: dados da escola, horário publicado, aula executada, ocorrência resolvida e progresso atualizado.
+                Desenvolvemos o Cronos ao lado de coordenadores e diretores de escolas profissionais. Vimos de perto o cansaço de fechar mapas de UFCDs à mão e gerir substituições no WhatsApp. Por isso, desenhámos um fluxo natural que respeita as pessoas e o tempo de cada escola.
               </p>
             </div>
 
@@ -449,12 +445,9 @@ export function MarketingSite() {
         <section className="cronos-generator" id="gerador" aria-labelledby="cronos-generator-title">
           <div className="cronos-layout cronos-generator__grid">
             <div className="cronos-generator__copy">
-              <h2 id="cronos-generator-title">Como o gerador de horários ajuda a escola.</h2>
+              <h2 id="cronos-generator-title">Um gerador que pensa como um coordenador.</h2>
               <p>
-                O gerador recebe as regras reais da escola e propõe um horário viável para o ensino profissional: UFCDs, horas por cumprir, disponibilidade dos professores, salas necessárias e calendário letivo.
-              </p>
-              <p>
-                Quando a escola precisa de alterar as próximas semanas, o Cronos evita refazer tudo: protege o que já foi comunicado e ajusta apenas o que ainda pode mudar.
+                Em vez de tentar adivinhar num quadrado em branco, diga ao Cronos o que tem na sua escola: salas disponíveis, dias preferidos dos professores e carga de cada UFCD. Nós fazemos as contas complexas por si.
               </p>
             </div>
 
@@ -583,9 +576,9 @@ export function MarketingSite() {
         <section className="cronos-contact" id="contacto" aria-labelledby="cronos-contact-title">
           <div className="cronos-layout cronos-contact__grid">
             <div className="cronos-contact__content">
-              <h2 id="cronos-contact-title">Quer ver o Cronos aplicado à sua escola?</h2>
+              <h2 id="cronos-contact-title">Gostava de ver como funcionaria na sua escola? Fale connosco.</h2>
               <p>
-                A demonstração pode partir da realidade da sua instituição: cursos profissionais, turmas, professores, salas, UFCDs, horários atuais e principais dificuldades operacionais.
+                Sem compromisso. Mostre-nos o seu maior desafio com os horários atuais e mostramos-lhe, em 15 minutos, como o Cronos pode ajudar a resolvê-lo.
               </p>
 
               <div className="cronos-contact-cards">
@@ -626,15 +619,15 @@ export function MarketingSite() {
                 </select>
               </label>
               <label className="cronos-field cronos-field--full">
-                <span>A sua mensagem</span>
-                <textarea name="message" placeholder="Que cursos, turmas e desafios de horários quer analisar?" rows="4" />
+                <span>Conte-nos um pouco sobre a sua escola (Ex.: quantas turmas têm ou qual a maior dificuldade atualmente)</span>
+                <textarea name="message" placeholder="Conte-nos aqui sobre a sua escola e desafios..." rows="4" />
               </label>
               <label className="cronos-checkbox">
                 <input type="checkbox" name="newsletter" />
                 <span>Desejo receber novidades sobre o Cronos</span>
               </label>
               <button type="submit" className="cronos-button cronos-button--form">
-                Pedir demonstração <ArrowIcon />
+                Falar com a nossa equipa <ArrowIcon />
               </button>
               <p className="cronos-form__note">Respondemos habitualmente em menos de 2 horas.</p>
             </form>
