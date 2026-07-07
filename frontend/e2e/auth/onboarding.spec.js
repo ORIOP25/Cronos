@@ -10,7 +10,14 @@
  * Para correr localmente: docker compose up -d && npx playwright test e2e/auth/
  */
 import { test, expect } from '@playwright/test'
-import { attachRuntimeGuards, loginAsAdminReal, goTo, expectText } from '../utils/clerk-helpers.js'
+import {
+  attachRuntimeGuards,
+  expectNoAppCrash,
+  expectRouteReady,
+  expectText,
+  goTo,
+  loginAsAdminReal,
+} from '../utils/clerk-helpers.js'
 
 test.describe('Onboarding — Clerk real', () => {
   test.beforeEach(async ({ page }) => {
@@ -20,6 +27,7 @@ test.describe('Onboarding — Clerk real', () => {
 
   test('T29: fluxo sign-up → create-org → onboarding → dashboard', async ({ page }) => {
     await goTo(page, '/create-org')
+    await expectNoAppCrash(page)
 
     const nameInput = page.locator('input[name="name"]')
     if (await nameInput.isVisible({ timeout: 3000 }).catch(() => false)) {
@@ -38,16 +46,20 @@ test.describe('Onboarding — Clerk real', () => {
     }
 
     await page.waitForURL('**/dashboard', { timeout: 10000 }).catch(() => {})
+    if (page.url().endsWith('/dashboard')) {
+      await expectRouteReady(page, '/dashboard')
+    }
   })
 
   test('T30: login admin vê dashboard', async ({ page }) => {
     await goTo(page, '/dashboard')
-    await expectText(page, 'Dashboard')
+    await expectRouteReady(page, '/dashboard')
   })
 
   test('T33: onboarding interrompido é retomado', async ({ page }) => {
     await goTo(page, '/onboarding')
     const heading = page.locator('h1, h2').first()
     await expect(heading).toBeVisible({ timeout: 10000 })
+    await expectNoAppCrash(page)
   })
 })

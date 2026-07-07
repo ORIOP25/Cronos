@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { attachRuntimeGuards, goTo, loginAsAdminReal } from '../utils/clerk-helpers.js'
+import { attachRuntimeGuards, expectRouteReady, goTo, loginAsAdminReal } from '../utils/clerk-helpers.js'
 
 async function ensureOnboardingComplete(page) {
   await goTo(page, '/onboarding')
@@ -27,13 +27,12 @@ test.describe('Dashboard real backend', () => {
     await goTo(page, '/dashboard')
     await dashboardResponse
 
-    await expect(page).toHaveURL(/\/dashboard$/)
-    await expect(page.getByText(/dashboard/i).first()).toBeVisible({ timeout: 10000 })
-    await expect(page.locator('[data-testid="error-boundary"]')).toHaveCount(0)
+    await expectRouteReady(page, '/dashboard')
   })
 
   test('renders dashboard resource and operational sections without API mocks', async ({ page }) => {
     await goTo(page, '/dashboard')
+    await expectRouteReady(page, '/dashboard')
 
     await expect(page.locator('[data-testid="resource-teachers"]')).toBeVisible({ timeout: 10000 })
     await expect(page.locator('[data-testid="resource-classes"]')).toBeVisible({ timeout: 10000 })

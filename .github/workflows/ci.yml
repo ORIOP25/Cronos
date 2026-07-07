@@ -188,9 +188,9 @@ jobs:
             echo "The Clerk publishable key is public config and does not need to be a GitHub secret."
             exit 1
           fi
-          if [ -z "$CLERK_SECRET_KEY" ] && [ -z "$CLERK_TESTING_TOKEN" ]; then
+          if [ -z "$CLERK_SECRET_KEY" ]; then
             echo "ERROR: Missing Clerk server-side E2E auth."
-            echo "Set secret CLERK_SECRET_KEY, or set secret CLERK_TESTING_TOKEN."
+            echo "Set secret CLERK_SECRET_KEY. It is required to prepare deterministic local member state before Playwright."
             exit 1
           fi
           if [ -z "$E2E_CLERK_ADMIN_EMAIL" ] || [ -z "$E2E_CLERK_TEACHER_EMAIL" ]; then
@@ -205,6 +205,7 @@ jobs:
           VITE_CLERK_PUBLISHABLE_KEY: ${{ vars.VITE_CLERK_PUBLISHABLE_KEY || vars.CLERK_PUBLISHABLE_KEY || secrets.VITE_CLERK_PUBLISHABLE_KEY || secrets.CLERK_PUBLISHABLE_KEY || env.CI_CLERK_PUBLISHABLE_KEY }}
           E2E_CLERK_ADMIN_EMAIL: ${{ secrets.E2E_CLERK_ADMIN_EMAIL || env.CI_E2E_CLERK_ADMIN_EMAIL }}
           E2E_CLERK_TEACHER_EMAIL: ${{ secrets.E2E_CLERK_TEACHER_EMAIL || env.CI_E2E_CLERK_TEACHER_EMAIL }}
+          E2E_CLERK_ORG_ID: ${{ vars.E2E_CLERK_ORG_ID || secrets.E2E_CLERK_ORG_ID }}
 
       - name: Start full application stack
         run: docker compose -f docker-compose.ci.yml up -d --build --wait
@@ -237,6 +238,21 @@ jobs:
         env:
           COMPOSE_PROJECT_NAME: cronos-ci-${{ github.run_id }}-${{ github.run_attempt }}
 
+      - name: Prepare E2E Clerk local state
+        run: |
+          docker compose -f docker-compose.ci.yml exec -T \
+            -e CLERK_SECRET_KEY="$CLERK_SECRET_KEY" \
+            -e E2E_CLERK_ADMIN_EMAIL="$E2E_CLERK_ADMIN_EMAIL" \
+            -e E2E_CLERK_TEACHER_EMAIL="$E2E_CLERK_TEACHER_EMAIL" \
+            -e E2E_CLERK_ORG_ID="$E2E_CLERK_ORG_ID" \
+            backend python scripts/prepare_e2e_clerk_state.py
+        env:
+          COMPOSE_PROJECT_NAME: cronos-ci-${{ github.run_id }}-${{ github.run_attempt }}
+          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
+          E2E_CLERK_ADMIN_EMAIL: ${{ secrets.E2E_CLERK_ADMIN_EMAIL || env.CI_E2E_CLERK_ADMIN_EMAIL }}
+          E2E_CLERK_TEACHER_EMAIL: ${{ secrets.E2E_CLERK_TEACHER_EMAIL || env.CI_E2E_CLERK_TEACHER_EMAIL }}
+          E2E_CLERK_ORG_ID: ${{ vars.E2E_CLERK_ORG_ID || secrets.E2E_CLERK_ORG_ID }}
+
       - name: Run E2E Tests
         working-directory: frontend
         run: |
@@ -252,6 +268,7 @@ jobs:
           VITE_CLERK_PUBLISHABLE_KEY: ${{ vars.VITE_CLERK_PUBLISHABLE_KEY || vars.CLERK_PUBLISHABLE_KEY || secrets.VITE_CLERK_PUBLISHABLE_KEY || secrets.CLERK_PUBLISHABLE_KEY || env.CI_CLERK_PUBLISHABLE_KEY }}
           E2E_CLERK_ADMIN_EMAIL: ${{ secrets.E2E_CLERK_ADMIN_EMAIL || env.CI_E2E_CLERK_ADMIN_EMAIL }}
           E2E_CLERK_TEACHER_EMAIL: ${{ secrets.E2E_CLERK_TEACHER_EMAIL || env.CI_E2E_CLERK_TEACHER_EMAIL }}
+          E2E_CLERK_ORG_ID: ${{ vars.E2E_CLERK_ORG_ID || secrets.E2E_CLERK_ORG_ID }}
 
       - name: Verify E2E reality gates
         run: |

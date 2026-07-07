@@ -1,7 +1,9 @@
-import { test, expect } from '@playwright/test'
+import { test } from '@playwright/test'
 import {
   attachRuntimeGuards,
   clickSidebarRoute,
+  expectNoAppCrash,
+  expectRouteReady,
   goTo,
   loginAsAdminReal,
   loginAsTeacherReal,
@@ -24,6 +26,7 @@ test.describe('Real stack smoke', () => {
     await loginAsAdminReal(page)
     await ensureOnboardingComplete(page)
     await goTo(page, '/dashboard')
+    await expectRouteReady(page, '/dashboard')
 
     for (const path of [
       '/dashboard',
@@ -37,7 +40,7 @@ test.describe('Real stack smoke', () => {
       '/config',
     ]) {
       await clickSidebarRoute(page, path)
-      await expect(page.locator('[data-testid="error-boundary"]')).toHaveCount(0)
+      await expectNoAppCrash(page)
     }
   })
 
@@ -45,10 +48,11 @@ test.describe('Real stack smoke', () => {
     attachRuntimeGuards(page)
     await loginAsTeacherReal(page)
     await goTo(page, '/my-availability')
+    await expectRouteReady(page, '/my-availability')
 
     for (const path of ['/my-availability', '/my-schedules', '/my-progress']) {
       await clickSidebarRoute(page, path)
-      await expect(page.locator('[data-testid="error-boundary"]')).toHaveCount(0)
+      await expectNoAppCrash(page)
     }
   })
 })

@@ -5,7 +5,14 @@
  * Clerk real não permite simular tokens expirados facilmente.
  */
 import { test, expect } from '@playwright/test'
-import { allowApiFailure, attachRuntimeGuards, loginAsAdminReal, goTo } from '../utils/clerk-helpers.js'
+import {
+  allowApiFailure,
+  attachRuntimeGuards,
+  expectNoAppCrash,
+  expectRouteReady,
+  goTo,
+  loginAsAdminReal,
+} from '../utils/clerk-helpers.js'
 
 test.describe('Session resilience', () => {
   test.beforeEach(async ({ page }) => {
@@ -15,10 +22,10 @@ test.describe('Session resilience', () => {
 
   test('sessão persiste após page reload', async ({ page }) => {
     await goTo(page, '/dashboard')
-    await expect(page).toHaveURL(/\/dashboard/)
+    await expectRouteReady(page, '/dashboard')
 
     await page.reload()
-    await expect(page).toHaveURL(/\/dashboard/)
+    await expectRouteReady(page, '/dashboard')
   })
 
   test('API 401 redireciona para /login', async ({ page }) => {
@@ -28,6 +35,7 @@ test.describe('Session resilience', () => {
     })
     await goTo(page, '/dashboard')
     await expect(page).toHaveURL(/\/login|\/dashboard/)
+    await expectNoAppCrash(page)
   })
 
   test('API 403 mostra estado de erro', async ({ page }) => {
@@ -37,5 +45,6 @@ test.describe('Session resilience', () => {
     })
     await goTo(page, '/members')
     await expect(page.getByText(/Admin access required/i).first()).toBeVisible({ timeout: 10000 })
+    await expectNoAppCrash(page)
   })
 })
