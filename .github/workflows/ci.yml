@@ -10,6 +10,8 @@ env:
   PYTHON_VERSION: "3.12"
   NODE_VERSION: "20"
   CI_CLERK_PUBLISHABLE_KEY: "pk_test_d2VsY29tZWQtY2F0LTgzLmNsZXJrLmFjY291bnRzLmRldiQ"
+  CI_E2E_CLERK_ADMIN_EMAIL: "aperiusteste@gmail.com"
+  CI_E2E_CLERK_TEACHER_EMAIL: "rodrigommanguinhas@gmail.com"
 
 jobs:
   backend:
@@ -201,8 +203,8 @@ jobs:
           CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
           CLERK_TESTING_TOKEN: ${{ secrets.CLERK_TESTING_TOKEN }}
           VITE_CLERK_PUBLISHABLE_KEY: ${{ vars.VITE_CLERK_PUBLISHABLE_KEY || vars.CLERK_PUBLISHABLE_KEY || secrets.VITE_CLERK_PUBLISHABLE_KEY || secrets.CLERK_PUBLISHABLE_KEY || env.CI_CLERK_PUBLISHABLE_KEY }}
-          E2E_CLERK_ADMIN_EMAIL: ${{ secrets.E2E_CLERK_ADMIN_EMAIL }}
-          E2E_CLERK_TEACHER_EMAIL: ${{ secrets.E2E_CLERK_TEACHER_EMAIL }}
+          E2E_CLERK_ADMIN_EMAIL: ${{ secrets.E2E_CLERK_ADMIN_EMAIL || env.CI_E2E_CLERK_ADMIN_EMAIL }}
+          E2E_CLERK_TEACHER_EMAIL: ${{ secrets.E2E_CLERK_TEACHER_EMAIL || env.CI_E2E_CLERK_TEACHER_EMAIL }}
 
       - name: Start full application stack
         run: docker compose -f docker-compose.ci.yml up -d --build --wait
@@ -248,8 +250,8 @@ jobs:
           CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
           CLERK_TESTING_TOKEN: ${{ secrets.CLERK_TESTING_TOKEN }}
           VITE_CLERK_PUBLISHABLE_KEY: ${{ vars.VITE_CLERK_PUBLISHABLE_KEY || vars.CLERK_PUBLISHABLE_KEY || secrets.VITE_CLERK_PUBLISHABLE_KEY || secrets.CLERK_PUBLISHABLE_KEY || env.CI_CLERK_PUBLISHABLE_KEY }}
-          E2E_CLERK_ADMIN_EMAIL: ${{ secrets.E2E_CLERK_ADMIN_EMAIL }}
-          E2E_CLERK_TEACHER_EMAIL: ${{ secrets.E2E_CLERK_TEACHER_EMAIL }}
+          E2E_CLERK_ADMIN_EMAIL: ${{ secrets.E2E_CLERK_ADMIN_EMAIL || env.CI_E2E_CLERK_ADMIN_EMAIL }}
+          E2E_CLERK_TEACHER_EMAIL: ${{ secrets.E2E_CLERK_TEACHER_EMAIL || env.CI_E2E_CLERK_TEACHER_EMAIL }}
 
       - name: Verify E2E reality gates
         run: |
