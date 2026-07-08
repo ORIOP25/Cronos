@@ -77,4 +77,19 @@ describe('E2E runtime guard classifiers', () => {
       url: `${baseUrl}/api/v1/dashboard`,
     }, [])).toBe(`API 500: ${baseUrl}/api/v1/dashboard`)
   })
+
+  it('fails an unexpected API 404 unless it is explicitly allowlisted', () => {
+    const response = {
+      status: 404,
+      url: `${baseUrl}/api/v1/schedule/active-blocks/42/log`,
+    }
+
+    expect(getApiResponseError(response, [])).toBe(
+      `API 404: ${baseUrl}/api/v1/schedule/active-blocks/42/log`,
+    )
+    expect(getApiResponseError(response, [{
+      status: 404,
+      url: '/api/v1/schedule/active-blocks/',
+    }])).toBeNull()
+  })
 })

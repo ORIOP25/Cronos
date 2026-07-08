@@ -7,6 +7,36 @@ import {
 } from '../utils/clerk-helpers.js'
 
 const API_PREFIX = '/api/v1'
+
+function toIsoDate(value) {
+  const year = value.getFullYear()
+  const month = String(value.getMonth() + 1).padStart(2, '0')
+  const day = String(value.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+function schedulerFixtureDates() {
+  const schoolStart = new Date()
+  schoolStart.setHours(12, 0, 0, 0)
+  const daysSinceMonday = (schoolStart.getDay() + 6) % 7
+  schoolStart.setDate(schoolStart.getDate() - daysSinceMonday - 14)
+  const hardEnd = new Date(schoolStart)
+  hardEnd.setDate(hardEnd.getDate() + 60)
+  return {
+    schoolStartDate: toIsoDate(schoolStart),
+    schoolHardEndDate: toIsoDate(hardEnd),
+    startYear: schoolStart.getFullYear(),
+    endYear: hardEnd.getFullYear(),
+  }
+}
+
+function addDaysIso(isoDate, days) {
+  const value = new Date(`${isoDate}T12:00:00`)
+  value.setDate(value.getDate() + days)
+  return toIsoDate(value)
+}
+
+const FIXTURE_DATES = schedulerFixtureDates()
 const FIXTURE = {
   subjectName: 'E2E Scheduler Subject',
   moduleName: 'E2E Scheduler Module',
@@ -15,10 +45,7 @@ const FIXTURE = {
   courseAbbreviation: 'E2ESCH',
   className: 'E2E Scheduler Class',
   roomName: 'E2E Scheduler Room',
-  schoolStartDate: '2026-09-14',
-  schoolHardEndDate: '2027-07-09',
-  startYear: 2026,
-  endYear: 2027,
+  ...FIXTURE_DATES,
 }
 
 async function apiRequest(page, method, path, body) {
@@ -99,7 +126,7 @@ function singleFixtureModule(existingSubject) {
     ...(existingModule?.id ? { id: existingModule.id } : {}),
     name: FIXTURE.moduleName,
     code: FIXTURE.moduleCode,
-    hours_total: 1,
+    hours_total: 2,
     order: 0,
   }
 }
@@ -266,13 +293,13 @@ async function waitForJobToSucceed(page, jobId) {
 }
 
 test.describe('Scheduler generation', () => {
-  test('admin generates a real pending complete draft', async ({ page }) => {
+  test('admin publishes and registers completed and occurrence active blocks', async ({ page }) => {
     test.setTimeout(180_000)
 
     attachRuntimeGuards(page)
     await loginAsAdminReal(page)
     await goTo(page, '/dashboard')
-    await seedMinimalSchedulerInputs(page)
+    const { classId } = await seedMinimalSchedulerInputs(page)
 
     await goTo(page, '/schedules')
     await expectRouteReady(page, '/schedules')
@@ -295,5 +322,86 @@ test.describe('Scheduler generation', () => {
     await expect(page.getByText('Rascunho pendente').first()).toBeVisible({ timeout: 30_000 })
     await expect(page.getByText('Resultado completo').first()).toBeVisible({ timeout: 30_000 })
     await expect(page.getByText(/Erro na gera/i)).toHaveCount(0)
+
+    const approvalResponsePromise = page.waitForResponse(
+      (candidate) => candidate.url().includes('/api/v1/scheduler/drafts/')
+        && candidate.url().endsWith('/approve')
+        && candidate.request().method() === 'POST',
+    )
+    await page.getByRole('button', { name: /^Aprovar$/i }).click()
+    const approvalResponse = await approvalResponsePromise
+    expect(
+      approvalResponse.ok(),
+      `draft approval failed: ${approvalResponse.status()} ${await approvalResponse.text()}`,
+    ).toBeTruthy()
+
+    const weekStart = FIXTURE.schoolStartDate
+    const publishedSlots = await apiRequest(
+      page,
+      'GET',
+      `/schedule/week?class_id=${classId}&week_start=${weekStart}`,
+    )
+    const activeSlots = publishedSlots.filter((slot) => slot.active_schedule_block_id)
+    expect(activeSlots.length).toBeGreaterThanOrEqual(2)
+    const activeBlockIds = new Set(
+      activeSlots.map((slot) => slot.active_schedule_block_id),
+    )
+    const activeLogPath = /\/api\/v1\/schedule\/active-blocks\/(\d+)\/log(?:\?|$)/
+
+    await goTo(page, `/schedules?weekStart=${weekStart}`)
+    await expectRouteReady(page, '/schedules')
+    await page.getByLabel('Turma').selectOption(String(classId))
+
+    const lessonButtons = page.getByRole('button', {
+      name: new RegExp(`Abrir registo de ${FIXTURE.subjectName}`, 'i'),
+    })
+    await expect(lessonButtons).toHaveCount(activeSlots.length, { timeout: 20_000 })
+
+    await lessonButtons.nth(0).click()
+    await page.getByLabel(/Sum.rio/i).fill('E2E active lesson completed')
+    const completedResponsePromise = page.waitForResponse(
+      (candidate) => candidate.request().method() === 'PUT'
+        && activeLogPath.test(candidate.url()),
+    )
+    await page.getByRole('button', { name: /^Aula Dada$/i }).click()
+    const completedResponse = await completedResponsePromise
+    expect(completedResponse.status()).toBe(200)
+    const completedBlockId = Number(completedResponse.url().match(activeLogPath)?.[1])
+    expect(activeBlockIds.has(completedBlockId)).toBe(true)
+    await expect(page.getByRole('gridcell', { name: /Conclu.da/i }).first()).toBeVisible({
+      timeout: 20_000,
+    })
+
+    await lessonButtons.nth(1).click()
+    await page.getByLabel(/Sum.rio/i).fill('E2E active lesson occurrence')
+    await page.getByRole('button', { name: /^Criar Ocorr.ncia$/i }).click()
+    const occurrenceResponsePromise = page.waitForResponse(
+      (candidate) => candidate.request().method() === 'PUT'
+        && activeLogPath.test(candidate.url()),
+    )
+    await page.getByRole('button', { name: /Sim, criar ocorr.ncia/i }).click()
+    const occurrenceResponse = await occurrenceResponsePromise
+    expect(occurrenceResponse.status()).toBe(200)
+    const occurrenceBlockId = Number(occurrenceResponse.url().match(activeLogPath)?.[1])
+    expect(activeBlockIds.has(occurrenceBlockId)).toBe(true)
+    expect(occurrenceBlockId).not.toBe(completedBlockId)
+    await expect(page.getByRole('gridcell', { name: /Ocorr.ncia/i }).first()).toBeVisible({
+      timeout: 20_000,
+    })
+
+    const occurrences = await apiRequest(
+      page,
+      'GET',
+      `/occurrences/?class_id=${classId}&date_from=${weekStart}&date_to=${addDaysIso(
+        weekStart,
+        6,
+      )}`,
+    )
+    expect(occurrences.items).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        active_schedule_block_id: occurrenceBlockId,
+        is_active: true,
+      }),
+    ]))
   })
 })

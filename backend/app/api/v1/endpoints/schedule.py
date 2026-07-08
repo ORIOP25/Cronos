@@ -457,6 +457,29 @@ async def get_week_schedule(
 #  WBS FASE 1/2 — REGISTO DE AULAS (LESSON LOG)
 # ==========================================
 
+LESSON_LOG_ACCESS_DENIED = "Acesso negado."
+LESSON_LOG_OTHER_TEACHER_DENIED = "Nao pode alterar registos de outros professores."
+
+
+def _require_lesson_log_actor(current_user: models.User) -> bool:
+    """Return whether the actor is an admin, rejecting unsupported capabilities."""
+    is_admin = deps.user_has_admin_capability(current_user)
+    if not is_admin and not deps.user_has_teacher_capability(current_user):
+        raise HTTPException(status_code=403, detail=LESSON_LOG_ACCESS_DENIED)
+    return is_admin
+
+
+def _authorize_lesson_log_teacher(
+    current_user: models.User,
+    *,
+    block_teacher_id: int,
+    is_admin: bool,
+) -> None:
+    """Restrict teacher-only actors to blocks assigned to their teacher profile."""
+    if not is_admin and block_teacher_id != current_user.teacher_id:
+        raise HTTPException(status_code=403, detail=LESSON_LOG_OTHER_TEACHER_DENIED)
+
+
 @router.put(
     "/outputs/{schedule_output_id}/log",
     response_model=schemas.LessonLogRead,
@@ -469,30 +492,71 @@ async def upsert_lesson_log(
     current_user: Annotated[models.User, Depends(deps.get_current_active_user)],
 ):
     """Atualiza o estado de execução (LessonLog) de um bloco de aula."""
-    is_admin = deps.user_has_admin_capability(current_user)
-    is_teacher = deps.user_has_teacher_capability(current_user)
-
-    if not is_admin and not is_teacher:
-        raise HTTPException(status_code=403, detail="Acesso negado.")
+    is_admin = _require_lesson_log_actor(current_user)
         
     def _run(sync_db):
         from app.services import lesson_log_service
         
-        # 1. Verificar permissões sobre o bloco se for professor
-        output = sync_db.get(models.ScheduleOutput, schedule_output_id)
+        output = sync_db.query(models.ScheduleOutput).filter(
+            models.ScheduleOutput.id == schedule_output_id,
+            models.ScheduleOutput.organization_id == current_user.organization_id,
+        ).first()
         if not output:
             raise HTTPException(status_code=404, detail="Bloco planeado não encontrado.")
+
+        _authorize_lesson_log_teacher(
+            current_user,
+            block_teacher_id=output.lesson.teacher_id,
+            is_admin=is_admin,
+        )
             
-        if is_teacher and output.lesson.teacher_id != current_user.teacher_id:
-            raise HTTPException(status_code=403, detail="Não pode alterar registos de outros professores.")
-            
-        # 2. Executar o upsert e a contabilidade do progresso
         return lesson_log_service.upsert_lesson_log_sync(
             sync_db,
             organization_id=current_user.organization_id,
             user_id=current_user.id,
             schedule_output_id=schedule_output_id,
             payload=payload
+        )
+
+    return await db.run_sync(_run)
+
+
+@router.put(
+    "/active-blocks/{active_schedule_block_id}/log",
+    response_model=schemas.LessonLogRead,
+    summary="Registar execucao de bloco do horario ativo",
+)
+async def upsert_active_lesson_log(
+    active_schedule_block_id: int,
+    payload: schemas.LessonLogCreate,
+    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    current_user: Annotated[models.User, Depends(deps.get_current_active_user)],
+):
+    is_admin = _require_lesson_log_actor(current_user)
+
+    def _run(sync_db):
+        from app.services import lesson_log_service
+
+        block = sync_db.query(models.ActiveScheduleBlock).filter(
+            models.ActiveScheduleBlock.id == active_schedule_block_id,
+            models.ActiveScheduleBlock.organization_id == current_user.organization_id,
+            models.ActiveScheduleBlock.status == models.ActiveScheduleBlockStatus.ACTIVE,
+        ).first()
+        if block is None:
+            raise HTTPException(status_code=404, detail="Bloco do horario ativo nao encontrado.")
+
+        _authorize_lesson_log_teacher(
+            current_user,
+            block_teacher_id=block.teacher_id,
+            is_admin=is_admin,
+        )
+
+        return lesson_log_service.upsert_active_lesson_log_sync(
+            sync_db,
+            organization_id=current_user.organization_id,
+            user_id=current_user.id,
+            active_schedule_block_id=active_schedule_block_id,
+            payload=payload,
         )
 
     return await db.run_sync(_run)
@@ -509,20 +573,24 @@ async def upsert_operational_lesson_log(
     db: Annotated[AsyncSession, Depends(deps.get_db)],
     current_user: Annotated[models.User, Depends(deps.get_current_active_user)],
 ):
-    is_admin = deps.user_has_admin_capability(current_user)
-    is_teacher = deps.user_has_teacher_capability(current_user)
-
-    if not is_admin and not is_teacher:
-        raise HTTPException(status_code=403, detail="Acesso negado.")
+    is_admin = _require_lesson_log_actor(current_user)
 
     def _run(sync_db):
         from app.services import lesson_log_service
 
-        block = sync_db.get(models.OperationalScheduleBlock, operational_block_id)
-        if not block or block.organization_id != current_user.organization_id:
+        block = sync_db.query(models.OperationalScheduleBlock).filter(
+            models.OperationalScheduleBlock.id == operational_block_id,
+            models.OperationalScheduleBlock.organization_id == current_user.organization_id,
+            models.OperationalScheduleBlock.status == models.OperationalBlockStatus.ACTIVE,
+        ).first()
+        if block is None:
             raise HTTPException(status_code=404, detail="Bloco operacional nao encontrado.")
-        if is_teacher and block.teacher_id != current_user.teacher_id:
-            raise HTTPException(status_code=403, detail="Nao pode alterar registos de outros professores.")
+
+        _authorize_lesson_log_teacher(
+            current_user,
+            block_teacher_id=block.teacher_id,
+            is_admin=is_admin,
+        )
 
         return lesson_log_service.upsert_operational_lesson_log_sync(
             sync_db,

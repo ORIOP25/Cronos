@@ -20,6 +20,19 @@ from app.services import (
 
 # sync_db fixture is provided by conftest.py (shared across all test files)
 
+
+@pytest.mark.unit
+def test_active_lesson_log_put_is_registered_in_openapi():
+    from app.main import app
+
+    operation = app.openapi()["paths"][
+        "/api/v1/schedule/active-blocks/{active_schedule_block_id}/log"
+    ]
+    assert set(operation) == {"put"}
+    assert operation["put"]["requestBody"]["required"] is True
+    assert operation["put"]["responses"]["200"]["content"]["application/json"]["schema"]
+
+
 @pytest.fixture
 def base_setup(sync_db):
     import uuid
@@ -1901,4 +1914,328 @@ class TestActiveBaselineOperationalCutover:
         assert decided.status == models.LessonOccurrenceStatus.SUBSTITUTED
         assert operational.planned_schedule_output_id is None
         assert operational.teacher_id == substitute.id
+
+
+def _lesson_log_test_actor(user, *capabilities):
+    setattr(user, "_membership_capabilities", set(capabilities))
+    return user
+
+
+@pytest.mark.asyncio
+class TestActiveLessonLogHttpContract:
+    async def test_legacy_and_operational_log_routes_remain_functional(
+        self, async_client, sync_db, base_setup
+    ):
+        from app.api import deps
+        from app.main import app
+
+        subject = sync_db.execute(
+            select(models.Subject).where(
+                models.Subject.organization_id == base_setup["organization_id"]
+            )
+        ).scalar_one()
+        room = sync_db.execute(
+            select(models.Room).where(
+                models.Room.organization_id == base_setup["organization_id"]
+            )
+        ).scalar_one()
+        timeslot = sync_db.execute(
+            select(models.Timeslot).where(
+                models.Timeslot.organization_id == base_setup["organization_id"]
+            )
+        ).scalar_one()
+        occurrence = models.LessonOccurrence(
+            organization_id=base_setup["organization_id"],
+            schedule_output_id=base_setup["schedule_output_id"],
+            date=base_setup["date"],
+            class_id=base_setup["class_id"],
+            subject_id=subject.id,
+            planned_timeslot_id=timeslot.id,
+            planned_room_id=room.id,
+            planned_teacher_id=base_setup["teacher_id"],
+            planned_module_id=base_setup["module_id"],
+            planned_hours=2.0,
+            status=models.LessonOccurrenceStatus.SUBSTITUTED,
+        )
+        sync_db.add(occurrence)
+        sync_db.flush()
+        operational = models.OperationalScheduleBlock(
+            organization_id=base_setup["organization_id"],
+            source_occurrence_id=occurrence.id,
+            source_occurrence_revision=occurrence.revision,
+            planned_schedule_output_id=base_setup["schedule_output_id"],
+            date=base_setup["date"],
+            timeslot_id=timeslot.id,
+            room_id=room.id,
+            class_id=base_setup["class_id"],
+            teacher_id=base_setup["teacher_id"],
+            subject_id=subject.id,
+            module_id=base_setup["module_id"],
+            created_by_user_id=base_setup["user_id"],
+        )
+        sync_db.add(operational)
+        sync_db.commit()
+
+        admin = _lesson_log_test_actor(
+            sync_db.get(models.User, base_setup["user_id"]),
+            models.MembershipCapability.admin,
+        )
+        app.dependency_overrides[deps.get_current_active_user] = lambda: admin
+        try:
+            legacy_response = await async_client.put(
+                f"/api/v1/schedule/outputs/{base_setup['schedule_output_id']}/log",
+                json={"status": "PENDING", "summary": "Legacy adapter"},
+            )
+            operational_response = await async_client.put(
+                f"/api/v1/schedule/operational-blocks/{operational.id}/log",
+                json={"status": "PENDING", "summary": "Operational adapter"},
+            )
+        finally:
+            app.dependency_overrides.pop(deps.get_current_active_user, None)
+
+        assert legacy_response.status_code == 200, legacy_response.text
+        assert legacy_response.json()["schedule_output_id"] == base_setup["schedule_output_id"]
+        assert operational_response.status_code == 200, operational_response.text
+        assert operational_response.json()["operational_block_id"] == operational.id
+
+    async def test_admin_completes_active_block_and_persists_audit_and_progress(
+        self, async_client, sync_db, base_setup
+    ):
+        from app.api import deps
+        from app.main import app
+
+        block = _create_active_baseline_block(sync_db, base_setup)
+        admin = _lesson_log_test_actor(
+            sync_db.get(models.User, base_setup["user_id"]),
+            models.MembershipCapability.admin,
+        )
+        app.dependency_overrides[deps.get_current_active_user] = lambda: admin
+        try:
+            response = await async_client.put(
+                f"/api/v1/schedule/active-blocks/{block.id}/log",
+                json={
+                    "status": "COMPLETED",
+                    "summary": "HTTP active baseline lesson",
+                    "notes": "Registered through ASGI",
+                },
+            )
+        finally:
+            app.dependency_overrides.pop(deps.get_current_active_user, None)
+
+        assert response.status_code == 200, response.text
+        body = response.json()
+        assert body["active_schedule_block_id"] == block.id
+        assert body["schedule_output_id"] is None
+        assert body["summary"] == "HTTP active baseline lesson"
+        assert body["notes"] == "Registered through ASGI"
+        assert body["logged_by_user_id"] == admin.id
+        assert body["logged_at"] is not None
+
+        sync_db.expire_all()
+        persisted = sync_db.execute(
+            select(models.LessonLog).where(
+                models.LessonLog.active_schedule_block_id == block.id
+            )
+        ).scalar_one()
+        progress = sync_db.execute(
+            select(models.ClassProgress).where(
+                models.ClassProgress.class_id == base_setup["class_id"],
+                models.ClassProgress.module_id == base_setup["module_id"],
+            )
+        ).scalar_one()
+        assert persisted.status == models.LessonLogStatus.COMPLETED
+        assert persisted.version == 1
+        assert progress.hours_completed == 7.0
+
+    async def test_admin_creates_exactly_one_linked_active_occurrence(
+        self, async_client, sync_db, base_setup
+    ):
+        from app.api import deps
+        from app.main import app
+
+        block = _create_active_baseline_block(sync_db, base_setup)
+        admin = _lesson_log_test_actor(
+            sync_db.get(models.User, base_setup["user_id"]),
+            models.MembershipCapability.admin,
+        )
+        app.dependency_overrides[deps.get_current_active_user] = lambda: admin
+        try:
+            response = await async_client.put(
+                f"/api/v1/schedule/active-blocks/{block.id}/log",
+                json={"status": "OCCURRENCE", "summary": "Teacher absent"},
+            )
+        finally:
+            app.dependency_overrides.pop(deps.get_current_active_user, None)
+
+        assert response.status_code == 200, response.text
+        assert response.json()["active_schedule_block_id"] == block.id
+        sync_db.expire_all()
+        occurrences = sync_db.execute(
+            select(models.LessonOccurrence).where(
+                models.LessonOccurrence.active_schedule_block_id == block.id,
+                models.LessonOccurrence.is_active.is_(True),
+            )
+        ).scalars().all()
+        assert len(occurrences) == 1
+
+    async def test_only_owning_teacher_can_update_active_block(
+        self, async_client, sync_db, base_setup
+    ):
+        from app.api import deps
+        from app.main import app
+
+        block = _create_active_baseline_block(sync_db, base_setup)
+        owner = models.User(
+            email="active-owner@test.local",
+            is_active=True,
+            role=models.UserRole.teacher,
+            organization_id=base_setup["organization_id"],
+            teacher_id=base_setup["teacher_id"],
+        )
+        other_teacher = models.Teacher(
+            name="Other active teacher",
+            organization_id=base_setup["organization_id"],
+        )
+        sync_db.add_all([owner, other_teacher])
+        sync_db.flush()
+        other = models.User(
+            email="active-other@test.local",
+            is_active=True,
+            role=models.UserRole.teacher,
+            organization_id=base_setup["organization_id"],
+            teacher_id=other_teacher.id,
+        )
+        sync_db.add(other)
+        sync_db.commit()
+        owner = _lesson_log_test_actor(owner, models.MembershipCapability.teacher)
+        other = _lesson_log_test_actor(other, models.MembershipCapability.teacher)
+
+        app.dependency_overrides[deps.get_current_active_user] = lambda: other
+        denied = await async_client.put(
+            f"/api/v1/schedule/active-blocks/{block.id}/log",
+            json={"status": "OCCURRENCE"},
+        )
+        app.dependency_overrides[deps.get_current_active_user] = lambda: owner
+        try:
+            allowed = await async_client.put(
+                f"/api/v1/schedule/active-blocks/{block.id}/log",
+                json={"status": "OCCURRENCE"},
+            )
+        finally:
+            app.dependency_overrides.pop(deps.get_current_active_user, None)
+
+        assert denied.status_code == 403
+        assert allowed.status_code == 200, allowed.text
+
+    async def test_cross_tenant_inactive_and_missing_blocks_are_indistinguishable(
+        self, async_client, sync_db, base_setup
+    ):
+        from app.api import deps
+        from app.main import app
+
+        block = _create_active_baseline_block(sync_db, base_setup)
+        foreign_org = models.Organization(name="Foreign active org", plan_status="active")
+        sync_db.add(foreign_org)
+        sync_db.flush()
+        foreign_admin = models.User(
+            email="foreign-active-admin@test.local",
+            is_active=True,
+            role=models.UserRole.admin,
+            organization_id=foreign_org.id,
+        )
+        sync_db.add(foreign_admin)
+        sync_db.commit()
+        foreign_admin = _lesson_log_test_actor(
+            foreign_admin, models.MembershipCapability.admin
+        )
+        app.dependency_overrides[deps.get_current_active_user] = lambda: foreign_admin
+        cross_tenant = await async_client.put(
+            f"/api/v1/schedule/active-blocks/{block.id}/log",
+            json={"status": "OCCURRENCE"},
+        )
+
+        local_admin = _lesson_log_test_actor(
+            sync_db.get(models.User, base_setup["user_id"]),
+            models.MembershipCapability.admin,
+        )
+        block.status = models.ActiveScheduleBlockStatus.CANCELED
+        sync_db.commit()
+        app.dependency_overrides[deps.get_current_active_user] = lambda: local_admin
+        try:
+            inactive = await async_client.put(
+                f"/api/v1/schedule/active-blocks/{block.id}/log",
+                json={"status": "OCCURRENCE"},
+            )
+            missing = await async_client.put(
+                "/api/v1/schedule/active-blocks/2147483647/log",
+                json={"status": "OCCURRENCE"},
+            )
+        finally:
+            app.dependency_overrides.pop(deps.get_current_active_user, None)
+
+        assert cross_tenant.status_code == 404
+        assert inactive.status_code == 404
+        assert missing.status_code == 404
+
+    async def test_future_completion_is_rejected_but_occurrence_is_allowed(
+        self, async_client, sync_db, base_setup
+    ):
+        from app.api import deps
+        from app.main import app
+
+        block = _create_active_baseline_block(sync_db, base_setup)
+        block.date = date.today() + timedelta(days=1)
+        sync_db.commit()
+        admin = _lesson_log_test_actor(
+            sync_db.get(models.User, base_setup["user_id"]),
+            models.MembershipCapability.admin,
+        )
+        app.dependency_overrides[deps.get_current_active_user] = lambda: admin
+        try:
+            completed = await async_client.put(
+                f"/api/v1/schedule/active-blocks/{block.id}/log",
+                json={"status": "COMPLETED"},
+            )
+            occurrence = await async_client.put(
+                f"/api/v1/schedule/active-blocks/{block.id}/log",
+                json={"status": "OCCURRENCE"},
+            )
+        finally:
+            app.dependency_overrides.pop(deps.get_current_active_user, None)
+
+        assert completed.status_code == 400
+        assert occurrence.status_code == 200, occurrence.text
+
+    @pytest.mark.parametrize(
+        "timesheet_status",
+        [models.TimesheetStatus.SUBMITTED, models.TimesheetStatus.APPROVED],
+    )
+    async def test_closed_active_block_week_is_immutable(
+        self, async_client, sync_db, base_setup, timesheet_status
+    ):
+        from app.api import deps
+        from app.main import app
+
+        block = _create_active_baseline_block(sync_db, base_setup)
+        sync_db.add(models.TeacherWeeklyTimesheet(
+            organization_id=base_setup["organization_id"],
+            teacher_id=base_setup["teacher_id"],
+            week_start_date=block.date - timedelta(days=block.date.weekday()),
+            status=timesheet_status,
+        ))
+        sync_db.commit()
+        admin = _lesson_log_test_actor(
+            sync_db.get(models.User, base_setup["user_id"]),
+            models.MembershipCapability.admin,
+        )
+        app.dependency_overrides[deps.get_current_active_user] = lambda: admin
+        try:
+            response = await async_client.put(
+                f"/api/v1/schedule/active-blocks/{block.id}/log",
+                json={"status": "OCCURRENCE"},
+            )
+        finally:
+            app.dependency_overrides.pop(deps.get_current_active_user, None)
+
+        assert response.status_code == 400
 

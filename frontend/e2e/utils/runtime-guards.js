@@ -1,4 +1,3 @@
-const AUTH_FAILURE_STATUSES = new Set([401, 403])
 const ABORTED_ERROR = 'net::ERR_ABORTED'
 const ABORTABLE_PATH_PREFIXES = [
   '/api/',
@@ -140,7 +139,7 @@ export function getApiResponseError(response, allowedFailures) {
   const status = Number(response.status)
   if (
     url.includes('/api/')
-    && (status >= 500 || AUTH_FAILURE_STATUSES.has(status))
+    && status >= 400
     && !isAllowedApiFailure(allowedFailures, { status, url })
   ) {
     return `API ${status}: ${url}`
