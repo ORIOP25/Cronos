@@ -1,5 +1,6 @@
 import re
-from datetime import date, time
+from datetime import date, datetime, time, timezone
+from uuid import uuid4
 
 import pytest
 from alembic import command
@@ -8,7 +9,12 @@ from sqlalchemy import text
 from app import models
 from app.services.scheduler_state_service import SchedulerStateService
 from scripts.repair_migrations import main as repair_migrations_main
-from tests.conftest import _alembic_config, create_org_and_user, sync_test_engine
+from tests.conftest import (
+    SyncTestSession,
+    _alembic_config,
+    create_org_and_user,
+    sync_test_engine,
+)
 
 
 pytestmark = pytest.mark.postgresql
@@ -71,6 +77,125 @@ def test_tenant_ref_trigger_functions_only_reference_existing_columns():
             refs = set(column_refs.findall(row["prosrc"])) - {"organization_id"}
             missing = refs - actual_columns
             assert not missing, f"{row['proname']} references missing columns: {sorted(missing)}"
+
+
+def test_forward_migration_repairs_stale_schedule_drafts_tenant_ref_trigger():
+    """Persistent DBs stamped at the baseline must receive repaired trigger bodies."""
+    with sync_test_engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                CREATE OR REPLACE FUNCTION app_security.validate_schedule_drafts_tenant_refs()
+                RETURNS trigger
+                LANGUAGE plpgsql
+                SET search_path = pg_catalog, public
+                AS $$
+                BEGIN
+                    IF NEW.approved_by_user_id IS NOT NULL THEN
+                        RETURN NEW;
+                    END IF;
+                    RETURN NEW;
+                END;
+                $$;
+                """
+            )
+        )
+        conn.execute(
+            text(
+                "UPDATE alembic_version SET version_num = '20260705_beta_baseline'"
+            )
+        )
+
+    try:
+        command.upgrade(_alembic_config(), "head")
+
+        with sync_test_engine.begin() as conn:
+            function_body = conn.execute(
+                text(
+                    """
+                    SELECT p.prosrc
+                    FROM pg_proc p
+                    JOIN pg_namespace n ON n.oid = p.pronamespace
+                    WHERE n.nspname = 'app_security'
+                      AND p.proname = 'validate_schedule_drafts_tenant_refs'
+                    """
+                )
+            ).scalar_one()
+
+        assert "approved_by_user_id" not in function_body
+        assert "decided_by_user_id" in function_body
+
+        unique = uuid4().hex
+        now = datetime.now(timezone.utc)
+        with SyncTestSession() as session:
+            org = models.Organization(
+                name=f"Trigger Repair {unique}",
+                clerk_org_id=f"org_trigger_repair_{unique}",
+            )
+            session.add(org)
+            session.flush()
+
+            user = models.User(
+                organization_id=org.id,
+                email=f"trigger.repair.{unique}@example.com",
+                clerk_user_id=f"user_trigger_repair_{unique}",
+                role=models.UserRole.admin,
+                is_active=True,
+            )
+            school_year = models.SchedulerSchoolYear(
+                organization_id=org.id,
+                label="2025/2026",
+                start_date=date(2025, 9, 1),
+                hard_end_date=date(2026, 7, 31),
+                is_active=True,
+            )
+            session.add_all([user, school_year])
+            session.flush()
+
+            job = models.ScheduleGenerationJob(
+                organization_id=org.id,
+                school_year_id=school_year.id,
+                requested_by_user_id=user.id,
+                strategy=models.ScheduleGenerationStrategy.COMPLETE_GENERATION,
+                trigger_type=models.ScheduleGenerationTrigger.FIRST_GENERATION,
+                job_status=models.ScheduleGenerationJobStatus.SUCCEEDED,
+                result_category=models.ScheduleGenerationResultCategory.COMPLETE_SUCCESS,
+                generation_input_fingerprint=unique[:32],
+                scheduler_state_version_used=0,
+                queued_at=now,
+                started_at=now,
+                finished_at=now,
+                duration_ms=1,
+                idempotency_key=f"repair-{unique}",
+            )
+            session.add(job)
+            session.flush()
+
+            draft = models.ScheduleDraft(
+                organization_id=org.id,
+                school_year_id=school_year.id,
+                generation_job_id=job.id,
+                strategy=models.ScheduleGenerationStrategy.COMPLETE_GENERATION,
+                draft_state=models.ScheduleDraftState.PENDING,
+                result_category=models.ScheduleGenerationResultCategory.COMPLETE_SUCCESS,
+                trigger_type=models.ScheduleGenerationTrigger.FIRST_GENERATION,
+                generation_input_fingerprint=unique[:32],
+                scheduler_state_version_used=0,
+                projected_completion_date=date(2026, 6, 30),
+                hard_end_date=date(2026, 7, 31),
+                summary_json={"changed_blocks": 0},
+                recommended_actions_json=[],
+                warnings_json=[],
+                metrics_json={},
+                created_by_user_id=user.id,
+            )
+            session.add(draft)
+            session.commit()
+            draft_id = draft.id
+
+        assert draft_id is not None
+    finally:
+        command.stamp(_alembic_config(), "head")
 
 
 @pytest.mark.asyncio

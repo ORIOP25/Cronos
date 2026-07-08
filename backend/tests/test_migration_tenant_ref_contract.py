@@ -7,24 +7,42 @@ from sqlalchemy import Column, Integer, MetaData, Table
 
 pytestmark = pytest.mark.unit
 
-MIGRATION_PATH = (
+BASELINE_MIGRATION_PATH = (
     Path(__file__).resolve().parents[1]
     / "alembic"
     / "versions"
     / "20260705_beta_baseline.py"
 )
-spec = importlib.util.spec_from_file_location("beta_baseline_migration", MIGRATION_PATH)
-assert spec is not None
-assert spec.loader is not None
-migration = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(migration)
+REPAIR_MIGRATION_PATH = (
+    Path(__file__).resolve().parents[1]
+    / "alembic"
+    / "versions"
+    / "20260706_repair_tenant_ref_triggers.py"
+)
 
 
-def test_same_tenant_refs_match_model_metadata():
+def _load_migration(module_name: str, path: Path):
+    spec = importlib.util.spec_from_file_location(module_name, path)
+    assert spec is not None
+    assert spec.loader is not None
+    migration = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(migration)
+    return migration
+
+
+@pytest.mark.parametrize(
+    "migration",
+    [
+        _load_migration("beta_baseline_migration", BASELINE_MIGRATION_PATH),
+        _load_migration("tenant_ref_repair_migration", REPAIR_MIGRATION_PATH),
+    ],
+)
+def test_same_tenant_refs_match_model_metadata(migration):
     assert migration._tenant_ref_contract_errors() == []
 
 
 def test_same_tenant_ref_contract_reports_all_errors():
+    migration = _load_migration("beta_baseline_migration_errors", BASELINE_MIGRATION_PATH)
     metadata = MetaData()
     Table(
         "source",
