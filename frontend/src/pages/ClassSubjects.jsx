@@ -22,6 +22,8 @@ import {
   useRemoveClassSubject,
 } from '../hooks/useSchoolData'
 import Breadcrumbs from '../components/Breadcrumbs'
+import ConfirmationModal from '../components/ConfirmationModal'
+import { getApiErrorMessage } from '../utils/apiErrors'
 
 // ==========================================
 //  HELPERS
@@ -156,6 +158,7 @@ const ClassSubjects = () => {
   // State para modal de adicionar disciplina
   const [showAddModal, setShowAddModal] = useState(false)
   const [selectedSubjectToAdd, setSelectedSubjectToAdd] = useState('')
+  const [subjectToRemove, setSubjectToRemove] = useState(null)
 
   // Data hooks
   const { data: classSubjects, isLoading, error } = useClassSubjects(numClassId)
@@ -186,8 +189,16 @@ const ClassSubjects = () => {
   }
 
   const handleRemoveSubject = (subjectId) => {
-    if (!globalThis.confirm('Remover esta disciplina da turma?')) return
-    removeSubject.mutate({ classId: numClassId, subjectId })
+    const subject = classSubjects?.subjects?.find(item => item.subject_id === subjectId)
+    setSubjectToRemove(subject || { subject_id: subjectId, subject_name: 'esta disciplina' })
+  }
+
+  const confirmRemoveSubject = () => {
+    if (!subjectToRemove) return
+    removeSubject.mutate(
+      { classId: numClassId, subjectId: subjectToRemove.subject_id },
+      { onSettled: () => setSubjectToRemove(null) }
+    )
   }
 
   const handleTeacherChange = (subjectId, teacherId) => {
@@ -239,7 +250,7 @@ const ClassSubjects = () => {
     return (
       <div className="p-4">
         <CAlert color="danger">
-          <strong>Erro:</strong> {error?.response?.data?.detail || 'Turma não encontrada.'}
+          <strong>Erro:</strong> {getApiErrorMessage(error, 'Turma não encontrada.')}
         </CAlert>
         <CButton color="light" onClick={() => navigate(`/courses/${numCourseId}`)}>
           <CIcon icon={cilArrowLeft} className="me-1" /> Voltar ao Curso
@@ -260,17 +271,17 @@ const ClassSubjects = () => {
       {/* Alertas de erro */}
       {addSubject.isError && (
         <CAlert color="danger" dismissible onClose={() => addSubject.reset()}>
-          <strong>Erro ao adicionar:</strong> {addSubject.error?.response?.data?.detail || 'Erro desconhecido'}
+          <strong>Erro ao adicionar:</strong> {getApiErrorMessage(addSubject.error, 'Erro desconhecido')}
         </CAlert>
       )}
       {updateTeacher.isError && (
         <CAlert color="danger" dismissible onClose={() => updateTeacher.reset()}>
-          <strong>Erro ao atribuir professor:</strong> {updateTeacher.error?.response?.data?.detail || 'Erro desconhecido'}
+          <strong>Erro ao atribuir professor:</strong> {getApiErrorMessage(updateTeacher.error, 'Erro desconhecido')}
         </CAlert>
       )}
       {removeSubject.isError && (
         <CAlert color="danger" dismissible onClose={() => removeSubject.reset()}>
-          <strong>Erro ao remover:</strong> {removeSubject.error?.response?.data?.detail || 'Erro desconhecido'}
+          <strong>Erro ao remover:</strong> {getApiErrorMessage(removeSubject.error, 'Erro desconhecido')}
         </CAlert>
       )}
 
@@ -376,6 +387,16 @@ const ClassSubjects = () => {
           </CButton>
         </CModalFooter>
       </CModal>
+      <ConfirmationModal
+        visible={Boolean(subjectToRemove)}
+        onClose={() => setSubjectToRemove(null)}
+        onConfirm={confirmRemoveSubject}
+        title="Confirmar remoção da disciplina"
+        message={`Remover ${subjectToRemove?.subject_name || 'esta disciplina'} desta turma?`}
+        confirmText="Remover"
+        isLoading={removeSubject.isPending}
+        variant="danger"
+      />
     </div>
   )
 }

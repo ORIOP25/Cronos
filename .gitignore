@@ -5,6 +5,9 @@ __pycache__/
 .venv/
 venv/
 .pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
 
 # --- Variáveis de Ambiente (SEGURANÇA MÁXIMA) ---
 .env
@@ -13,8 +16,10 @@ venv/
 # --- Artefactos Gerados / Logs ---
 celerybeat-schedule
 test_output.txt
+coverage/
 frontend/playwright-report/
 frontend/test-results/
+frontend/coverage/
 
 # --- Frontend (Node) ---
 node_modules/

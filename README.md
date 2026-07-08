@@ -7,10 +7,16 @@ SaaS para gestão e geração de horários no Ensino Profissional em Portugal. S
 | Camada | Stack |
 |--------|-------|
 | Backend | Python 3.12, FastAPI, SQLAlchemy Async, Pydantic v2, Celery |
-| Frontend | React 19, CoreUI, React Query, Zustand |
-| Base de Dados | PostgreSQL 15 |
+| Frontend | React 19, Vite, CoreUI, React Query, Clerk |
+| Base de Dados | PostgreSQL 15 local / PostgreSQL 16 CI |
 | Cache / Queue | Redis 7 |
 | Scheduling Engine | OR-Tools CP-SAT (Solver V2) |
+
+## Estado Atual
+
+Fase atual: beta baseline hardening. As funcionalidades principais estao
+fechadas; o foco e qualidade operacional, UX consistente, CI/CD, schema drift,
+documentacao e limpeza de legado.
 
 ## Arranque Rápido (Dev Local)
 
@@ -66,7 +72,7 @@ Ver [`documentation/README.md`](documentation/README.md) para o índice completo
 
 ## Qualidade
 
-- CI/CD: GitHub Actions (pytest + Vitest + SonarQube)
+- CI/CD: GitHub Actions (pytest + coverage, Vitest coverage, build, Alembic check, trigger audit, Playwright E2E)
 - Segurança: Rate limiting, CORS, security headers, httpOnly cookies
 - Tenant isolation: `organization_id` em todas as queries
 - Auditoria: Ver [`documentation/08_security_quality/AUDITORIA_ARQUITETURAL_ALPHA_1.0.md`](documentation/08_security_quality/AUDITORIA_ARQUITETURAL_ALPHA_1.0.md)

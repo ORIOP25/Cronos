@@ -25,6 +25,20 @@ export const BRAND_STATS_CREATEORG = [
   { value: 'Pronto', label: 'a usar' },
 ]
 
+export const CLERK_LOCALIZATION_PT = {
+  socialButtonsBlockButton: 'Continuar com {{provider}}',
+  formFieldLabel__emailAddress: 'Email',
+  formFieldLabel__password: 'Palavra-passe',
+  formFieldLabel__firstName: 'Nome',
+  formFieldLabel__lastName: 'Apelido',
+  formFieldInputPlaceholder__emailAddress: 'nome@escola.pt',
+  formFieldInputPlaceholder__password: 'A sua palavra-passe',
+  formButtonPrimary: 'Continuar',
+  footerActionLink__signIn: 'Já tem conta? Entrar',
+  footerActionLink__signUp: 'Não tem conta? Registar',
+  dividerText: 'ou',
+}
+
 export const CLERK_APPEARANCE_AUTH = {
   layout: {
     socialButtonsPlacement: 'bottom',

@@ -31,14 +31,6 @@ apiClient.interceptors.request.use(async (config) => {
 apiClient.interceptors.response.use(
   (response) => response,
   (error) => {
-    const status = error?.response?.status;
-    if (status === 403) {
-      const detail = error?.response?.data?.detail;
-      if (detail && !globalThis._403_toast_shown) {
-        globalThis._403_toast_shown = true;
-        setTimeout(() => { globalThis._403_toast_shown = false }, 3000);
-      }
-    }
     return Promise.reject(error);
   }
 );

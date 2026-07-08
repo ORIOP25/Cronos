@@ -58,4 +58,13 @@ describe('response interceptor', () => {
 
     await expect(interceptor(error)).rejects.toBe(error)
   })
+
+  it('does not mutate global state for 403 errors', async () => {
+    const interceptor = apiClient.interceptors.response.handlers[0]?.rejected
+    delete globalThis._403_toast_shown
+    const error = { response: { status: 403, data: { detail: 'Sem permissões' } } }
+
+    await expect(interceptor(error)).rejects.toBe(error)
+    expect(globalThis._403_toast_shown).toBeUndefined()
+  })
 })

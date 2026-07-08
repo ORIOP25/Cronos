@@ -5,6 +5,7 @@ import { cilPencil, cilTrash, cilChevronRight } from '@coreui/icons'
 import PropTypes from 'prop-types'
 import ConfirmationModal from './ConfirmationModal'
 import { TXT } from '../utils/terminology'
+import { getApiErrorMessage } from '../utils/apiErrors'
 
 const SmartTable = ({ 
   columns, 
@@ -34,7 +35,7 @@ const SmartTable = ({
   }
   
   if (isError) {
-    const msg = error?.response?.data?.detail || error?.message || 'Erro ao carregar os dados'
+    const msg = getApiErrorMessage(error, TXT.ERROR_LOADING)
     return (
       <div className="text-center p-5 zen-reveal">
         <div style={{ color: 'var(--color-state-gap-text)', marginBottom: '16px', fontSize: '2rem' }}>!</div>

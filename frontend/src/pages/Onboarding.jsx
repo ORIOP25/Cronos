@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useOrganization } from '@clerk/react'
 import { useNavigate, Link } from 'react-router-dom'
 import apiClient from '../apiClient'
+import { getApiErrorMessage } from '../utils/apiErrors'
 
 function toLocalDateInputValue(dateValue) {
   const year = dateValue.getFullYear()
@@ -70,10 +71,7 @@ export default function Onboarding() {
       await apiClient.post('/onboarding', form)
       navigate('/dashboard', { replace: true })
     } catch (err) {
-      setError(
-        err.response?.data?.detail ||
-          'Erro ao guardar configurações. Tente novamente.'
-      )
+      setError(getApiErrorMessage(err, 'Erro ao guardar configurações. Tente novamente.'))
     } finally {
       setSubmitting(false)
     }

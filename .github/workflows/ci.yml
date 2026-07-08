@@ -62,6 +62,30 @@ jobs:
           CLERK_WEBHOOK_SECRET: ${{ secrets.CLERK_WEBHOOK_SECRET }}
           CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_PUBLISHABLE_KEY || vars.VITE_CLERK_PUBLISHABLE_KEY || secrets.CLERK_PUBLISHABLE_KEY || secrets.VITE_CLERK_PUBLISHABLE_KEY || env.CI_CLERK_PUBLISHABLE_KEY }}
 
+      - name: Verify Alembic schema drift
+        working-directory: backend
+        run: alembic check
+        env:
+          ENVIRONMENT: local
+          DATABASE_URL: "postgresql+asyncpg://postgres:ci_pg_pass@localhost:5432/cronos_test_db"
+          DATABASE_POOLING_ENABLED: "false"
+          SECRET_KEY: ci-test-secret-key-not-for-production
+          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
+          CLERK_WEBHOOK_SECRET: ${{ secrets.CLERK_WEBHOOK_SECRET }}
+          CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_PUBLISHABLE_KEY || vars.VITE_CLERK_PUBLISHABLE_KEY || secrets.CLERK_PUBLISHABLE_KEY || secrets.VITE_CLERK_PUBLISHABLE_KEY || env.CI_CLERK_PUBLISHABLE_KEY }}
+
+      - name: Audit tenant trigger contracts
+        working-directory: backend
+        run: python scripts/audit_triggers.py
+        env:
+          ENVIRONMENT: local
+          DATABASE_URL: "postgresql+asyncpg://postgres:ci_pg_pass@localhost:5432/cronos_test_db"
+          DATABASE_POOLING_ENABLED: "false"
+          SECRET_KEY: ci-test-secret-key-not-for-production
+          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
+          CLERK_WEBHOOK_SECRET: ${{ secrets.CLERK_WEBHOOK_SECRET }}
+          CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_PUBLISHABLE_KEY || vars.VITE_CLERK_PUBLISHABLE_KEY || secrets.CLERK_PUBLISHABLE_KEY || secrets.VITE_CLERK_PUBLISHABLE_KEY || env.CI_CLERK_PUBLISHABLE_KEY }}
+
       - name: Run DB contract tests
         working-directory: backend
         run: pytest tests/test_runtime_reality.py tests/test_rls_database_policies.py -m postgresql -v --tb=short
@@ -77,7 +101,7 @@ jobs:
 
       - name: Run Tests
         working-directory: backend
-        run: pytest tests/ -v --cov=app --cov-report=xml:coverage.xml --tb=short
+        run: pytest tests/ -v --cov=app --cov-report=xml:coverage.xml --cov-fail-under=35 --tb=short
         env:
           ENVIRONMENT: local
           DATABASE_URL: "postgresql+asyncpg://postgres:ci_pg_pass@localhost:5432/cronos_test_db"
@@ -145,7 +169,7 @@ jobs:
 
       - name: Test
         working-directory: frontend
-        run: npx vitest run
+        run: npm run test:coverage
 
       - name: Build
         working-directory: frontend

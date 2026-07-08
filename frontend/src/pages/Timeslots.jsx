@@ -8,6 +8,7 @@ import SmartTable from '../components/SmartTable'
 import GenericModalForm from '../components/GenericModalForm'
 import TimeslotForm from '../components/Forms/TimeslotForm'
 import TimeslotGeneratorModal from '../components/Modals/TimeslotGeneratorModal'
+import { getApiErrorMessage } from '../utils/apiErrors'
 
 import { 
   useTimeslots, 
@@ -88,13 +89,7 @@ const Timeslots = () => {
       {/* Tratamento de Erros ROBUSTO */}
       {deleteMutation.isError && (
         <CAlert color="danger" dismissible onClose={deleteMutation.reset}>
-          <strong>Erro ao remover:</strong> {
-            (() => {
-              const detail = deleteMutation.error?.response?.data?.detail;
-              if (Array.isArray(detail)) return detail.map(e => e.msg).join(', ');
-              return detail || "Ocorreu um erro desconhecido.";
-            })()
-          }
+          <strong>Erro ao remover:</strong> {getApiErrorMessage(deleteMutation.error)}
         </CAlert>
       )}
 

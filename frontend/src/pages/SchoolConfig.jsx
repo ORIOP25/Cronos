@@ -14,46 +14,7 @@ import apiClient from '../apiClient'
 import { useOrganization } from '@clerk/react'
 import { formatDate } from '../utils/formatUtils'
 import { TXT, EVENT_TYPE_LABELS } from '../utils/terminology'
-
-const getApiErrorMessage = (error, fallbackMessage) => {
-  const detail = error?.response?.data?.detail
-
-  if (typeof detail === 'string' && detail.trim()) {
-    return detail
-  }
-
-  if (Array.isArray(detail)) {
-    const messages = detail
-      .map((item) => {
-        if (typeof item === 'string') return item
-        if (item && typeof item === 'object') {
-          return item.msg || item.message || item.detail || ''
-        }
-        return ''
-      })
-      .filter(Boolean)
-
-    if (messages.length > 0) {
-      return messages.join(' ')
-    }
-  }
-
-  if (detail && typeof detail === 'object') {
-    if (typeof detail.message === 'string' && detail.message.trim()) {
-      return detail.message
-    }
-
-    if (typeof detail.msg === 'string' && detail.msg.trim()) {
-      return detail.msg
-    }
-  }
-
-  if (typeof error?.message === 'string' && error.message.trim()) {
-    return error.message
-  }
-
-  return fallbackMessage
-}
+import { getApiErrorMessage } from '../utils/apiErrors'
 
 const CalendarSection = () => {
   const queryClient = useQueryClient()

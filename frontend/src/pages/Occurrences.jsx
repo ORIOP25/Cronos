@@ -19,6 +19,8 @@ import {
 import { formatDate, formatDateTime } from '../utils/formatUtils'
 import { TXT, OPERATIONAL_STATE_LABELS, OPERATIONAL_STATE_COLORS } from '../utils/terminology'
 import { useRole } from '../hooks/useRole'
+import ConfirmationModal from '../components/ConfirmationModal'
+import { getApiErrorMessage } from '../utils/apiErrors'
 
 // ---------------------------------------------------------------------------
 // Constantes
@@ -92,14 +94,8 @@ const compareOccurrences = (left, right) => {
 
 const buildUpdateErrorMessage = (error) => {
   const status = error?.response?.status
-  const detail = error?.response?.data?.detail
   const suffix = status === 409 ? ' Atualize os dados e tente novamente.' : ''
-  if (Array.isArray(detail) && detail.length > 0) {
-    const firstItem = detail[0]
-    if (typeof firstItem?.msg === 'string') return `${firstItem.msg}${suffix}`
-  }
-  if (typeof detail === 'string' && detail.trim()) return `${detail}${suffix}`
-  return `${TXT.ERROR_SAVING}${suffix}`
+  return `${getApiErrorMessage(error, TXT.ERROR_SAVING)}${suffix}`
 }
 
 const resolveName = (byIdMap, id, fallbackPrefix) => {
@@ -504,6 +500,7 @@ const OccurrencesPanel = ({ classId, dateFrom, dateTo, initialOccurrenceId, forc
   const [saveErrorMessage, setSaveErrorMessage] = useState('')
   const [hasAppliedInitialFocus, setHasAppliedInitialFocus] = useState(false)
   const [revertingId, setRevertingId] = useState(null)
+  const [revertConfirmation, setRevertConfirmation] = useState(null)
   const { data: occurrencesPage, isLoading, isError } = useOccurrences({
     classId: classId || undefined,
     dateFrom: dateFrom || undefined,
@@ -609,12 +606,13 @@ const OccurrencesPanel = ({ classId, dateFrom, dateTo, initialOccurrenceId, forc
 
   const handleRevert = (occurrence) => {
     if (!isAdmin) return
+    setRevertConfirmation(occurrence)
+  }
+
+  const confirmRevert = () => {
+    if (!revertConfirmation) return
+    const occurrence = revertConfirmation
     const hasSubstituteLog = occurrence.status === 'SUBSTITUTED'
-    const confirmMessage = hasSubstituteLog
-      ? 'Reverter esta ocorrência? O histórico será preservado e poderá criar uma nova revisão para o mesmo bloco. O registo do substituto será revertido se a semana estiver aberta.'
-      : 'Reverter esta ocorrência? O histórico será preservado e poderá criar uma nova revisão para o mesmo bloco.'
-    const confirmed = window.confirm(confirmMessage)
-    if (!confirmed) return
     setRevertingId(occurrence.id)
     cancelMutation.mutate({
       id: occurrence.id,
@@ -624,12 +622,14 @@ const OccurrencesPanel = ({ classId, dateFrom, dateTo, initialOccurrenceId, forc
     }, {
       onSuccess: () => {
         setRevertingId(null)
+        setRevertConfirmation(null)
         closeEditModal()
         void queryClient.invalidateQueries({ queryKey: ['occurrences'] })
         void queryClient.invalidateQueries({ queryKey: ['weekSchedule'] })
       },
       onError: (error) => {
         setRevertingId(null)
+        setRevertConfirmation(null)
         setSaveErrorMessage(buildUpdateErrorMessage(error))
       },
     })
@@ -692,6 +692,20 @@ const OccurrencesPanel = ({ classId, dateFrom, dateTo, initialOccurrenceId, forc
           errorMessage={saveErrorMessage}
         />
       )}
+      <ConfirmationModal
+        visible={Boolean(revertConfirmation)}
+        onClose={() => setRevertConfirmation(null)}
+        onConfirm={confirmRevert}
+        title="Confirmar reversão"
+        message={
+          revertConfirmation?.status === 'SUBSTITUTED'
+            ? 'Reverter esta ocorrência? O histórico será preservado e poderá criar uma nova revisão para o mesmo bloco. O registo do substituto será revertido se a semana estiver aberta.'
+            : 'Reverter esta ocorrência? O histórico será preservado e poderá criar uma nova revisão para o mesmo bloco.'
+        }
+        confirmText="Reverter"
+        isLoading={cancelMutation.isPending}
+        variant="warning"
+      />
 
       <div className="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
         <div className="text-muted small">

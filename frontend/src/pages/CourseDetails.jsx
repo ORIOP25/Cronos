@@ -12,6 +12,8 @@ import {
 } from '@coreui/icons'
 import GenericModalForm from '../components/GenericModalForm'
 import ClassInCourseForm from '../components/Forms/ClassInCourseForm'
+import ConfirmationModal from '../components/ConfirmationModal'
+import { getApiErrorMessage } from '../utils/apiErrors'
 
 import {
   useCourseDetails,
@@ -107,6 +109,7 @@ const CourseDetails = () => {
   const [headerForm, setHeaderForm] = useState({ name: '', abbreviation: '' })
   const [classModalVisible, setClassModalVisible] = useState(false)
   const [selectedClass, setSelectedClass] = useState(null)
+  const [deleteConfirmation, setDeleteConfirmation] = useState(null)
 
   // --- MEMOIZED: Turmas agrupadas por grade_level ---
   // eslint-disable-next-line react-hooks/preserve-manual-memoization
@@ -154,11 +157,7 @@ const CourseDetails = () => {
   }
 
   const handleDeleteCourse = () => {
-    if (globalThis.confirm('Apagar este curso? Esta ação é irreversível e pode falhar se houver turmas.')) {
-      deleteCourse.mutate(courseId, {
-        onSuccess: () => { navigate('/courses') }
-      })
-    }
+    setDeleteConfirmation({ type: 'course' })
   }
 
   const handleClassClick = (cls) => {
@@ -200,14 +199,29 @@ const CourseDetails = () => {
   }
 
   const handleDeleteClass = (cls) => {
-    const confirmation = globalThis.confirm(
-      `Apagar a turma ${cls.name}? Esta ação elimina aulas, agendamentos e substituições associados.`
-    )
-
-    if (!confirmation) return
-
-    deleteCourseClass.mutate({ courseId, classId: cls.id })
+    setDeleteConfirmation({ type: 'class', classData: cls })
   }
+
+  const handleConfirmDelete = () => {
+    if (deleteConfirmation?.type === 'course') {
+      deleteCourse.mutate(courseId, {
+        onSuccess: () => { navigate('/courses') },
+        onSettled: () => setDeleteConfirmation(null),
+      })
+      return
+    }
+
+    if (deleteConfirmation?.type === 'class') {
+      deleteCourseClass.mutate(
+        { courseId, classId: deleteConfirmation.classData.id },
+        { onSettled: () => setDeleteConfirmation(null) }
+      )
+    }
+  }
+
+  const deleteMessage = deleteConfirmation?.type === 'class'
+    ? `Apagar a turma ${deleteConfirmation.classData.name}? Esta ação elimina aulas, agendamentos e substituições associados.`
+    : 'Apagar este curso? Esta ação é irreversível e pode falhar se houver turmas.'
 
   // ==========================================
   //  RENDER: Loading / Error
@@ -226,7 +240,7 @@ const CourseDetails = () => {
     return (
       <div className="p-4">
         <CAlert color="danger">
-          <strong>Erro:</strong> {error?.response?.data?.detail || 'Curso não encontrado.'}
+          <strong>Erro:</strong> {getApiErrorMessage(error, 'Curso não encontrado.')}
         </CAlert>
         <CButton color="light" onClick={() => navigate('/courses')}>
           <CIcon icon={cilArrowLeft} className="me-1" /> Voltar aos Cursos
@@ -250,13 +264,13 @@ const CourseDetails = () => {
       {updateCourse.isError && (
         <CAlert color="danger" dismissible onClose={() => updateCourse.reset()}>
           <strong>Erro ao atualizar:</strong>{' '}
-          {updateCourse.error?.response?.data?.detail || 'Ocorreu um erro inesperado.'}
+          {getApiErrorMessage(updateCourse.error)}
         </CAlert>
       )}
       {deleteCourse.isError && (
         <CAlert color="danger" dismissible onClose={() => deleteCourse.reset()}>
           <strong>Erro ao apagar:</strong>{' '}
-          {deleteCourse.error?.response?.data?.detail || 'Não é possível apagar este curso.'}
+          {getApiErrorMessage(deleteCourse.error, 'Não é possível apagar este curso.')}
         </CAlert>
       )}
       {(createCourseClass.isError || updateCourseClass.isError || deleteCourseClass.isError) && (
@@ -270,10 +284,9 @@ const CourseDetails = () => {
           }}
         >
           <strong>Erro ao gerir turma:</strong>{' '}
-          {createCourseClass.error?.response?.data?.detail
-            || updateCourseClass.error?.response?.data?.detail
-            || deleteCourseClass.error?.response?.data?.detail
-            || 'Ocorreu um erro inesperado.'}
+          {getApiErrorMessage(
+            createCourseClass.error || updateCourseClass.error || deleteCourseClass.error
+          )}
         </CAlert>
       )}
 
@@ -414,6 +427,16 @@ const CourseDetails = () => {
         onSubmit={handleSubmitClass}
         isLoading={createCourseClass.isPending || updateCourseClass.isPending}
         error={createCourseClass.error || updateCourseClass.error}
+      />
+      <ConfirmationModal
+        visible={Boolean(deleteConfirmation)}
+        onClose={() => setDeleteConfirmation(null)}
+        onConfirm={handleConfirmDelete}
+        title={deleteConfirmation?.type === 'class' ? 'Confirmar remoção da turma' : 'Confirmar remoção do curso'}
+        message={deleteMessage}
+        confirmText="Remover"
+        isLoading={deleteCourse.isPending || deleteCourseClass.isPending}
+        variant="danger"
       />
     </div>
   )

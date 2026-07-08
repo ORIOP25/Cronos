@@ -92,16 +92,15 @@ describe('Schedules scheduler flow', () => {
     }
     mocks.currentDraft = { draft_id: 77 }
     mocks.generate.mockResolvedValue({ job_id: 91 })
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
 
     renderPage()
     fireEvent.click(screen.getByRole('button', { name: 'Gerar novamente' }))
+    expect(await screen.findByText(/substituir o rascunho pendente/i)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /confirmar gera/i }))
 
     await waitFor(() => {
-      expect(confirmSpy).toHaveBeenCalledOnce()
       expect(mocks.generate).toHaveBeenCalledWith({ replacePendingDraft: true })
     })
-    confirmSpy.mockRestore()
   })
 
   it('shows the only generation action when the status allows it', () => {

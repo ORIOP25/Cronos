@@ -9,6 +9,7 @@ import { cilPlus } from '@coreui/icons'
 import SmartTable from '../components/SmartTable'
 import GenericModalForm from '../components/GenericModalForm'
 import ClassForm from '../components/Forms/ClassForm'
+import { getApiErrorMessage } from '../utils/apiErrors'
 
 // Hooks de Dados (CRUD)
 import { 
@@ -93,15 +94,7 @@ const Classes = () => {
       {/* Tratamento de Erros de Eliminação */}
       {deleteMutation.isError && (
         <CAlert color="danger" dismissible onClose={deleteMutation.reset}>
-          <strong>Erro ao remover:</strong> {
-            (() => {
-              const detail = deleteMutation.error?.response?.data?.detail;
-              if (Array.isArray(detail)) {
-                 return detail.map(e => e.msg).join(', ');
-              }
-              return detail || "Ocorreu um erro desconhecido.";
-            })()
-          }
+          <strong>Erro ao remover:</strong> {getApiErrorMessage(deleteMutation.error)}
         </CAlert>
       )}
 

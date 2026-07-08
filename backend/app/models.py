@@ -502,10 +502,6 @@ class OrganizationMembershipCapability(Base):
 
     membership: Mapped["OrganizationMembership"] = relationship(back_populates="capabilities")
 
-    __table_args__ = (
-        UniqueConstraint("organization_membership_id", "capability", name="uq_org_membership_capability"),
-    )
-
 
 class MemberAccessOperation(Base):
     __tablename__ = "member_access_operation"
