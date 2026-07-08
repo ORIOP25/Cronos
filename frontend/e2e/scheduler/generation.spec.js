@@ -11,16 +11,32 @@ const API_PREFIX = '/api/v1'
 async function apiRequest(page, method, path, body) {
   return await page.evaluate(
     async ({ apiPrefix, method: requestMethod, path: requestPath, body: requestBody }) => {
-      const token = await window.Clerk?.session?.getToken()
+      let token = null
+      try {
+        token = await window.Clerk?.session?.getToken?.()
+      } catch {
+        token = null
+      }
       if (!token) {
-        throw new Error('Clerk session token is not available.')
+        try {
+          const activeSession = window.Clerk?.client?.sessions?.find(
+            (session) => session.status === 'active',
+          ) || window.Clerk?.client?.sessions?.[0]
+          token = await activeSession?.getToken?.()
+        } catch {
+          token = null
+        }
+      }
+      const headers = {
+        'Content-Type': 'application/json',
+      }
+      if (token) {
+        headers.Authorization = `Bearer ${token}`
       }
       const response = await fetch(`${apiPrefix}${requestPath}`, {
         method: requestMethod,
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
+        credentials: 'same-origin',
+        headers,
         body: requestBody === undefined ? undefined : JSON.stringify(requestBody),
       })
       const text = await response.text()
