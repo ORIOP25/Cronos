@@ -8,7 +8,7 @@ on:
 
 env:
   PYTHON_VERSION: "3.12"
-  NODE_VERSION: "20"
+  NODE_VERSION: "24"
   CI_CLERK_PUBLISHABLE_KEY: "pk_test_d2VsY29tZWQtY2F0LTgzLmNsZXJrLmFjY291bnRzLmRldiQ"
   CI_E2E_CLERK_ADMIN_EMAIL: "aperiusteste@gmail.com"
   CI_E2E_CLERK_TEACHER_EMAIL: "rodrigommanguinhas@gmail.com"
