@@ -1,5 +1,10 @@
 # Plano WBS V4: Registo de Aulas — Simplificação + Centralização
 
+> Plano histórico preservado como registo de implementação. Versões, caminhos,
+> contagens de testes e decisões abaixo refletem o corte de Maio de 2026. Para o
+> estado atual da beta, consultar
+> `../10_migration_map/BETA_BASELINE_READINESS_AUDIT_2026-07.md`.
+
 ## Estado da Implementação
 
 | Fase | Estado | Data | Notas |

@@ -41,14 +41,23 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
-          cache-dependency-path: backend/requirements.txt
+          cache-dependency-path: |
+            backend/requirements.txt
+            backend/requirements-dev.txt
 
       - name: Install Dependencies
         working-directory: backend
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install pytest-cov
+          pip install -r requirements-dev.txt
+
+      - name: Lint backend
+        working-directory: backend
+        run: ruff check app scripts
+
+      - name: Audit backend dependencies
+        working-directory: backend
+        run: pip-audit -r requirements.txt --progress-spinner off
 
       - name: Run Migrations
         working-directory: backend
@@ -86,35 +95,21 @@ jobs:
           CLERK_WEBHOOK_SECRET: ${{ secrets.CLERK_WEBHOOK_SECRET }}
           CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_PUBLISHABLE_KEY || vars.VITE_CLERK_PUBLISHABLE_KEY || secrets.CLERK_PUBLISHABLE_KEY || secrets.VITE_CLERK_PUBLISHABLE_KEY || env.CI_CLERK_PUBLISHABLE_KEY }}
 
-      - name: Run DB contract tests
+      - name: Audit database integrity
         working-directory: backend
-        run: pytest tests/test_runtime_reality.py tests/test_rls_database_policies.py -m postgresql -v --tb=short
+        run: python scripts/audit_database_integrity.py
         env:
           ENVIRONMENT: local
           DATABASE_URL: "postgresql+asyncpg://postgres:ci_pg_pass@localhost:5432/cronos_test_db"
           DATABASE_POOLING_ENABLED: "false"
           SECRET_KEY: ci-test-secret-key-not-for-production
-          RATELIMIT_ENABLED: "false"
           CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
           CLERK_WEBHOOK_SECRET: ${{ secrets.CLERK_WEBHOOK_SECRET }}
           CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_PUBLISHABLE_KEY || vars.VITE_CLERK_PUBLISHABLE_KEY || secrets.CLERK_PUBLISHABLE_KEY || secrets.VITE_CLERK_PUBLISHABLE_KEY || env.CI_CLERK_PUBLISHABLE_KEY }}
 
       - name: Run Tests
         working-directory: backend
-        run: pytest tests/ -v --cov=app --cov-report=xml:coverage.xml --cov-fail-under=35 --tb=short
-        env:
-          ENVIRONMENT: local
-          DATABASE_URL: "postgresql+asyncpg://postgres:ci_pg_pass@localhost:5432/cronos_test_db"
-          DATABASE_POOLING_ENABLED: "false"
-          SECRET_KEY: ci-test-secret-key-not-for-production
-          RATELIMIT_ENABLED: "false"
-          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
-          CLERK_WEBHOOK_SECRET: ${{ secrets.CLERK_WEBHOOK_SECRET }}
-          CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_PUBLISHABLE_KEY || vars.VITE_CLERK_PUBLISHABLE_KEY || secrets.CLERK_PUBLISHABLE_KEY || secrets.VITE_CLERK_PUBLISHABLE_KEY || env.CI_CLERK_PUBLISHABLE_KEY }}
-
-      - name: Run PostgreSQL reality tests
-        working-directory: backend
-        run: pytest tests/ -m postgresql -v --tb=short
+        run: pytest tests/ -v --cov=app --cov-report=xml:coverage.xml --cov-fail-under=70 --junitxml=test-results.xml --tb=short
         env:
           ENVIRONMENT: local
           DATABASE_URL: "postgresql+asyncpg://postgres:ci_pg_pass@localhost:5432/cronos_test_db"
@@ -128,22 +123,19 @@ jobs:
       - name: Verify skipped test count
         working-directory: backend
         run: |
-          SKIPPED=$(pytest tests/ --collect-only -q 2>&1 | grep -oP '\d+ skipped' | grep -oP '\d+' || echo 0)
-          MAX_ALLOWED=3
-          if [ "$SKIPPED" -gt "$MAX_ALLOWED" ]; then
-            echo "ERROR: $SKIPPED skipped tests (max $MAX_ALLOWED allowed)"
-            exit 1
-          fi
-          echo "OK: $SKIPPED skipped tests (threshold: $MAX_ALLOWED)"
-        env:
-          ENVIRONMENT: local
-          DATABASE_URL: "postgresql+asyncpg://postgres:ci_pg_pass@localhost:5432/cronos_test_db"
-          DATABASE_POOLING_ENABLED: "false"
-          SECRET_KEY: ci-test-secret-key-not-for-production
-          RATELIMIT_ENABLED: "false"
-          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
-          CLERK_WEBHOOK_SECRET: ${{ secrets.CLERK_WEBHOOK_SECRET }}
-          CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_PUBLISHABLE_KEY || vars.VITE_CLERK_PUBLISHABLE_KEY || secrets.CLERK_PUBLISHABLE_KEY || secrets.VITE_CLERK_PUBLISHABLE_KEY || env.CI_CLERK_PUBLISHABLE_KEY }}
+          python - <<'PY'
+          import xml.etree.ElementTree as ET
+
+          root = ET.parse("test-results.xml").getroot()
+          skipped = sum(
+              int(suite.attrib.get("skipped", 0))
+              for suite in root.iter("testsuite")
+          )
+          maximum = 3
+          if skipped > maximum:
+              raise SystemExit(f"ERROR: {skipped} skipped tests (max {maximum} allowed)")
+          print(f"OK: {skipped} skipped tests (threshold: {maximum})")
+          PY
 
   frontend:
     name: Frontend - Lint + Test + Build
@@ -163,9 +155,17 @@ jobs:
         working-directory: frontend
         run: npm ci
 
+      - name: Audit frontend dependencies
+        working-directory: frontend
+        run: npm audit --audit-level=high
+
       - name: Lint
         working-directory: frontend
         run: npm run lint -- --max-warnings 0
+
+      - name: Detect frontend dead code
+        working-directory: frontend
+        run: npm run lint:dead-code
 
       - name: Test
         working-directory: frontend

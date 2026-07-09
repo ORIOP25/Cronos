@@ -32,7 +32,7 @@ def upsert_lesson_log_sync(
     output = db.query(models.ScheduleOutput).filter(
         models.ScheduleOutput.id == schedule_output_id,
         models.ScheduleOutput.organization_id == organization_id,
-        models.ScheduleOutput.is_draft == False
+        models.ScheduleOutput.is_draft.is_(False)
     ).with_for_update().first()
     
     if not output:

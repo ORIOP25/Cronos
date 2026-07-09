@@ -4,7 +4,7 @@
  * Using subject ID modulo ensures the same subject always gets the same color,
  * regardless of list order or which component renders first.
  */
-export const SUBJECT_COLORS = [
+const SUBJECT_COLORS = [
   '#5c3d2e', // Brown Medium (Brand Primary)
   '#15803d', // Green (Success)
   '#2563eb', // Blue (Info)

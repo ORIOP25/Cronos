@@ -21,20 +21,9 @@ apiClient.interceptors.request.use(async (config) => {
       config.headers.Authorization = `Bearer ${token}`;
     }
   } catch {
-    // token not ready, fall back to cookie (withCredentials)
+    // Token retrieval failed; protected endpoints will reject the unauthenticated request.
   }
   return config;
 });
-
-
-
-apiClient.interceptors.response.use(
-  (response) => response,
-  (error) => {
-    return Promise.reject(error);
-  }
-);
-
-
 
 export default apiClient;

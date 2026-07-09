@@ -320,39 +320,6 @@ export const useCourseDetails = (courseId) => {
 }
 
 /**
- * Criar novo curso com turmas automáticas.
- * 
- * 4º Pilares:
- * - Security: Backend valida abbreviation uniqueness
- * - Stability: onSuccess invalida caches para garantir consistência
- * 
- * Uso:
- * const createCourse = useCreateCourse()
- * createCourse.mutate({
- *   name: "Técnico em Informática",
- *   abbreviation: "TI",
- *   subject_ids: [1, 2],
- *   classes_config: [
- *     { grade_level: 10, size: 25, start_year: 2025, end_year: 2028 }
- *   ]
- * })
- */
-export const useCreateCourse = () => {
-  const queryClient = useQueryClient()
-  const orgId = useOrganization().organization?.id
-
-  return useMutation({
-    mutationFn: async (newCourse) => {
-      const { data } = await apiClient.post('/courses/', newCourse)
-      return data
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['courses', orgId] })
-    }
-  })
-}
-
-/**
  * Atualizar curso (PATCH - apenas campos enviados).
  * 
  * 4º Pilares:
@@ -718,32 +685,6 @@ export const useSubstituteRecommendations = ({ occurrenceId } = {}) => {
     },
     enabled: !!occurrenceId,
     ...DYNAMIC_OPTS,
-  })
-}
-
-/**
- * Cria (ou reutiliza) uma ocorrência operacional a partir de um bloco do horário.
- */
-export const useCreateOccurrence = () => {
-  const queryClient = useQueryClient()
-  const orgId = useOrganization().organization?.id
-
-  return useMutation({
-    mutationFn: async ({ scheduleOutputId, reason } = {}) => {
-      const payload = {
-        schedule_output_id: scheduleOutputId,
-      }
-      if (reason) {
-        payload.reason = reason
-      }
-      const { data } = await apiClient.post('/occurrences/', payload)
-      return data
-    },
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['occurrences', orgId] })
-      void queryClient.invalidateQueries({ queryKey: ['weekSchedule', orgId] })
-      void queryClient.invalidateQueries({ queryKey: ['schedule', orgId] })
-    },
   })
 }
 

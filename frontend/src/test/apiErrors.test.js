@@ -25,8 +25,23 @@ describe('getApiErrorMessage', () => {
     expect(getApiErrorMessage({ response: { data: { detail: { message: 'Rascunho desatualizado' } } } })).toBe('Rascunho desatualizado')
   })
 
-  it('falls back to the error message and humanizes operational terms', () => {
-    expect(getApiErrorMessage({ message: 'solver error' })).toContain('motor de cálculo')
+  it('uses a clear message when the server is unreachable', () => {
+    expect(getApiErrorMessage({ code: 'ERR_NETWORK', message: 'Network Error' }))
+      .toBe('Não foi possível ligar ao servidor. Verifique a ligação e tente novamente.')
+  })
+
+  it.each([
+    [401, 'A sua sessão terminou. Entre novamente.'],
+    [403, 'Não tem permissão para realizar esta ação.'],
+    [500, 'O servidor encontrou um problema. Tente novamente dentro de instantes.'],
+  ])('maps an empty HTTP %s response to actionable copy', (status, expected) => {
+    expect(getApiErrorMessage({ response: { status, data: {} } })).toBe(expected)
+  })
+
+  it('does not replace a useful backend detail with a generic status message', () => {
+    expect(getApiErrorMessage({
+      response: { status: 500, data: { detail: 'O motor de cálculo está indisponível.' } },
+    })).toBe('O motor de cálculo está indisponível.')
   })
 
   it('uses the provided fallback when no useful message exists', () => {

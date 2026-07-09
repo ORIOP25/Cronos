@@ -1,7 +1,7 @@
 // Ficheiro: frontend/src/test/testUtils.jsx
 /**
  * Utilitários de teste partilhados.
- * Fornece wrapper com QueryClientProvider e ToastProvider.
+ * Fornece wrapper com QueryClientProvider.
  *
  * Para testes que precisam de routing, usa renderWithRouter()
  * ou adiciona MemoryRouter manualmente.
@@ -12,7 +12,6 @@ import PropTypes from 'prop-types'
 import { render } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
-import { ToastProvider } from '../contexts/ToastContext'
 
 /**
  * Cria um QueryClient novo por teste (evita state leak entre testes).
@@ -29,8 +28,8 @@ function createTestQueryClient() {
 }
 
 /**
- * Renderiza componente com QueryClientProvider e ToastProvider.
- * Usar para componentes que usam React Query hooks ou toasts.
+ * Renderiza componente com QueryClientProvider.
+ * Usar para componentes que usam React Query hooks.
  * Para testes que precisam de routing, usar renderWithRouter().
  */
 export function renderWithProviders(ui, options = {}) {
@@ -39,9 +38,7 @@ export function renderWithProviders(ui, options = {}) {
   function Wrapper({ children }) {
     return (
       <QueryClientProvider client={queryClient}>
-        <ToastProvider>
-          {children}
-        </ToastProvider>
+        {children}
       </QueryClientProvider>
     )
   }

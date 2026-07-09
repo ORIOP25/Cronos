@@ -16,6 +16,7 @@ htmlcov/
 # --- Artefactos Gerados / Logs ---
 celerybeat-schedule
 test_output.txt
+test-results.xml
 coverage/
 frontend/playwright-report/
 frontend/test-results/

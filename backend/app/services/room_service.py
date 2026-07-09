@@ -2,7 +2,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 from sqlalchemy.future import select
 from app import models, schemas
-from app.models import ScheduleOutput
 from app.services.scheduler_state_service import record_scheduler_change
 
 

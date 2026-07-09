@@ -12,6 +12,7 @@ from app.schemas import (
     ClassCreateInCourse,
     ClassUpdateInCourse,
     CourseUpdate,
+    MemberCreate,
     RoomCreate,
     RoomUpdate,
     OrganizationSettingsUpsert,
@@ -275,3 +276,28 @@ class TestCourseUpdateValidation:
     def test_course_update_rejects_invalid_abbreviation_length(self, abbreviation):
         with pytest.raises(ValidationError):
             CourseUpdate(abbreviation=abbreviation)
+
+
+@pytest.mark.unit
+class TestMemberValidationMessages:
+    @pytest.mark.parametrize(
+        ("capabilities", "teacher_access_mode", "expected_message"),
+        [
+            (["teacher"], None, "teacher_access_mode é obrigatório para professores"),
+            (["admin"], "platform", "teacher_access_mode só pode ser usado para professores"),
+            (["admin", "teacher"], "scheduler_only", "Administrador requer acesso à plataforma"),
+        ],
+    )
+    def test_member_shape_errors_use_readable_portuguese(
+        self,
+        capabilities,
+        teacher_access_mode,
+        expected_message,
+    ):
+        with pytest.raises(ValidationError, match=expected_message):
+            MemberCreate(
+                organization_display_name="Professor Exemplo",
+                email="professor@example.pt",
+                capabilities=capabilities,
+                teacher_access_mode=teacher_access_mode,
+            )

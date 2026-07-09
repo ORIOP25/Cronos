@@ -138,7 +138,7 @@ export const OPERATIONAL_STATE_LABELS = {
   OPEN_PENDING: 'Pendente',
   DECIDED_GIVEN: 'Dada',
   DECIDED_GAP: 'Furo',
-  DECIDED_SUBSTITUTED: 'SubstituÃ­da',
+  DECIDED_SUBSTITUTED: 'Substituída',
   CLOSED: 'Resolvida',
   REVOKED: 'Revertida',
 }

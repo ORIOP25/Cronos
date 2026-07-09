@@ -72,7 +72,7 @@ Ver [`documentation/README.md`](documentation/README.md) para o índice completo
 
 ## Qualidade
 
-- CI/CD: GitHub Actions (pytest + coverage, Vitest coverage, build, Alembic check, trigger audit, Playwright E2E)
-- Segurança: Rate limiting, CORS, security headers, httpOnly cookies
+- CI/CD: GitHub Actions (Ruff, dependency audits, pytest >=70% coverage, honest whole-source Vitest coverage, build, Alembic drift, trigger/data integrity audits, Playwright E2E)
+- Segurança: Clerk bearer tokens, rate limiting, CORS e security headers
 - Tenant isolation: `organization_id` em todas as queries
 - Auditoria: Ver [`documentation/08_security_quality/AUDITORIA_ARQUITETURAL_ALPHA_1.0.md`](documentation/08_security_quality/AUDITORIA_ARQUITETURAL_ALPHA_1.0.md)

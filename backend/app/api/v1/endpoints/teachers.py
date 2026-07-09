@@ -4,7 +4,7 @@ from time import perf_counter
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import Annotated, List, Annotated
+from typing import List, Annotated
 from app import schemas
 from app.api import deps
 from app.services import teacher_observability_service, teacher_service
@@ -65,7 +65,6 @@ async def read_my_availability(
             )
 
         await db.run_sync(_emit)
-
 
 @router.get(
     "/observability/summary",
@@ -149,16 +148,6 @@ async def read_teachers(
         limit=limit
     )
 
-# --- 2. Criar Professor ---
-@router.post("/", response_model=schemas.TeacherRead)
-async def create_teacher(
-    current_user: Annotated[models.User, Depends(deps.get_current_active_admin)]
-):
-    raise HTTPException(
-        status_code=410,
-        detail="Legacy admin teacher creation is disabled. Use /api/v1/members for Equipa staff management.",
-    )
-
 # --- 4. NOVO ENDPOINT: Gravar Disponibilidades ---
 # Chama o serviço que já existe em teacher_service.py
 @router.post("/{teacher_id}/availability", responses={403: {"description": "Sem permissões"}, 404: {"description": TEACHER_NOT_FOUND_MSG}, 400: {"description": "Timeslot inválido"}})
@@ -231,31 +220,3 @@ async def update_teacher_availability(
             )
 
         await db.run_sync(_emit)
-
-# --- 3. Atualizar Professor (PATCH) ---
-@router.patch("/{teacher_id}", response_model=schemas.TeacherRead, responses={404: {"description": TEACHER_NOT_FOUND_MSG}})
-async def update_teacher(
-    teacher_id: int,
-    current_user: Annotated[models.User, Depends(deps.get_current_active_admin)] # Apenas Admins
-):
-    """
-    Atualiza dados do professor (ex: Nome).
-    """
-    raise HTTPException(
-        status_code=410,
-        detail="Legacy admin teacher updates are disabled. Use /api/v1/members for Equipa staff management.",
-    )
-
-# --- 4. Apagar Professor (DELETE) ---
-@router.delete("/{teacher_id}", responses={404: {"description": TEACHER_NOT_FOUND_MSG}, 400: {"description": "Dependências existentes"}})
-async def delete_teacher(
-    teacher_id: int,
-    current_user: Annotated[models.User, Depends(deps.get_current_active_admin)] # Apenas Admins
-):
-    """
-    Remove um professor. Falha se o professor tiver aulas atribuídas.
-    """
-    raise HTTPException(
-        status_code=410,
-        detail="Legacy admin teacher deletion is disabled. Use /api/v1/members for Equipa staff management.",
-    )

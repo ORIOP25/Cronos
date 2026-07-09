@@ -31,11 +31,13 @@ alembic upgrade head
 alembic current
 alembic check
 python scripts/audit_triggers.py
+python scripts/audit_database_integrity.py
 pytest tests/test_runtime_reality.py tests/test_rls_database_policies.py -m postgresql -v --tb=short
+ruff check app scripts
 ```
 
 ## Coverage
 
-CI enforces a modest backend coverage floor with `pytest-cov`. Raise it only
-after the suite grows enough that the new threshold is stable on the full
-database-backed run.
+Install local quality tooling with `pip install -r requirements-dev.txt`.
+CI enforces 70% backend coverage with `pytest-cov` on the complete
+database-backed suite.

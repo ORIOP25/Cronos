@@ -4,7 +4,7 @@ Frontend React/Vite do Cronos.
 
 ## Stack
 - React 19
-- Vite 7
+- Vite 8
 - React Router
 - Clerk
 - CoreUI
@@ -17,8 +17,11 @@ Frontend React/Vite do Cronos.
 npm run dev
 npm run build
 npm run lint
+npm run lint:dead-code
 npm run test
+npm run test:coverage
 npm run test:e2e
+npm audit
 ```
 
 ## Marketing site publico

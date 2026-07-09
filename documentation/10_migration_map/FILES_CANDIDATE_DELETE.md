@@ -1,5 +1,10 @@
 # Ficheiros Candidatos a Apagar
 
+> Inventário histórico, encerrado e substituído por
+> `BETA_BASELINE_LEGACY_CLEANUP_AUDIT.md` e
+> `BETA_BASELINE_READINESS_AUDIT_2026-07.md`. Não usar esta lista como backlog
+> atual.
+
 ## ✅ Já Apagados (Auditoria Alpha 1.0)
 - `documentation/GERADOR_HORARIOS_PLANO.md` — removido (legacy, conteúdo desatualizado)
 - `documentation/ANALISE_ENDPOINT_RESUMO.md` — removido (duplicação com BEST_PRACTICES_ENDPOINTS.md)

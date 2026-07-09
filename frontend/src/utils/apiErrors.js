@@ -22,13 +22,25 @@ const fromObjectDetail = (detail) => {
   return clean(detail.message) || clean(detail.msg) || clean(detail.detail)
 }
 
+const statusMessage = (status) => {
+  if (status === 401) return 'A sua sessão terminou. Entre novamente.'
+  if (status === 403) return 'Não tem permissão para realizar esta ação.'
+  if (status >= 500) return 'O servidor encontrou um problema. Tente novamente dentro de instantes.'
+  return null
+}
+
 export function getApiErrorMessage(error, fallbackMessage = TXT.ERROR_UNKNOWN) {
   const detail = error?.response?.data?.detail
+  const isNetworkError = error?.code === 'ERR_NETWORK'
+    || (!error?.response && clean(error?.message)?.toLowerCase() === 'network error')
 
   const message = clean(detail)
     || (Array.isArray(detail) ? fromArrayDetail(detail) : null)
     || fromObjectDetail(detail)
-    || clean(error?.message)
+    || (isNetworkError
+      ? 'Não foi possível ligar ao servidor. Verifique a ligação e tente novamente.'
+      : null)
+    || statusMessage(error?.response?.status)
     || fallbackMessage
 
   return humanizeOperationalDetail(message)

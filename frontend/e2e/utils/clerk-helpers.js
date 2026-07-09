@@ -6,13 +6,6 @@ import {
   getRequestFailureError,
 } from './runtime-guards.js'
 
-export {
-  getApiResponseError,
-  getConsoleError,
-  getRequestFailureError,
-  isAllowedApiFailure,
-} from './runtime-guards.js'
-
 const BASE_URL = process.env.BASE_URL || 'http://localhost:5173'
 
 function requiredEnv(name) {
@@ -135,15 +128,4 @@ export async function expectRouteReady(page, path) {
   if (marker) {
     await expect(marker).toBeVisible({ timeout: 10000 })
   }
-}
-
-export async function expectNoRuntimeFailure(page) {
-  await expectNoAppCrash(page)
-}
-
-export async function expectApiOk(page, urlPattern) {
-  return await page.waitForResponse(
-    (res) => res.url().includes(urlPattern) && res.status() === 200,
-    { timeout: 10000 }
-  )
 }

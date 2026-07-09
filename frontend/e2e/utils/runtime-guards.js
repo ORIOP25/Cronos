@@ -66,7 +66,7 @@ function isClerkBrowserBundleUrl(parsedUrl) {
     && parsedUrl.pathname.endsWith('/clerk.browser.js')
 }
 
-export function isBenignAbortedRequest(url, { baseUrl }) {
+function isBenignAbortedRequest(url, { baseUrl }) {
   const parsedUrl = parseUrl(url, baseUrl)
   if (!parsedUrl) return false
   if (isSameOrigin(url, baseUrl) && hasAbortablePath(url, baseUrl)) {
@@ -87,7 +87,7 @@ function allowedUrlMatches(allowedUrl, url) {
   return url.includes(String(allowedUrl))
 }
 
-export function isAllowedApiFailure(allowedFailures, { status, url = '' }) {
+function isAllowedApiFailure(allowedFailures, { status, url = '' }) {
   return allowedFailures.some((allowed) => (
     allowed.status === status && allowedUrlMatches(allowed.url, url)
   ))

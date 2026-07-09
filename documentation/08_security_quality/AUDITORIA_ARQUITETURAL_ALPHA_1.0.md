@@ -1,5 +1,10 @@
 # AUDITORIA ARQUITETURAL COMPLETA — Cronos Alpha 1.0
 
+> Auditoria histórica da Alpha 1.0. Evidência, riscos e recomendações abaixo
+> descrevem esse corte e não devem ser lidos como estado atual. O registo
+> canónico da beta está em
+> `../10_migration_map/BETA_BASELINE_READINESS_AUDIT_2026-07.md`.
+
 *(Auditoria de raiz focada em risco sistémico e capacidade de crescimento)*
 
 ---

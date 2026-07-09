@@ -5,7 +5,7 @@ import { RedirectToSignIn, useAuth, useOrganization } from '@clerk/react'
 import { useCurrentMember } from './hooks/useSchoolData'
 import { getDefaultRouteForMember, getForbiddenRedirectRoute, ROUTE_CREATE_ORG } from './roleAccess'
 
-export const PageLoader = () => (
+const PageLoader = () => (
   <div className="d-flex justify-content-center align-items-center" style={{ minHeight: '40vh' }}>
     <CSpinner color="primary" />
   </div>

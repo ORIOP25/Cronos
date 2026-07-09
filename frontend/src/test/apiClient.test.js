@@ -5,10 +5,6 @@ describe('apiClient', () => {
   it('has withCredentials enabled (T24)', () => {
     expect(apiClient.defaults.withCredentials).toBe(true)
   })
-
-  it('has response interceptor handlers', () => {
-    expect(apiClient.interceptors.response.handlers.length).toBeGreaterThanOrEqual(1)
-  })
 })
 
 describe('setClerkTokenGetter', () => {
@@ -40,31 +36,5 @@ describe('request interceptor', () => {
     const result = await interceptor(config)
     expect(result).toBe(config)
     expect(result.headers.Authorization).toBeUndefined()
-  })
-})
-
-describe('response interceptor', () => {
-  it('rejects 404 errors instead of turning them into empty success', async () => {
-    const interceptor = apiClient.interceptors.response.handlers[0]?.rejected
-    expect(interceptor).toBeTypeOf('function')
-
-    const error = { response: { status: 404, data: null } }
-    await expect(interceptor(error)).rejects.toBe(error)
-  })
-
-  it('rejects non-404 errors', async () => {
-    const interceptor = apiClient.interceptors.response.handlers[0]?.rejected
-    const error = { response: { status: 500, data: { detail: 'fail' } } }
-
-    await expect(interceptor(error)).rejects.toBe(error)
-  })
-
-  it('does not mutate global state for 403 errors', async () => {
-    const interceptor = apiClient.interceptors.response.handlers[0]?.rejected
-    delete globalThis._403_toast_shown
-    const error = { response: { status: 403, data: { detail: 'Sem permissões' } } }
-
-    await expect(interceptor(error)).rejects.toBe(error)
-    expect(globalThis._403_toast_shown).toBeUndefined()
   })
 })

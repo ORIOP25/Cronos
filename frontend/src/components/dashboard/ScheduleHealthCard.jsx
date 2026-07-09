@@ -61,10 +61,10 @@ export default function ScheduleHealthCard({ health, isLoading }) {
 
   const metrics = [
     { label: 'Turmas sem aula', value: health.classes_empty_week, alert: health.classes_empty_week > 0 },
-    { label: 'Média slots/turma', value: health.week_slots_avg, alert: false },
-    { label: 'Conflitos professor', value: health.duplicate_teacher_slots, alert: health.duplicate_teacher_slots > 0 },
-    { label: 'Média slots/professor', value: health.teacher_week_slots_avg, alert: false },
-    { label: 'Equidade (spread)', value: health.weekly_fairness_spread, alert: false },
+    { label: 'Média de blocos/turma', value: health.week_slots_avg, alert: false },
+    { label: 'Conflitos de professor', value: health.duplicate_teacher_slots, alert: health.duplicate_teacher_slots > 0 },
+    { label: 'Média de blocos/professor', value: health.teacher_week_slots_avg, alert: false },
+    { label: 'Variação semanal', value: health.weekly_fairness_spread, alert: false },
     { label: 'Conflitos turma', value: health.duplicate_class_slots, alert: health.duplicate_class_slots > 0 },
   ]
 

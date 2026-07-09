@@ -4,7 +4,6 @@ from datetime import date, timedelta
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy.future import select
-from sqlalchemy import and_
 from app import models, schemas
 from app.services.scheduler_state_service import record_scheduler_change
 
@@ -90,7 +89,6 @@ async def create_lesson(
 
     # 4. Buscar o Professor e as suas Competências (Subjects)
     from sqlalchemy.orm import selectinload
-    from app.services import teacher_service
     
     teacher_query = (
         select(models.Teacher)
@@ -975,7 +973,6 @@ def get_week_schedule_sync(
     teacher_id: int | None = None,
 ) -> list[dict]:
     """Returns active schedule slots for a given week, enriched with occurrence data."""
-    from datetime import timedelta
     from sqlalchemy.orm import joinedload
 
     week_end = week_start + timedelta(days=6)

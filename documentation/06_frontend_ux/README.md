@@ -11,10 +11,15 @@ Esta secção define a interface e experiência de utilizador do Cronos.
 - [**WBS_REFATORACAO_SCHOOL_CONFIG.md**](./WBS_REFATORACAO_SCHOOL_CONFIG.md): Refatoração da página de Configuração da Escola.
 - [**WBS_CORRECAO_BUGS_UI_UX_OPERACAO_REAL.md**](./WBS_CORRECAO_BUGS_UI_UX_OPERACAO_REAL.md): Correção de bugs UI/UX em operação real (✅ todas as correções aplicadas a 03 Maio 2026).
 
-## Auditoria Frontend (Maio 2026)
-- [**auditoria-frontend-ui-ux.md**](../auditoria-frontend-ui-ux.md): Auditoria completa (46 findings, 100% corrigidos a 03 Maio 2026). Inclui registo de correções, novas utilidades e componentes.
+## Auditorias
+- [**auditoria-frontend-ui-ux.md**](../auditoria-frontend-ui-ux.md): registo histórico da auditoria de Maio de 2026; não descreve necessariamente a árvore atual.
+- [**BETA_BASELINE_READINESS_AUDIT_2026-07.md**](../10_migration_map/BETA_BASELINE_READINESS_AUDIT_2026-07.md): inventário e estado verificado da beta baseline.
 
-## Novos Componentes e Utilidades (Maio 2026)
+## Registo histórico de implementação (Maio 2026)
+
+As contagens, tamanhos de bundle e descrições abaixo preservam o corte de Maio
+de 2026. Não são um inventário atual; o estado canónico está na auditoria da
+beta indicada acima.
 
 ### Utilitários Centralizados
 | Ficheiro | Descrição |
@@ -48,12 +53,6 @@ Esta secção define a interface e experiência de utilizador do Cronos.
 ### Code Splitting
 Todas as páginas protegidas usam `React.lazy()` + `Suspense`. Apenas Login/Register são carregadas no bundle inicial. Redução do bundle principal: 621KB → 381KB (39%).
 
-### Sistema de Toasts
-- `contexts/ToastContext.jsx`: `ToastProvider` + hook `useToast()`.
-- Toasts com auto-dismiss (4s), posicionados no canto superior direito.
-- Substitui `CAlert` inline por feedback não-bloqueante.
-- Variantes: `toast.success()`, `toast.error()`, `toast.warning()`, `toast.info()`.
-
 ### Focus Trap em Modais
 - `hooks/useFocusTrap.js`: hook que aprisiona o foco dentro do modal ativo.
 - Deteta automaticamente o `.modal-content` no DOM (compatível com portal do CoreUI).
@@ -64,12 +63,6 @@ Todas as páginas protegidas usam `React.lazy()` + `Suspense`. Apenas Login/Regi
 - `components/auth/BrandPanel.jsx`: painel de marca reutilizável entre Login e Register.
 - Props: `tagline` (texto descritivo), `stats` (array de {value, label}).
 - Reduziu duplicação de ~80 linhas de JSX em cada página.
-
-### Skeleton Loaders
-- `components/SkeletonTable.jsx`: placeholder animado para tabelas (usa `rows` e `columns`).
-- `components/SkeletonGrid.jsx`: placeholder animado para grelhas (usa `rows` e `cols`).
-- `components/Skeleton.css`: animação shimmer com `@keyframes`.
-- Integração futura: substituir spinners no `SmartTable` e `WeekGrid`.
 
 ### Breadcrumbs
 - `components/Breadcrumbs.jsx`: navegação hierárquica para páginas de cursos.

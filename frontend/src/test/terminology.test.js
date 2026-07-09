@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest'
-import { TXT, humanizeOperationalDetail, EVENT_TYPE_LABELS } from '../utils/terminology'
+import {
+  TXT,
+  humanizeOperationalDetail,
+  EVENT_TYPE_LABELS,
+  OPERATIONAL_STATE_LABELS,
+} from '../utils/terminology'
 
 describe('terminology', () => {
   describe('TXT', () => {
@@ -69,6 +74,18 @@ describe('terminology', () => {
       expect(EVENT_TYPE_LABELS.school_break).toBe('Pausa Escolar')
       expect(EVENT_TYPE_LABELS.exam_period).toBe('Período de Exames')
       expect(EVENT_TYPE_LABELS.other).toBe('Outro')
+    })
+  })
+
+  it('does not expose corrupted UTF-8 text in shared labels', () => {
+    const sharedLabels = [
+      ...Object.values(TXT),
+      ...Object.values(EVENT_TYPE_LABELS),
+      ...Object.values(OPERATIONAL_STATE_LABELS),
+    ]
+
+    sharedLabels.forEach((label) => {
+      expect(label).not.toMatch(/\u00C3[\u0080-\u00BF]|\u00C2[\u0080-\u00BF]|\u00E2\u20AC/)
     })
   })
 })

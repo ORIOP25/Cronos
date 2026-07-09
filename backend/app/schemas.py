@@ -93,11 +93,7 @@ class OrganizationRead(OrganizationBase):
 # --- TEACHER ---
 class TeacherBase(BaseModel):
     name: str
-    # Email: Será obrigatório em TeacherCreate, opcional em TeacherRead (compatibilidade)
     email: Optional[EmailStr] = None
-
-class TeacherCreate(TeacherBase):
-    subject_ids: list[int] = Field(default_factory=list, description=DESC_SUBJECT_IDS)
 
 class TeacherRead(TeacherBase):
     id: int
@@ -111,12 +107,6 @@ class TeacherRead(TeacherBase):
     # availabilities: List[AvailabilityRead] = [] 
 
     model_config = ConfigDict(from_attributes=True)
-
-class TeacherUpdate(BaseModel):
-    name: Optional[str] = None
-    email: Optional[EmailStr] = None
-    subject_ids: Optional[list[int]] = Field(None, description=DESC_SUBJECT_IDS)
-
 
 # --- EQuipa / Members ---
 
@@ -155,13 +145,13 @@ class MemberCreate(BaseModel):
     def validate_member_shape(self):
         caps = set(self.capabilities)
         if not caps.issubset({"teacher", "admin"}):
-            raise ValueError("Capacidade invÃ¡lida")
+            raise ValueError("Capacidade inválida")
         if "teacher" in caps and self.teacher_access_mode is None:
-            raise ValueError("teacher_access_mode Ã© obrigatÃ³rio para professores")
+            raise ValueError("teacher_access_mode é obrigatório para professores")
         if "teacher" not in caps and self.teacher_access_mode is not None:
-            raise ValueError("teacher_access_mode sÃ³ pode ser usado para professores")
+            raise ValueError("teacher_access_mode só pode ser usado para professores")
         if "admin" in caps and self.teacher_access_mode == "scheduler_only":
-            raise ValueError("Administrador requer acesso Ã  plataforma")
+            raise ValueError("Administrador requer acesso à plataforma")
         return self
 
 
@@ -180,9 +170,9 @@ class MemberUpdate(BaseModel):
         if self.capabilities is not None:
             caps = set(self.capabilities)
             if not caps.issubset({"teacher", "admin"}):
-                raise ValueError("Capacidade invÃ¡lida")
+                raise ValueError("Capacidade inválida")
             if "admin" in caps and self.teacher_access_mode == "scheduler_only":
-                raise ValueError("Administrador requer acesso Ã  plataforma")
+                raise ValueError("Administrador requer acesso à plataforma")
         return self
 
 

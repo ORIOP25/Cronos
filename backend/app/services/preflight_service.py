@@ -13,8 +13,6 @@ from app.services.scheduler_planning import (
     select_adaptive_near_future_weeks as _select_adaptive_near_future_weeks,
 )
 from app.core.task_keys import (
-    DEFAULT_HARD_END_MONTH,
-    DEFAULT_HARD_END_DAY,
     resolve_repair_window_days as _resolve_repair_window_days,
 )
 

@@ -4,6 +4,7 @@
 import os
 os.environ["RATELIMIT_ENABLED"] = "false"
 os.environ["DATABASE_POOLING_ENABLED"] = "false"
+os.environ["SENTRY_DSN"] = ""
 
 import pytest
 import pytest_asyncio
