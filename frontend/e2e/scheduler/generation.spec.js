@@ -26,7 +26,7 @@ function schedulerFixtureDates() {
     schoolStartDate: toIsoDate(schoolStart),
     schoolHardEndDate: toIsoDate(hardEnd),
     startYear: schoolStart.getFullYear(),
-    endYear: hardEnd.getFullYear(),
+    endYear: Math.max(hardEnd.getFullYear(), schoolStart.getFullYear() + 1),
   }
 }
 
