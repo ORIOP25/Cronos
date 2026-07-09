@@ -1,5 +1,4 @@
 """Serviço de Dashboard V1 — agrega métricas chave para o painel do diretor."""
-from collections import defaultdict
 from datetime import date, timedelta
 from typing import Optional
 

@@ -9,6 +9,7 @@ import { cilPlus } from '@coreui/icons'
 import SmartTable from '../components/SmartTable'
 import GenericModalForm from '../components/GenericModalForm'
 import RoomForm from '../components/Forms/RoomForm'
+import { getApiErrorMessage } from '../utils/apiErrors'
 
 // Hooks (Factory)
 import { 
@@ -92,7 +93,7 @@ const Rooms = () => {
 
       {deleteMutation.isError && (
         <CAlert color="danger" dismissible onClose={deleteMutation.reset}>
-          <strong>Erro ao remover:</strong> {deleteMutation.error?.response?.data?.detail || "Erro de dependência."}
+          <strong>Erro ao remover:</strong> {getApiErrorMessage(deleteMutation.error, 'Erro de dependência.')}
         </CAlert>
       )}
 

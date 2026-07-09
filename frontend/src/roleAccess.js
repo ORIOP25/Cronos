@@ -1,11 +1,9 @@
-export const ROUTE_LOGIN = '/login'
 export const ROUTE_DASHBOARD = '/dashboard'
 export const ROUTE_MY_AVAILABILITY = '/my-availability'
 export const ROUTE_MY_SCHEDULES = '/my-schedules'
-export const ROUTE_MY_PROGRESS = '/my-progress'
 export const ROUTE_CREATE_ORG = '/create-org'
 
-export const MODE_DEFAULT_ROUTE = Object.freeze({
+const MODE_DEFAULT_ROUTE = Object.freeze({
   admin: ROUTE_DASHBOARD,
   teacher: ROUTE_MY_AVAILABILITY,
 })
@@ -15,5 +13,5 @@ export function getDefaultRouteForMember(member) {
 }
 
 export function getForbiddenRedirectRoute(member) {
-  return getDefaultRouteForMember(member) ?? ROUTE_LOGIN
+  return getDefaultRouteForMember(member)
 }

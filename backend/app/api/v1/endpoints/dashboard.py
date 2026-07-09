@@ -1,5 +1,7 @@
-from typing import Annotated
 """Endpoint do Dashboard V1 — Command Center para administradores."""
+
+from typing import Annotated
+
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 

@@ -16,6 +16,7 @@ import CIcon from '@coreui/icons-react'
 import { cilCheckCircle, cilXCircle, cilActionUndo, cilWarning } from '@coreui/icons'
 import { useUpsertLessonLog, useUpdateTimesheetStatus } from '../hooks/useSchoolData'
 import { useFocusTrap } from '../hooks/useFocusTrap'
+import { getApiErrorMessage } from '../utils/apiErrors'
 
 const STATUS_INFO = {
   COMPLETED: { label: 'Aula Dada', badge: 'success' },
@@ -82,8 +83,7 @@ const LessonLogModal = ({ visible, onClose, slot, isAdmin = false }) => {
       })
       onClose()
     } catch (err) {
-      const msg = err.response?.data?.detail || 'Erro ao guardar o registo. Tente novamente.'
-      setErrorMessage(msg)
+      setErrorMessage(getApiErrorMessage(err, 'Erro ao guardar o registo. Tente novamente.'))
     }
   }
 
@@ -105,8 +105,7 @@ const LessonLogModal = ({ visible, onClose, slot, isAdmin = false }) => {
       })
       onClose()
     } catch (err) {
-      const msg = err.response?.data?.detail || 'Não foi possível reabrir a semana. Tente novamente.'
-      setErrorMessage(msg)
+      setErrorMessage(getApiErrorMessage(err, 'Não foi possível reabrir a semana. Tente novamente.'))
     }
   }
 

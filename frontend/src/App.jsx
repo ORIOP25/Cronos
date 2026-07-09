@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react'
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom'
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
 import { Show, useAuth } from '@clerk/react'
 
 import { setClerkTokenGetter } from './apiClient'
@@ -7,6 +7,7 @@ import { setClerkTokenGetter } from './apiClient'
 import SignInPage from './pages/SignInPage'
 import SignUpPage from './pages/SignUpPage'
 import CreateOrgPage from './pages/CreateOrgPage'
+import NotFoundPage from './pages/NotFoundPage'
 
 const Dashboard = React.lazy(() => import('./pages/Dashboard'))
 const MyAvailability = React.lazy(() => import('./pages/MyAvailability'))
@@ -50,6 +51,8 @@ function App() {
 
         <Route path="/login/*" element={<SignInPage />} />
         <Route path="/register/*" element={<SignUpPage />} />
+        <Route path="/sign-in/*" element={<Navigate to="/login" replace />} />
+        <Route path="/sign-up/*" element={<Navigate to="/register" replace />} />
 
         <Route path="/create-org" element={
           <RequireAuth><CreateOrgPage /></RequireAuth>
@@ -76,6 +79,8 @@ function App() {
           <Route path="timesheets" element={<RequireAdmin><LazyPage><Timesheets /></LazyPage></RequireAdmin>} />
           <Route path="my-availability" element={<RequireTeacher><LazyPage><MyAvailability /></LazyPage></RequireTeacher>} />
         </Route>
+
+        <Route path="*" element={<NotFoundPage />} />
       </Routes>
     </Router>
   )

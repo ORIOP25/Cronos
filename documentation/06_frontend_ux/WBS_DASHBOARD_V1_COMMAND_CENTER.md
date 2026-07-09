@@ -1,5 +1,10 @@
 # WBS: Dashboard V1 — Command Center
 
+> WBS histórico preservado como registo de implementação. Referências a stack,
+> CI, caminhos e contagens de testes refletem Maio de 2026, não a árvore atual.
+> Para o estado verificado da beta, consultar
+> `../10_migration_map/BETA_BASELINE_READINESS_AUDIT_2026-07.md`.
+
 **Data**: 2026-05-04
 **Versão**: 1.0 (Concluído)
 **Estado**: ✅ CONCLUÍDO

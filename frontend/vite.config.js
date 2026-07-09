@@ -14,11 +14,32 @@ export default defineConfig({
       provider: 'v8',
       reporter: ['lcov', 'text'],
       reportsDirectory: './coverage',
+      include: ['src/**/*.{js,jsx}'],
+      thresholds: {
+        statements: 31,
+        branches: 28,
+        functions: 24,
+        lines: 32,
+      },
       exclude: [
         'src/test/**',
         'src/main.jsx',
         'src/assets/**',
       ],
+    },
+  },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (!id.includes('node_modules')) return undefined
+          if (id.includes('@clerk')) return 'vendor-clerk'
+          if (id.includes('@coreui')) return 'vendor-coreui'
+          if (id.includes('@tanstack') || id.includes('axios')) return 'vendor-data'
+          if (id.includes('react')) return 'vendor-react'
+          return 'vendor'
+        },
+      },
     },
   },
   server: {

@@ -473,7 +473,7 @@ async def get_class_full_details(db: AsyncSession, class_id: int, organization_i
     progress_map = {p.module_id: p for p in progress_records}
     
     # 5. Construir árvore de disciplinas com progresso
-    for link in sorted(links, key=lambda l: l.subject.name if l.subject else ""):
+    for link in sorted(links, key=lambda item: item.subject.name if item.subject else ""):
         subject = link.subject
         if not subject:
             continue
@@ -603,7 +603,7 @@ async def get_class_subjects(db: AsyncSession, class_id: int, organization_id: i
     
     # 3. Construir resposta
     subjects_data = []
-    for link in sorted(links, key=lambda l: l.subject.name if l.subject else ""):
+    for link in sorted(links, key=lambda item: item.subject.name if item.subject else ""):
         subjects_data.append({
             "id": link.id,
             "subject_id": link.subject_id,

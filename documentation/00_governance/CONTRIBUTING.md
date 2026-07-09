@@ -18,7 +18,7 @@ cd backend && pytest --tb=short
 cd frontend && npx vitest run
 
 # 3. Verificar lint
-cd backend && ruff check app/
+cd backend && ruff check app scripts
 cd frontend && npm run lint
 
 # 4. Commit (NÃO automatizado — usar commits descritivos)
@@ -72,8 +72,8 @@ alembic upgrade head   # voltar a aplicar
 ## CI/CD
 
 CI dispara em push/PR para `main`:
-- Backend: pytest + coverage
-- Frontend: vitest + coverage
-- SonarQube: análise de qualidade
+- Backend: Ruff, `pip-audit`, migrações/drift, auditorias de triggers e integridade, pytest com cobertura mínima de 70%.
+- Frontend: `npm audit`, ESLint, Vitest com cobertura de toda a árvore `src`, e build.
+- E2E: stack Docker completa e Playwright com Clerk real de teste.
 
 Os testes DEVEM passar antes do merge.

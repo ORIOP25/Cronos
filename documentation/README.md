@@ -24,11 +24,10 @@ Arquitetura multi-tenant: cada escola opera isolada por organization_id.
 
 ### When
 Fase atual confirmada:
-- novo baseline do motor de horarios fechado em `03_scheduler_engine/PRD_SCHEDULE_GENERATOR_NEW_BASELINE.md`;
-- arquitetura tecnica fechada em `03_scheduler_engine/TECH_SPEC_SCHEDULE_GENERATOR_NEW_BASELINE.md`;
-- hard end date obrigatoria;
-- sem target/preferred end date como objetivo de otimizacao;
-- prioridade funcional seguinte: implementar o novo schedule generator por WBS.
+- beta baseline hardening em curso;
+- motor de horarios novo e baseline Equipa/membros/Clerk tratados como baseline operacional atual;
+- foco atual em polimento UI/UX, CI/CD, schema drift, documentacao, limpeza de legado e verificacao final;
+- novas funcionalidades complexas, reescritas amplas e redesigns ficam fora desta fase.
 
 ### Why
 Objetivo de negocio:
@@ -70,22 +69,24 @@ Ficheiros principais:
 
 ## Documentos Transversais
 
-- [CONTRIBUTING.md](00_governance/CONTRIBUTING.md) — Guia de contribuicao (Alembic, estilo, CI)
-- [AUDITORIA_ARQUITETURAL_ALPHA_1.0.md](08_security_quality/AUDITORIA_ARQUITETURAL_ALPHA_1.0.md) — Auditoria de qualidade (28 findings, Maio 2026)
-- [auditoria-frontend-ui-ux.md](auditoria-frontend-ui-ux.md) — Auditoria completa de frontend UI/UX (46 findings, 100% corrigidos a 03 Maio 2026)
+- [CONTRIBUTING.md](00_governance/CONTRIBUTING.md) - Guia de contribuicao (Alembic, estilo, CI)
+- [AUDITORIA_ARQUITETURAL_ALPHA_1.0.md](08_security_quality/AUDITORIA_ARQUITETURAL_ALPHA_1.0.md) - Auditoria historica de qualidade (28 findings, Maio 2026)
+- [auditoria-frontend-ui-ux.md](auditoria-frontend-ui-ux.md) - Auditoria historica de frontend UI/UX (46 findings, 100% corrigidos a 03 Maio 2026)
 
 ## Planeamento de entrega
 
-- WBS oficial da Alpha V1: 01_product_strategy/WBS_ALPHA_V1_ENTREGA.md
+- Auditoria canonica da prontidao beta baseline: 10_migration_map/BETA_BASELINE_READINESS_AUDIT_2026-07.md
+- WBS historica da Alpha V1: 01_product_strategy/WBS_ALPHA_V1_ENTREGA.md
 - Baseline fechado para Equipa/membros/Clerk: 01_product_strategy/PRD_CLERK_TEACHER_USER_CREATION.md
 - Especificacao tecnica do baseline Equipa/membros/Clerk: 01_product_strategy/TECH_SPEC_CLERK_BACKED_EQUIPA_MEMBER_MANAGEMENT.md
 - WBS de implementacao Equipa/membros/Clerk: 01_product_strategy/WBS_CLERK_BACKED_EQUIPA_MEMBER_MANAGEMENT.md
 
-## Fonte canonica para implementacao da Alpha V1
+## Fonte canonica para implementacao da Beta Baseline
 
-Para implementacao e validacao da Alpha V1, considerar como fonte oficial:
+Para implementacao e validacao da beta baseline, considerar como fonte oficial:
 - estrutura por layers em 00_governance ate 09_ops_observability;
-- WBS oficial em 01_product_strategy/WBS_ALPHA_V1_ENTREGA.md;
+- WBS Alpha V1 apenas como contexto historico de escopo ja entregue;
 - para gestao de membros, acessos, convites Clerk e substituicao do CRUD admin de professores, o PRD, a Tech Spec e o WBS de Equipa acima sao a baseline normativa.
+- para a auditoria e decisoes finais de hardening, usar `10_migration_map/BETA_BASELINE_READINESS_AUDIT_2026-07.md`.
 
-Documentos fora desta estrutura podem existir como historico/contexto e nao substituem as decisoes fechadas da Alpha V1.
+Documentos fora desta estrutura podem existir como historico/contexto e nao substituem as decisoes fechadas da beta baseline.

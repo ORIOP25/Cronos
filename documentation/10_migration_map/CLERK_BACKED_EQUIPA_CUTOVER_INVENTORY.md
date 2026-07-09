@@ -13,9 +13,9 @@ Source of truth: `documentation/01_product_strategy/PRD_CLERK_TEACHER_USER_CREAT
 - `frontend/src/components/DefaultLayout.jsx`: visible `Professores` admin navigation. Rewrite during frontend implementation to `Equipa` at `/members`.
 - `frontend/src/App.jsx`: admin `/teachers` route. Replace with `/members`; keep teacher self-service routes.
 - `frontend/src/hooks/useSchoolData.js`: legacy `teachers` CRUD hooks are valid only for domain reads until removed from staff-management UI.
-- `backend/app/api/v1/endpoints/teachers.py`: keep `/teachers/me/...`, observability, and teacher availability/domain operations; quarantine admin create/update/delete staff-management writes.
-- `backend/app/services/teacher_service.py`: legacy local login stub creation and best-effort Clerk invite path. Stop using it for canonical staff management; `/members` owns launch member writes.
-- `backend/app/schemas.py`: `TeacherCreate.create_user_account` and `TeacherUpdate.create_user_account` are legacy teacher CRUD fields, not valid in `/members`.
+- `backend/app/api/v1/endpoints/teachers.py`: `/teachers/me/...`, observability, reads, and teacher availability/domain operations remain; admin create/update/delete staff-management writes were removed.
+- `backend/app/services/teacher_service.py`: canonical member writes belong to `/members`; legacy teacher CRUD guards and implementations were removed.
+- `backend/app/schemas.py`: legacy `TeacherCreate` and `TeacherUpdate` contracts were removed.
 - `backend/app/api/deps.py`: legacy authorization currently resolves through `user.role`, `user.teacher_id`, and `is_active`. Rewrite to membership-aware auth during WBS 1.
 - Alembic baseline `20260705_beta_baseline.py`: owns current RLS and membership-aware auth context helpers.
 - Tests referencing `TeacherForm`, `create_user_account`, local active teacher users, or admin `/api/v1/teachers` writes: rewrite under WBS 11/12 to assert `/members`.

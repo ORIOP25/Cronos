@@ -23,9 +23,11 @@ import KPISidebar from '../components/schedules/KPISidebar'
 import DraftPanel from '../components/schedules/DraftPanel'
 import GenerationStatusPanel from '../components/schedules/GenerationStatusPanel'
 import PreflightErrorPanel from '../components/schedules/PreflightErrorPanel'
+import ConfirmationModal from '../components/ConfirmationModal'
 import { useOrganization } from '@clerk/react'
 import { useRole } from '../hooks/useRole'
 import { getCurrentWeekMonday, addDays, formatWeekRange } from '../utils/formatUtils'
+import { getApiErrorMessage } from '../utils/apiErrors'
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -155,6 +157,7 @@ const Schedules = () => {
   /* eslint-enable react-hooks/set-state-in-effect */
   const [adminLessonLogSlot, setAdminLessonLogSlot] = useState(null)
   const [generationActionError, setGenerationActionError] = useState('')
+  const [generationConfirmation, setGenerationConfirmation] = useState(null)
 
   // Sprint 3 hooks
   const { data: schedulerStatus, refetch: refetchSchedulerStatus } = useSchedulerStatus()
@@ -257,52 +260,8 @@ const Schedules = () => {
   }, [isTeacher, teacherOwnId])
   /* eslint-enable react-hooks/set-state-in-effect */
 
-  const handleGenerate = async () => {
-    setGenerationActionError('')
-    setPreflightErrors([])
-    setActiveJobId(null)
-    try {
-      const result = await generateMutation.mutateAsync()
-      if (result?.job_id) setActiveJobId(result.job_id)
-    } catch (err) {
-      const detail = err?.response?.data?.detail
-      if (detail?.error === 'pending_draft_replacement_required') {
-        const confirmed = window.confirm(
-          'Já existe um rascunho pendente. Pretende substituí-lo por uma nova geração?'
-        )
-        if (confirmed) {
-          try {
-            const result = await generateMutation.mutateAsync({ replacePendingDraft: true })
-            if (result?.job_id) setActiveJobId(result.job_id)
-          } catch (replacementError) {
-            const replacementDetail = replacementError?.response?.data?.detail
-            setGenerationActionError(
-              replacementDetail?.message
-              || replacementError?.message
-              || 'Erro ao iniciar a geração de substituição.'
-            )
-          }
-        }
-        return
-      }
-      const problems = err?.response?.data?.detail?.problems
-      if (!Array.isArray(problems) && detail?.message) {
-        setGenerationActionError(detail.message)
-        return
-      }
-      if (Array.isArray(problems)) {
-        setPreflightErrors(problems)
-      } else {
-        setGenerationActionError(err?.response?.data?.detail || err?.message || 'Erro ao iniciar a geração. Verifique a ligação e tente novamente.')
-      }
-    }
-  }
-
-  const handleRegenerate = async () => {
-    const confirmed = window.confirm(
-      'Gerar novamente irá substituir o rascunho pendente apenas quando a nova geração terminar com sucesso. Continuar?'
-    )
-    if (!confirmed) return
+  const startReplacementGeneration = async () => {
+    setGenerationConfirmation(null)
     setGenerationActionError('')
     setPreflightErrors([])
     try {
@@ -314,6 +273,36 @@ const Schedules = () => {
         detail?.message || err?.message || 'Não foi possível iniciar a nova geração.'
       )
     }
+  }
+
+  const handleGenerate = async () => {
+    setGenerationActionError('')
+    setPreflightErrors([])
+    setActiveJobId(null)
+    try {
+      const result = await generateMutation.mutateAsync()
+      if (result?.job_id) setActiveJobId(result.job_id)
+    } catch (err) {
+      const detail = err?.response?.data?.detail
+      if (detail?.error === 'pending_draft_replacement_required') {
+        setGenerationConfirmation('replace-pending-draft')
+        return
+      }
+      const problems = err?.response?.data?.detail?.problems
+      if (!Array.isArray(problems) && detail?.message) {
+        setGenerationActionError(detail.message)
+        return
+      }
+      if (Array.isArray(problems)) {
+        setPreflightErrors(problems)
+      } else {
+        setGenerationActionError(getApiErrorMessage(err, 'Erro ao iniciar a geração. Verifique a ligação e tente novamente.'))
+      }
+    }
+  }
+
+  const handleRegenerate = () => {
+    setGenerationConfirmation('regenerate')
   }
 
   const handleCancelGeneration = () => {
@@ -398,6 +387,21 @@ const Schedules = () => {
           isAdmin={isAdmin}
         />
       ) : null}
+
+      <ConfirmationModal
+        visible={Boolean(generationConfirmation)}
+        onClose={() => setGenerationConfirmation(null)}
+        onConfirm={() => { void startReplacementGeneration() }}
+        title="Confirmar nova geração"
+        message={
+          generationConfirmation === 'replace-pending-draft'
+            ? 'Já existe um rascunho pendente. Pretende substituí-lo por uma nova geração?'
+            : 'Gerar novamente irá substituir o rascunho pendente apenas quando a nova geração terminar com sucesso. Continuar?'
+        }
+        confirmText="Confirmar geração"
+        isLoading={generateMutation.isPending}
+        variant="warning"
+      />
 
       {/* ── Page header ── */}
       <div className="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3">

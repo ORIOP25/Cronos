@@ -96,16 +96,19 @@ async def create_occurrence(
     try:
         occurrence, created_now = await db.run_sync(_run)
     except occurrence_service.OccurrenceServiceError as exc:
+        error_status = exc.status_code
+        error_detail = exc.detail
+
         def _emit_failure(sync_db):
             occurrence_service.log_occurrence_event_safe_sync(
                 sync_db,
                 organization_id=organization_id,
                 event_type=occurrence_service.OBS_EVENT_CREATE,
-                result=occurrence_service.classify_occurrence_error_result(exc.status_code),
+                result=occurrence_service.classify_occurrence_error_result(error_status),
                 actor_user_id=current_user.id,
                 occurrence_id=None,
                 schedule_output_id=None,
-                detail=f"{exc.detail} (schedule_output_id={payload.schedule_output_id})",
+                detail=f"{error_detail} (schedule_output_id={payload.schedule_output_id})",
             )
 
         await db.run_sync(_emit_failure)
@@ -278,16 +281,19 @@ async def update_occurrence(
     try:
         updated = await db.run_sync(_run)
     except occurrence_service.OccurrenceServiceError as exc:
+        error_status = exc.status_code
+        error_detail = exc.detail
+
         def _emit_failure(sync_db):
             occurrence_service.log_occurrence_event_safe_sync(
                 sync_db,
                 organization_id=organization_id,
                 event_type=occurrence_service.OBS_EVENT_DECIDE,
-                result=occurrence_service.classify_occurrence_error_result(exc.status_code),
+                result=occurrence_service.classify_occurrence_error_result(error_status),
                 actor_user_id=current_user.id,
                 occurrence_id=occurrence_id,
                 schedule_output_id=None,
-                detail=exc.detail,
+                detail=error_detail,
             )
 
         await db.run_sync(_emit_failure)

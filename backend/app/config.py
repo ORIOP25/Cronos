@@ -3,7 +3,6 @@
 from typing import Literal
 from pydantic import PostgresDsn, RedisDsn, computed_field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic_core import MultiHostUrl
 
 class Settings(BaseSettings):
     """

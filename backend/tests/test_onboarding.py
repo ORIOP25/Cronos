@@ -147,33 +147,6 @@ async def test_onboarding_requires_admin(async_client, db_session):
     assert resp.status_code == 403
 
 
-# ── T23: Create teacher → sends Clerk invitation ───────────────
-@pytest.mark.asyncio
-async def test_create_teacher_write_is_quarantined(async_client, db_session):
-    from tests.conftest import create_org_and_user
-
-    await create_org_and_user(
-        db_session,
-        clerk_user_id="user_admin_inv",
-        email="admin@invite.pt",
-        role="admin",
-        org_name="Escola Invite",
-        clerk_org_id="org_inv_001",
-    )
-
-    with patch("app.api.deps.get_clerk_payload") as mock_payload:
-        mock_payload.return_value = {"sub": "user_admin_inv", "o": {"id": "org_inv_001", "rol": "admin"}}
-
-        resp = await async_client.post("/api/v1/teachers/", json={
-            "name": "Prof Teste",
-            "email": "prof@invite.pt",
-            "subject_ids": [],
-        })
-
-    assert resp.status_code == 410
-    assert "/api/v1/members" in resp.json()["detail"]
-
-
 # ── FASE 1.5: Onboarding fluxos de borda ──────────────────────
 
 @pytest.mark.asyncio

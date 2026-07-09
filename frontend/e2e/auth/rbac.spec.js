@@ -19,7 +19,7 @@ test.describe('RBAC — Admin (Clerk real)', () => {
     await loginAsAdminReal(page)
   })
 
-  test('T26: admin acede a dashboard, teachers, rooms', async ({ page }) => {
+  test('T26: admin acede ao dashboard', async ({ page }) => {
     await goTo(page, '/dashboard')
     await expectRouteReady(page, '/dashboard')
   })

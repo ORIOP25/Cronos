@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test'
 import {
+  allowApiFailure,
   attachRuntimeGuards,
   expectRouteReady,
   goTo,
@@ -26,7 +27,7 @@ function schedulerFixtureDates() {
     schoolStartDate: toIsoDate(schoolStart),
     schoolHardEndDate: toIsoDate(hardEnd),
     startYear: schoolStart.getFullYear(),
-    endYear: hardEnd.getFullYear(),
+    endYear: Math.max(hardEnd.getFullYear(), schoolStart.getFullYear() + 1),
   }
 }
 
@@ -297,6 +298,8 @@ test.describe('Scheduler generation', () => {
     test.setTimeout(180_000)
 
     attachRuntimeGuards(page)
+    allowApiFailure(page, { status: 409, url: '/api/v1/scheduler/generate' })
+    allowApiFailure(page, { status: 404, url: '/api/v1/scheduler/drafts/current' })
     await loginAsAdminReal(page)
     await goTo(page, '/dashboard')
     const { classId } = await seedMinimalSchedulerInputs(page)
@@ -307,7 +310,8 @@ test.describe('Scheduler generation', () => {
 
     const generateResponse = page.waitForResponse(
       (response) => response.url().includes('/api/v1/scheduler/generate')
-        && response.request().method() === 'POST',
+        && response.request().method() === 'POST'
+        && response.ok(),
     )
     await page.getByRole('button', { name: /Gerar Hor.rio/i }).click()
     const response = await generateResponse

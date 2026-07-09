@@ -1,5 +1,9 @@
 # Plano: Gestão de Professores Curso-Cêntrica
 
+> Plano histórico já executado. Os nomes de migrações, ficheiros e tarefas
+> pendentes abaixo preservam contexto e não representam trabalho atual. A
+> autoridade de estado é `BETA_BASELINE_READINESS_AUDIT_2026-07.md`.
+
 ## 📋 Resumo do Problema
 
 Atualmente a atribuição de professores a turmas é feita numa página separada (`ServiceDistribution.jsx`). É necessário:

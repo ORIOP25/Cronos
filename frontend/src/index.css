@@ -658,6 +658,74 @@ textarea {
    =========================== */
 
 /* Marketing Site V2 styles live in src/pages/MarketingSite.css. */
+
+/* ===========================
+   NOT FOUND
+   =========================== */
+
+.zen-not-found-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 24px;
+  background: var(--brand-50);
+}
+
+.zen-not-found-inner {
+  width: min(100%, 640px);
+  text-align: center;
+}
+
+.zen-not-found-kicker {
+  margin: 0 0 12px;
+  color: var(--brand-500);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.zen-not-found-title {
+  margin: 0;
+  color: var(--brand-950);
+  font-family: var(--font-display);
+  font-size: 2.35rem;
+  line-height: 1.1;
+}
+
+.zen-not-found-copy {
+  margin: 18px auto 0;
+  max-width: 520px;
+  color: var(--brand-600);
+  font-size: 1rem;
+  line-height: 1.7;
+}
+
+.zen-not-found-actions {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 28px;
+}
+
+@media (max-width: 480px) {
+  .zen-not-found-page {
+    align-items: flex-start;
+    padding-top: 96px;
+  }
+
+  .zen-not-found-title {
+    font-size: 1.9rem;
+  }
+
+  .zen-not-found-actions .btn-zen {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
 /* ===========================
    MOBILE: Professor (< 768px)
    =========================== */

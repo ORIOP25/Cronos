@@ -17,6 +17,7 @@ import {
 import CIcon from '@coreui/icons-react'
 import { cilActionUndo, cilPencil, cilPlus, cilReload, cilTrash } from '@coreui/icons'
 import PageHeader from '../components/PageHeader'
+import { getApiErrorMessage } from '../utils/apiErrors'
 import {
   useCreateMember,
   useMembers,
@@ -62,12 +63,6 @@ const capabilitiesToMode = (capabilities = []) => {
   if (capabilities.includes('teacher') && capabilities.includes('admin')) return 'mixed'
   if (capabilities.includes('admin')) return 'admin'
   return 'teacher'
-}
-
-const errorMessage = (error) => {
-  const detail = error?.response?.data?.detail
-  if (typeof detail === 'object') return detail.message
-  return detail || error?.message
 }
 
 const SubjectPicker = ({ subjects, selected, disabled, onChange }) => {
@@ -143,7 +138,7 @@ const MemberModal = ({ visible, member, subjects, onClose, onSave, isSaving, err
         <CModalTitle>{member ? 'Editar membro' : 'Adicionar membro'}</CModalTitle>
       </CModalHeader>
       <CModalBody>
-        {errorMessage(error) && <CAlert color="danger">{errorMessage(error)}</CAlert>}
+        {error && <CAlert color="danger">{getApiErrorMessage(error)}</CAlert>}
         {syncBlocked && <CAlert color="warning">Resolva a sincronizacao antes de editar este membro.</CAlert>}
         <div className="d-grid gap-3">
           <CFormInput label="Nome" value={draft.organization_display_name} onChange={(event) => setDraft({ ...draft, organization_display_name: event.target.value })} disabled={isSaving || syncBlocked} />
@@ -255,7 +250,8 @@ const Members = () => {
     setRemoveTarget(null)
   }
 
-  const actionError = errorMessage(removeMember.error || resendInvitation.error || retrySync.error || restoreMember.error)
+  const actionErrorSource = removeMember.error || resendInvitation.error || retrySync.error || restoreMember.error
+  const actionError = actionErrorSource ? getApiErrorMessage(actionErrorSource) : null
 
   return (
     <div>
@@ -286,7 +282,7 @@ const Members = () => {
         </div>
         <CButton color="primary" onClick={() => openModal()} className="d-flex align-items-center gap-2"><CIcon icon={cilPlus} />Adicionar membro</CButton>
       </div>
-      {isError && <CAlert color="danger">{errorMessage(error) || 'Nao foi possivel carregar a equipa.'} <CButton color="link" onClick={() => refetch()}>Tentar novamente</CButton></CAlert>}
+      {isError && <CAlert color="danger">{getApiErrorMessage(error, 'Nao foi possivel carregar a equipa.')} <CButton color="link" onClick={() => refetch()}>Tentar novamente</CButton></CAlert>}
       {actionError && <CAlert color="danger">{actionError}</CAlert>}
       <div className="table-responsive">
         <table className="table align-middle">

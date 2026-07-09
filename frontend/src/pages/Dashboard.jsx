@@ -2,9 +2,17 @@ import React from 'react'
 import { useNavigate } from 'react-router-dom'
 import { CAlert } from '@coreui/react'
 import AnalyticsHeatmap from '../components/AnalyticsHeatmap'
-import { AlertBar, ResourceCounts, ClassProgressOverview, DebtSummaryCard, QuickActions } from '../components/dashboard'
+import {
+  AlertBar,
+  ResourceCounts,
+  ScheduleHealthCard,
+  ClassProgressOverview,
+  DebtSummaryCard,
+  QuickActions,
+} from '../components/dashboard'
 import { useDashboard } from '../hooks/useSchoolData'
 import PageHeader from '../components/PageHeader'
+import { getApiErrorMessage } from '../utils/apiErrors'
 
 const Dashboard = () => {
   const { data, isLoading, isError, error } = useDashboard()
@@ -20,7 +28,7 @@ const Dashboard = () => {
       <div className="zen-reveal">
         {header}
         <CAlert color="danger" dismissible>
-          Erro ao carregar o dashboard: {error?.message || 'Tente novamente mais tarde.'}
+          Erro ao carregar o dashboard: {getApiErrorMessage(error, 'Tente novamente mais tarde.')}
         </CAlert>
       </div>
     )
@@ -94,6 +102,10 @@ const Dashboard = () => {
             </div>
           </div>
         </div>
+      </div>
+
+      <div className="zen-stagger-5 mb-4">
+        <ScheduleHealthCard health={data?.schedule_health} isLoading={isLoading} />
       </div>
 
       {/* ZONA 3: AnalyticsHeatmap (full width) */}

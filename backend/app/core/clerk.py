@@ -1,7 +1,7 @@
 import asyncio
 from functools import lru_cache
 from clerk_backend_api import Clerk
-from clerk_backend_api.security.types import AuthenticateRequestOptions, RequestState, AuthStatus
+from clerk_backend_api.security.types import AuthenticateRequestOptions, RequestState
 from app.config import settings
 
 

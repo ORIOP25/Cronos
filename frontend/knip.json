@@ -1,0 +1,12 @@
+{
+  "$schema": "https://unpkg.com/knip@latest/schema.json",
+  "entry": [
+    "e2e/global.setup.js",
+    "src/test/**/*.{js,jsx}"
+  ],
+  "project": [
+    "src/**/*.{js,jsx}",
+    "e2e/**/*.js",
+    "*.{js,jsx}"
+  ]
+}

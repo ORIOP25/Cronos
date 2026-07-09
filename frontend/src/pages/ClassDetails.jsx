@@ -19,6 +19,7 @@ import {
   useClassSubjects,
 } from '../hooks/useSchoolData'
 import Breadcrumbs from '../components/Breadcrumbs'
+import { getApiErrorMessage } from '../utils/apiErrors'
 
 // ==========================================
 //  HELPERS
@@ -337,7 +338,7 @@ const ClassDetails = () => {
     return (
       <div className="p-4">
         <CAlert color="danger">
-          <strong>Erro:</strong> {error?.response?.data?.detail || 'Turma não encontrada.'}
+          <strong>Erro:</strong> {getApiErrorMessage(error, 'Turma não encontrada.')}
         </CAlert>
         <CButton color="light" onClick={() => navigate(`/courses/${numCourseId}`)}>
           <CIcon icon={cilArrowLeft} className="me-1" /> Voltar ao Curso
@@ -364,13 +365,13 @@ const ClassDetails = () => {
       {updateClass.isError && (
         <CAlert color="danger" dismissible onClose={() => updateClass.reset()}>
           <strong>Erro ao atualizar turma:</strong>{' '}
-          {updateClass.error?.response?.data?.detail || 'Ocorreu um erro.'}
+          {getApiErrorMessage(updateClass.error)}
         </CAlert>
       )}
       {updateProgress.isError && (
         <CAlert color="danger" dismissible onClose={() => updateProgress.reset()}>
           <strong>Erro ao atualizar progresso:</strong>{' '}
-          {updateProgress.error?.response?.data?.detail || 'Ocorreu um erro.'}
+          {getApiErrorMessage(updateProgress.error)}
         </CAlert>
       )}
 

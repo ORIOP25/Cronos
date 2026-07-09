@@ -1,5 +1,10 @@
 # Plano WBS V2: Registo de Aulas — Refinamento e Expansão
 
+> Plano histórico preservado como registo de implementação. Versões, caminhos,
+> contagens de testes e decisões abaixo refletem o momento em que o plano foi
+> escrito. Para o estado atual da beta, consultar
+> `../10_migration_map/BETA_BASELINE_READINESS_AUDIT_2026-07.md`.
+
 ## 0. Contexto Técnico (Para quem nunca tocou na codebase)
 
 Esta secção fornece todo o contexto necessário para compreender e executar o plano sem conhecimento prévio da aplicação.

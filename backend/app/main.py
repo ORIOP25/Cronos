@@ -1,6 +1,7 @@
 # Ficheiro: app/main.py
 
 from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -71,8 +72,6 @@ if settings.SENTRY_DSN:
 else:
     logger.warning("[WARN] Sentry: DESLIGADO (DSN não configurado)")
 
-import traceback
-
 app = FastAPI(
     title=settings.PROJECT_NAME,
     description="API Escolar Profissional com Rate Limiting, Caching e Docker.",
@@ -82,14 +81,17 @@ app = FastAPI(
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
-    try:
-        with open("C:/Users/Hp/Desktop/AnoLetivo25_26/MeuProjeto/backend/500_traceback.log", "a", encoding="utf-8") as f:
-            f.write(f"Exception on {request.url.path}:\n")
-            f.write(traceback.format_exc())
-            f.write("\n" + "="*50 + "\n")
-    except Exception:
-        pass
-    return JSONResponse(status_code=500, content={"detail": str(exc)})
+    logger.error(
+        "Unhandled application error",
+        method=request.method,
+        path=request.url.path,
+        error_type=type(exc).__name__,
+        exc_info=(type(exc), exc, exc.__traceback__),
+    )
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Ocorreu um erro inesperado. Tente novamente."},
+    )
 
 # --- Configuração do Rate Limiter ---
 app.state.limiter = limiter

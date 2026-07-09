@@ -1,9 +1,9 @@
 ﻿"""
-WBS V4 â€” Testes novos para Registo de Aulas V4: SimplificaÃ§Ã£o + CentralizaÃ§Ã£o
+WBS V4 — Testes novos para Registo de Aulas V4: Simplificação + Centralização
 
 Valida:
-- REVOKED state machine (imutÃ¡vel, persistÃªncia)
-- Contabilidade SUBSTITUTED corrigida (sÃ³ debt no original)
+- REVOKED state machine (imutável, persistência)
+- Contabilidade SUBSTITUTED corrigida (só debt no original)
 - Substituto ganha horas via LessonLog COMPLETED
 - Slots futuros aceitam OCCURRENCE mas bloqueiam COMPLETED
 - cancel_occurrence_sync marca REVOKED em vez de apagar
@@ -25,7 +25,7 @@ from test_occurrence_shared import full_setup, substitution_setup, SyncTestSessi
 # T6: cancel_occurrence_sync marca REVOKED em vez de apagar
 # ---------------------------------------------------------------------------
 class TestCancelMarksRevoked:
-    """T6: cancel_occurrence_sync marca REVOKED, ocorrÃªncia persiste na BD."""
+    """T6: cancel_occurrence_sync marca REVOKED, ocorrência persiste na BD."""
 
     def _prepare_decided_occurrence(self, sync_db, full_setup, status):
         organization_id = full_setup["organization_id"]
@@ -49,7 +49,7 @@ class TestCancelMarksRevoked:
         return decided
 
     def test_cancel_marks_revoked_gap(self, sync_db, full_setup):
-        """T6a: cancel_occurrence_sync em GAP â†’ REVOKED, linha persiste."""
+        """T6a: cancel_occurrence_sync em GAP → REVOKED, linha persiste."""
         organization_id = full_setup["organization_id"]
         occurrence = self._prepare_decided_occurrence(sync_db, full_setup, LessonOccurrenceStatus.GAP)
 
@@ -64,7 +64,7 @@ class TestCancelMarksRevoked:
         assert reloaded.decided_at is not None
 
     def test_cancel_marks_revoked_substituted(self, sync_db, full_setup):
-        """T6b: cancel_occurrence_sync em SUBSTITUTED â†’ REVOKED, linha persiste."""
+        """T6b: cancel_occurrence_sync em SUBSTITUTED → REVOKED, linha persiste."""
         organization_id = full_setup["organization_id"]
         occurrence = self._prepare_decided_occurrence(sync_db, full_setup, LessonOccurrenceStatus.SUBSTITUTED)
 
@@ -79,10 +79,10 @@ class TestCancelMarksRevoked:
 
 
 # ---------------------------------------------------------------------------
-# T7: REVOKED Ã© imutÃ¡vel
+# T7: REVOKED é imutável
 # ---------------------------------------------------------------------------
 class TestRevokedIsImmutable:
-    """T7: update_occurrence_sync em REVOKED â†’ 409."""
+    """T7: update_occurrence_sync em REVOKED → 409."""
 
     def test_revoked_occurrence_cannot_be_updated(self, sync_db, full_setup):
         organization_id = full_setup["organization_id"]
@@ -98,12 +98,12 @@ class TestRevokedIsImmutable:
             decided_by_user_id=full_setup["admin_id"],
         )
 
-        # Reverter â†’ REVOKED
+        # Reverter → REVOKED
         occurrence_service.cancel_occurrence_sync(
             sync_db, organization_id, occurrence.id, full_setup["admin_id"], version=decided.version,
         )
 
-        # Tentar alterar REVOKED â†’ deve falhar
+        # Tentar alterar REVOKED → deve falhar
         with pytest.raises(occurrence_service.OccurrenceServiceError) as exc_info:
             occurrence_service.update_occurrence_sync(
                 sync_db, occurrence.id, organization_id,
@@ -117,10 +117,10 @@ class TestRevokedIsImmutable:
 
 
 # ---------------------------------------------------------------------------
-# T4: SUBSTITUTED sÃ³ credita debt no original
+# T4: SUBSTITUTED só credita debt no original
 # ---------------------------------------------------------------------------
 class TestSubstitutedAccountingOnlyDebtsOriginal:
-    """T4: SUBSTITUTED credita debt no original, NÃƒO credita executado."""
+    """T4: SUBSTITUTED credita debt no original, NÃO credita executado."""
 
     def test_substituted_only_creates_debt_on_planned_module(self, sync_db, full_setup):
         organization_id = full_setup["organization_id"]
@@ -161,10 +161,10 @@ class TestSubstitutedAccountingOnlyDebtsOriginal:
 
 
 # ---------------------------------------------------------------------------
-# T5: Substituto regista COMPLETED â†’ hours_completed no mÃ³dulo dele
+# T5: Substituto regista COMPLETED → hours_completed no módulo dele
 # ---------------------------------------------------------------------------
 class TestSubstituteCompletedCreditsExecutedModule:
-    """T5: Substituto regista Aula Dada â†’ hours_completed sobe no mÃ³dulo dele."""
+    """T5: Substituto regista Aula Dada → hours_completed sobe no módulo dele."""
 
     def test_substitute_lesson_log_completed_credits_executed_module(self, sync_db, full_setup, substitution_setup):
         organization_id = full_setup["organization_id"]
@@ -321,7 +321,7 @@ class TestAbsencesEndpointFiltersRevoked:
 # T11: Teacher self-revert marca REVOKED
 # ---------------------------------------------------------------------------
 class TestOpenOccurrenceSelfRevertMarksRevoked:
-    """T11: Teacher reverte OCCURRENCE â†’ ocorrÃªncia fica REVOKED."""
+    """T11: Teacher reverte OCCURRENCE → ocorrência fica REVOKED."""
 
     def test_self_revert_marks_revoked(self, sync_db, full_setup):
         organization_id = full_setup["organization_id"]
@@ -407,7 +407,7 @@ class TestSubstituteBlockAcceptsLessonLog:
 # T12: test_substitute_block_lists_in_week_schedule
 # ---------------------------------------------------------------------------
 class TestSubstituteBlockListsInWeekSchedule:
-    """T12: GET /schedule/week?teacher_id=<sub> inclui bloco de substituiÃ§Ã£o."""
+    """T12: GET /schedule/week?teacher_id=<sub> inclui bloco de substituição."""
 
     def test_operational_block_created_on_decision_without_structural_schedule_output(self, sync_db, full_setup, substitution_setup):
         """SUBSTITUTED cria bloco operacional, nao ScheduleOutput curricular."""

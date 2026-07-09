@@ -3,9 +3,9 @@
 import structlog
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session, selectinload
-from sqlalchemy import select, delete, insert
-from app import models, schemas
-from app.models import Availability, Teacher
+from sqlalchemy import select, delete
+from app import models
+from app.models import Availability
 from app.schemas import AvailabilitySelfCreate
 from app.services.scheduler_state_service import record_scheduler_change
 
@@ -86,14 +86,6 @@ async def get_teachers_by_org(
         
     return final_list
 
-async def create_teacher(
-    db: AsyncSession,
-    teacher_in: schemas.TeacherCreate,
-    organization_id: int,
-    changed_by_user_id: int | None = None,
-):
-    raise RuntimeError("Legacy admin teacher creation is disabled. Use member_service.create_member.")
-
 # Helper Function
 async def get_teacher_with_subjects(db: AsyncSession, teacher_id: int, organization_id: int):
     query = select(models.Teacher).where(
@@ -103,23 +95,6 @@ async def get_teacher_with_subjects(db: AsyncSession, teacher_id: int, organizat
     
     result = await db.execute(query)
     return result.scalars().first()
-
-async def delete_teacher(
-    db: AsyncSession, 
-    teacher_id: int,
-    organization_id: int,
-    changed_by_user_id: int | None = None,
-) -> str:
-    raise RuntimeError("Legacy admin teacher deletion is disabled. Use member_service.remove_member.")
-
-async def update_teacher(
-    db: AsyncSession, 
-    teacher_id: int, 
-    teacher_in: schemas.TeacherUpdate,
-    organization_id: int,
-    changed_by_user_id: int | None = None,
-):
-    raise RuntimeError("Legacy admin teacher updates are disabled. Use member_service.update_member.")
 
 async def get_teacher_details(db: AsyncSession, teacher_id: int, organization_id: int):
     # 1. Query: Selecionamos também o campo is_active do User

@@ -2087,7 +2087,7 @@ Required tests:
 17. Teacher-only members cannot access `Equipa`.
 18. Admin-capable members can access `Equipa`.
 19. Mixed-role members can access admin and teacher product areas through local capabilities.
-20. Legacy admin `POST/PATCH/DELETE /api/v1/teachers` staff-management writes fail closed after quarantine.
+20. Legacy admin `POST/PATCH/DELETE /api/v1/teachers` staff-management routes are removed and fail closed with `404/405`.
 21. Clerk `429` create/invite response returns stable error envelope with `retryable = true`, safe message, and no raw provider body.
 22. Clerk `429` resend response returns stable error envelope and does not expose external account state.
 

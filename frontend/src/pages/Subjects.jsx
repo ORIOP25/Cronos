@@ -10,6 +10,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import SmartTable from '../components/SmartTable'
 import GenericModalForm from '../components/GenericModalForm'
 import SubjectForm from '../components/Forms/SubjectForm'
+import { getApiErrorMessage } from '../utils/apiErrors'
 
 // Hooks de Dados
 import {
@@ -100,13 +101,13 @@ const Subjects = () => {
       {/* Tratamento de Erros de Criação/Eliminação */}
       {createMutation.isError && (
         <CAlert color="danger" dismissible onClose={createMutation.reset}>
-          <strong>Erro ao criar:</strong> {createMutation.error?.response?.data?.detail || "Erro desconhecido."}
+          <strong>Erro ao criar:</strong> {getApiErrorMessage(createMutation.error, 'Erro desconhecido.')}
         </CAlert>
       )}
 
       {deleteMutation.isError && (
         <CAlert color="danger" dismissible onClose={deleteMutation.reset}>
-          <strong>Erro ao remover:</strong> {deleteMutation.error?.response?.data?.detail || "Erro de dependência."}
+          <strong>Erro ao remover:</strong> {getApiErrorMessage(deleteMutation.error, 'Erro de dependência.')}
         </CAlert>
       )}
 

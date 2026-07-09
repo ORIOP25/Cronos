@@ -3,7 +3,7 @@ services:
     image: postgres:16-alpine
     environment:
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ci_pg_pass}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
       POSTGRES_DB: ${POSTGRES_DB:-cronos_ci_db}
     ports:
       - "5432:5432"
@@ -25,7 +25,7 @@ services:
     build: ./backend
     environment:
       ENVIRONMENT: local
-      DATABASE_URL: postgresql+asyncpg://postgres:${POSTGRES_PASSWORD:-ci_pg_pass}@db:5432/${POSTGRES_DB:-cronos_ci_db}
+      DATABASE_URL: postgresql+asyncpg://postgres:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@db:5432/${POSTGRES_DB:-cronos_ci_db}
       SECRET_KEY: ${SECRET_KEY:-ci-test-secret-key-not-for-production}
       CLERK_SECRET_KEY: ${CLERK_SECRET_KEY:-}
       CLERK_WEBHOOK_SECRET: ${CLERK_WEBHOOK_SECRET:-}
@@ -55,7 +55,7 @@ services:
     command: ["celery", "-A", "app.celery_worker.celery_app", "worker", "--loglevel=info"]
     environment:
       ENVIRONMENT: local
-      DATABASE_URL: postgresql+asyncpg://postgres:${POSTGRES_PASSWORD:-ci_pg_pass}@db:5432/${POSTGRES_DB:-cronos_ci_db}
+      DATABASE_URL: postgresql+asyncpg://postgres:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@db:5432/${POSTGRES_DB:-cronos_ci_db}
       SECRET_KEY: ${SECRET_KEY:-ci-test-secret-key-not-for-production}
       CLERK_SECRET_KEY: ${CLERK_SECRET_KEY:-}
       CLERK_WEBHOOK_SECRET: ${CLERK_WEBHOOK_SECRET:-}
@@ -77,7 +77,7 @@ services:
     command: ["celery", "-A", "app.celery_worker.celery_app", "beat", "--loglevel=info", "--schedule", "/tmp/celerybeat-schedule"]
     environment:
       ENVIRONMENT: local
-      DATABASE_URL: postgresql+asyncpg://postgres:${POSTGRES_PASSWORD:-ci_pg_pass}@db:5432/${POSTGRES_DB:-cronos_ci_db}
+      DATABASE_URL: postgresql+asyncpg://postgres:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@db:5432/${POSTGRES_DB:-cronos_ci_db}
       SECRET_KEY: ${SECRET_KEY:-ci-test-secret-key-not-for-production}
       CLERK_SECRET_KEY: ${CLERK_SECRET_KEY:-}
       CLERK_WEBHOOK_SECRET: ${CLERK_WEBHOOK_SECRET:-}

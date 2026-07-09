@@ -53,7 +53,7 @@ async def test_create_member_rejects_legacy_credential_fields(async_client, cler
     assert response.status_code == 422
 
 
-async def test_legacy_admin_teacher_writes_are_quarantined(async_client, clerk_admin_headers):
+async def test_legacy_admin_teacher_write_routes_are_removed(async_client, clerk_admin_headers):
     create_response = await async_client.post(
         "/api/v1/teachers/",
         headers=clerk_admin_headers,
@@ -66,9 +66,9 @@ async def test_legacy_admin_teacher_writes_are_quarantined(async_client, clerk_a
     )
     delete_response = await async_client.delete("/api/v1/teachers/123", headers=clerk_admin_headers)
 
-    assert create_response.status_code == 410
-    assert update_response.status_code == 410
-    assert delete_response.status_code == 410
+    assert create_response.status_code == 405
+    assert update_response.status_code == 404
+    assert delete_response.status_code == 404
 
 
 async def test_platform_teacher_invite_and_resend(async_client, clerk_admin_headers, monkeypatch):
@@ -153,16 +153,14 @@ async def test_retry_sync_relinks_active_member(async_client, clerk_admin_header
     assert body["clerk_membership_id"] == "mem_retry"
 
 
-async def test_teacher_service_legacy_write_guard(db_session):
-    from app import schemas
-    from app.services import teacher_service
+@pytest.mark.unit
+async def test_legacy_teacher_admin_writes_are_absent_from_openapi():
+    from app.main import app
 
-    with pytest.raises(RuntimeError):
-        await teacher_service.create_teacher(
-            db_session,
-            schemas.TeacherCreate(name="Legacy Guard", email="legacy.guard@example.com"),
-            organization_id=1,
-        )
+    paths = app.openapi()["paths"]
+
+    assert "post" not in paths["/api/v1/teachers/"]
+    assert "/api/v1/teachers/{teacher_id}" not in paths
 
 
 async def test_legacy_active_user_without_membership_is_denied(async_client, db_session, monkeypatch):

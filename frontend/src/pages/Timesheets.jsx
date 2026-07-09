@@ -20,6 +20,7 @@ import LessonLogModal from '../components/LessonLogModal'
 import TeacherCard from '../components/timesheets/TeacherCard'
 import { formatWeekRange, addDays, toWeekMonday } from '../utils/formatUtils'
 import { TXT } from '../utils/terminology'
+import { getApiErrorMessage } from '../utils/apiErrors'
 
 const STATUS_LABELS = {
   OPEN: 'Aberta',
@@ -85,7 +86,7 @@ const Timesheets = () => {
     try {
       await updateMutation.mutateAsync({ timesheetId, status })
     } catch (err) {
-      setStatusActionError(err.response?.data?.detail || 'Erro ao alterar estado. Tente novamente.')
+      setStatusActionError(getApiErrorMessage(err, 'Erro ao alterar estado. Tente novamente.'))
     }
   }
 

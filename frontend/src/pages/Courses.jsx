@@ -10,6 +10,7 @@ import { cilPlus } from '@coreui/icons'
 import SmartTable from '../components/SmartTable'
 import GenericModalForm from '../components/GenericModalForm'
 import CourseForm from '../components/Forms/CourseForm'
+import { getApiErrorMessage } from '../utils/apiErrors'
 
 import { 
   useCourses,
@@ -78,23 +79,7 @@ const Courses = () => {
         <CAlert color="danger" dismissible onClose={() => createMutation.reset()}>
           <strong>Erro:</strong>
           <div className="mt-1 text-sm">
-            {(() => {
-              const detail = createMutation.error?.response?.data?.detail;
-              if (typeof detail === 'string') return detail;
-              if (Array.isArray(detail)) {
-                return (
-                  <ul className="mb-0 ps-3">
-                    {detail.map((err) => (
-                      <li key={`${(err.loc || []).join('.')}-${err.msg}`}>
-                        {err.msg} 
-                        {err.loc ? <span className="opacity-75 ms-1">({err.loc.join(' -> ')})</span> : ''}
-                      </li>
-                    ))}
-                  </ul>
-                );
-              }
-              return createMutation.error?.message || "Ocorreu um erro inesperado.";
-            })()}
+            {getApiErrorMessage(createMutation.error)}
           </div>
         </CAlert>
       )}

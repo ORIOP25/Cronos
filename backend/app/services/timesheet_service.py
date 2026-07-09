@@ -1,9 +1,9 @@
 from datetime import date, datetime, timezone, timedelta
 from sqlalchemy.orm import Session
-from sqlalchemy import select, func, and_
-from app.core.exceptions import DomainError, NotFoundError, ConflictError
+from sqlalchemy import func, and_
+from app.core.exceptions import DomainError, NotFoundError
 
-from app import models, schemas
+from app import models
 from typing import List, Optional
 
 
@@ -106,7 +106,7 @@ def submit_timesheet_sync(
     ).filter(
         models.ScheduleOutput.organization_id == organization_id,
         models.Lesson.teacher_id == teacher_id,
-        models.ScheduleOutput.is_draft == False,
+        models.ScheduleOutput.is_draft.is_(False),
         models.ScheduleOutput.date.between(week_start_date, week_end_date)
     ).all()
     
@@ -153,7 +153,7 @@ def _compute_slot_counts_for_teachers(
     completed_slots: com LessonLog.status == COMPLETED
     occurrence_slots: com LessonLog.status == OCCURRENCE OU LessonOccurrence ativa
     """
-    from sqlalchemy import case, func
+    from sqlalchemy import case
     week_end_date = week_start_date + timedelta(days=6)
 
     if _week_has_active_baseline(db, organization_id, week_start_date):

@@ -18,6 +18,7 @@ import {
 } from '../hooks/useSchoolData'
 import { useOrganization } from '@clerk/react'
 import { getCurrentWeekMonday, addDays, formatWeekRange, formatDate, toIsoDate, isAfterDate } from '../utils/formatUtils'
+import { getApiErrorMessage } from '../utils/apiErrors'
 
 const HORIZON_NOT_CONFIGURED_MESSAGE =
   'Não existe período semanal configurado para a escola. Contacte a equipa administrativa para validar o ano letivo ativo.'
@@ -275,7 +276,7 @@ function MySchedules() {
     try {
       await submitMutation.mutateAsync(weekStart)
     } catch (err) {
-      setSubmitError(err.response?.data?.detail || 'Erro ao submeter a semana. Tente novamente.')
+      setSubmitError(getApiErrorMessage(err, 'Erro ao submeter a semana. Tente novamente.'))
     }
   }
 

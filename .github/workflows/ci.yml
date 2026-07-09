@@ -8,7 +8,7 @@ on:
 
 env:
   PYTHON_VERSION: "3.12"
-  NODE_VERSION: "20"
+  NODE_VERSION: "24"
   CI_CLERK_PUBLISHABLE_KEY: "pk_test_d2VsY29tZWQtY2F0LTgzLmNsZXJrLmFjY291bnRzLmRldiQ"
   CI_E2E_CLERK_ADMIN_EMAIL: "aperiusteste@gmail.com"
   CI_E2E_CLERK_TEACHER_EMAIL: "rodrigommanguinhas@gmail.com"
@@ -23,7 +23,7 @@ jobs:
         image: postgres:16-alpine
         env:
           POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: ci_pg_pass
+          POSTGRES_HOST_AUTH_METHOD: trust
           POSTGRES_DB: cronos_test_db
         ports:
           - 5432:5432
@@ -41,59 +41,78 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
-          cache-dependency-path: backend/requirements.txt
+          cache-dependency-path: |
+            backend/requirements.txt
+            backend/requirements-dev.txt
 
       - name: Install Dependencies
         working-directory: backend
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install pytest-cov
+          pip install -r requirements-dev.txt
+
+      - name: Lint backend
+        working-directory: backend
+        run: ruff check app scripts
+
+      - name: Audit backend dependencies
+        working-directory: backend
+        run: pip-audit -r requirements.txt --progress-spinner off
 
       - name: Run Migrations
         working-directory: backend
         run: alembic upgrade head
         env:
           ENVIRONMENT: local
-          DATABASE_URL: "postgresql+asyncpg://postgres:ci_pg_pass@localhost:5432/cronos_test_db"
+          DATABASE_URL: "postgresql+asyncpg://postgres@localhost:5432/cronos_test_db"
           DATABASE_POOLING_ENABLED: "false"
           SECRET_KEY: ci-test-secret-key-not-for-production
           CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
           CLERK_WEBHOOK_SECRET: ${{ secrets.CLERK_WEBHOOK_SECRET }}
           CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_PUBLISHABLE_KEY || vars.VITE_CLERK_PUBLISHABLE_KEY || secrets.CLERK_PUBLISHABLE_KEY || secrets.VITE_CLERK_PUBLISHABLE_KEY || env.CI_CLERK_PUBLISHABLE_KEY }}
 
-      - name: Run DB contract tests
+      - name: Verify Alembic schema drift
         working-directory: backend
-        run: pytest tests/test_runtime_reality.py tests/test_rls_database_policies.py -m postgresql -v --tb=short
+        run: alembic check
         env:
           ENVIRONMENT: local
-          DATABASE_URL: "postgresql+asyncpg://postgres:ci_pg_pass@localhost:5432/cronos_test_db"
+          DATABASE_URL: "postgresql+asyncpg://postgres@localhost:5432/cronos_test_db"
           DATABASE_POOLING_ENABLED: "false"
           SECRET_KEY: ci-test-secret-key-not-for-production
-          RATELIMIT_ENABLED: "false"
+          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
+          CLERK_WEBHOOK_SECRET: ${{ secrets.CLERK_WEBHOOK_SECRET }}
+          CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_PUBLISHABLE_KEY || vars.VITE_CLERK_PUBLISHABLE_KEY || secrets.CLERK_PUBLISHABLE_KEY || secrets.VITE_CLERK_PUBLISHABLE_KEY || env.CI_CLERK_PUBLISHABLE_KEY }}
+
+      - name: Audit tenant trigger contracts
+        working-directory: backend
+        run: python scripts/audit_triggers.py
+        env:
+          ENVIRONMENT: local
+          DATABASE_URL: "postgresql+asyncpg://postgres@localhost:5432/cronos_test_db"
+          DATABASE_POOLING_ENABLED: "false"
+          SECRET_KEY: ci-test-secret-key-not-for-production
+          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
+          CLERK_WEBHOOK_SECRET: ${{ secrets.CLERK_WEBHOOK_SECRET }}
+          CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_PUBLISHABLE_KEY || vars.VITE_CLERK_PUBLISHABLE_KEY || secrets.CLERK_PUBLISHABLE_KEY || secrets.VITE_CLERK_PUBLISHABLE_KEY || env.CI_CLERK_PUBLISHABLE_KEY }}
+
+      - name: Audit database integrity
+        working-directory: backend
+        run: python -m scripts.audit_database_integrity
+        env:
+          ENVIRONMENT: local
+          DATABASE_URL: "postgresql+asyncpg://postgres@localhost:5432/cronos_test_db"
+          DATABASE_POOLING_ENABLED: "false"
+          SECRET_KEY: ci-test-secret-key-not-for-production
           CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
           CLERK_WEBHOOK_SECRET: ${{ secrets.CLERK_WEBHOOK_SECRET }}
           CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_PUBLISHABLE_KEY || vars.VITE_CLERK_PUBLISHABLE_KEY || secrets.CLERK_PUBLISHABLE_KEY || secrets.VITE_CLERK_PUBLISHABLE_KEY || env.CI_CLERK_PUBLISHABLE_KEY }}
 
       - name: Run Tests
         working-directory: backend
-        run: pytest tests/ -v --cov=app --cov-report=xml:coverage.xml --tb=short
+        run: pytest tests/ -v --cov=app --cov-report=xml:coverage.xml --cov-fail-under=70 --junitxml=test-results.xml --tb=short
         env:
           ENVIRONMENT: local
-          DATABASE_URL: "postgresql+asyncpg://postgres:ci_pg_pass@localhost:5432/cronos_test_db"
-          DATABASE_POOLING_ENABLED: "false"
-          SECRET_KEY: ci-test-secret-key-not-for-production
-          RATELIMIT_ENABLED: "false"
-          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
-          CLERK_WEBHOOK_SECRET: ${{ secrets.CLERK_WEBHOOK_SECRET }}
-          CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_PUBLISHABLE_KEY || vars.VITE_CLERK_PUBLISHABLE_KEY || secrets.CLERK_PUBLISHABLE_KEY || secrets.VITE_CLERK_PUBLISHABLE_KEY || env.CI_CLERK_PUBLISHABLE_KEY }}
-
-      - name: Run PostgreSQL reality tests
-        working-directory: backend
-        run: pytest tests/ -m postgresql -v --tb=short
-        env:
-          ENVIRONMENT: local
-          DATABASE_URL: "postgresql+asyncpg://postgres:ci_pg_pass@localhost:5432/cronos_test_db"
+          DATABASE_URL: "postgresql+asyncpg://postgres@localhost:5432/cronos_test_db"
           DATABASE_POOLING_ENABLED: "false"
           SECRET_KEY: ci-test-secret-key-not-for-production
           RATELIMIT_ENABLED: "false"
@@ -104,22 +123,19 @@ jobs:
       - name: Verify skipped test count
         working-directory: backend
         run: |
-          SKIPPED=$(pytest tests/ --collect-only -q 2>&1 | grep -oP '\d+ skipped' | grep -oP '\d+' || echo 0)
-          MAX_ALLOWED=3
-          if [ "$SKIPPED" -gt "$MAX_ALLOWED" ]; then
-            echo "ERROR: $SKIPPED skipped tests (max $MAX_ALLOWED allowed)"
-            exit 1
-          fi
-          echo "OK: $SKIPPED skipped tests (threshold: $MAX_ALLOWED)"
-        env:
-          ENVIRONMENT: local
-          DATABASE_URL: "postgresql+asyncpg://postgres:ci_pg_pass@localhost:5432/cronos_test_db"
-          DATABASE_POOLING_ENABLED: "false"
-          SECRET_KEY: ci-test-secret-key-not-for-production
-          RATELIMIT_ENABLED: "false"
-          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
-          CLERK_WEBHOOK_SECRET: ${{ secrets.CLERK_WEBHOOK_SECRET }}
-          CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_PUBLISHABLE_KEY || vars.VITE_CLERK_PUBLISHABLE_KEY || secrets.CLERK_PUBLISHABLE_KEY || secrets.VITE_CLERK_PUBLISHABLE_KEY || env.CI_CLERK_PUBLISHABLE_KEY }}
+          python - <<'PY'
+          import xml.etree.ElementTree as ET
+
+          root = ET.parse("test-results.xml").getroot()
+          skipped = sum(
+              int(suite.attrib.get("skipped", 0))
+              for suite in root.iter("testsuite")
+          )
+          maximum = 3
+          if skipped > maximum:
+              raise SystemExit(f"ERROR: {skipped} skipped tests (max {maximum} allowed)")
+          print(f"OK: {skipped} skipped tests (threshold: {maximum})")
+          PY
 
   frontend:
     name: Frontend - Lint + Test + Build
@@ -139,13 +155,21 @@ jobs:
         working-directory: frontend
         run: npm ci
 
+      - name: Audit frontend dependencies
+        working-directory: frontend
+        run: npm audit --audit-level=high
+
       - name: Lint
         working-directory: frontend
         run: npm run lint -- --max-warnings 0
 
+      - name: Detect frontend dead code
+        working-directory: frontend
+        run: npm run lint:dead-code
+
       - name: Test
         working-directory: frontend
-        run: npx vitest run
+        run: npm run test:coverage
 
       - name: Build
         working-directory: frontend
@@ -206,11 +230,14 @@ jobs:
           E2E_CLERK_TEACHER_EMAIL: ${{ secrets.E2E_CLERK_TEACHER_EMAIL || env.CI_E2E_CLERK_TEACHER_EMAIL }}
           E2E_CLERK_ORG_ID: ${{ vars.E2E_CLERK_ORG_ID || secrets.E2E_CLERK_ORG_ID }}
 
+      - name: Generate ephemeral CI database password
+        shell: bash
+        run: echo "POSTGRES_PASSWORD=$(openssl rand -hex 24)" >> "$GITHUB_ENV"
+
       - name: Start full application stack
         run: docker compose -f docker-compose.ci.yml up -d --build --wait
         env:
           COMPOSE_PROJECT_NAME: cronos-ci-${{ github.run_id }}-${{ github.run_attempt }}
-          POSTGRES_PASSWORD: ci_pg_pass
           POSTGRES_DB: cronos_ci_db
           SECRET_KEY: ci-test-secret-key-not-for-production
           CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}

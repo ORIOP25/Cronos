@@ -1,5 +1,10 @@
 # Auditoria Frontend & UI/UX — Cronos
 
+> Documento histórico de Maio de 2026. As afirmações de conclusão e o
+> inventário de ficheiros refletem esse corte e não a árvore atual. Para o
+> estado verificado da beta, consultar
+> `10_migration_map/BETA_BASELINE_READINESS_AUDIT_2026-07.md`.
+
 **Data**: 03 Maio 2026  
 **Âmbito**: Análise completa ao frontend (componentes, páginas, formulários, modais, tabelas, acessibilidade, cores, texto, ícones, formatação)  
 **Objetivo**: Identificar problemas, inconsistências e más práticas; propor melhorias para a experiência do utilizador e do desenvolvedor

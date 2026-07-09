@@ -37,5 +37,6 @@ test.describe('Dashboard real backend', () => {
     await expect(page.locator('[data-testid="resource-teachers"]')).toBeVisible({ timeout: 10000 })
     await expect(page.locator('[data-testid="resource-classes"]')).toBeVisible({ timeout: 10000 })
     await expect(page.locator('[data-testid="debt-summary"]')).toBeVisible({ timeout: 10000 })
+    await expect(page.locator('[data-testid="schedule-health"]')).toBeVisible({ timeout: 10000 })
   })
 })
