@@ -31,7 +31,7 @@ alembic upgrade head
 alembic current
 alembic check
 python scripts/audit_triggers.py
-python scripts/audit_database_integrity.py
+python -m scripts.audit_database_integrity
 pytest tests/test_runtime_reality.py tests/test_rls_database_policies.py -m postgresql -v --tb=short
 ruff check app scripts
 ```

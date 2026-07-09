@@ -23,7 +23,7 @@ jobs:
         image: postgres:16-alpine
         env:
           POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: ci_pg_pass
+          POSTGRES_HOST_AUTH_METHOD: trust
           POSTGRES_DB: cronos_test_db
         ports:
           - 5432:5432
@@ -64,7 +64,7 @@ jobs:
         run: alembic upgrade head
         env:
           ENVIRONMENT: local
-          DATABASE_URL: "postgresql+asyncpg://postgres:ci_pg_pass@localhost:5432/cronos_test_db"
+          DATABASE_URL: "postgresql+asyncpg://postgres@localhost:5432/cronos_test_db"
           DATABASE_POOLING_ENABLED: "false"
           SECRET_KEY: ci-test-secret-key-not-for-production
           CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
@@ -76,7 +76,7 @@ jobs:
         run: alembic check
         env:
           ENVIRONMENT: local
-          DATABASE_URL: "postgresql+asyncpg://postgres:ci_pg_pass@localhost:5432/cronos_test_db"
+          DATABASE_URL: "postgresql+asyncpg://postgres@localhost:5432/cronos_test_db"
           DATABASE_POOLING_ENABLED: "false"
           SECRET_KEY: ci-test-secret-key-not-for-production
           CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
@@ -88,7 +88,7 @@ jobs:
         run: python scripts/audit_triggers.py
         env:
           ENVIRONMENT: local
-          DATABASE_URL: "postgresql+asyncpg://postgres:ci_pg_pass@localhost:5432/cronos_test_db"
+          DATABASE_URL: "postgresql+asyncpg://postgres@localhost:5432/cronos_test_db"
           DATABASE_POOLING_ENABLED: "false"
           SECRET_KEY: ci-test-secret-key-not-for-production
           CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
@@ -97,10 +97,10 @@ jobs:
 
       - name: Audit database integrity
         working-directory: backend
-        run: python scripts/audit_database_integrity.py
+        run: python -m scripts.audit_database_integrity
         env:
           ENVIRONMENT: local
-          DATABASE_URL: "postgresql+asyncpg://postgres:ci_pg_pass@localhost:5432/cronos_test_db"
+          DATABASE_URL: "postgresql+asyncpg://postgres@localhost:5432/cronos_test_db"
           DATABASE_POOLING_ENABLED: "false"
           SECRET_KEY: ci-test-secret-key-not-for-production
           CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
@@ -112,7 +112,7 @@ jobs:
         run: pytest tests/ -v --cov=app --cov-report=xml:coverage.xml --cov-fail-under=70 --junitxml=test-results.xml --tb=short
         env:
           ENVIRONMENT: local
-          DATABASE_URL: "postgresql+asyncpg://postgres:ci_pg_pass@localhost:5432/cronos_test_db"
+          DATABASE_URL: "postgresql+asyncpg://postgres@localhost:5432/cronos_test_db"
           DATABASE_POOLING_ENABLED: "false"
           SECRET_KEY: ci-test-secret-key-not-for-production
           RATELIMIT_ENABLED: "false"
@@ -230,11 +230,14 @@ jobs:
           E2E_CLERK_TEACHER_EMAIL: ${{ secrets.E2E_CLERK_TEACHER_EMAIL || env.CI_E2E_CLERK_TEACHER_EMAIL }}
           E2E_CLERK_ORG_ID: ${{ vars.E2E_CLERK_ORG_ID || secrets.E2E_CLERK_ORG_ID }}
 
+      - name: Generate ephemeral CI database password
+        shell: bash
+        run: echo "POSTGRES_PASSWORD=$(openssl rand -hex 24)" >> "$GITHUB_ENV"
+
       - name: Start full application stack
         run: docker compose -f docker-compose.ci.yml up -d --build --wait
         env:
           COMPOSE_PROJECT_NAME: cronos-ci-${{ github.run_id }}-${{ github.run_attempt }}
-          POSTGRES_PASSWORD: ci_pg_pass
           POSTGRES_DB: cronos_ci_db
           SECRET_KEY: ci-test-secret-key-not-for-production
           CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
