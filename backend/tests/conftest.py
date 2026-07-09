@@ -132,7 +132,7 @@ async def async_client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient, 
     async def override_get_db():
         yield db_session
     app.dependency_overrides[get_db] = override_get_db
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="https://test") as ac:
         yield ac
     app.dependency_overrides.pop(get_db, None)
 
@@ -140,7 +140,7 @@ async def async_client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient, 
 @pytest_asyncio.fixture(scope="function")
 async def real_async_client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
     """ASGI client that uses the app's real SessionLocal per request."""
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="https://test") as ac:
         yield ac
 
 

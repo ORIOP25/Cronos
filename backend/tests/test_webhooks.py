@@ -40,7 +40,7 @@ def _set_webhook_secret(monkeypatch):
 async def async_client():
     from app.main import app
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="https://test") as client:
         yield client
 
 
