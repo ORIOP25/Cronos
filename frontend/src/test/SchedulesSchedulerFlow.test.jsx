@@ -119,18 +119,18 @@ describe('Schedules scheduler flow', () => {
     expect(screen.queryByRole('combobox', { name: /modo|estratégia/i })).not.toBeInTheDocument()
   })
 
-  it('shows the unavailable reason without a generation command', () => {
+  it('hides the generation command without showing an unavailable reason', () => {
     mocks.status = {
       pending_draft_id: null,
       primary_action: 'GENERATION_UNAVAILABLE',
       can_generate_new_draft: false,
       can_regenerate_with_confirmation: false,
-      blocked_reason: 'No schedule generation needed.',
+      blocked_reason: null,
     }
 
     renderPage()
 
-    expect(screen.getByText('No schedule generation needed.')).toBeInTheDocument()
+    expect(screen.queryByText('No schedule generation needed.')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Gerar Horário' })).not.toBeInTheDocument()
   })
 

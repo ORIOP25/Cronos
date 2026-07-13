@@ -10,6 +10,10 @@ import structlog
 from app import schemas, models
 from app.api import deps
 from app.services import schedule_service, teacher_observability_service
+from app.services.schedule_cache_service import (
+    invalidate_latest_schedule_cache,
+    latest_schedule_cache_key,
+)
 from app.services.preflight_service import _resolve_preflight_hard_end_date
 from app.config import settings
 from app.core.ratelimit import limiter
@@ -134,7 +138,7 @@ async def get_schedule(
     2. Se falhar, lê da BD e grava no Redis.
     """
     # Definimos a chave única para esta organização
-    CACHE_KEY = f"schedule_latest_data_{current_user.organization_id}"
+    CACHE_KEY = latest_schedule_cache_key(current_user.organization_id)
 
     try:
         r = _get_redis_client()
@@ -181,9 +185,7 @@ async def reset_all_data(
 
         # Se apagamos os dados, também devemos limpar a cache.
         try:
-            r = redis.Redis.from_url(str(settings.REDIS_URL))
-            cache_key = f"schedule_latest_data_{current_user.organization_id}"
-            r.delete(cache_key)
+            invalidate_latest_schedule_cache(current_user.organization_id)
         except Exception as cache_exc:
             detail = f"Dados apagados, mas falhou a invalidação de cache: {cache_exc}"
 

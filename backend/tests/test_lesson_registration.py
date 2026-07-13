@@ -15,8 +15,8 @@ from app.services import (
     lesson_log_service,
     timesheet_service,
     occurrence_service,
-    settings_service,
 )
+from app.services.school_year_reset_service import SchoolYearResetService
 
 # sync_db fixture is provided by conftest.py (shared across all test files)
 
@@ -243,7 +243,10 @@ class TestSoftReset:
         engine = create_async_engine(ASYNC_DB_URL, poolclass=NullPool)
         session_factory = async_sessionmaker(bind=engine, class_=AsyncSession, expire_on_commit=False)
         async with session_factory() as async_session:
-            await settings_service.soft_reset_year(async_session, organization_id)
+            await SchoolYearResetService(async_session).reset_year(
+                organization_id,
+                reset_by_user_id=base_setup["user_id"],
+            )
             
             # Assert ClassProgress is 0.0
             result = await async_session.execute(
@@ -1206,7 +1209,10 @@ class TestSoftResetCompleteness:
         engine = create_async_engine(ASYNC_DB_URL, poolclass=NullPool)
         session_factory = async_sessionmaker(bind=engine, class_=AsyncSession, expire_on_commit=False)
         async with session_factory() as async_session:
-            await settings_service.soft_reset_year(async_session, organization_id)
+            await SchoolYearResetService(async_session).reset_year(
+                organization_id,
+                reset_by_user_id=base_setup["user_id"],
+            )
 
             result = await async_session.execute(
                 select(models.ClassProgress).where(

@@ -8,11 +8,11 @@ Responsável por:
 """
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import date
 from typing import Sequence
 
 import holidays as pt_holidays_lib
-from sqlalchemy import select, and_, delete, update
+from sqlalchemy import select, and_, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models, schemas
@@ -454,54 +454,3 @@ async def sync_holidays(
     )
     await db.commit()
     return count
-
-# ==========================================
-#  SOFT-RESET DO ANO LETIVO
-# ==========================================
-
-async def soft_reset_year(db: AsyncSession, organization_id: int) -> bool:
-    """Limpa todas as instâncias dinâmicas e reinicia o progresso,
-    mantendo professores, turmas, cursos, disciplinas, módulos e salas.
-    """
-    # 1. Apagar Timesheets semanais
-    await db.execute(delete(models.TeacherWeeklyTimesheet).where(models.TeacherWeeklyTimesheet.organization_id == organization_id))
-
-    # 2. Apagar Eventos Operacionais e Ocorrências
-    await db.execute(delete(models.OccurrenceOperationalEvent).where(models.OccurrenceOperationalEvent.organization_id == organization_id))
-    await db.execute(delete(models.TeacherEndpointOperationalEvent).where(models.TeacherEndpointOperationalEvent.organization_id == organization_id))
-    await db.execute(delete(models.LessonOccurrence).where(models.LessonOccurrence.organization_id == organization_id))
-
-    # 3. Apagar Substituições (não têm organization_id direto, usar lesson_id como pivot)
-    await db.execute(
-        delete(models.Substitution).where(
-            models.Substitution.lesson_id.in_(
-                select(models.Lesson.id).where(models.Lesson.organization_id == organization_id)
-            )
-        )
-    )
-
-    # 4. Apagar Registos de Aulas (LessonLog tem organization_id direto)
-    await db.execute(delete(models.LessonLog).where(models.LessonLog.organization_id == organization_id))
-
-    # 5. Apagar ScheduleOutput (blocos gerados pelo Solver)
-    await db.execute(delete(models.ScheduleOutput).where(models.ScheduleOutput.organization_id == organization_id))
-
-    # 6. Resetar ClassProgress (hours_completed = 0.0) — preserva a estrutura de turmas/módulos
-    await db.execute(
-        update(models.ClassProgress)
-        .where(
-            models.ClassProgress.organization_id == organization_id,
-            models.ClassProgress.class_id.in_(
-                select(models.Class.id).where(models.Class.organization_id == organization_id)
-            )
-        )
-        .values(
-            hours_completed=0.0,
-            hours_debt=0.0,
-            is_completed=False,
-            updated_at=datetime.now(timezone.utc)
-        )
-    )
-
-    await db.commit()
-    return True

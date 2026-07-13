@@ -3,10 +3,7 @@ from datetime import date, datetime, timezone
 import pytest
 
 from app import models
-from app.services.scheduler_status_service import (
-    NO_TRIGGER_MESSAGE,
-    SchedulerStatusService,
-)
+from app.services.scheduler_status_service import SchedulerStatusService
 
 
 pytestmark = pytest.mark.integration
@@ -111,7 +108,7 @@ async def test_published_status_distinguishes_no_trigger_and_scheduler_change(db
 
     blocked = await SchedulerStatusService(db_session).get_status(organization.id)
     assert blocked.primary_action == "GENERATION_UNAVAILABLE"
-    assert blocked.blocked_reason == NO_TRIGGER_MESSAGE
+    assert blocked.blocked_reason is None
     assert blocked.can_generate_new_draft is False
 
     state.scheduler_state_version = 5

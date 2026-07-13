@@ -17,11 +17,16 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from pydantic import BaseModel
+import structlog
+
 from app import models, schemas
 from app.api import deps
 from app.services import settings_service
+from app.services.schedule_cache_service import invalidate_latest_schedule_cache
+from app.services.school_year_reset_service import SchoolYearResetService
 
 router = APIRouter()
+logger = structlog.get_logger(__name__)
 
 # ==========================================
 #  ORGANIZATION SETTINGS
@@ -74,7 +79,39 @@ async def soft_reset_year_endpoint(
     if payload.confirm_phrase != "Confirmo":
         raise HTTPException(status_code=400, detail="A frase de confirmação deve ser exatamente 'Confirmo'.")
         
-    await settings_service.soft_reset_year(db, current_user.organization_id)
+    try:
+        result = await SchoolYearResetService(db).reset_year(
+            current_user.organization_id,
+            reset_by_user_id=current_user.id,
+        )
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        logger.exception(
+            "school_year_destructive_reset_failed",
+            organization_id=current_user.organization_id,
+            actor_user_id=current_user.id,
+        )
+        raise
+
+    try:
+        invalidate_latest_schedule_cache(current_user.organization_id)
+    except Exception as exc:
+        logger.warning(
+            "school_year_reset_cache_invalidation_failed",
+            organization_id=current_user.organization_id,
+            actor_user_id=current_user.id,
+            error_type=type(exc).__name__,
+        )
+
+    logger.info(
+        "school_year_destructive_reset_committed",
+        organization_id=current_user.organization_id,
+        actor_user_id=current_user.id,
+        deleted_rows=result.deleted_rows,
+        reset_progress_rows=result.reset_progress_rows,
+        new_school_year_id=result.new_school_year_id,
+    )
     return {"message": "Soft-reset efetuado com sucesso."}
 
 # ==========================================

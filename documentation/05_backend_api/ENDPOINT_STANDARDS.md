@@ -205,6 +205,15 @@ Resposta minima (`200`):
 
 ## Contrato de seguranca para reset do ano letivo
 
+Existem duas operacoes deliberadamente distintas:
+- `POST /api/v1/scheduler/reset-year` faz um reset logico do scheduler e preserva o historico;
+- `POST /api/v1/school/settings/soft-reset` faz a transicao destrutiva de ano,
+  elimina dados operacionais do tenant, reinicia o progresso e preserva a estrutura base.
+
+Nao reutilizar listas parciais de `DELETE` nos endpoints. O reset destrutivo pertence ao
+caso de uso transacional `SchoolYearResetService`, que respeita a ordem das dependencias
+referenciais e recria o estado do scheduler como `UNPUBLISHED`.
+
 ### Endpoint de reset operacional
 - rota: `POST /api/v1/scheduler/reset-year`;
 - role: admin-only;

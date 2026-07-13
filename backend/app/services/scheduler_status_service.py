@@ -9,11 +9,6 @@ from app.services.scheduler_fingerprint_service import SchedulerFingerprintServi
 from app.services.scheduler_state_service import SchedulerStateService
 
 
-NO_TRIGGER_MESSAGE = (
-    "No schedule generation needed.\n\n"
-    "There are no declared missed hours to recover and no schedule-relevant "
-    "changes since the last approved schedule."
-)
 NOT_CONFIGURED_MESSAGE = "The scheduler school year is not configured."
 
 
@@ -92,7 +87,7 @@ class SchedulerStatusService:
             primary_action="GENERATION_UNAVAILABLE",
             can_generate_new_draft=False,
             can_regenerate_with_confirmation=False,
-            blocked_reason=NO_TRIGGER_MESSAGE,
+            blocked_reason=None,
             trigger_type=None,
         )
 
