@@ -10,6 +10,8 @@ from sqlalchemy import select
 from app import models
 from app.db.database import SessionLocal
 from app.services import member_reconciliation_service
+from app.services.clerk_access_service import ClerkAccessService
+from app.services.member_access_operation_service import MemberAccessOperationService
 
 
 def _operation_to_dict(operation: models.MemberAccessOperation | None) -> dict:
@@ -70,8 +72,67 @@ async def _main() -> None:
     hook_action.add_argument("--note", required=True)
     hook_action.add_argument("--apply", action="store_true")
 
+    revoke_orphan = subparsers.add_parser("revoke-orphan-invitation")
+    revoke_orphan.add_argument("--organization-id", type=int, required=True)
+    revoke_orphan.add_argument("--invitation-id", required=True)
+    revoke_orphan.add_argument("--email", required=True)
+    revoke_orphan.add_argument("--operator-id", type=int, required=True)
+    revoke_orphan.add_argument("--apply", action="store_true")
+
     args = parser.parse_args()
     async with SessionLocal() as db:
+        if args.command == "revoke-orphan-invitation":
+            organization = await db.get(models.Organization, args.organization_id)
+            operator = await db.get(models.User, args.operator_id)
+            if organization is None or not organization.clerk_org_id:
+                raise RuntimeError("The Clerk-backed organization was not found.")
+            if operator is None or not operator.clerk_user_id:
+                raise RuntimeError("The Clerk-backed operator was not found.")
+            preview = {
+                "organization_id": organization.id,
+                "clerk_org_id": organization.clerk_org_id,
+                "invitation_id": args.invitation_id,
+                "email": args.email.lower(),
+                "apply": args.apply,
+            }
+            if not args.apply:
+                print(json.dumps(preview, indent=2))
+                return
+            operations = MemberAccessOperationService()
+            operation = await operations.create_pending(
+                organization_id=organization.id,
+                target_email=args.email,
+                operation_type=models.MemberAccessOperationType.revoke_invitation,
+                created_by_user_id=operator.id,
+                intended_capabilities=set(),
+                intended_role=None,
+                intent={"orphan_invitation_id": args.invitation_id},
+                clerk_org_id=organization.clerk_org_id,
+                clerk_invitation_id=args.invitation_id,
+            )
+            result = await ClerkAccessService().revoke_organization_invitation(
+                clerk_org_id=organization.clerk_org_id,
+                invitation_id=args.invitation_id,
+                requesting_user_id=operator.clerk_user_id,
+            )
+            if not result.ok:
+                await operations.transition(
+                    operation.id,
+                    models.MemberAccessOperationStatus.failed,
+                    error_category=result.error_category,
+                    safe_message=result.safe_message,
+                )
+                raise RuntimeError(result.safe_message or "Clerk revocation failed.")
+            await operations.transition(
+                operation.id,
+                models.MemberAccessOperationStatus.local_committed,
+                clerk_invitation_id=args.invitation_id,
+            )
+            preview["operation_id"] = operation.id
+            preview["status"] = "revoked"
+            print(json.dumps(preview, indent=2))
+            return
+
         if args.command == "inspect-operation":
             operation = await db.get(models.MemberAccessOperation, args.id)
             print(json.dumps(_operation_to_dict(operation), indent=2, default=str))

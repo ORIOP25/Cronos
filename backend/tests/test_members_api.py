@@ -1,7 +1,52 @@
+from datetime import datetime, timezone
+from types import SimpleNamespace
+
 import pytest
 
 
 pytestmark = pytest.mark.asyncio
+
+
+@pytest.mark.unit
+async def test_clerk_access_service_normalizes_invitation_expiry_milliseconds(monkeypatch):
+    from app.services.member_service import ClerkAccessService
+
+    expires_at_ms = 1_786_526_551_827
+    invitation = SimpleNamespace(
+        id="orginv_contract",
+        status="pending",
+        expires_at=expires_at_ms,
+    )
+    sdk = SimpleNamespace(
+        organization_invitations=SimpleNamespace(
+            create=lambda **_kwargs: invitation,
+        )
+    )
+    monkeypatch.setattr("app.services.clerk_access_service.get_clerk_sdk", lambda: sdk)
+
+    result = await ClerkAccessService().create_organization_invitation(
+        clerk_org_id="org_contract",
+        email="teacher+clerk_test@example.com",
+        role="org:member",
+        inviter_user_id="user_admin",
+        membership_id=42,
+    )
+
+    assert result.ok is True
+    assert result.expires_at == datetime.fromtimestamp(expires_at_ms / 1000, tz=timezone.utc)
+    assert result.expires_at.tzinfo is timezone.utc
+
+
+@pytest.mark.unit
+async def test_clerk_access_service_rejects_invitation_without_provider_id():
+    from app.services.clerk_access_service import ClerkAccessService
+
+    result = ClerkAccessService._invitation_result(
+        SimpleNamespace(status="pending", expires_at=1_786_526_901_149)
+    )
+
+    assert result.ok is False
+    assert result.error_category == "provider_contract_error"
 
 
 async def test_create_scheduler_only_teacher_member(async_client, clerk_admin_headers):
@@ -71,14 +116,28 @@ async def test_legacy_admin_teacher_write_routes_are_removed(async_client, clerk
     assert delete_response.status_code == 404
 
 
-async def test_platform_teacher_invite_and_resend(async_client, clerk_admin_headers, monkeypatch):
+async def test_platform_teacher_invite_and_resend(
+    async_client,
+    clerk_admin_headers,
+    db_session,
+    monkeypatch,
+):
+    from sqlalchemy import select
+
+    from app import models
     from app.services.member_service import ClerkAccessResult
 
     invitation_ids = iter(["inv_initial", "inv_resend"])
     revoked = []
 
+    expires_at_ms = 1_786_526_551_827
+
     async def fake_create_invitation(self, **kwargs):
-        return ClerkAccessResult(invitation_id=next(invitation_ids), invitation_status="pending")
+        return ClerkAccessResult(
+            invitation_id=next(invitation_ids),
+            invitation_status="pending",
+            expires_at=expires_at_ms,
+        )
 
     async def fake_revoke_invitation(self, **kwargs):
         revoked.append(kwargs["invitation_id"])
@@ -103,6 +162,10 @@ async def test_platform_teacher_invite_and_resend(async_client, clerk_admin_head
     created = create_response.json()
     assert created["access_status"] == "pending_invite"
     assert created["clerk_invitation_id"] == "inv_initial"
+    assert datetime.fromisoformat(created["invitation_expires_at"].replace("Z", "+00:00")) == datetime.fromtimestamp(
+        expires_at_ms / 1000,
+        tz=timezone.utc,
+    )
 
     resend_response = await async_client.post(
         f"/api/v1/members/{created['id']}/resend-invitation",
@@ -116,6 +179,84 @@ async def test_platform_teacher_invite_and_resend(async_client, clerk_admin_head
     assert resent["actions"]["can_resend_invite"] is True
     assert resent["provider_state"] == "confirmed"
     assert resent["remove_effect"] in {"archive", "hard_delete"}
+    operations = list(
+        (
+            await db_session.scalars(
+                select(models.MemberAccessOperation).where(
+                    models.MemberAccessOperation.target_email
+                    == "platform.teacher@example.com"
+                )
+            )
+        ).all()
+    )
+    assert len(operations) == 3
+    assert all(
+        operation.operation_status
+        == models.MemberAccessOperationStatus.local_committed
+        for operation in operations
+    )
+
+
+async def test_scheduler_only_teacher_can_be_converted_to_platform_access(
+    async_client,
+    clerk_admin_headers,
+    db_session,
+    monkeypatch,
+):
+    from app.services.member_service import ClerkAccessResult
+
+    expires_at_ms = 1_786_526_901_149
+
+    async def fake_create_invitation(self, **_kwargs):
+        return ClerkAccessResult(
+            invitation_id="inv_conversion",
+            invitation_status="pending",
+            expires_at=expires_at_ms,
+        )
+
+    monkeypatch.setattr(
+        "app.services.member_service.ClerkAccessService.create_organization_invitation",
+        fake_create_invitation,
+    )
+
+    created_response = await async_client.post(
+        "/api/v1/members",
+        headers=clerk_admin_headers,
+        json={
+            "organization_display_name": "Scheduler Teacher",
+            "email": "scheduler.convert@example.com",
+            "capabilities": ["teacher"],
+            "teacher_access_mode": "scheduler_only",
+            "subject_ids": [],
+        },
+    )
+    assert created_response.status_code == 201, created_response.text
+    created = created_response.json()
+    # The production request dependency commits after every successful request.
+    # The shared test transaction deliberately does not, so expose this member to
+    # the independent access-operation ledger before issuing the next request.
+    await db_session.commit()
+
+    converted_response = await async_client.patch(
+        f"/api/v1/members/{created['id']}",
+        headers=clerk_admin_headers,
+        json={
+            "capabilities": ["teacher"],
+            "teacher_access_mode": "platform",
+            "subject_ids": [],
+            "lock_version": created["lock_version"],
+        },
+    )
+
+    assert converted_response.status_code == 200, converted_response.text
+    converted = converted_response.json()
+    assert converted["teacher_access_mode"] == "platform"
+    assert converted["access_status"] == "pending_invite"
+    assert converted["clerk_invitation_id"] == "inv_conversion"
+    assert datetime.fromisoformat(converted["invitation_expires_at"].replace("Z", "+00:00")) == datetime.fromtimestamp(
+        expires_at_ms / 1000,
+        tz=timezone.utc,
+    )
 
 
 async def test_retry_sync_relinks_active_member(async_client, clerk_admin_headers, db_session, monkeypatch):

@@ -201,6 +201,11 @@ jobs:
         working-directory: frontend
         run: npx playwright install --with-deps chromium
 
+      - name: Generate reserved Clerk invitation identities
+        run: |
+          echo "E2E_CLERK_INVITE_CREATE_EMAIL=e2e-create-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}+clerk_test@example.com" >> "$GITHUB_ENV"
+          echo "E2E_CLERK_INVITE_CONVERT_EMAIL=e2e-convert-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}+clerk_test@example.com" >> "$GITHUB_ENV"
+
       - name: Validate E2E Clerk config
         working-directory: frontend
         run: |
@@ -221,6 +226,10 @@ jobs:
             echo "Set secrets E2E_CLERK_ADMIN_EMAIL and E2E_CLERK_TEACHER_EMAIL."
             exit 1
           fi
+          case "$E2E_CLERK_INVITE_CREATE_EMAIL:$E2E_CLERK_INVITE_CONVERT_EMAIL" in
+            *+clerk_test@example.com:*+clerk_test@example.com) ;;
+            *) echo "ERROR: Invitation identities must use Clerk reserved test emails."; exit 1 ;;
+          esac
         env:
           CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_PUBLISHABLE_KEY || vars.VITE_CLERK_PUBLISHABLE_KEY || secrets.CLERK_PUBLISHABLE_KEY || secrets.VITE_CLERK_PUBLISHABLE_KEY || env.CI_CLERK_PUBLISHABLE_KEY }}
           CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
@@ -316,6 +325,22 @@ jobs:
         run: docker compose -f docker-compose.ci.yml logs --no-color
         env:
           COMPOSE_PROJECT_NAME: cronos-ci-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: Revoke E2E Clerk invitations
+        if: always()
+        run: |
+          if [ -n "$(docker compose -f docker-compose.ci.yml ps -q backend)" ]; then
+            docker compose -f docker-compose.ci.yml exec -T \
+              -e CLERK_SECRET_KEY="$CLERK_SECRET_KEY" \
+              -e E2E_CLERK_ADMIN_EMAIL="$E2E_CLERK_ADMIN_EMAIL" \
+              -e E2E_CLERK_INVITE_CREATE_EMAIL="$E2E_CLERK_INVITE_CREATE_EMAIL" \
+              -e E2E_CLERK_INVITE_CONVERT_EMAIL="$E2E_CLERK_INVITE_CONVERT_EMAIL" \
+              backend python scripts/cleanup_e2e_clerk_invitations.py
+          fi
+        env:
+          COMPOSE_PROJECT_NAME: cronos-ci-${{ github.run_id }}-${{ github.run_attempt }}
+          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
+          E2E_CLERK_ADMIN_EMAIL: ${{ secrets.E2E_CLERK_ADMIN_EMAIL || env.CI_E2E_CLERK_ADMIN_EMAIL }}
 
       - name: Stop full application stack
         if: always()
