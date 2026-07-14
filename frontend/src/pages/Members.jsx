@@ -141,9 +141,10 @@ const MemberModal = ({ visible, member, subjects, onClose, onSave, isSaving, err
         {error && <CAlert color="danger">{getApiErrorMessage(error)}</CAlert>}
         {syncBlocked && <CAlert color="warning">Resolva a sincronizacao antes de editar este membro.</CAlert>}
         <div className="d-grid gap-3">
-          <CFormInput label="Nome" value={draft.organization_display_name} onChange={(event) => setDraft({ ...draft, organization_display_name: event.target.value })} disabled={isSaving || syncBlocked} />
-          <CFormInput label="Email" type="email" value={draft.email} onChange={(event) => setDraft({ ...draft, email: event.target.value })} disabled={isSaving || syncBlocked || member?.access_status === 'active'} />
+          <CFormInput id="member-name" label="Nome" value={draft.organization_display_name} onChange={(event) => setDraft({ ...draft, organization_display_name: event.target.value })} disabled={isSaving || syncBlocked} />
+          <CFormInput id="member-email" label="Email" type="email" value={draft.email} onChange={(event) => setDraft({ ...draft, email: event.target.value })} disabled={isSaving || syncBlocked || member?.access_status === 'active'} />
           <CFormSelect
+            id="member-capability-mode"
             label="Tipo de membro"
             value={draft.capability_mode}
             onChange={(event) => {
@@ -160,6 +161,7 @@ const MemberModal = ({ visible, member, subjects, onClose, onSave, isSaving, err
           {hasTeacher && (
             <>
               <CFormSelect
+                id="member-teacher-access-mode"
                 label="Acesso do professor"
                 value={hasAdmin ? 'platform' : draft.teacher_access_mode}
                 onChange={(event) => setDraft({ ...draft, teacher_access_mode: event.target.value })}
