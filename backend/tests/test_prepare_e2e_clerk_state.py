@@ -8,6 +8,7 @@ from app.services.e2e_clerk_state import (
     ClerkUser,
     E2EClerkPreflightError,
     E2EClerkPrepConfig,
+    config_from_env,
     prepare_e2e_clerk_state,
 )
 
@@ -98,6 +99,33 @@ def _config(org_id="org_e2e"):
         teacher_email="teacher@example.com",
         clerk_org_id=org_id,
     )
+
+
+async def test_e2e_env_rejects_real_person_emails():
+    with pytest.raises(E2EClerkPreflightError) as exc:
+        config_from_env(
+            {
+                "CLERK_SECRET_KEY": "sk_test_example",
+                "E2E_CLERK_ADMIN_EMAIL": "real.admin@example.com",
+                "E2E_CLERK_TEACHER_EMAIL": "real.teacher@example.com",
+                "E2E_CLERK_ORG_ID": "org_e2e",
+            }
+        )
+
+    assert "Real-person emails are forbidden" in str(exc.value)
+
+
+async def test_e2e_env_accepts_reserved_test_users_in_dedicated_org():
+    config = config_from_env(
+        {
+            "CLERK_SECRET_KEY": "sk_test_example",
+            "E2E_CLERK_ADMIN_EMAIL": "cronos-admin+clerk_test@example.com",
+            "E2E_CLERK_TEACHER_EMAIL": "cronos-teacher+clerk_test@example.com",
+            "E2E_CLERK_ORG_ID": "org_e2e",
+        }
+    )
+
+    assert config.clerk_org_id == "org_e2e"
 
 
 async def test_prepare_e2e_clerk_state_creates_admin_teacher_membership_idempotently(db_session):

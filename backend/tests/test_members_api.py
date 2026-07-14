@@ -12,14 +12,20 @@ async def test_clerk_access_service_normalizes_invitation_expiry_milliseconds(mo
     from app.services.member_service import ClerkAccessService
 
     expires_at_ms = 1_786_526_551_827
+    create_kwargs = {}
     invitation = SimpleNamespace(
         id="orginv_contract",
         status="pending",
         expires_at=expires_at_ms,
     )
+
+    def create_invitation(**kwargs):
+        create_kwargs.update(kwargs)
+        return invitation
+
     sdk = SimpleNamespace(
         organization_invitations=SimpleNamespace(
-            create=lambda **_kwargs: invitation,
+            create=create_invitation,
         )
     )
     monkeypatch.setattr("app.services.clerk_access_service.get_clerk_sdk", lambda: sdk)
@@ -35,6 +41,8 @@ async def test_clerk_access_service_normalizes_invitation_expiry_milliseconds(mo
     assert result.ok is True
     assert result.expires_at == datetime.fromtimestamp(expires_at_ms / 1000, tz=timezone.utc)
     assert result.expires_at.tzinfo is timezone.utc
+    assert create_kwargs["redirect_url"] == "http://localhost:5173/login"
+    assert create_kwargs["notify"] is True
 
 
 @pytest.mark.unit
@@ -47,6 +55,121 @@ async def test_clerk_access_service_rejects_invitation_without_provider_id():
 
     assert result.ok is False
     assert result.error_category == "provider_contract_error"
+
+
+@pytest.mark.unit
+async def test_clerk_access_service_preserves_safe_provider_diagnostics():
+    from app.services.clerk_access_service import ClerkAccessService
+
+    class ProviderError(RuntimeError):
+        status_code = 409
+        headers = {"x-request-id": "req_contract"}
+        data = SimpleNamespace(
+            errors=[SimpleNamespace(code="organization_membership_exists")]
+        )
+
+    def fail():
+        raise ProviderError("sensitive provider response")
+
+    result = await ClerkAccessService()._call(fail)
+
+    assert result.ok is False
+    assert result.safe_message == (
+        "Access could not be synchronized with Clerk. Try again or contact support."
+    )
+    assert result.provider_status_code == 409
+    assert result.provider_error_code == "organization_membership_exists"
+    assert result.provider_request_id == "req_contract"
+
+
+@pytest.mark.unit
+async def test_clerk_access_service_finds_exact_user_and_membership(monkeypatch):
+    from app.services.clerk_access_service import ClerkAccessService
+
+    user = SimpleNamespace(
+        id="user_existing",
+        email_addresses=[SimpleNamespace(email_address="existing@example.com")],
+    )
+    membership = SimpleNamespace(
+        id="orgmem_existing",
+        role="org:member",
+    )
+    sdk = SimpleNamespace(
+        users=SimpleNamespace(list=lambda **_kwargs: [user]),
+        organization_memberships=SimpleNamespace(
+            list=lambda **_kwargs: SimpleNamespace(data=[membership])
+        ),
+    )
+    monkeypatch.setattr("app.services.clerk_access_service.get_clerk_sdk", lambda: sdk)
+    access = ClerkAccessService()
+
+    found_user = await access.find_user_by_email(email="EXISTING@example.com")
+    found_membership = await access.get_membership(
+        clerk_org_id="org_existing",
+        clerk_user_id=found_user.user_id,
+    )
+
+    assert found_user.user_id == "user_existing"
+    assert found_membership.membership_id == "orgmem_existing"
+    assert found_membership.role == "org:member"
+
+
+@pytest.mark.unit
+async def test_clerk_access_service_creates_membership_for_existing_user(monkeypatch):
+    from app.services.member_service import ClerkAccessService
+
+    create_kwargs = {}
+
+    def create_membership(**kwargs):
+        create_kwargs.update(kwargs)
+        return SimpleNamespace(id="orgmem_created", role="org:member")
+
+    sdk = SimpleNamespace(
+        organization_memberships=SimpleNamespace(create=create_membership),
+    )
+    monkeypatch.setattr("app.services.clerk_access_service.get_clerk_sdk", lambda: sdk)
+
+    result = await ClerkAccessService().create_organization_membership(
+        clerk_org_id="org_existing",
+        clerk_user_id="user_existing",
+        role="org:member",
+    )
+
+    assert result.ok is True
+    assert result.membership_id == "orgmem_created"
+    assert result.user_id == "user_existing"
+    assert create_kwargs == {
+        "organization_id": "org_existing",
+        "user_id": "user_existing",
+        "role": "org:member",
+    }
+
+
+@pytest.mark.unit
+async def test_clerk_access_service_revokes_membership_by_user_id(monkeypatch):
+    from app.services.member_service import ClerkAccessService
+
+    delete_kwargs = {}
+
+    def delete_membership(*, organization_id, user_id):
+        delete_kwargs.update(organization_id=organization_id, user_id=user_id)
+        return SimpleNamespace(id="orgmem_revoked", role="org:member")
+
+    sdk = SimpleNamespace(
+        organization_memberships=SimpleNamespace(delete=delete_membership),
+    )
+    monkeypatch.setattr("app.services.clerk_access_service.get_clerk_sdk", lambda: sdk)
+
+    result = await ClerkAccessService().revoke_organization_membership(
+        clerk_org_id="org_existing",
+        clerk_user_id="user_existing",
+    )
+
+    assert result.ok is True
+    assert delete_kwargs == {
+        "organization_id": "org_existing",
+        "user_id": "user_existing",
+    }
 
 
 async def test_create_scheduler_only_teacher_member(async_client, clerk_admin_headers):
@@ -139,12 +262,23 @@ async def test_platform_teacher_invite_and_resend(
             expires_at=expires_at_ms,
         )
 
+    async def fake_find_user(self, **_kwargs):
+        return ClerkAccessResult()
+
+    async def fake_find_pending_invitation(self, **_kwargs):
+        return ClerkAccessResult()
+
     async def fake_revoke_invitation(self, **kwargs):
         revoked.append(kwargs["invitation_id"])
         return ClerkAccessResult()
 
     monkeypatch.setattr("app.services.member_service.ClerkAccessService.create_organization_invitation", fake_create_invitation)
     monkeypatch.setattr("app.services.member_service.ClerkAccessService.revoke_organization_invitation", fake_revoke_invitation)
+    monkeypatch.setattr("app.services.member_service.ClerkAccessService.find_user_by_email", fake_find_user)
+    monkeypatch.setattr(
+        "app.services.member_service.ClerkAccessService.find_pending_invitation",
+        fake_find_pending_invitation,
+    )
 
     create_response = await async_client.post(
         "/api/v1/members",
@@ -214,9 +348,23 @@ async def test_scheduler_only_teacher_can_be_converted_to_platform_access(
             expires_at=expires_at_ms,
         )
 
+    async def fake_find_user(self, **_kwargs):
+        return ClerkAccessResult()
+
+    async def fake_find_pending_invitation(self, **_kwargs):
+        return ClerkAccessResult()
+
     monkeypatch.setattr(
         "app.services.member_service.ClerkAccessService.create_organization_invitation",
         fake_create_invitation,
+    )
+    monkeypatch.setattr(
+        "app.services.member_service.ClerkAccessService.find_user_by_email",
+        fake_find_user,
+    )
+    monkeypatch.setattr(
+        "app.services.member_service.ClerkAccessService.find_pending_invitation",
+        fake_find_pending_invitation,
     )
 
     created_response = await async_client.post(
@@ -257,6 +405,357 @@ async def test_scheduler_only_teacher_can_be_converted_to_platform_access(
         expires_at_ms / 1000,
         tz=timezone.utc,
     )
+
+
+async def test_create_platform_teacher_reconciles_existing_clerk_membership(
+    async_client,
+    clerk_admin_headers,
+    monkeypatch,
+):
+    from app.services.member_service import ClerkAccessResult
+
+    invitation_attempted = False
+
+    async def fake_find_user(self, **_kwargs):
+        return ClerkAccessResult(user_id="user_existing")
+
+    async def fake_get_membership(self, **_kwargs):
+        return ClerkAccessResult(
+            user_id="user_existing",
+            membership_id="orgmem_existing",
+            role="org:member",
+        )
+
+    async def fake_find_pending_invitation(self, **_kwargs):
+        return ClerkAccessResult()
+
+    async def fake_create_invitation(self, **_kwargs):
+        nonlocal invitation_attempted
+        invitation_attempted = True
+        return ClerkAccessResult(error_category="unexpected_invitation")
+
+    monkeypatch.setattr(
+        "app.services.member_service.ClerkAccessService.find_user_by_email",
+        fake_find_user,
+    )
+    monkeypatch.setattr(
+        "app.services.member_service.ClerkAccessService.get_membership",
+        fake_get_membership,
+    )
+    monkeypatch.setattr(
+        "app.services.member_service.ClerkAccessService.find_pending_invitation",
+        fake_find_pending_invitation,
+    )
+    monkeypatch.setattr(
+        "app.services.member_service.ClerkAccessService.create_organization_invitation",
+        fake_create_invitation,
+    )
+
+    response = await async_client.post(
+        "/api/v1/members",
+        headers=clerk_admin_headers,
+        json={
+            "organization_display_name": "Existing Clerk Teacher",
+            "email": "existing.clerk@example.com",
+            "capabilities": ["teacher"],
+            "teacher_access_mode": "platform",
+            "subject_ids": [],
+        },
+    )
+
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert invitation_attempted is False
+    assert body["access_status"] == "active"
+    assert body["clerk_membership_id"] == "orgmem_existing"
+    assert body["clerk_invitation_id"] is None
+
+
+async def test_create_platform_teacher_adopts_existing_pending_invitation(
+    async_client,
+    clerk_admin_headers,
+    monkeypatch,
+):
+    from app.services.member_service import ClerkAccessResult
+
+    expires_at_ms = 1_786_526_901_149
+    invitation_attempted = False
+
+    async def fake_find_user(self, **_kwargs):
+        return ClerkAccessResult()
+
+    async def fake_find_pending_invitation(self, **_kwargs):
+        return ClerkAccessResult(
+            invitation_id="orginv_existing",
+            invitation_status="pending",
+            expires_at=expires_at_ms,
+        )
+
+    async def fake_create_invitation(self, **_kwargs):
+        nonlocal invitation_attempted
+        invitation_attempted = True
+        return ClerkAccessResult(error_category="unexpected_invitation")
+
+    monkeypatch.setattr(
+        "app.services.member_service.ClerkAccessService.find_user_by_email",
+        fake_find_user,
+    )
+    monkeypatch.setattr(
+        "app.services.member_service.ClerkAccessService.find_pending_invitation",
+        fake_find_pending_invitation,
+    )
+    monkeypatch.setattr(
+        "app.services.member_service.ClerkAccessService.create_organization_invitation",
+        fake_create_invitation,
+    )
+
+    response = await async_client.post(
+        "/api/v1/members",
+        headers=clerk_admin_headers,
+        json={
+            "organization_display_name": "Already Invited Teacher",
+            "email": "already.invited@example.com",
+            "capabilities": ["teacher"],
+            "teacher_access_mode": "platform",
+            "subject_ids": [],
+        },
+    )
+
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert invitation_attempted is False
+    assert body["access_status"] == "pending_invite"
+    assert body["clerk_invitation_id"] == "orginv_existing"
+
+
+async def test_create_platform_teacher_directly_adds_existing_clerk_user(
+    async_client,
+    clerk_admin_headers,
+    monkeypatch,
+):
+    from app.services.member_service import ClerkAccessResult
+
+    invitation_attempted = False
+    membership_created = False
+
+    async def fake_find_user(self, **_kwargs):
+        return ClerkAccessResult(user_id="user_existing_without_membership")
+
+    async def fake_get_membership(self, **_kwargs):
+        return ClerkAccessResult(user_id="user_existing_without_membership")
+
+    async def fake_create_membership(self, **_kwargs):
+        nonlocal membership_created
+        membership_created = True
+        return ClerkAccessResult(
+            user_id="user_existing_without_membership",
+            membership_id="orgmem_created_directly",
+            role="org:member",
+        )
+
+    async def fake_create_invitation(self, **_kwargs):
+        nonlocal invitation_attempted
+        invitation_attempted = True
+        return ClerkAccessResult(error_category="unexpected_invitation")
+
+    monkeypatch.setattr(
+        "app.services.member_service.ClerkAccessService.find_user_by_email",
+        fake_find_user,
+    )
+    monkeypatch.setattr(
+        "app.services.member_service.ClerkAccessService.get_membership",
+        fake_get_membership,
+    )
+    monkeypatch.setattr(
+        "app.services.member_service.ClerkAccessService.create_organization_membership",
+        fake_create_membership,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "app.services.member_service.ClerkAccessService.create_organization_invitation",
+        fake_create_invitation,
+    )
+
+    response = await async_client.post(
+        "/api/v1/members",
+        headers=clerk_admin_headers,
+        json={
+            "organization_display_name": "Existing Direct Teacher",
+            "email": "existing.direct@example.com",
+            "capabilities": ["teacher"],
+            "teacher_access_mode": "platform",
+            "subject_ids": [],
+        },
+    )
+
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert membership_created is True
+    assert invitation_attempted is False
+    assert body["access_status"] == "active"
+    assert body["clerk_membership_id"] == "orgmem_created_directly"
+    assert body["clerk_invitation_id"] is None
+
+
+async def test_scheduler_only_conversion_reconciles_existing_clerk_membership(
+    async_client,
+    clerk_admin_headers,
+    db_session,
+    monkeypatch,
+):
+    from app.services.member_service import ClerkAccessResult
+
+    invitation_attempted = False
+
+    async def fake_find_user(self, **_kwargs):
+        return ClerkAccessResult(user_id="user_scheduler_existing")
+
+    async def fake_get_membership(self, **_kwargs):
+        return ClerkAccessResult(
+            user_id="user_scheduler_existing",
+            membership_id="orgmem_scheduler_existing",
+            role="org:member",
+        )
+
+    async def fake_find_pending_invitation(self, **_kwargs):
+        return ClerkAccessResult()
+
+    async def fake_create_invitation(self, **_kwargs):
+        nonlocal invitation_attempted
+        invitation_attempted = True
+        return ClerkAccessResult(error_category="unexpected_invitation")
+
+    monkeypatch.setattr(
+        "app.services.member_service.ClerkAccessService.find_user_by_email",
+        fake_find_user,
+    )
+    monkeypatch.setattr(
+        "app.services.member_service.ClerkAccessService.get_membership",
+        fake_get_membership,
+    )
+    monkeypatch.setattr(
+        "app.services.member_service.ClerkAccessService.find_pending_invitation",
+        fake_find_pending_invitation,
+    )
+    monkeypatch.setattr(
+        "app.services.member_service.ClerkAccessService.create_organization_invitation",
+        fake_create_invitation,
+    )
+
+    created_response = await async_client.post(
+        "/api/v1/members",
+        headers=clerk_admin_headers,
+        json={
+            "organization_display_name": "Existing Scheduler Teacher",
+            "email": "existing.scheduler@example.com",
+            "capabilities": ["teacher"],
+            "teacher_access_mode": "scheduler_only",
+            "subject_ids": [],
+        },
+    )
+    assert created_response.status_code == 201, created_response.text
+    created = created_response.json()
+    await db_session.commit()
+
+    response = await async_client.patch(
+        f"/api/v1/members/{created['id']}",
+        headers=clerk_admin_headers,
+        json={
+            "capabilities": ["teacher"],
+            "teacher_access_mode": "platform",
+            "subject_ids": [],
+            "lock_version": created["lock_version"],
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert invitation_attempted is False
+    assert body["access_status"] == "active"
+    assert body["clerk_membership_id"] == "orgmem_scheduler_existing"
+
+
+async def test_scheduler_only_conversion_adds_existing_clerk_user_to_organization(
+    async_client,
+    clerk_admin_headers,
+    db_session,
+    monkeypatch,
+):
+    from app.services.member_service import ClerkAccessResult
+
+    invitation_attempted = False
+    membership_created = False
+
+    async def fake_find_user(self, **_kwargs):
+        return ClerkAccessResult(user_id="user_scheduler_without_membership")
+
+    async def fake_get_membership(self, **_kwargs):
+        return ClerkAccessResult(user_id="user_scheduler_without_membership")
+
+    async def fake_create_membership(self, **_kwargs):
+        nonlocal membership_created
+        membership_created = True
+        return ClerkAccessResult(
+            user_id="user_scheduler_without_membership",
+            membership_id="orgmem_scheduler_created",
+            role="org:member",
+        )
+
+    async def fake_create_invitation(self, **_kwargs):
+        nonlocal invitation_attempted
+        invitation_attempted = True
+        return ClerkAccessResult(error_category="unexpected_invitation")
+
+    monkeypatch.setattr(
+        "app.services.member_service.ClerkAccessService.find_user_by_email",
+        fake_find_user,
+    )
+    monkeypatch.setattr(
+        "app.services.member_service.ClerkAccessService.get_membership",
+        fake_get_membership,
+    )
+    monkeypatch.setattr(
+        "app.services.member_service.ClerkAccessService.create_organization_membership",
+        fake_create_membership,
+    )
+    monkeypatch.setattr(
+        "app.services.member_service.ClerkAccessService.create_organization_invitation",
+        fake_create_invitation,
+    )
+
+    created_response = await async_client.post(
+        "/api/v1/members",
+        headers=clerk_admin_headers,
+        json={
+            "organization_display_name": "Direct Scheduler Teacher",
+            "email": "direct.scheduler@example.com",
+            "capabilities": ["teacher"],
+            "teacher_access_mode": "scheduler_only",
+            "subject_ids": [],
+        },
+    )
+    assert created_response.status_code == 201, created_response.text
+    created = created_response.json()
+    await db_session.commit()
+
+    response = await async_client.patch(
+        f"/api/v1/members/{created['id']}",
+        headers=clerk_admin_headers,
+        json={
+            "capabilities": ["teacher"],
+            "teacher_access_mode": "platform",
+            "subject_ids": [],
+            "lock_version": created["lock_version"],
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert membership_created is True
+    assert invitation_attempted is False
+    assert body["access_status"] == "active"
+    assert body["clerk_membership_id"] == "orgmem_scheduler_created"
+    assert body["clerk_invitation_id"] is None
 
 
 async def test_retry_sync_relinks_active_member(async_client, clerk_admin_headers, db_session, monkeypatch):
@@ -416,6 +915,144 @@ async def test_remove_scheduler_only_teacher_with_history_archives(async_client,
     member = await db_session.get(models.OrganizationMembership, created["id"])
     assert member is not None
     assert member.lifecycle_status == models.MembershipLifecycleStatus.archived
+
+
+async def test_active_platform_teacher_can_be_archived_and_restored(
+    async_client,
+    clerk_admin_headers,
+    db_session,
+    monkeypatch,
+):
+    from datetime import time
+
+    from sqlalchemy import select
+
+    from app import models
+    from app.services.member_service import ClerkAccessResult
+
+    revoked = []
+    restored_memberships = []
+
+    async def fake_revoke_membership(self, *, clerk_org_id, clerk_user_id):
+        revoked.append((clerk_org_id, clerk_user_id))
+        return ClerkAccessResult()
+
+    async def fake_find_user(self, **_kwargs):
+        return ClerkAccessResult(user_id="user_archive_active")
+
+    async def fake_get_membership(self, **_kwargs):
+        return ClerkAccessResult(user_id="user_archive_active")
+
+    async def fake_create_membership(self, *, clerk_org_id, clerk_user_id, role):
+        restored_memberships.append((clerk_org_id, clerk_user_id, role))
+        return ClerkAccessResult(
+            user_id=clerk_user_id,
+            membership_id="orgmem_archive_restored",
+            role=role,
+        )
+
+    monkeypatch.setattr(
+        "app.services.member_service.ClerkAccessService.revoke_organization_membership",
+        fake_revoke_membership,
+    )
+    monkeypatch.setattr(
+        "app.services.member_service.ClerkAccessService.find_user_by_email",
+        fake_find_user,
+    )
+    monkeypatch.setattr(
+        "app.services.member_service.ClerkAccessService.get_membership",
+        fake_get_membership,
+    )
+    monkeypatch.setattr(
+        "app.services.member_service.ClerkAccessService.create_organization_membership",
+        fake_create_membership,
+    )
+
+    org = await db_session.scalar(
+        select(models.Organization).where(models.Organization.clerk_org_id == "org_test_001")
+    )
+    account = models.User(
+        email="archive.active@example.com",
+        name="Archive Active",
+        clerk_user_id="user_archive_active",
+    )
+    db_session.add(account)
+    await db_session.flush()
+    member = models.OrganizationMembership(
+        organization_id=org.id,
+        account_id=account.id,
+        organization_display_name="Archive Active",
+        lifecycle_status=models.MembershipLifecycleStatus.active,
+        access_status=models.MembershipAccessStatus.active,
+        teacher_access_mode=models.TeacherAccessMode.platform,
+        expected_clerk_role=models.ClerkOrganizationRole.member,
+        clerk_membership_id="orgmem_archive_active",
+    )
+    db_session.add(member)
+    await db_session.flush()
+    teacher = models.Teacher(
+        name="Archive Active",
+        organization_id=org.id,
+        organization_membership_id=member.id,
+    )
+    timeslot = models.Timeslot(
+        organization_id=org.id,
+        day_of_week=2,
+        start_time=time(9, 0),
+        end_time=time(10, 0),
+    )
+    db_session.add_all([teacher, timeslot])
+    await db_session.flush()
+    db_session.add_all(
+        [
+            models.OrganizationMembershipCapability(
+                organization_membership_id=member.id,
+                capability=models.MembershipCapability.teacher,
+            ),
+            models.Availability(
+                organization_id=org.id,
+                teacher_id=teacher.id,
+                timeslot_id=timeslot.id,
+            ),
+        ]
+    )
+    await db_session.commit()
+
+    response = await async_client.post(
+        f"/api/v1/members/{member.id}/remove",
+        headers=clerk_admin_headers,
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["remove_effect"] == "archive"
+    assert revoked == [("org_test_001", "user_archive_active")]
+    assert member.lifecycle_status == models.MembershipLifecycleStatus.archived
+    assert member.access_status == models.MembershipAccessStatus.blocked
+    assert member.clerk_membership_id is None
+    # The API test fixture reuses the session without the production dependency's
+    # post-response commit; commit explicitly before testing restoration.
+    await db_session.commit()
+    await db_session.refresh(member)
+    assert member.lifecycle_status == models.MembershipLifecycleStatus.archived
+
+    restore_response = await async_client.post(
+        f"/api/v1/members/{member.id}/restore",
+        headers=clerk_admin_headers,
+        json={},
+    )
+
+    assert restore_response.status_code == 200, restore_response.text
+    restored = restore_response.json()
+    assert restored["lifecycle_status"] == "active"
+    assert restored["access_status"] == "active"
+    assert restored["clerk_membership_id"] == "orgmem_archive_restored"
+    assert restored_memberships == [
+        ("org_test_001", "user_archive_active", "org:member")
+    ]
+    await db_session.refresh(member)
+    assert member.lifecycle_status == models.MembershipLifecycleStatus.active
+    assert member.access_status == models.MembershipAccessStatus.active
+    assert member.clerk_membership_id == "orgmem_archive_restored"
 
 
 async def test_update_validates_subjects_before_clerk_role_change(async_client, clerk_admin_headers, db_session, monkeypatch):

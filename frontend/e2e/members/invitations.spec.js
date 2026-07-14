@@ -57,6 +57,7 @@ test.describe.serial('Member invitations — real Clerk', () => {
 
     const row = page.getByRole('row').filter({ hasText: email })
     await expect(row).toContainText('Convite pendente')
+    await expect(row).toContainText('Criado no Clerk; entrega do email por confirmar.')
   })
 
   test('converts a scheduler-only teacher to platform access', async ({ page }) => {
@@ -76,5 +77,6 @@ test.describe.serial('Member invitations — real Clerk', () => {
     await page.getByLabel('Acesso do professor').selectOption('platform')
     await saveAndExpect(page, 200)
     await expect(row).toContainText('Convite pendente')
+    await expect(row).toContainText('Criado no Clerk; entrega do email por confirmar.')
   })
 })

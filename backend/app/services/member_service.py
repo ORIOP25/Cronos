@@ -466,14 +466,82 @@ async def _send_invitation(
     except UnresolvedAccessOperationError as exc:
         _raise_unresolved_operation(exc)
 
-    result = await clerk_access.create_organization_invitation(
-        clerk_org_id=clerk_org_id,
-        email=target_email,
-        role=expected_role.value,
-        inviter_user_id=admin_clerk_user_id,
-        membership_id=membership_id,
-    )
-    if not result.ok:
+    if expected_role is None:
+        raise RuntimeError("A target Clerk role is required before granting platform access.")
+    provider_user = await clerk_access.find_user_by_email(email=target_email)
+    if not provider_user.ok:
+        await operation_service.transition(
+            operation.id,
+            models.MemberAccessOperationStatus.failed,
+            error_category=provider_user.error_category,
+            safe_message=provider_user.safe_message,
+        )
+        _raise_provider_failure(provider_user)
+    provider_membership = None
+    if provider_user.user_id:
+        provider_membership = await clerk_access.get_membership(
+            clerk_org_id=clerk_org_id,
+            clerk_user_id=provider_user.user_id,
+        )
+        if not provider_membership.ok:
+            await operation_service.transition(
+                operation.id,
+                models.MemberAccessOperationStatus.failed,
+                error_category=provider_membership.error_category,
+                safe_message=provider_membership.safe_message,
+            )
+            _raise_provider_failure(provider_membership)
+
+    created_invitation = False
+    created_membership = False
+    changed_role_from = None
+    result = None
+    if provider_membership and provider_membership.membership_id:
+        actual_role = (
+            models.ClerkOrganizationRole(provider_membership.role)
+            if provider_membership.role in {role.value for role in models.ClerkOrganizationRole}
+            else None
+        )
+        if actual_role != expected_role:
+            result = await clerk_access.change_membership_role(
+                clerk_org_id=clerk_org_id,
+                clerk_user_id=provider_user.user_id,
+                role=expected_role.value,
+            )
+            if not result.ok:
+                await operation_service.transition(
+                    operation.id,
+                    models.MemberAccessOperationStatus.failed,
+                    error_category=result.error_category,
+                    safe_message=result.safe_message,
+                )
+                _raise_provider_failure(result)
+            changed_role_from = actual_role
+            provider_membership = result
+    elif provider_user.user_id:
+        result = await clerk_access.create_organization_membership(
+            clerk_org_id=clerk_org_id,
+            clerk_user_id=provider_user.user_id,
+            role=expected_role.value,
+        )
+        if result.ok:
+            provider_membership = result
+            created_membership = True
+    else:
+        result = await clerk_access.find_pending_invitation(
+            clerk_org_id=clerk_org_id,
+            email=target_email,
+        )
+        if result.ok and not result.invitation_id:
+            result = await clerk_access.create_organization_invitation(
+                clerk_org_id=clerk_org_id,
+                email=target_email,
+                role=expected_role.value,
+                inviter_user_id=admin_clerk_user_id,
+                membership_id=membership_id,
+            )
+            created_invitation = result.ok
+    if result is not None and not result.ok:
         status_after_failure = models.MemberAccessOperationStatus.failed
         support_required = False
         if result.invitation_id:
@@ -500,26 +568,59 @@ async def _send_invitation(
         if support_required:
             _raise_local_commit_failure(support_required=True)
         _raise_provider_failure(result)
-    await operation_service.transition(
-        operation.id,
-        models.MemberAccessOperationStatus.clerk_succeeded,
-        clerk_invitation_id=result.invitation_id,
-    )
-    member.clerk_invitation_id = result.invitation_id
-    member.clerk_invitation_status = models.ClerkInvitationStatus.pending
-    member.invitation_expires_at = normalize_clerk_datetime(result.expires_at)
-    member.access_status = models.MembershipAccessStatus.pending_invite
+    if provider_membership and provider_membership.membership_id:
+        await operation_service.transition(
+            operation.id,
+            models.MemberAccessOperationStatus.clerk_succeeded,
+            clerk_membership_id=provider_membership.membership_id,
+        )
+        member.account.clerk_user_id = provider_user.user_id
+        member.account.organization_id = organization_id
+        member.account.is_active = True
+        member.account.last_clerk_sync_at = datetime.now(timezone.utc)
+        member.clerk_membership_id = provider_membership.membership_id
+        member.clerk_invitation_id = None
+        member.clerk_invitation_status = None
+        member.invitation_expires_at = None
+        member.access_status = models.MembershipAccessStatus.active
+    if result is not None and result.invitation_id:
+        await operation_service.transition(
+            operation.id,
+            models.MemberAccessOperationStatus.clerk_succeeded,
+            clerk_invitation_id=result.invitation_id,
+        )
+        member.clerk_invitation_id = result.invitation_id
+        member.clerk_invitation_status = models.ClerkInvitationStatus.pending
+        member.invitation_expires_at = normalize_clerk_datetime(result.expires_at)
+        member.access_status = models.MembershipAccessStatus.pending_invite
     member.access_error_category = None
     member.access_error_safe_message = None
     try:
         await db.commit()
     except Exception as exc:
         await db.rollback()
-        compensation = await clerk_access.revoke_organization_invitation(
-            clerk_org_id=clerk_org_id,
-            invitation_id=result.invitation_id,
-            requesting_user_id=admin_clerk_user_id,
-        )
+        compensation = ClerkAccessResult()
+        compensation_attempted = False
+        if created_membership and provider_user.user_id:
+            compensation = await clerk_access.revoke_organization_membership(
+                clerk_org_id=clerk_org_id,
+                clerk_user_id=provider_user.user_id,
+            )
+            compensation_attempted = True
+        elif created_invitation and result is not None and result.invitation_id:
+            compensation = await clerk_access.revoke_organization_invitation(
+                clerk_org_id=clerk_org_id,
+                invitation_id=result.invitation_id,
+                requesting_user_id=admin_clerk_user_id,
+            )
+            compensation_attempted = True
+        elif changed_role_from is not None and provider_user.user_id:
+            compensation = await clerk_access.change_membership_role(
+                clerk_org_id=clerk_org_id,
+                clerk_user_id=provider_user.user_id,
+                role=changed_role_from.value,
+            )
+            compensation_attempted = True
         support_required = not compensation.ok
         await operation_service.transition(
             operation.id,
@@ -528,10 +629,13 @@ async def _send_invitation(
                 if compensation.ok
                 else models.MemberAccessOperationStatus.support_required
             ),
-            clerk_invitation_id=result.invitation_id,
+            clerk_invitation_id=(result.invitation_id if result is not None else None),
+            clerk_membership_id=(
+                provider_membership.membership_id if provider_membership else None
+            ),
             error_category=compensation.error_category if support_required else "local_commit_failed",
             safe_message=compensation.safe_message if support_required else type(exc).__name__,
-            compensation_attempted=True,
+            compensation_attempted=compensation_attempted,
             support_required=support_required,
         )
         logger.error(
@@ -548,7 +652,10 @@ async def _send_invitation(
         models.MemberAccessOperationStatus.local_committed,
         membership_id=membership_id,
         account_id=account_id,
-        clerk_invitation_id=result.invitation_id,
+        clerk_invitation_id=(result.invitation_id if result is not None else None),
+        clerk_membership_id=(
+            provider_membership.membership_id if provider_membership else None
+        ),
     )
 
 
@@ -766,7 +873,6 @@ async def _revoke_provider_access(
             return await clerk_access.revoke_organization_membership(
                 clerk_org_id=org.clerk_org_id,
                 clerk_user_id=clerk_user_id,
-                clerk_membership_id=clerk_membership_id,
             )
 
         def apply_membership_revoke() -> None:
@@ -891,8 +997,13 @@ async def create_member(
     admin_id = current_admin.id
     admin_clerk_user_id = current_admin.clerk_user_id
     invite_result: ClerkAccessResult | None = None
+    provider_user: ClerkAccessResult | None = None
+    provider_membership: ClerkAccessResult | None = None
     operation_id: int | None = None
     clerk_org_id: str | None = None
+    created_invitation = False
+    created_membership = False
+    changed_role_from: models.ClerkOrganizationRole | None = None
 
     if expected_role is not None:
         org = await _organization(db, organization_id)
@@ -919,14 +1030,81 @@ async def create_member(
         except UnresolvedAccessOperationError as exc:
             _raise_unresolved_operation(exc)
         operation_id = operation.id
-        invite_result = await clerk_access.create_organization_invitation(
-            clerk_org_id=clerk_org_id,
-            email=normalized_email,
-            role=expected_role.value,
-            inviter_user_id=admin_clerk_user_id,
-            membership_id=None,
-        )
-        if not invite_result.ok:
+        provider_user = await clerk_access.find_user_by_email(email=normalized_email)
+        if not provider_user.ok:
+            await operation_service.transition(
+                operation_id,
+                models.MemberAccessOperationStatus.failed,
+                error_category=provider_user.error_category,
+                safe_message=provider_user.safe_message,
+            )
+            _raise_provider_failure(provider_user)
+        if provider_user.user_id:
+            provider_membership = await clerk_access.get_membership(
+                clerk_org_id=clerk_org_id,
+                clerk_user_id=provider_user.user_id,
+            )
+            if not provider_membership.ok:
+                await operation_service.transition(
+                    operation_id,
+                    models.MemberAccessOperationStatus.failed,
+                    error_category=provider_membership.error_category,
+                    safe_message=provider_membership.safe_message,
+                )
+                _raise_provider_failure(provider_membership)
+
+        if provider_membership and provider_membership.membership_id:
+            actual_role = (
+                models.ClerkOrganizationRole(provider_membership.role)
+                if provider_membership.role in {role.value for role in models.ClerkOrganizationRole}
+                else None
+            )
+            if actual_role != expected_role:
+                role_result = await clerk_access.change_membership_role(
+                    clerk_org_id=clerk_org_id,
+                    clerk_user_id=provider_user.user_id,
+                    role=expected_role.value,
+                )
+                if not role_result.ok:
+                    await operation_service.transition(
+                        operation_id,
+                        models.MemberAccessOperationStatus.failed,
+                        error_category=role_result.error_category,
+                        safe_message=role_result.safe_message,
+                    )
+                    _raise_provider_failure(role_result)
+                changed_role_from = actual_role
+                provider_membership = role_result
+        elif provider_user.user_id:
+            provider_membership = await clerk_access.create_organization_membership(
+                clerk_org_id=clerk_org_id,
+                clerk_user_id=provider_user.user_id,
+                role=expected_role.value,
+            )
+            if not provider_membership.ok:
+                await operation_service.transition(
+                    operation_id,
+                    models.MemberAccessOperationStatus.failed,
+                    error_category=provider_membership.error_category,
+                    safe_message=provider_membership.safe_message,
+                )
+                _raise_provider_failure(provider_membership)
+            created_membership = True
+        else:
+            invite_result = await clerk_access.find_pending_invitation(
+                clerk_org_id=clerk_org_id,
+                email=normalized_email,
+            )
+            if invite_result.ok and not invite_result.invitation_id:
+                invite_result = await clerk_access.create_organization_invitation(
+                    clerk_org_id=clerk_org_id,
+                    email=normalized_email,
+                    role=expected_role.value,
+                    inviter_user_id=admin_clerk_user_id,
+                    membership_id=None,
+                )
+                created_invitation = invite_result.ok
+        if invite_result is not None and not invite_result.ok:
             final_status = models.MemberAccessOperationStatus.failed
             support_required = False
             if invite_result.invitation_id:
@@ -953,14 +1131,28 @@ async def create_member(
             if support_required:
                 _raise_local_commit_failure(support_required=True)
             _raise_provider_failure(invite_result)
-        await operation_service.transition(
-            operation_id,
-            models.MemberAccessOperationStatus.clerk_succeeded,
-            clerk_invitation_id=invite_result.invitation_id,
-        )
+        if invite_result is not None:
+            await operation_service.transition(
+                operation_id,
+                models.MemberAccessOperationStatus.clerk_succeeded,
+                clerk_invitation_id=invite_result.invitation_id,
+            )
+        if provider_membership and provider_membership.membership_id:
+            await operation_service.transition(
+                operation_id,
+                models.MemberAccessOperationStatus.clerk_succeeded,
+                clerk_membership_id=provider_membership.membership_id,
+            )
 
     try:
         account = account or await _get_or_create_account(db, normalized_email, member_in.organization_display_name)
+        if provider_user and provider_user.user_id:
+            if account.clerk_user_id and account.clerk_user_id != provider_user.user_id:
+                raise RuntimeError("The local email is linked to a different Clerk user.")
+            account.clerk_user_id = provider_user.user_id
+            account.organization_id = organization_id
+            account.is_active = True
+            account.last_clerk_sync_at = datetime.now(timezone.utc)
         membership = models.OrganizationMembership(
             organization_id=organization_id,
             account_id=account.id,
@@ -983,17 +1175,56 @@ async def create_member(
             current_admin=current_admin,
         )
         if expected_role is not None:
-            assert invite_result is not None
-            membership.clerk_invitation_id = invite_result.invitation_id
-            membership.clerk_invitation_status = models.ClerkInvitationStatus.pending
-            membership.invitation_expires_at = normalize_clerk_datetime(invite_result.expires_at)
-            membership.access_status = models.MembershipAccessStatus.pending_invite
+            if provider_membership and provider_membership.membership_id:
+                membership.clerk_membership_id = provider_membership.membership_id
+                membership.access_status = models.MembershipAccessStatus.active
+            else:
+                assert invite_result is not None
+                membership.clerk_invitation_id = invite_result.invitation_id
+                membership.clerk_invitation_status = models.ClerkInvitationStatus.pending
+                membership.invitation_expires_at = normalize_clerk_datetime(invite_result.expires_at)
+                membership.access_status = models.MembershipAccessStatus.pending_invite
         await db.flush()
         if expected_role is not None:
             await db.commit()
     except Exception as exc:
         await db.rollback()
-        if invite_result is not None and operation_id is not None and clerk_org_id is not None:
+        if (
+            created_membership
+            and provider_user is not None
+            and provider_user.user_id
+            and operation_id is not None
+            and clerk_org_id is not None
+        ):
+            compensation = await clerk_access.revoke_organization_membership(
+                clerk_org_id=clerk_org_id,
+                clerk_user_id=provider_user.user_id,
+            )
+            support_required = not compensation.ok
+            await operation_service.transition(
+                operation_id,
+                (
+                    models.MemberAccessOperationStatus.compensated
+                    if compensation.ok
+                    else models.MemberAccessOperationStatus.support_required
+                ),
+                clerk_membership_id=provider_membership.membership_id,
+                error_category=(
+                    compensation.error_category if support_required else "local_commit_failed"
+                ),
+                safe_message=(
+                    compensation.safe_message if support_required else type(exc).__name__
+                ),
+                compensation_attempted=True,
+                support_required=support_required,
+            )
+            _raise_local_commit_failure(support_required=support_required)
+        if (
+            created_invitation
+            and invite_result is not None
+            and operation_id is not None
+            and clerk_org_id is not None
+        ):
             compensation = await clerk_access.revoke_organization_invitation(
                 clerk_org_id=clerk_org_id,
                 invitation_id=invite_result.invitation_id,
@@ -1021,6 +1252,43 @@ async def create_member(
                 error_type=type(exc).__name__,
             )
             _raise_local_commit_failure(support_required=support_required)
+        if (
+            changed_role_from is not None
+            and provider_user is not None
+            and provider_user.user_id
+            and operation_id is not None
+            and clerk_org_id is not None
+        ):
+            compensation = await clerk_access.change_membership_role(
+                clerk_org_id=clerk_org_id,
+                clerk_user_id=provider_user.user_id,
+                role=changed_role_from.value,
+            )
+            support_required = not compensation.ok
+            await operation_service.transition(
+                operation_id,
+                (
+                    models.MemberAccessOperationStatus.compensated
+                    if compensation.ok
+                    else models.MemberAccessOperationStatus.support_required
+                ),
+                error_category=(
+                    compensation.error_category if support_required else "local_commit_failed"
+                ),
+                safe_message=(
+                    compensation.safe_message if support_required else type(exc).__name__
+                ),
+                compensation_attempted=True,
+                support_required=support_required,
+            )
+            _raise_local_commit_failure(support_required=support_required)
+        if operation_id is not None:
+            await operation_service.transition(
+                operation_id,
+                models.MemberAccessOperationStatus.failed,
+                error_category="local_commit_failed",
+                safe_message=type(exc).__name__,
+            )
         raise
 
     if operation_id is not None:
@@ -1030,6 +1298,9 @@ async def create_member(
             membership_id=membership.id,
             account_id=account.id,
             clerk_invitation_id=invite_result.invitation_id if invite_result else None,
+            clerk_membership_id=(
+                provider_membership.membership_id if provider_membership else None
+            ),
         )
     created = await _load_member(db, organization_id, membership.id)
     return _to_read(created)

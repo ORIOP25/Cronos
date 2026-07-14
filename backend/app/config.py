@@ -1,6 +1,7 @@
 # Ficheiro: app/config.py
 
 from typing import Literal
+from urllib.parse import urlparse
 from pydantic import PostgresDsn, RedisDsn, computed_field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -31,6 +32,7 @@ class Settings(BaseSettings):
     CLERK_WEBHOOK_MAX_ATTEMPTS: int = 5
     CLERK_WEBHOOK_RETRY_BASE_SECONDS: int = 60
     FRONTEND_URL: str = "http://localhost:5173"
+    CLERK_INVITATION_REDIRECT_URL: str = ""
 
     # --- CORS ---
     # Lista separada por virgulas (ex: "https://app.exemplo.com,https://admin.exemplo.com")
@@ -69,6 +71,13 @@ class Settings(BaseSettings):
         # Se o CELERY_BROKER_URL não estiver no .env, usamos o REDIS_URL
         if not self.CELERY_BROKER_URL:
             self.CELERY_BROKER_URL = str(self.REDIS_URL)
+        if not self.CLERK_INVITATION_REDIRECT_URL:
+            self.CLERK_INVITATION_REDIRECT_URL = f"{self.FRONTEND_URL.rstrip('/')}/login"
+        redirect = urlparse(self.CLERK_INVITATION_REDIRECT_URL)
+        if redirect.scheme not in {"http", "https"} or not redirect.netloc:
+            raise ValueError("CLERK_INVITATION_REDIRECT_URL must be an absolute HTTP(S) URL.")
+        if self.ENVIRONMENT == "production" and redirect.hostname in {"localhost", "127.0.0.1"}:
+            raise ValueError("CLERK_INVITATION_REDIRECT_URL cannot point to localhost in production.")
         # Guardrail de configuração para V2.
         if self.SOLVER_V2_ROLLING_WEEKS < 1:
             self.SOLVER_V2_ROLLING_WEEKS = 8

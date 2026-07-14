@@ -27,9 +27,20 @@ export default function SignInPage() {
               routing="path"
               path="/login"
               signUpUrl="/register"
-              afterSignInUrl="/onboarding"
+              fallbackRedirectUrl="/"
               appearance={CLERK_APPEARANCE_AUTH}
             />
+
+            <div className="zen-auth-recovery-help">
+              <p>
+                Já tinha conta ou o convite não chegou? O convite não define uma
+                palavra-passe. Pode <strong>entrar com Google</strong> usando o mesmo
+                email ou recuperar a palavra-passe.
+              </p>
+              <Link to="/recuperar-palavra-passe" className="zen-auth-recovery-link">
+                Recuperar palavra-passe
+              </Link>
+            </div>
 
             <div className="zen-auth-form-footer">
               <Link to="/" className="zen-auth-back-link">

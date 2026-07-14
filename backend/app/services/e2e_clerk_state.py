@@ -84,6 +84,7 @@ def config_from_env(env: os._Environ[str] | dict[str, str] = os.environ) -> E2EC
             "CLERK_SECRET_KEY",
             "E2E_CLERK_ADMIN_EMAIL",
             "E2E_CLERK_TEACHER_EMAIL",
+            "E2E_CLERK_ORG_ID",
         ]
         if not env.get(name)
     ]
@@ -93,10 +94,21 @@ def config_from_env(env: os._Environ[str] | dict[str, str] = os.environ) -> E2EC
             + ", ".join(missing)
             + ". Set these as GitHub secrets before running real E2E."
         )
+    unsafe_emails = [
+        name
+        for name in ["E2E_CLERK_ADMIN_EMAIL", "E2E_CLERK_TEACHER_EMAIL"]
+        if not env[name].strip().lower().endswith("+clerk_test@example.com")
+    ]
+    if unsafe_emails:
+        raise E2EClerkPreflightError(
+            "Real-person emails are forbidden in Clerk E2E configuration: "
+            + ", ".join(unsafe_emails)
+            + ". Use dedicated Clerk reserved test users."
+        )
     return E2EClerkPrepConfig(
         admin_email=env["E2E_CLERK_ADMIN_EMAIL"],
         teacher_email=env["E2E_CLERK_TEACHER_EMAIL"],
-        clerk_org_id=env.get("E2E_CLERK_ORG_ID") or None,
+        clerk_org_id=env["E2E_CLERK_ORG_ID"],
     )
 
 

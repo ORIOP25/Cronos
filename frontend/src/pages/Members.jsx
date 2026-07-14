@@ -306,6 +306,9 @@ const Members = () => {
                     <CBadge color={accessColor}>{accessLabel}</CBadge>
                     {providerUnconfirmed && <CBadge color="warning" className="ms-1">Fornecedor por confirmar</CBadge>}
                     {member.access_error_safe_message && <div className="text-danger small mt-1">{member.access_error_safe_message}</div>}
+                    {member.access_status === 'pending_invite' && (
+                      <div className="text-muted small mt-1">Criado no Clerk; entrega do email por confirmar.</div>
+                    )}
                   </td>
                   <td className="small text-muted">
                     {member.capabilities.includes('teacher')

@@ -1342,6 +1342,111 @@ h1, h2, h3, h4, h5, h6 {
   text-align: center;
 }
 
+.zen-auth-recovery-help {
+  margin-top: 20px;
+  padding: 14px 16px;
+  border-left: 3px solid var(--brand-500);
+  background: rgba(212, 148, 11, 0.07);
+  color: var(--brand-700);
+  font-size: 0.82rem;
+  line-height: 1.55;
+}
+
+.zen-auth-recovery-help p {
+  margin: 0 0 8px;
+}
+
+.zen-auth-recovery-link,
+.zen-auth-recovery-alternatives a {
+  color: var(--brand-800);
+  font-weight: 700;
+}
+
+.zen-auth-recovery-card {
+  width: 100%;
+  padding: 32px;
+  background: #fff;
+  border: 1px solid rgba(29, 68, 58, 0.12);
+  box-shadow: 0 20px 50px rgba(20, 45, 39, 0.08);
+}
+
+.zen-auth-recovery-card h1 {
+  margin: 0 0 10px;
+  color: var(--brand-950);
+  font-family: var(--font-display);
+  font-size: 1.8rem;
+}
+
+.zen-auth-recovery-card > p {
+  margin: 0 0 24px;
+  color: var(--brand-600);
+  line-height: 1.6;
+}
+
+.zen-auth-recovery-card form {
+  display: grid;
+  gap: 10px;
+}
+
+.zen-auth-recovery-card label {
+  color: var(--brand-800);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.zen-auth-recovery-card input {
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1px solid rgba(29, 68, 58, 0.22);
+  color: var(--brand-950);
+  font: inherit;
+}
+
+.zen-auth-recovery-card input:focus {
+  border-color: var(--brand-700);
+  outline: 2px solid rgba(29, 68, 58, 0.12);
+  outline-offset: 1px;
+}
+
+.zen-auth-recovery-card button {
+  min-height: 44px;
+  margin-top: 8px;
+  border: 0;
+  background: var(--brand-800);
+  color: #fff;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 700;
+}
+
+.zen-auth-recovery-card button:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+
+.zen-auth-recovery-error {
+  margin-top: 16px;
+  padding: 12px;
+  border-left: 3px solid #a33a32;
+  background: #fff2f0;
+  color: #7f2822;
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
+.zen-auth-recovery-alternatives {
+  margin: 20px 0;
+  padding-top: 16px;
+  border-top: 1px solid rgba(29, 68, 58, 0.12);
+  color: var(--brand-600);
+  font-size: 0.82rem;
+}
+
+.zen-auth-recovery-alternatives p {
+  margin: 0 0 5px;
+}
+
 .zen-auth-back-link {
   display: inline-flex;
   align-items: center;

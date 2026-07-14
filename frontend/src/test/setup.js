@@ -12,6 +12,11 @@ const DEFAULT_STATE = {
 }
 
 let _clerkState = { ...DEFAULT_STATE }
+let _signInState = {
+  signIn: null,
+  errors: { fields: {} },
+  fetchStatus: 'idle',
+}
 
 export function setClerkState(overrides = {}) {
   Object.assign(_clerkState, overrides)
@@ -19,6 +24,15 @@ export function setClerkState(overrides = {}) {
 
 export function resetClerkState() {
   Object.assign(_clerkState, DEFAULT_STATE)
+  _signInState = {
+    signIn: null,
+    errors: { fields: {} },
+    fetchStatus: 'idle',
+  }
+}
+
+export function setClerkSignInState(overrides = {}) {
+  _signInState = { ..._signInState, ...overrides }
 }
 
 vi.mock('@clerk/react', () => ({
@@ -51,6 +65,7 @@ vi.mock('@clerk/react', () => ({
     openOrganizationProfile: vi.fn(),
     signOut: vi.fn(),
   }),
+  useSignIn: () => _signInState,
   ClerkProvider: ({ children }) => children,
   SignIn: () => null,
   SignUp: () => null,
