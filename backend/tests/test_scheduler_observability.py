@@ -35,6 +35,8 @@ def test_scheduler_event_contains_required_diagnostic_metrics(monkeypatch):
         metrics={
             "disruption_score": 17.5,
             "hard_constraint_failures": 0,
+            "quality_completed_stage": "GAPS_AVAILABILITY",
+            "workload_override_used": True,
         },
     )
 
@@ -64,6 +66,8 @@ def test_scheduler_event_contains_required_diagnostic_metrics(monkeypatch):
         "recovered_debt_minutes": 480,
         "remaining_debt_minutes": 120,
         "disruption_score": 17.5,
+        "quality_completed_stage": "GAPS_AVAILABILITY",
+        "workload_override_used": True,
         "failure_category": None,
     }
 
