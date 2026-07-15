@@ -60,19 +60,21 @@ function isGoogleFontsUrl(parsedUrl) {
     || parsedUrl.hostname === 'fonts.gstatic.com'
 }
 
-function isClerkBrowserBundleUrl(parsedUrl) {
+function isClerkHostedUrl(parsedUrl) {
   return parsedUrl.hostname.endsWith('.clerk.accounts.dev')
-    && parsedUrl.pathname.startsWith('/npm/@clerk/clerk-js')
-    && parsedUrl.pathname.endsWith('/clerk.browser.js')
 }
 
-function isBenignAbortedRequest(url, { baseUrl }) {
+function isBenignAbortedRequest({ method, url }, { baseUrl }) {
   const parsedUrl = parseUrl(url, baseUrl)
   if (!parsedUrl) return false
   if (isSameOrigin(url, baseUrl) && hasAbortablePath(url, baseUrl)) {
     return true
   }
-  return isGoogleFontsUrl(parsedUrl) || isClerkBrowserBundleUrl(parsedUrl)
+  if (isGoogleFontsUrl(parsedUrl)) {
+    return true
+  }
+  return ['GET', 'HEAD'].includes(method.toUpperCase())
+    && isClerkHostedUrl(parsedUrl)
 }
 
 function normalizedText(value) {
@@ -97,15 +99,15 @@ export function getRequestFailureError(requestFailure, { baseUrl }) {
   const url = normalizedText(requestFailure.url)
   if (isDataLikeUrl(url)) return null
 
+  const method = normalizedText(requestFailure.method || 'GET')
   const errorText = normalizedText(requestFailure.errorText || 'unknown error')
   if (
     errorText.includes(ABORTED_ERROR)
-    && isBenignAbortedRequest(url, { baseUrl })
+    && isBenignAbortedRequest({ method, url }, { baseUrl })
   ) {
     return null
   }
 
-  const method = normalizedText(requestFailure.method || 'GET')
   return `Network request failed: ${method} ${url} - ${errorText}`
 }
 

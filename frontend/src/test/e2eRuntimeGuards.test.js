@@ -25,12 +25,21 @@ describe('E2E runtime guard classifiers', () => {
     ['Google Fonts stylesheet', 'https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap'],
     ['Google Fonts file', 'https://fonts.gstatic.com/s/inter/v18/UcCO3FwrK3iLTcviYwYZ8UA3.woff2'],
     ['Clerk browser bundle', 'https://welcome-cat-83.clerk.accounts.dev/npm/@clerk/clerk-js@5/dist/clerk.browser.js'],
+    ['Clerk organization memberships read', 'https://welcomed-cat-83.clerk.accounts.dev/v1/me/organization_memberships?limit=10'],
   ])('ignores benign external browser-cancelled %s', (_label, url) => {
     expect(getRequestFailureError({
       method: 'GET',
       url,
       errorText: 'net::ERR_ABORTED',
     }, { baseUrl })).toBeNull()
+  })
+
+  it('keeps an aborted Clerk write request visible', () => {
+    expect(getRequestFailureError({
+      method: 'POST',
+      url: 'https://welcomed-cat-83.clerk.accounts.dev/v1/organizations',
+      errorText: 'net::ERR_ABORTED',
+    }, { baseUrl })).toContain('net::ERR_ABORTED')
   })
 
   it.each([
