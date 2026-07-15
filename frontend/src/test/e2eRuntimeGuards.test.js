@@ -9,6 +9,7 @@ const baseUrl = 'http://localhost:5173'
 
 describe('E2E runtime guard classifiers', () => {
   it.each([
+    ['app root navigation', `${baseUrl}/`],
     ['API request', `${baseUrl}/api/v1/members/me`],
     ['Vite module', `${baseUrl}/src/pages/Dashboard.jsx?t=123`],
     ['lazy component', `${baseUrl}/src/components/dashboard/ScheduleHealthCard.jsx?t=123`],

@@ -232,7 +232,7 @@ async def create_constraint(
     changed_by_user_id: int | None = None,
 ):
     await _validate_constraint_references(db, item, organization_id)
-    payload = item.model_dump(mode="json")
+    payload = item.model_dump(mode="json", exclude_none=True)
     db_item = models.Constraint(
         rule_type=models.ConstraintType(payload["rule_type"]),
         rule_payload=payload["rule_payload"],

@@ -68,7 +68,11 @@ function isClerkHostedUrl(parsedUrl) {
 function isBenignAbortedRequest({ method, url }, { baseUrl }) {
   const parsedUrl = parseUrl(url, baseUrl)
   if (!parsedUrl) return false
-  if (isSameOrigin(url, baseUrl) && hasAbortablePath(url, baseUrl)) {
+  if (
+    ['GET', 'HEAD'].includes(method.toUpperCase())
+    && isSameOrigin(url, baseUrl)
+    && (parsedUrl.pathname === '/' || hasAbortablePath(url, baseUrl))
+  ) {
     return true
   }
   if (isGoogleFontsUrl(parsedUrl)) {

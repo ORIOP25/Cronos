@@ -2,6 +2,7 @@ import pytest
 from pydantic import TypeAdapter, ValidationError
 
 from app import schemas
+from app.scheduler.domain.constraints import SchedulerConstraintPolicy
 
 
 pytestmark = pytest.mark.unit
@@ -22,7 +23,27 @@ adapter = TypeAdapter(schemas.ConstraintCreate)
 )
 def test_supported_constraint_payloads_are_typed(payload):
     result = adapter.validate_python(payload)
+    stored = result.model_dump(mode="json", exclude_none=True)
+
     assert result.rule_payload.model_dump()
+    assert SchedulerConstraintPolicy.parse([stored]).is_valid is True
+
+
+def test_unavailable_date_slot_storage_omits_inactive_selectors():
+    result = adapter.validate_python({
+        "rule_type": "teacher_unavailable",
+        "rule_payload": {
+            "teacher_id": 3,
+            "date": "2026-06-01",
+            "timeslot_id": 10,
+        },
+    })
+
+    assert result.model_dump(mode="json", exclude_none=True)["rule_payload"] == {
+        "teacher_id": 3,
+        "date": "2026-06-01",
+        "timeslot_id": 10,
+    }
 
 
 @pytest.mark.parametrize(

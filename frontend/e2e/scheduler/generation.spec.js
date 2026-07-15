@@ -1,5 +1,6 @@
 import { createClerkClient } from '@clerk/backend'
 import { clerk } from '@clerk/testing/playwright'
+import { createPageObjects } from '@clerk/testing/playwright/unstable'
 import { test, expect } from '@playwright/test'
 import {
   allowApiFailure,
@@ -18,11 +19,11 @@ function toIsoDate(value) {
   return `${year}-${month}-${day}`
 }
 
-function schedulerFixtureDates() {
+function schedulerFixtureDates(weekOffset) {
   const schoolStart = new Date()
   schoolStart.setHours(12, 0, 0, 0)
   const daysSinceMonday = (schoolStart.getDay() + 6) % 7
-  schoolStart.setDate(schoolStart.getDate() - daysSinceMonday - 14)
+  schoolStart.setDate(schoolStart.getDate() - daysSinceMonday + (weekOffset * 7))
   const hardEnd = new Date(schoolStart)
   hardEnd.setDate(hardEnd.getDate() + 60)
   return {
@@ -39,7 +40,8 @@ function addDaysIso(isoDate, days) {
   return toIsoDate(value)
 }
 
-const FIXTURE_DATES = schedulerFixtureDates()
+const FIXTURE_DATES = schedulerFixtureDates(-2)
+const FRESH_FOUNDER_DATES = schedulerFixtureDates(1)
 const FIXTURE = {
   subjectName: 'E2E Scheduler Subject',
   moduleName: 'E2E Scheduler Module',
@@ -107,6 +109,51 @@ async function resetSchedulerYearIfConfigured(page) {
   }
 }
 
+async function clearExistingSchedulerFixture(page) {
+  const status = await apiRequest(page, 'GET', '/scheduler/status')
+  if (status?.school_year_id) {
+    await apiRequest(page, 'POST', '/school/settings/soft-reset', {
+      confirm_phrase: 'Confirmo',
+    })
+  }
+}
+
+async function signInUserWithTicket(
+  client,
+  page,
+  userId,
+  path,
+  { organizationName } = {},
+) {
+  const ticket = await client.signInTokens.createSignInToken({
+    userId,
+    expiresInSeconds: 300,
+  })
+  const baseUrl = process.env.BASE_URL || 'http://localhost:5173'
+  const targetUrl = new URL(path, baseUrl)
+  const ticketUrl = new URL(ticket.url)
+  ticketUrl.searchParams.set('redirect_url', targetUrl.toString())
+  await page.goto(ticketUrl.toString(), { waitUntil: 'domcontentloaded' })
+  if (organizationName) {
+    await page.waitForURL(/\/tasks\/choose-organization(?:[/?#]|$)/, { timeout: 30_000 })
+    const clerkPages = createPageObjects({ page, baseURL: baseUrl })
+    await clerkPages.sessionTask.resolveForceOrganizationSelectionTask({
+      name: organizationName,
+    })
+  }
+  await page.waitForURL(targetUrl.toString(), { timeout: 30_000 })
+  await page.waitForFunction(() => window.Clerk?.user != null, null, { timeout: 30_000 })
+  await expectRouteReady(page, path)
+  if (organizationName) {
+    return await page.evaluate((name) => (
+      window.Clerk?.user?.organizationMemberships.find(
+        (membership) => membership.organization.name === name,
+      )?.organization.id ?? null
+    ), organizationName)
+  }
+  return null
+}
+
 async function findPreparedTeacherMember(page, requestedEmail) {
   const teacherEmail = requestedEmail || process.env.E2E_CLERK_TEACHER_EMAIL
   if (!teacherEmail) {
@@ -166,15 +213,15 @@ async function ensureFixtureCourse(page, subjectId) {
   return await apiRequest(page, 'PATCH', `/courses/${existing.id}`, payload)
 }
 
-async function ensureFixtureClass(page, courseId) {
+async function ensureFixtureClass(page, courseId, dates) {
   const course = await apiRequest(page, 'GET', `/courses/${courseId}`)
   const existing = course.classes.find((classroom) => classroom.name === FIXTURE.className)
   const payload = {
     name: FIXTURE.className,
     size: 20,
     grade_level: 10,
-    start_year: FIXTURE.startYear,
-    end_year: FIXTURE.endYear,
+    start_year: dates.startYear,
+    end_year: dates.endYear,
   }
   if (!existing) {
     return await apiRequest(page, 'POST', `/courses/${courseId}/classes`, payload)
@@ -225,7 +272,8 @@ async function e2eSubjectIds(page, fixtureSubjectId) {
     .map((subject) => subject.id)
 }
 
-export async function seedMinimalSchedulerInputs(page, teacherEmail) {
+export async function seedMinimalSchedulerInputs(page, teacherEmail, dates = FIXTURE_DATES) {
+  await clearExistingSchedulerFixture(page)
   await rejectPendingDraftIfPresent(page)
 
   const subject = await ensureFixtureSubject(page)
@@ -235,9 +283,12 @@ export async function seedMinimalSchedulerInputs(page, teacherEmail) {
     ...(teacherMember.subject_ids || []),
     ...(await e2eSubjectIds(page, subject.id)),
   ]))
+  const capabilities = Array.from(new Set([...teacherMember.capabilities, 'teacher']))
   const updatedTeacher = await apiRequest(page, 'PATCH', `/members/${teacherMember.id}`, {
-    capabilities: Array.from(new Set([...teacherMember.capabilities, 'teacher'])),
-    teacher_access_mode: teacherMember.teacher_access_mode || 'scheduler_only',
+    capabilities,
+    teacher_access_mode: capabilities.includes('admin')
+      ? 'platform'
+      : teacherMember.teacher_access_mode || 'scheduler_only',
     subject_ids: competencySubjectIds,
     lock_version: teacherMember.lock_version,
   })
@@ -246,8 +297,8 @@ export async function seedMinimalSchedulerInputs(page, teacherEmail) {
   }
 
   await apiRequest(page, 'POST', '/school/settings/', {
-    school_start_date: FIXTURE.schoolStartDate,
-    school_hard_end_date: FIXTURE.schoolHardEndDate,
+    school_start_date: dates.schoolStartDate,
+    school_hard_end_date: dates.schoolHardEndDate,
     repair_stability_window_days: 0,
   })
   await apiRequest(page, 'POST', '/school/grid-settings/', {
@@ -264,7 +315,7 @@ export async function seedMinimalSchedulerInputs(page, teacherEmail) {
   })
   await ensureFixtureRoom(page)
   const course = await ensureFixtureCourse(page, subject.id)
-  const classroom = await ensureFixtureClass(page, course.id)
+  const classroom = await ensureFixtureClass(page, course.id, dates)
   await ensureFixtureClassSubject(page, classroom.id, subject.id, updatedTeacher.teacher_id)
 
   const timeslots = await apiRequest(page, 'GET', '/timeslots/')
@@ -293,16 +344,6 @@ export async function waitForJobToSucceed(page, jobId) {
     },
   ).toBe('SUCCEEDED')
   return lastJob
-}
-
-async function continueOnAuthenticatedAppPage(context, signInPage, path) {
-  const appPage = await context.newPage()
-  attachRuntimeGuards(appPage)
-  allowApiFailure(appPage, { status: 404, url: '/api/v1/scheduler/drafts/current' })
-  await signInPage.close()
-  await goTo(appPage, path)
-  await expectRouteReady(appPage, path)
-  return appPage
 }
 
 export async function generateAndApproveThroughUi(page) {
@@ -475,7 +516,7 @@ test.describe('Scheduler generation', () => {
 })
 
 test('fresh founder completes Complete Generation and custom-rule Adaptive Repair', async ({
-  page: initialPage,
+  page,
   context,
 }) => {
   test.setTimeout(300_000)
@@ -485,8 +526,6 @@ test('fresh founder completes Complete Generation and custom-rule Adaptive Repai
   const runKey = `${Date.now()}-${Math.random().toString(16).slice(2)}`
   const email = `cronos-beta-${runKey}+clerk_test@example.com`
   const schoolName = `Cronos Beta ${runKey}`
-  const baseUrl = process.env.BASE_URL || 'http://localhost:5173'
-  let page = initialPage
   let userId
   let organizationId
 
@@ -503,18 +542,20 @@ test('fresh founder completes Complete Generation and custom-rule Adaptive Repai
 
     attachRuntimeGuards(page)
     allowApiFailure(page, { status: 404, url: '/api/v1/scheduler/drafts/current' })
-    await page.goto(baseUrl)
-    await clerk.signIn({ page, emailAddress: email })
-    page = await continueOnAuthenticatedAppPage(context, page, '/create-org')
-    await page.getByLabel('Nome da escola').fill(schoolName)
-    await page.getByRole('button', { name: /Criar organiza/i }).click()
-    await page.waitForURL('**/onboarding', { timeout: 20_000 })
-    organizationId = await page.evaluate(() => window.Clerk?.organization?.id)
+    organizationId = await signInUserWithTicket(client, page, userId, '/create-org', {
+      organizationName: schoolName,
+    })
     expect(organizationId).toMatch(/^org_/)
+    await page.getByRole('button', { name: schoolName }).click()
+    await page.waitForURL('**/onboarding', { timeout: 20_000 })
 
     await page.getByRole('button', { name: /Guardar e Come/i }).click()
     await expectRouteReady(page, '/dashboard')
-    const { classId, teacherId } = await seedMinimalSchedulerInputs(page, email)
+    const { classId, teacherId } = await seedMinimalSchedulerInputs(
+      page,
+      email,
+      FRESH_FOUNDER_DATES,
+    )
     await generateAndApproveThroughUi(page)
 
     const forbidden = await firstPublishedFutureSlot(page, classId)
@@ -554,9 +595,9 @@ test('fresh founder completes Complete Generation and custom-rule Adaptive Repai
     await secondPage.close()
 
     await clerk.signOut({ page })
-    await page.goto(baseUrl)
-    await clerk.signIn({ page, emailAddress: email })
-    page = await continueOnAuthenticatedAppPage(context, page, '/schedules')
+    await signInUserWithTicket(client, page, userId, '/dashboard')
+    await goTo(page, '/schedules')
+    await expectRouteReady(page, '/schedules')
 
     await page.evaluate(async () => window.Clerk.setActive({ organization: null }))
     await goTo(page, '/create-org')
