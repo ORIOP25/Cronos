@@ -61,7 +61,7 @@ function isGoogleFontsUrl(parsedUrl) {
 }
 
 function isClerkHostedUrl(parsedUrl) {
-  return parsedUrl.hostname.endsWith('.clerk.accounts.dev')
+  return parsedUrl.hostname.endsWith('.accounts.dev')
 }
 
 function isBenignAbortedRequest({ method, url }, { baseUrl }) {

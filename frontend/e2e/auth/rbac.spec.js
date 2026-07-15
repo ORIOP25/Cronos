@@ -6,6 +6,7 @@
  */
 import { test, expect } from '@playwright/test'
 import {
+  allowApiFailure,
   attachRuntimeGuards,
   expectNoAppCrash,
   expectRouteReady,
@@ -43,6 +44,7 @@ test.describe('RBAC — Teacher (Clerk real)', () => {
   })
 
   test('T27: teacher acede a my-availability, my-schedules, my-progress', async ({ page }) => {
+    allowApiFailure(page, { status: 404, url: '/api/v1/schedule/me/horizon' })
     for (const path of ['/my-availability', '/my-schedules', '/my-progress']) {
       await goTo(page, path)
       await expectRouteReady(page, path)

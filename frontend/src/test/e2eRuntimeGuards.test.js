@@ -26,6 +26,7 @@ describe('E2E runtime guard classifiers', () => {
     ['Google Fonts file', 'https://fonts.gstatic.com/s/inter/v18/UcCO3FwrK3iLTcviYwYZ8UA3.woff2'],
     ['Clerk browser bundle', 'https://welcome-cat-83.clerk.accounts.dev/npm/@clerk/clerk-js@5/dist/clerk.browser.js'],
     ['Clerk organization memberships read', 'https://welcomed-cat-83.clerk.accounts.dev/v1/me/organization_memberships?limit=10'],
+    ['Clerk hosted sign-in navigation', 'https://welcomed-cat-83.accounts.dev/sign-in?__clerk_db_jwt=test-token'],
   ])('ignores benign external browser-cancelled %s', (_label, url) => {
     expect(getRequestFailureError({
       method: 'GET',
@@ -37,7 +38,7 @@ describe('E2E runtime guard classifiers', () => {
   it('keeps an aborted Clerk write request visible', () => {
     expect(getRequestFailureError({
       method: 'POST',
-      url: 'https://welcomed-cat-83.clerk.accounts.dev/v1/organizations',
+      url: 'https://welcomed-cat-83.accounts.dev/v1/organizations',
       errorText: 'net::ERR_ABORTED',
     }, { baseUrl })).toContain('net::ERR_ABORTED')
   })

@@ -312,9 +312,17 @@ function MySchedules() {
     setWeekStart(nextWeekStart)
   }
 
+  const pageHeader = (
+    <PageHeader
+      preTitle="Professor"
+      title={<span>Meus <span className="text-editorial">Horários</span></span>}
+    />
+  )
+
   if (!effectiveTeacherId) {
     return (
       <div className="p-4">
+        {pageHeader}
         <CAlert color="danger" className="mb-0">
           Conta de professor sem perfil associado. Contacte um admin para associar o perfil docente.
         </CAlert>
@@ -325,6 +333,7 @@ function MySchedules() {
   if (isLoadingHorizon) {
     return (
       <div className="p-4">
+        {pageHeader}
         <CCard className="border-0 shadow-sm">
           <CCardBody className="py-4 d-flex align-items-center gap-2 text-muted">
             <CSpinner size="sm" />
@@ -338,6 +347,7 @@ function MySchedules() {
   if (hasHorizonError && !effectiveHorizon) {
     return (
       <div className="p-4">
+        {pageHeader}
         <CAlert color="danger" className="mb-0">
           {resolveHorizonErrorMessage(horizonError)}
         </CAlert>
@@ -375,7 +385,7 @@ function MySchedules() {
 
   return (
     <div className="p-4">
-      <PageHeader preTitle="Professor" title={<span>Meus <span className="text-editorial">Horários</span></span>} />
+      {pageHeader}
       <div className="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3">
         <div></div>
         <div className="d-flex gap-2 align-items-center flex-wrap">
