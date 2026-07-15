@@ -20,6 +20,22 @@ from app.services.scheduler_state_service import SchedulerStateError
 logger = structlog.get_logger(__name__)
 
 
+def _selection_conflict(exc: GenerationSelectionError | SchedulerStateError) -> HTTPException:
+    if isinstance(exc, GenerationSelectionError):
+        return HTTPException(
+            status_code=409,
+            detail={
+                "error": exc.code,
+                "message": str(exc),
+                "pending_draft_id": exc.pending_draft_id,
+            },
+        )
+    return HTTPException(
+        status_code=409,
+        detail={"error": "scheduler_state_invalid", "message": str(exc)},
+    )
+
+
 async def start_generation_request(
     payload: schemas.ScheduleGenerateRequest,
     db: AsyncSession,
@@ -27,9 +43,10 @@ async def start_generation_request(
 ) -> dict[str, int | str]:
     """Validate scheduler preflight, persist a generation job, and dispatch it."""
     organization_id = current_user.organization_id
+    generation = SchedulerGenerationService(db)
 
     try:
-        selection = await SchedulerGenerationService(db).select_strategy(
+        selection = await generation.select_strategy(
             organization_id,
             replace_pending_draft=payload.replace_pending_draft,
         )
@@ -46,20 +63,8 @@ async def start_generation_request(
                 "preflight": jsonable_encoder(preflight_summary),
             },
         ) from exc
-    except GenerationSelectionError as exc:
-        raise HTTPException(
-            status_code=409,
-            detail={
-                "error": exc.code,
-                "message": str(exc),
-                "pending_draft_id": exc.pending_draft_id,
-            },
-        ) from exc
-    except SchedulerStateError as exc:
-        raise HTTPException(
-            status_code=409,
-            detail={"error": "scheduler_state_invalid", "message": str(exc)},
-        ) from exc
+    except (GenerationSelectionError, SchedulerStateError) as exc:
+        raise _selection_conflict(exc) from exc
 
     stored_constraints = list(
         await db.scalars(
@@ -103,6 +108,17 @@ async def start_generation_request(
                 "preflight": encoded_preflight,
             },
         )
+
+    # Preflight may import missing holidays, which is itself a scheduler-relevant
+    # change. Refresh the immutable selection so job admission compares against
+    # the post-preflight state instead of rejecting the request's own update.
+    try:
+        selection = await generation.select_strategy(
+            organization_id,
+            replace_pending_draft=payload.replace_pending_draft,
+        )
+    except (GenerationSelectionError, SchedulerStateError) as exc:
+        raise _selection_conflict(exc) from exc
 
     jobs = SchedulerJobService(db)
     try:

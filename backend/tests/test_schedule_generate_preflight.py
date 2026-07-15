@@ -1,9 +1,8 @@
 import asyncio
 from datetime import date, time, timedelta
-from types import SimpleNamespace
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
 from app import models
 from app.services import scheduler_request_service
@@ -248,6 +247,46 @@ async def test_generate_returns_canonical_job_contract_with_minimal_valid_data(
     assert payload["status"] == "QUEUED"
     assert payload["strategy"] == "COMPLETE_GENERATION"
     assert payload["trigger_type"] == "FIRST_GENERATION"
+
+
+@pytest.mark.asyncio
+async def test_generate_refreshes_selection_after_preflight_imports_holidays(
+    async_client,
+    db_session,
+    admin_token_headers,
+    monkeypatch,
+):
+    organization_id = await _get_org_id(db_session)
+    await _seed_minimal_generation_data(db_session, organization_id)
+    await db_session.execute(
+        delete(models.SchoolCalendarEvent).where(
+            models.SchoolCalendarEvent.organization_id == organization_id,
+            models.SchoolCalendarEvent.source == models.CalendarEventSource.auto,
+        )
+    )
+    await db_session.commit()
+
+    dispatched = {}
+
+    def fake_apply_async(*, args, task_id):
+        dispatched.update(args=args, task_id=task_id)
+
+    monkeypatch.setattr(
+        scheduler_request_service.run_schedule_generation_job_task,
+        "apply_async",
+        fake_apply_async,
+    )
+
+    response = await async_client.post(
+        "/api/v1/scheduler/generate",
+        json={},
+        headers=admin_token_headers,
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert dispatched["args"] == [payload["job_id"]]
+    assert payload["strategy"] == "COMPLETE_GENERATION"
 
 
 @pytest.mark.asyncio

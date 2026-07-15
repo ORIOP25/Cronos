@@ -295,6 +295,16 @@ export async function waitForJobToSucceed(page, jobId) {
   return lastJob
 }
 
+async function continueOnAuthenticatedAppPage(context, signInPage, path) {
+  const appPage = await context.newPage()
+  attachRuntimeGuards(appPage)
+  allowApiFailure(appPage, { status: 404, url: '/api/v1/scheduler/drafts/current' })
+  await signInPage.close()
+  await goTo(appPage, path)
+  await expectRouteReady(appPage, path)
+  return appPage
+}
+
 export async function generateAndApproveThroughUi(page) {
   await goTo(page, '/schedules')
   await expectRouteReady(page, '/schedules')
@@ -464,7 +474,10 @@ test.describe('Scheduler generation', () => {
   })
 })
 
-test('fresh founder completes Complete Generation and custom-rule Adaptive Repair', async ({ page, context }) => {
+test('fresh founder completes Complete Generation and custom-rule Adaptive Repair', async ({
+  page: initialPage,
+  context,
+}) => {
   test.setTimeout(300_000)
   const secretKey = process.env.CLERK_SECRET_KEY
   if (!secretKey) throw new Error('CLERK_SECRET_KEY is required for the beta remediation journey.')
@@ -473,6 +486,7 @@ test('fresh founder completes Complete Generation and custom-rule Adaptive Repai
   const email = `cronos-beta-${runKey}+clerk_test@example.com`
   const schoolName = `Cronos Beta ${runKey}`
   const baseUrl = process.env.BASE_URL || 'http://localhost:5173'
+  let page = initialPage
   let userId
   let organizationId
 
@@ -491,7 +505,7 @@ test('fresh founder completes Complete Generation and custom-rule Adaptive Repai
     allowApiFailure(page, { status: 404, url: '/api/v1/scheduler/drafts/current' })
     await page.goto(baseUrl)
     await clerk.signIn({ page, emailAddress: email })
-    await goTo(page, '/create-org')
+    page = await continueOnAuthenticatedAppPage(context, page, '/create-org')
     await page.getByLabel('Nome da escola').fill(schoolName)
     await page.getByRole('button', { name: /Criar organiza/i }).click()
     await page.waitForURL('**/onboarding', { timeout: 20_000 })
@@ -542,8 +556,7 @@ test('fresh founder completes Complete Generation and custom-rule Adaptive Repai
     await clerk.signOut({ page })
     await page.goto(baseUrl)
     await clerk.signIn({ page, emailAddress: email })
-    await goTo(page, '/schedules')
-    await expectRouteReady(page, '/schedules')
+    page = await continueOnAuthenticatedAppPage(context, page, '/schedules')
 
     await page.evaluate(async () => window.Clerk.setActive({ organization: null }))
     await goTo(page, '/create-org')
