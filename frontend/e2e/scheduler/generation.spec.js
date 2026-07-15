@@ -226,7 +226,6 @@ async function e2eSubjectIds(page, fixtureSubjectId) {
 }
 
 export async function seedMinimalSchedulerInputs(page, teacherEmail) {
-  await resetSchedulerYearIfConfigured(page)
   await rejectPendingDraftIfPresent(page)
 
   const subject = await ensureFixtureSubject(page)
@@ -275,6 +274,7 @@ export async function seedMinimalSchedulerInputs(page, teacherEmail) {
     `/teachers/${updatedTeacher.teacher_id}/availability`,
     timeslots.map((slot) => ({ timeslot_id: slot.id, score: 2 })),
   )
+  await resetSchedulerYearIfConfigured(page)
 
   return { classId: classroom.id, subjectId: subject.id, teacherId: updatedTeacher.teacher_id }
 }
@@ -300,8 +300,7 @@ export async function generateAndApproveThroughUi(page) {
   await expectRouteReady(page, '/schedules')
   const generateResponse = page.waitForResponse(
     (response) => response.url().includes('/api/v1/scheduler/generate')
-      && response.request().method() === 'POST'
-      && response.ok(),
+      && response.request().method() === 'POST',
   )
   await page.getByRole('button', { name: /Gerar Hor.rio/i }).click()
   const response = await generateResponse
@@ -366,8 +365,7 @@ test.describe('Scheduler generation', () => {
 
     const generateResponse = page.waitForResponse(
       (response) => response.url().includes('/api/v1/scheduler/generate')
-        && response.request().method() === 'POST'
-        && response.ok(),
+        && response.request().method() === 'POST',
     )
     await page.getByRole('button', { name: /Gerar Hor.rio/i }).click()
     const response = await generateResponse

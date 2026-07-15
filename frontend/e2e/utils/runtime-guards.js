@@ -1,4 +1,5 @@
 const ABORTED_ERROR = 'net::ERR_ABORTED'
+const CSP_FALLBACK_NOTE = /^\s*Note that 'script-src' was not explicitly set, so 'default-src' is used as a fallback\.\s*$/
 const ABORTABLE_PATH_PREFIXES = [
   '/api/',
   '/src/',
@@ -122,6 +123,8 @@ export function getConsoleError(consoleMessage, allowedFailures) {
   if (consoleMessage.type !== 'error') return null
 
   const text = normalizedText(consoleMessage.text)
+  if (CSP_FALLBACK_NOTE.test(text)) return null
+
   const status = failedResourceStatus(text)
   if (
     status !== null

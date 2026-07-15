@@ -76,6 +76,16 @@ describe('E2E runtime guard classifiers', () => {
     expect(error).toContain('Browser console error')
   })
 
+  it('ignores the browser CSP fallback note emitted by Clerk hosted sign-in', () => {
+    const error = getConsoleError({
+      type: 'error',
+      text: " Note that 'script-src' was not explicitly set, so 'default-src' is used as a fallback.",
+      locationUrl: '',
+    }, [])
+
+    expect(error).toBeNull()
+  })
+
   it('ignores allowed API auth failures and fails unexpected API failures', () => {
     expect(getApiResponseError({
       status: 403,
