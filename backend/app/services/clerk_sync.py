@@ -1,7 +1,6 @@
 import asyncio
-from datetime import datetime, timezone
+from dataclasses import dataclass
 import structlog
-from sqlalchemy import func, select
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from app import models
@@ -11,6 +10,31 @@ from app.models import UserRole
 from app.services import member_reconciliation_service
 
 logger = structlog.get_logger(__name__)
+
+
+@dataclass(frozen=True)
+class ClerkUserProfile:
+    email: str | None
+    name: str | None
+
+
+async def fetch_clerk_user_profile(clerk_user_id: str) -> ClerkUserProfile | None:
+    sdk = get_clerk_sdk()
+    try:
+        clerk_user = await asyncio.to_thread(lambda: sdk.users.get(user_id=clerk_user_id))
+    except Exception as exc:
+        logger.error("BAPI users.get falhou para %s: %s", clerk_user_id, exc)
+        return None
+    email = (
+        clerk_user.email_addresses[0].email_address
+        if clerk_user.email_addresses
+        else None
+    )
+    name = (
+        f"{clerk_user.first_name or ''} {clerk_user.last_name or ''}".strip()
+        or None
+    )
+    return ClerkUserProfile(email=email, name=name)
 
 
 def parse_role(clerk_role: str | None) -> str:
@@ -152,18 +176,9 @@ async def sync_user_from_clerk_api(
     role: str | None = None,
     teacher_id: int | None = None,
 ) -> models.User | None:
-    sdk = get_clerk_sdk()
-    try:
-        clerk_user = await asyncio.to_thread(lambda: sdk.users.get(user_id=clerk_user_id))
-    except Exception as e:
-        logger.error("BAPI users.get falhou para %s: %s", clerk_user_id, e)
+    profile = await fetch_clerk_user_profile(clerk_user_id)
+    if profile is None:
         return None
-
-    email = None
-    if clerk_user.email_addresses:
-        email = clerk_user.email_addresses[0].email_address
-
-    name = f"{clerk_user.first_name or ''} {clerk_user.last_name or ''}".strip() or None
 
     if organization_id is not None:
         organization = await db.get(models.Organization, organization_id)
@@ -172,80 +187,19 @@ async def sync_user_from_clerk_api(
         user = await member_reconciliation_service.reconcile_first_login_by_email(
             db,
             clerk_user_id=clerk_user_id,
-            email=email,
-            name=name,
+            email=profile.email,
+            name=profile.name,
             organization=organization,
             token_role=role,
         )
         if user is not None:
             return user
 
-        # Bootstrap: org creator on a fresh DB (no pre-existing membership).
-        # Only bootstrap when the organization has zero members yet.
-        existing_count = await db.scalar(
-            select(func.count(models.OrganizationMembership.id)).where(
-                models.OrganizationMembership.organization_id == organization_id
-            )
-        )
-        if existing_count and existing_count > 0:
-            logger.warning(
-                "Fallback: org ja tem membros, nao vou criar bootstrap",
-                clerk_user_id=clerk_user_id,
-                organization_id=organization_id,
-            )
-            return None
-
-        logger.info(
-            "Bootstrap: a criar utilizador fundador da organizacao",
-            clerk_user_id=clerk_user_id,
-            organization_id=organization_id,
-        )
-
-        await set_async_tenant_context(db, organization_id)
-
-        user = models.User(
-            email=email.strip().lower() if email else clerk_user_id,
-            name=name,
-            clerk_user_id=clerk_user_id,
-            clerk_profile_name=name,
-            organization_id=organization_id,
-            role=models.UserRole.admin,
-            is_active=True,
-            last_clerk_sync_at=datetime.now(timezone.utc),
-        )
-        db.add(user)
-        await db.flush()
-
-        membership = models.OrganizationMembership(
-            organization_id=organization_id,
-            account_id=user.id,
-            organization_display_name=organization.name or "Organization",
-            lifecycle_status=models.MembershipLifecycleStatus.active,
-            access_status=models.MembershipAccessStatus.active,
-            expected_clerk_role=models.ClerkOrganizationRole.admin,
-        )
-        db.add(membership)
-        await db.flush()
-
-        admin_cap = models.OrganizationMembershipCapability(
-            organization_membership_id=membership.id,
-            capability=models.MembershipCapability.admin,
-        )
-        db.add(admin_cap)
-        await db.flush()
-
-        logger.info(
-            "Bootstrap concluido: user + membership + admin capability criados",
-            user_id=user.id,
-            membership_id=membership.id,
-        )
-        return user
-
     return await ensure_user_exists(
         db=db,
         clerk_user_id=clerk_user_id,
-        email=email,
-        name=name,
+        email=profile.email,
+        name=profile.name,
         role=role,
         organization_id=organization_id,
         teacher_id=teacher_id,

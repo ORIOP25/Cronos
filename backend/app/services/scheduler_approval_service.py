@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app import models
 from app.services.scheduler_fingerprint_service import SchedulerFingerprintService
 from app.services.scheduler_recovery_service import SchedulerRecoveryService
-from app.services.scheduler_job_runtime import DraftBlockSpec
+from app.scheduler.domain.contracts import DraftBlockSpec
 from app.services.scheduler_editable_boundary import EditableBoundaryBuilder
 from app.services.scheduler_target_validator import (
     SchedulerTargetValidationError,

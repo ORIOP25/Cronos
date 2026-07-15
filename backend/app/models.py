@@ -1880,6 +1880,7 @@ class LessonOccurrence(Base):
             ["active_schedule_blocks.id", "active_schedule_blocks.organization_id"],
             name="fk_lesson_occurrence_active_block_scope",
             ondelete="RESTRICT",
+            use_alter=True,
         ),
         Index("ix_lesson_occurrence_org_active_date", "organization_id", "is_active", "date"),
     )

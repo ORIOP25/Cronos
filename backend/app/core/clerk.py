@@ -16,7 +16,7 @@ def _verify_clerk_request_sync(request) -> RequestState:
     return sdk.authenticate_request(
         request,
         AuthenticateRequestOptions(
-            authorized_parties=[settings.FRONTEND_URL],
+            authorized_parties=settings.CLERK_AUTHORIZED_PARTIES_LIST,
         ),
     )
 

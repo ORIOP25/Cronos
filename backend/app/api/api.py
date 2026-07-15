@@ -21,6 +21,7 @@ from app.api.v1.endpoints import (
     dashboard,
     webhooks,
     onboarding,
+    session,
 )
 
 api_router = APIRouter()
@@ -48,6 +49,7 @@ api_router.include_router(timesheets.router, prefix="/timesheets", tags=["Submis
 api_router.include_router(dashboard.router, tags=["Dashboard"])
 api_router.include_router(webhooks.router, prefix="/webhooks", tags=["Webhooks"])
 api_router.include_router(onboarding.router, tags=["Onboarding"])
+api_router.include_router(session.router, prefix="/session", tags=["Session"])
 
 # Health Check (Geralmente não leva prefixo dentro da API ou usa /ops)
 # Mas para ficar organizado, deixamos na raiz da API ou sob /ops

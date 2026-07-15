@@ -27,6 +27,16 @@ describe('request interceptor', () => {
     expect(result.headers.Authorization).toBe('Bearer tk_test')
   })
 
+  it('preserves an explicitly supplied organization-scoped token', async () => {
+    setClerkTokenGetter(async () => 'tk_stale')
+    const config = { headers: { Authorization: 'Bearer tk_fresh_org' } }
+    const interceptor = apiClient.interceptors.request.handlers[0]?.fulfilled
+
+    const result = await interceptor(config)
+
+    expect(result.headers.Authorization).toBe('Bearer tk_fresh_org')
+  })
+
   it('continues without auth header when token getter throws', async () => {
     setClerkTokenGetter(async () => { throw new Error('fail') })
     const config = { headers: {} }

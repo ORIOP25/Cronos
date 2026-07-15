@@ -15,10 +15,17 @@ const memberState = vi.hoisted(() => ({
     teacher_id: null,
   },
   loading: false,
+  error: null,
 }))
 
 vi.mock('../hooks/useSchoolData', () => ({
-  useCurrentMember: () => ({ data: memberState.value, isLoading: memberState.loading }),
+  useCurrentMember: () => ({
+    data: memberState.value,
+    isLoading: memberState.loading,
+    isError: Boolean(memberState.error),
+    error: memberState.error,
+    refetch: vi.fn(),
+  }),
 }))
 
 function renderRedirect() {
@@ -38,6 +45,7 @@ describe('SignedInRedirect', () => {
   beforeEach(() => {
     resetClerkState()
     memberState.loading = false
+    memberState.error = null
     memberState.value = {
       access_status: 'active',
       lifecycle_status: 'active',

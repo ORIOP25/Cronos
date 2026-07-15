@@ -98,10 +98,14 @@ async def create_constraint(
     current_user: Annotated[models.User, Depends(deps.get_current_user)]
 ):
     # Garante que usamos o organization_id do utilizador logado
-    return await schedule_service.create_constraint(
-        db, item, current_user.organization_id,
-        changed_by_user_id=current_user.id,
-    )
+    try:
+        return await schedule_service.create_constraint(
+            db, item, current_user.organization_id,
+            changed_by_user_id=current_user.id,
+        )
+    except schedule_service.ConstraintSemanticValidationError as exc:
+        await db.rollback()
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 @router.get("/constraints/", response_model=List[schemas.ConstraintRead])
 async def read_constraints(

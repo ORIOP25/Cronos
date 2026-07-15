@@ -26,7 +26,7 @@ describe('GenerationStatusPanel', () => {
     useScheduleTaskStatus.mockReturnValue({
       data: {
         job_status: 'FAILED',
-        failure_code: 'TIMEOUT',
+        failure_code: 'TIMED_OUT',
         failure_message: 'A geração excedeu o limite de cinco minutos.',
       },
     })

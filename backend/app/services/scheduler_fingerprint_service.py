@@ -295,6 +295,7 @@ class SchedulerFingerprintService:
             "organization_id": organization_id,
             "school_year_id": school_year_id,
             "strategy": strategy,
+            "quality_policy_version": "baseline-v1",
             "timezone": school_year.timezone,
             "start_date": school_year.start_date,
             "hard_end_date": school_year.hard_end_date,

@@ -157,13 +157,87 @@ async def create_lesson(
     return db_item
 
 # --- CONSTRAINTS ---
+class ConstraintSemanticValidationError(ValueError):
+    pass
+
+
+async def _validate_constraint_references(
+    db: AsyncSession,
+    item: schemas.ConstraintCreate,
+    organization_id: int,
+) -> None:
+    payload = item.rule_payload.model_dump()
+    rule_type = item.rule_type.value
+    invalid = False
+
+    async def owned(model, entity_id: int):
+        return await db.scalar(
+            select(model).where(
+                model.id == entity_id,
+                model.organization_id == organization_id,
+            )
+        )
+
+    timeslot_id = payload.get("timeslot_id")
+    if timeslot_id is not None and await owned(models.Timeslot, timeslot_id) is None:
+        invalid = True
+
+    teacher_id = payload.get("teacher_id")
+    if teacher_id is not None:
+        teacher = await owned(models.Teacher, teacher_id)
+        if teacher is None or teacher.archived_at is not None:
+            invalid = True
+
+    if rule_type in {"specific_room", "lock_time"}:
+        class_row = await owned(models.Class, payload["class_id"])
+        subject_row = await owned(models.Subject, payload["subject_id"])
+        relationship = await db.scalar(
+            select(models.ClassSubjectLink.id).where(
+                models.ClassSubjectLink.organization_id == organization_id,
+                models.ClassSubjectLink.class_id == payload["class_id"],
+                models.ClassSubjectLink.subject_id == payload["subject_id"],
+                models.ClassSubjectLink.grade_level == class_row.grade_level
+                if class_row is not None
+                else False,
+            )
+        )
+        if (
+            class_row is None
+            or class_row.is_archived
+            or subject_row is None
+            or relationship is None
+        ):
+            invalid = True
+        if rule_type == "specific_room":
+            room = await owned(models.Room, payload["room_id"])
+            if (
+                room is None
+                or class_row is None
+                or subject_row is None
+                or room.capacity < class_row.size
+                or room.type != subject_row.required_room_type
+            ):
+                invalid = True
+
+    if invalid:
+        raise ConstraintSemanticValidationError(
+            "One or more scheduler constraint references are unavailable."
+        )
+
+
 async def create_constraint(
     db: AsyncSession,
     item: schemas.ConstraintCreate,
     organization_id: int,
     changed_by_user_id: int | None = None,
 ):
-    db_item = models.Constraint(**item.dict(), organization_id=organization_id)
+    await _validate_constraint_references(db, item, organization_id)
+    payload = item.model_dump(mode="json")
+    db_item = models.Constraint(
+        rule_type=models.ConstraintType(payload["rule_type"]),
+        rule_payload=payload["rule_payload"],
+        organization_id=organization_id,
+    )
     db.add(db_item)
     await db.flush()
     await record_scheduler_change(

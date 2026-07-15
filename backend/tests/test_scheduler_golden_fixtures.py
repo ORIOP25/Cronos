@@ -1,11 +1,16 @@
 import pytest
 
+from app.scheduler.domain.constraints import SchedulerConstraintPolicy
 from app.services.scheduler_complete_demand import CompleteDemandLedgerBuilder
 from tests.scheduler_golden_fixtures import (
+    constrained_scheduler_fixture,
     large_scheduler_fixture,
     medium_scheduler_fixture,
     small_scheduler_fixture,
 )
+
+
+pytestmark = pytest.mark.unit
 
 
 @pytest.mark.parametrize(
@@ -44,3 +49,18 @@ def test_golden_fixture_profiles_increase_in_representative_scale():
         len(item.snapshot["class_subject_requirements"])
         for item in fixtures
     ] == [9, 48, 120]
+
+
+def test_constrained_golden_fixture_covers_every_supported_custom_rule():
+    fixture = constrained_scheduler_fixture()
+    rows = fixture.snapshot["constraints"]
+
+    assert {row["rule_type"] for row in rows} == {
+        "specific_room",
+        "lock_time",
+        "teacher_unavailable",
+        "teacher_preferred",
+    }
+    assert not SchedulerConstraintPolicy.from_snapshot(
+        fixture.snapshot
+    ).configuration_violations

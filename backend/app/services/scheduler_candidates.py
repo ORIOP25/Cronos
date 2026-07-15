@@ -115,10 +115,13 @@ class CandidateUniverseBuilder:
                                 end_minute=slot["end_minute"],
                                 duration_minutes=slot["duration_minutes"],
                                 availability_score=(
-                                    score
-                                    + constraint_rules.preference_bonus(
-                                        item.teacher_id,
-                                        slot["id"],
+                                    min(
+                                        2,
+                                        score
+                                        + constraint_rules.preference_bonus(
+                                            item.teacher_id,
+                                            slot["id"],
+                                        ),
                                     )
                                 ),
                             )

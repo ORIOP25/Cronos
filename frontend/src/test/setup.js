@@ -23,7 +23,7 @@ export function setClerkState(overrides = {}) {
 }
 
 export function resetClerkState() {
-  Object.assign(_clerkState, DEFAULT_STATE)
+  _clerkState = { ...DEFAULT_STATE }
   _signInState = {
     signIn: null,
     errors: { fields: {} },
@@ -59,6 +59,19 @@ vi.mock('@clerk/react', () => ({
       publicMetadata: { teacher_id: _clerkState.teacherId },
     } : null,
     isLoaded: _clerkState.isLoaded,
+  }),
+  useOrganizationList: () => ({
+    isLoaded: _clerkState.isLoaded,
+    createOrganization: vi.fn().mockResolvedValue({ id: 'org_created' }),
+    setActive: vi.fn().mockResolvedValue(undefined),
+    userMemberships: {
+      data: _clerkState.memberships || (_clerkState.orgId ? [{
+        organization: {
+          id: _clerkState.orgId,
+          name: _clerkState.orgName,
+        },
+      }] : []),
+    },
   }),
   useClerk: () => ({
     openUserProfile: vi.fn(),

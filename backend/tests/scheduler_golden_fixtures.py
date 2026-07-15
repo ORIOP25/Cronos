@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import dataclass
 from datetime import date, timedelta
 
@@ -9,6 +10,74 @@ class SchedulerGoldenFixture:
     name: str
     snapshot: dict
     debt_basis: dict
+
+    def with_constraints(self, *constraints: dict) -> SchedulerGoldenFixture:
+        snapshot = deepcopy(self.snapshot)
+        snapshot["constraints"] = list(constraints)
+        return SchedulerGoldenFixture(self.name, snapshot, deepcopy(self.debt_basis))
+
+    def with_published_target(self, *blocks: dict) -> SchedulerGoldenFixture:
+        snapshot = deepcopy(self.snapshot)
+        snapshot["active_schedule"] = list(blocks)
+        return SchedulerGoldenFixture(self.name, snapshot, deepcopy(self.debt_basis))
+
+
+def constraint(rule_type: str, **rule_payload: object) -> dict:
+    return {"rule_type": rule_type, "rule_payload": rule_payload}
+
+
+def published_block(
+    *,
+    block_id: int,
+    stable_key: str,
+    class_id: int,
+    subject_id: int,
+    teacher_id: int,
+    room_id: int,
+    output_date: date,
+    timeslot_id: int,
+    duration_minutes: int = 60,
+    immutable: bool = False,
+    debt_occurrence_id: int | None = None,
+) -> dict:
+    return {
+        "id": block_id,
+        "schedule_version_id": "golden-v1",
+        "stable_block_key": stable_key,
+        "class_id": class_id,
+        "subject_id": subject_id,
+        "teacher_id": teacher_id,
+        "room_id": room_id,
+        "date": output_date.isoformat(),
+        "timeslot_id": timeslot_id,
+        "duration_minutes": duration_minutes,
+        "is_recovery_block": debt_occurrence_id is not None,
+        "recovery_source_occurrence_id": debt_occurrence_id,
+        "recovery_source_occurrence_revision": 1 if debt_occurrence_id is not None else None,
+        "lesson_log_status": "COMPLETED" if immutable else None,
+    }
+
+
+def constrained_scheduler_fixture() -> SchedulerGoldenFixture:
+    fixture = small_scheduler_fixture()
+    requirement = fixture.snapshot["class_subject_requirements"][0]
+    teacher_id = requirement["teacher_id"]
+    return fixture.with_constraints(
+        constraint(
+            "specific_room",
+            class_id=requirement["class_id"],
+            subject_id=requirement["subject_id"],
+            room_id=1,
+        ),
+        constraint(
+            "lock_time",
+            class_id=requirement["class_id"],
+            subject_id=requirement["subject_id"],
+            timeslot_id=2,
+        ),
+        constraint("teacher_unavailable", teacher_id=teacher_id, day_of_week=4),
+        constraint("teacher_preferred", teacher_id=teacher_id, timeslot_id=2),
+    )
 
 
 def small_scheduler_fixture() -> SchedulerGoldenFixture:

@@ -17,7 +17,9 @@ export const setClerkTokenGetter = (fn) => {
 apiClient.interceptors.request.use(async (config) => {
   try {
     const token = await getClerkToken();
-    if (token) {
+    // A caller may provide a freshly minted organization-scoped token. Never
+    // replace it with the application-wide token getter's current value.
+    if (token && !config.headers.Authorization) {
       config.headers.Authorization = `Bearer ${token}`;
     }
   } catch {

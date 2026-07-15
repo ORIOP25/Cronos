@@ -15,10 +15,17 @@ const memberState = vi.hoisted(() => ({
     teacher_id: null,
   },
   loading: false,
+  error: null,
 }))
 
 vi.mock('../hooks/useSchoolData', () => ({
-  useCurrentMember: () => ({ data: memberState.value, isLoading: memberState.loading }),
+  useCurrentMember: () => ({
+    data: memberState.value,
+    isLoading: memberState.loading,
+    isError: Boolean(memberState.error),
+    error: memberState.error,
+    refetch: vi.fn(),
+  }),
 }))
 
 function renderGuard(ui, initialEntries = ['/protected']) {
@@ -60,6 +67,7 @@ describe('RequireAdmin', () => {
   beforeEach(() => {
     resetClerkState()
     memberState.loading = false
+    memberState.error = null
     memberState.value = {
       access_status: 'active',
       lifecycle_status: 'active',
@@ -98,6 +106,7 @@ describe('RequireTeacher', () => {
   beforeEach(() => {
     resetClerkState()
     memberState.loading = false
+    memberState.error = null
     memberState.value = {
       access_status: 'active',
       lifecycle_status: 'active',
@@ -105,6 +114,38 @@ describe('RequireTeacher', () => {
       default_mode: 'teacher',
       teacher_id: 10,
     }
+  })
+
+  it('shows session recovery for a member-query 401 without redirecting to create org', () => {
+    memberState.error = { response: { status: 401 } }
+    renderGuard(<RequireAdmin><div>Admin</div></RequireAdmin>)
+    expect(screen.getByText(/sessão da organização precisa/i)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Atualizar sessão/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Terminar sessão/i })).toBeInTheDocument()
+    expect(screen.queryByText('Admin')).toBeNull()
+  })
+
+  it('shows access denied for a member-query 403', () => {
+    memberState.error = { response: { status: 403 } }
+    renderGuard(<RequireAdmin><div>Admin</div></RequireAdmin>)
+    expect(screen.getByText(/não tem acesso a esta organização/i)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Tentar novamente/i })).toBeNull()
+  })
+
+  it('shows a retry panel for a member-query 5xx', () => {
+    memberState.error = { response: { status: 503 } }
+    renderGuard(<RequireAdmin><div>Admin</div></RequireAdmin>)
+    expect(screen.getByText(/Não foi possível confirmar o acesso/i)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Tentar novamente/i })).toBeInTheDocument()
+  })
+
+  it('shows organization selection when memberships exist but none is active', () => {
+    setClerkState({
+      orgId: null,
+      memberships: [{ organization: { id: 'org_other', name: 'Outra escola' } }],
+    })
+    renderGuard(<RequireAdmin><div>Admin</div></RequireAdmin>)
+    expect(screen.getByTestId('organization-selector')).toBeInTheDocument()
   })
 
   it('allows active local teacher capability with teacher profile', () => {

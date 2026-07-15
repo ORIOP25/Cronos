@@ -5,6 +5,11 @@ from datetime import date
 from enum import StrEnum
 from typing import Any
 
+from app.scheduler.domain.constraints import (
+    RepairDimension,
+    SchedulerConstraintPolicy,
+    placement_facts,
+)
 from app.services.scheduler_editable_boundary import EditableBoundary
 
 
@@ -22,6 +27,7 @@ class ChangedBlockImpact:
     reasons: tuple[str, ...]
     category: str
     immutable: bool
+    violation_codes: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -47,6 +53,7 @@ class SchedulerChangeImpactAnalyzer:
         self,
         snapshot: dict[str, Any],
         boundary: EditableBoundary,
+        constraint_policy: SchedulerConstraintPolicy | None = None,
     ) -> SchedulerChangeImpact:
         classes = {row["id"]: row for row in snapshot.get("classes", [])}
         subjects = {row["id"]: row for row in snapshot.get("subjects", [])}
@@ -71,9 +78,13 @@ class SchedulerChangeImpactAnalyzer:
         blocked_dates = self._blocked_dates(snapshot.get("calendar_events", []))
         hard_end = date.fromisoformat(snapshot["hard_end_date"])
         scoped = {row.block["id"]: row for row in boundary.blocks}
+        if constraint_policy is None:
+            parsed_policy = SchedulerConstraintPolicy.from_snapshot(snapshot)
+            constraint_policy = parsed_policy.policy or SchedulerConstraintPolicy()
         impacts = []
         for block in snapshot.get("active_schedule", []):
             reasons: list[str] = []
+            violation_codes: list[str] = []
             category = "RESOURCE"
             block_date = date.fromisoformat(block["date"])
             class_row = classes.get(block["class_id"])
@@ -108,6 +119,12 @@ class SchedulerChangeImpactAnalyzer:
             ):
                 reasons.append("Block no longer fits the calendar or timetable grid.")
                 category = "CALENDAR_GRID"
+            evaluation = constraint_policy.evaluate(placement_facts(block))
+            if evaluation.hard_violations:
+                reasons.extend(row.message for row in evaluation.hard_violations)
+                violation_codes.extend(row.code.value for row in evaluation.hard_violations)
+                if evaluation.required_repair_dimension is RepairDimension.TIME:
+                    category = "TIME"
             if reasons:
                 scope = scoped.get(block["id"])
                 impacts.append(
@@ -116,6 +133,7 @@ class SchedulerChangeImpactAnalyzer:
                         reasons=tuple(reasons),
                         category=category,
                         immutable=scope is None or not scope.is_editable,
+                        violation_codes=tuple(violation_codes),
                     )
                 )
         return SchedulerChangeImpact(

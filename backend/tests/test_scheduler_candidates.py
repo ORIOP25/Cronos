@@ -1,8 +1,13 @@
 from datetime import date
 
+import pytest
+
 from app.services.scheduler_candidates import CandidateUniverseBuilder
 from app.services.scheduler_complete_demand import CompleteDemandLedgerBuilder
 from tests.test_scheduler_complete_demand import _snapshot as demand_snapshot
+
+
+pytestmark = pytest.mark.unit
 
 
 def _snapshot() -> dict:

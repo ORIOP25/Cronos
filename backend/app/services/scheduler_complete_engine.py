@@ -4,17 +4,20 @@ import asyncio
 from datetime import date, datetime, timedelta, timezone
 
 from app import models
+from app.scheduler.domain.contracts import (
+    DraftBlockSpec,
+    NoValidGenerationOutput,
+    ValidatedGenerationResult,
+)
 from app.services.scheduler_candidates import CandidateUniverseBuilder
 from app.services.scheduler_complete_demand import CompleteDemandLedgerBuilder
 from app.services.scheduler_far_fill import FarFutureFiller
 from app.services.scheduler_horizon import AdaptiveHorizonSelector
 from app.services.scheduler_job_runtime import (
-    DraftBlockSpec,
     GenerationExecutionContext,
-    NoValidGenerationOutput,
-    ValidatedGenerationResult,
 )
 from app.services.scheduler_near_optimizer import NearFutureOptimizer
+from app.services.scheduler_quality_service import evaluate_target_quality
 
 
 class CompleteGenerationEngine:
@@ -129,6 +132,7 @@ class CompleteGenerationEngine:
             for block in assembly.blocks
         )
         margin_days = (hard_end - assembly.projected_completion_date).days
+        quality_metrics = evaluate_target_quality(snapshot, blocks)
         return ValidatedGenerationResult(
             result_category=models.ScheduleGenerationResultCategory.COMPLETE_SUCCESS,
             projected_completion_date=assembly.projected_completion_date,
@@ -156,6 +160,8 @@ class CompleteGenerationEngine:
                 "complexity_score": horizon.complexity_score,
                 "estimated_near_candidate_count": horizon.estimated_candidate_count,
                 **near_result.metrics,
+                **quality_metrics,
+                "quality_optimization_complete": near_result.status == "optimal",
             },
         )
 

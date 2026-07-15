@@ -71,6 +71,17 @@ const DraftPanel = ({ draft, onApprove, onReject, isApproving, isRejecting }) =>
             </div>
           )}
 
+          {draft.workload_override_used && (
+            <CAlert color="danger" className="mb-3" data-testid="deadline-rescue-warning">
+              <div className="fw-bold">Resgate de prazo com sobrecarga</div>
+              <div className="small">
+                Para recuperar as horas antes do prazo, este rascunho excede o limite confortável em{' '}
+                {draft.class_overload_count || 0} dia(s) de turma ({draft.class_overload_excess_minutes || 0} min) e{' '}
+                {draft.teacher_overload_count || 0} dia(s) de professor ({draft.teacher_overload_excess_minutes || 0} min).
+              </div>
+            </CAlert>
+          )}
+
           {draft.warnings.map(warning => (
             <div key={warning} className="small text-warning-emphasis mb-1">{warning}</div>
           ))}
@@ -157,6 +168,11 @@ DraftPanel.propTypes = {
     recommended_actions: PropTypes.arrayOf(PropTypes.string).isRequired,
     warnings: PropTypes.arrayOf(PropTypes.string).isRequired,
     can_approve: PropTypes.bool.isRequired,
+    workload_override_used: PropTypes.bool,
+    class_overload_count: PropTypes.number,
+    class_overload_excess_minutes: PropTypes.number,
+    teacher_overload_count: PropTypes.number,
+    teacher_overload_excess_minutes: PropTypes.number,
   }).isRequired,
   onApprove: PropTypes.func.isRequired,
   onReject: PropTypes.func.isRequired,

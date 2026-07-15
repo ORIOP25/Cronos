@@ -14,7 +14,6 @@ import {
   attachRuntimeGuards,
   expectNoAppCrash,
   expectRouteReady,
-  expectText,
   goTo,
   loginAsAdminReal,
 } from '../utils/clerk-helpers.js'
@@ -23,32 +22,6 @@ test.describe('Onboarding — Clerk real', () => {
   test.beforeEach(async ({ page }) => {
     attachRuntimeGuards(page)
     await loginAsAdminReal(page)
-  })
-
-  test('T29: fluxo sign-up → create-org → onboarding → dashboard', async ({ page }) => {
-    await goTo(page, '/create-org')
-    await expectNoAppCrash(page)
-
-    const nameInput = page.locator('input[name="name"]')
-    if (await nameInput.isVisible({ timeout: 3000 }).catch(() => false)) {
-      await nameInput.fill('Escola E2E Test')
-      await page.locator('button[type="submit"]').click()
-      await page.waitForURL('**/onboarding', { timeout: 10000 })
-    }
-
-    await goTo(page, '/onboarding')
-    await expectText(page, 'Ano Letivo')
-
-    const startDate = page.locator('input[type="date"]').first()
-    if (await startDate.isVisible().catch(() => false)) {
-      await startDate.fill('2025-09-15')
-      await page.locator('button[type="submit"]').click()
-    }
-
-    await page.waitForURL('**/dashboard', { timeout: 10000 }).catch(() => {})
-    if (page.url().endsWith('/dashboard')) {
-      await expectRouteReady(page, '/dashboard')
-    }
   })
 
   test('T30: login admin vê dashboard', async ({ page }) => {

@@ -1,3 +1,5 @@
+import { createClerkClient } from '@clerk/backend'
+import { clerk } from '@clerk/testing/playwright'
 import { test, expect } from '@playwright/test'
 import {
   allowApiFailure,
@@ -49,7 +51,7 @@ const FIXTURE = {
   ...FIXTURE_DATES,
 }
 
-async function apiRequest(page, method, path, body) {
+export async function apiRequest(page, method, path, body) {
   return await page.evaluate(
     async ({ apiPrefix, method: requestMethod, path: requestPath, body: requestBody }) => {
       let token = null
@@ -105,8 +107,8 @@ async function resetSchedulerYearIfConfigured(page) {
   }
 }
 
-async function findPreparedTeacherMember(page) {
-  const teacherEmail = process.env.E2E_CLERK_TEACHER_EMAIL
+async function findPreparedTeacherMember(page, requestedEmail) {
+  const teacherEmail = requestedEmail || process.env.E2E_CLERK_TEACHER_EMAIL
   if (!teacherEmail) {
     throw new Error('E2E_CLERK_TEACHER_EMAIL is required for scheduler E2E.')
   }
@@ -223,19 +225,19 @@ async function e2eSubjectIds(page, fixtureSubjectId) {
     .map((subject) => subject.id)
 }
 
-async function seedMinimalSchedulerInputs(page) {
+export async function seedMinimalSchedulerInputs(page, teacherEmail) {
   await resetSchedulerYearIfConfigured(page)
   await rejectPendingDraftIfPresent(page)
 
   const subject = await ensureFixtureSubject(page)
 
-  const teacherMember = await findPreparedTeacherMember(page)
+  const teacherMember = await findPreparedTeacherMember(page, teacherEmail)
   const competencySubjectIds = Array.from(new Set([
     ...(teacherMember.subject_ids || []),
     ...(await e2eSubjectIds(page, subject.id)),
   ]))
   const updatedTeacher = await apiRequest(page, 'PATCH', `/members/${teacherMember.id}`, {
-    capabilities: teacherMember.capabilities,
+    capabilities: Array.from(new Set([...teacherMember.capabilities, 'teacher'])),
     teacher_access_mode: teacherMember.teacher_access_mode || 'scheduler_only',
     subject_ids: competencySubjectIds,
     lock_version: teacherMember.lock_version,
@@ -277,7 +279,7 @@ async function seedMinimalSchedulerInputs(page) {
   return { classId: classroom.id, subjectId: subject.id, teacherId: updatedTeacher.teacher_id }
 }
 
-async function waitForJobToSucceed(page, jobId) {
+export async function waitForJobToSucceed(page, jobId) {
   let lastJob = null
   await expect.poll(
     async () => {
@@ -292,6 +294,60 @@ async function waitForJobToSucceed(page, jobId) {
   ).toBe('SUCCEEDED')
   return lastJob
 }
+
+export async function generateAndApproveThroughUi(page) {
+  await goTo(page, '/schedules')
+  await expectRouteReady(page, '/schedules')
+  const generateResponse = page.waitForResponse(
+    (response) => response.url().includes('/api/v1/scheduler/generate')
+      && response.request().method() === 'POST'
+      && response.ok(),
+  )
+  await page.getByRole('button', { name: /Gerar Hor.rio/i }).click()
+  const response = await generateResponse
+  const responseText = await response.text()
+  expect(response.ok(), `scheduler generate failed: ${response.status()} ${responseText}`).toBeTruthy()
+  const job = await waitForJobToSucceed(page, JSON.parse(responseText).job_id)
+  expect(job.job_status).toBe('SUCCEEDED')
+  await expect(page.getByText(/Rascunho pronto para revis/i)).toBeVisible({ timeout: 30_000 })
+  const approvalResponsePromise = page.waitForResponse(
+    (candidate) => candidate.url().includes('/api/v1/scheduler/drafts/')
+      && candidate.url().endsWith('/approve')
+      && candidate.request().method() === 'POST',
+  )
+  await page.getByRole('button', { name: /^Aprovar$/i }).click()
+  const approvalResponse = await approvalResponsePromise
+  expect(
+    approvalResponse.ok(),
+    `draft approval failed: ${approvalResponse.status()} ${await approvalResponse.text()}`,
+  ).toBeTruthy()
+  return job
+}
+
+function mondayIso(value) {
+  const monday = new Date(value)
+  monday.setHours(12, 0, 0, 0)
+  monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7))
+  return monday.toISOString().slice(0, 10)
+}
+
+async function firstPublishedFutureSlot(page, classId) {
+  const cursor = new Date()
+  for (let week = 0; week < 10; week += 1) {
+    const weekStart = new Date(cursor)
+    weekStart.setDate(weekStart.getDate() + (week * 7))
+    const slots = await apiRequest(
+      page,
+      'GET',
+      `/schedule/week?class_id=${classId}&week_start=${mondayIso(weekStart)}`,
+    )
+    const published = slots.find((slot) => slot.active_schedule_block_id)
+    if (published) return published
+  }
+  throw new Error('No published future slot was found for adaptive repair.')
+}
+
+test.describe.configure({ mode: 'serial' })
 
 test.describe('Scheduler generation', () => {
   test('admin publishes and registers completed and occurrence active blocks', async ({ page }) => {
@@ -408,4 +464,97 @@ test.describe('Scheduler generation', () => {
       }),
     ]))
   })
+})
+
+test('fresh founder completes Complete Generation and custom-rule Adaptive Repair', async ({ page, context }) => {
+  test.setTimeout(300_000)
+  const secretKey = process.env.CLERK_SECRET_KEY
+  if (!secretKey) throw new Error('CLERK_SECRET_KEY is required for the beta remediation journey.')
+  const client = createClerkClient({ secretKey })
+  const runKey = `${Date.now()}-${Math.random().toString(16).slice(2)}`
+  const email = `cronos-beta-${runKey}+clerk_test@example.com`
+  const schoolName = `Cronos Beta ${runKey}`
+  const baseUrl = process.env.BASE_URL || 'http://localhost:5173'
+  let userId
+  let organizationId
+
+  try {
+    const user = await client.users.createUser({
+      emailAddress: [email],
+      firstName: 'Cronos',
+      lastName: 'Beta',
+      skipPasswordRequirement: true,
+      skipLegalChecks: true,
+      createOrganizationEnabled: true,
+    })
+    userId = user.id
+
+    attachRuntimeGuards(page)
+    allowApiFailure(page, { status: 404, url: '/api/v1/scheduler/drafts/current' })
+    await page.goto(baseUrl)
+    await clerk.signIn({ page, emailAddress: email })
+    await goTo(page, '/create-org')
+    await page.getByLabel('Nome da escola').fill(schoolName)
+    await page.getByRole('button', { name: /Criar organiza/i }).click()
+    await page.waitForURL('**/onboarding', { timeout: 20_000 })
+    organizationId = await page.evaluate(() => window.Clerk?.organization?.id)
+    expect(organizationId).toMatch(/^org_/)
+
+    await page.getByRole('button', { name: /Guardar e Come/i }).click()
+    await expectRouteReady(page, '/dashboard')
+    const { classId, teacherId } = await seedMinimalSchedulerInputs(page, email)
+    await generateAndApproveThroughUi(page)
+
+    const forbidden = await firstPublishedFutureSlot(page, classId)
+    await apiRequest(page, 'POST', '/schedule/constraints/', {
+      rule_type: 'teacher_unavailable',
+      rule_payload: {
+        teacher_id: teacherId,
+        date: forbidden.date,
+        timeslot_id: forbidden.timeslot.id,
+      },
+    })
+    await expect.poll(
+      async () => (await apiRequest(page, 'GET', '/scheduler/status')).trigger_type,
+      { timeout: 20_000 },
+    ).toBe('SCHEDULER_CHANGE')
+    const repairJob = await generateAndApproveThroughUi(page)
+    expect(repairJob.strategy).toBe('ADAPTIVE_REPAIR')
+
+    const repairedWeek = await apiRequest(
+      page,
+      'GET',
+      `/schedule/week?class_id=${classId}&week_start=${mondayIso(new Date(`${forbidden.date}T12:00:00`))}`,
+    )
+    expect(repairedWeek.some((slot) => (
+      slot.active_schedule_block_id
+      && slot.date === forbidden.date
+      && slot.timeslot.id === forbidden.timeslot.id
+      && slot.teacher.id === teacherId
+    ))).toBe(false)
+
+    await page.reload()
+    await expectRouteReady(page, '/schedules')
+    const secondPage = await context.newPage()
+    attachRuntimeGuards(secondPage)
+    await goTo(secondPage, '/schedules')
+    await expectRouteReady(secondPage, '/schedules')
+    await secondPage.close()
+
+    await clerk.signOut({ page })
+    await page.goto(baseUrl)
+    await clerk.signIn({ page, emailAddress: email })
+    await goTo(page, '/schedules')
+    await expectRouteReady(page, '/schedules')
+
+    await page.evaluate(async () => window.Clerk.setActive({ organization: null }))
+    await goTo(page, '/create-org')
+    await page.getByRole('button', { name: schoolName }).click()
+    await expectRouteReady(page, '/dashboard')
+  } finally {
+    if (organizationId) {
+      await client.organizations.deleteOrganization(organizationId).catch(() => undefined)
+    }
+    if (userId) await client.users.deleteUser(userId).catch(() => undefined)
+  }
 })

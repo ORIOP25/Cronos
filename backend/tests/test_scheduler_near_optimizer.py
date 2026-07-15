@@ -1,10 +1,15 @@
 from copy import deepcopy
 from datetime import date
 
+import pytest
+
 from app.services.scheduler_candidates import CandidateUniverseBuilder
 from app.services.scheduler_complete_demand import CompleteDemandLedgerBuilder
 from app.services.scheduler_near_optimizer import NearFutureOptimizer
 from tests.test_scheduler_candidates import _snapshot
+
+
+pytestmark = pytest.mark.unit
 
 
 def _optimize(snapshot: dict):
@@ -95,3 +100,37 @@ def test_optimizer_preserves_aggregate_contiguous_lunch_break():
 
     assert result.scheduled_blocks == 1
     assert result.target_blocks == 2
+
+
+def test_lower_priority_preference_cannot_weaken_earliest_completion_stage():
+    snapshot = _snapshot()
+    snapshot["hard_end_date"] = "2025-09-02"
+    snapshot["lunch_rules"] = None
+    snapshot["timetable_grid"] = [
+        {
+            "id": 10,
+            "day_of_week": 0,
+            "start_time": "09:00:00",
+            "end_time": "10:00:00",
+        },
+        {
+            "id": 20,
+            "day_of_week": 1,
+            "start_time": "09:00:00",
+            "end_time": "10:00:00",
+        },
+    ]
+    snapshot["teacher_availability"] = [
+        {"teacher_id": 3, "timeslot_id": 10, "score": 0},
+        {"teacher_id": 3, "timeslot_id": 20, "score": 2},
+    ]
+    snapshot["module_accounting"] = [
+        {"id": 7, "subject_id": 2, "hours_total": 1, "sequence": 1}
+    ]
+
+    result = _optimize(snapshot)
+
+    assert result.status == "optimal"
+    assert result.metrics["scheduled_minutes"] == 60
+    assert result.selected[0].output_date == date(2025, 9, 1)
+    assert result.selected[0].availability_score == 0

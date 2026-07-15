@@ -1,8 +1,11 @@
+import structlog
 from fastapi import HTTPException
 from fastapi.encoders import jsonable_encoder
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models, schemas
+from app.scheduler.domain.constraints import SchedulerConstraintPolicy
 from app.scheduler_worker import run_schedule_generation_job_task
 from app.services.preflight_service import _preflight_check
 from app.services.scheduler_generation_service import (
@@ -12,6 +15,9 @@ from app.services.scheduler_generation_service import (
 )
 from app.services.scheduler_job_service import SchedulerJobError, SchedulerJobService
 from app.services.scheduler_state_service import SchedulerStateError
+
+
+logger = structlog.get_logger(__name__)
 
 
 async def start_generation_request(
@@ -54,6 +60,31 @@ async def start_generation_request(
             status_code=409,
             detail={"error": "scheduler_state_invalid", "message": str(exc)},
         ) from exc
+
+    stored_constraints = list(
+        await db.scalars(
+            select(models.Constraint)
+            .where(models.Constraint.organization_id == organization_id)
+            .order_by(models.Constraint.id)
+        )
+    )
+    constraint_parse = SchedulerConstraintPolicy.parse(stored_constraints)
+    if constraint_parse.configuration_violations:
+        violation = constraint_parse.configuration_violations[0]
+        logger.warning(
+            "scheduler_constraint_preflight_rejected",
+            rejection_code="configuration_invalid",
+            constraint_type=violation.rule_type,
+        )
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error": "SCHEDULER_CONSTRAINT_CONFIGURATION_INVALID",
+                "message": violation.message,
+                "constraint_id": violation.constraint_id,
+                "constraint_type": violation.rule_type,
+            },
+        )
 
     preflight_errors, preflight_summary = await _preflight_check(
         db,

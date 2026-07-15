@@ -151,7 +151,51 @@ Expected:
 - the UI states that the draft is no longer current and instructs regeneration;
 - no active schedule mutation is committed.
 
-## 11. Reset The School Year
+## 11. Custom Constraint Repair
+
+1. Publish a valid schedule and select one future block.
+2. Create an exact date-plus-timeslot `teacher_unavailable` rule through the
+   authenticated API.
+3. Confirm the scheduler trigger becomes **Scheduler Change** and generate again.
+4. Review, approve, and query the published week.
+
+Expected:
+
+- Adaptive Repair moves or removes the forbidden placement, or returns explicit
+  No Valid Output with stable blocker codes;
+- it never returns the unchanged violating block as a successful target;
+- runtime and approval independently reject a forged violating target;
+- the published target contains no forbidden placement.
+
+## 12. Deadline Rescue Warning
+
+Use a deterministic fixture that can recover all debt only by exceeding the
+protected daily comfort bound.
+
+Expected:
+
+- recovery levels 1–4 do not create or worsen overload;
+- Deadline Rescue remains hard-valid and records the actual class/teacher excess;
+- the draft review shows the prominent
+  `DEADLINE_RESCUE_WORKLOAD_OVERRIDE` warning only when the bound was crossed.
+
+## 13. Fresh Organization Bootstrap
+
+1. Sign in with a provider user that has zero organization memberships.
+2. Create one organization in the visible UI.
+3. Complete onboarding, refresh, open a second tab, sign out and sign in again.
+4. Clear the active organization, select the existing membership, and return to
+   schedules.
+
+Expected:
+
+- exactly one provider organization and one local founder membership exist;
+- activation precedes fresh organization-token retrieval and bootstrap;
+- no transition loops back to organization creation;
+- 401, 403, and 5xx member-query failures show recovery/access panels rather
+  than masquerading as a missing organization.
+
+## 14. Reset The School Year
 
 1. Invoke the administrator reset-year action with explicit confirmation.
 2. Return to `/schedules`.

@@ -13,6 +13,9 @@ from app.services.scheduler_job_runtime import (
 )
 
 
+pytestmark = pytest.mark.unit
+
+
 def _snapshot(*, hard_end: str) -> dict:
     return {
         "organization_id": 1,
@@ -282,3 +285,97 @@ async def test_relevant_change_can_produce_valid_unchanged_target():
     assert result.adaptation_level == "SAME_TIME_RESOURCE_ADAPTATION"
     assert result.blocks[0].change_type == models.ScheduleDraftBlockChangeType.UNCHANGED
     assert result.summary["changed_blocks"] == 0
+
+
+def _custom_rule_context(rule_type: str, payload: dict) -> GenerationExecutionContext:
+    context = _change_context(current_room_valid=True)
+    snapshot = context.immutable_snapshot["generation_input"]
+    snapshot["constraints"] = [{"rule_type": rule_type, "rule_payload": payload}]
+    snapshot["timetable_grid"].extend(
+        [
+            {
+                "id": 11,
+                "day_of_week": 0,
+                "start_time": "10:00:00",
+                "end_time": "11:00:00",
+            },
+            {
+                "id": 12,
+                "day_of_week": 1,
+                "start_time": "09:00:00",
+                "end_time": "10:00:00",
+            },
+        ]
+    )
+    return context
+
+
+@pytest.mark.asyncio
+async def test_specific_room_constraint_is_detected_and_repaired_at_same_time():
+    context = _custom_rule_context(
+        "specific_room",
+        {"class_id": 1, "subject_id": 2, "room_id": 5},
+    )
+    result = await AdaptiveRepairEngine().generate(context)
+
+    assert result.adaptation_level == "SAME_TIME_RESOURCE_ADAPTATION"
+    assert (result.blocks[0].room_id, result.blocks[0].timeslot_id) == (5, 10)
+    assert result.blocks[0].change_type is models.ScheduleDraftBlockChangeType.ROOM_ONLY
+
+
+@pytest.mark.asyncio
+async def test_lock_time_constraint_moves_published_block():
+    context = _custom_rule_context(
+        "lock_time",
+        {"class_id": 1, "subject_id": 2, "timeslot_id": 11},
+    )
+    result = await AdaptiveRepairEngine().generate(context)
+
+    assert result.adaptation_level == "AFFECTED_RESOURCE_CLASS_TEACHER_REFIT"
+    assert result.blocks[0].timeslot_id == 11
+    assert result.blocks[0].change_type is models.ScheduleDraftBlockChangeType.MOVED
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("payload", "forbidden"),
+    [
+        ({"teacher_id": 3, "timeslot_id": 10}, lambda block: block.timeslot_id == 10),
+        ({"teacher_id": 3, "day_of_week": 0}, lambda block: block.date.weekday() == 0),
+        ({"teacher_id": 3, "date": "2026-06-01"}, lambda block: block.date.isoformat() == "2026-06-01"),
+        (
+            {"teacher_id": 3, "date": "2026-06-01", "timeslot_id": 10},
+            lambda block: block.date.isoformat() == "2026-06-01" and block.timeslot_id == 10,
+        ),
+    ],
+)
+async def test_teacher_unavailable_selector_is_repaired(payload, forbidden):
+    context = _custom_rule_context("teacher_unavailable", payload)
+    result = await AdaptiveRepairEngine().generate(context)
+
+    assert result.result_category is models.ScheduleGenerationResultCategory.COMPLETE_SUCCESS
+    assert not forbidden(result.blocks[0])
+    assert result.blocks[0].change_type is models.ScheduleDraftBlockChangeType.MOVED
+
+
+@pytest.mark.asyncio
+async def test_custom_rule_on_immutable_block_returns_no_valid_output_with_code():
+    context = _custom_rule_context(
+        "teacher_unavailable",
+        {"teacher_id": 3, "timeslot_id": 10},
+    )
+    context = replace(
+        context,
+        immutable_snapshot={
+            **context.immutable_snapshot,
+            "repair_policy": {
+                "school_today": "2026-06-01",
+                "editable_start_date": "2026-06-08",
+                "repair_stability_window_days": 7,
+            },
+        },
+    )
+    result = await AdaptiveRepairEngine().generate(context)
+
+    assert isinstance(result, NoValidGenerationOutput)
+    assert "teacher_unavailable" in result.blockers[0]

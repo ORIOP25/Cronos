@@ -51,6 +51,15 @@ def emit_scheduler_job_event(
             "residual_debt_minutes",
         ),
         "disruption_score": _metric(summary, metrics, "disruption_score"),
+        "quality_completed_stage": _metric(
+            summary,
+            metrics,
+            "quality_completed_stage",
+            "optimization_stages",
+        ),
+        "workload_override_used": bool(
+            _metric(summary, metrics, "workload_override_used") or False
+        ),
         "failure_category": job.failure_code,
     }
     try:

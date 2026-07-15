@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from time import monotonic
 from typing import Any
 
@@ -11,13 +11,22 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models
-from app.services.scheduler_constraint_rules import SchedulerConstraintRules
+from app.scheduler.domain.contracts import (
+    DraftBlockSpec,
+    NoValidGenerationOutput,
+    ValidatedGenerationResult,
+)
+from app.scheduler.domain.validation import GenerationEnvelopeValidator
 from app.services.scheduler_fingerprint_service import SchedulerFingerprintService
 from app.services.scheduler_recovery_service import SchedulerRecoveryService
 from app.services.scheduler_complete_demand import CompleteDemandLedgerBuilder
 from app.services.scheduler_editable_boundary import EditableBoundaryBuilder
 from app.services.scheduler_diff_service import SchedulerDiffService
 from app.services.scheduler_observability import emit_scheduler_job_event
+from app.services.scheduler_target_validator import (
+    SchedulerTargetValidationError,
+    SchedulerTargetValidator,
+)
 
 
 GENERATION_CAP_SECONDS = 5 * 60
@@ -44,48 +53,6 @@ class GenerationTimedOutError(GenerationRuntimeError):
 
 class GenerationValidationError(GenerationRuntimeError):
     pass
-
-
-@dataclass(frozen=True)
-class DraftBlockSpec:
-    stable_block_key: str
-    class_id: int
-    subject_id: int
-    teacher_id: int
-    room_id: int
-    room_type_id: models.RoomType | None
-    date: date
-    timeslot_id: int
-    duration_minutes: int
-    change_type: models.ScheduleDraftBlockChangeType
-    source_active_block_id: int | None = None
-    module_sequence_index: int | None = None
-    is_recovery_block: bool = False
-    recovery_source_occurrence_id: int | None = None
-    recovery_source_occurrence_revision: int | None = None
-    reason_code: str | None = None
-
-
-@dataclass(frozen=True)
-class ValidatedGenerationResult:
-    result_category: models.ScheduleGenerationResultCategory
-    projected_completion_date: date
-    hard_end_date: date
-    blocks: tuple[DraftBlockSpec, ...]
-    summary: dict[str, Any]
-    recovery_escalation_level: str | None = None
-    adaptation_level: str | None = None
-    partial_recovery_blocker_type: str | None = None
-    main_blocker_message: str | None = None
-    recommended_actions: tuple[str, ...] = ()
-    warnings: tuple[str, ...] = ()
-    metrics: dict[str, Any] = field(default_factory=dict)
-
-
-@dataclass(frozen=True)
-class NoValidGenerationOutput:
-    blockers: tuple[str, ...]
-    metrics: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -291,77 +258,27 @@ class SchedulerJobRuntime:
     ) -> None:
         if result.result_category == models.ScheduleGenerationResultCategory.NO_VALID_OUTPUT:
             raise GenerationValidationError("No Valid Output cannot be persisted as a draft.")
-        if (
-            context.strategy == models.ScheduleGenerationStrategy.COMPLETE_GENERATION
-            and result.result_category
-            != models.ScheduleGenerationResultCategory.COMPLETE_SUCCESS
-        ):
-            raise GenerationValidationError(
-                "Complete Generation must produce a complete-success draft."
-            )
-        if not result.blocks:
-            raise GenerationValidationError("A validated draft must contain schedule blocks.")
-        if result.projected_completion_date > result.hard_end_date:
-            raise GenerationValidationError("Projected completion exceeds the hard end date.")
-
         generation_input = context.immutable_snapshot["generation_input"]
-        start_date = date.fromisoformat(generation_input["start_date"])
         hard_end_date = date.fromisoformat(generation_input["hard_end_date"])
-        if result.hard_end_date != hard_end_date:
-            raise GenerationValidationError("Result hard end date differs from its snapshot.")
+        envelope_violations = GenerationEnvelopeValidator.validate(
+            context.strategy,
+            result,
+            hard_end_date,
+        )
+        if envelope_violations:
+            raise GenerationValidationError(envelope_violations[0].message)
 
-        constraint_rules = SchedulerConstraintRules.from_snapshot(generation_input)
-        if constraint_rules.blockers:
-            raise GenerationValidationError(
-                "Scheduler constraints are invalid or unsupported: "
-                + "; ".join(constraint_rules.blockers)
+        try:
+            SchedulerTargetValidator.validate(
+                generation_input,
+                result.blocks,
+                complete=(
+                    context.strategy
+                    == models.ScheduleGenerationStrategy.COMPLETE_GENERATION
+                ),
             )
-
-        stable_keys: set[str] = set()
-        grid = {
-            row["id"]: (
-                row["day_of_week"],
-                self._minute(row["start_time"]),
-                self._minute(row["end_time"]),
-            )
-            for row in generation_input.get("timetable_grid", [])
-        }
-        resource_intervals: dict[tuple[str, int, date], list[tuple[int, int]]] = {}
-        for block in result.blocks:
-            if not block.stable_block_key.strip() or block.stable_block_key in stable_keys:
-                raise GenerationValidationError("Draft stable block keys must be non-empty and unique.")
-            stable_keys.add(block.stable_block_key)
-            if block.date < start_date or block.date > hard_end_date:
-                raise GenerationValidationError("Draft block lies outside the school year.")
-            if block.duration_minutes <= 0:
-                raise GenerationValidationError("Draft block duration must be positive.")
-            slot = grid.get(block.timeslot_id)
-            if slot is None or slot[0] != block.date.weekday():
-                raise GenerationValidationError("Draft block is outside its timetable grid.")
-            start_minute, end_minute = slot[1], slot[2]
-            if block.duration_minutes > end_minute - start_minute:
-                raise GenerationValidationError("Draft duration exceeds its timetable slot.")
-            for kind, resource_id in (
-                ("class", block.class_id),
-                ("teacher", block.teacher_id),
-                ("room", block.room_id),
-            ):
-                key = (kind, resource_id, block.date)
-                intervals = resource_intervals.setdefault(key, [])
-                if any(
-                    start_minute < existing_end and end_minute > existing_start
-                    for existing_start, existing_end in intervals
-                ):
-                    raise GenerationValidationError("Draft contains a resource interval conflict.")
-                intervals.append((start_minute, end_minute))
-            if block.is_recovery_block != (
-                block.recovery_source_occurrence_id is not None
-                and block.recovery_source_occurrence_revision is not None
-            ):
-                raise GenerationValidationError("Recovery block source metadata is incomplete.")
-            violation = constraint_rules.violation_for_block(block)
-            if violation is not None:
-                raise GenerationValidationError(violation)
+        except SchedulerTargetValidationError as exc:
+            raise GenerationValidationError(str(exc)) from exc
 
         await self._validate_resource_scope(context, result.blocks)
         if context.strategy == models.ScheduleGenerationStrategy.COMPLETE_GENERATION:
@@ -827,8 +744,3 @@ class SchedulerJobRuntime:
 
     def _elapsed_ms(self, started: float) -> int:
         return max(0, int(round((self._elapsed_clock() - started) * 1000)))
-
-    @staticmethod
-    def _minute(value: str) -> int:
-        parsed = time.fromisoformat(value)
-        return parsed.hour * 60 + parsed.minute

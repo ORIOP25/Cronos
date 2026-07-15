@@ -72,9 +72,12 @@ jobs:
           CLERK_WEBHOOK_SECRET: ${{ secrets.CLERK_WEBHOOK_SECRET }}
           CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_PUBLISHABLE_KEY || vars.VITE_CLERK_PUBLISHABLE_KEY || secrets.CLERK_PUBLISHABLE_KEY || secrets.VITE_CLERK_PUBLISHABLE_KEY || env.CI_CLERK_PUBLISHABLE_KEY }}
 
-      - name: Verify Alembic schema drift
+      - name: Verify Alembic downgrade, upgrade, and schema drift
         working-directory: backend
-        run: alembic check
+        run: |
+          alembic downgrade base
+          alembic upgrade head
+          alembic check
         env:
           ENVIRONMENT: local
           DATABASE_URL: "postgresql+asyncpg://postgres@localhost:5432/cronos_test_db"
@@ -108,9 +111,40 @@ jobs:
           CLERK_WEBHOOK_SECRET: ${{ secrets.CLERK_WEBHOOK_SECRET }}
           CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_PUBLISHABLE_KEY || vars.VITE_CLERK_PUBLISHABLE_KEY || secrets.CLERK_PUBLISHABLE_KEY || secrets.VITE_CLERK_PUBLISHABLE_KEY || env.CI_CLERK_PUBLISHABLE_KEY }}
 
+      - name: Audit persisted scheduler constraints
+        working-directory: backend
+        run: python -m scripts.audit_scheduler_constraints
+        env:
+          ENVIRONMENT: local
+          DATABASE_URL: "postgresql+asyncpg://postgres@localhost:5432/cronos_test_db"
+          DATABASE_POOLING_ENABLED: "false"
+          SECRET_KEY: ci-test-secret-key-not-for-production
+          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
+          CLERK_WEBHOOK_SECRET: ${{ secrets.CLERK_WEBHOOK_SECRET }}
+          CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_PUBLISHABLE_KEY || vars.VITE_CLERK_PUBLISHABLE_KEY || secrets.CLERK_PUBLISHABLE_KEY || secrets.VITE_CLERK_PUBLISHABLE_KEY || env.CI_CLERK_PUBLISHABLE_KEY }}
+
       - name: Run Tests
         working-directory: backend
-        run: pytest tests/ -v --cov=app --cov-report=xml:coverage.xml --cov-fail-under=70 --junitxml=test-results.xml --tb=short
+        run: pytest tests/ -v --cov=app --cov-branch --cov-report=xml:coverage.xml --cov-fail-under=70 --junitxml=test-results.xml --tb=short
+        env:
+          ENVIRONMENT: local
+          DATABASE_URL: "postgresql+asyncpg://postgres@localhost:5432/cronos_test_db"
+          DATABASE_POOLING_ENABLED: "false"
+          SECRET_KEY: ci-test-secret-key-not-for-production
+          RATELIMIT_ENABLED: "false"
+          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
+          CLERK_WEBHOOK_SECRET: ${{ secrets.CLERK_WEBHOOK_SECRET }}
+          CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_PUBLISHABLE_KEY || vars.VITE_CLERK_PUBLISHABLE_KEY || secrets.CLERK_PUBLISHABLE_KEY || secrets.VITE_CLERK_PUBLISHABLE_KEY || env.CI_CLERK_PUBLISHABLE_KEY }}
+
+      - name: Enforce pure scheduler policy and validation branch coverage
+        working-directory: backend
+        run: >-
+          pytest -m unit -q
+          --cov=app.scheduler.domain.constraints
+          --cov=app.scheduler.domain.validation
+          --cov-branch
+          --cov-report=term-missing
+          --cov-fail-under=100
         env:
           ENVIRONMENT: local
           DATABASE_URL: "postgresql+asyncpg://postgres@localhost:5432/cronos_test_db"
@@ -160,23 +194,15 @@ jobs:
         working-directory: frontend
         run: npm audit --audit-level=high
 
-      - name: Lint
+      - name: Sequential frontend verification
         working-directory: frontend
-        run: npm run lint -- --max-warnings 0
-
-      - name: Detect frontend dead code
-        working-directory: frontend
-        run: npm run lint:dead-code
-
-      - name: Test
-        working-directory: frontend
-        run: npm run test:coverage
-
-      - name: Build
-        working-directory: frontend
-        run: npm run build
+        run: npm run verify
         env:
           VITE_CLERK_PUBLISHABLE_KEY: ${{ vars.VITE_CLERK_PUBLISHABLE_KEY || vars.CLERK_PUBLISHABLE_KEY || secrets.VITE_CLERK_PUBLISHABLE_KEY || secrets.CLERK_PUBLISHABLE_KEY || env.CI_CLERK_PUBLISHABLE_KEY }}
+
+      - name: SchoolConfig single-worker stability gate
+        working-directory: frontend
+        run: npm run test:school-config:stability
 
   e2e:
     name: E2E - Full Docker Stack + Playwright

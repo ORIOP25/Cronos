@@ -82,4 +82,23 @@ describe('DraftPanel', () => {
     expect(screen.getByText('A new target block was added.')).toBeInTheDocument()
     expect(screen.getByText('Adicionado: 1')).toBeInTheDocument()
   })
+
+  it('renders the deadline rescue workload override prominently', () => {
+    render(
+      <DraftPanel
+        draft={{
+          ...draft,
+          workload_override_used: true,
+          class_overload_count: 1,
+          class_overload_excess_minutes: 60,
+          teacher_overload_count: 2,
+          teacher_overload_excess_minutes: 120,
+        }}
+        onApprove={vi.fn()}
+        onReject={vi.fn()}
+      />
+    )
+    expect(screen.getByTestId('deadline-rescue-warning')).toHaveTextContent('Resgate de prazo com sobrecarga')
+    expect(screen.getByTestId('deadline-rescue-warning')).toHaveTextContent('120 min')
+  })
 })

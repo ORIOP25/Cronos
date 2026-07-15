@@ -1,7 +1,9 @@
+from __future__ import annotations
+
 from pydantic import BaseModel, EmailStr, Field, ConfigDict, model_validator, AliasChoices
 from datetime import time, datetime, date
-from enum import Enum
-from typing import Any, Optional, Literal
+from enum import Enum, StrEnum
+from typing import Annotated, Any, Optional, Literal, Union
 from .models import (
     RoomType, UserRole, ConstraintType, PreferenceLevel,
     CalendarEventType, CalendarEventSource, LessonOccurrenceStatus,
@@ -249,6 +251,27 @@ class CurrentMemberRead(BaseModel):
     default_mode: Literal["admin", "teacher"]
     available_modes: list[Literal["admin", "teacher"]]
 
+
+class SessionBootstrapOrganization(BaseModel):
+    id: int
+    clerk_org_id: str
+    name: str
+
+
+class SessionBootstrapMember(BaseModel):
+    id: int
+    access_status: Literal["active"]
+    lifecycle_status: Literal["active"]
+    capabilities: list[MemberCapabilityLiteral]
+    default_mode: Literal["admin", "teacher"]
+    teacher_id: int | None = None
+
+
+class SessionBootstrapResponse(BaseModel):
+    organization: SessionBootstrapOrganization
+    member: SessionBootstrapMember
+    onboarding_complete: bool
+
 # --- Class (Turma) ---
 class ClassBase(BaseModel):
     name: str
@@ -477,17 +500,124 @@ class LessonRead(LessonBase):
     model_config = model_config
 
 # --- CONSTRAINT (REGRA) ---
+class SupportedConstraintType(StrEnum):
+    specific_room = "specific_room"
+    lock_time = "lock_time"
+    teacher_unavailable = "teacher_unavailable"
+    teacher_preferred = "teacher_preferred"
+
+
+StrictPositiveInt = Annotated[int, Field(strict=True, gt=0)]
+ConstraintDate = date
+
+
+class _ConstraintPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+
+class SpecificRoomPayload(_ConstraintPayload):
+    class_id: StrictPositiveInt
+    subject_id: StrictPositiveInt
+    room_id: StrictPositiveInt
+
+
+class LockTimePayload(_ConstraintPayload):
+    class_id: StrictPositiveInt
+    subject_id: StrictPositiveInt
+    timeslot_id: StrictPositiveInt
+
+
+class TeacherPreferredPayload(_ConstraintPayload):
+    teacher_id: StrictPositiveInt
+    timeslot_id: StrictPositiveInt
+
+
+class TeacherUnavailablePayload(_ConstraintPayload):
+    teacher_id: StrictPositiveInt
+    timeslot_id: StrictPositiveInt | None = None
+    day_of_week: Annotated[int, Field(strict=True, ge=0, le=6)] | None = None
+    date: ConstraintDate | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def validate_selector_shape(cls, value):
+        if not isinstance(value, dict):
+            return value
+        selector_keys = set(value) - {"teacher_id"}
+        if selector_keys not in (
+            {"timeslot_id"},
+            {"day_of_week"},
+            {"date"},
+            {"date", "timeslot_id"},
+        ):
+            raise ValueError("teacher_unavailable requires exactly one canonical selector form")
+        date_value = value.get("date")
+        if date_value is not None and (
+            not isinstance(date_value, (str, date))
+            or isinstance(date_value, datetime)
+            or (isinstance(date_value, str) and "T" in date_value)
+        ):
+            raise ValueError("date must be an ISO date, not a datetime")
+        return value
+
+
+class _ConstraintWrite(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+
+class SpecificRoomConstraintCreate(_ConstraintWrite):
+    rule_type: Literal[SupportedConstraintType.specific_room]
+    rule_payload: SpecificRoomPayload
+
+
+class LockTimeConstraintCreate(_ConstraintWrite):
+    rule_type: Literal[SupportedConstraintType.lock_time]
+    rule_payload: LockTimePayload
+
+
+class TeacherUnavailableConstraintCreate(_ConstraintWrite):
+    rule_type: Literal[SupportedConstraintType.teacher_unavailable]
+    rule_payload: TeacherUnavailablePayload
+
+
+class TeacherPreferredConstraintCreate(_ConstraintWrite):
+    rule_type: Literal[SupportedConstraintType.teacher_preferred]
+    rule_payload: TeacherPreferredPayload
+
+
+ConstraintCreate = Annotated[
+    Union[
+        SpecificRoomConstraintCreate,
+        LockTimeConstraintCreate,
+        TeacherUnavailableConstraintCreate,
+        TeacherPreferredConstraintCreate,
+    ],
+    Field(discriminator="rule_type"),
+]
+
+
 class ConstraintBase(BaseModel):
     rule_type: ConstraintType
     rule_payload: Any  # Flexível para aceitar JSON complexo
 
-class ConstraintCreate(ConstraintBase):
-    pass
-
 class ConstraintRead(ConstraintBase):
     id: int
     organization_id: int
+    generation_compatible: bool = True
+    validation_errors: list[str] = Field(default_factory=list)
     model_config = model_config
+
+    @model_validator(mode="after")
+    def derive_generation_compatibility(self):
+        from app.scheduler.domain.constraints import SchedulerConstraintPolicy
+
+        result = SchedulerConstraintPolicy.parse(
+            [{"id": self.id, "rule_type": self.rule_type, "rule_payload": self.rule_payload}]
+        )
+        errors = [row.message for row in result.configuration_violations]
+        self.generation_compatible = not errors
+        self.validation_errors = errors
+        return self
 
 # --- Disponibilidade ---
 class AvailabilityBase(BaseModel):
@@ -640,6 +770,21 @@ class ScheduleDraftSummaryResponse(BaseModel):
     disruption_score: float = Field(ge=0)
     warnings: list[str] | tuple[str, ...]
     can_approve: bool
+    quality_policy_version: str | None = None
+    quality_optimization_complete: bool | None = None
+    class_completion_spread_days: int = Field(default=0, ge=0)
+    class_high_load_days: int = Field(default=0, ge=0)
+    teacher_high_load_days: int = Field(default=0, ge=0)
+    class_gap_minutes: int = Field(default=0, ge=0)
+    teacher_gap_minutes: int = Field(default=0, ge=0)
+    availability_disutility_minutes: int = Field(default=0, ge=0)
+    consecutive_excess_minutes: int = Field(default=0, ge=0)
+    recovery_stack_excess_minutes: int = Field(default=0, ge=0)
+    workload_override_used: bool = False
+    class_overload_count: int = Field(default=0, ge=0)
+    class_overload_excess_minutes: int = Field(default=0, ge=0)
+    teacher_overload_count: int = Field(default=0, ge=0)
+    teacher_overload_excess_minutes: int = Field(default=0, ge=0)
 
 
 class ScheduleDraftDiffEntryResponse(BaseModel):

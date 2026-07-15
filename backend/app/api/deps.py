@@ -32,11 +32,22 @@ async def get_db() -> AsyncGenerator:
 async def get_clerk_payload(request: Request) -> dict:
     state = await verify_clerk_request(request)
     if not state.is_signed_in:
+        reason_value = getattr(getattr(state, "reason", None), "value", None)
+        reason = reason_value[0] if isinstance(reason_value, tuple) else reason_value
+        category = (
+            "INVALID_AUTHORIZED_PARTY"
+            if reason == "token-invalid-authorized-parties"
+            else "NOT_AUTHENTICATED"
+        )
+        logger.warning("clerk_auth_rejected", auth_failure_category=category.lower())
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Not authenticated",
+            detail={
+                "error": category,
+                "message": "Not authenticated; authentication could not be verified.",
+            },
         )
-    return state.payload
+    return state.payload or {}
 
 
 async def _get_token_organization(

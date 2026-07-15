@@ -42,6 +42,21 @@ class DraftSummary:
     disruption_score: float
     warnings: tuple[str, ...]
     can_approve: bool
+    quality_policy_version: str | None = None
+    quality_optimization_complete: bool | None = None
+    class_completion_spread_days: int = 0
+    class_high_load_days: int = 0
+    teacher_high_load_days: int = 0
+    class_gap_minutes: int = 0
+    teacher_gap_minutes: int = 0
+    availability_disutility_minutes: int = 0
+    consecutive_excess_minutes: int = 0
+    recovery_stack_excess_minutes: int = 0
+    workload_override_used: bool = False
+    class_overload_count: int = 0
+    class_overload_excess_minutes: int = 0
+    teacher_overload_count: int = 0
+    teacher_overload_excess_minutes: int = 0
 
 
 class SchedulerDraftService:
@@ -85,6 +100,7 @@ class SchedulerDraftService:
             if row.change_type != models.ScheduleDraftBlockChangeType.UNCHANGED
         ]
         summary = draft.summary_json or {}
+        metrics = draft.metrics_json or {}
         recovered = int(summary.get("recovered_minutes", 0))
         remaining = int(summary.get("remaining_unscheduled_minutes", 0))
         state = await self._state.get_state(
@@ -119,4 +135,19 @@ class SchedulerDraftService:
             disruption_score=float(summary.get("disruption_score", 0)),
             warnings=tuple(draft.warnings_json or ()),
             can_approve=can_approve,
+            quality_policy_version=metrics.get("quality_policy_version"),
+            quality_optimization_complete=metrics.get("quality_optimization_complete"),
+            class_completion_spread_days=int(metrics.get("class_completion_spread_days", 0)),
+            class_high_load_days=int(metrics.get("class_high_load_days", 0)),
+            teacher_high_load_days=int(metrics.get("teacher_high_load_days", 0)),
+            class_gap_minutes=int(metrics.get("class_gap_minutes", 0)),
+            teacher_gap_minutes=int(metrics.get("teacher_gap_minutes", 0)),
+            availability_disutility_minutes=int(metrics.get("availability_disutility_minutes", 0)),
+            consecutive_excess_minutes=int(metrics.get("consecutive_excess_minutes", 0)),
+            recovery_stack_excess_minutes=int(metrics.get("recovery_stack_excess_minutes", 0)),
+            workload_override_used=bool(metrics.get("workload_override_used", False)),
+            class_overload_count=int(metrics.get("class_overload_count", 0)),
+            class_overload_excess_minutes=int(metrics.get("class_overload_excess_minutes", 0)),
+            teacher_overload_count=int(metrics.get("teacher_overload_count", 0)),
+            teacher_overload_excess_minutes=int(metrics.get("teacher_overload_excess_minutes", 0)),
         )

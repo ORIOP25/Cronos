@@ -13,6 +13,9 @@ from app.services.scheduler_job_runtime import (
 from tests.test_scheduler_candidates import _snapshot
 
 
+pytestmark = pytest.mark.unit
+
+
 def _context(snapshot: dict) -> GenerationExecutionContext:
     now = datetime.now(timezone.utc)
     return GenerationExecutionContext(

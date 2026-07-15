@@ -90,10 +90,6 @@ export async function clickSidebarRoute(page, path) {
   await expectRouteReady(page, path)
 }
 
-export async function expectText(page, text) {
-  await expect(page.getByText(text).first()).toBeVisible({ timeout: 10000 })
-}
-
 function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
