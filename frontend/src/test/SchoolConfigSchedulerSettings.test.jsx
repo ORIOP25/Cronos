@@ -27,9 +27,17 @@ describe('SchoolConfig scheduler settings', () => {
           repair_stability_window_days: 14,
         } })
       }
+      if (url === '/school/grid-settings/') {
+        return Promise.resolve({ data: {
+          lunch_window_start: '12:00:00',
+          lunch_window_end: '14:00:00',
+          lunch_min_duration_minutes: 60,
+        } })
+      }
+      if (url === '/timeslots/') return Promise.resolve({ data: [] })
       return Promise.resolve({ data: [] })
     })
-    apiClient.post.mockResolvedValue({ data: {} })
+    apiClient.post.mockResolvedValue({ data: { message: 'Grelha configurada e regenerada com sucesso.' } })
   })
 
   it('submits hard boundaries and accepts a zero-day stability window', async () => {
@@ -51,25 +59,81 @@ describe('SchoolConfig scheduler settings', () => {
     })
   })
 
-  it('submits grid generation settings as numbers', async () => {
-    renderWithProviders(<SchoolConfig />)
+  it('submits the grid with one atomic request and shows one success', async () => {
+    const { queryClient } = renderWithProviders(<SchoolConfig />)
+    const invalidate = vi.spyOn(queryClient, 'invalidateQueries')
 
     fireEvent.click(await screen.findByRole('tab', { name: /grelha/i }))
     fireEvent.click(screen.getByRole('button', { name: /guardar e regenerar/i }))
 
     await waitFor(() => {
-      expect(apiClient.post).toHaveBeenCalledWith('/school/grid-settings/', {
-        lunch_window_start: '12:00:00',
-        lunch_window_end: '14:00:00',
-        lunch_min_duration_minutes: 60,
-      })
-      expect(apiClient.post).toHaveBeenCalledWith('/timeslots/generate', {
-        start_time: '08:00:00',
-        end_time: '18:00:00',
-        slot_duration_minutes: 50,
-        break_duration_minutes: 10,
-        days_of_week: [0, 1, 2, 3, 4],
+      expect(apiClient.post).toHaveBeenCalledTimes(1)
+      expect(apiClient.post).toHaveBeenCalledWith('/school/grid-settings/regenerate', {
+        grid_settings: {
+          lunch_window_start: '12:00:00',
+          lunch_window_end: '14:00:00',
+          lunch_min_duration_minutes: 60,
+        },
+        timeslots: {
+          start_time: '08:00:00',
+          end_time: '18:00:00',
+          slot_duration_minutes: 50,
+          break_duration_minutes: 10,
+          days_of_week: [0, 1, 2, 3, 4],
+        },
       })
     })
+    expect(screen.getAllByRole('alert').filter((alert) => alert.textContent.includes('Grelha configurada'))).toHaveLength(1)
+    expect(invalidate.mock.calls.map(([options]) => options.queryKey)).toEqual(expect.arrayContaining([
+      ['org-grid-settings', 1],
+      ['timeslots', 1],
+      ['my-availability', 1],
+      ['scheduler-status', 1],
+      ['scheduler-current-draft', 1],
+    ]))
+  })
+
+  it('shows only the API error and keeps the button reusable after a conflict', async () => {
+    apiClient.post.mockRejectedValueOnce({ response: { status: 409, data: { detail: 'Use Recomeçar Ano Letivo.' } } })
+    const { queryClient } = renderWithProviders(<SchoolConfig />)
+    const invalidate = vi.spyOn(queryClient, 'invalidateQueries')
+
+    fireEvent.click(await screen.findByRole('tab', { name: /grelha/i }))
+    const button = screen.getByRole('button', { name: /guardar e regenerar/i })
+    fireEvent.click(button)
+
+    expect(await screen.findByText('Use Recomeçar Ano Letivo.')).toBeInTheDocument()
+    expect(screen.queryByText('Grelha configurada e regenerada com sucesso.')).not.toBeInTheDocument()
+    await waitFor(() => expect(button).toBeEnabled())
+    expect(apiClient.post).toHaveBeenCalledTimes(1)
+    expect(invalidate).not.toHaveBeenCalled()
+  })
+
+  it('does not request or show success while the form is invalid', async () => {
+    renderWithProviders(<SchoolConfig />)
+
+    fireEvent.click(await screen.findByRole('tab', { name: /grelha/i }))
+    fireEvent.change(screen.getByLabelText(/duração da aula/i), { target: { value: '0' } })
+    fireEvent.click(screen.getByRole('button', { name: /guardar e regenerar/i }))
+
+    expect(await screen.findByText(/preencha uma grelha válida/i)).toBeInTheDocument()
+    expect(apiClient.post).not.toHaveBeenCalled()
+  })
+
+  it('hydrates the real grid and blocks an irregular persisted grid', async () => {
+    apiClient.get.mockImplementation((url) => {
+      if (url === '/timeslots/') return Promise.resolve({ data: [
+        { day_of_week: 0, start_time: '07:30:00', end_time: '08:20:00' },
+        { day_of_week: 1, start_time: '07:30:00', end_time: '08:30:00' },
+      ] })
+      if (url === '/school/grid-settings/') return Promise.resolve({ data: null })
+      return Promise.resolve({ data: [] })
+    })
+    renderWithProviders(<SchoolConfig />)
+
+    fireEvent.click(await screen.findByRole('tab', { name: /grelha/i }))
+
+    expect(await screen.findByText(/irregular/i)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /guardar e regenerar/i })).toBeDisabled()
   })
 })

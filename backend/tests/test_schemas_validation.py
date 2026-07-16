@@ -12,6 +12,7 @@ from app.schemas import (
     ClassCreateInCourse,
     ClassUpdateInCourse,
     CourseUpdate,
+    GridConfigurationCommand,
     MemberCreate,
     RoomCreate,
     RoomUpdate,
@@ -20,8 +21,67 @@ from app.schemas import (
     ScheduleGenerateRequest,
     SubjectCreate,
     SubjectUpdate,
+    TimeslotBulkCreate,
 )
 from app.models import RoomType
+
+
+@pytest.mark.unit
+class TestTimeslotBulkValidation:
+    @pytest.mark.parametrize(
+        "changes",
+        [
+            {"end_time": "08:00"},
+            {"end_time": "07:59"},
+            {"days_of_week": []},
+            {"days_of_week": [0, 0]},
+            {"days_of_week": [-1]},
+            {"days_of_week": [7]},
+            {"slot_duration_minutes": 0},
+            {"break_duration_minutes": -1},
+            {"end_time": "08:30", "slot_duration_minutes": 31},
+        ],
+    )
+    def test_rejects_invalid_grid_boundaries(self, changes):
+        payload = {
+            "start_time": "08:00",
+            "end_time": "10:00",
+            "slot_duration_minutes": 50,
+            "break_duration_minutes": 10,
+            "days_of_week": [0, 1],
+            **changes,
+        }
+
+        with pytest.raises(ValidationError):
+            TimeslotBulkCreate(**payload)
+
+    def test_accepts_a_valid_grid(self):
+        value = TimeslotBulkCreate(
+            start_time="08:00",
+            end_time="10:00",
+            slot_duration_minutes=50,
+            break_duration_minutes=10,
+            days_of_week=[0, 1],
+        )
+
+        assert value.days_of_week == [0, 1]
+
+    def test_compound_command_rejects_lunch_outside_opening_hours(self):
+        with pytest.raises(ValidationError):
+            GridConfigurationCommand.model_validate({
+                "grid_settings": {
+                    "lunch_window_start": "12:00",
+                    "lunch_window_end": "14:00",
+                    "lunch_min_duration_minutes": 60,
+                },
+                "timeslots": {
+                    "start_time": "08:00",
+                    "end_time": "10:00",
+                    "slot_duration_minutes": 50,
+                    "break_duration_minutes": 10,
+                    "days_of_week": [0],
+                },
+            })
 
 
 class TestSchedulerBaselineContract:

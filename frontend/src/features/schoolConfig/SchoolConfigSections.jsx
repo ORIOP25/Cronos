@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import PropTypes from 'prop-types'
 import {
   CCard, CCardBody, CCardHeader, CCol, CRow, CForm, CFormInput,
   CFormCheck, CFormLabel, CButton, CAlert, CBadge,
@@ -14,7 +15,12 @@ import { useOrganization } from '@clerk/react'
 import { formatDate } from '../../utils/formatUtils'
 import { TXT, EVENT_TYPE_LABELS } from '../../utils/terminology'
 import { getApiErrorMessage } from '../../utils/apiErrors'
-import { toGridSettingsPayload, toSchoolSettingsPayload } from '../../utils/schoolConfigPayloads'
+import {
+  DEFAULT_GRID_FORM_DATA,
+  timeslotsToGridFormData,
+  toGridConfigurationPayload,
+  toSchoolSettingsPayload,
+} from '../../utils/schoolConfigPayloads'
 import { useTransientMessage } from '../../hooks/useTransientMessage'
 
 export const CalendarSection = () => {
@@ -394,64 +400,132 @@ export const SettingsSection = () => {
 }
 
 export const GridSection = () => {
-  const queryClient = useQueryClient()
   const orgId = useOrganization().organization?.id
-  const { message: successMsg, show: setSuccessMsg } = useTransientMessage()
-  
-  const [formData, setFormData] = useState({
-    start_time: '08:00',
-    end_time: '18:00',
-    slot_duration_minutes: 50,
-    break_duration_minutes: 10,
-    days: { 0: true, 1: true, 2: true, 3: true, 4: true, 5: false, 6: false },
-  })
-
-  const [gridSettings, setGridSettings] = useState({
-    lunch_window_start: '12:00',
-    lunch_window_end: '14:00',
-    lunch_min_duration_minutes: 60,
-  })
-
-  useQuery({
-    queryKey: ['org-grid-settings'],
+  const settingsQuery = useQuery({
+    queryKey: ['org-grid-settings', orgId],
+    enabled: Boolean(orgId),
     queryFn: async () => {
-      const { data } = await apiClient.get('/school/grid-settings/')
-      if (data) {
-        setGridSettings({
-          lunch_window_start: data.lunch_window_start ? data.lunch_window_start.slice(0, 5) : '12:00',
-          lunch_window_end: data.lunch_window_end ? data.lunch_window_end.slice(0, 5) : '14:00',
-          lunch_min_duration_minutes: data.lunch_min_duration_minutes || 60,
-        })
+      try {
+        const { data } = await apiClient.get('/school/grid-settings/')
+        return data
+      } catch (error) {
+        if (error.response?.status === 404) return null
+        throw error
       }
+    },
+  })
+
+  const timeslotsQuery = useQuery({
+    queryKey: ['timeslots', orgId],
+    enabled: Boolean(orgId),
+    queryFn: async () => {
+      const { data } = await apiClient.get('/timeslots/')
       return data
     },
   })
 
+  if (settingsQuery.isLoading || timeslotsQuery.isLoading) {
+    return <CButton color="primary" disabled>Guardar e Regenerar Grelha</CButton>
+  }
+  const queryError = settingsQuery.error || timeslotsQuery.error
+  if (queryError) {
+    return <CAlert color="danger">{getApiErrorMessage(queryError, 'Erro ao carregar a grelha.')}</CAlert>
+  }
+
+  let initialFormData
+  try {
+    initialFormData = timeslotsToGridFormData(timeslotsQuery.data)
+  } catch (error) {
+    return (
+      <div>
+        <CAlert color="danger">{error.message}</CAlert>
+        <CButton color="primary" disabled>Guardar e Regenerar Grelha</CButton>
+      </div>
+    )
+  }
+  const data = settingsQuery.data
+  const initialGridSettings = {
+    lunch_window_start: data?.lunch_window_start?.slice(0, 5) || '12:00',
+    lunch_window_end: data?.lunch_window_end?.slice(0, 5) || '14:00',
+    lunch_min_duration_minutes: data?.lunch_min_duration_minutes ?? 60,
+  }
+
+  return (
+    <GridEditor
+      key={orgId}
+      orgId={orgId}
+      initialFormData={initialFormData}
+      initialGridSettings={initialGridSettings}
+    />
+  )
+}
+
+const GridEditor = ({ orgId, initialFormData, initialGridSettings }) => {
+  const queryClient = useQueryClient()
+  const { message: feedback, show: showFeedback, clear: clearFeedback } = useTransientMessage()
+  const [formData, setFormData] = useState(initialFormData)
+  const [gridSettings, setGridSettings] = useState(initialGridSettings)
+
+  const affectedQueryKeys = [
+    ['org-grid-settings', orgId],
+    ['timeslots', orgId],
+    ['my-availability', orgId],
+    ['heatmap', orgId],
+    ['weekSchedule', orgId],
+    ['dashboard', orgId],
+    ['scheduler-status', orgId],
+    ['scheduler-current-draft', orgId],
+  ]
+
   const mutation = useMutation({
-    mutationFn: (payload) => apiClient.post('/timeslots/generate', payload),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['timeslots', orgId] })
-      void queryClient.invalidateQueries({ queryKey: ['weekSchedule', orgId] })
+    mutationFn: (payload) => apiClient.post('/school/grid-settings/regenerate', payload),
+    onSuccess: ({ data }) => {
+      showFeedback({ color: 'success', message: data.message })
+      affectedQueryKeys.forEach((queryKey) => {
+        void queryClient.invalidateQueries({ queryKey })
+      })
+    },
+    onError: (error) => {
+      showFeedback({
+        color: 'danger',
+        message: getApiErrorMessage(error, 'Erro ao guardar configuração da grelha.'),
+      }, 6000)
     },
   })
 
-  const gridSettingsMutation = useMutation({
-    mutationFn: (payload) => apiClient.post('/school/grid-settings/', payload),
-    onSuccess: () => {
-      setSuccessMsg('Grelha configurada com sucesso!')
-      void queryClient.invalidateQueries({ queryKey: ['org-grid-settings'] })
-    },
-  })
-
-  const handleSubmit = async () => {
-    const payloads = toGridSettingsPayload({ formData, gridSettings })
-
-    try {
-      await gridSettingsMutation.mutateAsync(payloads.gridSettings)
-      await mutation.mutateAsync(payloads.timeslots)
-    } catch {
-      // errors handled by React Query
+  const validateForm = () => {
+    const duration = Number(formData.slot_duration_minutes)
+    const breakDuration = Number(formData.break_duration_minutes)
+    const lunchDuration = Number(gridSettings.lunch_min_duration_minutes)
+    if (
+      !formData.start_time
+      || !formData.end_time
+      || !gridSettings.lunch_window_start
+      || !gridSettings.lunch_window_end
+      || !Number.isFinite(duration)
+      || duration <= 0
+      || !Number.isFinite(breakDuration)
+      || breakDuration < 0
+      || !Number.isFinite(lunchDuration)
+      || lunchDuration <= 0
+      || formData.end_time <= formData.start_time
+      || !Object.values(formData.days).some(Boolean)
+    ) {
+      return 'Preencha uma grelha válida, com pelo menos um dia de funcionamento.'
     }
+    return null
+  }
+
+  const handleSubmit = (event) => {
+    event.preventDefault()
+    clearFeedback()
+    mutation.reset()
+    const validationError = validateForm()
+    if (validationError) {
+      showFeedback({ color: 'danger', message: validationError }, 6000)
+      return
+    }
+    mutation.mutate(toGridConfigurationPayload({ formData, gridSettings }))
   }
 
   const toggleDay = (idx) => {
@@ -462,14 +536,13 @@ export const GridSection = () => {
 
   return (
     <div>
-      {successMsg && <CAlert color="success">{successMsg}</CAlert>}
-      {(mutation.isError || gridSettingsMutation.isError) && <CAlert color="danger">Erro ao guardar configuração da grelha.</CAlert>}
+      {feedback && <CAlert color={feedback.color}>{feedback.message}</CAlert>}
 
       <p className="text-muted mb-4">
         Defina aqui o funcionamento geral da escola. Ao guardar, o sistema irá <strong>regenerar todos os blocos horários</strong> base.
       </p>
 
-      <CForm>
+      <CForm onSubmit={handleSubmit}>
         <CRow className="mb-4 align-items-start">
           <CCol md={3}>
             <CFormInput id="gridStart" type="time" label="Abertura da Escola" value={formData.start_time} onChange={(e) => setFormData({ ...formData, start_time: e.target.value })} />
@@ -507,9 +580,14 @@ export const GridSection = () => {
         </fieldset>
 
         <div className="d-grid gap-2 d-md-flex justify-content-md-end">
-          <CButton color="primary" size="md" onClick={handleSubmit} disabled={mutation.isPending || gridSettingsMutation.isPending}>
+          <CButton
+            color="primary"
+            size="md"
+            type="submit"
+            disabled={mutation.isPending || !orgId}
+          >
             <CIcon icon={cilSave} className="me-2" />
-            {(mutation.isPending || gridSettingsMutation.isPending) ? 'A Processar...' : 'Guardar e Regenerar Grelha'}
+            {mutation.isPending ? 'A Processar...' : 'Guardar e Regenerar Grelha'}
           </CButton>
         </div>
       </CForm>
@@ -517,3 +595,18 @@ export const GridSection = () => {
   )
 }
 
+GridEditor.propTypes = {
+  orgId: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+  initialFormData: PropTypes.shape({
+    start_time: PropTypes.string.isRequired,
+    end_time: PropTypes.string.isRequired,
+    slot_duration_minutes: PropTypes.number.isRequired,
+    break_duration_minutes: PropTypes.number.isRequired,
+    days: PropTypes.objectOf(PropTypes.bool).isRequired,
+  }).isRequired,
+  initialGridSettings: PropTypes.shape({
+    lunch_window_start: PropTypes.string.isRequired,
+    lunch_window_end: PropTypes.string.isRequired,
+    lunch_min_duration_minutes: PropTypes.number.isRequired,
+  }).isRequired,
+}

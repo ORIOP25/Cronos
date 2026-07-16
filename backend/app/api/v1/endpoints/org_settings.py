@@ -5,6 +5,7 @@ Rotas:
   POST   /settings/                          — cria/atualiza configuração da escola
   GET    /grid-settings/                     — obtém a configuração da grelha horária
   POST   /grid-settings/                     — cria/atualiza configuração da grelha horária
+  POST   /grid-settings/regenerate           — guarda e regenera a grelha atomicamente
   POST   /settings/sync-holidays             — importa feriados automáticos
   GET    /calendar-events/                   — lista eventos do calendário
   POST   /calendar-events/                   — cria evento manual
@@ -148,6 +149,27 @@ async def upsert_grid_settings(
         )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
+
+
+@router.post(
+    "/grid-settings/regenerate",
+    response_model=schemas.GridConfigurationResponse,
+    summary="Guardar configuração e regenerar grelha atomicamente",
+)
+async def regenerate_grid_settings(
+    payload: schemas.GridConfigurationCommand,
+    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    current_user: Annotated[models.User, Depends(deps.get_current_active_admin)],
+) -> schemas.GridConfigurationResponse:
+    try:
+        return await settings_service.save_and_regenerate_grid(
+            db,
+            current_user.organization_id,
+            payload,
+            current_user.id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.post(

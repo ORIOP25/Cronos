@@ -43,6 +43,17 @@ Garantir operacao segura da estrategia interna `ADAPTIVE_REPAIR`, preservando di
 - Em caso de risco, rejeitar o draft pelo endpoint canonico de rejeicao.
 - O horario ativo atual permanece publicado; repetir geracao apenas apos ajustar capacidade ou regras.
 
+## Alterar a grelha horária
+
+- Uma alteração estrutural depois de existirem horários, drafts ou registos
+  operacionais devolve `409 Conflict`. É proteção de dados esperada, não uma
+  indisponibilidade do backend.
+- Se a destruição for intencional, o admin deve abrir **Período Letivo**, usar
+  **Recomeçar Ano Letivo** e confirmar explicitamente a operação antes de voltar
+  a guardar a grelha.
+- O reset é destrutivo e nunca é chamado automaticamente pelo formulário da
+  grelha. Alterações apenas ao almoço e submissões idênticas não exigem reset.
+
 ## Monitores minimos de rollout (WP-8.2)
 1. `repair_remaining_raw_hours` vs `repair_remaining_reconciled_hours`.
 2. `repair_hard_end_residual_hours`.

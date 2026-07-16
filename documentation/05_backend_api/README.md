@@ -20,3 +20,18 @@ Esta secao cobre a Layer Interface do lado backend.
 - Constraint reads include `generation_compatible` and `validation_errors`.
 - Generation returns `409 SCHEDULER_CONSTRAINT_CONFIGURATION_INVALID` before
   queueing work when a persisted legacy row cannot be interpreted safely.
+
+## Timetable grid configuration
+
+- `POST /api/v1/school/grid-settings/regenerate` atomically saves lunch settings
+  and replaces a structurally changed timeslot grid. Its body contains
+  `grid_settings` and `timeslots`; the response reports `generated_count`,
+  `changed`, and `grid_regenerated`.
+- Identical grids are no-ops and keep their timeslot IDs. Lunch-only changes are
+  allowed without replacing the grid.
+- Structural changes return `409 Conflict` while published schedules, drafts,
+  operational/history records, or slot-linked rules exist. This is expected
+  data-loss protection, not server unavailability.
+- An administrator must explicitly use **Período Letivo > Recomeçar Ano Letivo**
+  before retrying a destructive structural change. The reset is never invoked
+  automatically.

@@ -301,17 +301,19 @@ export async function seedMinimalSchedulerInputs(page, teacherEmail, dates = FIX
     school_hard_end_date: dates.schoolHardEndDate,
     repair_stability_window_days: 0,
   })
-  await apiRequest(page, 'POST', '/school/grid-settings/', {
-    lunch_window_start: '12:30',
-    lunch_window_end: '14:00',
-    lunch_min_duration_minutes: 60,
-  })
-  await apiRequest(page, 'POST', '/timeslots/generate', {
-    start_time: '09:00',
-    end_time: '11:00',
-    slot_duration_minutes: 60,
-    break_duration_minutes: 0,
-    days_of_week: [0, 1, 2, 3, 4],
+  await apiRequest(page, 'POST', '/school/grid-settings/regenerate', {
+    grid_settings: {
+      lunch_window_start: '12:30',
+      lunch_window_end: '14:00',
+      lunch_min_duration_minutes: 60,
+    },
+    timeslots: {
+      start_time: '09:00',
+      end_time: '14:00',
+      slot_duration_minutes: 60,
+      break_duration_minutes: 0,
+      days_of_week: [0, 1, 2, 3, 4],
+    },
   })
   await ensureFixtureRoom(page)
   const course = await ensureFixtureCourse(page, subject.id)

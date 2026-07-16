@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { toGridSettingsPayload, toSchoolSettingsPayload } from '../utils/schoolConfigPayloads'
+import {
+  timeslotsToGridFormData,
+  toGridConfigurationPayload,
+  toSchoolSettingsPayload,
+} from '../utils/schoolConfigPayloads'
 
 describe('school configuration payloads', () => {
   it('serializes scheduler settings', () => {
@@ -10,7 +14,7 @@ describe('school configuration payloads', () => {
     })
   })
   it('serializes grid and lunch settings', () => {
-    expect(toGridSettingsPayload({
+    expect(toGridConfigurationPayload({
       formData: {
         start_time: '08:00', end_time: '18:00', slot_duration_minutes: '50',
         break_duration_minutes: '10', days: { 0: true, 1: false, 2: true },
@@ -19,7 +23,7 @@ describe('school configuration payloads', () => {
         lunch_window_start: '12:00', lunch_window_end: '14:00', lunch_min_duration_minutes: '60',
       },
     })).toEqual({
-      gridSettings: {
+      grid_settings: {
         lunch_window_start: '12:00:00', lunch_window_end: '14:00:00', lunch_min_duration_minutes: 60,
       },
       timeslots: {
@@ -27,5 +31,27 @@ describe('school configuration payloads', () => {
         break_duration_minutes: 10, days_of_week: [0, 2],
       },
     })
+  })
+
+  it('hydrates the editor from a regular persisted grid', () => {
+    expect(timeslotsToGridFormData([
+      { day_of_week: 0, start_time: '08:00:00', end_time: '08:50:00' },
+      { day_of_week: 0, start_time: '09:00:00', end_time: '09:50:00' },
+      { day_of_week: 2, start_time: '08:00:00', end_time: '08:50:00' },
+      { day_of_week: 2, start_time: '09:00:00', end_time: '09:50:00' },
+    ])).toEqual({
+      start_time: '08:00',
+      end_time: '09:50',
+      slot_duration_minutes: 50,
+      break_duration_minutes: 10,
+      days: { 0: true, 1: false, 2: true, 3: false, 4: false, 5: false, 6: false },
+    })
+  })
+
+  it('rejects a persisted grid the simplified editor cannot represent', () => {
+    expect(() => timeslotsToGridFormData([
+      { day_of_week: 0, start_time: '08:00:00', end_time: '08:50:00' },
+      { day_of_week: 1, start_time: '08:00:00', end_time: '09:00:00' },
+    ])).toThrow(/irregular/i)
   })
 })

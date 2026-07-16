@@ -189,6 +189,11 @@ Use when:
 #### Adaptation Level C - Calendar/Grid Reflow
 May reorganize affected future blocks across the changed calendar, blocked dates, lunch rules, or timetable grid.
 
+Current implementation limitation: live structural timetable-grid changes after
+publication are blocked and require an explicit school-year reset. Supporting
+this reflow live requires versioned grids and historical timeslot preservation;
+that work is outside the current grid-regeneration bugfix.
+
 Use when:
 - the scheduling surface itself changed;
 - affected blocks no longer fit in their previous dates/timeslots.

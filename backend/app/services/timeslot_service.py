@@ -1,8 +1,46 @@
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, delete
-from app import models, schemas
+from dataclasses import dataclass
 from datetime import datetime, date, timedelta, time
+
+import structlog
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import delete, func, or_, select
+
+from app import models, schemas
+from app.core.exceptions import ConflictError
 from app.services.scheduler_state_service import record_scheduler_change
+
+
+logger = structlog.get_logger(__name__)
+
+PROTECTED_GRID_MESSAGE = (
+    "Não é possível regenerar a grelha enquanto existirem horários, rascunhos "
+    "ou registos operacionais. Se pretende apagar esses dados, use “Período "
+    "Letivo > Recomeçar Ano Letivo” e confirme a operação antes de tentar novamente."
+)
+SLOT_RULES_MESSAGE = (
+    "Existem regras associadas aos blocos horários atuais. Remova ou recrie "
+    "essas regras antes de substituir a grelha."
+)
+
+TIMESLOT_DEPENDENCY_POLICIES = {
+    ("availability", "timeslot_id"): "recreate",
+    ("schedule_draft_blocks", "timeslot_id"): "protect",
+    ("active_schedule_blocks", "timeslot_id"): "protect",
+    ("operational_schedule_block", "timeslot_id"): "protect",
+    ("schedule_output", "timeslot_id"): "protect",
+    ("substitutions", "timeslot_id"): "protect",
+    ("lesson_occurrence", "planned_timeslot_id"): "protect",
+    ("schedule_diff_entries", "before_timeslot_id"): "protect",
+    ("schedule_diff_entries", "after_timeslot_id"): "protect",
+}
+
+
+@dataclass(frozen=True)
+class GridRegenerationPlan:
+    organization_id: int
+    desired_signatures: tuple[tuple[int, time, time], ...]
+    before_grid: tuple[dict, ...]
+    changed: bool
 
 
 def _timeslot_snapshot(slot: models.Timeslot) -> dict:
@@ -185,106 +223,224 @@ async def delete_timeslot(
 
 # --- GERAÇÃO EM MASSA (RESET ESTRUTURAL) ---
 
-async def _purge_all_dependencies(db: AsyncSession, organization_id: int):
-    """
-    FUNÇÃO CRÍTICA: Prepara a escola para uma redefinição de horários.
-    Remove TODOS os dados que dependem da grelha de tempos.
-    A ordem é vital para respeitar as Foreign Keys.
-    """
-    # Identificar timeslots desta org
-    timeslot_ids_subquery = select(models.Timeslot.id).where(models.Timeslot.organization_id == organization_id)
+def build_timeslot_signatures(
+    settings: schemas.TimeslotBulkCreate,
+) -> list[tuple[int, time, time]]:
+    """Pure, canonical implementation of the grid generation math."""
+    signatures: list[tuple[int, time, time]] = []
+    current = datetime.combine(date.min, settings.start_time)
+    limit = datetime.combine(date.min, settings.end_time)
+    while current + timedelta(minutes=settings.slot_duration_minutes) <= limit:
+        end = current + timedelta(minutes=settings.slot_duration_minutes)
+        signatures.extend(
+            (day, current.time(), end.time()) for day in sorted(settings.days_of_week)
+        )
+        current = end + timedelta(minutes=settings.break_duration_minutes)
+    return sorted(signatures)
 
-    # 1. Substituições (Dependem de Timeslot)
-    # Se a grelha muda, as substituições passadas/futuras para tempos antigos perdem o sentido.
-    await db.execute(
-        delete(models.Substitution).where(
-            models.Substitution.timeslot_id.in_(timeslot_ids_subquery)
+
+async def _count_for_org(
+    db: AsyncSession,
+    model,
+    organization_id: int,
+    *conditions,
+) -> int:
+    return await db.scalar(
+        select(func.count())
+        .select_from(model)
+        .where(model.organization_id == organization_id, *conditions)
+    ) or 0
+
+
+async def _protected_dependency_counts(
+    db: AsyncSession,
+    organization_id: int,
+    current_slot_ids: set[int],
+    published: bool,
+) -> dict[str, int]:
+    counts = {
+        "published_state": int(published),
+        "draft_blocks": await _count_for_org(db, models.ScheduleDraftBlock, organization_id),
+        "active_blocks": await _count_for_org(db, models.ActiveScheduleBlock, organization_id),
+        "operational_blocks": await _count_for_org(db, models.OperationalScheduleBlock, organization_id),
+        "schedule_outputs": await _count_for_org(db, models.ScheduleOutput, organization_id),
+        "substitutions": await _count_for_org(db, models.Substitution, organization_id),
+        "lesson_occurrences": await _count_for_org(
+            db,
+            models.LessonOccurrence,
+            organization_id,
+            models.LessonOccurrence.planned_timeslot_id.in_(current_slot_ids),
+        ),
+        "schedule_diffs": await _count_for_org(
+            db,
+            models.ScheduleDiffEntry,
+            organization_id,
+            or_(
+                models.ScheduleDiffEntry.before_timeslot_id.in_(current_slot_ids),
+                models.ScheduleDiffEntry.after_timeslot_id.in_(current_slot_ids),
+            ),
+        ),
+    }
+    constraints = list(
+        await db.scalars(
+            select(models.Constraint).where(
+                models.Constraint.organization_id == organization_id
+            )
         )
     )
-
-    # 2. Horários Gerados (Dependem de Timeslot)
-    await db.execute(
-        delete(models.ScheduleOutput).where(
-            models.ScheduleOutput.timeslot_id.in_(timeslot_ids_subquery)
-        )
+    counts["slot_rules"] = sum(
+        1
+        for constraint in constraints
+        if isinstance(constraint.rule_payload, dict)
+        and constraint.rule_payload.get("timeslot_id") in current_slot_ids
     )
-
-    # 3. Disponibilidades (Dependem de Timeslot)
-    await db.execute(
-        delete(models.Availability).where(
-            models.Availability.timeslot_id.in_(timeslot_ids_subquery)
-        )
-    )
-
-    # 4. Timeslots (A grelha antiga)
-    await db.execute(delete(models.Timeslot).where(models.Timeslot.organization_id == organization_id))
+    return {category: count for category, count in counts.items() if count}
 
 
-async def create_bulk_timeslots(
-    db: AsyncSession, 
-    settings: schemas.TimeslotBulkCreate, 
+async def preflight_grid_regeneration(
+    db: AsyncSession,
+    settings: schemas.TimeslotBulkCreate,
     organization_id: int,
     changed_by_user_id: int | None = None,
-):
-    """
-    Executa o Hard Reset da grelha escolar.
-    """
-    teacher_ids = await _get_org_teacher_ids(db, organization_id)
-    previous_preferences = await _get_availability_preferences_by_time(db, organization_id)
-    previous_slots = await get_timeslots_by_org(db, organization_id)
-    before_grid = [_timeslot_snapshot(slot) for slot in previous_slots]
+) -> GridRegenerationPlan:
+    organization = await db.scalar(
+        select(models.Organization)
+        .where(models.Organization.id == organization_id)
+        .with_for_update()
+    )
+    if organization is None:
+        raise ValueError("Organization does not exist.")
 
-    # 1. Limpeza Profunda
-    await _purge_all_dependencies(db, organization_id)
-    
-    # 2. Reconstrução
-    created_count = 0
-    dummy_date = date.today()
-    current_start_dt = datetime.combine(dummy_date, settings.start_time)
-    end_limit_dt = datetime.combine(dummy_date, settings.end_time)
-
-    new_timeslots: list[models.Timeslot] = []
-
-    while True:
-        current_end_dt = current_start_dt + timedelta(minutes=settings.slot_duration_minutes)
-        
-        if current_end_dt > end_limit_dt:
-            break
-            
-        for day in settings.days_of_week:
-            new_slot = models.Timeslot(
-                day_of_week=day,
-                start_time=current_start_dt.time(),
-                end_time=current_end_dt.time(),
-                organization_id=organization_id
+    active_year = await db.scalar(
+        select(models.SchedulerSchoolYear)
+        .where(
+            models.SchedulerSchoolYear.organization_id == organization_id,
+            models.SchedulerSchoolYear.is_active.is_(True),
+        )
+        .with_for_update()
+    )
+    state = None
+    if active_year is not None:
+        state = await db.scalar(
+            select(models.SchedulerSchoolYearState)
+            .where(
+                models.SchedulerSchoolYearState.organization_id == organization_id,
+                models.SchedulerSchoolYearState.school_year_id == active_year.id,
             )
-            db.add(new_slot)
-            new_timeslots.append(new_slot)
-            created_count += 1
-        
-        current_start_dt = current_end_dt + timedelta(minutes=settings.break_duration_minutes)
+            .with_for_update()
+        )
 
-    await db.flush()
+    current_slots = list(
+        await db.scalars(
+            select(models.Timeslot)
+            .where(models.Timeslot.organization_id == organization_id)
+            .order_by(models.Timeslot.day_of_week, models.Timeslot.start_time)
+            .with_for_update()
+        )
+    )
+    desired = tuple(build_timeslot_signatures(settings))
+    current = tuple(
+        (slot.day_of_week, slot.start_time, slot.end_time) for slot in current_slots
+    )
+    plan = GridRegenerationPlan(
+        organization_id=organization_id,
+        desired_signatures=desired,
+        before_grid=tuple(_timeslot_snapshot(slot) for slot in current_slots),
+        changed=current != desired,
+    )
+    if not plan.changed:
+        return plan
 
-    _restore_availabilities_for_new_grid(
+    blockers = await _protected_dependency_counts(
         db,
         organization_id,
+        {slot.id for slot in current_slots},
+        state is not None
+        and state.school_year_publication_state == models.SchoolYearPublicationState.PUBLISHED,
+    )
+    if blockers:
+        logger.info(
+            "grid_regeneration_blocked",
+            organization_id=organization_id,
+            actor_user_id=changed_by_user_id,
+            blockers=blockers,
+        )
+        message = SLOT_RULES_MESSAGE if set(blockers) == {"slot_rules"} else PROTECTED_GRID_MESSAGE
+        raise ConflictError(message)
+    return plan
+
+
+async def apply_grid_regeneration(
+    db: AsyncSession,
+    plan: GridRegenerationPlan,
+    changed_by_user_id: int | None = None,
+) -> int:
+    if not plan.changed:
+        return len(plan.desired_signatures)
+
+    teacher_ids = await _get_org_teacher_ids(db, plan.organization_id)
+    previous_preferences = await _get_availability_preferences_by_time(
+        db, plan.organization_id
+    )
+    await db.execute(
+        delete(models.Availability).where(
+            models.Availability.organization_id == plan.organization_id
+        )
+    )
+    await db.execute(
+        delete(models.Timeslot).where(
+            models.Timeslot.organization_id == plan.organization_id
+        )
+    )
+    await db.flush()
+
+    new_timeslots = [
+        models.Timeslot(
+            organization_id=plan.organization_id,
+            day_of_week=day,
+            start_time=start,
+            end_time=end,
+        )
+        for day, start, end in plan.desired_signatures
+    ]
+    db.add_all(new_timeslots)
+    await db.flush()
+    _restore_availabilities_for_new_grid(
+        db,
+        plan.organization_id,
         teacher_ids,
         new_timeslots,
         previous_preferences,
     )
-
     await record_scheduler_change(
         db,
-        organization_id,
+        plan.organization_id,
         entity_type="TIMETABLE_GRID",
         entity_id=None,
         operation=models.SchedulerStateChangeOperation.BULK_IMPORT,
-        before=before_grid,
+        before=plan.before_grid,
         after=[_timeslot_snapshot(slot) for slot in new_timeslots],
         changed_by_user_id=changed_by_user_id,
-        metadata={"created_count": created_count},
+        metadata={"created_count": len(new_timeslots)},
     )
+    await db.flush()
+    return len(new_timeslots)
 
-    await db.commit()
-    return created_count
+
+async def create_bulk_timeslots(
+    db: AsyncSession,
+    settings: schemas.TimeslotBulkCreate,
+    organization_id: int,
+    changed_by_user_id: int | None = None,
+):
+    """Legacy transactional wrapper around the shared protected replacement."""
+    try:
+        plan = await preflight_grid_regeneration(
+            db, settings, organization_id, changed_by_user_id
+        )
+        count = await apply_grid_regeneration(db, plan, changed_by_user_id)
+        await db.commit()
+        return count
+    except Exception:
+        await db.rollback()
+        raise

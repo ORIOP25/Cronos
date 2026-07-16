@@ -12,16 +12,20 @@ from datetime import date
 from typing import Sequence
 
 import holidays as pt_holidays_lib
+import structlog
 from sqlalchemy import select, and_, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models, schemas
+from app.services import timeslot_service
+from app.services.schedule_cache_service import invalidate_latest_schedule_cache
 from app.services.scheduler_state_service import (
     SchedulerStateService,
     record_scheduler_change,
 )
 
 SETTINGS_NOT_FOUND = "Configurações da escola não encontradas"
+logger = structlog.get_logger(__name__)
 
 def _calendar_settings_snapshot(settings: models.OrganizationSettings) -> dict:
     return {
@@ -204,7 +208,29 @@ async def upsert_grid_settings(
     data: schemas.OrganizationGridSettingsUpsert,
     changed_by_user_id: int | None = None,
 ) -> models.OrganizationGridSettings:
-    """Cria ou actualiza as configurações únicas da grelha."""
+    """Legacy transactional wrapper for lunch settings."""
+    try:
+        settings, _ = await prepare_grid_settings(
+            db,
+            organization_id,
+            data,
+            changed_by_user_id=changed_by_user_id,
+        )
+        await db.commit()
+        await db.refresh(settings)
+        return settings
+    except Exception:
+        await db.rollback()
+        raise
+
+
+async def prepare_grid_settings(
+    db: AsyncSession,
+    organization_id: int,
+    data: schemas.OrganizationGridSettingsUpsert,
+    changed_by_user_id: int | None = None,
+) -> tuple[models.OrganizationGridSettings, bool]:
+    """Prepare lunch settings and audit without committing."""
     existing = await get_grid_settings(db, organization_id)
     if existing:
         before = _grid_settings_snapshot(existing)
@@ -235,6 +261,9 @@ async def upsert_grid_settings(
             existing.lunch_window_end = data.lunch_window_end
         if data.lunch_min_duration_minutes is not None:
             existing.lunch_min_duration_minutes = data.lunch_min_duration_minutes
+        after = _grid_settings_snapshot(existing)
+        if before == after:
+            return existing, False
         await record_scheduler_change(
             db,
             organization_id,
@@ -242,12 +271,11 @@ async def upsert_grid_settings(
             entity_id=existing.id,
             operation=models.SchedulerStateChangeOperation.UPDATE,
             before=before,
-            after=_grid_settings_snapshot(existing),
+            after=after,
             changed_by_user_id=changed_by_user_id,
         )
-        await db.commit()
-        await db.refresh(existing)
-        return existing
+        await db.flush()
+        return existing, True
 
     new_settings = models.OrganizationGridSettings(
         organization_id=organization_id,
@@ -267,9 +295,69 @@ async def upsert_grid_settings(
         after=_grid_settings_snapshot(new_settings),
         changed_by_user_id=changed_by_user_id,
     )
-    await db.commit()
-    await db.refresh(new_settings)
-    return new_settings
+    await db.flush()
+    return new_settings, True
+
+
+async def save_and_regenerate_grid(
+    db: AsyncSession,
+    organization_id: int,
+    command: schemas.GridConfigurationCommand,
+    changed_by_user_id: int,
+) -> schemas.GridConfigurationResponse:
+    """Commit lunch settings and a protected timetable-grid replacement atomically."""
+    try:
+        plan = await timeslot_service.preflight_grid_regeneration(
+            db,
+            command.timeslots,
+            organization_id,
+            changed_by_user_id,
+        )
+        _, settings_changed = await prepare_grid_settings(
+            db,
+            organization_id,
+            command.grid_settings,
+            changed_by_user_id,
+        )
+        generated_count = await timeslot_service.apply_grid_regeneration(
+            db,
+            plan,
+            changed_by_user_id,
+        )
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise
+
+    changed = settings_changed or plan.changed
+    try:
+        invalidate_latest_schedule_cache(organization_id)
+    except Exception as exc:
+        logger.warning(
+            "grid_regeneration_cache_invalidation_failed",
+            organization_id=organization_id,
+            actor_user_id=changed_by_user_id,
+            error_type=type(exc).__name__,
+        )
+    logger.info(
+        "grid_regeneration_committed",
+        organization_id=organization_id,
+        actor_user_id=changed_by_user_id,
+        previous_count=len(plan.before_grid),
+        generated_count=generated_count,
+        changed=changed,
+        grid_regenerated=plan.changed,
+    )
+    return schemas.GridConfigurationResponse(
+        message=(
+            "Grelha configurada e regenerada com sucesso."
+            if changed
+            else "A configuração da grelha já estava atualizada."
+        ),
+        generated_count=generated_count,
+        changed=changed,
+        grid_regenerated=plan.changed,
+    )
 
 
 # ==========================================

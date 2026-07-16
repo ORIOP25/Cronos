@@ -7,7 +7,7 @@ from typing import Annotated, Any, Optional, Literal, Union
 from .models import (
     RoomType, UserRole, ConstraintType, PreferenceLevel,
     CalendarEventType, CalendarEventSource, LessonOccurrenceStatus,
-    LessonLogStatus, TimesheetStatus, List,
+    LessonLogStatus, TimesheetStatus,
 )
 
 
@@ -1115,7 +1115,50 @@ class TimeslotBulkCreate(BaseModel):
     end_time: time
     slot_duration_minutes: int = Field(..., gt=0, description="Duração de cada aula (ex: 50 ou 90)")
     break_duration_minutes: int = Field(0, ge=0, description="Intervalo entre aulas")
-    days_of_week: List[int] = Field(..., description="Lista de dias (0=Seg, 4=Sex)")
+    days_of_week: list[int] = Field(
+        ..., min_length=1, max_length=7, description="Lista de dias (0=Seg, 4=Sex)"
+    )
+
+    @model_validator(mode="after")
+    def validate_grid(self):
+        if self.end_time <= self.start_time:
+            raise ValueError("A hora de fecho deve ser posterior à hora de abertura.")
+        if any(day < 0 or day > 6 for day in self.days_of_week):
+            raise ValueError("Os dias da semana devem estar entre 0 e 6.")
+        if len(set(self.days_of_week)) != len(self.days_of_week):
+            raise ValueError("Os dias da semana não podem estar duplicados.")
+        available_minutes = (
+            self.end_time.hour * 60
+            + self.end_time.minute
+            - self.start_time.hour * 60
+            - self.start_time.minute
+        )
+        if available_minutes < self.slot_duration_minutes:
+            raise ValueError("A janela horária deve permitir pelo menos uma aula completa.")
+        return self
+
+
+class GridConfigurationCommand(BaseModel):
+    grid_settings: OrganizationGridSettingsUpsert
+    timeslots: TimeslotBulkCreate
+
+    @model_validator(mode="after")
+    def validate_lunch_inside_grid(self):
+        lunch_start = self.grid_settings.lunch_window_start
+        lunch_end = self.grid_settings.lunch_window_end
+        if lunch_start is not None and (
+            lunch_start < self.timeslots.start_time
+            or lunch_end > self.timeslots.end_time
+        ):
+            raise ValueError("A janela de almoço deve ficar dentro do horário de abertura.")
+        return self
+
+
+class GridConfigurationResponse(BaseModel):
+    message: str
+    generated_count: int
+    changed: bool
+    grid_regenerated: bool
 
 # ==========================================
 #  DISCIPLINAS DA TURMA (Class-Subject Link)
