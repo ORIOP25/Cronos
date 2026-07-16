@@ -5,7 +5,7 @@ import {
   getConsoleError,
   getRequestFailureError,
 } from './runtime-guards.js'
-import { retryClerkRateLimit } from './clerk-rate-limit.js'
+import { observeClerkSignIn } from './clerk-rate-limit.js'
 
 const BASE_URL = process.env.BASE_URL || 'http://localhost:5173'
 
@@ -65,10 +65,17 @@ export function attachRuntimeGuards(page) {
 
 async function loginReal(page, emailEnvironmentVariable) {
   const emailAddress = requiredEnv(emailEnvironmentVariable)
-  await retryClerkRateLimit(async () => {
-    await page.goto(BASE_URL)
-    await clerk.signIn({ page, emailAddress })
-  }, (delay) => page.waitForTimeout(delay))
+  await expect.poll(
+    () => observeClerkSignIn(async () => {
+      await page.goto(BASE_URL)
+      await clerk.signIn({ page, emailAddress })
+    }),
+    {
+      message: `Clerk sign-in should succeed for ${emailEnvironmentVariable}`,
+      intervals: [5_000, 10_000],
+      timeout: 30_000,
+    },
+  ).toBe(true)
 }
 
 export async function loginAsAdminReal(page) {
