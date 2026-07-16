@@ -1,10 +1,7 @@
-import React from 'react'
 import {
   CModal, CModalHeader, CModalTitle, CModalBody,
   CAlert
 } from '@coreui/react'
-import PropTypes from 'prop-types'
-import { useFocusTrap } from '../hooks/useFocusTrap'
 import { getApiErrorMessage } from '../utils/apiErrors'
 
 /**
@@ -15,14 +12,12 @@ const GenericModalForm = ({
   onClose, 
   title, 
   initialData, 
-  FormComponent, // eslint-disable-line no-unused-vars
+  FormComponent,
   onSubmit, 
   isLoading,
   error,
   size
 }) => {
-
-  useFocusTrap(visible)
 
   const isEditing = !!initialData
   const modalTitle = isEditing ? `Editar ${title}` : `Novo ${title}`
@@ -52,18 +47,6 @@ const GenericModalForm = ({
       </CModalBody>
     </CModal>
   )
-}
-
-GenericModalForm.propTypes = {
-  visible: PropTypes.bool.isRequired,
-  onClose: PropTypes.func.isRequired,
-  title: PropTypes.string.isRequired,
-  initialData: PropTypes.object,
-  FormComponent: PropTypes.elementType.isRequired,
-  onSubmit: PropTypes.func.isRequired,
-  isLoading: PropTypes.bool,
-  error: PropTypes.object,
-  size: PropTypes.string,
 }
 
 export default GenericModalForm

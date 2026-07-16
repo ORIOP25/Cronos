@@ -1,9 +1,18 @@
-import React from 'react'
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
 import { renderWithProviders } from './testUtils'
 import { resetClerkState, setClerkState } from './setup'
 import App from '../App'
+
+vi.mock('../features/members/data', async (importOriginal) => ({
+  ...(await importOriginal()),
+  useCurrentMember: () => ({
+    data: { access_status: 'active', lifecycle_status: 'active', capabilities: ['admin'], default_mode: 'admin' },
+    isLoading: false,
+    isError: false,
+    refetch: vi.fn(),
+  }),
+}))
 
 function renderAppAt(path) {
   window.history.replaceState({}, '', path)
@@ -14,6 +23,18 @@ describe('App route polish', () => {
   beforeEach(() => {
     resetClerkState()
     setClerkState({ isSignedIn: false, isLoaded: true })
+  })
+
+  it('lazy-loads the signed-out marketing route through the shared fallback', async () => {
+    const { container } = renderAppAt('/')
+    expect(container.querySelector('.spinner-border')).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: /horários para o ensino profissional português/i })).toBeInTheDocument()
+  })
+
+  it('redirects a signed-in member from marketing to their default route', async () => {
+    setClerkState({ isSignedIn: true })
+    renderAppAt('/')
+    await waitFor(() => expect(window.location.pathname).toBe('/dashboard'))
   })
 
   it('redirects /sign-in to /login', async () => {

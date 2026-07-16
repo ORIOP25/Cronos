@@ -1,5 +1,4 @@
-import React, { useState, useEffect } from 'react'
-import PropTypes from 'prop-types'
+import { useState } from 'react'
 import {
   CModal,
   CModalHeader,
@@ -14,15 +13,10 @@ import {
 } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
 import { cilCheckCircle, cilXCircle, cilActionUndo, cilWarning } from '@coreui/icons'
-import { useUpsertLessonLog, useUpdateTimesheetStatus } from '../hooks/useSchoolData'
-import { useFocusTrap } from '../hooks/useFocusTrap'
+import { useUpsertLessonLog, useUpdateTimesheetStatus } from '../features/operations/data'
 import { getApiErrorMessage } from '../utils/apiErrors'
-
-const STATUS_INFO = {
-  COMPLETED: { label: 'Aula Dada', badge: 'success' },
-  OCCURRENCE: { label: 'Ocorrência', badge: 'warning' },
-  PENDING: { label: 'Pendente', badge: 'secondary' },
-}
+import { formatDateLong } from '../utils/formatUtils'
+import { getLessonLogStatus } from '../utils/presentation'
 
 const OCCURRENCE_STATUS_LABELS = {
   GIVEN:       'Dada ✓',
@@ -37,11 +31,9 @@ const OCCURRENCE_STATUS_LABELS = {
  * COMPLETED → editable if week OPEN, readonly if locked
  * OCCURRENCE → readonly (always)
  */
-const LessonLogModal = ({ visible, onClose, slot, isAdmin = false }) => {
-  useFocusTrap(visible)
-
-  const [summary, setSummary] = useState('')
-  const [notes, setNotes] = useState('')
+const LessonLogModal = ({ onClose, slot, isAdmin = false }) => {
+  const [summary, setSummary] = useState(() => slot.lesson_log_summary || '')
+  const [notes, setNotes] = useState(() => slot.lesson_log_notes || '')
   const [errorMessage, setErrorMessage] = useState('')
   const [showReopenConfirm, setShowReopenConfirm] = useState(false)
   const [showOccurrenceConfirm, setShowOccurrenceConfirm] = useState(false)
@@ -49,31 +41,11 @@ const LessonLogModal = ({ visible, onClose, slot, isAdmin = false }) => {
   const upsertLogMutation = useUpsertLessonLog()
   const updateTimesheetStatusMutation = useUpdateTimesheetStatus()
 
-  /* eslint-disable react-hooks/set-state-in-effect */
-  useEffect(() => {
-    if (visible && slot) {
-      setSummary(slot.lesson_log_summary || '')
-      setNotes(slot.lesson_log_notes || '')
-      setErrorMessage('')
-      setShowOccurrenceConfirm(false)
-      setShowReopenConfirm(false)
-    }
-  }, [visible, slot])
-  /* eslint-enable react-hooks/set-state-in-effect */
-
   const MAX_SUMMARY_LENGTH = 2000
   const MAX_NOTES_LENGTH = 1000
 
   const handleSubmit = async (status) => {
     setErrorMessage('')
-    if (summary.length > MAX_SUMMARY_LENGTH) {
-      setErrorMessage(`O sumário excede o tamanho máximo permitido (${MAX_SUMMARY_LENGTH} caracteres).`)
-      return
-    }
-    if (notes.length > MAX_NOTES_LENGTH) {
-      setErrorMessage(`As notas excedem o tamanho máximo permitido (${MAX_NOTES_LENGTH} caracteres).`)
-      return
-    }
     try {
       await upsertLogMutation.mutateAsync({
         scheduleOutputId: slot.schedule_output_id,
@@ -132,16 +104,10 @@ const LessonLogModal = ({ visible, onClose, slot, isAdmin = false }) => {
   const isWeekLocked = slot.week_timesheet_status === 'SUBMITTED' || slot.week_timesheet_status === 'APPROVED'
   const canEdit = isCompleted && !isWeekLocked
 
-  const statusInfo = STATUS_INFO[currentStatus] ?? STATUS_INFO.PENDING
-
-  const formatDate = (dateStr) => {
-    if (!dateStr) return '—'
-    const d = new Date(`${dateStr}T12:00:00`)
-    return d.toLocaleDateString('pt-PT', { day: '2-digit', month: 'long', year: 'numeric' })
-  }
+  const statusInfo = getLessonLogStatus(currentStatus)
 
   return (
-    <CModal visible={visible} onClose={onClose} alignment="center">
+    <CModal visible onClose={onClose} alignment="center">
       <CModalHeader>
         <CModalTitle>
           Registo de Aula{' '}
@@ -161,7 +127,7 @@ const LessonLogModal = ({ visible, onClose, slot, isAdmin = false }) => {
           className="mb-3 rounded px-3 py-2"
           style={{ backgroundColor: 'var(--color-bg-muted)', fontSize: '0.85rem' }}
         >
-          <div><strong>Data:</strong> {formatDate(slot.date)}</div>
+          <div><strong>Data:</strong> {formatDateLong(slot.date)}</div>
           <div><strong>Horário:</strong> {slot.timeslot ? `${slot.timeslot.start_time} – ${slot.timeslot.end_time}` : '—'}</div>
           <div><strong>Disciplina:</strong> {slot.subject?.name ?? '—'}</div>
           <div><strong>Turma:</strong> {slot.class_info?.name ?? '—'}</div>
@@ -379,13 +345,6 @@ const LessonLogModal = ({ visible, onClose, slot, isAdmin = false }) => {
       </CModalFooter>
     </CModal>
   )
-}
-
-LessonLogModal.propTypes = {
-  visible: PropTypes.bool.isRequired,
-  onClose: PropTypes.func.isRequired,
-  slot: PropTypes.object,
-  isAdmin: PropTypes.bool,
 }
 
 export default LessonLogModal

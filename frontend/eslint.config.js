@@ -11,12 +11,11 @@ export default defineConfig([
     files: ['**/*.{js,jsx}'],
     extends: [
       js.configs.recommended,
+      react.configs.flat.recommended,
+      react.configs.flat['jsx-runtime'],
       reactHooks.configs.flat.recommended,
       reactRefresh.configs.vite,
     ],
-    plugins: {
-      react,
-    },
     languageOptions: {
       ecmaVersion: 2020,
       globals: globals.browser,
@@ -26,8 +25,15 @@ export default defineConfig([
         sourceType: 'module',
       },
     },
+    settings: {
+      react: { version: 'detect' },
+    },
     rules: {
-      'no-unused-vars': ['error', { varsIgnorePattern: '^[A-Z_]' }],
+      'no-unused-vars': ['error', {
+        varsIgnorePattern: '^_',
+        argsIgnorePattern: '^_',
+      }],
+      'react/prop-types': 'off',
       'react/jsx-no-undef': 'error',
     },
   },
@@ -38,6 +44,22 @@ export default defineConfig([
         ...globals.browser,
         ...globals.node,
       },
+    },
+  },
+  {
+    files: ['src/pages/**/*.{js,jsx}', 'src/components/**/*.{js,jsx}'],
+    rules: {
+      'no-restricted-imports': ['error', {
+        paths: [{
+          name: '@tanstack/react-query',
+          importNames: ['useQuery', 'useMutation', 'useQueryClient'],
+          message: 'Pages and components must compose feature data hooks.',
+        }],
+        patterns: [{
+          group: ['**/apiClient'],
+          message: 'HTTP access belongs in a feature data module.',
+        }],
+      }],
     },
   },
 ])

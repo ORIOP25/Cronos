@@ -1,7 +1,9 @@
-import React, { useMemo } from 'react'
-import PropTypes from 'prop-types'
+import { useMemo } from 'react'
 import { CSpinner } from '@coreui/react'
+import { formatDateShort } from '../utils/formatUtils'
 import { getSubjectColor } from '../utils/subjectColors'
+import { buildWeekGridModel } from '../utils/weekGridModel'
+import { getLessonLogStatus } from '../utils/presentation'
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -25,31 +27,9 @@ const OCCURRENCE_LABELS = {
   REVOKED:     'Revertida',
 }
 
-function normalizeTimeLabel(value) {
-  if (!value) return ''
-  const text = String(value)
-  if (text.length >= 5) {
-    return text.slice(0, 5)
-  }
-  return text
-}
-
 // ---------------------------------------------------------------------------
 // Pure helpers — outside component (SonarQube S7721)
 // ---------------------------------------------------------------------------
-
-/** Build a lookup map: "dayOfWeek:startTime" → [slots]. */
-function buildSlotMap(slots) {
-  const map = {}
-  slots.forEach(slot => {
-    const key = `${slot.timeslot.day_of_week}:${normalizeTimeLabel(slot.timeslot.start_time)}`
-    if (!map[key]) {
-      map[key] = []
-    }
-    map[key].push(slot)
-  })
-  return map
-}
 
 function buildTooltipLines(slot) {
   return [
@@ -82,7 +62,7 @@ function getCellVisuals(slot) {
   // 1. Completed lesson log
   if (slot.lesson_log_status === 'COMPLETED') {
     return {
-      className: 'zen-state-card zen-state-given',
+      className: `zen-state-card ${getLessonLogStatus('COMPLETED').stateClass}`,
       style: { opacity: 0.55, filter: 'grayscale(0.5)' },
     }
   }
@@ -90,7 +70,7 @@ function getCellVisuals(slot) {
   // 2. Teacher registered OCCURRENCE (undecided)
   if (slot.lesson_log_status === 'OCCURRENCE') {
     return {
-      className: 'zen-state-card zen-state-gap',
+      className: `zen-state-card ${getLessonLogStatus('OCCURRENCE').stateClass}`,
       style: { opacity: 0.55, filter: 'grayscale(0.5)' },
     }
   }
@@ -136,22 +116,6 @@ function getCellVisuals(slot) {
   }
 }
 
-/** Format a date string as "04 Mar" for column headers. */
-function formatDateLabel(dateStr) {
-  if (!dateStr) return ''
-  return new Date(`${dateStr}T12:00:00`).toLocaleDateString('pt-PT', {
-    day: '2-digit',
-    month: 'short',
-  })
-}
-
-function getDateForDayFromWeekStart(weekStart, dayOfWeek) {
-  if (!weekStart) return ''
-  const date = new Date(`${weekStart}T12:00:00`)
-  date.setDate(date.getDate() + dayOfWeek)
-  return date.toISOString().split('T')[0]
-}
-
 // ---------------------------------------------------------------------------
 // SlotCell — individual table cell
 // ---------------------------------------------------------------------------
@@ -187,24 +151,18 @@ const SlotCell = ({ slotEntries, isOperationalEnabled, onOpenOperationalAction }
       operationalBlockReason = 'Conflito no slot. Use a página de Faltas para análise.'
     } else if (!(slot.schedule_output_id || slot.active_schedule_block_id || slot.operational_block_id) || !slot.date) {
       operationalBlockReason = 'Este bloco não tem contexto operacional completo.'
-    } else if (!(canCreateOccurrence || canDecideOccurrence)) {
-      if (slot.occurrence_id && slot.occurrence_decided_at) {
-        operationalBlockReason = 'Ocorrência já fechada.'
-      } else {
-        operationalBlockReason = 'Sem ação operacional disponível para este bloco.'
-      }
     }
   }
 
   const { className: cellClassName, style: cellStyle } = getCellVisuals(slot)
   const isSubstituteBlock = slot.is_substituted_block === true
-  let statusLabel = 'Planeado'
+  let statusLabel = getLessonLogStatus(slot.lesson_log_status).label
   if (isSubstituteBlock) {
     statusLabel = 'Substituição'
   } else if (slot.lesson_log_status === 'COMPLETED') {
-    statusLabel = 'Concluída ✓'
+    statusLabel = getLessonLogStatus('COMPLETED').label
   } else if (slot.lesson_log_status === 'OCCURRENCE') {
-    statusLabel = 'Ocorrência'
+    statusLabel = getLessonLogStatus('OCCURRENCE').label
   } else if (slot.occurrence_status && slot.occurrence_decided_at) {
     statusLabel = OCCURRENCE_LABELS[slot.occurrence_status] ?? slot.occurrence_status
   } else if (slot.occurrence_id && !slot.occurrence_decided_at) {
@@ -220,30 +178,9 @@ const SlotCell = ({ slotEntries, isOperationalEnabled, onOpenOperationalAction }
       return
     }
     onOpenOperationalAction({
-      schedule_output_id: slot.schedule_output_id,
-      active_schedule_block_id: slot.active_schedule_block_id,
-      operational_block_id: slot.operational_block_id,
-      block_source: slot.block_source,
-      date: slot.date,
-      is_past: slot.is_past,
-      occurrence_id: slot.occurrence_id,
-      occurrence_decided_at: slot.occurrence_decided_at,
+      ...slot,
       can_create_occurrence: canCreateOccurrence,
       can_decide_occurrence: canDecideOccurrence,
-      timeslot: slot.timeslot,
-      subject: slot.subject,
-      teacher: slot.teacher,
-      room: slot.room,
-      class_info: slot.class_info,
-      occurrence_status: slot.occurrence_status,
-      hours_given: slot.hours_given,
-      lesson_log_id: slot.lesson_log_id,
-      lesson_log_status: slot.lesson_log_status,
-      lesson_log_summary: slot.lesson_log_summary,
-      lesson_log_notes: slot.lesson_log_notes,
-      // WBS Fase 6: campos de fecho semanal
-      week_timesheet_status: slot.week_timesheet_status,
-      timesheet_id: slot.timesheet_id,
     })
   }
 
@@ -338,32 +275,6 @@ const SlotCell = ({ slotEntries, isOperationalEnabled, onOpenOperationalAction }
   )
 }
 
-SlotCell.propTypes = {
-  slotEntries: PropTypes.arrayOf(
-    PropTypes.shape({
-      subject: PropTypes.shape({ id: PropTypes.number, name: PropTypes.string }),
-      teacher: PropTypes.shape({ name: PropTypes.string }),
-      room: PropTypes.shape({ name: PropTypes.string }),
-      class_info: PropTypes.shape({ name: PropTypes.string }),
-      module: PropTypes.shape({ name: PropTypes.string, hours_total: PropTypes.number }),
-      schedule_output_id: PropTypes.number,
-      active_schedule_block_id: PropTypes.number,
-      operational_block_id: PropTypes.number,
-      block_source: PropTypes.string,
-      date: PropTypes.string,
-      occurrence_id: PropTypes.number,
-      can_create_occurrence: PropTypes.bool,
-      can_decide_occurrence: PropTypes.bool,
-      occurrence_status: PropTypes.string,
-      occurrence_decided_at: PropTypes.string,
-      is_past: PropTypes.bool,
-      hours_given: PropTypes.number,
-    }),
-  ),
-  isOperationalEnabled: PropTypes.bool,
-  onOpenOperationalAction: PropTypes.func,
-}
-
 // ---------------------------------------------------------------------------
 // WeekGrid — main component
 // ---------------------------------------------------------------------------
@@ -375,48 +286,10 @@ const WeekGrid = ({
   isOperationalEnabled = false,
   onOpenOperationalAction,
 }) => {
-  const slotMap = useMemo(() => buildSlotMap(slots), [slots])
-
-  const referenceTimeslots = useMemo(() => {
-    if (baseTimeslots.length > 0) {
-      return baseTimeslots
-    }
-    return slots.map((s) => s.timeslot)
-  }, [baseTimeslots, slots])
-
-  const uniqueTimes = useMemo(
-    () => [...new Set(referenceTimeslots.map(t => normalizeTimeLabel(t.start_time)))].sort((a, b) => a.localeCompare(b)),
-    [referenceTimeslots],
+  const { slotMap, uniqueTimes, activeDays, endTimeMap, dayDateMap } = useMemo(
+    () => buildWeekGridModel(slots, baseTimeslots, weekStart),
+    [slots, baseTimeslots, weekStart],
   )
-
-  const activeDays = useMemo(
-    () => [...new Set(referenceTimeslots.map(t => t.day_of_week))].sort((a, b) => a - b),
-    [referenceTimeslots],
-  )
-
-  // Map start_time → end_time (for the time column)
-  const endTimeMap = useMemo(() => {
-    const map = {}
-    referenceTimeslots.forEach(t => {
-      map[normalizeTimeLabel(t.start_time)] = normalizeTimeLabel(t.end_time)
-    })
-    return map
-  }, [referenceTimeslots])
-
-  // Map day_of_week → date string (for column header)
-  const dayDateMapFromSlots = useMemo(() => {
-    const map = {}
-    slots.forEach(s => { map[s.timeslot.day_of_week] = s.date })
-    return map
-  }, [slots])
-
-  const dayDateMap = useMemo(() => {
-    const map = {}
-    activeDays.forEach((day) => {
-      map[day] = dayDateMapFromSlots[day] ?? getDateForDayFromWeekStart(weekStart, day)
-    })
-    return map
-  }, [activeDays, dayDateMapFromSlots, weekStart])
 
   if (isLoading) {
     return (
@@ -457,11 +330,11 @@ const WeekGrid = ({
                 className="text-center"
                 style={{ fontSize: '0.8rem' }}
                 scope="col"
-                aria-label={`${DAY_LABELS[d]} ${formatDateLabel(dayDateMap[d])}`}
+                aria-label={`${DAY_LABELS[d]} ${formatDateShort(dayDateMap[d])}`}
               >
                 <div>{DAY_LABELS[d]}</div>
                 <div className="text-muted fw-normal" style={{ fontSize: '0.72rem' }}>
-                  {formatDateLabel(dayDateMap[d])}
+                  {formatDateShort(dayDateMap[d])}
                 </div>
               </th>
             ))}
@@ -494,45 +367,6 @@ const WeekGrid = ({
       </table>
     </div>
   )
-}
-
-const slotShape = PropTypes.shape({
-  schedule_output_id: PropTypes.number,
-  active_schedule_block_id: PropTypes.number,
-  operational_block_id: PropTypes.number,
-  date: PropTypes.string,
-  timeslot: PropTypes.shape({
-    id: PropTypes.number.isRequired,
-    day_of_week: PropTypes.number.isRequired,
-    start_time: PropTypes.string.isRequired,
-    end_time: PropTypes.string.isRequired,
-  }).isRequired,
-  subject:    PropTypes.shape({ id: PropTypes.number, name: PropTypes.string }),
-  teacher:    PropTypes.shape({ id: PropTypes.number, name: PropTypes.string }),
-  room:       PropTypes.shape({ id: PropTypes.number, name: PropTypes.string }),
-  class_info: PropTypes.shape({ id: PropTypes.number, name: PropTypes.string }),
-  module:     PropTypes.shape({ id: PropTypes.number, name: PropTypes.string, hours_total: PropTypes.number }),
-  is_past:    PropTypes.bool.isRequired,
-  occurrence_id: PropTypes.number,
-  can_create_occurrence: PropTypes.bool,
-  can_decide_occurrence: PropTypes.bool,
-  occurrence_status: PropTypes.string,
-  hours_given: PropTypes.number,
-})
-
-WeekGrid.propTypes = {
-  slots:     PropTypes.arrayOf(slotShape).isRequired,
-  isLoading: PropTypes.bool,
-  weekStart: PropTypes.string,
-  isOperationalEnabled: PropTypes.bool,
-  onOpenOperationalAction: PropTypes.func,
-  baseTimeslots: PropTypes.arrayOf(
-    PropTypes.shape({
-      day_of_week: PropTypes.number.isRequired,
-      start_time: PropTypes.string.isRequired,
-      end_time: PropTypes.string.isRequired,
-    }),
-  ),
 }
 
 export default WeekGrid

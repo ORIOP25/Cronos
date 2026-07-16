@@ -1,8 +1,7 @@
-import React, { useState } from 'react'
-import { CSpinner } from '@coreui/react'
+import { useState } from 'react'
+import { CAlert, CCard, CCardBody, CSpinner } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
 import { cilPencil, cilTrash, cilChevronRight } from '@coreui/icons'
-import PropTypes from 'prop-types'
 import ConfirmationModal from './ConfirmationModal'
 import { TXT } from '../utils/terminology'
 import { getApiErrorMessage } from '../utils/apiErrors'
@@ -18,58 +17,69 @@ const SmartTable = ({
   onEdit, 
   onDelete,
   onRowClick,
+  getRowLabel,
 }) => {
   const isClickable = typeof onRowClick === 'function'
   const [deleteTarget, setDeleteTarget] = useState(null)
   const [isDeleting, setIsDeleting] = useState(false)
+  const [deleteError, setDeleteError] = useState('')
 
   const handleDeleteConfirm = async () => {
     if (!deleteTarget || !onDelete) return
     setIsDeleting(true)
+    setDeleteError('')
     try {
       await onDelete(deleteTarget)
+      setDeleteTarget(null)
+    } catch (error) {
+      setDeleteError(getApiErrorMessage(error, 'Não foi possível remover o registo.'))
     } finally {
       setIsDeleting(false)
-      setDeleteTarget(null)
     }
+  }
+
+  const activateRow = (event, item) => {
+    if (!isClickable || !['Enter', ' '].includes(event.key)) return
+    event.preventDefault()
+    onRowClick(item)
   }
   
   if (isError) {
     const msg = getApiErrorMessage(error, TXT.ERROR_LOADING)
     return (
-      <div className="text-center p-5 zen-reveal">
+      <CCard className="border-0 shadow-sm"><CCardBody className="text-center p-5 zen-reveal">
         <div style={{ color: 'var(--color-state-gap-text)', marginBottom: '16px', fontSize: '2rem' }}>!</div>
         <p className="text-display" style={{ fontSize: '1.1rem', marginBottom: '8px' }}>Erro ao carregar</p>
         <p style={{ color: 'var(--brand-600)', fontSize: '0.9rem', maxWidth: 400, margin: '0 auto 16px' }}>{msg}</p>
         {onRetry && (
           <button className="btn-zen btn-zen-outline" onClick={onRetry}>Tentar novamente</button>
         )}
-      </div>
+      </CCardBody></CCard>
     )
   }
 
   if (isLoading) {
     return (
-      <div className="text-center p-5 zen-reveal">
+      <CCard className="border-0 shadow-sm"><CCardBody className="text-center p-5 zen-reveal">
         <CSpinner color="primary" variant="grow" />
         <p className="text-muted mt-3 text-editorial">{TXT.LOADING}</p>
-      </div>
+      </CCardBody></CCard>
     )
   }
 
   if (!data || data.length === 0) {
     return (
-      <div className="text-center p-5 text-muted zen-reveal">
+      <CCard className="border-0 shadow-sm"><CCardBody className="text-center p-5 text-muted zen-reveal">
         <div className="luxury-line" style={{ margin: '0 auto 20px' }} />
         <p className="text-display" style={{ fontSize: '1.2rem' }}>{TXT.EMPTY_TABLE}</p>
         <p style={{ fontSize: '0.9rem' }}>{TXT.EMPTY_TABLE_HINT}</p>
-      </div>
+      </CCardBody></CCard>
     )
   }
 
   return (
     <>
-      <div className="zen-reveal">
+      <CCard className="border-0 shadow-sm"><CCardBody className="p-0 zen-reveal">
         <table className="zen-table">
           <thead>
             <tr>
@@ -86,7 +96,10 @@ const SmartTable = ({
               <tr 
                 key={item.id || rowIndex}
                 onClick={isClickable ? () => onRowClick(item) : undefined}
-                style={isClickable ? { cursor: 'pointer' } : undefined}
+                onKeyDown={isClickable ? (event) => activateRow(event, item) : undefined}
+                tabIndex={isClickable ? 0 : undefined}
+                aria-label={isClickable ? getRowLabel?.(item) : undefined}
+                className={isClickable ? 'zen-table-row-interactive' : undefined}
               >
                 {columns.map((col) => (
                   <td key={col.key || col.label}>
@@ -103,14 +116,16 @@ const SmartTable = ({
                             className="btn-zen-ghost zen-table-action-trigger"
                             onClick={(e) => { e.stopPropagation(); onEdit(item) }}
                             title={TXT.EDIT}
+                            aria-label={`${TXT.EDIT} ${getRowLabel?.(item) ?? item.name ?? ''}`.trim()}
                             type="button"
                           >
                             <CIcon icon={cilPencil} size="sm"/>
                           </button>
                           <button 
                             className="btn-zen-ghost zen-table-action-trigger text-danger"
-                            onClick={(e) => { e.stopPropagation(); setDeleteTarget(item.id) }}
+                            onClick={(e) => { e.stopPropagation(); setDeleteError(''); setDeleteTarget(item.id) }}
                             title={TXT.REMOVE}
+                            aria-label={`${TXT.REMOVE} ${getRowLabel?.(item) ?? item.name ?? ''}`.trim()}
                             type="button"
                           >
                             <CIcon icon={cilTrash} size="sm"/>
@@ -127,7 +142,9 @@ const SmartTable = ({
             ))}
           </tbody>
         </table>
-      </div>
+      </CCardBody></CCard>
+
+      {deleteError && <CAlert color="danger" className="mt-3">{deleteError}</CAlert>}
 
       <ConfirmationModal
         visible={deleteTarget !== null}
@@ -137,24 +154,6 @@ const SmartTable = ({
       />
     </>
   )
-}
-
-SmartTable.propTypes = {
-  columns: PropTypes.arrayOf(PropTypes.shape({
-    key: PropTypes.string,
-    label: PropTypes.string.isRequired,
-    _style: PropTypes.object,
-    render: PropTypes.func,
-  })).isRequired,
-  data: PropTypes.array,
-  isLoading: PropTypes.bool,
-  isError: PropTypes.bool,
-  error: PropTypes.object,
-  onRetry: PropTypes.func,
-  actions: PropTypes.bool,
-  onEdit: PropTypes.func,
-  onDelete: PropTypes.func,
-  onRowClick: PropTypes.func,
 }
 
 export default SmartTable

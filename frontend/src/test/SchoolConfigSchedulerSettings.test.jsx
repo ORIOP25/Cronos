@@ -21,23 +21,36 @@ describe('SchoolConfig scheduler settings', () => {
     vi.clearAllMocks()
     apiClient.get.mockImplementation((url) => {
       if (url === '/school/settings/') {
-        return Promise.resolve({ data: {
+        return Promise.resolve({
           school_start_date: '2026-09-15',
           school_hard_end_date: '2027-07-31',
           repair_stability_window_days: 14,
-        } })
+        })
       }
       if (url === '/school/grid-settings/') {
-        return Promise.resolve({ data: {
+        return Promise.resolve({
           lunch_window_start: '12:00:00',
           lunch_window_end: '14:00:00',
           lunch_min_duration_minutes: 60,
-        } })
+        })
       }
-      if (url === '/timeslots/') return Promise.resolve({ data: [] })
-      return Promise.resolve({ data: [] })
+      if (url === '/timeslots/') return Promise.resolve([])
+      return Promise.resolve([])
     })
-    apiClient.post.mockResolvedValue({ data: { message: 'Grelha configurada e regenerada com sucesso.' } })
+    apiClient.post.mockResolvedValue({ message: 'Grelha configurada e regenerada com sucesso.' })
+  })
+
+  it('requests data only for the active configuration section', async () => {
+    renderWithProviders(<SchoolConfig />)
+
+    await waitFor(() => expect(apiClient.get).toHaveBeenCalledWith('/school/settings/'))
+    expect(apiClient.get).not.toHaveBeenCalledWith('/school/calendar-events/')
+    expect(apiClient.get).not.toHaveBeenCalledWith('/school/grid-settings/')
+    expect(apiClient.get).not.toHaveBeenCalledWith('/timeslots/')
+
+    fireEvent.click(screen.getByRole('tab', { name: /calendário/i }))
+    await waitFor(() => expect(apiClient.get).toHaveBeenCalledWith('/school/calendar-events/'))
+    expect(apiClient.get).not.toHaveBeenCalledWith('/school/grid-settings/')
   })
 
   it('submits hard boundaries and accepts a zero-day stability window', async () => {
@@ -64,6 +77,7 @@ describe('SchoolConfig scheduler settings', () => {
     const invalidate = vi.spyOn(queryClient, 'invalidateQueries')
 
     fireEvent.click(await screen.findByRole('tab', { name: /grelha/i }))
+    await screen.findByLabelText(/duração da aula/i)
     fireEvent.click(screen.getByRole('button', { name: /guardar e regenerar/i }))
 
     await waitFor(() => {
@@ -99,6 +113,7 @@ describe('SchoolConfig scheduler settings', () => {
     const invalidate = vi.spyOn(queryClient, 'invalidateQueries')
 
     fireEvent.click(await screen.findByRole('tab', { name: /grelha/i }))
+    await screen.findByLabelText(/duração da aula/i)
     const button = screen.getByRole('button', { name: /guardar e regenerar/i })
     fireEvent.click(button)
 
@@ -113,7 +128,7 @@ describe('SchoolConfig scheduler settings', () => {
     renderWithProviders(<SchoolConfig />)
 
     fireEvent.click(await screen.findByRole('tab', { name: /grelha/i }))
-    fireEvent.change(screen.getByLabelText(/duração da aula/i), { target: { value: '0' } })
+    fireEvent.change(await screen.findByLabelText(/duração da aula/i), { target: { value: '0' } })
     fireEvent.click(screen.getByRole('button', { name: /guardar e regenerar/i }))
 
     expect(await screen.findByText(/preencha uma grelha válida/i)).toBeInTheDocument()
@@ -122,12 +137,12 @@ describe('SchoolConfig scheduler settings', () => {
 
   it('hydrates the real grid and blocks an irregular persisted grid', async () => {
     apiClient.get.mockImplementation((url) => {
-      if (url === '/timeslots/') return Promise.resolve({ data: [
+      if (url === '/timeslots/') return Promise.resolve([
         { day_of_week: 0, start_time: '07:30:00', end_time: '08:20:00' },
         { day_of_week: 1, start_time: '07:30:00', end_time: '08:30:00' },
-      ] })
-      if (url === '/school/grid-settings/') return Promise.resolve({ data: null })
-      return Promise.resolve({ data: [] })
+      ])
+      if (url === '/school/grid-settings/') return Promise.resolve(null)
+      return Promise.resolve([])
     })
     renderWithProviders(<SchoolConfig />)
 

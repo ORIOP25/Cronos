@@ -1,5 +1,5 @@
-export const ROUTE_DASHBOARD = '/dashboard'
-export const ROUTE_MY_AVAILABILITY = '/my-availability'
+const ROUTE_DASHBOARD = '/dashboard'
+const ROUTE_MY_AVAILABILITY = '/my-availability'
 export const ROUTE_MY_SCHEDULES = '/my-schedules'
 export const ROUTE_CREATE_ORG = '/create-org'
 
@@ -12,6 +12,14 @@ export function getDefaultRouteForMember(member) {
   return MODE_DEFAULT_ROUTE[member?.default_mode] ?? ROUTE_CREATE_ORG
 }
 
-export function getForbiddenRedirectRoute(member) {
-  return getDefaultRouteForMember(member)
+export function isActiveMember(member) {
+  return member?.access_status === 'active' && member?.lifecycle_status === 'active'
+}
+
+export function hasMemberCapability(member, capability) {
+  return isActiveMember(member) && member.capabilities?.includes(capability) === true
+}
+
+export function canAccessTeacherRoutes(member) {
+  return hasMemberCapability(member, 'teacher') && Boolean(member.teacher_id)
 }

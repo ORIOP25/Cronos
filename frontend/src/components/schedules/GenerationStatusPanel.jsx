@@ -1,6 +1,5 @@
-import PropTypes from 'prop-types'
 import { CAlert, CSpinner } from '@coreui/react'
-import { useScheduleTaskStatus } from '../../hooks/useSchoolData'
+import { useScheduleTaskStatus } from '../../features/scheduling/data'
 
 const STATUS_LABELS = {
   QUEUED: 'Geração em fila',
@@ -42,10 +41,6 @@ const GenerationStatusPanel = ({ jobId }) => {
       {job.failure_message && <div className="small mt-2">{job.failure_message}</div>}
     </CAlert>
   )
-}
-
-GenerationStatusPanel.propTypes = {
-  jobId: PropTypes.number.isRequired,
 }
 
 export default GenerationStatusPanel

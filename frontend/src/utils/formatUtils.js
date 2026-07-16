@@ -74,7 +74,8 @@ export function formatDateTime(dateTimeStr) {
  * @returns {string} Data ISO (YYYY-MM-DD)
  */
 export function toWeekMonday(dateValue) {
-  const d = new Date(dateValue)
+  const d = toLocalDate(dateValue)
+  if (!d) return ''
   const dayOfWeek = d.getDay()
   const offset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek
   d.setDate(d.getDate() + offset)
@@ -87,6 +88,7 @@ export function toWeekMonday(dateValue) {
  * @returns {string}
  */
 export function toIsoDate(dateValue) {
+  if (!(dateValue instanceof Date) || Number.isNaN(dateValue.getTime())) return ''
   const year = dateValue.getFullYear()
   const month = String(dateValue.getMonth() + 1).padStart(2, '0')
   const day = String(dateValue.getDate()).padStart(2, '0')
@@ -108,9 +110,24 @@ export function getCurrentWeekMonday() {
  * @returns {string} YYYY-MM-DD
  */
 export function addDays(dateStr, days) {
-  const d = new Date(`${dateStr}T12:00:00`)
+  const d = toLocalDate(dateStr)
+  if (!d || !Number.isFinite(days)) return ''
   d.setDate(d.getDate() + days)
-  return d.toISOString().split('T')[0]
+  return toIsoDate(d)
+}
+
+function toLocalDate(dateValue) {
+  if (dateValue instanceof Date) {
+    if (Number.isNaN(dateValue.getTime())) return null
+    return new Date(dateValue.getFullYear(), dateValue.getMonth(), dateValue.getDate(), 12)
+  }
+  if (typeof dateValue !== 'string') return null
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateValue)
+  if (!match) return null
+  const [, year, month, day] = match.map(Number)
+  const date = new Date(year, month - 1, day, 12)
+  if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) return null
+  return date
 }
 
 /**
@@ -125,15 +142,6 @@ export function formatWeekRange(weekStart) {
   const short = { day: '2-digit', month: 'short' }
   const full = { day: '2-digit', month: 'short', year: 'numeric' }
   return `${start.toLocaleDateString('pt-PT', short)} – ${end.toLocaleDateString('pt-PT', full)}`
-}
-
-/**
- * Formata um número com separador de milhares PT-PT (ex: 1 200).
- * @param {number} value
- * @returns {string}
- */
-export function formatNumber(value) {
-  return Number(value).toLocaleString('pt-PT')
 }
 
 /**

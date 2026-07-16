@@ -74,6 +74,7 @@ export const CLERK_APPEARANCE_AUTH = {
       padding: '14px 28px',
       border: 'none',
       borderRadius: '4px',
+      '&:hover': { backgroundColor: '#4a2e1e', transform: 'translateY(-1px)' },
     },
     formFieldInput: {
       padding: '14px 16px',
@@ -81,6 +82,7 @@ export const CLERK_APPEARANCE_AUTH = {
       border: '1px solid #e0d6cc',
       borderRadius: '4px',
       backgroundColor: '#faf8f5',
+      '&:focus': { borderColor: '#d4940b', boxShadow: '0 0 0 3px rgba(212, 148, 11, 0.1)' },
     },
     formFieldLabel: {
       fontSize: '0.72rem',
@@ -107,6 +109,7 @@ export const CLERK_APPEARANCE_AUTH = {
       color: '#d4940b',
       fontWeight: '600',
       textDecoration: 'none',
+      '&:hover': { color: '#5c3d2e' },
     },
     dividerRow: {
       margin: '28px 0',
@@ -121,8 +124,18 @@ export const CLERK_APPEARANCE_AUTH = {
     socialButtonsBlockButton: {
       border: '1px solid #e0d6cc',
       borderRadius: '4px',
+      '&:hover': { backgroundColor: '#faf8f5', borderColor: '#5c3d2e' },
     },
     identityPreview: {
+      fontFamily: '"Outfit", sans-serif',
+    },
+    otpCodeFieldInput: {
+      border: '1px solid #e0d6cc',
+      borderRadius: '4px',
+      fontFamily: '"Outfit", sans-serif',
+    },
+    alert: {
+      borderRadius: '4px',
       fontFamily: '"Outfit", sans-serif',
     },
   },

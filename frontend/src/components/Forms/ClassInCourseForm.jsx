@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import { useState } from 'react'
 import {
   CForm,
   CRow,
@@ -8,42 +8,11 @@ import {
   CModalFooter,
   CAlert,
 } from '@coreui/react'
-import PropTypes from 'prop-types'
-
-const defaultState = {
-  name: '',
-  size: 25,
-  grade_level: 10,
-  start_year: new Date().getFullYear(),
-  end_year: new Date().getFullYear() + 3,
-}
+import { createClassDraft, validateClassDraft } from '../../utils/classDraft'
 
 const ClassInCourseForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
-  const [formData, setFormData] = useState(defaultState)
+  const [formData, setFormData] = useState(() => createClassDraft(initialData))
   const [error, setError] = useState('')
-
-  /* eslint-disable react-hooks/set-state-in-effect */
-  useEffect(() => {
-    if (initialData) {
-      setFormData({
-        name: initialData.name || '',
-        size: initialData.size || 25,
-        grade_level: initialData.grade_level || 10,
-        start_year: initialData.start_year || new Date().getFullYear(),
-        end_year: initialData.end_year || new Date().getFullYear() + 3,
-      })
-      return
-    }
-
-    setFormData({
-      name: '',
-      size: 25,
-      grade_level: 10,
-      start_year: new Date().getFullYear(),
-      end_year: new Date().getFullYear() + 3,
-    })
-  }, [initialData])
-  /* eslint-enable react-hooks/set-state-in-effect */
 
   const handleChange = (e) => {
     const { name, value } = e.target
@@ -53,32 +22,9 @@ const ClassInCourseForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
 
   const handleSubmit = (e) => {
     e.preventDefault()
-    const payload = {
-      name: String(formData.name).trim(),
-      size: Number(formData.size),
-      grade_level: Number(formData.grade_level),
-      start_year: Number(formData.start_year),
-      end_year: Number(formData.end_year),
-    }
-
-    if (!payload.name) {
-      setError('Indique o nome da turma.')
-      return
-    }
-    if (payload.size <= 0) {
-      setError('O numero de alunos tem de ser maior que zero.')
-      return
-    }
-    if (payload.grade_level < 10 || payload.grade_level > 12) {
-      setError('O ano tem de estar entre 10 e 12.')
-      return
-    }
-    if (payload.end_year <= payload.start_year) {
-      setError('O ano de fim tem de ser posterior ao ano de inicio.')
-      return
-    }
-
-    onSubmit(payload)
+    const validation = validateClassDraft(formData)
+    if (validation.error) return setError(validation.error)
+    onSubmit(validation.value)
   }
 
   let submitLabel = 'Criar Turma'
@@ -168,19 +114,6 @@ const ClassInCourseForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
       </CModalFooter>
     </CForm>
   )
-}
-
-ClassInCourseForm.propTypes = {
-  initialData: PropTypes.shape({
-    name: PropTypes.string,
-    size: PropTypes.number,
-    grade_level: PropTypes.number,
-    start_year: PropTypes.number,
-    end_year: PropTypes.number,
-  }),
-  onSubmit: PropTypes.func.isRequired,
-  isLoading: PropTypes.bool,
-  onCancel: PropTypes.func.isRequired,
 }
 
 export default ClassInCourseForm

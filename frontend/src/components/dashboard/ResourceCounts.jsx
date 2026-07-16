@@ -1,5 +1,5 @@
-import React from 'react'
 import { CCol, CRow } from '@coreui/react'
+import { getRoomType } from '../../utils/presentation'
 
 function KpiSkeleton() {
   return (
@@ -40,7 +40,6 @@ export default function ResourceCounts({ resources, isLoading }) {
   ]
 
   const roomsByType = resources?.rooms_by_type ?? {}
-  const roomTypeLabels = { normal: 'Normal', lab: 'Lab', gym: 'Ginásio', art: 'Arte' }
 
   return (
     <div data-testid="resource-counts">
@@ -68,7 +67,7 @@ export default function ResourceCounts({ resources, isLoading }) {
               ? '—'
               : Object.entries(roomsByType).map(([type, count], i) => (
                   <span key={type}>
-                    {roomTypeLabels[type] || type}: {count}
+                    {getRoomType(type).label}: {count}
                     {i < Object.keys(roomsByType).length - 1 ? ' · ' : ''}
                   </span>
                 ))

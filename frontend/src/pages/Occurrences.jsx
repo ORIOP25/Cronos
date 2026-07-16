@@ -1,12 +1,10 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import PageHeader from '../components/PageHeader'
-import PropTypes from 'prop-types'
 import { useSearchParams } from 'react-router-dom'
-import { useQueryClient } from '@tanstack/react-query'
 import {
   CCard, CCardBody, CCardHeader, CCol, CRow, CAlert, CBadge, CSpinner,
   CButton, CFormSelect, CFormInput, CFormLabel, CTabs, CTabList, CTab,
-  CTabContent, CTabPanel, CTable, CTableHead, CTableRow, CTableHeaderCell,
+  CTable, CTableHead, CTableRow, CTableHeaderCell,
   CTableBody, CTableDataCell, CModal, CModalHeader, CModalTitle,
   CModalBody, CModalFooter, CButtonGroup, CFormCheck,
 } from '@coreui/react'
@@ -14,11 +12,12 @@ import CIcon from '@coreui/icons-react'
 import { cilWarning, cilCheckCircle, cilBan, cilClock } from '@coreui/icons'
 import {
   useOccurrences, useDebts, useUpdateOccurrence, useCancelOccurrence,
-  useSubstituteRecommendations, useClasses, useTeachers, useSubjects,
-} from '../hooks/useSchoolData'
+  useSubstituteRecommendations,
+} from '../features/operations/data'
+import { useClasses, useSubjects } from '../features/catalog/data'
+import { useTeachers } from '../features/members/data'
 import { formatDate, formatDateTime } from '../utils/formatUtils'
 import { TXT, OPERATIONAL_STATE_LABELS, OPERATIONAL_STATE_COLORS } from '../utils/terminology'
-import { useRole } from '../hooks/useRole'
 import ConfirmationModal from '../components/ConfirmationModal'
 import { getApiErrorMessage } from '../utils/apiErrors'
 
@@ -26,27 +25,7 @@ import { getApiErrorMessage } from '../utils/apiErrors'
 // Constantes
 // ---------------------------------------------------------------------------
 const EMPTY_ARRAY = []
-
-const STATUS_LABELS = {
-  GIVEN: 'Dada',
-  GAP: 'Furo',
-  SUBSTITUTED: 'Substituída',
-  REVOKED: 'Revertida',
-}
-
-const STATUS_COLORS = {
-  GIVEN: 'success',
-  GAP: 'danger',
-  SUBSTITUTED: 'warning',
-  REVOKED: 'secondary',
-}
-
-const STATUS_ICONS = {
-  GIVEN: cilCheckCircle,
-  GAP: cilBan,
-  SUBSTITUTED: cilWarning,
-  REVOKED: cilClock,
-}
+const VALID_TABS = new Set(['occurrences', 'historical', 'debts'])
 
 const OPERATIONAL_STATE_ICONS = {
   OPEN_PENDING: cilClock,
@@ -56,16 +35,7 @@ const OPERATIONAL_STATE_ICONS = {
   REVOKED: cilClock,
 }
 
-const RESOLUTION_FILTERS = {
-  pending: 'Decisões Pendentes',
-  historical: 'Histórico',
-  all: 'Todas',
-}
-
 const resolveOccurrenceStartTime = (occurrence) => {
-  if (typeof occurrence?.timeslot?.start_time === 'string') {
-    return occurrence.timeslot.start_time
-  }
   if (typeof occurrence?.timeslot_start_time === 'string') {
     return occurrence.timeslot_start_time
   }
@@ -391,37 +361,6 @@ const EditOccurrenceModal = ({
   )
 }
 
-EditOccurrenceModal.propTypes = {
-  occurrence: PropTypes.shape({
-    id: PropTypes.number.isRequired,
-    date: PropTypes.string,
-    status: PropTypes.string,
-    operational_state: PropTypes.string,
-    version: PropTypes.number,
-    class_id: PropTypes.number,
-    class_name: PropTypes.string,
-    subject_id: PropTypes.number,
-    subject_name: PropTypes.string,
-    timeslot_id: PropTypes.number,
-    planned_teacher_id: PropTypes.number,
-    planned_teacher_name: PropTypes.string,
-    executed_teacher_id: PropTypes.number,
-    executed_teacher_name: PropTypes.string,
-    decided_by_user_id: PropTypes.number,
-    decided_by_user_name: PropTypes.string,
-    decided_at: PropTypes.string,
-    substitute_teacher_id: PropTypes.number,
-    substitute_subject_id: PropTypes.number,
-  }).isRequired,
-  onClose: PropTypes.func.isRequired,
-  onSave: PropTypes.func.isRequired,
-  onRevert: PropTypes.func,
-  isSaving: PropTypes.bool,
-  teacherById: PropTypes.instanceOf(Map).isRequired,
-  subjectById: PropTypes.instanceOf(Map).isRequired,
-  errorMessage: PropTypes.string,
-}
-
 // ---------------------------------------------------------------------------
 // Painel de Dívidas
 // ---------------------------------------------------------------------------
@@ -486,33 +425,26 @@ const DebtsPanel = ({ classId }) => {
   )
 }
 
-DebtsPanel.propTypes = {
-  classId: PropTypes.oneOfType([PropTypes.number, PropTypes.string]),
-}
-
 // ---------------------------------------------------------------------------
 // Painel de Ocorrências
 // ---------------------------------------------------------------------------
-const OccurrencesPanel = ({ classId, dateFrom, dateTo, initialOccurrenceId, forcedFilter }) => {
-  const { isAdmin } = useRole()
+const OccurrencesPanel = ({ classId, dateFrom, dateTo, initialOccurrenceId, mode }) => {
   const [editingOccurrence, setEditingOccurrence] = useState(null)
-  const [resolutionFilter, setResolutionFilter] = useState(forcedFilter || 'all')
   const [saveErrorMessage, setSaveErrorMessage] = useState('')
-  const [hasAppliedInitialFocus, setHasAppliedInitialFocus] = useState(false)
+  const focusedOccurrenceIdRef = useRef(null)
   const [revertingId, setRevertingId] = useState(null)
   const [revertConfirmation, setRevertConfirmation] = useState(null)
   const { data: occurrencesPage, isLoading, isError } = useOccurrences({
     classId: classId || undefined,
     dateFrom: dateFrom || undefined,
     dateTo: dateTo || undefined,
-    status: forcedFilter === 'pending' ? 'OPEN_PENDING' : undefined,
+    status: mode === 'pending' ? 'OPEN_PENDING' : undefined,
   })
   const occurrences = occurrencesPage?.items ?? EMPTY_ARRAY
   const { data: teachers = EMPTY_ARRAY } = useTeachers()
   const { data: subjects = EMPTY_ARRAY } = useSubjects()
   const updateMutation = useUpdateOccurrence()
   const cancelMutation = useCancelOccurrence()
-  const queryClient = useQueryClient()
   const [expandedId, setExpandedId] = useState(null)
 
   const teacherById = useMemo(
@@ -535,15 +467,12 @@ const OccurrencesPanel = ({ classId, dateFrom, dateTo, initialOccurrenceId, forc
   )
   const resolvedCount = sortedOccurrences.length - pendingCount
 
-  const visibleOccurrences = useMemo(() => {
-    if (resolutionFilter === 'pending') {
-      return sortedOccurrences.filter((occ) => getOperationalState(occ) === 'OPEN_PENDING')
-    }
-    if (resolutionFilter === 'historical') {
-      return sortedOccurrences.filter((occ) => getOperationalState(occ) !== 'OPEN_PENDING')
-    }
-    return sortedOccurrences
-  }, [resolutionFilter, sortedOccurrences])
+  const visibleOccurrences = useMemo(
+    () => sortedOccurrences.filter((occ) => mode === 'pending'
+      ? getOperationalState(occ) === 'OPEN_PENDING'
+      : getOperationalState(occ) !== 'OPEN_PENDING'),
+    [mode, sortedOccurrences],
+  )
 
   useEffect(() => {
     if (!editingOccurrence) return
@@ -556,40 +485,23 @@ const OccurrencesPanel = ({ classId, dateFrom, dateTo, initialOccurrenceId, forc
   }, [editingOccurrence, occurrences])
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setHasAppliedInitialFocus(false)
-    setEditingOccurrence(null)
-    setSaveErrorMessage('')
-  }, [initialOccurrenceId])
-
-  useEffect(() => {
-    if (forcedFilter) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setResolutionFilter(forcedFilter)
-    }
-  }, [forcedFilter])
-
-  useEffect(() => {
-    if (!initialOccurrenceId || hasAppliedInitialFocus) {
+    if (!initialOccurrenceId || focusedOccurrenceIdRef.current === initialOccurrenceId) {
       return
     }
     if (isLoading) {
       return
     }
 
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setResolutionFilter('all')
     const targetOccurrence = occurrences.find((occ) => occ.id === initialOccurrenceId)
-    if (targetOccurrence && isAdmin) {
+    if (targetOccurrence) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setEditingOccurrence(targetOccurrence)
     }
-    setHasAppliedInitialFocus(true)
+    focusedOccurrenceIdRef.current = initialOccurrenceId
   }, [
     initialOccurrenceId,
-    hasAppliedInitialFocus,
     isLoading,
     occurrences,
-    isAdmin,
   ])
 
   const closeEditModal = () => {
@@ -598,14 +510,12 @@ const OccurrencesPanel = ({ classId, dateFrom, dateTo, initialOccurrenceId, forc
   }
 
   const openEditModal = (occurrence) => {
-    if (!isAdmin) return
     if (getOperationalState(occurrence) === 'REVOKED') return
     setEditingOccurrence(occurrence)
     setSaveErrorMessage('')
   }
 
   const handleRevert = (occurrence) => {
-    if (!isAdmin) return
     setRevertConfirmation(occurrence)
   }
 
@@ -624,8 +534,6 @@ const OccurrencesPanel = ({ classId, dateFrom, dateTo, initialOccurrenceId, forc
         setRevertingId(null)
         setRevertConfirmation(null)
         closeEditModal()
-        void queryClient.invalidateQueries({ queryKey: ['occurrences'] })
-        void queryClient.invalidateQueries({ queryKey: ['weekSchedule'] })
       },
       onError: (error) => {
         setRevertingId(null)
@@ -640,8 +548,6 @@ const OccurrencesPanel = ({ classId, dateFrom, dateTo, initialOccurrenceId, forc
     updateMutation.mutate(payload, {
       onSuccess: () => {
         closeEditModal()
-        void queryClient.invalidateQueries({ queryKey: ['occurrences'] })
-        void queryClient.invalidateQueries({ queryKey: ['weekSchedule'] })
       },
       onError: (error) => setSaveErrorMessage(buildUpdateErrorMessage(error)),
     })
@@ -674,12 +580,6 @@ const OccurrencesPanel = ({ classId, dateFrom, dateTo, initialOccurrenceId, forc
 
   return (
     <>
-      {!isAdmin && (
-        <CAlert color="warning" className="mb-3">
-          Modo de leitura: apenas admin pode confirmar decisões operacionais.
-        </CAlert>
-      )}
-
       {editingOccurrence && (
         <EditOccurrenceModal
           occurrence={editingOccurrence}
@@ -709,43 +609,15 @@ const OccurrencesPanel = ({ classId, dateFrom, dateTo, initialOccurrenceId, forc
 
       <div className="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
         <div className="text-muted small">
-          {forcedFilter === 'pending' && `${pendingCount} pendentes`}
-          {forcedFilter === 'historical' && `${resolvedCount} no histórico`}
-          {!forcedFilter && `${pendingCount} pendentes, ${resolvedCount} resolvidas`}
+          {mode === 'pending' ? `${pendingCount} pendentes` : `${resolvedCount} no histórico`}
         </div>
-        {/* Show filter buttons only when no forcedFilter (standalone mode) */}
-        {!forcedFilter && (
-          <CButtonGroup size="sm" role="group" aria-label="Filtro de resolução">
-            <CButton
-              color={resolutionFilter === 'pending' ? 'primary' : 'secondary'}
-              variant={resolutionFilter === 'pending' ? undefined : 'outline'}
-              onClick={() => setResolutionFilter('pending')}
-            >
-              {RESOLUTION_FILTERS.pending} ({pendingCount})
-            </CButton>
-            <CButton
-              color={resolutionFilter === 'historical' ? 'primary' : 'secondary'}
-              variant={resolutionFilter === 'historical' ? undefined : 'outline'}
-              onClick={() => setResolutionFilter('historical')}
-            >
-              {RESOLUTION_FILTERS.historical} ({resolvedCount})
-            </CButton>
-            <CButton
-              color={resolutionFilter === 'all' ? 'primary' : 'secondary'}
-              variant={resolutionFilter === 'all' ? undefined : 'outline'}
-              onClick={() => setResolutionFilter('all')}
-            >
-              {RESOLUTION_FILTERS.all} ({sortedOccurrences.length})
-            </CButton>
-          </CButtonGroup>
-        )}
       </div>
 
       {visibleOccurrences.length === 0 && (
         <CAlert color="light" className="mb-0">
-          {resolutionFilter === 'pending' && 'Sem ocorrências pendentes com os filtros atuais.'}
-          {resolutionFilter === 'historical' && 'Sem ocorrências no histórico com os filtros atuais.'}
-          {resolutionFilter === 'all' && 'Sem ocorrências para apresentar.'}
+          {mode === 'pending'
+            ? 'Sem ocorrências pendentes com os filtros atuais.'
+            : 'Sem ocorrências no histórico com os filtros atuais.'}
         </CAlert>
       )}
 
@@ -886,63 +758,37 @@ const OccurrencesPanel = ({ classId, dateFrom, dateTo, initialOccurrenceId, forc
   )
 }
 
-OccurrencesPanel.propTypes = {
-  classId: PropTypes.oneOfType([PropTypes.number, PropTypes.string]),
-  dateFrom: PropTypes.string,
-  dateTo: PropTypes.string,
-  initialOccurrenceId: PropTypes.number,
-  forcedFilter: PropTypes.string,
-}
-
 // ---------------------------------------------------------------------------
 // Página principal
 // ---------------------------------------------------------------------------
 const Occurrences = () => {
   const [searchParams, setSearchParams] = useSearchParams()
 
-  const initialClassFilter = searchParams.get('class_id') ?? ''
-  const initialDateFrom = searchParams.get('date_from') ?? ''
-  const initialDateTo = searchParams.get('date_to') ?? ''
+  const classFilter = searchParams.get('class_id') ?? ''
+  const dateFrom = searchParams.get('date_from') ?? ''
+  const dateTo = searchParams.get('date_to') ?? ''
   const parsedOccurrenceId = Number.parseInt(searchParams.get('occurrence_id') ?? '', 10)
   const initialOccurrenceId = Number.isNaN(parsedOccurrenceId) ? undefined : parsedOccurrenceId
   const statusParam = searchParams.get('status') ?? ''
   const tabParam = searchParams.get('tab') ?? ''
+  const activeTab = VALID_TABS.has(tabParam)
+    ? tabParam
+    : ['GAP', 'SUBSTITUTED', 'GIVEN', 'REVOKED'].includes(statusParam.toUpperCase())
+      ? 'historical'
+      : 'occurrences'
 
-  const [classFilter, setClassFilter] = useState(initialClassFilter)
-  const [dateFrom, setDateFrom] = useState(initialDateFrom)
-  const [dateTo, setDateTo] = useState(initialDateTo)
-  const [activeTab, setActiveTab] = useState(
-    tabParam && ['occurrences', 'historical', 'debts'].includes(tabParam)
-      ? tabParam
-      : ['GAP', 'SUBSTITUTED', 'GIVEN', 'REVOKED'].includes(statusParam.toUpperCase())
-        ? 'historical'
-        : 'occurrences'
-  )
-
-  const handleTabChange = (tab) => {
-    setActiveTab(tab)
-    setSearchParams(prev => {
-      const next = new URLSearchParams(prev)
-      next.set('tab', tab)
+  const updateSearchParam = (name, value) => {
+    setSearchParams((previous) => {
+      const next = new URLSearchParams(previous)
+      if (value) next.set(name, value)
+      else next.delete(name)
       return next
-    }, { replace: true })
+    })
   }
 
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setClassFilter(initialClassFilter)
-    setDateFrom(initialDateFrom)
-    setDateTo(initialDateTo)
-    if (tabParam && ['occurrences', 'historical', 'debts'].includes(tabParam)) {
-      setActiveTab(tabParam)
-    } else {
-      setActiveTab(
-        ['GAP', 'SUBSTITUTED', 'GIVEN', 'REVOKED'].includes(statusParam.toUpperCase())
-          ? 'historical'
-          : 'occurrences'
-      )
-    }
-  }, [initialClassFilter, initialDateFrom, initialDateTo, statusParam, tabParam])
+  const handleTabChange = (tab) => {
+    if (VALID_TABS.has(tab)) updateSearchParam('tab', tab)
+  }
 
   const { data: classes = EMPTY_ARRAY } = useClasses()
 
@@ -960,7 +806,7 @@ const Occurrences = () => {
               <CFormSelect
                 id="classFilterOcc"
                 value={classFilter}
-                onChange={(e) => setClassFilter(e.target.value)}
+                onChange={(e) => updateSearchParam('class_id', e.target.value)}
               >
                 <option value="">— Todas as turmas —</option>
                 {[...classes].sort((a, b) => a.name.localeCompare(b.name)).map(c => (
@@ -974,7 +820,7 @@ const Occurrences = () => {
                 id="dateFromFilter"
                 type="date"
                 value={dateFrom}
-                onChange={(e) => setDateFrom(e.target.value)}
+                onChange={(e) => updateSearchParam('date_from', e.target.value)}
               />
             </CCol>
             <CCol md={3}>
@@ -983,7 +829,7 @@ const Occurrences = () => {
                 id="dateToFilter"
                 type="date"
                 value={dateTo}
-                onChange={(e) => setDateTo(e.target.value)}
+                onChange={(e) => updateSearchParam('date_to', e.target.value)}
               />
             </CCol>
           </CRow>
@@ -1007,55 +853,26 @@ const Occurrences = () => {
           </CTab>
         </CTabList>
 
-        <CTabContent>
-          {/* Tab: Decisões Pendentes */}
-          <CTabPanel className="p-0" itemKey="occurrences">
-            <CCard className="border-0 shadow-sm">
-              <CCardHeader className="bg-transparent fw-semibold">
-                Decisões Pendentes
-              </CCardHeader>
-              <CCardBody>
-                <OccurrencesPanel
-                  classId={classFilter}
-                  dateFrom={dateFrom}
-                  dateTo={dateTo}
-                  initialOccurrenceId={initialOccurrenceId}
-                  forcedFilter="pending"
-                />
-              </CCardBody>
-            </CCard>
-          </CTabPanel>
-
-          {/* Tab: Histórico */}
-          <CTabPanel className="p-0" itemKey="historical">
-            <CCard className="border-0 shadow-sm">
-              <CCardHeader className="bg-transparent fw-semibold">
-                Histórico de Ocorrências
-              </CCardHeader>
-              <CCardBody>
-                <OccurrencesPanel
-                  classId={classFilter}
-                  dateFrom={dateFrom}
-                  dateTo={dateTo}
-                  initialOccurrenceId={initialOccurrenceId}
-                  forcedFilter="historical"
-                />
-              </CCardBody>
-            </CCard>
-          </CTabPanel>
-
-          {/* Tab: Dívidas */}
-          <CTabPanel className="p-0" itemKey="debts">
-            <CCard className="border-0 shadow-sm">
-              <CCardHeader className="bg-transparent fw-semibold">
-                Resumo de Dívidas de Horas
-              </CCardHeader>
-              <CCardBody>
-                <DebtsPanel classId={classFilter} />
-              </CCardBody>
-            </CCard>
-          </CTabPanel>
-        </CTabContent>
+        <CCard className="border-0 shadow-sm">
+          <CCardHeader className="bg-transparent fw-semibold">
+            {activeTab === 'occurrences' && 'Decisões Pendentes'}
+            {activeTab === 'historical' && 'Histórico de Ocorrências'}
+            {activeTab === 'debts' && 'Resumo de Dívidas de Horas'}
+          </CCardHeader>
+          <CCardBody>
+            {activeTab === 'debts' ? (
+              <DebtsPanel classId={classFilter} />
+            ) : (
+              <OccurrencesPanel
+                classId={classFilter}
+                dateFrom={dateFrom}
+                dateTo={dateTo}
+                initialOccurrenceId={initialOccurrenceId}
+                mode={activeTab === 'historical' ? 'historical' : 'pending'}
+              />
+            )}
+          </CCardBody>
+        </CCard>
       </CTabs>
     </div>
   )

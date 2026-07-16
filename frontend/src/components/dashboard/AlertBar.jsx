@@ -1,4 +1,3 @@
-import React from 'react'
 import { useNavigate } from 'react-router-dom'
 import { CCol, CRow } from '@coreui/react'
 import CIcon from '@coreui/icons-react'

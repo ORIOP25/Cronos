@@ -1,20 +1,14 @@
 import { useState, useEffect } from 'react'
 import { useOrganization } from '@clerk/react'
 import { useNavigate, Link } from 'react-router-dom'
-import apiClient from '../apiClient'
 import { getApiErrorMessage } from '../utils/apiErrors'
+import { useCompleteOnboarding, useOnboardingStatus } from '../features/onboarding/data'
+import { toIsoDate } from '../utils/formatUtils'
 
-function toLocalDateInputValue(dateValue) {
-  const year = dateValue.getFullYear()
-  const month = String(dateValue.getMonth() + 1).padStart(2, '0')
-  const day = String(dateValue.getDate()).padStart(2, '0')
-  return `${year}-${month}-${day}`
-}
-
-const today = toLocalDateInputValue(new Date())
+const today = toIsoDate(new Date())
 const nextYearDate = new Date()
 nextYearDate.setFullYear(nextYearDate.getFullYear() + 1)
-const nextYear = toLocalDateInputValue(nextYearDate)
+const nextYear = toIsoDate(nextYearDate)
 
 function IconCalendar() {
   return (
@@ -40,7 +34,8 @@ export default function Onboarding() {
   const { organization } = useOrganization()
   const navigate = useNavigate()
 
-  const [status, setStatus] = useState({ loading: true, complete: false })
+  const statusQuery = useOnboardingStatus()
+  const completeOnboarding = useCompleteOnboarding()
   const [form, setForm] = useState({
     school_start_date: today,
     school_hard_end_date: nextYear,
@@ -48,36 +43,21 @@ export default function Onboarding() {
     lunch_end: '14:00',
     lunch_min_duration: 60,
   })
-  const [error, setError] = useState(null)
-  const [submitting, setSubmitting] = useState(false)
-
   useEffect(() => {
-    apiClient
-      .get('/onboarding/status')
-      .then((res) => {
-        setStatus({ loading: false, complete: res.data.onboarding_complete })
-        if (res.data.onboarding_complete) {
-          navigate('/dashboard', { replace: true })
-        }
-      })
-      .catch(() => setStatus({ loading: false, complete: false }))
-  }, [navigate])
+    if (statusQuery.data?.onboarding_complete) {
+      navigate('/dashboard', { replace: true })
+    }
+  }, [navigate, statusQuery.data?.onboarding_complete])
 
   const handleSubmit = async (e) => {
     e.preventDefault()
-    setError(null)
-    setSubmitting(true)
     try {
-      await apiClient.post('/onboarding', form)
+      await completeOnboarding.mutateAsync(form)
       navigate('/dashboard', { replace: true })
-    } catch (err) {
-      setError(getApiErrorMessage(err, 'Erro ao guardar configurações. Tente novamente.'))
-    } finally {
-      setSubmitting(false)
-    }
+    } catch { /* mutation state renders the error */ }
   }
 
-  if (status.loading) {
+  if (statusQuery.isLoading) {
     return (
       <div className="zen-onboarding-loading">
         <div className="zen-onboarding-loading-text">
@@ -94,7 +74,18 @@ export default function Onboarding() {
     )
   }
 
-  if (status.complete) {
+  if (statusQuery.isError) {
+    return (
+      <div className="zen-onboarding-loading" role="alert">
+        <div className="zen-onboarding-loading-text">Não foi possível carregar a configuração.</div>
+        <button type="button" className="zen-btn-primary" onClick={() => statusQuery.refetch()}>
+          Tentar novamente
+        </button>
+      </div>
+    )
+  }
+
+  if (statusQuery.data?.onboarding_complete) {
     return (
       <div className="zen-onboarding-loading">
         <div className="zen-onboarding-loading-text">
@@ -228,9 +219,9 @@ export default function Onboarding() {
           </div>
         </div>
 
-        {error && (
+        {completeOnboarding.isError && (
           <div className="zen-onboarding-error zen-reveal" role="alert">
-            {error}
+            {getApiErrorMessage(completeOnboarding.error, 'Erro ao guardar configurações. Tente novamente.')}
           </div>
         )}
 
@@ -238,10 +229,10 @@ export default function Onboarding() {
           <button
             type="submit"
             className="zen-btn-primary"
-            disabled={submitting}
+            disabled={completeOnboarding.isPending}
             style={{ display: 'inline-flex', alignItems: 'center', gap: 10 }}
           >
-            {submitting ? 'A guardar…' : 'Guardar e Começar'}
+            {completeOnboarding.isPending ? 'A guardar…' : 'Guardar e Começar'}
             <svg
               width="16"
               height="16"
@@ -249,7 +240,7 @@ export default function Onboarding() {
               fill="none"
               stroke="currentColor"
               strokeWidth="2"
-              style={{ opacity: submitting ? 0.5 : 1 }}
+              style={{ opacity: completeOnboarding.isPending ? 0.5 : 1 }}
             >
               <path d="M6 4 L10 8 L6 12" />
             </svg>

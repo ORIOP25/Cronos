@@ -1,56 +1,38 @@
-import React, { useState } from 'react'
+import { useState } from 'react'
 import PageHeader from '../components/PageHeader'
-import {
-  CCard, CCardBody, CButton, CAlert, CBadge 
-} from '@coreui/react'
+import { CButton, CAlert } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
 import { cilPlus } from '@coreui/icons'
-import { useQueryClient } from '@tanstack/react-query'
 
 import SmartTable from '../components/SmartTable'
 import GenericModalForm from '../components/GenericModalForm'
 import SubjectForm from '../components/Forms/SubjectForm'
+import RoomTypeBadge from '../components/RoomTypeBadge'
 import { getApiErrorMessage } from '../utils/apiErrors'
 
 // Hooks de Dados
 import {
   useSubjects,
-  useCreateEntity, 
-  useUpdateEntity, 
-  useDeleteEntity 
-} from '../hooks/useSchoolData'
+  useCreateSubject,
+  useUpdateSubject,
+  useDeleteSubject,
+} from '../features/catalog/data'
 
 const Subjects = () => {
   const [modalVisible, setModalVisible] = useState(false)
   const [selectedItem, setSelectedItem] = useState(null)
-  const queryClient = useQueryClient()
 
   // 1. Acesso aos Dados
   const { data: subjects, isLoading, isError, error, refetch } = useSubjects()
-  const createMutation = useCreateEntity('subjects')
-  const updateMutation = useUpdateEntity('subjects')
-  const deleteMutation = useDeleteEntity('subjects')
+  const createMutation = useCreateSubject()
+  const updateMutation = useUpdateSubject()
+  const deleteMutation = useDeleteSubject()
 
   // 2. Definição das Colunas
   const columns = [
     { key: 'name', label: 'Disciplina' },
-    { key: 'room_badge', label: 'Requisito de Sala' }
+    { key: 'required_room_type', label: 'Requisito de Sala', render: (subject) => <RoomTypeBadge type={subject.required_room_type} /> }
   ]
-
-  // 3. Transformação (ViewModel)
-  const tableData = (subjects || []).map(s => ({
-    ...s,
-    room_badge: getRoomBadge(s.required_room_type)
-  }))
-
-  function getRoomBadge(type) {
-    switch (type) {
-      case 'gym': return <CBadge color="warning" shape="rounded-pill">Ginásio</CBadge>
-      case 'lab': return <CBadge color="info" shape="rounded-pill">Laboratório</CBadge>
-      case 'art': return <CBadge color="danger" shape="rounded-pill">Artes</CBadge>
-      default: return <CBadge color="light" className="text-dark">Sala Normal</CBadge>
-    }
-  }
 
   // --- Handlers ---
 
@@ -67,9 +49,7 @@ const Subjects = () => {
     setModalVisible(true)
   }
 
-  const handleDelete = (id) => {
-    deleteMutation.mutate(id)
-  }
+  const handleDelete = (id) => deleteMutation.mutateAsync(id)
 
   const handleFormSubmit = async (formData) => {
     try {
@@ -80,7 +60,6 @@ const Subjects = () => {
       }
       setModalVisible(false)
       // Invalidar cache de cursos (incluem dados de disciplinas/módulos)
-      queryClient.invalidateQueries({ queryKey: ['courses'] })
     } catch {
       // Erro é tratado pelo mutation (mostrado no GenericModalForm)
     }
@@ -111,11 +90,9 @@ const Subjects = () => {
         </CAlert>
       )}
 
-      <CCard className="border-0 shadow-sm">
-        <CCardBody className="p-0">
-          <SmartTable
+      <SmartTable
             columns={columns}
-            data={tableData}
+            data={subjects || []}
             isLoading={isLoading}
             isError={isError}
             error={error}
@@ -123,9 +100,8 @@ const Subjects = () => {
             actions={true}
             onEdit={handleEdit}
             onDelete={handleDelete}
+            getRowLabel={(subject) => subject.name}
           />
-        </CCardBody>
-      </CCard>
 
       {/* MODAL COM WIZARD (Opção A: Criação com módulos) */}
       <GenericModalForm

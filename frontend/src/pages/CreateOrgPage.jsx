@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useOrganizationList } from '@clerk/react'
 import BrandPanel from '../components/auth/BrandPanel'

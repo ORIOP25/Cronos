@@ -25,9 +25,10 @@ import {
   useResendMemberInvitation,
   useRestoreMember,
   useRetryMemberSync,
-  useSubjects,
   useUpdateMember,
-} from '../hooks/useSchoolData'
+} from '../features/members/data'
+import { useSubjects } from '../features/catalog/data'
+import ConfirmationModal from '../components/ConfirmationModal'
 
 const emptyDraft = {
   organization_display_name: '',
@@ -339,26 +340,17 @@ const Members = () => {
           </tbody>
         </table>
       </div>
-      <CModal visible={Boolean(removeTarget)} onClose={() => setRemoveTarget(null)} alignment="center">
-        <CModalHeader>
-          <CModalTitle>Remover membro</CModalTitle>
-        </CModalHeader>
-        <CModalBody>
-          {removeTarget && (
-            <p className="mb-0">
-              {removeTarget.remove_effect === 'hard_delete'
-                ? `Este membro ainda nao tem historico e sera removido definitivamente.`
-                : `Este membro tem historico e sera arquivado para preservar horarios, aulas e auditoria.`}
-            </p>
-          )}
-        </CModalBody>
-        <CModalFooter>
-          <CButton color="secondary" variant="outline" onClick={() => setRemoveTarget(null)} disabled={removeMember.isPending}>Cancelar</CButton>
-          <CButton color="danger" onClick={remove} disabled={removeMember.isPending}>
-            {removeMember.isPending && <CSpinner size="sm" className="me-2" />}Remover
-          </CButton>
-        </CModalFooter>
-      </CModal>
+      <ConfirmationModal
+        visible={Boolean(removeTarget)}
+        onClose={() => setRemoveTarget(null)}
+        onConfirm={() => void remove()}
+        title="Remover membro"
+        message={removeTarget?.remove_effect === 'hard_delete'
+          ? 'Este membro ainda não tem histórico e será removido definitivamente.'
+          : 'Este membro tem histórico e será arquivado para preservar horários, aulas e auditoria.'}
+        confirmText="Remover"
+        isLoading={removeMember.isPending}
+      />
       <MemberModal
         visible={modalVisible}
         member={selectedMember}

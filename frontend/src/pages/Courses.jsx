@@ -1,9 +1,7 @@
-import React, { useState } from 'react'
+import { useState } from 'react'
 import PageHeader from '../components/PageHeader'
 import { useNavigate } from 'react-router-dom'
-import { 
-  CCard, CCardBody, CButton, CAlert, CBadge
-} from '@coreui/react'
+import { CButton, CAlert, CBadge } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
 import { cilPlus } from '@coreui/icons'
 
@@ -14,8 +12,8 @@ import { getApiErrorMessage } from '../utils/apiErrors'
 
 import { 
   useCourses,
-  useCreateEntity,
-} from '../hooks/useSchoolData'
+  useCreateCourse,
+} from '../features/catalog/data'
 
 const Courses = () => {
   const navigate = useNavigate()
@@ -23,7 +21,7 @@ const Courses = () => {
 
   // 1. Hooks de Dados
   const { data: courses, isLoading, isError, error, refetch } = useCourses()
-  const createMutation = useCreateEntity('courses')
+  const createMutation = useCreateCourse()
 
   // 2. Colunas da Tabela
   const columns = [
@@ -35,17 +33,11 @@ const Courses = () => {
       _style: { width: '12%' },
       render: (item) => (
         <CBadge color="success" shape="rounded-pill">
-          {item.classes_count}
+          {item.classes?.length ?? 0}
         </CBadge>
       )
     },
   ]
-
-  // 3. Transformação de Dados (ViewModel)
-  const tableData = (courses || []).map(c => ({
-    ...c,
-    classes_count: c.classes ? c.classes.length : 0,
-  }))
 
   // --- HANDLERS ---
 
@@ -85,19 +77,16 @@ const Courses = () => {
       )}
 
       {/* TABELA */}
-      <CCard className="border-0 shadow-sm">
-        <CCardBody className="p-0">
-          <SmartTable
+      <SmartTable
             columns={columns}
-            data={tableData}
+            data={courses || []}
             isLoading={isLoading}
             isError={isError}
             error={error}
             onRetry={() => refetch()}
             onRowClick={handleRowClick}
+            getRowLabel={(course) => course.name}
           />
-        </CCardBody>
-      </CCard>
 
       {/* MODAL WIZARD (apenas criação — edição via CourseDetails) */}
       <GenericModalForm

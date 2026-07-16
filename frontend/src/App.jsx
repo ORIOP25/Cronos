@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react'
+import { lazy, Suspense, useEffect } from 'react'
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
 import { Show, useAuth } from '@clerk/react'
 
@@ -10,27 +10,27 @@ import ForgotPasswordPage from './pages/ForgotPasswordPage'
 import CreateOrgPage from './pages/CreateOrgPage'
 import NotFoundPage from './pages/NotFoundPage'
 
-const Dashboard = React.lazy(() => import('./pages/Dashboard'))
-const MyAvailability = React.lazy(() => import('./pages/MyAvailability'))
-const MyProgress = React.lazy(() => import('./pages/MyProgress'))
-const MySchedules = React.lazy(() => import('./pages/MySchedules'))
-const Members = React.lazy(() => import('./pages/Members'))
-const Rooms = React.lazy(() => import('./pages/Rooms'))
-const Subjects = React.lazy(() => import('./pages/Subjects'))
-const SchoolConfig = React.lazy(() => import('./pages/SchoolConfig'))
-const Schedules = React.lazy(() => import('./pages/Schedules'))
-const Occurrences = React.lazy(() => import('./pages/Occurrences'))
-const Timesheets = React.lazy(() => import('./pages/Timesheets'))
-const Courses = React.lazy(() => import('./pages/Courses'))
-const CourseDetails = React.lazy(() => import('./pages/CourseDetails'))
-const ClassDetails = React.lazy(() => import('./pages/ClassDetails'))
-const ClassSubjects = React.lazy(() => import('./pages/ClassSubjects'))
-const Onboarding = React.lazy(() => import('./pages/Onboarding'))
+const Dashboard = lazy(() => import('./pages/Dashboard'))
+const MyAvailability = lazy(() => import('./pages/MyAvailability'))
+const MyProgress = lazy(() => import('./pages/MyProgress'))
+const MySchedules = lazy(() => import('./pages/MySchedules'))
+const Members = lazy(() => import('./pages/Members'))
+const Rooms = lazy(() => import('./pages/Rooms'))
+const Subjects = lazy(() => import('./pages/Subjects'))
+const SchoolConfig = lazy(() => import('./pages/SchoolConfig'))
+const Schedules = lazy(() => import('./pages/Schedules'))
+const Occurrences = lazy(() => import('./pages/Occurrences'))
+const Timesheets = lazy(() => import('./pages/Timesheets'))
+const Courses = lazy(() => import('./pages/Courses'))
+const CourseDetails = lazy(() => import('./pages/CourseDetails'))
+const ClassDetails = lazy(() => import('./pages/ClassDetails'))
+const ClassSubjects = lazy(() => import('./pages/ClassSubjects'))
+const Onboarding = lazy(() => import('./pages/Onboarding'))
+const MarketingSite = lazy(() => import('./pages/MarketingSite'))
 
 import DefaultLayout from './components/DefaultLayout'
-import { MarketingSite } from './pages/MarketingSite'
 import { ROUTE_MY_SCHEDULES } from './roleAccess'
-import { LazyPage, RequireAdmin, RequireAuth, RequireTeacher, SignedInRedirect } from './routeGuards'
+import { PageLoader, RequireAdmin, RequireAuth, RequireTeacher, SignedInRedirect } from './routeGuards'
 
 function App() {
   const { getToken, isLoaded } = useAuth()
@@ -38,12 +38,15 @@ function App() {
   useEffect(() => {
     if (isLoaded && getToken) {
       setClerkTokenGetter(getToken)
+      return () => setClerkTokenGetter(() => Promise.resolve(null))
     }
+    return undefined
   }, [isLoaded, getToken])
 
   return (
     <Router>
-      <Routes>
+      <Suspense fallback={<PageLoader />}>
+        <Routes>
         <Route path="/" element={
           <Show when="signed-out" fallback={<SignedInRedirect />}>
             <MarketingSite />
@@ -61,29 +64,34 @@ function App() {
         } />
 
         <Route path="/onboarding" element={
-          <RequireAdmin><LazyPage><Onboarding /></LazyPage></RequireAdmin>
+          <RequireAdmin><Onboarding /></RequireAdmin>
         } />
 
         <Route element={<RequireAuth><DefaultLayout /></RequireAuth>}>
-          <Route path="dashboard" element={<RequireAdmin><LazyPage><Dashboard /></LazyPage></RequireAdmin>} />
-          <Route path="members" element={<RequireAdmin><LazyPage><Members /></LazyPage></RequireAdmin>} />
-          <Route path="rooms" element={<RequireAdmin><LazyPage><Rooms /></LazyPage></RequireAdmin>} />
-          <Route path="subjects" element={<RequireAdmin><LazyPage><Subjects /></LazyPage></RequireAdmin>} />
-          <Route path="courses" element={<RequireAdmin><LazyPage><Courses /></LazyPage></RequireAdmin>} />
-          <Route path="courses/:id" element={<RequireAdmin><LazyPage><CourseDetails /></LazyPage></RequireAdmin>} />
-          <Route path="courses/:courseId/classes/:classId" element={<RequireAdmin><LazyPage><ClassDetails /></LazyPage></RequireAdmin>} />
-          <Route path="courses/:courseId/classes/:classId/subjects" element={<RequireAdmin><LazyPage><ClassSubjects /></LazyPage></RequireAdmin>} />
-          <Route path="config" element={<RequireAdmin><LazyPage><SchoolConfig /></LazyPage></RequireAdmin>} />
-          <Route path="schedules" element={<RequireAdmin><LazyPage><Schedules /></LazyPage></RequireAdmin>} />
-          <Route path={ROUTE_MY_SCHEDULES.slice(1)} element={<RequireTeacher><LazyPage><MySchedules /></LazyPage></RequireTeacher>} />
-          <Route path="my-progress" element={<RequireTeacher><LazyPage><MyProgress /></LazyPage></RequireTeacher>} />
-          <Route path="absences" element={<RequireAdmin><LazyPage><Occurrences /></LazyPage></RequireAdmin>} />
-          <Route path="timesheets" element={<RequireAdmin><LazyPage><Timesheets /></LazyPage></RequireAdmin>} />
-          <Route path="my-availability" element={<RequireTeacher><LazyPage><MyAvailability /></LazyPage></RequireTeacher>} />
+          <Route element={<RequireAdmin />}>
+            <Route path="dashboard" element={<Dashboard />} />
+            <Route path="members" element={<Members />} />
+            <Route path="rooms" element={<Rooms />} />
+            <Route path="subjects" element={<Subjects />} />
+            <Route path="courses" element={<Courses />} />
+            <Route path="courses/:id" element={<CourseDetails />} />
+            <Route path="courses/:courseId/classes/:classId" element={<ClassDetails />} />
+            <Route path="courses/:courseId/classes/:classId/subjects" element={<ClassSubjects />} />
+            <Route path="config" element={<SchoolConfig />} />
+            <Route path="schedules" element={<Schedules />} />
+            <Route path="absences" element={<Occurrences />} />
+            <Route path="timesheets" element={<Timesheets />} />
+          </Route>
+          <Route element={<RequireTeacher />}>
+            <Route path={ROUTE_MY_SCHEDULES.slice(1)} element={<MySchedules />} />
+            <Route path="my-progress" element={<MyProgress />} />
+            <Route path="my-availability" element={<MyAvailability />} />
+          </Route>
         </Route>
 
         <Route path="*" element={<NotFoundPage />} />
-      </Routes>
+        </Routes>
+      </Suspense>
     </Router>
   )
 }

@@ -1,29 +1,15 @@
-import React, { useState, useEffect } from 'react'
-import PropTypes from 'prop-types'
+import { useState } from 'react'
 import {
   CForm, CRow, CCol, CFormInput, CButton, CModalFooter, CFormSelect
 } from '@coreui/react'
+import { ROOM_TYPES } from '../../utils/presentation'
 
 const RoomForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
-  const [formData, setFormData] = useState({ 
-    name: '', 
-    type: 'normal',
-    capacity: 30
-  })
-
-  /* eslint-disable react-hooks/set-state-in-effect */
-  useEffect(() => {
-    if (initialData) {
-      setFormData({
-        name: initialData.name || '',
-        type: initialData.type || 'normal',
-        capacity: initialData.capacity || 30
-      })
-    } else {
-        setFormData({ name: '', type: 'normal', capacity: 30 })
-    }
-  }, [initialData])
-  /* eslint-enable react-hooks/set-state-in-effect */
+  const [formData, setFormData] = useState(() => ({
+    name: initialData?.name || '',
+    type: initialData?.type || 'normal',
+    capacity: initialData?.capacity || 30,
+  }))
 
   const handleChange = (e) => {
     const { name, value } = e.target
@@ -82,10 +68,7 @@ const RoomForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
             value={formData.type}
             onChange={handleChange}
           >
-            <option value="normal">Sala de Aula Normal</option>
-            <option value="lab">Laboratório</option>
-            <option value="gym">Ginásio / Desporto</option>
-            <option value="art">Artes / Atelier</option>
+            {Object.entries(ROOM_TYPES).map(([value, metadata]) => <option key={value} value={value}>{metadata.label}</option>)}
           </CFormSelect>
         </CCol>
       </CRow>
@@ -100,17 +83,6 @@ const RoomForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
       </CModalFooter>
     </CForm>
   )
-}
-
-RoomForm.propTypes = {
-  initialData: PropTypes.shape({
-    name: PropTypes.string,
-    type: PropTypes.string,
-    capacity: PropTypes.number,
-  }),
-  onSubmit: PropTypes.func.isRequired,
-  isLoading: PropTypes.bool,
-  onCancel: PropTypes.func.isRequired,
 }
 
 export default RoomForm

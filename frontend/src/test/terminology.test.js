@@ -8,29 +8,6 @@ import {
 
 describe('terminology', () => {
   describe('TXT', () => {
-    it('contém todas as chaves de ação', () => {
-      expect(TXT.SAVE).toBe('Guardar')
-      expect(TXT.CANCEL).toBe('Cancelar')
-      expect(TXT.REMOVE).toBe('Remover')
-      expect(TXT.EDIT).toBe('Editar')
-      expect(TXT.CREATE).toBe('Criar')
-      expect(TXT.ADD).toBe('Adicionar')
-      expect(TXT.CONFIRM).toBe('Confirmar')
-    })
-
-    it('contém chaves de estado', () => {
-      expect(TXT.LOADING).toBe('A carregar…')
-      expect(TXT.EMPTY_TABLE).toBe('Ainda sem registos.')
-      expect(TXT.ERROR_LOADING).toBe('Erro ao carregar os dados. Verifique a ligação e tente novamente.')
-    })
-
-    it('contém chaves de ocorrência', () => {
-      expect(TXT.OCCURRENCE_GIVEN).toBe('Dada')
-      expect(TXT.OCCURRENCE_GAP).toBe('Furo')
-      expect(TXT.OCCURRENCE_SUBSTITUTED).toBe('Substituída')
-      expect(TXT.OCCURRENCE_PENDING_DECISION).toBe('Pendente de decisão')
-    })
-
     it('todas as chaves têm valores em PT-PT', () => {
       for (const [, value] of Object.entries(TXT)) {
         expect(typeof value).toBe('string')

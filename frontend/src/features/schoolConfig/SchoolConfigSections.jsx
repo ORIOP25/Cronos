@@ -1,5 +1,4 @@
-import React, { useState, useEffect } from 'react'
-import PropTypes from 'prop-types'
+import { useState } from 'react'
 import {
   CCard, CCardBody, CCardHeader, CCol, CRow, CForm, CFormInput,
   CFormCheck, CFormLabel, CButton, CAlert, CBadge,
@@ -9,59 +8,45 @@ import {
 } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
 import { cilSave, cilTrash, cilCloudDownload, cilCalendar } from '@coreui/icons'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import apiClient from '../../apiClient'
 import { useOrganization } from '@clerk/react'
 import { formatDate } from '../../utils/formatUtils'
 import { TXT, EVENT_TYPE_LABELS } from '../../utils/terminology'
 import { getApiErrorMessage } from '../../utils/apiErrors'
 import {
-  DEFAULT_GRID_FORM_DATA,
   timeslotsToGridFormData,
   toGridConfigurationPayload,
   toSchoolSettingsPayload,
 } from '../../utils/schoolConfigPayloads'
 import { useTransientMessage } from '../../hooks/useTransientMessage'
+import { useTimeslots } from '../catalog/data'
+import {
+  useCalendarEvents,
+  useCreateCalendarEvent,
+  useDeleteCalendarEvent,
+  useGridSettings,
+  useRegenerateGrid,
+  useSchoolSettings,
+  useSoftResetSchoolYear,
+  useSyncHolidays,
+  useUpsertSchoolSettings,
+} from './data'
 
 export const CalendarSection = () => {
-  const queryClient = useQueryClient()
   const [newEvent, setNewEvent] = useState({
     name: '', start_date: '', end_date: '', event_type: 'school_break',
   })
   const { message: successMsg, show: setSuccessMsg } = useTransientMessage()
 
-  const { data: events = [], isLoading } = useQuery({
-    queryKey: ['calendar-events'],
-    queryFn: async () => {
-      const { data } = await apiClient.get('/school/calendar-events/')
-      return data
-    },
-  })
-
-  const syncMutation = useMutation({
-    mutationFn: () => apiClient.post('/school/settings/sync-holidays'),
-    onSuccess: () => {
-      setSuccessMsg(`Feriados nacionais importados com sucesso.`)
-      void queryClient.invalidateQueries({ queryKey: ['calendar-events'] })
-    },
-  })
-
-  const createMutation = useMutation({
-    mutationFn: (payload) => apiClient.post('/school/calendar-events/', payload),
-    onSuccess: () => {
-      setNewEvent({ name: '', start_date: '', end_date: '', event_type: 'school_break' })
-      void queryClient.invalidateQueries({ queryKey: ['calendar-events'] })
-    },
-  })
-
-  const deleteMutation = useMutation({
-    mutationFn: (id) => apiClient.delete(`/school/calendar-events/${id}`),
-    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['calendar-events'] }),
-  })
+  const { data: events = [], isLoading } = useCalendarEvents()
+  const syncMutation = useSyncHolidays()
+  const createMutation = useCreateCalendarEvent()
+  const deleteMutation = useDeleteCalendarEvent()
 
   const handleCreate = () => {
     if (!newEvent.name || !newEvent.start_date || !newEvent.end_date) return
-    createMutation.mutate(newEvent)
+    createMutation.mutate(newEvent, {
+      onSuccess: () => setNewEvent({ name: '', start_date: '', end_date: '', event_type: 'school_break' }),
+    })
   }
 
   let eventListContent
@@ -136,7 +121,9 @@ export const CalendarSection = () => {
           variant="outline"
           size="sm"
           disabled={syncMutation.isPending}
-          onClick={() => { syncMutation.mutate() }}
+          onClick={() => syncMutation.mutate(undefined, {
+            onSuccess: () => setSuccessMsg('Feriados nacionais importados com sucesso.'),
+          })}
         >
           <CIcon icon={cilCloudDownload} className="me-1" />
           {syncMutation.isPending ? 'A sincronizar...' : 'Sincronizar Feriados Nacionais'}
@@ -201,17 +188,27 @@ export const CalendarSection = () => {
     </div>
   )
 }
+function toSettingsForm(settings) {
+  return {
+    school_start_date: settings?.school_start_date || '',
+    school_hard_end_date: settings?.school_hard_end_date || '',
+    repair_stability_window_days: settings?.repair_stability_window_days?.toString() || '14',
+  }
+}
 
 export const SettingsSection = () => {
-  const queryClient = useQueryClient()
+  const { data: settings, isLoading } = useSchoolSettings()
+  if (isLoading) return <div className="d-flex justify-content-center p-5"><CSpinner /></div>
+
+  const editorKey = `${settings?.school_start_date ?? ''}:${settings?.school_hard_end_date ?? ''}:${settings?.repair_stability_window_days ?? ''}`
+  return <SettingsEditor key={editorKey} settings={settings} />
+}
+
+const SettingsEditor = ({ settings }) => {
   const { message: successMsg, show: setSuccessMsg } = useTransientMessage()
   const [savePromptMsg, setSavePromptMsg] = useState(null)
   const [saveConfirmationPending, setSaveConfirmationPending] = useState(false)
-  const [form, setForm] = useState({
-    school_start_date: '',
-    school_hard_end_date: '',
-    repair_stability_window_days: '14',
-  })
+  const [form, setForm] = useState(() => toSettingsForm(settings))
 
   // Soft-Reset state
   const [showResetModal, setShowResetModal] = useState(false)
@@ -219,60 +216,32 @@ export const SettingsSection = () => {
   const [resetChecked, setResetChecked] = useState(false)
   const [resetError, setResetError] = useState('')
 
-  const resetMutation = useMutation({
-    mutationFn: (payload) => apiClient.post('/school/settings/soft-reset', payload),
-    onSuccess: () => {
-      setSuccessMsg('Ano letivo recomeçado com sucesso. Todas as gerações, ocorrências e registos foram apagados.')
-      setShowResetModal(false)
-      setResetConfirmText('')
-      setResetChecked(false)
-      window.scrollTo(0, 0)
-    },
-    onError: (err) => {
-      setResetError(getApiErrorMessage(err, 'Erro ao recomeçar ano letivo.'))
-    }
-  })
+  const resetMutation = useSoftResetSchoolYear()
 
   const handleSoftReset = () => {
     setResetError('')
     if (resetConfirmText !== 'Confirmo' || !resetChecked) return
-    resetMutation.mutate({ confirm_phrase: resetConfirmText })
+    resetMutation.mutate({ confirm_phrase: resetConfirmText }, {
+      onSuccess: () => {
+        setSuccessMsg('Ano letivo recomeçado com sucesso. Todas as gerações, ocorrências e registos foram apagados.')
+        setShowResetModal(false)
+        setResetConfirmText('')
+        setResetChecked(false)
+        window.scrollTo(0, 0)
+      },
+      onError: (err) => {
+        setResetError(getApiErrorMessage(err, 'Erro ao recomeçar ano letivo.'))
+      },
+    })
   }
 
-  const { data: settings, isLoading } = useQuery({
-    queryKey: ['org-settings'],
-    queryFn: async () => {
-      const { data } = await apiClient.get('/school/settings/')
-      return data
-    },
-  })
-
-  /* eslint-disable react-hooks/set-state-in-effect */
-  useEffect(() => {
-    if (settings && Object.keys(settings).length > 0) {
-      setForm({
-        school_start_date: settings.school_start_date || '',
-        school_hard_end_date: settings.school_hard_end_date || '',
-        repair_stability_window_days: settings.repair_stability_window_days?.toString() || '14',
-      })
-    }
-  }, [settings])
-
-  useEffect(() => {
+  const updateForm = (field, value) => {
+    setForm((current) => ({ ...current, [field]: value }))
     setSaveConfirmationPending(false)
     setSavePromptMsg(null)
-  }, [form.school_start_date, form.school_hard_end_date, form.repair_stability_window_days])
-  /* eslint-enable react-hooks/set-state-in-effect */
+  }
 
-  const upsertMutation = useMutation({
-    mutationFn: (payload) => apiClient.post('/school/settings/', payload),
-    onSuccess: () => {
-      setSuccessMsg('Período letivo guardado com sucesso.')
-      setSavePromptMsg(null)
-      setSaveConfirmationPending(false)
-      void queryClient.invalidateQueries({ queryKey: ['org-settings'] })
-    },
-  })
+  const upsertMutation = useUpsertSchoolSettings()
 
   const handleSave = () => {
     if (!form.school_start_date || !form.school_hard_end_date) {
@@ -287,10 +256,14 @@ export const SettingsSection = () => {
       return
     }
 
-    upsertMutation.mutate(toSchoolSettingsPayload(form))
+    upsertMutation.mutate(toSchoolSettingsPayload(form), {
+      onSuccess: () => {
+        setSuccessMsg('Período letivo guardado com sucesso.')
+        setSavePromptMsg(null)
+        setSaveConfirmationPending(false)
+      },
+    })
   }
-
-  if (isLoading) return <div className="d-flex justify-content-center p-5"><CSpinner /></div>
 
   return (
     <div>
@@ -309,7 +282,7 @@ export const SettingsSection = () => {
             id="startDate"
             type="date"
             value={form.school_start_date}
-            onChange={(e) => setForm({ ...form, school_start_date: e.target.value })}
+            onChange={(e) => updateForm('school_start_date', e.target.value)}
             text="Data oficial de início do semestre"
           />
         </CCol>
@@ -319,7 +292,7 @@ export const SettingsSection = () => {
             id="hardEndDate"
             type="date"
             value={form.school_hard_end_date}
-            onChange={(e) => setForm({ ...form, school_hard_end_date: e.target.value })}
+            onChange={(e) => updateForm('school_hard_end_date', e.target.value)}
             text="Não há aulas após esta data"
           />
         </CCol>
@@ -330,7 +303,7 @@ export const SettingsSection = () => {
             type="number"
             min={0}
             value={form.repair_stability_window_days}
-            onChange={(e) => setForm({ ...form, repair_stability_window_days: e.target.value })}
+            onChange={(e) => updateForm('repair_stability_window_days', e.target.value)}
             text="Período em que se evita refazer horários"
           />
         </CCol>
@@ -401,28 +374,8 @@ export const SettingsSection = () => {
 
 export const GridSection = () => {
   const orgId = useOrganization().organization?.id
-  const settingsQuery = useQuery({
-    queryKey: ['org-grid-settings', orgId],
-    enabled: Boolean(orgId),
-    queryFn: async () => {
-      try {
-        const { data } = await apiClient.get('/school/grid-settings/')
-        return data
-      } catch (error) {
-        if (error.response?.status === 404) return null
-        throw error
-      }
-    },
-  })
-
-  const timeslotsQuery = useQuery({
-    queryKey: ['timeslots', orgId],
-    enabled: Boolean(orgId),
-    queryFn: async () => {
-      const { data } = await apiClient.get('/timeslots/')
-      return data
-    },
-  })
+  const settingsQuery = useGridSettings()
+  const timeslotsQuery = useTimeslots()
 
   if (settingsQuery.isLoading || timeslotsQuery.isLoading) {
     return <CButton color="primary" disabled>Guardar e Regenerar Grelha</CButton>
@@ -461,37 +414,11 @@ export const GridSection = () => {
 }
 
 const GridEditor = ({ orgId, initialFormData, initialGridSettings }) => {
-  const queryClient = useQueryClient()
   const { message: feedback, show: showFeedback, clear: clearFeedback } = useTransientMessage()
   const [formData, setFormData] = useState(initialFormData)
   const [gridSettings, setGridSettings] = useState(initialGridSettings)
 
-  const affectedQueryKeys = [
-    ['org-grid-settings', orgId],
-    ['timeslots', orgId],
-    ['my-availability', orgId],
-    ['heatmap', orgId],
-    ['weekSchedule', orgId],
-    ['dashboard', orgId],
-    ['scheduler-status', orgId],
-    ['scheduler-current-draft', orgId],
-  ]
-
-  const mutation = useMutation({
-    mutationFn: (payload) => apiClient.post('/school/grid-settings/regenerate', payload),
-    onSuccess: ({ data }) => {
-      showFeedback({ color: 'success', message: data.message })
-      affectedQueryKeys.forEach((queryKey) => {
-        void queryClient.invalidateQueries({ queryKey })
-      })
-    },
-    onError: (error) => {
-      showFeedback({
-        color: 'danger',
-        message: getApiErrorMessage(error, 'Erro ao guardar configuração da grelha.'),
-      }, 6000)
-    },
-  })
+  const mutation = useRegenerateGrid()
 
   const validateForm = () => {
     const duration = Number(formData.slot_duration_minutes)
@@ -525,7 +452,17 @@ const GridEditor = ({ orgId, initialFormData, initialGridSettings }) => {
       showFeedback({ color: 'danger', message: validationError }, 6000)
       return
     }
-    mutation.mutate(toGridConfigurationPayload({ formData, gridSettings }))
+    mutation.mutate(toGridConfigurationPayload({ formData, gridSettings }), {
+      onSuccess: (payload) => {
+        showFeedback({ color: 'success', message: payload.message })
+      },
+      onError: (error) => {
+        showFeedback({
+          color: 'danger',
+          message: getApiErrorMessage(error, 'Erro ao guardar configuração da grelha.'),
+        }, 6000)
+      },
+    })
   }
 
   const toggleDay = (idx) => {
@@ -593,20 +530,4 @@ const GridEditor = ({ orgId, initialFormData, initialGridSettings }) => {
       </CForm>
     </div>
   )
-}
-
-GridEditor.propTypes = {
-  orgId: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
-  initialFormData: PropTypes.shape({
-    start_time: PropTypes.string.isRequired,
-    end_time: PropTypes.string.isRequired,
-    slot_duration_minutes: PropTypes.number.isRequired,
-    break_duration_minutes: PropTypes.number.isRequired,
-    days: PropTypes.objectOf(PropTypes.bool).isRequired,
-  }).isRequired,
-  initialGridSettings: PropTypes.shape({
-    lunch_window_start: PropTypes.string.isRequired,
-    lunch_window_end: PropTypes.string.isRequired,
-    lunch_min_duration_minutes: PropTypes.number.isRequired,
-  }).isRequired,
 }

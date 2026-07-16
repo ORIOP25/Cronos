@@ -1,4 +1,3 @@
-import React from 'react'
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { screen, waitFor, fireEvent } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
@@ -37,7 +36,7 @@ describe('Onboarding', () => {
   })
 
   it('shows form when onboarding is incomplete', async () => {
-    apiClient.get.mockResolvedValueOnce({ data: { onboarding_complete: false, organization_name: 'Escola Onboard' } })
+    apiClient.get.mockResolvedValueOnce({ onboarding_complete: false, organization_name: 'Escola Onboard' })
     renderOnboarding()
     await waitFor(() => {
       expect(screen.getByText('Escola Onboard')).toBeInTheDocument()
@@ -48,7 +47,7 @@ describe('Onboarding', () => {
   })
 
   it('calls status API on mount', async () => {
-    apiClient.get.mockResolvedValueOnce({ data: { onboarding_complete: true, organization_name: 'Escola Onboard' } })
+    apiClient.get.mockResolvedValueOnce({ onboarding_complete: true, organization_name: 'Escola Onboard' })
     renderOnboarding()
     await waitFor(() => {
       expect(apiClient.get).toHaveBeenCalledWith('/onboarding/status')
@@ -61,8 +60,16 @@ describe('Onboarding', () => {
     expect(screen.getByText(/preparar a sua escola/i)).toBeInTheDocument()
   })
 
+  it('shows a retry state instead of an editable form when status loading fails', async () => {
+    apiClient.get.mockRejectedValueOnce(new Error('offline'))
+    renderOnboarding()
+
+    expect(await screen.findByRole('button', { name: /tentar novamente/i })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /guardar e come.ar/i })).not.toBeInTheDocument()
+  })
+
   it('redirects to dashboard when onboarding is already complete', async () => {
-    apiClient.get.mockResolvedValueOnce({ data: { onboarding_complete: true, organization_name: 'Escola Onboard' } })
+    apiClient.get.mockResolvedValueOnce({ onboarding_complete: true, organization_name: 'Escola Onboard' })
     renderOnboarding()
 
     await waitFor(() => {
@@ -71,8 +78,8 @@ describe('Onboarding', () => {
   })
 
   it('submits school settings and redirects to dashboard', async () => {
-    apiClient.get.mockResolvedValueOnce({ data: { onboarding_complete: false } })
-    apiClient.post.mockResolvedValueOnce({ data: { ok: true } })
+    apiClient.get.mockResolvedValueOnce({ onboarding_complete: false })
+    apiClient.post.mockResolvedValueOnce({ ok: true })
     renderOnboarding()
 
     await waitFor(() => {

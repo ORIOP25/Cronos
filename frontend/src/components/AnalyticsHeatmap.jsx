@@ -1,18 +1,13 @@
-import React from 'react'
-import { useQuery } from '@tanstack/react-query'
-import apiClient from '../apiClient'
 import { CSpinner, CTooltip } from '@coreui/react'
-import { useTimeslots } from '../hooks/useSchoolData'
+import { useTimeslots } from '../features/catalog/data'
+import { useAvailabilityHeatmap } from '../features/schoolConfig/data'
 
 const daysOfWeek = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"] // Nomes curtos
 
 const AnalyticsHeatmap = () => {
   const { data: timeslots } = useTimeslots()
 
-  const { data: heatmapData, isLoading } = useQuery({
-    queryKey: ['heatmap'],
-    queryFn: async () => (await apiClient.get('/analytics/availability-heatmap')).data
-  })
+  const { data: heatmapData, isLoading } = useAvailabilityHeatmap()
 
   // Cores quentes alinhadas com Retro Sunset
   const getSlotStyle = (stats) => {

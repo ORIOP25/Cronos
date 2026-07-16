@@ -1,16 +1,13 @@
-import React from 'react'
 import { useNavigate } from 'react-router-dom'
 import { CAlert } from '@coreui/react'
 import AnalyticsHeatmap from '../components/AnalyticsHeatmap'
-import {
-  AlertBar,
-  ResourceCounts,
-  ScheduleHealthCard,
-  ClassProgressOverview,
-  DebtSummaryCard,
-  QuickActions,
-} from '../components/dashboard'
-import { useDashboard } from '../hooks/useSchoolData'
+import AlertBar from '../components/dashboard/AlertBar'
+import ResourceCounts from '../components/dashboard/ResourceCounts'
+import ScheduleHealthCard from '../components/dashboard/ScheduleHealthCard'
+import ClassProgressOverview from '../components/dashboard/ClassProgressOverview'
+import DebtSummaryCard from '../components/dashboard/DebtSummaryCard'
+import QuickActions from '../components/dashboard/QuickActions'
+import { useDashboard } from '../features/operations/data'
 import PageHeader from '../components/PageHeader'
 import { getApiErrorMessage } from '../utils/apiErrors'
 

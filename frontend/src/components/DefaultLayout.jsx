@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { Outlet, NavLink, useLocation } from 'react-router-dom'
 import { useUser, useClerk } from '@clerk/react'
 import { ROUTE_MY_SCHEDULES } from '../roleAccess'
@@ -8,7 +8,7 @@ import CIcon from '@coreui/icons-react'
 import { 
   cilSpeedometer, cilCalendar, cilCheckCircle, cilPeople, 
   cilLibrary, cilEducation, cilRoom, cilSettings, cilUser,
-  cilMenu, cilChartPie
+  cilMenu, cilChartPie, cilAccountLogout
 } from '@coreui/icons'
 
 const SIDEBAR_WIDTH = 280
@@ -82,7 +82,7 @@ const DefaultLayout = () => {
   return (
     <div style={{ display: 'flex', minHeight: '100vh', backgroundColor: 'var(--rs-body-bg)' }}>
       {/* --- SIDEBAR --- */}
-      <aside style={{
+      <aside className={`zen-sidebar${collapsed ? ' is-collapsed' : ''}`} style={{
         width: `${currentWidth}px`,
         backgroundColor: 'var(--brand-950)',
         color: 'var(--rs-sidebar-text)',
@@ -176,118 +176,21 @@ const DefaultLayout = () => {
 
         {/* Rodapé da Sidebar */}
         <div style={{ marginTop: 'auto', paddingTop: '24px', borderTop: '1px solid rgba(255,255,255,0.05)' }}>
-          {!collapsed && (
-            <button
-              type="button"
-              onClick={() => openUserProfile()}
-              style={{ 
-                display: 'flex', 
-                border: 'none', 
-                textAlign: 'left', 
-                width: '100%',
-                alignItems: 'center', 
-                gap: '12px', 
-                padding: '12px',
-                backgroundColor: 'rgba(255,255,255,0.03)',
-                borderRadius: '8px',
-                marginBottom: '16px',
-                cursor: 'pointer',
-                transition: 'background-color 0.2s ease',
-              }}
-              onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.08)' }}
-              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.03)' }}
-              title="Gerir conta"
-            >
-              <div style={{ 
-                width: '36px', 
-                height: '36px', 
-                borderRadius: '4px', 
-                backgroundColor: 'var(--brand-800)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                color: '#ffffff',
-                fontWeight: '700',
-                flexShrink: 0,
-              }}>
-                {user?.primaryEmailAddress?.emailAddress?.[0]?.toUpperCase() || '?'}
-              </div>
-              <div style={{ overflow: 'hidden', flex: 1 }}>
-                <p style={{ fontSize: '0.85rem', color: 'var(--brand-50)', fontWeight: '600', margin: 0, textOverflow: 'ellipsis', whiteSpace: 'nowrap', overflow: 'hidden' }}>
-                  {user?.primaryEmailAddress?.emailAddress?.split('@')[0] || 'Convidado'}
-                </p>
-                <span className="zen-caps" style={{ color: 'var(--rs-sidebar-section)', fontSize: '0.6rem' }}>
-                  {getRoleLabel()}
-                </span>
-              </div>
-            </button>
-          )}
-          {collapsed && (
-            <button
-              type="button"
-              onClick={() => openUserProfile()}
-              style={{
-                display: 'flex',
-                border: 'none',
-                background: 'none',
-                justifyContent: 'center',
-                marginBottom: '16px',
-                cursor: 'pointer',
-              }}
-              title="Gerir conta"
-            >
-              <div style={{ 
-                width: '36px', 
-                height: '36px', 
-                borderRadius: '4px', 
-                backgroundColor: 'var(--brand-800)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                color: '#ffffff',
-                fontWeight: '700',
-              }}>
-                {user?.primaryEmailAddress?.emailAddress?.[0]?.toUpperCase() || '?'}
-              </div>
-            </button>
-          )}
+          <button type="button" onClick={() => openUserProfile()} className="zen-sidebar-profile" title="Gerir conta">
+            <div className="zen-sidebar-avatar">{user?.primaryEmailAddress?.emailAddress?.[0]?.toUpperCase() || '?'}</div>
+            <div className="zen-profile-details">
+              <p>{user?.primaryEmailAddress?.emailAddress?.split('@')[0] || 'Convidado'}</p>
+              <span className="zen-caps">{getRoleLabel()}</span>
+            </div>
+          </button>
 
           <button
             type="button"
             onClick={() => signOut()}
             title="Terminar sessão"
-            style={{
-              width: '100%',
-              background: 'none',
-              border: '1px solid rgba(255,255,255,0.08)',
-              color: 'rgba(251,244,231,0.5)',
-              cursor: 'pointer',
-              padding: collapsed ? '8px' : '8px 12px',
-              borderRadius: '4px',
-              fontSize: '0.78rem',
-              fontWeight: '500',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '6px',
-              transition: 'all 0.2s ease',
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.color = 'var(--brand-50)'
-              e.currentTarget.style.borderColor = 'rgba(255,255,255,0.15)'
-              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.04)'
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.color = 'rgba(251,244,231,0.5)'
-              e.currentTarget.style.borderColor = 'rgba(255,255,255,0.08)'
-              e.currentTarget.style.backgroundColor = 'transparent'
-            }}
+            className="zen-sidebar-logout"
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-              <polyline points="16 17 21 12 16 7" />
-              <line x1="21" y1="12" x2="9" y2="12" />
-            </svg>
+            <CIcon icon={cilAccountLogout} size="sm" />
             {!collapsed && 'Terminar sessão'}
           </button>
         </div>

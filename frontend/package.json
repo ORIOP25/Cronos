@@ -8,13 +8,14 @@
     "build": "vite build",
     "lint": "eslint . --max-warnings 0",
     "lint:dead-code": "knip --no-progress",
+    "lint:dead-code:production": "knip --production --no-progress",
     "preview": "vite preview",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
-    "verify": "npm run lint && npm run lint:dead-code && npm run test:coverage && npm run build",
+    "verify": "npm run lint && npm run lint:dead-code && npm run lint:dead-code:production && npm run test:coverage && npm run build",
     "test:school-config:stability": "node scripts/verify-school-config-stability.mjs"
   },
   "dependencies": {
@@ -25,7 +26,6 @@
     "@coreui/react": "^5.9.1",
     "@tanstack/react-query": "^5.90.8",
     "axios": "^1.18.1",
-    "prop-types": "^15.8.1",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-router-dom": "^7.18.1"

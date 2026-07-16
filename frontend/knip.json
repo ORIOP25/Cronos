@@ -1,11 +1,12 @@
 {
   "$schema": "https://unpkg.com/knip@latest/schema.json",
+  "ignoreExportsUsedInFile": true,
   "entry": [
     "e2e/global.setup.js",
     "src/test/**/*.{js,jsx}"
   ],
   "project": [
-    "src/**/*.{js,jsx}",
+    "src/**/*.{js,jsx}!",
     "e2e/**/*.js",
     "*.{js,jsx}"
   ]

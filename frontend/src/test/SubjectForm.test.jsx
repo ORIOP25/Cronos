@@ -1,148 +1,56 @@
-import { render, screen, fireEvent } from '@testing-library/react'
-import { describe, it, expect, vi } from 'vitest'
+import { fireEvent, render, screen } from '@testing-library/react'
+import { describe, expect, it, vi } from 'vitest'
 import SubjectForm from '../components/Forms/SubjectForm'
+import { EMPTY_MODULE, normalizeModule } from '../utils/subjectModules'
 
-const defaultProps = {
-  initialData: null,
-  onSubmit: vi.fn(),
-  isLoading: false,
-  onCancel: vi.fn(),
-}
+const renderForm = (props = {}) => render(<SubjectForm initialData={null} onSubmit={vi.fn()} onCancel={vi.fn()} isLoading={false} {...props} />)
 
-describe('SubjectForm wizard', () => {
-  it('renderiza passo 1 por defeito', () => {
-    render(<SubjectForm {...defaultProps} />)
-    expect(screen.getByText('1. Dados Gerais')).toBeInTheDocument()
-    expect(screen.getByPlaceholderText(/Matem/i)).toBeInTheDocument()
+describe('SubjectForm helpers', () => {
+  it('normalizes valid modules and rejects invalid ones', () => {
+    expect(EMPTY_MODULE).toEqual({ name: '', code: '', hours_total: '' })
+    expect(normalizeModule({ id: 7, name: ' M1 ', code: ' C1 ', hours_total: '25' })).toEqual({ id: 7, name: 'M1', code: 'C1', hours_total: 25 })
+    expect(normalizeModule({ name: 'M1', hours_total: '0' })).toBeNull()
+  })
+})
+
+describe('SubjectForm', () => {
+  it('shows both sections and initializes edit data lazily', () => {
+    renderForm({ initialData: { name: 'Matemática', required_room_type: 'lab', modules: [{ id: 1, name: 'M1', code: 'P01', hours_total: 25, order: 9 }] } })
+    expect(screen.getByRole('group', { name: 'Dados gerais' })).toBeInTheDocument()
+    expect(screen.getByRole('group', { name: 'Módulos' })).toBeInTheDocument()
+    expect(screen.getByLabelText(/nome da disciplina/i)).toHaveValue('Matemática')
+    expect(screen.getByLabelText(/sala preferencial/i)).toHaveValue('lab')
+    expect(screen.getByText(/M1.*P01.*25h/i)).toBeInTheDocument()
   })
 
-  it('mostra indicador dos dois passos', () => {
-    render(<SubjectForm {...defaultProps} />)
-    expect(screen.getByText('1. Dados Gerais')).toBeInTheDocument()
-    expect(screen.getByText(/2\./)).toBeInTheDocument()
-  })
-
-  it('avanca para modulos quando o nome esta preenchido', () => {
-    render(<SubjectForm {...defaultProps} />)
-
-    fireEvent.change(screen.getByPlaceholderText(/Matem/i), {
-      target: { value: 'Programacao' },
-    })
-    fireEvent.click(screen.getByRole('button', { name: /proximo|pr.ximo/i }))
-
-    expect(screen.getByText(/Adicionar M/i)).toBeInTheDocument()
-  })
-
-  it('nao avanca quando o nome tem apenas espacos', () => {
-    render(<SubjectForm {...defaultProps} />)
-
-    fireEvent.change(screen.getByPlaceholderText(/Matem/i), {
-      target: { value: '   ' },
-    })
-    fireEvent.click(screen.getByRole('button', { name: /proximo|pr.ximo/i }))
-
-    expect(screen.queryByText(/Adicionar M/i)).not.toBeInTheDocument()
-  })
-
-  it('mantem proximo desativado sem nome', () => {
-    render(<SubjectForm {...defaultProps} />)
-    expect(screen.getByRole('button', { name: /proximo|pr.ximo/i })).toBeDisabled()
-  })
-
-  it('mostra campos de modulo no passo 2', () => {
-    render(<SubjectForm {...defaultProps} />)
-
-    fireEvent.change(screen.getByPlaceholderText(/Matem/i), {
-      target: { value: 'Fisica' },
-    })
-    fireEvent.click(screen.getByRole('button', { name: /proximo|pr.ximo/i }))
-
-    expect(screen.getByPlaceholderText(/Geometria/i)).toBeInTheDocument()
-    expect(screen.getByPlaceholderText('001')).toBeInTheDocument()
-    expect(screen.getByPlaceholderText('H')).toBeInTheDocument()
-  })
-
-  it('submete payload limpo com modulos reordenados e horas numericas', () => {
+  it('adds, edits, removes, and orders modules only in the submit payload', () => {
     const onSubmit = vi.fn()
-    render(<SubjectForm {...defaultProps} onSubmit={onSubmit} />)
-
-    fireEvent.change(screen.getByPlaceholderText(/Matem/i), {
-      target: { value: ' Programacao ' },
-    })
-    fireEvent.click(screen.getByRole('button', { name: /proximo|pr.ximo/i }))
-    fireEvent.change(screen.getByPlaceholderText(/Geometria/i), {
-      target: { value: ' Modulo 1 ' },
-    })
-    fireEvent.change(screen.getByPlaceholderText('001'), {
-      target: { value: ' UFCD001 ' },
-    })
-    fireEvent.change(screen.getByPlaceholderText('H'), {
-      target: { value: '25' },
-    })
-    fireEvent.click(screen.getByRole('button', { name: /adicionar/i }))
-    fireEvent.click(screen.getByRole('button', { name: /guardar/i }))
-
+    renderForm({ onSubmit })
+    fireEvent.change(screen.getByLabelText(/nome da disciplina/i), { target: { value: ' Programação ' } })
+    fireEvent.change(screen.getByLabelText(/nome do módulo/i), { target: { value: ' M1 ' } })
+    fireEvent.change(screen.getByLabelText(/código UFCD/i), { target: { value: ' C1 ' } })
+    fireEvent.change(screen.getByLabelText(/horas/i), { target: { value: '25' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Adicionar' }))
+    fireEvent.click(screen.getByRole('button', { name: /editar M1/i }))
+    fireEvent.change(screen.getByLabelText(/nome do módulo/i), { target: { value: ' Módulo 1 ' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar' }))
+    fireEvent.click(screen.getByRole('button', { name: /guardar disciplina/i }))
     expect(onSubmit).toHaveBeenCalledWith({
-      name: 'Programacao',
+      name: 'Programação',
       required_room_type: 'normal',
-      modules: [
-        {
-          name: 'Modulo 1',
-          code: 'UFCD001',
-          hours_total: 25,
-          order: 0,
-        },
-      ],
+      modules: [{ name: 'Módulo 1', code: 'C1', hours_total: 25, order: 0 }],
     })
+    fireEvent.click(screen.getByRole('button', { name: /remover módulo 1/i }))
+    expect(screen.queryByText(/Módulo 1.*25h/i)).not.toBeInTheDocument()
   })
 
-  it('nao permite adicionar modulo com horas nao positivas', () => {
-    render(<SubjectForm {...defaultProps} />)
-
-    fireEvent.change(screen.getByPlaceholderText(/Matem/i), {
-      target: { value: 'Fisica' },
-    })
-    fireEvent.click(screen.getByRole('button', { name: /proximo|pr.ximo/i }))
-    fireEvent.change(screen.getByPlaceholderText(/Geometria/i), {
-      target: { value: 'Modulo invalido' },
-    })
-    fireEvent.change(screen.getByPlaceholderText('H'), {
-      target: { value: '0' },
-    })
-
-    expect(screen.getByRole('button', { name: /adicionar/i })).toBeDisabled()
-  })
-
-  it('dropdown de tipo de sala contem opcoes principais', () => {
-    render(<SubjectForm {...defaultProps} />)
-    const select = screen.getByRole('combobox')
-    expect(select).toHaveValue('normal')
-    expect([...select.options].map((option) => option.value)).toEqual(
-      expect.arrayContaining(['normal', 'lab', 'gym', 'art'])
-    )
-  })
-
-  it('popula campos na edicao', () => {
-    render(
-      <SubjectForm
-        {...defaultProps}
-        initialData={{
-          name: 'Matematica',
-          required_room_type: 'lab',
-          modules: [{ id: 1, name: 'M1', code: 'P01', hours_total: 25, order: 0 }],
-        }}
-      />
-    )
-
-    expect(screen.getByDisplayValue('Matematica')).toBeInTheDocument()
-    expect(screen.getByRole('combobox')).toHaveValue('lab')
-  })
-
-  it('botao cancelar chama onCancel', () => {
+  it('validates modules and supports cancel/loading', () => {
     const onCancel = vi.fn()
-    render(<SubjectForm {...defaultProps} onCancel={onCancel} />)
-
-    fireEvent.click(screen.getByText('Cancelar'))
-    expect(onCancel).toHaveBeenCalledTimes(1)
+    renderForm({ onCancel, isLoading: true })
+    fireEvent.click(screen.getByRole('button', { name: 'Adicionar' }))
+    expect(screen.getByRole('alert')).toHaveTextContent(/número de horas válido/i)
+    expect(screen.getByRole('button', { name: /a guardar/i })).toBeDisabled()
+    fireEvent.click(screen.getByRole('button', { name: /^cancelar$/i }))
+    expect(onCancel).toHaveBeenCalledOnce()
   })
 })

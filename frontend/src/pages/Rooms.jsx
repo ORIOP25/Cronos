@@ -1,58 +1,39 @@
-import React, { useState } from 'react'
+import { useState } from 'react'
 import PageHeader from '../components/PageHeader'
-import { 
-  CCard, CCardBody, CButton, CAlert, CBadge 
-} from '@coreui/react'
+import { CButton, CAlert, CBadge } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
 import { cilPlus } from '@coreui/icons'
 
 import SmartTable from '../components/SmartTable'
 import GenericModalForm from '../components/GenericModalForm'
 import RoomForm from '../components/Forms/RoomForm'
+import RoomTypeBadge from '../components/RoomTypeBadge'
 import { getApiErrorMessage } from '../utils/apiErrors'
 
 // Hooks (Factory)
 import { 
   useRooms, 
-  useCreateEntity, 
-  useUpdateEntity, 
-  useDeleteEntity 
-} from '../hooks/useSchoolData'
-
-function mapRoomType(type) {
-  const map = {
-    'normal': 'Normal',
-    'lab': 'Laboratório',
-    'gym': 'Ginásio',
-    'art': 'Artes'
-  }
-  return map[type] || type
-}
+  useCreateRoom,
+  useUpdateRoom,
+  useDeleteRoom,
+} from '../features/catalog/data'
 
 const Rooms = () => {
   const [modalVisible, setModalVisible] = useState(false)
   const [selectedItem, setSelectedItem] = useState(null)
 
   // 1. Hooks de Dados
-  // Nota: 'rooms' é a key que definimos no useSchoolData
   const { data: rooms, isLoading, isError, error, refetch } = useRooms()
-  const createMutation = useCreateEntity('rooms')
-  const updateMutation = useUpdateEntity('rooms')
-  const deleteMutation = useDeleteEntity('rooms')
+  const createMutation = useCreateRoom()
+  const updateMutation = useUpdateRoom()
+  const deleteMutation = useDeleteRoom()
 
   // 2. Colunas
   const columns = [
     { key: 'name', label: 'Sala' },
-    { key: 'capacity_badge', label: 'Lotação' },
-    { key: 'type_label', label: 'Tipo' }
+    { key: 'capacity', label: 'Lotação', render: (room) => <CBadge color="info">{room.capacity} alunos</CBadge> },
+    { key: 'type', label: 'Tipo', render: (room) => <RoomTypeBadge type={room.type} /> }
   ]
-
-  // 3. Transformação de Dados (ViewModel)
-  const tableData = (rooms || []).map(r => ({
-    ...r,
-    capacity_badge: <CBadge color="info">{r.capacity} alunos</CBadge>,
-    type_label: mapRoomType(r.type)
-  }))
 
   // --- Handlers ---
 
@@ -66,9 +47,7 @@ const Rooms = () => {
     setModalVisible(true)
   }
 
-  const handleDelete = (id) => {
-    deleteMutation.mutate(id)
-  }
+  const handleDelete = (id) => deleteMutation.mutateAsync(id)
 
   const handleFormSubmit = async (formData) => {
     if (selectedItem) {
@@ -97,11 +76,9 @@ const Rooms = () => {
         </CAlert>
       )}
 
-      <CCard className="border-0 shadow-sm">
-        <CCardBody className="p-0">
-          <SmartTable
+      <SmartTable
             columns={columns}
-            data={tableData}
+            data={rooms || []}
             isLoading={isLoading}
             isError={isError}
             error={error}
@@ -109,9 +86,8 @@ const Rooms = () => {
             actions={true}
             onEdit={handleEdit}
             onDelete={handleDelete}
+            getRowLabel={(room) => room.name}
           />
-        </CCardBody>
-      </CCard>
 
       <GenericModalForm
         visible={modalVisible}

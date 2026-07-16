@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react'
+import { useState, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   CCard, CCardBody, CCardHeader, CButton, CAlert,
@@ -11,8 +11,6 @@ import {
   cilArrowLeft, cilBook, cilUserPlus, cilTrash, cilPeople,
   cilBookmark, cilCheckCircle, cilWarning,
 } from '@coreui/icons'
-import PropTypes from 'prop-types'
-
 import {
   useClassSubjects,
   useAvailableSubjects,
@@ -20,31 +18,16 @@ import {
   useAddClassSubject,
   useUpdateClassSubjectTeacher,
   useRemoveClassSubject,
-} from '../hooks/useSchoolData'
+} from '../features/catalog/data'
 import Breadcrumbs from '../components/Breadcrumbs'
 import ConfirmationModal from '../components/ConfirmationModal'
+import RoomTypeBadge from '../components/RoomTypeBadge'
 import { getApiErrorMessage } from '../utils/apiErrors'
+import { formatGradeLevel } from '../utils/presentation'
 
 // ==========================================
 //  HELPERS
 // ==========================================
-
-const RoomBadge = ({ type }) => {
-  const config = {
-    gym: { color: 'warning', label: 'Ginásio' },
-    lab: { color: 'info', label: 'Laboratório' },
-    art: { color: 'danger', label: 'Artes' },
-    normal: { color: 'light', label: 'Normal', textClass: 'text-dark' },
-  }
-  const c = config[type] || config.normal
-  return <CBadge color={c.color} shape="rounded-pill" className={c.textClass || ''}>{c.label}</CBadge>
-}
-
-RoomBadge.propTypes = {
-  type: PropTypes.string.isRequired,
-}
-
-const gradeLabels = { 10: '10.º ano', 11: '11.º ano', 12: '12.º ano' }
 
 // ==========================================
 //  SUB-COMPONENT: Card de disciplina com dropdown de professor
@@ -70,7 +53,7 @@ const SubjectRow = ({
           <div className="d-flex align-items-center gap-2" style={{ minWidth: '180px' }}>
             <CIcon icon={cilBook} className="text-info" size="sm" />
             <span className="fw-medium">{subject.subject_name}</span>
-            <RoomBadge type={subject.required_room_type} />
+            <RoomTypeBadge type={subject.required_room_type} />
           </div>
 
           {/* Dropdown de Professor */}
@@ -131,19 +114,6 @@ const SubjectRow = ({
       </CCardBody>
     </CCard>
   )
-}
-
-SubjectRow.propTypes = {
-  subject: PropTypes.shape({
-    subject_id: PropTypes.number.isRequired,
-    subject_name: PropTypes.string.isRequired,
-    required_room_type: PropTypes.string,
-    teacher_id: PropTypes.number,
-    teacher_name: PropTypes.string,
-  }).isRequired,
-  onRemove: PropTypes.func.isRequired,
-  onTeacherChange: PropTypes.func.isRequired,
-  isUpdating: PropTypes.bool,
 }
 
 // ==========================================
@@ -293,7 +263,7 @@ const ClassSubjects = () => {
               <div className="d-flex align-items-center gap-2 mb-2">
                 <h3 className="mb-0 fw-bold">{classSubjects.class_name}</h3>
                 <CBadge color="primary" shape="rounded-pill">
-                  {gradeLabels[classSubjects.grade_level] || `${classSubjects.grade_level}.º ano`}
+                  {formatGradeLevel(classSubjects.grade_level)}
                 </CBadge>
               </div>
               {classSubjects.course_name && (

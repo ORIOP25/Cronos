@@ -1,9 +1,8 @@
 import { useMemo, useState } from 'react'
-import PropTypes from 'prop-types'
 import { CAlert, CBadge, CButton, CSpinner } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
 import { cilBan, cilCheckCircle, cilList, cilWarning } from '@coreui/icons'
-import { useScheduleDiff } from '../../hooks/useSchoolData'
+import { useScheduleDiff } from '../../features/scheduling/data'
 
 const CHANGE_LABELS = {
   ADDED: 'Adicionado',
@@ -147,37 +146,6 @@ const DraftPanel = ({ draft, onApprove, onReject, isApproving, isRejecting }) =>
       </div>
     </CAlert>
   )
-}
-
-DraftPanel.propTypes = {
-  draft: PropTypes.shape({
-    draft_id: PropTypes.number.isRequired,
-    strategy: PropTypes.string.isRequired,
-    result_category: PropTypes.string.isRequired,
-    recovery_escalation_level: PropTypes.string,
-    adaptation_level: PropTypes.string,
-    debt_hours_before: PropTypes.number.isRequired,
-    debt_hours_recovered: PropTypes.number.isRequired,
-    debt_hours_remaining: PropTypes.number.isRequired,
-    changed_blocks: PropTypes.number.isRequired,
-    affected_classes: PropTypes.number.isRequired,
-    affected_teachers: PropTypes.number.isRequired,
-    affected_days: PropTypes.number.isRequired,
-    disruption_score: PropTypes.number.isRequired,
-    main_blocker_message: PropTypes.string,
-    recommended_actions: PropTypes.arrayOf(PropTypes.string).isRequired,
-    warnings: PropTypes.arrayOf(PropTypes.string).isRequired,
-    can_approve: PropTypes.bool.isRequired,
-    workload_override_used: PropTypes.bool,
-    class_overload_count: PropTypes.number,
-    class_overload_excess_minutes: PropTypes.number,
-    teacher_overload_count: PropTypes.number,
-    teacher_overload_excess_minutes: PropTypes.number,
-  }).isRequired,
-  onApprove: PropTypes.func.isRequired,
-  onReject: PropTypes.func.isRequired,
-  isApproving: PropTypes.bool,
-  isRejecting: PropTypes.bool,
 }
 
 export default DraftPanel

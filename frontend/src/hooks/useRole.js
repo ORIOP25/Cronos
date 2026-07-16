@@ -1,4 +1,4 @@
-import { useCurrentMember } from './useSchoolData'
+import { useCurrentMember } from '../features/members/data'
 
 export function useRole() {
   const { data: member, isLoading, isError } = useCurrentMember()
