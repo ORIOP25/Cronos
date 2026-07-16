@@ -5,6 +5,7 @@ import {
   getConsoleError,
   getRequestFailureError,
 } from './runtime-guards.js'
+import { retryClerkRateLimit } from './clerk-rate-limit.js'
 
 const BASE_URL = process.env.BASE_URL || 'http://localhost:5173'
 
@@ -62,20 +63,20 @@ export function attachRuntimeGuards(page) {
   })
 }
 
+async function loginReal(page, emailEnvironmentVariable) {
+  const emailAddress = requiredEnv(emailEnvironmentVariable)
+  await retryClerkRateLimit(async () => {
+    await page.goto(BASE_URL)
+    await clerk.signIn({ page, emailAddress })
+  }, (delay) => page.waitForTimeout(delay))
+}
+
 export async function loginAsAdminReal(page) {
-  await page.goto(BASE_URL)
-  await clerk.signIn({
-    page,
-    emailAddress: requiredEnv('E2E_CLERK_ADMIN_EMAIL'),
-  })
+  await loginReal(page, 'E2E_CLERK_ADMIN_EMAIL')
 }
 
 export async function loginAsTeacherReal(page) {
-  await page.goto(BASE_URL)
-  await clerk.signIn({
-    page,
-    emailAddress: requiredEnv('E2E_CLERK_TEACHER_EMAIL'),
-  })
+  await loginReal(page, 'E2E_CLERK_TEACHER_EMAIL')
 }
 
 export async function goTo(page, path) {
