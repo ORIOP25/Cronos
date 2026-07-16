@@ -110,17 +110,17 @@ Final production LOC uses the same command as the baseline. The manifest graph i
 
 | Gate | Baseline | Final | Limit |
 |---|---:|---:|---:|
-| Production source | 17,316 lines / 71 files | 10,905 lines / 82 files | ≤16,000 lines |
-| Unit tests | 177 / 29 files | 221 / 41 files | All passing |
-| Statements | 35.69% | 52.24% | ≥45% |
-| Branches | 32.84% | 45.75% | ≥40% |
-| Functions | 27.87% | 45.30% | ≥35% |
-| Lines | 36.48% | 53.28% | ≥45% |
-| Static entry graph | 232,949 bytes / 9 files | 196,515 bytes / 3 files | ≤204,800 bytes / ≤5 files |
+| Production source | 17,316 lines / 71 files | 15,126 lines / 84 files | ≤16,000 lines |
+| Unit tests | 177 / 29 files | 222 / 41 files | All passing |
+| Statements | 35.69% | 52.56% | ≥45% |
+| Branches | 32.84% | 45.88% | ≥40% |
+| Functions | 27.87% | 45.09% | ≥35% |
+| Lines | 36.48% | 53.70% | ≥45% |
+| Static entry graph | 232,949 bytes / 9 files | 196,525 bytes / 3 files | ≤204,800 bytes / ≤5 files |
 
 Executed release gates:
 
-- `npm run verify`: pass — ESLint with zero warnings, normal Knip, production Knip, 221 tests with thresholded coverage, and production build.
+- `npm run verify`: pass — ESLint with zero warnings, normal Knip, production Knip, 222 tests with thresholded coverage, and production build.
 - `npm run test:school-config:stability`: pass — 10 consecutive runs, 6 assertions per run.
 - Targeted identity-switch, organization-switch, stale-query, route/auth, tab, modal, table, form, date, WeekGrid, and accessibility contracts: pass.
 - Session recovery E2E now mocks `/api/v1/members/me` with 401 and asserts the actual recovery UI instead of accepting either login or dashboard.

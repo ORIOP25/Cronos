@@ -215,9 +215,18 @@ const Schedules = () => {
       void refetchSchedulerStatus()
       void refetchCurrentDraft()
       clearStoredJobId(jobStorageKey)
-      void refetchWeekSchedule()
+      if (classId || teacherId) void refetchWeekSchedule()
     }
-  }, [jobData, activeJobId, refetchSchedulerStatus, refetchCurrentDraft, refetchWeekSchedule, jobStorageKey])
+  }, [
+    jobData,
+    activeJobId,
+    classId,
+    teacherId,
+    refetchSchedulerStatus,
+    refetchCurrentDraft,
+    refetchWeekSchedule,
+    jobStorageKey,
+  ])
 
   useEffect(() => {
     if (activeJobId) {

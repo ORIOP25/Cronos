@@ -35,9 +35,10 @@ test.describe('Session resilience', () => {
     })
     await goTo(page, '/dashboard')
     await expect(page).toHaveURL(/\/dashboard(?:[?#].*)?$/)
-    await expect(page.getByRole('alert')).toContainText(/sessão da organização precisa de ser atualizada/i)
+    const recoveryAlert = page.getByRole('alert')
+    await expect(recoveryAlert).toContainText(/sessão da organização precisa de ser atualizada/i)
     await expect(page.getByRole('button', { name: /atualizar sessão/i })).toBeVisible()
-    await expect(page.getByRole('button', { name: /terminar sessão/i })).toBeVisible()
+    await expect(recoveryAlert.getByRole('button', { name: /terminar sessão/i })).toBeVisible()
     await expectNoAppCrash(page)
   })
 
