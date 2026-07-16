@@ -1,10 +1,9 @@
-import React from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import { fireEvent, screen, within } from '@testing-library/react'
 import { renderWithProviders } from './testUtils'
 import Members from '../pages/Members'
 
-vi.mock('../hooks/useSchoolData', () => {
+vi.mock('../features/members/data', () => {
   const mutation = () => ({
     error: null,
     isPending: false,
@@ -20,7 +19,6 @@ vi.mock('../hooks/useSchoolData', () => {
       isLoading: false,
       refetch: vi.fn(),
     }),
-    useSubjects: () => ({ data: [] }),
     useCreateMember: mutation,
     useUpdateMember: mutation,
     useRemoveMember: mutation,
@@ -29,6 +27,10 @@ vi.mock('../hooks/useSchoolData', () => {
     useRetryMemberSync: mutation,
   }
 })
+
+vi.mock('../features/catalog/data', () => ({
+  useSubjects: () => ({ data: [] }),
+}))
 
 describe('Members', () => {
   it('exposes the member form controls through their visible labels', async () => {

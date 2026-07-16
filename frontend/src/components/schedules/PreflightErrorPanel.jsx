@@ -1,4 +1,3 @@
-import PropTypes from 'prop-types'
 import { CAlert } from '@coreui/react'
 
 const PreflightErrorPanel = ({ problems }) => (
@@ -9,9 +8,5 @@ const PreflightErrorPanel = ({ problems }) => (
     </ul>
   </CAlert>
 )
-
-PreflightErrorPanel.propTypes = {
-  problems: PropTypes.arrayOf(PropTypes.string).isRequired,
-}
 
 export default PreflightErrorPanel

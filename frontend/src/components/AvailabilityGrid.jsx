@@ -1,5 +1,4 @@
 import React, { useRef, useCallback, useEffect } from 'react';
-import PropTypes from 'prop-types';
 import { PREFERENCE_LEVELS, DEFAULT_PREFERENCE } from '../constants';
 
 const AvailabilityGrid = ({ timeslots, availabilityMap, onChange, selectedMode }) => {
@@ -136,19 +135,6 @@ const AvailabilityGrid = ({ timeslots, availabilityMap, onChange, selectedMode }
       </div>
     </div>
   );
-};
-
-AvailabilityGrid.propTypes = {
-  timeslots: PropTypes.arrayOf(
-    PropTypes.shape({
-      id: PropTypes.number.isRequired,
-      day_of_week: PropTypes.number.isRequired,
-      start_time: PropTypes.string.isRequired,
-    }),
-  ).isRequired,
-  availabilityMap: PropTypes.objectOf(PropTypes.number).isRequired,
-  onChange: PropTypes.func.isRequired,
-  selectedMode: PropTypes.number.isRequired,
 };
 
 export default AvailabilityGrid;

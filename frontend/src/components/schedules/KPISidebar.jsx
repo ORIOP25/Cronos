@@ -1,4 +1,3 @@
-import PropTypes from 'prop-types'
 import { getSubjectColor } from '../../utils/subjectColors'
 
 const KPISidebar = ({ subjects }) => {
@@ -42,18 +41,6 @@ const KPISidebar = ({ subjects }) => {
       })}
     </div>
   )
-}
-
-KPISidebar.propTypes = {
-  subjects: PropTypes.arrayOf(
-    PropTypes.shape({
-      id:                 PropTypes.number.isRequired,
-      name:               PropTypes.string.isRequired,
-      completed_hours:    PropTypes.number,
-      total_hours:        PropTypes.number,
-      overall_percentage: PropTypes.number,
-    }),
-  ),
 }
 
 export default KPISidebar

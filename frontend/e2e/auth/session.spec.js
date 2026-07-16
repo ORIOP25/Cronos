@@ -28,13 +28,16 @@ test.describe('Session resilience', () => {
     await expectRouteReady(page, '/dashboard')
   })
 
-  test('API 401 redireciona para /login', async ({ page }) => {
-    allowApiFailure(page, { status: 401, url: '/api/v1/dashboard' })
-    await page.route('**/api/v1/dashboard', (route) => {
+  test('API 401 do membro mostra recuperação explícita da sessão', async ({ page }) => {
+    allowApiFailure(page, { status: 401, url: '/api/v1/members/me' })
+    await page.route((url) => url.pathname === '/api/v1/members/me', (route) => {
       route.fulfill({ status: 401, contentType: 'application/json', body: '{"detail":"Unauthorized"}' })
     })
     await goTo(page, '/dashboard')
-    await expect(page).toHaveURL(/\/login|\/dashboard/)
+    await expect(page).toHaveURL(/\/dashboard(?:[?#].*)?$/)
+    await expect(page.getByRole('alert')).toContainText(/sessão da organização precisa de ser atualizada/i)
+    await expect(page.getByRole('button', { name: /atualizar sessão/i })).toBeVisible()
+    await expect(page.getByRole('button', { name: /terminar sessão/i })).toBeVisible()
     await expectNoAppCrash(page)
   })
 

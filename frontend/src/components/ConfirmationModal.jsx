@@ -1,5 +1,3 @@
-import React from 'react'
-import PropTypes from 'prop-types'
 import {
   CModal,
   CModalHeader,
@@ -12,7 +10,6 @@ import {
 import CIcon from '@coreui/icons-react'
 import { cilWarning } from '@coreui/icons'
 import { TXT } from '../utils/terminology'
-import { useFocusTrap } from '../hooks/useFocusTrap'
 
 /**
  * Modal de confirmação reutilizável para ações destrutivas.
@@ -29,8 +26,6 @@ const ConfirmationModal = ({
   isLoading = false,
   variant = 'danger',
 }) => {
-  useFocusTrap(visible)
-
   return (
     <CModal visible={visible} onClose={onClose} alignment="center">
       <CModalHeader>
@@ -61,18 +56,6 @@ const ConfirmationModal = ({
       </CModalFooter>
     </CModal>
   )
-}
-
-ConfirmationModal.propTypes = {
-  visible: PropTypes.bool.isRequired,
-  onClose: PropTypes.func.isRequired,
-  onConfirm: PropTypes.func.isRequired,
-  title: PropTypes.string,
-  message: PropTypes.string,
-  confirmText: PropTypes.string,
-  cancelText: PropTypes.string,
-  isLoading: PropTypes.bool,
-  variant: PropTypes.string,
 }
 
 export default ConfirmationModal

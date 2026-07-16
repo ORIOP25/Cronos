@@ -1,6 +1,3 @@
-import React from 'react'
-import PropTypes from 'prop-types'
-
 const BrandPanel = ({ tagline, stats }) => {
   return (
     <div className="zen-auth-brand-side">
@@ -41,16 +38,6 @@ const BrandPanel = ({ tagline, stats }) => {
       </div>
     </div>
   )
-}
-
-BrandPanel.propTypes = {
-  tagline: PropTypes.string.isRequired,
-  stats: PropTypes.arrayOf(
-    PropTypes.shape({
-      value: PropTypes.string.isRequired,
-      label: PropTypes.string.isRequired,
-    })
-  ).isRequired,
 }
 
 export default BrandPanel

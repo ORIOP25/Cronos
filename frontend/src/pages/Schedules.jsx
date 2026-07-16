@@ -1,7 +1,5 @@
-import React, { useState, useEffect } from 'react'
-import PropTypes from 'prop-types'
+import { useState, useEffect } from 'react'
 import { useLocation } from 'react-router-dom'
-import { useQueryClient } from '@tanstack/react-query'
 import {
   CCard, CCardBody, CCardHeader, CAlert, CBadge, CSpinner,
   CButton, CButtonGroup, CFormSelect, CFormLabel, CRow, CCol,
@@ -9,15 +7,17 @@ import {
 import CIcon from '@coreui/icons-react'
 import {
   cilCalendar, cilReload, cilBan,
-  cilArrowLeft, cilArrowRight, cilPeople, cilUser,
+  cilPeople, cilUser,
 } from '@coreui/icons'
 import {
   useSchedulerStatus, useCurrentDraftSummary, useApproveDraft, useRejectDraft,
   useGenerateSchedule, useScheduleTaskStatus, useCancelScheduleTask,
-  useClasses, useTeachers, useWeekSchedule, useClassDetails, useTimeslots,
-  useCurrentMember,
-} from '../hooks/useSchoolData'
+  useWeekSchedule,
+} from '../features/scheduling/data'
+import { useClasses, useClassDetails, useTimeslots } from '../features/catalog/data'
+import { useTeachers } from '../features/members/data'
 import WeekGrid from '../components/WeekGrid'
+import WeekNavigator from '../components/WeekNavigator'
 import LessonLogModal from '../components/LessonLogModal'
 import KPISidebar from '../components/schedules/KPISidebar'
 import DraftPanel from '../components/schedules/DraftPanel'
@@ -25,8 +25,7 @@ import GenerationStatusPanel from '../components/schedules/GenerationStatusPanel
 import PreflightErrorPanel from '../components/schedules/PreflightErrorPanel'
 import ConfirmationModal from '../components/ConfirmationModal'
 import { useOrganization } from '@clerk/react'
-import { useRole } from '../hooks/useRole'
-import { getCurrentWeekMonday, addDays, formatWeekRange } from '../utils/formatUtils'
+import { getCurrentWeekMonday } from '../utils/formatUtils'
 import { getApiErrorMessage } from '../utils/apiErrors'
 
 // ---------------------------------------------------------------------------
@@ -107,13 +106,8 @@ function clearStoredJobId(storageKey) {
 // ---------------------------------------------------------------------------
 const Schedules = () => {
   const location = useLocation()
-  const queryClient = useQueryClient()
   const { organization } = useOrganization()
   const orgId = organization?.id ?? null
-  const { isAdmin, isTeacher } = useRole()
-  const { data: currentMember } = useCurrentMember()
-  const teacherOwnId = currentMember?.teacher_id ?? null
-  const canConsultSchedule = isAdmin || (isTeacher && Boolean(teacherOwnId))
   const jobStorageKey = getJobStorageKey(orgId)
   const viewStorageKey = getViewStorageKey(orgId)
 
@@ -124,21 +118,23 @@ const Schedules = () => {
   const hasUrlParams = Boolean(urlTeacherId || urlWeekStart)
 
   // Restore persisted view state (admin only, URL params take priority)
-  const storedView = !hasUrlParams && isAdmin ? readStoredView(viewStorageKey) : null
+  const storedView = !hasUrlParams ? readStoredView(viewStorageKey) : null
 
   // Sprint 3 state
-  const [activeJobId, setActiveJobId]         = useState(null)
+  const [activeJobId, setActiveJobId]         = useState(() => {
+    const storedJobId = readStoredJobId(jobStorageKey)
+    return storedJobId ? Number(storedJobId) : null
+  })
   const [preflightErrors, setPreflightErrors] = useState([])
 
   // Sprint 4 state
   const [viewMode, setViewMode]                   = useState(
-    isTeacher ? 'teacher' : (storedView?.viewMode || 'class')
+    storedView?.viewMode || 'class'
   )
   const [selectedClassId, setSelectedClassId]     = useState(
     storedView?.selectedClassId || ''
   )
   const [selectedTeacherId, setSelectedTeacherId] = useState(() => {
-    if (isTeacher && teacherOwnId) return String(teacherOwnId)
     return storedView?.selectedTeacherId || ''
   })
   const [weekStart, setWeekStart]                 = useState(() => {
@@ -148,13 +144,12 @@ const Schedules = () => {
     return storedView?.weekStart || getCurrentWeekMonday()
   })
   // Bug #4: Keep weekStart in sync with URL query param changes (cross-navigation)
-  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (urlWeekStart && /^\d{4}-\d{2}-\d{2}$/.test(urlWeekStart) && urlWeekStart !== weekStart) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setWeekStart(urlWeekStart)
     }
   }, [urlWeekStart, weekStart])
-  /* eslint-enable react-hooks/set-state-in-effect */
   const [adminLessonLogSlot, setAdminLessonLogSlot] = useState(null)
   const [generationActionError, setGenerationActionError] = useState('')
   const [generationConfirmation, setGenerationConfirmation] = useState(null)
@@ -172,33 +167,32 @@ const Schedules = () => {
   const { data: jobData } = useScheduleTaskStatus(activeJobId)
 
   // Sprint 4 hooks
-  const { data: classes  = [] } = useClasses({ enabled: isAdmin })
-  const { data: teachers = [] } = useTeachers({ enabled: isAdmin })
+  const { data: classes  = [] } = useClasses()
+  const { data: teachers = [] } = useTeachers()
   const { data: timeslots = [] } = useTimeslots()
 
   // Apply URL query params for cross-navigation (Fase 7.4)
-  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
-    if (!isAdmin || !urlTeacherId) return
+    if (!urlTeacherId) return
     const teacherExists = teachers.some((t) => String(t.id) === urlTeacherId)
     if (teacherExists) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setViewMode('teacher')
       setSelectedTeacherId(urlTeacherId)
       setSelectedClassId('')
     }
-  }, [isAdmin, urlTeacherId, teachers])
-  /* eslint-enable react-hooks/set-state-in-effect */
+  }, [urlTeacherId, teachers])
 
   // Persist view state so the user returns to the same class/teacher
   useEffect(() => {
-    if (!isAdmin || hasUrlParams) return
+    if (hasUrlParams) return
     writeStoredView(viewStorageKey, {
       viewMode,
       selectedClassId,
       selectedTeacherId,
       weekStart,
     })
-  }, [isAdmin, hasUrlParams, viewStorageKey, viewMode, selectedClassId, selectedTeacherId, weekStart])
+  }, [hasUrlParams, viewStorageKey, viewMode, selectedClassId, selectedTeacherId, weekStart])
 
   const classId   = viewMode === 'class'   && selectedClassId   ? Number.parseInt(selectedClassId, 10)   : null
   const teacherId = viewMode === 'teacher' && selectedTeacherId ? Number.parseInt(selectedTeacherId, 10) : null
@@ -207,6 +201,7 @@ const Schedules = () => {
     data: weekSlots = [],
     isFetching: loadingWeek,
     isError: weekLoadError,
+    refetch: refetchWeekSchedule,
   } = useWeekSchedule(classId, teacherId, weekStart)
   const { data: classDetails } = useClassDetails(classId)
 
@@ -220,45 +215,15 @@ const Schedules = () => {
       void refetchSchedulerStatus()
       void refetchCurrentDraft()
       clearStoredJobId(jobStorageKey)
-      void queryClient.invalidateQueries({ queryKey: ['weekSchedule'] })
-      void queryClient.invalidateQueries({ queryKey: ['schedule'] })
+      void refetchWeekSchedule()
     }
-  }, [jobData, activeJobId, refetchSchedulerStatus, refetchCurrentDraft, queryClient, jobStorageKey])
-
-  /* eslint-disable react-hooks/set-state-in-effect */
-  useEffect(() => {
-    if (!isAdmin || activeJobId) {
-      return
-    }
-
-    const storedJobId = readStoredJobId(jobStorageKey)
-    if (storedJobId) {
-      setActiveJobId(Number(storedJobId))
-    }
-  }, [isAdmin, activeJobId, jobStorageKey])
-  /* eslint-enable react-hooks/set-state-in-effect */
+  }, [jobData, activeJobId, refetchSchedulerStatus, refetchCurrentDraft, refetchWeekSchedule, jobStorageKey])
 
   useEffect(() => {
-    if (!isAdmin) {
-      return
-    }
-
     if (activeJobId) {
       writeStoredJobId(jobStorageKey, activeJobId)
     }
-  }, [isAdmin, activeJobId, jobStorageKey])
-
-  /* eslint-disable react-hooks/set-state-in-effect */
-  useEffect(() => {
-    if (!isTeacher || !teacherOwnId) {
-      return
-    }
-
-    setViewMode('teacher')
-    setSelectedClassId('')
-    setSelectedTeacherId(String(teacherOwnId))
-  }, [isTeacher, teacherOwnId])
-  /* eslint-enable react-hooks/set-state-in-effect */
+  }, [activeJobId, jobStorageKey])
 
   const startReplacementGeneration = async () => {
     setGenerationConfirmation(null)
@@ -312,9 +277,6 @@ const Schedules = () => {
 
     setGenerationActionError('')
     cancelGenerationMutation.mutate(activeJobId, {
-      onSuccess: () => {
-        void queryClient.invalidateQueries({ queryKey: ['scheduler-job', orgId, activeJobId] })
-      },
       onError: () => {
         setGenerationActionError('Não foi possível cancelar a geração. Tente novamente.')
       },
@@ -324,15 +286,11 @@ const Schedules = () => {
   const isGenerating = ['QUEUED', 'RUNNING', 'CANCEL_REQUESTED'].includes(
     jobData?.job_status
   )
-  const weekLabel    = formatWeekRange(weekStart)
   const hasSelection = Boolean(classId || teacherId)
   const showKPI      = viewMode === 'class' && Boolean(classId)
   const gridCols     = showKPI ? 8 : 12
 
   const openCreateOccurrenceModal = (slot) => {
-    if (!isAdmin) {
-      return
-    }
     setAdminLessonLogSlot(slot)
   }
 
@@ -352,7 +310,7 @@ const Schedules = () => {
         isLoading={loadingWeek}
         baseTimeslots={timeslots}
         weekStart={weekStart}
-        isOperationalEnabled={isAdmin}
+        isOperationalEnabled
         onOpenOperationalAction={openCreateOccurrenceModal}
       />
     )
@@ -366,25 +324,15 @@ const Schedules = () => {
     )
   }
 
-  if (!canConsultSchedule) {
-    return (
-      <div className="p-4">
-        <CAlert color="danger" className="mb-0">
-          Conta de professor sem perfil associado. Contacte um admin para associar o perfil docente.
-        </CAlert>
-      </div>
-    )
-  }
-
   return (
     <div className="p-4">
 
       {adminLessonLogSlot ? (
         <LessonLogModal
-          visible={Boolean(adminLessonLogSlot)}
+          key={adminLessonLogSlot.operational_block_id ?? adminLessonLogSlot.id}
           onClose={() => setAdminLessonLogSlot(null)}
           slot={adminLessonLogSlot}
-          isAdmin={isAdmin}
+          isAdmin
         />
       ) : null}
 
@@ -410,8 +358,7 @@ const Schedules = () => {
         </div>
 
         {/* Status-driven generation controls */}
-        {isAdmin && (
-          <div className="d-flex align-items-center gap-2 flex-wrap">
+        <div className="d-flex align-items-center gap-2 flex-wrap">
                 {!hasPendingDraft && schedulerStatus?.can_generate_new_draft && (
                   <CButton
                     color="primary" size="sm"
@@ -450,12 +397,10 @@ const Schedules = () => {
                       }
                     </CButton>
                 )}
-          </div>
-        )}
+        </div>
       </div>
 
-      {isAdmin ? (
-        <>
+      <>
           {preflightErrors.length > 0 && <PreflightErrorPanel problems={preflightErrors} />}
           {generationActionError && (
             <CAlert color="danger" className="mb-4" style={{ whiteSpace: 'pre-line' }}>
@@ -491,8 +436,7 @@ const Schedules = () => {
               isRejecting={rejectMutation.isPending}
             />
           )}
-        </>
-      ) : null}
+      </>
 
       {/* ── Sprint 4: View controls ── */}
       <CCard className="border-0 shadow-sm mb-4">
@@ -500,8 +444,7 @@ const Schedules = () => {
           <CRow className="g-3 align-items-end flex-wrap">
 
             {/* View mode toggle */}
-            {isAdmin ? (
-              <CCol xs="auto">
+            <CCol xs="auto">
                 <div className="small text-muted mb-1">Vista por</div>
                 <CButtonGroup size="sm">
                   <CButton
@@ -519,16 +462,10 @@ const Schedules = () => {
                     Professor
                   </CButton>
                 </CButtonGroup>
-              </CCol>
-            ) : (
-              <CCol xs="auto">
-                <div className="small text-muted mb-1">Vista</div>
-                <CBadge color="info">Professor (somente próprio horário)</CBadge>
-              </CCol>
-            )}
+            </CCol>
 
             {/* Class selector */}
-            {isAdmin && viewMode === 'class' && (
+            {viewMode === 'class' && (
               <CCol xs="auto">
                 <CFormLabel htmlFor="classSelect" className="small mb-1 text-muted">Turma</CFormLabel>
                 <CFormSelect
@@ -547,7 +484,7 @@ const Schedules = () => {
             )}
 
             {/* Teacher selector */}
-            {isAdmin && viewMode === 'teacher' && (
+            {viewMode === 'teacher' && (
               <CCol xs="auto">
                 <CFormLabel htmlFor="teacherSelect" className="small mb-1 text-muted">Professor</CFormLabel>
                 <CFormSelect
@@ -567,32 +504,7 @@ const Schedules = () => {
 
             {/* Week navigation */}
             <CCol xs="auto" className="ms-auto">
-              <div className="d-flex align-items-center gap-2">
-                <CButton
-                  color="secondary" variant="outline" size="sm"
-                  onClick={() => setWeekStart(prev => addDays(prev, -7))}
-                  title="Semana anterior"
-                >
-                  <CIcon icon={cilArrowLeft} />
-                </CButton>
-                <span className="small fw-semibold" style={{ minWidth: '200px', textAlign: 'center' }}>
-                  {weekLabel}
-                </span>
-                <CButton
-                  color="secondary" variant="outline" size="sm"
-                  onClick={() => setWeekStart(prev => addDays(prev, 7))}
-                  title="Próxima semana"
-                >
-                  <CIcon icon={cilArrowRight} />
-                </CButton>
-                <CButton
-                  color="primary" variant="outline" size="sm"
-                  onClick={() => setWeekStart(getCurrentWeekMonday())}
-                  title="Ir para a semana atual"
-                >
-                  Hoje
-                </CButton>
-              </div>
+              <WeekNavigator value={weekStart} onChange={setWeekStart} />
             </CCol>
           </CRow>
         </CCardBody>

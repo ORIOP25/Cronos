@@ -1,6 +1,5 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import PageHeader from '../components/PageHeader'
-import { useQueryClient } from '@tanstack/react-query'
 import { CAlert, CBadge, CButton, CCard, CCardBody, CCardHeader, CSpinner } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
 import { cilArrowLeft, cilArrowRight, cilCalendar } from '@coreui/icons'
@@ -10,46 +9,26 @@ import ConfirmationModal from '../components/ConfirmationModal'
 import { TXT } from '../utils/terminology'
 import {
   useTeacherScheduleHorizon,
-  useTimeslots,
   useWeekSchedule,
+} from '../features/scheduling/data'
+import { useTimeslots } from '../features/catalog/data'
+import {
   useMyTimesheet,
   useSubmitMyTimesheet,
-  useCurrentMember
-} from '../hooks/useSchoolData'
-import { useOrganization } from '@clerk/react'
-import { getCurrentWeekMonday, addDays, formatWeekRange, formatDate, toIsoDate, isAfterDate } from '../utils/formatUtils'
+} from '../features/operations/data'
+import { useCurrentMember } from '../features/members/data'
+import { getCurrentWeekMonday, addDays, formatWeekRange, formatDate, toWeekMonday, isAfterDate } from '../utils/formatUtils'
 import { getApiErrorMessage } from '../utils/apiErrors'
+import { getWeekSubmissionBlockers } from '../features/operations/weekSubmission'
 
 const HORIZON_NOT_CONFIGURED_MESSAGE =
   'Não existe período semanal configurado para a escola. Contacte a equipa administrativa para validar o ano letivo ativo.'
 const HORIZON_SYNC_POLLING_INTERVAL_MS = 30000
 const HORIZON_NO_ACTIVE_GENERATION_KEY = '__no_active_generation__'
-const HORIZON_SYNC_FEEDBACK_MESSAGE =
-  'Horário atualizado com a versão mais recente publicada pela escola.'
-const HORIZON_DEGRADED_FEEDBACK_MESSAGE =
-  'Atualização semanal temporariamente indisponível. A mostrar o último estado válido.'
-const WEEK_DEGRADED_FEEDBACK_MESSAGE =
-  'Falha temporária ao carregar esta semana. A mostrar o último estado válido.'
+const EMPTY_ARRAY = []
 
 function toGenerationCacheKey(activeGenerationId) {
   return activeGenerationId || HORIZON_NO_ACTIVE_GENERATION_KEY
-}
-
-function parseDateAtNoon(dateStr) {
-  if (!dateStr) {
-    const today = new Date()
-    return new Date(today.getFullYear(), today.getMonth(), today.getDate(), 12, 0, 0, 0)
-  }
-  const [year, month, day] = dateStr.split('-').map(Number)
-  return new Date(year, month - 1, day, 12, 0, 0, 0)
-}
-
-function toWeekMonday(dateStr) {
-  const dateValue = parseDateAtNoon(dateStr)
-  const dayOfWeek = dateValue.getDay()
-  const offset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek
-  dateValue.setDate(dateValue.getDate() + offset)
-  return toIsoDate(dateValue)
 }
 
 function resolveHorizonErrorMessage(error) {
@@ -67,17 +46,10 @@ function resolveHorizonErrorMessage(error) {
 }
 
 function MySchedules() {
-  const queryClient = useQueryClient()
-  const { organization } = useOrganization()
   const { data: currentMember } = useCurrentMember()
   const teacherId = currentMember?.teacher_id
-  const orgId = organization?.id
-  const [weekStart, setWeekStart] = useState(getCurrentWeekMonday)
-  const [recommendedWeekApplied, setRecommendedWeekApplied] = useState(false)
+  const [selectedWeekStart, setSelectedWeekStart] = useState(null)
   const [limitFeedback, setLimitFeedback] = useState('')
-  const [syncFeedback, setSyncFeedback] = useState('')
-  const [lastHealthyHorizon, setLastHealthyHorizon] = useState(null)
-  const [lastHealthyWeekSlots, setLastHealthyWeekSlots] = useState([])
   const [selectedSlot, setSelectedSlot] = useState(null)
   const [showSubmitConfirm, setShowSubmitConfirm] = useState(false)
   const hasInitializedGenerationRef = useRef(false)
@@ -95,82 +67,15 @@ function MySchedules() {
     refetchInterval: HORIZON_SYNC_POLLING_INTERVAL_MS,
   })
 
-  /* eslint-disable react-hooks/set-state-in-effect */
-  useEffect(() => {
-    if (!isLoadingHorizon && !hasHorizonError && horizon) {
-      setLastHealthyHorizon(horizon)
-    }
-  }, [horizon, isLoadingHorizon, hasHorizonError])
-  /* eslint-enable react-hooks/set-state-in-effect */
-
-  const effectiveHorizon = hasHorizonError ? lastHealthyHorizon : horizon
-  const hardEndDate = effectiveHorizon?.hard_end_date ?? null
-  const recommendedWeekStart = effectiveHorizon?.week_start_recommended ?? null
-  const minWeekStart = effectiveHorizon?.min_week_start ?? recommendedWeekStart
-
-  // Sync week start from external recommendation (applied once per mount)
-  /* eslint-disable react-hooks/set-state-in-effect */
-  useEffect(() => {
-    if (!recommendedWeekStart || recommendedWeekApplied) {
-      return
-    }
-    setWeekStart(recommendedWeekStart)
-    setRecommendedWeekApplied(true)
-  }, [recommendedWeekApplied, recommendedWeekStart])
-  /* eslint-enable react-hooks/set-state-in-effect */
-
-  /* eslint-disable react-hooks/set-state-in-effect */
-  useEffect(() => {
-    if (minWeekStart && isAfterDate(minWeekStart, weekStart)) {
-      setWeekStart(minWeekStart)
-      setLimitFeedback(`A navegação foi limitada ao início do ano letivo (${formatDate(minWeekStart)}).`)
-      return
-    }
-    if (hardEndDate && isAfterDate(weekStart, hardEndDate)) {
-      setWeekStart(toWeekMonday(hardEndDate))
-      setLimitFeedback(`A navegação foi limitada à data limite do ano letivo (${formatDate(hardEndDate)}).`)
-    }
-  }, [hardEndDate, minWeekStart, weekStart])
-  /* eslint-enable react-hooks/set-state-in-effect */
-
-  /* eslint-disable react-hooks/set-state-in-effect */
-  useEffect(() => {
-    if (!effectiveTeacherId || isLoadingHorizon || hasHorizonError) {
-      return
-    }
-
-    const currentGenerationKey = toGenerationCacheKey(effectiveHorizon?.active_generation_id)
-    if (!hasInitializedGenerationRef.current) {
-      generationKeyRef.current = currentGenerationKey
-      hasInitializedGenerationRef.current = true
-      return
-    }
-
-    if (generationKeyRef.current === currentGenerationKey) {
-      return
-    }
-
-    generationKeyRef.current = currentGenerationKey
-    setSyncFeedback(HORIZON_SYNC_FEEDBACK_MESSAGE)
-
-    void queryClient.invalidateQueries({
-      predicate: (query) => {
-        const key = query.queryKey
-        return Array.isArray(key)
-          && key[0] === 'weekSchedule'
-          && key[1] === orgId
-          && key[3] === effectiveTeacherId
-      },
-    })
-  }, [
-    effectiveTeacherId,
-    effectiveHorizon?.active_generation_id,
-    hasHorizonError,
-    isLoadingHorizon,
-    orgId,
-    queryClient,
-  ])
-  /* eslint-enable react-hooks/set-state-in-effect */
+  const hardEndDate = horizon?.hard_end_date ?? null
+  const recommendedWeekStart = horizon?.week_start_recommended ?? null
+  const minWeekStart = horizon?.min_week_start ?? recommendedWeekStart
+  const requestedWeekStart = selectedWeekStart ?? recommendedWeekStart ?? getCurrentWeekMonday()
+  const weekStart = minWeekStart && isAfterDate(minWeekStart, requestedWeekStart)
+    ? minWeekStart
+    : hardEndDate && isAfterDate(requestedWeekStart, hardEndDate)
+      ? toWeekMonday(hardEndDate)
+      : requestedWeekStart
 
   const prevWeekStart = useMemo(() => addDays(weekStart, -7), [weekStart])
   const nextWeekStart = useMemo(() => addDays(weekStart, 7), [weekStart])
@@ -188,70 +93,44 @@ function MySchedules() {
   }, [hardEndDate, nextWeekStart])
 
   const {
-    data: fetchedWeekSlots = [],
+    data: fetchedWeekSlots,
     isFetching: isLoadingWeek,
     isError: hasWeekError,
+    refetch: refetchWeekSchedule,
   } = useWeekSchedule(null, effectiveTeacherId, weekStart)
 
-  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
-    if (!hasWeekError) {
-      setLastHealthyWeekSlots(fetchedWeekSlots)
-    }
-  }, [fetchedWeekSlots, hasWeekError])
-  /* eslint-enable react-hooks/set-state-in-effect */
+    if (!effectiveTeacherId || isLoadingHorizon || hasHorizonError) return
 
-  const weekSlots = hasWeekError ? lastHealthyWeekSlots : fetchedWeekSlots
-  const hasWeekFallback = hasWeekError && lastHealthyWeekSlots.length > 0
+    const currentGenerationKey = toGenerationCacheKey(horizon?.active_generation_id)
+    if (!hasInitializedGenerationRef.current) {
+      generationKeyRef.current = currentGenerationKey
+      hasInitializedGenerationRef.current = true
+      return
+    }
+    if (generationKeyRef.current === currentGenerationKey) return
+
+    generationKeyRef.current = currentGenerationKey
+    void refetchWeekSchedule()
+  }, [
+    effectiveTeacherId,
+    horizon?.active_generation_id,
+    hasHorizonError,
+    isLoadingHorizon,
+    refetchWeekSchedule,
+  ])
+
+  const weekSlots = hasWeekError ? EMPTY_ARRAY : fetchedWeekSlots ?? EMPTY_ARRAY
 
   const { data: timeslots = [] } = useTimeslots()
 
   const { data: timesheet } = useMyTimesheet(weekStart)
   const submitMutation = useSubmitMyTimesheet()
 
-  const canSubmit = useMemo(() => {
-    if (weekSlots.length === 0) return false
-    if (timesheet && timesheet.status !== 'OPEN') return false
-    
-    const now = new Date()
-    for (const slot of weekSlots) {
-      if (slot.date && slot.timeslot?.end_time) {
-        const endDateTime = new Date(`${slot.date}T${slot.timeslot.end_time}`)
-        if (endDateTime > now) return false
-      } else if (!slot.is_past) {
-        return false
-      }
-      
-      const hasLessonLog = slot.lesson_log_status === 'COMPLETED' || slot.lesson_log_status === 'OCCURRENCE'
-      const hasOccurrence = slot.occurrence_status != null
-      if (!hasLessonLog && !hasOccurrence) {
-        return false
-      }
-    }
-    return true
-  }, [weekSlots, timesheet])
-
-  const blockingSlots = useMemo(() => {
-    if (!timesheet || timesheet.status !== 'OPEN') return []
-    const now = new Date()
-    const blockers = []
-    for (const slot of weekSlots) {
-      const reasons = []
-      if (slot.date && slot.timeslot?.end_time) {
-        const endDateTime = new Date(`${slot.date}T${slot.timeslot.end_time}`)
-        if (endDateTime > now) reasons.push('aula futura')
-      }
-      const hasLessonLog = slot.lesson_log_status === 'COMPLETED' || slot.lesson_log_status === 'OCCURRENCE'
-      const hasOccurrence = slot.occurrence_status != null
-      if (!hasLessonLog && !hasOccurrence) reasons.push('não registada')
-      if (reasons.length > 0) {
-        const day = slot.date ? new Date(`${slot.date}T12:00:00`).toLocaleDateString('pt-PT', { weekday: 'short', day: 'numeric', month: 'short' }) : '?'
-        const subject = slot.subject?.name ?? '?'
-        blockers.push(`${day} — ${subject} (${reasons.join(', ')})`)
-      }
-    }
-    return blockers
-  }, [weekSlots, timesheet])
+  const blockingSlots = useMemo(() => getWeekSubmissionBlockers(weekSlots), [weekSlots])
+  const canSubmit = weekSlots.length > 0
+    && (!timesheet || timesheet.status === 'OPEN')
+    && blockingSlots.length === 0
 
   const submitTooltip = useMemo(() => {
     if (canSubmit) return ''
@@ -281,35 +160,32 @@ function MySchedules() {
   }
 
   const handlePrevWeek = () => {
-    setSyncFeedback('')
     if (prevWeekBlocked && minWeekStart) {
       setLimitFeedback(`Semanas antes de ${formatDate(minWeekStart)} estão bloqueadas.`)
       return
     }
     setLimitFeedback('')
-    setWeekStart(prevWeekStart)
+    setSelectedWeekStart(prevWeekStart)
   }
 
   const handleCurrentWeek = () => {
-    setSyncFeedback('')
     const currentWeek = getCurrentWeekMonday()
     if (hardEndDate && isAfterDate(currentWeek, hardEndDate)) {
-      setWeekStart(toWeekMonday(hardEndDate))
+      setSelectedWeekStart(toWeekMonday(hardEndDate))
       setLimitFeedback(`A semana atual está após a data limite do ano letivo (${formatDate(hardEndDate)}).`)
       return
     }
     setLimitFeedback('')
-    setWeekStart(currentWeek)
+    setSelectedWeekStart(currentWeek)
   }
 
   const handleNextWeek = () => {
-    setSyncFeedback('')
     if (nextWeekBlocked && hardEndDate) {
       setLimitFeedback(`Semanas após ${formatDate(hardEndDate)} estão bloqueadas.`)
       return
     }
     setLimitFeedback('')
-    setWeekStart(nextWeekStart)
+    setSelectedWeekStart(nextWeekStart)
   }
 
   const pageHeader = (
@@ -344,7 +220,7 @@ function MySchedules() {
     )
   }
 
-  if (hasHorizonError && !effectiveHorizon) {
+  if (hasHorizonError) {
     return (
       <div className="p-4">
         {pageHeader}
@@ -375,7 +251,7 @@ function MySchedules() {
     )
   }
 
-  if (hasWeekError && !hasWeekFallback) {
+  if (hasWeekError) {
     weekContent = (
       <div className="text-center p-5 text-danger" style={{ fontSize: '0.9rem' }}>
         Não foi possível carregar o seu horário semanal. Verifique a ligação e volte a tentar dentro de alguns minutos.
@@ -441,29 +317,11 @@ function MySchedules() {
             Limite de navegação: {minWeekStart ? `de ${formatDate(minWeekStart)} ` : ''}até {formatDate(hardEndDate)}.
           </div>
 
-          {hasHorizonError && effectiveHorizon ? (
-            <CAlert color="warning" className="mb-3">
-              {HORIZON_DEGRADED_FEEDBACK_MESSAGE}
-            </CAlert>
-          ) : null}
-
           {submitError && (
             <CAlert color="danger" className="mb-3">
               {submitError}
             </CAlert>
           )}
-
-          {hasWeekFallback ? (
-            <CAlert color="warning" className="mb-3">
-              {WEEK_DEGRADED_FEEDBACK_MESSAGE}
-            </CAlert>
-          ) : null}
-
-          {syncFeedback ? (
-            <CAlert color="info" className="mb-3">
-              {syncFeedback}
-            </CAlert>
-          ) : null}
 
           {limitFeedback ? (
             <CAlert color="warning" className="mb-3">
@@ -475,11 +333,13 @@ function MySchedules() {
         </CCardBody>
       </CCard>
 
-      <LessonLogModal
-        visible={Boolean(selectedSlot)}
-        onClose={() => setSelectedSlot(null)}
-        slot={selectedSlot}
-      />
+      {selectedSlot && (
+        <LessonLogModal
+          key={selectedSlot.operational_block_id ?? selectedSlot.id}
+          onClose={() => setSelectedSlot(null)}
+          slot={selectedSlot}
+        />
+      )}
 
       <ConfirmationModal
         visible={showSubmitConfirm}

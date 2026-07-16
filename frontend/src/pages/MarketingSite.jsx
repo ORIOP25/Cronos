@@ -320,7 +320,7 @@ function Stars() {
   )
 }
 
-export function MarketingSite() {
+export default function MarketingSite() {
   const [activeReview, setActiveReview] = useState(0)
   const visibleTestimonials = [0, 1, 2].map((offset) => testimonials[(activeReview + offset) % testimonials.length])
 

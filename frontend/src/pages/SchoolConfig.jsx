@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import { useState } from 'react'
 import {
   CAlert,
   CBadge,
@@ -6,9 +6,7 @@ import {
   CCardBody,
   CCardHeader,
   CTab,
-  CTabContent,
   CTabList,
-  CTabPanel,
   CTabs,
 } from '@coreui/react'
 import { useOrganization } from '@clerk/react'
@@ -28,6 +26,8 @@ const TAB_DEFINITIONS = [
 const SchoolConfig = () => {
   const { organization } = useOrganization()
   const [activeTab, setActiveTab] = useState('settings')
+  const activeSection = TAB_DEFINITIONS.find((tab) => tab.key === activeTab) ?? TAB_DEFINITIONS[0]
+  const ActiveSection = activeSection.component
 
   return (
     <div className="p-4">
@@ -46,16 +46,10 @@ const SchoolConfig = () => {
             <CTab key={tab.key} itemKey={tab.key}>{tab.label}</CTab>
           ))}
         </CTabList>
-        <CTabContent>
-          {TAB_DEFINITIONS.map((tab) => (
-            <CTabPanel key={tab.key} itemKey={tab.key}>
-              <CCard className="border-0 shadow-sm">
-                <CCardHeader className="bg-white fw-bold py-3">{tab.heading}</CCardHeader>
-                <CCardBody className="p-4">{React.createElement(tab.component)}</CCardBody>
-              </CCard>
-            </CTabPanel>
-          ))}
-        </CTabContent>
+        <CCard className="border-0 shadow-sm">
+          <CCardHeader className="bg-white fw-bold py-3">{activeSection.heading}</CCardHeader>
+          <CCardBody className="p-4"><ActiveSection /></CCardBody>
+        </CCard>
       </CTabs>
     </div>
   )

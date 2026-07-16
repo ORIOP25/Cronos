@@ -28,4 +28,9 @@ apiClient.interceptors.request.use(async (config) => {
   return config;
 });
 
+apiClient.interceptors.response.use(
+  (response) => response.data,
+  (error) => Promise.reject(error),
+);
+
 export default apiClient;

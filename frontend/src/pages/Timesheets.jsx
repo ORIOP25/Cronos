@@ -1,44 +1,32 @@
-import React, { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo } from 'react'
 import PageHeader from '../components/PageHeader'
 import { useNavigate } from 'react-router-dom'
 import {
   CCard, CCardBody, CAlert, CBadge, CSpinner, CButton,
   CFormSelect, CRow, CCol,
-  CModal, CModalHeader, CModalTitle, CModalBody, CModalFooter,
 } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
+import { cilCheckCircle, cilActionUndo, cilPeople, cilExternalLink } from '@coreui/icons'
 import {
-  cilCheckCircle, cilActionUndo, cilArrowLeft, cilArrowRight,
-  cilPeople, cilExternalLink,
-} from '@coreui/icons'
-import {
-  useTimesheets, useUpdateTimesheetStatus, useWeekSchedule,
-  useTimeslots,
-} from '../hooks/useSchoolData'
+  useTimesheets, useUpdateTimesheetStatus,
+} from '../features/operations/data'
+import { useWeekSchedule } from '../features/scheduling/data'
+import { useTimeslots } from '../features/catalog/data'
 import WeekGrid from '../components/WeekGrid'
 import LessonLogModal from '../components/LessonLogModal'
 import TeacherCard from '../components/timesheets/TeacherCard'
-import { formatWeekRange, addDays, toWeekMonday } from '../utils/formatUtils'
+import { formatWeekRange, toWeekMonday } from '../utils/formatUtils'
 import { TXT } from '../utils/terminology'
 import { getApiErrorMessage } from '../utils/apiErrors'
-
-const STATUS_LABELS = {
-  OPEN: 'Aberta',
-  SUBMITTED: 'Submetida',
-  APPROVED: 'Aprovada',
-}
-
-const STATUS_COLORS = {
-  OPEN: 'secondary',
-  SUBMITTED: 'info',
-  APPROVED: 'success',
-}
+import ConfirmationModal from '../components/ConfirmationModal'
+import { getTimesheetStatus } from '../utils/presentation'
+import WeekNavigator from '../components/WeekNavigator'
 
 const Timesheets = () => {
   const navigate = useNavigate()
   const [weekFilter, setWeekFilter] = useState(() => toWeekMonday(new Date()))
   const [statusFilter, setStatusFilter] = useState('ALL')
-  const [selectedTeacherId, setSelectedTeacherId] = useState(null)
+  const [requestedTeacherId, setRequestedTeacherId] = useState(null)
   const [modalSlot, setModalSlot] = useState(null)
   const [statusActionError, setStatusActionError] = useState('')
   const [showReopenConfirm, setShowReopenConfirm] = useState(false)
@@ -49,6 +37,14 @@ const Timesheets = () => {
     isLoading: loadingTimesheets,
     isError: timesheetsError,
   } = useTimesheets(weekFilter || undefined, statusParam)
+  const selectedTeacher = useMemo(
+    () => timesheets.find((item) => item.teacher_id === requestedTeacherId)
+      ?? timesheets[0]
+      ?? null,
+    [requestedTeacherId, timesheets],
+  )
+  const weekLabel = formatWeekRange(weekFilter)
+  const selectedTeacherId = selectedTeacher?.teacher_id ?? null
 
   const { data: timeslots = [] } = useTimeslots()
 
@@ -58,28 +54,6 @@ const Timesheets = () => {
   } = useWeekSchedule(null, selectedTeacherId, weekFilter)
 
   const updateMutation = useUpdateTimesheetStatus()
-
-  // Auto-select first teacher when list loads or changes
-  /* eslint-disable react-hooks/set-state-in-effect */
-  useEffect(() => {
-    if (timesheets.length > 0 && !selectedTeacherId) {
-      setSelectedTeacherId(timesheets[0].teacher_id)
-    }
-    if (timesheets.length > 0 && selectedTeacherId) {
-      const stillExists = timesheets.some((t) => t.teacher_id === selectedTeacherId)
-      if (!stillExists) {
-        setSelectedTeacherId(timesheets[0].teacher_id)
-      }
-    }
-    if (timesheets.length === 0) {
-      setSelectedTeacherId(null)
-    }
-  }, [timesheets, selectedTeacherId])
-  /* eslint-enable react-hooks/set-state-in-effect */
-
-  const selectedTeacher = useMemo(() => {
-    return timesheets.find((t) => t.teacher_id === selectedTeacherId) || null
-  }, [timesheets, selectedTeacherId])
 
   const handleUpdateStatus = async (timesheetId, status) => {
     setStatusActionError('')
@@ -118,7 +92,6 @@ const Timesheets = () => {
     navigate(`/schedules?teacherId=${selectedTeacherId}&weekStart=${weekFilter}`)
   }
 
-  const weekLabel = useMemo(() => formatWeekRange(weekFilter), [weekFilter])
 
   return (
     <div className="p-4">
@@ -140,38 +113,7 @@ const Timesheets = () => {
 
           <div className="ms-auto">
             <label className="form-label text-muted small fw-semibold mb-1 d-block">Semana</label>
-            <div className="d-flex align-items-center gap-2">
-              <CButton
-                color="secondary"
-                variant="outline"
-                size="sm"
-                onClick={() => setWeekFilter((prev) => addDays(prev, -7))}
-                title="Semana anterior"
-              >
-                <CIcon icon={cilArrowLeft} />
-              </CButton>
-              <span className="small fw-semibold" style={{ minWidth: '200px', textAlign: 'center' }}>
-                {weekLabel}
-              </span>
-              <CButton
-                color="secondary"
-                variant="outline"
-                size="sm"
-                onClick={() => setWeekFilter((prev) => addDays(prev, 7))}
-                title="Próxima semana"
-              >
-                <CIcon icon={cilArrowRight} />
-              </CButton>
-              <CButton
-                color="secondary"
-                variant="outline"
-                size="sm"
-                onClick={() => setWeekFilter(toWeekMonday(new Date()))}
-                title="Semana atual"
-              >
-                Hoje
-              </CButton>
-            </div>
+            <WeekNavigator value={weekFilter} onChange={setWeekFilter} />
           </div>
         </CCardBody>
       </CCard>
@@ -220,7 +162,7 @@ const Timesheets = () => {
                     key={ts.teacher_id}
                     teacher={ts}
                     isSelected={ts.teacher_id === selectedTeacherId}
-                    onClick={() => setSelectedTeacherId(ts.teacher_id)}
+                    onClick={() => setRequestedTeacherId(ts.teacher_id)}
                   />
                 ))}
               </div>
@@ -242,8 +184,8 @@ const Timesheets = () => {
                       </h4>
                       <div className="text-muted small">
                         Semana de {weekLabel} ·{' '}
-                        <CBadge color={STATUS_COLORS[selectedTeacher.status]}>
-                          {STATUS_LABELS[selectedTeacher.status]}
+                        <CBadge color={getTimesheetStatus(selectedTeacher.status).color}>
+                          {getTimesheetStatus(selectedTeacher.status).label}
                         </CBadge>
                         {selectedTeacher.submitted_at && (
                           <span className="ms-2">
@@ -353,37 +295,26 @@ const Timesheets = () => {
         </CCol>
       </CRow>
 
-      {/* Confirmation modal for reopen */}
-      <CModal visible={showReopenConfirm} onClose={() => setShowReopenConfirm(false)} alignment="center">
-        <CModalHeader>
-          <CModalTitle>Confirmar Reabertura</CModalTitle>
-        </CModalHeader>
-          <CModalBody>
-          {TXT.WEEK_REOPEN_CONFIRM}
-        </CModalBody>
-        <CModalFooter>
-          <CButton color="secondary" variant="outline" onClick={() => setShowReopenConfirm(false)}>
-            {TXT.CANCEL}
-          </CButton>
-          <CButton
-            color="warning"
-            className="text-white"
-            onClick={handleConfirmReopen}
-            disabled={updateMutation.isPending}
-          >
-            {updateMutation.isPending && <CSpinner size="sm" className="me-1" />}
-            Sim, reabrir
-          </CButton>
-        </CModalFooter>
-      </CModal>
+      <ConfirmationModal
+        visible={showReopenConfirm}
+        onClose={() => setShowReopenConfirm(false)}
+        onConfirm={handleConfirmReopen}
+        title="Confirmar Reabertura"
+        message={TXT.WEEK_REOPEN_CONFIRM}
+        confirmText="Sim, reabrir"
+        isLoading={updateMutation.isPending}
+        variant="warning"
+      />
 
       {/* LessonLogModal for direct interaction */}
-      <LessonLogModal
-        visible={Boolean(modalSlot)}
-        onClose={() => setModalSlot(null)}
-        slot={modalSlot}
-        isAdmin
-      />
+      {modalSlot && (
+        <LessonLogModal
+          key={modalSlot.operational_block_id ?? modalSlot.id}
+          onClose={() => setModalSlot(null)}
+          slot={modalSlot}
+          isAdmin
+        />
+      )}
     </div>
   )
 }

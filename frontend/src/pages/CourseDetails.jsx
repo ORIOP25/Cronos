@@ -1,6 +1,5 @@
-import React, { useState, useMemo, useCallback } from 'react'
+import { useState, useMemo, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import PropTypes from 'prop-types'
 import {
   CCard, CCardBody, CCardHeader, CCol, CRow, CButton, CAlert,
   CBadge, CSpinner, CFormInput,
@@ -14,6 +13,7 @@ import GenericModalForm from '../components/GenericModalForm'
 import ClassInCourseForm from '../components/Forms/ClassInCourseForm'
 import ConfirmationModal from '../components/ConfirmationModal'
 import { getApiErrorMessage } from '../utils/apiErrors'
+import { formatGradeLevel } from '../utils/presentation'
 
 import {
   useCourseDetails,
@@ -22,7 +22,7 @@ import {
   useCreateCourseClass,
   useUpdateCourseClass,
   useDeleteCourseClass,
-} from '../hooks/useSchoolData'
+} from '../features/catalog/data'
 import Breadcrumbs from '../components/Breadcrumbs'
 
 // ==========================================
@@ -30,7 +30,6 @@ import Breadcrumbs from '../components/Breadcrumbs'
 // ==========================================
 const ClassCard = ({ cls, onNavigate, onEdit, onDelete }) => {
   const yearLabel = `${cls.start_year}/${cls.end_year}`
-  const gradeLabels = { 10: '10.º ano', 11: '11.º ano', 12: '12.º ano' }
 
   return (
     <CCard
@@ -50,7 +49,7 @@ const ClassCard = ({ cls, onNavigate, onEdit, onDelete }) => {
         <div className="d-flex justify-content-between align-items-start mb-2">
           <div>
             <h6 className="mb-0 fw-bold">{cls.name}</h6>
-            <small className="text-muted">{gradeLabels[cls.grade_level] || `${cls.grade_level}.º ano`}</small>
+            <small className="text-muted">{formatGradeLevel(cls.grade_level)}</small>
           </div>
           <CBadge color="primary" shape="rounded-pill">{yearLabel}</CBadge>
         </div>
@@ -443,10 +442,3 @@ const CourseDetails = () => {
 }
 
 export default CourseDetails
-
-ClassCard.propTypes = {
-  cls: PropTypes.object.isRequired,
-  onNavigate: PropTypes.func.isRequired,
-  onEdit: PropTypes.func.isRequired,
-  onDelete: PropTypes.func.isRequired,
-}

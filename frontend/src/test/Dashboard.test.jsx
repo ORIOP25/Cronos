@@ -8,7 +8,7 @@ const { useDashboard } = vi.hoisted(() => ({
   useDashboard: vi.fn(),
 }))
 
-vi.mock('../hooks/useSchoolData', () => ({
+vi.mock('../features/operations/data', () => ({
   useDashboard: () => useDashboard(),
 }))
 

@@ -1,9 +1,9 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import DraftPanel from '../components/schedules/DraftPanel'
-import { useScheduleDiff } from '../hooks/useSchoolData'
+import { useScheduleDiff } from '../features/scheduling/data'
 
-vi.mock('../hooks/useSchoolData', () => ({
+vi.mock('../features/scheduling/data', () => ({
   useScheduleDiff: vi.fn(),
 }))
 

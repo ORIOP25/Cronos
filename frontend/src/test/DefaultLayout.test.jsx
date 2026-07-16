@@ -1,13 +1,8 @@
-import React from 'react'
 import { describe, it, expect, vi } from 'vitest'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { renderWithProviders } from './testUtils'
 import { setClerkState } from './setup'
 import DefaultLayout from '../components/DefaultLayout'
-
-vi.mock('../hooks/useSchoolData', () => ({
-  useDashboard: () => ({ data: null, isLoading: false }),
-}))
 
 vi.mock('../hooks/useRole', () => ({
   useRole: () => ({ isAdmin: true, isTeacher: false }),

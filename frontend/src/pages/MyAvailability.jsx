@@ -1,7 +1,9 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import AvailabilityGrid from '../components/AvailabilityGrid';
 import PageHeader from '../components/PageHeader';
-import { useCurrentMember, useTimeslots, useMyAvailability, useSaveAvailability } from '../hooks/useSchoolData';
+import { useCurrentMember } from '../features/members/data';
+import { useTimeslots } from '../features/catalog/data';
+import { useMyAvailability, useSaveAvailability } from '../features/operations/data';
 import { PREFERENCE_LEVELS, DEFAULT_PREFERENCE } from '../constants';
 
 

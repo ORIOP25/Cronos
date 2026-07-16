@@ -27,11 +27,9 @@ export function useCreateActiveOrganization() {
         setActive,
         getToken,
         storage: sessionStoragePort(),
-        bootstrap: async (token) => (
-          await apiClient.post('/session/bootstrap', undefined, {
+        bootstrap: (token) => apiClient.post('/session/bootstrap', undefined, {
             headers: { Authorization: `Bearer ${token}` },
-          })
-        ).data,
+          }),
         cacheMember: async (organizationId, result) => {
           queryClient.setQueryData(['current-member', organizationId], {
             ...result.member,

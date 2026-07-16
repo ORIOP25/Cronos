@@ -1,22 +1,20 @@
-// Testes para o sistema de role-based access (roleAccess.js).
-
 import { describe, it, expect } from 'vitest'
 import {
-  ROUTE_DASHBOARD,
   ROUTE_CREATE_ORG,
-  ROUTE_MY_AVAILABILITY,
+  canAccessTeacherRoutes,
   getDefaultRouteForMember,
-  getForbiddenRedirectRoute,
+  hasMemberCapability,
+  isActiveMember,
 } from '../roleAccess'
 
 describe('roleAccess', () => {
   describe('getDefaultRouteForMember', () => {
     it('admin vai para dashboard', () => {
-      expect(getDefaultRouteForMember({ default_mode: 'admin' })).toBe(ROUTE_DASHBOARD)
+      expect(getDefaultRouteForMember({ default_mode: 'admin' })).toBe('/dashboard')
     })
 
     it('teacher vai para my-availability', () => {
-      expect(getDefaultRouteForMember({ default_mode: 'teacher' })).toBe(ROUTE_MY_AVAILABILITY)
+      expect(getDefaultRouteForMember({ default_mode: 'teacher' })).toBe('/my-availability')
     })
 
     it('modo desconhecido redireciona para create-org', () => {
@@ -29,15 +27,32 @@ describe('roleAccess', () => {
     })
   })
 
-  describe('getForbiddenRedirectRoute', () => {
-    it('admin redirecionado para dashboard', () => {
-      expect(getForbiddenRedirectRoute({ default_mode: 'admin' })).toBe(ROUTE_DASHBOARD)
-    })
-
-    it('teacher redirecionado para my-availability', () => {
-      expect(getForbiddenRedirectRoute({ default_mode: 'teacher' })).toBe(ROUTE_MY_AVAILABILITY)
-    })
+  it('requires both active access and lifecycle state', () => {
+    expect(isActiveMember({ access_status: 'active', lifecycle_status: 'active' })).toBe(true)
+    expect(isActiveMember({ access_status: 'inactive', lifecycle_status: 'active' })).toBe(false)
+    expect(isActiveMember({ access_status: 'active', lifecycle_status: 'archived' })).toBe(false)
   })
 
+  it('grants only capabilities on an active membership', () => {
+    const activeAdmin = {
+      access_status: 'active',
+      lifecycle_status: 'active',
+      capabilities: ['admin'],
+    }
+    expect(hasMemberCapability(activeAdmin, 'admin')).toBe(true)
+    expect(hasMemberCapability(activeAdmin, 'teacher')).toBe(false)
+    expect(hasMemberCapability({ ...activeAdmin, access_status: 'inactive' }, 'admin')).toBe(false)
+  })
 
+  it('requires a teacher capability and linked teacher ID for teacher routes', () => {
+    const teacher = {
+      access_status: 'active',
+      lifecycle_status: 'active',
+      capabilities: ['teacher'],
+      teacher_id: 7,
+    }
+    expect(canAccessTeacherRoutes(teacher)).toBe(true)
+    expect(canAccessTeacherRoutes({ ...teacher, teacher_id: null })).toBe(false)
+    expect(canAccessTeacherRoutes({ ...teacher, capabilities: ['admin'] })).toBe(false)
+  })
 })

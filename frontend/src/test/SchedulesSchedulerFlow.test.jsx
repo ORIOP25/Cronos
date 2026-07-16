@@ -1,8 +1,7 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { MemoryRouter } from 'react-router-dom'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { fireEvent, screen, waitFor } from '@testing-library/react'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import Schedules from '../pages/Schedules'
+import { renderWithRouter } from './testUtils'
 
 const mocks = vi.hoisted(() => ({
   status: null,
@@ -15,7 +14,7 @@ vi.mock('../hooks/useRole', () => ({
   useRole: () => ({ isAdmin: true, isTeacher: false }),
 }))
 
-vi.mock('../hooks/useSchoolData', () => ({
+vi.mock('../features/scheduling/data', () => ({
   useSchedulerStatus: () => ({ data: mocks.status, refetch: vi.fn() }),
   useCurrentDraftSummary: () => ({ data: mocks.currentDraft, refetch: vi.fn() }),
   useApproveDraft: () => ({ mutateAsync: mocks.approve, isPending: false }),
@@ -23,10 +22,16 @@ vi.mock('../hooks/useSchoolData', () => ({
   useGenerateSchedule: () => ({ mutateAsync: mocks.generate, isPending: false }),
   useScheduleTaskStatus: () => ({ data: null }),
   useCancelScheduleTask: () => ({ mutate: vi.fn(), isPending: false }),
-  useCurrentMember: () => ({ data: { teacher_id: null } }),
-  useClasses: () => ({ data: [] }),
-  useTeachers: () => ({ data: [] }),
   useWeekSchedule: () => ({ data: [], isFetching: false, isError: false }),
+}))
+
+vi.mock('../features/members/data', () => ({
+  useCurrentMember: () => ({ data: { teacher_id: null } }),
+  useTeachers: () => ({ data: [] }),
+}))
+
+vi.mock('../features/catalog/data', () => ({
+  useClasses: () => ({ data: [] }),
   useClassDetails: () => ({ data: null }),
   useTimeslots: () => ({ data: [] }),
 }))
@@ -45,19 +50,10 @@ vi.mock('../components/schedules/KPISidebar', () => ({ default: () => null }))
 vi.mock('../components/schedules/GenerationStatusPanel', () => ({ default: () => null }))
 
 function renderPage() {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  return render(
-    <QueryClientProvider client={client}>
-      <MemoryRouter>
-        <Schedules />
-      </MemoryRouter>
-    </QueryClientProvider>
-  )
+  return renderWithRouter(<Schedules />)
 }
 
 describe('Schedules scheduler flow', () => {
-  afterEach(cleanup)
-
   beforeEach(() => {
     localStorage.clear()
     mocks.generate.mockReset()

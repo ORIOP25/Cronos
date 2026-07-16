@@ -8,7 +8,7 @@ export function toSchoolSettingsPayload(form) {
   }
 }
 
-export const DEFAULT_GRID_FORM_DATA = {
+const DEFAULT_GRID_FORM_DATA = {
   start_time: '08:00',
   end_time: '18:00',
   slot_duration_minutes: 50,

@@ -5,7 +5,6 @@ import {
   formatDateLong,
   formatDateShort,
   formatWeekRange,
-  formatNumber,
   normalizeTimeLabel,
   getCurrentWeekMonday,
   addDays,
@@ -69,15 +68,6 @@ describe('formatUtils', () => {
     })
   })
 
-  describe('formatNumber', () => {
-    it('formata números com separador PT', () => {
-      const result = formatNumber(1200)
-      // toLocaleString('pt-PT') pode retornar '1 200' ou '1200' dependendo da ICU
-      expect(typeof result).toBe('string')
-      expect(result).toMatch(/1\s?200/)
-    })
-  })
-
   describe('normalizeTimeLabel', () => {
     it('trunca hora para HH:MM', () => {
       expect(normalizeTimeLabel('08:30:00')).toBe('08:30')
@@ -102,6 +92,17 @@ describe('formatUtils', () => {
       expect(addDays('2026-05-01', 7)).toBe('2026-05-08')
       expect(addDays('2026-05-01', -1)).toBe('2026-04-30')
     })
+
+    it('uses local calendar arithmetic across Lisbon DST boundaries', () => {
+      expect(addDays('2026-03-28', 1)).toBe('2026-03-29')
+      expect(addDays('2026-10-24', 1)).toBe('2026-10-25')
+    })
+
+    it('accepts Date values and rejects malformed input', () => {
+      expect(addDays(new Date(2026, 4, 1), 1)).toBe('2026-05-02')
+      expect(addDays('2026-02-30', 1)).toBe('')
+      expect(addDays('bad-value', 1)).toBe('')
+    })
   })
 
   describe('toIsoDate', () => {
@@ -124,6 +125,12 @@ describe('formatUtils', () => {
       // 2026-05-03 é domingo — a segunda anterior é 2026-04-27
       const monday = toWeekMonday(new Date(2026, 4, 3, 12, 0, 0))
       expect(monday).toBe('2026-04-27')
+    })
+
+    it('handles Sunday strings and malformed input', () => {
+      expect(toWeekMonday('2026-05-03')).toBe('2026-04-27')
+      expect(toWeekMonday('not-a-date')).toBe('')
+      expect(toWeekMonday(new Date('invalid'))).toBe('')
     })
   })
 })

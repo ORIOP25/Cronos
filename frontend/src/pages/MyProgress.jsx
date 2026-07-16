@@ -1,9 +1,10 @@
-import React, { useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import PageHeader from '../components/PageHeader'
 import { CAlert, CBadge, CCard, CCardBody, CCardHeader, CSpinner } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
 import { cilBook, cilEducation } from '@coreui/icons'
-import { useCurrentMember, useTeacherProgress } from '../hooks/useSchoolData'
+import { useCurrentMember } from '../features/members/data'
+import { useTeacherProgress } from '../features/operations/data'
 
 function SubjectRow({ subject }) {
   const isLow = subject.overall_percentage < 50

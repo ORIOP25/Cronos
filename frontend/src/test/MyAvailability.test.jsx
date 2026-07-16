@@ -1,14 +1,16 @@
-import React from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import { screen } from '@testing-library/react'
 import { renderWithProviders } from './testUtils'
 import MyAvailability from '../pages/MyAvailability'
 
-vi.mock('../hooks/useSchoolData', () => ({
+vi.mock('../features/members/data', () => ({
   useCurrentMember: () => ({
     data: { teacher_id: 42 },
     isLoading: false,
   }),
+}))
+
+vi.mock('../features/catalog/data', () => ({
   useTimeslots: () => ({
     data: [
       { id: 1, day_of_week: 0, start_time: '08:00:00' },
@@ -16,6 +18,9 @@ vi.mock('../hooks/useSchoolData', () => ({
     ],
     isLoading: false,
   }),
+}))
+
+vi.mock('../features/operations/data', () => ({
   useMyAvailability: () => ({
     data: [
       { timeslot_id: 1, score: 2 },

@@ -1,6 +1,3 @@
-import React from 'react'
-import PropTypes from 'prop-types'
-
 const PageHeader = ({ preTitle, title, children }) => {
   return (
     <div className="d-flex justify-content-between align-items-end mb-5 flex-wrap gap-3">
@@ -20,12 +17,6 @@ const PageHeader = ({ preTitle, title, children }) => {
       </div>
     </div>
   )
-}
-
-PageHeader.propTypes = {
-  preTitle: PropTypes.string,
-  title: PropTypes.string.isRequired,
-  children: PropTypes.node,
 }
 
 export default PageHeader

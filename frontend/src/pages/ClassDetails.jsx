@@ -1,5 +1,4 @@
-import React, { useState, useMemo, useCallback } from 'react'
-import PropTypes from 'prop-types'
+import { useState, useMemo, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   CCard, CCardBody, CCardHeader, CCol, CRow, CButton, CAlert,
@@ -14,12 +13,14 @@ import {
 
 import {
   useClassDetails,
-  useUpdateEntity,
+  useUpdateClass,
   useUpdateClassProgress,
   useClassSubjects,
-} from '../hooks/useSchoolData'
+} from '../features/catalog/data'
 import Breadcrumbs from '../components/Breadcrumbs'
+import RoomTypeBadge from '../components/RoomTypeBadge'
 import { getApiErrorMessage } from '../utils/apiErrors'
+import { formatGradeLevel } from '../utils/presentation'
 
 // ==========================================
 //  HELPERS
@@ -31,22 +32,6 @@ const getProgressColor = (pct) => {
   if (pct >= 60)  return 'var(--rs-progress-yellow)'
   if (pct >= 30)  return 'var(--rs-progress-orange)'
   return 'var(--rs-progress-red)'
-}
-
-/** Badge de tipo de sala */
-const RoomBadge = ({ type }) => {
-  const config = {
-    gym: { color: 'warning', label: 'Ginásio' },
-    lab: { color: 'info', label: 'Laboratório' },
-    art: { color: 'danger', label: 'Artes' },
-    normal: { color: 'light', label: 'Normal', textClass: 'text-dark' },
-  }
-  const c = config[type] || config.normal
-  return <CBadge color={c.color} shape="rounded-pill" className={c.textClass || ''}>{c.label}</CBadge>
-}
-
-RoomBadge.propTypes = {
-  type: PropTypes.string.isRequired,
 }
 
 // ==========================================
@@ -126,20 +111,6 @@ const ModuleRow = ({ module, isEditing, editValue, onChangeHours }) => {
   )
 }
 
-ModuleRow.propTypes = {
-  module: PropTypes.shape({
-    id: PropTypes.number.isRequired,
-    name: PropTypes.string.isRequired,
-    code: PropTypes.string,
-    hours_total: PropTypes.number.isRequired,
-    hours_completed: PropTypes.number.isRequired,
-    is_completed: PropTypes.bool,
-  }).isRequired,
-  isEditing: PropTypes.bool.isRequired,
-  editValue: PropTypes.number.isRequired,
-  onChangeHours: PropTypes.func.isRequired,
-}
-
 // ==========================================
 //  SUB-COMPONENT: Card de disciplina com accordion
 // ==========================================
@@ -153,7 +124,7 @@ const SubjectCard = ({ subject, isEditing, editMap, onChangeHours }) => {
           <div className="d-flex align-items-center gap-2">
             <CIcon icon={cilBook} className="text-info" size="sm" />
             <strong style={{ fontSize: '0.95rem' }}>{subject.name}</strong>
-            <RoomBadge type={subject.required_room_type} />
+            <RoomTypeBadge type={subject.required_room_type} />
           </div>
           <div className="d-flex align-items-center gap-2">
             <span className="text-muted" style={{ fontSize: '0.85rem' }}>
@@ -194,21 +165,6 @@ const SubjectCard = ({ subject, isEditing, editMap, onChangeHours }) => {
   )
 }
 
-SubjectCard.propTypes = {
-  subject: PropTypes.shape({
-    id: PropTypes.number.isRequired,
-    name: PropTypes.string.isRequired,
-    overall_percentage: PropTypes.number.isRequired,
-    required_room_type: PropTypes.string,
-    completed_hours: PropTypes.number.isRequired,
-    total_hours: PropTypes.number.isRequired,
-    modules: PropTypes.arrayOf(PropTypes.object).isRequired,
-  }).isRequired,
-  isEditing: PropTypes.bool.isRequired,
-  editMap: PropTypes.objectOf(PropTypes.number).isRequired,
-  onChangeHours: PropTypes.func.isRequired,
-}
-
 // ==========================================
 //  COMPONENT PRINCIPAL: ClassDetails
 // ==========================================
@@ -221,7 +177,7 @@ const ClassDetails = () => {
   // --- DATA ---
   const { data: classData, isLoading, error } = useClassDetails(numClassId)
   const { data: classSubjects } = useClassSubjects(numClassId)
-  const updateClass = useUpdateEntity('classes')
+  const updateClass = useUpdateClass()
   const updateProgress = useUpdateClassProgress()
 
   // --- STATE: Edição do header ---
@@ -347,7 +303,6 @@ const ClassDetails = () => {
     )
   }
 
-  const gradeLabels = { 10: '10.º ano', 11: '11.º ano', 12: '12.º ano' }
   const yearLabel = `${classData.start_year}/${classData.end_year}`
 
   // ==========================================
@@ -420,7 +375,7 @@ const ClassDetails = () => {
                   <h3 className="mb-0 fw-bold">{classData.name}</h3>
                   <CBadge color="primary" shape="rounded-pill">{yearLabel}</CBadge>
                   <CBadge color="secondary" shape="rounded-pill">
-                    {gradeLabels[classData.grade_level] || `${classData.grade_level}.º ano`}
+                    {formatGradeLevel(classData.grade_level)}
                   </CBadge>
                 </div>
                 {classData.course && (
@@ -521,7 +476,7 @@ const ClassDetails = () => {
         <CCardBody className="py-2">
           {(classSubjects?.subjects || []).length === 0 ? (
             <p className="text-muted text-center mb-0 py-2">
-              Nenhuma disciplina atribuída. Clique em "Gerir" para adicionar disciplinas e atribuir professores.
+              Nenhuma disciplina atribuída. Clique em &quot;Gerir&quot; para adicionar disciplinas e atribuir professores.
             </p>
           ) : (
             <div className="table-responsive">

@@ -1,0 +1,34 @@
+export const ROOM_TYPES = Object.freeze({
+  normal: { label: 'Normal', color: 'light', textClass: 'text-dark' },
+  lab: { label: 'Laboratório', color: 'info' },
+  gym: { label: 'Ginásio', color: 'warning' },
+  art: { label: 'Artes', color: 'danger' },
+})
+
+export function getRoomType(type) {
+  return ROOM_TYPES[type] ?? { label: type || ROOM_TYPES.normal.label, color: 'secondary' }
+}
+
+export function formatGradeLevel(gradeLevel) {
+  return gradeLevel == null || gradeLevel === '' ? '—' : `${gradeLevel}.º ano`
+}
+
+export const TIMESHEET_STATUSES = Object.freeze({
+  OPEN: { label: 'Aberta', color: 'secondary', background: '#f8f9fa' },
+  SUBMITTED: { label: 'Submetida', color: 'info', background: '#fff3cd' },
+  APPROVED: { label: 'Aprovada', color: 'success', background: '#d1e7dd' },
+})
+
+export function getTimesheetStatus(status) {
+  return TIMESHEET_STATUSES[status] ?? { label: status || '—', color: 'secondary', background: '#e7f1ff' }
+}
+
+export const LESSON_LOG_STATUSES = Object.freeze({
+  PENDING: { label: 'Planeado', stateClass: 'zen-state-planned', badge: 'secondary' },
+  COMPLETED: { label: 'Concluída ✓', stateClass: 'zen-state-given', badge: 'success' },
+  OCCURRENCE: { label: 'Ocorrência', stateClass: 'zen-state-gap', badge: 'warning' },
+})
+
+export function getLessonLogStatus(status) {
+  return LESSON_LOG_STATUSES[status] ?? LESSON_LOG_STATUSES.PENDING
+}

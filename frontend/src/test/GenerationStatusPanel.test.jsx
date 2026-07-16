@@ -1,9 +1,9 @@
 import { cleanup, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import GenerationStatusPanel from '../components/schedules/GenerationStatusPanel'
-import { useScheduleTaskStatus } from '../hooks/useSchoolData'
+import { useScheduleTaskStatus } from '../features/scheduling/data'
 
-vi.mock('../hooks/useSchoolData', () => ({
+vi.mock('../features/scheduling/data', () => ({
   useScheduleTaskStatus: vi.fn(),
 }))
 

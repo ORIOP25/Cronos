@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { fireEvent, render, screen } from '@testing-library/react'
 import WeekGrid from '../components/WeekGrid'
+import { buildWeekGridModel } from '../utils/weekGridModel'
 
 const baseSlot = {
   schedule_output_id: 501,
@@ -21,6 +22,23 @@ const baseSlot = {
   hours_given: null,
 }
 
+describe('buildWeekGridModel', () => {
+  it('builds collisions, baseline times, dates, and locked slots', () => {
+    const collision = { ...baseSlot, schedule_output_id: 502, week_timesheet_status: 'APPROVED' }
+    const baseline = { id: 10, day_of_week: 1, start_time: '11:00:00', end_time: '12:00:00' }
+    const model = buildWeekGridModel([baseSlot, collision], [baseSlot.timeslot, baseline], '2026-04-20')
+    expect(model.slotMap['0:09:00']).toHaveLength(2)
+    expect(model.slotMap['0:09:00'][1].week_timesheet_status).toBe('APPROVED')
+    expect(model.uniqueTimes).toEqual(['09:00', '11:00'])
+    expect(model.activeDays).toEqual([0, 1])
+    expect(model.dayDateMap).toEqual({ 0: '2026-04-20', 1: '2026-04-21' })
+  })
+
+  it('supports empty input', () => {
+    expect(buildWeekGridModel()).toEqual({ slotMap: {}, uniqueTimes: [], activeDays: [], endTimeMap: {}, dayDateMap: {} })
+  })
+})
+
 describe('WeekGrid (Ponto 8.1)', () => {
   it('abre ação operacional ao clicar em bloco elegível', () => {
     const onOpenOperationalAction = vi.fn()
@@ -40,12 +58,11 @@ describe('WeekGrid (Ponto 8.1)', () => {
     fireEvent.click(slotButton)
 
     expect(onOpenOperationalAction).toHaveBeenCalledTimes(1)
-    expect(onOpenOperationalAction).toHaveBeenCalledWith(
-      expect.objectContaining({
-        schedule_output_id: 501,
-        date: '2026-04-20',
-      })
-    )
+    expect(onOpenOperationalAction).toHaveBeenCalledWith(expect.objectContaining({
+      ...baseSlot,
+      can_create_occurrence: true,
+      can_decide_occurrence: false,
+    }))
   })
 
   it('opens an active baseline block for operational registration', () => {
