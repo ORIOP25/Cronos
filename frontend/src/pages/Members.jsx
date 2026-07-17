@@ -258,7 +258,7 @@ const Members = () => {
 
   return (
     <div>
-      <PageHeader preTitle="Gestao" title="Equipa" />
+      <PageHeader preTitle="Gestão" title="Equipa" />
       <div className="d-flex justify-content-between align-items-center mb-4 gap-3 flex-wrap">
         <div className="d-flex gap-2 flex-wrap">
           <CFormInput

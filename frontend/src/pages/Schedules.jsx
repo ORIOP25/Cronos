@@ -24,6 +24,7 @@ import DraftPanel from '../components/schedules/DraftPanel'
 import GenerationStatusPanel from '../components/schedules/GenerationStatusPanel'
 import PreflightErrorPanel from '../components/schedules/PreflightErrorPanel'
 import ConfirmationModal from '../components/ConfirmationModal'
+import PageHeader from '../components/PageHeader'
 import { useOrganization } from '@clerk/react'
 import { getCurrentWeekMonday } from '../utils/formatUtils'
 import { getApiErrorMessage } from '../utils/apiErrors'
@@ -360,12 +361,10 @@ const Schedules = () => {
         variant="warning"
       />
 
-      {/* ── Page header ── */}
-      <div className="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3">
-        <div>
-          <h1 className="h3 mb-1" style={{ color: 'var(--brand-950)' }}>Horários escolares</h1>
-        </div>
-
+      <PageHeader
+        preTitle="Operações"
+        title={<span>Horários <span className="text-editorial">Escolares</span></span>}
+      >
         {/* Status-driven generation controls */}
         <div className="d-flex align-items-center gap-2 flex-wrap">
                 {!hasPendingDraft && schedulerStatus?.can_generate_new_draft && (
@@ -407,7 +406,7 @@ const Schedules = () => {
                     </CButton>
                 )}
         </div>
-      </div>
+      </PageHeader>
 
       <>
           {preflightErrors.length > 0 && <PreflightErrorPanel problems={preflightErrors} />}
