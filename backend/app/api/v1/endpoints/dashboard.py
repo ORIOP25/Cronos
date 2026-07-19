@@ -1,11 +1,11 @@
-"""Endpoint do Dashboard V1 — Command Center para administradores."""
+"""Endpoint do Dashboard V1 â€” Command Center para administradores."""
 
 from typing import Annotated
 
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app import models, schemas
+from app import schemas
 from app.api import deps
 from app.services import dashboard_service
 
@@ -15,12 +15,12 @@ router = APIRouter()
 @router.get("/dashboard", response_model=schemas.DashboardV1Response)
 async def get_dashboard(
     db: Annotated[AsyncSession, Depends(deps.get_db)],
-    current_user: Annotated[models.User, Depends(deps.get_current_active_admin)],
+    current_user: deps.AdminActor,
 ):
-    """Dashboard V1 — Command Center.
+    """Dashboard V1 â€” Command Center.
 
-    Agrega alertas operacionais, saúde do horário, progresso curricular,
-    contagens de recursos e resumo de dívidas numa única resposta.
+    Agrega alertas operacionais, saÃºde do horÃ¡rio, progresso curricular,
+    contagens de recursos e resumo de dÃ­vidas numa Ãºnica resposta.
     """
 
     def _run(sync_db):

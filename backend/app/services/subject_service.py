@@ -1,6 +1,7 @@
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session, selectinload
-from sqlalchemy import select, delete
+
 from app import models, schemas
 from app.services.scheduler_state_service import record_scheduler_change
 
@@ -19,48 +20,57 @@ def _subject_demand_snapshot(subject: models.Subject) -> dict:
     }
 
 
-async def _subject_is_scheduled(
-    db: AsyncSession, organization_id: int, subject_id: int
-) -> bool:
+async def _subject_is_scheduled(db: AsyncSession, organization_id: int, subject_id: int) -> bool:
     class_link = await db.scalar(
-        select(models.ClassSubjectLink.id).where(
+        select(models.ClassSubjectLink.id)
+        .where(
             models.ClassSubjectLink.organization_id == organization_id,
             models.ClassSubjectLink.subject_id == subject_id,
-        ).limit(1)
+        )
+        .limit(1)
     )
     if class_link is not None:
         return True
     course_link = await db.execute(
-        select(models.course_subject_link.c.subject_id).where(
+        select(models.course_subject_link.c.subject_id)
+        .where(
             models.course_subject_link.c.organization_id == organization_id,
             models.course_subject_link.c.subject_id == subject_id,
-        ).limit(1)
+        )
+        .limit(1)
     )
     return course_link.first() is not None
 
+
 # --- ASYNC (API) ---
 async def get_subjects_by_org(db: AsyncSession, organization_id: int):
-    stmt = select(models.Subject).where(models.Subject.organization_id == organization_id).order_by(models.Subject.name).options(selectinload(models.Subject.modules))
+    stmt = (
+        select(models.Subject)
+        .where(models.Subject.organization_id == organization_id)
+        .order_by(models.Subject.name)
+        .options(selectinload(models.Subject.modules))
+    )
     result = await db.execute(stmt)
     return result.scalars().all()
+
 
 async def create_subject(
     db: AsyncSession,
     item: schemas.SubjectCreate,
     organization_id: int,
-    changed_by_user_id: int | None = None,
+    changed_by_membership_id: int | None = None,
 ):
     """
     Cria uma disciplina e os seus módulos (Library) atomicamente.
     """
     # 0. Verificar duplicados
     query_check = select(models.Subject).where(
-        models.Subject.name == item.name,
-        models.Subject.organization_id == organization_id
+        models.Subject.name == item.name, models.Subject.organization_id == organization_id
     )
     result_check = await db.execute(query_check)
     if result_check.scalars().first():
         from app.core.exceptions import DomainError
+
         raise DomainError(
             f"A disciplina '{item.name}' já existe nesta escola.",
             status_code=400,
@@ -71,10 +81,7 @@ async def create_subject(
     modules_data = subject_data.pop("modules", [])
 
     # 2. Criar a Disciplina
-    db_subject = models.Subject(
-        **subject_data,
-        organization_id=organization_id
-    )
+    db_subject = models.Subject(**subject_data, organization_id=organization_id)
     db.add(db_subject)
     await db.flush()  # Flush gera o ID da disciplina (db_subject.id)
 
@@ -83,7 +90,7 @@ async def create_subject(
         db_module = models.Module(
             **mod,
             organization_id=organization_id,
-            subject_id=db_subject.id  # Ligação ao Pai
+            subject_id=db_subject.id,  # Ligação ao Pai
         )
         db.add(db_module)
 
@@ -97,35 +104,44 @@ async def create_subject(
         operation=models.SchedulerStateChangeOperation.CREATE,
         before=None,
         after=_subject_demand_snapshot(db_subject),
-        changed_by_user_id=changed_by_user_id,
+        changed_by_membership_id=changed_by_membership_id,
         active_resource=False,
     )
 
     # 4. Commit Atómico (Grava tudo ou nada)
-    await db.commit()
-    
+    await db.flush()
+
     # 5. Refresh com Eager Loading
     # Precisamos de recarregar o objeto para garantir que devolvemos os módulos na resposta
-    query = select(models.Subject).where(models.Subject.id == db_subject.id).options(
-        selectinload(models.Subject.modules)
+    query = (
+        select(models.Subject)
+        .where(models.Subject.id == db_subject.id)
+        .options(selectinload(models.Subject.modules))
     )
     result = await db.execute(query)
     return result.scalars().first()
 
+
 # --- HELPERS: Sincronização de Módulos (Smart Diff) ---
 
-async def _delete_removed_modules(db: AsyncSession, existing_modules: dict, incoming_ids: set, organization_id: int):
-    """Apaga módulos removidos pelo utilizador e o class_progress associado."""
+
+async def _delete_removed_modules(
+    db: AsyncSession, existing_modules: dict, incoming_ids: set, organization_id: int
+):
+    """Delete unused modules while preserving append-only progress history."""
     ids_to_delete = set(existing_modules.keys()) - incoming_ids
     if not ids_to_delete:
         return
-    # Bulk delete class_progress (FK) antes dos módulos
-    await db.execute(
-        delete(models.ClassProgress).where(
-            models.ClassProgress.organization_id == organization_id,
-            models.ClassProgress.module_id.in_(ids_to_delete)
+    referenced = await db.scalar(
+        select(models.ProgressLedgerEntry.id)
+        .where(
+            models.ProgressLedgerEntry.organization_id == organization_id,
+            models.ProgressLedgerEntry.module_id.in_(ids_to_delete),
         )
+        .limit(1)
     )
+    if referenced is not None:
+        raise ValueError("Modules with progress history cannot be deleted.")
     # ORM delete — mantém o identity map sincronizado
     for mod_id in ids_to_delete:
         await db.delete(existing_modules[mod_id])
@@ -133,20 +149,31 @@ async def _delete_removed_modules(db: AsyncSession, existing_modules: dict, inco
 
 
 async def _reset_module_orders(db: AsyncSession, incoming_modules: list, existing_modules: dict):
-    """Evita violação da UniqueConstraint (uq_module_order_per_subject)
-    ao reordenar módulos: define ordens temporárias negativas primeiro."""
+    """Move retained modules outside both order ranges before reordering."""
     modules_to_update = [
-        m for m in incoming_modules
-        if m.id is not None and m.id in existing_modules
+        m for m in incoming_modules if m.id is not None and m.id in existing_modules
     ]
     if not modules_to_update:
         return
-    for i, mod_data in enumerate(modules_to_update, start=1):
-        existing_modules[mod_data.id].order = -i
+    temporary_start = (
+        max(
+            [module.order for module in existing_modules.values()]
+            + [module.order for module in incoming_modules]
+        )
+        + 1
+    )
+    for offset, mod_data in enumerate(modules_to_update):
+        existing_modules[mod_data.id].order = temporary_start + offset
     await db.flush()
 
 
-def _upsert_modules(db: AsyncSession, incoming_modules: list, existing_modules: dict, subject_id: int, organization_id: int):
+def _upsert_modules(
+    db: AsyncSession,
+    incoming_modules: list,
+    existing_modules: dict,
+    subject_id: int,
+    organization_id: int,
+):
     """Atualiza módulos existentes e cria novos (com ordens finais)."""
     for mod_data in incoming_modules:
         if mod_data.id is not None and mod_data.id in existing_modules:
@@ -172,16 +199,17 @@ async def update_subject(
     subject_id: int,
     subject_in: schemas.SubjectUpdate,
     organization_id: int,
-    changed_by_user_id: int | None = None,
+    changed_by_membership_id: int | None = None,
 ):
     # 1. Buscar a disciplina com módulos
-    query = select(models.Subject).where(
-        models.Subject.id == subject_id,
-        models.Subject.organization_id == organization_id
-    ).options(selectinload(models.Subject.modules))
+    query = (
+        select(models.Subject)
+        .where(models.Subject.id == subject_id, models.Subject.organization_id == organization_id)
+        .options(selectinload(models.Subject.modules))
+    )
     result = await db.execute(query)
     subject = result.scalars().first()
-    
+
     if not subject:
         return None
     before = _subject_demand_snapshot(subject)
@@ -192,13 +220,13 @@ async def update_subject(
         q_check = select(models.Subject).where(
             models.Subject.name == subject_in.name,
             models.Subject.organization_id == organization_id,
-            models.Subject.id != subject_id
+            models.Subject.id != subject_id,
         )
         if (await db.execute(q_check)).scalars().first():
-            return None 
+            return None
 
     # 3. Atualizar campos simples
-    update_data = subject_in.model_dump(exclude_unset=True, exclude={'modules'})
+    update_data = subject_in.model_dump(exclude_unset=True, exclude={"modules"})
     for field, value in update_data.items():
         setattr(subject, field, value)
 
@@ -220,21 +248,26 @@ async def update_subject(
         operation=models.SchedulerStateChangeOperation.UPDATE,
         before=before,
         after=_subject_demand_snapshot(subject),
-        changed_by_user_id=changed_by_user_id,
+        changed_by_membership_id=changed_by_membership_id,
         active_resource=active_resource,
     )
 
     # subject já está tracked pela sessão — commit grava todas as alterações
-    await db.commit()
-    stmt = select(models.Subject).options(selectinload(models.Subject.modules)).where(models.Subject.id == subject.id)
+    await db.flush()
+    stmt = (
+        select(models.Subject)
+        .options(selectinload(models.Subject.modules))
+        .where(models.Subject.id == subject.id)
+    )
     result = await db.execute(stmt)
     return result.scalars().first()
+
 
 async def delete_subject(
     db: AsyncSession,
     subject_id: int,
     organization_id: int,
-    changed_by_user_id: int | None = None,
+    changed_by_membership_id: int | None = None,
 ):
     """
     Remove uma disciplina. Protege se existirem aulas associadas.
@@ -249,20 +282,25 @@ async def delete_subject(
         .options(selectinload(models.Subject.modules))
     )
     item = result.scalars().first()
-    
+
     if not item:
         return "NOT_FOUND"
 
-    # 2. VERIFICAÇÃO DE INTEGRIDADE
-    # Verifica se existem aulas (Lessons) desta disciplina
-    query_dep = select(models.Lesson).where(
-        models.Lesson.organization_id == organization_id,
-        models.Lesson.subject_id == subject_id,
-    )
-    result_dep = await db.execute(query_dep)
-    
-    if result_dep.first():
-        return "DEPENDENCY_ERROR"
+    for model in (
+        models.ClassSubjectLink,
+        models.ActiveScheduleBlock,
+        models.ScheduleDraftBlock,
+        models.OperationalScheduleBlock,
+    ):
+        if (
+            await db.execute(
+                select(model.id).where(
+                    model.organization_id == organization_id,
+                    model.subject_id == subject_id,
+                )
+            )
+        ).first():
+            return "DEPENDENCY_ERROR"
 
     # 3. Apagar
     before = _subject_demand_snapshot(item)
@@ -276,11 +314,12 @@ async def delete_subject(
         operation=models.SchedulerStateChangeOperation.DELETE,
         before=before,
         after=None,
-        changed_by_user_id=changed_by_user_id,
+        changed_by_membership_id=changed_by_membership_id,
         active_resource=active_resource,
     )
-    await db.commit()
+    await db.flush()
     return "SUCCESS"
+
 
 # --- SYNC (SOLVER) ---
 def get_subjects_by_org_sync(db: Session, organization_id: int):

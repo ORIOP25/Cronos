@@ -11,7 +11,6 @@ from app.services.session_bootstrap_service import (
     SessionBootstrapService,
 )
 
-
 router = APIRouter()
 logger = structlog.get_logger(__name__)
 
@@ -20,14 +19,14 @@ logger = structlog.get_logger(__name__)
 async def bootstrap_session(
     request: Request,
     db: Annotated[AsyncSession, Depends(deps.get_db)],
+    clerk: deps.ClerkGatewayDep,
+    payload: Annotated[dict, Depends(deps.get_clerk_payload)],
 ):
-    payload = await deps.get_clerk_payload(request)
     try:
-        result = await SessionBootstrapService(db).bootstrap(payload)
+        result = await SessionBootstrapService(db, clerk).bootstrap(payload)
         logger.info("session_bootstrap_outcome", outcome="success")
         return result
     except SessionBootstrapError as exc:
-        await db.rollback()
         logger.warning(
             "session_bootstrap_outcome",
             outcome=exc.code.lower(),

@@ -6,19 +6,19 @@ Responsável por:
   - CRUD de eventos do calendário escolar (SchoolCalendarEvent)
   - Importação automática de feriados via package `holidays`
 """
+
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import date
-from typing import Sequence
 
 import holidays as pt_holidays_lib
 import structlog
-from sqlalchemy import select, and_, delete
+from sqlalchemy import and_, delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models, schemas
 from app.services import timeslot_service
-from app.services.schedule_cache_service import invalidate_latest_schedule_cache
 from app.services.scheduler_state_service import (
     SchedulerStateService,
     record_scheduler_change,
@@ -26,6 +26,7 @@ from app.services.scheduler_state_service import (
 
 SETTINGS_NOT_FOUND = "Configurações da escola não encontradas"
 logger = structlog.get_logger(__name__)
+
 
 def _calendar_settings_snapshot(settings: models.OrganizationSettings) -> dict:
     return {
@@ -70,7 +71,7 @@ async def _sync_school_year_and_record_settings_changes(
     *,
     before_calendar: dict | None,
     before_policy: dict | None,
-    changed_by_user_id: int | None,
+    changed_by_membership_id: int | None,
 ) -> None:
     state_service = SchedulerStateService(db)
     if settings.school_start_date is not None and settings.school_hard_end_date is not None:
@@ -95,7 +96,7 @@ async def _sync_school_year_and_record_settings_changes(
         operation=operation,
         before=before_calendar,
         after=_calendar_settings_snapshot(settings),
-        changed_by_user_id=changed_by_user_id,
+        changed_by_membership_id=changed_by_membership_id,
     )
     await record_scheduler_change(
         db,
@@ -105,7 +106,7 @@ async def _sync_school_year_and_record_settings_changes(
         operation=operation,
         before=before_policy,
         after=_repair_policy_snapshot(settings),
-        changed_by_user_id=changed_by_user_id,
+        changed_by_membership_id=changed_by_membership_id,
         repair_policy_change=True,
     )
 
@@ -114,7 +115,10 @@ async def _sync_school_year_and_record_settings_changes(
 #  ORGANIZATION SETTINGS
 # ==========================================
 
-async def get_settings(db: AsyncSession, organization_id: int) -> models.OrganizationSettings | None:
+
+async def get_settings(
+    db: AsyncSession, organization_id: int
+) -> models.OrganizationSettings | None:
     """Retorna a configuração única da escola."""
     result = await db.execute(
         select(models.OrganizationSettings).where(
@@ -123,11 +127,12 @@ async def get_settings(db: AsyncSession, organization_id: int) -> models.Organiz
     )
     return result.scalar_one_or_none()
 
+
 async def upsert_settings(
     db: AsyncSession,
     organization_id: int,
     data: schemas.OrganizationSettingsUpsert,
-    changed_by_user_id: int | None = None,
+    changed_by_membership_id: int | None = None,
 ) -> models.OrganizationSettings:
     """Cria ou actualiza o registo único de configuração."""
     existing = await get_settings(db, organization_id)
@@ -162,9 +167,9 @@ async def upsert_settings(
             existing,
             before_calendar=before_calendar,
             before_policy=before_policy,
-            changed_by_user_id=changed_by_user_id,
+            changed_by_membership_id=changed_by_membership_id,
         )
-        await db.commit()
+        await db.flush()
         await db.refresh(existing)
         return existing
 
@@ -183,17 +188,21 @@ async def upsert_settings(
         new_settings,
         before_calendar=None,
         before_policy=None,
-        changed_by_user_id=changed_by_user_id,
+        changed_by_membership_id=changed_by_membership_id,
     )
-    await db.commit()
+    await db.flush()
     await db.refresh(new_settings)
     return new_settings
+
 
 # ==========================================
 #  ORGANIZATION GRID SETTINGS
 # ==========================================
 
-async def get_grid_settings(db: AsyncSession, organization_id: int) -> models.OrganizationGridSettings | None:
+
+async def get_grid_settings(
+    db: AsyncSession, organization_id: int
+) -> models.OrganizationGridSettings | None:
     """Retorna as configurações únicas da grelha da escola."""
     result = await db.execute(
         select(models.OrganizationGridSettings).where(
@@ -202,11 +211,12 @@ async def get_grid_settings(db: AsyncSession, organization_id: int) -> models.Or
     )
     return result.scalar_one_or_none()
 
+
 async def upsert_grid_settings(
     db: AsyncSession,
     organization_id: int,
     data: schemas.OrganizationGridSettingsUpsert,
-    changed_by_user_id: int | None = None,
+    changed_by_membership_id: int | None = None,
 ) -> models.OrganizationGridSettings:
     """Legacy transactional wrapper for lunch settings."""
     try:
@@ -214,13 +224,12 @@ async def upsert_grid_settings(
             db,
             organization_id,
             data,
-            changed_by_user_id=changed_by_user_id,
+            changed_by_membership_id=changed_by_membership_id,
         )
-        await db.commit()
+        await db.flush()
         await db.refresh(settings)
         return settings
     except Exception:
-        await db.rollback()
         raise
 
 
@@ -228,7 +237,7 @@ async def prepare_grid_settings(
     db: AsyncSession,
     organization_id: int,
     data: schemas.OrganizationGridSettingsUpsert,
-    changed_by_user_id: int | None = None,
+    changed_by_membership_id: int | None = None,
 ) -> tuple[models.OrganizationGridSettings, bool]:
     """Prepare lunch settings and audit without committing."""
     existing = await get_grid_settings(db, organization_id)
@@ -272,7 +281,7 @@ async def prepare_grid_settings(
             operation=models.SchedulerStateChangeOperation.UPDATE,
             before=before,
             after=after,
-            changed_by_user_id=changed_by_user_id,
+            changed_by_membership_id=changed_by_membership_id,
         )
         await db.flush()
         return existing, True
@@ -293,7 +302,7 @@ async def prepare_grid_settings(
         operation=models.SchedulerStateChangeOperation.CREATE,
         before=None,
         after=_grid_settings_snapshot(new_settings),
-        changed_by_user_id=changed_by_user_id,
+        changed_by_membership_id=changed_by_membership_id,
     )
     await db.flush()
     return new_settings, True
@@ -303,7 +312,7 @@ async def save_and_regenerate_grid(
     db: AsyncSession,
     organization_id: int,
     command: schemas.GridConfigurationCommand,
-    changed_by_user_id: int,
+    changed_by_membership_id: int,
 ) -> schemas.GridConfigurationResponse:
     """Commit lunch settings and a protected timetable-grid replacement atomically."""
     try:
@@ -311,38 +320,28 @@ async def save_and_regenerate_grid(
             db,
             command.timeslots,
             organization_id,
-            changed_by_user_id,
+            changed_by_membership_id,
         )
         _, settings_changed = await prepare_grid_settings(
             db,
             organization_id,
             command.grid_settings,
-            changed_by_user_id,
+            changed_by_membership_id,
         )
         generated_count = await timeslot_service.apply_grid_regeneration(
             db,
             plan,
-            changed_by_user_id,
+            changed_by_membership_id,
         )
-        await db.commit()
+        await db.flush()
     except Exception:
-        await db.rollback()
         raise
 
     changed = settings_changed or plan.changed
-    try:
-        invalidate_latest_schedule_cache(organization_id)
-    except Exception as exc:
-        logger.warning(
-            "grid_regeneration_cache_invalidation_failed",
-            organization_id=organization_id,
-            actor_user_id=changed_by_user_id,
-            error_type=type(exc).__name__,
-        )
     logger.info(
         "grid_regeneration_committed",
         organization_id=organization_id,
-        actor_user_id=changed_by_user_id,
+        actor_membership_id=changed_by_membership_id,
         previous_count=len(plan.before_grid),
         generated_count=generated_count,
         changed=changed,
@@ -363,6 +362,7 @@ async def save_and_regenerate_grid(
 # ==========================================
 #  SCHOOL CALENDAR EVENTS
 # ==========================================
+
 
 async def list_calendar_events(
     db: AsyncSession,
@@ -387,17 +387,21 @@ async def create_calendar_event(
     db: AsyncSession,
     organization_id: int,
     data: schemas.SchoolCalendarEventCreate,
-    changed_by_user_id: int | None = None,
+    changed_by_membership_id: int | None = None,
 ) -> models.SchoolCalendarEvent:
     settings = await get_settings(db, organization_id)
     if settings:
         min_date = settings.school_start_date
         max_date = settings.school_hard_end_date
-        
+
         if min_date and (data.start_date < min_date or data.end_date < min_date):
-            raise ValueError(f"Evento fora do intervalo permitido. O calendário escolar começa a {min_date.isoformat()}.")
+            raise ValueError(
+                f"Evento fora do intervalo permitido. O calendário escolar começa a {min_date.isoformat()}."
+            )
         if max_date and (data.start_date > max_date or data.end_date > max_date):
-            raise ValueError(f"Evento fora do intervalo permitido. O calendário escolar termina a {max_date.isoformat()}.")
+            raise ValueError(
+                f"Evento fora do intervalo permitido. O calendário escolar termina a {max_date.isoformat()}."
+            )
 
     event = models.SchoolCalendarEvent(
         organization_id=organization_id,
@@ -417,9 +421,9 @@ async def create_calendar_event(
         operation=models.SchedulerStateChangeOperation.CREATE,
         before=None,
         after=_calendar_event_snapshot(event),
-        changed_by_user_id=changed_by_user_id,
+        changed_by_membership_id=changed_by_membership_id,
     )
-    await db.commit()
+    await db.flush()
     await db.refresh(event)
     return event
 
@@ -428,7 +432,7 @@ async def delete_calendar_event(
     db: AsyncSession,
     organization_id: int,
     event_id: int,
-    changed_by_user_id: int | None = None,
+    changed_by_membership_id: int | None = None,
 ) -> bool:
     result = await db.execute(
         select(models.SchoolCalendarEvent).where(
@@ -451,15 +455,16 @@ async def delete_calendar_event(
         operation=models.SchedulerStateChangeOperation.DELETE,
         before=before,
         after=None,
-        changed_by_user_id=changed_by_user_id,
+        changed_by_membership_id=changed_by_membership_id,
     )
-    await db.commit()
+    await db.flush()
     return True
 
 
 # ==========================================
 #  IMPORTAÇÃO DE FERIADOS (via package `holidays`)
 # ==========================================
+
 
 def _get_pt_holidays(years: list[int]) -> dict[date, str]:
     """Obtém feriados de Portugal para os anos indicados, sem subdivisão regional."""
@@ -469,7 +474,7 @@ def _get_pt_holidays(years: list[int]) -> dict[date, str]:
 async def sync_holidays(
     db: AsyncSession,
     organization_id: int,
-    changed_by_user_id: int | None = None,
+    changed_by_membership_id: int | None = None,
 ) -> int:
     """Importa feriados nacionais para o calendário da escola.
 
@@ -483,7 +488,9 @@ async def sync_holidays(
         years = [current_year, current_year + 1]
     else:
         start_year = settings.school_start_date.year
-        end_year = settings.school_hard_end_date.year if settings.school_hard_end_date else start_year + 1
+        end_year = (
+            settings.school_hard_end_date.year if settings.school_hard_end_date else start_year + 1
+        )
         years = list(range(start_year, end_year + 1))
 
     existing_auto_events = await db.scalars(
@@ -537,8 +544,8 @@ async def sync_holidays(
         operation=models.SchedulerStateChangeOperation.BULK_IMPORT,
         before=before,
         after=_sorted_calendar_snapshots(created_events),
-        changed_by_user_id=changed_by_user_id,
+        changed_by_membership_id=changed_by_membership_id,
         metadata={"imported_count": count, "source": "AUTO"},
     )
-    await db.commit()
+    await db.flush()
     return count

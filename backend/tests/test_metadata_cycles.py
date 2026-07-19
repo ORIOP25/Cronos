@@ -1,13 +1,9 @@
 import warnings
 
-import pytest
 from sqlalchemy.exc import SAWarning
 
 from app import models
 from app.db.database import Base
-
-
-pytestmark = pytest.mark.unit
 
 
 def test_metadata_sort_has_no_foreign_key_cycle_warning():

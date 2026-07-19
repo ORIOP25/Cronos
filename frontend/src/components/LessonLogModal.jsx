@@ -48,7 +48,6 @@ const LessonLogModal = ({ onClose, slot, isAdmin = false }) => {
     setErrorMessage('')
     try {
       await upsertLogMutation.mutateAsync({
-        scheduleOutputId: slot.schedule_output_id,
         activeScheduleBlockId: slot.active_schedule_block_id,
         operationalBlockId: slot.operational_block_id,
         payload: { status, summary, notes },

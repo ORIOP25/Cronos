@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from enum import StrEnum
-from typing import Any, Iterable, Mapping
+from typing import Any
 
 
 class ConstraintViolationCode(StrEnum):
@@ -101,12 +102,14 @@ class SchedulerConstraintPolicy:
             constraint_id = _strict_int(row.get("id"), positive=True)
             payload = row.get("rule_payload")
             if not isinstance(payload, Mapping):
-                violations.append(_configuration(
-                    ConfigurationViolationCode.INVALID_PAYLOAD,
-                    f"Constraint {rule_type} has an invalid payload.",
-                    constraint_id,
-                    rule_type,
-                ))
+                violations.append(
+                    _configuration(
+                        ConfigurationViolationCode.INVALID_PAYLOAD,
+                        f"Constraint {rule_type} has an invalid payload.",
+                        constraint_id,
+                        rule_type,
+                    )
+                )
                 continue
 
             if rule_type == "specific_room":
@@ -118,12 +121,14 @@ class SchedulerConstraintPolicy:
                     {"class_id", "subject_id", "specific_room_id"},
                 )
                 if None in (class_id, subject_id, room_id) or not valid_keys:
-                    violations.append(_configuration(
-                        ConfigurationViolationCode.INVALID_PAYLOAD,
-                        "specific_room constraint requires class_id, subject_id, and room_id.",
-                        constraint_id,
-                        rule_type,
-                    ))
+                    violations.append(
+                        _configuration(
+                            ConfigurationViolationCode.INVALID_PAYLOAD,
+                            "specific_room constraint requires class_id, subject_id, and room_id.",
+                            constraint_id,
+                            rule_type,
+                        )
+                    )
                 else:
                     room_rules.setdefault((class_id, subject_id), set()).add(room_id)
                 continue
@@ -137,12 +142,14 @@ class SchedulerConstraintPolicy:
                     "subject_id",
                     "timeslot_id",
                 }:
-                    violations.append(_configuration(
-                        ConfigurationViolationCode.INVALID_PAYLOAD,
-                        "lock_time constraint requires class_id, subject_id, and timeslot_id.",
-                        constraint_id,
-                        rule_type,
-                    ))
+                    violations.append(
+                        _configuration(
+                            ConfigurationViolationCode.INVALID_PAYLOAD,
+                            "lock_time constraint requires class_id, subject_id, and timeslot_id.",
+                            constraint_id,
+                            rule_type,
+                        )
+                    )
                 else:
                     lock_rules.setdefault((class_id, subject_id), set()).add(timeslot_id)
                 continue
@@ -154,12 +161,14 @@ class SchedulerConstraintPolicy:
                     "teacher_id",
                     "timeslot_id",
                 }:
-                    violations.append(_configuration(
-                        ConfigurationViolationCode.INVALID_PAYLOAD,
-                        "teacher_preferred constraint requires teacher_id and timeslot_id.",
-                        constraint_id,
-                        rule_type,
-                    ))
+                    violations.append(
+                        _configuration(
+                            ConfigurationViolationCode.INVALID_PAYLOAD,
+                            "teacher_preferred constraint requires teacher_id and timeslot_id.",
+                            constraint_id,
+                            rule_type,
+                        )
+                    )
                 else:
                     preferred_slots.add((teacher_id, timeslot_id))
                 continue
@@ -188,15 +197,20 @@ class SchedulerConstraintPolicy:
                     and ("timeslot_id" not in selector_keys or timeslot_id is not None)
                     and ("day_of_week" not in selector_keys or weekday is not None)
                 )
-                if teacher_id is None or selector_count != 1 or not selector_values_valid or (
-                    weekday is not None and weekday not in range(7)
+                if (
+                    teacher_id is None
+                    or selector_count != 1
+                    or not selector_values_valid
+                    or (weekday is not None and weekday not in range(7))
                 ):
-                    violations.append(_configuration(
-                        ConfigurationViolationCode.INVALID_PAYLOAD,
-                        "teacher_unavailable constraint requires teacher_id and exactly one valid selector.",
-                        constraint_id,
-                        rule_type,
-                    ))
+                    violations.append(
+                        _configuration(
+                            ConfigurationViolationCode.INVALID_PAYLOAD,
+                            "teacher_unavailable constraint requires teacher_id and exactly one valid selector.",
+                            constraint_id,
+                            rule_type,
+                        )
+                    )
                 elif blocked_date is not None and timeslot_id is not None:
                     unavailable_date_slots.add((teacher_id, blocked_date, timeslot_id))
                 elif blocked_date is not None:
@@ -224,15 +238,17 @@ class SchedulerConstraintPolicy:
                 policy=None,
                 configuration_violations=tuple(_deduplicate(violations)),
             )
-        return PolicyParseResult(policy=cls(
-            specific_rooms={key: frozenset(values) for key, values in room_rules.items()},
-            locked_timeslots={key: frozenset(values) for key, values in lock_rules.items()},
-            teacher_unavailable_timeslots=frozenset(unavailable_slots),
-            teacher_unavailable_days=frozenset(unavailable_days),
-            teacher_unavailable_dates=frozenset(unavailable_dates),
-            teacher_unavailable_date_slots=frozenset(unavailable_date_slots),
-            teacher_preferred_timeslots=frozenset(preferred_slots),
-        ))
+        return PolicyParseResult(
+            policy=cls(
+                specific_rooms={key: frozenset(values) for key, values in room_rules.items()},
+                locked_timeslots={key: frozenset(values) for key, values in lock_rules.items()},
+                teacher_unavailable_timeslots=frozenset(unavailable_slots),
+                teacher_unavailable_days=frozenset(unavailable_days),
+                teacher_unavailable_dates=frozenset(unavailable_dates),
+                teacher_unavailable_date_slots=frozenset(unavailable_date_slots),
+                teacher_preferred_timeslots=frozenset(preferred_slots),
+            )
+        )
 
     @classmethod
     def from_snapshot(cls, snapshot: Mapping[str, Any]) -> PolicyParseResult:
@@ -243,28 +259,36 @@ class SchedulerConstraintPolicy:
         key = (facts.class_id, facts.subject_id)
         rooms = self.specific_rooms.get(key)
         if rooms is not None and facts.room_id not in rooms:
-            violations.append(ConstraintViolation(
-                ConstraintViolationCode.SPECIFIC_ROOM,
-                RepairDimension.RESOURCE,
-                "Draft violates a specific_room scheduler constraint.",
-            ))
+            violations.append(
+                ConstraintViolation(
+                    ConstraintViolationCode.SPECIFIC_ROOM,
+                    RepairDimension.RESOURCE,
+                    "Draft violates a specific_room scheduler constraint.",
+                )
+            )
         timeslots = self.locked_timeslots.get(key)
         if timeslots is not None and facts.timeslot_id not in timeslots:
-            violations.append(ConstraintViolation(
-                ConstraintViolationCode.LOCK_TIME,
-                RepairDimension.TIME,
-                "Draft violates a lock_time scheduler constraint.",
-            ))
+            violations.append(
+                ConstraintViolation(
+                    ConstraintViolationCode.LOCK_TIME,
+                    RepairDimension.TIME,
+                    "Draft violates a lock_time scheduler constraint.",
+                )
+            )
         if self._teacher_unavailable(facts.teacher_id, facts.output_date, facts.timeslot_id):
-            violations.append(ConstraintViolation(
-                ConstraintViolationCode.TEACHER_UNAVAILABLE,
-                RepairDimension.TIME,
-                "Draft violates a teacher_unavailable scheduler constraint.",
-            ))
+            violations.append(
+                ConstraintViolation(
+                    ConstraintViolationCode.TEACHER_UNAVAILABLE,
+                    RepairDimension.TIME,
+                    "Draft violates a teacher_unavailable scheduler constraint.",
+                )
+            )
         return ConstraintEvaluation(
             hard_violations=tuple(violations),
             preference_tier_adjustment=(
-                1 if (facts.teacher_id, facts.timeslot_id) in self.teacher_preferred_timeslots else 0
+                1
+                if (facts.teacher_id, facts.timeslot_id) in self.teacher_preferred_timeslots
+                else 0
             ),
         )
 

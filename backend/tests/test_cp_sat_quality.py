@@ -1,6 +1,5 @@
 from datetime import date
 
-import pytest
 from ortools.sat.python import cp_model
 
 from app.scheduler.domain.quality import (
@@ -13,9 +12,6 @@ from app.scheduler.infrastructure.cp_sat_quality import (
     CpSatQualityAdapter,
     SelectableQualityBlock,
 )
-
-
-pytestmark = pytest.mark.unit
 
 
 def test_daily_excess_and_availability_expressions_match_pure_evaluator():
@@ -76,8 +72,7 @@ def test_all_cp_sat_quality_expressions_match_pure_evaluator_with_fixed_blocks()
             )
     fixed = (blocks[0],)
     rows = tuple(
-        SelectableQualityBlock(str(index), block)
-        for index, block in enumerate(blocks[1:], start=1)
+        SelectableQualityBlock(str(index), block) for index, block in enumerate(blocks[1:], start=1)
     )
     model = cp_model.CpModel()
     variables = {row.key: model.NewBoolVar(row.key) for row in rows}

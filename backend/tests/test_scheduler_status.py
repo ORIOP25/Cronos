@@ -1,12 +1,7 @@
-from datetime import date, datetime, timezone
-
-import pytest
+from datetime import UTC, date, datetime
 
 from app import models
 from app.services.scheduler_status_service import SchedulerStatusService
-
-
-pytestmark = pytest.mark.integration
 
 
 async def _status_context(db_session):
@@ -14,11 +9,7 @@ async def _status_context(db_session):
     db_session.add(organization)
     await db_session.flush()
     user = models.User(
-        organization_id=organization.id,
         email="status-admin@example.com",
-        role=models.UserRole.admin,
-        is_active=True,
-        is_superuser=False,
     )
     school_year = models.SchedulerSchoolYear(
         organization_id=organization.id,
@@ -29,16 +20,26 @@ async def _status_context(db_session):
     )
     db_session.add_all([user, school_year])
     await db_session.flush()
+    membership = models.OrganizationMembership(
+        organization_id=organization.id,
+        account_id=user.id,
+        organization_display_name="Status Admin",
+        lifecycle_status=models.MembershipLifecycleStatus.active,
+        access_status=models.MembershipAccessStatus.active,
+        can_admin=True,
+        can_teach=False,
+    )
+    db_session.add(membership)
+    await db_session.flush()
     state = models.SchedulerSchoolYearState(
         organization_id=organization.id,
         school_year_id=school_year.id,
     )
     db_session.add(state)
     await db_session.commit()
-    return organization, user, school_year, state
+    return organization, membership, school_year, state
 
 
-@pytest.mark.asyncio
 async def test_status_exposes_first_generation_as_primary_action(db_session):
     organization, _user, school_year, _state = await _status_context(db_session)
 
@@ -52,14 +53,13 @@ async def test_status_exposes_first_generation_as_primary_action(db_session):
     assert status.trigger_type == "FIRST_GENERATION"
 
 
-@pytest.mark.asyncio
 async def test_pending_draft_review_outranks_regeneration(db_session):
-    organization, user, school_year, state = await _status_context(db_session)
-    now = datetime.now(timezone.utc)
+    organization, membership, school_year, state = await _status_context(db_session)
+    now = datetime.now(UTC)
     job = models.ScheduleGenerationJob(
         organization_id=organization.id,
         school_year_id=school_year.id,
-        requested_by_user_id=user.id,
+        requested_by_membership_id=membership.id,
         strategy=models.ScheduleGenerationStrategy.COMPLETE_GENERATION,
         trigger_type=models.ScheduleGenerationTrigger.FIRST_GENERATION,
         job_status=models.ScheduleGenerationJobStatus.SUCCEEDED,
@@ -82,7 +82,7 @@ async def test_pending_draft_review_outranks_regeneration(db_session):
         projected_completion_date=date(2026, 6, 30),
         hard_end_date=school_year.hard_end_date,
         summary_json={},
-        created_by_user_id=user.id,
+        created_by_membership_id=membership.id,
     )
     db_session.add(draft)
     await db_session.flush()
@@ -97,7 +97,6 @@ async def test_pending_draft_review_outranks_regeneration(db_session):
     assert status.can_regenerate_with_confirmation is True
 
 
-@pytest.mark.asyncio
 async def test_published_status_distinguishes_no_trigger_and_scheduler_change(db_session):
     organization, _user, _school_year, state = await _status_context(db_session)
     state.school_year_publication_state = models.SchoolYearPublicationState.PUBLISHED
@@ -119,7 +118,6 @@ async def test_published_status_distinguishes_no_trigger_and_scheduler_change(db
     assert changed.can_generate_new_draft is True
 
 
-@pytest.mark.asyncio
 async def test_status_endpoint_returns_unconfigured_state(
     async_client,
     clerk_admin_headers,

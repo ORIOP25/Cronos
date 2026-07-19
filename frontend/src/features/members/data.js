@@ -16,7 +16,7 @@ export const useTeachers = ({ enabled = true } = {}) => {
   return useQuery({
     queryKey: ['teachers', orgId],
     queryFn: async () => {
-      return apiClient.get('/import/teachers')
+      return apiClient.get('/teachers/')
     },
     enabled: Boolean(orgId) && enabled,
     ...STATIC_OPTS

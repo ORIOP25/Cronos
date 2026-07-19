@@ -1,8 +1,8 @@
 from app.services.scheduler_editable_boundary import (
-    EditableBoundaryBuilder,
     IMMUTABLE_EXECUTED,
     IMMUTABLE_PAST,
     IMMUTABLE_STABILITY_WINDOW,
+    EditableBoundaryBuilder,
 )
 
 

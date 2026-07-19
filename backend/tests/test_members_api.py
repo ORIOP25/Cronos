@@ -1,13 +1,9 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from types import SimpleNamespace
 
 import pytest
 
 
-pytestmark = pytest.mark.asyncio
-
-
-@pytest.mark.unit
 async def test_clerk_access_service_normalizes_invitation_expiry_milliseconds(monkeypatch):
     from app.services.member_service import ClerkAccessService
 
@@ -39,13 +35,12 @@ async def test_clerk_access_service_normalizes_invitation_expiry_milliseconds(mo
     )
 
     assert result.ok is True
-    assert result.expires_at == datetime.fromtimestamp(expires_at_ms / 1000, tz=timezone.utc)
-    assert result.expires_at.tzinfo is timezone.utc
+    assert result.expires_at == datetime.fromtimestamp(expires_at_ms / 1000, tz=UTC)
+    assert result.expires_at.tzinfo is UTC
     assert create_kwargs["redirect_url"] == "http://localhost:5173/login"
     assert create_kwargs["notify"] is True
 
 
-@pytest.mark.unit
 async def test_clerk_access_service_rejects_invitation_without_provider_id():
     from app.services.clerk_access_service import ClerkAccessService
 
@@ -57,16 +52,13 @@ async def test_clerk_access_service_rejects_invitation_without_provider_id():
     assert result.error_category == "provider_contract_error"
 
 
-@pytest.mark.unit
 async def test_clerk_access_service_preserves_safe_provider_diagnostics():
     from app.services.clerk_access_service import ClerkAccessService
 
     class ProviderError(RuntimeError):
         status_code = 409
         headers = {"x-request-id": "req_contract"}
-        data = SimpleNamespace(
-            errors=[SimpleNamespace(code="organization_membership_exists")]
-        )
+        data = SimpleNamespace(errors=[SimpleNamespace(code="organization_membership_exists")])
 
     def fail():
         raise ProviderError("sensitive provider response")
@@ -82,7 +74,6 @@ async def test_clerk_access_service_preserves_safe_provider_diagnostics():
     assert result.provider_request_id == "req_contract"
 
 
-@pytest.mark.unit
 async def test_clerk_access_service_finds_exact_user_and_membership(monkeypatch):
     from app.services.clerk_access_service import ClerkAccessService
 
@@ -114,7 +105,6 @@ async def test_clerk_access_service_finds_exact_user_and_membership(monkeypatch)
     assert found_membership.role == "org:member"
 
 
-@pytest.mark.unit
 async def test_clerk_access_service_creates_membership_for_existing_user(monkeypatch):
     from app.services.member_service import ClerkAccessService
 
@@ -145,7 +135,6 @@ async def test_clerk_access_service_creates_membership_for_existing_user(monkeyp
     }
 
 
-@pytest.mark.unit
 async def test_clerk_access_service_revokes_membership_by_user_id(monkeypatch):
     from app.services.member_service import ClerkAccessService
 
@@ -206,7 +195,9 @@ async def test_members_list_has_top_level_total(async_client, clerk_admin_header
 
 
 @pytest.mark.parametrize("forbidden_field", ["password", "create_user_account"])
-async def test_create_member_rejects_legacy_credential_fields(async_client, clerk_admin_headers, forbidden_field):
+async def test_create_member_rejects_legacy_credential_fields(
+    async_client, clerk_admin_headers, forbidden_field
+):
     payload = {
         "organization_display_name": "Bruno Costa",
         "email": "bruno.costa@example.com",
@@ -272,9 +263,17 @@ async def test_platform_teacher_invite_and_resend(
         revoked.append(kwargs["invitation_id"])
         return ClerkAccessResult()
 
-    monkeypatch.setattr("app.services.member_service.ClerkAccessService.create_organization_invitation", fake_create_invitation)
-    monkeypatch.setattr("app.services.member_service.ClerkAccessService.revoke_organization_invitation", fake_revoke_invitation)
-    monkeypatch.setattr("app.services.member_service.ClerkAccessService.find_user_by_email", fake_find_user)
+    monkeypatch.setattr(
+        "app.services.member_service.ClerkAccessService.create_organization_invitation",
+        fake_create_invitation,
+    )
+    monkeypatch.setattr(
+        "app.services.member_service.ClerkAccessService.revoke_organization_invitation",
+        fake_revoke_invitation,
+    )
+    monkeypatch.setattr(
+        "app.services.member_service.ClerkAccessService.find_user_by_email", fake_find_user
+    )
     monkeypatch.setattr(
         "app.services.member_service.ClerkAccessService.find_pending_invitation",
         fake_find_pending_invitation,
@@ -296,9 +295,11 @@ async def test_platform_teacher_invite_and_resend(
     created = create_response.json()
     assert created["access_status"] == "pending_invite"
     assert created["clerk_invitation_id"] == "inv_initial"
-    assert datetime.fromisoformat(created["invitation_expires_at"].replace("Z", "+00:00")) == datetime.fromtimestamp(
+    assert datetime.fromisoformat(
+        created["invitation_expires_at"].replace("Z", "+00:00")
+    ) == datetime.fromtimestamp(
         expires_at_ms / 1000,
-        tz=timezone.utc,
+        tz=UTC,
     )
 
     resend_response = await async_client.post(
@@ -317,16 +318,14 @@ async def test_platform_teacher_invite_and_resend(
         (
             await db_session.scalars(
                 select(models.MemberAccessOperation).where(
-                    models.MemberAccessOperation.target_email
-                    == "platform.teacher@example.com"
+                    models.MemberAccessOperation.target_email == "platform.teacher@example.com"
                 )
             )
         ).all()
     )
     assert len(operations) == 3
     assert all(
-        operation.operation_status
-        == models.MemberAccessOperationStatus.local_committed
+        operation.operation_status == models.MemberAccessOperationStatus.local_committed
         for operation in operations
     )
 
@@ -401,9 +400,11 @@ async def test_scheduler_only_teacher_can_be_converted_to_platform_access(
     assert converted["teacher_access_mode"] == "platform"
     assert converted["access_status"] == "pending_invite"
     assert converted["clerk_invitation_id"] == "inv_conversion"
-    assert datetime.fromisoformat(converted["invitation_expires_at"].replace("Z", "+00:00")) == datetime.fromtimestamp(
+    assert datetime.fromisoformat(
+        converted["invitation_expires_at"].replace("Z", "+00:00")
+    ) == datetime.fromtimestamp(
         expires_at_ms / 1000,
-        tz=timezone.utc,
+        tz=UTC,
     )
 
 
@@ -758,34 +759,46 @@ async def test_scheduler_only_conversion_adds_existing_clerk_user_to_organizatio
     assert body["clerk_invitation_id"] is None
 
 
-async def test_retry_sync_relinks_active_member(async_client, clerk_admin_headers, db_session, monkeypatch):
+async def test_retry_sync_relinks_active_member(
+    async_client, clerk_admin_headers, db_session, monkeypatch
+):
     from sqlalchemy import select
+
     from app import models
     from app.services.member_service import ClerkAccessResult
 
     async def fake_change_role(self, **kwargs):
         return ClerkAccessResult(membership_id="mem_retry", role=kwargs["role"])
 
-    monkeypatch.setattr("app.services.member_service.ClerkAccessService.change_membership_role", fake_change_role)
+    monkeypatch.setattr(
+        "app.services.member_service.ClerkAccessService.change_membership_role", fake_change_role
+    )
 
-    user = models.User(email="retry.direct@example.com", name="Retry Direct", clerk_user_id="user_retry_direct")
+    user = models.User(
+        email="retry.direct@example.com", name="Retry Direct", clerk_user_id="user_retry_direct"
+    )
     db_session.add(user)
     await db_session.flush()
-    org = await db_session.scalar(select(models.Organization).where(models.Organization.clerk_org_id == "org_test_001"))
+    org = await db_session.scalar(
+        select(models.Organization).where(models.Organization.clerk_org_id == "org_test_001")
+    )
     member = models.OrganizationMembership(
         organization_id=org.id,
         account_id=user.id,
         organization_display_name="Retry Direct",
         lifecycle_status=models.MembershipLifecycleStatus.active,
         access_status=models.MembershipAccessStatus.sync_error,
+        can_admin=True,
+        can_teach=False,
         expected_clerk_role=models.ClerkOrganizationRole.admin,
     )
     db_session.add(member)
     await db_session.flush()
-    db_session.add(models.OrganizationMembershipCapability(organization_membership_id=member.id, capability=models.MembershipCapability.admin))
     await db_session.commit()
 
-    response = await async_client.post(f"/api/v1/members/{member.id}/retry-sync", headers=clerk_admin_headers)
+    response = await async_client.post(
+        f"/api/v1/members/{member.id}/retry-sync", headers=clerk_admin_headers
+    )
 
     assert response.status_code == 200, response.text
     body = response.json()
@@ -793,7 +806,6 @@ async def test_retry_sync_relinks_active_member(async_client, clerk_admin_header
     assert body["clerk_membership_id"] == "mem_retry"
 
 
-@pytest.mark.unit
 async def test_legacy_teacher_admin_writes_are_absent_from_openapi():
     from app.main import app
 
@@ -803,49 +815,41 @@ async def test_legacy_teacher_admin_writes_are_absent_from_openapi():
     assert "/api/v1/teachers/{teacher_id}" not in paths
 
 
-async def test_legacy_active_user_without_membership_is_denied(async_client, db_session, monkeypatch):
+async def test_legacy_active_user_without_membership_is_denied(async_client, db_session):
     from app import models
-    from tests.conftest import mock_clerk_payload
 
-    org = models.Organization(name="Legacy Auth Org", clerk_org_id="org_legacy_denied", plan_status="active")
+    org = models.Organization(
+        name="Legacy Auth Org", clerk_org_id="org_legacy_denied", plan_status="active"
+    )
     user = models.User(
         email="legacy.active@example.com",
         name="Legacy Active",
         clerk_user_id="user_legacy_active",
-        organization_id=None,
-        role=models.UserRole.admin,
-        is_active=True,
     )
     db_session.add_all([org, user])
     await db_session.commit()
-
-    async def _payload(_request):
-        return mock_clerk_payload("user_legacy_active", "org_legacy_denied", "admin")
-
-    monkeypatch.setattr("app.api.deps.get_clerk_payload", _payload)
-
-    response = await async_client.get("/api/v1/members", headers={"Authorization": "Bearer test_user_legacy_active"})
+    response = await async_client.get(
+        "/api/v1/members",
+        headers={"Authorization": "Bearer test_user_legacy_active|org_legacy_denied"},
+    )
 
     assert response.status_code == 403
 
 
-async def test_mixed_member_can_use_teacher_self_service(async_client, db_session, monkeypatch):
+async def test_mixed_member_can_use_teacher_self_service(async_client, db_session):
     from app import models
-    from tests.conftest import mock_clerk_payload
 
-    org = models.Organization(name="Mixed Org", clerk_org_id="org_mixed_member", plan_status="active")
+    org = models.Organization(
+        name="Mixed Org", clerk_org_id="org_mixed_member", plan_status="active"
+    )
     db_session.add(org)
     await db_session.flush()
-    teacher = models.Teacher(name="Mixed Teacher", organization_id=org.id)
     user = models.User(
         email="mixed@example.com",
         name="Mixed Member",
         clerk_user_id="user_mixed_member",
-        organization_id=None,
-        role=None,
-        is_active=None,
     )
-    db_session.add_all([teacher, user])
+    db_session.add(user)
     await db_session.flush()
     member = models.OrganizationMembership(
         organization_id=org.id,
@@ -854,30 +858,33 @@ async def test_mixed_member_can_use_teacher_self_service(async_client, db_sessio
         lifecycle_status=models.MembershipLifecycleStatus.active,
         access_status=models.MembershipAccessStatus.active,
         teacher_access_mode=models.TeacherAccessMode.platform,
-        expected_clerk_role=models.ClerkOrganizationRole.admin,
+        can_admin=True,
+        can_teach=True,
     )
     db_session.add(member)
     await db_session.flush()
-    teacher.organization_membership_id = member.id
-    db_session.add_all([
-        models.OrganizationMembershipCapability(organization_membership_id=member.id, capability=models.MembershipCapability.admin),
-        models.OrganizationMembershipCapability(organization_membership_id=member.id, capability=models.MembershipCapability.teacher),
-    ])
+    teacher = models.Teacher(
+        organization_id=org.id,
+        organization_membership_id=member.id,
+    )
+    db_session.add(teacher)
     await db_session.commit()
 
-    async def _payload(_request):
-        return mock_clerk_payload("user_mixed_member", "org_mixed_member", "admin")
-
-    monkeypatch.setattr("app.api.deps.get_clerk_payload", _payload)
-
-    response = await async_client.get("/api/v1/teachers/me/availability", headers={"Authorization": "Bearer test_user_mixed_member"})
+    response = await async_client.get(
+        "/api/v1/teachers/me/availability",
+        headers={"Authorization": "Bearer test_user_mixed_member"},
+    )
 
     assert response.status_code == 200, response.text
 
 
-async def test_remove_scheduler_only_teacher_with_history_archives(async_client, clerk_admin_headers, db_session):
+async def test_remove_scheduler_only_teacher_with_history_archives(
+    async_client, clerk_admin_headers, db_session
+):
     from datetime import time
+
     from sqlalchemy import select
+
     from app import models
 
     create_response = await async_client.post(
@@ -894,7 +901,9 @@ async def test_remove_scheduler_only_teacher_with_history_archives(async_client,
     assert create_response.status_code == 201, create_response.text
     created = create_response.json()
     teacher_id = created["teacher_id"]
-    org = await db_session.scalar(select(models.Organization).where(models.Organization.clerk_org_id == "org_test_001"))
+    org = await db_session.scalar(
+        select(models.Organization).where(models.Organization.clerk_org_id == "org_test_001")
+    )
     db_session.add(
         models.Timeslot(
             organization_id=org.id,
@@ -904,11 +913,17 @@ async def test_remove_scheduler_only_teacher_with_history_archives(async_client,
         )
     )
     await db_session.flush()
-    timeslot = await db_session.scalar(select(models.Timeslot).where(models.Timeslot.organization_id == org.id))
-    db_session.add(models.Availability(organization_id=org.id, teacher_id=teacher_id, timeslot_id=timeslot.id))
+    timeslot = await db_session.scalar(
+        select(models.Timeslot).where(models.Timeslot.organization_id == org.id)
+    )
+    db_session.add(
+        models.Availability(organization_id=org.id, teacher_id=teacher_id, timeslot_id=timeslot.id)
+    )
     await db_session.commit()
 
-    remove_response = await async_client.post(f"/api/v1/members/{created['id']}/remove", headers=clerk_admin_headers)
+    remove_response = await async_client.post(
+        f"/api/v1/members/{created['id']}/remove", headers=clerk_admin_headers
+    )
 
     assert remove_response.status_code == 200, remove_response.text
     assert remove_response.json()["remove_effect"] == "archive"
@@ -985,13 +1000,14 @@ async def test_active_platform_teacher_can_be_archived_and_restored(
         lifecycle_status=models.MembershipLifecycleStatus.active,
         access_status=models.MembershipAccessStatus.active,
         teacher_access_mode=models.TeacherAccessMode.platform,
+        can_admin=False,
+        can_teach=True,
         expected_clerk_role=models.ClerkOrganizationRole.member,
         clerk_membership_id="orgmem_archive_active",
     )
     db_session.add(member)
     await db_session.flush()
     teacher = models.Teacher(
-        name="Archive Active",
         organization_id=org.id,
         organization_membership_id=member.id,
     )
@@ -1003,18 +1019,12 @@ async def test_active_platform_teacher_can_be_archived_and_restored(
     )
     db_session.add_all([teacher, timeslot])
     await db_session.flush()
-    db_session.add_all(
-        [
-            models.OrganizationMembershipCapability(
-                organization_membership_id=member.id,
-                capability=models.MembershipCapability.teacher,
-            ),
-            models.Availability(
-                organization_id=org.id,
-                teacher_id=teacher.id,
-                timeslot_id=timeslot.id,
-            ),
-        ]
+    db_session.add(
+        models.Availability(
+            organization_id=org.id,
+            teacher_id=teacher.id,
+            timeslot_id=timeslot.id,
+        )
     )
     await db_session.commit()
 
@@ -1026,14 +1036,10 @@ async def test_active_platform_teacher_can_be_archived_and_restored(
     assert response.status_code == 200, response.text
     assert response.json()["remove_effect"] == "archive"
     assert revoked == [("org_test_001", "user_archive_active")]
+    await db_session.refresh(member)
     assert member.lifecycle_status == models.MembershipLifecycleStatus.archived
     assert member.access_status == models.MembershipAccessStatus.blocked
     assert member.clerk_membership_id is None
-    # The API test fixture reuses the session without the production dependency's
-    # post-response commit; commit explicitly before testing restoration.
-    await db_session.commit()
-    await db_session.refresh(member)
-    assert member.lifecycle_status == models.MembershipLifecycleStatus.archived
 
     restore_response = await async_client.post(
         f"/api/v1/members/{member.id}/restore",
@@ -1046,17 +1052,18 @@ async def test_active_platform_teacher_can_be_archived_and_restored(
     assert restored["lifecycle_status"] == "active"
     assert restored["access_status"] == "active"
     assert restored["clerk_membership_id"] == "orgmem_archive_restored"
-    assert restored_memberships == [
-        ("org_test_001", "user_archive_active", "org:member")
-    ]
+    assert restored_memberships == [("org_test_001", "user_archive_active", "org:member")]
     await db_session.refresh(member)
     assert member.lifecycle_status == models.MembershipLifecycleStatus.active
     assert member.access_status == models.MembershipAccessStatus.active
     assert member.clerk_membership_id == "orgmem_archive_restored"
 
 
-async def test_update_validates_subjects_before_clerk_role_change(async_client, clerk_admin_headers, db_session, monkeypatch):
+async def test_update_validates_subjects_before_clerk_role_change(
+    async_client, clerk_admin_headers, db_session, monkeypatch
+):
     from sqlalchemy import select
+
     from app import models
     from app.services.member_service import ClerkAccessResult
 
@@ -1067,9 +1074,17 @@ async def test_update_validates_subjects_before_clerk_role_change(async_client, 
         called = True
         return ClerkAccessResult(membership_id="mem_changed", role=kwargs["role"])
 
-    monkeypatch.setattr("app.services.member_service.ClerkAccessService.change_membership_role", fake_change_role)
-    org = await db_session.scalar(select(models.Organization).where(models.Organization.clerk_org_id == "org_test_001"))
-    account = models.User(email="validate-before-clerk@example.com", name="Validate First", clerk_user_id="user_validate_first")
+    monkeypatch.setattr(
+        "app.services.member_service.ClerkAccessService.change_membership_role", fake_change_role
+    )
+    org = await db_session.scalar(
+        select(models.Organization).where(models.Organization.clerk_org_id == "org_test_001")
+    )
+    account = models.User(
+        email="validate-before-clerk@example.com",
+        name="Validate First",
+        clerk_user_id="user_validate_first",
+    )
     db_session.add(account)
     await db_session.flush()
     member = models.OrganizationMembership(
@@ -1079,14 +1094,15 @@ async def test_update_validates_subjects_before_clerk_role_change(async_client, 
         lifecycle_status=models.MembershipLifecycleStatus.active,
         access_status=models.MembershipAccessStatus.active,
         teacher_access_mode=models.TeacherAccessMode.platform,
+        can_admin=False,
+        can_teach=True,
         expected_clerk_role=models.ClerkOrganizationRole.member,
         clerk_membership_id="mem_existing",
     )
     db_session.add(member)
     await db_session.flush()
-    teacher = models.Teacher(name="Validate First", organization_id=org.id, organization_membership_id=member.id)
+    teacher = models.Teacher(organization_id=org.id, organization_membership_id=member.id)
     db_session.add(teacher)
-    db_session.add(models.OrganizationMembershipCapability(organization_membership_id=member.id, capability=models.MembershipCapability.teacher))
     await db_session.commit()
 
     response = await async_client.patch(

@@ -6,12 +6,22 @@ requires-python = ">=3.12"
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]
-asyncio_mode = "strict"
+asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
+addopts = ["--strict-config", "--strict-markers", "-ra", "--tb=short"]
 markers = [
     "unit: Testes puros sem BD nem rede (schemas, funções puras)",
     "integration: Testes com BD de teste (requer PostgreSQL)",
     "postgresql: Testes que exigem schema PostgreSQL criado por Alembic",
+    "redis: Testes que exigem Redis real",
     "slow: Testes lentos (>1s) — excluídos por defeito",
     "solver: Testes do motor de horários (CP-SAT / OR-Tools)",
 ]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+extend-exclude = [".venv"]
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I", "UP", "B", "RUF100"]

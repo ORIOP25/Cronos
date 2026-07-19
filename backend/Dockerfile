@@ -1,5 +1,5 @@
 # 1. Usar Python 3.12 (versão leve)
-FROM python:3.12-slim
+FROM python:3.12.13-slim@sha256:c3d81d25b3154142b0b42eb1e61300024426268edeb5b5a26dd7ddf64d9daf28 AS runtime
 
 # 2. Configurações para Python em Docker (logs imediatos, sem .pyc)
 ENV PYTHONDONTWRITEBYTECODE=1
@@ -9,32 +9,25 @@ ENV PYTHONPATH=/app
 # 3. Criar pasta de trabalho dentro do Docker
 WORKDIR /app
 
-# 4. Instalar ferramentas de sistema necessárias (para compilar libs)
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    libpq-dev \
-    && rm -rf /var/lib/apt/lists/*
-
-# 5. Copiar a lista de compras e instalar
 COPY requirements.txt .
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --require-hashes -r requirements.txt
 
-# 6. Copiar o código todo do projeto para dentro do Docker
-COPY . .
+COPY app ./app
+COPY alembic ./alembic
+COPY alembic.ini .
 
-# 7. Instalar netcat para health check + dos2unix para line endings
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    netcat-traditional \
-    dos2unix \
-    && rm -rf /var/lib/apt/lists/* \
-    && dos2unix /app/entrypoint.sh && chmod +x /app/entrypoint.sh
+RUN addgroup --system cronos && adduser --system --ingroup cronos cronos \
+    && chown -R cronos:cronos /app
+USER cronos
 
 # 9. Expor a porta 8000
 EXPOSE 8000
 
-# 10. Usar entrypoint script (garante Alembic + seed antes de FastAPI)
-ENTRYPOINT ["/app/entrypoint.sh"]
-
-# 11. Comando por defeito: Uvicorn (o worker sobreescreve via docker-compose command)
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+
+FROM runtime AS ci
+USER root
+COPY requirements-dev.txt .
+RUN pip install --no-cache-dir --require-hashes -r requirements-dev.txt
+COPY scripts ./scripts
+USER cronos

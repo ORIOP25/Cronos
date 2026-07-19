@@ -1,10 +1,10 @@
 """Observabilidade operacional para endpoints self-service do professor (Passo 9)."""
+
 from __future__ import annotations
 
 from collections import defaultdict
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from math import ceil
-from typing import Optional
 
 import structlog
 from sqlalchemy import and_, select
@@ -34,39 +34,32 @@ def _percentile(values: list[int], percentile: float) -> int:
     return int(ordered[rank])
 
 
-def _to_role_value(role: Optional[models.UserRole]) -> Optional[str]:
-    if role is None:
-        return None
-    return role.value
-
-
 def log_teacher_endpoint_event_safe_sync(
     db: Session,
     *,
     organization_id: int,
-    actor_user_id: Optional[int],
-    actor_role: Optional[models.UserRole],
+    actor_membership_id: int | None,
+    actor_role: str | None,
     endpoint_key: str,
     http_status: int,
     latency_ms: int,
-    active_generation_id: Optional[str] = None,
+    active_generation_id: str | None = None,
 ) -> None:
     """Regista evento sem bloquear o fluxo principal em caso de falha de observabilidade."""
     try:
         event = models.TeacherEndpointOperationalEvent(
             organization_id=organization_id,
-            actor_user_id=actor_user_id,
-            actor_role=_to_role_value(actor_role),
+            actor_membership_id=actor_membership_id,
+            actor_role=actor_role,
             endpoint_key=endpoint_key,
             http_status=http_status,
             latency_ms=max(0, int(latency_ms)),
             active_generation_id=active_generation_id,
-            created_at=datetime.now(timezone.utc),
+            created_at=datetime.now(UTC),
         )
         db.add(event)
-        db.commit()
+        db.flush()
     except Exception as exc:
-        db.rollback()
         logger.warning(
             "teacher_endpoint_observability_emit_failed",
             organization_id=organization_id,
@@ -84,26 +77,32 @@ def get_teacher_endpoint_observability_summary_sync(
 ) -> dict:
     """Agrega eventos por endpoint com taxas de erro e alertas operacionais."""
     normalized_window_minutes = max(5, int(window_minutes))
-    start_at = datetime.now(timezone.utc) - timedelta(minutes=normalized_window_minutes)
+    start_at = datetime.now(UTC) - timedelta(minutes=normalized_window_minutes)
 
-    events = db.execute(
-        select(models.TeacherEndpointOperationalEvent)
-        .where(
-            and_(
-                models.TeacherEndpointOperationalEvent.organization_id == organization_id,
-                models.TeacherEndpointOperationalEvent.created_at >= start_at,
+    events = (
+        db.execute(
+            select(models.TeacherEndpointOperationalEvent)
+            .where(
+                and_(
+                    models.TeacherEndpointOperationalEvent.organization_id == organization_id,
+                    models.TeacherEndpointOperationalEvent.created_at >= start_at,
+                )
             )
+            .order_by(models.TeacherEndpointOperationalEvent.created_at.asc())
         )
-        .order_by(models.TeacherEndpointOperationalEvent.created_at.asc())
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
 
-    grouped = defaultdict(lambda: {
-        "total_requests": 0,
-        "status_2xx": 0,
-        "status_403": 0,
-        "status_5xx": 0,
-        "latencies": [],
-    })
+    grouped = defaultdict(
+        lambda: {
+            "total_requests": 0,
+            "status_2xx": 0,
+            "status_403": 0,
+            "status_5xx": 0,
+            "latencies": [],
+        }
+    )
 
     for event in events:
         bucket = grouped[event.endpoint_key]

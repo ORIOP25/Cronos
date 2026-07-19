@@ -3,10 +3,6 @@ from pydantic import ValidationError
 
 from app.config import Settings
 
-
-pytestmark = pytest.mark.unit
-
-
 BASE = {
     "DATABASE_URL": "postgresql://user:pass@localhost/test_db",
     "SECRET_KEY": "test",

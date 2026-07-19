@@ -12,7 +12,6 @@ from app.api.deps import get_db
 from app.config import settings
 from app.services.member_webhook_service import enqueue_and_process_clerk_event
 
-
 logger = structlog.get_logger(__name__)
 router = APIRouter(tags=["webhooks"])
 
@@ -39,12 +38,17 @@ async def handle_clerk_webhook(request: Request, db: Annotated[AsyncSession, Dep
                 "webhook-signature": svix_signature,
             },
         )
-    except (WebhookVerificationError, ValueError):
-        raise HTTPException(status_code=401, detail="Invalid webhook signature")
+    except (WebhookVerificationError, ValueError) as exc:
+        raise HTTPException(status_code=401, detail="Invalid webhook signature") from exc
 
     data = json.loads(payload)
     event = await enqueue_and_process_clerk_event(db, svix_id=svix_id, payload=data)
-    logger.info("Clerk webhook processed", svix_id=svix_id, event_type=event.event_type, status=event.processing_status.value)
+    logger.info(
+        "Clerk webhook processed",
+        svix_id=svix_id,
+        event_type=event.event_type,
+        status=event.processing_status.value,
+    )
     if event.processing_status in {
         models.ClerkWebhookProcessingStatus.processing,
         models.ClerkWebhookProcessingStatus.received,

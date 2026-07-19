@@ -1,9 +1,10 @@
 # Ficheiro: app/services/teacher_service.py
 
 import structlog
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session, selectinload
-from sqlalchemy import select, delete
+
 from app import models
 from app.models import Availability
 from app.schemas import AvailabilitySelfCreate
@@ -18,30 +19,19 @@ def _teacher_capacity_snapshot(subject_ids) -> dict:
 
 def _availability_snapshot(rows) -> list[dict]:
     return sorted(
-        (
-            {"timeslot_id": int(row[0]), "score": int(row[1])}
-            for row in rows
-        ),
+        ({"timeslot_id": int(row[0]), "score": int(row[1])} for row in rows),
         key=lambda item: item["timeslot_id"],
     )
 
 
-async def _teacher_is_scheduled(
-    db: AsyncSession, organization_id: int, teacher_id: int
-) -> bool:
-    lesson_id = await db.scalar(
-        select(models.Lesson.id).where(
-            models.Lesson.organization_id == organization_id,
-            models.Lesson.teacher_id == teacher_id,
-        ).limit(1)
-    )
-    if lesson_id is not None:
-        return True
+async def _teacher_is_scheduled(db: AsyncSession, organization_id: int, teacher_id: int) -> bool:
     assignment_id = await db.scalar(
-        select(models.ClassSubjectLink.id).where(
+        select(models.ClassSubjectLink.id)
+        .where(
             models.ClassSubjectLink.organization_id == organization_id,
             models.ClassSubjectLink.teacher_id == teacher_id,
-        ).limit(1)
+        )
+        .limit(1)
     )
     return assignment_id is not None
 
@@ -50,87 +40,99 @@ async def _teacher_is_scheduled(
 #  FUNÇÕES ASSÍNCRONAS (Para usar na API/FastAPI)
 # ==========================================
 
+
 async def get_teachers_by_org(
-    db: AsyncSession, 
-    organization_id: int, 
-    skip: int = 0, 
-    limit: int = 100
+    db: AsyncSession, organization_id: int, skip: int = 0, limit: int = 100
 ):
-    """
-    Retorna professores com email, login_email e status is_active.
-    LEFT JOIN com User para obter dados de autenticação.
-    """
-    # 1. Query: Selecionamos Teacher + email + is_active do User
+    """Return teachers with account data derived from their membership."""
     stmt = (
-        select(models.Teacher, models.User.email, models.User.is_active)
-        .outerjoin(models.User, models.User.teacher_id == models.Teacher.id)
+        select(
+            models.Teacher,
+            models.User.email,
+            (
+                models.OrganizationMembership.lifecycle_status
+                == models.MembershipLifecycleStatus.active
+            ).label("is_active"),
+        )
+        .join(
+            models.OrganizationMembership,
+            models.OrganizationMembership.id == models.Teacher.organization_membership_id,
+        )
+        .join(
+            models.User,
+            models.User.id == models.OrganizationMembership.account_id,
+        )
         .where(models.Teacher.organization_id == organization_id)
         .options(selectinload(models.Teacher.subjects))
         .order_by(models.Teacher.name)
         .offset(skip)
         .limit(limit)
     )
-    
+
     result = await db.execute(stmt)
     rows = result.all()
-    
-    # 2. Mapeamento: Transformamos as tuplas em objetos com dados injetados
+
     final_list = []
     for teacher, user_email, is_active in rows:
-        # Injetar campos no objeto ORM (mantém relações carregadas intactas)
-        setattr(teacher, "login_email", user_email)
-        setattr(teacher, "email", user_email)
-        # Se is_active for None (sem User), assumimos False
-        setattr(teacher, "is_active", is_active if is_active is not None else False)
+        teacher.login_email = user_email
+        teacher.email = user_email
+        teacher.is_active = is_active
         final_list.append(teacher)
-        
+
     return final_list
+
 
 # Helper Function
 async def get_teacher_with_subjects(db: AsyncSession, teacher_id: int, organization_id: int):
-    query = select(models.Teacher).where(
-        models.Teacher.id == teacher_id,
-        models.Teacher.organization_id == organization_id
-    ).options(selectinload(models.Teacher.subjects))
-    
+    query = (
+        select(models.Teacher)
+        .where(models.Teacher.id == teacher_id, models.Teacher.organization_id == organization_id)
+        .options(selectinload(models.Teacher.subjects))
+    )
+
     result = await db.execute(query)
     return result.scalars().first()
 
+
 async def get_teacher_details(db: AsyncSession, teacher_id: int, organization_id: int):
-    # 1. Query: Selecionamos também o campo is_active do User
     stmt = (
-        select(models.Teacher, models.User.email, models.User.is_active)
-        .outerjoin(models.User, models.User.teacher_id == models.Teacher.id)
-        .where(
-            models.Teacher.id == teacher_id,
-            models.Teacher.organization_id == organization_id
+        select(
+            models.Teacher,
+            models.User.email,
+            (
+                models.OrganizationMembership.lifecycle_status
+                == models.MembershipLifecycleStatus.active
+            ).label("is_active"),
         )
+        .join(
+            models.OrganizationMembership,
+            models.OrganizationMembership.id == models.Teacher.organization_membership_id,
+        )
+        .join(
+            models.User,
+            models.User.id == models.OrganizationMembership.account_id,
+        )
+        .where(models.Teacher.id == teacher_id, models.Teacher.organization_id == organization_id)
         .options(selectinload(models.Teacher.subjects))
         .execution_options(populate_existing=True)
     )
-    
+
     result = await db.execute(stmt)
     row = result.first()
-    
+
     if not row:
         return None
-    
-    # 2. Desembrulhamos os 3 valores (Teacher, email, is_active)
+
     teacher, email, is_active = row
-    
-    # 3. Injetamos os valores no objeto Teacher para o Pydantic conseguir ler
-    setattr(teacher, "login_email", email)
-    setattr(teacher, "email", email)
-    # Se is_active for None (não tem User), assumimos False
-    setattr(teacher, "is_active", is_active if is_active is not None else False)
-    
+    teacher.login_email = email
+    teacher.email = email
+    teacher.is_active = is_active
+
     return teacher
 
+
 async def find_replacement_teacher(
-    db: AsyncSession, 
-    organization_id: int, 
-    unavailable_slot_id: int, 
-    exclude_teacher_id: int
+    db: AsyncSession, organization_id: int, unavailable_slot_id: int, exclude_teacher_id: int
 ):
     """
     Encontra professores que podem substituir numa aula.
@@ -142,29 +144,33 @@ async def find_replacement_teacher(
     """
     # 1. Buscar todos os professores
     all_teachers = await get_teachers_by_org(db, organization_id)
-    
+
     # 2. Buscar as preferências de TODOS os professores para este slot específico
-    avail_stmt = select(Availability).join(
-        models.Timeslot,
-        Availability.timeslot_id == models.Timeslot.id,
-    ).where(
-        Availability.timeslot_id == unavailable_slot_id,
-        models.Timeslot.organization_id == organization_id,
+    avail_stmt = (
+        select(Availability)
+        .join(
+            models.Timeslot,
+            Availability.timeslot_id == models.Timeslot.id,
+        )
+        .where(
+            Availability.timeslot_id == unavailable_slot_id,
+            models.Timeslot.organization_id == organization_id,
+        )
     )
     avail_results = await db.execute(avail_stmt)
-    
+
     # Mapa rápido: { teacher_id: score }
     teacher_scores = {av.teacher_id: av.score for av in avail_results.scalars().all()}
 
     suggestions = []
-    
+
     for teacher in all_teachers:
         if teacher.id == exclude_teacher_id:
             continue
-            
+
         # Obter score (Default = 1/Neutro se não tiver registo)
-        score = teacher_scores.get(teacher.id, 1) #
-        
+        score = teacher_scores.get(teacher.id, 1)  #
+
         # FILTRO RÍGIDO: Se for Impossível (-1), salta fora.
         if score == -1:
             continue
@@ -174,8 +180,8 @@ async def find_replacement_teacher(
         # 2: Preferencial (Score 2)
         # 3: Neutro (Score 1)
         # 4: Evitar (Score 0) -> Fundo da lista
-        
-        priority = 3 # Default
+
+        priority = 3  # Default
         reason = "Disponível"
 
         if score == 2:
@@ -184,16 +190,18 @@ async def find_replacement_teacher(
         elif score == 0:
             priority = 4
             reason = "Evitar (Marcado a Laranja)"
-        
-        suggestions.append({
-            "teacher_id": teacher.id,
-            "teacher_name": teacher.name,
-            "priority": priority,
-            "reason": reason
-        })
-        
+
+        suggestions.append(
+            {
+                "teacher_id": teacher.id,
+                "teacher_name": teacher.name,
+                "priority": priority,
+                "reason": reason,
+            }
+        )
+
     # Ordenar: Prioridade (crescente), depois Nome (alfabético)
-    suggestions.sort(key=lambda x: (x['priority'], x['teacher_name']))
+    suggestions.sort(key=lambda x: (x["priority"], x["teacher_name"]))
     return suggestions
 
 
@@ -230,12 +238,13 @@ async def get_teacher_availability(
         for row in rows.all()
     ]
 
+
 async def set_teacher_availability(
-    db: AsyncSession, 
-    teacher_id: int, 
+    db: AsyncSession,
+    teacher_id: int,
     availabilities: list[AvailabilitySelfCreate],
     organization_id: int,
-    changed_by_user_id: int | None = None,
+    changed_by_membership_id: int | None = None,
 ):
     """
     Define as disponibilidades de um professor.
@@ -244,8 +253,7 @@ async def set_teacher_availability(
     """
     # 1. Validar que o professor pertence a esta organização
     teacher_query = select(models.Teacher).where(
-        models.Teacher.id == teacher_id,
-        models.Teacher.organization_id == organization_id
+        models.Teacher.id == teacher_id, models.Teacher.organization_id == organization_id
     )
     teacher_result = await db.execute(teacher_query)
     db_teacher = teacher_result.scalars().first()
@@ -270,8 +278,7 @@ async def set_teacher_availability(
     # 3. Validar que todos os timeslots pertencem à organização
     if availabilities:
         timeslot_query = select(models.Timeslot.id).where(
-            models.Timeslot.id.in_(timeslot_ids),
-            models.Timeslot.organization_id == organization_id
+            models.Timeslot.id.in_(timeslot_ids), models.Timeslot.organization_id == organization_id
         )
         timeslot_result = await db.execute(timeslot_query)
         valid_ids = {row[0] for row in timeslot_result.all()}
@@ -293,7 +300,7 @@ async def set_teacher_availability(
                 organization_id=organization_id,
                 teacher_id=teacher_id,
                 timeslot_id=item.timeslot_id,
-                score=item.score.value  # Guardamos o inteiro (-1, 0, 1, 2)
+                score=item.score.value,  # Guardamos o inteiro (-1, 0, 1, 2)
             )
             for item in availabilities
         ]
@@ -309,19 +316,20 @@ async def set_teacher_availability(
             after=_availability_snapshot(
                 (item.timeslot_id, item.score.value) for item in availabilities
             ),
-            changed_by_user_id=changed_by_user_id,
+            changed_by_membership_id=changed_by_membership_id,
             metadata={"item_count": len(new_records)},
             active_resource=active_resource,
         )
-        await db.commit()
+        await db.flush()
         return {"status": "success", "count": len(new_records)}
     except Exception:
-        await db.rollback()
         raise
+
 
 # ==========================================
 #  FUNÇÕES SÍNCRONAS (Para usar no Solver/Celery)
 # ==========================================
+
 
 def get_teachers_by_org_sync(db: Session, organization_id: int):
     """Retorna todos os professores (Sync - Bloqueante)."""
@@ -331,6 +339,7 @@ def get_teachers_by_org_sync(db: Session, organization_id: int):
 # ==========================================
 #  PROGRESSO DO PROFESSOR (Visão Privada)
 # ==========================================
+
 
 async def get_teacher_progress(
     db: AsyncSession,
@@ -391,23 +400,35 @@ async def get_teacher_progress(
             }
 
     # 3. Buscar progresso de todas as turmas relevantes de uma vez
+    progress_map = {}
     if class_ids:
-        progress_query = select(models.ClassProgress).where(
-            models.ClassProgress.organization_id == organization_id,
-            models.ClassProgress.class_id.in_(class_ids)
+        progress_query = (
+            select(
+                models.ProgressLedgerEntry.class_id,
+                models.ProgressLedgerEntry.module_id,
+                func.coalesce(func.sum(models.ProgressLedgerEntry.completed_minutes_delta), 0),
+                func.coalesce(func.sum(models.ProgressLedgerEntry.debt_minutes_delta), 0),
+            )
+            .where(
+                models.ProgressLedgerEntry.organization_id == organization_id,
+                models.ProgressLedgerEntry.class_id.in_(class_ids),
+            )
+            .group_by(
+                models.ProgressLedgerEntry.class_id,
+                models.ProgressLedgerEntry.module_id,
+            )
         )
         progress_result = await db.execute(progress_query)
-        progress_records = progress_result.scalars().all()
-        progress_map = {(p.class_id, p.module_id): p for p in progress_records}
+        progress_map = {
+            (row[0], row[1]): (int(row[2]), int(row[3])) for row in progress_result.all()
+        }
 
     # 4. Construir dados de disciplinas com progresso por turma
     for link in links:
         if not link.class_ or not link.subject:
             continue
         progress_map_for_class = {
-            module_id: p
-            for (c_id, module_id), p in progress_map.items()
-            if c_id == link.class_id
+            module_id: p for (c_id, module_id), p in progress_map.items() if c_id == link.class_id
         }
         subject_data = _build_subject_with_progress(link.subject, progress_map_for_class)
         classes_map[link.class_id]["subjects"].append(subject_data)
@@ -421,6 +442,7 @@ async def get_teacher_progress(
 
 
 # ── Clerk Integration ─────────────────────────────────────────────
+
 
 async def invite_teacher_to_clerk(
     clerk_org_id: str,

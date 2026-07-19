@@ -1,4 +1,4 @@
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 
 from app import models
 from app.services.scheduler_diff_service import SchedulerDiffService
@@ -23,7 +23,7 @@ def _active(block_id: int, key: str, block_date: str) -> dict:
 
 
 def test_diff_builder_records_moved_and_removed_sides_without_patch_rows():
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     context = GenerationExecutionContext(
         job_id=9,
         organization_id=1,

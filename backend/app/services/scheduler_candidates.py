@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import UTC, date, datetime, time, timedelta
 from typing import Any
 
 from app.services.scheduler_complete_demand import CompleteDemandLedger
@@ -77,7 +77,7 @@ class CandidateUniverseBuilder:
 
         current = start
         while current <= end:
-            if deadline_at is not None and datetime.now(timezone.utc) >= deadline_at:
+            if deadline_at is not None and datetime.now(UTC) >= deadline_at:
                 blockers.append("Candidate generation exhausted its time budget.")
                 break
             if current not in blocked_dates:
@@ -175,7 +175,7 @@ class CandidateUniverseBuilder:
         validated: dict[int, tuple[dict[str, int], ...]] = {}
         for weekday, slots in by_day.items():
             ordered = sorted(slots, key=lambda row: (row["start_minute"], row["id"]))
-            for previous, current in zip(ordered, ordered[1:]):
+            for previous, current in zip(ordered, ordered[1:], strict=False):
                 if current["start_minute"] < previous["end_minute"]:
                     blockers.append(f"Timetable slots overlap on weekday {weekday}.")
             validated[weekday] = tuple(ordered)

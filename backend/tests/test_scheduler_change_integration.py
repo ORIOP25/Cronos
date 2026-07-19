@@ -1,6 +1,5 @@
 from datetime import date
 
-import pytest
 from sqlalchemy import select
 
 from app import models, schemas
@@ -12,12 +11,9 @@ from app.services import (
     timeslot_service,
 )
 from app.services.scheduler_state_service import SchedulerStateService
+from tests.conftest import create_teacher_profile
 
 
-pytestmark = pytest.mark.integration
-
-
-@pytest.mark.asyncio
 async def test_scheduler_shaping_writes_increment_but_policy_and_text_do_not(db_session):
     organization = models.Organization(name="Versioned School", plan_status="active")
     db_session.add(organization)
@@ -85,15 +81,19 @@ async def test_scheduler_shaping_writes_increment_but_policy_and_text_do_not(db_
     await db_session.refresh(state)
     assert state.scheduler_state_version == 4
 
-    teacher = models.Teacher(
+    teacher = await create_teacher_profile(
+        db_session,
         name="Unassigned Teacher",
         organization_id=organization.id,
     )
-    db_session.add(teacher)
-    await db_session.flush()
     await db_session.refresh(state)
     assert state.scheduler_state_version == 4
-    teacher.name = "Renamed Unassigned Teacher"
+    membership = await db_session.get(
+        models.OrganizationMembership,
+        teacher.organization_membership_id,
+    )
+    assert membership is not None
+    membership.organization_display_name = "Renamed Unassigned Teacher"
     await db_session.flush()
     await db_session.refresh(state)
     assert state.scheduler_state_version == 4
@@ -196,9 +196,7 @@ async def test_scheduler_shaping_writes_increment_but_policy_and_text_do_not(db_
     events = (
         await db_session.scalars(
             select(models.SchedulerStateVersionEvent)
-            .where(
-                models.SchedulerStateVersionEvent.organization_id == organization.id
-            )
+            .where(models.SchedulerStateVersionEvent.organization_id == organization.id)
             .order_by(models.SchedulerStateVersionEvent.id)
         )
     ).all()
@@ -214,7 +212,6 @@ async def test_scheduler_shaping_writes_increment_but_policy_and_text_do_not(db_
         for event in events
     )
     assert any(
-        event.entity_type == "ROOM"
-        and event.change_scope == models.SchedulerStateChangeScope.NO_OP
+        event.entity_type == "ROOM" and event.change_scope == models.SchedulerStateChangeScope.NO_OP
         for event in events
     )

@@ -1,15 +1,13 @@
-from datetime import date, datetime, time, timezone
-from unittest.mock import patch
-
-import pytest
+from datetime import UTC, date, datetime, time
 
 from app import models
 from app.services.scheduler_lifecycle_service import SchedulerLifecycleService
 from app.services.scheduler_recovery_service import SchedulerRecoveryService
-from tests.conftest import create_org_and_user, mock_clerk_payload
-
-
-pytestmark = pytest.mark.integration
+from tests.conftest import (
+    create_org_and_user,
+    create_teacher_profile,
+    ensure_membership_capabilities,
+)
 
 
 async def _tenant_bundle(db_session, suffix: str) -> dict[str, object]:
@@ -20,6 +18,12 @@ async def _tenant_bundle(db_session, suffix: str) -> dict[str, object]:
         role="admin",
         org_name=f"Scheduler Tenant {suffix}",
         clerk_org_id=f"org_scheduler_tenant_{suffix}",
+    )
+    membership = await ensure_membership_capabilities(
+        db_session,
+        organization_id=organization.id,
+        user=user,
+        capabilities=[models.MembershipCapability.admin],
     )
     school_year = models.SchedulerSchoolYear(
         organization_id=organization.id,
@@ -38,7 +42,8 @@ async def _tenant_bundle(db_session, suffix: str) -> dict[str, object]:
         name=f"Subject {suffix}",
         required_room_type=models.RoomType.normal,
     )
-    teacher = models.Teacher(
+    teacher = await create_teacher_profile(
+        db_session,
         organization_id=organization.id,
         name=f"Teacher {suffix}",
     )
@@ -72,11 +77,11 @@ async def _tenant_bundle(db_session, suffix: str) -> dict[str, object]:
     db_session.add_all([class_, state])
     await db_session.flush()
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     completed_job = models.ScheduleGenerationJob(
         organization_id=organization.id,
         school_year_id=school_year.id,
-        requested_by_user_id=user.id,
+        requested_by_membership_id=membership.id,
         strategy=models.ScheduleGenerationStrategy.ADAPTIVE_REPAIR,
         trigger_type=models.ScheduleGenerationTrigger.EXPLICIT_DEBT,
         job_status=models.ScheduleGenerationJobStatus.SUCCEEDED,
@@ -88,7 +93,7 @@ async def _tenant_bundle(db_session, suffix: str) -> dict[str, object]:
     queued_job = models.ScheduleGenerationJob(
         organization_id=organization.id,
         school_year_id=school_year.id,
-        requested_by_user_id=user.id,
+        requested_by_membership_id=membership.id,
         strategy=models.ScheduleGenerationStrategy.COMPLETE_GENERATION,
         trigger_type=models.ScheduleGenerationTrigger.FIRST_GENERATION,
         job_status=models.ScheduleGenerationJobStatus.QUEUED,
@@ -115,7 +120,7 @@ async def _tenant_bundle(db_session, suffix: str) -> dict[str, object]:
         projected_completion_date=date(2026, 6, 30),
         hard_end_date=school_year.hard_end_date,
         summary_json={"recovered_minutes": 60, "remaining_unscheduled_minutes": 60},
-        created_by_user_id=user.id,
+        created_by_membership_id=membership.id,
     )
     db_session.add(draft)
     await db_session.flush()
@@ -185,6 +190,7 @@ async def _tenant_bundle(db_session, suffix: str) -> dict[str, object]:
     return {
         "organization": organization,
         "user": user,
+        "membership": membership,
         "school_year": school_year,
         "state": state,
         "queued_job": queued_job,
@@ -198,40 +204,26 @@ def _headers(suffix: str) -> dict[str, str]:
     return {"Authorization": f"Bearer scheduler_tenant_{suffix}"}
 
 
-@pytest.mark.asyncio
 async def test_scheduler_api_rejects_cross_tenant_jobs_and_drafts(
     async_client,
     db_session,
 ):
-    tenant_a = await _tenant_bundle(db_session, "a")
+    await _tenant_bundle(db_session, "a")
     tenant_b = await _tenant_bundle(db_session, "b")
-    payload_a = mock_clerk_payload(
-        "scheduler_tenant_a",
-        tenant_a["organization"].clerk_org_id,
-        "admin",
-    )
-
-    with patch("app.api.deps.get_clerk_payload", return_value=payload_a):
-        job_id = tenant_b["queued_job"].id
-        draft_id = tenant_b["draft"].id
-        responses = [
-            await async_client.get(f"/api/v1/scheduler/jobs/{job_id}", headers=_headers("a")),
-            await async_client.post(
-                f"/api/v1/scheduler/jobs/{job_id}/cancel", headers=_headers("a")
-            ),
-            await async_client.get(
-                f"/api/v1/scheduler/drafts/{draft_id}", headers=_headers("a")
-            ),
-            await async_client.get(
-                f"/api/v1/scheduler/drafts/{draft_id}/diff", headers=_headers("a")
-            ),
-            await async_client.post(
-                f"/api/v1/scheduler/drafts/{draft_id}/approve", headers=_headers("a")
-            ),
-            await async_client.post(
-                f"/api/v1/scheduler/drafts/{draft_id}/reject", headers=_headers("a")
-            ),
-        ]
+    job_id = tenant_b["queued_job"].id
+    draft_id = tenant_b["draft"].id
+    responses = [
+        await async_client.get(f"/api/v1/scheduler/jobs/{job_id}", headers=_headers("a")),
+        await async_client.post(f"/api/v1/scheduler/jobs/{job_id}/cancel", headers=_headers("a")),
+        await async_client.get(f"/api/v1/scheduler/drafts/{draft_id}", headers=_headers("a")),
+        await async_client.get(f"/api/v1/scheduler/drafts/{draft_id}/diff", headers=_headers("a")),
+        await async_client.post(
+            f"/api/v1/scheduler/drafts/{draft_id}/approve", headers=_headers("a")
+        ),
+        await async_client.post(
+            f"/api/v1/scheduler/drafts/{draft_id}/reject", headers=_headers("a")
+        ),
+    ]
 
     assert [response.status_code for response in responses] == [404] * len(responses)
     await db_session.refresh(tenant_b["queued_job"])
@@ -240,7 +232,6 @@ async def test_scheduler_api_rejects_cross_tenant_jobs_and_drafts(
     assert tenant_b["draft"].draft_state == models.ScheduleDraftState.PENDING
 
 
-@pytest.mark.asyncio
 async def test_reset_and_recovery_mutations_preserve_other_tenant_state(db_session):
     tenant_a = await _tenant_bundle(db_session, "a")
     tenant_b = await _tenant_bundle(db_session, "b")
@@ -254,7 +245,7 @@ async def test_reset_and_recovery_mutations_preserve_other_tenant_state(db_sessi
 
     await SchedulerLifecycleService(db_session).reset_year(
         tenant_a["organization"].id,
-        reset_by_user_id=tenant_a["user"].id,
+        reset_by_membership_id=tenant_a["membership"].id,
         confirmed=True,
     )
     await db_session.commit()

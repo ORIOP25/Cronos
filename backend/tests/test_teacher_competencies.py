@@ -2,17 +2,18 @@
 Testes de Competências de Professores
 Parte de test_business_logic.py (split).
 """
-import pytest
+
+from factories import API, _setup_course_class_subject
 from httpx import AsyncClient
-from test_business_logic_shared import API, _setup_course_class_subject
+
 from tests.conftest import create_teacher_profile
 
 
-@pytest.mark.asyncio
 class TestCompetencies:
-
-    async def test_assign_teacher_with_competency(self, async_client: AsyncClient, admin_token_headers: dict, db_session):
-        ctx = await _setup_course_class_subject(async_client, admin_token_headers)
+    async def test_assign_teacher_with_competency(
+        self, async_client: AsyncClient, clerk_admin_headers: dict, db_session
+    ):
+        ctx = await _setup_course_class_subject(async_client, clerk_admin_headers)
         teacher = await create_teacher_profile(
             db_session,
             organization_id=1,
@@ -24,29 +25,35 @@ class TestCompetencies:
         resp = await async_client.patch(
             f"{API}/classes/{ctx['class_id']}/subjects/{ctx['subject_id']}",
             json={"teacher_id": teacher_id},
-            headers=admin_token_headers,
+            headers=clerk_admin_headers,
         )
         assert resp.status_code == 200
 
-    async def test_assign_teacher_without_competency_400(self, async_client: AsyncClient, admin_token_headers: dict, db_session):
-        ctx = await _setup_course_class_subject(async_client, admin_token_headers)
+    async def test_assign_teacher_without_competency_400(
+        self, async_client: AsyncClient, clerk_admin_headers: dict, db_session
+    ):
+        ctx = await _setup_course_class_subject(async_client, clerk_admin_headers)
         teacher = await create_teacher_profile(db_session, organization_id=1, name="Prof. Sem Comp")
         await db_session.commit()
         teacher_id = teacher.id
         resp = await async_client.patch(
             f"{API}/classes/{ctx['class_id']}/subjects/{ctx['subject_id']}",
             json={"teacher_id": teacher_id},
-            headers=admin_token_headers,
+            headers=clerk_admin_headers,
         )
         assert resp.status_code == 400
-        assert "competência" in resp.json()["detail"].lower()
+        detail = resp.json()["detail"].lower()
+        assert "professor" in detail
+        assert "disciplina" in detail
 
-    async def test_assign_teacher_wrong_subject_400(self, async_client: AsyncClient, admin_token_headers: dict, db_session):
-        ctx = await _setup_course_class_subject(async_client, admin_token_headers)
+    async def test_assign_teacher_wrong_subject_400(
+        self, async_client: AsyncClient, clerk_admin_headers: dict, db_session
+    ):
+        ctx = await _setup_course_class_subject(async_client, clerk_admin_headers)
         other_sub = await async_client.post(
             f"{API}/subjects/",
             json={"name": "Educação Física", "required_room_type": "gym"},
-            headers=admin_token_headers,
+            headers=clerk_admin_headers,
         )
         other_sub_id = other_sub.json()["id"]
         teacher = await create_teacher_profile(
@@ -60,12 +67,14 @@ class TestCompetencies:
         resp = await async_client.patch(
             f"{API}/classes/{ctx['class_id']}/subjects/{ctx['subject_id']}",
             json={"teacher_id": teacher_id},
-            headers=admin_token_headers,
+            headers=clerk_admin_headers,
         )
         assert resp.status_code == 400
 
-    async def test_remove_teacher_assignment(self, async_client: AsyncClient, admin_token_headers: dict, db_session):
-        ctx = await _setup_course_class_subject(async_client, admin_token_headers)
+    async def test_remove_teacher_assignment(
+        self, async_client: AsyncClient, clerk_admin_headers: dict, db_session
+    ):
+        ctx = await _setup_course_class_subject(async_client, clerk_admin_headers)
         teacher = await create_teacher_profile(
             db_session,
             organization_id=1,
@@ -77,11 +86,11 @@ class TestCompetencies:
         await async_client.patch(
             f"{API}/classes/{ctx['class_id']}/subjects/{ctx['subject_id']}",
             json={"teacher_id": teacher_id},
-            headers=admin_token_headers,
+            headers=clerk_admin_headers,
         )
         resp = await async_client.patch(
             f"{API}/classes/{ctx['class_id']}/subjects/{ctx['subject_id']}",
             json={"teacher_id": None},
-            headers=admin_token_headers,
+            headers=clerk_admin_headers,
         )
         assert resp.status_code == 200

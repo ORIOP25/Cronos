@@ -12,7 +12,9 @@ Valida:
 import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+
 from app import models
+from tests.conftest import create_teacher_profile
 
 
 class TestClassSubjectLink:
@@ -24,14 +26,20 @@ class TestClassSubjectLink:
         db_session.add(org)
         await db_session.flush()
 
-        course = models.Course(name="Técnico em Informática", abbreviation="TI", organization_id=org.id)
+        course = models.Course(
+            name="Técnico em Informática", abbreviation="TI", organization_id=org.id
+        )
         db_session.add(course)
         await db_session.flush()
 
         cls = models.Class(
-            name="TI 25/28", size=25, course_id=course.id,
-            grade_level=10, start_year=2025, end_year=2028,
-            organization_id=org.id
+            name="TI 25/28",
+            size=25,
+            course_id=course.id,
+            grade_level=10,
+            start_year=2025,
+            end_year=2028,
+            organization_id=org.id,
         )
         db_session.add(cls)
         await db_session.flush()
@@ -40,12 +48,15 @@ class TestClassSubjectLink:
         db_session.add(subject)
         await db_session.flush()
 
-        teacher = models.Teacher(name="Prof. Silva", organization_id=org.id)
-        db_session.add(teacher)
-        await db_session.flush()
+        teacher = await create_teacher_profile(
+            db_session,
+            organization_id=org.id,
+            name="Prof. Silva",
+        )
 
         # Adicionar competência ao professor
         from sqlalchemy import insert
+
         await db_session.execute(
             insert(models.teacher_subject_link).values(
                 organization_id=org.id, teacher_id=teacher.id, subject_id=subject.id
@@ -55,7 +66,6 @@ class TestClassSubjectLink:
 
         return org, course, cls, subject, teacher
 
-    @pytest.mark.asyncio
     async def test_class_subject_link_default_values(self, db_session: AsyncSession):
         """✅ ClassSubjectLink criado com teacher_id=None por padrão"""
         _, _, cls, subject, _ = await self._create_base_data(db_session)
@@ -64,7 +74,7 @@ class TestClassSubjectLink:
             organization_id=cls.organization_id,
             class_id=cls.id,
             subject_id=subject.id,
-            grade_level=cls.grade_level
+            grade_level=cls.grade_level,
         )
         db_session.add(link)
         await db_session.commit()
@@ -72,7 +82,6 @@ class TestClassSubjectLink:
 
         assert link.teacher_id is None
 
-    @pytest.mark.asyncio
     async def test_class_subject_link_custom_values(self, db_session: AsyncSession):
         """✅ ClassSubjectLink aceita professor atribuído"""
         _, _, cls, subject, teacher = await self._create_base_data(db_session)
@@ -90,7 +99,6 @@ class TestClassSubjectLink:
 
         assert link.teacher_id == teacher.id
 
-    @pytest.mark.asyncio
     async def test_class_subject_link_update_teacher(self, db_session: AsyncSession):
         """✅ ClassSubjectLink permite atualizar professor"""
         _, _, cls, subject, teacher = await self._create_base_data(db_session)
@@ -111,7 +119,6 @@ class TestClassSubjectLink:
 
         assert link.teacher_id == teacher.id
 
-    @pytest.mark.asyncio
     async def test_class_subject_link_unique_constraint(self, db_session: AsyncSession):
         """🔐 Não pode haver 2 links para mesma turma+disciplina+grade_level"""
         from sqlalchemy import exc
@@ -122,7 +129,7 @@ class TestClassSubjectLink:
             organization_id=cls.organization_id,
             class_id=cls.id,
             subject_id=subject.id,
-            grade_level=cls.grade_level
+            grade_level=cls.grade_level,
         )
         db_session.add(link1)
         await db_session.commit()
@@ -131,14 +138,13 @@ class TestClassSubjectLink:
             organization_id=cls.organization_id,
             class_id=cls.id,
             subject_id=subject.id,
-            grade_level=cls.grade_level
+            grade_level=cls.grade_level,
         )
         db_session.add(link2)
 
         with pytest.raises(exc.IntegrityError):
             await db_session.commit()
 
-    @pytest.mark.asyncio
     async def test_class_subject_link_different_grade_levels(self, db_session: AsyncSession):
         """📈 Mesma turma+disciplina pode existir em grade_levels diferentes"""
         _, _, cls, subject, _ = await self._create_base_data(db_session)
@@ -159,10 +165,12 @@ class TestClassSubjectLink:
         await db_session.commit()
 
         result = await db_session.execute(
-            select(models.ClassSubjectLink).where(
+            select(models.ClassSubjectLink)
+            .where(
                 models.ClassSubjectLink.class_id == cls.id,
-                models.ClassSubjectLink.subject_id == subject.id
-            ).order_by(models.ClassSubjectLink.grade_level)
+                models.ClassSubjectLink.subject_id == subject.id,
+            )
+            .order_by(models.ClassSubjectLink.grade_level)
         )
         links = result.scalars().all()
 

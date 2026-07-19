@@ -1,5 +1,5 @@
-from dataclasses import replace
 from copy import deepcopy
+from dataclasses import replace
 from datetime import date, time
 from types import SimpleNamespace
 
@@ -12,9 +12,6 @@ from app.scheduler.domain.validation import (
     TargetHardConstraintValidator,
     TargetViolationCode,
 )
-
-
-pytestmark = pytest.mark.unit
 
 
 def _block(key: str, class_id: int, teacher_id: int, timeslot_id: int) -> DraftBlockSpec:
@@ -106,11 +103,14 @@ def test_generation_envelope_accepts_valid_adaptive_result():
         hard_end_date=date(2026, 7, 1),
     )
 
-    assert GenerationEnvelopeValidator.validate(
-        "ADAPTIVE_REPAIR",
-        result,
-        date(2026, 7, 1),
-    ) == ()
+    assert (
+        GenerationEnvelopeValidator.validate(
+            "ADAPTIVE_REPAIR",
+            result,
+            date(2026, 7, 1),
+        )
+        == ()
+    )
 
 
 def _hard_snapshot():
@@ -126,9 +126,7 @@ def _hard_snapshot():
             }
         ],
         "calendar_events": [],
-        "class_subject_requirements": [
-            {"class_id": 1, "subject_id": 2, "teacher_id": 3}
-        ],
+        "class_subject_requirements": [{"class_id": 1, "subject_id": 2, "teacher_id": 3}],
         "classes": [{"id": 1, "size": 20}],
         "subjects": [{"id": 2, "required_room_type": "normal"}],
         "rooms": [{"id": 4, "capacity": 30, "type": "normal"}],
@@ -235,9 +233,7 @@ def test_shared_hard_validator_reports_duplicate_conflicts_custom_and_configurat
         (_valid_hard_block(),),
     )
     invalid_policy = deepcopy(snapshot)
-    invalid_policy["constraints"] = [
-        {"rule_type": "min_gap", "rule_payload": {"class_id": 1}}
-    ]
+    invalid_policy["constraints"] = [{"rule_type": "min_gap", "rule_payload": {"class_id": 1}}]
     configuration = TargetHardConstraintValidator.validate(
         invalid_policy,
         (_valid_hard_block(),),

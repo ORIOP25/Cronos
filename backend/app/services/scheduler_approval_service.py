@@ -1,16 +1,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models
-from app.services.scheduler_fingerprint_service import SchedulerFingerprintService
-from app.services.scheduler_recovery_service import SchedulerRecoveryService
 from app.scheduler.domain.contracts import DraftBlockSpec
 from app.services.scheduler_editable_boundary import EditableBoundaryBuilder
+from app.services.scheduler_fingerprint_service import SchedulerFingerprintService
+from app.services.scheduler_recovery_service import SchedulerRecoveryService
 from app.services.scheduler_target_validator import (
     SchedulerTargetValidationError,
     SchedulerTargetValidator,
@@ -50,21 +50,21 @@ class SchedulerApprovalService:
         organization_id: int,
         draft_id: int,
         *,
-        decided_by_user_id: int,
+        decided_by_membership_id: int,
         now: datetime | None = None,
     ) -> ApprovalResult:
-        instant = now or datetime.now(timezone.utc)
+        instant = now or datetime.now(UTC)
         draft = await self.validate_preconditions(
             organization_id,
             draft_id,
-            decided_by_user_id=decided_by_user_id,
+            decided_by_membership_id=decided_by_membership_id,
             now=instant,
         )
         if draft.strategy == models.ScheduleGenerationStrategy.ADAPTIVE_REPAIR:
             return await self._approve_repair(
                 organization_id,
                 draft,
-                decided_by_user_id,
+                decided_by_membership_id,
                 instant,
             )
         state = await self._locked_state(organization_id, draft.school_year_id)
@@ -73,8 +73,7 @@ class SchedulerApprovalService:
                 select(models.ActiveScheduleBlock.id).where(
                     models.ActiveScheduleBlock.organization_id == organization_id,
                     models.ActiveScheduleBlock.school_year_id == draft.school_year_id,
-                    models.ActiveScheduleBlock.status
-                    == models.ActiveScheduleBlockStatus.ACTIVE,
+                    models.ActiveScheduleBlock.status == models.ActiveScheduleBlockStatus.ACTIVE,
                 )
             )
         )
@@ -117,7 +116,7 @@ class SchedulerApprovalService:
                 )
             )
         draft.draft_state = models.ScheduleDraftState.APPROVED
-        draft.decided_by_user_id = decided_by_user_id
+        draft.decided_by_membership_id = decided_by_membership_id
         draft.decided_at = instant
         state.pending_draft_id = None
         state.school_year_publication_state = models.SchoolYearPublicationState.PUBLISHED
@@ -137,7 +136,7 @@ class SchedulerApprovalService:
         self,
         organization_id: int,
         draft: models.ScheduleDraft,
-        decided_by_user_id: int,
+        decided_by_membership_id: int,
         instant: datetime,
     ) -> ApprovalResult:
         state = await self._locked_state(organization_id, draft.school_year_id)
@@ -164,8 +163,7 @@ class SchedulerApprovalService:
                 .where(
                     models.ActiveScheduleBlock.organization_id == organization_id,
                     models.ActiveScheduleBlock.school_year_id == draft.school_year_id,
-                    models.ActiveScheduleBlock.status
-                    == models.ActiveScheduleBlockStatus.ACTIVE,
+                    models.ActiveScheduleBlock.status == models.ActiveScheduleBlockStatus.ACTIVE,
                 )
                 .order_by(models.ActiveScheduleBlock.id)
                 .with_for_update()
@@ -272,7 +270,7 @@ class SchedulerApprovalService:
             active_by_draft_block,
         )
         draft.draft_state = models.ScheduleDraftState.APPROVED
-        draft.decided_by_user_id = decided_by_user_id
+        draft.decided_by_membership_id = decided_by_membership_id
         draft.decided_at = instant
         state.pending_draft_id = None
         state.active_schedule_version_id = version_id
@@ -292,10 +290,10 @@ class SchedulerApprovalService:
         organization_id: int,
         draft_id: int,
         *,
-        decided_by_user_id: int,
+        decided_by_membership_id: int,
         now: datetime | None = None,
     ) -> models.ScheduleDraft:
-        instant = now or datetime.now(timezone.utc)
+        instant = now or datetime.now(UTC)
         if instant.tzinfo is None or instant.utcoffset() is None:
             raise SchedulerApprovalError("Approval time must be timezone-aware.")
         draft = await self._db.scalar(
@@ -336,7 +334,7 @@ class SchedulerApprovalService:
                 draft,
                 state,
                 "The school-year publication state no longer matches this draft strategy.",
-                decided_by_user_id,
+                decided_by_membership_id,
                 instant,
             )
 
@@ -350,7 +348,7 @@ class SchedulerApprovalService:
                 draft,
                 state,
                 "Schedule conditions changed after this draft was generated.",
-                decided_by_user_id,
+                decided_by_membership_id,
                 instant,
             )
         if draft.strategy == models.ScheduleGenerationStrategy.COMPLETE_GENERATION:
@@ -366,7 +364,7 @@ class SchedulerApprovalService:
                 draft,
                 state,
                 "The repair policy changed after this draft was generated.",
-                decided_by_user_id,
+                decided_by_membership_id,
                 instant,
             )
         uses_debt = draft.trigger_type in (
@@ -387,7 +385,7 @@ class SchedulerApprovalService:
                     draft,
                     state,
                     "The explicit-debt trigger no longer exists.",
-                    decided_by_user_id,
+                    decided_by_membership_id,
                     instant,
                 )
             if current_debt.value != draft.debt_basis_fingerprint:
@@ -395,7 +393,7 @@ class SchedulerApprovalService:
                     draft,
                     state,
                     "The explicit-debt basis changed after this draft was generated.",
-                    decided_by_user_id,
+                    decided_by_membership_id,
                     instant,
                 )
         if uses_change:
@@ -406,7 +404,7 @@ class SchedulerApprovalService:
                     draft,
                     state,
                     "The scheduler-change trigger no longer exists.",
-                    decided_by_user_id,
+                    decided_by_membership_id,
                     instant,
                 )
             if state.scheduler_state_version != draft.scheduler_state_version_used:
@@ -414,7 +412,7 @@ class SchedulerApprovalService:
                     draft,
                     state,
                     "Scheduler conditions changed after this draft was generated.",
-                    decided_by_user_id,
+                    decided_by_membership_id,
                     instant,
                 )
         return draft
@@ -445,7 +443,6 @@ class SchedulerApprovalService:
                     models.ScheduleDraftBlock.draft_id == draft.id,
                 )
                 .order_by(models.ScheduleDraftBlock.id)
-                .with_for_update()
             )
         )
         if not blocks:
@@ -480,7 +477,7 @@ class SchedulerApprovalService:
                     models.PlannedRecoveryLink.school_year_id == draft.school_year_id,
                     models.ScheduleDraftBlock.draft_id == draft.id,
                 )
-                .with_for_update()
+                .with_for_update(of=models.PlannedRecoveryLink)
             )
         )
         expected = {
@@ -503,8 +500,7 @@ class SchedulerApprovalService:
                 link.status != models.PlannedRecoveryLinkStatus.PLANNED
                 or link.planned_active_block_id is not None
                 or link.debt_occurrence_id != block.recovery_source_occurrence_id
-                or link.debt_occurrence_revision
-                != block.recovery_source_occurrence_revision
+                or link.debt_occurrence_revision != block.recovery_source_occurrence_revision
                 or link.class_id != block.class_id
                 or link.subject_id != block.subject_id
                 or link.teacher_id != block.teacher_id
@@ -527,21 +523,17 @@ class SchedulerApprovalService:
             or not isinstance(remaining, int)
             or remaining < 0
             or (
-                "recovered_minutes" in metrics
-                and metrics["recovered_minutes"] != recovered_minutes
+                "recovered_minutes" in metrics and metrics["recovered_minutes"] != recovered_minutes
             )
             or (
-                "residual_debt_minutes" in metrics
-                and metrics["residual_debt_minutes"] != remaining
+                "residual_debt_minutes" in metrics and metrics["residual_debt_minutes"] != remaining
             )
             or (
-                draft.result_category
-                == models.ScheduleGenerationResultCategory.PARTIAL_RECOVERY
+                draft.result_category == models.ScheduleGenerationResultCategory.PARTIAL_RECOVERY
                 and remaining <= 0
             )
             or (
-                draft.result_category
-                == models.ScheduleGenerationResultCategory.COMPLETE_SUCCESS
+                draft.result_category == models.ScheduleGenerationResultCategory.COMPLETE_SUCCESS
                 and remaining != 0
             )
         ):
@@ -608,7 +600,7 @@ class SchedulerApprovalService:
     ):
         draft.draft_state = models.ScheduleDraftState.STALE
         draft.stale_reason = reason
-        draft.decided_by_user_id = user_id
+        draft.decided_by_membership_id = user_id
         draft.decided_at = instant
         state.pending_draft_id = None
         state.lock_version += 1
@@ -630,7 +622,7 @@ class SchedulerApprovalService:
     ):
         draft.draft_state = models.ScheduleDraftState.INVALIDATED
         draft.invalidated_reason = reason
-        draft.decided_by_user_id = user_id
+        draft.decided_by_membership_id = user_id
         draft.decided_at = instant
         state.pending_draft_id = None
         state.lock_version += 1

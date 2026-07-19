@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date, time
 from enum import StrEnum
-from typing import Any, Iterable, Mapping, Sequence
-
+from typing import Any
 
 QUALITY_POLICY_VERSION = "baseline-v1"
 
@@ -101,16 +101,12 @@ class ScheduleQualityMetrics:
     @property
     def gap_and_availability_cost_minutes(self) -> int:
         return (
-            self.class_gap_minutes
-            + self.teacher_gap_minutes
-            + self.availability_disutility_minutes
+            self.class_gap_minutes + self.teacher_gap_minutes + self.availability_disutility_minutes
         )
 
     def as_dict(self) -> dict[str, Any]:
         return {
-            key: value
-            for key, value in self.__dict__.items()
-            if key != "class_progress_per_mille"
+            key: value for key, value in self.__dict__.items() if key != "class_progress_per_mille"
         } | {"class_progress_per_mille": dict(self.class_progress_per_mille)}
 
 
@@ -122,7 +118,9 @@ class ScheduleQualityEvaluator:
         lunch_rule: Mapping[str, Any] | None = None,
     ):
         self.policy = policy
-        self.slots = tuple(sorted(slots, key=lambda row: (row.day_of_week, row.start_minute, row.id)))
+        self.slots = tuple(
+            sorted(slots, key=lambda row: (row.day_of_week, row.start_minute, row.id))
+        )
         self.slots_by_id = {row.id: row for row in self.slots}
         self.slots_by_day: dict[int, tuple[QualitySlot, ...]] = {
             weekday: tuple(row for row in self.slots if row.day_of_week == weekday)
@@ -139,18 +137,32 @@ class ScheduleQualityEvaluator:
         ordered = tuple(sorted(blocks, key=self._block_order))
         class_daily = self._daily(ordered, "class_id")
         teacher_daily = self._daily(ordered, "teacher_id")
-        class_excess = sum(max(0, value - self.policy.healthy_class_daily_minutes) for value in class_daily.values())
-        teacher_excess = sum(max(0, value - self.policy.healthy_teacher_daily_minutes) for value in teacher_daily.values())
-        class_heavy = {key for key, value in class_daily.items() if value > self.policy.healthy_class_daily_minutes}
-        teacher_heavy = {key for key, value in teacher_daily.items() if value > self.policy.healthy_teacher_daily_minutes}
-        repeated_heavy_count = self._repeated_heavy(class_heavy) + self._repeated_heavy(teacher_heavy)
-        repeated_heavy_penalty = repeated_heavy_count * self.policy.standard_block_minutes
-        consecutive = self._consecutive_excess(ordered, "class_id") + self._consecutive_excess(ordered, "teacher_id")
-        late = sum(
-            block.duration_minutes
-            for block in ordered
-            if self._is_late(block)
+        class_excess = sum(
+            max(0, value - self.policy.healthy_class_daily_minutes)
+            for value in class_daily.values()
         )
+        teacher_excess = sum(
+            max(0, value - self.policy.healthy_teacher_daily_minutes)
+            for value in teacher_daily.values()
+        )
+        class_heavy = {
+            key
+            for key, value in class_daily.items()
+            if value > self.policy.healthy_class_daily_minutes
+        }
+        teacher_heavy = {
+            key
+            for key, value in teacher_daily.items()
+            if value > self.policy.healthy_teacher_daily_minutes
+        }
+        repeated_heavy_count = self._repeated_heavy(class_heavy) + self._repeated_heavy(
+            teacher_heavy
+        )
+        repeated_heavy_penalty = repeated_heavy_count * self.policy.standard_block_minutes
+        consecutive = self._consecutive_excess(ordered, "class_id") + self._consecutive_excess(
+            ordered, "teacher_id"
+        )
+        late = sum(block.duration_minutes for block in ordered if self._is_late(block))
         recovery_daily: dict[tuple[int, date], int] = defaultdict(int)
         for block in ordered:
             if block.is_recovery_block:

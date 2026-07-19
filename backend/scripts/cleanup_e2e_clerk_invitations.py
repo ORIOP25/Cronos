@@ -11,7 +11,6 @@ from app.core.clerk import get_clerk_sdk
 from app.db.database import SessionLocal
 from app.services.clerk_access_service import ClerkAccessService
 
-
 EMAIL_ENV_NAMES = (
     "E2E_CLERK_INVITE_CREATE_EMAIL",
     "E2E_CLERK_INVITE_CONVERT_EMAIL",
@@ -34,9 +33,7 @@ async def _main() -> None:
         raise RuntimeError("E2E_CLERK_ADMIN_EMAIL is required.")
 
     async with SessionLocal() as db:
-        admin = await db.scalar(
-            select(models.User).where(models.User.email == admin_email)
-        )
+        admin = await db.scalar(select(models.User).where(models.User.email == admin_email))
         if admin is None or not admin.clerk_user_id:
             raise RuntimeError("The prepared E2E admin was not found locally.")
         organization = await db.get(models.Organization, admin.organization_id)

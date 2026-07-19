@@ -1,9 +1,9 @@
 from datetime import date
 
 import pytest
+from sqlalchemy import select
 
 from app import models
-from sqlalchemy import select
 from app.services.scheduler_state_service import (
     InvalidSchedulerStateTransitionError,
     PendingDraftConflictError,
@@ -12,30 +12,34 @@ from app.services.scheduler_state_service import (
 )
 
 
-pytestmark = pytest.mark.integration
-
-
 async def _create_org_and_user(db_session):
     organization = models.Organization(name="State Service School", plan_status="active")
     db_session.add(organization)
     await db_session.flush()
     user = models.User(
-        organization_id=organization.id,
         email=f"state-service-{organization.id}@example.com",
-        role=models.UserRole.admin,
-        is_active=True,
-        is_superuser=False,
     )
     db_session.add(user)
     await db_session.flush()
-    return organization, user
+    membership = models.OrganizationMembership(
+        organization_id=organization.id,
+        account_id=user.id,
+        organization_display_name="State Service Admin",
+        lifecycle_status=models.MembershipLifecycleStatus.active,
+        access_status=models.MembershipAccessStatus.active,
+        can_admin=True,
+        can_teach=False,
+    )
+    db_session.add(membership)
+    await db_session.flush()
+    return organization, membership
 
 
-async def _create_pending_draft(db_session, organization, school_year, user, state):
+async def _create_pending_draft(db_session, organization, school_year, membership, state):
     job = models.ScheduleGenerationJob(
         organization_id=organization.id,
         school_year_id=school_year.id,
-        requested_by_user_id=user.id,
+        requested_by_membership_id=membership.id,
         strategy=models.ScheduleGenerationStrategy.COMPLETE_GENERATION,
     )
     db_session.add(job)
@@ -52,14 +56,13 @@ async def _create_pending_draft(db_session, organization, school_year, user, sta
         projected_completion_date=date(2026, 6, 30),
         hard_end_date=school_year.hard_end_date,
         summary_json={},
-        created_by_user_id=user.id,
+        created_by_membership_id=membership.id,
     )
     db_session.add(draft)
     await db_session.flush()
     return draft
 
 
-@pytest.mark.asyncio
 async def test_get_or_create_active_state_is_idempotent(db_session):
     organization, _ = await _create_org_and_user(db_session)
     service = SchedulerStateService(db_session)
@@ -82,18 +85,15 @@ async def test_get_or_create_active_state_is_idempotent(db_session):
     )
 
 
-@pytest.mark.asyncio
 async def test_pending_lookup_requires_pointer_consistency(db_session):
-    organization, user = await _create_org_and_user(db_session)
+    organization, membership = await _create_org_and_user(db_session)
     service = SchedulerStateService(db_session)
     school_year, state = await service.get_or_create_active_state(
         organization.id,
         start_date=date(2025, 9, 1),
         hard_end_date=date(2026, 7, 15),
     )
-    draft = await _create_pending_draft(
-        db_session, organization, school_year, user, state
-    )
+    draft = await _create_pending_draft(db_session, organization, school_year, membership, state)
 
     with pytest.raises(SchedulerStateIntegrityError):
         await service.get_pending_draft(organization.id, school_year.id)
@@ -104,18 +104,15 @@ async def test_pending_lookup_requires_pointer_consistency(db_session):
     assert pending.id == draft.id
 
 
-@pytest.mark.asyncio
 async def test_publish_and_reset_transitions_are_centralized(db_session):
-    organization, user = await _create_org_and_user(db_session)
+    organization, membership = await _create_org_and_user(db_session)
     service = SchedulerStateService(db_session)
     school_year, state = await service.get_or_create_active_state(
         organization.id,
         start_date=date(2025, 9, 1),
         hard_end_date=date(2026, 7, 15),
     )
-    draft = await _create_pending_draft(
-        db_session, organization, school_year, user, state
-    )
+    draft = await _create_pending_draft(db_session, organization, school_year, membership, state)
     await service.set_pending_draft(organization.id, school_year.id, draft.id)
 
     published = await service.mark_published(
@@ -125,36 +122,29 @@ async def test_publish_and_reset_transitions_are_centralized(db_session):
         approved_scheduler_state_version=state.scheduler_state_version,
         approved_draft_id=draft.id,
     )
-    assert published.school_year_publication_state == (
-        models.SchoolYearPublicationState.PUBLISHED
-    )
+    assert published.school_year_publication_state == (models.SchoolYearPublicationState.PUBLISHED)
     assert published.pending_draft_id is None
 
     reset = await service.reset_year(
         organization.id,
         school_year.id,
-        reset_by_user_id=user.id,
+        reset_by_membership_id=membership.id,
     )
-    assert reset.school_year_publication_state == (
-        models.SchoolYearPublicationState.UNPUBLISHED
-    )
+    assert reset.school_year_publication_state == (models.SchoolYearPublicationState.UNPUBLISHED)
     assert reset.active_schedule_version_id is None
     assert reset.approved_scheduler_state_version is None
     assert reset.reset_at is not None
 
 
-@pytest.mark.asyncio
 async def test_clear_pending_draft_uses_expected_identity(db_session):
-    organization, user = await _create_org_and_user(db_session)
+    organization, membership = await _create_org_and_user(db_session)
     service = SchedulerStateService(db_session)
     school_year, state = await service.get_or_create_active_state(
         organization.id,
         start_date=date(2025, 9, 1),
         hard_end_date=date(2026, 7, 15),
     )
-    draft = await _create_pending_draft(
-        db_session, organization, school_year, user, state
-    )
+    draft = await _create_pending_draft(db_session, organization, school_year, membership, state)
     await service.set_pending_draft(organization.id, school_year.id, draft.id)
 
     with pytest.raises(PendingDraftConflictError):
@@ -165,18 +155,15 @@ async def test_clear_pending_draft_uses_expected_identity(db_session):
         )
 
 
-@pytest.mark.asyncio
 async def test_publish_rejects_a_stale_scheduler_state_version(db_session):
-    organization, user = await _create_org_and_user(db_session)
+    organization, membership = await _create_org_and_user(db_session)
     service = SchedulerStateService(db_session)
     school_year, state = await service.get_or_create_active_state(
         organization.id,
         start_date=date(2025, 9, 1),
         hard_end_date=date(2026, 7, 15),
     )
-    draft = await _create_pending_draft(
-        db_session, organization, school_year, user, state
-    )
+    draft = await _create_pending_draft(db_session, organization, school_year, membership, state)
     await service.set_pending_draft(organization.id, school_year.id, draft.id)
 
     with pytest.raises(InvalidSchedulerStateTransitionError):
@@ -189,7 +176,6 @@ async def test_publish_rejects_a_stale_scheduler_state_version(db_session):
         )
 
 
-@pytest.mark.asyncio
 async def test_active_school_year_rejects_invalid_timezone(db_session):
     organization, _ = await _create_org_and_user(db_session)
     service = SchedulerStateService(db_session)
@@ -203,9 +189,8 @@ async def test_active_school_year_rejects_invalid_timezone(db_session):
         )
 
 
-@pytest.mark.asyncio
 async def test_relevant_change_increments_once_and_records_event(db_session):
-    organization, user = await _create_org_and_user(db_session)
+    organization, membership = await _create_org_and_user(db_session)
     service = SchedulerStateService(db_session)
     school_year, state = await service.get_or_create_active_state(
         organization.id,
@@ -220,7 +205,7 @@ async def test_relevant_change_increments_once_and_records_event(db_session):
         operation=models.SchedulerStateChangeOperation.UPDATE,
         before={"capacity": 20, "type": models.RoomType.normal},
         after={"type": models.RoomType.lab, "capacity": 20},
-        changed_by_user_id=user.id,
+        changed_by_membership_id=membership.id,
     )
 
     assert event is not None
@@ -237,7 +222,6 @@ async def test_relevant_change_increments_once_and_records_event(db_session):
     assert stored.before_metadata_json == {"capacity": 20, "type": "normal"}
 
 
-@pytest.mark.asyncio
 async def test_noop_and_repair_policy_changes_do_not_increment(db_session):
     organization, _ = await _create_org_and_user(db_session)
     service = SchedulerStateService(db_session)
@@ -273,7 +257,6 @@ async def test_noop_and_repair_policy_changes_do_not_increment(db_session):
     assert state.scheduler_state_version == 0
 
 
-@pytest.mark.asyncio
 async def test_inactive_resource_change_is_audited_without_increment(db_session):
     organization, _ = await _create_org_and_user(db_session)
     service = SchedulerStateService(db_session)

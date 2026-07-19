@@ -13,8 +13,7 @@ def test_small_school_receives_larger_horizon_than_complex_school():
 
     large = deepcopy(small)
     large["classes"] = [
-        {"id": class_id, "size": 24, "grade_level": 10}
-        for class_id in range(1, 31)
+        {"id": class_id, "size": 24, "grade_level": 10} for class_id in range(1, 31)
     ]
     large["class_subject_requirements"] = [
         {
@@ -49,8 +48,7 @@ def test_horizon_shrinks_under_candidate_and_time_pressure():
     snapshot = _snapshot()
     snapshot["hard_end_date"] = "2026-07-15"
     snapshot["rooms"] = [
-        {"id": room_id, "capacity": 30, "type": "normal"}
-        for room_id in range(1, 101)
+        {"id": room_id, "capacity": 30, "type": "normal"} for room_id in range(1, 101)
     ]
     ledger = CompleteDemandLedgerBuilder().build(snapshot)
     selector = AdaptiveHorizonSelector()

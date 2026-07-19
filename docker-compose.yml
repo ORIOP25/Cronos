@@ -1,144 +1,115 @@
 name: cronos
 
-# Credenciais definidas via variáveis de ambiente ou ficheiro .env na raiz.
-# Exemplo de .env (NUNCA comitar):
-#   POSTGRES_USER=postgres
-#   POSTGRES_PASSWORD=<senha_segura>
-#   POSTGRES_DB=cronos_db
-#   BOOTSTRAP_ADMIN_PASSWORD=<senha_admin_segura>
-#   REDIS_PASSWORD=<senha_redis_opcional>
+x-backend-environment: &backend-environment
+  ENVIRONMENT: local
+  DATABASE_URL: postgresql+asyncpg://cronos_app:${CRONOS_APP_PASSWORD:?CRONOS_APP_PASSWORD is required}@db:5432/${POSTGRES_DB:-cronos_db}
+  REDIS_URL: redis://redis:6379/0
+  CELERY_BROKER_URL: redis://redis:6379/0
 
 services:
-  # 1. Base de Dados
   db:
-    image: postgres:15-alpine
+    image: postgres:16-alpine@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777
     restart: always
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD deve ser definida no .env}
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
       POSTGRES_DB: ${POSTGRES_DB:-cronos_db}
-    ports:
-      - "5432:5432"
+    ports: ["5432:5432"]
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d ${POSTGRES_DB:-cronos_db}"]
       interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 10
 
-  # 2. Redis (com persistência AOF)
   redis:
-    image: redis:7-alpine
+    image: redis:7-alpine@sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99
     restart: always
-    expose:
-      - "6379"
-    volumes:
-      - redis_data:/data
     command: redis-server --appendonly yes
+    volumes: [redis_data:/data]
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 10
 
-  # 3. Backend API
-  backend:
-    build: ./backend
-    expose:
-      - "8000"
-    env_file:
-      - ./backend/.env
+  migrate:
+    build:
+      context: ./backend
+      target: runtime
+    command: ["alembic", "upgrade", "head"]
     environment:
-      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-cronos_db}
-      - CELERY_BROKER_URL=redis://redis:6379/0
-      - REDIS_URL=redis://redis:6379/0
-      - RUN_MIGRATIONS=1
-      - BOOTSTRAP_DEFAULT_ADMIN=0
-      - BOOTSTRAP_ADMIN_EMAIL=admin@cronos.local
-      - BOOTSTRAP_ADMIN_PASSWORD=${BOOTSTRAP_ADMIN_PASSWORD:-admin1234}
-      - BOOTSTRAP_ADMIN_NAME=Admin Cronos
-      - BOOTSTRAP_ORG_NAME=Escola Demo Cronos
-
-    ports:
-      - "8000:8000"
-
-    volumes:
-      - ./backend:/app
-
+      <<: *backend-environment
+      MIGRATION_DATABASE_URL: postgresql+psycopg2://cronos_migrator:${CRONOS_MIGRATOR_PASSWORD}@db:5432/${POSTGRES_DB:-cronos_db}
     depends_on:
-      db:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
+      provision-db: {condition: service_completed_successfully}
+
+  provision-db:
+    image: postgres:16-alpine@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777
+    command: ["/bin/sh", "/scripts/provision_database.sh"]
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_DB: ${POSTGRES_DB:-cronos_db}
+      PGPASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      PGHOST: db
+      CRONOS_MIGRATOR_PASSWORD: ${CRONOS_MIGRATOR_PASSWORD:?CRONOS_MIGRATOR_PASSWORD is required}
+      CRONOS_APP_PASSWORD: ${CRONOS_APP_PASSWORD:?CRONOS_APP_PASSWORD is required}
+    volumes:
+      - ./backend/scripts/provision_database.sh:/scripts/provision_database.sh:ro
+    depends_on:
+      db: {condition: service_healthy}
+
+  backend:
+    build:
+      context: ./backend
+      target: runtime
+    environment: *backend-environment
+    ports: ["8000:8000"]
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+      redis: {condition: service_healthy}
     healthcheck:
-      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health', timeout=2)\""]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/ready', timeout=2)"]
       interval: 5s
       timeout: 3s
       retries: 20
-      start_period: 20s
 
-  # 4. Worker Celery
   worker:
-    build: ./backend
-    command: ["celery", "-A", "app.celery_worker.celery_app", "worker", "--loglevel=info"]
-    env_file:
-      - ./backend/.env
-    environment:
-      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-cronos_db}
-      - CELERY_BROKER_URL=redis://redis:6379/0
-      - REDIS_URL=redis://redis:6379/0
-      - RUN_MIGRATIONS=0
-    volumes:
-      - ./backend:/app
-    depends_on:
-      backend:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      db:
-        condition: service_healthy
-
-  # 5. Celery Beat — Scheduler de tarefas periódicas (cron diário às 23:59)
-  beat:
-    build: ./backend
-    command: ["celery", "-A", "app.celery_worker.celery_app", "beat", "--loglevel=info", "--schedule", "/tmp/celerybeat-schedule"]
-    env_file:
-      - ./backend/.env
-    environment:
-      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-cronos_db}
-      - CELERY_BROKER_URL=redis://redis:6379/0
-      - REDIS_URL=redis://redis:6379/0
-      - RUN_MIGRATIONS=0
-    volumes:
-      - ./backend:/app
-    depends_on:
-      backend:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      db:
-        condition: service_healthy
-
-  # 6. Frontend (Vite Dev Server)
-  frontend:
     build:
-      context: ./frontend
-      dockerfile: Dockerfile
-    ports:
-      - "5173:5173"
+      context: ./backend
+      target: runtime
+    command: ["celery", "-A", "app.celery_worker.celery_app", "worker", "--loglevel=info"]
+    environment:
+      <<: *backend-environment
+      DATABASE_POOLING_ENABLED: "false"
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+      redis: {condition: service_healthy}
+
+  beat:
+    build:
+      context: ./backend
+      target: runtime
+    command: ["celery", "-A", "app.celery_worker.celery_app", "beat", "--loglevel=info", "--schedule", "/tmp/celerybeat-schedule"]
+    environment:
+      <<: *backend-environment
+      DATABASE_POOLING_ENABLED: "false"
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+      redis: {condition: service_healthy}
+
+  frontend:
+    build: ./frontend
+    ports: ["5173:5173"]
     command: npm run dev
     volumes:
       - ./frontend:/app
       - /app/node_modules
-    environment:
-      - CHOKIDAR_USEPOLLING=true
+    environment: {CHOKIDAR_USEPOLLING: "true"}
     depends_on:
-      backend:
-        condition: service_healthy
+      backend: {condition: service_healthy}
 
 volumes:
   postgres_data:
-    name: cronos_postgres_data
   redis_data:
-    name: cronos_redis_data
