@@ -212,6 +212,7 @@ jobs:
         run: |
           docker compose -f docker-compose.ci.yml exec -T \
             -e CLERK_SECRET_KEY="$CLERK_SECRET_KEY" \
+            -e DATABASE_URL="$DATABASE_URL" \
             -e E2E_CLERK_ADMIN_EMAIL="$E2E_CLERK_ADMIN_EMAIL" \
             -e E2E_CLERK_TEACHER_EMAIL="$E2E_CLERK_TEACHER_EMAIL" \
             -e E2E_CLERK_ORG_ID="$E2E_CLERK_ORG_ID" \
@@ -219,6 +220,7 @@ jobs:
         env:
           COMPOSE_PROJECT_NAME: cronos-ci-${{ github.run_id }}-${{ github.run_attempt }}
           CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
+          DATABASE_URL: postgresql+asyncpg://cronos_migrator:${{ env.CI_MIGRATOR_PASSWORD }}@db:5432/cronos_ci_db
           E2E_CLERK_ADMIN_EMAIL: ${{ env.CI_E2E_CLERK_ADMIN_EMAIL }}
           E2E_CLERK_TEACHER_EMAIL: ${{ env.CI_E2E_CLERK_TEACHER_EMAIL }}
           E2E_CLERK_ORG_ID: ${{ env.CI_E2E_CLERK_ORG_ID }}
@@ -248,6 +250,7 @@ jobs:
           if [ -n "$(docker compose -f docker-compose.ci.yml ps -q backend)" ]; then
             docker compose -f docker-compose.ci.yml exec -T \
               -e CLERK_SECRET_KEY="$CLERK_SECRET_KEY" \
+              -e DATABASE_URL="$DATABASE_URL" \
               -e E2E_CLERK_ADMIN_EMAIL="$E2E_CLERK_ADMIN_EMAIL" \
               -e E2E_CLERK_INVITE_CREATE_EMAIL="$E2E_CLERK_INVITE_CREATE_EMAIL" \
               -e E2E_CLERK_INVITE_CONVERT_EMAIL="$E2E_CLERK_INVITE_CONVERT_EMAIL" \
@@ -256,6 +259,7 @@ jobs:
         env:
           COMPOSE_PROJECT_NAME: cronos-ci-${{ github.run_id }}-${{ github.run_attempt }}
           CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
+          DATABASE_URL: postgresql+asyncpg://cronos_migrator:${{ env.CI_MIGRATOR_PASSWORD }}@db:5432/cronos_ci_db
           E2E_CLERK_ADMIN_EMAIL: ${{ env.CI_E2E_CLERK_ADMIN_EMAIL }}
           E2E_CLERK_INVITE_CREATE_EMAIL: ${{ env.E2E_CLERK_INVITE_CREATE_EMAIL }}
           E2E_CLERK_INVITE_CONVERT_EMAIL: ${{ env.E2E_CLERK_INVITE_CONVERT_EMAIL }}
