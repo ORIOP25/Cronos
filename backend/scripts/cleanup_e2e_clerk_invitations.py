@@ -36,7 +36,14 @@ async def _main() -> None:
         admin = await db.scalar(select(models.User).where(models.User.email == admin_email))
         if admin is None or not admin.clerk_user_id:
             raise RuntimeError("The prepared E2E admin was not found locally.")
-        organization = await db.get(models.Organization, admin.organization_id)
+        membership = await db.scalar(
+            select(models.OrganizationMembership).where(
+                models.OrganizationMembership.account_id == admin.id
+            )
+        )
+        organization = await db.get(
+            models.Organization, membership.organization_id if membership else None
+        )
         if organization is None or not organization.clerk_org_id:
             raise RuntimeError("The prepared E2E Clerk organization was not found locally.")
         org_id = organization.clerk_org_id
