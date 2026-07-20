@@ -133,7 +133,9 @@ services:
       E2E_CLERK_INVITE_CREATE_EMAIL: ${E2E_CLERK_INVITE_CREATE_EMAIL:?E2E_CLERK_INVITE_CREATE_EMAIL is required}
       E2E_CLERK_INVITE_CONVERT_EMAIL: ${E2E_CLERK_INVITE_CONVERT_EMAIL:?E2E_CLERK_INVITE_CONVERT_EMAIL is required}
     volumes:
-      - ./frontend:/work/frontend:ro
+      # Docker must create the nested node_modules mountpoint below this path.
+      # CI uses an ephemeral checkout, so this mount can safely be writable.
+      - ./frontend:/work/frontend
       - frontend_node_modules_ci:/work/frontend/node_modules
     depends_on:
       frontend: {condition: service_healthy}
