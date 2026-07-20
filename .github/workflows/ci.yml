@@ -2,10 +2,10 @@ name: CI
 
 on:
   push:
-    branches: [main, develop, review-backend]
+    branches: [main, develop]
     tags: ["v*"]
   pull_request:
-    branches: [main, develop, review-backend]
+    branches: [main, develop]
 
 permissions:
   contents: read
@@ -151,8 +151,10 @@ jobs:
       
       - name: Validate Clerk test identities
         run: |
-          echo "E2E_CLERK_INVITE_CREATE_EMAIL=e2e-create-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}+clerk_test@example.com" >> "$GITHUB_ENV"
-          echo "E2E_CLERK_INVITE_CONVERT_EMAIL=e2e-convert-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}+clerk_test@example.com" >> "$GITHUB_ENV"
+          invite_create_email="e2e-create-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}+clerk_test@example.com"
+          invite_convert_email="e2e-convert-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}+clerk_test@example.com"
+          echo "E2E_CLERK_INVITE_CREATE_EMAIL=${invite_create_email}" >> "$GITHUB_ENV"
+          echo "E2E_CLERK_INVITE_CONVERT_EMAIL=${invite_convert_email}" >> "$GITHUB_ENV"
           if [ -z "$CLERK_PUBLISHABLE_KEY" ]; then
             echo "ERROR: Missing Clerk publishable key for E2E."
             exit 1
@@ -173,7 +175,7 @@ jobs:
             echo "ERROR: A dedicated Clerk E2E organization is required."
             exit 1
           fi
-          case "$E2E_CLERK_INVITE_CREATE_EMAIL:$E2E_CLERK_INVITE_CONVERT_EMAIL" in
+          case "$invite_create_email:$invite_convert_email" in
             *+clerk_test@example.com:*+clerk_test@example.com) ;;
             *) echo "ERROR: Invitation identities must use Clerk reserved test emails."; exit 1 ;;
           esac
