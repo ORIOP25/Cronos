@@ -1,3 +1,15 @@
+from dataclasses import dataclass, field
+from typing import Any
+
+
+@dataclass(slots=True)
+class AppError(Exception):
+    kind: str
+    code: str
+    detail: str
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+
 class DomainError(Exception):
     """Exceção de domínio — o endpoint mapeia para HTTP status code."""
 

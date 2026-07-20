@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import select
@@ -9,12 +9,12 @@ from sqlalchemy.orm import selectinload
 
 from app import models
 from app.config import settings
-from app.services.member_service import ClerkAccessService
 from app.services import member_webhook_service
+from app.services.member_service import ClerkAccessService
 
 
 def _now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def _normalize_token_role(token_role: str | None) -> str | None:
@@ -41,7 +41,8 @@ async def reconcile_first_login(
         .where(
             models.OrganizationMembership.organization_id == organization.id,
             models.OrganizationMembership.account_id == user.id,
-            models.OrganizationMembership.lifecycle_status == models.MembershipLifecycleStatus.active,
+            models.OrganizationMembership.lifecycle_status
+            == models.MembershipLifecycleStatus.active,
             models.OrganizationMembership.access_status.in_(
                 [
                     models.MembershipAccessStatus.pending_invite,
@@ -50,7 +51,7 @@ async def reconcile_first_login(
                 ]
             ),
         )
-        .options(selectinload(models.OrganizationMembership.capabilities), selectinload(models.OrganizationMembership.teacher_profile))
+        .options(selectinload(models.OrganizationMembership.teacher_profile))
     )
     if member is None or member.expected_clerk_role is None:
         return False
@@ -63,15 +64,21 @@ async def reconcile_first_login(
     )
     if not provider.ok or _normalize_token_role(provider.role) != member.expected_clerk_role.value:
         member.access_error_category = provider.error_category or "provider_unconfirmed"
-        member.access_error_safe_message = provider.safe_message or "Clerk membership could not be confirmed."
+        member.access_error_safe_message = (
+            provider.safe_message or "Clerk membership could not be confirmed."
+        )
         await db.flush()
         return False
     member.access_status = models.MembershipAccessStatus.active
     member.clerk_membership_id = provider.membership_id or member.clerk_membership_id
-    member.clerk_invitation_status = models.ClerkInvitationStatus.accepted if member.clerk_invitation_id else member.clerk_invitation_status
+    member.clerk_invitation_status = (
+        models.ClerkInvitationStatus.accepted
+        if member.clerk_invitation_id
+        else member.clerk_invitation_status
+    )
     member.access_error_category = None
     member.access_error_safe_message = None
-    member.updated_by_user_id = user.id
+    member.updated_by_membership_id = user.id
     member.lock_version += 1
     await db.flush()
     return True
@@ -87,7 +94,10 @@ async def confirm_provider_membership(
         member = await db.scalar(
             select(models.OrganizationMembership)
             .where(models.OrganizationMembership.id == member.id)
-            .options(selectinload(models.OrganizationMembership.organization), selectinload(models.OrganizationMembership.account))
+            .options(
+                selectinload(models.OrganizationMembership.organization),
+                selectinload(models.OrganizationMembership.account),
+            )
         )
     if member is None or member.organization is None or not member.organization.clerk_org_id:
         return None
@@ -122,7 +132,8 @@ async def reconcile_first_login_by_email(
         .join(models.User, models.User.id == models.OrganizationMembership.account_id)
         .where(
             models.OrganizationMembership.organization_id == organization.id,
-            models.OrganizationMembership.lifecycle_status == models.MembershipLifecycleStatus.active,
+            models.OrganizationMembership.lifecycle_status
+            == models.MembershipLifecycleStatus.active,
             models.OrganizationMembership.access_status.in_(
                 [
                     models.MembershipAccessStatus.pending_invite,
@@ -150,7 +161,9 @@ async def reconcile_first_login_by_email(
     )
     if not provider.ok:
         member.access_error_category = provider.error_category or "provider_unconfirmed"
-        member.access_error_safe_message = provider.safe_message or "Clerk membership could not be confirmed."
+        member.access_error_safe_message = (
+            provider.safe_message or "Clerk membership could not be confirmed."
+        )
         await db.flush()
         return None
     if _normalize_token_role(provider.role) != member.expected_clerk_role.value:
@@ -166,20 +179,30 @@ async def reconcile_first_login_by_email(
     account.last_clerk_sync_at = _now()
     member.access_status = models.MembershipAccessStatus.active
     member.clerk_membership_id = provider.membership_id or member.clerk_membership_id
-    member.clerk_invitation_status = models.ClerkInvitationStatus.accepted if member.clerk_invitation_id else member.clerk_invitation_status
+    member.clerk_invitation_status = (
+        models.ClerkInvitationStatus.accepted
+        if member.clerk_invitation_id
+        else member.clerk_invitation_status
+    )
     member.access_error_category = None
     member.access_error_safe_message = None
-    member.updated_by_user_id = account.id
+    member.updated_by_membership_id = account.id
     member.lock_version += 1
     await db.flush()
     return account
 
 
-async def run_scheduled_reconciliation(db: AsyncSession, *, limit: int = 100) -> dict[str, Any]:
+async def run_scheduled_reconciliation(
+    db: AsyncSession,
+    *,
+    limit: int = 100,
+    clerk_access: ClerkAccessService | None = None,
+) -> dict[str, Any]:
     now = _now()
     expired_result = await db.execute(
         select(models.OrganizationMembership).where(
-            models.OrganizationMembership.access_status == models.MembershipAccessStatus.pending_invite,
+            models.OrganizationMembership.access_status
+            == models.MembershipAccessStatus.pending_invite,
             models.OrganizationMembership.invitation_expires_at.is_not(None),
             models.OrganizationMembership.invitation_expires_at < now,
         )
@@ -193,14 +216,15 @@ async def run_scheduled_reconciliation(db: AsyncSession, *, limit: int = 100) ->
         select(models.OrganizationMembership)
         .join(models.Organization)
         .where(
-            models.OrganizationMembership.access_status == models.MembershipAccessStatus.pending_invite,
+            models.OrganizationMembership.access_status
+            == models.MembershipAccessStatus.pending_invite,
             models.OrganizationMembership.clerk_invitation_id.is_not(None),
         )
         .options(selectinload(models.OrganizationMembership.organization))
         .limit(limit)
     )
     checked_invites = 0
-    clerk_access = ClerkAccessService()
+    clerk_access = clerk_access or ClerkAccessService()
     for member in pending_invite_result.scalars().all():
         if not member.organization.clerk_org_id:
             continue
@@ -211,7 +235,9 @@ async def run_scheduled_reconciliation(db: AsyncSession, *, limit: int = 100) ->
         )
         if not result.ok:
             member.access_error_category = result.error_category or "provider_unconfirmed"
-            member.access_error_safe_message = result.safe_message or "Clerk invitation state could not be confirmed."
+            member.access_error_safe_message = (
+                result.safe_message or "Clerk invitation state could not be confirmed."
+            )
             continue
         if result.invitation_status in {"expired", "revoked"}:
             member.access_status = models.MembershipAccessStatus.invite_expired
@@ -228,7 +254,8 @@ async def run_scheduled_reconciliation(db: AsyncSession, *, limit: int = 100) ->
 
     stale_processing_result = await db.execute(
         select(models.ClerkWebhookEvent).where(
-            models.ClerkWebhookEvent.processing_status == models.ClerkWebhookProcessingStatus.processing,
+            models.ClerkWebhookEvent.processing_status
+            == models.ClerkWebhookProcessingStatus.processing,
             models.ClerkWebhookEvent.last_attempt_at < now - timedelta(minutes=10),
         )
     )
@@ -241,7 +268,8 @@ async def run_scheduled_reconciliation(db: AsyncSession, *, limit: int = 100) ->
     retry_result = await db.execute(
         select(models.ClerkWebhookEvent)
         .where(
-            models.ClerkWebhookEvent.processing_status == models.ClerkWebhookProcessingStatus.retryable_failed,
+            models.ClerkWebhookEvent.processing_status
+            == models.ClerkWebhookProcessingStatus.retryable_failed,
             models.ClerkWebhookEvent.next_retry_at <= now,
         )
         .order_by(models.ClerkWebhookEvent.created_at)

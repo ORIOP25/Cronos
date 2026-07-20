@@ -1,10 +1,3 @@
-import pytest
-
-
-pytestmark = pytest.mark.integration
-
-
-@pytest.mark.asyncio
 async def test_professor_can_read_status_but_cannot_mutate_scheduler(
     async_client,
     clerk_teacher_headers,

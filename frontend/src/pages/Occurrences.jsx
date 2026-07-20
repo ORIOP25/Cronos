@@ -93,11 +93,11 @@ const buildExecutionSummary = (occurrence, teacherById, subjectById) => {
 }
 
 const buildDeciderDisplayName = (occurrence) => {
-  if (occurrence.decided_by_user_name) {
-    return occurrence.decided_by_user_name
+  if (occurrence.decided_by_membership_name) {
+    return occurrence.decided_by_membership_name
   }
-  if (occurrence.decided_by_user_id) {
-    return `Utilizador #${occurrence.decided_by_user_id}`
+  if (occurrence.decided_by_membership_id) {
+    return `Membro #${occurrence.decided_by_membership_id}`
   }
   return 'Admin'
 }
@@ -737,7 +737,7 @@ const OccurrencesPanel = ({ classId, dateFrom, dateTo, initialOccurrenceId, mode
                           <span className="text-muted">{formatDateTime(occ.decided_at)}</span>
                         </div>
                       )}
-                      {occ.decided_by_user_id && (
+                      {occ.decided_by_membership_id && (
                         <div>
                           <strong>Decisor:</strong>{' '}
                           <span className="text-muted">{buildDeciderDisplayName(occ)}</span>

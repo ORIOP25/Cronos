@@ -62,9 +62,7 @@ class SchedulerDebtService:
                 original_timeslot_id=item["original_timeslot_id"],
                 declared_minutes=item["declared_debt_minutes"],
                 delivered_recovery_minutes=item["delivered_recovery_minutes"],
-                active_planned_recovery_minutes=item[
-                    "active_planned_recovery_minutes"
-                ],
+                active_planned_recovery_minutes=item["active_planned_recovery_minutes"],
                 remaining_minutes=item["unresolved_debt_minutes"],
             )
             for item in snapshot["items"]

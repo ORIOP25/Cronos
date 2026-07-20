@@ -2,6 +2,7 @@
 
 from typing import Literal
 from urllib.parse import urlparse
+
 from pydantic import PostgresDsn, RedisDsn, computed_field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -23,29 +24,29 @@ def _normalize_http_origin(value: str, field_name: str) -> str:
         raise ValueError(f"{field_name} must contain exact absolute HTTP(S) origins.")
     return f"{parsed.scheme.lower()}://{parsed.netloc.lower()}"
 
+
 class Settings(BaseSettings):
     """
     Configurações globais da aplicação.
     Centraliza segredos, URLs e constantes do sistema.
     """
-    
+
     # --- Constantes do Projeto ---
     PROJECT_NAME: str = "Cronos API"
     API_V1_STR: str = "/api/v1"
+    APP_VERSION: str = "0.1.0"
 
     # --- Ambiente (Validação: Só aceita estas 3 strings) ---
     ENVIRONMENT: Literal["local", "staging", "production"] = "local"
 
-   # --- Base de Dados (Validação: Tem de ser um URL Postgres real) ---
+    # --- Base de Dados (Validação: Tem de ser um URL Postgres real) ---
     DATABASE_URL: PostgresDsn
+    MIGRATION_DATABASE_URL: PostgresDsn | None = None
     DATABASE_POOLING_ENABLED: bool = True
 
     # --- Configuração de Segurança ---
-    SECRET_KEY: str
-
     # --- Clerk Authentication ---
     CLERK_SECRET_KEY: str = ""
-    CLERK_PUBLISHABLE_KEY: str = ""
     CLERK_WEBHOOK_SECRET: str = ""
     CLERK_WEBHOOK_MAX_ATTEMPTS: int = 5
     CLERK_WEBHOOK_RETRY_BASE_SECONDS: int = 60
@@ -84,25 +85,21 @@ class Settings(BaseSettings):
     # --- Infraestrutura (Redis & Celery) ---
     # Se não definires no .env, assume o default do Docker
     REDIS_URL: str | RedisDsn = "redis://redis:6379/0"
+    RATELIMIT_ENABLED: bool = True
 
     # --- Solver (roadmap V2) ---
     # Fallback seguro: manter V1 por omissão até ativação explícita.
-    SOLVER_ENGINE_VERSION: Literal["v1", "v2"] = "v1"
-    SOLVER_V2_ROLLING_WEEKS: int = 8
-    SOLVER_V2_OBJECTIVE_MODE: Literal["lexicographic"] = "lexicographic"
 
     # Permitimos que seja None para não obrigar a ter no .env
     CELERY_BROKER_URL: str | None = None
 
     # --- Lógica Inteligente: Validador ---
     # Este código corre DEPOIS de carregar o .env
-    @model_validator(mode='after')
+    @model_validator(mode="after")
     def set_defaults(self):
         self.FRONTEND_URL = _normalize_http_origin(self.FRONTEND_URL, "FRONTEND_URL")
         if self.FRONTEND_URL not in self.CLERK_AUTHORIZED_PARTIES_LIST:
-            raise ValueError(
-                "FRONTEND_URL must appear in CLERK_AUTHORIZED_PARTIES."
-            )
+            raise ValueError("FRONTEND_URL must appear in CLERK_AUTHORIZED_PARTIES.")
         # Se o CELERY_BROKER_URL não estiver no .env, usamos o REDIS_URL
         if not self.CELERY_BROKER_URL:
             self.CELERY_BROKER_URL = str(self.REDIS_URL)
@@ -112,22 +109,23 @@ class Settings(BaseSettings):
         if redirect.scheme not in {"http", "https"} or not redirect.netloc:
             raise ValueError("CLERK_INVITATION_REDIRECT_URL must be an absolute HTTP(S) URL.")
         if self.ENVIRONMENT == "production" and redirect.hostname in {"localhost", "127.0.0.1"}:
-            raise ValueError("CLERK_INVITATION_REDIRECT_URL cannot point to localhost in production.")
+            raise ValueError(
+                "CLERK_INVITATION_REDIRECT_URL cannot point to localhost in production."
+            )
         # Guardrail de configuração para V2.
-        if self.SOLVER_V2_ROLLING_WEEKS < 1:
-            self.SOLVER_V2_ROLLING_WEEKS = 8
         return self
-    
+
     # --- Monitorização (Opcional) ---
     # Pode ser None se estivermos em desenvolvimento local
     SENTRY_DSN: str | None = None
-    SENTRY_TRACES_SAMPLE_RATE: float = 1.0
+    SENTRY_TRACES_SAMPLE_RATE: float = 0.1
 
     # Configuração do Pydantic para ler do .env
     model_config = SettingsConfigDict(
-        env_file=".env", 
+        env_file=".env",
         case_sensitive=True,
-        extra="ignore" # Ignora variáveis extra no .env que não usamos
+        extra="ignore",  # Ignora variáveis extra no .env que não usamos
     )
+
 
 settings = Settings()

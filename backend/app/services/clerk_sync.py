@@ -1,12 +1,13 @@
 import asyncio
 from dataclasses import dataclass
+
 import structlog
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
+
 from app import models
-from app.core.clerk import get_clerk_sdk
+from app.core.clerk import ClerkGateway, get_clerk_sdk
 from app.db.tenant import set_async_tenant_context
-from app.models import UserRole
 from app.services import member_reconciliation_service
 
 logger = structlog.get_logger(__name__)
@@ -18,33 +19,52 @@ class ClerkUserProfile:
     name: str | None
 
 
-async def fetch_clerk_user_profile(clerk_user_id: str) -> ClerkUserProfile | None:
-    sdk = get_clerk_sdk()
+async def fetch_clerk_organization_name(
+    clerk_org_id: str,
+    gateway: ClerkGateway | None = None,
+) -> str | None:
+    sdk = gateway.sdk if gateway is not None else get_clerk_sdk()
     try:
-        clerk_user = await asyncio.to_thread(lambda: sdk.users.get(user_id=clerk_user_id))
+        organization = (
+            await sdk.organizations.get_async(organization_id=clerk_org_id)
+            if gateway is not None
+            else await asyncio.to_thread(
+                lambda: sdk.organizations.get(organization_id=clerk_org_id)
+            )
+        )
+    except Exception as exc:
+        logger.error("BAPI organizations.get failed", clerk_org_id=clerk_org_id, error=str(exc))
+        return None
+    return organization.name
+
+
+async def fetch_clerk_user_profile(
+    clerk_user_id: str,
+    gateway: ClerkGateway | None = None,
+) -> ClerkUserProfile | None:
+    sdk = gateway.sdk if gateway is not None else get_clerk_sdk()
+    try:
+        clerk_user = (
+            await sdk.users.get_async(user_id=clerk_user_id)
+            if gateway is not None
+            else await asyncio.to_thread(lambda: sdk.users.get(user_id=clerk_user_id))
+        )
     except Exception as exc:
         logger.error("BAPI users.get falhou para %s: %s", clerk_user_id, exc)
         return None
-    email = (
-        clerk_user.email_addresses[0].email_address
-        if clerk_user.email_addresses
-        else None
-    )
-    name = (
-        f"{clerk_user.first_name or ''} {clerk_user.last_name or ''}".strip()
-        or None
-    )
+    email = clerk_user.email_addresses[0].email_address if clerk_user.email_addresses else None
+    name = f"{clerk_user.first_name or ''} {clerk_user.last_name or ''}".strip() or None
     return ClerkUserProfile(email=email, name=name)
 
 
 def parse_role(clerk_role: str | None) -> str:
     if not clerk_role:
-        return UserRole.teacher.value
+        return "teacher"
     role_map = {
-        "admin": UserRole.admin.value,
-        "member": UserRole.teacher.value,
+        "admin": "admin",
+        "member": "teacher",
     }
-    return role_map.get(clerk_role, UserRole.teacher.value)
+    return role_map.get(clerk_role, "teacher")
 
 
 async def ensure_organization_exists(
@@ -207,11 +227,19 @@ async def sync_user_from_clerk_api(
 
 
 async def sync_organization_from_clerk_api(
-    db: AsyncSession, clerk_org_id: str
+    db: AsyncSession,
+    clerk_org_id: str,
+    gateway: ClerkGateway | None = None,
 ) -> models.Organization | None:
-    sdk = get_clerk_sdk()
+    sdk = gateway.sdk if gateway is not None else get_clerk_sdk()
     try:
-        clerk_org = await asyncio.to_thread(lambda: sdk.organizations.get(organization_id=clerk_org_id))
+        clerk_org = (
+            await sdk.organizations.get_async(organization_id=clerk_org_id)
+            if gateway is not None
+            else await asyncio.to_thread(
+                lambda: sdk.organizations.get(organization_id=clerk_org_id)
+            )
+        )
     except Exception as e:
         logger.error("BAPI organizations.get falhou para %s: %s", clerk_org_id, e)
         return None

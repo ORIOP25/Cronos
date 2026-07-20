@@ -5,8 +5,27 @@ import pytest
 from sqlalchemy import delete, select
 
 from app import models
-from app.services import scheduler_request_service
+from app.api import deps
+from app.main import app
 from app.services import preflight_service
+from tests.conftest import create_teacher_profile
+
+
+@pytest.fixture
+def dispatched_tasks():
+    calls = []
+
+    class RecordingDispatcher:
+        def dispatch(self, *, organization_id, job_id, task_id):
+            calls.append((organization_id, job_id, task_id))
+
+    app.dependency_overrides[deps.get_scheduler_task_dispatcher] = RecordingDispatcher
+    try:
+        yield calls
+    finally:
+        app.dependency_overrides.pop(deps.get_scheduler_task_dispatcher, None)
+
+
 async def _get_org_id(db_session):
     org = (await db_session.execute(select(models.Organization))).scalars().first()
     if org is None:
@@ -84,14 +103,18 @@ async def _seed_minimal_generation_data_with_settings(
     )
     db_session.add(class_)
 
-    teacher = models.Teacher(name="Prof. Teste", organization_id=organization_id)
-    db_session.add(teacher)
+    teacher = await create_teacher_profile(
+        db_session,
+        name="Prof. Teste",
+        organization_id=organization_id,
+    )
 
     subject = models.Subject(name="Disciplina Teste", organization_id=organization_id)
     db_session.add(subject)
     await db_session.flush()
 
     module = models.Module(
+        organization_id=organization_id,
         name="Modulo 1",
         code="M1",
         hours_total=25,
@@ -101,6 +124,7 @@ async def _seed_minimal_generation_data_with_settings(
     db_session.add(module)
 
     link = models.ClassSubjectLink(
+        organization_id=organization_id,
         class_id=class_.id,
         subject_id=subject.id,
         grade_level=class_.grade_level,
@@ -126,6 +150,7 @@ async def _seed_minimal_generation_data_with_settings(
     await db_session.flush()
 
     availability = models.Availability(
+        organization_id=organization_id,
         teacher_id=teacher.id,
         timeslot_id=timeslot.id,
         score=1,
@@ -159,12 +184,11 @@ async def _publish_schedule_with_explicit_debt(db_session, organization_id: int)
     await db_session.commit()
 
 
-@pytest.mark.asyncio
-async def test_generate_fails_when_settings_missing(async_client, admin_token_headers):
+async def test_generate_fails_when_settings_missing(async_client, clerk_admin_headers):
     response = await async_client.post(
         "/api/v1/scheduler/generate",
         json={},
-        headers=admin_token_headers,
+        headers=clerk_admin_headers,
     )
 
     assert response.status_code == 400
@@ -173,11 +197,10 @@ async def test_generate_fails_when_settings_missing(async_client, admin_token_he
     assert payload["detail"]["problems"]
 
 
-@pytest.mark.asyncio
 async def test_generate_does_not_sync_holidays_before_school_year_is_complete(
     async_client,
     db_session,
-    admin_token_headers,
+    clerk_admin_headers,
     monkeypatch,
 ):
     organization_id = await _get_org_id(db_session)
@@ -201,7 +224,7 @@ async def test_generate_does_not_sync_holidays_before_school_year_is_complete(
     response = await async_client.post(
         "/api/v1/scheduler/generate",
         json={},
-        headers=admin_token_headers,
+        headers=clerk_admin_headers,
     )
 
     assert called["value"] is False
@@ -211,37 +234,30 @@ async def test_generate_does_not_sync_holidays_before_school_year_is_complete(
     assert not any("feriado" in msg.lower() for msg in problems)
 
 
-@pytest.mark.asyncio
 async def test_generate_returns_canonical_job_contract_with_minimal_valid_data(
     async_client,
     db_session,
-    admin_token_headers,
-    monkeypatch,
+    clerk_admin_headers,
+    dispatched_tasks,
 ):
     organization_id = await _get_org_id(db_session)
     await _seed_minimal_generation_data(db_session, organization_id)
 
-    dispatched = {}
-
-    def fake_apply_async(*, args, task_id):
-        dispatched.update(args=args, task_id=task_id)
-
-    monkeypatch.setattr(
-        scheduler_request_service.run_schedule_generation_job_task,
-        "apply_async",
-        fake_apply_async,
-    )
-
     response = await async_client.post(
         "/api/v1/scheduler/generate",
         json={},
-        headers=admin_token_headers,
+        headers=clerk_admin_headers,
     )
 
     assert response.status_code == 200
     payload = response.json()
-    assert dispatched["args"] == [payload["job_id"]]
-    assert dispatched["task_id"] == f"scheduler-job-{payload['job_id']}"
+    assert dispatched_tasks == [
+        (
+            organization_id,
+            payload["job_id"],
+            f"scheduler-job-{payload['job_id']}",
+        )
+    ]
     assert "task_id" not in payload
     assert "preflight" not in payload
     assert payload["status"] == "QUEUED"
@@ -249,12 +265,11 @@ async def test_generate_returns_canonical_job_contract_with_minimal_valid_data(
     assert payload["trigger_type"] == "FIRST_GENERATION"
 
 
-@pytest.mark.asyncio
 async def test_generate_refreshes_selection_after_preflight_imports_holidays(
     async_client,
     db_session,
-    admin_token_headers,
-    monkeypatch,
+    clerk_admin_headers,
+    dispatched_tasks,
 ):
     organization_id = await _get_org_id(db_session)
     await _seed_minimal_generation_data(db_session, organization_id)
@@ -266,52 +281,30 @@ async def test_generate_refreshes_selection_after_preflight_imports_holidays(
     )
     await db_session.commit()
 
-    dispatched = {}
-
-    def fake_apply_async(*, args, task_id):
-        dispatched.update(args=args, task_id=task_id)
-
-    monkeypatch.setattr(
-        scheduler_request_service.run_schedule_generation_job_task,
-        "apply_async",
-        fake_apply_async,
-    )
-
     response = await async_client.post(
         "/api/v1/scheduler/generate",
         json={},
-        headers=admin_token_headers,
+        headers=clerk_admin_headers,
     )
 
     assert response.status_code == 200
     payload = response.json()
-    assert dispatched["args"] == [payload["job_id"]]
+    assert dispatched_tasks[0][:2] == (organization_id, payload["job_id"])
     assert payload["strategy"] == "COMPLETE_GENERATION"
 
 
-@pytest.mark.asyncio
 async def test_canonical_scheduler_generation_job_and_cancel_contract(
     async_client,
     db_session,
-    admin_token_headers,
-    monkeypatch,
+    clerk_admin_headers,
+    dispatched_tasks,
 ):
     organization_id = await _get_org_id(db_session)
     await _seed_minimal_generation_data(db_session, organization_id)
-    dispatched = {}
-
-    def fake_apply_async(*, args, task_id):
-        dispatched.update(args=args, task_id=task_id)
-
-    monkeypatch.setattr(
-        scheduler_request_service.run_schedule_generation_job_task,
-        "apply_async",
-        fake_apply_async,
-    )
     generated = await async_client.post(
         "/api/v1/scheduler/generate",
         json={"idempotency_key": "canonical-generate"},
-        headers=admin_token_headers,
+        headers=clerk_admin_headers,
     )
 
     assert generated.status_code == 200
@@ -322,21 +315,21 @@ async def test_canonical_scheduler_generation_job_and_cancel_contract(
         "trigger_type": "FIRST_GENERATION",
         "status": "QUEUED",
     }
-    assert dispatched["args"] == [payload["job_id"]]
+    assert dispatched_tasks[0][:2] == (organization_id, payload["job_id"])
     assert "task_id" not in payload
     assert "solver_version" not in payload
     assert "preflight" not in payload
 
     job = await async_client.get(
         f"/api/v1/scheduler/jobs/{payload['job_id']}",
-        headers=admin_token_headers,
+        headers=clerk_admin_headers,
     )
     assert job.status_code == 200
     assert job.json()["job_status"] == "QUEUED"
 
     canceled = await async_client.post(
         f"/api/v1/scheduler/jobs/{payload['job_id']}/cancel",
-        headers=admin_token_headers,
+        headers=clerk_admin_headers,
     )
     assert canceled.status_code == 200
     assert canceled.json() == {
@@ -345,49 +338,43 @@ async def test_canonical_scheduler_generation_job_and_cancel_contract(
     }
 
 
-@pytest.mark.asyncio
 async def test_generate_idempotency_key_dispatches_only_once(
     async_client,
     db_session,
-    admin_token_headers,
-    monkeypatch,
+    clerk_admin_headers,
+    dispatched_tasks,
 ):
     organization_id = await _get_org_id(db_session)
     await _seed_minimal_generation_data(db_session, organization_id)
-    dispatched = []
-
-    def fake_apply_async(*, args, task_id):
-        dispatched.append((args, task_id))
-
-    monkeypatch.setattr(
-        scheduler_request_service.run_schedule_generation_job_task,
-        "apply_async",
-        fake_apply_async,
-    )
     payload = {"idempotency_key": "same-click"}
 
     first = await async_client.post(
         "/api/v1/scheduler/generate",
         json=payload,
-        headers=admin_token_headers,
+        headers=clerk_admin_headers,
     )
     retry = await async_client.post(
         "/api/v1/scheduler/generate",
         json=payload,
-        headers=admin_token_headers,
+        headers=clerk_admin_headers,
     )
 
     assert first.status_code == retry.status_code == 200
     assert first.json()["job_id"] == retry.json()["job_id"]
     expected_task_id = f"scheduler-job-{first.json()['job_id']}"
-    assert dispatched == [([first.json()["job_id"]], expected_task_id)]
+    assert dispatched_tasks == [
+        (
+            organization_id,
+            first.json()["job_id"],
+            expected_task_id,
+        )
+    ]
 
 
-@pytest.mark.asyncio
 async def test_generate_explains_when_published_schedule_has_no_trigger(
     async_client,
     db_session,
-    admin_token_headers,
+    clerk_admin_headers,
 ):
     organization_id = await _get_org_id(db_session)
     await _seed_minimal_generation_data(db_session, organization_id)
@@ -405,7 +392,7 @@ async def test_generate_explains_when_published_schedule_has_no_trigger(
     response = await async_client.post(
         "/api/v1/scheduler/generate",
         json={},
-        headers=admin_token_headers,
+        headers=clerk_admin_headers,
     )
 
     assert response.status_code == 409
@@ -414,12 +401,11 @@ async def test_generate_explains_when_published_schedule_has_no_trigger(
     assert "no unresolved explicit debt" in detail["message"]
 
 
-@pytest.mark.asyncio
 async def test_repair_generate_fails_when_window_blocks_all_future(
     async_client,
     db_session,
-    admin_token_headers,
-    monkeypatch,
+    clerk_admin_headers,
+    dispatched_tasks,
 ):
     organization_id = await _get_org_id(db_session)
     today = date.today()
@@ -432,36 +418,24 @@ async def test_repair_generate_fails_when_window_blocks_all_future(
     )
     await _publish_schedule_with_explicit_debt(db_session, organization_id)
 
-    called = {"value": False}
-
-    def fake_apply_async(*, args, task_id):
-        called["value"] = True
-
-    monkeypatch.setattr(
-        scheduler_request_service.run_schedule_generation_job_task,
-        "apply_async",
-        fake_apply_async,
-    )
-
     response = await async_client.post(
         "/api/v1/scheduler/generate",
         json={},
-        headers=admin_token_headers,
+        headers=clerk_admin_headers,
     )
 
     assert response.status_code == 400
     payload = response.json()
     assert payload["detail"]["error"] == "preflight_failed"
     assert any("janela de estabilidade" in msg.lower() for msg in payload["detail"]["problems"])
-    assert called["value"] is False
+    assert dispatched_tasks == []
 
 
-@pytest.mark.asyncio
 async def test_repair_generate_succeeds_when_horizon_exists_outside_window(
     async_client,
     db_session,
-    admin_token_headers,
-    monkeypatch,
+    clerk_admin_headers,
+    dispatched_tasks,
 ):
     organization_id = await _get_org_id(db_session)
     today = date.today()
@@ -472,29 +446,26 @@ async def test_repair_generate_succeeds_when_horizon_exists_outside_window(
         school_hard_end_date=today + timedelta(days=60),
         repair_window_days=14,
     )
-    await _publish_schedule_with_explicit_debt(db_session, organization_id)
-
-    queued = {}
-
-    def fake_apply_async(*, args, task_id):
-        queued.update(args=args, task_id=task_id)
-
-    monkeypatch.setattr(
-        scheduler_request_service.run_schedule_generation_job_task,
-        "apply_async",
-        fake_apply_async,
+    module = await db_session.scalar(
+        select(models.Module).where(models.Module.organization_id == organization_id)
     )
+    module.required_minutes = 60
+    await _publish_schedule_with_explicit_debt(db_session, organization_id)
 
     response = await async_client.post(
         "/api/v1/scheduler/generate",
         json={},
-        headers=admin_token_headers,
+        headers=clerk_admin_headers,
     )
 
-    assert response.status_code in (200, 400), f"Unexpected status: {response.status_code}, body: {response.text}"
-    if response.status_code == 200:
-        payload = response.json()
-        assert queued["args"] == [payload["job_id"]]
-        assert queued["task_id"] == f"scheduler-job-{payload['job_id']}"
-        assert payload["strategy"] == "ADAPTIVE_REPAIR"
-        assert payload["trigger_type"] == "EXPLICIT_DEBT"
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert dispatched_tasks == [
+        (
+            organization_id,
+            payload["job_id"],
+            f"scheduler-job-{payload['job_id']}",
+        )
+    ]
+    assert payload["strategy"] == "ADAPTIVE_REPAIR"
+    assert payload["trigger_type"] == "EXPLICIT_DEBT"

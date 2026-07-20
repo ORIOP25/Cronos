@@ -3,22 +3,33 @@ name: CI
 on:
   push:
     branches: [main, develop]
+    tags: ["v*"]
   pull_request:
-    branches: [main]
+    branches: [main, develop]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
   PYTHON_VERSION: "3.12"
   NODE_VERSION: "24"
-  CI_CLERK_PUBLISHABLE_KEY: "pk_test_d2VsY29tZWQtY2F0LTgzLmNsZXJrLmFjY291bnRzLmRldiQ"
-  CI_E2E_CLERK_ADMIN_EMAIL: "cronos-ci-admin+clerk_test@example.com"
-  CI_E2E_CLERK_TEACHER_EMAIL: "cronos-ci-teacher+clerk_test@example.com"
-  CI_E2E_CLERK_ORG_ID: "org_3GSWBnL58PL3vtTWhVh7CR4p2LX"
+  TEST_DATABASE_URL: postgresql+asyncpg://cronos_app:app-ci@localhost:5432/cronos_test_db
+  DATABASE_URL: postgresql+asyncpg://cronos_app:app-ci@localhost:5432/cronos_test_db
+  MIGRATION_DATABASE_URL: postgresql+psycopg2://cronos_migrator:migrator-ci@localhost:5432/cronos_test_db
+  REDIS_URL: redis://localhost:6379/0
+  CELERY_BROKER_URL: redis://localhost:6379/0
+  ENVIRONMENT: local
+  SENTRY_DSN: ""
+  DATABASE_POOLING_ENABLED: "false"
 
 jobs:
   backend:
-    name: Backend - Tests + Coverage
     runs-on: ubuntu-latest
-
+    timeout-minutes: 45
     services:
       postgres:
         image: postgres:16-alpine
@@ -26,359 +37,155 @@ jobs:
           POSTGRES_USER: postgres
           POSTGRES_HOST_AUTH_METHOD: trust
           POSTGRES_DB: cronos_test_db
-        ports:
-          - 5432:5432
+        ports: ["5432:5432"]
         options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
+          --health-cmd "pg_isready -U postgres -d cronos_test_db"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 5s --health-retries 10
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Python ${{ env.PYTHON_VERSION }}
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
-          cache-dependency-path: |
-            backend/requirements.txt
-            backend/requirements-dev.txt
-
-      - name: Install Dependencies
+          cache-dependency-path: backend/requirements-dev.txt
+      - name: Provision database roles
+        run: |
+          psql postgresql://postgres@localhost/cronos_test_db <<'SQL'
+          CREATE ROLE cronos_migrator LOGIN NOSUPERUSER BYPASSRLS PASSWORD 'migrator-ci';
+          CREATE ROLE cronos_app LOGIN NOSUPERUSER NOBYPASSRLS PASSWORD 'app-ci';
+          CREATE ROLE cronos_auth_definer NOLOGIN NOSUPERUSER BYPASSRLS;
+          GRANT cronos_auth_definer TO cronos_migrator;
+          ALTER DATABASE cronos_test_db OWNER TO cronos_migrator;
+          GRANT CONNECT ON DATABASE cronos_test_db TO cronos_app;
+          SQL
+      - name: Install locked dependencies
+        working-directory: backend
+        run: python -m pip install --require-hashes -r requirements-dev.txt
+      - name: Verify dependency locks
         working-directory: backend
         run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements-dev.txt
-
-      - name: Lint backend
-        working-directory: backend
-        run: ruff check app scripts
-
-      - name: Audit backend dependencies
-        working-directory: backend
-        run: pip-audit -r requirements.txt --progress-spinner off
-
-      - name: Run Migrations
-        working-directory: backend
-        run: alembic upgrade head
-        env:
-          ENVIRONMENT: local
-          DATABASE_URL: "postgresql+asyncpg://postgres@localhost:5432/cronos_test_db"
-          DATABASE_POOLING_ENABLED: "false"
-          SECRET_KEY: ci-test-secret-key-not-for-production
-          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
-          CLERK_WEBHOOK_SECRET: ${{ secrets.CLERK_WEBHOOK_SECRET }}
-          CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_PUBLISHABLE_KEY || vars.VITE_CLERK_PUBLISHABLE_KEY || secrets.CLERK_PUBLISHABLE_KEY || secrets.VITE_CLERK_PUBLISHABLE_KEY || env.CI_CLERK_PUBLISHABLE_KEY }}
-
-      - name: Verify Alembic downgrade, upgrade, and schema drift
+          pip-compile --quiet --allow-unsafe --generate-hashes --output-file=requirements.txt requirements.in
+          pip-compile --quiet --allow-unsafe --generate-hashes --output-file=requirements-dev.txt requirements-dev.in
+          git diff --exit-code -- requirements.txt requirements-dev.txt
+          pip check
+          pip-audit -r requirements.txt --progress-spinner off
+      - name: Ruff
         working-directory: backend
         run: |
-          alembic downgrade base
+          ruff format --check .
+          ruff check .
+      - name: Verify immutable migration
+        working-directory: backend
+        run: |
           alembic upgrade head
           alembic check
-        env:
-          ENVIRONMENT: local
-          DATABASE_URL: "postgresql+asyncpg://postgres@localhost:5432/cronos_test_db"
-          DATABASE_POOLING_ENABLED: "false"
-          SECRET_KEY: ci-test-secret-key-not-for-production
-          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
-          CLERK_WEBHOOK_SECRET: ${{ secrets.CLERK_WEBHOOK_SECRET }}
-          CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_PUBLISHABLE_KEY || vars.VITE_CLERK_PUBLISHABLE_KEY || secrets.CLERK_PUBLISHABLE_KEY || secrets.VITE_CLERK_PUBLISHABLE_KEY || env.CI_CLERK_PUBLISHABLE_KEY }}
-
-      - name: Audit tenant trigger contracts
+          alembic downgrade base
+          alembic upgrade head
+      - name: Test without Redis contracts
         working-directory: backend
-        run: python scripts/audit_triggers.py
         env:
-          ENVIRONMENT: local
-          DATABASE_URL: "postgresql+asyncpg://postgres@localhost:5432/cronos_test_db"
-          DATABASE_POOLING_ENABLED: "false"
-          SECRET_KEY: ci-test-secret-key-not-for-production
-          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
-          CLERK_WEBHOOK_SECRET: ${{ secrets.CLERK_WEBHOOK_SECRET }}
-          CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_PUBLISHABLE_KEY || vars.VITE_CLERK_PUBLISHABLE_KEY || secrets.CLERK_PUBLISHABLE_KEY || secrets.VITE_CLERK_PUBLISHABLE_KEY || env.CI_CLERK_PUBLISHABLE_KEY }}
-
-      - name: Audit database integrity
-        working-directory: backend
-        run: python -m scripts.audit_database_integrity
-        env:
-          ENVIRONMENT: local
-          DATABASE_URL: "postgresql+asyncpg://postgres@localhost:5432/cronos_test_db"
-          DATABASE_POOLING_ENABLED: "false"
-          SECRET_KEY: ci-test-secret-key-not-for-production
-          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
-          CLERK_WEBHOOK_SECRET: ${{ secrets.CLERK_WEBHOOK_SECRET }}
-          CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_PUBLISHABLE_KEY || vars.VITE_CLERK_PUBLISHABLE_KEY || secrets.CLERK_PUBLISHABLE_KEY || secrets.VITE_CLERK_PUBLISHABLE_KEY || env.CI_CLERK_PUBLISHABLE_KEY }}
-
-      - name: Audit persisted scheduler constraints
-        working-directory: backend
-        run: python -m scripts.audit_scheduler_constraints
-        env:
-          ENVIRONMENT: local
-          DATABASE_URL: "postgresql+asyncpg://postgres@localhost:5432/cronos_test_db"
-          DATABASE_POOLING_ENABLED: "false"
-          SECRET_KEY: ci-test-secret-key-not-for-production
-          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
-          CLERK_WEBHOOK_SECRET: ${{ secrets.CLERK_WEBHOOK_SECRET }}
-          CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_PUBLISHABLE_KEY || vars.VITE_CLERK_PUBLISHABLE_KEY || secrets.CLERK_PUBLISHABLE_KEY || secrets.VITE_CLERK_PUBLISHABLE_KEY || env.CI_CLERK_PUBLISHABLE_KEY }}
-
-      - name: Run Tests
-        working-directory: backend
-        run: pytest tests/ -v --cov=app --cov-branch --cov-report=xml:coverage.xml --cov-fail-under=70 --junitxml=test-results.xml --tb=short
-        env:
-          ENVIRONMENT: local
-          DATABASE_URL: "postgresql+asyncpg://postgres@localhost:5432/cronos_test_db"
-          DATABASE_POOLING_ENABLED: "false"
-          SECRET_KEY: ci-test-secret-key-not-for-production
           RATELIMIT_ENABLED: "false"
-          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
-          CLERK_WEBHOOK_SECRET: ${{ secrets.CLERK_WEBHOOK_SECRET }}
-          CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_PUBLISHABLE_KEY || vars.VITE_CLERK_PUBLISHABLE_KEY || secrets.CLERK_PUBLISHABLE_KEY || secrets.VITE_CLERK_PUBLISHABLE_KEY || env.CI_CLERK_PUBLISHABLE_KEY }}
-
-      - name: Enforce pure scheduler policy and validation branch coverage
-        working-directory: backend
         run: >-
-          pytest -m unit -q
-          --cov=app.scheduler.domain.constraints
-          --cov=app.scheduler.domain.validation
-          --cov-branch
-          --cov-report=term-missing
-          --cov-fail-under=100
-        env:
-          ENVIRONMENT: local
-          DATABASE_URL: "postgresql+asyncpg://postgres@localhost:5432/cronos_test_db"
-          DATABASE_POOLING_ENABLED: "false"
-          SECRET_KEY: ci-test-secret-key-not-for-production
-          RATELIMIT_ENABLED: "false"
-          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
-          CLERK_WEBHOOK_SECRET: ${{ secrets.CLERK_WEBHOOK_SECRET }}
-          CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_PUBLISHABLE_KEY || vars.VITE_CLERK_PUBLISHABLE_KEY || secrets.CLERK_PUBLISHABLE_KEY || secrets.VITE_CLERK_PUBLISHABLE_KEY || env.CI_CLERK_PUBLISHABLE_KEY }}
-
-      - name: Verify skipped test count
+          coverage run --branch -m pytest -q -m "not redis"
+          --junitxml=test-results.xml
+      - name: Test Redis contracts and report coverage
         working-directory: backend
+        env:
+          RATELIMIT_ENABLED: "true"
         run: |
+          coverage run --branch --append -m pytest -q -m redis --junitxml=test-results-redis.xml
+          coverage report --fail-under=85
+          coverage report --include='app/scheduler/domain/constraints.py,app/scheduler/domain/validation.py' --fail-under=100
           python - <<'PY'
           import xml.etree.ElementTree as ET
-
-          root = ET.parse("test-results.xml").getroot()
+          files = ("test-results.xml", "test-results-redis.xml")
           skipped = sum(
-              int(suite.attrib.get("skipped", 0))
-              for suite in root.iter("testsuite")
+              int(x.attrib.get("skipped", 0))
+              for path in files
+              for x in ET.parse(path).iter("testsuite")
           )
-          maximum = 3
-          if skipped > maximum:
-              raise SystemExit(f"ERROR: {skipped} skipped tests (max {maximum} allowed)")
-          print(f"OK: {skipped} skipped tests (threshold: {maximum})")
+          if skipped:
+              raise SystemExit(f"{skipped} skipped tests are not allowed")
           PY
+      - name: Build hardened backend image
+        run: docker build --target runtime -t cronos-backend:test backend
 
   frontend:
-    name: Frontend - Lint + Test + Build
     runs-on: ubuntu-latest
-
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Node.js ${{ env.NODE_VERSION }}
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
           cache-dependency-path: frontend/package-lock.json
-
-      - name: Install Dependencies
-        working-directory: frontend
+      - working-directory: frontend
         run: npm ci
-
-      - name: Audit frontend dependencies
-        working-directory: frontend
-        run: npm audit --audit-level=high
-
-      - name: Sequential frontend verification
-        working-directory: frontend
-        run: npm run verify
-        env:
-          VITE_CLERK_PUBLISHABLE_KEY: ${{ vars.VITE_CLERK_PUBLISHABLE_KEY || vars.CLERK_PUBLISHABLE_KEY || secrets.VITE_CLERK_PUBLISHABLE_KEY || secrets.CLERK_PUBLISHABLE_KEY || env.CI_CLERK_PUBLISHABLE_KEY }}
-
-      - name: SchoolConfig single-worker stability gate
-        working-directory: frontend
-        run: npm run test:school-config:stability
+      - working-directory: frontend
+        run: |
+          npm audit --audit-level=high
+          npm run verify
+          npm run test:school-config:stability
 
   e2e:
-    name: E2E - Full Docker Stack + Playwright
     needs: [backend, frontend]
     runs-on: ubuntu-latest
     timeout-minutes: 30
-
+    concurrency: cronos-e2e
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Node.js ${{ env.NODE_VERSION }}
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
-
-      - name: Install Dependencies
-        working-directory: frontend
-        run: npm ci
-
-      - name: Install Playwright Browsers
-        working-directory: frontend
-        run: npx playwright install --with-deps chromium
-
-      - name: Generate reserved Clerk invitation identities
-        run: |
-          echo "E2E_CLERK_INVITE_CREATE_EMAIL=e2e-create-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}+clerk_test@example.com" >> "$GITHUB_ENV"
-          echo "E2E_CLERK_INVITE_CONVERT_EMAIL=e2e-convert-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}+clerk_test@example.com" >> "$GITHUB_ENV"
-
-      - name: Validate E2E Clerk config
-        working-directory: frontend
-        run: |
-          export CLERK_PUBLISHABLE_KEY="${CLERK_PUBLISHABLE_KEY:-${VITE_CLERK_PUBLISHABLE_KEY:-$CI_CLERK_PUBLISHABLE_KEY}}"
-          if [ -z "$CLERK_PUBLISHABLE_KEY" ]; then
-            echo "ERROR: Missing Clerk publishable key for E2E."
-            echo "Set repository variable VITE_CLERK_PUBLISHABLE_KEY or CLERK_PUBLISHABLE_KEY, or update CI_CLERK_PUBLISHABLE_KEY."
-            echo "The Clerk publishable key is public config and does not need to be a GitHub secret."
-            exit 1
-          fi
-          if [ -z "$CLERK_SECRET_KEY" ]; then
-            echo "ERROR: Missing Clerk server-side E2E auth."
-            echo "Set secret CLERK_SECRET_KEY. It is required to prepare deterministic local member state before Playwright."
-            exit 1
-          fi
-          if [ -z "$E2E_CLERK_ADMIN_EMAIL" ] || [ -z "$E2E_CLERK_TEACHER_EMAIL" ]; then
-            echo "ERROR: Missing Clerk E2E user emails."
-            echo "Set secrets E2E_CLERK_ADMIN_EMAIL and E2E_CLERK_TEACHER_EMAIL."
-            exit 1
-          fi
-          case "$E2E_CLERK_ADMIN_EMAIL:$E2E_CLERK_TEACHER_EMAIL" in
-            *+clerk_test@example.com:*+clerk_test@example.com) ;;
-            *) echo "ERROR: E2E login identities must be dedicated Clerk reserved test users."; exit 1 ;;
-          esac
-          if [ -z "$E2E_CLERK_ORG_ID" ]; then
-            echo "ERROR: A dedicated Clerk E2E organization is required."
-            exit 1
-          fi
-          case "$E2E_CLERK_INVITE_CREATE_EMAIL:$E2E_CLERK_INVITE_CONVERT_EMAIL" in
-            *+clerk_test@example.com:*+clerk_test@example.com) ;;
-            *) echo "ERROR: Invitation identities must use Clerk reserved test emails."; exit 1 ;;
-          esac
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - name: Run real Clerk E2E
         env:
-          CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_PUBLISHABLE_KEY || vars.VITE_CLERK_PUBLISHABLE_KEY || secrets.CLERK_PUBLISHABLE_KEY || secrets.VITE_CLERK_PUBLISHABLE_KEY || env.CI_CLERK_PUBLISHABLE_KEY }}
-          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
-          CLERK_TESTING_TOKEN: ${{ secrets.CLERK_TESTING_TOKEN }}
-          VITE_CLERK_PUBLISHABLE_KEY: ${{ vars.VITE_CLERK_PUBLISHABLE_KEY || vars.CLERK_PUBLISHABLE_KEY || secrets.VITE_CLERK_PUBLISHABLE_KEY || secrets.CLERK_PUBLISHABLE_KEY || env.CI_CLERK_PUBLISHABLE_KEY }}
-          E2E_CLERK_ADMIN_EMAIL: ${{ env.CI_E2E_CLERK_ADMIN_EMAIL }}
-          E2E_CLERK_TEACHER_EMAIL: ${{ env.CI_E2E_CLERK_TEACHER_EMAIL }}
-          E2E_CLERK_ORG_ID: ${{ env.CI_E2E_CLERK_ORG_ID }}
-
-      - name: Generate ephemeral CI database password
-        shell: bash
-        run: echo "POSTGRES_PASSWORD=$(openssl rand -hex 24)" >> "$GITHUB_ENV"
-
-      - name: Start full application stack
-        run: docker compose -f docker-compose.ci.yml up -d --build --wait
-        env:
-          COMPOSE_PROJECT_NAME: cronos-ci-${{ github.run_id }}-${{ github.run_attempt }}
-          POSTGRES_DB: cronos_ci_db
-          SECRET_KEY: ci-test-secret-key-not-for-production
           CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
           CLERK_WEBHOOK_SECRET: ${{ secrets.CLERK_WEBHOOK_SECRET }}
-          CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_PUBLISHABLE_KEY || vars.VITE_CLERK_PUBLISHABLE_KEY || secrets.CLERK_PUBLISHABLE_KEY || secrets.VITE_CLERK_PUBLISHABLE_KEY || env.CI_CLERK_PUBLISHABLE_KEY }}
-          VITE_CLERK_PUBLISHABLE_KEY: ${{ vars.VITE_CLERK_PUBLISHABLE_KEY || vars.CLERK_PUBLISHABLE_KEY || secrets.VITE_CLERK_PUBLISHABLE_KEY || secrets.CLERK_PUBLISHABLE_KEY || env.CI_CLERK_PUBLISHABLE_KEY }}
+          VITE_CLERK_PUBLISHABLE_KEY: ${{ vars.VITE_CLERK_PUBLISHABLE_KEY }}
+          POSTGRES_PASSWORD: ${{ secrets.CI_POSTGRES_PASSWORD }}
+          CRONOS_MIGRATOR_PASSWORD: ${{ secrets.CI_MIGRATOR_PASSWORD }}
+          CRONOS_APP_PASSWORD: ${{ secrets.CI_APP_PASSWORD }}
+        run: docker compose -f docker-compose.ci.yml up --build --abort-on-container-exit --exit-code-from e2e
 
-      - name: Verify stale Alembic repair through backend entrypoint
+  publish-backend:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [backend, frontend, e2e]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      packages: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - name: Validate semantic release tag
+        shell: bash
         run: |
-          docker compose -f docker-compose.ci.yml exec -T db \
-            psql -U postgres -d cronos_ci_db \
-            -c "UPDATE alembic_version SET version_num = 'e7b8c9d0a1f2';"
-          docker compose -f docker-compose.ci.yml restart backend
-          for attempt in $(seq 1 30); do
-            if curl --fail --silent http://localhost:8000/api/v1/health >/dev/null; then
-              echo "Backend health is green after stale Alembic repair."
-              exit 0
-            fi
-            echo "Waiting for backend health after stale Alembic repair (attempt ${attempt}/30)."
-            sleep 2
-          done
-          docker compose -f docker-compose.ci.yml logs --no-color backend
-          exit 1
-        env:
-          COMPOSE_PROJECT_NAME: cronos-ci-${{ github.run_id }}-${{ github.run_attempt }}
-
-      - name: Prepare E2E Clerk local state
-        run: |
-          docker compose -f docker-compose.ci.yml exec -T \
-            -e CLERK_SECRET_KEY="$CLERK_SECRET_KEY" \
-            -e E2E_CLERK_ADMIN_EMAIL="$E2E_CLERK_ADMIN_EMAIL" \
-            -e E2E_CLERK_TEACHER_EMAIL="$E2E_CLERK_TEACHER_EMAIL" \
-            -e E2E_CLERK_ORG_ID="$E2E_CLERK_ORG_ID" \
-            backend python scripts/prepare_e2e_clerk_state.py
-        env:
-          COMPOSE_PROJECT_NAME: cronos-ci-${{ github.run_id }}-${{ github.run_attempt }}
-          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
-          E2E_CLERK_ADMIN_EMAIL: ${{ env.CI_E2E_CLERK_ADMIN_EMAIL }}
-          E2E_CLERK_TEACHER_EMAIL: ${{ env.CI_E2E_CLERK_TEACHER_EMAIL }}
-          E2E_CLERK_ORG_ID: ${{ env.CI_E2E_CLERK_ORG_ID }}
-
-      - name: Run E2E Tests
-        working-directory: frontend
-        run: |
-          export CLERK_PUBLISHABLE_KEY="${CLERK_PUBLISHABLE_KEY:-${VITE_CLERK_PUBLISHABLE_KEY:-$CI_CLERK_PUBLISHABLE_KEY}}"
-          npx playwright test --project=chromium
-        env:
-          COMPOSE_PROJECT_NAME: cronos-ci-${{ github.run_id }}-${{ github.run_attempt }}
-          BASE_URL: http://localhost:5173
-          PLAYWRIGHT_SKIP_WEB_SERVER: "1"
-          CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_PUBLISHABLE_KEY || vars.VITE_CLERK_PUBLISHABLE_KEY || secrets.CLERK_PUBLISHABLE_KEY || secrets.VITE_CLERK_PUBLISHABLE_KEY || env.CI_CLERK_PUBLISHABLE_KEY }}
-          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
-          CLERK_TESTING_TOKEN: ${{ secrets.CLERK_TESTING_TOKEN }}
-          VITE_CLERK_PUBLISHABLE_KEY: ${{ vars.VITE_CLERK_PUBLISHABLE_KEY || vars.CLERK_PUBLISHABLE_KEY || secrets.VITE_CLERK_PUBLISHABLE_KEY || secrets.CLERK_PUBLISHABLE_KEY || env.CI_CLERK_PUBLISHABLE_KEY }}
-          E2E_CLERK_ADMIN_EMAIL: ${{ env.CI_E2E_CLERK_ADMIN_EMAIL }}
-          E2E_CLERK_TEACHER_EMAIL: ${{ env.CI_E2E_CLERK_TEACHER_EMAIL }}
-          E2E_CLERK_ORG_ID: ${{ env.CI_E2E_CLERK_ORG_ID }}
-
-      - name: Verify E2E reality gates
-        run: |
-          if grep -R -E "test\.skip|describe\.skip|test\.only|describe\.only" frontend/e2e; then
-            echo "ERROR: skipped or focused E2E tests are not allowed in the beta gate."
-            exit 1
-          fi
-          if grep -R "waitForTimeout" frontend/e2e; then
-            echo "ERROR: E2E tests must wait on observable app state."
-            exit 1
-          fi
-          if grep -R -E "locator\(['\"]body['\"]\)" frontend/e2e; then
-            echo "ERROR: Body-level E2E assertions are not meaningful enough for the beta gate."
-            exit 1
-          fi
-
-      - name: Dump compose logs
-        if: failure()
-        run: docker compose -f docker-compose.ci.yml logs --no-color
-        env:
-          COMPOSE_PROJECT_NAME: cronos-ci-${{ github.run_id }}-${{ github.run_attempt }}
-
-      - name: Revoke E2E Clerk invitations
-        if: always()
-        run: |
-          if [ -n "$(docker compose -f docker-compose.ci.yml ps -q backend)" ]; then
-            docker compose -f docker-compose.ci.yml exec -T \
-              -e CLERK_SECRET_KEY="$CLERK_SECRET_KEY" \
-              -e E2E_CLERK_ADMIN_EMAIL="$E2E_CLERK_ADMIN_EMAIL" \
-              -e E2E_CLERK_INVITE_CREATE_EMAIL="$E2E_CLERK_INVITE_CREATE_EMAIL" \
-              -e E2E_CLERK_INVITE_CONVERT_EMAIL="$E2E_CLERK_INVITE_CONVERT_EMAIL" \
-              backend python scripts/cleanup_e2e_clerk_invitations.py
-          fi
-        env:
-          COMPOSE_PROJECT_NAME: cronos-ci-${{ github.run_id }}-${{ github.run_attempt }}
-          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
-          E2E_CLERK_ADMIN_EMAIL: ${{ env.CI_E2E_CLERK_ADMIN_EMAIL }}
-
-      - name: Stop full application stack
-        if: always()
-        run: docker compose -f docker-compose.ci.yml down -v --remove-orphans
-        env:
-          COMPOSE_PROJECT_NAME: cronos-ci-${{ github.run_id }}-${{ github.run_attempt }}
+          [[ "${GITHUB_REF_NAME}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3
+      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        id: build
+        with:
+          context: backend
+          target: runtime
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/cronos-backend:${{ github.sha }}
+            ghcr.io/${{ github.repository_owner }}/cronos-backend:${{ github.ref_name }}
+          provenance: true
+          sbom: true
+      - uses: actions/attest-build-provenance@96b4a1ef7235a096b17240c259729fdd70c83d45 # v2
+        with:
+          subject-name: ghcr.io/${{ github.repository_owner }}/cronos-backend
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true

@@ -1,9 +1,4 @@
-import pytest
-
 from app import models
-
-
-pytestmark = pytest.mark.unit
 
 
 def test_scheduler_school_year_is_tenant_scoped_and_date_bounded():
@@ -13,20 +8,15 @@ def test_scheduler_school_year_is_tenant_scoped_and_date_bounded():
         table.columns.keys()
     )
     assert any(
-        constraint.name == "uq_scheduler_school_year_org_label"
-        for constraint in table.constraints
+        constraint.name == "uq_scheduler_school_year_org_label" for constraint in table.constraints
     )
     assert any(
-        constraint.name == "uq_scheduler_school_year_id_org"
-        for constraint in table.constraints
+        constraint.name == "uq_scheduler_school_year_id_org" for constraint in table.constraints
     )
     assert any(
-        constraint.name == "ck_scheduler_school_year_date_order"
-        for constraint in table.constraints
+        constraint.name == "ck_scheduler_school_year_date_order" for constraint in table.constraints
     )
-    assert "uq_scheduler_school_year_active_org" in {
-        index.name for index in table.indexes
-    }
+    assert "uq_scheduler_school_year_active_org" in {index.name for index in table.indexes}
 
 
 def test_scheduler_school_year_state_has_one_row_per_tenant_year():
@@ -80,7 +70,7 @@ def test_schedule_generation_job_tracks_lifecycle_and_snapshots():
     assert {
         "organization_id",
         "school_year_id",
-        "requested_by_user_id",
+        "requested_by_membership_id",
         "strategy",
         "trigger_type",
         "job_status",
@@ -105,8 +95,7 @@ def test_schedule_generation_job_tracks_lifecycle_and_snapshots():
         for constraint in table.constraints
     )
     assert any(
-        constraint.name == "uq_schedule_generation_job_id_scope"
-        for constraint in table.constraints
+        constraint.name == "uq_schedule_generation_job_id_scope" for constraint in table.constraints
     )
     assert any(
         constraint.name == "fk_schedule_generation_job_year_scope"
@@ -122,9 +111,7 @@ def test_schedule_generation_job_tracks_lifecycle_and_snapshots():
         "ck_schedule_generation_job_started_after_queued",
         "ck_schedule_generation_job_finished_after_started",
     } <= {constraint.name for constraint in table.constraints}
-    assert "uq_schedule_generation_job_active_year" in {
-        index.name for index in table.indexes
-    }
+    assert "uq_schedule_generation_job_active_year" in {index.name for index in table.indexes}
 
 
 def test_schedule_draft_stores_decision_inputs_and_output_summary():
@@ -156,9 +143,9 @@ def test_schedule_draft_stores_decision_inputs_and_output_summary():
         "metrics_json",
         "stale_reason",
         "invalidated_reason",
-        "created_by_user_id",
+        "created_by_membership_id",
         "created_at",
-        "decided_by_user_id",
+        "decided_by_membership_id",
         "decided_at",
     } <= set(table.columns.keys())
 
@@ -181,7 +168,7 @@ def test_schedule_draft_enforces_auditable_valid_output_invariants():
     } <= constraint_names
     assert "uq_schedule_drafts_pending_year" in index_names
     assert table_default(models.ScheduleDraft, "draft_state") == models.ScheduleDraftState.PENDING
-    assert not table.columns.created_by_user_id.nullable
+    assert not table.columns.created_by_membership_id.nullable
     job_scope = next(
         constraint
         for constraint in table.foreign_key_constraints
@@ -455,7 +442,7 @@ def test_scheduler_state_version_events_explain_increment_decisions():
         "entity_id",
         "operation",
         "change_scope",
-        "changed_by_user_id",
+        "changed_by_membership_id",
         "changed_at",
         "before_metadata_json",
         "after_metadata_json",

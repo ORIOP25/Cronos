@@ -4,7 +4,6 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Any
 
-
 IMMUTABLE_PAST = "PAST"
 IMMUTABLE_EXECUTED = "EXECUTED"
 IMMUTABLE_STABILITY_WINDOW = "STABILITY_WINDOW"
@@ -43,12 +42,8 @@ class EditableBoundaryBuilder:
         repair_policy_snapshot: dict[str, Any],
     ) -> EditableBoundary:
         school_today = date.fromisoformat(repair_policy_snapshot["school_today"])
-        editable_start = date.fromisoformat(
-            repair_policy_snapshot["editable_start_date"]
-        )
-        stability_days = int(
-            repair_policy_snapshot["repair_stability_window_days"]
-        )
+        editable_start = date.fromisoformat(repair_policy_snapshot["editable_start_date"])
+        stability_days = int(repair_policy_snapshot["repair_stability_window_days"])
         if stability_days < 0:
             raise ValueError("Repair stability window cannot be negative.")
         if editable_start < school_today:

@@ -49,9 +49,7 @@ class RepairTriggerClassifier:
             trigger = models.ScheduleGenerationTrigger.SCHEDULER_CHANGE
             summary = "Adaptive repair is responding to scheduler-relevant changes."
         else:
-            raise ValueError(
-                "No unresolved explicit debt or scheduler-relevant change exists."
-            )
+            raise ValueError("No unresolved explicit debt or scheduler-relevant change exists.")
         if declared_trigger is not None and declared_trigger != trigger:
             raise ValueError(
                 f"Declared repair trigger {declared_trigger.value} does not match {trigger.value}."

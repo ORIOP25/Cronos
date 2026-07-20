@@ -159,7 +159,7 @@ def _build_fixture(
         {
             "id": subject_id * 10 + sequence,
             "subject_id": subject_id,
-            "hours_total": 2,
+            "required_minutes": 120,
             "sequence": sequence,
         }
         for subject_id in range(1, subject_count + 1)
@@ -179,8 +179,7 @@ def _build_fixture(
             )
             slot_id += 1
     rooms = [
-        {"id": room_id, "capacity": 35, "type": "normal"}
-        for room_id in range(1, normal_rooms + 1)
+        {"id": room_id, "capacity": 35, "type": "normal"} for room_id in range(1, normal_rooms + 1)
     ] + [
         {"id": normal_rooms + room_id, "capacity": 35, "type": "lab"}
         for room_id in range(1, lab_rooms + 1)

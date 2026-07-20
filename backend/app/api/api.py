@@ -1,27 +1,26 @@
 # Ficheiro: app/api/api.py
 
 from fastapi import APIRouter
+
 from app.api.v1.endpoints import (
-    teachers,
-    members,
+    analytics,
     classes,
-    subjects,
+    courses,
+    dashboard,
+    health,
+    members,
+    occurrences,
+    onboarding,
+    org_settings,
     rooms,
     schedule,
     scheduler,
-    analytics,
-    import_data,
-    lessons,
-    timeslots,
-    health,
-    courses,
-    org_settings,
-    occurrences,
-    timesheets,
-    dashboard,
-    webhooks,
-    onboarding,
     session,
+    subjects,
+    teachers,
+    timesheets,
+    timeslots,
+    webhooks,
 )
 
 api_router = APIRouter()
@@ -35,13 +34,11 @@ api_router.include_router(teachers.router, prefix="/teachers", tags=["Teacher se
 api_router.include_router(classes.router, prefix="/classes", tags=["Turmas"])
 api_router.include_router(subjects.router, prefix="/subjects", tags=["Disciplinas"])
 api_router.include_router(rooms.router, prefix="/rooms", tags=["Salas"])
-api_router.include_router(lessons.router, prefix="/lessons", tags=["Aulas"])
 api_router.include_router(timeslots.router, prefix="/timeslots", tags=["timeslots"])
 api_router.include_router(scheduler.router, prefix="/scheduler", tags=["Scheduler"])
 
 api_router.include_router(schedule.router, prefix="/schedule", tags=["Gerador de Horários"])
 api_router.include_router(analytics.router, prefix="/analytics", tags=["Analytics"])
-api_router.include_router(import_data.router, prefix="/import", tags=["Importação de Dados"])
 api_router.include_router(courses.router, prefix="/courses", tags=["courses"])
 api_router.include_router(org_settings.router, prefix="/school", tags=["Configurações da Escola"])
 api_router.include_router(occurrences.router, prefix="/occurrences", tags=["Ocorrências de Aulas"])

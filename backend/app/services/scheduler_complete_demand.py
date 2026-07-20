@@ -84,10 +84,10 @@ class CompleteDemandLedgerBuilder:
             seen_sequences: set[int] = set()
             progress_by_module = self._progress_by_module(snapshot, class_id)
             for module in module_rows:
-                hours = module.get("hours_total", 0)
+                required_minutes = module.get("required_minutes", 0)
                 sequence = module.get("sequence")
-                if not isinstance(hours, (int, float)) or hours <= 0:
-                    blockers.append(f"Module {module['id']} has no positive required hours.")
+                if not isinstance(required_minutes, int) or required_minutes <= 0:
+                    blockers.append(f"Module {module['id']} has no positive required minutes.")
                     continue
                 if not isinstance(sequence, int) or sequence < 0 or sequence in seen_sequences:
                     blockers.append(f"Module sequence is invalid for subject {subject_id}.")
@@ -98,7 +98,7 @@ class CompleteDemandLedgerBuilder:
                     DemandModule(
                         module_id=module["id"],
                         sequence=sequence,
-                        required_minutes=max(0, int(round(hours * 60)) - completed_minutes),
+                        required_minutes=max(0, required_minutes - completed_minutes),
                     )
                 )
             if not demand_modules:
@@ -160,8 +160,8 @@ class CompleteDemandLedgerBuilder:
         for row in snapshot.get("class_progress", []):
             if row.get("class_id") != class_id:
                 continue
-            hours_completed = row.get("hours_completed", 0)
-            if not isinstance(hours_completed, (int, float)):
+            completed_minutes = row.get("completed_minutes", 0)
+            if not isinstance(completed_minutes, int):
                 continue
-            progress[int(row["module_id"])] = max(0, int(round(hours_completed * 60)))
+            progress[int(row["module_id"])] = max(0, completed_minutes)
         return progress

@@ -1,19 +1,32 @@
 from datetime import date
-from sqlalchemy import func, select as sa_select
-from sqlalchemy.ext.asyncio import AsyncSession
+
 import structlog
+from sqlalchemy import func
+from sqlalchemy import select as sa_select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app import models
+from app.core.task_keys import (
+    resolve_repair_window_days as _resolve_repair_window_days,
+)
 from app.services import schedule_service, settings_service
 from app.services.scheduler_planning import (
     build_blocked_dates as _build_blocked_dates,
-    build_primary_window as _build_primary_window,
-    compute_remaining_minutes as _compute_remaining_minutes,
-    estimate_capacity_minutes_in_range as _estimate_capacity_minutes_in_range,
-    resolve_expansion_start_date,
-    select_adaptive_near_future_weeks as _select_adaptive_near_future_weeks,
 )
-from app.core.task_keys import (
-    resolve_repair_window_days as _resolve_repair_window_days,
+from app.services.scheduler_planning import (
+    build_primary_window as _build_primary_window,
+)
+from app.services.scheduler_planning import (
+    compute_remaining_minutes as _compute_remaining_minutes,
+)
+from app.services.scheduler_planning import (
+    estimate_capacity_minutes_in_range as _estimate_capacity_minutes_in_range,
+)
+from app.services.scheduler_planning import (
+    resolve_expansion_start_date,
+)
+from app.services.scheduler_planning import (
+    select_adaptive_near_future_weeks as _select_adaptive_near_future_weeks,
 )
 
 logger = structlog.get_logger(__name__)
@@ -89,7 +102,9 @@ async def _ensure_auto_holidays(
     return None
 
 
-async def _get_generation_workload_counts(db: AsyncSession, organization_id: int) -> tuple[int, int]:
+async def _get_generation_workload_counts(
+    db: AsyncSession, organization_id: int
+) -> tuple[int, int]:
     class_subject_count = await db.scalar(
         sa_select(func.count(models.ClassSubjectLink.id))
         .join(models.Class, models.ClassSubjectLink.class_id == models.Class.id)
@@ -101,15 +116,8 @@ async def _get_generation_workload_counts(db: AsyncSession, organization_id: int
             models.ClassSubjectLink.grade_level == models.Class.grade_level,
         )
     )
-    lesson_count = await db.scalar(
-        sa_select(func.count(models.Lesson.id))
-        .join(models.Class, models.Lesson.class_id == models.Class.id)
-        .where(
-            models.Lesson.organization_id == organization_id,
-            models.Class.is_archived == False,  # noqa: E712
-        )
-    )
-    return class_subject_count or 0, lesson_count or 0
+    count = class_subject_count or 0
+    return count, count
 
 
 async def _collect_generation_teacher_ids(db: AsyncSession, organization_id: int) -> set[int]:
@@ -127,17 +135,7 @@ async def _collect_generation_teacher_ids(db: AsyncSession, organization_id: int
     )
     class_subject_teacher_ids = {row[0] for row in class_subject_teacher_rows.all()}
 
-    lesson_teacher_rows = await db.execute(
-        sa_select(models.Lesson.teacher_id)
-        .join(models.Class, models.Lesson.class_id == models.Class.id)
-        .where(
-            models.Lesson.organization_id == organization_id,
-            models.Class.is_archived == False,  # noqa: E712
-        )
-        .distinct()
-    )
-    lesson_teacher_ids = {row[0] for row in lesson_teacher_rows.all()}
-    return class_subject_teacher_ids | lesson_teacher_ids
+    return class_subject_teacher_ids
 
 
 async def _collect_generation_subject_ids(db: AsyncSession, organization_id: int) -> set[int]:
@@ -155,17 +153,7 @@ async def _collect_generation_subject_ids(db: AsyncSession, organization_id: int
     )
     class_subject_ids = {row[0] for row in class_subject_subject_rows.all()}
 
-    lesson_subject_rows = await db.execute(
-        sa_select(models.Lesson.subject_id)
-        .join(models.Class, models.Lesson.class_id == models.Class.id)
-        .where(
-            models.Lesson.organization_id == organization_id,
-            models.Class.is_archived == False,  # noqa: E712
-        )
-        .distinct()
-    )
-    lesson_subject_ids = {row[0] for row in lesson_subject_rows.all()}
-    return class_subject_ids | lesson_subject_ids
+    return class_subject_ids
 
 
 async def _validate_teacher_availabilities(
@@ -208,17 +196,16 @@ async def _validate_subject_requirements(
 
     errors: list[str] = []
     module_rows = await db.execute(
-        sa_select(models.Module.subject_id, models.Module.hours_total)
-        .where(models.Module.subject_id.in_(subject_ids))
+        sa_select(models.Module.subject_id, models.Module.required_minutes).where(
+            models.Module.subject_id.in_(subject_ids)
+        )
     )
     modules_by_subject: dict[int, list[int]] = {}
     for subject_id, hours_total in module_rows.all():
         modules_by_subject.setdefault(subject_id, []).append(hours_total)
 
     missing_module_subject_ids = {
-        subject_id
-        for subject_id in subject_ids
-        if subject_id not in modules_by_subject
+        subject_id for subject_id in subject_ids if subject_id not in modules_by_subject
     }
     invalid_module_subject_ids = {
         subject_id
@@ -229,15 +216,15 @@ async def _validate_subject_requirements(
 
     if impacted_subject_ids:
         subject_rows = await db.execute(
-            sa_select(models.Subject.id, models.Subject.name)
-            .where(models.Subject.id.in_(impacted_subject_ids))
+            sa_select(models.Subject.id, models.Subject.name).where(
+                models.Subject.id.in_(impacted_subject_ids)
+            )
         )
         subject_name_map = {row[0]: row[1] for row in subject_rows.all()}
 
         if missing_module_subject_ids:
             missing_names = sorted(
-                subject_name_map.get(sid, f"ID {sid}")
-                for sid in missing_module_subject_ids
+                subject_name_map.get(sid, f"ID {sid}") for sid in missing_module_subject_ids
             )
             errors.append(
                 "Disciplinas sem módulos definidos: "
@@ -247,8 +234,7 @@ async def _validate_subject_requirements(
 
         if invalid_module_subject_ids:
             invalid_names = sorted(
-                subject_name_map.get(sid, f"ID {sid}")
-                for sid in invalid_module_subject_ids
+                subject_name_map.get(sid, f"ID {sid}") for sid in invalid_module_subject_ids
             )
             errors.append(
                 "Disciplinas com módulos inválidos (hours_total <= 0): "
@@ -263,9 +249,7 @@ async def _validate_subject_requirements(
     )
     required_room_types = {row[0] for row in required_type_rows.all()}
     available_type_rows = await db.execute(
-        sa_select(models.Room.type)
-        .where(models.Room.organization_id == organization_id)
-        .distinct()
+        sa_select(models.Room.type).where(models.Room.organization_id == organization_id).distinct()
     )
     available_room_types = {row[0] for row in available_type_rows.all()}
 
@@ -348,38 +332,28 @@ async def _build_hard_end_feasibility(
     )
 
     def _run(sync_db) -> tuple[int, int]:
-        lessons = schedule_service.get_active_lessons_with_subject_sync(sync_db, organization_id)
+        lessons = (
+            sync_db.query(
+                models.ClassSubjectLink.class_id,
+                models.ClassSubjectLink.subject_id,
+            )
+            .join(models.Class, models.ClassSubjectLink.class_id == models.Class.id)
+            .filter(
+                models.ClassSubjectLink.organization_id == organization_id,
+                models.Class.organization_id == organization_id,
+                models.Class.is_archived.is_(False),
+                models.ClassSubjectLink.teacher_id.isnot(None),
+                models.ClassSubjectLink.grade_level == models.Class.grade_level,
+            )
+            .all()
+        )
         modules_by_subject = schedule_service.get_modules_by_subject_sync(sync_db, organization_id)
         progress_map = schedule_service.get_class_progress_map_sync(sync_db, organization_id)
 
-        remaining_minutes = 0
-        if lessons:
-            for lesson in lessons:
-                remaining = _compute_remaining_minutes(lesson, modules_by_subject, progress_map)
-                remaining_minutes += max(0, int(remaining))
-        else:
-            link_rows = (
-                sync_db.query(
-                    models.ClassSubjectLink.class_id,
-                    models.ClassSubjectLink.subject_id,
-                )
-                .join(models.Class, models.ClassSubjectLink.class_id == models.Class.id)
-                .filter(
-                    models.Class.organization_id == organization_id,
-                    models.ClassSubjectLink.organization_id == organization_id,
-                    models.Class.is_archived == False,  # noqa: E712
-                    models.ClassSubjectLink.teacher_id.isnot(None),
-                    models.ClassSubjectLink.grade_level == models.Class.grade_level,
-                )
-                .distinct()
-                .all()
-            )
-
-            for class_id, subject_id in link_rows:
-                for module in modules_by_subject.get(subject_id, []):
-                    hours_done = float(progress_map.get((class_id, module.id), 0) or 0)
-                    remaining_hours = max(0.0, float(module.hours_total) - hours_done)
-                    remaining_minutes += int(round(remaining_hours * 60))
+        remaining_minutes = sum(
+            max(0, int(_compute_remaining_minutes(lesson, modules_by_subject, progress_map)))
+            for lesson in lessons
+        )
 
         if remaining_minutes <= 0:
             return (0, 0)
@@ -482,7 +456,9 @@ async def _preflight_check(
         )
 
     ts_count = await db.scalar(
-        sa_select(func.count(models.Timeslot.id)).where(models.Timeslot.organization_id == organization_id)
+        sa_select(func.count(models.Timeslot.id)).where(
+            models.Timeslot.organization_id == organization_id
+        )
     )
     if not ts_count:
         errors.append(
@@ -496,7 +472,9 @@ async def _preflight_check(
         errors.append("Nenhuma sala configurada.")
 
     calendar_events = await db.execute(
-        sa_select(models.SchoolCalendarEvent).where(models.SchoolCalendarEvent.organization_id == organization_id)
+        sa_select(models.SchoolCalendarEvent).where(
+            models.SchoolCalendarEvent.organization_id == organization_id
+        )
     )
     blocked_dates = _build_blocked_dates(calendar_events.scalars().all())
 

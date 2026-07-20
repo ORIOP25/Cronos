@@ -1,12 +1,12 @@
-"""Serviço de Dashboard V1 — agrega métricas chave para o painel do diretor."""
+"""ServiÃ§o de Dashboard V1 â€” agrega mÃ©tricas chave para o painel do diretor."""
+
+from collections import defaultdict
 from datetime import date, timedelta
-from typing import Optional
 
+from sqlalchemy import String, and_, cast, desc, func, select
 from sqlalchemy.orm import Session
-from sqlalchemy import select, func, and_, distinct, desc
 
-from app import models
-from app import schemas
+from app import models, schemas
 from app.services import occurrence_service
 
 
@@ -14,20 +14,13 @@ def get_dashboard_summary_sync(
     db: Session,
     organization_id: int,
 ) -> schemas.DashboardV1Response:
-    """Retorna estatísticas agregadas para o dashboard principal."""
+    """Retorna estatÃ­sticas agregadas para o dashboard principal."""
     today = date.today()
 
-    alerts = _get_alert_counts(db, organization_id, today)
-    resources = _get_resource_counts(db, organization_id)
+    alerts, resources, org_name = _get_overview(db, organization_id, today)
     schedule_health = _get_schedule_health(db, organization_id, today)
     class_progress = _get_class_progress(db, organization_id)
     debts = _get_debt_summary(db, organization_id, today)
-
-    org_name = db.scalar(
-        select(models.Organization.name).where(
-            models.Organization.id == organization_id
-        )
-    ) or ""
 
     return schemas.DashboardV1Response(
         alerts=alerts,
@@ -39,128 +32,86 @@ def get_dashboard_summary_sync(
     )
 
 
-def _get_alert_counts(
+def _count(model, *criteria):
+    return select(func.count(model.id)).where(*criteria).scalar_subquery()
+
+
+def _get_overview(
     db: Session,
     organization_id: int,
     today: date,
-) -> schemas.AlertCounts:
-    """Contagens para a barra de alertas do dashboard."""
-
-    pending_occurrences_today = db.scalar(
-        select(func.count(models.LessonOccurrence.id)).where(
-            and_(
+) -> tuple[schemas.AlertCounts, schemas.ResourceCounts, str]:
+    room_counts = (
+        select(
+            cast(models.Room.type, String).label("room_type"),
+            func.count(models.Room.id).label("room_count"),
+        )
+        .where(models.Room.organization_id == organization_id)
+        .group_by(models.Room.type)
+        .subquery()
+    )
+    rooms_by_type = (
+        select(func.json_object_agg(room_counts.c.room_type, room_counts.c.room_count))
+        .select_from(room_counts)
+        .scalar_subquery()
+    )
+    row = db.execute(
+        select(
+            models.Organization.name,
+            _count(
+                models.LessonOccurrence,
                 models.LessonOccurrence.organization_id == organization_id,
                 models.LessonOccurrence.date == today,
                 models.LessonOccurrence.decided_at.is_(None),
-            )
-        )
-    ) or 0
-
-    pending_occurrences_total = db.scalar(
-        select(func.count(models.LessonOccurrence.id)).where(
-            and_(
+            ),
+            _count(
+                models.LessonOccurrence,
                 models.LessonOccurrence.organization_id == organization_id,
                 models.LessonOccurrence.is_active.is_(True),
                 models.LessonOccurrence.decided_at.is_(None),
-            )
-        )
-    ) or 0
-
-    pending_timesheets = db.scalar(
-        select(func.count(models.TeacherWeeklyTimesheet.id)).where(
-            and_(
+            ),
+            _count(
+                models.TeacherWeeklyTimesheet,
                 models.TeacherWeeklyTimesheet.organization_id == organization_id,
                 models.TeacherWeeklyTimesheet.status == models.TimesheetStatus.SUBMITTED,
-            )
-        )
-    ) or 0
-
-    pending_drafts = db.scalar(
-        select(func.count(distinct(models.ScheduleOutput.generation_id))).where(
-            and_(
-                models.ScheduleOutput.organization_id == organization_id,
-                models.ScheduleOutput.is_draft.is_(True),
-            )
-        )
-    ) or 0
-
-    active_substitutions_today = db.scalar(
-        select(func.count(models.LessonOccurrence.id)).where(
-            and_(
+            ),
+            _count(
+                models.ScheduleDraft,
+                models.ScheduleDraft.organization_id == organization_id,
+                models.ScheduleDraft.draft_state == models.ScheduleDraftState.PENDING,
+            ),
+            _count(
+                models.LessonOccurrence,
                 models.LessonOccurrence.organization_id == organization_id,
                 models.LessonOccurrence.is_active.is_(True),
                 models.LessonOccurrence.date == today,
                 models.LessonOccurrence.status == models.LessonOccurrenceStatus.SUBSTITUTED,
-            )
-        )
-    ) or 0
-
-    return schemas.AlertCounts(
-        pending_occurrences_today=pending_occurrences_today,
-        pending_occurrences_total=pending_occurrences_total,
-        pending_timesheets=pending_timesheets,
-        pending_drafts=pending_drafts,
-        active_substitutions_today=active_substitutions_today,
-    )
-
-
-def _get_resource_counts(
-    db: Session,
-    organization_id: int,
-) -> schemas.ResourceCounts:
-    """Contagens de entidades e distribuição de salas por tipo."""
-
-    teachers_count = db.scalar(
-        select(func.count(models.Teacher.id)).where(
-            models.Teacher.organization_id == organization_id
-        )
-    ) or 0
-
-    classes_count = db.scalar(
-        select(func.count(models.Class.id)).where(
-            models.Class.organization_id == organization_id
-        )
-    ) or 0
-
-    courses_count = db.scalar(
-        select(func.count(models.Course.id)).where(
-            models.Course.organization_id == organization_id
-        )
-    ) or 0
-
-    subjects_count = db.scalar(
-        select(func.count(models.Subject.id)).where(
-            models.Subject.organization_id == organization_id
-        )
-    ) or 0
-
-    rooms_count = db.scalar(
-        select(func.count(models.Room.id)).where(
-            models.Room.organization_id == organization_id
-        )
-    ) or 0
-
-    rooms_by_type_rows = db.execute(
-        select(
-            models.Room.type,
-            func.count(models.Room.id),
-        ).where(
-            models.Room.organization_id == organization_id
-        ).group_by(models.Room.type)
-    ).all()
-
-    rooms_by_type: dict[str, int] = {}
-    for room_type, count in rooms_by_type_rows:
-        key = room_type.value if hasattr(room_type, "value") else str(room_type)
-        rooms_by_type[key] = count
-
-    return schemas.ResourceCounts(
-        teachers_count=teachers_count,
-        classes_count=classes_count,
-        courses_count=courses_count,
-        subjects_count=subjects_count,
-        rooms_count=rooms_count,
-        rooms_by_type=rooms_by_type,
+            ),
+            _count(models.Teacher, models.Teacher.organization_id == organization_id),
+            _count(models.Class, models.Class.organization_id == organization_id),
+            _count(models.Course, models.Course.organization_id == organization_id),
+            _count(models.Subject, models.Subject.organization_id == organization_id),
+            _count(models.Room, models.Room.organization_id == organization_id),
+            rooms_by_type,
+        ).where(models.Organization.id == organization_id)
+    ).one()
+    return (
+        schemas.AlertCounts(
+            pending_occurrences_today=row[1],
+            pending_occurrences_total=row[2],
+            pending_timesheets=row[3],
+            pending_drafts=row[4],
+            active_substitutions_today=row[5],
+        ),
+        schemas.ResourceCounts(
+            teachers_count=row[6],
+            classes_count=row[7],
+            courses_count=row[8],
+            subjects_count=row[9],
+            rooms_count=row[10],
+            rooms_by_type=row[11] or {},
+        ),
+        row[0],
     )
 
 
@@ -168,162 +119,66 @@ def _get_schedule_health(
     db: Session,
     organization_id: int,
     today: date,
-) -> Optional[schemas.ScheduleHealthWidget]:
-    """Métricas de saúde da última geração ativa."""
-
-    latest_gen = db.scalar(
-        select(models.ScheduleOutput.generation_id).where(
-            and_(
-                models.ScheduleOutput.organization_id == organization_id,
-                models.ScheduleOutput.is_draft.is_(False),
-            )
-        ).order_by(desc(models.ScheduleOutput.id)).limit(1)
+) -> schemas.ScheduleHealthWidget | None:
+    latest_version = (
+        select(models.ActiveScheduleBlock.schedule_version_id)
+        .where(
+            models.ActiveScheduleBlock.organization_id == organization_id,
+            models.ActiveScheduleBlock.status == models.ActiveScheduleBlockStatus.ACTIVE,
+        )
+        .order_by(desc(models.ActiveScheduleBlock.id))
+        .limit(1)
+        .scalar_subquery()
     )
 
-    if latest_gen is None:
+    blocks = list(
+        db.execute(
+            select(
+                models.ActiveScheduleBlock.schedule_version_id,
+                models.ActiveScheduleBlock.class_id,
+                models.ActiveScheduleBlock.teacher_id,
+                models.ActiveScheduleBlock.date,
+                models.ActiveScheduleBlock.timeslot_id,
+            ).where(
+                models.ActiveScheduleBlock.organization_id == organization_id,
+                models.ActiveScheduleBlock.status == models.ActiveScheduleBlockStatus.ACTIVE,
+                models.ActiveScheduleBlock.schedule_version_id == latest_version,
+            )
+        ).all()
+    )
+    if not blocks:
         return None
-
-    generation_id = latest_gen
-
-    blocks_count = db.scalar(
-        select(func.count(models.ScheduleOutput.id)).where(
-            and_(
-                models.ScheduleOutput.organization_id == organization_id,
-                models.ScheduleOutput.is_draft.is_(False),
-                models.ScheduleOutput.generation_id == generation_id,
-            )
-        )
-    ) or 0
-
-    classes_total = db.scalar(
-        select(func.count(distinct(models.Lesson.class_id))).select_from(
-            models.ScheduleOutput
-        ).join(
-            models.Lesson,
-            models.ScheduleOutput.lesson_id == models.Lesson.id,
-        ).where(
-            and_(
-                models.ScheduleOutput.organization_id == organization_id,
-                models.ScheduleOutput.is_draft.is_(False),
-                models.ScheduleOutput.generation_id == generation_id,
-            )
-        )
-    ) or 0
-
+    generation_id = blocks[0].schedule_version_id
+    blocks_count = len(blocks)
+    class_ids = {row.class_id for row in blocks}
+    teacher_ids = {row.teacher_id for row in blocks}
     week_start = today - timedelta(days=today.weekday())
+    weekly_counts = defaultdict(int)
+    teacher_slots = defaultdict(int)
+    class_slots = defaultdict(int)
+    for row in blocks:
+        if row.date >= week_start:
+            weekly_counts[row.class_id] += 1
+        teacher_slots[(row.teacher_id, row.date, row.timeslot_id)] += 1
+        class_slots[(row.class_id, row.date, row.timeslot_id)] += 1
 
-    slots_per_class_rows = db.execute(
-        select(
-            models.Lesson.class_id,
-            func.count(models.ScheduleOutput.id),
-        ).select_from(models.ScheduleOutput).join(
-            models.Lesson,
-            models.ScheduleOutput.lesson_id == models.Lesson.id,
-        ).where(
-            and_(
-                models.ScheduleOutput.organization_id == organization_id,
-                models.ScheduleOutput.is_draft.is_(False),
-                models.ScheduleOutput.generation_id == generation_id,
-                models.ScheduleOutput.date >= week_start,
-            )
-        ).group_by(models.Lesson.class_id)
-    ).all()
-
-    week_slots_total = sum(count for _, count in slots_per_class_rows)
-    classes_with_slots = len([c for c, count in slots_per_class_rows if count > 0])
-    classes_empty_week = classes_total - classes_with_slots
-
-    week_slots_avg = round(week_slots_total / classes_total, 1) if classes_total > 0 else 0.0
-
-    slot_counts = [count for _, count in slots_per_class_rows]
-    if len(slot_counts) > 1 and classes_total > 0:
-        mean = week_slots_total / classes_total
-        variance = sum((c - mean) ** 2 for c in slot_counts) / classes_total
-        weekly_fairness_spread = round(variance ** 0.5, 1)
-    else:
-        weekly_fairness_spread = 0.0
-
-    dup_rows = db.execute(
-        select(
-            models.Lesson.teacher_id,
-            models.ScheduleOutput.date,
-            models.ScheduleOutput.timeslot_id,
-            func.count(models.ScheduleOutput.id),
-        ).select_from(models.ScheduleOutput).join(
-            models.Lesson,
-            models.ScheduleOutput.lesson_id == models.Lesson.id,
-        ).where(
-            and_(
-                models.ScheduleOutput.organization_id == organization_id,
-                models.ScheduleOutput.is_draft.is_(False),
-                models.ScheduleOutput.generation_id == generation_id,
-            )
-        ).group_by(
-            models.Lesson.teacher_id,
-            models.ScheduleOutput.date,
-            models.ScheduleOutput.timeslot_id,
-        ).having(
-            func.count(models.ScheduleOutput.id) > 1
-        )
-    ).all()
-
-    duplicate_teacher_slots = len(dup_rows)
-
-    dup_class_rows = db.execute(
-        select(
-            models.Lesson.class_id,
-            models.ScheduleOutput.date,
-            models.ScheduleOutput.timeslot_id,
-            func.count(models.ScheduleOutput.id),
-        ).select_from(models.ScheduleOutput).join(
-            models.Lesson,
-            models.ScheduleOutput.lesson_id == models.Lesson.id,
-        ).where(
-            and_(
-                models.ScheduleOutput.organization_id == organization_id,
-                models.ScheduleOutput.is_draft.is_(False),
-                models.ScheduleOutput.generation_id == generation_id,
-            )
-        ).group_by(
-            models.Lesson.class_id,
-            models.ScheduleOutput.date,
-            models.ScheduleOutput.timeslot_id,
-        ).having(
-            func.count(models.ScheduleOutput.id) > 1
-        )
-    ).all()
-
-    duplicate_class_slots = len(dup_class_rows)
-
-    distinct_teachers = db.scalar(
-        select(func.count(distinct(models.Lesson.teacher_id))).select_from(
-            models.ScheduleOutput
-        ).join(
-            models.Lesson,
-            models.ScheduleOutput.lesson_id == models.Lesson.id,
-        ).where(
-            and_(
-                models.ScheduleOutput.organization_id == organization_id,
-                models.ScheduleOutput.is_draft.is_(False),
-                models.ScheduleOutput.generation_id == generation_id,
-            )
-        )
-    ) or 0
-
-    teacher_week_slots_avg = (
-        round(blocks_count / distinct_teachers, 1) if distinct_teachers > 0 else 0.0
+    classes_total = len(class_ids)
+    values = list(weekly_counts.values())
+    week_total = sum(values)
+    mean = week_total / classes_total if classes_total else 0.0
+    variance = (
+        sum((count - mean) ** 2 for count in values) / classes_total if classes_total > 1 else 0.0
     )
-
     return schemas.ScheduleHealthWidget(
         generation_id=generation_id,
         blocks_count=blocks_count,
         classes_total=classes_total,
-        classes_empty_week=classes_empty_week,
-        week_slots_avg=week_slots_avg,
-        duplicate_teacher_slots=duplicate_teacher_slots,
-        duplicate_class_slots=duplicate_class_slots,
-        weekly_fairness_spread=weekly_fairness_spread,
-        teacher_week_slots_avg=teacher_week_slots_avg,
+        classes_empty_week=classes_total - len(weekly_counts),
+        week_slots_avg=round(mean, 1),
+        duplicate_teacher_slots=sum(count > 1 for count in teacher_slots.values()),
+        duplicate_class_slots=sum(count > 1 for count in class_slots.values()),
+        weekly_fairness_spread=round(variance**0.5, 1),
+        teacher_week_slots_avg=(round(blocks_count / len(teacher_ids), 1) if teacher_ids else 0.0),
     )
 
 
@@ -331,8 +186,19 @@ def _get_class_progress(
     db: Session,
     organization_id: int,
 ) -> list[schemas.ClassProgressSummary]:
-    """Progresso curricular agregado por turma."""
-
+    ledger = (
+        select(
+            models.ProgressLedgerEntry.class_id.label("class_id"),
+            models.ProgressLedgerEntry.module_id.label("module_id"),
+            func.sum(models.ProgressLedgerEntry.completed_minutes_delta).label("minutes"),
+        )
+        .where(models.ProgressLedgerEntry.organization_id == organization_id)
+        .group_by(
+            models.ProgressLedgerEntry.class_id,
+            models.ProgressLedgerEntry.module_id,
+        )
+        .subquery()
+    )
     rows = db.execute(
         select(
             models.Class.id,
@@ -340,47 +206,50 @@ def _get_class_progress(
             models.Class.grade_level,
             models.Course.id,
             models.Course.name,
-            func.coalesce(func.sum(models.ClassProgress.hours_completed), 0.0),
-            func.coalesce(func.sum(models.Module.hours_total), 0.0),
-        ).select_from(models.Class).join(
-            models.Course, models.Class.course_id == models.Course.id
-        ).outerjoin(
-            models.ClassProgress, models.ClassProgress.class_id == models.Class.id
-        ).outerjoin(
-            models.Module, models.ClassProgress.module_id == models.Module.id
-        ).where(
-            models.Class.organization_id == organization_id
-        ).group_by(
+            func.coalesce(func.sum(ledger.c.minutes), 0),
+            func.coalesce(func.sum(models.Module.required_minutes), 0),
+        )
+        .select_from(models.Class)
+        .join(models.Course, models.Class.course_id == models.Course.id)
+        .outerjoin(
+            models.ClassSubjectLink,
+            and_(
+                models.ClassSubjectLink.class_id == models.Class.id,
+                models.ClassSubjectLink.grade_level == models.Class.grade_level,
+            ),
+        )
+        .outerjoin(models.Module, models.Module.subject_id == models.ClassSubjectLink.subject_id)
+        .outerjoin(
+            ledger,
+            and_(
+                ledger.c.class_id == models.Class.id,
+                ledger.c.module_id == models.Module.id,
+            ),
+        )
+        .where(models.Class.organization_id == organization_id)
+        .group_by(
             models.Class.id,
             models.Class.name,
             models.Class.grade_level,
             models.Course.id,
             models.Course.name,
-        ).order_by(
-            (func.coalesce(func.sum(models.ClassProgress.hours_completed), 0.0)
-             / func.nullif(func.coalesce(func.sum(models.Module.hours_total), 1.0), 0.0))
         )
     ).all()
-
-    result: list[schemas.ClassProgressSummary] = []
-    for (
-        class_id, class_name, grade_level,
-        course_id, course_name,
-        completed_hours, total_hours,
-    ) in rows:
-        pct = round((completed_hours / total_hours * 100), 1) if total_hours > 0 else 0.0
-        result.append(schemas.ClassProgressSummary(
-            class_id=class_id,
-            class_name=class_name,
-            course_id=course_id,
-            course_name=course_name,
-            grade_level=grade_level,
-            overall_percentage=min(pct, 100.0),
-            completed_hours=round(completed_hours or 0.0, 1),
-            total_hours=round(total_hours or 0.0, 1),
-        ))
-
-    return result
+    return [
+        schemas.ClassProgressSummary(
+            class_id=row[0],
+            class_name=row[1],
+            grade_level=row[2],
+            course_id=row[3],
+            course_name=row[4],
+            overall_percentage=(
+                min(100.0, round(int(row[5]) / int(row[6]) * 100, 1)) if row[6] else 0.0
+            ),
+            completed_hours=round(int(row[5]) / 60, 1),
+            total_hours=round(int(row[6]) / 60, 1),
+        )
+        for row in rows
+    ]
 
 
 def _get_debt_summary(
@@ -388,7 +257,7 @@ def _get_debt_summary(
     organization_id: int,
     today: date,
 ) -> schemas.DebtSummary:
-    """Resumo de dívidas de horas."""
+    """Resumo de dÃ­vidas de horas."""
 
     debt_list = occurrence_service.get_debts_sync(db, organization_id)
 

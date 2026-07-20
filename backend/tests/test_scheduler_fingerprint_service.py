@@ -1,4 +1,4 @@
-from datetime import date, datetime, time, timezone
+from datetime import UTC, date, datetime, time
 
 import pytest
 
@@ -8,9 +8,7 @@ from app.services.scheduler_fingerprint_service import (
     SchedulerFingerprintService,
 )
 from app.services.scheduler_serialization import canonical_json_bytes, sha256_json
-
-
-pytestmark = pytest.mark.integration
+from tests.conftest import create_teacher_profile
 
 
 def test_canonical_hash_is_stable_across_mapping_and_set_order():
@@ -22,7 +20,6 @@ def test_canonical_hash_is_stable_across_mapping_and_set_order():
     assert len(sha256_json(first)) == 64
 
 
-@pytest.mark.asyncio
 async def test_generation_input_fingerprint_changes_only_for_canonical_inputs(db_session):
     organization = models.Organization(name="Fingerprint School", plan_status="active")
     db_session.add(organization)
@@ -80,7 +77,6 @@ async def test_generation_input_fingerprint_changes_only_for_canonical_inputs(db
     assert resized.value != first.value
 
 
-@pytest.mark.asyncio
 async def test_strategy_changes_snapshot_and_adaptive_includes_active_schedule(db_session):
     organization = models.Organization(name="Strategy Fingerprint", plan_status="active")
     db_session.add(organization)
@@ -119,7 +115,6 @@ async def test_strategy_changes_snapshot_and_adaptive_includes_active_schedule(d
     assert adaptive.value != complete.value
 
 
-@pytest.mark.asyncio
 async def test_recreated_semantically_identical_calendar_event_keeps_fingerprint(db_session):
     organization = models.Organization(name="Calendar Fingerprint", plan_status="active")
     db_session.add(organization)
@@ -178,7 +173,6 @@ async def test_recreated_semantically_identical_calendar_event_keeps_fingerprint
     assert recreated.value == first.value
 
 
-@pytest.mark.asyncio
 async def test_repair_policy_snapshot_uses_school_local_date_and_allows_zero(db_session):
     organization = models.Organization(name="Policy Snapshot", plan_status="active")
     db_session.add(organization)
@@ -202,7 +196,7 @@ async def test_repair_policy_snapshot_uses_school_local_date_and_allows_zero(db_
     result = await SchedulerFingerprintService(db_session).repair_policy_snapshot(
         organization.id,
         school_year.id,
-        now=datetime(2026, 6, 1, 23, 30, tzinfo=timezone.utc),
+        now=datetime(2026, 6, 1, 23, 30, tzinfo=UTC),
     )
 
     assert result.editable_start_date == date(2026, 6, 2)
@@ -220,11 +214,10 @@ async def test_repair_policy_snapshot_uses_school_local_date_and_allows_zero(db_
         await SchedulerFingerprintService(db_session).repair_policy_snapshot(
             organization.id,
             school_year.id,
-            now=datetime(2026, 6, 1, 23, 30, tzinfo=timezone.utc),
+            now=datetime(2026, 6, 1, 23, 30, tzinfo=UTC),
         )
 
 
-@pytest.mark.asyncio
 async def test_repair_policy_change_has_separate_hash_from_generation_inputs(db_session):
     organization = models.Organization(name="Policy Separation", plan_status="active")
     db_session.add(organization)
@@ -251,7 +244,7 @@ async def test_repair_policy_change_has_separate_hash_from_generation_inputs(db_
     db_session.add_all([state, settings])
     await db_session.commit()
     service = SchedulerFingerprintService(db_session)
-    instant = datetime(2026, 1, 5, 12, tzinfo=timezone.utc)
+    instant = datetime(2026, 1, 5, 12, tzinfo=UTC)
 
     generation_before = await service.generation_input_fingerprint(
         organization.id,
@@ -279,8 +272,9 @@ async def test_repair_policy_change_has_separate_hash_from_generation_inputs(db_
     assert state.scheduler_state_version == 0
 
 
-@pytest.mark.asyncio
-async def test_class_subject_requirements_include_scheduler_inputs_and_ignore_other_year_events(db_session):
+async def test_class_subject_requirements_include_scheduler_inputs_and_ignore_other_year_events(
+    db_session,
+):
     organization = models.Organization(name="Canonical Inputs", plan_status="active")
     db_session.add(organization)
     await db_session.flush()
@@ -301,14 +295,18 @@ async def test_class_subject_requirements_include_scheduler_inputs_and_ignore_ot
         name="Canonical Subject",
         required_room_type=models.RoomType.normal,
     )
-    teacher = models.Teacher(organization_id=organization.id, name="Canonical Teacher")
+    teacher = await create_teacher_profile(
+        db_session,
+        organization_id=organization.id,
+        name="Canonical Teacher",
+    )
     slot = models.Timeslot(
         organization_id=organization.id,
         day_of_week=1,
         start_time=time(9, 0),
         end_time=time(10, 0),
     )
-    db_session.add_all([school_year, course, subject, teacher, slot])
+    db_session.add_all([school_year, course, subject, slot])
     await db_session.flush()
     state = models.SchedulerSchoolYearState(
         organization_id=organization.id,
@@ -363,9 +361,7 @@ async def test_class_subject_requirements_include_scheduler_inputs_and_ignore_ot
         school_year.id,
         models.ScheduleGenerationStrategy.COMPLETE_GENERATION,
     )
-    assert first.snapshot["subjects"] == [
-        {"id": subject.id, "required_room_type": "normal"}
-    ]
+    assert first.snapshot["subjects"] == [{"id": subject.id, "required_room_type": "normal"}]
     assert first.snapshot["class_subject_requirements"] == [
         {
             "class_id": class_.id,

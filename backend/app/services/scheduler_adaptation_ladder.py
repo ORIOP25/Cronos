@@ -67,9 +67,7 @@ class SchedulerChangeImpactAnalyzer:
             (row["teacher_id"], row["subject_id"])
             for row in snapshot.get("teacher_subject_eligibility", [])
         }
-        grid = {
-            row["id"]: row for row in snapshot.get("timetable_grid", [])
-        }
+        grid = {row["id"]: row for row in snapshot.get("timetable_grid", [])}
         impossible = {
             (row["teacher_id"], row["timeslot_id"])
             for row in snapshot.get("teacher_availability", [])
@@ -96,18 +94,23 @@ class SchedulerChangeImpactAnalyzer:
             if assignments.get((block["class_id"], block["subject_id"])) != block["teacher_id"]:
                 reasons.append("Class-subject teacher assignment changed.")
                 category = "ASSIGNMENT"
-            if block["teacher_id"] not in teachers or (
-                block["teacher_id"], block["subject_id"]
-            ) not in qualifications:
+            if (
+                block["teacher_id"] not in teachers
+                or (block["teacher_id"], block["subject_id"]) not in qualifications
+            ):
                 reasons.append("Assigned teacher is no longer eligible.")
             if (block["teacher_id"], block["timeslot_id"]) in impossible:
                 reasons.append("Teacher availability is now impossible at this time.")
             if room_row is None:
                 reasons.append("Assigned room no longer exists.")
-            elif class_row is not None and subject_row is not None and (
-                room_row.get("capacity", 0) < class_row["size"]
-                or self._value(room_row.get("type"))
-                != self._value(subject_row.get("required_room_type"))
+            elif (
+                class_row is not None
+                and subject_row is not None
+                and (
+                    room_row.get("capacity", 0) < class_row["size"]
+                    or self._value(room_row.get("type"))
+                    != self._value(subject_row.get("required_room_type"))
+                )
             ):
                 reasons.append("Assigned room is no longer compatible.")
             slot = grid.get(block["timeslot_id"])

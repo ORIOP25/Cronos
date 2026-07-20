@@ -1,74 +1,91 @@
+from typing import Annotated
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import List, Annotated
+
 from app import schemas
 from app.api import deps
 from app.services import room_service
-from app import models
 
 router = APIRouter()
 
-@router.get("/", response_model=List[schemas.RoomRead])
+
+@router.get("/", response_model=list[schemas.RoomRead])
 async def read_rooms(
-    current_user: Annotated[models.User, Depends(deps.get_current_user)],
-    db: Annotated[AsyncSession, Depends(deps.get_db)]
+    current_user: deps.ActiveActor, db: Annotated[AsyncSession, Depends(deps.get_db)]
 ):
     return await room_service.get_rooms_by_org(
         db,
         organization_id=current_user.organization_id,
     )
 
+
 @router.post("/", response_model=schemas.RoomRead)
 async def create_room(
     room: schemas.RoomCreate,
     db: Annotated[AsyncSession, Depends(deps.get_db)],
-    # A Correção: Pedimos o Utilizador Logado, não o org_id direto
-    current_user: Annotated[models.User, Depends(deps.get_current_user)] 
+    # A CorreÃ§Ã£o: Pedimos o Utilizador Logado, nÃ£o o org_id direto
+    current_user: deps.AdminActor,
 ):
     """
     Cria uma nova sala.
-    O org_id é preenchido automaticamente com base no utilizador logado.
+    O org_id Ã© preenchido automaticamente com base no utilizador logado.
     """
     return await room_service.create_room(
-        db, 
-        room, 
-        organization_id=current_user.organization_id, # <--- Passamos o ID aqui internamente
-        changed_by_user_id=current_user.id,
+        db,
+        room,
+        organization_id=current_user.organization_id,  # <--- Passamos o ID aqui internamente
+        changed_by_membership_id=current_user.membership_id,
     )
 
-@router.patch("/{room_id}", response_model=schemas.RoomRead, responses={404: {"description": "Sala não encontrada"}})
+
+@router.patch(
+    "/{room_id}",
+    response_model=schemas.RoomRead,
+    responses={404: {"description": "Sala nÃ£o encontrada"}},
+)
 async def update_room(
     room_id: int,
     room_in: schemas.RoomUpdate,
     db: Annotated[AsyncSession, Depends(deps.get_db)],
-    current_user: Annotated[models.User, Depends(deps.get_current_active_admin)]
+    current_user: deps.AdminActor,
 ):
     room = await room_service.update_room(
-        db, room_id, room_in, current_user.organization_id,
-        changed_by_user_id=current_user.id,
+        db,
+        room_id,
+        room_in,
+        current_user.organization_id,
+        changed_by_membership_id=current_user.membership_id,
     )
     if not room:
-        raise HTTPException(status_code=404, detail="Sala não encontrada")
+        raise HTTPException(status_code=404, detail="Sala nÃ£o encontrada")
     return room
 
-@router.delete("/{room_id}", responses={404: {"description": "Sala não encontrada"}, 400: {"description": "Dependências existentes"}})
+
+@router.delete(
+    "/{room_id}",
+    responses={
+        404: {"description": "Sala nÃ£o encontrada"},
+        400: {"description": "DependÃªncias existentes"},
+    },
+)
 async def delete_room(
-    room_id: int,
-    db: Annotated[AsyncSession, Depends(deps.get_db)],
-    current_user: Annotated[models.User, Depends(deps.get_current_active_admin)]
+    room_id: int, db: Annotated[AsyncSession, Depends(deps.get_db)], current_user: deps.AdminActor
 ):
     status = await room_service.delete_room(
-        db, room_id, current_user.organization_id,
-        changed_by_user_id=current_user.id,
+        db,
+        room_id,
+        current_user.organization_id,
+        changed_by_membership_id=current_user.membership_id,
     )
-    
+
     if status == "NOT_FOUND":
-        raise HTTPException(status_code=404, detail="Sala não encontrada")
-    
+        raise HTTPException(status_code=404, detail="Sala nÃ£o encontrada")
+
     if status == "DEPENDENCY_ERROR":
         raise HTTPException(
-            status_code=400, 
-            detail="Não é possível apagar esta sala pois existem aulas agendadas nela."
+            status_code=400,
+            detail="NÃ£o Ã© possÃ­vel apagar esta sala pois existem aulas agendadas nela.",
         )
-    
+
     return {"message": "Sala removida com sucesso"}

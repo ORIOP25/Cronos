@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 
@@ -56,7 +56,16 @@ async def _main() -> None:
 
     resolve_op = subparsers.add_parser("resolve-operation")
     resolve_op.add_argument("--id", type=int, required=True)
-    resolve_op.add_argument("--action", choices=["mark_resolved", "mark_support_required", "retry_compensation", "commit_confirmed_clerk_state"], required=True)
+    resolve_op.add_argument(
+        "--action",
+        choices=[
+            "mark_resolved",
+            "mark_support_required",
+            "retry_compensation",
+            "commit_confirmed_clerk_state",
+        ],
+        required=True,
+    )
     resolve_op.add_argument("--operator-id", type=int, required=True)
     resolve_op.add_argument("--note", default="")
     resolve_op.add_argument("--apply", action="store_true")
@@ -67,7 +76,17 @@ async def _main() -> None:
 
     hook_action = subparsers.add_parser("webhook-action")
     hook_action.add_argument("--id", type=int, required=True)
-    hook_action.add_argument("--action", choices=["replay", "ignore", "mark-sync-error", "replay_dead_letter", "leave_dead_letter_blocked"], required=True)
+    hook_action.add_argument(
+        "--action",
+        choices=[
+            "replay",
+            "ignore",
+            "mark-sync-error",
+            "replay_dead_letter",
+            "leave_dead_letter_blocked",
+        ],
+        required=True,
+    )
     hook_action.add_argument("--operator-id", type=int, required=True)
     hook_action.add_argument("--note", required=True)
     hook_action.add_argument("--apply", action="store_true")
@@ -88,6 +107,14 @@ async def _main() -> None:
                 raise RuntimeError("The Clerk-backed organization was not found.")
             if operator is None or not operator.clerk_user_id:
                 raise RuntimeError("The Clerk-backed operator was not found.")
+            operator_membership_id = await db.scalar(
+                select(models.OrganizationMembership.id).where(
+                    models.OrganizationMembership.organization_id == organization.id,
+                    models.OrganizationMembership.account_id == operator.id,
+                )
+            )
+            if operator_membership_id is None:
+                raise RuntimeError("The operator is not a member of the organization.")
             preview = {
                 "organization_id": organization.id,
                 "clerk_org_id": organization.clerk_org_id,
@@ -98,19 +125,20 @@ async def _main() -> None:
             if not args.apply:
                 print(json.dumps(preview, indent=2))
                 return
-            operations = MemberAccessOperationService()
+            clerk_access = ClerkAccessService()
+            operations = MemberAccessOperationService(SessionLocal, clerk_access)
             operation = await operations.create_pending(
                 organization_id=organization.id,
                 target_email=args.email,
                 operation_type=models.MemberAccessOperationType.revoke_invitation,
-                created_by_user_id=operator.id,
+                created_by_membership_id=operator_membership_id,
                 intended_capabilities=set(),
                 intended_role=None,
                 intent={"orphan_invitation_id": args.invitation_id},
                 clerk_org_id=organization.clerk_org_id,
                 clerk_invitation_id=args.invitation_id,
             )
-            result = await ClerkAccessService().revoke_organization_invitation(
+            result = await clerk_access.revoke_organization_invitation(
                 clerk_org_id=organization.clerk_org_id,
                 invitation_id=args.invitation_id,
                 requesting_user_id=operator.clerk_user_id,
@@ -146,16 +174,16 @@ async def _main() -> None:
             if args.apply:
                 if args.action in {"mark_resolved", "commit_confirmed_clerk_state"}:
                     operation.operation_status = models.MemberAccessOperationStatus.local_committed
-                    operation.support_resolved_at = datetime.now(timezone.utc)
+                    operation.support_resolved_at = datetime.now(UTC)
                     operation.support_resolved_by_user_id = args.operator_id
                     operation.support_resolution_action = args.action
                     operation.support_resolution_note = args.note
                 elif args.action == "mark_support_required":
                     operation.operation_status = models.MemberAccessOperationStatus.support_required
-                    operation.support_required_at = datetime.now(timezone.utc)
+                    operation.support_required_at = datetime.now(UTC)
                 elif args.action == "retry_compensation":
                     operation.operation_status = models.MemberAccessOperationStatus.pending
-                    operation.compensation_attempted_at = datetime.now(timezone.utc)
+                    operation.compensation_attempted_at = datetime.now(UTC)
                 await db.commit()
             print(json.dumps(_operation_to_dict(operation), indent=2, default=str))
             return
@@ -187,16 +215,16 @@ async def _main() -> None:
             }
             if args.apply:
                 event.support_resolution_action = args.action
-                event.support_resolved_at = datetime.now(timezone.utc)
+                event.support_resolved_at = datetime.now(UTC)
                 event.support_resolved_by_user_id = args.operator_id
                 event.support_resolution_note = args.note
                 if args.action in {"replay", "replay_dead_letter"}:
                     event.processing_status = models.ClerkWebhookProcessingStatus.retryable_failed
-                    event.next_retry_at = datetime.now(timezone.utc)
+                    event.next_retry_at = datetime.now(UTC)
                     await member_reconciliation_service.run_scheduled_reconciliation(db, limit=1)
                 elif args.action == "ignore":
                     event.processing_status = models.ClerkWebhookProcessingStatus.ignored
-                    event.processed_at = datetime.now(timezone.utc)
+                    event.processed_at = datetime.now(UTC)
                 elif args.action == "mark-sync-error":
                     event.processing_status = models.ClerkWebhookProcessingStatus.sync_error
                     event.error_category = event.error_category or "support_marked_sync_error"

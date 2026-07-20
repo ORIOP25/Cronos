@@ -1,8 +1,9 @@
 from datetime import date, timedelta
-from typing import Annotated, List, Optional
-from fastapi import APIRouter, Depends, HTTPException
+from typing import Annotated
 
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
+
 from app import models, schemas
 from app.api import deps
 from app.services import timesheet_service
@@ -21,7 +22,7 @@ def _model_to_read_dict(t: models.TeacherWeeklyTimesheet) -> dict:
         "status": t.status,
         "submitted_at": t.submitted_at,
         "approved_at": t.approved_at,
-        "approved_by_user_id": t.approved_by_user_id,
+        "approved_by_membership_id": t.approved_by_membership_id,
         "created_at": t.created_at,
         "total_slots": 0,
         "registered_slots": 0,
@@ -32,27 +33,28 @@ def _model_to_read_dict(t: models.TeacherWeeklyTimesheet) -> dict:
 
 @router.get(
     "/",
-    response_model=List[schemas.TeacherWeeklyTimesheetRead],
+    response_model=list[schemas.TeacherWeeklyTimesheetRead],
     summary="Listar timesheets semanais",
 )
 async def list_timesheets(
     db: Annotated[AsyncSession, Depends(deps.get_db)],
-    current_user: Annotated[models.User, Depends(deps.get_current_active_user)],
-    week_start_date: Optional[date] = None,
-    status: Optional[models.TimesheetStatus] = None,
+    current_user: deps.ActiveActor,
+    week_start_date: date | None = None,
+    status: models.TimesheetStatus | None = None,
 ):
     if not deps.user_has_admin_capability(current_user):
         raise HTTPException(status_code=403, detail="Acesso negado.")
-        
+
     def _run(sync_db):
         return timesheet_service.list_timesheets_sync(
             sync_db,
             organization_id=current_user.organization_id,
             week_start_date=week_start_date,
-            status=status
+            status=status,
         )
-        
+
     return await db.run_sync(_run)
+
 
 @router.get(
     "/me/{week_start_date}",
@@ -62,22 +64,25 @@ async def list_timesheets(
 async def get_my_timesheet(
     week_start_date: date,
     db: Annotated[AsyncSession, Depends(deps.get_db)],
-    current_user: Annotated[models.User, Depends(deps.get_current_active_user)],
+    current_user: deps.ActiveActor,
 ):
     if not deps.user_has_teacher_capability(current_user):
-        raise HTTPException(status_code=403, detail="Apenas professores podem consultar a sua timesheet.")
-        
+        raise HTTPException(
+            status_code=403, detail="Apenas professores podem consultar a sua timesheet."
+        )
+
     def _run(sync_db):
         t = timesheet_service.get_or_create_timesheet_sync(
             sync_db,
             organization_id=current_user.organization_id,
             teacher_id=current_user.teacher_id,
-            week_start_date=week_start_date
+            week_start_date=week_start_date,
         )
-        sync_db.refresh(t, ['teacher'])
+        sync_db.refresh(t, ["teacher"])
         return _model_to_read_dict(t)
-        
+
     return await db.run_sync(_run)
+
 
 @router.post(
     "/me/{week_start_date}/submit",
@@ -87,33 +92,36 @@ async def get_my_timesheet(
 async def submit_my_timesheet(
     week_start_date: date,
     db: Annotated[AsyncSession, Depends(deps.get_db)],
-    current_user: Annotated[models.User, Depends(deps.get_current_active_user)],
+    current_user: deps.ActiveActor,
 ):
     if not deps.user_has_teacher_capability(current_user):
-        raise HTTPException(status_code=403, detail="Apenas professores podem submeter a sua timesheet.")
-        
+        raise HTTPException(
+            status_code=403, detail="Apenas professores podem submeter a sua timesheet."
+        )
+
     def _run(sync_db):
         t = timesheet_service.submit_timesheet_sync(
             sync_db,
             organization_id=current_user.organization_id,
             teacher_id=current_user.teacher_id,
-            week_start_date=week_start_date
+            week_start_date=week_start_date,
         )
-        sync_db.refresh(t, ['teacher'])
+        sync_db.refresh(t, ["teacher"])
         return _model_to_read_dict(t)
-        
+
     return await db.run_sync(_run)
+
 
 @router.get(
     "/{timesheet_id}/pending-occurrences",
-    summary="Listar ocorrências por decidir na semana de uma timesheet",
+    summary="Listar ocorrÃªncias por decidir na semana de uma timesheet",
 )
 async def get_pending_occurrences_for_timesheet(
     timesheet_id: int,
     db: Annotated[AsyncSession, Depends(deps.get_db)],
-    current_user: Annotated[models.User, Depends(deps.get_current_active_user)],
+    current_user: deps.ActiveActor,
 ):
-    """Devolve as ocorrências OPEN na semana associada à timesheet."""
+    """Devolve as ocorrÃªncias OPEN na semana associada Ã  timesheet."""
     if not deps.user_has_admin_capability(current_user):
         raise HTTPException(status_code=403, detail="Acesso negado.")
 
@@ -126,6 +134,7 @@ async def get_pending_occurrences_for_timesheet(
 
     return await db.run_sync(_run)
 
+
 @router.patch(
     "/{timesheet_id}/status",
     response_model=schemas.TeacherWeeklyTimesheetRead,
@@ -135,18 +144,20 @@ async def update_timesheet_status(
     timesheet_id: int,
     payload: schemas.TimesheetStatusUpdate,
     db: Annotated[AsyncSession, Depends(deps.get_db)],
-    current_user: Annotated[models.User, Depends(deps.get_current_active_user)],
+    current_user: deps.ActiveActor,
 ):
     if not deps.user_has_admin_capability(current_user):
-        raise HTTPException(status_code=403, detail="Apenas admins podem aprovar ou reabrir timesheets.")
-        
+        raise HTTPException(
+            status_code=403, detail="Apenas admins podem aprovar ou reabrir timesheets."
+        )
+
     def _run(sync_db):
         return timesheet_service.update_timesheet_status_sync(
             sync_db,
             organization_id=current_user.organization_id,
             timesheet_id=timesheet_id,
             status=payload.status,
-            admin_user_id=current_user.id
+            admin_membership_id=current_user.membership_id,
         )
-        
+
     return await db.run_sync(_run)

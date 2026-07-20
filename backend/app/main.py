@@ -2,26 +2,28 @@
 
 from contextlib import asynccontextmanager
 
+import sentry_sdk
+import structlog
 from fastapi import FastAPI, Request
+from fastapi.encoders import jsonable_encoder
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from slowapi.middleware import SlowAPIMiddleware
+from redis import asyncio as aioredis
 
 # --- Imports de Performance e Segurança ---
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
-from fastapi_cache import FastAPICache
-from fastapi_cache.backends.redis import RedisBackend
-from redis import asyncio as aioredis
-import structlog
-import sentry_sdk
+from slowapi.middleware import SlowAPIMiddleware
+
+from app.api.api import api_router
 
 # --- Imports da Aplicação ---
 from app.config import settings
-from app.core.ratelimit import limiter
-from app.core.exceptions import DomainError
-from app.api.api import api_router
+from app.core.clerk import ClerkGateway
+from app.core.exceptions import AppError, DomainError
 from app.core.logging import setup_logging
+from app.core.ratelimit import limiter
+from app.db.database import SessionLocal, engine_async
 
 # ==========================================
 # CICLO DE VIDA (LIFESPAN)
@@ -29,26 +31,32 @@ from app.core.logging import setup_logging
 
 logger = structlog.get_logger()
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # 1. Configurar Logs (PRIMEIRA COISA A FAZER)
     setup_logging()
-    
+
     # Substituir print por logger.info
     logger.info("-> Servidor a arrancar...", version="0.5", env=settings.ENVIRONMENT)
-    
-    try:
-        redis = aioredis.from_url(str(settings.REDIS_URL))
-        FastAPICache.init(RedisBackend(redis), prefix="fastapi-cache")
-        logger.info("[OK] Sistema de Cache: LIGADO", url=str(settings.REDIS_URL))
-    except Exception as e:
-        logger.error("[ERROR] Falha no Redis", error=str(e)) # Log de erro estruturado
 
-    logger.info("[OK] Rate Limit: LIGADO")
-    
-    yield
-    
-    logger.info("ZZZ Servidor a desligar...")
+    redis = aioredis.from_url(str(settings.REDIS_URL), socket_connect_timeout=1)
+    app.state.redis = redis
+    async with ClerkGateway() as clerk:
+        app.state.clerk = clerk
+        try:
+            try:
+                await redis.ping()
+                logger.info("redis_ready", url=str(settings.REDIS_URL))
+            except Exception as exc:
+                logger.warning("redis_not_ready", error=str(exc))
+            logger.info("rate_limit_configured", enabled=settings.RATELIMIT_ENABLED)
+            yield
+        finally:
+            await redis.aclose()
+            await engine_async.dispose()
+            logger.info("ZZZ Servidor a desligar...")
+
 
 # ==========================================
 # INICIALIZAÇÃO DA APP
@@ -57,16 +65,11 @@ async def lifespan(app: FastAPI):
 if settings.SENTRY_DSN:
     sentry_sdk.init(
         dsn=settings.SENTRY_DSN,
-        environment=settings.ENVIRONMENT, # 'local' ou 'production'
-        
+        environment=settings.ENVIRONMENT,  # 'local' ou 'production'
         # --- Performance & Profiling ---
         traces_sample_rate=settings.SENTRY_TRACES_SAMPLE_RATE,
-        _experiments={
-            "profiles_sample_rate": settings.SENTRY_TRACES_SAMPLE_RATE,
-        },
-        
         # Dados extra
-        send_default_pii=settings.ENVIRONMENT != "production", # Evita PII em produção
+        send_default_pii=settings.ENVIRONMENT != "production",  # Evita PII em produção
     )
     logger.info("[OK] Sentry: LIGADO")
 else:
@@ -75,9 +78,10 @@ else:
 app = FastAPI(
     title=settings.PROJECT_NAME,
     description="API Escolar Profissional com Rate Limiting, Caching e Docker.",
-    version="1.0.0",
-    lifespan=lifespan
+    version=settings.APP_VERSION,
+    lifespan=lifespan,
 )
+
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
@@ -92,6 +96,7 @@ async def global_exception_handler(request: Request, exc: Exception):
         status_code=500,
         content={"detail": "Ocorreu um erro inesperado. Tente novamente."},
     )
+
 
 # --- Configuração do Rate Limiter ---
 app.state.limiter = limiter
@@ -108,6 +113,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
 # --- Domain Error Handler ---
 @app.exception_handler(DomainError)
 async def domain_error_handler(request: Request, exc: DomainError):
@@ -116,8 +122,26 @@ async def domain_error_handler(request: Request, exc: DomainError):
         content={"detail": exc.message},
     )
 
+
+@app.exception_handler(AppError)
+async def app_error_handler(request: Request, exc: AppError):
+    status_code = {"preflight_failed": 400}.get(exc.code) or {
+        "validation": 422,
+        "not_found": 404,
+        "conflict": 409,
+        "forbidden": 403,
+        "unavailable": 503,
+    }[exc.kind]
+    detail = exc.metadata or {"code": exc.code, "message": exc.detail}
+    return JSONResponse(
+        status_code=status_code,
+        content=jsonable_encoder({"detail": detail}),
+    )
+
+
 # --- Security Headers ---
-_HEALTH_PATHS = {"/health", "/api/v1/health"}
+_HEALTH_PATHS = {"/health/live", "/health/ready", "/api/v1/health"}
+
 
 @app.middleware("http")
 async def security_headers(request, call_next):
@@ -154,8 +178,11 @@ async def security_headers(request, call_next):
         )
 
     if settings.ENVIRONMENT == "production":
-        response.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains; preload"
+        response.headers["Strict-Transport-Security"] = (
+            "max-age=63072000; includeSubDomains; preload"
+        )
     return response
+
 
 # ==========================================
 # ROTAS (ROUTERS)
@@ -164,13 +191,29 @@ async def security_headers(request, call_next):
 # 1. Incluir todas as rotas da API v1 (Centralização)
 app.include_router(api_router, prefix=settings.API_V1_STR)
 
+
 # 2. Rota Raiz (Boas vindas simples)
 # Mantemos esta rota fora do /api/v1 apenas para testes rápidos de conectividade
 @app.get("/", tags=["Root"])
 def root():
     return {
-        "status": "online", 
-        "version": "1.0.0", 
+        "status": "online",
+        "version": settings.APP_VERSION,
         "system": "Cronos",
-        "docs": "/docs"
+        "docs": "/docs",
     }
+
+
+@app.get("/health/live", include_in_schema=False)
+@limiter.exempt
+async def live():
+    return {"status": "ok"}
+
+
+@app.get("/health/ready", include_in_schema=False)
+@limiter.exempt
+async def ready(request: Request):
+    from app.api.v1.endpoints.health import readiness
+
+    async with SessionLocal() as db:
+        return await readiness(request, db)

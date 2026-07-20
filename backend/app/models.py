@@ -1,14 +1,34 @@
 import enum
-from datetime import datetime, time, timezone, date as date_type
-from typing import List, Optional
+from datetime import UTC, datetime, time
+from datetime import date as date_type
+from typing import NamedTuple, Optional
+
 from sqlalchemy import (
-    Column, Integer, String, Boolean,
-    ForeignKey, Date, DateTime, Time,
-    Text, Enum as SAEnum, UniqueConstraint, CheckConstraint, ForeignKeyConstraint,
-    Table, Float, Index, event,
+    Boolean,
+    CheckConstraint,
+    Column,
+    Date,
+    DateTime,
+    ForeignKey,
+    ForeignKeyConstraint,
+    Index,
+    Integer,
+    String,
+    Table,
+    Text,
+    Time,
+    UniqueConstraint,
+    event,
+    func,
+    select,
 )
+from sqlalchemy import (
+    Enum as SAEnum,
+)
+from sqlalchemy.ext.hybrid import hybrid_property
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import JSON
-from sqlalchemy.orm import Mapped, Session, mapped_column, relationship
+
 from app.db.database import Base
 
 # --- FK Reference Constants (SonarQube S1192) ---
@@ -17,66 +37,73 @@ FK_TEACHER_ID = "teacher.id"
 FK_SUBJECT_ID = "subject.id"
 FK_CLASS_ID = "class.id"
 FK_TIMESLOT_ID = "timeslot.id"
-FK_SCHEDULE_OUTPUT_ID = "schedule_output.id"
 CASCADE_ALL_DELETE = "all, delete-orphan"
 ON_DELETE_SET_NULL = "SET NULL"
 
-class RoomType(str, enum.Enum):
+
+class RoomType(enum.StrEnum):
     normal = "normal"
     lab = "lab"
     gym = "gym"
     art = "art"
 
-class CalendarEventType(str, enum.Enum):
+
+class CalendarEventType(enum.StrEnum):
     national_holiday = "national_holiday"
     school_break = "school_break"
     exam_period = "exam_period"
     other = "other"
 
-class CalendarEventSource(str, enum.Enum):
+
+class CalendarEventSource(enum.StrEnum):
     auto = "auto"
     manual = "manual"
 
-class LessonOccurrenceStatus(str, enum.Enum):
+
+class LessonOccurrenceStatus(enum.StrEnum):
     GIVEN = "GIVEN"
     GAP = "GAP"
     SUBSTITUTED = "SUBSTITUTED"
     REVOKED = "REVOKED"
 
-class LessonLogStatus(str, enum.Enum):
+
+class LessonLogStatus(enum.StrEnum):
     """Estado de execução de um bloco de aula gerado pelo Solver."""
-    PENDING = "PENDING"        # Aula ainda não registada (padrão)
-    COMPLETED = "COMPLETED"    # Professor confirmou que a aula foi dada
+
+    PENDING = "PENDING"  # Aula ainda não registada (padrão)
+    COMPLETED = "COMPLETED"  # Professor confirmou que a aula foi dada
     OCCURRENCE = "OCCURRENCE"  # Falta/Ocorrência registada para este bloco
 
-class OperationalBlockStatus(str, enum.Enum):
+
+class OperationalBlockStatus(enum.StrEnum):
     ACTIVE = "ACTIVE"
     CANCELLED = "CANCELLED"
 
-class OperationalBlockExecutionStatus(str, enum.Enum):
+
+class OperationalBlockExecutionStatus(enum.StrEnum):
     PENDING_LOG = "PENDING_LOG"
     COMPLETED = "COMPLETED"
     CANCELLED = "CANCELLED"
 
 
-class SchoolYearPublicationState(str, enum.Enum):
+class SchoolYearPublicationState(enum.StrEnum):
     UNPUBLISHED = "UNPUBLISHED"
     PUBLISHED = "PUBLISHED"
 
 
-class ScheduleGenerationStrategy(str, enum.Enum):
+class ScheduleGenerationStrategy(enum.StrEnum):
     COMPLETE_GENERATION = "COMPLETE_GENERATION"
     ADAPTIVE_REPAIR = "ADAPTIVE_REPAIR"
 
 
-class ScheduleGenerationTrigger(str, enum.Enum):
+class ScheduleGenerationTrigger(enum.StrEnum):
     FIRST_GENERATION = "FIRST_GENERATION"
     EXPLICIT_DEBT = "EXPLICIT_DEBT"
     SCHEDULER_CHANGE = "SCHEDULER_CHANGE"
     MIXED = "MIXED"
 
 
-class ScheduleGenerationJobStatus(str, enum.Enum):
+class ScheduleGenerationJobStatus(enum.StrEnum):
     QUEUED = "QUEUED"
     RUNNING = "RUNNING"
     CANCEL_REQUESTED = "CANCEL_REQUESTED"
@@ -86,13 +113,13 @@ class ScheduleGenerationJobStatus(str, enum.Enum):
     NO_VALID_OUTPUT = "NO_VALID_OUTPUT"
 
 
-class ScheduleGenerationResultCategory(str, enum.Enum):
+class ScheduleGenerationResultCategory(enum.StrEnum):
     COMPLETE_SUCCESS = "COMPLETE_SUCCESS"
     PARTIAL_RECOVERY = "PARTIAL_RECOVERY"
     NO_VALID_OUTPUT = "NO_VALID_OUTPUT"
 
 
-class ScheduleDraftState(str, enum.Enum):
+class ScheduleDraftState(enum.StrEnum):
     PENDING = "PENDING"
     APPROVED = "APPROVED"
     REJECTED = "REJECTED"
@@ -101,7 +128,7 @@ class ScheduleDraftState(str, enum.Enum):
     INVALIDATED = "INVALIDATED"
 
 
-class ScheduleDraftBlockChangeType(str, enum.Enum):
+class ScheduleDraftBlockChangeType(enum.StrEnum):
     UNCHANGED = "UNCHANGED"
     ADDED = "ADDED"
     MOVED = "MOVED"
@@ -109,7 +136,7 @@ class ScheduleDraftBlockChangeType(str, enum.Enum):
     REPLACED = "REPLACED"
 
 
-class ScheduleDiffChangeType(str, enum.Enum):
+class ScheduleDiffChangeType(enum.StrEnum):
     ADDED = "ADDED"
     MOVED = "MOVED"
     CHANGED = "CHANGED"
@@ -117,56 +144,53 @@ class ScheduleDiffChangeType(str, enum.Enum):
     UNCHANGED_IMPACTED = "UNCHANGED_IMPACTED"
 
 
-class ScheduleDiffScope(str, enum.Enum):
+class ScheduleDiffScope(enum.StrEnum):
     AFFECTED = "AFFECTED"
     RELATED = "RELATED"
     UNRELATED = "UNRELATED"
 
 
-class ActiveScheduleBlockStatus(str, enum.Enum):
+class ActiveScheduleBlockStatus(enum.StrEnum):
     ACTIVE = "ACTIVE"
     REMOVED = "REMOVED"
     CANCELED = "CANCELED"
 
 
-class PlannedRecoveryLinkStatus(str, enum.Enum):
+class PlannedRecoveryLinkStatus(enum.StrEnum):
     PLANNED = "PLANNED"
     DELIVERED = "DELIVERED"
     CANCELED = "CANCELED"
     REPLACED = "REPLACED"
 
 
-class SchedulerStateChangeOperation(str, enum.Enum):
+class SchedulerStateChangeOperation(enum.StrEnum):
     CREATE = "CREATE"
     UPDATE = "UPDATE"
     DELETE = "DELETE"
     BULK_IMPORT = "BULK_IMPORT"
 
 
-class SchedulerStateChangeScope(str, enum.Enum):
+class SchedulerStateChangeScope(enum.StrEnum):
     FUTURE_IMPACTING = "FUTURE_IMPACTING"
     PAST_ONLY = "PAST_ONLY"
     NO_OP = "NO_OP"
     INACTIVE_RESOURCE = "INACTIVE_RESOURCE"
 
-class TimesheetStatus(str, enum.Enum):
+
+class TimesheetStatus(enum.StrEnum):
     """Estado do ciclo de vida do fecho semanal de um professor."""
-    OPEN = "OPEN"            # Semana aberta — professor pode editar
+
+    OPEN = "OPEN"  # Semana aberta — professor pode editar
     SUBMITTED = "SUBMITTED"  # Professor submeteu — aguarda aprovação do admin
-    APPROVED = "APPROVED"    # Admin aprovou — semana congelada
-
-class UserRole(str, enum.Enum):
-    admin = "admin"
-    teacher = "teacher"
-    student = "student"
+    APPROVED = "APPROVED"  # Admin aprovou — semana congelada
 
 
-class MembershipLifecycleStatus(str, enum.Enum):
+class MembershipLifecycleStatus(enum.StrEnum):
     active = "active"
     archived = "archived"
 
 
-class MembershipAccessStatus(str, enum.Enum):
+class MembershipAccessStatus(enum.StrEnum):
     none = "none"
     pending_invite = "pending_invite"
     invite_expired = "invite_expired"
@@ -175,29 +199,33 @@ class MembershipAccessStatus(str, enum.Enum):
     sync_error = "sync_error"
 
 
-class TeacherAccessMode(str, enum.Enum):
+class TeacherAccessMode(enum.StrEnum):
     platform = "platform"
     scheduler_only = "scheduler_only"
 
 
-class MembershipCapability(str, enum.Enum):
+class MembershipCapability(enum.StrEnum):
     teacher = "teacher"
     admin = "admin"
 
 
-class ClerkOrganizationRole(str, enum.Enum):
+class MembershipCapabilityView(NamedTuple):
+    capability: MembershipCapability
+
+
+class ClerkOrganizationRole(enum.StrEnum):
     member = "org:member"
     admin = "org:admin"
 
 
-class ClerkInvitationStatus(str, enum.Enum):
+class ClerkInvitationStatus(enum.StrEnum):
     pending = "pending"
     accepted = "accepted"
     revoked = "revoked"
     expired = "expired"
 
 
-class MemberAccessOperationType(str, enum.Enum):
+class MemberAccessOperationType(enum.StrEnum):
     create_invitation = "create_invitation"
     revoke_invitation = "revoke_invitation"
     revoke_membership = "revoke_membership"
@@ -207,7 +235,7 @@ class MemberAccessOperationType(str, enum.Enum):
     block_access = "block_access"
 
 
-class MemberAccessOperationStatus(str, enum.Enum):
+class MemberAccessOperationStatus(enum.StrEnum):
     pending = "pending"
     clerk_succeeded = "clerk_succeeded"
     local_committed = "local_committed"
@@ -217,7 +245,7 @@ class MemberAccessOperationStatus(str, enum.Enum):
     support_required = "support_required"
 
 
-class ClerkWebhookProcessingStatus(str, enum.Enum):
+class ClerkWebhookProcessingStatus(enum.StrEnum):
     received = "received"
     processing = "processing"
     processed = "processed"
@@ -226,40 +254,40 @@ class ClerkWebhookProcessingStatus(str, enum.Enum):
     sync_error = "sync_error"
     dead_letter = "dead_letter"
 
-class OrganizationPlanStatus(str, enum.Enum):
+
+class OrganizationPlanStatus(enum.StrEnum):
     inactive = "inactive"
     active = "active"
     suspended = "suspended"
 
-class SubstitutionStatus(str, enum.Enum):
-    PENDING = "PENDING"
-    CONFIRMED = "CONFIRMED"
-    CANCELLED = "CANCELLED"
 
-class ConstraintType(str, enum.Enum):
+class ConstraintType(enum.StrEnum):
     # Regras de Sala/Tempo
     specific_room = "specific_room"
     lock_time = "lock_time"
-    
+
     # Regras de Professor
     teacher_unavailable = "teacher_unavailable"
     teacher_preferred = "teacher_preferred"
-    
-    # Outras genéricas
-    min_gap = "min_gap"
-    max_days = "max_days"
+
 
 class PreferenceLevel(int, enum.Enum):
-    PREFERRED = 2    # Verde: "Quero muito" (Bónus no score)
-    NEUTRAL = 1      # Amarelo: "Tanto faz" (Padrão)
-    AVOID = 0        # Laranja: "Evitar" (Penalização no score)
+    PREFERRED = 2  # Verde: "Quero muito" (Bónus no score)
+    NEUTRAL = 1  # Amarelo: "Tanto faz" (Padrão)
+    AVOID = 0  # Laranja: "Evitar" (Penalização no score)
     IMPOSSIBLE = -1  # Vermelho: "Proibido" (Hard Constraint)
+
 
 # Tabela Relacional entre Cursos e Disciplinas
 course_subject_link = Table(
     "course_subject_link",
     Base.metadata,
-    Column("organization_id", ForeignKey(FK_ORG_ID, ondelete="CASCADE"), nullable=False, primary_key=True),
+    Column(
+        "organization_id",
+        ForeignKey(FK_ORG_ID, ondelete="CASCADE"),
+        nullable=False,
+        primary_key=True,
+    ),
     Column("course_id", ForeignKey("course.id", ondelete="CASCADE"), primary_key=True),
     Column("subject_id", ForeignKey(FK_SUBJECT_ID, ondelete="CASCADE"), primary_key=True),
     Index("ix_course_subject_link_organization_id", "organization_id"),
@@ -269,11 +297,17 @@ course_subject_link = Table(
 teacher_subject_link = Table(
     "teacher_subject_link",
     Base.metadata,
-    Column("organization_id", ForeignKey(FK_ORG_ID, ondelete="CASCADE"), nullable=False, primary_key=True),
+    Column(
+        "organization_id",
+        ForeignKey(FK_ORG_ID, ondelete="CASCADE"),
+        nullable=False,
+        primary_key=True,
+    ),
     Column("teacher_id", ForeignKey(FK_TEACHER_ID, ondelete="CASCADE"), primary_key=True),
     Column("subject_id", ForeignKey(FK_SUBJECT_ID, ondelete="CASCADE"), primary_key=True),
     Index("ix_teacher_subject_link_organization_id", "organization_id"),
 )
+
 
 # Tabela Relacional: Disciplinas de uma Turma (com professor opcional)
 # Esta tabela define que disciplinas uma turma tem num determinado grade_level
@@ -282,11 +316,17 @@ class ClassSubjectLink(Base):
     __tablename__ = "class_subject_link"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    organization_id: Mapped[int] = mapped_column(ForeignKey(FK_ORG_ID, ondelete="CASCADE"), nullable=False, index=True)
+    organization_id: Mapped[int] = mapped_column(
+        ForeignKey(FK_ORG_ID, ondelete="CASCADE"), nullable=False, index=True
+    )
     class_id: Mapped[int] = mapped_column(ForeignKey(FK_CLASS_ID, ondelete="CASCADE"), index=True)
-    subject_id: Mapped[int] = mapped_column(ForeignKey(FK_SUBJECT_ID, ondelete="CASCADE"), index=True)
+    subject_id: Mapped[int] = mapped_column(
+        ForeignKey(FK_SUBJECT_ID, ondelete="CASCADE"), index=True
+    )
     grade_level: Mapped[int] = mapped_column(Integer, nullable=False)  # 10, 11, 12
-    teacher_id: Mapped[Optional[int]] = mapped_column(ForeignKey(FK_TEACHER_ID, ondelete=ON_DELETE_SET_NULL), nullable=True, index=True)
+    teacher_id: Mapped[int | None] = mapped_column(
+        ForeignKey(FK_TEACHER_ID, ondelete=ON_DELETE_SET_NULL), nullable=True, index=True
+    )
 
     # Relacionamentos
     class_: Mapped["Class"] = relationship()
@@ -294,27 +334,41 @@ class ClassSubjectLink(Base):
     teacher: Mapped[Optional["Teacher"]] = relationship()
 
     __table_args__ = (
-        UniqueConstraint("organization_id", "class_id", "subject_id", "grade_level", name="uq_class_subject_grade"),
+        UniqueConstraint(
+            "organization_id",
+            "class_id",
+            "subject_id",
+            "grade_level",
+            name="uq_class_subject_grade",
+        ),
     )
+
 
 class Availability(Base):
     __tablename__ = "availability"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    organization_id: Mapped[int] = mapped_column(ForeignKey(FK_ORG_ID, ondelete="CASCADE"), nullable=False, index=True)
+    organization_id: Mapped[int] = mapped_column(
+        ForeignKey(FK_ORG_ID, ondelete="CASCADE"), nullable=False, index=True
+    )
     teacher_id: Mapped[int] = mapped_column(ForeignKey(FK_TEACHER_ID), index=True)
     timeslot_id: Mapped[int] = mapped_column(ForeignKey(FK_TIMESLOT_ID), index=True)
-    
+
     # O Score (-1 a 2)
-    score: Mapped[int] = mapped_column(Integer, default=PreferenceLevel.NEUTRAL.value, nullable=False)
+    score: Mapped[int] = mapped_column(
+        Integer, default=PreferenceLevel.NEUTRAL.value, nullable=False
+    )
 
     # Relacionamentos (Ajusta os nomes se as tuas classes Teacher/Timeslot forem diferentes)
     teacher: Mapped["Teacher"] = relationship(back_populates="availabilities")
     timeslot: Mapped["Timeslot"] = relationship()
 
     __table_args__ = (
-        UniqueConstraint('organization_id', 'teacher_id', 'timeslot_id', name='uq_teacher_timeslot_availability'),
+        UniqueConstraint(
+            "organization_id", "teacher_id", "timeslot_id", name="uq_teacher_timeslot_availability"
+        ),
     )
+
 
 # Modelo "Organization" (O Colégio)
 # Esta é a tabela "mãe" de quase todas as outras.
@@ -323,10 +377,12 @@ class Organization(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(100), nullable=False)
-    clerk_org_id: Mapped[Optional[str]] = mapped_column(String(255), unique=True, nullable=True)
+    clerk_org_id: Mapped[str | None] = mapped_column(String(255), unique=True, nullable=True)
 
-    courses: Mapped[List["Course"]] = relationship(back_populates="organization", cascade=CASCADE_ALL_DELETE)
-    
+    courses: Mapped[list["Course"]] = relationship(
+        back_populates="organization", cascade=CASCADE_ALL_DELETE
+    )
+
     # Campo para o plano de subscrição (do Ponto 3.6 do Charter)
     plan_status: Mapped[OrganizationPlanStatus] = mapped_column(
         SAEnum(OrganizationPlanStatus), default=OrganizationPlanStatus.inactive, nullable=False
@@ -335,16 +391,21 @@ class Organization(Base):
     # --- Relacionamentos ---
     # Isto cria "atalhos" em Python para aceder aos dados ligados.
     # Ex: my_organization.users, my_organization.teachers, etc.
-    users: Mapped[List["User"]] = relationship(back_populates="organization")
-    teachers: Mapped[List["Teacher"]] = relationship(back_populates="organization")
-    classes: Mapped[List["Class"]] = relationship(back_populates="organization")
-    rooms: Mapped[List["Room"]] = relationship(back_populates="organization")
-    subjects: Mapped[List["Subject"]] = relationship(back_populates="organization")
-    timeslots: Mapped[List["Timeslot"]] = relationship(back_populates="organization")
+    teachers: Mapped[list["Teacher"]] = relationship(back_populates="organization")
+    classes: Mapped[list["Class"]] = relationship(back_populates="organization")
+    rooms: Mapped[list["Room"]] = relationship(back_populates="organization")
+    subjects: Mapped[list["Subject"]] = relationship(back_populates="organization")
+    timeslots: Mapped[list["Timeslot"]] = relationship(back_populates="organization")
 
-    settings: Mapped[Optional["OrganizationSettings"]] = relationship(back_populates="organization", cascade=CASCADE_ALL_DELETE, uselist=False)
-    grid_settings: Mapped[Optional["OrganizationGridSettings"]] = relationship(back_populates="organization", cascade=CASCADE_ALL_DELETE, uselist=False)
-    calendar_events: Mapped[List["SchoolCalendarEvent"]] = relationship(back_populates="organization", cascade=CASCADE_ALL_DELETE)
+    settings: Mapped[Optional["OrganizationSettings"]] = relationship(
+        back_populates="organization", cascade=CASCADE_ALL_DELETE, uselist=False
+    )
+    grid_settings: Mapped[Optional["OrganizationGridSettings"]] = relationship(
+        back_populates="organization", cascade=CASCADE_ALL_DELETE, uselist=False
+    )
+    calendar_events: Mapped[list["SchoolCalendarEvent"]] = relationship(
+        back_populates="organization", cascade=CASCADE_ALL_DELETE
+    )
 
     def __repr__(self) -> str:
         return f"<Organization(id={self.id}, name='{self.name}')>"
@@ -355,41 +416,31 @@ class User(Base):
     __tablename__ = "user"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    name: Mapped[Optional[str]] = mapped_column(String(150), nullable=True)
+    name: Mapped[str | None] = mapped_column(String(150), nullable=True)
     email: Mapped[str] = mapped_column(String(100), unique=True, index=True, nullable=False)
-    clerk_user_id: Mapped[Optional[str]] = mapped_column(String(255), unique=True, nullable=True)
-    # O Papel do utilizador (Admin por defeito)
-    role: Mapped[Optional[UserRole]] = mapped_column(SAEnum(UserRole), default=None, nullable=True)
-    # Se for admin, isto fica NULL. Se for professor, aponta para o ID dele.
-    teacher_id: Mapped[Optional[int]] = mapped_column(
-        ForeignKey(FK_TEACHER_ID, name="fk_user_teacher", use_alter=True),
-        nullable=True,
+    clerk_user_id: Mapped[str | None] = mapped_column(String(255), unique=True, nullable=True)
+    clerk_primary_email_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    clerk_profile_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    last_clerk_sync_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
     )
-    organization_id: Mapped[Optional[int]] = mapped_column(ForeignKey(FK_ORG_ID), nullable=True, index=True)
-    organization: Mapped["Organization"] = relationship(back_populates="users")
-    # Atalho para aceder aos dados do professor (se existirem)
-    teacher_profile: Mapped[Optional["Teacher"]] = relationship()
-    # Permite bloquear utilizadores sem apagar o histórico (Soft Delete)
-    is_active: Mapped[Optional[bool]] = mapped_column(Boolean, default=None, nullable=True)
-    is_superuser: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    clerk_primary_email_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    clerk_profile_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    last_clerk_sync_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+    )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc),
-        onupdate=lambda: datetime.now(timezone.utc),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
         nullable=False,
     )
 
-    memberships: Mapped[List["OrganizationMembership"]] = relationship(
+    memberships: Mapped[list["OrganizationMembership"]] = relationship(
         back_populates="account",
         foreign_keys="OrganizationMembership.account_id",
     )
 
     def __repr__(self) -> str:
-        return f"<User(id={self.id}, email='{self.email}', role='{self.role}')>"
+        return f"<User(id={self.id}, email='{self.email}')>"
 
 
 # 5. Modelo "Teacher"
@@ -397,42 +448,56 @@ class Teacher(Base):
     __tablename__ = "teacher"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    name: Mapped[str] = mapped_column(String(100), nullable=False)
-    
     # Chave Estrangeira: Liga o Professor à sua Organization
     organization_id: Mapped[int] = mapped_column(ForeignKey(FK_ORG_ID))
-    organization_membership_id: Mapped[Optional[int]] = mapped_column(
+    organization_membership_id: Mapped[int] = mapped_column(
         ForeignKey(
             "organization_membership.id",
-            ondelete=ON_DELETE_SET_NULL,
             name="fk_teacher_organization_membership",
             use_alter=True,
         ),
-        nullable=True,
+        nullable=False,
         unique=True,
         index=True,
     )
-    archived_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
-    
+
     # Relacionamento: Permite-nos fazer my_teacher.organization
     organization: Mapped["Organization"] = relationship(back_populates="teachers")
-    organization_membership: Mapped[Optional["OrganizationMembership"]] = relationship(back_populates="teacher_profile")
+    organization_membership: Mapped["OrganizationMembership"] = relationship(
+        back_populates="teacher_profile", lazy="joined"
+    )
 
-    subjects: Mapped[List["Subject"]] = relationship(
-        secondary=teacher_subject_link,
-        back_populates="teachers"
+    @hybrid_property
+    def name(self) -> str:
+        return self.organization_membership.organization_display_name
+
+    @name.expression
+    def name(cls):
+        return (
+            select(OrganizationMembership.organization_display_name)
+            .where(OrganizationMembership.id == cls.organization_membership_id)
+            .correlate_except(OrganizationMembership)
+            .scalar_subquery()
+        )
+
+    subjects: Mapped[list["Subject"]] = relationship(
+        secondary=teacher_subject_link, back_populates="teachers"
     )
 
     @property
-    def subject_ids(self) -> List[int]:
+    def subject_ids(self) -> list[int]:
         """
         Permite ao Pydantic ler 'teacher.subject_ids' e receber [1, 2]
         em vez de crashar a tentar ler objetos complexos.
         """
         return [s.id for s in self.subjects]
 
-    availabilities: Mapped[List["Availability"]] = relationship(back_populates="teacher", cascade=CASCADE_ALL_DELETE)
-    timesheets: Mapped[List["TeacherWeeklyTimesheet"]] = relationship(back_populates="teacher", cascade=CASCADE_ALL_DELETE)
+    availabilities: Mapped[list["Availability"]] = relationship(
+        back_populates="teacher", cascade=CASCADE_ALL_DELETE
+    )
+    timesheets: Mapped[list["TeacherWeeklyTimesheet"]] = relationship(
+        back_populates="teacher", cascade=CASCADE_ALL_DELETE
+    )
 
     def __repr__(self) -> str:
         return f"<Teacher(id={self.id}, name='{self.name}')>"
@@ -442,104 +507,220 @@ class OrganizationMembership(Base):
     __tablename__ = "organization_membership"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    organization_id: Mapped[int] = mapped_column(ForeignKey(FK_ORG_ID, ondelete="CASCADE"), nullable=False, index=True)
-    account_id: Mapped[int] = mapped_column(ForeignKey("user.id", ondelete="CASCADE"), nullable=False, index=True)
+    organization_id: Mapped[int] = mapped_column(
+        ForeignKey(FK_ORG_ID, ondelete="CASCADE"), nullable=False, index=True
+    )
+    account_id: Mapped[int] = mapped_column(
+        ForeignKey("user.id", ondelete="CASCADE"), nullable=False, index=True
+    )
     organization_display_name: Mapped[str] = mapped_column(String(150), nullable=False)
     lifecycle_status: Mapped[MembershipLifecycleStatus] = mapped_column(
-        SAEnum(MembershipLifecycleStatus), default=MembershipLifecycleStatus.active, nullable=False, index=True
+        SAEnum(MembershipLifecycleStatus),
+        default=MembershipLifecycleStatus.active,
+        nullable=False,
+        index=True,
     )
     access_status: Mapped[MembershipAccessStatus] = mapped_column(
-        SAEnum(MembershipAccessStatus), default=MembershipAccessStatus.none, nullable=False, index=True
+        SAEnum(MembershipAccessStatus),
+        default=MembershipAccessStatus.none,
+        nullable=False,
+        index=True,
     )
-    teacher_access_mode: Mapped[Optional[TeacherAccessMode]] = mapped_column(SAEnum(TeacherAccessMode), nullable=True)
-    expected_clerk_role: Mapped[Optional[ClerkOrganizationRole]] = mapped_column(
-        SAEnum(ClerkOrganizationRole, values_callable=lambda enum_cls: [item.value for item in enum_cls]),
-        nullable=True,
+    teacher_access_mode: Mapped[TeacherAccessMode | None] = mapped_column(
+        SAEnum(TeacherAccessMode), nullable=True
     )
-    clerk_membership_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, index=True)
-    clerk_invitation_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, index=True)
-    clerk_invitation_status: Mapped[Optional[ClerkInvitationStatus]] = mapped_column(SAEnum(ClerkInvitationStatus), nullable=True)
-    invitation_expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
-    access_error_category: Mapped[Optional[str]] = mapped_column(String(80), nullable=True)
-    access_error_safe_message: Mapped[Optional[str]] = mapped_column(String(240), nullable=True)
-    access_block_reason: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
-    created_by_user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("user.id", ondelete=ON_DELETE_SET_NULL), nullable=True)
-    updated_by_user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("user.id", ondelete=ON_DELETE_SET_NULL), nullable=True)
+    can_admin: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    can_teach: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    clerk_membership_id: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    clerk_invitation_id: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    clerk_invitation_status: Mapped[ClerkInvitationStatus | None] = mapped_column(
+        SAEnum(ClerkInvitationStatus), nullable=True
+    )
+    invitation_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    access_error_category: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    access_error_safe_message: Mapped[str | None] = mapped_column(String(240), nullable=True)
+    access_block_reason: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    created_by_membership_id: Mapped[int | None] = mapped_column(
+        ForeignKey("organization_membership.id", ondelete=ON_DELETE_SET_NULL), nullable=True
+    )
+    updated_by_membership_id: Mapped[int | None] = mapped_column(
+        ForeignKey("organization_membership.id", ondelete=ON_DELETE_SET_NULL), nullable=True
+    )
     lock_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+    )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc),
-        onupdate=lambda: datetime.now(timezone.utc),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
         nullable=False,
     )
 
     organization: Mapped["Organization"] = relationship()
     account: Mapped["User"] = relationship(back_populates="memberships", foreign_keys=[account_id])
-    capabilities: Mapped[List["OrganizationMembershipCapability"]] = relationship(
-        back_populates="membership", cascade=CASCADE_ALL_DELETE
+    teacher_profile: Mapped[Optional["Teacher"]] = relationship(
+        back_populates="organization_membership", uselist=False
     )
-    teacher_profile: Mapped[Optional["Teacher"]] = relationship(back_populates="organization_membership", uselist=False)
-    created_by_user: Mapped[Optional["User"]] = relationship(foreign_keys=[created_by_user_id])
-    updated_by_user: Mapped[Optional["User"]] = relationship(foreign_keys=[updated_by_user_id])
+    created_by_membership: Mapped[Optional["OrganizationMembership"]] = relationship(
+        foreign_keys=[created_by_membership_id]
+    )
+    updated_by_membership: Mapped[Optional["OrganizationMembership"]] = relationship(
+        foreign_keys=[updated_by_membership_id]
+    )
+
+    @property
+    def capabilities(self) -> list[MembershipCapabilityView]:
+        values = []
+        if self.can_admin:
+            values.append(MembershipCapabilityView(MembershipCapability.admin))
+        if self.can_teach:
+            values.append(MembershipCapabilityView(MembershipCapability.teacher))
+        return values
+
+    @property
+    def expected_clerk_role(self) -> ClerkOrganizationRole | None:
+        if self.can_admin:
+            return ClerkOrganizationRole.admin
+        if self.can_teach and self.teacher_access_mode == TeacherAccessMode.platform:
+            return ClerkOrganizationRole.member
+        return None
+
+    @expected_clerk_role.setter
+    def expected_clerk_role(self, value: ClerkOrganizationRole | None) -> None:
+        # Compatibility for command code; capability columns remain authoritative.
+        del value
 
     __table_args__ = (
         UniqueConstraint("organization_id", "account_id", name="uq_org_membership_account"),
+        Index(
+            "uq_org_membership_clerk_membership",
+            "clerk_membership_id",
+            unique=True,
+            postgresql_where=clerk_membership_id.is_not(None),
+        ),
+        Index(
+            "uq_org_membership_clerk_invitation",
+            "clerk_invitation_id",
+            unique=True,
+            postgresql_where=clerk_invitation_id.is_not(None),
+        ),
         CheckConstraint(
             "access_status != 'active' OR account_id IS NOT NULL",
             name="ck_membership_active_has_account",
         ),
+        CheckConstraint("can_admin OR can_teach", name="ck_membership_has_capability"),
+        CheckConstraint(
+            "can_teach = (teacher_access_mode IS NOT NULL)",
+            name="ck_membership_teacher_mode",
+        ),
+        CheckConstraint(
+            "NOT (can_admin AND teacher_access_mode = 'scheduler_only')",
+            name="ck_membership_admin_not_scheduler_only",
+        ),
     )
-
-
-class OrganizationMembershipCapability(Base):
-    __tablename__ = "organization_membership_capability"
-
-    organization_membership_id: Mapped[int] = mapped_column(
-        ForeignKey("organization_membership.id", ondelete="CASCADE"), primary_key=True
-    )
-    capability: Mapped[MembershipCapability] = mapped_column(SAEnum(MembershipCapability), primary_key=True)
-
-    membership: Mapped["OrganizationMembership"] = relationship(back_populates="capabilities")
 
 
 class MemberAccessOperation(Base):
     __tablename__ = "member_access_operation"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    organization_id: Mapped[int] = mapped_column(ForeignKey(FK_ORG_ID, ondelete="CASCADE"), nullable=False, index=True)
-    membership_id: Mapped[Optional[int]] = mapped_column(ForeignKey("organization_membership.id", ondelete=ON_DELETE_SET_NULL), nullable=True, index=True)
-    account_id: Mapped[Optional[int]] = mapped_column(ForeignKey("user.id", ondelete=ON_DELETE_SET_NULL), nullable=True, index=True)
-    target_email: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
-    operation_type: Mapped[MemberAccessOperationType] = mapped_column(SAEnum(MemberAccessOperationType), nullable=False)
-    operation_status: Mapped[MemberAccessOperationStatus] = mapped_column(
-        SAEnum(MemberAccessOperationStatus), default=MemberAccessOperationStatus.pending, nullable=False, index=True
+    organization_id: Mapped[int] = mapped_column(
+        ForeignKey(FK_ORG_ID, ondelete="CASCADE"), nullable=False, index=True
     )
-    idempotency_key: Mapped[str] = mapped_column(String(160), nullable=False, unique=True, index=True)
+    membership_id: Mapped[int | None] = mapped_column(
+        ForeignKey("organization_membership.id", ondelete=ON_DELETE_SET_NULL),
+        nullable=True,
+        index=True,
+    )
+    account_id: Mapped[int | None] = mapped_column(
+        ForeignKey("user.id", ondelete=ON_DELETE_SET_NULL), nullable=True, index=True
+    )
+    target_email: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    operation_type: Mapped[MemberAccessOperationType] = mapped_column(
+        SAEnum(MemberAccessOperationType), nullable=False
+    )
+    operation_status: Mapped[MemberAccessOperationStatus] = mapped_column(
+        SAEnum(MemberAccessOperationStatus),
+        default=MemberAccessOperationStatus.pending,
+        nullable=False,
+        index=True,
+    )
+    idempotency_key: Mapped[str] = mapped_column(
+        String(160), nullable=False, unique=True, index=True
+    )
     intended_capabilities_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
-    intended_clerk_role: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
-    previous_access_snapshot_json: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
-    draft_payload_json: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
-    clerk_org_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    clerk_user_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    clerk_membership_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    clerk_invitation_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    provider_error_category: Mapped[Optional[str]] = mapped_column(String(80), nullable=True)
-    provider_error_safe_message: Mapped[Optional[str]] = mapped_column(String(240), nullable=True)
-    provider_error_reference: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
-    compensation_attempted_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
-    support_required_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
-    support_resolution_action: Mapped[Optional[str]] = mapped_column(String(80), nullable=True)
-    support_resolved_by_user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("user.id", ondelete=ON_DELETE_SET_NULL), nullable=True)
-    support_resolved_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
-    support_resolution_note: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
-    created_by_user_id: Mapped[int] = mapped_column(ForeignKey("user.id", ondelete="RESTRICT"), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
+    intended_clerk_role: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    previous_access_snapshot_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    draft_payload_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    clerk_org_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    clerk_user_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    clerk_membership_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    clerk_invitation_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    provider_error_category: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    provider_error_safe_message: Mapped[str | None] = mapped_column(String(240), nullable=True)
+    provider_error_reference: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    compensation_attempted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    support_required_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    support_resolution_action: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    support_resolved_by_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("user.id", ondelete=ON_DELETE_SET_NULL), nullable=True
+    )
+    support_resolved_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    support_resolution_note: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    created_by_membership_id: Mapped[int] = mapped_column(
+        ForeignKey("organization_membership.id", ondelete="RESTRICT"), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+    )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc),
-        onupdate=lambda: datetime.now(timezone.utc),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
         nullable=False,
+    )
+
+    __table_args__ = (
+        Index(
+            "uq_member_operation_unresolved_membership",
+            "organization_id",
+            "membership_id",
+            unique=True,
+            postgresql_where=(
+                operation_status.in_(
+                    [
+                        MemberAccessOperationStatus.pending,
+                        MemberAccessOperationStatus.clerk_succeeded,
+                        MemberAccessOperationStatus.compensation_failed,
+                        MemberAccessOperationStatus.support_required,
+                    ]
+                )
+                & membership_id.is_not(None)
+            ),
+        ),
+        Index(
+            "uq_member_operation_unresolved_email",
+            "organization_id",
+            func.lower(target_email),
+            unique=True,
+            postgresql_where=operation_status.in_(
+                [
+                    MemberAccessOperationStatus.pending,
+                    MemberAccessOperationStatus.clerk_succeeded,
+                    MemberAccessOperationStatus.compensation_failed,
+                    MemberAccessOperationStatus.support_required,
+                ]
+            ),
+        ),
     )
 
 
@@ -549,23 +730,41 @@ class ClerkWebhookEvent(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     svix_id: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
     event_type: Mapped[str] = mapped_column(String(120), nullable=False, index=True)
-    clerk_object_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, index=True)
-    clerk_org_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, index=True)
-    clerk_user_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, index=True)
+    clerk_object_id: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    clerk_org_id: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    clerk_user_id: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
     payload_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     processing_status: Mapped[ClerkWebhookProcessingStatus] = mapped_column(
-        SAEnum(ClerkWebhookProcessingStatus), default=ClerkWebhookProcessingStatus.received, nullable=False, index=True
+        SAEnum(ClerkWebhookProcessingStatus),
+        default=ClerkWebhookProcessingStatus.received,
+        nullable=False,
+        index=True,
     )
-    error_category: Mapped[Optional[str]] = mapped_column(String(80), nullable=True)
-    support_resolution_action: Mapped[Optional[str]] = mapped_column(String(80), nullable=True)
-    support_resolved_by_user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("user.id", ondelete=ON_DELETE_SET_NULL), nullable=True)
-    support_resolved_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
-    support_resolution_note: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    error_category: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    support_resolution_action: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    support_resolved_by_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("user.id", ondelete=ON_DELETE_SET_NULL), nullable=True
+    )
+    support_resolved_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    support_resolution_note: Mapped[str | None] = mapped_column(String(500), nullable=True)
     attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    last_attempt_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
-    next_retry_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
-    processed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    next_retry_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+    )
+    processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        Index(
+            "ix_clerk_webhook_due_work",
+            "processing_status",
+            "next_retry_at",
+            "created_at",
+        ),
+    )
 
 
 # 6. Modelo "Class" (Turma)
@@ -582,7 +781,7 @@ class Class(Base):
     grade_level: Mapped[int] = mapped_column(Integer, nullable=False)  # 10, 11, 12
 
     # Sprint 0: Dados de progresso do solver
-    projected_end_date: Mapped[Optional[date_type]] = mapped_column(Date, nullable=True)
+    projected_end_date: Mapped[date_type | None] = mapped_column(Date, nullable=True)
     is_archived: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     # Associação a um Curso
@@ -590,11 +789,10 @@ class Class(Base):
     course: Mapped["Course"] = relationship(back_populates="classes")
 
     # Histórico de progresso
-    progress_records: Mapped[List["ClassProgress"]] = relationship(back_populates="class_", cascade=CASCADE_ALL_DELETE)
 
     # Chave Estrangeira: Liga a Turma à sua Organization
     organization_id: Mapped[int] = mapped_column(ForeignKey(FK_ORG_ID))
-    
+
     # Relacionamento: Permite-nos fazer my_class.organization
     organization: Mapped["Organization"] = relationship(back_populates="classes")
 
@@ -611,13 +809,15 @@ class Room(Base):
 
     # Adicionamos a capacidade (Lotação)
     capacity: Mapped[int] = mapped_column(Integer, default=30, nullable=False)
-    
+
     # Usamos o Enum que definimos em cima
-    type: Mapped[RoomType] = mapped_column(SAEnum(RoomType), nullable=False, default=RoomType.normal)
+    type: Mapped[RoomType] = mapped_column(
+        SAEnum(RoomType), nullable=False, default=RoomType.normal
+    )
 
     # Chave Estrangeira: Liga a Sala à sua Organization
     organization_id: Mapped[int] = mapped_column(ForeignKey(FK_ORG_ID))
-    
+
     # Relacionamento: Permite-nos fazer my_room.organization
     organization: Mapped["Organization"] = relationship(back_populates="rooms")
 
@@ -635,28 +835,26 @@ class Subject(Base):
     # Define qual o tipo de sala ideal para esta disciplina.
     # Default: Sala Normal.
     required_room_type: Mapped[RoomType] = mapped_column(
-        SAEnum(RoomType), 
-        default=RoomType.normal, 
-        nullable=False
+        SAEnum(RoomType), default=RoomType.normal, nullable=False
     )
 
-    modules: Mapped[List["Module"]] = relationship(back_populates="subject", cascade=CASCADE_ALL_DELETE)
+    modules: Mapped[list["Module"]] = relationship(
+        back_populates="subject", cascade=CASCADE_ALL_DELETE
+    )
 
     # Chave Estrangeira: Liga a Disciplina à sua Organization
     organization_id: Mapped[int] = mapped_column(ForeignKey(FK_ORG_ID))
-    
+
     # Relacionamento: Permite-nos fazer my_subject.organization
     organization: Mapped["Organization"] = relationship(back_populates="subjects")
-    
+
     # Relação N:M com Course - Define a Matriz Curricular
-    courses: Mapped[List["Course"]] = relationship(
-        secondary=course_subject_link,
-        back_populates="subjects"
+    courses: Mapped[list["Course"]] = relationship(
+        secondary=course_subject_link, back_populates="subjects"
     )
 
-    teachers: Mapped[List[Teacher]] = relationship(
-        secondary=teacher_subject_link,
-        back_populates="subjects"
+    teachers: Mapped[list[Teacher]] = relationship(
+        secondary=teacher_subject_link, back_populates="subjects"
     )
 
     def __repr__(self) -> str:
@@ -668,16 +866,16 @@ class Timeslot(Base):
     __tablename__ = "timeslot"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    
+
     # 0=Segunda, 1=Terça, ..., 6=Domingo
-    day_of_week: Mapped[int] = mapped_column(Integer, nullable=False) 
+    day_of_week: Mapped[int] = mapped_column(Integer, nullable=False)
     start_time: Mapped[time] = mapped_column(Time, nullable=False)
     end_time: Mapped[time] = mapped_column(Time, nullable=False)
 
     # Chave Estrangeira: Liga o Bloco Horário à sua Organization
     # Isto confirma a nossa decisão: cada escola define os seus próprios blocos
     organization_id: Mapped[int] = mapped_column(ForeignKey(FK_ORG_ID))
-    
+
     # Relacionamento: Permite-nos fazer my_timeslot.organization
     organization: Mapped["Organization"] = relationship(back_populates="timeslots")
 
@@ -688,103 +886,81 @@ class Timeslot(Base):
 
     def __repr__(self) -> str:
         return f"<Timeslot(id={self.id}, day={self.day_of_week}, start='{self.start_time}')>"
-    
-# 10. Modelo "Lesson" (A "Necessidade de Aula")
-# (Como definido no Ponto 3.5 do Charter)
-class Lesson(Base):
-    __tablename__ = "lesson"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    organization_id: Mapped[int] = mapped_column(ForeignKey(FK_ORG_ID), index=True)
-
-    class_id: Mapped[int] = mapped_column(ForeignKey(FK_CLASS_ID), index=True)
-    subject_id: Mapped[int] = mapped_column(ForeignKey(FK_SUBJECT_ID), index=True)
-    teacher_id: Mapped[int] = mapped_column(ForeignKey(FK_TEACHER_ID), index=True)
-    
-    # --- Relacionamentos ---
-    # (Para podermos aceder a lesson.class, lesson.teacher, etc.)
-    organization: Mapped["Organization"] = relationship()
-    class_model: Mapped["Class"] = relationship()
-    subject: Mapped["Subject"] = relationship()
-    teacher: Mapped["Teacher"] = relationship()
-
-    # Garante que não definimos a mesma aula duas vezes
-    __table_args__ = (
-        UniqueConstraint(
-            "organization_id", 
-            "class_id", 
-            "subject_id", 
-            "teacher_id", 
-            name="uq_lesson_definition"
-        ),
-    )
-
-    def __repr__(self) -> str:
-        return f"<Lesson(id={self.id}, class_id={self.class_id}, subject_id={self.subject_id})>"
-    
 
 
-# 11. Modelo "Constraint" (A "Regra")
 class Constraint(Base):
     __tablename__ = "constraint"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    organization_id: Mapped[int] = mapped_column(ForeignKey(FK_ORG_ID, ondelete="CASCADE"), index=True)
+    organization_id: Mapped[int] = mapped_column(
+        ForeignKey(FK_ORG_ID, ondelete="CASCADE"), index=True
+    )
     rule_type: Mapped[ConstraintType] = mapped_column(SAEnum(ConstraintType), nullable=False)
-    rule_payload: Mapped[dict] = mapped_column(JSON, nullable=False)
+    class_id: Mapped[int | None] = mapped_column(ForeignKey(FK_CLASS_ID), nullable=True)
+    subject_id: Mapped[int | None] = mapped_column(ForeignKey(FK_SUBJECT_ID), nullable=True)
+    teacher_id: Mapped[int | None] = mapped_column(ForeignKey(FK_TEACHER_ID), nullable=True)
+    room_id: Mapped[int | None] = mapped_column(ForeignKey("room.id"), nullable=True)
+    timeslot_id: Mapped[int | None] = mapped_column(ForeignKey(FK_TIMESLOT_ID), nullable=True)
+    constraint_date: Mapped[date_type | None] = mapped_column(Date, nullable=True)
+    day_of_week: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     organization: Mapped["Organization"] = relationship()
+
+    @property
+    def rule_payload(self) -> dict:
+        values = {
+            "class_id": self.class_id,
+            "subject_id": self.subject_id,
+            "teacher_id": self.teacher_id,
+            "room_id": self.room_id,
+            "timeslot_id": self.timeslot_id,
+            "date": self.constraint_date,
+            "day_of_week": self.day_of_week,
+        }
+        return {key: value for key, value in values.items() if value is not None}
+
+    __table_args__ = (
+        CheckConstraint(
+            "day_of_week IS NULL OR day_of_week BETWEEN 0 AND 6", name="ck_constraint_day"
+        ),
+        CheckConstraint(
+            "(rule_type = 'specific_room' AND class_id IS NOT NULL AND subject_id IS NOT NULL "
+            "AND room_id IS NOT NULL AND teacher_id IS NULL AND timeslot_id IS NULL "
+            "AND constraint_date IS NULL AND day_of_week IS NULL) OR "
+            "(rule_type = 'lock_time' AND class_id IS NOT NULL AND subject_id IS NOT NULL "
+            "AND timeslot_id IS NOT NULL AND teacher_id IS NULL AND room_id IS NULL "
+            "AND constraint_date IS NULL AND day_of_week IS NULL) OR "
+            "(rule_type = 'teacher_preferred' AND teacher_id IS NOT NULL AND timeslot_id IS NOT NULL "
+            "AND class_id IS NULL AND subject_id IS NULL AND room_id IS NULL "
+            "AND constraint_date IS NULL AND day_of_week IS NULL) OR "
+            "(rule_type = 'teacher_unavailable' AND teacher_id IS NOT NULL "
+            "AND class_id IS NULL AND subject_id IS NULL AND room_id IS NULL "
+            "AND ((timeslot_id IS NOT NULL AND constraint_date IS NULL AND day_of_week IS NULL) OR "
+            "(timeslot_id IS NULL AND constraint_date IS NOT NULL AND day_of_week IS NULL) OR "
+            "(timeslot_id IS NULL AND constraint_date IS NULL AND day_of_week IS NOT NULL) OR "
+            "(timeslot_id IS NOT NULL AND constraint_date IS NOT NULL AND day_of_week IS NULL)))",
+            name="ck_constraint_typed_shape",
+        ),
+    )
 
     def __repr__(self) -> str:
         return f"<Constraint(id={self.id}, type='{self.rule_type}')>"
-    
-# 12. Modelo "ScheduleOutput" (O Horário Final)
-# (Como definido no Ponto 3.5 do Charter)
-class ScheduleOutput(Base):
-    __tablename__ = "schedule_output"
 
-    id: Mapped[int] = mapped_column(primary_key=True)
-    organization_id: Mapped[int] = mapped_column(ForeignKey(FK_ORG_ID), index=True)
-
-    # A "aula" que foi agendada (ex: Matemática do 10A)
-    lesson_id: Mapped[int] = mapped_column(ForeignKey("lesson.id"), index=True)
-    
-    # O "bloco" onde ela foi agendada (ex: Segunda 09:00)
-    timeslot_id: Mapped[int] = mapped_column(ForeignKey(FK_TIMESLOT_ID), index=True)
-    
-    # A "sala" que foi usada (ex: Sala 1.1)
-    room_id: Mapped[int] = mapped_column(ForeignKey("room.id"), index=True)
-    
-    # ID para versionar (ex: "Geração de Verão 2025")
-    generation_id: Mapped[str] = mapped_column(String(100), index=True)
-
-    # Sprint 0: Data absoluta e flag de rascunho
-    date: Mapped[Optional[date_type]] = mapped_column(Date, nullable=True, index=True)
-    is_draft: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-
-    # Relacionamentos
-    organization: Mapped["Organization"] = relationship()
-    lesson: Mapped["Lesson"] = relationship()
-    timeslot: Mapped["Timeslot"] = relationship()
-    room: Mapped["Room"] = relationship()
-    lesson_logs: Mapped[List["LessonLog"]] = relationship(viewonly=True)
-
-    def __repr__(self) -> str:
-        return f"<ScheduleOutput(lesson_id={self.lesson_id}, timeslot_id={self.timeslot_id})>"
-    
-# --- CONFIGURAÇÕES DA ESCOLA (Sprint 0) ---
 
 class OrganizationSettings(Base):
     """Configurações da escola (única por organização)."""
+
     __tablename__ = "organization_settings"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    organization_id: Mapped[int] = mapped_column(ForeignKey(FK_ORG_ID, ondelete="CASCADE"), unique=True, index=True)
-    school_start_date: Mapped[Optional[date_type]] = mapped_column(Date, nullable=True)
-    school_hard_end_date: Mapped[Optional[date_type]] = mapped_column(Date, nullable=True)
-    repair_stability_window_days: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    organization_id: Mapped[int] = mapped_column(
+        ForeignKey(FK_ORG_ID, ondelete="CASCADE"), unique=True, index=True
+    )
+    school_start_date: Mapped[date_type | None] = mapped_column(Date, nullable=True)
+    school_hard_end_date: Mapped[date_type | None] = mapped_column(Date, nullable=True)
+    repair_stability_window_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
     auto_confirm_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
-    auto_confirm_cutoff_time: Mapped[Optional[time]] = mapped_column(Time, nullable=True)
+    auto_confirm_cutoff_time: Mapped[time | None] = mapped_column(Time, nullable=True)
 
     organization: Mapped["Organization"] = relationship(back_populates="settings")
 
@@ -794,6 +970,7 @@ class OrganizationSettings(Base):
 
 class SchedulerSchoolYear(Base):
     """Stable tenant-scoped identity for one scheduler school year."""
+
     __tablename__ = "scheduler_school_year"
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -810,19 +987,17 @@ class SchedulerSchoolYear(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
-        default=lambda: datetime.now(timezone.utc),
+        default=lambda: datetime.now(UTC),
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
-        default=lambda: datetime.now(timezone.utc),
-        onupdate=lambda: datetime.now(timezone.utc),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
     )
 
     __table_args__ = (
-        UniqueConstraint(
-            "id", "organization_id", name="uq_scheduler_school_year_id_org"
-        ),
+        UniqueConstraint("id", "organization_id", name="uq_scheduler_school_year_id_org"),
         UniqueConstraint("organization_id", "label", name="uq_scheduler_school_year_org_label"),
         CheckConstraint("hard_end_date >= start_date", name="ck_scheduler_school_year_date_order"),
         Index(
@@ -836,6 +1011,7 @@ class SchedulerSchoolYear(Base):
 
 class SchedulerSchoolYearState(Base):
     """Publication lifecycle state for one tenant and school year."""
+
     __tablename__ = "scheduler_school_year_state"
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -853,28 +1029,28 @@ class SchedulerSchoolYearState(Base):
         nullable=False,
         default=SchoolYearPublicationState.UNPUBLISHED,
     )
-    active_schedule_version_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
-    pending_draft_id: Mapped[Optional[int]] = mapped_column(
+    active_schedule_version_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    pending_draft_id: Mapped[int | None] = mapped_column(
         nullable=True,
     )
     scheduler_state_version: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    approved_scheduler_state_version: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    reset_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
-    reset_by_user_id: Mapped[Optional[int]] = mapped_column(
-        ForeignKey("user.id", ondelete=ON_DELETE_SET_NULL),
+    approved_scheduler_state_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    reset_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    reset_by_membership_id: Mapped[int | None] = mapped_column(
+        ForeignKey("organization_membership.id", ondelete=ON_DELETE_SET_NULL),
         nullable=True,
     )
     lock_version: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
-        default=lambda: datetime.now(timezone.utc),
+        default=lambda: datetime.now(UTC),
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
-        default=lambda: datetime.now(timezone.utc),
-        onupdate=lambda: datetime.now(timezone.utc),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
     )
 
     __table_args__ = (
@@ -915,6 +1091,7 @@ class SchedulerSchoolYearState(Base):
 
 class ScheduleGenerationJob(Base):
     """Auditable execution record for one bounded generation attempt."""
+
     __tablename__ = "schedule_generation_job"
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -927,15 +1104,15 @@ class ScheduleGenerationJob(Base):
         nullable=False,
         index=True,
     )
-    requested_by_user_id: Mapped[Optional[int]] = mapped_column(
-        ForeignKey("user.id", ondelete=ON_DELETE_SET_NULL),
+    requested_by_membership_id: Mapped[int | None] = mapped_column(
+        ForeignKey("organization_membership.id", ondelete=ON_DELETE_SET_NULL),
         nullable=True,
     )
     strategy: Mapped[ScheduleGenerationStrategy] = mapped_column(
         SAEnum(ScheduleGenerationStrategy),
         nullable=False,
     )
-    trigger_type: Mapped[Optional[ScheduleGenerationTrigger]] = mapped_column(
+    trigger_type: Mapped[ScheduleGenerationTrigger | None] = mapped_column(
         SAEnum(ScheduleGenerationTrigger),
         nullable=True,
     )
@@ -944,31 +1121,31 @@ class ScheduleGenerationJob(Base):
         nullable=False,
         default=ScheduleGenerationJobStatus.QUEUED,
     )
-    result_category: Mapped[Optional[ScheduleGenerationResultCategory]] = mapped_column(
+    result_category: Mapped[ScheduleGenerationResultCategory | None] = mapped_column(
         SAEnum(ScheduleGenerationResultCategory),
         nullable=True,
     )
-    generation_input_fingerprint: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
-    debt_basis_fingerprint: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
-    scheduler_state_version_used: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    repair_policy_snapshot_hash: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
-    input_snapshot_json: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    generation_input_fingerprint: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    debt_basis_fingerprint: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    scheduler_state_version_used: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    repair_policy_snapshot_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    input_snapshot_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     queued_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
-        default=lambda: datetime.now(timezone.utc),
+        default=lambda: datetime.now(UTC),
     )
-    started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
-    finished_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
-    deadline_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
-    duration_ms: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    cancellation_requested_at: Mapped[Optional[datetime]] = mapped_column(
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    deadline_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    cancellation_requested_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
     )
-    failure_code: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
-    failure_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    idempotency_key: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    failure_code: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    failure_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    idempotency_key: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
     __table_args__ = (
         ForeignKeyConstraint(
@@ -1020,17 +1197,20 @@ class ScheduleGenerationJob(Base):
             "organization_id",
             "school_year_id",
             unique=True,
-            postgresql_where=job_status.in_((
-                ScheduleGenerationJobStatus.QUEUED,
-                ScheduleGenerationJobStatus.RUNNING,
-                ScheduleGenerationJobStatus.CANCEL_REQUESTED,
-            )),
+            postgresql_where=job_status.in_(
+                (
+                    ScheduleGenerationJobStatus.QUEUED,
+                    ScheduleGenerationJobStatus.RUNNING,
+                    ScheduleGenerationJobStatus.CANCEL_REQUESTED,
+                )
+            ),
         ),
     )
 
 
 class ScheduleDraft(Base):
     """Auditable proposed schedule state produced by a successful generation job."""
+
     __tablename__ = "schedule_drafts"
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -1065,39 +1245,37 @@ class ScheduleDraft(Base):
         nullable=False,
     )
     generation_input_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
-    scheduler_state_version_used: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    debt_basis_fingerprint: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
-    repair_policy_snapshot_json: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
-    repair_policy_snapshot_hash: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
-    editable_start_date: Mapped[Optional[date_type]] = mapped_column(Date, nullable=True)
-    recovery_escalation_level: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
-    adaptation_level: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    scheduler_state_version_used: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    debt_basis_fingerprint: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    repair_policy_snapshot_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    repair_policy_snapshot_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    editable_start_date: Mapped[date_type | None] = mapped_column(Date, nullable=True)
+    recovery_escalation_level: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    adaptation_level: Mapped[str | None] = mapped_column(String(50), nullable=True)
     projected_completion_date: Mapped[date_type] = mapped_column(Date, nullable=False)
     hard_end_date: Mapped[date_type] = mapped_column(Date, nullable=False)
     summary_json: Mapped[dict] = mapped_column(JSON, nullable=False)
-    partial_recovery_blocker_type: Mapped[Optional[str]] = mapped_column(
-        String(50), nullable=True
-    )
-    main_blocker_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    recommended_actions_json: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
-    warnings_json: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
-    metrics_json: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
-    stale_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    invalidated_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    created_by_user_id: Mapped[int] = mapped_column(
-        ForeignKey("user.id", ondelete="RESTRICT"),
+    partial_recovery_blocker_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    main_blocker_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    recommended_actions_json: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    warnings_json: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    metrics_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    stale_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    invalidated_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_by_membership_id: Mapped[int] = mapped_column(
+        ForeignKey("organization_membership.id", ondelete="RESTRICT"),
         nullable=False,
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
-        default=lambda: datetime.now(timezone.utc),
+        default=lambda: datetime.now(UTC),
     )
-    decided_by_user_id: Mapped[Optional[int]] = mapped_column(
-        ForeignKey("user.id", ondelete=ON_DELETE_SET_NULL),
+    decided_by_membership_id: Mapped[int | None] = mapped_column(
+        ForeignKey("organization_membership.id", ondelete=ON_DELETE_SET_NULL),
         nullable=True,
     )
-    decided_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     __table_args__ = (
         ForeignKeyConstraint(
@@ -1144,7 +1322,7 @@ class ScheduleDraft(Base):
             name="ck_schedule_drafts_adaptive_editable_start",
         ),
         CheckConstraint(
-            "(draft_state = 'PENDING' AND decided_at IS NULL AND decided_by_user_id IS NULL) "
+            "(draft_state = 'PENDING' AND decided_at IS NULL AND decided_by_membership_id IS NULL) "
             "OR (draft_state <> 'PENDING' AND decided_at IS NOT NULL)",
             name="ck_schedule_drafts_decision_consistency",
         ),
@@ -1170,6 +1348,7 @@ class ScheduleDraft(Base):
 
 class ScheduleDraftBlock(Base):
     """One concrete target block in a draft's complete editable-future state."""
+
     __tablename__ = "schedule_draft_blocks"
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -1181,10 +1360,8 @@ class ScheduleDraftBlock(Base):
         nullable=False,
         index=True,
     )
-    draft_id: Mapped[int] = mapped_column(
-        nullable=False, index=True
-    )
-    source_active_block_id: Mapped[Optional[int]] = mapped_column(
+    draft_id: Mapped[int] = mapped_column(nullable=False, index=True)
+    source_active_block_id: Mapped[int | None] = mapped_column(
         ForeignKey(
             "active_schedule_blocks.id",
             name="fk_schedule_draft_blocks_source_active",
@@ -1198,26 +1375,24 @@ class ScheduleDraftBlock(Base):
     subject_id: Mapped[int] = mapped_column(ForeignKey(FK_SUBJECT_ID), nullable=False)
     teacher_id: Mapped[int] = mapped_column(ForeignKey(FK_TEACHER_ID), nullable=False)
     room_id: Mapped[int] = mapped_column(ForeignKey("room.id"), nullable=False)
-    room_type_id: Mapped[Optional[RoomType]] = mapped_column(SAEnum(RoomType), nullable=True)
+    room_type_id: Mapped[RoomType | None] = mapped_column(SAEnum(RoomType), nullable=True)
     date: Mapped[date_type] = mapped_column(Date, nullable=False)
     timeslot_id: Mapped[int] = mapped_column(ForeignKey(FK_TIMESLOT_ID), nullable=False)
     duration_minutes: Mapped[int] = mapped_column(Integer, nullable=False)
-    module_sequence_index: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    module_sequence_index: Mapped[int | None] = mapped_column(Integer, nullable=True)
     is_recovery_block: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    recovery_source_occurrence_id: Mapped[Optional[int]] = mapped_column(
+    recovery_source_occurrence_id: Mapped[int | None] = mapped_column(
         ForeignKey("lesson_occurrence.id", ondelete="RESTRICT"), nullable=True
     )
-    recovery_source_occurrence_revision: Mapped[Optional[int]] = mapped_column(
-        Integer, nullable=True
-    )
+    recovery_source_occurrence_revision: Mapped[int | None] = mapped_column(Integer, nullable=True)
     change_type: Mapped[ScheduleDraftBlockChangeType] = mapped_column(
         SAEnum(ScheduleDraftBlockChangeType), nullable=False
     )
-    reason_code: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    reason_code: Mapped[str | None] = mapped_column(String(50), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
-        default=lambda: datetime.now(timezone.utc),
+        default=lambda: datetime.now(UTC),
     )
 
     __table_args__ = (
@@ -1235,24 +1410,33 @@ class ScheduleDraftBlock(Base):
             "draft_id", "stable_block_key", name="uq_schedule_draft_blocks_stable_key"
         ),
         UniqueConstraint(
-            "id", "organization_id", "school_year_id",
+            "id",
+            "organization_id",
+            "school_year_id",
             name="uq_schedule_draft_blocks_id_scope",
         ),
         UniqueConstraint(
-            "draft_id", "class_id", "date", "timeslot_id",
+            "draft_id",
+            "class_id",
+            "date",
+            "timeslot_id",
             name="uq_schedule_draft_blocks_class_slot",
         ),
         UniqueConstraint(
-            "draft_id", "teacher_id", "date", "timeslot_id",
+            "draft_id",
+            "teacher_id",
+            "date",
+            "timeslot_id",
             name="uq_schedule_draft_blocks_teacher_slot",
         ),
         UniqueConstraint(
-            "draft_id", "room_id", "date", "timeslot_id",
+            "draft_id",
+            "room_id",
+            "date",
+            "timeslot_id",
             name="uq_schedule_draft_blocks_room_slot",
         ),
-        CheckConstraint(
-            "duration_minutes > 0", name="ck_schedule_draft_blocks_duration_positive"
-        ),
+        CheckConstraint("duration_minutes > 0", name="ck_schedule_draft_blocks_duration_positive"),
         CheckConstraint(
             "module_sequence_index IS NULL OR module_sequence_index >= 0",
             name="ck_schedule_draft_blocks_module_sequence_nonnegative",
@@ -1283,6 +1467,7 @@ class ScheduleDraftBlock(Base):
 
 class ScheduleDiffEntry(Base):
     """Optional immutable explanation of one before/after draft difference."""
+
     __tablename__ = "schedule_diff_entries"
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -1299,7 +1484,7 @@ class ScheduleDiffEntry(Base):
     class_id: Mapped[int] = mapped_column(ForeignKey(FK_CLASS_ID), nullable=False)
     subject_id: Mapped[int] = mapped_column(ForeignKey(FK_SUBJECT_ID), nullable=False)
     teacher_id: Mapped[int] = mapped_column(ForeignKey(FK_TEACHER_ID), nullable=False)
-    before_active_block_id: Mapped[Optional[int]] = mapped_column(
+    before_active_block_id: Mapped[int | None] = mapped_column(
         ForeignKey(
             "active_schedule_blocks.id",
             name="fk_schedule_diff_entries_before_active",
@@ -1308,44 +1493,42 @@ class ScheduleDiffEntry(Base):
         ),
         nullable=True,
     )
-    after_draft_block_id: Mapped[Optional[int]] = mapped_column(
+    after_draft_block_id: Mapped[int | None] = mapped_column(
         ForeignKey("schedule_draft_blocks.id", ondelete=ON_DELETE_SET_NULL), nullable=True
     )
-    before_date: Mapped[Optional[date_type]] = mapped_column(Date, nullable=True)
-    before_timeslot_id: Mapped[Optional[int]] = mapped_column(
+    before_date: Mapped[date_type | None] = mapped_column(Date, nullable=True)
+    before_timeslot_id: Mapped[int | None] = mapped_column(
         ForeignKey(FK_TIMESLOT_ID, ondelete=ON_DELETE_SET_NULL), nullable=True
     )
-    before_room_id: Mapped[Optional[int]] = mapped_column(
+    before_room_id: Mapped[int | None] = mapped_column(
         ForeignKey("room.id", ondelete=ON_DELETE_SET_NULL), nullable=True
     )
-    after_date: Mapped[Optional[date_type]] = mapped_column(Date, nullable=True)
-    after_timeslot_id: Mapped[Optional[int]] = mapped_column(
+    after_date: Mapped[date_type | None] = mapped_column(Date, nullable=True)
+    after_timeslot_id: Mapped[int | None] = mapped_column(
         ForeignKey(FK_TIMESLOT_ID, ondelete=ON_DELETE_SET_NULL), nullable=True
     )
-    after_room_id: Mapped[Optional[int]] = mapped_column(
+    after_room_id: Mapped[int | None] = mapped_column(
         ForeignKey("room.id", ondelete=ON_DELETE_SET_NULL), nullable=True
     )
-    before_snapshot_json: Mapped[Optional[dict]] = mapped_column(
+    before_snapshot_json: Mapped[dict | None] = mapped_column(
         JSON(none_as_null=True), nullable=True
     )
-    after_snapshot_json: Mapped[Optional[dict]] = mapped_column(
-        JSON(none_as_null=True), nullable=True
-    )
+    after_snapshot_json: Mapped[dict | None] = mapped_column(JSON(none_as_null=True), nullable=True)
     change_type: Mapped[ScheduleDiffChangeType] = mapped_column(
         SAEnum(ScheduleDiffChangeType), nullable=False
     )
     impact_scope: Mapped[ScheduleDiffScope] = mapped_column(
         SAEnum(ScheduleDiffScope), nullable=False, default=ScheduleDiffScope.AFFECTED
     )
-    reason_code: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
-    reason_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    recovery_link_impact_json: Mapped[Optional[dict]] = mapped_column(
+    reason_code: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    reason_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    recovery_link_impact_json: Mapped[dict | None] = mapped_column(
         JSON(none_as_null=True), nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
-        default=lambda: datetime.now(timezone.utc),
+        default=lambda: datetime.now(UTC),
     )
 
     __table_args__ = (
@@ -1374,6 +1557,7 @@ class ScheduleDiffEntry(Base):
 
 class ActiveScheduleBlock(Base):
     """Versioned published schedule block created from an approved draft target."""
+
     __tablename__ = "active_schedule_blocks"
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -1402,13 +1586,13 @@ class ActiveScheduleBlock(Base):
         default=ActiveScheduleBlockStatus.ACTIVE,
     )
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc)
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
-        default=lambda: datetime.now(timezone.utc),
-        onupdate=lambda: datetime.now(timezone.utc),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
     )
 
     __table_args__ = (
@@ -1423,11 +1607,14 @@ class ActiveScheduleBlock(Base):
             ondelete="RESTRICT",
         ),
         UniqueConstraint(
-            "id", "organization_id", "school_year_id",
+            "id",
+            "organization_id",
+            "school_year_id",
             name="uq_active_schedule_blocks_id_scope",
         ),
         UniqueConstraint(
-            "id", "organization_id",
+            "id",
+            "organization_id",
             name="uq_active_schedule_blocks_id_org",
         ),
         UniqueConstraint(
@@ -1435,31 +1622,44 @@ class ActiveScheduleBlock(Base):
             name="uq_active_schedule_blocks_source_draft_block",
         ),
         UniqueConstraint(
-            "organization_id", "school_year_id", "schedule_version_id", "stable_block_key",
+            "organization_id",
+            "school_year_id",
+            "schedule_version_id",
+            "stable_block_key",
             name="uq_active_schedule_blocks_version_stable_key",
         ),
-        CheckConstraint(
-            "duration_minutes > 0", name="ck_active_schedule_blocks_duration_positive"
-        ),
+        CheckConstraint("duration_minutes > 0", name="ck_active_schedule_blocks_duration_positive"),
         CheckConstraint(
             "length(trim(stable_block_key)) > 0",
             name="ck_active_schedule_blocks_stable_key_nonempty",
         ),
         Index(
             "uq_active_schedule_blocks_class_slot",
-            "organization_id", "school_year_id", "class_id", "date", "timeslot_id",
+            "organization_id",
+            "school_year_id",
+            "class_id",
+            "date",
+            "timeslot_id",
             unique=True,
             postgresql_where=(status == ActiveScheduleBlockStatus.ACTIVE),
         ),
         Index(
             "uq_active_schedule_blocks_teacher_slot",
-            "organization_id", "school_year_id", "teacher_id", "date", "timeslot_id",
+            "organization_id",
+            "school_year_id",
+            "teacher_id",
+            "date",
+            "timeslot_id",
             unique=True,
             postgresql_where=(status == ActiveScheduleBlockStatus.ACTIVE),
         ),
         Index(
             "uq_active_schedule_blocks_room_slot",
-            "organization_id", "school_year_id", "room_id", "date", "timeslot_id",
+            "organization_id",
+            "school_year_id",
+            "room_id",
+            "date",
+            "timeslot_id",
             unique=True,
             postgresql_where=(status == ActiveScheduleBlockStatus.ACTIVE),
         ),
@@ -1468,6 +1668,7 @@ class ActiveScheduleBlock(Base):
 
 class PlannedRecoveryLink(Base):
     """Idempotent accounting link from debt evidence to planned and delivered recovery."""
+
     __tablename__ = "planned_recovery_links"
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -1481,17 +1682,15 @@ class PlannedRecoveryLink(Base):
     )
     debt_occurrence_id: Mapped[int] = mapped_column(nullable=False)
     debt_occurrence_revision: Mapped[int] = mapped_column(Integer, nullable=False)
-    planned_active_block_id: Mapped[Optional[int]] = mapped_column(nullable=True)
-    planned_draft_block_id: Mapped[Optional[int]] = mapped_column(nullable=True)
+    planned_active_block_id: Mapped[int | None] = mapped_column(nullable=True)
+    planned_draft_block_id: Mapped[int | None] = mapped_column(nullable=True)
     planned_recovery_minutes: Mapped[int] = mapped_column(Integer, nullable=False)
     delivered_recovery_minutes: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    delivered_lesson_log_id: Mapped[Optional[int]] = mapped_column(
-        nullable=True
-    )
-    delivered_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    delivered_lesson_log_id: Mapped[int | None] = mapped_column(nullable=True)
+    delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     class_id: Mapped[int] = mapped_column(ForeignKey(FK_CLASS_ID), nullable=False)
     subject_id: Mapped[int] = mapped_column(ForeignKey(FK_SUBJECT_ID), nullable=False)
-    teacher_id: Mapped[Optional[int]] = mapped_column(
+    teacher_id: Mapped[int | None] = mapped_column(
         ForeignKey(FK_TEACHER_ID, ondelete=ON_DELETE_SET_NULL), nullable=True
     )
     status: Mapped[PlannedRecoveryLinkStatus] = mapped_column(
@@ -1500,13 +1699,13 @@ class PlannedRecoveryLink(Base):
         default=PlannedRecoveryLinkStatus.PLANNED,
     )
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc)
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
-        default=lambda: datetime.now(timezone.utc),
-        onupdate=lambda: datetime.now(timezone.utc),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
     )
 
     __table_args__ = (
@@ -1550,15 +1749,9 @@ class PlannedRecoveryLink(Base):
             name="fk_planned_recovery_links_delivery_evidence",
             ondelete="RESTRICT",
         ),
-        UniqueConstraint(
-            "planned_active_block_id", name="uq_planned_recovery_links_active_block"
-        ),
-        UniqueConstraint(
-            "planned_draft_block_id", name="uq_planned_recovery_links_draft_block"
-        ),
-        UniqueConstraint(
-            "delivered_lesson_log_id", name="uq_planned_recovery_links_delivery_log"
-        ),
+        UniqueConstraint("planned_active_block_id", name="uq_planned_recovery_links_active_block"),
+        UniqueConstraint("planned_draft_block_id", name="uq_planned_recovery_links_draft_block"),
+        UniqueConstraint("delivered_lesson_log_id", name="uq_planned_recovery_links_delivery_log"),
         CheckConstraint(
             "planned_recovery_minutes > 0",
             name="ck_planned_recovery_links_planned_minutes_positive",
@@ -1589,6 +1782,7 @@ class PlannedRecoveryLink(Base):
 
 class SchedulerStateVersionEvent(Base):
     """Append-only audit event explaining a scheduler state version decision."""
+
     __tablename__ = "scheduler_state_version_events"
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -1597,22 +1791,22 @@ class SchedulerStateVersionEvent(Base):
     version_before: Mapped[int] = mapped_column(Integer, nullable=False)
     version_after: Mapped[int] = mapped_column(Integer, nullable=False)
     entity_type: Mapped[str] = mapped_column(String(80), nullable=False)
-    entity_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    entity_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
     operation: Mapped[SchedulerStateChangeOperation] = mapped_column(
         SAEnum(SchedulerStateChangeOperation), nullable=False
     )
     change_scope: Mapped[SchedulerStateChangeScope] = mapped_column(
         SAEnum(SchedulerStateChangeScope), nullable=False
     )
-    changed_by_user_id: Mapped[Optional[int]] = mapped_column(
-        ForeignKey("user.id", ondelete=ON_DELETE_SET_NULL), nullable=True
+    changed_by_membership_id: Mapped[int | None] = mapped_column(
+        ForeignKey("organization_membership.id", ondelete=ON_DELETE_SET_NULL), nullable=True
     )
     changed_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc)
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
     )
-    before_metadata_json: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
-    after_metadata_json: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
-    metadata_json: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    before_metadata_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    after_metadata_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    metadata_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     __table_args__ = (
         ForeignKeyConstraint(
@@ -1639,23 +1833,27 @@ class SchedulerStateVersionEvent(Base):
         ),
         Index(
             "uq_scheduler_state_version_events_increment",
-            "organization_id", "school_year_id", "version_after",
+            "organization_id",
+            "school_year_id",
+            "version_after",
             unique=True,
-            postgresql_where=(
-                change_scope == SchedulerStateChangeScope.FUTURE_IMPACTING
-            ),
+            postgresql_where=(change_scope == SchedulerStateChangeScope.FUTURE_IMPACTING),
         ),
     )
 
+
 class OrganizationGridSettings(Base):
     """Configurações da grelha horária da organização."""
+
     __tablename__ = "organization_grid_settings"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    organization_id: Mapped[int] = mapped_column(ForeignKey(FK_ORG_ID, ondelete="CASCADE"), unique=True, index=True)
-    lunch_window_start: Mapped[Optional[time]] = mapped_column(Time, nullable=True)
-    lunch_window_end: Mapped[Optional[time]] = mapped_column(Time, nullable=True)
-    lunch_min_duration_minutes: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    organization_id: Mapped[int] = mapped_column(
+        ForeignKey(FK_ORG_ID, ondelete="CASCADE"), unique=True, index=True
+    )
+    lunch_window_start: Mapped[time | None] = mapped_column(Time, nullable=True)
+    lunch_window_end: Mapped[time | None] = mapped_column(Time, nullable=True)
+    lunch_min_duration_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     organization: Mapped["Organization"] = relationship(back_populates="grid_settings")
 
@@ -1668,10 +1866,13 @@ class SchoolCalendarEvent(Base):
     source=AUTO: importado via package holidays Python.
     source=MANUAL: adicionado pelo diretor.
     """
+
     __tablename__ = "school_calendar_event"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    organization_id: Mapped[int] = mapped_column(ForeignKey(FK_ORG_ID, ondelete="CASCADE"), index=True)
+    organization_id: Mapped[int] = mapped_column(
+        ForeignKey(FK_ORG_ID, ondelete="CASCADE"), index=True
+    )
     name: Mapped[str] = mapped_column(String(150), nullable=False)
     start_date: Mapped[date_type] = mapped_column(Date, nullable=False)
     end_date: Mapped[date_type] = mapped_column(Date, nullable=False)
@@ -1687,55 +1888,17 @@ class SchoolCalendarEvent(Base):
 
 
 # -- SUBSTITUIÇÕES --
-class Substitution(Base):
-    __tablename__ = "substitutions"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    organization_id: Mapped[int] = mapped_column(ForeignKey(FK_ORG_ID, ondelete="CASCADE"), index=True)
-    lesson_id: Mapped[int] = mapped_column(ForeignKey("lesson.id"), nullable=False)
-    timeslot_id: Mapped[int] = mapped_column(ForeignKey(FK_TIMESLOT_ID), nullable=False)
-    date: Mapped[date_type] = mapped_column(Date, nullable=False, index=True)
-    original_teacher_id: Mapped[int] = mapped_column(ForeignKey(FK_TEACHER_ID), nullable=False)
-    substitute_teacher_id: Mapped[int] = mapped_column(ForeignKey(FK_TEACHER_ID), nullable=False)
-    substitute_subject_id: Mapped[Optional[int]] = mapped_column(ForeignKey(FK_SUBJECT_ID), nullable=True)
-
-    status: Mapped[SubstitutionStatus] = mapped_column(
-        SAEnum(SubstitutionStatus), default=SubstitutionStatus.PENDING, nullable=False
-    )
-    reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc),
-    )
-
-    organization: Mapped["Organization"] = relationship()
-    lesson: Mapped["Lesson"] = relationship()
-    timeslot: Mapped["Timeslot"] = relationship()
-    original_teacher: Mapped["Teacher"] = relationship(foreign_keys=[original_teacher_id])
-    substitute_teacher: Mapped["Teacher"] = relationship(foreign_keys=[substitute_teacher_id])
-    substitute_subject: Mapped[Optional["Subject"]] = relationship(foreign_keys=[substitute_subject_id])
-
-
-# --- OCORRÊNCIAS DE AULAS (Sprint 2) ---
-
 class LessonOccurrence(Base):
-    """Registo imutável do que aconteceu numa data específica.
-    NEVER delete — é histórico permanente (D24).
-    schedule_output_id usa ON DELETE SET NULL para preservar o registo
-    mesmo que o horário seja regenerado.
-    """
+    """Immutable operational record for one published schedule block."""
+
     __tablename__ = "lesson_occurrence"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    organization_id: Mapped[int] = mapped_column(ForeignKey(FK_ORG_ID, ondelete="CASCADE"), index=True)
-
-    # Liga ao slot planeado (pode ficar NULL se o horário for removido)
-    schedule_output_id: Mapped[Optional[int]] = mapped_column(
-        ForeignKey("schedule_output.id", ondelete=ON_DELETE_SET_NULL),
-        nullable=True,
-        index=True,
+    organization_id: Mapped[int] = mapped_column(
+        ForeignKey(FK_ORG_ID, ondelete="CASCADE"), index=True
     )
-    active_schedule_block_id: Mapped[Optional[int]] = mapped_column(
+
+    active_schedule_block_id: Mapped[int | None] = mapped_column(
         nullable=True,
         index=True,
     )
@@ -1744,11 +1907,15 @@ class LessonOccurrence(Base):
     date: Mapped[date_type] = mapped_column(Date, nullable=False, index=True)
 
     # Contexto imutável de turma/disciplina (preservado mesmo se schedule_output for NULL)
-    class_id: Mapped[Optional[int]] = mapped_column(ForeignKey(FK_CLASS_ID, ondelete=ON_DELETE_SET_NULL), nullable=True)
-    subject_id: Mapped[Optional[int]] = mapped_column(ForeignKey(FK_SUBJECT_ID, ondelete=ON_DELETE_SET_NULL), nullable=True)
+    class_id: Mapped[int | None] = mapped_column(
+        ForeignKey(FK_CLASS_ID, ondelete=ON_DELETE_SET_NULL), nullable=True
+    )
+    subject_id: Mapped[int | None] = mapped_column(
+        ForeignKey(FK_SUBJECT_ID, ondelete=ON_DELETE_SET_NULL), nullable=True
+    )
 
     # Decisao final. NULL significa ocorrencia aberta/pendente.
-    status: Mapped[Optional[LessonOccurrenceStatus]] = mapped_column(
+    status: Mapped[LessonOccurrenceStatus | None] = mapped_column(
         SAEnum(LessonOccurrenceStatus), nullable=True
     )
 
@@ -1756,75 +1923,88 @@ class LessonOccurrence(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, index=True)
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
 
-    created_by_user_id: Mapped[Optional[int]] = mapped_column(
-        ForeignKey("user.id", ondelete=ON_DELETE_SET_NULL), nullable=True
+    created_by_membership_id: Mapped[int | None] = mapped_column(
+        ForeignKey("organization_membership.id", ondelete=ON_DELETE_SET_NULL), nullable=True
     )
-    creation_source: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
-    reason: Mapped[Optional[str]] = mapped_column(String(250), nullable=True)
+    creation_source: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    reason: Mapped[str | None] = mapped_column(String(250), nullable=True)
 
-    revoked_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
-    revoked_by_user_id: Mapped[Optional[int]] = mapped_column(
-        ForeignKey("user.id", ondelete=ON_DELETE_SET_NULL), nullable=True
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revoked_by_membership_id: Mapped[int | None] = mapped_column(
+        ForeignKey("organization_membership.id", ondelete=ON_DELETE_SET_NULL), nullable=True
     )
-    revoked_reason: Mapped[Optional[str]] = mapped_column(String(250), nullable=True)
+    revoked_reason: Mapped[str | None] = mapped_column(String(250), nullable=True)
 
-    planned_timeslot_id: Mapped[Optional[int]] = mapped_column(
+    planned_timeslot_id: Mapped[int | None] = mapped_column(
         ForeignKey(FK_TIMESLOT_ID, ondelete=ON_DELETE_SET_NULL), nullable=True
     )
-    planned_room_id: Mapped[Optional[int]] = mapped_column(
+    planned_room_id: Mapped[int | None] = mapped_column(
         ForeignKey("room.id", ondelete=ON_DELETE_SET_NULL), nullable=True
     )
-    planned_generation_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    planned_generation_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
     # Horas planeadas do bloco (preservadas mesmo se o slot for removido)
-    planned_hours: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    planned_minutes: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
     # Substituição (preenchido quando status=SUBSTITUTED)
-    substitute_teacher_id: Mapped[Optional[int]] = mapped_column(
+    substitute_teacher_id: Mapped[int | None] = mapped_column(
         ForeignKey(FK_TEACHER_ID, ondelete=ON_DELETE_SET_NULL), nullable=True
     )
-    substitute_subject_id: Mapped[Optional[int]] = mapped_column(
+    substitute_subject_id: Mapped[int | None] = mapped_column(
         ForeignKey(FK_SUBJECT_ID, ondelete=ON_DELETE_SET_NULL), nullable=True
     )
 
     # Docente previsto e docente que efetivamente executou
-    planned_teacher_id: Mapped[Optional[int]] = mapped_column(
+    planned_teacher_id: Mapped[int | None] = mapped_column(
         ForeignKey(FK_TEACHER_ID, ondelete=ON_DELETE_SET_NULL), nullable=True
     )
-    executed_teacher_id: Mapped[Optional[int]] = mapped_column(
+    executed_teacher_id: Mapped[int | None] = mapped_column(
         ForeignKey(FK_TEACHER_ID, ondelete=ON_DELETE_SET_NULL), nullable=True
     )
 
     # Módulo planeado e módulo efetivamente executado
-    planned_module_id: Mapped[Optional[int]] = mapped_column(
+    planned_module_id: Mapped[int | None] = mapped_column(
         ForeignKey("module.id", ondelete=ON_DELETE_SET_NULL), nullable=True
     )
-    executed_module_id: Mapped[Optional[int]] = mapped_column(
+    executed_module_id: Mapped[int | None] = mapped_column(
         ForeignKey("module.id", ondelete=ON_DELETE_SET_NULL), nullable=True
     )
 
     # Horas efetivamente dadas na execução (0.0 quando GAP)
-    hours_given: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    given_minutes: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+    @property
+    def planned_hours(self) -> float:
+        return self.planned_minutes / 60
+
+    @planned_hours.setter
+    def planned_hours(self, value: float) -> None:
+        self.planned_minutes = int(round(value * 60))
+
+    @property
+    def hours_given(self) -> float:
+        return self.given_minutes / 60
+
+    @hours_given.setter
+    def hours_given(self, value: float) -> None:
+        self.given_minutes = int(round(value * 60))
 
     # Quem decidiu e quando decidiu o estado final
-    decided_by_user_id: Mapped[Optional[int]] = mapped_column(
-        ForeignKey("user.id", ondelete=ON_DELETE_SET_NULL), nullable=True
+    decided_by_membership_id: Mapped[int | None] = mapped_column(
+        ForeignKey("organization_membership.id", ondelete=ON_DELETE_SET_NULL), nullable=True
     )
-    decided_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Auditoria
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc),
+        default=lambda: datetime.now(UTC),
         nullable=True,
     )
 
     # Relacionamentos
     organization: Mapped["Organization"] = relationship()
-    schedule_output: Mapped[Optional["ScheduleOutput"]] = relationship()
-    active_schedule_block: Mapped[Optional["ActiveScheduleBlock"]] = relationship(
-        viewonly=True
-    )
+    active_schedule_block: Mapped[Optional["ActiveScheduleBlock"]] = relationship(viewonly=True)
     class_: Mapped[Optional["Class"]] = relationship(foreign_keys=[class_id])
     subject: Mapped[Optional["Subject"]] = relationship(foreign_keys=[subject_id])
     substitute_teacher: Mapped[Optional["Teacher"]] = relationship(
@@ -1833,46 +2013,37 @@ class LessonOccurrence(Base):
     substitute_subject: Mapped[Optional["Subject"]] = relationship(
         foreign_keys=[substitute_subject_id]
     )
-    planned_teacher: Mapped[Optional["Teacher"]] = relationship(
-        foreign_keys=[planned_teacher_id]
+    planned_teacher: Mapped[Optional["Teacher"]] = relationship(foreign_keys=[planned_teacher_id])
+    executed_teacher: Mapped[Optional["Teacher"]] = relationship(foreign_keys=[executed_teacher_id])
+    planned_module: Mapped[Optional["Module"]] = relationship(foreign_keys=[planned_module_id])
+    executed_module: Mapped[Optional["Module"]] = relationship(foreign_keys=[executed_module_id])
+    decided_by_membership: Mapped[Optional["OrganizationMembership"]] = relationship(
+        foreign_keys=[decided_by_membership_id]
     )
-    executed_teacher: Mapped[Optional["Teacher"]] = relationship(
-        foreign_keys=[executed_teacher_id]
+    created_by_membership: Mapped[Optional["OrganizationMembership"]] = relationship(
+        foreign_keys=[created_by_membership_id]
     )
-    planned_module: Mapped[Optional["Module"]] = relationship(
-        foreign_keys=[planned_module_id]
-    )
-    executed_module: Mapped[Optional["Module"]] = relationship(
-        foreign_keys=[executed_module_id]
-    )
-    decided_by_user: Mapped[Optional["User"]] = relationship(
-        foreign_keys=[decided_by_user_id]
-    )
-    created_by_user: Mapped[Optional["User"]] = relationship(
-        foreign_keys=[created_by_user_id]
-    )
-    revoked_by_user: Mapped[Optional["User"]] = relationship(
-        foreign_keys=[revoked_by_user_id]
+    revoked_by_membership: Mapped[Optional["OrganizationMembership"]] = relationship(
+        foreign_keys=[revoked_by_membership_id]
     )
     planned_timeslot: Mapped[Optional["Timeslot"]] = relationship(
         foreign_keys=[planned_timeslot_id]
     )
-    planned_room: Mapped[Optional["Room"]] = relationship(
-        foreign_keys=[planned_room_id]
-    )
+    planned_room: Mapped[Optional["Room"]] = relationship(foreign_keys=[planned_room_id])
 
     # Uma ocorrência por slot planeado (evita duplicados do cron)
     __table_args__ = (
         UniqueConstraint(
-            "id", "organization_id", "revision",
+            "id",
+            "organization_id",
+            "revision",
             name="uq_lesson_occurrence_id_org_revision",
         ),
         UniqueConstraint(
-            "organization_id", "schedule_output_id", "date", "revision",
-            name="uq_lesson_occurrence_output_date_revision",
-        ),
-        UniqueConstraint(
-            "organization_id", "active_schedule_block_id", "date", "revision",
+            "organization_id",
+            "active_schedule_block_id",
+            "date",
+            "revision",
             name="uq_lesson_occurrence_active_block_date_revision",
         ),
         ForeignKeyConstraint(
@@ -1883,6 +2054,8 @@ class LessonOccurrence(Base):
             use_alter=True,
         ),
         Index("ix_lesson_occurrence_org_active_date", "organization_id", "is_active", "date"),
+        CheckConstraint("planned_minutes >= 0", name="ck_occurrence_planned_minutes"),
+        CheckConstraint("given_minutes >= 0", name="ck_occurrence_given_minutes"),
     )
 
     def __repr__(self) -> str:
@@ -1891,46 +2064,47 @@ class LessonOccurrence(Base):
 
 class OccurrenceOperationalEvent(Base):
     """Evento operacional de ocorrências para observabilidade interna (pilot baseline)."""
+
     __tablename__ = "occurrence_operational_event"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    organization_id: Mapped[int] = mapped_column(ForeignKey(FK_ORG_ID, ondelete="CASCADE"), index=True)
+    organization_id: Mapped[int] = mapped_column(
+        ForeignKey(FK_ORG_ID, ondelete="CASCADE"), index=True
+    )
 
-    occurrence_id: Mapped[Optional[int]] = mapped_column(
+    occurrence_id: Mapped[int | None] = mapped_column(
         ForeignKey("lesson_occurrence.id", ondelete=ON_DELETE_SET_NULL),
         nullable=True,
         index=True,
     )
-    schedule_output_id: Mapped[Optional[int]] = mapped_column(
-        ForeignKey("schedule_output.id", ondelete=ON_DELETE_SET_NULL),
+    active_schedule_block_id: Mapped[int | None] = mapped_column(
+        ForeignKey("active_schedule_blocks.id", ondelete="RESTRICT"),
         nullable=True,
         index=True,
     )
-    actor_user_id: Mapped[Optional[int]] = mapped_column(
-        ForeignKey("user.id", ondelete=ON_DELETE_SET_NULL),
+    actor_membership_id: Mapped[int | None] = mapped_column(
+        ForeignKey("organization_membership.id", ondelete=ON_DELETE_SET_NULL),
         nullable=True,
         index=True,
     )
 
     event_type: Mapped[str] = mapped_column(String(50), nullable=False)
     result: Mapped[str] = mapped_column(String(50), nullable=False)
-    decision_status: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
-    detail: Mapped[Optional[str]] = mapped_column(String(240), nullable=True)
+    decision_status: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    detail: Mapped[str | None] = mapped_column(String(240), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc),
+        default=lambda: datetime.now(UTC),
         nullable=True,
         index=True,
     )
 
     organization: Mapped["Organization"] = relationship()
     occurrence: Mapped[Optional["LessonOccurrence"]] = relationship()
-    schedule_output: Mapped[Optional["ScheduleOutput"]] = relationship()
-    actor_user: Mapped[Optional["User"]] = relationship()
+    active_schedule_block: Mapped[Optional["ActiveScheduleBlock"]] = relationship()
+    actor_membership: Mapped[Optional["OrganizationMembership"]] = relationship()
 
-    __table_args__ = (
-        Index("ix_occ_event_org_created", "organization_id", "created_at"),
-    )
+    __table_args__ = (Index("ix_occ_event_org_created", "organization_id", "created_at"),)
 
     def __repr__(self) -> str:
         return (
@@ -1941,47 +2115,68 @@ class OccurrenceOperationalEvent(Base):
 
 class OperationalScheduleBlock(Base):
     """Bloco operacional derivado de uma ocorrencia, separado do horario curricular."""
+
     __tablename__ = "operational_schedule_block"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    organization_id: Mapped[int] = mapped_column(ForeignKey(FK_ORG_ID, ondelete="CASCADE"), nullable=False, index=True)
-    source_occurrence_id: Mapped[int] = mapped_column(ForeignKey("lesson_occurrence.id", ondelete="CASCADE"), nullable=False, index=True)
+    organization_id: Mapped[int] = mapped_column(
+        ForeignKey(FK_ORG_ID, ondelete="CASCADE"), nullable=False, index=True
+    )
+    source_occurrence_id: Mapped[int] = mapped_column(
+        ForeignKey("lesson_occurrence.id", ondelete="CASCADE"), nullable=False, index=True
+    )
     source_occurrence_revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
-    planned_schedule_output_id: Mapped[Optional[int]] = mapped_column(
-        ForeignKey(FK_SCHEDULE_OUTPUT_ID, ondelete=ON_DELETE_SET_NULL),
+    planned_active_schedule_block_id: Mapped[int | None] = mapped_column(
+        ForeignKey("active_schedule_blocks.id", ondelete="RESTRICT"),
         nullable=True,
         index=True,
     )
     date: Mapped[date_type] = mapped_column(Date, nullable=False, index=True)
     timeslot_id: Mapped[int] = mapped_column(ForeignKey(FK_TIMESLOT_ID), nullable=False, index=True)
-    room_id: Mapped[Optional[int]] = mapped_column(ForeignKey("room.id", ondelete=ON_DELETE_SET_NULL), nullable=True)
+    room_id: Mapped[int | None] = mapped_column(
+        ForeignKey("room.id", ondelete=ON_DELETE_SET_NULL), nullable=True
+    )
     class_id: Mapped[int] = mapped_column(ForeignKey(FK_CLASS_ID), nullable=False, index=True)
     teacher_id: Mapped[int] = mapped_column(ForeignKey(FK_TEACHER_ID), nullable=False, index=True)
     subject_id: Mapped[int] = mapped_column(ForeignKey(FK_SUBJECT_ID), nullable=False, index=True)
-    module_id: Mapped[Optional[int]] = mapped_column(ForeignKey("module.id", ondelete=ON_DELETE_SET_NULL), nullable=True)
+    module_id: Mapped[int | None] = mapped_column(
+        ForeignKey("module.id", ondelete=ON_DELETE_SET_NULL), nullable=True
+    )
     status: Mapped[OperationalBlockStatus] = mapped_column(
         SAEnum(OperationalBlockStatus), nullable=False, default=OperationalBlockStatus.ACTIVE
     )
     execution_status: Mapped[OperationalBlockExecutionStatus] = mapped_column(
-        SAEnum(OperationalBlockExecutionStatus), nullable=False, default=OperationalBlockExecutionStatus.PENDING_LOG
+        SAEnum(OperationalBlockExecutionStatus),
+        nullable=False,
+        default=OperationalBlockExecutionStatus.PENDING_LOG,
     )
-    created_by_user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("user.id", ondelete=ON_DELETE_SET_NULL), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
-    cancelled_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_by_membership_id: Mapped[int | None] = mapped_column(
+        ForeignKey("organization_membership.id", ondelete=ON_DELETE_SET_NULL), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+    )
+    cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     organization: Mapped["Organization"] = relationship()
     source_occurrence: Mapped["LessonOccurrence"] = relationship()
-    planned_schedule_output: Mapped[Optional["ScheduleOutput"]] = relationship()
+    planned_active_schedule_block: Mapped[Optional["ActiveScheduleBlock"]] = relationship()
     timeslot: Mapped["Timeslot"] = relationship()
     room: Mapped[Optional["Room"]] = relationship()
     class_: Mapped["Class"] = relationship()
     teacher: Mapped["Teacher"] = relationship()
     subject: Mapped["Subject"] = relationship()
     module: Mapped[Optional["Module"]] = relationship()
-    created_by_user: Mapped[Optional["User"]] = relationship()
+    created_by_membership: Mapped[Optional["OrganizationMembership"]] = relationship()
 
     __table_args__ = (
-        Index("ix_operational_block_org_teacher_date_slot", "organization_id", "teacher_id", "date", "timeslot_id"),
+        Index(
+            "ix_operational_block_org_teacher_date_slot",
+            "organization_id",
+            "teacher_id",
+            "date",
+            "timeslot_id",
+        ),
         Index("ix_operational_block_org_class_date", "organization_id", "class_id", "date"),
     )
 
@@ -1992,26 +2187,28 @@ class TeacherEndpointOperationalEvent(Base):
     __tablename__ = "teacher_endpoint_operational_event"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    organization_id: Mapped[int] = mapped_column(ForeignKey(FK_ORG_ID, ondelete="CASCADE"), index=True)
-    actor_user_id: Mapped[Optional[int]] = mapped_column(
-        ForeignKey("user.id", ondelete=ON_DELETE_SET_NULL),
+    organization_id: Mapped[int] = mapped_column(
+        ForeignKey(FK_ORG_ID, ondelete="CASCADE"), index=True
+    )
+    actor_membership_id: Mapped[int | None] = mapped_column(
+        ForeignKey("organization_membership.id", ondelete=ON_DELETE_SET_NULL),
         nullable=True,
         index=True,
     )
-    actor_role: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    actor_role: Mapped[str | None] = mapped_column(String(20), nullable=True)
     endpoint_key: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
     http_status: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
     latency_ms: Mapped[int] = mapped_column(Integer, nullable=False)
-    active_generation_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    active_generation_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc),
+        default=lambda: datetime.now(UTC),
         nullable=False,
         index=True,
     )
 
     organization: Mapped["Organization"] = relationship()
-    actor_user: Mapped[Optional["User"]] = relationship()
+    actor_membership: Mapped[Optional["OrganizationMembership"]] = relationship()
 
     __table_args__ = (
         Index("ix_teacher_endpoint_event_org_created", "organization_id", "created_at"),
@@ -2031,44 +2228,13 @@ class TeacherEndpointOperationalEvent(Base):
 
 
 @event.listens_for(LessonOccurrence, "before_delete")
-def _prevent_lesson_occurrence_delete(mapper, connection, target) -> None:  # noqa: ARG001
+def _prevent_lesson_occurrence_delete(mapper, connection, target) -> None:
     raise ValueError("LessonOccurrence é histórico imutável e não pode ser removida")
 
 
-@event.listens_for(Session, "before_flush")
-def _populate_direct_tenant_ownership(session, flush_context, instances) -> None:  # noqa: ARG001
-    """Populate direct tenant ownership from already tenant-owned parents."""
-    parent_rules = (
-        (Availability, "teacher_id", Teacher),
-        (ClassSubjectLink, "class_id", Class),
-        (Module, "subject_id", Subject),
-        (ClassProgress, "class_id", Class),
-    )
-    for obj in session.new:
-        if getattr(obj, "organization_id", None) is not None:
-            continue
-        for model, parent_attr, parent_model in parent_rules:
-            if not isinstance(obj, model):
-                continue
-            parent_id = getattr(obj, parent_attr, None)
-            if parent_id is None:
-                break
-            parent = session.get(parent_model, parent_id)
-            if parent is not None:
-                obj.organization_id = parent.organization_id
-            break
-
-
-# --- REGISTO DE EXECUÇÃO DE AULAS (WBS Fase 1) ---
-
 class LessonLog(Base):
-    """Registo de execução de um bloco de aula gerado pelo Solver.
+    """Execution log for either a published or operational block."""
 
-    Relação 1-para-1 com ScheduleOutput. Criado automaticamente quando
-    o professor ou admin interage com um bloco pela primeira vez.
-    É a nova fonte de verdade para o progresso da disciplina
-    (substituindo o acoplamento a LessonOccurrence para aulas normais).
-    """
     __tablename__ = "lesson_log"
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -2078,22 +2244,14 @@ class LessonLog(Base):
         ForeignKey(FK_ORG_ID, ondelete="CASCADE"), nullable=False, index=True
     )
 
-    # Ligação 1-para-1 ao bloco gerado pelo Solver
-    schedule_output_id: Mapped[Optional[int]] = mapped_column(
-        ForeignKey(FK_SCHEDULE_OUTPUT_ID, ondelete="CASCADE"),
-        nullable=True,
-        unique=True,  # Garante relação 1-para-1
-        index=True,
-    )
-
     # Estado de execução da aula
-    operational_block_id: Mapped[Optional[int]] = mapped_column(
+    operational_block_id: Mapped[int | None] = mapped_column(
         ForeignKey("operational_schedule_block.id", ondelete="CASCADE"),
         nullable=True,
         unique=True,
         index=True,
     )
-    active_schedule_block_id: Mapped[Optional[int]] = mapped_column(
+    active_schedule_block_id: Mapped[int | None] = mapped_column(
         ForeignKey("active_schedule_blocks.id", ondelete="RESTRICT"),
         nullable=True,
         index=True,
@@ -2105,43 +2263,45 @@ class LessonLog(Base):
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
 
     # Conteúdo pedagógico (ambos opcionais)
-    summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)   # Sumário da aula
-    notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)     # Notas livres
+    summary: Mapped[str | None] = mapped_column(Text, nullable=True)  # Sumário da aula
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)  # Notas livres
 
     # Auditoria — quem registou e quando
-    logged_by_user_id: Mapped[Optional[int]] = mapped_column(
-        ForeignKey("user.id", ondelete=ON_DELETE_SET_NULL), nullable=True
+    logged_by_membership_id: Mapped[int | None] = mapped_column(
+        ForeignKey("organization_membership.id", ondelete=ON_DELETE_SET_NULL), nullable=True
     )
-    logged_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    logged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc),
+        default=lambda: datetime.now(UTC),
         nullable=False,
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc),
-        onupdate=lambda: datetime.now(timezone.utc),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
         nullable=False,
     )
 
     # Relacionamentos
     organization: Mapped["Organization"] = relationship()
-    schedule_output: Mapped[Optional["ScheduleOutput"]] = relationship()
     operational_block: Mapped[Optional["OperationalScheduleBlock"]] = relationship()
     active_schedule_block: Mapped[Optional["ActiveScheduleBlock"]] = relationship()
-    logged_by_user: Mapped[Optional["User"]] = relationship(foreign_keys=[logged_by_user_id])
+    logged_by_membership: Mapped[Optional["OrganizationMembership"]] = relationship(
+        foreign_keys=[logged_by_membership_id]
+    )
 
     __table_args__ = (
         CheckConstraint(
-            "(CASE WHEN schedule_output_id IS NOT NULL THEN 1 ELSE 0 END + "
-            "CASE WHEN operational_block_id IS NOT NULL THEN 1 ELSE 0 END + "
+            "(CASE WHEN operational_block_id IS NOT NULL THEN 1 ELSE 0 END + "
             "CASE WHEN active_schedule_block_id IS NOT NULL THEN 1 ELSE 0 END) = 1",
             name="ck_lesson_log_exactly_one_target",
         ),
         UniqueConstraint(
-            "id", "organization_id", "active_schedule_block_id",
+            "id",
+            "organization_id",
+            "active_schedule_block_id",
             name="uq_lesson_log_id_org_active_block",
         ),
         UniqueConstraint(
@@ -2152,8 +2312,8 @@ class LessonLog(Base):
 
     def __repr__(self) -> str:
         return (
-            f"<LessonLog(id={self.id}, schedule_output_id={self.schedule_output_id}, "
-            f"operational_block_id={self.operational_block_id}, status='{self.status}')>"
+            f"<LessonLog(id={self.id}, operational_block_id={self.operational_block_id}, "
+            f"status='{self.status}')>"
         )
 
 
@@ -2168,6 +2328,7 @@ class TeacherWeeklyTimesheet(Base):
     Regra: só pode ser submetida quando todos os LessonLog da semana
     tiverem status != PENDING E nenhum bloco da semana for futuro.
     """
+
     __tablename__ = "teacher_weekly_timesheet"
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -2189,27 +2350,31 @@ class TeacherWeeklyTimesheet(Base):
     )
 
     # Datas de transição de estado (auditoria)
-    submitted_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
-    approved_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
-    approved_by_user_id: Mapped[Optional[int]] = mapped_column(
-        ForeignKey("user.id", ondelete=ON_DELETE_SET_NULL), nullable=True
+    submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    approved_by_membership_id: Mapped[int | None] = mapped_column(
+        ForeignKey("organization_membership.id", ondelete=ON_DELETE_SET_NULL), nullable=True
     )
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc),
+        default=lambda: datetime.now(UTC),
         nullable=False,
     )
 
     # Relacionamentos
     organization: Mapped["Organization"] = relationship()
     teacher: Mapped["Teacher"] = relationship(back_populates="timesheets")
-    approved_by_user: Mapped[Optional["User"]] = relationship(foreign_keys=[approved_by_user_id])
+    approved_by_membership: Mapped[Optional["OrganizationMembership"]] = relationship(
+        foreign_keys=[approved_by_membership_id]
+    )
 
     # Uma única timesheet por professor por semana
     __table_args__ = (
         UniqueConstraint(
-            "organization_id", "teacher_id", "week_start_date",
+            "organization_id",
+            "teacher_id",
+            "week_start_date",
             name="uq_teacher_weekly_timesheet",
         ),
         Index("ix_timesheet_org_week", "organization_id", "week_start_date"),
@@ -2224,21 +2389,22 @@ class TeacherWeeklyTimesheet(Base):
 
 # --- ENSINO PROFISSIONAL / MODULAR ---
 
+
 class Course(Base):
     """Ex: Técnico de Gestão e Programação de Sistemas Informáticos"""
+
     __tablename__ = "course"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(150), nullable=False)
     abbreviation: Mapped[str] = mapped_column(String(10), nullable=False)
     organization_id: Mapped[int] = mapped_column(ForeignKey(FK_ORG_ID))
-    
+
     organization: Mapped["Organization"] = relationship(back_populates="courses")
-    classes: Mapped[List["Class"]] = relationship(back_populates="course")
-    
-    subjects: Mapped[List["Subject"]] = relationship(
-        secondary=course_subject_link,
-        back_populates="courses"
+    classes: Mapped[list["Class"]] = relationship(back_populates="course")
+
+    subjects: Mapped[list["Subject"]] = relationship(
+        secondary=course_subject_link, back_populates="courses"
     )
 
     __table_args__ = (
@@ -2246,7 +2412,7 @@ class Course(Base):
     )
 
     @property
-    def subject_ids(self) -> List[int]:
+    def subject_ids(self) -> list[int]:
         """
         Propriedade virtual que o Pydantic lê automaticamente
         devido ao 'from_attributes=True' no schema.
@@ -2256,71 +2422,74 @@ class Course(Base):
     def __repr__(self) -> str:
         return f"<Course(id={self.id}, name='{self.name}')>"
 
+
 class Module(Base):
     """Ex: UFCD 0789 - Fundamentos de Programação (50h)"""
+
     __tablename__ = "module"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    organization_id: Mapped[int] = mapped_column(ForeignKey(FK_ORG_ID, ondelete="CASCADE"), nullable=False, index=True)
+    organization_id: Mapped[int] = mapped_column(
+        ForeignKey(FK_ORG_ID, ondelete="CASCADE"), nullable=False, index=True
+    )
     name: Mapped[str] = mapped_column(String(150), nullable=False)
-    code: Mapped[Optional[str]] = mapped_column(String(50), nullable=True) # Ex: "0789"
-    hours_total: Mapped[int] = mapped_column(Integer, nullable=False)  # Sem default - admin define
-    order: Mapped[int] = mapped_column(Integer, nullable=False)  # Sequência no currículo (1, 2, 3...)
-    
+    code: Mapped[str | None] = mapped_column(String(50), nullable=True)  # Ex: "0789"
+    required_minutes: Mapped[int] = mapped_column(Integer, nullable=False)
+    order: Mapped[int] = mapped_column(
+        Integer, nullable=False
+    )  # Sequência no currículo (1, 2, 3...)
+
     # Um módulo pertence a uma disciplina macro (ex: pertence a "Programação")
     subject_id: Mapped[int] = mapped_column(ForeignKey(FK_SUBJECT_ID))
     subject: Mapped["Subject"] = relationship(back_populates="modules")
 
     # Garante ordem única por disciplina
     __table_args__ = (
-        UniqueConstraint("organization_id", "subject_id", "order", name="uq_module_order_per_subject"),
+        UniqueConstraint(
+            "organization_id", "subject_id", "order", name="uq_module_order_per_subject"
+        ),
+        CheckConstraint("required_minutes > 0", name="ck_module_required_minutes"),
+        CheckConstraint('"order" >= 0', name="ck_module_order_nonnegative"),
     )
+
+    @property
+    def hours_total(self) -> float:
+        return self.required_minutes / 60
+
+    @hours_total.setter
+    def hours_total(self, value: float) -> None:
+        self.required_minutes = int(round(value * 60))
 
     def __repr__(self) -> str:
         return f"<Module(id={self.id}, code='{self.code}', hours={self.hours_total})>"
 
-class ClassProgress(Base):
-    """Rastreia quantas horas a turma já fez de um módulo"""
-    __tablename__ = "class_progress"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    organization_id: Mapped[int] = mapped_column(ForeignKey(FK_ORG_ID, ondelete="CASCADE"), nullable=False, index=True)
-    
-    class_id: Mapped[int] = mapped_column(ForeignKey(FK_CLASS_ID))
-    module_id: Mapped[int] = mapped_column(ForeignKey("module.id"))
-    
-    hours_completed: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
-    hours_debt: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
-    is_completed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), nullable=False)
-
-    # Relacionamentos
-    class_: Mapped["Class"] = relationship(back_populates="progress_records")
-    module: Mapped["Module"] = relationship()
-    
-    # Garante uma entrada por turma/módulo
-    __table_args__ = (
-        UniqueConstraint("organization_id", "class_id", "module_id", name="uq_class_module"),
-    )
-
 
 class ProgressLedgerEntry(Base):
     """Ledger idempotente dos deltas aplicados a progresso/divida curricular."""
+
     __tablename__ = "progress_ledger_entry"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    organization_id: Mapped[int] = mapped_column(ForeignKey(FK_ORG_ID, ondelete="CASCADE"), nullable=False, index=True)
+    organization_id: Mapped[int] = mapped_column(
+        ForeignKey(FK_ORG_ID, ondelete="CASCADE"), nullable=False, index=True
+    )
     source_type: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
     source_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
-    source_revision: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    source_revision: Mapped[int | None] = mapped_column(Integer, nullable=True)
     class_id: Mapped[int] = mapped_column(ForeignKey(FK_CLASS_ID), nullable=False, index=True)
     module_id: Mapped[int] = mapped_column(ForeignKey("module.id"), nullable=False, index=True)
-    completed_delta: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
-    debt_delta: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
-    idempotency_key: Mapped[str] = mapped_column(String(160), nullable=False, unique=True, index=True)
-    created_by_user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("user.id", ondelete=ON_DELETE_SET_NULL), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
-    reverses_ledger_entry_id: Mapped[Optional[int]] = mapped_column(
+    completed_minutes_delta: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    debt_minutes_delta: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    idempotency_key: Mapped[str] = mapped_column(
+        String(160), nullable=False, unique=True, index=True
+    )
+    created_by_membership_id: Mapped[int | None] = mapped_column(
+        ForeignKey("organization_membership.id", ondelete=ON_DELETE_SET_NULL), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+    )
+    reverses_ledger_entry_id: Mapped[int | None] = mapped_column(
         ForeignKey("progress_ledger_entry.id", ondelete=ON_DELETE_SET_NULL),
         nullable=True,
     )
@@ -2328,9 +2497,13 @@ class ProgressLedgerEntry(Base):
     organization: Mapped["Organization"] = relationship()
     class_: Mapped["Class"] = relationship()
     module: Mapped["Module"] = relationship()
-    created_by_user: Mapped[Optional["User"]] = relationship()
+    created_by_membership: Mapped[Optional["OrganizationMembership"]] = relationship()
     reverses_ledger_entry: Mapped[Optional["ProgressLedgerEntry"]] = relationship(remote_side=[id])
 
     __table_args__ = (
         Index("ix_progress_ledger_org_source", "organization_id", "source_type", "source_id"),
+        CheckConstraint(
+            "completed_minutes_delta <> 0 OR debt_minutes_delta <> 0",
+            name="ck_progress_ledger_nonzero_delta",
+        ),
     )

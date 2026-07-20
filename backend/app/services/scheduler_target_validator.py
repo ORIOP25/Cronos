@@ -61,8 +61,7 @@ class SchedulerTargetValidator:
             key = (block.class_id, block.subject_id)
             actual[key] = actual.get(key, 0) + block.duration_minutes
         expected = {
-            (item.class_id, item.subject_id): item.required_minutes
-            for item in ledger.items
+            (item.class_id, item.subject_id): item.required_minutes for item in ledger.items
         }
         if actual != expected:
             raise SchedulerTargetValidationError(

@@ -78,9 +78,7 @@ class SchedulerGenerationService:
     ) -> GenerationSelection:
         school_year = await self._state.get_active_school_year(organization_id)
         if school_year is None:
-            raise GenerationConfigurationError(
-                "No active scheduler school year is configured."
-            )
+            raise GenerationConfigurationError("No active scheduler school year is configured.")
         state = await self._state.get_state(organization_id, school_year.id)
         if state is None:
             raise GenerationConfigurationError(
@@ -97,10 +95,7 @@ class SchedulerGenerationService:
                 pending_draft_id=pending_draft.id,
             )
 
-        if (
-            state.school_year_publication_state
-            == models.SchoolYearPublicationState.UNPUBLISHED
-        ):
+        if state.school_year_publication_state == models.SchoolYearPublicationState.UNPUBLISHED:
             return GenerationSelection(
                 organization_id=organization_id,
                 school_year_id=school_year.id,

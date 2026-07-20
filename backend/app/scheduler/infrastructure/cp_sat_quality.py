@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
-from typing import Any, Iterable, Mapping, Sequence
+from typing import Any
 
 from ortools.sat.python import cp_model
 
@@ -47,11 +48,7 @@ class CpSatQualityExpressions:
 
     @property
     def gap_and_availability_cost(self):
-        return (
-            self.class_gap_minutes
-            + self.teacher_gap_minutes
-            + self.availability_disutility
-        )
+        return self.class_gap_minutes + self.teacher_gap_minutes + self.availability_disutility
 
 
 @dataclass(frozen=True)
@@ -112,13 +109,11 @@ class CpSatQualityAdapter:
             class_daily_excess=class_quality.daily_excess,
             teacher_daily_excess=teacher_quality.daily_excess,
             consecutive_excess=(
-                class_quality.consecutive_excess
-                + teacher_quality.consecutive_excess
+                class_quality.consecutive_excess + teacher_quality.consecutive_excess
             ),
             late_slot_minutes=late,
             repeated_heavy_penalty=(
-                class_quality.repeated_heavy_penalty
-                + teacher_quality.repeated_heavy_penalty
+                class_quality.repeated_heavy_penalty + teacher_quality.repeated_heavy_penalty
             ),
             recovery_stack_excess=recovery_stack,
             class_gap_minutes=class_quality.gap_minutes,
@@ -168,9 +163,7 @@ class CpSatQualityAdapter:
                 key = (resource_id, output_date, slot.id)
                 terms = variable_loads.get(key, ())
                 fixed_minutes = fixed_loads.get(key, 0)
-                occupancy = model.NewBoolVar(
-                    f"{prefix}_occupied_{day_index}_{slot_index}"
-                )
+                occupancy = model.NewBoolVar(f"{prefix}_occupied_{day_index}_{slot_index}")
                 if fixed_minutes:
                     model.Add(occupancy == 1)
                 elif terms:
@@ -232,18 +225,14 @@ class CpSatQualityAdapter:
             )
 
         repeated_heavy: list[Any] = []
-        for week_index, values in enumerate(
-            heavy_by_week[key] for key in sorted(heavy_by_week)
-        ):
+        for week_index, values in enumerate(heavy_by_week[key] for key in sorted(heavy_by_week)):
             excess = model.NewIntVar(
                 0,
                 len(values),
                 f"{prefix}_repeated_heavy_{week_index}",
             )
             model.AddMaxEquality(excess, [sum(values) - 2, 0])
-            repeated_heavy.append(
-                self.evaluator.policy.standard_block_minutes * excess
-            )
+            repeated_heavy.append(self.evaluator.policy.standard_block_minutes * excess)
         return _ResourceExpressions(
             daily_excess=sum(daily_excesses),
             consecutive_excess=sum(run_excesses),
@@ -297,9 +286,7 @@ class CpSatQualityAdapter:
                     f"{prefix}_continue_{day_index}_{index}",
                 )
                 model.Add(run == runs[-1] + load).OnlyEnforceIf(continuation)
-                model.Add(run == load).OnlyEnforceIf(
-                    [occupancy, continuation.Not()]
-                )
+                model.Add(run == load).OnlyEnforceIf([occupancy, continuation.Not()])
                 model.Add(run == 0).OnlyEnforceIf(occupancy.Not())
             runs.append(run)
             excess = model.NewIntVar(
@@ -362,12 +349,8 @@ class CpSatQualityAdapter:
     def _lunch_overlap(self, slot: QualitySlot) -> int:
         if not self.evaluator.lunch_rule:
             return 0
-        lunch_start = self.evaluator._minute(
-            self.evaluator.lunch_rule.get("window_start")
-        )
-        lunch_end = self.evaluator._minute(
-            self.evaluator.lunch_rule.get("window_end")
-        )
+        lunch_start = self.evaluator._minute(self.evaluator.lunch_rule.get("window_start"))
+        lunch_end = self.evaluator._minute(self.evaluator.lunch_rule.get("window_end"))
         return max(
             0,
             min(slot.end_minute, lunch_end) - max(slot.start_minute, lunch_start),

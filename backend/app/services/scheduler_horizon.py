@@ -41,8 +41,7 @@ class AdaptiveHorizonSelector:
             ledger.required_minutes / max(1, self._minimum_slot_minutes(snapshot))
         )
         impossible_count = sum(
-            row.get("score") == -1
-            for row in snapshot.get("teacher_availability", [])
+            row.get("score") == -1 for row in snapshot.get("teacher_availability", [])
         )
         availability_rows = len(snapshot.get("teacher_availability", []))
         impossible_density = impossible_count / max(1, availability_rows)
@@ -64,12 +63,11 @@ class AdaptiveHorizonSelector:
             + (10.0 if 0 < remaining_days < 90 else 0.0),
         )
         complexity_days = round(
-            self.MAX_HORIZON_DAYS
-            - (self.MAX_HORIZON_DAYS - self.MIN_HORIZON_DAYS) * score / 100
+            self.MAX_HORIZON_DAYS - (self.MAX_HORIZON_DAYS - self.MIN_HORIZON_DAYS) * score / 100
         )
-        rooms_per_item = sum(
-            len(item.eligible_room_ids) for item in ledger.items
-        ) / max(1, len(ledger.items))
+        rooms_per_item = sum(len(item.eligible_room_ids) for item in ledger.items) / max(
+            1, len(ledger.items)
+        )
         weekday_slot_density = slot_count / 7
         estimated_candidates_per_day = max(
             1,

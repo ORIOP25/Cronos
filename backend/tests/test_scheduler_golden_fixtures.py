@@ -10,9 +10,6 @@ from tests.scheduler_golden_fixtures import (
 )
 
 
-pytestmark = pytest.mark.unit
-
-
 @pytest.mark.parametrize(
     ("factory", "expected_name"),
     (
@@ -45,10 +42,7 @@ def test_golden_fixture_profiles_increase_in_representative_scale():
     ]
 
     assert [len(item.snapshot["classes"]) for item in fixtures] == [3, 12, 30]
-    assert [
-        len(item.snapshot["class_subject_requirements"])
-        for item in fixtures
-    ] == [9, 48, 120]
+    assert [len(item.snapshot["class_subject_requirements"]) for item in fixtures] == [9, 48, 120]
 
 
 def test_constrained_golden_fixture_covers_every_supported_custom_rule():
@@ -61,6 +55,4 @@ def test_constrained_golden_fixture_covers_every_supported_custom_rule():
         "teacher_unavailable",
         "teacher_preferred",
     }
-    assert not SchedulerConstraintPolicy.from_snapshot(
-        fixture.snapshot
-    ).configuration_violations
+    assert not SchedulerConstraintPolicy.from_snapshot(fixture.snapshot).configuration_violations

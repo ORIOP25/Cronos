@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
-from typing import Any, Mapping
+from collections.abc import Mapping
+from datetime import UTC, date, datetime
+from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from sqlalchemy import select
@@ -132,9 +133,7 @@ class SchedulerStateService:
             .values(
                 organization_id=organization_id,
                 school_year_id=school_year_id,
-                school_year_publication_state=(
-                    models.SchoolYearPublicationState.UNPUBLISHED
-                ),
+                school_year_publication_state=(models.SchoolYearPublicationState.UNPUBLISHED),
                 scheduler_state_version=0,
                 lock_version=0,
             )
@@ -295,7 +294,7 @@ class SchedulerStateService:
         organization_id: int,
         school_year_id: int,
         *,
-        reset_by_user_id: int,
+        reset_by_membership_id: int,
         reset_at: datetime | None = None,
     ) -> models.SchedulerSchoolYearState:
         state = await self._require_locked_state(organization_id, school_year_id)
@@ -303,8 +302,8 @@ class SchedulerStateService:
         state.active_schedule_version_id = None
         state.pending_draft_id = None
         state.approved_scheduler_state_version = None
-        state.reset_by_user_id = reset_by_user_id
-        state.reset_at = reset_at or datetime.now(timezone.utc)
+        state.reset_by_membership_id = reset_by_membership_id
+        state.reset_at = reset_at or datetime.now(UTC)
         state.lock_version += 1
         await self._db.flush()
         return state
@@ -318,7 +317,7 @@ class SchedulerStateService:
         operation: models.SchedulerStateChangeOperation,
         before: Any,
         after: Any,
-        changed_by_user_id: int | None = None,
+        changed_by_membership_id: int | None = None,
         future_impacting: bool = True,
         active_resource: bool = True,
         repair_policy_change: bool = False,
@@ -375,7 +374,7 @@ class SchedulerStateService:
             entity_id=None if entity_id is None else str(entity_id),
             operation=operation,
             change_scope=change_scope,
-            changed_by_user_id=changed_by_user_id,
+            changed_by_membership_id=changed_by_membership_id,
             before_metadata_json=canonical_before,
             after_metadata_json=canonical_after,
             metadata_json=canonical_metadata,

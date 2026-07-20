@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import func, select
@@ -11,12 +11,11 @@ from sqlalchemy.orm import selectinload
 from app import models
 from app.config import settings
 
-
 RETRYABLE_CATEGORIES = {"temporary_failure", "provider_rate_limited"}
 
 
 def _now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def _normalize_email(email: str | None) -> str | None:
@@ -58,7 +57,9 @@ def sanitize_payload(payload: dict[str, Any]) -> dict[str, Any]:
         "timestamp": payload.get("timestamp"),
         "data": {
             "id": data.get("id"),
-            "email_address": data.get("email_address") or user_data.get("identifier") or primary_email,
+            "email_address": data.get("email_address")
+            or user_data.get("identifier")
+            or primary_email,
             "first_name": data.get("first_name"),
             "last_name": data.get("last_name"),
             "organization": {
@@ -87,7 +88,11 @@ async def enqueue_and_process_clerk_event(
     event_type = payload.get("type") or "unknown"
     data = payload.get("data") or {}
     clerk_org_id = (data.get("organization") or {}).get("id") or data.get("organization_id")
-    clerk_user_id = data.get("id") if event_type.startswith("user.") else (data.get("public_user_data") or {}).get("user_id")
+    clerk_user_id = (
+        data.get("id")
+        if event_type.startswith("user.")
+        else (data.get("public_user_data") or {}).get("user_id")
+    )
     event = models.ClerkWebhookEvent(
         svix_id=svix_id,
         event_type=event_type,
@@ -102,7 +107,9 @@ async def enqueue_and_process_clerk_event(
             db.add(event)
             await db.flush()
     except IntegrityError:
-        existing = await db.scalar(select(models.ClerkWebhookEvent).where(models.ClerkWebhookEvent.svix_id == svix_id))
+        existing = await db.scalar(
+            select(models.ClerkWebhookEvent).where(models.ClerkWebhookEvent.svix_id == svix_id)
+        )
         if existing is not None:
             if _should_reprocess(existing):
                 await process_clerk_event(db, existing)
@@ -149,27 +156,41 @@ async def process_clerk_event(db: AsyncSession, event: models.ClerkWebhookEvent)
             matched = await _sync_membership(db, event, data)
             if event.processing_status != models.ClerkWebhookProcessingStatus.sync_error:
                 event.processing_status = (
-                    models.ClerkWebhookProcessingStatus.processed if matched else models.ClerkWebhookProcessingStatus.ignored
+                    models.ClerkWebhookProcessingStatus.processed
+                    if matched
+                    else models.ClerkWebhookProcessingStatus.ignored
                 )
         elif event_type == "organizationMembership.deleted":
             matched = await _delete_membership(db, data)
             event.processing_status = (
-                models.ClerkWebhookProcessingStatus.processed if matched else models.ClerkWebhookProcessingStatus.ignored
+                models.ClerkWebhookProcessingStatus.processed
+                if matched
+                else models.ClerkWebhookProcessingStatus.ignored
             )
-        elif event_type in {"organizationInvitation.created", "organizationInvitation.accepted", "organizationInvitation.revoked"}:
+        elif event_type in {
+            "organizationInvitation.created",
+            "organizationInvitation.accepted",
+            "organizationInvitation.revoked",
+        }:
             matched = await _sync_invitation(db, event_type, data)
             event.processing_status = (
-                models.ClerkWebhookProcessingStatus.processed if matched else models.ClerkWebhookProcessingStatus.ignored
+                models.ClerkWebhookProcessingStatus.processed
+                if matched
+                else models.ClerkWebhookProcessingStatus.ignored
             )
         elif event_type in {"user.created", "user.updated"}:
             matched = await _sync_user_identity(db, data)
             event.processing_status = (
-                models.ClerkWebhookProcessingStatus.processed if matched else models.ClerkWebhookProcessingStatus.ignored
+                models.ClerkWebhookProcessingStatus.processed
+                if matched
+                else models.ClerkWebhookProcessingStatus.ignored
             )
         elif event_type == "user.deleted":
             matched = await _block_deleted_user(db, data)
             event.processing_status = (
-                models.ClerkWebhookProcessingStatus.processed if matched else models.ClerkWebhookProcessingStatus.ignored
+                models.ClerkWebhookProcessingStatus.processed
+                if matched
+                else models.ClerkWebhookProcessingStatus.ignored
             )
         else:
             event.processing_status = models.ClerkWebhookProcessingStatus.ignored
@@ -180,7 +201,9 @@ async def process_clerk_event(db: AsyncSession, event: models.ClerkWebhookEvent)
             event.processing_status = models.ClerkWebhookProcessingStatus.dead_letter
         else:
             event.processing_status = models.ClerkWebhookProcessingStatus.retryable_failed
-            delay = settings.CLERK_WEBHOOK_RETRY_BASE_SECONDS * (2 ** max(event.attempt_count - 1, 0))
+            delay = settings.CLERK_WEBHOOK_RETRY_BASE_SECONDS * (
+                2 ** max(event.attempt_count - 1, 0)
+            )
             event.next_retry_at = _now() + timedelta(seconds=delay)
         event.error_category = "temporary_failure"
 
@@ -189,9 +212,15 @@ async def _sync_organization(db: AsyncSession, data: dict[str, Any]) -> None:
     clerk_org_id = (data.get("organization") or {}).get("id") or data.get("id")
     if not clerk_org_id:
         return
-    org = await db.scalar(select(models.Organization).where(models.Organization.clerk_org_id == clerk_org_id))
+    org = await db.scalar(
+        select(models.Organization).where(models.Organization.clerk_org_id == clerk_org_id)
+    )
     if org is None:
-        org = models.Organization(name=data.get("name") or (data.get("organization") or {}).get("name") or "Organization", clerk_org_id=clerk_org_id, plan_status="active")
+        org = models.Organization(
+            name=data.get("name") or (data.get("organization") or {}).get("name") or "Organization",
+            clerk_org_id=clerk_org_id,
+            plan_status="active",
+        )
         db.add(org)
     elif data.get("name"):
         org.name = data["name"]
@@ -199,7 +228,9 @@ async def _sync_organization(db: AsyncSession, data: dict[str, Any]) -> None:
 
 async def _archive_organization(db: AsyncSession, data: dict[str, Any]) -> None:
     clerk_org_id = data.get("id")
-    org = await db.scalar(select(models.Organization).where(models.Organization.clerk_org_id == clerk_org_id))
+    org = await db.scalar(
+        select(models.Organization).where(models.Organization.clerk_org_id == clerk_org_id)
+    )
     if org is not None:
         org.plan_status = models.OrganizationPlanStatus.inactive
 
@@ -217,7 +248,6 @@ async def _load_matching_membership(
         .join(models.User, models.User.id == models.OrganizationMembership.account_id)
         .options(
             selectinload(models.OrganizationMembership.account),
-            selectinload(models.OrganizationMembership.capabilities),
             selectinload(models.OrganizationMembership.teacher_profile),
         )
         .where(models.Organization.clerk_org_id == clerk_org_id)
@@ -246,7 +276,9 @@ def _mark_identity_conflict(
         event.error_category = "identity_conflict"
 
 
-async def _sync_membership(db: AsyncSession, event: models.ClerkWebhookEvent, data: dict[str, Any]) -> bool:
+async def _sync_membership(
+    db: AsyncSession, event: models.ClerkWebhookEvent, data: dict[str, Any]
+) -> bool:
     org_data = data.get("organization") or {}
     clerk_org_id = org_data.get("id")
     user_data = data.get("public_user_data") or {}
@@ -296,8 +328,16 @@ async def _sync_membership(db: AsyncSession, event: models.ClerkWebhookEvent, da
         return True
     member.account.clerk_user_id = webhook_user_id
     member.clerk_membership_id = data.get("id") or member.clerk_membership_id
-    member.access_status = models.MembershipAccessStatus.active if expected_role else models.MembershipAccessStatus.none
-    member.clerk_invitation_status = models.ClerkInvitationStatus.accepted if member.clerk_invitation_id else member.clerk_invitation_status
+    member.access_status = (
+        models.MembershipAccessStatus.active
+        if expected_role
+        else models.MembershipAccessStatus.none
+    )
+    member.clerk_invitation_status = (
+        models.ClerkInvitationStatus.accepted
+        if member.clerk_invitation_id
+        else member.clerk_invitation_status
+    )
     member.access_error_category = None
     member.access_error_safe_message = None
     return True
@@ -306,7 +346,9 @@ async def _sync_membership(db: AsyncSession, event: models.ClerkWebhookEvent, da
 async def _delete_membership(db: AsyncSession, data: dict[str, Any]) -> bool:
     clerk_membership_id = data.get("id") or data.get("membership_id")
     clerk_user_id = (data.get("public_user_data") or {}).get("user_id")
-    stmt = select(models.OrganizationMembership).options(selectinload(models.OrganizationMembership.account))
+    stmt = select(models.OrganizationMembership).options(
+        selectinload(models.OrganizationMembership.account)
+    )
     if clerk_membership_id:
         stmt = stmt.where(models.OrganizationMembership.clerk_membership_id == clerk_membership_id)
     elif clerk_user_id:
@@ -327,7 +369,9 @@ async def _sync_invitation(db: AsyncSession, event_type: str, data: dict[str, An
     if not invitation_id:
         return False
     member = await db.scalar(
-        select(models.OrganizationMembership).where(models.OrganizationMembership.clerk_invitation_id == invitation_id)
+        select(models.OrganizationMembership).where(
+            models.OrganizationMembership.clerk_invitation_id == invitation_id
+        )
     )
     if member is None:
         return False
@@ -337,7 +381,10 @@ async def _sync_invitation(db: AsyncSession, event_type: str, data: dict[str, An
         "organizationInvitation.revoked": models.ClerkInvitationStatus.revoked,
     }
     member.clerk_invitation_status = status_map[event_type]
-    if event_type == "organizationInvitation.revoked" and member.access_status == models.MembershipAccessStatus.pending_invite:
+    if (
+        event_type == "organizationInvitation.revoked"
+        and member.access_status == models.MembershipAccessStatus.pending_invite
+    ):
         member.access_status = models.MembershipAccessStatus.invite_expired
     return True
 
@@ -370,7 +417,9 @@ async def _sync_user_identity(db: AsyncSession, data: dict[str, Any]) -> bool:
             _mark_identity_conflict(member)
         return bool(matched_members)
     conflicting_account = await db.scalar(
-        select(models.User).where(models.User.clerk_user_id == clerk_user_id, models.User.id != account.id)
+        select(models.User).where(
+            models.User.clerk_user_id == clerk_user_id, models.User.id != account.id
+        )
     )
     if conflicting_account is not None:
         members = await db.execute(
@@ -390,7 +439,10 @@ async def _sync_user_identity(db: AsyncSession, data: dict[str, Any]) -> bool:
             _mark_identity_conflict(member)
         return bool(matched_members)
     account.clerk_user_id = clerk_user_id
-    account.clerk_profile_name = " ".join(filter(None, [data.get("first_name"), data.get("last_name")])) or account.clerk_profile_name
+    account.clerk_profile_name = (
+        " ".join(filter(None, [data.get("first_name"), data.get("last_name")]))
+        or account.clerk_profile_name
+    )
     account.last_clerk_sync_at = _now()
     return True
 

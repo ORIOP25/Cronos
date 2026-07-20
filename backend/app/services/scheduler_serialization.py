@@ -3,9 +3,10 @@ from __future__ import annotations
 import enum
 import hashlib
 import json
+from collections.abc import Mapping
 from datetime import date, datetime, time
 from decimal import Decimal
-from typing import Any, Mapping
+from typing import Any
 
 
 class SchedulerSerializationError(ValueError):

@@ -14,7 +14,9 @@ async def _main() -> None:
     args = parser.parse_args()
 
     async with SessionLocal() as db:
-        result = await member_reconciliation_service.run_scheduled_reconciliation(db, limit=args.limit)
+        result = await member_reconciliation_service.run_scheduled_reconciliation(
+            db, limit=args.limit
+        )
         await db.commit()
         print(json.dumps(result, indent=2, default=str))
 

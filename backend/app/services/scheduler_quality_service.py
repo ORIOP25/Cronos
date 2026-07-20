@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from typing import Any, Iterable
+from collections.abc import Iterable
+from typing import Any
 
 from app.scheduler.domain.constraints import SchedulerConstraintPolicy
 from app.scheduler.domain.quality import (
@@ -45,7 +46,7 @@ def evaluate_target_quality(
     required: dict[int, int] = defaultdict(int)
     for row in snapshot.get("module_accounting", []):
         subject_id = row.get("subject_id")
-        minutes = max(0, int(round(float(row.get("hours_total") or 0) * 60)))
+        minutes = max(0, int(row.get("required_minutes") or 0))
         for assignment in snapshot.get("class_subject_requirements", []):
             if assignment.get("subject_id") == subject_id:
                 required[int(assignment["class_id"])] += minutes

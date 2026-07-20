@@ -2,14 +2,13 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 import structlog
 
 from app.config import settings
-from app.core.clerk import get_clerk_sdk
-
+from app.core.clerk import ClerkGateway, get_clerk_sdk
 
 SAFE_PROVIDER_ERROR = "Access could not be synchronized with Clerk. Try again or contact support."
 PROVIDER_CONTRACT_ERROR = "provider_contract_error"
@@ -44,19 +43,30 @@ def normalize_clerk_datetime(value: object) -> datetime | None:
         return None
     if isinstance(value, datetime):
         if value.tzinfo is None:
-            return value.replace(tzinfo=timezone.utc)
-        return value.astimezone(timezone.utc)
+            return value.replace(tzinfo=UTC)
+        return value.astimezone(UTC)
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise TypeError(f"Unsupported Clerk timestamp type: {type(value).__name__}")
-    return datetime.fromtimestamp(value / 1000, tz=timezone.utc)
+    return datetime.fromtimestamp(value / 1000, tz=UTC)
 
 
 class ClerkAccessService:
     """Infrastructure adapter for Clerk Backend API access operations."""
 
+    def __init__(self, gateway: ClerkGateway | None = None) -> None:
+        self._gateway = gateway
+
+    @property
+    def _sdk(self):
+        return self._gateway.sdk if self._gateway is not None else get_clerk_sdk()
+
     async def _call(self, fn, *args, **kwargs) -> ClerkAccessResult:
         try:
-            result = await asyncio.to_thread(fn, *args, **kwargs)
+            result = (
+                await fn(*args, **kwargs)
+                if self._gateway is not None
+                else await asyncio.to_thread(fn, *args, **kwargs)
+            )
         except Exception as exc:
             text = str(exc).lower()
             status_code = getattr(exc, "status_code", None)
@@ -64,10 +74,13 @@ class ClerkAccessService:
             request_id = headers.get("x-request-id") or headers.get("x-clerk-request-id")
             errors = getattr(getattr(exc, "data", None), "errors", None) or []
             provider_code = getattr(errors[0], "code", None) if errors else None
-            retryable = any(
-                marker in text
-                for marker in ["429", "rate", "timeout", "temporar", "connection"]
-            ) or status_code == 429
+            retryable = (
+                any(
+                    marker in text
+                    for marker in ["429", "rate", "timeout", "temporar", "connection"]
+                )
+                or status_code == 429
+            )
             logger.warning(
                 "clerk_provider_request_failed",
                 operation=getattr(fn, "__name__", type(fn).__name__),
@@ -88,13 +101,13 @@ class ClerkAccessService:
         return ClerkAccessResult(raw=result)
 
     async def find_user_by_email(self, *, email: str) -> ClerkAccessResult:
-        sdk = get_clerk_sdk()
+        sdk = self._sdk
         normalized = email.strip().lower()
-
-        def _list():
-            return sdk.users.list(request={"email_address": [normalized], "limit": 10})
-
-        result = await self._call(_list)
+        list_users = sdk.users.list_async if self._gateway is not None else sdk.users.list
+        result = await self._call(
+            list_users,
+            request={"email_address": [normalized], "limit": 10},
+        )
         if not result.ok:
             return result
         users = list(result.raw or [])
@@ -126,18 +139,20 @@ class ClerkAccessService:
         clerk_org_id: str,
         email: str,
     ) -> ClerkAccessResult:
-        sdk = get_clerk_sdk()
+        sdk = self._sdk
         normalized = email.strip().lower()
-
-        def _list():
-            return sdk.organization_invitations.list(
-                organization_id=clerk_org_id,
-                email_address=normalized,
-                status="pending",
-                limit=100,
-            )
-
-        result = await self._call(_list)
+        list_invitations = (
+            sdk.organization_invitations.list_async
+            if self._gateway is not None
+            else sdk.organization_invitations.list
+        )
+        result = await self._call(
+            list_invitations,
+            organization_id=clerk_org_id,
+            email_address=normalized,
+            status="pending",
+            limit=100,
+        )
         if not result.ok:
             return result
         invitations = [
@@ -208,20 +223,22 @@ class ClerkAccessService:
         inviter_user_id: str,
         membership_id: int | None,
     ) -> ClerkAccessResult:
-        sdk = get_clerk_sdk()
-
-        def _send():
-            return sdk.organization_invitations.create(
-                organization_id=clerk_org_id,
-                email_address=email,
-                role=role,
-                inviter_user_id=inviter_user_id,
-                public_metadata={"membership_id": membership_id} if membership_id else {},
-                redirect_url=settings.CLERK_INVITATION_REDIRECT_URL,
-                notify=True,
-            )
-
-        result = await self._call(_send)
+        sdk = self._sdk
+        create_invitation = (
+            sdk.organization_invitations.create_async
+            if self._gateway is not None
+            else sdk.organization_invitations.create
+        )
+        result = await self._call(
+            create_invitation,
+            organization_id=clerk_org_id,
+            email_address=email,
+            role=role,
+            inviter_user_id=inviter_user_id,
+            public_metadata={"membership_id": membership_id} if membership_id else {},
+            redirect_url=settings.CLERK_INVITATION_REDIRECT_URL,
+            notify=True,
+        )
         if not result.ok:
             return result
         parsed = self._invitation_result(result.raw)
@@ -236,16 +253,18 @@ class ClerkAccessService:
         clerk_user_id: str,
         role: str,
     ) -> ClerkAccessResult:
-        sdk = get_clerk_sdk()
-
-        def _create():
-            return sdk.organization_memberships.create(
-                organization_id=clerk_org_id,
-                user_id=clerk_user_id,
-                role=role,
-            )
-
-        result = await self._call(_create)
+        sdk = self._sdk
+        create_membership = (
+            sdk.organization_memberships.create_async
+            if self._gateway is not None
+            else sdk.organization_memberships.create
+        )
+        result = await self._call(
+            create_membership,
+            organization_id=clerk_org_id,
+            user_id=clerk_user_id,
+            role=role,
+        )
         if not result.ok:
             return result
         raw = result.raw
@@ -275,16 +294,18 @@ class ClerkAccessService:
         invitation_id: str,
         requesting_user_id: str,
     ) -> ClerkAccessResult:
-        sdk = get_clerk_sdk()
-
-        def _revoke():
-            return sdk.organization_invitations.revoke(
-                organization_id=clerk_org_id,
-                invitation_id=invitation_id,
-                requesting_user_id=requesting_user_id,
-            )
-
-        return await self._call(_revoke)
+        sdk = self._sdk
+        revoke_invitation = (
+            sdk.organization_invitations.revoke_async
+            if self._gateway is not None
+            else sdk.organization_invitations.revoke
+        )
+        return await self._call(
+            revoke_invitation,
+            organization_id=clerk_org_id,
+            invitation_id=invitation_id,
+            requesting_user_id=requesting_user_id,
+        )
 
     async def revoke_organization_membership(
         self,
@@ -292,15 +313,17 @@ class ClerkAccessService:
         clerk_org_id: str,
         clerk_user_id: str,
     ) -> ClerkAccessResult:
-        sdk = get_clerk_sdk()
-
-        def _delete():
-            return sdk.organization_memberships.delete(
-                organization_id=clerk_org_id,
-                user_id=clerk_user_id,
-            )
-
-        return await self._call(_delete)
+        sdk = self._sdk
+        delete_membership = (
+            sdk.organization_memberships.delete_async
+            if self._gateway is not None
+            else sdk.organization_memberships.delete
+        )
+        return await self._call(
+            delete_membership,
+            organization_id=clerk_org_id,
+            user_id=clerk_user_id,
+        )
 
     async def change_membership_role(
         self,
@@ -309,16 +332,18 @@ class ClerkAccessService:
         clerk_user_id: str,
         role: str,
     ) -> ClerkAccessResult:
-        sdk = get_clerk_sdk()
-
-        def _update():
-            return sdk.organization_memberships.update(
-                organization_id=clerk_org_id,
-                user_id=clerk_user_id,
-                role=role,
-            )
-
-        result = await self._call(_update)
+        sdk = self._sdk
+        update_membership = (
+            sdk.organization_memberships.update_async
+            if self._gateway is not None
+            else sdk.organization_memberships.update
+        )
+        result = await self._call(
+            update_membership,
+            organization_id=clerk_org_id,
+            user_id=clerk_user_id,
+            role=role,
+        )
         if not result.ok:
             return result
         raw = result.raw
@@ -335,26 +360,25 @@ class ClerkAccessService:
         clerk_org_id: str,
         clerk_user_id: str,
     ) -> ClerkAccessResult:
-        sdk = get_clerk_sdk()
-
-        def _get():
-            if hasattr(sdk.organization_memberships, "get"):
-                return sdk.organization_memberships.get(
-                    organization_id=clerk_org_id,
-                    user_id=clerk_user_id,
-                )
-            return sdk.organization_memberships.list(
-                organization_id=clerk_org_id,
-                user_id=[clerk_user_id],
-                limit=10,
-            )
-
-        result = await self._call(_get)
+        sdk = self._sdk
+        list_memberships = (
+            sdk.organization_memberships.list_async
+            if self._gateway is not None
+            else sdk.organization_memberships.list
+        )
+        result = await self._call(
+            list_memberships,
+            organization_id=clerk_org_id,
+            user_id=[clerk_user_id],
+            limit=10,
+        )
         if not result.ok:
             return result
         raw = result.raw
-        item = raw.data[0] if hasattr(raw, "data") and raw.data else (
-            None if hasattr(raw, "data") else raw
+        item = (
+            raw.data[0]
+            if hasattr(raw, "data") and raw.data
+            else (None if hasattr(raw, "data") else raw)
         )
         return ClerkAccessResult(
             membership_id=getattr(item, "id", None),
@@ -369,17 +393,17 @@ class ClerkAccessService:
         clerk_org_id: str,
         invitation_id: str,
     ) -> ClerkAccessResult:
-        sdk = get_clerk_sdk()
-
-        def _get():
-            if hasattr(sdk.organization_invitations, "get"):
-                return sdk.organization_invitations.get(
-                    organization_id=clerk_org_id,
-                    invitation_id=invitation_id,
-                )
-            return sdk.organization_invitations.list(organization_id=clerk_org_id)
-
-        result = await self._call(_get)
+        sdk = self._sdk
+        get_invitation = (
+            sdk.organization_invitations.get_async
+            if self._gateway is not None
+            else sdk.organization_invitations.get
+        )
+        result = await self._call(
+            get_invitation,
+            organization_id=clerk_org_id,
+            invitation_id=invitation_id,
+        )
         if not result.ok:
             return result
         raw = result.raw

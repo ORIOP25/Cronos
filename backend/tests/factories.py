@@ -1,23 +1,22 @@
 """
 Fixtures e helpers partilhados pelos testes de lógica de negócio (split).
 """
-import pytest
-from pytest import approx
-from httpx import AsyncClient
-from datetime import date, time, timedelta
+
 from uuid import uuid4
+
+from httpx import AsyncClient
+
 from app.config import settings
-from app import models
-from app.models import UserRole
 from tests.conftest import create_teacher_user
 
 API = settings.API_V1_STR
 
 
-async def _create_teacher_auth_headers(db_session, *, teacher_id: int, organization_id: int) -> tuple[dict, str]:
+async def _create_teacher_auth_headers(
+    db_session, *, teacher_id: int, organization_id: int
+) -> tuple[dict, str]:
     """Cria utilizador teacher autenticado para testes de self-service.
-    Retorna (headers, clerk_user_id) — o clerk_user_id deve ser usado com
-    patch('app.api.deps.get_clerk_payload', return_value=mock_clerk_payload(clerk_user_id, ...)).
+    Returns headers and the persisted Clerk user ID used by the auth dependency override.
     """
     cid = f"teacher_avail_{uuid4().hex[:8]}"
     await create_teacher_user(

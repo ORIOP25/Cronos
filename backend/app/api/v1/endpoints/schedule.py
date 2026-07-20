@@ -1,53 +1,35 @@
 from datetime import date, timedelta
 from time import perf_counter
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from fastapi.encoders import jsonable_encoder
-from sqlalchemy.ext.asyncio import AsyncSession
-from typing import Annotated, List
-import json
-import redis
+from typing import Annotated
+
 import structlog
-from app import schemas, models
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app import models, schemas
 from app.api import deps
-from app.services import schedule_service, teacher_observability_service
-from app.services.schedule_cache_service import (
-    invalidate_latest_schedule_cache,
-    latest_schedule_cache_key,
-)
-from app.services.preflight_service import _resolve_preflight_hard_end_date
-from app.config import settings
 from app.core.ratelimit import limiter
+from app.services import schedule_service, teacher_observability_service
+from app.services.preflight_service import _resolve_preflight_hard_end_date
+from app.services.school_year_reset_service import SchoolYearResetService
 
 router = APIRouter()
 logger = structlog.get_logger(__name__)
 ERR_TEACHER_PROFILE_REQUIRED = "Professor sem perfil associado"
-ERR_TEACHER_OWN_SCHEDULE_ONLY = "Professor só pode consultar o próprio horário"
-ERR_TEACHER_HORIZON_NOT_FOUND = "Não existe horizonte semanal configurado para a organização"
-ERR_SCHEDULE_RESET_FORBIDDEN = "Sem permissões para apagar os dados de horário"
-
-
-
-
-def _get_redis_client() -> redis.Redis:
-    if not hasattr(_get_redis_client, "_client"):
-        _get_redis_client._client = redis.Redis.from_url(
-            str(settings.REDIS_URL), decode_responses=True, socket_connect_timeout=2
-        )
-    return _get_redis_client._client
+ERR_TEACHER_OWN_SCHEDULE_ONLY = "Professor sÃ³ pode consultar o prÃ³prio horÃ¡rio"
+ERR_TEACHER_HORIZON_NOT_FOUND = "NÃ£o existe horizonte semanal configurado para a organizaÃ§Ã£o"
+ERR_SCHEDULE_RESET_FORBIDDEN = "Sem permissÃµes para apagar os dados de horÃ¡rio"
 
 
 def _extract_request_id(request: Request) -> str | None:
-    return (
-        request.headers.get("x-request-id")
-        or request.headers.get("x-correlation-id")
-    )
+    return request.headers.get("x-request-id") or request.headers.get("x-correlation-id")
 
 
 def _log_schedule_reset_audit(
     request: Request,
     *,
     organization_id: int | None,
-    user_id: int | None,
+    membership_id: int | None,
     role: str | None,
     status_code: int,
     detail: str,
@@ -55,7 +37,7 @@ def _log_schedule_reset_audit(
     logger.info(
         "schedule_reset_audit",
         organization_id=organization_id,
-        actor_user_id=user_id,
+        actor_membership_id=membership_id,
         actor_role=role,
         method=request.method,
         path=str(request.url.path),
@@ -67,13 +49,11 @@ def _log_schedule_reset_audit(
 
 async def _require_admin_for_schedule_reset(
     request: Request,
-    db: Annotated[AsyncSession, Depends(deps.get_db)],
-    current_user: Annotated[models.User, Depends(deps.get_current_user)],
-) -> models.User:
+    current_user: Annotated[deps.Actor, Depends(deps.get_current_active_user)],
+) -> deps.Actor:
     """Aplica gate admin-only com trilho de auditoria para tentativas negadas."""
     try:
-        active_user = await deps.get_current_active_user(db, current_user)
-        return deps.get_current_active_admin(active_user)
+        return deps.get_current_active_admin(current_user)
     except HTTPException as exc:
         detail = str(exc.detail)
         if exc.status_code == 403:
@@ -81,139 +61,106 @@ async def _require_admin_for_schedule_reset(
         _log_schedule_reset_audit(
             request,
             organization_id=getattr(current_user, "organization_id", None),
-            user_id=getattr(current_user, "id", None),
-            role=getattr(getattr(current_user, "role", None), "value", getattr(current_user, "role", None)),
+            membership_id=getattr(current_user, "membership_id", None),
+            role=deps.actor_role(current_user),
             status_code=exc.status_code,
             detail=detail,
         )
-        raise HTTPException(status_code=exc.status_code, detail=detail)
-
+        raise HTTPException(status_code=exc.status_code, detail=detail) from exc
 
 
 # --- CONSTRAINTS (Regras) ---
 @router.post("/constraints/", response_model=schemas.ConstraintRead)
 async def create_constraint(
-    item: schemas.ConstraintCreate, 
+    item: schemas.ConstraintCreate,
     db: Annotated[AsyncSession, Depends(deps.get_db)],
-    current_user: Annotated[models.User, Depends(deps.get_current_user)]
+    current_user: deps.AdminActor,
 ):
     # Garante que usamos o organization_id do utilizador logado
     try:
         return await schedule_service.create_constraint(
-            db, item, current_user.organization_id,
-            changed_by_user_id=current_user.id,
+            db,
+            item,
+            current_user.organization_id,
+            changed_by_membership_id=current_user.membership_id,
         )
     except schedule_service.ConstraintSemanticValidationError as exc:
-        await db.rollback()
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-@router.get("/constraints/", response_model=List[schemas.ConstraintRead])
+
+@router.get("/constraints/", response_model=list[schemas.ConstraintRead])
 async def read_constraints(
-    db: Annotated[AsyncSession, Depends(deps.get_db)],
-    current_user: Annotated[models.User, Depends(deps.get_current_user)]
+    db: Annotated[AsyncSession, Depends(deps.get_db)], current_user: deps.ActiveActor
 ):
     return await schedule_service.get_constraints_by_org(db, current_user.organization_id)
 
-@router.delete("/constraints/{constraint_id}", responses={404: {"description": "Regra não encontrada"}})
+
+@router.delete(
+    "/constraints/{constraint_id}", responses={404: {"description": "Regra nÃ£o encontrada"}}
+)
 async def delete_constraint(
-    constraint_id: int, 
+    constraint_id: int,
     db: Annotated[AsyncSession, Depends(deps.get_db)],
-    current_user: Annotated[models.User, Depends(deps.get_current_user)]
+    current_user: deps.AdminActor,
 ):
     success = await schedule_service.delete_constraint(
-        db, constraint_id, current_user.organization_id,
-        changed_by_user_id=current_user.id,
+        db,
+        constraint_id,
+        current_user.organization_id,
+        changed_by_membership_id=current_user.membership_id,
     )
     if not success:
-        raise HTTPException(status_code=404, detail="Regra não encontrada")
+        raise HTTPException(status_code=404, detail="Regra nÃ£o encontrada")
     return {"ok": True}
 
-
-# --- RESULTADOS ---
-@router.get("/latest", response_model=List[schemas.ScheduleOutputRead])
-async def get_schedule(
-    db: Annotated[AsyncSession, Depends(deps.get_db)],
-    current_user: Annotated[models.User, Depends(deps.get_current_user)]
-):
-    """
-    Retorna o horário mais recente.
-    Usa padrão 'Write-Through Cache' com Redis:
-    1. Tenta ler do Redis.
-    2. Se falhar, lê da BD e grava no Redis.
-    """
-    # Definimos a chave única para esta organização
-    CACHE_KEY = latest_schedule_cache_key(current_user.organization_id)
-
-    try:
-        r = _get_redis_client()
-        cached_data = r.get(CACHE_KEY)
-
-        if cached_data:
-            logger.debug("Cache HIT", cache_key=CACHE_KEY)
-            return json.loads(cached_data)
-    except Exception as e:
-        logger.warning("Erro ao ler cache Redis", error=str(e), cache_key=CACHE_KEY)
-
-    logger.debug("Cache MISS", cache_key=CACHE_KEY)
-
-    latest_schedule = await schedule_service.get_latest_schedule_by_org(db, current_user.organization_id)
-
-    if latest_schedule:
-        try:
-            json_data = jsonable_encoder(latest_schedule)
-            r.set(CACHE_KEY, json.dumps(json_data), ex=60)
-        except Exception as e:
-            logger.warning("Erro ao gravar cache Redis", error=str(e))
-
-    return latest_schedule
 
 @router.delete(
     "/reset",
     responses={
-        200: {"description": "Dados de horário apagados com sucesso"},
-        401: {"description": "Credenciais inválidas"},
+        200: {"description": "Dados de horÃ¡rio apagados com sucesso"},
+        401: {"description": "Credenciais invÃ¡lidas"},
         403: {"description": ERR_SCHEDULE_RESET_FORBIDDEN},
     },
-    summary="Apagar dados operacionais de horário (admin-only)",
+    summary="Apagar dados operacionais de horÃ¡rio (admin-only)",
 )
 async def reset_all_data(
     request: Request,
     db: Annotated[AsyncSession, Depends(deps.get_db)],
-    current_user: Annotated[models.User, Depends(_require_admin_for_schedule_reset)],
+    current_user: Annotated[deps.Actor, Depends(_require_admin_for_schedule_reset)],
 ):
     status_code = 200
-    detail = "Dados de horário apagados com sucesso."
+    detail = "Dados de horÃ¡rio apagados com sucesso."
 
     try:
-        await schedule_service.delete_all_schedule_data(db, current_user.organization_id)
-
-        # Se apagamos os dados, também devemos limpar a cache.
-        try:
-            invalidate_latest_schedule_cache(current_user.organization_id)
-        except Exception as cache_exc:
-            detail = f"Dados apagados, mas falhou a invalidação de cache: {cache_exc}"
-
-        return {"msg": "Dados de horário apagados com sucesso."}
+        result = await SchoolYearResetService(db).reset_year(
+            current_user.organization_id,
+            reset_by_membership_id=current_user.membership_id,
+        )
+        return {
+            "msg": "Dados de horÃ¡rio apagados com sucesso.",
+            "deleted_rows": result.deleted_rows,
+            "new_school_year_id": result.new_school_year_id,
+        }
     except Exception as exc:
         status_code = 500
-        detail = f"Falha ao apagar dados de horário: {exc}"
+        detail = f"Falha ao apagar dados de horÃ¡rio: {exc}"
         raise
     finally:
         _log_schedule_reset_audit(
             request,
             organization_id=current_user.organization_id,
-            user_id=current_user.id,
-            role=getattr(current_user.role, "value", str(current_user.role)),
+            membership_id=current_user.membership_id,
+            role="admin" if current_user.can_admin else "teacher",
             status_code=status_code,
             detail=detail,
         )
 
 
 # ==========================================
-#  SPRINT 4 — VISUALIZAÇÃO SEMANAL
+#  SPRINT 4 â€” VISUALIZAÃ‡ÃƒO SEMANAL
 # ==========================================
 
-WEEK_FILTER_REQUIRED_MSG = "Indique class_id ou teacher_id para filtrar o horário."
+WEEK_FILTER_REQUIRED_MSG = "Indique class_id ou teacher_id para filtrar o horÃ¡rio."
 WEEK_SCHEDULE_RATE_LIMIT = "60/minute;600/hour"
 
 
@@ -236,10 +183,7 @@ def _resolve_teacher_horizon_payload(
         if hard_end_date is None:
             continue
 
-        start_reference = (
-            org_settings.school_start_date
-            or hard_end_date
-        )
+        start_reference = org_settings.school_start_date or hard_end_date
         if start_reference > hard_end_date:
             continue
 
@@ -300,7 +244,7 @@ def _resolve_teacher_horizon_payload(
 async def get_teacher_schedule_horizon(
     request: Request,
     db: Annotated[AsyncSession, Depends(deps.get_db)],
-    current_user: Annotated[models.User, Depends(deps.get_current_active_user)],
+    current_user: deps.ActiveActor,
 ):
     start_ts = perf_counter()
     status_code = 200
@@ -326,15 +270,17 @@ async def get_teacher_schedule_horizon(
                 return None
 
             latest_generation_row = (
-                sync_db.query(models.ScheduleOutput.generation_id)
+                sync_db.query(models.ActiveScheduleBlock.schedule_version_id)
                 .filter(
-                    models.ScheduleOutput.organization_id == current_user.organization_id,
-                    models.ScheduleOutput.is_draft.is_(False),
+                    models.ActiveScheduleBlock.organization_id == current_user.organization_id,
+                    models.ActiveScheduleBlock.status == models.ActiveScheduleBlockStatus.ACTIVE,
                 )
-                .order_by(models.ScheduleOutput.id.desc())
+                .order_by(models.ActiveScheduleBlock.id.desc())
                 .first()
             )
-            payload["active_generation_id"] = latest_generation_row[0] if latest_generation_row else None
+            payload["active_generation_id"] = (
+                latest_generation_row[0] if latest_generation_row else None
+            )
             return payload
 
         horizon_payload = await db.run_sync(_run)
@@ -357,8 +303,8 @@ async def get_teacher_schedule_horizon(
             teacher_observability_service.log_teacher_endpoint_event_safe_sync(
                 sync_db,
                 organization_id=current_user.organization_id,
-                actor_user_id=current_user.id,
-                actor_role=current_user.role,
+                actor_membership_id=current_user.membership_id,
+                actor_role=deps.actor_role(current_user),
                 endpoint_key=teacher_observability_service.ENDPOINT_SCHEDULE_ME_HORIZON_READ,
                 http_status=status_code,
                 latency_ms=elapsed_ms,
@@ -374,20 +320,22 @@ async def get_teacher_schedule_horizon(
     responses={
         400: {"description": WEEK_FILTER_REQUIRED_MSG},
         403: {"description": ERR_TEACHER_OWN_SCHEDULE_ONLY},
-        429: {"description": "Limite temporário de proteção do endpoint excedido."},
+        429: {"description": "Limite temporÃ¡rio de proteÃ§Ã£o do endpoint excedido."},
     },
-    summary="Horário de uma semana (turma ou professor)",
+    summary="HorÃ¡rio de uma semana (turma ou professor)",
 )
 @limiter.limit(WEEK_SCHEDULE_RATE_LIMIT)
 async def get_week_schedule(
-    week_start: Annotated[date, Query(description="Data de início da semana (segunda-feira, YYYY-MM-DD)")],
+    week_start: Annotated[
+        date, Query(description="Data de inÃ­cio da semana (segunda-feira, YYYY-MM-DD)")
+    ],
     request: Request,
     db: Annotated[AsyncSession, Depends(deps.get_db)],
-    current_user: Annotated[models.User, Depends(deps.get_current_active_user)],
+    current_user: deps.ActiveActor,
     class_id: Annotated[int | None, Query(description="ID da turma")] = None,
     teacher_id: Annotated[int | None, Query(description="ID do professor")] = None,
 ):
-    """Retorna os slots da semana indicada, enriquecidos com o estado de ocorrência para dias passados."""
+    """Retorna os slots da semana indicada, enriquecidos com o estado de ocorrÃªncia para dias passados."""
     start_ts = perf_counter()
     status_code = 200
     should_log_teacher_observability = deps.user_has_teacher_capability(current_user)
@@ -421,6 +369,7 @@ async def get_week_schedule(
 
         def _run(sync_db):
             from app.services import schedule_service as svc
+
             return svc.get_week_schedule_sync(
                 sync_db,
                 organization_id=current_user.organization_id,
@@ -444,8 +393,8 @@ async def get_week_schedule(
                 teacher_observability_service.log_teacher_endpoint_event_safe_sync(
                     sync_db,
                     organization_id=current_user.organization_id,
-                    actor_user_id=current_user.id,
-                    actor_role=current_user.role,
+                    actor_membership_id=current_user.membership_id,
+                    actor_role=deps.actor_role(current_user),
                     endpoint_key=teacher_observability_service.ENDPOINT_SCHEDULE_WEEK_TEACHER_READ,
                     http_status=status_code,
                     latency_ms=elapsed_ms,
@@ -456,18 +405,18 @@ async def get_week_schedule(
 
 
 # ==========================================
-#  AUDITORIA TÉCNICA POR GERAÇÃO
+#  AUDITORIA TÃ‰CNICA POR GERAÃ‡ÃƒO
 # ==========================================
 
 # ==========================================
-#  WBS FASE 1/2 — REGISTO DE AULAS (LESSON LOG)
+#  WBS FASE 1/2 â€” REGISTO DE AULAS (LESSON LOG)
 # ==========================================
 
 LESSON_LOG_ACCESS_DENIED = "Acesso negado."
 LESSON_LOG_OTHER_TEACHER_DENIED = "Nao pode alterar registos de outros professores."
 
 
-def _require_lesson_log_actor(current_user: models.User) -> bool:
+def _require_lesson_log_actor(current_user: deps.Actor) -> bool:
     """Return whether the actor is an admin, rejecting unsupported capabilities."""
     is_admin = deps.user_has_admin_capability(current_user)
     if not is_admin and not deps.user_has_teacher_capability(current_user):
@@ -476,7 +425,7 @@ def _require_lesson_log_actor(current_user: models.User) -> bool:
 
 
 def _authorize_lesson_log_teacher(
-    current_user: models.User,
+    current_user: deps.Actor,
     *,
     block_teacher_id: int,
     is_admin: bool,
@@ -484,47 +433,6 @@ def _authorize_lesson_log_teacher(
     """Restrict teacher-only actors to blocks assigned to their teacher profile."""
     if not is_admin and block_teacher_id != current_user.teacher_id:
         raise HTTPException(status_code=403, detail=LESSON_LOG_OTHER_TEACHER_DENIED)
-
-
-@router.put(
-    "/outputs/{schedule_output_id}/log",
-    response_model=schemas.LessonLogRead,
-    summary="Registar execução de aula",
-)
-async def upsert_lesson_log(
-    schedule_output_id: int,
-    payload: schemas.LessonLogCreate,
-    db: Annotated[AsyncSession, Depends(deps.get_db)],
-    current_user: Annotated[models.User, Depends(deps.get_current_active_user)],
-):
-    """Atualiza o estado de execução (LessonLog) de um bloco de aula."""
-    is_admin = _require_lesson_log_actor(current_user)
-        
-    def _run(sync_db):
-        from app.services import lesson_log_service
-        
-        output = sync_db.query(models.ScheduleOutput).filter(
-            models.ScheduleOutput.id == schedule_output_id,
-            models.ScheduleOutput.organization_id == current_user.organization_id,
-        ).first()
-        if not output:
-            raise HTTPException(status_code=404, detail="Bloco planeado não encontrado.")
-
-        _authorize_lesson_log_teacher(
-            current_user,
-            block_teacher_id=output.lesson.teacher_id,
-            is_admin=is_admin,
-        )
-            
-        return lesson_log_service.upsert_lesson_log_sync(
-            sync_db,
-            organization_id=current_user.organization_id,
-            user_id=current_user.id,
-            schedule_output_id=schedule_output_id,
-            payload=payload
-        )
-
-    return await db.run_sync(_run)
 
 
 @router.put(
@@ -536,18 +444,22 @@ async def upsert_active_lesson_log(
     active_schedule_block_id: int,
     payload: schemas.LessonLogCreate,
     db: Annotated[AsyncSession, Depends(deps.get_db)],
-    current_user: Annotated[models.User, Depends(deps.get_current_active_user)],
+    current_user: deps.ActiveActor,
 ):
     is_admin = _require_lesson_log_actor(current_user)
 
     def _run(sync_db):
         from app.services import lesson_log_service
 
-        block = sync_db.query(models.ActiveScheduleBlock).filter(
-            models.ActiveScheduleBlock.id == active_schedule_block_id,
-            models.ActiveScheduleBlock.organization_id == current_user.organization_id,
-            models.ActiveScheduleBlock.status == models.ActiveScheduleBlockStatus.ACTIVE,
-        ).first()
+        block = (
+            sync_db.query(models.ActiveScheduleBlock)
+            .filter(
+                models.ActiveScheduleBlock.id == active_schedule_block_id,
+                models.ActiveScheduleBlock.organization_id == current_user.organization_id,
+                models.ActiveScheduleBlock.status == models.ActiveScheduleBlockStatus.ACTIVE,
+            )
+            .first()
+        )
         if block is None:
             raise HTTPException(status_code=404, detail="Bloco do horario ativo nao encontrado.")
 
@@ -560,7 +472,7 @@ async def upsert_active_lesson_log(
         return lesson_log_service.upsert_active_lesson_log_sync(
             sync_db,
             organization_id=current_user.organization_id,
-            user_id=current_user.id,
+            membership_id=current_user.membership_id,
             active_schedule_block_id=active_schedule_block_id,
             payload=payload,
         )
@@ -577,18 +489,22 @@ async def upsert_operational_lesson_log(
     operational_block_id: int,
     payload: schemas.LessonLogCreate,
     db: Annotated[AsyncSession, Depends(deps.get_db)],
-    current_user: Annotated[models.User, Depends(deps.get_current_active_user)],
+    current_user: deps.ActiveActor,
 ):
     is_admin = _require_lesson_log_actor(current_user)
 
     def _run(sync_db):
         from app.services import lesson_log_service
 
-        block = sync_db.query(models.OperationalScheduleBlock).filter(
-            models.OperationalScheduleBlock.id == operational_block_id,
-            models.OperationalScheduleBlock.organization_id == current_user.organization_id,
-            models.OperationalScheduleBlock.status == models.OperationalBlockStatus.ACTIVE,
-        ).first()
+        block = (
+            sync_db.query(models.OperationalScheduleBlock)
+            .filter(
+                models.OperationalScheduleBlock.id == operational_block_id,
+                models.OperationalScheduleBlock.organization_id == current_user.organization_id,
+                models.OperationalScheduleBlock.status == models.OperationalBlockStatus.ACTIVE,
+            )
+            .first()
+        )
         if block is None:
             raise HTTPException(status_code=404, detail="Bloco operacional nao encontrado.")
 
@@ -601,7 +517,7 @@ async def upsert_operational_lesson_log(
         return lesson_log_service.upsert_operational_lesson_log_sync(
             sync_db,
             organization_id=current_user.organization_id,
-            user_id=current_user.id,
+            membership_id=current_user.membership_id,
             operational_block_id=operational_block_id,
             payload=payload,
         )

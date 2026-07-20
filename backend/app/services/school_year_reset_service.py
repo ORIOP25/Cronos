@@ -1,15 +1,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import structlog
-from sqlalchemy import delete, select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models
 from app.services.scheduler_state_service import SchedulerStateService
-
 
 logger = structlog.get_logger(__name__)
 
@@ -23,7 +22,7 @@ class SchoolYearResetResult:
 
 
 class SchoolYearResetService:
-    """Destructively clears one tenant's operational academic-year data."""
+    """Reset the active scheduler state while preserving immutable history."""
 
     def __init__(self, db: AsyncSession):
         self._db = db
@@ -32,7 +31,7 @@ class SchoolYearResetService:
         self,
         organization_id: int,
         *,
-        reset_by_user_id: int,
+        reset_by_membership_id: int,
     ) -> SchoolYearResetResult:
         await self._lock_organization(organization_id)
         settings = await self._load_settings(organization_id)
@@ -42,73 +41,87 @@ class SchoolYearResetService:
         logger.info(
             "school_year_destructive_reset_started",
             organization_id=organization_id,
-            actor_user_id=reset_by_user_id,
+            actor_membership_id=reset_by_membership_id,
             school_year_id=previous_school_year_id,
         )
 
-        deleted: dict[str, int] = {}
-        for label, model in (
-            ("teacher_weekly_timesheets", models.TeacherWeeklyTimesheet),
-            ("occurrence_operational_events", models.OccurrenceOperationalEvent),
-            ("teacher_endpoint_operational_events", models.TeacherEndpointOperationalEvent),
-            ("substitutions", models.Substitution),
-            ("planned_recovery_links", models.PlannedRecoveryLink),
-            ("progress_ledger_entries", models.ProgressLedgerEntry),
-            ("lesson_logs", models.LessonLog),
-            ("operational_schedule_blocks", models.OperationalScheduleBlock),
-        ):
-            deleted[label] = await self._delete_for_organization(model, organization_id)
-
-        # Occurrences live outside the scheduler-year aggregate and therefore
-        # must stop referencing active blocks before that aggregate is removed.
-        await self._db.execute(
-            update(models.LessonOccurrence)
-            .where(models.LessonOccurrence.organization_id == organization_id)
-            .values(active_schedule_block_id=None)
+        now = datetime.now(UTC)
+        affected: dict[str, int] = {}
+        result = await self._db.execute(
+            update(models.ActiveScheduleBlock)
+            .where(
+                models.ActiveScheduleBlock.organization_id == organization_id,
+                models.ActiveScheduleBlock.status == models.ActiveScheduleBlockStatus.ACTIVE,
+            )
+            .values(status=models.ActiveScheduleBlockStatus.REMOVED, updated_at=now)
         )
+        affected["active_schedule_blocks"] = result.rowcount or 0
+        result = await self._db.execute(
+            update(models.OperationalScheduleBlock)
+            .where(
+                models.OperationalScheduleBlock.organization_id == organization_id,
+                models.OperationalScheduleBlock.status == models.OperationalBlockStatus.ACTIVE,
+            )
+            .values(
+                status=models.OperationalBlockStatus.CANCELLED,
+                execution_status=models.OperationalBlockExecutionStatus.CANCELLED,
+                cancelled_at=now,
+            )
+        )
+        affected["operational_schedule_blocks"] = result.rowcount or 0
+        result = await self._db.execute(
+            update(models.PlannedRecoveryLink)
+            .where(
+                models.PlannedRecoveryLink.organization_id == organization_id,
+                models.PlannedRecoveryLink.status == models.PlannedRecoveryLinkStatus.PLANNED,
+            )
+            .values(status=models.PlannedRecoveryLinkStatus.CANCELED, updated_at=now)
+        )
+        affected["planned_recovery_links"] = result.rowcount or 0
 
-        if active_year is not None:
-            result = await self._db.execute(
-                delete(models.SchedulerSchoolYear).where(
-                    models.SchedulerSchoolYear.id == active_year.id,
-                    models.SchedulerSchoolYear.organization_id == organization_id,
+        pending_drafts = list(
+            await self._db.scalars(
+                select(models.ScheduleDraft).where(
+                    models.ScheduleDraft.organization_id == organization_id,
+                    models.ScheduleDraft.draft_state == models.ScheduleDraftState.PENDING,
                 )
             )
-            deleted["scheduler_school_years"] = result.rowcount or 0
-        else:
-            deleted["scheduler_school_years"] = 0
-
-        # The school-year cascade removes scheduler rows that reference the
-        # occurrences before the occurrences themselves are deleted.
-        deleted["lesson_occurrences"] = await self._delete_for_organization(
-            models.LessonOccurrence,
-            organization_id,
         )
-        deleted["schedule_outputs"] = await self._delete_for_organization(
-            models.ScheduleOutput,
-            organization_id,
-        )
+        for draft in pending_drafts:
+            draft.draft_state = models.ScheduleDraftState.INVALIDATED
+            draft.invalidated_reason = "School year reset by an administrator."
+            draft.decided_by_membership_id = reset_by_membership_id
+            draft.decided_at = now
+        affected["pending_drafts"] = len(pending_drafts)
 
-        progress_result = await self._db.execute(
-            update(models.ClassProgress)
-            .where(models.ClassProgress.organization_id == organization_id)
-            .values(
-                hours_completed=0.0,
-                hours_debt=0.0,
-                is_completed=False,
-                updated_at=datetime.now(timezone.utc),
+        reset_progress_rows = await self._append_progress_reversals(
+            organization_id,
+            school_year_id=previous_school_year_id,
+            reset_by_membership_id=reset_by_membership_id,
+        )
+        if active_year is not None:
+            state = await SchedulerStateService(self._db).get_state(
+                organization_id,
+                active_year.id,
+                for_update=True,
             )
-        )
-        reset_progress_rows = progress_result.rowcount or 0
+            if state is not None:
+                state.pending_draft_id = None
+                state.school_year_publication_state = models.SchoolYearPublicationState.UNPUBLISHED
+                state.active_schedule_version_id = None
+                state.approved_scheduler_state_version = None
+                state.scheduler_state_version += 1
+                state.lock_version += 1
 
-        new_school_year_id = await self._recreate_clean_school_year(
-            organization_id,
-            settings,
+        new_school_year_id = (
+            active_year.id
+            if active_year is not None
+            else await self._recreate_clean_school_year(organization_id, settings)
         )
         await self._db.flush()
 
         reset_result = SchoolYearResetResult(
-            deleted_rows=deleted,
+            deleted_rows=affected,
             reset_progress_rows=reset_progress_rows,
             previous_school_year_id=previous_school_year_id,
             new_school_year_id=new_school_year_id,
@@ -116,8 +129,8 @@ class SchoolYearResetService:
         logger.info(
             "school_year_destructive_reset_ready_to_commit",
             organization_id=organization_id,
-            actor_user_id=reset_by_user_id,
-            deleted_rows=deleted,
+            actor_membership_id=reset_by_membership_id,
+            deleted_rows=affected,
             reset_progress_rows=reset_progress_rows,
             previous_school_year_id=previous_school_year_id,
             new_school_year_id=new_school_year_id,
@@ -156,11 +169,51 @@ class SchoolYearResetService:
             .with_for_update()
         )
 
-    async def _delete_for_organization(self, model, organization_id: int) -> int:
-        result = await self._db.execute(
-            delete(model).where(model.organization_id == organization_id)
+    async def _append_progress_reversals(
+        self,
+        organization_id: int,
+        *,
+        school_year_id: int | None,
+        reset_by_membership_id: int,
+    ) -> int:
+        totals = list(
+            await self._db.execute(
+                select(
+                    models.ProgressLedgerEntry.class_id,
+                    models.ProgressLedgerEntry.module_id,
+                    func.sum(models.ProgressLedgerEntry.completed_minutes_delta),
+                    func.sum(models.ProgressLedgerEntry.debt_minutes_delta),
+                )
+                .where(models.ProgressLedgerEntry.organization_id == organization_id)
+                .group_by(
+                    models.ProgressLedgerEntry.class_id,
+                    models.ProgressLedgerEntry.module_id,
+                )
+            )
         )
-        return result.rowcount or 0
+        count = 0
+        for class_id, module_id, completed, debt in totals:
+            completed_minutes = int(completed or 0)
+            debt_minutes = int(debt or 0)
+            if completed_minutes == 0 and debt_minutes == 0:
+                continue
+            self._db.add(
+                models.ProgressLedgerEntry(
+                    organization_id=organization_id,
+                    source_type="school_year_reset",
+                    source_id=school_year_id or 0,
+                    class_id=class_id,
+                    module_id=module_id,
+                    completed_minutes_delta=-completed_minutes,
+                    debt_minutes_delta=-debt_minutes,
+                    idempotency_key=(
+                        f"school-year-reset:{school_year_id or 0}:{class_id}:{module_id}"
+                    ),
+                    created_by_membership_id=reset_by_membership_id,
+                )
+            )
+            count += 1
+        return count
 
     async def _recreate_clean_school_year(
         self,
@@ -173,9 +226,7 @@ class SchoolYearResetService:
             or settings.school_hard_end_date is None
         ):
             return None
-        school_year, _ = await SchedulerStateService(
-            self._db
-        ).get_or_create_active_state(
+        school_year, _ = await SchedulerStateService(self._db).get_or_create_active_state(
             organization_id,
             start_date=settings.school_start_date,
             hard_end_date=settings.school_hard_end_date,

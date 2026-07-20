@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from sqlalchemy import and_, select
+from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models
@@ -18,6 +18,19 @@ from app.services.scheduler_serialization import (
 
 class SchedulerFingerprintError(RuntimeError):
     pass
+
+
+def _constraint_payload(row) -> dict:
+    values = {
+        "class_id": row.class_id,
+        "subject_id": row.subject_id,
+        "teacher_id": row.teacher_id,
+        "room_id": row.room_id,
+        "timeslot_id": row.timeslot_id,
+        "date": row.constraint_date,
+        "day_of_week": row.day_of_week,
+    }
+    return {key: value for key, value in values.items() if value is not None}
 
 
 @dataclass(frozen=True)
@@ -67,7 +80,7 @@ class SchedulerFingerprintService:
         if settings is None:
             raise SchedulerFingerprintError("Organization scheduler settings were not found.")
 
-        instant = now or datetime.now(timezone.utc)
+        instant = now or datetime.now(UTC)
         if instant.tzinfo is None or instant.utcoffset() is None:
             raise SchedulerFingerprintError("Repair policy snapshot time must be timezone-aware.")
         try:
@@ -81,9 +94,7 @@ class SchedulerFingerprintService:
             settings.repair_stability_window_days is not None
             and settings.repair_stability_window_days < 0
         ):
-            raise SchedulerFingerprintError(
-                "Repair stability window cannot be negative."
-            )
+            raise SchedulerFingerprintError("Repair stability window cannot be negative.")
         stability_window_days = resolve_repair_window_days(settings)
         school_today = instant.astimezone(school_timezone).date()
         editable_start_date = max(
@@ -156,79 +167,108 @@ class SchedulerFingerprintService:
         class_ids = {row.id for row in class_rows}
 
         assignment_rows = (
-            await self._db.execute(
-                select(
-                    models.ClassSubjectLink.id,
-                    models.ClassSubjectLink.class_id,
-                    models.ClassSubjectLink.subject_id,
-                    models.ClassSubjectLink.grade_level,
-                    models.ClassSubjectLink.teacher_id,
-                ).where(
-                    models.ClassSubjectLink.organization_id == organization_id,
-                    models.ClassSubjectLink.class_id.in_(class_ids),
+            (
+                await self._db.execute(
+                    select(
+                        models.ClassSubjectLink.id,
+                        models.ClassSubjectLink.class_id,
+                        models.ClassSubjectLink.subject_id,
+                        models.ClassSubjectLink.grade_level,
+                        models.ClassSubjectLink.teacher_id,
+                    ).where(
+                        models.ClassSubjectLink.organization_id == organization_id,
+                        models.ClassSubjectLink.class_id.in_(class_ids),
+                    )
                 )
-            )
-        ).all() if class_ids else []
+            ).all()
+            if class_ids
+            else []
+        )
         subject_ids = {row.subject_id for row in assignment_rows}
-        teacher_ids = {
-            row.teacher_id for row in assignment_rows if row.teacher_id is not None
-        }
+        teacher_ids = {row.teacher_id for row in assignment_rows if row.teacher_id is not None}
         teacher_rows = (
-            await self._db.execute(
-                select(models.Teacher.id).where(
-                    models.Teacher.organization_id == organization_id,
-                    models.Teacher.id.in_(teacher_ids),
+            (
+                await self._db.execute(
+                    select(models.Teacher.id).where(
+                        models.Teacher.organization_id == organization_id,
+                        models.Teacher.id.in_(teacher_ids),
+                    )
                 )
-            )
-        ).all() if teacher_ids else []
+            ).all()
+            if teacher_ids
+            else []
+        )
         qualification_rows = (
-            await self._db.execute(
-                select(
-                    models.teacher_subject_link.c.teacher_id,
-                    models.teacher_subject_link.c.subject_id,
-                ).where(
-                    models.teacher_subject_link.c.organization_id == organization_id,
-                    models.teacher_subject_link.c.teacher_id.in_(teacher_ids),
-                    models.teacher_subject_link.c.subject_id.in_(subject_ids),
+            (
+                await self._db.execute(
+                    select(
+                        models.teacher_subject_link.c.teacher_id,
+                        models.teacher_subject_link.c.subject_id,
+                    ).where(
+                        models.teacher_subject_link.c.organization_id == organization_id,
+                        models.teacher_subject_link.c.teacher_id.in_(teacher_ids),
+                        models.teacher_subject_link.c.subject_id.in_(subject_ids),
+                    )
                 )
-            )
-        ).all() if teacher_ids and subject_ids else []
+            ).all()
+            if teacher_ids and subject_ids
+            else []
+        )
 
         subject_rows = (
-            await self._db.execute(
-                select(models.Subject.id, models.Subject.required_room_type).where(
-                    models.Subject.organization_id == organization_id,
-                    models.Subject.id.in_(subject_ids),
+            (
+                await self._db.execute(
+                    select(models.Subject.id, models.Subject.required_room_type).where(
+                        models.Subject.organization_id == organization_id,
+                        models.Subject.id.in_(subject_ids),
+                    )
                 )
-            )
-        ).all() if subject_ids else []
+            ).all()
+            if subject_ids
+            else []
+        )
         module_rows = (
-            await self._db.execute(
-                select(
-                    models.Module.id,
-                    models.Module.subject_id,
-                    models.Module.hours_total,
-                    models.Module.order,
-                ).where(
-                    models.Module.organization_id == organization_id,
-                    models.Module.subject_id.in_(subject_ids),
+            (
+                await self._db.execute(
+                    select(
+                        models.Module.id,
+                        models.Module.subject_id,
+                        models.Module.required_minutes,
+                        models.Module.order,
+                    ).where(
+                        models.Module.organization_id == organization_id,
+                        models.Module.subject_id.in_(subject_ids),
+                    )
                 )
-            )
-        ).all() if subject_ids else []
+            ).all()
+            if subject_ids
+            else []
+        )
         module_ids = {row.id for row in module_rows}
         progress_rows = (
-            await self._db.execute(
-                select(
-                    models.ClassProgress.class_id,
-                    models.ClassProgress.module_id,
-                    models.ClassProgress.hours_completed,
-                ).where(
-                    models.ClassProgress.organization_id == organization_id,
-                    models.ClassProgress.class_id.in_(class_ids),
-                    models.ClassProgress.module_id.in_(module_ids),
+            (
+                await self._db.execute(
+                    select(
+                        models.ProgressLedgerEntry.class_id,
+                        models.ProgressLedgerEntry.module_id,
+                        func.sum(models.ProgressLedgerEntry.completed_minutes_delta).label(
+                            "completed_minutes"
+                        ),
+                    )
+                    .where(
+                        models.ProgressLedgerEntry.organization_id == organization_id,
+                        models.ProgressLedgerEntry.class_id.in_(class_ids),
+                        models.ProgressLedgerEntry.module_id.in_(module_ids),
+                    )
+                    .group_by(
+                        models.ProgressLedgerEntry.class_id,
+                        models.ProgressLedgerEntry.module_id,
+                    )
                 )
-            )
-        ).all() if class_ids and module_ids else []
+            ).all()
+            if class_ids and module_ids
+            else []
+        )
 
         timeslot_rows = (
             await self._db.execute(
@@ -241,17 +281,21 @@ class SchedulerFingerprintService:
             )
         ).all()
         availability_rows = (
-            await self._db.execute(
-                select(
-                    models.Availability.teacher_id,
-                    models.Availability.timeslot_id,
-                    models.Availability.score,
-                ).where(
-                    models.Availability.organization_id == organization_id,
-                    models.Availability.teacher_id.in_(teacher_ids),
+            (
+                await self._db.execute(
+                    select(
+                        models.Availability.teacher_id,
+                        models.Availability.timeslot_id,
+                        models.Availability.score,
+                    ).where(
+                        models.Availability.organization_id == organization_id,
+                        models.Availability.teacher_id.in_(teacher_ids),
+                    )
                 )
-            )
-        ).all() if teacher_ids else []
+            ).all()
+            if teacher_ids
+            else []
+        )
         room_rows = (
             await self._db.execute(
                 select(
@@ -281,7 +325,13 @@ class SchedulerFingerprintService:
                 select(
                     models.Constraint.id,
                     models.Constraint.rule_type,
-                    models.Constraint.rule_payload,
+                    models.Constraint.class_id,
+                    models.Constraint.subject_id,
+                    models.Constraint.teacher_id,
+                    models.Constraint.room_id,
+                    models.Constraint.timeslot_id,
+                    models.Constraint.constraint_date,
+                    models.Constraint.day_of_week,
                 ).where(models.Constraint.organization_id == organization_id)
             )
         ).all()
@@ -330,17 +380,19 @@ class SchedulerFingerprintService:
             "constraints": [
                 {
                     "rule_type": row.rule_type,
-                    "rule_payload": row.rule_payload,
+                    "rule_payload": _constraint_payload(row),
                 }
                 for row in sorted(
                     constraint_rows,
                     key=lambda row: (
                         row.rule_type.value,
-                        canonical_json_bytes(row.rule_payload),
+                        canonical_json_bytes(_constraint_payload(row)),
                     ),
                 )
             ],
-            "lunch_rules": None if grid_settings is None else {
+            "lunch_rules": None
+            if grid_settings is None
+            else {
                 "window_start": grid_settings.lunch_window_start,
                 "window_end": grid_settings.lunch_window_end,
                 "minimum_minutes": grid_settings.lunch_min_duration_minutes,
@@ -360,10 +412,7 @@ class SchedulerFingerprintService:
                 {"id": row.id, "required_room_type": row.required_room_type}
                 for row in sorted(subject_rows, key=lambda row: row.id)
             ],
-            "teachers": [
-                {"id": row.id}
-                for row in sorted(teacher_rows, key=lambda row: row.id)
-            ],
+            "teachers": [{"id": row.id} for row in sorted(teacher_rows, key=lambda row: row.id)],
             "teacher_subject_eligibility": [
                 {
                     "teacher_id": row.teacher_id,
@@ -384,7 +433,9 @@ class SchedulerFingerprintService:
                 for row in sorted(
                     assignment_rows,
                     key=lambda row: (
-                        row.class_id, row.subject_id, row.grade_level,
+                        row.class_id,
+                        row.subject_id,
+                        row.grade_level,
                         -1 if row.teacher_id is None else row.teacher_id,
                     ),
                 )
@@ -408,7 +459,7 @@ class SchedulerFingerprintService:
                 {
                     "id": row.id,
                     "subject_id": row.subject_id,
-                    "hours_total": row.hours_total,
+                    "required_minutes": row.required_minutes,
                     "sequence": row.order,
                 }
                 for row in sorted(module_rows, key=lambda row: row.id)
@@ -417,7 +468,7 @@ class SchedulerFingerprintService:
                 {
                     "class_id": row.class_id,
                     "module_id": row.module_id,
-                    "hours_completed": row.hours_completed,
+                    "completed_minutes": row.completed_minutes,
                 }
                 for row in sorted(
                     progress_rows,
@@ -458,9 +509,8 @@ class SchedulerFingerprintService:
                     .where(
                         models.ActiveScheduleBlock.organization_id == organization_id,
                         models.ActiveScheduleBlock.school_year_id == school_year_id,
-                        models.ActiveScheduleBlock.status == (
-                            models.ActiveScheduleBlockStatus.ACTIVE
-                        ),
+                        models.ActiveScheduleBlock.status
+                        == (models.ActiveScheduleBlockStatus.ACTIVE),
                     )
                 )
             ).all()
@@ -527,45 +577,29 @@ class SchedulerFingerprintService:
             await self._db.execute(
                 select(
                     models.LessonOccurrence,
-                    models.ScheduleOutput.timeslot_id.label("source_timeslot_id"),
+                    models.LessonOccurrence.planned_timeslot_id.label("source_timeslot_id"),
                     models.Timeslot.start_time.label("source_start_time"),
                     models.Timeslot.end_time.label("source_end_time"),
-                    models.Lesson.class_id.label("source_class_id"),
-                    models.Lesson.subject_id.label("source_subject_id"),
-                    models.Lesson.teacher_id.label("source_teacher_id"),
-                )
-                .outerjoin(
-                    models.ScheduleOutput,
-                    and_(
-                        models.ScheduleOutput.id
-                        == models.LessonOccurrence.schedule_output_id,
-                        models.ScheduleOutput.organization_id
-                        == models.LessonOccurrence.organization_id,
-                    ),
+                    models.LessonOccurrence.class_id.label("source_class_id"),
+                    models.LessonOccurrence.subject_id.label("source_subject_id"),
+                    models.LessonOccurrence.planned_teacher_id.label("source_teacher_id"),
                 )
                 .outerjoin(
                     models.Timeslot,
                     and_(
-                        models.Timeslot.id == models.ScheduleOutput.timeslot_id,
-                        models.Timeslot.organization_id
-                        == models.LessonOccurrence.organization_id,
-                    ),
-                )
-                .outerjoin(
-                    models.Lesson,
-                    and_(
-                        models.Lesson.id == models.ScheduleOutput.lesson_id,
-                        models.Lesson.organization_id
-                        == models.LessonOccurrence.organization_id,
+                        models.Timeslot.id == models.LessonOccurrence.planned_timeslot_id,
+                        models.Timeslot.organization_id == models.LessonOccurrence.organization_id,
                     ),
                 )
                 .where(
                     models.LessonOccurrence.organization_id == organization_id,
                     models.LessonOccurrence.is_active.is_(True),
-                    models.LessonOccurrence.status.in_((
-                        models.LessonOccurrenceStatus.GAP,
-                        models.LessonOccurrenceStatus.SUBSTITUTED,
-                    )),
+                    models.LessonOccurrence.status.in_(
+                        (
+                            models.LessonOccurrenceStatus.GAP,
+                            models.LessonOccurrenceStatus.SUBSTITUTED,
+                        )
+                    ),
                     models.LessonOccurrence.date >= school_year.start_date,
                     models.LessonOccurrence.date <= school_year.hard_end_date,
                 )
@@ -610,25 +644,25 @@ class SchedulerFingerprintService:
         for row in sorted(debt_rows, key=lambda item: item.LessonOccurrence.id):
             occurrence = row.LessonOccurrence
             if occurrence.planned_hours > 0:
-                declared_minutes = max(
-                    0, int(round(float(occurrence.planned_hours) * 60))
-                )
+                declared_minutes = max(0, int(round(float(occurrence.planned_hours) * 60)))
             elif row.source_start_time is not None and row.source_end_time is not None:
                 start_minutes = row.source_start_time.hour * 60 + row.source_start_time.minute
                 end_minutes = row.source_end_time.hour * 60 + row.source_end_time.minute
                 declared_minutes = max(0, end_minutes - start_minutes)
             else:
-                declared_minutes = max(
-                    0, int(round(float(occurrence.hours_given or 0) * 60))
-                )
+                declared_minutes = max(0, int(round(float(occurrence.hours_given or 0) * 60)))
             delivered_minutes = 0
             active_planned_minutes = 0
             ordered_links = sorted(
                 links_by_occurrence.get(occurrence.id, []),
                 key=lambda pair: (
                     pair[0].status.value,
-                    -1 if pair[0].planned_active_block_id is None else pair[0].planned_active_block_id,
-                    -1 if pair[0].planned_draft_block_id is None else pair[0].planned_draft_block_id,
+                    -1
+                    if pair[0].planned_active_block_id is None
+                    else pair[0].planned_active_block_id,
+                    -1
+                    if pair[0].planned_draft_block_id is None
+                    else pair[0].planned_draft_block_id,
                     pair[0].planned_recovery_minutes,
                 ),
             )
@@ -651,7 +685,7 @@ class SchedulerFingerprintService:
                     "occurrence_id": occurrence.id,
                     "occurrence_revision": occurrence.revision,
                     "debt_status": occurrence.status,
-                    "source_planned_block_id": occurrence.schedule_output_id,
+                    "source_planned_block_id": occurrence.active_schedule_block_id,
                     "class_id": occurrence.class_id or row.source_class_id,
                     "subject_id": occurrence.subject_id or row.source_subject_id,
                     "teacher_id": occurrence.planned_teacher_id or row.source_teacher_id,

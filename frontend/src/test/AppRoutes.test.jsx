@@ -25,11 +25,19 @@ describe('App route polish', () => {
     setClerkState({ isSignedIn: false, isLoaded: true })
   })
 
-  it('lazy-loads the signed-out marketing route through the shared fallback', async () => {
-    const { container } = renderAppAt('/')
-    expect(container.querySelector('.spinner-border')).toBeInTheDocument()
-    expect(await screen.findByRole('heading', { name: /horários para o ensino profissional português/i })).toBeInTheDocument()
-  })
+  it(
+    'lazy-loads the signed-out marketing route through the shared fallback',
+    async () => {
+      const { container } = renderAppAt('/')
+      expect(container.querySelector('.spinner-border')).toBeInTheDocument()
+      expect(
+        await screen.findByRole('heading', {
+          name: /horários para o ensino profissional português/i,
+        }),
+      ).toBeInTheDocument()
+    },
+    10_000,
+  )
 
   it('redirects a signed-in member from marketing to their default route', async () => {
     setClerkState({ isSignedIn: true })

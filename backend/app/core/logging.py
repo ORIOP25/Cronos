@@ -1,7 +1,9 @@
 # Ficheiro: app/core/logging.py
 import logging
 import sys
+
 import structlog
+
 from app.config import settings
 
 
@@ -9,13 +11,14 @@ class _HealthCheckFilter(logging.Filter):
     def filter(self, record: logging.LogRecord) -> bool:
         return "/health" not in record.getMessage()
 
+
 def setup_logging():
     """
     Configura o sistema de logs para ser 'Enterprise Grade'.
     - Em 'local': Logs coloridos e fáceis de ler.
     - Em 'production': Logs em JSON para ferramentas como Datadog/Sentry/Render.
     """
-    
+
     # 1. Decidir o formato base
     if settings.ENVIRONMENT == "local":
         # Desenvolvimento: Cores bonitas
@@ -28,12 +31,12 @@ def setup_logging():
 
     # 2. Processadores (O que acontece a cada log)
     processors = [
-        structlog.contextvars.merge_contextvars, # Junta variáveis de contexto (ex: user_id)
-        structlog.processors.add_log_level,      # Adiciona "level": "info"
-        structlog.processors.TimeStamper(fmt="iso"), # Adiciona timestamp ISO 8601
+        structlog.contextvars.merge_contextvars,  # Junta variáveis de contexto (ex: user_id)
+        structlog.processors.add_log_level,  # Adiciona "level": "info"
+        structlog.processors.TimeStamper(fmt="iso"),  # Adiciona timestamp ISO 8601
         structlog.processors.StackInfoRenderer(),
-        structlog.processors.format_exc_info,    # Formata exceções (tracebacks)
-        renderer,                                # O renderizador escolhido acima
+        structlog.processors.format_exc_info,  # Formata exceções (tracebacks)
+        renderer,  # O renderizador escolhido acima
     ]
 
     # 3. Configurar o Structlog

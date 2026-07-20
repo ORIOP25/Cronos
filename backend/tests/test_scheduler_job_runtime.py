@@ -1,5 +1,5 @@
 import asyncio
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import UTC, date, datetime, time, timedelta
 
 import pytest
 from fastapi import HTTPException
@@ -8,18 +8,17 @@ from sqlalchemy import select
 import app.services.scheduler_job_runtime as runtime_module
 from app import models
 from app.api.v1.endpoints.scheduler import approve_draft as approve_draft_endpoint
-from app.services.scheduler_generation_service import SchedulerGenerationService
-from app.services.scheduler_complete_engine import run_complete_generation
+from app.core.auth import Actor
 from app.services.scheduler_adaptive_engine import run_adaptive_repair
-from app.services.scheduler_fingerprint_service import SchedulerFingerprintService
-from app.services.scheduler_draft_service import SchedulerDraftService
-from app.services.scheduler_diff_service import SchedulerDiffService
 from app.services.scheduler_approval_service import (
     DraftApprovalConflictError,
     SchedulerApprovalService,
 )
-from app.services.scheduler_lifecycle_service import SchedulerLifecycleService
-from app.services.scheduler_status_service import SchedulerStatusService
+from app.services.scheduler_complete_engine import run_complete_generation
+from app.services.scheduler_diff_service import SchedulerDiffService
+from app.services.scheduler_draft_service import SchedulerDraftService
+from app.services.scheduler_fingerprint_service import SchedulerFingerprintService
+from app.services.scheduler_generation_service import SchedulerGenerationService
 from app.services.scheduler_job_runtime import (
     DraftBlockSpec,
     NoValidGenerationOutput,
@@ -27,10 +26,9 @@ from app.services.scheduler_job_runtime import (
     ValidatedGenerationResult,
 )
 from app.services.scheduler_job_service import SchedulerJobService
-from tests.conftest import TestingSessionLocal
-
-
-pytestmark = pytest.mark.integration
+from app.services.scheduler_lifecycle_service import SchedulerLifecycleService
+from app.services.scheduler_status_service import SchedulerStatusService
+from tests.conftest import TestingSessionLocal, create_teacher_profile
 
 
 async def _runtime_context(db_session):
@@ -38,11 +36,7 @@ async def _runtime_context(db_session):
     db_session.add(organization)
     await db_session.flush()
     user = models.User(
-        organization_id=organization.id,
         email="runtime-admin@example.com",
-        role=models.UserRole.admin,
-        is_active=True,
-        is_superuser=False,
     )
     school_year = models.SchedulerSchoolYear(
         organization_id=organization.id,
@@ -61,7 +55,11 @@ async def _runtime_context(db_session):
         name="Subject",
         required_room_type=models.RoomType.normal,
     )
-    teacher = models.Teacher(organization_id=organization.id, name="Teacher")
+    teacher = await create_teacher_profile(
+        db_session,
+        organization_id=organization.id,
+        name="Teacher",
+    )
     room = models.Room(
         organization_id=organization.id,
         name="Room",
@@ -74,7 +72,18 @@ async def _runtime_context(db_session):
         start_time=time(9),
         end_time=time(10),
     )
-    db_session.add_all([user, school_year, course, subject, teacher, room, slot])
+    db_session.add_all([user, school_year, course, subject, room, slot])
+    await db_session.flush()
+    membership = models.OrganizationMembership(
+        organization_id=organization.id,
+        account_id=user.id,
+        organization_display_name="Runtime Admin",
+        lifecycle_status=models.MembershipLifecycleStatus.active,
+        access_status=models.MembershipAccessStatus.active,
+        can_admin=True,
+        can_teach=False,
+    )
+    db_session.add(membership)
     await db_session.flush()
     state = models.SchedulerSchoolYearState(
         organization_id=organization.id,
@@ -121,6 +130,7 @@ async def _runtime_context(db_session):
     return {
         "organization": organization,
         "user": user,
+        "membership": membership,
         "school_year": school_year,
         "state": state,
         "class": class_,
@@ -162,14 +172,13 @@ async def _queue_job(db_session, ctx, key: str, *, replace_pending=False):
     )
     handle = await SchedulerJobService(db_session).create_or_get_job(
         selection,
-        requested_by_user_id=ctx["user"].id,
+        requested_by_membership_id=ctx["membership"].id,
         idempotency_key=key,
     )
     await db_session.commit()
     return handle.job
 
 
-@pytest.mark.asyncio
 async def test_success_commits_validated_draft_only_at_end(db_session):
     ctx = await _runtime_context(db_session)
     job = await _queue_job(db_session, ctx, "success-1")
@@ -195,21 +204,38 @@ async def test_success_commits_validated_draft_only_at_end(db_session):
     assert finished.deadline_at - finished.started_at == timedelta(minutes=5)
     drafts = (
         await db_session.scalars(
-            select(models.ScheduleDraft).where(
-                models.ScheduleDraft.generation_job_id == job.id
-            )
+            select(models.ScheduleDraft).where(models.ScheduleDraft.generation_job_id == job.id)
         )
     ).all()
     assert len(drafts) == 1
     assert drafts[0].draft_state == models.ScheduleDraftState.PENDING
     await db_session.refresh(ctx["state"])
     assert ctx["state"].pending_draft_id == drafts[0].id
-    assert not (
-        await db_session.scalars(select(models.ActiveScheduleBlock))
-    ).all()
+    assert not (await db_session.scalars(select(models.ActiveScheduleBlock))).all()
 
 
-@pytest.mark.asyncio
+async def test_runtime_role_reinstalls_tenant_context_after_each_checkpoint(
+    db_session,
+    runtime_db_session,
+):
+    ctx = await _runtime_context(db_session)
+    job = await _queue_job(db_session, ctx, "runtime-role-checkpoints")
+
+    async def engine(execution):
+        await execution.ensure_can_continue()
+        return _valid_result(ctx)
+
+    finished = await SchedulerJobRuntime(runtime_db_session).execute(
+        job.id,
+        engine,
+        organization_id=ctx["organization"].id,
+    )
+
+    assert finished.job_status == models.ScheduleGenerationJobStatus.SUCCEEDED, (
+        finished.failure_message
+    )
+
+
 async def test_runtime_emits_started_and_success_lifecycle_events(
     db_session,
     monkeypatch,
@@ -238,7 +264,6 @@ async def test_runtime_emits_started_and_success_lifecycle_events(
     )
 
 
-@pytest.mark.asyncio
 async def test_runtime_emits_no_output_and_timeout_categories(db_session, monkeypatch):
     ctx = await _runtime_context(db_session)
     events = []
@@ -254,7 +279,7 @@ async def test_runtime_emits_no_output_and_timeout_categories(db_session, monkey
 
     await SchedulerJobRuntime(db_session).execute(no_output_job.id, no_output)
     timeout_job = await _queue_job(db_session, ctx, "observability-timeout")
-    now = [datetime.now(timezone.utc)]
+    now = [datetime.now(UTC)]
 
     async def timeout(_execution):
         now[0] += timedelta(minutes=5, seconds=1)
@@ -274,7 +299,6 @@ async def test_runtime_emits_no_output_and_timeout_categories(db_session, monkey
     assert events[1][1]["hard_constraint_failures"] == 1
 
 
-@pytest.mark.asyncio
 async def test_real_complete_engine_persists_full_pending_draft(db_session):
     ctx = await _runtime_context(db_session)
     job = await _queue_job(db_session, ctx, "real-complete-engine")
@@ -288,17 +312,13 @@ async def test_real_complete_engine_persists_full_pending_draft(db_session):
         finished.failure_message
     )
     draft = await db_session.scalar(
-        select(models.ScheduleDraft).where(
-            models.ScheduleDraft.generation_job_id == job.id
-        )
+        select(models.ScheduleDraft).where(models.ScheduleDraft.generation_job_id == job.id)
     )
     assert draft is not None
     assert draft.result_category == models.ScheduleGenerationResultCategory.COMPLETE_SUCCESS
     blocks = (
         await db_session.scalars(
-            select(models.ScheduleDraftBlock).where(
-                models.ScheduleDraftBlock.draft_id == draft.id
-            )
+            select(models.ScheduleDraftBlock).where(models.ScheduleDraftBlock.draft_id == draft.id)
         )
     ).all()
     assert len(blocks) == 1
@@ -314,36 +334,30 @@ async def test_real_complete_engine_persists_full_pending_draft(db_session):
     assert diff[0].after_draft_block_id == blocks[0].id
 
 
-@pytest.mark.asyncio
 async def test_approval_preconditions_accept_current_complete_draft(db_session):
     ctx = await _runtime_context(db_session)
     job = await _queue_job(db_session, ctx, "approval-current-complete")
     await SchedulerJobRuntime(db_session).execute(job.id, run_complete_generation)
     draft = await db_session.scalar(
-        select(models.ScheduleDraft).where(
-            models.ScheduleDraft.generation_job_id == job.id
-        )
+        select(models.ScheduleDraft).where(models.ScheduleDraft.generation_job_id == job.id)
     )
 
     validated = await SchedulerApprovalService(db_session).validate_preconditions(
         ctx["organization"].id,
         draft.id,
-        decided_by_user_id=ctx["user"].id,
+        decided_by_membership_id=ctx["membership"].id,
     )
 
     assert validated.id == draft.id
     assert validated.draft_state == models.ScheduleDraftState.PENDING
 
 
-@pytest.mark.asyncio
 async def test_approval_preconditions_mark_changed_complete_draft_stale(db_session):
     ctx = await _runtime_context(db_session)
     job = await _queue_job(db_session, ctx, "approval-stale-complete")
     await SchedulerJobRuntime(db_session).execute(job.id, run_complete_generation)
     draft = await db_session.scalar(
-        select(models.ScheduleDraft).where(
-            models.ScheduleDraft.generation_job_id == job.id
-        )
+        select(models.ScheduleDraft).where(models.ScheduleDraft.generation_job_id == job.id)
     )
     db_session.add(
         models.Room(
@@ -359,7 +373,7 @@ async def test_approval_preconditions_mark_changed_complete_draft_stale(db_sessi
         await SchedulerApprovalService(db_session).validate_preconditions(
             ctx["organization"].id,
             draft.id,
-            decided_by_user_id=ctx["user"].id,
+            decided_by_membership_id=ctx["membership"].id,
         )
     await db_session.commit()
 
@@ -372,21 +386,16 @@ async def test_approval_preconditions_mark_changed_complete_draft_stale(db_sessi
     assert not (await db_session.scalars(select(models.ActiveScheduleBlock))).all()
 
 
-@pytest.mark.asyncio
 async def test_complete_approval_atomically_publishes_exact_target(db_session):
     ctx = await _runtime_context(db_session)
     job = await _queue_job(db_session, ctx, "approve-complete")
     await SchedulerJobRuntime(db_session).execute(job.id, run_complete_generation)
     draft = await db_session.scalar(
-        select(models.ScheduleDraft).where(
-            models.ScheduleDraft.generation_job_id == job.id
-        )
+        select(models.ScheduleDraft).where(models.ScheduleDraft.generation_job_id == job.id)
     )
     target = list(
         await db_session.scalars(
-            select(models.ScheduleDraftBlock).where(
-                models.ScheduleDraftBlock.draft_id == draft.id
-            )
+            select(models.ScheduleDraftBlock).where(models.ScheduleDraftBlock.draft_id == draft.id)
         )
     )
     assert not (await db_session.scalars(select(models.ActiveScheduleBlock))).all()
@@ -394,7 +403,7 @@ async def test_complete_approval_atomically_publishes_exact_target(db_session):
     result = await SchedulerApprovalService(db_session).approve(
         ctx["organization"].id,
         draft.id,
-        decided_by_user_id=ctx["user"].id,
+        decided_by_membership_id=ctx["membership"].id,
     )
     await db_session.commit()
 
@@ -437,37 +446,30 @@ async def test_complete_approval_atomically_publishes_exact_target(db_session):
     await db_session.refresh(draft)
     await db_session.refresh(ctx["state"])
     assert draft.draft_state == models.ScheduleDraftState.APPROVED
-    assert draft.decided_by_user_id == ctx["user"].id
+    assert draft.decided_by_membership_id == ctx["membership"].id
     assert ctx["state"].school_year_publication_state == (
         models.SchoolYearPublicationState.PUBLISHED
     )
     assert ctx["state"].pending_draft_id is None
     assert ctx["state"].active_schedule_version_id == f"draft-{draft.id}"
-    assert ctx["state"].approved_scheduler_state_version == (
-        ctx["state"].scheduler_state_version
-    )
+    assert ctx["state"].approved_scheduler_state_version == (ctx["state"].scheduler_state_version)
     assert await SchedulerDiffService(db_session).list_diff(
         ctx["organization"].id,
         draft.id,
     )
 
 
-@pytest.mark.asyncio
 async def test_approval_rejects_demand_result_mismatch_without_publication(db_session):
     ctx = await _runtime_context(db_session)
     job = await _queue_job(db_session, ctx, "approval-demand-mismatch")
     await SchedulerJobRuntime(db_session).execute(job.id, run_complete_generation)
     draft = await db_session.scalar(
-        select(models.ScheduleDraft).where(
-            models.ScheduleDraft.generation_job_id == job.id
-        )
+        select(models.ScheduleDraft).where(models.ScheduleDraft.generation_job_id == job.id)
     )
     state_id = ctx["state"].id
     draft_id = draft.id
     block = await db_session.scalar(
-        select(models.ScheduleDraftBlock).where(
-            models.ScheduleDraftBlock.draft_id == draft.id
-        )
+        select(models.ScheduleDraftBlock).where(models.ScheduleDraftBlock.draft_id == draft.id)
     )
     block.duration_minutes -= 1
     await db_session.commit()
@@ -476,7 +478,7 @@ async def test_approval_rejects_demand_result_mismatch_without_publication(db_se
         await SchedulerApprovalService(db_session).approve(
             ctx["organization"].id,
             draft.id,
-            decided_by_user_id=ctx["user"].id,
+            decided_by_membership_id=ctx["membership"].id,
         )
     await db_session.rollback()
     db_session.expire_all()
@@ -486,22 +488,17 @@ async def test_approval_rejects_demand_result_mismatch_without_publication(db_se
     assert not (await db_session.scalars(select(models.ActiveScheduleBlock))).all()
 
 
-@pytest.mark.asyncio
 async def test_approval_rejects_recovery_link_on_non_recovery_target(db_session):
     ctx = await _runtime_context(db_session)
     job = await _queue_job(db_session, ctx, "approval-recovery-integrity")
     await SchedulerJobRuntime(db_session).execute(job.id, run_complete_generation)
     draft = await db_session.scalar(
-        select(models.ScheduleDraft).where(
-            models.ScheduleDraft.generation_job_id == job.id
-        )
+        select(models.ScheduleDraft).where(models.ScheduleDraft.generation_job_id == job.id)
     )
     state_id = ctx["state"].id
     draft_id = draft.id
     block = await db_session.scalar(
-        select(models.ScheduleDraftBlock).where(
-            models.ScheduleDraftBlock.draft_id == draft.id
-        )
+        select(models.ScheduleDraftBlock).where(models.ScheduleDraftBlock.draft_id == draft.id)
     )
     occurrence = models.LessonOccurrence(
         organization_id=ctx["organization"].id,
@@ -534,7 +531,7 @@ async def test_approval_rejects_recovery_link_on_non_recovery_target(db_session)
         await SchedulerApprovalService(db_session).approve(
             ctx["organization"].id,
             draft.id,
-            decided_by_user_id=ctx["user"].id,
+            decided_by_membership_id=ctx["membership"].id,
         )
     await db_session.rollback()
     db_session.expire_all()
@@ -544,15 +541,12 @@ async def test_approval_rejects_recovery_link_on_non_recovery_target(db_session)
     assert not (await db_session.scalars(select(models.ActiveScheduleBlock))).all()
 
 
-@pytest.mark.asyncio
 async def test_repair_approval_reconciles_moved_added_and_removed_blocks(db_session, monkeypatch):
     ctx = await _runtime_context(db_session)
     source_job = await _queue_job(db_session, ctx, "repair-reconcile-source")
     await SchedulerJobRuntime(db_session).execute(source_job.id, run_complete_generation)
     source_draft = await db_session.scalar(
-        select(models.ScheduleDraft).where(
-            models.ScheduleDraft.generation_job_id == source_job.id
-        )
+        select(models.ScheduleDraft).where(models.ScheduleDraft.generation_job_id == source_job.id)
     )
     source_block = await db_session.scalar(
         select(models.ScheduleDraftBlock).where(
@@ -617,8 +611,8 @@ async def test_repair_approval_reconciles_moved_added_and_removed_blocks(db_sess
         ]
     )
     source_draft.draft_state = models.ScheduleDraftState.APPROVED
-    source_draft.decided_by_user_id = ctx["user"].id
-    source_draft.decided_at = datetime.now(timezone.utc)
+    source_draft.decided_by_membership_id = ctx["membership"].id
+    source_draft.decided_at = datetime.now(UTC)
     ctx["state"].pending_draft_id = None
     ctx["state"].school_year_publication_state = models.SchoolYearPublicationState.PUBLISHED
     ctx["state"].active_schedule_version_id = "published-v1"
@@ -627,7 +621,7 @@ async def test_repair_approval_reconciles_moved_added_and_removed_blocks(db_sess
     await db_session.commit()
 
     repair_job = await _queue_job(db_session, ctx, "repair-reconcile-target")
-    fixed_now = datetime(2026, 6, 23, 12, tzinfo=timezone.utc)
+    fixed_now = datetime(2026, 6, 23, 12, tzinfo=UTC)
     original_policy_snapshot = SchedulerFingerprintService.repair_policy_snapshot
 
     async def fixed_policy_snapshot(service, organization_id, school_year_id, **_kwargs):
@@ -695,9 +689,7 @@ async def test_repair_approval_reconciles_moved_added_and_removed_blocks(db_sess
         finished.failure_message
     )
     repair_draft = await db_session.scalar(
-        select(models.ScheduleDraft).where(
-            models.ScheduleDraft.generation_job_id == repair_job.id
-        )
+        select(models.ScheduleDraft).where(models.ScheduleDraft.generation_job_id == repair_job.id)
     )
     diff = await SchedulerDiffService(db_session).list_diff(
         ctx["organization"].id,
@@ -708,7 +700,7 @@ async def test_repair_approval_reconciles_moved_added_and_removed_blocks(db_sess
     await SchedulerApprovalService(db_session).approve(
         ctx["organization"].id,
         repair_draft.id,
-        decided_by_user_id=ctx["user"].id,
+        decided_by_membership_id=ctx["membership"].id,
     )
     await db_session.commit()
 
@@ -731,15 +723,12 @@ async def test_repair_approval_reconciles_moved_added_and_removed_blocks(db_sess
     assert second_active.status == models.ActiveScheduleBlockStatus.REMOVED
 
 
-@pytest.mark.asyncio
 async def test_reject_retains_draft_blocks_and_diff_audit(db_session):
     ctx = await _runtime_context(db_session)
     job = await _queue_job(db_session, ctx, "reject-audit")
     await SchedulerJobRuntime(db_session).execute(job.id, run_complete_generation)
     draft = await db_session.scalar(
-        select(models.ScheduleDraft).where(
-            models.ScheduleDraft.generation_job_id == job.id
-        )
+        select(models.ScheduleDraft).where(models.ScheduleDraft.generation_job_id == job.id)
     )
     block_ids = set(
         await db_session.scalars(
@@ -759,7 +748,7 @@ async def test_reject_retains_draft_blocks_and_diff_audit(db_session):
     result = await SchedulerLifecycleService(db_session).reject_draft(
         ctx["organization"].id,
         draft.id,
-        decided_by_user_id=ctx["user"].id,
+        decided_by_membership_id=ctx["membership"].id,
     )
     await db_session.commit()
 
@@ -767,15 +756,18 @@ async def test_reject_retains_draft_blocks_and_diff_audit(db_session):
     await db_session.refresh(draft)
     await db_session.refresh(ctx["state"])
     assert draft.draft_state == models.ScheduleDraftState.REJECTED
-    assert draft.decided_by_user_id == ctx["user"].id
+    assert draft.decided_by_membership_id == ctx["membership"].id
     assert ctx["state"].pending_draft_id is None
-    assert set(
-        await db_session.scalars(
-            select(models.ScheduleDraftBlock.id).where(
-                models.ScheduleDraftBlock.draft_id == draft.id
+    assert (
+        set(
+            await db_session.scalars(
+                select(models.ScheduleDraftBlock.id).where(
+                    models.ScheduleDraftBlock.draft_id == draft.id
+                )
             )
         )
-    ) == block_ids
+        == block_ids
+    )
     assert {
         row.id
         for row in await SchedulerDiffService(db_session).list_diff(
@@ -785,20 +777,17 @@ async def test_reject_retains_draft_blocks_and_diff_audit(db_session):
     } == diff_ids
 
 
-@pytest.mark.asyncio
 async def test_reset_year_cancels_active_schedule_and_restores_first_generation(db_session):
     ctx = await _runtime_context(db_session)
     job = await _queue_job(db_session, ctx, "reset-published-source")
     await SchedulerJobRuntime(db_session).execute(job.id, run_complete_generation)
     draft = await db_session.scalar(
-        select(models.ScheduleDraft).where(
-            models.ScheduleDraft.generation_job_id == job.id
-        )
+        select(models.ScheduleDraft).where(models.ScheduleDraft.generation_job_id == job.id)
     )
     await SchedulerApprovalService(db_session).approve(
         ctx["organization"].id,
         draft.id,
-        decided_by_user_id=ctx["user"].id,
+        decided_by_membership_id=ctx["membership"].id,
     )
     await db_session.commit()
     active = list(
@@ -812,7 +801,7 @@ async def test_reset_year_cancels_active_schedule_and_restores_first_generation(
 
     reset = await SchedulerLifecycleService(db_session).reset_year(
         ctx["organization"].id,
-        reset_by_user_id=ctx["user"].id,
+        reset_by_membership_id=ctx["membership"].id,
         confirmed=True,
     )
     await db_session.commit()
@@ -825,15 +814,12 @@ async def test_reset_year_cancels_active_schedule_and_restores_first_generation(
     await db_session.refresh(ctx["state"])
     assert ctx["state"].active_schedule_version_id is None
     assert ctx["state"].approved_scheduler_state_version is None
-    assert ctx["state"].reset_by_user_id == ctx["user"].id
-    status = await SchedulerStatusService(db_session).get_status(
-        ctx["organization"].id
-    )
+    assert ctx["state"].reset_by_membership_id == ctx["membership"].id
+    status = await SchedulerStatusService(db_session).get_status(ctx["organization"].id)
     assert status.primary_action == "GENERATE_SCHEDULE"
     assert status.trigger_type == "FIRST_GENERATION"
 
 
-@pytest.mark.asyncio
 async def test_real_adaptive_engine_persists_valid_partial_target_and_links(
     db_session,
     monkeypatch,
@@ -851,9 +837,9 @@ async def test_real_adaptive_engine_persists_valid_partial_target_and_links(
             models.ScheduleDraftBlock.draft_id == source_draft.id
         )
     )
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     source_draft.draft_state = models.ScheduleDraftState.APPROVED
-    source_draft.decided_by_user_id = ctx["user"].id
+    source_draft.decided_by_membership_id = ctx["membership"].id
     source_draft.decided_at = now
     active = models.ActiveScheduleBlock(
         organization_id=ctx["organization"].id,
@@ -869,32 +855,15 @@ async def test_real_adaptive_engine_persists_valid_partial_target_and_links(
         duration_minutes=source_block.duration_minutes,
         source_draft_block_id=source_block.id,
     )
-    lesson = models.Lesson(
-        organization_id=ctx["organization"].id,
-        class_id=ctx["class"].id,
-        subject_id=ctx["subject"].id,
-        teacher_id=ctx["teacher"].id,
-    )
     settings = models.OrganizationSettings(
         organization_id=ctx["organization"].id,
         repair_stability_window_days=0,
     )
-    db_session.add_all([active, lesson, settings])
-    await db_session.flush()
-    legacy_output = models.ScheduleOutput(
-        organization_id=ctx["organization"].id,
-        lesson_id=lesson.id,
-        timeslot_id=ctx["slot"].id,
-        room_id=ctx["room"].id,
-        generation_id="legacy-debt-source",
-        date=date(2026, 6, 16),
-        is_draft=False,
-    )
-    db_session.add(legacy_output)
+    db_session.add_all([active, settings])
     await db_session.flush()
     debt = models.LessonOccurrence(
         organization_id=ctx["organization"].id,
-        schedule_output_id=legacy_output.id,
+        active_schedule_block_id=active.id,
         date=date(2026, 6, 16),
         class_id=ctx["class"].id,
         subject_id=ctx["subject"].id,
@@ -903,9 +872,9 @@ async def test_real_adaptive_engine_persists_valid_partial_target_and_links(
         is_active=True,
         planned_timeslot_id=ctx["slot"].id,
         planned_room_id=ctx["room"].id,
-        planned_hours=5.0,
+        planned_minutes=300,
         planned_teacher_id=ctx["teacher"].id,
-        hours_given=0.0,
+        given_minutes=0,
     )
     db_session.add(debt)
     ctx["state"].school_year_publication_state = models.SchoolYearPublicationState.PUBLISHED
@@ -915,7 +884,7 @@ async def test_real_adaptive_engine_persists_valid_partial_target_and_links(
     await db_session.commit()
 
     repair_job = await _queue_job(db_session, ctx, "real-adaptive-partial")
-    fixed_now = datetime(2026, 6, 23, 12, tzinfo=timezone.utc)
+    fixed_now = datetime(2026, 6, 23, 12, tzinfo=UTC)
     original_policy_snapshot = SchedulerFingerprintService.repair_policy_snapshot
 
     async def fixed_policy_snapshot(service, organization_id, school_year_id, **_kwargs):
@@ -938,9 +907,7 @@ async def test_real_adaptive_engine_persists_valid_partial_target_and_links(
 
     assert finished.job_status == models.ScheduleGenerationJobStatus.SUCCEEDED
     draft = await db_session.scalar(
-        select(models.ScheduleDraft).where(
-            models.ScheduleDraft.generation_job_id == repair_job.id
-        )
+        select(models.ScheduleDraft).where(models.ScheduleDraft.generation_job_id == repair_job.id)
     )
     assert draft.result_category == models.ScheduleGenerationResultCategory.PARTIAL_RECOVERY
     assert draft.summary_json["recovered_minutes"] == 240
@@ -950,9 +917,7 @@ async def test_real_adaptive_engine_persists_valid_partial_target_and_links(
     )
     target_blocks = (
         await db_session.scalars(
-            select(models.ScheduleDraftBlock).where(
-                models.ScheduleDraftBlock.draft_id == draft.id
-            )
+            select(models.ScheduleDraftBlock).where(models.ScheduleDraftBlock.draft_id == draft.id)
         )
     ).all()
     recovery_blocks = [row for row in target_blocks if row.is_recovery_block]
@@ -971,9 +936,7 @@ async def test_real_adaptive_engine_persists_valid_partial_target_and_links(
     ).all()
     assert len(links) == 4
     assert sum(row.planned_recovery_minutes for row in links) == 240
-    summary = await SchedulerDraftService(db_session).current_summary(
-        ctx["organization"].id
-    )
+    summary = await SchedulerDraftService(db_session).current_summary(ctx["organization"].id)
     assert summary.draft_id == draft.id
     assert summary.result_category == "PARTIAL_RECOVERY"
     assert summary.debt_hours_before == 5
@@ -1003,7 +966,7 @@ async def test_real_adaptive_engine_persists_valid_partial_target_and_links(
     approval = await SchedulerApprovalService(db_session).approve(
         ctx["organization"].id,
         draft.id,
-        decided_by_user_id=ctx["user"].id,
+        decided_by_membership_id=ctx["membership"].id,
     )
     await db_session.commit()
 
@@ -1026,11 +989,9 @@ async def test_real_adaptive_engine_persists_valid_partial_target_and_links(
         assert link.status == models.PlannedRecoveryLinkStatus.PLANNED
         assert link.planned_active_block_id is not None
         assert link.planned_draft_block_id is None
-    residual_after_approval = (
-        await SchedulerFingerprintService(db_session).debt_basis_fingerprint(
-            ctx["organization"].id,
-            ctx["school_year"].id,
-        )
+    residual_after_approval = await SchedulerFingerprintService(db_session).debt_basis_fingerprint(
+        ctx["organization"].id,
+        ctx["school_year"].id,
     )
     assert residual_after_approval is not None
     assert residual_after_approval.unresolved_debt_minutes == 60
@@ -1041,7 +1002,6 @@ async def test_real_adaptive_engine_persists_valid_partial_target_and_links(
     assert ctx["state"].active_schedule_version_id == f"draft-{draft.id}"
 
 
-@pytest.mark.asyncio
 async def test_no_output_and_validation_failure_create_no_draft(db_session):
     ctx = await _runtime_context(db_session)
     first = await _queue_job(db_session, ctx, "no-output")
@@ -1080,7 +1040,6 @@ async def test_no_output_and_validation_failure_create_no_draft(db_session):
     assert ctx["state"].pending_draft_id is None
 
 
-@pytest.mark.asyncio
 async def test_replacement_is_atomic_across_failure_and_success(db_session):
     ctx = await _runtime_context(db_session)
     initial_job = await _queue_job(db_session, ctx, "initial")
@@ -1090,9 +1049,7 @@ async def test_replacement_is_atomic_across_failure_and_success(db_session):
 
     await SchedulerJobRuntime(db_session).execute(initial_job.id, valid)
     old_draft = await db_session.scalar(
-        select(models.ScheduleDraft).where(
-            models.ScheduleDraft.generation_job_id == initial_job.id
-        )
+        select(models.ScheduleDraft).where(models.ScheduleDraft.generation_job_id == initial_job.id)
     )
     assert old_draft is not None
 
@@ -1149,7 +1106,6 @@ async def test_replacement_is_atomic_across_failure_and_success(db_session):
         ),
     ),
 )
-@pytest.mark.asyncio
 async def test_replacement_terminal_outcomes_preserve_previous_pending_draft(
     db_session,
     outcome,
@@ -1164,9 +1120,7 @@ async def test_replacement_terminal_outcomes_preserve_previous_pending_draft(
 
     await SchedulerJobRuntime(db_session).execute(initial_job.id, valid)
     old_draft = await db_session.scalar(
-        select(models.ScheduleDraft).where(
-            models.ScheduleDraft.generation_job_id == initial_job.id
-        )
+        select(models.ScheduleDraft).where(models.ScheduleDraft.generation_job_id == initial_job.id)
     )
     replacement = await _queue_job(
         db_session,
@@ -1174,7 +1128,7 @@ async def test_replacement_terminal_outcomes_preserve_previous_pending_draft(
         f"preserve-{outcome}-replacement",
         replace_pending=True,
     )
-    now = [datetime.now(timezone.utc)]
+    now = [datetime.now(UTC)]
 
     async def terminal(execution):
         if outcome == "failure":
@@ -1213,7 +1167,6 @@ async def test_replacement_terminal_outcomes_preserve_previous_pending_draft(
     ).all()
 
 
-@pytest.mark.asyncio
 async def test_repair_draft_becomes_stale_after_policy_change(db_session):
     ctx = await _runtime_context(db_session)
     complete_job = await _queue_job(db_session, ctx, "repair-stale-complete")
@@ -1229,7 +1182,7 @@ async def test_repair_draft_becomes_stale_after_policy_change(db_session):
     await SchedulerApprovalService(db_session).approve(
         ctx["organization"].id,
         complete_draft.id,
-        decided_by_user_id=ctx["user"].id,
+        decided_by_membership_id=ctx["membership"].id,
     )
     settings = models.OrganizationSettings(
         organization_id=ctx["organization"].id,
@@ -1246,9 +1199,7 @@ async def test_repair_draft_becomes_stale_after_policy_change(db_session):
     )
     assert finished.job_status == models.ScheduleGenerationJobStatus.SUCCEEDED
     repair_draft = await db_session.scalar(
-        select(models.ScheduleDraft).where(
-            models.ScheduleDraft.generation_job_id == repair_job.id
-        )
+        select(models.ScheduleDraft).where(models.ScheduleDraft.generation_job_id == repair_job.id)
     )
     settings.repair_stability_window_days = 1
     await db_session.commit()
@@ -1257,7 +1208,7 @@ async def test_repair_draft_becomes_stale_after_policy_change(db_session):
         await SchedulerApprovalService(db_session).approve(
             ctx["organization"].id,
             repair_draft.id,
-            decided_by_user_id=ctx["user"].id,
+            decided_by_membership_id=ctx["membership"].id,
         )
     await db_session.commit()
 
@@ -1269,7 +1220,6 @@ async def test_repair_draft_becomes_stale_after_policy_change(db_session):
     assert ctx["state"].pending_draft_id is None
 
 
-@pytest.mark.asyncio
 async def test_cancellation_during_engine_creates_no_draft(db_session):
     ctx = await _runtime_context(db_session)
     job = await _queue_job(db_session, ctx, "cancel-runtime")
@@ -1293,7 +1243,6 @@ async def test_cancellation_during_engine_creates_no_draft(db_session):
     assert not (await db_session.scalars(select(models.ScheduleDraft))).all()
 
 
-@pytest.mark.asyncio
 async def test_cancellation_before_worker_start_is_finalized(db_session):
     ctx = await _runtime_context(db_session)
     job = await _queue_job(db_session, ctx, "cancel-before-start")
@@ -1314,11 +1263,10 @@ async def test_cancellation_before_worker_start_is_finalized(db_session):
     assert not (await db_session.scalars(select(models.ScheduleDraft))).all()
 
 
-@pytest.mark.asyncio
 async def test_deadline_expiry_creates_no_draft(db_session):
     ctx = await _runtime_context(db_session)
     job = await _queue_job(db_session, ctx, "timeout-runtime")
-    now = [datetime.now(timezone.utc)]
+    now = [datetime.now(UTC)]
 
     async def exceed_deadline(_execution):
         now[0] += timedelta(minutes=5, seconds=1)
@@ -1334,13 +1282,12 @@ async def test_deadline_expiry_creates_no_draft(db_session):
     assert not (await db_session.scalars(select(models.ScheduleDraft))).all()
 
 
-@pytest.mark.asyncio
 async def test_validation_is_bounded_by_final_deadline_without_persisting_draft(
     db_session,
     monkeypatch,
 ):
-    monkeypatch.setattr(runtime_module, "GENERATION_CAP_SECONDS", 3)
-    monkeypatch.setattr(runtime_module, "FINAL_COMMIT_RESERVE_SECONDS", 1)
+    monkeypatch.setattr(runtime_module, "GENERATION_CAP_SECONDS", 0.05)
+    monkeypatch.setattr(runtime_module, "FINAL_COMMIT_RESERVE_SECONDS", 0.01)
     ctx = await _runtime_context(db_session)
     job = await _queue_job(db_session, ctx, "validation-timeout")
     runtime = SchedulerJobRuntime(db_session)
@@ -1349,7 +1296,7 @@ async def test_validation_is_bounded_by_final_deadline_without_persisting_draft(
         return _valid_result(ctx)
 
     async def slow_validation(_context, _result):
-        await asyncio.sleep(4)
+        await asyncio.Event().wait()
 
     monkeypatch.setattr(runtime, "_validate_result", slow_validation)
     finished = await runtime.execute(job.id, engine)
@@ -1359,18 +1306,15 @@ async def test_validation_is_bounded_by_final_deadline_without_persisting_draft(
     assert not (await db_session.scalars(select(models.ScheduleDraft))).all()
 
 
-@pytest.mark.asyncio
 async def test_concurrent_duplicate_generation_requests_converge_to_one_job(db_session):
     ctx = await _runtime_context(db_session)
-    selection = await SchedulerGenerationService(db_session).select_strategy(
-        ctx["organization"].id
-    )
+    selection = await SchedulerGenerationService(db_session).select_strategy(ctx["organization"].id)
 
     async def create_job():
         async with TestingSessionLocal() as session:
             handle = await SchedulerJobService(session).create_or_get_job(
                 selection,
-                requested_by_user_id=ctx["user"].id,
+                requested_by_membership_id=ctx["membership"].id,
                 idempotency_key="concurrent-click",
             )
             await session.commit()
@@ -1383,28 +1327,23 @@ async def test_concurrent_duplicate_generation_requests_converge_to_one_job(db_s
     jobs = (
         await db_session.scalars(
             select(models.ScheduleGenerationJob).where(
-                models.ScheduleGenerationJob.organization_id
-                == ctx["organization"].id,
-                models.ScheduleGenerationJob.school_year_id
-                == ctx["school_year"].id,
+                models.ScheduleGenerationJob.organization_id == ctx["organization"].id,
+                models.ScheduleGenerationJob.school_year_id == ctx["school_year"].id,
             )
         )
     ).all()
     assert [job.id for job in jobs] == [first[0]]
 
 
-@pytest.mark.asyncio
 async def test_concurrent_approval_publishes_exactly_once(db_session):
     ctx = await _runtime_context(db_session)
     job = await _queue_job(db_session, ctx, "concurrent-approval")
     organization_id = ctx["organization"].id
     school_year_id = ctx["school_year"].id
-    user_id = ctx["user"].id
+    membership_id = ctx["membership"].id
     await SchedulerJobRuntime(db_session).execute(job.id, run_complete_generation)
     draft = await db_session.scalar(
-        select(models.ScheduleDraft).where(
-            models.ScheduleDraft.generation_job_id == job.id
-        )
+        select(models.ScheduleDraft).where(models.ScheduleDraft.generation_job_id == job.id)
     )
 
     async def approve():
@@ -1413,7 +1352,7 @@ async def test_concurrent_approval_publishes_exactly_once(db_session):
                 result = await SchedulerApprovalService(session).approve(
                     organization_id,
                     draft.id,
-                    decided_by_user_id=user_id,
+                    decided_by_membership_id=membership_id,
                 )
                 await session.commit()
                 return "approved", result.active_schedule_version_id
@@ -1426,20 +1365,17 @@ async def test_concurrent_approval_publishes_exactly_once(db_session):
     assert sorted(outcome[0] for outcome in outcomes) == ["approved", "conflict"]
     db_session.expire_all()
     state = await db_session.scalar(
-            select(models.SchedulerSchoolYearState).where(
-                models.SchedulerSchoolYearState.organization_id
-                == organization_id,
-                models.SchedulerSchoolYearState.school_year_id == school_year_id,
+        select(models.SchedulerSchoolYearState).where(
+            models.SchedulerSchoolYearState.organization_id == organization_id,
+            models.SchedulerSchoolYearState.school_year_id == school_year_id,
         )
     )
     active = (
         await db_session.scalars(
-                select(models.ActiveScheduleBlock).where(
-                    models.ActiveScheduleBlock.organization_id
-                    == organization_id,
-                    models.ActiveScheduleBlock.school_year_id == school_year_id,
-                models.ActiveScheduleBlock.status
-                == models.ActiveScheduleBlockStatus.ACTIVE,
+            select(models.ActiveScheduleBlock).where(
+                models.ActiveScheduleBlock.organization_id == organization_id,
+                models.ActiveScheduleBlock.school_year_id == school_year_id,
+                models.ActiveScheduleBlock.status == models.ActiveScheduleBlockStatus.ACTIVE,
             )
         )
     ).all()
@@ -1449,7 +1385,6 @@ async def test_concurrent_approval_publishes_exactly_once(db_session):
     assert active[0].schedule_version_id == state.active_schedule_version_id
 
 
-@pytest.mark.asyncio
 async def test_approval_endpoint_rolls_back_ordinary_integrity_conflicts(
     db_session,
     monkeypatch,
@@ -1468,11 +1403,20 @@ async def test_approval_endpoint_rolls_back_ordinary_integrity_conflicts(
 
     monkeypatch.setattr(SchedulerApprovalService, "approve", fail_after_mutation)
     with pytest.raises(HTTPException) as raised:
-        await approve_draft_endpoint(
-            draft_id=999,
-            db=db_session,
-            current_user=ctx["user"],
-        )
+        async with db_session.begin():
+            await approve_draft_endpoint(
+                draft_id=999,
+                db=db_session,
+                current_user=Actor(
+                    account_id=ctx["user"].id,
+                    clerk_user_id="",
+                    organization_id=ctx["organization"].id,
+                    membership_id=ctx["membership"].id,
+                    can_admin=True,
+                    can_teach=False,
+                    teacher_id=None,
+                ),
+            )
 
     assert raised.value.status_code == 409
     state = await db_session.get(models.SchedulerSchoolYearState, state_id)

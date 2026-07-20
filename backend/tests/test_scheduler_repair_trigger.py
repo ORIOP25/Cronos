@@ -27,8 +27,12 @@ def test_repair_trigger_classification(generation, debt, expected):
     result = RepairTriggerClassifier().classify(generation, debt)
 
     assert result.trigger_type == expected
-    assert result.use_recovery_ladder is (expected != models.ScheduleGenerationTrigger.SCHEDULER_CHANGE)
-    assert result.use_adaptation_ladder is (expected != models.ScheduleGenerationTrigger.EXPLICIT_DEBT)
+    assert result.use_recovery_ladder is (
+        expected != models.ScheduleGenerationTrigger.SCHEDULER_CHANGE
+    )
+    assert result.use_adaptation_ladder is (
+        expected != models.ScheduleGenerationTrigger.EXPLICIT_DEBT
+    )
     assert "Adaptive repair" in result.summary
 
 

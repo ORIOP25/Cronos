@@ -8,7 +8,6 @@ from app import models
 from app.services.scheduler_fingerprint_service import SchedulerFingerprintService
 from app.services.scheduler_state_service import SchedulerStateService
 
-
 NOT_CONFIGURED_MESSAGE = "The scheduler school year is not configured."
 
 
@@ -44,10 +43,7 @@ class SchedulerStatusService:
             school_year.id,
         )
         debt = None
-        if (
-            state.school_year_publication_state
-            == models.SchoolYearPublicationState.PUBLISHED
-        ):
+        if state.school_year_publication_state == models.SchoolYearPublicationState.PUBLISHED:
             debt = await self._fingerprints.debt_basis_fingerprint(
                 organization_id,
                 school_year.id,
@@ -112,10 +108,7 @@ class SchedulerStatusService:
         state: models.SchedulerSchoolYearState,
         debt_minutes: int,
     ) -> models.ScheduleGenerationTrigger | None:
-        if (
-            state.school_year_publication_state
-            == models.SchoolYearPublicationState.UNPUBLISHED
-        ):
+        if state.school_year_publication_state == models.SchoolYearPublicationState.UNPUBLISHED:
             return models.ScheduleGenerationTrigger.FIRST_GENERATION
         approved = state.approved_scheduler_state_version
         changed = approved is not None and state.scheduler_state_version > approved

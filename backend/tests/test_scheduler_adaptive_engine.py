@@ -1,5 +1,5 @@
 from dataclasses import replace
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -8,12 +8,9 @@ from app.services.scheduler_adaptive_engine import AdaptiveRepairEngine
 from app.services.scheduler_job_runtime import (
     GenerationExecutionContext,
     GenerationValidationError,
-    SchedulerJobRuntime,
     NoValidGenerationOutput,
+    SchedulerJobRuntime,
 )
-
-
-pytestmark = pytest.mark.unit
 
 
 def _snapshot(*, hard_end: str) -> dict:
@@ -40,9 +37,7 @@ def _snapshot(*, hard_end: str) -> dict:
         "subjects": [{"id": 2, "required_room_type": "normal"}],
         "teachers": [{"id": 3}],
         "teacher_subject_eligibility": [{"teacher_id": 3, "subject_id": 2}],
-        "class_subject_requirements": [
-            {"class_id": 1, "subject_id": 2, "teacher_id": 3}
-        ],
+        "class_subject_requirements": [{"class_id": 1, "subject_id": 2, "teacher_id": 3}],
         "teacher_availability": [],
         "rooms": [{"id": 4, "capacity": 30, "type": "normal"}],
         "module_accounting": [],
@@ -85,7 +80,7 @@ def _debt(minutes: int) -> dict:
 
 
 def _context(*, hard_end: str, stability_days: int) -> GenerationExecutionContext:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     editable = "2026-06-08" if stability_days else "2026-06-01"
     return GenerationExecutionContext(
         job_id=1,
@@ -113,7 +108,7 @@ def _change_context(
     eligible_replacement: bool = True,
     current_room_valid: bool = False,
 ) -> GenerationExecutionContext:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     snapshot = _snapshot(hard_end="2026-06-15")
     snapshot["scheduler_state_version"] = 5
     snapshot["rooms"][0]["capacity"] = 30 if current_room_valid else 10
@@ -139,7 +134,6 @@ def _change_context(
     )
 
 
-@pytest.mark.asyncio
 async def test_full_recovery_produces_complete_target_with_exact_lineage():
     result = await AdaptiveRepairEngine().generate(
         _context(hard_end="2026-06-15", stability_days=7)
@@ -156,7 +150,6 @@ async def test_full_recovery_produces_complete_target_with_exact_lineage():
     assert result.partial_recovery_blocker_type is None
 
 
-@pytest.mark.asyncio
 async def test_partial_recovery_reports_stability_window_blocker_exactly():
     result = await AdaptiveRepairEngine().generate(
         _context(hard_end="2026-06-08", stability_days=7)
@@ -189,7 +182,6 @@ async def test_partial_recovery_reports_stability_window_blocker_exactly():
     assert len(result.blocks) == 2
 
 
-@pytest.mark.asyncio
 async def test_partial_recovery_reports_resource_capacity_without_stability_window():
     result = await AdaptiveRepairEngine().generate(
         _context(hard_end="2026-06-08", stability_days=0)
@@ -203,7 +195,6 @@ async def test_partial_recovery_reports_resource_capacity_without_stability_wind
     assert result.metrics["residual_debt_minutes"] == 60
 
 
-@pytest.mark.asyncio
 async def test_runtime_independently_rejects_forged_partial_recovery_metrics():
     context = _context(hard_end="2026-06-08", stability_days=7)
     result = await AdaptiveRepairEngine().generate(context)
@@ -217,7 +208,6 @@ async def test_runtime_independently_rejects_forged_partial_recovery_metrics():
         SchedulerJobRuntime._validate_adaptive_repair(context, forged)
 
 
-@pytest.mark.asyncio
 async def test_runtime_independently_rejects_changed_immutable_block():
     context = _context(hard_end="2026-06-08", stability_days=7)
     result = await AdaptiveRepairEngine().generate(context)
@@ -231,7 +221,6 @@ async def test_runtime_independently_rejects_changed_immutable_block():
         )
 
 
-@pytest.mark.asyncio
 async def test_scheduler_change_uses_smallest_same_time_resource_adaptation():
     context = _change_context()
 
@@ -251,28 +240,21 @@ async def test_scheduler_change_uses_smallest_same_time_resource_adaptation():
     SchedulerJobRuntime._validate_adaptive_repair(context, result)
 
 
-@pytest.mark.asyncio
 async def test_scheduler_change_returns_no_output_when_no_valid_future_exists():
-    result = await AdaptiveRepairEngine().generate(
-        _change_context(eligible_replacement=False)
-    )
+    result = await AdaptiveRepairEngine().generate(_change_context(eligible_replacement=False))
 
     assert isinstance(result, NoValidGenerationOutput)
     assert any("cannot be re-placed" in blocker for blocker in result.blockers)
 
 
-@pytest.mark.asyncio
 async def test_scheduler_change_never_modifies_invalid_protected_block():
-    result = await AdaptiveRepairEngine().generate(
-        _change_context(stability_days=7)
-    )
+    result = await AdaptiveRepairEngine().generate(_change_context(stability_days=7))
 
     assert isinstance(result, NoValidGenerationOutput)
     assert result.metrics["immutable_invalid_blocks"] == 1
     assert "Immutable block 50" in result.blockers[0]
 
 
-@pytest.mark.asyncio
 async def test_relevant_change_can_produce_valid_unchanged_target():
     context = _change_context(
         eligible_replacement=False,
@@ -310,7 +292,6 @@ def _custom_rule_context(rule_type: str, payload: dict) -> GenerationExecutionCo
     return context
 
 
-@pytest.mark.asyncio
 async def test_specific_room_constraint_is_detected_and_repaired_at_same_time():
     context = _custom_rule_context(
         "specific_room",
@@ -323,7 +304,6 @@ async def test_specific_room_constraint_is_detected_and_repaired_at_same_time():
     assert result.blocks[0].change_type is models.ScheduleDraftBlockChangeType.ROOM_ONLY
 
 
-@pytest.mark.asyncio
 async def test_lock_time_constraint_moves_published_block():
     context = _custom_rule_context(
         "lock_time",
@@ -336,13 +316,15 @@ async def test_lock_time_constraint_moves_published_block():
     assert result.blocks[0].change_type is models.ScheduleDraftBlockChangeType.MOVED
 
 
-@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("payload", "forbidden"),
     [
         ({"teacher_id": 3, "timeslot_id": 10}, lambda block: block.timeslot_id == 10),
         ({"teacher_id": 3, "day_of_week": 0}, lambda block: block.date.weekday() == 0),
-        ({"teacher_id": 3, "date": "2026-06-01"}, lambda block: block.date.isoformat() == "2026-06-01"),
+        (
+            {"teacher_id": 3, "date": "2026-06-01"},
+            lambda block: block.date.isoformat() == "2026-06-01",
+        ),
         (
             {"teacher_id": 3, "date": "2026-06-01", "timeslot_id": 10},
             lambda block: block.date.isoformat() == "2026-06-01" and block.timeslot_id == 10,
@@ -358,7 +340,6 @@ async def test_teacher_unavailable_selector_is_repaired(payload, forbidden):
     assert result.blocks[0].change_type is models.ScheduleDraftBlockChangeType.MOVED
 
 
-@pytest.mark.asyncio
 async def test_custom_rule_on_immutable_block_returns_no_valid_output_with_code():
     context = _custom_rule_context(
         "teacher_unavailable",

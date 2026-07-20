@@ -3,7 +3,6 @@
 import math
 from datetime import date, timedelta
 
-
 MIN_NEAR_FUTURE_HORIZON_WEEKS = 1
 MAX_NEAR_FUTURE_HORIZON_WEEKS = 12
 
@@ -77,9 +76,7 @@ def build_primary_window(
             "window_usable_days": 0,
         }
     total_days = (end_date - window_start_date).days + 1
-    blocked_days = sum(
-        window_start_date <= blocked <= end_date for blocked in blocked_dates
-    )
+    blocked_days = sum(window_start_date <= blocked <= end_date for blocked in blocked_dates)
     return {
         "horizon_weeks": safe_weeks,
         "window_start_date": window_start_date,
@@ -103,9 +100,9 @@ def estimate_capacity_minutes_in_range(
     for timeslot in timeslots:
         start = timeslot.start_time.hour * 60 + timeslot.start_time.minute
         end = timeslot.end_time.hour * 60 + timeslot.end_time.minute
-        minutes_by_weekday[timeslot.day_of_week] = (
-            minutes_by_weekday.get(timeslot.day_of_week, 0) + max(0, end - start)
-        )
+        minutes_by_weekday[timeslot.day_of_week] = minutes_by_weekday.get(
+            timeslot.day_of_week, 0
+        ) + max(0, end - start)
     total = 0
     current = start_date
     while current <= end_date:

@@ -1,7 +1,5 @@
 from datetime import date, timedelta
 
-import pytest
-
 from app.scheduler.domain.quality import (
     AvailabilityTier,
     QualityBlock,
@@ -10,13 +8,8 @@ from app.scheduler.domain.quality import (
     SchedulerQualityPolicy,
 )
 
-
-pytestmark = pytest.mark.unit
-
-
 SLOTS = tuple(
-    QualitySlot(index + 1, 0, 9 * 60 + index * 60, 10 * 60 + index * 60)
-    for index in range(6)
+    QualitySlot(index + 1, 0, 9 * 60 + index * 60, 10 * 60 + index * 60) for index in range(6)
 )
 POLICY = SchedulerQualityPolicy.from_durations([45, 60, 60, 120])
 
