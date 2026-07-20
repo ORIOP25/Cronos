@@ -60,7 +60,10 @@ services:
     environment:
       <<: *runtime-environment
       CLERK_SECRET_KEY: ${CLERK_SECRET_KEY:?CLERK_SECRET_KEY is required}
-      CLERK_WEBHOOK_SECRET: ${CLERK_WEBHOOK_SECRET:?CLERK_WEBHOOK_SECRET is required}
+      # E2E exercises Clerk authentication, not inbound webhook delivery. The
+      # application handles an unset webhook secret by returning 503 on that
+      # endpoint, so CI should not require an unrelated credential to start.
+      CLERK_WEBHOOK_SECRET: ${CLERK_WEBHOOK_SECRET:-}
       FRONTEND_URL: http://frontend:5173
       CLERK_AUTHORIZED_PARTIES: http://frontend:5173
     ports: ["8000:8000"]
