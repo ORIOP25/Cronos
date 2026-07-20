@@ -49,6 +49,9 @@ services:
       target: runtime
     command: ["alembic", "upgrade", "head"]
     environment:
+      # Settings validates DATABASE_URL before Alembic replaces the SQLAlchemy
+      # URL with MIGRATION_DATABASE_URL below.
+      DATABASE_URL: postgresql+psycopg2://cronos_migrator:${CRONOS_MIGRATOR_PASSWORD:?CRONOS_MIGRATOR_PASSWORD is required}@db:5432/${POSTGRES_DB:-cronos_ci_db}
       MIGRATION_DATABASE_URL: postgresql+psycopg2://cronos_migrator:${CRONOS_MIGRATOR_PASSWORD:?CRONOS_MIGRATOR_PASSWORD is required}@db:5432/${POSTGRES_DB:-cronos_ci_db}
     depends_on:
       provision-db: {condition: service_completed_successfully}
