@@ -105,6 +105,11 @@ services:
     ports: ["5173:5173"]
     depends_on:
       backend: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:5173').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 24
 
   e2e:
     image: mcr.microsoft.com/playwright:v1.59.1-noble
@@ -116,11 +121,16 @@ services:
       BASE_URL: http://frontend:5173
       VITE_CLERK_PUBLISHABLE_KEY: ${VITE_CLERK_PUBLISHABLE_KEY:?VITE_CLERK_PUBLISHABLE_KEY is required}
       CLERK_SECRET_KEY: ${CLERK_SECRET_KEY:?CLERK_SECRET_KEY is required}
+      CLERK_TESTING_TOKEN: ${CLERK_TESTING_TOKEN:-}
+      E2E_CLERK_ADMIN_EMAIL: ${E2E_CLERK_ADMIN_EMAIL:?E2E_CLERK_ADMIN_EMAIL is required}
+      E2E_CLERK_TEACHER_EMAIL: ${E2E_CLERK_TEACHER_EMAIL:?E2E_CLERK_TEACHER_EMAIL is required}
+      E2E_CLERK_INVITE_CREATE_EMAIL: ${E2E_CLERK_INVITE_CREATE_EMAIL:?E2E_CLERK_INVITE_CREATE_EMAIL is required}
+      E2E_CLERK_INVITE_CONVERT_EMAIL: ${E2E_CLERK_INVITE_CONVERT_EMAIL:?E2E_CLERK_INVITE_CONVERT_EMAIL is required}
     volumes:
       - ./frontend:/work/frontend:ro
       - frontend_node_modules_ci:/work/frontend/node_modules
     depends_on:
-      frontend: {condition: service_started}
+      frontend: {condition: service_healthy}
       worker: {condition: service_started}
       beat: {condition: service_started}
 
