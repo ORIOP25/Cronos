@@ -17,6 +17,9 @@ concurrency:
 env:
   PYTHON_VERSION: "3.12"
   NODE_VERSION: "24"
+  # Clerk publishable keys are public client configuration. Keep this fallback so
+  # E2E can run when repository variables are not configured.
+  CI_CLERK_PUBLISHABLE_KEY: "pk_test_d2VsY29tZWQtY2F0LTgzLmNsZXJrLmFjY291bnRzLmRldiQ"
   TEST_DATABASE_URL: postgresql+asyncpg://cronos_app:app-ci@localhost:5432/cronos_test_db
   DATABASE_URL: postgresql+asyncpg://cronos_app:app-ci@localhost:5432/cronos_test_db
   MIGRATION_DATABASE_URL: postgresql+psycopg2://cronos_migrator:migrator-ci@localhost:5432/cronos_test_db
