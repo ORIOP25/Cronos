@@ -17,9 +17,6 @@ concurrency:
 env:
   PYTHON_VERSION: "3.12"
   NODE_VERSION: "24"
-  # Clerk publishable keys are public client configuration. Keep this fallback so
-  # E2E can run when repository variables are not configured.
-  CI_CLERK_PUBLISHABLE_KEY: "pk_test_d2VsY29tZWQtY2F0LTgzLmNsZXJrLmFjY291bnRzLmRldiQ"
   TEST_DATABASE_URL: postgresql+asyncpg://cronos_app:app-ci@localhost:5432/cronos_test_db
   DATABASE_URL: postgresql+asyncpg://cronos_app:app-ci@localhost:5432/cronos_test_db
   MIGRATION_DATABASE_URL: postgresql+psycopg2://cronos_migrator:migrator-ci@localhost:5432/cronos_test_db
@@ -155,12 +152,12 @@ jobs:
           invite_convert_email="e2e-convert-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}+clerk_test@example.com"
           echo "E2E_CLERK_INVITE_CREATE_EMAIL=${invite_create_email}" >> "$GITHUB_ENV"
           echo "E2E_CLERK_INVITE_CONVERT_EMAIL=${invite_convert_email}" >> "$GITHUB_ENV"
-          if [ -z "$CLERK_PUBLISHABLE_KEY" ]; then
-            echo "ERROR: Missing Clerk publishable key for E2E."
+          if [[ "$VITE_CLERK_PUBLISHABLE_KEY" != pk_test_* ]]; then
+            echo "ERROR: Missing or invalid Clerk publishable key for E2E. Must start with pk_test_"
             exit 1
           fi
-          if [ -z "$CLERK_SECRET_KEY" ]; then
-            echo "ERROR: Missing Clerk server-side E2E auth."
+          if [[ "$CLERK_SECRET_KEY" != sk_test_* ]]; then
+            echo "ERROR: Missing or invalid Clerk server-side E2E auth. Must start with sk_test_"
             exit 1
           fi
           if [ -z "$E2E_CLERK_ADMIN_EMAIL" ] || [ -z "$E2E_CLERK_TEACHER_EMAIL" ]; then
@@ -180,7 +177,7 @@ jobs:
             *) echo "ERROR: Invitation identities must use Clerk reserved test emails."; exit 1 ;;
           esac
         env:
-          CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_PUBLISHABLE_KEY || vars.VITE_CLERK_PUBLISHABLE_KEY || secrets.CLERK_PUBLISHABLE_KEY || secrets.VITE_CLERK_PUBLISHABLE_KEY || env.CI_CLERK_PUBLISHABLE_KEY }}
+          VITE_CLERK_PUBLISHABLE_KEY: ${{ vars.VITE_CLERK_PUBLISHABLE_KEY }}
           CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
           E2E_CLERK_ADMIN_EMAIL: ${{ env.CI_E2E_CLERK_ADMIN_EMAIL }}
           E2E_CLERK_TEACHER_EMAIL: ${{ env.CI_E2E_CLERK_TEACHER_EMAIL }}
@@ -202,7 +199,7 @@ jobs:
           CRONOS_APP_PASSWORD: ${{ env.CI_APP_PASSWORD }}
           CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
           CLERK_WEBHOOK_SECRET: ${{ secrets.CLERK_WEBHOOK_SECRET }}
-          VITE_CLERK_PUBLISHABLE_KEY: ${{ vars.VITE_CLERK_PUBLISHABLE_KEY || vars.CLERK_PUBLISHABLE_KEY || secrets.VITE_CLERK_PUBLISHABLE_KEY || secrets.CLERK_PUBLISHABLE_KEY || env.CI_CLERK_PUBLISHABLE_KEY }}
+          VITE_CLERK_PUBLISHABLE_KEY: ${{ vars.VITE_CLERK_PUBLISHABLE_KEY }}
           E2E_CLERK_ADMIN_EMAIL: ${{ env.CI_E2E_CLERK_ADMIN_EMAIL }}
           E2E_CLERK_TEACHER_EMAIL: ${{ env.CI_E2E_CLERK_TEACHER_EMAIL }}
           E2E_CLERK_INVITE_CREATE_EMAIL: ${{ env.E2E_CLERK_INVITE_CREATE_EMAIL }}
@@ -232,9 +229,8 @@ jobs:
           POSTGRES_PASSWORD: ${{ env.POSTGRES_PASSWORD }}
           CRONOS_MIGRATOR_PASSWORD: ${{ env.CI_MIGRATOR_PASSWORD }}
           CRONOS_APP_PASSWORD: ${{ env.CI_APP_PASSWORD }}
-          VITE_CLERK_PUBLISHABLE_KEY: ${{ vars.VITE_CLERK_PUBLISHABLE_KEY || vars.CLERK_PUBLISHABLE_KEY || secrets.VITE_CLERK_PUBLISHABLE_KEY || secrets.CLERK_PUBLISHABLE_KEY || env.CI_CLERK_PUBLISHABLE_KEY }}
+          VITE_CLERK_PUBLISHABLE_KEY: ${{ vars.VITE_CLERK_PUBLISHABLE_KEY }}
           CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
-          CLERK_TESTING_TOKEN: ${{ secrets.CLERK_TESTING_TOKEN }}
           E2E_CLERK_ADMIN_EMAIL: ${{ env.CI_E2E_CLERK_ADMIN_EMAIL }}
           E2E_CLERK_TEACHER_EMAIL: ${{ env.CI_E2E_CLERK_TEACHER_EMAIL }}
           E2E_CLERK_ORG_ID: ${{ env.CI_E2E_CLERK_ORG_ID }}
