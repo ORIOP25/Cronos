@@ -1,3 +1,5 @@
+from datetime import date
+
 import pytest
 from pydantic import TypeAdapter, ValidationError
 
@@ -37,6 +39,10 @@ def test_supported_constraint_payloads_are_typed(payload):
 
     assert result.rule_payload.model_dump()
     assert SchedulerConstraintPolicy.parse([stored]).is_valid is True
+
+    # Pydantic must parse ISO date strings into datetime.date objects
+    if hasattr(result.rule_payload, "date") and result.rule_payload.date is not None:
+        assert isinstance(result.rule_payload.date, date)
 
 
 def test_unavailable_date_slot_storage_omits_inactive_selectors():

@@ -124,17 +124,17 @@ async def create_constraint(
     changed_by_membership_id: int | None = None,
 ):
     await _validate_constraint_references(db, item, organization_id)
-    payload = item.model_dump(mode="json", exclude_none=True)
+    rule_payload = item.rule_payload.model_dump(exclude_none=True)
     db_item = models.Constraint(
-        rule_type=models.ConstraintType(payload["rule_type"]),
+        rule_type=models.ConstraintType(item.rule_type.value),
         organization_id=organization_id,
-        class_id=payload["rule_payload"].get("class_id"),
-        subject_id=payload["rule_payload"].get("subject_id"),
-        teacher_id=payload["rule_payload"].get("teacher_id"),
-        room_id=payload["rule_payload"].get("room_id"),
-        timeslot_id=payload["rule_payload"].get("timeslot_id"),
-        constraint_date=payload["rule_payload"].get("date"),
-        day_of_week=payload["rule_payload"].get("day_of_week"),
+        class_id=rule_payload.get("class_id"),
+        subject_id=rule_payload.get("subject_id"),
+        teacher_id=rule_payload.get("teacher_id"),
+        room_id=rule_payload.get("room_id"),
+        timeslot_id=rule_payload.get("timeslot_id"),
+        constraint_date=rule_payload.get("date"),
+        day_of_week=rule_payload.get("day_of_week"),
     )
     db.add(db_item)
     await db.flush()
