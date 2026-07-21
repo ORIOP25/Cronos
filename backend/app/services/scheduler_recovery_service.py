@@ -49,7 +49,7 @@ class SchedulerRecoveryService:
                 models.ScheduleDraft.draft_state == models.ScheduleDraftState.PENDING,
                 models.ScheduleDraft.strategy == models.ScheduleGenerationStrategy.ADAPTIVE_REPAIR,
             )
-            .with_for_update()
+            .with_for_update(of=models.ScheduleDraft)
         )
         if block is None:
             raise RecoveryLinkIntegrityError(
@@ -157,7 +157,7 @@ class SchedulerRecoveryService:
                     models.ScheduleDraftBlock.draft_id == draft_id,
                     models.PlannedRecoveryLink.status == models.PlannedRecoveryLinkStatus.PLANNED,
                 )
-                .with_for_update()
+                .with_for_update(of=models.PlannedRecoveryLink)
             )
         ).all()
         activated = 0
@@ -211,7 +211,7 @@ class SchedulerRecoveryService:
                     models.PlannedRecoveryLink.status == models.PlannedRecoveryLinkStatus.PLANNED,
                     models.PlannedRecoveryLink.planned_active_block_id.is_(None),
                 )
-                .with_for_update()
+                .with_for_update(of=models.PlannedRecoveryLink)
             )
         ).all()
         for link in links:
