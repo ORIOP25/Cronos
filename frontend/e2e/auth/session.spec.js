@@ -20,6 +20,10 @@ test.describe('Session resilience', () => {
     await loginAsAdminReal(page)
   })
 
+  test.afterEach(async ({ context }) => {
+    await context.unrouteAll({ behavior: 'wait' })
+  })
+
   test('sessão persiste após page reload', async ({ page }) => {
     await goTo(page, '/dashboard')
     await expectRouteReady(page, '/dashboard')
@@ -30,9 +34,10 @@ test.describe('Session resilience', () => {
 
   test('API 401 do membro mostra recuperação explícita da sessão', async ({ page }) => {
     allowApiFailure(page, { status: 401, url: '/api/v1/members/me' })
-    await page.route((url) => url.pathname === '/api/v1/members/me', (route) => {
-      route.fulfill({ status: 401, contentType: 'application/json', body: '{"detail":"Unauthorized"}' })
-    })
+    await page.route(
+      (url) => url.pathname === '/api/v1/members/me',
+      (route) => route.fulfill({ status: 401, contentType: 'application/json', body: '{"detail":"Unauthorized"}' }),
+    )
     await goTo(page, '/dashboard')
     await expect(page).toHaveURL(/\/dashboard(?:[?#].*)?$/)
     const recoveryAlert = page.getByRole('alert')
@@ -44,9 +49,10 @@ test.describe('Session resilience', () => {
 
   test('API 403 na listagem de membros mostra alerta', async ({ page }) => {
     allowApiFailure(page, { status: 403, url: '/api/v1/members' })
-    await page.route((url) => url.pathname === '/api/v1/members', (route) => {
-      route.fulfill({ status: 403, contentType: 'application/json', body: '{"detail":"Admin access required"}' })
-    })
+    await page.route(
+      (url) => url.pathname === '/api/v1/members',
+      (route) => route.fulfill({ status: 403, contentType: 'application/json', body: '{"detail":"Admin access required"}' }),
+    )
     await goTo(page, '/members')
     await expect(page).toHaveURL(/\/members(?:[?#].*)?$/)
     await expect(page.getByText(/Admin access required/i).first()).toBeVisible({ timeout: 10000 })
