@@ -7,12 +7,16 @@ production privilege boundaries.
 
 from datetime import UTC, date, datetime, time
 
+import pytest
 import pytest_asyncio
 from sqlalchemy import select
 
 from app import models
 from app.db.tenant import set_async_tenant_context
-from app.services.scheduler_recovery_service import SchedulerRecoveryService
+from app.services.scheduler_recovery_service import (
+    RecoveryDebtUnavailableError,
+    SchedulerRecoveryService,
+)
 from tests.conftest import (
     RuntimeTestingSessionLocal,
     create_org_and_user,
@@ -47,12 +51,21 @@ async def seed(db_session):
     db_session.add(year)
     await db_session.flush()
 
-    cls = models.SchoolClass(organization_id=org.id, name="T1", abbreviation="T1", level="10")
-    db_session.add(cls)
+    course = models.Course(organization_id=org.id, name="Test Course", abbreviation="TC")
+    db_session.add(course)
     await db_session.flush()
 
-    subject = models.Subject(organization_id=org.id, name="Math", abbreviation="MAT")
-    db_session.add(subject)
+    cls = models.Class(
+        organization_id=org.id,
+        name="T1",
+        size=20,
+        start_year=2026,
+        end_year=2027,
+        grade_level=10,
+        course_id=course.id,
+    )
+    subject = models.Subject(organization_id=org.id, name="Math")
+    db_session.add_all([cls, subject])
     await db_session.flush()
 
     teacher = await create_teacher_profile(
@@ -84,6 +97,7 @@ async def seed(db_session):
     db_session.add(occurrence)
     await db_session.flush()
 
+    now = datetime.now(UTC)
     job = models.ScheduleGenerationJob(
         organization_id=org.id,
         school_year_id=year.id,
@@ -91,8 +105,9 @@ async def seed(db_session):
         job_status=models.ScheduleGenerationJobStatus.SUCCEEDED,
         result_category=models.ScheduleGenerationResultCategory.PARTIAL_RECOVERY,
         requested_by_membership_id=membership.id,
-        started_at=datetime.now(UTC),
-        finished_at=datetime.now(UTC),
+        queued_at=now,
+        started_at=now,
+        finished_at=now,
         generation_input_fingerprint="test_fp",
     )
     db_session.add(job)
@@ -214,35 +229,22 @@ async def test_plan_draft_recovery_succeeds_as_cronos_app(seed, db_session):
     async with RuntimeTestingSessionLocal() as session:
         await set_async_tenant_context(session, seed["org"].id)
         svc = SchedulerRecoveryService(session)
-        try:
-            link = await svc.plan_draft_recovery(
+        with pytest.raises(RecoveryDebtUnavailableError):
+            await svc.plan_draft_recovery(
                 seed["org"].id,
                 seed["year"].id,
                 seed["block"].id,
             )
-            # If debt ledger is empty, this raises RecoveryDebtUnavailableError
-            # which is acceptable — the important thing is no permission error
-            assert link is not None
-            await session.commit()
-        except Exception as exc:
-            # RecoveryDebtUnavailableError is acceptable: the lock succeeded,
-            # only the debt lookup failed because test fixtures don't populate
-            # the full debt ledger. InsufficientPrivilegeError would be a real failure.
-            assert "permission denied" not in str(exc).lower(), (
-                f"Unexpected permission error: {exc}"
-            )
 
 
-async def test_tenant_isolation(seed):
+async def test_tenant_isolation(seed, db_session):
     """Another org cannot see this org's recovery links."""
-    async with RuntimeTestingSessionLocal() as session:
-        # Set context to a different org (id=999999)
-        await session.execute(
-            models.Organization.__table__.insert().values(
-                id=999999, name="Other Org", clerk_org_id="org_other_isolation"
-            )
+    await db_session.execute(
+        models.Organization.__table__.insert().values(
+            id=999999, name="Other Org", clerk_org_id="org_other_isolation"
         )
-        await session.commit()
+    )
+    await db_session.commit()
 
     async with RuntimeTestingSessionLocal() as session:
         await set_async_tenant_context(session, 999999)
