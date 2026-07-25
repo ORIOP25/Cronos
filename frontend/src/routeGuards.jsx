@@ -1,5 +1,6 @@
 import { Navigate, Outlet } from 'react-router-dom'
 import { CSpinner } from '@coreui/react'
+import { useQueryClient } from '@tanstack/react-query'
 import {
   OrganizationSwitcher,
   RedirectToSignIn,
@@ -9,6 +10,8 @@ import {
   useOrganizationList,
 } from '@clerk/react'
 import { useCurrentMember } from './features/members/data'
+import { recoverOrganizationSession } from './features/members/recoverOrganizationSession'
+import apiClient from './apiClient'
 import {
   ROUTE_CREATE_ORG,
   canAccessTeacherRoutes,
@@ -67,22 +70,28 @@ function MemberQueryFailure({ error, recoverSession, refetch, signOut }) {
 function useOrganizationGuardState() {
   const auth = useAuth()
   const clerk = useClerk()
+  const queryClient = useQueryClient()
   const organizationState = useOrganization()
   const list = useOrganizationList({ userMemberships: { infinite: true } })
   const member = useCurrentMember({ enabled: Boolean(organizationState.organization) })
   return {
     ...auth,
     organization: organizationState.organization,
+    organizationMembership: organizationState.membership,
     orgLoaded: organizationState.isLoaded,
     listLoaded: list.isLoaded,
     memberships: list.userMemberships?.data || [],
     member,
     recoverSession: async () => {
-      await auth.getToken({
-        organizationId: organizationState.organization?.id,
-        skipCache: true,
+      const organizationId = organizationState.organization?.id
+      const currentMember = await recoverOrganizationSession({
+        getToken: auth.getToken,
+        organizationId,
+        requestMember: (token) => apiClient.get('/members/me', {
+          headers: { Authorization: `Bearer ${token}` },
+        }),
       })
-      await member.refetch()
+      queryClient.setQueryData(['current-member', organizationId], currentMember)
     },
     signOut: clerk.signOut,
   }
@@ -95,6 +104,13 @@ function MemberGate({ children, capability, requireTeacherId = false, redirectTo
   if (!state.isSignedIn) return <RedirectToSignIn />
   if (!state.organization) return <OrganizationRequired memberships={state.memberships} />
   if (memberLoading) return <PageLoader />
+  if (
+    isError
+    && error?.response?.status === 403
+    && ['admin', 'org:admin'].includes(state.organizationMembership?.role)
+  ) {
+    return <Navigate to={ROUTE_CREATE_ORG} replace />
+  }
   if (isError) return <MemberQueryFailure error={error} recoverSession={state.recoverSession} refetch={refetch} signOut={state.signOut} />
   if (redirectToDefault) return <Navigate to={getDefaultRouteForMember(member)} replace />
   const allowed = requireTeacherId

@@ -53,7 +53,7 @@ async def get_clerk_payload(
             if reason == "token-invalid-authorized-parties"
             else "NOT_AUTHENTICATED"
         )
-        logger.warning("clerk_auth_rejected", auth_failure_category=category.lower())
+        logger.warning("clerk_auth_rejected", auth_failure_category=reason or category.lower())
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail={

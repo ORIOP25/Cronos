@@ -15,15 +15,11 @@ export const setClerkTokenGetter = (fn) => {
 };
 
 apiClient.interceptors.request.use(async (config) => {
-  try {
-    const token = await getClerkToken();
-    // A caller may provide a freshly minted organization-scoped token. Never
-    // replace it with the application-wide token getter's current value.
-    if (token && !config.headers.Authorization) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
-  } catch {
-    // Token retrieval failed; protected endpoints will reject the unauthenticated request.
+  const token = await getClerkToken();
+  // A caller may provide a freshly minted organization-scoped token. Never
+  // replace it with the application-wide token getter's current value.
+  if (token && !config.headers.Authorization) {
+    config.headers.Authorization = `Bearer ${token}`;
   }
   return config;
 });

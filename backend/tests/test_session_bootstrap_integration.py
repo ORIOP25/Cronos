@@ -39,6 +39,46 @@ async def _provider_stubs(monkeypatch, organization):
     )
 
 
+async def test_bootstrap_creates_founder_graph_from_empty_baseline(
+    db_session,
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        SessionBootstrapService,
+        "_verify_provider_membership",
+        AsyncMock(return_value="orgmem_empty"),
+    )
+    monkeypatch.setattr(
+        clerk_sync,
+        "fetch_clerk_organization_name",
+        AsyncMock(return_value="Empty Baseline School"),
+    )
+    monkeypatch.setattr(
+        clerk_sync,
+        "fetch_clerk_user_profile",
+        AsyncMock(
+            return_value=clerk_sync.ClerkUserProfile(
+                email="founder@example.com",
+                name="Founder",
+            )
+        ),
+    )
+
+    result = await SessionBootstrapService(db_session).bootstrap(
+        {
+            "sub": "user_empty",
+            "o": {"id": "org_empty", "rol": "org:admin"},
+        }
+    )
+
+    assert result.organization["clerk_org_id"] == "org_empty"
+    assert result.member["capabilities"] == ["admin"]
+    assert result.onboarding_complete is False
+    assert await db_session.scalar(select(func.count(models.User.id))) == 1
+    assert await db_session.scalar(select(func.count(models.Organization.id))) == 1
+    assert await db_session.scalar(select(func.count(models.OrganizationMembership.id))) == 1
+
+
 async def test_bootstrap_is_idempotent_and_creates_one_founder_graph(
     db_session,
     monkeypatch,

@@ -39,7 +39,7 @@ documentation, and cleanup hardening.
 | BB-005 | UI | API error parsing was duplicated across modal, table, CRUD, onboarding, schedule, occurrence, and timesheet surfaces. | Users could receive inconsistent messages; maintenance risk when backend error shapes evolve. | P1 beta polish | Added `frontend/src/utils/apiErrors.js` and adopted it in focused high-traffic surfaces. | `frontend/src/test/apiErrors.test.js`; `npm run test`; `npm run test:coverage`. | Fixed |
 | BB-006 | CI | Backend CI wrote coverage XML, but did not enforce a backend coverage threshold. | Coverage could regress without CI failure. | P2 maintenance | Enforced a 70% backend floor after measuring the full suite above 73%. | Full database-backed suite with `--cov-fail-under=70`. | Fixed |
 | BB-007 | CI | The first coverage configuration measured only files imported by tests, so its reported 54.57% statement coverage omitted many zero-coverage source files. | The gate could pass while whole screens and hooks were unmeasured. | P1 beta polish | Added `coverage.include` for all `src/**/*.{js,jsx}` and set honest whole-source floors to 31/28/24/32. | `npm run test:coverage`: 24 files, 143 tests, coverage 31.21/28.22/24.44/32.00. | Fixed |
-| BB-008 | CI/DB | CI ran migrations and DB tests, but no `alembic check` gate existed. | SQLAlchemy metadata and migrations could drift. | P0 blocker | Added `alembic check` to CI and fixed detected drift. | `alembic current` at `20260706_repair_tenant_refs`; `alembic check` reports no new upgrade operations. | Fixed |
+| BB-008 | CI/DB | CI ran migrations and DB tests, but no `alembic check` gate existed. | SQLAlchemy metadata and migrations could drift. | P0 blocker | Added `alembic check` to CI and fixed detected drift. | `alembic current` at `0001_initial`; `alembic check` reports no new upgrade operations. | Fixed |
 | BB-009 | CI/DB | `backend/scripts/audit_triggers.py` existed, but CI did not call it. | Tenant trigger contract regressions could miss the beta gate. | P1 beta polish | Added trigger audit to CI after migrations. | `python scripts/audit_triggers.py` passed against migrated test DB. | Fixed |
 | BB-010 | Backend/DB | `backend/tests/conftest.py` refuses destructive tests unless the DB name contains `test` or `ci`. | Safe behavior was good, but local backend testing was not discoverable. | P1 beta polish | Replaced backend README with concise safe local test, Alembic, trigger-audit, and coverage instructions. | Docs review plus successful disposable-DB test run. | Fixed |
 | BB-011 | Docs | Root README listed stale frontend/quality-gate facts, including Zustand and SonarQube. | New maintainers got stale stack and CI information. | P2 maintenance | Updated stack and CI quality-gate description to current beta baseline facts. | Docs review; targeted stale-term search. | Fixed |
@@ -76,10 +76,10 @@ BB-016 through BB-027. Superseded measurements are labelled below.
 | `npm run test:coverage` | Superseded | The first 54.57% result omitted unimported source files; BB-007 records the corrected gate. |
 | `npm run build` | Passed | Initial build had a chunk warning; BB-023 records the resolved build. |
 | `alembic upgrade head` | Passed | Disposable Postgres test DB migrated successfully. |
-| `alembic current` | Passed | Current revision `20260706_repair_tenant_refs (head)`. |
+| `alembic current` | Passed | Current revision `0001_initial (head)`. |
 | `alembic check` | Failed, then passed | Initial metadata drift was the redundant `uq_org_membership_capability`; after model cleanup, no new upgrade operations detected. |
 | `python scripts/audit_triggers.py` | Passed | Trigger contract audit succeeded against migrated test DB. |
-| `pytest tests/test_migration_tenant_ref_contract.py -q` | Passed | 3 migration contract tests passed. |
+| `pytest tests/test_session_bootstrap_integration.py -q` | Passed | Empty-baseline, idempotency, concurrency, tenant-safety, and rollback contracts passed. |
 | `pytest -m unit -q` | Passed | 21 passed, 519 deselected. |
 | `pytest tests/ -v --cov=app --cov-report=xml:coverage.xml --cov-fail-under=35 --tb=short` | Passed | 538 passed, 2 skipped, coverage 73.03%, runtime 33:12. |
 | `rg "window\\.confirm|globalThis\\.confirm|confirm\\(" frontend/src frontend/e2e` | Passed after fixes | Only remaining match is the comment inside `ConfirmationModal.jsx`. |

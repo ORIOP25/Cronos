@@ -1,3 +1,4 @@
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
@@ -25,7 +26,8 @@ class FakeClerkGateway:
         return self.state
 
 
-async def test_clerk_gateway_owns_async_sdk_lifecycle():
+async def test_clerk_gateway_uses_injected_sdk_without_a_secret(monkeypatch):
+    monkeypatch.setattr("app.core.clerk.settings.CLERK_SECRET_KEY", "   ")
     calls = []
     signed_out = RequestState(status=AuthStatus.SIGNED_OUT)
 
@@ -45,6 +47,13 @@ async def test_clerk_gateway_owns_async_sdk_lifecycle():
         assert await gateway.authenticate_request(MagicMock()) is signed_out
 
     assert calls == ["enter", "authenticate", "exit"]
+
+
+def test_clerk_gateway_requires_a_secret_for_real_sdk(monkeypatch):
+    monkeypatch.setattr("app.core.clerk.settings.CLERK_SECRET_KEY", "   ")
+
+    with pytest.raises(RuntimeError, match="CLERK_SECRET_KEY"):
+        ClerkGateway()
 
 
 @pytest.mark.parametrize(
@@ -148,3 +157,21 @@ async def test_get_clerk_payload_rejects_signed_out_request():
 
     assert exc.value.status_code == 401
     assert exc.value.detail["error"] == "NOT_AUTHENTICATED"
+
+
+async def test_get_clerk_payload_logs_the_specific_clerk_failure(monkeypatch):
+    from app.api import deps
+
+    calls = []
+    monkeypatch.setattr(deps.logger, "warning", lambda *args, **kwargs: calls.append((args, kwargs)))
+    state = SimpleNamespace(
+        is_signed_in=False,
+        reason=SimpleNamespace(value="token-invalid-signature"),
+    )
+
+    with pytest.raises(HTTPException):
+        await get_clerk_payload(MagicMock(), FakeClerkGateway(state))
+
+    assert calls == [
+        (("clerk_auth_rejected",), {"auth_failure_category": "token-invalid-signature"})
+    ]

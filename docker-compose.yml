@@ -64,6 +64,7 @@ services:
     build:
       context: ./backend
       target: runtime
+    env_file: ./backend/.env
     environment: *backend-environment
     ports: ["8000:8000"]
     depends_on:
@@ -80,6 +81,7 @@ services:
       context: ./backend
       target: runtime
     command: ["celery", "-A", "app.celery_worker.celery_app", "worker", "--loglevel=info"]
+    env_file: ./backend/.env
     environment:
       <<: *backend-environment
       DATABASE_POOLING_ENABLED: "false"
@@ -112,4 +114,5 @@ services:
 
 volumes:
   postgres_data:
+    name: cronos_postgres_data_v16_baseline
   redis_data:

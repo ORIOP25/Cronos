@@ -10,7 +10,12 @@ class ClerkGateway:
     """One lifecycle-owned async Clerk SDK context."""
 
     def __init__(self, sdk: Clerk | None = None) -> None:
-        self.sdk = sdk or Clerk(bearer_auth=settings.CLERK_SECRET_KEY)
+        if sdk is None:
+            secret_key = settings.CLERK_SECRET_KEY.strip()
+            if not secret_key:
+                raise RuntimeError("CLERK_SECRET_KEY must be configured to use Clerk.")
+            sdk = Clerk(bearer_auth=secret_key)
+        self.sdk = sdk
 
     async def __aenter__(self) -> ClerkGateway:
         await self.sdk.__aenter__()

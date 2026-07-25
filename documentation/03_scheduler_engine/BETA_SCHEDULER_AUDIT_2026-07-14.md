@@ -410,7 +410,7 @@ No normal application database or normal ports (`5432`, `8000`, `5173`) were use
 
 | Gate | Result |
 |---|---|
-| `alembic upgrade head` | PASS — upgraded through `20260706_repair_tenant_refs`. |
+| `alembic upgrade head` | PASS — created the schema directly at `0001_initial`. |
 | `alembic current` | PASS — at head. |
 | `alembic check` | PASS — no new upgrade operations detected. |
 | same-tenant trigger audit | PASS. |
