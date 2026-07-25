@@ -1,5 +1,5 @@
-import { describe, it, expect, vi } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import ConfirmationModal from '../components/ConfirmationModal'
 
 describe('ConfirmationModal', () => {
@@ -8,6 +8,18 @@ describe('ConfirmationModal', () => {
     onClose: vi.fn(),
     onConfirm: vi.fn(),
   }
+
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+
+  afterEach(() => {
+    act(() => {
+      vi.runOnlyPendingTimers()
+    })
+    cleanup()
+    vi.useRealTimers()
+  })
 
   it('mostra título e mensagem padrão', () => {
     render(<ConfirmationModal {...defaultProps} />)
