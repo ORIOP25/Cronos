@@ -92,7 +92,7 @@ jobs:
         env:
           DATABASE_URL: ${{ env.MIGRATION_DATABASE_URL }}
         run: |
-          python scripts/audit_triggers.py
+          python -m scripts.audit_triggers
           python -m scripts.audit_database_integrity
       - name: Test without Redis contracts
         working-directory: backend
