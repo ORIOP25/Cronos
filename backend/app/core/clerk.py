@@ -29,6 +29,7 @@ class ClerkGateway:
             request,
             AuthenticateRequestOptions(
                 authorized_parties=settings.CLERK_AUTHORIZED_PARTIES_LIST,
+                clock_skew_in_ms=settings.CLERK_CLOCK_SKEW_MS,
             ),
         )
 
@@ -47,11 +48,6 @@ async def verify_clerk_request(
 ) -> RequestState:
     if gateway is not None:
         return await gateway.authenticate_request(request)
-    # Compatibility for direct unit calls which do not start FastAPI lifespan.
-    sdk = get_clerk_sdk()
-    return await sdk.authenticate_request_async(
-        request,
-        AuthenticateRequestOptions(
-            authorized_parties=settings.CLERK_AUTHORIZED_PARTIES_LIST,
-        ),
-    )
+    # Direct callers do not have FastAPI's lifespan-managed gateway.
+    async with ClerkGateway() as managed_gateway:
+        return await managed_gateway.authenticate_request(request)

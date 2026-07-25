@@ -32,12 +32,11 @@ alembic current
 alembic check
 python scripts/audit_triggers.py
 python -m scripts.audit_database_integrity
-pytest tests/test_runtime_reality.py tests/test_rls_database_policies.py -m postgresql -v --tb=short
+pytest tests/test_migration_tenant_ref_contract.py tests/test_rls_database_policies.py -m postgresql -v --tb=short
 ruff check app scripts
 ```
 
 ## Coverage
 
 Install local quality tooling with `pip install -r requirements-dev.txt`.
-CI enforces 70% backend coverage with `pytest-cov` on the complete
-database-backed suite.
+CI enforces 70% backend coverage with the complete database-backed suite.

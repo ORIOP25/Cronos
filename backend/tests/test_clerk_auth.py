@@ -32,6 +32,8 @@ async def test_clerk_gateway_uses_injected_sdk_without_a_secret(monkeypatch):
     signed_out = RequestState(status=AuthStatus.SIGNED_OUT)
 
     class FakeSdk:
+        options = None
+
         async def __aenter__(self):
             calls.append("enter")
             return self
@@ -41,12 +43,15 @@ async def test_clerk_gateway_uses_injected_sdk_without_a_secret(monkeypatch):
 
         async def authenticate_request_async(self, _request, _options):
             calls.append("authenticate")
+            self.options = _options
             return signed_out
 
-    async with ClerkGateway(FakeSdk()) as gateway:
+    sdk = FakeSdk()
+    async with ClerkGateway(sdk) as gateway:
         assert await gateway.authenticate_request(MagicMock()) is signed_out
 
     assert calls == ["enter", "authenticate", "exit"]
+    assert sdk.options.clock_skew_in_ms == 60_000
 
 
 def test_clerk_gateway_requires_a_secret_for_real_sdk(monkeypatch):
@@ -76,6 +81,28 @@ async def test_verify_clerk_request_uses_gateway(state, signed_in):
 
     assert result.is_signed_in is signed_in
     assert gateway.calls == 1
+
+
+async def test_verify_clerk_request_creates_and_closes_gateway_when_not_injected(monkeypatch):
+    calls = []
+    signed_out = RequestState(status=AuthStatus.SIGNED_OUT)
+
+    class ManagedGateway:
+        async def __aenter__(self):
+            calls.append("enter")
+            return self
+
+        async def __aexit__(self, *_args):
+            calls.append("exit")
+
+        async def authenticate_request(self, _request):
+            calls.append("authenticate")
+            return signed_out
+
+    monkeypatch.setattr("app.core.clerk.ClerkGateway", ManagedGateway)
+
+    assert await verify_clerk_request(MagicMock()) is signed_out
+    assert calls == ["enter", "authenticate", "exit"]
 
 
 async def test_get_current_user_resolves_immutable_actor(db_session):

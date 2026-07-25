@@ -77,7 +77,7 @@ else:
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
-    description="API Escolar Profissional com Rate Limiting, Caching e Docker.",
+    description="API Escolar Profissional com rate limiting e Docker.",
     version=settings.APP_VERSION,
     lifespan=lifespan,
 )

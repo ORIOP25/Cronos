@@ -1,12 +1,12 @@
-# 1. Usar Python 3.12 (versão leve)
+# Usar Python 3.12 (versão leve)
 FROM python:3.12.13-slim@sha256:c3d81d25b3154142b0b42eb1e61300024426268edeb5b5a26dd7ddf64d9daf28 AS runtime
 
-# 2. Configurações para Python em Docker (logs imediatos, sem .pyc)
+# Configurações para Python em Docker (logs imediatos, sem .pyc)
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONPATH=/app
 
-# 3. Criar pasta de trabalho dentro do Docker
+# Criar pasta de trabalho dentro do Docker
 WORKDIR /app
 
 COPY requirements.txt .
@@ -20,7 +20,7 @@ RUN addgroup --system cronos && adduser --system --ingroup cronos cronos \
     && chown -R cronos:cronos /app
 USER cronos
 
-# 9. Expor a porta 8000
+# Expor a porta 8000
 EXPOSE 8000
 
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

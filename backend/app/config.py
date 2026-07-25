@@ -53,6 +53,9 @@ class Settings(BaseSettings):
     FRONTEND_URL: str = "http://localhost:5173"
     CLERK_AUTHORIZED_PARTIES: str = ""
     CLERK_INVITATION_REDIRECT_URL: str = ""
+    # Clerk emits short-lived JWTs. Permit a small, bounded difference between
+    # the Clerk and application-server clocks when checking nbf/iat.
+    CLERK_CLOCK_SKEW_MS: int = 60_000
 
     # --- CORS ---
     # Lista separada por virgulas (ex: "https://app.exemplo.com,https://admin.exemplo.com")
@@ -97,6 +100,8 @@ class Settings(BaseSettings):
     # Este código corre DEPOIS de carregar o .env
     @model_validator(mode="after")
     def set_defaults(self):
+        if not 0 <= self.CLERK_CLOCK_SKEW_MS <= 60_000:
+            raise ValueError("CLERK_CLOCK_SKEW_MS must be between 0 and 60000.")
         self.FRONTEND_URL = _normalize_http_origin(self.FRONTEND_URL, "FRONTEND_URL")
         if self.FRONTEND_URL not in self.CLERK_AUTHORIZED_PARTIES_LIST:
             raise ValueError("FRONTEND_URL must appear in CLERK_AUTHORIZED_PARTIES.")
