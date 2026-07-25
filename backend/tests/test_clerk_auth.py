@@ -163,7 +163,11 @@ async def test_get_clerk_payload_logs_the_specific_clerk_failure(monkeypatch):
     from app.api import deps
 
     calls = []
-    monkeypatch.setattr(deps.logger, "warning", lambda *args, **kwargs: calls.append((args, kwargs)))
+    monkeypatch.setattr(
+        deps.logger,
+        "warning",
+        lambda *args, **kwargs: calls.append((args, kwargs)),
+    )
     state = SimpleNamespace(
         is_signed_in=False,
         reason=SimpleNamespace(value="token-invalid-signature"),
