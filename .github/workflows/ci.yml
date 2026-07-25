@@ -130,7 +130,7 @@ jobs:
         run: npm ci
       - working-directory: frontend
         run: |
-          npm audit --audit-level=high
+          npm run audit:production
           npm run verify
           npm run test:school-config:stability
 
