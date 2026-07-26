@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models
+
 if TYPE_CHECKING:
     from app.services.scheduler_job_runtime import (
         DraftBlockSpec,
@@ -45,14 +46,10 @@ class SchedulerDiffService:
     ) -> list[models.ScheduleDiffEntry]:
         active = {
             row["id"]: row
-            for row in context.immutable_snapshot["generation_input"].get(
-                "active_schedule", []
-            )
+            for row in context.immutable_snapshot["generation_input"].get("active_schedule", [])
         }
         target_sources = {
-            spec.source_active_block_id
-            for spec in specs
-            if spec.source_active_block_id is not None
+            spec.source_active_block_id for spec in specs if spec.source_active_block_id is not None
         }
         entries: list[models.ScheduleDiffEntry] = []
         for spec, block in zip(specs, blocks, strict=True):

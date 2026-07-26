@@ -1,17 +1,24 @@
 from __future__ import annotations
 
-from pydantic import BaseModel, EmailStr, Field, ConfigDict, model_validator, AliasChoices
-from datetime import time, datetime, date
-from enum import Enum, StrEnum
-from typing import Annotated, Any, Optional, Literal, Union
+from datetime import date, datetime, time
+from enum import StrEnum
+from typing import Annotated, Any, Literal
+
+from pydantic import AliasChoices, BaseModel, ConfigDict, EmailStr, Field, model_validator
+
 from .models import (
-    RoomType, UserRole, ConstraintType, PreferenceLevel,
-    CalendarEventType, CalendarEventSource, LessonOccurrenceStatus,
-    LessonLogStatus, TimesheetStatus,
+    CalendarEventSource,
+    CalendarEventType,
+    ConstraintType,
+    LessonLogStatus,
+    LessonOccurrenceStatus,
+    PreferenceLevel,
+    RoomType,
+    TimesheetStatus,
 )
 
 
-class OperationalOccurrenceState(str, Enum):
+class OperationalOccurrenceState(StrEnum):
     OPEN_PENDING = "OPEN_PENDING"
     DECIDED_GIVEN = "DECIDED_GIVEN"
     DECIDED_GAP = "DECIDED_GAP"
@@ -37,78 +44,43 @@ ERR_YEAR_RANGE = "Ano de fim deve ser maior que o ano de início"
 DESC_HOURS_TOTAL = "Carga horária total do módulo"
 
 # ==========================================
-#  AUTENTICAÇÃO & USERS
-# ==========================================
-
-class UserBase(BaseModel):
-    email: EmailStr
-
-class UserCreate(UserBase):
-    clerk_user_id: Optional[str] = None
-    name: Optional[str] = None
-    role: Optional[UserRole] = None
-    teacher_id: Optional[int] = None
-
-class UserRead(UserBase):
-    id: int
-    name: str | None = None
-    role: UserRole
-    teacher_id: int | None = None
-    organization_id: int
-
-    model_config = model_config
-
-class UserResponse(UserBase):
-    id: int
-    organization_id: int
-    # role: UserRole = UserRole.ADMIN # Descomentar se usares roles no futuro
-    
-    model_config = model_config
-
-class ClerkUserRead(BaseModel):
-    id: int
-    clerk_user_id: Optional[str] = None
-    email: str
-    name: str | None = None
-    role: str
-    organization_id: int
-    teacher_id: int | None = None
-    is_active: bool
-
-    model_config = model_config
-
-# ==========================================
 #  ESCOLA (Entidades Básicas)
 # ==========================================
+
 
 class OrganizationBase(BaseModel):
     name: str
 
+
 class OrganizationCreate(OrganizationBase):
     pass
+
 
 class OrganizationRead(OrganizationBase):
     id: int
     plan_status: str
     model_config = model_config
 
+
 # --- TEACHER ---
 class TeacherBase(BaseModel):
     name: str
-    email: Optional[EmailStr] = None
+    email: EmailStr | None = None
+
 
 class TeacherRead(TeacherBase):
     id: int
     organization_id: int
-    user_id: Optional[int] = None
-    login_email: Optional[str] = None
+    user_id: int | None = None
+    login_email: str | None = None
     # NOVO: Para o frontend saber se a conta está ativa ou inativa
     is_active: bool = False
     subject_ids: list[int] = Field(default_factory=list, description=DESC_SUBJECT_IDS)
     # Opcional: Incluir lista de disponibilidades quando pedes o professor
-    # availabilities: List[AvailabilityRead] = [] 
+    # availabilities: List[AvailabilityRead] = []
 
     model_config = ConfigDict(from_attributes=True)
+
 
 # --- EQuipa / Members ---
 
@@ -127,7 +99,7 @@ AccessStatusLiteral = Literal[
 
 class MemberErrorEnvelope(BaseModel):
     code: str
-    category: Optional[str] = None
+    category: str | None = None
     message: str
     retryable: bool = False
     support_required: bool = False
@@ -140,7 +112,7 @@ class MemberCreate(BaseModel):
     organization_display_name: str = Field(..., min_length=1, max_length=150)
     email: EmailStr
     capabilities: list[MemberCapabilityLiteral] = Field(..., min_length=1)
-    teacher_access_mode: Optional[TeacherAccessModeLiteral] = None
+    teacher_access_mode: TeacherAccessModeLiteral | None = None
     subject_ids: list[int] = Field(default_factory=list, description=DESC_SUBJECT_IDS)
 
     @model_validator(mode="after")
@@ -160,12 +132,12 @@ class MemberCreate(BaseModel):
 class MemberUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    organization_display_name: Optional[str] = Field(None, min_length=1, max_length=150)
-    email: Optional[EmailStr] = None
-    capabilities: Optional[list[MemberCapabilityLiteral]] = Field(None, min_length=1)
-    teacher_access_mode: Optional[TeacherAccessModeLiteral] = None
-    subject_ids: Optional[list[int]] = Field(None, description=DESC_SUBJECT_IDS)
-    lock_version: Optional[int] = Field(None, ge=1)
+    organization_display_name: str | None = Field(None, min_length=1, max_length=150)
+    email: EmailStr | None = None
+    capabilities: list[MemberCapabilityLiteral] | None = Field(None, min_length=1)
+    teacher_access_mode: TeacherAccessModeLiteral | None = None
+    subject_ids: list[int] | None = Field(None, description=DESC_SUBJECT_IDS)
+    lock_version: int | None = Field(None, ge=1)
 
     @model_validator(mode="after")
     def validate_member_update_shape(self):
@@ -182,9 +154,9 @@ class MemberRestore(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     restore_access: bool = True
-    capabilities: Optional[list[MemberCapabilityLiteral]] = Field(None, min_length=1)
-    teacher_access_mode: Optional[TeacherAccessModeLiteral] = None
-    subject_ids: Optional[list[int]] = Field(None, description=DESC_SUBJECT_IDS)
+    capabilities: list[MemberCapabilityLiteral] | None = Field(None, min_length=1)
+    teacher_access_mode: TeacherAccessModeLiteral | None = None
+    subject_ids: list[int] | None = Field(None, description=DESC_SUBJECT_IDS)
 
     @model_validator(mode="after")
     def validate_member_restore_shape(self):
@@ -216,17 +188,17 @@ class MemberRead(BaseModel):
     capabilities: list[MemberCapabilityLiteral]
     lifecycle_status: LifecycleStatusLiteral
     access_status: AccessStatusLiteral
-    teacher_access_mode: Optional[TeacherAccessModeLiteral] = None
-    expected_clerk_role: Optional[Literal["org:member", "org:admin"]] = None
-    clerk_user_id: Optional[str] = None
-    clerk_membership_id: Optional[str] = None
-    clerk_invitation_id: Optional[str] = None
-    clerk_invitation_status: Optional[Literal["pending", "accepted", "revoked", "expired"]] = None
-    invitation_expires_at: Optional[datetime] = None
-    teacher_id: Optional[int] = None
+    teacher_access_mode: TeacherAccessModeLiteral | None = None
+    expected_clerk_role: Literal["org:member", "org:admin"] | None = None
+    clerk_user_id: str | None = None
+    clerk_membership_id: str | None = None
+    clerk_invitation_id: str | None = None
+    clerk_invitation_status: Literal["pending", "accepted", "revoked", "expired"] | None = None
+    invitation_expires_at: datetime | None = None
+    teacher_id: int | None = None
     subject_ids: list[int] = Field(default_factory=list)
-    access_error_category: Optional[str] = None
-    access_error_safe_message: Optional[str] = None
+    access_error_category: str | None = None
+    access_error_safe_message: str | None = None
     provider_state: Literal["confirmed", "unconfirmed", "not_required"] = "confirmed"
     remove_effect: Literal["hard_delete", "archive"] = "archive"
     actions: MemberActionFlags = Field(default_factory=MemberActionFlags)
@@ -247,7 +219,7 @@ class CurrentMemberRead(BaseModel):
     capabilities: list[MemberCapabilityLiteral]
     access_status: AccessStatusLiteral
     lifecycle_status: LifecycleStatusLiteral
-    teacher_id: Optional[int] = None
+    teacher_id: int | None = None
     default_mode: Literal["admin", "teacher"]
     available_modes: list[Literal["admin", "teacher"]]
 
@@ -272,36 +244,42 @@ class SessionBootstrapResponse(BaseModel):
     member: SessionBootstrapMember
     onboarding_complete: bool
 
+
 # --- Class (Turma) ---
 class ClassBase(BaseModel):
     name: str
     size: int = Field(default=25, gt=0, description=DESC_CLASS_SIZE)
 
+
 class ClassCreate(ClassBase):
-    course_id: int = Field(..., description="ID do curso (obrigatório — turmas pertencem sempre a um curso)")
+    course_id: int = Field(
+        ..., description="ID do curso (obrigatório — turmas pertencem sempre a um curso)"
+    )
     grade_level: int = Field(..., ge=10, le=12, description=DESC_GRADE_LEVEL)
     start_year: int = Field(..., description=DESC_START_YEAR)
     end_year: int = Field(..., description=DESC_END_YEAR)
 
-    @model_validator(mode='after')
+    @model_validator(mode="after")
     def validate_year_window(self):
         if self.end_year <= self.start_year:
             raise ValueError(ERR_YEAR_RANGE)
         return self
 
+
 class ClassUpdate(BaseModel):
-    name: Optional[str] = None
-    size: Optional[int] = Field(None, gt=0, description=DESC_CLASS_SIZE)
-    grade_level: Optional[int] = Field(None, ge=10, le=12, description=DESC_GRADE_LEVEL)
-    start_year: Optional[int] = Field(None, description=DESC_START_YEAR)
-    end_year: Optional[int] = Field(None, description=DESC_END_YEAR)
+    name: str | None = None
+    size: int | None = Field(None, gt=0, description=DESC_CLASS_SIZE)
+    grade_level: int | None = Field(None, ge=10, le=12, description=DESC_GRADE_LEVEL)
+    start_year: int | None = Field(None, description=DESC_START_YEAR)
+    end_year: int | None = Field(None, description=DESC_END_YEAR)
+
 
 class ClassCreateInCourse(ClassBase):
     grade_level: int = Field(..., ge=10, le=12, description=DESC_GRADE_LEVEL)
     start_year: int = Field(..., description=DESC_START_YEAR)
     end_year: int = Field(..., description=DESC_END_YEAR)
 
-    @model_validator(mode='after')
+    @model_validator(mode="after")
     def validate_year_window(self):
         if self.end_year <= self.start_year:
             raise ValueError(ERR_YEAR_RANGE)
@@ -309,80 +287,95 @@ class ClassCreateInCourse(ClassBase):
 
 
 class ClassUpdateInCourse(BaseModel):
-    name: Optional[str] = None
-    size: Optional[int] = Field(None, gt=0, description=DESC_CLASS_SIZE)
-    grade_level: Optional[int] = Field(None, ge=10, le=12, description=DESC_GRADE_LEVEL)
-    start_year: Optional[int] = Field(None, description=DESC_START_YEAR)
-    end_year: Optional[int] = Field(None, description=DESC_END_YEAR)
+    name: str | None = None
+    size: int | None = Field(None, gt=0, description=DESC_CLASS_SIZE)
+    grade_level: int | None = Field(None, ge=10, le=12, description=DESC_GRADE_LEVEL)
+    start_year: int | None = Field(None, description=DESC_START_YEAR)
+    end_year: int | None = Field(None, description=DESC_END_YEAR)
 
-    @model_validator(mode='after')
+    @model_validator(mode="after")
     def validate_year_window_if_present(self):
-        if self.start_year is not None and self.end_year is not None and self.end_year <= self.start_year:
+        if (
+            self.start_year is not None
+            and self.end_year is not None
+            and self.end_year <= self.start_year
+        ):
             raise ValueError(ERR_YEAR_RANGE)
         return self
+
 
 class ClassRead(ClassBase):
     id: int
     organization_id: int
-    course_id: Optional[int] = None
+    course_id: int | None = None
     grade_level: int
     start_year: int
     end_year: int
     model_config = model_config
 
+
 # --- MÓDULOS ---
 class ModuleBase(BaseModel):
     name: str
-    code: Optional[str] = None
+    code: str | None = None
     hours_total: int = Field(..., gt=0, description=DESC_HOURS_TOTAL)
     order: int = Field(..., ge=0, description="Ordem sequencial do módulo (0, 1, 2...)")
+
 
 class ModuleCreate(ModuleBase):
     pass
 
+
 class ModuleUpsert(BaseModel):
     """Módulo para upsert: se id presente = atualizar, se ausente = criar"""
-    id: Optional[int] = None
+
+    id: int | None = None
     name: str
-    code: Optional[str] = None
+    code: str | None = None
     hours_total: int = Field(..., gt=0, description=DESC_HOURS_TOTAL)
     order: int = Field(..., ge=0, description="Ordem sequencial do módulo")
 
+
 class ModuleUpdate(BaseModel):
-    name: Optional[str] = None
-    code: Optional[str] = None
-    hours_total: Optional[int] = Field(None, gt=0, description=DESC_HOURS_TOTAL)
-    subject_id: Optional[int] = None
+    name: str | None = None
+    code: str | None = None
+    hours_total: int | None = Field(None, gt=0, description=DESC_HOURS_TOTAL)
+    subject_id: int | None = None
+
 
 class ModuleRead(ModuleBase):
     id: int
     subject_id: int
     model_config = ConfigDict(from_attributes=True)
 
+
 # --- SUBJECT ---
 class SubjectBase(BaseModel):
     name: str
     required_room_type: RoomType = RoomType.normal
 
-class SubjectCreate(SubjectBase):
-    modules: list[ModuleCreate] = Field(default_factory=list, description="Lista de módulos iniciais")
 
-    @model_validator(mode='after')
+class SubjectCreate(SubjectBase):
+    modules: list[ModuleCreate] = Field(
+        default_factory=list, description="Lista de módulos iniciais"
+    )
+
+    @model_validator(mode="after")
     def validate_module_order(self):
         """
         Valida que os módulos têm ordem sequencial começando em 0: [0, 1, 2, ...]
         Garante integridade de dados - pré-requisitos funcionam corretamente.
-        
+
         4º Pilar - Security: Evita injeção de dados inválidos via API
         """
         if not self.modules:
             # Permitir subject sem módulos (criar depois)
             return self
-        
+
         # Extrai orders e ordena
         orders = sorted([m.order for m in self.modules])
         expected = list(range(0, len(self.modules)))
-        
+
         # Valida sequência começando em 0
         if orders != expected:
             raise ValueError(
@@ -391,12 +384,13 @@ class SubjectCreate(SubjectBase):
             )
         return self
 
-class SubjectUpdate(BaseModel):
-    name: Optional[str] = None
-    required_room_type: Optional[RoomType] = None
-    modules: Optional[list[ModuleUpsert]] = None
 
-    @model_validator(mode='after')
+class SubjectUpdate(BaseModel):
+    name: str | None = None
+    required_room_type: RoomType | None = None
+    modules: list[ModuleUpsert] | None = None
+
+    @model_validator(mode="after")
     def validate_module_order(self):
         if self.modules is None:
             return self
@@ -409,11 +403,13 @@ class SubjectUpdate(BaseModel):
             )
         return self
 
+
 class SubjectRead(SubjectBase):
     id: int
     organization_id: int
     modules: list[ModuleRead] = []
     model_config = model_config
+
 
 # --- ROOM (SALA) ---
 class RoomBase(BaseModel):
@@ -421,22 +417,27 @@ class RoomBase(BaseModel):
     type: RoomType
     capacity: int = Field(30, gt=0)
 
+
 class RoomCreate(RoomBase):
     pass
 
+
 class RoomUpdate(BaseModel):
-    name: Optional[str] = None
-    type: Optional[RoomType] = None
-    capacity: Optional[int] = Field(None, gt=0)
+    name: str | None = None
+    type: RoomType | None = None
+    capacity: int | None = Field(None, gt=0)
+
 
 class RoomRead(RoomBase):
     id: int
     organization_id: int
     model_config = model_config
 
+
 # ==========================================
 #  HORÁRIOS (Complexo)
 # ==========================================
+
 
 # --- TIMESLOT (BLOCO DE TEMPO) ---
 class TimeslotBase(BaseModel):
@@ -446,26 +447,29 @@ class TimeslotBase(BaseModel):
     end_time: time
 
     # VALIDAÇÃO SÉNIOR: Garantir que o fim é depois do início
-    @model_validator(mode='after')
+    @model_validator(mode="after")
     def check_times(self):
         if self.end_time <= self.start_time:
-            raise ValueError('A hora de fim deve ser posterior à hora de início')
+            raise ValueError("A hora de fim deve ser posterior à hora de início")
         return self
+
 
 class TimeslotCreate(TimeslotBase):
     pass
 
-class TimeslotUpdate(BaseModel):
-    day_of_week: Optional[int] = Field(None, ge=0, le=6)
-    start_time: Optional[time] = None
-    end_time: Optional[time] = None
 
-    @model_validator(mode='after')
+class TimeslotUpdate(BaseModel):
+    day_of_week: int | None = Field(None, ge=0, le=6)
+    start_time: time | None = None
+    end_time: time | None = None
+
+    @model_validator(mode="after")
     def check_times(self):
         if self.start_time is not None and self.end_time is not None:
             if self.end_time <= self.start_time:
-                raise ValueError('A hora de fim deve ser posterior à hora de início')
+                raise ValueError("A hora de fim deve ser posterior à hora de início")
         return self
+
 
 class TimeslotRead(TimeslotBase):
     id: int
@@ -473,10 +477,11 @@ class TimeslotRead(TimeslotBase):
 
     model_config = ConfigDict(from_attributes=True)
 
+
 # --- LESSON (ATRIBUIÇÃO DE PROFESSOR) ---
-# 
+#
 # Padrão (Service Distribution):
-# Uma "Lesson" é a Atribuição de um Professor a uma Disciplina/Turma.
+# Associação canónica entre turma, disciplina e professor.
 # O Solver calcula dinamicamente quantas vezes por semana o professor dá aulas,
 # baseado no currículo do curso, progresso modular e disponibilidade.
 #
@@ -484,20 +489,24 @@ class TimeslotRead(TimeslotBase):
 # - Disciplina: Qual disciplina? (ex: Matemática)
 # - Professor: Quem leciona? (ex: Prof. Silva) [VALIDADO: deve ter competência]
 
+
 class LessonBase(BaseModel):
     class_id: int
     subject_id: int
     teacher_id: int
+
 
 class LessonCreate(LessonBase):
     # NOVO: Permite criar uma atribuição sem especificar horas exatas.
     # O Solver dirá quantas horas por semana são necessárias.
     pass
 
+
 class LessonRead(LessonBase):
     id: int
     organization_id: int
     model_config = model_config
+
 
 # --- CONSTRAINT (REGRA) ---
 class SupportedConstraintType(StrEnum):
@@ -586,12 +595,10 @@ class TeacherPreferredConstraintCreate(_ConstraintWrite):
 
 
 ConstraintCreate = Annotated[
-    Union[
-        SpecificRoomConstraintCreate,
-        LockTimeConstraintCreate,
-        TeacherUnavailableConstraintCreate,
-        TeacherPreferredConstraintCreate,
-    ],
+    SpecificRoomConstraintCreate
+    | LockTimeConstraintCreate
+    | TeacherUnavailableConstraintCreate
+    | TeacherPreferredConstraintCreate,
     Field(discriminator="rule_type"),
 ]
 
@@ -599,6 +606,7 @@ ConstraintCreate = Annotated[
 class ConstraintBase(BaseModel):
     rule_type: ConstraintType
     rule_payload: Any  # Flexível para aceitar JSON complexo
+
 
 class ConstraintRead(ConstraintBase):
     id: int
@@ -619,6 +627,7 @@ class ConstraintRead(ConstraintBase):
         self.validation_errors = errors
         return self
 
+
 # --- Disponibilidade ---
 class AvailabilityBase(BaseModel):
     teacher_id: int
@@ -626,39 +635,29 @@ class AvailabilityBase(BaseModel):
     # O Pydantic valida se é um dos valores do Enum (-1, 0, 1, 2)
     score: PreferenceLevel = PreferenceLevel.NEUTRAL
 
+
 class AvailabilityCreate(AvailabilityBase):
     pass
 
+
 class AvailabilitySelfCreate(BaseModel):
     """Disponibilidade sem teacher_id (usa ID do path/autenticacao)."""
+
     timeslot_id: int
     score: PreferenceLevel = PreferenceLevel.NEUTRAL
 
 
 class AvailabilitySelfRead(BaseModel):
     """Leitura self-service de disponibilidade do professor autenticado."""
+
     timeslot_id: int
     score: PreferenceLevel = PreferenceLevel.NEUTRAL
 
+
 class AvailabilityRead(AvailabilityBase):
     id: int
-    
+
     model_config = ConfigDict(from_attributes=True)
-
-
-class ScheduleOutputBase(BaseModel):
-    lesson_id: int
-    timeslot_id: int
-    room_id: int
-    generation_id: str
-
-
-class ScheduleOutputRead(ScheduleOutputBase):
-    id: int
-    organization_id: int
-    lesson_date: Optional[date] = Field(None, alias="date")
-    is_draft: bool = False
-    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 
 
 # --- GERADOR DE HORÁRIOS (Sprint 1) ---
@@ -667,6 +666,7 @@ class ScheduleGenerateRequest(BaseModel):
 
     A estratégia é escolhida internamente pelo estado de publicação do ano letivo.
     """
+
     model_config = ConfigDict(extra="forbid")
 
     replace_pending_draft: bool = False
@@ -676,9 +676,7 @@ class ScheduleGenerateRequest(BaseModel):
 class SchedulerGenerateResponse(BaseModel):
     job_id: int
     strategy: Literal["COMPLETE_GENERATION", "ADAPTIVE_REPAIR"]
-    trigger_type: Literal[
-        "FIRST_GENERATION", "EXPLICIT_DEBT", "SCHEDULER_CHANGE", "MIXED"
-    ]
+    trigger_type: Literal["FIRST_GENERATION", "EXPLICIT_DEBT", "SCHEDULER_CHANGE", "MIXED"]
     status: str
 
 
@@ -696,12 +694,15 @@ class SchedulerStatusResponse(BaseModel):
     can_generate_new_draft: bool
     can_regenerate_with_confirmation: bool
     blocked_reason: str | None
-    trigger_type: Literal[
-        "FIRST_GENERATION",
-        "EXPLICIT_DEBT",
-        "SCHEDULER_CHANGE",
-        "MIXED",
-    ] | None
+    trigger_type: (
+        Literal[
+            "FIRST_GENERATION",
+            "EXPLICIT_DEBT",
+            "SCHEDULER_CHANGE",
+            "MIXED",
+        ]
+        | None
+    )
     unresolved_debt_hours: float = Field(ge=0)
     scheduler_state_version: int | None = Field(default=None, ge=0)
     approved_scheduler_state_version: int | None = Field(default=None, ge=0)
@@ -712,9 +713,7 @@ class ScheduleGenerationJobResponse(BaseModel):
 
     id: int
     strategy: Literal["COMPLETE_GENERATION", "ADAPTIVE_REPAIR"]
-    trigger_type: Literal[
-        "FIRST_GENERATION", "EXPLICIT_DEBT", "SCHEDULER_CHANGE", "MIXED"
-    ] | None
+    trigger_type: Literal["FIRST_GENERATION", "EXPLICIT_DEBT", "SCHEDULER_CHANGE", "MIXED"] | None
     job_status: Literal[
         "QUEUED",
         "RUNNING",
@@ -724,9 +723,7 @@ class ScheduleGenerationJobResponse(BaseModel):
         "FAILED",
         "NO_VALID_OUTPUT",
     ]
-    result_category: Literal[
-        "COMPLETE_SUCCESS", "PARTIAL_RECOVERY", "NO_VALID_OUTPUT"
-    ] | None
+    result_category: Literal["COMPLETE_SUCCESS", "PARTIAL_RECOVERY", "NO_VALID_OUTPUT"] | None
     queued_at: datetime
     started_at: datetime | None
     finished_at: datetime | None
@@ -746,13 +743,9 @@ class ScheduleDraftSummaryResponse(BaseModel):
 
     draft_id: int
     strategy: Literal["COMPLETE_GENERATION", "ADAPTIVE_REPAIR"]
-    draft_state: Literal[
-        "PENDING", "APPROVED", "REJECTED", "REPLACED", "STALE", "INVALIDATED"
-    ]
+    draft_state: Literal["PENDING", "APPROVED", "REJECTED", "REPLACED", "STALE", "INVALIDATED"]
     result_category: Literal["COMPLETE_SUCCESS", "PARTIAL_RECOVERY"]
-    trigger_type: Literal[
-        "FIRST_GENERATION", "EXPLICIT_DEBT", "SCHEDULER_CHANGE", "MIXED"
-    ]
+    trigger_type: Literal["FIRST_GENERATION", "EXPLICIT_DEBT", "SCHEDULER_CHANGE", "MIXED"]
     recovery_escalation_level: str | None
     adaptation_level: str | None
     projected_completion_date: date
@@ -839,110 +832,105 @@ class SchedulerResetYearResponse(BaseModel):
     canceled_recovery_links: int = Field(ge=0)
 
 
-# --- SUBSTITUTIONS ---
-
-class SubstitutionBase(BaseModel):
-    lesson_id: int
-    timeslot_id: int
-    original_teacher_id: int
-    date: date  # Campo crítico para a mudança pontual
-    reason: Optional[str] = None
-
-class SubstitutionCreate(SubstitutionBase):
-    # O ID do professor substituto é enviado aqui
-    substitute_teacher_id: int 
-
-class SubstitutionResponse(SubstitutionBase):
-    id: int
-    substitute_teacher_id: int
-    status: str
-    created_at: datetime
-    
-    # Para facilitar a leitura no frontend (opcional, mas recomendado)
-    original_teacher_name: Optional[str] = None
-    substitute_teacher_name: Optional[str] = None
-
-    model_config = ConfigDict(from_attributes=True)
-
-# Schema para a sugestão (resposta do algoritmo)
-class ReplacementSuggestion(BaseModel):
-    teacher_id: int
-    teacher_name: str
-    priority: int  # 1 (Melhor disponibilidade), 2 (Mesma area), 3 (Livre)
-    reason: str    # Ex: "Livre e elegivel para a turma"
-
 # --- CURSOS ---
 # Classes Auxiliares
 class ClassConfigCreate(BaseModel):
     """Define as regras para criar uma turma automática"""
+
     grade_level: int = Field(..., ge=10, le=12, description=DESC_GRADE_LEVEL)
     size: int = Field(25, gt=0, description="Número de alunos")
     start_year: int = Field(..., description=DESC_START_YEAR)
     end_year: int = Field(..., description=DESC_END_YEAR)
 
+
 class TeacherAssignmentCreate(BaseModel):
     """Define quem é o professor 'padrão' para uma disciplina neste curso"""
+
     subject_id: int
     teacher_id: int
 
+
 class CourseBase(BaseModel):
     name: str
-    abbreviation: str = Field(..., min_length=2, max_length=10, description="Sigla do curso (ex: TGEI)")
+    abbreviation: str = Field(
+        ..., min_length=2, max_length=10, description="Sigla do curso (ex: TGEI)"
+    )
+
 
 class CourseCreate(CourseBase):
-    subject_ids: list[int] = Field(default_factory=list, description="IDs das disciplinas que compõem o curso")
-    teacher_assignments: list[TeacherAssignmentCreate] = Field(default_factory=list, description="Professores por disciplina")
-    classes_config: list[ClassConfigCreate] = Field(default_factory=list, description="Configuração das turmas a criar")
+    subject_ids: list[int] = Field(
+        default_factory=list, description="IDs das disciplinas que compõem o curso"
+    )
+    teacher_assignments: list[TeacherAssignmentCreate] = Field(
+        default_factory=list, description="Professores por disciplina"
+    )
+    classes_config: list[ClassConfigCreate] = Field(
+        default_factory=list, description="Configuração das turmas a criar"
+    )
+
 
 class CourseUpdate(BaseModel):
-    name: Optional[str] = None
-    abbreviation: Optional[str] = Field(None, min_length=2, max_length=10)
-    subject_ids: Optional[list[int]] = None
+    name: str | None = None
+    abbreviation: str | None = Field(None, min_length=2, max_length=10)
+    subject_ids: list[int] | None = None
+
 
 class SubjectSimple(BaseModel):
     """Versão simplificada de Subject para não over-fetch"""
+
     id: int
     name: str
     required_room_type: RoomType
     model_config = ConfigDict(from_attributes=True)
+
 
 class CourseRead(CourseBase):
     id: int
     organization_id: int
     model_config = ConfigDict(from_attributes=True)
 
+
 # Este schema traz logo as turmas + disciplinas associadas para não termos de fazer múltiplos pedidos
 class CourseDetailRead(CourseRead):
-    subjects: list[SubjectSimple] = Field(default_factory=list, description="Disciplinas do curso (sem módulos)")
+    subjects: list[SubjectSimple] = Field(
+        default_factory=list, description="Disciplinas do curso (sem módulos)"
+    )
     classes: list[ClassRead] = Field(default_factory=list, description="Turmas do curso")
     model_config = ConfigDict(from_attributes=True)
+
 
 # --- COURSE BASIC (para relacionamentos) ---
 class CourseBasic(CourseBase):
     """Versão simples de Course sem disciplinas/turmas (evita circular imports)"""
+
     id: int
     organization_id: int
     model_config = ConfigDict(from_attributes=True)
+
 
 # --- CLASS DETAIL READ (Turma + Curso) ---
 class ClassDetailRead(ClassRead):
     """
     Detalhes da turma incluindo o curso associado.
     Não inclui Lessons (horário) para manter payload leve - essas vêm de um endpoint separado.
-    
+
     4º Pilar - Scalability: Endpoint é autossuficiente (tem course no browser navigation),
     sem sobrecarregar com centenas de lessons. O horário vem depois se necessário.
     """
-    course: Optional[CourseBasic] = None
+
+    course: CourseBasic | None = None
     model_config = ConfigDict(from_attributes=True)
+
 
 # --- PROGRESSO DE MÓDULOS (Dashboard da Turma) ---
 
+
 class ModuleProgressRead(BaseModel):
     """Módulo com informação de progresso para uma turma específica"""
+
     id: int
     name: str
-    code: Optional[str] = None
+    code: str | None = None
     hours_total: int
     order: int
     hours_completed: float = 0.0
@@ -950,8 +938,10 @@ class ModuleProgressRead(BaseModel):
     is_completed: bool = False
     percentage: float = 0.0
 
+
 class SubjectProgressRead(BaseModel):
     """Disciplina com módulos e progresso agregado por turma"""
+
     id: int
     name: str
     required_room_type: RoomType
@@ -960,30 +950,40 @@ class SubjectProgressRead(BaseModel):
     completed_hours: int = 0
     overall_percentage: float = 0.0
 
+
 class ClassFullDetailRead(ClassRead):
     """
     Dashboard completo da turma: Curso + Disciplinas + Módulos + Progresso.
-    
+
     4 Pilares:
     ⚡ Optimization: 2 queries otimizadas com selectinload (vs N+1)
     📈 Scalability: Esquema extensível para futuras features (alunos, notas)
     ⚙️ Stability: Progresso calculado server-side (fonte de verdade única)
     🔐 Security: Filtrado por org_id no service layer
     """
-    course: Optional[CourseBasic] = None
+
+    course: CourseBasic | None = None
     subjects: list[SubjectProgressRead] = []
     model_config = ConfigDict(from_attributes=True)
 
+
 # --- ATUALIZAÇÃO DE PROGRESSO ---
+
 
 class ClassProgressUpdate(BaseModel):
     """Atualizar horas completadas de um módulo para uma turma"""
+
     module_id: int
     hours_completed: float = Field(..., ge=0, description="Horas já lecionadas")
 
+
 class ClassProgressBulkUpdate(BaseModel):
     """Atualizar progresso de múltiplos módulos de uma vez"""
-    progress: list[ClassProgressUpdate] = Field(..., min_length=1, description="Lista de atualizações")
+
+    progress: list[ClassProgressUpdate] = Field(
+        ..., min_length=1, description="Lista de atualizações"
+    )
+
 
 # ==========================================
 #  CONFIGURAÇÕES DA ESCOLA (Sprint 0)
@@ -1006,6 +1006,7 @@ ERR_HARD_BEFORE_TARGET = "A data-limite rígida não pode ser anterior à data-a
 
 class OrganizationSettingsUpsert(BaseModel):
     """Cria ou atualiza as configurações da escola."""
+
     model_config = ConfigDict(extra="forbid")
 
     school_start_date: date | None = Field(None, description="Primeiro dia de aulas")
@@ -1024,7 +1025,7 @@ class OrganizationSettingsUpsert(BaseModel):
         if start_date and hard_end_date and hard_end_date < start_date:
             raise ValueError(ERR_HARD_BEFORE_START)
 
-    @model_validator(mode='after')
+    @model_validator(mode="after")
     def validate_school_dates_only(self):
         self._validate_school_dates(
             self.school_start_date,
@@ -1040,6 +1041,7 @@ class OrganizationSettingsRead(BaseModel):
     school_hard_end_date: date | None = None
     repair_stability_window_days: int | None = None
     model_config = ConfigDict(from_attributes=True)
+
 
 class OrganizationGridSettingsUpsert(BaseModel):
     lunch_window_start: time | None = Field(None, description=DESC_LUNCH_START)
@@ -1060,7 +1062,7 @@ class OrganizationGridSettingsUpsert(BaseModel):
         if minimum is not None and minimum > (end_minutes - start_minutes):
             raise ValueError(ERR_LUNCH_WINDOW_DURATION)
 
-    @model_validator(mode='after')
+    @model_validator(mode="after")
     def validate_lunch_window(self):
         self._validate_lunch_inputs(
             self.lunch_window_start,
@@ -1068,6 +1070,7 @@ class OrganizationGridSettingsUpsert(BaseModel):
             self.lunch_min_duration_minutes,
         )
         return self
+
 
 class OrganizationGridSettingsRead(BaseModel):
     id: int
@@ -1090,10 +1093,10 @@ class SchoolCalendarEventCreate(BaseModel):
     end_date: date
     event_type: CalendarEventType
 
-    @model_validator(mode='after')
+    @model_validator(mode="after")
     def validate_date_range(self):
         if self.end_date < self.start_date:
-            raise ValueError('A data de fim não pode ser anterior à data de início')
+            raise ValueError("A data de fim não pode ser anterior à data de início")
         return self
 
 
@@ -1147,8 +1150,7 @@ class GridConfigurationCommand(BaseModel):
         lunch_start = self.grid_settings.lunch_window_start
         lunch_end = self.grid_settings.lunch_window_end
         if lunch_start is not None and (
-            lunch_start < self.timeslots.start_time
-            or lunch_end > self.timeslots.end_time
+            lunch_start < self.timeslots.start_time or lunch_end > self.timeslots.end_time
         ):
             raise ValueError("A janela de almoço deve ficar dentro do horário de abertura.")
         return self
@@ -1160,46 +1162,61 @@ class GridConfigurationResponse(BaseModel):
     changed: bool
     grid_regenerated: bool
 
+
 # ==========================================
 #  DISCIPLINAS DA TURMA (Class-Subject Link)
 #  Gestão curso-cêntrica de professores
 # ==========================================
 
+
 class ClassSubjectCreate(BaseModel):
     """Adicionar uma disciplina a uma turma (para o grade_level atual)"""
+
     subject_id: int
+
 
 class ClassSubjectUpdate(BaseModel):
     """Atribuir ou alterar professor de uma disciplina da turma"""
-    teacher_id: Optional[int] = Field(None, description="ID do professor (null para remover atribuição)")
+
+    teacher_id: int | None = Field(
+        None, description="ID do professor (null para remover atribuição)"
+    )
+
 
 class TeacherSimple(BaseModel):
     """Versão simplificada de Teacher para dropdowns"""
+
     id: int
     name: str
     model_config = ConfigDict(from_attributes=True)
 
+
 class ClassSubjectRead(BaseModel):
     """Disciplina da turma com professor atribuído"""
+
     id: int
     subject_id: int
     subject_name: str
     required_room_type: RoomType
     grade_level: int
-    teacher_id: Optional[int] = None
-    teacher_name: Optional[str] = None
-    
+    teacher_id: int | None = None
+    teacher_name: str | None = None
+
+
 class ClassSubjectsListRead(BaseModel):
     """Lista completa de disciplinas da turma para a página ClassSubjects"""
+
     class_id: int
     class_name: str
-    course_name: Optional[str] = None
-    course_abbreviation: Optional[str] = None
+    course_name: str | None = None
+    course_abbreviation: str | None = None
     grade_level: int
     subjects: list[ClassSubjectRead] = []
 
+
 class EligibleTeacherRead(BaseModel):
     """Professor elegível para lecionar uma disciplina (tem competência)"""
+
     id: int
     name: str
     is_assigned_elsewhere: bool = False  # True se já dá esta disciplina noutra turma
@@ -1211,48 +1228,48 @@ class EligibleTeacherRead(BaseModel):
 # ==========================================
 
 DESC_OCCURRENCE_STATUS = "Estado da ocorrência: GIVEN | GAP | SUBSTITUTED"
-DESC_OCCURRENCE_CREATE_SCHEDULE_OUTPUT_ID = "ID do bloco planeado (ScheduleOutput) para iniciar ocorrência operacional"
+DESC_OCCURRENCE_CREATE_ACTIVE_BLOCK_ID = "ID do bloco publicado para iniciar ocorrência operacional"
 
 
 class LessonOccurrenceRead(BaseModel):
     """Registo histórico do que aconteceu numa aula agendada."""
+
     id: int
     organization_id: int
-    schedule_output_id: Optional[int] = None
-    active_schedule_block_id: Optional[int] = None
+    active_schedule_block_id: int | None = None
     date: date
-    status: Optional[LessonOccurrenceStatus] = None
+    status: LessonOccurrenceStatus | None = None
     operational_state: OperationalOccurrenceState
     revision: int = 1
     is_active: bool = True
     version: int = 1
-    class_id: Optional[int] = None
-    class_name: Optional[str] = None
-    subject_id: Optional[int] = None
-    subject_name: Optional[str] = None
-    timeslot_id: Optional[int] = None
-    timeslot_start_time: Optional[time] = None
-    timeslot_end_time: Optional[time] = None
+    class_id: int | None = None
+    class_name: str | None = None
+    subject_id: int | None = None
+    subject_name: str | None = None
+    timeslot_id: int | None = None
+    timeslot_start_time: time | None = None
+    timeslot_end_time: time | None = None
     planned_hours: float
-    planned_teacher_id: Optional[int] = None
-    planned_teacher_name: Optional[str] = None
-    executed_teacher_id: Optional[int] = None
-    executed_teacher_name: Optional[str] = None
-    planned_module_id: Optional[int] = None
-    executed_module_id: Optional[int] = None
-    substitute_teacher_id: Optional[int] = None
-    substitute_subject_id: Optional[int] = None
+    planned_teacher_id: int | None = None
+    planned_teacher_name: str | None = None
+    executed_teacher_id: int | None = None
+    executed_teacher_name: str | None = None
+    planned_module_id: int | None = None
+    executed_module_id: int | None = None
+    substitute_teacher_id: int | None = None
+    substitute_subject_id: int | None = None
     hours_given: float
-    decided_by_user_id: Optional[int] = None
-    decided_by_user_name: Optional[str] = None
-    decided_at: Optional[datetime] = None
-    revoked_at: Optional[datetime] = None
-    revoked_by_user_id: Optional[int] = None
-    revoked_reason: Optional[str] = None
-    lesson_log_summary: Optional[str] = None
-    lesson_log_notes: Optional[str] = None
-    reason: Optional[str] = None
-    creation_source: Optional[str] = None
+    decided_by_membership_id: int | None = None
+    decided_by_membership_name: str | None = None
+    decided_at: datetime | None = None
+    revoked_at: datetime | None = None
+    revoked_by_membership_id: int | None = None
+    revoked_reason: str | None = None
+    lesson_log_summary: str | None = None
+    lesson_log_notes: str | None = None
+    reason: str | None = None
+    creation_source: str | None = None
     created_at: datetime
 
     model_config = model_config
@@ -1267,15 +1284,20 @@ class LessonOccurrenceListRead(BaseModel):
 
 class LessonOccurrenceCreate(BaseModel):
     """Payload para criar ocorrência operacional a partir de um bloco do horário."""
+
     action: Literal["CREATE_OCCURRENCE"] = "CREATE_OCCURRENCE"
-    schedule_output_id: int = Field(..., gt=0, description=DESC_OCCURRENCE_CREATE_SCHEDULE_OUTPUT_ID)
-    mode: Literal["manual_admin", "lesson_log", "auto_confirm"] = Field(default="manual_admin", max_length=50)
-    reason: Optional[str] = Field(None, max_length=250)
+    active_schedule_block_id: int = Field(
+        ..., gt=0, description=DESC_OCCURRENCE_CREATE_ACTIVE_BLOCK_ID
+    )
+    mode: Literal["manual_admin", "lesson_log", "auto_confirm"] = Field(
+        default="manual_admin", max_length=50
+    )
+    reason: str | None = Field(None, max_length=250)
 
     model_config = ConfigDict(extra="forbid")
 
     @model_validator(mode="after")
-    def trim_reason(self) -> "LessonOccurrenceCreate":
+    def trim_reason(self) -> LessonOccurrenceCreate:
         if self.reason is not None:
             self.reason = self.reason.strip() or None
         return self
@@ -1283,26 +1305,27 @@ class LessonOccurrenceCreate(BaseModel):
 
 class LessonOccurrenceUpdate(BaseModel):
     """Payload para o diretor registar uma falta ou substituição."""
+
     status: LessonOccurrenceStatus = Field(..., description=DESC_OCCURRENCE_STATUS)
     version: int = Field(..., ge=1)
-    reason: Optional[str] = Field(None, max_length=250)
-    substitute_teacher_id: Optional[int] = Field(
+    reason: str | None = Field(None, max_length=250)
+    substitute_teacher_id: int | None = Field(
         None, gt=0, description="ID do professor substituto (obrigatório se status=SUBSTITUTED)"
     )
-    substitute_subject_id: Optional[int] = Field(
+    substitute_subject_id: int | None = Field(
         None, gt=0, description="ID da disciplina dada pelo substituto"
     )
 
     model_config = ConfigDict(extra="forbid")
 
     @model_validator(mode="after")
-    def trim_reason(self) -> "LessonOccurrenceUpdate":
+    def trim_reason(self) -> LessonOccurrenceUpdate:
         if self.reason is not None:
             self.reason = self.reason.strip() or None
         return self
 
     @model_validator(mode="after")
-    def check_substituted_requirements(self) -> "LessonOccurrenceUpdate":
+    def check_substituted_requirements(self) -> LessonOccurrenceUpdate:
         if self.status == LessonOccurrenceStatus.REVOKED:
             raise ValueError("REVOKED usa o endpoint de cancelamento, nao PATCH normal")
         if self.status == LessonOccurrenceStatus.SUBSTITUTED:
@@ -1313,7 +1336,9 @@ class LessonOccurrenceUpdate(BaseModel):
             return self
 
         if self.substitute_teacher_id is not None or self.substitute_subject_id is not None:
-            raise ValueError("substitute_teacher_id e substitute_subject_id só podem ser enviados com status=SUBSTITUTED")
+            raise ValueError(
+                "substitute_teacher_id e substitute_subject_id só podem ser enviados com status=SUBSTITUTED"
+            )
         return self
 
 
@@ -1323,7 +1348,7 @@ class LessonOccurrenceCancel(BaseModel):
     cancel_completed_substitute_log: bool = False
 
     @model_validator(mode="after")
-    def trim_reason(self) -> "LessonOccurrenceCancel":
+    def trim_reason(self) -> LessonOccurrenceCancel:
         self.reason = self.reason.strip()
         if not self.reason:
             raise ValueError("reason não pode ser vazio após trim")
@@ -1337,12 +1362,13 @@ class DebtItem(BaseModel):
     - gap_occurrences / hours_owed = visão operacional total (inclui futuro decidido).
     - *_overdue = subconjunto vencido até a data de referência (as_of_date).
     """
+
     class_id: int
     class_name: str
     subject_id: int
     subject_name: str
-    teacher_id: Optional[int] = None
-    teacher_name: Optional[str] = None
+    teacher_id: int | None = None
+    teacher_name: str | None = None
     gap_occurrences: int
     hours_owed: float
     gap_occurrences_overdue: int = 0
@@ -1356,6 +1382,7 @@ class DebtListRead(BaseModel):
     - total_gaps / total_hours_owed mantêm a visão operacional total.
     - total_*_overdue expõem a visão vencida até as_of_date.
     """
+
     total_gaps: int
     total_hours_owed: float
     total_gaps_overdue: int = 0
@@ -1366,6 +1393,7 @@ class DebtListRead(BaseModel):
 
 class AvailableSubstituteRead(BaseModel):
     """Professor disponível para substituir num slot específico."""
+
     teacher_id: int
     teacher_name: str
     subject_id: int
@@ -1376,6 +1404,7 @@ class AvailableSubstituteRead(BaseModel):
 
 class SubstituteRecommendationRead(BaseModel):
     """Candidato elegível para substituição com ranking e critérios objetivos."""
+
     rank: int
     teacher_id: int
     teacher_name: str
@@ -1385,12 +1414,13 @@ class SubstituteRecommendationRead(BaseModel):
     class_name: str
     substitutions_in_period: int
     daily_load_hours: float
-    days_since_last_substitution: Optional[int] = None
+    days_since_last_substitution: int | None = None
     justification: str
 
 
 class OccurrenceObservabilitySummaryRead(BaseModel):
     """Contadores operacionais mínimos de ocorrências por organização."""
+
     window_days: int
     total_events: int
     decisions_success: int
@@ -1433,8 +1463,10 @@ class TeacherEndpointObservabilitySummaryRead(BaseModel):
 #  SPRINT 3 — RASCUNHOS E DIFF DE HORÁRIOS
 # ==========================================
 
+
 class ScheduleDraftRead(BaseModel):
     """Resumo de um rascunho de horário pendente de aprovação."""
+
     generation_id: str
     count: int
     earliest_date: date | None = None
@@ -1443,6 +1475,7 @@ class ScheduleDraftRead(BaseModel):
 
 class DraftComparisonSummaryRead(BaseModel):
     """Estatísticas agregadas de comparação entre o rascunho e o publicado."""
+
     delta_projected_end_date_days: int
     end_date_spread_days: int
     churn_outside_frozen_ratio: float
@@ -1453,6 +1486,7 @@ class DraftComparisonSummaryRead(BaseModel):
 
 class ScheduleDiffRead(BaseModel):
     """Resultado do diff entre rascunho e horário ativo."""
+
     generation_id: str
     added: int
     removed: int
@@ -1467,6 +1501,7 @@ class ScheduleDiffRead(BaseModel):
 
 class AuditGenerationSummaryRead(BaseModel):
     """Resumo de uma geração ativa para seleção no dashboard técnico."""
+
     generation_id: str
     blocks_count: int
     start_date: date | None = None
@@ -1480,6 +1515,7 @@ class AuditRoomUsageRead(BaseModel):
 
 class ScheduleGenerationAuditRead(BaseModel):
     """Métricas técnicas de auditoria por geração."""
+
     generation_id: str
     blocks_count: int
     start_date: date | None = None
@@ -1503,6 +1539,7 @@ class ScheduleGenerationAuditRead(BaseModel):
 # ==========================================
 #  SPRINT 4 — VISUALIZAÇÃO SEMANAL
 # ==========================================
+
 
 class WeekTimeslotInfo(BaseModel):
     id: int
@@ -1530,14 +1567,15 @@ class WeekClassInfo(BaseModel):
     id: int
     name: str
 
-    
+
 class TeacherScheduleHorizonRead(BaseModel):
     """Metadados mínimos para a visão semanal do professor autenticado."""
+
     min_week_start: date
     week_start_recommended: date
     hard_end_date: date
-    active_generation_id: Optional[str] = None
-    
+    active_generation_id: str | None = None
+
 
 class WeekModuleInfo(BaseModel):
     id: int
@@ -1547,33 +1585,33 @@ class WeekModuleInfo(BaseModel):
 
 class WeekSlotRead(BaseModel):
     """Um bloco de aula numa semana: slot planeado + ocorrência real."""
-    schedule_output_id: Optional[int] = None
-    active_schedule_block_id: Optional[int] = None
-    operational_block_id: Optional[int] = None
+
+    active_schedule_block_id: int | None = None
+    operational_block_id: int | None = None
     block_source: Literal["planned", "active", "operational"] = "planned"
-    date: Optional[str] = None
+    date: str | None = None
     timeslot: WeekTimeslotInfo
-    subject: Optional[WeekSubjectInfo] = None
-    teacher: Optional[WeekTeacherInfo] = None
-    room: Optional[WeekRoomInfo] = None
-    class_info: Optional[WeekClassInfo] = None
-    module: Optional[WeekModuleInfo] = None
+    subject: WeekSubjectInfo | None = None
+    teacher: WeekTeacherInfo | None = None
+    room: WeekRoomInfo | None = None
+    class_info: WeekClassInfo | None = None
+    module: WeekModuleInfo | None = None
     is_past: bool
-    occurrence_status: Optional[str] = None
-    hours_given: Optional[float] = None
-    occurrence_id: Optional[int] = None
-    occurrence_decided_at: Optional[datetime] = None
+    occurrence_status: str | None = None
+    hours_given: float | None = None
+    occurrence_id: int | None = None
+    occurrence_decided_at: datetime | None = None
     can_create_occurrence: bool
     can_decide_occurrence: bool
     # WBS Fase 1: campos de registo de execução
-    lesson_log_id: Optional[int] = None
-    lesson_log_status: Optional[LessonLogStatus] = None
-    lesson_log_summary: Optional[str] = None
-    lesson_log_notes: Optional[str] = None
-    lesson_log_logged_at: Optional[datetime] = None
+    lesson_log_id: int | None = None
+    lesson_log_status: LessonLogStatus | None = None
+    lesson_log_summary: str | None = None
+    lesson_log_notes: str | None = None
+    lesson_log_logged_at: datetime | None = None
     # WBS Fase 6: estado do fecho semanal do professor
-    week_timesheet_status: Optional[str] = None
-    timesheet_id: Optional[int] = None
+    week_timesheet_status: str | None = None
+    timesheet_id: int | None = None
     # WBS V3 Fase 4: indicador de bloco de substituição
     is_substituted_block: bool = False
 
@@ -1582,25 +1620,27 @@ class WeekSlotRead(BaseModel):
 #  WBS FASE 1 — LESSON LOG (REGISTO DE EXECUÇÃO)
 # ==========================================
 
+
 class LessonLogCreate(BaseModel):
     """Payload para registar/atualizar o estado de execução de uma aula."""
+
     status: LessonLogStatus
-    summary: Optional[str] = Field(None, max_length=2000, description="Sumário da aula (opcional)")
-    notes: Optional[str] = Field(None, max_length=1000, description="Notas livres (opcional)")
+    summary: str | None = Field(None, max_length=2000, description="Sumário da aula (opcional)")
+    notes: str | None = Field(None, max_length=1000, description="Notas livres (opcional)")
 
 
 class LessonLogRead(BaseModel):
     """Leitura completa de um registo de execução de aula."""
+
     id: int
     organization_id: int
-    schedule_output_id: Optional[int] = None
-    active_schedule_block_id: Optional[int] = None
-    operational_block_id: Optional[int] = None
+    active_schedule_block_id: int | None = None
+    operational_block_id: int | None = None
     status: LessonLogStatus
-    summary: Optional[str] = None
-    notes: Optional[str] = None
-    logged_by_user_id: Optional[int] = None
-    logged_at: Optional[datetime] = None
+    summary: str | None = None
+    notes: str | None = None
+    logged_by_membership_id: int | None = None
+    logged_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -1611,23 +1651,26 @@ class LessonLogRead(BaseModel):
 #  WBS FASE 1 — TEACHER WEEKLY TIMESHEET
 # ==========================================
 
+
 class TimesheetStatusUpdate(BaseModel):
     """Payload para mudar o estado de uma timesheet semanal."""
+
     status: TimesheetStatus
 
 
 class TeacherWeeklyTimesheetRead(BaseModel):
     """Leitura de uma timesheet semanal (usada no painel admin e no horario do professor)."""
+
     id: int
     organization_id: int
     teacher_id: int
-    teacher_name: Optional[str] = None
+    teacher_name: str | None = None
     week_start_date: date
     week_end_date: date
     status: TimesheetStatus
-    submitted_at: Optional[datetime] = None
-    approved_at: Optional[datetime] = None
-    approved_by_user_id: Optional[int] = None
+    submitted_at: datetime | None = None
+    approved_at: datetime | None = None
+    approved_by_membership_id: int | None = None
     created_at: datetime
     # WBS Fase 7.3: contagens de slots para o painel esquerdo
     total_slots: int = 0
@@ -1642,11 +1685,15 @@ class TeacherWeeklyTimesheetRead(BaseModel):
 #  PROGRESSO DO PROFESSOR (Visão Privada)
 # ==========================================
 
+
 class TeacherModuleProgressRead(BaseModel):
     """Progresso de um módulo numa disciplina de uma turma do professor."""
+
     module_id: int = Field(validation_alias=AliasChoices("module_id", "id"))
     module_name: str = Field(validation_alias=AliasChoices("module_name", "name"))
-    module_code: Optional[str] = Field(default=None, validation_alias=AliasChoices("module_code", "code"))
+    module_code: str | None = Field(
+        default=None, validation_alias=AliasChoices("module_code", "code")
+    )
     hours_total: int
     hours_completed: float
     hours_debt: float
@@ -1656,6 +1703,7 @@ class TeacherModuleProgressRead(BaseModel):
 
 class TeacherSubjectProgressRead(BaseModel):
     """Disciplina com módulos e progresso agregado para uma turma do professor."""
+
     subject_id: int = Field(validation_alias=AliasChoices("subject_id", "id"))
     subject_name: str = Field(validation_alias=AliasChoices("subject_name", "name"))
     required_room_type: RoomType
@@ -1667,9 +1715,10 @@ class TeacherSubjectProgressRead(BaseModel):
 
 class TeacherClassProgressRead(BaseModel):
     """Turma com disciplinas e progresso do professor autenticado."""
+
     class_id: int
     class_name: str
-    course_name: Optional[str] = None
+    course_name: str | None = None
     grade_level: int
     subjects: list[TeacherSubjectProgressRead] = []
 
@@ -1678,9 +1727,12 @@ class TeacherClassProgressRead(BaseModel):
 #  DASHBOARD V1 — COMMAND CENTER
 # ==========================================
 
+
 class AlertCounts(BaseModel):
     pending_occurrences_today: int = Field(ge=0, description="Ocorrências de hoje por decidir")
-    pending_occurrences_total: int = Field(ge=0, description="Total de ocorrências por decidir (qualquer data)")
+    pending_occurrences_total: int = Field(
+        ge=0, description="Total de ocorrências por decidir (qualquer data)"
+    )
     pending_timesheets: int = Field(ge=0, description="Timesheets SUBMITTED por aprovar")
     pending_drafts: int = Field(ge=0, description="Rascunhos de horário pendentes")
     active_substitutions_today: int = Field(ge=0, description="Substituições ativas hoje")
@@ -1696,7 +1748,7 @@ class ResourceCounts(BaseModel):
 
 
 class ScheduleHealthWidget(BaseModel):
-    generation_id: Optional[str] = Field(None, description="None se não houver geração ativa")
+    generation_id: str | None = Field(None, description="None se não houver geração ativa")
     blocks_count: int = 0
     classes_total: int = 0
     classes_empty_week: int = 0
@@ -1710,8 +1762,8 @@ class ScheduleHealthWidget(BaseModel):
 class ClassProgressSummary(BaseModel):
     class_id: int
     class_name: str
-    course_id: Optional[int] = None
-    course_name: Optional[str] = None
+    course_id: int | None = None
+    course_name: str | None = None
     grade_level: int
     overall_percentage: float = Field(ge=0.0, le=100.0)
     completed_hours: float = 0.0
@@ -1730,13 +1782,14 @@ class DebtSummary(BaseModel):
 class DashboardV1Response(BaseModel):
     alerts: AlertCounts
     resources: ResourceCounts
-    schedule_health: Optional[ScheduleHealthWidget] = None
+    schedule_health: ScheduleHealthWidget | None = None
     class_progress: list[ClassProgressSummary] = Field(default_factory=list)
     debts: DebtSummary
     organization_name: str
 
 
 # ── Onboarding ─────────────────────────────────────────────────
+
 
 class OnboardingRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -1747,7 +1800,7 @@ class OnboardingRequest(BaseModel):
     lunch_end: time
     lunch_min_duration: int
 
-    @model_validator(mode='after')
+    @model_validator(mode="after")
     def validate_dates(self):
         if self.school_hard_end_date <= self.school_start_date:
             raise ValueError("Data de fim definitiva deve ser posterior à data de início")
@@ -1760,4 +1813,4 @@ class OnboardingRequest(BaseModel):
 
 class OnboardingStatusResponse(BaseModel):
     onboarding_complete: bool
-    organization_name: Optional[str] = None
+    organization_name: str | None = None

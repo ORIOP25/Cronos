@@ -1,7 +1,5 @@
 from types import SimpleNamespace
 
-import pytest
-
 from app import schemas
 from app.services import class_service
 
@@ -10,6 +8,7 @@ class _NoopDb:
     def __init__(self):
         self.added = []
         self.commits = 0
+        self.flushes = 0
         self.refreshes = 0
 
     def add(self, obj):
@@ -18,11 +17,13 @@ class _NoopDb:
     async def commit(self):
         self.commits += 1
 
+    async def flush(self):
+        self.flushes += 1
+
     async def refresh(self, _obj):
         self.refreshes += 1
 
 
-@pytest.mark.asyncio
 async def test_update_class_rejects_partial_year_update_without_mutating(monkeypatch):
     db_class = SimpleNamespace(
         id=1,
@@ -58,7 +59,6 @@ async def test_update_class_rejects_partial_year_update_without_mutating(monkeyp
     assert db.commits == 0
 
 
-@pytest.mark.asyncio
 async def test_update_class_applies_valid_partial_year_update(monkeypatch):
     db_class = SimpleNamespace(
         id=1,
@@ -91,11 +91,11 @@ async def test_update_class_applies_valid_partial_year_update(monkeypatch):
 
     assert result is db_class
     assert db_class.end_year == 2029
-    assert db.commits == 1
+    assert db.commits == 0
+    assert db.flushes == 1
     assert db.refreshes == 1
 
 
-@pytest.mark.asyncio
 async def test_update_class_in_course_rejects_partial_year_update_without_mutating(monkeypatch):
     db_class = SimpleNamespace(
         name="TGPSI 10A",

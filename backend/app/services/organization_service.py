@@ -1,8 +1,11 @@
 import asyncio
+
 import structlog
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
+
 from app import models
+from app.core.clerk import ClerkGateway
 from app.schemas import OnboardingRequest
 from app.services.scheduler_state_service import SchedulerStateService
 
@@ -32,26 +35,38 @@ async def get_onboarding_status(db: AsyncSession, organization_id: int) -> tuple
     return settings is not None, org.name if org else None
 
 
-async def mark_onboarding_complete_in_clerk(clerk_user_id: str) -> None:
+async def mark_onboarding_complete_in_clerk(
+    clerk_user_id: str,
+    gateway: ClerkGateway | None = None,
+) -> None:
     from app.core.clerk import get_clerk_sdk
-    sdk = get_clerk_sdk()
+
+    sdk = gateway.sdk if gateway is not None else get_clerk_sdk()
     try:
-        await asyncio.to_thread(
-            update_clerk_public_metadata,
-            sdk,
-            clerk_user_id,
-            {"onboardingComplete": True},
-        )
+        if gateway is not None:
+            await sdk.users.update_metadata_async(
+                user_id=clerk_user_id,
+                public_metadata={"onboardingComplete": True},
+            )
+        else:
+            await asyncio.to_thread(
+                update_clerk_public_metadata,
+                sdk,
+                clerk_user_id,
+                {"onboardingComplete": True},
+            )
         logger.info("Clerk public_metadata actualizado", clerk_user_id=clerk_user_id)
     except Exception as e:
-        logger.warning("Falha ao actualizar Clerk public_metadata", clerk_user_id=clerk_user_id, error=str(e))
+        logger.warning(
+            "Falha ao actualizar Clerk public_metadata", clerk_user_id=clerk_user_id, error=str(e)
+        )
 
 
 async def complete_onboarding(
     db: AsyncSession,
     organization_id: int,
     data: OnboardingRequest,
-    changed_by_user_id: int | None = None,
+    changed_by_membership_id: int | None = None,
 ) -> None:
     existing = await db.execute(
         select(models.OrganizationSettings).where(
@@ -97,6 +112,6 @@ async def complete_onboarding(
             "lunch_window_end": grid_settings.lunch_window_end,
             "lunch_min_duration_minutes": grid_settings.lunch_min_duration_minutes,
         },
-        changed_by_user_id=changed_by_user_id,
+        changed_by_membership_id=changed_by_membership_id,
         metadata={"repair_stability_window_days": settings.repair_stability_window_days},
     )

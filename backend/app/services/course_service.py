@@ -1,13 +1,12 @@
+from sqlalchemy import delete, insert, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
-from sqlalchemy import select, insert, delete
+
 from app import models, schemas
 from app.services.scheduler_state_service import record_scheduler_change
 
 
-async def _course_demand_snapshot(
-    db: AsyncSession, organization_id: int, course_id: int
-) -> dict:
+async def _course_demand_snapshot(db: AsyncSession, organization_id: int, course_id: int) -> dict:
     subject_ids = await db.scalars(
         select(models.course_subject_link.c.subject_id).where(
             models.course_subject_link.c.organization_id == organization_id,
@@ -34,20 +33,26 @@ async def _course_demand_snapshot(
                 for item in classes.all()
             ),
             key=lambda item: (
-                item["start_year"], item["end_year"], item["grade_level"], item["size"]
+                item["start_year"],
+                item["end_year"],
+                item["grade_level"],
+                item["size"],
             ),
         ),
     }
 
+
 # --- LEITURA ---
-async def get_courses_by_org(db: AsyncSession, organization_id: int, skip: int = 0, limit: int = 100):
+async def get_courses_by_org(
+    db: AsyncSession, organization_id: int, skip: int = 0, limit: int = 100
+):
     """
     Lista cursos da organização com paginação offset/limit.
-    
+
     4º Pilar:
     - Optimization: selectinload carrega subjects+classes em 3 queries (não N+1)
     - Scalability: offset/limit permite crescimento sem impacto
-    
+
     Nota: Carregamos subjects e classes porque a tabela precisa da contagem
     e o modal de edição precisa dos dados completos para popular o form.
     Para ~50 cursos com ~10 disciplinas cada, o overhead é negligível.
@@ -55,37 +60,39 @@ async def get_courses_by_org(db: AsyncSession, organization_id: int, skip: int =
     # Sanitize limit (max 1000 para evitar sobre-carga)
     limit = min(max(limit, 1), 1000)
     skip = max(skip, 0)
-    
-    query = select(models.Course)\
-        .where(models.Course.organization_id == organization_id)\
-        .options(
-            selectinload(models.Course.subjects),
-            selectinload(models.Course.classes)
-        )\
-        .order_by(models.Course.name)\
-        .offset(skip)\
+
+    query = (
+        select(models.Course)
+        .where(models.Course.organization_id == organization_id)
+        .options(selectinload(models.Course.subjects), selectinload(models.Course.classes))
+        .order_by(models.Course.name)
+        .offset(skip)
         .limit(limit)
+    )
     result = await db.execute(query)
     return result.scalars().all()
 
+
 async def get_course_details(db: AsyncSession, course_id: int, organization_id: int):
     """Retorna a árvore completa do curso para a Dashboard"""
-    query = select(models.Course).where(
-        models.Course.id == course_id, 
-        models.Course.organization_id == organization_id
-    ).options(
-        selectinload(models.Course.subjects),
-        selectinload(models.Course.classes) # Carregar turmas
+    query = (
+        select(models.Course)
+        .where(models.Course.id == course_id, models.Course.organization_id == organization_id)
+        .options(
+            selectinload(models.Course.subjects),
+            selectinload(models.Course.classes),  # Carregar turmas
+        )
     )
     result = await db.execute(query)
     return result.scalars().first()
+
 
 # --- CRIAÇÃO (O MOTOR NOVO) ---
 async def create_course(
     db: AsyncSession,
     item: schemas.CourseCreate,
     organization_id: int,
-    changed_by_user_id: int | None = None,
+    changed_by_membership_id: int | None = None,
 ):
     """
     Cria Curso + Associa Disciplinas + Define Professores + Gera Turmas
@@ -94,7 +101,7 @@ async def create_course(
     # 1. Validar Abreviatura Única (Regra de Negócio)
     q_check = select(models.Course).where(
         models.Course.abbreviation == item.abbreviation.upper(),
-        models.Course.organization_id == organization_id
+        models.Course.organization_id == organization_id,
     )
     if (await db.execute(q_check)).scalars().first():
         return "ABBREVIATION_EXISTS"
@@ -105,35 +112,39 @@ async def create_course(
     if item.subject_ids:
         q_subjects = select(models.Subject).where(
             models.Subject.id.in_(item.subject_ids),
-            models.Subject.organization_id == organization_id 
+            models.Subject.organization_id == organization_id,
         )
         subjects_to_link = (await db.execute(q_subjects)).scalars().all()
-        
+
         if len(subjects_to_link) != len(item.subject_ids):
             return "INVALID_SUBJECTS"
 
     # 3. Criar o Objeto Curso (SEM disciplinas, evita lazy loading em async)
     course_data = item.model_dump(
-        exclude={'subject_ids', 'classes_config', 'teacher_assignments', 'abbreviation'}
+        exclude={"subject_ids", "classes_config", "teacher_assignments", "abbreviation"}
     )
-    
+
     db_course = models.Course(
-        **course_data, 
+        **course_data,
         organization_id=organization_id,
-        abbreviation=item.abbreviation.upper()
+        abbreviation=item.abbreviation.upper(),
         # ❌ NÃO atribuir subjects aqui (trigga lazy loading em async)
     )
-    
+
     db.add(db_course)
     await db.flush()  # Gerar ID do curso
-    
+
     # 3.5. Associar disciplinas via INSERT (evita lazy load em async)
     # ⚠️ NÃO usar db_course.subjects.extend() - causa MissingGreenlet
     if subjects_to_link:
         # Inserir directamente na tabela de ligação
         stmt = insert(models.course_subject_link).values(
             [
-                {"organization_id": organization_id, "course_id": db_course.id, "subject_id": subject.id}
+                {
+                    "organization_id": organization_id,
+                    "course_id": db_course.id,
+                    "subject_id": subject.id,
+                }
                 for subject in subjects_to_link
             ]
         )
@@ -145,7 +156,7 @@ async def create_course(
         start_short = cls_conf.start_year % 100
         end_short = cls_conf.end_year % 100
         class_name = f"{db_course.abbreviation} {start_short}/{end_short}"
-        
+
         new_class = models.Class(
             name=class_name,
             size=cls_conf.size,
@@ -153,7 +164,7 @@ async def create_course(
             organization_id=organization_id,
             grade_level=cls_conf.grade_level,
             start_year=cls_conf.start_year,
-            end_year=cls_conf.end_year
+            end_year=cls_conf.end_year,
         )
         db.add(new_class)
 
@@ -166,16 +177,17 @@ async def create_course(
         operation=models.SchedulerStateChangeOperation.BULK_IMPORT,
         before=None,
         after=await _course_demand_snapshot(db, organization_id, db_course.id),
-        changed_by_user_id=changed_by_user_id,
+        changed_by_membership_id=changed_by_membership_id,
         metadata={"class_count": len(item.classes_config)},
     )
 
     # 5. Commit Final
-    await db.commit()
-    
+    await db.flush()
+
     # 6. Retornar com eager load (selectinload) para evitar lazy loading em async
     # ⚠️ NÃO usar .refresh() com relacionamentos - causa MissingGreenlet
     return await get_course_details(db, db_course.id, organization_id)
+
 
 # --- UPDATE E DELETE ---
 async def update_course(
@@ -183,21 +195,20 @@ async def update_course(
     course_id: int,
     item: schemas.CourseUpdate,
     organization_id: int,
-    changed_by_user_id: int | None = None,
+    changed_by_membership_id: int | None = None,
 ):
     """
     Atualiza um curso (PATCH - apenas campos enviados).
     """
     query = select(models.Course).where(
-        models.Course.id == course_id, 
-        models.Course.organization_id == organization_id
+        models.Course.id == course_id, models.Course.organization_id == organization_id
     )
-    
+
     result = await db.execute(query)
     db_item = result.scalars().first()
-    
+
     if not db_item:
-        return None # Alterado para retornar None (o endpoint trata o 404)
+        return None  # Alterado para retornar None (o endpoint trata o 404)
     before = await _course_demand_snapshot(db, organization_id, course_id)
 
     # SECURITY: Se estão a mudar abbreviation, validar uniqueness
@@ -205,7 +216,7 @@ async def update_course(
         q_check = select(models.Course).where(
             models.Course.abbreviation == item.abbreviation.upper(),
             models.Course.organization_id == organization_id,
-            models.Course.id != course_id
+            models.Course.id != course_id,
         )
         if (await db.execute(q_check)).scalars().first():
             return "ABBREVIATION_EXISTS"
@@ -219,24 +230,24 @@ async def update_course(
             setattr(db_item, field, value.upper())
         else:
             setattr(db_item, field, value)
-            
+
     # Gravar as alterações escalares primeiro
     db.add(db_item)
     await db.flush()
 
     # 2. Atualizar Relações (SQL Directo para evitar MissingGreenlet)
     if item.subject_ids is not None:
-        # CORREÇÃO CRÍTICA: Expirar a relação no ORM para evitar que ele 
+        # CORREÇÃO CRÍTICA: Expirar a relação no ORM para evitar que ele
         # re-insira os dados antigos durante o commit.
-        db.expire(db_item, ['subjects'])
+        db.expire(db_item, ["subjects"])
 
         # Validar IDs
         stmt_subjects = select(models.Subject).where(
             models.Subject.id.in_(item.subject_ids),
-            models.Subject.organization_id == organization_id
+            models.Subject.organization_id == organization_id,
         )
         new_subjects = (await db.execute(stmt_subjects)).scalars().all()
-        
+
         # Remover antigas
         await db.execute(
             delete(models.course_subject_link).where(
@@ -244,7 +255,7 @@ async def update_course(
                 models.course_subject_link.c.course_id == course_id,
             )
         )
-        
+
         # Inserir novas
         if new_subjects:
             stmt = insert(models.course_subject_link).values(
@@ -267,21 +278,26 @@ async def update_course(
         operation=models.SchedulerStateChangeOperation.UPDATE,
         before=before,
         after=await _course_demand_snapshot(db, organization_id, course_id),
-        changed_by_user_id=changed_by_user_id,
+        changed_by_membership_id=changed_by_membership_id,
     )
-    await db.commit()
-    
+    await db.flush()
+
     # Retornar com eager load fresco
     return await get_course_details(db, course_id, organization_id)
+
 
 async def delete_course(
     db: AsyncSession,
     course_id: int,
     organization_id: int,
-    changed_by_user_id: int | None = None,
+    changed_by_membership_id: int | None = None,
 ):
     # 1. Verificar existência
-    result = await db.execute(select(models.Course).where(models.Course.id == course_id, models.Course.organization_id == organization_id))
+    result = await db.execute(
+        select(models.Course).where(
+            models.Course.id == course_id, models.Course.organization_id == organization_id
+        )
+    )
     course = result.scalars().first()
     if not course:
         return "NOT_FOUND"
@@ -306,8 +322,8 @@ async def delete_course(
         operation=models.SchedulerStateChangeOperation.DELETE,
         before=before,
         after=None,
-        changed_by_user_id=changed_by_user_id,
+        changed_by_membership_id=changed_by_membership_id,
         active_resource=bool(before["subject_ids"]),
     )
-    await db.commit()
+    await db.flush()
     return "SUCCESS"

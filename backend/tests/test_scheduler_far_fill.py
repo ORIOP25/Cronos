@@ -1,8 +1,6 @@
 from copy import deepcopy
 from datetime import date
 
-import pytest
-
 from app.services.scheduler_candidates import (
     CandidateUniverse,
     CandidateUniverseBuilder,
@@ -16,9 +14,6 @@ from app.services.scheduler_complete_demand import (
 )
 from app.services.scheduler_far_fill import FarFutureFiller
 from tests.test_scheduler_candidates import _snapshot
-
-
-pytestmark = pytest.mark.unit
 
 
 def _universes(snapshot: dict):
@@ -43,8 +38,8 @@ def test_far_fill_completes_modules_in_sequence_without_overstatement():
     snapshot = _snapshot()
     snapshot["lunch_rules"] = None
     snapshot["module_accounting"] = [
-        {"id": 7, "subject_id": 2, "hours_total": 1, "sequence": 1},
-        {"id": 8, "subject_id": 2, "hours_total": 1, "sequence": 2},
+        {"id": 7, "subject_id": 2, "required_minutes": 60, "sequence": 1},
+        {"id": 8, "subject_id": 2, "required_minutes": 60, "sequence": 2},
     ]
     ledger, near, far = _universes(snapshot)
     near_selected = (near.candidates[0],)
@@ -68,7 +63,7 @@ def test_far_fill_reports_residual_demand_when_capacity_is_insufficient():
     snapshot["hard_end_date"] = "2025-09-01"
     snapshot["lunch_rules"] = None
     snapshot["module_accounting"] = [
-        {"id": 7, "subject_id": 2, "hours_total": 2, "sequence": 1}
+        {"id": 7, "subject_id": 2, "required_minutes": 120, "sequence": 1}
     ]
     ledger, near, far = _universes(snapshot)
 
@@ -107,7 +102,7 @@ def test_far_fill_keeps_shared_teacher_out_of_overlapping_blocks():
         {"class_id": 9, "subject_id": 2, "grade_level": 10, "teacher_id": 3}
     )
     snapshot["module_accounting"] = [
-        {"id": 7, "subject_id": 2, "hours_total": 1, "sequence": 1}
+        {"id": 7, "subject_id": 2, "required_minutes": 60, "sequence": 1}
     ]
     ledger = CompleteDemandLedgerBuilder().build(snapshot)
     universe = CandidateUniverseBuilder().build(
@@ -150,12 +145,8 @@ def test_far_fill_incremental_quality_avoids_worsening_an_already_full_day():
             availability_score=1,
         )
 
-    near = tuple(
-        candidate(9, 4, monday, index, 480 + index * 60)
-        for index in range(1, 5)
-    ) + tuple(
-        candidate(1, 3, tuesday, 10 + index, 480 + index * 60)
-        for index in range(1, 5)
+    near = tuple(candidate(9, 4, monday, index, 480 + index * 60) for index in range(1, 5)) + tuple(
+        candidate(1, 3, tuesday, 10 + index, 480 + index * 60) for index in range(1, 5)
     )
     far = CandidateUniverse(
         candidates=(

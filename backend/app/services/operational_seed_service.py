@@ -1,536 +1,313 @@
-"""Operational seed profile for Alpha V1 Step 6.
-
-This seed is deterministic and focused on daily operations:
-- two isolated organizations;
-- one occurrence with multiple eligible substitutes;
-- one no-eligible case resolved as GAP fallback.
-"""
+"""Deterministic operational seed using the canonical scheduler lifecycle."""
 
 from __future__ import annotations
 
-from datetime import date, datetime, time, timezone, timedelta
+from datetime import date, time
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
 from app import models
+from app.db.tenant import set_async_tenant_context, set_sync_tenant_context
 
 ACADEMIC_YEAR = "2025/2026"
 REFERENCE_DATE = date(2026, 4, 20)
-HISTORICAL_DATE = REFERENCE_DATE - timedelta(days=3)
-
-ORG_A_NAME = "Escola Piloto Operacional A"
-ORG_B_NAME = "Escola Piloto Operacional B"
-
-SCENARIO_MULTI_ELIGIBLE = "multi_eligible_substitution"
-SCENARIO_NO_ELIGIBLE = "no_eligible_fallback_gap"
 
 
-def _create_organization(
-    db: Session,
-    *,
-    org_name: str,
-    admin_email: str,
-) -> tuple[models.Organization, models.User]:
-    org = models.Organization(name=org_name, plan_status="active")
-    db.add(org)
-    db.flush()
+def _one_or_create(db: Session, model: type, /, defaults: dict | None = None, **identity):
+    instance = db.execute(select(model).filter_by(**identity)).scalar_one_or_none()
+    if instance is None:
+        instance = model(**identity, **(defaults or {}))
+        db.add(instance)
+        db.flush()
+    return instance
 
-    admin = models.User(
-        name=f"Admin {org_name}",
-        email=admin_email,
-        clerk_user_id=f"seed_{admin_email}",
-        role=models.UserRole.admin,
-        organization_id=org.id,
-        is_active=True,
+
+def _seed_organization(db: Session, *, suffix: str) -> dict[str, int]:
+    slug = suffix.lower()
+    organization_name = f"Escola Piloto Operacional {suffix}"
+    email = f"admin.operacional.{slug}@seed.pt"
+    principal = (
+        db.execute(
+            text(
+                """
+            SELECT account_id, organization_id, membership_id
+            FROM app_security.bootstrap_founder(
+                :clerk_user_id, :clerk_org_id, :organization_name,
+                :email, :profile_name, :provider_membership_id
+            )
+            """
+            ),
+            {
+                "clerk_user_id": f"seed_admin_operational_{slug}",
+                "clerk_org_id": f"org_operational_{slug}",
+                "organization_name": organization_name,
+                "email": email,
+                "profile_name": f"Admin Operacional {suffix}",
+                "provider_membership_id": f"seed_membership_operational_{slug}",
+            },
+        )
+        .mappings()
+        .one()
     )
-    db.add(admin)
-
-    settings = models.OrganizationSettings(
-        organization_id=org.id,
-        school_start_date=date(2025, 9, 15),
-        school_hard_end_date=date(2026, 7, 31),
-        repair_stability_window_days=14,
+    set_sync_tenant_context(db, principal["organization_id"])
+    organization = db.get(models.Organization, principal["organization_id"])
+    admin = db.get(models.User, principal["account_id"])
+    membership = db.get(models.OrganizationMembership, principal["membership_id"])
+    if organization is None or admin is None or membership is None:
+        raise RuntimeError("Operational seed principal could not be loaded")
+    membership.can_admin = True
+    membership.can_teach = True
+    membership.teacher_access_mode = models.TeacherAccessMode.platform
+    settings = _one_or_create(
+        db,
+        models.OrganizationSettings,
+        organization_id=organization.id,
+        defaults={
+            "school_start_date": date(2025, 9, 15),
+            "school_hard_end_date": date(2026, 7, 31),
+            "repair_stability_window_days": 14,
+        },
     )
-    db.add(settings)
+    del settings
 
-    grid_settings = models.OrganizationGridSettings(
-        organization_id=org.id,
-        lunch_window_start=time(12, 0),
-        lunch_window_end=time(14, 0),
-        lunch_min_duration_minutes=60,
+    school_year = _one_or_create(
+        db,
+        models.SchedulerSchoolYear,
+        organization_id=organization.id,
+        label=ACADEMIC_YEAR,
+        defaults={
+            "start_date": date(2025, 9, 15),
+            "hard_end_date": date(2026, 7, 31),
+            "timezone": "Europe/Lisbon",
+            "is_active": True,
+        },
     )
-    db.add(grid_settings)
-    db.flush()
-
-    return org, admin
-
-
-def _create_course_and_class(db: Session, *, organization_id: int, suffix: str) -> tuple[models.Course, models.Class]:
-    course = models.Course(
-        name=f"Curso Operacional {suffix}",
-        abbreviation=f"COP{suffix}",
-        organization_id=organization_id,
+    _one_or_create(
+        db,
+        models.SchedulerSchoolYearState,
+        organization_id=organization.id,
+        school_year_id=school_year.id,
     )
-    db.add(course)
-    db.flush()
 
-    klass = models.Class(
+    teacher = db.execute(
+        select(models.Teacher).where(models.Teacher.organization_membership_id == membership.id)
+    ).scalar_one_or_none()
+    if teacher is None:
+        teacher = models.Teacher(
+            organization_id=organization.id,
+            organization_membership_id=membership.id,
+        )
+        db.add(teacher)
+        db.flush()
+
+    course = _one_or_create(
+        db,
+        models.Course,
+        organization_id=organization.id,
+        abbreviation=f"OP{suffix}",
+        defaults={"name": f"Curso Operacional {suffix}"},
+    )
+    klass = _one_or_create(
+        db,
+        models.Class,
+        organization_id=organization.id,
         name=f"Turma Operacional {suffix}",
-        size=24,
-        start_year=2025,
-        end_year=2028,
-        grade_level=10,
-        course_id=course.id,
-        organization_id=organization_id,
+        defaults={
+            "size": 24,
+            "start_year": 2025,
+            "end_year": 2028,
+            "grade_level": 10,
+            "course_id": course.id,
+        },
     )
-    db.add(klass)
-    db.flush()
-
-    return course, klass
-
-
-def _create_room_and_timeslots(db: Session, *, organization_id: int, suffix: str) -> tuple[models.Room, models.Timeslot, models.Timeslot]:
-    room = models.Room(
+    room = _one_or_create(
+        db,
+        models.Room,
+        organization_id=organization.id,
         name=f"Sala Operacional {suffix}",
-        capacity=30,
-        type=models.RoomType.normal,
-        organization_id=organization_id,
+        defaults={"capacity": 30, "type": models.RoomType.normal},
     )
-    db.add(room)
-    db.flush()
-
-    slot_multi = models.Timeslot(
+    subject = _one_or_create(
+        db,
+        models.Subject,
+        organization_id=organization.id,
+        name=f"Programação Operacional {suffix}",
+        defaults={"required_room_type": models.RoomType.normal},
+    )
+    _one_or_create(
+        db,
+        models.Module,
+        organization_id=organization.id,
+        subject_id=subject.id,
+        order=0,
+        defaults={
+            "name": f"Módulo Operacional {suffix}",
+            "code": f"OP-{suffix}-01",
+            "required_minutes": 60,
+        },
+    )
+    timeslot = _one_or_create(
+        db,
+        models.Timeslot,
+        organization_id=organization.id,
         day_of_week=0,
-        start_time=time(9, 0),
-        end_time=time(11, 0),
-        organization_id=organization_id,
+        start_time=time(9),
+        defaults={"end_time": time(10)},
     )
-    db.add(slot_multi)
-
-    slot_gap = models.Timeslot(
-        day_of_week=1,
-        start_time=time(9, 0),
-        end_time=time(11, 0),
-        organization_id=organization_id,
-    )
-    db.add(slot_gap)
-    db.flush()
-
-    return room, slot_multi, slot_gap
-
-
-def _create_teacher(db: Session, *, organization_id: int, name: str) -> models.Teacher:
-    teacher = models.Teacher(name=name, organization_id=organization_id)
-    db.add(teacher)
-    db.flush()
-    return teacher
-
-
-def _create_subject_and_module(
-    db: Session,
-    *,
-    organization_id: int,
-    name: str,
-    code: str,
-    hours_total: int = 30,
-) -> tuple[models.Subject, models.Module]:
-    subject = models.Subject(
-        name=name,
-        required_room_type=models.RoomType.normal,
-        organization_id=organization_id,
-    )
-    db.add(subject)
-    db.flush()
-
-    module = models.Module(
-        organization_id=organization_id,
-        name=f"Modulo {name}",
-        code=code,
-        hours_total=hours_total,
-        order=1,
-        subject_id=subject.id,
-    )
-    db.add(module)
-    db.flush()
-
-    return subject, module
-
-
-def _link_class_subject(
-    db: Session,
-    *,
-    klass: models.Class,
-    subject: models.Subject,
-    teacher: models.Teacher,
-) -> None:
-    existing = db.query(models.ClassSubjectLink).filter_by(
+    _one_or_create(
+        db,
+        models.ClassSubjectLink,
+        organization_id=organization.id,
         class_id=klass.id,
         subject_id=subject.id,
         grade_level=klass.grade_level,
-    ).first()
-    if existing:
-        return
-    db.add(models.ClassSubjectLink(
-        organization_id=klass.organization_id,
-        class_id=klass.id,
-        subject_id=subject.id,
-        grade_level=klass.grade_level,
-        teacher_id=teacher.id,
-    ))
-
-
-def _set_availability(
-    db: Session,
-    *,
-    teacher: models.Teacher,
-    slot: models.Timeslot,
-    score: models.PreferenceLevel,
-) -> None:
-    db.add(models.Availability(
-        organization_id=teacher.organization_id,
-        teacher_id=teacher.id,
-        timeslot_id=slot.id,
-        score=score.value,
-    ))
-
-
-def _create_lesson(
-    db: Session,
-    *,
-    organization_id: int,
-    klass: models.Class,
-    subject: models.Subject,
-    teacher: models.Teacher,
-) -> models.Lesson:
-    lesson = models.Lesson(
-        organization_id=organization_id,
-        class_id=klass.id,
-        subject_id=subject.id,
-        teacher_id=teacher.id,
+        defaults={"teacher_id": teacher.id},
     )
-    db.add(lesson)
-    db.flush()
-    return lesson
-
-
-def _create_schedule_output(
-    db: Session,
-    *,
-    organization_id: int,
-    lesson: models.Lesson,
-    slot: models.Timeslot,
-    room: models.Room,
-    target_date: date,
-    generation_id: str,
-) -> models.ScheduleOutput:
-    schedule_output = models.ScheduleOutput(
-        organization_id=organization_id,
-        lesson_id=lesson.id,
-        timeslot_id=slot.id,
-        room_id=room.id,
-        generation_id=generation_id,
-        date=target_date,
-        is_draft=False,
+    teacher_subject_exists = db.scalar(
+        select(models.teacher_subject_link.c.teacher_id).where(
+            models.teacher_subject_link.c.organization_id == organization.id,
+            models.teacher_subject_link.c.teacher_id == teacher.id,
+            models.teacher_subject_link.c.subject_id == subject.id,
+        )
     )
-    db.add(schedule_output)
-    db.flush()
-    return schedule_output
-
-
-def _create_occurrence(
-    db: Session,
-    *,
-    organization_id: int,
-    schedule_output: models.ScheduleOutput,
-    target_date: date,
-    status: models.LessonOccurrenceStatus,
-    planned_module_id: int,
-    planned_teacher_id: int,
-    hours: float,
-    substitute_teacher_id: int | None = None,
-    substitute_subject_id: int | None = None,
-    executed_module_id: int | None = None,
-    executed_teacher_id: int | None = None,
-    decided_by_user_id: int | None = None,
-    decided_at: datetime | None = None,
-) -> models.LessonOccurrence:
-    occurrence = models.LessonOccurrence(
-        organization_id=organization_id,
-        schedule_output_id=schedule_output.id,
-        date=target_date,
-        status=status,
-        planned_hours=hours,
-        substitute_teacher_id=substitute_teacher_id,
-        substitute_subject_id=substitute_subject_id,
-        planned_teacher_id=planned_teacher_id,
-        executed_teacher_id=executed_teacher_id,
-        planned_module_id=planned_module_id,
-        executed_module_id=executed_module_id,
-        hours_given=hours if status != models.LessonOccurrenceStatus.GAP else 0.0,
-        decided_by_user_id=decided_by_user_id,
-        decided_at=decided_at,
+    if teacher_subject_exists is None:
+        db.execute(
+            models.teacher_subject_link.insert().values(
+                organization_id=organization.id,
+                teacher_id=teacher.id,
+                subject_id=subject.id,
+            )
+        )
+    _one_or_create(
+        db,
+        models.Availability,
+        organization_id=organization.id,
+        teacher_id=teacher.id,
+        timeslot_id=timeslot.id,
+        defaults={"score": models.PreferenceLevel.PREFERRED.value},
     )
-    db.add(occurrence)
-    db.flush()
-    return occurrence
 
-
-def _collect_totals(db: Session) -> dict[str, int]:
     return {
-        "organizations": int(db.execute(select(func.count(models.Organization.id))).scalar_one()),
-        "teachers": int(db.execute(select(func.count(models.Teacher.id))).scalar_one()),
-        "subjects": int(db.execute(select(func.count(models.Subject.id))).scalar_one()),
-        "classes": int(db.execute(select(func.count(models.Class.id))).scalar_one()),
-        "lessons": int(db.execute(select(func.count(models.Lesson.id))).scalar_one()),
-        "schedule_outputs": int(db.execute(select(func.count(models.ScheduleOutput.id))).scalar_one()),
-        "occurrences": int(db.execute(select(func.count(models.LessonOccurrence.id))).scalar_one()),
-        "availabilities": int(db.execute(select(func.count(models.Availability.id))).scalar_one()),
+        "organization_id": organization.id,
+        "admin_account_id": admin.id,
+        "school_year_id": school_year.id,
+        "teacher_id": teacher.id,
+        "class_id": klass.id,
+        "subject_id": subject.id,
+        "room_id": room.id,
     }
 
 
 def seed_operational_scenarios_sync(db: Session) -> dict[str, Any]:
-    """Populate a deterministic operational dataset for Alpha V1 Step 6."""
-    org_a, admin_a = _create_organization(
-        db,
-        org_name=ORG_A_NAME,
-        admin_email="admin.operacional.a@seed.pt",
+    """Upsert two isolated canonical tenants without committing the caller's UoW."""
+    tenants = [_seed_organization(db, suffix=suffix) for suffix in ("A", "B")]
+    counted_models = (
+        ("organizations", models.Organization),
+        ("memberships", models.OrganizationMembership),
+        ("teachers", models.Teacher),
+        ("classes", models.Class),
+        ("class_subject_links", models.ClassSubjectLink),
     )
-    org_b, admin_b = _create_organization(
-        db,
-        org_name=ORG_B_NAME,
-        admin_email="admin.operacional.b@seed.pt",
-    )
-
-    _, class_a = _create_course_and_class(db, organization_id=org_a.id, suffix="A")
-    _, class_b = _create_course_and_class(db, organization_id=org_b.id, suffix="B")
-
-    room_a, slot_a_multi, slot_a_gap = _create_room_and_timeslots(db, organization_id=org_a.id, suffix="A")
-    room_b, slot_b_multi, _ = _create_room_and_timeslots(db, organization_id=org_b.id, suffix="B")
-
-    planned_teacher_a = _create_teacher(db, organization_id=org_a.id, name="Prof Planeado A")
-    candidate_a1 = _create_teacher(db, organization_id=org_a.id, name="Prof Candidato A1")
-    candidate_a2 = _create_teacher(db, organization_id=org_a.id, name="Prof Candidato A2")
-    blocked_a = _create_teacher(db, organization_id=org_a.id, name="Prof Sem Elegibilidade A")
-
-    planned_teacher_b = _create_teacher(db, organization_id=org_b.id, name="Prof Planeado B")
-    candidate_b1 = _create_teacher(db, organization_id=org_b.id, name="Prof Candidato B1")
-
-    planned_subject_a, planned_module_a = _create_subject_and_module(
-        db,
-        organization_id=org_a.id,
-        name="Programacao A",
-        code="OPA-PROG-01",
-    )
-    planned_gap_subject_a, planned_gap_module_a = _create_subject_and_module(
-        db,
-        organization_id=org_a.id,
-        name="Arquitetura A",
-        code="OPA-ARQ-01",
-    )
-    alt_subject_a1, alt_module_a1 = _create_subject_and_module(
-        db,
-        organization_id=org_a.id,
-        name="Redes A",
-        code="OPA-RED-01",
-    )
-    alt_subject_a2, _ = _create_subject_and_module(
-        db,
-        organization_id=org_a.id,
-        name="Ingles Tecnico A",
-        code="OPA-ING-01",
-    )
-    blocked_subject_a, _ = _create_subject_and_module(
-        db,
-        organization_id=org_a.id,
-        name="Fisica A",
-        code="OPA-FIS-01",
-    )
-
-    planned_subject_b, planned_module_b = _create_subject_and_module(
-        db,
-        organization_id=org_b.id,
-        name="Programacao B",
-        code="OPB-PROG-01",
-    )
-    alt_subject_b1, _ = _create_subject_and_module(
-        db,
-        organization_id=org_b.id,
-        name="Redes B",
-        code="OPB-RED-01",
-    )
-
-    _link_class_subject(db, klass=class_a, subject=planned_subject_a, teacher=planned_teacher_a)
-    _link_class_subject(db, klass=class_a, subject=planned_gap_subject_a, teacher=planned_teacher_a)
-    _link_class_subject(db, klass=class_a, subject=alt_subject_a1, teacher=candidate_a1)
-    _link_class_subject(db, klass=class_a, subject=alt_subject_a2, teacher=candidate_a2)
-    _link_class_subject(db, klass=class_a, subject=blocked_subject_a, teacher=blocked_a)
-
-    _link_class_subject(db, klass=class_b, subject=planned_subject_b, teacher=planned_teacher_b)
-    _link_class_subject(db, klass=class_b, subject=alt_subject_b1, teacher=candidate_b1)
-
-    _set_availability(db, teacher=planned_teacher_a, slot=slot_a_multi, score=models.PreferenceLevel.NEUTRAL)
-    _set_availability(db, teacher=planned_teacher_a, slot=slot_a_gap, score=models.PreferenceLevel.NEUTRAL)
-    _set_availability(db, teacher=candidate_a1, slot=slot_a_multi, score=models.PreferenceLevel.PREFERRED)
-    _set_availability(db, teacher=candidate_a2, slot=slot_a_multi, score=models.PreferenceLevel.PREFERRED)
-
-    _set_availability(db, teacher=candidate_a1, slot=slot_a_gap, score=models.PreferenceLevel.IMPOSSIBLE)
-    _set_availability(db, teacher=candidate_a2, slot=slot_a_gap, score=models.PreferenceLevel.IMPOSSIBLE)
-    _set_availability(db, teacher=blocked_a, slot=slot_a_gap, score=models.PreferenceLevel.IMPOSSIBLE)
-
-    _set_availability(db, teacher=planned_teacher_b, slot=slot_b_multi, score=models.PreferenceLevel.NEUTRAL)
-    _set_availability(db, teacher=candidate_b1, slot=slot_b_multi, score=models.PreferenceLevel.PREFERRED)
-
-    lesson_multi = _create_lesson(
-        db,
-        organization_id=org_a.id,
-        klass=class_a,
-        subject=planned_subject_a,
-        teacher=planned_teacher_a,
-    )
-    lesson_gap = _create_lesson(
-        db,
-        organization_id=org_a.id,
-        klass=class_a,
-        subject=planned_gap_subject_a,
-        teacher=planned_teacher_a,
-    )
-
-    lesson_b = _create_lesson(
-        db,
-        organization_id=org_b.id,
-        klass=class_b,
-        subject=planned_subject_b,
-        teacher=planned_teacher_b,
-    )
-
-    schedule_multi = _create_schedule_output(
-        db,
-        organization_id=org_a.id,
-        lesson=lesson_multi,
-        slot=slot_a_multi,
-        room=room_a,
-        target_date=REFERENCE_DATE,
-        generation_id="seed-operational-a-multi",
-    )
-    schedule_gap = _create_schedule_output(
-        db,
-        organization_id=org_a.id,
-        lesson=lesson_gap,
-        slot=slot_a_gap,
-        room=room_a,
-        target_date=REFERENCE_DATE,
-        generation_id="seed-operational-a-gap",
-    )
-    schedule_historical = _create_schedule_output(
-        db,
-        organization_id=org_a.id,
-        lesson=lesson_multi,
-        slot=slot_a_multi,
-        room=room_a,
-        target_date=HISTORICAL_DATE,
-        generation_id="seed-operational-a-history",
-    )
-
-    schedule_b = _create_schedule_output(
-        db,
-        organization_id=org_b.id,
-        lesson=lesson_b,
-        slot=slot_b_multi,
-        room=room_b,
-        target_date=REFERENCE_DATE,
-        generation_id="seed-operational-b-base",
-    )
-
-    multi_occurrence = _create_occurrence(
-        db,
-        organization_id=org_a.id,
-        schedule_output=schedule_multi,
-        target_date=REFERENCE_DATE,
-        status=models.LessonOccurrenceStatus.GIVEN,
-        planned_module_id=planned_module_a.id,
-        planned_teacher_id=planned_teacher_a.id,
-        hours=2.0,
-    )
-
-    no_eligible_occurrence = _create_occurrence(
-        db,
-        organization_id=org_a.id,
-        schedule_output=schedule_gap,
-        target_date=REFERENCE_DATE,
-        status=models.LessonOccurrenceStatus.GAP,
-        planned_module_id=planned_gap_module_a.id,
-        planned_teacher_id=planned_teacher_a.id,
-        hours=2.0,
-        decided_by_user_id=admin_a.id,
-        decided_at=datetime(2026, 4, 20, 8, 30, tzinfo=timezone.utc),
-    )
-
-    _create_occurrence(
-        db,
-        organization_id=org_a.id,
-        schedule_output=schedule_historical,
-        target_date=HISTORICAL_DATE,
-        status=models.LessonOccurrenceStatus.SUBSTITUTED,
-        planned_module_id=planned_module_a.id,
-        planned_teacher_id=planned_teacher_a.id,
-        substitute_teacher_id=candidate_a1.id,
-        substitute_subject_id=alt_subject_a1.id,
-        executed_module_id=alt_module_a1.id,
-        executed_teacher_id=candidate_a1.id,
-        hours=2.0,
-        decided_by_user_id=admin_a.id,
-        decided_at=datetime(2026, 4, 17, 10, 0, tzinfo=timezone.utc),
-    )
-
-    org_b_occurrence = _create_occurrence(
-        db,
-        organization_id=org_b.id,
-        schedule_output=schedule_b,
-        target_date=REFERENCE_DATE,
-        status=models.LessonOccurrenceStatus.GIVEN,
-        planned_module_id=planned_module_b.id,
-        planned_teacher_id=planned_teacher_b.id,
-        hours=2.0,
-    )
-
-    db.commit()
-
-    signature = {
-        "profile": "alpha_v1_operational_step6",
-        "reference_date": REFERENCE_DATE.isoformat(),
-        "organization_count": 2,
-        "scenario_codes": [
-            SCENARIO_MULTI_ELIGIBLE,
-            SCENARIO_NO_ELIGIBLE,
-        ],
-        "expected": {
-            SCENARIO_MULTI_ELIGIBLE: {
-                "minimum_recommendations": 2,
-            },
-            SCENARIO_NO_ELIGIBLE: {
-                "expected_recommendations": 0,
-                "fallback_status": models.LessonOccurrenceStatus.GAP.value,
-            },
-        },
-        "totals": _collect_totals(db),
-    }
-
-    runtime = {
-        "org_a_id": org_a.id,
-        "org_b_id": org_b.id,
-        "org_a_admin_user_id": admin_a.id,
-        "org_b_admin_user_id": admin_b.id,
-        "org_a_class_id": class_a.id,
-        "org_b_class_id": class_b.id,
-        "multi_eligible_occurrence_id": multi_occurrence.id,
-        "no_eligible_occurrence_id": no_eligible_occurrence.id,
-        "org_b_occurrence_id": org_b_occurrence.id,
-        "expected_first_recommendation_teacher_id": candidate_a2.id,
-    }
-
+    totals = {name: 0 for name, _ in counted_models}
+    for tenant in tenants:
+        set_sync_tenant_context(db, tenant["organization_id"])
+        for name, model in counted_models:
+            totals[name] += int(db.scalar(select(func.count(model.id))) or 0)
     return {
-        "signature": signature,
-        "runtime": runtime,
+        "signature": {
+            "profile": "canonical_operational_v1",
+            "reference_date": REFERENCE_DATE.isoformat(),
+            "organization_count": len(tenants),
+            "totals": totals,
+        },
+        "runtime": {"tenants": tenants},
     }
+
+
+async def seed_and_publish_operational_scenarios(db: AsyncSession) -> dict[str, Any]:
+    """Seed master data and publish one real generated schedule per tenant."""
+    from app.services.scheduler_approval_service import SchedulerApprovalService
+    from app.services.scheduler_complete_engine import run_complete_generation
+    from app.services.scheduler_generation_service import SchedulerGenerationService
+    from app.services.scheduler_job_runtime import SchedulerJobRuntime
+    from app.services.scheduler_job_service import SchedulerJobService
+
+    async with db.begin():
+        payload = await db.run_sync(seed_operational_scenarios_sync)
+
+    stable_keys: list[str] = []
+    active_block_count = 0
+    for tenant in payload["runtime"]["tenants"]:
+        organization_id = tenant["organization_id"]
+        await set_async_tenant_context(db, organization_id)
+        existing_count = int(
+            await db.scalar(
+                select(func.count(models.ActiveScheduleBlock.id)).where(
+                    models.ActiveScheduleBlock.organization_id == organization_id,
+                    models.ActiveScheduleBlock.status == models.ActiveScheduleBlockStatus.ACTIVE,
+                )
+            )
+            or 0
+        )
+        if existing_count == 0:
+            draft_id = await db.scalar(
+                select(models.SchedulerSchoolYearState.pending_draft_id).where(
+                    models.SchedulerSchoolYearState.organization_id == organization_id,
+                    models.SchedulerSchoolYearState.school_year_id == tenant["school_year_id"],
+                )
+            )
+            if draft_id is None:
+                selection = await SchedulerGenerationService(db).select_strategy(organization_id)
+                handle = await SchedulerJobService(db).create_or_get_job(
+                    selection,
+                    requested_by_membership_id=tenant["admin_account_id"],
+                    idempotency_key=f"operational-seed:{organization_id}:{ACADEMIC_YEAR}",
+                )
+                await db.commit()
+                finished = await SchedulerJobRuntime(db).execute(
+                    handle.job.id,
+                    run_complete_generation,
+                    organization_id=organization_id,
+                )
+                if finished.job_status != models.ScheduleGenerationJobStatus.SUCCEEDED:
+                    raise RuntimeError(
+                        "Operational seed generation failed: "
+                        f"{finished.failure_code}: {finished.failure_message}"
+                    )
+                await set_async_tenant_context(db, organization_id)
+                draft_id = await db.scalar(
+                    select(models.ScheduleDraft.id).where(
+                        models.ScheduleDraft.organization_id == organization_id,
+                        models.ScheduleDraft.generation_job_id == finished.id,
+                    )
+                )
+                if draft_id is None:
+                    raise RuntimeError("Operational seed generation produced no draft")
+            await SchedulerApprovalService(db).approve(
+                organization_id,
+                draft_id,
+                decided_by_membership_id=tenant["admin_account_id"],
+            )
+            await db.commit()
+
+        await set_async_tenant_context(db, organization_id)
+        keys = list(
+            await db.scalars(
+                select(models.ActiveScheduleBlock.stable_block_key)
+                .where(
+                    models.ActiveScheduleBlock.organization_id == organization_id,
+                    models.ActiveScheduleBlock.status == models.ActiveScheduleBlockStatus.ACTIVE,
+                )
+                .order_by(models.ActiveScheduleBlock.stable_block_key)
+            )
+        )
+        stable_keys.extend(f"{organization_id}:{key}" for key in keys)
+        active_block_count += len(keys)
+        await db.rollback()
+
+    payload["signature"]["active_block_count"] = active_block_count
+    payload["signature"]["active_stable_keys"] = stable_keys
+    return payload

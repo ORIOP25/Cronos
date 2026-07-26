@@ -63,12 +63,12 @@ describe('apiClient public contract', () => {
     expect(adapter.mock.calls[0][0].headers.get('Authorization')).toBe('Bearer tk_fresh_org')
   })
 
-  it('continues without an auth header when token retrieval fails', async () => {
+  it('rejects before sending a request when token retrieval fails', async () => {
     setClerkTokenGetter(async () => { throw new Error('token unavailable') })
     const adapter = vi.fn(async (config) => response(config, null))
 
-    await apiClient.get('/contract', { adapter })
+    await expect(apiClient.get('/contract', { adapter })).rejects.toThrow('token unavailable')
 
-    expect(adapter.mock.calls[0][0].headers.get('Authorization')).toBeUndefined()
+    expect(adapter).not.toHaveBeenCalled()
   })
 })

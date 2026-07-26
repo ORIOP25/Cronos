@@ -3,34 +3,37 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 from time import monotonic
 from typing import Any
 
+import structlog
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models
+from app.db.tenant import set_async_tenant_context
 from app.scheduler.domain.contracts import (
     DraftBlockSpec,
     NoValidGenerationOutput,
     ValidatedGenerationResult,
 )
 from app.scheduler.domain.validation import GenerationEnvelopeValidator
-from app.services.scheduler_fingerprint_service import SchedulerFingerprintService
-from app.services.scheduler_recovery_service import SchedulerRecoveryService
 from app.services.scheduler_complete_demand import CompleteDemandLedgerBuilder
-from app.services.scheduler_editable_boundary import EditableBoundaryBuilder
 from app.services.scheduler_diff_service import SchedulerDiffService
+from app.services.scheduler_editable_boundary import EditableBoundaryBuilder
+from app.services.scheduler_fingerprint_service import SchedulerFingerprintService
 from app.services.scheduler_observability import emit_scheduler_job_event
+from app.services.scheduler_recovery_service import SchedulerRecoveryService
 from app.services.scheduler_target_validator import (
     SchedulerTargetValidationError,
     SchedulerTargetValidator,
 )
 
-
 GENERATION_CAP_SECONDS = 5 * 60
 FINAL_COMMIT_RESERVE_SECONDS = 15
+
+logger = structlog.get_logger(__name__)
 
 FAILURE_CANCELED = "CANCELED"
 FAILURE_TIMED_OUT = "TIMED_OUT"
@@ -95,21 +98,26 @@ class SchedulerJobRuntime:
         elapsed_clock: Callable[[], float] | None = None,
     ):
         self._db = db
-        self._clock = clock or (lambda: datetime.now(timezone.utc))
+        self._clock = clock or (lambda: datetime.now(UTC))
         self._elapsed_clock = elapsed_clock or monotonic
 
     async def execute(
         self,
         job_id: int,
         engine: GenerationEngine,
+        *,
+        organization_id: int | None = None,
     ) -> models.ScheduleGenerationJob:
+        self._organization_id = organization_id
         elapsed_start = self._elapsed_clock()
         try:
             context = await self._start_and_snapshot(job_id)
-            await self._assert_can_continue(job_id, context.deadline_at)
-            solve_seconds = (
-                context.solve_deadline_at - self._aware_now()
-            ).total_seconds()
+            await self._assert_can_continue(
+                job_id,
+                context.deadline_at,
+                end_transaction=True,
+            )
+            solve_seconds = (context.solve_deadline_at - self._aware_now()).total_seconds()
             if solve_seconds <= 0:
                 raise GenerationTimedOutError(
                     "Generation snapshot exhausted the solver time budget."
@@ -123,7 +131,11 @@ class SchedulerJobRuntime:
                 raise GenerationTimedOutError(
                     "Generation exceeded its solver time budget."
                 ) from exc
-            await self._assert_can_continue(job_id, context.deadline_at)
+            await self._assert_can_continue(
+                job_id,
+                context.deadline_at,
+                end_transaction=True,
+            )
             if result is None or isinstance(result, NoValidGenerationOutput):
                 return await self._run_before_deadline(
                     lambda: self._finish_without_output(
@@ -139,7 +151,11 @@ class SchedulerJobRuntime:
                 context.deadline_at,
                 "Generation validation exceeded the five-minute deadline.",
             )
-            await self._assert_can_continue(job_id, context.deadline_at)
+            await self._assert_can_continue(
+                job_id,
+                context.deadline_at,
+                end_transaction=True,
+            )
             return await self._run_before_deadline(
                 lambda: self._commit_validated_draft(
                     context,
@@ -178,6 +194,12 @@ class SchedulerJobRuntime:
             raise
         except Exception as exc:
             await self._db.rollback()
+            logger.exception(
+                "scheduler_generation_unexpected_failure",
+                job_id=job_id,
+                organization_id=organization_id,
+                error_type=type(exc).__name__,
+            )
             return await self._finish_failure(
                 job_id,
                 models.ScheduleGenerationJobStatus.FAILED,
@@ -199,6 +221,7 @@ class SchedulerJobRuntime:
         job.deadline_at = deadline_at
         await self._db.commit()
 
+        await self._install_tenant_context()
         fingerprints = SchedulerFingerprintService(self._db)
         generation = await fingerprints.generation_input_fingerprint(
             job.organization_id,
@@ -238,6 +261,7 @@ class SchedulerJobRuntime:
         job.input_snapshot_json = immutable_snapshot
         await self._db.commit()
         emit_scheduler_job_event("generation_started", job)
+        checkpoint_job_id = job.id
 
         return GenerationExecutionContext(
             job_id=job.id,
@@ -248,7 +272,11 @@ class SchedulerJobRuntime:
             immutable_snapshot=immutable_snapshot,
             started_at=started_at,
             deadline_at=deadline_at,
-            checkpoint=lambda: self._assert_can_continue(job.id, deadline_at),
+            checkpoint=lambda: self._assert_can_continue(
+                checkpoint_job_id,
+                deadline_at,
+                end_transaction=True,
+            ),
         )
 
     async def _validate_result(
@@ -273,8 +301,7 @@ class SchedulerJobRuntime:
                 generation_input,
                 result.blocks,
                 complete=(
-                    context.strategy
-                    == models.ScheduleGenerationStrategy.COMPLETE_GENERATION
+                    context.strategy == models.ScheduleGenerationStrategy.COMPLETE_GENERATION
                 ),
             )
         except SchedulerTargetValidationError as exc:
@@ -326,11 +353,21 @@ class SchedulerJobRuntime:
             class_row = classes.get(block.class_id)
             subject_row = subjects.get(block.subject_id)
             room_row = rooms.get(block.room_id)
-            required_room_type = None if subject_row is None else str(
-                getattr(subject_row.get("required_room_type"), "value", subject_row.get("required_room_type"))
+            required_room_type = (
+                None
+                if subject_row is None
+                else str(
+                    getattr(
+                        subject_row.get("required_room_type"),
+                        "value",
+                        subject_row.get("required_room_type"),
+                    )
+                )
             )
-            actual_room_type = None if room_row is None else str(
-                getattr(room_row.get("type"), "value", room_row.get("type"))
+            actual_room_type = (
+                None
+                if room_row is None
+                else str(getattr(room_row.get("type"), "value", room_row.get("type")))
             )
             if (
                 class_row is None
@@ -348,7 +385,9 @@ class SchedulerJobRuntime:
                 )
             if block.change_type == models.ScheduleDraftBlockChangeType.ADDED:
                 if block.source_active_block_id is not None:
-                    raise GenerationValidationError("Added repair blocks cannot have active lineage.")
+                    raise GenerationValidationError(
+                        "Added repair blocks cannot have active lineage."
+                    )
                 continue
             source = active.get(block.source_active_block_id)
             if source is None or block.source_active_block_id in source_ids:
@@ -397,14 +436,19 @@ class SchedulerJobRuntime:
         }
         recovered_by_debt: dict[tuple[int, int], int] = {}
         for block in result.blocks:
-            if not block.is_recovery_block or block.change_type != models.ScheduleDraftBlockChangeType.ADDED:
+            if (
+                not block.is_recovery_block
+                or block.change_type != models.ScheduleDraftBlockChangeType.ADDED
+            ):
                 continue
             key = (
                 int(block.recovery_source_occurrence_id),
                 int(block.recovery_source_occurrence_revision),
             )
             if key not in debt_items:
-                raise GenerationValidationError("Recovery block references debt outside its snapshot.")
+                raise GenerationValidationError(
+                    "Recovery block references debt outside its snapshot."
+                )
             recovered_by_debt[key] = recovered_by_debt.get(key, 0) + block.duration_minutes
         if any(recovered_by_debt.get(key, 0) > minutes for key, minutes in debt_items.items()):
             raise GenerationValidationError("Repair over-recovers an explicit debt entry.")
@@ -455,8 +499,7 @@ class SchedulerJobRuntime:
             key = (block.class_id, block.subject_id)
             actual[key] = actual.get(key, 0) + block.duration_minutes
         expected = {
-            (item.class_id, item.subject_id): item.required_minutes
-            for item in ledger.items
+            (item.class_id, item.subject_id): item.required_minutes for item in ledger.items
         }
         if actual != expected:
             raise GenerationValidationError(
@@ -468,6 +511,7 @@ class SchedulerJobRuntime:
         context: GenerationExecutionContext,
         blocks: tuple[DraftBlockSpec, ...],
     ) -> None:
+        await self._install_tenant_context()
         checks = (
             (models.Class, {block.class_id for block in blocks}),
             (models.Subject, {block.subject_id for block in blocks}),
@@ -499,15 +543,14 @@ class SchedulerJobRuntime:
         state = await self._db.scalar(
             select(models.SchedulerSchoolYearState)
             .where(
-                models.SchedulerSchoolYearState.organization_id
-                == context.organization_id,
+                models.SchedulerSchoolYearState.organization_id == context.organization_id,
                 models.SchedulerSchoolYearState.school_year_id == context.school_year_id,
             )
             .with_for_update()
         )
         if state is None:
             raise GenerationValidationError("Scheduler state disappeared before commit.")
-        if job.requested_by_user_id is None:
+        if job.requested_by_membership_id is None:
             raise GenerationValidationError(
                 "A user-owned generation job is required to create a draft."
             )
@@ -531,7 +574,7 @@ class SchedulerJobRuntime:
             if old_draft is None:
                 raise GenerationValidationError("Replacement draft is no longer pending.")
             old_draft.draft_state = models.ScheduleDraftState.REPLACED
-            old_draft.decided_by_user_id = job.requested_by_user_id
+            old_draft.decided_by_membership_id = job.requested_by_membership_id
             old_draft.decided_at = now
             await SchedulerRecoveryService(self._db).cancel_draft_recovery_links(
                 context.organization_id,
@@ -568,7 +611,7 @@ class SchedulerJobRuntime:
             recommended_actions_json=list(result.recommended_actions) or None,
             warnings_json=list(result.warnings) or None,
             metrics_json=result.metrics or None,
-            created_by_user_id=job.requested_by_user_id,
+            created_by_membership_id=job.requested_by_membership_id,
         )
         self._db.add(draft)
         await self._db.flush()
@@ -651,7 +694,14 @@ class SchedulerJobRuntime:
         except TimeoutError as exc:
             raise GenerationTimedOutError(timeout_message) from exc
 
-    async def _assert_can_continue(self, job_id: int, deadline_at: datetime) -> None:
+    async def _assert_can_continue(
+        self,
+        job_id: int,
+        deadline_at: datetime,
+        *,
+        end_transaction: bool = False,
+    ) -> None:
+        await self._install_tenant_context()
         job = await self._db.get(models.ScheduleGenerationJob, job_id)
         if job is None:
             raise GenerationRuntimeError("Generation job no longer exists.")
@@ -660,6 +710,8 @@ class SchedulerJobRuntime:
             raise GenerationCanceledError("Generation cancellation was requested.")
         if self._aware_now() >= deadline_at:
             raise GenerationTimedOutError("Generation exceeded its five-minute deadline.")
+        if end_transaction and self._organization_id is not None:
+            await self._db.rollback()
 
     async def _finish_without_output(
         self,
@@ -683,9 +735,7 @@ class SchedulerJobRuntime:
             "generation_no_valid_output",
             job,
             result=result,
-            hard_constraint_failures=(
-                0 if result is None else len(result.blockers)
-            ),
+            hard_constraint_failures=(0 if result is None else len(result.blockers)),
         )
         return job
 
@@ -727,14 +777,26 @@ class SchedulerJobRuntime:
         return job
 
     async def _locked_job(self, job_id: int) -> models.ScheduleGenerationJob:
+        await self._install_tenant_context()
         job = await self._db.scalar(
             select(models.ScheduleGenerationJob)
-            .where(models.ScheduleGenerationJob.id == job_id)
+            .where(
+                models.ScheduleGenerationJob.id == job_id,
+                *(
+                    (models.ScheduleGenerationJob.organization_id == self._organization_id,)
+                    if self._organization_id is not None
+                    else ()
+                ),
+            )
             .with_for_update()
         )
         if job is None:
             raise GenerationRuntimeError("Generation job was not found.")
         return job
+
+    async def _install_tenant_context(self) -> None:
+        if self._organization_id is not None:
+            await set_async_tenant_context(self._db, self._organization_id)
 
     def _aware_now(self) -> datetime:
         value = self._clock()

@@ -1,5 +1,3 @@
-import pytest
-
 from app.scheduler.domain.quality import SolveWorkloadMode
 from app.services.scheduler_adaptive_engine import AdaptiveRepairEngine
 from app.services.scheduler_editable_boundary import EditableBoundaryBuilder
@@ -7,9 +5,6 @@ from app.services.scheduler_recovery_ladder import (
     RecoveryEscalationLadder,
     RecoveryLevel,
 )
-
-
-pytestmark = pytest.mark.unit
 
 
 def _block(block_id, class_id, teacher_id, block_date="2026-03-01"):
@@ -55,10 +50,7 @@ def test_recovery_scopes_escalate_without_unfreezing_immutable_blocks():
     assert [row["id"] for row in scopes[2].movable_blocks] == [2, 3]
     assert [row["id"] for row in scopes[3].movable_blocks] == [2, 3, 4]
     assert scopes[4].allow_workload_override is True
-    assert all(
-        1 in {row["id"] for row in scope.fixed_blocks}
-        for scope in scopes[:-1]
-    )
+    assert all(1 in {row["id"] for row in scope.fixed_blocks} for scope in scopes[:-1])
     solve_scopes = [AdaptiveRepairEngine._recovery_scope(scope) for scope in scopes[:-1]]
     assert [scope.workload_mode for scope in solve_scopes[:4]] == [
         SolveWorkloadMode.PROTECT_COMFORT,

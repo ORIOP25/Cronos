@@ -1,108 +1,146 @@
+name: cronos-ci
+
+x-runtime-environment: &runtime-environment
+  ENVIRONMENT: local
+  DATABASE_URL: postgresql+asyncpg://cronos_app:${CRONOS_APP_PASSWORD:?CRONOS_APP_PASSWORD is required}@db:5432/${POSTGRES_DB:-cronos_ci_db}
+  REDIS_URL: redis://redis:6379/0
+  CELERY_BROKER_URL: redis://redis:6379/0
+  RATELIMIT_ENABLED: "true"
+
 services:
   db:
-    image: postgres:16-alpine
+    image: postgres:16-alpine@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
       POSTGRES_DB: ${POSTGRES_DB:-cronos_ci_db}
-    ports:
-      - "5432:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d ${POSTGRES_DB:-cronos_ci_db}"]
       interval: 5s
       timeout: 5s
       retries: 12
 
   redis:
-    image: redis:7-alpine
+    image: redis:7-alpine@sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 5s
       retries: 12
 
-  backend:
-    build: ./backend
+  provision-db:
+    image: postgres:16-alpine@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777
+    command: ["/bin/sh", "/scripts/provision_database.sh"]
     environment:
-      ENVIRONMENT: local
-      DATABASE_URL: postgresql+asyncpg://postgres:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@db:5432/${POSTGRES_DB:-cronos_ci_db}
-      SECRET_KEY: ${SECRET_KEY:-ci-test-secret-key-not-for-production}
-      CLERK_SECRET_KEY: ${CLERK_SECRET_KEY:-}
+      POSTGRES_USER: postgres
+      POSTGRES_DB: ${POSTGRES_DB:-cronos_ci_db}
+      PGPASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      PGHOST: db
+      CRONOS_MIGRATOR_PASSWORD: ${CRONOS_MIGRATOR_PASSWORD:?CRONOS_MIGRATOR_PASSWORD is required}
+      CRONOS_APP_PASSWORD: ${CRONOS_APP_PASSWORD:?CRONOS_APP_PASSWORD is required}
+    volumes:
+      - ./backend/scripts/provision_database.sh:/scripts/provision_database.sh:ro
+    depends_on:
+      db: {condition: service_healthy}
+
+  migrate:
+    build:
+      context: ./backend
+      target: runtime
+    command: ["alembic", "upgrade", "head"]
+    environment:
+      # Settings validates DATABASE_URL before Alembic replaces the SQLAlchemy
+      # URL with MIGRATION_DATABASE_URL below.
+      DATABASE_URL: postgresql+psycopg2://cronos_migrator:${CRONOS_MIGRATOR_PASSWORD:?CRONOS_MIGRATOR_PASSWORD is required}@db:5432/${POSTGRES_DB:-cronos_ci_db}
+      MIGRATION_DATABASE_URL: postgresql+psycopg2://cronos_migrator:${CRONOS_MIGRATOR_PASSWORD:?CRONOS_MIGRATOR_PASSWORD is required}@db:5432/${POSTGRES_DB:-cronos_ci_db}
+    depends_on:
+      provision-db: {condition: service_completed_successfully}
+
+  backend:
+    build:
+      context: ./backend
+      target: ci
+    environment:
+      <<: *runtime-environment
+      CLERK_SECRET_KEY: ${CLERK_SECRET_KEY:?CLERK_SECRET_KEY is required}
+      # E2E exercises Clerk authentication, not inbound webhook delivery. The
+      # application handles an unset webhook secret by returning 503 on that
+      # endpoint, so CI should not require an unrelated credential to start.
       CLERK_WEBHOOK_SECRET: ${CLERK_WEBHOOK_SECRET:-}
-      CLERK_PUBLISHABLE_KEY: ${CLERK_PUBLISHABLE_KEY:-}
       FRONTEND_URL: http://localhost:5173
       CLERK_AUTHORIZED_PARTIES: http://localhost:5173
-      CELERY_BROKER_URL: redis://redis:6379/0
-      REDIS_URL: redis://redis:6379/0
-      RUN_MIGRATIONS: "1"
-      BOOTSTRAP_DEFAULT_ADMIN: "0"
-      RATELIMIT_ENABLED: "false"
-    ports:
-      - "8000:8000"
+    ports: ["8000:8000"]
     depends_on:
-      db:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
+      migrate: {condition: service_completed_successfully}
+      redis: {condition: service_healthy}
     healthcheck:
-      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health', timeout=2)\""]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/ready', timeout=2)"]
       interval: 5s
       timeout: 3s
       retries: 24
-      start_period: 20s
 
   worker:
-    build: ./backend
+    build:
+      context: ./backend
+      target: runtime
     command: ["celery", "-A", "app.celery_worker.celery_app", "worker", "--loglevel=info"]
     environment:
-      ENVIRONMENT: local
-      DATABASE_URL: postgresql+asyncpg://postgres:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@db:5432/${POSTGRES_DB:-cronos_ci_db}
-      SECRET_KEY: ${SECRET_KEY:-ci-test-secret-key-not-for-production}
-      CLERK_SECRET_KEY: ${CLERK_SECRET_KEY:-}
-      CLERK_WEBHOOK_SECRET: ${CLERK_WEBHOOK_SECRET:-}
-      CLERK_PUBLISHABLE_KEY: ${CLERK_PUBLISHABLE_KEY:-}
-      CELERY_BROKER_URL: redis://redis:6379/0
-      REDIS_URL: redis://redis:6379/0
-      RUN_MIGRATIONS: "0"
-      RATELIMIT_ENABLED: "false"
+      <<: *runtime-environment
+      DATABASE_POOLING_ENABLED: "false"
     depends_on:
-      backend:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      db:
-        condition: service_healthy
+      migrate: {condition: service_completed_successfully}
+      redis: {condition: service_healthy}
 
   beat:
-    build: ./backend
+    build:
+      context: ./backend
+      target: runtime
     command: ["celery", "-A", "app.celery_worker.celery_app", "beat", "--loglevel=info", "--schedule", "/tmp/celerybeat-schedule"]
     environment:
-      ENVIRONMENT: local
-      DATABASE_URL: postgresql+asyncpg://postgres:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@db:5432/${POSTGRES_DB:-cronos_ci_db}
-      SECRET_KEY: ${SECRET_KEY:-ci-test-secret-key-not-for-production}
-      CLERK_SECRET_KEY: ${CLERK_SECRET_KEY:-}
-      CLERK_WEBHOOK_SECRET: ${CLERK_WEBHOOK_SECRET:-}
-      CLERK_PUBLISHABLE_KEY: ${CLERK_PUBLISHABLE_KEY:-}
-      CELERY_BROKER_URL: redis://redis:6379/0
-      REDIS_URL: redis://redis:6379/0
-      RUN_MIGRATIONS: "0"
-      RATELIMIT_ENABLED: "false"
+      <<: *runtime-environment
+      DATABASE_POOLING_ENABLED: "false"
     depends_on:
-      backend:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      db:
-        condition: service_healthy
+      migrate: {condition: service_completed_successfully}
+      redis: {condition: service_healthy}
 
   frontend:
     build: ./frontend
-    command: npm run dev -- --host 0.0.0.0
+    command: ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
     environment:
-      CHOKIDAR_USEPOLLING: "true"
-      VITE_CLERK_PUBLISHABLE_KEY: ${VITE_CLERK_PUBLISHABLE_KEY:-}
-    ports:
-      - "5173:5173"
+      VITE_CLERK_PUBLISHABLE_KEY: ${VITE_CLERK_PUBLISHABLE_KEY:?VITE_CLERK_PUBLISHABLE_KEY is required}
+    ports: ["5173:5173"]
     depends_on:
-      backend:
-        condition: service_healthy
+      backend: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:5173').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 24
+
+  e2e:
+    image: mcr.microsoft.com/playwright:v1.59.1-noble
+    network_mode: host
+    working_dir: /work/frontend
+    command: ["/bin/sh", "-c", "npm ci && npm run test:e2e"]
+    environment:
+      CI: "true"
+      PLAYWRIGHT_SKIP_WEB_SERVER: "1"
+      BASE_URL: http://localhost:5173
+      VITE_CLERK_PUBLISHABLE_KEY: ${VITE_CLERK_PUBLISHABLE_KEY:?VITE_CLERK_PUBLISHABLE_KEY is required}
+      CLERK_SECRET_KEY: ${CLERK_SECRET_KEY:?CLERK_SECRET_KEY is required}
+      E2E_CLERK_ADMIN_EMAIL: ${E2E_CLERK_ADMIN_EMAIL:?E2E_CLERK_ADMIN_EMAIL is required}
+      E2E_CLERK_TEACHER_EMAIL: ${E2E_CLERK_TEACHER_EMAIL:?E2E_CLERK_TEACHER_EMAIL is required}
+      E2E_CLERK_INVITE_CREATE_EMAIL: ${E2E_CLERK_INVITE_CREATE_EMAIL:?E2E_CLERK_INVITE_CREATE_EMAIL is required}
+      E2E_CLERK_INVITE_CONVERT_EMAIL: ${E2E_CLERK_INVITE_CONVERT_EMAIL:?E2E_CLERK_INVITE_CONVERT_EMAIL is required}
+    volumes:
+      # Docker must create the nested node_modules mountpoint below this path.
+      # CI uses an ephemeral checkout, so this mount can safely be writable.
+      - ./frontend:/work/frontend
+      - frontend_node_modules_ci:/work/frontend/node_modules
+    depends_on:
+      frontend: {condition: service_healthy}
+      worker: {condition: service_started}
+      beat: {condition: service_started}
+
+volumes:
+  frontend_node_modules_ci:

@@ -12,7 +12,7 @@ export const useRooms = () => {
   return useQuery({
     queryKey: ['rooms', orgId],
     queryFn: async () => {
-      return apiClient.get('/import/rooms')
+      return apiClient.get('/rooms/')
     },
     enabled: Boolean(orgId),
     ...STATIC_OPTS
@@ -24,7 +24,7 @@ export const useSubjects = () => {
   return useQuery({
     queryKey: ['subjects', orgId],
     queryFn: async () => {
-      return apiClient.get('/import/subjects')
+      return apiClient.get('/subjects/')
     },
     enabled: Boolean(orgId),
     ...STATIC_OPTS

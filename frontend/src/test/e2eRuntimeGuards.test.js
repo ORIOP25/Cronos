@@ -77,6 +77,16 @@ describe('E2E runtime guard classifiers', () => {
     expect(error).toContain('Browser console error')
   })
 
+  it('includes the location URL when throwing an unexpected failed-resource console error', () => {
+    const error = getConsoleError({
+      type: 'error',
+      text: 'Failed to load resource: the server responded with a status of 403 (Forbidden)',
+      locationUrl: `${baseUrl}/api/v1/members`,
+    }, [])
+
+    expect(error).toContain('Browser console error: Failed to load resource: the server responded with a status of 403 (Forbidden) at http://localhost:5173/api/v1/members')
+  })
+
   it('ignores the browser CSP fallback note emitted by Clerk hosted sign-in', () => {
     const error = getConsoleError({
       type: 'error',

@@ -81,8 +81,7 @@ class RecoveryEscalationLadder:
             scope(
                 RecoveryLevel.AFFECTED_TEACHER_CLASS,
                 lambda row: (
-                    row["class_id"] in affected_classes
-                    or row["teacher_id"] in affected_teachers
+                    row["class_id"] in affected_classes or row["teacher_id"] in affected_teachers
                 ),
                 "Reorganize editable blocks tied to affected classes or teachers.",
             ),

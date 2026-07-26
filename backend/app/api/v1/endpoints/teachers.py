@@ -1,15 +1,15 @@
 # Ficheiro: backend/app/api/endpoints/teachers.py
 
 from time import perf_counter
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import List, Annotated
+
 from app import schemas
 from app.api import deps
-from app.services import teacher_observability_service, teacher_service
 from app.core.ratelimit import limiter
-from app import models
+from app.services import teacher_observability_service, teacher_service
 
 TEACHER_NOT_FOUND_MSG = "Professor não encontrado"
 
@@ -18,12 +18,12 @@ router = APIRouter()
 
 @router.get(
     "/me/availability",
-    response_model=List[schemas.AvailabilitySelfRead],
+    response_model=list[schemas.AvailabilitySelfRead],
     responses={403: {"description": "Sem permissões"}, 404: {"description": TEACHER_NOT_FOUND_MSG}},
 )
 async def read_my_availability(
     db: Annotated[AsyncSession, Depends(deps.get_db)],
-    current_user: Annotated[models.User, Depends(deps.get_current_active_user)],
+    current_user: deps.ActiveActor,
 ):
     """Lê disponibilidade do professor autenticado (self-service)."""
     start_ts = perf_counter()
@@ -57,14 +57,15 @@ async def read_my_availability(
             teacher_observability_service.log_teacher_endpoint_event_safe_sync(
                 sync_db,
                 organization_id=current_user.organization_id,
-                actor_user_id=current_user.id,
-                actor_role=current_user.role,
+                actor_membership_id=current_user.membership_id,
+                actor_role=deps.actor_role(current_user),
                 endpoint_key=teacher_observability_service.ENDPOINT_TEACHERS_ME_AVAILABILITY_READ,
                 http_status=status_code,
                 latency_ms=elapsed_ms,
             )
 
         await db.run_sync(_emit)
+
 
 @router.get(
     "/observability/summary",
@@ -73,8 +74,10 @@ async def read_my_availability(
 )
 async def get_teacher_endpoints_observability_summary(
     db: Annotated[AsyncSession, Depends(deps.get_db)],
-    current_user: Annotated[models.User, Depends(deps.get_current_active_admin)],
-    window_minutes: Annotated[int, Query(ge=5, le=1440, description="Janela de agregação em minutos")] = 15,
+    current_user: deps.AdminActor,
+    window_minutes: Annotated[
+        int, Query(ge=5, le=1440, description="Janela de agregação em minutos")
+    ] = 15,
 ):
     def _run(sync_db):
         return teacher_observability_service.get_teacher_endpoint_observability_summary_sync(
@@ -94,7 +97,7 @@ async def get_teacher_endpoints_observability_summary(
 )
 async def read_my_progress(
     db: Annotated[AsyncSession, Depends(deps.get_db)],
-    current_user: Annotated[models.User, Depends(deps.get_current_active_user)],
+    current_user: deps.ActiveActor,
 ):
     """Retorna o progresso das disciplinas do professor nas turmas assignadas."""
     start_ts = perf_counter()
@@ -124,8 +127,8 @@ async def read_my_progress(
             teacher_observability_service.log_teacher_endpoint_event_safe_sync(
                 sync_db,
                 organization_id=current_user.organization_id,
-                actor_user_id=current_user.id,
-                actor_role=current_user.role,
+                actor_membership_id=current_user.membership_id,
+                actor_role=deps.actor_role(current_user),
                 endpoint_key=teacher_observability_service.ENDPOINT_TEACHERS_ME_PROGRESS_READ,
                 http_status=status_code,
                 latency_ms=elapsed_ms,
@@ -133,31 +136,37 @@ async def read_my_progress(
 
         await db.run_sync(_emit)
 
+
 # --- 1. Ler Professores ---
-@router.get("/", response_model=List[schemas.TeacherRead])
+@router.get("/", response_model=list[schemas.TeacherRead])
 async def read_teachers(
-    current_user: Annotated[models.User, Depends(deps.get_current_active_admin)],
+    current_user: deps.AdminActor,
     db: Annotated[AsyncSession, Depends(deps.get_db)],
-    skip: int = 0, 
+    skip: int = 0,
     limit: int = 100,
 ):
     return await teacher_service.get_teachers_by_org(
-        db, 
-        organization_id=current_user.organization_id, 
-        skip=skip, 
-        limit=limit
+        db, organization_id=current_user.organization_id, skip=skip, limit=limit
     )
+
 
 # --- 4. NOVO ENDPOINT: Gravar Disponibilidades ---
 # Chama o serviço que já existe em teacher_service.py
-@router.post("/{teacher_id}/availability", responses={403: {"description": "Sem permissões"}, 404: {"description": TEACHER_NOT_FOUND_MSG}, 400: {"description": "Timeslot inválido"}})
+@router.post(
+    "/{teacher_id}/availability",
+    responses={
+        403: {"description": "Sem permissões"},
+        404: {"description": TEACHER_NOT_FOUND_MSG},
+        400: {"description": "Timeslot inválido"},
+    },
+)
 @limiter.limit("30/minute")
 async def update_teacher_availability(
     request: Request,
     teacher_id: int,
-    availability_data: List[schemas.AvailabilitySelfCreate], # Recebe a lista do Frontend
+    availability_data: list[schemas.AvailabilitySelfCreate],  # Recebe a lista do Frontend
     db: Annotated[AsyncSession, Depends(deps.get_db)],
-    current_user: Annotated[models.User, Depends(deps.get_current_active_user)]
+    current_user: deps.ActiveActor,
 ):
     """
     Grava as preferências de horário chamando o serviço dedicado.
@@ -176,14 +185,16 @@ async def update_teacher_availability(
         # Professores só podem atualizar a própria disponibilidade
         if not is_admin and current_user.teacher_id != teacher_id:
             status_code = 403
-            raise HTTPException(status_code=403, detail="Sem permissões para atualizar outro professor")
+            raise HTTPException(
+                status_code=403, detail="Sem permissões para atualizar outro professor"
+            )
 
         result = await teacher_service.set_teacher_availability(
             db,
             teacher_id,
             availability_data,
             organization_id=current_user.organization_id,
-            changed_by_user_id=current_user.id,
+            changed_by_membership_id=current_user.membership_id,
         )
 
         if result == "NOT_FOUND":
@@ -212,8 +223,8 @@ async def update_teacher_availability(
             teacher_observability_service.log_teacher_endpoint_event_safe_sync(
                 sync_db,
                 organization_id=current_user.organization_id,
-                actor_user_id=current_user.id,
-                actor_role=current_user.role,
+                actor_membership_id=current_user.membership_id,
+                actor_role=deps.actor_role(current_user),
                 endpoint_key=teacher_observability_service.ENDPOINT_TEACHERS_AVAILABILITY_UPDATE,
                 http_status=status_code,
                 latency_ms=elapsed_ms,

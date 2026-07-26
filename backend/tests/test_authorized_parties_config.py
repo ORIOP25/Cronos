@@ -3,10 +3,6 @@ from pydantic import ValidationError
 
 from app.config import Settings
 
-
-pytestmark = pytest.mark.unit
-
-
 BASE = {
     "DATABASE_URL": "postgresql://user:pass@localhost/test_db",
     "SECRET_KEY": "test",
@@ -29,6 +25,16 @@ def test_authorized_parties_accept_multiple_exact_origins():
         "https://app.example.com",
         "https://preview.example.com:444",
     ]
+
+
+@pytest.mark.parametrize("clock_skew_ms", [-1, 60_001])
+def test_clerk_clock_skew_must_be_bounded(clock_skew_ms):
+    with pytest.raises(ValidationError, match="CLERK_CLOCK_SKEW_MS"):
+        Settings(
+            **BASE,
+            FRONTEND_URL="https://app.example.com",
+            CLERK_CLOCK_SKEW_MS=clock_skew_ms,
+        )
 
 
 @pytest.mark.parametrize(

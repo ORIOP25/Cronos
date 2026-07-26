@@ -1,8 +1,6 @@
 import asyncio
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 from time import monotonic
-
-import pytest
 
 from app import models
 from app.services.scheduler_candidates import CandidateUniverse, CandidateUniverseBuilder
@@ -22,7 +20,7 @@ def test_large_school_candidate_generation_stops_at_bounded_effort():
         ledger,
         window_start=date.fromisoformat(fixture.snapshot["start_date"]),
         window_end=date.fromisoformat(fixture.snapshot["hard_end_date"]),
-        deadline_at=datetime.now(timezone.utc) + timedelta(seconds=2),
+        deadline_at=datetime.now(UTC) + timedelta(seconds=2),
         max_candidates=5_000,
     )
 
@@ -35,12 +33,11 @@ def test_large_school_candidate_generation_stops_at_bounded_effort():
     )
 
 
-@pytest.mark.asyncio
 async def test_large_school_complete_engine_never_requests_all_year_optimization(
     monkeypatch,
 ):
     fixture = large_scheduler_fixture()
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     captured = {}
 
     def bounded_build(_builder, _snapshot, _ledger, **kwargs):

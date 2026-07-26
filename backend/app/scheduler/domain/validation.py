@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from datetime import date, time, timedelta
 from enum import StrEnum
-from typing import Any, Iterable, Mapping
+from typing import Any
 
 from app.scheduler.domain.constraints import SchedulerConstraintPolicy, placement_facts
 
@@ -136,10 +137,12 @@ class TargetHardConstraintValidator:
                 )
             )
             if invalid:
-                violations.append(TargetViolation(
-                    TargetViolationCode.HARD_CONSTRAINT_VIOLATION,
-                    "The draft target no longer satisfies hard scheduler constraints.",
-                ))
+                violations.append(
+                    TargetViolation(
+                        TargetViolationCode.HARD_CONSTRAINT_VIOLATION,
+                        "The draft target no longer satisfies hard scheduler constraints.",
+                    )
+                )
                 continue
             stable_keys.add(block.stable_block_key)
             evaluation = policy.evaluate(placement_facts(block))
@@ -157,20 +160,24 @@ class TargetHardConstraintValidator:
             ):
                 key = (kind, resource_id, block.date)
                 if any(slot[1] < end and slot[2] > start for start, end in intervals[key]):
-                    violations.append(TargetViolation(
-                        TargetViolationCode.RESOURCE_CONFLICT,
-                        "The draft target contains a resource conflict.",
-                        kind,
-                        resource_id,
-                        block.date,
-                    ))
+                    violations.append(
+                        TargetViolation(
+                            TargetViolationCode.RESOURCE_CONFLICT,
+                            "The draft target contains a resource conflict.",
+                            kind,
+                            resource_id,
+                            block.date,
+                        )
+                    )
                 intervals[key].append((slot[1], slot[2]))
 
-        violations.extend(LunchBreakValidator.validate(
-            snapshot.get("lunch_rules"),
-            blocks,
-            grid,
-        ))
+        violations.extend(
+            LunchBreakValidator.validate(
+                snapshot.get("lunch_rules"),
+                blocks,
+                grid,
+            )
+        )
         return tuple(violations)
 
     @staticmethod
@@ -234,11 +241,13 @@ class LunchBreakValidator:
                 cursor = max(cursor, end)
             gaps.append(max(0, lunch_end - cursor))
             if max(gaps, default=0) < minimum:
-                violations.append(TargetViolation(
-                    TargetViolationCode.LUNCH_BREAK_VIOLATION,
-                    "The draft target does not preserve the required lunch break.",
-                    kind,
-                    resource_id,
-                    output_date,
-                ))
+                violations.append(
+                    TargetViolation(
+                        TargetViolationCode.LUNCH_BREAK_VIOLATION,
+                        "The draft target does not preserve the required lunch break.",
+                        kind,
+                        resource_id,
+                        output_date,
+                    )
+                )
         return tuple(violations)

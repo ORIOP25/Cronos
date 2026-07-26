@@ -45,14 +45,10 @@ class NearFutureOptimizer:
         candidates = universe.candidates
         model = cp_model.CpModel()
         variables = {
-            candidate.candidate_key: model.NewBoolVar(
-                f"x_{index}"
-            )
+            candidate.candidate_key: model.NewBoolVar(f"x_{index}")
             for index, candidate in enumerate(candidates)
         }
-        items_by_key = {
-            (item.class_id, item.subject_id): item for item in ledger.items
-        }
+        items_by_key = {(item.class_id, item.subject_id): item for item in ledger.items}
         credited_minutes = {
             candidate.candidate_key: min(
                 candidate.duration_minutes,
@@ -100,12 +96,9 @@ class NearFutureOptimizer:
 
         minimum_duration = min(row.duration_minutes for row in candidates)
         target_by_demand = {
-            (item.class_id, item.subject_id): item.required_minutes
-            for item in ledger.items
+            (item.class_id, item.subject_id): item.required_minutes for item in ledger.items
         }
-        target_blocks = sum(
-            ceil(item.required_minutes / minimum_duration) for item in ledger.items
-        )
+        target_blocks = sum(ceil(item.required_minutes / minimum_duration) for item in ledger.items)
         demand_vars: dict[
             tuple[int, int],
             list[tuple[int, cp_model.IntVar]],
@@ -130,13 +123,9 @@ class NearFutureOptimizer:
         model.Maximize(total)
         status = solver.Solve(model)
         if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
-            return NearFutureResult(
-                (), "infeasible", 0, target_blocks, {}
-            )
+            return NearFutureResult((), "infeasible", 0, target_blocks, {})
         best_total = int(round(solver.ObjectiveValue()))
-        best_values = {
-            key: solver.Value(variable) for key, variable in variables.items()
-        }
+        best_values = {key: solver.Value(variable) for key, variable in variables.items()}
         model.Add(total == best_total)
         self._hint(model, variables, solver)
 
@@ -149,8 +138,7 @@ class NearFutureOptimizer:
         for candidate in candidates:
             model.Add(
                 latest_completion
-                >= (candidate.output_date - first_date).days
-                * variables[candidate.candidate_key]
+                >= (candidate.output_date - first_date).days * variables[candidate.candidate_key]
             )
         model.Minimize(latest_completion)
         solver = self._solver(stage_budget)
@@ -203,9 +191,7 @@ class NearFutureOptimizer:
                 },
             )
         best_date_cost = int(round(solver.ObjectiveValue()))
-        best_values = {
-            key: solver.Value(variable) for key, variable in variables.items()
-        }
+        best_values = {key: solver.Value(variable) for key, variable in variables.items()}
         if status != cp_model.OPTIMAL:
             return self._result_from_values(
                 candidates,
@@ -234,8 +220,7 @@ class NearFutureOptimizer:
         coverage_by_class: dict[int, cp_model.IntVar] = {}
         for class_id, target in class_targets.items():
             selected_minutes = sum(
-                duration * variable
-                for duration, variable in class_selected[class_id]
+                duration * variable for duration, variable in class_selected[class_id]
             )
             coverage = model.NewIntVar(0, 1000, f"class_coverage_{class_id}")
             model.Add(coverage * target <= selected_minutes * 1000)
@@ -252,7 +237,11 @@ class NearFutureOptimizer:
                 best_values,
                 target_blocks=target_blocks,
                 status="feasible",
-                metrics={"scheduled_minutes": best_total, "date_cost": best_date_cost, "optimization_stages": 3},
+                metrics={
+                    "scheduled_minutes": best_total,
+                    "date_cost": best_date_cost,
+                    "optimization_stages": 3,
+                },
             )
         best_values = {key: solver.Value(variable) for key, variable in variables.items()}
         best_minimum_coverage = solver.Value(minimum_coverage)
@@ -285,7 +274,11 @@ class NearFutureOptimizer:
                 best_values,
                 target_blocks=target_blocks,
                 status="feasible",
-                metrics={"scheduled_minutes": best_total, "date_cost": best_date_cost, "optimization_stages": 4},
+                metrics={
+                    "scheduled_minutes": best_total,
+                    "date_cost": best_date_cost,
+                    "optimization_stages": 4,
+                },
             )
         best_values = {key: solver.Value(variable) for key, variable in variables.items()}
         best_spread = solver.Value(coverage_spread)
@@ -312,11 +305,28 @@ class NearFutureOptimizer:
         solver = self._solver(stage_budget)
         status = solver.Solve(model)
         if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
-            return self._result_from_values(candidates, best_values, target_blocks=target_blocks, status="feasible", metrics={"scheduled_minutes": best_total, "optimization_stages": 5})
+            return self._result_from_values(
+                candidates,
+                best_values,
+                target_blocks=target_blocks,
+                status="feasible",
+                metrics={"scheduled_minutes": best_total, "optimization_stages": 5},
+            )
         best_values = {key: solver.Value(variable) for key, variable in variables.items()}
         best_workload = solver.Value(workload_cost)
         if status != cp_model.OPTIMAL:
-            return self._result_from_values(candidates, best_values, target_blocks=target_blocks, status="feasible", metrics={"scheduled_minutes": best_total, "workload_cost_minutes": best_workload, "optimization_stages": 6, "quality_optimization_complete": False})
+            return self._result_from_values(
+                candidates,
+                best_values,
+                target_blocks=target_blocks,
+                status="feasible",
+                metrics={
+                    "scheduled_minutes": best_total,
+                    "workload_cost_minutes": best_workload,
+                    "optimization_stages": 6,
+                    "quality_optimization_complete": False,
+                },
+            )
         model.Add(workload_cost == best_workload)
         self._hint(model, variables, solver)
 
@@ -325,11 +335,28 @@ class NearFutureOptimizer:
         solver = self._solver(stage_budget)
         status = solver.Solve(model)
         if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
-            return self._result_from_values(candidates, best_values, target_blocks=target_blocks, status="feasible", metrics={"scheduled_minutes": best_total, "optimization_stages": 6})
+            return self._result_from_values(
+                candidates,
+                best_values,
+                target_blocks=target_blocks,
+                status="feasible",
+                metrics={"scheduled_minutes": best_total, "optimization_stages": 6},
+            )
         best_values = {key: solver.Value(variable) for key, variable in variables.items()}
         best_gap_and_availability = solver.Value(gap_and_availability)
         if status != cp_model.OPTIMAL:
-            return self._result_from_values(candidates, best_values, target_blocks=target_blocks, status="feasible", metrics={"scheduled_minutes": best_total, "gap_and_availability_cost_minutes": best_gap_and_availability, "optimization_stages": 7, "quality_optimization_complete": False})
+            return self._result_from_values(
+                candidates,
+                best_values,
+                target_blocks=target_blocks,
+                status="feasible",
+                metrics={
+                    "scheduled_minutes": best_total,
+                    "gap_and_availability_cost_minutes": best_gap_and_availability,
+                    "optimization_stages": 7,
+                    "quality_optimization_complete": False,
+                },
+            )
         model.Add(gap_and_availability == best_gap_and_availability)
         self._hint(model, variables, solver)
 
@@ -402,11 +429,7 @@ class NearFutureOptimizer:
     ) -> NearFutureResult:
         selected = tuple(
             sorted(
-                (
-                    candidate
-                    for candidate in candidates
-                    if values.get(candidate.candidate_key, 0)
-                ),
+                (candidate for candidate in candidates if values.get(candidate.candidate_key, 0)),
                 key=lambda row: (
                     row.output_date,
                     row.start_minute,
@@ -418,9 +441,7 @@ class NearFutureOptimizer:
         )
         result_metrics = dict(metrics)
         result_metrics["scheduled_blocks"] = len(selected)
-        result_metrics["preference_score"] = sum(
-            row.availability_score for row in selected
-        )
+        result_metrics["preference_score"] = sum(row.availability_score for row in selected)
         return NearFutureResult(
             selected=selected,
             status=status,
@@ -471,7 +492,11 @@ class NearFutureOptimizer:
         starts = sorted(
             {
                 lunch_start,
-                *(row.end_minute for row in candidates if lunch_start <= row.end_minute <= lunch_end),
+                *(
+                    row.end_minute
+                    for row in candidates
+                    if lunch_start <= row.end_minute <= lunch_end
+                ),
             }
         )
         starts = [start for start in starts if start + minimum <= lunch_end]
@@ -483,20 +508,14 @@ class NearFutureOptimizer:
             grouped[("teacher", candidate.teacher_id, candidate.output_date)].append(candidate)
         for group_index, rows in enumerate(grouped.values()):
             choices = [
-                model.NewBoolVar(f"lunch_{group_index}_{index}")
-                for index in range(len(starts))
+                model.NewBoolVar(f"lunch_{group_index}_{index}") for index in range(len(starts))
             ]
             model.AddExactlyOne(choices)
-            for choice, break_start in zip(choices, starts):
+            for choice, break_start in zip(choices, starts, strict=False):
                 break_end = break_start + minimum
                 for candidate in rows:
-                    if (
-                        candidate.start_minute < break_end
-                        and candidate.end_minute > break_start
-                    ):
-                        model.Add(
-                            variables[candidate.candidate_key] + choice <= 1
-                        )
+                    if candidate.start_minute < break_end and candidate.end_minute > break_start:
+                        model.Add(variables[candidate.candidate_key] + choice <= 1)
 
     @staticmethod
     def _solver(seconds: float) -> cp_model.CpSolver:

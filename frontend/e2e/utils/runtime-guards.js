@@ -140,7 +140,7 @@ export function getConsoleError(consoleMessage, allowedFailures) {
     return null
   }
 
-  return `Browser console error: ${text}`
+  return `Browser console error: ${text} at ${normalizedText(consoleMessage.locationUrl)}`
 }
 
 export function getApiResponseError(response, allowedFailures) {

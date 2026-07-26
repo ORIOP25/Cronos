@@ -1,0 +1,11 @@
+*
+!requirements.txt
+!requirements-dev.txt
+!app/**
+!alembic/**
+!alembic.ini
+!scripts/member_reconcile.py
+!scripts/member_support.py
+!scripts/prepare_e2e_clerk_state.py
+!scripts/cleanup_e2e_clerk_invitations.py
+!scripts/__init__.py

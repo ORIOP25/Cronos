@@ -1,6 +1,6 @@
-from datetime import date
 import asyncio
 from dataclasses import replace
+from datetime import date
 
 import pytest
 
@@ -15,9 +15,6 @@ from app.services.scheduler_job_service import (
     SchedulerJobService,
 )
 from tests.conftest import TestingSessionLocal
-
-
-pytestmark = pytest.mark.integration
 
 
 async def _base_state(db_session):
@@ -42,7 +39,24 @@ async def _base_state(db_session):
     return organization, school_year, state
 
 
-@pytest.mark.asyncio
+async def _admin_membership(db_session, organization, email):
+    user = models.User(email=email)
+    db_session.add(user)
+    await db_session.flush()
+    membership = models.OrganizationMembership(
+        organization_id=organization.id,
+        account_id=user.id,
+        organization_display_name="Scheduler Admin",
+        lifecycle_status=models.MembershipLifecycleStatus.active,
+        access_status=models.MembershipAccessStatus.active,
+        can_admin=True,
+        can_teach=False,
+    )
+    db_session.add(membership)
+    await db_session.flush()
+    return membership
+
+
 async def test_strategy_selection_covers_first_debt_change_mixed_and_no_trigger(db_session):
     organization, school_year, state = await _base_state(db_session)
     service = SchedulerGenerationService(db_session)
@@ -93,22 +107,13 @@ async def test_strategy_selection_covers_first_debt_change_mixed_and_no_trigger(
         await service.select_strategy(organization.id)
 
 
-@pytest.mark.asyncio
 async def test_pending_draft_requires_confirmation_and_is_not_replaced_early(db_session):
     organization, school_year, state = await _base_state(db_session)
-    user = models.User(
-        organization_id=organization.id,
-        email="strategy-selector@example.com",
-        role=models.UserRole.admin,
-        is_active=True,
-        is_superuser=False,
-    )
-    db_session.add(user)
-    await db_session.flush()
+    membership = await _admin_membership(db_session, organization, "strategy-selector@example.com")
     job = models.ScheduleGenerationJob(
         organization_id=organization.id,
         school_year_id=school_year.id,
-        requested_by_user_id=user.id,
+        requested_by_membership_id=membership.id,
         strategy=models.ScheduleGenerationStrategy.COMPLETE_GENERATION,
         trigger_type=models.ScheduleGenerationTrigger.FIRST_GENERATION,
     )
@@ -125,7 +130,7 @@ async def test_pending_draft_requires_confirmation_and_is_not_replaced_early(db_
         projected_completion_date=date(2026, 6, 30),
         hard_end_date=school_year.hard_end_date,
         summary_json={},
-        created_by_user_id=user.id,
+        created_by_membership_id=membership.id,
     )
     db_session.add(draft)
     await db_session.flush()
@@ -147,26 +152,15 @@ async def test_pending_draft_requires_confirmation_and_is_not_replaced_early(db_
     assert state.pending_draft_id == draft.id
 
 
-@pytest.mark.asyncio
 async def test_job_creation_is_locked_idempotent_and_reuses_active_job(db_session):
     organization, _, _ = await _base_state(db_session)
-    user = models.User(
-        organization_id=organization.id,
-        email="job-requester@example.com",
-        role=models.UserRole.admin,
-        is_active=True,
-        is_superuser=False,
-    )
-    db_session.add(user)
-    await db_session.flush()
-    selection = await SchedulerGenerationService(db_session).select_strategy(
-        organization.id
-    )
+    membership = await _admin_membership(db_session, organization, "job-requester@example.com")
+    selection = await SchedulerGenerationService(db_session).select_strategy(organization.id)
     jobs = SchedulerJobService(db_session)
 
     first = await jobs.create_or_get_job(
         selection,
-        requested_by_user_id=user.id,
+        requested_by_membership_id=membership.id,
         idempotency_key=" request-1 ",
     )
     await db_session.commit()
@@ -177,7 +171,7 @@ async def test_job_creation_is_locked_idempotent_and_reuses_active_job(db_sessio
 
     retry = await jobs.create_or_get_job(
         selection,
-        requested_by_user_id=user.id,
+        requested_by_membership_id=membership.id,
         idempotency_key="request-1",
     )
     assert retry.created is False
@@ -185,7 +179,7 @@ async def test_job_creation_is_locked_idempotent_and_reuses_active_job(db_sessio
 
     concurrent = await jobs.create_or_get_job(
         selection,
-        requested_by_user_id=user.id,
+        requested_by_membership_id=membership.id,
     )
     assert concurrent.created is False
     assert concurrent.job.id == first.job.id
@@ -197,30 +191,19 @@ async def test_job_creation_is_locked_idempotent_and_reuses_active_job(db_sessio
     with pytest.raises(SchedulerJobIdempotencyConflictError):
         await jobs.create_or_get_job(
             conflicting,
-            requested_by_user_id=user.id,
+            requested_by_membership_id=membership.id,
             idempotency_key="request-1",
         )
 
 
-@pytest.mark.asyncio
 async def test_job_cancellation_is_tenant_scoped_and_idempotent(db_session):
     organization, _, _ = await _base_state(db_session)
-    user = models.User(
-        organization_id=organization.id,
-        email="job-cancel@example.com",
-        role=models.UserRole.admin,
-        is_active=True,
-        is_superuser=False,
-    )
-    db_session.add(user)
-    await db_session.flush()
-    selection = await SchedulerGenerationService(db_session).select_strategy(
-        organization.id
-    )
+    membership = await _admin_membership(db_session, organization, "job-cancel@example.com")
+    selection = await SchedulerGenerationService(db_session).select_strategy(organization.id)
     jobs = SchedulerJobService(db_session)
     handle = await jobs.create_or_get_job(
         selection,
-        requested_by_user_id=user.id,
+        requested_by_membership_id=membership.id,
     )
 
     requested = await jobs.request_cancellation(organization.id, handle.job.id)
@@ -233,29 +216,19 @@ async def test_job_cancellation_is_tenant_scoped_and_idempotent(db_session):
     assert repeated.cancellation_requested_at == first_requested_at
 
 
-@pytest.mark.asyncio
 async def test_simultaneous_job_admission_reuses_one_active_job(db_session):
     organization, _, _ = await _base_state(db_session)
-    user = models.User(
-        organization_id=organization.id,
-        email="job-race@example.com",
-        role=models.UserRole.admin,
-        is_active=True,
-        is_superuser=False,
-    )
-    db_session.add(user)
+    membership = await _admin_membership(db_session, organization, "job-race@example.com")
     await db_session.commit()
     organization_id = organization.id
-    user_id = user.id
-    selection = await SchedulerGenerationService(db_session).select_strategy(
-        organization_id
-    )
+    membership_id = membership.id
+    selection = await SchedulerGenerationService(db_session).select_strategy(organization_id)
 
     async def admit() -> tuple[int, bool]:
         async with TestingSessionLocal() as session:
             handle = await SchedulerJobService(session).create_or_get_job(
                 selection,
-                requested_by_user_id=user_id,
+                requested_by_membership_id=membership_id,
             )
             await session.commit()
             return handle.job.id, handle.created

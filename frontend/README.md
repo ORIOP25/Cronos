@@ -1,52 +1,68 @@
-# Cronos Frontend
+# Cronos Frontend Workspace
 
-Frontend React/Vite do Cronos.
+React 19 single-page application (SPA) for Cronos, built with Vite 8.
 
-## Stack
+## Technology Stack
 - React 19
 - Vite 8
 - React Router
-- Clerk
+- Clerk Authentication (`@clerk/clerk-react`)
 - CoreUI
-- React Query
+- TanStack React Query (`@tanstack/react-query`)
 - Vitest
-- Playwright
+- Playwright E2E
 
-## Scripts
+## Development Commands
+
 ```bash
+# Install dependencies
+npm install
+
+# Start local dev server
 npm run dev
+
+# Build production bundle
 npm run build
-npm run lint
-npm run lint:dead-code
+
+# Run Vitest unit tests
 npm run test
+
+# Run test coverage
 npm run test:coverage
+
+# Run ESLint check
+npm run lint
+
+# Run dead code check (Knip)
+npm run lint:dead-code
+
+# Run Playwright E2E tests
 npm run test:e2e
-npm audit
 ```
 
-## Marketing site publico
-A homepage publica vive em:
+## Public Marketing Site
+The public marketing landing page resides in:
+- Component: `src/pages/MarketingSite.jsx`
+- Styles: `src/pages/MarketingSite.css`
+- Static Graphics: `public/marketing/`
 
-- `src/pages/MarketingSite.jsx`
-- `src/pages/MarketingSite.css`
+Marketing site CSS classes use the `cronos-*` namespace to isolate styles from authenticated application pages.
 
-Assets publicos da landing:
+## Route Summary Table
 
-- `public/marketing/hero-laptop.png`
-- `public/marketing/product-panorama.png`
+| Path | View Component | Access Requirement |
+| :--- | :--- | :--- |
+| `/` | `MarketingSite.jsx` | Public |
+| `/login/*` | `SignInPage.jsx` | Public |
+| `/dashboard` | `Dashboard.jsx` | Authenticated |
+| `/schedules` | `Schedules.jsx` | Authenticated |
+| `/members` | `Members.jsx` | Admin (`Equipa`) |
+| `/config` | `SchoolConfig.jsx` | Admin |
+| `/my-availability` | `MyAvailability.jsx` | Teacher |
 
-Esta e a versao oficial atual do site publico. A implementacao antiga foi substituida por uma landing editorial V3 orientada a produto, com copy explicita para gestao de horarios no ensino profissional portugues.
+## Visual Baseline Generation
+Visual snapshot reference graphics reside in `documentation/06_frontend_ux/visual-baselines/`. Run CSS coverage scripts to update execution metrics:
 
-## Rotas
-- `/`: marketing site para utilizadores signed-out.
-- `/login`: autenticacao.
-- `/register`: registo.
-- Rotas autenticadas: dashboard, horarios, cursos, Equipa/membros, salas, sumarios, progresso, self-service do professor e configuracao.
-
-Nota de baseline: o lancamento substitui o CRUD admin visivel de `Professores` por `Equipa` e pela API `/members`. Endpoints/paginas de professor continuam apenas para self-service e operacao de dominio.
-
-## Notas de manutencao
-- O marketing site usa classes `cronos-*` para evitar conflitos com a aplicacao autenticada.
-- A app operacional continua a usar os tokens globais em `src/index.css`.
-- Evitar novas dependencias visuais sem necessidade clara.
-- Atualizar `documentation/06_frontend_ux/WEBSITE_INSTITUCIONAL_WBS.md` quando a estrutura publica mudar.
+```bash
+node scripts/capture-css-coverage.mjs
+```

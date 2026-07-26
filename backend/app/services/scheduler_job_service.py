@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -9,7 +9,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app import models
 from app.services.scheduler_generation_service import GenerationSelection
 from app.services.scheduler_state_service import SchedulerStateService
-
 
 ACTIVE_JOB_STATUSES = (
     models.ScheduleGenerationJobStatus.QUEUED,
@@ -49,17 +48,15 @@ class SchedulerJobService:
         self,
         selection: GenerationSelection,
         *,
-        requested_by_user_id: int,
+        requested_by_membership_id: int,
         idempotency_key: str | None = None,
     ) -> GenerationJobHandle:
         normalized_key = self._normalize_idempotency_key(idempotency_key)
         if normalized_key is not None:
             existing = await self._db.scalar(
                 select(models.ScheduleGenerationJob).where(
-                    models.ScheduleGenerationJob.organization_id
-                    == selection.organization_id,
-                    models.ScheduleGenerationJob.school_year_id
-                    == selection.school_year_id,
+                    models.ScheduleGenerationJob.organization_id == selection.organization_id,
+                    models.ScheduleGenerationJob.school_year_id == selection.school_year_id,
                     models.ScheduleGenerationJob.idempotency_key == normalized_key,
                 )
             )
@@ -104,7 +101,7 @@ class SchedulerJobService:
         job = models.ScheduleGenerationJob(
             organization_id=selection.organization_id,
             school_year_id=selection.school_year_id,
-            requested_by_user_id=requested_by_user_id,
+            requested_by_membership_id=requested_by_membership_id,
             strategy=selection.strategy,
             trigger_type=selection.trigger_type,
             scheduler_state_version_used=selection.scheduler_state_version,
@@ -142,7 +139,7 @@ class SchedulerJobService:
             models.ScheduleGenerationJobStatus.RUNNING,
         ):
             job.job_status = models.ScheduleGenerationJobStatus.CANCEL_REQUESTED
-            job.cancellation_requested_at = datetime.now(timezone.utc)
+            job.cancellation_requested_at = datetime.now(UTC)
             await self._db.flush()
         return job
 
@@ -178,7 +175,7 @@ class SchedulerJobService:
         if job is None:
             raise SchedulerJobNotFoundError("Generation job was not found.")
         if job.job_status == models.ScheduleGenerationJobStatus.QUEUED:
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             job.job_status = models.ScheduleGenerationJobStatus.FAILED
             job.started_at = now
             job.finished_at = now
@@ -198,9 +195,7 @@ class SchedulerJobService:
             return None
         normalized = value.strip()
         if not normalized:
-            raise SchedulerJobIdempotencyConflictError(
-                "Idempotency key cannot be blank."
-            )
+            raise SchedulerJobIdempotencyConflictError("Idempotency key cannot be blank.")
         if len(normalized) > 100:
             raise SchedulerJobIdempotencyConflictError(
                 "Idempotency key cannot exceed 100 characters."
@@ -216,8 +211,7 @@ class SchedulerJobService:
         if (
             job.strategy != selection.strategy
             or job.trigger_type != selection.trigger_type
-            or request_metadata.get("replace_pending_draft_id")
-            != selection.pending_draft_id
+            or request_metadata.get("replace_pending_draft_id") != selection.pending_draft_id
         ):
             raise SchedulerJobIdempotencyConflictError(
                 "The existing job key belongs to a different generation request."

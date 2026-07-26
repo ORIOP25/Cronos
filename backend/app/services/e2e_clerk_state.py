@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import os
 from dataclasses import asdict, dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Protocol
 
 from sqlalchemy import select
@@ -160,7 +160,9 @@ def _membership_user_id(raw_membership) -> str | None:
     return getattr(public_user_data, "user_id", None)
 
 
-def _to_clerk_membership(raw_membership, *, fallback_user_id: str | None = None) -> ClerkOrganizationMembership | None:
+def _to_clerk_membership(
+    raw_membership, *, fallback_user_id: str | None = None
+) -> ClerkOrganizationMembership | None:
     organization_id = _organization_id(raw_membership)
     user_id = _membership_user_id(raw_membership) or fallback_user_id
     if not organization_id or not user_id:
@@ -184,9 +186,7 @@ class SdkClerkDirectory:
 
         def _list_users():
             try:
-                return self._sdk.users.list(
-                    request={"email_address": [normalized], "limit": 10}
-                )
+                return self._sdk.users.list(request={"email_address": [normalized], "limit": 10})
             except TypeError:
                 return self._sdk.users.list(email_address=[normalized], limit=10)
 
@@ -199,7 +199,9 @@ class SdkClerkDirectory:
         matches = []
         for raw_user in raw_users:
             addresses = list(getattr(raw_user, "email_addresses", None) or [])
-            user_emails = {_email_address(item).strip().lower() for item in addresses if _email_address(item)}
+            user_emails = {
+                _email_address(item).strip().lower() for item in addresses if _email_address(item)
+            }
             primary = _primary_email(raw_user)
             if primary:
                 user_emails.add(primary.strip().lower())
@@ -216,7 +218,7 @@ class SdkClerkDirectory:
         raw_user = matches[0]
         primary_email = _primary_email(raw_user) or normalized
         return ClerkUser(
-            id=getattr(raw_user, "id"),
+            id=raw_user.id,
             email=primary_email.strip().lower(),
             name=_user_name(raw_user),
         )
@@ -245,10 +247,7 @@ class SdkClerkDirectory:
             raise E2EClerkPreflightError(
                 f"Could not list Clerk organization memberships for user {user_id!r}."
             ) from exc
-        memberships = [
-            _to_clerk_membership(item, fallback_user_id=user_id)
-            for item in _items(raw)
-        ]
+        memberships = [_to_clerk_membership(item, fallback_user_id=user_id) for item in _items(raw)]
         return [membership for membership in memberships if membership is not None]
 
     async def get_organization_membership(
@@ -268,10 +267,7 @@ class SdkClerkDirectory:
             raise E2EClerkPreflightError(
                 f"Could not read Clerk organization membership for user {user_id!r} in org {organization_id!r}."
             ) from exc
-        memberships = [
-            _to_clerk_membership(item, fallback_user_id=user_id)
-            for item in _items(raw)
-        ]
+        memberships = [_to_clerk_membership(item, fallback_user_id=user_id) for item in _items(raw)]
         return next((membership for membership in memberships if membership is not None), None)
 
 
@@ -335,7 +331,9 @@ async def _required_membership(
     return membership
 
 
-async def _upsert_organization(db: AsyncSession, clerk_org: ClerkOrganization) -> models.Organization:
+async def _upsert_organization(
+    db: AsyncSession, clerk_org: ClerkOrganization
+) -> models.Organization:
     organization = await db.scalar(
         select(models.Organization).where(models.Organization.clerk_org_id == clerk_org.id)
     )
@@ -358,12 +356,10 @@ async def _upsert_user(
     *,
     clerk_user: ClerkUser,
     organization_id: int,
-    role: models.UserRole,
+    role: str,
 ) -> models.User:
     normalized_email = _normalize_email(clerk_user.email)
-    user = await db.scalar(
-        select(models.User).where(models.User.clerk_user_id == clerk_user.id)
-    )
+    user = await db.scalar(select(models.User).where(models.User.clerk_user_id == clerk_user.id))
     if user is None:
         user = await db.scalar(select(models.User).where(models.User.email == normalized_email))
     if user is None:
@@ -375,10 +371,8 @@ async def _upsert_user(
     user.email = normalized_email
     user.name = clerk_user.name or user.name or normalized_email
     user.clerk_profile_name = clerk_user.name
-    user.organization_id = organization_id
-    user.role = role
-    user.is_active = True
-    user.last_clerk_sync_at = datetime.now(timezone.utc)
+    del organization_id, role
+    user.last_clerk_sync_at = datetime.now(UTC)
     return user
 
 
@@ -387,24 +381,8 @@ async def _sync_capabilities(
     membership: models.OrganizationMembership,
     desired: set[models.MembershipCapability],
 ) -> None:
-    existing_rows = (
-        await db.scalars(
-            select(models.OrganizationMembershipCapability).where(
-                models.OrganizationMembershipCapability.organization_membership_id == membership.id
-            )
-        )
-    ).all()
-    existing = {row.capability for row in existing_rows}
-    for row in existing_rows:
-        if row.capability not in desired:
-            await db.delete(row)
-    for capability in desired - existing:
-        db.add(
-            models.OrganizationMembershipCapability(
-                organization_membership_id=membership.id,
-                capability=capability,
-            )
-        )
+    membership.can_admin = models.MembershipCapability.admin in desired
+    membership.can_teach = models.MembershipCapability.teacher in desired
     await db.flush()
 
 
@@ -429,6 +407,13 @@ async def _upsert_membership(
             organization_id=organization.id,
             account_id=user.id,
             organization_display_name=display_name,
+            can_admin=capability == models.MembershipCapability.admin,
+            can_teach=capability == models.MembershipCapability.teacher,
+            teacher_access_mode=(
+                models.TeacherAccessMode.platform
+                if capability == models.MembershipCapability.teacher
+                else None
+            ),
         )
         db.add(membership)
         await db.flush()
@@ -436,7 +421,7 @@ async def _upsert_membership(
     membership.organization_display_name = display_name
     membership.lifecycle_status = models.MembershipLifecycleStatus.active
     membership.access_status = models.MembershipAccessStatus.active
-    membership.expected_clerk_role = expected_role
+    del expected_role
     membership.clerk_membership_id = clerk_membership.id
     membership.teacher_access_mode = (
         models.TeacherAccessMode.platform
@@ -459,22 +444,15 @@ async def _ensure_teacher_profile(
     teacher = await db.scalar(
         select(models.Teacher).where(models.Teacher.organization_membership_id == membership.id)
     )
-    if teacher is None and user.teacher_id:
-        existing = await db.get(models.Teacher, user.teacher_id)
-        if existing is not None and existing.organization_id == organization_id:
-            teacher = existing
-            teacher.organization_membership_id = membership.id
     if teacher is None:
         teacher = models.Teacher(
-            name=user.name or user.email,
             organization_id=organization_id,
             organization_membership_id=membership.id,
         )
         db.add(teacher)
         await db.flush()
 
-    teacher.name = user.name or user.email
-    user.teacher_id = teacher.id
+    membership.organization_display_name = user.name or user.email
     return teacher
 
 
@@ -518,13 +496,13 @@ async def prepare_e2e_clerk_state(
         db,
         clerk_user=admin,
         organization_id=organization.id,
-        role=models.UserRole.admin,
+        role="admin",
     )
     teacher_user = await _upsert_user(
         db,
         clerk_user=teacher,
         organization_id=organization.id,
-        role=models.UserRole.teacher,
+        role="teacher",
     )
     await db.flush()
 
@@ -552,7 +530,6 @@ async def prepare_e2e_clerk_state(
         user=teacher_user,
         membership=teacher_membership,
     )
-    admin_user.teacher_id = None
     await db.flush()
 
     return E2EClerkPrepResult(

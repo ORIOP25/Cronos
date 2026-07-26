@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -36,7 +36,9 @@ class SchedulerRecoveryService:
     ) -> models.PlannedRecoveryLink:
         block = await self._db.scalar(
             select(models.ScheduleDraftBlock)
-            .join(models.ScheduleDraft, models.ScheduleDraft.id == models.ScheduleDraftBlock.draft_id)
+            .join(
+                models.ScheduleDraft, models.ScheduleDraft.id == models.ScheduleDraftBlock.draft_id
+            )
             .where(
                 models.ScheduleDraftBlock.id == draft_block_id,
                 models.ScheduleDraftBlock.organization_id == organization_id,
@@ -47,7 +49,7 @@ class SchedulerRecoveryService:
                 models.ScheduleDraft.draft_state == models.ScheduleDraftState.PENDING,
                 models.ScheduleDraft.strategy == models.ScheduleGenerationStrategy.ADAPTIVE_REPAIR,
             )
-            .with_for_update()
+            .with_for_update(of=models.ScheduleDraft)
         )
         if block is None:
             raise RecoveryLinkIntegrityError(
@@ -66,9 +68,7 @@ class SchedulerRecoveryService:
                 models.PlannedRecoveryLink.planned_draft_block_id == block.id,
             )
         )
-        requested_minutes = (
-            block.duration_minutes if recovery_minutes is None else recovery_minutes
-        )
+        requested_minutes = block.duration_minutes if recovery_minutes is None else recovery_minutes
         if requested_minutes <= 0 or requested_minutes > block.duration_minutes:
             raise RecoveryLinkIntegrityError(
                 "Recovery minutes must be positive and cannot exceed the draft block duration."
@@ -76,8 +76,7 @@ class SchedulerRecoveryService:
         if existing is not None:
             if (
                 existing.debt_occurrence_id == block.recovery_source_occurrence_id
-                and existing.debt_occurrence_revision
-                == block.recovery_source_occurrence_revision
+                and existing.debt_occurrence_revision == block.recovery_source_occurrence_revision
                 and existing.planned_recovery_minutes == requested_minutes
             ):
                 return existing
@@ -91,8 +90,7 @@ class SchedulerRecoveryService:
                 entry
                 for entry in ledger.entries
                 if entry.occurrence_id == block.recovery_source_occurrence_id
-                and entry.occurrence_revision
-                == block.recovery_source_occurrence_revision
+                and entry.occurrence_revision == block.recovery_source_occurrence_revision
             ),
             None,
         )
@@ -108,8 +106,7 @@ class SchedulerRecoveryService:
                 models.PlannedRecoveryLink.debt_occurrence_id == debt_entry.occurrence_id,
                 models.PlannedRecoveryLink.debt_occurrence_revision
                 == debt_entry.occurrence_revision,
-                models.PlannedRecoveryLink.status
-                == models.PlannedRecoveryLinkStatus.PLANNED,
+                models.PlannedRecoveryLink.status == models.PlannedRecoveryLinkStatus.PLANNED,
                 models.PlannedRecoveryLink.planned_active_block_id.is_(None),
                 models.PlannedRecoveryLink.planned_draft_block_id.is_not(None),
             )
@@ -158,10 +155,9 @@ class SchedulerRecoveryService:
                     models.ScheduleDraftBlock.organization_id == organization_id,
                     models.ScheduleDraftBlock.school_year_id == school_year_id,
                     models.ScheduleDraftBlock.draft_id == draft_id,
-                    models.PlannedRecoveryLink.status
-                    == models.PlannedRecoveryLinkStatus.PLANNED,
+                    models.PlannedRecoveryLink.status == models.PlannedRecoveryLinkStatus.PLANNED,
                 )
-                .with_for_update()
+                .with_for_update(of=models.PlannedRecoveryLink)
             )
         ).all()
         activated = 0
@@ -177,11 +173,9 @@ class SchedulerRecoveryService:
                     models.ActiveScheduleBlock.id == active_block_id,
                     models.ActiveScheduleBlock.organization_id == organization_id,
                     models.ActiveScheduleBlock.school_year_id == school_year_id,
-                    models.ActiveScheduleBlock.source_draft_block_id
-                    == link.planned_draft_block_id,
+                    models.ActiveScheduleBlock.source_draft_block_id == link.planned_draft_block_id,
                     models.ActiveScheduleBlock.is_recovery_block.is_(True),
-                    models.ActiveScheduleBlock.status
-                    == models.ActiveScheduleBlockStatus.ACTIVE,
+                    models.ActiveScheduleBlock.status == models.ActiveScheduleBlockStatus.ACTIVE,
                 )
             )
             if active_block is None:
@@ -214,11 +208,10 @@ class SchedulerRecoveryService:
                     models.ScheduleDraftBlock.organization_id == organization_id,
                     models.ScheduleDraftBlock.school_year_id == school_year_id,
                     models.ScheduleDraftBlock.draft_id == draft_id,
-                    models.PlannedRecoveryLink.status
-                    == models.PlannedRecoveryLinkStatus.PLANNED,
+                    models.PlannedRecoveryLink.status == models.PlannedRecoveryLinkStatus.PLANNED,
                     models.PlannedRecoveryLink.planned_active_block_id.is_(None),
                 )
-                .with_for_update()
+                .with_for_update(of=models.PlannedRecoveryLink)
             )
         ).all()
         for link in links:
@@ -284,8 +277,7 @@ class SchedulerRecoveryService:
                     models.PlannedRecoveryLink.organization_id == organization_id,
                     models.PlannedRecoveryLink.school_year_id == school_year_id,
                     models.PlannedRecoveryLink.planned_active_block_id.in_(active_block_ids),
-                    models.PlannedRecoveryLink.status
-                    == models.PlannedRecoveryLinkStatus.PLANNED,
+                    models.PlannedRecoveryLink.status == models.PlannedRecoveryLinkStatus.PLANNED,
                 )
                 .with_for_update()
             )
@@ -317,12 +309,8 @@ class SchedulerRecoveryService:
         if link is None:
             raise RecoveryLinkIntegrityError("Active block has no planned recovery link.")
         if link.status == models.PlannedRecoveryLinkStatus.DELIVERED:
-            if (
-                link.delivered_lesson_log_id == lesson_log_id
-                and (
-                    delivered_minutes is None
-                    or delivered_minutes == link.delivered_recovery_minutes
-                )
+            if link.delivered_lesson_log_id == lesson_log_id and (
+                delivered_minutes is None or delivered_minutes == link.delivered_recovery_minutes
             ):
                 return link
             raise RecoveryLinkIntegrityError("Recovery was already delivered by other evidence.")
@@ -358,7 +346,7 @@ class SchedulerRecoveryService:
         if minutes <= 0 or minutes > link.planned_recovery_minutes:
             raise RecoveryLinkIntegrityError("Delivered recovery minutes are out of range.")
 
-        delivery_time = delivered_at or datetime.now(timezone.utc)
+        delivery_time = delivered_at or datetime.now(UTC)
         if delivery_time.tzinfo is None or delivery_time.utcoffset() is None:
             raise RecoveryLinkIntegrityError("Delivery time must be timezone-aware.")
 

@@ -1,13 +1,8 @@
 from datetime import date
 
-import pytest
-
 from app.services.scheduler_candidates import CandidateUniverseBuilder
 from app.services.scheduler_complete_demand import CompleteDemandLedgerBuilder
 from tests.test_scheduler_complete_demand import _snapshot as demand_snapshot
-
-
-pytestmark = pytest.mark.unit
 
 
 def _snapshot() -> dict:
@@ -74,9 +69,7 @@ def test_candidates_use_real_dates_and_prune_calendar_and_lunch():
 
 def test_candidates_prune_impossible_availability_and_fixed_conflicts():
     snapshot = _snapshot()
-    snapshot["teacher_availability"] = [
-        {"teacher_id": 3, "timeslot_id": 10, "score": -1}
-    ]
+    snapshot["teacher_availability"] = [{"teacher_id": 3, "timeslot_id": 10, "score": -1}]
     impossible = _build(snapshot)
     assert impossible.is_usable is False
     assert impossible.removed_by_reason["teacher_impossible"] == 2
@@ -152,8 +145,7 @@ def test_candidate_window_is_clamped_to_school_year_and_hard_end():
     )
 
     assert all(
-        date(2025, 9, 1) <= row.output_date <= date(2025, 9, 15)
-        for row in universe.candidates
+        date(2025, 9, 1) <= row.output_date <= date(2025, 9, 15) for row in universe.candidates
     )
 
 

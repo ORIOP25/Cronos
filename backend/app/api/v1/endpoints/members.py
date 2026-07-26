@@ -3,10 +3,9 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app import models, schemas
+from app import schemas
 from app.api import deps
 from app.services import member_service
-
 
 router = APIRouter()
 
@@ -15,7 +14,7 @@ router = APIRouter()
 @router.get("/", response_model=schemas.MemberListRead)
 async def list_members(
     db: Annotated[AsyncSession, Depends(deps.get_db)],
-    current_user: Annotated[models.User, Depends(deps.get_current_active_admin)],
+    current_user: deps.AdminActor,
     include_archived: bool = False,
     skip: Annotated[int, Query(ge=0)] = 0,
     limit: Annotated[int, Query(ge=1, le=200)] = 100,
@@ -32,7 +31,7 @@ async def list_members(
 @router.get("/me", response_model=schemas.CurrentMemberRead)
 async def get_current_member(
     db: Annotated[AsyncSession, Depends(deps.get_db)],
-    current_user: Annotated[models.User, Depends(deps.get_current_active_user)],
+    current_user: deps.ActiveActor,
 ):
     return await member_service.current_member(db, current_user=current_user)
 
@@ -42,13 +41,16 @@ async def get_current_member(
 async def create_member(
     member: schemas.MemberCreate,
     db: Annotated[AsyncSession, Depends(deps.get_db)],
-    current_user: Annotated[models.User, Depends(deps.get_current_active_admin)],
+    current_user: deps.AdminActor,
+    operation_service: deps.MemberAccessOperationDep,
 ):
     return await member_service.create_member(
         db,
         member,
         organization_id=current_user.organization_id,
         current_admin=current_user,
+        clerk_access=operation_service.clerk_access,
+        operation_service=operation_service,
     )
 
 
@@ -56,9 +58,11 @@ async def create_member(
 async def get_member(
     member_id: int,
     db: Annotated[AsyncSession, Depends(deps.get_db)],
-    current_user: Annotated[models.User, Depends(deps.get_current_active_admin)],
+    current_user: deps.AdminActor,
 ):
-    return await member_service.get_member_read(db, organization_id=current_user.organization_id, member_id=member_id)
+    return await member_service.get_member_read(
+        db, organization_id=current_user.organization_id, member_id=member_id
+    )
 
 
 @router.patch("/{member_id}", response_model=schemas.MemberRead)
@@ -66,7 +70,8 @@ async def update_member(
     member_id: int,
     member: schemas.MemberUpdate,
     db: Annotated[AsyncSession, Depends(deps.get_db)],
-    current_user: Annotated[models.User, Depends(deps.get_current_active_admin)],
+    current_user: deps.AdminActor,
+    operation_service: deps.MemberAccessOperationDep,
 ):
     return await member_service.update_member(
         db,
@@ -74,6 +79,8 @@ async def update_member(
         member,
         organization_id=current_user.organization_id,
         current_admin=current_user,
+        clerk_access=operation_service.clerk_access,
+        operation_service=operation_service,
     )
 
 
@@ -81,13 +88,16 @@ async def update_member(
 async def remove_member(
     member_id: int,
     db: Annotated[AsyncSession, Depends(deps.get_db)],
-    current_user: Annotated[models.User, Depends(deps.get_current_active_admin)],
+    current_user: deps.AdminActor,
+    operation_service: deps.MemberAccessOperationDep,
 ):
     return await member_service.remove_member(
         db,
         member_id,
         organization_id=current_user.organization_id,
         current_admin=current_user,
+        clerk_access=operation_service.clerk_access,
+        operation_service=operation_service,
     )
 
 
@@ -95,13 +105,16 @@ async def remove_member(
 async def resend_member_invitation(
     member_id: int,
     db: Annotated[AsyncSession, Depends(deps.get_db)],
-    current_user: Annotated[models.User, Depends(deps.get_current_active_admin)],
+    current_user: deps.AdminActor,
+    operation_service: deps.MemberAccessOperationDep,
 ):
     return await member_service.resend_invitation(
         db,
         member_id,
         organization_id=current_user.organization_id,
         current_admin=current_user,
+        clerk_access=operation_service.clerk_access,
+        operation_service=operation_service,
     )
 
 
@@ -109,13 +122,16 @@ async def resend_member_invitation(
 async def retry_member_sync(
     member_id: int,
     db: Annotated[AsyncSession, Depends(deps.get_db)],
-    current_user: Annotated[models.User, Depends(deps.get_current_active_admin)],
+    current_user: deps.AdminActor,
+    operation_service: deps.MemberAccessOperationDep,
 ):
     return await member_service.retry_sync(
         db,
         member_id,
         organization_id=current_user.organization_id,
         current_admin=current_user,
+        clerk_access=operation_service.clerk_access,
+        operation_service=operation_service,
     )
 
 
@@ -123,7 +139,8 @@ async def retry_member_sync(
 async def restore_member(
     member_id: int,
     db: Annotated[AsyncSession, Depends(deps.get_db)],
-    current_user: Annotated[models.User, Depends(deps.get_current_active_admin)],
+    current_user: deps.AdminActor,
+    operation_service: deps.MemberAccessOperationDep,
     restore: schemas.MemberRestore | None = None,
 ):
     return await member_service.restore_member(
@@ -132,4 +149,6 @@ async def restore_member(
         restore_in=restore,
         organization_id=current_user.organization_id,
         current_admin=current_user,
+        clerk_access=operation_service.clerk_access,
+        operation_service=operation_service,
     )

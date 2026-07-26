@@ -1,150 +1,77 @@
-"""
-Testes para endpoints de analytics, importação, lessons e substitutions.
-
-Cobre fluxos reais com dados, não apenas respostas vazias.
-"""
+from datetime import time
 
 import pytest
 from httpx import AsyncClient
-from unittest.mock import patch
 
-from app.config import settings
 from app import models
-from tests.conftest import mock_clerk_payload
+from app.config import settings
+from tests.conftest import create_teacher_profile
 
 API = settings.API_V1_STR
 
 
-@pytest.mark.asyncio
-class TestAnalyticsHeatmap:
-    async def test_heatmap_empty_when_no_teachers(
-        self, async_client: AsyncClient, admin_token_headers: dict
-    ):
-        r = await async_client.get(
-            f"{API}/analytics/availability-heatmap", headers=admin_token_headers
-        )
-        assert r.status_code == 200
-        assert r.json() == []
+async def test_heatmap_empty_for_authenticated_tenant(
+    async_client: AsyncClient,
+    clerk_admin_headers: dict,
+):
+    response = await async_client.get(
+        f"{API}/analytics/availability-heatmap",
+        headers=clerk_admin_headers,
+    )
+    assert response.status_code == 200
+    assert response.json() == []
 
-    async def test_heatmap_requires_auth(self, async_client: AsyncClient):
-        r = await async_client.get(f"{API}/analytics/availability-heatmap")
-        assert r.status_code == 401
 
-    async def test_heatmap_accessible_to_teacher(
-        self, async_client: AsyncClient, db_session
-    ):
-        """Heatmap é acessível a qualquer utilizador autenticado (não requer admin)."""
-        org = models.Organization(name="Heatmap Teacher Org", plan_status="active")
-        db_session.add(org)
-        await db_session.flush()
+async def test_heatmap_requires_authentication(async_client: AsyncClient):
+    response = await async_client.get(f"{API}/analytics/availability-heatmap")
+    assert response.status_code == 401
 
-        teacher = models.Teacher(name="Prof. Heatmap Teacher", organization_id=org.id)
-        db_session.add(teacher)
-        await db_session.flush()
 
-        teacher_cid = "heatmap_teacher_001"
-        teacher_user = models.User(
-            email="heatmap.prof.ci@escola.pt",
-            clerk_user_id=teacher_cid,
-            is_active=True,
-            role=models.UserRole.teacher,
-            organization_id=org.id,
-            teacher_id=teacher.id,
-        )
-        db_session.add(teacher_user)
-        await db_session.commit()
-
-        teacher_headers = {"Authorization": f"Bearer test_{teacher_cid}"}
-
-        with patch("app.api.deps.get_clerk_payload", return_value=mock_clerk_payload(teacher_cid, None, "teacher")):
-            r = await async_client.get(
-                f"{API}/analytics/availability-heatmap", headers=teacher_headers
-            )
-        assert r.status_code == 200
-
-    async def test_heatmap_with_teachers_and_timeslots(
-        self, async_client: AsyncClient, admin_token_headers: dict, db_session
-    ):
-        from datetime import time
-
-        teacher = models.Teacher(name="Prof. Dados Heatmap", organization_id=1)
-        db_session.add(teacher)
-        await db_session.flush()
-
-        timeslot = models.Timeslot(
-            day_of_week=0,
-            start_time=time(8, 0),
-            end_time=time(9, 0),
+async def test_heatmap_returns_canonical_availability(
+    async_client: AsyncClient,
+    clerk_admin_headers: dict,
+    db_session,
+):
+    teacher = await create_teacher_profile(
+        db_session,
+        organization_id=1,
+        name="Prof. Heatmap",
+    )
+    timeslot = models.Timeslot(
+        day_of_week=0,
+        start_time=time(8),
+        end_time=time(9),
+        organization_id=1,
+    )
+    db_session.add(timeslot)
+    await db_session.flush()
+    db_session.add(
+        models.Availability(
             organization_id=1,
-        )
-        db_session.add(timeslot)
-        await db_session.flush()
-
-        availability = models.Availability(
             teacher_id=teacher.id,
             timeslot_id=timeslot.id,
             score=models.PreferenceLevel.PREFERRED.value,
         )
-        db_session.add(availability)
-        await db_session.commit()
+    )
+    await db_session.commit()
 
-        r = await async_client.get(
-            f"{API}/analytics/availability-heatmap", headers=admin_token_headers
-        )
-        assert r.status_code == 200
-        data = r.json()
-        assert isinstance(data, list)
-        assert len(data) >= 1
-
-
-@pytest.mark.asyncio
-class TestImportEndpoints:
-    async def test_import_timeslots_requires_admin(
-        self, async_client: AsyncClient, admin_token_headers: dict
-    ):
-        r = await async_client.get(
-            f"{API}/import/timeslots", headers=admin_token_headers
-        )
-        assert r.status_code == 200
-
-    async def test_import_timeslots_no_auth(self, async_client: AsyncClient):
-        r = await async_client.get(f"{API}/import/timeslots")
-        assert r.status_code == 401
-
-    async def test_import_teachers_requires_admin(
-        self, async_client: AsyncClient, admin_token_headers: dict
-    ):
-        r = await async_client.get(
-            f"{API}/import/teachers", headers=admin_token_headers
-        )
-        assert r.status_code == 200
-
-    async def test_import_teachers_no_auth(self, async_client: AsyncClient):
-        r = await async_client.get(f"{API}/import/teachers")
-        assert r.status_code == 401
-
-    async def test_import_rooms_requires_admin(
-        self, async_client: AsyncClient, admin_token_headers: dict
-    ):
-        r = await async_client.get(
-            f"{API}/import/rooms", headers=admin_token_headers
-        )
-        assert r.status_code == 200
-
-    async def test_import_rooms_no_auth(self, async_client: AsyncClient):
-        r = await async_client.get(f"{API}/import/rooms")
-        assert r.status_code == 401
+    response = await async_client.get(
+        f"{API}/analytics/availability-heatmap",
+        headers=clerk_admin_headers,
+    )
+    assert response.status_code == 200
+    assert len(response.json()) == 1
 
 
-@pytest.mark.asyncio
-class TestLessonsEndpoints:
-    async def test_lessons_list_requires_admin(
-        self, async_client: AsyncClient, admin_token_headers: dict
-    ):
-        r = await async_client.get(f"{API}/lessons/", headers=admin_token_headers)
-        assert r.status_code == 200
-
-    async def test_lessons_list_no_auth(self, async_client: AsyncClient):
-        r = await async_client.get(f"{API}/lessons/")
-        assert r.status_code == 401
-
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/import/timeslots",
+        "/import/teachers",
+        "/import/rooms",
+        "/lessons/",
+    ],
+)
+async def test_legacy_read_aliases_are_removed(async_client: AsyncClient, path: str):
+    response = await async_client.get(f"{API}{path}")
+    assert response.status_code == 404

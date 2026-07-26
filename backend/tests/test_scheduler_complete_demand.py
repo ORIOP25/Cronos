@@ -16,8 +16,8 @@ def _snapshot() -> dict:
             {"id": 6, "capacity": 30, "type": "laboratory"},
         ],
         "module_accounting": [
-            {"id": 8, "subject_id": 2, "hours_total": 40, "sequence": 2},
-            {"id": 7, "subject_id": 2, "hours_total": 50, "sequence": 1},
+            {"id": 8, "subject_id": 2, "required_minutes": 2400, "sequence": 2},
+            {"id": 7, "subject_id": 2, "required_minutes": 3000, "sequence": 1},
         ],
     }
 
@@ -37,9 +37,7 @@ def test_complete_demand_ledger_preserves_module_sequence_and_full_hours():
 
 def test_complete_demand_uses_subject_remaining_after_module_progress():
     snapshot = _snapshot()
-    snapshot["class_progress"] = [
-        {"class_id": 1, "module_id": 7, "hours_completed": 25}
-    ]
+    snapshot["class_progress"] = [{"class_id": 1, "module_id": 7, "completed_minutes": 1500}]
 
     ledger = CompleteDemandLedgerBuilder().build(snapshot)
 
@@ -74,9 +72,7 @@ def test_complete_demand_cannot_pass_with_missing_required_modules():
 
 def test_complete_demand_reports_teacher_and_room_ineligibility():
     snapshot = _snapshot()
-    snapshot["teacher_subject_eligibility"] = [
-        {"teacher_id": 3, "subject_id": 99}
-    ]
+    snapshot["teacher_subject_eligibility"] = [{"teacher_id": 3, "subject_id": 99}]
     snapshot["rooms"] = [{"id": 4, "capacity": 10, "type": "normal"}]
 
     ledger = CompleteDemandLedgerBuilder().build(snapshot)

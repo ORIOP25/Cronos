@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 
 from app import models
 from app.scheduler.domain.contracts import (
@@ -97,9 +97,8 @@ class CompleteGenerationEngine:
         await context.ensure_can_continue()
         if not assembly.is_complete or assembly.projected_completion_date is None:
             return NoValidGenerationOutput(
-                blockers=assembly.blockers or (
-                    "The annual curriculum could not be fully placed before the hard end date.",
-                ),
+                blockers=assembly.blockers
+                or ("The annual curriculum could not be fully placed before the hard end date.",),
                 metrics={
                     "required_minutes": assembly.required_minutes,
                     "scheduled_minutes": assembly.scheduled_minutes,
@@ -107,9 +106,7 @@ class CompleteGenerationEngine:
                 },
             )
 
-        room_types = {
-            item.subject_id: item.required_room_type for item in ledger.items
-        }
+        room_types = {item.subject_id: item.required_room_type for item in ledger.items}
         blocks = tuple(
             DraftBlockSpec(
                 stable_block_key=block.stable_block_key,
@@ -169,7 +166,7 @@ class CompleteGenerationEngine:
     def _remaining_seconds(context: GenerationExecutionContext) -> float:
         return max(
             0.0,
-            (context.solve_deadline_at - datetime.now(timezone.utc)).total_seconds(),
+            (context.solve_deadline_at - datetime.now(UTC)).total_seconds(),
         )
 
 

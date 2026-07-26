@@ -1,14 +1,13 @@
 from dataclasses import dataclass
-from datetime import datetime, date, timedelta, time
+from datetime import date, datetime, time, timedelta
 
 import structlog
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import delete, func, or_, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models, schemas
 from app.core.exceptions import ConflictError
 from app.services.scheduler_state_service import record_scheduler_change
-
 
 logger = structlog.get_logger(__name__)
 
@@ -108,18 +107,23 @@ def _restore_availabilities_for_new_grid(
                 )
             )
 
+
 async def get_timeslots_by_org(db: AsyncSession, organization_id: int):
     # Ordenar por Dia da Semana e depois Hora de Início
-    stmt = select(models.Timeslot).where(models.Timeslot.organization_id == organization_id)\
+    stmt = (
+        select(models.Timeslot)
+        .where(models.Timeslot.organization_id == organization_id)
         .order_by(models.Timeslot.day_of_week, models.Timeslot.start_time)
+    )
     result = await db.execute(stmt)
     return result.scalars().all()
+
 
 async def create_timeslot(
     db: AsyncSession,
     item: schemas.TimeslotCreate,
     organization_id: int,
-    changed_by_user_id: int | None = None,
+    changed_by_membership_id: int | None = None,
 ):
     db_item = models.Timeslot(**item.model_dump(), organization_id=organization_id)
     db.add(db_item)
@@ -132,26 +136,26 @@ async def create_timeslot(
         operation=models.SchedulerStateChangeOperation.CREATE,
         before=None,
         after=_timeslot_snapshot(db_item),
-        changed_by_user_id=changed_by_user_id,
+        changed_by_membership_id=changed_by_membership_id,
     )
-    await db.commit()
+    await db.flush()
     await db.refresh(db_item)
     return db_item
 
+
 async def update_timeslot(
-    db: AsyncSession, 
-    timeslot_id: int, 
-    item: schemas.TimeslotUpdate, 
+    db: AsyncSession,
+    timeslot_id: int,
+    item: schemas.TimeslotUpdate,
     organization_id: int,
-    changed_by_user_id: int | None = None,
+    changed_by_membership_id: int | None = None,
 ):
     query = select(models.Timeslot).where(
-        models.Timeslot.id == timeslot_id,
-        models.Timeslot.organization_id == organization_id
+        models.Timeslot.id == timeslot_id, models.Timeslot.organization_id == organization_id
     )
     result = await db.execute(query)
     db_item = result.scalars().first()
-    
+
     if not db_item:
         return None
 
@@ -169,42 +173,48 @@ async def update_timeslot(
         operation=models.SchedulerStateChangeOperation.UPDATE,
         before=before,
         after=_timeslot_snapshot(db_item),
-        changed_by_user_id=changed_by_user_id,
+        changed_by_membership_id=changed_by_membership_id,
     )
-    await db.commit()
+    await db.flush()
     await db.refresh(db_item)
     return db_item
+
 
 async def delete_timeslot(
     db: AsyncSession,
     timeslot_id: int,
     organization_id: int,
-    changed_by_user_id: int | None = None,
+    changed_by_membership_id: int | None = None,
 ):
     """
     Remove um bloco horário individual.
     Lógica 'Soft': Limpa dependências fracas (Availability) mas bloqueia se houver dados críticos.
     """
-    result = await db.execute(select(models.Timeslot).where(models.Timeslot.id == timeslot_id, models.Timeslot.organization_id == organization_id))
+    result = await db.execute(
+        select(models.Timeslot).where(
+            models.Timeslot.id == timeslot_id, models.Timeslot.organization_id == organization_id
+        )
+    )
     item = result.scalars().first()
-    
+
     if not item:
         return "NOT_FOUND"
 
     # Verificações de Integridade (Firewall para delete individual)
-    
-    # 1. Horários Gerados (ScheduleOutput)
-    query_sched = select(models.ScheduleOutput).where(models.ScheduleOutput.timeslot_id == timeslot_id)
-    if (await db.execute(query_sched)).first():
-        return "DEPENDENCY_ERROR_SCHEDULE"
 
-    # 2. Substituições (Substitutions) - NOVO
-    query_subs = select(models.Substitution).where(models.Substitution.timeslot_id == timeslot_id)
-    if (await db.execute(query_subs)).first():
-        return "DEPENDENCY_ERROR_SUBSTITUTION"
+    for model in (
+        models.ActiveScheduleBlock,
+        models.ScheduleDraftBlock,
+        models.OperationalScheduleBlock,
+    ):
+        query = select(model.id).where(model.timeslot_id == timeslot_id)
+        if (await db.execute(query)).first():
+            return "DEPENDENCY_ERROR_SCHEDULE"
 
     # Limpeza de dependências fracas (Availability)
-    await db.execute(delete(models.Availability).where(models.Availability.timeslot_id == timeslot_id))
+    await db.execute(
+        delete(models.Availability).where(models.Availability.timeslot_id == timeslot_id)
+    )
 
     before = _timeslot_snapshot(item)
     await db.delete(item)
@@ -216,12 +226,14 @@ async def delete_timeslot(
         operation=models.SchedulerStateChangeOperation.DELETE,
         before=before,
         after=None,
-        changed_by_user_id=changed_by_user_id,
+        changed_by_membership_id=changed_by_membership_id,
     )
-    await db.commit()
+    await db.flush()
     return "SUCCESS"
 
+
 # --- GERAÇÃO EM MASSA (RESET ESTRUTURAL) ---
+
 
 def build_timeslot_signatures(
     settings: schemas.TimeslotBulkCreate,
@@ -245,11 +257,14 @@ async def _count_for_org(
     organization_id: int,
     *conditions,
 ) -> int:
-    return await db.scalar(
-        select(func.count())
-        .select_from(model)
-        .where(model.organization_id == organization_id, *conditions)
-    ) or 0
+    return (
+        await db.scalar(
+            select(func.count())
+            .select_from(model)
+            .where(model.organization_id == organization_id, *conditions)
+        )
+        or 0
+    )
 
 
 async def _protected_dependency_counts(
@@ -262,9 +277,9 @@ async def _protected_dependency_counts(
         "published_state": int(published),
         "draft_blocks": await _count_for_org(db, models.ScheduleDraftBlock, organization_id),
         "active_blocks": await _count_for_org(db, models.ActiveScheduleBlock, organization_id),
-        "operational_blocks": await _count_for_org(db, models.OperationalScheduleBlock, organization_id),
-        "schedule_outputs": await _count_for_org(db, models.ScheduleOutput, organization_id),
-        "substitutions": await _count_for_org(db, models.Substitution, organization_id),
+        "operational_blocks": await _count_for_org(
+            db, models.OperationalScheduleBlock, organization_id
+        ),
         "lesson_occurrences": await _count_for_org(
             db,
             models.LessonOccurrence,
@@ -283,9 +298,7 @@ async def _protected_dependency_counts(
     }
     constraints = list(
         await db.scalars(
-            select(models.Constraint).where(
-                models.Constraint.organization_id == organization_id
-            )
+            select(models.Constraint).where(models.Constraint.organization_id == organization_id)
         )
     )
     counts["slot_rules"] = sum(
@@ -301,7 +314,7 @@ async def preflight_grid_regeneration(
     db: AsyncSession,
     settings: schemas.TimeslotBulkCreate,
     organization_id: int,
-    changed_by_user_id: int | None = None,
+    changed_by_membership_id: int | None = None,
 ) -> GridRegenerationPlan:
     organization = await db.scalar(
         select(models.Organization)
@@ -339,9 +352,7 @@ async def preflight_grid_regeneration(
         )
     )
     desired = tuple(build_timeslot_signatures(settings))
-    current = tuple(
-        (slot.day_of_week, slot.start_time, slot.end_time) for slot in current_slots
-    )
+    current = tuple((slot.day_of_week, slot.start_time, slot.end_time) for slot in current_slots)
     plan = GridRegenerationPlan(
         organization_id=organization_id,
         desired_signatures=desired,
@@ -362,7 +373,7 @@ async def preflight_grid_regeneration(
         logger.info(
             "grid_regeneration_blocked",
             organization_id=organization_id,
-            actor_user_id=changed_by_user_id,
+            actor_membership_id=changed_by_membership_id,
             blockers=blockers,
         )
         message = SLOT_RULES_MESSAGE if set(blockers) == {"slot_rules"} else PROTECTED_GRID_MESSAGE
@@ -373,24 +384,20 @@ async def preflight_grid_regeneration(
 async def apply_grid_regeneration(
     db: AsyncSession,
     plan: GridRegenerationPlan,
-    changed_by_user_id: int | None = None,
+    changed_by_membership_id: int | None = None,
 ) -> int:
     if not plan.changed:
         return len(plan.desired_signatures)
 
     teacher_ids = await _get_org_teacher_ids(db, plan.organization_id)
-    previous_preferences = await _get_availability_preferences_by_time(
-        db, plan.organization_id
-    )
+    previous_preferences = await _get_availability_preferences_by_time(db, plan.organization_id)
     await db.execute(
         delete(models.Availability).where(
             models.Availability.organization_id == plan.organization_id
         )
     )
     await db.execute(
-        delete(models.Timeslot).where(
-            models.Timeslot.organization_id == plan.organization_id
-        )
+        delete(models.Timeslot).where(models.Timeslot.organization_id == plan.organization_id)
     )
     await db.flush()
 
@@ -420,7 +427,7 @@ async def apply_grid_regeneration(
         operation=models.SchedulerStateChangeOperation.BULK_IMPORT,
         before=plan.before_grid,
         after=[_timeslot_snapshot(slot) for slot in new_timeslots],
-        changed_by_user_id=changed_by_user_id,
+        changed_by_membership_id=changed_by_membership_id,
         metadata={"created_count": len(new_timeslots)},
     )
     await db.flush()
@@ -431,16 +438,15 @@ async def create_bulk_timeslots(
     db: AsyncSession,
     settings: schemas.TimeslotBulkCreate,
     organization_id: int,
-    changed_by_user_id: int | None = None,
+    changed_by_membership_id: int | None = None,
 ):
     """Legacy transactional wrapper around the shared protected replacement."""
     try:
         plan = await preflight_grid_regeneration(
-            db, settings, organization_id, changed_by_user_id
+            db, settings, organization_id, changed_by_membership_id
         )
-        count = await apply_grid_regeneration(db, plan, changed_by_user_id)
-        await db.commit()
+        count = await apply_grid_regeneration(db, plan, changed_by_membership_id)
+        await db.flush()
         return count
     except Exception:
-        await db.rollback()
         raise

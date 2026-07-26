@@ -1,13 +1,9 @@
 import json
 from types import SimpleNamespace
 
-import pytest
-
 from app.main import global_exception_handler
 
 
-@pytest.mark.unit
-@pytest.mark.asyncio
 async def test_global_exception_handler_hides_internal_error_details(monkeypatch):
     logged = {}
 
@@ -27,14 +23,10 @@ async def test_global_exception_handler_hides_internal_error_details(monkeypatch
     )
 
     assert response.status_code == 500
-    assert json.loads(response.body) == {
-        "detail": "Ocorreu um erro inesperado. Tente novamente."
-    }
+    assert json.loads(response.body) == {"detail": "Ocorreu um erro inesperado. Tente novamente."}
     assert b"database password" not in response.body
     assert logged["event"] == "Unhandled application error"
     assert logged["context"]["method"] == "GET"
     assert logged["context"]["path"] == "/api/v1/private"
     assert logged["context"]["error_type"] == "RuntimeError"
-    assert logged["context"]["exc_info"][1].args == (
-        "database password leaked in traceback",
-    )
+    assert logged["context"]["exc_info"][1].args == ("database password leaked in traceback",)

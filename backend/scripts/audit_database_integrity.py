@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Iterable
 
 from sqlalchemy import inspect, text
 
 from app import models  # noqa: F401 - registers SQLAlchemy metadata
-from app.db.database import Base, engine_sync
-
+from app.db.database import Base, engine_async
 
 IGNORED_TABLES = {"alembic_version"}
 
@@ -24,9 +24,7 @@ def _duplicate_groups_sql(
 ) -> str:
     quoted_columns = ", ".join(_quoted(preparer, column) for column in columns)
     quoted_table = _quoted(preparer, table)
-    populated_key = " AND ".join(
-        f"{_quoted(preparer, column)} IS NOT NULL" for column in columns
-    )
+    populated_key = " AND ".join(f"{_quoted(preparer, column)} IS NOT NULL" for column in columns)
     return (
         "SELECT COUNT(*) FROM ("
         f"SELECT {quoted_columns} FROM public.{quoted_table} "
@@ -42,8 +40,7 @@ def _orphan_count_sql(preparer, table: str, foreign_key: dict) -> str:
     remote_table = foreign_key["referred_table"]
 
     local_not_null = " AND ".join(
-        f"child.{_quoted(preparer, column)} IS NOT NULL"
-        for column in local_columns
+        f"child.{_quoted(preparer, column)} IS NOT NULL" for column in local_columns
     )
     reference_match = " AND ".join(
         f"parent.{_quoted(preparer, remote)} = child.{_quoted(preparer, local)}"
@@ -86,9 +83,7 @@ def _audit_unique_keys(connection, inspector, preparer, table: str) -> list[str]
             text(_duplicate_groups_sql(preparer, table, columns))
         ).scalar_one()
         if duplicate_groups:
-            errors.append(
-                f"{table} has {duplicate_groups} duplicate group(s) for {columns}"
-            )
+            errors.append(f"{table} has {duplicate_groups} duplicate group(s) for {columns}")
     return errors
 
 
@@ -108,29 +103,33 @@ def _audit_foreign_keys(connection, inspector, preparer, table: str) -> list[str
     return errors
 
 
-def audit_database() -> list[str]:
+def _audit_connection(connection) -> list[str]:
     errors: list[str] = []
 
-    with engine_sync.connect() as connection:
-        inspector = inspect(connection)
-        preparer = connection.dialect.identifier_preparer
-        actual_tables = set(inspector.get_table_names(schema="public")) - IGNORED_TABLES
-        expected_tables = set(Base.metadata.tables)
+    inspector = inspect(connection)
+    preparer = connection.dialect.identifier_preparer
+    actual_tables = set(inspector.get_table_names(schema="public")) - IGNORED_TABLES
+    expected_tables = set(Base.metadata.tables)
 
-        for table in sorted(expected_tables - actual_tables):
-            errors.append(f"missing table: public.{table}")
-        for table in sorted(actual_tables - expected_tables):
-            errors.append(f"unexpected table: public.{table}")
+    for table in sorted(expected_tables - actual_tables):
+        errors.append(f"missing table: public.{table}")
+    for table in sorted(actual_tables - expected_tables):
+        errors.append(f"unexpected table: public.{table}")
 
-        for table in sorted(actual_tables & expected_tables):
-            errors.extend(_audit_unique_keys(connection, inspector, preparer, table))
-            errors.extend(_audit_foreign_keys(connection, inspector, preparer, table))
+    for table in sorted(actual_tables & expected_tables):
+        errors.extend(_audit_unique_keys(connection, inspector, preparer, table))
+        errors.extend(_audit_foreign_keys(connection, inspector, preparer, table))
 
     return errors
 
 
+async def audit_database() -> list[str]:
+    async with engine_async.connect() as connection:
+        return await connection.run_sync(_audit_connection)
+
+
 def main() -> None:
-    errors = audit_database()
+    errors = asyncio.run(audit_database())
     if errors:
         details = "\n- ".join(errors)
         raise SystemExit(f"Database integrity audit failed:\n- {details}")

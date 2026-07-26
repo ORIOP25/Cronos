@@ -1,11 +1,11 @@
-import pytest
-from unittest.mock import patch
 from datetime import date, time
+
+import pytest
 
 
 @pytest.fixture(autouse=True)
 def _stub_clerk_onboarding_metadata(monkeypatch):
-    async def _noop(_clerk_user_id: str) -> None:
+    async def _noop(_clerk_user_id: str, _gateway=None) -> None:
         return None
 
     monkeypatch.setattr(
@@ -13,8 +13,7 @@ def _stub_clerk_onboarding_metadata(monkeypatch):
         _noop,
     )
 
-@pytest.mark.unit
-@pytest.mark.asyncio
+
 async def test_onboarding_clerk_metadata_uses_update_metadata(monkeypatch):
     from app.services.organization_service import mark_onboarding_complete_in_clerk
 
@@ -23,10 +22,12 @@ async def test_onboarding_clerk_metadata_uses_update_metadata(monkeypatch):
             self.calls = []
 
         def update_metadata(self, *, user_id, public_metadata):
-            self.calls.append({
-                "user_id": user_id,
-                "public_metadata": public_metadata,
-            })
+            self.calls.append(
+                {
+                    "user_id": user_id,
+                    "public_metadata": public_metadata,
+                }
+            )
 
     class FakeSdk:
         def __init__(self):
@@ -40,24 +41,25 @@ async def test_onboarding_clerk_metadata_uses_update_metadata(monkeypatch):
 
     await mark_onboarding_complete_in_clerk("user_onb_metadata")
 
-    assert fake_sdk.users.calls == [{
-        "user_id": "user_onb_metadata",
-        "public_metadata": {"onboardingComplete": True},
-    }]
+    assert fake_sdk.users.calls == [
+        {
+            "user_id": "user_onb_metadata",
+            "public_metadata": {"onboardingComplete": True},
+        }
+    ]
 
 
 # ── T19: GET status without token → 401 ────────────────────────
-@pytest.mark.asyncio
 async def test_onboarding_status_requires_auth(async_client):
     resp = await async_client.get("/api/v1/onboarding/status")
     assert resp.status_code == 401
 
 
 # ── T20: POST onboarding → creates settings ────────────────────
-@pytest.mark.asyncio
 async def test_onboarding_creates_settings(async_client, db_session):
-    from app import models
     from sqlalchemy.future import select
+
+    from app import models
     from tests.conftest import create_org_and_user
 
     org, _ = await create_org_and_user(
@@ -68,7 +70,7 @@ async def test_onboarding_creates_settings(async_client, db_session):
         org_name="Escola Onboard",
         clerk_org_id="org_onb_001",
     )
-
+    await db_session.commit()
     data = {
         "school_start_date": "2025-09-15",
         "school_hard_end_date": "2026-07-31",
@@ -77,9 +79,11 @@ async def test_onboarding_creates_settings(async_client, db_session):
         "lunch_min_duration": 60,
     }
 
-    with patch("app.api.deps.get_clerk_payload") as mock_payload:
-        mock_payload.return_value = {"sub": "user_onb_001", "o": {"id": "org_onb_001", "rol": "admin"}}
-        resp = await async_client.post("/api/v1/onboarding", json=data)
+    resp = await async_client.post(
+        "/api/v1/onboarding",
+        headers={"Authorization": "Bearer test_user_onb_001"},
+        json=data,
+    )
 
     assert resp.status_code == 200
     resp_data = resp.json()
@@ -105,7 +109,6 @@ async def test_onboarding_creates_settings(async_client, db_session):
 
 
 # ── T21: POST without token → 401 ─────────────────────────────
-@pytest.mark.asyncio
 async def test_onboarding_requires_auth(async_client):
     data = {
         "school_start_date": "2025-09-15",
@@ -119,7 +122,6 @@ async def test_onboarding_requires_auth(async_client):
 
 
 # ── T22: Teacher rejected → 403 ───────────────────────────────
-@pytest.mark.asyncio
 async def test_onboarding_requires_admin(async_client, db_session):
     from tests.conftest import create_org_and_user
 
@@ -131,7 +133,7 @@ async def test_onboarding_requires_admin(async_client, db_session):
         org_name="Escola T",
         clerk_org_id="org_t_001",
     )
-
+    await db_session.commit()
     data = {
         "school_start_date": "2025-09-15",
         "school_hard_end_date": "2026-07-31",
@@ -140,20 +142,21 @@ async def test_onboarding_requires_admin(async_client, db_session):
         "lunch_min_duration": 60,
     }
 
-    with patch("app.api.deps.get_clerk_payload") as mock_payload:
-        mock_payload.return_value = {"sub": "user_t_001", "o": {"id": "org_t_001", "rol": "member"}}
-        resp = await async_client.post("/api/v1/onboarding", json=data)
+    resp = await async_client.post(
+        "/api/v1/onboarding",
+        headers={"Authorization": "Bearer test_user_t_001"},
+        json=data,
+    )
 
     assert resp.status_code == 403
 
 
 # ── FASE 1.5: Onboarding fluxos de borda ──────────────────────
-
-@pytest.mark.asyncio
 async def test_onboarding_post_idempotent(async_client, db_session):
     """POST 2x → segunda vez é no-op, retorna 200 em ambas."""
-    from app import models
     from sqlalchemy.future import select as sa_select
+
+    from app import models
     from tests.conftest import create_org_and_user
 
     org, _ = await create_org_and_user(
@@ -164,7 +167,7 @@ async def test_onboarding_post_idempotent(async_client, db_session):
         org_name="Escola Idemp",
         clerk_org_id="org_onb_idem",
     )
-
+    await db_session.commit()
     data = {
         "school_start_date": "2025-09-15",
         "school_hard_end_date": "2026-07-31",
@@ -173,13 +176,11 @@ async def test_onboarding_post_idempotent(async_client, db_session):
         "lunch_min_duration": 60,
     }
 
-    with patch("app.api.deps.get_clerk_payload") as mock_payload:
-        mock_payload.return_value = {"sub": "user_onb_idem", "o": {"id": "org_onb_idem", "rol": "admin"}}
-        resp1 = await async_client.post("/api/v1/onboarding", json=data)
-        assert resp1.status_code == 200
-
-        resp2 = await async_client.post("/api/v1/onboarding", json=data)
-        assert resp2.status_code == 200
+    headers = {"Authorization": "Bearer test_user_onb_idem"}
+    resp1 = await async_client.post("/api/v1/onboarding", headers=headers, json=data)
+    assert resp1.status_code == 200
+    resp2 = await async_client.post("/api/v1/onboarding", headers=headers, json=data)
+    assert resp2.status_code == 200
 
     # Apenas 1 OrganizationSettings
     result = await db_session.execute(
@@ -190,7 +191,6 @@ async def test_onboarding_post_idempotent(async_client, db_session):
     assert len(result.all()) == 1
 
 
-@pytest.mark.asyncio
 async def test_onboarding_status_incomplete(async_client, db_session):
     """GET /onboarding/status sem settings → onboarding_complete: false."""
     from tests.conftest import create_org_and_user
@@ -203,17 +203,17 @@ async def test_onboarding_status_incomplete(async_client, db_session):
         org_name="Escola Incomp",
         clerk_org_id="org_onb_inc",
     )
+    await db_session.commit()
+    resp = await async_client.get(
+        "/api/v1/onboarding/status",
+        headers={"Authorization": "Bearer test_user_onb_inc"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["onboarding_complete"] is False
+    assert data["organization_name"] == "Escola Incomp"
 
-    with patch("app.api.deps.get_clerk_payload") as mock_payload:
-        mock_payload.return_value = {"sub": "user_onb_inc", "o": {"id": "org_onb_inc", "rol": "admin"}}
-        resp = await async_client.get("/api/v1/onboarding/status")
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["onboarding_complete"] is False
-        assert data["organization_name"] == "Escola Incomp"
 
-
-@pytest.mark.asyncio
 async def test_onboarding_status_complete_after_post(async_client, db_session):
     """POST onboarding → GET status → onboarding_complete: true."""
     from tests.conftest import create_org_and_user
@@ -226,7 +226,7 @@ async def test_onboarding_status_complete_after_post(async_client, db_session):
         org_name="Escola Comp",
         clerk_org_id="org_onb_comp",
     )
-
+    await db_session.commit()
     data = {
         "school_start_date": "2025-09-15",
         "school_hard_end_date": "2026-07-31",
@@ -235,22 +235,20 @@ async def test_onboarding_status_complete_after_post(async_client, db_session):
         "lunch_min_duration": 60,
     }
 
-    with patch("app.api.deps.get_clerk_payload") as mock_payload:
-        mock_payload.return_value = {"sub": "user_onb_comp", "o": {"id": "org_onb_comp", "rol": "admin"}}
-        await async_client.post("/api/v1/onboarding", json=data)
-        resp = await async_client.get("/api/v1/onboarding/status")
-        assert resp.status_code == 200
-        assert resp.json()["onboarding_complete"] is True
+    headers = {"Authorization": "Bearer test_user_onb_comp"}
+    await async_client.post("/api/v1/onboarding", headers=headers, json=data)
+    resp = await async_client.get("/api/v1/onboarding/status", headers=headers)
+    assert resp.status_code == 200
+    assert resp.json()["onboarding_complete"] is True
 
 
-@pytest.mark.asyncio
 async def test_global_account_can_exist_without_organization_membership(async_client, db_session):
     """User sem organization_id é rejeitado pela invariant final do schema."""
     from app import models
 
     user = models.User(
-        clerk_user_id="user_no_org_assoc", email="noorg@onb.pt",
-        role=None, organization_id=None, is_active=None,
+        clerk_user_id="user_no_org_assoc",
+        email="noorg@onb.pt",
     )
     db_session.add(user)
     await db_session.commit()

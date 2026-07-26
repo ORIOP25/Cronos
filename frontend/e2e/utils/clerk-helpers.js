@@ -1,4 +1,4 @@
-import { clerk } from '@clerk/testing/playwright'
+import { clerk, setupClerkTestingToken } from '@clerk/testing/playwright'
 import { expect } from '@playwright/test'
 import {
   getApiResponseError,
@@ -67,6 +67,7 @@ async function loginReal(page, emailEnvironmentVariable) {
   const emailAddress = requiredEnv(emailEnvironmentVariable)
   await expect.poll(
     () => observeClerkSignIn(async () => {
+      await setupClerkTestingToken({ page })
       await page.goto(BASE_URL)
       await clerk.signIn({ page, emailAddress })
     }),
@@ -87,6 +88,7 @@ export async function loginAsTeacherReal(page) {
 }
 
 export async function goTo(page, path) {
+  await setupClerkTestingToken({ page })
   await page.goto(`${BASE_URL}${path}`, { waitUntil: 'domcontentloaded' })
   await expectNoAppCrash(page)
 }

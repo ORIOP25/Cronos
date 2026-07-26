@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass
-from datetime import date, datetime, time, timezone
+from datetime import UTC, date, datetime, time
 from math import ceil
 from typing import Any
 
@@ -14,7 +14,7 @@ from app.scheduler.domain.quality import (
     quality_slots_from_snapshot,
 )
 from app.services.scheduler_candidates import CandidateUniverse, PlacementCandidate
-from app.services.scheduler_complete_demand import CompleteDemandLedger, CompleteDemandItem
+from app.services.scheduler_complete_demand import CompleteDemandItem, CompleteDemandLedger
 
 
 @dataclass(frozen=True)
@@ -62,15 +62,10 @@ class FarFutureFiller:
             "Candidate window does not intersect the school year.",
         }
         blockers = list(ledger.blockers) + [
-            blocker
-            for blocker in far_universe.blockers
-            if blocker not in capacity_blockers
+            blocker for blocker in far_universe.blockers if blocker not in capacity_blockers
         ]
         items = {(row.class_id, row.subject_id): row for row in ledger.items}
-        remaining = {
-            key: item.required_minutes
-            for key, item in items.items()
-        }
+        remaining = {key: item.required_minutes for key, item in items.items()}
         blocks: list[AssembledScheduleBlock] = []
         occupied: dict[tuple[str, int, date], list[tuple[int, int]]] = defaultdict(list)
         lunch = self._lunch_rule(snapshot.get("lunch_rules"))
@@ -120,7 +115,7 @@ class FarFutureFiller:
 
         timed_out = False
         for bucket_key in sorted(time_buckets):
-            if deadline_at is not None and datetime.now(timezone.utc) >= deadline_at:
+            if deadline_at is not None and datetime.now(UTC) >= deadline_at:
                 blockers.append("Far-future fill exhausted its time budget.")
                 timed_out = True
                 break
@@ -272,11 +267,7 @@ class FarFutureFiller:
             if class_id == candidate.class_id
         )
         credited_for_class = max(0, required_for_class - remaining_for_class)
-        pace = (
-            credited_for_class / required_for_class
-            if required_for_class > 0
-            else 1.0
-        )
+        pace = credited_for_class / required_for_class if required_for_class > 0 else 1.0
         item = items[key]
         normalized_remaining = remaining.get(key, 0) / max(1, item.required_minutes)
         predicted = self._quality_candidate(
@@ -349,7 +340,7 @@ class FarFutureFiller:
             ):
                 if proposals_left <= 0:
                     return result
-                if deadline_at is not None and datetime.now(timezone.utc) >= deadline_at:
+                if deadline_at is not None and datetime.now(UTC) >= deadline_at:
                     return result
                 proposals_left -= 1
                 if candidate.duration_minutes < current.duration_minutes:
@@ -358,8 +349,7 @@ class FarFutureFiller:
                 if replacement == current:
                     continue
                 proposed = [
-                    replacement if position == index else row
-                    for position, row in enumerate(result)
+                    replacement if position == index else row for position, row in enumerate(result)
                 ]
                 if not self._assembled_hard_valid(proposed, lunch):
                     continue
@@ -400,9 +390,7 @@ class FarFutureFiller:
         evaluator: ScheduleQualityEvaluator,
         blocks: list[AssembledScheduleBlock],
     ) -> tuple[int, int, int, tuple]:
-        metrics = evaluator.evaluate(
-            FarFutureFiller._quality_block(row) for row in blocks
-        )
+        metrics = evaluator.evaluate(FarFutureFiller._quality_block(row) for row in blocks)
         signature = tuple(
             (
                 row.output_date.toordinal(),
@@ -571,10 +559,7 @@ class FarFutureFiller:
         minimum_duration: int,
     ) -> float:
         key = (candidate.class_id, candidate.subject_id)
-        sessions = ceil(
-            max(0, remaining.get(key, 0))
-            / max(1, minimum_duration)
-        )
+        sessions = ceil(max(0, remaining.get(key, 0)) / max(1, minimum_duration))
         return candidate_counts.get(key, 0) / max(1, sessions)
 
     @staticmethod

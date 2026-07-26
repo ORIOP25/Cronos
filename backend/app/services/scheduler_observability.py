@@ -6,7 +6,6 @@ import structlog
 
 from app import models
 
-
 logger = structlog.get_logger(__name__)
 
 

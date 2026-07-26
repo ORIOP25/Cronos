@@ -1,73 +1,90 @@
+from typing import Annotated
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import List, Annotated
-from app import schemas, models
+
+from app import schemas
 from app.api import deps
 from app.services import subject_service
 
 router = APIRouter()
 
+
 # --- 1. Ler Disciplinas ---
-@router.get("/", response_model=List[schemas.SubjectRead])
+@router.get("/", response_model=list[schemas.SubjectRead])
 async def read_subjects(
-    db: Annotated[AsyncSession, Depends(deps.get_db)],
-    current_user: Annotated[models.User, Depends(deps.get_current_active_user)]
+    db: Annotated[AsyncSession, Depends(deps.get_db)], current_user: deps.ActiveActor
 ):
     # Qualquer utilizador autenticado pode ver a lista de disciplinas
     return await subject_service.get_subjects_by_org(db, current_user.organization_id)
 
+
 # --- 2. Criar Disciplina ---
 @router.post("/", response_model=schemas.SubjectRead)
 async def create_subject(
-    item: schemas.SubjectCreate, 
+    item: schemas.SubjectCreate,
     db: Annotated[AsyncSession, Depends(deps.get_db)],
-    current_user: Annotated[models.User, Depends(deps.get_current_active_admin)]
+    current_user: deps.AdminActor,
 ):
     return await subject_service.create_subject(
-        db, item, current_user.organization_id,
-        changed_by_user_id=current_user.id,
+        db,
+        item,
+        current_user.organization_id,
+        changed_by_membership_id=current_user.membership_id,
     )
 
+
 # --- 3. Atualizar Disciplina ---
-@router.patch("/{subject_id}", response_model=schemas.SubjectRead, responses={404: {"description": "Disciplina não encontrada"}})
+@router.patch(
+    "/{subject_id}",
+    response_model=schemas.SubjectRead,
+    responses={404: {"description": "Disciplina nÃ£o encontrada"}},
+)
 async def update_subject(
     subject_id: int,
     subject_in: schemas.SubjectUpdate,
     db: Annotated[AsyncSession, Depends(deps.get_db)],
-    current_user: Annotated[models.User, Depends(deps.get_current_active_admin)] # Apenas Admin
+    current_user: deps.AdminActor,  # Apenas Admin
 ):
     subject = await subject_service.update_subject(
-        db, 
-        subject_id, 
-        subject_in, 
+        db,
+        subject_id,
+        subject_in,
         current_user.organization_id,
-        changed_by_user_id=current_user.id,
+        changed_by_membership_id=current_user.membership_id,
     )
     if not subject:
-        raise HTTPException(status_code=404, detail="Disciplina não encontrada")
+        raise HTTPException(status_code=404, detail="Disciplina nÃ£o encontrada")
     return subject
 
+
 # --- 4. Apagar Disciplina   ---
-@router.delete("/{subject_id}", responses={404: {"description": "Disciplina não encontrada"}, 400: {"description": "Dependências existentes"}})
+@router.delete(
+    "/{subject_id}",
+    responses={
+        404: {"description": "Disciplina nÃ£o encontrada"},
+        400: {"description": "DependÃªncias existentes"},
+    },
+)
 async def delete_subject(
-    subject_id: int, 
+    subject_id: int,
     db: Annotated[AsyncSession, Depends(deps.get_db)],
-    current_user: Annotated[models.User, Depends(deps.get_current_active_admin)] # Apenas Admin
+    current_user: deps.AdminActor,  # Apenas Admin
 ):
     status = await subject_service.delete_subject(
-        db, 
-        subject_id, 
+        db,
+        subject_id,
         current_user.organization_id,
-        changed_by_user_id=current_user.id,
+        changed_by_membership_id=current_user.membership_id,
     )
-    
+
     if status == "NOT_FOUND":
-        raise HTTPException(status_code=404, detail="Disciplina não encontrada")
-    
+        raise HTTPException(status_code=404, detail="Disciplina nÃ£o encontrada")
+
     if status == "DEPENDENCY_ERROR":
         raise HTTPException(
-            status_code=400, 
-            detail="Não é possível apagar esta disciplina pois existem aulas associadas a ela."
+            status_code=400,
+            detail="NÃ£o Ã© possÃ­vel apagar esta disciplina pois existem aulas associadas a ela.",
         )
-    
+
     return {"message": "Disciplina removida com sucesso"}

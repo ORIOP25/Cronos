@@ -1,11 +1,9 @@
-# Domain Model
+# Domain Model Index
 
-Esta secao documenta as verdades de dominio que nao podem ser violadas.
+This section documents Portuguese Professional Education domain rules, team membership management, and school settings.
 
-## Conteudo principal
-- ENSINO_PROFISSIONAL_INVARIANTS.md: invariantes modulares, limites de autorizacao, exemplos praticos e impacto por layer.
+## Documents
 
-## Resultado esperado
-- reduzir regressao funcional;
-- evitar interpretacoes anuais-estaticas no dominio modular;
-- manter coerencia entre produto, API e persistencia.
+- [PROFESSIONAL_EDUCATION.md](PROFESSIONAL_EDUCATION.md): Courses, modules, hours, and non-linear schedule invariants.
+- [MEMBERS_AND_ACCESS.md](MEMBERS_AND_ACCESS.md): Organization team members, role capabilities, and Clerk sync.
+- [SCHOOL_CONFIGURATION.md](SCHOOL_CONFIGURATION.md): School year parameters, shift times, room types, and calendar events.

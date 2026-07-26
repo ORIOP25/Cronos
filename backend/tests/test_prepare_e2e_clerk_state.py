@@ -13,9 +13,6 @@ from app.services.e2e_clerk_state import (
 )
 
 
-pytestmark = pytest.mark.asyncio
-
-
 class FakeClerkDirectory:
     def __init__(self, *, users, organizations, memberships):
         self.users = {user.email: user for user in users}
@@ -29,19 +26,14 @@ class FakeClerkDirectory:
         return self.organizations.get(organization_id)
 
     async def list_user_organization_memberships(self, user_id):
-        return [
-            membership
-            for membership in self.memberships
-            if membership.user_id == user_id
-        ]
+        return [membership for membership in self.memberships if membership.user_id == user_id]
 
     async def get_organization_membership(self, organization_id, user_id):
         return next(
             (
                 membership
                 for membership in self.memberships
-                if membership.organization_id == organization_id
-                and membership.user_id == user_id
+                if membership.organization_id == organization_id and membership.user_id == user_id
             ),
             None,
         )
@@ -151,25 +143,26 @@ async def test_prepare_e2e_clerk_state_creates_admin_teacher_membership_idempote
     teacher_user = await db_session.scalar(
         select(models.User).where(models.User.clerk_user_id == "user_teacher")
     )
-    teacher_profile = await db_session.get(models.Teacher, teacher_user.teacher_id)
-
-    admin_caps = set(
-        await db_session.scalars(
-            select(models.OrganizationMembershipCapability.capability)
-            .join(models.OrganizationMembership)
-            .where(models.OrganizationMembership.account_id == admin_user.id)
+    admin_membership = await db_session.scalar(
+        select(models.OrganizationMembership).where(
+            models.OrganizationMembership.account_id == admin_user.id
         )
     )
-    teacher_caps = set(
-        await db_session.scalars(
-            select(models.OrganizationMembershipCapability.capability)
-            .join(models.OrganizationMembership)
-            .where(models.OrganizationMembership.account_id == teacher_user.id)
+    teacher_membership = await db_session.scalar(
+        select(models.OrganizationMembership).where(
+            models.OrganizationMembership.account_id == teacher_user.id
+        )
+    )
+    teacher_profile = await db_session.scalar(
+        select(models.Teacher).where(
+            models.Teacher.organization_membership_id == teacher_membership.id
         )
     )
 
-    assert admin_caps == {models.MembershipCapability.admin}
-    assert teacher_caps == {models.MembershipCapability.teacher}
+    assert admin_membership.can_admin is True
+    assert admin_membership.can_teach is False
+    assert teacher_membership.can_admin is False
+    assert teacher_membership.can_teach is True
     assert teacher_profile is not None
     assert teacher_profile.organization_membership_id is not None
 

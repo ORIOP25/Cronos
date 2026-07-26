@@ -132,11 +132,7 @@ class DisruptionScorer:
 
     @staticmethod
     def _urgency(before: dict | None, after: dict | None, school_today: date) -> float:
-        dates = [
-            date.fromisoformat(row["date"])
-            for row in (before, after)
-            if row is not None
-        ]
+        dates = [date.fromisoformat(row["date"]) for row in (before, after) if row is not None]
         days_away = max(0, min((value - school_today).days for value in dates))
         if days_away <= 7:
             return 2.0

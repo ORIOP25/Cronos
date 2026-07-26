@@ -17,7 +17,7 @@ class SchedulerConstraintRules:
     blockers: tuple[str, ...] = ()
 
     @classmethod
-    def from_snapshot(cls, snapshot: dict[str, Any]) -> "SchedulerConstraintRules":
+    def from_snapshot(cls, snapshot: dict[str, Any]) -> SchedulerConstraintRules:
         result = SchedulerConstraintPolicy.from_snapshot(snapshot)
         return cls(
             policy=result.policy or SchedulerConstraintPolicy(),

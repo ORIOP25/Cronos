@@ -2,51 +2,82 @@
 #
 # CRÍTICO: RATELIMIT_ENABLED deve ser definido ANTES de qualquer import da app.
 import os
-os.environ["RATELIMIT_ENABLED"] = "false"
+
+os.environ.setdefault("RATELIMIT_ENABLED", "false")
 os.environ["DATABASE_POOLING_ENABLED"] = "false"
 os.environ["SENTRY_DSN"] = ""
 
+from collections.abc import AsyncGenerator
+from uuid import uuid4
+
 import pytest
 import pytest_asyncio
-from typing import AsyncGenerator
-from uuid import uuid4
-from alembic import command
 from alembic.config import Config
-from httpx import AsyncClient, ASGITransport
-from sqlalchemy import create_engine
-from sqlalchemy import text
+from fastapi import Request
+from httpx import ASGITransport, AsyncClient
+from sqlalchemy import create_engine, select, text
 from sqlalchemy.engine import make_url
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.pool import NullPool
 
-from app.db.database import Base, ASYNC_DB_URL, SYNC_DB_URL
-from app.api.deps import get_db
-from app.main import app
+from alembic import command
 from app import models
-from app.models import UserRole
+from app.api import deps
+from app.config import settings
+from app.main import app
+from tests.db import validated_test_database_url
+
+get_db = deps.get_db
 
 # --- Engines de Teste ---
-test_engine = create_async_engine(ASYNC_DB_URL, poolclass=NullPool, echo=False)
-sync_test_engine = create_engine(SYNC_DB_URL, echo=False)
+_configured_test_url = os.environ.get("TEST_DATABASE_URL", str(settings.DATABASE_URL))
+_runtime_sync_test_url = (
+    make_url(_configured_test_url)
+    .set(drivername="postgresql+psycopg2")
+    .render_as_string(hide_password=False)
+)
+_migration_sync_test_url = (
+    make_url(str(settings.MIGRATION_DATABASE_URL or _runtime_sync_test_url))
+    .set(drivername="postgresql+psycopg2")
+    .render_as_string(hide_password=False)
+)
+_async_test_url = (
+    make_url(_migration_sync_test_url)
+    .set(drivername="postgresql+asyncpg")
+    .render_as_string(hide_password=False)
+)
+_runtime_async_test_url = (
+    make_url(_configured_test_url)
+    .set(drivername="postgresql+asyncpg")
+    .render_as_string(hide_password=False)
+)
+test_engine = create_async_engine(_async_test_url, poolclass=NullPool, echo=False)
+runtime_test_engine = create_async_engine(
+    _runtime_async_test_url,
+    poolclass=NullPool,
+    echo=False,
+)
+sync_test_engine = create_engine(_migration_sync_test_url, echo=False)
+runtime_sync_test_engine = create_engine(_runtime_sync_test_url, echo=False)
 SyncTestSession = sessionmaker(bind=sync_test_engine, autocommit=False, autoflush=False)
 
 TestingSessionLocal = async_sessionmaker(
-    bind=test_engine, class_=AsyncSession, expire_on_commit=False
+    bind=test_engine,
+    class_=AsyncSession,
+    expire_on_commit=False,
+    autoflush=False,
+)
+RuntimeTestingSessionLocal = async_sessionmaker(
+    bind=runtime_test_engine,
+    class_=AsyncSession,
+    expire_on_commit=False,
+    autoflush=False,
 )
 
 
 def _assert_safe_test_database() -> None:
-    db_name = make_url(SYNC_DB_URL).database or ""
-    if os.environ.get("ALLOW_NON_TEST_DATABASE") == "1":
-        return
-    if any(marker in db_name.lower() for marker in ("test", "ci")):
-        return
-    raise RuntimeError(
-        "Refusing to run destructive tests against a non-test database. "
-        f"Current database is {db_name!r}. Use a dedicated *_test database "
-        "or set ALLOW_NON_TEST_DATABASE=1 intentionally."
-    )
+    validated_test_database_url(os.environ.get("TEST_DATABASE_URL"))
 
 
 def _alembic_config() -> Config:
@@ -60,17 +91,21 @@ def _quote_identifier(identifier: str) -> str:
 
 def _truncate_public_tables() -> None:
     with sync_test_engine.begin() as conn:
-        rows = conn.execute(
-            text(
-                """
+        rows = (
+            conn.execute(
+                text(
+                    """
                 SELECT tablename
                 FROM pg_tables
                 WHERE schemaname = 'public'
                   AND tablename <> 'alembic_version'
                 ORDER BY tablename
                 """
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         if rows:
             table_list = ", ".join(f"public.{_quote_identifier(table)}" for table in rows)
             conn.execute(text(f"TRUNCATE TABLE {table_list} RESTART IDENTITY CASCADE"))
@@ -81,41 +116,32 @@ def migrated_test_database():
     """Build the test schema through Alembic so triggers/RLS/functions exist."""
     _assert_safe_test_database()
     with sync_test_engine.begin() as conn:
+        conn.execute(text("DROP SCHEMA IF EXISTS app_security CASCADE"))
         conn.execute(text("DROP SCHEMA IF EXISTS public CASCADE"))
         conn.execute(text("CREATE SCHEMA public"))
         conn.execute(text("GRANT ALL ON SCHEMA public TO public"))
     command.upgrade(_alembic_config(), "head")
     yield
+
+
+@pytest.fixture
+def clean_database(migrated_test_database):
+    yield
     _truncate_public_tables()
 
-
-@pytest.fixture(autouse=True)
-def _migrate_database_for_non_unit_tests(request):
-    if request.node.get_closest_marker("unit"):
-        return
-    request.getfixturevalue("migrated_test_database")
 
 # --- Fixture: BD Assíncrona ---
 @pytest_asyncio.fixture(scope="function")
-async def db_session() -> AsyncGenerator[AsyncSession, None]:
-    _truncate_public_tables()
+async def db_session(clean_database) -> AsyncGenerator[AsyncSession, None]:
     async with TestingSessionLocal() as session:
         yield session
-    _truncate_public_tables()
 
 
 @pytest_asyncio.fixture(scope="function")
-async def orm_schema_session() -> AsyncGenerator[AsyncSession, None]:
-    """Opt-in ORM-only fixture for tests that intentionally bypass Alembic."""
-    async with test_engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
-        await conn.run_sync(Base.metadata.create_all)
-    async with TestingSessionLocal() as session:
+async def runtime_db_session(clean_database) -> AsyncGenerator[AsyncSession, None]:
+    async with RuntimeTestingSessionLocal() as session:
         yield session
-    async with test_engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
-        await conn.execute(text("DROP TABLE IF EXISTS alembic_version"))
-    command.upgrade(_alembic_config(), "head")
+
 
 # --- Fixture: BD Síncrona ---
 @pytest.fixture
@@ -126,15 +152,59 @@ def sync_db(db_session):
     finally:
         db.close()
 
+
 # --- Fixture: Cliente API ---
 @pytest_asyncio.fixture(scope="function")
 async def async_client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
+    class _TestClerkGateway:
+        sdk = None
+
+    async def override_get_clerk_payload(request: Request) -> dict:
+        authorization = request.headers.get("authorization", "")
+        token = authorization.removeprefix("Bearer ")
+        principal = token.removeprefix("test_") if token else ""
+        clerk_user_id, separator, explicit_org_id = principal.partition("|")
+        clerk_org_id = explicit_org_id if separator else None
+        if clerk_user_id and clerk_org_id is None:
+            clerk_org_id = await db_session.scalar(
+                select(models.Organization.clerk_org_id)
+                .select_from(models.User)
+                .join(
+                    models.OrganizationMembership,
+                    models.OrganizationMembership.account_id == models.User.id,
+                )
+                .join(
+                    models.Organization,
+                    models.Organization.id == models.OrganizationMembership.organization_id,
+                )
+                .where(
+                    models.User.clerk_user_id == clerk_user_id,
+                    models.OrganizationMembership.lifecycle_status
+                    == models.MembershipLifecycleStatus.active,
+                )
+            )
+        payload = {"sub": clerk_user_id} if clerk_user_id else {}
+        if clerk_org_id:
+            payload["o"] = {"id": clerk_org_id}
+        return payload
+
     async def override_get_db():
-        yield db_session
+        async with RuntimeTestingSessionLocal() as session:
+            try:
+                yield session
+                await session.commit()
+            except Exception:
+                await session.rollback()
+                raise
+
     app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[deps.get_clerk_payload] = override_get_clerk_payload
+    app.dependency_overrides[deps.get_clerk_gateway] = _TestClerkGateway
     async with AsyncClient(transport=ASGITransport(app=app), base_url="https://test") as ac:
         yield ac
     app.dependency_overrides.pop(get_db, None)
+    app.dependency_overrides.pop(deps.get_clerk_payload, None)
+    app.dependency_overrides.pop(deps.get_clerk_gateway, None)
 
 
 @pytest_asyncio.fixture(scope="function")
@@ -147,6 +217,7 @@ async def real_async_client(db_session: AsyncSession) -> AsyncGenerator[AsyncCli
 # ============================================================
 # HELPERS COM CLERK (mock get_clerk_payload)
 # ============================================================
+
 
 async def create_org_and_user(
     db_session: AsyncSession,
@@ -163,54 +234,64 @@ async def create_org_and_user(
     from sqlalchemy.future import select as _sel
 
     async def _ensure_membership(org: models.Organization, user: models.User) -> None:
-        membership = (await db_session.execute(
-            _sel(models.OrganizationMembership).where(
-                models.OrganizationMembership.organization_id == org.id,
-                models.OrganizationMembership.account_id == user.id,
+        membership = (
+            await db_session.execute(
+                _sel(models.OrganizationMembership).where(
+                    models.OrganizationMembership.organization_id == org.id,
+                    models.OrganizationMembership.account_id == user.id,
+                )
             )
-        )).scalar_one_or_none()
+        ).scalar_one_or_none()
         if membership is None:
-            capability = models.MembershipCapability.admin if role == "admin" else models.MembershipCapability.teacher
-            expected_role = models.ClerkOrganizationRole.admin if role == "admin" else models.ClerkOrganizationRole.member
+            capability = (
+                models.MembershipCapability.admin
+                if role == "admin"
+                else models.MembershipCapability.teacher
+            )
             membership = models.OrganizationMembership(
                 organization_id=org.id,
                 account_id=user.id,
                 organization_display_name=user.name or user.email,
                 lifecycle_status=models.MembershipLifecycleStatus.active,
                 access_status=models.MembershipAccessStatus.active,
-                teacher_access_mode=models.TeacherAccessMode.platform if capability == models.MembershipCapability.teacher else None,
-                expected_clerk_role=expected_role,
+                teacher_access_mode=models.TeacherAccessMode.platform
+                if capability == models.MembershipCapability.teacher
+                else None,
+                can_admin=capability == models.MembershipCapability.admin,
+                can_teach=capability == models.MembershipCapability.teacher,
             )
             db_session.add(membership)
             await db_session.flush()
-            db_session.add(models.OrganizationMembershipCapability(
-                organization_membership_id=membership.id,
-                capability=capability,
-            ))
-        if user.teacher_id:
-            teacher = await db_session.get(models.Teacher, user.teacher_id)
+        if teacher_id:
+            teacher = await db_session.get(models.Teacher, teacher_id)
             if teacher is not None and teacher.organization_membership_id is None:
                 teacher.organization_membership_id = membership.id
 
     # Verificar se user já existe
-    existing_user = (await db_session.execute(
-        _sel(models.User).where(models.User.clerk_user_id == clerk_user_id)
-    )).scalar_one_or_none()
+    existing_user = (
+        await db_session.execute(
+            _sel(models.User).where(models.User.clerk_user_id == clerk_user_id)
+        )
+    ).scalar_one_or_none()
     if existing_user is not None:
-        org = (await db_session.execute(
-            _sel(models.Organization).where(models.Organization.id == existing_user.organization_id)
-        )).scalar_one_or_none()
+        org = (
+            await db_session.execute(
+                _sel(models.Organization)
+                .join(models.OrganizationMembership)
+                .where(models.OrganizationMembership.account_id == existing_user.id)
+            )
+        ).scalar_one_or_none()
         if org is not None:
-            CLERK_ORG_BY_USER[clerk_user_id] = org.clerk_org_id
             await _ensure_membership(org, existing_user)
-            await db_session.commit()
         return org, existing_user
 
     # Verificar se org já existe
     c_org_id = clerk_org_id or f"org_{uuid4().hex[:8]}"
-    org = (await db_session.execute(
-        _sel(models.Organization).where(models.Organization.clerk_org_id == c_org_id)
-    )).scalar_one_or_none()
+    org = (
+        await db_session.execute(
+            _sel(models.Organization).where(models.Organization.clerk_org_id == c_org_id)
+        )
+    ).scalar_one_or_none()
 
     if org is None:
         org = models.Organization(
@@ -225,16 +306,10 @@ async def create_org_and_user(
         clerk_user_id=clerk_user_id,
         email=email or f"{clerk_user_id}@test.com",
         name=name or "Test User",
-        role=role,
-        organization_id=org.id,
-        teacher_id=teacher_id,
-        is_active=True,
     )
     db_session.add(user)
     await db_session.flush()
-    CLERK_ORG_BY_USER[clerk_user_id] = org.clerk_org_id
     await _ensure_membership(org, user)
-    await db_session.commit()
     return org, user
 
 
@@ -251,76 +326,20 @@ async def ensure_membership_capabilities(
     """Create or update the local membership shape used by the Clerk baseline."""
     from sqlalchemy.future import select as _sel
 
+    can_teach = models.MembershipCapability.teacher in capabilities
+    if can_teach and teacher_access_mode is None:
+        teacher_access_mode = models.TeacherAccessMode.platform
+
     organization = await db_session.get(models.Organization, organization_id)
     if organization is not None and not organization.clerk_org_id:
         organization.clerk_org_id = f"org_test_{organization_id}"
         await db_session.flush()
-    if organization is not None and user.clerk_user_id:
-        CLERK_ORG_BY_USER[user.clerk_user_id] = organization.clerk_org_id
-
-    membership = (await db_session.execute(
-        _sel(models.OrganizationMembership).where(
-            models.OrganizationMembership.organization_id == organization_id,
-            models.OrganizationMembership.account_id == user.id,
-        )
-    )).scalar_one_or_none()
-    if membership is None:
-        membership = models.OrganizationMembership(
-            organization_id=organization_id,
-            account_id=user.id,
-            organization_display_name=display_name or user.name or user.email,
-            lifecycle_status=models.MembershipLifecycleStatus.active,
-            access_status=models.MembershipAccessStatus.active,
-            teacher_access_mode=teacher_access_mode,
-            expected_clerk_role=expected_clerk_role,
-        )
-        db_session.add(membership)
-        await db_session.flush()
-    else:
-        membership.lifecycle_status = models.MembershipLifecycleStatus.active
-        membership.access_status = models.MembershipAccessStatus.active
-        membership.teacher_access_mode = teacher_access_mode
-        membership.expected_clerk_role = expected_clerk_role
-
-    existing = set((await db_session.execute(
-        _sel(models.OrganizationMembershipCapability.capability).where(
-            models.OrganizationMembershipCapability.organization_membership_id == membership.id,
-        )
-    )).scalars().all())
-    for capability in capabilities:
-        if capability not in existing:
-            db_session.add(models.OrganizationMembershipCapability(
-                organization_membership_id=membership.id,
-                capability=capability,
-            ))
-    await db_session.flush()
-    return membership
-
-
-def ensure_membership_capabilities_sync(
-    db_session,
-    *,
-    organization_id: int,
-    user: models.User,
-    capabilities: list[models.MembershipCapability],
-    display_name: str | None = None,
-    expected_clerk_role: models.ClerkOrganizationRole | None = None,
-    teacher_access_mode: models.TeacherAccessMode | None = None,
-) -> models.OrganizationMembership:
-    """Synchronous twin for legacy service tests that now need Clerk memberships."""
-    from sqlalchemy import select as _sel
-
-    organization = db_session.get(models.Organization, organization_id)
-    if organization is not None and not organization.clerk_org_id:
-        organization.clerk_org_id = f"org_test_{organization_id}"
-        db_session.flush()
-    if organization is not None and user.clerk_user_id:
-        CLERK_ORG_BY_USER[user.clerk_user_id] = organization.clerk_org_id
-
-    membership = db_session.execute(
-        _sel(models.OrganizationMembership).where(
-            models.OrganizationMembership.organization_id == organization_id,
-            models.OrganizationMembership.account_id == user.id,
+    membership = (
+        await db_session.execute(
+            _sel(models.OrganizationMembership).where(
+                models.OrganizationMembership.organization_id == organization_id,
+                models.OrganizationMembership.account_id == user.id,
+            )
         )
     ).scalar_one_or_none()
     if membership is None:
@@ -331,28 +350,18 @@ def ensure_membership_capabilities_sync(
             lifecycle_status=models.MembershipLifecycleStatus.active,
             access_status=models.MembershipAccessStatus.active,
             teacher_access_mode=teacher_access_mode,
-            expected_clerk_role=expected_clerk_role,
+            can_admin=models.MembershipCapability.admin in capabilities,
+            can_teach=can_teach,
         )
         db_session.add(membership)
-        db_session.flush()
+        await db_session.flush()
     else:
         membership.lifecycle_status = models.MembershipLifecycleStatus.active
         membership.access_status = models.MembershipAccessStatus.active
         membership.teacher_access_mode = teacher_access_mode
-        membership.expected_clerk_role = expected_clerk_role
-
-    existing = set(db_session.execute(
-        _sel(models.OrganizationMembershipCapability.capability).where(
-            models.OrganizationMembershipCapability.organization_membership_id == membership.id,
-        )
-    ).scalars().all())
-    for capability in capabilities:
-        if capability not in existing:
-            db_session.add(models.OrganizationMembershipCapability(
-                organization_membership_id=membership.id,
-                capability=capability,
-            ))
-    db_session.flush()
+        membership.can_admin = models.MembershipCapability.admin in capabilities
+        membership.can_teach = can_teach
+    await db_session.flush()
     return membership
 
 
@@ -367,20 +376,46 @@ async def create_teacher_profile(
     """Create a teacher domain profile directly for tests that are not member-CRUD tests."""
     from sqlalchemy.future import select as _sel
 
+    if organization_membership_id is None:
+        account = models.User(
+            email=f"teacher-{uuid4().hex}@test.invalid",
+            name=name,
+        )
+        db_session.add(account)
+        await db_session.flush()
+        membership = models.OrganizationMembership(
+            organization_id=organization_id,
+            account_id=account.id,
+            organization_display_name=name,
+            lifecycle_status=models.MembershipLifecycleStatus.active,
+            access_status=models.MembershipAccessStatus.none,
+            teacher_access_mode=models.TeacherAccessMode.scheduler_only,
+            can_admin=False,
+            can_teach=True,
+        )
+        db_session.add(membership)
+        await db_session.flush()
+        organization_membership_id = membership.id
+
     teacher = models.Teacher(
-        name=name,
         organization_id=organization_id,
         organization_membership_id=organization_membership_id,
     )
     db_session.add(teacher)
     await db_session.flush()
     if subject_ids:
-        valid_subject_ids = set((await db_session.execute(
-            _sel(models.Subject.id).where(
-                models.Subject.organization_id == organization_id,
-                models.Subject.id.in_(subject_ids),
+        valid_subject_ids = set(
+            (
+                await db_session.execute(
+                    _sel(models.Subject.id).where(
+                        models.Subject.organization_id == organization_id,
+                        models.Subject.id.in_(subject_ids),
+                    )
+                )
             )
-        )).scalars().all())
+            .scalars()
+            .all()
+        )
         for subject_id in valid_subject_ids:
             await db_session.execute(
                 models.teacher_subject_link.insert().values(
@@ -392,15 +427,6 @@ async def create_teacher_profile(
     return teacher
 
 
-def mock_clerk_payload(clerk_user_id: str, org_id: str | None = None, role: str = "admin") -> dict:
-    payload = {"sub": clerk_user_id}
-    if org_id is None:
-        org_id = CLERK_ORG_BY_USER.get(clerk_user_id)
-    if org_id:
-        payload["o"] = {"id": org_id, "rol": role}
-    return payload
-
-
 # ============================================================
 # FIXTURES DE AUTENTICAÇÃO (Fase 3 — com mock + user DB)
 # ============================================================
@@ -408,59 +434,34 @@ def mock_clerk_payload(clerk_user_id: str, org_id: str | None = None, role: str 
 ADMIN_USER_ID = "user_admin_001"
 TEACHER_USER_ID = "user_teacher_001"
 MOCK_ORG_ID = "org_test_001"
-CLERK_ORG_BY_USER: dict[str, str] = {}
 
 
 @pytest_asyncio.fixture
-async def clerk_admin_headers(db_session: AsyncSession, monkeypatch):
-    """Headers de admin com mock + user criado automaticamente na DB."""
-    org, _ = await create_org_and_user(
+async def clerk_admin_headers(db_session: AsyncSession):
+    """Headers de admin com utilizador e membership persistidos na BD."""
+    await create_org_and_user(
         db_session,
         clerk_user_id=ADMIN_USER_ID,
         email="admin@test.com",
         role="admin",
         clerk_org_id=MOCK_ORG_ID,
     )
-    payload = mock_clerk_payload(ADMIN_USER_ID, org.clerk_org_id, "admin")
-
-    async def _mock_payload(_request):
-        return payload
-
-    monkeypatch.setattr("app.api.deps.get_clerk_payload", _mock_payload)
+    await db_session.commit()
     yield {"Authorization": f"Bearer test_{ADMIN_USER_ID}"}
 
 
 @pytest_asyncio.fixture
-async def clerk_teacher_headers(db_session: AsyncSession, monkeypatch):
-    """Headers de teacher com mock + user criado automaticamente na DB."""
-    org, _ = await create_org_and_user(
+async def clerk_teacher_headers(db_session: AsyncSession):
+    """Headers de professor com utilizador e membership persistidos na BD."""
+    await create_org_and_user(
         db_session,
         clerk_user_id=TEACHER_USER_ID,
         email="teacher@test.com",
         role="teacher",
         clerk_org_id=MOCK_ORG_ID + "_t",
     )
-    payload = mock_clerk_payload(TEACHER_USER_ID, org.clerk_org_id, "member")
-
-    async def _mock_payload(_request):
-        return payload
-
-    monkeypatch.setattr("app.api.deps.get_clerk_payload", _mock_payload)
+    await db_session.commit()
     yield {"Authorization": f"Bearer test_{TEACHER_USER_ID}"}
-
-
-@pytest.fixture
-def admin_token_headers(clerk_admin_headers) -> dict:
-    """Alias compatível com testes que usam admin_token_headers: dict."""
-    return clerk_admin_headers
-
-
-@pytest.fixture
-def clerk_auth_headers(clerk_admin_headers):
-    """Factory de headers — compatível com código existente."""
-    def _headers(clerk_user_id="user_test_admin", org_id="org_test_1", role="admin"):
-        return clerk_admin_headers
-    return _headers
 
 
 async def create_teacher_user(
@@ -473,14 +474,33 @@ async def create_teacher_user(
     teacher_id: int,
 ) -> models.User:
     """Cria um User com role=teacher e teacher_id vinculado — atalho para testes de professor."""
+    teacher = await db_session.get(models.Teacher, teacher_id)
+    if teacher is not None:
+        membership = await db_session.get(
+            models.OrganizationMembership,
+            teacher.organization_membership_id,
+        )
+        if membership is not None and membership.organization_id == org_id:
+            user = await db_session.get(models.User, membership.account_id)
+            user.clerk_user_id = clerk_user_id
+            user.email = email or f"{clerk_user_id}@test.com"
+            user.name = name or teacher.name
+            await ensure_membership_capabilities(
+                db_session,
+                organization_id=org_id,
+                user=user,
+                capabilities=[models.MembershipCapability.teacher],
+                expected_clerk_role=models.ClerkOrganizationRole.member,
+                teacher_access_mode=models.TeacherAccessMode.platform,
+            )
+            await db_session.flush()
+            return user
+        raise ValueError("Teacher profile does not belong to the requested organization.")
+
     user = models.User(
         clerk_user_id=clerk_user_id,
         email=email or f"{clerk_user_id}@test.com",
         name=name or "Teacher User",
-        role="teacher",
-        organization_id=org_id,
-        teacher_id=teacher_id,
-        is_active=True,
     )
     db_session.add(user)
     await db_session.flush()
@@ -493,7 +513,7 @@ async def create_teacher_user(
         teacher_access_mode=models.TeacherAccessMode.platform,
     )
     teacher = await db_session.get(models.Teacher, teacher_id)
-    if teacher is not None and teacher.organization_membership_id is None:
+    if teacher is not None:
         teacher.organization_membership_id = membership.id
     await db_session.flush()
     return user

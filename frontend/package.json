@@ -15,6 +15,7 @@
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
+    "audit:production": "node scripts/audit-production.mjs",
     "verify": "npm run lint && npm run lint:dead-code && npm run lint:dead-code:production && npm run test:coverage && npm run build",
     "test:school-config:stability": "node scripts/verify-school-config-stability.mjs"
   },

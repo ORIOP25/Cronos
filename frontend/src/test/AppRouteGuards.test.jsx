@@ -3,7 +3,13 @@ import { screen } from '@testing-library/react'
 import { Route, Routes } from 'react-router-dom'
 import { renderWithRouter } from './testUtils'
 import { setClerkState, resetClerkState } from './setup'
-import { RequireAdmin, RequireAuth, RequireTeacher, SignedInRedirect } from '../routeGuards'
+import {
+  RequireAdmin,
+  RequireAuth,
+  RequireTeacher,
+  SignedInRedirect,
+} from '../routeGuards'
+import { recoverOrganizationSession } from '../features/members/recoverOrganizationSession'
 
 const memberState = vi.hoisted(() => ({
   value: {
@@ -33,6 +39,7 @@ function renderGuard(ui, initialEntries = ['/protected']) {
       <Route path="/protected" element={ui} />
       <Route path="/dashboard" element={<div data-testid="dashboard-route">Dashboard</div>} />
       <Route path="/my-availability" element={<div data-testid="teacher-route">Teacher</div>} />
+      <Route path="/create-org" element={<div data-testid="create-org-route">Create Org</div>} />
       <Route path="/login" element={<div data-testid="login-route">Login</div>} />
     </Routes>,
     { initialEntries },
@@ -69,6 +76,22 @@ describe('RequireAuth', () => {
     setClerkState({ isSignedIn: false, isLoaded: true })
     renderGuard(<RequireAuth><div>Content</div></RequireAuth>)
     expect(screen.queryByText('Content')).toBeNull()
+  })
+})
+
+describe('recoverOrganizationSession', () => {
+  it('uses the freshly minted organization token for the member request', async () => {
+    const getToken = vi.fn().mockResolvedValue('fresh-org-token')
+    const requestMember = vi.fn().mockResolvedValue({ id: 1 })
+
+    await expect(recoverOrganizationSession({
+      getToken,
+      organizationId: 'org_123',
+      requestMember,
+    })).resolves.toEqual({ id: 1 })
+
+    expect(getToken).toHaveBeenCalledWith({ organizationId: 'org_123', skipCache: true })
+    expect(requestMember).toHaveBeenCalledWith('fresh-org-token')
   })
 })
 
@@ -134,7 +157,14 @@ describe('RequireTeacher', () => {
     expect(screen.queryByText('Admin')).toBeNull()
   })
 
-  it('shows access denied for a member-query 403', () => {
+  it('sends an organization admin without a local member to baseline bootstrap', () => {
+    memberState.error = { response: { status: 403 } }
+    renderGuard(<RequireAdmin><div>Admin</div></RequireAdmin>)
+    expect(screen.getByTestId('create-org-route')).toBeInTheDocument()
+  })
+
+  it('shows access denied for a non-admin member-query 403', () => {
+    setClerkState({ role: 'org:member' })
     memberState.error = { response: { status: 403 } }
     renderGuard(<RequireAdmin><div>Admin</div></RequireAdmin>)
     expect(screen.getByText(/não tem acesso a esta organização/i)).toBeInTheDocument()

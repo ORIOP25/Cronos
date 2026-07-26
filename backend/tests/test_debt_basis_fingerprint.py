@@ -1,4 +1,4 @@
-from datetime import date, datetime, time, timezone
+from datetime import UTC, date, datetime, time
 
 import pytest
 from sqlalchemy import select
@@ -6,17 +6,15 @@ from sqlalchemy import select
 from app import models
 from app.services.scheduler_debt_service import SchedulerDebtService
 from app.services.scheduler_fingerprint_service import SchedulerFingerprintService
-from app.services.scheduler_recovery_service import (
-    RecoveryDebtUnavailableError,
-    SchedulerRecoveryService,
-)
 from app.services.scheduler_generation_service import (
     NoOperationalTriggerError,
     SchedulerGenerationService,
 )
-
-
-pytestmark = pytest.mark.integration
+from app.services.scheduler_recovery_service import (
+    RecoveryDebtUnavailableError,
+    SchedulerRecoveryService,
+)
+from tests.conftest import create_teacher_profile
 
 
 async def _debt_context(db_session):
@@ -48,7 +46,11 @@ async def _debt_context(db_session):
         name="Course",
         abbreviation="CRS",
     )
-    teacher = models.Teacher(organization_id=organization.id, name="Teacher")
+    teacher = await create_teacher_profile(
+        db_session,
+        organization_id=organization.id,
+        name="Teacher",
+    )
     room = models.Room(
         organization_id=organization.id,
         name="Room",
@@ -61,7 +63,7 @@ async def _debt_context(db_session):
         start_time=time(9, 0),
         end_time=time(10, 30),
     )
-    db_session.add_all([subject, course, teacher, room, timeslot])
+    db_session.add_all([subject, course, room, timeslot])
     await db_session.flush()
     class_ = models.Class(
         organization_id=organization.id,
@@ -92,7 +94,6 @@ async def _debt_context(db_session):
     return organization, school_year, class_, subject, teacher, room, timeslot, occurrence
 
 
-@pytest.mark.asyncio
 async def test_debt_fingerprint_tracks_status_revision_and_minutes(db_session):
     organization, school_year, *_, occurrence = await _debt_context(db_session)
     service = SchedulerFingerprintService(db_session)
@@ -113,7 +114,6 @@ async def test_debt_fingerprint_tracks_status_revision_and_minutes(db_session):
     assert await service.debt_basis_fingerprint(organization.id, school_year.id) is None
 
 
-@pytest.mark.asyncio
 async def test_debt_exists_only_after_human_controlled_status_decision(db_session):
     organization, school_year, *_, occurrence = await _debt_context(db_session)
     service = SchedulerFingerprintService(db_session)
@@ -129,7 +129,6 @@ async def test_debt_exists_only_after_human_controlled_status_decision(db_sessio
     ).unresolved_debt_minutes == 90
 
 
-@pytest.mark.asyncio
 async def test_active_planned_recovery_suppresses_covered_debt(db_session):
     (
         organization,
@@ -142,18 +141,25 @@ async def test_active_planned_recovery_suppresses_covered_debt(db_session):
         occurrence,
     ) = await _debt_context(db_session)
     user = models.User(
-        organization_id=organization.id,
         email="debt-fingerprint@example.com",
-        role=models.UserRole.admin,
-        is_active=True,
-        is_superuser=False,
     )
     db_session.add(user)
+    await db_session.flush()
+    membership = models.OrganizationMembership(
+        organization_id=organization.id,
+        account_id=user.id,
+        organization_display_name="Debt Admin",
+        lifecycle_status=models.MembershipLifecycleStatus.active,
+        access_status=models.MembershipAccessStatus.active,
+        can_admin=True,
+        can_teach=False,
+    )
+    db_session.add(membership)
     await db_session.flush()
     job = models.ScheduleGenerationJob(
         organization_id=organization.id,
         school_year_id=school_year.id,
-        requested_by_user_id=user.id,
+        requested_by_membership_id=membership.id,
         strategy=models.ScheduleGenerationStrategy.ADAPTIVE_REPAIR,
     )
     db_session.add(job)
@@ -171,7 +177,7 @@ async def test_active_planned_recovery_suppresses_covered_debt(db_session):
         projected_completion_date=date(2026, 6, 30),
         hard_end_date=school_year.hard_end_date,
         summary_json={},
-        created_by_user_id=user.id,
+        created_by_membership_id=membership.id,
     )
     db_session.add(draft)
     await db_session.flush()
@@ -248,9 +254,7 @@ async def test_active_planned_recovery_suppresses_covered_debt(db_session):
         school_year.id,
     )
     assert ledger.total_remaining_minutes == 60
-    assert ledger.remaining_minutes_by_class_subject == {
-        (class_.id, subject.id): 60
-    }
+    assert ledger.remaining_minutes_by_class_subject == {(class_.id, subject.id): 60}
     assert ledger.entries[0].occurrence_id == occurrence.id
     assert ledger.entries[0].source_planned_block_id is None
     duplicate_block = models.ScheduleDraftBlock(
@@ -282,12 +286,10 @@ async def test_active_planned_recovery_suppresses_covered_debt(db_session):
         )
 
     draft.draft_state = models.ScheduleDraftState.APPROVED
-    draft.decided_by_user_id = user.id
-    draft.decided_at = datetime.now(timezone.utc)
+    draft.decided_by_membership_id = membership.id
+    draft.decided_at = datetime.now(UTC)
     await db_session.flush()
-    selection = await SchedulerGenerationService(db_session).select_strategy(
-        organization.id
-    )
+    selection = await SchedulerGenerationService(db_session).select_strategy(organization.id)
     assert selection.trigger_type == models.ScheduleGenerationTrigger.EXPLICIT_DEBT
     assert selection.debt_basis.unresolved_debt_minutes == 60
 
@@ -316,7 +318,7 @@ async def test_active_planned_recovery_suppresses_covered_debt(db_session):
         organization_id=organization.id,
         active_schedule_block_id=active_block.id,
         status=models.LessonLogStatus.COMPLETED,
-        logged_by_user_id=user.id,
+        logged_by_membership_id=membership.id,
     )
     db_session.add(lesson_log)
     await db_session.flush()

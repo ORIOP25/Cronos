@@ -1,15 +1,10 @@
 from copy import deepcopy
 from datetime import date
 
-import pytest
-
 from app.services.scheduler_candidates import CandidateUniverseBuilder
 from app.services.scheduler_complete_demand import CompleteDemandLedgerBuilder
 from app.services.scheduler_near_optimizer import NearFutureOptimizer
 from tests.test_scheduler_candidates import _snapshot
-
-
-pytestmark = pytest.mark.unit
 
 
 def _optimize(snapshot: dict):
@@ -31,7 +26,7 @@ def _optimize(snapshot: dict):
 def test_optimizer_selects_earliest_feasible_date():
     snapshot = _snapshot()
     snapshot["module_accounting"] = [
-        {"id": 7, "subject_id": 2, "hours_total": 1, "sequence": 1}
+        {"id": 7, "subject_id": 2, "required_minutes": 60, "sequence": 1}
     ]
     snapshot["lunch_rules"] = None
 
@@ -65,7 +60,7 @@ def test_optimizer_prevents_teacher_class_and_room_interval_conflicts():
         {"class_id": 9, "subject_id": 2, "grade_level": 10, "teacher_id": 3}
     )
     snapshot["module_accounting"] = [
-        {"id": 7, "subject_id": 2, "hours_total": 1, "sequence": 1}
+        {"id": 7, "subject_id": 2, "required_minutes": 60, "sequence": 1}
     ]
 
     result = _optimize(snapshot)
@@ -93,7 +88,7 @@ def test_optimizer_preserves_aggregate_contiguous_lunch_break():
         },
     ]
     snapshot["module_accounting"] = [
-        {"id": 7, "subject_id": 2, "hours_total": 2, "sequence": 1}
+        {"id": 7, "subject_id": 2, "required_minutes": 120, "sequence": 1}
     ]
 
     result = _optimize(snapshot)
@@ -125,7 +120,7 @@ def test_lower_priority_preference_cannot_weaken_earliest_completion_stage():
         {"teacher_id": 3, "timeslot_id": 20, "score": 2},
     ]
     snapshot["module_accounting"] = [
-        {"id": 7, "subject_id": 2, "hours_total": 1, "sequence": 1}
+        {"id": 7, "subject_id": 2, "required_minutes": 60, "sequence": 1}
     ]
 
     result = _optimize(snapshot)

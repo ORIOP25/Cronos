@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -47,7 +47,7 @@ class SchedulerLifecycleService:
         organization_id: int,
         draft_id: int,
         *,
-        decided_by_user_id: int,
+        decided_by_membership_id: int,
         now: datetime | None = None,
     ) -> DraftRejectionResult:
         instant = self._instant(now)
@@ -89,7 +89,7 @@ class SchedulerLifecycleService:
         draft.draft_state = models.ScheduleDraftState.REJECTED
         draft.stale_reason = None
         draft.invalidated_reason = None
-        draft.decided_by_user_id = decided_by_user_id
+        draft.decided_by_membership_id = decided_by_membership_id
         draft.decided_at = instant
         await self._db.flush()
         return DraftRejectionResult(draft_id=draft.id, draft_state="REJECTED")
@@ -98,7 +98,7 @@ class SchedulerLifecycleService:
         self,
         organization_id: int,
         *,
-        reset_by_user_id: int,
+        reset_by_membership_id: int,
         confirmed: bool,
         now: datetime | None = None,
     ) -> ResetYearResult:
@@ -116,9 +116,7 @@ class SchedulerLifecycleService:
             .with_for_update()
         )
         if school_year is None:
-            raise SchedulerLifecycleNotFoundError(
-                "No active scheduler school year exists."
-            )
+            raise SchedulerLifecycleNotFoundError("No active scheduler school year exists.")
         state = await self._locked_state(organization_id, school_year.id)
         jobs = list(
             await self._db.scalars(
@@ -166,7 +164,7 @@ class SchedulerLifecycleService:
             )
             draft.draft_state = models.ScheduleDraftState.INVALIDATED
             draft.invalidated_reason = "The scheduler school year was reset."
-            draft.decided_by_user_id = reset_by_user_id
+            draft.decided_by_membership_id = reset_by_membership_id
             draft.decided_at = instant
 
         active_blocks = list(
@@ -175,8 +173,7 @@ class SchedulerLifecycleService:
                 .where(
                     models.ActiveScheduleBlock.organization_id == organization_id,
                     models.ActiveScheduleBlock.school_year_id == school_year.id,
-                    models.ActiveScheduleBlock.status
-                    == models.ActiveScheduleBlockStatus.ACTIVE,
+                    models.ActiveScheduleBlock.status == models.ActiveScheduleBlockStatus.ACTIVE,
                 )
                 .with_for_update()
             )
@@ -195,7 +192,7 @@ class SchedulerLifecycleService:
         state.active_schedule_version_id = None
         state.approved_scheduler_state_version = None
         state.reset_at = instant
-        state.reset_by_user_id = reset_by_user_id
+        state.reset_by_membership_id = reset_by_membership_id
         state.lock_version += 1
         await self._db.flush()
         return ResetYearResult(
@@ -217,14 +214,12 @@ class SchedulerLifecycleService:
             .with_for_update()
         )
         if state is None:
-            raise SchedulerLifecycleNotFoundError(
-                "Scheduler school-year state was not found."
-            )
+            raise SchedulerLifecycleNotFoundError("Scheduler school-year state was not found.")
         return state
 
     @staticmethod
     def _instant(value: datetime | None) -> datetime:
-        instant = value or datetime.now(timezone.utc)
+        instant = value or datetime.now(UTC)
         if instant.tzinfo is None or instant.utcoffset() is None:
             raise SchedulerLifecycleError("Lifecycle decision time must be timezone-aware.")
         return instant
