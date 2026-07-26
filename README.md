@@ -1,78 +1,67 @@
 # Cronos
 
-SaaS para gestão e geração de horários no Ensino Profissional em Portugal. Sistema operacional dinâmico que planeia, replaneia e regista execução real — não um calendário anual estático.
+Cronos is a Software-as-a-Service (SaaS) platform for course scheduling and operational management in Portuguese Professional Education (*Ensino Profissional*). The system manages school structures, course modules, teacher availability, automated schedule generation, lesson logging (*Sumários*), teacher absences (*Faltas*), and cover arrangements (*Substituições*).
 
-## Arquitetura
+## Technology Stack
 
-| Camada | Stack |
-|--------|-------|
-| Backend | Python 3.12, FastAPI, SQLAlchemy Async, Pydantic v2, Celery |
-| Frontend | React 19, Vite, CoreUI, React Query, Clerk |
-| Base de Dados | PostgreSQL 15 local / PostgreSQL 16 CI |
-| Cache / Queue | Redis 7 |
-| Scheduling Engine | OR-Tools CP-SAT (Solver V2) |
+| Layer | Technologies |
+| :--- | :--- |
+| **Backend API** | Python 3.12, FastAPI, Async SQLAlchemy, Pydantic v2, Celery |
+| **Frontend UI** | React 19, Vite 8, CoreUI, React Query, Clerk Auth |
+| **Database** | PostgreSQL 15 (Local) / PostgreSQL 16 (CI) with Row-Level Security |
+| **Cache / Queue** | Redis 7 |
+| **Scheduler Engine** | Google OR-Tools CP-SAT (Solver V2 Engine) |
 
-## Estado Atual
+## Supported User Roles
+- **Administrator (`admin`)**: Full access to school settings, curriculum, team management (`Equipa`), solver execution, and draft approvals.
+- **Teacher (`teacher`)**: Access to self-service portal, availability configuration, personal timetable, and assigned class lesson logs (*Sumários*).
 
-Fase atual: beta baseline hardening. As funcionalidades principais estao
-fechadas; o foco e qualidade operacional, UX consistente, CI/CD, schema drift,
-documentacao e limpeza de legado.
+## Quick Start (Local Docker Environment)
 
-## Arranque Rápido (Dev Local)
+1. **Clone repository and prepare environment files**:
+   ```bash
+   cp backend/.env.example backend/.env
+   ```
+
+2. **Start Docker services**:
+   ```bash
+   docker compose up -d
+   ```
+
+3. **Apply database migrations**:
+   ```bash
+   docker compose exec cronos-backend alembic upgrade head
+   ```
+
+4. **Seed realistic test dataset**:
+   ```bash
+   docker compose exec cronos-backend python scripts/seed.py --scenario small-realistic
+   ```
+
+5. **Access application services**:
+   - Frontend Application: `http://localhost:5173`
+   - Backend API Documentation: `http://localhost:8000/docs`
+   - Health Check Endpoint: `http://localhost:8000/api/v1/health`
+
+## First Verification Commands
+
+Run backend and frontend verification commands to test your setup:
 
 ```bash
-# 1. Criar .env com credenciais
-cp backend/.env.example backend/.env
-# Editar backend/.env com valores reais
+# Run backend tests
+cd backend && pytest tests/ -v
 
-# 2. Criar .env para docker-compose na raiz
-cp .env.example .env  # (se existir) ou criar manualmente:
-# POSTGRES_PASSWORD=<senha>
-
-# 3. Arrancar tudo
-docker compose up -d
-
-# 4. Aceder
-# Frontend: http://localhost:5173
-# API Docs:  http://localhost:8000/docs
+# Run frontend tests
+cd frontend && npm run test
 ```
 
-## Estrutura
+## Documentation Reading Paths
 
-```
-MeuProjeto/
-├── backend/          # FastAPI + Alembic + Celery
-│   ├── app/          # Código da aplicação
-│   ├── alembic/      # Migrações de base de dados
-│   ├── scripts/      # Scripts de manutenção
-│   └── tests/        # Testes pytest
-├── frontend/         # React + Vite
-│   └── src/
-│       ├── pages/        # Páginas da app
-│       ├── components/   # Componentes reutilizáveis
-│       └── test/         # Testes Vitest
-├── documentation/    # Documentação estruturada (11 áreas)
-│   ├── 01_product_strategy/
-│   ├── 02_domain_model/
-│   ├── 03_scheduler_engine/
-│   └── ...
-├── .agents/skills/   # Skills para AI-assisted development
-└── docker-compose.yml
-```
+Complete technical documentation resides in the [`documentation/`](documentation/) directory:
 
-## Documentação
-
-Toda a documentação oficial está em [`documentation/`](documentation/). Estrutura por camadas (Clean Architecture):
-
-- **Layer 1 (Interface)**: `05_backend_api/`, `06_frontend_ux/`
-- **Layer 2 (Regras de Negócio)**: `01_product_strategy/`, `02_domain_model/`, `03_scheduler_engine/`, `04_operational_features/`
-- **Layer 3 (Base de Dados)**: `07_data_and_seed/`, `08_security_quality/`, `09_ops_observability/`
-
-Ver [`documentation/README.md`](documentation/README.md) para o índice completo.
-
-## Qualidade
-
-- CI/CD: GitHub Actions (Ruff, dependency audits, pytest >=70% coverage, honest whole-source Vitest coverage, build, Alembic drift, trigger/data integrity audits, Playwright E2E)
-- Segurança: Clerk bearer tokens, rate limiting, CORS e security headers
-- Tenant isolation: `organization_id` em todas as queries
-- Auditoria: Ver [`documentation/08_security_quality/AUDITORIA_ARQUITETURAL_ALPHA_1.0.md`](documentation/08_security_quality/AUDITORIA_ARQUITETURAL_ALPHA_1.0.md)
+- [Project Overview](documentation/00_getting_started/PROJECT_OVERVIEW.md)
+- [Repository Map](documentation/00_getting_started/REPOSITORY_MAP.md)
+- [Glossary](documentation/00_getting_started/GLOSSARY.md)
+- [Technical Walkthrough](documentation/00_getting_started/TECHNICAL_WALKTHROUGH.md)
+- [System Architecture](documentation/01_system_architecture/SYSTEM_ARCHITECTURE.md)
+- [API Reference](documentation/05_backend_api/API_REFERENCE.md)

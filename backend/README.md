@@ -1,16 +1,28 @@
-# Cronos Backend
+# Cronos Backend Workspace
 
-FastAPI backend for Cronos, with SQLAlchemy async models, Alembic migrations,
-PostgreSQL tenant isolation, Clerk-backed authentication, Celery workers, and
-the scheduling engine services.
+FastAPI backend application for Cronos. Manages REST API endpoints, SQLAlchemy database models, Alembic migrations, Clerk authentication verification, PostgreSQL tenant isolation, Celery worker queues, and the OR-Tools CP-SAT solver engine.
 
-## Local Safety
+## Python Setup and Local Runtime
 
-Backend tests reset the target schema. The pytest fixture refuses to run
-destructive tests unless the database name contains `test` or `ci`, unless
-`ALLOW_NON_TEST_DATABASE=1` is set intentionally.
+1. **Create and activate Python virtual environment**:
+   ```bash
+   python -m venv .venv
+   source .venv/bin/activate  # Linux / macOS
+   .venv\Scripts\activate     # Windows PowerShell
+   ```
 
-Use a dedicated database for local tests:
+2. **Install development dependencies**:
+   ```bash
+   pip install -r requirements-dev.txt
+   ```
+
+## Database Safety and Safeguards
+
+Backend test fixtures automatically reset the target database schema. To prevent accidental data loss, the test fixture execution enforces strict database name safeguards:
+- Pytest refuses execution unless the database name contains `test` or `ci`.
+- Overriding database safety requires explicit flag setting (`ALLOW_NON_TEST_DATABASE=1`).
+
+Execute backend tests against a dedicated test database:
 
 ```powershell
 $env:ENVIRONMENT='local'
@@ -21,22 +33,19 @@ $env:RATELIMIT_ENABLED='false'
 pytest tests/ -v
 ```
 
-## Database Gates
+## Mandatory Database Verification Gates
 
-Run these against a migrated test database before calling the backend baseline
-healthy:
+Run these verification commands before marking backend changes healthy:
 
-```powershell
+```bash
 alembic upgrade head
 alembic current
 alembic check
 python scripts/audit_triggers.py
 python -m scripts.audit_database_integrity
-pytest tests/test_migration_tenant_ref_contract.py tests/test_rls_database_policies.py -m postgresql -v --tb=short
 ruff check app scripts
 ```
 
-## Coverage
+## Coverage Requirements
 
-Install local quality tooling with `pip install -r requirements-dev.txt`.
-CI enforces 70% backend coverage with the complete database-backed suite.
+CI enforces a minimum threshold of **70% backend code coverage** across the full database-backed test suite.
