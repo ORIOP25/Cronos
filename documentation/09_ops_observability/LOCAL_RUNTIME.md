@@ -1,74 +1,114 @@
 # Local Runtime
 
 ## Purpose
-This document provides instructions for deploying, configuring, and operating the Cronos runtime environment locally.
+This document specifies the local Docker runtime deployment, container topology, maintenance jobs, and production readiness guidelines for Cronos.
 
 ## Intended Reader
-This document targets all software developers and DevOps engineers.
+This document targets DevOps engineers, software developers, and site reliability engineers.
 
 ## Prerequisites
-Install Docker Desktop (with Docker Compose) and Python 3.12 locally.
+Install Docker Desktop with Docker Compose. Install Python 3.12 for local host commands.
+
+Configure root environment variables in `.env` using `.env.example`:
+- `POSTGRES_PASSWORD`: Superuser database password.
+- `CRONOS_MIGRATOR_PASSWORD`: Migration role password.
+- `CRONOS_APP_PASSWORD`: Application connection password.
+- `VITE_CLERK_PUBLISHABLE_KEY`: Public Clerk key passed to frontend builds.
 
 ## What the System Does
-The application executes locally using Docker Compose (`docker-compose.yml`).
+Cronos executes locally using Docker Compose (`docker-compose.yml`). The production-like runtime contains six core services.
 
-## Container Topology Table
+## Why the Behavior Exists
+Normal runtime services never alter database schemas automatically on startup. Separating schema changes into explicit maintenance jobs prevents race conditions, database locks, and accidental production schema mutations.
 
-| Container Name | Internal Service | Exposed Host Port | Container Base Image |
+## Components and Ownership
+
+| Service Name | Purpose | Host Access | Container Base |
 | :--- | :--- | :--- | :--- |
-| `cronos-db` | PostgreSQL Database | `5432` | `postgres:15-alpine` |
-| `cronos-redis` | Redis Queue & Cache | `6379` | `redis:7-alpine` |
-| `cronos-backend` | FastAPI REST API | `8000` | Custom Python 3.12 |
-| `cronos-worker` | Celery Solver Worker | N/A | Custom Python 3.12 |
-| `cronos-frontend` | React Nginx / Vite Dev | `5173` | Custom Node 20 / Nginx |
+| `db` | PostgreSQL 16 database with RLS | `127.0.0.1:5432` | `postgres:16-alpine` |
+| `redis` | Persistent Celery broker and cache | Internal only | `redis:7-alpine` |
+| `backend` | FastAPI REST API application | `127.0.0.1:8000` | Custom Python 3.12 |
+| `worker` | Scheduler and reconciliation tasks | Internal only | Custom Python 3.12 |
+| `beat` | Hourly reconciliation dispatch | Internal only | Custom Python 3.12 |
+| `frontend` | Production Nginx SPA server | `127.0.0.1:8080` | Custom Node 24 / Nginx |
 
-## Environment Groups and Configuration
+### Maintenance Profile Services
 
-### Backend Environment Variables (`backend/.env`)
-- `ENVIRONMENT`: Runtime mode (`local`, `testing`, `production`).
-- `DATABASE_URL`: PostgreSQL connection string (`postgresql+asyncpg://postgres:pass@db:5432/cronos_db`).
-- `REDIS_URL`: Redis connection string (`redis://redis:6379/0`).
-- `CLERK_SECRET_KEY`: Secret API key for Clerk authentication verification.
-- `CLERK_WEBHOOK_SECRET`: SVIX signing secret for incoming webhooks.
+| Maintenance Job | Command | Purpose |
+| :--- | :--- | :--- |
+| `provision-db` | `python scripts/provision_db.py` | Role setup and password rotation |
+| `db-maintenance` | `alembic upgrade head` | Database schema migrations |
 
-### Frontend Environment Variables (`frontend/.env.local`)
-- `VITE_API_URL`: Backend API base URL (`http://localhost:8000/api/v1`).
-- `VITE_CLERK_PUBLISHABLE_KEY`: Publishable key for Clerk client SDK.
+## Data or Request Flow
 
-## Quick Start Commands
+```mermaid
+flowchart TD
+    Client[Browser User] -->|HTTP 127.0.0.1:8080| Nginx[Frontend Nginx Container]
+    Nginx -->|Static Assets| SPA[React 19 Application]
+    Nginx -->|Proxy /api/| BE[FastAPI Backend 127.0.0.1:8000]
+    BE -->|Async SQLAlchemy| DB[(PostgreSQL 16 db:5432)]
+    BE -->|Task Dispatch| Redis[(Redis Broker)]
+    Worker[Celery Worker] -->|Fetch Tasks| Redis
+    Worker -->|Execute Solver V2| DB
+    Beat[Celery Beat] -->|Dispatch Periodic Jobs| Redis
+```
 
-1. **Start Infrastructure Services**:
-   ```bash
-   docker compose up -d
-   ```
-2. **Apply Database Migrations**:
-   ```bash
-   docker compose exec cronos-backend alembic upgrade head
-   ```
-3. **Seed Test Data**:
-   ```bash
-   docker compose exec cronos-backend python scripts/seed.py --scenario small-realistic
-   ```
+## Contracts and Invariants
+- Normal runtime containers do not execute automatic Alembic migrations on startup.
+- Production deployments must complete `db-maintenance` before starting new application containers.
+- Published container ports bind exclusively to loopback interface (`127.0.0.1`).
+- Backend containers use read-only root filesystems with temporary writable `/tmp` mounts.
 
-## Service Access URLs
+## States and Transitions
 
-| Application Service | Local Access URL |
-| :--- | :--- |
-| **Frontend Web App** | `http://localhost:5173` |
-| **Backend API Docs** | `http://localhost:8000/docs` |
-| **Health Endpoint** | `http://localhost:8000/api/v1/health` |
+### Maintenance Lifecycle
+1. Execute `docker compose --profile maintenance run --rm provision-db` for initial setup.
+2. Execute `docker compose --profile maintenance run --rm db-maintenance` before every release containing migrations.
+3. Execute `docker compose up -d --build` to start normal application services.
+
+### Frontend Runtime Modes
+- **Production Mode (Default)**: Nginx serves static SPA files on port `8080` and proxies `/api/` requests.
+- **Development Mode (Vite)**: Execute `docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build`. Serves Vite hot reload on port `5173`.
 
 ## Failure Modes
-- Container Startup Order: Backend container retries database connection until PostgreSQL accepts connections.
+
+| Failure Scenario | Root Cause | Recovery Action |
+| :--- | :--- | :--- |
+| **Database Connection Refused** | `db` container initializing | Backend retries connection automatically |
+| **Missing Migration Error** | `db-maintenance` job skipped | Run `docker compose --profile maintenance run --rm db-maintenance` |
+| **Worker Out of Memory** | Large solver allocation | Celery recycles child processes automatically after each task (`max-tasks-per-child=1`) |
 
 ## Verification Procedure
-Access `http://localhost:8000/health`. Verify HTTP status `200` response.
+
+1. **Verify Resolved Compose Configuration**:
+   ```bash
+   docker compose config --quiet
+   ```
+2. **Execute Database Maintenance**:
+   ```bash
+   docker compose --profile maintenance run --rm db-maintenance
+   ```
+3. **Start Normal Runtime Stack**:
+   ```bash
+   docker compose up -d --build
+   ```
+4. **Inspect Active Containers**:
+   ```bash
+   docker compose ps
+   ```
+5. **Verify Registered Worker Tasks**:
+   ```bash
+   docker compose exec worker celery -A app.celery_worker.celery_app inspect registered
+   ```
 
 ## Source Map
-- Docker Compose: `docker-compose.yml`
-- Backend Environment: `backend/app/core/config.py`
-- Frontend Environment: `frontend/vite.config.js`
+- Normal Compose Spec: `docker-compose.yml`
+- Dev Override Spec: `docker-compose.dev.yml`
+- CI Compose Spec: `docker-compose.ci.yml`
+- Backend Dockerfile: `backend/Dockerfile`
+- Frontend Dockerfile: `frontend/Dockerfile`
+- Frontend Nginx Config: `frontend/nginx.conf`
 
 ## Related Documents
-- [Repository Map](../00_getting_started/REPOSITORY_MAP.md)
 - [Observability and Recovery](OBSERVABILITY_AND_RECOVERY.md)
+- [Testing and CI](../08_security_quality/TESTING_AND_CI.md)
