@@ -29,6 +29,7 @@ services:
       retries: 12
 
   provision-db:
+    profiles: [maintenance]
     image: postgres:16-alpine@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777
     command: ["/bin/sh", "/scripts/provision_database.sh"]
     environment:
@@ -43,10 +44,9 @@ services:
     depends_on:
       db: {condition: service_healthy}
 
-  migrate:
-    build:
-      context: ./backend
-      target: runtime
+  db-maintenance:
+    profiles: [maintenance]
+    image: cronos-backend-ci:local
     command: ["alembic", "upgrade", "head"]
     environment:
       # Settings validates DATABASE_URL before Alembic replaces the SQLAlchemy
@@ -54,9 +54,10 @@ services:
       DATABASE_URL: postgresql+psycopg2://cronos_migrator:${CRONOS_MIGRATOR_PASSWORD:?CRONOS_MIGRATOR_PASSWORD is required}@db:5432/${POSTGRES_DB:-cronos_ci_db}
       MIGRATION_DATABASE_URL: postgresql+psycopg2://cronos_migrator:${CRONOS_MIGRATOR_PASSWORD:?CRONOS_MIGRATOR_PASSWORD is required}@db:5432/${POSTGRES_DB:-cronos_ci_db}
     depends_on:
-      provision-db: {condition: service_completed_successfully}
+      db: {condition: service_healthy}
 
   backend:
+    image: cronos-backend-ci:local
     build:
       context: ./backend
       target: ci
@@ -71,7 +72,7 @@ services:
       CLERK_AUTHORIZED_PARTIES: http://localhost:5173
     ports: ["8000:8000"]
     depends_on:
-      migrate: {condition: service_completed_successfully}
+      db: {condition: service_healthy}
       redis: {condition: service_healthy}
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/ready', timeout=2)"]
@@ -80,39 +81,36 @@ services:
       retries: 24
 
   worker:
-    build:
-      context: ./backend
-      target: runtime
-    command: ["celery", "-A", "app.celery_worker.celery_app", "worker", "--loglevel=info"]
+    image: cronos-backend-ci:local
+    command: ["celery", "-A", "app.celery_worker.celery_app", "worker", "--loglevel=info", "--include=app.scheduler_worker", "--autoscale=2,1", "--prefetch-multiplier=1", "--max-tasks-per-child=1"]
     environment:
       <<: *runtime-environment
       DATABASE_POOLING_ENABLED: "false"
     depends_on:
-      migrate: {condition: service_completed_successfully}
+      db: {condition: service_healthy}
       redis: {condition: service_healthy}
 
   beat:
-    build:
-      context: ./backend
-      target: runtime
+    image: cronos-backend-ci:local
     command: ["celery", "-A", "app.celery_worker.celery_app", "beat", "--loglevel=info", "--schedule", "/tmp/celerybeat-schedule"]
     environment:
       <<: *runtime-environment
       DATABASE_POOLING_ENABLED: "false"
     depends_on:
-      migrate: {condition: service_completed_successfully}
+      db: {condition: service_healthy}
       redis: {condition: service_healthy}
 
   frontend:
-    build: ./frontend
-    command: ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
-    environment:
-      VITE_CLERK_PUBLISHABLE_KEY: ${VITE_CLERK_PUBLISHABLE_KEY:?VITE_CLERK_PUBLISHABLE_KEY is required}
-    ports: ["5173:5173"]
+    build:
+      context: ./frontend
+      target: runtime
+      args:
+        VITE_CLERK_PUBLISHABLE_KEY: ${VITE_CLERK_PUBLISHABLE_KEY:?VITE_CLERK_PUBLISHABLE_KEY is required}
+    ports: ["127.0.0.1:5173:8080"]
     depends_on:
       backend: {condition: service_healthy}
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://localhost:5173').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:8080 || exit 1"]
       interval: 5s
       timeout: 3s
       retries: 24
