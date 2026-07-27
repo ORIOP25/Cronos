@@ -136,6 +136,8 @@ describe('vertical feature data hooks', () => {
       ['available-subjects', 'org-a', 3],
       ['eligible-teachers', 'org-a', 7],
     ]))
+    expect(apiClient.get).toHaveBeenCalledWith('/rooms/')
+    expect(apiClient.get).toHaveBeenCalledWith('/subjects/')
   })
 
   it('keeps subject-dependent course invalidation inside catalog mutations', async () => {

@@ -69,6 +69,7 @@ async def test_heatmap_returns_canonical_availability(
         "/import/timeslots",
         "/import/teachers",
         "/import/rooms",
+        "/import/subjects",
         "/lessons/",
     ],
 )
