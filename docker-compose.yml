@@ -5,18 +5,27 @@ x-backend-environment: &backend-environment
   DATABASE_URL: postgresql+asyncpg://cronos_app:${CRONOS_APP_PASSWORD:?CRONOS_APP_PASSWORD is required}@db:5432/${POSTGRES_DB:-cronos_db}
   REDIS_URL: redis://redis:6379/0
   CELERY_BROKER_URL: redis://redis:6379/0
+  FRONTEND_URL: http://localhost:8080
+  CLERK_AUTHORIZED_PARTIES: http://localhost:8080
+
+x-runtime-security: &runtime-security
+  init: true
+  security_opt: ["no-new-privileges:true"]
+  cap_drop: [ALL]
+  logging:
+    driver: local
+    options: {max-size: "10m", max-file: "3"}
 
 services:
   db:
     image: postgres:16-alpine@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777
-    restart: always
+    restart: unless-stopped
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
       POSTGRES_DB: ${POSTGRES_DB:-cronos_db}
-    ports: ["5432:5432"]
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
+    ports: ["127.0.0.1:5432:5432"]
+    volumes: [postgres_data:/var/lib/postgresql/data]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d ${POSTGRES_DB:-cronos_db}"]
       interval: 5s
@@ -25,7 +34,7 @@ services:
 
   redis:
     image: redis:7-alpine@sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99
-    restart: always
+    restart: unless-stopped
     command: redis-server --appendonly yes
     volumes: [redis_data:/data]
     healthcheck:
@@ -34,18 +43,8 @@ services:
       timeout: 5s
       retries: 10
 
-  migrate:
-    build:
-      context: ./backend
-      target: runtime
-    command: ["alembic", "upgrade", "head"]
-    environment:
-      <<: *backend-environment
-      MIGRATION_DATABASE_URL: postgresql+psycopg2://cronos_migrator:${CRONOS_MIGRATOR_PASSWORD}@db:5432/${POSTGRES_DB:-cronos_db}
-    depends_on:
-      provision-db: {condition: service_completed_successfully}
-
   provision-db:
+    profiles: [maintenance]
     image: postgres:16-alpine@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777
     command: ["/bin/sh", "/scripts/provision_database.sh"]
     environment:
@@ -55,64 +54,84 @@ services:
       PGHOST: db
       CRONOS_MIGRATOR_PASSWORD: ${CRONOS_MIGRATOR_PASSWORD:?CRONOS_MIGRATOR_PASSWORD is required}
       CRONOS_APP_PASSWORD: ${CRONOS_APP_PASSWORD:?CRONOS_APP_PASSWORD is required}
-    volumes:
-      - ./backend/scripts/provision_database.sh:/scripts/provision_database.sh:ro
-    depends_on:
-      db: {condition: service_healthy}
+    volumes: [./backend/scripts/provision_database.sh:/scripts/provision_database.sh:ro]
+    depends_on: {db: {condition: service_healthy}}
+
+  db-maintenance:
+    profiles: [maintenance]
+    image: cronos-backend:local
+    command: ["alembic", "upgrade", "head"]
+    environment:
+      <<: *backend-environment
+      MIGRATION_DATABASE_URL: postgresql+psycopg2://cronos_migrator:${CRONOS_MIGRATOR_PASSWORD}@db:5432/${POSTGRES_DB:-cronos_db}
+    depends_on: {db: {condition: service_healthy}}
+    read_only: true
+    tmpfs: [/tmp]
+    <<: *runtime-security
 
   backend:
-    build:
-      context: ./backend
-      target: runtime
+    image: cronos-backend:local
+    build: {context: ./backend, target: runtime}
     env_file: ./backend/.env
     environment: *backend-environment
-    ports: ["8000:8000"]
+    restart: unless-stopped
+    ports: ["127.0.0.1:8000:8000"]
     depends_on:
-      migrate: {condition: service_completed_successfully}
+      db: {condition: service_healthy}
       redis: {condition: service_healthy}
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/ready', timeout=2)"]
       interval: 5s
       timeout: 3s
       retries: 20
+    read_only: true
+    tmpfs: [/tmp]
+    <<: *runtime-security
 
   worker:
-    build:
-      context: ./backend
-      target: runtime
-    command: ["celery", "-A", "app.celery_worker.celery_app", "worker", "--loglevel=info"]
+    image: cronos-backend:local
+    command: ["celery", "-A", "app.celery_worker.celery_app", "worker", "--loglevel=info", "--include=app.scheduler_worker", "--autoscale=2,1", "--prefetch-multiplier=1", "--max-tasks-per-child=1"]
     env_file: ./backend/.env
     environment:
       <<: *backend-environment
       DATABASE_POOLING_ENABLED: "false"
+    restart: unless-stopped
     depends_on:
-      migrate: {condition: service_completed_successfully}
+      db: {condition: service_healthy}
       redis: {condition: service_healthy}
+    read_only: true
+    tmpfs: [/tmp]
+    <<: *runtime-security
 
   beat:
-    build:
-      context: ./backend
-      target: runtime
+    image: cronos-backend:local
     command: ["celery", "-A", "app.celery_worker.celery_app", "beat", "--loglevel=info", "--schedule", "/tmp/celerybeat-schedule"]
     environment:
       <<: *backend-environment
       DATABASE_POOLING_ENABLED: "false"
+    restart: unless-stopped
     depends_on:
-      migrate: {condition: service_completed_successfully}
+      db: {condition: service_healthy}
       redis: {condition: service_healthy}
+    read_only: true
+    tmpfs: [/tmp]
+    <<: *runtime-security
 
   frontend:
-    build: ./frontend
-    ports: ["5173:5173"]
-    command: npm run dev
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
-    environment: {CHOKIDAR_USEPOLLING: "true"}
-    depends_on:
-      backend: {condition: service_healthy}
+    build:
+      context: ./frontend
+      target: runtime
+      args:
+        VITE_CLERK_PUBLISHABLE_KEY: ${VITE_CLERK_PUBLISHABLE_KEY:?VITE_CLERK_PUBLISHABLE_KEY is required}
+    restart: unless-stopped
+    ports: ["127.0.0.1:8080:8080"]
+    depends_on: {backend: {condition: service_healthy}}
+    read_only: true
+    tmpfs: [/tmp, /var/cache/nginx, /var/run]
+    <<: *runtime-security
 
 volumes:
   postgres_data:
     name: cronos_postgres_data_v16_baseline
   redis_data:
+    name: cronos_redis_data

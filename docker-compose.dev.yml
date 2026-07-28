@@ -1,0 +1,25 @@
+# Use this override for Vite hot reload instead of the production-like Nginx UI.
+services:
+  backend:
+    environment:
+      FRONTEND_URL: http://localhost:5173
+      CLERK_AUTHORIZED_PARTIES: http://localhost:5173
+
+  frontend:
+    build:
+      context: ./frontend
+      target: dev
+    command: ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
+    ports: !override ["127.0.0.1:5173:5173"]
+    volumes:
+      - ./frontend:/app
+      - frontend_node_modules:/app/node_modules
+    environment:
+      CHOKIDAR_USEPOLLING: "true"
+      VITE_CLERK_PUBLISHABLE_KEY: ${VITE_CLERK_PUBLISHABLE_KEY:?VITE_CLERK_PUBLISHABLE_KEY is required}
+    read_only: false
+    tmpfs: []
+
+volumes:
+  frontend_node_modules:
+    name: cronos_frontend_node_modules

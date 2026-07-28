@@ -197,8 +197,66 @@ jobs:
           echo "CI_MIGRATOR_PASSWORD=$(openssl rand -hex 24)" >> "$GITHUB_ENV"
           echo "CI_APP_PASSWORD=$(openssl rand -hex 24)" >> "$GITHUB_ENV"
 
+      - name: Build CI backend image
+        run: docker compose -f docker-compose.ci.yml build backend
+        env:
+          COMPOSE_PROJECT_NAME: cronos-ci-${{ github.run_id }}-${{ github.run_attempt }}
+          CRONOS_MIGRATOR_PASSWORD: ${{ env.CI_MIGRATOR_PASSWORD }}
+          CRONOS_APP_PASSWORD: ${{ env.CI_APP_PASSWORD }}
+          VITE_CLERK_PUBLISHABLE_KEY: ${{ vars.VITE_CLERK_PUBLISHABLE_KEY }}
+          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
+          E2E_CLERK_ADMIN_EMAIL: ${{ env.CI_E2E_CLERK_ADMIN_EMAIL }}
+          E2E_CLERK_TEACHER_EMAIL: ${{ env.CI_E2E_CLERK_TEACHER_EMAIL }}
+          E2E_CLERK_INVITE_CREATE_EMAIL: ${{ env.E2E_CLERK_INVITE_CREATE_EMAIL }}
+          E2E_CLERK_INVITE_CONVERT_EMAIL: ${{ env.E2E_CLERK_INVITE_CONVERT_EMAIL }}
+
+      - name: Start CI infrastructure
+        run: docker compose -f docker-compose.ci.yml up -d --wait db redis
+        env:
+          COMPOSE_PROJECT_NAME: cronos-ci-${{ github.run_id }}-${{ github.run_attempt }}
+          POSTGRES_DB: cronos_ci_db
+          POSTGRES_PASSWORD: ${{ env.POSTGRES_PASSWORD }}
+          CRONOS_MIGRATOR_PASSWORD: ${{ env.CI_MIGRATOR_PASSWORD }}
+          CRONOS_APP_PASSWORD: ${{ env.CI_APP_PASSWORD }}
+          VITE_CLERK_PUBLISHABLE_KEY: ${{ vars.VITE_CLERK_PUBLISHABLE_KEY }}
+          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
+          E2E_CLERK_ADMIN_EMAIL: ${{ env.CI_E2E_CLERK_ADMIN_EMAIL }}
+          E2E_CLERK_TEACHER_EMAIL: ${{ env.CI_E2E_CLERK_TEACHER_EMAIL }}
+          E2E_CLERK_INVITE_CREATE_EMAIL: ${{ env.E2E_CLERK_INVITE_CREATE_EMAIL }}
+          E2E_CLERK_INVITE_CONVERT_EMAIL: ${{ env.E2E_CLERK_INVITE_CONVERT_EMAIL }}
+
+      - name: Provision CI database roles
+        run: docker compose -f docker-compose.ci.yml --profile maintenance run --rm provision-db
+        env:
+          COMPOSE_PROJECT_NAME: cronos-ci-${{ github.run_id }}-${{ github.run_attempt }}
+          POSTGRES_DB: cronos_ci_db
+          POSTGRES_PASSWORD: ${{ env.POSTGRES_PASSWORD }}
+          CRONOS_MIGRATOR_PASSWORD: ${{ env.CI_MIGRATOR_PASSWORD }}
+          CRONOS_APP_PASSWORD: ${{ env.CI_APP_PASSWORD }}
+          VITE_CLERK_PUBLISHABLE_KEY: ${{ vars.VITE_CLERK_PUBLISHABLE_KEY }}
+          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
+          E2E_CLERK_ADMIN_EMAIL: ${{ env.CI_E2E_CLERK_ADMIN_EMAIL }}
+          E2E_CLERK_TEACHER_EMAIL: ${{ env.CI_E2E_CLERK_TEACHER_EMAIL }}
+          E2E_CLERK_INVITE_CREATE_EMAIL: ${{ env.E2E_CLERK_INVITE_CREATE_EMAIL }}
+          E2E_CLERK_INVITE_CONVERT_EMAIL: ${{ env.E2E_CLERK_INVITE_CONVERT_EMAIL }}
+
+      - name: Apply CI database migrations
+        run: docker compose -f docker-compose.ci.yml --profile maintenance run --rm db-maintenance
+        env:
+          COMPOSE_PROJECT_NAME: cronos-ci-${{ github.run_id }}-${{ github.run_attempt }}
+          POSTGRES_DB: cronos_ci_db
+          POSTGRES_PASSWORD: ${{ env.POSTGRES_PASSWORD }}
+          CRONOS_MIGRATOR_PASSWORD: ${{ env.CI_MIGRATOR_PASSWORD }}
+          CRONOS_APP_PASSWORD: ${{ env.CI_APP_PASSWORD }}
+          VITE_CLERK_PUBLISHABLE_KEY: ${{ vars.VITE_CLERK_PUBLISHABLE_KEY }}
+          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
+          E2E_CLERK_ADMIN_EMAIL: ${{ env.CI_E2E_CLERK_ADMIN_EMAIL }}
+          E2E_CLERK_TEACHER_EMAIL: ${{ env.CI_E2E_CLERK_TEACHER_EMAIL }}
+          E2E_CLERK_INVITE_CREATE_EMAIL: ${{ env.E2E_CLERK_INVITE_CREATE_EMAIL }}
+          E2E_CLERK_INVITE_CONVERT_EMAIL: ${{ env.E2E_CLERK_INVITE_CONVERT_EMAIL }}
+
       - name: Start full application stack
-        run: docker compose -f docker-compose.ci.yml up -d --build --wait backend worker beat frontend
+        run: docker compose -f docker-compose.ci.yml up -d --wait backend worker beat frontend
         env:
           COMPOSE_PROJECT_NAME: cronos-ci-${{ github.run_id }}-${{ github.run_attempt }}
           POSTGRES_DB: cronos_ci_db
@@ -213,6 +271,7 @@ jobs:
           E2E_CLERK_INVITE_CONVERT_EMAIL: ${{ env.E2E_CLERK_INVITE_CONVERT_EMAIL }}
 
       - name: Prepare E2E Clerk local state
+        id: prepare-e2e-clerk-state
         run: |
           docker compose -f docker-compose.ci.yml exec -T \
             -e CLERK_SECRET_KEY="$CLERK_SECRET_KEY" \
@@ -251,7 +310,7 @@ jobs:
           COMPOSE_PROJECT_NAME: cronos-ci-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Revoke E2E Clerk invitations
-        if: always()
+        if: ${{ always() && steps.prepare-e2e-clerk-state.outcome == 'success' }}
         run: |
           if [ -n "$(docker compose -f docker-compose.ci.yml ps -q backend)" ]; then
             docker compose -f docker-compose.ci.yml exec -T \

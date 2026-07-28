@@ -20,7 +20,8 @@ MeuProjeto/
 │   ├── README.md                 # Agent suite documentation
 │   └── skills/                   # Modular skills (cronos-*, clerk*, grill-me, ponytail)
 ├── .github/                      # GitHub Action workflows and agent definitions
-│   └── agents/                   # Agent_Cronos.md router
+│   ├── agents/                   # Agent_Cronos.md router
+│   └── workflows/                # CI workflow specifications
 ├── backend/                      # Python FastAPI application
 │   ├── alembic/                  # Database migration scripts
 │   ├── app/                      # Backend application source
@@ -33,7 +34,7 @@ MeuProjeto/
 │   │   └── worker/               # Celery background workers and solver tasks
 │   ├── scripts/                  # Database audit and maintenance scripts
 │   ├── tests/                    # Pytest test suite
-│   ├── Dockerfile                # Backend container file
+│   ├── Dockerfile                # Multi-stage BuildKit backend image file
 │   └── README.md                 # Backend workspace documentation
 ├── frontend/                     # React 19 + Vite frontend application
 │   ├── e2e/                      # Playwright end-to-end tests
@@ -47,7 +48,9 @@ MeuProjeto/
 │   │   ├── App.jsx               # Route definitions and layout router
 │   │   ├── index.css             # Global design tokens and styles
 │   │   └── main.jsx              # React entry point
-│   ├── Dockerfile                # Frontend container file
+│   ├── .dockerignore             # Docker build exclusion rules
+│   ├── Dockerfile                # Multi-stage Nginx / Node frontend image file
+│   ├── nginx.conf                # Production Nginx SPA server configuration
 │   └── README.md                 # Frontend workspace documentation
 ├── documentation/                # Controlled ASD-STE100 technical documentation
 │   ├── README.md                 # Primary documentation index
@@ -61,8 +64,10 @@ MeuProjeto/
 │   ├── 07_data_and_seed/         # Seed scenarios and test data
 │   ├── 08_security_quality/      # Security controls, RLS, and CI workflows
 │   └── 09_ops_observability/     # Local runtime and observability runbooks
-├── docker-compose.yml            # Local development infrastructure setup
-├── docker-compose.ci.yml         # CI workflow infrastructure setup
+├── .env.example                  # Template root environment variable file
+├── docker-compose.yml            # Production-like local Compose deployment
+├── docker-compose.dev.yml        # Development override file for Vite hot reload
+├── docker-compose.ci.yml         # CI workflow Compose deployment
 ├── README.md                     # Root repository quick start guide
 ├── skills-lock.json              # Version lockfile for AI skills
 └── sonar-project.properties      # SonarQube quality analysis configuration
@@ -80,7 +85,7 @@ MeuProjeto/
 ## Source Map
 - Backend Entry: `backend/app/main.py`
 - Frontend Entry: `frontend/src/main.jsx`
-- Root Docker: `docker-compose.yml`
+- Compose Configurations: `docker-compose.yml`, `docker-compose.dev.yml`, `docker-compose.ci.yml`
 
 ## Related Documents
 - [Project Overview](PROJECT_OVERVIEW.md)

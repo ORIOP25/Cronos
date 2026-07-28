@@ -53,16 +53,20 @@ npx playwright test
 ```
 
 ## Continuous Integration (CI) Workflow Steps
-1. **Lint and Syntax Check**: Run `ruff check` (backend) and `eslint` (frontend).
-2. **Backend Test Suite**: Execute Pytest with PostgreSQL database container.
-3. **Database Migration Audit**: Verify `alembic check` for schema drift.
-4. **Trigger Integrity Audit**: Execute `python backend/scripts/audit_triggers.py`.
-5. **Frontend Build & Test**: Execute `npm run build` and Vitest suite.
-6. **E2E Smoke Test**: Run Playwright suite against launched containers.
+1. **Lint and Syntax Check**: Execute `ruff check` for backend and `eslint` for frontend.
+2. **Build Application Images**: Build backend and frontend container images once.
+3. **Database Role Provisioning**: Run `docker compose --profile maintenance run --rm provision-db`.
+4. **Database Migration Execution**: Run `docker compose --profile maintenance run --rm db-maintenance`.
+5. **Start Runtime Stack**: Launch `db`, `redis`, `backend`, and `frontend` Nginx containers.
+6. **Backend and Database Audits**: Verify `alembic check` and execute `python backend/scripts/audit_triggers.py`.
+7. **Frontend Unit Tests**: Run Vitest component test suite.
+8. **Playwright E2E Tests**: Run Playwright against the Nginx frontend container.
+9. **Compose Project Teardown**: Execute `docker compose down -v --remove-orphans`.
 
 ## Contracts and Invariants
 - Backend tests must execute against a dedicated test database name containing `test` or `ci`.
 - CI builds fail automatically if coverage falls below configured threshold.
+- CI workflows must tear down Compose projects cleanly upon job completion.
 
 ## Failure Modes
 - Destructive Test Prevention: Pytest fixture aborts if database URL does not contain `test` or `ci`.
@@ -74,8 +78,9 @@ Execute local CI verification pipeline manually before pushing commits.
 - Backend Tests: `backend/tests/`
 - Frontend Tests: `frontend/src/test/`
 - E2E Tests: `frontend/e2e/`
-- CI Pipeline: `.github/workflows/ci.yml` (if present)
+- CI Pipeline Spec: `docker-compose.ci.yml`, `.github/workflows/ci.yml`
 
 ## Related Documents
 - [Contributing Guidelines](../00_getting_started/CONTRIBUTING.md)
 - [Security and Tenant Isolation](SECURITY_AND_TENANT_ISOLATION.md)
+- [Local Runtime](../09_ops_observability/LOCAL_RUNTIME.md)

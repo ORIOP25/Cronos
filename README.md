@@ -20,26 +20,32 @@ Cronos is a Software-as-a-Service (SaaS) platform for course scheduling and oper
 
 1. **Clone repository and prepare environment files**:
    ```bash
+   cp .env.example .env
    cp backend/.env.example backend/.env
    ```
 
-2. **Start Docker services**:
+2. **Provision database roles on first installation or password rotation**:
    ```bash
-   docker compose up -d
+   docker compose --profile maintenance run --rm provision-db
    ```
 
-3. **Apply database migrations**:
+3. **Apply database migrations on first installation and each release**:
    ```bash
-   docker compose exec cronos-backend alembic upgrade head
+   docker compose --profile maintenance run --rm db-maintenance
    ```
 
-4. **Seed realistic test dataset**:
+4. **Start or reconcile the production-like local stack**:
    ```bash
-   docker compose exec cronos-backend python scripts/seed.py --scenario small-realistic
+   docker compose up -d --build
    ```
 
-5. **Access application services**:
-   - Frontend Application: `http://localhost:5173`
+5. **Seed realistic test data**:
+   ```bash
+   docker compose exec backend python scripts/seed.py --scenario small-realistic
+   ```
+
+6. **Access application services**:
+   - Frontend Application: `http://localhost:8080`
    - Backend API Documentation: `http://localhost:8000/docs`
    - Health Check Endpoint: `http://localhost:8000/api/v1/health`
 
@@ -54,6 +60,9 @@ cd backend && pytest tests/ -v
 # Run frontend tests
 cd frontend && npm run test
 ```
+
+For Vite hot reload, use `docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build`.
+The development frontend is available at `http://localhost:5173`.
 
 ## Documentation Reading Paths
 

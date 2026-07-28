@@ -1,0 +1,13 @@
+# Keep the Docker build context small and prevent local configuration from
+# becoming part of an image layer.
+node_modules/
+dist/
+coverage/
+reports/
+playwright-report/
+test-results/
+.git/
+.env
+.env.*
+*.log
+npm-debug.log*
