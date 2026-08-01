@@ -42,6 +42,8 @@ MeuProjeto/
 │   ├── scripts/                  # Quality and CSS coverage scripts
 │   ├── src/                      # React source code
 │   │   ├── components/           # Reusable UI components
+│   │   │   └── marketing/        # Modular marketing site sections
+│   │   ├── data/                 # Extracted static content data
 │   │   ├── features/             # Feature-specific logic and hooks
 │   │   ├── hooks/                # Custom React hooks
 │   │   ├── pages/                # Top-level page views

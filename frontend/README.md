@@ -42,11 +42,13 @@ npm run test:e2e
 
 ## Public Marketing Site
 The public marketing landing page resides in:
-- Component: `src/pages/MarketingSite.jsx`
+- Page Assembler: `src/pages/MarketingSite.jsx`
+- Section Components: `src/components/marketing/` (`TestimonialsMarquee.jsx`, `ContactQuestionnaire.jsx`, etc.)
+- Static Data: `src/data/marketingData.js`
 - Styles: `src/pages/MarketingSite.css`
-- Static Graphics: `public/marketing/`
+- Optimized WebP Graphics: `public/marketing/*.webp`
 
-Marketing site CSS classes use the `cronos-*` namespace to isolate styles from authenticated application pages.
+Marketing site CSS classes use the `cronos-*` namespace to isolate styles from authenticated application pages. Continuous animations use GPU hardware layer promotion (`translate3d`). Below-the-fold sections use `content-visibility: auto`.
 
 ## Route Summary Table
 
