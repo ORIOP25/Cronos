@@ -12,9 +12,10 @@
   --cronos-blue: #476da8;
   --cronos-red: #a4573e;
   --cronos-shadow: 0 10px 30px rgba(59, 36, 21, 0.08);
+  --cronos-anchor-offset: 144px;
 
   min-height: 100vh;
-  overflow-x: hidden;
+  overflow-x: clip;
   background: var(--cronos-cream);
   color: var(--cronos-brown);
   font-family: var(--font-body);
@@ -35,8 +36,12 @@
   margin: 0 auto;
 }
 
+.cronos-marketing main > section[id] {
+  scroll-margin-top: var(--cronos-anchor-offset);
+}
+
 .cronos-header {
-  position: fixed;
+  position: sticky;
   top: 0;
   left: 0;
   width: 100%;
@@ -220,7 +225,7 @@
 
 .cronos-hero {
   position: relative;
-  padding: 220px 0 130px;
+  padding: 96px 0 130px;
   overflow: hidden;
 }
 
@@ -339,8 +344,6 @@
   object-fit: cover;
   border: 1px solid rgba(242, 162, 12, 0.2);
 }
-
-
 
 .cronos-service-strip {
   display: grid;
@@ -752,98 +755,6 @@
   color: #d4940b;
 }
 
-.cronos-routine-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 24px;
-}
-
-.cronos-routine-card {
-  min-height: 390px;
-  display: grid;
-  grid-template-columns: minmax(0, 0.88fr) minmax(0, 1fr);
-  border: 1px solid var(--cronos-line);
-  background: var(--cronos-paper);
-  box-shadow: var(--cronos-shadow);
-}
-
-.cronos-routine-card__scene {
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-end;
-  padding: 32px;
-  background:
-    linear-gradient(180deg, rgba(59, 36, 21, 0.78), rgba(59, 36, 21, 0.98)),
-    var(--cronos-brown);
-  color: var(--cronos-cream-2);
-}
-
-.cronos-routine-card__scene span {
-  margin-bottom: auto;
-  color: var(--cronos-accent);
-  font-size: 0.68rem;
-  font-weight: 900;
-  letter-spacing: 0.08em;
-  line-height: 1.35;
-  text-transform: uppercase;
-}
-
-.cronos-routine-card__scene h3 {
-  margin: 0 0 18px;
-  color: var(--cronos-cream-2);
-  font-size: 2rem;
-  font-weight: 900;
-  line-height: 1;
-}
-
-.cronos-routine-card__scene p {
-  margin: 0;
-  color: rgba(255, 250, 240, 0.78);
-  font-size: 0.95rem;
-  line-height: 1.65;
-}
-
-.cronos-routine-card__details {
-  position: relative;
-  padding: 32px 34px;
-}
-
-.cronos-routine-card__details strong {
-  display: block;
-  margin: 0 0 22px;
-  color: var(--cronos-brown);
-  font-size: 1.1rem;
-  font-weight: 900;
-  line-height: 1.25;
-}
-
-.cronos-routine-card__details ul {
-  display: grid;
-  gap: 12px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.cronos-routine-card__details li {
-  position: relative;
-  padding-left: 24px;
-  color: var(--cronos-muted);
-  font-size: 0.94rem;
-  line-height: 1.55;
-}
-
-.cronos-routine-card__details li::before {
-  content: '';
-  position: absolute;
-  top: 0.58em;
-  left: 0;
-  width: 9px;
-  height: 9px;
-  border: 1px solid var(--cronos-accent);
-  background: rgba(242, 162, 12, 0.12);
-}
-
 .cronos-roles {
   padding: 120px 0;
   border-bottom: 1px solid var(--cronos-line);
@@ -1096,8 +1007,6 @@
   background: linear-gradient(270deg, var(--cronos-cream) 0%, rgba(251, 246, 230, 0) 100%);
 }
 
-
-
 .cronos-marquee-row {
   display: flex;
   width: max-content;
@@ -1134,14 +1043,25 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .cronos-marketing *,
+  .cronos-marketing *::before,
+  .cronos-marketing *::after,
+  .cronos-hero-bg-anim,
+  .cronos-contact-step,
+  .cronos-stepper-progress-fill,
+  .cronos-contact-progress__fill,
   .cronos-marquee-row--right,
   .cronos-marquee-row--left {
-    animation: none;
+    animation: none !important;
+    transition: none !important;
+  }
+
+  .cronos-marquee-row--right,
+  .cronos-marquee-row--left {
     width: 100%;
     overflow-x: auto;
   }
 }
-
 .cronos-product,
 .cronos-process,
 .cronos-generator,
@@ -1228,74 +1148,6 @@
   color: rgba(61, 43, 31, 0.6);
   font-size: 0.8rem;
   font-weight: 600;
-}
-
-.cronos-testimonial-card blockquote span {
-  color: var(--cronos-accent);
-  font-size: 1.4rem;
-}
-
-.cronos-carousel-button {
-  width: 38px;
-  height: 38px;
-  border: 0;
-  border-radius: 0;
-  background: var(--cronos-brown);
-  color: var(--cronos-paper);
-  font-size: 1.6rem;
-  line-height: 1;
-  cursor: pointer;
-  transition: background 180ms ease, color 180ms ease;
-}
-
-.cronos-carousel-button:hover,
-.cronos-carousel-button:focus-visible {
-  background: var(--cronos-accent);
-  color: var(--cronos-brown);
-}
-
-.cronos-carousel-dots {
-  display: flex;
-  justify-content: center;
-  gap: 8px;
-  margin-top: 36px;
-}
-
-.cronos-carousel-dots button {
-  width: 7px;
-  height: 5px;
-  padding: 0;
-  border: 0;
-  border-radius: 0;
-  background: rgba(242, 162, 12, 0.18);
-  cursor: pointer;
-  transition: width 180ms ease, background 180ms ease;
-}
-
-.cronos-carousel-dots button:hover,
-.cronos-carousel-dots button:focus-visible {
-  background: rgba(242, 162, 12, 0.55);
-}
-
-.cronos-carousel-dots button.is-active {
-  width: 24px;
-  background: var(--cronos-accent);
-}
-
-.cronos-testimonials__scribble {
-  position: absolute;
-  top: 250px;
-  right: 30px;
-  width: 110px;
-  height: 430px;
-  opacity: 0.16;
-  pointer-events: none;
-  background:
-    radial-gradient(ellipse at 70% 10%, transparent 40%, var(--cronos-muted) 41%, transparent 43%),
-    radial-gradient(ellipse at 25% 42%, transparent 40%, var(--cronos-muted) 41%, transparent 43%),
-    radial-gradient(ellipse at 75% 73%, transparent 40%, var(--cronos-muted) 41%, transparent 43%);
-  border-right: 1px solid var(--cronos-muted);
-  transform: rotate(11deg);
 }
 
 .cronos-contact {
@@ -1498,14 +1350,14 @@
 }
 
 .cronos-form__note {
-  margin-top: 18px;
+  margin: 18px 0 0;
+  color: rgba(61, 43, 31, 0.42);
   font-size: 0.8rem;
   font-weight: 400;
-  color: rgba(61, 43, 31, 0.42);
   line-height: 1.4;
   letter-spacing: 0;
+  text-align: center;
 }
-
 .cronos-contact-step h3 {
   font-family: var(--font-heading, 'Playfair Display', serif);
   font-size: 1.85rem;
@@ -1695,15 +1547,6 @@
   accent-color: var(--cronos-brown);
 }
 
-.cronos-form__note {
-  grid-column: 1 / -1;
-  margin: 0;
-  color: var(--cronos-muted);
-  font-size: 0.76rem;
-  font-weight: 700;
-  text-align: center;
-}
-
 .cronos-footer {
   padding: 110px 0 62px;
   background: var(--cronos-brown-2);
@@ -1769,7 +1612,7 @@
 
 @media (max-width: 1180px) {
   .cronos-hero {
-    padding-top: 92px;
+    padding-top: 80px;
   }
 
   .cronos-hero__grid {
@@ -1781,7 +1624,7 @@
     font-size: 3.8rem;
   }
 
-  .cronos-service-tile span {
+  .cronos-service-tile h3 {
     font-size: 1.45rem;
   }
 
@@ -1808,9 +1651,6 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .cronos-routine-grid {
-    grid-template-columns: 1fr;
-  }
 
   .cronos-process-card:not(:last-child)::after {
     display: none;
@@ -1822,6 +1662,10 @@
 }
 
 @media (max-width: 900px) {
+  .cronos-marketing {
+    --cronos-anchor-offset: 176px;
+  }
+
   .cronos-header__inner {
     height: auto;
     min-height: 92px;
@@ -1840,7 +1684,7 @@
   }
 
   .cronos-hero {
-    padding: 86px 0 82px;
+    padding: 72px 0 82px;
   }
 
   .cronos-hero__grid,
@@ -1862,10 +1706,7 @@
 
   .cronos-service-strip,
   .cronos-product-grid,
-  .cronos-routine-grid,
   .cronos-role-grid,
-  .cronos-generator__panel,
-  .cronos-testimonial-grid,
   .cronos-footer__grid {
     grid-template-columns: 1fr;
   }
@@ -1889,11 +1730,6 @@
     border-top: 1px solid var(--cronos-line);
   }
 
-  .cronos-generator__panel > div + div {
-    border-left: 0;
-    border-top: 1px solid rgba(251, 246, 230, 0.16);
-  }
-
   .cronos-process,
   .cronos-product,
   .cronos-routine,
@@ -1903,29 +1739,8 @@
     padding-bottom: 86px;
   }
 
-  .cronos-product-panorama {
-    height: 520px;
-  }
-
-  .cronos-testimonials__wrap {
-    grid-template-columns: 1fr;
-  }
-
-  .cronos-testimonials__wrap {
-    grid-template-columns: 42px 1fr 42px;
-    gap: 10px;
-  }
-
-  .cronos-testimonials__scribble {
-    display: none;
-  }
-
   .cronos-contact {
     padding-bottom: 86px;
-  }
-
-  .cronos-form {
-    height: auto;
   }
 
   .cronos-footer__brand {
@@ -1934,6 +1749,10 @@
 }
 
 @media (max-width: 640px) {
+  .cronos-marketing {
+    --cronos-anchor-offset: 212px;
+  }
+
   .cronos-layout,
   .cronos-header__inner {
     width: min(100% - 32px, 1180px);
@@ -1948,10 +1767,6 @@
   .cronos-nav {
     justify-content: flex-start;
     flex-wrap: wrap;
-  }
-
-  .cronos-header__line {
-    display: none;
   }
 
   .cronos-section-heading h2,
@@ -1985,7 +1800,7 @@
     padding: 0 20px;
   }
 
-  .cronos-service-tile span {
+  .cronos-service-tile h3 {
     font-size: 1.28rem;
   }
 
@@ -2005,39 +1820,17 @@
     min-height: 320px;
   }
 
-  .cronos-module-card,
-  .cronos-routine-card__scene,
-  .cronos-routine-card__details,
-  .cronos-role-card,
-  .cronos-generator__panel > div {
+  .cronos-module-card {
     padding: 26px;
   }
 
-  .cronos-routine-card {
-    min-height: auto;
-    grid-template-columns: 1fr;
-  }
-
-  .cronos-routine-card__scene {
-    min-height: 250px;
+  .cronos-role-card__body {
+    padding: 26px 24px 30px;
   }
 
   .cronos-module-card,
   .cronos-role-card {
     min-height: auto;
-  }
-
-  .cronos-product-panorama {
-    height: 420px;
-  }
-
-  .cronos-product-panorama img {
-    object-position: 44% center;
-  }
-
-  .cronos-form {
-    grid-template-columns: 1fr;
-    padding: 26px;
   }
 
   .cronos-footer__brand {
@@ -2276,63 +2069,6 @@
   color: #3d2b1f;
 }
 
-/* Generator Section Enhancements */
-.cronos-gen-tabs-nav {
-  display: flex;
-  gap: 12px;
-  margin-top: 24px;
-}
-
-.cronos-gen-tab-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 18px;
-  border-radius: 8px;
-  border: 1px solid rgba(251, 246, 230, 0.2);
-  background: transparent;
-  color: #faf8f5;
-  font-size: 0.85rem;
-  font-weight: 700;
-  cursor: pointer;
-  transition: all 180ms ease;
-}
-
-.cronos-gen-tab-btn.is-active {
-  background: #d4940b;
-  color: #3d2b1f;
-  border-color: #d4940b;
-}
-
-.cronos-gen-list {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
-.cronos-gen-list li {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  font-size: 0.95rem;
-  line-height: 1.4;
-}
-
-.cronos-gen-icon {
-  width: 18px;
-  height: 18px;
-  margin-top: 2px;
-  flex-shrink: 0;
-  color: #d4940b;
-}
-
-.cronos-gen-icon--gold {
-  color: #d4940b;
-}
-
 /* Organic Routine Story Flow - Borderless & Spacious */
 .cronos-routine {
   padding-top: 110px;
@@ -2455,34 +2191,53 @@
   margin-top: 3px;
 }
 
-/* Roles Card Headers */
-.cronos-role-card__header {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  margin-bottom: 16px;
-}
-
-.cronos-role-icon {
-  color: #d4940b;
-}
-
-.cronos-star-icon {
-  width: 16px;
-  height: 16px;
-  color: #d4940b;
-}
-
 @media (max-width: 900px) {
   .cronos-stepper-pills {
     grid-template-columns: repeat(3, 1fr);
   }
-  .cronos-step-showcase,
-  .cronos-routine-active-card {
-    grid-template-columns: 1fr;
+
+  .cronos-step-showcase {
+    padding: 40px;
   }
-  .cronos-routine-tabs {
-    grid-template-columns: repeat(2, 1fr);
+
+  .cronos-routine-canvas {
+    grid-template-columns: 1fr;
+    padding: 40px;
   }
 }
 
+@media (max-width: 640px) {
+  .cronos-stepper-pills {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .cronos-stepper-pill {
+    min-height: 92px;
+    padding: 14px;
+  }
+
+  .cronos-step-showcase {
+    padding: 28px 22px;
+  }
+
+  .cronos-routine-stream {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+  }
+
+  .cronos-routine-canvas {
+    padding: 28px 22px;
+    gap: 32px;
+  }
+}
+
+.cronos-marketing .cronos-service-tile:focus-visible,
+.cronos-marketing .cronos-stepper-pill:focus-visible,
+.cronos-marketing .cronos-step-btn:focus-visible,
+.cronos-marketing .cronos-gen-toggle-btn:focus-visible,
+.cronos-marketing .cronos-routine-stream-pill:focus-visible,
+.cronos-marketing .cronos-contact-option-card:focus-visible,
+.cronos-marketing .cronos-contact-back-btn:focus-visible {
+  outline: 3px solid rgba(212, 148, 11, 0.5);
+  outline-offset: 3px;
+}

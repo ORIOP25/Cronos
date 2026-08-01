@@ -10,7 +10,10 @@ const HeroSection = memo(function HeroSection() {
       <div className="cronos-hero-bg-anim" aria-hidden="true" />
       <div className="cronos-layout cronos-hero__grid">
         <div className="cronos-hero__copy">
-          <h1 id="cronos-hero-title">
+          <h1
+            id="cronos-hero-title"
+            aria-label="Horários para o Ensino Profissional Português"
+          >
             <ShinyText
               text="Horários para o Ensino"
               color="#3b2415"

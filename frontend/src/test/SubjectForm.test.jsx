@@ -20,7 +20,9 @@ describe('SubjectForm', () => {
     expect(screen.getByRole('group', { name: 'Módulos' })).toBeInTheDocument()
     expect(screen.getByLabelText(/nome da disciplina/i)).toHaveValue('Matemática')
     expect(screen.getByLabelText(/sala preferencial/i)).toHaveValue('lab')
-    expect(screen.getByText(/M1.*P01.*25h/i)).toBeInTheDocument()
+    expect(screen.getByText('M1')).toBeInTheDocument()
+    expect(screen.getByText('P01')).toBeInTheDocument()
+    expect(screen.getByText('25h')).toBeInTheDocument()
   })
 
   it('adds, edits, removes, and orders modules only in the submit payload', () => {
@@ -41,7 +43,7 @@ describe('SubjectForm', () => {
       modules: [{ name: 'Módulo 1', code: 'C1', hours_total: 25, order: 0 }],
     })
     fireEvent.click(screen.getByRole('button', { name: /remover módulo 1/i }))
-    expect(screen.queryByText(/Módulo 1.*25h/i)).not.toBeInTheDocument()
+    expect(screen.queryByText('Módulo 1')).not.toBeInTheDocument()
   })
 
   it('validates modules and supports cancel/loading', () => {
