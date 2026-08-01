@@ -20,7 +20,9 @@ const GenericModalForm = ({
 }) => {
 
   const isEditing = !!initialData
-  const modalTitle = isEditing ? `Editar ${title}` : `Novo ${title}`
+  const isFeminine = ['Sala', 'Disciplina', 'Turma', 'Configuração'].some((word) => title?.includes(word))
+  const prefix = isEditing ? 'Editar' : (isFeminine ? 'Nova' : 'Novo')
+  const modalTitle = `${prefix} ${title}`
 
   const errorMessage = error ? getApiErrorMessage(error) : null
 
