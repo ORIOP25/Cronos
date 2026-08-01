@@ -33,6 +33,12 @@ Cronos employs a warm, authoritative visual identity designed for educational tr
 - **Headings**: `Playfair Display` (Editorial Serif, authoritative tone).
 - **Body & UI Controls**: `Outfit` (Clean Geometric Sans-Serif, maximum legibility).
 
+## Marketing Landing Page Aesthetics & Performance
+- **CSS Namespace**: Marketing components use `cronos-*` scoped CSS classes to avoid global style collision.
+- **Asset Standards**: Image graphics must use `<picture>` elements with WebP formats (`.webp`), fallback PNG/JPG formats, explicit width/height parameters, and `decoding="async"`.
+- **Motion & Hardware Acceleration**: Continuous CSS marquees must use GPU compositing transforms (`translate3d`), pause on hover, and respect `@media (prefers-reduced-motion: reduce)`.
+- **Layer Isolation**: Fixed elements with backdrop blur (`.cronos-header`) use composite layer isolation (`isolation: isolate; contain: layout style;`).
+
 ## Visual Evidence Baseline Standards
 The repository maintains visual snapshot baselines under `documentation/06_frontend_ux/visual-baselines/`:
 - `css-coverage.json`: CSS execution coverage metrics.
@@ -50,6 +56,7 @@ Run CSS coverage audit script: `node frontend/scripts/capture-css-coverage.mjs`.
 ## Source Map
 - Global CSS Tokens: `frontend/src/index.css`
 - Marketing Styles: `frontend/src/pages/MarketingSite.css`
+- Marketing Components: `frontend/src/components/marketing/`
 - Visual Baseline Dir: `documentation/06_frontend_ux/visual-baselines/`
 
 ## Related Documents

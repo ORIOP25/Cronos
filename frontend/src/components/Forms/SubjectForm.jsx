@@ -94,17 +94,17 @@ const SubjectForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
       <fieldset>
         <legend className="h6 mb-3">Módulos</legend>
         <CRow className="g-2 align-items-end">
-          <CCol md={5}><CFormInput id="subject-module-name" label="Nome do módulo" value={moduleDraft.name} onChange={(event) => updateModule('name', event.target.value)} /></CCol>
+          <CCol md={4}><CFormInput id="subject-module-name" label="Nome do módulo" value={moduleDraft.name} onChange={(event) => updateModule('name', event.target.value)} /></CCol>
           <CCol md={3}><CFormInput id="subject-module-code" label="Código UFCD" value={moduleDraft.code} onChange={(event) => updateModule('code', event.target.value)} /></CCol>
           <CCol md={2}><CFormInput id="subject-module-hours" label="Horas" type="number" min={1} value={moduleDraft.hours_total} onChange={(event) => updateModule('hours_total', event.target.value)} /></CCol>
-          <CCol md={2} className="d-grid"><CButton type="button" color="secondary" variant="outline" onClick={saveModule}>{editingIndex == null ? 'Adicionar' : 'Guardar'}</CButton></CCol>
+          <CCol md={3} className="d-grid"><CButton type="button" color="secondary" variant="outline" onClick={saveModule}>{editingIndex == null ? 'Adicionar' : 'Guardar'}</CButton></CCol>
         </CRow>
         {editingIndex != null && <CButton type="button" color="secondary" variant="ghost" size="sm" onClick={cancelEditing}>Cancelar edição</CButton>}
 
         <div className="mt-3 d-grid gap-2">
           {subject.modules.map((module, index) => (
-            <div key={module.id ?? `${module.name}-${index}`} className="d-flex justify-content-between align-items-center border rounded p-2">
-              <span>{module.name} · {module.code || 'Sem código'} · {module.hours_total}h</span>
+            <div key={module.id ?? `${module.name}-${index}`} className="module-item-card d-flex justify-content-between align-items-center">
+              <span><strong>{module.name}</strong> · <small className="text-muted">{module.code || 'Sem código'}</small> · <strong>{module.hours_total}h</strong></span>
               <div>
                 <CButton type="button" color="primary" variant="ghost" size="sm" aria-label={`Editar ${module.name}`} onClick={() => startEditing(index)}>Editar</CButton>
                 <CButton type="button" color="danger" variant="ghost" size="sm" aria-label={`Remover ${module.name}`} onClick={() => setSubject((current) => ({ ...current, modules: current.modules.filter((_, moduleIndex) => moduleIndex !== index) }))}>Remover</CButton>
