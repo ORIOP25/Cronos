@@ -32,6 +32,21 @@ class OperationalOccurrenceState(StrEnum):
 # e convertê-lo num schema "TeacherRead").
 model_config = ConfigDict(from_attributes=True)
 
+class ContactSubmission(BaseModel):
+    """Validated public contact questionnaire payload."""
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    subject: str = Field(..., min_length=1, max_length=120)
+    courses: str = Field(..., min_length=1, max_length=40)
+    teachers: str = Field(..., min_length=1, max_length=40)
+    name: str = Field(..., min_length=1, max_length=120)
+    email: EmailStr
+    phone: str | None = Field(default=None, max_length=40)
+    message: str | None = Field(default=None, max_length=3000)
+    website: Literal[""] = ""
+
+
 # ==========================================
 #  CONSTANTES DE DESCRIÇÃO (SonarQube: evitar duplicação de literals)
 # ==========================================

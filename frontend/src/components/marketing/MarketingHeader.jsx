@@ -3,11 +3,16 @@ import { Link } from 'react-router-dom'
 import { navItems } from '../../data/marketingData'
 
 function BrandMark() {
+  const handleLogoClick = (e) => {
+    e.preventDefault()
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
   return (
-    <Link to="/" className="cronos-brand" aria-label="Cronos">
+    <a href="#inicio" onClick={handleLogoClick} className="cronos-brand" aria-label="Cronos - Voltar ao topo">
       <img src="/logo.png" alt="" className="cronos-brand__image" width="48" height="48" decoding="async" />
       <span className="cronos-brand__text">Cronos</span>
-    </Link>
+    </a>
   )
 }
 

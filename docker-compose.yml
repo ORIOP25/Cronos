@@ -73,7 +73,10 @@ services:
     image: cronos-backend:local
     build: {context: ./backend, target: runtime}
     env_file: ./backend/.env
-    environment: *backend-environment
+    environment:
+      <<: *backend-environment
+      CONTACT_SMTP_PASSWORD: ${CONTACT_SMTP_PASSWORD:?CONTACT_SMTP_PASSWORD is required}
+      TRUSTED_PROXY_IPS: 172.16.0.0/12
     restart: unless-stopped
     ports: ["127.0.0.1:8000:8000"]
     depends_on:

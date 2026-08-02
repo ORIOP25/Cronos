@@ -3,7 +3,7 @@
 from typing import Literal
 from urllib.parse import urlparse
 
-from pydantic import PostgresDsn, RedisDsn, computed_field, model_validator
+from pydantic import EmailStr, PostgresDsn, RedisDsn, SecretStr, computed_field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -89,6 +89,15 @@ class Settings(BaseSettings):
     # Se não definires no .env, assume o default do Docker
     REDIS_URL: str | RedisDsn = "redis://redis:6379/0"
     RATELIMIT_ENABLED: bool = True
+    # Comma-separated IP addresses or CIDR ranges allowed to supply X-Real-IP.
+    TRUSTED_PROXY_IPS: str = ""
+
+    CONTACT_SMTP_HOST: str = "smtp.hostinger.com"
+    CONTACT_SMTP_PORT: int = 465
+    CONTACT_SMTP_USERNAME: EmailStr = "contacto@cronos.pt"
+    CONTACT_SMTP_PASSWORD: SecretStr | None = None
+    CONTACT_EMAIL_TO: EmailStr = "contacto@cronos.pt"
+    CONTACT_SMTP_TIMEOUT_SECONDS: int = 10
 
     # --- Solver (roadmap V2) ---
     # Fallback seguro: manter V1 por omissão até ativação explícita.
@@ -102,6 +111,19 @@ class Settings(BaseSettings):
     def set_defaults(self):
         if not 0 <= self.CLERK_CLOCK_SKEW_MS <= 60_000:
             raise ValueError("CLERK_CLOCK_SKEW_MS must be between 0 and 60000.")
+        for proxy in filter(None, (value.strip() for value in self.TRUSTED_PROXY_IPS.split(","))):
+            try:
+                import ipaddress
+
+                ipaddress.ip_network(proxy, strict=False)
+            except ValueError as exc:
+                raise ValueError("TRUSTED_PROXY_IPS must contain valid IP addresses or CIDR ranges.") from exc
+        if not 1 <= self.CONTACT_SMTP_PORT <= 65_535:
+            raise ValueError("CONTACT_SMTP_PORT must be between 1 and 65535.")
+        if not 1 <= self.CONTACT_SMTP_TIMEOUT_SECONDS <= 30:
+            raise ValueError("CONTACT_SMTP_TIMEOUT_SECONDS must be between 1 and 30.")
+        if self.ENVIRONMENT == "production" and self.CONTACT_SMTP_PASSWORD is None:
+            raise ValueError("CONTACT_SMTP_PASSWORD is required in production.")
         self.FRONTEND_URL = _normalize_http_origin(self.FRONTEND_URL, "FRONTEND_URL")
         if self.FRONTEND_URL not in self.CLERK_AUTHORIZED_PARTIES_LIST:
             raise ValueError("FRONTEND_URL must appear in CLERK_AUTHORIZED_PARTIES.")
