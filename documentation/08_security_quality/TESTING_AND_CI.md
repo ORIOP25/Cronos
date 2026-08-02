@@ -58,7 +58,7 @@ npx playwright test
 3. **Database Role Provisioning**: Run `docker compose --profile maintenance run --rm provision-db`.
 4. **Database Migration Execution**: Run `docker compose --profile maintenance run --rm db-maintenance`.
 5. **Start Runtime Stack**: Launch `db`, `redis`, `backend`, and `frontend` Nginx containers.
-6. **Backend and Database Audits**: Verify `alembic check` and execute `python backend/scripts/audit_triggers.py`.
+6. **Backend and Database Audits**: Run `docker compose --profile maintenance run --rm db-maintenance alembic check` and execute `python backend/scripts/audit_triggers.py`.
 7. **Frontend Unit Tests**: Run Vitest component test suite.
 8. **Playwright E2E Tests**: Run Playwright against the Nginx frontend container.
 9. **Compose Project Teardown**: Execute `docker compose down -v --remove-orphans`.

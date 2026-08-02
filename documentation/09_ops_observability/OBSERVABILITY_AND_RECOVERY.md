@@ -26,7 +26,7 @@ Cronos monitors runtime health, task queue depth, solver execution latency, and 
 ### Runbook 1: Backend CI Failure Recovery
 1. Pull target branch and run local backend test suite: `pytest tests/ -v`.
 2. Inspect failure stack trace. If database error occurs, verify local test database URL.
-3. Check Alembic migration status: `alembic check`.
+3. Check Alembic migration status: `docker compose --profile maintenance run --rm db-maintenance alembic check`. This uses the privileged migrator role.
 4. If schema drift exists, create missing migration revision.
 
 ### Runbook 2: Stuck Scheduler Celery Worker

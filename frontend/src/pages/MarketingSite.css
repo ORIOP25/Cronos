@@ -1488,48 +1488,42 @@
 }
 
 .cronos-field {
-  display: grid;
-  gap: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
 .cronos-field--full {
-  grid-column: 1 / -1;
+  width: 100%;
 }
 
 .cronos-field span {
-  color: var(--cronos-muted);
-  font-size: 0.72rem;
-  font-weight: 900;
-  letter-spacing: 0;
-  text-transform: uppercase;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: #3d2b1f;
+  text-transform: none;
+  letter-spacing: normal;
 }
 
 .cronos-field input,
-.cronos-field select,
-.cronos-field textarea {
+.cronos-field select {
   width: 100%;
-  min-height: 42px;
-  padding: 0 0 10px;
-  border: 0;
-  border-bottom: 2px solid var(--cronos-line-strong);
-  border-radius: 0;
-  background: transparent;
-  color: var(--cronos-brown);
+  border: 1px solid rgba(61, 43, 31, 0.18);
+  border-radius: 12px;
+  padding: 14px 18px;
   font: inherit;
-  font-size: 0.92rem;
+  font-size: 0.98rem;
+  line-height: 1.5;
+  color: #3d2b1f;
+  background: #ffffff;
   outline: none;
-}
-
-.cronos-field textarea {
-  resize: vertical;
-  min-height: 72px;
+  transition: all 200ms ease;
 }
 
 .cronos-field input:focus,
-.cronos-field select:focus,
-.cronos-field textarea:focus {
-  border-bottom-color: var(--cronos-accent);
-  box-shadow: none !important;
+.cronos-field select:focus {
+  border-color: #d4940b;
+  box-shadow: 0 0 0 4px rgba(212, 148, 11, 0.14) !important;
 }
 
 .cronos-checkbox {
@@ -2240,4 +2234,27 @@
 .cronos-marketing .cronos-contact-back-btn:focus-visible {
   outline: 3px solid rgba(212, 148, 11, 0.5);
   outline-offset: 3px;
+}
+
+.cronos-contact-honeypot {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.cronos-contact-step-actions .cronos-button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.cronos-contact-error,
+.cronos-contact-privacy {
+  margin: 1rem 0 0;
+}
+
+.cronos-contact-error {
+  color: #9f1239;
 }

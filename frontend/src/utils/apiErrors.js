@@ -25,6 +25,7 @@ const fromObjectDetail = (detail) => {
 const statusMessage = (status) => {
   if (status === 401) return 'A sua sessão terminou. Entre novamente.'
   if (status === 403) return 'Não tem permissão para realizar esta ação.'
+  if (status === 429) return 'Foram efetuadas v?rias tentativas. Aguarde e tente novamente.'
   if (status >= 500) return 'O servidor encontrou um problema. Tente novamente dentro de instantes.'
   return null
 }

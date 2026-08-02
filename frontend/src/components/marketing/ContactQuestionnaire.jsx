@@ -1,296 +1,117 @@
-import { useState, memo } from 'react'
+import { memo, useState } from 'react'
 import CIcon from '@coreui/icons-react'
-import { cilArrowRight, cilChevronLeft, cilCheckCircle } from '@coreui/icons'
+import { cilArrowRight, cilCheckCircle, cilChevronLeft } from '@coreui/icons'
 import { contactCards } from '../../data/marketingData'
+import { useSubmitContact } from '../../features/contact/data'
+import { getApiErrorMessage } from '../../utils/apiErrors'
+
+const SUBJECT_OPTIONS = [
+  'Criar horários do zero sem conflitos',
+  'Gerir furos, faltas e substituições',
+  'Acompanhar horas de UFCDs e módulos',
+  'Outro',
+]
+const COURSE_OPTIONS = ['Entre 1 e 5', 'Entre 5 e 20', '20+']
+const TEACHER_OPTIONS = ['Entre 1 e 15', 'Entre 15 e 50', '50+']
+const EMPTY_CONTACT = { subject: '', courses: '', teachers: '', name: '', email: '', phone: '', message: '' }
 
 const ContactQuestionnaire = memo(function ContactQuestionnaire() {
   const [contactStep, setContactStep] = useState(0)
-  const [contactData, setContactData] = useState({
-    subject: '',
-    courses: '',
-    teachers: '',
-    name: '',
-    email: '',
-    phone: '',
-    message: '',
-  })
+  const [contactData, setContactData] = useState(EMPTY_CONTACT)
+  const [website, setWebsite] = useState('')
+  const [submitError, setSubmitError] = useState('')
+  const submitContact = useSubmitContact()
 
-  const handleSelectSubject = (val) => {
-    setContactData((prev) => ({ ...prev, subject: val }))
-    setContactStep(2)
+  const updateContactData = (field, value) => setContactData((current) => ({ ...current, [field]: value }))
+  const selectSubject = (value) => { updateContactData('subject', value); setContactStep(2) }
+  const selectCourses = (value) => { updateContactData('courses', value); setContactStep(3) }
+  const selectTeachers = (value) => { updateContactData('teachers', value); setContactStep(4) }
+  const handleContactDetailsNext = (event) => { event.preventDefault(); setContactStep(5) }
+  const handleFinalSubmit = async (event) => {
+    event.preventDefault()
+    if (submitContact.isPending) return
+    setSubmitError('')
+    try {
+      await submitContact.mutateAsync({ ...contactData, website })
+      setContactStep(6)
+    } catch (error) {
+      setSubmitError(getApiErrorMessage(error, 'Não foi possível enviar o pedido neste momento.'))
+    }
   }
-
-  const handleSelectCourses = (val) => {
-    setContactData((prev) => ({ ...prev, courses: val }))
-    setContactStep(3)
-  }
-
-  const handleSelectTeachers = (val) => {
-    setContactData((prev) => ({ ...prev, teachers: val }))
-    setContactStep(4)
-  }
-
-  const handleContactDetailsNext = (e) => {
-    e.preventDefault()
-    if (!contactData.name || !contactData.email) return
-    setContactStep(5)
-  }
-
-  const handleFinalSubmit = (e) => {
-    if (e) e.preventDefault()
-    setContactStep(6)
+  const resetQuestionnaire = () => {
+    setContactStep(0)
+    setContactData(EMPTY_CONTACT)
+    setWebsite('')
+    setSubmitError('')
+    submitContact.reset()
   }
 
   return (
     <section className="cronos-contact" id="contacto" aria-labelledby="cronos-contact-title">
       <div className="cronos-layout cronos-contact__grid">
         <div className="cronos-contact__content">
-          <h2 id="cronos-contact-title">
-            Gostava de ver como funcionaria na sua escola? <br />
-            <span className="cronos-contact-title-highlight">Fale connosco!</span>
-          </h2>
-          <p>
-            Sem compromisso. Mostre-nos o seu maior desafio com os horários atuais e mostramos-lhe, em 15 minutos, como o Cronos pode ajudar a resolvê-lo.
-          </p>
-
+          <h2 id="cronos-contact-title">Gostava de ver como funcionaria na sua escola? <br /><span className="cronos-contact-title-highlight">Fale connosco!</span></h2>
+          <p>Sem compromisso. Mostre-nos o seu maior desafio com os horários atuais e mostramos-lhe como o Cronos pode ajudar.</p>
           <div className="cronos-contact-cards">
-            {contactCards.map((card) => (
-              <div className="cronos-contact-card" key={card.label}>
-                <span className="cronos-contact-card__icon">
-                  <CIcon icon={card.icon} />
-                </span>
-                <div>
-                  <strong>{card.label}</strong>
-                  <span>{card.value}</span>
-                </div>
-              </div>
-            ))}
+            {contactCards.map((card) => <div className="cronos-contact-card" key={card.label}><span className="cronos-contact-card__icon"><CIcon icon={card.icon} /></span><div><strong>{card.label}</strong><span>{card.value}</span></div></div>)}
           </div>
         </div>
-
-        {/* Multi-Step Interactive Questionnaire Panel */}
         <div className="cronos-contact-interactive-panel">
-          {contactStep > 0 && contactStep < 6 && (
-            <div className="cronos-contact-progress">
-              <div className="cronos-contact-progress__header">
-                <span className="cronos-contact-progress__step">Passo {contactStep} de 5</span>
-                {contactStep > 1 && (
-                  <button
-                    type="button"
-                    className="cronos-contact-back-btn"
-                    onClick={() => setContactStep((prev) => prev - 1)}
-                  >
-                    <CIcon icon={cilChevronLeft} /> Voltar
-                  </button>
-                )}
-              </div>
-              <div className="cronos-contact-progress__track">
-                <div
-                  className="cronos-contact-progress__fill"
-                  style={{ width: `${(contactStep / 5) * 100}%` }}
-                />
-              </div>
-            </div>
-          )}
-
-          {/* Step 0: Welcome */}
-          {contactStep === 0 && (
-            <div className="cronos-contact-step cronos-contact-step--welcome">
-              <h3>Pronto para simplificar a gestão de horários da sua escola?</h3>
-              <p>
-                Responda a 4 perguntas rápidas para personalizarmos a conversa com a nossa equipa.
-              </p>
-              <button
-                type="button"
-                className="cronos-button cronos-button--form"
-                onClick={() => setContactStep(1)}
-              >
-                Falar com a nossa equipa <CIcon icon={cilArrowRight} />
-              </button>
-              <p className="cronos-form__note">Demora menos de 1 minuto. Sem qualquer compromisso.</p>
-            </div>
-          )}
-
-          {/* Step 1: Subject */}
-          {contactStep === 1 && (
-            <div className="cronos-contact-step">
-              <h3>Como podemos ajudar?</h3>
-              <div className="cronos-contact-options-grid">
-                <button
-                  type="button"
-                  className="cronos-contact-option-card cronos-contact-option-card--featured"
-                  onClick={() => handleSelectSubject('Criar horários do zero sem conflitos')}
-                >
-                  <strong>Criar horários do zero sem conflitos</strong>
-                  <span>Gerar a grelha completa automaticamente com salas e professores</span>
-                </button>
-                <button
-                  type="button"
-                  className="cronos-contact-option-card cronos-contact-option-card--featured"
-                  onClick={() => handleSelectSubject('Gerir furos, faltas e substituições')}
-                >
-                  <strong>Gerir furos, faltas e substituições</strong>
-                  <span>Resolver imprevistos diários sem desmoronar o calendário</span>
-                </button>
-                <button
-                  type="button"
-                  className="cronos-contact-option-card cronos-contact-option-card--featured"
-                  onClick={() => handleSelectSubject('Acompanhar horas de UFCDs e módulos')}
-                >
-                  <strong>Acompanhar horas de UFCDs e módulos</strong>
-                  <span>Controlo transparente do progresso letivo e sumários</span>
-                </button>
-                <button
-                  type="button"
-                  className="cronos-contact-option-card cronos-contact-option-card--subtle"
-                  onClick={() => handleSelectSubject('Outro')}
-                >
-                  <strong>Outro</strong>
-                  <span>Outra necessidade ou questão específica</span>
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Step 2: Courses */}
-          {contactStep === 2 && (
-            <div className="cronos-contact-step">
-              <h3>Quantos cursos leciona a sua escola?</h3>
-              <div className="cronos-contact-options-list">
-                {['Entre 1 e 5', 'Entre 5 e 20', '20+'].map((opt) => (
-                  <button
-                    key={opt}
-                    type="button"
-                    className="cronos-contact-option-card"
-                    onClick={() => handleSelectCourses(opt)}
-                  >
-                    <strong>{opt}</strong>
-                    <span>Cursos profissionais lecionados na escola</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Step 3: Teachers */}
-          {contactStep === 3 && (
-            <div className="cronos-contact-step">
-              <h3>Quantos professores integram o seu corpo docente?</h3>
-              <div className="cronos-contact-options-list">
-                {['Entre 1 e 15', 'Entre 15 e 50', '50+'].map((opt) => (
-                  <button
-                    key={opt}
-                    type="button"
-                    className="cronos-contact-option-card"
-                    onClick={() => handleSelectTeachers(opt)}
-                  >
-                    <strong>{opt}</strong>
-                    <span>Docentes e formadores ativos no corpo docente</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Step 4: Contact details */}
-          {contactStep === 4 && (
-            <form className="cronos-contact-step" onSubmit={handleContactDetailsNext}>
-              <h3>Dados de contacto</h3>
-              <div className="cronos-contact-fields">
-                <label className="cronos-field cronos-field--full">
-                  <span>O seu nome *</span>
-                  <input
-                    type="text"
-                    required
-                    placeholder="Nome completo"
-                    value={contactData.name}
-                    onChange={(e) => setContactData({ ...contactData, name: e.target.value })}
-                  />
-                </label>
-                <label className="cronos-field cronos-field--full">
-                  <span>Endereço de email *</span>
-                  <input
-                    type="email"
-                    required
-                    placeholder="exemplo@escola.pt"
-                    value={contactData.email}
-                    onChange={(e) => setContactData({ ...contactData, email: e.target.value })}
-                  />
-                </label>
-                <label className="cronos-field cronos-field--full">
-                  <span>Número de telefone</span>
-                  <input
-                    type="tel"
-                    placeholder="+351 912 345 678"
-                    value={contactData.phone}
-                    onChange={(e) => setContactData({ ...contactData, phone: e.target.value })}
-                  />
-                </label>
-              </div>
-              <button type="submit" className="cronos-button cronos-button--form">
-                Seguinte <CIcon icon={cilArrowRight} />
-              </button>
-            </form>
-          )}
-
-          {/* Step 5: Final message */}
-          {contactStep === 5 && (
-            <div className="cronos-contact-step">
-              <h3>Mais algum detalhe a partilhar?</h3>
-              <textarea
-                className="cronos-contact-textarea"
-                placeholder="Escreva aqui qualquer detalhe adicional..."
-                rows="4"
-                value={contactData.message}
-                onChange={(e) => setContactData({ ...contactData, message: e.target.value })}
-              />
-              <div className="cronos-contact-step-actions">
-                <button
-                  type="button"
-                  className="cronos-button cronos-button--secondary"
-                  onClick={() => handleFinalSubmit()}
-                >
-                  Não, obrigado
-                </button>
-                <button
-                  type="button"
-                  className="cronos-button"
-                  onClick={() => handleFinalSubmit()}
-                >
-                  Enviar <CIcon icon={cilArrowRight} />
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Step 6: Confirmation Screen */}
-          {contactStep === 6 && (
-            <div className="cronos-contact-step cronos-contact-step--success">
-              <div className="cronos-contact-success-icon">
-                <CIcon icon={cilCheckCircle} size="xl" />
-              </div>
-              <h3>Obrigado pelo contacto, {contactData.name || 'de toda a equipa'}!</h3>
-              <p className="cronos-contact-success__sub">Recebemos os seus dados.</p>
-              <p className="cronos-contact-success__detail">
-                Entraremos em contacto para o email{' '}
-                <strong>{contactData.email}</strong> em menos de 24 horas.
-              </p>
-              <button
-                type="button"
-                className="cronos-button cronos-button--secondary"
-                onClick={() => {
-                  setContactStep(0)
-                  setContactData({ subject: '', courses: '', teachers: '', name: '', email: '', phone: '', message: '' })
-                }}
-              >
-                Voltar ao início
-              </button>
-            </div>
-          )}
+          {contactStep > 0 && contactStep < 6 && <Progress step={contactStep} pending={submitContact.isPending} onBack={() => setContactStep((step) => step - 1)} />}
+          {contactStep === 0 && <Welcome onStart={() => setContactStep(1)} />}
+          {contactStep === 1 && <Options title="Como podemos ajudar?" options={SUBJECT_OPTIONS} onSelect={selectSubject} />}
+          {contactStep === 2 && <Options title="Quantos cursos leciona a sua escola?" options={COURSE_OPTIONS} onSelect={selectCourses} />}
+          {contactStep === 3 && <Options title="Quantos professores integram o seu corpo docente?" options={TEACHER_OPTIONS} onSelect={selectTeachers} />}
+          {contactStep === 4 && <ContactDetails data={contactData} onChange={updateContactData} onSubmit={handleContactDetailsNext} />}
+          {contactStep === 5 && <FinalForm data={contactData} website={website} error={submitError} pending={submitContact.isPending} onChange={updateContactData} onWebsiteChange={setWebsite} onSubmit={handleFinalSubmit} />}
+          {contactStep === 6 && <Success name={contactData.name} onReset={resetQuestionnaire} />}
         </div>
       </div>
     </section>
   )
 })
+
+function Progress({ step, pending, onBack }) { return <div className="cronos-contact-progress"><div className="cronos-contact-progress__header"><span className="cronos-contact-progress__step">Passo {step} de 5</span>{step > 1 && <button type="button" className="cronos-contact-back-btn" disabled={pending} onClick={onBack}><CIcon icon={cilChevronLeft} /> Voltar</button>}</div><div className="cronos-contact-progress__track"><div className="cronos-contact-progress__fill" style={{ width: `${step / 5 * 100}%` }} /></div></div> }
+function Welcome({ onStart }) { return <div className="cronos-contact-step cronos-contact-step--welcome"><h3>Pronto para simplificar a gestão de horários da sua escola?</h3><p>Responda a 4 perguntas rápidas para personalizarmos a conversa.</p><button type="button" className="cronos-button cronos-button--form" onClick={onStart}>Falar com a nossa equipa <CIcon icon={cilArrowRight} /></button></div> }
+function Options({ title, options, onSelect }) { return <div className="cronos-contact-step"><h3>{title}</h3><div className="cronos-contact-options-list">{options.map((option) => <button key={option} type="button" className="cronos-contact-option-card" onClick={() => onSelect(option)}><strong>{option}</strong></button>)}</div></div> }
+function ContactDetails({ data, onChange, onSubmit }) {
+  return (
+    <form className="cronos-contact-step" onSubmit={onSubmit}>
+      <h3>Dados de contacto</h3>
+      <div className="cronos-contact-fields">
+        <Field label="O seu nome *" type="text" required placeholder="Ex: Maria Santos" value={data.name} onChange={(value) => onChange('name', value)} />
+        <Field label="Endereço de email *" type="email" required placeholder="maria.santos@escola.pt" value={data.email} onChange={(value) => onChange('email', value)} />
+        <Field label="Número de telefone" type="tel" placeholder="+351 912 345 678" value={data.phone} onChange={(value) => onChange('phone', value)} />
+      </div>
+      <button type="submit" className="cronos-button cronos-button--form">
+        Seguinte <CIcon icon={cilArrowRight} />
+      </button>
+    </form>
+  )
+}
+function Field({ label, type, required = false, placeholder, value, onChange }) {
+  return (
+    <label className="cronos-field">
+      <span>{label}</span>
+      <input type={type} required={required} placeholder={placeholder} value={value} onChange={(event) => onChange(event.target.value)} />
+    </label>
+  )
+}
+function FinalForm({ data, website, error, pending, onChange, onWebsiteChange, onSubmit }) {
+  return (
+    <form className="cronos-contact-step" onSubmit={onSubmit}>
+      <h3>Mais algum detalhe a partilhar?</h3>
+      <textarea className="cronos-contact-textarea" placeholder="Escreva aqui qualquer detalhe adicional..." rows="4" value={data.message} onChange={(event) => onChange('message', event.target.value)} />
+      <input className="cronos-contact-honeypot" name="website" tabIndex={-1} autoComplete="off" aria-hidden="true" value={website} onChange={(event) => onWebsiteChange(event.target.value)} />
+      {error && <p className="cronos-contact-error" role="alert">{error} Tente novamente ou contacte-nos por <a href="mailto:contacto@cronos.pt">email</a>.</p>}
+      <div className="cronos-contact-step-actions">
+        <button type="submit" className="cronos-button cronos-button--secondary" disabled={pending}>Não, obrigado</button>
+        <button type="submit" className="cronos-button" disabled={pending}>{pending ? 'A enviar…' : 'Enviar'} <CIcon icon={cilArrowRight} /></button>
+      </div>
+      <p className="cronos-contact-privacy">Ao enviar, os dados indicados serão usados apenas para responder ao seu pedido e não serão utilizados para marketing.</p>
+    </form>
+  )
+}
+function Success({ name, onReset }) { return <div className="cronos-contact-step cronos-contact-step--success"><div className="cronos-contact-success-icon"><CIcon icon={cilCheckCircle} size="xl" /></div><h3>Obrigado pelo contacto, {name || 'de toda a equipa'}!</h3><p className="cronos-contact-success__detail">Responderemos assim que possível para o email indicado.</p><button type="button" className="cronos-button cronos-button--secondary" onClick={onReset}>Voltar ao início</button></div> }
 
 export default ContactQuestionnaire

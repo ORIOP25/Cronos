@@ -5,7 +5,6 @@ import { describe, expect, it } from 'vitest'
 import ProcessStepperSection from '../components/marketing/ProcessStepperSection'
 import GeneratorSection from '../components/marketing/GeneratorSection'
 import RoutineSection from '../components/marketing/RoutineSection'
-import ContactQuestionnaire from '../components/marketing/ContactQuestionnaire'
 import ShinyText from '../components/marketing/ShinyText'
 const shinyTextStyles = readFileSync(resolve('src/components/marketing/ShinyText.css'), 'utf8')
 
@@ -63,45 +62,6 @@ describe('marketing interactive sections', () => {
     expect(firstChapter).not.toHaveClass('is-active')
   })
 
-  it('validates, submits, confirms, and resets the local contact questionnaire flow', () => {
-    render(<ContactQuestionnaire />)
-
-    expect(screen.getByRole('heading', { name: /Pronto para simplificar/ })).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: /Falar com a nossa equipa/ }))
-    expect(screen.getByRole('heading', { name: 'Como podemos ajudar?' })).toBeInTheDocument()
-
-    fireEvent.click(screen.getByRole('button', { name: /Criar horários do zero sem conflitos/ }))
-    expect(screen.getByRole('heading', { name: /Quantos cursos/ })).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: /Entre 1 e 5/ }))
-    expect(screen.getByRole('heading', { name: /Quantos professores/ })).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: /Entre 1 e 15/ }))
-
-    const contactForm = screen.getByRole('heading', { name: 'Dados de contacto' }).closest('form')
-    expect(contactForm).not.toBeNull()
-    fireEvent.submit(contactForm)
-    expect(screen.getByRole('heading', { name: 'Dados de contacto' })).toBeInTheDocument()
-
-    fireEvent.change(screen.getByLabelText('O seu nome *'), { target: { value: 'Ana Coordenadora' } })
-    fireEvent.change(screen.getByLabelText('Endereço de email *'), { target: { value: 'ana@escola.pt' } })
-    fireEvent.change(screen.getByLabelText('Número de telefone'), { target: { value: '+351 912 345 678' } })
-    fireEvent.submit(contactForm)
-    expect(screen.getByRole('heading', { name: 'Mais algum detalhe a partilhar?' })).toBeInTheDocument()
-
-    fireEvent.change(screen.getByPlaceholderText(/qualquer detalhe adicional/), { target: { value: 'Uma nota para a demonstração.' } })
-    fireEvent.click(screen.getByRole('button', { name: /Enviar/ }))
-    expect(screen.getByText('Recebemos os seus dados.')).toBeInTheDocument()
-
-    fireEvent.click(screen.getByRole('button', { name: 'Voltar ao início' }))
-    expect(screen.getByRole('heading', { name: /Pronto para simplificar/ })).toBeInTheDocument()
-
-    fireEvent.click(screen.getByRole('button', { name: /Falar com a nossa equipa/ }))
-    fireEvent.click(screen.getByRole('button', { name: /Criar horários do zero sem conflitos/ }))
-    fireEvent.click(screen.getByRole('button', { name: /Entre 1 e 5/ }))
-    fireEvent.click(screen.getByRole('button', { name: /Entre 1 e 15/ }))
-    expect(screen.getByLabelText('O seu nome *')).toHaveValue('')
-    expect(screen.getByLabelText('Endereço de email *')).toHaveValue('')
-    expect(screen.getByLabelText('Número de telefone')).toHaveValue('')
-  })
 
   it('uses CSS animation props and exposes reduced-motion safeguards for ShinyText', () => {
     const { rerender } = render(

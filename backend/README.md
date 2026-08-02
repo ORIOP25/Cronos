@@ -38,9 +38,9 @@ pytest tests/ -v
 Run these verification commands before marking backend changes healthy:
 
 ```bash
-alembic upgrade head
-alembic current
-alembic check
+docker compose -f ../docker-compose.yml -f ../docker-compose.dev.yml --profile maintenance run --rm db-maintenance
+# Drift check uses the privileged cronos_migrator role. Do not run bare host-side alembic check.
+docker compose -f ../docker-compose.yml -f ../docker-compose.dev.yml --profile maintenance run --rm db-maintenance alembic check
 python scripts/audit_triggers.py
 python -m scripts.audit_database_integrity
 ruff check app scripts
