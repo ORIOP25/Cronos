@@ -78,6 +78,8 @@ def test_deliver_uses_tls_and_unwrapped_secret(monkeypatch):
     )
     assert calls["host"] == "smtp.hostinger.com" and calls["port"] == 465 and calls["timeout"] == 10
     assert calls["username"] == "contacto@cronos.pt" and calls["password"] == "secret"
+    assert calls["context"].check_hostname is True
+    assert calls["context"].verify_mode == ssl.CERT_REQUIRED
 
 
 @pytest.mark.asyncio

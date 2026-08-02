@@ -60,11 +60,14 @@ def _deliver_contact_message(message: EmailMessage, configuration: Settings) -> 
     password = configuration.CONTACT_SMTP_PASSWORD
     if password is None:
         raise RuntimeError("Contact SMTP password is not configured.")
+    tls_context = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
+    tls_context.check_hostname = True
+    tls_context.verify_mode = ssl.CERT_REQUIRED
     with smtplib.SMTP_SSL(
         configuration.CONTACT_SMTP_HOST,
         configuration.CONTACT_SMTP_PORT,
         timeout=configuration.CONTACT_SMTP_TIMEOUT_SECONDS,
-        context=ssl.create_default_context(),
+        context=tls_context,
     ) as smtp:
         smtp.login(configuration.CONTACT_SMTP_USERNAME, password.get_secret_value())
         refused = smtp.send_message(message)
