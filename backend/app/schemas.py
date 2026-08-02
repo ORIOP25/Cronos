@@ -32,6 +32,7 @@ class OperationalOccurrenceState(StrEnum):
 # e convertê-lo num schema "TeacherRead").
 model_config = ConfigDict(from_attributes=True)
 
+
 class ContactSubmission(BaseModel):
     """Validated public contact questionnaire payload."""
 

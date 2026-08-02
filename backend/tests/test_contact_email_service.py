@@ -11,17 +11,35 @@ from app.services import contact_email_service as service
 
 
 def submission(**changes):
-    data = {"subject": "Criar hor?rios do zero", "courses": "Entre 1 e 5", "teachers": "Entre 1 e 15", "name": "Ana & <Coordenadora>", "email": "ana@escola.pt", "phone": None, "message": None, "website": ""}
+    data = {
+        "subject": "Criar hor?rios do zero",
+        "courses": "Entre 1 e 5",
+        "teachers": "Entre 1 e 15",
+        "name": "Ana & <Coordenadora>",
+        "email": "ana@escola.pt",
+        "phone": None,
+        "message": None,
+        "website": "",
+    }
     data.update(changes)
     return ContactSubmission(**data)
 
 
 def config(password="secret"):
-    return SimpleNamespace(CONTACT_SMTP_HOST="smtp.hostinger.com", CONTACT_SMTP_PORT=465, CONTACT_SMTP_USERNAME="contacto@cronos.pt", CONTACT_SMTP_PASSWORD=SecretStr(password) if password else None, CONTACT_EMAIL_TO="contacto@cronos.pt", CONTACT_SMTP_TIMEOUT_SECONDS=10)
+    return SimpleNamespace(
+        CONTACT_SMTP_HOST="smtp.hostinger.com",
+        CONTACT_SMTP_PORT=465,
+        CONTACT_SMTP_USERNAME="contacto@cronos.pt",
+        CONTACT_SMTP_PASSWORD=SecretStr(password) if password else None,
+        CONTACT_EMAIL_TO="contacto@cronos.pt",
+        CONTACT_SMTP_TIMEOUT_SECONDS=10,
+    )
 
 
 def test_builds_safe_multipart_message():
-    message = service.build_contact_message(submission(subject="Ol?\r\nBcc: attacker@example.com", message=None), config())
+    message = service.build_contact_message(
+        submission(subject="Ol?\r\nBcc: attacker@example.com", message=None), config()
+    )
     assert message["From"] == "Cronos Website <contacto@cronos.pt>"
     assert message["To"] == "contacto@cronos.pt"
     assert message["Reply-To"] == "ana@escola.pt"
@@ -36,16 +54,28 @@ def test_builds_safe_multipart_message():
 
 def test_deliver_uses_tls_and_unwrapped_secret(monkeypatch):
     calls = {}
+
     class FakeSMTP:
-        def __init__(self, host, port, timeout, context): calls.update(host=host, port=port, timeout=timeout, context=context)
-        def __enter__(self): return self
-        def __exit__(self, *_): return False
-        def login(self, username, password): calls.update(username=username, password=password)
+        def __init__(self, host, port, timeout, context):
+            calls.update(host=host, port=port, timeout=timeout, context=context)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            return False
+
+        def login(self, username, password):
+            calls.update(username=username, password=password)
+
         def send_message(self, message):
             calls["message"] = message
             return {}
+
     monkeypatch.setattr(service.smtplib, "SMTP_SSL", FakeSMTP)
-    service._deliver_contact_message(service.build_contact_message(submission(), config()), config())
+    service._deliver_contact_message(
+        service.build_contact_message(submission(), config()), config()
+    )
     assert calls["host"] == "smtp.hostinger.com" and calls["port"] == 465 and calls["timeout"] == 10
     assert calls["username"] == "contacto@cronos.pt" and calls["password"] == "secret"
 
@@ -53,12 +83,19 @@ def test_deliver_uses_tls_and_unwrapped_secret(monkeypatch):
 @pytest.mark.asyncio
 async def test_delivery_failure_becomes_safe_app_error(monkeypatch):
     monkeypatch.setattr(service, "settings", config())
-    def fail(*_): raise TimeoutError("private detail")
+
+    def fail(*_):
+        raise TimeoutError("private detail")
+
     monkeypatch.setattr(service, "_deliver_contact_message", fail)
     with pytest.raises(AppError) as exc_info:
         await service.send_contact_email(submission())
     assert exc_info.value.kind == "unavailable"
-    assert exc_info.value.metadata == {"code": "contact_delivery_unavailable", "message": "N\u00e3o foi poss\u00edvel enviar o pedido neste momento.", "retryable": True}
+    assert exc_info.value.metadata == {
+        "code": "contact_delivery_unavailable",
+        "message": "N\u00e3o foi poss\u00edvel enviar o pedido neste momento.",
+        "retryable": True,
+    }
 
 
 @pytest.mark.asyncio
@@ -87,8 +124,12 @@ async def test_all_delivery_failures_become_safe_app_errors(monkeypatch, failure
 async def test_delivery_failure_log_excludes_submission_data(monkeypatch):
     events = []
     monkeypatch.setattr(service, "settings", config())
-    monkeypatch.setattr(service.logger, "exception", lambda *args, **kwargs: events.append((args, kwargs)))
-    monkeypatch.setattr(service, "_deliver_contact_message", lambda *_: (_ for _ in ()).throw(OSError("failed")))
+    monkeypatch.setattr(
+        service.logger, "exception", lambda *args, **kwargs: events.append((args, kwargs))
+    )
+    monkeypatch.setattr(
+        service, "_deliver_contact_message", lambda *_: (_ for _ in ()).throw(OSError("failed"))
+    )
     submitted = submission(name="Ana Privada", email="ana.privada@example.com", message="segredo")
     with pytest.raises(AppError):
         await service.send_contact_email(submitted)

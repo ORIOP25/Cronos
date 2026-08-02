@@ -15,6 +15,7 @@ from app.config import settings
 #    - Antes: "memory://" (RAM)
 #    - Agora: str(settings.REDIS_URL) (Redis)
 
+
 def _is_trusted_proxy(peer: str | None) -> bool:
     if not peer:
         return False

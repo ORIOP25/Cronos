@@ -20,14 +20,28 @@ def test_local_settings_allow_missing_contact_password():
 
 def test_production_requires_contact_password():
     with pytest.raises(ValidationError, match="CONTACT_SMTP_PASSWORD"):
-        make_settings(ENVIRONMENT="production", FRONTEND_URL="https://app.cronos.pt", CLERK_AUTHORIZED_PARTIES="https://app.cronos.pt")
+        make_settings(
+            ENVIRONMENT="production",
+            FRONTEND_URL="https://app.cronos.pt",
+            CLERK_AUTHORIZED_PARTIES="https://app.cronos.pt",
+        )
 
 
 def test_contact_password_is_secret():
-    assert isinstance(make_settings(CONTACT_SMTP_PASSWORD="secret").CONTACT_SMTP_PASSWORD, SecretStr)
+    assert isinstance(
+        make_settings(CONTACT_SMTP_PASSWORD="secret").CONTACT_SMTP_PASSWORD, SecretStr
+    )
 
 
-@pytest.mark.parametrize(("field", "value"), [("CONTACT_SMTP_PORT", 0), ("CONTACT_SMTP_PORT", 65536), ("CONTACT_SMTP_TIMEOUT_SECONDS", 0), ("CONTACT_SMTP_TIMEOUT_SECONDS", 31)])
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("CONTACT_SMTP_PORT", 0),
+        ("CONTACT_SMTP_PORT", 65536),
+        ("CONTACT_SMTP_TIMEOUT_SECONDS", 0),
+        ("CONTACT_SMTP_TIMEOUT_SECONDS", 31),
+    ],
+)
 def test_contact_connection_bounds_are_enforced(field, value):
     with pytest.raises(ValidationError):
         make_settings(**{field: value})

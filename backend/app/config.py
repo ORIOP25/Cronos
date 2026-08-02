@@ -117,7 +117,9 @@ class Settings(BaseSettings):
 
                 ipaddress.ip_network(proxy, strict=False)
             except ValueError as exc:
-                raise ValueError("TRUSTED_PROXY_IPS must contain valid IP addresses or CIDR ranges.") from exc
+                raise ValueError(
+                    "TRUSTED_PROXY_IPS must contain valid IP addresses or CIDR ranges."
+                ) from exc
         if not 1 <= self.CONTACT_SMTP_PORT <= 65_535:
             raise ValueError("CONTACT_SMTP_PORT must be between 1 and 65535.")
         if not 1 <= self.CONTACT_SMTP_TIMEOUT_SECONDS <= 30:
