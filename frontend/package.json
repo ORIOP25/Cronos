@@ -5,6 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:website": "vite --config vite.website.config.js",
+    "build:website": "vite build --config vite.website.config.js",
+    "verify:website": "npm run build:website && node scripts/verify-website-build.mjs",
     "build": "vite build",
     "lint": "eslint . --max-warnings 0",
     "lint:dead-code": "knip --no-progress",

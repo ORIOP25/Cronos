@@ -244,5 +244,5 @@ export const testimonials = [
 
 export const contactCards = [
   { label: 'Email', value: 'contacto@cronos.pt', icon: cilEnvelopeClosed },
-  { label: 'Telefone', value: '+351 210 000 000', icon: cilPhone },
+  { label: 'Telefone', value: '+351 968 348 153', icon: cilPhone },
 ]

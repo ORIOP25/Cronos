@@ -1,5 +1,4 @@
 import { Fragment, memo } from 'react'
-import { Link } from 'react-router-dom'
 import { navItems } from '../../data/marketingData'
 
 function BrandMark() {
@@ -30,7 +29,7 @@ const MarketingHeader = memo(function MarketingHeader() {
           ))}
         </nav>
         <div className="cronos-header__actions">
-          <Link to="/login" className="cronos-login-link">Entrar</Link>
+          <span className="cronos-login-link cronos-login-link--disabled" aria-disabled="true">Área reservada — brevemente</span>
           <a href="#contacto" className="cronos-button cronos-button--header">
             Agendar demonstração
           </a>
