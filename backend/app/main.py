@@ -154,6 +154,7 @@ async def security_headers(request, call_next):
         response.headers["Cache-Control"] = "no-store"
     return response
 
+
 # ==========================================
 # ROTAS (ROUTERS)
 # ==========================================

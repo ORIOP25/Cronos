@@ -64,7 +64,11 @@ class Settings(BaseSettings):
     @computed_field(return_type=list[str])
     def CORS_ORIGINS_LIST(self) -> list[str]:
         if self.CORS_ORIGINS:
-            return [_normalize_http_origin(origin, "CORS_ORIGINS") for origin in self.CORS_ORIGINS.split(",") if origin.strip()]
+            return [
+                _normalize_http_origin(origin, "CORS_ORIGINS")
+                for origin in self.CORS_ORIGINS.split(",")
+                if origin.strip()
+            ]
         if self.ENVIRONMENT == "local":
             return [
                 "http://localhost:5173",
@@ -119,9 +123,19 @@ class Settings(BaseSettings):
         if self.ENVIRONMENT == "production":
             if not self.CORS_ORIGINS_LIST:
                 raise ValueError("CORS_ORIGINS is required in production.")
-            origins = [self.FRONTEND_URL, *self.CORS_ORIGINS_LIST, *self.CLERK_AUTHORIZED_PARTIES_LIST]
-            if any(urlparse(origin).scheme != "https" or urlparse(origin).hostname in {"localhost", "127.0.0.1", "::1"} for origin in origins):
-                raise ValueError("Production browser origins must use HTTPS and cannot be localhost.")
+            origins = [
+                self.FRONTEND_URL,
+                *self.CORS_ORIGINS_LIST,
+                *self.CLERK_AUTHORIZED_PARTIES_LIST,
+            ]
+            if any(
+                urlparse(origin).scheme != "https"
+                or urlparse(origin).hostname in {"localhost", "127.0.0.1", "::1"}
+                for origin in origins
+            ):
+                raise ValueError(
+                    "Production browser origins must use HTTPS and cannot be localhost."
+                )
             if not self.CLERK_SECRET_KEY or not self.CLERK_WEBHOOK_SECRET:
                 raise ValueError("Clerk secrets are required in production.")
             if self.FRONTEND_URL not in self.CORS_ORIGINS_LIST:

@@ -15,9 +15,13 @@ RETURNS integer LANGUAGE sql STABLE SECURITY DEFINER
 SET search_path = pg_catalog, public
 AS $$ SELECT id FROM public.organization WHERE clerk_org_id = requested_clerk_org_id LIMIT 1 $$
 """)
-    op.execute("ALTER FUNCTION app_security.resolve_webhook_organization(text) OWNER TO cronos_auth_definer")
+    op.execute(
+        "ALTER FUNCTION app_security.resolve_webhook_organization(text) OWNER TO cronos_auth_definer"
+    )
     op.execute("REVOKE ALL ON FUNCTION app_security.resolve_webhook_organization(text) FROM PUBLIC")
-    op.execute("GRANT EXECUTE ON FUNCTION app_security.resolve_webhook_organization(text) TO cronos_app")
+    op.execute(
+        "GRANT EXECUTE ON FUNCTION app_security.resolve_webhook_organization(text) TO cronos_app"
+    )
     op.execute("""
 CREATE OR REPLACE FUNCTION app_security.resolve_principal(requested_clerk_user_id text, requested_clerk_org_id text)
 RETURNS TABLE (account_id integer, clerk_user_id text, organization_id integer, membership_id integer, can_admin boolean, can_teach boolean, teacher_id integer)
@@ -31,7 +35,9 @@ WHERE u.clerk_user_id = requested_clerk_user_id AND o.clerk_org_id = requested_c
   AND o.plan_status = 'active' AND m.lifecycle_status = 'active' AND m.access_status = 'active' LIMIT 1
 $$
 """)
-    op.execute("ALTER FUNCTION app_security.resolve_principal(text, text) OWNER TO cronos_auth_definer")
+    op.execute(
+        "ALTER FUNCTION app_security.resolve_principal(text, text) OWNER TO cronos_auth_definer"
+    )
     op.execute("""
 CREATE OR REPLACE FUNCTION app_security.deactivate_user(requested_clerk_user_id text)
 RETURNS boolean LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public AS $$
@@ -60,9 +66,13 @@ IF v_account IS NULL THEN INSERT INTO public."user"(name,email,clerk_user_id,cle
 INSERT INTO public.organization_membership(organization_id,account_id,organization_display_name,lifecycle_status,access_status,can_admin,can_teach,clerk_membership_id,created_by_membership_id,updated_by_membership_id,lock_version,created_at,updated_at) VALUES(v_org,v_account,requested_organization_name,'active','active',true,false,requested_membership_id,v_account,v_account,1,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP) RETURNING id INTO v_member;
 RETURN QUERY SELECT v_account,v_org,v_member; END $$
 """)
-    op.execute("ALTER FUNCTION app_security.bootstrap_founder(text, text, text, text, text, text) OWNER TO cronos_auth_definer")
+    op.execute(
+        "ALTER FUNCTION app_security.bootstrap_founder(text, text, text, text, text, text) OWNER TO cronos_auth_definer"
+    )
 
 
 def downgrade() -> None:
     op.execute("DROP FUNCTION app_security.resolve_webhook_organization(text)")
-    op.execute("""CREATE OR REPLACE FUNCTION app_security.resolve_principal(requested_clerk_user_id text, requested_clerk_org_id text) RETURNS TABLE (account_id integer, clerk_user_id text, organization_id integer, membership_id integer, can_admin boolean, can_teach boolean, teacher_id integer) LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public AS $$ SELECT u.id,u.clerk_user_id,m.organization_id,m.id,m.can_admin,m.can_teach,t.id FROM public."user" u JOIN public.organization_membership m ON m.account_id=u.id JOIN public.organization o ON o.id=m.organization_id LEFT JOIN public.teacher t ON t.organization_membership_id=m.id WHERE u.clerk_user_id=requested_clerk_user_id AND o.clerk_org_id=requested_clerk_org_id AND m.lifecycle_status='active' AND m.access_status='active' LIMIT 1 $$""")
+    op.execute(
+        """CREATE OR REPLACE FUNCTION app_security.resolve_principal(requested_clerk_user_id text, requested_clerk_org_id text) RETURNS TABLE (account_id integer, clerk_user_id text, organization_id integer, membership_id integer, can_admin boolean, can_teach boolean, teacher_id integer) LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public AS $$ SELECT u.id,u.clerk_user_id,m.organization_id,m.id,m.can_admin,m.can_teach,t.id FROM public."user" u JOIN public.organization_membership m ON m.account_id=u.id JOIN public.organization o ON o.id=m.organization_id LEFT JOIN public.teacher t ON t.organization_membership_id=m.id WHERE u.clerk_user_id=requested_clerk_user_id AND o.clerk_org_id=requested_clerk_org_id AND m.lifecycle_status='active' AND m.access_status='active' LIMIT 1 $$"""
+    )
