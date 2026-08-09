@@ -3,13 +3,15 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app import models
 from app.config import settings
+from app.db.tenant import set_async_tenant_context
+from app.services import clerk_sync
 
 RETRYABLE_CATEGORIES = {"temporary_failure", "provider_rate_limited"}
 
@@ -136,6 +138,20 @@ def _should_reprocess(event: models.ClerkWebhookEvent) -> bool:
     return False
 
 
+async def _set_webhook_tenant_context(db: AsyncSession, clerk_org_id: str | None) -> bool:
+    if not clerk_org_id:
+        return False
+    result = await db.execute(
+        text("SELECT app_security.resolve_webhook_organization(:clerk_org_id)"),
+        {"clerk_org_id": clerk_org_id},
+    )
+    organization_id = result.scalar_one_or_none()
+    if organization_id is None:
+        return False
+    await set_async_tenant_context(db, int(organization_id))
+    return True
+
+
 async def process_clerk_event(db: AsyncSession, event: models.ClerkWebhookEvent) -> None:
     if event.processing_status == models.ClerkWebhookProcessingStatus.processed:
         return
@@ -146,65 +162,78 @@ async def process_clerk_event(db: AsyncSession, event: models.ClerkWebhookEvent)
     try:
         event_type = event.event_type
         data = (event.payload_json or {}).get("data") or {}
+        clerk_org_id = (data.get("organization") or {}).get("id") or data.get("organization_id")
         if event_type in {"organization.created", "organization.updated"}:
-            await _sync_organization(db, data)
+            clerk_org_id = clerk_org_id or data.get("id")
+            if clerk_org_id:
+                await clerk_sync.ensure_organization_exists(
+                    db, clerk_org_id, data.get("name") or "Organization"
+                )
             event.processing_status = models.ClerkWebhookProcessingStatus.processed
         elif event_type == "organization.deleted":
-            await _archive_organization(db, data)
-            event.processing_status = models.ClerkWebhookProcessingStatus.processed
-        elif event_type in {"organizationMembership.created", "organizationMembership.updated"}:
-            matched = await _sync_membership(db, event, data)
-            if event.processing_status != models.ClerkWebhookProcessingStatus.sync_error:
+            changed = (
+                await clerk_sync.deactivate_organization_by_clerk_id(db, data.get("id"))
+                if data.get("id")
+                else False
+            )
+            event.processing_status = (
+                models.ClerkWebhookProcessingStatus.processed
+                if changed
+                else models.ClerkWebhookProcessingStatus.ignored
+            )
+        elif event_type == "user.deleted":
+            changed = (
+                await clerk_sync.deactivate_user_by_clerk_id(db, data.get("id"))
+                if data.get("id")
+                else False
+            )
+            event.processing_status = (
+                models.ClerkWebhookProcessingStatus.processed
+                if changed
+                else models.ClerkWebhookProcessingStatus.ignored
+            )
+        elif event_type in {"user.created", "user.updated"}:
+            event.processing_status = models.ClerkWebhookProcessingStatus.ignored
+        elif event_type.startswith(("organizationMembership.", "organizationInvitation.")):
+            if not await _set_webhook_tenant_context(db, clerk_org_id):
+                event.processing_status = models.ClerkWebhookProcessingStatus.ignored
+            elif event_type in {"organizationMembership.created", "organizationMembership.updated"}:
+                matched = await _sync_membership(db, event, data)
+                if event.processing_status != models.ClerkWebhookProcessingStatus.sync_error:
+                    event.processing_status = (
+                        models.ClerkWebhookProcessingStatus.processed
+                        if matched
+                        else models.ClerkWebhookProcessingStatus.ignored
+                    )
+            elif event_type == "organizationMembership.deleted":
+                matched = await _delete_membership(db, data)
                 event.processing_status = (
                     models.ClerkWebhookProcessingStatus.processed
                     if matched
                     else models.ClerkWebhookProcessingStatus.ignored
                 )
-        elif event_type == "organizationMembership.deleted":
-            matched = await _delete_membership(db, data)
-            event.processing_status = (
-                models.ClerkWebhookProcessingStatus.processed
-                if matched
-                else models.ClerkWebhookProcessingStatus.ignored
-            )
-        elif event_type in {
-            "organizationInvitation.created",
-            "organizationInvitation.accepted",
-            "organizationInvitation.revoked",
-        }:
-            matched = await _sync_invitation(db, event_type, data)
-            event.processing_status = (
-                models.ClerkWebhookProcessingStatus.processed
-                if matched
-                else models.ClerkWebhookProcessingStatus.ignored
-            )
-        elif event_type in {"user.created", "user.updated"}:
-            matched = await _sync_user_identity(db, data)
-            event.processing_status = (
-                models.ClerkWebhookProcessingStatus.processed
-                if matched
-                else models.ClerkWebhookProcessingStatus.ignored
-            )
-        elif event_type == "user.deleted":
-            matched = await _block_deleted_user(db, data)
-            event.processing_status = (
-                models.ClerkWebhookProcessingStatus.processed
-                if matched
-                else models.ClerkWebhookProcessingStatus.ignored
-            )
+            else:
+                matched = await _sync_invitation(db, event_type, data)
+                event.processing_status = (
+                    models.ClerkWebhookProcessingStatus.processed
+                    if matched
+                    else models.ClerkWebhookProcessingStatus.ignored
+                )
         else:
             event.processing_status = models.ClerkWebhookProcessingStatus.ignored
         event.error_category = None
         event.processed_at = _now()
     except Exception:
-        if event.attempt_count >= settings.CLERK_WEBHOOK_MAX_ATTEMPTS:
-            event.processing_status = models.ClerkWebhookProcessingStatus.dead_letter
-        else:
-            event.processing_status = models.ClerkWebhookProcessingStatus.retryable_failed
-            delay = settings.CLERK_WEBHOOK_RETRY_BASE_SECONDS * (
-                2 ** max(event.attempt_count - 1, 0)
+        event.processing_status = (
+            models.ClerkWebhookProcessingStatus.dead_letter
+            if event.attempt_count >= settings.CLERK_WEBHOOK_MAX_ATTEMPTS
+            else models.ClerkWebhookProcessingStatus.retryable_failed
+        )
+        if event.processing_status == models.ClerkWebhookProcessingStatus.retryable_failed:
+            event.next_retry_at = _now() + timedelta(
+                seconds=settings.CLERK_WEBHOOK_RETRY_BASE_SECONDS
+                * 2 ** max(event.attempt_count - 1, 0)
             )
-            event.next_retry_at = _now() + timedelta(seconds=delay)
         event.error_category = "temporary_failure"
 
 

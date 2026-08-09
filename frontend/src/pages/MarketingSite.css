@@ -2258,3 +2258,8 @@
 .cronos-contact-error {
   color: #9f1239;
 }
+
+.cronos-login-link--disabled { cursor: default; opacity: 0.65; }
+.cronos-turnstile { margin-top: 1rem; }
+
+.cronos-nav a { white-space: nowrap; }

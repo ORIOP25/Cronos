@@ -83,7 +83,11 @@ async def test_bootstrap_is_idempotent_and_creates_one_founder_graph(
     db_session,
     monkeypatch,
 ):
-    organization = models.Organization(name="Fresh School", clerk_org_id="org_fresh")
+    organization = models.Organization(
+        name="Fresh School",
+        clerk_org_id="org_fresh",
+        plan_status=models.OrganizationPlanStatus.active,
+    )
     db_session.add(organization)
     await db_session.flush()
     await _provider_stubs(monkeypatch, organization)
@@ -141,19 +145,13 @@ async def test_bootstrap_never_grants_founder_access_to_established_tenant(
             }
         )
 
-    assert await db_session.scalar(select(func.count(models.User.id))) == 2
+    assert await db_session.scalar(select(func.count(models.User.id))) == 1
     assert await db_session.scalar(select(func.count(models.OrganizationMembership.id))) == 1
-    founder = await db_session.scalar(
-        select(models.User).where(models.User.clerk_user_id == "user_founder")
-    )
-    assert founder is not None
     assert (
         await db_session.scalar(
-            select(func.count(models.OrganizationMembership.id)).where(
-                models.OrganizationMembership.account_id == founder.id
-            )
+            select(models.User).where(models.User.clerk_user_id == "user_founder")
         )
-        == 0
+        is None
     )
 
 
@@ -161,7 +159,11 @@ async def test_concurrent_bootstrap_calls_create_exactly_one_founder_graph(
     db_session,
     monkeypatch,
 ):
-    organization = models.Organization(name="Concurrent", clerk_org_id="org_concurrent")
+    organization = models.Organization(
+        name="Concurrent",
+        clerk_org_id="org_concurrent",
+        plan_status=models.OrganizationPlanStatus.active,
+    )
     db_session.add(organization)
     await db_session.commit()
     monkeypatch.setattr(

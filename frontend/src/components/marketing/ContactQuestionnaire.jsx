@@ -1,4 +1,4 @@
-import { memo, useState } from 'react'
+import { memo, useEffect, useRef, useState } from 'react'
 import CIcon from '@coreui/icons-react'
 import { cilArrowRight, cilCheckCircle, cilChevronLeft } from '@coreui/icons'
 import { contactCards } from '../../data/marketingData'
@@ -32,9 +32,15 @@ const ContactQuestionnaire = memo(function ContactQuestionnaire() {
     if (submitContact.isPending) return
     setSubmitError('')
     try {
-      await submitContact.mutateAsync({ ...contactData, website })
+      const turnstileToken = new FormData(event.currentTarget).get('cf-turnstile-response')
+      if (typeof turnstileToken !== 'string' || !turnstileToken) {
+        setSubmitError('Confirme a verificaçaão anti-spam antes de enviar o pedido.')
+        return
+      }
+      await submitContact.mutateAsync({ ...contactData, website, turnstileToken })
       setContactStep(6)
     } catch (error) {
+      window.turnstile?.reset?.()
       setSubmitError(getApiErrorMessage(error, 'Não foi possível enviar o pedido neste momento.'))
     }
   }
@@ -103,6 +109,7 @@ function FinalForm({ data, website, error, pending, onChange, onWebsiteChange, o
       <h3>Mais algum detalhe a partilhar?</h3>
       <textarea className="cronos-contact-textarea" placeholder="Escreva aqui qualquer detalhe adicional..." rows="4" value={data.message} onChange={(event) => onChange('message', event.target.value)} />
       <input className="cronos-contact-honeypot" name="website" tabIndex={-1} autoComplete="off" aria-hidden="true" value={website} onChange={(event) => onWebsiteChange(event.target.value)} />
+      <Turnstile />
       {error && <p className="cronos-contact-error" role="alert">{error} Tente novamente ou contacte-nos por <a href="mailto:contacto@cronos.pt">email</a>.</p>}
       <div className="cronos-contact-step-actions">
         <button type="submit" className="cronos-button cronos-button--secondary" disabled={pending}>Não, obrigado</button>
@@ -112,6 +119,17 @@ function FinalForm({ data, website, error, pending, onChange, onWebsiteChange, o
     </form>
   )
 }
+function Turnstile() {
+  const element = useRef(null)
+  const widgetId = useRef(null)
+  useEffect(() => {
+    if (!element.current || !import.meta.env.VITE_TURNSTILE_SITE_KEY || !window.turnstile?.render) return undefined
+    widgetId.current = window.turnstile.render(element.current, { sitekey: import.meta.env.VITE_TURNSTILE_SITE_KEY, action: 'contact' })
+    return () => window.turnstile?.remove?.(widgetId.current)
+  }, [])
+  return <div ref={element} className="cronos-turnstile" />
+}
+
 function Success({ name, onReset }) { return <div className="cronos-contact-step cronos-contact-step--success"><div className="cronos-contact-success-icon"><CIcon icon={cilCheckCircle} size="xl" /></div><h3>Obrigado pelo contacto, {name || 'de toda a equipa'}!</h3><p className="cronos-contact-success__detail">Responderemos assim que possível para o email indicado.</p><button type="button" className="cronos-button cronos-button--secondary" onClick={onReset}>Voltar ao início</button></div> }
 
 export default ContactQuestionnaire

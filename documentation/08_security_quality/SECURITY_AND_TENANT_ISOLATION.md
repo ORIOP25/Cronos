@@ -63,3 +63,7 @@ Run database RLS safety tests: `pytest backend/tests/test_rls_database_policies.
 ## Related Documents
 - [System Architecture](../01_system_architecture/SYSTEM_ARCHITECTURE.md)
 - [Testing and CI](TESTING_AND_CI.md)
+
+## Production boundary
+
+Production configuration requires HTTPS origins, Clerk secrets, and separate password-protected Redis services. Webhooks resolve tenant context before membership changes. Bootstrap creates only a safe founder. Active principals require an active organization plan. Cloudflare owns client-IP limits. Railway keeps Redis private.

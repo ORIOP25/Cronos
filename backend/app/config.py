@@ -64,7 +64,11 @@ class Settings(BaseSettings):
     @computed_field(return_type=list[str])
     def CORS_ORIGINS_LIST(self) -> list[str]:
         if self.CORS_ORIGINS:
-            return [origin.strip() for origin in self.CORS_ORIGINS.split(",") if origin.strip()]
+            return [
+                _normalize_http_origin(origin, "CORS_ORIGINS")
+                for origin in self.CORS_ORIGINS.split(",")
+                if origin.strip()
+            ]
         if self.ENVIRONMENT == "local":
             return [
                 "http://localhost:5173",
@@ -87,10 +91,8 @@ class Settings(BaseSettings):
 
     # --- Infraestrutura (Redis & Celery) ---
     # Se não definires no .env, assume o default do Docker
-    REDIS_URL: str | RedisDsn = "redis://redis:6379/0"
+    REDIS_URL: RedisDsn = "redis://redis:6379/0"
     RATELIMIT_ENABLED: bool = True
-    # Comma-separated IP addresses or CIDR ranges allowed to supply X-Real-IP.
-    TRUSTED_PROXY_IPS: str = ""
 
     CONTACT_SMTP_HOST: str = "smtp.hostinger.com"
     CONTACT_SMTP_PORT: int = 465
@@ -103,7 +105,7 @@ class Settings(BaseSettings):
     # Fallback seguro: manter V1 por omissão até ativação explícita.
 
     # Permitimos que seja None para não obrigar a ter no .env
-    CELERY_BROKER_URL: str | None = None
+    CELERY_BROKER_URL: RedisDsn | None = None
 
     # --- Lógica Inteligente: Validador ---
     # Este código corre DEPOIS de carregar o .env
@@ -111,15 +113,6 @@ class Settings(BaseSettings):
     def set_defaults(self):
         if not 0 <= self.CLERK_CLOCK_SKEW_MS <= 60_000:
             raise ValueError("CLERK_CLOCK_SKEW_MS must be between 0 and 60000.")
-        for proxy in filter(None, (value.strip() for value in self.TRUSTED_PROXY_IPS.split(","))):
-            try:
-                import ipaddress
-
-                ipaddress.ip_network(proxy, strict=False)
-            except ValueError as exc:
-                raise ValueError(
-                    "TRUSTED_PROXY_IPS must contain valid IP addresses or CIDR ranges."
-                ) from exc
         if not 1 <= self.CONTACT_SMTP_PORT <= 65_535:
             raise ValueError("CONTACT_SMTP_PORT must be between 1 and 65535.")
         if not 1 <= self.CONTACT_SMTP_TIMEOUT_SECONDS <= 30:
@@ -127,11 +120,32 @@ class Settings(BaseSettings):
         if self.ENVIRONMENT == "production" and self.CONTACT_SMTP_PASSWORD is None:
             raise ValueError("CONTACT_SMTP_PASSWORD is required in production.")
         self.FRONTEND_URL = _normalize_http_origin(self.FRONTEND_URL, "FRONTEND_URL")
+        if self.ENVIRONMENT == "production":
+            if not self.CORS_ORIGINS_LIST:
+                raise ValueError("CORS_ORIGINS is required in production.")
+            origins = [
+                self.FRONTEND_URL,
+                *self.CORS_ORIGINS_LIST,
+                *self.CLERK_AUTHORIZED_PARTIES_LIST,
+            ]
+            if any(
+                urlparse(origin).scheme != "https"
+                or urlparse(origin).hostname in {"localhost", "127.0.0.1", "::1"}
+                for origin in origins
+            ):
+                raise ValueError(
+                    "Production browser origins must use HTTPS and cannot be localhost."
+                )
+            if not self.CLERK_SECRET_KEY or not self.CLERK_WEBHOOK_SECRET:
+                raise ValueError("Clerk secrets are required in production.")
+            if self.FRONTEND_URL not in self.CORS_ORIGINS_LIST:
+                raise ValueError("FRONTEND_URL must appear in CORS_ORIGINS.")
         if self.FRONTEND_URL not in self.CLERK_AUTHORIZED_PARTIES_LIST:
             raise ValueError("FRONTEND_URL must appear in CLERK_AUTHORIZED_PARTIES.")
-        # Se o CELERY_BROKER_URL não estiver no .env, usamos o REDIS_URL
         if not self.CELERY_BROKER_URL:
-            self.CELERY_BROKER_URL = str(self.REDIS_URL)
+            if self.ENVIRONMENT == "production":
+                raise ValueError("CELERY_BROKER_URL is required in production.")
+            self.CELERY_BROKER_URL = self.REDIS_URL
         if not self.CLERK_INVITATION_REDIRECT_URL:
             self.CLERK_INVITATION_REDIRECT_URL = f"{self.FRONTEND_URL.rstrip('/')}/login"
         redirect = urlparse(self.CLERK_INVITATION_REDIRECT_URL)

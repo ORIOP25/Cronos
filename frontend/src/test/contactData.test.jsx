@@ -1,23 +1,25 @@
-import { renderHook } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+﻿import { renderHook } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createTestQueryClient } from './testUtils'
 import { QueryClientProvider } from '@tanstack/react-query'
-
-const { post } = vi.hoisted(() => ({ post: vi.fn() }))
-vi.mock('../apiClient', () => ({ default: { post } }))
-
 import { useSubmitContact } from '../features/contact/data'
 
 describe('useSubmitContact', () => {
-  beforeEach(() => post.mockReset())
+  beforeEach(() => vi.stubGlobal('fetch', vi.fn()))
+  afterEach(() => vi.unstubAllGlobals())
 
-  it('posts payloads to the contact endpoint', async () => {
-    post.mockResolvedValue(undefined)
-    const queryClient = createTestQueryClient()
-    const wrapper = ({ children }) => <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+  it('sends JSON with native fetch and accepts 204', async () => {
+    fetch.mockResolvedValue(new Response(null, { status: 204 }))
+    const wrapper = ({ children }) => <QueryClientProvider client={createTestQueryClient()}>{children}</QueryClientProvider>
     const { result } = renderHook(() => useSubmitContact(), { wrapper })
-    const payload = { name: 'Ana', website: '' }
-    await result.current.mutateAsync(payload)
-    expect(post).toHaveBeenCalledWith('/contact', payload)
+    await result.current.mutateAsync({ name: 'Ana', website: '' })
+    expect(fetch).toHaveBeenCalledWith('/api/v1/contact', expect.objectContaining({ method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'Ana', website: '' }) }))
+  })
+
+  it('keeps status and detail in the Axios-compatible error shape', async () => {
+    fetch.mockResolvedValue(new Response(JSON.stringify({ detail: 'Pedido inválido.' }), { status: 400, headers: { 'Content-Type': 'application/json' } }))
+    const wrapper = ({ children }) => <QueryClientProvider client={createTestQueryClient()}>{children}</QueryClientProvider>
+    const { result } = renderHook(() => useSubmitContact(), { wrapper })
+    await expect(result.current.mutateAsync({})).rejects.toMatchObject({ response: { status: 400, data: { detail: 'Pedido inválido.' } } })
   })
 })

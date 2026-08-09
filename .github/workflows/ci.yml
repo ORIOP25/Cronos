@@ -74,7 +74,11 @@ jobs:
           pip-compile --quiet --allow-unsafe --generate-hashes --output-file=requirements-dev.txt requirements-dev.in
           git diff --exit-code -- requirements.txt requirements-dev.txt
           pip check
-          pip-audit -r requirements.txt --progress-spinner off
+          # ponytail: remove these temporary exceptions when Clerk supports cryptography >=49.
+          pip-audit -r requirements.txt --progress-spinner off \
+            --ignore-vuln PYSEC-2026-3552 \
+            --ignore-vuln PYSEC-2026-3553 \
+            --ignore-vuln PYSEC-2026-3554
       - name: Ruff
         working-directory: backend
         run: |
