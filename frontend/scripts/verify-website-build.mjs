@@ -13,6 +13,10 @@ for (const file of required) {
 
 const manifest = JSON.parse(readFileSync(new URL('.vite/manifest.json', distUrl), 'utf8'))
 if (!manifest['index.html']) throw new Error('Vite manifest does not identify the website entry.')
+const headers = readFileSync(new URL('_headers', distUrl), 'utf8')
+for (const marker of ['Clerk', 'api.cronos.pt', 'Strict-Transport-Security']) {
+  if (headers.includes(marker)) throw new Error(`Website headers contain forbidden marker: ${marker}`)
+}
 
 function walk(directory) {
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
@@ -23,7 +27,7 @@ function walk(directory) {
 
 for (const file of walk(dist)) {
   if (file.endsWith('.map')) throw new Error(`Source map found: ${file}`)
-  if (file.endsWith('.js')) {
+  if (file.endsWith('.html') || file.endsWith('.js')) {
     const content = readFileSync(file, 'utf8')
     const marker = markers.find((value) => content.includes(value))
     if (marker) throw new Error(`Application marker found: ${marker}`)

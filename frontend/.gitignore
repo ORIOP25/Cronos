@@ -26,3 +26,9 @@ dist-ssr
 coverage/
 
 dist-website/
+
+.dev.vars
+.dev.vars.*
+.env
+.env.*
+!.env.example

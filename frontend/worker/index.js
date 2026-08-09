@@ -70,6 +70,17 @@ function emailBodies(data) {
   }
 }
 
+async function sendContactEmail(data, env) {
+  const bodies = emailBodies(data)
+  return env.CONTACT_EMAIL.send({
+    from: { name: 'Cronos Website', email: 'website@forms.cronos.pt' },
+    to: 'contacto@cronos.pt',
+    replyTo: data.email,
+    subject: `[Cronos] Novo contacto \u2014 ${data.subject}`,
+    ...bodies,
+  })
+}
+
 async function verifyTurnstile(token, hostname, env) {
   try {
     const response = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
@@ -98,16 +109,14 @@ export default {
     const data = validate(payload)
     if (!data) return json('Pedido inválido.', 400)
     if (data.website) return noContent()
-    if (!env.TURNSTILE_SECRET_KEY || !env.RESEND_API_KEY) return json('Não foi possível enviar o pedido neste momento.', 503)
+    if (!env.TURNSTILE_SECRET_KEY || !env.CONTACT_EMAIL?.send) return json('Não foi possível enviar o pedido neste momento.', 503)
 
     const { success } = await env.CONTACT_RATE_LIMITER.limit({ key: `contact:${request.headers.get('CF-Connecting-IP') || 'unknown'}` })
     if (!success) return json('Foram efetuadas várias tentativas. Aguarde e tente novamente.', 429, { 'Retry-After': '60' })
     if (!await verifyTurnstile(data.turnstileToken, url.hostname, env)) return json('A verificação anti-spam falhou. Tente novamente.', 400)
 
     try {
-      const bodies = emailBodies(data)
-      const response = await fetch('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: `Bearer ${env.RESEND_API_KEY}`, 'Content-Type': 'application/json', 'User-Agent': 'cronos-website/1.0' }, body: JSON.stringify({ from: 'Cronos Website <website@cronos.pt>', to: 'contacto@cronos.pt', reply_to: data.email, subject: `[Cronos] Novo contacto \u2014 ${data.subject}`, ...bodies }) })
-      if (!response.ok) throw new Error('Resend request failed')
+      await sendContactEmail(data, env)
       return noContent()
     } catch {
       console.error('Contact email sending failed')
