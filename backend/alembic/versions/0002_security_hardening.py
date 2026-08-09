@@ -56,7 +56,7 @@ PERFORM pg_advisory_xact_lock(hashtext(requested_clerk_org_id));
 SELECT id INTO v_org FROM public.organization WHERE clerk_org_id = requested_clerk_org_id;
 IF v_org IS NULL THEN INSERT INTO public.organization(name, clerk_org_id, plan_status) VALUES (requested_organization_name, requested_clerk_org_id, 'active') RETURNING id INTO v_org;
 ELSIF (SELECT plan_status FROM public.organization WHERE id = v_org) <> 'active' THEN RETURN; END IF;
-IF EXISTS (SELECT 1 FROM public.organization_membership WHERE organization_id = v_org) THEN
+IF EXISTS (SELECT 1 FROM public.organization_membership AS membership WHERE membership.organization_id = v_org) THEN
   RETURN QUERY SELECT u.id, v_org, m.id FROM public."user" u JOIN public.organization_membership m ON m.account_id=u.id WHERE m.organization_id=v_org AND u.clerk_user_id=requested_clerk_user_id AND m.clerk_membership_id=requested_membership_id AND m.lifecycle_status='active' AND m.access_status='active' AND m.can_admin; RETURN;
 END IF;
 SELECT id INTO v_account FROM public."user" WHERE clerk_user_id=requested_clerk_user_id;
