@@ -50,8 +50,5 @@ async def readiness(
 
 @router.get("/health", status_code=status.HTTP_200_OK)
 @limiter.exempt
-async def health_check(
-    request: Request,
-    db: Annotated[AsyncSession, Depends(deps.get_db)],
-):
-    return await readiness(request, db)
+async def health_check():
+    return {"status": "ok"}

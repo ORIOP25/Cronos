@@ -50,3 +50,7 @@ Run backend test suite: `cd backend && pytest tests/ -v`.
 ## Related Documents
 - [API Reference](API_REFERENCE.md)
 - [Errors and Transactions](ERRORS_AND_TRANSACTIONS.md)
+
+## Tenant context
+
+get_current_user and webhook dispatch install tenant context. get_db owns only the transaction.

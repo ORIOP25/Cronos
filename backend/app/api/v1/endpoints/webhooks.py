@@ -14,6 +14,7 @@ from app.services.member_webhook_service import enqueue_and_process_clerk_event
 
 logger = structlog.get_logger(__name__)
 router = APIRouter(tags=["webhooks"])
+MAX_WEBHOOK_BODY_BYTES = 256 * 1024
 
 
 @router.post("/clerk")
@@ -27,7 +28,13 @@ async def handle_clerk_webhook(request: Request, db: Annotated[AsyncSession, Dep
     if not all([svix_id, svix_timestamp, svix_signature]):
         raise HTTPException(status_code=400, detail="Missing Svix headers")
 
+    content_length = request.headers.get("content-length")
+    if content_length and content_length.isdigit() and int(content_length) > MAX_WEBHOOK_BODY_BYTES:
+        raise HTTPException(status_code=413, detail="Webhook body is too large")
+
     payload = await request.body()
+    if len(payload) > MAX_WEBHOOK_BODY_BYTES:
+        raise HTTPException(status_code=413, detail="Webhook body is too large")
     try:
         wh = Webhook(settings.CLERK_WEBHOOK_SECRET)
         wh.verify(

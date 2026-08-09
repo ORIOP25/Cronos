@@ -47,9 +47,9 @@ async def lifespan(app: FastAPI):
         try:
             try:
                 await redis.ping()
-                logger.info("redis_ready", url=str(settings.REDIS_URL))
+                logger.info("redis_ready")
             except Exception as exc:
-                logger.warning("redis_not_ready", error=str(exc))
+                logger.warning("redis_not_ready", error_type=type(exc).__name__)
             logger.info("rate_limit_configured", enabled=settings.RATELIMIT_ENABLED)
             yield
         finally:
@@ -69,7 +69,7 @@ if settings.SENTRY_DSN:
         # --- Performance & Profiling ---
         traces_sample_rate=settings.SENTRY_TRACES_SAMPLE_RATE,
         # Dados extra
-        send_default_pii=settings.ENVIRONMENT != "production",  # Evita PII em produção
+        send_default_pii=False,  # Evita PII em produção
     )
     logger.info("[OK] Sentry: LIGADO")
 else:
@@ -80,6 +80,9 @@ app = FastAPI(
     description="API Escolar Profissional com rate limiting e Docker.",
     version=settings.APP_VERSION,
     lifespan=lifespan,
+    docs_url=None if settings.ENVIRONMENT == "production" else "/docs",
+    redoc_url=None if settings.ENVIRONMENT == "production" else "/redoc",
+    openapi_url=None if settings.ENVIRONMENT == "production" else "/openapi.json",
 )
 
 
@@ -108,9 +111,9 @@ app.add_middleware(SlowAPIMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS_LIST,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
 )
 
 
@@ -140,47 +143,15 @@ async def app_error_handler(request: Request, exc: AppError):
 
 
 # --- Security Headers ---
-_HEALTH_PATHS = {"/health/live", "/health/ready", "/api/v1/health"}
-
-
 @app.middleware("http")
 async def security_headers(request, call_next):
     response = await call_next(request)
-    if request.url.path.rstrip("/") in _HEALTH_PATHS:
-        return response
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Referrer-Policy"] = "no-referrer"
     response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
-
-    if settings.ENVIRONMENT == "local":
-        response.headers["Content-Security-Policy"] = (
-            "default-src 'self'; "
-            "script-src 'self' 'unsafe-inline' https://*.clerk.accounts.dev https://challenges.cloudflare.com; "
-            "worker-src 'self' blob:; "
-            "connect-src 'self' https://*.clerk.accounts.dev https://challenges.cloudflare.com; "
-            "img-src 'self' https://img.clerk.com data:; "
-            "style-src 'self' 'unsafe-inline' https://*.clerk.accounts.dev; "
-            "frame-src 'self' https://*.clerk.accounts.dev https://challenges.cloudflare.com; "
-            "frame-ancestors 'self'"
-        )
-    else:
-        response.headers["Content-Security-Policy"] = (
-            "default-src 'self'; "
-            "script-src 'self' https://clerk.cronos.pt; "
-            "worker-src 'self' blob:; "
-            "connect-src 'self' https://clerk.cronos.pt; "
-            "img-src 'self' https://img.clerk.com data:; "
-            "style-src 'self' 'unsafe-inline' https://clerk.cronos.pt; "
-            "frame-src 'self' https://clerk.cronos.pt; "
-            "frame-ancestors 'self'; "
-            "upgrade-insecure-requests"
-        )
-
-    if settings.ENVIRONMENT == "production":
-        response.headers["Strict-Transport-Security"] = (
-            "max-age=63072000; includeSubDomains; preload"
-        )
+    if request.url.path.startswith("/api/"):
+        response.headers["Cache-Control"] = "no-store"
     return response
 
 
@@ -200,7 +171,6 @@ def root():
         "status": "online",
         "version": settings.APP_VERSION,
         "system": "Cronos",
-        "docs": "/docs",
     }
 
 

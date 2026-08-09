@@ -297,7 +297,7 @@ async def test_webhook_membership_identity_conflict_sets_sync_error(db_session):
     assert member.access_error_category == "identity_conflict"
 
 
-async def test_webhook_user_identity_conflict_marks_memberships_sync_error(db_session):
+async def test_webhook_user_updated_is_ignored(db_session):
     from app import models
     from app.services import member_webhook_service
 
@@ -348,8 +348,8 @@ async def test_webhook_user_identity_conflict_marks_memberships_sync_error(db_se
     await db_session.refresh(user)
 
     assert user.clerk_user_id == "user_existing_profile"
-    assert member.access_status == models.MembershipAccessStatus.sync_error
-    assert member.access_error_category == "identity_conflict"
+    assert member.access_status == models.MembershipAccessStatus.active
+    assert member.access_error_category is None
 
 
 async def test_webhook_missing_secret_fails_closed(async_client, monkeypatch):

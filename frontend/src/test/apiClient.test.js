@@ -15,11 +15,11 @@ function response(config, data, status = 200) {
 describe('apiClient public contract', () => {
   beforeEach(() => setClerkTokenGetter(async () => null))
 
-  it('sends credentials and resolves successful response payloads directly', async () => {
+  it('does not send browser credentials and resolves successful response payloads directly', async () => {
     const adapter = vi.fn(async (config) => response(config, { value: 42 }))
 
     await expect(apiClient.get('/contract', { adapter })).resolves.toEqual({ value: 42 })
-    expect(adapter.mock.calls[0][0].withCredentials).toBe(true)
+    expect(adapter.mock.calls[0][0].withCredentials).toBe(false)
   })
 
   it('resolves a 204 response as undefined', async () => {

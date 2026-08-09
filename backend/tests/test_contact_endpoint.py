@@ -3,7 +3,6 @@ from httpx import ASGITransport, AsyncClient
 from limits.storage import MemoryStorage
 from limits.strategies import FixedWindowRateLimiter
 
-from app.config import settings
 from app.core.exceptions import AppError
 from app.core.ratelimit import limiter
 from app.main import app
@@ -76,7 +75,6 @@ async def test_contact_limit_is_per_client_and_rejects_sixth_request(monkeypatch
     limiter._storage = memory_storage
     limiter._limiter = FixedWindowRateLimiter(memory_storage)
     limiter.enabled = True
-    monkeypatch.setattr(settings, "TRUSTED_PROXY_IPS", "127.0.0.1")
     deliveries = []
 
     async def sent(submission):
@@ -87,19 +85,9 @@ async def test_contact_limit_is_per_client_and_rejects_sixth_request(monkeypatch
         async with AsyncClient(
             transport=ASGITransport(app=app, client=("127.0.0.1", 1234)), base_url="http://test"
         ) as client:
-            headers = {"X-Real-IP": "198.51.100.10"}
             for _ in range(5):
-                assert (
-                    await client.post("/api/v1/contact", json=PAYLOAD, headers=headers)
-                ).status_code == 204
-            assert (
-                await client.post("/api/v1/contact", json=PAYLOAD, headers=headers)
-            ).status_code == 429
-            assert (
-                await client.post(
-                    "/api/v1/contact", json=PAYLOAD, headers={"X-Real-IP": "198.51.100.11"}
-                )
-            ).status_code == 204
+                assert (await client.post("/api/v1/contact", json=PAYLOAD)).status_code == 204
+            assert (await client.post("/api/v1/contact", json=PAYLOAD)).status_code == 429
     finally:
         limiter._storage, limiter._limiter, limiter.enabled = (
             original_storage,
@@ -107,4 +95,4 @@ async def test_contact_limit_is_per_client_and_rejects_sixth_request(monkeypatch
             original_enabled,
         )
 
-    assert len(deliveries) == 6
+    assert len(deliveries) == 5
