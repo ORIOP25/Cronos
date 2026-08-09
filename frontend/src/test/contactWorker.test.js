@@ -1,14 +1,13 @@
 ﻿import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import worker from '../../worker/index.js'
-
 const payload = { subject: 'Demonstração', courses: 'Entre 1 e 5', teachers: 'Entre 1 e 15', name: 'Ana Coordenadora', email: 'ana@escola.pt', phone: '+351 912 345 678', message: 'Mensagem', website: '', turnstileToken: 'token' }
 const request = (data = payload) => new Request('https://cronos.pt/api/contact', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) })
-const env = (overrides = {}) => ({ TURNSTILE_SECRET_KEY: 'secret', CONTACT_RATE_LIMITER: { limit: vi.fn().mockResolvedValue({ success: true }) }, CONTACT_EMAIL: { send: vi.fn().mockResolvedValue({ messageId: 'id' }) }, ...overrides })
+const env = (overrides = {}) => ({ TURNSTILE_SECRET_KEY: 'turnstile-secret', RESEND_API_KEY: 'resend-secret', CONTACT_RATE_LIMITER: { limit: vi.fn().mockResolvedValue({ success: true }) }, ...overrides })
 
 describe('contact Worker', () => {
-  beforeEach(() => {
-    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ success: true, action: 'contact', hostname: 'cronos.pt' }), { headers: { 'Content-Type': 'application/json' } })))
-  })
+  beforeEach(() => vi.stubGlobal('fetch', vi.fn(async (url) => url === 'https://challenges.cloudflare.com/turnstile/v0/siteverify'
+    ? new Response(JSON.stringify({ success: true, action: 'contact', hostname: 'cronos.pt' }), { headers: { 'Content-Type': 'application/json' } })
+    : new Response(null, { status: 202 }))))
   afterEach(() => vi.unstubAllGlobals())
 
   it('enforces route, method, content, JSON, allowed fields, and body size', async () => {
@@ -29,14 +28,13 @@ describe('contact Worker', () => {
   })
 
   it('stops honeypots and rate limits before verification or email', async () => {
-    const honeypot = env()
-    expect((await worker.fetch(request({ ...payload, website: 'bot' }), honeypot)).status).toBe(204)
+    expect((await worker.fetch(request({ ...payload, website: 'bot' }), env())).status).toBe(204)
     expect(fetch).not.toHaveBeenCalled()
     const limited = env({ CONTACT_RATE_LIMITER: { limit: vi.fn().mockResolvedValue({ success: false }) } })
     const response = await worker.fetch(request(), limited)
     expect(response.status).toBe(429)
     expect(response.headers.get('Retry-After')).toBe('60')
-    expect(limited.CONTACT_EMAIL.send).not.toHaveBeenCalled()
+    expect(fetch).not.toHaveBeenCalled()
   })
 
   it('requires Turnstile success, contact action, and request hostname', async () => {
@@ -50,16 +48,35 @@ describe('contact Worker', () => {
     expect((await worker.fetch(request(), bindings)).status).toBe(400)
   })
 
-  it('sends escaped email after verification and returns a safe delivery error', async () => {
-    const bindings = env()
-    expect((await worker.fetch(request({ ...payload, name: '<Ana>' }), bindings)).status).toBe(204)
-    expect(bindings.CONTACT_EMAIL.send).toHaveBeenCalledWith(expect.objectContaining({ from: { name: 'Cronos Website', email: 'website@cronos.pt' }, to: 'contacto@cronos.pt', replyTo: 'ana@escola.pt', subject: '[Cronos] Novo contacto — Demonstração', html: expect.stringContaining('&lt;Ana&gt;') }))
-    const failed = env({ CONTACT_EMAIL: { send: vi.fn().mockRejectedValue(new Error('failed')) } })
+  it('sends one escaped Resend email after verification', async () => {
+    expect((await worker.fetch(request({ ...payload, name: '<Ana>' }), env())).status).toBe(204)
+    expect(fetch).toHaveBeenCalledTimes(2)
+    const [url, options] = fetch.mock.calls.at(-1)
+    expect(url).toBe('https://api.resend.com/emails')
+    expect(options).toMatchObject({ method: 'POST', headers: { Authorization: 'Bearer resend-secret', 'Content-Type': 'application/json', 'User-Agent': 'cronos-website/1.0' } })
+    expect(JSON.parse(options.body)).toMatchObject({
+      from: 'Cronos Website <website@cronos.pt>', to: 'contacto@cronos.pt', reply_to: payload.email,
+      subject: `[Cronos] Novo contacto \u2014 ${payload.subject}`,
+      text: expect.stringContaining('<Ana>'), html: expect.stringContaining('&lt;Ana&gt;'),
+    })
+  })
+
+  it('returns a safe 503 for missing secrets and Resend failures without logging submitted data', async () => {
+    expect((await worker.fetch(request(), env({ RESEND_API_KEY: undefined }))).status).toBe(503)
+    expect((await worker.fetch(request(), env({ TURNSTILE_SECRET_KEY: undefined }))).status).toBe(503)
+    expect(fetch).not.toHaveBeenCalled()
+
+    fetch.mockImplementationOnce(async () => new Response(JSON.stringify({ success: true, action: 'contact', hostname: 'cronos.pt' }), { headers: { 'Content-Type': 'application/json' } }))
+    fetch.mockImplementationOnce(async () => { throw new Error('failed') })
     const log = vi.spyOn(console, 'error').mockImplementation(() => {})
-    const response = await worker.fetch(request(), failed)
+    const response = await worker.fetch(request(), env())
     expect(response.status).toBe(503)
-    expect(await response.json()).toEqual({ detail: 'Não foi possível enviar o pedido neste momento.' })
+    expect((await response.json()).detail).toEqual(expect.any(String))
     expect(log).not.toHaveBeenCalledWith(expect.stringContaining(payload.name))
     log.mockRestore()
+
+    fetch.mockImplementationOnce(async () => new Response(JSON.stringify({ success: true, action: 'contact', hostname: 'cronos.pt' }), { headers: { 'Content-Type': 'application/json' } }))
+    fetch.mockImplementationOnce(async () => new Response('unavailable', { status: 503 }))
+    expect((await worker.fetch(request(), env())).status).toBe(503)
   })
 })
