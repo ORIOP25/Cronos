@@ -84,3 +84,7 @@ Execute local CI verification pipeline manually before pushing commits.
 - [Contributing Guidelines](../00_getting_started/CONTRIBUTING.md)
 - [Security and Tenant Isolation](SECURITY_AND_TENANT_ISOLATION.md)
 - [Local Runtime](../09_ops_observability/LOCAL_RUNTIME.md)
+
+## Lifecycle regressions
+
+Run webhook lifecycle and session bootstrap integration suites with the production database role before release.

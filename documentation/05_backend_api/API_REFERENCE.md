@@ -95,3 +95,7 @@ Requests and responses use JSON. Success responses serialize Pydantic schemas di
 ## Related Documents
 - [Backend Architecture](BACKEND_ARCHITECTURE.md)
 - [Errors and Transactions](ERRORS_AND_TRANSACTIONS.md)
+
+## Health endpoints
+
+GET /api/v1/health is a constant-cost liveness endpoint. /health/ready is private readiness.
