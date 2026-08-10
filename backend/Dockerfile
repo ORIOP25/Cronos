@@ -8,20 +8,19 @@ ENV PYTHONPATH=/app
 
 WORKDIR /app
 
-# Builder stage: install dependencies into an isolated venv using a pip
-# cache mount, so rebuilds are fast and the cache never ends up in a layer.
+# Builder stage: install dependencies into an isolated venv. Railway requires
+# cache-mount IDs to contain a service ID, but this Dockerfile is shared by the
+# API, worker, beat, and bootstrap services, so layer caching is used instead.
 FROM base AS builder
 RUN python -m venv /opt/venv
 ENV PATH=/opt/venv/bin:$PATH
 COPY requirements.txt .
-RUN --mount=type=cache,id=cronos-pip,target=/root/.cache/pip \
-    pip install --require-hashes -r requirements.txt
+RUN pip install --require-hashes -r requirements.txt
 
 # Extends the builder venv with dev/test dependencies for the ci target only.
 FROM builder AS builder-dev
 COPY requirements-dev.txt .
-RUN --mount=type=cache,id=cronos-pip,target=/root/.cache/pip \
-    pip install --require-hashes -r requirements-dev.txt
+RUN pip install --require-hashes -r requirements-dev.txt
 
 # Runtime stage: only the venv + app code, no compilers/pip cache/build tools.
 FROM base AS runtime
