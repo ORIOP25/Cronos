@@ -14,13 +14,13 @@ FROM base AS builder
 RUN python -m venv /opt/venv
 ENV PATH=/opt/venv/bin:$PATH
 COPY requirements.txt .
-RUN --mount=type=cache,target=/root/.cache/pip \
+RUN --mount=type=cache,id=cronos-pip,target=/root/.cache/pip \
     pip install --require-hashes -r requirements.txt
 
 # Extends the builder venv with dev/test dependencies for the ci target only.
 FROM builder AS builder-dev
 COPY requirements-dev.txt .
-RUN --mount=type=cache,target=/root/.cache/pip \
+RUN --mount=type=cache,id=cronos-pip,target=/root/.cache/pip \
     pip install --require-hashes -r requirements-dev.txt
 
 # Runtime stage: only the venv + app code, no compilers/pip cache/build tools.
