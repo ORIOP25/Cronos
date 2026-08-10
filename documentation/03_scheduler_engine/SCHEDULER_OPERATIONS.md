@@ -13,7 +13,8 @@ Read [Scheduler Architecture](SCHEDULER_ARCHITECTURE.md).
 When disruptions occur during the academic year (e.g., long-term teacher sick leave), Cronos computes adaptive schedule repairs without discarding past execution history.
 
 ## Frozen Horizon Rules
-- **Frozen Horizon Window**: Past schedule blocks and blocks occurring within a configurable short-term window (e.g., next 48 hours) are **frozen**.
+- **Frozen Horizon Window**: Past blocks and blocks before the configured editable start date are immutable.
+- Blocks with `COMPLETED` or `OCCURRENCE` lesson logs are immutable.
 - The solver cannot move, delete, or alter frozen schedule blocks.
 - Unexecuted future blocks beyond the frozen horizon can be re-allocated.
 
@@ -33,22 +34,22 @@ Before approving a repair draft, administrators inspect statistical diffs via `G
 ```
 
 ## Backlog Management
-If total module hours cannot fit before the academic year end date, remaining hours move to **Backlog**. The repair summary displays remaining backlog hours requiring weekend or extra shift allocation.
+The engine reports residual debt when a repair cannot recover all required minutes before the hard end date. The draft stores blocker data and recommendations.
 
 ## Failure Modes and Recovery Runbook
 
 | Failure Symptom | Cause | Recovery Action |
 | :--- | :--- | :--- |
-| **Solver Status IMPOSSIBLE** | Over-constrained availability | Relax teacher availability or assign backup teacher |
+| **Job Status NO_VALID_OUTPUT** | Candidate or solve constraints block output | Inspect blocker metadata and recommended actions |
 | **High Backlog Hours** | Insufficient term calendar days | Extend school year end date in `/config` |
-| **Stuck Job Status** | Celery worker crash | Run job cancellation endpoint `POST /scheduler/jobs/{id}/cancel` |
+| **Stuck Job Status** | Worker interruption | Request cancellation with `POST /scheduler/jobs/{id}/cancel` |
 
 ## Verification Procedure
-Execute `python simulate_user.py`. The script runs a full schedule generation, injects occurrences, runs a repair generation, and audits the diff.
+Run scheduler change, disruption, diff, and recovery tests from `backend/tests/`. Inspect one generated draft through the API.
 
 ## Source Map
-- Repair Logic: `backend/app/services/repair_service.py`
-- Diff Engine: `backend/app/services/diff_service.py`
+- Repair Logic: `backend/app/services/scheduler_adaptive_engine.py`, `backend/app/services/scheduler_editable_boundary.py`
+- Diff Engine: `backend/app/services/scheduler_diff_service.py`
 - Ops Runbook: `documentation/09_ops_observability/OBSERVABILITY_AND_RECOVERY.md`
 
 ## Related Documents

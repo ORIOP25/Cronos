@@ -11,30 +11,28 @@ Read [Frontend Architecture](FRONTEND_ARCHITECTURE.md).
 
 ## Aesthetic Foundation: The 60-30-10 Color Rule
 Cronos employs a warm, authoritative visual identity designed for educational trust and operational clarity:
-- **60% Dominant Base Surfaces**: Warm White (`#faf8f5`, `#ffffff`).
-- **30% Structural Navigation**: Deep Brown (`#3d2b1f`, `#2a1a0f`).
-- **10% Action Accents**: Amber Gold (`#d4940b`, `#f0b429`).
+- **60% Dominant Base Surfaces**: Light Yellow (`#fef9e7`) and white surfaces.
+- **30% Structural Navigation**: Dark Brown (`#3b2415`).
+- **10% Action Accents**: Amber Gold (`#d4940b`).
 
 ## Color Palette Tokens Table
 
 | Token Name | Hex Value | Usage Purpose |
 | :--- | :--- | :--- |
-| `surface` | `#faf8f5` | Main application background surface |
-| `surface-bright` | `#ffffff` | Card containers and input background |
-| `primary` | `#5c3d2e` | Primary buttons and key structural elements |
-| `secondary` | `#8b6f5c` | Subdued text and secondary outlines |
-| `tertiary` | `#d4940b` | Accent highlights, active tabs, warning callouts |
-| `sidebar-bg-start` | `#3d2b1f` | Navigation sidebar background top gradient |
-| `sidebar-bg-end` | `#2a1a0f` | Navigation sidebar background bottom gradient |
-| `success` | `#15803d` | Approved statuses, completed lesson logs |
-| `error` | `#b91c1c` | Error alerts, gap indicators, destructive actions |
+| `--brand-50` | `#fef9e7` | Main application background |
+| `--brand-100` | `#fffbef` | Cards and table headers |
+| `--brand-800` | `#3b2415` | Primary controls and headings |
+| `--brand-600` | `#8b6f5c` | Muted text and secondary elements |
+| `--brand-500` | `#d4940b` | Calls to action and active states |
+| `--rs-teal` | `#15803d` | Success and completed states |
+| `--rs-deep` | `#b91c1c` | Error and gap states |
 
 ## Typography Pairings
 - **Headings**: `Playfair Display` (Editorial Serif, authoritative tone).
 - **Body & UI Controls**: `Outfit` (Clean Geometric Sans-Serif, maximum legibility).
 
 ## Marketing Landing Page Aesthetics & Performance
-- **CSS Namespace**: Marketing components use `cronos-*` scoped CSS classes to avoid global style collision.
+- **CSS Namespace**: Marketing components primarily use `cronos-*` scoped CSS classes.
 - **Asset Standards**: Image graphics must use `<picture>` elements with WebP formats (`.webp`), fallback PNG/JPG formats, explicit width/height parameters, and `decoding="async"`.
 - **Motion & Hardware Acceleration**: Continuous CSS marquees must use GPU compositing transforms (`translate3d`), pause on hover, and respect `@media (prefers-reduced-motion: reduce)`.
 - **Layer Isolation**: Fixed elements with backdrop blur (`.cronos-header`) use composite layer isolation (`isolation: isolate; contain: layout style;`).
@@ -47,8 +45,9 @@ The repository maintains visual snapshot baselines under `documentation/06_front
 *Note: Visual snapshots serve as design review evidence and baseline references.*
 
 ## Contracts and Invariants
-- All application styling must reference global CSS custom properties defined in `frontend/src/index.css`.
-- Do not introduce inline color hex values in React component files.
+- Authenticated application styling centralizes tokens in `frontend/src/index.css`.
+- Marketing-specific tokens live in `frontend/src/pages/MarketingSite.css`.
+- JSX can use inline layout styles, but colors should reference CSS variables.
 
 ## Verification Procedure
 Run CSS coverage audit script: `node frontend/scripts/capture-css-coverage.mjs`.

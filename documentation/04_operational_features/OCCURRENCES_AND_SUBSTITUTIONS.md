@@ -16,33 +16,37 @@ When a scheduled lesson does not proceed normally, Cronos creates a `LessonOccur
 
 ```mermaid
 stateDiagram-v2
-    [*] --> SCHEDULED : Default block state
-    SCHEDULED --> GIVEN : Summary logged normally
-    SCHEDULED --> GAP : Teacher absent / Class unassigned
-    SCHEDULED --> SUBSTITUTED : Cover teacher assigned & lesson logged
-    SCHEDULED --> CANCELLED : School holiday / Event cancellation
+    [*] --> OPEN_PENDING : Occurrence created
+    OPEN_PENDING --> GIVEN : Admin confirms planned lesson
+    OPEN_PENDING --> GAP : Admin confirms missed lesson
+    OPEN_PENDING --> SUBSTITUTED : Admin assigns alternate subject and teacher
+    GAP --> SUBSTITUTED : Admin revises decision
+    SUBSTITUTED --> GAP : Admin revises decision
+    OPEN_PENDING --> REVOKED : Admin cancels occurrence
 ```
 
 ## Occurrence Status Descriptions
 
 | Status | Description | Impact on Credit Hours |
 | :--- | :--- | :--- |
-| `SCHEDULED` | Future planned lesson block | Pending |
+| `OPEN_PENDING` | Occurrence awaits an administrative decision | None |
 | `GIVEN` | Lesson completed by assigned teacher | Credit Granted |
 | `GAP` | Lesson missed due to absence (*Falta*) | Credit Lost (Creates Debt) |
-| `SUBSTITUTED` | Lesson completed by substitute teacher | Credit Granted |
-| `CANCELLED` | Official school cancellation | Credit Deferred |
+| `SUBSTITUTED` | Alternate teacher and subject receive an operational block | Planned subject debt remains |
+| `REVOKED` | Occurrence history was canceled through a revision | Reversed |
 
 ## Substitute Recommendation Algorithm
 When an absence occurs, the system evaluates available replacement teachers via `GET /api/v1/occurrences/{id}/substitutes/recommendations`:
 
-1. **Availability Filter**: Teacher must be free during the block timeslot.
-2. **Subject Qualification**: Teacher must be qualified for the subject or enrolled in the same course team.
-3. **Workload Balance**: System ranks teachers with lowest current weekly hour load first.
+1. **Class Assignment**: Candidate must teach a different subject in the same class and grade.
+2. **Room and Availability**: Room type must match; availability cannot be `IMPOSSIBLE`.
+3. **Conflict Filter**: Candidate must have no active or operational block in the slot.
+4. **Ranking**: Prefer fewer recent substitutions, lower daily load, and longer time since last cover.
 
 ## Contracts and Invariants
-- Assigning a substitute requires a valid teacher qualified for the course or subject.
-- A substitute teacher gain permissions to log summaries for assigned substitution blocks.
+- Assigning a substitute requires a different teacher and subject already linked to the class.
+- The system creates an `OperationalScheduleBlock` for the substitute.
+- A substitute teacher gains permission to log that operational block.
 
 ## Failure Modes
 - No Available Substitutes: Endpoint returns empty recommendations list. Administrator must schedule an adaptive repair.
@@ -52,7 +56,7 @@ Navigate to `/occurrences`. Select an absence block, click **Find Substitutes**,
 
 ## Source Map
 - Occurrence Router: `backend/app/api/v1/endpoints/occurrences.py`
-- Recommendation Service: `backend/app/services/occurrence_service.py`
+- Occurrence and Recommendation Service: `backend/app/services/occurrence_service.py`
 - Frontend Page: `frontend/src/pages/Occurrences.jsx`
 
 ## Related Documents

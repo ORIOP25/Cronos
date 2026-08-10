@@ -10,7 +10,7 @@ This document targets frontend and backend engineers maintaining lesson logging 
 Read [Professional Education](../02_domain_model/PROFESSIONAL_EDUCATION.md).
 
 ## What the System Does
-Teachers enter formal lesson summaries (*Sumários*) for scheduled active blocks. The system registers executed hours, updates attendance counts, and appends entries to the module progress ledger.
+Teachers set execution status for active or operational blocks. They can add an optional summary and notes.
 
 ## Lesson Execution Workflow
 
@@ -23,37 +23,38 @@ sequenceDiagram
     participant DB as PostgreSQL DB
 
     Teacher->>FE: Open Dashboard & Select Active Block
-    Teacher->>FE: Input Summary Text, Hours, Student Attendance
+    Teacher->>FE: Select Status, Enter Summary and Notes
     Teacher->>FE: Click Guardar Sumário
     FE->>BE: PUT /api/v1/schedule/active-blocks/{id}/log
-    BE->>DB: Insert LessonLog Row
-    BE->>DB: Update ActiveScheduleBlock execution_status -> GIVEN
-    BE->>DB: Insert ProgressLedgerEntry Row
-    BE-->>FE: Return Updated Block State
+    BE->>DB: Upsert LessonLog Row
+    BE->>DB: Append ProgressLedgerEntry when status changes
+    BE-->>FE: Return LessonLog
 ```
 
 ## Lesson Log Fields Table
 
 | Field Name | Type | Constraints | Description |
 | :--- | :--- | :--- | :--- |
-| `summary_text` | String | Mandatory, max 2000 chars | Text describing topics taught |
-| `executed_hours` | Decimal | Positive, e.g., `1.5` | Actual instructional hours completed |
-| `students_present` | Integer | Non-negative | Number of students attending |
-| `students_absent` | Integer | Non-negative | Number of students absent |
+| `status` | Enum | `PENDING`, `COMPLETED`, or `OCCURRENCE` | Execution decision for the block |
+| `summary` | String | Optional, max 2000 chars | Text describing topics taught |
+| `notes` | String | Optional, max 1000 chars | Free operational notes |
 
 ## Contracts and Invariants
-- Teachers can log lessons only for blocks where they are assigned as primary or substitute teacher.
-- Logging a lesson automatically transitions the block status to `GIVEN`.
+- Admins can edit published block logs. Teachers can edit only their assigned published or operational blocks.
+- A `COMPLETED` log credits the block duration to the active module.
+- An `OCCURRENCE` log creates or reuses an open occurrence for an active block.
+- Submitted and approved weeks block later log edits.
 
 ## Failure Modes
-- Missing Mandatory Text: Submitting an empty summary returns HTTP `422 Unprocessable Entity`.
+- Future Lesson: The API rejects `COMPLETED` before the timeslot ends.
+- Active Occurrence Conflict: The API rejects completion while a decided occurrence exists.
 
 ## Verification Procedure
-Log in as teacher (`ana.matos@epnorte.pt`). Open dashboard, select lesson block, submit summary, verify block badge changes to green `GIVEN`.
+Log in with a linked teacher profile. Open `/my-schedules`, complete a past block, and verify its `COMPLETED` log.
 
 ## Source Map
 - Router: `backend/app/api/v1/endpoints/schedule.py`
-- Model: `backend/app/models.py` (`LessonLog`, `ProgressLedgerEntry`)
+- Service: `backend/app/services/lesson_log_service.py`
 - Component: `frontend/src/components/LessonLogModal.jsx`
 
 ## Related Documents

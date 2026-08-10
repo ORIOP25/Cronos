@@ -16,30 +16,30 @@ Cronos aggregates daily lesson logs into weekly teacher timesheets (`TeacherWeek
 
 | State | Description | Next State |
 | :--- | :--- | :--- |
-| `DRAFT` | Weekly timesheet accumulating daily lesson logs | `SUBMITTED` |
-| `SUBMITTED` | Teacher submits timesheet for administrative review | `APPROVED`, `REJECTED` |
-| `APPROVED` | Administrator approves timesheet for payroll | None (Terminal) |
-| `REJECTED` | Returned to teacher for summary corrections | `SUBMITTED` |
+| `OPEN` | Weekly timesheet accepts lesson log changes | `SUBMITTED` |
+| `SUBMITTED` | Teacher submits the resolved week | `APPROVED`, `OPEN` |
+| `APPROVED` | Administrator approves and locks the week | `OPEN` |
 
 ## Hour Debt Calculation
 Hour debt (*Dívida de Horas*) occurs when scheduled lessons are missed (`GAP`):
-- **Teacher Debt**: Missed hours owed by a teacher due to unexcused absence.
-- **Class Debt**: Missed curriculum hours required by a class cohort to complete a module.
+- **Curriculum Debt**: Planned module minutes not delivered by a `GAP` or substituted decision.
+- **Recovery Delivery**: A completed recovery block reduces debt through ledger entries.
 
 The system displays debt statistics on the administrative Command Center Dashboard (`/dashboard`).
 
 ## Contracts and Invariants
-- Submitting a timesheet requires all past weekly blocks to have explicit status (`GIVEN`, `GAP`, `SUBSTITUTED`, or `CANCELLED`).
+- Submitting requires at least one published block, no future blocks, and no missing or `PENDING` logs.
+- Reopening clears approval fields but preserves the submission timestamp.
 
 ## Failure Modes
-- Unlogged Blocks Pending: Submitting a timesheet with unlogged past blocks returns HTTP `400 Bad Request`.
+- Unlogged Blocks Pending: Submitting a week with missing or `PENDING` logs returns HTTP `400 Bad Request`.
 
 ## Verification Procedure
 Navigate to `/timesheets`. Inspect teacher weekly hour totals, pending summaries, and approval status buttons.
 
 ## Source Map
 - Timesheet Router: `backend/app/api/v1/endpoints/timesheets.py`
-- Models: `backend/app/models.py` (`TeacherWeeklyTimesheet`, `ProgressLedgerEntry`)
+- Service: `backend/app/services/timesheet_service.py`
 - Frontend Page: `frontend/src/pages/Timesheets.jsx`
 
 ## Related Documents

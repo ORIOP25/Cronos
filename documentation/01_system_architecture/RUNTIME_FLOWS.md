@@ -24,7 +24,7 @@ sequenceDiagram
 
     Client->>Auth: HTTP Request + Bearer JWT
     Auth->>Auth: Validate JWT & Claims
-    Auth->>DB: Set Session Variable app.current_organization_id
+    Auth->>DB: Resolve principal and set tenant session variable
     Auth->>API: Inject UserContext & DBSession
     API->>DB: Execute Query (RLS Enforced)
     DB-->>API: Filtered Rows
@@ -33,17 +33,17 @@ sequenceDiagram
 
 ## Asynchronous Worker Flow
 1. An administrator requests schedule generation via `POST /api/v1/scheduler/generate`.
-2. The endpoint creates a `ScheduleGenerationJob` record with status `SUBMITTED`.
+2. The endpoint creates a `ScheduleGenerationJob` record with status `QUEUED`.
 3. FastAPI dispatches the task ID to the Redis queue.
 4. A Celery worker consumes the task, loads school constraints, and invokes OR-Tools CP-SAT.
-5. The worker stores the generated output as a `ScheduleDraft` and updates job status to `SUCCESS`.
+5. The worker stores an approvable `ScheduleDraft` and updates the job to `SUCCEEDED`.
 6. The frontend polls `GET /api/v1/scheduler/status` until job completion.
 
 ## Clerk Webhook Flow
 1. Clerk issues HTTP `POST /api/v1/webhooks/clerk` on user or organization events.
 2. The endpoint verifies SVIX webhook signatures using `CLERK_WEBHOOK_SECRET`.
-3. The service processes `user.created`, `organization.created`, or `organizationMembership.created` events.
-4. The service updates `User`, `Organization`, and `OrganizationMembership` database rows.
+3. The service stores each event by Svix ID and processes supported Clerk lifecycle events idempotently.
+4. The service reconciles user, organization, membership, invitation, and access state.
 
 ## Contracts and Invariants
 - Webhook endpoints must verify SVIX signatures before processing payloads.
@@ -51,15 +51,15 @@ sequenceDiagram
 
 ## Failure Modes
 - Invalid Webhook Signature: Endpoint returns HTTP `400 Bad Request`.
-- Task Timeout: Celery revokes tasks exceeding maximum execution time limits.
+- Task Failure: The worker records a failure code and terminal job status.
 
 ## Verification Procedure
 Trigger user creation in Clerk dev dashboard. Verify database row creation in `users` and `organization_memberships` tables.
 
 ## Source Map
-- Auth Middleware: `backend/app/api/deps.py`
+- Auth Dependencies: `backend/app/api/deps.py`
 - Webhook Endpoint: `backend/app/api/v1/endpoints/webhooks.py`
-- Celery Worker Tasks: `backend/app/worker/tasks.py`
+- Celery Worker Tasks: `backend/app/scheduler_worker.py`, `backend/app/celery_worker.py`
 
 ## Related Documents
 - [System Architecture](SYSTEM_ARCHITECTURE.md)

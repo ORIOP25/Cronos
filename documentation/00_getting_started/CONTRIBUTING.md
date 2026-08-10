@@ -11,14 +11,16 @@ Review the [Repository Map](REPOSITORY_MAP.md) and set up the local runtime envi
 
 ## Git Branching Model
 - `main`: Production release branch. Must remain stable at all times.
-- `review-backend` / `feature/*`: Development feature branches.
+- `develop`: Integration branch accepted by the CI workflow.
+- `feature/*`: Optional development feature branches.
 - Commit messages must use concise imperative descriptions (e.g., `fix: update RLS policy for occurrences`).
 
 ## Code Standards and Tooling
 
 ### Backend (Python)
 - Code formatter and linter: `ruff`
-- Run linter check: `ruff check app scripts`
+- Run formatter check: `ruff format --check .`
+- Run linter check: `ruff check .`
 - Database migrations: Use Alembic for all schema alterations (`alembic revision --autogenerate -m "description"`).
 - Never execute destructive database operations without migration scripts.
 
@@ -37,19 +39,23 @@ Before pushing code, run the following verification pipeline:
    ```
 2. **Backend Database Integrity Check**:
    ```bash
-   python backend/scripts/audit_database_integrity.py
+   cd backend
+   alembic upgrade head
+   alembic check
+   python -m scripts.audit_triggers
+   python -m scripts.audit_database_integrity
    ```
 3. **Frontend Tests**:
    ```bash
    cd frontend
-   npm run test
-   npm run build
+   npm run verify
+   npm run test:school-config:stability
    ```
 
 ## Source Map
 - Backend Quality Rules: `backend/README.md`
 - Frontend Quality Rules: `frontend/README.md`
-- CI Pipeline Config: `.github/workflows/ci.yml` (if configured)
+- CI Pipeline Config: `.github/workflows/ci.yml`
 
 ## Related Documents
 - [Testing and CI](../08_security_quality/TESTING_AND_CI.md)

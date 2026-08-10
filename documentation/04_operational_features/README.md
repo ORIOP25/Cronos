@@ -4,6 +4,6 @@ This section documents operational workflows including lesson logging (*Sumário
 
 ## Documents
 
-- [LESSON_EXECUTION.md](LESSON_EXECUTION.md): Lesson execution logging (*Sumários*), weekly closures, and progress tracking.
-- [OCCURRENCES_AND_SUBSTITUTIONS.md](OCCURRENCES_AND_SUBSTITUTIONS.md): Occurrence states (`GAP`, `GIVEN`, `SUBSTITUTED`), absence registration, and cover recommendations.
+- [LESSON_EXECUTION.md](LESSON_EXECUTION.md): Lesson execution status, summaries, notes, and progress-ledger effects.
+- [OCCURRENCES_AND_SUBSTITUTIONS.md](OCCURRENCES_AND_SUBSTITUTIONS.md): Open decisions, occurrence states, revisions, and cover recommendations.
 - [TIMESHEETS_AND_PROGRESS.md](TIMESHEETS_AND_PROGRESS.md): Teacher weekly timesheets, hour debt calculation, and completion metrics.

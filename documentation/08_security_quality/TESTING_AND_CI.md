@@ -17,7 +17,7 @@ Cronos maintains automated unit, integration, database contract, and end-to-end 
 | Workspace | Test Tool | Scope | Minimum Coverage Target |
 | :--- | :--- | :--- | :--- |
 | `backend/` | Pytest | API endpoints, services, database models, RLS | **70% Code Coverage** |
-| `frontend/` | Vitest | React components, custom hooks, utilities | Whole-source component coverage |
+| `frontend/` | Vitest | React components, hooks, and utilities | Coverage collected by `npm run verify` |
 | `frontend/e2e/` | Playwright | Full browser E2E workflows | Critical path workflows |
 
 ## Running Test Suites
@@ -53,20 +53,19 @@ npx playwright test
 ```
 
 ## Continuous Integration (CI) Workflow Steps
-1. **Lint and Syntax Check**: Execute `ruff check` for backend and `eslint` for frontend.
-2. **Build Application Images**: Build backend and frontend container images once.
-3. **Database Role Provisioning**: Run `docker compose --profile maintenance run --rm provision-db`.
-4. **Database Migration Execution**: Run `docker compose --profile maintenance run --rm db-maintenance`.
-5. **Start Runtime Stack**: Launch `db`, `redis`, `backend`, and `frontend` Nginx containers.
-6. **Backend and Database Audits**: Run `docker compose --profile maintenance run --rm db-maintenance alembic check` and execute `python backend/scripts/audit_triggers.py`.
-7. **Frontend Unit Tests**: Run Vitest component test suite.
-8. **Playwright E2E Tests**: Run Playwright against the Nginx frontend container.
-9. **Compose Project Teardown**: Execute `docker compose down -v --remove-orphans`.
+1. **Backend Locks and Security**: Rebuild lock files, run `pip check`, and run `pip-audit` with recorded exceptions.
+2. **Backend Static Checks**: Run Ruff format and lint checks.
+3. **Migration Verification**: Upgrade, check drift, downgrade, and upgrade again.
+4. **Database Audits**: Run trigger and integrity audits with the migrator role.
+5. **Backend Tests**: Run non-Redis and Redis suites with combined branch coverage.
+6. **Frontend Verification**: Run production audit, lint, Knip, coverage, build, and configuration stability checks.
+7. **E2E Stack**: Build Compose services, provision roles, migrate, prepare Clerk state, and run Playwright.
+8. **Release Build**: On semantic version tags, publish and attest the backend image.
 
 ## Contracts and Invariants
 - Backend tests must execute against a dedicated test database name containing `test` or `ci`.
 - CI builds fail automatically if coverage falls below configured threshold.
-- CI workflows must tear down Compose projects cleanly upon job completion.
+- E2E CI tears down its Compose project and volumes in an `always()` step.
 
 ## Failure Modes
 - Destructive Test Prevention: Pytest fixture aborts if database URL does not contain `test` or `ci`.
@@ -85,6 +84,6 @@ Execute local CI verification pipeline manually before pushing commits.
 - [Security and Tenant Isolation](SECURITY_AND_TENANT_ISOLATION.md)
 - [Local Runtime](../09_ops_observability/LOCAL_RUNTIME.md)
 
-## Lifecycle regressions
+## Lifecycle Regressions
 
 Run webhook lifecycle and session bootstrap integration suites with the production database role before release.

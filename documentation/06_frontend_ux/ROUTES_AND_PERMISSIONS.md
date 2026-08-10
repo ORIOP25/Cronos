@@ -17,10 +17,10 @@ Read [Members and Access](../02_domain_model/MEMBERS_AND_ACCESS.md).
 | `/login/*` | `SignInPage.jsx` | Public | Authentication sign-in view |
 | `/register/*` | `SignUpPage.jsx` | Public | Registration view |
 | `/recuperar-palavra-passe` | `ForgotPasswordPage.jsx` | Public | Password recovery view |
-| `/onboarding` | `Onboarding.jsx` | Authenticated | Organization setup wizard |
+| `/onboarding` | `Onboarding.jsx` | Admin | Organization setup wizard |
 | `/create-org` | `CreateOrgPage.jsx` | Authenticated | Organization creation view |
-| `/dashboard` | `Dashboard.jsx` | Authenticated | Command Center / Teacher Portal |
-| `/schedules` | `Schedules.jsx` | Authenticated | Timetable view and solver trigger |
+| `/dashboard` | `Dashboard.jsx` | Admin | Administrative command center |
+| `/schedules` | `Schedules.jsx` | Admin | Timetable view and solver trigger |
 | `/courses` | `Courses.jsx` | Admin | Course catalog management |
 | `/courses/:id` | `CourseDetails.jsx` | Admin | Course details and classes list |
 | `/courses/:courseId/classes/:classId` | `ClassDetails.jsx` | Admin | Class details view |
@@ -29,23 +29,26 @@ Read [Members and Access](../02_domain_model/MEMBERS_AND_ACCESS.md).
 | `/members` | `Members.jsx` | Admin | Team member management (`Equipa`) |
 | `/rooms` | `Rooms.jsx` | Admin | Room catalog management |
 | `/absences` | `Occurrences.jsx` | Admin | Occurrence and substitution management |
-| `/timesheets` | `Timesheets.jsx` | Authenticated | Teacher weekly timesheets |
+| `/timesheets` | `Timesheets.jsx` | Admin | Weekly timesheet review |
+| `/my-schedules` | `MySchedules.jsx` | Teacher | Personal schedule, logs, and week submission |
 | `/my-availability` | `MyAvailability.jsx` | Teacher | Teacher availability grid |
 | `/my-progress` | `MyProgress.jsx` | Teacher | Teacher assigned class progress |
 | `/config` | `SchoolConfig.jsx` | Admin | School parameters & shift settings |
 
 ## Route Guard Logic
-Routes wrapped in `<RequireAdmin>` restrict non-administrative users:
-- If user role is `teacher`, accessing administrative routes (e.g., `/config`) automatically redirects to `/dashboard`.
+Routes use `<RequireAdmin>` and `<RequireTeacher>` capability guards:
+- A teacher without admin capability is redirected to `/my-availability` from administrative routes.
+- A member needs the teacher capability and a linked `teacher_id` for teacher routes.
 
 ## Contracts and Invariants
 - Signed-out users accessing protected routes are redirected to `/login`.
+- Inactive members are sent to `/create-org`; signed-in root visits use the membership default route.
 
 ## Failure Modes
 - Route Not Found: Accessing invalid path renders `NotFoundPage.jsx` (404 view).
 
 ## Verification Procedure
-Log in as teacher user. Attempt to navigate to `/config` manually in browser bar. Verify redirection to `/dashboard`.
+Log in as a teacher-only user. Open `/config` and verify redirection to `/my-availability`.
 
 ## Source Map
 - Route Guards: `frontend/src/routeGuards.jsx`

@@ -10,48 +10,54 @@ This document targets scheduler engineers, backend developers, and QA automation
 Read [Professional Education](../02_domain_model/PROFESSIONAL_EDUCATION.md).
 
 ## What the System Does
-The Cronos scheduler engine generates optimal weekly timetables using Google OR-Tools CP-SAT solver. The engine operates in two distinct modes:
+The Cronos scheduler generates dated schedules with Google OR-Tools CP-SAT. The lifecycle selects one of two strategies:
 
-1. **Full Generation Mode (`full`)**: Computes a complete timetable from scratch for all active classes, subjects, teachers, and rooms.
-2. **Adaptive Repair Mode (`repair`)**: Re-optimizes unexecuted future slots while preserving frozen past blocks and past logged lessons.
+1. **Complete Generation (`COMPLETE_GENERATION`)**: Schedules remaining curriculum before the hard end date for an unpublished school year.
+2. **Adaptive Repair (`ADAPTIVE_REPAIR`)**: Repairs explicit debt or scheduler-relevant changes after publication.
 
 ## Hard Constraints vs. Soft Objectives
 
 ### Mandatory Hard Constraints
-The solver must satisfy all hard constraints. If a hard constraint fails, the solver returns `Impossible` status:
+The solver must satisfy all hard constraints. Conflicting constraints can prevent valid output:
 
 | Constraint Name | Description | Violation Consequence |
 | :--- | :--- | :--- |
-| **No Teacher Overlap** | A teacher cannot teach two classes simultaneously | Impossible solution |
-| **No Class Overlap** | A class cannot attend two subjects simultaneously | Impossible solution |
-| **No Room Overlap** | A room cannot host two classes simultaneously | Impossible solution |
-| **Teacher Availability** | Lessons can only occur during teacher available slots | Impossible solution |
-| **Room Type Match** | Lab subjects require laboratory rooms | Impossible solution |
-| **Max Daily Workload** | Teacher/Class daily hours cannot exceed max daily limits | Impossible solution |
+| **No Teacher Overlap** | A teacher cannot teach two classes simultaneously | Invalid selection |
+| **No Class Overlap** | A class cannot attend two subjects simultaneously | Invalid selection |
+| **No Room Overlap** | A room cannot host two classes simultaneously | Invalid selection |
+| **Teacher Availability** | `IMPOSSIBLE` availability excludes a candidate | Candidate removed |
+| **Room Type Match** | Candidate rooms must match the subject room type | Candidate removed |
+| **Explicit Constraints** | Specific-room, locked-time, and unavailable rules restrict candidates | Candidate removed |
+| **Lunch Break** | Configured class and teacher lunch windows remain free | Invalid selection |
 
 ### Soft Optimization Objectives
 The solver minimizes penalty scores for soft objectives to maximize timetable quality:
 
 | Objective Name | Target Preference | Penalty Weight |
 | :--- | :--- | :--- |
-| **Minimize Student Gaps** | Avoid idle gaps between daily class lessons | High |
-| **Minimize Teacher Gaps** | Compact teacher daily schedules | Medium |
-| **Teacher Preferences** | Honor preferred working hours | Medium |
-| **Balanced Distribution** | Distribute subject hours evenly across week days | Low |
+| **Curriculum Coverage** | Maximize scheduled minutes | First |
+| **Completion Date** | Minimize the last selected date, then total date cost | Second |
+| **Class Fairness** | Maximize minimum class coverage and minimize spread | Third |
+| **Workload Quality** | Minimize excess daily, consecutive, late, and recovery load | Fourth |
+| **Gaps and Availability** | Minimize class gaps, teacher gaps, and availability disutility | Fifth |
+| **Room Consistency** | Minimize room changes per class and subject | Sixth |
 
 ## Contracts and Invariants
-- Full generation invalidates previous unapproved drafts.
-- Adaptive repair preserves past executed blocks (`GIVEN`, `SUBSTITUTED`).
+- Generation requires explicit confirmation before replacing a pending draft.
+- Adaptive repair preserves past blocks, completed or occurrence logs, and the stability window.
+- Published state requires an approved scheduler state version.
 
 ## Failure Modes
-- Unfeasible Model: Conflicting hard constraints (e.g., insufficient rooms) trigger `Impossible` status with detailed diagnostic logs.
+- No Valid Output: Candidate or solve failure records `NO_VALID_OUTPUT` with blocker metadata and recommendations.
 
 ## Verification Procedure
-Execute `python simulate_user.py` or POST to `/api/v1/scheduler/generate`. Inspect response task status.
+Run scheduler tests or POST to `/api/v1/scheduler/generate`. Poll the returned job through `/jobs/{job_id}`.
 
 ## Source Map
-- Solver Model: `backend/app/core/solver.py`
-- Constraints Module: `backend/app/services/scheduler_constraints.py`
+- Complete Engine: `backend/app/services/scheduler_complete_engine.py`
+- Adaptive Engine: `backend/app/services/scheduler_adaptive_engine.py`
+- Constraint Policy: `backend/app/scheduler/domain/constraints.py`
+- Quality Policy: `backend/app/scheduler/domain/quality.py`
 
 ## Related Documents
 - [Scheduler Architecture](SCHEDULER_ARCHITECTURE.md)

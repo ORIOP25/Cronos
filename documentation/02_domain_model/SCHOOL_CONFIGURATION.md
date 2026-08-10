@@ -16,40 +16,42 @@ Administrators configure school operational boundaries through the **Configuraç
 
 | Setting | Type | Example | Purpose |
 | :--- | :--- | :--- | :--- |
-| **Shift Start Time** | Time | `08:30` | Earliest daily slot start time |
-| **Shift End Time** | Time | `18:30` | Latest daily slot end time |
-| **Slot Duration** | Integer | `45` minutes | Standard lesson duration unit |
-| **Max Daily Hours** | Integer | `8` hours | Maximum daily hours per teacher or class |
-| **Active School Year** | Foreign Key | `2025/2026` | Target active academic year |
+| **School Start Date** | Date | `2025-09-15` | First instructional date |
+| **Hard End Date** | Date | `2026-07-31` | Last date available to the scheduler |
+| **Repair Stability Window** | Integer | `14` days | Future interval protected during repair |
+| **Grid Window** | Time range | `08:30`-`18:30` | Bounds for generated timeslots |
+| **Slot and Break Duration** | Integer | `50` / `10` minutes | Generated lesson and break lengths |
+| **Lunch Window** | Time range | `12:00`-`14:00` | Required lunch-break search window |
 
 ## Room Categories and Specifications
 Rooms (`Room`) have types (`RoomType`):
-- `STANDARD`: Standard theoretical classroom.
-- `LABORATORY`: Computer lab or technical workshop.
-- `GYMNASIUM`: Physical education sports facility.
+- `normal`: Standard theoretical classroom.
+- `lab`: Computer lab or technical workshop.
+- `gym`: Physical education sports facility.
+- `art`: Art room.
 
-Each subject assignment (`ClassSubjectLink`) can specify a required room type or explicit room.
+Each subject specifies a required room type. A `specific_room` constraint can restrict a class and subject.
 
 ## Calendar Events and Holidays
 School calendar events (`SchoolCalendarEvent`) represent non-instructional days:
 - National Holidays
 - School Breaks / Vacations
-- Institutional Events
+- Exam Periods and Other Events
 
 The scheduler ignores calendar holiday slots during timetable generation.
 
 ## Contracts and Invariants
-- Regenerating timeslot grids invalidates existing draft schedules if slot durations change.
-- Deleting an active room removes it from future scheduler availability choices.
+- Grid regeneration is blocked after publication or while protected scheduler data exists.
+- Settings, grid, and calendar changes record scheduler state-version events.
 
 ## Failure Modes
-- Invalid Shift Configuration: Setting shift start time after shift end time returns HTTP `422 Unprocessable Entity`.
+- Invalid Grid Configuration: An invalid time range or lunch window returns HTTP `422 Unprocessable Entity`.
 
 ## Verification Procedure
 Navigate to `/config`. Update shift duration or add a holiday event. Verify configuration persistence.
 
 ## Source Map
-- Settings Router: `backend/app/api/v1/endpoints/org_settings.py`
+- Settings Router: `backend/app/api/v1/endpoints/org_settings.py` under `/api/v1/school`
 - Rooms Router: `backend/app/api/v1/endpoints/rooms.py`
 - Frontend Page: `frontend/src/pages/SchoolConfig.jsx`
 

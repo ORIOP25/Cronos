@@ -10,7 +10,7 @@ This document targets all developers working on the Cronos codebase.
 Read the [Project Overview](PROJECT_OVERVIEW.md).
 
 ## What the System Does
-Cronos organizes source code into three distinct workspaces: the backend service, the frontend application, and shared project documentation.
+Cronos organizes source into backend, frontend, documentation, workflow, and agent-skill areas.
 
 ## Repository Tree Structure
 
@@ -26,13 +26,14 @@ MeuProjeto/
 │   ├── alembic/                  # Database migration scripts
 │   ├── app/                      # Backend application source
 │   │   ├── api/                  # API routers (v1 endpoints)
-│   │   ├── core/                 # App configuration, security, database session
-│   │   ├── db/                   # Database engine setup
+│   │   ├── core/                 # Authentication, exceptions, logging, and rate limits
+│   │   ├── db/                   # Database engine and tenant context
 │   │   ├── models.py             # SQLAlchemy ORM models
 │   │   ├── schemas.py            # Pydantic data schemas
 │   │   ├── services/             # Business logic and domain services
-│   │   └── worker/               # Celery background workers and solver tasks
-│   ├── scripts/                  # Database audit and maintenance scripts
+│   │   └── scheduler/            # Scheduler domain and infrastructure adapters
+│   ├── scripts/                  # Database audits, member support, and E2E preparation
+│   ├── seed_data.py              # Canonical operational seed entry point
 │   ├── tests/                    # Pytest test suite
 │   ├── Dockerfile                # Multi-stage BuildKit backend image file
 │   └── README.md                 # Backend workspace documentation
@@ -55,7 +56,6 @@ MeuProjeto/
 │   ├── nginx.conf                # Production Nginx SPA server configuration
 │   └── README.md                 # Frontend workspace documentation
 ├── documentation/                # Controlled ASD-STE100 technical documentation
-│   ├── README.md                 # Primary documentation index
 │   ├── 00_getting_started/       # Onboarding and repository guides
 │   ├── 01_system_architecture/   # System architecture and data models
 │   ├── 02_domain_model/          # Professional education domain rules
@@ -82,7 +82,7 @@ MeuProjeto/
 | `backend/` | Python | Handles data persistence, authentication checks, business logic, solver computation. |
 | `frontend/` | JavaScript, JSX, CSS | Handles user interfaces, client routing, API requests, state management. |
 | `documentation/` | Markdown | Maintains technical guides following ASD-STE100 rules. |
-| `.agents/` | Markdown, Shell | Defines AI agent specialized skills and triggers. |
+| `.agents/` | Markdown | Defines specialized agent skills and routing guidance. |
 
 ## Source Map
 - Backend Entry: `backend/app/main.py`

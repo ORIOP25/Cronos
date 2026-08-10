@@ -15,6 +15,8 @@ Configure root environment variables in `.env` using `.env.example`:
 - `CRONOS_APP_PASSWORD`: Application connection password.
 - `VITE_CLERK_PUBLISHABLE_KEY`: Public Clerk key passed to frontend builds.
 
+Configure `backend/.env` with Clerk secrets and backend settings. The Compose stack also requires `CONTACT_SMTP_PASSWORD`.
+
 ## What the System Does
 Cronos executes locally using Docker Compose (`docker-compose.yml`). The production-like runtime contains six core services.
 
@@ -36,7 +38,7 @@ Normal runtime services never alter database schemas automatically on startup. S
 
 | Maintenance Job | Command | Purpose |
 | :--- | :--- | :--- |
-| `provision-db` | `python scripts/provision_db.py` | Role setup and password rotation |
+| `provision-db` | `/scripts/provision_database.sh` | Role setup and password rotation |
 | `db-maintenance` | `alembic upgrade head` | Database schema migrations |
 
 ## Data or Request Flow
@@ -45,7 +47,7 @@ Normal runtime services never alter database schemas automatically on startup. S
 flowchart TD
     Client[Browser User] -->|HTTP 127.0.0.1:8080| Nginx[Frontend Nginx Container]
     Nginx -->|Static Assets| SPA[React 19 Application]
-    Nginx -->|Proxy /api/| BE[FastAPI Backend 127.0.0.1:8000]
+    Nginx -->|Proxy /api/| BE[FastAPI Backend backend:8000]
     BE -->|Async SQLAlchemy| DB[(PostgreSQL 16 db:5432)]
     BE -->|Task Dispatch| Redis[(Redis Broker)]
     Worker[Celery Worker] -->|Fetch Tasks| Redis
@@ -84,20 +86,25 @@ flowchart TD
    ```bash
    docker compose config --quiet
    ```
-2. **Execute Database Maintenance**:
+2. **Provision Database Roles**:
+   ```bash
+   docker compose --profile maintenance run --rm provision-db
+   ```
+3. **Execute Database Maintenance**:
    ```bash
    docker compose --profile maintenance run --rm db-maintenance
    ```
-3. **Start Normal Runtime Stack**:
+4. **Start Normal Runtime Stack**:
    ```bash
    docker compose up -d --build
    ```
-4. **Inspect Active Containers**:
+5. **Inspect Active Containers**:
    ```bash
    docker compose ps
    ```
-5. **Verify Registered Worker Tasks**:
+6. **Verify Readiness and Registered Worker Tasks**:
    ```bash
+   curl http://127.0.0.1:8000/health/ready
    docker compose exec worker celery -A app.celery_worker.celery_app inspect registered
    ```
 
