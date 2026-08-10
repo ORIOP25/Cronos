@@ -119,13 +119,19 @@ Do not change the Hostinger apex SPF record.
 
 ## Backups
 
-Enable daily PostgreSQL backups with six-day retention.
+Railway-managed backups and point-in-time recovery require the Pro plan. The
+initial Hobby deployment intentionally defers managed backups; do not upgrade
+the workspace automatically.
 
-Enable weekly PostgreSQL backups with one-month retention.
+Before relying on Cronos for irreplaceable production data, either upgrade to
+Pro and enable daily plus weekly retention, or implement and restore-test an
+encrypted external PostgreSQL backup outside Railway.
 
-Create a manual backup after bootstrap and migrations.
+Until one of those options is active, record the deployment as operating
+without backups and treat recovery from database loss as unavailable.
 
-Record the backup identifier in the release notes.
+When backups are enabled, create a manual backup after bootstrap and migrations
+and record its identifier in the release notes.
 
 ## Post-Deployment Verification
 
