@@ -132,47 +132,61 @@ class Settings(BaseSettings):
     # Este código corre DEPOIS de carregar o .env
     @model_validator(mode="after")
     def set_defaults(self):
+        self._validate_numeric_limits()
+        self._validate_shared_settings()
+        if self.ENVIRONMENT == "production":
+            self._validate_production_settings()
+        self._set_celery_default()
+        self._set_and_validate_invitation_redirect()
+        return self
+
+    def _validate_numeric_limits(self) -> None:
         if not 0 <= self.CLERK_CLOCK_SKEW_MS <= 60_000:
             raise ValueError("CLERK_CLOCK_SKEW_MS must be between 0 and 60000.")
         if not 1 <= self.CONTACT_EMAIL_TIMEOUT_SECONDS <= 30:
             raise ValueError("CONTACT_EMAIL_TIMEOUT_SECONDS must be between 1 and 30.")
         if not 1 <= self.TURNSTILE_TIMEOUT_SECONDS <= 30:
             raise ValueError("TURNSTILE_TIMEOUT_SECONDS must be between 1 and 30.")
+
+    def _validate_shared_settings(self) -> None:
         if not self.TURNSTILE_ALLOWED_HOSTNAMES_LIST:
             raise ValueError("TURNSTILE_ALLOWED_HOSTNAMES cannot be empty.")
         # Evaluate proxy networks during startup so malformed entries fail fast.
         _ = self.TRUSTED_PROXY_NETWORKS
         self.FRONTEND_URL = _normalize_http_origin(self.FRONTEND_URL, "FRONTEND_URL")
-        if self.ENVIRONMENT == "production":
-            if not self.CORS_ORIGINS_LIST:
-                raise ValueError("CORS_ORIGINS is required in production.")
-            origins = [
-                self.FRONTEND_URL,
-                *self.CORS_ORIGINS_LIST,
-                *self.CLERK_AUTHORIZED_PARTIES_LIST,
-            ]
-            if any(
-                urlparse(origin).scheme != "https"
-                or urlparse(origin).hostname in {"localhost", "127.0.0.1", "::1"}
-                for origin in origins
-            ):
-                raise ValueError(
-                    "Production browser origins must use HTTPS and cannot be localhost."
-                )
-            if not self.CLERK_SECRET_KEY or not self.CLERK_WEBHOOK_SECRET:
-                raise ValueError("Clerk secrets are required in production.")
-            if self.RESEND_API_KEY is None:
-                raise ValueError("RESEND_API_KEY is required in production.")
-            if self.TURNSTILE_SECRET_KEY is None:
-                raise ValueError("TURNSTILE_SECRET_KEY is required in production.")
-            if self.FRONTEND_URL not in self.CORS_ORIGINS_LIST:
-                raise ValueError("FRONTEND_URL must appear in CORS_ORIGINS.")
         if self.FRONTEND_URL not in self.CLERK_AUTHORIZED_PARTIES_LIST:
             raise ValueError("FRONTEND_URL must appear in CLERK_AUTHORIZED_PARTIES.")
+
+    def _validate_production_settings(self) -> None:
+        if not self.CORS_ORIGINS_LIST:
+            raise ValueError("CORS_ORIGINS is required in production.")
+        origins = [
+            self.FRONTEND_URL,
+            *self.CORS_ORIGINS_LIST,
+            *self.CLERK_AUTHORIZED_PARTIES_LIST,
+        ]
+        if any(
+            urlparse(origin).scheme != "https"
+            or urlparse(origin).hostname in {"localhost", "127.0.0.1", "::1"}
+            for origin in origins
+        ):
+            raise ValueError("Production browser origins must use HTTPS and cannot be localhost.")
+        if not self.CLERK_SECRET_KEY or not self.CLERK_WEBHOOK_SECRET:
+            raise ValueError("Clerk secrets are required in production.")
+        if self.RESEND_API_KEY is None:
+            raise ValueError("RESEND_API_KEY is required in production.")
+        if self.TURNSTILE_SECRET_KEY is None:
+            raise ValueError("TURNSTILE_SECRET_KEY is required in production.")
+        if self.FRONTEND_URL not in self.CORS_ORIGINS_LIST:
+            raise ValueError("FRONTEND_URL must appear in CORS_ORIGINS.")
+
+    def _set_celery_default(self) -> None:
         if not self.CELERY_BROKER_URL:
             if self.ENVIRONMENT == "production":
                 raise ValueError("CELERY_BROKER_URL is required in production.")
             self.CELERY_BROKER_URL = self.REDIS_URL
+
+    def _set_and_validate_invitation_redirect(self) -> None:
         if not self.CLERK_INVITATION_REDIRECT_URL:
             self.CLERK_INVITATION_REDIRECT_URL = f"{self.FRONTEND_URL.rstrip('/')}/login"
         redirect = urlparse(self.CLERK_INVITATION_REDIRECT_URL)
@@ -182,8 +196,6 @@ class Settings(BaseSettings):
             raise ValueError(
                 "CLERK_INVITATION_REDIRECT_URL cannot point to localhost in production."
             )
-        # Guardrail de configuração para V2.
-        return self
 
     # --- Monitorização (Opcional) ---
     # Pode ser None se estivermos em desenvolvimento local

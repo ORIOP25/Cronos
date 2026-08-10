@@ -4,7 +4,7 @@
 FROM node:24-alpine AS deps
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN npm ci
+RUN npm ci --ignore-scripts
 
 # Development dependencies are installed in the build stage only.
 FROM deps AS build

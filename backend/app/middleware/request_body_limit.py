@@ -2,10 +2,18 @@
 
 import json
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 
 from starlette.types import Message, Receive, Scope, Send
 
 ASGIApp = Callable[[Scope, Receive, Send], Awaitable[None]]
+
+
+@dataclass(frozen=True)
+class BodyReadResult:
+    messages: list[Message]
+    exceeded: bool = False
+    disconnected: bool = False
 
 
 class RequestBodyLimitMiddleware:
@@ -20,29 +28,18 @@ class RequestBodyLimitMiddleware:
             await self.app(scope, receive, send)
             return
 
-        headers = {key.lower(): value for key, value in scope.get("headers", [])}
-        content_length = headers.get(b"content-length")
-        if content_length is not None:
-            try:
-                if int(content_length) > self.max_bytes:
-                    await self._reject(send)
-                    return
-            except ValueError:
-                pass
+        if self._content_length_exceeds_limit(scope):
+            await self._reject(send)
+            return
 
-        messages: list[Message] = []
-        received = 0
-        while True:
-            message = await receive()
-            messages.append(message)
-            if message["type"] == "http.disconnect":
-                return
-            received += len(message.get("body", b""))
-            if received > self.max_bytes:
-                await self._reject(send)
-                return
-            if not message.get("more_body", False):
-                break
+        result = await self._read_body(receive)
+        if result.disconnected:
+            return
+        if result.exceeded:
+            await self._reject(send)
+            return
+
+        messages = result.messages
 
         async def replay() -> Message:
             if messages:
@@ -50,6 +47,30 @@ class RequestBodyLimitMiddleware:
             return {"type": "http.request", "body": b"", "more_body": False}
 
         await self.app(scope, replay, send)
+
+    def _content_length_exceeds_limit(self, scope: Scope) -> bool:
+        headers = {key.lower(): value for key, value in scope.get("headers", [])}
+        content_length = headers.get(b"content-length")
+        if content_length is None:
+            return False
+        try:
+            return int(content_length) > self.max_bytes
+        except ValueError:
+            return False
+
+    async def _read_body(self, receive: Receive) -> BodyReadResult:
+        messages: list[Message] = []
+        received = 0
+        while True:
+            message = await receive()
+            messages.append(message)
+            if message["type"] == "http.disconnect":
+                return BodyReadResult(messages, disconnected=True)
+            received += len(message.get("body", b""))
+            if received > self.max_bytes:
+                return BodyReadResult(messages, exceeded=True)
+            if not message.get("more_body", False):
+                return BodyReadResult(messages)
 
     @staticmethod
     async def _reject(send: Send) -> None:
