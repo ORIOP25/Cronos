@@ -40,8 +40,7 @@ def build_resend_payload(
         f"{label}: {value}" for label, value in answers
     )
     rows = "".join(
-        f"<dt>{html.escape(label)}</dt><dd>{html.escape(value)}</dd>"
-        for label, value in answers
+        f"<dt>{html.escape(label)}</dt><dd>{html.escape(value)}</dd>" for label, value in answers
     )
     subject = " ".join(submission.subject.split())
     return {

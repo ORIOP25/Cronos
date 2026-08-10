@@ -26,9 +26,7 @@ def _required(environment: Mapping[str, str], name: str) -> str:
 def _ensure_role(cursor, role_name: str, attributes: str) -> None:
     cursor.execute("SELECT 1 FROM pg_roles WHERE rolname = %s", (role_name,))
     if cursor.fetchone() is None:
-        cursor.execute(
-            sql.SQL("CREATE ROLE {} " + attributes).format(sql.Identifier(role_name))
-        )
+        cursor.execute(sql.SQL("CREATE ROLE {} " + attributes).format(sql.Identifier(role_name)))
     cursor.execute(sql.SQL("ALTER ROLE {} " + attributes).format(sql.Identifier(role_name)))
 
 
@@ -42,9 +40,7 @@ def provision(environment: Mapping[str, str] = os.environ) -> None:
             for role_name, attributes in ROLE_DEFINITIONS.items():
                 _ensure_role(cursor, role_name, attributes)
             cursor.execute(
-                sql.SQL("ALTER ROLE {} PASSWORD %s").format(
-                    sql.Identifier("cronos_migrator")
-                ),
+                sql.SQL("ALTER ROLE {} PASSWORD %s").format(sql.Identifier("cronos_migrator")),
                 (migrator_password,),
             )
             cursor.execute(
