@@ -1,5 +1,6 @@
 # Ficheiro: app/config.py
 
+from ipaddress import IPv4Network, IPv6Network, ip_network
 from typing import Literal
 from urllib.parse import urlparse
 
@@ -94,12 +95,32 @@ class Settings(BaseSettings):
     REDIS_URL: RedisDsn = "redis://redis:6379/0"
     RATELIMIT_ENABLED: bool = True
 
-    CONTACT_SMTP_HOST: str = "smtp.hostinger.com"
-    CONTACT_SMTP_PORT: int = 465
-    CONTACT_SMTP_USERNAME: EmailStr = "contacto@cronos.pt"
-    CONTACT_SMTP_PASSWORD: SecretStr | None = None
+    RESEND_API_KEY: SecretStr | None = None
+    CONTACT_EMAIL_FROM: EmailStr = "website@forms.cronos.pt"
     CONTACT_EMAIL_TO: EmailStr = "contacto@cronos.pt"
-    CONTACT_SMTP_TIMEOUT_SECONDS: int = 10
+    CONTACT_EMAIL_TIMEOUT_SECONDS: int = 10
+    TURNSTILE_SECRET_KEY: SecretStr | None = None
+    TURNSTILE_ALLOWED_HOSTNAMES: str = "cronos.pt,www.cronos.pt"
+    TURNSTILE_TIMEOUT_SECONDS: int = 5
+    TRUSTED_PROXY_IPS: str = ""
+
+    @computed_field(return_type=list[str])
+    def TURNSTILE_ALLOWED_HOSTNAMES_LIST(self) -> list[str]:
+        return list(
+            dict.fromkeys(
+                hostname.strip().lower()
+                for hostname in self.TURNSTILE_ALLOWED_HOSTNAMES.split(",")
+                if hostname.strip()
+            )
+        )
+
+    @computed_field(return_type=list[IPv4Network | IPv6Network])
+    def TRUSTED_PROXY_NETWORKS(self) -> list[IPv4Network | IPv6Network]:
+        return [
+            ip_network(value.strip(), strict=False)
+            for value in self.TRUSTED_PROXY_IPS.split(",")
+            if value.strip()
+        ]
 
     # --- Solver (roadmap V2) ---
     # Fallback seguro: manter V1 por omissão até ativação explícita.
@@ -113,12 +134,14 @@ class Settings(BaseSettings):
     def set_defaults(self):
         if not 0 <= self.CLERK_CLOCK_SKEW_MS <= 60_000:
             raise ValueError("CLERK_CLOCK_SKEW_MS must be between 0 and 60000.")
-        if not 1 <= self.CONTACT_SMTP_PORT <= 65_535:
-            raise ValueError("CONTACT_SMTP_PORT must be between 1 and 65535.")
-        if not 1 <= self.CONTACT_SMTP_TIMEOUT_SECONDS <= 30:
-            raise ValueError("CONTACT_SMTP_TIMEOUT_SECONDS must be between 1 and 30.")
-        if self.ENVIRONMENT == "production" and self.CONTACT_SMTP_PASSWORD is None:
-            raise ValueError("CONTACT_SMTP_PASSWORD is required in production.")
+        if not 1 <= self.CONTACT_EMAIL_TIMEOUT_SECONDS <= 30:
+            raise ValueError("CONTACT_EMAIL_TIMEOUT_SECONDS must be between 1 and 30.")
+        if not 1 <= self.TURNSTILE_TIMEOUT_SECONDS <= 30:
+            raise ValueError("TURNSTILE_TIMEOUT_SECONDS must be between 1 and 30.")
+        if not self.TURNSTILE_ALLOWED_HOSTNAMES_LIST:
+            raise ValueError("TURNSTILE_ALLOWED_HOSTNAMES cannot be empty.")
+        # Evaluate proxy networks during startup so malformed entries fail fast.
+        _ = self.TRUSTED_PROXY_NETWORKS
         self.FRONTEND_URL = _normalize_http_origin(self.FRONTEND_URL, "FRONTEND_URL")
         if self.ENVIRONMENT == "production":
             if not self.CORS_ORIGINS_LIST:
@@ -138,6 +161,10 @@ class Settings(BaseSettings):
                 )
             if not self.CLERK_SECRET_KEY or not self.CLERK_WEBHOOK_SECRET:
                 raise ValueError("Clerk secrets are required in production.")
+            if self.RESEND_API_KEY is None:
+                raise ValueError("RESEND_API_KEY is required in production.")
+            if self.TURNSTILE_SECRET_KEY is None:
+                raise ValueError("TURNSTILE_SECRET_KEY is required in production.")
             if self.FRONTEND_URL not in self.CORS_ORIGINS_LIST:
                 raise ValueError("FRONTEND_URL must appear in CORS_ORIGINS.")
         if self.FRONTEND_URL not in self.CLERK_AUTHORIZED_PARTIES_LIST:

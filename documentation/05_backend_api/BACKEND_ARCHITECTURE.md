@@ -32,6 +32,14 @@ FastAPI dependencies (`backend/app/api/deps.py`) supply context objects to route
 - `require_admin`: Enforces administrative role capability requirement.
 - `require_teacher`: Enforces teacher role capability requirement.
 
+The public contact flow uses a separate dependency module.
+
+`backend/app/contact/dependencies.py` constructs provider adapters with one pooled HTTP client.
+
+`ContactApplicationService` verifies the honeypot and Turnstile before email delivery.
+
+The service has no FastAPI, HTTP, Cloudflare, or Resend imports.
+
 ## Contracts and Invariants
 - All endpoints must declare explicit response models using Pydantic schemas (`backend/app/schemas.py`).
 - Handlers must not execute raw blocking SQL queries on the main async loop.
@@ -46,6 +54,7 @@ Run backend test suite: `cd backend && pytest tests/ -v`.
 - FastAPI App Init: `backend/app/main.py`
 - Dependencies: `backend/app/api/deps.py`
 - Router Directory: `backend/app/api/v1/endpoints/`
+- Contact Use Case: `backend/app/contact/`
 
 ## Related Documents
 - [API Reference](API_REFERENCE.md)

@@ -1,10 +1,12 @@
-﻿import { act, fireEvent, screen, waitFor } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { act, fireEvent, screen, waitFor } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderWithProviders } from './testUtils'
 
 const { mutation } = vi.hoisted(() => ({ mutation: { mutateAsync: vi.fn(), reset: vi.fn(), isPending: false } }))
 vi.mock('../features/contact/data', () => ({ useSubmitContact: () => mutation }))
 import ContactQuestionnaire from '../components/marketing/ContactQuestionnaire'
+
+let turnstileOptions
 
 async function reachFinalStep() {
   fireEvent.click(screen.getByRole('button', { name: /Falar/ }))
@@ -14,38 +16,79 @@ async function reachFinalStep() {
   fireEvent.change(screen.getByLabelText(/nome/), { target: { value: 'Ana' } })
   fireEvent.change(screen.getByLabelText(/email/), { target: { value: 'ana@escola.pt' } })
   fireEvent.submit(screen.getByRole('heading', { name: /Dados/ }).closest('form'))
-  const form = screen.getByRole('heading', { name: /Mais/ }).closest('form')
-  const token = document.createElement('input')
-  token.name = 'cf-turnstile-response'
-  token.value = 'token'
-  form.append(token)
+  await waitFor(() => expect(window.turnstile.render).toHaveBeenCalled())
 }
 
 describe('ContactQuestionnaire', () => {
-  beforeEach(() => { mutation.mutateAsync.mockReset(); mutation.reset.mockReset(); mutation.isPending = false })
+  beforeEach(() => {
+    mutation.mutateAsync.mockReset()
+    mutation.reset.mockReset()
+    mutation.isPending = false
+    vi.stubEnv('VITE_TURNSTILE_SITE_KEY', 'site-key')
+    turnstileOptions = undefined
+    window.turnstile = {
+      render: vi.fn((element, options) => { turnstileOptions = options; return 'widget-id' }),
+      reset: vi.fn(),
+      remove: vi.fn(),
+    }
+  })
+  afterEach(() => {
+    vi.unstubAllEnvs()
+    delete window.turnstile
+  })
 
-  it('submits the Turnstile token and shows success only after the request succeeds', async () => {
+  it('submits the current token using the snake_case public contract', async () => {
     mutation.mutateAsync.mockResolvedValue(undefined)
     renderWithProviders(<ContactQuestionnaire />)
     await reachFinalStep()
+    act(() => turnstileOptions.callback('valid-token'))
     fireEvent.click(screen.getByRole('button', { name: /^Enviar/ }))
-    await waitFor(() => expect(mutation.mutateAsync).toHaveBeenCalledWith(expect.objectContaining({ name: 'Ana', website: '', turnstileToken: 'token' })))
-    expect(document.querySelector('.cronos-contact-step--success')).toBeInTheDocument()
+    await waitFor(() => expect(mutation.mutateAsync).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'Ana', website: '', turnstile_token: 'valid-token',
+    })))
+    expect(screen.getByText(/Obrigado pelo contacto, Ana/)).toBeInTheDocument()
   })
 
-  it('blocks a missing token and preserves the fallback after failure', async () => {
+  it('blocks submission without a token using the required Portuguese message', async () => {
     renderWithProviders(<ContactQuestionnaire />)
     await reachFinalStep()
-    document.querySelector('[name="cf-turnstile-response"]').remove()
+    fireEvent.click(screen.getByRole('button', { name: /^Enviar/ }))
+    expect(mutation.mutateAsync).not.toHaveBeenCalled()
+    expect(screen.getByRole('alert')).toHaveTextContent('Confirme a verificação anti-spam antes de enviar o pedido.')
+  })
+
+  it('clears an expired token before submission', async () => {
+    renderWithProviders(<ContactQuestionnaire />)
+    await reachFinalStep()
+    act(() => {
+      turnstileOptions.callback('expired-token')
+      turnstileOptions['expired-callback']()
+    })
+    fireEvent.click(screen.getByRole('button', { name: /^Enviar/ }))
+    expect(mutation.mutateAsync).not.toHaveBeenCalled()
+  })
+
+  it('resets Turnstile after backend failure and preserves questionnaire fields', async () => {
+    mutation.mutateAsync.mockRejectedValue({ response: { status: 503, data: { detail: 'Indisponível.' } } })
+    renderWithProviders(<ContactQuestionnaire />)
+    await reachFinalStep()
+    act(() => turnstileOptions.callback('token'))
+    fireEvent.click(screen.getByRole('button', { name: /^Enviar/ }))
+    await waitFor(() => expect(window.turnstile.reset).toHaveBeenCalledWith('widget-id'))
+    expect(screen.getByRole('link', { name: 'email' })).toHaveAttribute('href', 'mailto:contacto@cronos.pt')
+    fireEvent.click(screen.getByRole('button', { name: /Voltar/ }))
+    expect(screen.getByLabelText(/nome/)).toHaveValue('Ana')
+  })
+
+  it('clears the token and reports widget errors', async () => {
+    renderWithProviders(<ContactQuestionnaire />)
+    await reachFinalStep()
+    act(() => {
+      turnstileOptions.callback('token')
+      turnstileOptions['error-callback']()
+    })
     fireEvent.click(screen.getByRole('button', { name: /^Enviar/ }))
     expect(mutation.mutateAsync).not.toHaveBeenCalled()
     expect(screen.getByRole('alert')).toHaveTextContent('anti-spam')
-    mutation.mutateAsync.mockRejectedValue({ response: { status: 429, data: { detail: {} } } })
-    const token = document.createElement('input')
-    token.name = 'cf-turnstile-response'
-    token.value = 'token'
-    screen.getByRole('heading', { name: /Mais/ }).closest('form').append(token)
-    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /^Enviar/ })); await Promise.resolve() })
-    await waitFor(() => expect(screen.getByRole('link', { name: 'email' })).toHaveAttribute('href', 'mailto:contacto@cronos.pt'))
   })
 })

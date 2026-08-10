@@ -2,6 +2,7 @@
 
 from contextlib import asynccontextmanager
 
+import httpx
 import sentry_sdk
 import structlog
 from fastapi import FastAPI, Request
@@ -16,14 +17,13 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
 from app.api.api import api_router
-
-# --- Imports da Aplicação ---
 from app.config import settings
 from app.core.clerk import ClerkGateway
 from app.core.exceptions import AppError, DomainError
 from app.core.logging import setup_logging
 from app.core.ratelimit import limiter
 from app.db.database import SessionLocal, engine_async
+from app.middleware.request_body_limit import RequestBodyLimitMiddleware
 
 # ==========================================
 # CICLO DE VIDA (LIFESPAN)
@@ -42,8 +42,9 @@ async def lifespan(app: FastAPI):
 
     redis = aioredis.from_url(str(settings.REDIS_URL), socket_connect_timeout=1)
     app.state.redis = redis
-    async with ClerkGateway() as clerk:
+    async with ClerkGateway() as clerk, httpx.AsyncClient() as http_client:
         app.state.clerk = clerk
+        app.state.http_client = http_client
         try:
             try:
                 await redis.ping()
@@ -105,6 +106,12 @@ async def global_exception_handler(request: Request, exc: Exception):
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.add_middleware(SlowAPIMiddleware)
+app.add_middleware(
+    RequestBodyLimitMiddleware,
+    max_bytes=16 * 1024,
+    method="POST",
+    path="/api/v1/contact",
+)
 
 # --- Configuração de CORS ---
 # Nota: Em produção, deves restringir isto aos domínios reais
@@ -129,13 +136,21 @@ async def domain_error_handler(request: Request, exc: DomainError):
 @app.exception_handler(AppError)
 async def app_error_handler(request: Request, exc: AppError):
     status_code = {"preflight_failed": 400}.get(exc.code) or {
+        "bad_request": 400,
         "validation": 422,
         "not_found": 404,
         "conflict": 409,
         "forbidden": 403,
         "unavailable": 503,
     }[exc.kind]
-    detail = exc.metadata or {"code": exc.code, "message": exc.detail}
+    if exc.code in {
+        "contact_delivery_unavailable",
+        "turnstile_rejected",
+        "turnstile_unavailable",
+    }:
+        detail = exc.detail
+    else:
+        detail = exc.metadata or {"code": exc.code, "message": exc.detail}
     return JSONResponse(
         status_code=status_code,
         content=jsonable_encoder({"detail": detail}),

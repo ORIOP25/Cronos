@@ -1,9 +1,12 @@
 ﻿import { useMutation } from '@tanstack/react-query'
 
-const endpoint = import.meta.env.VITE_CONTACT_ENDPOINT || '/api/v1/contact'
+export function getContactEndpoint() {
+  const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || '/api/v1').replace(/\/$/, '')
+  return `${apiBaseUrl}/contact`
+}
 
 async function submitContact(payload) {
-  const response = await fetch(endpoint, {
+  const response = await fetch(getContactEndpoint(), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
@@ -17,5 +20,5 @@ async function submitContact(payload) {
 }
 
 export function useSubmitContact() {
-  return useMutation({ mutationFn: submitContact })
+  return useMutation({ mutationFn: submitContact, retry: false })
 }

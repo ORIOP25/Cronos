@@ -45,7 +45,10 @@ class ContactSubmission(BaseModel):
     email: EmailStr
     phone: str | None = Field(default=None, max_length=40)
     message: str | None = Field(default=None, max_length=3000)
-    website: Literal[""] = ""
+    # Honeypot values must reach the application service so bots receive the
+    # same successful response as legitimate visitors.
+    website: str = Field(default="", max_length=200)
+    turnstile_token: str = Field(min_length=1, max_length=2048)
 
 
 # ==========================================

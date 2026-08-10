@@ -1,9 +1,9 @@
 # Ficheiro: app/core/ratelimit.py
 
 from slowapi import Limiter
-from slowapi.util import get_remote_address
 
 from app.config import settings
+from app.core.client_ip import trusted_remote_address
 
 # ==========================================
 # RATE LIMITER DISTRIBUÍDO
@@ -15,7 +15,7 @@ from app.config import settings
 
 
 limiter = Limiter(
-    key_func=get_remote_address,
+    key_func=trusted_remote_address,
     storage_uri=str(settings.REDIS_URL),
     enabled=settings.RATELIMIT_ENABLED,
     default_limits=["200 per day", "50 per hour"],  # Limites padrão de segurança
