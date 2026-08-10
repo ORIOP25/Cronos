@@ -34,7 +34,7 @@ const ContactQuestionnaire = memo(function ContactQuestionnaire() {
     try {
       const turnstileToken = new FormData(event.currentTarget).get('cf-turnstile-response')
       if (typeof turnstileToken !== 'string' || !turnstileToken) {
-        setSubmitError('Confirme a verifica??o anti-spam antes de enviar o pedido.')
+        setSubmitError('Confirme a verificação anti-spam antes de enviar o pedido.')
         return
       }
       await submitContact.mutateAsync({ ...contactData, website, turnstileToken })
