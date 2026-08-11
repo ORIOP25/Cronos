@@ -3,7 +3,6 @@ name: CI
 on:
   push:
     branches: [main, develop]
-    tags: ["v*"]
   pull_request:
     branches: [main, develop]
 
@@ -74,7 +73,9 @@ jobs:
           pip-compile --quiet --allow-unsafe --generate-hashes --output-file=requirements-dev.txt requirements-dev.in
           git diff --exit-code -- requirements.txt requirements-dev.txt
           pip check
-          # ponytail: remove these temporary exceptions when Clerk supports cryptography >=49.
+          # ponytail: remove these temporary exceptions when the Clerk lock supports cryptography >=50.
+          # Cronos does not call pkcs7_decrypt_* or cryptography.x509.verification.
+          # Retry the normal Clerk dependency update on every lock refresh.
           pip-audit -r requirements.txt --progress-spinner off \
             --ignore-vuln PYSEC-2026-3552 \
             --ignore-vuln PYSEC-2026-3553 \
@@ -312,7 +313,6 @@ jobs:
         run: docker compose -f docker-compose.ci.yml logs --no-color
         env:
           COMPOSE_PROJECT_NAME: cronos-ci-${{ github.run_id }}-${{ github.run_attempt }}
-
       - name: Revoke E2E Clerk invitations
         if: ${{ always() && steps.prepare-e2e-clerk-state.outcome == 'success' }}
         run: |
@@ -338,42 +338,3 @@ jobs:
         run: docker compose -f docker-compose.ci.yml down -v --remove-orphans
         env:
           COMPOSE_PROJECT_NAME: cronos-ci-${{ github.run_id }}-${{ github.run_attempt }}
-
-  publish-backend:
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: [backend, frontend, e2e]
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    permissions:
-      contents: write
-      packages: write
-      id-token: write
-      attestations: write
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-      - name: Validate semantic release tag
-        shell: bash
-        run: |
-          [[ "${GITHUB_REF_NAME}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
-      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3
-      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
-        id: build
-        with:
-          context: backend
-          target: runtime
-          push: true
-          tags: |
-            ghcr.io/${{ github.repository_owner }}/cronos-backend:${{ github.sha }}
-            ghcr.io/${{ github.repository_owner }}/cronos-backend:${{ github.ref_name }}
-          provenance: true
-          sbom: true
-      - uses: actions/attest-build-provenance@96b4a1ef7235a096b17240c259729fdd70c83d45 # v2
-        with:
-          subject-name: ghcr.io/${{ github.repository_owner }}/cronos-backend
-          subject-digest: ${{ steps.build.outputs.digest }}
-          push-to-registry: true

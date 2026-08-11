@@ -90,7 +90,7 @@ Run `npm ci && npm run build`.
 
 Publish the `dist` directory.
 
-Set Node.js to version 22.
+Set Node.js to version 24.
 
 Set these public build variables:
 

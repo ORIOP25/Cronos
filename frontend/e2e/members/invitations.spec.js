@@ -39,6 +39,8 @@ async function saveAndExpect(page, expectedStatus) {
 }
 
 test.describe.serial('Member invitations — real Clerk', () => {
+  test.describe.configure({ retries: 0 })
+
   test.beforeEach(async ({ page }) => {
     attachRuntimeGuards(page)
     await loginAsAdminReal(page)

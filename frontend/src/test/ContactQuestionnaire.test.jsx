@@ -8,7 +8,7 @@ import ContactQuestionnaire from '../components/marketing/ContactQuestionnaire'
 
 let turnstileOptions
 
-async function reachFinalStep() {
+async function reachFinalStep({ waitForWidget = true } = {}) {
   fireEvent.click(screen.getByRole('button', { name: /Falar/ }))
   fireEvent.click(screen.getByRole('button', { name: /Criar/ }))
   fireEvent.click(screen.getByRole('button', { name: /Entre 1 e 5/ }))
@@ -16,7 +16,7 @@ async function reachFinalStep() {
   fireEvent.change(screen.getByLabelText(/nome/), { target: { value: 'Ana' } })
   fireEvent.change(screen.getByLabelText(/email/), { target: { value: 'ana@escola.pt' } })
   fireEvent.submit(screen.getByRole('heading', { name: /Dados/ }).closest('form'))
-  await waitFor(() => expect(window.turnstile.render).toHaveBeenCalled())
+  if (waitForWidget) await waitFor(() => expect(window.turnstile.render).toHaveBeenCalled())
 }
 
 describe('ContactQuestionnaire', () => {
@@ -33,8 +33,35 @@ describe('ContactQuestionnaire', () => {
     }
   })
   afterEach(() => {
+    vi.useRealTimers()
     vi.unstubAllEnvs()
     delete window.turnstile
+  })
+
+  it('waits for Turnstile to load after the first render and renders once', async () => {
+    delete window.turnstile
+    renderWithProviders(<ContactQuestionnaire />)
+    await reachFinalStep({ waitForWidget: false })
+
+    window.setTimeout(() => {
+      window.turnstile = {
+        render: vi.fn((element, options) => { turnstileOptions = options; return 'widget-id' }),
+        reset: vi.fn(),
+        remove: vi.fn(),
+      }
+    }, 20)
+
+    await waitFor(() => expect(window.turnstile.render).toHaveBeenCalledTimes(1))
+  })
+
+  it('reports a safe error when Turnstile does not load in time', async () => {
+    vi.useFakeTimers()
+    delete window.turnstile
+    renderWithProviders(<ContactQuestionnaire />)
+    await reachFinalStep({ waitForWidget: false })
+
+    act(() => vi.advanceTimersByTime(3000))
+    expect(screen.getByRole('alert')).toHaveTextContent('NÃ£o foi possÃ­vel carregar a verificaÃ§Ã£o anti-spam.')
   })
 
   it('submits the current token using the snake_case public contract', async () => {

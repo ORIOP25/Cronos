@@ -51,9 +51,11 @@ export const useMembers = ({ includeArchived = false, enabled = true } = {}) => 
 }
 
 const invalidateMemberQueries = (queryClient, orgId) => {
-  void queryClient.invalidateQueries({ queryKey: ['members', orgId] })
-  void queryClient.invalidateQueries({ queryKey: ['current-member', orgId] })
-  void queryClient.invalidateQueries({ queryKey: ['teachers', orgId] })
+  return Promise.all([
+    queryClient.invalidateQueries({ queryKey: ['members', orgId] }),
+    queryClient.invalidateQueries({ queryKey: ['current-member', orgId] }),
+    queryClient.invalidateQueries({ queryKey: ['teachers', orgId] }),
+  ])
 }
 
 export const useCreateMember = () => {

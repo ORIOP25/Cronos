@@ -1,7 +1,6 @@
 """Serviço de Ocorrências de Aulas (Sprint 2).
 
 Responsabilidades:
-- Confirmar automaticamente aulas como GIVEN (cron diário)
 - Registar faltas (GAP) e substituições (SUBSTITUTED) manualmente
 - Calcular dívida curricular a partir do ledger e do horário ativo
 - Encontrar professores disponíveis para substituição num slot
@@ -1649,20 +1648,6 @@ def update_occurrence_sync(
 
 # ---------------------------------------------------------------------------
 # Confirmação automática diária (chamada pelo cron Celery Beat)
-# ---------------------------------------------------------------------------
-
-
-def auto_confirm_daily_sync(
-    db: Session,
-    organization_id: int,
-    target_date: date,
-    now: datetime | None = None,
-) -> int:
-    """Keep unregistered lessons open for an explicit user decision."""
-    del db, organization_id, target_date, now
-    return 0
-
-
 # ---------------------------------------------------------------------------
 
 

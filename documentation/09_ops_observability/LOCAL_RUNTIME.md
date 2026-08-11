@@ -15,7 +15,7 @@ Configure root environment variables in `.env` using `.env.example`:
 - `CRONOS_APP_PASSWORD`: Application connection password.
 - `VITE_CLERK_PUBLISHABLE_KEY`: Public Clerk key passed to frontend builds.
 
-Configure `backend/.env` with Clerk secrets and backend settings. The Compose stack also requires `CONTACT_SMTP_PASSWORD`.
+Configure `backend/.env` with Clerk secrets and backend settings. Contact delivery requires `RESEND_API_KEY` and `TURNSTILE_SECRET_KEY`.
 
 ## What the System Does
 Cronos executes locally using Docker Compose (`docker-compose.yml`). The production-like runtime contains six core services.

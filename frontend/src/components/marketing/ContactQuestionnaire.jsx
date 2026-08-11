@@ -14,6 +14,8 @@ const SUBJECT_OPTIONS = [
 const COURSE_OPTIONS = ['Entre 1 e 5', 'Entre 5 e 20', '20+']
 const TEACHER_OPTIONS = ['Entre 1 e 15', 'Entre 15 e 50', '50+']
 const EMPTY_CONTACT = { subject: '', courses: '', teachers: '', name: '', email: '', phone: '', message: '' }
+const TURNSTILE_POLL_INTERVAL_MS = 50
+const TURNSTILE_LOAD_TIMEOUT_MS = 3000
 
 const ContactQuestionnaire = memo(function ContactQuestionnaire() {
   const [contactStep, setContactStep] = useState(0)
@@ -138,23 +140,55 @@ function FinalForm({ data, website, error, pending, resetVersion, onChange, onWe
 function Turnstile({ resetVersion, onSuccess, onExpired, onError }) {
   const element = useRef(null)
   const widgetId = useRef(null)
+  const [loadError, setLoadError] = useState(false)
   useEffect(() => {
-    if (!element.current || !import.meta.env.VITE_TURNSTILE_SITE_KEY || !window.turnstile?.render) return undefined
-    widgetId.current = window.turnstile.render(element.current, {
-      sitekey: import.meta.env.VITE_TURNSTILE_SITE_KEY,
-      action: 'contact',
-      callback: onSuccess,
-      'expired-callback': onExpired,
-      'error-callback': onError,
-    })
+    let pollId
+    let timeoutId
+    let disposed = false
+    const siteKey = import.meta.env.VITE_TURNSTILE_SITE_KEY
+    const clearLoadingTimers = () => {
+      if (pollId) window.clearInterval(pollId)
+      if (timeoutId) window.clearTimeout(timeoutId)
+    }
+    const renderWidget = () => {
+      if (disposed || widgetId.current !== null || !element.current || !siteKey || !window.turnstile?.render) return false
+      widgetId.current = window.turnstile.render(element.current, {
+        sitekey: siteKey,
+        action: 'contact',
+        callback: onSuccess,
+        'expired-callback': onExpired,
+        'error-callback': onError,
+      })
+      setLoadError(false)
+      clearLoadingTimers()
+      return true
+    }
+
+    if (!siteKey) {
+      timeoutId = window.setTimeout(() => {
+        if (!disposed) setLoadError(true)
+      }, 0)
+    } else if (!renderWidget()) {
+      pollId = window.setInterval(renderWidget, TURNSTILE_POLL_INTERVAL_MS)
+      timeoutId = window.setTimeout(() => {
+        clearLoadingTimers()
+        if (!disposed && widgetId.current === null) setLoadError(true)
+      }, TURNSTILE_LOAD_TIMEOUT_MS)
+    }
     return () => {
+      disposed = true
+      clearLoadingTimers()
       if (widgetId.current !== null) window.turnstile?.remove?.(widgetId.current)
+      widgetId.current = null
     }
   }, [onError, onExpired, onSuccess])
   useEffect(() => {
     if (resetVersion > 0 && widgetId.current !== null) window.turnstile?.reset?.(widgetId.current)
   }, [resetVersion])
-  return <div ref={element} className="cronos-turnstile" />
+  return <>
+    <div ref={element} className="cronos-turnstile" />
+    {loadError && <p className="cronos-contact-error" role="alert">NÃ£o foi possÃ­vel carregar a verificaÃ§Ã£o anti-spam. Tente atualizar a pÃ¡gina.</p>}
+  </>
 }
 
 function Success({ name, onReset }) { return <div className="cronos-contact-step cronos-contact-step--success"><div className="cronos-contact-success-icon"><CIcon icon={cilCheckCircle} size="xl" /></div><h3>Obrigado pelo contacto, {name || 'de toda a equipa'}!</h3><p className="cronos-contact-success__detail">Responderemos assim que possível para o email indicado.</p><button type="button" className="cronos-button cronos-button--secondary" onClick={onReset}>Voltar ao início</button></div> }

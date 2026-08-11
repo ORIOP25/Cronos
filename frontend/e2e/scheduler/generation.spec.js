@@ -85,9 +85,18 @@ export async function apiRequest(page, method, path, body) {
         body: requestBody === undefined ? undefined : JSON.stringify(requestBody),
       })
       const text = await response.text()
-      const data = text ? JSON.parse(text) : null
+      let data = null
+      try {
+        data = text ? JSON.parse(text) : null
+      } catch {
+        data = text
+      }
       if (!response.ok) {
-        throw new Error(`${requestMethod} ${requestPath} failed: ${response.status} ${text}`)
+        const organizationId = window.Clerk?.organization?.id ?? '<none>'
+        throw new Error(
+          `${requestMethod} ${requestPath} failed for organization ${organizationId}: `
+          + `${response.status} ${text}`,
+        )
       }
       return data
     },
@@ -550,9 +559,15 @@ test('fresh founder completes Complete Generation and custom-rule Adaptive Repai
     expect(organizationId).toMatch(/^org_/)
     await page.getByRole('button', { name: schoolName }).click()
     await page.waitForURL('**/onboarding', { timeout: 20_000 })
+    await page.waitForFunction(
+      (expectedOrganizationId) => window.Clerk?.organization?.id === expectedOrganizationId,
+      organizationId,
+      { timeout: 30_000 },
+    )
 
     await page.getByRole('button', { name: /Guardar e Come/i }).click()
     await expectRouteReady(page, '/dashboard')
+    await apiRequest(page, 'GET', '/members/me')
     const { classId, teacherId } = await seedMinimalSchedulerInputs(
       page,
       email,

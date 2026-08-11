@@ -98,6 +98,23 @@ describe('vertical feature data hooks', () => {
     ]))
   })
 
+  it('keeps member mutations pending until invalidated queries finish', async () => {
+    const { queryClient, wrapper } = createHarness()
+    const pendingInvalidations = []
+    vi.spyOn(queryClient, 'invalidateQueries').mockImplementation((options) => (
+      new Promise((resolve) => pendingInvalidations.push({ options, resolve }))
+    ))
+    const mutation = renderHook(() => useCreateMember(), { wrapper })
+
+    const mutationPromise = mutation.result.current.mutateAsync({ name: 'Ana' })
+    await waitFor(() => expect(pendingInvalidations).toHaveLength(3))
+    expect(mutation.result.current.isPending).toBe(true)
+
+    pendingInvalidations.forEach(({ resolve }) => resolve())
+    await mutationPromise
+    await waitFor(() => expect(mutation.result.current.isPending).toBe(false))
+  })
+
   it('does not execute organization reads without an active organization', async () => {
     setClerkState({ orgId: null })
     const { wrapper } = createHarness()

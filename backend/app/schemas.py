@@ -1308,9 +1308,7 @@ class LessonOccurrenceCreate(BaseModel):
     active_schedule_block_id: int = Field(
         ..., gt=0, description=DESC_OCCURRENCE_CREATE_ACTIVE_BLOCK_ID
     )
-    mode: Literal["manual_admin", "lesson_log", "auto_confirm"] = Field(
-        default="manual_admin", max_length=50
-    )
+    mode: Literal["manual_admin", "lesson_log"] = Field(default="manual_admin", max_length=50)
     reason: str | None = Field(None, max_length=250)
 
     model_config = ConfigDict(extra="forbid")

@@ -178,7 +178,6 @@ async def upsert_settings(
         school_start_date=data.school_start_date,
         school_hard_end_date=data.school_hard_end_date,
         repair_stability_window_days=data.repair_stability_window_days,
-        auto_confirm_enabled=False,
     )
     db.add(new_settings)
     await db.flush()

@@ -15,6 +15,7 @@ from app.schemas import (
     ClassUpdateInCourse,
     CourseUpdate,
     GridConfigurationCommand,
+    LessonOccurrenceCreate,
     MemberCreate,
     OnboardingRequest,
     OrganizationSettingsUpsert,
@@ -87,6 +88,10 @@ class TestTimeslotBulkValidation:
 
 
 class TestSchedulerBaselineContract:
+    def test_occurrence_rejects_removed_auto_confirm_mode(self):
+        with pytest.raises(ValidationError):
+            LessonOccurrenceCreate(active_schedule_block_id=1, mode="auto_confirm")
+
     def test_generate_request_rejects_public_mode_selection(self):
         with pytest.raises(ValidationError):
             ScheduleGenerateRequest(mode="repair")
