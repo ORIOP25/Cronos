@@ -4,5 +4,5 @@ This section documents tenant isolation mechanisms, security controls, testing f
 
 ## Documents
 
-- [SECURITY_AND_TENANT_ISOLATION.md](SECURITY_AND_TENANT_ISOLATION.md): Clerk JWT verification, PostgreSQL Row-Level Security, CORS, security headers.
-- [TESTING_AND_CI.md](TESTING_AND_CI.md): Pytest, Vitest, Playwright E2E testing, GitHub Actions CI workflows, SonarQube.
+- [SECURITY_AND_TENANT_ISOLATION.md](SECURITY_AND_TENANT_ISOLATION.md): Clerk authentication, forced PostgreSQL RLS, CORS, and security headers.
+- [TESTING_AND_CI.md](TESTING_AND_CI.md): Pytest, Vitest, Playwright E2E testing, and GitHub Actions workflows.

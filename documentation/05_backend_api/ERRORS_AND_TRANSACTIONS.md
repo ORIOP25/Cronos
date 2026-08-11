@@ -10,16 +10,25 @@ This document targets API consumers and backend developers.
 Read [API Reference](API_REFERENCE.md).
 
 ## What the System Does
-FastAPI handlers capture exceptions and return standard JSON error structures.
+FastAPI handlers return several compatible `detail` shapes. Clients normalize them through `getApiErrorMessage`.
 
 ## Standard Error Envelope Schema
-All error responses return JSON matching this structure:
+Unhandled errors and simple domain errors return a string detail:
 
 ```json
 {
-  "detail": "Descriptive error message text",
-  "code": "ERROR_CATEGORY_CODE",
-  "meta": {}
+  "detail": "Descriptive error message text"
+}
+```
+
+Structured application errors place code and message fields inside `detail`:
+
+```json
+{
+  "detail": {
+    "code": "ERROR_CATEGORY_CODE",
+    "message": "Descriptive error message text"
+  }
 }
 ```
 
@@ -33,19 +42,21 @@ All error responses return JSON matching this structure:
 | `401 Unauthorized` | Auth Error | Missing or invalid Clerk JWT token |
 | `403 Forbidden` | Permission Error | Insufficient role capability |
 | `404 Not Found` | Resource Missing | Target record ID does not exist |
-| `422 Unprocessable` | Validation Error | Pydantic payload validation failure |
+| `409 Conflict` | State Conflict | Stale version, active lifecycle conflict, or duplicate action |
+| `422 Unprocessable` | Validation Error | Pydantic or domain validation failure |
+| `503 Unavailable` | Dependency Failure | Readiness, webhook retry, or unavailable service |
 | `500 Internal Error` | Server Failure | Unhandled backend exception |
 
 ## Transaction Rollback Rules
-- FastAPI handlers manage database transactions via SQLAlchemy async sessions.
-- If an exception occurs inside a transaction block, SQLAlchemy automatically triggers a `ROLLBACK`.
-- Complex multi-step operations (e.g., draft promotion) execute inside explicit nested transaction blocks (`async with session.begin():`).
+- The `get_db` dependency commits after a successful request.
+- The dependency rolls back and re-raises any request exception.
+- Services use row locks and flushes inside the request transaction for multi-step lifecycle changes.
 
 ## Failure Modes
-- Database Integrity Conflict: Attempting to delete a record linked to active foreign keys raises a database error. Handler returns HTTP `400 Bad Request`.
+- Database Integrity Conflict: Services map known dependency conflicts to domain-specific `400` or `409` responses.
 
 ## Verification Procedure
-Send an invalid payload to `/api/v1/classes/`. Verify that response returns HTTP `422 Unprocessable Entity` with validation detail details.
+Send an invalid payload to `/api/v1/classes/`. Verify HTTP `422` and client-side message normalization.
 
 ## Source Map
 - Exception Handlers: `backend/app/main.py`

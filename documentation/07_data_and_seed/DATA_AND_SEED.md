@@ -1,7 +1,7 @@
 # Data and Seed Specifications
 
 ## Purpose
-This document specifies database seed scenarios, data fixtures, default credentials, and seed execution routines.
+This document specifies the deterministic operational seed, generated records, and execution routine.
 
 ## Intended Reader
 This document targets developers, QA engineers, and automated test runners.
@@ -10,50 +10,49 @@ This document targets developers, QA engineers, and automated test runners.
 Set up backend environment variables and start PostgreSQL.
 
 ## What the System Does
-The backend provides a database seed script (`backend/scripts/seed.py`) that populates the database with realistic educational datasets.
+The backend provides `backend/seed_data.py`. It creates two isolated tenants and publishes one generated schedule per tenant.
 
 ## Available Seed Scenarios
 
-| Scenario Name | Included Entities | Primary Purpose |
+| Profile Name | Included Entities | Primary Purpose |
 | :--- | :--- | :--- |
-| `small-realistic` | 1 Organization, 3 Courses, 9 Classes, 10 Teachers, 25 Subjects, Rooms | Development, local manual testing, walkthroughs |
-| `multi-course` | 2 Organizations, 8 Courses, 24 Classes, 40 Teachers, Full Shift Grids | Multi-tenant isolation testing, performance bench |
-| `stress-test` | Multi-school, 500+ classes, heavy constraint loads | Solver V2 engine capacity and scalability testing |
+| `canonical_operational_v1` | 2 organizations, 2 admin-teachers, 2 courses, 2 classes, 2 subjects, 2 rooms | Tenant isolation and scheduler lifecycle testing |
 
-## Default Account Credentials (`small-realistic`)
+## Seed Identities
 
 | Role | Email Address | Password | Organization |
 | :--- | :--- | :--- | :--- |
-| **Administrator** | `ana.silva@escola.pt` | `1234` | Escola Profissional do Norte |
-| **Teacher** | `ana.matos@epnorte.pt` | `1234` | Escola Profissional do Norte |
-| **Teacher** | `carlos.gomes@epnorte.pt` | `1234` | Escola Profissional do Norte |
+| **Admin and Teacher** | `admin.operacional.a@seed.pt` | None | Escola Piloto Operacional A |
+| **Admin and Teacher** | `admin.operacional.b@seed.pt` | None | Escola Piloto Operacional B |
+
+The seed creates local account rows and synthetic Clerk identifiers. It does not create Clerk passwords or interactive login users.
 
 ## Seed Execution Command
 Execute the seed script using Python:
 
 ```bash
-python backend/scripts/seed.py --scenario small-realistic
+cd backend
+python seed_data.py
 ```
 
-To reset existing data before seeding:
-
-```bash
-python backend/scripts/seed.py --scenario small-realistic --reset
-```
+The command is idempotent. It prints a signature containing the profile, reference date, counts, and active stable keys.
 
 ## Contracts and Invariants
 - Seeding scripts must generate valid foreign key relationships and set mandatory `organization_id` values.
-- Default passwords in seed datasets are restricted to local development environments.
+- Each seed tenant receives its own `organization_id` and forced RLS context.
+- The seed uses the canonical generation and approval services.
+- Repeated execution preserves the same signature and does not duplicate active blocks.
 
 ## Failure Modes
-- Database Not Migrated: Running seed on an outdated schema raises missing table errors. Run `alembic upgrade head` first.
+- Database Not Migrated: Running the seed without current migrations raises schema or security-function errors.
+- No Valid Schedule: The seed raises an error if canonical generation produces no draft.
 
 ## Verification Procedure
-Run seed script and inspect populated tables using `python -m scripts.audit_database_integrity`.
+Run `pytest tests/test_operational_seed.py -v`. Then run `python -m scripts.audit_database_integrity`.
 
 ## Source Map
-- Seed Runner: `backend/scripts/seed.py`
-- Seed Scenarios Module: `backend/app/db/seed_data.py`
+- Seed Runner: `backend/seed_data.py`
+- Seed Service: `backend/app/services/operational_seed_service.py`
 
 ## Related Documents
 - [Local Runtime](../09_ops_observability/LOCAL_RUNTIME.md)

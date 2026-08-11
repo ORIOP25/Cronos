@@ -18,8 +18,8 @@ The backend is built with Python 3.12 and FastAPI. It exposes a JSON REST API un
 flowchart TD
     Req[Incoming HTTP Request] --> CORS[CORS Middleware]
     CORS --> Security[Security Headers Middleware]
-    Security --> Auth[Clerk JWT Authentication Dependency]
-    Auth --> RLS[PostgreSQL RLS Tenant Session Injection]
+    Security --> Auth[Clerk Request Authentication Dependency]
+    Auth --> RLS[Principal Resolution and Tenant Context]
     RLS --> Handler[FastAPI Router Handler]
     Handler --> DB[(PostgreSQL Database)]
     Handler --> Res[Pydantic JSON Response serialization]
@@ -27,10 +27,10 @@ flowchart TD
 
 ## Dependency Injection Components
 FastAPI dependencies (`backend/app/api/deps.py`) supply context objects to router handlers:
-- `get_db`: Yields an async SQLAlchemy database session. Configures tenant RLS session variable `app.current_organization_id`.
-- `get_current_user`: Validates Clerk JWT, fetches or bootstraps `User` record.
-- `require_admin`: Enforces administrative role capability requirement.
-- `require_teacher`: Enforces teacher role capability requirement.
+- `get_db`: Yields an async SQLAlchemy session. It commits on success and rolls back on error.
+- `get_clerk_payload`: Validates the Clerk request and authorized party.
+- `get_current_user`: Calls `app_security.resolve_principal` and installs tenant context.
+- `AdminActor`: Requires the active membership to have the admin capability.
 
 The public contact flow uses a separate dependency module.
 
@@ -41,11 +41,11 @@ The public contact flow uses a separate dependency module.
 The service has no FastAPI, HTTP, Cloudflare, or Resend imports.
 
 ## Contracts and Invariants
-- All endpoints must declare explicit response models using Pydantic schemas (`backend/app/schemas.py`).
+- Public API payloads use Pydantic schemas where endpoints declare response models.
 - Handlers must not execute raw blocking SQL queries on the main async loop.
 
 ## Failure Modes
-- Database Transaction Error: SQLAlchemy automatically rolls back uncommitted transactions on unhandled exceptions.
+- Database Transaction Error: `get_db` rolls back the session and re-raises the exception.
 
 ## Verification Procedure
 Run backend test suite: `cd backend && pytest tests/ -v`.
@@ -60,6 +60,6 @@ Run backend test suite: `cd backend && pytest tests/ -v`.
 - [API Reference](API_REFERENCE.md)
 - [Errors and Transactions](ERRORS_AND_TRANSACTIONS.md)
 
-## Tenant context
+## Tenant Context
 
-get_current_user and webhook dispatch install tenant context. get_db owns only the transaction.
+`get_current_user` and webhook dispatch install tenant context. `get_db` owns the transaction boundary.

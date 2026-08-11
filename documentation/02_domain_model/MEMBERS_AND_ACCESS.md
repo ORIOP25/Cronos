@@ -10,41 +10,37 @@ This document targets backend and frontend developers implementing authorization
 Read [Data Model](../01_system_architecture/DATA_MODEL.md).
 
 ## What the System Does
-Cronos handles team access through organization memberships (`OrganizationMembership`). User identity originates in Clerk.
+Cronos handles team access through organization memberships. Clerk supplies identity and organization context.
 
 ## User Access Roles
 
 | Role | Interface View | Endpoint Capabilities |
 | :--- | :--- | :--- |
-| **`admin`** | Full access to all pages and settings | Full CRUD on school settings, classes, subjects, solver jobs, draft approvals |
-| **`teacher`** | Self-service portal only (`/dashboard`, `/my-availability`, `/my-progress`, `/schedules`) | Read personal schedules, update availability, create lesson logs for assigned classes |
+| **`admin` capability** | Administrative application | Curriculum, members, settings, scheduler, occurrences, and timesheets |
+| **`teacher` capability** | Self-service application | Personal availability, progress, schedule, lesson logs, and week submission |
 
 ## Membership Lifecycle States
 
 ```mermaid
 stateDiagram-v2
-    [*] --> INVITATION_PENDING : Admin sends invite
-    INVITATION_PENDING --> ACTIVE : User accepts invite
-    ACTIVE --> SUSPENDED : Admin suspends access
-    SUSPENDED --> ACTIVE : Admin restores access
-    ACTIVE --> REVOKED : Admin removes member
-    REVOKED --> [*]
+    [*] --> pending_invite : Admin sends invite
+    pending_invite --> active : Clerk membership reconciles
+    pending_invite --> invite_expired : Invitation expires
+    active --> blocked : Admin blocks access
+    blocked --> active : Admin restores access
+    active --> archived : Admin removes member
 ```
 
 ## Role Capabilities Table
 
 | Capability Identifier | Admin | Teacher | Description |
 | :--- | :--- | :--- | :--- |
-| `MANAGE_ORGANIZATION` | Yes | No | Modify school configuration and settings |
-| `MANAGE_MEMBERS` | Yes | No | Invite, suspend, or remove team members |
-| `MANAGE_CURRICULUM` | Yes | No | Create and edit courses, classes, subjects, rooms |
-| `EXECUTE_SOLVER` | Yes | No | Trigger full or repair schedule generation |
-| `APPROVE_SCHEDULE` | Yes | No | Promote schedule drafts to active timetable |
-| `LOG_LESSON` | Yes | Assigned Only | Create lesson summaries (*Sumários*) for classes |
-| `VIEW_PERSONAL_SCHEDULE` | Yes | Yes | View individual weekly schedule grid |
+| `admin` | Yes | No | Pass administrative backend and frontend guards |
+| `teacher` | Optional | Yes | Access teacher routes when a linked teacher profile exists |
 
 ## Contracts and Invariants
-- Every active user must have an active `OrganizationMembership` row matching the requested `organization_id`.
+- Every principal must have `lifecycle_status=active` and `access_status=active` for the Clerk organization.
+- One membership can hold both `admin` and `teacher` capabilities.
 - Teacher endpoints inspect user identity to prevent accessing unauthorized class data.
 
 ## Failure Modes
@@ -54,7 +50,7 @@ stateDiagram-v2
 Inspect `/members` view as administrator. Verify invitation buttons, member lists, and role badges.
 
 ## Source Map
-- Role Dependency: `backend/app/api/deps.py` (`require_admin`, `require_teacher`)
+- Role Dependency: `backend/app/api/deps.py` (`AdminActor`, capability helpers)
 - Member Router: `backend/app/api/v1/endpoints/members.py`
 - Frontend Guard: `frontend/src/routeGuards.jsx`
 

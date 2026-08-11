@@ -6,4 +6,4 @@ This section documents the FastAPI backend application structure, REST API speci
 
 - [BACKEND_ARCHITECTURE.md](BACKEND_ARCHITECTURE.md): FastAPI architecture, dependency injection, middleware chain.
 - [API_REFERENCE.md](API_REFERENCE.md): Comprehensive endpoint reference tables and payload models.
-- [ERRORS_AND_TRANSACTIONS.md](ERRORS_AND_TRANSACTIONS.md): Standard error envelopes, HTTP status codes, transaction rollbacks.
+- [ERRORS_AND_TRANSACTIONS.md](ERRORS_AND_TRANSACTIONS.md): Supported error shapes, HTTP status codes, and transaction rollbacks.

@@ -30,10 +30,10 @@ flowchart TD
 | :--- | :--- | :--- |
 | **Authentication** | Bearer JWT Signature Verification | FastAPI dependency checking Clerk public keys |
 | **Tenant Isolation** | PostgreSQL Row-Level Security (RLS) | Database policies filtering rows by `organization_id` |
-| **Role Authorization** | Role capability dependencies | `require_admin` and `require_teacher` dependencies |
+| **Role Authorization** | Active actor and capability checks | `AdminActor` and capability helpers |
 | **Cross-Origin Security** | CORS Middleware | Explicit origin whitelist (`CORS_ORIGINS`) |
-| **HTTP Security Headers** | Security Headers Middleware | HSTS, X-Content-Type-Options, X-Frame-Options |
-| **Rate Limiting** | Slowapi Rate Limiter | IP and user rate limits on sensitive endpoints |
+| **HTTP Security Headers** | FastAPI middleware | No-sniff, frame denial, referrer, permissions, and API no-store headers |
+| **Rate Limiting** | SlowAPI with Redis storage | Remote-address default limits |
 
 ## PostgreSQL RLS Policy Example
 Every tenant table enforces Row-Level Security:
@@ -41,16 +41,21 @@ Every tenant table enforces Row-Level Security:
 ```sql
 ALTER TABLE classes ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY tenant_isolation_policy ON classes
-    USING (organization_id = NULLIF(current_setting('app.current_organization_id', true), '')::uuid);
+ALTER TABLE class FORCE ROW LEVEL SECURITY;
+
+CREATE POLICY tenant_isolation ON class TO cronos_app
+    USING (organization_id = app_security.current_organization_id())
+    WITH CHECK (organization_id = app_security.current_organization_id());
 ```
 
 ## Contracts and Invariants
-- Direct database queries must set `app.current_organization_id` before executing statements.
-- Production environment configurations must disable `ALLOW_NON_TEST_DATABASE` override flags.
+- Runtime tenant queries must set `app.current_organization_id` before accessing protected rows.
+- The application role is `NOBYPASSRLS`; the migration role is separate and uses `BYPASSRLS`.
+- Production requires HTTPS origins, Clerk secrets, and non-local invitation redirects.
 
 ## Failure Modes
-- Missing Tenant Header/Context: RLS policy evaluates to false, returning zero rows or throwing permission exception.
+- Missing Tenant Context: Read policies return no tenant rows and write checks reject rows.
+- Invalid Clerk Authorized Party: Authentication returns HTTP `401` with a structured detail.
 
 ## Verification Procedure
 Run database RLS safety tests: `pytest backend/tests/test_rls_database_policies.py -v`.
@@ -64,6 +69,6 @@ Run database RLS safety tests: `pytest backend/tests/test_rls_database_policies.
 - [System Architecture](../01_system_architecture/SYSTEM_ARCHITECTURE.md)
 - [Testing and CI](TESTING_AND_CI.md)
 
-## Production boundary
+## Production Boundary
 
-Production configuration requires HTTPS origins, Clerk secrets, and separate password-protected Redis services. Webhooks resolve tenant context before membership changes. Bootstrap creates only a safe founder. Active principals require an active organization plan. Cloudflare owns client-IP limits. Railway keeps Redis private.
+Production configuration validates HTTPS origins, Clerk secrets, and invitation redirects. Webhooks verify Svix signatures before resolving tenant context.

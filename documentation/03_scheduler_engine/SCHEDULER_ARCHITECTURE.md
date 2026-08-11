@@ -21,39 +21,41 @@ flowchart TD
     C --> D[Celery Worker Picks Up Task]
     D --> E[Fetch Database State & Build Constraints]
     E --> F[Invoke Google OR-Tools CP-SAT Solver]
-    F -->|SATISFIABLE / OPTIMAL| G[Convert Variable Assignments to Draft Blocks]
-    F -->|INFEASIBLE / IMPOSSIBLE| H[Set Job Status to IMPOSSIBLE]
+    F -->|FEASIBLE / OPTIMAL| G[Convert Variable Assignments to Draft Blocks]
+    F -->|No Valid Output| H[Set Job Status to NO_VALID_OUTPUT]
     G --> I[Store ScheduleDraft & ScheduleDraftBlock Rows]
-    I --> J[Set Job Status to SUCCESS]
+    I --> J[Set Job Status to SUCCEEDED]
 ```
 
 ## CP-SAT Formulation Details
-- **Decision Variable**: `x[c, s, t, r, d, p] ∈ {0, 1}` represents Class `c`, Subject `s`, Teacher `t`, Room `r`, Day `d`, and Period `p`.
-- **Constraint Expressions**: Linear integer inequalities enforce sum totals across periods and days.
-- **Search Parameters**: Worker sets time limit (default 60 seconds) and multithreading search parameters.
+- **Decision Variable**: One Boolean variable selects each precomputed placement candidate.
+- **Resource Constraints**: Optional fixed intervals enforce class, teacher, and room non-overlap by date.
+- **Search Parameters**: Bounded deterministic stages use one search worker and random seed zero.
 
 ## Draft Lifecycle States
 
 | State | Description | Next Allowed State |
 | :--- | :--- | :--- |
-| `GENERATING` | Solver task currently executing in Celery worker | `REVIEW_PENDING`, `FAILED` |
-| `REVIEW_PENDING` | Draft created, awaiting administrative audit | `APPROVED`, `REJECTED` |
-| `APPROVED` | Promoted to active schedule (`ActiveScheduleBlock`) | None (Terminal) |
-| `REJECTED` | Discarded by administrator | None (Terminal) |
+| `PENDING` | Draft awaits an administrative decision | `APPROVED`, `REJECTED`, `REPLACED`, `STALE`, `INVALIDATED` |
+| `APPROVED` | Draft blocks became active schedule blocks | Terminal |
+| `REJECTED` | Administrator rejected the draft | Terminal |
+| `REPLACED` | A later confirmed generation replaced the draft | Terminal |
+| `STALE` | Scheduler state changed after generation | `REJECTED` |
+| `INVALIDATED` | Reset or lifecycle action invalidated the draft | `REJECTED` |
 
 ## Contracts and Invariants
-- Approving a new draft archives current active schedule blocks and activates the new draft blocks atomically inside a database transaction.
+- Approval locks lifecycle rows, validates fingerprints, applies the diff, publishes state, and reconciles recovery links transactionally.
 
 ## Failure Modes
-- Solver Timeout: If CP-SAT exceeds configured timeout limit, it returns the best feasible solution found or flags timeout.
+- Partial Optimization: A bounded stage can preserve the best feasible values and mark quality optimization incomplete.
 
 ## Verification Procedure
-Run backend scheduler unit tests: `pytest backend/tests/test_solver.py -v`.
+From `backend/`, run `pytest -m solver -v` and the scheduler golden fixture tests.
 
 ## Source Map
-- Solver Core: `backend/app/core/solver.py`
+- Solver Engines: `backend/app/services/scheduler_complete_engine.py`, `backend/app/services/scheduler_adaptive_engine.py`
 - Scheduler Router: `backend/app/api/v1/endpoints/scheduler.py`
-- Draft Service: `backend/app/services/draft_service.py`
+- Draft Services: `backend/app/services/scheduler_draft_service.py`, `backend/app/services/scheduler_approval_service.py`
 
 ## Related Documents
 - [Scheduler Behavior](SCHEDULER_BEHAVIOR.md)
