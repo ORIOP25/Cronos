@@ -195,6 +195,69 @@ async def test_webhook_membership_created_matches_pending_local_member(async_cli
     assert user.clerk_user_id == "user_wb_match"
 
 
+async def test_webhook_membership_created_matches_under_runtime_database_role(
+    db_session, runtime_db_session
+):
+    """The production role must link invited users through SECURITY DEFINER helpers."""
+    from app import models
+    from app.services import member_webhook_service
+
+    org = models.Organization(
+        name="Runtime Org",
+        clerk_org_id="org_wb_runtime_match",
+        plan_status="active",
+    )
+    user = models.User(email="runtime-match@example.com", name="Runtime Match")
+    db_session.add_all([org, user])
+    await db_session.flush()
+    member = models.OrganizationMembership(
+        organization_id=org.id,
+        account_id=user.id,
+        organization_display_name="Runtime Match",
+        lifecycle_status=models.MembershipLifecycleStatus.active,
+        access_status=models.MembershipAccessStatus.pending_invite,
+        can_admin=False,
+        can_teach=True,
+        teacher_access_mode=models.TeacherAccessMode.platform,
+        expected_clerk_role=models.ClerkOrganizationRole.member,
+        clerk_invitation_id="inv_runtime_match",
+        clerk_invitation_status=models.ClerkInvitationStatus.pending,
+    )
+    db_session.add(member)
+    await db_session.flush()
+    member_id = member.id
+    user_id = user.id
+    await db_session.commit()
+
+    payload = _mk_payload(
+        "organizationMembership.created",
+        {
+            "id": "mem_runtime_match",
+            "role": "org:member",
+            "organization": {"id": "org_wb_runtime_match", "name": "Runtime Org"},
+            "public_user_data": {
+                "user_id": "user_wb_runtime_match",
+                "identifier": "runtime-match@example.com",
+            },
+            "public_metadata": {"membership_id": member_id},
+        },
+    )
+
+    await member_webhook_service.enqueue_and_process_clerk_event(
+        runtime_db_session,
+        svix_id=f"msg_runtime_match_{uuid4().hex}",
+        payload=payload,
+    )
+    await runtime_db_session.commit()
+
+    await db_session.refresh(user)
+    await db_session.refresh(member)
+    assert user.id == user_id
+    assert user.clerk_user_id == "user_wb_runtime_match"
+    assert member.access_status == models.MembershipAccessStatus.active
+    assert member.clerk_membership_id == "mem_runtime_match"
+
+
 async def test_webhook_membership_role_mismatch_sets_sync_error(async_client, db_session):
     from app import models
 

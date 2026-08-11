@@ -355,7 +355,19 @@ async def _sync_membership(
         member.access_error_safe_message = "Clerk role does not match the expected local access."
         event.processing_status = models.ClerkWebhookProcessingStatus.sync_error
         return True
-    member.account.clerk_user_id = webhook_user_id
+    linked_account = await clerk_sync.ensure_user_exists(
+        db,
+        clerk_user_id=webhook_user_id,
+        email=email,
+        name=member.organization_display_name,
+        role=provider_role,
+        organization_id=member.organization_id,
+        teacher_id=member.teacher_profile.id if member.teacher_profile else None,
+    )
+    if linked_account is None or linked_account.id != member.account_id:
+        _mark_identity_conflict(member, event=event)
+        return True
+    await db.refresh(member.account)
     member.clerk_membership_id = data.get("id") or member.clerk_membership_id
     member.access_status = (
         models.MembershipAccessStatus.active
@@ -467,12 +479,18 @@ async def _sync_user_identity(db: AsyncSession, data: dict[str, Any]) -> bool:
         for member in matched_members:
             _mark_identity_conflict(member)
         return bool(matched_members)
-    account.clerk_user_id = clerk_user_id
-    account.clerk_profile_name = (
-        " ".join(filter(None, [data.get("first_name"), data.get("last_name")]))
-        or account.clerk_profile_name
+    profile_name = (
+        " ".join(filter(None, [data.get("first_name"), data.get("last_name")])) or None
     )
-    account.last_clerk_sync_at = _now()
+    linked_account = await clerk_sync.ensure_user_exists(
+        db,
+        clerk_user_id=clerk_user_id,
+        email=email,
+        name=profile_name,
+    )
+    if linked_account is None or linked_account.id != account.id:
+        return False
+    await db.refresh(account)
     return True
 
 
