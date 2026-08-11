@@ -148,20 +148,17 @@ class MemberAccessOperationService:
             if operation is not None and operation.operation_status in UNRESOLVED_STATUSES:
                 raise UnresolvedAccessOperationError(operation.id)
             if operation is None:
-                # Invitation operations may be started while the domain session is
+                # Access operations may be started while the domain session is
                 # editing the target membership/account. Persisting those foreign
                 # keys here would make this independent ledger transaction wait on
                 # the domain transaction, while the domain transaction waits for
                 # this commit: a cross-session self-deadlock. The target email is
                 # the durable correlation key until the local commit succeeds; the
                 # final transition attaches the local identifiers afterwards.
-                defer_local_references = (
-                    operation_type == models.MemberAccessOperationType.create_invitation
-                )
                 operation = models.MemberAccessOperation(
                     organization_id=organization_id,
-                    membership_id=None if defer_local_references else membership_id,
-                    account_id=None if defer_local_references else account_id,
+                    membership_id=None,
+                    account_id=None,
                     target_email=target_email.lower(),
                     operation_type=operation_type,
                     idempotency_key=key,

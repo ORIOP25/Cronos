@@ -844,6 +844,8 @@ async def _change_provider_role(
     await operation_service.transition(
         operation.id,
         models.MemberAccessOperationStatus.local_committed,
+        membership_id=member.id,
+        account_id=member.account_id,
         clerk_membership_id=member.clerk_membership_id,
     )
 
@@ -923,6 +925,8 @@ async def _revoke_provider_access(
         await operation_service.transition(
             operation.id,
             models.MemberAccessOperationStatus.local_committed,
+            membership_id=membership_id,
+            account_id=account_id,
         )
 
     if (
