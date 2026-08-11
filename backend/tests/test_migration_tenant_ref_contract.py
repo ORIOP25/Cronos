@@ -4,6 +4,7 @@ from pathlib import Path
 VERSIONS = Path(__file__).resolve().parents[1] / "alembic" / "versions"
 INITIAL = VERSIONS / "0001_initial.py"
 SECURITY = VERSIONS / "0002_security_hardening.py"
+REMOVE_AUTO_CONFIRM = VERSIONS / "0003_remove_auto_confirm_settings.py"
 
 
 def _load_initial():
@@ -16,7 +17,7 @@ def _load_initial():
 
 def test_prelaunch_history_is_one_frozen_self_contained_revision():
     revisions = sorted(VERSIONS.glob("*.py"))
-    assert revisions == [INITIAL, SECURITY]
+    assert revisions == [INITIAL, SECURITY, REMOVE_AUTO_CONFIRM]
     source = INITIAL.read_text(encoding="utf-8")
     assert _load_initial().down_revision is None
     for forbidden in ("app.models", "Base.metadata", "create_all", "drop_all", "CREATE TRIGGER"):
