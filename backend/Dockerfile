@@ -15,12 +15,22 @@ FROM base AS builder
 RUN python -m venv /opt/venv
 ENV PATH=/opt/venv/bin:$PATH
 COPY requirements.txt .
-RUN pip install --require-hashes -r requirements.txt
+# standardwebhooks 1.0.1 publishes only a source distribution. Its locked hash
+# keeps this explicit exception reproducible while all other packages use wheels.
+RUN pip install \
+    --require-hashes \
+    --only-binary=:all: \
+    --no-binary=standardwebhooks \
+    -r requirements.txt
 
 # Extends the builder venv with dev/test dependencies for the ci target only.
 FROM builder AS builder-dev
 COPY requirements-dev.txt .
-RUN pip install --require-hashes -r requirements-dev.txt
+RUN pip install \
+    --require-hashes \
+    --only-binary=:all: \
+    --no-binary=standardwebhooks \
+    -r requirements-dev.txt
 
 # Runtime stage: only the venv + app code, no compilers/pip cache/build tools.
 FROM base AS runtime

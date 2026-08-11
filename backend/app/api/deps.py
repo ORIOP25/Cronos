@@ -183,7 +183,10 @@ def get_current_active_admin(
     return current_user
 
 
-DbSession = Annotated[AsyncSession, Depends(get_db, scope="function")]
+DbSession = Annotated[
+    AsyncSession,
+    Depends(get_db, scope="function"),  # NOSONAR: supported by FastAPI 0.139.
+]
 ClerkGatewayDep = Annotated[ClerkGateway, Depends(get_clerk_gateway)]
 MemberAccessOperationDep = Annotated[
     MemberAccessOperationService,

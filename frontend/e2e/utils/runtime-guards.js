@@ -123,6 +123,11 @@ function failedResourceStatus(text) {
   return match ? Number.parseInt(match[1], 10) : null
 }
 
+function isBenignGoogleFont404(status, url) {
+  const parsedUrl = parseUrl(url, 'http://localhost')
+  return status === 404 && parsedUrl?.hostname === 'fonts.gstatic.com'
+}
+
 export function getConsoleError(consoleMessage, allowedFailures) {
   if (consoleMessage.type !== 'error') return null
 
@@ -132,10 +137,13 @@ export function getConsoleError(consoleMessage, allowedFailures) {
   const status = failedResourceStatus(text)
   if (
     status !== null
-    && isAllowedApiFailure(allowedFailures, {
-      status,
-      url: normalizedText(consoleMessage.locationUrl),
-    })
+    && (
+      isBenignGoogleFont404(status, normalizedText(consoleMessage.locationUrl))
+      || isAllowedApiFailure(allowedFailures, {
+        status,
+        url: normalizedText(consoleMessage.locationUrl),
+      })
+    )
   ) {
     return null
   }
