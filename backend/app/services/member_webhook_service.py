@@ -479,9 +479,7 @@ async def _sync_user_identity(db: AsyncSession, data: dict[str, Any]) -> bool:
         for member in matched_members:
             _mark_identity_conflict(member)
         return bool(matched_members)
-    profile_name = (
-        " ".join(filter(None, [data.get("first_name"), data.get("last_name")])) or None
-    )
+    profile_name = " ".join(filter(None, [data.get("first_name"), data.get("last_name")])) or None
     linked_account = await clerk_sync.ensure_user_exists(
         db,
         clerk_user_id=clerk_user_id,
