@@ -51,6 +51,7 @@ class Settings(BaseSettings):
     CLERK_WEBHOOK_SECRET: str = ""
     CLERK_WEBHOOK_MAX_ATTEMPTS: int = 5
     CLERK_WEBHOOK_RETRY_BASE_SECONDS: int = 60
+    CLERK_ACCESS_TIMEOUT_SECONDS: int = 10
     FRONTEND_URL: str = "http://localhost:5173"
     CLERK_AUTHORIZED_PARTIES: str = ""
     CLERK_INVITATION_REDIRECT_URL: str = ""
@@ -143,6 +144,8 @@ class Settings(BaseSettings):
     def _validate_numeric_limits(self) -> None:
         if not 0 <= self.CLERK_CLOCK_SKEW_MS <= 60_000:
             raise ValueError("CLERK_CLOCK_SKEW_MS must be between 0 and 60000.")
+        if not 1 <= self.CLERK_ACCESS_TIMEOUT_SECONDS <= 30:
+            raise ValueError("CLERK_ACCESS_TIMEOUT_SECONDS must be between 1 and 30.")
         if not 1 <= self.CONTACT_EMAIL_TIMEOUT_SECONDS <= 30:
             raise ValueError("CONTACT_EMAIL_TIMEOUT_SECONDS must be between 1 and 30.")
         if not 1 <= self.TURNSTILE_TIMEOUT_SECONDS <= 30:

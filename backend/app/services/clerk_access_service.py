@@ -53,8 +53,20 @@ def normalize_clerk_datetime(value: object) -> datetime | None:
 class ClerkAccessService:
     """Infrastructure adapter for Clerk Backend API access operations."""
 
-    def __init__(self, gateway: ClerkGateway | None = None) -> None:
+    def __init__(
+        self,
+        gateway: ClerkGateway | None = None,
+        *,
+        timeout_seconds: float | None = None,
+    ) -> None:
         self._gateway = gateway
+        self._timeout_seconds = (
+            float(settings.CLERK_ACCESS_TIMEOUT_SECONDS)
+            if timeout_seconds is None
+            else timeout_seconds
+        )
+        if self._timeout_seconds <= 0:
+            raise ValueError("Clerk access timeout must be positive.")
 
     @property
     def _sdk(self):
@@ -62,10 +74,22 @@ class ClerkAccessService:
 
     async def _call(self, fn, *args, **kwargs) -> ClerkAccessResult:
         try:
-            result = (
-                await fn(*args, **kwargs)
+            provider_call = (
+                fn(*args, **kwargs)
                 if self._gateway is not None
-                else await asyncio.to_thread(fn, *args, **kwargs)
+                else asyncio.to_thread(fn, *args, **kwargs)
+            )
+            result = await asyncio.wait_for(provider_call, timeout=self._timeout_seconds)
+        except TimeoutError:
+            logger.warning(
+                "clerk_provider_request_timed_out",
+                operation=getattr(fn, "__name__", type(fn).__name__),
+                timeout_seconds=self._timeout_seconds,
+            )
+            return ClerkAccessResult(
+                retryable=True,
+                error_category="provider_timeout",
+                safe_message=SAFE_PROVIDER_ERROR,
             )
         except Exception as exc:
             text = str(exc).lower()

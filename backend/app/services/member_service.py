@@ -100,7 +100,11 @@ def _access_status_for_draft(
 
 
 def _has_provider_outage(member: models.OrganizationMembership) -> bool:
-    return member.access_error_category in {"provider_rate_limited", "provider_unconfirmed"}
+    return member.access_error_category in {
+        "provider_rate_limited",
+        "provider_timeout",
+        "provider_unconfirmed",
+    }
 
 
 def _provider_state(member: models.OrganizationMembership) -> str:
@@ -463,8 +467,11 @@ async def _assert_can_remove_admin_capability(
 
 
 def _raise_provider_failure(result: ClerkAccessResult) -> None:
+    status_code = 429 if result.error_category == "provider_rate_limited" else 502
+    if result.retryable and status_code != 429:
+        status_code = 503
     raise member_error(
-        429 if result.retryable else 502,
+        status_code,
         result.error_category or "provider_error",
         result.safe_message or SAFE_PROVIDER_ERROR,
         retryable=result.retryable,
