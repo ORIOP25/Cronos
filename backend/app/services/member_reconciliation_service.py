@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -78,7 +78,7 @@ async def reconcile_first_login(
     )
     member.access_error_category = None
     member.access_error_safe_message = None
-    member.updated_by_membership_id = user.id
+    member.updated_by_membership_id = member.id
     member.lock_version += 1
     await db.flush()
     return True
@@ -174,9 +174,31 @@ async def reconcile_first_login_by_email(
         return None
 
     account = member.account
-    account.clerk_user_id = clerk_user_id
-    account.clerk_profile_name = name or account.clerk_profile_name
-    account.last_clerk_sync_at = _now()
+    linked_account_id = await db.scalar(
+        text(
+            """
+            SELECT id
+            FROM app_security.ensure_user(
+                :clerk_user_id, :email, :display_name, :role,
+                :organization_id, NULL
+            )
+            """
+        ),
+        {
+            "clerk_user_id": clerk_user_id,
+            "email": normalized_email,
+            "display_name": name or member.organization_display_name,
+            "role": member.expected_clerk_role.value,
+            "organization_id": organization.id,
+        },
+    )
+    if linked_account_id != account.id:
+        member.access_status = models.MembershipAccessStatus.sync_error
+        member.access_error_category = "identity_conflict"
+        member.access_error_safe_message = "Clerk identity does not match the local member account."
+        await db.flush()
+        return None
+    await db.refresh(account)
     member.access_status = models.MembershipAccessStatus.active
     member.clerk_membership_id = provider.membership_id or member.clerk_membership_id
     member.clerk_invitation_status = (
@@ -186,7 +208,7 @@ async def reconcile_first_login_by_email(
     )
     member.access_error_category = None
     member.access_error_safe_message = None
-    member.updated_by_membership_id = account.id
+    member.updated_by_membership_id = member.id
     member.lock_version += 1
     await db.flush()
     return account

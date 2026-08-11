@@ -4,13 +4,17 @@
 FROM node:24-alpine AS deps
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN npm ci
+RUN npm ci --ignore-scripts
 
 # Development dependencies are installed in the build stage only.
 FROM deps AS build
 COPY . .
 ARG VITE_CLERK_PUBLISHABLE_KEY
+ARG VITE_API_BASE_URL=/api/v1
+ARG VITE_TURNSTILE_SITE_KEY
 ENV VITE_CLERK_PUBLISHABLE_KEY=$VITE_CLERK_PUBLISHABLE_KEY
+ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
+ENV VITE_TURNSTILE_SITE_KEY=$VITE_TURNSTILE_SITE_KEY
 RUN npm run build
 
 # Vite remains available through docker-compose.dev.yml.

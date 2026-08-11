@@ -195,6 +195,218 @@ async def test_webhook_membership_created_matches_pending_local_member(async_cli
     assert user.clerk_user_id == "user_wb_match"
 
 
+async def test_webhook_membership_created_matches_under_runtime_database_role(
+    db_session, runtime_db_session
+):
+    """The production role must link invited users through SECURITY DEFINER helpers."""
+    from app import models
+    from app.services import member_webhook_service
+
+    org = models.Organization(
+        name="Runtime Org",
+        clerk_org_id="org_wb_runtime_match",
+        plan_status="active",
+    )
+    user = models.User(email="runtime-match@example.com", name="Runtime Match")
+    db_session.add_all([org, user])
+    await db_session.flush()
+    member = models.OrganizationMembership(
+        organization_id=org.id,
+        account_id=user.id,
+        organization_display_name="Runtime Match",
+        lifecycle_status=models.MembershipLifecycleStatus.active,
+        access_status=models.MembershipAccessStatus.pending_invite,
+        can_admin=False,
+        can_teach=True,
+        teacher_access_mode=models.TeacherAccessMode.platform,
+        expected_clerk_role=models.ClerkOrganizationRole.member,
+        clerk_invitation_id="inv_runtime_match",
+        clerk_invitation_status=models.ClerkInvitationStatus.pending,
+    )
+    db_session.add(member)
+    await db_session.flush()
+    member_id = member.id
+    user_id = user.id
+    await db_session.commit()
+
+    payload = _mk_payload(
+        "organizationMembership.created",
+        {
+            "id": "mem_runtime_match",
+            "role": "org:member",
+            "organization": {"id": "org_wb_runtime_match", "name": "Runtime Org"},
+            "public_user_data": {
+                "user_id": "user_wb_runtime_match",
+                "identifier": "runtime-match@example.com",
+            },
+            "public_metadata": {"membership_id": member_id},
+        },
+    )
+
+    await member_webhook_service.enqueue_and_process_clerk_event(
+        runtime_db_session,
+        svix_id=f"msg_runtime_match_{uuid4().hex}",
+        payload=payload,
+    )
+    await runtime_db_session.commit()
+
+    await db_session.refresh(user)
+    await db_session.refresh(member)
+    assert user.id == user_id
+    assert user.clerk_user_id == "user_wb_runtime_match"
+    assert member.access_status == models.MembershipAccessStatus.active
+    assert member.clerk_membership_id == "mem_runtime_match"
+
+
+async def test_first_login_reconciliation_links_user_under_runtime_database_role(
+    db_session, runtime_db_session
+):
+    from app import models
+    from app.services import clerk_sync, member_reconciliation_service
+    from app.services.clerk_access_service import ClerkAccessResult
+
+    org = models.Organization(
+        name="Runtime First Login Org",
+        clerk_org_id="org_runtime_first_login",
+        plan_status="active",
+    )
+    user = models.User(email="runtime-first-login@example.com", name="Invited Teacher")
+    db_session.add_all([org, user])
+    await db_session.flush()
+    member = models.OrganizationMembership(
+        organization_id=org.id,
+        account_id=user.id,
+        organization_display_name="Invited Teacher",
+        lifecycle_status=models.MembershipLifecycleStatus.active,
+        access_status=models.MembershipAccessStatus.pending_invite,
+        can_admin=False,
+        can_teach=True,
+        teacher_access_mode=models.TeacherAccessMode.platform,
+        expected_clerk_role=models.ClerkOrganizationRole.member,
+        clerk_invitation_id="inv_runtime_first_login",
+        clerk_invitation_status=models.ClerkInvitationStatus.accepted,
+    )
+    db_session.add(member)
+    await db_session.flush()
+    user_id = user.id
+    member_id = member.id
+    await db_session.commit()
+
+    class ConfirmedMembership:
+        async def get_membership(self, **_kwargs):
+            return ClerkAccessResult(
+                user_id="user_runtime_first_login",
+                membership_id="mem_runtime_first_login",
+                role="org:member",
+            )
+
+    runtime_org = await clerk_sync.ensure_organization_exists(
+        runtime_db_session,
+        "org_runtime_first_login",
+        "Runtime First Login Org",
+    )
+    linked = await member_reconciliation_service.reconcile_first_login_by_email(
+        runtime_db_session,
+        clerk_user_id="user_runtime_first_login",
+        email="runtime-first-login@example.com",
+        name="Invited Teacher",
+        organization=runtime_org,
+        token_role="org:member",
+        clerk_access=ConfirmedMembership(),
+    )
+    await runtime_db_session.commit()
+
+    await db_session.refresh(user)
+    await db_session.refresh(member)
+    assert linked is not None
+    assert user.id == user_id
+    assert user.clerk_user_id == "user_runtime_first_login"
+    assert member.id == member_id
+    assert member.access_status == models.MembershipAccessStatus.active
+    assert member.clerk_membership_id == "mem_runtime_first_login"
+    assert member.updated_by_membership_id == member_id
+
+
+async def test_current_user_dependency_recovers_accepted_invite_under_runtime_role(
+    db_session, runtime_db_session, monkeypatch
+):
+    from starlette.requests import Request
+
+    from app import models
+    from app.api import deps
+    from app.services import clerk_sync
+    from app.services.clerk_access_service import ClerkAccessResult
+
+    org = models.Organization(
+        name="Runtime Dependency Org",
+        clerk_org_id="org_runtime_dependency",
+        plan_status="active",
+    )
+    user = models.User(email="runtime-dependency@example.com", name="Invited Dependency")
+    db_session.add_all([org, user])
+    await db_session.flush()
+    member = models.OrganizationMembership(
+        organization_id=org.id,
+        account_id=user.id,
+        organization_display_name="Invited Dependency",
+        lifecycle_status=models.MembershipLifecycleStatus.active,
+        access_status=models.MembershipAccessStatus.pending_invite,
+        can_admin=False,
+        can_teach=True,
+        teacher_access_mode=models.TeacherAccessMode.platform,
+        expected_clerk_role=models.ClerkOrganizationRole.member,
+        clerk_invitation_id="inv_runtime_dependency",
+        clerk_invitation_status=models.ClerkInvitationStatus.accepted,
+    )
+    db_session.add(member)
+    await db_session.flush()
+    teacher = models.Teacher(
+        organization_id=org.id,
+        organization_membership_id=member.id,
+    )
+    db_session.add(teacher)
+    await db_session.commit()
+
+    async def fake_profile(*_args, **_kwargs):
+        return clerk_sync.ClerkUserProfile(
+            email="runtime-dependency@example.com",
+            name="Invited Dependency",
+        )
+
+    async def fake_membership(*_args, **_kwargs):
+        return ClerkAccessResult(
+            user_id="user_runtime_dependency",
+            membership_id="mem_runtime_dependency",
+            role="org:member",
+        )
+
+    monkeypatch.setattr(clerk_sync, "fetch_clerk_user_profile", fake_profile)
+    monkeypatch.setattr(
+        "app.services.member_reconciliation_service.ClerkAccessService.get_membership",
+        fake_membership,
+    )
+
+    actor = await deps.get_current_user(
+        Request({"type": "http", "method": "GET", "path": "/", "headers": []}),
+        runtime_db_session,
+        payload={
+            "sub": "user_runtime_dependency",
+            "o": {"id": "org_runtime_dependency", "rol": "org:member"},
+        },
+    )
+    await runtime_db_session.commit()
+
+    await db_session.refresh(user)
+    await db_session.refresh(member)
+    assert actor.account_id == user.id
+    assert actor.membership_id == member.id
+    assert actor.can_admin is False
+    assert actor.can_teach is True
+    assert actor.teacher_id == teacher.id
+    assert user.clerk_user_id == "user_runtime_dependency"
+    assert member.access_status == models.MembershipAccessStatus.active
+
+
 async def test_webhook_membership_role_mismatch_sets_sync_error(async_client, db_session):
     from app import models
 

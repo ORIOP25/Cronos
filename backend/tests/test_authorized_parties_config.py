@@ -37,6 +37,16 @@ def test_clerk_clock_skew_must_be_bounded(clock_skew_ms):
         )
 
 
+@pytest.mark.parametrize("timeout_seconds", [0, 31])
+def test_clerk_access_timeout_must_be_bounded(timeout_seconds):
+    with pytest.raises(ValidationError, match="CLERK_ACCESS_TIMEOUT_SECONDS"):
+        Settings(
+            **BASE,
+            FRONTEND_URL="https://app.example.com",
+            CLERK_ACCESS_TIMEOUT_SECONDS=timeout_seconds,
+        )
+
+
 @pytest.mark.parametrize(
     "parties",
     [

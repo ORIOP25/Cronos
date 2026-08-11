@@ -1,3 +1,4 @@
+import asyncio
 from datetime import UTC, datetime
 from types import SimpleNamespace
 
@@ -72,6 +73,27 @@ async def test_clerk_access_service_preserves_safe_provider_diagnostics():
     assert result.provider_status_code == 409
     assert result.provider_error_code == "organization_membership_exists"
     assert result.provider_request_id == "req_contract"
+
+
+async def test_clerk_access_service_bounds_provider_wait_time():
+    from app.services.clerk_access_service import ClerkAccessService
+
+    async def never_returns():
+        await asyncio.sleep(60)
+
+    access = ClerkAccessService(
+        gateway=SimpleNamespace(sdk=None),
+        timeout_seconds=0.01,
+    )
+
+    result = await access._call(never_returns)
+
+    assert result.ok is False
+    assert result.retryable is True
+    assert result.error_category == "provider_timeout"
+    assert result.safe_message == (
+        "Access could not be synchronized with Clerk. Try again or contact support."
+    )
 
 
 async def test_clerk_access_service_finds_exact_user_and_membership(monkeypatch):

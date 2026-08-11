@@ -155,6 +155,12 @@ Read [Backend Architecture](BACKEND_ARCHITECTURE.md) and [Glossary](../00_gettin
 | :--- | :--- | :--- | :--- |
 | `POST` | `/api/v1/webhooks/clerk` | Public (Signed) | Process Clerk user and organization webhooks |
 
+### 9. Public contact (`/api/v1/contact`)
+
+| Method | Endpoint Route | Required Role | Summary Description |
+| :--- | :--- | :--- | :--- |
+| `POST` | `/api/v1/contact` | Public (Turnstile) | Deliver a website contact request through Resend |
+
 ## Standard Request and Response Formats
 Requests and responses use JSON. Success responses serialize Pydantic schemas directly or wrap items in list envelopes.
 

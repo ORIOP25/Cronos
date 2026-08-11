@@ -72,7 +72,9 @@ async def get_current_user(
     if payload is None:
         payload = await get_clerk_payload(request)
     clerk_user_id = payload.get("sub")
-    clerk_org_id = (payload.get("o") or {}).get("id")
+    organization_claim = payload.get("o") or {}
+    clerk_org_id = organization_claim.get("id")
+    token_role = organization_claim.get("rol")
     if not clerk_user_id:
         raise HTTPException(status_code=401, detail="No user ID in token")
     if not clerk_org_id:
@@ -91,6 +93,32 @@ async def get_current_user(
         {"clerk_user_id": clerk_user_id, "clerk_org_id": clerk_org_id},
     )
     principal = result.mappings().one_or_none()
+    if principal is None:
+        organization_id = await db.scalar(
+            text("SELECT app_security.resolve_webhook_organization(:clerk_org_id)"),
+            {"clerk_org_id": clerk_org_id},
+        )
+        if organization_id is not None:
+            await set_async_tenant_context(db, int(organization_id))
+            from app.services import clerk_sync
+
+            await clerk_sync.sync_user_from_clerk_api(
+                db,
+                clerk_user_id,
+                organization_id=int(organization_id),
+                role=token_role,
+            )
+            result = await db.execute(
+                text(
+                    """
+                    SELECT account_id, organization_id, membership_id,
+                           can_admin, can_teach, teacher_id
+                    FROM app_security.resolve_principal(:clerk_user_id, :clerk_org_id)
+                    """
+                ),
+                {"clerk_user_id": clerk_user_id, "clerk_org_id": clerk_org_id},
+            )
+            principal = result.mappings().one_or_none()
     if principal is None:
         raise HTTPException(status_code=403, detail="Active organization membership required")
 
@@ -155,7 +183,12 @@ def get_current_active_admin(
     return current_user
 
 
-DbSession = Annotated[AsyncSession, Depends(get_db, scope="function")]
+# FastAPI 0.139 supports function-scoped yield dependencies. SonarPython does
+# not yet recognize the scope keyword in this Depends signature.
+DbSession = Annotated[
+    AsyncSession,
+    Depends(get_db, scope="function"),  # NOSONAR
+]
 ClerkGatewayDep = Annotated[ClerkGateway, Depends(get_clerk_gateway)]
 MemberAccessOperationDep = Annotated[
     MemberAccessOperationService,

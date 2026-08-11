@@ -7,6 +7,11 @@ x-backend-environment: &backend-environment
   CELERY_BROKER_URL: redis://redis:6379/0
   FRONTEND_URL: http://localhost:8080
   CLERK_AUTHORIZED_PARTIES: http://localhost:8080
+  CONTACT_EMAIL_FROM: website@forms.cronos.pt
+  CONTACT_EMAIL_TO: contacto@cronos.pt
+  CONTACT_EMAIL_TIMEOUT_SECONDS: "10"
+  TURNSTILE_ALLOWED_HOSTNAMES: localhost,cronos.pt,www.cronos.pt
+  TURNSTILE_TIMEOUT_SECONDS: "5"
 
 x-runtime-security: &runtime-security
   init: true
@@ -75,7 +80,8 @@ services:
     env_file: ./backend/.env
     environment:
       <<: *backend-environment
-      CONTACT_SMTP_PASSWORD: ${CONTACT_SMTP_PASSWORD:?CONTACT_SMTP_PASSWORD is required}
+      RESEND_API_KEY: ${RESEND_API_KEY:?RESEND_API_KEY is required}
+      TURNSTILE_SECRET_KEY: ${TURNSTILE_SECRET_KEY:?TURNSTILE_SECRET_KEY is required}
       TRUSTED_PROXY_IPS: 172.16.0.0/12
     restart: unless-stopped
     ports: ["127.0.0.1:8000:8000"]
@@ -126,6 +132,8 @@ services:
       target: runtime
       args:
         VITE_CLERK_PUBLISHABLE_KEY: ${VITE_CLERK_PUBLISHABLE_KEY:?VITE_CLERK_PUBLISHABLE_KEY is required}
+        VITE_API_BASE_URL: /api/v1
+        VITE_TURNSTILE_SITE_KEY: ${VITE_TURNSTILE_SITE_KEY:?VITE_TURNSTILE_SITE_KEY is required}
     restart: unless-stopped
     ports: ["127.0.0.1:8080:8080"]
     depends_on: {backend: {condition: service_healthy}}

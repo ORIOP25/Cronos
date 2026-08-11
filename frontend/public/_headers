@@ -3,13 +3,9 @@
   X-Frame-Options: DENY
   Referrer-Policy: strict-origin-when-cross-origin
   Permissions-Policy: camera=(), microphone=(), geolocation=()
-  Strict-Transport-Security: max-age=86400
-  Content-Security-Policy: default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self' https://clerk.cronos.pt https://challenges.cloudflare.com https://*.protect.clerk.com https://static.cloudflareinsights.com; connect-src 'self' https://api.cronos.pt https://clerk.cronos.pt https://*.protect.clerk.com; img-src 'self' data: https://img.clerk.com; font-src 'self' data: https://fonts.gstatic.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; worker-src 'self' blob:; frame-src 'self' https://challenges.cloudflare.com https://*.protect.clerk.com; upgrade-insecure-requests
+  Content-Security-Policy: default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self' https://clerk.cronos.pt https://challenges.cloudflare.com https://*.protect.clerk.com https://static.cloudflareinsights.com; connect-src 'self' https://api.cronos.pt https://clerk.cronos.pt https://*.protect.clerk.com https://challenges.cloudflare.com; img-src 'self' data: https://img.clerk.com; font-src 'self' data: https://fonts.gstatic.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; worker-src 'self' blob:; frame-src 'self' https://challenges.cloudflare.com https://*.protect.clerk.com; upgrade-insecure-requests
   Cache-Control: public, max-age=0, must-revalidate
 /index.html
-  Cache-Control: public, max-age=0, must-revalidate
-
-/404.html
   Cache-Control: public, max-age=0, must-revalidate
 
 /assets/*
@@ -19,8 +15,7 @@
   Cache-Control: public, max-age=86400
 
 /logo.png
+  Cache-Control: public, max-age=86400
+
 /favicon.ico
-/favicon-16x16.png
-/favicon-32x32.png
-/apple-touch-icon.png
   Cache-Control: public, max-age=86400

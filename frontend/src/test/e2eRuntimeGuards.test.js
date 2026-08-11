@@ -67,6 +67,28 @@ describe('E2E runtime guard classifiers', () => {
     expect(error).toBeNull()
   })
 
+  it('ignores only Google Fonts asset 404 console noise', () => {
+    const font404 = getConsoleError({
+      type: 'error',
+      text: 'Failed to load resource: the server responded with a status of 404 ()',
+      locationUrl: 'https://fonts.gstatic.com/s/outfit/v15/font.woff2',
+    }, [])
+    const font500 = getConsoleError({
+      type: 'error',
+      text: 'Failed to load resource: the server responded with a status of 500 ()',
+      locationUrl: 'https://fonts.gstatic.com/s/outfit/v15/font.woff2',
+    }, [])
+    const other404 = getConsoleError({
+      type: 'error',
+      text: 'Failed to load resource: the server responded with a status of 404 ()',
+      locationUrl: 'https://cdn.example.test/font.woff2',
+    }, [])
+
+    expect(font404).toBeNull()
+    expect(font500).toContain('Browser console error')
+    expect(other404).toContain('Browser console error')
+  })
+
   it('keeps throwing for unexpected browser console errors', () => {
     const error = getConsoleError({
       type: 'error',
