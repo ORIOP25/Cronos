@@ -258,6 +258,75 @@ async def test_webhook_membership_created_matches_under_runtime_database_role(
     assert member.clerk_membership_id == "mem_runtime_match"
 
 
+async def test_first_login_reconciliation_links_user_under_runtime_database_role(
+    db_session, runtime_db_session
+):
+    from app import models
+    from app.services import clerk_sync, member_reconciliation_service
+    from app.services.clerk_access_service import ClerkAccessResult
+
+    org = models.Organization(
+        name="Runtime First Login Org",
+        clerk_org_id="org_runtime_first_login",
+        plan_status="active",
+    )
+    user = models.User(email="runtime-first-login@example.com", name="Invited Teacher")
+    db_session.add_all([org, user])
+    await db_session.flush()
+    member = models.OrganizationMembership(
+        organization_id=org.id,
+        account_id=user.id,
+        organization_display_name="Invited Teacher",
+        lifecycle_status=models.MembershipLifecycleStatus.active,
+        access_status=models.MembershipAccessStatus.pending_invite,
+        can_admin=False,
+        can_teach=True,
+        teacher_access_mode=models.TeacherAccessMode.platform,
+        expected_clerk_role=models.ClerkOrganizationRole.member,
+        clerk_invitation_id="inv_runtime_first_login",
+        clerk_invitation_status=models.ClerkInvitationStatus.accepted,
+    )
+    db_session.add(member)
+    await db_session.flush()
+    user_id = user.id
+    member_id = member.id
+    await db_session.commit()
+
+    class ConfirmedMembership:
+        async def get_membership(self, **_kwargs):
+            return ClerkAccessResult(
+                user_id="user_runtime_first_login",
+                membership_id="mem_runtime_first_login",
+                role="org:member",
+            )
+
+    runtime_org = await clerk_sync.ensure_organization_exists(
+        runtime_db_session,
+        "org_runtime_first_login",
+        "Runtime First Login Org",
+    )
+    linked = await member_reconciliation_service.reconcile_first_login_by_email(
+        runtime_db_session,
+        clerk_user_id="user_runtime_first_login",
+        email="runtime-first-login@example.com",
+        name="Invited Teacher",
+        organization=runtime_org,
+        token_role="org:member",
+        clerk_access=ConfirmedMembership(),
+    )
+    await runtime_db_session.commit()
+
+    await db_session.refresh(user)
+    await db_session.refresh(member)
+    assert linked is not None
+    assert user.id == user_id
+    assert user.clerk_user_id == "user_runtime_first_login"
+    assert member.id == member_id
+    assert member.access_status == models.MembershipAccessStatus.active
+    assert member.clerk_membership_id == "mem_runtime_first_login"
+    assert member.updated_by_membership_id == member_id
+
+
 async def test_webhook_membership_role_mismatch_sets_sync_error(async_client, db_session):
     from app import models
 
