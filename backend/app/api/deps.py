@@ -183,9 +183,11 @@ def get_current_active_admin(
     return current_user
 
 
+# FastAPI 0.139 supports function-scoped yield dependencies. SonarPython does
+# not yet recognize the scope keyword in this Depends signature.
 DbSession = Annotated[
     AsyncSession,
-    Depends(get_db, scope="function"),  # NOSONAR: supported by FastAPI 0.139.
+    Depends(get_db, scope="function"),  # NOSONAR
 ]
 ClerkGatewayDep = Annotated[ClerkGateway, Depends(get_clerk_gateway)]
 MemberAccessOperationDep = Annotated[

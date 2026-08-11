@@ -40,7 +40,7 @@ function isDataLikeUrl(url) {
 function isSameOrigin(url, baseUrl) {
   const parsedUrl = parseUrl(url, baseUrl)
   const parsedBase = parseUrl(baseUrl, baseUrl)
-  return Boolean(parsedUrl && parsedBase && parsedUrl.origin === parsedBase.origin)
+  return Boolean(parsedUrl?.origin && parsedUrl.origin === parsedBase?.origin)
 }
 
 function hasAbortablePath(url, baseUrl) {
@@ -117,9 +117,8 @@ export function getRequestFailureError(requestFailure, { baseUrl }) {
 }
 
 function failedResourceStatus(text) {
-  const match = normalizedText(text).match(
-    /Failed to load resource:.*(?:status of|status code)\s+(\d{3})/i,
-  )
+  const failedResourcePattern = /Failed to load resource:.*(?:status of|status code)\s+(\d{3})/i
+  const match = failedResourcePattern.exec(normalizedText(text))
   return match ? Number.parseInt(match[1], 10) : null
 }
 
