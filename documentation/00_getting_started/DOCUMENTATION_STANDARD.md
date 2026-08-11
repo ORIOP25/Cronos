@@ -1,79 +1,89 @@
 # Documentation Standard (ASD-STE100)
 
 ## Purpose
-This document defines the writing standards, structural templates, and quality requirements for Cronos technical documentation.
+
+This document defines the writing, structure, and verification rules for Cronos documentation.
 
 ## Intended Reader
-This document targets technical authors, software engineers, and documentation reviewers.
 
-## ASD-STE100 Writing Rules
-All documentation in this repository must comply with Simplified Technical English (ASD-STE100) standards:
-
-1. **Controlled Language**: Use clear, direct, and unambiguous English.
-2. **Active Voice**: Write in active voice ("FastAPI validates tokens" not "Tokens are validated by FastAPI").
-3. **Imperative Form**: Use imperative form for procedural steps ("Run `pytest tests/`").
-4. **Sentence Length**:
-   - Limit procedural sentences to a maximum of 20 words.
-   - Limit descriptive sentences to a maximum of 25 words.
-5. **Paragraph Limit**: Limit paragraphs to a maximum of six sentences.
-6. **Noun Groups**: Limit noun groups to a maximum of three nouns (e.g., use "overhead panel" instead of "overhead panel battery section").
-7. **Approved Terminology**: Use a single approved term for each concept. Consult [GLOSSARY.md](GLOSSARY.md).
-8. **Portuguese Domain Terms**: Preserve exact Portuguese terms (*Ensino Profissional*, *Sumários*, *Faltas*, *Substituições*, *Turmas*) when referencing UI labels or legal domain definitions.
-9. **No Unplanned Features**: Write in present tense for observed behavior (`does`, `calculates`). Do not use `will` for planned features. Do not use unresolved decision markers.
-
-## Standard Section Template for Technical Guides
-Every technical guide under `01_system_architecture/` through `09_ops_observability/` must use this exact structure:
-
-```markdown
-# [Document Title]
-
-## Purpose
-[Short statement of purpose]
-
-## Intended Reader
-[Target developer profile]
+This document targets technical authors, engineers, and documentation reviewers.
 
 ## Prerequisites
-[Required reading or technical background]
+
+Read the [Glossary](GLOSSARY.md) before changing controlled terms.
 
 ## What the System Does
-[Factual explanation of component behavior]
+
+Cronos documentation describes observed repository behavior.
+
+Source code, tests, configuration, and migrations have priority over existing text.
+
+Documentation does not claim that external provider dashboards are configured.
 
 ## Why the Behavior Exists
-[Business rationale or architectural justification]
+
+Short, controlled sentences reduce ambiguity during development, release, and incident recovery.
 
 ## Components and Ownership
-[Table listing files, classes, and responsibilities]
+
+| Area | Location | Rule |
+| :--- | :--- | :--- |
+| Application guides | `documentation/00_getting_started/` through `documentation/09_ops_observability/` | Describe current behavior. |
+| Cronos agent guidance | `.agents/skills/cronos-*/` | Describe current engineering contracts. |
+| Imported skills | `.agents/skills/clerk*`, `grill-me`, `ponytail`, and others | Do not modify. |
 
 ## Data or Request Flow
-[Diagram or numbered step list]
+
+1. Inspect the implementation and tests.
+2. Check paths, commands, routes, and configuration names.
+3. Update the smallest complete set of documents.
+4. Validate relative links and source paths.
+5. Run relevant application verification commands.
 
 ## Contracts and Invariants
-[Enforced rules and structural constraints]
+
+- Use active voice.
+- Use imperative mood for procedures.
+- Use present tense for observed behavior.
+- Keep descriptive sentences to 25 words or fewer.
+- Keep procedural sentences to 20 words or fewer.
+- Keep paragraphs to six sentences or fewer.
+- Use one approved term for each concept.
+- Preserve exact Portuguese UI and domain terms.
+- Link only to existing repository files.
+- Mark unverified external state as an operational prerequisite.
+- Index files named `README.md` may use a short document list.
+- Technical guides use the full section structure in this standard.
 
 ## States and Transitions
-[State machine tables or diagrams]
+
+Documentation changes follow this review state:
+
+`inspect` -> `edit` -> `link-check` -> `verification` -> `review`.
 
 ## Failure Modes
-[List of error scenarios and system responses]
+
+- A stale source path makes the document non-actionable.
+- A copied legacy status can mislead operations.
+- An unverified provider claim can create a false release signal.
+- A broken relative link fails navigation.
 
 ## Verification Procedure
-[Commands or steps to verify functionality]
+
+1. Search changed documents for obsolete paths and feature names.
+2. Resolve every relative Markdown link.
+3. Compare commands with package scripts, Compose services, and CI steps.
+4. Run the relevant backend or frontend checks.
+5. Review `git diff --check` and `git status --short`.
 
 ## Source Map
-[Paths to implementation files and unit tests]
 
-## Related Documents
-[Links to related documentation files]
-```
-
-## Review Checklist
-Before merging documentation changes:
-- [ ] Validate sentence length (max 20 words for procedures, max 25 words for descriptions).
-- [ ] Confirm active voice usage.
-- [ ] Confirm all relative file links resolve correctly.
-- [ ] Verify that source paths match current codebase files.
-
-## Related Documents
 - [Glossary](GLOSSARY.md)
 - [Contributing Guidelines](CONTRIBUTING.md)
+- [Repository Map](REPOSITORY_MAP.md)
+- [CI Workflow](../../.github/workflows/ci.yml)
+
+## Related Documents
+
+- [Project Overview](PROJECT_OVERVIEW.md)
+- [Testing and CI](../08_security_quality/TESTING_AND_CI.md)

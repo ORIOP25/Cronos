@@ -1,67 +1,88 @@
 # Frontend Architecture
 
 ## Purpose
-This document details React 19 application structure, Vite build configuration, React Query cache management, and UI component hierarchy.
+
+This document describes the React SPA, route composition, client state, authentication, and API transport.
 
 ## Intended Reader
-This document targets frontend React engineers and UI designers.
+
+This document targets React engineers and UI maintainers.
 
 ## Prerequisites
-Read the [Project Overview](../00_getting_started/PROJECT_OVERVIEW.md).
+
+Read [Routes and Permissions](ROUTES_AND_PERMISSIONS.md) and [Design System](DESIGN_SYSTEM.md).
 
 ## What the System Does
-The frontend is a React 19 and Vite 8 SPA. It uses TanStack React Query and an Axios API client.
 
-## Component Hierarchy Structure
+The frontend uses React 19, Vite 8, React Router, Clerk, Axios, and TanStack React Query.
+One Vite entry point serves the public marketing page and authenticated application.
 
-```text
-main.jsx (Clerk, Query, and User Providers)
-└── App.jsx (Lazy Route Definitions)
-    ├── DefaultLayout (Navigation Sidebar & Header)
-    │   ├── PageHeader (Breadcrumbs & Action Buttons)
-    │   └── Page Components (/dashboard, /schedules, /members, etc.)
-    │       ├── SmartTable (Reusable Data Table)
-    │       ├── GenericModalForm (Create/Edit Modal Dialogs)
-    │       └── Feature Widgets (KPISidebar, DraftPanel, AlertBar)
-    └── MarketingSite (Public Landing Page Assembler)
-        ├── MarketingHeader & MarketingFooter
-        ├── HeroSection & ServiceStrip
-        ├── ProductValueSection & ProcessStepperSection
-        ├── GeneratorSection & RoutineSection
-        ├── RolesSection & AboutFounderSection
-        └── TestimonialsMarquee & ContactQuestionnaire
-```
+## Why the Behavior Exists
 
-## State Management and Caching Strategy
-- **Server State**: Managed via TanStack React Query (`queryClient.js`). Key invalidations trigger automatic refetching after mutations.
-- **Client UI State**: Component-local React `useState` and `useReducer` hooks. Section-local state isolated within memoized marketing components.
-- **Static Content**: Extracted static data arrays maintained in `frontend/src/data/marketingData.js`.
-- **Auth & Session State**: Managed via Clerk `@clerk/react` hooks and `UserQueryProvider.jsx`.
+Lazy route loading keeps the initial bundle small.
+React Query manages server state while component state handles form and view state.
 
-## Performance and Rendering Optimization
-- **Hardware Acceleration**: Marquee rows use GPU layer promotion (`will-change: transform; transform: translate3d(0,0,0)`). Edge masks use fixed CSS pseudo-elements instead of continuous gradient mask recalculations.
-- **Off-Screen Content**: Below-the-fold marketing sections use `content-visibility: auto; contain-intrinsic-size: 800px;` to defer rendering until scrolled into view.
-- **Asset Strategy**: Marketing graphics use optimized WebP formats (`<picture>` elements with PNG fallbacks). Below-the-fold images use `loading="lazy"` and `decoding="async"`. The Hero LCP asset uses `loading="eager"`.
+## Components and Ownership
+
+| Area | Implementation |
+| :--- | :--- |
+| Entry and providers | `frontend/src/main.jsx`, `UserQueryProvider.jsx` |
+| Routes | `frontend/src/App.jsx` |
+| Auth guards | `frontend/src/routeGuards.jsx`, `roleAccess.js` |
+| API transport | `frontend/src/apiClient.js` |
+| Server state | `frontend/src/queryClient.js`, `features/*/data.js` |
+| Authenticated layout | `frontend/src/components/DefaultLayout.jsx` |
+| Marketing page | `frontend/src/pages/MarketingSite.jsx` and `components/marketing/` |
+
+## Data or Request Flow
+
+1. `main.jsx` mounts `ClerkProvider`, `ErrorBoundary`, and `UserQueryProvider`.
+2. `App.jsx` selects public, signed-in, admin, or teacher routes.
+3. Clerk provides an organization-scoped token getter.
+4. `apiClient` attaches the token to authenticated Axios requests.
+5. Feature hooks read or mutate API data through React Query.
+6. Public contact uses `fetch` and does not use the Clerk interceptor.
 
 ## Contracts and Invariants
-- All authenticated API requests must include the Clerk Bearer JWT fetched via `useAuth().getToken()`.
-- Public landing page (`MarketingSite.jsx`) uses isolated CSS namespaces (`cronos-*`) to prevent style bleeding.
+
+- `VITE_API_BASE_URL` defaults to `/api/v1`.
+- Mutations do not retry.
+- Queries retry at most twice for network, `408`, `429`, and `5xx` errors.
+- Teacher routes require a teacher capability and linked profile.
+- Marketing styles use the `cronos-*` namespace.
+- The runtime Nginx fallback serves `index.html` for client routes.
+
+## States and Transitions
+
+Route guards move through loading, signed-out, organization selection, member error, or authorized states.
+Contact submission moves through questionnaire steps, pending, error, and success states.
 
 ## Failure Modes
-- Network Failure: Queries retry at most twice for network, `408`, `429`, and server errors. Mutations do not retry.
+
+- Missing Clerk configuration blocks authenticated startup.
+- A `401` member request offers organization-session recovery.
+- A `403` member request displays an access message.
+- API errors use normalized messages from `frontend/src/utils/apiErrors.js`.
 
 ## Verification Procedure
-Run frontend test suite: `cd frontend && npm run test`. Verify zero failing Vitest components.
+
+1. Run `npm ci` inside `frontend/`.
+2. Run `npm run audit:production`.
+3. Run `npm run verify`.
+4. Run `npm run test:school-config:stability`.
 
 ## Source Map
-- App Entry: `frontend/src/main.jsx`
-- Layout Router: `frontend/src/App.jsx`
-- Query Client: `frontend/src/queryClient.js`
-- API Client: `frontend/src/apiClient.js`
-- Marketing Page Assembler: `frontend/src/pages/MarketingSite.jsx`
-- Marketing Components: `frontend/src/components/marketing/`
-- Marketing Data: `frontend/src/data/marketingData.js`
+
+- `frontend/src/main.jsx`
+- `frontend/src/App.jsx`
+- `frontend/src/apiClient.js`
+- `frontend/src/queryClient.js`
+- `frontend/src/routeGuards.jsx`
+- `frontend/Dockerfile`
+- `frontend/nginx.conf`
 
 ## Related Documents
+
 - [Routes and Permissions](ROUTES_AND_PERMISSIONS.md)
 - [Design System](DESIGN_SYSTEM.md)
+- [Accessibility](ACCESSIBILITY.md)

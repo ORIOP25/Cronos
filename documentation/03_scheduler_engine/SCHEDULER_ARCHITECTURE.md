@@ -1,62 +1,93 @@
 # Scheduler Architecture
 
 ## Purpose
-This document details CP-SAT decision variables, Celery worker dispatching, state models, and draft approval flows.
+
+This document describes scheduler selection, worker execution, CP-SAT services, drafts, diffs, and approval.
 
 ## Intended Reader
-This document targets backend developers and optimization specialists.
+
+This document targets scheduler engineers, backend engineers, and QA engineers.
 
 ## Prerequisites
-Read [Scheduler Behavior](SCHEDULER_BEHAVIOR.md).
+
+Read [Scheduler Behavior](SCHEDULER_BEHAVIOR.md) and [Data Model](../01_system_architecture/DATA_MODEL.md).
 
 ## What the System Does
-The scheduler converts database records into CP-SAT boolean decision variables, executes the solver asynchronously, and persists results as schedule drafts.
 
-## Solver Execution Pipeline
+The scheduler selects complete generation before publication and adaptive repair after publication.
+It stores an immutable input snapshot, runs in Celery, and persists a draft before approval.
+
+## Why the Behavior Exists
+
+The selection service prevents unsupported generation requests.
+The runtime makes each solve auditable and keeps long computation outside FastAPI.
+
+## Components and Ownership
+
+| Responsibility | Implementation |
+| :--- | :--- |
+| Strategy selection | `backend/app/services/scheduler_generation_service.py` |
+| Job lifecycle | `backend/app/services/scheduler_job_runtime.py` |
+| Complete generation | `backend/app/services/scheduler_complete_engine.py` |
+| Adaptive repair | `backend/app/services/scheduler_adaptive_engine.py` |
+| Candidate generation | `backend/app/services/scheduler_candidates.py` |
+| Constraints and quality | `backend/app/scheduler/domain/`, `scheduler_constraint_rules.py` |
+| Draft and diff | `scheduler_draft_service.py`, `scheduler_diff_service.py` |
+| Approval | `scheduler_approval_service.py`, `scheduler_recovery_service.py` |
+| Dispatch | `backend/app/scheduler/infrastructure/task_dispatcher.py` |
+
+## Data or Request Flow
 
 ```mermaid
 flowchart TD
-    A[POST /scheduler/generate] --> B[Create ScheduleGenerationJob Record]
-    B --> C[Dispatch Task to Redis Worker Queue]
-    C --> D[Celery Worker Picks Up Task]
-    D --> E[Fetch Database State & Build Constraints]
-    E --> F[Invoke Google OR-Tools CP-SAT Solver]
-    F -->|FEASIBLE / OPTIMAL| G[Convert Variable Assignments to Draft Blocks]
-    F -->|No Valid Output| H[Set Job Status to NO_VALID_OUTPUT]
-    G --> I[Store ScheduleDraft & ScheduleDraftBlock Rows]
-    I --> J[Set Job Status to SUCCEEDED]
+    Request[POST /api/v1/scheduler/generate] --> Select[Select strategy]
+    Select --> Job[Store QUEUED job and snapshot]
+    Job --> Queue[Redis]
+    Queue --> Worker[Celery worker]
+    Worker --> Engine[Complete or adaptive engine]
+    Engine --> CPSAT[CP-SAT candidates and quality]
+    CPSAT --> Draft[Persist draft, blocks, diff, metrics]
+    Draft --> Approval[Admin approval or rejection]
+    Approval --> Active[Promote active blocks and recovery links]
 ```
 
-## CP-SAT Formulation Details
-- **Decision Variable**: One Boolean variable selects each precomputed placement candidate.
-- **Resource Constraints**: Optional fixed intervals enforce class, teacher, and room non-overlap by date.
-- **Search Parameters**: Bounded deterministic stages use one search worker and random seed zero.
-
-## Draft Lifecycle States
-
-| State | Description | Next Allowed State |
-| :--- | :--- | :--- |
-| `PENDING` | Draft awaits an administrative decision | `APPROVED`, `REJECTED`, `REPLACED`, `STALE`, `INVALIDATED` |
-| `APPROVED` | Draft blocks became active schedule blocks | Terminal |
-| `REJECTED` | Administrator rejected the draft | Terminal |
-| `REPLACED` | A later confirmed generation replaced the draft | Terminal |
-| `STALE` | Scheduler state changed after generation | `REJECTED` |
-| `INVALIDATED` | Reset or lifecycle action invalidated the draft | `REJECTED` |
-
 ## Contracts and Invariants
-- Approval locks lifecycle rows, validates fingerprints, applies the diff, publishes state, and reconciles recovery links transactionally.
+
+- A pending draft requires explicit replacement confirmation.
+- A published year requires an approved scheduler state version.
+- Every worker solve uses a tenant-scoped session.
+- Draft approval validates the fingerprint before promotion.
+- Recovery links reconcile with approved active blocks.
+
+## States and Transitions
+
+- Strategy: `COMPLETE_GENERATION` or `ADAPTIVE_REPAIR`.
+- Job: `QUEUED`, `RUNNING`, `CANCEL_REQUESTED`, `CANCELED`, `SUCCEEDED`, `FAILED`, `NO_VALID_OUTPUT`.
+- Draft: `PENDING`, `APPROVED`, `REJECTED`, `REPLACED`, `STALE`, `INVALIDATED`.
 
 ## Failure Modes
-- Partial Optimization: A bounded stage can preserve the best feasible values and mark quality optimization incomplete.
+
+- No active school year returns a configuration failure.
+- No debt or scheduler change blocks adaptive repair selection.
+- A stale fingerprint rejects approval.
+- A solver timeout records a failed job.
+- An infeasible target records `NO_VALID_OUTPUT` with blockers.
 
 ## Verification Procedure
-From `backend/`, run `pytest -m solver -v` and the scheduler golden fixture tests.
+
+1. Run scheduler generation and job runtime tests.
+2. Run draft, diff, approval, and recovery tests.
+3. Inspect the job and draft through the scheduler API.
 
 ## Source Map
-- Solver Engines: `backend/app/services/scheduler_complete_engine.py`, `backend/app/services/scheduler_adaptive_engine.py`
-- Scheduler Router: `backend/app/api/v1/endpoints/scheduler.py`
-- Draft Services: `backend/app/services/scheduler_draft_service.py`, `backend/app/services/scheduler_approval_service.py`
+
+- `backend/app/services/scheduler_generation_service.py`
+- `backend/app/services/scheduler_job_runtime.py`
+- `backend/app/services/scheduler_complete_engine.py`
+- `backend/app/services/scheduler_adaptive_engine.py`
+- `backend/app/api/v1/endpoints/scheduler.py`
 
 ## Related Documents
+
 - [Scheduler Behavior](SCHEDULER_BEHAVIOR.md)
 - [Scheduler Operations](SCHEDULER_OPERATIONS.md)

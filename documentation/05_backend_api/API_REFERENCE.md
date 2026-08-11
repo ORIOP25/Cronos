@@ -1,177 +1,207 @@
 # API Reference
 
 ## Purpose
-This document provides a comprehensive REST API endpoint reference for the Cronos backend service.
+
+This document lists the implemented HTTP routes, access requirements, and public provider contracts.
 
 ## Intended Reader
-This document targets API consumers, frontend developers, and backend engineers.
+
+This document targets API consumers, frontend engineers, backend engineers, and QA engineers.
 
 ## Prerequisites
-Read [Backend Architecture](BACKEND_ARCHITECTURE.md) and [Glossary](../00_getting_started/GLOSSARY.md).
 
-## Endpoint Families Table
+Read [Backend Architecture](BACKEND_ARCHITECTURE.md) and [Errors and Transactions](ERRORS_AND_TRANSACTIONS.md).
 
-### 1. Public, Session, and Health
+## What the System Does
 
-| Method | Endpoint Route | Required Role | Summary Description |
-| :--- | :--- | :--- | :--- |
-| `GET` | `/api/v1/health` | Public | System health check and status verification |
-| `GET` | `/health/live` | Public | Process liveness check |
-| `GET` | `/health/ready` | Public | Database and Redis readiness check |
-| `POST` | `/api/v1/contact` | Public | Submit the marketing contact form |
-| `POST` | `/api/v1/session/bootstrap` | Signed In | Resolve or bootstrap session state |
-| `GET` | `/api/v1/onboarding/status` | Admin | Read onboarding state |
-| `POST` | `/api/v1/onboarding` | Admin | Configure the first school state |
+FastAPI mounts application routes under `/api/v1`.
+Protected routes resolve an active organization membership.
+The liveness and readiness routes remain outside that prefix.
 
-### 2. Analytics and Dashboard
+## Why the Behavior Exists
 
-| Method | Endpoint Route | Required Role | Summary Description |
-| :--- | :--- | :--- | :--- |
-| `GET` | `/api/v1/analytics/availability-heatmap` | Authenticated | Availability distribution heatmap metrics |
-| `GET` | `/api/v1/dashboard` | Admin | Administrative dashboard data |
+Stable route families keep frontend features and provider webhooks independent from implementation modules.
 
-### 3. Classes and Curriculum (`/api/v1/classes`)
+## Components and Ownership
 
-| Method | Endpoint Route | Required Role | Summary Description |
-| :--- | :--- | :--- | :--- |
-| `GET` | `/api/v1/classes/` | Admin | List all classes (*Turmas*) for organization |
-| `POST` | `/api/v1/classes/` | Admin | Create a new class cohort |
-| `GET` | `/api/v1/classes/{class_id}` | Admin | Fetch class detail by ID |
-| `PATCH` | `/api/v1/classes/{class_id}` | Admin | Update class parameters |
-| `DELETE` | `/api/v1/classes/{class_id}` | Admin | Delete class cohort |
-| `GET` | `/api/v1/classes/{class_id}/curriculum` | Admin | Fetch course subjects for the class |
-| `PATCH` | `/api/v1/classes/{class_id}/progress` | Admin | Append manual progress adjustments |
-| `GET` | `/api/v1/classes/{class_id}/subjects` | Authenticated | Fetch class subject assignments |
-| `POST` | `/api/v1/classes/{class_id}/subjects` | Admin | Assign subject to class with primary teacher |
-| `PATCH` | `/api/v1/classes/{class_id}/subjects/{subject_id}` | Admin | Change the assigned teacher |
-| `DELETE` | `/api/v1/classes/{class_id}/subjects/{subject_id}` | Admin | Remove a subject assignment |
-| `GET` | `/api/v1/classes/{class_id}/available-subjects` | Authenticated | List assignable subjects |
-| `GET` | `/api/v1/classes/subjects/{subject_id}/eligible-teachers` | Authenticated | List eligible teachers |
+| Area | Source |
+| :--- | :--- |
+| Router assembly | `backend/app/api/api.py` |
+| Endpoint modules | `backend/app/api/v1/endpoints/` |
+| Pydantic contracts | `backend/app/schemas.py` |
+| Authentication dependencies | `backend/app/api/deps.py` |
 
-### 4. Courses and Catalogs
+## Data or Request Flow
 
-| Method | Endpoint Route | Required Role | Summary Description |
-| :--- | :--- | :--- | :--- |
-| `GET` | `/api/v1/courses/` | Authenticated | List all vocational courses |
-| `POST` | `/api/v1/courses/` | Admin | Create new course entity |
-| `GET` | `/api/v1/courses/{course_id}` | Authenticated | Fetch course details |
-| `GET` | `/api/v1/courses/{course_id}/classes` | Authenticated | List course classes |
-| `POST` | `/api/v1/courses/{course_id}/classes` | Admin | Create a class inside a course |
-| `PATCH` | `/api/v1/courses/{course_id}/classes/{class_id}` | Admin | Update a class inside a course |
-| `DELETE` | `/api/v1/courses/{course_id}/classes/{class_id}` | Admin | Delete a class inside a course |
-| `PATCH` | `/api/v1/courses/{course_id}` | Admin | Update course metadata |
-| `DELETE` | `/api/v1/courses/{course_id}` | Admin | Delete course entity |
-| `GET/POST` | `/api/v1/subjects/` | Authenticated / Admin | List or create subjects and modules |
-| `PATCH/DELETE` | `/api/v1/subjects/{subject_id}` | Admin | Update or delete a subject |
-| `GET/POST` | `/api/v1/rooms/` | Authenticated / Admin | List or create rooms |
-| `PATCH/DELETE` | `/api/v1/rooms/{room_id}` | Admin | Update or delete a room |
-| `GET` | `/api/v1/timeslots/` | Authenticated | List grid slots |
-| `POST` | `/api/v1/timeslots/generate` | Admin | Replace the timeslot grid after preflight |
+1. Send JSON to an `/api/v1` route.
+2. Include a Clerk Bearer token for protected routes.
+3. Include an active organization in the Clerk session.
+4. Provide route-specific IDs and payloads.
+5. Read the JSON response or standard error detail.
 
-### 5. Organization Members (`/api/v1/members`)
+## Endpoint Inventory
 
-| Method | Endpoint Route | Required Role | Summary Description |
-| :--- | :--- | :--- | :--- |
-| `GET` | `/api/v1/members/` | Admin | List all team members (`Equipa`) |
-| `GET` | `/api/v1/members/me` | Authenticated | Fetch active user membership context |
-| `POST` | `/api/v1/members/` | Admin | Invite new organization team member |
-| `PATCH` | `/api/v1/members/{member_id}` | Admin | Update member role or status |
-| `POST` | `/api/v1/members/{member_id}/remove` | Admin | Remove member from organization |
-| `POST` | `/api/v1/members/{member_id}/resend-invitation` | Admin | Resend a pending invite |
-| `POST` | `/api/v1/members/{member_id}/retry-sync` | Admin | Retry provider synchronization |
-| `POST` | `/api/v1/members/{member_id}/restore` | Admin | Restore member access |
+`Public` routes do not require a membership. `Active` routes require active access.
+`Admin` routes require the `admin` capability. `Teacher` routes also require a linked teacher profile.
 
-### 6. Teacher Self-Service
+### Public, health, session, and onboarding
 
-| Method | Endpoint Route | Required Role | Summary Description |
-| :--- | :--- | :--- | :--- |
-| `GET` | `/api/v1/teachers/me/availability` | Teacher | Read personal availability |
-| `POST` | `/api/v1/teachers/{teacher_id}/availability` | Self or Admin | Replace teacher availability |
-| `GET` | `/api/v1/teachers/me/progress` | Teacher | Read assigned class progress |
-| `GET` | `/api/v1/teachers/` | Admin | List teachers |
-| `GET` | `/api/v1/teachers/observability/summary` | Admin | Read teacher endpoint telemetry |
+| Method | Route | Access |
+| :--- | :--- | :--- |
+| `GET` | `/health/live` | Public |
+| `GET` | `/health/ready` | Public; returns `503` when dependencies fail |
+| `GET` | `/api/v1/health` | Public |
+| `POST` | `/api/v1/contact` | Public; Turnstile and rate limits |
+| `POST` | `/api/v1/session/bootstrap` | Signed in |
+| `GET` | `/api/v1/onboarding/status` | Admin |
+| `POST` | `/api/v1/onboarding` | Admin |
 
-### 7. Occurrences and Substitutions (`/api/v1/occurrences`)
+### Dashboard, analytics, and catalog
 
-| Method | Endpoint Route | Required Role | Summary Description |
-| :--- | :--- | :--- | :--- |
-| `GET` | `/api/v1/occurrences/` | Admin | List lesson occurrences |
-| `POST` | `/api/v1/occurrences/` | Admin | Create an occurrence from an active block |
-| `GET` | `/api/v1/occurrences/debts` | Admin | Fetch hour debt summaries |
-| `GET` | `/api/v1/occurrences/observability/summary` | Admin | Read occurrence endpoint telemetry |
-| `GET` | `/api/v1/occurrences/substitutes` | Admin | List free teachers for a date and timeslot |
-| `GET` | `/api/v1/occurrences/{occurrence_id}` | Admin | Read one occurrence |
-| `GET` | `/api/v1/occurrences/{occurrence_id}/substitutes/recommendations` | Admin | Rank eligible substitute assignments |
-| `PATCH` | `/api/v1/occurrences/{occurrence_id}` | Admin | Decide or revise occurrence status |
-| `POST` | `/api/v1/occurrences/{occurrence_id}/cancel` | Admin | Revoke an occurrence through a new revision |
+| Method | Route | Access |
+| :--- | :--- | :--- |
+| `GET` | `/api/v1/dashboard` | Admin |
+| `GET` | `/api/v1/analytics/availability-heatmap` | Active |
+| `GET` | `/api/v1/courses/` | Active |
+| `POST` | `/api/v1/courses/` | Admin |
+| `GET` | `/api/v1/courses/{course_id}` | Active |
+| `PATCH` | `/api/v1/courses/{course_id}` | Admin |
+| `DELETE` | `/api/v1/courses/{course_id}` | Admin |
+| `GET` | `/api/v1/courses/{course_id}/classes` | Active |
+| `POST` | `/api/v1/courses/{course_id}/classes` | Admin |
+| `PATCH` | `/api/v1/courses/{course_id}/classes/{class_id}` | Admin |
+| `DELETE` | `/api/v1/courses/{course_id}/classes/{class_id}` | Admin |
+| `GET` | `/api/v1/classes/` | Admin |
+| `POST` | `/api/v1/classes/` | Admin |
+| `GET` | `/api/v1/classes/{class_id}` | Admin |
+| `PATCH` | `/api/v1/classes/{class_id}` | Admin |
+| `DELETE` | `/api/v1/classes/{class_id}` | Admin |
+| `GET` | `/api/v1/classes/{class_id}/curriculum` | Admin |
+| `PATCH` | `/api/v1/classes/{class_id}/progress` | Admin |
+| `GET` | `/api/v1/classes/{class_id}/subjects` | Active |
+| `POST` | `/api/v1/classes/{class_id}/subjects` | Admin |
+| `PATCH` | `/api/v1/classes/{class_id}/subjects/{subject_id}` | Admin |
+| `DELETE` | `/api/v1/classes/{class_id}/subjects/{subject_id}` | Admin |
+| `GET` | `/api/v1/classes/{class_id}/available-subjects` | Active |
+| `GET` | `/api/v1/classes/subjects/{subject_id}/eligible-teachers` | Active |
+| `GET` / `POST` | `/api/v1/subjects/` | Active / Admin |
+| `PATCH` / `DELETE` | `/api/v1/subjects/{subject_id}` | Admin |
+| `GET` / `POST` | `/api/v1/rooms/` | Active / Admin |
+| `PATCH` / `DELETE` | `/api/v1/rooms/{room_id}` | Admin |
+| `GET` | `/api/v1/timeslots/` | Active |
+| `POST` | `/api/v1/timeslots/generate` | Admin |
 
-### 8. Scheduler and Solver Engine (`/api/v1/scheduler`)
+### Members and teachers
 
-| Method | Endpoint Route | Required Role | Summary Description |
-| :--- | :--- | :--- | :--- |
-| `POST` | `/api/v1/scheduler/generate` | Admin | Trigger full or repair schedule generation job |
-| `GET` | `/api/v1/scheduler/jobs/{job_id}` | Authenticated | Read one generation job |
-| `POST` | `/api/v1/scheduler/jobs/{job_id}/cancel` | Admin | Request job cancellation |
-| `GET` | `/api/v1/scheduler/status` | Authenticated | Read scheduler lifecycle status |
-| `GET` | `/api/v1/scheduler/drafts/current` | Authenticated | Fetch the current pending draft |
-| `GET` | `/api/v1/scheduler/drafts/{draft_id}` | Authenticated | Fetch one draft summary |
-| `GET` | `/api/v1/scheduler/drafts/{draft_id}/diff` | Authenticated | Fetch persisted draft diff entries |
-| `POST` | `/api/v1/scheduler/drafts/{draft_id}/approve` | Admin | Promote draft schedule to active timetable |
-| `POST` | `/api/v1/scheduler/drafts/{draft_id}/reject` | Admin | Discard schedule draft |
-| `POST` | `/api/v1/scheduler/reset-year` | Admin | Reset scheduler publication state |
+| Method | Route | Access |
+| :--- | :--- | :--- |
+| `GET` | `/api/v1/members/` and `/api/v1/members` | Admin |
+| `GET` | `/api/v1/members/me` | Active |
+| `POST` | `/api/v1/members/` and `/api/v1/members` | Admin |
+| `GET` | `/api/v1/members/{member_id}` | Admin |
+| `PATCH` | `/api/v1/members/{member_id}` | Admin |
+| `POST` | `/api/v1/members/{member_id}/remove` | Admin |
+| `POST` | `/api/v1/members/{member_id}/resend-invitation` | Admin |
+| `POST` | `/api/v1/members/{member_id}/retry-sync` | Admin |
+| `POST` | `/api/v1/members/{member_id}/restore` | Admin |
+| `GET` | `/api/v1/teachers/` | Admin |
+| `GET` | `/api/v1/teachers/me/availability` | Teacher |
+| `POST` | `/api/v1/teachers/{teacher_id}/availability` | Active; self or admin |
+| `GET` | `/api/v1/teachers/me/progress` | Teacher |
+| `GET` | `/api/v1/teachers/observability/summary` | Admin |
 
-### 9. Weekly Schedule, Constraints, and Logs (`/api/v1/schedule`)
+### School configuration
 
-| Method | Endpoint Route | Required Role | Summary Description |
-| :--- | :--- | :--- | :--- |
-| `GET` | `/api/v1/schedule/week` | Authenticated | Fetch weekly schedule grid blocks |
-| `GET` | `/api/v1/schedule/me/horizon` | Teacher | Read personal schedule bounds |
-| `PUT` | `/api/v1/schedule/active-blocks/{active_schedule_block_id}/log` | Assigned Teacher or Admin | Set status, summary, and notes |
-| `PUT` | `/api/v1/schedule/operational-blocks/{operational_block_id}/log` | Assigned Teacher or Admin | Log a substitute operational block |
-| `GET/POST` | `/api/v1/schedule/constraints/` | Authenticated / Admin | List or create scheduler constraints |
-| `DELETE` | `/api/v1/schedule/constraints/{constraint_id}` | Admin | Delete a scheduler constraint |
-| `DELETE` | `/api/v1/schedule/reset` | Admin | Destructively reset schedule data |
+| Method | Route | Access |
+| :--- | :--- | :--- |
+| `GET` / `POST` | `/api/v1/school/settings/` | Admin |
+| `POST` | `/api/v1/school/settings/soft-reset` | Admin |
+| `POST` | `/api/v1/school/settings/sync-holidays` | Admin |
+| `GET` / `POST` | `/api/v1/school/grid-settings/` | Admin |
+| `POST` | `/api/v1/school/grid-settings/regenerate` | Admin |
+| `GET` / `POST` | `/api/v1/school/calendar-events/` | Active / Admin |
+| `DELETE` | `/api/v1/school/calendar-events/{event_id}` | Admin |
 
-### 10. School Settings and Timesheets
+### Scheduler and schedule operations
 
-| Method | Endpoint Route | Required Role | Summary Description |
-| :--- | :--- | :--- | :--- |
-| `GET/POST` | `/api/v1/school/settings/` | Admin | Read or update school dates and repair window |
-| `POST` | `/api/v1/school/settings/soft-reset` | Admin | Reset the school year while preserving history |
-| `GET/POST` | `/api/v1/school/grid-settings/` | Admin | Read or update lunch settings |
-| `POST` | `/api/v1/school/grid-settings/regenerate` | Admin | Save lunch settings and replace the grid atomically |
-| `GET/POST` | `/api/v1/school/calendar-events/` | Authenticated / Admin | List or create school calendar events |
-| `DELETE` | `/api/v1/school/calendar-events/{event_id}` | Admin | Delete a school calendar event |
-| `POST` | `/api/v1/school/settings/sync-holidays` | Admin | Import Portuguese national holidays |
-| `GET` | `/api/v1/timesheets/` | Admin | List weekly timesheets |
-| `GET` | `/api/v1/timesheets/me/{week_start_date}` | Teacher | Get or create the personal week |
-| `POST` | `/api/v1/timesheets/me/{week_start_date}/submit` | Teacher | Submit the personal week |
-| `GET` | `/api/v1/timesheets/{timesheet_id}/pending-occurrences` | Admin | List open occurrences in the week |
-| `PATCH` | `/api/v1/timesheets/{timesheet_id}/status` | Admin | Approve or reopen a week |
+| Method | Route | Access |
+| :--- | :--- | :--- |
+| `POST` | `/api/v1/scheduler/generate` | Admin |
+| `GET` | `/api/v1/scheduler/status` | Active |
+| `GET` | `/api/v1/scheduler/jobs/{job_id}` | Active |
+| `POST` | `/api/v1/scheduler/jobs/{job_id}/cancel` | Admin |
+| `GET` | `/api/v1/scheduler/drafts/current` | Active |
+| `GET` | `/api/v1/scheduler/drafts/{draft_id}` | Active |
+| `GET` | `/api/v1/scheduler/drafts/{draft_id}/diff` | Active |
+| `POST` | `/api/v1/scheduler/drafts/{draft_id}/approve` | Admin |
+| `POST` | `/api/v1/scheduler/drafts/{draft_id}/reject` | Admin |
+| `POST` | `/api/v1/scheduler/reset-year` | Admin |
+| `GET` / `POST` | `/api/v1/schedule/constraints/` | Active / Admin |
+| `DELETE` | `/api/v1/schedule/constraints/{constraint_id}` | Admin |
+| `GET` | `/api/v1/schedule/week` | Active; teacher scope is restricted |
+| `GET` | `/api/v1/schedule/me/horizon` | Teacher |
+| `PUT` | `/api/v1/schedule/active-blocks/{id}/log` | Active; assigned teacher or admin |
+| `PUT` | `/api/v1/schedule/operational-blocks/{id}/log` | Active; assigned teacher or admin |
+| `DELETE` | `/api/v1/schedule/reset` | Admin |
 
-### 11. Webhooks (`/api/v1/webhooks`)
+### Occurrences, timesheets, and webhooks
 
-| Method | Endpoint Route | Required Role | Summary Description |
-| :--- | :--- | :--- | :--- |
-| `POST` | `/api/v1/webhooks/clerk` | Public (Signed) | Process Clerk user and organization webhooks |
+| Method | Route | Access |
+| :--- | :--- | :--- |
+| `GET` / `POST` | `/api/v1/occurrences/` | Admin |
+| `GET` | `/api/v1/occurrences/{occurrence_id}` | Admin |
+| `PATCH` | `/api/v1/occurrences/{occurrence_id}` | Admin |
+| `POST` | `/api/v1/occurrences/{occurrence_id}/cancel` | Admin |
+| `GET` | `/api/v1/occurrences/debts` | Admin |
+| `GET` | `/api/v1/occurrences/substitutes` | Admin |
+| `GET` | `/api/v1/occurrences/{occurrence_id}/substitutes/recommendations` | Admin |
+| `GET` | `/api/v1/occurrences/observability/summary` | Admin |
+| `GET` | `/api/v1/timesheets/` | Admin |
+| `GET` | `/api/v1/timesheets/me/{week_start_date}` | Teacher |
+| `POST` | `/api/v1/timesheets/me/{week_start_date}/submit` | Teacher |
+| `GET` | `/api/v1/timesheets/{timesheet_id}/pending-occurrences` | Admin |
+| `PATCH` | `/api/v1/timesheets/{timesheet_id}/status` | Admin |
+| `POST` | `/api/v1/webhooks/clerk` | Public; Svix signature required |
 
-### 9. Public contact (`/api/v1/contact`)
+## Contracts and Invariants
 
-| Method | Endpoint Route | Required Role | Summary Description |
-| :--- | :--- | :--- | :--- |
-| `POST` | `/api/v1/contact` | Public (Turnstile) | Deliver a website contact request through Resend |
+- Protected routes derive `organization_id` from the active membership.
+- The API does not accept a client-supplied tenant ID as authority.
+- The contact route returns `204` on accepted or honeypot submissions.
+- Production hides FastAPI documentation routes through settings.
 
-## Standard Request and Response Formats
-Requests and responses use JSON. Success responses serialize Pydantic schemas directly or wrap items in list envelopes.
+## States and Transitions
+
+Route-specific state values are defined by `backend/app/models.py` and `backend/app/schemas.py`.
+Do not infer state names from UI labels.
+
+## Failure Modes
+
+- `400`: domain or provider validation failure.
+- `401`: missing or invalid authentication or webhook signature.
+- `403`: insufficient capability or ownership.
+- `404`: tenant-scoped resource not found.
+- `409`: state or version conflict.
+- `413`: protected body exceeds its route limit.
+- `422`: invalid JSON or Pydantic payload.
+- `429`: rate limit exceeded.
+- `503`: provider or dependency unavailable.
+
+## Verification Procedure
+
+1. Start the API in `local` mode.
+2. Open `http://localhost:8000/docs`.
+3. Run endpoint tests with a dedicated test database.
+4. Run frontend feature tests against the route contracts.
 
 ## Source Map
-- Endpoint Routers: `backend/app/api/v1/endpoints/`
-- Schema Models: `backend/app/schemas.py`
+
+- Router assembly: `backend/app/api/api.py`
+- Endpoint source: `backend/app/api/v1/endpoints/`
+- Schemas: `backend/app/schemas.py`
+- API tests: `backend/tests/`
 
 ## Related Documents
+
 - [Backend Architecture](BACKEND_ARCHITECTURE.md)
 - [Errors and Transactions](ERRORS_AND_TRANSACTIONS.md)
-
-## Health Endpoints
-
-`GET /api/v1/health` is a constant response. `/health/ready` checks PostgreSQL and Redis and returns `503` when either dependency fails.

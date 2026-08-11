@@ -1,59 +1,83 @@
 # Members and Access
 
 ## Purpose
-This document details organization member management (`Equipa`), access roles, user capabilities, and Clerk synchronization.
+
+This document describes organization membership, capabilities, teacher profiles, and Clerk synchronization.
 
 ## Intended Reader
-This document targets backend and frontend developers implementing authorization logic.
+
+This document targets backend and frontend engineers implementing access control.
 
 ## Prerequisites
-Read [Data Model](../01_system_architecture/DATA_MODEL.md).
+
+Read [Security and Tenant Isolation](../08_security_quality/SECURITY_AND_TENANT_ISOLATION.md).
 
 ## What the System Does
-Cronos handles team access through organization memberships. Clerk supplies identity and organization context.
 
-## User Access Roles
+Clerk provides identity and organization membership.
+Cronos stores local membership state, capabilities, access mode, and teacher linkage.
 
-| Role | Interface View | Endpoint Capabilities |
-| :--- | :--- | :--- |
-| **`admin` capability** | Administrative application | Curriculum, members, settings, scheduler, occurrences, and timesheets |
-| **`teacher` capability** | Self-service application | Personal availability, progress, schedule, lesson logs, and week submission |
+## Why the Behavior Exists
 
-## Membership Lifecycle States
+Local state supports tenant queries, route guards, operational permissions, and recovery after provider synchronization failures.
 
-```mermaid
-stateDiagram-v2
-    [*] --> pending_invite : Admin sends invite
-    pending_invite --> active : Clerk membership reconciles
-    pending_invite --> invite_expired : Invitation expires
-    active --> blocked : Admin blocks access
-    blocked --> active : Admin restores access
-    active --> archived : Admin removes member
-```
+## Components and Ownership
 
-## Role Capabilities Table
+| Area | Implementation |
+| :--- | :--- |
+| Access models | `backend/app/models.py` |
+| Auth dependencies | `backend/app/api/deps.py` |
+| Member API | `backend/app/api/v1/endpoints/members.py` |
+| Clerk webhook | `backend/app/api/v1/endpoints/webhooks.py` |
+| Access operations | `backend/app/services/member_access_operation_service.py` |
+| Frontend guards | `frontend/src/routeGuards.jsx`, `frontend/src/roleAccess.js` |
 
-| Capability Identifier | Admin | Teacher | Description |
-| :--- | :--- | :--- | :--- |
-| `admin` | Yes | No | Pass administrative backend and frontend guards |
-| `teacher` | Optional | Yes | Access teacher routes when a linked teacher profile exists |
+## Data or Request Flow
+
+1. Clerk identifies the signed-in user and active organization.
+2. Cronos resolves the local membership inside that organization.
+3. The API checks active lifecycle and access status.
+4. Capability checks allow `admin` or `teacher` operations.
+5. Webhooks and member actions reconcile provider and local state.
 
 ## Contracts and Invariants
-- Every principal must have `lifecycle_status=active` and `access_status=active` for the Clerk organization.
-- One membership can hold both `admin` and `teacher` capabilities.
-- Teacher endpoints inspect user identity to prevent accessing unauthorized class data.
+
+- Active access requires `lifecycle_status=active` and `access_status=active`.
+- Capabilities are `admin` and `teacher`.
+- A teacher route requires a linked `teacher_id`.
+- A member can hold both capabilities.
+- `scheduler_only` teacher access does not imply platform login access.
+- Member operations record provider and local outcomes.
+
+## States and Transitions
+
+Lifecycle states are `active` and `archived`.
+Access states are `none`, `pending_invite`, `invite_expired`, `active`, `blocked`, and `sync_error`.
+Access operations use compensating states when provider and local commits diverge.
 
 ## Failure Modes
-- Insufficient Privileges: A teacher attempting administrative operations receives HTTP `403 Forbidden`.
+
+- Missing or invalid Clerk credentials return an authentication error.
+- An inactive or blocked membership cannot access tenant routes.
+- A teacher without a profile cannot access teacher routes.
+- A provider operation failure remains visible for retry or support.
 
 ## Verification Procedure
-Inspect `/members` view as administrator. Verify invitation buttons, member lists, and role badges.
+
+1. Open `/members` as an administrator.
+2. Create, resend, block, restore, or retry a member action.
+3. Verify the local status and operation record.
+4. Test a teacher-only account on `/my-schedules` and `/config`.
 
 ## Source Map
-- Role Dependency: `backend/app/api/deps.py` (`AdminActor`, capability helpers)
-- Member Router: `backend/app/api/v1/endpoints/members.py`
-- Frontend Guard: `frontend/src/routeGuards.jsx`
+
+- Models: `backend/app/models.py`
+- Dependencies: `backend/app/api/deps.py`
+- API: `backend/app/api/v1/endpoints/members.py`
+- Services: `backend/app/services/member_service.py`, `member_access_operation_service.py`
+- Tests: `backend/tests/test_members_api.py`, `test_webhooks.py`
 
 ## Related Documents
+
 - [Professional Education](PROFESSIONAL_EDUCATION.md)
-- [Security and Tenant Isolation](../08_security_quality/SECURITY_AND_TENANT_ISOLATION.md)
+- [Routes and Permissions](../06_frontend_ux/ROUTES_AND_PERMISSIONS.md)

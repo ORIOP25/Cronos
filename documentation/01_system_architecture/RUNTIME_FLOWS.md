@@ -1,66 +1,108 @@
 # Runtime Flows
 
 ## Purpose
-This document details execution flows for API requests, authentication checks, background solver jobs, and Clerk webhooks.
+
+This document describes authenticated requests, contact delivery, scheduler jobs, and Clerk webhook processing.
 
 ## Intended Reader
-This document targets backend developers and security engineers.
+
+This document targets backend engineers and security engineers.
 
 ## Prerequisites
-Read [System Architecture](SYSTEM_ARCHITECTURE.md).
+
+Read [System Architecture](SYSTEM_ARCHITECTURE.md) and [Backend Architecture](../05_backend_api/BACKEND_ARCHITECTURE.md).
 
 ## What the System Does
-Cronos handles HTTP requests synchronously while offloading schedule generation and heavy calculations to Celery workers.
 
-## Request Execution Flow
+FastAPI handles request validation and orchestration.
+Services perform database work.
+Celery handles generation and repair outside the request process.
 
-```mermaid
-sequenceDiagram
-    autonumber
-    participant Client as React Client
-    participant Auth as Auth Middleware
-    participant API as Endpoint Handler
-    participant DB as PostgreSQL DB
+## Why the Behavior Exists
 
-    Client->>Auth: HTTP Request + Bearer JWT
-    Auth->>Auth: Validate JWT & Claims
-    Auth->>DB: Resolve principal and set tenant session variable
-    Auth->>API: Inject UserContext & DBSession
-    API->>DB: Execute Query (RLS Enforced)
-    DB-->>API: Filtered Rows
-    API-->>Client: JSON Response Envelope
-```
+Explicit boundaries prevent provider adapters, authentication, and solver work from leaking into unrelated handlers.
 
-## Asynchronous Worker Flow
-1. An administrator requests schedule generation via `POST /api/v1/scheduler/generate`.
-2. The endpoint creates a `ScheduleGenerationJob` record with status `QUEUED`.
-3. FastAPI dispatches the task ID to the Redis queue.
-4. A Celery worker consumes the task, loads school constraints, and invokes OR-Tools CP-SAT.
-5. The worker stores an approvable `ScheduleDraft` and updates the job to `SUCCEEDED`.
-6. The frontend polls `GET /api/v1/scheduler/status` until job completion.
+## Components and Ownership
 
-## Clerk Webhook Flow
-1. Clerk issues HTTP `POST /api/v1/webhooks/clerk` on user or organization events.
-2. The endpoint verifies SVIX webhook signatures using `CLERK_WEBHOOK_SECRET`.
-3. The service stores each event by Svix ID and processes supported Clerk lifecycle events idempotently.
-4. The service reconciles user, organization, membership, invitation, and access state.
+| Flow | Implementation |
+| :--- | :--- |
+| Authentication and tenant context | `backend/app/api/deps.py`, `backend/app/db/tenant.py` |
+| Contact request | `backend/app/api/v1/endpoints/contact.py`, `backend/app/contact/` |
+| Scheduler job | `backend/app/api/v1/endpoints/scheduler.py`, `backend/app/scheduler_worker.py` |
+| Clerk webhook | `backend/app/api/v1/endpoints/webhooks.py`, `backend/app/services/member_webhook_service.py` |
+
+## Data or Request Flow
+
+### Authenticated API request
+
+1. The client sends a Clerk Bearer token.
+2. The API verifies the token and authorized party.
+3. The API resolves the local user and active membership.
+4. The database dependency sets `app.current_organization_id`.
+5. The handler calls a service and returns a response.
+
+### Public contact request
+
+1. The body limit middleware checks `POST /api/v1/contact`.
+2. Pydantic validates the `ContactSubmission` payload.
+3. The application service checks the honeypot.
+4. The Turnstile adapter validates `action` and `hostname`.
+5. The Resend adapter sends text and escaped HTML.
+
+### Scheduler request
+
+1. The admin endpoint selects the strategy from school-year state.
+2. The API records a `QUEUED` job and dispatches `scheduler.run_generation_job`.
+3. The worker creates an independent session and tenant context.
+4. The selected engine builds candidates and runs CP-SAT.
+5. The runtime stores a draft, diff data, and result category.
+
+### Clerk webhook
+
+1. Clerk sends `POST /api/v1/webhooks/clerk` with Svix headers.
+2. The endpoint verifies the signature and body size.
+3. The service stores the event by Svix ID.
+4. Reconciliation processes supported events idempotently.
 
 ## Contracts and Invariants
-- Webhook endpoints must verify SVIX signatures before processing payloads.
-- Background worker tasks must establish independent database sessions and set RLS tenant variables.
+
+- A worker task creates its own database session.
+- A webhook cannot process an invalid signature.
+- Contact delivery does not occur before Turnstile validation.
+- The contact service does not import FastAPI or provider clients.
+
+## States and Transitions
+
+Clerk webhook events use `received`, `processing`, `processed`, `ignored`, `retryable_failed`, `sync_error`, or `dead_letter`.
+
+Scheduler jobs use `QUEUED`, `RUNNING`, `CANCEL_REQUESTED`, `CANCELED`, `SUCCEEDED`, `FAILED`, or `NO_VALID_OUTPUT`.
 
 ## Failure Modes
-- Invalid Webhook Signature: Endpoint returns HTTP `400 Bad Request`.
-- Task Failure: The worker records a failure code and terminal job status.
+
+- Body size above 16 KiB returns `413` for the contact route.
+- Invalid Turnstile data returns `400`.
+- Provider timeout or provider failure returns `503`.
+- Invalid webhook signatures return `401`.
+- Worker failures remain visible in job fields and logs.
 
 ## Verification Procedure
-Trigger user creation in Clerk dev dashboard. Verify database row creation in `users` and `organization_memberships` tables.
+
+1. Run contact service tests without network access.
+2. Run webhook tests with signed fixtures.
+3. Run scheduler job runtime tests.
+4. Inspect health and worker tasks in the local stack.
 
 ## Source Map
-- Auth Dependencies: `backend/app/api/deps.py`
-- Webhook Endpoint: `backend/app/api/v1/endpoints/webhooks.py`
-- Celery Worker Tasks: `backend/app/scheduler_worker.py`, `backend/app/celery_worker.py`
+
+- `backend/app/middleware/request_body_limit.py`
+- `backend/app/contact/service.py`
+- `backend/app/contact/turnstile_verifier.py`
+- `backend/app/contact/resend_gateway.py`
+- `backend/app/api/v1/endpoints/webhooks.py`
+- `backend/app/scheduler_worker.py`
 
 ## Related Documents
+
 - [System Architecture](SYSTEM_ARCHITECTURE.md)
 - [API Reference](../05_backend_api/API_REFERENCE.md)
+- [Security and Tenant Isolation](../08_security_quality/SECURITY_AND_TENANT_ISOLATION.md)

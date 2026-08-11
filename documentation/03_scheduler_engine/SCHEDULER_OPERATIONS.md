@@ -13,13 +13,13 @@ Read [Scheduler Architecture](SCHEDULER_ARCHITECTURE.md).
 When disruptions occur during the academic year (e.g., long-term teacher sick leave), Cronos computes adaptive schedule repairs without discarding past execution history.
 
 ## Frozen Horizon Rules
-- **Frozen Horizon Window**: Past blocks and blocks before the configured editable start date are immutable.
+- **Frozen Horizon Window**: Past blocks and blocks before the computed editable start date are immutable.
 - Blocks with `COMPLETED` or `OCCURRENCE` lesson logs are immutable.
 - The solver cannot move, delete, or alter frozen schedule blocks.
 - Unexecuted future blocks beyond the frozen horizon can be re-allocated.
 
 ## Draft Diff Auditing
-Before approving a repair draft, administrators inspect statistical diffs via `GET /api/v1/scheduler/drafts/{id}/diff`:
+Before approving a repair draft, administrators inspect persisted diffs via `GET /api/v1/scheduler/drafts/{id}/diff`:
 
 ```text
 +--------------------------------------+--------------------+
@@ -41,8 +41,8 @@ The engine reports residual debt when a repair cannot recover all required minut
 | Failure Symptom | Cause | Recovery Action |
 | :--- | :--- | :--- |
 | **Job Status NO_VALID_OUTPUT** | Candidate or solve constraints block output | Inspect blocker metadata and recommended actions |
-| **High Backlog Hours** | Insufficient term calendar days | Extend school year end date in `/config` |
-| **Stuck Job Status** | Worker interruption | Request cancellation with `POST /scheduler/jobs/{id}/cancel` |
+| **High Backlog Hours** | Capacity cannot recover all debt | Review blockers, resources, and school-year dates |
+| **Stuck Job Status** | Worker interruption | Request cancellation with `POST /api/v1/scheduler/jobs/{id}/cancel` |
 
 ## Verification Procedure
 Run scheduler change, disruption, diff, and recovery tests from `backend/tests/`. Inspect one generated draft through the API.

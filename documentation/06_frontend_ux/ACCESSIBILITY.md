@@ -11,6 +11,7 @@ Read [Design System](DESIGN_SYSTEM.md).
 
 ## What the System Does
 Cronos implements accessibility patterns but does not claim repository-wide WCAG certification.
+The repository does not run an automated full-page WCAG audit in CI.
 
 ## Contrast Rules and Targets
 - **Normal Text**: Contrast ratio must exceed **4.5:1** against underlying background surface.
@@ -26,6 +27,7 @@ Cronos implements accessibility patterns but does not claim repository-wide WCAG
 | **Icon Buttons** | Screen reader labels | Buttons contain `aria-label` attributes |
 | **Form Fields** | Explicit label association | `<label htmlFor="id">` linked to matching input `id` |
 | **Schedule Grid** | Native interactive controls | `WeekGrid.jsx` places actionable content in buttons |
+| **Keyboard rows** | Enter and Space activation | `SmartTable.jsx` handles keyboard activation for clickable rows |
 
 ## Failure Modes
 - Regression Risk: CI runs component tests but no automated full-page WCAG or contrast audit.

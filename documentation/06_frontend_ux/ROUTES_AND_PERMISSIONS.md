@@ -37,12 +37,14 @@ Read [Members and Access](../02_domain_model/MEMBERS_AND_ACCESS.md).
 
 ## Route Guard Logic
 Routes use `<RequireAdmin>` and `<RequireTeacher>` capability guards:
-- A teacher without admin capability is redirected to `/my-availability` from administrative routes.
+- A member without admin capability is redirected to its default route from administrative routes.
 - A member needs the teacher capability and a linked `teacher_id` for teacher routes.
+- A member with both capabilities uses the admin default route.
 
 ## Contracts and Invariants
 - Signed-out users accessing protected routes are redirected to `/login`.
-- Inactive members are sent to `/create-org`; signed-in root visits use the membership default route.
+- A signed-in user without an active organization sees the organization selector or `/create-org`.
+- Signed-in root visits use `getDefaultRouteForMember`.
 
 ## Failure Modes
 - Route Not Found: Accessing invalid path renders `NotFoundPage.jsx` (404 view).

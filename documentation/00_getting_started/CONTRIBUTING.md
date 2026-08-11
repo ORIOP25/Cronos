@@ -45,6 +45,8 @@ Before pushing code, run the following verification pipeline:
    python -m scripts.audit_triggers
    python -m scripts.audit_database_integrity
    ```
+
+   Use the CI or maintenance container when local PostgreSQL is not configured for `cronos_migrator`.
 3. **Frontend Tests**:
    ```bash
    cd frontend

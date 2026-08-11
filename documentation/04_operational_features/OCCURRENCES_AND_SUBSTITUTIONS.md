@@ -1,64 +1,85 @@
 # Occurrences and Substitutions
 
 ## Purpose
-This document details occurrence state machines, teacher absence registration (*Faltas*), and substitute teacher recommendation logic (*Substituições*).
+
+This document describes absences (*Faltas*), occurrence revisions, and substitutions (*Substituições*).
 
 ## Intended Reader
-This document targets backend and frontend developers working on operational features.
+
+This document targets backend engineers, frontend engineers, and school administrators.
 
 ## Prerequisites
-Read [Lesson Execution](LESSON_EXECUTION.md).
+
+Read [Lesson Execution](LESSON_EXECUTION.md) and [Scheduler Operations](../03_scheduler_engine/SCHEDULER_OPERATIONS.md).
 
 ## What the System Does
-When a scheduled lesson does not proceed normally, Cronos creates a `LessonOccurrence` record. The occurrence categorizes the operational event and tracks replacement teachers or subjects.
 
-## Occurrence State Machine
+Cronos creates an occurrence from an active schedule block when a lesson needs an operational decision.
+An administrator can mark it given, gap, substituted, or revoked through versioned operations.
 
-```mermaid
-stateDiagram-v2
-    [*] --> OPEN_PENDING : Occurrence created
-    OPEN_PENDING --> GIVEN : Admin confirms planned lesson
-    OPEN_PENDING --> GAP : Admin confirms missed lesson
-    OPEN_PENDING --> SUBSTITUTED : Admin assigns alternate subject and teacher
-    GAP --> SUBSTITUTED : Admin revises decision
-    SUBSTITUTED --> GAP : Admin revises decision
-    OPEN_PENDING --> REVOKED : Admin cancels occurrence
-```
+## Why the Behavior Exists
 
-## Occurrence Status Descriptions
+Occurrence revisions preserve the original planned block and the latest decision.
+Operational blocks separate cover work from the curriculum schedule.
 
-| Status | Description | Impact on Credit Hours |
-| :--- | :--- | :--- |
-| `OPEN_PENDING` | Occurrence awaits an administrative decision | None |
-| `GIVEN` | Lesson completed by assigned teacher | Credit Granted |
-| `GAP` | Lesson missed due to absence (*Falta*) | Credit Lost (Creates Debt) |
-| `SUBSTITUTED` | Alternate teacher and subject receive an operational block | Planned subject debt remains |
-| `REVOKED` | Occurrence history was canceled through a revision | Reversed |
+## Components and Ownership
 
-## Substitute Recommendation Algorithm
-When an absence occurs, the system evaluates available replacement teachers via `GET /api/v1/occurrences/{id}/substitutes/recommendations`:
+| Responsibility | Implementation |
+| :--- | :--- |
+| API | `backend/app/api/v1/endpoints/occurrences.py` |
+| Domain service | `backend/app/services/occurrence_service.py` |
+| Recovery service | `backend/app/services/scheduler_recovery_service.py` |
+| Models | `LessonOccurrence`, `OperationalScheduleBlock` |
+| UI | `frontend/src/pages/Occurrences.jsx` |
 
-1. **Class Assignment**: Candidate must teach a different subject in the same class and grade.
-2. **Room and Availability**: Room type must match; availability cannot be `IMPOSSIBLE`.
-3. **Conflict Filter**: Candidate must have no active or operational block in the slot.
-4. **Ranking**: Prefer fewer recent substitutions, lower daily load, and longer time since last cover.
+## Data or Request Flow
+
+1. An administrator creates an occurrence from an active block.
+2. The API stores an open, versioned occurrence.
+3. The administrator chooses `GIVEN`, `GAP`, or `SUBSTITUTED`.
+4. Substitution requires a linked teacher and subject.
+5. The service creates or updates an operational block.
+6. Recovery and progress services record the resulting minutes.
 
 ## Contracts and Invariants
-- Assigning a substitute requires a different teacher and subject already linked to the class.
-- The system creates an `OperationalScheduleBlock` for the substitute.
-- A substitute teacher gains permission to log that operational block.
+
+- The API state is `OPEN_PENDING`, `DECIDED_GIVEN`, `DECIDED_GAP`, `DECIDED_SUBSTITUTED`, or `REVOKED`.
+- The database status values are `GIVEN`, `GAP`, `SUBSTITUTED`, and `REVOKED`.
+- A normal update cannot submit `REVOKED`; use the cancel endpoint.
+- A substituted decision requires both substitute IDs.
+- A decision includes the expected occurrence version.
+- A substitute block uses the occurrence revision that created it.
+
+## States and Transitions
+
+`OPEN_PENDING` -> `DECIDED_GIVEN`, `DECIDED_GAP`, `DECIDED_SUBSTITUTED`, or `REVOKED`.
+The API can revise a decided occurrence while the revision remains active.
 
 ## Failure Modes
-- No Available Substitutes: Endpoint returns empty recommendations list. Administrator must schedule an adaptive repair.
+
+- A stale version returns a conflict.
+- An invalid substitute returns a validation error.
+- No eligible substitute returns an empty recommendation list.
+- A duplicate active occurrence is rejected or reused by service rules.
 
 ## Verification Procedure
-Navigate to `/occurrences`. Select an absence block, click **Find Substitutes**, select a qualified teacher, and click **Assign Cover**.
+
+1. Open `/absences` as an administrator.
+2. Create an occurrence from a block.
+3. Inspect recommendations.
+4. Decide `GAP` or `SUBSTITUTED`.
+5. Verify the active revision and operational block.
 
 ## Source Map
-- Occurrence Router: `backend/app/api/v1/endpoints/occurrences.py`
-- Occurrence and Recommendation Service: `backend/app/services/occurrence_service.py`
-- Frontend Page: `frontend/src/pages/Occurrences.jsx`
+
+- `backend/app/api/v1/endpoints/occurrences.py`
+- `backend/app/services/occurrence_service.py`
+- `backend/app/services/scheduler_recovery_service.py`
+- `backend/app/models.py`
+- `frontend/src/pages/Occurrences.jsx`
+- Tests: `backend/tests/test_debt_basis_fingerprint.py`, `backend/tests/test_scheduler_disruption.py`
 
 ## Related Documents
+
 - [Lesson Execution](LESSON_EXECUTION.md)
 - [Scheduler Operations](../03_scheduler_engine/SCHEDULER_OPERATIONS.md)

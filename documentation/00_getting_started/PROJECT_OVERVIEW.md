@@ -1,67 +1,92 @@
 # Project Overview
 
 ## Purpose
-This document provides an overview of the Cronos software platform. It outlines the core problem, business goals, and supported user profiles.
+
+This document summarizes the current Cronos platform, its runtime components, and its primary workflows.
 
 ## Intended Reader
-This document targets new developers, technical architects, and product managers.
+
+This document targets new developers, architects, product specialists, and release engineers.
 
 ## Prerequisites
-No prior codebase knowledge is required.
+
+No previous repository knowledge is required.
 
 ## What the System Does
-Cronos is a Software-as-a-Service (SaaS) platform designed for Portuguese Professional Education (*Ensino Profissional*). The application manages school structures, course modules, teacher availability, automated schedule generation, lesson execution logs (*Sumários*), teacher absences (*Faltas*), and cover arrangements (*Substituições*).
 
-Cronos is a dynamic operational system. It plans initial schedules, tracks real-world execution, and calculates schedule repairs when disruptions occur.
+Cronos supports Portuguese Professional Education (*Ensino Profissional*).
+It manages curriculum, teacher availability, schedules, lesson logs (*Sumários*), absences (*Faltas*), substitutions (*Substituições*), progress, and timesheets.
+
+The application uses one React SPA, one FastAPI API, PostgreSQL, Redis, and Celery processes.
 
 ## Why the Behavior Exists
-Professional education in Portugal operates under non-linear course structures. Courses contain multiple independent modules (*Módulos*). Each module requires a specific number of instructional hours. Static annual calendars cannot accommodate modular execution rates or frequent teacher absences. Cronos automates schedule generation and execution tracking to guarantee compliance with educational regulations.
+
+Courses contain ordered modules (*Módulos*) with required instructional minutes.
+Schedules must account for resource conflicts, availability, calendar events, execution history, and recovery work.
 
 ## Components and Ownership
 
-| Component | Responsibility | Tech Stack |
+| Component | Responsibility | Technology |
 | :--- | :--- | :--- |
-| **Backend API** | Business logic, endpoints, database management | Python 3.12, FastAPI, Async SQLAlchemy |
-| **Frontend UI** | User web interface, interactive grids | React 19, Vite, CoreUI, React Query |
-| **Scheduler Engine** | Complete generation and adaptive schedule repair | Google OR-Tools CP-SAT |
-| **Worker Queue** | Asynchronous generation and repair jobs | Redis 7, Celery |
-| **Database** | Persistent data storage and tenant isolation | PostgreSQL 16 (forced RLS) |
-| **Authentication** | User identity, organizations, and RBAC | Clerk Authentication |
+| Backend API | HTTP, authentication, domain services, persistence | Python 3.12, FastAPI, Async SQLAlchemy |
+| Frontend | Public site, authenticated UI, client state | React 19, Vite 8, CoreUI, TanStack Query |
+| Scheduler | Complete generation and adaptive repair | Google OR-Tools CP-SAT |
+| Worker | Background generation jobs | Celery and Redis |
+| Beat | Hourly member reconciliation | Celery Beat and Redis |
+| Database | Tenant data, RLS, audit records | PostgreSQL 16 |
+| Identity | Users, organizations, roles, webhooks | Clerk |
 
 ## Data or Request Flow
-1. School administrators log into Cronos and configure school parameters.
-2. Administrators invite staff members through the team view (`Equipa`).
-3. Teachers record timeslot preferences through the self-service portal.
-4. Administrators trigger full schedule generation.
-5. The scheduler worker computes optimal timetable slots using OR-Tools CP-SAT.
-6. Administrators review and approve schedule drafts.
-7. Teachers complete lesson logs or report lesson occurrences.
-8. The engine computes adaptive schedule repairs when required.
+
+1. An administrator configures the school year, grid, rooms, curriculum, and staff.
+2. A teacher manages availability and views assigned schedule blocks.
+3. An administrator starts complete generation or adaptive repair.
+4. The API creates a job and dispatches `scheduler.run_generation_job`.
+5. The worker computes a bounded result and stores a schedule draft.
+6. An administrator reviews the draft and approves or rejects it.
+7. Teachers record `COMPLETED` or `OCCURRENCE` lesson logs.
+8. Administrators decide occurrences and review debt, recovery, progress, and timesheets.
 
 ## Contracts and Invariants
-- Each school operates inside an isolated organization tenant (`organization_id`).
-- Teachers do not have direct access to administrative routes.
-- The scheduler prevents class, teacher, and room overlap for selected schedule blocks.
+
+- Tenant-owned data uses `organization_id` and forced PostgreSQL RLS.
+- The application role uses `NOBYPASSRLS`; the migration role is separate.
+- Administrative routes require the `admin` capability.
+- Teacher routes require the `teacher` capability and a linked teacher profile.
+- Generation prevents class, teacher, and room overlap.
 
 ## States and Transitions
-- **School Year Publication**: `UNPUBLISHED` -> `PUBLISHED`.
-- **Generation Job**: `QUEUED` -> `RUNNING` -> `SUCCEEDED`, `FAILED`, `NO_VALID_OUTPUT`, or `CANCELED`.
-- **Schedule Draft**: `PENDING` -> `APPROVED`, `REJECTED`, `REPLACED`, `STALE`, or `INVALIDATED`.
+
+- School year: `UNPUBLISHED` -> `PUBLISHED`.
+- Job: `QUEUED` -> `RUNNING` -> `SUCCEEDED`, `FAILED`, `NO_VALID_OUTPUT`, or `CANCELED`.
+- Draft: `PENDING` -> `APPROVED`, `REJECTED`, `REPLACED`, `STALE`, or `INVALIDATED`.
+- Timesheet: `OPEN` -> `SUBMITTED` -> `APPROVED`; approval can return to `OPEN`.
 
 ## Failure Modes
-- **Authentication Failure**: Invalid Clerk JWT results in HTTP `401 Unauthorized`.
-- **Tenant Context Missing**: Forced RLS hides tenant rows and rejects writes outside the active tenant.
-- **No Valid Output**: The job records `NO_VALID_OUTPUT` when generation cannot produce an approvable draft.
+
+- Invalid Clerk credentials return an authentication error.
+- Missing tenant context prevents access to tenant rows.
+- A missing Redis or PostgreSQL dependency makes readiness fail.
+- A blocked solve records `NO_VALID_OUTPUT` or `FAILED` with diagnostic fields.
 
 ## Verification Procedure
-Run the production-like Docker environment and access `http://localhost:8080`. Verify `/health/ready` before login.
+
+1. Copy the root environment example.
+2. Provision database roles with the maintenance profile.
+3. Apply migrations with the maintenance profile.
+4. Start the stack and verify `/health/live` and `/health/ready`.
 
 ## Source Map
-- Backend Core: `backend/app/main.py`
-- Frontend App Entry: `frontend/src/App.jsx`
-- Database Models: `backend/app/models.py`
-- Scheduler Services: `backend/app/services/scheduler_*`
+
+- Backend entry: `backend/app/main.py`
+- Frontend entry: `frontend/src/main.jsx`
+- Route definitions: `frontend/src/App.jsx`
+- Models: `backend/app/models.py`
+- Scheduler services: `backend/app/services/scheduler_*.py`
+- Local runtime: `docker-compose.yml`
 
 ## Related Documents
+
+- [Repository Map](REPOSITORY_MAP.md)
 - [System Architecture](../01_system_architecture/SYSTEM_ARCHITECTURE.md)
 - [Glossary](GLOSSARY.md)

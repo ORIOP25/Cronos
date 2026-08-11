@@ -1,53 +1,90 @@
 # Observability and Recovery
 
 ## Purpose
-This document specifies health monitoring metrics, Celery queue alerts, log formatting, and incident recovery runbooks.
+
+This document describes health signals, structured logs, scheduler telemetry, and recovery actions.
 
 ## Intended Reader
-This document targets site reliability engineers and backend support engineers.
+
+This document targets operators, backend support engineers, and release engineers.
 
 ## Prerequisites
-Read [Local Runtime](LOCAL_RUNTIME.md).
+
+Read [Local Runtime](LOCAL_RUNTIME.md) and [Testing and CI](../08_security_quality/TESTING_AND_CI.md).
 
 ## What the System Does
-Cronos exposes health endpoints, structured logs, optional Sentry reporting, and persisted scheduler and teacher endpoint telemetry.
 
-## Health Metrics and Alert Thresholds
+The API exposes liveness and readiness.
+The backend emits structured logs and optional Sentry events.
+Scheduler, occurrence, and teacher endpoints store operational telemetry.
 
-| Signal | Source | Repository Threshold | Action on Failure |
-| :--- | :--- | :--- | :--- |
-| **Liveness** | `GET /health/live` | HTTP `200` | Restart the backend process if unavailable |
-| **Readiness** | `GET /health/ready` | HTTP `200`; otherwise `503` | Inspect PostgreSQL and Redis connectivity |
-| **Scheduler Jobs** | Job status, duration, failure fields | Terminal status required | Inspect failure code, message, and worker logs |
-| **Teacher Endpoints** | Persisted endpoint event summary | API returns alerts from stored policy | Inspect endpoint status and latency samples |
-| **Application Errors** | Structured logs and optional Sentry | No static alert threshold in repository | Correlate request path and exception type |
+## Why the Behavior Exists
 
-## Incident Recovery Runbooks
+Health endpoints separate process availability from dependency readiness.
+Persisted event summaries support tenant-scoped operational review without logging request PII.
 
-### Runbook 1: Backend CI Failure Recovery
-1. Pull target branch and run local backend test suite: `pytest tests/ -v`.
-2. Inspect failure stack trace. If database error occurs, verify local test database URL.
-3. Check Alembic migration status: `docker compose --profile maintenance run --rm db-maintenance alembic check`. This uses the privileged migrator role.
-4. If schema drift exists, create missing migration revision.
+## Components and Ownership
 
-### Runbook 2: Stuck Scheduler Celery Worker
-1. Inspect current state with `GET /api/v1/scheduler/status` and one job with `/jobs/{id}`.
-2. Send cancellation request for hung task: `POST /api/v1/scheduler/jobs/{id}/cancel`.
-3. Restart the worker container: `docker compose restart worker`.
+| Signal | Source |
+| :--- | :--- |
+| Liveness | `backend/app/main.py` (`/health/live`) |
+| Readiness | `backend/app/main.py`, `backend/app/api/v1/endpoints/health.py` |
+| Structured logging | `backend/app/core/logging.py` |
+| Scheduler telemetry | `backend/app/services/scheduler_observability.py` |
+| Occurrence telemetry | `backend/app/models.py`, `occurrence_service.py` |
+| Teacher telemetry | `backend/app/services/teacher_observability_service.py` |
+| Integrity audits | `backend/scripts/audit_triggers.py`, `audit_database_integrity.py` |
 
-### Runbook 3: Database Trigger / Integrity Failure
-1. Execute database trigger audit script: `python backend/scripts/audit_triggers.py`.
-2. From `backend/`, execute `python -m scripts.audit_database_integrity`.
-3. Apply migration repair scripts if corrupt state is detected.
+## Data or Request Flow
+
+1. A monitor calls `/health/live`.
+2. A readiness check queries PostgreSQL and Redis.
+3. Services record scheduler, occurrence, or teacher operational events.
+4. Operators inspect logs, job fields, and event summaries.
+5. Operators use the recovery procedure for the affected component.
+
+## Contracts and Invariants
+
+- Liveness returns `200` when the process handles requests.
+- Readiness returns `503` when PostgreSQL or Redis is unavailable.
+- Scheduler jobs expose terminal status, failure code, and duration fields.
+- Logs must not contain contact form PII or provider secrets.
+- Database audits run with the migrator role.
+
+## States and Transitions
+
+Jobs move from queued or running states to success, cancellation, no-valid-output, or failure.
+Provider and webhook states remain queryable through their persisted status fields.
+
+## Failure Modes and Recovery
+
+| Symptom | Action |
+| :--- | :--- |
+| Liveness fails | Inspect API process and restart the API service. |
+| Readiness returns `503` | Check PostgreSQL and Redis connectivity. |
+| Job remains active | Inspect job fields, request cancellation, and inspect worker logs. |
+| Worker task is missing | Inspect Celery registration and worker command. |
+| Migration or trigger audit fails | Stop release, inspect migration state, and restore from verified backup if required. |
 
 ## Verification Procedure
-From `backend/`, execute both `python -m scripts.audit_triggers` and `python -m scripts.audit_database_integrity`.
+
+1. Query both health endpoints.
+2. Inspect worker tasks with Celery inspect.
+3. Run `python -m scripts.audit_triggers` from `backend/`.
+4. Run `python -m scripts.audit_database_integrity` from `backend/`.
+5. Record incident evidence before changing data.
 
 ## Source Map
-- Audit Scripts: `backend/scripts/audit_triggers.py`, `backend/scripts/audit_database_integrity.py`
-- Health Implementation: `backend/app/api/v1/endpoints/health.py`
-- Scheduler Telemetry: `backend/app/services/scheduler_observability.py`
+
+- `backend/app/main.py`
+- `backend/app/api/v1/endpoints/health.py`
+- `backend/app/services/scheduler_observability.py`
+- `backend/app/services/teacher_observability_service.py`
+- `backend/scripts/audit_triggers.py`
+- `backend/scripts/audit_database_integrity.py`
 
 ## Related Documents
+
 - [Local Runtime](LOCAL_RUNTIME.md)
-- [Testing and CI](../08_security_quality/TESTING_AND_CI.md)
+- [Deployment Runbook](DEPLOYMENT_RUNBOOK.md)
+- [Security and Tenant Isolation](../08_security_quality/SECURITY_AND_TENANT_ISOLATION.md)

@@ -11,9 +11,9 @@ Read [Frontend Architecture](FRONTEND_ARCHITECTURE.md).
 
 ## Aesthetic Foundation: The 60-30-10 Color Rule
 Cronos employs a warm, authoritative visual identity designed for educational trust and operational clarity:
-- **60% Dominant Base Surfaces**: Light Yellow (`#fef9e7`) and white surfaces.
-- **30% Structural Navigation**: Dark Brown (`#3b2415`).
-- **10% Action Accents**: Amber Gold (`#d4940b`).
+- **60% Dominant Base Surfaces**: Warm light surfaces, including `#fef9e7`.
+- **30% Structural Navigation**: Deep brown, including `#3b2415`.
+- **10% Action Accents**: Amber gold, including `#d4940b`.
 
 ## Color Palette Tokens Table
 
@@ -32,7 +32,7 @@ Cronos employs a warm, authoritative visual identity designed for educational tr
 - **Body & UI Controls**: `Outfit` (Clean Geometric Sans-Serif, maximum legibility).
 
 ## Marketing Landing Page Aesthetics & Performance
-- **CSS Namespace**: Marketing components primarily use `cronos-*` scoped CSS classes.
+- **CSS Namespace**: Marketing components use the `.cronos-marketing` root and `cronos-*` classes.
 - **Asset Standards**: Image graphics must use `<picture>` elements with WebP formats (`.webp`), fallback PNG/JPG formats, explicit width/height parameters, and `decoding="async"`.
 - **Motion & Hardware Acceleration**: Continuous CSS marquees must use GPU compositing transforms (`translate3d`), pause on hover, and respect `@media (prefers-reduced-motion: reduce)`.
 - **Layer Isolation**: Fixed elements with backdrop blur (`.cronos-header`) use composite layer isolation (`isolation: isolate; contain: layout style;`).
@@ -45,8 +45,9 @@ The repository maintains visual snapshot baselines under `documentation/06_front
 *Note: Visual snapshots serve as design review evidence and baseline references.*
 
 ## Contracts and Invariants
-- Authenticated application styling centralizes tokens in `frontend/src/index.css`.
+- Authenticated application tokens live in `frontend/src/index.css`.
 - Marketing-specific tokens live in `frontend/src/pages/MarketingSite.css`.
+- The implementation contains semantic state tokens for given, gap, substituted, and open states.
 - JSX can use inline layout styles, but colors should reference CSS variables.
 
 ## Verification Procedure

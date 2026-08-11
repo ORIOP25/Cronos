@@ -26,7 +26,8 @@ Execute backend tests against a dedicated test database:
 
 ```powershell
 $env:ENVIRONMENT='local'
-$env:DATABASE_URL='postgresql+asyncpg://postgres:ci_pg_pass@localhost:55432/cronos_test_db'
+$env:TEST_DATABASE_URL='postgresql+asyncpg://cronos_app:app-ci@localhost:5432/cronos_test_db'
+$env:DATABASE_URL=$env:TEST_DATABASE_URL
 $env:DATABASE_POOLING_ENABLED='false'
 $env:SECRET_KEY='local-test-secret'
 $env:RATELIMIT_ENABLED='false'
@@ -41,10 +42,13 @@ Run these verification commands before marking backend changes healthy:
 docker compose -f ../docker-compose.yml -f ../docker-compose.dev.yml --profile maintenance run --rm db-maintenance
 # Drift check uses the privileged cronos_migrator role. Do not run bare host-side alembic check.
 docker compose -f ../docker-compose.yml -f ../docker-compose.dev.yml --profile maintenance run --rm db-maintenance alembic check
-python scripts/audit_triggers.py
+python -m scripts.audit_triggers
 python -m scripts.audit_database_integrity
 ruff check app scripts
 ```
+
+Run migrations with the privileged `cronos_migrator` role. Run application tests
+with a database name containing `test` or `ci`.
 
 ## Coverage Requirements
 

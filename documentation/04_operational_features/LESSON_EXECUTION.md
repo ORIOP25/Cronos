@@ -1,62 +1,86 @@
 # Lesson Execution
 
 ## Purpose
-This document specifies the operational workflow for entering lesson logs (*Sumários*), tracking attendance, and updating module progress.
+
+This document describes lesson logs (*Sumários*) for active and operational schedule blocks.
 
 ## Intended Reader
-This document targets frontend and backend engineers maintaining lesson logging features.
+
+This document targets frontend and backend engineers.
 
 ## Prerequisites
-Read [Professional Education](../02_domain_model/PROFESSIONAL_EDUCATION.md).
+
+Read [Professional Education](../02_domain_model/PROFESSIONAL_EDUCATION.md) and [Routes and Permissions](../06_frontend_ux/ROUTES_AND_PERMISSIONS.md).
 
 ## What the System Does
-Teachers set execution status for active or operational blocks. They can add an optional summary and notes.
 
-## Lesson Execution Workflow
+Teachers and administrators record execution status, summary text, and notes.
+The API stores one lesson log for the block target and updates progress evidence through services.
 
-```mermaid
-sequenceDiagram
-    autonumber
-    actor Teacher
-    participant FE as React UI
-    participant BE as FastAPI API
-    participant DB as PostgreSQL DB
+## Why the Behavior Exists
 
-    Teacher->>FE: Open Dashboard & Select Active Block
-    Teacher->>FE: Select Status, Enter Summary and Notes
-    Teacher->>FE: Click Guardar Sumário
-    FE->>BE: PUT /api/v1/schedule/active-blocks/{id}/log
-    BE->>DB: Upsert LessonLog Row
-    BE->>DB: Append ProgressLedgerEntry when status changes
-    BE-->>FE: Return LessonLog
-```
+The planned block and execution record have different meanings.
+Separating them preserves schedule history and supports occurrence decisions.
 
-## Lesson Log Fields Table
+## Components and Ownership
 
-| Field Name | Type | Constraints | Description |
-| :--- | :--- | :--- | :--- |
-| `status` | Enum | `PENDING`, `COMPLETED`, or `OCCURRENCE` | Execution decision for the block |
-| `summary` | String | Optional, max 2000 chars | Text describing topics taught |
-| `notes` | String | Optional, max 1000 chars | Free operational notes |
+| Responsibility | Implementation |
+| :--- | :--- |
+| API | `backend/app/api/v1/endpoints/schedule.py` |
+| Service | `backend/app/services/lesson_log_service.py` |
+| Models | `backend/app/models.py` (`LessonLog`, `ProgressLedgerEntry`) |
+| UI | `frontend/src/components/LessonLogModal.jsx`, `frontend/src/components/WeekGrid.jsx` |
+
+## Data or Request Flow
+
+1. The teacher opens `/my-schedules`.
+2. The frontend loads `/api/v1/schedule/week`.
+3. The teacher selects an eligible block.
+4. The frontend sends a `PUT` request to the active or operational block log endpoint.
+5. The service validates ownership, week state, and time rules.
+6. The service stores the log and related ledger changes.
+
+The endpoints are `/api/v1/schedule/active-blocks/{id}/log` and `/api/v1/schedule/operational-blocks/{id}/log`.
 
 ## Contracts and Invariants
-- Admins can edit published block logs. Teachers can edit only their assigned published or operational blocks.
-- A `COMPLETED` log credits the block duration to the active module.
-- An `OCCURRENCE` log creates or reuses an open occurrence for an active block.
-- Submitted and approved weeks block later log edits.
+
+- Lesson log status is `PENDING`, `COMPLETED`, or `OCCURRENCE`.
+- Summary text has a maximum length of 2,000 characters.
+- Notes have a maximum length of 1,000 characters.
+- Teachers can edit only blocks assigned to their linked profile.
+- Administrators can edit tenant blocks.
+- Submitted or approved weekly timesheets block later edits.
+
+## States and Transitions
+
+`PENDING` -> `COMPLETED` or `OCCURRENCE`.
+An occurrence log creates or reuses an active occurrence.
+A completed log credits the executed block through the progress service.
 
 ## Failure Modes
-- Future Lesson: The API rejects `COMPLETED` before the timeslot ends.
-- Active Occurrence Conflict: The API rejects completion while a decided occurrence exists.
+
+- A future block cannot be marked completed before its timeslot ends.
+- A teacher cannot update another teacher's block.
+- An inactive block returns not found.
+- A closed week rejects changes.
 
 ## Verification Procedure
-Log in with a linked teacher profile. Open `/my-schedules`, complete a past block, and verify its `COMPLETED` log.
+
+1. Sign in with a linked teacher.
+2. Open `/my-schedules`.
+3. Open an eligible past block.
+4. Save `COMPLETED` with a summary.
+5. Verify the log and progress response.
 
 ## Source Map
-- Router: `backend/app/api/v1/endpoints/schedule.py`
-- Service: `backend/app/services/lesson_log_service.py`
-- Component: `frontend/src/components/LessonLogModal.jsx`
+
+- `backend/app/api/v1/endpoints/schedule.py`
+- `backend/app/services/lesson_log_service.py`
+- `backend/app/models.py`
+- `frontend/src/components/LessonLogModal.jsx`
+- Tests: `frontend/src/test/MySchedules.test.jsx`, `frontend/src/test/WeekGrid.test.jsx`, `frontend/src/test/weekSubmission.test.js`
 
 ## Related Documents
+
 - [Occurrences and Substitutions](OCCURRENCES_AND_SUBSTITUTIONS.md)
 - [Timesheets and Progress](TIMESHEETS_AND_PROGRESS.md)

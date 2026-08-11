@@ -1,60 +1,87 @@
 # School Configuration
 
 ## Purpose
-This document specifies school parameters, shift configurations, slot definitions, room categories, and calendar events.
+
+This document describes school-year settings, lunch rules, calendar events, rooms, and timeslot generation.
 
 ## Intended Reader
-This document targets backend developers and UI engineers working on configuration features.
+
+This document targets backend engineers and frontend engineers maintaining configuration features.
 
 ## Prerequisites
-Read [Data Model](../01_system_architecture/DATA_MODEL.md).
+
+Read [Data Model](../01_system_architecture/DATA_MODEL.md) and [Scheduler Behavior](../03_scheduler_engine/SCHEDULER_BEHAVIOR.md).
 
 ## What the System Does
-Administrators configure school operational boundaries through the **Configuração da Escola** section (`/config`). These parameters dictate scheduler constraints.
 
-## Configuration Parameters Table
+Administrators configure dates, repair stability, lunch rules, calendar events, rooms, and the weekly timeslot grid.
 
-| Setting | Type | Example | Purpose |
-| :--- | :--- | :--- | :--- |
-| **School Start Date** | Date | `2025-09-15` | First instructional date |
-| **Hard End Date** | Date | `2026-07-31` | Last date available to the scheduler |
-| **Repair Stability Window** | Integer | `14` days | Future interval protected during repair |
-| **Grid Window** | Time range | `08:30`-`18:30` | Bounds for generated timeslots |
-| **Slot and Break Duration** | Integer | `50` / `10` minutes | Generated lesson and break lengths |
-| **Lunch Window** | Time range | `12:00`-`14:00` | Required lunch-break search window |
+The scheduler reads these values during preflight and generation.
 
-## Room Categories and Specifications
-Rooms (`Room`) have types (`RoomType`):
-- `normal`: Standard theoretical classroom.
-- `lab`: Computer lab or technical workshop.
-- `gym`: Physical education sports facility.
-- `art`: Art room.
+## Why the Behavior Exists
 
-Each subject specifies a required room type. A `specific_room` constraint can restrict a class and subject.
+The configuration defines the legal planning interval and available resources for each organization.
+State-version events detect changes that can invalidate a published schedule.
 
-## Calendar Events and Holidays
-School calendar events (`SchoolCalendarEvent`) represent non-instructional days:
-- National Holidays
-- School Breaks / Vacations
-- Exam Periods and Other Events
+## Components and Ownership
 
-The scheduler ignores calendar holiday slots during timetable generation.
+| Area | Implementation |
+| :--- | :--- |
+| School settings | `organization_settings`, `backend/app/services/settings_service.py` |
+| Grid settings | `organization_grid_settings`, `backend/app/api/v1/endpoints/org_settings.py` |
+| Calendar events | `school_calendar_event`, `org_settings.py` |
+| Rooms | `backend/app/api/v1/endpoints/rooms.py` |
+| Timeslots | `backend/app/api/v1/endpoints/timeslots.py` |
+| Configuration UI | `frontend/src/pages/SchoolConfig.jsx` |
+
+## Data or Request Flow
+
+1. An administrator opens `/config`.
+2. The frontend reads school, grid, calendar, room, and timeslot data.
+3. The administrator changes a validated value.
+4. The API persists the value and records scheduler impact.
+5. Grid regeneration replaces timeslots atomically when preflight permits it.
 
 ## Contracts and Invariants
-- Grid regeneration is blocked after publication or while protected scheduler data exists.
-- Settings, grid, and calendar changes record scheduler state-version events.
+
+- `school_hard_end_date` cannot precede `school_start_date`.
+- `repair_stability_window_days` cannot be negative.
+- Lunch start and end must appear together.
+- Lunch end must follow lunch start.
+- Lunch minimum duration cannot exceed the configured window.
+- Room types are `normal`, `lab`, `gym`, or `art`.
+- Calendar events use `national_holiday`, `school_break`, `exam_period`, or `other`.
+
+## States and Transitions
+
+Configuration changes produce scheduler state scopes: `FUTURE_IMPACTING`, `PAST_ONLY`, `NO_OP`, or `INACTIVE_RESOURCE`.
+Grid replacement is blocked when scheduler lifecycle rules do not permit it.
 
 ## Failure Modes
-- Invalid Grid Configuration: An invalid time range or lunch window returns HTTP `422 Unprocessable Entity`.
+
+- Invalid date or lunch payload returns `422`.
+- A protected grid cannot regenerate.
+- A missing hard end date blocks scheduler preflight.
+- A room or timeslot outside the tenant is rejected.
 
 ## Verification Procedure
-Navigate to `/config`. Update shift duration or add a holiday event. Verify configuration persistence.
+
+1. Open `/config` as an administrator.
+2. Save valid school dates and lunch settings.
+3. Add a calendar event.
+4. Regenerate the grid only when preflight allows it.
+5. Run configuration and scheduler preflight tests.
 
 ## Source Map
-- Settings Router: `backend/app/api/v1/endpoints/org_settings.py` under `/api/v1/school`
-- Rooms Router: `backend/app/api/v1/endpoints/rooms.py`
-- Frontend Page: `frontend/src/pages/SchoolConfig.jsx`
+
+- Models: `backend/app/models.py`
+- Schemas: `backend/app/schemas.py`
+- Settings router: `backend/app/api/v1/endpoints/org_settings.py`
+- Room router: `backend/app/api/v1/endpoints/rooms.py`
+- Timeslot router: `backend/app/api/v1/endpoints/timeslots.py`
+- Tests: `backend/tests/test_org_settings_endpoints.py`, `test_timeslots_crud.py`
 
 ## Related Documents
+
 - [Professional Education](PROFESSIONAL_EDUCATION.md)
-- [Scheduler Architecture](../03_scheduler_engine/SCHEDULER_ARCHITECTURE.md)
+- [Scheduler Operations](../03_scheduler_engine/SCHEDULER_OPERATIONS.md)

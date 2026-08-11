@@ -8,7 +8,7 @@ Cronos is a Software-as-a-Service (SaaS) platform for course scheduling and oper
 | :--- | :--- |
 | **Backend API** | Python 3.12, FastAPI, Async SQLAlchemy, Pydantic v2, Celery |
 | **Frontend UI** | React 19, Vite 8, CoreUI, React Query, Clerk Auth |
-| **Database** | PostgreSQL 15 (Local) / PostgreSQL 16 (CI) with Row-Level Security |
+| **Database** | PostgreSQL 16 with forced Row-Level Security |
 | **Cache / Queue** | Redis 7 |
 | **Scheduler Engine** | Google OR-Tools CP-SAT (Solver V2 Engine) |
 
@@ -39,15 +39,18 @@ Cronos is a Software-as-a-Service (SaaS) platform for course scheduling and oper
    docker compose up -d --build
    ```
 
-5. **Seed realistic test data**:
+5. **Seed realistic test data from the backend workspace**:
    ```bash
-   docker compose exec backend python scripts/seed.py --scenario small-realistic
+   cd backend
+   python seed_data.py
    ```
 
 6. **Access application services**:
    - Frontend Application: `http://localhost:8080`
-   - Backend API Documentation: `http://localhost:8000/docs`
-   - Health Check Endpoint: `http://localhost:8000/api/v1/health`
+   - Backend API documentation: `http://localhost:8000/docs` in `local` mode
+   - Liveness endpoint: `http://localhost:8000/health/live`
+   - Readiness endpoint: `http://localhost:8000/health/ready`
+   - API health endpoint: `http://localhost:8000/api/v1/health`
 
 ## First Verification Commands
 
@@ -63,6 +66,12 @@ cd frontend && npm run test
 
 For Vite hot reload, use `docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build`.
 The development frontend is available at `http://localhost:5173`.
+
+The production-like local frontend uses Nginx on `http://localhost:8080`.
+The Vite development override uses `http://localhost:5173`.
+
+The root Compose file requires database, Clerk, Turnstile, and Resend variables.
+Use test provider credentials for local work.
 
 ## Documentation Reading Paths
 

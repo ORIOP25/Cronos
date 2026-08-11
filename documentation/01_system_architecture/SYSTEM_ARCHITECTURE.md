@@ -1,71 +1,109 @@
 # System Architecture
 
 ## Purpose
-This document describes the high-level software architecture, container layout, and component boundaries of Cronos.
+
+This document describes the current Cronos runtime, application boundaries, and deployment units.
 
 ## Intended Reader
-This document targets software architects, backend engineers, and DevOps specialists.
+
+This document targets architects, backend engineers, frontend engineers, and release engineers.
 
 ## Prerequisites
+
 Read the [Project Overview](../00_getting_started/PROJECT_OVERVIEW.md).
 
 ## What the System Does
-Cronos implements a multi-tenant web platform with interface, service, scheduler, and persistence boundaries:
 
-```mermaid
-graph TD
-    Client[React 19 Frontend UI] -->|HTTP REST + Bearer JWT| API[FastAPI Backend Layer 1]
-    API -->|Services & Invariants| Domain[Application Services]
-    Domain -->|Async SQLAlchemy| DB[(PostgreSQL 16 + Forced RLS)]
-    API -->|Redis Queue Jobs| Worker[Celery Async Worker]
-    Worker -->|OR-Tools CP-SAT| Solver[Solver V2 Engine]
-    Worker -->|Read/Write State| DB
-    Client -->|Auth Tokens| Clerk[Clerk Identity Provider]
-    BE_Webhook[FastAPI Webhook Handler] <--|HTTP Webhooks| Clerk
-```
+Cronos combines a React SPA, a FastAPI API, PostgreSQL, Redis, and Celery processes.
+
+The API serves HTTP requests and dispatches solver jobs.
+The worker executes generation and repair.
+Beat dispatches hourly member reconciliation.
 
 ## Why the Behavior Exists
-Clean Architecture isolates user interface concerns from business logic and database persistence. Multi-tenant isolation ensures data privacy across schools. Asynchronous worker queues prevent long-running solver computations from blocking API HTTP threads.
+
+The SPA keeps the user interface independent from backend deployment.
+The API remains responsive while the worker executes bounded CP-SAT jobs.
+PostgreSQL RLS protects tenant-owned data.
 
 ## Components and Ownership
 
-| Layer | Component | File Path / Directory | Responsibility |
-| :--- | :--- | :--- | :--- |
-| **Layer 1: Interface** | FastAPI Routers | `backend/app/api/v1/endpoints/` | HTTP request handling, payload validation, status codes |
-| **Layer 1: Interface** | React UI Pages | `frontend/src/pages/` | Client rendering, route guards, state management |
-| **Layer 2: Domain** | Domain Services | `backend/app/services/` | Business rules, solver job orchestration, occurrence state |
-| **Scheduler Domain** | Constraint and quality policies | `backend/app/scheduler/domain/` | Pure scheduler contracts, validation, and quality rules |
-| **Scheduler Services** | Generation and repair engines | `backend/app/services/scheduler_*` | Candidate building, CP-SAT solves, lifecycle, and recovery |
-| **Layer 3: Data** | SQLAlchemy Models | `backend/app/models.py` | ORM definitions, table relationships, foreign keys |
-| **Layer 3: Data** | Alembic Migrations | `backend/alembic/versions/` | Database schema version control |
+| Component | Source or configuration | Responsibility |
+| :--- | :--- | :--- |
+| SPA | `frontend/src/` | Routes, UI, Clerk session, API calls |
+| API | `backend/app/main.py` | HTTP lifecycle, middleware, routers |
+| Domain services | `backend/app/services/` | Business rules and transactions |
+| Scheduler domain | `backend/app/scheduler/` | Solver contracts, constraints, quality |
+| Worker | `backend/app/scheduler_worker.py` | Complete and adaptive jobs |
+| Beat | `backend/app/celery_worker.py` | Hourly reconciliation schedule |
+| Persistence | `backend/app/models.py` and `backend/alembic/` | Schema and records |
+| Local runtime | `docker-compose.yml` | Containers and maintenance profiles |
 
 ## Data or Request Flow
-1. The client sends an HTTP request containing a Clerk Bearer JWT token.
-2. FastAPI dependencies validate the Clerk request and resolve the active membership.
-3. The authentication dependency sets PostgreSQL session variable `app.current_organization_id`.
-4. Row-Level Security policies filter table queries automatically.
-5. Domain services execute business rules and commit database transactions.
-6. FastAPI serializes Pydantic response models and returns JSON responses.
+
+```mermaid
+flowchart TD
+    Browser[Browser] --> SPA[React SPA]
+    SPA -->|Bearer JWT or public request| API[FastAPI API]
+    API --> Auth[Clerk verification]
+    API --> Services[Application services]
+    Services --> DB[(PostgreSQL 16 + forced RLS)]
+    API --> Redis[(Redis)]
+    Redis --> Worker[Celery worker]
+    Worker --> Solver[OR-Tools CP-SAT]
+    Worker --> DB
+    Beat[Celery Beat] --> Redis
+    Clerk[Clerk] -->|Svix webhook| API
+```
+
+1. The client sends a request to the SPA or API.
+2. Authenticated dependencies verify Clerk and resolve the active membership.
+3. The database dependency installs the tenant context before protected queries.
+4. Services validate domain rules and commit a transaction.
+5. Solver requests enter Redis and run in a separate worker process.
 
 ## Contracts and Invariants
-- Tenant-owned queries must include `organization_id` and run after tenant context installation.
-- Direct database modifications bypass domain services only during automated Alembic migrations.
+
+- Tenant queries use the active `organization_id` and PostgreSQL tenant context.
+- The runtime application role is `NOBYPASSRLS`.
+- The migrator role is separate and uses `BYPASSRLS`.
+- The API does not run Alembic migrations during application startup.
+- The API exposes `/health/live` and `/health/ready` outside `/api/v1`.
 
 ## States and Transitions
-System runtime states transition from API request receipt to background Celery execution and persistent storage.
+
+The main asynchronous path is:
+
+`HTTP request` -> `QUEUED job` -> `RUNNING job` -> `draft or explicit failure`.
+
+The Beat path dispatches `members.run_scheduled_reconciliation` hourly.
 
 ## Failure Modes
-- Database Connection Lost: Backend returns HTTP `500 Internal Server Error` and logs database error.
-- Redis Down: Async schedule generation requests fail during task queue dispatch.
+
+- Clerk verification failure blocks the protected request.
+- Missing tenant context blocks tenant data access.
+- PostgreSQL or Redis failure makes readiness return `503`.
+- Worker failure records a terminal job status and diagnostic fields.
 
 ## Verification Procedure
-Inspect containers using `docker compose ps`. Verify `/health/live` and `/health/ready` on port `8000`.
+
+1. Run `docker compose config` with required variables.
+2. Verify `docker compose ps` shows healthy dependencies.
+3. Query `/health/live` and `/health/ready`.
+4. Inspect worker registration with `celery inspect registered`.
 
 ## Source Map
-- FastAPI Entry: `backend/app/main.py`
-- Database Session Setup: `backend/app/db/database.py`, `backend/app/db/tenant.py`
-- Docker Architecture: `docker-compose.yml`
+
+- API lifecycle: `backend/app/main.py`
+- API router: `backend/app/api/api.py`
+- Tenant context: `backend/app/db/tenant.py`
+- Worker task: `backend/app/scheduler_worker.py`
+- Beat schedule: `backend/app/celery_worker.py`
+- Frontend entry: `frontend/src/main.jsx`
+- Runtime contract: `docker-compose.yml`
 
 ## Related Documents
+
 - [Runtime Flows](RUNTIME_FLOWS.md)
 - [Data Model](DATA_MODEL.md)
+- [Backend Architecture](../05_backend_api/BACKEND_ARCHITECTURE.md)

@@ -1,48 +1,83 @@
 # Professional Education Domain
 
 ## Purpose
-This document specifies domain rules and legal invariants for Portuguese Professional Education (*Ensino Profissional*).
+
+This document describes the curriculum hierarchy and progress rules implemented by Cronos.
 
 ## Intended Reader
-This document targets software engineers and product specialists.
+
+This document targets domain engineers, backend engineers, and product specialists.
 
 ## Prerequisites
+
 Read the [Project Overview](../00_getting_started/PROJECT_OVERVIEW.md) and [Glossary](../00_getting_started/GLOSSARY.md).
 
 ## What the System Does
-Cronos structures educational data into courses (*Cursos*), student cohorts (*Turmas*), subjects (*Disciplinas*), and modules (*Módulos*).
 
-### Structural Hierarchy
-1. **Course**: Educational track (e.g., *Técnico de Informática*). Belongs to an Organization.
-2. **Class (*Turma*)**: Cohort of students enrolled in a course (e.g., *10º ANO - INFO*).
-3. **Subject**: Curriculum area (e.g., *Programação e Sistemas de Informação*).
-4. **Module (*Módulo*)**: Independent instructional unit with mandatory total hours (e.g., *Módulo 1 - Algoritmos*, 25 hours).
-5. **Class-Subject Link**: Grade-specific assignment binding a Class, Subject, and optional Teacher.
+Cronos models an organization, course (*Curso*), class (*Turma*), subject (*Disciplina*), and ordered module (*Módulo*).
+
+Each module stores `required_minutes` and an `order` within its subject.
+A class-subject link binds a class, subject, grade level, and optional teacher.
 
 ## Why the Behavior Exists
-Portuguese professional secondary education does not follow fixed annual subject schedules. Courses execute sequentially or concurrently by modules. Students complete credit hours per module. Schedule generation must track module credit progress and prevent scheduling classes beyond required module hours.
 
-## Module Progress Calculations
-- **Total Required Hours**: Total instructional credit hours assigned to a module.
-- **Completed Hours**: Sum of `completed_minutes_delta` values in the progress ledger.
-- **Debt Hours**: Sum of unresolved `debt_minutes_delta` values in the progress ledger.
-- **Remaining Hours**: Required minutes minus completed minutes, bounded at zero.
+Module-level minutes represent modular execution more accurately than a fixed annual subject total.
+The scheduler uses remaining module minutes when it builds demand.
+
+## Components and Ownership
+
+| Responsibility | Implementation |
+| :--- | :--- |
+| Curriculum models | `backend/app/models.py` (`Course`, `Class`, `Subject`, `Module`) |
+| Curriculum API | `backend/app/api/v1/endpoints/courses.py`, `classes.py`, `subjects.py` |
+| Progress ledger | `backend/app/models.py` (`ProgressLedgerEntry`) |
+| Progress services | `backend/app/services/class_service.py`, `teacher_service.py` |
+| Curriculum UI | `frontend/src/pages/Courses.jsx`, `CourseDetails.jsx`, `ClassDetails.jsx` |
+
+## Data or Request Flow
+
+1. An administrator creates a course and class.
+2. An administrator creates subjects and ordered modules.
+3. An administrator links subjects to a class and assigns a teacher.
+4. The scheduler reads module minutes and execution ledger values.
+5. Lesson logs and recovery delivery append ledger deltas.
+6. The UI reports completed minutes, debt minutes, and percentage.
 
 ## Contracts and Invariants
-- Manual progress updates clamp completed time to the module requirement.
-- A class cannot have two scheduled lesson blocks in the same timeslot.
-- A teacher cannot teach two different classes in the same timeslot.
+
+- Module `required_minutes` must be greater than zero.
+- Module order is unique within an organization and subject.
+- Remaining demand starts at the first incomplete module.
+- Completed minutes cannot exceed the module requirement in progress views.
+- Ledger entries use idempotency keys and preserve source evidence.
+
+## States and Transitions
+
+Progress moves from required minutes to completed minutes or debt minutes.
+Recovery delivery reduces outstanding debt through a linked execution record.
 
 ## Failure Modes
-- Invalid Module Update: The API rejects progress changes for modules outside the class curriculum.
+
+- Invalid module order or minutes return validation errors.
+- A class cannot update progress for a module outside its curriculum.
+- A cross-organization relationship fails scoped validation.
 
 ## Verification Procedure
-Inspect class details page at `/courses/:courseId/classes/:classId/subjects`. Verify module list and hour counters.
+
+1. Open `/courses` as an administrator.
+2. Create or open a class.
+3. Open `/courses/:courseId/classes/:classId/subjects`.
+4. Inspect module totals and progress counters.
 
 ## Source Map
-- Models: `backend/app/models.py` (`Course`, `Class`, `Subject`, `Module`, `ClassSubjectLink`)
-- Progress Calculation: `backend/app/services/class_service.py`, `backend/app/services/occurrence_service.py`
+
+- Models: `backend/app/models.py`
+- Schemas: `backend/app/schemas.py`
+- Curriculum endpoints: `backend/app/api/v1/endpoints/classes.py`, `courses.py`, `subjects.py`
+- Tests: `backend/tests/test_module_progress.py`, `test_class_subjects.py`
 
 ## Related Documents
-- [Members and Access](MEMBERS_AND_ACCESS.md)
+
+- [School Configuration](SCHOOL_CONFIGURATION.md)
 - [Lesson Execution](../04_operational_features/LESSON_EXECUTION.md)
+- [Data Model](../01_system_architecture/DATA_MODEL.md)

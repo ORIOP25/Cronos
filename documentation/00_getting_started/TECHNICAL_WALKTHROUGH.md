@@ -1,92 +1,103 @@
 # Technical Walkthrough
 
 ## Purpose
-This document provides a technical walkthrough of primary administrator and teacher workflows. It replaces the legacy demonstration script.
+
+This document traces the main administrator and teacher workflows through the current frontend, API, worker, and database.
 
 ## Intended Reader
-This document targets software developers, QA engineers, and system evaluators.
+
+This document targets developers, QA engineers, and system evaluators.
 
 ## Prerequisites
-Provision roles, apply migrations, and start the stack. Use real Clerk test identities for interactive login.
 
-## Workflow 1: Administrator Initial Setup and Schedule Generation
+Start the local stack and use dedicated Clerk test identities.
+Read the [Routes and Permissions](../06_frontend_ux/ROUTES_AND_PERMISSIONS.md) guide.
 
-```mermaid
-sequenceDiagram
-    autonumber
-    actor Admin as School Administrator
-    participant FE as React Frontend
-    participant BE as FastAPI Backend
-    participant DB as PostgreSQL DB
-    participant Celery as Celery Worker
-    participant Solver as CP-SAT Solver V2
+## What the System Does
 
-    Admin->>FE: 1. Login at /login with Clerk
-    FE->>FE: 2. Clerk creates an organization-scoped session
-    Admin->>FE: 4. Open School Configuration (/config)
-    FE->>BE: 5. GET /api/v1/school/settings/
-    BE-->>FE: 6. Return Settings & Shift Grid
-    Admin->>FE: 7. Open Team View (/members)
-    FE->>BE: 8. GET /api/v1/members/
-    BE-->>FE: 9. Return Organization Members
-    Admin->>FE: 10. Trigger Schedule Generation (/schedules)
-    FE->>BE: 11. POST /api/v1/scheduler/generate (mode: full)
-    BE->>Celery: 12. Dispatch solver task
-    Celery->>Solver: 13. Compute CP-SAT Schedule
-    Solver-->>Celery: 14. Return Schedule Output
-    Celery->>DB: 15. Store Schedule Draft
-    FE->>BE: 16. Poll GET /api/v1/scheduler/status
-    BE-->>FE: 17. Return Status: SUCCEEDED
-    Admin->>FE: 18. Review & Approve Draft
-    FE->>BE: 19. POST /api/v1/scheduler/drafts/{id}/approve
-    BE->>DB: 20. Promote Draft to Active Schedule
-```
+The administrator flow configures a tenant, generates a schedule, and approves a draft.
+The teacher flow reads personal blocks and records execution.
 
-### Step-by-Step Procedure
-1. Access the application at `http://localhost:8080`.
-2. Log in with an active Clerk administrator membership.
-3. Navigate to **Configuração da Escola** (`/config`). Verify weekly shift times, slot durations, and active school year parameters.
-4. Navigate to **Equipa** (`/members`). Inspect organization members and role assignments.
-5. Navigate to **Horários** (`/schedules`). Click **Gerar Horário Completo**.
-6. The system dispatches a Celery task. The status widget displays generation progress.
-7. Upon completion, inspect the generated draft. Compare projected completion dates and gap metrics.
-8. Click **Aprovar Rascunho**. The system promotes the draft to active schedule status.
+## Why the Behavior Exists
 
-## Workflow 2: Teacher Daily Operations and Lesson Logging
+The API keeps long solver work outside the HTTP request.
+The worker stores an auditable job and draft before an administrator changes the active schedule.
+
+## Components and Ownership
+
+| Component | Source |
+| :--- | :--- |
+| Frontend routes | `frontend/src/App.jsx` |
+| Admin schedule page | `frontend/src/pages/Schedules.jsx` |
+| Teacher schedule page | `frontend/src/pages/MySchedules.jsx` |
+| Scheduler router | `backend/app/api/v1/endpoints/scheduler.py` |
+| Weekly schedule router | `backend/app/api/v1/endpoints/schedule.py` |
+| Worker task | `backend/app/scheduler_worker.py` |
+
+## Data or Request Flow
 
 ```mermaid
 sequenceDiagram
-    autonumber
-    actor Teacher as Teacher (Ana Matos)
-    participant FE as React Frontend
-    participant BE as FastAPI Backend
-    participant DB as PostgreSQL DB
+    actor Admin
+    participant FE as React SPA
+    participant API as FastAPI
+    participant Redis
+    participant Worker as Celery Worker
+    participant DB as PostgreSQL
 
-    Teacher->>FE: 1. Login at /login with Clerk
-    Teacher->>FE: 2. View My Schedule (/my-schedules)
-    FE->>BE: 3. GET /api/v1/schedule/week (my slots)
-    BE-->>FE: 6. Return Teacher Schedule
-    Teacher->>FE: 4. Click Lesson Block -> Open Log Modal
-    Teacher->>FE: 5. Select Status, Enter Summary and Notes
-    FE->>BE: 6. PUT /api/v1/schedule/active-blocks/{id}/log
-    BE->>DB: 7. Upsert LessonLog and append ledger deltas
-    BE-->>FE: 8. Return Updated LessonLog
+    Admin->>FE: Open /schedules
+    FE->>API: POST /api/v1/scheduler/generate
+    API->>DB: Store QUEUED job
+    API->>Redis: Dispatch scheduler.run_generation_job
+    Worker->>Redis: Consume job
+    Worker->>DB: Read snapshot and write draft
+    FE->>API: Poll /api/v1/scheduler/status
+    Admin->>FE: Approve the draft
+    FE->>API: POST /api/v1/scheduler/drafts/{id}/approve
+    API->>DB: Promote the draft transactionally
 ```
 
-### Step-by-Step Procedure
-1. Log out from the administrator account.
-2. Log in with an active Clerk teacher membership and linked teacher profile.
-3. View **O Meu Horário** (`/my-schedules`). The page shows personal weekly schedule blocks.
-4. Click a scheduled lesson block. The **Registo de Aula** modal opens.
-5. Select `COMPLETED` or `OCCURRENCE`. Add optional summary and notes.
-6. Click **Guardar Sumário**. A completed log credits the block duration to the active module.
+## Contracts and Invariants
+
+- The API selects complete generation before publication.
+- The API selects adaptive repair after publication when debt or scheduler changes exist.
+- A pending draft requires explicit replacement confirmation before another generation.
+- Teacher-only users can request only their own schedule.
+- A lesson log uses `PENDING`, `COMPLETED`, or `OCCURRENCE`.
+
+## States and Transitions
+
+`QUEUED` -> `RUNNING` -> `SUCCEEDED`, `FAILED`, `NO_VALID_OUTPUT`, or `CANCELED`.
+
+Approval changes a pending draft to `APPROVED` and publishes its active blocks.
+
+## Failure Modes
+
+- Missing scheduler configuration returns a generation selection error.
+- A pending draft blocks generation without replacement confirmation.
+- A worker failure stores a failure code and message on the job.
+- A teacher without a linked profile receives `403` on teacher-only routes.
+
+## Verification Procedure
+
+1. Open `http://localhost:8080`.
+2. Sign in with an administrator identity.
+3. Configure `/config`, then open `/schedules`.
+4. Generate, inspect, and approve a draft.
+5. Sign in with a teacher identity and open `/my-schedules`.
+6. Record a lesson log on an eligible block.
 
 ## Source Map
-- Admin Pages: `frontend/src/pages/SchoolConfig.jsx`, `frontend/src/pages/Schedules.jsx`
-- Teacher Pages: `frontend/src/pages/MySchedules.jsx`, `frontend/src/components/LessonLogModal.jsx`
-- API Routers: `backend/app/api/v1/endpoints/scheduler.py`, `backend/app/api/v1/endpoints/schedule.py`
+
+- `frontend/src/App.jsx`
+- `frontend/src/pages/Schedules.jsx`
+- `frontend/src/pages/MySchedules.jsx`
+- `backend/app/api/v1/endpoints/scheduler.py`
+- `backend/app/api/v1/endpoints/schedule.py`
+- `backend/app/scheduler_worker.py`
 
 ## Related Documents
+
 - [Project Overview](PROJECT_OVERVIEW.md)
 - [Scheduler Behavior](../03_scheduler_engine/SCHEDULER_BEHAVIOR.md)
 - [Lesson Execution](../04_operational_features/LESSON_EXECUTION.md)

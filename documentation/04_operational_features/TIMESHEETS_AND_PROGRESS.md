@@ -1,47 +1,88 @@
 # Timesheets and Progress
 
 ## Purpose
-This document details teacher weekly timesheet submission, hour debt accounting, and course progress ledgers.
+
+This document describes weekly teacher timesheets, progress ledger accounting, debt, and recovery delivery.
 
 ## Intended Reader
-This document targets developers maintaining reporting and payroll metrics.
+
+This document targets backend engineers, frontend engineers, and reporting owners.
 
 ## Prerequisites
+
 Read [Lesson Execution](LESSON_EXECUTION.md) and [Occurrences and Substitutions](OCCURRENCES_AND_SUBSTITUTIONS.md).
 
 ## What the System Does
-Cronos aggregates daily lesson logs into weekly teacher timesheets (`TeacherWeeklyTimesheet`) and computes course progress statistics.
 
-## Teacher Weekly Timesheet Lifecycle
+Cronos creates a weekly timesheet for a linked teacher.
+It validates lesson coverage before submission and exposes approval actions to administrators.
 
-| State | Description | Next State |
-| :--- | :--- | :--- |
-| `OPEN` | Weekly timesheet accepts lesson log changes | `SUBMITTED` |
-| `SUBMITTED` | Teacher submits the resolved week | `APPROVED`, `OPEN` |
-| `APPROVED` | Administrator approves and locks the week | `OPEN` |
+Progress views aggregate append-only completed and debt minute deltas.
 
-## Hour Debt Calculation
-Hour debt (*Dívida de Horas*) occurs when scheduled lessons are missed (`GAP`):
-- **Curriculum Debt**: Planned module minutes not delivered by a `GAP` or substituted decision.
-- **Recovery Delivery**: A completed recovery block reduces debt through ledger entries.
+## Why the Behavior Exists
 
-The system displays debt statistics on the administrative Command Center Dashboard (`/dashboard`).
+Weekly closure prevents later changes to reviewed execution.
+Ledger entries preserve idempotent evidence for progress and recovery.
+
+## Components and Ownership
+
+| Responsibility | Implementation |
+| :--- | :--- |
+| Timesheet API | `backend/app/api/v1/endpoints/timesheets.py` |
+| Timesheet service | `backend/app/services/timesheet_service.py` |
+| Progress service | `backend/app/services/teacher_service.py`, `class_service.py` |
+| Ledger model | `backend/app/models.py` (`ProgressLedgerEntry`) |
+| UI | `frontend/src/pages/Timesheets.jsx`, `MyProgress.jsx` |
+
+## Data or Request Flow
+
+1. A teacher opens `/my-schedules` or `/timesheets`.
+2. The API loads the week and creates a record when needed.
+3. The teacher records all eligible blocks.
+4. The teacher submits the week.
+5. An administrator approves or reopens the week.
+6. Progress and debt views read ledger and occurrence data.
 
 ## Contracts and Invariants
-- Submitting requires at least one published block, no future blocks, and no missing or `PENDING` logs.
-- Reopening clears approval fields but preserves the submission timestamp.
+
+- Timesheet status is `OPEN`, `SUBMITTED`, or `APPROVED`.
+- Submission requires a linked teacher and a valid week.
+- Missing or `PENDING` lesson logs block submission.
+- Future blocks do not satisfy week closure.
+- Approval sets approver identity and freezes later edits.
+- Reopening returns the week to `OPEN`.
+- Ledger entries require non-zero deltas and unique idempotency keys.
+
+## States and Transitions
+
+`OPEN` -> `SUBMITTED` -> `APPROVED`.
+An administrator can reopen `SUBMITTED` or `APPROVED` records to `OPEN`.
 
 ## Failure Modes
-- Unlogged Blocks Pending: Submitting a week with missing or `PENDING` logs returns HTTP `400 Bad Request`.
+
+- An unlinked teacher cannot submit a timesheet.
+- Missing logs return a validation error.
+- A non-admin cannot approve or reopen a timesheet.
+- A duplicate ledger source does not apply its delta twice.
 
 ## Verification Procedure
-Navigate to `/timesheets`. Inspect teacher weekly hour totals, pending summaries, and approval status buttons.
+
+1. Open `/timesheets` as an administrator.
+2. Open a teacher week.
+3. Submit a complete week as the teacher.
+4. Approve and reopen the week as the administrator.
+5. Inspect progress and debt totals.
 
 ## Source Map
-- Timesheet Router: `backend/app/api/v1/endpoints/timesheets.py`
-- Service: `backend/app/services/timesheet_service.py`
-- Frontend Page: `frontend/src/pages/Timesheets.jsx`
+
+- `backend/app/api/v1/endpoints/timesheets.py`
+- `backend/app/services/timesheet_service.py`
+- `backend/app/models.py`
+- `frontend/src/pages/Timesheets.jsx`
+- `frontend/src/pages/MyProgress.jsx`
+- Tests: `backend/tests/test_module_progress.py`, `frontend/src/test/weekSubmission.test.js`
 
 ## Related Documents
+
 - [Lesson Execution](LESSON_EXECUTION.md)
-- [Occurrences and Substitutions](OCCURRENCES_AND_SUBSTITUTIONS.md)
+- [Professional Education](../02_domain_model/PROFESSIONAL_EDUCATION.md)
