@@ -66,6 +66,8 @@
   background: var(--marketing-surface-muted);
   text-decoration: none;
   transition: transform 300ms ease, border-color 300ms ease, box-shadow 300ms ease;
+  min-width: 0;
+  overflow: hidden;
 }
 .cronos-contact-strip__item:hover {
   transform: translateY(-3px);
@@ -93,6 +95,8 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .cronos-contact-strip__label {
@@ -107,6 +111,8 @@
   font-size: 1.25rem;
   font-weight: 700;
   color: var(--marketing-ink);
+  word-break: break-all;
+  overflow-wrap: anywhere;
 }
 
 .cronos-contact-strip__sub {
@@ -117,6 +123,24 @@
 @media (max-width: 768px) {
   .cronos-contact-strip__grid {
     grid-template-columns: 1fr;
+  }
+  .cronos-contact-strip__item {
+    padding: var(--space-4);
+    gap: var(--space-3);
+  }
+  .cronos-contact-strip__icon {
+    width: 44px;
+    height: 44px;
+  }
+  .cronos-contact-strip__icon svg {
+    width: 18px;
+    height: 18px;
+  }
+  .cronos-contact-strip__value {
+    font-size: clamp(0.95rem, 4.2vw, 1.15rem);
+  }
+  .cronos-contact-strip__sub {
+    font-size: 0.82rem;
   }
 }
 .cronos-questionnaire { position: relative; overflow: hidden; border: 1px solid var(--marketing-border); border-radius: var(--marketing-radius-panel); background: var(--marketing-surface); box-shadow: 0 28px 70px rgb(61 43 31 / 10%); }

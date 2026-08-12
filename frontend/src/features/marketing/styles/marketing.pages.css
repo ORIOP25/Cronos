@@ -460,6 +460,34 @@
 .cronos-workflow-visual--finish .is-complete { background: var(--marketing-success); color: #ffffff; border-color: var(--marketing-success); }
 .cronos-workflow-visual--finish .is-pending { border: 1.5px dashed var(--marketing-accent); background: var(--marketing-surface); color: var(--marketing-ink); }
 
+@media (max-width: 639px) {
+  .cronos-workflow-visual {
+    min-height: auto;
+    padding: var(--space-4);
+    overflow: hidden;
+  }
+  .cronos-workflow-visual__axis {
+    display: none;
+  }
+  .cronos-workflow-visual__blocks {
+    grid-template-columns: repeat(2, 1fr) !important;
+    grid-template-rows: auto !important;
+    gap: 10px !important;
+    height: auto !important;
+  }
+  .cronos-workflow-visual__blocks span {
+    grid-column: auto !important;
+    grid-row: auto !important;
+    min-height: 64px;
+    padding: 10px 12px;
+    transform: none !important;
+  }
+  .cronos-workflow-visual__blocks span small {
+    font-size: 0.82rem;
+    line-height: 1.2;
+  }
+}
+
 /* About Story Section (matching main layout adaptively - larger scale) */
 .cronos-about-story { position: relative; overflow: hidden; background: var(--marketing-surface); padding-block: var(--space-7) var(--space-9); }
 .cronos-about-story::after { position: absolute; right: -10vw; bottom: -10vw; width: 36vw; height: 36vw; border: 1px solid var(--marketing-border); border-radius: 50%; opacity: .3; content: ''; }
