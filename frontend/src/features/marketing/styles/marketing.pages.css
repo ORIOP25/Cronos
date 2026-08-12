@@ -1,0 +1,722 @@
+.cronos-hero { position: relative; overflow: hidden; padding-top: var(--space-8); padding-bottom: var(--space-7); }
+.cronos-hero::before { position: absolute; top: 10%; right: -10%; width: 44vw; height: 44vw; border: 1px solid var(--marketing-border); border-radius: 50%; opacity: .55; content: ''; }
+.cronos-hero__grid, .cronos-about-story__grid, .cronos-contact-page__grid { position: relative; display: grid; gap: var(--space-8); align-items: start; }
+.cronos-hero__copy { position: relative; z-index: 1; display: grid; gap: var(--space-6); }
+.cronos-hero__body { max-width: 48ch; color: var(--marketing-ink-muted); font-size: 1.25rem; line-height: 1.65; }
+.cronos-hero__actions { display: grid; gap: var(--space-3); }
+.cronos-hero__actions .cronos-button { width: 100%; padding: var(--space-4) var(--space-6); font-size: 1.12rem; }
+.cronos-hero__visual { position: relative; }
+.cronos-hero__frame { position: relative; padding: var(--space-3) 0 0 var(--space-3); }
+.cronos-hero__frame::before { position: absolute; inset: 0 12% 12% 0; border: 1px solid var(--marketing-accent); content: ''; }
+.cronos-hero__picture { position: relative; display: block; overflow: hidden; border-radius: var(--marketing-radius-panel); box-shadow: 0 28px 70px rgb(61 43 31 / 16%); }
+.cronos-hero__picture img { display: block; width: 100%; height: auto; aspect-ratio: 4 / 3; object-fit: cover; transition: transform 900ms cubic-bezier(.22, 1, .36, 1); }
+.cronos-hero__frame:hover .cronos-hero__picture img { transform: scale(1.025); }
+
+.cronos-problem { position: relative; overflow: hidden; background: var(--marketing-surface-muted); padding-block: var(--space-8) var(--space-9); }
+.cronos-problem__layout { display: grid; gap: var(--space-8); }
+.cronos-problem__heading { min-width: 0; }
+.cronos-problem__copy { display: grid; gap: var(--space-8); }
+.cronos-problem .cronos-section-heading h2 { max-width: 34ch; font-size: clamp(2.2rem, 3.5vw, 3rem); }
+.cronos-problem__calendar { position: relative; min-height: 180px; display: flex; align-items: flex-end; gap: var(--space-3); padding: var(--space-6); border: 1px solid var(--marketing-border); border-radius: var(--marketing-radius-panel); background: var(--marketing-surface); }
+.cronos-problem__month { position: relative; z-index: 1; width: 90px; height: 120px; display: grid; place-items: center; border-top: 5px solid var(--marketing-accent); border-radius: 8px 8px 0 0; background: var(--marketing-ink); color: var(--marketing-surface); font-family: var(--marketing-font-display); font-size: 1.85rem; }
+.cronos-problem__month.is-late { height: 90px; border-top-color: var(--marketing-danger); opacity: 1; background: #665047; }
+.cronos-problem__month.is-late-more { height: 64px; border-top-color: var(--marketing-danger); opacity: 1; background: #786a62; }
+.cronos-problem__drift { position: absolute; right: var(--space-6); bottom: var(--space-6); left: 300px; border-top: 1px dashed var(--marketing-border-strong); }
+.cronos-problem__drift::after { position: absolute; top: -4px; right: 0; width: 8px; height: 8px; border-top: 1px solid var(--marketing-ink); border-right: 1px solid var(--marketing-ink); transform: rotate(45deg); content: ''; }
+.cronos-problem__timeline { display: grid; gap: var(--space-4); padding: 0; margin: 0; list-style: none; counter-reset: problem; }
+.cronos-problem__item { position: relative; display: grid; grid-template-columns: 52px 1fr; gap: var(--space-4); padding: var(--space-6); border: 1px solid var(--marketing-border); border-radius: var(--marketing-radius-panel); background: var(--marketing-bg); transition: transform 350ms cubic-bezier(.22, 1, .36, 1), border-color 350ms ease, background-color 350ms ease; }
+.cronos-problem__item:nth-child(even) { margin-left: var(--space-5); }
+.cronos-problem__item:hover { z-index: 1; border-color: var(--marketing-accent); background: var(--marketing-surface); transform: translateX(-8px); }
+.cronos-problem__number { color: var(--marketing-accent-text); font-size: .92rem; font-weight: 800; letter-spacing: .08em; }
+.cronos-problem__item h3 { margin-bottom: var(--space-2); font-family: var(--marketing-font-body); font-size: 1.2rem; font-weight: 700; }
+.cronos-problem__item p { color: var(--marketing-ink-muted); font-size: 1.1rem; line-height: 1.6; }
+
+.cronos-minute { overflow: hidden; background: var(--marketing-surface); padding-block: var(--space-8) var(--space-9); }
+.cronos-minute__layout { display: grid; gap: var(--space-8); }
+.cronos-minute-visual { --clock-turn: calc(var(--active-step) * 120deg + 32deg); position: relative; min-height: 480px; display: flex; flex-direction: column; justify-content: space-between; overflow: hidden; border: 1px solid var(--marketing-border); border-radius: var(--marketing-radius-panel); background: var(--marketing-ink); color: var(--marketing-surface); }
+.cronos-minute-visual__clock { position: absolute; z-index: 0; top: 56px; left: 50%; width: 200px; height: 200px; border: 1px solid rgb(255 253 249 / 22%); border-radius: 50%; pointer-events: none; transform: translateX(-50%); }
+.cronos-minute-visual__clock::before { position: absolute; inset: 16px; border: 12px solid rgb(255 253 249 / 8%); border-top-color: var(--marketing-accent); border-radius: 50%; transform: rotate(var(--clock-turn)); transition: transform 650ms cubic-bezier(.22, 1, .36, 1); content: ''; }
+.cronos-minute-visual__hand { position: absolute; top: 50%; left: 50%; width: 3px; height: 68px; background: var(--marketing-accent-on-dark); transform: translate(-50%, -100%) rotate(var(--clock-turn)); transform-origin: bottom; transition: transform 650ms cubic-bezier(.22, 1, .36, 1); }
+.cronos-minute-visual__centre { position: absolute; top: 50%; left: 50%; width: 14px; height: 14px; border-radius: 50%; background: var(--marketing-accent-on-dark); transform: translate(-50%, -50%); }
+.cronos-minute-visual__time { position: absolute; top: -30px; right: 0; left: 0; bottom: auto; color: var(--marketing-accent-on-dark); font-size: 1.05rem; font-weight: 700; text-align: center; letter-spacing: .14em; }
+.cronos-minute-visual__content { position: relative; z-index: 1; min-width: 0; display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: var(--space-2) var(--space-3); padding: 270px var(--space-5) var(--space-6); }
+.cronos-minute-visual__content h3 { color: var(--marketing-surface); font-size: 1.3rem; font-weight: 700; }
+.cronos-minute-visual__content p { grid-column: 2; color: rgb(255 253 249 / 76%); font-size: 1.08rem; line-height: 1.6; }
+.cronos-minute-visual__index { color: var(--marketing-accent-on-dark); font-weight: 800; font-size: 1.1rem; }
+.cronos-minute-visual__controls { position: relative; z-index: 3; display: grid; border-top: 1px solid rgb(255 253 249 / 16%); }
+.cronos-minute-visual__controls button { display: grid; grid-template-columns: 40px 1fr; gap: var(--space-3); padding: var(--space-5) var(--space-6); border: 0; border-bottom: 1px solid rgb(255 253 249 / 12%); background: transparent; color: rgb(255 253 249 / 65%); font-size: 1.05rem; font-weight: 600; cursor: pointer; text-align: left; transition: color 250ms ease, background-color 250ms ease; }
+.cronos-minute-visual__controls button:last-child { border-bottom: 0; }
+.cronos-minute-visual__controls button.is-active { background: rgb(255 253 249 / 9%); color: var(--marketing-surface); font-weight: 700; }
+.cronos-minute-visual__controls button span { color: var(--marketing-accent-on-dark); font-size: .88rem; font-weight: 800; }
+
+.cronos-adaptive { overflow: hidden; background: var(--marketing-surface-muted); padding-block: var(--space-8) var(--space-9); }
+.cronos-adaptive__grid { display: grid; gap: var(--space-8); align-items: start; }
+.cronos-adaptive-visual { display: grid; gap: var(--space-6); }
+.cronos-adaptive-visual__canvas { position: relative; display: grid; gap: 10px; padding: var(--space-5); border: 1px solid var(--marketing-border); border-radius: var(--marketing-radius-panel); background: var(--marketing-surface); box-shadow: 0 24px 60px rgb(61 43 31 / 8%); }
+.cronos-adaptive-visual__days, .cronos-adaptive-visual__row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+.cronos-adaptive-visual__days span { color: var(--marketing-ink-muted); font-size: .78rem; font-weight: 700; letter-spacing: .12em; }
+.cronos-adaptive-visual__row span { min-height: 52px; border: 1px solid var(--marketing-border); border-radius: 8px; background: var(--marketing-surface-muted); transition: transform 600ms cubic-bezier(.22, 1, .36, 1), background-color 400ms ease; }
+.cronos-adaptive-visual:hover .is-shifted { transform: translateX(8px); }
+.cronos-adaptive-visual__row .is-fixed { background: var(--marketing-ink); }
+.cronos-adaptive-visual__row .is-shifted { border-color: var(--marketing-accent); background: rgb(212 148 11 / 18%); }
+.cronos-adaptive-visual__row .is-approved { border-color: var(--marketing-success); background: rgb(47 125 99 / 20%); }
+.cronos-adaptive-visual__boundary { position: absolute; top: 0; bottom: 0; left: 50%; border-left: 1px dashed var(--marketing-accent); pointer-events: none; }
+.cronos-adaptive-visual__legend { display: grid; grid-template-columns: 1fr; gap: var(--space-4); padding: 0; margin: 0; list-style: none; }
+.cronos-adaptive-visual__legend li { display: grid; grid-template-columns: 32px 1fr; gap: var(--space-3); align-content: start; }
+.cronos-adaptive-visual__legend svg { color: var(--marketing-accent-text); width: 22px; height: 22px; }
+.cronos-adaptive-visual__legend div { grid-column: 1 / -1; }
+.cronos-adaptive-visual__legend h3 { margin-bottom: var(--space-2); font-family: var(--marketing-font-body); font-size: 1.15rem; font-weight: 700; }
+.cronos-adaptive-visual__legend p { color: var(--marketing-ink-muted); font-size: 1.05rem; line-height: 1.55; }
+.cronos-adaptive-visual__number { color: var(--marketing-accent-text); font-size: .88rem; font-weight: 800; }
+
+.cronos-people { overflow: hidden; padding-block: var(--space-8) var(--space-9); }
+.cronos-people .cronos-section-heading h2 { max-width: 32ch; font-size: clamp(2.2rem, 3.5vw, 3rem); }
+.cronos-people__gallery { display: grid; gap: var(--space-6); margin-top: var(--space-8); }
+.cronos-person { min-width: 0; display: flex; flex-direction: column; overflow: hidden; border: 1px solid var(--marketing-border); border-radius: var(--marketing-radius-panel); background: var(--marketing-surface); box-shadow: 0 12px 32px rgb(61 43 31 / 4%); transition: transform 300ms cubic-bezier(.22, 1, .36, 1), border-color 300ms ease, box-shadow 300ms ease; }
+.cronos-person:hover { transform: translateY(-6px); border-color: var(--marketing-accent); box-shadow: 0 20px 40px rgb(61 43 31 / 10%); }
+.cronos-person__picture-wrap { position: relative; width: 100%; aspect-ratio: 16 / 10; overflow: hidden; background: var(--marketing-surface-muted); }
+.cronos-person__picture { display: block; width: 100%; height: 100%; }
+.cronos-person__picture img { display: block; width: 100%; height: 100%; object-fit: cover; filter: saturate(.85); transition: filter 500ms ease, transform 600ms cubic-bezier(.22, 1, .36, 1); }
+.cronos-person:hover .cronos-person__picture img { filter: saturate(1); transform: scale(1.05); }
+.cronos-person__caption { display: flex; flex-direction: column; flex-grow: 1; gap: var(--space-2); padding: var(--space-6); color: var(--marketing-ink); }
+.cronos-person__caption h3 { font-family: var(--marketing-font-display); font-size: 1.55rem; font-weight: 700; color: var(--marketing-ink); margin-bottom: var(--space-1); }
+.cronos-person__caption p { color: var(--marketing-ink-muted); font-size: 1.1rem; line-height: 1.65; margin: 0; }
+
+.cronos-page-intro { position: relative; overflow: hidden; padding-block: var(--space-8) var(--space-6); }
+.cronos-page-intro::after { position: absolute; right: -8vw; bottom: -14vw; width: 32vw; height: 32vw; border: 1px solid var(--marketing-border); border-radius: 50%; opacity: .35; content: ''; }
+.cronos-page-intro .cronos-section-heading h1 { max-width: 26ch; margin-inline: auto; font-size: clamp(2.4rem, 4vw, 3.8rem); line-height: 1.15; }
+
+/* Comparison Section (Sem o Cronos vs Com o Cronos) */
+.cronos-advantages-comparison {
+  padding-block: var(--space-8) var(--space-9);
+  background: var(--marketing-surface-muted);
+  border-top: 1px solid var(--marketing-border);
+}
+
+.cronos-advantages-comparison__grid {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+.cronos-comparison-card {
+  display: grid;
+  grid-template-columns: 1fr;
+  border: 1px solid var(--marketing-border);
+  border-radius: var(--marketing-radius-panel);
+  overflow: hidden;
+  box-shadow: 0 16px 40px rgb(61 43 31 / 6%);
+  background: var(--marketing-surface);
+}
+
+.cronos-comparison-card__side {
+  display: flex;
+  flex-direction: column;
+}
+
+.cronos-comparison-card__side--loss {
+  background: var(--marketing-surface-muted);
+  border-right: 1px solid var(--marketing-border);
+}
+
+.cronos-comparison-card__side--gain {
+  background: var(--marketing-surface);
+  box-shadow: inset 0 0 0 2px rgb(47 125 99 / 24%);
+  position: relative;
+  z-index: 1;
+}
+
+.cronos-comparison-card__banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-4) var(--space-6);
+  font-size: 0.85rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.cronos-comparison-card__banner--loss {
+  background: rgb(194 65 12 / 12%);
+  border-bottom: 1px solid rgb(194 65 12 / 20%);
+  color: var(--marketing-danger);
+}
+
+.cronos-comparison-card__banner--gain {
+  background: rgb(47 125 99 / 14%);
+  border-bottom: 1px solid rgb(47 125 99 / 24%);
+  color: var(--marketing-success);
+}
+
+.cronos-comparison-card__icon {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  font-size: 0.8rem;
+  font-weight: 900;
+}
+.cronos-comparison-card__banner--loss .cronos-comparison-card__icon {
+  background: rgb(194 65 12 / 18%);
+  color: var(--marketing-danger);
+}
+.cronos-comparison-card__banner--gain .cronos-comparison-card__icon {
+  background: rgb(47 125 99 / 20%);
+  color: var(--marketing-success);
+}
+
+.cronos-comparison-card__body {
+  padding: var(--space-6) var(--space-7);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.cronos-comparison-card__side h3 {
+  margin: 0;
+  font-family: var(--marketing-font-display);
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: var(--marketing-ink);
+}
+
+.cronos-comparison-card__side p {
+  margin: 0;
+  color: var(--marketing-ink-muted);
+  font-size: 1.08rem;
+  line-height: 1.6;
+}
+
+/* Impact Section (Soft skills for Director, Coordinator, Teachers) */
+.cronos-advantages-impact {
+  padding-block: var(--space-9);
+  background: var(--marketing-surface);
+  border-top: 1px solid var(--marketing-border);
+}
+.cronos-advantages-impact .cronos-section-heading h2 {
+  max-width: 32ch;
+  margin-inline: auto;
+  font-size: clamp(2.2rem, 3.4vw, 3rem);
+}
+.cronos-advantages-impact__grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--space-6);
+  margin-top: var(--space-8);
+}
+
+.cronos-impact-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-7);
+  border: 1px solid var(--marketing-border);
+  border-radius: var(--marketing-radius-panel);
+  background: var(--marketing-surface-muted);
+  box-shadow: 0 12px 32px rgb(61 43 31 / 4%);
+  transition: transform 300ms ease, border-color 300ms ease, box-shadow 300ms ease;
+}
+.cronos-impact-card:hover {
+  transform: translateY(-4px);
+  border-color: var(--marketing-accent);
+  box-shadow: 0 20px 44px rgb(61 43 31 / 10%);
+}
+
+.cronos-impact-card__role {
+  font-size: 0.85rem;
+  font-weight: 800;
+  color: var(--marketing-accent-text);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.cronos-impact-card h3 {
+  margin: 0;
+  font-family: var(--marketing-font-display);
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: var(--marketing-ink);
+}
+
+.cronos-impact-card p {
+  margin: 0;
+  color: var(--marketing-ink-muted);
+  font-size: 1.08rem;
+  line-height: 1.65;
+}
+
+.cronos-workflow { overflow: hidden; }
+.cronos-workflow .cronos-section-heading h1 { max-width: 28ch; }
+.cronos-workflow__experience { display: grid; gap: var(--space-6); margin-top: var(--space-7); }
+
+/* Segmented 3-Step Navigation Bar matching site template */
+.cronos-tabs {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  width: 100%;
+  padding: 6px;
+  border: 1px solid var(--marketing-border);
+  border-radius: var(--marketing-radius-panel);
+  background: var(--marketing-surface-muted);
+}
+.cronos-tabs button {
+  width: 100%;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid transparent;
+  border-radius: var(--marketing-radius-control);
+  background: transparent;
+  color: var(--marketing-ink-muted);
+  cursor: pointer;
+  text-align: left;
+  transition: all 200ms ease;
+}
+.cronos-tabs button:hover {
+  color: var(--marketing-ink);
+  background: rgb(255 253 249 / 60%);
+}
+.cronos-tabs button[aria-selected='true'] {
+  border-color: var(--marketing-border);
+  background: var(--marketing-surface);
+  color: var(--marketing-ink);
+  box-shadow: 0 4px 12px rgb(61 43 31 / 8%);
+}
+.cronos-tabs button svg { width: 20px; height: 20px; flex-shrink: 0; opacity: 0.65; }
+.cronos-tabs button[aria-selected='true'] svg { opacity: 1; color: var(--marketing-accent-text); }
+.cronos-tabs__number {
+  font-family: var(--marketing-font-body);
+  font-size: 0.95rem;
+  font-weight: 800;
+  color: var(--marketing-ink-muted);
+  letter-spacing: .06em;
+}
+.cronos-tabs button[aria-selected='true'] .cronos-tabs__number {
+  color: var(--marketing-accent-text);
+}
+.cronos-tabs__label {
+  font-weight: 700;
+  font-size: 1.05rem;
+  white-space: normal;
+}
+
+/* Active Content Panel */
+.cronos-workflow__panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  padding: var(--space-5);
+  border: 1px solid var(--marketing-border);
+  border-radius: var(--marketing-radius-panel);
+  background: var(--marketing-surface);
+  box-shadow: 0 24px 60px rgb(61 43 31 / 8%);
+  outline: none;
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* Copy Column - scaled up */
+.cronos-workflow__copy { display: flex; flex-direction: column; gap: var(--space-5); justify-content: center; }
+.cronos-workflow__copy h2 {
+  font-family: var(--marketing-font-display);
+  font-size: clamp(1.9rem, 2.8vw, 2.6rem);
+  font-weight: 700;
+  color: var(--marketing-ink);
+  line-height: 1.2;
+  margin: 0;
+}
+.cronos-workflow__copy > p {
+  color: var(--marketing-ink-muted);
+  font-size: 1.18rem;
+  line-height: 1.65;
+  margin: 0;
+}
+.cronos-check-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  margin: var(--space-2) 0;
+  padding: 0;
+  list-style: none;
+}
+.cronos-check-list li {
+  position: relative;
+  padding-left: 36px;
+  color: var(--marketing-ink);
+  font-size: 1.12rem;
+  line-height: 1.55;
+  font-weight: 500;
+}
+.cronos-check-list li::before {
+  position: absolute;
+  left: 0;
+  top: 3px;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: rgb(212 148 11 / 18%);
+  color: var(--marketing-accent-text);
+  content: '✓';
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+.cronos-workflow__result {
+  margin-top: var(--space-3);
+  padding: var(--space-5) var(--space-6);
+  border-left: 5px solid var(--marketing-accent);
+  border-radius: 0 var(--marketing-radius-control) var(--marketing-radius-control) 0;
+  background: var(--marketing-surface-muted);
+  color: var(--marketing-ink);
+  font-size: 1.08rem;
+  line-height: 1.6;
+}
+.cronos-workflow__result strong { color: var(--marketing-ink); font-weight: 700; }
+
+/* Interactive Graphic Canvas - scaled up */
+.cronos-workflow-visual {
+  position: relative;
+  min-height: 440px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  overflow: hidden;
+  border: 1px solid var(--marketing-border);
+  border-radius: var(--marketing-radius-panel);
+  background: var(--marketing-surface-muted);
+  padding: var(--space-6);
+}
+.cronos-workflow-visual__header {
+  display: flex;
+  justify-content: flex-end;
+  z-index: 2;
+}
+.cronos-workflow-visual__badge {
+  padding: 6px 14px;
+  border-radius: 8px;
+  background: var(--marketing-surface);
+  border: 1px solid var(--marketing-border);
+  color: var(--marketing-ink);
+  font-size: 0.88rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  box-shadow: 0 2px 8px rgb(61 43 31 / 4%);
+}
+.cronos-workflow-visual__axis {
+  position: absolute;
+  inset: 56px 28px 28px;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  pointer-events: none;
+}
+.cronos-workflow-visual__axis span { border-left: 1px dashed var(--marketing-border); }
+.cronos-workflow-visual__axis span:last-child { border-right: 1px dashed var(--marketing-border); }
+
+.cronos-workflow-visual__blocks {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  grid-template-rows: repeat(3, 1fr);
+  gap: 16px;
+  height: 310px;
+  margin-top: var(--space-4);
+}
+.cronos-workflow-visual__blocks span {
+  display: flex;
+  align-items: flex-end;
+  padding: 14px;
+  border: 1px solid var(--marketing-border);
+  border-radius: 12px;
+  background: var(--marketing-surface);
+  box-shadow: 0 6px 18px rgb(61 43 31 / 6%);
+  transition: all 500ms cubic-bezier(.22, 1, .36, 1);
+}
+.cronos-workflow-visual__blocks span small {
+  font-size: 0.9rem;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+/* Step 1 Visual (Prepare) */
+.cronos-workflow-visual--prepare .cronos-workflow-visual__blocks span:nth-child(1) { grid-row: 1 / 3; background: var(--marketing-ink); color: var(--marketing-surface); border-color: var(--marketing-ink); }
+.cronos-workflow-visual--prepare .cronos-workflow-visual__blocks span:nth-child(2) { grid-column: 2 / 4; background: var(--marketing-surface); color: var(--marketing-ink); border-color: var(--marketing-accent); }
+.cronos-workflow-visual--prepare .cronos-workflow-visual__blocks span:nth-child(3) { grid-row: 2 / 4; grid-column: 2; background: var(--marketing-surface-muted); color: var(--marketing-ink-muted); }
+.cronos-workflow-visual--prepare .cronos-workflow-visual__blocks span:nth-child(4) { grid-column: 3 / 5; background: var(--marketing-ink); color: var(--marketing-surface); border-color: var(--marketing-ink); }
+
+/* Step 2 Visual (Adapt) */
+.cronos-workflow-visual--adapt .is-protected { background: var(--marketing-ink); color: var(--marketing-surface); border-color: var(--marketing-ink); }
+.cronos-workflow-visual--adapt .is-moving { border-color: var(--marketing-accent); background: rgb(212 148 11 / 20%); color: var(--marketing-ink); transform: translateY(14px); }
+
+/* Step 3 Visual (Finish) */
+.cronos-workflow-visual--finish .is-complete { background: var(--marketing-success); color: #ffffff; border-color: var(--marketing-success); }
+.cronos-workflow-visual--finish .is-pending { border: 1.5px dashed var(--marketing-accent); background: var(--marketing-surface); color: var(--marketing-ink); }
+
+/* About Story Section (matching main layout adaptively - larger scale) */
+.cronos-about-story { position: relative; overflow: hidden; background: var(--marketing-surface); padding-block: var(--space-7) var(--space-9); }
+.cronos-about-story::after { position: absolute; right: -10vw; bottom: -10vw; width: 36vw; height: 36vw; border: 1px solid var(--marketing-border); border-radius: 50%; opacity: .3; content: ''; }
+
+.cronos-about-story__grid {
+  display: grid;
+  gap: var(--space-8);
+  align-items: center;
+}
+
+.cronos-about-story__copy { position: relative; z-index: 1; display: flex; flex-direction: column; gap: var(--space-6); }
+.cronos-about-story .cronos-section-heading h1 { max-width: 20ch; font-size: clamp(2.6rem, 4.2vw, 4.2rem); line-height: 1.15; }
+
+.cronos-about-story__paragraphs {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+.cronos-about-story__paragraphs p {
+  color: var(--marketing-ink-muted);
+  font-size: 1.2rem;
+  line-height: 1.7;
+  margin: 0;
+}
+
+/* Quote Card matching main design - scaled up */
+.cronos-about-story__quote {
+  margin-top: var(--space-3);
+  padding: var(--space-6) var(--space-7);
+  border-left: 5px solid var(--marketing-accent);
+  border-radius: var(--marketing-radius-panel);
+  background: var(--marketing-surface-muted);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+.cronos-about-story__quote p {
+  margin: 0;
+  font-family: var(--marketing-font-display);
+  font-size: clamp(1.25rem, 2vw, 1.45rem);
+  font-style: italic;
+  color: var(--marketing-ink);
+  line-height: 1.45;
+}
+.cronos-about-story__cite {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-style: normal;
+}
+.cronos-about-story__cite strong {
+  color: var(--marketing-ink);
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+.cronos-about-story__cite span {
+  color: var(--marketing-accent-text);
+  font-size: 0.92rem;
+  font-weight: 600;
+}
+
+/* Founder Portrait Photo Card with Dark Brown Overlay Badge - scaled up */
+.cronos-founder-portrait {
+  position: relative;
+  z-index: 1;
+  margin: 0;
+}
+.cronos-founder-portrait__frame {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--marketing-radius-panel);
+  border: 1px solid var(--marketing-border);
+  background: var(--marketing-surface);
+  box-shadow: 0 24px 60px rgb(61 43 31 / 12%);
+  aspect-ratio: 4 / 5;
+}
+.cronos-founder-portrait__picture {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.cronos-founder-portrait__picture img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 600ms ease;
+}
+.cronos-founder-portrait:hover .cronos-founder-portrait__picture img {
+  transform: scale(1.03);
+}
+
+.cronos-founder-portrait__badge {
+  position: absolute;
+  bottom: var(--space-5);
+  left: var(--space-5);
+  right: var(--space-5);
+  padding: var(--space-5) var(--space-6);
+  border-radius: var(--marketing-radius-control);
+  background: var(--marketing-ink);
+  color: var(--marketing-surface);
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  box-shadow: 0 10px 30px rgb(0 0 0 / 24%);
+}
+.cronos-founder-portrait__badge strong {
+  color: var(--marketing-surface);
+  font-size: 1.2rem;
+  font-weight: 700;
+}
+.cronos-founder-portrait__badge span {
+  color: var(--marketing-accent-on-dark);
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.cronos-help { position: relative; overflow: hidden; }
+.cronos-help__container { max-width: 1040px; }
+.cronos-help__intro { display: grid; gap: var(--space-6); }
+.cronos-help__mark { width: 136px; height: 136px; display: grid; place-items: center; justify-self: end; border: 1px solid var(--marketing-border); border-radius: 50%; color: var(--marketing-accent-text); font-family: var(--marketing-font-display); font-size: 5rem; transform: rotate(8deg); }
+.cronos-help .cronos-section-heading h1 { max-width: 18ch; }
+
+.cronos-contact-page { position: relative; overflow: hidden; padding-block: var(--space-7) var(--space-8); }
+.cronos-contact-page::before { position: absolute; top: 12%; left: -12vw; width: 34vw; height: 34vw; border: 1px solid var(--marketing-border); border-radius: 50%; content: ''; }
+.cronos-contact-page__intro { position: relative; z-index: 1; display: grid; gap: var(--space-4); }
+.cronos-contact-page__intro > p:last-of-type { color: var(--marketing-ink-muted); }
+.cronos-contact-page__graphic { min-height: 180px; display: grid; grid-template-columns: repeat(5, 1fr); align-items: end; gap: 8px; margin-top: var(--space-5); }
+.cronos-contact-page__graphic span { height: 32%; border-top: 3px solid var(--marketing-accent); background: var(--marketing-surface-muted); animation: cronos-bars 4s ease-in-out infinite; }
+.cronos-contact-page__graphic span:nth-child(2) { height: 74%; animation-delay: -.8s; }
+.cronos-contact-page__graphic span:nth-child(3) { height: 48%; animation-delay: -1.6s; }
+.cronos-contact-page__graphic span:nth-child(4) { height: 92%; animation-delay: -2.4s; }
+.cronos-contact-page__graphic span:nth-child(5) { height: 62%; animation-delay: -3.2s; }
+.cronos-questionnaire { min-width: 0; padding: var(--space-5); }
+.cronos-questionnaire__step .cronos-button, .cronos-questionnaire__welcome .cronos-button, .cronos-questionnaire__success .cronos-button { width: 100%; }
+
+.cronos-demo-cta__copy { display: grid; gap: var(--space-3); }
+.cronos-demo-cta h2 { max-width: 24ch; }
+.cronos-demo-cta__inner { display: grid; gap: var(--space-5); }
+.cronos-demo-cta__inner > .cronos-button { width: 100%; }
+
+@keyframes cronos-bars { 50% { transform: scaleY(.72); } }
+
+@media (max-width: 899px) {
+  .cronos-hero {
+    padding-top: var(--space-6);
+    padding-bottom: var(--space-7);
+  }
+  .cronos-hero__grid {
+    gap: var(--space-6);
+  }
+  .cronos-hero__copy {
+    gap: var(--space-4);
+    text-align: center;
+    align-items: center;
+    justify-content: center;
+  }
+  .cronos-hero__copy h1 {
+    font-size: clamp(2.1rem, 6.5vw, 2.8rem);
+    line-height: 1.18;
+    margin-inline: auto;
+  }
+  .cronos-hero__body {
+    font-size: 1.1rem;
+    line-height: 1.6;
+    margin-inline: auto;
+  }
+  .cronos-hero__actions {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    max-width: 340px;
+    margin-inline: auto;
+  }
+  .cronos-hero__actions .cronos-button {
+    width: 100%;
+    justify-content: center;
+  }
+  .cronos-hero__visual {
+    width: 100%;
+  }
+}
+
+@media (min-width: 640px) {
+  .cronos-hero__actions { display: flex; flex-wrap: wrap; }
+  .cronos-hero__actions .cronos-button { width: auto; }
+  .cronos-people__gallery { grid-template-columns: repeat(2, 1fr); }
+  .cronos-person--1 { grid-column: 1 / -1; min-height: 0; }
+  .cronos-questionnaire { padding: var(--space-7); }
+  .cronos-help__intro { grid-template-columns: 1fr auto; align-items: end; }
+}
+
+@media (min-width: 768px) {
+  .cronos-comparison-card {
+    grid-template-columns: 1fr 1fr;
+  }
+  .cronos-comparison-card__side--loss {
+    border-right: 1px solid var(--marketing-border);
+    border-bottom: 0;
+  }
+  .cronos-tabs {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: var(--space-3);
+    padding: 8px;
+  }
+  .cronos-tabs button {
+    justify-content: center;
+    text-align: center;
+    padding: var(--space-4) var(--space-5);
+  }
+  .cronos-tabs__label {
+    font-size: 1.12rem;
+    white-space: nowrap;
+  }
+  .cronos-adaptive-visual__legend {
+    grid-template-columns: repeat(3, 1fr);
+  }
+  .cronos-advantages-impact__grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+@media (min-width: 900px) {
+  .cronos-hero { padding-block: var(--marketing-section-space); }
+  .cronos-hero__grid { grid-template-columns: 1.05fr .95fr; gap: var(--space-8); align-items: center; }
+  .cronos-problem__layout { grid-template-columns: .95fr 1.05fr; grid-template-areas: 'heading cascade' 'copy cascade'; gap: var(--space-5) var(--space-8); align-items: start; }
+  .cronos-problem__heading { grid-area: heading; }
+  .cronos-problem__copy { grid-area: copy; }
+  .cronos-problem__cascade { grid-area: cascade; }
+  .cronos-problem .cronos-section-heading { max-width: 60ch; }
+  .cronos-problem__item:nth-child(2) { margin-left: var(--space-7); }
+  .cronos-problem__item:nth-child(3) { margin-left: var(--space-5); }
+  .cronos-problem__item:nth-child(4) { margin-left: var(--space-8); }
+  .cronos-minute__layout { grid-template-columns: minmax(280px, .72fr) minmax(0, 1.28fr); gap: var(--space-8); align-items: center; }
+  .cronos-minute-visual { display: grid; grid-template-columns: 1fr 230px; grid-template-rows: 1fr; min-height: 520px; }
+  .cronos-minute-visual__clock { top: 38%; left: 29%; width: 240px; height: 240px; transform: translate(-50%, -50%); }
+  .cronos-minute-visual__time { top: -36px; font-size: 1.15rem; }
+  .cronos-minute-visual__hand { height: 78px; }
+  .cronos-minute-visual__content { grid-column: 1; grid-row: 1; align-self: end; padding: 300px var(--space-7) var(--space-7); grid-template-columns: 52px minmax(0, 1fr); gap: var(--space-2) var(--space-4); }
+  .cronos-minute-visual__content h3 { font-size: 1.4rem; }
+  .cronos-minute-visual__content p { font-size: 1.15rem; }
+  .cronos-minute-visual__controls { grid-column: 2; grid-row: 1; border-top: 0; border-left: 1px solid rgb(255 253 249 / 16%); }
+  .cronos-minute-visual__controls button { align-content: center; }
+  .cronos-adaptive__grid { grid-template-columns: .72fr 1.28fr; gap: var(--space-8); }
+  .cronos-people__gallery { grid-template-columns: repeat(3, 1fr); align-items: stretch; gap: var(--space-6); }
+  .cronos-workflow__experience { gap: var(--space-6); border: 0; }
+  .cronos-workflow__panel { display: grid; grid-template-columns: 1fr 1.05fr; gap: var(--space-8); padding: var(--space-7); border: 1px solid var(--marketing-border); }
+  .cronos-workflow__copy { padding: 0; }
+  .cronos-about-story__grid { grid-template-columns: 1.05fr .95fr; gap: var(--space-8); }
+  .cronos-contact-page__grid { grid-template-columns: .9fr 1.1fr; gap: var(--space-8); }
+  .cronos-demo-cta__inner { grid-template-columns: minmax(0, 760px) auto; align-items: center; }
+  .cronos-demo-cta__inner > .cronos-button { width: auto; max-width: 300px; }
+  .cronos-footer { padding-block: 48px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cronos-contact-page__graphic span { animation: none; }
+  .cronos-minute-visual__hand, .cronos-minute-visual__clock::before { transition: none; }
+}

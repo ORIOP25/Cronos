@@ -46,7 +46,7 @@ The repository maintains visual snapshot baselines under `documentation/06_front
 
 ## Contracts and Invariants
 - Authenticated application tokens live in `frontend/src/index.css`.
-- Marketing-specific tokens live in `frontend/src/pages/MarketingSite.css`.
+- Marketing-specific tokens live in `frontend/src/features/marketing/styles/`.
 - The implementation contains semantic state tokens for given, gap, substituted, and open states.
 - JSX can use inline layout styles, but colors should reference CSS variables.
 
@@ -55,8 +55,10 @@ Run CSS coverage audit script: `node frontend/scripts/capture-css-coverage.mjs`.
 
 ## Source Map
 - Global CSS Tokens: `frontend/src/index.css`
-- Marketing Styles: `frontend/src/pages/MarketingSite.css`
-- Marketing Components: `frontend/src/components/marketing/`
+- Marketing Styles: `frontend/src/features/marketing/styles/`
+- Marketing Components: `frontend/src/features/marketing/components/`
+- Marketing Pages: `frontend/src/pages/marketing/`
+- Route Metadata: `frontend/src/features/marketing/content/metadata.js`
 - Visual Baseline Dir: `documentation/06_frontend_ux/visual-baselines/`
 
 ## Related Documents

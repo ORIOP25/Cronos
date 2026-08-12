@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
 import { renderWithProviders } from './testUtils'
 import { resetClerkState, setClerkState } from './setup'
+import { marketingMetadata } from '../features/marketing/content/metadata'
 import App from '../App'
 
 vi.mock('../features/members/data', async (importOriginal) => ({
@@ -23,6 +24,16 @@ describe('App route polish', () => {
   beforeEach(() => {
     resetClerkState()
     setClerkState({ isSignedIn: false, isLoaded: true })
+    document.head.innerHTML = `
+      <title>Fixture title</title>
+      <meta name="description" content="Fixture description" />
+      <link rel="canonical" href="https://cronos.pt/" />
+      <meta property="og:title" content="Fixture title" />
+      <meta property="og:description" content="Fixture description" />
+      <meta property="og:url" content="https://cronos.pt/" />
+      <meta name="twitter:title" content="Fixture title" />
+      <meta name="twitter:description" content="Fixture description" />
+    `
   })
 
   it(
@@ -33,7 +44,7 @@ describe('App route polish', () => {
       expect(
         await screen.findByRole('heading', {
           name: /horários para o ensino profissional português/i,
-        }),
+        }, { timeout: 10_000 }),
       ).toBeInTheDocument()
     },
     10_000,
@@ -41,8 +52,20 @@ describe('App route polish', () => {
 
   it('redirects a signed-in member from marketing to their default route', async () => {
     setClerkState({ isSignedIn: true })
-    renderAppAt('/')
+    renderAppAt('/vantagens')
     await waitFor(() => expect(window.location.pathname).toBe('/dashboard'))
+
+    const baseMetadata = marketingMetadata['/']
+    await waitFor(() => {
+      expect(document.title).toBe(baseMetadata.title)
+      expect(document.querySelector('meta[name="description"]')).toHaveAttribute('content', baseMetadata.description)
+      expect(document.querySelector('link[rel="canonical"]')).toHaveAttribute('href', baseMetadata.canonicalUrl)
+      expect(document.querySelector('meta[property="og:title"]')).toHaveAttribute('content', baseMetadata.title)
+      expect(document.querySelector('meta[property="og:description"]')).toHaveAttribute('content', baseMetadata.description)
+      expect(document.querySelector('meta[property="og:url"]')).toHaveAttribute('content', baseMetadata.canonicalUrl)
+      expect(document.querySelector('meta[name="twitter:title"]')).toHaveAttribute('content', baseMetadata.title)
+      expect(document.querySelector('meta[name="twitter:description"]')).toHaveAttribute('content', baseMetadata.description)
+    })
   })
 
   it('redirects /sign-in to /login', async () => {

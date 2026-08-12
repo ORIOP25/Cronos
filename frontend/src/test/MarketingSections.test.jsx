@@ -1,84 +1,93 @@
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
-import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
-import ProcessStepperSection from '../components/marketing/ProcessStepperSection'
-import GeneratorSection from '../components/marketing/GeneratorSection'
-import RoutineSection from '../components/marketing/RoutineSection'
-import ShinyText from '../components/marketing/ShinyText'
-const shinyTextStyles = readFileSync(resolve('src/components/marketing/ShinyText.css'), 'utf8')
+import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react'
+import { renderWithRouter } from './testUtils'
+import HomePage from '../pages/marketing/HomePage'
+import VantagensPage from '../pages/marketing/VantagensPage'
+import HowItWorksPage from '../pages/marketing/HowItWorksPage'
+import AboutPage from '../pages/marketing/AboutPage'
+import WorkflowTabs from '../features/marketing/components/workflow/WorkflowTabs'
+import FaqSection from '../features/marketing/components/help/FaqSection'
+import MarketingHeader from '../features/marketing/components/layout/MarketingHeader'
 
-describe('marketing interactive sections', () => {
-  it('moves through the process stepper and keeps navigation boundaries disabled', () => {
-    render(<ProcessStepperSection />)
-
-    expect(screen.getByRole('heading', { name: 'Preparar escola' })).toBeInTheDocument()
-    const previousButton = screen.getByRole('button', { name: /Anterior/ })
-    const nextButton = screen.getByRole('button', { name: /Seguinte/ })
-    expect(previousButton).toBeDisabled()
-    expect(nextButton).not.toBeDisabled()
-
-    fireEvent.click(nextButton)
-    expect(screen.getByRole('heading', { name: 'Recolher disponibilidades' })).toBeInTheDocument()
-    expect(previousButton).not.toBeDisabled()
-
-    fireEvent.click(screen.getByRole('button', { name: /Ver Etapa 06/ }))
-    expect(screen.getByRole('heading', { name: 'Acompanhar progresso' })).toBeInTheDocument()
-    expect(nextButton).toBeDisabled()
-
-    fireEvent.click(screen.getByRole('button', { name: /Ver Etapa 01/ }))
-    expect(screen.getByRole('heading', { name: 'Preparar escola' })).toBeInTheDocument()
-    expect(previousButton).toBeDisabled()
+describe('public marketing sections', () => {
+  it('renders the homepage sections in the approved narrative order', () => {
+    renderWithRouter(<HomePage />)
+    const headings = screen.getAllByRole('heading').map((heading) => heading.textContent)
+    expect(headings.indexOf('Horários para o Ensino Profissional Português')).toBeLessThan(headings.indexOf('Uma falta hoje não pode estragar o planeamento de junho'))
+    expect(headings).toContain('Resolva uma substituição em menos de 1 minuto')
+    expect(headings).toContain('O horário muda sem apagar o que já aconteceu')
+    expect(headings).toContain('Feito para quem mantém a escola a funcionar')
+    expect(screen.getAllByRole('link', { name: 'Pedir demonstração' }).every((link) => link.getAttribute('href') === '/contacto')).toBe(true)
   })
 
-  it('switches the generator list between inputs and outputs', () => {
-    render(<GeneratorSection />)
-
-    const inputsTab = screen.getByRole('button', { name: /O Cronos recebe/ })
-    const outputsTab = screen.getByRole('button', { name: /A escola recebe/ })
-    expect(inputsTab).toHaveClass('is-active')
-    expect(screen.getByText('Cursos profissionais, turmas e anos de ciclo')).toBeInTheDocument()
-
-    fireEvent.click(outputsTab)
-    expect(outputsTab).toHaveClass('is-active')
-    expect(screen.getByText(/Horários harmoniosos e prontos a usar/)).toBeInTheDocument()
-    expect(screen.queryByText('Cursos profissionais, turmas e anos de ciclo')).not.toBeInTheDocument()
-
-    fireEvent.click(inputsTab)
-    expect(inputsTab).toHaveClass('is-active')
-    expect(screen.getByText('Cursos profissionais, turmas e anos de ciclo')).toBeInTheDocument()
+  it('keeps public headings free of final periods', () => {
+    const pages = [
+      <HomePage key="home" />,
+      <VantagensPage key="advantages" />,
+      <HowItWorksPage key="workflow" />,
+      <AboutPage key="about" />,
+      <FaqSection key="help" />,
+    ]
+    pages.forEach((page) => {
+      renderWithRouter(page)
+      screen.getAllByRole('heading').forEach((heading) => expect(heading.textContent.trim()).not.toMatch(/\.$/))
+      cleanup()
+    })
   })
 
-  it('updates the routine story and checklist when a chapter changes', () => {
-    render(<RoutineSection />)
-
-    const firstChapter = screen.getByRole('button', { name: /Antes da semana começar/ })
-    expect(firstChapter).toHaveClass('is-active')
-    expect(screen.getByRole('heading', { name: 'A escola prepara o terreno' })).toBeInTheDocument()
-
-    fireEvent.click(screen.getByRole('button', { name: /Quando o horário é publicado/ }))
-    expect(screen.getByRole('heading', { name: 'Cada pessoa vê o que tem pela frente' })).toBeInTheDocument()
-    expect(screen.getByText('Horário semanal por turma.')).toBeInTheDocument()
-    expect(firstChapter).not.toHaveClass('is-active')
+  it('supports keyboard selection in workflow tabs', () => {
+    renderWithRouter(<WorkflowTabs />)
+    const tabs = screen.getAllByRole('tab')
+    fireEvent.keyDown(tabs[0], { key: 'ArrowRight' })
+    expect(tabs[1]).toHaveAttribute('aria-selected', 'true')
+    expect(document.querySelector('.cronos-workflow-visual--adapt')).toBeInTheDocument()
+    fireEvent.keyDown(tabs[1], { key: 'End' })
+    expect(tabs[2]).toHaveAttribute('aria-selected', 'true')
+    expect(document.querySelector('.cronos-workflow-visual--finish')).toBeInTheDocument()
   })
 
+  it('reveals one minute-workflow step at a time', () => {
+    renderWithRouter(<HomePage />)
+    const secondStep = screen.getByRole('button', { name: /passo 2: escolher um substituto elegível/i })
+    const firstStep = screen.getByRole('button', { name: /passo 1: registar a falta/i })
+    const thirdStep = screen.getByRole('button', { name: /passo 3: confirmar a decisão/i })
+    fireEvent.click(secondStep)
+    expect(secondStep).toHaveAttribute('aria-pressed', 'true')
+    expect(document.querySelector('.cronos-minute-visual')).toHaveStyle({ '--active-step': '1' })
+    fireEvent.click(thirdStep)
+    expect(thirdStep).toHaveAttribute('aria-pressed', 'true')
+    fireEvent.click(firstStep)
+    expect(firstStep).toHaveAttribute('aria-pressed', 'true')
+    expect(document.querySelector('.cronos-minute-visual')).toHaveStyle({ '--active-step': '0' })
+  })
 
-  it('uses CSS animation props and exposes reduced-motion safeguards for ShinyText', () => {
-    const { rerender } = render(
-      <ShinyText text="Cronos" direction="right" yoyo pauseOnHover speed={2} delay={1} />,
-    )
-    const shinyText = screen.getByText('Cronos')
+  it('keeps the homepage hero image free of duplicated overlays and notes', () => {
+    renderWithRouter(<HomePage />)
+    expect(document.querySelector('.cronos-hero__schedule')).not.toBeInTheDocument()
+    expect(screen.queryByText('Uma visão operacional para cada decisão.')).not.toBeInTheDocument()
+    expect(screen.getAllByRole('img')).toHaveLength(4)
+  })
 
-    expect(shinyText).toHaveClass('shiny-text', 'shiny-text--pause-on-hover')
-    expect(shinyText.style.getPropertyValue('--shiny-animation-direction')).toBe('alternate-reverse')
-    expect(shinyText.style.getPropertyValue('--shiny-speed')).toBe('2s')
-    expect(shinyText.style.getPropertyValue('--shiny-delay')).toBe('1s')
+  it('starts the FAQ closed and keeps one answer open', () => {
+    renderWithRouter(<FaqSection />)
+    const questions = screen.getAllByRole('button')
+    expect(questions[0]).toHaveAttribute('aria-expanded', 'false')
+    fireEvent.click(questions[0])
+    expect(questions[0]).toHaveAttribute('aria-expanded', 'true')
+    expect(document.querySelector('#faq-panel-professional')).toHaveAttribute('aria-hidden', 'false')
+    fireEvent.click(questions[1])
+    expect(questions[0]).toHaveAttribute('aria-expanded', 'false')
+    expect(document.querySelector('#faq-panel-professional')).toHaveAttribute('aria-hidden', 'true')
+    expect(questions[1]).toHaveAttribute('aria-expanded', 'true')
+  })
 
-    rerender(<ShinyText text="Cronos" disabled />)
-    expect(screen.getByText('Cronos')).toHaveClass('shiny-text--disabled')
-    expect(screen.getByText('Cronos').getAttribute('style')).toBe('')
-    expect(shinyTextStyles).toMatch(/prefers-reduced-motion: reduce/)
-    expect(shinyTextStyles).toMatch(/animation:\s*none/)
-    expect(shinyTextStyles).toMatch(/background-position:\s*50% center/)
+  it('does not focus the mobile menu button on load and restores focus only after Escape', async () => {
+    renderWithRouter(<MarketingHeader />)
+    const toggle = screen.getByRole('button', { name: 'Abrir menu de navegação' })
+    expect(document.activeElement).not.toBe(toggle)
+    fireEvent.click(toggle)
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    await waitFor(() => expect(document.activeElement).toBe(toggle))
   })
 })

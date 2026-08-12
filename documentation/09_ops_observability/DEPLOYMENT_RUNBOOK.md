@@ -17,6 +17,7 @@ Do not treat this document as proof that an external dashboard is configured.
 
 The repository defines one API service, one worker, one Beat service, and one database bootstrap job for Railway.
 The frontend builds from `frontend/` and produces `frontend/dist`.
+The build emits `index.html`, `vantagens.html`, `como-funciona.html`, `sobre.html`, `ajuda.html`, and `contacto.html`.
 
 ## Why the Behavior Exists
 
@@ -71,6 +72,8 @@ Run it twice to verify idempotency.
 Build from `frontend` with `npm ci && npm run build`.
 Publish `dist`.
 Set `VITE_API_BASE_URL`, `VITE_CLERK_PUBLISHABLE_KEY`, and `VITE_TURNSTILE_SITE_KEY` as public build variables.
+Nginx resolves public deep links with `try_files $uri $uri.html $uri/ /index.html`.
+Cloudflare Pages uses `public/_redirects` for the five internal marketing HTML files.
 Test every client route on the hosting provider before domain cutover.
 
 ## Contracts and Invariants

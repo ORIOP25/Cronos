@@ -13,7 +13,12 @@ Read [Members and Access](../02_domain_model/MEMBERS_AND_ACCESS.md).
 
 | Route Path | Page Component | Access Level | Description |
 | :--- | :--- | :--- | :--- |
-| `/` | `MarketingSite.jsx` | Public | Public landing page for signed-out users |
+| `/` | `pages/marketing/HomePage.jsx` | Public | Public landing page for signed-out users |
+| `/vantagens` | `pages/marketing/VantagensPage.jsx` | Public | Marketing comparison and benefits |
+| `/como-funciona` | `pages/marketing/HowItWorksPage.jsx` | Public | Marketing workflow explanation |
+| `/sobre` | `pages/marketing/AboutPage.jsx` | Public | Cronos story and founder information |
+| `/ajuda` | `pages/marketing/HelpPage.jsx` | Public | Frequently asked questions |
+| `/contacto` | `pages/marketing/ContactPage.jsx` | Public | Demonstration request questionnaire |
 | `/login/*` | `SignInPage.jsx` | Public | Authentication sign-in view |
 | `/register/*` | `SignUpPage.jsx` | Public | Registration view |
 | `/recuperar-palavra-passe` | `ForgotPasswordPage.jsx` | Public | Password recovery view |
@@ -45,6 +50,7 @@ Routes use `<RequireAdmin>` and `<RequireTeacher>` capability guards:
 - Signed-out users accessing protected routes are redirected to `/login`.
 - A signed-in user without an active organization sees the organization selector or `/create-org`.
 - Signed-in root visits use `getDefaultRouteForMember`.
+- Public metadata comes from `features/marketing/content/metadata.js`.
 
 ## Failure Modes
 - Route Not Found: Accessing invalid path renders `NotFoundPage.jsx` (404 view).

@@ -1,0 +1,47 @@
+# Cronos — Horários para o Ensino Profissional Português
+
+> O Cronos é uma plataforma de gestão de horários desenhada especificamente para escolas de Ensino Profissional em Portugal. Permite resolver imprevistos em menos de 1 minuto, gerir substituições de professores e acompanhar horas por cumprir antes que o ano letivo chegue ao verão.
+
+## Informação Geral
+
+- **Site Oficial:** https://cronos.pt
+- **Fundador & CEO:** Rodrigo Manguinhas
+- **Email de Contacto:** contacto@cronos.pt
+- **Telefone:** +351 968 348 153
+- **Público-Alvo:** Direção escolar, Coordenadores pedagógicos e Professores do Ensino Profissional em Portugal.
+
+## Páginas Principais
+
+- [Início](https://cronos.pt/): Apresentação da plataforma, fluxo de resolução de ocorrências em 1 minuto e preservação do passado com futuro adaptativo.
+- [Vantagens](https://cronos.pt/vantagens): O custo invisível da gestão manual vs. os ganhos em previsibilidade, transparência e redução de tempo.
+- [Como Funciona](https://cronos.pt/como-funciona): Etapas de preparação, publicação adaptativa e acompanhamento do progresso de módulos e UFCDs.
+- [Sobre](https://cronos.pt/sobre): A história por trás do Cronos, criado por quem conhece a rotina do Ensino Profissional.
+- [Ajuda](https://cronos.pt/ajuda): Respostas às dúvidas mais frequentes sobre adequação ao Ensino Profissional, utilização sem instalação local, substituições de professores e segurança.
+- [Contacto](https://cronos.pt/contacto): Formulário para pedir demonstração ou agendar reunião com a equipa.
+
+## Funcionalidades e Conceitos-Chave
+
+### 1. Resolução de Faltas em 1 Minuto
+- **Registar a falta:** Criação da ocorrência a partir da aula certa, mantendo o contexto da decisão.
+- **Escolher um substituto elegível:** Consulta de docentes disponíveis e escolha de opção compatível com a aula.
+- **Confirmar a decisão:** Confirmação da substituição e atualização do saldo de horas no mesmo instante.
+
+### 2. Horário Adaptativo (Futuro Recalculado)
+- **Passado protegido:** O histórico de aulas e blocos protegidos mantêm-se inalterados.
+- **Futuro recalculado:** Reorganização inteligente apenas dos blocos futuros editáveis.
+- **Aprovação da escola:** A direção revê a proposta e confirma as alterações antes de publicar.
+
+### 3. Acompanhamento de Módulos e UFCDs
+- Acompanhamento do progresso por turma, disciplina e UFCD para perceber cedo onde é preciso recuperar.
+- Fim de ano previsível sem sobressaltos ou urgências de última hora em junho.
+
+### 4. Perfis de Utilização
+- **Direção:** Visão comum sobre horários, ocorrências e horas por cumprir para apoiar reuniões pedagógicas.
+- **Coordenação:** Organização de alterações e decisões com o contexto da aula.
+- **Professores:** Consulta do horário e registo do que aconteceu na sala de aula.
+
+## Perguntas Frequentes (FAQ)
+
+- **Instalação:** Não é necessária qualquer instalação. O Cronos funciona no navegador em computadores, tablets e telemóveis.
+- **Dados existentes:** É possível começar a configuração com os dados que a escola já organiza (professores, turmas, salas, UFCDs).
+- **Segurança:** Autenticação e isolamento por organização. Os dados são tratados nos fluxos próprios da aplicação.

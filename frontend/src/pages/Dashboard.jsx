@@ -17,7 +17,7 @@ const Dashboard = () => {
 
   // ── Header ──────────────────────────────────────
   const header = (
-    <PageHeader preTitle="Visão Geral" title="Painel de Controlo" />
+    <PageHeader preTitle="Visão Geral" title="Painel Geral" />
   )
 
   if (isError) {

@@ -1,5 +1,30 @@
-﻿User-agent: *
+User-agent: *
 Allow: /
+Allow: /vantagens
+Allow: /como-funciona
+Allow: /sobre
+Allow: /ajuda
+Allow: /contacto
+
 Disallow: /api/
+Disallow: /login
+Disallow: /register
+Disallow: /dashboard
+Disallow: /members
+Disallow: /rooms
+Disallow: /subjects
+Disallow: /courses
+Disallow: /config
+Disallow: /schedules
+Disallow: /absences
+Disallow: /timesheets
+Disallow: /my-progress
+Disallow: /my-availability
+Disallow: /onboarding
+Disallow: /create-org
+Disallow: /my-schedules
+Disallow: /recuperar-palavra-passe
+Disallow: /sign-in
+Disallow: /sign-up
 
 Sitemap: https://cronos.pt/sitemap.xml
