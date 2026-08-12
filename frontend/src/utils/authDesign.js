@@ -1,11 +1,11 @@
 export const BRAND_TAGLINE_LOGIN =
-  'O software de gestão pensado para a realidade do ensino profissional. Horários dinâmicos, progresso curricular visível, substituições inteligentes.'
+  'O software de gestão pensado para o Ensino Profissional. Horários dinâmicos, progresso curricular visível e substituições em 1 minuto.'
 
 export const BRAND_TAGLINE_REGISTER =
-  'Junte-se às escolas profissionais que já transformaram a gestão de horários. Comece em minutos, sem complicações.'
+  'Junte-se às escolas profissionais que já simplificaram a gestão de horários. Comece em minutos, sem complicações.'
 
 export const BRAND_TAGLINE_CREATEORG =
-  'Dê um nome à sua organização. É o primeiro passo para ter uma visão completa da sua escola numa só plataforma.'
+  'Dê um nome à sua organização. É o primeiro passo para ter uma visão completa da sua escola num só lugar.'
 
 export const BRAND_STATS_LOGIN = [
   { value: '< 30 min', label: 'Gerar horário' },

@@ -1,0 +1,38 @@
+.cronos-marketing { min-height: 100vh; overflow-x: hidden; background: var(--marketing-bg); color: var(--marketing-ink); font-family: var(--marketing-font-body); }
+.cronos-marketing *, .cronos-marketing *::before, .cronos-marketing *::after { box-sizing: border-box; }
+.cronos-marketing h1, .cronos-marketing h2, .cronos-marketing h3, .cronos-marketing p, .cronos-marketing figure, .cronos-marketing blockquote { margin: 0; }
+.cronos-marketing h1, .cronos-marketing h2, .cronos-marketing h3 { color: var(--marketing-ink); font-family: var(--marketing-font-display); font-weight: 600; letter-spacing: -0.025em; }
+.cronos-marketing h1 { max-width: 15ch; font-size: var(--marketing-page-title); line-height: 1; }
+.cronos-marketing h2 { max-width: 22ch; font-size: var(--marketing-section-title); line-height: 1.08; }
+.cronos-marketing h3 { max-width: 22ch; font-size: var(--marketing-card-title); line-height: 1.15; }
+.cronos-marketing p, .cronos-marketing li { font-size: 1rem; line-height: 1.6; }
+.cronos-marketing p { max-width: 60ch; }
+.cronos-marketing button, .cronos-marketing input, .cronos-marketing textarea { font: inherit; }
+.cronos-container { width: min(var(--marketing-container), calc(100% - 32px)); margin-inline: auto; }
+.cronos-narrow { max-width: var(--marketing-reading-width); }
+.cronos-marketing-section { padding-block: var(--marketing-section-space); }
+.cronos-eyebrow { color: var(--marketing-accent-text); font-size: .78rem; font-weight: 700; letter-spacing: .12em; line-height: 1.3; text-transform: uppercase; }
+.cronos-section-heading { display: grid; gap: var(--space-4); max-width: var(--marketing-reading-width); }
+.cronos-section-heading--page h1 { max-width: 15ch; }
+.cronos-section-heading--section h2 { max-width: 22ch; }
+.cronos-section-heading--center { margin-inline: auto; text-align: center; }
+.cronos-section-heading--center h1,
+.cronos-section-heading--center h2,
+.cronos-section-heading--center h3,
+.cronos-section-heading--center p,
+.cronos-section-heading--center .cronos-section-heading__body,
+.cronos-section-heading--center .cronos-eyebrow { margin-inline: auto; text-align: center; }
+.cronos-section-heading__body { color: var(--marketing-ink-muted); max-width: 55ch; }
+.cronos-button { --button-bg: var(--marketing-ink); --button-border: var(--marketing-ink); --button-fg: var(--marketing-surface); min-height: 48px; display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2); padding: 12px 20px; border: 1px solid var(--button-border); border-radius: var(--marketing-radius-control); background-color: var(--button-bg); color: var(--button-fg); cursor: pointer; font-weight: 600; text-decoration: none; transition: background-color 200ms ease, border-color 200ms ease, transform 200ms ease; }
+.cronos-button:hover { --button-bg: #24170f; --button-border: #24170f; transform: translateY(-1px); }
+.cronos-button--secondary { --button-bg: transparent; --button-border: var(--marketing-ink); --button-fg: var(--marketing-ink); }
+.cronos-button--secondary:hover { --button-bg: var(--marketing-surface-muted); --button-border: var(--marketing-ink); }
+.cronos-button--light { --button-bg: var(--marketing-surface); --button-border: var(--marketing-surface); --button-fg: var(--marketing-ink); }
+.cronos-marketing .cronos-nav__link, .cronos-marketing .cronos-footer a, .cronos-marketing .cronos-contact-strip a, .cronos-marketing .cronos-founder-note a, .cronos-marketing .cronos-questionnaire__error a { color: var(--marketing-ink); }
+.cronos-marketing .cronos-footer a, .cronos-marketing .cronos-footer__brand p { color: rgb(255 253 249 / 78%); }
+.cronos-marketing .cronos-button, .cronos-marketing .cronos-button:hover { color: var(--button-fg); }
+.cronos-marketing button:focus-visible, .cronos-marketing a:focus-visible, .cronos-marketing input:focus-visible, .cronos-marketing textarea:focus-visible { outline: 2px solid var(--marketing-accent); outline-offset: 2px; }
+.cronos-reveal { opacity: 0; transform: translateY(24px); transition: opacity 650ms cubic-bezier(.22, 1, .36, 1), transform 650ms cubic-bezier(.22, 1, .36, 1); }
+.cronos-reveal.is-visible { opacity: 1; transform: translateY(0); }
+.cronos-button:active { transform: translateY(1px) scale(.985); }
+@media (prefers-reduced-motion: reduce) { .cronos-marketing *, .cronos-marketing *::before, .cronos-marketing *::after { transition-duration: .01ms; animation-duration: .01ms; } .cronos-reveal { opacity: 1; transform: none; } }

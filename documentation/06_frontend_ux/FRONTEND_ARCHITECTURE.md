@@ -15,7 +15,7 @@ Read [Routes and Permissions](ROUTES_AND_PERMISSIONS.md) and [Design System](DES
 ## What the System Does
 
 The frontend uses React 19, Vite 8, React Router, Clerk, Axios, and TanStack React Query.
-One Vite entry point serves the public marketing page and authenticated application.
+One Vite entry point serves the public marketing routes and authenticated application.
 
 ## Why the Behavior Exists
 
@@ -32,7 +32,9 @@ React Query manages server state while component state handles form and view sta
 | API transport | `frontend/src/apiClient.js` |
 | Server state | `frontend/src/queryClient.js`, `features/*/data.js` |
 | Authenticated layout | `frontend/src/components/DefaultLayout.jsx` |
-| Marketing page | `frontend/src/pages/MarketingSite.jsx` and `components/marketing/` |
+| Marketing layout | `frontend/src/features/marketing/components/layout/MarketingLayout.jsx` |
+| Marketing content | `frontend/src/features/marketing/` and `frontend/src/pages/marketing/` |
+| Marketing metadata | `frontend/src/features/marketing/content/metadata.js` |
 
 ## Data or Request Flow
 
@@ -50,7 +52,9 @@ React Query manages server state while component state handles form and view sta
 - Queries retry at most twice for network, `408`, `429`, and `5xx` errors.
 - Teacher routes require a teacher capability and linked profile.
 - Marketing styles use the `cronos-*` namespace.
-- The runtime Nginx fallback serves `index.html` for client routes.
+- `metadata.js` is the single source for public route metadata.
+- The build emits `index.html` and five route HTML files.
+- Nginx resolves deep links with `try_files $uri $uri.html $uri/ /index.html`.
 
 ## States and Transitions
 

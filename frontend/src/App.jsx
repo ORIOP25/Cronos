@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect } from 'react'
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
-import { Show, useAuth } from '@clerk/react'
+import { useAuth } from '@clerk/react'
 
 import { setClerkTokenGetter } from './apiClient'
 
@@ -26,11 +26,18 @@ const CourseDetails = lazy(() => import('./pages/CourseDetails'))
 const ClassDetails = lazy(() => import('./pages/ClassDetails'))
 const ClassSubjects = lazy(() => import('./pages/ClassSubjects'))
 const Onboarding = lazy(() => import('./pages/Onboarding'))
-const MarketingSite = lazy(() => import('./pages/MarketingSite'))
+
+const MarketingLayout = lazy(() => import('./features/marketing/components/layout/MarketingLayout.jsx'))
+const HomePage = lazy(() => import('./pages/marketing/HomePage.jsx'))
+const VantagensPage = lazy(() => import('./pages/marketing/VantagensPage.jsx'))
+const HowItWorksPage = lazy(() => import('./pages/marketing/HowItWorksPage.jsx'))
+const AboutPage = lazy(() => import('./pages/marketing/AboutPage.jsx'))
+const HelpPage = lazy(() => import('./pages/marketing/HelpPage.jsx'))
+const ContactPage = lazy(() => import('./pages/marketing/ContactPage.jsx'))
 
 import DefaultLayout from './components/DefaultLayout'
 import { ROUTE_MY_SCHEDULES } from './roleAccess'
-import { PageLoader, RequireAdmin, RequireAuth, RequireTeacher, SignedInRedirect } from './routeGuards'
+import { PageLoader, RequireAdmin, RequireAuth, RequireTeacher } from './routeGuards'
 
 function App() {
   const { getToken, isLoaded } = useAuth()
@@ -47,49 +54,52 @@ function App() {
     <Router>
       <Suspense fallback={<PageLoader />}>
         <Routes>
-        <Route path="/" element={
-          <Show when="signed-out" fallback={<SignedInRedirect />}>
-            <MarketingSite />
-          </Show>
-        } />
-
-        <Route path="/login/*" element={<SignInPage />} />
-        <Route path="/recuperar-palavra-passe" element={<ForgotPasswordPage />} />
-        <Route path="/register/*" element={<SignUpPage />} />
-        <Route path="/sign-in/*" element={<Navigate to="/login" replace />} />
-        <Route path="/sign-up/*" element={<Navigate to="/register" replace />} />
-
-        <Route path="/create-org" element={
-          <RequireAuth><CreateOrgPage /></RequireAuth>
-        } />
-
-        <Route path="/onboarding" element={
-          <RequireAdmin><Onboarding /></RequireAdmin>
-        } />
-
-        <Route element={<RequireAuth><DefaultLayout /></RequireAuth>}>
-          <Route element={<RequireAdmin />}>
-            <Route path="dashboard" element={<Dashboard />} />
-            <Route path="members" element={<Members />} />
-            <Route path="rooms" element={<Rooms />} />
-            <Route path="subjects" element={<Subjects />} />
-            <Route path="courses" element={<Courses />} />
-            <Route path="courses/:id" element={<CourseDetails />} />
-            <Route path="courses/:courseId/classes/:classId" element={<ClassDetails />} />
-            <Route path="courses/:courseId/classes/:classId/subjects" element={<ClassSubjects />} />
-            <Route path="config" element={<SchoolConfig />} />
-            <Route path="schedules" element={<Schedules />} />
-            <Route path="absences" element={<Occurrences />} />
-            <Route path="timesheets" element={<Timesheets />} />
+          <Route element={<MarketingLayout />}>
+            <Route path="/" element={<HomePage />} />
+            <Route path="/vantagens" element={<VantagensPage />} />
+            <Route path="/como-funciona" element={<HowItWorksPage />} />
+            <Route path="/sobre" element={<AboutPage />} />
+            <Route path="/ajuda" element={<HelpPage />} />
+            <Route path="/contacto" element={<ContactPage />} />
           </Route>
-          <Route element={<RequireTeacher />}>
-            <Route path={ROUTE_MY_SCHEDULES.slice(1)} element={<MySchedules />} />
-            <Route path="my-progress" element={<MyProgress />} />
-            <Route path="my-availability" element={<MyAvailability />} />
-          </Route>
-        </Route>
 
-        <Route path="*" element={<NotFoundPage />} />
+          <Route path="/login/*" element={<SignInPage />} />
+          <Route path="/recuperar-palavra-passe" element={<ForgotPasswordPage />} />
+          <Route path="/register/*" element={<SignUpPage />} />
+          <Route path="/sign-in/*" element={<Navigate to="/login" replace />} />
+          <Route path="/sign-up/*" element={<Navigate to="/register" replace />} />
+
+          <Route path="/create-org" element={
+            <RequireAuth><CreateOrgPage /></RequireAuth>
+          } />
+
+          <Route path="/onboarding" element={
+            <RequireAdmin><Onboarding /></RequireAdmin>
+          } />
+
+          <Route element={<RequireAuth><DefaultLayout /></RequireAuth>}>
+            <Route element={<RequireAdmin />}>
+              <Route path="dashboard" element={<Dashboard />} />
+              <Route path="members" element={<Members />} />
+              <Route path="rooms" element={<Rooms />} />
+              <Route path="subjects" element={<Subjects />} />
+              <Route path="courses" element={<Courses />} />
+              <Route path="courses/:id" element={<CourseDetails />} />
+              <Route path="courses/:courseId/classes/:classId" element={<ClassDetails />} />
+              <Route path="courses/:courseId/classes/:classId/subjects" element={<ClassSubjects />} />
+              <Route path="config" element={<SchoolConfig />} />
+              <Route path="schedules" element={<Schedules />} />
+              <Route path="absences" element={<Occurrences />} />
+              <Route path="timesheets" element={<Timesheets />} />
+            </Route>
+            <Route element={<RequireTeacher />}>
+              <Route path={ROUTE_MY_SCHEDULES.slice(1)} element={<MySchedules />} />
+              <Route path="my-progress" element={<MyProgress />} />
+              <Route path="my-availability" element={<MyAvailability />} />
+            </Route>
+          </Route>
+
+          <Route path="*" element={<NotFoundPage />} />
         </Routes>
       </Suspense>
     </Router>

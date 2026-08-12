@@ -1,0 +1,35 @@
+.cronos-marketing {
+  --marketing-bg: #faf8f5;
+  --marketing-surface: #fffdf9;
+  --marketing-surface-muted: #f3eee8;
+  --marketing-ink: #3d2b1f;
+  --marketing-ink-muted: #67584c;
+  --marketing-accent: #d4940b;
+  --marketing-accent-text: #805700;
+  --marketing-accent-on-dark: #f4c65f;
+  --marketing-success: #23634f;
+  --marketing-danger: #8f2d0b;
+  --marketing-border: rgb(61 43 31 / 16%);
+  --marketing-border-strong: rgb(61 43 31 / 30%);
+  --marketing-font-display: 'Playfair Display', Georgia, serif;
+  --marketing-font-body: 'IBM Plex Sans', 'Outfit', Arial, sans-serif;
+  --marketing-radius-control: 6px;
+  --marketing-radius-panel: 8px;
+  --marketing-container: 1180px;
+  --marketing-reading-width: 680px;
+  --marketing-header-mobile: 64px;
+  --marketing-header-desktop: 72px;
+  --marketing-page-title: clamp(2.5rem, 4vw, 4.5rem);
+  --marketing-section-title: clamp(2rem, 2.8vw, 3.25rem);
+  --marketing-card-title: clamp(1.35rem, 1.8vw, 1.8rem);
+  --marketing-section-space: clamp(3.5rem, 7vw, 5.5rem);
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --space-8: 72px;
+  --space-9: 112px;
+}
