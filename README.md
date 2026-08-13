@@ -54,15 +54,23 @@ Cronos is a Software-as-a-Service (SaaS) platform for course scheduling and oper
 
 ## First Verification Commands
 
-Run backend and frontend verification commands to test your setup:
+Use the fast suites during the TDD cycle:
 
-```bash
-# Run backend tests
-cd backend && pytest tests/ -v
+```powershell
+# Backend TDD cycle. Requires no PostgreSQL or Redis.
+cd backend
+pytest -m "unit and not slow" -q
 
-# Run frontend tests
-cd frontend && npm run test
+# Frontend TDD cycle.
+cd ..\frontend
+npm test
 ```
+
+Run the complete validation before integration:
+
+- Backend with PostgreSQL and Redis configured: `pytest tests/ -v`.
+- Frontend with `npm run verify`.
+- E2E only with reserved Clerk test identities.
 
 For Vite hot reload, use `docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build`.
 The development frontend is available at `http://localhost:5173`.

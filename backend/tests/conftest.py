@@ -7,7 +7,7 @@ os.environ.setdefault("RATELIMIT_ENABLED", "false")
 os.environ["DATABASE_POOLING_ENABLED"] = "false"
 os.environ["SENTRY_DSN"] = ""
 
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Iterable
 from uuid import uuid4
 
 import pytest
@@ -23,12 +23,62 @@ from sqlalchemy.pool import NullPool
 
 from alembic import command
 from app import models
-from app.api import deps
 from app.config import settings
-from app.main import app
 from tests.db import validated_test_database_url
 
-get_db = deps.get_db
+_DATABASE_FIXTURES = frozenset(
+    {
+        "migrated_test_database",
+        "clean_database",
+        "db_session",
+        "runtime_db_session",
+        "sync_db",
+        "async_client",
+        "real_async_client",
+    }
+)
+_EXTERNAL_RESOURCE_MARKERS = frozenset({"postgresql", "redis"})
+
+
+def classify_test_suite(
+    fixturenames: Iterable[str],
+    markers: Iterable[str],
+) -> str | None:
+    """Infer the suite marker from external resources used by a test."""
+    fixture_names = set(fixturenames)
+    marker_names = set(markers)
+    external_markers = marker_names.intersection(_EXTERNAL_RESOURCE_MARKERS)
+    database_fixtures = fixture_names.intersection(_DATABASE_FIXTURES)
+    if "unit" in marker_names and (
+        "integration" in marker_names or external_markers or database_fixtures
+    ):
+        conflicts = sorted({"integration", *external_markers, *database_fixtures} - {"unit"})
+        raise ValueError(
+            "explicit 'unit' marker conflicts with infrastructure classification: "
+            + ", ".join(conflicts)
+        )
+    if "integration" in marker_names:
+        return "integration"
+    if "postgresql" in external_markers:
+        return "integration"
+    if "redis" in external_markers:
+        return None
+    if database_fixtures:
+        return "integration"
+    return "unit"
+
+
+@pytest.hookimpl(tryfirst=True)
+def pytest_collection_modifyitems(items):
+    for item in items:
+        marker_names = {marker.name for marker in item.iter_markers()}
+        try:
+            suite = classify_test_suite(item.fixturenames, marker_names)
+        except ValueError as exc:
+            raise pytest.UsageError(f"{item.nodeid}: {exc}") from exc
+        if suite is not None and suite not in marker_names:
+            item.add_marker(suite)
+
 
 # --- Engines de Teste ---
 _configured_test_url = os.environ.get("TEST_DATABASE_URL", str(settings.DATABASE_URL))
@@ -156,6 +206,11 @@ def sync_db(db_session):
 # --- Fixture: Cliente API ---
 @pytest_asyncio.fixture(scope="function")
 async def async_client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
+    from app.api import deps
+    from app.main import app
+
+    get_db = deps.get_db
+
     class _TestClerkGateway:
         sdk = None
 
@@ -200,16 +255,20 @@ async def async_client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient, 
     app.dependency_overrides[get_db] = override_get_db
     app.dependency_overrides[deps.get_clerk_payload] = override_get_clerk_payload
     app.dependency_overrides[deps.get_clerk_gateway] = _TestClerkGateway
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="https://test") as ac:
-        yield ac
-    app.dependency_overrides.pop(get_db, None)
-    app.dependency_overrides.pop(deps.get_clerk_payload, None)
-    app.dependency_overrides.pop(deps.get_clerk_gateway, None)
+    try:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="https://test") as ac:
+            yield ac
+    finally:
+        app.dependency_overrides.pop(get_db, None)
+        app.dependency_overrides.pop(deps.get_clerk_payload, None)
+        app.dependency_overrides.pop(deps.get_clerk_gateway, None)
 
 
 @pytest_asyncio.fixture(scope="function")
 async def real_async_client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
     """ASGI client that uses the app's real SessionLocal per request."""
+    from app.main import app
+
     async with AsyncClient(transport=ASGITransport(app=app), base_url="https://test") as ac:
         yield ac
 

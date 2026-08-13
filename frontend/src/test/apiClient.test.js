@@ -1,3 +1,4 @@
+// @vitest-environment node
 import axios from 'axios'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import apiClient, { setClerkTokenGetter } from '../apiClient'
