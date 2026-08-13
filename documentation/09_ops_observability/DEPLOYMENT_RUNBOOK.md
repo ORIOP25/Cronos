@@ -53,6 +53,8 @@ Use root directory `/backend` and `backend/railway/api.json`.
 Set `DATABASE_POOLING_ENABLED=true` and `PORT=8000`.
 Use the `cronos_app` URL for runtime access.
 Use the `cronos_migrator` URL for migrations.
+The API publishes `scheduler.run_generation_job` through `celery_app.send_task`.
+Do not import `app.scheduler_worker` in the API process.
 
 ### Railway worker and Beat
 
@@ -60,6 +62,7 @@ Use root directory `/backend` and their matching JSON files.
 Set `DATABASE_POOLING_ENABLED=false`.
 Use private PostgreSQL and Redis URLs.
 Run one worker and one Beat replica.
+The worker command includes `--include=app.scheduler_worker`; this process owns the scheduler task and OR-Tools imports.
 
 ### Database bootstrap
 

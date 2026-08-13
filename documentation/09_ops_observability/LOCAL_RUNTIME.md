@@ -17,6 +17,7 @@ Copy `.env.example` to `.env` and `backend/.env.example` to `backend/.env`.
 
 The root Compose file runs PostgreSQL, Redis, API, worker, Beat, and the production-like Nginx SPA.
 The development override replaces the frontend runtime with Vite hot reload.
+The API publishes the scheduler task name through Redis; the worker imports and executes the scheduler task.
 
 ## Why the Behavior Exists
 
@@ -43,7 +44,8 @@ flowchart TD
     Browser[Browser :8080] --> Nginx[Nginx SPA]
     Nginx -->|/api/| API[Backend :8000]
     API --> DB[(PostgreSQL)]
-    API --> Redis[(Redis)]
+    API --> Dispatcher[Named task dispatcher]
+    Dispatcher -->|scheduler.run_generation_job| Redis[(Redis)]
     Redis --> Worker[Celery worker]
     Beat[Celery Beat] --> Redis
     Worker --> DB
@@ -63,6 +65,8 @@ flowchart TD
 - The API image exposes port `8000`.
 - The frontend runtime exposes port `8080`.
 - The worker command uses `--max-tasks-per-child=1`.
+- The API process does not import `app.scheduler_worker` or OR-Tools.
+- The worker process includes `app.scheduler_worker` and owns solver imports.
 - Beat stores its schedule under `/tmp`.
 
 ## States and Transitions

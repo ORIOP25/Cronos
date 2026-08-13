@@ -16,7 +16,8 @@ Read the [Project Overview](../00_getting_started/PROJECT_OVERVIEW.md).
 
 Cronos combines a React SPA, a FastAPI API, PostgreSQL, Redis, and Celery processes.
 
-The API serves HTTP requests and dispatches solver jobs.
+The API serves HTTP requests and publishes named Celery tasks.
+It does not import `app.scheduler_worker` or OR-Tools to dispatch a job.
 The worker executes generation and repair.
 Beat dispatches hourly member reconciliation.
 
@@ -34,6 +35,7 @@ PostgreSQL RLS protects tenant-owned data.
 | API | `backend/app/main.py` | HTTP lifecycle, middleware, routers |
 | Domain services | `backend/app/services/` | Business rules and transactions |
 | Scheduler domain | `backend/app/scheduler/` | Solver contracts, constraints, quality |
+| Task dispatcher | `backend/app/scheduler/infrastructure/task_dispatcher.py` | Publish registered task names without loading the solver |
 | Worker | `backend/app/scheduler_worker.py` | Complete and adaptive jobs |
 | Beat | `backend/app/celery_worker.py` | Hourly reconciliation schedule |
 | Persistence | `backend/app/models.py` and `backend/alembic/` | Schema and records |
@@ -48,7 +50,8 @@ flowchart TD
     API --> Auth[Clerk verification]
     API --> Services[Application services]
     Services --> DB[(PostgreSQL 16 + forced RLS)]
-    API --> Redis[(Redis)]
+    API --> Dispatcher[Celery task dispatcher]
+    Dispatcher -->|scheduler.run_generation_job| Redis[(Redis)]
     Redis --> Worker[Celery worker]
     Worker --> Solver[OR-Tools CP-SAT]
     Worker --> DB
@@ -60,7 +63,8 @@ flowchart TD
 2. Authenticated dependencies verify Clerk and resolve the active membership.
 3. The database dependency installs the tenant context before protected queries.
 4. Services validate domain rules and commit a transaction.
-5. Solver requests enter Redis and run in a separate worker process.
+5. The API publishes `scheduler.run_generation_job` through the lightweight dispatcher.
+6. The worker registers that task, loads OR-Tools, and runs the solve in a separate process.
 
 ## Contracts and Invariants
 

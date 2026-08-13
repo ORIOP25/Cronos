@@ -41,7 +41,7 @@ Schedules must account for resource conflicts, availability, calendar events, ex
 1. An administrator configures the school year, grid, rooms, curriculum, and staff.
 2. A teacher manages availability and views assigned schedule blocks.
 3. An administrator starts complete generation or adaptive repair.
-4. The API creates a job and dispatches `scheduler.run_generation_job`.
+4. The API creates a job and publishes the registered task name `scheduler.run_generation_job` through Redis.
 5. The worker computes a bounded result and stores a schedule draft.
 6. An administrator reviews the draft and approves or rejects it.
 7. Teachers record `COMPLETED` or `OCCURRENCE` lesson logs.
@@ -83,6 +83,8 @@ Schedules must account for resource conflicts, availability, calendar events, ex
 - Route definitions: `frontend/src/App.jsx`
 - Models: `backend/app/models.py`
 - Scheduler services: `backend/app/services/scheduler_*.py`
+- Scheduler dispatch boundary: `backend/app/scheduler/infrastructure/task_dispatcher.py`
+- Worker task registration: `backend/app/scheduler_worker.py`
 - Local runtime: `docker-compose.yml`
 
 ## Related Documents

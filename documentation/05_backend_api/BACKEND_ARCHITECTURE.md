@@ -32,6 +32,7 @@ Provider adapters isolate external HTTP calls from application services.
 | Contact adapters | `backend/app/contact/` | Turnstile and Resend integration |
 | Database | `backend/app/db/` | Async engine and tenant context |
 | Schemas | `backend/app/schemas.py` | Request and response validation |
+| Scheduler dispatch | `backend/app/scheduler/infrastructure/task_dispatcher.py` | Publish named Celery tasks without importing the solver worker |
 | Exceptions | `backend/app/core/exceptions.py` | Error classification and mapping |
 
 ## Data or Request Flow
@@ -89,6 +90,7 @@ Unhandled errors log a traceback and return a safe `500` response.
 - `backend/app/api/deps.py`
 - `backend/app/db/database.py`
 - `backend/app/db/tenant.py`
+- `backend/app/scheduler/infrastructure/task_dispatcher.py`
 - `backend/app/contact/`
 - `backend/tests/test_error_handlers.py`
 

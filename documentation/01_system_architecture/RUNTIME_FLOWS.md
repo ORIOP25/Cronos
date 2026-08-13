@@ -28,7 +28,7 @@ Explicit boundaries prevent provider adapters, authentication, and solver work f
 | :--- | :--- |
 | Authentication and tenant context | `backend/app/api/deps.py`, `backend/app/db/tenant.py` |
 | Contact request | `backend/app/api/v1/endpoints/contact.py`, `backend/app/contact/` |
-| Scheduler job | `backend/app/api/v1/endpoints/scheduler.py`, `backend/app/scheduler_worker.py` |
+| Scheduler job | `backend/app/api/v1/endpoints/scheduler.py`, `backend/app/scheduler/infrastructure/task_dispatcher.py`, `backend/app/scheduler_worker.py` |
 | Clerk webhook | `backend/app/api/v1/endpoints/webhooks.py`, `backend/app/services/member_webhook_service.py` |
 
 ## Data or Request Flow
@@ -52,10 +52,11 @@ Explicit boundaries prevent provider adapters, authentication, and solver work f
 ### Scheduler request
 
 1. The admin endpoint selects the strategy from school-year state.
-2. The API records a `QUEUED` job and dispatches `scheduler.run_generation_job`.
-3. The worker creates an independent session and tenant context.
-4. The selected engine builds candidates and runs CP-SAT.
-5. The runtime stores a draft, diff data, and result category.
+2. The API records a `QUEUED` job.
+3. The lightweight dispatcher calls `celery_app.send_task` with `scheduler.run_generation_job`.
+4. The worker starts with `app.scheduler_worker`, registers the task, and creates an independent session and tenant context.
+5. The selected engine builds candidates and runs CP-SAT.
+6. The runtime stores a draft, diff data, and result category.
 
 ### Clerk webhook
 
@@ -99,6 +100,8 @@ Scheduler jobs use `QUEUED`, `RUNNING`, `CANCEL_REQUESTED`, `CANCELED`, `SUCCEED
 - `backend/app/contact/turnstile_verifier.py`
 - `backend/app/contact/resend_gateway.py`
 - `backend/app/api/v1/endpoints/webhooks.py`
+- `backend/app/scheduler/infrastructure/task_dispatcher.py`
+- `backend/app/celery_worker.py`
 - `backend/app/scheduler_worker.py`
 
 ## Related Documents

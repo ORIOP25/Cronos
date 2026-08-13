@@ -16,6 +16,7 @@ Read [Scheduler Behavior](SCHEDULER_BEHAVIOR.md) and [Data Model](../01_system_a
 
 The scheduler selects complete generation before publication and adaptive repair after publication.
 It stores an immutable input snapshot, runs in Celery, and persists a draft before approval.
+The API publishes the task name through `celery_app.send_task`; only the worker imports `app.scheduler_worker` and OR-Tools.
 
 ## Why the Behavior Exists
 
@@ -42,7 +43,8 @@ The runtime makes each solve auditable and keeps long computation outside FastAP
 flowchart TD
     Request[POST /api/v1/scheduler/generate] --> Select[Select strategy]
     Select --> Job[Store QUEUED job and snapshot]
-    Job --> Queue[Redis]
+    Job --> Dispatch[Named task dispatcher]
+    Dispatch -->|scheduler.run_generation_job| Queue[Redis]
     Queue --> Worker[Celery worker]
     Worker --> Engine[Complete or adaptive engine]
     Engine --> CPSAT[CP-SAT candidates and quality]

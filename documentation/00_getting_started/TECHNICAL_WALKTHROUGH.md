@@ -21,6 +21,8 @@ The teacher flow reads personal blocks and records execution.
 ## Why the Behavior Exists
 
 The API keeps long solver work outside the HTTP request.
+The API dispatcher imports only `app.celery_worker.celery_app` and publishes the registered task name.
+The worker imports `app.scheduler_worker` and the solver dependencies when it starts.
 The worker stores an auditable job and draft before an administrator changes the active schedule.
 
 ## Components and Ownership
@@ -31,6 +33,7 @@ The worker stores an auditable job and draft before an administrator changes the
 | Admin schedule page | `frontend/src/pages/Schedules.jsx` |
 | Teacher schedule page | `frontend/src/pages/MySchedules.jsx` |
 | Scheduler router | `backend/app/api/v1/endpoints/scheduler.py` |
+| Task dispatcher | `backend/app/scheduler/infrastructure/task_dispatcher.py` |
 | Weekly schedule router | `backend/app/api/v1/endpoints/schedule.py` |
 | Worker task | `backend/app/scheduler_worker.py` |
 
@@ -48,8 +51,9 @@ sequenceDiagram
     Admin->>FE: Open /schedules
     FE->>API: POST /api/v1/scheduler/generate
     API->>DB: Store QUEUED job
-    API->>Redis: Dispatch scheduler.run_generation_job
+    API->>Redis: send_task("scheduler.run_generation_job")
     Worker->>Redis: Consume job
+    Worker->>Worker: Register task and load OR-Tools
     Worker->>DB: Read snapshot and write draft
     FE->>API: Poll /api/v1/scheduler/status
     Admin->>FE: Approve the draft
@@ -94,6 +98,8 @@ Approval changes a pending draft to `APPROVED` and publishes its active blocks.
 - `frontend/src/pages/MySchedules.jsx`
 - `backend/app/api/v1/endpoints/scheduler.py`
 - `backend/app/api/v1/endpoints/schedule.py`
+- `backend/app/scheduler/infrastructure/task_dispatcher.py`
+- `backend/app/celery_worker.py`
 - `backend/app/scheduler_worker.py`
 
 ## Related Documents
