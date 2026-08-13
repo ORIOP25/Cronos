@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, expect, it, vi } from 'vitest'
 import { observeClerkSignIn } from '../../e2e/utils/clerk-rate-limit'
 

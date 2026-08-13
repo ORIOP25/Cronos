@@ -1,3 +1,4 @@
+// @vitest-environment node
 import process from 'node:process'
 import { ESLint } from 'eslint'
 import { describe, expect, it } from 'vitest'

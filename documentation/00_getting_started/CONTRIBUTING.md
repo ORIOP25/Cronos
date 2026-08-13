@@ -29,8 +29,19 @@ Review the [Repository Map](REPOSITORY_MAP.md) and set up the local runtime envi
 - Dead code scanner: Knip (`npm run lint:dead-code` inside `frontend/`)
 - Component styling: Follow `DESIGN_SYSTEM.md` tokens. Do not introduce ad-hoc CSS frameworks.
 
-## Mandatory Pre-Commit Quality Gates
-Before pushing code, run the following verification pipeline:
+## TDD Feedback Cycle
+Run the fast suites while developing:
+
+```powershell
+cd backend
+pytest -m "unit and not slow" -q
+
+cd ..\frontend
+npm test
+```
+
+## Mandatory Pre-Integration Quality Gates
+Before integrating code, run the complete verification pipeline:
 
 1. **Backend Tests**:
    ```bash
@@ -51,8 +62,20 @@ Before pushing code, run the following verification pipeline:
    ```bash
    cd frontend
    npm run verify
-   npm run test:school-config:stability
    ```
+
+Coverage, lint, dependency audits, database audits, and E2E remain required gates.
+
+## Diagnostics
+
+Run the frontend stability check only when investigating scheduler settings:
+
+```bash
+cd frontend
+npm run test:school-config:stability
+```
+
+This command is diagnostic. Do not treat it as a pre-integration gate.
 
 ## Source Map
 - Backend Quality Rules: `backend/README.md`
