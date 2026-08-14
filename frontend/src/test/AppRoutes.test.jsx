@@ -43,7 +43,7 @@ describe('App route polish', () => {
       expect(container.querySelector('.spinner-border')).toBeInTheDocument()
       expect(
         await screen.findByRole('heading', {
-          name: /horários para o ensino profissional português/i,
+          name: /gestão de horários para o ensino profissional/i,
         }, { timeout: 10_000 }),
       ).toBeInTheDocument()
     },
