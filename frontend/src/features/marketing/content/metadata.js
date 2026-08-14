@@ -1,7 +1,7 @@
 export const marketingMetadata = Object.freeze({
   '/': Object.freeze({
-    title: 'Cronos | Horários para o Ensino Profissional Português',
-    description: 'Resolva imprevistos em menos de 1 minuto e adapte o horário antes que as horas por cumprir cheguem ao verão.',
+    title: 'Cronos | Gestão de Horários para o Ensino Profissional',
+    description: 'Cronos ajuda escolas profissionais a gerir horários, faltas e substituições.',
     canonicalUrl: 'https://cronos.pt/',
   }),
   '/vantagens': Object.freeze({

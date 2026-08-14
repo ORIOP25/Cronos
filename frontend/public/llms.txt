@@ -1,4 +1,4 @@
-# Cronos — Horários para o Ensino Profissional Português
+# Cronos — Gestão de Horários para o Ensino Profissional
 
 > O Cronos é uma plataforma de gestão de horários desenhada especificamente para escolas de Ensino Profissional em Portugal. Permite resolver imprevistos em menos de 1 minuto, gerir substituições de professores e acompanhar horas por cumprir antes que o ano letivo chegue ao verão.
 

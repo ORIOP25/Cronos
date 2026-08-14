@@ -1,6 +1,6 @@
 export const homeHero = {
-  title: 'Horários para o Ensino Profissional Português',
-  body: 'Resolva imprevistos em menos de 1 minuto e adapte o horário antes que as horas por cumprir cheguem ao verão.',
+  title: 'Gestão de Horários para o Ensino Profissional',
+  body: 'Cronos ajuda escolas profissionais a gerir horários, faltas e substituições.',
   image: {
     webpSrc: '/marketing/product/hero-schedule.webp',
     fallbackSrc: '/marketing/product/hero-schedule.png',

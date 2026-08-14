@@ -13,7 +13,7 @@ describe('public marketing sections', () => {
   it('renders the homepage sections in the approved narrative order', () => {
     renderWithRouter(<HomePage />)
     const headings = screen.getAllByRole('heading').map((heading) => heading.textContent)
-    expect(headings.indexOf('Horários para o Ensino Profissional Português')).toBeLessThan(headings.indexOf('Uma falta hoje não pode estragar o planeamento de junho'))
+    expect(headings.indexOf('Gestão de Horários para o Ensino Profissional')).toBeLessThan(headings.indexOf('Uma falta hoje não pode estragar o planeamento de junho'))
     expect(headings).toContain('Resolva uma substituição em menos de 1 minuto')
     expect(headings).toContain('O horário muda sem apagar o que já aconteceu')
     expect(headings).toContain('Feito para quem mantém a escola a funcionar')
