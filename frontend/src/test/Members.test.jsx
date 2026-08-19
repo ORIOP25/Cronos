@@ -1,7 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
 import { fireEvent, screen, within } from '@testing-library/react'
+import { beforeEach } from 'vitest'
 import { renderWithProviders } from './testUtils'
 import Members from '../pages/Members'
+
+const { useMembersMock } = vi.hoisted(() => ({ useMembersMock: vi.fn() }))
 
 vi.mock('../features/members/data', () => {
   const mutation = () => ({
@@ -12,13 +15,7 @@ vi.mock('../features/members/data', () => {
   })
 
   return {
-    useMembers: () => ({
-      data: { items: [] },
-      error: null,
-      isError: false,
-      isLoading: false,
-      refetch: vi.fn(),
-    }),
+    useMembers: () => useMembersMock(),
     useCreateMember: mutation,
     useUpdateMember: mutation,
     useRemoveMember: mutation,
@@ -33,6 +30,16 @@ vi.mock('../features/catalog/data', () => ({
 }))
 
 describe('Members', () => {
+  beforeEach(() => {
+    useMembersMock.mockReturnValue({
+      data: { items: [] },
+      error: null,
+      isError: false,
+      isLoading: false,
+      refetch: vi.fn(),
+    })
+  })
+
   it('exposes the member form controls through their visible labels', async () => {
     renderWithProviders(<Members />)
 
@@ -43,5 +50,36 @@ describe('Members', () => {
     expect(within(dialog).getByRole('textbox', { name: 'Email' })).toBeEnabled()
     expect(within(dialog).getByRole('combobox', { name: 'Tipo de membro' })).toBeEnabled()
     expect(within(dialog).getByRole('combobox', { name: 'Acesso do professor' })).toBeEnabled()
+  })
+
+  it('keeps action descriptions hoverable when the icon buttons are disabled', () => {
+    useMembersMock.mockReturnValue({
+      data: {
+        items: [{
+          id: 7,
+          organization_display_name: 'Ana Silva',
+          email: 'ana@example.test',
+          capabilities: ['teacher'],
+          teacher_access_mode: 'platform',
+          subject_ids: [],
+          access_status: 'active',
+          lifecycle_status: 'active',
+          can_resend_invitation: false,
+          can_retry_sync: false,
+          can_restore: false,
+          lock_version: 1,
+        }],
+      },
+      error: null,
+      isError: false,
+      isLoading: false,
+      refetch: vi.fn(),
+    })
+
+    renderWithProviders(<Members />)
+
+    for (const description of ['Reenviar convite', 'Tentar sincronização novamente', 'Restaurar membro']) {
+      expect(screen.getByTitle(description)).toBeVisible()
+    }
   })
 })

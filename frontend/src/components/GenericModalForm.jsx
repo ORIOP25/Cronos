@@ -1,8 +1,8 @@
 import {
   CModal, CModalHeader, CModalTitle, CModalBody,
-  CAlert
 } from '@coreui/react'
 import { getApiErrorMessage } from '../utils/apiErrors'
+import FeedbackBanner from './FeedbackBanner'
 
 /**
  * Componente Genérico para Criar/Editar Entidades via Modal.
@@ -27,7 +27,7 @@ const GenericModalForm = ({
   const errorMessage = error ? getApiErrorMessage(error) : null
 
   return (
-    <CModal visible={visible} onClose={onClose} backdrop="static" size={size}>
+    <CModal className="confirmation-modal" visible={visible} onClose={onClose} backdrop="static" size={size} scrollable>
       <CModalHeader onClose={onClose}>
         <CModalTitle>{modalTitle}</CModalTitle>
       </CModalHeader>
@@ -35,9 +35,7 @@ const GenericModalForm = ({
       <CModalBody>
         {/* Mostra o erro já tratado (agora é garantidamente uma String) */}
         {errorMessage && (
-          <CAlert color="danger" dismissible>
-            <strong>Erro:</strong> {errorMessage}
-          </CAlert>
+          <FeedbackBanner tone="danger" onDismiss={onClose}>Erro: {errorMessage}</FeedbackBanner>
         )}
 
         <FormComponent 

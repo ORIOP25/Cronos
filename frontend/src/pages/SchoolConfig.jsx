@@ -1,7 +1,5 @@
 import { useState } from 'react'
 import {
-  CAlert,
-  CBadge,
   CCard,
   CCardBody,
   CCardHeader,
@@ -18,9 +16,9 @@ import {
 } from '../features/schoolConfig/SchoolConfigSections'
 
 const TAB_DEFINITIONS = [
-  { key: 'settings', label: 'Período Letivo', heading: 'Definição do Período Letivo', component: SettingsSection },
-  { key: 'calendar', label: 'Calendário e Interrupções', heading: 'Calendário (Feriados e Pausas)', component: CalendarSection },
-  { key: 'grid', label: 'Grelha Horária', heading: 'Definição da Grelha Horária', component: GridSection },
+  { key: 'settings', label: 'Período letivo', heading: 'Definição do período letivo', component: SettingsSection },
+  { key: 'calendar', label: 'Calendário e interrupções', heading: 'Calendário e interrupções', component: CalendarSection },
+  { key: 'grid', label: 'Grelha horária', heading: 'Definição da grelha horária', component: GridSection },
 ]
 
 const SchoolConfig = () => {
@@ -30,16 +28,8 @@ const SchoolConfig = () => {
   const ActiveSection = activeSection.component
 
   return (
-    <div className="p-4">
-      <PageHeader preTitle="Configuração" title="Escola" />
-      {organization?.name && (
-        <CAlert color="primary" className="d-flex align-items-center gap-2 py-2 mb-4">
-          A gerir organização:
-          <CBadge color="light" textColor="primary" className="fs-6">
-            {organization.name}
-          </CBadge>
-        </CAlert>
-      )}
+    <div>
+      <PageHeader preTitle="Configuração" title="Escola" context={organization?.name ? `Organização: ${organization.name}` : undefined} />
       <CTabs activeItemKey={activeTab} onChange={setActiveTab}>
         <CTabList variant="tabs" className="mb-4">
           {TAB_DEFINITIONS.map((tab) => (

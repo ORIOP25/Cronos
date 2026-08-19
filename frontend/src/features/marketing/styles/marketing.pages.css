@@ -82,6 +82,43 @@
 .cronos-person__caption h3 { font-family: var(--marketing-font-display); font-size: 1.55rem; font-weight: 700; color: var(--marketing-ink); margin-bottom: var(--space-1); }
 .cronos-person__caption p { color: var(--marketing-ink-muted); font-size: 1.1rem; line-height: 1.65; margin: 0; }
 
+.cronos-teacher-pain { overflow: hidden; background: var(--marketing-surface-muted); }
+.cronos-teacher-pain__grid { display: grid; gap: var(--space-8); align-items: center; }
+.cronos-teacher-pain__visual { position: relative; display: grid; gap: var(--space-5); padding: var(--space-6); border: 1px solid var(--marketing-border); border-radius: var(--marketing-radius-panel); background: var(--marketing-surface); box-shadow: 0 24px 60px rgb(61 43 31 / 8%); }
+.cronos-teacher-pain__lesson { display: flex; justify-content: space-between; gap: var(--space-4); padding-bottom: var(--space-4); border-bottom: 1px solid var(--marketing-border); color: var(--marketing-ink-muted); }
+.cronos-teacher-pain__lesson strong { color: var(--marketing-ink); }
+.cronos-teacher-pain__versions { display: grid; gap: var(--space-4); }
+.cronos-teacher-version { display: grid; grid-template-columns: 1fr auto; gap: var(--space-2) var(--space-4); padding: var(--space-5); border: 1px solid var(--marketing-border); border-radius: var(--marketing-radius-control); background: var(--marketing-bg); }
+.cronos-teacher-version span, .cronos-teacher-version small { color: var(--marketing-ink-muted); }
+.cronos-teacher-version small { grid-column: 1 / -1; }
+.cronos-teacher-version--active { border-color: var(--marketing-accent); background: rgb(212 148 11 / 8%); }
+.cronos-teacher-version--active small { color: var(--marketing-accent-text); font-weight: 700; }
+.cronos-teacher-pain__visual > p { color: var(--marketing-danger); font-family: var(--marketing-font-display); font-size: 1.35rem; font-weight: 600; }
+
+.cronos-teacher-hub { overflow: hidden; background: var(--marketing-surface); }
+.cronos-teacher-hub .cronos-section-heading h2 { max-width: 28ch; }
+.cronos-teacher-hub__layout { display: grid; gap: var(--space-5); margin-top: var(--space-8); }
+.cronos-teacher-hub__actions { display: grid; gap: var(--space-4); }
+.cronos-teacher-action { position: relative; display: grid; gap: var(--space-2); padding: var(--space-5); border: 1px solid var(--marketing-border); border-radius: var(--marketing-radius-panel); background: var(--marketing-bg); }
+.cronos-teacher-action > span { width: 24px; border-top: 2px solid var(--marketing-accent); }
+.cronos-teacher-action h3 { font-family: var(--marketing-font-body); font-size: 1.08rem; font-weight: 700; letter-spacing: 0; }
+.cronos-teacher-action p { color: var(--marketing-ink-muted); font-size: .95rem; }
+.cronos-teacher-schedule { min-width: 0; overflow: hidden; border: 1px solid var(--marketing-border); border-radius: var(--marketing-radius-panel); background: var(--marketing-bg); box-shadow: 0 24px 60px rgb(61 43 31 / 8%); }
+.cronos-teacher-schedule__header, .cronos-teacher-schedule__footer { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); padding: var(--space-4) var(--space-5); }
+.cronos-teacher-schedule__header { border-bottom: 1px solid var(--marketing-border); }
+.cronos-teacher-schedule__header span { color: var(--marketing-success); font-size: .8rem; font-weight: 700; text-transform: uppercase; }
+.cronos-teacher-schedule__scroll { overflow-x: auto; }
+.cronos-teacher-schedule__grid { min-width: 620px; display: grid; grid-template-columns: 64px repeat(5, 1fr); padding: var(--space-4); color: var(--marketing-ink-muted); font-size: .72rem; }
+.cronos-teacher-schedule__grid > strong { padding-bottom: var(--space-3); text-align: center; }
+.cronos-teacher-schedule__row { position: relative; grid-column: 1 / -1; display: grid; grid-template-columns: 64px repeat(5, 1fr); min-height: 84px; }
+.cronos-teacher-schedule__row > span { padding-top: var(--space-3); }
+.cronos-teacher-schedule__row > i { border-top: 1px solid var(--marketing-border); border-left: 1px solid var(--marketing-border); }
+.cronos-teacher-schedule__row > i:last-of-type { border-right: 1px solid var(--marketing-border); }
+.cronos-teacher-schedule__row b { z-index: 1; align-self: center; display: grid; gap: 2px; min-height: 58px; margin: 4px; place-content: center; border: 1px solid var(--marketing-accent); border-radius: var(--marketing-radius-control); background: rgb(212 148 11 / 13%); color: var(--marketing-ink); font-size: .72rem; text-align: center; }
+.cronos-teacher-schedule__row b small { color: var(--marketing-ink-muted); font-weight: 400; }
+.cronos-teacher-schedule__footer { border-top: 1px solid var(--marketing-border); color: var(--marketing-ink-muted); font-size: .8rem; }
+.cronos-teacher-schedule__footer span:first-child { color: var(--marketing-success); font-weight: 700; }
+
 .cronos-page-intro { position: relative; overflow: hidden; padding-block: var(--space-8) var(--space-6); }
 .cronos-page-intro::after { position: absolute; right: -8vw; bottom: -14vw; width: 32vw; height: 32vw; border: 1px solid var(--marketing-border); border-radius: 50%; opacity: .35; content: ''; }
 .cronos-page-intro .cronos-section-heading h1 { max-width: 26ch; margin-inline: auto; font-size: clamp(2.4rem, 4vw, 3.8rem); line-height: 1.15; }
@@ -384,6 +421,8 @@
 /* Interactive Graphic Canvas - scaled up */
 .cronos-workflow-visual {
   position: relative;
+  min-width: 0;
+  width: 100%;
   min-height: 440px;
   display: flex;
   flex-direction: column;
@@ -395,11 +434,13 @@
   padding: var(--space-6);
 }
 .cronos-workflow-visual__header {
+  min-width: 0;
   display: flex;
   justify-content: flex-end;
   z-index: 2;
 }
 .cronos-workflow-visual__badge {
+  max-width: 100%;
   padding: 6px 14px;
   border-radius: 8px;
   background: var(--marketing-surface);
@@ -460,7 +501,36 @@
 .cronos-workflow-visual--finish .is-complete { background: var(--marketing-success); color: #ffffff; border-color: var(--marketing-success); }
 .cronos-workflow-visual--finish .is-pending { border: 1.5px dashed var(--marketing-accent); background: var(--marketing-surface); color: var(--marketing-ink); }
 
-@media (max-width: 639px) {
+.cronos-teacher-workflow { overflow: hidden; border-top: 1px solid var(--marketing-border); background: var(--marketing-surface-muted); }
+.cronos-teacher-workflow .cronos-section-heading h2 { max-width: 28ch; }
+.cronos-teacher-workflow__tabs { display: grid; gap: var(--space-2); margin-top: var(--space-7); padding: 6px; border: 1px solid var(--marketing-border); border-radius: var(--marketing-radius-panel); background: var(--marketing-surface); }
+.cronos-teacher-workflow__tabs button { display: flex; align-items: center; gap: var(--space-3); min-height: 56px; padding: var(--space-4); border: 0; border-radius: var(--marketing-radius-control); background: transparent; color: var(--marketing-ink-muted); cursor: pointer; font-weight: 700; text-align: left; }
+.cronos-teacher-workflow__tabs button[aria-selected='true'] { background: var(--marketing-ink); color: var(--marketing-surface); }
+.cronos-teacher-workflow__tabs button span { color: var(--marketing-accent-on-dark); font-size: .78rem; letter-spacing: .08em; }
+.cronos-teacher-workflow__panel { display: grid; gap: var(--space-7); padding: var(--space-6); border: 1px solid var(--marketing-border); border-top: 0; background: var(--marketing-surface); }
+.cronos-teacher-workflow__copy { display: flex; flex-direction: column; justify-content: center; gap: var(--space-4); }
+.cronos-teacher-workflow__copy h2 { font-size: clamp(1.8rem, 3vw, 2.5rem); }
+.cronos-teacher-workflow__copy > p { color: var(--marketing-ink-muted); font-size: 1.08rem; }
+.cronos-teacher-workflow__result { padding: var(--space-4); border-left: 3px solid var(--marketing-accent); background: var(--marketing-surface-muted); color: var(--marketing-ink-muted); }
+.cronos-teacher-workflow__result strong { color: var(--marketing-ink); }
+.cronos-teacher-workflow__boundary { max-width: none; padding: var(--space-4); border: 1px solid var(--marketing-border); border-top: 0; background: var(--marketing-bg); color: var(--marketing-ink-muted); text-align: center; }
+.cronos-teacher-workflow-visual { min-height: 310px; align-content: center; display: grid; gap: var(--space-5); padding: var(--space-6); border: 1px solid var(--marketing-border); border-radius: var(--marketing-radius-panel); background: var(--marketing-bg); box-shadow: 0 18px 45px rgb(61 43 31 / 7%); }
+.cronos-teacher-preferences { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
+.cronos-teacher-preferences span { aspect-ratio: 1.4; border: 1px solid var(--marketing-border); border-radius: 4px; background: var(--marketing-surface); }
+.cronos-teacher-preferences .is-preferred { border-color: var(--marketing-success); background: rgb(35 99 79 / 18%); }
+.cronos-teacher-preferences .is-impossible { border-color: var(--marketing-danger); background: rgb(143 45 11 / 16%); }
+.cronos-teacher-workflow-visual > small { color: var(--marketing-ink-muted); }
+.cronos-teacher-workflow-visual--teach > div { display: flex; flex-wrap: wrap; justify-content: space-between; gap: var(--space-3); }
+.cronos-teacher-workflow-visual--teach label { color: var(--marketing-ink-muted); font-size: .85rem; font-weight: 700; }
+.cronos-teacher-workflow-visual--teach p { min-height: 88px; padding: var(--space-4); border: 1px solid var(--marketing-border); border-radius: var(--marketing-radius-control); background: var(--marketing-surface); }
+.cronos-teacher-workflow-visual--teach > div:last-child span { flex: 1; padding: var(--space-3); border: 1px solid var(--marketing-ink); border-radius: var(--marketing-radius-control); text-align: center; }
+.cronos-teacher-workflow-visual--teach > div:last-child .is-primary { background: var(--marketing-ink); color: var(--marketing-surface); }
+.cronos-teacher-workflow-visual--track > div { display: grid; grid-template-columns: 110px 1fr 38px; gap: var(--space-3); align-items: center; }
+.cronos-teacher-workflow-visual--track i { height: 8px; overflow: hidden; border-radius: 8px; background: var(--marketing-surface-muted); }
+.cronos-teacher-workflow-visual--track i b { display: block; height: 100%; background: var(--marketing-success); }
+.cronos-teacher-workflow-visual--track small { color: var(--marketing-ink-muted); text-align: right; }
+
+@media (max-width: 899px) {
   .cronos-workflow-visual {
     min-height: auto;
     padding: var(--space-4);
@@ -470,7 +540,7 @@
     display: none;
   }
   .cronos-workflow-visual__blocks {
-    grid-template-columns: repeat(2, 1fr) !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
     grid-template-rows: auto !important;
     gap: 10px !important;
     height: auto !important;
@@ -674,8 +744,7 @@
 @media (min-width: 640px) {
   .cronos-hero__actions { display: flex; flex-wrap: wrap; }
   .cronos-hero__actions .cronos-button { width: auto; }
-  .cronos-people__gallery { grid-template-columns: repeat(2, 1fr); }
-  .cronos-person--1 { grid-column: 1 / -1; min-height: 0; }
+  .cronos-teacher-pain__versions, .cronos-teacher-hub__actions { grid-template-columns: repeat(2, 1fr); }
   .cronos-questionnaire { padding: var(--space-7); }
   .cronos-help__intro { grid-template-columns: 1fr auto; align-items: end; }
 }
@@ -688,20 +757,11 @@
     border-right: 1px solid var(--marketing-border);
     border-bottom: 0;
   }
-  .cronos-tabs {
-    display: grid;
+  .cronos-teacher-workflow__tabs {
     grid-template-columns: repeat(3, 1fr);
-    gap: var(--space-3);
-    padding: 8px;
   }
-  .cronos-tabs button {
+  .cronos-teacher-workflow__tabs button {
     justify-content: center;
-    text-align: center;
-    padding: var(--space-4) var(--space-5);
-  }
-  .cronos-tabs__label {
-    font-size: 1.12rem;
-    white-space: nowrap;
   }
   .cronos-adaptive-visual__legend {
     grid-template-columns: repeat(3, 1fr);
@@ -712,6 +772,9 @@
 }
 
 @media (min-width: 900px) {
+  .cronos-tabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-3); padding: 8px; }
+  .cronos-tabs button { justify-content: center; padding: var(--space-4) var(--space-5); text-align: center; }
+  .cronos-tabs__label { font-size: 1.12rem; white-space: nowrap; }
   .cronos-hero { padding-block: var(--marketing-section-space); }
   .cronos-hero__grid { grid-template-columns: 1.05fr .95fr; gap: var(--space-8); align-items: center; }
   .cronos-problem__layout { grid-template-columns: .95fr 1.05fr; grid-template-areas: 'heading cascade' 'copy cascade'; gap: var(--space-5) var(--space-8); align-items: start; }
@@ -734,9 +797,16 @@
   .cronos-minute-visual__controls button { align-content: center; }
   .cronos-adaptive__grid { grid-template-columns: .72fr 1.28fr; gap: var(--space-8); }
   .cronos-people__gallery { grid-template-columns: repeat(3, 1fr); align-items: stretch; gap: var(--space-6); }
+  .cronos-teacher-pain__grid { grid-template-columns: .8fr 1.2fr; }
+  .cronos-teacher-hub__layout { grid-template-columns: 210px minmax(0, 1fr) 210px; align-items: center; }
+  .cronos-teacher-hub__actions { grid-template-columns: 1fr; }
+  .cronos-teacher-action::after { position: absolute; top: 50%; width: var(--space-5); border-top: 1px dashed var(--marketing-accent); content: ''; }
+  .cronos-teacher-hub__actions--left .cronos-teacher-action::after { right: calc(-1 * var(--space-5)); }
+  .cronos-teacher-hub__actions--right .cronos-teacher-action::after { left: calc(-1 * var(--space-5)); }
   .cronos-workflow__experience { gap: var(--space-6); border: 0; }
   .cronos-workflow__panel { display: grid; grid-template-columns: 1fr 1.05fr; gap: var(--space-8); padding: var(--space-7); border: 1px solid var(--marketing-border); }
   .cronos-workflow__copy { padding: 0; }
+  .cronos-teacher-workflow__panel { grid-template-columns: 1fr 1.05fr; padding: var(--space-7); }
   .cronos-about-story__grid { grid-template-columns: 1.05fr .95fr; gap: var(--space-8); }
   .cronos-contact-page__grid { grid-template-columns: .9fr 1.1fr; gap: var(--space-8); }
   .cronos-demo-cta__inner { grid-template-columns: minmax(0, 760px) auto; align-items: center; }

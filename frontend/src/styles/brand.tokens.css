@@ -1,0 +1,43 @@
+:root {
+  --cronos-bg: #faf8f5;
+  --cronos-surface: #fffdf9;
+  --cronos-surface-muted: #f3eee8;
+  --cronos-ink: #3d2b1f;
+  --cronos-ink-muted: #67584c;
+  --cronos-accent: #d4940b;
+  --cronos-accent-text: #805700;
+  --cronos-success: #23634f;
+  --cronos-danger: #8f2d0b;
+  --cronos-warning: #a16207;
+  --cronos-border: rgb(61 43 31 / 16%);
+  --cronos-border-strong: rgb(61 43 31 / 30%);
+  --cronos-font-display: 'Playfair Display', Georgia, serif;
+  --cronos-font-body: 'IBM Plex Sans', 'Outfit', Arial, sans-serif;
+  --cronos-radius-control: 6px;
+  --cronos-radius-panel: 8px;
+  --cronos-shadow-panel: 0 12px 32px rgb(61 43 31 / 7%);
+
+  --brand-50: var(--cronos-bg);
+  --brand-100: var(--cronos-surface);
+  --brand-200: var(--cronos-surface-muted);
+  --brand-500: var(--cronos-accent);
+  --brand-600: var(--cronos-ink-muted);
+  --brand-800: var(--cronos-ink);
+  --brand-950: var(--cronos-ink);
+  --font-display: var(--cronos-font-display);
+  --font-body: var(--cronos-font-body);
+  --rs-body-bg: var(--cronos-bg);
+  --rs-heading: var(--cronos-ink);
+  --rs-muted: var(--cronos-ink-muted);
+  --rs-card-border: var(--cronos-border);
+  --rs-light-border: var(--cronos-border);
+  --color-bg-surface: var(--cronos-surface);
+  --color-bg-surface-strong: var(--cronos-surface-muted);
+  --color-bg-muted: var(--cronos-surface-muted);
+  --color-border-default: var(--cronos-border);
+  --color-border-strong: var(--cronos-border-strong);
+  --color-focus-ring: rgb(212 148 11 / 45%);
+  --rs-primary: var(--cronos-ink);
+  --rs-primary-hover: #2d1f17;
+  --rs-primary-active: #241811;
+}

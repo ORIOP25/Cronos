@@ -6,7 +6,7 @@ import {
   } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
 import {
-  cilCalendar, cilReload, cilBan,
+  cilReload, cilBan,
   cilPeople, cilUser,
 } from '@coreui/icons'
 import {
@@ -25,6 +25,7 @@ import GenerationStatusPanel from '../components/schedules/GenerationStatusPanel
 import PreflightErrorPanel from '../components/schedules/PreflightErrorPanel'
 import ConfirmationModal from '../components/ConfirmationModal'
 import PageHeader from '../components/PageHeader'
+import StatePanel from '../components/StatePanel'
 import { useOrganization } from '@clerk/react'
 import { getCurrentWeekMonday } from '../utils/formatUtils'
 import { getApiErrorMessage } from '../utils/apiErrors'
@@ -297,21 +298,12 @@ const Schedules = () => {
     jobData?.job_status
   )
   const hasSelection = Boolean(classId || teacherId)
-  const showKPI      = viewMode === 'class' && Boolean(classId)
-  const gridCols     = showKPI ? 8 : 12
 
   const openCreateOccurrenceModal = (slot) => {
     setAdminLessonLogSlot(slot)
   }
 
-  let weekGridContent = (
-    <div className="text-center p-5 text-muted">
-      <CIcon icon={cilCalendar} style={{ fontSize: '2rem', opacity: 0.35 }} />
-      <div className="mt-2">
-        Selecione uma turma ou professor para visualizar o horário da semana.
-      </div>
-    </div>
-  )
+  let weekGridContent = <StatePanel state="empty" title="Escolha uma seleção" description="Selecione uma turma ou professor para visualizar o horário da semana." />
 
   if (hasSelection) {
     weekGridContent = (
@@ -322,20 +314,17 @@ const Schedules = () => {
         weekStart={weekStart}
         isOperationalEnabled
         onOpenOperationalAction={openCreateOccurrenceModal}
+        fitViewport
       />
     )
   }
 
   if (hasSelection && weekLoadError) {
-    weekGridContent = (
-      <div className="text-center p-5 text-danger" style={{ fontSize: '0.9rem' }}>
-        Erro ao carregar o horário da semana. Tente novamente.
-      </div>
-    )
+    weekGridContent = <StatePanel state="error" title="Não foi possível carregar o horário" description="Tente novamente quando a ligação estiver disponível." action={<button type="button" className="btn btn-outline-primary" onClick={() => refetchWeekSchedule()}>Tentar novamente</button>} />
   }
 
   return (
-    <div className="p-4">
+    <div className="p-4 schedules-page">
 
       {adminLessonLogSlot ? (
         <LessonLogModal
@@ -363,7 +352,7 @@ const Schedules = () => {
 
       <PageHeader
         preTitle="Operações"
-        title={<span>Horários <span className="text-editorial">Escolares</span></span>}
+        title="Horários Escolares"
       >
         {/* Status-driven generation controls */}
         <div className="d-flex align-items-center gap-2 flex-wrap">
@@ -447,7 +436,7 @@ const Schedules = () => {
       </>
 
       {/* ── Sprint 4: View controls ── */}
-      <CCard className="border-0 shadow-sm mb-4">
+      <CCard className="border-0 shadow-sm mb-3 schedule-controls">
         <CCardBody className="py-2 px-3">
           <CRow className="g-3 align-items-end flex-wrap">
 
@@ -518,44 +507,23 @@ const Schedules = () => {
         </CCardBody>
       </CCard>
 
-      {/* ── Sprint 4: Grid + KPI ── */}
-      <CRow className="g-4">
+      <CCard className="border-0 shadow-sm mb-4 schedule-grid-card">
+        <CCardHeader className="bg-transparent fw-semibold d-flex align-items-center justify-content-between py-2">
+          <span>
+            Grelha semanal
+            {hasPendingDraft && <CBadge color="warning" className="ms-2">Rascunho pendente</CBadge>}
+          </span>
+          {loadingWeek && <CSpinner size="sm" className="text-secondary" />}
+        </CCardHeader>
+        <CCardBody className="p-0">{weekGridContent}</CCardBody>
+      </CCard>
 
-        {/* Week Grid */}
-        <CCol lg={gridCols}>
-          <CCard className="border-0 shadow-sm h-100">
-            <CCardHeader className="bg-transparent fw-semibold d-flex align-items-center justify-content-between">
-              <span>
-                Grelha Semanal
-                {hasPendingDraft && (
-                  <CBadge color="warning" className="ms-2">
-                    Rascunho pendente
-                  </CBadge>
-                )}
-              </span>
-              {loadingWeek && <CSpinner size="sm" className="text-secondary" />}
-            </CCardHeader>
-            <CCardBody className="p-0">
-              {weekGridContent}
-            </CCardBody>
-          </CCard>
-        </CCol>
-
-        {/* KPI Sidebar — class mode only */}
-        {showKPI && (
-          <CCol lg={4}>
-            <CCard className="border-0 shadow-sm h-100">
-              <CCardHeader className="bg-transparent fw-semibold">
-                Progresso por Disciplina
-              </CCardHeader>
-              <CCardBody>
-                <KPISidebar subjects={classSubjects} />
-              </CCardBody>
-            </CCard>
-          </CCol>
-        )}
-
-      </CRow>
+      {viewMode === 'class' && Boolean(classId) && (
+        <CCard className="border-0 shadow-sm">
+          <CCardHeader className="bg-transparent fw-semibold">Progresso por disciplina</CCardHeader>
+          <CCardBody><KPISidebar subjects={classSubjects} /></CCardBody>
+        </CCard>
+      )}
     </div>
   )
 }

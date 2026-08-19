@@ -96,7 +96,7 @@ const Timesheets = () => {
   return (
     <div className="p-4">
       {/* Header */}
-      <PageHeader preTitle="Operações" title={<span>Fecho <span className="text-editorial">Semanal</span></span>} />
+      <PageHeader preTitle="Operações" title="Fecho Semanal" />
 
       {/* Filters */}
       <CCard className="border-0 shadow-sm mb-4">

@@ -1018,6 +1018,22 @@ DESC_REPAIR_WINDOW_DAYS = "Janela fixa de estabilidade (em dias) para o modo de 
 ERR_LUNCH_WINDOW_PAIR = "Defina início e fim da janela de almoço em conjunto"
 ERR_LUNCH_WINDOW_ORDER = "A hora de fim da janela de almoço deve ser posterior ao início"
 ERR_LUNCH_WINDOW_DURATION = "A duração mínima de almoço excede a janela configurada"
+
+
+def validate_lunch_window(start: time | None, end: time | None, minimum: int | None) -> None:
+    """Validate the shared lunch-window invariant used by setup flows."""
+    if (start is None) != (end is None):
+        raise ValueError(ERR_LUNCH_WINDOW_PAIR)
+    if start is None or end is None:
+        return
+    start_minutes = start.hour * 60 + start.minute
+    end_minutes = end.hour * 60 + end.minute
+    if end_minutes <= start_minutes:
+        raise ValueError(ERR_LUNCH_WINDOW_ORDER)
+    if minimum is not None and minimum < 1:
+        raise ValueError(ERR_LUNCH_WINDOW_DURATION)
+    if minimum is not None and minimum > (end_minutes - start_minutes):
+        raise ValueError(ERR_LUNCH_WINDOW_DURATION)
 ERR_TARGET_BEFORE_START = "A data-alvo de fim não pode ser anterior ao início das aulas"
 ERR_HARD_BEFORE_START = "A data-limite rígida não pode ser anterior ao início das aulas"
 ERR_HARD_BEFORE_TARGET = "A data-limite rígida não pode ser anterior à data-alvo de fim"
@@ -1069,17 +1085,7 @@ class OrganizationGridSettingsUpsert(BaseModel):
 
     @staticmethod
     def _validate_lunch_inputs(start: time | None, end: time | None, minimum: int | None) -> None:
-        if (start is None) != (end is None):
-            raise ValueError(ERR_LUNCH_WINDOW_PAIR)
-        if start is None or end is None:
-            return
-
-        start_minutes = start.hour * 60 + start.minute
-        end_minutes = end.hour * 60 + end.minute
-        if end_minutes <= start_minutes:
-            raise ValueError(ERR_LUNCH_WINDOW_ORDER)
-        if minimum is not None and minimum > (end_minutes - start_minutes):
-            raise ValueError(ERR_LUNCH_WINDOW_DURATION)
+        validate_lunch_window(start, end, minimum)
 
     @model_validator(mode="after")
     def validate_lunch_window(self):
@@ -1821,10 +1827,7 @@ class OnboardingRequest(BaseModel):
     def validate_dates(self):
         if self.school_hard_end_date <= self.school_start_date:
             raise ValueError("Data de fim definitiva deve ser posterior à data de início")
-        if self.lunch_end <= self.lunch_start:
-            raise ValueError("Hora de fim do almoço deve ser posterior à hora de início")
-        if self.lunch_min_duration < 1:
-            raise ValueError("Duração mínima do almoço deve ser pelo menos 1 minuto")
+        validate_lunch_window(self.lunch_start, self.lunch_end, self.lunch_min_duration)
         return self
 
 

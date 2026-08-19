@@ -1,0 +1,47 @@
+.app-shell { display: flex; min-height: 100vh; background: var(--cronos-bg); }
+.app-sidebar { position: sticky; top: 0; z-index: 20; display: flex; flex: 0 0 var(--sidebar-width, 280px); flex-direction: column; width: var(--sidebar-width, 280px); height: 100vh; padding: 24px 20px; overflow: auto; background: var(--cronos-ink); color: #fff; transition: width 200ms ease, flex-basis 200ms ease, padding 200ms ease; }
+.app-sidebar.is-collapsed { --sidebar-width: 72px; padding-inline: 8px; }
+.app-sidebar__top { display: flex; flex-direction: column; gap: 16px; margin-bottom: 28px; }
+.app-sidebar__brand-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 44px; }
+.app-sidebar.is-collapsed .app-sidebar__brand-row { justify-content: center; }
+.app-sidebar__brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.app-sidebar__brand img { width: 32px; height: 32px; object-fit: contain; filter: grayscale(1) brightness(0) invert(1); }
+.app-sidebar.is-collapsed .app-sidebar__brand img { width: 36px; height: 36px; }
+.app-sidebar__brand-name { color: #fff; font: 600 1.45rem/1 var(--cronos-font-display); }
+.app-sidebar__toggle { min-width: 44px; min-height: 44px; border: 0; border-radius: 6px; background: transparent; color: rgb(255 255 255 / 72%); cursor: pointer; }
+.app-sidebar__toggle:hover, .app-sidebar__toggle:focus-visible { background: rgb(255 255 255 / 10%); color: #fff; }
+.app-sidebar__nav { display: flex; flex-direction: column; gap: 2px; }
+.app-sidebar__section { margin: 20px 12px 6px; color: rgb(255 255 255 / 56%); font-size: .68rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+.app-sidebar__link { display: flex; align-items: center; gap: 12px; min-height: 44px; padding: 8px 12px; overflow: hidden; border-radius: 6px; color: rgb(255 255 255 / 76%); font-size: .88rem; font-weight: 500; text-decoration: none; white-space: nowrap; transition: background 180ms ease, color 180ms ease; }
+.app-sidebar.is-collapsed .app-sidebar__link { justify-content: center; padding-inline: 8px; }
+.app-sidebar__link:hover, .app-sidebar__link:focus-visible { background: rgb(255 255 255 / 10%); color: #fff; }
+.app-sidebar__link.active { background: rgb(255 255 255 / 14%); color: #f4c65f; font-weight: 700; }
+.app-sidebar__footer { display: grid; gap: 12px; margin-top: auto; padding-top: 20px; border-top: 1px solid rgb(255 255 255 / 10%); }
+.app-sidebar__profile { display: flex; align-items: center; gap: 10px; min-width: 0; padding: 8px; border: 0; border-radius: 6px; background: transparent; color: #fff; text-align: left; cursor: pointer; }
+.app-sidebar__profile:hover, .app-sidebar__profile:focus-visible { background: rgb(255 255 255 / 10%); }
+.app-sidebar__avatar { display: grid; flex: 0 0 36px; width: 36px; height: 36px; place-items: center; border-radius: 4px; background: rgb(255 255 255 / 14%); font-weight: 700; }
+.app-sidebar__profile-copy { min-width: 0; }
+.app-sidebar__profile-copy strong, .app-sidebar__profile-copy span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.app-sidebar__profile-copy strong { font-size: .84rem; }
+.app-sidebar__profile-copy span { color: rgb(255 255 255 / 56%); font-size: .68rem; }
+.app-sidebar__logout { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; padding: 8px 12px; border: 1px solid rgb(255 255 255 / 18%); border-radius: 6px; background: transparent; color: rgb(255 255 255 / 78%); cursor: pointer; }
+.app-sidebar__logout:hover, .app-sidebar__logout:focus-visible { border-color: rgb(255 255 255 / 35%); color: #fff; }
+.app-sidebar.is-collapsed .app-sidebar__brand-name, .app-sidebar.is-collapsed .app-sidebar__section, .app-sidebar.is-collapsed .app-sidebar__profile-copy, .app-sidebar.is-collapsed .app-sidebar__logout span { display: none; }
+.app-sidebar.is-collapsed .app-sidebar__profile { justify-content: center; }
+.app-mobile-header { display: none; }
+.app-main { flex: 1; min-width: 0; width: 100%; max-width: 1600px; margin: 0 auto; padding: 32px; overflow-x: clip; }
+.app-main__access-message { margin-bottom: 20px; }
+.app-drawer-open { overflow: hidden; }
+.app-drawer .app-sidebar { position: static; width: 280px; height: 100%; border: 0; }
+
+@media (max-width: 991px) {
+  .app-shell { display: block; }
+  .app-sidebar--desktop { display: none; }
+  .app-mobile-header { position: sticky; top: 0; z-index: 30; display: flex; align-items: center; justify-content: space-between; min-height: 64px; padding: 10px 16px; background: var(--cronos-ink); color: #fff; }
+  .app-mobile-header__brand { display: flex; align-items: center; gap: 10px; color: #fff; font: 600 1.35rem var(--cronos-font-display); }
+  .app-mobile-header__brand img { width: 30px; height: 30px; filter: grayscale(1) brightness(0) invert(1); }
+  .app-mobile-header__menu { min-width: 44px; min-height: 44px; border: 0; border-radius: 6px; background: transparent; color: #fff; cursor: pointer; }
+  .app-main { padding: 24px; }
+}
+
+@media (max-width: 767px) { .app-main { padding: 16px; } }

@@ -28,6 +28,9 @@ The repository does not run an automated full-page WCAG audit in CI.
 | **Form Fields** | Explicit label association | `<label htmlFor="id">` linked to matching input `id` |
 | **Schedule Grid** | Native interactive controls | `WeekGrid.jsx` places actionable content in buttons |
 | **Keyboard rows** | Enter and Space activation | `SmartTable.jsx` handles keyboard activation for clickable rows |
+| **Live feedback** | Errors alert immediately. Other feedback announces politely. | `FeedbackBanner.jsx` uses `role="alert"` or `role="status"`. |
+| **Availability grid** | Only one cell is in the normal tab order. Arrows move between available cells. | `AvailabilityGrid.jsx` uses roving `tabIndex`. |
+| **Scrollable grids** | Grid scrolling stays inside a labelled focusable region. | `WeekGrid.jsx` and `AvailabilityGrid.jsx` use contained scroll regions. |
 
 ## Failure Modes
 - Regression Risk: CI runs component tests but no automated full-page WCAG or contrast audit.

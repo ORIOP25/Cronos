@@ -120,7 +120,7 @@ function ClassCard({ classData }) {
             ))
           ) : (
             <div className="text-center py-3 text-muted" style={{ fontSize: '0.85rem' }}>
-              Sem disciplinas assignadas nesta turma.
+              Sem disciplinas atribuídas nesta turma.
             </div>
           )}
         </CCardBody>
@@ -175,7 +175,7 @@ function MyProgress() {
 
   return (
     <div className="p-4">
-      <PageHeader preTitle="Professor" title={<span>Meu <span className="text-editorial">Progresso</span></span>} />
+      <PageHeader preTitle="Professor" title="Meu Progresso" />
       <div className="d-flex justify-content-end mb-4">
         <CBadge color="info" className="px-3 py-2">
           {classes.length} turma{classes.length === 1 ? '' : 's'}
@@ -186,7 +186,7 @@ function MyProgress() {
         <CCard className="border-0 shadow-sm">
           <CCardBody className="text-center py-5 text-muted">
             <CIcon icon={cilEducation} style={{ fontSize: '2rem', opacity: 0.35 }} />
-            <div className="mt-2">Não está assignado a nenhuma turma/disciplina.</div>
+            <div className="mt-2">Não está atribuído a nenhuma turma/disciplina.</div>
           </CCardBody>
         </CCard>
       ) : (

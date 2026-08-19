@@ -25,9 +25,10 @@ const ConfirmationModal = ({
   cancelText = TXT.CANCEL,
   isLoading = false,
   variant = 'danger',
+  pendingText = TXT.SAVING,
 }) => {
   return (
-    <CModal visible={visible} onClose={onClose} alignment="center">
+    <CModal className="confirmation-modal" visible={visible} onClose={onClose} alignment="center" scrollable>
       <CModalHeader>
         <CModalTitle className="d-flex align-items-center gap-2">
           <CIcon icon={cilWarning} className="text-warning" />
@@ -35,7 +36,7 @@ const ConfirmationModal = ({
         </CModalTitle>
       </CModalHeader>
       <CModalBody>
-        <p style={{ color: 'var(--brand-950)', fontSize: '0.95rem', lineHeight: 1.6, margin: 0 }}>
+        <p className="confirmation-modal__message">
           {message}
         </p>
       </CModalBody>
@@ -47,7 +48,7 @@ const ConfirmationModal = ({
           {isLoading ? (
             <>
               <CSpinner size="sm" className="me-1" />
-              <span>{TXT.SAVING}</span>
+              <span>{pendingText}</span>
             </>
           ) : (
             confirmText

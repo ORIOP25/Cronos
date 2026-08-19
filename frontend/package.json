@@ -23,6 +23,7 @@
     "test:school-config:stability": "node scripts/verify-school-config-stability.mjs"
   },
   "dependencies": {
+    "@clerk/localizations": "^4.15.2",
     "@clerk/react": "^6.6.2",
     "@coreui/coreui": "^5.4.3",
     "@coreui/icons": "^3.0.1",

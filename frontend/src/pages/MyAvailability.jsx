@@ -1,203 +1,104 @@
-import { useState, useMemo, useCallback } from 'react';
-import AvailabilityGrid from '../components/AvailabilityGrid';
-import PageHeader from '../components/PageHeader';
-import { useCurrentMember } from '../features/members/data';
-import { useTimeslots } from '../features/catalog/data';
-import { useMyAvailability, useSaveAvailability } from '../features/operations/data';
-import { PREFERENCE_LEVELS, DEFAULT_PREFERENCE } from '../constants';
-
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import PageHeader from '../components/PageHeader'
+import FeedbackBanner from '../components/FeedbackBanner'
+import StatePanel from '../components/StatePanel'
+import AvailabilityGrid from '../components/AvailabilityGrid'
+import { useCurrentMember } from '../features/members/data'
+import { useTimeslots } from '../features/catalog/data'
+import { useMyAvailability, useSaveAvailability } from '../features/operations/data'
+import { PREFERENCE_LEVELS, DEFAULT_PREFERENCE } from '../constants'
 
 const mapAvailabilityApiMessage = (err, context) => {
-  const status = err?.response?.status;
+  const status = err?.response?.status
+  if (status === 403) return context === 'load' ? 'Sem permissões para consultar preferências de disponibilidade.' : 'Sem permissões para gravar disponibilidade desta conta.'
+  if (status === 404) return 'Perfil de professor não encontrado na organização autenticada.'
+  if (status === 400) return 'Dados de disponibilidade inválidos. Atualize a página e tente novamente.'
+  return context === 'load' ? 'Falha ao carregar preferências de disponibilidade. Tente novamente.' : 'Erro ao gravar disponibilidade. Tente novamente.'
+}
 
-  if (status === 403) {
-    if (context === 'load') {
-      return 'Sem permissões para consultar preferências de disponibilidade.';
-    }
-    return 'Sem permissões para gravar disponibilidade desta conta.';
-  }
+function toMap(rows = [], validIds) {
+  return Object.fromEntries(rows.filter((row) => validIds.has(row.timeslot_id)).map((row) => [row.timeslot_id, Number(row.score)]))
+}
 
-  if (status === 404) {
-    return 'Perfil de professor não encontrado na organização autenticada.';
-  }
-
-  if (status === 400) {
-    return 'Dados de disponibilidade inválidos. Atualize a página e tente novamente.';
-  }
-
-  if (context === 'load') {
-    return 'Falha ao carregar preferências de disponibilidade. Tente novamente.';
-  }
-  return 'Erro ao gravar disponibilidade. Tente novamente.';
-};
-
-const buildAvailabilityMap = (rows, validTimeslotIds) => {
-  const nextMap = {};
-  let ignoredCount = 0;
-
-  for (const row of rows) {
-    if (validTimeslotIds.has(row.timeslot_id)) {
-      nextMap[row.timeslot_id] = Number(row.score);
-    } else {
-      ignoredCount += 1;
-    }
-  }
-
-  return { map: nextMap, ignoredCount };
-};
-
-const MyAvailability = () => {
-  const [userEdits, setUserEdits] = useState({});
-  const [feedback, setFeedback] = useState(null);
-  const [selectedMode, setSelectedMode] = useState(DEFAULT_PREFERENCE);
+export default function MyAvailability() {
+  const [draftEdits, setDraftEdits] = useState({})
+  const [selectedScore, setSelectedScore] = useState(DEFAULT_PREFERENCE)
+  const [feedback, setFeedback] = useState(null)
   const { data: currentMember } = useCurrentMember()
-  const teacherId = currentMember?.teacher_id;
+  const teacherId = currentMember?.teacher_id
+  const timeslotsQuery = useTimeslots()
+  const availabilityQuery = useMyAvailability({ enabled: Boolean(teacherId) })
+  const saveMutation = useSaveAvailability()
+  const timeslots = useMemo(() => timeslotsQuery.data ?? [], [timeslotsQuery.data])
+  const persistedMap = useMemo(() => toMap(Array.isArray(availabilityQuery.data) ? availabilityQuery.data : [], new Set(timeslots.map((slot) => slot.id))), [availabilityQuery.data, timeslots])
+  const draftMap = useMemo(() => ({ ...persistedMap, ...draftEdits }), [persistedMap, draftEdits])
+  const changedIds = useMemo(() => Object.keys(draftEdits).filter((id) => draftEdits[id] !== (persistedMap[id] ?? DEFAULT_PREFERENCE)), [draftEdits, persistedMap])
+  const isDirty = changedIds.length > 0
 
-  const { data: timeslots = [], isLoading: loading } = useTimeslots();
-  const { data: persistedRows = [], isLoading: availLoading } = useMyAvailability({ enabled: Boolean(teacherId) });
-
-  const saveMutation = useSaveAvailability();
-
-  const { dbMap, derivedFeedback } = useMemo(() => {
-    if (timeslots.length === 0 || loading || availLoading) {
-      return { dbMap: {}, derivedFeedback: null };
+  useEffect(() => {
+    const beforeUnload = (event) => {
+      if (!isDirty) return
+      event.preventDefault()
+      event.returnValue = ''
     }
-    const validTimeslotIds = new Set(timeslots.map((slot) => slot.id));
-    const rows = Array.isArray(persistedRows) ? persistedRows : [];
+    window.addEventListener('beforeunload', beforeUnload)
+    return () => window.removeEventListener('beforeunload', beforeUnload)
+  }, [isDirty])
 
-    const { map, ignoredCount } = buildAvailabilityMap(rows, validTimeslotIds);
+  const handleGridChange = useCallback((id, score) => {
+    if (saveMutation.isPending) return
+    setFeedback(null)
+    setDraftEdits((current) => {
+      const next = { ...current }
+      if (score === (persistedMap[id] ?? DEFAULT_PREFERENCE)) delete next[id]
+      else next[id] = score
+      return next
+    })
+  }, [persistedMap, saveMutation.isPending])
 
-    let feedbackResult = null;
-    if (ignoredCount > 0) {
-      feedbackResult = {
-        type: 'info',
-        message: `Foram ignoradas ${ignoredCount} preferências antigas em blocos já removidos.`,
-      };
-    } else if (rows.length === 0) {
-      feedbackResult = {
-        type: 'info',
-        message: 'Sem preferências gravadas. Pode começar a pintar a grelha.',
-      };
-    }
-    return { dbMap: map, derivedFeedback: feedbackResult };
-  }, [timeslots, persistedRows, loading, availLoading]);
+  const handleReset = () => { setDraftEdits({}); setFeedback(null) }
 
-  const availabilityMap = useMemo(
-    () => ({ ...dbMap, ...userEdits }),
-    [dbMap, userEdits],
-  );
-
-  const effectiveFeedback = feedback ?? derivedFeedback;
-
-  const handleGridChange = (timeslotId, newScore) => {
-    if (saveMutation.isPending) return;
-
-    setFeedback(null);
-    setUserEdits((prev) => ({
-      ...prev,
-      [timeslotId]: newScore,
-    }));
-  };
-
-  const handleSave = useCallback(async () => {
-    if (!teacherId) {
-      setFeedback({
-        type: 'error',
-        message: 'Esta conta não está associada a um perfil de professor.',
-      });
-      return;
-    }
-
-    setFeedback(null);
-
-    const validTimeslotIds = new Set(timeslots.map((slot) => slot.id));
-    const payload = Object.entries(availabilityMap)
-      .map(([tsId, score]) => ({
-        timeslot_id: Number.parseInt(tsId, 10),
-        score,
-      }))
-      .filter((item) => validTimeslotIds.has(item.timeslot_id));
-
+  const handleSave = async () => {
+    if (!teacherId || !isDirty) return
+    setFeedback(null)
+    const validIds = new Set(timeslots.map((slot) => slot.id))
+    const payload = Object.entries(draftMap).filter(([id]) => validIds.has(Number(id))).map(([id, score]) => ({ timeslot_id: Number(id), score }))
     try {
-      await saveMutation.mutateAsync({ teacherId, payload });
-      setFeedback({ type: 'success', message: 'Disponibilidade gravada com sucesso.' });
-    } catch (err) {
-      setFeedback({ type: 'error', message: mapAvailabilityApiMessage(err, 'save') });
+      await saveMutation.mutateAsync({ teacherId, payload })
+      setDraftEdits({})
+      setFeedback({ tone: 'success', message: 'Preferências guardadas.' })
+    } catch (error) {
+      setFeedback({ tone: 'danger', message: mapAvailabilityApiMessage(error, 'save') })
     }
-  }, [teacherId, timeslots, availabilityMap, saveMutation]);
+  }
 
-  if (loading) return <div style={{ padding: '32px', color: 'var(--rs-muted)' }}>A carregar grelha...</div>;
-
-  const saving = saveMutation.isPending;
+  const queryError = timeslotsQuery.error || availabilityQuery.error
+  if (timeslotsQuery.isLoading || availabilityQuery.isLoading) return <><PageHeader preTitle="Professor" title="Minhas Preferências" /><StatePanel state="loading" title="A carregar preferências" description="Estamos a preparar a grelha de disponibilidade." /></>
+  if (queryError) return <><PageHeader preTitle="Professor" title="Minhas Preferências" /><StatePanel state="error" title="Não foi possível carregar a grelha" description={mapAvailabilityApiMessage(queryError, 'load')} action={<button type="button" className="btn btn-outline-primary" onClick={() => { void timeslotsQuery.refetch(); void availabilityQuery.refetch() }}>Tentar novamente</button>} /></>
+  if (!timeslots.length) return <><PageHeader preTitle="Professor" title="Minhas Preferências" /><StatePanel state="empty" title="A escola ainda não configurou blocos" description="As preferências ficam disponíveis depois de a grelha horária ser configurada." /></>
 
   return (
     <div>
-      <PageHeader preTitle="Professor" title={<span>Minhas <span className="text-editorial">Preferências</span></span>} />
-      <p style={{ color: 'var(--rs-muted)', marginBottom: '16px', marginTop: '-1rem' }}>Selecione uma ferramenta e clique (ou arraste) nas células para pintar.</p>
-
-      {effectiveFeedback ? (
-        <div
-          role={effectiveFeedback.type === 'error' ? 'alert' : 'status'}
-          className={`zen-alert zen-alert-${effectiveFeedback.type === 'error' ? 'danger' : effectiveFeedback.type}`}
-        >
-          {effectiveFeedback.message}
-        </div>
-      ) : null}
-      
-      <div style={{ display: 'flex', gap: '8px', marginBottom: '20px', flexWrap: 'wrap' }}>
-        {['-1', '0', '1', '2'].map((score) => {
-          const info = PREFERENCE_LEVELS[score];
-          const numScore = Number(score);
-          const isActive = selectedMode === numScore;
-          return (
-            <button
-              key={score}
-              type="button"
-              onClick={() => setSelectedMode(numScore)}
-              disabled={saving}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                padding: '8px 16px',
-                border: isActive ? '2px solid var(--rs-primary)' : '2px solid var(--rs-grid-cell-border)',
-                borderRadius: '8px',
-                backgroundColor: isActive ? info.color : 'transparent',
-                cursor: saving ? 'not-allowed' : 'pointer',
-                fontWeight: isActive ? '700' : '500',
-                fontSize: '0.9rem',
-                transition: 'all 0.15s ease',
-                opacity: saving ? 0.5 : (isActive ? 1 : 0.7),
-                boxShadow: isActive ? '0 2px 8px rgba(0,0,0,0.12)' : 'none',
-              }}
-            >
-              <span style={{ width: '14px', height: '14px', borderRadius: '50%', backgroundColor: info.color, border: '1px solid var(--rs-grid-cell-border)', flexShrink: 0 }} />
-              {info.label}
+      <PageHeader preTitle="Professor" title="Minhas Preferências" description="Escolha uma ferramenta e pinte os blocos. Pode usar rato, toque ou teclado." />
+      {feedback && <div className="mb-3"><FeedbackBanner tone={feedback.tone}>{feedback.message}</FeedbackBanner></div>}
+      <div className="availability-toolbar" role="toolbar" aria-label="Ferramentas de disponibilidade">
+        <div className="availability-toolbar__tools">
+          {[2, 1, 0, -1].map((score) => {
+            const info = PREFERENCE_LEVELS[score]
+            return <button key={score} type="button" className={`availability-tool${selectedScore === score ? ' is-selected' : ''}`} aria-pressed={selectedScore === score} onClick={() => setSelectedScore(score)} disabled={saveMutation.isPending}>
+              <span className="availability-tool__swatch" style={{ backgroundColor: info.color }} aria-hidden="true" />{info.label}
             </button>
-          );
-        })}
+          })}
+        </div>
+        <div className="availability-toolbar__status" aria-live="polite">{changedIds.length} {changedIds.length === 1 ? 'bloco alterado' : 'blocos alterados'}</div>
+        {isDirty && <button type="button" className="btn btn-link" onClick={handleReset} disabled={saveMutation.isPending}>Repor alterações</button>}
       </div>
-
-      <div style={{ opacity: saving ? 0.7 : 1, pointerEvents: saving ? 'none' : 'auto' }}>
-        <AvailabilityGrid 
-          timeslots={timeslots} 
-          availabilityMap={availabilityMap} 
-          onChange={handleGridChange}
-          selectedMode={selectedMode}
-        />
-      </div>
-
-      <div style={{ marginTop: '24px', textAlign: 'right' }}>
-        <button 
-          onClick={handleSave} 
-          disabled={saving}
-          className="btn-zen btn-zen-primary"
-        >
-          {saving ? 'A guardar...' : 'Guardar Alterações'}
+      <AvailabilityGrid timeslots={timeslots} availabilityMap={draftMap} onChange={handleGridChange} selectedMode={selectedScore} />
+      <div className="d-flex justify-content-end mt-4">
+        <button type="button" className="btn btn-primary" onClick={() => { void handleSave() }} disabled={!isDirty || saveMutation.isPending}>
+          {saveMutation.isPending ? 'A guardar' : 'Guardar preferências'}
         </button>
       </div>
     </div>
-  );
-};
-
-export default MyAvailability;
+  )
+}

@@ -53,6 +53,16 @@ describe('SchoolConfig scheduler settings', () => {
     expect(apiClient.get).not.toHaveBeenCalledWith('/school/grid-settings/')
   })
 
+  it('integrates the holiday import action into the event editor header', async () => {
+    renderWithProviders(<SchoolConfig />)
+
+    fireEvent.click(screen.getByRole('tab', { name: /calendário/i }))
+    const importButton = await screen.findByRole('button', { name: /importar feriados nacionais/i })
+
+    expect(importButton.closest('.card-header')).toBeInTheDocument()
+    expect(importButton).toHaveTextContent('Importar Feriados')
+  })
+
   it('submits hard boundaries and accepts a zero-day stability window', async () => {
     renderWithProviders(<SchoolConfig />)
 
@@ -60,8 +70,8 @@ describe('SchoolConfig scheduler settings', () => {
     expect(screen.queryByLabelText(/fim previsto|data preferida/i)).not.toBeInTheDocument()
 
     fireEvent.change(repairWindow, { target: { value: '0' } })
-    fireEvent.click(screen.getByRole('button', { name: /guardar configurações gerais/i }))
-    fireEvent.click(screen.getByRole('button', { name: /confirmar guarda/i }))
+    fireEvent.click(screen.getByRole('button', { name: /guardar alterações/i }))
+    fireEvent.click(screen.getAllByRole('button', { name: /guardar alterações/i }).at(-1))
 
     await waitFor(() => {
       expect(apiClient.post).toHaveBeenCalledWith('/school/settings/', {

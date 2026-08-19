@@ -1,140 +1,127 @@
-import React, { useRef, useCallback, useEffect } from 'react';
-import { PREFERENCE_LEVELS, DEFAULT_PREFERENCE } from '../constants';
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { PREFERENCE_LEVELS, DEFAULT_PREFERENCE } from '../constants'
 
-const AvailabilityGrid = ({ timeslots, availabilityMap, onChange, selectedMode }) => {
-  // timeslots: Lista vinda da BD (ex: day_of_week: 0, start_time: "08:00:00")
-  
-  // Agrupar timeslots por Dias da Semana para desenhar a tabela
-  const days = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta"];
-  
-  // Extrair as horas únicas e ordenar (ex: "08:00:00", "09:00:00")
-  const uniqueTimes = [...new Set(timeslots.map(t => t.start_time))].sort((a, b) => a.localeCompare(b));
+const DAY_LABELS = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo']
 
-  // --- Click-and-Drag (Paintbrush) ---
-  const isDragging = useRef(false);
+function timeLabel(time = '') { return time.slice(0, 5) }
 
-  const getScore = (timeslotId) => availabilityMap[timeslotId] ?? DEFAULT_PREFERENCE;
+export default function AvailabilityGrid({ timeslots = [], availabilityMap, onChange, selectedMode }) {
+  const [focusedId, setFocusedId] = useState(null)
+  const paintSession = useRef({ active: false, lastPaintedId: null })
+  const cellRefs = useRef(new Map())
 
-  const applyPaint = useCallback((timeslot) => {
-    const currentScore = availabilityMap[timeslot.id] ?? DEFAULT_PREFERENCE;
-    if (currentScore !== selectedMode) {
-      onChange(timeslot.id, selectedMode);
-    }
-  }, [selectedMode, availabilityMap, onChange]);
+  const model = useMemo(() => {
+    const slotByKey = new Map(timeslots.map((slot) => [`${slot.day_of_week}:${timeLabel(slot.start_time)}`, slot]))
+    const days = [...new Set(timeslots.map((slot) => slot.day_of_week))].sort((a, b) => a - b)
+    const times = [...new Set(timeslots.map((slot) => timeLabel(slot.start_time)))].sort((a, b) => a.localeCompare(b))
+    return { slotByKey, days, times }
+  }, [timeslots])
 
-  const handleCellMouseDown = (timeslot) => {
-    isDragging.current = true;
-    applyPaint(timeslot);
-  };
+  const effectiveFocusedId = timeslots.some((slot) => slot.id === focusedId) ? focusedId : timeslots[0]?.id ?? null
 
-  const handleCellMouseEnter = (timeslot) => {
-    if (isDragging.current) {
-      applyPaint(timeslot);
-    }
-  };
+  const getScore = (id) => availabilityMap[id] ?? DEFAULT_PREFERENCE
+  const applyPaint = (slot) => {
+    if (!slot || paintSession.current.lastPaintedId === slot.id) return
+    paintSession.current.lastPaintedId = slot.id
+    if (getScore(slot.id) !== selectedMode) onChange(slot.id, selectedMode)
+  }
 
-  const handleMouseUp = () => {
-    isDragging.current = false;
-  };
-
-  // Captura a libertação do rato globalmente para não quebrar o drag quando
-  // o cursor sai da janela antes de soltar o botão.
   useEffect(() => {
-    globalThis.addEventListener('mouseup', handleMouseUp);
-    return () => globalThis.removeEventListener('mouseup', handleMouseUp);
-  }, []);
+    const endPaint = () => { paintSession.current.active = false; paintSession.current.lastPaintedId = null }
+    window.addEventListener('pointerup', endPaint)
+    window.addEventListener('pointercancel', endPaint)
+    window.addEventListener('blur', endPaint)
+    return () => {
+      window.removeEventListener('pointerup', endPaint)
+      window.removeEventListener('pointercancel', endPaint)
+      window.removeEventListener('blur', endPaint)
+    }
+  }, [])
 
-  const styles = {
-    grid: {
-      display: 'grid',
-      gridTemplateColumns: `100px repeat(${days.length}, 1fr)`,
-      gap: '4px',
-      marginTop: '20px'
-    },
-    headerCell: {
-      fontWeight: '600',
-      textAlign: 'center',
-      padding: '10px',
-      backgroundColor: 'var(--rs-grid-header-bg)',
-      color: 'var(--rs-grid-header-text)',
-      fontSize: '0.85rem',
-      borderRadius: '6px',
-    },
-    timeLabel: {
-      fontWeight: '600',
-      textAlign: 'center',
-      padding: '10px',
-      backgroundColor: 'var(--rs-grid-time-bg)',
-      color: 'var(--rs-grid-time-text)',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      borderRadius: '6px',
-      fontSize: '0.85rem',
-    },
-    cell: (score) => ({
-      width: '100%',
-      height: '60px',
-      padding: 0,
-      fontFamily: 'inherit',
-      color: 'inherit',
-      backgroundColor: PREFERENCE_LEVELS[score].color,
-      cursor: 'pointer',
-      border: '1px solid var(--rs-grid-cell-border)',
-      borderRadius: '8px',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      fontSize: '0.8rem',
-      fontWeight: '500',
-      transition: 'all 0.2s ease',
-      userSelect: 'none',
-    })
-  };
+  const moveFocus = (currentSlot, dayOffset, timeOffset) => {
+    const dayIndex = model.days.indexOf(currentSlot.day_of_week)
+    const timeIndex = model.times.indexOf(timeLabel(currentSlot.start_time))
+    const nextDay = model.days[dayIndex + dayOffset]
+    const nextTime = model.times[timeIndex + timeOffset]
+    if (nextDay === undefined || nextTime === undefined) return
+    const next = model.slotByKey.get(`${nextDay}:${nextTime}`)
+    if (next) {
+      setFocusedId(next.id)
+      cellRefs.current.get(next.id)?.focus()
+    }
+  }
+
+  const handleKeyDown = (event, slot) => {
+    const moves = { ArrowRight: [1, 0], ArrowLeft: [-1, 0], ArrowDown: [0, 1], ArrowUp: [0, -1] }
+    if (moves[event.key]) {
+      event.preventDefault()
+      moveFocus(slot, moves[event.key][0], moves[event.key][1])
+      return
+    }
+    if (event.key === 'Home' || event.key === 'End') {
+      event.preventDefault()
+      const time = timeLabel(slot.start_time)
+      const day = event.key === 'Home' ? model.days[0] : model.days.at(-1)
+      const next = model.slotByKey.get(`${day}:${time}`)
+      if (next) {
+        setFocusedId(next.id)
+        cellRefs.current.get(next.id)?.focus()
+      }
+      return
+    }
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault()
+      applyPaint(slot)
+    }
+  }
 
   return (
-    <div style={{ maxWidth: '100%', overflowX: 'auto' }}>
-      {/* A Grelha */}
-      <div style={styles.grid}>
-        {/* Cabeçalho */}
-        <div style={styles.headerCell}>Hora</div>
-        {days.map(day => (
-          <div key={day} style={styles.headerCell}>{day}</div>
-        ))}
-
-        {/* Linhas (Horas) */}
-        {uniqueTimes.map(time => (
-          <React.Fragment key={time}>
-            {/* Coluna da Hora (com slice para tirar os segundos :00) */}
-            <div style={styles.timeLabel}>{time.slice(0, 5)}</div>
-            
-            {/* Células dos Dias */}
-            {days.map((dayName, index) => {
-              const slot = timeslots.find(t => t.day_of_week === index && t.start_time === time);
-              
-              if (!slot) return <div key={`${index}-${time}`} style={{ background: 'var(--rs-grid-empty-bg)', border: '1px dashed var(--rs-grid-empty-border)', borderRadius: '8px' }} title="Sem horário definido" />; 
-
-              const score = getScore(slot.id);
-              
+    <div className="availability-grid-scroll" role="region" aria-label="Grelha de preferências de disponibilidade" tabIndex="0">
+      <div className="availability-grid" style={{ '--availability-days': model.days.length }}>
+        <div className="availability-grid__header">Hora</div>
+        {model.days.map((day) => <div className="availability-grid__header" key={day}>{DAY_LABELS[day] ?? `Dia ${day + 1}`}</div>)}
+        {model.times.map((time) => (
+          <div className="availability-grid__row" key={time}>
+            <div className="availability-grid__time">{time}</div>
+            {model.days.map((day) => {
+              const slot = model.slotByKey.get(`${day}:${time}`)
+              if (!slot) return <div className="availability-grid__empty" key={`${day}-${time}`} aria-label="Bloco indisponível">—</div>
+              const score = getScore(slot.id)
+              const preference = PREFERENCE_LEVELS[score]
+              const selected = effectiveFocusedId === slot.id
               return (
                 <button
                   type="button"
                   key={slot.id}
-                  style={styles.cell(score)}
-                  onMouseDown={() => handleCellMouseDown(slot)}
-                  onMouseEnter={() => handleCellMouseEnter(slot)}
-                  onClick={() => applyPaint(slot)}
-                  title={`${PREFERENCE_LEVELS[selectedMode].label}: ${dayName} às ${time}`}
+                  ref={(element) => {
+                    if (element) cellRefs.current.set(slot.id, element)
+                    else cellRefs.current.delete(slot.id)
+                  }}
+                  data-timeslot-id={slot.id}
+                  className="availability-grid__cell"
+                  style={{ '--preference-color': preference.color }}
+                  tabIndex={selected ? 0 : -1}
+                  aria-label={`${DAY_LABELS[day] ?? `Dia ${day + 1}`}, ${time}, estado guardado: ${preference.label}, ferramenta ativa: ${PREFERENCE_LEVELS[selectedMode].label}`}
+                  onFocus={() => setFocusedId(slot.id)}
+                  onKeyDown={(event) => handleKeyDown(event, slot)}
+                  onPointerDown={(event) => {
+                    if (event.button !== 0) return
+                    event.preventDefault()
+                    event.currentTarget.setPointerCapture?.(event.pointerId)
+                    paintSession.current.active = true
+                    paintSession.current.lastPaintedId = null
+                    applyPaint(slot)
+                  }}
+                  onPointerEnter={() => { if (paintSession.current.active) applyPaint(slot) }}
+                  onPointerUp={() => { paintSession.current.active = false; paintSession.current.lastPaintedId = null }}
                 >
-                  {PREFERENCE_LEVELS[score].label}
+                  {preference.label}
                 </button>
-              );
+              )
             })}
-          </React.Fragment>
+          </div>
         ))}
       </div>
     </div>
-  );
-};
-
-export default AvailabilityGrid;
+  )
+}

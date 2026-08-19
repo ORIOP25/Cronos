@@ -7,7 +7,7 @@ import {
 import CIcon from '@coreui/icons-react'
 import {
   cilArrowLeft, cilPencil, cilSave, cilX, cilTrash,
-  cilBookmark, cilPeople, cilChevronRight, cilPlus,
+  cilPeople, cilChevronRight, cilPlus,
 } from '@coreui/icons'
 import GenericModalForm from '../components/GenericModalForm'
 import ClassInCourseForm from '../components/Forms/ClassInCourseForm'
@@ -336,7 +336,6 @@ const CourseDetails = () => {
             <div className="d-flex justify-content-between align-items-center">
               <div>
                 <div className="d-flex align-items-center gap-2 mb-1">
-                  <CIcon icon={cilBookmark} className="text-primary" />
                   <h3 className="mb-0 fw-bold">{course.name}</h3>
                   <CBadge color="primary" shape="rounded-pill" style={{ fontSize: '0.9rem' }}>
                     {course.abbreviation}
@@ -367,7 +366,6 @@ const CourseDetails = () => {
             <CCardHeader className="bg-transparent d-flex align-items-center gap-2">
               <CIcon icon={cilPeople} className="text-success" />
               <strong>Turmas</strong>
-              <CBadge color="success" shape="rounded-pill">{course.classes?.length || 0}</CBadge>
               <CButton
                 color="primary"
                 size="sm"

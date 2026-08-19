@@ -122,6 +122,16 @@ class TestSchedulerBaselineContract:
                 lunch_min_duration=60,
             )
 
+    def test_onboarding_rejects_lunch_duration_longer_than_window(self):
+        with pytest.raises(ValidationError):
+            OnboardingRequest(
+                school_start_date="2025-09-15",
+                school_hard_end_date="2026-07-31",
+                lunch_start="12:00",
+                lunch_end="13:00",
+                lunch_min_duration=61,
+            )
+
 
 class TestSubjectCreateValidation:
     """Testes de validação do SubjectCreate"""

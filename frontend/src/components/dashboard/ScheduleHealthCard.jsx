@@ -23,7 +23,7 @@ export default function ScheduleHealthCard({ health, isLoading }) {
         ) : !health ? (
           <div className="text-center py-4" data-testid="schedule-health-empty">
             <p className="mb-3 text-muted">Nenhum horário gerado.</p>
-            <CButton color="primary" variant="outline" size="sm" onClick={() => navigate('/schedules?action=new')}>Criar o primeiro</CButton>
+            <CButton color="primary" variant="outline" size="sm" onClick={() => navigate('/schedules?action=new')}>Criar horário</CButton>
           </div>
         ) : (
           <>

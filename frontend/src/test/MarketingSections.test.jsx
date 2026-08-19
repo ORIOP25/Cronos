@@ -6,6 +6,7 @@ import VantagensPage from '../pages/marketing/VantagensPage'
 import HowItWorksPage from '../pages/marketing/HowItWorksPage'
 import AboutPage from '../pages/marketing/AboutPage'
 import WorkflowTabs from '../features/marketing/components/workflow/WorkflowTabs'
+import TeacherWorkflowSection from '../features/marketing/components/workflow/TeacherWorkflowSection'
 import FaqSection from '../features/marketing/components/help/FaqSection'
 import MarketingHeader from '../features/marketing/components/layout/MarketingHeader'
 
@@ -17,22 +18,33 @@ describe('public marketing sections', () => {
     expect(headings).toContain('Resolva uma substituição em menos de 1 minuto')
     expect(headings).toContain('O horário muda sem apagar o que já aconteceu')
     expect(headings).toContain('Feito para quem mantém a escola a funcionar')
+    expect(headings.indexOf('Feito para quem mantém a escola a funcionar')).toBeLessThan(headings.indexOf('O horário mudou. O professor soube?'))
+    expect(headings.indexOf('O horário mudou. O professor soube?')).toBeLessThan(headings.indexOf('O dia do professor começa no horário'))
+    expect(screen.getByRole('region', { name: 'Horário e rotina do professor' })).toBeInTheDocument()
+    expect(screen.getByText('Defina preferências')).toBeInTheDocument()
+    expect(screen.getByText('Consulte alterações')).toBeInTheDocument()
+    expect(screen.getByText('Registe a aula')).toBeInTheDocument()
+    expect(screen.getByText('Acompanhe UFCDs')).toBeInTheDocument()
     expect(screen.getAllByRole('link', { name: 'Pedir demonstração' }).every((link) => link.getAttribute('href') === '/contacto')).toBe(true)
   })
 
-  it('keeps public headings free of final periods', () => {
-    const pages = [
-      <HomePage key="home" />,
-      <VantagensPage key="advantages" />,
-      <HowItWorksPage key="workflow" />,
-      <AboutPage key="about" />,
-      <FaqSection key="help" />,
-    ]
-    pages.forEach((page) => {
-      renderWithRouter(page)
-      screen.getAllByRole('heading').forEach((heading) => expect(heading.textContent.trim()).not.toMatch(/\.$/))
-      cleanup()
-    })
+  it('adds the teacher perspective without changing the advantages page structure', () => {
+    renderWithRouter(<VantagensPage />)
+    expect(screen.getByText('Professores sem saber qual é a versão certa')).toBeInTheDocument()
+    expect(screen.getByText(/alterações dispersas por mensagens e ficheiros/i)).toBeInTheDocument()
+    expect(screen.getByText('Para os Professores')).toBeInTheDocument()
+  })
+
+  it.each([
+    ['homepage', <HomePage key="home" />],
+    ['advantages page', <VantagensPage key="advantages" />],
+    ['workflow page', <HowItWorksPage key="workflow" />],
+    ['about page', <AboutPage key="about" />],
+    ['help page', <FaqSection key="help" />],
+  ])('keeps %s headings free of final periods', (_pageName, page) => {
+    renderWithRouter(page)
+    screen.getAllByRole('heading').forEach((heading) => expect(heading.textContent.trim()).not.toMatch(/\.$/))
+    cleanup()
   })
 
   it('supports keyboard selection in workflow tabs', () => {
@@ -44,6 +56,17 @@ describe('public marketing sections', () => {
     fireEvent.keyDown(tabs[1], { key: 'End' })
     expect(tabs[2]).toHaveAttribute('aria-selected', 'true')
     expect(document.querySelector('.cronos-workflow-visual--finish')).toBeInTheDocument()
+  })
+
+  it('explains the teacher workflow with simple accessible tabs', () => {
+    renderWithRouter(<TeacherWorkflowSection />)
+    const tabs = screen.getAllByRole('tab', { name: /preparar|lecionar|acompanhar/i })
+    expect(tabs).toHaveLength(3)
+    expect(tabs[0]).toHaveAttribute('aria-selected', 'true')
+    fireEvent.keyDown(tabs[0], { key: 'ArrowRight' })
+    expect(tabs[1]).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('heading', { name: 'A aula começa no bloco certo' })).toBeInTheDocument()
+    expect(screen.getByText('A coordenação decide faltas e substituições.')).toBeInTheDocument()
   })
 
   it('reveals one minute-workflow step at a time', () => {

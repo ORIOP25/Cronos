@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { CSpinner } from '@coreui/react'
+import StatePanel from './StatePanel'
 import { formatDateShort } from '../utils/formatUtils'
 import { getSubjectColor } from '../utils/subjectColors'
 import { buildWeekGridModel } from '../utils/weekGridModel'
@@ -62,16 +62,16 @@ function getCellVisuals(slot) {
   // 1. Completed lesson log
   if (slot.lesson_log_status === 'COMPLETED') {
     return {
-      className: `zen-state-card ${getLessonLogStatus('COMPLETED').stateClass}`,
-      style: { opacity: 0.55, filter: 'grayscale(0.5)' },
+      className: `zen-state-card ${getLessonLogStatus('COMPLETED').stateClass} is-muted`,
+      style: {},
     }
   }
 
   // 2. Teacher registered OCCURRENCE (undecided)
   if (slot.lesson_log_status === 'OCCURRENCE') {
     return {
-      className: `zen-state-card ${getLessonLogStatus('OCCURRENCE').stateClass}`,
-      style: { opacity: 0.55, filter: 'grayscale(0.5)' },
+      className: `zen-state-card ${getLessonLogStatus('OCCURRENCE').stateClass} is-muted`,
+      style: {},
     }
   }
 
@@ -79,18 +79,15 @@ function getCellVisuals(slot) {
   if (!slot.is_past) {
     return {
       className: 'zen-state-card',
-      style: {
-        backgroundColor: `${color}26`,
-        borderLeftColor: color,
-      },
+      style: { '--slot-color': color },
     }
   }
 
   // Past slots with active (undecided) occurrence
   if (slot.occurrence_id && !slot.occurrence_decided_at) {
     return {
-      className: `zen-state-card ${OPEN_OCCURRENCE_CLASS}`,
-      style: { opacity: 0.55, filter: 'grayscale(0.5)' },
+      className: `zen-state-card ${OPEN_OCCURRENCE_CLASS} is-muted`,
+      style: {},
     }
   }
 
@@ -99,20 +96,20 @@ function getCellVisuals(slot) {
     const cls = OCCURRENCE_CLASSES[slot.occurrence_status]
     if (slot.occurrence_status === 'REVOKED') {
       return {
-        className: `zen-state-card ${cls}`,
-        style: { opacity: 0.45, filter: 'grayscale(0.6)' },
+        className: `zen-state-card ${cls} is-revoked`,
+        style: {},
       }
     }
     return {
-      className: `zen-state-card ${cls}`,
-      style: { opacity: 0.55, filter: 'grayscale(0.5)' },
+      className: `zen-state-card ${cls} is-muted`,
+      style: {},
     }
   }
 
   // Past but no occurrence registered yet (Planned/Pending)
   return {
     className: `zen-state-card ${PLANNED_CLASS}`,
-    style: { borderLeftColor: color },
+    style: { '--slot-color': color },
   }
 }
 
@@ -122,8 +119,8 @@ function getCellVisuals(slot) {
 const SlotCell = ({ slotEntries, isOperationalEnabled, onOpenOperationalAction }) => {
   if (!slotEntries || slotEntries.length === 0) {
     return (
-      <td className="bg-light text-center align-middle" style={{ padding: '4px' }}>
-        <span className="text-black-50" style={{ fontSize: '0.75rem' }}>—</span>
+      <td className="week-grid__cell week-grid__empty">
+        <span>—</span>
       </td>
     )
   }
@@ -156,7 +153,7 @@ const SlotCell = ({ slotEntries, isOperationalEnabled, onOpenOperationalAction }
 
   const { className: cellClassName, style: cellStyle } = getCellVisuals(slot)
   const isSubstituteBlock = slot.is_substituted_block === true
-  let statusLabel = getLessonLogStatus(slot.lesson_log_status).label
+  let statusLabel = null
   if (isSubstituteBlock) {
     statusLabel = 'Substituição'
   } else if (slot.lesson_log_status === 'COMPLETED') {
@@ -167,8 +164,6 @@ const SlotCell = ({ slotEntries, isOperationalEnabled, onOpenOperationalAction }
     statusLabel = OCCURRENCE_LABELS[slot.occurrence_status] ?? slot.occurrence_status
   } else if (slot.occurrence_id && !slot.occurrence_decided_at) {
     statusLabel = 'Ocorrência'
-  } else if (slot.is_past) {
-    statusLabel = slot.class_info?.name || null
   }
 
   const titleText = buildCellTitle(slotEntries)
@@ -187,58 +182,36 @@ const SlotCell = ({ slotEntries, isOperationalEnabled, onOpenOperationalAction }
   const isDraft = slot.is_draft === true
 
   const cardContent = (
-    <div
-      className={cellClassName}
-      style={{
-        ...cellStyle,
-        fontSize: '0.78rem',
-        minHeight: '60px',
-        ...(isWeekLocked ? { opacity: 0.55, filter: 'grayscale(0.5)' } : {}),
-        ...(isDraft ? { borderStyle: 'dashed', borderWidth: '2px', borderColor: 'var(--cui-secondary)' } : {}),
-      }}
-    >
-      <div className="fw-semibold text-truncate" style={{ fontSize: '0.8rem' }}>
+      <div
+        className={`${cellClassName} week-grid__card${isWeekLocked ? ' is-locked' : ''}${isDraft ? ' is-draft' : ''}`}
+        style={cellStyle}
+      >
+      <div className="week-grid__subject">
         {slot.subject?.name ?? '—'}
       </div>
-      <div className="text-muted text-truncate" style={{ fontSize: '0.72rem' }}>
-        {slot.teacher?.name ?? ''}
-      </div>
-      <div className="text-muted text-truncate" style={{ fontSize: '0.72rem' }}>
-        {slot.room?.name ?? ''}
+      <div className="week-grid__details">
+        <span className="week-grid__secondary">
+          {[slot.teacher?.name, slot.room?.name].filter(Boolean).join(' · ')}
+        </span>
+        {canOpenOperationalAction ? (
+          <span className="week-grid__action">
+            {isWeekLocked ? 'Consultar' : 'Registar'}
+          </span>
+        ) : null}
       </div>
       {hasCollision ? (
-        <div className="badge text-bg-danger mt-1" style={{ fontSize: '0.66rem' }}>
+        <div className="badge text-bg-danger mt-1">
           Conflito x{slotEntries.length}
         </div>
       ) : null}
       {isDraft ? (
-        <div className="badge text-bg-secondary mt-1" style={{ fontSize: '0.66rem' }}>
+        <div className="badge text-bg-secondary mt-1">
           Rascunho
         </div>
       ) : null}
-      <div
-        style={{
-          fontSize: '0.7rem',
-          marginTop: '3px',
-          fontWeight: 600,
-          opacity: 0.8,
-        }}
-      >
-        {statusLabel}
-      </div>
-      {canOpenOperationalAction ? (
-        <div
-          className="mt-1 fw-semibold"
-          style={{
-            fontSize: '0.68rem',
-            color: isWeekLocked ? 'var(--cui-secondary)' : 'var(--cui-primary)',
-          }}
-        >
-          {isWeekLocked ? 'Consultar' : 'Registar'}
-        </div>
-      ) : null}
+      {statusLabel ? <div className="week-grid__status">{statusLabel}</div> : null}
       {!canOpenOperationalAction && operationalBlockReason ? (
-        <div className="mt-1 text-muted" style={{ fontSize: '0.66rem' }}>
+        <div className="week-grid__secondary">
           {operationalBlockReason}
         </div>
       ) : null}
@@ -246,13 +219,13 @@ const SlotCell = ({ slotEntries, isOperationalEnabled, onOpenOperationalAction }
   )
 
   const ariaLabel = slot
-    ? `${slot.subject?.name ?? 'Sem disciplina'}, ${slot.teacher?.name ?? ''}, ${slot.room?.name ?? ''}, ${statusLabel}`
+    ? `${slot.subject?.name ?? 'Sem disciplina'}, ${slot.teacher?.name ?? ''}, ${slot.room?.name ?? ''}, ${statusLabel ?? 'Planeado'}`
     : 'Célula vazia'
 
   return (
     <td
       title={titleText}
-      style={{ padding: '4px', verticalAlign: 'top' }}
+      className="week-grid__cell"
       role="gridcell"
       aria-label={ariaLabel}
     >
@@ -260,14 +233,8 @@ const SlotCell = ({ slotEntries, isOperationalEnabled, onOpenOperationalAction }
         type="button"
         onClick={handleOpenOperationalAction}
         disabled={!canOpenOperationalAction}
-        className="w-100 text-start"
+        className="week-grid__button"
         aria-label={canOpenOperationalAction ? `Abrir registo de ${slot.subject?.name ?? 'aula'}` : undefined}
-        style={{
-          border: 'none',
-          background: 'transparent',
-          padding: 0,
-          cursor: canOpenOperationalAction ? 'pointer' : 'default',
-        }}
       >
         {cardContent}
       </button>
@@ -285,6 +252,7 @@ const WeekGrid = ({
   weekStart = '',
   isOperationalEnabled = false,
   onOpenOperationalAction,
+  fitViewport = false,
 }) => {
   const { slotMap, uniqueTimes, activeDays, endTimeMap, dayDateMap } = useMemo(
     () => buildWeekGridModel(slots, baseTimeslots, weekStart),
@@ -292,34 +260,27 @@ const WeekGrid = ({
   )
 
   if (isLoading) {
-    return (
-      <div className="text-center p-5 text-muted">
-        <CSpinner size="sm" className="me-2" />
-        A carregar horário…
-      </div>
-    )
+    return <StatePanel state="loading" title="A carregar o horário" description="Estamos a preparar os blocos desta semana." />
   }
 
   if (!slots.length) {
-    return (
-      <div className="text-center p-5 text-muted" style={{ fontSize: '0.9rem' }}>
-        Sem aulas registadas para esta semana e seleção.
-      </div>
-    )
+    return <StatePanel state="empty" title="Sem aulas nesta seleção" description="Escolha outra turma, professor ou semana para consultar o horário." />
   }
 
   return (
-    <div className="table-responsive">
+    <div className="week-grid-scroll" tabIndex="0" role="region" aria-label="Grelha semanal de horários. Use Shift e roda do rato para deslocar horizontalmente.">
       <table
-        className="table table-bordered table-sm align-middle mb-0"
-        style={{ tableLayout: 'fixed' }}
+        className={`week-grid${fitViewport ? ' week-grid--fit-viewport' : ''}`}
+        style={{
+          '--week-grid-min-width': `${76 + activeDays.length * 132}px`,
+          '--week-grid-row-count': Math.max(uniqueTimes.length, 1),
+        }}
         aria-label="Grelha semanal de horários"
       >
-        <thead className="table-light">
+        <thead>
           <tr>
             <th
-              className="text-center align-middle"
-              style={{ width: '96px', fontSize: '0.8rem' }}
+              className="week-grid__time-header"
               scope="col"
             >
               Horário
@@ -327,13 +288,12 @@ const WeekGrid = ({
             {activeDays.map(d => (
               <th
                 key={d}
-                className="text-center"
-                style={{ fontSize: '0.8rem' }}
+                className="week-grid__day-header"
                 scope="col"
                 aria-label={`${DAY_LABELS[d]} ${formatDateShort(dayDateMap[d])}`}
               >
                 <div>{DAY_LABELS[d]}</div>
-                <div className="text-muted fw-normal" style={{ fontSize: '0.72rem' }}>
+                <div className="fw-normal" style={{ fontSize: '0.72rem' }}>
                   {formatDateShort(dayDateMap[d])}
                 </div>
               </th>
@@ -344,14 +304,12 @@ const WeekGrid = ({
           {uniqueTimes.map(time => (
             <tr key={time}>
               <td
-                className="fw-bold text-muted bg-light text-center"
-                style={{ fontSize: '0.75rem', whiteSpace: 'nowrap', verticalAlign: 'middle' }}
+                className="week-grid__time"
                 scope="row"
                 aria-label={`${time} – ${endTimeMap[time] ?? ''}`}
               >
-                {time}
-                <br />
-                <span className="fw-normal text-black-50">{endTimeMap[time] ?? ''}</span>
+                <span className="week-grid__time-start">{time}</span>
+                <span className="week-grid__time-end">{endTimeMap[time] ?? ''}</span>
               </td>
               {activeDays.map(dayIdx => (
                 <SlotCell

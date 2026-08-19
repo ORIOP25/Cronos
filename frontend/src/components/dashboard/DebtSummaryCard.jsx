@@ -4,9 +4,9 @@ export default function DebtSummaryCard({ debts, isLoading }) {
   const navigate = useNavigate()
   const hasDebt = (debts?.total_hours_owed ?? 0) > 0
   return (
-    <div data-testid="debt-summary" className="zen-card">
+    <div data-testid="debt-summary" className="zen-card dashboard-debt-card">
       <div className="zen-card-header"><h3 className="mb-0 dashboard-card-title">Dívidas de Horas</h3></div>
-      <div className="zen-card-body text-center py-3">
+      <div className="zen-card-body text-center py-3 dashboard-debt-card__body">
         {isLoading ? (
           <div className="dashboard-metric-skeleton mx-auto" />
         ) : (

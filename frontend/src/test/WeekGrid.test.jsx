@@ -40,6 +40,23 @@ describe('buildWeekGridModel', () => {
 })
 
 describe('WeekGrid (Ponto 8.1)', () => {
+  it('uses the viewport-fit density without repeating planned metadata', () => {
+    const { container } = render(
+      <WeekGrid
+        slots={[baseSlot]}
+        isLoading={false}
+        baseTimeslots={[baseSlot.timeslot]}
+        weekStart="2026-04-20"
+        fitViewport
+      />
+    )
+
+    expect(screen.getByRole('table', { name: /grelha semanal/i })).toHaveClass('week-grid--fit-viewport')
+    expect(screen.queryByText('Planeado')).not.toBeInTheDocument()
+    expect(container.querySelector('.week-grid__time-start')).toHaveTextContent('09:00')
+    expect(container.querySelector('.week-grid__time-end')).toHaveTextContent('11:00')
+  })
+
   it('abre ação operacional ao clicar em bloco elegível', () => {
     const onOpenOperationalAction = vi.fn()
 

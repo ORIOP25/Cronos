@@ -11,25 +11,25 @@ Read [Frontend Architecture](FRONTEND_ARCHITECTURE.md).
 
 ## Aesthetic Foundation: The 60-30-10 Color Rule
 Cronos employs a warm, authoritative visual identity designed for educational trust and operational clarity:
-- **60% Dominant Base Surfaces**: Warm light surfaces, including `#fef9e7`.
-- **30% Structural Navigation**: Deep brown, including `#3b2415`.
+- **60% Dominant Base Surfaces**: Warm light surfaces, including `#faf8f5`.
+- **30% Structural Navigation**: Deep brown, including `#3d2b1f`.
 - **10% Action Accents**: Amber gold, including `#d4940b`.
 
 ## Color Palette Tokens Table
 
 | Token Name | Hex Value | Usage Purpose |
 | :--- | :--- | :--- |
-| `--brand-50` | `#fef9e7` | Main application background |
-| `--brand-100` | `#fffbef` | Cards and table headers |
-| `--brand-800` | `#3b2415` | Primary controls and headings |
-| `--brand-600` | `#8b6f5c` | Muted text and secondary elements |
+| `--cronos-bg` | `#faf8f5` | Main application background |
+| `--cronos-surface` | `#fffdf9` | Cards and table headers |
+| `--cronos-ink` | `#3d2b1f` | Primary controls and headings |
+| `--cronos-ink-muted` | `#67584c` | Muted text and secondary elements |
 | `--brand-500` | `#d4940b` | Calls to action and active states |
 | `--rs-teal` | `#15803d` | Success and completed states |
 | `--rs-deep` | `#b91c1c` | Error and gap states |
 
 ## Typography Pairings
 - **Headings**: `Playfair Display` (Editorial Serif, authoritative tone).
-- **Body & UI Controls**: `Outfit` (Clean Geometric Sans-Serif, maximum legibility).
+- **Body & UI Controls**: `IBM Plex Sans` (clear operational text and controls).
 
 ## Marketing Landing Page Aesthetics & Performance
 - **CSS Namespace**: Marketing components use the `.cronos-marketing` root and `cronos-*` classes.
@@ -46,6 +46,7 @@ The repository maintains visual snapshot baselines under `documentation/06_front
 
 ## Contracts and Invariants
 - Authenticated application tokens live in `frontend/src/index.css`.
+- Canonical shared tokens live in `frontend/src/styles/brand.tokens.css`.
 - Marketing-specific tokens live in `frontend/src/features/marketing/styles/`.
 - The implementation contains semantic state tokens for given, gap, substituted, and open states.
 - JSX can use inline layout styles, but colors should reference CSS variables.

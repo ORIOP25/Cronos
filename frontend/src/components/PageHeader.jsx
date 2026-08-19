@@ -1,21 +1,21 @@
-const PageHeader = ({ preTitle, title, children }) => {
+const PageHeader = ({ preTitle, title, description, context, actions, children }) => {
+  const headerActions = actions ?? children
+
   return (
-    <div className="d-flex justify-content-between align-items-end mb-5 flex-wrap gap-3">
-      <div>
-        {preTitle && (
-          <span className="zen-caps" style={{ color: 'var(--brand-600)' }}>
-            {preTitle}
-          </span>
-        )}
-        <h1 className="text-display mt-2" style={{ fontSize: '3rem', color: 'var(--brand-950)' }}>
-          <span className="text-editorial">{title}</span>
-        </h1>
+    <header className="page-header">
+      <div className="page-header__copy">
+        {preTitle && <span className="page-header__pretitle">{preTitle}</span>}
+        <h1 className="page-header__title">{title}</h1>
+        {context && <p className="page-header__context">{context}</p>}
+        {description && <p className="page-header__description">{description}</p>}
       </div>
-      <div className="d-flex align-items-end gap-3 flex-wrap">
-        <div className="luxury-line" style={{ width: '100px', marginBottom: '14px' }} />
-        {children}
-      </div>
-    </div>
+      {headerActions && (
+        <div className="page-header__actions">
+          <span className="page-header__rule" aria-hidden="true" />
+          {headerActions}
+        </div>
+      )}
+    </header>
   )
 }
 

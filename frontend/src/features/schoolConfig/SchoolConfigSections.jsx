@@ -18,6 +18,9 @@ import {
   toSchoolSettingsPayload,
 } from '../../utils/schoolConfigPayloads'
 import { useTransientMessage } from '../../hooks/useTransientMessage'
+import FeedbackBanner from '../../components/FeedbackBanner'
+import StatePanel from '../../components/StatePanel'
+import ConfirmationModal from '../../components/ConfirmationModal'
 import { useTimeslots } from '../catalog/data'
 import {
   useCalendarEvents,
@@ -41,25 +44,27 @@ export const CalendarSection = () => {
   const syncMutation = useSyncHolidays()
   const createMutation = useCreateCalendarEvent()
   const deleteMutation = useDeleteCalendarEvent()
+  const [fieldErrors, setFieldErrors] = useState({})
+  const [deleteTarget, setDeleteTarget] = useState(null)
 
   const handleCreate = () => {
-    if (!newEvent.name || !newEvent.start_date || !newEvent.end_date) return
+    const errors = {}
+    if (!newEvent.name.trim()) errors.name = 'Indique o nome do evento.'
+    if (!newEvent.start_date) errors.start_date = 'Indique a data de início.'
+    if (!newEvent.end_date) errors.end_date = 'Indique a data de fim.'
+    if (newEvent.start_date && newEvent.end_date && newEvent.end_date < newEvent.start_date) errors.end_date = 'A data de fim deve ser posterior ou igual à data de início.'
+    setFieldErrors(errors)
+    if (Object.keys(errors).length) return
     createMutation.mutate(newEvent, {
-      onSuccess: () => setNewEvent({ name: '', start_date: '', end_date: '', event_type: 'school_break' }),
+      onSuccess: () => { setNewEvent({ name: '', start_date: '', end_date: '', event_type: 'school_break' }); setFieldErrors({}); setSuccessMsg('Evento adicionado com sucesso.') },
     })
   }
 
+  const sortedEvents = [...events].sort((left, right) => left.start_date.localeCompare(right.start_date))
   let eventListContent
-  if (isLoading) {
-    eventListContent = <div className="text-center py-4"><CSpinner /></div>
-  } else if (events.length === 0) {
-    eventListContent = (
-      <CAlert color="secondary">
-        Sem eventos registados. Pode sincronizar os feriados nacionais ou adicionar pausas letivas manualmente.
-      </CAlert>
-    )
-  } else {
-    eventListContent = (
+  if (isLoading) eventListContent = <StatePanel state="loading" title="A carregar eventos" compact />
+  else if (sortedEvents.length === 0) eventListContent = <StatePanel state="empty" title="Sem interrupções registadas" description="Importe feriados nacionais ou adicione uma interrupção manual." compact />
+  else eventListContent = (
       <CTable striped hover responsive>
         <CTableHead>
           <CTableRow>
@@ -72,11 +77,11 @@ export const CalendarSection = () => {
           </CTableRow>
         </CTableHead>
         <CTableBody>
-          {events.map((ev) => (
+          {sortedEvents.map((ev) => (
             <CTableRow key={ev.id}>
               <CTableDataCell>{ev.name}</CTableDataCell>
-              <CTableDataCell style={{ whiteSpace: 'nowrap' }}>{formatDate(ev.start_date)}</CTableDataCell>
-              <CTableDataCell style={{ whiteSpace: 'nowrap' }}>{formatDate(ev.end_date)}</CTableDataCell>
+              <CTableDataCell className="text-nowrap">{formatDate(ev.start_date)}</CTableDataCell>
+              <CTableDataCell className="text-nowrap">{formatDate(ev.end_date)}</CTableDataCell>
               <CTableDataCell>{EVENT_TYPE_LABELS[ev.event_type] ?? ev.event_type}</CTableDataCell>
               <CTableDataCell>
                 <CBadge color={ev.source === 'auto' ? 'info' : 'secondary'}>
@@ -89,7 +94,8 @@ export const CalendarSection = () => {
                   variant="ghost"
                   size="sm"
                   disabled={deleteMutation.isPending}
-                  onClick={() => { deleteMutation.mutate(ev.id) }}
+                  aria-label={`Eliminar ${ev.name}`}
+                  onClick={() => setDeleteTarget(ev)}
                 >
                   <CIcon icon={cilTrash} />
                 </CButton>
@@ -99,42 +105,42 @@ export const CalendarSection = () => {
         </CTableBody>
       </CTable>
     )
-  }
 
   return (
     <div>
-      {successMsg && <CAlert color="success" className="mb-3">{successMsg}</CAlert>}
+      {successMsg && <div className="mb-3"><FeedbackBanner tone="success">{successMsg}</FeedbackBanner></div>}
       {syncMutation.isError && (
-        <CAlert color="danger">
+        <FeedbackBanner tone="danger">
           {getApiErrorMessage(syncMutation.error, 'Erro ao sincronizar feriados.')}
-        </CAlert>
+        </FeedbackBanner>
       )}
       {createMutation.isError && (
-        <CAlert color="danger">
+        <FeedbackBanner tone="danger">
           {getApiErrorMessage(createMutation.error, 'Erro ao adicionar evento. Verifique as datas e tente novamente.')}
-        </CAlert>
+        </FeedbackBanner>
       )}
 
-      <div className="d-flex align-items-center gap-3 mb-4">
-        <CButton
-          color="info"
-          variant="outline"
-          size="sm"
-          disabled={syncMutation.isPending}
-          onClick={() => syncMutation.mutate(undefined, {
-            onSuccess: () => setSuccessMsg('Feriados nacionais importados com sucesso.'),
-          })}
-        >
-          <CIcon icon={cilCloudDownload} className="me-1" />
-          {syncMutation.isPending ? 'A sincronizar...' : 'Sincronizar Feriados Nacionais'}
-        </CButton>
-      </div>
-
-      <CCard className="border-0 shadow-sm mb-4">
-        <CCardHeader className="bg-white fw-bold py-2">
-          <CIcon icon={cilCalendar} className="me-2" />Adicionar Pausa / Evento Manual
+      <CCard className="border-0 shadow-sm mb-4 calendar-event-editor">
+        <CCardHeader className="bg-white fw-bold py-2 calendar-event-editor__header">
+          <span><CIcon icon={cilCalendar} className="me-2" />Adicionar Evento</span>
+          <CButton
+            color="secondary"
+            variant="outline"
+            size="sm"
+            className="calendar-import-action"
+            aria-label="Importar feriados nacionais"
+            title="Importar os feriados nacionais que ainda não estão no calendário"
+            disabled={syncMutation.isPending}
+            onClick={() => syncMutation.mutate(undefined, {
+              onSuccess: (result) => setSuccessMsg(result?.imported_count === 0 ? 'Não foram encontrados novos feriados.' : result?.imported_count === 1 ? '1 feriado importado.' : `${result?.imported_count ?? 0} feriados importados.`),
+            })}
+          >
+            <CIcon icon={cilCloudDownload} className="me-1" />
+            {syncMutation.isPending ? 'A Importar' : 'Importar Feriados'}
+          </CButton>
         </CCardHeader>
         <CCardBody>
+          <p className="text-muted mb-3">Registe uma interrupção específica da escola ou importe os feriados nacionais.</p>
           <CRow className="g-3">
             <CCol md={4}>
               <CFormLabel htmlFor="eventName">Nome do evento</CFormLabel>
@@ -143,7 +149,9 @@ export const CalendarSection = () => {
                 placeholder="Ex: Férias de Natal"
                 value={newEvent.name}
                 onChange={(e) => setNewEvent((p) => ({ ...p, name: e.target.value }))}
+                invalid={Boolean(fieldErrors.name)}
               />
+              {fieldErrors.name && <div className="text-danger small mt-1">{fieldErrors.name}</div>}
             </CCol>
             <CCol md={2}>
               <CFormLabel htmlFor="eventStart">Início</CFormLabel>
@@ -152,7 +160,9 @@ export const CalendarSection = () => {
                 type="date"
                 value={newEvent.start_date}
                 onChange={(e) => setNewEvent((p) => ({ ...p, start_date: e.target.value }))}
+                invalid={Boolean(fieldErrors.start_date)}
               />
+              {fieldErrors.start_date && <div className="text-danger small mt-1">{fieldErrors.start_date}</div>}
             </CCol>
             <CCol md={2}>
               <CFormLabel htmlFor="eventEnd">Fim</CFormLabel>
@@ -161,7 +171,9 @@ export const CalendarSection = () => {
                 type="date"
                 value={newEvent.end_date}
                 onChange={(e) => setNewEvent((p) => ({ ...p, end_date: e.target.value }))}
+                invalid={Boolean(fieldErrors.end_date)}
               />
+              {fieldErrors.end_date && <div className="text-danger small mt-1">{fieldErrors.end_date}</div>}
             </CCol>
             <CCol md={3}>
               <CFormLabel htmlFor="eventType">Tipo</CFormLabel>
@@ -177,7 +189,7 @@ export const CalendarSection = () => {
             </CCol>
             <CCol md={1} className="d-flex align-items-end">
               <CButton color="primary" onClick={handleCreate} disabled={createMutation.isPending}>
-                {TXT.ADD}
+                {createMutation.isPending ? 'A adicionar' : 'Adicionar evento'}
               </CButton>
             </CCol>
           </CRow>
@@ -185,6 +197,15 @@ export const CalendarSection = () => {
       </CCard>
 
       {eventListContent}
+      <ConfirmationModal
+        visible={Boolean(deleteTarget)}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={() => { deleteMutation.mutate(deleteTarget.id, { onSuccess: () => setDeleteTarget(null) }) }}
+        title="Eliminar evento"
+        message={deleteTarget ? `O evento “${deleteTarget.name}” será eliminado. Esta ação não pode ser desfeita.` : ''}
+        confirmText="Eliminar evento"
+        isLoading={deleteMutation.isPending}
+      />
     </div>
   )
 }
@@ -207,7 +228,7 @@ export const SettingsSection = () => {
 const SettingsEditor = ({ settings }) => {
   const { message: successMsg, show: setSuccessMsg } = useTransientMessage()
   const [savePromptMsg, setSavePromptMsg] = useState(null)
-  const [saveConfirmationPending, setSaveConfirmationPending] = useState(false)
+  const [showSaveModal, setShowSaveModal] = useState(false)
   const [form, setForm] = useState(() => toSettingsForm(settings))
 
   // Soft-Reset state
@@ -237,7 +258,6 @@ const SettingsEditor = ({ settings }) => {
 
   const updateForm = (field, value) => {
     setForm((current) => ({ ...current, [field]: value }))
-    setSaveConfirmationPending(false)
     setSavePromptMsg(null)
   }
 
@@ -246,21 +266,21 @@ const SettingsEditor = ({ settings }) => {
   const handleSave = () => {
     if (!form.school_start_date || !form.school_hard_end_date) {
       setSavePromptMsg('Por favor, preencha todas as datas antes de guardar.')
-      setSaveConfirmationPending(false)
       return;
     }
-
-    if (!saveConfirmationPending) {
-      setSavePromptMsg('Ao guardar estas definições, o ano letivo em vigor será sobrescrito. Volte a carregar em guardar para confirmar.')
-      setSaveConfirmationPending(true)
+    if (form.school_hard_end_date <= form.school_start_date) {
+      setSavePromptMsg('A data-limite deve ser posterior à data de início.')
       return
     }
+    setShowSaveModal(true)
+  }
 
+  const confirmSave = () => {
     upsertMutation.mutate(toSchoolSettingsPayload(form), {
       onSuccess: () => {
         setSuccessMsg('Período letivo guardado com sucesso.')
         setSavePromptMsg(null)
-        setSaveConfirmationPending(false)
+        setShowSaveModal(false)
       },
     })
   }
@@ -316,17 +336,28 @@ const SettingsEditor = ({ settings }) => {
           size="sm"
           onClick={() => setShowResetModal(true)}
         >
-          Recomeçar Ano Letivo
+           Recomeçar ano letivo
         </CButton>
         <CButton color="primary" onClick={handleSave} disabled={upsertMutation.isPending}>
           <CIcon icon={cilSave} className="me-1" />
-          {upsertMutation.isPending ? 'A guardar...' : (saveConfirmationPending ? 'Confirmar guarda' : 'Guardar Configurações Gerais')}
+           {upsertMutation.isPending ? 'A guardar' : 'Guardar alterações'}
         </CButton>
       </div>
 
+      <ConfirmationModal
+        visible={showSaveModal}
+        onClose={() => setShowSaveModal(false)}
+        onConfirm={confirmSave}
+        title="Guardar novas datas?"
+        message="As novas datas alteram o período usado pelo gerador de horários. Confirme para guardar estas alterações."
+        confirmText="Guardar alterações"
+        isLoading={upsertMutation.isPending}
+        variant="primary"
+      />
+
       <CModal visible={showResetModal} onClose={() => { setShowResetModal(false); setResetError(''); setResetConfirmText(''); setResetChecked(false); }} backdrop="static">
         <CModalHeader>
-          <CModalTitle className="text-danger fw-bold">Confirmar Ação Destrutiva</CModalTitle>
+          <CModalTitle className="text-danger fw-bold">Recomeçar ano letivo</CModalTitle>
         </CModalHeader>
         <CModalBody>
           <CAlert color="warning">
@@ -364,7 +395,7 @@ const SettingsEditor = ({ settings }) => {
             disabled={resetConfirmText !== 'Confirmo' || !resetChecked || resetMutation.isPending}
             onClick={handleSoftReset}
           >
-            {resetMutation.isPending ? 'A apagar...' : 'Remover Dados e Recomeçar'}
+            {resetMutation.isPending ? 'A remover dados' : 'Remover dados e recomeçar'}
           </CButton>
         </CModalFooter>
       </CModal>
@@ -378,7 +409,7 @@ export const GridSection = () => {
   const timeslotsQuery = useTimeslots()
 
   if (settingsQuery.isLoading || timeslotsQuery.isLoading) {
-    return <CButton color="primary" disabled>Guardar e Regenerar Grelha</CButton>
+    return <div className="school-config-skeleton" aria-busy="true"><span className="skeleton" /><span className="skeleton" /><span className="skeleton" /><span className="skeleton" /></div>
   }
   const queryError = settingsQuery.error || timeslotsQuery.error
   if (queryError) {
@@ -424,6 +455,12 @@ const GridEditor = ({ orgId, initialFormData, initialGridSettings }) => {
     const duration = Number(formData.slot_duration_minutes)
     const breakDuration = Number(formData.break_duration_minutes)
     const lunchDuration = Number(gridSettings.lunch_min_duration_minutes)
+    const toMinutes = (value) => {
+      const [hours, minutes] = String(value || '').split(':').map(Number)
+      return Number.isFinite(hours) && Number.isFinite(minutes) ? hours * 60 + minutes : NaN
+    }
+    const lunchStart = toMinutes(gridSettings.lunch_window_start)
+    const lunchEnd = toMinutes(gridSettings.lunch_window_end)
     if (
       !formData.start_time
       || !formData.end_time
@@ -435,11 +472,15 @@ const GridEditor = ({ orgId, initialFormData, initialGridSettings }) => {
       || breakDuration < 0
       || !Number.isFinite(lunchDuration)
       || lunchDuration <= 0
+      || !Number.isFinite(lunchStart)
+      || !Number.isFinite(lunchEnd)
+      || lunchEnd <= lunchStart
       || formData.end_time <= formData.start_time
       || !Object.values(formData.days).some(Boolean)
     ) {
       return 'Preencha uma grelha válida, com pelo menos um dia de funcionamento.'
     }
+    if (lunchDuration > lunchEnd - lunchStart) return 'A duração mínima do almoço não pode exceder a janela configurada.'
     return null
   }
 
@@ -524,7 +565,7 @@ const GridEditor = ({ orgId, initialFormData, initialGridSettings }) => {
             disabled={mutation.isPending || !orgId}
           >
             <CIcon icon={cilSave} className="me-2" />
-            {mutation.isPending ? 'A Processar...' : 'Guardar e Regenerar Grelha'}
+             {mutation.isPending ? 'A regenerar' : 'Guardar e regenerar grelha'}
           </CButton>
         </div>
       </CForm>

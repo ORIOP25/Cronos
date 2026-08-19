@@ -1,81 +1,33 @@
-import { CSpinner, CTooltip } from '@coreui/react'
+import { CTooltip } from '@coreui/react'
 import { useTimeslots } from '../features/catalog/data'
 import { useAvailabilityHeatmap } from '../features/schoolConfig/data'
+import StatePanel from './StatePanel'
 
-const daysOfWeek = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"] // Nomes curtos
+const DAYS = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom']
 
-const AnalyticsHeatmap = () => {
-  const { data: timeslots } = useTimeslots()
-
-  const { data: heatmapData, isLoading } = useAvailabilityHeatmap()
-
-  // Cores quentes alinhadas com Retro Sunset
-  const getSlotStyle = (stats) => {
-    if (!stats) return { bg: 'var(--rs-heat-neutral-bg)', border: 'var(--rs-heat-neutral-border)' }
-    const r = stats.availability_ratio
-    
-    if (r < 0.3) return { bg: 'var(--rs-heat-critical-bg)', border: 'var(--rs-heat-critical-border)', text: 'var(--rs-heat-critical-text)' }
-    if (r < 0.6) return { bg: 'var(--rs-heat-medium-bg)', border: 'var(--rs-heat-medium-border)', text: 'var(--rs-heat-medium-text)' }
-    return { bg: 'var(--rs-heat-good-bg)', border: 'var(--rs-heat-good-border)', text: 'var(--rs-heat-good-text)' }
-  }
-
-  if (isLoading) return <div className="text-center p-3 text-muted small"><CSpinner size="sm"/> A carregar dados...</div>
-
-  // Organizar dados
-  const slotsByDay = (timeslots || []).reduce((acc, slot) => {
-    if (!acc[slot.day_of_week]) acc[slot.day_of_week] = []
-    acc[slot.day_of_week].push(slot)
-    return acc
-  }, {})
-  
-  Object.keys(slotsByDay).forEach(day => {
-    slotsByDay[day].sort((a, b) => a.start_time.localeCompare(b.start_time))
-  })
-
-  return (
-    <div>
-      <div className="d-flex gap-2 overflow-auto pb-2">
-        {[0, 1, 2, 3, 4, 5].map(dayIndex => {
-          const daySlots = slotsByDay[dayIndex]
-          if (!daySlots || daySlots.length === 0) return null
-
-          return (
-            <div key={dayIndex} className="flex-grow-1" style={{ minWidth: '100px' }}>
-              <div className="text-uppercase text-muted fw-bold mb-2" style={{fontSize: '0.7rem', letterSpacing: '1px'}}>
-                {daysOfWeek[dayIndex]}
-              </div>
-              <div className="d-flex flex-column gap-1">
-                {daySlots.map(slot => {
-                  const stats = heatmapData?.find(h => h.timeslot_id === slot.id)
-                  const style = getSlotStyle(stats)
-                  const avail = stats ? stats.available_count : '-'
-                  const total = stats ? stats.total_teachers : '-'
-
-                  return (
-                    <CTooltip content={`Disponíveis: ${avail} / ${total}`} key={slot.id}>
-                      <div 
-                        className="rounded p-2 d-flex justify-content-between align-items-center"
-                        style={{
-                          backgroundColor: style.bg,
-                          border: `1px solid ${style.border}`,
-                          color: style.text,
-                          cursor: 'help',
-                          fontSize: '0.75rem'
-                        }}
-                      >
-                        <span className="fw-semibold">{slot.start_time.slice(0, 5)}</span>
-                        <span className="opacity-75">{avail}/{total}</span>
-                      </div>
-                    </CTooltip>
-                  )
-                })}
-              </div>
-            </div>
-          )
-        })}
-      </div>
-    </div>
-  )
+function getHeatmapStyle(stats) {
+  if (!stats) return { backgroundColor: 'var(--rs-heat-neutral-bg)', borderColor: 'var(--rs-heat-neutral-border)' }
+  if (stats.availability_ratio < 0.3) return { backgroundColor: 'var(--rs-heat-critical-bg)', borderColor: 'var(--rs-heat-critical-border)', color: 'var(--rs-heat-critical-text)' }
+  if (stats.availability_ratio < 0.6) return { backgroundColor: 'var(--rs-heat-medium-bg)', borderColor: 'var(--rs-heat-medium-border)', color: 'var(--rs-heat-medium-text)' }
+  return { backgroundColor: 'var(--rs-heat-good-bg)', borderColor: 'var(--rs-heat-good-border)', color: 'var(--rs-heat-good-text)' }
 }
 
-export default AnalyticsHeatmap
+export default function AnalyticsHeatmap() {
+  const timeslotsQuery = useTimeslots()
+  const heatmapQuery = useAvailabilityHeatmap()
+  if (timeslotsQuery.isLoading || heatmapQuery.isLoading) return <StatePanel state="loading" title="A carregar disponibilidade" compact />
+  if (timeslotsQuery.isError || heatmapQuery.isError) return <StatePanel state="error" title="Não foi possível carregar a disponibilidade" description="Tente novamente quando a ligação estiver disponível." action={<button type="button" className="btn btn-link" onClick={() => { void timeslotsQuery.refetch(); void heatmapQuery.refetch() }}>Tentar novamente</button>} compact />
+  const timeslots = timeslotsQuery.data ?? []
+  const heatmapData = heatmapQuery.data ?? []
+  if (!timeslots.length) return <StatePanel state="empty" title="Sem blocos configurados" description="A disponibilidade aparece depois de configurar a grelha horária." compact />
+  const slotsByDay = timeslots.reduce((acc, slot) => { (acc[slot.day_of_week] ??= []).push(slot); return acc }, {})
+  Object.values(slotsByDay).forEach((slots) => slots.sort((a, b) => a.start_time.localeCompare(b.start_time)))
+  const summary = heatmapData.length ? `A grelha mostra a disponibilidade de professores em ${heatmapData.length} blocos.` : 'Ainda não existem dados de disponibilidade para estes blocos.'
+  return <div className="availability-heatmap">
+    <p className="text-muted small mb-3">{summary}</p>
+    <div className="availability-heatmap__legend" aria-label="Legenda da disponibilidade"><span><i className="is-good" /> Boa</span><span><i className="is-medium" /> Intermédia</span><span><i className="is-critical" /> Crítica</span></div>
+    <div className="availability-heatmap__days">
+      {Object.entries(slotsByDay).sort(([a], [b]) => Number(a) - Number(b)).map(([day, slots]) => <div className="availability-heatmap__day" key={day}><div className="availability-heatmap__day-label">{DAYS[day] ?? `Dia ${Number(day) + 1}`}</div>{slots.map((slot) => { const stats = heatmapData.find((item) => item.timeslot_id === slot.id); const available = stats?.available_count ?? '-'; const total = stats?.total_teachers ?? '-'; return <CTooltip content={`Disponíveis: ${available} / ${total}`} key={slot.id}><div className="availability-heatmap__slot" style={getHeatmapStyle(stats)} aria-label={`${DAYS[day] ?? `Dia ${Number(day) + 1}`} às ${slot.start_time.slice(0, 5)}: ${available} de ${total} professores disponíveis`}><strong>{slot.start_time.slice(0, 5)}</strong><span>{available}/{total}</span></div></CTooltip> })}</div>)}
+    </div>
+  </div>
+}

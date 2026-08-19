@@ -13,6 +13,7 @@ import {
   CModalHeader,
   CModalTitle,
   CSpinner,
+  CTooltip,
 } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
 import { cilActionUndo, cilPencil, cilPlus, cilReload, cilTrash } from '@coreui/icons'
@@ -134,7 +135,7 @@ const MemberModal = ({ visible, member, subjects, onClose, onSave, isSaving, err
   }
 
   return (
-    <CModal visible={visible} onClose={onClose} alignment="center" size="lg">
+    <CModal visible={visible} onClose={onClose} alignment="center" size="lg" className="app-modal">
       <CModalHeader>
         <CModalTitle>{member ? 'Editar membro' : 'Adicionar membro'}</CModalTitle>
       </CModalHeader>
@@ -201,11 +202,18 @@ const MemberModal = ({ visible, member, subjects, onClose, onSave, isSaving, err
   )
 }
 
-const ActionButton = ({ title, color = 'secondary', icon, disabled, loading, onClick }) => (
-  <CButton color={color} variant="ghost" size="sm" onClick={onClick} title={title} disabled={disabled || loading}>
-    {loading ? <CSpinner size="sm" /> : <CIcon icon={icon} />}
-  </CButton>
-)
+const ActionButton = ({ title, color = 'secondary', icon, disabled, loading, onClick }) => {
+  const isDisabled = disabled || loading
+  return (
+    <CTooltip content={title} placement="top">
+      <span className="member-action-tooltip" title={title} tabIndex={isDisabled ? 0 : undefined}>
+        <CButton color={color} variant="ghost" size="sm" onClick={onClick} aria-label={title} disabled={isDisabled}>
+          {loading ? <CSpinner size="sm" /> : <CIcon icon={icon} />}
+        </CButton>
+      </span>
+    </CTooltip>
+  )
+}
 
 const Members = () => {
   const [includeArchived, setIncludeArchived] = useState(false)
@@ -289,7 +297,7 @@ const Members = () => {
       {actionError && <CAlert color="danger">{actionError}</CAlert>}
       <div className="table-responsive">
         <table className="table align-middle">
-          <thead><tr><th>Nome</th><th>Email</th><th>Tipo</th><th>Estado</th><th>Competencias</th><th className="text-end">Acoes</th></tr></thead>
+          <thead><tr><th>Nome</th><th>Email</th><th>Tipo</th><th>Estado</th><th>Competências</th><th className="text-end">Ações</th></tr></thead>
           <tbody>
             {isLoading && <tr><td colSpan="6"><CSpinner size="sm" /> A carregar equipa...</td></tr>}
             {!isLoading && members.map((member) => {
@@ -321,7 +329,7 @@ const Members = () => {
                   <td className="text-end">
                     <ActionButton title="Editar membro" icon={cilPencil} disabled={!member.actions?.can_edit} onClick={() => openModal(member)} />
                     <ActionButton title="Reenviar convite" icon={cilReload} disabled={!member.actions?.can_resend_invite} loading={resendInvitation.isPending} onClick={() => resendInvitation.mutate(member.id)} />
-                    <ActionButton title="Tentar sincronizar" icon={cilReload} color="warning" disabled={!member.actions?.can_retry_sync} loading={retrySync.isPending} onClick={() => retrySync.mutate(member.id)} />
+                    <ActionButton title="Tentar sincronização novamente" icon={cilReload} color="warning" disabled={!member.actions?.can_retry_sync} loading={retrySync.isPending} onClick={() => retrySync.mutate(member.id)} />
                     <ActionButton title="Restaurar membro" icon={cilActionUndo} color="success" disabled={!member.actions?.can_restore} loading={restoreMember.isPending} onClick={() => restoreMember.mutate({ id: member.id, payload: restorePayloadFromMember(member) })} />
                     <ActionButton title="Remover membro" icon={cilTrash} color="danger" disabled={!member.actions?.can_remove} loading={removeMember.isPending} onClick={() => setRemoveTarget(member)} />
                   </td>

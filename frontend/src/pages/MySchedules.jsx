@@ -191,7 +191,7 @@ function MySchedules() {
   const pageHeader = (
     <PageHeader
       preTitle="Professor"
-      title={<span>Meus <span className="text-editorial">Horários</span></span>}
+      title="Meus Horários"
     />
   )
 

@@ -32,9 +32,9 @@ export default function SignInPage() {
 
             <div className="zen-auth-recovery-help">
               <p>
-                Já tinha conta ou o convite não chegou? O convite não define uma
+                Já tem conta ou o convite não chegou? O convite não define uma
                 palavra-passe. Pode <strong>entrar com Google</strong> usando o mesmo
-                email ou recuperar a palavra-passe.
+                email ou recuperar a sua palavra-passe.
               </p>
               <Link to="/recuperar-palavra-passe" className="zen-auth-recovery-link">
                 Recuperar palavra-passe

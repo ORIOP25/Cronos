@@ -1,10 +1,12 @@
 import { useState } from 'react'
-import { CAlert, CCard, CCardBody, CSpinner } from '@coreui/react'
+import { CCard, CCardBody } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
 import { cilPencil, cilTrash, cilChevronRight } from '@coreui/icons'
 import ConfirmationModal from './ConfirmationModal'
 import { TXT } from '../utils/terminology'
 import { getApiErrorMessage } from '../utils/apiErrors'
+import StatePanel from './StatePanel'
+import FeedbackBanner from './FeedbackBanner'
 
 const SmartTable = ({ 
   columns, 
@@ -18,6 +20,7 @@ const SmartTable = ({
   onDelete,
   onRowClick,
   getRowLabel,
+  emptyAction,
 }) => {
   const isClickable = typeof onRowClick === 'function'
   const [deleteTarget, setDeleteTarget] = useState(null)
@@ -46,35 +49,15 @@ const SmartTable = ({
   
   if (isError) {
     const msg = getApiErrorMessage(error, TXT.ERROR_LOADING)
-    return (
-      <CCard className="border-0 shadow-sm"><CCardBody className="text-center p-5 zen-reveal">
-        <div style={{ color: 'var(--color-state-gap-text)', marginBottom: '16px', fontSize: '2rem' }}>!</div>
-        <p className="text-display" style={{ fontSize: '1.1rem', marginBottom: '8px' }}>Erro ao carregar</p>
-        <p style={{ color: 'var(--brand-600)', fontSize: '0.9rem', maxWidth: 400, margin: '0 auto 16px' }}>{msg}</p>
-        {onRetry && (
-          <button className="btn-zen btn-zen-outline" onClick={onRetry}>Tentar novamente</button>
-        )}
-      </CCardBody></CCard>
-    )
+    return <StatePanel state="error" title="Erro ao carregar" description={msg} action={onRetry && <button className="btn btn-outline-primary" type="button" onClick={onRetry}>Tentar novamente</button>} />
   }
 
   if (isLoading) {
-    return (
-      <CCard className="border-0 shadow-sm"><CCardBody className="text-center p-5 zen-reveal">
-        <CSpinner color="primary" variant="grow" />
-        <p className="text-muted mt-3 text-editorial">{TXT.LOADING}</p>
-      </CCardBody></CCard>
-    )
+    return <StatePanel state="loading" title={TXT.LOADING} />
   }
 
   if (!data || data.length === 0) {
-    return (
-      <CCard className="border-0 shadow-sm"><CCardBody className="text-center p-5 text-muted zen-reveal">
-        <div className="luxury-line" style={{ margin: '0 auto 20px' }} />
-        <p className="text-display" style={{ fontSize: '1.2rem' }}>{TXT.EMPTY_TABLE}</p>
-        <p style={{ fontSize: '0.9rem' }}>{TXT.EMPTY_TABLE_HINT}</p>
-      </CCardBody></CCard>
-    )
+    return <StatePanel state="empty" title={TXT.EMPTY_TABLE} description={TXT.EMPTY_TABLE_HINT} action={emptyAction} />
   }
 
   return (
@@ -102,7 +85,7 @@ const SmartTable = ({
                 className={isClickable ? 'zen-table-row-interactive' : undefined}
               >
                 {columns.map((col) => (
-                  <td key={col.key || col.label}>
+                  <td key={col.key || col.label} data-label={col.label}>
                     {col.render ? col.render(item) : item[col.key]}
                   </td>
                 ))}
@@ -144,7 +127,7 @@ const SmartTable = ({
         </table>
       </CCardBody></CCard>
 
-      {deleteError && <CAlert color="danger" className="mt-3">{deleteError}</CAlert>}
+      {deleteError && <div className="mt-3"><FeedbackBanner tone="danger">{deleteError}</FeedbackBanner></div>}
 
       <ConfirmationModal
         visible={deleteTarget !== null}

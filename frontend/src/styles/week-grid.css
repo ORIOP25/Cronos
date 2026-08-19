@@ -1,0 +1,42 @@
+.week-grid-scroll { max-width: 100%; overflow-x: auto; overscroll-behavior-inline: contain; outline: none; }
+.week-grid-scroll:focus-visible { outline: 3px solid var(--color-focus-ring); outline-offset: -3px; }
+.week-grid { width: max(100%, var(--week-grid-min-width)); table-layout: fixed; border-collapse: separate; border-spacing: 0; }
+.week-grid th, .week-grid td { border-color: var(--cronos-border); }
+.week-grid__day-header { position: sticky; top: 0; z-index: 3; min-width: 132px; padding: 10px 6px; background: var(--cronos-surface); color: var(--cronos-ink); font-size: .8rem; text-align: center; }
+.week-grid__time-header { position: sticky; top: 0; left: 0; z-index: 5; width: 76px; min-width: 76px; padding: 10px 6px; background: var(--cronos-surface-muted); }
+.week-grid__time { position: sticky; left: 0; z-index: 2; width: 76px; min-width: 76px; padding: 6px; background: var(--cronos-surface-muted); color: var(--cronos-ink-muted); font-size: .75rem; text-align: center; white-space: nowrap; }
+.week-grid__cell { min-width: 132px; padding: 6px; vertical-align: top; background: var(--cronos-bg); }
+.week-grid__empty { color: var(--cronos-ink-muted); font-size: .75rem; text-align: center; }
+.week-grid__card { min-height: 52px; padding: 6px 8px; border-left: 3px solid var(--slot-color, var(--cronos-border-strong)); border-radius: 4px; background: color-mix(in srgb, var(--slot-color, var(--cronos-surface-muted)) 15%, transparent); color: var(--cronos-ink); font-size: .78rem; }
+.week-grid__card.is-locked { opacity: .55; filter: grayscale(.5); }
+.week-grid__card.is-muted { opacity: .55; filter: grayscale(.5); }
+.week-grid__card.is-revoked { opacity: .45; filter: grayscale(.6); }
+.week-grid__card.is-draft { border-style: dashed; border-width: 2px; border-color: var(--cronos-ink-muted); }
+.week-grid__subject { overflow: hidden; font-size: .8rem; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+.week-grid__secondary { overflow: hidden; color: var(--cronos-ink-muted); font-size: .72rem; text-overflow: ellipsis; white-space: nowrap; }
+.week-grid__details { display: flex; align-items: baseline; justify-content: space-between; gap: 6px; min-width: 0; }
+.week-grid__status { margin-top: 3px; color: var(--cronos-ink-muted); font-size: .7rem; font-weight: 600; }
+.week-grid__action { flex: 0 0 auto; color: var(--cronos-ink); font-size: .68rem; font-weight: 700; }
+.week-grid__time-end { display: block; color: var(--cronos-ink-muted); font-weight: 400; }
+.week-grid__button { width: 100%; padding: 0; border: 0; background: transparent; color: inherit; cursor: pointer; text-align: left; }
+.week-grid__button:disabled { cursor: default; }
+.week-grid__button:not(:disabled):focus-visible { outline: 3px solid var(--color-focus-ring); outline-offset: 2px; }
+
+.week-grid--fit-viewport { --week-grid-row-height: clamp(34px, calc((100dvh - 310px) / var(--week-grid-row-count)), 52px); }
+.week-grid--fit-viewport .week-grid__day-header,
+.week-grid--fit-viewport .week-grid__time-header { padding-block: 6px; }
+.week-grid--fit-viewport tbody tr { height: var(--week-grid-row-height); }
+.week-grid--fit-viewport .week-grid__time,
+.week-grid--fit-viewport .week-grid__cell { padding: 3px 5px; vertical-align: middle; }
+.week-grid--fit-viewport .week-grid__time { overflow: hidden; line-height: 1.05; }
+.week-grid--fit-viewport .week-grid__time-start,
+.week-grid--fit-viewport .week-grid__time-end { display: block; max-width: 100%; overflow: hidden; text-overflow: clip; }
+.week-grid--fit-viewport .week-grid__time-end { margin-top: 2px; font-size: .68rem; }
+.week-grid--fit-viewport .week-grid__card { display: flex; flex-direction: column; justify-content: center; min-height: 0; height: calc(var(--week-grid-row-height) - 6px); padding: 3px 6px; overflow: hidden; }
+.week-grid--fit-viewport .week-grid__subject { line-height: 1.15; }
+.week-grid--fit-viewport .week-grid__details { line-height: 1.1; }
+
+@media (max-width: 767px) {
+  .week-grid--fit-viewport tbody tr { height: auto; }
+  .week-grid--fit-viewport .week-grid__card { min-height: 52px; height: auto; }
+}

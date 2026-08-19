@@ -1,259 +1,51 @@
-import { useState, useEffect } from 'react'
+import { useEffect, useReducer } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useOrganization } from '@clerk/react'
-import { useNavigate, Link } from 'react-router-dom'
+import { useOnboardingStatus, useCompleteOnboarding } from '../features/onboarding/data'
 import { getApiErrorMessage } from '../utils/apiErrors'
-import { useCompleteOnboarding, useOnboardingStatus } from '../features/onboarding/data'
-import { toIsoDate } from '../utils/formatUtils'
-
-const today = toIsoDate(new Date())
-const nextYearDate = new Date()
-nextYearDate.setFullYear(nextYearDate.getFullYear() + 1)
-const nextYear = toIsoDate(nextYearDate)
-
-function IconCalendar() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="3" y="4" width="18" height="18" rx="2" />
-      <line x1="16" y1="2" x2="16" y2="6" />
-      <line x1="8" y1="2" x2="8" y2="6" />
-      <line x1="3" y1="10" x2="21" y2="10" />
-    </svg>
-  )
-}
-
-function IconClock() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="12" cy="12" r="10" />
-      <polyline points="12 6 12 12 16 14" />
-    </svg>
-  )
-}
+import GuidedFormShell from '../components/GuidedFormShell'
+import StatePanel from '../components/StatePanel'
+import FeedbackBanner from '../components/FeedbackBanner'
+import OnboardingQuestionnaire from '../features/onboarding/components/OnboardingQuestionnaire'
+import { initialOnboardingState, onboardingReducer, validateOnboardingStep } from '../features/onboarding/onboardingModel'
 
 export default function Onboarding() {
-  const { organization } = useOrganization()
   const navigate = useNavigate()
-
+  const { organization } = useOrganization()
   const statusQuery = useOnboardingStatus()
-  const completeOnboarding = useCompleteOnboarding()
-  const [form, setForm] = useState({
-    school_start_date: today,
-    school_hard_end_date: nextYear,
-    lunch_start: '12:30',
-    lunch_end: '14:00',
-    lunch_min_duration: 60,
-  })
+  const completeMutation = useCompleteOnboarding()
+  const [state, dispatch] = useReducer(onboardingReducer, initialOnboardingState)
+  const organizationName = statusQuery.data?.organization_name || organization?.name || 'a sua escola'
+
   useEffect(() => {
-    if (statusQuery.data?.onboarding_complete) {
-      navigate('/dashboard', { replace: true })
-    }
+    if (statusQuery.data?.onboarding_complete) navigate('/dashboard', { replace: true })
   }, [navigate, statusQuery.data?.onboarding_complete])
 
-  const handleSubmit = async (e) => {
-    e.preventDefault()
+  const handleComplete = async () => {
+    const errors = validateOnboardingStep(2, state.values)
+    if (Object.keys(errors).length) { dispatch({ type: 'SET_ERRORS', errors }); return }
+    dispatch({ type: 'SUBMIT_STARTED' })
     try {
-      await completeOnboarding.mutateAsync(form)
-      navigate('/dashboard', { replace: true })
-    } catch { /* mutation state renders the error */ }
+      await completeMutation.mutateAsync(state.values)
+      dispatch({ type: 'SUBMIT_SUCCEEDED' })
+    } catch (error) {
+      dispatch({ type: 'SUBMIT_FAILED', error: getApiErrorMessage(error, 'Não foi possível guardar a configuração. Tente novamente.') })
+    }
   }
 
-  if (statusQuery.isLoading) {
-    return (
-      <div className="zen-onboarding-loading">
-        <div className="zen-onboarding-loading-text">
-          A preparar a sua escola&hellip;
-        </div>
-        <div className="zen-onboarding-progress">
-          <div className="zen-onboarding-progress-dot active" />
-          <div className="zen-onboarding-progress-line" />
-          <div className="zen-onboarding-progress-dot" />
-          <div className="zen-onboarding-progress-line" />
-          <div className="zen-onboarding-progress-dot" />
-        </div>
-      </div>
-    )
-  }
-
-  if (statusQuery.isError) {
-    return (
-      <div className="zen-onboarding-loading" role="alert">
-        <div className="zen-onboarding-loading-text">Não foi possível carregar a configuração.</div>
-        <button type="button" className="zen-btn-primary" onClick={() => statusQuery.refetch()}>
-          Tentar novamente
-        </button>
-      </div>
-    )
-  }
-
-  if (statusQuery.data?.onboarding_complete) {
-    return (
-      <div className="zen-onboarding-loading">
-        <div className="zen-onboarding-loading-text">
-          Configuração já concluída. A redirecionar&hellip;
-        </div>
-      </div>
-    )
-  }
+  if (statusQuery.isLoading) return <div className="guided-form-shell"><StatePanel state="loading" title="A preparar a sua escola" description="Estamos a verificar a configuração inicial." /></div>
+  if (statusQuery.isError) return <div className="guided-form-shell"><StatePanel state="error" title="Não foi possível carregar a configuração" action={<button type="button" className="btn btn-outline-primary" onClick={() => statusQuery.refetch()}>Tentar novamente</button>} /></div>
+  if (statusQuery.data?.onboarding_complete) return <div className="guided-form-shell"><StatePanel state="loading" title="A abrir o Cronos" /></div>
 
   return (
-    <div className="zen-onboarding-page">
-      <div className="luxury-noise" style={{ opacity: 0.015 }} />
-
-      <section className="zen-onboarding-hero zen-reveal">
-        <div className="zen-onboarding-hero-inner">
-          <span className="zen-onboarding-hero-kicker">Configuração inicial</span>
-          <h1 className="zen-onboarding-hero-title">
-            Bem-vindo,&nbsp;
-            <span className="text-editorial" style={{ color: 'var(--brand-500)' }}>
-              {organization?.name || 'Escola'}
-            </span>
-          </h1>
-          <p className="zen-onboarding-hero-subtitle">
-            Precisamos de algumas informações sobre o ano letivo para começar a
-            gerar horários com precisão. São só dois passos.
-          </p>
-        </div>
-      </section>
-
-      <form onSubmit={handleSubmit} className="zen-onboarding-form">
-        <div className="zen-onboarding-card zen-reveal zen-stagger-1">
-          <div className="zen-onboarding-card-header">
-            <div className="zen-onboarding-card-icon">
-              <IconCalendar />
-            </div>
-            <h2 className="zen-onboarding-card-title">Ano Letivo</h2>
-          </div>
-
-          <div className="zen-onboarding-field">
-            <label className="zen-onboarding-label">Data de início</label>
-            <input
-              type="date"
-              aria-label="Data de início"
-              className="zen-onboarding-input"
-              value={form.school_start_date}
-              onChange={(e) =>
-                setForm({ ...form, school_start_date: e.target.value })
-              }
-              required
-            />
-          </div>
-
-          <div className="zen-onboarding-row">
-            <div className="zen-onboarding-field">
-              <label className="zen-onboarding-label">
-                Fim máximo{' '}
-                <span style={{ fontWeight: 400, opacity: 0.5, textTransform: 'none', letterSpacing: '0' }}>
-                  (exames | recuperações)
-                </span>
-              </label>
-              <input
-                type="date"
-                aria-label="Fim máximo"
-                className="zen-onboarding-input"
-                value={form.school_hard_end_date}
-                onChange={(e) =>
-                  setForm({ ...form, school_hard_end_date: e.target.value })
-                }
-                required
-              />
-            </div>
-          </div>
-        </div>
-
-        <div className="zen-onboarding-card zen-reveal zen-stagger-2">
-          <div className="zen-onboarding-card-header">
-            <div className="zen-onboarding-card-icon">
-              <IconClock />
-            </div>
-            <h2 className="zen-onboarding-card-title">Janela de Almoço</h2>
-          </div>
-
-          <div className="zen-onboarding-row">
-            <div className="zen-onboarding-field">
-              <label className="zen-onboarding-label">Início</label>
-              <input
-                type="time"
-                aria-label="Início do almoço"
-                className="zen-onboarding-input"
-                value={form.lunch_start}
-                onChange={(e) =>
-                  setForm({ ...form, lunch_start: e.target.value })
-                }
-                required
-              />
-            </div>
-
-            <div className="zen-onboarding-field">
-              <label className="zen-onboarding-label">Fim</label>
-              <input
-                type="time"
-                aria-label="Fim do almoço"
-                className="zen-onboarding-input"
-                value={form.lunch_end}
-                onChange={(e) =>
-                  setForm({ ...form, lunch_end: e.target.value })
-                }
-                required
-              />
-            </div>
-          </div>
-
-          <div className="zen-onboarding-field" style={{ marginTop: 8 }}>
-            <label className="zen-onboarding-label">Duração mínima (minutos)</label>
-            <input
-              type="number"
-              aria-label="Duração mínima"
-              className="zen-onboarding-input"
-              style={{ maxWidth: 180 }}
-              value={form.lunch_min_duration}
-              min={30}
-              max={120}
-              onChange={(e) =>
-                setForm({
-                  ...form,
-                  lunch_min_duration: Number.parseInt(e.target.value) || 60,
-                })
-              }
-              required
-            />
-          </div>
-        </div>
-
-        {completeOnboarding.isError && (
-          <div className="zen-onboarding-error zen-reveal" role="alert">
-            {getApiErrorMessage(completeOnboarding.error, 'Erro ao guardar configurações. Tente novamente.')}
-          </div>
-        )}
-
-        <div className="zen-onboarding-submit zen-reveal zen-stagger-3">
-          <button
-            type="submit"
-            className="zen-btn-primary"
-            disabled={completeOnboarding.isPending}
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 10 }}
-          >
-            {completeOnboarding.isPending ? 'A guardar…' : 'Guardar e Começar'}
-            <svg
-              width="16"
-              height="16"
-              viewBox="0 0 16 16"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              style={{ opacity: completeOnboarding.isPending ? 0.5 : 1 }}
-            >
-              <path d="M6 4 L10 8 L6 12" />
-            </svg>
-          </button>
-          <Link
-            to="/dashboard"
-            className="zen-auth-back-link"
-            style={{ marginLeft: 24, fontWeight: 400 }}
-          >
-            Saltar por agora
-          </Link>
-        </div>
-      </form>
-    </div>
+    <GuidedFormShell
+      eyebrow="Configuração inicial"
+      title="Prepare o Cronos para a sua escola"
+      summary={`Vamos preparar ${organizationName}. Depois, poderá configurar recursos e gerar horários.`}
+      meta="2 passos, cerca de 1 minuto"
+    >
+      {state.error && <div className="mb-3"><FeedbackBanner tone="danger">{state.error}</FeedbackBanner></div>}
+      <OnboardingQuestionnaire state={state} dispatch={dispatch} onSubmit={state.currentStep === 3 ? () => navigate('/dashboard', { replace: true }) : handleComplete} />
+    </GuidedFormShell>
   )
 }

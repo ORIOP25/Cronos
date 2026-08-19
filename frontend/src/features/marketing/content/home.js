@@ -36,3 +36,30 @@ export const people = {
     { id: 'teachers', title: 'Professores', text: 'Consulte o horário e registe o que aconteceu na sala', image: { webpSrc: '/marketing/professores-role.webp', fallbackSrc: '/marketing/professores-role.png', alt: 'Professor numa sala de aula', width: 500, height: 334 } },
   ],
 }
+
+export const teacherUncertainty = {
+  eyebrow: 'Para os professores',
+  title: 'O horário mudou. O professor soube?',
+  body: 'Quando a informação fica espalhada entre mensagens e ficheiros, uma alteração cria dúvidas antes da aula seguinte.',
+  versions: [
+    { id: 'previous', label: 'Mensagem recebida', room: 'Sala 1.06', state: 'Versão anterior' },
+    { id: 'active', label: 'Horário ativo', room: 'Sala 2.12', state: 'Atualizado' },
+  ],
+}
+
+export const teacherScheduleHub = {
+  title: 'O dia do professor começa no horário',
+  body: 'O professor define as suas preferências, consulta alterações confirmadas, regista cada aula e acompanha o progresso das UFCDs.',
+  actions: [
+    { id: 'preferences', title: 'Defina preferências', text: 'Indique quando prefere, evita ou não pode lecionar.' },
+    { id: 'changes', title: 'Consulte alterações', text: 'Veja a versão ativa e saiba o que mudou.' },
+    { id: 'lesson', title: 'Registe a aula', text: 'Escreva o sumário, sinalize ocorrências e submeta a semana.' },
+    { id: 'progress', title: 'Acompanhe UFCDs', text: 'Consulte o progresso das turmas que leciona.' },
+  ],
+  blocks: [
+    { id: 'programming', day: 1, row: 1, label: 'Programação', className: '11.º TGPSI' },
+    { id: 'networks', day: 3, row: 2, label: 'Redes', className: '10.º TGPSI' },
+    { id: 'systems', day: 2, row: 3, label: 'Sistemas', className: '11.º TGPSI' },
+    { id: 'recovery', day: 4, row: 1, label: 'Programação', className: '10.º TGPSI' },
+  ],
+}

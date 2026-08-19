@@ -9,7 +9,8 @@ services:
     build:
       context: ./frontend
       target: dev
-    command: ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
+    # Keep the persistent dependency volume aligned with the bind-mounted lockfile.
+    command: ["/bin/sh", "-c", "npm ci --ignore-scripts && exec npm run dev -- --host 0.0.0.0"]
     ports: !override ["127.0.0.1:5173:5173"]
     volumes:
       - ./frontend:/app

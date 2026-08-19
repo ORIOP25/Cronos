@@ -1,7 +1,7 @@
 export const advantagesIntro = {
   eyebrow: 'Porquê o Cronos',
   title: 'O custo invisível de gerir o Ensino Profissional à antiga',
-  body: 'Descubra o que a sua escola perde todos os dias em tempo, tranquilidade e previsibilidade quando o horário não é gerido de forma integrada',
+  body: 'Descubra o que a escola e os professores perdem em tempo, tranquilidade e previsibilidade quando o horário não é gerido de forma integrada',
 }
 
 
@@ -22,10 +22,10 @@ export const lossesVsGains = [
   },
   {
     id: 'friction',
-    lossTitle: 'Frustração e ruído na comunicação',
-    lossText: 'Professores apanhados de surpresa por alterações não comunicadas e incerteza sobre o histórico de aulas lecionadas.',
-    gainTitle: 'Alinhamento e clareza para toda a equipa',
-    gainText: 'Uma base comum de informação acessível a todos, onde cada alteração fica registada com transparência e respeito pelo trabalho.',
+    lossTitle: 'Professores sem saber qual é a versão certa',
+    lossText: 'Alterações dispersas por mensagens e ficheiros obrigam os docentes a confirmar horários e criam dúvidas antes da aula seguinte.',
+    gainTitle: 'Uma referência comum para toda a equipa',
+    gainText: 'Cada professor consulta o horário ativo e encontra o registo da semana no mesmo lugar.',
   },
 ]
 
@@ -45,7 +45,7 @@ export const softSkillPillars = [
   {
     id: 'teachers',
     role: 'Para os Professores',
-    title: 'Respeito pelo tempo e previsibilidade',
-    text: 'Garanta um ambiente escolar organizado, onde os docentes conhecem a sua carga de trabalho e confiam na gestão do seu horário.',
+    title: 'Previsibilidade antes de cada aula',
+    text: 'Evite confirmações repetidas e dúvidas sobre alterações. Cada docente sabe qual é o horário ativo e o que falta registar.',
   },
 ]

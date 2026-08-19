@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { screen } from '@testing-library/react'
+import { screen, within } from '@testing-library/react'
 import { renderWithProviders } from './testUtils'
 import MyAvailability from '../pages/MyAvailability'
 
@@ -39,5 +39,20 @@ describe('MyAvailability', () => {
 
     expect(screen.getByRole('heading', { name: /Minhas Preferencias|Minhas Preferências/i })).toBeVisible()
     expect(screen.queryByText(/Algo correu mal|Ocorreu um erro inesperado/i)).not.toBeInTheDocument()
+  })
+
+  it('orders the painting tools by intent and does not pre-highlight the first slot', () => {
+    renderWithProviders(<MyAvailability />)
+
+    const toolbar = screen.getByRole('toolbar', { name: /ferramentas de disponibilidade/i })
+    expect(within(toolbar).getAllByRole('button').map((button) => button.textContent.trim())).toEqual([
+      'Preferencial',
+      'Neutro',
+      'Evitar',
+      'Impossível',
+    ])
+
+    const firstSlot = screen.getByRole('button', { name: /segunda, 08:00/i })
+    expect(firstSlot).not.toHaveClass('is-focused')
   })
 })

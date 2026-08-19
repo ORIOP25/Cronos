@@ -1,3 +1,5 @@
+import { ptPT } from '@clerk/localizations'
+
 export const BRAND_TAGLINE_LOGIN =
   'O software de gestão pensado para o Ensino Profissional. Horários dinâmicos, progresso curricular visível e substituições em 1 minuto.'
 
@@ -26,7 +28,44 @@ export const BRAND_STATS_CREATEORG = [
 ]
 
 export const CLERK_LOCALIZATION_PT = {
-  socialButtonsBlockButton: 'Continuar com {{provider}}',
+  ...ptPT,
+  signIn: {
+    ...ptPT.signIn,
+    start: {
+      ...ptPT.signIn.start,
+      title: 'Entrar no Cronos',
+      titleCombined: 'Entrar no Cronos',
+      subtitle: 'Bem-vindo de volta. Entre para continuar.',
+      subtitleCombined: 'Bem-vindo de volta. Entre para continuar.',
+      actionText: 'Ainda não tem conta?',
+      actionLink: 'Registar',
+    },
+    password: {
+      ...ptPT.signIn.password,
+      subtitle: 'para continuar no Cronos',
+    },
+    emailCode: {
+      ...ptPT.signIn.emailCode,
+      subtitle: 'para continuar no Cronos',
+    },
+    forgotPassword: {
+      ...ptPT.signIn.forgotPassword,
+      title: 'Recuperar palavra-passe',
+      subtitle: 'Para redefinir a sua palavra-passe',
+    },
+  },
+  signUp: {
+    ...ptPT.signUp,
+    start: {
+      ...ptPT.signUp.start,
+      title: 'Criar conta no Cronos',
+      titleCombined: 'Criar conta no Cronos',
+      subtitle: 'Comece a utilizar o Cronos na sua escola.',
+      subtitleCombined: 'Comece a utilizar o Cronos na sua escola.',
+      actionText: 'Já tem conta?',
+      actionLink: 'Entrar',
+    },
+  },
   formFieldLabel__emailAddress: 'Email',
   formFieldLabel__password: 'Palavra-passe',
   formFieldLabel__firstName: 'Nome',
@@ -37,12 +76,15 @@ export const CLERK_LOCALIZATION_PT = {
   footerActionLink__signIn: 'Já tem conta? Entrar',
   footerActionLink__signUp: 'Não tem conta? Registar',
   dividerText: 'ou',
+  lastAuthenticationStrategy: 'Último método usado',
 }
 
 export const CLERK_APPEARANCE_AUTH = {
   layout: {
-    socialButtonsPlacement: 'bottom',
-    socialButtonsVariant: 'iconButton',
+    logoImageUrl: '/logo.png',
+    socialButtonsPlacement: 'top',
+    socialButtonsVariant: 'blockButton',
+    showOptionalFields: false,
   },
   variables: {
     colorPrimary: '#5c3d2e',
@@ -53,8 +95,8 @@ export const CLERK_APPEARANCE_AUTH = {
     colorInputText: '#1a1512',
     colorInputBorder: '#e0d6cc',
     colorShimmer: '#f5f0eb',
-    fontFamily: '"Outfit", sans-serif',
-    fontFamilyButtons: '"Outfit", sans-serif',
+    fontFamily: '"IBM Plex Sans", Arial, sans-serif',
+    fontFamilyButtons: '"IBM Plex Sans", Arial, sans-serif',
     fontSize: '15px',
     borderRadius: '4px',
   },
@@ -64,6 +106,17 @@ export const CLERK_APPEARANCE_AUTH = {
       border: 'none',
       width: '100%',
       background: 'transparent',
+    },
+    cardBox: {
+      width: '100%',
+      maxWidth: '440px',
+      boxShadow: 'none',
+      border: 'none',
+      background: 'transparent',
+    },
+    footer: {
+      background: 'transparent',
+      borderTop: 'none',
     },
     formButtonPrimary: {
       backgroundColor: '#5c3d2e',
@@ -127,16 +180,16 @@ export const CLERK_APPEARANCE_AUTH = {
       '&:hover': { backgroundColor: '#faf8f5', borderColor: '#5c3d2e' },
     },
     identityPreview: {
-      fontFamily: '"Outfit", sans-serif',
+      fontFamily: '"IBM Plex Sans", Arial, sans-serif',
     },
     otpCodeFieldInput: {
       border: '1px solid #e0d6cc',
       borderRadius: '4px',
-      fontFamily: '"Outfit", sans-serif',
+      fontFamily: '"IBM Plex Sans", Arial, sans-serif',
     },
     alert: {
       borderRadius: '4px',
-      fontFamily: '"Outfit", sans-serif',
+      fontFamily: '"IBM Plex Sans", Arial, sans-serif',
     },
   },
 }

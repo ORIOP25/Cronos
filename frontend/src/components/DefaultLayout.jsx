@@ -1,228 +1,156 @@
-import { useState, useEffect } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Outlet, NavLink, useLocation } from 'react-router-dom'
 import { useUser, useClerk } from '@clerk/react'
+import { COffcanvas, COffcanvasBody } from '@coreui/react'
 import { ROUTE_MY_SCHEDULES } from '../roleAccess'
 import { useRole } from '../hooks/useRole'
 import { TXT } from '../utils/terminology'
+import FeedbackBanner from './FeedbackBanner'
 import CIcon from '@coreui/icons-react'
-import { 
-  cilSpeedometer, cilCalendar, cilCheckCircle, cilPeople, 
+import {
+  cilSpeedometer, cilCalendar, cilCheckCircle, cilPeople,
   cilLibrary, cilEducation, cilRoom, cilSettings, cilUser,
-  cilMenu, cilChartPie, cilAccountLogout
+  cilMenu, cilChartPie, cilAccountLogout, cilX,
 } from '@coreui/icons'
 
-const SIDEBAR_WIDTH = 280
-const SIDEBAR_COLLAPSED_WIDTH = 72
+const SIDEBAR_STORAGE_KEY = 'hz-sidebar-collapsed'
 
-const SidebarLink = ({ to, icon, children, collapsed }) => (
-  <NavLink 
-    to={to} 
-    className={({ isActive }) => `zen-sidebar-item ${isActive ? 'active' : ''}`}
-    style={({ isActive }) => ({
-      color: isActive ? 'var(--rs-sidebar-brand)' : 'var(--rs-sidebar-link)',
-      textDecoration: 'none',
-      padding: collapsed ? '12px' : '12px 16px',
-      borderRadius: '4px',
-      display: 'flex',
-      alignItems: 'center',
-      gap: '12px',
-      fontSize: '0.88rem',
-      fontWeight: isActive ? '600' : '500',
-      transition: 'all 0.3s cubic-bezier(0.2, 0.8, 0.2, 1)',
-      backgroundColor: isActive ? 'rgba(255, 255, 255, 0.1)' : 'transparent',
-      marginBottom: '2px',
-      justifyContent: collapsed ? 'center' : 'flex-start',
-      overflow: 'hidden',
-      whiteSpace: 'nowrap',
-    })}
-    title={collapsed ? children : undefined}
-  >
-    <CIcon icon={icon} size="sm" style={{ opacity: 0.8, flexShrink: 0 }} />
-    {!collapsed && children}
-  </NavLink>
-)
+function SidebarLink({ to, icon, children, collapsed, onNavigate }) {
+  return (
+    <NavLink
+      to={to}
+      onClick={onNavigate}
+      className={({ isActive }) => `app-sidebar__link${isActive ? ' active' : ''}`}
+      title={collapsed ? children : undefined}
+    >
+      <CIcon icon={icon} size="sm" aria-hidden="true" />
+      {!collapsed && <span>{children}</span>}
+    </NavLink>
+  )
+}
+
+function AppSidebarContent({ collapsed, isAdmin, isTeacher, user, roleLabel, onToggle, onNavigate, onProfile, onSignOut, mobile = false }) {
+  return (
+    <div className={`app-sidebar${collapsed ? ' is-collapsed' : ''}${mobile ? ' app-sidebar--mobile' : ''}`}>
+      <div className="app-sidebar__top">
+        <div className="app-sidebar__brand-row">
+          <div className="app-sidebar__brand">
+            <img src="/logo.png" alt={collapsed ? 'Cronos' : 'Cronos — Logótipo'} />
+            {!collapsed && <span className="app-sidebar__brand-name">{TXT.SIDEBAR_BRAND}</span>}
+          </div>
+          {!mobile && (
+            <button type="button" className="app-sidebar__toggle" onClick={onToggle} aria-label={collapsed ? 'Expandir menu' : 'Colapsar menu'} title={collapsed ? 'Expandir menu' : 'Colapsar menu'}>
+              <CIcon icon={cilMenu} size="sm" aria-hidden="true" />
+            </button>
+          )}
+          {mobile && (
+            <button type="button" className="app-sidebar__toggle" onClick={onNavigate} aria-label="Fechar menu">
+              <CIcon icon={cilX} size="sm" aria-hidden="true" />
+            </button>
+          )}
+        </div>
+      </div>
+
+      <nav className="app-sidebar__nav" aria-label="Navegação da aplicação">
+        {isAdmin && <>
+          <SidebarLink to="/dashboard" icon={cilSpeedometer} collapsed={collapsed} onNavigate={onNavigate}>Dashboard</SidebarLink>
+          <SidebarLink to="/schedules" icon={cilCalendar} collapsed={collapsed} onNavigate={onNavigate}>Horários</SidebarLink>
+          <SidebarLink to="/absences" icon={cilCheckCircle} collapsed={collapsed} onNavigate={onNavigate}>Faltas</SidebarLink>
+          <SidebarLink to="/timesheets" icon={cilCalendar} collapsed={collapsed} onNavigate={onNavigate}>Fecho Semanal</SidebarLink>
+          {!collapsed && <div className="app-sidebar__section">Pedagogia</div>}
+          <SidebarLink to="/courses" icon={cilEducation} collapsed={collapsed} onNavigate={onNavigate}>Cursos</SidebarLink>
+          <SidebarLink to="/members" icon={cilPeople} collapsed={collapsed} onNavigate={onNavigate}>Equipa</SidebarLink>
+          <SidebarLink to="/subjects" icon={cilLibrary} collapsed={collapsed} onNavigate={onNavigate}>Disciplinas</SidebarLink>
+          {!collapsed && <div className="app-sidebar__section">Recursos</div>}
+          <SidebarLink to="/rooms" icon={cilRoom} collapsed={collapsed} onNavigate={onNavigate}>Salas</SidebarLink>
+          <SidebarLink to="/config" icon={cilSettings} collapsed={collapsed} onNavigate={onNavigate}>Configuração</SidebarLink>
+        </>}
+        {isTeacher && <>
+          <SidebarLink to="/my-availability" icon={cilUser} collapsed={collapsed} onNavigate={onNavigate}>Preferências</SidebarLink>
+          <SidebarLink to={ROUTE_MY_SCHEDULES} icon={cilCalendar} collapsed={collapsed} onNavigate={onNavigate}>Meus Horários</SidebarLink>
+          <SidebarLink to="/my-progress" icon={cilChartPie} collapsed={collapsed} onNavigate={onNavigate}>Meu Progresso</SidebarLink>
+        </>}
+      </nav>
+
+      <div className="app-sidebar__footer">
+        <button type="button" onClick={onProfile} className="app-sidebar__profile" title="Gerir conta">
+          <span className="app-sidebar__avatar">{user?.primaryEmailAddress?.emailAddress?.[0]?.toUpperCase() || '?'}</span>
+          <span className="app-sidebar__profile-copy">
+            <strong>{user?.primaryEmailAddress?.emailAddress?.split('@')[0] || 'Convidado'}</strong>
+            <span>{roleLabel}</span>
+          </span>
+        </button>
+        <button type="button" onClick={onSignOut} title="Terminar sessão" className="app-sidebar__logout">
+          <CIcon icon={cilAccountLogout} size="sm" aria-hidden="true" />
+          <span>Terminar sessão</span>
+        </button>
+      </div>
+    </div>
+  )
+}
 
 const DefaultLayout = () => {
   const location = useLocation()
   const { user } = useUser()
   const { openUserProfile, signOut } = useClerk()
-  
   const { isAdmin, isTeacher } = useRole()
-  const accessDeniedMessage = location?.state?.accessDeniedMessage ?? ''
-  
+  const menuButtonRef = useRef(null)
   const [collapsed, setCollapsed] = useState(() => {
-    try {
-      return localStorage.getItem('hz-sidebar-collapsed') === 'true'
-    } catch {
-      return false
-    }
+    try { return localStorage.getItem(SIDEBAR_STORAGE_KEY) === 'true' } catch { return false }
   })
+  const [mobileOpen, setMobileOpen] = useState(false)
+  const accessDeniedMessage = location?.state?.accessDeniedMessage ?? ''
+  const roleLabel = isAdmin ? 'Diretor' : isTeacher ? 'Professor' : ''
 
   useEffect(() => {
-    try {
-      localStorage.setItem('hz-sidebar-collapsed', String(collapsed))
-    } catch {
-      // no-op
-    }
+    try { localStorage.setItem(SIDEBAR_STORAGE_KEY, String(collapsed)) } catch { /* storage is optional */ }
   }, [collapsed])
 
   useEffect(() => {
-    if (!accessDeniedMessage) return
-    window.history.replaceState({}, document.title, `${location.pathname}${location.search}`)
-  }, [accessDeniedMessage, location.pathname, location.search])
+    const closeTimer = window.setTimeout(() => setMobileOpen(false), 0)
+    return () => window.clearTimeout(closeTimer)
+  }, [location.pathname, location.search])
 
-  const getRoleLabel = () => {
-    if (isAdmin) return 'Diretor'
-    if (isTeacher) return 'Professor'
-    return ''
+  useEffect(() => {
+    document.body.classList.toggle('app-drawer-open', mobileOpen)
+    return () => document.body.classList.remove('app-drawer-open')
+  }, [mobileOpen])
+
+  useEffect(() => {
+    if (!mobileOpen) return undefined
+    const handleKeyDown = (event) => { if (event.key === 'Escape') setMobileOpen(false) }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [mobileOpen])
+
+  const closeMobile = () => {
+    setMobileOpen(false)
+    window.setTimeout(() => menuButtonRef.current?.focus(), 0)
   }
 
-  const currentWidth = collapsed ? SIDEBAR_COLLAPSED_WIDTH : SIDEBAR_WIDTH
-
   return (
-    <div style={{ display: 'flex', minHeight: '100vh', backgroundColor: 'var(--rs-body-bg)' }}>
-      {/* --- SIDEBAR --- */}
-      <aside className={`zen-sidebar${collapsed ? ' is-collapsed' : ''}`} style={{
-        width: `${currentWidth}px`,
-        backgroundColor: 'var(--brand-950)',
-        color: 'var(--rs-sidebar-text)',
-        padding: collapsed ? '24px 8px' : '32px 20px',
-        display: 'flex',
-        flexDirection: 'column',
-        position: 'sticky',
-        top: 0,
-        height: '100vh',
-        overflowY: 'auto',
-        overflowX: 'hidden',
-        flexShrink: 0,
-        borderRight: '1px solid rgba(255, 255, 255, 0.03)',
-        transition: 'width 0.3s cubic-bezier(0.2, 0.8, 0.2, 1), padding 0.3s ease',
-        zIndex: 10,
-      }}>
-        {/* Toggle + Brand + OrgSwitcher */}
-        <div style={{
-          display: 'flex',
-          flexDirection: 'column',
-          gap: collapsed ? '8px' : '16px',
-          marginBottom: collapsed ? '32px' : '32px',
-        }}>
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: collapsed ? 'center' : 'space-between',
-            paddingLeft: collapsed ? '0' : '8px',
-          }}>
-            {!collapsed && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                <img src="/logo.png" alt="Cronos Logo" style={{ width: '32px', height: '32px', borderRadius: '6px', objectFit: 'contain' }} />
-                <div>
-                  <h2 className="text-display" style={{ color: '#ffffff', fontSize: '1.6rem', margin: 0 }}>
-                    {TXT.SIDEBAR_BRAND}
-                  </h2>
-                  <div className="luxury-line" style={{ width: '40px', marginTop: '6px' }} />
-                </div>
-              </div>
-            )}
-            {collapsed && (
-              <div style={{ paddingBottom: '8px' }}>
-                <img src="/logo.png" alt="Cronos" style={{ width: '36px', height: '36px', borderRadius: '6px', objectFit: 'contain' }} />
-              </div>
-            )}
-            <button
-              type="button"
-              onClick={() => setCollapsed(prev => !prev)}
-              style={{
-                background: 'none', border: 'none', color: 'var(--rs-sidebar-link)',
-                cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center',
-                opacity: 0.6, transition: 'opacity 0.2s ease',
-              }}
-              onMouseEnter={(e) => { e.currentTarget.style.opacity = '1' }}
-              onMouseLeave={(e) => { e.currentTarget.style.opacity = '0.6' }}
-              title={collapsed ? 'Expandir menu' : 'Colapsar menu'}
-              aria-label={collapsed ? 'Expandir menu' : 'Colapsar menu'}
-            >
-              <CIcon icon={cilMenu} size="sm" />
-            </button>
-          </div>
-        </div>
-        
-        <nav style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-          {isAdmin && (
-            <>
-              <SidebarLink to="/dashboard" icon={cilSpeedometer} collapsed={collapsed}>Dashboard</SidebarLink>
-              <SidebarLink to="/schedules" icon={cilCalendar} collapsed={collapsed}>Horários</SidebarLink>
-              <SidebarLink to="/absences" icon={cilCheckCircle} collapsed={collapsed}>Faltas</SidebarLink>
-              <SidebarLink to="/timesheets" icon={cilCalendar} collapsed={collapsed}>Fecho Semanal</SidebarLink>
-              
-              {!collapsed && <div className="text-editorial" style={sectionLabelStyle}>Pedagogia</div>}
-              <SidebarLink to="/courses" icon={cilEducation} collapsed={collapsed}>Cursos</SidebarLink>
-              <SidebarLink to="/members" icon={cilPeople} collapsed={collapsed}>Equipa</SidebarLink>
-              <SidebarLink to="/subjects" icon={cilLibrary} collapsed={collapsed}>Disciplinas</SidebarLink>
-              
-              {!collapsed && <div className="text-editorial" style={sectionLabelStyle}>Recursos</div>}
-              <SidebarLink to="/rooms" icon={cilRoom} collapsed={collapsed}>Salas</SidebarLink>
-              <SidebarLink to="/config" icon={cilSettings} collapsed={collapsed}>Configuração</SidebarLink>
-            </>
-          )}
-
-          {isTeacher && (
-            <>
-              <SidebarLink to="/my-availability" icon={cilUser} collapsed={collapsed}>Preferências</SidebarLink>
-              <SidebarLink to={ROUTE_MY_SCHEDULES} icon={cilCalendar} collapsed={collapsed}>Meus Horários</SidebarLink>
-              <SidebarLink to="/my-progress" icon={cilChartPie} collapsed={collapsed}>Meu Progresso</SidebarLink>
-            </>
-          )}
-        </nav>
-
-        {/* Rodapé da Sidebar */}
-        <div style={{ marginTop: 'auto', paddingTop: '24px', borderTop: '1px solid rgba(255,255,255,0.05)' }}>
-          <button type="button" onClick={() => openUserProfile()} className="zen-sidebar-profile" title="Gerir conta">
-            <div className="zen-sidebar-avatar">{user?.primaryEmailAddress?.emailAddress?.[0]?.toUpperCase() || '?'}</div>
-            <div className="zen-profile-details">
-              <p>{user?.primaryEmailAddress?.emailAddress?.split('@')[0] || 'Convidado'}</p>
-              <span className="zen-caps">{getRoleLabel()}</span>
-            </div>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => signOut()}
-            title="Terminar sessão"
-            className="zen-sidebar-logout"
-          >
-            <CIcon icon={cilAccountLogout} size="sm" />
-            {!collapsed && 'Terminar sessão'}
-          </button>
-        </div>
+    <div className="app-shell">
+      <aside className="app-sidebar--desktop" aria-label="Navegação principal">
+        <AppSidebarContent collapsed={collapsed} isAdmin={isAdmin} isTeacher={isTeacher} user={user} roleLabel={roleLabel} onToggle={() => setCollapsed((value) => !value)} onNavigate={() => {}} onProfile={openUserProfile} onSignOut={() => signOut()} />
       </aside>
-
-      {/* --- MAIN CONTENT --- */}
-      <main style={{
-        flex: 1,
-        padding: isTeacher ? '24px 16px' : '48px',
-        overflowY: 'auto',
-        maxWidth: isTeacher ? '100%' : '1400px',
-        margin: '0 auto',
-        width: '100%',
-      }}>
-        {accessDeniedMessage && (
-          <div role="alert" className="zen-toast zen-toast-warning" style={{ position: 'relative', marginBottom: '32px', animation: 'none' }}>
-             {accessDeniedMessage}
-          </div>
-        )}
+      <header className="app-mobile-header">
+        <div className="app-mobile-header__brand"><img src="/logo.png" alt="Cronos" /> Cronos</div>
+        <button ref={menuButtonRef} type="button" className="app-mobile-header__menu" onClick={() => setMobileOpen(true)} aria-label="Abrir menu de navegação" aria-expanded={mobileOpen}>
+          <CIcon icon={cilMenu} size="lg" aria-hidden="true" />
+        </button>
+      </header>
+      {mobileOpen && <COffcanvas className="app-drawer" placement="start" visible={mobileOpen} onHide={closeMobile} backdrop scroll={false} aria-labelledby="app-drawer-title">
+        <COffcanvasBody className="p-0">
+          <span id="app-drawer-title" className="visually-hidden">Menu de navegação</span>
+          <AppSidebarContent collapsed={false} isAdmin={isAdmin} isTeacher={isTeacher} user={user} roleLabel={roleLabel} onToggle={() => {}} onNavigate={closeMobile} onProfile={() => { closeMobile(); openUserProfile() }} onSignOut={() => { closeMobile(); signOut() }} mobile />
+        </COffcanvasBody>
+      </COffcanvas>}
+      <main className="app-main">
+        {accessDeniedMessage && <div className="app-main__access-message"><FeedbackBanner tone="warning">{accessDeniedMessage}</FeedbackBanner></div>}
         <Outlet />
       </main>
     </div>
   )
-}
-
-const sectionLabelStyle = {
-  fontSize: '0.7rem',
-  color: 'var(--rs-sidebar-section)',
-  letterSpacing: '0.1em',
-  marginTop: '24px',
-  marginBottom: '8px',
-  paddingLeft: '16px',
 }
 
 export default DefaultLayout

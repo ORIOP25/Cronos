@@ -254,8 +254,9 @@ export const useSaveAvailability = () => {
     mutationFn: async ({ teacherId, payload }) => {
       return apiClient.post(`/teachers/${teacherId}/availability`, payload)
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['my-availability', orgId] })
+    onSuccess: (_, { payload }) => {
+      queryClient.setQueryData(['my-availability', orgId], payload)
+      void queryClient.invalidateQueries({ queryKey: ['my-availability', orgId] })
     },
   })
 }

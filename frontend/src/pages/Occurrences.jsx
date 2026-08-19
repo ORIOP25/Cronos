@@ -795,7 +795,7 @@ const Occurrences = () => {
   return (
     <div className="p-4">
       {/* Cabeçalho */}
-      <PageHeader preTitle="Operações" title={<span>Faltas e <span className="text-editorial">Ocorrências</span></span>} />
+      <PageHeader preTitle="Operações" title="Faltas e Ocorrências" />
 
       {/* Filtros globais */}
       <CCard className="border-0 shadow-sm mb-4">
