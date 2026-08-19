@@ -34,7 +34,7 @@ export const softSkillPillars = [
     id: 'director',
     role: 'Para a Direção',
     title: 'Tranquilidade e visão estratégica',
-    text: 'Aceda ao estado real do ano letivo em segundos. Tome decisões informadas em reuniões pedagógicas sem sobressaltos ou dados em falta.',
+    text: 'Aceda ao estado do ano letivo em segundos. Tome decisões informadas em reuniões pedagógicas sem sobressaltos ou dados em falta.',
   },
   {
     id: 'coordinator',

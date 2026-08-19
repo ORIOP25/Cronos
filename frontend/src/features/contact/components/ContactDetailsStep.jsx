@@ -5,7 +5,7 @@ export default function ContactDetailsStep({ answers, errors, onChange, onNext }
       <div className="cronos-questionnaire__fields">
         <Field id="name" label="Nome" value={answers.name} error={errors.name} onChange={onChange} />
         <Field id="email" type="email" label="Email" value={answers.email} error={errors.email} onChange={onChange} />
-        <Field id="phone" type="tel" label="Telefone, opcional" value={answers.phone} onChange={onChange} />
+        <Field id="phone" type="tel" label="Telefone" value={answers.phone} onChange={onChange} />
       </div>
       <button type="submit" className="cronos-button">Continuar</button>
     </form>

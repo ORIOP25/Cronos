@@ -2,7 +2,7 @@ export const questionnaireOptions = {
   subject: [
     'Criar horários do zero sem conflitos',
     'Gerir furos, faltas e substituições',
-    'Acompanhar horas de UFCDs e módulos',
+    'Acompanhar horas de UFCDs',
     'Outro',
   ],
   courses: ['Entre 1 e 5', 'Entre 5 e 20', '20+'],
