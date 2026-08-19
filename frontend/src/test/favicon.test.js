@@ -10,9 +10,9 @@ const favicon = readFileSync(resolve(frontendRoot, 'public/favicon.png'))
 
 describe('public favicon contract', () => {
   it('uses the dedicated favicon instead of the transparent brand logo', () => {
-    expect(indexHtml).toContain('<link rel="icon" type="image/png" sizes="256x256" href="/favicon.png" />')
+    expect(indexHtml).toContain('<link rel="icon" type="image/png" sizes="256x256" href="/favicon.png?v=3" />')
     expect(indexHtml).not.toContain('<link rel="icon" type="image/png" sizes="256x256" href="/logo.png" />')
-    expect(indexHtml).toContain('<link rel="apple-touch-icon" sizes="256x256" href="/favicon.png" />')
+    expect(indexHtml).toContain('<link rel="apple-touch-icon" sizes="256x256" href="/favicon.png?v=3" />')
   })
 
   it('publishes the favicon with a stable cache rule and valid PNG dimensions', () => {
@@ -22,4 +22,3 @@ describe('public favicon contract', () => {
     expect(favicon.readUInt32BE(20)).toBe(256)
   })
 })
-
