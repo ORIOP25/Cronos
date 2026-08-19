@@ -11,7 +11,7 @@ export default function MinuteDecisionVisual() {
       <div className="cronos-minute-visual__clock" aria-hidden="true">
         <span className="cronos-minute-visual__hand" />
         <span className="cronos-minute-visual__centre" />
-        <span className="cronos-minute-visual__time">00:{20 * (activeIndex + 1)}</span>
+        <span className="cronos-minute-visual__time">00:{[20, 40, 59][activeIndex]}</span>
       </div>
       <div className="cronos-minute-visual__content" aria-live="polite">
         <span className="cronos-minute-visual__index">0{activeIndex + 1}</span>

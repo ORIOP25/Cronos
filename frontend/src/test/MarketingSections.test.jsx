@@ -56,6 +56,7 @@ describe('public marketing sections', () => {
     expect(document.querySelector('.cronos-minute-visual')).toHaveStyle({ '--active-step': '1' })
     fireEvent.click(thirdStep)
     expect(thirdStep).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByText('00:59')).toBeInTheDocument()
     fireEvent.click(firstStep)
     expect(firstStep).toHaveAttribute('aria-pressed', 'true')
     expect(document.querySelector('.cronos-minute-visual')).toHaveStyle({ '--active-step': '0' })
