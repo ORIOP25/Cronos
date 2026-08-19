@@ -1034,6 +1034,8 @@ def validate_lunch_window(start: time | None, end: time | None, minimum: int | N
         raise ValueError(ERR_LUNCH_WINDOW_DURATION)
     if minimum is not None and minimum > (end_minutes - start_minutes):
         raise ValueError(ERR_LUNCH_WINDOW_DURATION)
+
+
 ERR_TARGET_BEFORE_START = "A data-alvo de fim não pode ser anterior ao início das aulas"
 ERR_HARD_BEFORE_START = "A data-limite rígida não pode ser anterior ao início das aulas"
 ERR_HARD_BEFORE_TARGET = "A data-limite rígida não pode ser anterior à data-alvo de fim"
