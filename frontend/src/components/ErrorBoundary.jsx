@@ -1,4 +1,8 @@
 import React from 'react'
+
+const AUTO_RECOVERY_KEY = 'cronos:error-boundary:last-reload'
+const AUTO_RECOVERY_COOLDOWN_MS = 30_000
+
 class ErrorBoundary extends React.Component {
   constructor(props) {
     super(props)
@@ -11,13 +15,30 @@ class ErrorBoundary extends React.Component {
 
   componentDidCatch(error, errorInfo) {
     console.error('Erro capturado pelo ErrorBoundary:', error, errorInfo)
+    this.attemptAutomaticRecovery()
   }
 
-  handleReload = () => {
-    this.setState({ hasError: false, error: null })
+  reloadPage = () => {
     if (this.props.onReset) {
       this.props.onReset()
+      return
     }
+
+    globalThis.location.reload()
+  }
+
+  attemptAutomaticRecovery = () => {
+    try {
+      const lastReload = Number(globalThis.sessionStorage.getItem(AUTO_RECOVERY_KEY) ?? 0)
+      if (Date.now() - lastReload < AUTO_RECOVERY_COOLDOWN_MS) return
+
+      globalThis.sessionStorage.setItem(AUTO_RECOVERY_KEY, String(Date.now()))
+    } catch (storageError) {
+      console.error('Não foi possível proteger a recuperação automática:', storageError)
+      return
+    }
+
+    this.reloadPage()
   }
 
   render() {
@@ -25,7 +46,7 @@ class ErrorBoundary extends React.Component {
       if (this.props.fallback) {
         return this.props.fallback({
           error: this.state.error,
-          onReload: this.handleReload,
+          onReload: this.reloadPage,
         })
       }
 
@@ -71,7 +92,7 @@ class ErrorBoundary extends React.Component {
             <button
               type="button"
               className="btn-zen btn-zen-primary"
-              onClick={this.handleReload}
+              onClick={this.reloadPage}
             >
               Tentar novamente
             </button>
