@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest'
 
 const frontendRoot = resolve(import.meta.dirname, '../..')
 const indexHtml = readFileSync(resolve(frontendRoot, 'index.html'), 'utf8')
-const headers = readFileSync(resolve(frontendRoot, 'public/_headers'), 'utf8')
+const headers = readFileSync(resolve(frontendRoot, 'public/_headers'), 'utf8').replaceAll('\r\n', '\n')
 const favicon = readFileSync(resolve(frontendRoot, 'public/favicon.png'))
 
 describe('public favicon contract', () => {
