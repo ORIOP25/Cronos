@@ -11,6 +11,25 @@ import {
 } from '../utils/clerk-helpers.js'
 
 const API_PREFIX = '/api/v1'
+const OPERATION_TIMEOUT_MS = 30_000
+const JOB_TIMEOUT_MS = 120_000
+const COMPOSED_FLOW_TIMEOUT_MS = 600_000
+
+function withTimeout(operation, label, timeoutMs = OPERATION_TIMEOUT_MS) {
+  let timeoutId
+  const timeout = new Promise((_, reject) => {
+    timeoutId = setTimeout(() => {
+      reject(new Error(`${label} timed out after ${timeoutMs}ms`))
+    }, timeoutMs)
+  })
+  return Promise.race([Promise.resolve().then(operation), timeout]).finally(() => {
+    clearTimeout(timeoutId)
+  })
+}
+
+function sleep(durationMs) {
+  return new Promise((resolve) => setTimeout(resolve, durationMs))
+}
 
 function toIsoDate(value) {
   const year = value.getFullYear()
@@ -53,9 +72,9 @@ const FIXTURE = {
   ...FIXTURE_DATES,
 }
 
-export async function apiRequest(page, method, path, body) {
+export async function apiRequest(page, method, path, body, timeoutMs = OPERATION_TIMEOUT_MS) {
   return await page.evaluate(
-    async ({ apiPrefix, method: requestMethod, path: requestPath, body: requestBody }) => {
+    async ({ apiPrefix, method: requestMethod, path: requestPath, body: requestBody, timeoutMs }) => {
       let token = null
       try {
         token = await window.Clerk?.session?.getToken?.()
@@ -78,29 +97,42 @@ export async function apiRequest(page, method, path, body) {
       if (token) {
         headers.Authorization = `Bearer ${token}`
       }
-      const response = await fetch(`${apiPrefix}${requestPath}`, {
-        method: requestMethod,
-        credentials: 'same-origin',
-        headers,
-        body: requestBody === undefined ? undefined : JSON.stringify(requestBody),
-      })
-      const text = await response.text()
-      let data = null
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
+      let response
       try {
-        data = text ? JSON.parse(text) : null
-      } catch {
-        data = text
+        response = await fetch(`${apiPrefix}${requestPath}`, {
+          method: requestMethod,
+          credentials: 'same-origin',
+          headers,
+          body: requestBody === undefined ? undefined : JSON.stringify(requestBody),
+          signal: controller.signal,
+        })
+        const text = await response.text()
+        let data = null
+        try {
+          data = text ? JSON.parse(text) : null
+        } catch {
+          data = text
+        }
+        if (!response.ok) {
+          const organizationId = window.Clerk?.organization?.id ?? '<none>'
+          throw new Error(
+            `${requestMethod} ${requestPath} failed for organization ${organizationId}: `
+            + `${response.status} ${text}`,
+          )
+        }
+        return data
+      } catch (error) {
+        if (error?.name === 'AbortError') {
+          throw new Error(`${requestMethod} ${requestPath} timed out after ${timeoutMs}ms`)
+        }
+        throw error
+      } finally {
+        clearTimeout(timeoutId)
       }
-      if (!response.ok) {
-        const organizationId = window.Clerk?.organization?.id ?? '<none>'
-        throw new Error(
-          `${requestMethod} ${requestPath} failed for organization ${organizationId}: `
-          + `${response.status} ${text}`,
-        )
-      }
-      return data
     },
-    { apiPrefix: API_PREFIX, method, path, body },
+    { apiPrefix: API_PREFIX, method, path, body, timeoutMs },
   )
 }
 
@@ -134,10 +166,10 @@ async function signInUserWithTicket(
   path,
   { organizationName } = {},
 ) {
-  const ticket = await client.signInTokens.createSignInToken({
-    userId,
-    expiresInSeconds: 300,
-  })
+  const ticket = await withTimeout(
+    () => client.signInTokens.createSignInToken({ userId, expiresInSeconds: 300 }),
+    'Clerk sign-in token creation',
+  )
   const baseUrl = process.env.BASE_URL || 'http://localhost:5173'
   const targetUrl = new URL(path, baseUrl)
   const ticketUrl = new URL(ticket.url)
@@ -146,9 +178,10 @@ async function signInUserWithTicket(
   if (organizationName) {
     await page.waitForURL(/\/tasks\/choose-organization(?:[/?#]|$)/, { timeout: 30_000 })
     const clerkPages = createPageObjects({ page, baseURL: baseUrl })
-    await clerkPages.sessionTask.resolveForceOrganizationSelectionTask({
-      name: organizationName,
-    })
+    await withTimeout(
+      () => clerkPages.sessionTask.resolveForceOrganizationSelectionTask({ name: organizationName }),
+      'Clerk organization selection',
+    )
   }
   await page.waitForURL(targetUrl.toString(), { timeout: 30_000 })
   await page.waitForFunction(() => window.Clerk?.user != null, null, { timeout: 30_000 })
@@ -343,18 +376,35 @@ export async function seedMinimalSchedulerInputs(page, teacherEmail, dates = FIX
 
 export async function waitForJobToSucceed(page, jobId) {
   let lastJob = null
-  await expect.poll(
-    async () => {
-      lastJob = await apiRequest(page, 'GET', `/scheduler/jobs/${jobId}`)
-      return lastJob.job_status
-    },
-    {
-      message: `scheduler job ${jobId} should finish successfully`,
-      intervals: [1000, 2000, 5000],
-      timeout: 120_000,
-    },
-  ).toBe('SUCCEEDED')
-  return lastJob
+  const startedAt = Date.now()
+  const deadline = startedAt + JOB_TIMEOUT_MS
+  const terminalFailures = new Set(['FAILED', 'NO_VALID_OUTPUT', 'CANCELED'])
+  while (Date.now() < deadline) {
+    const remainingMs = deadline - Date.now()
+    lastJob = await apiRequest(
+      page,
+      'GET',
+      `/scheduler/jobs/${jobId}`,
+      undefined,
+      Math.min(OPERATION_TIMEOUT_MS, remainingMs),
+    )
+    if (lastJob.job_status === 'SUCCEEDED') return lastJob
+    if (terminalFailures.has(lastJob.job_status)) {
+      throw new Error(
+        `scheduler job ${jobId} ended with ${lastJob.job_status}; `
+        + `strategy=${lastJob.strategy}; duration_ms=${lastJob.duration_ms ?? 'unknown'}; `
+        + `payload=${JSON.stringify(lastJob, null, 2)}`,
+      )
+    }
+    await sleep(Math.min(2000, Math.max(0, deadline - Date.now())))
+  }
+  throw new Error(
+    `scheduler job ${jobId} did not finish within ${JOB_TIMEOUT_MS}ms; `
+    + `strategy=${lastJob?.strategy ?? 'unknown'}; `
+    + `state=${lastJob?.job_status ?? 'unknown'}; `
+    + `duration_ms=${lastJob?.duration_ms ?? (Date.now() - startedAt)}; `
+    + `payload=${JSON.stringify(lastJob, null, 2)}`,
+  )
 }
 
 export async function generateAndApproveThroughUi(page) {
@@ -363,6 +413,7 @@ export async function generateAndApproveThroughUi(page) {
   const generateResponse = page.waitForResponse(
     (response) => response.url().includes('/api/v1/scheduler/generate')
       && response.request().method() === 'POST',
+    { timeout: OPERATION_TIMEOUT_MS },
   )
   await page.getByRole('button', { name: /Gerar Hor.rio/i }).click()
   const response = await generateResponse
@@ -375,6 +426,7 @@ export async function generateAndApproveThroughUi(page) {
     (candidate) => candidate.url().includes('/api/v1/scheduler/drafts/')
       && candidate.url().endsWith('/approve')
       && candidate.request().method() === 'POST',
+    { timeout: OPERATION_TIMEOUT_MS },
   )
   await page.getByRole('button', { name: /^Aprovar$/i }).click()
   const approvalResponse = await approvalResponsePromise
@@ -530,7 +582,7 @@ test('fresh founder completes Complete Generation and custom-rule Adaptive Repai
   page,
   context,
 }) => {
-  test.setTimeout(300_000)
+  test.setTimeout(COMPOSED_FLOW_TIMEOUT_MS)
   const secretKey = process.env.CLERK_SECRET_KEY
   if (!secretKey) throw new Error('CLERK_SECRET_KEY is required for the beta remediation journey.')
   const client = createClerkClient({ secretKey })
@@ -539,91 +591,142 @@ test('fresh founder completes Complete Generation and custom-rule Adaptive Repai
   const schoolName = `Cronos Beta ${runKey}`
   let userId
   let organizationId
+  let primaryError = null
+  const cleanupErrors = []
 
   try {
-    const user = await client.users.createUser({
-      emailAddress: [email],
-      firstName: 'Cronos',
-      lastName: 'Beta',
-      skipPasswordRequirement: true,
-      skipLegalChecks: true,
-      createOrganizationEnabled: true,
+    await test.step('criação Clerk', async () => {
+      const user = await withTimeout(
+        () => client.users.createUser({
+          emailAddress: [email],
+          firstName: 'Cronos',
+          lastName: 'Beta',
+          skipPasswordRequirement: true,
+          skipLegalChecks: true,
+          createOrganizationEnabled: true,
+        }),
+        'Clerk user creation',
+      )
+      userId = user.id
+      attachRuntimeGuards(page)
+      allowApiFailure(page, { status: 404, url: '/api/v1/scheduler/drafts/current' })
+      organizationId = await signInUserWithTicket(client, page, userId, '/create-org', {
+        organizationName: schoolName,
+      })
+      expect(organizationId).toMatch(/^org_/)
     })
-    userId = user.id
 
-    attachRuntimeGuards(page)
-    allowApiFailure(page, { status: 404, url: '/api/v1/scheduler/drafts/current' })
-    organizationId = await signInUserWithTicket(client, page, userId, '/create-org', {
-      organizationName: schoolName,
+    await test.step('onboarding', async () => {
+      await page.getByRole('button', { name: schoolName }).click()
+      await page.waitForURL('**/onboarding', { timeout: OPERATION_TIMEOUT_MS })
+      await page.waitForFunction(
+        (expectedOrganizationId) => window.Clerk?.organization?.id === expectedOrganizationId,
+        organizationId,
+        { timeout: OPERATION_TIMEOUT_MS },
+      )
+      await page.getByRole('button', { name: /Guardar e Come/i }).click()
+      await expectRouteReady(page, '/dashboard')
+      await apiRequest(page, 'GET', '/members/me')
     })
-    expect(organizationId).toMatch(/^org_/)
-    await page.getByRole('button', { name: schoolName }).click()
-    await page.waitForURL('**/onboarding', { timeout: 20_000 })
-    await page.waitForFunction(
-      (expectedOrganizationId) => window.Clerk?.organization?.id === expectedOrganizationId,
-      organizationId,
-      { timeout: 30_000 },
-    )
 
-    await page.getByRole('button', { name: /Guardar e Come/i }).click()
-    await expectRouteReady(page, '/dashboard')
-    await apiRequest(page, 'GET', '/members/me')
-    const { classId, teacherId } = await seedMinimalSchedulerInputs(
-      page,
-      email,
-      FRESH_FOUNDER_DATES,
-    )
-    await generateAndApproveThroughUi(page)
+    const { classId, teacherId } = await test.step('preparação dos dados', () => (
+      seedMinimalSchedulerInputs(page, email, FRESH_FOUNDER_DATES)
+    ))
 
-    const forbidden = await firstPublishedFutureSlot(page, classId)
-    await apiRequest(page, 'POST', '/schedule/constraints/', {
-      rule_type: 'teacher_unavailable',
-      rule_payload: {
-        teacher_id: teacherId,
-        date: forbidden.date,
-        timeslot_id: forbidden.timeslot.id,
-      },
+    await test.step('geração completa', async () => {
+      const job = await generateAndApproveThroughUi(page)
+      expect(job.strategy).toBe('COMPLETE_GENERATION')
     })
-    await expect.poll(
-      async () => (await apiRequest(page, 'GET', '/scheduler/status')).trigger_type,
-      { timeout: 20_000 },
-    ).toBe('SCHEDULER_CHANGE')
-    const repairJob = await generateAndApproveThroughUi(page)
-    expect(repairJob.strategy).toBe('ADAPTIVE_REPAIR')
 
-    const repairedWeek = await apiRequest(
-      page,
-      'GET',
-      `/schedule/week?class_id=${classId}&week_start=${mondayIso(new Date(`${forbidden.date}T12:00:00`))}`,
-    )
-    expect(repairedWeek.some((slot) => (
-      slot.active_schedule_block_id
-      && slot.date === forbidden.date
-      && slot.timeslot.id === forbidden.timeslot.id
-      && slot.teacher.id === teacherId
-    ))).toBe(false)
+    const forbidden = await test.step('seleção da aula a bloquear', () => (
+      firstPublishedFutureSlot(page, classId)
+    ))
 
-    await page.reload()
-    await expectRouteReady(page, '/schedules')
-    const secondPage = await context.newPage()
-    attachRuntimeGuards(secondPage)
-    await goTo(secondPage, '/schedules')
-    await expectRouteReady(secondPage, '/schedules')
-    await secondPage.close()
+    const repairJob = await test.step('reparação adaptativa', async () => {
+      await apiRequest(page, 'POST', '/schedule/constraints/', {
+        rule_type: 'teacher_unavailable',
+        rule_payload: {
+          teacher_id: teacherId,
+          date: forbidden.date,
+          timeslot_id: forbidden.timeslot.id,
+        },
+      })
+      await expect.poll(
+        async () => (await apiRequest(page, 'GET', '/scheduler/status')).trigger_type,
+        { timeout: OPERATION_TIMEOUT_MS },
+      ).toBe('SCHEDULER_CHANGE')
+      const job = await generateAndApproveThroughUi(page)
+      expect(job.strategy).toBe('ADAPTIVE_REPAIR')
+      return job
+    })
 
-    await clerk.signOut({ page })
-    await signInUserWithTicket(client, page, userId, '/dashboard')
-    await goTo(page, '/schedules')
-    await expectRouteReady(page, '/schedules')
+    await test.step('validação da reparação', async () => {
+      const repairedWeek = await apiRequest(
+        page,
+        'GET',
+        `/schedule/week?class_id=${classId}&week_start=${mondayIso(new Date(`${forbidden.date}T12:00:00`))}`,
+      )
+      expect(repairedWeek.some((slot) => (
+        slot.active_schedule_block_id
+        && slot.date === forbidden.date
+        && slot.timeslot.id === forbidden.timeslot.id
+        && slot.teacher.id === teacherId
+      ))).toBe(false)
+      expect(repairJob.duration_ms).toBeLessThanOrEqual(JOB_TIMEOUT_MS)
+    })
 
-    await page.evaluate(async () => window.Clerk.setActive({ organization: null }))
-    await goTo(page, '/create-org')
-    await page.getByRole('button', { name: schoolName }).click()
-    await expectRouteReady(page, '/dashboard')
+    await test.step('sessão e troca de organização', async () => {
+      await page.reload()
+      await expectRouteReady(page, '/schedules')
+      const secondPage = await context.newPage()
+      try {
+        attachRuntimeGuards(secondPage)
+        await goTo(secondPage, '/schedules')
+        await expectRouteReady(secondPage, '/schedules')
+      } finally {
+        await withTimeout(() => secondPage.close(), OPERATION_TIMEOUT_MS, 'secondary page close')
+      }
+
+      await withTimeout(() => clerk.signOut({ page }), 'Clerk sign out')
+      await signInUserWithTicket(client, page, userId, '/dashboard')
+      await goTo(page, '/schedules')
+      await expectRouteReady(page, '/schedules')
+
+      await page.evaluate(async () => window.Clerk.setActive({ organization: null }))
+      await goTo(page, '/create-org')
+      await page.getByRole('button', { name: schoolName }).click()
+      await expectRouteReady(page, '/dashboard')
+    })
+  } catch (error) {
+    primaryError = error
   } finally {
     if (organizationId) {
-      await client.organizations.deleteOrganization(organizationId).catch(() => undefined)
+      try {
+        await withTimeout(
+          () => client.organizations.deleteOrganization(organizationId),
+          `Clerk organization cleanup ${organizationId}`,
+        )
+      } catch (error) {
+        cleanupErrors.push(error)
+      }
     }
-    if (userId) await client.users.deleteUser(userId).catch(() => undefined)
+    if (userId) {
+      try {
+        await withTimeout(() => client.users.deleteUser(userId), `Clerk user cleanup ${userId}`)
+      } catch (error) {
+        cleanupErrors.push(error)
+      }
+    }
+  }
+  if (primaryError) {
+    if (cleanupErrors.length) {
+      console.error('Cleanup failed after the primary E2E error:', cleanupErrors)
+    }
+    throw primaryError
+  }
+  if (cleanupErrors.length) {
+    const cleanupError = new Error('E2E cleanup failed')
+    cleanupError.errors = cleanupErrors
+    throw cleanupError
   }
 })
