@@ -286,17 +286,24 @@ async function ensureFixtureRoom(page) {
 }
 
 async function ensureFixtureClassSubject(page, classroomId, subjectId, teacherId) {
-  const classSubjects = await apiRequest(page, 'GET', `/classes/${classroomId}/subjects`)
+  let classSubjects = await apiRequest(page, 'GET', `/classes/${classroomId}/subjects`)
   const hasFixtureSubject = classSubjects.subjects.some(
     (subject) => subject.subject_id === subjectId,
   )
   if (!hasFixtureSubject) {
     await apiRequest(page, 'POST', `/classes/${classroomId}/subjects`, { subject_id: subjectId })
   }
+
+  classSubjects = await apiRequest(page, 'GET', `/classes/${classroomId}/subjects`)
   for (const subject of classSubjects.subjects) {
     if (subject.subject_id !== subjectId) {
       await apiRequest(page, 'DELETE', `/classes/${classroomId}/subjects/${subject.subject_id}`)
     }
+  }
+
+  classSubjects = await apiRequest(page, 'GET', `/classes/${classroomId}/subjects`)
+  if (!classSubjects.subjects.some((subject) => subject.subject_id === subjectId)) {
+    throw new Error(`Fixture subject ${subjectId} was not associated with class ${classroomId}.`)
   }
   await apiRequest(page, 'PATCH', `/classes/${classroomId}/subjects/${subjectId}`, {
     teacher_id: teacherId,
