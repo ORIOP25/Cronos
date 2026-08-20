@@ -700,7 +700,7 @@ test('fresh founder completes Complete Generation and custom-rule Adaptive Repai
         await goTo(secondPage, '/schedules')
         await expectRouteReady(secondPage, '/schedules')
       } finally {
-        await withTimeout(() => secondPage.close(), OPERATION_TIMEOUT_MS, 'secondary page close')
+        await withTimeout(() => secondPage.close(), 'secondary page close', OPERATION_TIMEOUT_MS)
       }
 
       await withTimeout(() => clerk.signOut({ page }), 'Clerk sign out')
