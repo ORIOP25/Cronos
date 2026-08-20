@@ -624,7 +624,16 @@ test('fresh founder completes Complete Generation and custom-rule Adaptive Repai
         organizationId,
         { timeout: OPERATION_TIMEOUT_MS },
       )
-      await page.getByRole('button', { name: /Guardar e Come/i }).click()
+
+      await page.getByRole('button', { name: 'Começar' }).click()
+      await page.locator('#onboarding-school-start').fill(FRESH_FOUNDER_DATES.schoolStartDate)
+      await page.locator('#onboarding-school-end').fill(FRESH_FOUNDER_DATES.schoolHardEndDate)
+      await page.locator('button[type="submit"]').click()
+
+      await page.locator('#onboarding-lunch-start').fill('12:30')
+      await page.locator('#onboarding-lunch-end').fill('14:00')
+      await page.locator('#onboarding-lunch-duration').fill('60')
+      await page.getByRole('button', { name: 'Guardar e concluir' }).click()
       await expectRouteReady(page, '/dashboard')
       await apiRequest(page, 'GET', '/members/me')
     }, { timeout: 120_000 })
