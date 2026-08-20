@@ -506,7 +506,8 @@
 .cronos-teacher-workflow__tabs { display: grid; gap: var(--space-2); margin-top: var(--space-7); padding: 6px; border: 1px solid var(--marketing-border); border-radius: var(--marketing-radius-panel); background: var(--marketing-surface); }
 .cronos-teacher-workflow__tabs button { display: flex; align-items: center; gap: var(--space-3); min-height: 56px; padding: var(--space-4); border: 0; border-radius: var(--marketing-radius-control); background: transparent; color: var(--marketing-ink-muted); cursor: pointer; font-weight: 700; text-align: left; }
 .cronos-teacher-workflow__tabs button[aria-selected='true'] { background: var(--marketing-ink); color: var(--marketing-surface); }
-.cronos-teacher-workflow__tabs button span { color: var(--marketing-accent-on-dark); font-size: .78rem; letter-spacing: .08em; }
+.cronos-teacher-workflow__tabs button span { color: var(--marketing-accent-text); font-size: .78rem; letter-spacing: .08em; }
+.cronos-teacher-workflow__tabs button[aria-selected='true'] span { color: var(--marketing-accent-on-dark); }
 .cronos-teacher-workflow__panel { display: grid; gap: var(--space-7); padding: var(--space-6); border: 1px solid var(--marketing-border); border-top: 0; background: var(--marketing-surface); }
 .cronos-teacher-workflow__copy { display: flex; flex-direction: column; justify-content: center; gap: var(--space-4); }
 .cronos-teacher-workflow__copy h2 { font-size: clamp(1.8rem, 3vw, 2.5rem); }
