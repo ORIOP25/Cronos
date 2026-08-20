@@ -614,7 +614,7 @@ test('fresh founder completes Complete Generation and custom-rule Adaptive Repai
         organizationName: schoolName,
       })
       expect(organizationId).toMatch(/^org_/)
-    })
+    }, { timeout: 120_000 })
 
     await test.step('onboarding', async () => {
       await page.getByRole('button', { name: schoolName }).click()
@@ -627,20 +627,20 @@ test('fresh founder completes Complete Generation and custom-rule Adaptive Repai
       await page.getByRole('button', { name: /Guardar e Come/i }).click()
       await expectRouteReady(page, '/dashboard')
       await apiRequest(page, 'GET', '/members/me')
-    })
+    }, { timeout: 120_000 })
 
     const { classId, teacherId } = await test.step('preparação dos dados', () => (
       seedMinimalSchedulerInputs(page, email, FRESH_FOUNDER_DATES)
-    ))
+    ), { timeout: 120_000 })
 
     await test.step('geração completa', async () => {
       const job = await generateAndApproveThroughUi(page)
       expect(job.strategy).toBe('COMPLETE_GENERATION')
-    })
+    }, { timeout: 180_000 })
 
     const forbidden = await test.step('seleção da aula a bloquear', () => (
       firstPublishedFutureSlot(page, classId)
-    ))
+    ), { timeout: OPERATION_TIMEOUT_MS })
 
     const repairJob = await test.step('reparação adaptativa', async () => {
       await apiRequest(page, 'POST', '/schedule/constraints/', {
@@ -658,7 +658,7 @@ test('fresh founder completes Complete Generation and custom-rule Adaptive Repai
       const job = await generateAndApproveThroughUi(page)
       expect(job.strategy).toBe('ADAPTIVE_REPAIR')
       return job
-    })
+    }, { timeout: 180_000 })
 
     await test.step('validação da reparação', async () => {
       const repairedWeek = await apiRequest(
@@ -673,7 +673,7 @@ test('fresh founder completes Complete Generation and custom-rule Adaptive Repai
         && slot.teacher.id === teacherId
       ))).toBe(false)
       expect(repairJob.duration_ms).toBeLessThanOrEqual(JOB_TIMEOUT_MS)
-    })
+    }, { timeout: 60_000 })
 
     await test.step('sessão e troca de organização', async () => {
       await page.reload()
@@ -696,7 +696,7 @@ test('fresh founder completes Complete Generation and custom-rule Adaptive Repai
       await goTo(page, '/create-org')
       await page.getByRole('button', { name: schoolName }).click()
       await expectRouteReady(page, '/dashboard')
-    })
+    }, { timeout: 120_000 })
   } catch (error) {
     primaryError = error
   } finally {
