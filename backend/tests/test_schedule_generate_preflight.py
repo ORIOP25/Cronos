@@ -7,7 +7,7 @@ from sqlalchemy import delete, select
 from app import models
 from app.api import deps
 from app.main import app
-from app.services import preflight_service
+from app.services import settings_service
 from tests.conftest import create_teacher_profile
 
 
@@ -224,7 +224,7 @@ async def test_generate_does_not_sync_holidays_during_preflight(
         called["value"] = True
         return 3
 
-    monkeypatch.setattr(preflight_service.settings_service, "sync_holidays", fake_sync_holidays)
+    monkeypatch.setattr(settings_service, "sync_holidays", fake_sync_holidays)
 
     response = await async_client.post(
         "/api/v1/scheduler/generate",

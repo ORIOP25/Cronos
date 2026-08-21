@@ -185,7 +185,6 @@ def clean_database(migrated_test_database):
 @pytest_asyncio.fixture(scope="function")
 async def db_session(clean_database) -> AsyncGenerator[AsyncSession, None]:
     async with TestingSessionLocal() as session:
-        await session.execute(text("SET lock_timeout = '5s'"))
         try:
             yield session
         finally:
@@ -195,7 +194,6 @@ async def db_session(clean_database) -> AsyncGenerator[AsyncSession, None]:
 @pytest_asyncio.fixture(scope="function")
 async def runtime_db_session(clean_database) -> AsyncGenerator[AsyncSession, None]:
     async with RuntimeTestingSessionLocal() as session:
-        await session.execute(text("SET lock_timeout = '5s'"))
         try:
             yield session
         finally:

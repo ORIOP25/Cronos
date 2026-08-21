@@ -32,7 +32,12 @@ from tests.conftest import TestingSessionLocal, create_teacher_profile
 
 
 async def _runtime_context(db_session):
-    organization = models.Organization(name="Runtime School", plan_status="active")
+    organization = models.Organization(
+        name="Runtime School",
+        plan_status="active",
+        foundation_status=models.OrganizationFoundationStatus.COMPLETED,
+        foundation_completed_at=datetime.now(UTC),
+    )
     db_session.add(organization)
     await db_session.flush()
     user = models.User(
