@@ -84,7 +84,6 @@ def config_from_env(env: os._Environ[str] | dict[str, str] = os.environ) -> E2EC
             "CLERK_SECRET_KEY",
             "E2E_CLERK_ADMIN_EMAIL",
             "E2E_CLERK_TEACHER_EMAIL",
-            "E2E_CLERK_ORG_ID",
         ]
         if not env.get(name)
     ]
@@ -108,7 +107,7 @@ def config_from_env(env: os._Environ[str] | dict[str, str] = os.environ) -> E2EC
     return E2EClerkPrepConfig(
         admin_email=env["E2E_CLERK_ADMIN_EMAIL"],
         teacher_email=env["E2E_CLERK_TEACHER_EMAIL"],
-        clerk_org_id=env["E2E_CLERK_ORG_ID"],
+        clerk_org_id=env.get("E2E_CLERK_ORG_ID") or None,
     )
 
 

@@ -120,6 +120,18 @@ async def test_e2e_env_accepts_reserved_test_users_in_dedicated_org():
     assert config.clerk_org_id == "org_e2e"
 
 
+async def test_e2e_env_allows_org_discovery_for_reserved_test_users():
+    config = config_from_env(
+        {
+            "CLERK_SECRET_KEY": "sk_test_example",
+            "E2E_CLERK_ADMIN_EMAIL": "cronos-admin+clerk_test@example.com",
+            "E2E_CLERK_TEACHER_EMAIL": "cronos-teacher+clerk_test@example.com",
+        }
+    )
+
+    assert config.clerk_org_id is None
+
+
 async def test_prepare_e2e_clerk_state_creates_admin_teacher_membership_idempotently(db_session):
     directory = _directory()
 

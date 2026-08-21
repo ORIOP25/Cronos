@@ -165,7 +165,7 @@ jobs:
     env:
       CI_E2E_CLERK_ADMIN_EMAIL: "cronos-ci-admin+clerk_test@example.com"
       CI_E2E_CLERK_TEACHER_EMAIL: "cronos-ci-teacher+clerk_test@example.com"
-      CI_E2E_CLERK_ORG_ID: "org_3GSWBnL58PL3vtTWhVh7CR4p2LX"
+      CI_E2E_CLERK_ORG_ID: ${{ vars.E2E_CLERK_ORG_ID }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       
@@ -191,10 +191,6 @@ jobs:
             *+clerk_test@example.com:*+clerk_test@example.com) ;;
             *) echo "ERROR: E2E login identities must be dedicated Clerk reserved test users."; exit 1 ;;
           esac
-          if [ -z "$E2E_CLERK_ORG_ID" ]; then
-            echo "ERROR: A dedicated Clerk E2E organization is required."
-            exit 1
-          fi
           case "$invite_create_email:$invite_convert_email" in
             *+clerk_test@example.com:*+clerk_test@example.com) ;;
             *) echo "ERROR: Invitation identities must use Clerk reserved test emails."; exit 1 ;;
