@@ -109,7 +109,7 @@ jobs:
         env:
           RATELIMIT_ENABLED: "false"
         run: >-
-          coverage run --branch -m pytest -q -m "not redis"
+          coverage run --branch -m pytest -vv --tb=short --maxfail=4 -m "not redis"
           --junitxml=test-results.xml
       - name: Test Redis contracts and report coverage
         working-directory: backend
