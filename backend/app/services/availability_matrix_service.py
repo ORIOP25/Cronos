@@ -9,7 +9,14 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Availability, PreferenceLevel, Teacher, Timeslot
+from app.models import (
+    Availability,
+    MembershipLifecycleStatus,
+    OrganizationMembership,
+    PreferenceLevel,
+    Teacher,
+    Timeslot,
+)
 
 logger = structlog.get_logger(__name__)
 
@@ -49,9 +56,18 @@ class AvailabilityMatrixInspector:
         timeslot_ids: list[int] | set[int] | None = None,
     ) -> AvailabilityMatrixInspection:
         # 1. Fetch active teachers of the org
-        t_stmt = select(Teacher.id).where(
-            Teacher.organization_id == organization_id,
-            Teacher.is_archived.is_(False),
+        t_stmt = (
+            select(Teacher.id)
+            .join(
+                OrganizationMembership,
+                OrganizationMembership.id == Teacher.organization_membership_id,
+            )
+            .where(
+                Teacher.organization_id == organization_id,
+                OrganizationMembership.organization_id == organization_id,
+                OrganizationMembership.lifecycle_status == MembershipLifecycleStatus.active,
+                OrganizationMembership.can_teach.is_(True),
+            )
         )
         if teacher_ids is not None:
             t_stmt = t_stmt.where(Teacher.id.in_(teacher_ids))

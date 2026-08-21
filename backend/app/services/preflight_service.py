@@ -287,9 +287,18 @@ class PreflightService:
 
         teacher_count = (
             await self.db.scalar(
-                sa_select(func.count(models.Teacher.id)).where(
+                sa_select(func.count(models.Teacher.id))
+                .join(
+                    models.OrganizationMembership,
+                    models.OrganizationMembership.id
+                    == models.Teacher.organization_membership_id,
+                )
+                .where(
                     models.Teacher.organization_id == organization_id,
-                    models.Teacher.is_archived.is_(False),
+                    models.OrganizationMembership.organization_id == organization_id,
+                    models.OrganizationMembership.lifecycle_status
+                    == models.MembershipLifecycleStatus.active,
+                    models.OrganizationMembership.can_teach.is_(True),
                 )
             )
             or 0
