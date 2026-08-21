@@ -82,6 +82,7 @@ async def test_foundation_endpoints_full_lifecycle(db_session, override_auth_act
     override_auth_actor(actor)
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+
         async def request(method: str, path: str, **kwargs):
             try:
                 return await asyncio.wait_for(ac.request(method, path, **kwargs), timeout=10)
@@ -143,8 +144,7 @@ async def test_foundation_endpoints_full_lifecycle(db_session, override_auth_act
 
         # 8. Complete foundation with version 1 -> succeeds
         resp = await request(
-            "POST",
-            "/api/v1/foundation/complete", json={"expected_version": 1, "confirmed": True}
+            "POST", "/api/v1/foundation/complete", json={"expected_version": 1, "confirmed": True}
         )
         assert resp.status_code == 200
         assert resp.json()["foundation_status"] == "COMPLETED"
@@ -158,7 +158,8 @@ async def test_foundation_endpoints_full_lifecycle(db_session, override_auth_act
         # 10. Attempting to save draft when COMPLETED yields 409
         resp = await request(
             "PUT",
-            "/api/v1/foundation/draft", json={"expected_version": 1, "current_step": 1, "data": {}}
+            "/api/v1/foundation/draft",
+            json={"expected_version": 1, "current_step": 1, "data": {}},
         )
         assert resp.status_code == 409
         assert resp.json()["detail"]["code"] == "FOUNDATION_ALREADY_COMPLETED"
