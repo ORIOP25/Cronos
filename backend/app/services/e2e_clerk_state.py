@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from typing import Protocol
+from urllib.error import HTTPError
+from urllib.request import Request, urlopen
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -55,12 +58,23 @@ class ClerkDirectory(Protocol):
         user_id: str,
     ) -> ClerkOrganizationMembership | None: ...
 
+    async def create_organization(self, *, name: str, created_by: str) -> ClerkOrganization: ...
+
+    async def create_organization_membership(
+        self,
+        *,
+        organization_id: str,
+        user_id: str,
+        role: str,
+    ) -> ClerkOrganizationMembership: ...
+
 
 @dataclass(frozen=True, slots=True)
 class E2EClerkPrepConfig:
     admin_email: str
     teacher_email: str
     clerk_org_id: str | None = None
+    auto_provision: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -108,6 +122,8 @@ def config_from_env(env: os._Environ[str] | dict[str, str] = os.environ) -> E2EC
         admin_email=env["E2E_CLERK_ADMIN_EMAIL"],
         teacher_email=env["E2E_CLERK_TEACHER_EMAIL"],
         clerk_org_id=env.get("E2E_CLERK_ORG_ID") or None,
+        auto_provision=env.get("E2E_CLERK_AUTO_PROVISION", "false").strip().lower()
+        in {"1", "true", "yes"},
     )
 
 
@@ -269,6 +285,68 @@ class SdkClerkDirectory:
         memberships = [_to_clerk_membership(item, fallback_user_id=user_id) for item in _items(raw)]
         return next((membership for membership in memberships if membership is not None), None)
 
+    async def _post(self, path: str, payload: dict) -> dict:
+        secret_key = os.environ.get("CLERK_SECRET_KEY", "").strip()
+        if not secret_key:
+            raise E2EClerkPreflightError(
+                "CLERK_SECRET_KEY is required to provision Clerk E2E state."
+            )
+
+        def _request() -> dict:
+            request = Request(
+                f"https://api.clerk.com/v1{path}",
+                data=json.dumps(payload).encode("utf-8"),
+                headers={
+                    "Authorization": f"Bearer {secret_key}",
+                    "Content-Type": "application/json",
+                },
+                method="POST",
+            )
+            try:
+                with urlopen(request, timeout=15) as response:
+                    return json.load(response)
+            except HTTPError as exc:
+                detail = exc.read().decode("utf-8", errors="replace")[:300]
+                raise E2EClerkPreflightError(
+                    f"Clerk API POST {path} failed with HTTP {exc.code}: {detail}"
+                ) from exc
+            except OSError as exc:
+                raise E2EClerkPreflightError(
+                    f"Clerk API POST {path} could not be completed: {type(exc).__name__}."
+                ) from exc
+
+        return await asyncio.to_thread(_request)
+
+    async def create_organization(self, *, name: str, created_by: str) -> ClerkOrganization:
+        raw = await self._post("/organizations", {"name": name, "created_by": created_by})
+        organization_id = raw.get("id")
+        if not organization_id:
+            raise E2EClerkPreflightError("Clerk organization creation returned no organization ID.")
+        return ClerkOrganization(id=organization_id, name=raw.get("name") or name)
+
+    async def create_organization_membership(
+        self,
+        *,
+        organization_id: str,
+        user_id: str,
+        role: str,
+    ) -> ClerkOrganizationMembership:
+        raw = await self._post(
+            f"/organizations/{organization_id}/memberships",
+            {"user_id": user_id, "role": role},
+        )
+        membership_id = raw.get("id")
+        if not membership_id:
+            raise E2EClerkPreflightError(
+                "Clerk organization membership creation returned no membership ID."
+            )
+        return ClerkOrganizationMembership(
+            id=membership_id,
+            organization_id=organization_id,
+            user_id=user_id,
+            role=raw.get("role") or role,
+        )
+
 
 def _normalize_email(email: str) -> str:
     return email.strip().lower()
@@ -295,12 +373,20 @@ async def _resolve_clerk_org_id(
     directory: ClerkDirectory,
     admin: ClerkUser,
     configured_org_id: str | None,
+    *,
+    auto_provision: bool = False,
 ) -> str:
     if configured_org_id:
         return configured_org_id
 
     memberships = await directory.list_user_organization_memberships(admin.id)
     org_ids = sorted({membership.organization_id for membership in memberships})
+    if not org_ids and auto_provision:
+        organization = await directory.create_organization(
+            name="Cronos CI E2E",
+            created_by=admin.id,
+        )
+        return organization.id
     if len(org_ids) != 1:
         raise E2EClerkPreflightError(
             "E2E_CLERK_ORG_ID is required unless the admin test account belongs to exactly one "
@@ -316,8 +402,15 @@ async def _required_membership(
     user: ClerkUser,
     expected_role: models.ClerkOrganizationRole,
     label: str,
+    auto_provision: bool = False,
 ) -> ClerkOrganizationMembership:
     membership = await directory.get_organization_membership(organization_id, user.id)
+    if membership is None and auto_provision:
+        membership = await directory.create_organization_membership(
+            organization_id=organization_id,
+            user_id=user.id,
+            role=expected_role.value,
+        )
     if membership is None:
         raise E2EClerkPreflightError(
             f"Clerk {label} user {user.email!r} is not a member of organization {organization_id!r}."
@@ -466,7 +559,12 @@ async def prepare_e2e_clerk_state(
     if admin.id == teacher.id:
         raise E2EClerkPreflightError("Admin and teacher E2E users must be different Clerk users.")
 
-    clerk_org_id = await _resolve_clerk_org_id(directory, admin, config.clerk_org_id)
+    clerk_org_id = await _resolve_clerk_org_id(
+        directory,
+        admin,
+        config.clerk_org_id,
+        auto_provision=config.auto_provision,
+    )
     clerk_org = await directory.get_organization(clerk_org_id)
     if clerk_org is None:
         raise E2EClerkPreflightError(
@@ -479,6 +577,7 @@ async def prepare_e2e_clerk_state(
         user=admin,
         expected_role=models.ClerkOrganizationRole.admin,
         label="admin",
+        auto_provision=config.auto_provision,
     )
     teacher_provider_membership = await _required_membership(
         directory,
@@ -486,6 +585,7 @@ async def prepare_e2e_clerk_state(
         user=teacher,
         expected_role=models.ClerkOrganizationRole.member,
         label="teacher",
+        auto_provision=config.auto_provision,
     )
 
     organization = await _upsert_organization(db, clerk_org)

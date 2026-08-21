@@ -14,10 +14,11 @@ from app.services.e2e_clerk_state import (
 
 
 class FakeClerkDirectory:
-    def __init__(self, *, users, organizations, memberships):
+    def __init__(self, *, users, organizations, memberships, provisioned_org=None):
         self.users = {user.email: user for user in users}
         self.organizations = {org.id: org for org in organizations}
         self.memberships = memberships
+        self.provisioned_org = provisioned_org
 
     async def get_user_by_email(self, email):
         return self.users.get(email)
@@ -37,6 +38,31 @@ class FakeClerkDirectory:
             ),
             None,
         )
+
+    async def create_organization(self, *, name, created_by):
+        del created_by
+        organization = self.provisioned_org or ClerkOrganization("org_provisioned", name)
+        self.organizations[organization.id] = organization
+        self.provisioned_org = organization
+        self.memberships.append(
+            ClerkOrganizationMembership(
+                id="mem_provisioned_admin",
+                organization_id=organization.id,
+                user_id="user_admin",
+                role="org:admin",
+            )
+        )
+        return organization
+
+    async def create_organization_membership(self, *, organization_id, user_id, role):
+        membership = ClerkOrganizationMembership(
+            id=f"mem_{user_id}",
+            organization_id=organization_id,
+            user_id=user_id,
+            role=role,
+        )
+        self.memberships.append(membership)
+        return membership
 
 
 def _directory(*, extra_admin_org=False, teacher_role="org:member"):
@@ -189,6 +215,25 @@ async def test_prepare_e2e_clerk_state_requires_org_id_when_admin_has_multiple_o
 
     assert "E2E_CLERK_ORG_ID" in str(exc.value)
     assert "exactly one" in str(exc.value)
+
+
+async def test_prepare_e2e_clerk_state_auto_provisions_empty_directory(db_session):
+    directory = _directory()
+    directory.memberships.clear()
+    config = E2EClerkPrepConfig(
+        admin_email="admin@example.com",
+        teacher_email="teacher@example.com",
+        auto_provision=True,
+    )
+
+    result = await prepare_e2e_clerk_state(db_session, directory=directory, config=config)
+
+    assert result.clerk_org_id == "org_provisioned"
+    assert {
+        (membership.user_id, membership.role)
+        for membership in directory.memberships
+        if membership.organization_id == "org_provisioned"
+    } == {("user_admin", "org:admin"), ("user_teacher", "org:member")}
 
 
 async def test_prepare_e2e_clerk_state_rejects_teacher_without_member_role(db_session):
