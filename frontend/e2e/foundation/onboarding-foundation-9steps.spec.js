@@ -7,10 +7,42 @@ import {
   loginAsAdminReal,
 } from '../utils/clerk-helpers.js'
 
+async function resetFoundationDraft(page) {
+  const result = await page.evaluate(async () => {
+    const token = await window.Clerk?.session?.getToken()
+    const headers = {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    }
+    const draftResponse = await fetch('/api/v1/foundation/draft', { headers })
+    if (!draftResponse.ok) {
+      return { ok: false, status: draftResponse.status, body: await draftResponse.text() }
+    }
+    const draft = await draftResponse.json()
+    const saveResponse = await fetch('/api/v1/foundation/draft', {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify({
+        expected_version: draft.version,
+        current_step: 1,
+        data: {},
+      }),
+    })
+    return { ok: saveResponse.ok, status: saveResponse.status, body: await saveResponse.text() }
+  })
+  if (!result.ok) {
+    throw new Error(`Could not reset Foundation E2E draft: ${result.status} ${result.body}`)
+  }
+}
+
 test.describe('Foundation — 9-Step Wizard Flow', () => {
   test.beforeEach(async ({ page }) => {
     attachRuntimeGuards(page)
     await loginAsAdminReal(page)
+  })
+
+  test.afterEach(async ({ page }) => {
+    await resetFoundationDraft(page)
   })
 
   test('completes all 9 foundation steps and activates school', async ({ page }) => {

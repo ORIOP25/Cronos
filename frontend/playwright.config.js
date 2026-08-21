@@ -21,10 +21,22 @@ export default defineConfig({
       testMatch: /global\.setup\.js/,
     },
     {
-      name: 'chromium',
-      testIgnore: /global\.setup\.js/,
+      name: 'foundation setup',
+      testMatch: /e2e[\\/]foundation[\\/](first-schedule-approval-dashboard|foundation-conflict-recovery|onboarding-foundation-9steps)\.spec\.js/,
       use: { ...devices['Desktop Chrome'] },
       dependencies: ['global setup'],
+    },
+    {
+      name: 'foundation activation',
+      testMatch: /e2e[\\/]foundation[\\/]foundation\.spec\.js/,
+      use: { ...devices['Desktop Chrome'] },
+      dependencies: ['foundation setup'],
+    },
+    {
+      name: 'chromium',
+      testIgnore: /global\.setup\.js|e2e[\\/]foundation[\\/](first-schedule-approval-dashboard|foundation-conflict-recovery|onboarding-foundation-9steps|foundation)\.spec\.js/,
+      use: { ...devices['Desktop Chrome'] },
+      dependencies: ['foundation activation'],
     },
   ],
 
