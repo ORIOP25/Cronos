@@ -64,12 +64,20 @@ def override_auth_actor(db_session):
 
 
 async def test_foundation_endpoints_full_lifecycle(db_session, override_auth_actor):
-    org, user, mem = await _create_org_and_admin(
-        db_session,
-        "Lifecycle Org",
-        "org_lifecycle_test",
-        models.OrganizationFoundationStatus.NOT_STARTED,
-    )
+    try:
+        org, user, mem = await asyncio.wait_for(
+            _create_org_and_admin(
+                db_session,
+                "Lifecycle Org",
+                "org_lifecycle_test",
+                models.OrganizationFoundationStatus.NOT_STARTED,
+            ),
+            timeout=10,
+        )
+    except TimeoutError as exc:
+        raise AssertionError(
+            "Creating the Foundation lifecycle test organization timed out"
+        ) from exc
     actor = deps.Actor(
         account_id=user.id,
         clerk_user_id=user.clerk_user_id,
