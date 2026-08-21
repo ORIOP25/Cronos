@@ -25,7 +25,17 @@ async function resetFoundationDraft(page) {
       body: JSON.stringify({
         expected_version: draft.version,
         current_step: 1,
-        data: {},
+        data: {
+          repair_stability_window_days: 14,
+          days_of_week: [0, 1, 2, 3, 4],
+          opening_time: '08:30',
+          closing_time: '17:30',
+          slot_duration_minutes: 50,
+          break_duration_minutes: 10,
+          lunch_window_start: '12:30',
+          lunch_window_end: '14:00',
+          lunch_min_duration_minutes: 60,
+        },
       }),
     })
     return { ok: saveResponse.ok, status: saveResponse.status, body: await saveResponse.text() }
