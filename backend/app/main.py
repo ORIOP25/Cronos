@@ -1,5 +1,6 @@
 # Ficheiro: app/main.py
 
+import traceback
 from contextlib import asynccontextmanager
 
 import httpx
@@ -89,12 +90,16 @@ app = FastAPI(
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
+    formatted_traceback = "".join(
+        traceback.format_exception(type(exc), exc, exc.__traceback__)
+    )
     logger.error(
         "Unhandled application error",
         method=request.method,
         path=request.url.path,
         error_type=type(exc).__name__,
-        exc_info=(type(exc), exc, exc.__traceback__),
+        error=str(exc),
+        traceback=formatted_traceback,
     )
     return JSONResponse(
         status_code=500,
