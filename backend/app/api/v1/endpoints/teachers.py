@@ -67,6 +67,68 @@ async def read_my_availability(
         await db.run_sync(_emit)
 
 
+@router.put(
+    "/me/availability",
+    responses={
+        403: {"description": "Sem permissões"},
+        404: {"description": TEACHER_NOT_FOUND_MSG},
+        400: {"description": "Timeslot inválido"},
+    },
+)
+@limiter.limit("30/minute")
+async def update_my_availability(
+    request: Request,
+    availability_data: list[schemas.AvailabilitySelfCreate],
+    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    current_user: deps.ActiveActor,
+):
+    """Atualiza disponibilidade do professor autenticado (self-service)."""
+    if current_user.teacher_id is None:
+        raise HTTPException(status_code=403, detail="Professor sem perfil associado")
+
+    result = await teacher_service.set_teacher_availability(
+        db,
+        current_user.teacher_id,
+        availability_data,
+        organization_id=current_user.organization_id,
+        changed_by_membership_id=current_user.membership_id,
+    )
+    if result == "NOT_FOUND":
+        raise HTTPException(status_code=404, detail=TEACHER_NOT_FOUND_MSG)
+    if result == "INVALID_TIMESLOT":
+        raise HTTPException(status_code=400, detail="Timeslot inválido ou fora da organização")
+    if result == "DUPLICATE_TIMESLOT":
+        raise HTTPException(status_code=400, detail="Payload inválido: timeslot_id duplicado")
+    return result
+
+
+@router.get(
+    "/{teacher_id}/availability",
+    response_model=list[schemas.AvailabilitySelfRead],
+    responses={403: {"description": "Sem permissões"}, 404: {"description": TEACHER_NOT_FOUND_MSG}},
+)
+async def read_teacher_availability(
+    teacher_id: int,
+    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    current_user: deps.ActiveActor,
+):
+    """Inspetor read-only de disponibilidade para Administrador ou o próprio Professor."""
+    is_admin = deps.user_has_admin_capability(current_user)
+    if not is_admin and current_user.teacher_id != teacher_id:
+        raise HTTPException(
+            status_code=403, detail="Sem permissões para visualizar outro professor"
+        )
+
+    result = await teacher_service.get_teacher_availability(
+        db,
+        teacher_id=teacher_id,
+        organization_id=current_user.organization_id,
+    )
+    if result == "NOT_FOUND":
+        raise HTTPException(status_code=404, detail=TEACHER_NOT_FOUND_MSG)
+    return result
+
+
 @router.get(
     "/observability/summary",
     response_model=schemas.TeacherEndpointObservabilitySummaryRead,
@@ -148,86 +210,3 @@ async def read_teachers(
     return await teacher_service.get_teachers_by_org(
         db, organization_id=current_user.organization_id, skip=skip, limit=limit
     )
-
-
-# --- 4. NOVO ENDPOINT: Gravar Disponibilidades ---
-# Chama o serviço que já existe em teacher_service.py
-@router.post(
-    "/{teacher_id}/availability",
-    responses={
-        403: {"description": "Sem permissões"},
-        404: {"description": TEACHER_NOT_FOUND_MSG},
-        400: {"description": "Timeslot inválido"},
-    },
-)
-@limiter.limit("30/minute")
-async def update_teacher_availability(
-    request: Request,
-    teacher_id: int,
-    availability_data: list[schemas.AvailabilitySelfCreate],  # Recebe a lista do Frontend
-    db: Annotated[AsyncSession, Depends(deps.get_db)],
-    current_user: deps.ActiveActor,
-):
-    """
-    Grava as preferências de horário chamando o serviço dedicado.
-    """
-    start_ts = perf_counter()
-    status_code = 200
-
-    try:
-        # Default deny: apenas admin e professor podem operar este endpoint
-        is_admin = deps.user_has_admin_capability(current_user)
-        is_teacher = deps.user_has_teacher_capability(current_user)
-        if not is_admin and not is_teacher:
-            status_code = 403
-            raise HTTPException(status_code=403, detail="Sem permissões para este endpoint")
-
-        # Professores só podem atualizar a própria disponibilidade
-        if not is_admin and current_user.teacher_id != teacher_id:
-            status_code = 403
-            raise HTTPException(
-                status_code=403, detail="Sem permissões para atualizar outro professor"
-            )
-
-        result = await teacher_service.set_teacher_availability(
-            db,
-            teacher_id,
-            availability_data,
-            organization_id=current_user.organization_id,
-            changed_by_membership_id=current_user.membership_id,
-        )
-
-        if result == "NOT_FOUND":
-            status_code = 404
-            raise HTTPException(status_code=404, detail=TEACHER_NOT_FOUND_MSG)
-
-        if result == "INVALID_TIMESLOT":
-            status_code = 400
-            raise HTTPException(status_code=400, detail="Timeslot inválido ou fora da organização")
-
-        if result == "DUPLICATE_TIMESLOT":
-            status_code = 400
-            raise HTTPException(status_code=400, detail="Payload inválido: timeslot_id duplicado")
-
-        return result
-    except HTTPException as exc:
-        status_code = exc.status_code
-        raise
-    except Exception:
-        status_code = 500
-        raise
-    finally:
-        elapsed_ms = max(1, int((perf_counter() - start_ts) * 1000))
-
-        def _emit(sync_db):
-            teacher_observability_service.log_teacher_endpoint_event_safe_sync(
-                sync_db,
-                organization_id=current_user.organization_id,
-                actor_membership_id=current_user.membership_id,
-                actor_role=deps.actor_role(current_user),
-                endpoint_key=teacher_observability_service.ENDPOINT_TEACHERS_AVAILABILITY_UPDATE,
-                http_status=status_code,
-                latency_ms=elapsed_ms,
-            )
-
-        await db.run_sync(_emit)

@@ -3,7 +3,7 @@ from datetime import date
 
 from sqlalchemy import event
 
-from app import models
+from app import models, schemas
 from app.services import (
     dashboard_service,
     member_service,
@@ -61,7 +61,15 @@ def test_dashboard_uses_at_most_four_statements(sync_db):
     sync_db.commit()
 
     with _statement_counter(sync_db) as statements:
-        dashboard_service.get_dashboard_summary_sync(sync_db, organization_id)
+        dashboard_service.get_dashboard_summary_sync(
+            sync_db,
+            organization_id,
+            bases=schemas.BasesReadinessResponse(
+                percentage=0,
+                depth=0,
+                complete=False,
+            ),
+        )
 
     assert len(statements) <= 4
 

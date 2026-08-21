@@ -11,6 +11,10 @@ from app.services import preflight_service
 from tests.conftest import create_teacher_profile
 
 
+def _issue_codes(response):
+    return {issue["code"] for issue in response.json()["detail"]["issues"]}
+
+
 @pytest.fixture
 def dispatched_tasks():
     calls = []
@@ -194,10 +198,11 @@ async def test_generate_fails_when_settings_missing(async_client, clerk_admin_he
     assert response.status_code == 400
     payload = response.json()
     assert payload["detail"]["error"] == "preflight_failed"
-    assert payload["detail"]["problems"]
+    assert payload["detail"]["status"] == "BLOCKED"
+    assert "MISSING_CALENDAR" in _issue_codes(response)
 
 
-async def test_generate_does_not_sync_holidays_before_school_year_is_complete(
+async def test_generate_does_not_sync_holidays_during_preflight(
     async_client,
     db_session,
     clerk_admin_headers,
@@ -230,8 +235,8 @@ async def test_generate_does_not_sync_holidays_before_school_year_is_complete(
     assert called["value"] is False
     assert response.status_code == 400
     payload = response.json()
-    problems = payload["detail"]["problems"]
-    assert not any("feriado" in msg.lower() for msg in problems)
+    assert payload["detail"]["status"] == "BLOCKED"
+    assert "HOLIDAYS_NOT_SYNCHRONIZED" not in _issue_codes(response)
 
 
 async def test_generate_returns_canonical_job_contract_with_minimal_valid_data(
@@ -427,7 +432,7 @@ async def test_repair_generate_fails_when_window_blocks_all_future(
     assert response.status_code == 400
     payload = response.json()
     assert payload["detail"]["error"] == "preflight_failed"
-    assert any("janela de estabilidade" in msg.lower() for msg in payload["detail"]["problems"])
+    assert "REPAIR_WINDOW_INFEASIBLE" in _issue_codes(response)
     assert dispatched_tasks == []
 
 

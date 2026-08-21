@@ -9,22 +9,26 @@ import {
   loginAsTeacherReal,
 } from '../utils/clerk-helpers.js'
 
-async function ensureOnboardingComplete(page) {
-  await goTo(page, '/onboarding')
+async function ensureFoundationComplete(page) {
+  await goTo(page, '/foundation')
 
   const startDate = page.locator('input[type="date"]').first()
   if (await startDate.isVisible({ timeout: 5000 }).catch(() => false)) {
     await startDate.fill('2025-09-15')
-    await page.locator('button[type="submit"]').click()
+    await page.locator('#school_hard_end_date').fill('2026-07-31')
+    for (let step = 1; step < 9; step += 1) {
+      await page.getByRole('button', { name: /seguinte/i }).click()
+    }
+    await page.getByRole('button', { name: /ativar escola definitivamente/i }).click()
     await page.waitForURL(/\/dashboard/, { timeout: 15000 })
   }
 }
 
 test.describe('Real stack smoke', () => {
-  test('admin can complete onboarding and click every admin sidebar route', async ({ page }) => {
+  test('admin can complete Foundation and click every admin sidebar route', async ({ page }) => {
     attachRuntimeGuards(page)
     await loginAsAdminReal(page)
-    await ensureOnboardingComplete(page)
+    await ensureFoundationComplete(page)
     await goTo(page, '/dashboard')
     await expectRouteReady(page, '/dashboard')
 

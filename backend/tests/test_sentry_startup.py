@@ -9,16 +9,9 @@ def test_sentry_initializes_without_jinja2():
             sys.executable,
             "-c",
             """
-import builtins
-
-original_import = builtins.__import__
-
-def block_jinja2(name, *args, **kwargs):
-    if name == "jinja2" or name.startswith("jinja2."):
-        raise ModuleNotFoundError("jinja2 is intentionally unavailable")
-    return original_import(name, *args, **kwargs)
-
-builtins.__import__ = block_jinja2
+import sys
+sys.modules["jinja2"] = None
+sys.modules["markupsafe"] = None
 
 import sentry_sdk
 

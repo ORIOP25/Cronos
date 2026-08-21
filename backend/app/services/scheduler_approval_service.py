@@ -118,6 +118,15 @@ class SchedulerApprovalService:
         draft.draft_state = models.ScheduleDraftState.APPROVED
         draft.decided_by_membership_id = decided_by_membership_id
         draft.decided_at = instant
+        org_stmt = (
+            select(models.Organization)
+            .where(models.Organization.id == organization_id)
+            .with_for_update()
+        )
+        org_result = await self._db.execute(org_stmt)
+        org = org_result.scalar_one_or_none()
+        if org and org.first_real_schedule_approved_at is None:
+            org.first_real_schedule_approved_at = instant
         state.pending_draft_id = None
         state.school_year_publication_state = models.SchoolYearPublicationState.PUBLISHED
         state.active_schedule_version_id = version_id

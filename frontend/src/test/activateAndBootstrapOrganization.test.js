@@ -15,7 +15,7 @@ function ports(overrides = {}) {
     bootstrap: vi.fn().mockResolvedValue({
       organization: { id: 7 },
       member: { id: 8, capabilities: ['admin'] },
-      onboarding_complete: false,
+      foundation_status: 'NOT_STARTED',
     }),
     cacheMember: vi.fn().mockResolvedValue(undefined),
     navigate: vi.fn(),
@@ -46,7 +46,7 @@ describe('activateAndBootstrapOrganization', () => {
       'createOrganization', 'setActive', 'getToken', 'bootstrap', 'cacheMember', 'navigate',
     ])
     expect(adapters.getToken).toHaveBeenCalledWith({ organizationId: 'org_new', skipCache: true })
-    expect(adapters.navigate).toHaveBeenCalledWith('/onboarding')
+    expect(adapters.navigate).toHaveBeenCalledWith('/foundation')
     expect(adapters.storage.remove).toHaveBeenCalledWith(PENDING_ORGANIZATION_KEY)
   })
 
@@ -96,7 +96,7 @@ describe('activateAndBootstrapOrganization', () => {
     adapters.bootstrap.mockResolvedValue({
       organization: { id: 7 },
       member: { id: 8, capabilities: ['admin'] },
-      onboarding_complete: true,
+      foundation_status: 'COMPLETED',
     })
 
     await activateAndBootstrapOrganization({ name: 'Cronos' }, adapters)

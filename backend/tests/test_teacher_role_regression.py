@@ -101,15 +101,15 @@ class TestTeacherRoleRegressionContracts:
         )
         await db_session.commit()
         teacher_id = teacher.id
-        write_resp = await async_client.post(
-            f"{API}/teachers/{teacher_id}/availability",
-            json=[{"timeslot_id": slot_rows[0]["id"], "score": 2}],
-            headers=clerk_admin_headers,
-        )
-        assert write_resp.status_code == 200
         teacher_headers, cid = await _create_teacher_auth_headers(
             db_session, organization_id=1, teacher_id=teacher_id
         )
+        write_resp = await async_client.put(
+            f"{API}/teachers/me/availability",
+            json=[{"timeslot_id": slot_rows[0]["id"], "score": 2}],
+            headers=teacher_headers,
+        )
+        assert write_resp.status_code == 200
         read_resp = await _patch_and_call(
             cid, teacher_headers, f"{API}/teachers/me/availability", async_client
         )
@@ -298,25 +298,25 @@ class TestTeacherRoleRegressionContracts:
         )
         await db_session.commit()
         teacher_id = teacher.id
-        baseline_resp = await async_client.post(
-            f"{API}/teachers/{teacher_id}/availability",
+        teacher_headers, cid = await _create_teacher_auth_headers(
+            db_session, organization_id=1, teacher_id=teacher_id
+        )
+        baseline_resp = await async_client.put(
+            f"{API}/teachers/me/availability",
             json=[{"timeslot_id": slot_rows[0]["id"], "score": 2}],
-            headers=clerk_admin_headers,
+            headers=teacher_headers,
         )
         assert baseline_resp.status_code == 200
-        duplicate_resp = await async_client.post(
-            f"{API}/teachers/{teacher_id}/availability",
+        duplicate_resp = await async_client.put(
+            f"{API}/teachers/me/availability",
             json=[
                 {"timeslot_id": slot_rows[0]["id"], "score": 1},
                 {"timeslot_id": slot_rows[0]["id"], "score": 0},
             ],
-            headers=clerk_admin_headers,
+            headers=teacher_headers,
         )
         assert duplicate_resp.status_code == 400
         assert "duplicado" in duplicate_resp.json()["detail"].lower()
-        teacher_headers, cid = await _create_teacher_auth_headers(
-            db_session, organization_id=1, teacher_id=teacher_id
-        )
         persisted_resp = await _patch_and_call(
             cid, teacher_headers, f"{API}/teachers/me/availability", async_client
         )

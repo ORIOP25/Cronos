@@ -377,6 +377,11 @@ async def _sync_teacher_profile(
         )
         db.add(teacher)
         await db.flush()
+        from app.services.availability_matrix_service import AvailabilityMatrixRepairService
+
+        await AvailabilityMatrixRepairService.repair(
+            db, organization_id=member.organization_id, teacher_ids=[teacher.id]
+        )
         member.teacher_profile = teacher
         await record_scheduler_change(
             db,
@@ -1812,6 +1817,14 @@ async def current_member(db: AsyncSession, *, current_user: Actor) -> schemas.Cu
         modes.append("admin")
     if "teacher" in caps:
         modes.append("teacher")
+
+    foundation_status = await db.scalar(
+        select(models.Organization.foundation_status).where(
+            models.Organization.id == current_user.organization_id
+        )
+    )
+    status_str = foundation_status.value if foundation_status else "NOT_STARTED"
+
     return schemas.CurrentMemberRead(
         member_id=member.id,
         account_id=current_user.account_id,
@@ -1822,4 +1835,5 @@ async def current_member(db: AsyncSession, *, current_user: Actor) -> schemas.Cu
         teacher_id=member.teacher_profile.id if member.teacher_profile else None,
         default_mode="admin" if "admin" in caps else "teacher",
         available_modes=modes,
+        foundation_status=status_str,
     )

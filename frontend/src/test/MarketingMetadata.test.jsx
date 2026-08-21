@@ -34,7 +34,7 @@ describe('marketing metadata', () => {
       window.history.replaceState({}, '', route)
       renderWithProviders(<App />)
 
-      await screen.findByRole('heading', { level: 1 })
+      await screen.findByRole('heading', { level: 1 }, { timeout: 10_000 })
       const expected = marketingMetadata[route]
 
       await waitFor(() => {

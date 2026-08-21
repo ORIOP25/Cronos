@@ -44,7 +44,7 @@ Stable route families keep frontend features and provider webhooks independent f
 `Public` routes do not require a membership. `Active` routes require active access.
 `Admin` routes require the `admin` capability. `Teacher` routes also require a linked teacher profile.
 
-### Public, health, session, and onboarding
+### Public, health, session, and Foundation
 
 | Method | Route | Access |
 | :--- | :--- | :--- |
@@ -53,8 +53,10 @@ Stable route families keep frontend features and provider webhooks independent f
 | `GET` | `/api/v1/health` | Public |
 | `POST` | `/api/v1/contact` | Public; Turnstile and rate limits |
 | `POST` | `/api/v1/session/bootstrap` | Signed in |
-| `GET` | `/api/v1/onboarding/status` | Admin |
-| `POST` | `/api/v1/onboarding` | Admin |
+| `GET` | `/api/v1/foundation/status` | Signed in |
+| `GET` | `/api/v1/foundation/draft` | Foundation admin |
+| `PUT` | `/api/v1/foundation/draft` | Foundation admin |
+| `POST` | `/api/v1/foundation/complete` | Foundation admin |
 
 ### Dashboard, analytics, and catalog
 

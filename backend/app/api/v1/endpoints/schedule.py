@@ -10,7 +10,6 @@ from app import models, schemas
 from app.api import deps
 from app.core.ratelimit import limiter
 from app.services import schedule_service, teacher_observability_service
-from app.services.preflight_service import _resolve_preflight_hard_end_date
 from app.services.school_year_reset_service import SchoolYearResetService
 
 router = APIRouter()
@@ -179,7 +178,7 @@ def _resolve_teacher_horizon_payload(
     candidates: list[tuple[date, date]] = []
 
     for org_settings in settings_rows:
-        hard_end_date = _resolve_preflight_hard_end_date(org_settings)
+        hard_end_date = org_settings.school_hard_end_date
         if hard_end_date is None:
             continue
 

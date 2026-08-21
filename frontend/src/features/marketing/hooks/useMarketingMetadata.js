@@ -19,10 +19,15 @@ function applyMetadata(metadata) {
   setAttribute('meta[name="twitter:description"]', 'content', metadata.description)
 }
 
-export function useMarketingMetadata() {
+export function useMarketingMetadata(enabled = true) {
   const { pathname } = useLocation()
 
   useEffect(() => {
+    if (!enabled) {
+      applyMetadata(marketingMetadata['/'])
+      return undefined
+    }
+
     const metadata = marketingMetadata[pathname]
     if (!metadata) {
       if (import.meta.env.DEV) throw new Error(`Missing marketing metadata for public route: ${pathname}`)
@@ -31,5 +36,5 @@ export function useMarketingMetadata() {
 
     applyMetadata(metadata)
     return () => applyMetadata(marketingMetadata['/'])
-  }, [pathname])
+  }, [enabled, pathname])
 }

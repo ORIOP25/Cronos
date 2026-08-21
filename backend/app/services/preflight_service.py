@@ -1,33 +1,15 @@
-from datetime import date
-
 import structlog
 from sqlalchemy import func
 from sqlalchemy import select as sa_select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app import models
+from app import models, schemas
 from app.core.task_keys import (
     resolve_repair_window_days as _resolve_repair_window_days,
 )
-from app.services import schedule_service, settings_service
-from app.services.scheduler_planning import (
-    build_blocked_dates as _build_blocked_dates,
-)
-from app.services.scheduler_planning import (
-    build_primary_window as _build_primary_window,
-)
-from app.services.scheduler_planning import (
-    compute_remaining_minutes as _compute_remaining_minutes,
-)
-from app.services.scheduler_planning import (
-    estimate_capacity_minutes_in_range as _estimate_capacity_minutes_in_range,
-)
-from app.services.scheduler_planning import (
-    resolve_expansion_start_date,
-)
-from app.services.scheduler_planning import (
-    select_adaptive_near_future_weeks as _select_adaptive_near_future_weeks,
-)
+from app.services.availability_matrix_service import AvailabilityMatrixInspector
+from app.services.scheduler_state_service import SchedulerStateService
+from app.services.scheduler_planning import resolve_expansion_start_date
 
 logger = structlog.get_logger(__name__)
 
@@ -46,10 +28,6 @@ async def _get_latest_settings_with_dates(
     return settings_result.scalars().first()
 
 
-def _resolve_preflight_hard_end_date(org_settings: models.OrganizationSettings) -> date | None:
-    return org_settings.school_hard_end_date
-
-
 def _validate_repair_generation_window(org_settings: models.OrganizationSettings) -> str | None:
     repair_window_days = _resolve_repair_window_days(org_settings)
     editable_start_date = resolve_expansion_start_date(
@@ -57,7 +35,7 @@ def _validate_repair_generation_window(org_settings: models.OrganizationSettings
         adaptive_repair=True,
         repair_window_days=repair_window_days,
     )
-    hard_end_date = _resolve_preflight_hard_end_date(org_settings)
+    hard_end_date = org_settings.school_hard_end_date
     if hard_end_date is None:
         return None
     if hard_end_date < editable_start_date:
@@ -65,39 +43,6 @@ def _validate_repair_generation_window(org_settings: models.OrganizationSettings
             "Reparacao adaptativa bloqueada: nao existe horizonte fora da janela "
             f"de estabilidade (até {editable_start_date.isoformat()}) antes do hard end date "
             f"({hard_end_date.isoformat()})."
-        )
-    return None
-
-
-async def _ensure_auto_holidays(
-    db: AsyncSession,
-    organization_id: int,
-    org_settings: models.OrganizationSettings,
-) -> str | None:
-    holiday_count = await db.scalar(
-        sa_select(func.count(models.SchoolCalendarEvent.id)).where(
-            models.SchoolCalendarEvent.organization_id == organization_id,
-            models.SchoolCalendarEvent.source == models.CalendarEventSource.auto,
-        )
-    )
-    if holiday_count:
-        return None
-
-    try:
-        imported = await settings_service.sync_holidays(
-            db,
-            organization_id=organization_id,
-        )
-    except Exception:
-        return (
-            "Falha ao sincronizar feriados automáticos. "
-            "Aceda a Configurações > Calendário Escolar e clique em 'Sincronizar Feriados'."
-        )
-
-    if imported <= 0:
-        return (
-            "Não foi possível carregar feriados automáticos. "
-            "Aceda a Configurações > Calendário Escolar e clique em 'Sincronizar Feriados'."
         )
     return None
 
@@ -158,24 +103,38 @@ async def _collect_generation_subject_ids(db: AsyncSession, organization_id: int
 
 async def _validate_teacher_availabilities(
     db: AsyncSession,
+    organization_id: int,
     teacher_ids: set[int],
+    timeslot_ids: set[int],
 ) -> str | None:
-    if not teacher_ids:
+    if not teacher_ids or not timeslot_ids:
         return None
 
-    available_teacher_rows = await db.execute(
-        sa_select(models.Availability.teacher_id)
-        .where(models.Availability.teacher_id.in_(teacher_ids))
-        .distinct()
+    inspection = await AvailabilityMatrixInspector.inspect(
+        db,
+        organization_id=organization_id,
+        teacher_ids=teacher_ids,
+        timeslot_ids=timeslot_ids,
     )
-    available_teacher_ids = {row[0] for row in available_teacher_rows.all()}
+    available_teacher_ids = {
+        teacher_id
+        for teacher_id in teacher_ids
+        if any(
+            inspection.get_score(teacher_id, timeslot_id)
+            != models.PreferenceLevel.IMPOSSIBLE.value
+            for timeslot_id in timeslot_ids
+        )
+    }
     missing_availability_ids = teacher_ids - available_teacher_ids
     if not missing_availability_ids:
         return None
 
     teacher_name_rows = await db.execute(
         sa_select(models.Teacher.name)
-        .where(models.Teacher.id.in_(missing_availability_ids))
+        .where(
+            models.Teacher.organization_id == organization_id,
+            models.Teacher.id.in_(missing_availability_ids),
+        )
         .order_by(models.Teacher.name)
     )
     missing_names = [row[0] for row in teacher_name_rows.all()]
@@ -197,6 +156,7 @@ async def _validate_subject_requirements(
     errors: list[str] = []
     module_rows = await db.execute(
         sa_select(models.Module.subject_id, models.Module.required_minutes).where(
+            models.Module.organization_id == organization_id,
             models.Module.subject_id.in_(subject_ids)
         )
     )
@@ -217,6 +177,7 @@ async def _validate_subject_requirements(
     if impacted_subject_ids:
         subject_rows = await db.execute(
             sa_select(models.Subject.id, models.Subject.name).where(
+                models.Subject.organization_id == organization_id,
                 models.Subject.id.in_(impacted_subject_ids)
             )
         )
@@ -244,7 +205,10 @@ async def _validate_subject_requirements(
 
     required_type_rows = await db.execute(
         sa_select(models.Subject.required_room_type)
-        .where(models.Subject.id.in_(subject_ids))
+        .where(
+            models.Subject.organization_id == organization_id,
+            models.Subject.id.in_(subject_ids),
+        )
         .distinct()
     )
     required_room_types = {row[0] for row in required_type_rows.all()}
@@ -265,253 +229,229 @@ async def _validate_subject_requirements(
     return errors
 
 
-def _build_preflight_primary_window(
-    *,
-    org_settings: models.OrganizationSettings,
-    adaptive_repair: bool,
-    blocked_dates: set[date],
-    class_count: int,
-    teacher_count: int,
-    room_count: int,
-    timeslot_count: int,
-    lesson_count: int,
-) -> dict | None:
-    hard_end_date = _resolve_preflight_hard_end_date(org_settings)
-    if hard_end_date is None:
-        return None
+class PreflightService:
+    def __init__(self, db: AsyncSession):
+        self.db = db
 
-    repair_window_days = _resolve_repair_window_days(org_settings) if adaptive_repair else 0
-    window_start = resolve_expansion_start_date(
-        org_settings.school_start_date,
-        adaptive_repair=adaptive_repair,
-        repair_window_days=repair_window_days,
-    )
+    async def evaluate(
+        self,
+        *,
+        organization_id: int,
+        school_year_id: int | None = None,
+        strategy: models.ScheduleGenerationStrategy = models.ScheduleGenerationStrategy.COMPLETE_GENERATION,
+    ) -> schemas.PreflightReport:
+        issues: list[schemas.PreflightIssue] = []
 
-    near_future_weeks = _select_adaptive_near_future_weeks(
-        class_count=class_count,
-        teacher_count=teacher_count,
-        room_count=room_count,
-        timeslot_count=timeslot_count,
-        lesson_count=lesson_count,
-        blocked_dates_count=len(blocked_dates),
-        remaining_days=(hard_end_date - window_start).days + 1,
-    )
-    primary_window = _build_primary_window(
-        window_start_date=window_start,
-        hard_end_date=hard_end_date,
-        blocked_dates=blocked_dates,
-        horizon_weeks=near_future_weeks,
-    )
-    return {
-        "near_future_horizon_weeks": near_future_weeks,
-        "start_date": primary_window["window_start_date"],
-        "end_date": primary_window["window_end_date"],
-        "total_days": int(primary_window["window_total_days"]),
-        "blocked_days": int(primary_window["window_blocked_days"]),
-        "usable_days": int(primary_window["window_usable_days"]),
-    }
-
-
-async def _build_hard_end_feasibility(
-    db: AsyncSession,
-    organization_id: int,
-    org_settings: models.OrganizationSettings,
-    adaptive_repair: bool,
-    room_count: int,
-    blocked_dates: set[date],
-) -> dict | None:
-    hard_end_date = _resolve_preflight_hard_end_date(org_settings)
-    if hard_end_date is None:
-        return None
-
-    repair_window_days = _resolve_repair_window_days(org_settings) if adaptive_repair else 0
-    horizon_start = resolve_expansion_start_date(
-        org_settings.school_start_date,
-        adaptive_repair=adaptive_repair,
-        repair_window_days=repair_window_days,
-    )
-
-    def _run(sync_db) -> tuple[int, int]:
-        lessons = (
-            sync_db.query(
-                models.ClassSubjectLink.class_id,
-                models.ClassSubjectLink.subject_id,
+        if school_year_id is None:
+            active_school_year = await SchedulerStateService(self.db).get_active_school_year(
+                organization_id
             )
-            .join(models.Class, models.ClassSubjectLink.class_id == models.Class.id)
-            .filter(
-                models.ClassSubjectLink.organization_id == organization_id,
-                models.Class.organization_id == organization_id,
-                models.Class.is_archived.is_(False),
-                models.ClassSubjectLink.teacher_id.isnot(None),
-                models.ClassSubjectLink.grade_level == models.Class.grade_level,
+            school_year_id = active_school_year.id if active_school_year is not None else None
+        if school_year_id is None:
+            issues.append(
+                schemas.PreflightIssue(
+                    code="ACTIVE_SCHOOL_YEAR_REQUIRED",
+                    severity="BLOCKER",
+                    message="Defina o ano letivo ativo antes de gerar.",
+                    route="/config",
+                )
             )
-            .all()
+
+        org_settings = await _get_latest_settings_with_dates(self.db, organization_id)
+        if org_settings is None:
+            issues.append(
+                schemas.PreflightIssue(
+                    code="MISSING_CALENDAR",
+                    severity="BLOCKER",
+                    message="Datas do ano letivo não configuradas.",
+                    route="/config",
+                )
+            )
+
+        ts_count = (
+            await self.db.scalar(
+                sa_select(func.count(models.Timeslot.id)).where(
+                    models.Timeslot.organization_id == organization_id
+                )
+            )
+            or 0
         )
-        modules_by_subject = schedule_service.get_modules_by_subject_sync(sync_db, organization_id)
-        progress_map = schedule_service.get_class_progress_map_sync(sync_db, organization_id)
+        if ts_count == 0:
+            issues.append(
+                schemas.PreflightIssue(
+                    code="MISSING_TIMESLOTS",
+                    severity="BLOCKER",
+                    message="Nenhum bloco de horário configurado.",
+                    route="/config",
+                )
+            )
 
-        remaining_minutes = sum(
-            max(0, int(_compute_remaining_minutes(lesson, modules_by_subject, progress_map)))
-            for lesson in lessons
+        teacher_count = (
+            await self.db.scalar(
+                sa_select(func.count(models.Teacher.id)).where(
+                    models.Teacher.organization_id == organization_id,
+                    models.Teacher.is_archived.is_(False),
+                )
+            )
+            or 0
         )
+        if teacher_count == 0:
+            issues.append(
+                schemas.PreflightIssue(
+                    code="MISSING_TEACHERS",
+                    severity="BLOCKER",
+                    message="Nenhum professor registado.",
+                    route="/members",
+                )
+            )
 
-        if remaining_minutes <= 0:
-            return (0, 0)
-
-        timeslots = schedule_service.get_timeslots_by_org_sync(sync_db, organization_id)
-        capacity_minutes = _estimate_capacity_minutes_in_range(
-            timeslots=timeslots,
-            room_count=max(0, int(room_count)),
-            blocked_dates=blocked_dates,
-            start_date=horizon_start,
-            end_date=hard_end_date,
+        class_count = (
+            await self.db.scalar(
+                sa_select(func.count(models.Class.id)).where(
+                    models.Class.organization_id == organization_id,
+                    models.Class.is_archived.is_(False),
+                )
+            )
+            or 0
         )
-        return (remaining_minutes, capacity_minutes)
+        if class_count == 0:
+            issues.append(
+                schemas.PreflightIssue(
+                    code="MISSING_CLASSES",
+                    severity="BLOCKER",
+                    message="Nenhuma turma ativa registada.",
+                    route="/courses",
+                )
+            )
 
-    backlog_minutes, capacity_minutes = await db.run_sync(_run)
-    expected_residual_minutes = max(0, backlog_minutes - max(0, capacity_minutes))
-
-    return {
-        "start_date": horizon_start,
-        "hard_end_date": hard_end_date,
-        "backlog_hours": round(max(0, backlog_minutes) / 60, 1),
-        "capacity_hours": round(max(0, capacity_minutes) / 60, 1),
-        "expected_residual_hours": round(expected_residual_minutes / 60, 1),
-        "feasible_until_hard_end": expected_residual_minutes == 0,
-    }
-
-
-def _build_repair_infeasible_error(feasibility: dict) -> str:
-    return (
-        "Reparacao adaptativa bloqueada: carga reconciliada estimada "
-        f"({feasibility['backlog_hours']}h) excede a capacidade teorica maxima "
-        f"({feasibility['capacity_hours']}h) no horizonte "
-        f"{feasibility['start_date'].isoformat()} a {feasibility['hard_end_date'].isoformat()}. "
-        f"Residual esperado ate hard end: {feasibility['expected_residual_hours']}h."
-    )
-
-
-async def _preflight_check(
-    db: AsyncSession,
-    organization_id: int,
-    strategy: models.ScheduleGenerationStrategy = (
-        models.ScheduleGenerationStrategy.COMPLETE_GENERATION
-    ),
-    *,
-    replace_pending_draft: bool = False,
-    school_year_id: int | None = None,
-) -> tuple[list[str], dict]:
-    """Valida pré-condições e devolve erros + resumo de preflight híbrido."""
-    errors: list[str] = []
-    preflight_summary: dict = {
-        "strategy": strategy.value,
-        "primary_window": None,
-        "hard_end_feasibility": None,
-    }
-
-    pending_conditions = [
-        models.ScheduleDraft.organization_id == organization_id,
-        models.ScheduleDraft.draft_state == models.ScheduleDraftState.PENDING,
-    ]
-    if school_year_id is not None:
-        pending_conditions.append(models.ScheduleDraft.school_year_id == school_year_id)
-    pending_draft_count = await db.scalar(
-        sa_select(func.count(models.ScheduleDraft.id)).where(*pending_conditions)
-    )
-    if pending_draft_count and not replace_pending_draft:
-        return (
-            [
-                "Existe um rascunho pendente de aprovação. "
-                "Por favor, aprove ou rejeite o rascunho atual antes de iniciar uma nova geração."
-            ],
-            preflight_summary,
+        room_count = (
+            await self.db.scalar(
+                sa_select(func.count(models.Room.id)).where(
+                    models.Room.organization_id == organization_id
+                )
+            )
+            or 0
         )
+        if room_count == 0:
+            issues.append(
+                schemas.PreflightIssue(
+                    code="MISSING_ROOMS",
+                    severity="BLOCKER",
+                    message="Nenhuma sala configurada.",
+                    route="/rooms",
+                )
+            )
 
-    org_settings = await _get_latest_settings_with_dates(db, organization_id)
-    if not org_settings:
-        return (
-            [
-                "Nenhum ano letivo com 'data de inicio' e 'data-limite rigida'. "
-                "Configure em Configurações > Anos Letivos."
-            ],
-            preflight_summary,
+        class_subject_count, lesson_count = await _get_generation_workload_counts(
+            self.db, organization_id
         )
+        allocations_ready = (class_subject_count > 0) or (lesson_count > 0)
+        if not allocations_ready:
+            issues.append(
+                schemas.PreflightIssue(
+                    code="MISSING_ALLOCATIONS",
+                    severity="BLOCKER",
+                    message="Nenhuma disciplina atribuída a turmas/professores.",
+                    route="/courses",
+                )
+            )
+        else:
+            subject_ids = await _collect_generation_subject_ids(self.db, organization_id)
+            subject_errors = await _validate_subject_requirements(
+                self.db, organization_id, subject_ids
+            )
+            for s_err in subject_errors:
+                issues.append(
+                    schemas.PreflightIssue(
+                        code="INVALID_SUBJECT_REQUIREMENTS",
+                        severity="BLOCKER",
+                        message=s_err,
+                        route="/subjects",
+                    )
+                )
 
-    adaptive_repair = strategy == models.ScheduleGenerationStrategy.ADAPTIVE_REPAIR
-    if adaptive_repair:
-        window_error = _validate_repair_generation_window(org_settings)
-        if window_error:
-            errors.append(window_error)
-
-    holiday_error = await _ensure_auto_holidays(db, organization_id, org_settings)
-    if holiday_error:
-        errors.append(holiday_error)
-
-    class_subject_count, lesson_count = await _get_generation_workload_counts(db, organization_id)
-    if not class_subject_count and not lesson_count:
-        errors.append(
-            "Nenhuma carga letiva ativa encontrada. "
-            "Atribua professores em Turmas > Disciplinas (modelo novo) "
-            "ou configure as licoes curriculares."
+        pending_conditions = [
+            models.ScheduleDraft.organization_id == organization_id,
+            models.ScheduleDraft.draft_state == models.ScheduleDraftState.PENDING,
+        ]
+        if school_year_id is not None:
+            pending_conditions.append(models.ScheduleDraft.school_year_id == school_year_id)
+        has_pending = (
+            await self.db.scalar(
+                sa_select(func.count(models.ScheduleDraft.id)).where(*pending_conditions)
+            )
+            or 0
         )
+        if has_pending > 0:
+            issues.append(
+                schemas.PreflightIssue(
+                    code="PENDING_DRAFT",
+                    severity="WARNING",
+                    message="Existe um rascunho de horário pendente de aprovação.",
+                    route="/schedules",
+                )
+            )
 
-    ts_count = await db.scalar(
-        sa_select(func.count(models.Timeslot.id)).where(
-            models.Timeslot.organization_id == organization_id
+        teacher_ids = await _collect_generation_teacher_ids(self.db, organization_id)
+        timeslot_rows = await self.db.execute(
+            sa_select(models.Timeslot.id).where(
+                models.Timeslot.organization_id == organization_id
+            )
         )
-    )
-    if not ts_count:
-        errors.append(
-            "Nenhum período horário configurado. Configure em Configurações > Grelha Horária."
-        )
-
-    room_count = await db.scalar(
-        sa_select(func.count(models.Room.id)).where(models.Room.organization_id == organization_id)
-    )
-    if not room_count:
-        errors.append("Nenhuma sala configurada.")
-
-    calendar_events = await db.execute(
-        sa_select(models.SchoolCalendarEvent).where(
-            models.SchoolCalendarEvent.organization_id == organization_id
-        )
-    )
-    blocked_dates = _build_blocked_dates(calendar_events.scalars().all())
-
-    teacher_ids = await _collect_generation_teacher_ids(db, organization_id)
-    preflight_summary["primary_window"] = _build_preflight_primary_window(
-        org_settings=org_settings,
-        adaptive_repair=adaptive_repair,
-        blocked_dates=blocked_dates,
-        class_count=int(class_subject_count or 0),
-        teacher_count=len(teacher_ids),
-        room_count=int(room_count or 0),
-        timeslot_count=int(ts_count or 0),
-        lesson_count=int(lesson_count or class_subject_count or 0),
-    )
-    teacher_error = await _validate_teacher_availabilities(db, teacher_ids)
-    if teacher_error:
-        errors.append(teacher_error)
-
-    subject_ids = await _collect_generation_subject_ids(db, organization_id)
-    errors.extend(await _validate_subject_requirements(db, organization_id, subject_ids))
-
-    if not errors:
-        feasibility = await _build_hard_end_feasibility(
-            db,
+        timeslot_ids = set(timeslot_rows.scalars().all())
+        teacher_error = await _validate_teacher_availabilities(
+            self.db,
             organization_id,
-            org_settings,
-            adaptive_repair,
-            int(room_count or 0),
-            blocked_dates,
+            teacher_ids,
+            timeslot_ids,
         )
-        preflight_summary["hard_end_feasibility"] = feasibility
+        if teacher_error:
+            issues.append(
+                schemas.PreflightIssue(
+                    code="MISSING_TEACHER_AVAILABILITY",
+                    severity="BLOCKER",
+                    message=teacher_error,
+                    route="/members",
+                )
+            )
 
-        if (
-            adaptive_repair
-            and feasibility is not None
-            and not feasibility["feasible_until_hard_end"]
-        ):
-            errors.append(_build_repair_infeasible_error(feasibility))
+        if strategy == models.ScheduleGenerationStrategy.ADAPTIVE_REPAIR and org_settings:
+            window_error = _validate_repair_generation_window(org_settings)
+            if window_error:
+                issues.append(
+                    schemas.PreflightIssue(
+                        code="REPAIR_WINDOW_INFEASIBLE",
+                        severity="BLOCKER",
+                        message=window_error,
+                        route="/schedules",
+                    )
+                )
 
-    return errors, preflight_summary
+        has_blocker = any(i.severity == "BLOCKER" for i in issues)
+        has_warning = any(i.severity == "WARNING" for i in issues)
+        if has_blocker:
+            status = "BLOCKED"
+        elif has_warning:
+            status = "READY_WITH_WARNINGS"
+        else:
+            status = "READY"
+
+        fingerprint = None
+        if school_year_id is not None:
+            from app.services.scheduler_fingerprint_service import (
+                SchedulerFingerprintService,
+            )
+
+            fps = SchedulerFingerprintService(self.db)
+            fp_result = await fps.generation_input_fingerprint(
+                organization_id=organization_id,
+                school_year_id=school_year_id,
+                strategy=strategy,
+            )
+            fingerprint = fp_result.value
+
+        return schemas.PreflightReport(
+            status=status,
+            fingerprint=fingerprint,
+            issues=issues,
+        )

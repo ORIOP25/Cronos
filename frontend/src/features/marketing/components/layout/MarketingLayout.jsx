@@ -1,4 +1,4 @@
-import { Show } from '@clerk/react'
+import { Show, useAuth } from '@clerk/react'
 import { Outlet } from 'react-router-dom'
 import { SignedInRedirect } from '../../../../routeGuards'
 import MarketingHeader from './MarketingHeader'
@@ -9,8 +9,9 @@ import { useMarketingMetadata } from '../../hooks/useMarketingMetadata'
 import '../../../../pages/MarketingSite.css'
 
 export default function MarketingLayout() {
+  const { isLoaded, isSignedIn } = useAuth()
   useScrollToTop()
-  useMarketingMetadata()
+  useMarketingMetadata(!isLoaded || !isSignedIn)
 
   return (
     <Show when="signed-out" fallback={<SignedInRedirect />}>

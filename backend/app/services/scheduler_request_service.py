@@ -7,7 +7,8 @@ from app.core.auth import Actor
 from app.core.exceptions import AppError
 from app.scheduler.application.contracts import SchedulerTaskDispatcher
 from app.scheduler.domain.constraints import SchedulerConstraintPolicy
-from app.services.preflight_service import _preflight_check
+from app.services.availability_matrix_service import AvailabilityMatrixRepairService
+from app.services.preflight_service import PreflightService
 from app.services.scheduler_generation_service import (
     GenerationConfigurationError,
     GenerationSelectionError,
@@ -49,24 +50,27 @@ async def start_generation_request(
     organization_id = current_user.organization_id
     generation = SchedulerGenerationService(db)
 
+    # 1. Repair missing availability cells within mutation transaction
+    await AvailabilityMatrixRepairService.repair(db, organization_id=organization_id)
+    await db.flush()
+
     try:
         selection = await generation.select_strategy(
             organization_id,
             replace_pending_draft=payload.replace_pending_draft,
         )
     except GenerationConfigurationError as exc:
-        preflight_errors, preflight_summary = await _preflight_check(
-            db,
-            organization_id,
-        )
+        preflight_service = PreflightService(db)
+        report = await preflight_service.evaluate(organization_id=organization_id)
         raise AppError(
             kind="validation",
             code="preflight_failed",
             detail=str(exc),
             metadata={
                 "error": "preflight_failed",
-                "problems": preflight_errors or [str(exc)],
-                "preflight": preflight_summary,
+                "status": report.status,
+                "report": report.model_dump(),
+                "issues": [i.model_dump() for i in report.issues],
             },
         ) from exc
     except (GenerationSelectionError, SchedulerStateError) as exc:
@@ -99,36 +103,24 @@ async def start_generation_request(
             },
         )
 
-    preflight_errors, preflight_summary = await _preflight_check(
-        db,
-        organization_id,
-        selection.strategy,
-        replace_pending_draft=payload.replace_pending_draft,
+    preflight_service = PreflightService(db)
+    report = await preflight_service.evaluate(
+        organization_id=organization_id,
         school_year_id=selection.school_year_id,
+        strategy=selection.strategy,
     )
-    encoded_preflight = preflight_summary
-    if preflight_errors:
+    if report.status == "BLOCKED" or any(i.severity == "BLOCKER" for i in report.issues):
         raise AppError(
             kind="validation",
             code="preflight_failed",
             detail="Scheduler preflight failed.",
             metadata={
                 "error": "preflight_failed",
-                "problems": preflight_errors,
-                "preflight": encoded_preflight,
+                "status": report.status,
+                "report": report.model_dump(),
+                "issues": [i.model_dump() for i in report.issues],
             },
         )
-
-    # Preflight may import missing holidays, which is itself a scheduler-relevant
-    # change. Refresh the immutable selection so job admission compares against
-    # the post-preflight state instead of rejecting the request's own update.
-    try:
-        selection = await generation.select_strategy(
-            organization_id,
-            replace_pending_draft=payload.replace_pending_draft,
-        )
-    except (GenerationSelectionError, SchedulerStateError) as exc:
-        raise _selection_conflict(exc) from exc
 
     jobs = SchedulerJobService(db)
     try:
@@ -137,9 +129,7 @@ async def start_generation_request(
             requested_by_membership_id=current_user.membership_id,
             idempotency_key=payload.idempotency_key,
         )
-        await db.commit()
     except SchedulerJobError as exc:
-        await db.rollback()
         raise AppError(
             kind="conflict",
             code=exc.code,
@@ -161,7 +151,6 @@ async def start_generation_request(
                 handle.job.id,
                 f"Could not dispatch generation job: {dispatch_error}",
             )
-            await db.commit()
             raise AppError(
                 kind="unavailable",
                 code="generation_dispatch_failed",

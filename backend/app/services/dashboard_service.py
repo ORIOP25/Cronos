@@ -13,22 +13,46 @@ from app.services import occurrence_service
 def get_dashboard_summary_sync(
     db: Session,
     organization_id: int,
-) -> schemas.DashboardV1Response:
-    """Retorna estatÃ­sticas agregadas para o dashboard principal."""
+    *,
+    bases: schemas.BasesReadinessResponse | None = None,
+) -> schemas.DashboardResponse:
+    """Retorna estatísticas agregadas para o dashboard principal (PREPARATION vs OPERATIONAL discriminada)."""
     today = date.today()
 
-    alerts, resources, org_name = _get_overview(db, organization_id, today)
+    org = db.scalar(select(models.Organization).where(models.Organization.id == organization_id))
+    org_name = org.name if org else "Escola"
+    foundation_status = (
+        org.foundation_status if org else models.OrganizationFoundationStatus.NOT_STARTED
+    )
+    foundation_completed_at = org.foundation_completed_at if org else None
+    first_real_approved_at = org.first_real_schedule_approved_at if org else None
+
+    if first_real_approved_at is None:
+        if bases is None:
+            raise ValueError("Preparation dashboard requires canonical readiness bases")
+        return schemas.PreparationDashboardResponse(
+            mode="PREPARATION",
+            organization_name=org_name,
+            foundation_status=foundation_status,
+            foundation_completed_at=foundation_completed_at,
+            bases=bases,
+        )
+
+    # Modo Operacional
+    alerts, resources, _, _ = _get_overview(db, organization_id, today)
     schedule_health = _get_schedule_health(db, organization_id, today)
     class_progress = _get_class_progress(db, organization_id)
     debts = _get_debt_summary(db, organization_id, today)
 
-    return schemas.DashboardV1Response(
+    return schemas.OperationalDashboardResponse(
+        mode="OPERATIONAL",
+        organization_name=org_name,
+        first_real_schedule_approved_at=first_real_approved_at,
         alerts=alerts,
         resources=resources,
         schedule_health=schedule_health,
         class_progress=class_progress,
         debts=debts,
-        organization_name=org_name,
     )
 
 
@@ -40,7 +64,7 @@ def _get_overview(
     db: Session,
     organization_id: int,
     today: date,
-) -> tuple[schemas.AlertCounts, schemas.ResourceCounts, str]:
+) -> tuple[schemas.AlertCounts, schemas.ResourceCounts, str, any]:
     room_counts = (
         select(
             cast(models.Room.type, String).label("room_type"),
@@ -58,6 +82,7 @@ def _get_overview(
     row = db.execute(
         select(
             models.Organization.name,
+            models.Organization.first_real_schedule_approved_at,
             _count(
                 models.LessonOccurrence,
                 models.LessonOccurrence.organization_id == organization_id,
@@ -97,21 +122,22 @@ def _get_overview(
     ).one()
     return (
         schemas.AlertCounts(
-            pending_occurrences_today=row[1],
-            pending_occurrences_total=row[2],
-            pending_timesheets=row[3],
-            pending_drafts=row[4],
-            active_substitutions_today=row[5],
+            pending_occurrences_today=row[2],
+            pending_occurrences_total=row[3],
+            pending_timesheets=row[4],
+            pending_drafts=row[5],
+            active_substitutions_today=row[6],
         ),
         schemas.ResourceCounts(
-            teachers_count=row[6],
-            classes_count=row[7],
-            courses_count=row[8],
-            subjects_count=row[9],
-            rooms_count=row[10],
-            rooms_by_type=row[11] or {},
+            teachers_count=row[7],
+            classes_count=row[8],
+            courses_count=row[9],
+            subjects_count=row[10],
+            rooms_count=row[11],
+            rooms_by_type=row[12] or {},
         ),
         row[0],
+        row[1],
     )
 
 

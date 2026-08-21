@@ -18,6 +18,7 @@ const memberState = vi.hoisted(() => ({
     capabilities: ['admin'],
     default_mode: 'admin',
     teacher_id: null,
+    foundation_status: 'COMPLETED',
   },
   loading: false,
   error: null,
@@ -106,6 +107,7 @@ describe('RequireAdmin', () => {
       capabilities: ['admin'],
       default_mode: 'admin',
       teacher_id: null,
+      foundation_status: 'COMPLETED',
     }
   })
 
@@ -121,6 +123,7 @@ describe('RequireAdmin', () => {
       capabilities: ['teacher'],
       default_mode: 'teacher',
       teacher_id: 10,
+      foundation_status: 'COMPLETED',
     }
     renderGuard(<RequireAdmin><div>Admin</div></RequireAdmin>)
     expect(screen.queryByText('Admin')).toBeNull()
@@ -145,6 +148,7 @@ describe('RequireTeacher', () => {
       capabilities: ['teacher'],
       default_mode: 'teacher',
       teacher_id: 10,
+      foundation_status: 'COMPLETED',
     }
   })
 
@@ -200,6 +204,7 @@ describe('RequireTeacher', () => {
       capabilities: ['admin', 'teacher'],
       default_mode: 'admin',
       teacher_id: 10,
+      foundation_status: 'COMPLETED',
     }
     renderGuard(<RequireTeacher><div data-testid="teacher-content">Teacher</div></RequireTeacher>)
     expect(screen.getByTestId('teacher-content')).toBeInTheDocument()
@@ -212,6 +217,7 @@ describe('RequireTeacher', () => {
       capabilities: ['admin'],
       default_mode: 'admin',
       teacher_id: null,
+      foundation_status: 'COMPLETED',
     }
     renderGuard(<RequireTeacher><div>Teacher</div></RequireTeacher>)
     expect(screen.queryByText('Teacher')).toBeNull()
@@ -230,6 +236,7 @@ describe('SignedInRedirect', () => {
       capabilities: ['admin'],
       default_mode: 'admin',
       teacher_id: null,
+      foundation_status: 'COMPLETED',
     }
   })
 
@@ -245,6 +252,7 @@ describe('SignedInRedirect', () => {
       capabilities: ['teacher'],
       default_mode: 'teacher',
       teacher_id: 10,
+      foundation_status: 'COMPLETED',
     }
     renderRedirect()
     expect(screen.getByTestId('teacher-route')).toBeInTheDocument()

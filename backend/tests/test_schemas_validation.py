@@ -17,7 +17,6 @@ from app.schemas import (
     GridConfigurationCommand,
     LessonOccurrenceCreate,
     MemberCreate,
-    OnboardingRequest,
     OrganizationSettingsUpsert,
     RoomCreate,
     RoomUpdate,
@@ -110,28 +109,6 @@ class TestSchedulerBaselineContract:
             repair_stability_window_days=0,
         )
         assert settings.repair_stability_window_days == 0
-
-    def test_onboarding_rejects_target_end_date(self):
-        with pytest.raises(ValidationError):
-            OnboardingRequest(
-                school_start_date="2025-09-15",
-                school_target_end_date="2026-06-15",
-                school_hard_end_date="2026-07-31",
-                lunch_start="12:30",
-                lunch_end="14:00",
-                lunch_min_duration=60,
-            )
-
-    def test_onboarding_rejects_lunch_duration_longer_than_window(self):
-        with pytest.raises(ValidationError):
-            OnboardingRequest(
-                school_start_date="2025-09-15",
-                school_hard_end_date="2026-07-31",
-                lunch_start="12:00",
-                lunch_end="13:00",
-                lunch_min_duration=61,
-            )
-
 
 class TestSubjectCreateValidation:
     """Testes de validação do SubjectCreate"""

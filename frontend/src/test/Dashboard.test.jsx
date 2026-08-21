@@ -20,6 +20,8 @@ describe('Dashboard', () => {
   beforeEach(() => {
     useDashboard.mockReturnValue({
       data: {
+        mode: 'OPERATIONAL',
+        organization_name: 'Escola Exemplo',
         alerts: {
           pending_occurrences_today: 0,
           pending_timesheets: 0,
@@ -59,10 +61,33 @@ describe('Dashboard', () => {
     })
   })
 
-  it('renders schedule health returned by the dashboard API', () => {
+  it('renders schedule health in operational mode when first schedule was approved', () => {
     renderWithRouter(<Dashboard />, { initialEntries: ['/dashboard'] })
 
     expect(screen.getByTestId('schedule-health')).toBeInTheDocument()
     expect(screen.getByText(/12 blocos no total/i)).toBeInTheDocument()
+  })
+
+  it('renders preparation dashboard when first real schedule is not yet approved', () => {
+    useDashboard.mockReturnValue({
+      data: {
+        mode: 'PREPARATION',
+        organization_name: 'Escola Exemplo',
+        foundation_status: 'COMPLETED',
+        foundation_completed_at: '2025-09-15T00:00:00Z',
+        bases: {
+          depth: 7,
+          percentage: 100,
+          complete: true,
+          steps: [],
+        },
+      },
+      isLoading: false,
+    })
+
+    renderWithRouter(<Dashboard />, { initialEntries: ['/dashboard'] })
+
+    expect(screen.getByTestId('preparation-dashboard')).toBeInTheDocument()
+    expect(screen.getByText(/todas as bases estão prontas para geração/i)).toBeInTheDocument()
   })
 })

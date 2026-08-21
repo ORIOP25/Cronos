@@ -369,13 +369,6 @@ export async function seedMinimalSchedulerInputs(page, teacherEmail, dates = FIX
   const classroom = await ensureFixtureClass(page, course.id, dates)
   await ensureFixtureClassSubject(page, classroom.id, subject.id, updatedTeacher.teacher_id)
 
-  const timeslots = await apiRequest(page, 'GET', '/timeslots/')
-  await apiRequest(
-    page,
-    'POST',
-    `/teachers/${updatedTeacher.teacher_id}/availability`,
-    timeslots.map((slot) => ({ timeslot_id: slot.id, score: 2 })),
-  )
   await resetSchedulerYearIfConfigured(page)
 
   return { classId: classroom.id, subjectId: subject.id, teacherId: updatedTeacher.teacher_id }
@@ -623,24 +616,21 @@ test('fresh founder completes Complete Generation and custom-rule Adaptive Repai
       expect(organizationId).toMatch(/^org_/)
     }, { timeout: 120_000 })
 
-    await test.step('onboarding', async () => {
+    await test.step('Foundation', async () => {
       await page.getByRole('button', { name: schoolName }).click()
-      await page.waitForURL('**/onboarding', { timeout: OPERATION_TIMEOUT_MS })
+      await page.waitForURL('**/foundation', { timeout: OPERATION_TIMEOUT_MS })
       await page.waitForFunction(
         (expectedOrganizationId) => window.Clerk?.organization?.id === expectedOrganizationId,
         organizationId,
         { timeout: OPERATION_TIMEOUT_MS },
       )
 
-      await page.getByRole('button', { name: 'Começar' }).click()
-      await page.locator('#onboarding-school-start').fill(FRESH_FOUNDER_DATES.schoolStartDate)
-      await page.locator('#onboarding-school-end').fill(FRESH_FOUNDER_DATES.schoolHardEndDate)
-      await page.locator('button[type="submit"]').click()
-
-      await page.locator('#onboarding-lunch-start').fill('12:30')
-      await page.locator('#onboarding-lunch-end').fill('14:00')
-      await page.locator('#onboarding-lunch-duration').fill('60')
-      await page.getByRole('button', { name: 'Guardar e concluir' }).click()
+      await page.locator('#school_start_date').fill(FRESH_FOUNDER_DATES.schoolStartDate)
+      await page.locator('#school_hard_end_date').fill(FRESH_FOUNDER_DATES.schoolHardEndDate)
+      for (let step = 1; step < 9; step += 1) {
+        await page.getByRole('button', { name: /seguinte/i }).click()
+      }
+      await page.getByRole('button', { name: /ativar escola definitivamente/i }).click()
       await expectRouteReady(page, '/dashboard')
       await apiRequest(page, 'GET', '/members/me')
     }, { timeout: 120_000 })

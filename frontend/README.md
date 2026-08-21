@@ -68,7 +68,7 @@ Marketing site CSS classes use the `cronos-*` namespace to isolate styles from a
 | `/register/*` | `SignUpPage.jsx` | Public |
 | `/recuperar-palavra-passe` | `ForgotPasswordPage.jsx` | Public |
 | `/create-org` | `CreateOrgPage.jsx` | Signed in |
-| `/onboarding` | `Onboarding.jsx` | Admin |
+| `/foundation` | `Foundation.jsx` | Foundation admin |
 | `/dashboard` | `Dashboard.jsx` | Authenticated |
 | `/schedules` | `Schedules.jsx` | Authenticated |
 | `/members` | `Members.jsx` | Admin (`Equipa`) |

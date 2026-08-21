@@ -20,7 +20,7 @@ Disallow: /absences
 Disallow: /timesheets
 Disallow: /my-progress
 Disallow: /my-availability
-Disallow: /onboarding
+Disallow: /foundation
 Disallow: /create-org
 Disallow: /my-schedules
 Disallow: /recuperar-palavra-passe

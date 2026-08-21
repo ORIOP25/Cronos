@@ -14,7 +14,8 @@ export async function activateAndBootstrapOrganization(input, ports) {
   const result = await ports.bootstrap(token)
   await ports.cacheMember(organizationId, result)
   ports.storage.remove(PENDING_ORGANIZATION_KEY)
-  ports.navigate(result.onboarding_complete ? ports.defaultRoute(result.member) : '/onboarding')
+  const isComplete = result.foundation_status === 'COMPLETED'
+  ports.navigate(isComplete ? ports.defaultRoute(result.member) : '/foundation')
   return result
 }
 

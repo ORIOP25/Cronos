@@ -19,7 +19,7 @@
     "audit:production": "node scripts/audit-production.mjs",
     "test:marketing-assets": "node scripts/audit-marketing-assets.mjs",
     "test:marketing-build": "node --test scripts/build-marketing-pages.test.mjs",
-    "verify": "npm run lint && npm run lint:dead-code && npm run lint:dead-code:production && npm run test:marketing-build && npm run test:marketing-assets && npm run test:coverage && npm run build",
+    "verify": "npm run lint && npm run lint:dead-code && npm run lint:dead-code:production && npm run test:marketing-build && npm run test:marketing-assets && npm run test:school-config:stability && npm run test:coverage && npm run build",
     "test:school-config:stability": "node scripts/verify-school-config-stability.mjs"
   },
   "dependencies": {

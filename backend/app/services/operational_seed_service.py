@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date, time
+from datetime import UTC, date, datetime, time
 from typing import Any
 
 from sqlalchemy import func, select, text
@@ -34,7 +34,7 @@ def _seed_organization(db: Session, *, suffix: str) -> dict[str, int]:
             text(
                 """
             SELECT account_id, organization_id, membership_id
-            FROM app_security.bootstrap_founder(
+            FROM app_security.bootstrap_organization_admin(
                 :clerk_user_id, :clerk_org_id, :organization_name,
                 :email, :profile_name, :provider_membership_id
             )
@@ -58,6 +58,9 @@ def _seed_organization(db: Session, *, suffix: str) -> dict[str, int]:
     membership = db.get(models.OrganizationMembership, principal["membership_id"])
     if organization is None or admin is None or membership is None:
         raise RuntimeError("Operational seed principal could not be loaded")
+    if organization.foundation_status != models.OrganizationFoundationStatus.COMPLETED:
+        organization.foundation_status = models.OrganizationFoundationStatus.COMPLETED
+        organization.foundation_completed_at = datetime.now(UTC)
     membership.can_admin = True
     membership.can_teach = True
     membership.teacher_access_mode = models.TeacherAccessMode.platform

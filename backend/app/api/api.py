@@ -8,17 +8,19 @@ from app.api.v1.endpoints import (
     contact,
     courses,
     dashboard,
+    foundation,
     health,
     members,
     occurrences,
-    onboarding,
     org_settings,
+    readiness,
     rooms,
     schedule,
     scheduler,
     session,
     subjects,
     teachers,
+    telemetry,
     timesheets,
     timeslots,
     webhooks,
@@ -47,8 +49,10 @@ api_router.include_router(org_settings.router, prefix="/school", tags=["Configur
 api_router.include_router(occurrences.router, prefix="/occurrences", tags=["Ocorrências de Aulas"])
 api_router.include_router(timesheets.router, prefix="/timesheets", tags=["Submissões Semanais"])
 api_router.include_router(dashboard.router, tags=["Dashboard"])
+api_router.include_router(readiness.router, prefix="/readiness", tags=["Prontidão"])
 api_router.include_router(webhooks.router, prefix="/webhooks", tags=["Webhooks"])
-api_router.include_router(onboarding.router, tags=["Onboarding"])
+api_router.include_router(foundation.router, tags=["Fundação"])
+api_router.include_router(telemetry.router, tags=["Telemetria"])
 api_router.include_router(session.router, prefix="/session", tags=["Session"])
 
 # Health Check (Geralmente não leva prefixo dentro da API ou usa /ops)

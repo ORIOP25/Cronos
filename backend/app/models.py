@@ -2,8 +2,10 @@ import enum
 from datetime import UTC, datetime, time
 from datetime import date as date_type
 from typing import NamedTuple, Optional
+from uuid import UUID as PyUUID
 
 from sqlalchemy import (
+    BigInteger,
     Boolean,
     CheckConstraint,
     Column,
@@ -13,18 +15,22 @@ from sqlalchemy import (
     ForeignKeyConstraint,
     Index,
     Integer,
+    SmallInteger,
     String,
     Table,
     Text,
     Time,
     UniqueConstraint,
+    Uuid,
     event,
     func,
     select,
+    text,
 )
 from sqlalchemy import (
     Enum as SAEnum,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import JSON
@@ -261,6 +267,12 @@ class OrganizationPlanStatus(enum.StrEnum):
     suspended = "suspended"
 
 
+class OrganizationFoundationStatus(enum.StrEnum):
+    NOT_STARTED = "NOT_STARTED"
+    IN_PROGRESS = "IN_PROGRESS"
+    COMPLETED = "COMPLETED"
+
+
 class ConstraintType(enum.StrEnum):
     # Regras de Sala/Tempo
     specific_room = "specific_room"
@@ -388,6 +400,24 @@ class Organization(Base):
         SAEnum(OrganizationPlanStatus), default=OrganizationPlanStatus.inactive, nullable=False
     )
 
+    foundation_status: Mapped[OrganizationFoundationStatus] = mapped_column(
+        SAEnum(
+            OrganizationFoundationStatus,
+            name="organizationfoundationstatus",
+            native_enum=True,
+            values_callable=lambda obj: [e.value for e in obj],
+        ),
+        default=OrganizationFoundationStatus.NOT_STARTED,
+        server_default=text("'NOT_STARTED'"),
+        nullable=False,
+    )
+    foundation_completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    first_real_schedule_approved_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
     # --- Relacionamentos ---
     # Isto cria "atalhos" em Python para aceder aos dados ligados.
     # Ex: my_organization.users, my_organization.teachers, etc.
@@ -406,9 +436,121 @@ class Organization(Base):
     calendar_events: Mapped[list["SchoolCalendarEvent"]] = relationship(
         back_populates="organization", cascade=CASCADE_ALL_DELETE
     )
+    foundation_draft: Mapped[Optional["OrganizationFoundationDraft"]] = relationship(
+        back_populates="organization", cascade=CASCADE_ALL_DELETE, uselist=False
+    )
+    tutorial_telemetry_events: Mapped[list["TutorialTelemetryEvent"]] = relationship(
+        back_populates="organization", cascade=CASCADE_ALL_DELETE
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "foundation_status != 'COMPLETED' OR foundation_completed_at IS NOT NULL",
+            name="chk_organization_foundation_completed_at_required",
+        ),
+        CheckConstraint(
+            "first_real_schedule_approved_at IS NULL OR foundation_status = 'COMPLETED'",
+            name="chk_organization_first_real_schedule_requires_completed",
+        ),
+    )
 
     def __repr__(self) -> str:
         return f"<Organization(id={self.id}, name='{self.name}')>"
+
+
+class OrganizationFoundationDraft(Base):
+    __tablename__ = "organization_foundation_draft"
+
+    organization_id: Mapped[int] = mapped_column(
+        ForeignKey(FK_ORG_ID, ondelete="CASCADE"), primary_key=True
+    )
+    version: Mapped[int] = mapped_column(
+        Integer, default=1, server_default=text("1"), nullable=False
+    )
+    current_step: Mapped[int] = mapped_column(
+        SmallInteger, default=1, server_default=text("1"), nullable=False
+    )
+    payload_json: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    updated_by_membership_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+        server_default=text("CURRENT_TIMESTAMP"),
+        nullable=False,
+    )
+
+    organization: Mapped["Organization"] = relationship(back_populates="foundation_draft")
+
+    __table_args__ = (
+        CheckConstraint("version > 0", name="chk_organization_foundation_draft_version"),
+        CheckConstraint(
+            "current_step BETWEEN 1 AND 9",
+            name="chk_organization_foundation_draft_current_step",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "updated_by_membership_id"],
+            ["organization_membership.organization_id", "organization_membership.id"],
+            name="fk_org_foundation_draft_membership_tenant_scoped",
+            ondelete="RESTRICT",
+        ),
+    )
+
+
+class TutorialTelemetryEvent(Base):
+    __tablename__ = "tutorial_telemetry_event"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    organization_id: Mapped[int] = mapped_column(
+        ForeignKey(FK_ORG_ID, ondelete="CASCADE"), nullable=False
+    )
+    tutorial_run_id: Mapped[PyUUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    client_event_id: Mapped[PyUUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    tutorial_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    event_name: Mapped[str] = mapped_column(String(40), nullable=False)
+    chapter: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    step_id: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        server_default=text("CURRENT_TIMESTAMP"),
+        nullable=False,
+    )
+
+    organization: Mapped["Organization"] = relationship(back_populates="tutorial_telemetry_events")
+
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id",
+            "client_event_id",
+            name="uq_tutorial_telemetry_client_event",
+        ),
+        Index("ix_tutorial_telemetry_event_organization_id", "organization_id"),
+        Index(
+            "ix_tutorial_telemetry_run",
+            "organization_id",
+            "tutorial_run_id",
+            "created_at",
+        ),
+        Index(
+            "ix_tutorial_telemetry_version_event",
+            "organization_id",
+            "tutorial_version",
+            "event_name",
+        ),
+        CheckConstraint(
+            "event_name IN ('tutorial_opened', 'chapter_started', 'step_skipped', 'tutorial_exited', 'tutorial_completed', 'tutorial_repeated')",
+            name="chk_tutorial_telemetry_event_name",
+        ),
+        CheckConstraint(
+            "chapter IS NULL OR chapter IN (1, 2)",
+            name="chk_tutorial_telemetry_chapter",
+        ),
+        CheckConstraint(
+            "tutorial_version > 0",
+            name="chk_tutorial_telemetry_version",
+        ),
+    )
 
 
 # Modelo "User" (O Diretor/Admin)

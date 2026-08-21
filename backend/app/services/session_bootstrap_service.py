@@ -36,7 +36,7 @@ class ClerkDirectoryUnavailableError(SessionBootstrapError):
 class SessionBootstrapResult:
     organization: dict
     member: dict
-    onboarding_complete: bool
+    foundation_status: str
 
 
 class SessionBootstrapService:
@@ -75,7 +75,7 @@ class SessionBootstrapService:
                     text(
                         """
                 SELECT account_id, organization_id, membership_id
-                FROM app_security.bootstrap_founder(
+                FROM app_security.bootstrap_organization_admin(
                     :clerk_user_id, :clerk_org_id, :organization_name,
                     :email, :profile_name, :provider_membership_id
                 )
@@ -108,13 +108,6 @@ class SessionBootstrapService:
             raise ActiveOrganizationAccessDeniedError(
                 "Active organization administrator access is required."
             )
-        onboarding_complete = bool(
-            await self.db.scalar(
-                select(models.OrganizationSettings.id).where(
-                    models.OrganizationSettings.organization_id == organization.id
-                )
-            )
-        )
         return SessionBootstrapResult(
             organization={
                 "id": organization.id,
@@ -129,7 +122,7 @@ class SessionBootstrapService:
                 "default_mode": "admin",
                 "teacher_id": None,
             },
-            onboarding_complete=onboarding_complete,
+            foundation_status=organization.foundation_status.value,
         )
 
     async def _load_membership(

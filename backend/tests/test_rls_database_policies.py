@@ -55,7 +55,7 @@ def test_principal_resolution_and_cross_tenant_write_denial(clean_database):
             return connection.execute(
                 text(
                     """
-                    SELECT * FROM app_security.bootstrap_founder(
+                    SELECT * FROM app_security.bootstrap_organization_admin(
                       :user_id, :org_id, :org_name, :email, :profile, :membership_id
                     )
                     """

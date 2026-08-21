@@ -4,6 +4,7 @@ from typing import Annotated
 
 import structlog
 from fastapi import Depends, HTTPException, Request, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models
@@ -138,7 +139,22 @@ async def get_current_user(
 
 async def get_current_active_user(
     current_user: Annotated[Actor, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
 ) -> Actor:
+    status_value = await db.scalar(
+        select(models.Organization.foundation_status).where(
+            models.Organization.id == current_user.organization_id
+        )
+    )
+    if status_value != models.OrganizationFoundationStatus.COMPLETED:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "FOUNDATION_REQUIRED",
+                "message": "A fundação escolar deve ser concluída antes de aceder aos módulos operacionais.",
+                "foundation_status": status_value.value if status_value else "NOT_STARTED",
+            },
+        )
     return current_user
 
 
@@ -172,6 +188,17 @@ def actor_role(current_user: Actor) -> str:
     return "member"
 
 
+def get_foundation_admin(
+    current_user: Annotated[Actor, Depends(get_current_user)],
+) -> Actor:
+    if not user_has_admin_capability(current_user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required",
+        )
+    return current_user
+
+
 def get_current_active_admin(
     current_user: Annotated[Actor, Depends(get_current_active_user)],
 ) -> Actor:
@@ -194,6 +221,8 @@ MemberAccessOperationDep = Annotated[
     MemberAccessOperationService,
     Depends(get_member_access_operation_service),
 ]
+SessionActor = Annotated[Actor, Depends(get_current_user)]
+FoundationAdminActor = Annotated[Actor, Depends(get_foundation_admin)]
 ActiveActor = Annotated[Actor, Depends(get_current_active_user)]
 AdminActor = Annotated[Actor, Depends(get_current_active_admin)]
 

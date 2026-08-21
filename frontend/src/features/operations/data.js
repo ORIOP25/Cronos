@@ -251,8 +251,8 @@ export const useSaveAvailability = () => {
   const queryClient = useQueryClient()
   const orgId = useOrganization().organization?.id
   return useMutation({
-    mutationFn: async ({ teacherId, payload }) => {
-      return apiClient.post(`/teachers/${teacherId}/availability`, payload)
+    mutationFn: async ({ payload }) => {
+      return apiClient.put('/teachers/me/availability', payload)
     },
     onSuccess: (_, { payload }) => {
       queryClient.setQueryData(['my-availability', orgId], payload)

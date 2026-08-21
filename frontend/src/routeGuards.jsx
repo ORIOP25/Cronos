@@ -97,7 +97,7 @@ function useOrganizationGuardState() {
   }
 }
 
-function MemberGate({ children, capability, requireTeacherId = false, redirectToDefault = false }) {
+function MemberGate({ children, capability, requireTeacherId = false, redirectToDefault = false, allowUncompletedFoundation = false }) {
   const state = useOrganizationGuardState()
   const { data: member, isLoading: memberLoading, isError, error, refetch } = state.member
   if (!state.isLoaded || !state.orgLoaded || !state.listLoaded) return <PageLoader />
@@ -113,6 +113,13 @@ function MemberGate({ children, capability, requireTeacherId = false, redirectTo
   }
   if (isError) return <MemberQueryFailure error={error} recoverSession={state.recoverSession} refetch={refetch} signOut={state.signOut} />
   if (redirectToDefault) return <Navigate to={getDefaultRouteForMember(member)} replace />
+
+  // Foundation gate: incomplete organizations have no operational routes.
+  const isOrgAdmin = ['admin', 'org:admin'].includes(state.organizationMembership?.role)
+  if (!allowUncompletedFoundation && member && member.foundation_status !== 'COMPLETED') {
+    return <Navigate to={isOrgAdmin ? '/foundation' : '/foundation/waiting'} replace />
+  }
+
   const allowed = requireTeacherId
     ? canAccessTeacherRoutes(member)
     : hasMemberCapability(member, capability)
@@ -122,6 +129,10 @@ function MemberGate({ children, capability, requireTeacherId = false, redirectTo
 
 export function RequireAdmin({ children }) {
   return <MemberGate capability="admin">{children}</MemberGate>
+}
+
+export function RequireFoundationAdmin({ children }) {
+  return <MemberGate capability="admin" allowUncompletedFoundation>{children}</MemberGate>
 }
 
 export function RequireTeacher({ children }) {

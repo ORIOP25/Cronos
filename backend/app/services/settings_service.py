@@ -311,7 +311,7 @@ async def save_and_regenerate_grid(
     db: AsyncSession,
     organization_id: int,
     command: schemas.GridConfigurationCommand,
-    changed_by_membership_id: int,
+    changed_by_membership_id: int | None = None,
 ) -> schemas.GridConfigurationResponse:
     """Commit lunch settings and a protected timetable-grid replacement atomically."""
     try:
@@ -332,6 +332,10 @@ async def save_and_regenerate_grid(
             plan,
             changed_by_membership_id,
         )
+        if plan.changed:
+            from app.services.availability_matrix_service import AvailabilityMatrixRepairService
+
+            await AvailabilityMatrixRepairService.repair(db, organization_id=organization_id)
         await db.flush()
     except Exception:
         raise

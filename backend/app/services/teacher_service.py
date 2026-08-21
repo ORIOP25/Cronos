@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session, selectinload
 from app import models
 from app.models import Availability
 from app.schemas import AvailabilitySelfCreate
+from app.services.availability_matrix_service import AvailabilityMatrixInspector
 from app.services.scheduler_state_service import record_scheduler_change
 
 logger = structlog.get_logger(__name__)
@@ -210,7 +211,7 @@ async def get_teacher_availability(
     teacher_id: int,
     organization_id: int,
 ) -> list[dict] | str:
-    """Lê disponibilidades de um professor dentro da organização autenticada."""
+    """Lê disponibilidades de um professor dentro da organização autenticada (sintetiza NEUTRAL em memória)."""
     teacher_query = select(models.Teacher).where(
         models.Teacher.id == teacher_id,
         models.Teacher.organization_id == organization_id,
@@ -220,22 +221,27 @@ async def get_teacher_availability(
     if not db_teacher:
         return "NOT_FOUND"
 
-    rows = await db.execute(
-        select(models.Availability.timeslot_id, models.Availability.score)
-        .join(models.Timeslot, models.Availability.timeslot_id == models.Timeslot.id)
-        .where(
-            models.Availability.teacher_id == teacher_id,
-            models.Timeslot.organization_id == organization_id,
-        )
-        .order_by(models.Timeslot.day_of_week, models.Timeslot.start_time, models.Availability.id)
+    timeslots_result = await db.execute(
+        select(models.Timeslot)
+        .where(models.Timeslot.organization_id == organization_id)
+        .order_by(models.Timeslot.day_of_week, models.Timeslot.start_time, models.Timeslot.id)
+    )
+    timeslots = timeslots_result.scalars().all()
+    timeslot_ids = [ts.id for ts in timeslots]
+
+    inspection = await AvailabilityMatrixInspector.inspect(
+        db,
+        organization_id=organization_id,
+        teacher_ids=[teacher_id],
+        timeslot_ids=timeslot_ids,
     )
 
     return [
         {
-            "timeslot_id": row.timeslot_id,
-            "score": row.score,
+            "timeslot_id": ts.id,
+            "score": inspection.get_score(teacher_id, ts.id),
         }
-        for row in rows.all()
+        for ts in timeslots
     ]
 
 
@@ -248,8 +254,7 @@ async def set_teacher_availability(
 ):
     """
     Define as disponibilidades de um professor.
-    Estratégia: Apagar as antigas para esse professor e inserir as novas (Bulk Update).
-    Isto é mais simples do que fazer update linha a linha.
+    Exige exatamente uma entrada por timeslot ativo da organização.
     """
     # 1. Validar que o professor pertence a esta organização
     teacher_query = select(models.Teacher).where(
@@ -270,20 +275,18 @@ async def set_teacher_availability(
     )
     before = _availability_snapshot(existing_rows.all())
 
-    # 2. Validar payload antes de qualquer mutação (evita alterações parciais em erro)
+    # 2. Validar que o payload contém exatamente todos os timeslots da organização
+    all_timeslots_result = await db.execute(
+        select(models.Timeslot.id).where(models.Timeslot.organization_id == organization_id)
+    )
+    all_org_timeslot_ids = set(all_timeslots_result.scalars().all())
+
     timeslot_ids = [item.timeslot_id for item in availabilities]
     if len(timeslot_ids) != len(set(timeslot_ids)):
         return "DUPLICATE_TIMESLOT"
 
-    # 3. Validar que todos os timeslots pertencem à organização
-    if availabilities:
-        timeslot_query = select(models.Timeslot.id).where(
-            models.Timeslot.id.in_(timeslot_ids), models.Timeslot.organization_id == organization_id
-        )
-        timeslot_result = await db.execute(timeslot_query)
-        valid_ids = {row[0] for row in timeslot_result.all()}
-        if len(valid_ids) != len(set(timeslot_ids)):
-            return "INVALID_TIMESLOT"
+    if set(timeslot_ids) != all_org_timeslot_ids:
+        return "INVALID_TIMESLOT"
 
     # 4. Mutação transacional
     try:

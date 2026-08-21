@@ -23,7 +23,11 @@ export const useTeachers = ({ enabled = true } = {}) => {
   })
 }
 
-export const useCurrentMember = ({ enabled = true } = {}) => {
+export const useCurrentMember = ({
+  enabled = true,
+  refetchInterval = false,
+  refetchOnWindowFocus = true,
+} = {}) => {
   const orgId = useOrganization().organization?.id
   const { isLoaded, isSignedIn } = useAuth()
   return useQuery({
@@ -33,6 +37,8 @@ export const useCurrentMember = ({ enabled = true } = {}) => {
     },
     enabled: Boolean(orgId) && Boolean(isSignedIn) && isLoaded && enabled,
     staleTime: 1000 * 60,
+    refetchInterval,
+    refetchOnWindowFocus,
   })
 }
 

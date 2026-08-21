@@ -22,7 +22,7 @@ Read [Members and Access](../02_domain_model/MEMBERS_AND_ACCESS.md).
 | `/login/*` | `SignInPage.jsx` | Public | Authentication sign-in view |
 | `/register/*` | `SignUpPage.jsx` | Public | Registration view |
 | `/recuperar-palavra-passe` | `ForgotPasswordPage.jsx` | Public | Password recovery view |
-| `/onboarding` | `Onboarding.jsx` | Admin | Organization setup wizard |
+| `/foundation` | `Foundation.jsx` | Foundation admin | Organization setup wizard |
 | `/create-org` | `CreateOrgPage.jsx` | Authenticated | Organization creation view |
 | `/dashboard` | `Dashboard.jsx` | Admin | Administrative command center |
 | `/schedules` | `Schedules.jsx` | Admin | Timetable view and solver trigger |

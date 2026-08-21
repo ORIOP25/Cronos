@@ -92,7 +92,7 @@ export default function ForgotPasswordPage() {
 
     await execute(() => signIn.finalize({
       navigate: async ({ session, decorateUrl }) => {
-        const destination = decorateUrl(session?.currentTask ? '/onboarding' : '/')
+        const destination = decorateUrl(session?.currentTask ? '/foundation' : '/')
         if (destination.startsWith('http')) {
           window.location.href = destination
           return

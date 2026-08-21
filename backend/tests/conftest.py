@@ -8,6 +8,7 @@ os.environ["DATABASE_POOLING_ENABLED"] = "false"
 os.environ["SENTRY_DSN"] = ""
 
 from collections.abc import AsyncGenerator, Iterable
+from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
@@ -288,6 +289,8 @@ async def create_org_and_user(
     org_name: str = "Escola Teste",
     clerk_org_id: str | None = None,
     teacher_id: int | None = None,
+    foundation_status: models.OrganizationFoundationStatus = models.OrganizationFoundationStatus.COMPLETED,
+    foundation_completed_at: datetime | None = None,
 ) -> tuple[models.Organization, models.User]:
     """Cria org + user. Idempotente: se já existirem, retorna os existentes."""
     from sqlalchemy.future import select as _sel
@@ -353,10 +356,18 @@ async def create_org_and_user(
     ).scalar_one_or_none()
 
     if org is None:
+        completed_at = foundation_completed_at
+        if (
+            foundation_status == models.OrganizationFoundationStatus.COMPLETED
+            and completed_at is None
+        ):
+            completed_at = datetime.now(UTC)
         org = models.Organization(
             name=org_name,
             clerk_org_id=c_org_id,
             plan_status="active",
+            foundation_status=foundation_status,
+            foundation_completed_at=completed_at,
         )
         db_session.add(org)
         await db_session.flush()
@@ -370,6 +381,57 @@ async def create_org_and_user(
     await db_session.flush()
     await _ensure_membership(org, user)
     return org, user
+
+
+async def create_completed_organization(
+    db_session: AsyncSession,
+    *,
+    clerk_user_id: str = "clerk_test_admin_completed",
+    org_name: str = "Escola Completa Teste",
+    clerk_org_id: str | None = None,
+) -> tuple[models.Organization, models.User]:
+    return await create_org_and_user(
+        db_session,
+        clerk_user_id=clerk_user_id,
+        org_name=org_name,
+        clerk_org_id=clerk_org_id,
+        foundation_status=models.OrganizationFoundationStatus.COMPLETED,
+        foundation_completed_at=datetime.now(UTC),
+    )
+
+
+async def create_not_started_organization(
+    db_session: AsyncSession,
+    *,
+    clerk_user_id: str = "clerk_test_admin_not_started",
+    org_name: str = "Escola Nao Iniciada Teste",
+    clerk_org_id: str | None = None,
+) -> tuple[models.Organization, models.User]:
+    return await create_org_and_user(
+        db_session,
+        clerk_user_id=clerk_user_id,
+        org_name=org_name,
+        clerk_org_id=clerk_org_id,
+        foundation_status=models.OrganizationFoundationStatus.NOT_STARTED,
+        foundation_completed_at=None,
+    )
+
+
+async def create_in_progress_organization(
+    db_session: AsyncSession,
+    *,
+    clerk_user_id: str = "clerk_test_admin_in_progress",
+    org_name: str = "Escola Em Progresso Teste",
+    clerk_org_id: str | None = None,
+) -> tuple[models.Organization, models.User]:
+    return await create_org_and_user(
+        db_session,
+        clerk_user_id=clerk_user_id,
+        org_name=org_name,
+        clerk_org_id=clerk_org_id,
+        foundation_status=models.OrganizationFoundationStatus.IN_PROGRESS,
+        foundation_completed_at=None,
+    )
 
 
 async def ensure_membership_capabilities(

@@ -103,6 +103,33 @@ def _audit_foreign_keys(connection, inspector, preparer, table: str) -> list[str
     return errors
 
 
+def _audit_rls_policies(connection) -> list[str]:
+    errors = []
+    unhardened = (
+        connection.execute(
+            text(
+                """
+            SELECT c.relname
+            FROM pg_class c
+            JOIN pg_namespace n ON n.oid = c.relnamespace
+            JOIN information_schema.columns col
+              ON col.table_schema = n.nspname AND col.table_name = c.relname
+            WHERE n.nspname = 'public'
+              AND c.relkind = 'r'
+              AND col.column_name = 'organization_id'
+              AND (NOT c.relrowsecurity OR NOT c.relforcerowsecurity)
+            ORDER BY c.relname
+            """
+            )
+        )
+        .scalars()
+        .all()
+    )
+    if unhardened:
+        errors.append(f"Tables missing row security or forced row security: {unhardened}")
+    return errors
+
+
 def _audit_connection(connection) -> list[str]:
     errors: list[str] = []
 
@@ -120,6 +147,28 @@ def _audit_connection(connection) -> list[str]:
         errors.extend(_audit_unique_keys(connection, inspector, preparer, table))
         errors.extend(_audit_foreign_keys(connection, inspector, preparer, table))
 
+    # Audit required check constraints
+    check_constraints_sql = """
+    SELECT conname
+    FROM pg_constraint
+    WHERE connamespace = 'public'::regnamespace
+      AND contype = 'c'
+    """
+    existing_checks = set(connection.execute(text(check_constraints_sql)).scalars())
+    required_checks = {
+        "chk_organization_foundation_completed_at_required",
+        "chk_organization_first_real_schedule_requires_completed",
+        "chk_organization_foundation_draft_version",
+        "chk_organization_foundation_draft_current_step",
+        "chk_tutorial_telemetry_event_name",
+        "chk_tutorial_telemetry_chapter",
+        "chk_tutorial_telemetry_version",
+    }
+    missing_checks = required_checks - existing_checks
+    if missing_checks:
+        errors.append(f"Missing required check constraints: {sorted(missing_checks)}")
+
+    errors.extend(_audit_rls_policies(connection))
     return errors
 
 

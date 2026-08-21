@@ -31,7 +31,7 @@ async def list_members(
 @router.get("/me", response_model=schemas.CurrentMemberRead)
 async def get_current_member(
     db: Annotated[AsyncSession, Depends(deps.get_db)],
-    current_user: deps.ActiveActor,
+    current_user: deps.SessionActor,
 ):
     return await member_service.current_member(db, current_user=current_user)
 

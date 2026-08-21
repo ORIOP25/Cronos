@@ -62,7 +62,7 @@ React Query manages server state while component state handles form and view sta
 
 Route guards move through loading, signed-out, organization selection, member error, or authorized states.
 Contact submission moves through questionnaire steps, pending, error, and success states.
-Onboarding moves through welcome, two guided steps, pending, error, and success states.
+Foundation moves through nine validated steps, draft persistence, conflict, and completion states.
 Availability keeps persisted server data separate from a local paint draft.
 
 ## Failure Modes

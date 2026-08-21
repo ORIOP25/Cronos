@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import date, datetime, time
 from enum import StrEnum
 from typing import Annotated, Any, Literal
+from uuid import UUID
 
 from pydantic import AliasChoices, BaseModel, ConfigDict, EmailStr, Field, model_validator
 
@@ -12,6 +13,7 @@ from .models import (
     ConstraintType,
     LessonLogStatus,
     LessonOccurrenceStatus,
+    OrganizationFoundationStatus,
     PreferenceLevel,
     RoomType,
     TimesheetStatus,
@@ -232,6 +234,8 @@ class MemberListRead(BaseModel):
 
 
 class CurrentMemberRead(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     member_id: int
     account_id: int
     organization_id: int
@@ -241,15 +245,20 @@ class CurrentMemberRead(BaseModel):
     teacher_id: int | None = None
     default_mode: Literal["admin", "teacher"]
     available_modes: list[Literal["admin", "teacher"]]
+    foundation_status: OrganizationFoundationStatus
 
 
 class SessionBootstrapOrganization(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     id: int
     clerk_org_id: str
     name: str
 
 
 class SessionBootstrapMember(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     id: int
     access_status: Literal["active"]
     lifecycle_status: Literal["active"]
@@ -259,9 +268,119 @@ class SessionBootstrapMember(BaseModel):
 
 
 class SessionBootstrapResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     organization: SessionBootstrapOrganization
     member: SessionBootstrapMember
-    onboarding_complete: bool
+    foundation_status: OrganizationFoundationStatus
+
+
+# --- Foundation & Readiness Schemas ---
+class FoundationDraftData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    school_start_date: date | None = None
+    school_hard_end_date: date | None = None
+    repair_stability_window_days: int | None = Field(default=None, ge=1, le=60)
+    days_of_week: list[int] | None = None
+    opening_time: time | None = None
+    closing_time: time | None = None
+    slot_duration_minutes: int | None = Field(default=None, ge=15, le=120)
+    break_duration_minutes: int | None = Field(default=None, ge=0, le=60)
+    lunch_window_start: time | None = None
+    lunch_window_end: time | None = None
+    lunch_min_duration_minutes: int | None = Field(default=None, ge=1, le=180)
+
+
+class FoundationDraftWrite(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    expected_version: int = Field(..., ge=0)
+    current_step: int = Field(default=1, ge=1, le=9)
+    data: FoundationDraftData
+
+
+class FoundationDraftRead(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    version: int
+    current_step: int = Field(default=1, ge=1, le=9)
+    data: FoundationDraftData
+    updated_at: datetime | None = None
+
+
+class FoundationCompleteCommand(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    expected_version: int = Field(..., ge=0)
+    confirmed: Literal[True]
+
+
+class FoundationStatusResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    foundation_status: OrganizationFoundationStatus
+    foundation_completed_at: datetime | None = None
+    first_real_schedule_approved_at: datetime | None = None
+    organization_name: str
+
+
+class FoundationCompleteResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    foundation_status: OrganizationFoundationStatus
+    foundation_completed_at: datetime
+    generated_timeslot_count: int
+
+
+class TutorialTelemetryEventCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    tutorial_run_id: UUID
+    client_event_id: UUID
+    tutorial_version: int = Field(..., ge=1)
+    event_name: Literal[
+        "tutorial_opened",
+        "chapter_started",
+        "step_skipped",
+        "tutorial_exited",
+        "tutorial_completed",
+        "tutorial_repeated",
+    ]
+    chapter: int | None = Field(default=None, ge=1, le=2)
+    step_id: str | None = Field(default=None, max_length=80)
+
+
+class PreflightIssue(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    code: str
+    severity: Literal["BLOCKER", "WARNING"]
+    message: str
+    route: str
+
+
+class PreflightReport(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    status: Literal["BLOCKED", "READY_WITH_WARNINGS", "READY"]
+    fingerprint: str | None = None
+    issues: list[PreflightIssue] = Field(default_factory=list)
+
+
+class ReadinessStep(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    code: str
+    status: Literal["COMPLETE", "PENDING"]
+    route: str
+
+
+class BasesReadinessResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    percentage: int
+    depth: int
+    complete: bool
+    fingerprint: str | None = None
+    issues: list[PreflightIssue] = Field(default_factory=list)
+    steps: list[ReadinessStep] = Field(default_factory=list)
 
 
 # --- Class (Turma) ---
@@ -1804,35 +1923,28 @@ class DebtSummary(BaseModel):
     as_of_date: date
 
 
-class DashboardV1Response(BaseModel):
-    alerts: AlertCounts
+class PreparationDashboardResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    mode: Literal["PREPARATION"] = "PREPARATION"
+    organization_name: str
+    foundation_status: OrganizationFoundationStatus
+    foundation_completed_at: datetime | None = None
+    bases: BasesReadinessResponse
+
+
+class OperationalDashboardResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    mode: Literal["OPERATIONAL"] = "OPERATIONAL"
+    organization_name: str
+    first_real_schedule_approved_at: datetime
     resources: ResourceCounts
+    alerts: AlertCounts | None = None
     schedule_health: ScheduleHealthWidget | None = None
     class_progress: list[ClassProgressSummary] = Field(default_factory=list)
-    debts: DebtSummary
-    organization_name: str
+    debts: DebtSummary | None = None
 
 
-# ── Onboarding ─────────────────────────────────────────────────
-
-
-class OnboardingRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    school_start_date: date
-    school_hard_end_date: date
-    lunch_start: time
-    lunch_end: time
-    lunch_min_duration: int
-
-    @model_validator(mode="after")
-    def validate_dates(self):
-        if self.school_hard_end_date <= self.school_start_date:
-            raise ValueError("Data de fim definitiva deve ser posterior à data de início")
-        validate_lunch_window(self.lunch_start, self.lunch_end, self.lunch_min_duration)
-        return self
-
-
-class OnboardingStatusResponse(BaseModel):
-    onboarding_complete: bool
-    organization_name: str | None = None
+DashboardResponse = Annotated[
+    PreparationDashboardResponse | OperationalDashboardResponse,
+    Field(discriminator="mode"),
+]

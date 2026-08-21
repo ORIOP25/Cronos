@@ -264,13 +264,13 @@ const Schedules = () => {
         setGenerationConfirmation('replace-pending-draft')
         return
       }
-      const problems = err?.response?.data?.detail?.problems
-      if (!Array.isArray(problems) && detail?.message) {
+      const issues = detail?.issues || detail?.report?.issues
+      if (!Array.isArray(issues) && detail?.message) {
         setGenerationActionError(detail.message)
         return
       }
-      if (Array.isArray(problems)) {
-        setPreflightErrors(problems)
+      if (Array.isArray(issues)) {
+        setPreflightErrors(issues)
       } else {
         setGenerationActionError(getApiErrorMessage(err, 'Erro ao iniciar a geração. Verifique a ligação e tente novamente.'))
       }
@@ -398,7 +398,7 @@ const Schedules = () => {
       </PageHeader>
 
       <>
-          {preflightErrors.length > 0 && <PreflightErrorPanel problems={preflightErrors} />}
+          {preflightErrors.length > 0 && <PreflightErrorPanel issues={preflightErrors} />}
           {generationActionError && (
             <CAlert color="danger" className="mb-4" style={{ whiteSpace: 'pre-line' }}>
               {generationActionError}

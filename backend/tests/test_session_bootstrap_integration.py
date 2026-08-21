@@ -73,7 +73,7 @@ async def test_bootstrap_creates_founder_graph_from_empty_baseline(
 
     assert result.organization["clerk_org_id"] == "org_empty"
     assert result.member["capabilities"] == ["admin"]
-    assert result.onboarding_complete is False
+    assert result.foundation_status == "NOT_STARTED"
     assert await db_session.scalar(select(func.count(models.User.id))) == 1
     assert await db_session.scalar(select(func.count(models.Organization.id))) == 1
     assert await db_session.scalar(select(func.count(models.OrganizationMembership.id))) == 1

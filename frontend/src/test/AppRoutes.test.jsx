@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
 import { renderWithProviders } from './testUtils'
 import { resetClerkState, setClerkState } from './setup'
@@ -8,7 +8,13 @@ import App from '../App'
 vi.mock('../features/members/data', async (importOriginal) => ({
   ...(await importOriginal()),
   useCurrentMember: () => ({
-    data: { access_status: 'active', lifecycle_status: 'active', capabilities: ['admin'], default_mode: 'admin' },
+    data: {
+      access_status: 'active',
+      lifecycle_status: 'active',
+      capabilities: ['admin'],
+      default_mode: 'admin',
+      foundation_status: 'COMPLETED',
+    },
     isLoading: false,
     isError: false,
     refetch: vi.fn(),
@@ -21,19 +27,28 @@ function renderAppAt(path) {
 }
 
 describe('App route polish', () => {
+  const initialHeadHtml = `
+    <title>Fixture title</title>
+    <meta name="description" content="Fixture description" />
+    <link rel="canonical" href="https://cronos.pt/" />
+    <meta property="og:title" content="Fixture title" />
+    <meta property="og:description" content="Fixture description" />
+    <meta property="og:url" content="https://cronos.pt/" />
+    <meta name="twitter:title" content="Fixture title" />
+    <meta name="twitter:description" content="Fixture description" />
+  `
+
   beforeEach(() => {
     resetClerkState()
+    vi.clearAllMocks()
     setClerkState({ isSignedIn: false, isLoaded: true })
-    document.head.innerHTML = `
-      <title>Fixture title</title>
-      <meta name="description" content="Fixture description" />
-      <link rel="canonical" href="https://cronos.pt/" />
-      <meta property="og:title" content="Fixture title" />
-      <meta property="og:description" content="Fixture description" />
-      <meta property="og:url" content="https://cronos.pt/" />
-      <meta name="twitter:title" content="Fixture title" />
-      <meta name="twitter:description" content="Fixture description" />
-    `
+    document.head.innerHTML = initialHeadHtml
+  })
+
+  afterEach(() => {
+    resetClerkState()
+    vi.clearAllMocks()
+    document.head.innerHTML = initialHeadHtml
   })
 
   it(
@@ -90,5 +105,11 @@ describe('App route polish', () => {
     expect(await screen.findByRole('heading', { name: /página não encontrada/i })).toBeInTheDocument()
     expect(screen.getByText(/rota-inexistente/i)).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /voltar ao início/i })).toHaveAttribute('href', '/')
+  })
+
+  it('does not expose the removed onboarding route', async () => {
+    renderAppAt('/onboarding')
+
+    expect(await screen.findByRole('heading', { name: /página não encontrada/i })).toBeInTheDocument()
   })
 })

@@ -25,7 +25,9 @@ const Courses = lazy(() => import('./pages/Courses'))
 const CourseDetails = lazy(() => import('./pages/CourseDetails'))
 const ClassDetails = lazy(() => import('./pages/ClassDetails'))
 const ClassSubjects = lazy(() => import('./pages/ClassSubjects'))
-const Onboarding = lazy(() => import('./pages/Onboarding'))
+const Foundation = lazy(() => import('./pages/Foundation'))
+const FoundationWaiting = lazy(() => import('./pages/FoundationWaiting'))
+const Guide = lazy(() => import('./pages/Guide'))
 
 const MarketingLayout = lazy(() => import('./features/marketing/components/layout/MarketingLayout.jsx'))
 const HomePage = lazy(() => import('./pages/marketing/HomePage.jsx'))
@@ -37,7 +39,7 @@ const ContactPage = lazy(() => import('./pages/marketing/ContactPage.jsx'))
 
 import DefaultLayout from './components/DefaultLayout'
 import { ROUTE_MY_SCHEDULES } from './roleAccess'
-import { PageLoader, RequireAdmin, RequireAuth, RequireTeacher } from './routeGuards'
+import { PageLoader, RequireAdmin, RequireFoundationAdmin, RequireAuth, RequireTeacher } from './routeGuards'
 
 function App() {
   const { getToken, isLoaded } = useAuth()
@@ -73,9 +75,14 @@ function App() {
             <RequireAuth><CreateOrgPage /></RequireAuth>
           } />
 
-          <Route path="/onboarding" element={
-            <RequireAdmin><Onboarding /></RequireAdmin>
+          <Route path="/foundation/waiting" element={
+            <RequireAuth><FoundationWaiting /></RequireAuth>
           } />
+
+          <Route path="/foundation" element={
+            <RequireFoundationAdmin><Foundation /></RequireFoundationAdmin>
+          } />
+          <Route path="/guide" element={<RequireAdmin><Guide /></RequireAdmin>} />
 
           <Route element={<RequireAuth><DefaultLayout /></RequireAuth>}>
             <Route element={<RequireAdmin />}>
