@@ -859,10 +859,16 @@ async def test_legacy_active_user_without_membership_is_denied(async_client, db_
 
 
 async def test_mixed_member_can_use_teacher_self_service(async_client, db_session):
+    from datetime import UTC, datetime
+
     from app import models
 
     org = models.Organization(
-        name="Mixed Org", clerk_org_id="org_mixed_member", plan_status="active"
+        name="Mixed Org",
+        clerk_org_id="org_mixed_member",
+        plan_status="active",
+        foundation_status=models.OrganizationFoundationStatus.COMPLETED,
+        foundation_completed_at=datetime.now(UTC),
     )
     db_session.add(org)
     await db_session.flush()

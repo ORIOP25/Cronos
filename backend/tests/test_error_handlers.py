@@ -29,4 +29,5 @@ async def test_global_exception_handler_hides_internal_error_details(monkeypatch
     assert logged["context"]["method"] == "GET"
     assert logged["context"]["path"] == "/api/v1/private"
     assert logged["context"]["error_type"] == "RuntimeError"
-    assert logged["context"]["exc_info"][1].args == ("database password leaked in traceback",)
+    assert logged["context"]["error"] == "database password leaked in traceback"
+    assert "RuntimeError: database password leaked in traceback" in logged["context"]["traceback"]
