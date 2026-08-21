@@ -286,6 +286,7 @@ jobs:
             -e E2E_CLERK_ADMIN_EMAIL="$E2E_CLERK_ADMIN_EMAIL" \
             -e E2E_CLERK_TEACHER_EMAIL="$E2E_CLERK_TEACHER_EMAIL" \
             -e E2E_CLERK_ORG_ID="$E2E_CLERK_ORG_ID" \
+            -e E2E_CLERK_AUTO_PROVISION="$E2E_CLERK_AUTO_PROVISION" \
             backend python scripts/prepare_e2e_clerk_state.py
         env:
           COMPOSE_PROJECT_NAME: cronos-ci-${{ github.run_id }}-${{ github.run_attempt }}
@@ -294,6 +295,7 @@ jobs:
           E2E_CLERK_ADMIN_EMAIL: ${{ env.CI_E2E_CLERK_ADMIN_EMAIL }}
           E2E_CLERK_TEACHER_EMAIL: ${{ env.CI_E2E_CLERK_TEACHER_EMAIL }}
           E2E_CLERK_ORG_ID: ${{ env.CI_E2E_CLERK_ORG_ID }}
+          E2E_CLERK_AUTO_PROVISION: ${{ env.CI_E2E_CLERK_AUTO_PROVISION }}
 
       - name: Run E2E Tests
         run: docker compose -f docker-compose.ci.yml run --rm --no-deps e2e
