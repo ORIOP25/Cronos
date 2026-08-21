@@ -110,6 +110,7 @@ class TestSchedulerBaselineContract:
         )
         assert settings.repair_stability_window_days == 0
 
+
 class TestSubjectCreateValidation:
     """Testes de validação do SubjectCreate"""
 

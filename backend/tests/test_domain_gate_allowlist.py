@@ -125,7 +125,6 @@ async def test_uncompleted_foundation_blocks_operational_endpoints_with_409(
         assert telemetry_resp.json()["detail"]["code"] == "FOUNDATION_REQUIRED"
 
 
-
 async def test_completed_foundation_allows_operational_endpoints(db_session, override_auth_actor):
     org, user, mem = await _create_org_and_admin(
         db_session,

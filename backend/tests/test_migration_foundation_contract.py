@@ -19,11 +19,16 @@ def _alembic_config() -> Config:
 
 def test_foundation_migration_does_not_backfill_or_publish_legacy_wrapper():
     source = (
-        Path(__file__).parents[1] / "alembic" / "versions" / "0004_foundation_telemetry.py"
-    ).read_text(encoding="utf-8").lower()
+        (Path(__file__).parents[1] / "alembic" / "versions" / "0004_foundation_telemetry.py")
+        .read_text(encoding="utf-8")
+        .lower()
+    )
 
     assert "backfill" not in source
-    assert "create or replace function app_security.bootstrap_founder" not in source.split("def downgrade", 1)[0]
+    assert (
+        "create or replace function app_security.bootstrap_founder"
+        not in source.split("def downgrade", 1)[0]
+    )
     assert "create or replace function app_security.bootstrap_organization_admin" in source
 
 

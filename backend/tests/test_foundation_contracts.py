@@ -64,5 +64,8 @@ def test_head_migration_has_no_legacy_bootstrap_or_backfill():
     migration = Path(__file__).parents[1] / "alembic" / "versions" / "0004_foundation_telemetry.py"
     source = migration.read_text(encoding="utf-8").lower()
 
-    assert "create or replace function app_security.bootstrap_founder" not in source.split("def downgrade", 1)[0]
+    assert (
+        "create or replace function app_security.bootstrap_founder"
+        not in source.split("def downgrade", 1)[0]
+    )
     assert "backfill" not in source

@@ -46,10 +46,19 @@ def upgrade() -> None:
         sa.Column("current_step", sa.SmallInteger(), nullable=False, server_default="1"),
         sa.Column("payload_json", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
         sa.Column("updated_by_membership_id", sa.Integer(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("CURRENT_TIMESTAMP"), nullable=False),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("CURRENT_TIMESTAMP"),
+            nullable=False,
+        ),
         sa.CheckConstraint("version > 0", name="chk_organization_foundation_draft_version"),
-        sa.CheckConstraint("current_step BETWEEN 1 AND 9", name="chk_organization_foundation_draft_current_step"),
-        sa.ForeignKeyConstraint(["organization_id"], ["public.organization.id"], ondelete="CASCADE"),
+        sa.CheckConstraint(
+            "current_step BETWEEN 1 AND 9", name="chk_organization_foundation_draft_current_step"
+        ),
+        sa.ForeignKeyConstraint(
+            ["organization_id"], ["public.organization.id"], ondelete="CASCADE"
+        ),
         sa.ForeignKeyConstraint(
             ["organization_id", "updated_by_membership_id"],
             ["public.organization_membership.organization_id", "public.organization_membership.id"],
@@ -69,21 +78,47 @@ def upgrade() -> None:
         sa.Column("event_name", sa.String(length=40), nullable=False),
         sa.Column("chapter", sa.SmallInteger(), nullable=True),
         sa.Column("step_id", sa.String(length=80), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("CURRENT_TIMESTAMP"), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("CURRENT_TIMESTAMP"),
+            nullable=False,
+        ),
         sa.CheckConstraint(
             "event_name IN ('tutorial_opened', 'chapter_started', 'step_skipped', 'tutorial_exited', 'tutorial_completed', 'tutorial_repeated')",
             name="chk_tutorial_telemetry_event_name",
         ),
-        sa.CheckConstraint("chapter IS NULL OR chapter IN (1, 2)", name="chk_tutorial_telemetry_chapter"),
+        sa.CheckConstraint(
+            "chapter IS NULL OR chapter IN (1, 2)", name="chk_tutorial_telemetry_chapter"
+        ),
         sa.CheckConstraint("tutorial_version > 0", name="chk_tutorial_telemetry_version"),
-        sa.ForeignKeyConstraint(["organization_id"], ["public.organization.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(
+            ["organization_id"], ["public.organization.id"], ondelete="CASCADE"
+        ),
         sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint("organization_id", "client_event_id", name="uq_tutorial_telemetry_client_event"),
+        sa.UniqueConstraint(
+            "organization_id", "client_event_id", name="uq_tutorial_telemetry_client_event"
+        ),
         schema="public",
     )
-    op.create_index("ix_tutorial_telemetry_event_organization_id", "tutorial_telemetry_event", ["organization_id"], schema="public")
-    op.create_index("ix_tutorial_telemetry_run", "tutorial_telemetry_event", ["organization_id", "tutorial_run_id", "created_at"], schema="public")
-    op.create_index("ix_tutorial_telemetry_version_event", "tutorial_telemetry_event", ["organization_id", "tutorial_version", "event_name"], schema="public")
+    op.create_index(
+        "ix_tutorial_telemetry_event_organization_id",
+        "tutorial_telemetry_event",
+        ["organization_id"],
+        schema="public",
+    )
+    op.create_index(
+        "ix_tutorial_telemetry_run",
+        "tutorial_telemetry_event",
+        ["organization_id", "tutorial_run_id", "created_at"],
+        schema="public",
+    )
+    op.create_index(
+        "ix_tutorial_telemetry_version_event",
+        "tutorial_telemetry_event",
+        ["organization_id", "tutorial_version", "event_name"],
+        schema="public",
+    )
 
     op.execute("ALTER TABLE public.organization_foundation_draft ENABLE ROW LEVEL SECURITY")
     op.execute("ALTER TABLE public.organization_foundation_draft FORCE ROW LEVEL SECURITY")
@@ -105,10 +140,14 @@ def upgrade() -> None:
         WITH CHECK (organization_id = app_security.current_organization_id())
         """
     )
-    op.execute("GRANT SELECT, INSERT, UPDATE, DELETE ON public.organization_foundation_draft TO cronos_app")
+    op.execute(
+        "GRANT SELECT, INSERT, UPDATE, DELETE ON public.organization_foundation_draft TO cronos_app"
+    )
     op.execute("GRANT SELECT, INSERT ON public.tutorial_telemetry_event TO cronos_app")
     op.execute("REVOKE UPDATE, DELETE ON public.tutorial_telemetry_event FROM cronos_app")
-    op.execute("GRANT USAGE, SELECT ON SEQUENCE public.tutorial_telemetry_event_id_seq TO cronos_app")
+    op.execute(
+        "GRANT USAGE, SELECT ON SEQUENCE public.tutorial_telemetry_event_id_seq TO cronos_app"
+    )
 
     # 0002 leaves the obsolete contract installed. The head exposes only the canonical name.
     op.execute(f"DROP FUNCTION IF EXISTS app_security.bootstrap_founder({BOOTSTRAP_SIGNATURE})")
@@ -169,9 +208,15 @@ def upgrade() -> None:
         $$;
         """
     )
-    op.execute(f"ALTER FUNCTION app_security.bootstrap_organization_admin({BOOTSTRAP_SIGNATURE}) OWNER TO cronos_auth_definer")
-    op.execute(f"REVOKE ALL ON FUNCTION app_security.bootstrap_organization_admin({BOOTSTRAP_SIGNATURE}) FROM PUBLIC")
-    op.execute(f"GRANT EXECUTE ON FUNCTION app_security.bootstrap_organization_admin({BOOTSTRAP_SIGNATURE}) TO cronos_app")
+    op.execute(
+        f"ALTER FUNCTION app_security.bootstrap_organization_admin({BOOTSTRAP_SIGNATURE}) OWNER TO cronos_auth_definer"
+    )
+    op.execute(
+        f"REVOKE ALL ON FUNCTION app_security.bootstrap_organization_admin({BOOTSTRAP_SIGNATURE}) FROM PUBLIC"
+    )
+    op.execute(
+        f"GRANT EXECUTE ON FUNCTION app_security.bootstrap_organization_admin({BOOTSTRAP_SIGNATURE}) TO cronos_app"
+    )
 
     op.execute(
         """
@@ -231,11 +276,17 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.execute("DROP TRIGGER IF EXISTS trg_tutorial_telemetry_append_only ON public.tutorial_telemetry_event")
+    op.execute(
+        "DROP TRIGGER IF EXISTS trg_tutorial_telemetry_append_only ON public.tutorial_telemetry_event"
+    )
     op.execute("DROP FUNCTION IF EXISTS app_security.trg_fn_tutorial_telemetry_append_only()")
-    op.execute("DROP TRIGGER IF EXISTS trg_organization_foundation_monotonic ON public.organization")
+    op.execute(
+        "DROP TRIGGER IF EXISTS trg_organization_foundation_monotonic ON public.organization"
+    )
     op.execute("DROP FUNCTION IF EXISTS app_security.trg_fn_organization_foundation_monotonic()")
-    op.execute(f"DROP FUNCTION IF EXISTS app_security.bootstrap_organization_admin({BOOTSTRAP_SIGNATURE})")
+    op.execute(
+        f"DROP FUNCTION IF EXISTS app_security.bootstrap_organization_admin({BOOTSTRAP_SIGNATURE})"
+    )
     op.execute(
         """
         CREATE OR REPLACE FUNCTION app_security.bootstrap_founder(
@@ -281,15 +332,37 @@ def downgrade() -> None:
         $$;
         """
     )
-    op.execute(f"ALTER FUNCTION app_security.bootstrap_founder({BOOTSTRAP_SIGNATURE}) OWNER TO cronos_auth_definer")
+    op.execute(
+        f"ALTER FUNCTION app_security.bootstrap_founder({BOOTSTRAP_SIGNATURE}) OWNER TO cronos_auth_definer"
+    )
 
-    op.drop_index("ix_tutorial_telemetry_version_event", table_name="tutorial_telemetry_event", schema="public")
-    op.drop_index("ix_tutorial_telemetry_run", table_name="tutorial_telemetry_event", schema="public")
-    op.drop_index("ix_tutorial_telemetry_event_organization_id", table_name="tutorial_telemetry_event", schema="public")
+    op.drop_index(
+        "ix_tutorial_telemetry_version_event",
+        table_name="tutorial_telemetry_event",
+        schema="public",
+    )
+    op.drop_index(
+        "ix_tutorial_telemetry_run", table_name="tutorial_telemetry_event", schema="public"
+    )
+    op.drop_index(
+        "ix_tutorial_telemetry_event_organization_id",
+        table_name="tutorial_telemetry_event",
+        schema="public",
+    )
     op.drop_table("tutorial_telemetry_event", schema="public")
     op.drop_table("organization_foundation_draft", schema="public")
-    op.drop_constraint("chk_organization_first_real_schedule_requires_completed", "organization", schema="public", type_="check")
-    op.drop_constraint("chk_organization_foundation_completed_at_required", "organization", schema="public", type_="check")
+    op.drop_constraint(
+        "chk_organization_first_real_schedule_requires_completed",
+        "organization",
+        schema="public",
+        type_="check",
+    )
+    op.drop_constraint(
+        "chk_organization_foundation_completed_at_required",
+        "organization",
+        schema="public",
+        type_="check",
+    )
     op.drop_column("organization", "first_real_schedule_approved_at", schema="public")
     op.drop_column("organization", "foundation_completed_at", schema="public")
     op.drop_column("organization", "foundation_status", schema="public")

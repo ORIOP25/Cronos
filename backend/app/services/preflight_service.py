@@ -8,8 +8,8 @@ from app.core.task_keys import (
     resolve_repair_window_days as _resolve_repair_window_days,
 )
 from app.services.availability_matrix_service import AvailabilityMatrixInspector
-from app.services.scheduler_state_service import SchedulerStateService
 from app.services.scheduler_planning import resolve_expansion_start_date
+from app.services.scheduler_state_service import SchedulerStateService
 
 logger = structlog.get_logger(__name__)
 
@@ -120,8 +120,7 @@ async def _validate_teacher_availabilities(
         teacher_id
         for teacher_id in teacher_ids
         if any(
-            inspection.get_score(teacher_id, timeslot_id)
-            != models.PreferenceLevel.IMPOSSIBLE.value
+            inspection.get_score(teacher_id, timeslot_id) != models.PreferenceLevel.IMPOSSIBLE.value
             for timeslot_id in timeslot_ids
         )
     }
@@ -157,7 +156,7 @@ async def _validate_subject_requirements(
     module_rows = await db.execute(
         sa_select(models.Module.subject_id, models.Module.required_minutes).where(
             models.Module.organization_id == organization_id,
-            models.Module.subject_id.in_(subject_ids)
+            models.Module.subject_id.in_(subject_ids),
         )
     )
     modules_by_subject: dict[int, list[int]] = {}
@@ -178,7 +177,7 @@ async def _validate_subject_requirements(
         subject_rows = await db.execute(
             sa_select(models.Subject.id, models.Subject.name).where(
                 models.Subject.organization_id == organization_id,
-                models.Subject.id.in_(impacted_subject_ids)
+                models.Subject.id.in_(impacted_subject_ids),
             )
         )
         subject_name_map = {row[0]: row[1] for row in subject_rows.all()}
@@ -394,9 +393,7 @@ class PreflightService:
 
         teacher_ids = await _collect_generation_teacher_ids(self.db, organization_id)
         timeslot_rows = await self.db.execute(
-            sa_select(models.Timeslot.id).where(
-                models.Timeslot.organization_id == organization_id
-            )
+            sa_select(models.Timeslot.id).where(models.Timeslot.organization_id == organization_id)
         )
         timeslot_ids = set(timeslot_rows.scalars().all())
         teacher_error = await _validate_teacher_availabilities(

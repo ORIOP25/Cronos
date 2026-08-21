@@ -95,7 +95,8 @@ class SchoolReadinessService:
                 models.Teacher.organization_id == organization_id,
                 models.Teacher.id.in_(teacher_ids),
                 models.OrganizationMembership.organization_id == organization_id,
-                models.OrganizationMembership.lifecycle_status == models.MembershipLifecycleStatus.active,
+                models.OrganizationMembership.lifecycle_status
+                == models.MembershipLifecycleStatus.active,
             )
         )
         active_teacher_ids = set(active_teacher_rows.scalars().all())
