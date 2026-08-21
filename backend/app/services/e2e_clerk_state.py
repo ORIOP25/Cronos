@@ -1,13 +1,10 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import os
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from typing import Protocol
-from urllib.error import HTTPError
-from urllib.request import Request, urlopen
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -285,44 +282,21 @@ class SdkClerkDirectory:
         memberships = [_to_clerk_membership(item, fallback_user_id=user_id) for item in _items(raw)]
         return next((membership for membership in memberships if membership is not None), None)
 
-    async def _post(self, path: str, payload: dict) -> dict:
-        secret_key = os.environ.get("CLERK_SECRET_KEY", "").strip()
-        if not secret_key:
-            raise E2EClerkPreflightError(
-                "CLERK_SECRET_KEY is required to provision Clerk E2E state."
-            )
-
-        def _request() -> dict:
-            request = Request(
-                f"https://api.clerk.com/v1{path}",
-                data=json.dumps(payload).encode("utf-8"),
-                headers={
-                    "Authorization": f"Bearer {secret_key}",
-                    "Content-Type": "application/json",
-                },
-                method="POST",
-            )
-            try:
-                with urlopen(request, timeout=15) as response:
-                    return json.load(response)
-            except HTTPError as exc:
-                detail = exc.read().decode("utf-8", errors="replace")[:300]
-                raise E2EClerkPreflightError(
-                    f"Clerk API POST {path} failed with HTTP {exc.code}: {detail}"
-                ) from exc
-            except OSError as exc:
-                raise E2EClerkPreflightError(
-                    f"Clerk API POST {path} could not be completed: {type(exc).__name__}."
-                ) from exc
-
-        return await asyncio.to_thread(_request)
-
     async def create_organization(self, *, name: str, created_by: str) -> ClerkOrganization:
-        raw = await self._post("/organizations", {"name": name, "created_by": created_by})
-        organization_id = raw.get("id")
+        try:
+            raw = await asyncio.to_thread(
+                lambda: self._sdk.organizations.create(
+                    request={"name": name, "created_by": created_by}
+                )
+            )
+        except Exception as exc:
+            raise E2EClerkPreflightError(
+                f"Could not create Clerk organization {name!r}. Check Clerk API permissions."
+            ) from exc
+        organization_id = getattr(raw, "id", None)
         if not organization_id:
             raise E2EClerkPreflightError("Clerk organization creation returned no organization ID.")
-        return ClerkOrganization(id=organization_id, name=raw.get("name") or name)
+        return ClerkOrganization(id=organization_id, name=getattr(raw, "name", None) or name)
 
     async def create_organization_membership(
         self,
@@ -331,11 +305,19 @@ class SdkClerkDirectory:
         user_id: str,
         role: str,
     ) -> ClerkOrganizationMembership:
-        raw = await self._post(
-            f"/organizations/{organization_id}/memberships",
-            {"user_id": user_id, "role": role},
-        )
-        membership_id = raw.get("id")
+        try:
+            raw = await asyncio.to_thread(
+                lambda: self._sdk.organization_memberships.create(
+                    organization_id=organization_id,
+                    user_id=user_id,
+                    role=role,
+                )
+            )
+        except Exception as exc:
+            raise E2EClerkPreflightError(
+                "Could not create Clerk organization membership. Check Clerk API permissions."
+            ) from exc
+        membership_id = getattr(raw, "id", None)
         if not membership_id:
             raise E2EClerkPreflightError(
                 "Clerk organization membership creation returned no membership ID."
@@ -344,7 +326,7 @@ class SdkClerkDirectory:
             id=membership_id,
             organization_id=organization_id,
             user_id=user_id,
-            role=raw.get("role") or role,
+            role=getattr(raw, "role", None) or role,
         )
 
 
