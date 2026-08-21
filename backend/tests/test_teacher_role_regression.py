@@ -1,3 +1,4 @@
+from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
@@ -106,7 +107,7 @@ class TestTeacherRoleRegressionContracts:
         )
         write_resp = await async_client.put(
             f"{API}/teachers/me/availability",
-            json=[{"timeslot_id": slot_rows[0]["id"], "score": 2}],
+            json=[{"timeslot_id": slot["id"], "score": 2} for slot in slot_rows],
             headers=teacher_headers,
         )
         assert write_resp.status_code == 200
@@ -116,7 +117,7 @@ class TestTeacherRoleRegressionContracts:
         assert read_resp.status_code == 200
         payload_data = read_resp.json()
         assert isinstance(payload_data, list)
-        assert len(payload_data) == 1
+        assert len(payload_data) == len(slot_rows)
         assert payload_data[0]["timeslot_id"] == slot_rows[0]["id"]
         assert payload_data[0]["score"] == 2
 
@@ -179,7 +180,10 @@ class TestTeacherRoleRegressionContracts:
         )
         assert admin_resp.status_code == 403
         org_without_settings = models.Organization(
-            name=f"Org Sem Horizon {uuid4().hex[:6]}", plan_status="active"
+            name=f"Org Sem Horizon {uuid4().hex[:6]}",
+            plan_status="active",
+            foundation_status=models.OrganizationFoundationStatus.COMPLETED,
+            foundation_completed_at=datetime.now(UTC),
         )
         db_session.add(org_without_settings)
         await db_session.flush()
@@ -303,7 +307,7 @@ class TestTeacherRoleRegressionContracts:
         )
         baseline_resp = await async_client.put(
             f"{API}/teachers/me/availability",
-            json=[{"timeslot_id": slot_rows[0]["id"], "score": 2}],
+            json=[{"timeslot_id": slot["id"], "score": 2} for slot in slot_rows],
             headers=teacher_headers,
         )
         assert baseline_resp.status_code == 200
@@ -322,6 +326,6 @@ class TestTeacherRoleRegressionContracts:
         )
         assert persisted_resp.status_code == 200
         persisted_rows = persisted_resp.json()
-        assert len(persisted_rows) == 1
+        assert len(persisted_rows) == len(slot_rows)
         assert persisted_rows[0]["timeslot_id"] == slot_rows[0]["id"]
         assert persisted_rows[0]["score"] == 2
