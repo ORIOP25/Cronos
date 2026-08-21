@@ -1,4 +1,6 @@
 import pytest
+import asyncio
+
 from httpx import ASGITransport, AsyncClient
 
 from app import models
@@ -80,23 +82,29 @@ async def test_foundation_endpoints_full_lifecycle(db_session, override_auth_act
     override_auth_actor(actor)
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        async def request(method: str, path: str, **kwargs):
+            try:
+                return await asyncio.wait_for(ac.request(method, path, **kwargs), timeout=10)
+            except TimeoutError as exc:
+                raise AssertionError(f"API request timed out: {method} {path}") from exc
+
         # 1. Initial status is NOT_STARTED
-        resp = await ac.get("/api/v1/foundation/status")
+        resp = await request("GET", "/api/v1/foundation/status")
         assert resp.status_code == 200
         assert resp.json()["foundation_status"] == "NOT_STARTED"
 
         # 2. /members/me is accessible in NOT_STARTED and returns foundation_status
-        me_resp = await ac.get("/api/v1/members/me")
+        me_resp = await request("GET", "/api/v1/members/me")
         assert me_resp.status_code == 200
         assert me_resp.json()["foundation_status"] == "NOT_STARTED"
 
         # 3. Operational endpoints return 409 FOUNDATION_REQUIRED
-        classes_resp = await ac.get("/api/v1/classes/")
+        classes_resp = await request("GET", "/api/v1/classes/")
         assert classes_resp.status_code == 409
         assert classes_resp.json()["detail"]["code"] == "FOUNDATION_REQUIRED"
 
         # 4. Get initial draft -> version 0
-        resp = await ac.get("/api/v1/foundation/draft")
+        resp = await request("GET", "/api/v1/foundation/draft")
         assert resp.status_code == 200
         assert resp.json()["version"] == 0
 
@@ -118,23 +126,24 @@ async def test_foundation_endpoints_full_lifecycle(db_session, override_auth_act
                 "lunch_min_duration_minutes": 60,
             },
         }
-        resp = await ac.put("/api/v1/foundation/draft", json=put_payload)
+        resp = await request("PUT", "/api/v1/foundation/draft", json=put_payload)
         assert resp.status_code == 200
         assert resp.json()["version"] == 1
 
         # 6. Status is now IN_PROGRESS
-        resp = await ac.get("/api/v1/foundation/status")
+        resp = await request("GET", "/api/v1/foundation/status")
         assert resp.status_code == 200
         assert resp.json()["foundation_status"] == "IN_PROGRESS"
 
         # 7. Stale save with expected_version 0 yields 409
-        resp = await ac.put("/api/v1/foundation/draft", json=put_payload)
+        resp = await request("PUT", "/api/v1/foundation/draft", json=put_payload)
         assert resp.status_code == 409
         assert resp.json()["detail"]["code"] == "FOUNDATION_DRAFT_VERSION_CONFLICT"
         assert resp.json()["detail"]["current_version"] == 1
 
         # 8. Complete foundation with version 1 -> succeeds
-        resp = await ac.post(
+        resp = await request(
+            "POST",
             "/api/v1/foundation/complete", json={"expected_version": 1, "confirmed": True}
         )
         assert resp.status_code == 200
@@ -142,17 +151,18 @@ async def test_foundation_endpoints_full_lifecycle(db_session, override_auth_act
         assert resp.json()["generated_timeslot_count"] > 0
 
         # 9. Status is now COMPLETED
-        resp = await ac.get("/api/v1/foundation/status")
+        resp = await request("GET", "/api/v1/foundation/status")
         assert resp.status_code == 200
         assert resp.json()["foundation_status"] == "COMPLETED"
 
         # 10. Attempting to save draft when COMPLETED yields 409
-        resp = await ac.put(
+        resp = await request(
+            "PUT",
             "/api/v1/foundation/draft", json={"expected_version": 1, "current_step": 1, "data": {}}
         )
         assert resp.status_code == 409
         assert resp.json()["detail"]["code"] == "FOUNDATION_ALREADY_COMPLETED"
 
         # 11. Operational endpoints are now accessible
-        classes_resp = await ac.get("/api/v1/classes/")
+        classes_resp = await request("GET", "/api/v1/classes/")
         assert classes_resp.status_code == 200
