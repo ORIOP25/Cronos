@@ -290,8 +290,7 @@ class PreflightService:
                 sa_select(func.count(models.Teacher.id))
                 .join(
                     models.OrganizationMembership,
-                    models.OrganizationMembership.id
-                    == models.Teacher.organization_membership_id,
+                    models.OrganizationMembership.id == models.Teacher.organization_membership_id,
                 )
                 .where(
                     models.Teacher.organization_id == organization_id,
