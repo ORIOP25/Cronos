@@ -104,19 +104,12 @@ jobs:
         run: |
           python -m scripts.audit_triggers
           python -m scripts.audit_database_integrity
-      - name: Diagnose Foundation lifecycle isolation
-        working-directory: backend
-        env:
-          RATELIMIT_ENABLED: "false"
-        run: >-
-          timeout 30s pytest -vv -s --setup-show
-          tests/test_foundation_endpoints.py::test_foundation_endpoints_full_lifecycle
       - name: Test without Redis contracts
         working-directory: backend
         env:
           RATELIMIT_ENABLED: "false"
         run: >-
-          coverage run --branch -m pytest -vv --tb=short --maxfail=4 -m "not redis"
+          coverage run --branch -m pytest -q -m "not redis"
           --junitxml=test-results.xml
       - name: Test Redis contracts and report coverage
         working-directory: backend
