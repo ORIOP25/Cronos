@@ -90,9 +90,7 @@ app = FastAPI(
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
-    formatted_traceback = "".join(
-        traceback.format_exception(type(exc), exc, exc.__traceback__)
-    )
+    formatted_traceback = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
     logger.error(
         "Unhandled application error",
         method=request.method,
