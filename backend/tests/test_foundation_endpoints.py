@@ -1,4 +1,5 @@
 import asyncio
+import sys
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -8,6 +9,18 @@ from app.api import deps
 from app.main import app
 
 pytestmark = pytest.mark.postgresql
+
+
+async def _await_with_diagnostics(coro, *, timeout: float, operation: str):
+    task = asyncio.create_task(coro, name=operation)
+    done, _ = await asyncio.wait({task}, timeout=timeout)
+    if task in done:
+        return task.result()
+
+    print(f"Timed out while {operation}; pending task stack:", file=sys.stderr, flush=True)
+    task.print_stack(file=sys.stderr)
+    task.cancel()
+    raise AssertionError(f"Timed out while {operation}")
 
 
 async def _create_org_and_admin(
@@ -64,20 +77,16 @@ def override_auth_actor(db_session):
 
 
 async def test_foundation_endpoints_full_lifecycle(db_session, override_auth_actor):
-    try:
-        org, user, mem = await asyncio.wait_for(
-            _create_org_and_admin(
-                db_session,
-                "Lifecycle Org",
-                "org_lifecycle_test",
-                models.OrganizationFoundationStatus.NOT_STARTED,
-            ),
-            timeout=10,
-        )
-    except TimeoutError as exc:
-        raise AssertionError(
-            "Creating the Foundation lifecycle test organization timed out"
-        ) from exc
+    org, user, mem = await _await_with_diagnostics(
+        _create_org_and_admin(
+            db_session,
+            "Lifecycle Org",
+            "org_lifecycle_test",
+            models.OrganizationFoundationStatus.NOT_STARTED,
+        ),
+        timeout=10,
+        operation="creating the Foundation lifecycle test organization",
+    )
     actor = deps.Actor(
         account_id=user.id,
         clerk_user_id=user.clerk_user_id,
@@ -92,10 +101,11 @@ async def test_foundation_endpoints_full_lifecycle(db_session, override_auth_act
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
 
         async def request(method: str, path: str, **kwargs):
-            try:
-                return await asyncio.wait_for(ac.request(method, path, **kwargs), timeout=10)
-            except TimeoutError as exc:
-                raise AssertionError(f"API request timed out: {method} {path}") from exc
+            return await _await_with_diagnostics(
+                ac.request(method, path, **kwargs),
+                timeout=10,
+                operation=f"requesting {method} {path}",
+            )
 
         # 1. Initial status is NOT_STARTED
         resp = await request("GET", "/api/v1/foundation/status")
