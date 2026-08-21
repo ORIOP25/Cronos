@@ -104,6 +104,13 @@ jobs:
         run: |
           python -m scripts.audit_triggers
           python -m scripts.audit_database_integrity
+      - name: Diagnose Foundation lifecycle isolation
+        working-directory: backend
+        env:
+          RATELIMIT_ENABLED: "false"
+        run: >-
+          timeout 30s pytest -vv -s --setup-show
+          tests/test_foundation_endpoints.py::test_foundation_endpoints_full_lifecycle
       - name: Test without Redis contracts
         working-directory: backend
         env:
