@@ -51,6 +51,8 @@ test.describe('Foundation — 9-Step Wizard Flow', () => {
 
     // Step 1: Period
     await expect(page.locator('text=1. Período do Ano Letivo')).toBeVisible({ timeout: 10000 })
+    await page.locator('#school_start_date').fill('2025-09-15')
+    await page.locator('#school_hard_end_date').fill('2026-07-31')
     await page.locator('button:has-text("Seguinte →")').click()
 
     // Step 2: Days
