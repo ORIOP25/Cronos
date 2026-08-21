@@ -65,11 +65,21 @@ export function attachRuntimeGuards(page) {
 
 async function loginReal(page, emailEnvironmentVariable) {
   const emailAddress = requiredEnv(emailEnvironmentVariable)
+  const organizationId = process.env.E2E_CLERK_ORG_ID
   await expect.poll(
     () => observeClerkSignIn(async () => {
       await setupClerkTestingToken({ page })
       await page.goto(BASE_URL)
       await clerk.signIn({ page, emailAddress })
+      if (organizationId) {
+        await page.evaluate(async (id) => {
+          await window.Clerk.setActive({ organization: id })
+        }, organizationId)
+        await page.waitForFunction(
+          (id) => window.Clerk?.organization?.id === id,
+          organizationId,
+        )
+      }
     }),
     {
       message: `Clerk sign-in should succeed for ${emailEnvironmentVariable}`,
