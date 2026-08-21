@@ -1,4 +1,5 @@
 import asyncio
+import faulthandler
 import sys
 
 import pytest
@@ -77,6 +78,7 @@ def override_auth_actor(db_session):
 
 
 async def test_foundation_endpoints_full_lifecycle(db_session, override_auth_actor):
+    faulthandler.dump_traceback_later(10, repeat=True)
     org, user, mem = await _await_with_diagnostics(
         _create_org_and_admin(
             db_session,
