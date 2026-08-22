@@ -21,10 +21,16 @@ export default defineConfig({
       testMatch: /global\.setup\.js/,
     },
     {
+      name: 'onboarding',
+      testMatch: /e2e[\\/]auth[\\/]onboarding-create-organization\.spec\.js/,
+      use: { ...devices['Desktop Chrome'] },
+      dependencies: ['global setup'],
+    },
+    {
       name: 'foundation setup',
       testMatch: /e2e[\\/]foundation[\\/](first-schedule-approval-dashboard|foundation-conflict-recovery|onboarding-foundation-9steps)\.spec\.js/,
       use: { ...devices['Desktop Chrome'] },
-      dependencies: ['global setup'],
+      dependencies: ['global setup', 'onboarding'],
     },
     {
       name: 'foundation activation',
@@ -34,7 +40,7 @@ export default defineConfig({
     },
     {
       name: 'chromium',
-      testIgnore: /global\.setup\.js|e2e[\\/]foundation[\\/](first-schedule-approval-dashboard|foundation-conflict-recovery|onboarding-foundation-9steps|foundation)\.spec\.js/,
+      testIgnore: /global\.setup\.js|e2e[\\/]auth[\\/]onboarding-create-organization\.spec\.js|e2e[\\/]foundation[\\/](first-schedule-approval-dashboard|foundation-conflict-recovery|onboarding-foundation-9steps|foundation)\.spec\.js/,
       use: { ...devices['Desktop Chrome'] },
       dependencies: ['foundation activation'],
     },
