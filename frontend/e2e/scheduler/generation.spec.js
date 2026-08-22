@@ -76,8 +76,10 @@ export async function apiRequest(page, method, path, body, timeoutMs = OPERATION
   return await page.evaluate(
     async ({ apiPrefix, method: requestMethod, path: requestPath, body: requestBody, timeoutMs }) => {
       let token = null
+      const organizationId = window.Clerk?.organization?.id ?? null
+      const tokenOptions = organizationId ? { organizationId } : undefined
       try {
-        token = await window.Clerk?.session?.getToken?.()
+        token = await window.Clerk?.session?.getToken?.(tokenOptions)
       } catch {
         token = null
       }
@@ -86,7 +88,7 @@ export async function apiRequest(page, method, path, body, timeoutMs = OPERATION
           const activeSession = window.Clerk?.client?.sessions?.find(
             (session) => session.status === 'active',
           ) || window.Clerk?.client?.sessions?.[0]
-          token = await activeSession?.getToken?.()
+          token = await activeSession?.getToken?.(tokenOptions)
         } catch {
           token = null
         }
@@ -116,9 +118,9 @@ export async function apiRequest(page, method, path, body, timeoutMs = OPERATION
           data = text
         }
         if (!response.ok) {
-          const organizationId = window.Clerk?.organization?.id ?? '<none>'
+          const currentOrganizationId = window.Clerk?.organization?.id ?? '<none>'
           throw new Error(
-            `${requestMethod} ${requestPath} failed for organization ${organizationId}: `
+            `${requestMethod} ${requestPath} failed for organization ${currentOrganizationId}: `
             + `${response.status} ${text}`,
           )
         }
