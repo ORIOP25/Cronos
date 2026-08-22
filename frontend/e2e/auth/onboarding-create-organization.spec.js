@@ -1,5 +1,6 @@
 import { createClerkClient } from '@clerk/backend'
 import { setupClerkTestingToken } from '@clerk/testing/playwright'
+import { createPageObjects } from '@clerk/testing/playwright/unstable'
 import { expect, test } from '@playwright/test'
 import { attachRuntimeGuards, expectRouteReady } from '../utils/clerk-helpers.js'
 
@@ -23,7 +24,7 @@ test('manual founder onboarding creates and activates an organization', async ({
   const email = `cronos-onboarding-${runKey}+clerk_test@example.com`
   const schoolName = `Cronos Onboarding ${runKey}`
   let userId
-  let organizationId
+  const organizationIds = new Set()
   const cleanupErrors = []
   let primaryError = null
 
@@ -49,21 +50,46 @@ test('manual founder onboarding creates and activates an organization', async ({
       'Clerk onboarding sign-in token creation',
     )
     const ticketUrl = new URL(ticket.url)
-    ticketUrl.searchParams.set('redirect_url', new URL('/create-org', baseUrl).toString())
+    const targetUrl = new URL('/create-org', baseUrl)
+    ticketUrl.searchParams.set('redirect_url', targetUrl.toString())
     await page.goto(ticketUrl.toString(), { waitUntil: 'domcontentloaded' })
-    await page.waitForURL('**/create-org', { timeout: OPERATION_TIMEOUT_MS })
+
+    await expect.poll(() => page.url(), { timeout: OPERATION_TIMEOUT_MS }).toMatch(
+      /\/(?:create-org|tasks\/choose-organization)(?:[/?#]|$)/,
+    )
+    if (/\/tasks\/choose-organization(?:[/?#]|$)/.test(page.url())) {
+      const clerkPages = createPageObjects({ page, baseURL: baseUrl })
+      await withTimeout(
+        () => clerkPages.sessionTask.resolveForceOrganizationSelectionTask({ name: schoolName }),
+        'Clerk organization selection',
+      )
+    }
+    await page.waitForURL(targetUrl.toString(), { timeout: OPERATION_TIMEOUT_MS })
     await page.waitForFunction(() => window.Clerk?.user != null, null, {
       timeout: OPERATION_TIMEOUT_MS,
     })
 
-    await page.getByLabel('Nome da escola').fill(schoolName)
-    await page.getByRole('button', { name: 'Criar organização' }).click()
+    const schoolInput = page.getByLabel('Nome da escola')
+    const existingOrganization = page.getByRole('button', { name: schoolName, exact: true })
+    await expect.poll(async () => {
+      if (await schoolInput.isVisible()) return 'create'
+      if (await existingOrganization.isVisible()) return 'select'
+      return null
+    }, { timeout: OPERATION_TIMEOUT_MS }).toMatch(/^(create|select)$/)
+
+    if (await schoolInput.isVisible()) {
+      await schoolInput.fill(schoolName)
+      await page.getByRole('button', { name: 'Criar organização' }).click()
+    } else {
+      await existingOrganization.click()
+    }
     await page.waitForFunction(
       () => window.Clerk?.organization?.id?.startsWith('org_'),
       null,
       { timeout: OPERATION_TIMEOUT_MS },
     )
-    organizationId = await page.evaluate(() => window.Clerk.organization.id)
+    const organizationId = await page.evaluate(() => window.Clerk.organization.id)
+    organizationIds.add(organizationId)
     await page.waitForURL('**/foundation', { timeout: OPERATION_TIMEOUT_MS })
     expect(organizationId).toMatch(/^org_/)
     await expectRouteReady(page, '/foundation')
@@ -71,7 +97,7 @@ test('manual founder onboarding creates and activates an organization', async ({
   } catch (error) {
     primaryError = error
   } finally {
-    if (organizationId) {
+    for (const organizationId of organizationIds) {
       try {
         await withTimeout(
           () => client.organizations.deleteOrganization(organizationId),
