@@ -58,3 +58,15 @@ def test_head_exposes_only_the_canonical_bootstrap_function(clean_database):
         assert old_function == 0
         assert canonical_function == 1
         assert marker
+
+
+def test_bootstrap_membership_audit_uses_membership_ids(clean_database):
+    source = (
+        (Path(__file__).parents[1] / "alembic" / "versions" / "0006_fix_bootstrap_membership_audit.py")
+        .read_text(encoding="utf-8")
+        .lower()
+    )
+
+    assert "requested_membership_id, null, null" in source
+    assert "set created_by_membership_id = v_member" in source
+    assert "set updated_by_membership_id = v_member" in source

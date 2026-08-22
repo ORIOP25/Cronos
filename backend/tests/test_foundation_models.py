@@ -186,6 +186,23 @@ def test_organization_foundation_draft_constraints_and_composite_fk(clean_databa
     org_marker1 = uuid.uuid4().hex[:8]
     org_marker2 = uuid.uuid4().hex[:8]
     with sync_test_engine.connect() as conn:
+        conn.execute(
+            text(
+                """
+                INSERT INTO public."user" (
+                    name, email, clerk_user_id, created_at, updated_at
+                ) VALUES (
+                    'Existing account', :email, :clerk_user_id,
+                    CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                )
+                """
+            ),
+            {
+                "email": f"existing-{org_marker1}@example.test",
+                "clerk_user_id": f"user-existing-{org_marker1}",
+            },
+        )
+        conn.commit()
         p1 = (
             conn.execute(
                 text(
@@ -229,6 +246,20 @@ def test_organization_foundation_draft_constraints_and_composite_fk(clean_databa
             .one()
         )
         conn.commit()
+
+        audit = conn.execute(
+            text(
+                """
+                SELECT id, account_id, created_by_membership_id, updated_by_membership_id
+                FROM organization_membership
+                WHERE id = :membership_id
+                """
+            ),
+            {"membership_id": p1["membership_id"]},
+        ).mappings().one()
+        assert audit["account_id"] != audit["id"]
+        assert audit["created_by_membership_id"] == audit["id"]
+        assert audit["updated_by_membership_id"] == audit["id"]
 
         # 1. version = 0 fails
         with pytest.raises(DBAPIError):
