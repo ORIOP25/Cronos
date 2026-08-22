@@ -2,7 +2,6 @@
 
 from alembic import op
 
-
 revision = "0005_reclaim_deleted_identity"
 down_revision = "0004_foundation_telemetry"
 branch_labels = None
@@ -108,9 +107,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.execute(
-        f"DROP FUNCTION IF EXISTS app_security.find_clerk_user_by_email({FINDER_SIGNATURE})"
-    )
+    op.execute(f"DROP FUNCTION IF EXISTS app_security.find_clerk_user_by_email({FINDER_SIGNATURE})")
     op.execute(
         f"DROP FUNCTION IF EXISTS app_security.reclaim_deleted_clerk_identity({IDENTITY_SIGNATURE})"
     )
