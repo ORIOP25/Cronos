@@ -630,6 +630,7 @@ test('fresh founder completes Complete Generation and custom-rule Adaptive Repai
       for (let step = 1; step < 9; step += 1) {
         await page.getByRole('button', { name: /seguinte/i }).click()
       }
+      await page.locator('#foundation-confirmation').check()
       await page.getByRole('button', { name: /ativar escola definitivamente/i }).click()
       await expectRouteReady(page, '/dashboard')
       await apiRequest(page, 'GET', '/members/me')
