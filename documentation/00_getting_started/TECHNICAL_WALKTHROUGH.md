@@ -84,7 +84,7 @@ Approval changes a pending draft to `APPROVED` and publishes its active blocks.
 
 ## Verification Procedure
 
-1. Open `http://localhost:8080`.
+1. Open `http://localhost:5173`.
 2. Sign in with an administrator identity.
 3. Configure `/config`, then open `/schedules`.
 4. Generate, inspect, and approve a draft.

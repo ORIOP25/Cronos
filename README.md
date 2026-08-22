@@ -46,7 +46,7 @@ Cronos is a Software-as-a-Service (SaaS) platform for course scheduling and oper
    ```
 
 6. **Access application services**:
-   - Frontend Application: `http://localhost:8080`
+   - Frontend Application: `http://localhost:5173`
    - Backend API documentation: `http://localhost:8000/docs` in `local` mode
    - Liveness endpoint: `http://localhost:8000/health/live`
    - Readiness endpoint: `http://localhost:8000/health/ready`
@@ -75,8 +75,8 @@ Run the complete validation before integration:
 For Vite hot reload, use `docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build`.
 The development frontend is available at `http://localhost:5173`.
 
-The production-like local frontend uses Nginx on `http://localhost:8080`.
-The Vite development override uses `http://localhost:5173`.
+The local frontend uses Nginx on `http://localhost:5173`.
+The Vite development override also uses `http://localhost:5173`.
 
 The root Compose file requires database, Clerk, Turnstile, and Resend variables.
 Use test provider credentials for local work.

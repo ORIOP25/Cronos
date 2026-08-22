@@ -35,13 +35,13 @@ This prevents concurrent services from changing production-like schemas during s
 | `backend` | `127.0.0.1:8000` | FastAPI API |
 | `worker` | Internal only | Generation and repair tasks |
 | `beat` | Internal only | Hourly reconciliation dispatch |
-| `frontend` | `127.0.0.1:8080` | Nginx SPA and `/api/` proxy |
+| `frontend` | `127.0.0.1:5173` | Nginx SPA and `/api/` proxy |
 
 ## Data or Request Flow
 
 ```mermaid
 flowchart TD
-    Browser[Browser :8080] --> Nginx[Nginx SPA]
+    Browser[Browser :5173] --> Nginx[Nginx SPA]
     Nginx -->|/api/| API[Backend :8000]
     API --> DB[(PostgreSQL)]
     API --> Dispatcher[Named task dispatcher]
@@ -54,7 +54,7 @@ flowchart TD
 1. Provision roles on a new database or password rotation.
 2. Apply migrations with `db-maintenance`.
 3. Start normal services.
-4. Use the Nginx frontend on port `8080`.
+4. Use the Nginx frontend on port `5173`.
 5. Use the Vite override on port `5173` for development.
 
 ## Contracts and Invariants
@@ -63,7 +63,7 @@ flowchart TD
 - Database and Redis ports bind to loopback or remain internal.
 - Runtime containers use read-only roots and temporary writable paths.
 - The API image exposes port `8000`.
-- The frontend runtime exposes port `8080`.
+- The frontend runtime exposes host port `5173` and listens on container port `8080`.
 - The worker command uses `--max-tasks-per-child=1`.
 - The API process does not import `app.scheduler_worker` or OR-Tools.
 - The worker process includes `app.scheduler_worker` and owns solver imports.

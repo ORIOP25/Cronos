@@ -5,8 +5,8 @@ x-backend-environment: &backend-environment
   DATABASE_URL: postgresql+asyncpg://cronos_app:${CRONOS_APP_PASSWORD:?CRONOS_APP_PASSWORD is required}@db:5432/${POSTGRES_DB:-cronos_db}
   REDIS_URL: redis://redis:6379/0
   CELERY_BROKER_URL: redis://redis:6379/0
-  FRONTEND_URL: http://localhost:8080
-  CLERK_AUTHORIZED_PARTIES: http://localhost:8080
+  FRONTEND_URL: http://localhost:5173
+  CLERK_AUTHORIZED_PARTIES: http://localhost:5173
   CONTACT_EMAIL_FROM: website@forms.cronos.pt
   CONTACT_EMAIL_TO: contacto@cronos.pt
   CONTACT_EMAIL_TIMEOUT_SECONDS: "10"
@@ -137,7 +137,7 @@ services:
         VITE_API_BASE_URL: /api/v1
         VITE_TURNSTILE_SITE_KEY: ${VITE_TURNSTILE_SITE_KEY:-}
     restart: unless-stopped
-    ports: ["127.0.0.1:8080:8080"]
+    ports: ["127.0.0.1:5173:8080"]
     depends_on: {backend: {condition: service_healthy}}
     read_only: true
     tmpfs: [/tmp, /var/cache/nginx, /var/run]
