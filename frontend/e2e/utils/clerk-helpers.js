@@ -115,8 +115,10 @@ function escapeRegExp(value) {
 }
 
 function readyMarker(page, path) {
+  if (path === '/dashboard') {
+    return page.locator('[data-testid="preparation-dashboard"], [data-testid="resource-counts"]').first()
+  }
   const exactMarkers = new Map([
-    ['/dashboard', /Painel de Controlo/i],
     ['/members', /Equipa/i],
     ['/courses', /Cursos/i],
     ['/rooms', /Salas/i],

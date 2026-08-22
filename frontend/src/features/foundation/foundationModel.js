@@ -214,13 +214,16 @@ export function foundationReducer(state, action) {
   switch (action.type) {
     case 'INIT_FROM_SERVER': {
       const serverDraft = action.payload || {}
+      const serverValues = Object.fromEntries(
+        Object.entries(serverDraft.data || {}).filter(([, value]) => value !== null && value !== undefined),
+      )
       return {
         ...state,
         version: serverDraft.version || 0,
         currentStep: serverDraft.current_step || 1,
         values: {
           ...initialFoundationDraftValues,
-          ...(serverDraft.data || {}),
+          ...serverValues,
         },
         fieldErrors: {},
         status: 'idle',

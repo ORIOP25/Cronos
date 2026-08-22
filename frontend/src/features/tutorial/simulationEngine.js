@@ -173,6 +173,7 @@ export function simulationReducer(state = INITIAL_SIMULATION_STATE, action) {
       if (state.currentStepIndex >= TUTORIAL_STEPS.length - 1) {
         return {
           ...state,
+          isOpen: false,
           simulationData: nextData,
           completedSteps: nextCompleted,
           completed: true,

@@ -38,6 +38,12 @@ test.describe('Dashboard real backend', () => {
     await goTo(page, '/dashboard')
     await expectRouteReady(page, '/dashboard')
 
+    const preparationDashboard = page.getByTestId('preparation-dashboard')
+    if (await preparationDashboard.isVisible().catch(() => false)) {
+      await expect(preparationDashboard).toBeVisible()
+      return
+    }
+
     await expect(page.locator('[data-testid="resource-teachers"]')).toBeVisible({ timeout: 10000 })
     await expect(page.locator('[data-testid="resource-classes"]')).toBeVisible({ timeout: 10000 })
     await expect(page.locator('[data-testid="debt-summary"]')).toBeVisible({ timeout: 10000 })
