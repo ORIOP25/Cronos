@@ -1,5 +1,5 @@
 import { createClerkClient } from '@clerk/backend'
-import { clerk, setupClerkTestingToken } from '@clerk/testing/playwright'
+import { setupClerkTestingToken } from '@clerk/testing/playwright'
 import { createPageObjects } from '@clerk/testing/playwright/unstable'
 import { expect, test } from '@playwright/test'
 import { attachRuntimeGuards, expectRouteReady } from '../utils/clerk-helpers.js'
@@ -45,13 +45,14 @@ test('manual founder onboarding creates and activates an organization', async ({
     attachRuntimeGuards(page)
     await setupClerkTestingToken({ page })
     const baseUrl = process.env.BASE_URL || 'http://localhost:5173'
-    const targetUrl = new URL('/create-org', baseUrl)
-    await page.goto(baseUrl, { waitUntil: 'domcontentloaded' })
-    await withTimeout(
-      () => clerk.signIn({ page, emailAddress: email }),
-      'Clerk onboarding sign-in',
+    const ticket = await withTimeout(
+      () => client.signInTokens.createSignInToken({ userId, expiresInSeconds: 300 }),
+      'Clerk onboarding sign-in token creation',
     )
-    await page.goto(targetUrl.toString(), { waitUntil: 'domcontentloaded' })
+    const ticketUrl = new URL(ticket.url)
+    const targetUrl = new URL('/create-org', baseUrl)
+    ticketUrl.searchParams.set('redirect_url', targetUrl.toString())
+    await page.goto(ticketUrl.toString(), { waitUntil: 'domcontentloaded' })
 
     await expect.poll(() => page.url(), { timeout: OPERATION_TIMEOUT_MS }).toMatch(
       /\/(?:create-org|tasks\/choose-organization)(?:[/?#]|$)/,
