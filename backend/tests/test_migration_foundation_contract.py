@@ -75,5 +75,7 @@ def test_bootstrap_membership_audit_uses_membership_ids(clean_database):
     normalized_source = re.sub(r"\s+", " ", source)
 
     assert "requested_membership_id, null, null" in normalized_source
-    assert "set created_by_membership_id = v_member" in normalized_source
-    assert "set updated_by_membership_id = v_member" in normalized_source
+    assert (
+        "set created_by_membership_id = v_member, updated_by_membership_id = v_member"
+        in normalized_source
+    )
