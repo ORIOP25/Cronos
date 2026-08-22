@@ -1,4 +1,5 @@
 import os
+import re
 import uuid
 from pathlib import Path
 
@@ -71,7 +72,8 @@ def test_bootstrap_membership_audit_uses_membership_ids(clean_database):
         .read_text(encoding="utf-8")
         .lower()
     )
+    normalized_source = re.sub(r"\s+", " ", source)
 
-    assert "requested_membership_id, null, null" in source
-    assert "set created_by_membership_id = v_member" in source
-    assert "set updated_by_membership_id = v_member" in source
+    assert "requested_membership_id, null, null" in normalized_source
+    assert "set created_by_membership_id = v_member" in normalized_source
+    assert "set updated_by_membership_id = v_member" in normalized_source
