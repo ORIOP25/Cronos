@@ -247,16 +247,20 @@ def test_organization_foundation_draft_constraints_and_composite_fk(clean_databa
         )
         conn.commit()
 
-        audit = conn.execute(
-            text(
-                """
+        audit = (
+            conn.execute(
+                text(
+                    """
                 SELECT id, account_id, created_by_membership_id, updated_by_membership_id
                 FROM organization_membership
                 WHERE id = :membership_id
                 """
-            ),
-            {"membership_id": p1["membership_id"]},
-        ).mappings().one()
+                ),
+                {"membership_id": p1["membership_id"]},
+            )
+            .mappings()
+            .one()
+        )
         assert audit["account_id"] != audit["id"]
         assert audit["created_by_membership_id"] == audit["id"]
         assert audit["updated_by_membership_id"] == audit["id"]
