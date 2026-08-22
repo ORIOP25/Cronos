@@ -88,6 +88,9 @@ describe('vertical feature data hooks', () => {
     expect(apiClient.get).toHaveBeenCalledWith('/members', {
       params: { include_archived: true },
     })
+    expect(apiClient.get).toHaveBeenCalledWith('/members/me', {
+      headers: { Authorization: 'Bearer test_token_123' },
+    })
 
     const mutation = renderHook(() => useCreateMember(), { wrapper })
     await act(() => mutation.result.current.mutateAsync({ name: 'Ana' }))

@@ -35,9 +35,7 @@ export function useCreateActiveOrganization() {
             ...result.member,
             member_id: result.member.id,
             organization_id: result.organization.id,
-          })
-          await queryClient.invalidateQueries({
-            queryKey: ['current-member', organizationId],
+            foundation_status: result.foundation_status,
           })
         },
         navigate: (route) => navigate(route, { replace: true }),

@@ -80,8 +80,10 @@ services:
     env_file: ./backend/.env
     environment:
       <<: *backend-environment
-      RESEND_API_KEY: ${RESEND_API_KEY:?RESEND_API_KEY is required}
-      TURNSTILE_SECRET_KEY: ${TURNSTILE_SECRET_KEY:?TURNSTILE_SECRET_KEY is required}
+      # These integrations are optional for local development. Production still
+      # requires both values through Settings' environment validation.
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      TURNSTILE_SECRET_KEY: ${TURNSTILE_SECRET_KEY:-}
       TRUSTED_PROXY_IPS: 172.16.0.0/12
     restart: unless-stopped
     ports: ["127.0.0.1:8000:8000"]
@@ -133,7 +135,7 @@ services:
       args:
         VITE_CLERK_PUBLISHABLE_KEY: ${VITE_CLERK_PUBLISHABLE_KEY:?VITE_CLERK_PUBLISHABLE_KEY is required}
         VITE_API_BASE_URL: /api/v1
-        VITE_TURNSTILE_SITE_KEY: ${VITE_TURNSTILE_SITE_KEY:?VITE_TURNSTILE_SITE_KEY is required}
+        VITE_TURNSTILE_SITE_KEY: ${VITE_TURNSTILE_SITE_KEY:-}
     restart: unless-stopped
     ports: ["127.0.0.1:8080:8080"]
     depends_on: {backend: {condition: service_healthy}}

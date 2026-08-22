@@ -69,6 +69,7 @@ class SessionBootstrapService:
             raise ClerkDirectoryUnavailableError(
                 "The provider directory is temporarily unavailable."
             )
+        await self._reconcile_deleted_identity(profile.email, clerk_user_id)
         principal = (
             (
                 await self.db.execute(
@@ -123,6 +124,58 @@ class SessionBootstrapService:
                 "teacher_id": None,
             },
             foundation_status=organization.foundation_status.value,
+        )
+
+    async def _reconcile_deleted_identity(
+        self,
+        email: str | None,
+        current_clerk_user_id: str,
+    ) -> None:
+        """Detach a local identity only after Clerk confirms it was deleted.
+
+        Webhooks are the normal source of this state transition. The lookup is
+        deliberately kept as a bootstrap fallback because local Docker
+        environments cannot receive Clerk webhooks reliably.
+        """
+        normalized_email = (email or "").strip().lower()
+        if not normalized_email:
+            return
+
+        await self.db.execute(
+            text("SELECT pg_advisory_xact_lock(hashtext(:identity_key))"),
+            {"identity_key": f"clerk-bootstrap:{normalized_email}"},
+        )
+        candidate_clerk_user_id = await self.db.scalar(
+            text(
+                """
+                SELECT app_security.find_clerk_user_by_email(
+                    :email, :current_clerk_user_id
+                )
+                """
+            ),
+            {
+                "email": normalized_email,
+                "current_clerk_user_id": current_clerk_user_id,
+            },
+        )
+        if candidate_clerk_user_id is None:
+            return
+
+        exists = await clerk_sync.clerk_user_exists(candidate_clerk_user_id, self.clerk)
+        if exists is None:
+            raise ClerkDirectoryUnavailableError(
+                "The provider directory is temporarily unavailable."
+            )
+        if exists:
+            return
+
+        await self.db.execute(
+            text(
+                """
+                SELECT app_security.reclaim_deleted_clerk_identity(:clerk_user_id)
+                """
+            ),
+            {"clerk_user_id": candidate_clerk_user_id},
         )
 
     async def _load_membership(

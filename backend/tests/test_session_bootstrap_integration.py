@@ -155,6 +155,95 @@ async def test_bootstrap_never_grants_founder_access_to_established_tenant(
     )
 
 
+async def test_bootstrap_reclaims_identity_after_clerk_user_was_deleted(
+    db_session,
+    monkeypatch,
+):
+    old_organization = models.Organization(
+        name="Deleted School",
+        clerk_org_id="org_deleted",
+        plan_status=models.OrganizationPlanStatus.active,
+    )
+    old_account = models.User(
+        email="founder@example.com",
+        clerk_user_id="user_deleted",
+        name="Old Founder",
+    )
+    db_session.add_all([old_organization, old_account])
+    await db_session.flush()
+    db_session.add(
+        models.OrganizationMembership(
+            organization_id=old_organization.id,
+            account_id=old_account.id,
+            organization_display_name=old_organization.name,
+            lifecycle_status=models.MembershipLifecycleStatus.active,
+            access_status=models.MembershipAccessStatus.active,
+            can_admin=True,
+            can_teach=False,
+            clerk_membership_id="orgmem_deleted",
+        )
+    )
+    await db_session.flush()
+    await _provider_stubs(monkeypatch, old_organization)
+    monkeypatch.setattr(clerk_sync, "clerk_user_exists", AsyncMock(return_value=False))
+
+    result = await SessionBootstrapService(db_session).bootstrap(
+        {
+            "sub": "user_recreated",
+            "o": {"id": "org_recreated", "rol": "org:admin"},
+        }
+    )
+
+    assert result.organization["clerk_org_id"] == "org_recreated"
+    recreated = await db_session.scalar(
+        select(models.User).where(models.User.clerk_user_id == "user_recreated")
+    )
+    assert recreated is not None
+    assert recreated.email == "founder@example.com"
+    archived = await db_session.scalar(
+        select(models.OrganizationMembership).where(
+            models.OrganizationMembership.account_id == old_account.id
+        )
+    )
+    assert archived is not None
+    assert archived.access_status == models.MembershipAccessStatus.none
+    assert archived.lifecycle_status == models.MembershipLifecycleStatus.archived
+    assert await db_session.scalar(select(func.count(models.User.id))) == 2
+
+
+async def test_bootstrap_does_not_reclaim_an_existing_clerk_identity(
+    db_session,
+    monkeypatch,
+):
+    old_account = models.User(
+        email="founder@example.com",
+        clerk_user_id="user_existing",
+        name="Existing Founder",
+    )
+    db_session.add(old_account)
+    await db_session.flush()
+    await _provider_stubs(
+        monkeypatch,
+        models.Organization(name="New School", clerk_org_id="org_new"),
+    )
+    monkeypatch.setattr(clerk_sync, "clerk_user_exists", AsyncMock(return_value=True))
+
+    with pytest.raises(ActiveOrganizationAccessDeniedError):
+        await SessionBootstrapService(db_session).bootstrap(
+            {
+                "sub": "user_recreated",
+                "o": {"id": "org_new", "rol": "org:admin"},
+            }
+        )
+
+    assert (
+        await db_session.scalar(
+            select(models.User).where(models.User.clerk_user_id == "user_existing")
+        )
+        is not None
+    )
+
+
 async def test_concurrent_bootstrap_calls_create_exactly_one_founder_graph(
     db_session,
     monkeypatch,

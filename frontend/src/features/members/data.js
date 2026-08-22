@@ -29,11 +29,15 @@ export const useCurrentMember = ({
   refetchOnWindowFocus = true,
 } = {}) => {
   const orgId = useOrganization().organization?.id
-  const { isLoaded, isSignedIn } = useAuth()
+  const { getToken, isLoaded, isSignedIn } = useAuth()
   return useQuery({
     queryKey: ['current-member', orgId],
     queryFn: async () => {
-      return apiClient.get('/members/me')
+      const token = await getToken({ organizationId: orgId })
+      if (!token) throw new Error('Organization session token unavailable.')
+      return apiClient.get('/members/me', {
+        headers: { Authorization: `Bearer ${token}` },
+      })
     },
     enabled: Boolean(orgId) && Boolean(isSignedIn) && isLoaded && enabled,
     staleTime: 1000 * 60,

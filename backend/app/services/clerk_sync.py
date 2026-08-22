@@ -57,6 +57,39 @@ async def fetch_clerk_user_profile(
     return ClerkUserProfile(email=email, name=name)
 
 
+def _provider_status_code(error: Exception) -> int | None:
+    """Read the status code exposed by the different Clerk SDK error types."""
+    for source in (error, getattr(error, "response", None)):
+        if source is None:
+            continue
+        for attribute in ("status_code", "status"):
+            value = getattr(source, attribute, None)
+            if isinstance(value, int):
+                return value
+            if isinstance(value, str) and value.isdigit():
+                return int(value)
+    return None
+
+
+async def clerk_user_exists(
+    clerk_user_id: str,
+    gateway: ClerkGateway | None = None,
+) -> bool | None:
+    """Return whether Clerk still has an identity, or ``None`` on directory outage."""
+    sdk = gateway.sdk if gateway is not None else get_clerk_sdk()
+    try:
+        if gateway is not None:
+            await sdk.users.get_async(user_id=clerk_user_id)
+        else:
+            await asyncio.to_thread(lambda: sdk.users.get(user_id=clerk_user_id))
+    except Exception as exc:
+        if _provider_status_code(exc) == 404 or "404" in str(exc):
+            return False
+        logger.error("BAPI users.get failed while reconciling identity", error=str(exc))
+        return None
+    return True
+
+
 def parse_role(clerk_role: str | None) -> str:
     if not clerk_role:
         return "teacher"
