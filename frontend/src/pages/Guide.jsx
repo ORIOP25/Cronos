@@ -9,6 +9,7 @@ export default function Guide() {
   const { user } = useUser()
   const {
     isOpen,
+    isHydrated,
     status,
     openTutorial,
     currentStep,
@@ -26,10 +27,10 @@ export default function Guide() {
   } = useTutorialSimulation({ orgId: organization?.id, userId: user?.id })
 
   useEffect(() => {
-    if (!isOpen && status !== 'COMPLETED' && status !== 'SKIPPED') {
+    if (isHydrated && !isOpen && status !== 'COMPLETED' && status !== 'SKIPPED') {
       openTutorial()
     }
-  }, [isOpen, status, openTutorial])
+  }, [isHydrated, isOpen, status, openTutorial])
 
   if (!isOpen) {
     return (

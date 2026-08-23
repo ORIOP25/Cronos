@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import {
   CBadge,
@@ -14,6 +15,13 @@ import PageHeader from '../../components/PageHeader'
 export function PreparationDashboard({ orgId, userId, organizationName, bases }) {
   const navigate = useNavigate()
   const tutorial = useTutorialSimulation({ orgId, userId })
+  const { isHydrated, isOpen, status, openTutorial } = tutorial
+
+  useEffect(() => {
+    if (isHydrated && !isOpen && status === 'NOT_STARTED') {
+      openTutorial()
+    }
+  }, [isHydrated, isOpen, status, openTutorial])
 
   const percentage = bases?.percentage ?? 0
   const depth = bases?.depth ?? 0

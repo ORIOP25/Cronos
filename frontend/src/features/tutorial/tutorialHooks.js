@@ -1,4 +1,4 @@
-import { useReducer, useEffect, useCallback, useRef } from 'react'
+import { useReducer, useEffect, useCallback } from 'react'
 import { useUser } from '@clerk/react'
 import { TUTORIAL_STEPS, getTutorialStorageKey as buildTutorialStorageKey } from './contracts'
 import { simulationReducer, INITIAL_SIMULATION_STATE } from './simulationEngine'
@@ -13,7 +13,6 @@ export function useTutorialSimulation({ orgId, userId } = {}) {
   const { user } = useUser()
   const effectiveUserId = userId || user?.id
   const storageKey = buildTutorialStorageKey(effectiveUserId, orgId)
-  const hydratedKeyRef = useRef(null)
 
   const [state, dispatch] = useReducer(simulationReducer, INITIAL_SIMULATION_STATE, (initial) => {
     return loadTutorialState(localStorage, storageKey, initial)
@@ -21,12 +20,11 @@ export function useTutorialSimulation({ orgId, userId } = {}) {
 
   useEffect(() => {
     const saved = loadTutorialState(localStorage, storageKey, INITIAL_SIMULATION_STATE)
-    hydratedKeyRef.current = storageKey
-    dispatch({ type: 'HYDRATE_TUTORIAL', payload: saved })
+    dispatch({ type: 'HYDRATE_TUTORIAL', payload: saved, storageKey })
   }, [storageKey])
 
   useEffect(() => {
-    if (hydratedKeyRef.current === storageKey) saveTutorialState(localStorage, storageKey, state)
+    if (state.hydratedStorageKey === storageKey) saveTutorialState(localStorage, storageKey, state)
   }, [state, storageKey])
 
   const currentStep = TUTORIAL_STEPS[state.currentStepIndex] || TUTORIAL_STEPS[0]
@@ -138,6 +136,7 @@ export function useTutorialSimulation({ orgId, userId } = {}) {
 
   return {
     isOpen: state.isOpen,
+    isHydrated: state.hydratedStorageKey === storageKey,
     currentStepIndex: state.currentStepIndex,
     currentStep,
     totalSteps: TUTORIAL_STEPS.length,

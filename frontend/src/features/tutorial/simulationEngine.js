@@ -127,6 +127,7 @@ function createInitialState() {
     completed: false,
     skippedSteps: [],
     completedSteps: [],
+    hydratedStorageKey: null,
     simulationData: createSimulationData(),
   }
 }
@@ -138,7 +139,10 @@ export function simulationReducer(state = INITIAL_SIMULATION_STATE, action) {
 
   switch (action.type) {
     case 'HYDRATE_TUTORIAL':
-      return action.payload || state
+      return {
+        ...(action.payload || state),
+        hydratedStorageKey: action.storageKey || null,
+      }
 
     case 'OPEN_TUTORIAL': {
       const runId = action.payload?.tutorialRunId || state.tutorialRunId || (
