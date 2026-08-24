@@ -10,6 +10,7 @@ import {
 import {
   foundationReducer,
   initialFoundationState,
+  serializeFoundationDraftValues,
   validateFoundationStep,
   FOUNDATION_STEP_COUNT,
   STEP_PERIOD,
@@ -101,7 +102,7 @@ export function FoundationWizard() {
           const res = await saveDraftMutation.mutateAsync({
             expected_version: confirmedVersionRef.current,
             current_step: nextSnapshot.step,
-            data: nextSnapshot.values,
+            data: serializeFoundationDraftValues(nextSnapshot.values),
           })
           confirmedVersionRef.current = res.version
           failedSnapshotRef.current = null

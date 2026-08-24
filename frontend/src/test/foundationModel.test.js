@@ -5,6 +5,7 @@ import {
   validateFoundationStep,
   initialFoundationState,
   buildDailyTimeslots,
+  serializeFoundationDraftValues,
   STEP_PERIOD,
   STEP_DAYS,
   STEP_OPENING,
@@ -16,6 +17,13 @@ import {
 } from '../features/foundation/foundationModel'
 
 describe('foundationModel', () => {
+  it('serializes empty draft fields as nullable values for the partial backend contract', () => {
+    expect(serializeFoundationDraftValues({ school_start_date: '2025-09-15', school_hard_end_date: '' })).toEqual({
+      school_start_date: '2025-09-15',
+      school_hard_end_date: null,
+    })
+  })
+
   it('requires school start date and hard end date with proper order (Step 1)', () => {
     expect(
       validateFoundationStep(STEP_PERIOD, {

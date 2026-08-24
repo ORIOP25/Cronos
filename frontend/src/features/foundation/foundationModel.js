@@ -48,6 +48,12 @@ export function minutesToTime(totalMinutes) {
   return `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}`
 }
 
+export function serializeFoundationDraftValues(values) {
+  return Object.fromEntries(
+    Object.entries(values).map(([field, value]) => [field, value === '' ? null : value]),
+  )
+}
+
 export function buildDailyTimeslots(values) {
   const openMin = timeToMinutes(values.opening_time)
   const closeMin = timeToMinutes(values.closing_time)
