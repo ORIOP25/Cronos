@@ -219,13 +219,19 @@ function toSettingsForm(settings) {
 
 export const SettingsSection = () => {
   const { data: settings, isLoading } = useSchoolSettings()
+  const { message: resetSuccessMsg, show: showResetSuccess } = useTransientMessage()
   if (isLoading) return <div className="d-flex justify-content-center p-5"><CSpinner /></div>
 
   const editorKey = `${settings?.school_start_date ?? ''}:${settings?.school_hard_end_date ?? ''}:${settings?.repair_stability_window_days ?? ''}`
-  return <SettingsEditor key={editorKey} settings={settings} />
+  return (
+    <>
+      {resetSuccessMsg && <CAlert color="success" className="mb-3">{resetSuccessMsg}</CAlert>}
+      <SettingsEditor key={editorKey} settings={settings} onSoftResetSuccess={showResetSuccess} />
+    </>
+  )
 }
 
-const SettingsEditor = ({ settings }) => {
+const SettingsEditor = ({ settings, onSoftResetSuccess }) => {
   const { message: successMsg, show: setSuccessMsg } = useTransientMessage()
   const [savePromptMsg, setSavePromptMsg] = useState(null)
   const [showSaveModal, setShowSaveModal] = useState(false)
@@ -244,7 +250,7 @@ const SettingsEditor = ({ settings }) => {
     if (resetConfirmText !== 'Confirmo' || !resetChecked) return
     resetMutation.mutate({ confirm_phrase: resetConfirmText }, {
       onSuccess: () => {
-        setSuccessMsg('Ano letivo recomeçado com sucesso. Todas as gerações, ocorrências e registos foram apagados.', 10_000)
+        onSoftResetSuccess('Ano letivo recomeçado com sucesso. Todas as gerações, ocorrências e registos foram apagados.', 10_000)
         setShowResetModal(false)
         setResetConfirmText('')
         setResetChecked(false)

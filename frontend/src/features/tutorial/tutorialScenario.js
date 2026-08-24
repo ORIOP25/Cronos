@@ -417,17 +417,20 @@ export function createTutorialScenario({ stepId, status, values = {}, skippedSte
   }
 
   const subjectChanges = values.subject_create
-  if (subjectChanges?.name) scenario.subjects[0] = { ...scenario.subjects[0], name: subjectChanges.name }
-  if (subjectChanges?.roomType) scenario.subjects[0] = { ...scenario.subjects[0], roomType: subjectChanges.roomType.toUpperCase() }
+  const configuredSubject = subjectChanges?.name || subjectChanges?.roomType
+    ? scenario.subjects.at(-1)
+    : scenario.subjects[0]
+  if (subjectChanges?.name) configuredSubject.name = subjectChanges.name
+  if (subjectChanges?.roomType) configuredSubject.roomType = subjectChanges.roomType.toUpperCase()
 
   const moduleChanges = values.module_add
   if (moduleChanges?.moduleName || moduleChanges?.moduleHours || moduleChanges?.requiredMinutes) {
-    scenario.modules[0] = {
-      ...scenario.modules[0],
+    const configuredModule = scenario.modules.find((module) => module.subjectId === configuredSubject.id) || scenario.modules[0]
+    Object.assign(configuredModule, {
       ...(moduleChanges.moduleName ? { name: moduleChanges.moduleName } : {}),
       ...(moduleChanges.moduleHours ? { requiredMinutes: moduleChanges.moduleHours * 60 } : {}),
       ...(moduleChanges.requiredMinutes ? { requiredMinutes: moduleChanges.requiredMinutes } : {}),
-    }
+    })
   }
 
   const courseChanges = values.course_create

@@ -40,6 +40,20 @@ describe('tutorial v2 domain', () => {
     })
   })
 
+  it('keeps baseline subjects available after recording the created subject', () => {
+    const scenario = createTutorialScenario({
+      ...INITIAL_TUTORIAL_STATE,
+      values: {
+        subject_create: { completed: true, name: 'Sistemas Embebidos', roomType: 'LAB' },
+        module_add: { completed: true, moduleName: 'UFCD 5412', moduleHours: 25 },
+      },
+    })
+
+    expect(scenario.subjects.map((subject) => subject.name)).toContain('Programação')
+    expect(scenario.subjects.map((subject) => subject.name)).toContain('Sistemas Embebidos')
+    expect(scenario.modules.map((module) => module.name)).toContain('UFCD 5412')
+  })
+
   it('uses the v2 tenant-isolated storage key', () => {
     expect(getTutorialStorageKey('user_123', 'org_abc')).toBe('cronos:tutorial:v2:user:user_123:org:org_abc')
     expect(getTutorialStorageKey(null, null)).toBe('cronos:tutorial:v2:user:anonymous:org:personal')
