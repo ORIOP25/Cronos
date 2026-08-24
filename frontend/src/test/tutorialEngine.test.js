@@ -85,6 +85,13 @@ describe('tutorial v2 domain', () => {
       path: '/courses/',
       body: { name: 'Técnico de Eletrónica', abbreviation: 'TE' },
     })?.expectedActionId).toBe('save-course')
+
+    expect(matchTutorialMutation({
+      stepId: 'teacher_add',
+      method: 'post',
+      path: '/members',
+      body: { organization_display_name: 'Rui Almeida', email: '', subject_ids: [] },
+    })).toMatchObject({ expectedActionId: 'save-teacher', changes: { name: 'Rui Almeida' } })
   })
 
   it('keeps exit as an in-progress checkpoint and repeats with a new run', () => {

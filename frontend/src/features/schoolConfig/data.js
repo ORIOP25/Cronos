@@ -86,7 +86,9 @@ export function useSoftResetSchoolYear() {
   return useMutation({
     mutationFn: (payload) => apiClient.post('/school/settings/soft-reset', payload),
     onSuccess: () => {
-      void queryClient.resetQueries({ predicate: (query) => query.queryKey[1] === orgId })
+      void queryClient.resetQueries({
+        predicate: (query) => query.queryKey[1] === orgId && query.queryKey[0] !== RESOURCES.settings,
+      })
       void invalidatePreparationQueries(queryClient, orgId)
     },
   })

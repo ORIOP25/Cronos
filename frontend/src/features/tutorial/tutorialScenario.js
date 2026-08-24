@@ -271,6 +271,11 @@ function boundedText(value, field) {
   return normalized ? { [field]: normalized.slice(0, MAX_TUTORIAL_TEXT) } : null
 }
 
+function optionalBoundedText(value, field) {
+  if (value == null || (typeof value === 'string' && !value.trim())) return undefined
+  return boundedText(value, field)
+}
+
 function boundedNumber(value, field, { min = 0, max = 100000 } = {}) {
   if (value == null || value === '') return undefined
   const normalized = Number(value)
@@ -312,7 +317,10 @@ export function normalizeTutorialChanges(stepId, changes = {}) {
         boundedNumber(changes.size, 'size', { min: 1, max: 1000 }),
       )
     case 'teacher_add':
-      return mergeChanges(boundedText(changes.name ?? changes.organization_display_name, 'name'), boundedText(changes.email, 'email'))
+      return mergeChanges(
+        boundedText(changes.name ?? changes.organization_display_name, 'name'),
+        optionalBoundedText(changes.email, 'email'),
+      )
     case 'teacher_competency': {
       const ids = changes.subject_ids
       if (ids != null && (!Array.isArray(ids) || ids.length > 8 || ids.some((id) => !Number.isInteger(Number(id))))) return null

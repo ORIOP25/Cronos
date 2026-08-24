@@ -8,6 +8,11 @@ import {
 
 test.describe.configure({ mode: 'serial' })
 
+const isAllowedTutorialRequest = (url) => (
+  url.includes('/api/v1/tutorial/telemetry')
+  || url.includes('/api/v1/members/me')
+)
+
 test.describe('Tutorial — network boundary', () => {
   test('uses local simulation only and sends telemetry without operational mutations', async ({ page }) => {
     await page.addInitScript(() => {
@@ -33,13 +38,13 @@ test.describe('Tutorial — network boundary', () => {
       if (await skipButton.isVisible()) await skipButton.click()
       else await page.getByTestId('tutorial-complete-step').click()
 
-      const operationalRequests = requests.filter((url) => !url.includes('/tutorial/telemetry'))
+      const operationalRequests = requests.filter((url) => !isAllowedTutorialRequest(url))
       expect(operationalRequests).toEqual([])
     }
 
     await expect(page.getByTestId('tutorial-workspace')).toBeHidden()
 
-    const operationalRequests = requests.filter((url) => !url.includes('/tutorial/telemetry'))
+    const operationalRequests = requests.filter((url) => !isAllowedTutorialRequest(url))
     expect(operationalRequests).toEqual([])
     await expectNoAppCrash(page)
   })

@@ -99,7 +99,8 @@ describe('school configuration data hooks', () => {
     await waitFor(() => expect(resetQueries).toHaveBeenCalledOnce())
 
     const { predicate } = resetQueries.mock.calls[0][0]
-    expect(predicate({ queryKey: ['org-settings', 'org-a'] })).toBe(true)
+    expect(predicate({ queryKey: ['org-settings', 'org-a'] })).toBe(false)
+    expect(predicate({ queryKey: ['scheduler-status', 'org-a'] })).toBe(true)
     expect(predicate({ queryKey: ['calendar-events', 'org-b'] })).toBe(false)
     expect(predicate({ queryKey: ['unscoped'] })).toBe(false)
   })
