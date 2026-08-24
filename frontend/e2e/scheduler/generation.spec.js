@@ -643,11 +643,8 @@ test('fresh founder completes Complete Generation and custom-rule Adaptive Repai
       }
       await page.locator('#foundation-confirmation').check()
       await page.getByRole('button', { name: /ativar escola definitivamente/i }).click()
-      await expectRouteReady(page, '/guide')
-      await expect(page.getByTestId('tutorial-workspace')).toBeVisible()
-      await page.getByTestId('tutorial-skip-all-button').click()
-      await expect(page.getByTestId('tutorial-workspace')).toBeHidden()
       await expectRouteReady(page, '/dashboard')
+      await expect(page.locator('aside a[href="/dashboard"]').first()).toBeVisible()
       await apiRequest(page, 'GET', '/members/me')
     }, { timeout: 120_000 })
 
