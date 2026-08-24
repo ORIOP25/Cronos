@@ -384,6 +384,7 @@ export const TUTORIAL_MUTATION_RULES = Object.freeze([
   { stepId: 'availability_review', method: 'put', pathMatcher: /^\/teachers\/me\/availability$/, expectedActionId: 'confirm-availability' },
   { stepId: 'schedule_prepare', method: 'post', pathMatcher: /^\/scheduler\/generate$/, expectedActionId: 'prepare-schedule' },
   { stepId: 'schedule_approve', method: 'post', pathMatcher: /^\/scheduler\/drafts\/\d+\/approve$/, expectedActionId: 'approve-schedule' },
+  { stepId: 'occurrence_create', method: 'put', pathMatcher: /^\/schedule\/(active|operational)-blocks\/\d+\/log$/, expectedActionId: 'create-occurrence' },
   { stepId: 'occurrence_create', method: 'patch', pathMatcher: /^\/occurrences\/\d+$/, expectedActionId: 'create-occurrence' },
   { stepId: 'substitution_complete', method: 'patch', pathMatcher: /^\/occurrences\/\d+$/, expectedActionId: 'complete-substitution' },
   { stepId: 'repair_simulate', method: 'post', pathMatcher: /^\/scheduler\/generate$/, expectedActionId: 'simulate-repair' },

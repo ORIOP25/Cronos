@@ -106,6 +106,13 @@ describe('tutorial v2 domain', () => {
       path: '/members',
       body: { organization_display_name: 'Rui Almeida', email: '', subject_ids: [] },
     })).toMatchObject({ expectedActionId: 'save-teacher', changes: { name: 'Rui Almeida' } })
+
+    expect(matchTutorialMutation({
+      stepId: 'occurrence_create',
+      method: 'put',
+      path: '/schedule/active-blocks/41/log',
+      body: { status: 'OCCURRENCE', summary: '', notes: '' },
+    })).toMatchObject({ expectedActionId: 'create-occurrence' })
   })
 
   it('keeps exit as an in-progress checkpoint and repeats with a new run', () => {
