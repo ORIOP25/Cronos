@@ -21,7 +21,7 @@ export function DaysStep({ values, fieldErrors, onChange }) {
 
   return (
     <div className="foundation-step-days">
-      <h4 className="h5 mb-3 text-dark fw-bold">2. Dias de Funcionamento Letivo</h4>
+      <h4 tabIndex="-1" className="h5 mb-3 text-dark fw-bold">2. Dias de Funcionamento Letivo</h4>
       <p className="text-muted small mb-4">
         Selecione os dias da semana em que a sua instituição tem atividades letivas regulares.
       </p>

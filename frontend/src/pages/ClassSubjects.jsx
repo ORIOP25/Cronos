@@ -119,8 +119,10 @@ const SubjectRow = ({
 // ==========================================
 //  COMPONENT PRINCIPAL: ClassSubjects
 // ==========================================
-const ClassSubjects = () => {
-  const { courseId, classId } = useParams()
+const ClassSubjects = ({ courseIdOverride, classIdOverride, navigationDisabled = false }) => {
+  const params = useParams()
+  const courseId = courseIdOverride ?? params.courseId
+  const classId = classIdOverride ?? params.classId
   const navigate = useNavigate()
   const numClassId = Number(classId)
   const numCourseId = Number(courseId)
@@ -222,7 +224,7 @@ const ClassSubjects = () => {
         <CAlert color="danger">
           <strong>Erro:</strong> {getApiErrorMessage(error, 'Turma não encontrada.')}
         </CAlert>
-        <CButton color="light" onClick={() => navigate(`/courses/${numCourseId}`)}>
+        <CButton color="light" onClick={() => { if (!navigationDisabled) navigate(`/courses/${numCourseId}`) }} disabled={navigationDisabled}>
           <CIcon icon={cilArrowLeft} className="me-1" /> Voltar ao Curso
         </CButton>
       </div>
@@ -297,6 +299,7 @@ const ClassSubjects = () => {
               color="primary" 
               onClick={() => setShowAddModal(true)}
               disabled={isUpdating}
+              data-tutorial-target="add-class-subject"
             >
               <CIcon icon={cilUserPlus} className="me-1" />
               Adicionar Disciplina

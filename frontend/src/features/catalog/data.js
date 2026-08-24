@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import apiClient from '../../apiClient'
+import { useApiClient } from '../../ApiClientContext'
+import { invalidatePreparationQueries } from '../readiness/data'
 import { useOrganization, useAuth } from '@clerk/react'
 
 const STATIC_OPTS = {
@@ -8,6 +9,7 @@ const STATIC_OPTS = {
 }
 
 export const useRooms = () => {
+  const apiClient = useApiClient()
   const orgId = useOrganization().organization?.id
   return useQuery({
     queryKey: ['rooms', orgId],
@@ -20,6 +22,7 @@ export const useRooms = () => {
 }
 
 export const useSubjects = () => {
+  const apiClient = useApiClient()
   const orgId = useOrganization().organization?.id
   return useQuery({
     queryKey: ['subjects', orgId],
@@ -32,6 +35,7 @@ export const useSubjects = () => {
 }
 
 export const useClasses = ({ enabled = true } = {}) => {
+  const apiClient = useApiClient()
   const orgId = useOrganization().organization?.id
   return useQuery({
     queryKey: ['classes', orgId],
@@ -45,6 +49,7 @@ export const useClasses = ({ enabled = true } = {}) => {
 
 
 export const useTimeslots = () => {
+  const apiClient = useApiClient()
   const orgId = useOrganization().organization?.id
   const { isLoaded } = useAuth()
   return useQuery({
@@ -58,6 +63,7 @@ export const useTimeslots = () => {
 
 // --- CURSOS ---
 export const useCourses = () => {
+  const apiClient = useApiClient()
   const orgId = useOrganization().organization?.id
   return useQuery({
     queryKey: ['courses', orgId],
@@ -85,6 +91,7 @@ export const useCourses = () => {
  * @param {string} entityKey - O nome da entidade (ex: 'rooms'). Define o URL e a Cache Key.
  */
 const useCreateEntity = (entityKey, dependentRoots = []) => {
+  const apiClient = useApiClient()
   const queryClient = useQueryClient()
   const orgId = useOrganization().organization?.id
 
@@ -97,6 +104,7 @@ const useCreateEntity = (entityKey, dependentRoots = []) => {
       dependentRoots.forEach((root) => {
         queryClient.invalidateQueries({ queryKey: [root, orgId] })
       })
+      void invalidatePreparationQueries(queryClient, orgId)
     }
   })
 }
@@ -108,6 +116,7 @@ const useCreateEntity = (entityKey, dependentRoots = []) => {
  * PATCH: Atualização parcial (apenas campos enviados)
  */
 const useUpdateEntity = (entityKey, dependentRoots = []) => {
+  const apiClient = useApiClient()
   const queryClient = useQueryClient()
   const orgId = useOrganization().organization?.id
 
@@ -120,6 +129,7 @@ const useUpdateEntity = (entityKey, dependentRoots = []) => {
       dependentRoots.forEach((root) => {
         queryClient.invalidateQueries({ queryKey: [root, orgId] })
       })
+      void invalidatePreparationQueries(queryClient, orgId)
     }
   })
 }
@@ -129,6 +139,7 @@ const useUpdateEntity = (entityKey, dependentRoots = []) => {
  * Uso: mutate(1)
  */
 const useDeleteEntity = (entityKey, dependentRoots = []) => {
+  const apiClient = useApiClient()
   const queryClient = useQueryClient()
   const orgId = useOrganization().organization?.id
 
@@ -141,6 +152,7 @@ const useDeleteEntity = (entityKey, dependentRoots = []) => {
       dependentRoots.forEach((root) => {
         queryClient.invalidateQueries({ queryKey: [root, orgId] })
       })
+      void invalidatePreparationQueries(queryClient, orgId)
     }
   })
 }
@@ -173,6 +185,7 @@ export const useUpdateClass = () => useUpdateEntity('classes')
  * course.classes[0].name
  */
 export const useCourseDetails = (courseId) => {
+  const apiClient = useApiClient()
   const orgId = useOrganization().organization?.id
   return useQuery({
     queryKey: ['courses', orgId, courseId],
@@ -201,6 +214,7 @@ export const useCourseDetails = (courseId) => {
  * })
  */
 export const useUpdateCourse = () => {
+  const apiClient = useApiClient()
   const queryClient = useQueryClient()
   const orgId = useOrganization().organization?.id
 
@@ -227,6 +241,7 @@ export const useUpdateCourse = () => {
  * deleteCourse.mutate(5) // courseId
  */
 export const useDeleteCourse = () => {
+  const apiClient = useApiClient()
   const queryClient = useQueryClient()
   const orgId = useOrganization().organization?.id
 
@@ -242,6 +257,7 @@ export const useDeleteCourse = () => {
 
 
 export const useCreateCourseClass = () => {
+  const apiClient = useApiClient()
   const queryClient = useQueryClient()
   const orgId = useOrganization().organization?.id
 
@@ -259,6 +275,7 @@ export const useCreateCourseClass = () => {
 
 
 export const useUpdateCourseClass = () => {
+  const apiClient = useApiClient()
   const queryClient = useQueryClient()
   const orgId = useOrganization().organization?.id
 
@@ -279,6 +296,7 @@ export const useUpdateCourseClass = () => {
 
 
 export const useDeleteCourseClass = () => {
+  const apiClient = useApiClient()
   const queryClient = useQueryClient()
   const orgId = useOrganization().organization?.id
 
@@ -316,6 +334,7 @@ export const useDeleteCourseClass = () => {
  * - Optimization: Backend retorna tudo em 2 queries (vs N+1)
  */
 export const useClassDetails = (classId) => {
+  const apiClient = useApiClient()
   const orgId = useOrganization().organization?.id
   return useQuery({
     queryKey: ['classes', orgId, classId],
@@ -346,6 +365,7 @@ export const useClassDetails = (classId) => {
  * - Security: Backend valida que módulos pertencem ao curso da turma
  */
 export const useUpdateClassProgress = () => {
+  const apiClient = useApiClient()
   const queryClient = useQueryClient()
   const orgId = useOrganization().organization?.id
 
@@ -372,6 +392,7 @@ export const useUpdateClassProgress = () => {
  * Usado na página ClassSubjects.jsx
  */
 export const useClassSubjects = (classId) => {
+  const apiClient = useApiClient()
   const orgId = useOrganization().organization?.id
   return useQuery({
     queryKey: ['class-subjects', orgId, classId],
@@ -390,6 +411,7 @@ export const useClassSubjects = (classId) => {
  * (Disciplinas da org que ainda não estão associadas)
  */
 export const useAvailableSubjects = (classId) => {
+  const apiClient = useApiClient()
   const orgId = useOrganization().organization?.id
   return useQuery({
     queryKey: ['available-subjects', orgId, classId],
@@ -407,6 +429,7 @@ export const useAvailableSubjects = (classId) => {
  * (Professores que têm competência na disciplina)
  */
 export const useEligibleTeachers = (subjectId) => {
+  const apiClient = useApiClient()
   const orgId = useOrganization().organization?.id
   return useQuery({
     queryKey: ['eligible-teachers', orgId, subjectId],
@@ -423,6 +446,7 @@ export const useEligibleTeachers = (subjectId) => {
  * Adiciona uma disciplina à turma.
  */
 export const useAddClassSubject = () => {
+  const apiClient = useApiClient()
   const queryClient = useQueryClient()
   const orgId = useOrganization().organization?.id
 
@@ -443,6 +467,7 @@ export const useAddClassSubject = () => {
  * Atualiza o professor de uma disciplina da turma.
  */
 export const useUpdateClassSubjectTeacher = () => {
+  const apiClient = useApiClient()
   const queryClient = useQueryClient()
   const orgId = useOrganization().organization?.id
 
@@ -462,6 +487,7 @@ export const useUpdateClassSubjectTeacher = () => {
  * Remove uma disciplina da turma.
  */
 export const useRemoveClassSubject = () => {
+  const apiClient = useApiClient()
   const queryClient = useQueryClient()
   const orgId = useOrganization().organization?.id
 

@@ -237,7 +237,7 @@ const EditOccurrenceModal = ({
   const executionSummary = buildExecutionSummary(occurrence, teacherById, subjectById)
 
   return (
-    <CModal visible onClose={onClose} alignment="center">
+    <CModal visible onClose={onClose} alignment="center" data-tutorial-target="occurrence-decision">
       <CModalHeader>
         <CModalTitle>Decisão Operacional — {formatDate(occurrence.date)}</CModalTitle>
       </CModalHeader>
@@ -275,6 +275,7 @@ const EditOccurrenceModal = ({
               color={status === 'SUBSTITUTED' ? 'warning' : 'secondary'}
               variant={status === 'SUBSTITUTED' ? undefined : 'outline'}
               onClick={() => setStatus('SUBSTITUTED')}
+              data-tutorial-target="decision-substitute"
             >
               Substituída
             </CButton>
@@ -686,7 +687,7 @@ const OccurrencesPanel = ({ classId, dateFrom, dateTo, initialOccurrenceId, mode
               <CTableDataCell className="text-end" onClick={(e) => e.stopPropagation()}>
                 <div className="d-flex gap-1 justify-content-end">
                   {isUndecided && (
-                    <CButton color="primary" size="sm" variant="outline" onClick={() => openEditModal(occ)}>
+                    <CButton color="primary" size="sm" variant="outline" onClick={() => openEditModal(occ)} data-tutorial-target="decision-open">
                       Decidir
                     </CButton>
                   )}
@@ -793,7 +794,7 @@ const Occurrences = () => {
   const { data: classes = EMPTY_ARRAY } = useClasses()
 
   return (
-    <div className="p-4">
+    <div className="p-4" data-tutorial-target="occurrences-workspace">
       {/* Cabeçalho */}
       <PageHeader preTitle="Operações" title="Faltas e Ocorrências" />
 

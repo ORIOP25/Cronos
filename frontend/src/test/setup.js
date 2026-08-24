@@ -1,6 +1,10 @@
 import '@testing-library/jest-dom'
 import { vi } from 'vitest'
 
+if (typeof window !== 'undefined') {
+  Object.defineProperty(window, 'scrollTo', { value: vi.fn(), writable: true, configurable: true })
+}
+
 const DEFAULT_STATE = {
   isSignedIn: true,
   isLoaded: true,

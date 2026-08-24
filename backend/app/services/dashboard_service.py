@@ -4,10 +4,31 @@ from collections import defaultdict
 from datetime import date, timedelta
 
 from sqlalchemy import String, and_, cast, desc, func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
 from app import models, schemas
 from app.services import occurrence_service
+from app.services.school_readiness_service import SchoolReadinessService
+
+
+async def get_dashboard_summary(
+    db: AsyncSession,
+    organization_id: int,
+) -> schemas.DashboardResponse:
+    """Resolve o modo do dashboard e agrega os dados da organização autenticada."""
+    organization = await db.get(models.Organization, organization_id)
+    if organization is None:
+        raise RuntimeError(f"Organization {organization_id} not found")
+
+    bases = None
+    if organization.first_real_schedule_approved_at is None:
+        bases = await SchoolReadinessService(db).evaluate_bases(organization_id)
+
+    def _run(sync_db):
+        return get_dashboard_summary_sync(sync_db, organization_id, bases=bases)
+
+    return await db.run_sync(_run)
 
 
 def get_dashboard_summary_sync(

@@ -3,7 +3,7 @@ import { CFormLabel, CFormInput, CFormFeedback, CRow, CCol } from '@coreui/react
 export function OpeningStep({ values, fieldErrors, onChange }) {
   return (
     <div className="foundation-step-opening">
-      <h4 className="h5 mb-3 text-dark fw-bold">3. Horário de Abertura e Encerramento</h4>
+      <h4 tabIndex="-1" className="h5 mb-3 text-dark fw-bold">3. Horário de Abertura e Encerramento</h4>
       <p className="text-muted small mb-4">
         Defina os limites diários para o funcionamento da instituição escolar.
       </p>

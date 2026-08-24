@@ -60,6 +60,7 @@ export default function Dashboard() {
         orgId={organization?.id}
         userId={user?.id}
         organizationName={orgName}
+        foundationStatus={data.foundation_status}
         bases={data.bases}
       />
     )

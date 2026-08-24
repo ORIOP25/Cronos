@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import apiClient from '../../apiClient'
+import { useApiClient } from '../../ApiClientContext'
+import { invalidatePreparationQueries } from '../readiness/data'
 import { useOrganization, useAuth } from '@clerk/react'
 
 const STATIC_OPTS = {
@@ -12,6 +13,7 @@ const DYNAMIC_OPTS = {
 }
 
 export const useTeachers = ({ enabled = true } = {}) => {
+  const apiClient = useApiClient()
   const orgId = useOrganization().organization?.id
   return useQuery({
     queryKey: ['teachers', orgId],
@@ -28,6 +30,7 @@ export const useCurrentMember = ({
   refetchInterval = false,
   refetchOnWindowFocus = true,
 } = {}) => {
+  const apiClient = useApiClient()
   const orgId = useOrganization().organization?.id
   const { getToken, isLoaded, isSignedIn } = useAuth()
   return useQuery({
@@ -47,6 +50,7 @@ export const useCurrentMember = ({
 }
 
 export const useMembers = ({ includeArchived = false, enabled = true } = {}) => {
+  const apiClient = useApiClient()
   const orgId = useOrganization().organization?.id
   return useQuery({
     queryKey: ['members', orgId, includeArchived],
@@ -65,10 +69,12 @@ const invalidateMemberQueries = (queryClient, orgId) => {
     queryClient.invalidateQueries({ queryKey: ['members', orgId] }),
     queryClient.invalidateQueries({ queryKey: ['current-member', orgId] }),
     queryClient.invalidateQueries({ queryKey: ['teachers', orgId] }),
+    invalidatePreparationQueries(queryClient, orgId),
   ])
 }
 
 export const useCreateMember = () => {
+  const apiClient = useApiClient()
   const queryClient = useQueryClient()
   const orgId = useOrganization().organization?.id
   return useMutation({
@@ -80,6 +86,7 @@ export const useCreateMember = () => {
 }
 
 export const useUpdateMember = () => {
+  const apiClient = useApiClient()
   const queryClient = useQueryClient()
   const orgId = useOrganization().organization?.id
   return useMutation({
@@ -91,6 +98,7 @@ export const useUpdateMember = () => {
 }
 
 export const useRemoveMember = () => {
+  const apiClient = useApiClient()
   const queryClient = useQueryClient()
   const orgId = useOrganization().organization?.id
   return useMutation({
@@ -102,6 +110,7 @@ export const useRemoveMember = () => {
 }
 
 export const useResendMemberInvitation = () => {
+  const apiClient = useApiClient()
   const queryClient = useQueryClient()
   const orgId = useOrganization().organization?.id
   return useMutation({
@@ -113,6 +122,7 @@ export const useResendMemberInvitation = () => {
 }
 
 export const useRetryMemberSync = () => {
+  const apiClient = useApiClient()
   const queryClient = useQueryClient()
   const orgId = useOrganization().organization?.id
   return useMutation({
@@ -124,6 +134,7 @@ export const useRetryMemberSync = () => {
 }
 
 export const useRestoreMember = () => {
+  const apiClient = useApiClient()
   const queryClient = useQueryClient()
   const orgId = useOrganization().organization?.id
   return useMutation({

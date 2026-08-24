@@ -71,7 +71,7 @@ const Subjects = () => {
     <div className="p-4">
       <PageHeader preTitle="Gestão" title="Disciplinas" />
       <div className="d-flex justify-content-end mb-4">
-        <CButton color="primary" onClick={handleCreate} className="d-flex align-items-center gap-2">
+        <CButton color="primary" onClick={handleCreate} className="d-flex align-items-center gap-2" data-tutorial-target="new-subject">
           <CIcon icon={cilPlus} />
           Nova Disciplina
         </CButton>
@@ -113,6 +113,7 @@ const Subjects = () => {
         onSubmit={handleFormSubmit}
         isLoading={activeMutation.isPending}
         error={activeMutation.error}
+        tutorialTarget="subject-form"
       />
     </div>
   )

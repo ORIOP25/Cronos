@@ -110,7 +110,7 @@ describe('vertical feature data hooks', () => {
     const mutation = renderHook(() => useCreateMember(), { wrapper })
 
     const mutationPromise = mutation.result.current.mutateAsync({ name: 'Ana' })
-    await waitFor(() => expect(pendingInvalidations).toHaveLength(3))
+    await waitFor(() => expect(pendingInvalidations).toHaveLength(6))
     expect(mutation.result.current.isPending).toBe(true)
 
     pendingInvalidations.forEach(({ resolve }) => resolve())

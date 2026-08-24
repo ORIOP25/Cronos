@@ -2,6 +2,7 @@ import { useOrganization } from '@clerk/react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import apiClient from '../../apiClient'
 import { orgQueryKey } from '../queryKeys'
+import { invalidatePreparationQueries } from '../readiness/data'
 
 const FOUNDATION_STATUS_ROOT = 'foundation-status'
 const FOUNDATION_DRAFT_ROOT = 'foundation-draft'
@@ -45,6 +46,7 @@ export function useCompleteFoundation() {
       queryClient.invalidateQueries({ queryKey: orgQueryKey(FOUNDATION_STATUS_ROOT, orgId) })
       queryClient.invalidateQueries({ queryKey: orgQueryKey(FOUNDATION_DRAFT_ROOT, orgId) })
       queryClient.invalidateQueries({ queryKey: orgQueryKey('current-member', orgId) })
+      void invalidatePreparationQueries(queryClient, orgId)
     },
   })
 }

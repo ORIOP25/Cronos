@@ -78,7 +78,7 @@ export default function MyAvailability() {
   if (!timeslots.length) return <><PageHeader preTitle="Professor" title="Minhas Preferências" /><StatePanel state="empty" title="A escola ainda não configurou blocos" description="As preferências ficam disponíveis depois de a grelha horária ser configurada." /></>
 
   return (
-    <div>
+    <div data-tutorial-target="availability-workspace">
       <PageHeader preTitle="Professor" title="Minhas Preferências" description="Escolha uma ferramenta e pinte os blocos. Pode usar rato, toque ou teclado." />
       {feedback && <div className="mb-3"><FeedbackBanner tone={feedback.tone}>{feedback.message}</FeedbackBanner></div>}
       <div className="availability-toolbar" role="toolbar" aria-label="Ferramentas de disponibilidade">

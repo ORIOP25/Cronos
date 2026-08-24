@@ -2,6 +2,7 @@ import { useOrganization } from '@clerk/react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import apiClient from '../../apiClient'
 import { invalidateOrgQueries, orgQueryKey } from '../queryKeys'
+import { invalidatePreparationQueries } from '../readiness/data'
 
 const RESOURCES = {
   calendar: 'calendar-events',
@@ -39,7 +40,10 @@ export function useSyncHolidays() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: () => apiClient.post('/school/settings/sync-holidays'),
-    onSuccess: () => invalidateOrgQueries(queryClient, orgId, [RESOURCES.calendar]),
+    onSuccess: () => {
+      void invalidateOrgQueries(queryClient, orgId, [RESOURCES.calendar])
+      void invalidatePreparationQueries(queryClient, orgId)
+    },
   })
 }
 
@@ -48,7 +52,10 @@ export function useCreateCalendarEvent() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (payload) => apiClient.post('/school/calendar-events/', payload),
-    onSuccess: () => invalidateOrgQueries(queryClient, orgId, [RESOURCES.calendar]),
+    onSuccess: () => {
+      void invalidateOrgQueries(queryClient, orgId, [RESOURCES.calendar])
+      void invalidatePreparationQueries(queryClient, orgId)
+    },
   })
 }
 
@@ -57,7 +64,10 @@ export function useDeleteCalendarEvent() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (id) => apiClient.delete(`/school/calendar-events/${id}`),
-    onSuccess: () => invalidateOrgQueries(queryClient, orgId, [RESOURCES.calendar]),
+    onSuccess: () => {
+      void invalidateOrgQueries(queryClient, orgId, [RESOURCES.calendar])
+      void invalidatePreparationQueries(queryClient, orgId)
+    },
   })
 }
 
@@ -75,9 +85,10 @@ export function useSoftResetSchoolYear() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (payload) => apiClient.post('/school/settings/soft-reset', payload),
-    onSuccess: () => queryClient.resetQueries({
-      predicate: (query) => query.queryKey[1] === orgId,
-    }),
+    onSuccess: () => {
+      void queryClient.resetQueries({ predicate: (query) => query.queryKey[1] === orgId })
+      void invalidatePreparationQueries(queryClient, orgId)
+    },
   })
 }
 
@@ -86,7 +97,10 @@ export function useUpsertSchoolSettings() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (payload) => apiClient.post('/school/settings/', payload),
-    onSuccess: () => invalidateOrgQueries(queryClient, orgId, [RESOURCES.settings]),
+    onSuccess: () => {
+      void invalidateOrgQueries(queryClient, orgId, [RESOURCES.settings])
+      void invalidatePreparationQueries(queryClient, orgId)
+    },
   })
 }
 
@@ -111,7 +125,10 @@ export function useRegenerateGrid() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (payload) => apiClient.post('/school/grid-settings/regenerate', payload),
-    onSuccess: () => invalidateOrgQueries(queryClient, orgId, GRID_DEPENDENCIES),
+    onSuccess: () => {
+      void invalidateOrgQueries(queryClient, orgId, GRID_DEPENDENCIES)
+      void invalidatePreparationQueries(queryClient, orgId)
+    },
   })
 }
 

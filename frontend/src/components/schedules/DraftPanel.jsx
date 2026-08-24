@@ -138,6 +138,7 @@ const DraftPanel = ({ draft, onApprove, onReject, isApproving, isRejecting }) =>
             size="sm"
             disabled={isWorking || !draft.can_approve}
             onClick={() => onApprove(draft.draft_id)}
+            data-tutorial-target="approve-schedule"
           >
             {isApproving ? <CSpinner size="sm" className="me-1" /> : <CIcon icon={cilCheckCircle} className="me-1" />}
             Aprovar

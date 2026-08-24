@@ -33,10 +33,14 @@ class TutorialTelemetryService:
             )
             .on_conflict_do_nothing(index_elements=["organization_id", "client_event_id"])
         )
-        await db.execute(stmt)
+        inserted_id = (
+            await db.execute(stmt.returning(models.TutorialTelemetryEvent.id))
+        ).scalar_one_or_none()
         await db.flush()
         logger.info(
-            "tutorial_telemetry_event_recorded",
+            "tutorial_telemetry_event_inserted"
+            if inserted_id is not None
+            else "tutorial_telemetry_event_duplicate",
             organization_id=organization_id,
             event_name=event.event_name,
             tutorial_run_id=str(event.tutorial_run_id),

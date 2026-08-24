@@ -106,7 +106,7 @@ const LessonLogModal = ({ onClose, slot, isAdmin = false }) => {
   const statusInfo = getLessonLogStatus(currentStatus)
 
   return (
-    <CModal visible onClose={onClose} alignment="center">
+    <CModal visible onClose={onClose} alignment="center" data-tutorial-target="lesson-log-modal">
       <CModalHeader>
         <CModalTitle>
           Registo de Aula{' '}

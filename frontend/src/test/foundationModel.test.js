@@ -4,7 +4,7 @@ import {
   foundationReducer,
   validateFoundationStep,
   initialFoundationState,
-  calculateGridSlots,
+  buildDailyTimeslots,
   STEP_PERIOD,
   STEP_DAYS,
   STEP_OPENING,
@@ -112,7 +112,7 @@ describe('foundationModel', () => {
   })
 
   it('calculates grid slots and validates preview (Step 7)', () => {
-    const slots = calculateGridSlots(initialFoundationDraftValues)
+    const slots = buildDailyTimeslots(initialFoundationDraftValues)
     expect(slots.length).toBeGreaterThan(0)
     expect(slots[0]).toHaveProperty('start')
     expect(slots[0]).toHaveProperty('end')
@@ -139,7 +139,7 @@ describe('foundationModel', () => {
       repair_stability_window_days: 0,
     })).toHaveProperty('repair_stability_window_days')
 
-    expect(calculateGridSlots({
+    expect(buildDailyTimeslots({
       ...initialFoundationDraftValues,
       opening_time: '08:00',
       closing_time: '10:00',

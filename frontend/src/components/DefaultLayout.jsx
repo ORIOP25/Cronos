@@ -2,20 +2,22 @@ import { useEffect, useRef, useState } from 'react'
 import { Outlet, NavLink, useLocation } from 'react-router-dom'
 import { useUser, useClerk } from '@clerk/react'
 import { COffcanvas, COffcanvasBody } from '@coreui/react'
-import { ROUTE_MY_SCHEDULES } from '../roleAccess'
 import { useRole } from '../hooks/useRole'
 import { TXT } from '../utils/terminology'
 import FeedbackBanner from './FeedbackBanner'
 import CIcon from '@coreui/icons-react'
-import {
-  cilSpeedometer, cilCalendar, cilCheckCircle, cilPeople,
-  cilLibrary, cilEducation, cilRoom, cilSettings, cilUser,
-  cilMenu, cilChartPie, cilAccountLogout, cilX,
-} from '@coreui/icons'
+import { cilMenu, cilX } from '@coreui/icons'
+import { ADMIN_NAVIGATION, SIGN_OUT_ICON, TEACHER_NAVIGATION } from './appNavigation'
 
 const SIDEBAR_STORAGE_KEY = 'hz-sidebar-collapsed'
 
-function SidebarLink({ to, icon, children, collapsed, onNavigate }) {
+function SidebarLink({ to, icon, children, collapsed, onNavigate, activePath, disabled }) {
+  if (disabled) return (
+    <button type="button" className={`app-sidebar__link${activePath === to ? ' active' : ''}`} disabled title={collapsed ? children : undefined}>
+      <CIcon icon={icon} size="sm" aria-hidden="true" />
+      {!collapsed && <span>{children}</span>}
+    </button>
+  )
   return (
     <NavLink
       to={to}
@@ -29,7 +31,7 @@ function SidebarLink({ to, icon, children, collapsed, onNavigate }) {
   )
 }
 
-function AppSidebarContent({ collapsed, isAdmin, isTeacher, user, roleLabel, onToggle, onNavigate, onProfile, onSignOut, mobile = false }) {
+function AppSidebarContent({ collapsed, isAdmin, isTeacher, user, roleLabel, onToggle, onNavigate, onProfile, onSignOut, mobile = false, activePath, navigationDisabled = false }) {
   return (
     <div className={`app-sidebar${collapsed ? ' is-collapsed' : ''}${mobile ? ' app-sidebar--mobile' : ''}`}>
       <div className="app-sidebar__top">
@@ -52,36 +54,21 @@ function AppSidebarContent({ collapsed, isAdmin, isTeacher, user, roleLabel, onT
       </div>
 
       <nav className="app-sidebar__nav" aria-label="Navegação da aplicação">
-        {isAdmin && <>
-          <SidebarLink to="/dashboard" icon={cilSpeedometer} collapsed={collapsed} onNavigate={onNavigate}>Dashboard</SidebarLink>
-          <SidebarLink to="/schedules" icon={cilCalendar} collapsed={collapsed} onNavigate={onNavigate}>Horários</SidebarLink>
-          <SidebarLink to="/absences" icon={cilCheckCircle} collapsed={collapsed} onNavigate={onNavigate}>Faltas</SidebarLink>
-          <SidebarLink to="/timesheets" icon={cilCalendar} collapsed={collapsed} onNavigate={onNavigate}>Fecho Semanal</SidebarLink>
-          {!collapsed && <div className="app-sidebar__section">Pedagogia</div>}
-          <SidebarLink to="/courses" icon={cilEducation} collapsed={collapsed} onNavigate={onNavigate}>Cursos</SidebarLink>
-          <SidebarLink to="/members" icon={cilPeople} collapsed={collapsed} onNavigate={onNavigate}>Equipa</SidebarLink>
-          <SidebarLink to="/subjects" icon={cilLibrary} collapsed={collapsed} onNavigate={onNavigate}>Disciplinas</SidebarLink>
-          {!collapsed && <div className="app-sidebar__section">Recursos</div>}
-          <SidebarLink to="/rooms" icon={cilRoom} collapsed={collapsed} onNavigate={onNavigate}>Salas</SidebarLink>
-          <SidebarLink to="/config" icon={cilSettings} collapsed={collapsed} onNavigate={onNavigate}>Configuração</SidebarLink>
-        </>}
-        {isTeacher && <>
-          <SidebarLink to="/my-availability" icon={cilUser} collapsed={collapsed} onNavigate={onNavigate}>Preferências</SidebarLink>
-          <SidebarLink to={ROUTE_MY_SCHEDULES} icon={cilCalendar} collapsed={collapsed} onNavigate={onNavigate}>Meus Horários</SidebarLink>
-          <SidebarLink to="/my-progress" icon={cilChartPie} collapsed={collapsed} onNavigate={onNavigate}>Meu Progresso</SidebarLink>
-        </>}
+        {(isAdmin ? ADMIN_NAVIGATION : isTeacher ? TEACHER_NAVIGATION : []).map((item, index) => item.section
+          ? (!collapsed && <div key={`section-${item.section}-${index}`} className="app-sidebar__section">{item.section}</div>)
+          : <SidebarLink key={item.path} to={item.path} icon={item.icon} collapsed={collapsed} onNavigate={onNavigate} activePath={activePath} disabled={navigationDisabled}>{item.label}</SidebarLink>)}
       </nav>
 
       <div className="app-sidebar__footer">
-        <button type="button" onClick={onProfile} className="app-sidebar__profile" title="Gerir conta">
+        <button type="button" onClick={onProfile} className="app-sidebar__profile" title="Gerir conta" disabled={navigationDisabled}>
           <span className="app-sidebar__avatar">{user?.primaryEmailAddress?.emailAddress?.[0]?.toUpperCase() || '?'}</span>
           <span className="app-sidebar__profile-copy">
             <strong>{user?.primaryEmailAddress?.emailAddress?.split('@')[0] || 'Convidado'}</strong>
             <span>{roleLabel}</span>
           </span>
         </button>
-        <button type="button" onClick={onSignOut} title="Terminar sessão" className="app-sidebar__logout">
-          <CIcon icon={cilAccountLogout} size="sm" aria-hidden="true" />
+        <button type="button" onClick={onSignOut} title="Terminar sessão" className="app-sidebar__logout" disabled={navigationDisabled}>
+          <CIcon icon={SIGN_OUT_ICON} size="sm" aria-hidden="true" />
           <span>Terminar sessão</span>
         </button>
       </div>
@@ -89,11 +76,13 @@ function AppSidebarContent({ collapsed, isAdmin, isTeacher, user, roleLabel, onT
   )
 }
 
-const DefaultLayout = () => {
+const DefaultLayout = ({ children, activePath, navigationDisabled = false, navigationRole, className = '' }) => {
   const location = useLocation()
   const { user } = useUser()
   const { openUserProfile, signOut } = useClerk()
-  const { isAdmin, isTeacher } = useRole()
+  const currentRole = useRole()
+  const isAdmin = navigationRole === 'admin' || currentRole.isAdmin
+  const isTeacher = navigationRole === 'teacher' || (!navigationRole && currentRole.isTeacher)
   const menuButtonRef = useRef(null)
   const [collapsed, setCollapsed] = useState(() => {
     try { return localStorage.getItem(SIDEBAR_STORAGE_KEY) === 'true' } catch { return false }
@@ -129,9 +118,9 @@ const DefaultLayout = () => {
   }
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell${className ? ` ${className}` : ''}`}>
       <aside className="app-sidebar--desktop" aria-label="Navegação principal">
-        <AppSidebarContent collapsed={collapsed} isAdmin={isAdmin} isTeacher={isTeacher} user={user} roleLabel={roleLabel} onToggle={() => setCollapsed((value) => !value)} onNavigate={() => {}} onProfile={openUserProfile} onSignOut={() => signOut()} />
+        <AppSidebarContent collapsed={collapsed} isAdmin={isAdmin} isTeacher={isTeacher} user={user} roleLabel={roleLabel} onToggle={() => setCollapsed((value) => !value)} onNavigate={() => {}} onProfile={openUserProfile} onSignOut={() => signOut()} activePath={activePath} navigationDisabled={navigationDisabled} />
       </aside>
       <header className="app-mobile-header">
         <div className="app-mobile-header__brand"><img src="/logo.png" alt="Cronos" /> Cronos</div>
@@ -142,12 +131,12 @@ const DefaultLayout = () => {
       {mobileOpen && <COffcanvas className="app-drawer" placement="start" visible={mobileOpen} onHide={closeMobile} backdrop scroll={false} aria-labelledby="app-drawer-title">
         <COffcanvasBody className="p-0">
           <span id="app-drawer-title" className="visually-hidden">Menu de navegação</span>
-          <AppSidebarContent collapsed={false} isAdmin={isAdmin} isTeacher={isTeacher} user={user} roleLabel={roleLabel} onToggle={() => {}} onNavigate={closeMobile} onProfile={() => { closeMobile(); openUserProfile() }} onSignOut={() => { closeMobile(); signOut() }} mobile />
+          <AppSidebarContent collapsed={false} isAdmin={isAdmin} isTeacher={isTeacher} user={user} roleLabel={roleLabel} onToggle={() => {}} onNavigate={closeMobile} onProfile={() => { closeMobile(); openUserProfile() }} onSignOut={() => { closeMobile(); signOut() }} activePath={activePath} navigationDisabled={navigationDisabled} mobile />
         </COffcanvasBody>
       </COffcanvas>}
       <main className="app-main">
         {accessDeniedMessage && <div className="app-main__access-message"><FeedbackBanner tone="warning">{accessDeniedMessage}</FeedbackBanner></div>}
-        <Outlet />
+        {children ?? <Outlet />}
       </main>
     </div>
   )

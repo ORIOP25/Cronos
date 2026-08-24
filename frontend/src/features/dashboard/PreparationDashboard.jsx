@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import {
   CBadge,
   CButton,
@@ -9,172 +9,229 @@ import {
   CProgressBar,
 } from '@coreui/react'
 import { useTutorialSimulation } from '../tutorial/tutorialHooks'
-import { TutorialModal } from '../tutorial/TutorialModal'
+import { usePrevalidation } from '../readiness/data'
 import PageHeader from '../../components/PageHeader'
+import StatePanel from '../../components/StatePanel'
+import { getApiErrorMessage } from '../../utils/apiErrors'
 
-export function PreparationDashboard({ orgId, userId, organizationName, bases }) {
+const BLOCK_LABELS = Object.freeze({
+  ACTIVE_CLASSES: 'Turmas ativas',
+  MODULES: 'Módulos',
+  TEACHER_ASSIGNMENT: 'Atribuição docente',
+  CLASS_SUBJECTS: 'Associações turma-disciplina',
+  COMPATIBLE_ROOM: 'Salas compatíveis',
+  TIMESLOTS: 'Grelha de tempos letivos',
+  TEACHER_AVAILABILITY: 'Disponibilidade docente',
+})
+
+function statusFor(steps, code) {
+  return steps.find((step) => step.code === code)?.status || 'PENDING'
+}
+
+function firstPendingRoute(steps, codes) {
+  return codes.map((code) => steps.find((step) => step.code === code && step.status !== 'COMPLETE'))
+    .find(Boolean)?.route || null
+}
+
+export function PreparationDashboard({
+  orgId,
+  userId,
+  organizationName,
+  foundationStatus = 'NOT_STARTED',
+  bases,
+  autoStartGuide = true,
+}) {
   const navigate = useNavigate()
   const tutorial = useTutorialSimulation({ orgId, userId })
-  const { isHydrated, isOpen, status, openTutorial } = tutorial
+  const { isHydrated, status } = tutorial
+  const fingerprint = bases?.depth === 7 && bases?.complete ? bases.fingerprint : null
+  const prevalidation = usePrevalidation({ fingerprint, enabled: Boolean(fingerprint) })
 
   useEffect(() => {
-    if (isHydrated && !isOpen && status === 'NOT_STARTED') {
-      openTutorial()
-    }
-  }, [isHydrated, isOpen, status, openTutorial])
+    if (autoStartGuide && isHydrated && status === 'NOT_STARTED') navigate('/guide', { replace: true })
+  }, [autoStartGuide, isHydrated, navigate, status])
 
-  const percentage = bases?.percentage ?? 0
-  const depth = bases?.depth ?? 0
-  const complete = Boolean(bases?.complete)
-
-  const steps = bases?.steps || [
-    { code: 'ACTIVE_CLASSES', status: 'PENDING', route: '/courses' },
-    { code: 'CLASS_SUBJECTS', status: 'PENDING', route: '/classes' },
-    { code: 'MODULES', status: 'PENDING', route: '/subjects' },
-    { code: 'TEACHER_ASSIGNMENT', status: 'PENDING', route: '/members' },
-    { code: 'COMPATIBLE_ROOM', status: 'PENDING', route: '/rooms' },
-    { code: 'TIMESLOTS', status: 'PENDING', route: '/config' },
-    { code: 'TEACHER_AVAILABILITY', status: 'PENDING', route: '/members' },
-  ]
-
-  const stepLabels = {
-    ACTIVE_CLASSES: '1. Pelo menos uma Turma ativa registada',
-    CLASS_SUBJECTS: '2. Associação Turma-Disciplina com ano curricular válido',
-    MODULES: '3. Disciplinas com Módulos UFCD e carga horária definida',
-    TEACHER_ASSIGNMENT: '4. Docentes com qualificação e competência atribuídos',
-    COMPATIBLE_ROOM: '5. Salas compatíveis com tipologia e lotação da turma',
-    TIMESLOTS: '6. Grelha semanal de tempos letivos configurada',
-    TEACHER_AVAILABILITY: '7. Disponibilidade docente compatível (não impossível)',
+  if (!bases || typeof bases !== 'object' || !Array.isArray(bases.steps)) {
+    return <StatePanel state="error" title="Resposta de readiness inválida" description="As bases de preparação não foram devolvidas pelo servidor." />
   }
+
+  const percentage = bases.percentage ?? 0
+  const depth = bases.depth ?? 0
+  const complete = Boolean(bases.complete)
+  const steps = bases.steps
+  const issues = [
+    ...(Array.isArray(bases.issues) ? bases.issues : []),
+    ...(Array.isArray(prevalidation.data?.issues) ? prevalidation.data.issues : []),
+  ]
+  const prevalidationStatus = prevalidation.isError
+    ? 'ERROR'
+    : prevalidation.isFetching
+      ? 'CHECKING'
+      : prevalidation.data?.status || (complete ? 'BLOCKED' : 'NOT_READY')
+  const canGenerate = ['READY', 'READY_WITH_WARNINGS'].includes(prevalidationStatus)
+  const prevalidationErrorMessage = prevalidation.error?.response?.status === 409
+    && prevalidation.error?.response?.data?.detail?.code === 'PREFLIGHT_STALE'
+    ? 'Os dados da escola foram alterados. Recalcule a prontidão antes de gerar.'
+    : getApiErrorMessage(prevalidation.error, 'Não foi possível validar os dados da escola.')
+
+  const blocks = [
+    {
+      id: 'foundation',
+      title: 'Fundação',
+      codes: [],
+      status: foundationStatus === 'COMPLETED' ? 'COMPLETE' : 'PENDING',
+      route: foundationStatus === 'COMPLETED' ? null : '/foundation',
+    },
+    {
+      id: 'offer',
+      title: 'Oferta',
+      codes: ['ACTIVE_CLASSES', 'MODULES'],
+      route: firstPendingRoute(steps, ['ACTIVE_CLASSES', 'MODULES']),
+    },
+    {
+      id: 'people',
+      title: 'Pessoas',
+      codes: ['TEACHER_ASSIGNMENT'],
+      route: firstPendingRoute(steps, ['TEACHER_ASSIGNMENT']) || '/members',
+    },
+    {
+      id: 'associations',
+      title: 'Associações',
+      codes: ['CLASS_SUBJECTS', 'COMPATIBLE_ROOM'],
+      route: firstPendingRoute(steps, ['CLASS_SUBJECTS', 'COMPATIBLE_ROOM']),
+    },
+    {
+      id: 'first-schedule',
+      title: 'Primeiro horário',
+      codes: ['TIMESLOTS', 'TEACHER_AVAILABILITY'],
+      route: firstPendingRoute(steps, ['TIMESLOTS', 'TEACHER_AVAILABILITY']) || '/schedules',
+      status: complete
+        ? (canGenerate ? 'COMPLETE' : prevalidationStatus)
+        : null,
+    },
+  ].map((block) => ({
+    ...block,
+    status: block.status || (block.codes.length > 0 && block.codes.every((code) => statusFor(steps, code) === 'COMPLETE') ? 'COMPLETE' : 'PENDING'),
+  }))
 
   return (
     <div className="preparation-dashboard" data-testid="preparation-dashboard">
       <PageHeader
         preTitle="Fase de Preparação"
         title="Prontidão das Bases Escolares"
-        context={`Escola: ${organizationName}`}
-        description="Complete a cadeia cumulativa de 7 níveis antes de lançar a geração de horários."
+        context={`Escola: ${organizationName || 'a sua escola'}`}
+        description="Complete os cinco blocos antes de lançar a geração do primeiro horário."
       />
 
-      {/* Banner Principal de Prontidão */}
       <CCard className="mb-4 shadow-sm border-0 bg-primary text-white">
         <CCardBody className="p-4">
           <div className="d-flex justify-content-between align-items-center mb-3">
             <div>
               <CBadge color="light" textColor="primary" className="fw-bold text-uppercase mb-2">
-                Nível de Prontidão: {depth}/7
+                Nível de prontidão: {depth}/7
               </CBadge>
               <h3 className="h4 fw-bold mb-1">
-                {complete ? '🎉 Todas as bases estão prontas para geração!' : `Prontidão das Bases: ${percentage}% (${depth}/7 níveis atingidos)`}
+                {complete ? 'Todas as bases estão prontas para geração.' : `Prontidão das bases: ${percentage}%`}
               </h3>
-              <p className="mb-0 text-white-50 small">
-                {complete
-                  ? 'A escola cumpre todos os invariantes do motor CP-SAT do Google OR-Tools.'
-                  : 'Complete o próximo nível pendente na lista abaixo para progredir.'}
-              </p>
+              <p className="mb-0 text-white-50 small">A geração usa os dados atualmente registados na escola.</p>
             </div>
             <div className="d-flex gap-2">
               <CButton
                 color="light"
                 variant="outline"
                 className="text-white border-white"
-                onClick={tutorial.status === 'IN_PROGRESS' ? tutorial.openTutorial : tutorial.repeatTutorial}
+                onClick={() => {
+                  if (tutorial.status !== 'IN_PROGRESS') tutorial.repeatTutorial()
+                  navigate('/guide')
+                }}
               >
-                {tutorial.status === 'IN_PROGRESS' ? 'Retomar guia' : 'Repetir guia'} 🎓
+                {tutorial.status === 'IN_PROGRESS' ? 'Retomar guia' : 'Repetir guia'}
               </CButton>
               <CButton
                 color="light"
                 className="text-primary fw-bold px-4"
-                disabled={!complete}
+                disabled={!canGenerate}
                 onClick={() => navigate('/schedules')}
               >
-                Gerar Horário →
+                {prevalidationStatus === 'CHECKING' ? 'A validar…' : 'Gerar primeiro horário →'}
               </CButton>
             </div>
           </div>
-
           <CProgress height={8} className="bg-white bg-opacity-25 mt-2">
             <CProgressBar value={percentage} color="warning" />
           </CProgress>
         </CCardBody>
       </CCard>
 
-      {/* Lista Cumulativa de Níveis */}
-      <CCard className="shadow-sm border-0 mb-4">
-        <CCardBody className="p-4">
-          <h4 className="h5 fw-bold mb-3 text-dark">Cadeia Cumulativa de Validação</h4>
-          <div className="d-flex flex-column gap-3">
-            {steps.map((st, idx) => {
-              const isPassed = st.status === 'COMPLETE'
-              const isCurrentTarget = !isPassed && (idx === 0 || steps[idx - 1].status === 'COMPLETE')
-
-              return (
-                <div
-                  key={st.code}
-                  className={`p-3 rounded border d-flex justify-content-between align-items-center ${
-                    isPassed
-                      ? 'bg-light border-success-subtle'
-                      : isCurrentTarget
-                        ? 'bg-white border-primary shadow-sm'
-                        : 'bg-light text-muted opacity-75'
-                  }`}
-                >
-                  <div className="d-flex align-items-center gap-3">
-                    <span
-                      className={`badge rounded-pill ${
-                        isPassed ? 'bg-success' : isCurrentTarget ? 'bg-primary' : 'bg-secondary'
-                      }`}
-                    >
-                      {isPassed ? '✓ Concluído' : isCurrentTarget ? 'A Realizar' : 'Bloqueado'}
-                    </span>
-                    <div>
-                      <h6 className="mb-0 fw-semibold text-dark">
-                        {stepLabels[st.code] || st.code}
-                      </h6>
-                      <small className="text-muted">
-                        {isPassed
-                          ? 'Invariante satisfeito'
-                          : isCurrentTarget
-                            ? 'Configure este recurso para desbloquear o próximo nível'
-                            : 'Requer que o nível anterior esteja concluído'}
-                      </small>
+      <div className="preparation-blocks d-grid gap-3" data-testid="preparation-blocks">
+        {blocks.map((block, index) => {
+          const pendingCode = block.codes.find((code) => statusFor(steps, code) !== 'COMPLETE')
+          const blockerRoute = issues.find((issue) => issue.severity === 'BLOCKER')?.route
+          const actionRoute = block.id === 'first-schedule' && blockerRoute ? blockerRoute : block.route
+          const needsPrevalidationCorrection = block.id === 'first-schedule'
+            && complete
+            && !canGenerate
+          const showPrevalidationRetry = block.id === 'first-schedule' && prevalidation.isError
+          const showRouteAction = actionRoute
+            && !showPrevalidationRetry
+            && prevalidationStatus !== 'CHECKING'
+            && (block.status !== 'COMPLETE' || needsPrevalidationCorrection)
+          return (
+            <CCard key={block.id} data-testid={`preparation-block-${block.id}`} className="shadow-sm border-0">
+              <CCardBody className="d-flex justify-content-between align-items-start gap-3">
+                <div>
+                  <p className="text-uppercase text-muted small mb-1">Bloco {index + 1}</p>
+                  <h3 className="h5 fw-bold mb-2">{block.title}</h3>
+                  <p className="text-muted mb-2">
+                    {block.status === 'COMPLETE'
+                      ? 'Concluído.'
+                      : block.id === 'first-schedule' && prevalidation.isError
+                        ? 'Não foi possível validar as bases.'
+                      : pendingCode
+                        ? `Pendente: ${BLOCK_LABELS[pendingCode] || pendingCode}.`
+                        : block.id === 'first-schedule'
+                          ? `Prevalidation: ${prevalidationStatus}.`
+                          : 'Configure este bloco para continuar.'}
+                  </p>
+                  {block.id === 'first-schedule' && <p className="small text-muted mb-0">Prevalidation: {prevalidationStatus}.</p>}
+                  {showPrevalidationRetry && (
+                    <div className="small text-danger mt-2" role="alert">
+                      <span>{prevalidationErrorMessage}</span>{' '}
+                      <CButton
+                        color="link"
+                        size="sm"
+                        className="p-0 align-baseline"
+                        onClick={() => void prevalidation.refetch()}
+                        disabled={prevalidation.isFetching}
+                      >
+                        Tentar novamente
+                      </CButton>
                     </div>
-                  </div>
-
-                  <div>
-                    {isCurrentTarget && (
-                      <Link to={st.route} className="btn btn-sm btn-primary">
-                        Configurar →
-                      </Link>
-                    )}
-                    {isPassed && (
-                      <Link to={st.route} className="btn btn-sm btn-outline-secondary">
-                        Ver
-                      </Link>
-                    )}
-                  </div>
+                  )}
                 </div>
-              )
-            })}
-          </div>
-        </CCardBody>
-      </CCard>
+                {showRouteAction && (
+                  <CButton color="primary" size="sm" onClick={() => navigate(actionRoute)}>
+                    {block.id === 'first-schedule' && canGenerate ? 'Abrir geração' : 'Corrigir bloco'}
+                  </CButton>
+                )}
+              </CCardBody>
+            </CCard>
+          )
+        })}
+      </div>
 
-      {/* Tutorial Modal */}
-      <TutorialModal
-        isOpen={tutorial.isOpen}
-        currentStep={tutorial.currentStep}
-        currentStepIndex={tutorial.currentStepIndex}
-        totalSteps={tutorial.totalSteps}
-        progressPercent={tutorial.progressPercent}
-        completed={tutorial.completed}
-        simulationData={tutorial.simulationData}
-        onNext={tutorial.nextStep}
-        onPrev={tutorial.prevStep}
-        onSkip={tutorial.skipStep}
-        onSkipTutorial={tutorial.skipTutorial}
-        onClose={tutorial.exitTutorial}
-      />
+      {issues.length > 0 && (
+        <CCard className="shadow-sm border-0 mt-4" data-testid="preparation-issues">
+          <CCardBody>
+            <h3 className="h5 fw-bold">Issues de preparação</h3>
+            <ul className="mb-0">
+              {issues.map((issue, index) => (
+                <li key={`${issue.code}-${index}`}><strong>{issue.code}</strong> · {issue.severity} · {issue.message} · {issue.route}</li>
+              ))}
+            </ul>
+          </CCardBody>
+        </CCard>
+      )}
     </div>
   )
 }

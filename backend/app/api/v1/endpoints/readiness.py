@@ -68,17 +68,4 @@ async def get_prevalidation(
             },
         )
 
-    final_report = await preflight_service.evaluate(
-        organization_id=current_user.organization_id,
-        school_year_id=active_school_year.id,
-        strategy=models.ScheduleGenerationStrategy.COMPLETE_GENERATION,
-    )
-    if final_report.fingerprint != initial_report.fingerprint:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail={
-                "code": "PREFLIGHT_STALE",
-                "message": "O estado da escola mudou durante a pré-validação.",
-            },
-        )
-    return final_report
+    return initial_report

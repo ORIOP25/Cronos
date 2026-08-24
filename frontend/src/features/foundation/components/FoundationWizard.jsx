@@ -21,7 +21,6 @@ import {
   STEP_PREVIEW,
   STEP_CALENDAR,
   STEP_CONFIRMATION,
-  STEP_LABELS,
 } from '../foundationModel'
 import { PeriodStep } from './PeriodStep'
 import { DaysStep } from './DaysStep'
@@ -44,7 +43,7 @@ function apiErrorMessage(detail, fallback) {
   return fallback
 }
 
-export function FoundationWizard({ organizationName }) {
+export function FoundationWizard() {
   const navigate = useNavigate()
   const statusQuery = useFoundationStatus()
   const draftQuery = useFoundationDraft()
@@ -53,21 +52,33 @@ export function FoundationWizard({ organizationName }) {
 
   const [state, dispatch] = useReducer(foundationReducer, initialFoundationState)
   const [confirmed, setConfirmed] = useState(false)
+  const [isRetrying, setIsRetrying] = useState(false)
+  const [isReloadingConflict, setIsReloadingConflict] = useState(false)
+  const [conflictReloadError, setConflictReloadError] = useState('')
   const isInitialSync = useRef(false)
   const isDirtyRef = useRef(false)
   const autosaveTimerRef = useRef(null)
   const confirmedVersionRef = useRef(0)
   const pendingSnapshotRef = useRef(null)
+  const failedSnapshotRef = useRef(null)
   const saveRunnerRef = useRef(null)
 
   // 1. Initial Sync from Server Draft
   useEffect(() => {
-    if (draftQuery.data && !isInitialSync.current) {
+    if (statusQuery.data && draftQuery.data && !isInitialSync.current) {
       isInitialSync.current = true
       confirmedVersionRef.current = draftQuery.data.version || 0
       dispatch({ type: 'INIT_FROM_SERVER', payload: draftQuery.data })
     }
-  }, [draftQuery.data])
+  }, [draftQuery.data, statusQuery.data])
+
+  useEffect(() => {
+    if (!isInitialSync.current || !state.currentStep) return
+    const focusTimer = window.setTimeout(() => {
+      document.querySelector('.foundation-step-content h4')?.focus()
+    }, 0)
+    return () => window.clearTimeout(focusTimer)
+  }, [state.currentStep])
 
   // 2. Redirect if already completed
   useEffect(() => {
@@ -77,6 +88,7 @@ export function FoundationWizard({ organizationName }) {
   }, [statusQuery.data?.foundation_status, state.completedThisSession, navigate])
 
   const persistSnapshot = useCallback((snapshot) => {
+    if (state.status === 'conflict') return Promise.resolve(false)
     pendingSnapshotRef.current = snapshot
     if (saveRunnerRef.current) return saveRunnerRef.current
 
@@ -92,11 +104,14 @@ export function FoundationWizard({ organizationName }) {
             data: nextSnapshot.values,
           })
           confirmedVersionRef.current = res.version
+          failedSnapshotRef.current = null
           dispatch({ type: 'SAVE_SUCCEEDED', version: res.version })
         } catch (err) {
           if (err?.response?.status === 409) {
+            pendingSnapshotRef.current = nextSnapshot
             dispatch({ type: 'VERSION_CONFLICT', payload: err.response.data?.detail || {} })
           } else {
+            failedSnapshotRef.current = nextSnapshot
             dispatch({
               type: 'SAVE_FAILED',
               error: apiErrorMessage(err?.response?.data?.detail, 'Não foi possível guardar o rascunho.'),
@@ -112,11 +127,11 @@ export function FoundationWizard({ organizationName }) {
       saveRunnerRef.current = null
     })
     return saveRunnerRef.current
-  }, [saveDraftMutation])
+  }, [saveDraftMutation, state.status])
 
   // 4. 600ms Debounced Autosave on user input
   useEffect(() => {
-    if (!isInitialSync.current || !isDirtyRef.current || state.status === 'conflict') {
+    if (!isInitialSync.current || !isDirtyRef.current || state.status === 'conflict' || state.status === 'saving') {
       return
     }
 
@@ -137,8 +152,13 @@ export function FoundationWizard({ organizationName }) {
   }, [state.values, state.currentStep, state.status, persistSnapshot])
 
   const handleChange = (field, value) => {
+    if (state.status === 'conflict' || state.status === 'saving') return
     isDirtyRef.current = true
     dispatch({ type: 'SET_FIELD', field, value })
+  }
+
+  const handleRetrySave = () => {
+    if (failedSnapshotRef.current) void persistSnapshot(failedSnapshotRef.current)
   }
 
   // Navigation handlers
@@ -200,14 +220,52 @@ export function FoundationWizard({ organizationName }) {
 
   // Conflict Resolution
   const handleReloadConflict = async () => {
-    const res = await draftQuery.refetch()
-    if (res.data) {
+    setConflictReloadError('')
+    setIsReloadingConflict(true)
+    try {
+      const res = await draftQuery.refetch()
+      if (res.error || !res.data) {
+        throw res.error || new Error('O rascunho remoto não foi devolvido.')
+      }
       confirmedVersionRef.current = res.data.version || 0
+      failedSnapshotRef.current = null
+      pendingSnapshotRef.current = null
+      isDirtyRef.current = false
       dispatch({ type: 'RESOLVE_CONFLICT_RELOAD', payload: res.data })
+    } catch (err) {
+      setConflictReloadError(apiErrorMessage(err?.response?.data?.detail, 'Não foi possível recarregar os dados mais recentes.'))
+    } finally {
+      setIsReloadingConflict(false)
     }
   }
 
-  if (statusQuery.isLoading || draftQuery.isLoading) {
+  const handleRetryHydration = async () => {
+    setIsRetrying(true)
+    await Promise.all([statusQuery.refetch(), draftQuery.refetch()])
+    setIsRetrying(false)
+  }
+
+  const organizationName = statusQuery.data?.organization_name || 'a sua escola'
+  const isBlocked = state.status === 'saving' || state.status === 'conflict' || isRetrying
+
+  if (statusQuery.isError || draftQuery.isError) {
+    return (
+      <div className="guided-form-shell">
+        <StatePanel
+          state="error"
+          title="Não foi possível carregar a fundação da escola"
+          description="O estado e o rascunho não foram confirmados. Tente novamente para continuar."
+          action={(
+            <button type="button" onClick={handleRetryHydration} disabled={isRetrying}>
+              {isRetrying ? 'A tentar novamente…' : 'Tentar novamente'}
+            </button>
+          )}
+        />
+      </div>
+    )
+  }
+
+  if (statusQuery.isLoading || draftQuery.isLoading || !isInitialSync.current || isRetrying) {
     return (
       <div className="guided-form-shell">
         <StatePanel state="loading" title="A carregar a fundação da escola" description="A obter dados e rascunho de configuração..." />
@@ -225,34 +283,36 @@ export function FoundationWizard({ organizationName }) {
       >
         <div className="d-flex justify-content-between align-items-center mb-3">
           <GuidedFormProgress
-            steps={STEP_LABELS}
-            currentStep={state.currentStep}
-            onStepClick={(step) => {
-              if (step <= state.currentStep) void persistDestination(step)
-            }}
+            current={state.currentStep}
+            total={FOUNDATION_STEP_COUNT}
           />
           <div className="ms-3 text-end" style={{ minWidth: '120px' }}>
             {state.status === 'saving' && (
-              <span className="small text-muted d-flex align-items-center gap-1 justify-content-end">
+              <span className="small text-muted d-flex align-items-center gap-1 justify-content-end" role="status">
                 <CSpinner size="sm" /> A guardar...
               </span>
             )}
             {state.status === 'saved' && (
-              <CBadge color="success" shape="rounded-pill">Guardado ✓</CBadge>
+              <CBadge color="success" shape="rounded-pill" role="status">Guardado ✓</CBadge>
             )}
             {state.status === 'error' && (
-              <CBadge color="danger" shape="rounded-pill">Erro ao guardar</CBadge>
+              <CBadge color="danger" shape="rounded-pill" role="alert">Erro ao guardar</CBadge>
             )}
           </div>
         </div>
 
         {state.error && (
           <div className="mb-3">
-            <FeedbackBanner tone="danger">{state.error}</FeedbackBanner>
+            <FeedbackBanner
+              tone="danger"
+              action={state.status === 'error' && failedSnapshotRef.current ? (
+                <button type="button" onClick={handleRetrySave}>Tentar guardar novamente</button>
+              ) : undefined}
+            >{state.error}</FeedbackBanner>
           </div>
         )}
 
-        <div className="foundation-step-content py-2">
+        <fieldset disabled={isBlocked || !isInitialSync.current} className="foundation-step-content py-2 border-0 p-0 m-0">
           {state.currentStep === STEP_PERIOD && (
             <PeriodStep
               values={state.values}
@@ -322,13 +382,13 @@ export function FoundationWizard({ organizationName }) {
               onConfirmedChange={setConfirmed}
             />
           )}
-        </div>
+        </fieldset>
 
         <div className="d-flex justify-content-between align-items-center pt-4 border-top mt-4">
           <CButton
             color="secondary"
             variant="outline"
-            disabled={state.currentStep === 1 || state.status === 'saving'}
+            disabled={state.currentStep === 1 || isBlocked}
             onClick={handlePrev}
           >
             ← Anterior
@@ -338,7 +398,7 @@ export function FoundationWizard({ organizationName }) {
             {state.currentStep < STEP_CONFIRMATION ? (
               <CButton
                 color="primary"
-                disabled={state.status === 'saving'}
+                disabled={isBlocked}
                 onClick={handleNext}
               >
                 Seguinte →
@@ -348,7 +408,7 @@ export function FoundationWizard({ organizationName }) {
                 color="success"
                 size="lg"
                 className="fw-bold px-4"
-                disabled={state.status === 'saving' || !confirmed}
+                disabled={isBlocked || !confirmed}
                 onClick={handleCompleteActivation}
               >
                 {state.status === 'saving' ? (
@@ -367,7 +427,8 @@ export function FoundationWizard({ organizationName }) {
         isOpen={state.status === 'conflict'}
         conflictData={state.conflictData}
         onReload={handleReloadConflict}
-        onClose={() => dispatch({ type: 'CLOSE_CONFLICT' })}
+        reloadError={conflictReloadError}
+        isReloading={isReloadingConflict}
       />
     </div>
   )

@@ -64,7 +64,7 @@ const Rooms = () => {
     <div className="p-4">
       <PageHeader preTitle="Gestão" title="Salas" />
       <div className="d-flex justify-content-end mb-4">
-        <CButton color="primary" onClick={handleCreate} className="d-flex align-items-center gap-2">
+        <CButton color="primary" onClick={handleCreate} className="d-flex align-items-center gap-2" data-tutorial-target="new-room">
           <CIcon icon={cilPlus} />
           Nova Sala
         </CButton>
@@ -98,6 +98,7 @@ const Rooms = () => {
         onSubmit={handleFormSubmit}
         isLoading={activeMutation.isPending}
         error={activeMutation.error}
+        tutorialTarget="room-form"
       />
     </div>
   )

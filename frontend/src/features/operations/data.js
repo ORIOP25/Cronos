@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import apiClient from '../../apiClient'
+import { useApiClient } from '../../ApiClientContext'
+import { invalidatePreparationQueries } from '../readiness/data'
 import { useOrganization, useAuth } from '@clerk/react'
 
 const DYNAMIC_OPTS = {
@@ -7,6 +8,7 @@ const DYNAMIC_OPTS = {
 }
 
 export const useOccurrences = ({ classId, dateFrom, dateTo, status } = {}) => {
+  const apiClient = useApiClient()
   const orgId = useOrganization().organization?.id
   const params = {}
   if (classId) params.class_id = classId
@@ -30,6 +32,7 @@ export const useOccurrences = ({ classId, dateFrom, dateTo, status } = {}) => {
  * Lista de dívidas de horas agrupadas por turma/disciplina.
  */
 export const useDebts = ({ classId } = {}) => {
+  const apiClient = useApiClient()
   const orgId = useOrganization().organization?.id
   const params = {}
   if (classId) params.class_id = classId
@@ -47,6 +50,7 @@ export const useDebts = ({ classId } = {}) => {
  * Ranking de recomendações para uma ocorrência específica.
  */
 export const useSubstituteRecommendations = ({ occurrenceId } = {}) => {
+  const apiClient = useApiClient()
   const orgId = useOrganization().organization?.id
   return useQuery({
     queryKey: ['substitute-recommendations', orgId, occurrenceId],
@@ -62,6 +66,7 @@ export const useSubstituteRecommendations = ({ occurrenceId } = {}) => {
  * Mutation para registar falta (GAP) ou substituição (SUBSTITUTED).
  */
 export const useUpdateOccurrence = () => {
+  const apiClient = useApiClient()
   const queryClient = useQueryClient()
   const orgId = useOrganization().organization?.id
 
@@ -90,6 +95,7 @@ export const useUpdateOccurrence = () => {
  * WBS V3 Fase 3.
  */
 export const useCancelOccurrence = () => {
+  const apiClient = useApiClient()
   const queryClient = useQueryClient()
   const orgId = useOrganization().organization?.id
 
@@ -114,6 +120,7 @@ export const useCancelOccurrence = () => {
  * Registar execução de aula (LessonLog).
  */
 export const useUpsertLessonLog = () => {
+  const apiClient = useApiClient()
   const queryClient = useQueryClient()
   const orgId = useOrganization().organization?.id
 
@@ -138,6 +145,7 @@ export const useUpsertLessonLog = () => {
 // ============================================================
 
 export const useMyTimesheet = (weekStartDate) => {
+  const apiClient = useApiClient()
   const orgId = useOrganization().organization?.id
   return useQuery({
     queryKey: ['my-timesheet', orgId, weekStartDate],
@@ -150,6 +158,7 @@ export const useMyTimesheet = (weekStartDate) => {
 }
 
 export const useSubmitMyTimesheet = () => {
+  const apiClient = useApiClient()
   const queryClient = useQueryClient()
   const orgId = useOrganization().organization?.id
 
@@ -165,6 +174,7 @@ export const useSubmitMyTimesheet = () => {
 }
 
 export const useTimesheets = (weekStartDate, status) => {
+  const apiClient = useApiClient()
   const orgId = useOrganization().organization?.id
   const params = {}
   if (weekStartDate) params.week_start_date = weekStartDate
@@ -179,6 +189,7 @@ export const useTimesheets = (weekStartDate, status) => {
 }
 
 export const useUpdateTimesheetStatus = () => {
+  const apiClient = useApiClient()
   const queryClient = useQueryClient()
   const orgId = useOrganization().organization?.id
 
@@ -202,14 +213,29 @@ export const useUpdateTimesheetStatus = () => {
  * Lista rascunhos pendentes de aprovação para a organização do user.
  */
 export const useDashboard = ({ enabled = true } = {}) => {
+  const apiClient = useApiClient()
+  const queryClient = useQueryClient()
   const orgId = useOrganization().organization?.id
   return useQuery({
     queryKey: ['dashboard', orgId],
     queryFn: async () => {
-      return apiClient.get('/dashboard')
+      const data = await apiClient.get('/dashboard')
+      if (!data || !['PREPARATION', 'OPERATIONAL'].includes(data.mode)) {
+        throw new Error('Dashboard contract error: mode is missing or unknown.')
+      }
+      if (data.mode === 'PREPARATION' && (!data.bases || typeof data.bases !== 'object')) {
+        throw new Error('Dashboard contract error: preparation bases are missing.')
+      }
+      return data
+    },
+    onError: (error) => {
+      if (error?.response?.status === 409 && error?.response?.data?.detail?.code === 'PREFLIGHT_STALE') {
+        void queryClient.invalidateQueries({ queryKey: ['dashboard', orgId] })
+      }
     },
     enabled: Boolean(orgId) && enabled,
     ...DYNAMIC_OPTS,
+    refetchOnWindowFocus: 'always',
   })
 }
 
@@ -218,6 +244,7 @@ export const useDashboard = ({ enabled = true } = {}) => {
  * Retorna turmas com disciplinas e módulos + progresso.
  */
 export const useTeacherProgress = ({ enabled = true } = {}) => {
+  const apiClient = useApiClient()
   const orgId = useOrganization().organization?.id
   return useQuery({
     queryKey: ['teacher-progress', orgId],
@@ -233,6 +260,7 @@ export const useTeacherProgress = ({ enabled = true } = {}) => {
  * Disponibilidade do professor autenticado.
  */
 export const useMyAvailability = ({ enabled = true } = {}) => {
+  const apiClient = useApiClient()
   const orgId = useOrganization().organization?.id
   const { isLoaded } = useAuth()
   return useQuery({
@@ -248,6 +276,7 @@ export const useMyAvailability = ({ enabled = true } = {}) => {
  * Guardar disponibilidade do professor.
  */
 export const useSaveAvailability = () => {
+  const apiClient = useApiClient()
   const queryClient = useQueryClient()
   const orgId = useOrganization().organization?.id
   return useMutation({
@@ -257,6 +286,7 @@ export const useSaveAvailability = () => {
     onSuccess: (_, { payload }) => {
       queryClient.setQueryData(['my-availability', orgId], payload)
       void queryClient.invalidateQueries({ queryKey: ['my-availability', orgId] })
+      void invalidatePreparationQueries(queryClient, orgId)
     },
   })
 }

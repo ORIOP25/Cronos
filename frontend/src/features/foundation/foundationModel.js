@@ -10,18 +10,6 @@ export const STEP_PREVIEW = 7
 export const STEP_CALENDAR = 8
 export const STEP_CONFIRMATION = 9
 
-export const STEP_LABELS = [
-  'Período Escolar',
-  'Dias Letivos',
-  'Horário de Funcionamento',
-  'Duração do Bloco',
-  'Intervalos',
-  'Almoço',
-  'Grelha Gerada',
-  'Pausas e Feriados',
-  'Ativação',
-]
-
 export const initialFoundationDraftValues = {
   school_start_date: '',
   school_hard_end_date: '',
@@ -60,15 +48,21 @@ export function minutesToTime(totalMinutes) {
   return `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}`
 }
 
-export function calculateGridSlots(values) {
+export function buildDailyTimeslots(values) {
   const openMin = timeToMinutes(values.opening_time)
   const closeMin = timeToMinutes(values.closing_time)
   const slotDur = values.slot_duration_minutes == null ? 50 : Number(values.slot_duration_minutes)
   const breakDur = values.break_duration_minutes == null ? 10 : Number(values.break_duration_minutes)
-  const lunchStart = timeToMinutes(values.lunch_window_start)
-  const lunchEnd = timeToMinutes(values.lunch_window_end)
 
-  if (Number.isNaN(openMin) || Number.isNaN(closeMin) || closeMin <= openMin) {
+  if (
+    Number.isNaN(openMin) ||
+    Number.isNaN(closeMin) ||
+    closeMin <= openMin ||
+    !Number.isInteger(slotDur) ||
+    !Number.isInteger(breakDur) ||
+    slotDur <= 0 ||
+    breakDur < 0
+  ) {
     return []
   }
 
@@ -79,19 +73,8 @@ export function calculateGridSlots(values) {
   while (cur + slotDur <= closeMin) {
     const slotEnd = cur + slotDur
 
-    // If overlaps lunch window
-    const inLunch =
-      !Number.isNaN(lunchStart) &&
-      !Number.isNaN(lunchEnd) &&
-      cur < lunchEnd &&
-      slotEnd > lunchStart
-
-    if (inLunch) {
-      cur = Math.max(cur + breakDur, lunchEnd)
-      continue
-    }
-
     slots.push({
+      id: `${minutesToTime(cur)}-${minutesToTime(slotEnd)}`,
       index: slotIndex++,
       start: minutesToTime(cur),
       end: minutesToTime(slotEnd),
@@ -171,8 +154,8 @@ export function validateFoundationStep(step, values) {
     if (!Number.isNaN(lunchStartMin) && !Number.isNaN(lunchEndMin) && lunchEndMin <= lunchStartMin) {
       errors.lunch_window_end = 'O fim do almoço deve ser posterior ao início.'
     }
-    if (!Number.isInteger(lunchDur) || lunchDur < 15) {
-      errors.lunch_min_duration_minutes = 'A duração mínima de almoço deve ser pelo menos 15 minutos.'
+    if (!Number.isInteger(lunchDur) || lunchDur < 1) {
+      errors.lunch_min_duration_minutes = 'A duração mínima de almoço deve ser pelo menos 1 minuto.'
     }
     if (
       !Number.isNaN(lunchStartMin) &&
@@ -193,7 +176,7 @@ export function validateFoundationStep(step, values) {
   }
 
   if (step === STEP_PREVIEW) {
-    const slots = calculateGridSlots(values)
+    const slots = buildDailyTimeslots(values)
     if (slots.length === 0) {
       errors.preview = 'A configuração atual não permite gerar nenhum bloco de horário.'
     }

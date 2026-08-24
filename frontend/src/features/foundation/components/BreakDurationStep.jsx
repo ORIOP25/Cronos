@@ -3,7 +3,7 @@ import { CFormLabel, CFormInput, CFormFeedback } from '@coreui/react'
 export function BreakDurationStep({ values, fieldErrors, onChange }) {
   return (
     <div className="foundation-step-break-duration">
-      <h4 className="h5 mb-3 text-dark fw-bold">5. Intervalos entre Blocos</h4>
+      <h4 tabIndex="-1" className="h5 mb-3 text-dark fw-bold">5. Intervalos entre Blocos</h4>
       <p className="text-muted small mb-4">
         Indique a duração padrão dos intervalos entre blocos de aulas consecutivos.
       </p>

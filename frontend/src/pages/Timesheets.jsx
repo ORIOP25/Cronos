@@ -178,7 +178,7 @@ const Timesheets = () => {
                 <>
                   {/* Teacher header */}
                   <div className="d-flex justify-content-between align-items-start flex-wrap gap-3 mb-3">
-                    <div>
+    <div data-tutorial-target="timesheets-workspace">
                       <h4 className="mb-1 fw-bold">
                         {selectedTeacher.teacher_name || `Prof. #${selectedTeacher.teacher_id}`}
                       </h4>

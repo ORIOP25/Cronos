@@ -26,6 +26,16 @@ STEPS_METADATA = [
     ("TEACHER_AVAILABILITY", "/members"),
 ]
 
+READINESS_ISSUE_MESSAGES = {
+    "ACTIVE_CLASSES": "Registe pelo menos uma turma ativa.",
+    "CLASS_SUBJECTS": "Associe uma disciplina à turma com o ano curricular atual.",
+    "MODULES": "Adicione módulos com carga horária positiva às disciplinas.",
+    "TEACHER_ASSIGNMENT": "Associe um professor ativo e competente à disciplina.",
+    "COMPATIBLE_ROOM": "Registe uma sala compatível com a tipologia e lotação.",
+    "TIMESLOTS": "Configure pelo menos um tempo letivo.",
+    "TEACHER_AVAILABILITY": "Registe disponibilidade docente não impossível.",
+}
+
 
 class SchoolReadinessService:
     """Evaluates the 7 cumulative depths of school readiness for schedule generation."""
@@ -198,6 +208,16 @@ class SchoolReadinessService:
         issues: list[schemas.PreflightIssue],
         fingerprint: str | None = None,
     ) -> schemas.BasesReadinessResponse:
+        if depth < len(STEPS_METADATA) and not issues:
+            code, route = STEPS_METADATA[depth]
+            issues = [
+                schemas.PreflightIssue(
+                    code=f"{code}_REQUIRED",
+                    severity="BLOCKER",
+                    message=READINESS_ISSUE_MESSAGES[code],
+                    route=route,
+                )
+            ]
         percentage = PERCENTAGE_MAP[min(depth, 7)]
         steps: list[schemas.ReadinessStep] = []
         for i, (code, route) in enumerate(STEPS_METADATA):

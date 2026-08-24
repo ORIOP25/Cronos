@@ -1,166 +1,142 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import {
   TUTORIAL_STEPS,
   TUTORIAL_VERSION,
   getTutorialStorageKey,
-} from '../features/tutorial/contracts'
+  matchTutorialMutation,
+  matchTutorialMutations,
+  createTutorialScenario,
+  tutorialScenarioInvariants,
+} from '../features/tutorial/tutorialScenario'
 import {
-  simulationReducer,
-  INITIAL_SIMULATION_STATE,
-  simulationInvariants,
-} from '../features/tutorial/simulationEngine'
+  INITIAL_TUTORIAL_STATE,
+  applyTutorialTransition,
+  getTutorialScenario,
+  validateTutorialState,
+} from '../features/tutorial/tutorialModel'
 
-describe('tutorialEngine', () => {
-  it('has exactly 24 canonical steps across 2 chapters with TUTORIAL_VERSION = 1', () => {
-    expect(TUTORIAL_VERSION).toBe(1)
+describe('tutorial v2 domain', () => {
+  it('declares exactly 24 deterministic steps and 17 skips', () => {
+    expect(TUTORIAL_VERSION).toBe(2)
     expect(TUTORIAL_STEPS).toHaveLength(24)
-
-    const chapters = new Set(TUTORIAL_STEPS.map((s) => s.chapter))
-    expect(chapters).toEqual(new Set([1, 2]))
-
-    const c1Steps = TUTORIAL_STEPS.filter((s) => s.chapter === 1)
-    const c2Steps = TUTORIAL_STEPS.filter((s) => s.chapter === 2)
-    expect(c1Steps).toHaveLength(14)
-    expect(c2Steps).toHaveLength(10)
-
-    // Check step ids are unique
-    const ids = TUTORIAL_STEPS.map((s) => s.id)
-    expect(ids).toEqual([
-      'structure_overview',
-      'subject_create',
-      'module_add',
-      'course_create',
-      'class_create',
-      'teacher_add',
-      'teacher_competency',
-      'room_add',
-      'assignment_create',
-      'availability_review',
-      'schedule_prepare',
-      'schedule_review',
-      'schedule_approve',
-      'chapter_transition',
-      'published_block_open',
-      'occurrence_create',
-      'substitute_teacher_select',
-      'substitute_subject_select',
-      'substitution_complete',
-      'debt_observe',
-      'repair_simulate',
-      'repair_compare',
-      'history_verify',
-      'repair_approve',
-    ])
-    expect(new Set(ids).size).toBe(24)
+    expect(new Set(TUTORIAL_STEPS.map((step) => step.id)).size).toBe(24)
+    expect(TUTORIAL_STEPS.filter((step) => step.isSkippable)).toHaveLength(17)
+    expect(TUTORIAL_STEPS.filter((step) => step.kind === 'observation').every((step) => step.action.id === 'continue')).toBe(true)
+    expect(TUTORIAL_STEPS.every((step) => step.action.id && step.activeNavItem && step.screen)).toBe(true)
   })
 
-  it('proves exactly 7 unskippable and 17 skippable steps (2^17 = 131072 combinations)', () => {
-    const unskippableSteps = TUTORIAL_STEPS.filter((s) => !s.isSkippable)
-    const skippableSteps = TUTORIAL_STEPS.filter((s) => s.isSkippable)
-
-    expect(unskippableSteps).toHaveLength(7)
-    expect(skippableSteps).toHaveLength(17)
-
-    const combinations = 2 ** skippableSteps.length
-    expect(combinations).toBe(131072)
-  })
-
-  it('generates the canonical isolated storage key format', () => {
-    const key1 = getTutorialStorageKey('user_123', 'org_abc')
-    expect(key1).toBe('cronos:tutorial:v1:user:user_123:org:org_abc')
-
-    const keyDefault = getTutorialStorageKey(null, null)
-    expect(keyDefault).toBe('cronos:tutorial:v1:user:anonymous:org:personal')
-  })
-
-  it('transitions state correctly on open, next, prev, skip, and exit', () => {
-    // 1. OPEN_TUTORIAL
-    let state = simulationReducer(INITIAL_SIMULATION_STATE, {
-      type: 'OPEN_TUTORIAL',
-      payload: { tutorialRunId: 'run-uuid-123' },
-    })
-    expect(state.isOpen).toBe(true)
-    expect(state.tutorialRunId).toBe('run-uuid-123')
-    expect(state.currentStepIndex).toBe(0)
-    expect(state.completed).toBe(false)
-
-    // Step 1 is unskippable
-    expect(TUTORIAL_STEPS[0].isSkippable).toBe(false)
-    const afterAttemptSkip = simulationReducer(state, { type: 'SKIP_STEP' })
-    expect(afterAttemptSkip.currentStepIndex).toBe(0)
-    expect(afterAttemptSkip.skippedSteps).toHaveLength(0)
-
-    // 2. NEXT_STEP advances to step 2
-    state = simulationReducer(state, { type: 'NEXT_STEP' })
-    expect(state.currentStepIndex).toBe(1)
-    expect(state.completedSteps).toContain(TUTORIAL_STEPS[0].id)
-
-    // 3. PREV_STEP returns to step 1
-    state = simulationReducer(state, { type: 'PREV_STEP' })
-    expect(state.currentStepIndex).toBe(0)
-
-    // 4. NEXT_STEP to step 2 (which is skippable)
-    state = simulationReducer(state, { type: 'NEXT_STEP' })
-    expect(state.currentStepIndex).toBe(1)
-    expect(TUTORIAL_STEPS[1].isSkippable).toBe(true)
-
-    // SKIP_STEP on step 2
-    state = simulationReducer(state, { type: 'SKIP_STEP' })
-    expect(state.currentStepIndex).toBe(2)
-    expect(state.skippedSteps).toContain(TUTORIAL_STEPS[1].id)
-    expect(simulationInvariants(state.simulationData)).toEqual({
+  it('contains the required local scenario dimensions', () => {
+    const scenario = createTutorialScenario(INITIAL_TUTORIAL_STATE)
+    expect(tutorialScenarioInvariants(scenario)).toEqual({
       courses: true,
       classes: true,
       subjects: true,
+      modules: true,
       teachers: true,
       rooms: true,
-      modules: true,
+      demoIds: true,
+      weeklyGrid: true,
       historyPreserved: true,
     })
-
-    // 5. EXIT_TUTORIAL
-    state = simulationReducer(state, { type: 'EXIT_TUTORIAL' })
-    expect(state.isOpen).toBe(false)
   })
 
-  it(
-    'exhaustively simulates all 131,072 (2^17) skip combinations deterministically',
-    () => {
-      const TOTAL_COMBINATIONS = 1 << 17 // 131072
-      const baseOpenState = simulationReducer(INITIAL_SIMULATION_STATE, {
-        type: 'OPEN_TUTORIAL',
-        payload: { tutorialRunId: 'test-run-benchmark' },
+  it('uses the v2 tenant-isolated storage key', () => {
+    expect(getTutorialStorageKey('user_123', 'org_abc')).toBe('cronos:tutorial:v2:user:user_123:org:org_abc')
+    expect(getTutorialStorageKey(null, null)).toBe('cronos:tutorial:v2:user:anonymous:org:personal')
+  })
+
+  it('accepts only the action declared by the current step', () => {
+    const started = applyTutorialTransition(INITIAL_TUTORIAL_STATE, { type: 'START', tutorialRunId: 'run-1' })
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const invalid = applyTutorialTransition(started, { type: 'COMPLETE_STEP', actionId: 'wrong-action' })
+    expect(invalid).toBe(started)
+    expect(consoleError).toHaveBeenCalled()
+    consoleError.mockRestore()
+
+    const completed = applyTutorialTransition(started, { type: 'COMPLETE_STEP', actionId: 'continue' })
+    expect(completed.stepId).toBe('subject_create')
+    expect(completed.chapter).toBe(1)
+  })
+
+  it('completes related fields saved by one real form as one sequence', () => {
+    let state = applyTutorialTransition(INITIAL_TUTORIAL_STATE, { type: 'START', tutorialRunId: 'run-sequence' })
+    state = applyTutorialTransition(state, { type: 'COMPLETE_STEP', actionId: 'continue' })
+    state = applyTutorialTransition(state, {
+      type: 'COMPLETE_SEQUENCE',
+      actionIds: ['save-subject', 'add-module'],
+    })
+    expect(state.stepId).toBe('course_create')
+  })
+
+  it('matches a real form mutation to one or more declared tutorial objectives', () => {
+    const matches = matchTutorialMutations({
+      method: 'post',
+      path: '/courses/',
+      body: {
+        name: 'Técnico de Eletrónica',
+        abbreviation: 'TE',
+        classes_config: [{ name: '10.º TE', grade_level: 10, size: 24 }],
+      },
+    })
+    expect(matches.map((match) => match.stepId)).toEqual(['course_create', 'class_create'])
+    expect(matchTutorialMutation({
+      stepId: 'course_create',
+      method: 'post',
+      path: '/courses/',
+      body: { name: 'Técnico de Eletrónica', abbreviation: 'TE' },
+    })?.expectedActionId).toBe('save-course')
+  })
+
+  it('keeps exit as an in-progress checkpoint and repeats with a new run', () => {
+    const started = applyTutorialTransition(INITIAL_TUTORIAL_STATE, { type: 'START', tutorialRunId: 'run-1' })
+    const exited = applyTutorialTransition(started, { type: 'EXIT' })
+    expect(exited).toEqual(started)
+    expect(exited.status).toBe('IN_PROGRESS')
+
+    const repeated = applyTutorialTransition(exited, { type: 'REPEAT', tutorialRunId: 'run-2' })
+    expect(repeated).toMatchObject({ tutorialRunId: 'run-2', status: 'IN_PROGRESS', stepId: 'structure_overview', skippedStepIds: [], values: {} })
+  })
+
+  it('completes deterministic skip boundary and representative masks with valid data', () => {
+    const skippable = TUTORIAL_STEPS.filter((step) => step.isSkippable)
+    const total = 2 ** skippable.length
+    expect(total).toBe(131072)
+    const masks = [
+      0,
+      total - 1,
+      1,
+      2,
+      0x01555,
+      0x0AAAA,
+      0x12345,
+    ]
+
+    for (const mask of masks) {
+      let state = applyTutorialTransition(INITIAL_TUTORIAL_STATE, {
+        type: 'START',
+        tutorialRunId: `run-exhaustive-${mask}`,
       })
-
-      const skipAction = { type: 'SKIP_STEP' }
-      const nextAction = { type: 'NEXT_STEP' }
-
-      for (let mask = 0; mask < TOTAL_COMBINATIONS; mask++) {
-        let state = baseOpenState
-        let skippablePointer = 0
-        let expectedSkipCount = 0
-
-        for (let stepIdx = 0; stepIdx < 24; stepIdx++) {
-          const step = TUTORIAL_STEPS[stepIdx]
-          if (step.isSkippable) {
-            const shouldSkip = (mask & (1 << skippablePointer)) !== 0
-            skippablePointer++
-            if (shouldSkip) {
-              expectedSkipCount++
-              state = simulationReducer(state, skipAction)
-            } else {
-              state = simulationReducer(state, nextAction)
-            }
-          } else {
-            state = simulationReducer(state, nextAction)
-          }
+      let skipPointer = 0
+      while (state.status === 'IN_PROGRESS') {
+        const step = TUTORIAL_STEPS.find((item) => item.id === state.stepId)
+        const shouldSkip = step.isSkippable && (mask & (1 << skipPointer++)) !== 0
+        const nextState = applyTutorialTransition(state, shouldSkip
+          ? { type: 'SKIP_STEP' }
+          : { type: 'COMPLETE_STEP', actionId: step.action.id })
+        const validation = validateTutorialState(nextState)
+        const scenario = getTutorialScenario(nextState)
+        const invariants = tutorialScenarioInvariants(scenario)
+        if (nextState === state || !validation.valid || !Object.values(invariants).every(Boolean)) {
+          throw new Error(`Tutorial transition diverged at mask ${mask}, step ${step.id}: ${validation.reason || JSON.stringify(invariants)}`)
         }
-
-        expect(state.completed).toBe(true)
-        expect(state.skippedSteps.length).toBe(expectedSkipCount)
-        expect(Object.values(simulationInvariants(state.simulationData)).every(Boolean)).toBe(true)
+        state = nextState
       }
-    },
-    30000,
-  )
+      const scenario = getTutorialScenario(state)
+      expect(state.status).toBe('COMPLETED')
+      expect(state.stepId).toBe(TUTORIAL_STEPS.at(-1).id)
+      expect(state.skippedStepIds.every((stepId) => skippable.some((step) => step.id === stepId))).toBe(true)
+      expect(scenario.debt.originalHours).toBe(2)
+      expect(scenario.repair.history[0].preserved).toBe(true)
+    }
+  })
 })

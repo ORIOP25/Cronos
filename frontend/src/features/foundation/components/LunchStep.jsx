@@ -3,7 +3,7 @@ import { CFormLabel, CFormInput, CFormFeedback, CRow, CCol } from '@coreui/react
 export function LunchStep({ values, fieldErrors, onChange }) {
   return (
     <div className="foundation-step-lunch">
-      <h4 className="h5 mb-3 text-dark fw-bold">6. Período e Duração de Almoço</h4>
+      <h4 tabIndex="-1" className="h5 mb-3 text-dark fw-bold">6. Período e Duração de Almoço</h4>
       <p className="text-muted small mb-4">
         Configure a janela horária reservada para o almoço de alunos e professores.
       </p>
@@ -47,7 +47,7 @@ export function LunchStep({ values, fieldErrors, onChange }) {
             type="number"
             id="lunch_min_duration_minutes"
             name="lunch_min_duration_minutes"
-            min={15}
+            min={1}
             max={180}
             value={values.lunch_min_duration_minutes ?? 60}
             invalid={Boolean(fieldErrors.lunch_min_duration_minutes)}

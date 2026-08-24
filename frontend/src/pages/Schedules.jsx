@@ -106,7 +106,7 @@ function clearStoredJobId(storageKey) {
 // ---------------------------------------------------------------------------
 // Schedules — Main Page
 // ---------------------------------------------------------------------------
-const Schedules = () => {
+const Schedules = ({ initialClassId = '', persistView = true }) => {
   const location = useLocation()
   const { organization } = useOrganization()
   const orgId = organization?.id ?? null
@@ -120,7 +120,7 @@ const Schedules = () => {
   const hasUrlParams = Boolean(urlTeacherId || urlWeekStart)
 
   // Restore persisted view state (admin only, URL params take priority)
-  const storedView = !hasUrlParams ? readStoredView(viewStorageKey) : null
+  const storedView = persistView && !hasUrlParams ? readStoredView(viewStorageKey) : null
 
   // Sprint 3 state
   const [activeJobId, setActiveJobId]         = useState(() => {
@@ -134,7 +134,7 @@ const Schedules = () => {
     storedView?.viewMode || 'class'
   )
   const [selectedClassId, setSelectedClassId]     = useState(
-    storedView?.selectedClassId || ''
+    String(initialClassId || storedView?.selectedClassId || '')
   )
   const [selectedTeacherId, setSelectedTeacherId] = useState(() => {
     return storedView?.selectedTeacherId || ''
@@ -187,14 +187,14 @@ const Schedules = () => {
 
   // Persist view state so the user returns to the same class/teacher
   useEffect(() => {
-    if (hasUrlParams) return
+    if (hasUrlParams || !persistView) return
     writeStoredView(viewStorageKey, {
       viewMode,
       selectedClassId,
       selectedTeacherId,
       weekStart,
     })
-  }, [hasUrlParams, viewStorageKey, viewMode, selectedClassId, selectedTeacherId, weekStart])
+  }, [hasUrlParams, persistView, viewStorageKey, viewMode, selectedClassId, selectedTeacherId, weekStart])
 
   const classId   = viewMode === 'class'   && selectedClassId   ? Number.parseInt(selectedClassId, 10)   : null
   const teacherId = viewMode === 'teacher' && selectedTeacherId ? Number.parseInt(selectedTeacherId, 10) : null
@@ -361,6 +361,7 @@ const Schedules = () => {
                     color="primary" size="sm"
                     disabled={isGenerating || generateMutation.isPending}
                     onClick={() => { void handleGenerate() }}
+                    data-tutorial-target="generate-schedule"
                   >
                     {isGenerating
                       ? <><CSpinner size="sm" className="me-1" />A gerar…</>
@@ -375,6 +376,7 @@ const Schedules = () => {
                       size="sm"
                       disabled={isGenerating || generateMutation.isPending}
                       onClick={() => { void handleRegenerate() }}
+                      data-tutorial-target="regenerate-schedule"
                     >
                       <CIcon icon={cilReload} className="me-1" />
                       Gerar novamente
@@ -397,7 +399,7 @@ const Schedules = () => {
         </div>
       </PageHeader>
 
-      <>
+      <div data-tutorial-target="schedule-draft">
           {preflightErrors.length > 0 && <PreflightErrorPanel issues={preflightErrors} />}
           {generationActionError && (
             <CAlert color="danger" className="mb-4" style={{ whiteSpace: 'pre-line' }}>
@@ -433,7 +435,7 @@ const Schedules = () => {
               isRejecting={rejectMutation.isPending}
             />
           )}
-      </>
+      </div>
 
       {/* ── Sprint 4: View controls ── */}
       <CCard className="border-0 shadow-sm mb-3 schedule-controls">
@@ -507,7 +509,7 @@ const Schedules = () => {
         </CCardBody>
       </CCard>
 
-      <CCard className="border-0 shadow-sm mb-4 schedule-grid-card">
+      <CCard className="border-0 shadow-sm mb-4 schedule-grid-card" data-tutorial-target="schedule-grid">
         <CCardHeader className="bg-transparent fw-semibold d-flex align-items-center justify-content-between py-2">
           <span>
             Grelha semanal

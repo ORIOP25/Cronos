@@ -3,7 +3,7 @@ import { CFormLabel, CFormInput, CFormFeedback } from '@coreui/react'
 export function SlotDurationStep({ values, fieldErrors, onChange }) {
   return (
     <div className="foundation-step-slot-duration">
-      <h4 className="h5 mb-3 text-dark fw-bold">4. Duração dos Blocos de Aulas</h4>
+      <h4 tabIndex="-1" className="h5 mb-3 text-dark fw-bold">4. Duração dos Blocos de Aulas</h4>
       <p className="text-muted small mb-4">
         Indique a duração padrão de cada tempo letivo (normalmente 45, 50 ou 90 minutos).
       </p>

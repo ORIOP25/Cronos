@@ -7,7 +7,7 @@ export function SummaryStep({ values, organizationName, confirmed, onConfirmedCh
 
   return (
     <div className="foundation-step-summary">
-      <h4 className="h5 mb-3 text-dark fw-bold">9. Confirmação e Ativação da Fundação</h4>
+      <h4 tabIndex="-1" className="h5 mb-3 text-dark fw-bold">9. Confirmação e Ativação da Fundação</h4>
       <p className="text-muted small mb-4">
         Reveja os parâmetros base para <strong>{organizationName}</strong>. Ao clicar em &quot;Ativar Escola&quot;, a fundação será concluída de forma definitiva e irreversível, criando a grelha horária canónica e desbloqueando a fase de preparação.
       </p>
@@ -59,7 +59,7 @@ export function SummaryStep({ values, organizationName, confirmed, onConfirmedCh
       </CRow>
 
       <CCallout color="info" className="bg-white">
-        <strong>Ativação Monotónica:</strong> A ativação da fundação cria os blocos de horário oficiais e desbloqueia o registo de professores, turmas e salas. Não é possível reverter o estado para não iniciado.
+        <strong>Ativação Monotónica:</strong> A ativação da fundação cria a grelha de tempos letivos e desbloqueia o registo de professores, turmas e salas. Não é possível reverter o estado para não iniciado.
       </CCallout>
 
       <CFormCheck

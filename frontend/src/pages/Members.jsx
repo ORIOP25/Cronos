@@ -135,7 +135,7 @@ const MemberModal = ({ visible, member, subjects, onClose, onSave, isSaving, err
   }
 
   return (
-    <CModal visible={visible} onClose={onClose} alignment="center" size="lg" className="app-modal">
+    <CModal visible={visible} onClose={onClose} alignment="center" size="lg" className="app-modal" data-tutorial-target="member-form">
       <CModalHeader>
         <CModalTitle>{member ? 'Editar membro' : 'Adicionar membro'}</CModalTitle>
       </CModalHeader>
@@ -291,7 +291,7 @@ const Members = () => {
           />
           <CFormSwitch label="Mostrar arquivados" checked={includeArchived} onChange={(event) => setIncludeArchived(event.target.checked)} />
         </div>
-        <CButton color="primary" onClick={() => openModal()} className="d-flex align-items-center gap-2"><CIcon icon={cilPlus} />Adicionar membro</CButton>
+        <CButton color="primary" onClick={() => openModal()} className="d-flex align-items-center gap-2" data-tutorial-target="new-member"><CIcon icon={cilPlus} />Adicionar membro</CButton>
       </div>
       {isError && <CAlert color="danger">{getApiErrorMessage(error, 'Nao foi possivel carregar a equipa.')} <CButton color="link" onClick={() => refetch()}>Tentar novamente</CButton></CAlert>}
       {actionError && <CAlert color="danger">{actionError}</CAlert>}

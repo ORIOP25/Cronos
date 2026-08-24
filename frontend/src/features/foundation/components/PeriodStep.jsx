@@ -3,7 +3,7 @@ import { CFormLabel, CFormInput, CFormFeedback, CRow, CCol } from '@coreui/react
 export function PeriodStep({ values, fieldErrors, onChange }) {
   return (
     <div className="foundation-step-period">
-      <h4 className="h5 mb-3 text-dark fw-bold">1. Período do Ano Letivo</h4>
+      <h4 tabIndex="-1" className="h5 mb-3 text-dark fw-bold">1. Período do Ano Letivo</h4>
       <p className="text-muted small mb-4">
         Defina o horizonte temporal da sua escola. O Cronos calculará se a totalidade das horas curriculares pode ser ministrada até à data-limite rígida.
       </p>
@@ -47,14 +47,14 @@ export function PeriodStep({ values, fieldErrors, onChange }) {
             type="number"
             id="repair_stability_window_days"
             name="repair_stability_window_days"
-            min={0}
+            min={1}
             max={60}
             value={values.repair_stability_window_days ?? 14}
             invalid={Boolean(fieldErrors.repair_stability_window_days)}
             onChange={(e) => onChange('repair_stability_window_days', Number(e.target.value))}
           />
           <small className="text-muted d-block mt-1">
-            Número de dias no futuro imediato cujos horários não são alterados automaticamente durante reparações adaptativas (omissão: 14 dias).
+            Número de dias no futuro imediato cujos horários ficam protegidos durante reparações adaptativas (omissão: 14 dias).
           </small>
           {fieldErrors.repair_stability_window_days && (
             <CFormFeedback invalid>{fieldErrors.repair_stability_window_days}</CFormFeedback>

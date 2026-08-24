@@ -18,6 +18,7 @@ import './styles/availability-toolbar.css'
 import './styles/dashboard.css'
 import './styles/smart-table.css'
 import './styles/modal.css'
+import './styles/tutorial.css'
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
