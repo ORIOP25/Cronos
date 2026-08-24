@@ -88,7 +88,7 @@ describe('school configuration data hooks', () => {
 
   it('resets only queries belonging to the active organization after a soft reset', async () => {
     const { queryClient } = renderWithProviders(<SoftResetProbe />)
-    const resetQueries = vi.spyOn(queryClient, 'resetQueries')
+    const invalidateQueries = vi.spyOn(queryClient, 'invalidateQueries')
 
     fireEvent.click(screen.getByRole('button', { name: 'Reset' }))
 
@@ -96,9 +96,9 @@ describe('school configuration data hooks', () => {
       '/school/settings/soft-reset',
       { confirm_phrase: 'Confirmo' },
     ))
-    await waitFor(() => expect(resetQueries).toHaveBeenCalledOnce())
+    await waitFor(() => expect(invalidateQueries.mock.calls.some(([options]) => typeof options?.predicate === 'function')).toBe(true))
 
-    const { predicate } = resetQueries.mock.calls[0][0]
+    const { predicate } = invalidateQueries.mock.calls.find(([options]) => typeof options?.predicate === 'function')[0]
     expect(predicate({ queryKey: ['org-settings', 'org-a'] })).toBe(false)
     expect(predicate({ queryKey: ['scheduler-status', 'org-a'] })).toBe(true)
     expect(predicate({ queryKey: ['calendar-events', 'org-b'] })).toBe(false)

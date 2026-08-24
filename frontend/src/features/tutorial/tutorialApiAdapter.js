@@ -10,12 +10,12 @@ function createTutorialApiError(message, { config, method, path, stepId }) {
 function parseJson(value, metadata) {
   if (value == null || value === '') return {}
   if (typeof value !== 'string') {
-    if (typeof value === 'object' && !Array.isArray(value)) return value
+    if (typeof value === 'object' && (!Array.isArray(value) || metadata.stepId === 'availability_review')) return value
     throw createTutorialApiError('O corpo do pedido deve ser um objeto JSON.', metadata)
   }
   try {
     const parsed = JSON.parse(value)
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('JSON body must be an object')
+    if (!parsed || typeof parsed !== 'object' || (Array.isArray(parsed) && metadata.stepId !== 'availability_review')) throw new Error('JSON body must be an object')
     return parsed
   } catch {
     throw createTutorialApiError('JSON inválido no pedido do guia.', metadata)
