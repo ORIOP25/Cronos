@@ -18,6 +18,7 @@ export default function CreateOrgPage() {
   const [name, setName] = useState('')
   const pendingOrganizationId = sessionStorage.getItem(PENDING_ORGANIZATION_KEY)
   const memberships = userMemberships?.data || []
+  const membershipsLoading = !isLoaded || userMemberships?.isLoading || userMemberships?.isFetching
 
   const submit = async (event) => {
     event.preventDefault()
@@ -33,17 +34,17 @@ export default function CreateOrgPage() {
         <div className="zen-auth-form-side">
           <div className="zen-auth-form-wrapper">
             <h1 className="h3 mb-3">Organização escolar</h1>
-            {!isLoaded && <p>A carregar organizações…</p>}
+            {membershipsLoading && <p>A carregar organizações…</p>}
             {error && (
               <div className="alert alert-danger" role="alert">
                 Não foi possível ativar a organização. Pode tentar novamente sem criar outra.
               </div>
             )}
-            {pendingOrganizationId ? (
+            {!membershipsLoading && pendingOrganizationId ? (
               <button type="button" className="btn btn-primary" disabled={isPending} onClick={retry}>
                 {isPending ? 'A ativar…' : 'Retomar ativação'}
               </button>
-            ) : memberships.length ? (
+            ) : !membershipsLoading && memberships.length ? (
               <div>
                 <p>Selecione a organização que pretende utilizar.</p>
                 <div className="d-grid gap-2">
@@ -60,7 +61,7 @@ export default function CreateOrgPage() {
                   ))}
                 </div>
               </div>
-            ) : isLoaded ? (
+            ) : !membershipsLoading ? (
               <form onSubmit={submit}>
                 <label htmlFor="organization-name" className="form-label">Nome da escola</label>
                 <input
