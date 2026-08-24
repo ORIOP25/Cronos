@@ -22,7 +22,7 @@ async def record_tutorial_telemetry(
     request: Request,
     event: schemas.TutorialTelemetryEventCreate,
     current_user: deps.FoundationAdminActor,
-    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
 ) -> Response:
     """Registo de evento de telemetria do tutorial (append-only)."""
     await TutorialTelemetryService.record(

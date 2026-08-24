@@ -38,7 +38,7 @@ logger = structlog.get_logger(__name__)
     summary="Obter configuraÃ§Ãµes da escola",
 )
 async def get_org_settings(
-    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
     current_user: deps.AdminActor,
 ) -> schemas.OrganizationSettingsRead:
     settings = await settings_service.get_settings(db, current_user.organization_id)
@@ -53,7 +53,7 @@ async def get_org_settings(
 )
 async def upsert_org_settings(
     payload: schemas.OrganizationSettingsUpsert,
-    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
     current_user: deps.AdminActor,
 ) -> schemas.OrganizationSettingsRead:
     try:
@@ -77,7 +77,7 @@ class SoftResetRequest(BaseModel):
 )
 async def soft_reset_year_endpoint(
     payload: SoftResetRequest,
-    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
     current_user: deps.AdminActor,
 ):
     if payload.confirm_phrase != "Confirmo":
@@ -120,7 +120,7 @@ async def soft_reset_year_endpoint(
     summary="Obter configuraÃ§Ãµes da grelha horÃ¡ria",
 )
 async def get_grid_settings(
-    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
     current_user: deps.AdminActor,
 ) -> schemas.OrganizationGridSettingsRead:
     settings = await settings_service.get_grid_settings(db, current_user.organization_id)
@@ -135,7 +135,7 @@ async def get_grid_settings(
 )
 async def upsert_grid_settings(
     payload: schemas.OrganizationGridSettingsUpsert,
-    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
     current_user: deps.AdminActor,
 ) -> schemas.OrganizationGridSettingsRead:
     try:
@@ -156,7 +156,7 @@ async def upsert_grid_settings(
 )
 async def regenerate_grid_settings(
     payload: schemas.GridConfigurationCommand,
-    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
     current_user: deps.AdminActor,
 ) -> schemas.GridConfigurationResponse:
     try:
@@ -175,7 +175,7 @@ async def regenerate_grid_settings(
     summary="Importar feriados nacionais automaticamente",
 )
 async def sync_holidays(
-    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
     current_user: deps.AdminActor,
 ) -> schemas.HolidaysSyncResponse:
     """Importa feriados via package `holidays` (Portugal).
@@ -202,7 +202,7 @@ async def sync_holidays(
     summary="Listar eventos do calendÃ¡rio escolar",
 )
 async def list_calendar_events(
-    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
     current_user: deps.ActiveActor,
     from_date: Annotated[
         date | None, Query(description="Filtrar eventos a partir desta data")
@@ -220,7 +220,7 @@ async def list_calendar_events(
 )
 async def create_calendar_event(
     payload: schemas.SchoolCalendarEventCreate,
-    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
     current_user: deps.AdminActor,
 ) -> schemas.SchoolCalendarEventRead:
     try:
@@ -241,7 +241,7 @@ async def create_calendar_event(
 )
 async def delete_calendar_event(
     event_id: int,
-    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
     current_user: deps.AdminActor,
 ) -> dict:
     success = await settings_service.delete_calendar_event(

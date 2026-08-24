@@ -14,7 +14,7 @@ router = APIRouter()
 
 @router.get("/dashboard", response_model=schemas.DashboardResponse)
 async def get_dashboard(
-    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
     current_user: deps.AdminActor,
 ):
     """Dashboard V1 â€” Command Center.

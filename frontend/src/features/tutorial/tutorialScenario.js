@@ -301,12 +301,14 @@ export function normalizeTutorialChanges(stepId, changes = {}) {
     case 'module_add': {
       const module = Array.isArray(changes.modules) ? changes.modules[0] : changes
       if (!module || typeof module !== 'object' || Array.isArray(module)) return null
-      return mergeChanges(
-        boundedText(module.name, 'moduleName'),
-        boundedText(module.code, 'moduleCode'),
-        boundedNumber(module.hours_total, 'moduleHours', { min: 1, max: 200 }),
+      const normalized = mergeChanges(
+        boundedText(module.moduleName ?? module.name, 'moduleName'),
+        boundedText(module.moduleCode ?? module.code, 'moduleCode'),
+        boundedNumber(module.moduleHours ?? module.hours_total, 'moduleHours', { min: 1, max: 200 }),
         boundedNumber(module.requiredMinutes, 'requiredMinutes', { min: 1, max: 10000 }),
       )
+      if (!normalized?.moduleName || (normalized.moduleHours == null && normalized.requiredMinutes == null)) return null
+      return normalized
     }
     case 'course_create':
       return mergeChanges(boundedText(changes.name, 'name'), boundedText(changes.abbreviation, 'code'))
@@ -323,9 +325,9 @@ export function normalizeTutorialChanges(stepId, changes = {}) {
       )
     case 'teacher_competency': {
       const ids = changes.subject_ids
-      if (ids != null && (!Array.isArray(ids) || ids.length > 8 || ids.some((id) => !Number.isInteger(Number(id))))) return null
-      const subjectId = changes.subject_id ?? (Array.isArray(ids) ? ids[0] : undefined)
-      return subjectId == null ? {} : boundedNumber(subjectId, 'subjectId', { min: 1, max: 1000000 })
+      if (ids != null && (!Array.isArray(ids) || ids.length === 0 || ids.length > 8 || ids.some((id) => !Number.isInteger(Number(id))))) return null
+      const subjectId = changes.subjectId ?? changes.subject_id ?? (Array.isArray(ids) ? ids[0] : undefined)
+      return subjectId == null ? null : boundedNumber(subjectId, 'subjectId', { min: 1, max: 1000000 })
     }
     case 'room_add':
       return mergeChanges(
@@ -351,10 +353,6 @@ export function normalizeTutorialChanges(stepId, changes = {}) {
 
 function normalizeBodyForStep(stepId, body) {
   if (!body || typeof body !== 'object' || (Array.isArray(body) && stepId !== 'availability_review')) return null
-  if (stepId === 'module_add') {
-    if (!Array.isArray(body.modules) || body.modules.length === 0) return null
-    return normalizeTutorialChanges(stepId, { modules: body.modules })
-  }
   if (stepId === 'class_create' && Array.isArray(body.classes_config)) {
     if (body.classes_config.length === 0) return null
     return normalizeTutorialChanges(stepId, body.classes_config[0])

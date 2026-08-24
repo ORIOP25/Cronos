@@ -13,7 +13,7 @@ router = APIRouter()
 @router.get("", response_model=schemas.MemberListRead)
 @router.get("/", response_model=schemas.MemberListRead)
 async def list_members(
-    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
     current_user: deps.AdminActor,
     include_archived: bool = False,
     skip: Annotated[int, Query(ge=0)] = 0,
@@ -30,7 +30,7 @@ async def list_members(
 
 @router.get("/me", response_model=schemas.CurrentMemberRead)
 async def get_current_member(
-    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
     current_user: deps.SessionActor,
 ):
     return await member_service.current_member(db, current_user=current_user)
@@ -40,7 +40,7 @@ async def get_current_member(
 @router.post("/", response_model=schemas.MemberRead, status_code=201)
 async def create_member(
     member: schemas.MemberCreate,
-    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
     current_user: deps.AdminActor,
     operation_service: deps.MemberAccessOperationDep,
 ):
@@ -57,7 +57,7 @@ async def create_member(
 @router.get("/{member_id}", response_model=schemas.MemberRead)
 async def get_member(
     member_id: int,
-    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
     current_user: deps.AdminActor,
 ):
     return await member_service.get_member_read(
@@ -69,7 +69,7 @@ async def get_member(
 async def update_member(
     member_id: int,
     member: schemas.MemberUpdate,
-    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
     current_user: deps.AdminActor,
     operation_service: deps.MemberAccessOperationDep,
 ):
@@ -87,7 +87,7 @@ async def update_member(
 @router.post("/{member_id}/remove")
 async def remove_member(
     member_id: int,
-    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
     current_user: deps.AdminActor,
     operation_service: deps.MemberAccessOperationDep,
 ):
@@ -104,7 +104,7 @@ async def remove_member(
 @router.post("/{member_id}/resend-invitation", response_model=schemas.MemberRead)
 async def resend_member_invitation(
     member_id: int,
-    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
     current_user: deps.AdminActor,
     operation_service: deps.MemberAccessOperationDep,
 ):
@@ -121,7 +121,7 @@ async def resend_member_invitation(
 @router.post("/{member_id}/retry-sync", response_model=schemas.MemberRead)
 async def retry_member_sync(
     member_id: int,
-    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
     current_user: deps.AdminActor,
     operation_service: deps.MemberAccessOperationDep,
 ):
@@ -138,7 +138,7 @@ async def retry_member_sync(
 @router.post("/{member_id}/restore", response_model=schemas.MemberRead)
 async def restore_member(
     member_id: int,
-    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
     current_user: deps.AdminActor,
     operation_service: deps.MemberAccessOperationDep,
     restore: schemas.MemberRestore | None = None,

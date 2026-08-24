@@ -42,11 +42,11 @@ export function useCompleteFoundation() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (payload) => apiClient.post('/foundation/complete', payload),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: orgQueryKey(FOUNDATION_STATUS_ROOT, orgId) })
-      queryClient.invalidateQueries({ queryKey: orgQueryKey(FOUNDATION_DRAFT_ROOT, orgId) })
-      queryClient.invalidateQueries({ queryKey: orgQueryKey('current-member', orgId) })
-      void invalidatePreparationQueries(queryClient, orgId)
-    },
+    onSuccess: () => Promise.all([
+      queryClient.invalidateQueries({ queryKey: orgQueryKey(FOUNDATION_STATUS_ROOT, orgId) }),
+      queryClient.invalidateQueries({ queryKey: orgQueryKey(FOUNDATION_DRAFT_ROOT, orgId) }),
+      queryClient.invalidateQueries({ queryKey: orgQueryKey('current-member', orgId) }),
+      invalidatePreparationQueries(queryClient, orgId),
+    ]),
   })
 }

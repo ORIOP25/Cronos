@@ -12,7 +12,8 @@ router = APIRouter()
 
 @router.get("/", response_model=list[schemas.RoomRead])
 async def read_rooms(
-    current_user: deps.ActiveActor, db: Annotated[AsyncSession, Depends(deps.get_db)]
+    current_user: deps.ActiveActor,
+    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
 ):
     return await room_service.get_rooms_by_org(
         db,
@@ -23,7 +24,7 @@ async def read_rooms(
 @router.post("/", response_model=schemas.RoomRead)
 async def create_room(
     room: schemas.RoomCreate,
-    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
     # A CorreÃ§Ã£o: Pedimos o Utilizador Logado, nÃ£o o org_id direto
     current_user: deps.AdminActor,
 ):
@@ -47,7 +48,7 @@ async def create_room(
 async def update_room(
     room_id: int,
     room_in: schemas.RoomUpdate,
-    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
     current_user: deps.AdminActor,
 ):
     room = await room_service.update_room(
@@ -70,7 +71,9 @@ async def update_room(
     },
 )
 async def delete_room(
-    room_id: int, db: Annotated[AsyncSession, Depends(deps.get_db)], current_user: deps.AdminActor
+    room_id: int,
+    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
+    current_user: deps.AdminActor,
 ):
     status = await room_service.delete_room(
         db,

@@ -18,7 +18,7 @@ router = APIRouter(prefix="/foundation", tags=["foundation"])
 @router.get("/status", response_model=schemas.FoundationStatusResponse)
 async def get_foundation_status(
     current_user: deps.SessionActor,
-    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
 ):
     service = FoundationService(db)
     return await service.get_status(current_user.organization_id)
@@ -27,7 +27,7 @@ async def get_foundation_status(
 @router.get("/draft", response_model=schemas.FoundationDraftRead)
 async def get_foundation_draft(
     current_user: deps.FoundationAdminActor,
-    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
 ):
     service = FoundationService(db)
     return await service.get_draft(current_user.organization_id)
@@ -37,7 +37,7 @@ async def get_foundation_draft(
 async def save_foundation_draft(
     data: schemas.FoundationDraftWrite,
     current_user: deps.FoundationAdminActor,
-    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
 ):
     service = FoundationService(db)
     try:
@@ -69,7 +69,7 @@ async def save_foundation_draft(
 async def complete_foundation(
     command: schemas.FoundationCompleteCommand,
     current_user: deps.FoundationAdminActor,
-    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
 ):
     service = FoundationService(db)
     try:

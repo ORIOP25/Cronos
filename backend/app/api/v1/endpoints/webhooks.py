@@ -18,7 +18,9 @@ MAX_WEBHOOK_BODY_BYTES = 256 * 1024
 
 
 @router.post("/clerk")
-async def handle_clerk_webhook(request: Request, db: Annotated[AsyncSession, Depends(get_db)]):
+async def handle_clerk_webhook(
+    request: Request, db: Annotated[AsyncSession, Depends(get_db, scope="function")]
+):
     svix_id = request.headers.get("svix-id")
     svix_timestamp = request.headers.get("svix-timestamp")
     svix_signature = request.headers.get("svix-signature")

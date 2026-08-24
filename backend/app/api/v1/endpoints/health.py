@@ -17,7 +17,7 @@ router = APIRouter()
 
 async def readiness(
     request: Request,
-    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
 ):
     health_status = {"status": "ok", "postgres": "unknown", "redis": "unknown"}
 

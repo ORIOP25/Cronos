@@ -18,7 +18,7 @@ router = APIRouter()
 
 @router.get("/bases", response_model=schemas.BasesReadinessResponse)
 async def get_bases_readiness(
-    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
     current_user: deps.AdminActor,
 ):
     """Calcula a prontidão das Bases Escolares em cadeia cumulativa de 7 níveis."""
@@ -28,7 +28,7 @@ async def get_bases_readiness(
 
 @router.get("/prevalidation", response_model=schemas.PreflightReport)
 async def get_prevalidation(
-    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
     current_user: deps.AdminActor,
     fingerprint: Annotated[
         str | None,

@@ -22,7 +22,7 @@ router = APIRouter()
     responses={403: {"description": "Sem permissões"}, 404: {"description": TEACHER_NOT_FOUND_MSG}},
 )
 async def read_my_availability(
-    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
     current_user: deps.ActiveActor,
 ):
     """Lê disponibilidade do professor autenticado (self-service)."""
@@ -79,7 +79,7 @@ async def read_my_availability(
 async def update_my_availability(
     request: Request,
     availability_data: list[schemas.AvailabilitySelfCreate],
-    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
     current_user: deps.ActiveActor,
 ):
     """Atualiza disponibilidade do professor autenticado (self-service)."""
@@ -109,7 +109,7 @@ async def update_my_availability(
 )
 async def read_teacher_availability(
     teacher_id: int,
-    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
     current_user: deps.ActiveActor,
 ):
     """Inspetor read-only de disponibilidade para Administrador ou o próprio Professor."""
@@ -135,7 +135,7 @@ async def read_teacher_availability(
     summary="Resumo operacional dos endpoints críticos do professor",
 )
 async def get_teacher_endpoints_observability_summary(
-    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
     current_user: deps.AdminActor,
     window_minutes: Annotated[
         int, Query(ge=5, le=1440, description="Janela de agregação em minutos")
@@ -158,7 +158,7 @@ async def get_teacher_endpoints_observability_summary(
     responses={403: {"description": "Sem permissões"}},
 )
 async def read_my_progress(
-    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
     current_user: deps.ActiveActor,
 ):
     """Retorna o progresso das disciplinas do professor nas turmas assignadas."""
@@ -203,7 +203,7 @@ async def read_my_progress(
 @router.get("/", response_model=list[schemas.TeacherRead])
 async def read_teachers(
     current_user: deps.AdminActor,
-    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
     skip: int = 0,
     limit: int = 100,
 ):

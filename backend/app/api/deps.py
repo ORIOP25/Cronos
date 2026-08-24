@@ -67,7 +67,7 @@ async def get_clerk_payload(
 
 async def get_current_user(
     request: Request,
-    db: Annotated[AsyncSession, Depends(get_db)],
+    db: Annotated[AsyncSession, Depends(get_db, scope="function")],
     payload: Annotated[dict | None, Depends(get_clerk_payload)] = None,
 ) -> Actor:
     if payload is None:
@@ -139,7 +139,7 @@ async def get_current_user(
 
 async def get_current_active_user(
     current_user: Annotated[Actor, Depends(get_current_user)],
-    db: Annotated[AsyncSession, Depends(get_db)],
+    db: Annotated[AsyncSession, Depends(get_db, scope="function")],
 ) -> Actor:
     status_value = await db.scalar(
         select(models.Organization.foundation_status).where(

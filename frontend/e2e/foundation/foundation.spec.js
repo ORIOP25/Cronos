@@ -61,6 +61,7 @@ test.describe('Foundation — canonical activation', () => {
     await page.getByRole('button', { name: /Ativar Escola Definitivamente/i }).click()
     await expect((await completeResponse).status()).toBe(200)
     await expect(page).toHaveURL(/\/dashboard(?:[?#].*)?$/)
+    await expect(page.locator('aside a[href="/dashboard"]').first()).toBeVisible()
     await expectNoAppCrash(page)
   })
 })

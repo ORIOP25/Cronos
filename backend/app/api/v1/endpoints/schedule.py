@@ -72,7 +72,7 @@ async def _require_admin_for_schedule_reset(
 @router.post("/constraints/", response_model=schemas.ConstraintRead)
 async def create_constraint(
     item: schemas.ConstraintCreate,
-    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
     current_user: deps.AdminActor,
 ):
     # Garante que usamos o organization_id do utilizador logado
@@ -89,7 +89,8 @@ async def create_constraint(
 
 @router.get("/constraints/", response_model=list[schemas.ConstraintRead])
 async def read_constraints(
-    db: Annotated[AsyncSession, Depends(deps.get_db)], current_user: deps.ActiveActor
+    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
+    current_user: deps.ActiveActor,
 ):
     return await schedule_service.get_constraints_by_org(db, current_user.organization_id)
 
@@ -99,7 +100,7 @@ async def read_constraints(
 )
 async def delete_constraint(
     constraint_id: int,
-    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
     current_user: deps.AdminActor,
 ):
     success = await schedule_service.delete_constraint(
@@ -124,7 +125,7 @@ async def delete_constraint(
 )
 async def reset_all_data(
     request: Request,
-    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
     current_user: Annotated[deps.Actor, Depends(_require_admin_for_schedule_reset)],
 ):
     status_code = 200
@@ -242,7 +243,7 @@ def _resolve_teacher_horizon_payload(
 @limiter.limit("300/hour")
 async def get_teacher_schedule_horizon(
     request: Request,
-    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
     current_user: deps.ActiveActor,
 ):
     start_ts = perf_counter()
@@ -329,7 +330,7 @@ async def get_week_schedule(
         date, Query(description="Data de inÃ­cio da semana (segunda-feira, YYYY-MM-DD)")
     ],
     request: Request,
-    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
     current_user: deps.ActiveActor,
     class_id: Annotated[int | None, Query(description="ID da turma")] = None,
     teacher_id: Annotated[int | None, Query(description="ID do professor")] = None,
@@ -442,7 +443,7 @@ def _authorize_lesson_log_teacher(
 async def upsert_active_lesson_log(
     active_schedule_block_id: int,
     payload: schemas.LessonLogCreate,
-    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
     current_user: deps.ActiveActor,
 ):
     is_admin = _require_lesson_log_actor(current_user)
@@ -487,7 +488,7 @@ async def upsert_active_lesson_log(
 async def upsert_operational_lesson_log(
     operational_block_id: int,
     payload: schemas.LessonLogCreate,
-    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
     current_user: deps.ActiveActor,
 ):
     is_admin = _require_lesson_log_actor(current_user)

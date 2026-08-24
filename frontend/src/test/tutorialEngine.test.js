@@ -5,6 +5,7 @@ import {
   getTutorialStorageKey,
   matchTutorialMutation,
   matchTutorialMutations,
+  normalizeTutorialChanges,
   createTutorialScenario,
   tutorialScenarioInvariants,
 } from '../features/tutorial/tutorialScenario'
@@ -77,7 +78,10 @@ describe('tutorial v2 domain', () => {
     state = applyTutorialTransition(state, { type: 'COMPLETE_STEP', actionId: 'continue' })
     state = applyTutorialTransition(state, {
       type: 'COMPLETE_SEQUENCE',
-      actionIds: ['save-subject', 'add-module'],
+      completions: [
+        { actionId: 'save-subject', changes: { name: 'Sistemas Embebidos' } },
+        { actionId: 'add-module', changes: { moduleName: 'UFCD 5412', moduleHours: 25 } },
+      ],
     })
     expect(state.stepId).toBe('course_create')
   })
@@ -115,6 +119,36 @@ describe('tutorial v2 domain', () => {
     })).toMatchObject({ expectedActionId: 'create-occurrence' })
   })
 
+  it('normalizes structured checkpoints idempotently and rejects incomplete data', () => {
+    const rawModule = {
+      modules: [{ name: 'UFCD 5412', code: '5412', hours_total: 25 }],
+    }
+    const moduleChanges = normalizeTutorialChanges('module_add', rawModule)
+    expect(moduleChanges).toEqual({
+      moduleName: 'UFCD 5412',
+      moduleCode: '5412',
+      moduleHours: 25,
+    })
+    expect(normalizeTutorialChanges('module_add', moduleChanges)).toEqual(moduleChanges)
+    expect(normalizeTutorialChanges('module_add', { modules: [{ name: 'Sem horas' }] })).toBeNull()
+
+    const rawCompetency = { subject_ids: [2] }
+    const competencyChanges = normalizeTutorialChanges('teacher_competency', rawCompetency)
+    expect(competencyChanges).toEqual({ subjectId: 2 })
+    expect(normalizeTutorialChanges('teacher_competency', competencyChanges)).toEqual(competencyChanges)
+    expect(normalizeTutorialChanges('teacher_competency', { subject_ids: [] })).toBeNull()
+
+    let state = applyTutorialTransition(INITIAL_TUTORIAL_STATE, { type: 'START', tutorialRunId: 'run-canonical-values' })
+    state = applyTutorialTransition(state, { type: 'COMPLETE_STEP', actionId: 'continue' })
+    state = applyTutorialTransition(state, { type: 'COMPLETE_STEP', actionId: 'save-subject', changes: { name: 'Sistemas Embebidos' } })
+    state = applyTutorialTransition(state, { type: 'COMPLETE_STEP', actionId: 'add-module', changes: moduleChanges })
+    expect(state.values.module_add).toEqual({ completed: true, ...moduleChanges })
+
+    state = { ...state, stepId: 'teacher_competency', chapter: 1 }
+    state = applyTutorialTransition(state, { type: 'COMPLETE_STEP', actionId: 'save-competency', changes: competencyChanges })
+    expect(state.values.teacher_competency).toEqual({ completed: true, ...competencyChanges })
+  })
+
   it('keeps exit as an in-progress checkpoint and repeats with a new run', () => {
     const started = applyTutorialTransition(INITIAL_TUTORIAL_STATE, { type: 'START', tutorialRunId: 'run-1' })
     const exited = applyTutorialTransition(started, { type: 'EXIT' })
@@ -138,6 +172,17 @@ describe('tutorial v2 domain', () => {
       0x0AAAA,
       0x12345,
     ]
+    const completionChanges = {
+      subject_create: { name: 'Sistemas Embebidos' },
+      module_add: { moduleName: 'UFCD 5412', moduleHours: 25 },
+      course_create: { name: 'Técnico de Eletrónica' },
+      class_create: { name: '10.º TE', gradeLevel: 10, size: 24 },
+      teacher_add: { name: 'Rui Almeida' },
+      teacher_competency: { subjectId: 1 },
+      room_add: { name: 'Laboratório 3', type: 'LAB', capacity: 24 },
+      assignment_create: { classId: 1, subjectId: 1, teacherId: 1 },
+      availability_review: { status: 'NEUTRAL' },
+    }
 
     for (const mask of masks) {
       let state = applyTutorialTransition(INITIAL_TUTORIAL_STATE, {
@@ -150,7 +195,7 @@ describe('tutorial v2 domain', () => {
         const shouldSkip = step.isSkippable && (mask & (1 << skipPointer++)) !== 0
         const nextState = applyTutorialTransition(state, shouldSkip
           ? { type: 'SKIP_STEP' }
-          : { type: 'COMPLETE_STEP', actionId: step.action.id })
+          : { type: 'COMPLETE_STEP', actionId: step.action.id, changes: completionChanges[step.id] })
         const validation = validateTutorialState(nextState)
         const scenario = getTutorialScenario(nextState)
         const invariants = tutorialScenarioInvariants(scenario)

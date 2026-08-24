@@ -13,7 +13,8 @@ router = APIRouter()
 # --- 1. Ler Disciplinas ---
 @router.get("/", response_model=list[schemas.SubjectRead])
 async def read_subjects(
-    db: Annotated[AsyncSession, Depends(deps.get_db)], current_user: deps.ActiveActor
+    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
+    current_user: deps.ActiveActor,
 ):
     # Qualquer utilizador autenticado pode ver a lista de disciplinas
     return await subject_service.get_subjects_by_org(db, current_user.organization_id)
@@ -23,7 +24,7 @@ async def read_subjects(
 @router.post("/", response_model=schemas.SubjectRead)
 async def create_subject(
     item: schemas.SubjectCreate,
-    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
     current_user: deps.AdminActor,
 ):
     return await subject_service.create_subject(
@@ -43,7 +44,7 @@ async def create_subject(
 async def update_subject(
     subject_id: int,
     subject_in: schemas.SubjectUpdate,
-    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
     current_user: deps.AdminActor,  # Apenas Admin
 ):
     subject = await subject_service.update_subject(
@@ -68,7 +69,7 @@ async def update_subject(
 )
 async def delete_subject(
     subject_id: int,
-    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
     current_user: deps.AdminActor,  # Apenas Admin
 ):
     status = await subject_service.delete_subject(

@@ -35,6 +35,7 @@ import {
   useTeacherScheduleHorizon,
   useWeekSchedule,
 } from '../features/scheduling/data'
+import { useCompleteFoundation } from '../features/foundation/foundationData'
 
 vi.mock('../apiClient', () => ({
   default: {
@@ -110,6 +111,23 @@ describe('vertical feature data hooks', () => {
     const mutation = renderHook(() => useCreateMember(), { wrapper })
 
     const mutationPromise = mutation.result.current.mutateAsync({ name: 'Ana' })
+    await waitFor(() => expect(pendingInvalidations).toHaveLength(6))
+    expect(mutation.result.current.isPending).toBe(true)
+
+    pendingInvalidations.forEach(({ resolve }) => resolve())
+    await mutationPromise
+    await waitFor(() => expect(mutation.result.current.isPending).toBe(false))
+  })
+
+  it('keeps foundation completion pending until all dependent caches reconcile', async () => {
+    const { queryClient, wrapper } = createHarness()
+    const pendingInvalidations = []
+    vi.spyOn(queryClient, 'invalidateQueries').mockImplementation((options) => (
+      new Promise((resolve) => pendingInvalidations.push({ options, resolve }))
+    ))
+    const mutation = renderHook(() => useCompleteFoundation(), { wrapper })
+
+    const mutationPromise = mutation.result.current.mutateAsync({ expected_version: 1, confirmed: true })
     await waitFor(() => expect(pendingInvalidations).toHaveLength(6))
     expect(mutation.result.current.isPending).toBe(true)
 

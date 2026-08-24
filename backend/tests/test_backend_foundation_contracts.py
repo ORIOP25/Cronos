@@ -152,6 +152,16 @@ def test_tenant_routes_do_not_use_weak_authentication_dependency() -> None:
     assert offenders == {}
 
 
+def test_api_database_dependencies_are_function_scoped() -> None:
+    offenders = []
+    paths = [APP / "api" / "deps.py", *_python_files("api/v1/endpoints")]
+    for path in paths:
+        for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            if "Depends(" in line and "get_db" in line and 'scope="function"' not in line:
+                offenders.append(f"{path.relative_to(APP)}:{line_number}")
+    assert offenders == []
+
+
 def test_ordinary_api_and_services_do_not_control_transactions() -> None:
     allowed = {
         Path("api/deps.py"),

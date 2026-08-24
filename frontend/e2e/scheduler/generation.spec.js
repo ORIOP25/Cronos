@@ -347,6 +347,17 @@ export async function seedMinimalSchedulerInputs(page, teacherEmail, dates = FIX
     throw new Error('Prepared E2E teacher did not expose a teacher_id after subject assignment.')
   }
 
+  const eligibleTeachers = await apiRequest(
+    page,
+    'GET',
+    `/classes/subjects/${subject.id}/eligible-teachers`,
+  )
+  if (!eligibleTeachers.some((teacher) => teacher.id === updatedTeacher.teacher_id)) {
+    throw new Error(
+      `Teacher ${updatedTeacher.teacher_id} was not eligible for subject ${subject.id} after competency update.`,
+    )
+  }
+
   await apiRequest(page, 'POST', '/school/settings/', {
     school_start_date: dates.schoolStartDate,
     school_hard_end_date: dates.schoolHardEndDate,
@@ -461,8 +472,6 @@ async function firstPublishedFutureSlot(page, classId) {
   }
   throw new Error('No published future slot was found for adaptive repair.')
 }
-
-test.describe.configure({ mode: 'serial' })
 
 test.describe('Scheduler generation', () => {
   test('admin publishes and registers completed and occurrence active blocks', async ({ page }) => {

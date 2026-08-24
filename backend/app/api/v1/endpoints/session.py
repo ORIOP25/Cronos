@@ -18,7 +18,7 @@ logger = structlog.get_logger(__name__)
 @router.post("/bootstrap", response_model=schemas.SessionBootstrapResponse)
 async def bootstrap_session(
     request: Request,
-    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
     clerk: deps.ClerkGatewayDep,
     payload: Annotated[dict, Depends(deps.get_clerk_payload)],
 ):

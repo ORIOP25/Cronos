@@ -14,7 +14,7 @@ router = APIRouter()
 
 @router.get("/availability-heatmap")
 async def get_availability_heatmap(
-    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
     current_user: deps.ActiveActor,
 ):
     """

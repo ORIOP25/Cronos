@@ -15,7 +15,7 @@ router = APIRouter()
 # --- 1. Listar Cursos (com Disciplinas e Turmas) ---
 @router.get("/", response_model=list[schemas.CourseDetailRead])
 async def read_courses(
-    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
     current_user: deps.ActiveActor,
     skip: int = 0,
     limit: int = 100,
@@ -36,7 +36,7 @@ async def read_courses(
 )
 async def create_course(
     item: schemas.CourseCreate,
-    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
     current_user: deps.AdminActor,
 ) -> Any:
     """
@@ -71,7 +71,7 @@ async def create_course(
 )
 async def read_course_detail(
     course_id: int,
-    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
     current_user: deps.ActiveActor,
 ) -> Any:
     """
@@ -91,7 +91,7 @@ async def read_course_detail(
 )
 async def read_course_classes(
     course_id: int,
-    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
     current_user: deps.ActiveActor,
 ) -> Any:
     course = await course_service.get_course_details(db, course_id, current_user.organization_id)
@@ -108,7 +108,7 @@ async def read_course_classes(
 async def create_course_class(
     course_id: int,
     item: schemas.ClassCreateInCourse,
-    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
     current_user: deps.AdminActor,
 ) -> Any:
     result = await class_service.create_class_in_course(
@@ -135,7 +135,7 @@ async def update_course_class(
     course_id: int,
     class_id: int,
     item: schemas.ClassUpdateInCourse,
-    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
     current_user: deps.AdminActor,
 ) -> Any:
     result = await class_service.update_class_in_course(
@@ -160,7 +160,7 @@ async def update_course_class(
 async def delete_course_class(
     course_id: int,
     class_id: int,
-    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
     current_user: deps.AdminActor,
 ) -> Any:
     status = await class_service.delete_class_in_course(
@@ -187,7 +187,7 @@ async def delete_course_class(
 async def update_course(
     course_id: int,
     item: schemas.CourseUpdate,
-    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
     current_user: deps.AdminActor,
 ) -> Any:
     """
@@ -228,7 +228,7 @@ async def update_course(
 )
 async def delete_course(
     course_id: int,
-    db: Annotated[AsyncSession, Depends(deps.get_db)],
+    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
     current_user: deps.AdminActor,
 ) -> Any:
     status = await course_service.delete_course(
