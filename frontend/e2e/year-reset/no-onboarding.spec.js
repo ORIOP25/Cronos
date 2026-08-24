@@ -13,6 +13,8 @@ test.describe('Year reset — no legacy onboarding', () => {
     attachRuntimeGuards(page)
     await loginAsAdminReal(page)
 
+    await goTo(page, '/guide')
+    await expect(page.getByTestId('tutorial-workspace')).toBeVisible()
     const tutorialStorageBefore = await page.evaluate(() => Object.fromEntries(
       Object.entries(localStorage).filter(([key]) => key.startsWith('cronos:tutorial:')),
     ))

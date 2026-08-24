@@ -244,7 +244,7 @@ const SettingsEditor = ({ settings }) => {
     if (resetConfirmText !== 'Confirmo' || !resetChecked) return
     resetMutation.mutate({ confirm_phrase: resetConfirmText }, {
       onSuccess: () => {
-        setSuccessMsg('Ano letivo recomeçado com sucesso. Todas as gerações, ocorrências e registos foram apagados.')
+        setSuccessMsg('Ano letivo recomeçado com sucesso. Todas as gerações, ocorrências e registos foram apagados.', 10_000)
         setShowResetModal(false)
         setResetConfirmText('')
         setResetChecked(false)

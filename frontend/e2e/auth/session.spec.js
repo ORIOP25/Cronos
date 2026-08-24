@@ -25,6 +25,9 @@ test.describe('Session resilience', () => {
   })
 
   test('sessão persiste após page reload', async ({ page }) => {
+    await goTo(page, '/guide')
+    await expect(page.getByTestId('tutorial-workspace')).toBeVisible()
+
     await goTo(page, '/dashboard')
     await expectRouteReady(page, '/dashboard')
 

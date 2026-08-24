@@ -100,7 +100,7 @@ async def test_uncompleted_foundation_blocks_operational_endpoints_with_409(
             body = resp.json()
             assert body["detail"]["code"] == "FOUNDATION_REQUIRED"
 
-        # 2. Allowlisted foundation & session endpoints are ALLOWED
+        # 2. Allowlisted foundation, session, and onboarding telemetry endpoints are ALLOWED
         status_resp = await ac.get("/api/v1/foundation/status")
         assert status_resp.status_code == 200
         assert status_resp.json()["foundation_status"] == "IN_PROGRESS"
@@ -121,8 +121,7 @@ async def test_uncompleted_foundation_blocks_operational_endpoints_with_409(
                 "event_name": "tutorial_opened",
             },
         )
-        assert telemetry_resp.status_code == 409
-        assert telemetry_resp.json()["detail"]["code"] == "FOUNDATION_REQUIRED"
+        assert telemetry_resp.status_code == 204
 
 
 async def test_completed_foundation_allows_operational_endpoints(db_session, override_auth_actor):
