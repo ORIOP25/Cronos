@@ -62,6 +62,7 @@ export default function Dashboard() {
         organizationName={orgName}
         foundationStatus={data.foundation_status}
         bases={data.bases}
+        autoStartGuide={false}
       />
     )
   }

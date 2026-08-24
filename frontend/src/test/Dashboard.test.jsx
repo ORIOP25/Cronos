@@ -4,7 +4,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import Dashboard from '../pages/Dashboard'
 import { renderWithRouter } from './testUtils'
 
-const { useDashboard } = vi.hoisted(() => ({
+const { PreparationDashboard, useDashboard } = vi.hoisted(() => ({
+  PreparationDashboard: vi.fn(),
   useDashboard: vi.fn(),
 }))
 
@@ -14,6 +15,13 @@ vi.mock('../features/operations/data', () => ({
 
 vi.mock('../components/AnalyticsHeatmap', () => ({
   default: () => <div data-testid="availability-heatmap" />,
+}))
+
+vi.mock('../features/dashboard/PreparationDashboard', () => ({
+  PreparationDashboard: (props) => {
+    PreparationDashboard(props)
+    return <div data-testid="preparation-dashboard" />
+  },
 }))
 
 describe('Dashboard', () => {
@@ -88,6 +96,8 @@ describe('Dashboard', () => {
     renderWithRouter(<Dashboard />, { initialEntries: ['/dashboard'] })
 
     expect(screen.getByTestId('preparation-dashboard')).toBeInTheDocument()
-    expect(screen.getByText(/todas as bases estão prontas para geração/i)).toBeInTheDocument()
+    expect(PreparationDashboard).toHaveBeenCalledWith(
+      expect.objectContaining({ autoStartGuide: false }),
+    )
   })
 })
