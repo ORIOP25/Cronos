@@ -82,7 +82,7 @@ function App() {
           <Route path="/foundation" element={
             <RequireFoundationAdmin><Foundation /></RequireFoundationAdmin>
           } />
-          <Route path="/guide" element={<RequireAdmin><Guide /></RequireAdmin>} />
+          <Route path="/guide" element={<RequireFoundationAdmin><Guide /></RequireFoundationAdmin>} />
 
           <Route element={<RequireAuth><DefaultLayout /></RequireAuth>}>
             <Route element={<RequireAdmin />}>

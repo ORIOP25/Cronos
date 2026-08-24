@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test'
 import {
+  allowApiFailure,
   attachRuntimeGuards,
   expectNoAppCrash,
   expectRouteReady,
@@ -36,6 +37,7 @@ test.describe('Foundation — Conflict Resolution Modal', () => {
           body: JSON.stringify({ detail: { expected_version: 0, current_version: 1 } }),
         })
       })
+      allowApiFailure(pageB, { status: 409, url: '/api/v1/foundation/draft' })
       await pageB.locator('#school_start_date').fill('2025-09-16')
       await expect(pageB.getByRole('heading', { name: /conflito de edição detetado/i })).toBeVisible()
       await expect(pageB.getByRole('button', { name: /seguinte/i })).toBeDisabled()
