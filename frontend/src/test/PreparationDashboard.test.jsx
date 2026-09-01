@@ -122,7 +122,7 @@ describe('PreparationDashboard tutorial entry points', () => {
       steps: readinessCodes.map((code, index) => ({
         code,
         status: index < 3 ? 'COMPLETE' : 'PENDING',
-        route: code === 'TEACHER_ASSIGNMENT' ? '/courses' : '/config',
+        route: code === 'TEACHER_ASSIGNMENT' ? '/courses/7/classes/3/subjects' : '/config',
       })),
     }
 
@@ -130,7 +130,7 @@ describe('PreparationDashboard tutorial entry points', () => {
 
     const level = screen.getByTestId('preparation-level-TEACHER_ASSIGNMENT')
     expect(level).toHaveTextContent('4. Professor competente atribuído à disciplina da turma')
-    expect(level.querySelector('a')).toHaveAttribute('href', '/courses')
+    expect(level.querySelector('a')).toHaveAttribute('href', '/courses/7/classes/3/subjects')
   })
 
   it('keeps preparation summary labels concise', () => {

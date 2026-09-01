@@ -92,7 +92,15 @@ class SchoolReadinessService:
         # 4. Depth 4: Assigned competent teacher in teacher_subject_link
         assigned_links = [lnk for lnk in links_with_modules if lnk.teacher_id is not None]
         if not assigned_links:
-            return self._build_response(depth, issues)
+            return self._build_response(
+                depth,
+                issues,
+                step_routes={
+                    "TEACHER_ASSIGNMENT": self._class_subject_route(
+                        class_by_id, links_with_modules
+                    )
+                },
+            )
 
         teacher_ids = {lnk.teacher_id for lnk in assigned_links}
         active_teacher_rows = await self._db.execute(
@@ -112,7 +120,15 @@ class SchoolReadinessService:
         active_teacher_ids = set(active_teacher_rows.scalars().all())
         assigned_links = [lnk for lnk in assigned_links if lnk.teacher_id in active_teacher_ids]
         if not assigned_links:
-            return self._build_response(depth, issues)
+            return self._build_response(
+                depth,
+                issues,
+                step_routes={
+                    "TEACHER_ASSIGNMENT": self._class_subject_route(
+                        class_by_id, links_with_modules
+                    )
+                },
+            )
         teacher_ids = {lnk.teacher_id for lnk in assigned_links}
         comp_q = select(
             models.teacher_subject_link.c.teacher_id,
@@ -127,7 +143,15 @@ class SchoolReadinessService:
             lnk for lnk in assigned_links if (lnk.teacher_id, lnk.subject_id) in comp_set
         ]
         if not competent_links:
-            return self._build_response(depth, issues)
+            return self._build_response(
+                depth,
+                issues,
+                step_routes={
+                    "TEACHER_ASSIGNMENT": self._class_subject_route(
+                        class_by_id, links_with_modules
+                    )
+                },
+            )
         depth = 4
 
         # 5. Depth 5: Compatible room exists (room.type == subject.required_room_type and room.capacity >= class.size)
@@ -207,22 +231,25 @@ class SchoolReadinessService:
         depth: int,
         issues: list[schemas.PreflightIssue],
         fingerprint: str | None = None,
+        step_routes: dict[str, str] | None = None,
     ) -> schemas.BasesReadinessResponse:
+        routes = {code: route for code, route in STEPS_METADATA}
+        routes.update(step_routes or {})
         if depth < len(STEPS_METADATA) and not issues:
-            code, route = STEPS_METADATA[depth]
+            code, _ = STEPS_METADATA[depth]
             issues = [
                 schemas.PreflightIssue(
                     code=f"{code}_REQUIRED",
                     severity="BLOCKER",
                     message=READINESS_ISSUE_MESSAGES[code],
-                    route=route,
+                    route=routes[code],
                 )
             ]
         percentage = PERCENTAGE_MAP[min(depth, 7)]
         steps: list[schemas.ReadinessStep] = []
-        for i, (code, route) in enumerate(STEPS_METADATA):
+        for i, (code, _) in enumerate(STEPS_METADATA):
             status = "COMPLETE" if depth > i else "PENDING"
-            steps.append(schemas.ReadinessStep(code=code, status=status, route=route))
+            steps.append(schemas.ReadinessStep(code=code, status=status, route=routes[code]))
 
         return schemas.BasesReadinessResponse(
             percentage=percentage,
@@ -232,3 +259,19 @@ class SchoolReadinessService:
             issues=issues,
             steps=steps,
         )
+
+    @staticmethod
+    def _class_subject_route(class_by_id, links) -> str:
+        """Return the class subject page for the first pending association."""
+        target_link = min(
+            links,
+            key=lambda link: (link.class_id, link.subject_id),
+            default=None,
+        )
+        if target_link is None:
+            return "/courses"
+
+        school_class = class_by_id.get(target_link.class_id)
+        if school_class is None:
+            return "/courses"
+        return f"/courses/{school_class.course_id}/classes/{school_class.id}/subjects"

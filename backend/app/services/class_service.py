@@ -964,10 +964,18 @@ async def get_eligible_teachers_for_subject(
             models.teacher_subject_link,
             models.Teacher.id == models.teacher_subject_link.c.teacher_id,
         )
+        .join(
+            models.OrganizationMembership,
+            models.OrganizationMembership.id == models.Teacher.organization_membership_id,
+        )
         .where(
             models.teacher_subject_link.c.subject_id == subject_id,
             models.teacher_subject_link.c.organization_id == organization_id,
             models.Teacher.organization_id == organization_id,
+            models.OrganizationMembership.organization_id == organization_id,
+            models.OrganizationMembership.lifecycle_status
+            == models.MembershipLifecycleStatus.active,
+            models.OrganizationMembership.can_teach.is_(True),
         )
         .order_by(models.Teacher.name)
     )
