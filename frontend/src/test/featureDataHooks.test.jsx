@@ -18,6 +18,7 @@ import {
   useRooms,
   useSubjects,
   useTimeslots,
+  useUpdateClassSubjectTeacher,
 } from '../features/catalog/data'
 import {
   useDebts,
@@ -189,6 +190,21 @@ describe('vertical feature data hooks', () => {
     expect(invalidate.mock.calls.map(([options]) => options.queryKey)).toEqual(expect.arrayContaining([
       ['subjects', 'org-a'],
       ['courses', 'org-a'],
+    ]))
+  })
+
+  it('refreshes readiness after assigning a teacher to a class subject', async () => {
+    const { queryClient, wrapper } = createHarness()
+    const invalidate = vi.spyOn(queryClient, 'invalidateQueries')
+    const mutation = renderHook(() => useUpdateClassSubjectTeacher(), { wrapper })
+
+    await act(() => mutation.result.current.mutateAsync({ classId: 4, subjectId: 7, teacherId: 12 }))
+
+    expect(apiClient.patch).toHaveBeenCalledWith('/classes/4/subjects/7', { teacher_id: 12 })
+    expect(invalidate.mock.calls.map(([options]) => options.queryKey)).toEqual(expect.arrayContaining([
+      ['dashboard', 'org-a'],
+      ['readiness-bases', 'org-a'],
+      ['prevalidation', 'org-a'],
     ]))
   })
 

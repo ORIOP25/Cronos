@@ -459,6 +459,7 @@ export const useAddClassSubject = () => {
       queryClient.invalidateQueries({ queryKey: ['available-subjects', orgId, variables.classId] })
       queryClient.invalidateQueries({ queryKey: ['classes', orgId, variables.classId] })
       queryClient.invalidateQueries({ queryKey: ['courses', orgId] })
+      void invalidatePreparationQueries(queryClient, orgId)
     }
   })
 }
@@ -479,6 +480,7 @@ export const useUpdateClassSubjectTeacher = () => {
     },
     onSuccess: (data, variables) => {
       queryClient.setQueryData(['class-subjects', orgId, variables.classId], data)
+      void invalidatePreparationQueries(queryClient, orgId)
     }
   })
 }
@@ -500,6 +502,7 @@ export const useRemoveClassSubject = () => {
       queryClient.invalidateQueries({ queryKey: ['available-subjects', orgId, variables.classId] })
       queryClient.invalidateQueries({ queryKey: ['classes', orgId, variables.classId] })
       queryClient.invalidateQueries({ queryKey: ['courses', orgId] })
+      void invalidatePreparationQueries(queryClient, orgId)
     }
   })
 }
