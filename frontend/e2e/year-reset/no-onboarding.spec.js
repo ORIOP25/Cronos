@@ -14,6 +14,8 @@ test.describe('Year reset — no legacy onboarding', () => {
     await loginAsAdminReal(page)
 
     await goTo(page, '/guide')
+    await expect(page.getByTestId('guide-landing')).toBeVisible()
+    await page.getByRole('button', { name: /conhecer o guia/i }).click()
     await expect(page.getByTestId('tutorial-workspace')).toBeVisible()
     const tutorialStorageBefore = await page.evaluate(() => Object.fromEntries(
       Object.entries(localStorage).filter(([key]) => key.startsWith('cronos:tutorial:')),

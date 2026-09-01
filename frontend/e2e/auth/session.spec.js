@@ -28,6 +28,8 @@ test.describe('Session resilience', () => {
 
   test('sessão persiste após page reload', async ({ page }) => {
     await goTo(page, '/guide')
+    await expect(page.getByTestId('guide-landing')).toBeVisible()
+    await page.getByRole('button', { name: /conhecer o guia/i }).click()
     await expect(page.getByTestId('tutorial-workspace')).toBeVisible()
 
     await goTo(page, '/dashboard')

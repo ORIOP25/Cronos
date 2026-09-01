@@ -50,6 +50,8 @@ test.describe('Tutorial — cenário local v3', () => {
     await page.getByTestId('tutorial-advance-button').click()
     await expect(page.getByTestId('tutorial-step-counter')).toHaveText('Passo 2 de 13')
     await page.getByTestId('tutorial-exit-button').click()
+    await expect(page).toHaveURL(/\/dashboard(?:[?#].*)?$/)
+    await goTo(page, '/guide')
     await expect(page.getByTestId('guide-landing')).toBeVisible()
     await page.getByRole('button', { name: /retomar guia/i }).click()
     await expect(page.getByTestId('tutorial-step-counter')).toHaveText('Passo 2 de 13')

@@ -28,8 +28,8 @@ test.describe('Readiness — first schedule', () => {
     expect(readiness.body.steps).toHaveLength(7)
     expect(readiness.body.steps.map((step) => step.code)).toEqual([
       'ACTIVE_CLASSES',
-      'CLASS_SUBJECTS',
       'MODULES',
+      'CLASS_SUBJECTS',
       'TEACHER_ASSIGNMENT',
       'COMPATIBLE_ROOM',
       'TIMESLOTS',
