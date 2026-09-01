@@ -11,6 +11,8 @@ test.describe.configure({ mode: 'serial' })
 test.describe('Tutorial — cenário local v3', () => {
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(() => {
+      if (sessionStorage.getItem('cronos:e2e:tutorial-reset') === '1') return
+      sessionStorage.setItem('cronos:e2e:tutorial-reset', '1')
       for (const key of Object.keys(localStorage)) {
         if (key.startsWith('cronos:tutorial:')) localStorage.removeItem(key)
       }
