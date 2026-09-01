@@ -2,14 +2,15 @@
   --tutorial-ink: #3d2b1f;
   --tutorial-muted: #816f63;
   --tutorial-accent: #d4940b;
+  --tutorial-panel-width: 480px;
 }
 
 .tutorial-live-shell .app-sidebar__link { width: 100%; border: 0; background: transparent; text-align: left; }
 .tutorial-live-shell .app-sidebar__link:disabled { cursor: default; opacity: 1; }
 .tutorial-live-shell .app-sidebar__link.active { background: rgb(255 255 255 / 14%); }
 .tutorial-live-shell .app-main { position: relative; }
-.tutorial-live-page { padding-top: 34px; }
-.tutorial-live-page.is-reviewing { pointer-events: none; filter: saturate(.35); }
+.tutorial-live-page { padding-top: 34px; padding-right: calc(var(--tutorial-panel-width) + 24px); }
+.tutorial-live-page.is-reviewing { filter: saturate(.35); }
 
 .tutorial-demo-ribbon {
   position: absolute;
@@ -34,9 +35,9 @@
   z-index: 1100;
   display: flex;
   flex-direction: column;
-  width: min(480px, calc(100vw - 48px));
+  width: min(var(--tutorial-panel-width), calc(100vw - 48px));
   max-height: calc(100vh - 48px);
-  padding: 28px;
+  padding: 24px;
   overflow: auto;
   border: 1px solid var(--cronos-border);
   border-radius: var(--cronos-radius-panel);
@@ -44,30 +45,22 @@
   box-shadow: 0 24px 70px rgb(35 20 10 / 24%);
 }
 
-/* Keep the panel away from the bottom-right action used by these steps. */
-.tutorial-instruction-panel[data-step-id="availability_review"],
-.tutorial-instruction-panel[data-step-id="substitute_teacher_select"] {
-  right: auto;
-  left: 304px;
-}
-
-.tutorial-instruction-panel__topline { display: flex; justify-content: space-between; color: var(--tutorial-muted); font-size: .67rem; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; }
-.tutorial-instruction-panel__dot { color: #4a9b68; }
-.tutorial-chapter-label { margin-top: 22px; color: var(--tutorial-accent); font-size: .69rem; font-weight: 800; letter-spacing: .11em; text-transform: uppercase; }
+.tutorial-chapter-label { color: var(--tutorial-accent); font-size: .8rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
 .tutorial-instruction-panel__progress { height: 4px; margin-top: 13px; overflow: hidden; border-radius: 2px; background: #eee6de; }
 .tutorial-instruction-panel__progress span { display: block; height: 100%; background: var(--tutorial-accent); }
-.tutorial-instruction-panel__copy { margin-top: 22px; }
+.tutorial-instruction-panel__copy { margin-top: 16px; }
 .tutorial-instruction-panel__copy:focus-visible { outline: 3px solid rgb(212 148 11 / 30%); outline-offset: 7px; }
-.tutorial-step-counter, .tutorial-review-label { margin: 0 0 9px; color: var(--tutorial-muted); font-size: .7rem; font-weight: 800; text-transform: uppercase; }
+.tutorial-step-counter, .tutorial-review-label { margin: 0 0 9px; color: var(--tutorial-muted); font-size: .82rem; font-weight: 800; text-transform: uppercase; }
 .tutorial-review-label { color: #9a6a0b; }
-.tutorial-instruction-panel h1 { margin: 0; color: var(--tutorial-ink); font: 700 1.9rem/1.08 var(--font-display, Georgia, serif); }
-.tutorial-instruction-panel__description { margin: 16px 0 0; color: var(--tutorial-muted); font-size: 1rem; line-height: 1.6; }
-.tutorial-instruction-panel__instruction { display: grid; gap: 10px; margin-top: 22px; padding: 18px; border: 2px solid #edc46e; border-left: 5px solid var(--tutorial-accent); border-radius: 6px; background: #fff4d8; }
-.tutorial-instruction-panel__instruction span { color: #865900; font-size: .75rem; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
-.tutorial-instruction-panel__instruction strong { color: var(--tutorial-ink); font-size: 1rem; line-height: 1.55; }
-.tutorial-instruction-panel__controls { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 22px; }
-.tutorial-instruction-panel__footer { display: flex; justify-content: space-between; gap: 10px; padding-top: 14px; }
-.tutorial-button, .tutorial-link-button { min-height: 38px; padding: 8px 11px; border: 0; background: transparent; color: var(--tutorial-muted); font: 700 .73rem var(--font-body, sans-serif); cursor: pointer; }
+.tutorial-instruction-panel h1 { margin: 0; color: var(--tutorial-ink); font: 700 2rem/1.12 var(--font-display, Georgia, serif); }
+.tutorial-instruction-panel__description { margin: 10px 0 0; color: var(--tutorial-muted); font-size: 1.06rem; line-height: 1.5; }
+.tutorial-instruction-panel__instruction { display: grid; gap: 8px; margin-top: 16px; padding: 14px; border: 2px solid #edc46e; border-left: 5px solid var(--tutorial-accent); border-radius: 6px; background: #fff4d8; }
+.tutorial-instruction-panel__instruction span { color: #865900; font-size: .82rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
+.tutorial-instruction-panel__instruction strong { color: var(--tutorial-ink); font-size: 1.06rem; line-height: 1.5; }
+.tutorial-instruction-panel__controls { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
+.tutorial-instruction-panel__footer { display: flex; justify-content: space-between; gap: 10px; padding-top: 12px; }
+.tutorial-instruction-panel__footer .tutorial-link-button { padding-inline: 4px; }
+.tutorial-button, .tutorial-link-button { min-height: 38px; padding: 8px 11px; border: 0; background: transparent; color: var(--tutorial-muted); font: 700 .85rem var(--font-body, sans-serif); cursor: pointer; }
 .tutorial-button--primary { width: 100%; border-radius: 7px; background: var(--tutorial-ink); color: #fff; }
 .tutorial-button--quiet:disabled { cursor: not-allowed; opacity: .38; }
 .tutorial-link-button--warning { color: #9a6a0b; }
@@ -87,45 +80,39 @@
   text-align: center;
 }
 
-.tutorial-landing__mark { display: grid; width: 62px; height: 62px; place-items: center; border-radius: 50%; background: var(--tutorial-ink); color: #f6cc72; font: 700 1.8rem var(--font-display, Georgia, serif); }
+.tutorial-landing__logo { display: block; width: 62px; height: 62px; object-fit: contain; }
 .tutorial-eyebrow { margin: 0 0 9px; color: var(--tutorial-accent); font-size: .68rem; font-weight: 800; letter-spacing: .15em; text-transform: uppercase; }
 .tutorial-landing h1 { margin: 0; color: var(--tutorial-ink); font: 700 clamp(2rem, 4vw, 3.5rem) var(--font-display, Georgia, serif); }
 .tutorial-landing p:not(.tutorial-eyebrow) { max-width: 460px; margin: 0 0 12px; color: var(--tutorial-muted); line-height: 1.6; }
 
 @media (min-width: 768px) and (max-height: 800px) {
-  .tutorial-instruction-panel { padding: 20px; }
-  .tutorial-chapter-label { margin-top: 14px; }
+  .tutorial-instruction-panel { padding: 18px; }
   .tutorial-instruction-panel__progress { margin-top: 9px; }
-  .tutorial-instruction-panel__copy { margin-top: 14px; }
-  .tutorial-instruction-panel h1 { font-size: 1.6rem; }
-  .tutorial-instruction-panel__description { margin-top: 10px; line-height: 1.45; }
-  .tutorial-instruction-panel__instruction { gap: 6px; margin-top: 14px; padding: 14px; }
-  .tutorial-instruction-panel__controls { margin-top: 12px; }
-  .tutorial-instruction-panel__footer { padding-top: 8px; }
+  .tutorial-instruction-panel__copy { margin-top: 12px; }
+  .tutorial-instruction-panel h1 { font-size: 1.75rem; }
+  .tutorial-instruction-panel__description { margin-top: 8px; line-height: 1.45; }
+  .tutorial-instruction-panel__instruction { gap: 6px; margin-top: 12px; padding: 12px; }
+  .tutorial-instruction-panel__controls { margin-top: 10px; }
+  .tutorial-instruction-panel__footer { padding-top: 6px; }
 }
 
 @media (min-width: 768px) and (max-width: 1399px) and (max-height: 800px) {
-  .tutorial-instruction-panel { width: 360px; }
-  .tutorial-instruction-panel:is(
-    [data-step-id="subject_create"],
-    [data-step-id="module_add"],
-    [data-step-id="course_create"],
-    [data-step-id="class_create"],
-    [data-step-id="teacher_add"],
-    [data-step-id="teacher_competency"],
-    [data-step-id="room_add"],
-    [data-step-id="assignment_create"]
-  ) { right: auto; left: 304px; }
+  .tutorial-live-shell { --tutorial-panel-width: 360px; }
+}
+
+@media (min-width: 768px) and (max-width: 1599px) {
   body:has(.modal.show) .tutorial-instruction-panel { right: 12px; left: auto; width: 216px; padding: 14px; }
-  body:has(.modal.show) .tutorial-instruction-panel h1 { font-size: 1.35rem; }
-  body:has(.modal.show) .tutorial-instruction-panel__description { font-size: .86rem; }
+  body:has(.modal.show) .tutorial-instruction-panel h1 { font-size: 1.45rem; }
+  body:has(.modal.show) .tutorial-instruction-panel__description { font-size: .95rem; }
   body:has(.modal.show) .tutorial-instruction-panel__instruction { padding: 10px; }
-  body:has(.modal.show) .tutorial-instruction-panel__instruction strong { font-size: .86rem; }
+  body:has(.modal.show) .tutorial-instruction-panel__instruction strong { font-size: .95rem; }
 }
 
 @media (max-width: 767px) {
   .tutorial-demo-ribbon { right: 16px; left: 16px; }
-  .tutorial-instruction-panel,
-  .tutorial-instruction-panel[data-step-id="availability_review"],
-  .tutorial-instruction-panel[data-step-id="substitute_teacher_select"] { right: 12px; bottom: 12px; left: auto; width: calc(100vw - 24px); max-height: 48vh; }
+  .tutorial-live-page { padding-right: 0; padding-bottom: 50vh; }
+  .tutorial-instruction-panel { right: 12px; bottom: 12px; left: auto; width: calc(100vw - 24px); max-height: 48vh; }
+  body:has(.tutorial-live-shell) .modal-dialog { height: calc(52vh - 24px); min-height: 0; margin: 12px; align-items: flex-start; }
+  body:has(.tutorial-live-shell) .modal-content { max-height: 100%; }
+  body:has(.tutorial-live-shell) .modal-body { overflow-y: auto; }
 }

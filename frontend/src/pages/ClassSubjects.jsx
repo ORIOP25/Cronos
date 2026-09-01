@@ -36,7 +36,9 @@ const SubjectRow = ({
   subject, 
   onRemove,
   onTeacherChange,
-  isUpdating 
+  isUpdating,
+  canEditTeacher = true,
+  canRemove = true,
 }) => {
   const { data: eligibleTeachers, isLoading: teachersLoading } = useEligibleTeachers(subject.subject_id)
   
@@ -65,7 +67,8 @@ const SubjectRow = ({
                 size="sm"
                 value={subject.teacher_id || ''}
                 onChange={handleTeacherChange}
-                disabled={isUpdating}
+                disabled={isUpdating || !canEditTeacher}
+                data-tutorial-target="class-subject-teacher"
                 style={{ minWidth: '180px' }}
               >
                 <option value="">
@@ -92,16 +95,16 @@ const SubjectRow = ({
           </div>
 
           {/* Botão Remover */}
-          <CButton
+          {canRemove && <CButton
             color="danger"
             variant="ghost"
             size="sm"
             onClick={() => onRemove(subject.subject_id)}
-            disabled={isUpdating}
+            disabled={isUpdating || !canRemove}
             title="Remover disciplina"
           >
             <CIcon icon={cilTrash} />
-          </CButton>
+          </CButton>}
         </div>
         
         {/* Info do professor atribuído */}
@@ -119,13 +122,17 @@ const SubjectRow = ({
 // ==========================================
 //  COMPONENT PRINCIPAL: ClassSubjects
 // ==========================================
-const ClassSubjects = ({ courseIdOverride, classIdOverride, navigationDisabled = false }) => {
+const ClassSubjects = ({ courseIdOverride, classIdOverride, navigationDisabled = false, readOnly = false, allowedActions }) => {
   const params = useParams()
   const courseId = courseIdOverride ?? params.courseId
   const classId = classIdOverride ?? params.classId
   const navigate = useNavigate()
   const numClassId = Number(classId)
   const numCourseId = Number(courseId)
+  const isTutorial = Array.isArray(allowedActions)
+  const canEditTeacher = !readOnly && (!isTutorial || allowedActions.includes('UPDATE_CLASS_SUBJECT_TEACHER'))
+  const canAdd = !readOnly && !isTutorial
+  const canRemove = !readOnly && !isTutorial
 
   // State para modal de adicionar disciplina
   const [showAddModal, setShowAddModal] = useState(false)
@@ -174,6 +181,7 @@ const ClassSubjects = ({ courseIdOverride, classIdOverride, navigationDisabled =
   }
 
   const handleTeacherChange = (subjectId, teacherId) => {
+    if (!canEditTeacher) return
     updateTeacher.mutate({ classId: numClassId, subjectId, teacherId })
   }
 
@@ -298,7 +306,7 @@ const ClassSubjects = ({ courseIdOverride, classIdOverride, navigationDisabled =
             <CButton 
               color="primary" 
               onClick={() => setShowAddModal(true)}
-              disabled={isUpdating}
+              disabled={isUpdating || !canAdd}
               data-tutorial-target="add-class-subject"
             >
               <CIcon icon={cilUserPlus} className="me-1" />
@@ -320,7 +328,7 @@ const ClassSubjects = ({ courseIdOverride, classIdOverride, navigationDisabled =
             <div className="text-center py-4">
               <CIcon icon={cilBook} size="3xl" className="text-muted mb-3" />
               <p className="text-muted mb-3">Nenhuma disciplina associada a esta turma.</p>
-              <CButton color="primary" onClick={() => setShowAddModal(true)}>
+              <CButton color="primary" onClick={() => setShowAddModal(true)} disabled={!canAdd} data-tutorial-target="add-class-subject">
                 <CIcon icon={cilUserPlus} className="me-1" />
                 Adicionar Primeira Disciplina
               </CButton>
@@ -333,6 +341,8 @@ const ClassSubjects = ({ courseIdOverride, classIdOverride, navigationDisabled =
                 onRemove={handleRemoveSubject}
                 onTeacherChange={handleTeacherChange}
                 isUpdating={isUpdating}
+                canEditTeacher={canEditTeacher}
+                canRemove={canRemove}
               />
             ))
           )}

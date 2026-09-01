@@ -92,6 +92,24 @@ Webhook events move through received, processing, processed, ignored, retryable,
 - `backend/tests/test_tenant_isolation_complete.py`
 - `frontend/public/_headers`
 
+## Onboarding Security Boundaries
+
+The onboarding flow has explicit actor boundaries:
+
+| Actor | Allowed before Foundation completion | Allowed after completion |
+| :--- | :--- | :--- |
+| Signed-in member | Session bootstrap, Foundation status, waiting page | Member features allowed by capability. |
+| Foundation administrator | Read, save, and complete Foundation | Same operations are idempotent or rejected after completion. |
+| Active administrator | No normal operational routes | Admin, readiness, dashboard, and configuration routes. |
+| Active teacher | No normal operational routes | Teacher routes with a linked teacher profile. |
+
+Clerk identity is external input.
+The backend resolves the local organization and member and applies tenant-scoped authorization before business operations.
+Foundation status does not grant admin capability; it only controls whether a capable administrator may complete setup.
+
+Tutorial telemetry is tenant-scoped, limited to a Foundation administrator, deduplicated by `(organization_id, client_event_id)`, and append-only.
+Tutorial scenario values remain in browser storage and are not trusted as operational records.
+
 ## Related Documents
 
 - [Members and Access](../02_domain_model/MEMBERS_AND_ACCESS.md)

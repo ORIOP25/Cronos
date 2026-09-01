@@ -94,6 +94,17 @@ Unhandled errors log a traceback and return a safe `500` response.
 - `backend/app/contact/`
 - `backend/tests/test_error_handlers.py`
 
+## Onboarding Backend Boundary
+
+The onboarding backend follows the existing request boundary:
+
+`FastAPI router -> actor dependency -> application service -> SQLAlchemy model -> PostgreSQL`
+
+The session endpoint bootstraps the tenant and current member.
+The Foundation router delegates draft and completion rules to `FoundationService`.
+Readiness and dashboard routers expose derived state after Foundation completion.
+All endpoint database dependencies use function scope so `commit` or `rollback` finishes before the response.
+
 ## Related Documents
 
 - [API Reference](API_REFERENCE.md)

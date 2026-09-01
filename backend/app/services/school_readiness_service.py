@@ -18,8 +18,8 @@ PERCENTAGE_MAP = [0, 14, 28, 42, 57, 71, 85, 100]
 
 STEPS_METADATA = [
     ("ACTIVE_CLASSES", "/courses"),
-    ("CLASS_SUBJECTS", "/courses"),
     ("MODULES", "/subjects"),
+    ("CLASS_SUBJECTS", "/courses"),
     ("TEACHER_ASSIGNMENT", "/members"),
     ("COMPATIBLE_ROOM", "/rooms"),
     ("TIMESLOTS", "/config"),
@@ -57,11 +57,23 @@ class SchoolReadinessService:
             return self._build_response(depth, issues)
         depth = 1
 
-        # 2. Depth 2: ClassSubjectLink for active class in current grade_level
+        # 2. Depth 2: Subject has Module with required_minutes > 0
+        module_q = select(models.Module).where(
+            models.Module.organization_id == organization_id,
+            models.Module.required_minutes > 0,
+        )
+        modules = (await self._db.execute(module_q)).scalars().all()
+        subjects_with_modules = {module.subject_id for module in modules}
+        if not subjects_with_modules:
+            return self._build_response(depth, issues)
+        depth = 2
+
+        # 3. Depth 3: ClassSubjectLink for an active class in current grade_level
         class_ids = [c.id for c in classes]
         link_q = select(models.ClassSubjectLink).where(
             models.ClassSubjectLink.organization_id == organization_id,
             models.ClassSubjectLink.class_id.in_(class_ids),
+            models.ClassSubjectLink.subject_id.in_(subjects_with_modules),
         )
         links = (await self._db.execute(link_q)).scalars().all()
         class_by_id = {c.id: c for c in classes}
@@ -73,21 +85,9 @@ class SchoolReadinessService:
         ]
         if not valid_links:
             return self._build_response(depth, issues)
-        depth = 2
-
-        # 3. Depth 3: Subject has Module with required_minutes > 0
-        subject_ids = {lnk.subject_id for lnk in valid_links}
-        module_q = select(models.Module).where(
-            models.Module.organization_id == organization_id,
-            models.Module.subject_id.in_(subject_ids),
-            models.Module.required_minutes > 0,
-        )
-        modules = (await self._db.execute(module_q)).scalars().all()
-        subjects_with_modules = {m.subject_id for m in modules}
-        links_with_modules = [lnk for lnk in valid_links if lnk.subject_id in subjects_with_modules]
-        if not links_with_modules:
-            return self._build_response(depth, issues)
         depth = 3
+
+        links_with_modules = valid_links
 
         # 4. Depth 4: Assigned competent teacher in teacher_subject_link
         assigned_links = [lnk for lnk in links_with_modules if lnk.teacher_id is not None]

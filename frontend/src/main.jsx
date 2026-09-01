@@ -24,6 +24,8 @@ ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <ClerkProvider
       publishableKey={import.meta.env.VITE_CLERK_PUBLISHABLE_KEY}
+      signInUrl="/login"
+      signUpUrl="/register"
       afterSignOutUrl="/"
       localization={CLERK_LOCALIZATION_PT}
     >

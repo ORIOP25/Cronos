@@ -1,215 +1,210 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
+  TUTORIAL_ACTIONS,
+  TUTORIAL_CHAPTERS,
+  TUTORIAL_COPY,
   TUTORIAL_STEPS,
   TUTORIAL_VERSION,
+  getLegacyTutorialStorageKey,
   getTutorialStorageKey,
-  matchTutorialMutation,
-  matchTutorialMutations,
-  normalizeTutorialChanges,
-  createTutorialScenario,
-  tutorialScenarioInvariants,
-} from '../features/tutorial/tutorialScenario'
+} from '../features/tutorial/tutorialContent'
 import {
   INITIAL_TUTORIAL_STATE,
   applyTutorialTransition,
-  getTutorialScenario,
+  getTutorialProgressPercent,
   validateTutorialState,
 } from '../features/tutorial/tutorialModel'
+import {
+  applyTutorialDemoAction,
+  createTutorialScenario,
+  tutorialScenarioInvariants,
+} from '../features/tutorial/tutorialScenario'
 
-describe('tutorial v2 domain', () => {
-  it('declares exactly 24 deterministic steps and 17 skips', () => {
-    expect(TUTORIAL_VERSION).toBe(2)
-    expect(TUTORIAL_STEPS).toHaveLength(24)
-    expect(new Set(TUTORIAL_STEPS.map((step) => step.id)).size).toBe(24)
-    expect(TUTORIAL_STEPS.filter((step) => step.isSkippable)).toHaveLength(17)
-    expect(TUTORIAL_STEPS.filter((step) => step.kind === 'observation').every((step) => step.action.id === 'continue')).toBe(true)
-    expect(TUTORIAL_STEPS.every((step) => step.action.id && step.activeNavItem && step.screen)).toBe(true)
+describe('tutorial v3 domain', () => {
+  it('declares the 13 feature steps in two chapters', () => {
+    expect(TUTORIAL_VERSION).toBe(3)
+    expect(TUTORIAL_STEPS).toHaveLength(13)
+    expect(TUTORIAL_STEPS.slice(0, 7).every((step) => step.chapter === 1)).toBe(true)
+    expect(TUTORIAL_STEPS.slice(7).every((step) => step.chapter === 2)).toBe(true)
+    expect(new Set(TUTORIAL_STEPS.map((step) => step.id)).size).toBe(13)
+    expect(TUTORIAL_STEPS.map((step) => step.id)).toEqual([
+      'curriculum', 'courses_classes', 'team', 'rooms', 'class_plan',
+      'availability', 'schedule', 'occurrences', 'substitutions',
+      'weekly_close', 'hour_debts', 'recovery', 'history',
+    ])
+    expect(TUTORIAL_CHAPTERS).toHaveLength(2)
+    expect(TUTORIAL_STEPS.every((step) => step.page && step.target && step.allowedActions)).toBe(true)
   })
 
-  it('contains the required local scenario dimensions', () => {
-    const scenario = createTutorialScenario(INITIAL_TUTORIAL_STATE)
-    expect(tutorialScenarioInvariants(scenario)).toEqual({
-      courses: true,
-      classes: true,
-      subjects: true,
-      modules: true,
-      teachers: true,
-      rooms: true,
-      demoIds: true,
-      weeklyGrid: true,
-      historyPreserved: true,
+  it('keeps the guide copy and persistence key tenant-specific', () => {
+    expect(TUTORIAL_COPY.ribbon).toBe('Ambiente de demonstração · os dados da escola não são alterados.')
+    expect(getTutorialStorageKey('user_123', 'org_abc')).toBe('cronos:tutorial:v3:user:user_123:org:org_abc')
+    expect(getTutorialStorageKey(null, null)).toBeNull()
+    expect(getLegacyTutorialStorageKey('user_123', 'org_abc')).toBe('cronos:tutorial:v2:user:user_123:org:org_abc')
+    expect(getLegacyTutorialStorageKey(null, null)).toBeNull()
+  })
+
+  it('creates a pure deterministic scenario for every step', () => {
+    for (const step of TUTORIAL_STEPS) {
+      const scenario = createTutorialScenario(step.id)
+      const invariants = tutorialScenarioInvariants(scenario)
+      expect(Object.values(invariants).every(Boolean)).toBe(true)
+      expect(scenario.stepId).toBe(step.id)
+      expect(scenario.weekStart).toBe('2025-09-15')
+      expect(scenario.referenceDate).toBe('2025-09-20T12:00:00Z')
+      expect(scenario.slotDurationMinutes).toBe(60)
+      expect([...scenario.courses, ...scenario.classes, ...scenario.subjects, ...scenario.modules,
+        ...scenario.teachers, ...scenario.rooms, ...scenario.classSubjects, ...scenario.timeslots,
+        ...scenario.blocks].every((item) => item.id.startsWith('demo-'))).toBe(true)
+    }
+  })
+
+  it('keeps the debt and recovery example deterministic', () => {
+    const scenario = createTutorialScenario('recovery')
+    expect(scenario.debt).toMatchObject({
+      hoursOwedMinutes: 120,
+      proposedRecoveryMinutes: 60,
+      remainingMinutes: 60,
+    })
+    expect(scenario.draft).toMatchObject({
+      kind: 'RECOVERY',
+      resultCategory: 'PARTIAL_RECOVERY',
+      debtHoursBefore: 2,
+      debtHoursRecovered: 1,
+      debtHoursRemaining: 1,
     })
   })
 
-  it('keeps baseline subjects available after recording the created subject', () => {
-    const scenario = createTutorialScenario({
-      ...INITIAL_TUTORIAL_STATE,
-      values: {
-        subject_create: { completed: true, name: 'Sistemas Embebidos', roomType: 'LAB' },
-        module_add: { completed: true, moduleName: 'UFCD 5412', moduleHours: 25 },
+  it('applies declared demo actions without mutating the source scenario', () => {
+    const subjectScenario = createTutorialScenario('curriculum')
+    const editedSubject = applyTutorialDemoAction(subjectScenario, {
+      type: TUTORIAL_ACTIONS.UPDATE_SUBJECT,
+      subjectId: 1,
+      data: {
+        name: 'Programação Aplicada',
+        required_room_type: 'lab',
+        modules: [{ name: 'Algoritmos', code: 'UFCD-A', hours_total: 2 }],
       },
     })
+    expect(subjectScenario.subjects[0].name).toBe('Programação')
+    expect(editedSubject.subjects[0].name).toBe('Programação Aplicada')
+    expect(editedSubject.modules).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'demo-module-edited-1', requiredMinutes: 120 }),
+    ]))
 
-    expect(scenario.subjects.map((subject) => subject.name)).toContain('Programação')
-    expect(scenario.subjects.map((subject) => subject.name)).toContain('Sistemas Embebidos')
-    expect(scenario.modules.map((module) => module.name)).toContain('UFCD 5412')
+    const classScenario = createTutorialScenario('courses_classes')
+    const editedClass = applyTutorialDemoAction(classScenario, {
+      type: TUTORIAL_ACTIONS.UPDATE_CLASS,
+      courseId: 1,
+      classId: 1,
+      data: { name: '10.º TIS', grade_level: 10, size: 24, start_year: 2025, end_year: 2028 },
+    })
+    expect(editedClass.classes[0]).toMatchObject({ name: '10.º TIS', size: 24 })
+
+    const memberScenario = createTutorialScenario('team')
+    const editedMember = applyTutorialDemoAction(memberScenario, {
+      type: TUTORIAL_ACTIONS.UPDATE_MEMBER_COMPETENCIES,
+      memberId: 1,
+      data: { subject_ids: [1, 2] },
+    })
+    expect(editedMember.teachers[0].competencies).toHaveLength(2)
+
+    const roomScenario = createTutorialScenario('rooms')
+    const editedRoom = applyTutorialDemoAction(roomScenario, {
+      type: TUTORIAL_ACTIONS.UPDATE_ROOM,
+      roomId: 1,
+      data: { name: 'Laboratório maior', type: 'lab', capacity: 30 },
+    })
+    expect(editedRoom.rooms[0]).toMatchObject({ name: 'Laboratório maior', capacity: 30 })
+
+    const planScenario = createTutorialScenario('class_plan')
+    const editedAssignment = applyTutorialDemoAction(planScenario, {
+      type: TUTORIAL_ACTIONS.UPDATE_CLASS_SUBJECT_TEACHER,
+      classId: 1,
+      subjectId: 1,
+      teacherId: 1,
+    })
+    expect(editedAssignment.classSubjects[0].teacherId).toBe('demo-teacher-programming')
+
+    const availabilityScenario = createTutorialScenario('availability')
+    const editedAvailability = applyTutorialDemoAction(availabilityScenario, {
+      type: TUTORIAL_ACTIONS.UPDATE_AVAILABILITY,
+      slots: [{ timeslot_id: 1, score: -1 }],
+    })
+    expect(editedAvailability.availability.slots[0].score).toBe(-1)
+    expect(availabilityScenario.availability.slots[0].score).toBe(1)
   })
 
-  it('uses the v2 tenant-isolated storage key', () => {
-    expect(getTutorialStorageKey('user_123', 'org_abc')).toBe('cronos:tutorial:v2:user:user_123:org:org_abc')
-    expect(getTutorialStorageKey(null, null)).toBe('cronos:tutorial:v2:user:anonymous:org:personal')
+  it('models schedule, occurrence, substitution and recovery actions', () => {
+    const schedule = createTutorialScenario('schedule')
+    const generated = applyTutorialDemoAction(schedule, { type: TUTORIAL_ACTIONS.GENERATE_SCHEDULE })
+    expect(generated.draft).toMatchObject({ kind: 'SCHEDULE', resultCategory: 'COMPLETE_SUCCESS' })
+    const approved = applyTutorialDemoAction(generated, { type: TUTORIAL_ACTIONS.APPROVE_SCHEDULE, draftId: 71 })
+    expect(approved.draft).toBeNull()
+
+    const occurrenceScenario = createTutorialScenario('occurrences')
+    const withOccurrence = applyTutorialDemoAction(occurrenceScenario, {
+      type: TUTORIAL_ACTIONS.CREATE_OCCURRENCE,
+      blockId: 1,
+      status: 'OCCURRENCE',
+    })
+    expect(withOccurrence.occurrences).toHaveLength(1)
+
+    const substitutionScenario = createTutorialScenario('substitutions')
+    const substituted = applyTutorialDemoAction(substitutionScenario, {
+      type: TUTORIAL_ACTIONS.DECIDE_SUBSTITUTION,
+      occurrenceId: 1,
+      status: 'SUBSTITUTED',
+      substituteTeacherId: 2,
+      substituteSubjectId: 2,
+    })
+    expect(substituted.occurrences[0]).toMatchObject({
+      status: 'SUBSTITUTED',
+      operationalState: 'DECIDED_SUBSTITUTED',
+    })
+
+    const recovery = createTutorialScenario('recovery')
+    const recoveryApproved = applyTutorialDemoAction(recovery, {
+      type: TUTORIAL_ACTIONS.APPROVE_RECOVERY,
+      draftId: 72,
+    })
+    expect(recoveryApproved.draft).toBeNull()
+    expect(recoveryApproved.publishedRecoveryBlockIds).toContain('demo-block-recovery-1')
   })
 
-  it('accepts only the action declared by the current step', () => {
-    const started = applyTutorialTransition(INITIAL_TUTORIAL_STATE, { type: 'START', tutorialRunId: 'run-1' })
+  it('advances only with an exact expected step and ignores duplicate clicks', () => {
+    const started = applyTutorialTransition(INITIAL_TUTORIAL_STATE, { type: 'START', tutorialRunId: 'run-v3' })
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
-    const invalid = applyTutorialTransition(started, { type: 'COMPLETE_STEP', actionId: 'wrong-action' })
-    expect(invalid).toBe(started)
+    expect(applyTutorialTransition(started, { type: 'ADVANCE', expectedStepId: 'courses_classes' })).toBe(started)
     expect(consoleError).toHaveBeenCalled()
     consoleError.mockRestore()
 
-    const completed = applyTutorialTransition(started, { type: 'COMPLETE_STEP', actionId: 'continue' })
-    expect(completed.stepId).toBe('subject_create')
-    expect(completed.chapter).toBe(1)
+    const advanced = applyTutorialTransition(started, { type: 'ADVANCE', expectedStepId: 'curriculum' })
+    expect(advanced).toEqual({ version: 3, tutorialRunId: 'run-v3', status: 'IN_PROGRESS', stepId: 'courses_classes' })
+    expect(applyTutorialTransition(advanced, { type: 'ADVANCE', expectedStepId: 'curriculum' })).toBe(advanced)
   })
 
-  it('completes related fields saved by one real form as one sequence', () => {
-    let state = applyTutorialTransition(INITIAL_TUTORIAL_STATE, { type: 'START', tutorialRunId: 'run-sequence' })
-    state = applyTutorialTransition(state, { type: 'COMPLETE_STEP', actionId: 'continue' })
-    state = applyTutorialTransition(state, {
-      type: 'COMPLETE_SEQUENCE',
-      completions: [
-        { actionId: 'save-subject', changes: { name: 'Sistemas Embebidos' } },
-        { actionId: 'add-module', changes: { moduleName: 'UFCD 5412', moduleHours: 25 } },
-      ],
-    })
-    expect(state.stepId).toBe('course_create')
-  })
-
-  it('matches a real form mutation to one or more declared tutorial objectives', () => {
-    const matches = matchTutorialMutations({
-      method: 'post',
-      path: '/courses/',
-      body: {
-        name: 'Técnico de Eletrónica',
-        abbreviation: 'TE',
-        classes_config: [{ name: '10.º TE', grade_level: 10, size: 24 }],
-      },
-    })
-    expect(matches.map((match) => match.stepId)).toEqual(['course_create', 'class_create'])
-    expect(matchTutorialMutation({
-      stepId: 'course_create',
-      method: 'post',
-      path: '/courses/',
-      body: { name: 'Técnico de Eletrónica', abbreviation: 'TE' },
-    })?.expectedActionId).toBe('save-course')
-
-    expect(matchTutorialMutation({
-      stepId: 'teacher_add',
-      method: 'post',
-      path: '/members',
-      body: { organization_display_name: 'Rui Almeida', email: '', subject_ids: [] },
-    })).toMatchObject({ expectedActionId: 'save-teacher', changes: { name: 'Rui Almeida' } })
-
-    expect(matchTutorialMutation({
-      stepId: 'occurrence_create',
-      method: 'put',
-      path: '/schedule/active-blocks/41/log',
-      body: { status: 'OCCURRENCE', summary: '', notes: '' },
-    })).toMatchObject({ expectedActionId: 'create-occurrence' })
-  })
-
-  it('normalizes structured checkpoints idempotently and rejects incomplete data', () => {
-    const rawModule = {
-      modules: [{ name: 'UFCD 5412', code: '5412', hours_total: 25 }],
+  it('keeps progress derived from the current feature index', () => {
+    let state = applyTutorialTransition(INITIAL_TUTORIAL_STATE, { type: 'START', tutorialRunId: 'run-progress' })
+    expect(getTutorialProgressPercent(state)).toBe(0)
+    for (let index = 0; index < TUTORIAL_STEPS.length - 1; index += 1) {
+      state = applyTutorialTransition(state, { type: 'ADVANCE', expectedStepId: TUTORIAL_STEPS[index].id })
     }
-    const moduleChanges = normalizeTutorialChanges('module_add', rawModule)
-    expect(moduleChanges).toEqual({
-      moduleName: 'UFCD 5412',
-      moduleCode: '5412',
-      moduleHours: 25,
-    })
-    expect(normalizeTutorialChanges('module_add', moduleChanges)).toEqual(moduleChanges)
-    expect(normalizeTutorialChanges('module_add', { modules: [{ name: 'Sem horas' }] })).toBeNull()
-
-    const rawCompetency = { subject_ids: [2] }
-    const competencyChanges = normalizeTutorialChanges('teacher_competency', rawCompetency)
-    expect(competencyChanges).toEqual({ subjectId: 2 })
-    expect(normalizeTutorialChanges('teacher_competency', competencyChanges)).toEqual(competencyChanges)
-    expect(normalizeTutorialChanges('teacher_competency', { subject_ids: [] })).toBeNull()
-
-    let state = applyTutorialTransition(INITIAL_TUTORIAL_STATE, { type: 'START', tutorialRunId: 'run-canonical-values' })
-    state = applyTutorialTransition(state, { type: 'COMPLETE_STEP', actionId: 'continue' })
-    state = applyTutorialTransition(state, { type: 'COMPLETE_STEP', actionId: 'save-subject', changes: { name: 'Sistemas Embebidos' } })
-    state = applyTutorialTransition(state, { type: 'COMPLETE_STEP', actionId: 'add-module', changes: moduleChanges })
-    expect(state.values.module_add).toEqual({ completed: true, ...moduleChanges })
-
-    state = { ...state, stepId: 'teacher_competency', chapter: 1 }
-    state = applyTutorialTransition(state, { type: 'COMPLETE_STEP', actionId: 'save-competency', changes: competencyChanges })
-    expect(state.values.teacher_competency).toEqual({ completed: true, ...competencyChanges })
+    expect(state.stepId).toBe(TUTORIAL_STEPS.at(-1).id)
+    expect(getTutorialProgressPercent(state)).toBeLessThan(100)
+    state = applyTutorialTransition(state, { type: 'ADVANCE', expectedStepId: TUTORIAL_STEPS.at(-1).id })
+    expect(state.status).toBe('COMPLETED')
+    expect(getTutorialProgressPercent(state)).toBe(100)
   })
 
-  it('keeps exit as an in-progress checkpoint and repeats with a new run', () => {
-    const started = applyTutorialTransition(INITIAL_TUTORIAL_STATE, { type: 'START', tutorialRunId: 'run-1' })
-    const exited = applyTutorialTransition(started, { type: 'EXIT' })
-    expect(exited).toEqual(started)
-    expect(exited.status).toBe('IN_PROGRESS')
+  it('supports integral skip, exit, repeat and rejects extra persisted fields', () => {
+    const started = applyTutorialTransition(INITIAL_TUTORIAL_STATE, { type: 'START', tutorialRunId: 'run-skip' })
+    const skipped = applyTutorialTransition(started, { type: 'SKIP_TUTORIAL' })
+    expect(skipped).toMatchObject({ status: 'SKIPPED', stepId: 'curriculum', tutorialRunId: 'run-skip' })
+    expect(applyTutorialTransition(skipped, { type: 'EXIT' })).toBe(skipped)
 
-    const repeated = applyTutorialTransition(exited, { type: 'REPEAT', tutorialRunId: 'run-2' })
-    expect(repeated).toMatchObject({ tutorialRunId: 'run-2', status: 'IN_PROGRESS', stepId: 'structure_overview', skippedStepIds: [], values: {} })
-  })
-
-  it('completes deterministic skip boundary and representative masks with valid data', () => {
-    const skippable = TUTORIAL_STEPS.filter((step) => step.isSkippable)
-    const total = 2 ** skippable.length
-    expect(total).toBe(131072)
-    const masks = [
-      0,
-      total - 1,
-      1,
-      2,
-      0x01555,
-      0x0AAAA,
-      0x12345,
-    ]
-    const completionChanges = {
-      subject_create: { name: 'Sistemas Embebidos' },
-      module_add: { moduleName: 'UFCD 5412', moduleHours: 25 },
-      course_create: { name: 'Técnico de Eletrónica' },
-      class_create: { name: '10.º TE', gradeLevel: 10, size: 24 },
-      teacher_add: { name: 'Rui Almeida' },
-      teacher_competency: { subjectId: 1 },
-      room_add: { name: 'Laboratório 3', type: 'LAB', capacity: 24 },
-      assignment_create: { classId: 1, subjectId: 1, teacherId: 1 },
-      availability_review: { status: 'NEUTRAL' },
-    }
-
-    for (const mask of masks) {
-      let state = applyTutorialTransition(INITIAL_TUTORIAL_STATE, {
-        type: 'START',
-        tutorialRunId: `run-exhaustive-${mask}`,
-      })
-      let skipPointer = 0
-      while (state.status === 'IN_PROGRESS') {
-        const step = TUTORIAL_STEPS.find((item) => item.id === state.stepId)
-        const shouldSkip = step.isSkippable && (mask & (1 << skipPointer++)) !== 0
-        const nextState = applyTutorialTransition(state, shouldSkip
-          ? { type: 'SKIP_STEP' }
-          : { type: 'COMPLETE_STEP', actionId: step.action.id, changes: completionChanges[step.id] })
-        const validation = validateTutorialState(nextState)
-        const scenario = getTutorialScenario(nextState)
-        const invariants = tutorialScenarioInvariants(scenario)
-        if (nextState === state || !validation.valid || !Object.values(invariants).every(Boolean)) {
-          throw new Error(`Tutorial transition diverged at mask ${mask}, step ${step.id}: ${validation.reason || JSON.stringify(invariants)}`)
-        }
-        state = nextState
-      }
-      const scenario = getTutorialScenario(state)
-      expect(state.status).toBe('COMPLETED')
-      expect(state.stepId).toBe(TUTORIAL_STEPS.at(-1).id)
-      expect(state.skippedStepIds.every((stepId) => skippable.some((step) => step.id === stepId))).toBe(true)
-      expect(scenario.debt.originalHours).toBe(2)
-      expect(scenario.repair.history[0].preserved).toBe(true)
-    }
+    const repeated = applyTutorialTransition(skipped, { type: 'REPEAT', tutorialRunId: 'run-repeat' })
+    expect(repeated).toEqual({ version: 3, tutorialRunId: 'run-repeat', status: 'IN_PROGRESS', stepId: 'curriculum' })
+    expect(validateTutorialState({ ...repeated, chapter: 1 }).valid).toBe(false)
   })
 })

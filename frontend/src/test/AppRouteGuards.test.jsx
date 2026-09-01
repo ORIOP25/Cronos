@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { screen } from '@testing-library/react'
-import { Route, Routes } from 'react-router-dom'
-import { renderWithRouter } from './testUtils'
+import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { renderWithProviders, renderWithRouter } from './testUtils'
 import { setClerkState, resetClerkState } from './setup'
 import {
   RequireAdmin,
@@ -71,12 +71,43 @@ describe('RequireAuth', () => {
     setClerkState({ isLoaded: false })
     renderGuard(<RequireAuth><div>Content</div></RequireAuth>)
     expect(screen.getByRole('status', { hidden: true })).toBeInTheDocument()
+    expect(screen.queryByTestId('redirect-to-sign-in')).toBeNull()
   })
 
   it('redirects to sign-in when signed out', () => {
     setClerkState({ isSignedIn: false, isLoaded: true })
     renderGuard(<RequireAuth><div>Content</div></RequireAuth>)
     expect(screen.queryByText('Content')).toBeNull()
+    expect(screen.getByTestId('redirect-to-sign-in')).toBeInTheDocument()
+  })
+
+  it('redirects when an active session is lost', () => {
+    const view = renderWithProviders(
+      <MemoryRouter initialEntries={['/protected']}>
+        <RequireAuth><div data-testid="protected-content">Content</div></RequireAuth>
+      </MemoryRouter>,
+    )
+    expect(screen.getByTestId('protected-content')).toBeInTheDocument()
+
+    setClerkState({ isSignedIn: false })
+    view.rerender(
+      <MemoryRouter initialEntries={['/protected']}>
+        <RequireAuth><div data-testid="protected-content">Content</div></RequireAuth>
+      </MemoryRouter>,
+    )
+
+    expect(screen.queryByTestId('protected-content')).toBeNull()
+    expect(screen.getByTestId('redirect-to-sign-in')).toBeInTheDocument()
+  })
+
+  it('passes the current path, query and fragment to the native sign-in redirect', () => {
+    setClerkState({ isSignedIn: false, isLoaded: true })
+    renderGuard(<RequireAuth><div>Content</div></RequireAuth>, ['/protected?tab=week#availability'])
+
+    expect(screen.getByTestId('redirect-to-sign-in')).toHaveAttribute(
+      'data-redirect-url',
+      '/protected?tab=week#availability',
+    )
   })
 })
 
@@ -134,6 +165,7 @@ describe('RequireAdmin', () => {
     setClerkState({ isSignedIn: false, isLoaded: true })
     renderGuard(<RequireAdmin><div>Admin</div></RequireAdmin>)
     expect(screen.queryByText('Admin')).toBeNull()
+    expect(screen.getByTestId('redirect-to-sign-in')).toBeInTheDocument()
   })
 })
 

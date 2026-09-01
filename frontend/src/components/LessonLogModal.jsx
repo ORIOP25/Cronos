@@ -31,20 +31,24 @@ const OCCURRENCE_STATUS_LABELS = {
  * COMPLETED → editable if week OPEN, readonly if locked
  * OCCURRENCE → readonly (always)
  */
-const LessonLogModal = ({ onClose, slot, isAdmin = false }) => {
+const LessonLogModal = ({ onClose, slot, isAdmin = false, readOnly = false, allowedActions, referenceDate }) => {
   const [summary, setSummary] = useState(() => slot.lesson_log_summary || '')
   const [notes, setNotes] = useState(() => slot.lesson_log_notes || '')
   const [errorMessage, setErrorMessage] = useState('')
   const [showReopenConfirm, setShowReopenConfirm] = useState(false)
   const [showOccurrenceConfirm, setShowOccurrenceConfirm] = useState(false)
+  const [defaultReferenceDate] = useState(() => Date.now())
 
   const upsertLogMutation = useUpsertLessonLog()
   const updateTimesheetStatusMutation = useUpdateTimesheetStatus()
+  const isTutorial = Array.isArray(allowedActions)
+  const canEditTimesheet = !readOnly && !isTutorial
 
   const MAX_SUMMARY_LENGTH = 2000
   const MAX_NOTES_LENGTH = 1000
 
   const handleSubmit = async (status) => {
+    if (!canCreateOccurrence || (isTutorial && status !== 'OCCURRENCE')) return
     setErrorMessage('')
     try {
       await upsertLogMutation.mutateAsync({
@@ -95,13 +99,20 @@ const LessonLogModal = ({ onClose, slot, isAdmin = false }) => {
   let isFuture = false
   if (slot.date && slot.timeslot?.end_time) {
     const endDateTime = new Date(`${slot.date}T${slot.timeslot.end_time}`)
-    isFuture = endDateTime > new Date()
+    isFuture = endDateTime > new Date(referenceDate || defaultReferenceDate)
   } else {
     isFuture = !slot.is_past
   }
 
   const isWeekLocked = slot.week_timesheet_status === 'SUBMITTED' || slot.week_timesheet_status === 'APPROVED'
-  const canEdit = isCompleted && !isWeekLocked
+  const canCreateOccurrence = !readOnly
+    && !isWeekLocked
+    && (!isTutorial || allowedActions.includes('CREATE_OCCURRENCE'))
+  const canEdit = isCompleted
+    && !isWeekLocked
+    && !readOnly
+    && (!isTutorial || allowedActions.includes('UPDATE_LESSON_LOG'))
+  const canEditForm = canEdit || (isPending && canCreateOccurrence)
 
   const statusInfo = getLessonLogStatus(currentStatus)
 
@@ -169,20 +180,20 @@ const LessonLogModal = ({ onClose, slot, isAdmin = false }) => {
         )}
 
         {/* Locked week — read-only mode */}
-        {!isFuture && isWeekLocked && (
+        {isWeekLocked && (
           <CAlert color="secondary" className="mb-3 d-flex align-items-center justify-content-between flex-wrap gap-2">
             <span>
               <strong>Semana {slot.week_timesheet_status === 'SUBMITTED' ? 'submetida' : 'aprovada'}</strong>
               {' — Modo de consulta.'}
               {!isAdmin && ' Os campos estão bloqueados para edição.'}
             </span>
-            {isAdmin && (
+            {isAdmin && canEditTimesheet && (
               <CButton
                 color="warning"
                 size="sm"
                 className="text-white"
                 onClick={handleReopenWeek}
-                disabled={updateTimesheetStatusMutation.isPending}
+                disabled={!canEditTimesheet || updateTimesheetStatusMutation.isPending}
               >
                 {updateTimesheetStatusMutation.isPending && <CSpinner size="sm" className="me-1" />}
                 <CIcon icon={cilActionUndo} className="me-1" />
@@ -225,7 +236,7 @@ const LessonLogModal = ({ onClose, slot, isAdmin = false }) => {
             placeholder="Sumário descritivo da aula..."
             value={summary}
             onChange={(e) => setSummary(e.target.value)}
-            disabled={!canEdit && !isPending}
+            disabled={!canEditForm}
             maxLength={MAX_SUMMARY_LENGTH}
           />
           <div className="text-muted text-end small mt-1" style={{ fontSize: '0.7rem' }}>
@@ -240,7 +251,7 @@ const LessonLogModal = ({ onClose, slot, isAdmin = false }) => {
             placeholder="Anotações para uso interno ou partilha com direção..."
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
-            disabled={!canEdit && !isPending}
+            disabled={!canEditForm}
             maxLength={MAX_NOTES_LENGTH}
           />
           <div className="text-muted text-end small mt-1" style={{ fontSize: '0.7rem' }}>
@@ -304,7 +315,7 @@ const LessonLogModal = ({ onClose, slot, isAdmin = false }) => {
           {upsertLogMutation.isPending && <CSpinner size="sm" className="align-self-center" />}
 
           {/* PENDING — 3 buttons */}
-          {isPending && (
+          {isPending && canCreateOccurrence && (
             <>
               <CButton
                 style={{ backgroundColor: 'var(--color-state-gap)', borderColor: 'var(--color-state-gap)', color: '#fff' }}
@@ -316,15 +327,15 @@ const LessonLogModal = ({ onClose, slot, isAdmin = false }) => {
                 Criar Ocorrência
               </CButton>
 
-              <CButton
-                style={{ backgroundColor: 'var(--color-state-given)', borderColor: 'var(--color-state-given)', color: '#fff' }}
-                onClick={() => handleSubmit('COMPLETED')}
-                disabled={isFuture || isWeekLocked || upsertLogMutation.isPending}
-                title="Marcar aula como dada"
-              >
-                <CIcon icon={cilCheckCircle} className="me-1" />
-                Aula Dada
-              </CButton>
+              {!isTutorial && <CButton
+                  style={{ backgroundColor: 'var(--color-state-given)', borderColor: 'var(--color-state-given)', color: '#fff' }}
+                  onClick={() => handleSubmit('COMPLETED')}
+                  disabled={isFuture || isWeekLocked || upsertLogMutation.isPending}
+                  title="Marcar aula como dada"
+                >
+                  <CIcon icon={cilCheckCircle} className="me-1" />
+                  Aula Dada
+                </CButton>}
             </>
           )}
 

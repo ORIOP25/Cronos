@@ -50,10 +50,19 @@ Structured application errors place code and message fields inside `detail`:
 | `500 Internal Error` | Server Failure | Unhandled backend exception |
 
 ## Transaction Rollback Rules
+
 - The `get_db` dependency commits after a successful request.
 - The dependency rolls back and re-raises any request exception.
 - Services use row locks and flushes inside the request transaction for multi-step lifecycle changes.
 - The contact route returns `204` without a response body on accepted submissions.
+
+The database dependency uses function scope, so the commit completes before FastAPI sends the response.
+An error during commit therefore returns an error instead of a false successful response.
+
+Foundation draft writes and completion use optimistic version checks.
+Return `409 FOUNDATION_DRAFT_VERSION_CONFLICT` when `expected_version` is stale.
+Return `422 FOUNDATION_INCOMPLETE` when the complete snapshot fails validation.
+Return `409 FOUNDATION_ALREADY_COMPLETED` when a completed organization receives another draft write.
 
 ## Failure Modes
 - Database Integrity Conflict: Services map known dependency conflicts to domain-specific `400` or `409` responses.

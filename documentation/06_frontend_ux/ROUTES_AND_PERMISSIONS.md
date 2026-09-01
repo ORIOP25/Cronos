@@ -63,6 +63,29 @@ Log in as a teacher-only user. Open `/config` and verify redirection to `/my-ava
 - App Router: `frontend/src/App.jsx`
 - Role Access Definition: `frontend/src/roleAccess.js`
 
+## Onboarding Route Contract
+
+The guard order is significant:
+
+1. wait for Clerk authentication;
+2. wait for the active organization and membership list;
+3. bootstrap or read the current local member;
+4. send users without a tenant to `/create-org` or the organization selector;
+5. apply the Foundation gate;
+6. apply admin or teacher capability checks.
+
+| Route | Access while Foundation is incomplete | Access after Foundation completion |
+| :--- | :--- | :--- |
+| `/create-org` | Signed-in user without an organization or membership | Same condition only. |
+| `/foundation/waiting` | Signed-in non-admin member | Not required. |
+| `/foundation` | Foundation administrator | Foundation administrator; completed state redirects to `/dashboard`. |
+| `/guide` | Foundation administrator only | Foundation administrator; tutorial remains optional. |
+| `/dashboard` | No; normal admin routes are gated | Active administrator. |
+| `/my-availability` | No; teacher routes are gated | Active teacher with a linked teacher profile. |
+
+Foundation status is read from the current member and server status.
+Do not implement a client-only bypass for the gate.
+
 ## Related Documents
 - [Frontend Architecture](FRONTEND_ARCHITECTURE.md)
 - [Members and Access](../02_domain_model/MEMBERS_AND_ACCESS.md)

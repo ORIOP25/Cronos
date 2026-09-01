@@ -12,7 +12,7 @@ const CHANGE_LABELS = {
   UNCHANGED_IMPACTED: 'Sem alteração',
 }
 
-const DraftPanel = ({ draft, onApprove, onReject, isApproving, isRejecting }) => {
+const DraftPanel = ({ draft, onApprove, onReject, isApproving, isRejecting, allowApprove = true, allowReject = true }) => {
   const [showDiff, setShowDiff] = useState(false)
   const { data: diff = [], isLoading } = useScheduleDiff(draft.draft_id, showDiff)
   const counts = useMemo(() => diff.reduce((result, row) => ({
@@ -53,9 +53,8 @@ const DraftPanel = ({ draft, onApprove, onReject, isApproving, isRejecting }) =>
 
           {(draft.debt_hours_before > 0 || isPartial) && (
             <div className="small mb-3">
-              <strong>{draft.debt_hours_recovered}h</strong> recuperadas de{' '}
-              <strong>{draft.debt_hours_before}h</strong>;{' '}
-              <strong>{draft.debt_hours_remaining}h</strong> por agendar.
+              <strong>{draft.debt_hours_recovered}h</strong> previstas para recuperação;{' '}
+              <strong>{draft.debt_hours_remaining}h</strong> ainda por agendar.
             </div>
           )}
 
@@ -91,6 +90,7 @@ const DraftPanel = ({ draft, onApprove, onReject, isApproving, isRejecting }) =>
             size="sm"
             className="px-0 mt-1"
             onClick={() => setShowDiff(value => !value)}
+            data-tutorial-target="review-schedule-changes"
           >
             <CIcon icon={cilList} className="me-1" />
             {showDiff ? 'Ocultar alterações' : 'Ver alterações'}
@@ -122,8 +122,8 @@ const DraftPanel = ({ draft, onApprove, onReject, isApproving, isRejecting }) =>
           )}
         </div>
 
-        <div className="d-flex gap-2">
-          <CButton
+        <div className="d-flex gap-2 ms-auto">
+          {allowReject && <CButton
             color="danger"
             variant="outline"
             size="sm"
@@ -132,8 +132,8 @@ const DraftPanel = ({ draft, onApprove, onReject, isApproving, isRejecting }) =>
           >
             {isRejecting ? <CSpinner size="sm" className="me-1" /> : <CIcon icon={cilBan} className="me-1" />}
             Rejeitar
-          </CButton>
-          <CButton
+          </CButton>}
+          {allowApprove && <CButton
             color="success"
             size="sm"
             disabled={isWorking || !draft.can_approve}
@@ -142,7 +142,7 @@ const DraftPanel = ({ draft, onApprove, onReject, isApproving, isRejecting }) =>
           >
             {isApproving ? <CSpinner size="sm" className="me-1" /> : <CIcon icon={cilCheckCircle} className="me-1" />}
             Aprovar
-          </CButton>
+          </CButton>}
         </div>
       </div>
     </CAlert>

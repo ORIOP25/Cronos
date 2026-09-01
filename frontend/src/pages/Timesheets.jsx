@@ -22,14 +22,15 @@ import ConfirmationModal from '../components/ConfirmationModal'
 import { getTimesheetStatus } from '../utils/presentation'
 import WeekNavigator from '../components/WeekNavigator'
 
-const Timesheets = () => {
+const Timesheets = ({ initialWeekStart, readOnly = false, allowedActions, navigationDisabled = false, referenceDate } = {}) => {
   const navigate = useNavigate()
-  const [weekFilter, setWeekFilter] = useState(() => toWeekMonday(new Date()))
+  const [weekFilter, setWeekFilter] = useState(() => initialWeekStart || toWeekMonday(new Date()))
   const [statusFilter, setStatusFilter] = useState('ALL')
   const [requestedTeacherId, setRequestedTeacherId] = useState(null)
   const [modalSlot, setModalSlot] = useState(null)
   const [statusActionError, setStatusActionError] = useState('')
   const [showReopenConfirm, setShowReopenConfirm] = useState(false)
+  const canManageWeek = !readOnly && !Array.isArray(allowedActions)
 
   const statusParam = statusFilter === 'ALL' ? undefined : statusFilter
   const {
@@ -56,6 +57,7 @@ const Timesheets = () => {
   const updateMutation = useUpdateTimesheetStatus()
 
   const handleUpdateStatus = async (timesheetId, status) => {
+    if (!canManageWeek) return
     setStatusActionError('')
     try {
       await updateMutation.mutateAsync({ timesheetId, status })
@@ -94,7 +96,7 @@ const Timesheets = () => {
 
 
   return (
-    <div className="p-4">
+    <div className="p-4" data-tutorial-target="timesheets-workspace">
       {/* Header */}
       <PageHeader preTitle="Operações" title="Fecho Semanal" />
 
@@ -178,7 +180,7 @@ const Timesheets = () => {
                 <>
                   {/* Teacher header */}
                   <div className="d-flex justify-content-between align-items-start flex-wrap gap-3 mb-3">
-    <div data-tutorial-target="timesheets-workspace">
+                    <div>
                       <h4 className="mb-1 fw-bold">
                         {selectedTeacher.teacher_name || `Prof. #${selectedTeacher.teacher_id}`}
                       </h4>
@@ -197,7 +199,7 @@ const Timesheets = () => {
 
                     {/* Action buttons */}
                     <div className="d-flex gap-2 align-items-center">
-                      {selectedTeacher.status === 'SUBMITTED' && (
+                      {canManageWeek && selectedTeacher.status === 'SUBMITTED' && (
                         <>
                           <CButton
                             color="success"
@@ -223,7 +225,7 @@ const Timesheets = () => {
                         </>
                       )}
 
-                      {selectedTeacher.status === 'APPROVED' && (
+                      {canManageWeek && selectedTeacher.status === 'APPROVED' && (
                         <CButton
                           color="warning"
                           size="sm"
@@ -242,7 +244,7 @@ const Timesheets = () => {
                         </span>
                       )}
 
-                      <CButton
+                      {!navigationDisabled && <CButton
                         color="primary"
                         variant="outline"
                         size="sm"
@@ -252,7 +254,7 @@ const Timesheets = () => {
                       >
                         <CIcon icon={cilExternalLink} className="me-1" />
                         Ver em Horários
-                      </CButton>
+                      </CButton>}
                     </div>
                   </div>
 
@@ -308,11 +310,14 @@ const Timesheets = () => {
 
       {/* LessonLogModal for direct interaction */}
       {modalSlot && (
-        <LessonLogModal
+          <LessonLogModal
           key={modalSlot.operational_block_id ?? modalSlot.id}
           onClose={() => setModalSlot(null)}
           slot={modalSlot}
           isAdmin
+          readOnly={readOnly}
+          allowedActions={allowedActions}
+          referenceDate={referenceDate}
         />
       )}
     </div>

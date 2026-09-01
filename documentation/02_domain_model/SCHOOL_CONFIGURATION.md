@@ -81,6 +81,25 @@ Grid replacement is blocked when scheduler lifecycle rules do not permit it.
 - Timeslot router: `backend/app/api/v1/endpoints/timeslots.py`
 - Tests: `backend/tests/test_org_settings_endpoints.py`, `test_timeslots_crud.py`
 
+## Foundation and School Configuration Boundary
+
+Foundation is the first configuration boundary for a new organization.
+It collects the calendar period, active weekdays, opening and closing times, slot duration, breaks, and lunch interval.
+Completion validates the complete snapshot and generates the initial timeslot grid.
+
+The `/config` pages manage later operational configuration, such as school years, curriculum, staff, rooms, and other resources.
+Do not use `/config` as a replacement for Foundation when `foundation_status` is not `COMPLETED`.
+
+The readiness service then checks the cumulative bases needed for generation:
+
+1. active class;
+2. valid class-subject link;
+3. module with positive required minutes;
+4. active competent teacher;
+5. compatible room;
+6. generated timeslot;
+7. possible teacher availability.
+
 ## Related Documents
 
 - [Professional Education](PROFESSIONAL_EDUCATION.md)

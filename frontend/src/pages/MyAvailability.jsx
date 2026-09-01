@@ -20,7 +20,7 @@ function toMap(rows = [], validIds) {
   return Object.fromEntries(rows.filter((row) => validIds.has(row.timeslot_id)).map((row) => [row.timeslot_id, Number(row.score)]))
 }
 
-export default function MyAvailability() {
+export default function MyAvailability({ readOnly = false, allowedActions, warnOnUnsavedChanges = true }) {
   const [draftEdits, setDraftEdits] = useState({})
   const [selectedScore, setSelectedScore] = useState(DEFAULT_PREFERENCE)
   const [feedback, setFeedback] = useState(null)
@@ -29,6 +29,8 @@ export default function MyAvailability() {
   const timeslotsQuery = useTimeslots()
   const availabilityQuery = useMyAvailability({ enabled: Boolean(teacherId) })
   const saveMutation = useSaveAvailability()
+  const isTutorial = Array.isArray(allowedActions)
+  const canSave = !readOnly && (!isTutorial || allowedActions.includes('UPDATE_AVAILABILITY'))
   const timeslots = useMemo(() => timeslotsQuery.data ?? [], [timeslotsQuery.data])
   const persistedMap = useMemo(() => toMap(Array.isArray(availabilityQuery.data) ? availabilityQuery.data : [], new Set(timeslots.map((slot) => slot.id))), [availabilityQuery.data, timeslots])
   const draftMap = useMemo(() => ({ ...persistedMap, ...draftEdits }), [persistedMap, draftEdits])
@@ -37,16 +39,16 @@ export default function MyAvailability() {
 
   useEffect(() => {
     const beforeUnload = (event) => {
-      if (!isDirty) return
+      if (!warnOnUnsavedChanges || !isDirty) return
       event.preventDefault()
       event.returnValue = ''
     }
     window.addEventListener('beforeunload', beforeUnload)
     return () => window.removeEventListener('beforeunload', beforeUnload)
-  }, [isDirty])
+  }, [isDirty, warnOnUnsavedChanges])
 
   const handleGridChange = useCallback((id, score) => {
-    if (saveMutation.isPending) return
+    if (!canSave || saveMutation.isPending) return
     setFeedback(null)
     setDraftEdits((current) => {
       const next = { ...current }
@@ -54,12 +56,12 @@ export default function MyAvailability() {
       else next[id] = score
       return next
     })
-  }, [persistedMap, saveMutation.isPending])
+  }, [canSave, persistedMap, saveMutation.isPending])
 
   const handleReset = () => { setDraftEdits({}); setFeedback(null) }
 
   const handleSave = async () => {
-    if (!teacherId || !isDirty) return
+    if (!canSave || !teacherId || !isDirty) return
     setFeedback(null)
     const validIds = new Set(timeslots.map((slot) => slot.id))
     const payload = Object.entries(draftMap).filter(([id]) => validIds.has(Number(id))).map(([id, score]) => ({ timeslot_id: Number(id), score }))
@@ -85,17 +87,17 @@ export default function MyAvailability() {
         <div className="availability-toolbar__tools">
           {[2, 1, 0, -1].map((score) => {
             const info = PREFERENCE_LEVELS[score]
-            return <button key={score} type="button" className={`availability-tool${selectedScore === score ? ' is-selected' : ''}`} aria-pressed={selectedScore === score} onClick={() => setSelectedScore(score)} disabled={saveMutation.isPending}>
+            return <button key={score} type="button" className={`availability-tool${selectedScore === score ? ' is-selected' : ''}`} aria-pressed={selectedScore === score} onClick={() => setSelectedScore(score)} disabled={!canSave || saveMutation.isPending}>
               <span className="availability-tool__swatch" style={{ backgroundColor: info.color }} aria-hidden="true" />{info.label}
             </button>
           })}
         </div>
         <div className="availability-toolbar__status" aria-live="polite">{changedIds.length} {changedIds.length === 1 ? 'bloco alterado' : 'blocos alterados'}</div>
-        {isDirty && <button type="button" className="btn btn-link" onClick={handleReset} disabled={saveMutation.isPending}>Repor alterações</button>}
+        {isDirty && <button type="button" className="btn btn-link" onClick={handleReset} disabled={!canSave || saveMutation.isPending}>Repor alterações</button>}
       </div>
       <AvailabilityGrid timeslots={timeslots} availabilityMap={draftMap} onChange={handleGridChange} selectedMode={selectedScore} />
       <div className="d-flex justify-content-end mt-4">
-        <button type="button" className="btn btn-primary" onClick={() => { void handleSave() }} disabled={!isDirty || saveMutation.isPending}>
+        <button type="button" className="btn btn-primary" onClick={() => { void handleSave() }} disabled={!canSave || !isDirty || saveMutation.isPending}>
           {saveMutation.isPending ? 'A guardar' : 'Guardar preferências'}
         </button>
       </div>

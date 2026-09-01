@@ -85,6 +85,7 @@ Use test provider credentials for local work.
 
 Complete technical documentation resides in the [`documentation/`](documentation/) directory:
 
+- [Director Onboarding](documentation/00_getting_started/ONBOARDING.md)
 - [Project Overview](documentation/00_getting_started/PROJECT_OVERVIEW.md)
 - [Repository Map](documentation/00_getting_started/REPOSITORY_MAP.md)
 - [Glossary](documentation/00_getting_started/GLOSSARY.md)

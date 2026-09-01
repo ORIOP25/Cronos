@@ -1,521 +1,574 @@
-export const TUTORIAL_VERSION = 2
-export const TUTORIAL_STORAGE_PREFIX = `cronos:tutorial:v${TUTORIAL_VERSION}`
+import { validateClassDraft } from '../../utils/classDraft'
+import { normalizeModule } from '../../utils/subjectModules'
+import { ROOM_TYPES } from '../../utils/presentation'
+import {
+  TUTORIAL_ACTIONS,
+  TUTORIAL_STEPS,
+  getTutorialStep,
+  getTutorialStepIndex,
+} from './tutorialContent'
 
-export const TUTORIAL_STATUSES = Object.freeze([
-  'NOT_STARTED',
-  'IN_PROGRESS',
-  'COMPLETED',
-  'SKIPPED',
-])
+const DEMO_WEEK_START = '2025-09-15'
+const DEMO_REFERENCE_DATE = '2025-09-20T12:00:00Z'
+const DEMO_HARD_END_DATE = '2026-07-31'
+const SLOT_DURATION_MINUTES = 60
 
-const STEP_DEFINITIONS = [
-  ['structure_overview', 1, 'Dashboard', 'observation', 'Visão geral da estrutura', 'Conheça a sequência de configuração que prepara uma escola para o primeiro horário.', 'continue', 'Continuar', false],
-  ['subject_create', 1, 'Disciplinas', 'exercise', 'Criar disciplina', 'Guarde a disciplina preparada. Os dados pertencem apenas a esta demonstração.', 'save-subject', 'Guardar disciplina', true],
-  ['module_add', 1, 'Disciplinas', 'exercise', 'Adicionar módulo', 'Adicione o módulo UFCD preparado com carga horária positiva.', 'add-module', 'Adicionar módulo', true],
-  ['course_create', 1, 'Cursos', 'exercise', 'Criar curso', 'Guarde o curso profissional preparado para o cenário local.', 'save-course', 'Guardar curso', true],
-  ['class_create', 1, 'Cursos', 'exercise', 'Criar turma', 'Guarde a turma preparada com ano curricular e lotação.', 'save-class', 'Guardar turma', true],
-  ['teacher_add', 1, 'Equipa', 'exercise', 'Adicionar professor', 'Guarde o professor preparado no cenário de demonstração.', 'save-teacher', 'Guardar professor', true],
-  ['teacher_competency', 1, 'Equipa', 'exercise', 'Registar competência', 'Associe a competência preparada à disciplina indicada.', 'save-competency', 'Guardar competência', true],
-  ['room_add', 1, 'Salas', 'exercise', 'Adicionar sala', 'Guarde a sala preparada com tipologia e capacidade compatíveis.', 'save-room', 'Guardar sala', true],
-  ['assignment_create', 1, 'Cursos', 'exercise', 'Associar disciplina à turma', 'Guarde a associação curricular compatível.', 'save-assignment', 'Guardar associação', true],
-  ['availability_review', 1, 'Equipa', 'exercise', 'Rever disponibilidade', 'Confirme a matriz preparada. Apenas IMPOSSIBLE bloqueia um bloco.', 'confirm-availability', 'Confirmar disponibilidade', true],
-  ['schedule_prepare', 1, 'Horários', 'exercise', 'Preparar exemplo', 'Prepare o horário estático. Nenhum solver ou pedido operacional é executado.', 'prepare-schedule', 'Preparar exemplo', true],
-  ['schedule_review', 1, 'Horários', 'observation', 'Rever exemplo de horário', 'Observe o exemplo preparado antes da aprovação simulada.', 'continue', 'Continuar', false],
-  ['schedule_approve', 1, 'Horários', 'exercise', 'Aprovar exemplo', 'Aprove o horário preparado para continuar a demonstração.', 'approve-schedule', 'Aprovar exemplo', true],
-  ['chapter_transition', 1, 'Horários', 'transition', 'Resolver a primeira ocorrência', 'O horário está aprovado. Amanhã um professor falta e a turma precisa de uma resposta operacional.', 'resolve-occurrence', 'Resolver ocorrência', true],
-  ['published_block_open', 2, 'Horários', 'exercise', 'Abrir bloco publicado', 'Abra o bloco publicado que terá uma ocorrência.', 'open-block', 'Abrir bloco', false],
-  ['occurrence_create', 2, 'Horários', 'exercise', 'Criar ocorrência', 'Registe a falta no bloco aberto. Isto envia a situação para uma decisão operacional.', 'create-occurrence', 'Criar ocorrência', true],
-  ['substitute_teacher_select', 2, 'Faltas', 'exercise', 'Selecionar professor', 'Selecione apenas o professor local indicado para a substituição.', 'select-teacher', 'Selecionar professor', true],
-  ['substitute_subject_select', 2, 'Faltas', 'exercise', 'Selecionar disciplina', 'Selecione apenas a disciplina local indicada para a substituição.', 'select-subject', 'Selecionar disciplina', true],
-  ['substitution_complete', 2, 'Faltas', 'exercise', 'Concluir substituição', 'Conclua a substituição preparada sem tocar em dados reais.', 'complete-substitution', 'Concluir substituição', true],
-  ['debt_observe', 2, 'Fecho Semanal', 'observation', 'Observar dívida de horas', 'Veja a dívida original. O histórico permanece preservado.', 'continue', 'Continuar', false],
-  ['repair_simulate', 2, 'Horários', 'exercise', 'Simular reparação', 'Simule uma reparação estática num horizonte futuro.', 'simulate-repair', 'Simular reparação', true],
-  ['repair_compare', 2, 'Horários', 'observation', 'Comparar reparação', 'Compare a dívida original com a projeção da reparação.', 'continue', 'Continuar', false],
-  ['history_verify', 2, 'Horários', 'exercise', 'Confirmar histórico', 'Confirme que o histórico da reparação permanece intacto.', 'confirm-history', 'Confirmar histórico', false],
-  ['repair_approve', 2, 'Horários', 'exercise', 'Aprovar reparação', 'Aprove a reparação simulada e conclua o guia local.', 'approve-repair', 'Aprovar reparação', false],
-]
-
-const STEP_INSTRUCTIONS = Object.freeze({
-  structure_overview: 'Veja as bases pela ordem apresentada. O horário só é fiável quando currículo, recursos e disponibilidade estão completos.',
-  subject_create: 'Abra “Nova Disciplina”. Crie “Sistemas Embebidos” e guarde apenas os dados gerais da disciplina.',
-  module_add: 'Edite a disciplina criada e adicione a UFCD 5412 com 25 horas antes de guardar.',
-  course_create: 'Abra “Novo Curso”. Crie “Técnico de Eletrónica” e guarde os dados gerais do curso.',
-  class_create: 'Edite o curso criado e configure a turma “10.º TE” com ano curricular e lotação.',
-  teacher_add: 'Abra “Adicionar membro”. Crie o professor “Rui Almeida” sem configurar competências nesta etapa.',
-  teacher_competency: 'Edite o professor criado e associe-lhe a disciplina que pode lecionar.',
-  room_add: 'Abra “Nova Sala”. Crie “Laboratório 3”, escolha o tipo Laboratório e indique capacidade 24.',
-  assignment_create: 'Use “Adicionar disciplina”. Associe uma disciplina disponível e escolha um professor elegível.',
-  availability_review: 'Marque um bloco como indisponível e guarde. Restrições impossíveis impedem o motor de colocar aulas nesse período.',
-  schedule_prepare: 'Selecione “Gerar Horário”. O Cronos valida as bases e cria um rascunho antes de publicar alterações.',
-  schedule_review: 'Leia os indicadores e as diferenças do rascunho. Esta revisão evita publicar conflitos ou alterações inesperadas.',
-  schedule_approve: 'Selecione “Aprovar” apenas depois de rever o impacto. A aprovação transforma o rascunho no horário ativo.',
-  chapter_transition: 'Continue para acompanhar uma falta desde o bloco publicado até à reparação da dívida de horas.',
-  published_block_open: 'Na grelha semanal, abra o bloco de Programação. A operação começa sempre no contexto da aula planeada.',
-  occurrence_create: 'No registo da aula, selecione “Criar Ocorrência” e confirme. O horário planeado permanece no histórico.',
-  substitute_teacher_select: 'Na ocorrência pendente, selecione “Decidir” para abrir a decisão operacional.',
-  substitute_subject_select: 'Escolha “Substituída”. O Cronos apresenta apenas combinações elegíveis de professor e disciplina.',
-  substitution_complete: 'Reveja o candidato recomendado, confirme a decisão e guarde. A escolha fica auditável no histórico.',
-  debt_observe: 'Observe as horas planeadas e realizadas. Uma aula não dada cria dívida sem apagar o planeamento original.',
-  repair_simulate: 'Selecione “Gerar novamente” e confirme. O rascunho de reparação procura recuperar horas futuras.',
-  repair_compare: 'Compare dívida inicial, horas recuperadas e dívida restante antes de aceitar a reparação.',
-  history_verify: 'Confirme que a ocorrência e o bloco original continuam visíveis. Reparar nunca deve reescrever o passado.',
-  repair_approve: 'Aprove o rascunho de reparação. Só esta ação publica os novos blocos futuros.',
-})
-
-export const TUTORIAL_STEPS = Object.freeze(STEP_DEFINITIONS.map(([
-  id,
-  chapter,
-  activeNavItem,
-  kind,
-  title,
-  description,
-  actionId,
-  actionLabel,
-  isSkippable,
-], index) => Object.freeze({
-  id,
-  chapter,
-  stepNumber: STEP_DEFINITIONS.slice(0, index + 1).filter((definition) => definition[1] === chapter).length,
-  screen: getScreenForStep(id),
-  activeNavItem: getNavPath(activeNavItem),
-  activeNavLabel: activeNavItem,
-  kind,
-  title,
-  description,
-  instruction: STEP_INSTRUCTIONS[id],
-  action: Object.freeze({ id: actionId, label: actionLabel }),
-  target: getTargetForStep(id),
-  completion: getCompletionForStep(id, kind),
-  isSkippable,
-})))
-
-function getCompletionForStep(stepId, kind) {
-  if (kind !== 'exercise' || stepId === 'history_verify') return 'panel'
-  if (['published_block_open', 'substitute_teacher_select', 'substitute_subject_select'].includes(stepId)) return 'interaction'
-  return 'mutation'
+export class TutorialScenarioError extends Error {
+  constructor(message, { code = 'TUTORIAL_SCENARIO_INVALID', status = 400 } = {}) {
+    super(message)
+    this.name = 'TutorialScenarioError'
+    this.code = code
+    this.status = status
+  }
 }
 
-function getTargetForStep(stepId) {
-  return {
-    subject_create: 'new-subject',
-    module_add: 'new-subject',
-    course_create: 'new-course',
-    class_create: 'new-course',
-    teacher_add: 'new-member',
-    teacher_competency: 'new-member',
-    room_add: 'new-room',
-    assignment_create: 'add-class-subject',
-    availability_review: 'availability-workspace',
-    schedule_prepare: 'generate-schedule',
-    schedule_approve: 'approve-schedule',
-    published_block_open: 'schedule-grid',
-    occurrence_create: 'lesson-log-modal',
-    substitute_teacher_select: 'decision-open',
-    substitute_subject_select: 'decision-substitute',
-    substitution_complete: 'occurrence-decision',
-    repair_simulate: 'regenerate-schedule',
-    repair_approve: 'approve-schedule',
-  }[stepId] || null
+function clone(value) {
+  return JSON.parse(JSON.stringify(value))
 }
 
-function getScreenForStep(stepId) {
-  if (stepId === 'structure_overview' || ['subject_create', 'module_add', 'course_create', 'class_create'].includes(stepId)) return 'curriculum'
-  if (['teacher_add', 'teacher_competency', 'room_add'].includes(stepId)) return 'people-resources'
-  if (stepId === 'assignment_create') return 'assignments'
-  if (stepId === 'availability_review') return 'availability'
-  if (['schedule_prepare', 'schedule_review', 'schedule_approve', 'chapter_transition'].includes(stepId)) return 'schedule'
-  if (['published_block_open', 'occurrence_create', 'substitute_teacher_select', 'substitute_subject_select', 'substitution_complete'].includes(stepId)) return 'occurrence'
-  if (stepId === 'debt_observe') return 'debt'
-  return 'repair'
+function numericId(collection, internalId) {
+  const index = collection.findIndex((item) => item.id === internalId)
+  return index < 0 ? null : index + 1
 }
 
-function getNavPath(label) {
-  return {
-    Dashboard: '/dashboard',
-    Disciplinas: '/subjects',
-    Cursos: '/courses',
-    Equipa: '/members',
-    Salas: '/rooms',
-    Horários: '/schedules',
-    Faltas: '/absences',
-    'Fecho Semanal': '/timesheets',
-  }[label]
+function internalId(collection, value) {
+  const numeric = Number(value)
+  if (!Number.isInteger(numeric) || numeric < 1 || numeric > collection.length) return null
+  return collection[numeric - 1].id
 }
 
-const DEMO_GRID = Object.freeze([
-  Object.freeze({ id: 'demo-slot-1', day: 'Seg', time: '08:30–09:20', subjectId: 'demo-subject-prog', subject: 'Programação', room: 'Lab 2', teacher: 'Prof. António Silva', className: '10.º TIS', status: 'APPROVED' }),
-  Object.freeze({ id: 'demo-slot-2', day: 'Seg', time: '09:30–10:20', subjectId: 'demo-subject-redes', subject: 'Redes', room: 'Lab 2', teacher: 'Prof. António Silva', className: '10.º TIS', status: 'APPROVED' }),
-  Object.freeze({ id: 'demo-slot-3', day: 'Ter', time: '10:30–11:20', subjectId: 'demo-subject-mat', subject: 'Matemática', room: 'Sala 101', teacher: 'Prof.ª Maria Santos', className: '11.º TGEI', status: 'APPROVED' }),
-  Object.freeze({ id: 'demo-slot-4', day: 'Qua', time: '14:30–15:20', subjectId: 'demo-subject-design', subject: 'Design', room: 'Atelier', teacher: 'Prof.ª Ana Martins', className: '12.º TGPSI', status: 'APPROVED' }),
-])
+function requireEntity(collection, value, label) {
+  const internal = typeof value === 'string' && value.startsWith('demo-') ? value : internalId(collection, value)
+  const entity = collection.find((item) => item.id === internal)
+  if (!entity) throw new TutorialScenarioError(`${label} não existe no exemplo.`, { code: 'DEMO_ENTITY_NOT_FOUND', status: 404 })
+  return entity
+}
 
-function createBaseScenario() {
-  return {
-    id: 'demo-cronos-school',
-    startDate: '2025-09-15',
-    hardEndDate: '2026-07-31',
-    slotDuration: 50,
-    breakDuration: 10,
-    lunch: { start: '12:30', end: '14:30', minimumMinutes: 60 },
+function createTimeslots() {
+  const starts = ['08:00', '10:00', '14:00', '16:00']
+  return Array.from({ length: 5 }, (_, day) => starts.map((start, index) => ({
+    id: `demo-timeslot-${day * starts.length + index + 1}`,
+    dayOfWeek: day,
+    startTime: start,
+    endTime: `${String(Number(start.slice(0, 2)) + 1).padStart(2, '0')}:${start.slice(3)}`,
+  }))).flat()
+}
+
+function createBlocks(timeslots) {
+  return [
+    {
+      id: 'demo-block-programming-1',
+      date: '2025-09-15',
+      timeslotId: timeslots[0].id,
+      classId: 'demo-class-10-tis',
+      subjectId: 'demo-subject-programming',
+      teacherId: 'demo-teacher-programming',
+      roomId: 'demo-room-lab',
+      lessonLogStatus: 'PENDING',
+    },
+    {
+      id: 'demo-block-programming-2',
+      date: '2025-09-16',
+      timeslotId: timeslots[4].id,
+      classId: 'demo-class-10-tis',
+      subjectId: 'demo-subject-programming',
+      teacherId: 'demo-teacher-programming',
+      roomId: 'demo-room-lab',
+      lessonLogStatus: 'COMPLETED',
+    },
+    {
+      id: 'demo-block-recovery-1',
+      date: '2025-09-23',
+      timeslotId: timeslots[4].id,
+      classId: 'demo-class-10-tis',
+      subjectId: 'demo-subject-programming',
+      teacherId: 'demo-teacher-programming',
+      roomId: 'demo-room-lab',
+      lessonLogStatus: 'PENDING',
+      isRecovery: true,
+    },
+    {
+      id: 'demo-block-mathematics-1',
+      date: '2025-09-17',
+      timeslotId: timeslots[8].id,
+      classId: 'demo-class-10-tis',
+      subjectId: 'demo-subject-mathematics',
+      teacherId: 'demo-teacher-mathematics',
+      roomId: 'demo-room-classroom',
+      lessonLogStatus: 'COMPLETED',
+    },
+  ]
+}
+
+function createBaseScenario(stepId) {
+  const timeslots = createTimeslots()
+  const blocks = createBlocks(timeslots)
+  const scenario = {
+    stepId,
+    weekStart: DEMO_WEEK_START,
+    referenceDate: DEMO_REFERENCE_DATE,
+    hardEndDate: DEMO_HARD_END_DATE,
+    slotDurationMinutes: SLOT_DURATION_MINUTES,
+    timeslots,
     courses: [
-      { id: 'demo-course-technology', name: 'Técnico de Informática', code: 'TIS', active: true },
-      { id: 'demo-course-management', name: 'Técnico de Gestão', code: 'TGEI', active: true },
+      { id: 'demo-course-informatics', name: 'Curso de Informática', code: 'TIS', active: true },
     ],
     classes: [
-      { id: 'demo-class-10a', name: '10.º TIS', courseId: 'demo-course-technology', gradeLevel: 10, size: 24, active: true },
-      { id: 'demo-class-11b', name: '11.º TGEI', courseId: 'demo-course-management', gradeLevel: 11, size: 22, active: true },
-      { id: 'demo-class-12c', name: '12.º TGPSI', courseId: 'demo-course-technology', gradeLevel: 12, size: 20, active: true },
+      {
+        id: 'demo-class-10-tis',
+        name: '10.º TIS',
+        courseId: 'demo-course-informatics',
+        gradeLevel: 10,
+        size: 24,
+        startYear: 2025,
+        endYear: 2028,
+        active: true,
+      },
     ],
     subjects: [
-      { id: 'demo-subject-prog', name: 'Programação', roomType: 'LAB' },
-      { id: 'demo-subject-mat', name: 'Matemática', roomType: 'NORMAL' },
-      { id: 'demo-subject-redes', name: 'Redes', roomType: 'LAB' },
-      { id: 'demo-subject-gestao', name: 'Gestão', roomType: 'NORMAL' },
-      { id: 'demo-subject-design', name: 'Design', roomType: 'ART' },
+      { id: 'demo-subject-programming', name: 'Programação', roomType: 'LAB' },
+      { id: 'demo-subject-mathematics', name: 'Matemática', roomType: 'NORMAL' },
     ],
     modules: [
-      { id: 'demo-module-prog', subjectId: 'demo-subject-prog', name: 'UFCD 0782', requiredMinutes: 100 },
-      { id: 'demo-module-mat', subjectId: 'demo-subject-mat', name: 'UFCD 0783', requiredMinutes: 100 },
-      { id: 'demo-module-redes', subjectId: 'demo-subject-redes', name: 'UFCD 0790', requiredMinutes: 100 },
-      { id: 'demo-module-gestao', subjectId: 'demo-subject-gestao', name: 'UFCD 0665', requiredMinutes: 100 },
-      { id: 'demo-module-design', subjectId: 'demo-subject-design', name: 'UFCD 0132', requiredMinutes: 100 },
+      { id: 'demo-module-programming-1', subjectId: 'demo-subject-programming', name: 'Fundamentos de programação', code: 'UFCD-PROG-1', requiredMinutes: 120 },
+      { id: 'demo-module-programming-2', subjectId: 'demo-subject-programming', name: 'Estruturas de dados', code: 'UFCD-PROG-2', requiredMinutes: 180 },
+      { id: 'demo-module-mathematics-1', subjectId: 'demo-subject-mathematics', name: 'Matemática aplicada', code: 'UFCD-MAT-1', requiredMinutes: 120 },
     ],
     teachers: [
-      { id: 'demo-teacher-silva', name: 'Prof. António Silva', competencies: ['demo-subject-prog', 'demo-subject-redes'] },
-      { id: 'demo-teacher-santos', name: 'Prof.ª Maria Santos', competencies: ['demo-subject-mat'] },
-      { id: 'demo-teacher-costa', name: 'Prof. João Costa', competencies: ['demo-subject-gestao'] },
-      { id: 'demo-teacher-martins', name: 'Prof.ª Ana Martins', competencies: ['demo-subject-design'] },
+      { id: 'demo-teacher-programming', name: 'Prof. António Silva', email: 'antonio.silva@demo.cronos.pt', competencies: ['demo-subject-programming'] },
+      { id: 'demo-teacher-mathematics', name: 'Prof.ª Maria Santos', email: 'maria.santos@demo.cronos.pt', competencies: ['demo-subject-mathematics'] },
     ],
     rooms: [
-      { id: 'demo-room-101', name: 'Sala 101', type: 'NORMAL', capacity: 30 },
-      { id: 'demo-room-lab2', name: 'Lab 2', type: 'LAB', capacity: 26 },
-      { id: 'demo-room-atelier', name: 'Atelier', type: 'ART', capacity: 24 },
+      { id: 'demo-room-lab', name: 'Laboratório de Programação', type: 'LAB', capacity: 28 },
+      { id: 'demo-room-classroom', name: 'Sala 101', type: 'NORMAL', capacity: 30 },
     ],
-    weeklyGrid: { days: ['Seg', 'Ter', 'Qua', 'Qui', 'Sex'], slots: ['08:30', '09:30', '10:30', '11:30', '14:30', '15:30'] },
-    gridPreview: DEMO_GRID,
-    approvedSchedule: { id: 'demo-approved-schedule', status: 'PREPARED', generationId: 'demo-generation-1', blocks: DEMO_GRID.length },
-    associations: [{ id: 'demo-assignment-1', classId: 'demo-class-10a', subjectId: 'demo-subject-prog' }],
+    classSubjects: [
+      { id: 'demo-class-subject-programming', classId: 'demo-class-10-tis', subjectId: 'demo-subject-programming', teacherId: 'demo-teacher-programming' },
+      { id: 'demo-class-subject-mathematics', classId: 'demo-class-10-tis', subjectId: 'demo-subject-mathematics', teacherId: 'demo-teacher-mathematics' },
+    ],
     availability: {
-      status: 'NEUTRAL',
-      matrix: [
-        { teacher: 'Prof. António Silva', monday: 'AVAILABLE', tuesday: 'NEUTRAL', wednesday: 'AVAILABLE' },
-        { teacher: 'Prof.ª Maria Santos', monday: 'NEUTRAL', tuesday: 'AVAILABLE', wednesday: 'AVAILABLE' },
-      ],
+      teacherId: 'demo-teacher-programming',
+      slots: timeslots.map((slot) => ({ timeslotId: slot.id, score: 1 })),
     },
-    occurrence: { id: 'demo-occurrence-1', date: '2025-09-16', blockId: 'demo-slot-1', reason: 'Falta justificada', status: 'PREPARED' },
-    substitution: { teacherId: 'demo-teacher-costa', teacher: 'Prof. João Costa', subjectId: 'demo-subject-prog', subject: 'Programação', status: 'PREPARED' },
-    debt: { originalHours: 2, projectedHours: 2, unit: 'horas', source: 'demo-occurrence-1' },
-    repair: {
-      futureDate: '2025-09-23',
-      original: { hours: 2, historyId: 'demo-history-1' },
-      proposed: { hours: 1, block: 'Ter 16:30–17:20' },
-      history: [{ id: 'demo-history-1', event: 'Dívida criada', date: '2025-09-16', preserved: true }],
-    },
-    workflow: {
-      subjectCreated: false,
-      moduleAdded: false,
-      courseCreated: false,
-      classCreated: false,
-      teacherAdded: false,
-      competencySaved: false,
-      roomAdded: false,
-      assignmentCreated: false,
-      availabilityConfirmed: false,
-      schedulePrepared: false,
-      scheduleReviewed: false,
-      scheduleApproved: false,
-      publishedBlockOpen: false,
-      occurrenceCreated: false,
-      substituteTeacherSelected: false,
-      substituteSubjectSelected: false,
-      substitutionCompleted: false,
-      repairSimulated: false,
-      repairCompared: false,
-      repairApproved: false,
-      historyPreserved: true,
-      lastCheckpoint: null,
+    blocks,
+    occurrences: [],
+    draft: null,
+    publishedRecoveryBlockIds: [],
+    jobs: {},
+    history: [
+      {
+        id: 'demo-history-substitution',
+        occurrenceId: 'demo-occurrence-history',
+        date: '2025-09-15',
+        preserved: true,
+      },
+    ],
+    debt: {
+      hoursOwedMinutes: 120,
+      proposedRecoveryMinutes: 60,
+      remainingMinutes: 60,
+      asOfDate: '2025-09-20',
     },
   }
-}
 
-const WORKFLOW_KEYS = Object.freeze({
-  subject_create: 'subjectCreated',
-  module_add: 'moduleAdded',
-  course_create: 'courseCreated',
-  class_create: 'classCreated',
-  teacher_add: 'teacherAdded',
-  teacher_competency: 'competencySaved',
-  room_add: 'roomAdded',
-  assignment_create: 'assignmentCreated',
-  availability_review: 'availabilityConfirmed',
-  schedule_prepare: 'schedulePrepared',
-  schedule_review: 'scheduleReviewed',
-  schedule_approve: 'scheduleApproved',
-  chapter_transition: 'publishedBlockOpen',
-  published_block_open: 'publishedBlockOpen',
-  occurrence_create: 'occurrenceCreated',
-  substitute_teacher_select: 'substituteTeacherSelected',
-  substitute_subject_select: 'substituteSubjectSelected',
-  substitution_complete: 'substitutionCompleted',
-  repair_simulate: 'repairSimulated',
-  repair_compare: 'repairCompared',
-  repair_approve: 'repairApproved',
-})
-
-const MAX_TUTORIAL_TEXT = 120
-
-function boundedText(value, field) {
-  if (value == null) return undefined
-  if (typeof value !== 'string') return null
-  const normalized = value.trim()
-  return normalized ? { [field]: normalized.slice(0, MAX_TUTORIAL_TEXT) } : null
-}
-
-function optionalBoundedText(value, field) {
-  if (value == null || (typeof value === 'string' && !value.trim())) return undefined
-  return boundedText(value, field)
-}
-
-function boundedNumber(value, field, { min = 0, max = 100000 } = {}) {
-  if (value == null || value === '') return undefined
-  const normalized = Number(value)
-  return Number.isFinite(normalized) && normalized >= min && normalized <= max
-    ? { [field]: normalized }
-    : null
-}
-
-function mergeChanges(...parts) {
-  const result = {}
-  for (const part of parts) {
-    if (part === null) return null
-    if (part) Object.assign(result, part)
-  }
-  return result
-}
-
-export function normalizeTutorialChanges(stepId, changes = {}) {
-  if (!changes || typeof changes !== 'object' || Array.isArray(changes)) return null
-  switch (stepId) {
-    case 'subject_create':
-      return mergeChanges(boundedText(changes.name, 'name'), boundedText(changes.required_room_type, 'roomType'))
-    case 'module_add': {
-      const module = Array.isArray(changes.modules) ? changes.modules[0] : changes
-      if (!module || typeof module !== 'object' || Array.isArray(module)) return null
-      const normalized = mergeChanges(
-        boundedText(module.moduleName ?? module.name, 'moduleName'),
-        boundedText(module.moduleCode ?? module.code, 'moduleCode'),
-        boundedNumber(module.moduleHours ?? module.hours_total, 'moduleHours', { min: 1, max: 200 }),
-        boundedNumber(module.requiredMinutes, 'requiredMinutes', { min: 1, max: 10000 }),
-      )
-      if (!normalized?.moduleName || (normalized.moduleHours == null && normalized.requiredMinutes == null)) return null
-      return normalized
-    }
-    case 'course_create':
-      return mergeChanges(boundedText(changes.name, 'name'), boundedText(changes.abbreviation, 'code'))
-    case 'class_create':
-      return mergeChanges(
-        boundedText(changes.name, 'name'),
-        boundedNumber(changes.grade_level ?? changes.gradeLevel, 'gradeLevel', { min: 1, max: 20 }),
-        boundedNumber(changes.size, 'size', { min: 1, max: 1000 }),
-      )
-    case 'teacher_add':
-      return mergeChanges(
-        boundedText(changes.name ?? changes.organization_display_name, 'name'),
-        optionalBoundedText(changes.email, 'email'),
-      )
-    case 'teacher_competency': {
-      const ids = changes.subject_ids
-      if (ids != null && (!Array.isArray(ids) || ids.length === 0 || ids.length > 8 || ids.some((id) => !Number.isInteger(Number(id))))) return null
-      const subjectId = changes.subjectId ?? changes.subject_id ?? (Array.isArray(ids) ? ids[0] : undefined)
-      return subjectId == null ? null : boundedNumber(subjectId, 'subjectId', { min: 1, max: 1000000 })
-    }
-    case 'room_add':
-      return mergeChanges(
-        boundedText(changes.name, 'name'),
-        boundedText(changes.type, 'type'),
-        boundedNumber(changes.capacity, 'capacity', { min: 1, max: 10000 }),
-      )
-    case 'assignment_create':
-      return mergeChanges(
-        boundedNumber(changes.class_id ?? changes.classId, 'classId', { min: 1, max: 1000000 }),
-        boundedNumber(changes.subject_id ?? changes.subjectId, 'subjectId', { min: 1, max: 1000000 }),
-        boundedNumber(changes.teacher_id ?? changes.teacherId, 'teacherId', { min: 1, max: 1000000 }),
-      )
-    case 'availability_review':
-      return mergeChanges(
-        boundedText(changes.status, 'status'),
-        boundedNumber(changes.score, 'score', { min: -1, max: 2 }),
-      )
-    default:
-      return {}
-  }
-}
-
-function normalizeBodyForStep(stepId, body) {
-  if (!body || typeof body !== 'object' || (Array.isArray(body) && stepId !== 'availability_review')) return null
-  if (stepId === 'class_create' && Array.isArray(body.classes_config)) {
-    if (body.classes_config.length === 0) return null
-    return normalizeTutorialChanges(stepId, body.classes_config[0])
-  }
-  if (stepId === 'availability_review') {
-    if (!Array.isArray(body.availability) && !Array.isArray(body)) return normalizeTutorialChanges(stepId, body)
-    const entries = Array.isArray(body) ? body : body.availability
-    if (entries.some((entry) => !entry || typeof entry !== 'object' || Array.isArray(entry))) return null
-    return { status: 'NEUTRAL' }
-  }
-  if (stepId === 'teacher_competency') return normalizeTutorialChanges(stepId, body)
-  return normalizeTutorialChanges(stepId, body)
-}
-
-export const TUTORIAL_MUTATION_RULES = Object.freeze([
-  { stepId: 'subject_create', method: 'post', pathMatcher: /^\/subjects\/$/, expectedActionId: 'save-subject' },
-  { stepId: 'module_add', method: 'patch', pathMatcher: /^\/subjects\/\d+$/, expectedActionId: 'add-module' },
-  { stepId: 'module_add', method: 'post', pathMatcher: /^\/subjects\/$/, expectedActionId: 'add-module' },
-  { stepId: 'course_create', method: 'post', pathMatcher: /^\/courses\/$/, expectedActionId: 'save-course' },
-  { stepId: 'class_create', method: 'post', pathMatcher: /^\/courses\/$/, expectedActionId: 'save-class' },
-  { stepId: 'class_create', method: 'post', pathMatcher: /^\/courses\/\d+\/classes$/, expectedActionId: 'save-class' },
-  { stepId: 'teacher_add', method: 'post', pathMatcher: /^\/members$/, expectedActionId: 'save-teacher' },
-  { stepId: 'teacher_competency', method: 'patch', pathMatcher: /^\/members\/\d+$/, expectedActionId: 'save-competency' },
-  { stepId: 'teacher_competency', method: 'post', pathMatcher: /^\/members$/, expectedActionId: 'save-competency' },
-  { stepId: 'room_add', method: 'post', pathMatcher: /^\/rooms\/$/, expectedActionId: 'save-room' },
-  { stepId: 'assignment_create', method: 'post', pathMatcher: /^\/classes\/\d+\/subjects$/, expectedActionId: 'save-assignment' },
-  { stepId: 'availability_review', method: 'put', pathMatcher: /^\/teachers\/me\/availability$/, expectedActionId: 'confirm-availability' },
-  { stepId: 'schedule_prepare', method: 'post', pathMatcher: /^\/scheduler\/generate$/, expectedActionId: 'prepare-schedule' },
-  { stepId: 'schedule_approve', method: 'post', pathMatcher: /^\/scheduler\/drafts\/\d+\/approve$/, expectedActionId: 'approve-schedule' },
-  { stepId: 'occurrence_create', method: 'put', pathMatcher: /^\/schedule\/(active|operational)-blocks\/\d+\/log$/, expectedActionId: 'create-occurrence' },
-  { stepId: 'occurrence_create', method: 'patch', pathMatcher: /^\/occurrences\/\d+$/, expectedActionId: 'create-occurrence' },
-  { stepId: 'substitution_complete', method: 'patch', pathMatcher: /^\/occurrences\/\d+$/, expectedActionId: 'complete-substitution' },
-  { stepId: 'repair_simulate', method: 'post', pathMatcher: /^\/scheduler\/generate$/, expectedActionId: 'simulate-repair' },
-  { stepId: 'repair_approve', method: 'post', pathMatcher: /^\/scheduler\/drafts\/\d+\/approve$/, expectedActionId: 'approve-repair' },
-].map((rule) => Object.freeze(rule)))
-
-export function matchTutorialMutations({ method, path, body }) {
-  return TUTORIAL_MUTATION_RULES
-    .filter((candidate) => candidate.method === method && candidate.pathMatcher.test(path))
-    .map((rule) => ({ ...rule, changes: normalizeBodyForStep(rule.stepId, body) }))
-    .filter(({ changes }) => changes !== null)
-}
-
-export function matchTutorialMutation({ stepId, method, path, body }) {
-  return matchTutorialMutations({ method, path, body })
-    .find((candidate) => !stepId || candidate.stepId === stepId) || null
-}
-
-export function createTutorialScenario({ stepId, status, values = {}, skippedStepIds = [] } = {}) {
-  const scenario = createBaseScenario()
-  const currentIndex = Math.max(0, TUTORIAL_STEPS.findIndex((step) => step.id === stepId))
-  const applied = new Set([
-    ...TUTORIAL_STEPS.slice(0, currentIndex).map((step) => step.id),
-    ...(status === 'COMPLETED' && stepId ? [stepId] : []),
-    ...Object.keys(values).filter((id) => values[id]?.completed === true),
-    ...skippedStepIds,
-  ])
-
-  for (const [id, workflowKey] of Object.entries(WORKFLOW_KEYS)) {
-    if (applied.has(id)) scenario.workflow[workflowKey] = true
-  }
-
-  const subjectChanges = values.subject_create
-  const configuredSubject = subjectChanges?.name || subjectChanges?.roomType
-    ? scenario.subjects.at(-1)
-    : scenario.subjects[0]
-  if (subjectChanges?.name) configuredSubject.name = subjectChanges.name
-  if (subjectChanges?.roomType) configuredSubject.roomType = subjectChanges.roomType.toUpperCase()
-
-  const moduleChanges = values.module_add
-  if (moduleChanges?.moduleName || moduleChanges?.moduleHours || moduleChanges?.requiredMinutes) {
-    const configuredModule = scenario.modules.find((module) => module.subjectId === configuredSubject.id) || scenario.modules[0]
-    Object.assign(configuredModule, {
-      ...(moduleChanges.moduleName ? { name: moduleChanges.moduleName } : {}),
-      ...(moduleChanges.moduleHours ? { requiredMinutes: moduleChanges.moduleHours * 60 } : {}),
-      ...(moduleChanges.requiredMinutes ? { requiredMinutes: moduleChanges.requiredMinutes } : {}),
-    })
-  }
-
-  const courseChanges = values.course_create
-  if (courseChanges?.name || courseChanges?.code) {
-    scenario.courses[0] = { ...scenario.courses[0], ...(courseChanges.name ? { name: courseChanges.name } : {}), ...(courseChanges.code ? { code: courseChanges.code } : {}) }
-  }
-  const classChanges = values.class_create
-  if (classChanges?.name || classChanges?.gradeLevel || classChanges?.size) {
-    scenario.classes[0] = { ...scenario.classes[0], ...classChanges }
-  }
-  const teacherChanges = values.teacher_add
-  if (teacherChanges?.name || teacherChanges?.email) {
-    scenario.teachers[0] = { ...scenario.teachers[0], ...(teacherChanges.name ? { name: teacherChanges.name } : {}), ...(teacherChanges.email ? { email: teacherChanges.email } : {}) }
-  }
-  const competencyChanges = values.teacher_competency
-  if (competencyChanges?.subjectId) {
-    const subject = scenario.subjects[competencyChanges.subjectId - 1] || scenario.subjects[0]
-    scenario.teachers[0] = { ...scenario.teachers[0], competencies: [subject.id] }
-  }
-  const roomChanges = values.room_add
-  if (roomChanges?.name || roomChanges?.type || roomChanges?.capacity) {
-    scenario.rooms[0] = { ...scenario.rooms[0], ...(roomChanges.name ? { name: roomChanges.name } : {}), ...(roomChanges.type ? { type: roomChanges.type.toUpperCase() } : {}), ...(roomChanges.capacity ? { capacity: roomChanges.capacity } : {}) }
-  }
-  const assignmentChanges = values.assignment_create
-  if (assignmentChanges?.classId || assignmentChanges?.subjectId || assignmentChanges?.teacherId) {
-    scenario.associations[0] = {
-      ...scenario.associations[0],
-      ...(assignmentChanges.classId ? { classId: scenario.classes[assignmentChanges.classId - 1]?.id || scenario.classes[0].id } : {}),
-      ...(assignmentChanges.subjectId ? { subjectId: scenario.subjects[assignmentChanges.subjectId - 1]?.id || scenario.subjects[0].id } : {}),
-      ...(assignmentChanges.teacherId ? { teacherId: scenario.teachers[assignmentChanges.teacherId - 1]?.id || scenario.teachers[0].id } : {}),
-    }
-  }
-  if (values.availability_review?.status) scenario.availability.status = values.availability_review.status.toUpperCase()
-
-  scenario.workflow.lastCheckpoint = stepId || TUTORIAL_STEPS[0].id
-  if (scenario.workflow.schedulePrepared) scenario.workflow.scheduleReviewed = applied.has('schedule_review') || applied.has('schedule_approve')
-  if (scenario.workflow.scheduleReviewed) scenario.workflow.scheduleApproved = applied.has('schedule_approve') || applied.has('chapter_transition')
-  if (scenario.workflow.scheduleApproved) scenario.workflow.publishedBlockOpen = applied.has('published_block_open') || applied.has('occurrence_create')
-  if (scenario.workflow.publishedBlockOpen) scenario.workflow.occurrenceCreated = applied.has('occurrence_create') || applied.has('substitute_teacher_select')
-  if (scenario.workflow.occurrenceCreated) scenario.workflow.substituteTeacherSelected = applied.has('substitute_teacher_select') || applied.has('substitute_subject_select')
-  if (scenario.workflow.substituteTeacherSelected) scenario.workflow.substituteSubjectSelected = applied.has('substitute_subject_select') || applied.has('substitution_complete')
-  if (scenario.workflow.substitutionCompleted) scenario.debt.projectedHours = scenario.debt.originalHours
-  if (scenario.workflow.repairSimulated) {
-    scenario.debt.projectedHours = 1
-    scenario.repair.proposed.hours = 1
+  if (stepId === 'substitutions') scenario.occurrences = [createOpenOccurrence('demo-occurrence-open', blocks[0])]
+  if (stepId === 'weekly_close') scenario.occurrences = [createOpenOccurrence('demo-occurrence-open', blocks[0])]
+  if (stepId === 'hour_debts') scenario.occurrences = [
+    createGapOccurrence('demo-occurrence-gap-1', blocks[0]),
+    createGapOccurrence('demo-occurrence-gap-2', blocks[1]),
+  ]
+  if (stepId === 'history') scenario.occurrences = [createHistoryOccurrence(blocks[0])]
+  if (stepId === 'recovery') {
+    scenario.occurrences = [createHistoryOccurrence(blocks[0])]
+    scenario.draft = createRecoveryDraft()
   }
   return scenario
 }
 
-export function tutorialScenarioInvariants(scenario) {
-  const allDemoIds = [
-    ...scenario.courses,
-    ...scenario.classes,
-    ...scenario.subjects,
-    ...scenario.modules,
-    ...scenario.teachers,
-    ...scenario.rooms,
-  ].map((item) => item.id)
+function createOpenOccurrence(id, block) {
   return {
-    courses: scenario.courses.length === 2,
-    classes: scenario.classes.length === 3,
-    subjects: scenario.subjects.length === 5,
-    modules: scenario.modules.length === 5 && scenario.modules.every((module) => module.requiredMinutes > 0),
-    teachers: scenario.teachers.length === 4,
-    rooms: scenario.rooms.length === 3,
-    demoIds: allDemoIds.every((id) => id.startsWith('demo-')),
-    weeklyGrid: scenario.weeklyGrid.days.length === 5 && scenario.weeklyGrid.slots.length > 0,
-    historyPreserved: scenario.workflow.historyPreserved === true && scenario.repair.history.every((event) => event.preserved),
+    id,
+    blockId: block.id,
+    date: block.date,
+    status: 'GAP',
+    operationalState: 'OPEN_PENDING',
+    reason: 'Falta justificada',
+    substituteTeacherId: null,
+    substituteSubjectId: null,
+    version: 1,
+    lessonLogSummary: '',
+    lessonLogNotes: '',
   }
 }
 
-export function getTutorialStep(stepId) {
-  return TUTORIAL_STEPS.find((step) => step.id === stepId) || null
+function createGapOccurrence(id, block) {
+  return { ...createOpenOccurrence(id, block), operationalState: 'DECIDED_GAP' }
 }
 
-export function getTutorialStepIndex(stepId) {
-  return TUTORIAL_STEPS.findIndex((step) => step.id === stepId)
+function createHistoryOccurrence(block) {
+  return {
+    ...createOpenOccurrence('demo-occurrence-history', block),
+    status: 'SUBSTITUTED',
+    operationalState: 'DECIDED_SUBSTITUTED',
+    substituteTeacherId: 'demo-teacher-mathematics',
+    substituteSubjectId: 'demo-subject-mathematics',
+    decidedAt: '2025-09-15T11:00:00Z',
+  }
 }
 
-export function getNextTutorialStep(stepId) {
-  const index = getTutorialStepIndex(stepId)
-  return index >= 0 ? TUTORIAL_STEPS[index + 1] || null : null
+function createRecoveryDraft() {
+  return {
+    id: 'demo-draft-recovery',
+    kind: 'RECOVERY',
+    strategy: 'ADAPTIVE_REPAIR',
+    triggerType: 'EXPLICIT_DEBT',
+    resultCategory: 'PARTIAL_RECOVERY',
+    debtHoursBefore: 2,
+    debtHoursRecovered: 1,
+    debtHoursRemaining: 1,
+    changedBlocks: 1,
+    affectedClasses: 1,
+    affectedTeachers: 1,
+    affectedDays: 1,
+    disruptionScore: 2,
+    projectedCompletionDate: '2025-09-23',
+    mainBlockerMessage: 'Uma hora continua por agendar.',
+    recommendedActions: ['Agendar a hora restante numa semana futura.'],
+    warnings: [],
+    canApprove: true,
+  }
 }
 
-export function getTutorialStorageKey(clerkUserId, clerkOrgId) {
-  const user = clerkUserId || 'anonymous'
-  const org = clerkOrgId || 'personal'
-  return `${TUTORIAL_STORAGE_PREFIX}:user:${user}:org:${org}`
+function createScheduleDraft() {
+  return {
+    id: 'demo-draft-schedule',
+    kind: 'SCHEDULE',
+    strategy: 'COMPLETE_GENERATION',
+    triggerType: 'FIRST_GENERATION',
+    resultCategory: 'COMPLETE_SUCCESS',
+    debtHoursBefore: 0,
+    debtHoursRecovered: 0,
+    debtHoursRemaining: 0,
+    changedBlocks: 4,
+    affectedClasses: 1,
+    affectedTeachers: 2,
+    affectedDays: 3,
+    disruptionScore: 4,
+    projectedCompletionDate: '2025-09-19',
+    mainBlockerMessage: null,
+    recommendedActions: [],
+    warnings: [],
+    canApprove: true,
+  }
 }
+
+function ensureAction(scenario, actionType) {
+  const step = getTutorialStep(scenario.stepId)
+  if (!step?.allowedActions.includes(actionType)) {
+    throw new TutorialScenarioError(`A ação ${actionType} não está disponível neste passo.`, { code: 'DEMO_ACTION_NOT_ALLOWED', status: 403 })
+  }
+}
+
+function normalizeSubjectModules(modules) {
+  if (!Array.isArray(modules)) throw new TutorialScenarioError('Os módulos devem ser um array.', { code: 'INVALID_MODULES' })
+  const normalized = modules.map(normalizeModule)
+  if (normalized.some((module) => !module)) throw new TutorialScenarioError('Cada módulo precisa de nome e horas positivas.', { code: 'INVALID_MODULES' })
+  return normalized.map((module, index) => ({
+    id: `demo-module-edited-${index + 1}`,
+    name: module.name,
+    code: module.code,
+    requiredMinutes: module.hours_total * 60,
+  }))
+}
+
+function applySubjectUpdate(next, action) {
+  const subject = requireEntity(next.subjects, action.subjectId ?? action.id, 'A disciplina')
+  const data = action.data ?? action
+  if (data.name != null) {
+    const name = String(data.name).trim()
+    if (!name) throw new TutorialScenarioError('O nome da disciplina é obrigatório.')
+    subject.name = name
+  }
+  if (data.required_room_type != null || data.roomType != null) {
+    const type = String(data.required_room_type ?? data.roomType).toUpperCase()
+    if (!ROOM_TYPES[type.toLowerCase()] && !Object.keys(ROOM_TYPES).some((key) => key.toUpperCase() === type)) {
+      throw new TutorialScenarioError('O tipo de sala da disciplina é inválido.')
+    }
+    subject.roomType = type
+  }
+  if (data.modules != null) {
+    const modules = normalizeSubjectModules(data.modules)
+    next.modules = next.modules.filter((module) => module.subjectId !== subject.id)
+    next.modules.push(...modules.map((module) => ({ ...module, subjectId: subject.id })))
+  }
+}
+
+function applyClassUpdate(next, action) {
+  const course = requireEntity(next.courses, action.courseId, 'O curso')
+  const cls = requireEntity(next.classes, action.classId, 'A turma')
+  if (cls.courseId !== course.id) throw new TutorialScenarioError('A turma não pertence ao curso indicado.', { code: 'CLASS_COURSE_MISMATCH', status: 400 })
+  const existing = next.classes.filter((item) => item.id !== cls.id && item.courseId === course.id)
+  const validation = validateClassDraft(action.data ?? action, existing.map((item) => ({ name: item.name })))
+  if (validation.error) throw new TutorialScenarioError(validation.error, { code: 'INVALID_CLASS' })
+  Object.assign(cls, {
+    name: validation.value.name,
+    size: validation.value.size,
+    gradeLevel: validation.value.grade_level,
+    startYear: validation.value.start_year,
+    endYear: validation.value.end_year,
+  })
+}
+
+function applyMemberUpdate(next, action) {
+  const teacher = requireEntity(next.teachers, action.memberId ?? action.id, 'O professor')
+  const data = action.data ?? action
+  if (!Array.isArray(data.subject_ids ?? data.subjectIds)) throw new TutorialScenarioError('As competências devem ser um array.')
+  const subjectIds = data.subject_ids ?? data.subjectIds
+  teacher.competencies = subjectIds.map((id) => internalId(next.subjects, id) ?? id)
+  if (teacher.competencies.some((id) => !next.subjects.some((subject) => subject.id === id))) {
+    throw new TutorialScenarioError('A competência indicada não existe no exemplo.', { code: 'SUBJECT_NOT_FOUND', status: 404 })
+  }
+}
+
+function applyRoomUpdate(next, action) {
+  const room = requireEntity(next.rooms, action.roomId ?? action.id, 'A sala')
+  const data = action.data ?? action
+  const name = String(data.name ?? room.name).trim()
+  const capacity = Number(data.capacity ?? room.capacity)
+  const type = String(data.type ?? room.type).toUpperCase()
+  if (!name || !Number.isInteger(capacity) || capacity < 1 || !ROOM_TYPES[type.toLowerCase()]) throw new TutorialScenarioError('Os dados da sala são inválidos.')
+  Object.assign(room, { name, capacity, type })
+}
+
+function applyClassSubjectTeacherUpdate(next, action) {
+  const cls = requireEntity(next.classes, action.classId, 'A turma')
+  const subject = requireEntity(next.subjects, action.subjectId, 'A disciplina')
+  const teacher = requireEntity(next.teachers, action.teacherId, 'O professor')
+  if (cls.id !== next.classes[0].id) throw new TutorialScenarioError('A turma não está preparada para este exemplo.', { code: 'DEMO_ENTITY_NOT_FOUND', status: 404 })
+  if (!teacher.competencies.includes(subject.id)) throw new TutorialScenarioError('O professor não tem competência para esta disciplina.', { code: 'INELIGIBLE_TEACHER', status: 400 })
+  const assignment = next.classSubjects.find((item) => item.classId === cls.id && item.subjectId === subject.id)
+  if (!assignment) throw new TutorialScenarioError('A disciplina não está associada à turma.', { code: 'CLASS_SUBJECT_NOT_FOUND', status: 404 })
+  assignment.teacherId = teacher.id
+}
+
+function applyAvailabilityUpdate(next, action) {
+  const slots = action.slots ?? action.data ?? action
+  if (!Array.isArray(slots)) throw new TutorialScenarioError('A disponibilidade deve ser um array.')
+  const validIds = new Set(next.timeslots.map((slot) => numericId(next.timeslots, slot.id)))
+  const seen = new Set()
+  const normalized = slots.map((slot) => {
+    const id = Number(slot.timeslot_id ?? slot.timeslotId)
+    const score = Number(slot.score)
+    if (!validIds.has(id) || seen.has(id) || ![-1, 0, 1, 2].includes(score)) throw new TutorialScenarioError('A grelha de disponibilidade contém um período inválido.')
+    seen.add(id)
+    return { timeslotId: internalId(next.timeslots, id), score }
+  })
+  next.availability.slots = next.timeslots.map((slot) => normalized.find((entry) => entry.timeslotId === slot.id) ?? { timeslotId: slot.id, score: 1 })
+}
+
+function applyGenerate(next) {
+  if (next.draft) throw new TutorialScenarioError('Já existe um rascunho pendente.', { code: 'PENDING_DRAFT', status: 409 })
+  next.draft = createScheduleDraft()
+  next.jobs['demo-job-schedule'] = { id: 'demo-job-schedule', status: 'SUCCEEDED', resultCategory: 'COMPLETE_SUCCESS' }
+}
+
+function applyApproval(next, action) {
+  const draftId = action.draftId ?? action.id
+  if (!next.draft || next.draft.id !== (typeof draftId === 'string' && draftId.startsWith('demo-') ? draftId : draftId === 72 ? 'demo-draft-recovery' : 'demo-draft-schedule')) {
+    throw new TutorialScenarioError('O rascunho indicado não existe ou já não está pendente.', { code: 'DRAFT_NOT_FOUND', status: 404 })
+  }
+  if (next.draft.kind === 'RECOVERY') next.publishedRecoveryBlockIds.push('demo-block-recovery-1')
+  next.draft = null
+}
+
+function applyOccurrence(next, action) {
+  const block = requireEntity(next.blocks, action.blockId ?? action.activeBlockId, 'O bloco')
+  if (action.status !== 'OCCURRENCE') throw new TutorialScenarioError('Este exercício aceita apenas a intenção OCCURRENCE.')
+  if (next.occurrences.some((occurrence) => occurrence.blockId === block.id && occurrence.status !== 'REVOKED')) {
+    throw new TutorialScenarioError('Este bloco já tem uma ocorrência.', { code: 'OCCURRENCE_ALREADY_EXISTS', status: 409 })
+  }
+  next.occurrences.push(createOpenOccurrence('demo-occurrence-created', block))
+  block.lessonLogStatus = 'OCCURRENCE'
+}
+
+function applySubstitution(next, action) {
+  if (action.status !== 'SUBSTITUTED') throw new TutorialScenarioError('Este exercício aceita apenas a decisão SUBSTITUTED.')
+  const occurrence = requireEntity(next.occurrences, action.occurrenceId ?? action.id, 'A ocorrência')
+  const teacher = requireEntity(next.teachers, action.substituteTeacherId ?? action.teacherId, 'A professora substituta')
+  const subject = requireEntity(next.subjects, action.substituteSubjectId ?? action.subjectId, 'A disciplina substituta')
+  if (!teacher.competencies.includes(subject.id)) throw new TutorialScenarioError('A recomendação não corresponde às competências apresentadas.', { code: 'INVALID_SUBSTITUTE', status: 400 })
+  occurrence.status = 'SUBSTITUTED'
+  occurrence.operationalState = 'DECIDED_SUBSTITUTED'
+  occurrence.substituteTeacherId = teacher.id
+  occurrence.substituteSubjectId = subject.id
+  occurrence.decidedAt = '2025-09-15T11:00:00Z'
+  occurrence.version += 1
+}
+
+export function createTutorialScenario(stepId) {
+  if (!getTutorialStep(stepId)) throw new TutorialScenarioError('O passo do guia não existe.', { code: 'UNKNOWN_STEP', status: 400 })
+  const scenario = createBaseScenario(stepId)
+  if (Object.values(tutorialScenarioInvariants(scenario)).some((value) => !value)) {
+    throw new TutorialScenarioError('O cenário do guia não cumpre os invariantes da demonstração.')
+  }
+  return scenario
+}
+
+export function applyTutorialDemoAction(scenario, action) {
+  if (!scenario || typeof scenario !== 'object' || !getTutorialStep(scenario.stepId)) throw new TutorialScenarioError('O cenário do guia é inválido.')
+  if (!action || typeof action !== 'object') throw new TutorialScenarioError('A ação experimental é inválida.')
+  ensureAction(scenario, action.type)
+  const next = clone(scenario)
+  switch (action.type) {
+    case TUTORIAL_ACTIONS.UPDATE_SUBJECT: applySubjectUpdate(next, action); break
+    case TUTORIAL_ACTIONS.UPDATE_CLASS: applyClassUpdate(next, action); break
+    case TUTORIAL_ACTIONS.UPDATE_MEMBER_COMPETENCIES: applyMemberUpdate(next, action); break
+    case TUTORIAL_ACTIONS.UPDATE_ROOM: applyRoomUpdate(next, action); break
+    case TUTORIAL_ACTIONS.UPDATE_CLASS_SUBJECT_TEACHER: applyClassSubjectTeacherUpdate(next, action); break
+    case TUTORIAL_ACTIONS.UPDATE_AVAILABILITY: applyAvailabilityUpdate(next, action); break
+    case TUTORIAL_ACTIONS.GENERATE_SCHEDULE: applyGenerate(next); break
+    case TUTORIAL_ACTIONS.APPROVE_SCHEDULE:
+    case TUTORIAL_ACTIONS.APPROVE_RECOVERY: applyApproval(next, action); break
+    case TUTORIAL_ACTIONS.CREATE_OCCURRENCE: applyOccurrence(next, action); break
+    case TUTORIAL_ACTIONS.DECIDE_SUBSTITUTION: applySubstitution(next, action); break
+    default: throw new TutorialScenarioError(`Ação experimental não suportada: ${action.type}.`, { code: 'UNSUPPORTED_DEMO_ACTION', status: 403 })
+  }
+  return next
+}
+
+function subjectApi(scenario, subject) {
+  return {
+    id: numericId(scenario.subjects, subject.id),
+    name: subject.name,
+    required_room_type: subject.roomType.toLowerCase(),
+    modules: scenario.modules.filter((module) => module.subjectId === subject.id).map((module, index) => ({
+      id: numericId(scenario.modules, module.id),
+      name: module.name,
+      code: module.code,
+      hours_total: module.requiredMinutes / 60,
+      order: index,
+    })),
+  }
+}
+
+export function createTutorialApiSnapshot(scenario) {
+  const subjects = scenario.subjects.map((subject) => subjectApi(scenario, subject))
+  const courses = scenario.courses.map((course) => ({
+    id: numericId(scenario.courses, course.id),
+    name: course.name,
+    abbreviation: course.code,
+    classes: scenario.classes.filter((item) => item.courseId === course.id).map((item) => ({
+      id: numericId(scenario.classes, item.id),
+      name: item.name,
+      grade_level: item.gradeLevel,
+      size: item.size,
+      start_year: item.startYear,
+      end_year: item.endYear,
+      course_id: numericId(scenario.courses, item.courseId),
+    })),
+    subjects,
+  }))
+  const teachers = scenario.teachers.map((teacher) => ({
+    id: numericId(scenario.teachers, teacher.id),
+    name: teacher.name,
+    subject_ids: teacher.competencies.map((id) => numericId(scenario.subjects, id)).filter(Number.isInteger),
+    current_classes_count: scenario.classSubjects.filter((item) => item.teacherId === teacher.id).length,
+    email: teacher.email,
+  }))
+  const classes = scenario.classes.map((item) => ({
+    id: numericId(scenario.classes, item.id),
+    name: item.name,
+    grade_level: item.gradeLevel,
+    size: item.size,
+    start_year: item.startYear,
+    end_year: item.endYear,
+    course_id: numericId(scenario.courses, item.courseId),
+  }))
+  const members = scenario.teachers.map((teacher, index) => ({
+    id: index + 1,
+    organization_display_name: teacher.name,
+    email: teacher.email,
+    capabilities: ['teacher'],
+    teacher_access_mode: 'scheduler_only',
+    subject_ids: teachers[index].subject_ids,
+    access_status: 'active',
+    lifecycle_status: 'active',
+    provider_state: 'confirmed',
+    lock_version: 1,
+    actions: { can_edit: true, can_remove: false, can_resend_invite: false, can_retry_sync: false, can_restore: false },
+  }))
+  const rooms = scenario.rooms.map((room) => ({ id: numericId(scenario.rooms, room.id), name: room.name, type: room.type.toLowerCase(), capacity: room.capacity }))
+  const timeslots = scenario.timeslots.map((slot) => ({
+    id: numericId(scenario.timeslots, slot.id),
+    day_of_week: slot.dayOfWeek,
+    start_time: `${slot.startTime}:00`,
+    end_time: `${slot.endTime}:00`,
+  }))
+  const assignments = scenario.classSubjects.map((assignment) => ({
+    id: numericId(scenario.classSubjects, assignment.id),
+    class_id: numericId(scenario.classes, assignment.classId),
+    subject_id: numericId(scenario.subjects, assignment.subjectId),
+    teacher_id: numericId(scenario.teachers, assignment.teacherId),
+  }))
+  const currentDraft = scenario.draft ? {
+    draft_id: scenario.draft.id === 'demo-draft-recovery' ? 72 : 71,
+    strategy: scenario.draft.strategy,
+    draft_state: 'PENDING',
+    result_category: scenario.draft.resultCategory,
+    trigger_type: scenario.draft.triggerType,
+    recovery_escalation_level: scenario.draft.kind === 'RECOVERY' ? 'PARTIAL' : null,
+    adaptation_level: scenario.draft.kind === 'RECOVERY' ? 'MINIMAL' : null,
+    projected_completion_date: scenario.draft.projectedCompletionDate,
+    hard_end_date: scenario.hardEndDate,
+    debt_hours_before: scenario.draft.debtHoursBefore,
+    debt_hours_recovered: scenario.draft.debtHoursRecovered,
+    debt_hours_remaining: scenario.draft.debtHoursRemaining,
+    partial_recovery_blocker_type: scenario.draft.kind === 'RECOVERY' ? 'UNSCHEDULED_REMAINDER' : null,
+    main_blocker_message: scenario.draft.mainBlockerMessage,
+    recommended_actions: scenario.draft.recommendedActions,
+    changed_blocks: scenario.draft.changedBlocks,
+    affected_classes: scenario.draft.affectedClasses,
+    affected_teachers: scenario.draft.affectedTeachers,
+    affected_days: scenario.draft.affectedDays,
+    disruption_score: scenario.draft.disruptionScore,
+    warnings: scenario.draft.warnings,
+    can_approve: scenario.draft.canApprove,
+    quality_policy_version: 'demo-v1',
+    quality_optimization_complete: true,
+    class_completion_spread_days: 1,
+    class_high_load_days: 0,
+    teacher_high_load_days: 0,
+    class_gap_minutes: 0,
+    teacher_gap_minutes: 0,
+    availability_disutility_minutes: 0,
+    consecutive_excess_minutes: 0,
+    recovery_stack_excess_minutes: 0,
+    workload_override_used: false,
+    class_overload_count: 0,
+    class_overload_excess_minutes: 0,
+    teacher_overload_count: 0,
+    teacher_overload_excess_minutes: 0,
+  } : null
+  return { subjects, courses, classes, teachers, members, rooms, timeslots, assignments, currentDraft }
+}
+
+export function tutorialScenarioInvariants(scenario) {
+  const allEntities = [...scenario.courses, ...scenario.classes, ...scenario.subjects, ...scenario.modules, ...scenario.teachers, ...scenario.rooms, ...scenario.classSubjects, ...scenario.timeslots, ...scenario.blocks]
+  const programming = scenario.subjects.find((subject) => subject.id === 'demo-subject-programming')
+  const mathsTeacher = scenario.teachers.find((teacher) => teacher.id === 'demo-teacher-mathematics')
+  return {
+    step: Boolean(getTutorialStep(scenario.stepId)),
+    chapters: TUTORIAL_STEPS.filter((step) => step.chapter === 1).length === 7 && TUTORIAL_STEPS.filter((step) => step.chapter === 2).length === 6,
+    demoIds: allEntities.every((item) => item.id.startsWith('demo-')),
+    curriculum: Boolean(programming) && scenario.modules.some((module) => module.subjectId === programming.id && module.requiredMinutes > 0),
+    classCourse: scenario.classes.every((item) => scenario.courses.some((course) => course.id === item.courseId)),
+    eligibleTeachers: scenario.classSubjects.every((assignment) => scenario.teachers.some((teacher) => teacher.id === assignment.teacherId && teacher.competencies.includes(assignment.subjectId))),
+    roomCapacity: scenario.rooms.some((room) => room.type === 'LAB' && room.capacity >= scenario.classes[0].size),
+    calendar: scenario.weekStart === DEMO_WEEK_START && scenario.referenceDate === DEMO_REFERENCE_DATE && scenario.slotDurationMinutes === 60,
+    debt: scenario.debt.hoursOwedMinutes === 120 && scenario.debt.proposedRecoveryMinutes === 60 && scenario.debt.remainingMinutes === 60,
+    substituteEligibility: Boolean(mathsTeacher?.competencies.includes('demo-subject-mathematics')),
+    historyPreserved: scenario.history.every((event) => event.preserved),
+  }
+}
+
+export { TUTORIAL_ACTIONS, TUTORIAL_STEPS, getTutorialStep, getTutorialStepIndex }

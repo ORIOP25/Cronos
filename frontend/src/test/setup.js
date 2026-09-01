@@ -1,4 +1,5 @@
 import '@testing-library/jest-dom'
+import { createElement } from 'react'
 import { vi } from 'vitest'
 
 if (typeof window !== 'undefined') {
@@ -91,7 +92,10 @@ vi.mock('@clerk/react', () => ({
     if (when === 'signed-out') return _clerkState.isSignedIn ? (fallback || null) : children
     return children
   },
-  RedirectToSignIn: () => null,
+  RedirectToSignIn: ({ redirectUrl }) => createElement('div', {
+    'data-testid': 'redirect-to-sign-in',
+    'data-redirect-url': redirectUrl,
+  }),
   UserButton: () => null,
   OrganizationSwitcher: () => null,
   Protect: ({ children, role, condition, fallback }) => {

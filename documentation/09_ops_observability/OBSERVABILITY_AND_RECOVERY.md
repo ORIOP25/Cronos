@@ -83,6 +83,33 @@ Provider and webhook states remain queryable through their persisted status fiel
 - `backend/scripts/audit_triggers.py`
 - `backend/scripts/audit_database_integrity.py`
 
+## Onboarding Observability and Recovery
+
+Monitor these onboarding boundaries:
+
+- session bootstrap success and provider `503` failures;
+- Foundation draft version conflicts;
+- incomplete or already-completed Foundation commands;
+- generated timeslot count at completion;
+- readiness blockers and stale prevalidation fingerprints;
+- dashboard mode changes after the first real schedule approval;
+- tutorial telemetry duplicates and provider failures.
+
+The tutorial emits best-effort telemetry but does not block local progress when the request fails.
+The backend logs duplicate client events as ignored inserts.
+
+When a Foundation completion appears successful but the UI shows the previous state:
+
+1. inspect the API response and database status;
+2. refresh `foundation-status`, `foundation-draft`, and `current-member`;
+3. inspect the frontend network log for the invalidation requests;
+4. confirm that the organization has generated at least one timeslot;
+5. repeat only after identifying the stale boundary.
+
+When an E2E onboarding test fails in CI, download `playwright-report` and `test-results`.
+Playwright retains a trace on failure and CI uploads both artifacts even when the suite fails.
+Retries are disabled, so the first failure is the diagnostic signal.
+
 ## Related Documents
 
 - [Local Runtime](LOCAL_RUNTIME.md)

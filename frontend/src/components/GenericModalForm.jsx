@@ -18,11 +18,12 @@ const GenericModalForm = ({
   error,
   size,
   tutorialTarget,
+  readOnly = false,
 }) => {
 
   const isEditing = !!initialData
   const isFeminine = ['Sala', 'Disciplina', 'Turma', 'Configuração'].some((word) => title?.includes(word))
-  const prefix = isEditing ? 'Editar' : (isFeminine ? 'Nova' : 'Novo')
+  const prefix = readOnly ? 'Consultar' : isEditing ? 'Editar' : (isFeminine ? 'Nova' : 'Novo')
   const modalTitle = `${prefix} ${title}`
 
   const errorMessage = error ? getApiErrorMessage(error) : null
@@ -44,6 +45,7 @@ const GenericModalForm = ({
           onSubmit={onSubmit} 
           isLoading={isLoading}
           onCancel={onClose}
+          readOnly={readOnly}
         />
       </CModalBody>
     </CModal>

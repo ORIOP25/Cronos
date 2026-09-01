@@ -14,6 +14,8 @@ import {
   loginAsAdminReal,
 } from '../utils/clerk-helpers.js'
 
+test.use({ storageState: { cookies: [], origins: [] } })
+
 test.describe('Session resilience', () => {
   test.beforeEach(async ({ page }) => {
     attachRuntimeGuards(page)

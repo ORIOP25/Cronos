@@ -1,5 +1,7 @@
 # WBS Técnico — Onboarding In-App do Diretor
 
+> **Estado atual:** este documento mantém a especificação técnica e o plano de implementação históricos. O comportamento implementado e verificado está em [Director Onboarding](../00_getting_started/ONBOARDING.md). Em caso de divergência, use o código, os testes e a CI como fonte de verdade.
+
 ## 1. Finalidade
 
 Este documento converte o contrato funcional do onboarding numa estrutura técnica de implementação.
@@ -565,8 +567,8 @@ Avalie sete níveis pela mesma cadeia relacional.
 | Profundidade | Condição cumulativa | Correção |
 | :--- | :--- | :--- |
 | 1 | Existe `Class.is_archived = false` | `/courses` |
-| 2 | A turma possui `ClassSubjectLink` no `grade_level` atual | Página de disciplinas da turma |
-| 3 | A disciplina possui `Module.required_minutes > 0` | `/subjects` |
+| 2 | Existe `Module.required_minutes > 0` na organização | `/subjects` |
+| 3 | A turma possui `ClassSubjectLink` no `grade_level` atual para uma disciplina com módulos | Página de disciplinas da turma |
 | 4 | O link possui professor competente em `teacher_subject_link` | `/members` |
 | 5 | Existe sala com tipo exigido e capacidade suficiente | `/rooms` |
 | 6 | Existe pelo menos um `Timeslot` da organização | `/config` |

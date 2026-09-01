@@ -93,6 +93,21 @@ Availability keeps persisted server data separate from a local paint draft.
 - `frontend/Dockerfile`
 - `frontend/nginx.conf`
 
+## Onboarding Frontend Architecture
+
+The onboarding path is split into independent features:
+
+- `routeGuards.jsx` waits for Clerk, the active organization, and `/members/me` before routing.
+- `CreateOrgPage.jsx` waits for the Clerk membership list before it renders creation or selection controls.
+- `FoundationWizard.jsx` owns the nine-step interaction, autosave queue, version conflict state, and completion navigation.
+- `foundationModel.js` contains pure step and validation rules.
+- `foundationData.js` owns React Query keys and invalidation.
+- `features/tutorial/` owns local scenario state, reducer transitions, normalization, storage, telemetry, and the API boundary.
+
+Foundation completion invalidates `foundation-status`, `foundation-draft`, `current-member`, dashboard, and readiness queries as one mutation lifecycle.
+The real dashboard passes `autoStartGuide={false}` so the post-completion destination is stable.
+The tutorial can still be opened explicitly from the dashboard or `/guide`.
+
 ## Related Documents
 
 - [Routes and Permissions](ROUTES_AND_PERMISSIONS.md)

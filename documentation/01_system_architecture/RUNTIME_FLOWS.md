@@ -65,6 +65,20 @@ Explicit boundaries prevent provider adapters, authentication, and solver work f
 3. The service stores the event by Svix ID.
 4. Reconciliation processes supported events idempotently.
 
+## Onboarding Runtime Flow
+
+1. Clerk supplies the authenticated subject and active organization claim.
+2. `POST /api/v1/session/bootstrap` reconciles the provider organization, membership, and local member.
+3. The route guard reads `/members/me` and `foundation_status` before it selects an authenticated route.
+4. An administrator reads and saves the Foundation draft with an optimistic `expected_version`.
+5. Foundation completion validates the snapshot, writes settings, regenerates timeslots, flushes the state, and commits before returning.
+6. The frontend invalidates `foundation-status`, `foundation-draft`, `current-member`, dashboard, and readiness queries before navigating to `/dashboard`.
+7. The optional tutorial runs in local browser state. Its API boundary prevents simulated page actions from changing operational data.
+8. Readiness and prevalidation expose the bases required before schedule generation.
+
+The route gate allows only Foundation status and Foundation administration while the Foundation is incomplete.
+Normal admin and teacher routes require `COMPLETED`.
+
 ## Contracts and Invariants
 
 - A worker task creates its own database session.

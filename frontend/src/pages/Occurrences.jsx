@@ -141,9 +141,11 @@ const EditOccurrenceModal = ({
   teacherById,
   subjectById,
   errorMessage,
+  allowedDecisions,
 }) => {
+  const availableDecisions = allowedDecisions ?? ['GIVEN', 'GAP', 'SUBSTITUTED']
   const [status, setStatus] = useState(
-    occurrence.status || 'GAP'
+    availableDecisions.includes(occurrence.status) ? occurrence.status : availableDecisions[0] || occurrence.status || 'GAP'
   )
   const [selectedRecommendation, setSelectedRecommendation] = useState(
     occurrence.substitute_teacher_id && occurrence.substitute_subject_id
@@ -215,7 +217,7 @@ const EditOccurrenceModal = ({
   }, [showAllRecommendations, orderedRecommendations, topRecommendations, selectedRecommendation])
 
   const handleSave = () => {
-    if (!isDecisionConfirmed) {
+    if (!isDecisionConfirmed || !availableDecisions.includes(status)) {
       return
     }
     onSave({
@@ -261,6 +263,7 @@ const EditOccurrenceModal = ({
               color={status === 'GIVEN' ? 'success' : 'secondary'}
               variant={status === 'GIVEN' ? undefined : 'outline'}
               onClick={() => setStatus('GIVEN')}
+              disabled={!availableDecisions.includes('GIVEN')}
             >
               Dada
             </CButton>
@@ -268,6 +271,7 @@ const EditOccurrenceModal = ({
               color={status === 'GAP' ? 'danger' : 'secondary'}
               variant={status === 'GAP' ? undefined : 'outline'}
               onClick={() => setStatus('GAP')}
+              disabled={!availableDecisions.includes('GAP')}
             >
               Furo
             </CButton>
@@ -275,6 +279,7 @@ const EditOccurrenceModal = ({
               color={status === 'SUBSTITUTED' ? 'warning' : 'secondary'}
               variant={status === 'SUBSTITUTED' ? undefined : 'outline'}
               onClick={() => setStatus('SUBSTITUTED')}
+              disabled={!availableDecisions.includes('SUBSTITUTED')}
               data-tutorial-target="decision-substitute"
             >
               Substituída
@@ -429,7 +434,15 @@ const DebtsPanel = ({ classId }) => {
 // ---------------------------------------------------------------------------
 // Painel de Ocorrências
 // ---------------------------------------------------------------------------
-const OccurrencesPanel = ({ classId, dateFrom, dateTo, initialOccurrenceId, mode }) => {
+const OccurrencesPanel = ({
+  classId,
+  dateFrom,
+  dateTo,
+  initialOccurrenceId,
+  mode,
+  readOnly = false,
+  allowedActions,
+}) => {
   const [editingOccurrence, setEditingOccurrence] = useState(null)
   const [saveErrorMessage, setSaveErrorMessage] = useState('')
   const focusedOccurrenceIdRef = useRef(null)
@@ -447,6 +460,9 @@ const OccurrencesPanel = ({ classId, dateFrom, dateTo, initialOccurrenceId, mode
   const updateMutation = useUpdateOccurrence()
   const cancelMutation = useCancelOccurrence()
   const [expandedId, setExpandedId] = useState(null)
+  const isTutorial = Array.isArray(allowedActions)
+  const canDecide = !readOnly && (!isTutorial || allowedActions.includes('DECIDE_SUBSTITUTION'))
+  const canRevert = !readOnly && !isTutorial
 
   const teacherById = useMemo(
     () => new Map(teachers.map((teacher) => [teacher.id, teacher.name])),
@@ -511,17 +527,19 @@ const OccurrencesPanel = ({ classId, dateFrom, dateTo, initialOccurrenceId, mode
   }
 
   const openEditModal = (occurrence) => {
+    if (!canDecide) return
     if (getOperationalState(occurrence) === 'REVOKED') return
     setEditingOccurrence(occurrence)
     setSaveErrorMessage('')
   }
 
   const handleRevert = (occurrence) => {
+    if (!canRevert) return
     setRevertConfirmation(occurrence)
   }
 
   const confirmRevert = () => {
-    if (!revertConfirmation) return
+    if (!revertConfirmation || !canRevert) return
     const occurrence = revertConfirmation
     const hasSubstituteLog = occurrence.status === 'SUBSTITUTED'
     setRevertingId(occurrence.id)
@@ -545,6 +563,7 @@ const OccurrencesPanel = ({ classId, dateFrom, dateTo, initialOccurrenceId, mode
   }
 
   const handleSave = (payload) => {
+    if (!canDecide) return
     setSaveErrorMessage('')
     updateMutation.mutate(payload, {
       onSuccess: () => {
@@ -586,11 +605,12 @@ const OccurrencesPanel = ({ classId, dateFrom, dateTo, initialOccurrenceId, mode
           occurrence={editingOccurrence}
           onClose={closeEditModal}
           onSave={handleSave}
-          onRevert={() => { handleRevert(editingOccurrence) }}
+           onRevert={canRevert ? () => { handleRevert(editingOccurrence) } : null}
           isSaving={updateMutation.isPending || cancelMutation.isPending}
           teacherById={teacherById}
-          subjectById={subjectById}
-          errorMessage={saveErrorMessage}
+           subjectById={subjectById}
+           errorMessage={saveErrorMessage}
+           allowedDecisions={isTutorial ? ['SUBSTITUTED'] : undefined}
         />
       )}
       <ConfirmationModal
@@ -686,12 +706,12 @@ const OccurrencesPanel = ({ classId, dateFrom, dateTo, initialOccurrenceId, mode
               <CTableDataCell className="fw-semibold">{executionSummary}</CTableDataCell>
               <CTableDataCell className="text-end" onClick={(e) => e.stopPropagation()}>
                 <div className="d-flex gap-1 justify-content-end">
-                  {isUndecided && (
+                  {isUndecided && canDecide && (
                     <CButton color="primary" size="sm" variant="outline" onClick={() => openEditModal(occ)} data-tutorial-target="decision-open">
                       Decidir
                     </CButton>
                   )}
-                  {isDecided && (
+                  {isDecided && canRevert && (
                     <CButton
                       color="secondary"
                       size="sm"
@@ -762,7 +782,12 @@ const OccurrencesPanel = ({ classId, dateFrom, dateTo, initialOccurrenceId, mode
 // ---------------------------------------------------------------------------
 // Página principal
 // ---------------------------------------------------------------------------
-const Occurrences = () => {
+const Occurrences = ({
+  tabOverride,
+  readOnly = false,
+  allowedActions,
+  navigationDisabled = false,
+} = {}) => {
   const [searchParams, setSearchParams] = useSearchParams()
 
   const classFilter = searchParams.get('class_id') ?? ''
@@ -771,7 +796,7 @@ const Occurrences = () => {
   const parsedOccurrenceId = Number.parseInt(searchParams.get('occurrence_id') ?? '', 10)
   const initialOccurrenceId = Number.isNaN(parsedOccurrenceId) ? undefined : parsedOccurrenceId
   const statusParam = searchParams.get('status') ?? ''
-  const tabParam = searchParams.get('tab') ?? ''
+  const tabParam = tabOverride ?? searchParams.get('tab') ?? ''
   const activeTab = VALID_TABS.has(tabParam)
     ? tabParam
     : ['GAP', 'SUBSTITUTED', 'GIVEN', 'REVOKED'].includes(statusParam.toUpperCase())
@@ -794,7 +819,11 @@ const Occurrences = () => {
   const { data: classes = EMPTY_ARRAY } = useClasses()
 
   return (
-    <div className="p-4" data-tutorial-target="occurrences-workspace">
+    <div
+      className="p-4"
+      data-tutorial-target="occurrences-workspace"
+      data-tutorial-navigation-disabled={navigationDisabled || undefined}
+    >
       {/* Cabeçalho */}
       <PageHeader preTitle="Operações" title="Faltas e Ocorrências" />
 
@@ -862,7 +891,7 @@ const Occurrences = () => {
           </CCardHeader>
           <CCardBody>
             {activeTab === 'debts' ? (
-              <DebtsPanel classId={classFilter} />
+              <DebtsPanel classId={classFilter} readOnly={readOnly} />
             ) : (
               <OccurrencesPanel
                 classId={classFilter}
@@ -870,6 +899,8 @@ const Occurrences = () => {
                 dateTo={dateTo}
                 initialOccurrenceId={initialOccurrenceId}
                 mode={activeTab === 'historical' ? 'historical' : 'pending'}
+                readOnly={readOnly}
+                allowedActions={allowedActions}
               />
             )}
           </CCardBody>

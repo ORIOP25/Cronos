@@ -55,4 +55,20 @@ describe('SubjectForm', () => {
     fireEvent.click(screen.getByRole('button', { name: /^cancelar$/i }))
     expect(onCancel).toHaveBeenCalledOnce()
   })
+
+  it('keeps the curriculum inspectable without exposing edit controls in read-only mode', () => {
+    renderForm({
+      readOnly: true,
+      initialData: {
+        name: 'Programação',
+        required_room_type: 'lab',
+        modules: [{ id: 1, name: 'Fundamentos de programação', code: 'UFCD-PROG-1', hours_total: 2 }],
+      },
+    })
+
+    expect(screen.getByLabelText(/nome da disciplina/i)).toBeDisabled()
+    expect(screen.getByText('Fundamentos de programação')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /guardar disciplina/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /editar fundamentos/i })).not.toBeInTheDocument()
+  })
 })

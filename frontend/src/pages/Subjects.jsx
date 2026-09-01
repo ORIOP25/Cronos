@@ -18,7 +18,7 @@ import {
   useDeleteSubject,
 } from '../features/catalog/data'
 
-const Subjects = () => {
+const Subjects = ({ readOnly = false, allowedActions }) => {
   const [modalVisible, setModalVisible] = useState(false)
   const [selectedItem, setSelectedItem] = useState(null)
 
@@ -27,6 +27,11 @@ const Subjects = () => {
   const createMutation = useCreateSubject()
   const updateMutation = useUpdateSubject()
   const deleteMutation = useDeleteSubject()
+  const isTutorial = Array.isArray(allowedActions)
+  const canUpdate = !readOnly && (!isTutorial || allowedActions.includes('UPDATE_SUBJECT'))
+  const canOpenDetails = canUpdate || readOnly
+  const canCreate = !isTutorial && !readOnly
+  const canDelete = !isTutorial && !readOnly
 
   // 2. Definição das Colunas
   const columns = [
@@ -37,19 +42,21 @@ const Subjects = () => {
   // --- Handlers ---
 
   const handleCreate = () => {
+    if (!canCreate) return
     // Wizard: Sempre começa do zero (Opção A - Decisão Arquitetural)
     setSelectedItem(null)
     setModalVisible(true)
   }
 
   const handleEdit = (item) => {
+    if (!canOpenDetails) return
     // RESTRIÇÃO: Por enquanto, edição simples (Fase 6)
     // O Wizard é apenas para CRIAÇÃO (Opção A)
     setSelectedItem(item)
     setModalVisible(true)
   }
 
-  const handleDelete = (id) => deleteMutation.mutateAsync(id)
+  const handleDelete = (id) => canDelete ? deleteMutation.mutateAsync(id) : Promise.resolve()
 
   const handleFormSubmit = async (formData) => {
     try {
@@ -70,12 +77,12 @@ const Subjects = () => {
   return (
     <div className="p-4">
       <PageHeader preTitle="Gestão" title="Disciplinas" />
-      <div className="d-flex justify-content-end mb-4">
+      {canCreate && <div className="d-flex justify-content-end mb-4">
         <CButton color="primary" onClick={handleCreate} className="d-flex align-items-center gap-2" data-tutorial-target="new-subject">
           <CIcon icon={cilPlus} />
           Nova Disciplina
         </CButton>
-      </div>
+      </div>}
 
       {/* Tratamento de Erros de Criação/Eliminação */}
       {createMutation.isError && (
@@ -100,6 +107,9 @@ const Subjects = () => {
             actions={true}
             onEdit={handleEdit}
             onDelete={handleDelete}
+            allowEdit={canOpenDetails}
+            allowDelete={canDelete}
+            readOnly={readOnly}
             getRowLabel={(subject) => subject.name}
           />
 
@@ -114,6 +124,7 @@ const Subjects = () => {
         isLoading={activeMutation.isPending}
         error={activeMutation.error}
         tutorialTarget="subject-form"
+        readOnly={readOnly}
       />
     </div>
   )

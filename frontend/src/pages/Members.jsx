@@ -91,7 +91,7 @@ const SubjectPicker = ({ subjects, selected, disabled, onChange }) => {
   )
 }
 
-const MemberModal = ({ visible, member, subjects, onClose, onSave, isSaving, error }) => {
+const MemberModal = ({ visible, member, subjects, onClose, onSave, isSaving, error, competenciesOnly = false }) => {
   const [draft, setDraft] = useState(emptyDraft)
   const [adminConfirmed, setAdminConfirmed] = useState(false)
 
@@ -143,8 +143,8 @@ const MemberModal = ({ visible, member, subjects, onClose, onSave, isSaving, err
         {error && <CAlert color="danger">{getApiErrorMessage(error)}</CAlert>}
         {syncBlocked && <CAlert color="warning">Resolva a sincronizacao antes de editar este membro.</CAlert>}
         <div className="d-grid gap-3">
-          <CFormInput id="member-name" label="Nome" value={draft.organization_display_name} onChange={(event) => setDraft({ ...draft, organization_display_name: event.target.value })} disabled={isSaving || syncBlocked} />
-          <CFormInput id="member-email" label="Email" type="email" value={draft.email} onChange={(event) => setDraft({ ...draft, email: event.target.value })} disabled={isSaving || syncBlocked || member?.access_status === 'active'} />
+          <CFormInput id="member-name" label="Nome" value={draft.organization_display_name} onChange={(event) => setDraft({ ...draft, organization_display_name: event.target.value })} disabled={isSaving || syncBlocked || competenciesOnly} />
+          <CFormInput id="member-email" label="Email" type="email" value={draft.email} onChange={(event) => setDraft({ ...draft, email: event.target.value })} disabled={isSaving || syncBlocked || member?.access_status === 'active' || competenciesOnly} />
           <CFormSelect
             id="member-capability-mode"
             label="Tipo de membro"
@@ -153,7 +153,7 @@ const MemberModal = ({ visible, member, subjects, onClose, onSave, isSaving, err
               setAdminConfirmed(false)
               setDraft({ ...draft, capability_mode: event.target.value, teacher_access_mode: event.target.value === 'admin' ? 'platform' : draft.teacher_access_mode })
             }}
-            disabled={isSaving || syncBlocked}
+            disabled={isSaving || syncBlocked || competenciesOnly}
             options={[
               { value: 'teacher', label: 'Professor' },
               { value: 'admin', label: 'Administrador' },
@@ -167,7 +167,7 @@ const MemberModal = ({ visible, member, subjects, onClose, onSave, isSaving, err
                 label="Acesso do professor"
                 value={hasAdmin ? 'platform' : draft.teacher_access_mode}
                 onChange={(event) => setDraft({ ...draft, teacher_access_mode: event.target.value })}
-                disabled={isSaving || syncBlocked || hasAdmin}
+                disabled={isSaving || syncBlocked || hasAdmin || competenciesOnly}
                 options={[
                   { value: 'platform', label: 'Com acesso a plataforma' },
                   { value: 'scheduler_only', label: 'Apenas recurso de horario' },
@@ -186,7 +186,7 @@ const MemberModal = ({ visible, member, subjects, onClose, onSave, isSaving, err
               id="member-admin-confirmation"
               label="Confirmo que este membro deve ter acesso de administrador."
               checked={adminConfirmed}
-              disabled={isSaving || syncBlocked}
+              disabled={isSaving || syncBlocked || competenciesOnly}
               onChange={(event) => setAdminConfirmed(event.target.checked)}
             />
           )}
@@ -202,12 +202,12 @@ const MemberModal = ({ visible, member, subjects, onClose, onSave, isSaving, err
   )
 }
 
-const ActionButton = ({ title, color = 'secondary', icon, disabled, loading, onClick }) => {
+const ActionButton = ({ title, color = 'secondary', icon, disabled, loading, onClick, tutorialTarget }) => {
   const isDisabled = disabled || loading
   return (
     <CTooltip content={title} placement="top">
       <span className="member-action-tooltip" title={title} tabIndex={isDisabled ? 0 : undefined}>
-        <CButton color={color} variant="ghost" size="sm" onClick={onClick} aria-label={title} disabled={isDisabled}>
+        <CButton color={color} variant="ghost" size="sm" onClick={onClick} aria-label={title} disabled={isDisabled} data-tutorial-target={tutorialTarget}>
           {loading ? <CSpinner size="sm" /> : <CIcon icon={icon} />}
         </CButton>
       </span>
@@ -215,7 +215,7 @@ const ActionButton = ({ title, color = 'secondary', icon, disabled, loading, onC
   )
 }
 
-const Members = () => {
+const Members = ({ readOnly = false, allowedActions }) => {
   const [includeArchived, setIncludeArchived] = useState(false)
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
@@ -230,6 +230,9 @@ const Members = () => {
   const resendInvitation = useResendMemberInvitation()
   const retrySync = useRetryMemberSync()
   const restoreMember = useRestoreMember()
+  const isTutorial = Array.isArray(allowedActions)
+  const canUpdate = !readOnly && (!isTutorial || allowedActions.includes('UPDATE_MEMBER_COMPETENCIES'))
+  const canCreate = !readOnly && !isTutorial
   const activeMutation = selectedMember ? updateMember : createMember
   const members = useMemo(() => {
     const rows = data?.items ?? []
@@ -246,6 +249,8 @@ const Members = () => {
   }, [data?.items, search, statusFilter])
 
   const openModal = (member = null) => {
+    if (member && !canUpdate) return
+    if (!member && !canCreate) return
     setSelectedMember(member)
     setModalVisible(true)
   }
@@ -256,7 +261,7 @@ const Members = () => {
   }
 
   const remove = async () => {
-    if (!removeTarget) return
+    if (!removeTarget || !canCreate) return
     await removeMember.mutateAsync(removeTarget.id)
     setRemoveTarget(null)
   }
@@ -291,7 +296,7 @@ const Members = () => {
           />
           <CFormSwitch label="Mostrar arquivados" checked={includeArchived} onChange={(event) => setIncludeArchived(event.target.checked)} />
         </div>
-        <CButton color="primary" onClick={() => openModal()} className="d-flex align-items-center gap-2" data-tutorial-target="new-member"><CIcon icon={cilPlus} />Adicionar membro</CButton>
+        {canCreate && <CButton color="primary" onClick={() => openModal()} className="d-flex align-items-center gap-2" data-tutorial-target="new-member"><CIcon icon={cilPlus} />Adicionar membro</CButton>}
       </div>
       {isError && <CAlert color="danger">{getApiErrorMessage(error, 'Nao foi possivel carregar a equipa.')} <CButton color="link" onClick={() => refetch()}>Tentar novamente</CButton></CAlert>}
       {actionError && <CAlert color="danger">{actionError}</CAlert>}
@@ -327,11 +332,11 @@ const Members = () => {
                       : '-'}
                   </td>
                   <td className="text-end">
-                    <ActionButton title="Editar membro" icon={cilPencil} disabled={!member.actions?.can_edit} onClick={() => openModal(member)} />
-                    <ActionButton title="Reenviar convite" icon={cilReload} disabled={!member.actions?.can_resend_invite} loading={resendInvitation.isPending} onClick={() => resendInvitation.mutate(member.id)} />
-                    <ActionButton title="Tentar sincronização novamente" icon={cilReload} color="warning" disabled={!member.actions?.can_retry_sync} loading={retrySync.isPending} onClick={() => retrySync.mutate(member.id)} />
-                    <ActionButton title="Restaurar membro" icon={cilActionUndo} color="success" disabled={!member.actions?.can_restore} loading={restoreMember.isPending} onClick={() => restoreMember.mutate({ id: member.id, payload: restorePayloadFromMember(member) })} />
-                    <ActionButton title="Remover membro" icon={cilTrash} color="danger" disabled={!member.actions?.can_remove} loading={removeMember.isPending} onClick={() => setRemoveTarget(member)} />
+                    <ActionButton title="Editar membro" icon={cilPencil} disabled={!member.actions?.can_edit || !canUpdate} onClick={() => openModal(member)} tutorialTarget={`edit-member-${member.id}`} />
+                    <ActionButton title="Reenviar convite" icon={cilReload} disabled={isTutorial || !member.actions?.can_resend_invite} loading={resendInvitation.isPending} onClick={() => resendInvitation.mutate(member.id)} />
+                    <ActionButton title="Tentar sincronização novamente" icon={cilReload} color="warning" disabled={isTutorial || !member.actions?.can_retry_sync} loading={retrySync.isPending} onClick={() => retrySync.mutate(member.id)} />
+                    <ActionButton title="Restaurar membro" icon={cilActionUndo} color="success" disabled={isTutorial || !member.actions?.can_restore} loading={restoreMember.isPending} onClick={() => restoreMember.mutate({ id: member.id, payload: restorePayloadFromMember(member) })} />
+                    <ActionButton title="Remover membro" icon={cilTrash} color="danger" disabled={isTutorial || !member.actions?.can_remove} loading={removeMember.isPending} onClick={() => setRemoveTarget(member)} />
                   </td>
                 </tr>
               )
@@ -359,14 +364,15 @@ const Members = () => {
         confirmText="Remover"
         isLoading={removeMember.isPending}
       />
-      <MemberModal
+        <MemberModal
         visible={modalVisible}
         member={selectedMember}
         subjects={subjects}
         onClose={() => setModalVisible(false)}
         onSave={save}
         isSaving={activeMutation.isPending}
-        error={activeMutation.error}
+          error={activeMutation.error}
+          competenciesOnly={isTutorial}
       />
     </div>
   )

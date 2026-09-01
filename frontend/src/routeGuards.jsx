@@ -1,4 +1,4 @@
-import { Navigate, Outlet } from 'react-router-dom'
+import { Navigate, Outlet, useLocation } from 'react-router-dom'
 import { CSpinner } from '@coreui/react'
 import { useQueryClient } from '@tanstack/react-query'
 import {
@@ -25,10 +25,15 @@ export const PageLoader = () => (
   </div>
 )
 
+function RedirectToCurrentPageSignIn() {
+  const location = useLocation()
+  return <RedirectToSignIn redirectUrl={`${location.pathname}${location.search}${location.hash}`} />
+}
+
 export function RequireAuth({ children }) {
   const { isSignedIn, isLoaded } = useAuth()
   if (!isLoaded) return <PageLoader />
-  if (!isSignedIn) return <RedirectToSignIn />
+  if (!isSignedIn) return <RedirectToCurrentPageSignIn />
   return children ?? <Outlet />
 }
 
@@ -101,7 +106,7 @@ function MemberGate({ children, capability, requireTeacherId = false, redirectTo
   const state = useOrganizationGuardState()
   const { data: member, isLoading: memberLoading, isError, error, refetch } = state.member
   if (!state.isLoaded || !state.orgLoaded || !state.listLoaded) return <PageLoader />
-  if (!state.isSignedIn) return <RedirectToSignIn />
+  if (!state.isSignedIn) return <RedirectToCurrentPageSignIn />
   if (!state.organization) return <OrganizationRequired memberships={state.memberships} />
   if (memberLoading) return <PageLoader />
   if (

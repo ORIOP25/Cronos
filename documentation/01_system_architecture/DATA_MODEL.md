@@ -97,6 +97,20 @@ erDiagram
 - RLS tests: `backend/tests/test_rls_database_policies.py`
 - Integrity tests: `backend/tests/test_tenant_isolation_complete.py`
 
+## Onboarding Data Contract
+
+The onboarding lifecycle uses tenant-scoped records and explicit state fields.
+
+| Record | Important fields | Integrity rule |
+| :--- | :--- | :--- |
+| `organizations` | `foundation_status`, `foundation_completed_at`, `first_real_schedule_approved_at` | A completed Foundation requires `foundation_completed_at`; the first real approval requires a completed Foundation. |
+| `organization_foundation_drafts` | `organization_id`, `version`, `current_step`, JSONB `payload`, `updated_by_membership_id` | One draft exists per organization. `version` is positive and increases on each accepted write. |
+| `tutorial_telemetry_events` | `organization_id`, `tutorial_run_id`, `client_event_id`, `version`, `event`, optional chapter and step | `(organization_id, client_event_id)` is unique. Append-only constraints protect the event history. |
+
+Foundation settings and generated timeslots are written in the same completion unit of work.
+The API database dependency commits the unit before it returns a successful response.
+The tutorial scenario is not stored in these tables; it remains in browser storage.
+
 ## Related Documents
 
 - [System Architecture](SYSTEM_ARCHITECTURE.md)

@@ -33,7 +33,7 @@ Database safeguards prevent destructive tests from targeting a real database.
 | Frontend tests | Vitest and V8 coverage | Thresholds in `frontend/vite.config.js` |
 | Frontend quality | ESLint and Knip | `npm run verify` |
 | E2E | Playwright and Docker Compose | Clerk test identities and full stack |
-| Workflow | `.github/workflows/ci.yml` | Runs on `main`, `develop`, and pull requests |
+| Workflow | `.github/workflows/ci.yml` | Runs on pushes and pull requests |
 
 ## Backend Test Suite Classification
 
@@ -100,6 +100,40 @@ flowchart LR
 - Scheduler domain constraints require full coverage in their dedicated report.
 - Skipped tests fail the backend job.
 - The current workflow has no tag-triggered image publication job.
+- Playwright uses `retries: 0` and retains a trace on any failure.
+- E2E jobs publish `playwright-report` and `test-results` even when the suite fails.
+- A failed E2E test must not prevent later independent tests from being collected or executed.
+
+## Onboarding Verification Matrix
+
+Use focused tests while changing onboarding behavior:
+
+| Concern | Verification |
+| :--- | :--- |
+| Organization creation and Clerk membership loading | `frontend/e2e/auth/onboarding-create-organization.spec.js` |
+| Foundation draft, nine steps, and completion | `frontend/e2e/foundation/` |
+| Foundation conflict recovery | `frontend/e2e/foundation/foundation-conflict-recovery.spec.js` |
+| Foundation to dashboard transition | `frontend/e2e/foundation/first-schedule-approval-dashboard.spec.js` |
+| Tutorial navigation and local boundary | `frontend/e2e/foundation/tutorial-13steps-navigation.spec.js` and `frontend/e2e/tutorial/` |
+| Readiness and first schedule | `frontend/e2e/readiness/first-schedule.spec.js` |
+| Scheduler fixture post-condition | `frontend/e2e/scheduler/` |
+
+The onboarding contract requires tests for committed writes, idempotent tutorial normalization, full module and competency values, cache reconciliation before navigation, and independent scheduler execution.
+
+## Final Onboarding Release Gate
+
+Run the following sequence before declaring an onboarding change ready:
+
+1. Run `pytest tests/ -v` from `backend/`.
+2. Run `alembic check` with the migrator role.
+3. Run `python -m scripts.audit_triggers` and `python -m scripts.audit_database_integrity` from `backend/`.
+4. Run `npm run audit:production` and `npm run verify` from `frontend/`.
+5. Run `npm run test:school-config:stability` when configuration stability is in scope.
+6. Run the affected Foundation, tutorial, readiness, dashboard, and scheduler specs in isolation.
+7. Run the scheduler specs without a serial dependency.
+8. Run the complete E2E suite twice in succession with `retries: 0`.
+
+Do not declare the branch clean when a test is omitted, skipped, retried, or left without its failure artifacts.
 
 ## States and Transitions
 

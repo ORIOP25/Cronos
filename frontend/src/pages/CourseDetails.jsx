@@ -28,14 +28,14 @@ import Breadcrumbs from '../components/Breadcrumbs'
 // ==========================================
 //  HELPER: Card de turma (grade_level agrupado)
 // ==========================================
-const ClassCard = ({ cls, onNavigate, onEdit, onDelete }) => {
+const ClassCard = ({ cls, onNavigate, onEdit, onDelete, navigationDisabled = false, canEdit = true, canDelete = true }) => {
   const yearLabel = `${cls.start_year}/${cls.end_year}`
 
   return (
     <CCard
       className="border h-100 shadow-sm class-card"
       style={{ cursor: 'pointer', transition: 'box-shadow 0.2s, transform 0.15s' }}
-      onClick={() => onNavigate(cls)}
+      onClick={() => { if (!navigationDisabled) onNavigate(cls) }}
       onMouseEnter={(e) => {
       e.currentTarget.style.boxShadow = '0 4px 15px var(--rs-card-shadow-hover)'
         e.currentTarget.style.transform = 'translateY(-2px)'
@@ -57,7 +57,7 @@ const ClassCard = ({ cls, onNavigate, onEdit, onDelete }) => {
           <CIcon icon={cilPeople} size="sm" />
           <span>{cls.size} alunos</span>
           <div className="ms-auto d-flex align-items-center gap-1">
-            <CButton
+            {canEdit && <CButton
               size="sm"
               color="light"
               className="d-flex align-items-center gap-1 text-primary"
@@ -65,10 +65,12 @@ const ClassCard = ({ cls, onNavigate, onEdit, onDelete }) => {
                 e.stopPropagation()
                 onEdit(cls)
               }}
+              aria-label={`Editar ${cls.name}`}
+              data-tutorial-target={`edit-class-${cls.id}`}
             >
               <CIcon icon={cilPencil} size="sm" />
-            </CButton>
-            <CButton
+            </CButton>}
+            {canDelete && <CButton
               size="sm"
               color="danger"
               variant="ghost"
@@ -78,7 +80,7 @@ const ClassCard = ({ cls, onNavigate, onEdit, onDelete }) => {
               }}
             >
               <CIcon icon={cilTrash} size="sm" />
-            </CButton>
+            </CButton>}
             <CIcon icon={cilChevronRight} size="sm" />
           </div>
         </div>
@@ -90,10 +92,15 @@ const ClassCard = ({ cls, onNavigate, onEdit, onDelete }) => {
 // ==========================================
 //  COMPONENT PRINCIPAL: CourseDetails
 // ==========================================
-const CourseDetails = () => {
+const CourseDetails = ({ courseIdOverride, readOnly = false, allowedActions, navigationDisabled = false }) => {
   const { id } = useParams()
   const navigate = useNavigate()
-  const courseId = Number(id)
+  const courseId = Number(courseIdOverride ?? id)
+  const isTutorial = Array.isArray(allowedActions)
+  const canUpdateClass = !readOnly && (!isTutorial || allowedActions.includes('UPDATE_CLASS'))
+  const canEditCourse = !readOnly && !isTutorial
+  const canCreateClass = !readOnly && !isTutorial
+  const canDelete = !readOnly && !isTutorial
 
   // --- DATA ---
   const { data: course, isLoading, error } = useCourseDetails(courseId)
@@ -137,9 +144,10 @@ const CourseDetails = () => {
   // ==========================================
 
   const startEditHeader = useCallback(() => {
+    if (!canEditCourse) return
     setHeaderForm({ name: course.name, abbreviation: course.abbreviation })
     setEditingHeader(true)
-  }, [course])
+  }, [canEditCourse, course])
 
   const cancelEditHeader = () => setEditingHeader(false)
 
@@ -164,17 +172,19 @@ const CourseDetails = () => {
   }
 
   const handleOpenCreateClass = () => {
+    if (!canCreateClass) return
     setSelectedClass(null)
     setClassModalVisible(true)
   }
 
   const handleOpenEditClass = (cls) => {
+    if (!canUpdateClass) return
     setSelectedClass(cls)
     setClassModalVisible(true)
   }
 
   const handleSubmitClass = (formData) => {
-    if (selectedClass) {
+    if (selectedClass && canUpdateClass) {
       updateCourseClass.mutate(
         { courseId, classId: selectedClass.id, data: formData },
         {
@@ -187,6 +197,7 @@ const CourseDetails = () => {
       return
     }
 
+    if (!canCreateClass) return
     createCourseClass.mutate(
       { courseId, data: formData },
       {
@@ -255,7 +266,7 @@ const CourseDetails = () => {
   return (
     <div className="p-4">
       <Breadcrumbs items={[
-        { label: 'Cursos', to: '/courses' },
+        { label: 'Cursos', to: navigationDisabled ? undefined : '/courses' },
         { label: course?.name || `Curso #${courseId}` },
       ]} />
 
@@ -346,13 +357,13 @@ const CourseDetails = () => {
                 </small>
               </div>
               <div className="d-flex gap-2">
-                <CButton color="light" size="sm" className="d-flex align-items-center gap-1 text-primary" onClick={startEditHeader} title="Editar nome e sigla">
+                {canEditCourse && <CButton color="light" size="sm" className="d-flex align-items-center gap-1 text-primary" onClick={startEditHeader} title="Editar nome e sigla">
                   <CIcon icon={cilPencil} size="sm" />
                   Editar
-                </CButton>
-                <CButton color="danger" variant="ghost" size="sm" className="d-flex align-items-center" onClick={handleDeleteCourse} title="Apagar curso">
+                </CButton>}
+                {canDelete && <CButton color="danger" variant="ghost" size="sm" className="d-flex align-items-center" onClick={handleDeleteCourse} title="Apagar curso">
                   <CIcon icon={cilTrash} size="sm" />
-                </CButton>
+                </CButton>}
               </div>
             </div>
           )}
@@ -371,6 +382,8 @@ const CourseDetails = () => {
                 size="sm"
                 className="ms-auto d-flex align-items-center gap-1"
                 onClick={handleOpenCreateClass}
+                disabled={!canCreateClass}
+                data-tutorial-target="new-class"
               >
                 <CIcon icon={cilPlus} size="sm" />
                 Nova Turma
@@ -380,7 +393,7 @@ const CourseDetails = () => {
               {(course.classes || []).length === 0 ? (
                 <div className="text-muted text-center mb-0">
                   <p className="mb-3">Nenhuma turma criada para este curso.</p>
-                  <CButton color="primary" variant="outline" onClick={handleOpenCreateClass}>
+                  <CButton color="primary" variant="outline" onClick={handleOpenCreateClass} disabled={!canCreateClass} data-tutorial-target="new-class">
                     <CIcon icon={cilPlus} className="me-1" /> Criar primeira turma
                   </CButton>
                 </div>
@@ -398,6 +411,9 @@ const CourseDetails = () => {
                             onNavigate={handleClassClick}
                             onEdit={handleOpenEditClass}
                             onDelete={handleDeleteClass}
+                            navigationDisabled={navigationDisabled}
+                            canEdit={canUpdateClass}
+                            canDelete={canDelete}
                           />
                         </CCol>
                       ))}

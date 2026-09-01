@@ -1,194 +1,206 @@
-import { useCallback, useEffect, useReducer, useState } from 'react'
-import { useUser } from '@clerk/react'
-import { getTutorialStorageKey, TUTORIAL_STEPS } from './tutorialScenario'
-import { INITIAL_TUTORIAL_STATE, deriveCompletedStepIds, getTutorialScenario, isTutorialComplete, tutorialReducer } from './tutorialModel'
-import { loadTutorialState, saveTutorialState } from './tutorialStorage'
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
+import { useOrganization, useUser } from '@clerk/react'
+import {
+  TUTORIAL_STEPS,
+  getTutorialStorageKey,
+  getTutorialStep,
+} from './tutorialContent'
+import {
+  INITIAL_TUTORIAL_STATE,
+  deriveCompletedStepIds,
+  getTutorialProgressPercent,
+  isTutorialComplete,
+  tutorialReducer,
+} from './tutorialModel'
+import {
+  hasLegacyTutorialState,
+  loadTutorialState,
+  saveTutorialState,
+} from './tutorialStorage'
+import { createTutorialScenario } from './tutorialScenario'
 import { sendTutorialTelemetryEvent } from './tutorialTelemetry'
-
-function createTutorialRunId() {
-  return globalThis.crypto?.randomUUID?.() || `run-${Date.now()}-${Math.random().toString(36).slice(2)}`
-}
 
 function getStorage() {
   return globalThis.localStorage
 }
 
 export function useTutorialSimulation({ orgId, userId } = {}) {
+  const { organization } = useOrganization()
   const { user } = useUser()
-  const effectiveUserId = userId || user?.id
-  const storageKey = getTutorialStorageKey(effectiveUserId, orgId)
+  const effectiveUserId = userId ?? user?.id
+  const effectiveOrgId = orgId ?? organization?.id
+  const storageKey = getTutorialStorageKey(effectiveUserId, effectiveOrgId)
   const [isOpen, setIsOpen] = useState(false)
   const [hydratedStorageKey, setHydratedStorageKey] = useState(null)
   const [persistenceError, setPersistenceError] = useState(null)
+  const [versionUpdateVisible, setVersionUpdateVisible] = useState(false)
   const [state, dispatch] = useReducer(
     tutorialReducer,
     INITIAL_TUTORIAL_STATE,
     (initialState) => loadTutorialState(getStorage(), storageKey, initialState),
   )
+  const stateRef = useRef(state)
+  const isOpenRef = useRef(isOpen)
+
+  stateRef.current = state
+  isOpenRef.current = isOpen
 
   useEffect(() => {
-    const savedState = loadTutorialState(getStorage(), storageKey, INITIAL_TUTORIAL_STATE)
-    dispatch({ type: 'HYDRATE', payload: savedState })
-    const hydrationTimer = window.setTimeout(() => setHydratedStorageKey(storageKey), 0)
-    return () => window.clearTimeout(hydrationTimer)
-  }, [storageKey])
+    setIsOpen(false)
+    isOpenRef.current = false
+    setHydratedStorageKey(null)
+    const loaded = loadTutorialState(getStorage(), storageKey, INITIAL_TUTORIAL_STATE)
+    stateRef.current = loaded
+    dispatch({ type: 'HYDRATE', payload: loaded })
+    setVersionUpdateVisible(hasLegacyTutorialState(getStorage(), effectiveUserId, effectiveOrgId))
+    const hydrationTimer = globalThis.setTimeout(() => setHydratedStorageKey(storageKey), 0)
+    return () => globalThis.clearTimeout(hydrationTimer)
+  }, [effectiveOrgId, effectiveUserId, storageKey])
 
   const currentStepIndex = Math.max(0, TUTORIAL_STEPS.findIndex((step) => step.id === state.stepId))
   const currentStep = TUTORIAL_STEPS[currentStepIndex] || TUTORIAL_STEPS[0]
   const completed = isTutorialComplete(state)
-  const progressPercent = Math.round(((completed ? TUTORIAL_STEPS.length : currentStepIndex + 1) / TUTORIAL_STEPS.length) * 100)
-  const scenario = getTutorialScenario(state)
+  const progressPercent = getTutorialProgressPercent(state)
+  const scenario = useMemo(() => createTutorialScenario(currentStep.id), [currentStep.id])
 
   const persist = useCallback((nextState) => {
     const result = saveTutorialState(getStorage(), storageKey, nextState)
     setPersistenceError(result.ok ? null : result.error)
-    return nextState
+    return result
   }, [storageKey])
 
-  const emit = useCallback((eventName, eventState = state, step = currentStep) => {
+  const emit = useCallback((eventName, eventState, step = getTutorialStep(eventState.stepId)) => {
+    if (!eventState?.tutorialRunId) return
     void sendTutorialTelemetryEvent({
       tutorialRunId: eventState.tutorialRunId,
       eventName,
-      chapter: step?.chapter ?? eventState.chapter,
+      chapter: step?.chapter ?? null,
       stepId: step?.id ?? eventState.stepId,
     })
-  }, [currentStep, state])
+  }, [])
+
+  const transition = useCallback((action, { events = [], force = false, open = false, close = false } = {}) => {
+    const current = stateRef.current
+    const next = tutorialReducer(current, action)
+    if (next === current && !force) return false
+
+    const persistence = persist(next)
+    stateRef.current = next
+    if (next !== current) dispatch({ type: 'HYDRATE', payload: next })
+    if (open) {
+      isOpenRef.current = true
+      setIsOpen(true)
+    }
+    if (close) {
+      isOpenRef.current = false
+      setIsOpen(false)
+    }
+    // Persistence is attempted before telemetry, even when storage is unavailable.
+    void persistence
+    for (const event of events) emit(event.name, next, event.stepId ? getTutorialStep(event.stepId) : undefined)
+    return next
+  }, [emit, persist])
 
   const startTutorial = useCallback(() => {
-    if (state.status === 'IN_PROGRESS') {
+    const current = stateRef.current
+    if (current.status === 'IN_PROGRESS') {
+      isOpenRef.current = true
       setIsOpen(true)
-      return state
+      return current
     }
-    const action = { type: 'START', tutorialRunId: createTutorialRunId() }
-    const nextState = tutorialReducer(state, action)
-    persist(nextState)
-    dispatch(action)
-    setIsOpen(true)
-    emit('tutorial_opened', nextState, TUTORIAL_STEPS[0])
-    return nextState
-  }, [emit, persist, state])
+    if (current.status !== 'NOT_STARTED') return current
+    const next = transition({ type: 'START' }, {
+      open: true,
+      events: [
+        { name: 'tutorial_opened', stepId: TUTORIAL_STEPS[0].id },
+        { name: 'chapter_started', stepId: TUTORIAL_STEPS[0].id },
+      ],
+    })
+    return next || current
+  }, [transition])
 
   const openTutorial = useCallback(() => {
-    if (state.status === 'NOT_STARTED') return startTutorial()
-    if (!isOpen && state.status === 'IN_PROGRESS') emit('tutorial_opened', state, currentStep)
+    const current = stateRef.current
+    if (current.status === 'NOT_STARTED') return startTutorial()
+    if (current.status === 'IN_PROGRESS' && !isOpenRef.current) {
+      emit('tutorial_opened', current, getTutorialStep(current.stepId))
+    }
+    isOpenRef.current = true
     setIsOpen(true)
-    return state
-  }, [currentStep, emit, isOpen, startTutorial, state])
+    return current
+  }, [emit, startTutorial])
 
-  const completeCurrentAction = useCallback((actionId, changes = {}) => {
-    const action = { type: 'COMPLETE_STEP', actionId, changes }
-    const nextState = tutorialReducer(state, action)
-    if (nextState === state) return false
-    persist(nextState)
-    dispatch(action)
-    if (nextState.status === 'COMPLETED') {
-      setIsOpen(false)
-      emit('tutorial_completed', nextState, currentStep)
-    } else if (nextState.chapter !== state.chapter) {
-      emit('chapter_started', nextState, TUTORIAL_STEPS[currentStepIndex + 1])
-    }
-    return true
-  }, [currentStep, currentStepIndex, emit, persist, state])
-
-  const completeActionSequence = useCallback((completions) => {
-    const action = {
-      type: 'COMPLETE_SEQUENCE',
-      completions: completions.map((completion) => typeof completion === 'string' ? { actionId: completion } : completion),
-    }
-    const nextState = tutorialReducer(state, action)
-    if (nextState === state) return false
-    persist(nextState)
-    dispatch(action)
-    if (nextState.status === 'COMPLETED') {
-      setIsOpen(false)
-      emit('tutorial_completed', nextState, currentStep)
-    } else if (nextState.chapter !== state.chapter) {
-      emit('chapter_started', nextState, TUTORIAL_STEPS.find((step) => step.id === nextState.stepId))
-    }
-    return true
-  }, [currentStep, emit, persist, state])
-
-  const skipStep = useCallback(() => {
-    if (!currentStep.isSkippable) return false
-    const action = { type: 'SKIP_STEP' }
-    const nextState = tutorialReducer(state, action)
-    if (nextState === state) return false
-    persist(nextState)
-    dispatch(action)
-    emit('step_skipped', state, currentStep)
-    if (nextState.chapter !== state.chapter) emit('chapter_started', nextState, TUTORIAL_STEPS[currentStepIndex + 1])
-    return true
-  }, [currentStep, currentStepIndex, emit, persist, state])
+  const advanceTutorial = useCallback((expectedStepId) => {
+    const current = stateRef.current
+    const nextStep = getTutorialStep(current.stepId)
+    const nextIndex = currentStepIndex + 1
+    const next = transition({ type: 'ADVANCE', expectedStepId }, {
+      close: nextStep?.id === TUTORIAL_STEPS.at(-1)?.id,
+      events: nextStep?.id === TUTORIAL_STEPS.at(-1)?.id
+        ? [{ name: 'tutorial_completed', stepId: nextStep.id }]
+        : TUTORIAL_STEPS[nextIndex]?.chapter !== nextStep?.chapter
+          ? [{ name: 'chapter_started', stepId: TUTORIAL_STEPS[nextIndex]?.id }]
+          : [],
+    })
+    return Boolean(next)
+  }, [currentStepIndex, transition])
 
   const exitTutorial = useCallback(() => {
-    const action = { type: 'EXIT' }
-    const nextState = tutorialReducer(state, action)
-    persist(nextState)
-    dispatch(action)
-    setIsOpen(false)
-    emit('tutorial_exited', state, currentStep)
-  }, [currentStep, emit, persist, state])
+    const current = stateRef.current
+    if (!['IN_PROGRESS', 'COMPLETED', 'SKIPPED'].includes(current.status)) return false
+    transition({ type: 'EXIT' }, {
+      force: true,
+      close: true,
+      events: [{ name: 'tutorial_exited', stepId: current.stepId }],
+    })
+    return true
+  }, [transition])
 
   const skipTutorial = useCallback(() => {
-    const action = { type: 'SKIP_TUTORIAL' }
-    const nextState = tutorialReducer(state, action)
-    persist(nextState)
-    dispatch(action)
-    setIsOpen(false)
-    emit('tutorial_exited', state, currentStep)
-  }, [currentStep, emit, persist, state])
-
-  const continueLater = useCallback(() => {
-    if (currentStep.id !== 'chapter_transition') return false
-    const action = { type: 'SKIP_STEP' }
-    const nextState = tutorialReducer(state, action)
-    if (nextState === state) return false
-    persist(nextState)
-    dispatch(action)
-    setIsOpen(false)
-    emit('step_skipped', state, currentStep)
-    emit('tutorial_exited', nextState, TUTORIAL_STEPS[currentStepIndex + 1])
-    return true
-  }, [currentStep, currentStepIndex, emit, persist, state])
+    const current = stateRef.current
+    const next = transition({ type: 'SKIP_TUTORIAL' }, {
+      close: true,
+      events: [{ name: 'tutorial_exited', stepId: current.stepId }],
+    })
+    return Boolean(next)
+  }, [transition])
 
   const repeatTutorial = useCallback(() => {
-    const action = { type: 'REPEAT', tutorialRunId: createTutorialRunId() }
-    const nextState = tutorialReducer(state, action)
-    persist(nextState)
-    dispatch(action)
-    setIsOpen(true)
-    emit('tutorial_repeated', nextState, TUTORIAL_STEPS[0])
-    emit('tutorial_opened', nextState, TUTORIAL_STEPS[0])
-    return nextState
-  }, [emit, persist, state])
+    const next = transition({ type: 'REPEAT' }, {
+      open: true,
+      events: [
+        { name: 'tutorial_repeated', stepId: TUTORIAL_STEPS[0].id },
+        { name: 'tutorial_opened', stepId: TUTORIAL_STEPS[0].id },
+        { name: 'chapter_started', stepId: TUTORIAL_STEPS[0].id },
+      ],
+    })
+    return next || stateRef.current
+  }, [transition])
 
   return {
     isOpen,
-    isHydrated: hydratedStorageKey === storageKey,
+    storageKey,
+    isHydrated: storageKey !== null && hydratedStorageKey === storageKey,
     status: state.status,
     tutorialRunId: state.tutorialRunId,
-    chapter: state.chapter,
+    chapter: currentStep.chapter,
     stepId: state.stepId,
     currentStepIndex,
     currentStep,
     totalSteps: TUTORIAL_STEPS.length,
     progressPercent,
-    values: state.values,
-    skippedStepIds: state.skippedStepIds,
     completedStepIds: deriveCompletedStepIds(state),
     completed,
     scenario,
     simulationData: scenario,
     startTutorial,
     openTutorial,
-    completeCurrentAction,
-    completeActionSequence,
-    onAction: completeCurrentAction,
-    skipStep,
+    advanceTutorial,
     exitTutorial,
     skipTutorial,
-    continueLater,
     repeatTutorial,
     persistenceError,
+    versionUpdateVisible,
+    dismissVersionUpdate: () => setVersionUpdateVisible(false),
   }
 }

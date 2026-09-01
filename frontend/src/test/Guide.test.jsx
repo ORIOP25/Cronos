@@ -13,10 +13,22 @@ describe('Guide', () => {
     window.localStorage.clear()
   })
 
-  it('opens the live tutorial after storage hydration', async () => {
+  it('shows an explicit entry screen before opening the live tutorial', async () => {
     renderWithRouter(<Guide />, { initialEntries: ['/guide'] })
 
+    await waitFor(() => expect(screen.getByRole('button', { name: /conhecer o guia/i })).toBeInTheDocument())
+    expect(screen.queryByTestId('tutorial-workspace')).not.toBeInTheDocument()
+    expect(screen.getByRole('img', { name: 'Cronos' })).toHaveAttribute('src', '/logo.png')
+    expect(screen.queryByText('C')).not.toBeInTheDocument()
+    screen.getByRole('button', { name: /conhecer o guia/i }).click()
     await waitFor(() => expect(screen.getByTestId('tutorial-workspace')).toBeInTheDocument())
-    expect(screen.getByTestId('tutorial-step-counter')).toHaveTextContent('Passo 1 de 24')
+    expect(screen.getByTestId('tutorial-step-counter')).toHaveTextContent('Passo 1 de 13')
+  })
+
+  it('opens the requested path directly from an explicit dashboard entry', async () => {
+    renderWithRouter(<Guide />, { initialEntries: ['/guide?entry=start'] })
+
+    expect(await screen.findByTestId('tutorial-workspace')).toBeInTheDocument()
+    expect(screen.getByTestId('tutorial-step-counter')).toHaveTextContent('Passo 1 de 13')
   })
 })

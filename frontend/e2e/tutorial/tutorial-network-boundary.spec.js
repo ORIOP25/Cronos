@@ -30,9 +30,11 @@ test.describe('Tutorial — network boundary', () => {
     })
 
     await goTo(page, '/guide')
+    await expect(page.getByTestId('guide-landing')).toBeVisible()
+    await page.getByRole('button', { name: /conhecer o guia/i }).click()
     await expect(page.getByTestId('tutorial-workspace')).toBeVisible()
     await page.getByTestId('tutorial-skip-all-button').click()
-    await expect(page.getByTestId('tutorial-workspace')).toBeHidden()
+    await expect(page.getByTestId('tutorial-workspace')).toHaveCount(0)
 
     const operationalRequests = requests.filter((url) => !isAllowedTutorialRequest(url))
     expect(operationalRequests).toEqual([])

@@ -18,7 +18,7 @@ import {
   useDeleteRoom,
 } from '../features/catalog/data'
 
-const Rooms = () => {
+const Rooms = ({ readOnly = false, allowedActions }) => {
   const [modalVisible, setModalVisible] = useState(false)
   const [selectedItem, setSelectedItem] = useState(null)
 
@@ -27,6 +27,10 @@ const Rooms = () => {
   const createMutation = useCreateRoom()
   const updateMutation = useUpdateRoom()
   const deleteMutation = useDeleteRoom()
+  const isTutorial = Array.isArray(allowedActions)
+  const canUpdate = !readOnly && (!isTutorial || allowedActions.includes('UPDATE_ROOM'))
+  const canCreate = !isTutorial && !readOnly
+  const canDelete = !isTutorial && !readOnly
 
   // 2. Colunas
   const columns = [
@@ -38,16 +42,18 @@ const Rooms = () => {
   // --- Handlers ---
 
   const handleCreate = () => {
+    if (!canCreate) return
     setSelectedItem(null)
     setModalVisible(true)
   }
 
   const handleEdit = (item) => {
+    if (!canUpdate) return
     setSelectedItem(item)
     setModalVisible(true)
   }
 
-  const handleDelete = (id) => deleteMutation.mutateAsync(id)
+  const handleDelete = (id) => canDelete ? deleteMutation.mutateAsync(id) : Promise.resolve()
 
   const handleFormSubmit = async (formData) => {
     if (selectedItem) {
@@ -63,12 +69,12 @@ const Rooms = () => {
   return (
     <div className="p-4">
       <PageHeader preTitle="Gestão" title="Salas" />
-      <div className="d-flex justify-content-end mb-4">
+      {canCreate && <div className="d-flex justify-content-end mb-4">
         <CButton color="primary" onClick={handleCreate} className="d-flex align-items-center gap-2" data-tutorial-target="new-room">
           <CIcon icon={cilPlus} />
           Nova Sala
         </CButton>
-      </div>
+      </div>}
 
       {deleteMutation.isError && (
         <CAlert color="danger" dismissible onClose={deleteMutation.reset}>
@@ -86,6 +92,8 @@ const Rooms = () => {
             actions={true}
             onEdit={handleEdit}
             onDelete={handleDelete}
+            allowEdit={canUpdate}
+            allowDelete={canDelete}
             getRowLabel={(room) => room.name}
           />
 

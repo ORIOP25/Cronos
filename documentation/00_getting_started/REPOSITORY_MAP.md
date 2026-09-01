@@ -59,6 +59,7 @@ MeuProjeto/
 │   └── README.md                 # Frontend workspace documentation
 ├── documentation/                # Controlled ASD-STE100 technical documentation
 │   ├── 00_getting_started/       # Onboarding and repository guides
+│   │   ├── ONBOARDING.md         # Canonical Foundation and tutorial contract
 │   ├── 01_system_architecture/   # System architecture and data models
 │   ├── 02_domain_model/          # Professional education domain rules
 │   ├── 03_scheduler_engine/      # Scheduler engine documentation
@@ -90,10 +91,16 @@ MeuProjeto/
 
 - Backend entry: `backend/app/main.py`
 - Frontend entry: `frontend/src/main.jsx`
+- Onboarding routes: `frontend/src/App.jsx`, `frontend/src/routeGuards.jsx`
+- Foundation feature: `frontend/src/features/foundation/`
+- Tutorial feature: `frontend/src/features/tutorial/`
+- Onboarding API: `backend/app/api/v1/endpoints/session.py`, `backend/app/api/v1/endpoints/foundation.py`, `backend/app/api/v1/endpoints/readiness.py`
+- Onboarding services: `backend/app/services/foundation_service.py`, `backend/app/services/school_readiness_service.py`, `backend/app/services/dashboard_service.py`
 - Compose configurations: `docker-compose.yml`, `docker-compose.dev.yml`, `docker-compose.ci.yml`
 - Railway service definitions: `backend/railway/*.json`
 
 ## Related Documents
 
+- [Director Onboarding](ONBOARDING.md)
 - [Project Overview](PROJECT_OVERVIEW.md)
 - [Local Runtime Guide](../09_ops_observability/LOCAL_RUNTIME.md)

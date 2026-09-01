@@ -38,14 +38,17 @@ Schedules must account for resource conflicts, availability, calendar events, ex
 
 ## Data or Request Flow
 
-1. An administrator configures the school year, grid, rooms, curriculum, and staff.
-2. A teacher manages availability and views assigned schedule blocks.
-3. An administrator starts complete generation or adaptive repair.
-4. The API creates a job and publishes the registered task name `scheduler.run_generation_job` through Redis.
-5. The worker computes a bounded result and stores a schedule draft.
-6. An administrator reviews the draft and approves or rejects it.
-7. Teachers record `COMPLETED` or `OCCURRENCE` lesson logs.
-8. Administrators decide occurrences and review debt, recovery, progress, and timesheets.
+1. Clerk authenticates the user and selects an organization.
+2. An organization administrator completes the nine-step Foundation and creates the school grid.
+3. The administrator uses the optional local tutorial or continues with real configuration.
+4. The administrator builds the seven readiness bases: classes, curriculum links, modules, competent teachers, rooms, timeslots, and availability.
+5. The administrator starts complete generation or adaptive repair.
+6. The API creates a job and publishes the registered task name `scheduler.run_generation_job` through Redis.
+7. The worker computes a bounded result and stores a schedule draft.
+8. An administrator reviews the draft and approves or rejects it.
+9. The first real approval changes the dashboard from `PREPARATION` to `OPERATIONAL`.
+10. Teachers record `COMPLETED` or `OCCURRENCE` lesson logs.
+11. Administrators decide occurrences and review debt, recovery, progress, and timesheets.
 
 ## Contracts and Invariants
 
@@ -89,6 +92,7 @@ Schedules must account for resource conflicts, availability, calendar events, ex
 
 ## Related Documents
 
+- [Director Onboarding](ONBOARDING.md)
 - [Repository Map](REPOSITORY_MAP.md)
 - [System Architecture](../01_system_architecture/SYSTEM_ARCHITECTURE.md)
 - [Glossary](GLOSSARY.md)

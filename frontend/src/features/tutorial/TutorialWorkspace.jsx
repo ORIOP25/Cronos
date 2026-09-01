@@ -1,30 +1,30 @@
-import { useEffect, useRef, useState } from 'react'
-import { TUTORIAL_STEPS, matchTutorialMutation, matchTutorialMutations } from './tutorialScenario'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { TUTORIAL_STEPS } from './tutorialContent'
+import { createTutorialScenario } from './tutorialScenario'
 import { TutorialInstructionPanel } from './TutorialInstructionPanel'
 import { TutorialShell } from './TutorialShell'
 import { TutorialApiBoundary } from './TutorialApiBoundary'
 import { TutorialLivePage } from './TutorialLivePage'
 import { TutorialInteractionGuard } from './TutorialInteractionGuard'
 
-export function TutorialWorkspace({ tutorial, onExit, onSkipTutorial, onContinueLater }) {
+export function TutorialWorkspace({ tutorial, onExit, onSkipTutorial }) {
   const [reviewStepIndex, setReviewStepIndex] = useState(null)
   const instructionRef = useRef(null)
-  const mountedRef = useRef(false)
   const reviewMode = Number.isInteger(reviewStepIndex)
   const screenStep = reviewMode ? TUTORIAL_STEPS[reviewStepIndex] : tutorial.currentStep
+  const screenScenario = useMemo(() => createTutorialScenario(screenStep.id), [screenStep.id])
+  const presentationKey = `${tutorial.storageKey ?? ''}:${tutorial.tutorialRunId ?? 'unstarted'}:${screenStep.id}:${reviewMode ? 'review' : 'current'}`
 
   useEffect(() => {
-    if (!mountedRef.current) {
-      mountedRef.current = true
-      const focusTimer = window.setTimeout(() => instructionRef.current?.focus(), 0)
-      return () => window.clearTimeout(focusTimer)
-    }
-    const resetTimer = window.setTimeout(() => {
-      setReviewStepIndex(null)
-      instructionRef.current?.focus()
-    }, 0)
-    return () => window.clearTimeout(resetTimer)
+    const focusTimer = globalThis.setTimeout(() => instructionRef.current?.focus(), 0)
+    return () => globalThis.clearTimeout(focusTimer)
   }, [tutorial.stepId])
+
+  useEffect(() => {
+    if (!reviewMode) return undefined
+    const focusTimer = globalThis.setTimeout(() => instructionRef.current?.focus(), 0)
+    return () => globalThis.clearTimeout(focusTimer)
+  }, [reviewMode, reviewStepIndex])
 
   const beginReview = () => {
     if (tutorial.currentStepIndex > 0) setReviewStepIndex(tutorial.currentStepIndex - 1)
@@ -47,54 +47,31 @@ export function TutorialWorkspace({ tutorial, onExit, onSkipTutorial, onContinue
       onReturnToCurrent={() => setReviewStepIndex(null)}
       onExit={onExit}
       onSkipTutorial={onSkipTutorial}
-      onSkipStep={tutorial.skipStep}
-      onContinueLater={onContinueLater}
-      onCompleteStep={() => tutorial.onAction(screenStep.action.id)}
+      onAdvance={() => tutorial.advanceTutorial(screenStep.id)}
       persistenceError={tutorial.persistenceError}
+      versionUpdateVisible={tutorial.versionUpdateVisible}
+      onDismissVersionUpdate={tutorial.dismissVersionUpdate}
     />
   )
 
-  const handleDomainMutation = ({ method, path, body }) => {
-    if (reviewMode) return
-    const matches = matchTutorialMutations({ method, path, body })
-    const matched = matchTutorialMutation({ stepId: screenStep.id, method, path, body })
-    if (!matched || matched.expectedActionId !== screenStep.action.id) return
-
-    const sequence = [matched]
-    const sequenceStep = {
-      subject_create: 'module_add',
-      course_create: 'class_create',
-      teacher_add: 'teacher_competency',
-    }[screenStep.id]
-    if (sequenceStep && Array.isArray(body?.modules) && body.modules.length > 0) {
-      const nextMatch = matches.find((candidate) => candidate.stepId === sequenceStep)
-      if (nextMatch) sequence.push(nextMatch)
-    } else if (sequenceStep === 'class_create' && Array.isArray(body?.classes_config) && body.classes_config.length > 0) {
-      const nextMatch = matches.find((candidate) => candidate.stepId === sequenceStep)
-      if (nextMatch) sequence.push(nextMatch)
-    } else if (sequenceStep === 'teacher_competency' && Array.isArray(body?.subject_ids) && body.subject_ids.length > 0) {
-      const nextMatch = matches.find((candidate) => candidate.stepId === sequenceStep)
-      if (nextMatch) sequence.push(nextMatch)
-    }
-
-    if (sequence.length > 1) {
-      tutorial.completeActionSequence(sequence.map(({ expectedActionId, changes }) => ({ actionId: expectedActionId, changes })))
-    } else {
-      tutorial.onAction(matched.expectedActionId, matched.changes)
-    }
-  }
-
   return (
-    <TutorialApiBoundary scenario={tutorial.scenario} onDomainMutation={handleDomainMutation}>
+    <TutorialApiBoundary
+      key={presentationKey}
+      stepId={screenStep.id}
+      readOnly={reviewMode}
+      scenario={screenScenario}
+    >
       <TutorialShell activeNavItem={screenStep.activeNavItem} panel={panel}>
-        <TutorialInteractionGuard step={screenStep} reviewMode={reviewMode} onTargetAction={() => tutorial.onAction(screenStep.action.id)} />
-        {reviewMode && <div className="tutorial-review-banner">Está a consultar um passo concluído. As ações estão bloqueadas e o checkpoint não muda.</div>}
-        <div
-          className={reviewMode ? 'tutorial-live-page is-reviewing' : 'tutorial-live-page'}
-          inert={reviewMode ? '' : undefined}
-          aria-hidden={reviewMode ? 'true' : undefined}
-        >
-          <TutorialLivePage step={screenStep} />
+        <TutorialInteractionGuard step={screenStep} reviewMode={reviewMode} />
+        {reviewMode && <div className="tutorial-review-banner" role="status">Está a rever um passo concluído. Volte ao passo atual para continuar.</div>}
+        <div className={reviewMode ? 'tutorial-live-page is-reviewing' : 'tutorial-live-page'}>
+          <TutorialLivePage
+            step={screenStep}
+            readOnly={reviewMode}
+            allowedActions={reviewMode ? [] : screenStep.allowedActions}
+            navigationDisabled
+            referenceDate={screenScenario.referenceDate}
+          />
         </div>
       </TutorialShell>
     </TutorialApiBoundary>

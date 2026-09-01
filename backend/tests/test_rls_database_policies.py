@@ -97,3 +97,47 @@ def test_principal_resolution_and_cross_tenant_write_denial(clean_database):
                 {"org": org_b},
             )
         connection.rollback()
+
+
+def test_user_rls_exposes_membership_accounts_to_the_current_tenant(clean_database):
+    marker = uuid.uuid4().hex
+    with runtime_sync_test_engine.connect() as connection:
+
+        def founder(suffix: str):
+            return connection.execute(
+                text(
+                    """
+                    SELECT * FROM app_security.bootstrap_organization_admin(
+                      :user_id, :org_id, :org_name, :email, :profile, :membership_id
+                    )
+                    """
+                ),
+                {
+                    "user_id": f"user-{suffix}-{marker}",
+                    "org_id": f"org-{suffix}-{marker}",
+                    "org_name": f"Organization {suffix}",
+                    "email": f"{suffix}-{marker}@example.test",
+                    "profile": f"Admin {suffix}",
+                    "membership_id": f"membership-{suffix}-{marker}",
+                },
+            ).one()
+
+        account_a, org_a, _ = founder("a")
+        account_b, _, _ = founder("b")
+        connection.commit()
+
+        connection.execute(
+            text("SELECT set_config('app.current_organization_id', :org, true)"),
+            {"org": str(org_a)},
+        )
+        visible_account = connection.execute(
+            text('SELECT id, email FROM "user" WHERE id = :account_id'),
+            {"account_id": account_a},
+        ).one()
+        hidden_accounts = connection.execute(
+            text('SELECT id FROM "user" WHERE id = :account_id'),
+            {"account_id": account_b},
+        ).all()
+
+        assert visible_account.id == account_a
+        assert hidden_accounts == []

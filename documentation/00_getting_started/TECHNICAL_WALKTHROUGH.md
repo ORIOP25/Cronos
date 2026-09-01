@@ -11,12 +11,14 @@ This document targets developers, QA engineers, and system evaluators.
 ## Prerequisites
 
 Start the local stack and use dedicated Clerk test identities.
+Read the [Director Onboarding](ONBOARDING.md) contract before running this walkthrough.
 Read the [Routes and Permissions](../06_frontend_ux/ROUTES_AND_PERMISSIONS.md) guide.
 
 ## What the System Does
 
-The administrator flow configures a tenant, generates a schedule, and approves a draft.
+The administrator flow activates a tenant, completes Foundation, builds readiness bases, generates a schedule, and approves a draft.
 The teacher flow reads personal blocks and records execution.
+The optional tutorial explains the same product sequence with local demo state.
 
 ## Why the Behavior Exists
 
@@ -30,7 +32,14 @@ The worker stores an auditable job and draft before an administrator changes the
 | Component | Source |
 | :--- | :--- |
 | Frontend routes | `frontend/src/App.jsx` |
+| Organization route guards | `frontend/src/routeGuards.jsx` |
+| Organization activation | `frontend/src/pages/CreateOrgPage.jsx` |
+| Foundation wizard | `frontend/src/features/foundation/components/FoundationWizard.jsx` |
+| Tutorial engine | `frontend/src/features/tutorial/` |
 | Admin schedule page | `frontend/src/pages/Schedules.jsx` |
+| Session bootstrap | `backend/app/api/v1/endpoints/session.py` |
+| Foundation router | `backend/app/api/v1/endpoints/foundation.py` |
+| Readiness router | `backend/app/api/v1/endpoints/readiness.py` |
 | Teacher schedule page | `frontend/src/pages/MySchedules.jsx` |
 | Scheduler router | `backend/app/api/v1/endpoints/scheduler.py` |
 | Task dispatcher | `backend/app/scheduler/infrastructure/task_dispatcher.py` |
@@ -38,6 +47,50 @@ The worker stores an auditable job and draft before an administrator changes the
 | Worker task | `backend/app/scheduler_worker.py` |
 
 ## Data or Request Flow
+
+### Authenticated onboarding
+
+```mermaid
+sequenceDiagram
+    actor Admin
+    participant Clerk
+    participant FE as React SPA
+    participant API as FastAPI
+    participant DB as PostgreSQL
+
+    Admin->>Clerk: Sign in and select organization
+    FE->>API: POST /api/v1/session/bootstrap
+    API->>Clerk: Reconcile organization and membership
+    API->>DB: Upsert local organization and member
+    API-->>FE: organization, current member, foundation_status
+    FE->>API: GET /api/v1/foundation/status
+    FE->>API: GET /api/v1/foundation/draft
+    Admin->>FE: Complete nine Foundation steps
+    FE->>API: PUT /api/v1/foundation/draft
+    FE->>API: POST /api/v1/foundation/complete
+    API->>DB: Commit settings, grid, status, and timestamp
+    API-->>FE: COMPLETED and generated_timeslot_count
+    FE->>API: Reconcile foundation-status, draft, current-member, and readiness caches
+    FE-->>Admin: Navigate to stable /dashboard
+```
+
+The backend commits the database transaction before a successful write response.
+The frontend waits for dependent caches before it changes route.
+This prevents a route guard or dashboard from reading the previous Foundation state.
+
+The tutorial starts only when the user opens `/guide` or selects a dashboard tutorial action.
+Its simulated page actions are intercepted by `TutorialApiBoundary` and do not write operational records.
+
+### Readiness before generation
+
+1. The administrator creates an active class.
+2. The administrator creates valid class-subject links for the current grade.
+3. The administrator adds modules with positive required minutes.
+4. The administrator assigns active competent teachers.
+5. The administrator creates compatible rooms.
+6. Foundation provides at least one timeslot.
+7. The administrator confirms possible teacher availability.
+8. The administrator runs prevalidation and resolves blockers.
 
 ```mermaid
 sequenceDiagram
@@ -63,6 +116,11 @@ sequenceDiagram
 
 ## Contracts and Invariants
 
+- Organization onboarding requires a completed Foundation before normal admin and teacher routes open.
+- Foundation completion must generate at least one timeslot and must be committed before the response returns.
+- Draft writes use `expected_version`; a stale version returns `409`.
+- Tutorial state is local and must not be treated as operational seed data.
+- Dashboard mode remains `PREPARATION` until the first real schedule approval.
 - The API selects complete generation before publication.
 - The API selects adaptive repair after publication when debt or scheduler changes exist.
 - A pending draft requires explicit replacement confirmation before another generation.
@@ -85,15 +143,27 @@ Approval changes a pending draft to `APPROVED` and publishes its active blocks.
 ## Verification Procedure
 
 1. Open `http://localhost:5173`.
-2. Sign in with an administrator identity.
-3. Configure `/config`, then open `/schedules`.
-4. Generate, inspect, and approve a draft.
-5. Sign in with a teacher identity and open `/my-schedules`.
-6. Record a lesson log on an eligible block.
+2. Sign in with an administrator identity and select an organization.
+3. If the organization is new, complete `/foundation` and confirm the nine steps.
+4. Verify that the response lands on `/dashboard` and that the sidebar shows Dashboard.
+5. Open `/guide` and complete, skip, exit, resume, and repeat the local tutorial actions.
+6. Configure the readiness bases and inspect the readiness percentage and prevalidation issues.
+7. Configure `/config`, then open `/schedules`.
+8. Generate, inspect, and approve a real draft.
+9. Confirm that the dashboard changes from `PREPARATION` to `OPERATIONAL` only after the first real approval.
+10. Sign in with a teacher identity and open `/my-schedules`.
+11. Record a lesson log on an eligible block.
 
 ## Source Map
 
 - `frontend/src/App.jsx`
+- `frontend/src/routeGuards.jsx`
+- `frontend/src/features/foundation/components/FoundationWizard.jsx`
+- `frontend/src/features/tutorial/tutorialModel.js`
+- `frontend/src/features/tutorial/tutorialScenario.js`
+- `backend/app/api/v1/endpoints/session.py`
+- `backend/app/api/v1/endpoints/foundation.py`
+- `backend/app/api/v1/endpoints/readiness.py`
 - `frontend/src/pages/Schedules.jsx`
 - `frontend/src/pages/MySchedules.jsx`
 - `backend/app/api/v1/endpoints/scheduler.py`

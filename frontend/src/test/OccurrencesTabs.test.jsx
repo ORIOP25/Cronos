@@ -12,17 +12,19 @@ vi.mock('../features/operations/data', () => ({
   useCancelOccurrence: () => ({ isPending: false, mutate: vi.fn() }),
   useDebts: (filters) => hooks.debts(filters),
   useOccurrences: (filters) => hooks.occurrences(filters),
-  useSubstituteRecommendations: () => ({ data: [] }),
+  useSubstituteRecommendations: () => ({
+    data: [{ rank: 1, teacher_id: 2, teacher_name: 'Prof.ª Maria Santos', subject_id: 2, subject_name: 'Matemática' }],
+  }),
   useUpdateOccurrence: () => ({ isPending: false, mutate: vi.fn() }),
 }))
 
 vi.mock('../features/catalog/data', () => ({
   useClasses: () => ({ data: [{ id: 3, name: '10.º A' }] }),
-  useSubjects: () => ({ data: [] }),
+  useSubjects: () => ({ data: [{ id: 1, name: 'Programação' }, { id: 2, name: 'Matemática' }] }),
 }))
 
 vi.mock('../features/members/data', () => ({
-  useTeachers: () => ({ data: [] }),
+  useTeachers: () => ({ data: [{ id: 1, name: 'Prof. António Silva' }, { id: 2, name: 'Prof.ª Maria Santos' }] }),
 }))
 
 describe('Occurrences active tab ownership', () => {
@@ -57,5 +59,31 @@ describe('Occurrences active tab ownership', () => {
 
     expect(hooks.occurrences).toHaveBeenCalledWith(expect.objectContaining({ status: 'OPEN_PENDING' }))
     expect(hooks.debts).not.toHaveBeenCalled()
+  })
+
+  it('restricts the tutorial substitution modal to the prepared decision', async () => {
+    hooks.occurrences.mockReturnValue({
+      data: {
+        items: [{
+          id: 1,
+          date: '2025-09-15',
+          status: 'GAP',
+          operational_state: 'OPEN_PENDING',
+          planned_teacher_id: 1,
+          class_name: '10.º A',
+          subject_name: 'Programação',
+          version: 1,
+        }],
+      },
+      isLoading: false,
+      isError: false,
+    })
+
+    renderWithRouter(<Occurrences allowedActions={['DECIDE_SUBSTITUTION']} />, { initialEntries: ['/absences'] })
+    fireEvent.click(await screen.findByRole('button', { name: 'Decidir' }))
+
+    expect(screen.getByRole('button', { name: 'Dada' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Furo' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Substituída' })).toBeEnabled()
   })
 })

@@ -1,10 +1,12 @@
 # WBS Técnico de Correção — Onboarding In-App do Diretor
 
+> **Estado atual:** este documento conserva o registo da auditoria e do plano de correção. O cabeçalho NO-GO e os resultados datados abaixo são históricos, não são o estado atual da branch. Consulte o [guia canónico do onboarding](../00_getting_started/ONBOARDING.md) e a [Testing and CI](../08_security_quality/TESTING_AND_CI.md) para o contrato atualmente implementado.
+
 ## 1. Finalidade
 
 Este documento transforma a auditoria da implementação do plano `DIRECTOR_ONBOARDING_WBS.md` num plano de correção executável.
 
-O estado auditado é **NO-GO**. A implementação não pode ser integrada nem promovida enquanto os gates P0 deste documento não estiverem concluídos.
+O estado auditado no momento de criação era **NO-GO**. Os gates P0 foram corrigidos depois da auditoria; este documento não substitui a verificação atual da CI.
 
 Este WBS não autoriza atalhos funcionais. O contrato alvo continua a ser o contrato fechado no plano original: fundação com nove passos, guia local com vinte e quatro passos, disponibilidade neutra, readiness coerente, preflight sem efeitos laterais, dashboard discriminado e telemetria append-only.
 

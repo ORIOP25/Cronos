@@ -25,6 +25,9 @@ In accordance with ASD-STE100, technical concepts have single approved terms. Po
 | **Substituição** | Cover / Substitution | Arrangement assigning a replacement teacher or subject to an absence block. |
 | **Bloco** | Schedule Block | A dated timeslot assigned to a class, subject, teacher, and room. |
 | **Horário** | Schedule / Timetable | The weekly distribution of schedule blocks across classes and teachers. |
+| **Fundação (Foundation)** | Foundation | Required nine-step organization setup that validates the calendar and generates the initial timeslot grid. |
+| **Professor competente** | Competent teacher | Active teacher assigned to a subject with the required competency. |
+| **Disponibilidade** | Availability | Teacher availability score used to determine whether a generated assignment is possible. |
 
 ## Technical Terms and Abbreviations
 
@@ -40,8 +43,18 @@ In accordance with ASD-STE100, technical concepts have single approved terms. Po
 | **Recovery link** | Recovery relation | Link from an adaptive repair block to the original published block. |
 | **RLS** | Row-Level Security | PostgreSQL feature that enforces tenant isolation per row. |
 | **STE** | Simplified Technical English | Controlled writing standard (ASD-STE100) used for documentation clarity. |
+| **Foundation status** | Organization setup state | `NOT_STARTED`, `IN_PROGRESS`, or `COMPLETED`; it controls the normal authenticated route gate. |
+| **Readiness depth** | Operational readiness level | Cumulative level from 0 to 7 that measures whether the bases for schedule generation exist. |
+| **Prevalidation** | Generation preflight | Pure check that returns blockers, warnings, and a fingerprint before a generation request. |
+| **Draft version** | Optimistic concurrency version | Monotonic version sent as `expected_version` to prevent overwriting another administrator's draft. |
+| **Current member** | Local organization member | The tenant-scoped membership returned by `/members/me` and used by route guards. |
+| **Tutorial run** | Local tutorial execution | Browser-scoped tutorial state identified by a run ID and separated from operational data. |
+| **Tutorial telemetry** | Tutorial usage event | Best-effort event stored by organization and deduplicated by client event ID. |
+| **Preparation dashboard** | Pre-operational dashboard | Dashboard mode shown after Foundation and before the first real schedule approval. |
+| **Operational dashboard** | Active operations dashboard | Dashboard mode shown after the first real schedule approval. |
 
 ## Related Documents
 
+- [Director Onboarding](ONBOARDING.md)
 - [Project Overview](PROJECT_OVERVIEW.md)
 - [Professional Education Domain](../02_domain_model/PROFESSIONAL_EDUCATION.md)

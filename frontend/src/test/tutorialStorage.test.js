@@ -1,59 +1,79 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { TUTORIAL_STEPS, TUTORIAL_VERSION } from '../features/tutorial/tutorialScenario'
+import {
+  TUTORIAL_STEPS,
+  TUTORIAL_VERSION,
+  getLegacyTutorialStorageKey,
+  getTutorialStorageKey,
+} from '../features/tutorial/tutorialContent'
 import { INITIAL_TUTORIAL_STATE, applyTutorialTransition } from '../features/tutorial/tutorialModel'
-import { createTutorialState, loadTutorialState, saveTutorialState } from '../features/tutorial/tutorialStorage'
+import {
+  createTutorialState,
+  loadTutorialState,
+  saveTutorialState,
+  serializeTutorialState,
+  hasLegacyTutorialState,
+} from '../features/tutorial/tutorialStorage'
 
-describe('tutorialStorage v2', () => {
+describe('tutorialStorage v3', () => {
   beforeEach(() => {
     localStorage.clear()
     vi.restoreAllMocks()
   })
 
-  it('persists only the minimum resumable checkpoint', () => {
-    let state = applyTutorialTransition(INITIAL_TUTORIAL_STATE, { type: 'START', tutorialRunId: 'run-1' })
-    state = applyTutorialTransition(state, { type: 'COMPLETE_STEP', actionId: 'continue' })
-    state = applyTutorialTransition(state, { type: 'SKIP_STEP' })
-    saveTutorialState(localStorage, 'tutorial', state)
-    const raw = JSON.parse(localStorage.getItem('tutorial'))
-    const loaded = loadTutorialState(localStorage, 'tutorial', INITIAL_TUTORIAL_STATE)
+  it('persists exactly the minimum resumable state', () => {
+    const state = applyTutorialTransition(INITIAL_TUTORIAL_STATE, { type: 'START', tutorialRunId: 'run-1' })
+    const next = applyTutorialTransition(state, { type: 'ADVANCE', expectedStepId: TUTORIAL_STEPS[0].id })
+    const key = getTutorialStorageKey('user_1', 'org_1')
 
+    expect(saveTutorialState(localStorage, key, next)).toEqual({ ok: true })
+    const raw = JSON.parse(localStorage.getItem(key))
     expect(raw).toEqual({
       version: TUTORIAL_VERSION,
       tutorialRunId: 'run-1',
       status: 'IN_PROGRESS',
-      chapter: 1,
-      stepId: 'module_add',
-      values: {},
-      skippedStepIds: ['subject_create'],
+      stepId: 'courses_classes',
     })
-    expect(raw).not.toHaveProperty('simulationData')
-    expect(raw).not.toHaveProperty('currentStepIndex')
-    expect(loaded).toEqual(raw)
+    expect(Object.keys(raw)).toHaveLength(4)
+    expect(loadTutorialState(localStorage, key, INITIAL_TUTORIAL_STATE)).toEqual(raw)
+    expect(serializeTutorialState({ ...next, values: { ignored: true } })).not.toHaveProperty('values')
   })
 
-  it('rejects malformed, v1, inconsistent and mandatory-skip states', () => {
+  it('rejects malformed or legacy-shaped v3 state', () => {
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
-    localStorage.setItem('tutorial', '{invalid-json')
-    expect(loadTutorialState(localStorage, 'tutorial', INITIAL_TUTORIAL_STATE)).toBe(INITIAL_TUTORIAL_STATE)
-
-    const base = {
-      version: TUTORIAL_VERSION - 1,
+    const key = getTutorialStorageKey('user_1', 'org_1')
+    localStorage.setItem(key, JSON.stringify({
+      version: 3,
       tutorialRunId: 'run-1',
       status: 'IN_PROGRESS',
+      stepId: 'curriculum',
       chapter: 1,
-      stepId: TUTORIAL_STEPS[0].id,
-      values: {},
-      skippedStepIds: [],
-    }
-    expect(createTutorialState(INITIAL_TUTORIAL_STATE, base)).toBe(INITIAL_TUTORIAL_STATE)
-    expect(createTutorialState(INITIAL_TUTORIAL_STATE, { ...base, version: TUTORIAL_VERSION, chapter: 2 })).toBe(INITIAL_TUTORIAL_STATE)
-    expect(createTutorialState(INITIAL_TUTORIAL_STATE, { ...base, version: TUTORIAL_VERSION, skippedStepIds: ['structure_overview'] })).toBe(INITIAL_TUTORIAL_STATE)
+    }))
+    expect(loadTutorialState(localStorage, key, INITIAL_TUTORIAL_STATE)).toBe(INITIAL_TUTORIAL_STATE)
+    localStorage.setItem(key, '{invalid-json')
+    expect(loadTutorialState(localStorage, key, INITIAL_TUTORIAL_STATE)).toBe(INITIAL_TUTORIAL_STATE)
     expect(consoleError).toHaveBeenCalled()
   })
 
-  it('accepts NOT_STARTED without a run id and rejects active states without one', () => {
-    const notStarted = { ...INITIAL_TUTORIAL_STATE, tutorialRunId: null }
-    expect(createTutorialState(INITIAL_TUTORIAL_STATE, notStarted)).toEqual(INITIAL_TUTORIAL_STATE)
-    expect(createTutorialState(INITIAL_TUTORIAL_STATE, { ...notStarted, status: 'IN_PROGRESS' })).toBe(INITIAL_TUTORIAL_STATE)
+  it('requires authenticated user and organization identity for persistence', () => {
+    expect(getTutorialStorageKey(null, 'org_1')).toBeNull()
+    expect(getTutorialStorageKey('user_1', null)).toBeNull()
+    expect(saveTutorialState(localStorage, null, INITIAL_TUTORIAL_STATE).ok).toBe(false)
+    expect(localStorage.length).toBe(0)
+  })
+
+  it('detects v2 only to show an update notice and never converts it', () => {
+    const legacyKey = getLegacyTutorialStorageKey('user_1', 'org_1')
+    localStorage.setItem(legacyKey, JSON.stringify({ old: true }))
+    expect(hasLegacyTutorialState(localStorage, 'user_1', 'org_1')).toBe(true)
+    expect(localStorage.getItem(legacyKey)).toBe(JSON.stringify({ old: true }))
+    expect(loadTutorialState(localStorage, getTutorialStorageKey('user_1', 'org_1'), INITIAL_TUTORIAL_STATE)).toBe(INITIAL_TUTORIAL_STATE)
+  })
+
+  it('validates the initial state as a valid not-started checkpoint', () => {
+    expect(createTutorialState(INITIAL_TUTORIAL_STATE, INITIAL_TUTORIAL_STATE)).toEqual(INITIAL_TUTORIAL_STATE)
+    expect(createTutorialState(INITIAL_TUTORIAL_STATE, {
+      ...INITIAL_TUTORIAL_STATE,
+      status: 'IN_PROGRESS',
+    })).toBe(INITIAL_TUTORIAL_STATE)
   })
 })

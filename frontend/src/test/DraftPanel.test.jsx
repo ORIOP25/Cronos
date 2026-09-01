@@ -57,6 +57,8 @@ describe('DraftPanel', () => {
 
     expect(screen.getByText('Recuperação parcial')).toBeInTheDocument()
     expect(screen.getByText(/^8h$/)).toBeInTheDocument()
+    expect(screen.getByText(/previstas para recuperação/i).parentElement).toHaveTextContent('8h previstas para recuperação')
+    expect(screen.getByText(/ainda por agendar/i).parentElement).toHaveTextContent('10h ainda por agendar')
     expect(screen.getByText(draft.main_blocker_message)).toBeInTheDocument()
     expect(screen.queryByText('A new target block was added.')).not.toBeInTheDocument()
     expect(useScheduleDiff).toHaveBeenLastCalledWith(42, false)

@@ -1,161 +1,110 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { useEffect, useReducer } from 'react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { TutorialWorkspace } from '../features/tutorial/TutorialWorkspace'
 import { TutorialInteractionGuard } from '../features/tutorial/TutorialInteractionGuard'
-import { TUTORIAL_STEPS } from '../features/tutorial/tutorialScenario'
-import { INITIAL_TUTORIAL_STATE, applyTutorialTransition, getTutorialScenario } from '../features/tutorial/tutorialModel'
+import { TutorialApiBoundary } from '../features/tutorial/TutorialApiBoundary'
+import { useApiClient } from '../ApiClientContext'
+import { TUTORIAL_STEPS } from '../features/tutorial/tutorialContent'
+import { INITIAL_TUTORIAL_STATE, applyTutorialTransition } from '../features/tutorial/tutorialModel'
+import { createTutorialScenario } from '../features/tutorial/tutorialScenario'
 import { renderWithRouter } from './testUtils'
 
-function makeTutorial(state, onAction = vi.fn()) {
+function makeTutorial(state) {
   const currentStepIndex = TUTORIAL_STEPS.findIndex((step) => step.id === state.stepId)
   return {
+    storageKey: 'cronos:tutorial:v3:user:test:org:test',
     isOpen: true,
+    version: 3,
+    status: state.status,
+    tutorialRunId: state.tutorialRunId,
     stepId: state.stepId,
     currentStep: TUTORIAL_STEPS[currentStepIndex],
     currentStepIndex,
     totalSteps: TUTORIAL_STEPS.length,
-    progressPercent: Math.round(((currentStepIndex + 1) / TUTORIAL_STEPS.length) * 100),
-    scenario: getTutorialScenario(state),
-    onAction,
-    completeActionSequence: vi.fn(),
-    skipStep: vi.fn(),
+    progressPercent: Math.round((currentStepIndex / TUTORIAL_STEPS.length) * 100),
+    persistenceError: null,
+    versionUpdateVisible: false,
+    dismissVersionUpdate: vi.fn(),
+    advanceTutorial: vi.fn(),
   }
 }
 
-async function expectCheckpointPageReady(step) {
-  if (step.id === 'structure_overview') {
-    expect(await screen.findByTestId('preparation-dashboard')).toBeVisible()
-    return
-  }
-  if (['subject_create', 'module_add', 'assignment_create'].includes(step.id)) {
-    expect((await screen.findAllByText('Programação')).length).toBeGreaterThan(0)
-    return
-  }
-  if (['course_create', 'class_create'].includes(step.id)) {
-    expect((await screen.findAllByText('Técnico de Informática')).length).toBeGreaterThan(0)
-    return
-  }
-  if (['teacher_add', 'teacher_competency'].includes(step.id)) {
-    expect((await screen.findAllByText('Prof. António Silva')).length).toBeGreaterThan(0)
-    return
-  }
-  if (step.id === 'room_add') {
-    expect(await screen.findByText('Sala 101')).toBeVisible()
-    return
-  }
-  if (step.id === 'availability_review') {
-    expect((await screen.findAllByRole('button', { name: /neutro/i }, { timeout: 5_000 })).length).toBeGreaterThan(0)
-    return
-  }
-  if (['substitute_teacher_select', 'substitute_subject_select', 'substitution_complete'].includes(step.id)) {
-    expect(await screen.findByRole('button', { name: /decidir/i })).toBeEnabled()
-    return
-  }
-  if (step.id === 'debt_observe') {
-    expect((await screen.findAllByText('Prof. António Silva')).length).toBeGreaterThan(0)
-    return
-  }
-  expect((await screen.findAllByText('Programação')).length).toBeGreaterThan(0)
+function InteractiveTutorial({ stepId = 'curriculum' }) {
+  const [state, dispatch] = useReducer(applyTutorialTransition, {
+    ...INITIAL_TUTORIAL_STATE,
+    status: 'IN_PROGRESS',
+    tutorialRunId: 'run-workspace',
+    stepId,
+  })
+  const tutorial = makeTutorial(state)
+  tutorial.advanceTutorial = (expectedStepId) => dispatch({ type: 'ADVANCE', expectedStepId })
+  return <TutorialWorkspace tutorial={tutorial} onExit={vi.fn()} onSkipTutorial={vi.fn()} />
 }
 
-describe('TutorialWorkspace', () => {
-  it('observes a target interaction even when the real component stops bubbling', async () => {
-    const onTargetAction = vi.fn()
-    const step = TUTORIAL_STEPS.find(({ id }) => id === 'substitute_teacher_select')
-
-    render(
-      <>
-        <TutorialInteractionGuard step={step} reviewMode={false} onTargetAction={onTargetAction} />
-        <button type="button" data-tutorial-target="decision-open" onClick={(event) => event.stopPropagation()}>Decidir</button>
-      </>,
-    )
-
-    fireEvent.click(screen.getByRole('button', { name: 'Decidir' }))
-    await waitFor(() => expect(onTargetAction).toHaveBeenCalledOnce())
+describe('TutorialWorkspace v3', () => {
+  it('keeps one local API client bound to the current presented scenario', async () => {
+    const clients = []
+    function Probe() {
+      const client = useApiClient()
+      useEffect(() => { clients.push(client) }, [client])
+      return null
+    }
+    const before = createTutorialScenario('schedule')
+    const after = createTutorialScenario('recovery')
+    const { rerender } = render(<TutorialApiBoundary stepId="schedule" scenario={before}><Probe /></TutorialApiBoundary>)
+    await waitFor(() => expect(clients).toHaveLength(1))
+    expect(await clients[0].get('/scheduler/drafts/current')).toBeNull()
+    rerender(<TutorialApiBoundary stepId="recovery" scenario={after}><Probe /></TutorialApiBoundary>)
+    await waitFor(() => expect(clients).toHaveLength(2))
+    expect(await clients[1].get('/scheduler/drafts/current')).toMatchObject({ result_category: 'PARTIAL_RECOVERY' })
   })
 
-  it('renders and highlights the real Cronos page instead of a tutorial copy', async () => {
-    let state = applyTutorialTransition(INITIAL_TUTORIAL_STATE, { type: 'START', tutorialRunId: 'run-view' })
-    state = applyTutorialTransition(state, { type: 'COMPLETE_STEP', actionId: 'continue' })
-    const onAction = vi.fn()
-
-    renderWithRouter(<TutorialWorkspace tutorial={makeTutorial(state, onAction)} onExit={vi.fn()} onSkipTutorial={vi.fn()} onContinueLater={vi.fn()} />)
-
-    expect(await screen.findByRole('heading', { name: 'Disciplinas' })).toBeVisible()
-    const realCreateButton = screen.getByRole('button', { name: /nova disciplina/i })
-    expect(document.querySelector('.tutorial-target-highlight')).not.toBeInTheDocument()
-    expect(document.querySelector('.tutorial-screen')).not.toBeInTheDocument()
-
-    fireEvent.click(realCreateButton)
-    const dialog = await screen.findByRole('dialog')
-    await waitFor(() => expect(document.querySelector('.tutorial-target-highlight')).not.toBeInTheDocument())
-    expect(dialog).toBeVisible()
-    expect(screen.getByLabelText(/nome da disciplina/i)).toBeVisible()
-    expect(onAction).not.toHaveBeenCalled()
+  it('advances only from the instruction panel with the current expected step', async () => {
+    renderWithRouter(<InteractiveTutorial />)
+    expect(await screen.findByTestId('tutorial-step-counter')).toHaveTextContent('Passo 1 de 13')
+    expect(screen.getByTestId('tutorial-initial-note')).toHaveTextContent(/cada passo apresenta um exemplo preparado/i)
+    fireEvent.click(screen.getByTestId('tutorial-advance-button'))
+    await waitFor(() => expect(screen.getByTestId('tutorial-step-counter')).toHaveTextContent('Passo 2 de 13'))
   })
 
-  it('turns a previous step into read-only review mode without changing the checkpoint', async () => {
-    let state = applyTutorialTransition(INITIAL_TUTORIAL_STATE, { type: 'START', tutorialRunId: 'run-review' })
-    state = applyTutorialTransition(state, { type: 'COMPLETE_STEP', actionId: 'continue' })
-    const onAction = vi.fn()
-    renderWithRouter(<TutorialWorkspace tutorial={makeTutorial(state, onAction)} onExit={vi.fn()} onSkipTutorial={vi.fn()} onContinueLater={vi.fn()} />)
+  it('renders the schedule step with generation available and approval disabled until a draft exists', async () => {
+    renderWithRouter(<InteractiveTutorial stepId="schedule" />)
+    const page = within(document.querySelector('.tutorial-live-page'))
+    expect(await screen.findByRole('heading', { name: 'Horários Escolares' })).toBeVisible()
+    expect(await page.findByRole('button', { name: /gerar horário/i })).toBeEnabled()
+    expect(page.queryByRole('button', { name: 'Aprovar' })).not.toBeInTheDocument()
+  }, 15_000)
 
-    fireEvent.click(screen.getByTestId('tutorial-prev-button'))
+  it('opens a previous step as a readable, non-mutating review', async () => {
+    renderWithRouter(<InteractiveTutorial stepId="courses_classes" />)
+    fireEvent.click(await screen.findByTestId('tutorial-prev-button'))
     await waitFor(() => expect(screen.getByText(/a rever o passo 1/i)).toBeVisible())
     expect(document.querySelector('.tutorial-live-page')).toHaveClass('is-reviewing')
-    expect(onAction).not.toHaveBeenCalled()
+    expect(document.querySelector('.tutorial-live-page')).not.toHaveAttribute('aria-hidden')
+    expect(document.querySelector('.tutorial-live-page')).not.toHaveAttribute('inert')
+    const consultButton = await screen.findByRole('button', { name: /consultar programação/i })
+    expect(consultButton).toBeVisible()
+    fireEvent.click(consultButton)
+    expect(screen.getByRole('dialog')).toHaveTextContent('Fundamentos de programação')
+    expect(screen.getByLabelText(/nome da disciplina/i)).toBeDisabled()
     fireEvent.click(screen.getByRole('button', { name: /voltar ao passo atual/i }))
-    expect(screen.queryByText(/a rever o passo 1/i)).not.toBeInTheDocument()
-    expect(await screen.findByRole('button', { name: /nova disciplina/i })).toBeEnabled()
-  })
+    await waitFor(() => expect(document.querySelector('[data-tutorial-target="edit-class-1"]')).toBeEnabled())
+  }, 15_000)
 
-  it('advances explanatory steps from the guide panel', async () => {
-    const state = applyTutorialTransition(INITIAL_TUTORIAL_STATE, { type: 'START', tutorialRunId: 'run-explanation' })
-    const onAction = vi.fn()
-    renderWithRouter(<TutorialWorkspace tutorial={makeTutorial(state, onAction)} onExit={vi.fn()} onSkipTutorial={vi.fn()} onContinueLater={vi.fn()} />)
-
-    fireEvent.click(await screen.findByTestId('tutorial-complete-step'))
-    expect(onAction).toHaveBeenCalledWith('continue')
-  })
-
-  it('renders the schedule preparation checkpoint after skipping setup exercises', async () => {
-    let state = applyTutorialTransition(INITIAL_TUTORIAL_STATE, { type: 'START', tutorialRunId: 'run-schedule' })
-    state = applyTutorialTransition(state, { type: 'COMPLETE_STEP', actionId: 'continue' })
-    while (state.stepId !== 'schedule_prepare') state = applyTutorialTransition(state, { type: 'SKIP_STEP' })
-
-    renderWithRouter(<TutorialWorkspace tutorial={makeTutorial(state)} onExit={vi.fn()} onSkipTutorial={vi.fn()} onContinueLater={vi.fn()} />)
-
-    expect(await screen.findByRole('heading', { name: 'Horários Escolares' })).toBeVisible()
-    expect(await screen.findByRole('button', { name: /gerar horário/i })).toBeEnabled()
-  })
-
-  it('renders the weekly close checkpoint reached after confirming a substitution', async () => {
-    const state = {
-      ...INITIAL_TUTORIAL_STATE,
-      tutorialRunId: 'run-weekly-close',
-      status: 'IN_PROGRESS',
-      chapter: 2,
-      stepId: 'debt_observe',
-    }
-
-    renderWithRouter(<TutorialWorkspace tutorial={makeTutorial(state)} onExit={vi.fn()} onSkipTutorial={vi.fn()} onContinueLater={vi.fn()} />)
-
-    expect(await screen.findByRole('heading', { name: 'Fecho Semanal' })).toBeVisible()
-    expect((await screen.findAllByText('Prof. António Silva')).length).toBeGreaterThan(0)
-  })
-
-  it.each(TUTORIAL_STEPS)('mounts checkpoint $stepNumber/$id with its real page fully loaded', async (step) => {
-    const state = {
-      ...INITIAL_TUTORIAL_STATE,
-      tutorialRunId: `run-${step.id}`,
-      status: 'IN_PROGRESS',
-      chapter: step.chapter,
-      stepId: step.id,
-    }
-
-    renderWithRouter(<TutorialWorkspace tutorial={makeTutorial(state)} onExit={vi.fn()} onSkipTutorial={vi.fn()} onContinueLater={vi.fn()} />)
-
-    await expectCheckpointPageReady(step)
-    expect(screen.getByTestId('tutorial-step-counter')).toHaveTextContent(`Passo ${TUTORIAL_STEPS.indexOf(step) + 1} de 24`)
+  it('keeps the interaction guard scoped to the active feature target', () => {
+    const onTarget = vi.fn()
+    const onOther = vi.fn()
+    render(
+      <>
+        <TutorialInteractionGuard step={TUTORIAL_STEPS[0]} />
+        <button type="button" data-tutorial-target="edit-record-1" onClick={onTarget}>Editar Programação</button>
+        <button type="button" onClick={onOther}>Apagar dados</button>
+      </>,
+    )
+    fireEvent.click(screen.getByRole('button', { name: /editar programação/i }))
+    fireEvent.click(screen.getByRole('button', { name: /apagar dados/i }))
+    expect(onTarget).toHaveBeenCalledOnce()
+    expect(onOther).not.toHaveBeenCalled()
   })
 })

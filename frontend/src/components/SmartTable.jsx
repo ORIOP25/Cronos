@@ -21,6 +21,9 @@ const SmartTable = ({
   onRowClick,
   getRowLabel,
   emptyAction,
+  allowEdit = true,
+  allowDelete = true,
+  readOnly = false,
 }) => {
   const isClickable = typeof onRowClick === 'function'
   const [deleteTarget, setDeleteTarget] = useState(null)
@@ -95,16 +98,17 @@ const SmartTable = ({
                     <div className="d-flex justify-content-end align-items-center gap-2">
                       {actions && (
                         <>
-                          <button 
+                          {allowEdit && <button
                             className="btn-zen-ghost zen-table-action-trigger"
                             onClick={(e) => { e.stopPropagation(); onEdit(item) }}
-                            title={TXT.EDIT}
-                            aria-label={`${TXT.EDIT} ${getRowLabel?.(item) ?? item.name ?? ''}`.trim()}
+                            title={readOnly ? 'Consultar' : TXT.EDIT}
+                            data-tutorial-target={`edit-record-${item.id}`}
+                            aria-label={`${readOnly ? 'Consultar' : TXT.EDIT} ${getRowLabel?.(item) ?? item.name ?? ''}`.trim()}
                             type="button"
                           >
                             <CIcon icon={cilPencil} size="sm"/>
-                          </button>
-                          <button 
+                          </button>}
+                          {allowDelete && <button
                             className="btn-zen-ghost zen-table-action-trigger text-danger"
                             onClick={(e) => { e.stopPropagation(); setDeleteError(''); setDeleteTarget(item.id) }}
                             title={TXT.REMOVE}
@@ -112,7 +116,7 @@ const SmartTable = ({
                             type="button"
                           >
                             <CIcon icon={cilTrash} size="sm"/>
-                          </button>
+                          </button>}
                         </>
                       )}
                       {isClickable && !actions && (

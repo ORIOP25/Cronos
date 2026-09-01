@@ -165,6 +165,33 @@ Stable route families keep frontend features and provider webhooks independent f
 | `PATCH` | `/api/v1/timesheets/{timesheet_id}/status` | Admin |
 | `POST` | `/api/v1/webhooks/clerk` | Public; Svix signature required |
 
+## Onboarding API Contract
+
+All paths below are relative to `/api/v1`.
+
+| Method | Path | Actor | Purpose |
+| :--- | :--- | :--- | :--- |
+| `POST` | `/session/bootstrap` | Authenticated Clerk organization administrator | Reconcile the provider organization and current member. |
+| `GET` | `/foundation/status` | Signed-in organization member | Read Foundation status and completion timestamps. |
+| `GET` | `/foundation/draft` | Foundation administrator | Read the current draft, version, step, and data. |
+| `PUT` | `/foundation/draft` | Foundation administrator | Validate and save a draft with `expected_version`. |
+| `POST` | `/foundation/complete` | Foundation administrator | Validate, persist, and complete the Foundation. |
+| `POST` | `/tutorial/telemetry` | Foundation administrator | Append a deduplicated tutorial event. |
+| `GET` | `/readiness/bases` | Active administrator | Read cumulative readiness depth and issues. |
+| `GET` | `/readiness/prevalidation` | Active administrator | Check blockers and warnings before generation. |
+| `GET` | `/dashboard` | Active administrator | Read `PREPARATION` or `OPERATIONAL` dashboard data. |
+
+`PUT /foundation/draft` accepts `expected_version`, `current_step` from 1 to 9, and a strict Foundation data object.
+The response returns the new version.
+`POST /foundation/complete` accepts the expected version and `confirmed: true`.
+It returns `COMPLETED`, the completion timestamp, and the generated timeslot count.
+
+The database dependency uses function scope for endpoint transactions.
+The dependency commits after the handler returns and rolls back on error.
+Therefore a successful write response confirms a committed state.
+
+Important error codes are `FOUNDATION_DRAFT_VERSION_CONFLICT`, `FOUNDATION_INCOMPLETE`, `FOUNDATION_ALREADY_COMPLETED`, `ACTIVE_SCHOOL_YEAR_REQUIRED`, and `PREFLIGHT_STALE`.
+
 ## Contracts and Invariants
 
 - Protected routes derive `organization_id` from the active membership.

@@ -16,6 +16,8 @@
 .dashboard-progress-filters { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
 .dashboard-progress-filters label { display: grid; gap: 5px; color: var(--cronos-ink-muted); font-size: .78rem; font-weight: 600; }
 .dashboard-progress-filters select { min-height: 36px; padding: 6px 8px; border: 1px solid var(--cronos-border); border-radius: 6px; background: var(--cronos-bg); color: var(--cronos-ink); font: inherit; }
+.preparation-dashboard__guide-button { color: var(--cronos-surface); border-color: var(--cronos-surface); }
+.preparation-dashboard__guide-button:hover, .preparation-dashboard__guide-button:focus-visible { color: var(--cronos-ink); border-color: var(--cronos-accent); background: var(--cronos-accent); }
 .availability-heatmap__legend { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; color: var(--cronos-ink-muted); font-size: .76rem; }
 .availability-heatmap__legend span { display: inline-flex; align-items: center; gap: 5px; }
 .availability-heatmap__legend i { width: 10px; height: 10px; border-radius: 50%; }

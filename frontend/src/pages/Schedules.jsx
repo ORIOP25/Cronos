@@ -106,11 +106,15 @@ function clearStoredJobId(storageKey) {
 // ---------------------------------------------------------------------------
 // Schedules — Main Page
 // ---------------------------------------------------------------------------
-const Schedules = ({ initialClassId = '', persistView = true }) => {
+const Schedules = ({ initialClassId = '', initialWeekStart, persistView = true, readOnly = false, allowedActions, referenceDate }) => {
   const location = useLocation()
   const { organization } = useOrganization()
   const orgId = organization?.id ?? null
-  const jobStorageKey = getJobStorageKey(orgId)
+  const isTutorial = Array.isArray(allowedActions)
+  const canGenerate = !readOnly && (!isTutorial || allowedActions.includes('GENERATE_SCHEDULE'))
+  const canApprove = !readOnly && (!isTutorial || allowedActions.includes('APPROVE_SCHEDULE') || allowedActions.includes('APPROVE_RECOVERY'))
+  const canReject = !readOnly && !isTutorial
+  const jobStorageKey = persistView ? getJobStorageKey(orgId) : null
   const viewStorageKey = getViewStorageKey(orgId)
 
   // Parse query params for cross-navigation (Fase 7.4)
@@ -143,7 +147,7 @@ const Schedules = ({ initialClassId = '', persistView = true }) => {
     if (urlWeekStart && /^\d{4}-\d{2}-\d{2}$/.test(urlWeekStart)) {
       return urlWeekStart
     }
-    return storedView?.weekStart || getCurrentWeekMonday()
+    return initialWeekStart || storedView?.weekStart || getCurrentWeekMonday()
   })
   // Bug #4: Keep weekStart in sync with URL query param changes (cross-navigation)
   useEffect(() => {
@@ -237,6 +241,7 @@ const Schedules = ({ initialClassId = '', persistView = true }) => {
   }, [activeJobId, jobStorageKey])
 
   const startReplacementGeneration = async () => {
+    if (!canGenerate) return
     setGenerationConfirmation(null)
     setGenerationActionError('')
     setPreflightErrors([])
@@ -252,6 +257,7 @@ const Schedules = ({ initialClassId = '', persistView = true }) => {
   }
 
   const handleGenerate = async () => {
+    if (!canGenerate) return
     setGenerationActionError('')
     setPreflightErrors([])
     setActiveJobId(null)
@@ -278,6 +284,7 @@ const Schedules = ({ initialClassId = '', persistView = true }) => {
   }
 
   const handleRegenerate = () => {
+    if (!canGenerate) return
     setGenerationConfirmation('regenerate')
   }
 
@@ -332,6 +339,9 @@ const Schedules = ({ initialClassId = '', persistView = true }) => {
           onClose={() => setAdminLessonLogSlot(null)}
           slot={adminLessonLogSlot}
           isAdmin
+          readOnly={readOnly}
+          allowedActions={allowedActions}
+          referenceDate={referenceDate}
         />
       ) : null}
 
@@ -356,7 +366,7 @@ const Schedules = ({ initialClassId = '', persistView = true }) => {
       >
         {/* Status-driven generation controls */}
         <div className="d-flex align-items-center gap-2 flex-wrap">
-                {!hasPendingDraft && schedulerStatus?.can_generate_new_draft && (
+                {!hasPendingDraft && schedulerStatus?.can_generate_new_draft && canGenerate && (
                   <CButton
                     color="primary" size="sm"
                     disabled={isGenerating || generateMutation.isPending}
@@ -369,7 +379,7 @@ const Schedules = ({ initialClassId = '', persistView = true }) => {
                     }
                   </CButton>
                 )}
-                {hasPendingDraft && schedulerStatus?.can_regenerate_with_confirmation && (
+                {hasPendingDraft && schedulerStatus?.can_regenerate_with_confirmation && canGenerate && (
                     <CButton
                       color="secondary"
                       variant="outline"
@@ -382,7 +392,7 @@ const Schedules = ({ initialClassId = '', persistView = true }) => {
                       Gerar novamente
                     </CButton>
                 )}
-                {activeJobId && isGenerating && (
+                {activeJobId && isGenerating && canGenerate && (
                     <CButton
                       color="danger"
                       variant="outline"
@@ -433,6 +443,8 @@ const Schedules = ({ initialClassId = '', persistView = true }) => {
               }}
               isApproving={approveMutation.isPending}
               isRejecting={rejectMutation.isPending}
+              allowApprove={canApprove}
+              allowReject={canReject}
             />
           )}
       </div>
