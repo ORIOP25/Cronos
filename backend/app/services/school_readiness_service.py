@@ -96,9 +96,7 @@ class SchoolReadinessService:
                 depth,
                 issues,
                 step_routes={
-                    "TEACHER_ASSIGNMENT": self._class_subject_route(
-                        class_by_id, links_with_modules
-                    )
+                    "TEACHER_ASSIGNMENT": self._class_subject_route(class_by_id, links_with_modules)
                 },
             )
 
@@ -124,9 +122,7 @@ class SchoolReadinessService:
                 depth,
                 issues,
                 step_routes={
-                    "TEACHER_ASSIGNMENT": self._class_subject_route(
-                        class_by_id, links_with_modules
-                    )
+                    "TEACHER_ASSIGNMENT": self._class_subject_route(class_by_id, links_with_modules)
                 },
             )
         teacher_ids = {lnk.teacher_id for lnk in assigned_links}
@@ -147,9 +143,7 @@ class SchoolReadinessService:
                 depth,
                 issues,
                 step_routes={
-                    "TEACHER_ASSIGNMENT": self._class_subject_route(
-                        class_by_id, links_with_modules
-                    )
+                    "TEACHER_ASSIGNMENT": self._class_subject_route(class_by_id, links_with_modules)
                 },
             )
         depth = 4

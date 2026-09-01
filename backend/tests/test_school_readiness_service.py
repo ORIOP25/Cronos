@@ -136,9 +136,7 @@ async def test_readiness_counts_scheduler_only_teacher_assignment(db_session):
     competency_only_report = await service.evaluate_bases(organization.id)
 
     assert competency_only_report.depth == 3
-    expected_subject_route = (
-        f"/courses/{course.id}/classes/{school_class.id}/subjects"
-    )
+    expected_subject_route = f"/courses/{course.id}/classes/{school_class.id}/subjects"
     assert competency_only_report.issues[0].route == expected_subject_route
     assert competency_only_report.steps[3].route == expected_subject_route
     assert competency_only_report.issues[0].message == (
