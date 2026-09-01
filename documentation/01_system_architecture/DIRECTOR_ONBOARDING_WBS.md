@@ -569,7 +569,7 @@ Avalie sete níveis pela mesma cadeia relacional.
 | 1 | Existe `Class.is_archived = false` | `/courses` |
 | 2 | Existe `Module.required_minutes > 0` na organização | `/subjects` |
 | 3 | A turma possui `ClassSubjectLink` no `grade_level` atual para uma disciplina com módulos | Página de disciplinas da turma |
-| 4 | O link possui professor competente em `teacher_subject_link` | `/members` |
+| 4 | O `ClassSubjectLink` possui professor ativo com competência em `teacher_subject_link` | `/courses` |
 | 5 | Existe sala com tipo exigido e capacidade suficiente | `/rooms` |
 | 6 | Existe pelo menos um `Timeslot` da organização | `/config` |
 | 7 | O professor possui disponibilidade diferente de `IMPOSSIBLE` nesse timeslot | `/members` |

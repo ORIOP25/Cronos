@@ -16,7 +16,7 @@ const STEP_LABELS = Object.freeze({
   ACTIVE_CLASSES: '1. Pelo menos uma Turma ativa registada',
   MODULES: '2. Disciplinas com Módulos UFCD e carga horária definida',
   CLASS_SUBJECTS: '3. Associação Turma-Disciplina com ano curricular válido',
-  TEACHER_ASSIGNMENT: '4. Docentes com qualificação e competência atribuídos',
+  TEACHER_ASSIGNMENT: '4. Professor competente atribuído à disciplina da turma',
   COMPATIBLE_ROOM: '5. Salas compatíveis com tipologia e lotação da turma',
   TIMESLOTS: '6. Grelha semanal de tempos letivos configurada',
   TEACHER_AVAILABILITY: '7. Disponibilidade docente compatível (não impossível)',

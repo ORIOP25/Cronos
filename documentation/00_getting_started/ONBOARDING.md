@@ -284,7 +284,7 @@ After Foundation, the administrator builds the operational bases.
 | 1 | Active non-archived class | 14% |
 | 2 | Module with positive required minutes | 28% |
 | 3 | Valid class-subject link for the current grade on a subject with modules | 42% |
-| 4 | Active competent teacher assignment | 57% |
+| 4 | Active competent teacher assigned to the class subject | 57% |
 | 5 | Compatible room type and capacity | 71% |
 | 6 | At least one generated timeslot | 85% |
 | 7 | At least one possible teacher availability score | 100% |

@@ -121,17 +121,29 @@ async def test_readiness_counts_scheduler_only_teacher_assignment(db_session):
         name="Professor sem acesso",
         subject_ids=[subject.id],
     )
+
     link = models.ClassSubjectLink(
         organization_id=organization.id,
         class_id=school_class.id,
         subject_id=subject.id,
         grade_level=school_class.grade_level,
-        teacher_id=teacher.id,
+        teacher_id=None,
     )
     db_session.add(link)
     await db_session.flush()
 
     service = SchoolReadinessService(db_session)
+    competency_only_report = await service.evaluate_bases(organization.id)
+
+    assert competency_only_report.depth == 3
+    assert competency_only_report.issues[0].route == "/courses"
+    assert competency_only_report.issues[0].message == (
+        "Atribua um professor ativo e competente à disciplina da turma."
+    )
+
+    link.teacher_id = teacher.id
+    await db_session.flush()
+
     scheduler_only_report = await service.evaluate_bases(organization.id)
 
     assert scheduler_only_report.depth == 4

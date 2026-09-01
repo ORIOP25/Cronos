@@ -114,6 +114,25 @@ describe('PreparationDashboard tutorial entry points', () => {
     expect(levels[2]).toHaveTextContent('3. Associação Turma-Disciplina com ano curricular válido')
   })
 
+  it('sends the teacher assignment action to the class subject page', () => {
+    const teacherPendingBases = {
+      ...bases,
+      depth: 3,
+      percentage: 42,
+      steps: readinessCodes.map((code, index) => ({
+        code,
+        status: index < 3 ? 'COMPLETE' : 'PENDING',
+        route: code === 'TEACHER_ASSIGNMENT' ? '/courses' : '/config',
+      })),
+    }
+
+    renderWithRouter(<PreparationDashboard bases={teacherPendingBases} autoStartGuide={false} />)
+
+    const level = screen.getByTestId('preparation-level-TEACHER_ASSIGNMENT')
+    expect(level).toHaveTextContent('4. Professor competente atribuído à disciplina da turma')
+    expect(level.querySelector('a')).toHaveAttribute('href', '/courses')
+  })
+
   it('keeps preparation summary labels concise', () => {
     renderWithRouter(
       <PreparationDashboard
