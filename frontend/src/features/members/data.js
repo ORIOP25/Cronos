@@ -69,6 +69,7 @@ const invalidateMemberQueries = (queryClient, orgId) => {
     queryClient.invalidateQueries({ queryKey: ['members', orgId] }),
     queryClient.invalidateQueries({ queryKey: ['current-member', orgId] }),
     queryClient.invalidateQueries({ queryKey: ['teachers', orgId] }),
+    queryClient.invalidateQueries({ queryKey: ['eligible-teachers', orgId] }),
     invalidatePreparationQueries(queryClient, orgId),
   ])
 }

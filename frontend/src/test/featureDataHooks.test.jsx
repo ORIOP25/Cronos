@@ -100,6 +100,7 @@ describe('vertical feature data hooks', () => {
       ['members', 'org-a'],
       ['current-member', 'org-a'],
       ['teachers', 'org-a'],
+      ['eligible-teachers', 'org-a'],
     ]))
   })
 
@@ -112,7 +113,7 @@ describe('vertical feature data hooks', () => {
     const mutation = renderHook(() => useCreateMember(), { wrapper })
 
     const mutationPromise = mutation.result.current.mutateAsync({ name: 'Ana' })
-    await waitFor(() => expect(pendingInvalidations).toHaveLength(6))
+    await waitFor(() => expect(pendingInvalidations).toHaveLength(7))
     expect(mutation.result.current.isPending).toBe(true)
 
     pendingInvalidations.forEach(({ resolve }) => resolve())
