@@ -69,6 +69,13 @@ function isBenignAbortedRequest({ method, url }, { baseUrl }) {
   const parsedUrl = parseUrl(url, baseUrl)
   if (!parsedUrl) return false
   if (
+    method.toUpperCase() === 'POST'
+    && isSameOrigin(url, baseUrl)
+    && parsedUrl.pathname === '/api/v1/tutorial/telemetry'
+  ) {
+    return true
+  }
+  if (
     ['GET', 'HEAD'].includes(method.toUpperCase())
     && isSameOrigin(url, baseUrl)
     && (
