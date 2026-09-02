@@ -11,6 +11,8 @@ test.describe.configure({ mode: 'serial' })
 const isAllowedTutorialRequest = (url) => (
   url.includes('/api/v1/tutorial/telemetry')
   || url.includes('/api/v1/members/me')
+  || url.includes('/api/v1/foundation/status')
+  || url.includes('/api/v1/foundation/draft')
 )
 
 test.describe('Tutorial — network boundary', () => {
