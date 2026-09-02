@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models, schemas
 from app.api import deps
+from app.core.exceptions import AppError
 from app.core.ratelimit import limiter
 from app.scheduler.application.contracts import SchedulerTaskDispatcher
 from app.services.scheduler_approval_service import (
@@ -27,7 +28,11 @@ from app.services.scheduler_lifecycle_service import (
     SchedulerLifecycleService,
 )
 from app.services.scheduler_observability import emit_scheduler_job_event
-from app.services.scheduler_request_service import start_generation_request
+from app.services.scheduler_request_service import (
+    persist_dispatch_failure,
+    persist_prepared_generation,
+    prepare_generation_request,
+)
 from app.services.scheduler_status_service import SchedulerStatusService
 
 router = APIRouter()
@@ -42,7 +47,41 @@ async def generate_schedule(
     current_user: deps.AdminActor,
     dispatcher: Annotated[SchedulerTaskDispatcher, Depends(deps.get_scheduler_task_dispatcher)],
 ):
-    return await start_generation_request(payload, db, current_user, dispatcher)
+    handle = await prepare_generation_request(payload, db, current_user)
+    await persist_prepared_generation(db)
+
+    if handle.created:
+        jobs = SchedulerJobService(db)
+        try:
+            dispatcher.dispatch(
+                organization_id=current_user.organization_id,
+                job_id=handle.job.id,
+                task_id=jobs.worker_task_id(handle.job.id),
+            )
+        except Exception as dispatch_error:
+            await persist_dispatch_failure(
+                db,
+                organization_id=current_user.organization_id,
+                job_id=handle.job.id,
+                reason=f"Could not dispatch generation job: {dispatch_error}",
+            )
+            raise AppError(
+                kind="unavailable",
+                code="generation_dispatch_failed",
+                detail="Generation could not be queued.",
+                metadata={
+                    "error": "generation_dispatch_failed",
+                    "message": "Generation could not be queued.",
+                    "job_id": handle.job.id,
+                },
+            ) from dispatch_error
+
+    return {
+        "job_id": handle.job.id,
+        "strategy": handle.job.strategy.value,
+        "trigger_type": handle.job.trigger_type.value,
+        "status": handle.job.job_status.value,
+    }
 
 
 @router.get(

@@ -16,7 +16,7 @@ from datetime import date
 from typing import Annotated
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -65,6 +65,11 @@ async def upsert_org_settings(
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except settings_service.HolidaySyncError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"code": exc.code, "message": str(exc)},
+        ) from exc
 
 
 class SoftResetRequest(BaseModel):
@@ -181,11 +186,17 @@ async def sync_holidays(
     """Importa feriados via package `holidays` (Portugal).
     Elimina todos os eventos AUTO anteriores e recria-os (idempotente).
     """
-    count = await settings_service.sync_holidays(
-        db,
-        organization_id=current_user.organization_id,
-        changed_by_membership_id=current_user.membership_id,
-    )
+    try:
+        count = await settings_service.sync_holidays(
+            db,
+            organization_id=current_user.organization_id,
+            changed_by_membership_id=current_user.membership_id,
+        )
+    except settings_service.HolidaySyncError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"code": exc.code, "message": str(exc)},
+        ) from exc
     return schemas.HolidaysSyncResponse(
         imported_count=count,
         message=f"{count} feriados importados com sucesso.",

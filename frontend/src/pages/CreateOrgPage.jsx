@@ -1,9 +1,9 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { useOrganizationList } from '@clerk/react'
+import { useOrganizationList, useUser } from '@clerk/react'
 import BrandPanel from '../components/auth/BrandPanel'
 import { useCreateActiveOrganization } from '../features/organization/useCreateActiveOrganization'
-import { PENDING_ORGANIZATION_KEY } from '../features/organization/activateAndBootstrapOrganization'
+import { getPendingOrganizationKey } from '../features/organization/activateAndBootstrapOrganization'
 import {
   BRAND_STATS_CREATEORG,
   BRAND_TAGLINE_CREATEORG,
@@ -14,9 +14,11 @@ export default function CreateOrgPage() {
   const { isLoaded, userMemberships } = useOrganizationList({
     userMemberships: { infinite: true },
   })
+  const { user } = useUser()
   const { run, isPending, error } = useCreateActiveOrganization()
   const [name, setName] = useState('')
-  const pendingOrganizationId = sessionStorage.getItem(PENDING_ORGANIZATION_KEY)
+  const pendingKey = getPendingOrganizationKey(user?.id)
+  const pendingOrganizationId = pendingKey ? sessionStorage.getItem(pendingKey) : null
   const memberships = userMemberships?.data || []
   const membershipsLoading = !isLoaded || userMemberships?.isLoading || userMemberships?.isFetching
 

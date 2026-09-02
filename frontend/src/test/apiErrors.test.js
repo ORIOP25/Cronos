@@ -1,8 +1,15 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
-import { getApiErrorMessage } from '../utils/apiErrors'
+import { getApiErrorCode, getApiErrorMessage } from '../utils/apiErrors'
 
 describe('getApiErrorMessage', () => {
+  it('reads a structured backend error code', () => {
+    expect(getApiErrorCode({
+      response: { data: { detail: { code: 'HOLIDAY_SYNC_FAILED', message: 'Falha' } } },
+    })).toBe('HOLIDAY_SYNC_FAILED')
+    expect(getApiErrorCode({ response: { data: { detail: 'Falha' } } })).toBeNull()
+  })
+
   it('uses plain backend detail strings', () => {
     expect(getApiErrorMessage({ response: { data: { detail: 'Nome obrigatório' } } })).toBe('Nome obrigatório')
   })

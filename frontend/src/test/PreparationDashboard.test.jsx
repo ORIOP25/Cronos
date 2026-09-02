@@ -2,16 +2,11 @@ import { fireEvent, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useLocation } from 'react-router-dom'
 
-vi.mock('../features/readiness/data', () => ({
-  usePrevalidation: vi.fn(),
-}))
-
 import { PreparationDashboard } from '../features/dashboard/PreparationDashboard'
 import { getTutorialStorageKey } from '../features/tutorial/tutorialContent'
 import { INITIAL_TUTORIAL_STATE, applyTutorialTransition } from '../features/tutorial/tutorialModel'
 import { saveTutorialState } from '../features/tutorial/tutorialStorage'
 import { renderWithRouter } from './testUtils'
-import { usePrevalidation } from '../features/readiness/data'
 
 const readinessCodes = [
   'ACTIVE_CLASSES',
@@ -45,13 +40,6 @@ describe('PreparationDashboard tutorial entry points', () => {
   beforeEach(() => {
     window.localStorage.clear()
     vi.clearAllMocks()
-    usePrevalidation.mockReturnValue({
-      data: null,
-      error: null,
-      isError: false,
-      isFetching: false,
-      refetch: vi.fn(),
-    })
   })
 
   it('keeps a new preparation dashboard on the dashboard until the guide CTA is selected', async () => {
@@ -79,7 +67,7 @@ describe('PreparationDashboard tutorial entry points', () => {
     await waitFor(() => expect(screen.getByTestId('location-probe')).toHaveTextContent('/guide?entry=resume'))
   })
 
-  it('renders the seven-level validation chain and disables prevalidation below depth seven', () => {
+  it('renders the seven-level validation chain and disables generation below depth seven', () => {
     renderWithRouter(
       <PreparationDashboard
         orgId="org_test"
@@ -91,7 +79,6 @@ describe('PreparationDashboard tutorial entry points', () => {
     )
 
     expect(screen.getAllByTestId(/^preparation-level-/)).toHaveLength(7)
-    expect(usePrevalidation).toHaveBeenCalledWith({ fingerprint: null, enabled: false })
     expect(screen.getByRole('button', { name: /gerar horário/i })).toBeDisabled()
   })
 
@@ -165,14 +152,6 @@ describe('PreparationDashboard tutorial entry points', () => {
   })
 
   it('sends the complete bases fingerprint and enables READY_WITH_WARNINGS generation', () => {
-    usePrevalidation.mockReturnValue({
-      data: { status: 'READY_WITH_WARNINGS', issues: [{ code: 'WARN', severity: 'WARNING', message: 'Aviso', route: '/schedules' }] },
-      error: null,
-      isError: false,
-      isFetching: false,
-      refetch: vi.fn(),
-    })
-
     renderWithRouter(
       <PreparationDashboard
         orgId="org_test"
@@ -180,28 +159,20 @@ describe('PreparationDashboard tutorial entry points', () => {
         organizationName="Escola Teste"
         foundationStatus="COMPLETED"
         bases={completeBases}
+        prevalidation={{ status: 'READY_WITH_WARNINGS', issues: [{ code: 'WARN', severity: 'WARNING', message: 'Aviso', route: '/schedules' }] }}
         autoStartGuide={false}
       />,
     )
 
-    expect(usePrevalidation).toHaveBeenCalledWith({ fingerprint: 'fingerprint-v1', enabled: true })
     expect(screen.getByRole('button', { name: /gerar horário/i })).toBeEnabled()
     expect(screen.getAllByText('Invariante satisfeito')).toHaveLength(7)
     expect(screen.queryByText(/issues de preparação/i)).not.toBeInTheDocument()
   })
 
-  it('keeps generation disabled while prevalidation is checking', () => {
-    usePrevalidation.mockReturnValue({
-      data: null,
-      error: null,
-      isError: false,
-      isFetching: true,
-      refetch: vi.fn(),
-    })
+  it('keeps generation disabled when prevalidation is blocked', () => {
+    renderWithRouter(<PreparationDashboard bases={completeBases} prevalidation={{ status: 'BLOCKED', issues: [] }} autoStartGuide={false} />)
 
-    renderWithRouter(<PreparationDashboard bases={completeBases} autoStartGuide={false} />)
-
-    expect(screen.getByRole('button', { name: /a validar/i })).toBeDisabled()
+    expect(screen.getByRole('button', { name: /gerar horário/i })).toBeDisabled()
     expect(screen.getByTestId('preparation-levels')).toBeVisible()
   })
 

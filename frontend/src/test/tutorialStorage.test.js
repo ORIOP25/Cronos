@@ -2,7 +2,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   TUTORIAL_STEPS,
   TUTORIAL_VERSION,
-  getLegacyTutorialStorageKey,
   getTutorialStorageKey,
 } from '../features/tutorial/tutorialContent'
 import { INITIAL_TUTORIAL_STATE, applyTutorialTransition } from '../features/tutorial/tutorialModel'
@@ -11,7 +10,6 @@ import {
   loadTutorialState,
   saveTutorialState,
   serializeTutorialState,
-  hasLegacyTutorialState,
 } from '../features/tutorial/tutorialStorage'
 
 describe('tutorialStorage v3', () => {
@@ -61,12 +59,11 @@ describe('tutorialStorage v3', () => {
     expect(localStorage.length).toBe(0)
   })
 
-  it('detects v2 only to show an update notice and never converts it', () => {
-    const legacyKey = getLegacyTutorialStorageKey('user_1', 'org_1')
-    localStorage.setItem(legacyKey, JSON.stringify({ old: true }))
-    expect(hasLegacyTutorialState(localStorage, 'user_1', 'org_1')).toBe(true)
-    expect(localStorage.getItem(legacyKey)).toBe(JSON.stringify({ old: true }))
+  it('uses only the v3 key and does not read unrelated storage', () => {
+    const unrelatedKey = 'cronos:tutorial:v2:user:user_1:org:org_1'
+    localStorage.setItem(unrelatedKey, JSON.stringify({ old: true }))
     expect(loadTutorialState(localStorage, getTutorialStorageKey('user_1', 'org_1'), INITIAL_TUTORIAL_STATE)).toBe(INITIAL_TUTORIAL_STATE)
+    expect(localStorage.getItem(unrelatedKey)).toBe(JSON.stringify({ old: true }))
   })
 
   it('validates the initial state as a valid not-started checkpoint', () => {

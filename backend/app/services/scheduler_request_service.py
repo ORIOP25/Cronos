@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app import models, schemas
 from app.core.auth import Actor
 from app.core.exceptions import AppError
-from app.scheduler.application.contracts import SchedulerTaskDispatcher
+from app.db.tenant import set_async_tenant_context
 from app.scheduler.domain.constraints import SchedulerConstraintPolicy
 from app.services.availability_matrix_service import AvailabilityMatrixRepairService
 from app.services.preflight_service import PreflightService
@@ -14,10 +14,32 @@ from app.services.scheduler_generation_service import (
     GenerationSelectionError,
     SchedulerGenerationService,
 )
-from app.services.scheduler_job_service import SchedulerJobError, SchedulerJobService
+from app.services.scheduler_job_service import (
+    GenerationJobHandle,
+    SchedulerJobError,
+    SchedulerJobService,
+)
 from app.services.scheduler_state_service import SchedulerStateError
 
 logger = structlog.get_logger(__name__)
+
+
+async def persist_prepared_generation(db: AsyncSession) -> None:
+    """Commit the durable job before handing it to an external dispatcher."""
+    await db.commit()
+
+
+async def persist_dispatch_failure(
+    db: AsyncSession,
+    *,
+    organization_id: int,
+    job_id: int,
+    reason: str,
+) -> None:
+    """Persist a dispatch failure after the initial transaction has closed."""
+    await set_async_tenant_context(db, organization_id)
+    await SchedulerJobService(db).mark_dispatch_failed(organization_id, job_id, reason)
+    await db.commit()
 
 
 def _selection_conflict(exc: GenerationSelectionError | SchedulerStateError) -> AppError:
@@ -40,13 +62,12 @@ def _selection_conflict(exc: GenerationSelectionError | SchedulerStateError) -> 
     )
 
 
-async def start_generation_request(
+async def prepare_generation_request(
     payload: schemas.ScheduleGenerateRequest,
     db: AsyncSession,
     current_user: Actor,
-    dispatcher: SchedulerTaskDispatcher,
-) -> dict[str, int | str]:
-    """Validate scheduler preflight, persist a generation job, and dispatch it."""
+) -> GenerationJobHandle:
+    """Validate scheduler preflight and persist a generation job."""
     organization_id = current_user.organization_id
     generation = SchedulerGenerationService(db)
 
@@ -137,34 +158,4 @@ async def start_generation_request(
             metadata={"error": exc.code, "message": str(exc)},
         ) from exc
 
-    task_id = jobs.worker_task_id(handle.job.id)
-    if handle.created:
-        try:
-            dispatcher.dispatch(
-                organization_id=organization_id,
-                job_id=handle.job.id,
-                task_id=task_id,
-            )
-        except Exception as dispatch_error:
-            await jobs.mark_dispatch_failed(
-                organization_id,
-                handle.job.id,
-                f"Could not dispatch generation job: {dispatch_error}",
-            )
-            raise AppError(
-                kind="unavailable",
-                code="generation_dispatch_failed",
-                detail="Generation could not be queued.",
-                metadata={
-                    "error": "generation_dispatch_failed",
-                    "message": "Generation could not be queued.",
-                    "job_id": handle.job.id,
-                },
-            ) from dispatch_error
-
-    return {
-        "job_id": handle.job.id,
-        "strategy": handle.job.strategy.value,
-        "trigger_type": handle.job.trigger_type.value,
-        "status": handle.job.job_status.value,
-    }
+    return handle

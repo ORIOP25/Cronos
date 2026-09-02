@@ -37,6 +37,7 @@ import GuidedFormShell from '../../../components/GuidedFormShell'
 import GuidedFormProgress from '../../../components/GuidedFormProgress'
 import FeedbackBanner from '../../../components/FeedbackBanner'
 import StatePanel from '../../../components/StatePanel'
+import { getApiErrorCode } from '../../../utils/apiErrors'
 
 function apiErrorMessage(detail, fallback) {
   if (typeof detail === 'string') return detail
@@ -54,6 +55,7 @@ export function FoundationWizard() {
   const [state, dispatch] = useReducer(foundationReducer, initialFoundationState)
   const [confirmed, setConfirmed] = useState(false)
   const [isRetrying, setIsRetrying] = useState(false)
+  const [isRecoveringHolidays, setIsRecoveringHolidays] = useState(false)
   const [isReloadingConflict, setIsReloadingConflict] = useState(false)
   const [conflictReloadError, setConflictReloadError] = useState('')
   const isInitialSync = useRef(false)
@@ -90,8 +92,19 @@ export function FoundationWizard() {
 
   const persistSnapshot = useCallback((snapshot) => {
     if (state.status === 'conflict') return Promise.resolve(false)
+    if (autosaveTimerRef.current) {
+      clearTimeout(autosaveTimerRef.current)
+      autosaveTimerRef.current = null
+    }
     pendingSnapshotRef.current = snapshot
-    if (saveRunnerRef.current) return saveRunnerRef.current
+    if (saveRunnerRef.current) {
+      const activeRunner = saveRunnerRef.current
+      return activeRunner.then((saved) => (
+        pendingSnapshotRef.current === snapshot
+          ? persistSnapshot(snapshot)
+          : saved
+      ))
+    }
 
     const runner = (async () => {
       while (pendingSnapshotRef.current) {
@@ -116,6 +129,7 @@ export function FoundationWizard() {
             dispatch({
               type: 'SAVE_FAILED',
               error: apiErrorMessage(err?.response?.data?.detail, 'Não foi possível guardar o rascunho.'),
+              errorCode: getApiErrorCode(err),
             })
           }
           return false
@@ -141,6 +155,7 @@ export function FoundationWizard() {
     }
 
     autosaveTimerRef.current = setTimeout(() => {
+      autosaveTimerRef.current = null
       isDirtyRef.current = false
       void persistSnapshot({ step: state.currentStep, values: state.values })
     }, 600)
@@ -158,8 +173,35 @@ export function FoundationWizard() {
     dispatch({ type: 'SET_FIELD', field, value })
   }
 
+  const handleCalendarPreferenceChange = (_field, value) => {
+    if (state.status === 'conflict' || state.status === 'saving') return
+    const nextValues = { ...state.values, automatic_holidays_enabled: value }
+    isDirtyRef.current = false
+    dispatch({ type: 'SET_FIELD', field: 'automatic_holidays_enabled', value })
+    void persistSnapshot({ step: state.currentStep, values: nextValues })
+  }
+
   const handleRetrySave = () => {
     if (failedSnapshotRef.current) void persistSnapshot(failedSnapshotRef.current)
+  }
+
+  const canDisableAutomaticHolidays = state.status === 'error'
+    && state.errorCode === 'HOLIDAY_SYNC_FAILED'
+    && state.values.automatic_holidays_enabled
+
+  const handleDisableAutomaticHolidays = async () => {
+    if (!canDisableAutomaticHolidays || isRecoveringHolidays) return
+    setIsRecoveringHolidays(true)
+    const values = { ...state.values, automatic_holidays_enabled: false }
+    try {
+      const saved = await persistSnapshot({ step: state.currentStep, values })
+      if (saved) {
+        isDirtyRef.current = false
+        dispatch({ type: 'SET_FIELD', field: 'automatic_holidays_enabled', value: false })
+      }
+    } finally {
+      setIsRecoveringHolidays(false)
+    }
   }
 
   // Navigation handlers
@@ -214,6 +256,7 @@ export function FoundationWizard() {
         dispatch({
           type: 'COMPLETE_FAILED',
           error: apiErrorMessage(err?.response?.data?.detail, 'Falha ao ativar a escola. Tente novamente.'),
+          errorCode: getApiErrorCode(err),
         })
       }
     }
@@ -247,7 +290,7 @@ export function FoundationWizard() {
   }
 
   const organizationName = statusQuery.data?.organization_name || 'a sua escola'
-  const isBlocked = state.status === 'saving' || state.status === 'conflict' || isRetrying
+  const isBlocked = state.status === 'saving' || state.status === 'conflict' || isRetrying || isRecoveringHolidays
 
   if (statusQuery.isError || draftQuery.isError) {
     return (
@@ -280,7 +323,6 @@ export function FoundationWizard() {
         eyebrow="Fundação Escolar"
         title="Configuração Base da Escola"
         summary={`Defina o calendário e grelha letiva para ${organizationName}.`}
-        meta={`Passo ${state.currentStep} de ${FOUNDATION_STEP_COUNT}`}
       >
         <div className="d-flex justify-content-between align-items-center mb-3">
           <GuidedFormProgress
@@ -293,9 +335,6 @@ export function FoundationWizard() {
                 <CSpinner size="sm" /> A guardar...
               </span>
             )}
-            {state.status === 'saved' && (
-              <CBadge color="success" shape="rounded-pill" role="status">Guardado ✓</CBadge>
-            )}
             {state.status === 'error' && (
               <CBadge color="danger" shape="rounded-pill" role="alert">Erro ao guardar</CBadge>
             )}
@@ -306,9 +345,24 @@ export function FoundationWizard() {
           <div className="mb-3">
             <FeedbackBanner
               tone="danger"
-              action={state.status === 'error' && failedSnapshotRef.current ? (
-                <button type="button" onClick={handleRetrySave}>Tentar guardar novamente</button>
-              ) : undefined}
+              action={(
+                <div className="d-flex flex-wrap gap-2">
+                  {state.status === 'error' && failedSnapshotRef.current && (
+                    <button type="button" onClick={handleRetrySave} disabled={isRecoveringHolidays}>
+                      Tentar guardar novamente
+                    </button>
+                  )}
+                  {canDisableAutomaticHolidays && (
+                    <button
+                      type="button"
+                      onClick={handleDisableAutomaticHolidays}
+                      disabled={isRecoveringHolidays}
+                    >
+                      Desativar feriados automáticos e guardar
+                    </button>
+                  )}
+                </div>
+              )}
             >{state.error}</FeedbackBanner>
           </div>
         )}
@@ -372,6 +426,7 @@ export function FoundationWizard() {
           {state.currentStep === STEP_CALENDAR && (
             <SchoolCalendarStep
               values={state.values}
+              onChange={handleCalendarPreferenceChange}
             />
           )}
 
@@ -402,21 +457,17 @@ export function FoundationWizard() {
                 disabled={isBlocked}
                 onClick={handleNext}
               >
-                Seguinte →
+                {state.currentStep === STEP_CALENDAR && !state.values.automatic_holidays_enabled
+                  ? 'Ignorar por agora'
+                  : 'Seguinte →'}
               </CButton>
             ) : (
               <CButton
                 color="success"
-                size="lg"
-                className="fw-bold px-4"
                 disabled={isBlocked || !confirmed}
                 onClick={handleCompleteActivation}
               >
-                {state.status === 'saving' ? (
-                  <><CSpinner size="sm" className="me-2" /> A Ativar...</>
-                ) : (
-                  'Ativar Escola Definitivamente ✓'
-                )}
+                Ativar Escola
               </CButton>
             )}
           </div>

@@ -71,7 +71,11 @@ function isBenignAbortedRequest({ method, url }, { baseUrl }) {
   if (
     ['GET', 'HEAD'].includes(method.toUpperCase())
     && isSameOrigin(url, baseUrl)
-    && (parsedUrl.pathname === '/' || hasAbortablePath(url, baseUrl))
+    && (
+      parsedUrl.pathname === '/'
+      || hasAbortablePath(url, baseUrl)
+      || parsedUrl.searchParams.has('__clerk_db_jwt')
+    )
   ) {
     return true
   }

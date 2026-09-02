@@ -1,5 +1,8 @@
 import apiClient from '../../apiClient'
 import { TUTORIAL_VERSION } from './contracts'
+import { createTutorialRunId } from './tutorialModel'
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
 export async function sendTutorialTelemetryEvent({
   tutorialRunId,
@@ -7,12 +10,12 @@ export async function sendTutorialTelemetryEvent({
   chapter = null,
   stepId = null,
 }) {
-  if (!tutorialRunId) return
+  if (!UUID_PATTERN.test(tutorialRunId || '')) return
 
   const clientEventId =
     typeof crypto !== 'undefined' && crypto.randomUUID
       ? crypto.randomUUID()
-      : `evt-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
+      : createTutorialRunId()
 
   const payload = {
     tutorial_run_id: tutorialRunId,

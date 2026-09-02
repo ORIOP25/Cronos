@@ -1,8 +1,10 @@
 from datetime import date, time
 
 import pytest
+from sqlalchemy import select
 
 from app import models, schemas
+from app.services import settings_service
 from app.services.foundation_service import (
     FoundationDraftVersionConflictError,
     FoundationService,
@@ -124,6 +126,83 @@ async def test_foundation_save_draft_detects_version_conflict(db_session):
     with pytest.raises(FoundationDraftVersionConflictError) as exc_info:
         await service.save_draft(org.id, stale_write, membership_id=mem.id)
     assert exc_info.value.current_version == 1
+
+
+async def test_foundation_draft_automatic_holidays_uses_draft_period(db_session, monkeypatch):
+    org, mem = await _create_test_org(db_session, "org_found_auto_holidays")
+    monkeypatch.setattr(
+        settings_service,
+        "_get_pt_holidays",
+        lambda _years: {
+            date(2025, 9, 15): "Dentro",
+            date(2025, 9, 14): "Antes",
+            date(2026, 7, 31): "Limite",
+            date(2026, 8, 1): "Depois",
+        },
+    )
+
+    service = FoundationService(db_session)
+    first = await service.save_draft(
+        org.id,
+        schemas.FoundationDraftWrite(
+            expected_version=0,
+            current_step=1,
+            data=schemas.FoundationDraftData(
+                school_start_date=date(2025, 9, 15),
+                school_hard_end_date=date(2026, 7, 31),
+            ),
+        ),
+        membership_id=mem.id,
+    )
+    assert (await db_session.scalars(select(models.SchoolCalendarEvent))).all() == []
+
+    await service.save_draft(
+        org.id,
+        schemas.FoundationDraftWrite(
+            expected_version=first.version,
+            current_step=8,
+            data=schemas.FoundationDraftData(
+                school_start_date=date(2025, 9, 15),
+                school_hard_end_date=date(2026, 7, 31),
+                automatic_holidays_enabled=True,
+            ),
+        ),
+        membership_id=mem.id,
+    )
+    events = (
+        await db_session.scalars(
+            select(models.SchoolCalendarEvent).order_by(models.SchoolCalendarEvent.start_date)
+        )
+    ).all()
+    assert [(event.start_date, event.name) for event in events] == [
+        (date(2025, 9, 15), "Dentro"),
+        (date(2026, 7, 31), "Limite"),
+    ]
+
+    second = await service.save_draft(
+        org.id,
+        schemas.FoundationDraftWrite(
+            expected_version=2,
+            current_step=8,
+            data=schemas.FoundationDraftData(
+                school_start_date=date(2025, 9, 15),
+                school_hard_end_date=date(2026, 8, 1),
+                automatic_holidays_enabled=True,
+            ),
+        ),
+        membership_id=mem.id,
+    )
+    assert second.version == 3
+    events = (
+        await db_session.scalars(
+            select(models.SchoolCalendarEvent).order_by(models.SchoolCalendarEvent.start_date)
+        )
+    ).all()
+    assert [(event.start_date, event.name) for event in events] == [
+        (date(2025, 9, 15), "Dentro"),
+        (date(2026, 7, 31), "Limite"),
+        (date(2026, 8, 1), "Depois"),
+    ]
 
 
 async def test_foundation_complete_transactional_generates_grid(db_session):

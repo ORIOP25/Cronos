@@ -13,7 +13,6 @@ import {
   tutorialReducer,
 } from './tutorialModel'
 import {
-  hasLegacyTutorialState,
   loadTutorialState,
   saveTutorialState,
 } from './tutorialStorage'
@@ -33,7 +32,6 @@ export function useTutorialSimulation({ orgId, userId } = {}) {
   const [isOpen, setIsOpen] = useState(false)
   const [hydratedStorageKey, setHydratedStorageKey] = useState(null)
   const [persistenceError, setPersistenceError] = useState(null)
-  const [versionUpdateVisible, setVersionUpdateVisible] = useState(false)
   const [state, dispatch] = useReducer(
     tutorialReducer,
     INITIAL_TUTORIAL_STATE,
@@ -52,7 +50,6 @@ export function useTutorialSimulation({ orgId, userId } = {}) {
     const loaded = loadTutorialState(getStorage(), storageKey, INITIAL_TUTORIAL_STATE)
     stateRef.current = loaded
     dispatch({ type: 'HYDRATE', payload: loaded })
-    setVersionUpdateVisible(hasLegacyTutorialState(getStorage(), effectiveUserId, effectiveOrgId))
     const hydrationTimer = globalThis.setTimeout(() => setHydratedStorageKey(storageKey), 0)
     return () => globalThis.clearTimeout(hydrationTimer)
   }, [effectiveOrgId, effectiveUserId, storageKey])
@@ -200,7 +197,5 @@ export function useTutorialSimulation({ orgId, userId } = {}) {
     skipTutorial,
     repeatTutorial,
     persistenceError,
-    versionUpdateVisible,
-    dismissVersionUpdate: () => setVersionUpdateVisible(false),
   }
 }

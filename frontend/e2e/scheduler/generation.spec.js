@@ -638,11 +638,21 @@ test('fresh founder completes Complete Generation and custom-rule Adaptive Repai
 
       await page.locator('#school_start_date').fill(FRESH_FOUNDER_DATES.schoolStartDate)
       await page.locator('#school_hard_end_date').fill(FRESH_FOUNDER_DATES.schoolHardEndDate)
-      for (let step = 1; step < 9; step += 1) {
+      for (let step = 1; step < 8; step += 1) {
         await page.getByRole('button', { name: /seguinte/i }).click()
       }
+      const automaticHolidays = page.getByRole('checkbox', { name: /feriados automáticos/i })
+      await expect(automaticHolidays).not.toBeChecked()
+      const draftSaveResponse = page.waitForResponse((response) => (
+        response.url().includes('/api/v1/foundation/draft') &&
+        response.request().method() === 'PUT' &&
+        response.status() === 200
+      ))
+      await automaticHolidays.check()
+      await draftSaveResponse
+      await page.getByRole('button', { name: /seguinte/i }).click()
       await page.locator('#foundation-confirmation').check()
-      await page.getByRole('button', { name: /ativar escola definitivamente/i }).click()
+      await page.getByRole('button', { name: /^ativar escola$/i }).click()
       await expectRouteReady(page, '/dashboard')
       await expect(page.locator('aside a[href="/dashboard"]').first()).toBeVisible()
       await apiRequest(page, 'GET', '/members/me')

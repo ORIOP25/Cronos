@@ -1,11 +1,15 @@
 export function toSchoolSettingsPayload(form) {
-  return {
+  const payload = {
     school_start_date: form.school_start_date || null,
     school_hard_end_date: form.school_hard_end_date || null,
-    repair_stability_window_days: form.repair_stability_window_days
-      ? Number.parseInt(form.repair_stability_window_days, 10)
-      : null,
+    repair_stability_window_days: form.repair_stability_window_days === '' || form.repair_stability_window_days == null
+      ? 0
+      : Number.parseInt(form.repair_stability_window_days, 10),
   }
+  if (form.automatic_holidays_enabled !== undefined) {
+    payload.automatic_holidays_enabled = Boolean(form.automatic_holidays_enabled)
+  }
+  return payload
 }
 
 const DEFAULT_GRID_FORM_DATA = {

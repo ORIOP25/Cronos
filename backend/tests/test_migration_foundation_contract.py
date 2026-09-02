@@ -61,14 +61,9 @@ def test_head_exposes_only_the_canonical_bootstrap_function(clean_database):
         assert marker
 
 
-def test_bootstrap_membership_audit_uses_membership_ids(clean_database):
+def test_foundation_migration_owns_bootstrap_membership_audit():
     source = (
-        (
-            Path(__file__).parents[1]
-            / "alembic"
-            / "versions"
-            / "0006_fix_bootstrap_membership_audit.py"
-        )
+        (Path(__file__).parents[1] / "alembic" / "versions" / "0004_foundation_telemetry.py")
         .read_text(encoding="utf-8")
         .lower()
     )

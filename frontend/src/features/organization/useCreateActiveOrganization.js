@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useAuth, useOrganizationList } from '@clerk/react'
+import { useAuth, useOrganizationList, useUser } from '@clerk/react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import apiClient from '../../apiClient'
@@ -13,6 +13,7 @@ import {
 export function useCreateActiveOrganization() {
   const { createOrganization, setActive } = useOrganizationList()
   const { getToken } = useAuth()
+  const { user } = useUser()
   const queryClient = useQueryClient()
   const navigate = useNavigate()
   const [isPending, setIsPending] = useState(false)
@@ -22,7 +23,7 @@ export function useCreateActiveOrganization() {
     setIsPending(true)
     setError(null)
     try {
-      return await activateAndBootstrapOrganization(input, {
+      return await activateAndBootstrapOrganization({ ...input, userId: user?.id }, {
         createOrganization,
         setActive,
         getToken,

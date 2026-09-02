@@ -53,14 +53,14 @@ describe('SchoolConfig scheduler settings', () => {
     expect(apiClient.get).not.toHaveBeenCalledWith('/school/grid-settings/')
   })
 
-  it('integrates the holiday import action into the event editor header', async () => {
+  it('uses automatic holidays and does not expose a manual import action', async () => {
     renderWithProviders(<SchoolConfig />)
 
     fireEvent.click(screen.getByRole('tab', { name: /calendário/i }))
-    const importButton = await screen.findByRole('button', { name: /importar feriados nacionais/i })
+    const automaticHolidays = await screen.findByRole('checkbox', { name: /feriados automáticos/i })
 
-    expect(importButton.closest('.card-header')).toBeInTheDocument()
-    expect(importButton).toHaveTextContent('Importar Feriados')
+    expect(automaticHolidays).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /importar feriados/i })).not.toBeInTheDocument()
   })
 
   it('submits hard boundaries and accepts a zero-day stability window', async () => {
@@ -80,6 +80,65 @@ describe('SchoolConfig scheduler settings', () => {
         repair_stability_window_days: 0,
       })
     })
+  })
+
+  it('keeps edited settings and offers holiday recovery after a sync failure', async () => {
+    apiClient.get.mockImplementation((url) => {
+      if (url === '/school/settings/') {
+        return Promise.resolve({
+          school_start_date: '2026-09-15',
+          school_hard_end_date: '2027-07-31',
+          repair_stability_window_days: 14,
+          automatic_holidays_enabled: true,
+        })
+      }
+      return Promise.resolve([])
+    })
+    apiClient.post.mockRejectedValueOnce({
+      response: { status: 503, data: { detail: { code: 'HOLIDAY_SYNC_FAILED', message: 'sync failed' } } },
+    })
+
+    renderWithProviders(<SchoolConfig />)
+    const endDate = await screen.findByDisplayValue('2027-07-31')
+    fireEvent.change(endDate, { target: { value: '2027-08-31' } })
+    fireEvent.click(screen.getByRole('button', { name: /^guardar alterações$/i }))
+    fireEvent.click(screen.getAllByRole('button', { name: /^guardar alterações$/i }).at(-1))
+
+    const recoveryButton = await screen.findByRole('button', { name: /desativar feriados automáticos e guardar/i })
+    expect(screen.getByDisplayValue('2027-08-31')).toBeInTheDocument()
+    fireEvent.click(recoveryButton)
+
+    await waitFor(() => expect(apiClient.post).toHaveBeenLastCalledWith('/school/settings/', {
+      school_start_date: '2026-09-15',
+      school_hard_end_date: '2027-08-31',
+      repair_stability_window_days: 14,
+      automatic_holidays_enabled: false,
+    }))
+    expect(await screen.findByText(/guardado com os feriados automáticos desativados/i)).toBeInTheDocument()
+  })
+
+  it('does not offer holiday recovery for a generic settings error', async () => {
+    apiClient.get.mockImplementation((url) => {
+      if (url === '/school/settings/') {
+        return Promise.resolve({
+          school_start_date: '2026-09-15',
+          school_hard_end_date: '2027-07-31',
+          repair_stability_window_days: 14,
+          automatic_holidays_enabled: true,
+        })
+      }
+      return Promise.resolve([])
+    })
+    apiClient.post.mockRejectedValueOnce({
+      response: { status: 503, data: { detail: { code: 'OTHER_FAILURE', message: 'other failure' } } },
+    })
+
+    renderWithProviders(<SchoolConfig />)
+    fireEvent.click(await screen.findByRole('button', { name: /^guardar alterações$/i }))
+    fireEvent.click(screen.getAllByRole('button', { name: /^guardar alterações$/i }).at(-1))
+
+    await screen.findByText('other failure')
+    expect(screen.queryByRole('button', { name: /desativar feriados automáticos e guardar/i })).not.toBeInTheDocument()
   })
 
   it('submits the grid with one atomic request and shows one success', async () => {

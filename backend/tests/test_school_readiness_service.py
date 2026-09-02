@@ -1,10 +1,71 @@
+from datetime import time
+
 import pytest
 
 from app import models
+from app.services.availability_matrix_service import (
+    AvailabilityMatrixInspector,
+    AvailabilityMatrixRepairService,
+)
 from app.services.school_readiness_service import SchoolReadinessService
 from tests.conftest import create_org_and_user, create_teacher_profile
 
 pytestmark = pytest.mark.postgresql
+
+
+@pytest.mark.asyncio
+async def test_availability_matrix_repairs_set_and_preserves_impossible_cells(db_session):
+    organization, _ = await create_org_and_user(
+        db_session,
+        clerk_user_id="availability-matrix-user",
+        clerk_org_id="availability-matrix-org",
+    )
+    teacher = await create_teacher_profile(db_session, organization_id=organization.id)
+    timeslots = [
+        models.Timeslot(
+            organization_id=organization.id,
+            day_of_week=day,
+            start_time=time(8),
+            end_time=time(9),
+        )
+        for day in (0, 1)
+    ]
+    db_session.add_all(timeslots)
+    await db_session.flush()
+    db_session.add(
+        models.Availability(
+            organization_id=organization.id,
+            teacher_id=teacher.id,
+            timeslot_id=timeslots[0].id,
+            score=models.PreferenceLevel.IMPOSSIBLE.value,
+        )
+    )
+    await db_session.flush()
+
+    repaired = await AvailabilityMatrixRepairService.repair(
+        db_session,
+        organization_id=organization.id,
+    )
+    assert repaired == 1
+
+    inspection = await AvailabilityMatrixInspector.inspect(
+        db_session,
+        organization_id=organization.id,
+        teacher_ids=[teacher.id],
+        timeslot_ids=[slot.id for slot in timeslots],
+    )
+    assert inspection.get_score(teacher.id, timeslots[0].id) == models.PreferenceLevel.IMPOSSIBLE
+    assert inspection.get_score(teacher.id, timeslots[1].id) == models.PreferenceLevel.NEUTRAL
+    assert inspection.anomalies == []
+    assert (
+        await AvailabilityMatrixInspector.fully_impossible_teacher_ids(
+            db_session,
+            organization_id=organization.id,
+            teacher_ids=[teacher.id],
+            timeslot_ids=[slot.id for slot in timeslots],
+        )
+        == set()
+    )
 
 
 @pytest.mark.asyncio

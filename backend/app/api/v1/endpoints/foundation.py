@@ -11,6 +11,7 @@ from app.services.foundation_service import (
     FoundationIncompleteDraftError,
     FoundationService,
 )
+from app.services.settings_service import HolidaySyncError
 
 router = APIRouter(prefix="/foundation", tags=["foundation"])
 
@@ -63,6 +64,11 @@ async def save_foundation_draft(
                 "message": str(exc),
             },
         ) from exc
+    except HolidaySyncError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"code": exc.code, "message": str(exc)},
+        ) from exc
 
 
 @router.post("/complete", response_model=schemas.FoundationCompleteResponse)
@@ -94,4 +100,9 @@ async def complete_foundation(
                 "code": "FOUNDATION_INCOMPLETE",
                 "message": str(exc),
             },
+        ) from exc
+    except HolidaySyncError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"code": exc.code, "message": str(exc)},
         ) from exc

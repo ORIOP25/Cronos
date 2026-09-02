@@ -2,7 +2,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
   activateAndBootstrapOrganization,
-  PENDING_ORGANIZATION_KEY,
+  getPendingOrganizationKey,
 } from '../features/organization/activateAndBootstrapOrganization'
 
 
@@ -31,6 +31,7 @@ function ports(overrides = {}) {
 
 
 describe('activateAndBootstrapOrganization', () => {
+  const pendingKey = getPendingOrganizationKey('user_new')
   it('orders create, activation, fresh token, bootstrap, cache, and navigation', async () => {
     const calls = []
     const adapters = ports()
@@ -41,27 +42,27 @@ describe('activateAndBootstrapOrganization', () => {
         return original(...args)
       })
     }
-    await activateAndBootstrapOrganization({ name: 'Cronos' }, adapters)
+    await activateAndBootstrapOrganization({ name: 'Cronos', userId: 'user_new' }, adapters)
     expect(calls).toEqual([
       'createOrganization', 'setActive', 'getToken', 'bootstrap', 'cacheMember', 'navigate',
     ])
     expect(adapters.getToken).toHaveBeenCalledWith({ organizationId: 'org_new', skipCache: true })
     expect(adapters.navigate).toHaveBeenCalledWith('/foundation')
-    expect(adapters.storage.remove).toHaveBeenCalledWith(PENDING_ORGANIZATION_KEY)
+    expect(adapters.storage.remove).toHaveBeenCalledWith(pendingKey)
   })
 
   it('retries a stored organization without creating a duplicate', async () => {
     const adapters = ports()
     adapters.storage.get.mockReturnValue('org_pending')
-    await activateAndBootstrapOrganization({ name: '' }, adapters)
+    await activateAndBootstrapOrganization({ name: '', userId: 'user_new' }, adapters)
     expect(adapters.createOrganization).not.toHaveBeenCalled()
     expect(adapters.setActive).toHaveBeenCalledWith({ organization: 'org_pending' })
   })
 
   it('keeps pending activation when bootstrap fails', async () => {
     const adapters = ports({ bootstrap: vi.fn().mockRejectedValue(new Error('offline')) })
-    await expect(activateAndBootstrapOrganization({ name: 'Cronos' }, adapters)).rejects.toThrow('offline')
-    expect(adapters.storage.set).toHaveBeenCalledWith(PENDING_ORGANIZATION_KEY, 'org_new')
+    await expect(activateAndBootstrapOrganization({ name: 'Cronos', userId: 'user_new' }, adapters)).rejects.toThrow('offline')
+    expect(adapters.storage.set).toHaveBeenCalledWith(pendingKey, 'org_new')
     expect(adapters.storage.remove).not.toHaveBeenCalled()
   })
 
@@ -70,7 +71,7 @@ describe('activateAndBootstrapOrganization', () => {
       createOrganization: vi.fn().mockRejectedValue(new Error('create failed')),
     })
 
-    await expect(activateAndBootstrapOrganization({ name: 'Cronos' }, adapters)).rejects.toThrow('create failed')
+    await expect(activateAndBootstrapOrganization({ name: 'Cronos', userId: 'user_new' }, adapters)).rejects.toThrow('create failed')
 
     expect(adapters.storage.set).not.toHaveBeenCalled()
     expect(adapters.setActive).not.toHaveBeenCalled()
@@ -83,9 +84,9 @@ describe('activateAndBootstrapOrganization', () => {
         [portName]: vi.fn().mockRejectedValue(new Error(`${portName} failed`)),
       })
 
-      await expect(activateAndBootstrapOrganization({ name: 'Cronos' }, adapters)).rejects.toThrow(`${portName} failed`)
+      await expect(activateAndBootstrapOrganization({ name: 'Cronos', userId: 'user_new' }, adapters)).rejects.toThrow(`${portName} failed`)
 
-      expect(adapters.storage.set).toHaveBeenCalledWith(PENDING_ORGANIZATION_KEY, 'org_new')
+      expect(adapters.storage.set).toHaveBeenCalledWith(pendingKey, 'org_new')
       expect(adapters.storage.remove).not.toHaveBeenCalled()
       expect(adapters.navigate).not.toHaveBeenCalled()
     },
@@ -99,7 +100,7 @@ describe('activateAndBootstrapOrganization', () => {
       foundation_status: 'COMPLETED',
     })
 
-    await activateAndBootstrapOrganization({ name: 'Cronos' }, adapters)
+    await activateAndBootstrapOrganization({ name: 'Cronos', userId: 'user_new' }, adapters)
 
     expect(adapters.defaultRoute).toHaveBeenCalledWith(expect.objectContaining({ id: 8 }))
     expect(adapters.navigate).toHaveBeenCalledWith('/dashboard')

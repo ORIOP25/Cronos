@@ -120,7 +120,7 @@ function MemberGate({ children, capability, requireTeacherId = false, redirectTo
   if (redirectToDefault) return <Navigate to={getDefaultRouteForMember(member)} replace />
 
   // Foundation gate: incomplete organizations have no operational routes.
-  const isOrgAdmin = ['admin', 'org:admin'].includes(state.organizationMembership?.role)
+  const isOrgAdmin = hasMemberCapability(member, 'admin')
   if (!allowUncompletedFoundation && member && member.foundation_status !== 'COMPLETED') {
     return <Navigate to={isOrgAdmin ? '/foundation' : '/foundation/waiting'} replace />
   }

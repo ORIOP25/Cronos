@@ -14,6 +14,20 @@ describe('school configuration payloads', () => {
       school_start_date: '2026-09-01', school_hard_end_date: '2027-07-31', repair_stability_window_days: 14,
     })
   })
+
+  it('preserves zero stability and can explicitly disable automatic holidays', () => {
+    expect(toSchoolSettingsPayload({
+      school_start_date: '2026-09-01',
+      school_hard_end_date: '2027-07-31',
+      repair_stability_window_days: '0',
+      automatic_holidays_enabled: false,
+    })).toEqual({
+      school_start_date: '2026-09-01',
+      school_hard_end_date: '2027-07-31',
+      repair_stability_window_days: 0,
+      automatic_holidays_enabled: false,
+    })
+  })
   it('serializes grid and lunch settings', () => {
     expect(toGridConfigurationPayload({
       formData: {

@@ -20,8 +20,6 @@ export const TutorialInstructionPanel = forwardRef(function TutorialInstructionP
   onSkipTutorial,
   onAdvance,
   persistenceError,
-  versionUpdateVisible,
-  onDismissVersionUpdate,
 }, ref) {
   const viewedIndex = reviewMode ? reviewStepIndex : stepIndex
   const isFirst = viewedIndex <= 0
@@ -35,12 +33,6 @@ export const TutorialInstructionPanel = forwardRef(function TutorialInstructionP
       <div className="tutorial-chapter-label">Capítulo {step.chapter} · {chapter?.title}</div>
       <div className="tutorial-instruction-panel__progress" aria-label={`${progressPercent}% do guia concluído`}><span style={{ width: `${progressPercent}%` }} /></div>
       <div ref={ref} tabIndex="-1" className="tutorial-instruction-panel__copy" id="tutorial-instruction" aria-live="polite">
-        {versionUpdateVisible && !reviewMode && (
-          <div className="alert alert-info" role="status">
-            <span>{TUTORIAL_COPY.versionUpdate}</span>{' '}
-            <button type="button" className="btn btn-link p-0 align-baseline" onClick={onDismissVersionUpdate}>Fechar</button>
-          </div>
-        )}
         {isChapterStart && <p className="tutorial-chapter-introduction">{chapter?.introduction}</p>}
         {!reviewMode && stepIndex === 0 && <p className="tutorial-initial-note" data-testid="tutorial-initial-note">{TUTORIAL_COPY.initialNote}</p>}
         {reviewMode && <p className="tutorial-review-label">{TUTORIAL_COPY.reviewLabel(reviewStepIndex + 1)}</p>}

@@ -113,7 +113,7 @@ describe('vertical feature data hooks', () => {
     const mutation = renderHook(() => useCreateMember(), { wrapper })
 
     const mutationPromise = mutation.result.current.mutateAsync({ name: 'Ana' })
-    await waitFor(() => expect(pendingInvalidations).toHaveLength(7))
+    await waitFor(() => expect(pendingInvalidations).toHaveLength(6))
     expect(mutation.result.current.isPending).toBe(true)
 
     pendingInvalidations.forEach(({ resolve }) => resolve())
@@ -130,7 +130,7 @@ describe('vertical feature data hooks', () => {
     const mutation = renderHook(() => useCompleteFoundation(), { wrapper })
 
     const mutationPromise = mutation.result.current.mutateAsync({ expected_version: 1, confirmed: true })
-    await waitFor(() => expect(pendingInvalidations).toHaveLength(6))
+    await waitFor(() => expect(pendingInvalidations).toHaveLength(7))
     expect(mutation.result.current.isPending).toBe(true)
 
     pendingInvalidations.forEach(({ resolve }) => resolve())
@@ -205,7 +205,6 @@ describe('vertical feature data hooks', () => {
     expect(invalidate.mock.calls.map(([options]) => options.queryKey)).toEqual(expect.arrayContaining([
       ['dashboard', 'org-a'],
       ['readiness-bases', 'org-a'],
-      ['prevalidation', 'org-a'],
     ]))
   })
 

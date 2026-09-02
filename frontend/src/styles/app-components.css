@@ -82,7 +82,6 @@
 .schedule-controls .card-body { padding-block: 8px; }
 
 .calendar-event-editor__header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
-.calendar-import-action { flex: 0 0 auto; min-height: 36px; }
 
 .member-action-tooltip { display: inline-flex; }
 

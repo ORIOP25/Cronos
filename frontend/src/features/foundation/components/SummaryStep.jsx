@@ -1,6 +1,8 @@
-import { CCard, CCardBody, CRow, CCol, CCallout, CFormCheck } from '@coreui/react'
+import { CCard, CCardBody, CRow, CCol, CFormCheck } from '@coreui/react'
+import CIcon from '@coreui/icons-react'
+import { cilCalendar, cilClock } from '@coreui/icons'
 
-const DAY_NAMES = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado']
+const DAY_NAMES = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo']
 
 export function SummaryStep({ values, organizationName, confirmed, onConfirmedChange }) {
   const days = (values.days_of_week || []).map((d) => DAY_NAMES[d] || `Dia ${d}`).join(', ')
@@ -16,7 +18,7 @@ export function SummaryStep({ values, organizationName, confirmed, onConfirmedCh
         <CCol md={6}>
           <CCard className="h-100 border-0 shadow-sm bg-light">
             <CCardBody>
-              <h6 className="fw-bold text-primary mb-3">📅 Período Escolar</h6>
+              <h6 className="fw-bold text-primary mb-3"><CIcon icon={cilCalendar} className="me-2" aria-hidden="true" />Período Escolar</h6>
               <div className="small mb-2">
                 <span className="text-muted d-block">Data de Início:</span>
                 <strong>{values.school_start_date || '—'}</strong>
@@ -29,6 +31,10 @@ export function SummaryStep({ values, organizationName, confirmed, onConfirmedCh
                 <span className="text-muted d-block">Janela de Estabilidade:</span>
                 <strong>{values.repair_stability_window_days ?? 14} dias</strong>
               </div>
+              <div className="small mt-2">
+                <span className="text-muted d-block">Feriados automáticos:</span>
+                <strong>{values.automatic_holidays_enabled ? 'Ativados' : 'Desativados'}</strong>
+              </div>
             </CCardBody>
           </CCard>
         </CCol>
@@ -36,7 +42,7 @@ export function SummaryStep({ values, organizationName, confirmed, onConfirmedCh
         <CCol md={6}>
           <CCard className="h-100 border-0 shadow-sm bg-light">
             <CCardBody>
-              <h6 className="fw-bold text-primary mb-3">⏱️ Grelha Horária</h6>
+              <h6 className="fw-bold text-primary mb-3"><CIcon icon={cilClock} className="me-2" aria-hidden="true" />Grelha Horária</h6>
               <div className="small mb-2">
                 <span className="text-muted d-block">Dias de Aulas:</span>
                 <strong>{days || 'Nenhum'}</strong>
@@ -57,10 +63,6 @@ export function SummaryStep({ values, organizationName, confirmed, onConfirmedCh
           </CCard>
         </CCol>
       </CRow>
-
-      <CCallout color="info" className="bg-white">
-        <strong>Ativação Monotónica:</strong> A ativação da fundação cria a grelha de tempos letivos e desbloqueia o registo de professores, turmas e salas. Não é possível reverter o estado para não iniciado.
-      </CCallout>
 
       <CFormCheck
         id="foundation-confirmation"

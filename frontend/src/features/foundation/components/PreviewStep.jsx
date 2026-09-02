@@ -1,7 +1,7 @@
 import { CCard, CCardBody, CBadge } from '@coreui/react'
 import { buildDailyTimeslots } from '../foundationModel'
 
-const DAY_LABELS = ['Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado']
+const DAY_LABELS = ['Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado', 'Domingo']
 
 export function PreviewStep({ values, fieldErrors }) {
   const slots = buildDailyTimeslots(values)

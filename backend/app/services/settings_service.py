@@ -28,6 +28,13 @@ SETTINGS_NOT_FOUND = "Configurações da escola não encontradas"
 logger = structlog.get_logger(__name__)
 
 
+class HolidaySyncError(RuntimeError):
+    code = "HOLIDAY_SYNC_FAILED"
+
+    def __init__(self, message: str = "Não foi possível sincronizar os feriados nacionais."):
+        super().__init__(message)
+
+
 def _calendar_settings_snapshot(settings: models.OrganizationSettings) -> dict:
     return {
         "start_date": settings.school_start_date,
@@ -117,14 +124,15 @@ async def _sync_school_year_and_record_settings_changes(
 
 
 async def get_settings(
-    db: AsyncSession, organization_id: int
+    db: AsyncSession, organization_id: int, for_update: bool = False
 ) -> models.OrganizationSettings | None:
     """Retorna a configuração única da escola."""
-    result = await db.execute(
-        select(models.OrganizationSettings).where(
-            models.OrganizationSettings.organization_id == organization_id
-        )
+    query = select(models.OrganizationSettings).where(
+        models.OrganizationSettings.organization_id == organization_id
     )
+    if for_update:
+        query = query.with_for_update()
+    result = await db.execute(query)
     return result.scalar_one_or_none()
 
 
@@ -135,7 +143,16 @@ async def upsert_settings(
     changed_by_membership_id: int | None = None,
 ) -> models.OrganizationSettings:
     """Cria ou actualiza o registo único de configuração."""
-    existing = await get_settings(db, organization_id)
+    existing = await get_settings(db, organization_id, True)
+    if existing is None:
+        organization_exists = await db.scalar(
+            select(models.Organization.id)
+            .where(models.Organization.id == organization_id)
+            .with_for_update()
+        )
+        if organization_exists is None:
+            raise RuntimeError(f"Organization {organization_id} not found")
+        existing = await get_settings(db, organization_id, True)
     if existing:
         before_calendar = _calendar_settings_snapshot(existing)
         before_policy = _repair_policy_snapshot(existing)
@@ -149,6 +166,12 @@ async def upsert_settings(
             if data.school_hard_end_date is not None
             else existing.school_hard_end_date
         )
+        previous_automatic_holidays = bool(getattr(existing, "automatic_holidays_enabled", False))
+        next_automatic_holidays = (
+            data.automatic_holidays_enabled
+            if data.automatic_holidays_enabled is not None
+            else previous_automatic_holidays
+        )
         schemas.OrganizationSettingsUpsert._validate_school_dates(
             next_start_date,
             next_hard_end_date,
@@ -160,6 +183,8 @@ async def upsert_settings(
             existing.school_hard_end_date = data.school_hard_end_date
         if data.repair_stability_window_days is not None:
             existing.repair_stability_window_days = data.repair_stability_window_days
+        if data.automatic_holidays_enabled is not None:
+            existing.automatic_holidays_enabled = data.automatic_holidays_enabled
         await db.flush()
         await _sync_school_year_and_record_settings_changes(
             db,
@@ -169,6 +194,26 @@ async def upsert_settings(
             before_policy=before_policy,
             changed_by_membership_id=changed_by_membership_id,
         )
+        if (
+            next_automatic_holidays
+            and (
+                not previous_automatic_holidays
+                or before_calendar
+                != {
+                    "start_date": next_start_date,
+                    "hard_end_date": next_hard_end_date,
+                }
+            )
+            and next_start_date is not None
+            and next_hard_end_date is not None
+        ):
+            await sync_holidays(
+                db,
+                organization_id,
+                changed_by_membership_id=changed_by_membership_id,
+                school_start_date=next_start_date,
+                school_hard_end_date=next_hard_end_date,
+            )
         await db.flush()
         await db.refresh(existing)
         return existing
@@ -178,6 +223,7 @@ async def upsert_settings(
         school_start_date=data.school_start_date,
         school_hard_end_date=data.school_hard_end_date,
         repair_stability_window_days=data.repair_stability_window_days,
+        automatic_holidays_enabled=bool(data.automatic_holidays_enabled),
     )
     db.add(new_settings)
     await db.flush()
@@ -189,6 +235,18 @@ async def upsert_settings(
         before_policy=None,
         changed_by_membership_id=changed_by_membership_id,
     )
+    if (
+        new_settings.automatic_holidays_enabled
+        and new_settings.school_start_date is not None
+        and new_settings.school_hard_end_date is not None
+    ):
+        await sync_holidays(
+            db,
+            organization_id,
+            changed_by_membership_id=changed_by_membership_id,
+            school_start_date=new_settings.school_start_date,
+            school_hard_end_date=new_settings.school_hard_end_date,
+        )
     await db.flush()
     await db.refresh(new_settings)
     return new_settings
@@ -478,6 +536,8 @@ async def sync_holidays(
     db: AsyncSession,
     organization_id: int,
     changed_by_membership_id: int | None = None,
+    school_start_date: date | None = None,
+    school_hard_end_date: date | None = None,
 ) -> int:
     """Importa feriados nacionais para o calendário da escola.
 
@@ -485,70 +545,88 @@ async def sync_holidays(
     Garante idempotência: pode ser chamado várias vezes sem duplicados.
     Retorna o número de feriados importados.
     """
-    settings = await get_settings(db, organization_id)
-    if not settings or not settings.school_start_date:
-        current_year = date.today().year
-        years = [current_year, current_year + 1]
-    else:
-        start_year = settings.school_start_date.year
-        end_year = (
-            settings.school_hard_end_date.year if settings.school_hard_end_date else start_year + 1
-        )
-        years = list(range(start_year, end_year + 1))
+    try:
+        settings = await get_settings(db, organization_id, True)
+        if settings is None:
+            await db.scalar(
+                select(models.Organization.id)
+                .where(models.Organization.id == organization_id)
+                .with_for_update()
+            )
+            settings = await get_settings(db, organization_id, True)
+        min_date = school_start_date
+        max_date = school_hard_end_date
+        if min_date is None:
+            min_date = settings.school_start_date if settings else None
+        if max_date is None:
+            max_date = settings.school_hard_end_date if settings else None
+        if min_date is not None and max_date is not None and max_date < min_date:
+            raise HolidaySyncError("O período dos feriados é inválido.")
 
-    existing_auto_events = await db.scalars(
-        select(models.SchoolCalendarEvent).where(
-            models.SchoolCalendarEvent.organization_id == organization_id,
-            models.SchoolCalendarEvent.source == models.CalendarEventSource.auto,
-        )
-    )
-    before = _sorted_calendar_snapshots(existing_auto_events.all())
-    await db.execute(
-        delete(models.SchoolCalendarEvent).where(
-            and_(
+        if min_date is None:
+            current_year = date.today().year
+            years = [current_year, current_year + 1]
+        else:
+            end_year = max_date.year if max_date else min_date.year + 1
+            years = list(range(min_date.year, end_year + 1))
+
+        existing_auto_events = await db.scalars(
+            select(models.SchoolCalendarEvent).where(
                 models.SchoolCalendarEvent.organization_id == organization_id,
                 models.SchoolCalendarEvent.source == models.CalendarEventSource.auto,
             )
         )
-    )
-
-    holiday_map = _get_pt_holidays(years)
-
-    # Filtrar feriados pelo intervalo configurado [start_date, hard_end_date]
-    min_date = settings.school_start_date if settings and settings.school_start_date else None
-    max_date = settings.school_hard_end_date if settings and settings.school_hard_end_date else None
-
-    count = 0
-    created_events: list[models.SchoolCalendarEvent] = []
-    for holiday_date, holiday_name in sorted(holiday_map.items()):
-        if min_date and holiday_date < min_date:
-            continue
-        if max_date and holiday_date > max_date:
-            continue
-
-        event = models.SchoolCalendarEvent(
-            organization_id=organization_id,
-            name=holiday_name,
-            start_date=holiday_date,
-            end_date=holiday_date,
-            event_type=models.CalendarEventType.national_holiday,
-            source=models.CalendarEventSource.auto,
+        before = _sorted_calendar_snapshots(existing_auto_events.all())
+        await db.execute(
+            delete(models.SchoolCalendarEvent).where(
+                and_(
+                    models.SchoolCalendarEvent.organization_id == organization_id,
+                    models.SchoolCalendarEvent.source == models.CalendarEventSource.auto,
+                )
+            )
         )
-        db.add(event)
-        created_events.append(event)
-        count += 1
 
-    await db.flush()
-    await record_scheduler_change(
-        db,
-        organization_id,
-        entity_type="CALENDAR_EVENT",
-        entity_id=None,
-        operation=models.SchedulerStateChangeOperation.BULK_IMPORT,
-        before=before,
-        after=_sorted_calendar_snapshots(created_events),
-        changed_by_membership_id=changed_by_membership_id,
-        metadata={"imported_count": count, "source": "AUTO"},
-    )
-    await db.flush()
-    return count
+        holiday_map = _get_pt_holidays(years)
+        count = 0
+        created_events: list[models.SchoolCalendarEvent] = []
+        for holiday_date, holiday_name in sorted(holiday_map.items()):
+            if min_date and holiday_date < min_date:
+                continue
+            if max_date and holiday_date > max_date:
+                continue
+
+            event = models.SchoolCalendarEvent(
+                organization_id=organization_id,
+                name=holiday_name,
+                start_date=holiday_date,
+                end_date=holiday_date,
+                event_type=models.CalendarEventType.national_holiday,
+                source=models.CalendarEventSource.auto,
+            )
+            db.add(event)
+            created_events.append(event)
+            count += 1
+
+        await db.flush()
+        await record_scheduler_change(
+            db,
+            organization_id,
+            entity_type="CALENDAR_EVENT",
+            entity_id=None,
+            operation=models.SchedulerStateChangeOperation.BULK_IMPORT,
+            before=before,
+            after=_sorted_calendar_snapshots(created_events),
+            changed_by_membership_id=changed_by_membership_id,
+            metadata={"imported_count": count, "source": "AUTO"},
+        )
+        await db.flush()
+        return count
+    except HolidaySyncError:
+        raise
+    except Exception as exc:
+        logger.exception(
+            "holiday_sync_failed",
+            organization_id=organization_id,
+            actor_membership_id=changed_by_membership_id,
+        )
+        raise HolidaySyncError() from exc

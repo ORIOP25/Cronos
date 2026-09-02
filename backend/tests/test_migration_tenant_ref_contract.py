@@ -6,9 +6,7 @@ INITIAL = VERSIONS / "0001_initial.py"
 SECURITY = VERSIONS / "0002_security_hardening.py"
 REMOVE_AUTO_CONFIRM = VERSIONS / "0003_remove_auto_confirm_settings.py"
 FOUNDATION_TELEMETRY = VERSIONS / "0004_foundation_telemetry.py"
-RECLAIM_DELETED_IDENTITY = VERSIONS / "0005_reclaim_deleted_clerk_identity.py"
-FIX_BOOTSTRAP_MEMBERSHIP_AUDIT = VERSIONS / "0006_fix_bootstrap_membership_audit.py"
-QUALIFY_USER_RLS_POLICY = VERSIONS / "0007_qualify_user_rls_policy.py"
+AUTOMATIC_HOLIDAYS = VERSIONS / "0005_automatic_holidays.py"
 
 
 def _load_initial():
@@ -26,9 +24,7 @@ def test_migration_history_has_expected_revisions():
         SECURITY,
         REMOVE_AUTO_CONFIRM,
         FOUNDATION_TELEMETRY,
-        RECLAIM_DELETED_IDENTITY,
-        FIX_BOOTSTRAP_MEMBERSHIP_AUDIT,
-        QUALIFY_USER_RLS_POLICY,
+        AUTOMATIC_HOLIDAYS,
     ]
     source = INITIAL.read_text(encoding="utf-8")
     assert _load_initial().down_revision is None

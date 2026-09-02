@@ -5,7 +5,6 @@ import {
   TUTORIAL_COPY,
   TUTORIAL_STEPS,
   TUTORIAL_VERSION,
-  getLegacyTutorialStorageKey,
   getTutorialStorageKey,
 } from '../features/tutorial/tutorialContent'
 import {
@@ -40,8 +39,6 @@ describe('tutorial v3 domain', () => {
     expect(TUTORIAL_COPY.ribbon).toBe('Ambiente de demonstração · os dados da escola não são alterados.')
     expect(getTutorialStorageKey('user_123', 'org_abc')).toBe('cronos:tutorial:v3:user:user_123:org:org_abc')
     expect(getTutorialStorageKey(null, null)).toBeNull()
-    expect(getLegacyTutorialStorageKey('user_123', 'org_abc')).toBe('cronos:tutorial:v2:user:user_123:org:org_abc')
-    expect(getLegacyTutorialStorageKey(null, null)).toBeNull()
   })
 
   it('creates a pure deterministic scenario for every step', () => {

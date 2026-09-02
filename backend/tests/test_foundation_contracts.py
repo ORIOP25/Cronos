@@ -28,6 +28,17 @@ def test_foundation_snapshot_accepts_zero_break():
     validate_foundation_snapshot(valid_snapshot())
 
 
+def test_foundation_snapshot_accepts_zero_stability_window():
+    validate_foundation_snapshot(
+        valid_snapshot().model_copy(update={"repair_stability_window_days": 0})
+    )
+
+
+@pytest.mark.parametrize("payload", [{}, {"repair_stability_window_days": None}])
+def test_foundation_stability_window_defaults_to_fourteen(payload):
+    assert FoundationDraftData(**payload).repair_stability_window_days == 14
+
+
 @pytest.mark.parametrize(
     "changes",
     [
@@ -37,6 +48,8 @@ def test_foundation_snapshot_accepts_zero_break():
         {"lunch_window_start": time(7, 0)},
         {"lunch_window_end": time(18, 0)},
         {"slot_duration_minutes": 0},
+        {"repair_stability_window_days": -1},
+        {"repair_stability_window_days": 61},
     ],
 )
 def test_foundation_snapshot_rejects_invalid_complete_configuration(changes):

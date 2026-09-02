@@ -1,7 +1,7 @@
 """ServiÃ§o de Dashboard V1 â€” agrega mÃ©tricas chave para o painel do diretor."""
 
 from collections import defaultdict
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 from sqlalchemy import String, and_, cast, desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app import models, schemas
 from app.services import occurrence_service
+from app.services.preflight_service import PreflightService
 from app.services.school_readiness_service import SchoolReadinessService
 
 
@@ -22,11 +23,30 @@ async def get_dashboard_summary(
         raise RuntimeError(f"Organization {organization_id} not found")
 
     bases = None
+    prevalidation = None
     if organization.first_real_schedule_approved_at is None:
-        bases = await SchoolReadinessService(db).evaluate_bases(organization_id)
+        bases = await SchoolReadinessService(db).evaluate_bases(
+            organization_id,
+            resolve_fingerprint=False,
+        )
+        prevalidation = await PreflightService(db).evaluate(organization_id=organization_id)
+        if prevalidation.fingerprint != bases.fingerprint:
+            bases = bases.model_copy(update={"fingerprint": prevalidation.fingerprint})
 
     def _run(sync_db):
-        return get_dashboard_summary_sync(sync_db, organization_id, bases=bases)
+        snapshot = (
+            organization.name,
+            organization.foundation_status,
+            organization.foundation_completed_at,
+            organization.first_real_schedule_approved_at,
+        )
+        return get_dashboard_summary_sync(
+            sync_db,
+            organization_id,
+            bases=bases,
+            prevalidation=prevalidation,
+            organization_snapshot=snapshot,
+        )
 
     return await db.run_sync(_run)
 
@@ -36,27 +56,44 @@ def get_dashboard_summary_sync(
     organization_id: int,
     *,
     bases: schemas.BasesReadinessResponse | None = None,
+    prevalidation: schemas.PreflightReport | None = None,
+    organization_snapshot: tuple[
+        str,
+        models.OrganizationFoundationStatus,
+        datetime | None,
+        datetime | None,
+    ]
+    | None = None,
 ) -> schemas.DashboardResponse:
     """Retorna estatísticas agregadas para o dashboard principal (PREPARATION vs OPERATIONAL discriminada)."""
     today = date.today()
 
-    org = db.scalar(select(models.Organization).where(models.Organization.id == organization_id))
-    org_name = org.name if org else "Escola"
-    foundation_status = (
-        org.foundation_status if org else models.OrganizationFoundationStatus.NOT_STARTED
+    if organization_snapshot is None:
+        org = db.scalar(
+            select(models.Organization).where(models.Organization.id == organization_id)
+        )
+        organization_snapshot = (
+            org.name if org else "Escola",
+            org.foundation_status if org else models.OrganizationFoundationStatus.NOT_STARTED,
+            org.foundation_completed_at if org else None,
+            org.first_real_schedule_approved_at if org else None,
+        )
+    org_name, foundation_status, foundation_completed_at, first_real_approved_at = (
+        organization_snapshot
     )
-    foundation_completed_at = org.foundation_completed_at if org else None
-    first_real_approved_at = org.first_real_schedule_approved_at if org else None
 
     if first_real_approved_at is None:
         if bases is None:
             raise ValueError("Preparation dashboard requires canonical readiness bases")
+        if prevalidation is None:
+            raise ValueError("Preparation dashboard requires canonical prevalidation")
         return schemas.PreparationDashboardResponse(
             mode="PREPARATION",
             organization_name=org_name,
             foundation_status=foundation_status,
             foundation_completed_at=foundation_completed_at,
             bases=bases,
+            prevalidation=prevalidation,
         )
 
     # Modo Operacional
@@ -85,7 +122,7 @@ def _get_overview(
     db: Session,
     organization_id: int,
     today: date,
-) -> tuple[schemas.AlertCounts, schemas.ResourceCounts, str, any]:
+) -> tuple[schemas.AlertCounts, schemas.ResourceCounts, str, datetime | None]:
     room_counts = (
         select(
             cast(models.Room.type, String).label("room_type"),

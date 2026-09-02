@@ -46,22 +46,40 @@ test.describe('Foundation — canonical activation', () => {
     await page.locator('#lunch_min_duration_minutes').fill('60')
     await page.getByRole('button', { name: /Seguinte/i }).click()
     await page.getByRole('button', { name: /Seguinte/i }).click()
+
+    const automaticHolidays = page.getByRole('checkbox', { name: /feriados automáticos/i })
+    await expect(automaticHolidays).not.toBeChecked()
+    const draftSaveResponse = page.waitForResponse((response) => (
+      response.url().includes('/api/v1/foundation/draft') &&
+      response.request().method() === 'PUT' &&
+      response.status() === 200
+    ))
+    await automaticHolidays.check()
+    await draftSaveResponse
     await page.getByRole('button', { name: /Seguinte/i }).click()
 
     await expect(page.getByText('9. Confirmação e Ativação da Fundação')).toBeVisible()
     const confirmation = page.getByRole('checkbox', { name: /Confirmo que revi/i })
     await expect(confirmation).not.toBeChecked()
-    await expect(page.getByRole('button', { name: /Ativar Escola Definitivamente/i })).toBeDisabled()
+    await expect(page.getByRole('button', { name: /^Ativar Escola$/i })).toBeDisabled()
     await confirmation.check()
 
     const completeResponse = page.waitForResponse((response) => (
       response.url().includes('/api/v1/foundation/complete') &&
       response.request().method() === 'POST'
     ))
-    await page.getByRole('button', { name: /Ativar Escola Definitivamente/i }).click()
+    await page.getByRole('button', { name: /^Ativar Escola$/i }).click()
     await expect((await completeResponse).status()).toBe(200)
     await expect(page).toHaveURL(/\/dashboard(?:[?#].*)?$/)
     await expect(page.locator('aside a[href="/dashboard"]').first()).toBeVisible()
+    const settings = await page.evaluate(async () => {
+      const token = await window.Clerk?.session?.getToken()
+      const response = await fetch('/api/v1/school/settings/', {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      })
+      return response.json()
+    })
+    expect(settings.automatic_holidays_enabled).toBe(true)
     await expectNoAppCrash(page)
   })
 })

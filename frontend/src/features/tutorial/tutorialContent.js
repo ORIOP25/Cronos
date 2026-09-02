@@ -1,6 +1,5 @@
 export const TUTORIAL_VERSION = 3
 export const TUTORIAL_STORAGE_PREFIX = `cronos:tutorial:v${TUTORIAL_VERSION}`
-export const TUTORIAL_V2_STORAGE_PREFIX = 'cronos:tutorial:v2'
 
 export const TUTORIAL_STATUSES = Object.freeze([
   'NOT_STARTED',
@@ -51,7 +50,6 @@ export const TUTORIAL_CHAPTERS = Object.freeze([
 export const TUTORIAL_COPY = Object.freeze({
   ribbon: 'Ambiente de demonstração · os dados da escola não são alterados.',
   initialNote: 'Cada passo apresenta um exemplo preparado. Pode experimentar ou continuar sem preencher formulários. Ao mudar de passo ou recarregar, o exemplo é reposto.',
-  versionUpdate: 'O guia foi atualizado. Esta visita começa no primeiro passo.',
   persistenceFailure: 'Não foi possível guardar o progresso neste dispositivo. Pode continuar, mas a visita poderá recomeçar ao sair.',
   completion: 'Já conheceu as ferramentas que acompanham a preparação e a semana da escola. Pode regressar às suas tarefas e rever o guia quando precisar.',
   optionalAction: 'Pode experimentar',
@@ -254,9 +252,4 @@ export function getNextTutorialStep(stepId) {
 export function getTutorialStorageKey(userId, organizationId) {
   if (userId == null || organizationId == null || userId === '' || organizationId === '') return null
   return `${TUTORIAL_STORAGE_PREFIX}:user:${userId}:org:${organizationId}`
-}
-
-export function getLegacyTutorialStorageKey(userId, organizationId) {
-  if (userId == null || organizationId == null || userId === '' || organizationId === '') return null
-  return `${TUTORIAL_V2_STORAGE_PREFIX}:user:${userId}:org:${organizationId}`
 }

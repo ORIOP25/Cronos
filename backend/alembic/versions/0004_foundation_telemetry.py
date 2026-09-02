@@ -85,13 +85,13 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.CheckConstraint(
-            "event_name IN ('tutorial_opened', 'chapter_started', 'step_skipped', 'tutorial_exited', 'tutorial_completed', 'tutorial_repeated')",
+            "event_name IN ('tutorial_opened', 'chapter_started', 'tutorial_exited', 'tutorial_completed', 'tutorial_repeated')",
             name="chk_tutorial_telemetry_event_name",
         ),
         sa.CheckConstraint(
             "chapter IS NULL OR chapter IN (1, 2)", name="chk_tutorial_telemetry_chapter"
         ),
-        sa.CheckConstraint("tutorial_version > 0", name="chk_tutorial_telemetry_version"),
+        sa.CheckConstraint("tutorial_version = 3", name="chk_tutorial_telemetry_version"),
         sa.ForeignKeyConstraint(
             ["organization_id"], ["public.organization.id"], ondelete="CASCADE"
         ),
@@ -201,8 +201,12 @@ def upgrade() -> None:
                 updated_by_membership_id, lock_version, created_at, updated_at
             ) VALUES (
                 v_org, v_account, requested_organization_name, 'active', 'active', true, false,
-                requested_membership_id, v_account, v_account, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                requested_membership_id, NULL, NULL, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
             ) RETURNING id INTO v_member;
+            UPDATE public.organization_membership
+            SET created_by_membership_id = v_member,
+                updated_by_membership_id = v_member
+            WHERE id = v_member;
             RETURN QUERY SELECT v_account, v_org, v_member;
         END;
         $$;
@@ -273,6 +277,106 @@ def upgrade() -> None:
         FOR EACH ROW EXECUTE FUNCTION app_security.trg_fn_tutorial_telemetry_append_only()
         """
     )
+    op.execute(
+        """
+        CREATE OR REPLACE FUNCTION app_security.find_clerk_user_by_email(
+            requested_email text,
+            excluded_clerk_user_id text
+        )
+        RETURNS text
+        LANGUAGE sql
+        STABLE
+        SECURITY DEFINER
+        SET search_path = pg_catalog, public
+        AS $$
+            SELECT clerk_user_id
+            FROM public."user"
+            WHERE lower(email) = lower(requested_email)
+              AND clerk_user_id IS NOT NULL
+              AND clerk_user_id <> excluded_clerk_user_id
+            LIMIT 1
+        $$;
+        """
+    )
+    op.execute(
+        "ALTER FUNCTION app_security.find_clerk_user_by_email(text, text) OWNER TO cronos_auth_definer"
+    )
+    op.execute(
+        "REVOKE ALL ON FUNCTION app_security.find_clerk_user_by_email(text, text) FROM PUBLIC"
+    )
+    op.execute(
+        "GRANT EXECUTE ON FUNCTION app_security.find_clerk_user_by_email(text, text) TO cronos_app"
+    )
+    op.execute(
+        """
+        CREATE OR REPLACE FUNCTION app_security.reclaim_deleted_clerk_identity(
+            requested_clerk_user_id text
+        )
+        RETURNS boolean
+        LANGUAGE plpgsql
+        SECURITY DEFINER
+        SET search_path = pg_catalog, public
+        AS $$
+        DECLARE
+            v_account_id integer;
+            v_tombstone_email text;
+        BEGIN
+            SELECT id INTO v_account_id
+            FROM public."user"
+            WHERE clerk_user_id = requested_clerk_user_id
+            FOR UPDATE;
+
+            IF v_account_id IS NULL THEN
+                RETURN false;
+            END IF;
+
+            v_tombstone_email :=
+                'deleted+' || md5(requested_clerk_user_id) || '@invalid.local';
+
+            UPDATE public.organization_membership
+            SET lifecycle_status = 'archived',
+                access_status = 'none',
+                clerk_membership_id = NULL,
+                access_block_reason = 'provider_user_deleted',
+                updated_at = CURRENT_TIMESTAMP
+            WHERE account_id = v_account_id;
+
+            UPDATE public."user"
+            SET clerk_user_id = NULL,
+                email = v_tombstone_email,
+                clerk_primary_email_id = NULL,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = v_account_id;
+
+            RETURN true;
+        END;
+        $$;
+        """
+    )
+    op.execute(
+        "ALTER FUNCTION app_security.reclaim_deleted_clerk_identity(text) OWNER TO cronos_auth_definer"
+    )
+    op.execute(
+        "REVOKE ALL ON FUNCTION app_security.reclaim_deleted_clerk_identity(text) FROM PUBLIC"
+    )
+    op.execute(
+        "GRANT EXECUTE ON FUNCTION app_security.reclaim_deleted_clerk_identity(text) TO cronos_app"
+    )
+    op.execute('DROP POLICY IF EXISTS "tenant_membership_accounts" ON public."user"')
+    op.execute(
+        """
+        CREATE POLICY "tenant_membership_accounts" ON public."user"
+        TO cronos_app
+        USING (
+            EXISTS (
+                SELECT 1
+                FROM public.organization_membership AS m
+                WHERE m.account_id = "user".id
+                  AND m.organization_id = app_security.current_organization_id()
+            )
+        )
+        """
+    )
 
 
 def downgrade() -> None:
@@ -286,6 +390,23 @@ def downgrade() -> None:
     op.execute("DROP FUNCTION IF EXISTS app_security.trg_fn_organization_foundation_monotonic()")
     op.execute(
         f"DROP FUNCTION IF EXISTS app_security.bootstrap_organization_admin({BOOTSTRAP_SIGNATURE})"
+    )
+    op.execute("DROP FUNCTION IF EXISTS app_security.find_clerk_user_by_email(text, text)")
+    op.execute("DROP FUNCTION IF EXISTS app_security.reclaim_deleted_clerk_identity(text)")
+    op.execute('DROP POLICY IF EXISTS "tenant_membership_accounts" ON public."user"')
+    op.execute(
+        """
+        CREATE POLICY "tenant_membership_accounts" ON public."user"
+        TO cronos_app
+        USING (
+            EXISTS (
+                SELECT 1
+                FROM public.organization_membership AS m
+                WHERE m.account_id = "user".id
+                  AND m.organization_id = app_security.current_organization_id()
+            )
+        )
+        """
     )
     op.execute(
         """

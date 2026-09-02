@@ -24,6 +24,15 @@ describe('foundationModel', () => {
     })
   })
 
+  it('serializes an empty stability window as zero and keeps zero intact', () => {
+    expect(serializeFoundationDraftValues({ repair_stability_window_days: '' })).toEqual({
+      repair_stability_window_days: 0,
+    })
+    expect(serializeFoundationDraftValues({ repair_stability_window_days: 0 })).toEqual({
+      repair_stability_window_days: 0,
+    })
+  })
+
   it('requires school start date and hard end date with proper order (Step 1)', () => {
     expect(
       validateFoundationStep(STEP_PERIOD, {
@@ -139,12 +148,19 @@ describe('foundationModel', () => {
     ).toHaveProperty('school_start_date')
   })
 
-  it('requires at least one day of stability and preserves an explicit zero break', () => {
+  it('accepts zero days of stability and preserves an explicit zero break', () => {
     expect(validateFoundationStep(STEP_PERIOD, {
       ...initialFoundationDraftValues,
       school_start_date: '2025-09-15',
       school_hard_end_date: '2026-07-31',
       repair_stability_window_days: 0,
+    })).not.toHaveProperty('repair_stability_window_days')
+
+    expect(validateFoundationStep(STEP_PERIOD, {
+      ...initialFoundationDraftValues,
+      school_start_date: '2025-09-15',
+      school_hard_end_date: '2026-07-31',
+      repair_stability_window_days: 61,
     })).toHaveProperty('repair_stability_window_days')
 
     expect(buildDailyTimeslots({
@@ -168,6 +184,13 @@ describe('foundationModel', () => {
       ...initialFoundationDraftValues,
       days_of_week: [7],
     })).toHaveProperty('days_of_week')
+  })
+
+  it('supports Sunday as the canonical weekday value 6', () => {
+    expect(validateFoundationStep(STEP_DAYS, {
+      ...initialFoundationDraftValues,
+      days_of_week: [6],
+    })).toEqual({})
   })
 
   it('handles server initialization, versioning, and conflict states', () => {
@@ -203,5 +226,18 @@ describe('foundationModel', () => {
     expect(state.status).toBe('idle')
     expect(state.version).toBe(4)
     expect(state.values.school_start_date).toBe('2025-09-20')
+  })
+
+  it('stores structured errors and clears them when the edited value changes', () => {
+    let state = foundationReducer(initialFoundationState, {
+      type: 'SAVE_FAILED',
+      error: 'Não foi possível guardar o rascunho.',
+      errorCode: 'HOLIDAY_SYNC_FAILED',
+    })
+    expect(state.errorCode).toBe('HOLIDAY_SYNC_FAILED')
+
+    state = foundationReducer(state, { type: 'SET_FIELD', field: 'school_start_date', value: '2025-09-15' })
+    expect(state.error).toBe('')
+    expect(state.errorCode).toBe('')
   })
 })

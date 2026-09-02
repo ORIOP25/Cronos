@@ -1,9 +1,13 @@
+from datetime import date
+
 import pytest
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import select
 
 from app import models
 from app.api import deps
 from app.main import app
+from app.services import settings_service
 
 pytestmark = pytest.mark.postgresql
 
@@ -46,7 +50,12 @@ async def _create_org_and_admin(
 @pytest.fixture
 def override_auth_actor(db_session):
     async def _get_db():
-        yield db_session
+        try:
+            yield db_session
+            await db_session.commit()
+        except Exception:
+            await db_session.rollback()
+            raise
 
     app.dependency_overrides[deps.get_db] = _get_db
 
@@ -162,3 +171,199 @@ async def test_foundation_endpoints_full_lifecycle(db_session, override_auth_act
         # 11. Operational endpoints are now accessible
         classes_resp = await request("GET", "/api/v1/classes/")
         assert classes_resp.status_code == 200
+
+
+async def test_foundation_draft_automatic_holidays_failure_rolls_back_and_recovers(
+    db_session, override_auth_actor, monkeypatch
+):
+    monkeypatch.setattr(
+        settings_service,
+        "_get_pt_holidays",
+        lambda _years: {
+            date(2025, 9, 15): "Início original",
+            date(2026, 7, 31): "Fim original",
+        },
+    )
+    org, user, mem = await _create_org_and_admin(
+        db_session,
+        "Draft Recovery Org",
+        "org_draft_recovery_test",
+        models.OrganizationFoundationStatus.NOT_STARTED,
+    )
+    org_id = org.id
+    actor = deps.Actor(
+        account_id=user.id,
+        clerk_user_id=user.clerk_user_id,
+        organization_id=org_id,
+        membership_id=mem.id,
+        can_admin=True,
+        can_teach=False,
+        teacher_id=None,
+    )
+    override_auth_actor(actor)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        # 1. Save initial draft with automatic holidays enabled -> version 1
+        resp = await ac.put(
+            "/api/v1/foundation/draft",
+            json={
+                "expected_version": 0,
+                "current_step": 1,
+                "data": {
+                    "school_start_date": "2025-09-15",
+                    "school_hard_end_date": "2026-07-31",
+                    "automatic_holidays_enabled": True,
+                },
+            },
+        )
+        assert resp.status_code == 200
+        assert resp.json()["version"] == 1
+
+        events = (
+            await db_session.scalars(
+                select(models.SchoolCalendarEvent)
+                .where(models.SchoolCalendarEvent.organization_id == org_id)
+                .order_by(models.SchoolCalendarEvent.start_date)
+            )
+        ).all()
+        assert [(e.start_date, e.name) for e in events] == [
+            (date(2025, 9, 15), "Início original"),
+            (date(2026, 7, 31), "Fim original"),
+        ]
+
+        # 2. Provoke failure during next draft save
+        def fail_sync(_years):
+            raise RuntimeError("provider unavailable")
+
+        monkeypatch.setattr(settings_service, "_get_pt_holidays", fail_sync)
+
+        failed_resp = await ac.put(
+            "/api/v1/foundation/draft",
+            json={
+                "expected_version": 1,
+                "current_step": 1,
+                "data": {
+                    "school_start_date": "2025-09-15",
+                    "school_hard_end_date": "2026-08-31",
+                    "automatic_holidays_enabled": True,
+                },
+            },
+        )
+        assert failed_resp.status_code == 503
+        assert failed_resp.json()["detail"]["code"] == "HOLIDAY_SYNC_FAILED"
+
+        # 3. Verify in draft that version did NOT advance and previous data is preserved
+        draft_resp = await ac.get("/api/v1/foundation/draft")
+        assert draft_resp.status_code == 200
+        assert draft_resp.json()["version"] == 1
+        assert draft_resp.json()["data"]["school_hard_end_date"] == "2026-07-31"
+
+        events_after_fail = (
+            await db_session.scalars(
+                select(models.SchoolCalendarEvent)
+                .where(models.SchoolCalendarEvent.organization_id == org_id)
+                .order_by(models.SchoolCalendarEvent.start_date)
+            )
+        ).all()
+        assert [(e.start_date, e.name) for e in events_after_fail] == [
+            (date(2025, 9, 15), "Início original"),
+            (date(2026, 7, 31), "Fim original"),
+        ]
+
+        # 4. Recover with automatic_holidays_enabled: False and new dates
+        recover_resp = await ac.put(
+            "/api/v1/foundation/draft",
+            json={
+                "expected_version": 1,
+                "current_step": 1,
+                "data": {
+                    "school_start_date": "2025-09-15",
+                    "school_hard_end_date": "2026-08-31",
+                    "automatic_holidays_enabled": False,
+                },
+            },
+        )
+        assert recover_resp.status_code == 200
+        assert recover_resp.json()["version"] == 2
+        assert recover_resp.json()["data"]["school_hard_end_date"] == "2026-08-31"
+        assert recover_resp.json()["data"]["automatic_holidays_enabled"] is False
+
+        # Previous events still preserved
+        events_after_recovery = (
+            await db_session.scalars(
+                select(models.SchoolCalendarEvent)
+                .where(models.SchoolCalendarEvent.organization_id == org_id)
+                .order_by(models.SchoolCalendarEvent.start_date)
+            )
+        ).all()
+        assert [(e.start_date, e.name) for e in events_after_recovery] == [
+            (date(2025, 9, 15), "Início original"),
+            (date(2026, 7, 31), "Fim original"),
+        ]
+
+        # 5. Repeat operation with success when provider is restored -> no duplicates
+        monkeypatch.setattr(
+            settings_service,
+            "_get_pt_holidays",
+            lambda _years: {
+                date(2025, 9, 15): "Início original",
+                date(2026, 7, 31): "Fim original",
+                date(2026, 8, 15): "Assunção",
+            },
+        )
+        repeat_resp = await ac.put(
+            "/api/v1/foundation/draft",
+            json={
+                "expected_version": 2,
+                "current_step": 1,
+                "data": {
+                    "school_start_date": "2025-09-15",
+                    "school_hard_end_date": "2026-08-31",
+                    "automatic_holidays_enabled": True,
+                },
+            },
+        )
+        assert repeat_resp.status_code == 200
+        assert repeat_resp.json()["version"] == 3
+
+        events_after_success = (
+            await db_session.scalars(
+                select(models.SchoolCalendarEvent)
+                .where(models.SchoolCalendarEvent.organization_id == org_id)
+                .order_by(models.SchoolCalendarEvent.start_date)
+            )
+        ).all()
+        assert [(e.start_date, e.name) for e in events_after_success] == [
+            (date(2025, 9, 15), "Início original"),
+            (date(2026, 7, 31), "Fim original"),
+            (date(2026, 8, 15), "Assunção"),
+        ]
+
+        # Repeat again with identical configuration: version increments, no duplicates
+        repeat_again_resp = await ac.put(
+            "/api/v1/foundation/draft",
+            json={
+                "expected_version": 3,
+                "current_step": 1,
+                "data": {
+                    "school_start_date": "2025-09-15",
+                    "school_hard_end_date": "2026-08-31",
+                    "automatic_holidays_enabled": True,
+                },
+            },
+        )
+        assert repeat_again_resp.status_code == 200
+        assert repeat_again_resp.json()["version"] == 4
+
+        events_after_repeat = (
+            await db_session.scalars(
+                select(models.SchoolCalendarEvent)
+                .where(models.SchoolCalendarEvent.organization_id == org_id)
+                .order_by(models.SchoolCalendarEvent.start_date)
+            )
+        ).all()
+        assert [(e.start_date, e.name) for e in events_after_repeat] == [
+            (date(2025, 9, 15), "Início original"),
+            (date(2026, 7, 31), "Fim original"),
+            (date(2026, 8, 15), "Assunção"),
+        ]

@@ -1,4 +1,4 @@
-import { CFormLabel, CFormInput, CFormFeedback, CRow, CCol } from '@coreui/react'
+import { CFormLabel, CFormInput, CFormFeedback, CRow, CCol, CInputGroup, CInputGroupText } from '@coreui/react'
 
 export function LunchStep({ values, fieldErrors, onChange }) {
   return (
@@ -41,23 +41,27 @@ export function LunchStep({ values, fieldErrors, onChange }) {
 
         <CCol md={12} className="mt-4">
           <CFormLabel htmlFor="lunch_min_duration_minutes">
-            Duração Mínima de Almoço Garantida (Minutos) *
+            Duração Mínima de Almoço Garantida *
           </CFormLabel>
-          <CFormInput
-            type="number"
-            id="lunch_min_duration_minutes"
-            name="lunch_min_duration_minutes"
-            min={1}
-            max={180}
-            value={values.lunch_min_duration_minutes ?? 60}
-            invalid={Boolean(fieldErrors.lunch_min_duration_minutes)}
-            onChange={(e) => onChange('lunch_min_duration_minutes', Number(e.target.value))}
-          />
+          <CInputGroup>
+            <CFormInput
+              type="number"
+              id="lunch_min_duration_minutes"
+              name="lunch_min_duration_minutes"
+              min={1}
+              max={180}
+              value={values.lunch_min_duration_minutes ?? 60}
+              invalid={Boolean(fieldErrors.lunch_min_duration_minutes)}
+              aria-describedby="lunch_min_duration_minutes-unit lunch_min_duration_minutes-feedback"
+              onChange={(e) => onChange('lunch_min_duration_minutes', Number(e.target.value))}
+            />
+            <CInputGroupText id="lunch_min_duration_minutes-unit">Minutos</CInputGroupText>
+          </CInputGroup>
           <small className="text-muted d-block mt-1">
             Tempo mínimo contínuo que todo o horário terá livre para refeição (omissão: 60 minutos).
           </small>
           {fieldErrors.lunch_min_duration_minutes && (
-            <CFormFeedback invalid>{fieldErrors.lunch_min_duration_minutes}</CFormFeedback>
+            <CFormFeedback id="lunch_min_duration_minutes-feedback" className="d-block" invalid>{fieldErrors.lunch_min_duration_minutes}</CFormFeedback>
           )}
         </CCol>
       </CRow>

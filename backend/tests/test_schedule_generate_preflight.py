@@ -1,8 +1,10 @@
 import asyncio
+import os
 from datetime import date, time, timedelta
 
 import pytest
-from sqlalchemy import delete, select
+from sqlalchemy import create_engine, delete, select, text
+from sqlalchemy.engine import make_url
 
 from app import models
 from app.api import deps
@@ -268,6 +270,82 @@ async def test_generate_returns_canonical_job_contract_with_minimal_valid_data(
     assert payload["status"] == "QUEUED"
     assert payload["strategy"] == "COMPLETE_GENERATION"
     assert payload["trigger_type"] == "FIRST_GENERATION"
+
+
+async def test_generate_commits_job_before_dispatch(
+    async_client,
+    db_session,
+    clerk_admin_headers,
+):
+    organization_id = await _get_org_id(db_session)
+    await _seed_minimal_generation_data(db_session, organization_id)
+    sync_url = make_url(os.environ["TEST_DATABASE_URL"]).set(drivername="postgresql+psycopg2")
+    independent_engine = create_engine(sync_url.render_as_string(hide_password=False))
+    observed = {}
+
+    class IndependentSessionDispatcher:
+        def dispatch(self, *, organization_id, job_id, task_id):
+            with independent_engine.begin() as connection:
+                connection.execute(
+                    text(
+                        "SELECT set_config('app.current_organization_id', :organization_id, true)"
+                    ),
+                    {"organization_id": str(organization_id)},
+                )
+                observed["job_id"] = connection.scalar(
+                    text("SELECT id FROM schedule_generation_job WHERE id = :job_id"),
+                    {"job_id": job_id},
+                )
+                observed["task_id"] = task_id
+
+    app.dependency_overrides[deps.get_scheduler_task_dispatcher] = IndependentSessionDispatcher
+    try:
+        response = await async_client.post(
+            "/api/v1/scheduler/generate",
+            json={},
+            headers=clerk_admin_headers,
+        )
+    finally:
+        app.dependency_overrides.pop(deps.get_scheduler_task_dispatcher, None)
+        independent_engine.dispose()
+
+    assert response.status_code == 200
+    assert observed["job_id"] == response.json()["job_id"]
+    assert observed["task_id"] == f"scheduler-job-{response.json()['job_id']}"
+
+
+async def test_generate_marks_dispatch_failure_after_commit(
+    async_client,
+    db_session,
+    clerk_admin_headers,
+):
+    organization_id = await _get_org_id(db_session)
+    await _seed_minimal_generation_data(db_session, organization_id)
+
+    class FailingDispatcher:
+        def dispatch(self, **_kwargs):
+            raise RuntimeError("broker unavailable")
+
+    app.dependency_overrides[deps.get_scheduler_task_dispatcher] = FailingDispatcher
+    try:
+        response = await async_client.post(
+            "/api/v1/scheduler/generate",
+            json={},
+            headers=clerk_admin_headers,
+        )
+    finally:
+        app.dependency_overrides.pop(deps.get_scheduler_task_dispatcher, None)
+
+    assert response.status_code == 503
+    assert response.json()["detail"]["error"] == "generation_dispatch_failed"
+    job = await db_session.scalar(
+        select(models.ScheduleGenerationJob)
+        .where(models.ScheduleGenerationJob.organization_id == organization_id)
+        .order_by(models.ScheduleGenerationJob.id.desc())
+    )
+    assert job is not None
+    assert job.job_status == models.ScheduleGenerationJobStatus.FAILED
+    assert job.failure_message == "Could not dispatch generation job: broker unavailable"
 
 
 async def test_generate_refreshes_selection_after_preflight_imports_holidays(

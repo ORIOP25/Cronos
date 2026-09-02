@@ -7,6 +7,7 @@ const DAYS = [
   { value: 3, label: 'Quinta-feira' },
   { value: 4, label: 'Sexta-feira' },
   { value: 5, label: 'Sábado' },
+  { value: 6, label: 'Domingo' },
 ]
 
 export function DaysStep({ values, fieldErrors, onChange }) {

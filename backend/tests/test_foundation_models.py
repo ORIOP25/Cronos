@@ -16,6 +16,7 @@ def test_organization_model_foundation_fields(clean_database):
         assert hasattr(models.Organization, "foundation_status")
         assert hasattr(models.Organization, "foundation_completed_at")
         assert hasattr(models.Organization, "first_real_schedule_approved_at")
+        assert hasattr(models.OrganizationSettings, "automatic_holidays_enabled")
 
 
 def test_organization_foundation_draft_model(clean_database):
@@ -376,7 +377,7 @@ def test_tutorial_telemetry_event_append_only_and_idempotency(clean_database):
                 INSERT INTO tutorial_telemetry_event (
                     organization_id, tutorial_run_id, client_event_id, tutorial_version, event_name, chapter, step_id
                 ) VALUES (
-                    :org_id, :run_id, :client_event_id, 1, 'tutorial_opened', 1, 'structure_overview'
+                    :org_id, :run_id, :client_event_id, 3, 'tutorial_opened', 1, 'structure_overview'
                 )
                 """
             ),
@@ -396,7 +397,7 @@ def test_tutorial_telemetry_event_append_only_and_idempotency(clean_database):
                     INSERT INTO tutorial_telemetry_event (
                         organization_id, tutorial_run_id, client_event_id, tutorial_version, event_name, chapter, step_id
                     ) VALUES (
-                        :org_id, :run_id, :client_event_id, 1, 'tutorial_opened', 1, 'structure_overview'
+                        :org_id, :run_id, :client_event_id, 3, 'tutorial_opened', 1, 'structure_overview'
                     )
                     """
                 ),

@@ -33,6 +33,8 @@ export function useSaveFoundationDraft() {
     onSuccess: (data) => {
       queryClient.setQueryData(orgQueryKey(FOUNDATION_DRAFT_ROOT, orgId), data)
       queryClient.invalidateQueries({ queryKey: orgQueryKey(FOUNDATION_STATUS_ROOT, orgId) })
+      queryClient.invalidateQueries({ queryKey: orgQueryKey('org-settings', orgId) })
+      queryClient.invalidateQueries({ queryKey: orgQueryKey('calendar-events', orgId) })
     },
   })
 }
@@ -45,6 +47,8 @@ export function useCompleteFoundation() {
     onSuccess: () => Promise.all([
       queryClient.invalidateQueries({ queryKey: orgQueryKey(FOUNDATION_STATUS_ROOT, orgId) }),
       queryClient.invalidateQueries({ queryKey: orgQueryKey(FOUNDATION_DRAFT_ROOT, orgId) }),
+      queryClient.invalidateQueries({ queryKey: orgQueryKey('org-settings', orgId) }),
+      queryClient.invalidateQueries({ queryKey: orgQueryKey('calendar-events', orgId) }),
       queryClient.invalidateQueries({ queryKey: orgQueryKey('current-member', orgId) }),
       invalidatePreparationQueries(queryClient, orgId),
     ]),

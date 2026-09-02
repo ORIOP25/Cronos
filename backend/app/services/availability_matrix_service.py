@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import structlog
-from sqlalchemy import select
+from sqlalchemy import exists, func, literal, or_, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -116,6 +116,108 @@ class AvailabilityMatrixInspector:
 
         return AvailabilityMatrixInspection(matrix=matrix, anomalies=anomalies)
 
+    @classmethod
+    async def has_possible_slot(
+        cls,
+        db: AsyncSession,
+        *,
+        organization_id: int,
+        teacher_ids: list[int] | set[int] | None = None,
+        timeslot_ids: list[int] | set[int] | None = None,
+    ) -> bool:
+        teacher_query = (
+            select(Teacher.id)
+            .join(
+                OrganizationMembership,
+                OrganizationMembership.id == Teacher.organization_membership_id,
+            )
+            .where(
+                Teacher.organization_id == organization_id,
+                OrganizationMembership.organization_id == organization_id,
+                OrganizationMembership.lifecycle_status == MembershipLifecycleStatus.active,
+                OrganizationMembership.can_teach.is_(True),
+            )
+        )
+        if teacher_ids is not None:
+            teacher_query = teacher_query.where(Teacher.id.in_(teacher_ids))
+
+        timeslot_query = select(Timeslot.id).where(Timeslot.organization_id == organization_id)
+        if timeslot_ids is not None:
+            timeslot_query = timeslot_query.where(Timeslot.id.in_(timeslot_ids))
+
+        teachers = teacher_query.subquery("teachers")
+        timeslots = timeslot_query.subquery("timeslots")
+        possible_query = (
+            select(literal(1))
+            .select_from(teachers.join(timeslots, literal(True)))
+            .outerjoin(
+                Availability,
+                (Availability.organization_id == organization_id)
+                & (Availability.teacher_id == teachers.c.id)
+                & (Availability.timeslot_id == timeslots.c.id),
+            )
+            .where(
+                or_(
+                    Availability.id.is_(None),
+                    Availability.score != PreferenceLevel.IMPOSSIBLE.value,
+                )
+            )
+            .limit(1)
+        )
+        possible = await db.scalar(possible_query)
+        return bool(possible)
+
+    @classmethod
+    async def fully_impossible_teacher_ids(
+        cls,
+        db: AsyncSession,
+        *,
+        organization_id: int,
+        teacher_ids: list[int] | set[int] | None = None,
+        timeslot_ids: list[int] | set[int] | None = None,
+    ) -> set[int]:
+        teacher_query = (
+            select(Teacher.id)
+            .join(
+                OrganizationMembership,
+                OrganizationMembership.id == Teacher.organization_membership_id,
+            )
+            .where(
+                Teacher.organization_id == organization_id,
+                OrganizationMembership.organization_id == organization_id,
+                OrganizationMembership.lifecycle_status == MembershipLifecycleStatus.active,
+                OrganizationMembership.can_teach.is_(True),
+            )
+        )
+        if teacher_ids is not None:
+            teacher_query = teacher_query.where(Teacher.id.in_(teacher_ids))
+
+        timeslot_query = select(Timeslot.id).where(Timeslot.organization_id == organization_id)
+        if timeslot_ids is not None:
+            timeslot_query = timeslot_query.where(Timeslot.id.in_(timeslot_ids))
+
+        teachers = teacher_query.subquery("teachers")
+        timeslots = timeslot_query.subquery("timeslots")
+        possible_slot = (
+            select(literal(1))
+            .select_from(timeslots)
+            .outerjoin(
+                Availability,
+                (Availability.organization_id == organization_id)
+                & (Availability.teacher_id == teachers.c.id)
+                & (Availability.timeslot_id == timeslots.c.id),
+            )
+            .where(
+                or_(
+                    Availability.id.is_(None),
+                    Availability.score != PreferenceLevel.IMPOSSIBLE.value,
+                )
+            )
+            .correlate(teachers)
+        )
+        impossible_rows = await db.scalars(select(teachers.c.id).where(~exists(possible_slot)))
+        return set(impossible_rows.all())
+
 
 class AvailabilityMatrixRepairService:
     """
@@ -133,40 +235,48 @@ class AvailabilityMatrixRepairService:
         teacher_ids: list[int] | set[int] | None = None,
         timeslot_ids: list[int] | set[int] | None = None,
     ) -> int:
-        inspection = await AvailabilityMatrixInspector.inspect(
-            db,
-            organization_id=organization_id,
-            teacher_ids=teacher_ids,
-            timeslot_ids=timeslot_ids,
+        teacher_query = (
+            select(Teacher.id)
+            .join(
+                OrganizationMembership,
+                OrganizationMembership.id == Teacher.organization_membership_id,
+            )
+            .where(
+                Teacher.organization_id == organization_id,
+                OrganizationMembership.organization_id == organization_id,
+                OrganizationMembership.lifecycle_status == MembershipLifecycleStatus.active,
+                OrganizationMembership.can_teach.is_(True),
+            )
         )
-        if not inspection.anomalies:
-            return 0
+        if teacher_ids is not None:
+            teacher_query = teacher_query.where(Teacher.id.in_(teacher_ids))
+        valid_teachers = teacher_query.subquery("valid_teachers")
 
-        values = [
-            {
-                "organization_id": organization_id,
-                "teacher_id": a.teacher_id,
-                "timeslot_id": a.timeslot_id,
-                "score": PreferenceLevel.NEUTRAL.value,
-            }
-            for a in inspection.anomalies
-        ]
+        timeslot_query = select(Timeslot.id).where(Timeslot.organization_id == organization_id)
+        if timeslot_ids is not None:
+            timeslot_query = timeslot_query.where(Timeslot.id.in_(timeslot_ids))
+        valid_timeslots = timeslot_query.subquery("valid_timeslots")
 
-        stmt = (
+        candidate_rows = select(
+            literal(organization_id).label("organization_id"),
+            valid_teachers.c.id.label("teacher_id"),
+            valid_timeslots.c.id.label("timeslot_id"),
+            literal(PreferenceLevel.NEUTRAL.value).label("score"),
+        ).select_from(valid_teachers.join(valid_timeslots, literal(True)))
+        insert_stmt = (
             pg_insert(Availability)
-            .values(values)
+            .from_select(["organization_id", "teacher_id", "timeslot_id", "score"], candidate_rows)
             .on_conflict_do_nothing(index_elements=["organization_id", "teacher_id", "timeslot_id"])
         )
-        result = await db.execute(stmt)
+        inserted_rows = insert_stmt.returning(Availability.id).cte("inserted_availability")
+        result = await db.scalar(select(func.count()).select_from(inserted_rows))
         await db.flush()
-        inserted_count = (
-            result.rowcount if result.rowcount is not None and result.rowcount >= 0 else len(values)
-        )
+        inserted_count = int(result or 0)
 
-        logger.error(
-            "availability_matrix_integrity_repaired",
-            organization_id=organization_id,
-            repaired_count=inserted_count,
-            anomalies_count=len(inspection.anomalies),
-        )
+        if inserted_count:
+            logger.warning(
+                "availability_matrix_integrity_repaired",
+                organization_id=organization_id,
+                repaired_count=inserted_count,
+            )
         return inserted_count

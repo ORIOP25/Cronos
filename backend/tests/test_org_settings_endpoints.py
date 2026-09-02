@@ -32,6 +32,7 @@ async def test_upsert_settings_accepts_lunch_window(async_client, clerk_admin_he
     data = response.json()
     assert data["school_hard_end_date"] == "2026-07-31"
     assert data["repair_stability_window_days"] == 14
+    assert data["automatic_holidays_enabled"] is False
 
     grid_payload = {
         "lunch_window_start": "12:00",
@@ -98,6 +99,247 @@ async def test_upsert_settings_accepts_zero_repair_window(async_client, clerk_ad
 
     assert response.status_code == 200
     assert response.json()["repair_stability_window_days"] == 0
+
+
+async def test_upsert_settings_rejects_repair_window_above_sixty(
+    async_client,
+    clerk_admin_headers,
+):
+    response = await async_client.post(
+        "/api/v1/school/settings/",
+        json={"repair_stability_window_days": 61},
+        headers=clerk_admin_headers,
+    )
+
+    assert response.status_code == 422
+
+
+async def test_automatic_holidays_sync_is_bounded_and_can_be_disabled(
+    async_client,
+    clerk_admin_headers,
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        settings_service,
+        "_get_pt_holidays",
+        lambda _years: {
+            date(2025, 9, 15): "Dentro",
+            date(2025, 9, 14): "Antes",
+            date(2026, 7, 31): "Limite",
+            date(2026, 8, 1): "Depois",
+        },
+    )
+    payload = {
+        "school_start_date": "2025-09-15",
+        "school_hard_end_date": "2026-07-31",
+        "automatic_holidays_enabled": True,
+    }
+
+    response = await async_client.post(
+        "/api/v1/school/settings/",
+        json=payload,
+        headers=clerk_admin_headers,
+    )
+    assert response.status_code == 200
+    assert response.json()["automatic_holidays_enabled"] is True
+
+    events_response = await async_client.get(
+        "/api/v1/school/calendar-events/",
+        headers=clerk_admin_headers,
+    )
+    assert [(event["start_date"], event["name"]) for event in events_response.json()] == [
+        ("2025-09-15", "Dentro"),
+        ("2026-07-31", "Limite"),
+    ]
+
+    response = await async_client.post(
+        "/api/v1/school/settings/",
+        json={"automatic_holidays_enabled": False},
+        headers=clerk_admin_headers,
+    )
+    assert response.status_code == 200
+    assert response.json()["automatic_holidays_enabled"] is False
+
+    preserved_response = await async_client.get(
+        "/api/v1/school/calendar-events/",
+        headers=clerk_admin_headers,
+    )
+    assert len(preserved_response.json()) == 2
+
+    # With automatic holidays disabled, altering dates does not sync
+    response = await async_client.post(
+        "/api/v1/school/settings/",
+        json={"school_hard_end_date": "2026-08-31"},
+        headers=clerk_admin_headers,
+    )
+    assert response.status_code == 200
+    assert response.json()["school_hard_end_date"] == "2026-08-31"
+    assert response.json()["automatic_holidays_enabled"] is False
+
+    events_after_date_change = await async_client.get(
+        "/api/v1/school/calendar-events/",
+        headers=clerk_admin_headers,
+    )
+    assert [(event["start_date"], event["name"]) for event in events_after_date_change.json()] == [
+        ("2025-09-15", "Dentro"),
+        ("2026-07-31", "Limite"),
+    ]
+
+
+async def test_automatic_holidays_resyncs_only_after_period_change(
+    async_client,
+    clerk_admin_headers,
+    monkeypatch,
+):
+    sync_years = []
+
+    def fake_holidays(years):
+        sync_years.append(tuple(years))
+        return {
+            date(2025, 9, 15): "Início",
+            date(2026, 7, 31): "Período original",
+            date(2026, 8, 31): "Período alargado",
+        }
+
+    monkeypatch.setattr(settings_service, "_get_pt_holidays", fake_holidays)
+    base_payload = {
+        "school_start_date": "2025-09-15",
+        "school_hard_end_date": "2026-07-31",
+        "automatic_holidays_enabled": True,
+    }
+
+    response = await async_client.post(
+        "/api/v1/school/settings/", json=base_payload, headers=clerk_admin_headers
+    )
+    assert response.status_code == 200
+    assert len(sync_years) == 1
+
+    response = await async_client.post(
+        "/api/v1/school/settings/",
+        json={"repair_stability_window_days": 0, "automatic_holidays_enabled": True},
+        headers=clerk_admin_headers,
+    )
+    assert response.status_code == 200
+    assert len(sync_years) == 1
+
+    response = await async_client.post(
+        "/api/v1/school/settings/",
+        json={"school_hard_end_date": "2026-08-31", "automatic_holidays_enabled": True},
+        headers=clerk_admin_headers,
+    )
+    assert response.status_code == 200
+    assert len(sync_years) == 2
+
+    events_response = await async_client.get(
+        "/api/v1/school/calendar-events/", headers=clerk_admin_headers
+    )
+    assert [(event["start_date"], event["name"]) for event in events_response.json()] == [
+        ("2025-09-15", "Início"),
+        ("2026-07-31", "Período original"),
+        ("2026-08-31", "Período alargado"),
+    ]
+
+
+async def test_automatic_holidays_failure_rolls_back_settings_and_events(
+    async_client,
+    clerk_admin_headers,
+    monkeypatch,
+):
+    def fail_sync(_years):
+        raise RuntimeError("provider unavailable")
+
+    monkeypatch.setattr(settings_service, "_get_pt_holidays", fail_sync)
+    response = await async_client.post(
+        "/api/v1/school/settings/",
+        json={
+            "school_start_date": "2025-09-15",
+            "school_hard_end_date": "2026-07-31",
+            "automatic_holidays_enabled": True,
+        },
+        headers=clerk_admin_headers,
+    )
+
+    assert response.status_code == 503
+    assert response.json()["detail"]["code"] == "HOLIDAY_SYNC_FAILED"
+    settings_response = await async_client.get(
+        "/api/v1/school/settings/",
+        headers=clerk_admin_headers,
+    )
+    assert settings_response.status_code == 404
+
+
+async def test_automatic_holidays_failure_preserves_existing_settings_and_events(
+    async_client,
+    clerk_admin_headers,
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        settings_service,
+        "_get_pt_holidays",
+        lambda _years: {
+            date(2025, 9, 15): "Início original",
+            date(2026, 7, 31): "Fim original",
+        },
+    )
+    initial_response = await async_client.post(
+        "/api/v1/school/settings/",
+        json={
+            "school_start_date": "2025-09-15",
+            "school_hard_end_date": "2026-07-31",
+            "automatic_holidays_enabled": True,
+        },
+        headers=clerk_admin_headers,
+    )
+    assert initial_response.status_code == 200
+
+    def fail_sync(_years):
+        raise RuntimeError("provider unavailable")
+
+    monkeypatch.setattr(settings_service, "_get_pt_holidays", fail_sync)
+    failed_response = await async_client.post(
+        "/api/v1/school/settings/",
+        json={
+            "school_hard_end_date": "2026-08-31",
+            "automatic_holidays_enabled": True,
+        },
+        headers=clerk_admin_headers,
+    )
+    assert failed_response.status_code == 503
+    assert failed_response.json()["detail"]["code"] == "HOLIDAY_SYNC_FAILED"
+
+    settings_response = await async_client.get(
+        "/api/v1/school/settings/", headers=clerk_admin_headers
+    )
+    assert settings_response.json()["school_hard_end_date"] == "2026-07-31"
+    assert settings_response.json()["automatic_holidays_enabled"] is True
+    events_response = await async_client.get(
+        "/api/v1/school/calendar-events/", headers=clerk_admin_headers
+    )
+    assert [(event["start_date"], event["name"]) for event in events_response.json()] == [
+        ("2025-09-15", "Início original"),
+        ("2026-07-31", "Fim original"),
+    ]
+
+    # Recover with automatic holidays disabled: new dates saved, preference False, existing events preserved
+    recovery_response = await async_client.post(
+        "/api/v1/school/settings/",
+        json={
+            "school_hard_end_date": "2026-08-31",
+            "automatic_holidays_enabled": False,
+        },
+        headers=clerk_admin_headers,
+    )
+    assert recovery_response.status_code == 200
+    assert recovery_response.json()["school_hard_end_date"] == "2026-08-31"
+    assert recovery_response.json()["automatic_holidays_enabled"] is False
+
+    recovered_events = await async_client.get(
+        "/api/v1/school/calendar-events/", headers=clerk_admin_headers
+    )
+    assert [(event["start_date"], event["name"]) for event in recovered_events.json()] == [
+        ("2025-09-15", "Início original"),
+        ("2026-07-31", "Fim original"),
+    ]
 
 
 async def test_upsert_settings_rejects_partial_update_that_breaks_existing_dates(

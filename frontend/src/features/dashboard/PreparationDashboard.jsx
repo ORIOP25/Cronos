@@ -8,7 +8,6 @@ import {
   CProgressBar,
 } from '@coreui/react'
 import { useTutorialSimulation } from '../tutorial/tutorialHooks'
-import { usePrevalidation } from '../readiness/data'
 import PageHeader from '../../components/PageHeader'
 import StatePanel from '../../components/StatePanel'
 
@@ -27,11 +26,11 @@ export function PreparationDashboard({
   userId,
   organizationName,
   bases,
+  prevalidation,
 }) {
   const navigate = useNavigate()
   const tutorial = useTutorialSimulation({ orgId, userId })
-  const fingerprint = bases?.depth === 7 && bases?.complete ? bases.fingerprint : null
-  const prevalidation = usePrevalidation({ fingerprint, enabled: Boolean(fingerprint) })
+  const validation = prevalidation || { status: 'BLOCKED', issues: [] }
 
   if (!bases || typeof bases !== 'object' || !Array.isArray(bases.steps)) {
     return <StatePanel state="error" title="Resposta de readiness inválida" description="As bases de preparação não foram devolvidas pelo servidor." />
@@ -41,11 +40,7 @@ export function PreparationDashboard({
   const depth = bases.depth ?? 0
   const complete = Boolean(bases.complete)
   const steps = bases.steps
-  const prevalidationStatus = prevalidation.isError
-    ? 'ERROR'
-    : prevalidation.isFetching
-      ? 'CHECKING'
-      : prevalidation.data?.status || (complete ? 'BLOCKED' : 'NOT_READY')
+  const prevalidationStatus = validation.status || (complete ? 'BLOCKED' : 'NOT_READY')
   const canGenerate = ['READY', 'READY_WITH_WARNINGS'].includes(prevalidationStatus)
 
   return (
@@ -96,7 +91,7 @@ export function PreparationDashboard({
                 disabled={!canGenerate}
                 onClick={() => navigate('/schedules')}
               >
-                {prevalidationStatus === 'CHECKING' ? 'A validar…' : 'Gerar Horário →'}
+                Gerar Horário →
               </CButton>
             </div>
           </div>

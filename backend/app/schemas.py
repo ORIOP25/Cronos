@@ -5,7 +5,15 @@ from enum import StrEnum
 from typing import Annotated, Any, Literal
 from uuid import UUID
 
-from pydantic import AliasChoices, BaseModel, ConfigDict, EmailStr, Field, model_validator
+from pydantic import (
+    AliasChoices,
+    BaseModel,
+    ConfigDict,
+    EmailStr,
+    Field,
+    field_validator,
+    model_validator,
+)
 
 from .models import (
     CalendarEventSource,
@@ -281,7 +289,7 @@ class FoundationDraftData(BaseModel):
 
     school_start_date: date | None = None
     school_hard_end_date: date | None = None
-    repair_stability_window_days: int | None = Field(default=None, ge=1, le=60)
+    repair_stability_window_days: int = Field(default=14, ge=0, le=60)
     days_of_week: list[int] | None = None
     opening_time: time | None = None
     closing_time: time | None = None
@@ -290,6 +298,12 @@ class FoundationDraftData(BaseModel):
     lunch_window_start: time | None = None
     lunch_window_end: time | None = None
     lunch_min_duration_minutes: int | None = Field(default=None, ge=1, le=180)
+    automatic_holidays_enabled: bool = False
+
+    @field_validator("repair_stability_window_days", mode="before")
+    @classmethod
+    def default_missing_repair_stability_window(cls, value: int | None) -> int:
+        return 14 if value is None else value
 
 
 class FoundationDraftWrite(BaseModel):
@@ -338,11 +352,10 @@ class TutorialTelemetryEventCreate(BaseModel):
 
     tutorial_run_id: UUID
     client_event_id: UUID
-    tutorial_version: int = Field(..., ge=1)
+    tutorial_version: Literal[3]
     event_name: Literal[
         "tutorial_opened",
         "chapter_started",
-        "step_skipped",
         "tutorial_exited",
         "tutorial_completed",
         "tutorial_repeated",
@@ -1170,7 +1183,11 @@ class OrganizationSettingsUpsert(BaseModel):
     repair_stability_window_days: int | None = Field(
         None,
         ge=0,
+        le=60,
         description=DESC_REPAIR_WINDOW_DAYS,
+    )
+    automatic_holidays_enabled: bool | None = Field(
+        None, description="Importar feriados nacionais automaticamente"
     )
 
     @staticmethod
@@ -1196,6 +1213,7 @@ class OrganizationSettingsRead(BaseModel):
     school_start_date: date | None = None
     school_hard_end_date: date | None = None
     repair_stability_window_days: int | None = None
+    automatic_holidays_enabled: bool = False
     model_config = ConfigDict(from_attributes=True)
 
 
@@ -1930,6 +1948,7 @@ class PreparationDashboardResponse(BaseModel):
     foundation_status: OrganizationFoundationStatus
     foundation_completed_at: datetime | None = None
     bases: BasesReadinessResponse
+    prevalidation: PreflightReport
 
 
 class OperationalDashboardResponse(BaseModel):

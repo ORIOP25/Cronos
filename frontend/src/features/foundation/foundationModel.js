@@ -22,6 +22,7 @@ export const initialFoundationDraftValues = {
   lunch_window_start: '12:30',
   lunch_window_end: '14:00',
   lunch_min_duration_minutes: 60,
+  automatic_holidays_enabled: false,
 }
 
 export const initialFoundationState = {
@@ -31,6 +32,7 @@ export const initialFoundationState = {
   fieldErrors: {},
   status: 'idle', // 'idle' | 'saving' | 'saved' | 'error' | 'conflict'
   error: '',
+  errorCode: '',
   conflictData: null,
   completedThisSession: false,
 }
@@ -49,9 +51,12 @@ export function minutesToTime(totalMinutes) {
 }
 
 export function serializeFoundationDraftValues(values) {
-  return Object.fromEntries(
-    Object.entries(values).map(([field, value]) => [field, value === '' ? null : value]),
-  )
+  return Object.fromEntries(Object.entries(values).map(([field, value]) => {
+    if (field === 'repair_stability_window_days') {
+      return [field, value === '' || value == null ? 0 : Number(value)]
+    }
+    return [field, value === '' ? null : value]
+  }))
 }
 
 export function buildDailyTimeslots(values) {
@@ -109,9 +114,10 @@ export function validateFoundationStep(step, values) {
     ) {
       errors.school_hard_end_date = 'A data-limite deve ser posterior à data de início.'
     }
-    const windowDays = Number(values.repair_stability_window_days)
-    if (!Number.isInteger(windowDays) || windowDays < 1 || windowDays > 60) {
-      errors.repair_stability_window_days = 'A janela de estabilidade deve estar entre 1 e 60 dias.'
+    const rawWindowDays = values.repair_stability_window_days
+    const windowDays = rawWindowDays === '' || rawWindowDays == null ? 0 : Number(rawWindowDays)
+    if (!Number.isInteger(windowDays) || windowDays < 0 || windowDays > 60) {
+      errors.repair_stability_window_days = 'A janela de estabilidade deve estar entre 0 e 60 dias.'
     }
   }
 
@@ -217,6 +223,7 @@ export function foundationReducer(state, action) {
         fieldErrors: {},
         status: 'idle',
         error: '',
+        errorCode: '',
       }
     }
 
@@ -226,12 +233,15 @@ export function foundationReducer(state, action) {
         values: { ...state.values, [action.field]: action.value },
         fieldErrors: { ...state.fieldErrors, [action.field]: '' },
         error: '',
+        errorCode: '',
       }
 
     case 'SET_ERRORS':
       return {
         ...state,
         fieldErrors: action.errors,
+        error: '',
+        errorCode: '',
       }
 
     case 'SET_STEP':
@@ -239,6 +249,8 @@ export function foundationReducer(state, action) {
         ...state,
         currentStep: action.step,
         fieldErrors: {},
+        error: '',
+        errorCode: '',
       }
 
     case 'NEXT_STEP':
@@ -254,6 +266,7 @@ export function foundationReducer(state, action) {
         currentStep: Math.max(1, state.currentStep - 1),
         fieldErrors: {},
         error: '',
+        errorCode: '',
       }
 
     case 'SAVE_STARTED':
@@ -266,6 +279,8 @@ export function foundationReducer(state, action) {
       return {
         ...state,
         status: 'saved',
+        error: '',
+        errorCode: '',
         version: action.version ?? state.version + 1,
       }
 
@@ -274,6 +289,7 @@ export function foundationReducer(state, action) {
         ...state,
         status: 'error',
         error: action.error,
+        errorCode: action.errorCode || '',
       }
 
     case 'VERSION_CONFLICT':
@@ -282,6 +298,7 @@ export function foundationReducer(state, action) {
         status: 'conflict',
         conflictData: action.payload,
         error: 'Conflito de versão: o rascunho foi modificado noutra sessão.',
+        errorCode: action.payload?.code || '',
       }
 
     case 'RESOLVE_CONFLICT_RELOAD': {
@@ -291,6 +308,7 @@ export function foundationReducer(state, action) {
         status: 'idle',
         conflictData: null,
         error: '',
+        errorCode: '',
         version: latest.version,
         currentStep: latest.current_step || state.currentStep,
         values: {
@@ -309,6 +327,7 @@ export function foundationReducer(state, action) {
         status: 'idle',
         conflictData: null,
         error: '',
+        errorCode: '',
       }
 
     case 'COMPLETE_STARTED':
@@ -316,12 +335,15 @@ export function foundationReducer(state, action) {
         ...state,
         status: 'saving',
         error: '',
+        errorCode: '',
       }
 
     case 'COMPLETE_SUCCEEDED':
       return {
         ...state,
         status: 'saved',
+        error: '',
+        errorCode: '',
         completedThisSession: true,
       }
 
@@ -330,6 +352,7 @@ export function foundationReducer(state, action) {
         ...state,
         status: 'error',
         error: action.error,
+        errorCode: action.errorCode || '',
       }
 
     default:

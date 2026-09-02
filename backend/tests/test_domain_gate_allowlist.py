@@ -117,7 +117,7 @@ async def test_uncompleted_foundation_blocks_operational_endpoints_with_409(
             json={
                 "tutorial_run_id": "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11",
                 "client_event_id": "b0eebc99-9c0b-4ef8-bb6d-6bb9bd380a22",
-                "tutorial_version": 1,
+                "tutorial_version": 3,
                 "event_name": "tutorial_opened",
             },
         )

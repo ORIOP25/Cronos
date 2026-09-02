@@ -22,6 +22,13 @@ const fromObjectDetail = (detail) => {
   return clean(detail.message) || clean(detail.msg) || clean(detail.detail)
 }
 
+export function getApiErrorCode(error) {
+  const detail = error?.response?.data?.detail
+  return detail && typeof detail === 'object' && !Array.isArray(detail)
+    ? detail.code || null
+    : null
+}
+
 const statusMessage = (status) => {
   if (status === 401) return 'A sua sessão terminou. Entre novamente.'
   if (status === 403) return 'Não tem permissão para realizar esta ação.'

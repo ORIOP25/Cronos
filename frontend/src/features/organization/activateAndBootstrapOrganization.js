@@ -1,11 +1,17 @@
-export const PENDING_ORGANIZATION_KEY = 'cronos.pendingOrganizationActivation'
+export const PENDING_ORGANIZATION_STORAGE_PREFIX = 'cronos:pending-organization'
+
+export function getPendingOrganizationKey(userId) {
+  return userId ? `${PENDING_ORGANIZATION_STORAGE_PREFIX}:${userId}` : null
+}
 
 export async function activateAndBootstrapOrganization(input, ports) {
-  let organizationId = input.organizationId || ports.storage.get(PENDING_ORGANIZATION_KEY)
+  const storageKey = getPendingOrganizationKey(input.userId)
+  let organizationId = input.organizationId || (storageKey ? ports.storage.get(storageKey) : null)
   if (!organizationId) {
+    if (!storageKey) throw new Error('A user identity is required to create an organization.')
     const organization = await ports.createOrganization({ name: input.name.trim() })
     organizationId = organization.id
-    ports.storage.set(PENDING_ORGANIZATION_KEY, organizationId)
+    ports.storage.set(storageKey, organizationId)
   }
 
   await ports.setActive({ organization: organizationId })
@@ -13,7 +19,7 @@ export async function activateAndBootstrapOrganization(input, ports) {
   if (!token) throw new Error('A fresh organization session token could not be created.')
   const result = await ports.bootstrap(token)
   await ports.cacheMember(organizationId, result)
-  ports.storage.remove(PENDING_ORGANIZATION_KEY)
+  if (storageKey) ports.storage.remove(storageKey)
   const isComplete = result.foundation_status === 'COMPLETED'
   ports.navigate(isComplete ? ports.defaultRoute(result.member) : '/foundation')
   return result

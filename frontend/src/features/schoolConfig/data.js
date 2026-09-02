@@ -35,18 +35,6 @@ export function useCalendarEvents() {
   })
 }
 
-export function useSyncHolidays() {
-  const orgId = useOrganizationId()
-  const queryClient = useQueryClient()
-  return useMutation({
-    mutationFn: () => apiClient.post('/school/settings/sync-holidays'),
-    onSuccess: () => {
-      void invalidateOrgQueries(queryClient, orgId, [RESOURCES.calendar])
-      void invalidatePreparationQueries(queryClient, orgId)
-    },
-  })
-}
-
 export function useCreateCalendarEvent() {
   const orgId = useOrganizationId()
   const queryClient = useQueryClient()
@@ -99,8 +87,9 @@ export function useUpsertSchoolSettings() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (payload) => apiClient.post('/school/settings/', payload),
-    onSuccess: () => {
-      void invalidateOrgQueries(queryClient, orgId, [RESOURCES.settings])
+    onSuccess: (data) => {
+      queryClient.setQueryData(orgQueryKey(RESOURCES.settings, orgId), data)
+      void invalidateOrgQueries(queryClient, orgId, [RESOURCES.settings, RESOURCES.calendar])
       void invalidatePreparationQueries(queryClient, orgId)
     },
   })

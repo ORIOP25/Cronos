@@ -6,7 +6,8 @@ from httpx import ASGITransport, AsyncClient
 from app import models
 from app.api import deps
 from app.main import app
-from app.services.preflight_service import PreflightService
+from app.services.preflight_service import PreflightService, _validate_subject_requirements
+from tests.conftest import create_org_and_user, create_teacher_profile
 
 pytestmark = pytest.mark.postgresql
 
@@ -118,3 +119,93 @@ async def test_preflight_endpoint_returns_report(db_session, override_auth_actor
         assert data["status"] == "BLOCKED"
         assert "issues" in data
         assert any(issue["code"] == "ACTIVE_SCHOOL_YEAR_REQUIRED" for issue in data["issues"])
+
+
+async def test_preflight_rejects_room_that_cannot_fit_assigned_class(db_session):
+    org, _ = await create_org_and_user(
+        db_session,
+        clerk_user_id="preflight-room-user",
+        clerk_org_id="preflight-room-org",
+    )
+    course = models.Course(organization_id=org.id, name="Curso", abbreviation="C")
+    subject = models.Subject(
+        organization_id=org.id,
+        name="Laboratório",
+        required_room_type=models.RoomType.lab,
+    )
+    db_session.add_all([course, subject])
+    await db_session.flush()
+    school_class = models.Class(
+        organization_id=org.id,
+        course_id=course.id,
+        name="Turma grande",
+        size=30,
+        grade_level=10,
+        start_year=2025,
+        end_year=2028,
+    )
+    db_session.add(school_class)
+    await db_session.flush()
+    db_session.add(
+        models.Module(
+            organization_id=org.id,
+            subject_id=subject.id,
+            name="Módulo",
+            required_minutes=60,
+            order=0,
+        )
+    )
+    teacher = await create_teacher_profile(
+        db_session, organization_id=org.id, subject_ids=[subject.id]
+    )
+    db_session.add(
+        models.ClassSubjectLink(
+            organization_id=org.id,
+            class_id=school_class.id,
+            subject_id=subject.id,
+            grade_level=10,
+            teacher_id=teacher.id,
+        )
+    )
+    db_session.add(
+        models.Room(
+            organization_id=org.id,
+            name="Lab pequeno",
+            type=models.RoomType.lab,
+            capacity=20,
+        )
+    )
+    await db_session.flush()
+
+    errors = await _validate_subject_requirements(db_session, org.id, {subject.id})
+
+    assert errors and "Turmas sem sala compatível" in errors[0]
+    assert "Turma grande / Laboratório (30 lugares)" in errors[0]
+
+
+async def test_preparation_dashboard_embeds_single_prevalidation_snapshot(
+    db_session, override_auth_actor
+):
+    org, user, mem = await _create_org_and_admin(
+        db_session, "Dashboard Preflight School", "org_dashboard_preflight"
+    )
+    override_auth_actor(
+        deps.Actor(
+            account_id=user.id,
+            clerk_user_id=user.clerk_user_id,
+            organization_id=org.id,
+            membership_id=mem.id,
+            can_admin=True,
+            can_teach=False,
+            teacher_id=None,
+        )
+    )
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        response = await ac.get("/api/v1/dashboard")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["mode"] == "PREPARATION"
+    assert payload["prevalidation"]["status"] == "BLOCKED"
+    assert payload["bases"]["fingerprint"] == payload["prevalidation"]["fingerprint"]

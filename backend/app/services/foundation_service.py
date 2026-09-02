@@ -50,8 +50,8 @@ def validate_foundation_snapshot(data: schemas.FoundationDraftData) -> None:
         raise ValueError(f"Campos obrigatórios em falta: {', '.join(missing)}")
     if data.school_hard_end_date <= data.school_start_date:
         raise ValueError("A data-limite deve ser posterior à data de início")
-    if not 1 <= data.repair_stability_window_days <= 60:
-        raise ValueError("A janela de estabilidade deve estar entre 1 e 60 dias")
+    if not 0 <= data.repair_stability_window_days <= 60:
+        raise ValueError("A janela de estabilidade deve estar entre 0 e 60 dias")
     if (
         not data.days_of_week
         or len(data.days_of_week) > 7
@@ -149,6 +149,11 @@ class FoundationService:
         if write.expected_version != current_version:
             raise FoundationDraftVersionConflictError(current_version=current_version)
 
+        previous_data = (
+            schemas.FoundationDraftData.model_validate(draft.payload_json or {})
+            if draft is not None
+            else schemas.FoundationDraftData()
+        )
         if org.foundation_status == models.OrganizationFoundationStatus.NOT_STARTED:
             org.foundation_status = models.OrganizationFoundationStatus.IN_PROGRESS
 
@@ -174,6 +179,27 @@ class FoundationService:
             draft.updated_at = now
 
         await self.db.flush()
+        calendar_changed = (
+            previous_data.school_start_date != write.data.school_start_date
+            or previous_data.school_hard_end_date != write.data.school_hard_end_date
+        )
+        automatic_holidays_activated = (
+            not previous_data.automatic_holidays_enabled and write.data.automatic_holidays_enabled
+        )
+        if (
+            write.data.automatic_holidays_enabled
+            and (calendar_changed or automatic_holidays_activated)
+            and write.data.school_start_date is not None
+            and write.data.school_hard_end_date is not None
+            and write.data.school_hard_end_date >= write.data.school_start_date
+        ):
+            await settings_service.sync_holidays(
+                self.db,
+                organization_id,
+                changed_by_membership_id=membership_id,
+                school_start_date=write.data.school_start_date,
+                school_hard_end_date=write.data.school_hard_end_date,
+            )
         return schemas.FoundationDraftRead(
             version=new_version,
             current_step=write.current_step,
@@ -239,6 +265,7 @@ class FoundationService:
                 school_start_date=data.school_start_date,
                 school_hard_end_date=data.school_hard_end_date,
                 repair_stability_window_days=data.repair_stability_window_days,
+                automatic_holidays_enabled=data.automatic_holidays_enabled,
             ),
             changed_by_membership_id=membership_id,
         )

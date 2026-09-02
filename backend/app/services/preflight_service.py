@@ -110,21 +110,12 @@ async def _validate_teacher_availabilities(
     if not teacher_ids or not timeslot_ids:
         return None
 
-    inspection = await AvailabilityMatrixInspector.inspect(
+    missing_availability_ids = await AvailabilityMatrixInspector.fully_impossible_teacher_ids(
         db,
         organization_id=organization_id,
         teacher_ids=teacher_ids,
         timeslot_ids=timeslot_ids,
     )
-    available_teacher_ids = {
-        teacher_id
-        for teacher_id in teacher_ids
-        if any(
-            inspection.get_score(teacher_id, timeslot_id) != models.PreferenceLevel.IMPOSSIBLE.value
-            for timeslot_id in timeslot_ids
-        )
-    }
-    missing_availability_ids = teacher_ids - available_teacher_ids
     if not missing_availability_ids:
         return None
 
@@ -202,27 +193,39 @@ async def _validate_subject_requirements(
                 "Corrija a carga horária dos módulos."
             )
 
-    required_type_rows = await db.execute(
-        sa_select(models.Subject.required_room_type)
+    room_exists = sa_select(models.Room.id).where(
+        models.Room.organization_id == organization_id,
+        models.Room.type == models.Subject.required_room_type,
+        models.Room.capacity >= models.Class.size,
+    )
+    incompatible_rows = await db.execute(
+        sa_select(models.Class.name, models.Subject.name, models.Class.size)
+        .select_from(models.ClassSubjectLink)
+        .join(models.Class, models.Class.id == models.ClassSubjectLink.class_id)
+        .join(models.Subject, models.Subject.id == models.ClassSubjectLink.subject_id)
         .where(
+            models.ClassSubjectLink.organization_id == organization_id,
+            models.Class.organization_id == organization_id,
             models.Subject.organization_id == organization_id,
-            models.Subject.id.in_(subject_ids),
+            models.Class.is_archived.is_(False),
+            models.ClassSubjectLink.teacher_id.is_not(None),
+            models.ClassSubjectLink.grade_level == models.Class.grade_level,
+            models.ClassSubjectLink.subject_id.in_(subject_ids),
+            ~room_exists.where(models.Room.organization_id == organization_id)
+            .correlate(models.Class, models.Subject)
+            .exists(),
         )
-        .distinct()
+        .order_by(models.Class.name, models.Subject.name)
     )
-    required_room_types = {row[0] for row in required_type_rows.all()}
-    available_type_rows = await db.execute(
-        sa_select(models.Room.type).where(models.Room.organization_id == organization_id).distinct()
-    )
-    available_room_types = {row[0] for row in available_type_rows.all()}
-
-    missing_room_types = required_room_types - available_room_types
-    if missing_room_types:
-        missing_labels = sorted(rt.value for rt in missing_room_types)
+    incompatible = incompatible_rows.all()
+    if incompatible:
         errors.append(
-            "Não existem salas para os tipos exigidos: "
-            f"{', '.join(missing_labels)}. "
-            "Adicione salas desses tipos em Salas."
+            "Turmas sem sala compatível (tipo e lotação): "
+            + ", ".join(
+                f"{class_name} / {subject_name} ({size} lugares)"
+                for class_name, subject_name, size in incompatible
+            )
+            + ". Adicione salas compatíveis em Salas."
         )
 
     return errors

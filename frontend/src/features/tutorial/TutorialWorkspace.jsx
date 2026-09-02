@@ -49,8 +49,6 @@ export function TutorialWorkspace({ tutorial, onExit, onSkipTutorial }) {
       onSkipTutorial={onSkipTutorial}
       onAdvance={() => tutorial.advanceTutorial(screenStep.id)}
       persistenceError={tutorial.persistenceError}
-      versionUpdateVisible={tutorial.versionUpdateVisible}
-      onDismissVersionUpdate={tutorial.dismissVersionUpdate}
     />
   )
 

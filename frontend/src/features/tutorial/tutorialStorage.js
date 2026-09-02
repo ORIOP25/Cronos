@@ -1,7 +1,6 @@
 import {
   TUTORIAL_VERSION,
   TUTORIAL_STEPS,
-  getLegacyTutorialStorageKey,
 } from './tutorialContent'
 import { validateTutorialState } from './tutorialModel'
 
@@ -52,17 +51,6 @@ export function saveTutorialState(storage, key, state) {
   } catch (error) {
     console.error('Tutorial storage could not be written.', { key, error })
     return { ok: false, error }
-  }
-}
-
-export function hasLegacyTutorialState(storage, userId, organizationId) {
-  const key = getLegacyTutorialStorageKey(userId, organizationId)
-  if (!key || !storage) return false
-  try {
-    return storage.getItem(key) !== null
-  } catch (error) {
-    console.error('Legacy tutorial storage could not be inspected.', { key, error })
-    return false
   }
 }
 

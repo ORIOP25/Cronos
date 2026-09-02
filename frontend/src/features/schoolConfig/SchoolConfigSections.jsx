@@ -7,11 +7,11 @@ import {
   CModal, CModalHeader, CModalTitle, CModalBody, CModalFooter
 } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
-import { cilSave, cilTrash, cilCloudDownload, cilCalendar } from '@coreui/icons'
+import { cilSave, cilTrash, cilCalendar } from '@coreui/icons'
 import { useOrganization } from '@clerk/react'
 import { formatDate } from '../../utils/formatUtils'
 import { TXT, EVENT_TYPE_LABELS } from '../../utils/terminology'
-import { getApiErrorMessage } from '../../utils/apiErrors'
+import { getApiErrorCode, getApiErrorMessage } from '../../utils/apiErrors'
 import {
   timeslotsToGridFormData,
   toGridConfigurationPayload,
@@ -30,7 +30,6 @@ import {
   useRegenerateGrid,
   useSchoolSettings,
   useSoftResetSchoolYear,
-  useSyncHolidays,
   useUpsertSchoolSettings,
 } from './data'
 
@@ -41,11 +40,16 @@ export const CalendarSection = () => {
   const { message: successMsg, show: setSuccessMsg } = useTransientMessage()
 
   const { data: events = [], isLoading } = useCalendarEvents()
-  const syncMutation = useSyncHolidays()
+  const settingsQuery = useSchoolSettings()
+  const settingsMutation = useUpsertSchoolSettings()
   const createMutation = useCreateCalendarEvent()
   const deleteMutation = useDeleteCalendarEvent()
   const [fieldErrors, setFieldErrors] = useState({})
   const [deleteTarget, setDeleteTarget] = useState(null)
+  const [automaticHolidaysOverride, setAutomaticHolidaysOverride] = useState(null)
+  const automaticHolidaysEnabled = automaticHolidaysOverride ?? Boolean(
+    settingsQuery.data?.automatic_holidays_enabled,
+  )
 
   const handleCreate = () => {
     const errors = {}
@@ -63,7 +67,7 @@ export const CalendarSection = () => {
   const sortedEvents = [...events].sort((left, right) => left.start_date.localeCompare(right.start_date))
   let eventListContent
   if (isLoading) eventListContent = <StatePanel state="loading" title="A carregar eventos" compact />
-  else if (sortedEvents.length === 0) eventListContent = <StatePanel state="empty" title="Sem interrupções registadas" description="Importe feriados nacionais ou adicione uma interrupção manual." compact />
+  else if (sortedEvents.length === 0) eventListContent = <StatePanel state="empty" title="Sem interrupções registadas" description="Ative os feriados automáticos ou adicione uma interrupção manual." compact />
   else eventListContent = (
       <CTable striped hover responsive>
         <CTableHead>
@@ -109,9 +113,9 @@ export const CalendarSection = () => {
   return (
     <div>
       {successMsg && <div className="mb-3"><FeedbackBanner tone="success">{successMsg}</FeedbackBanner></div>}
-      {syncMutation.isError && (
+      {settingsMutation.isError && (
         <FeedbackBanner tone="danger">
-          {getApiErrorMessage(syncMutation.error, 'Erro ao sincronizar feriados.')}
+          {getApiErrorMessage(settingsMutation.error, 'Erro ao guardar a preferência de feriados automáticos.')}
         </FeedbackBanner>
       )}
       {createMutation.isError && (
@@ -123,24 +127,9 @@ export const CalendarSection = () => {
       <CCard className="border-0 shadow-sm mb-4 calendar-event-editor">
         <CCardHeader className="bg-white fw-bold py-2 calendar-event-editor__header">
           <span><CIcon icon={cilCalendar} className="me-2" />Adicionar Evento</span>
-          <CButton
-            color="secondary"
-            variant="outline"
-            size="sm"
-            className="calendar-import-action"
-            aria-label="Importar feriados nacionais"
-            title="Importar os feriados nacionais que ainda não estão no calendário"
-            disabled={syncMutation.isPending}
-            onClick={() => syncMutation.mutate(undefined, {
-              onSuccess: (result) => setSuccessMsg(result?.imported_count === 0 ? 'Não foram encontrados novos feriados.' : result?.imported_count === 1 ? '1 feriado importado.' : `${result?.imported_count ?? 0} feriados importados.`),
-            })}
-          >
-            <CIcon icon={cilCloudDownload} className="me-1" />
-            {syncMutation.isPending ? 'A Importar' : 'Importar Feriados'}
-          </CButton>
         </CCardHeader>
         <CCardBody>
-          <p className="text-muted mb-3">Registe uma interrupção específica da escola ou importe os feriados nacionais.</p>
+          <p className="text-muted mb-3">Registe uma interrupção específica da escola. Os feriados nacionais são sincronizados através da opção automática.</p>
           <CRow className="g-3">
             <CCol md={4}>
               <CFormLabel htmlFor="eventName">Nome do evento</CFormLabel>
@@ -196,6 +185,38 @@ export const CalendarSection = () => {
         </CCardBody>
       </CCard>
 
+      <CCard className="border-0 shadow-sm mb-4">
+        <CCardBody>
+          <CFormCheck
+            id="school-automatic-holidays"
+            label="Feriados automáticos"
+            checked={automaticHolidaysEnabled}
+            disabled={settingsQuery.isLoading || settingsMutation.isPending}
+            onChange={(event) => {
+              const enabled = event.target.checked
+              setAutomaticHolidaysOverride(enabled)
+              settingsMutation.mutate(
+                { automatic_holidays_enabled: enabled },
+                {
+                  onSuccess: () => {
+                    setAutomaticHolidaysOverride(null)
+                    setSuccessMsg(
+                      enabled
+                        ? 'Feriados automáticos ativados.'
+                        : 'Feriados automáticos desativados. Os eventos existentes foram preservados.',
+                    )
+                  },
+                  onError: () => setAutomaticHolidaysOverride(null),
+                },
+              )
+            }}
+          />
+          <p className="text-muted small mb-0 mt-2">
+            Ativar importa os feriados nacionais e acompanha alterações futuras às datas do período letivo.
+          </p>
+        </CCardBody>
+      </CCard>
+
       {eventListContent}
       <ConfirmationModal
         visible={Boolean(deleteTarget)}
@@ -210,29 +231,44 @@ export const CalendarSection = () => {
   )
 }
 function toSettingsForm(settings) {
-  return {
+  const form = {
     school_start_date: settings?.school_start_date || '',
     school_hard_end_date: settings?.school_hard_end_date || '',
     repair_stability_window_days: settings?.repair_stability_window_days?.toString() || '14',
   }
+  if (settings?.automatic_holidays_enabled !== undefined) {
+    form.automatic_holidays_enabled = Boolean(settings.automatic_holidays_enabled)
+  }
+  return form
+}
+
+function validateSettingsForm(form) {
+  if (!form.school_start_date || !form.school_hard_end_date) {
+    return 'Por favor, preencha todas as datas antes de guardar.'
+  }
+  if (form.school_hard_end_date <= form.school_start_date) {
+    return 'A data-limite deve ser posterior à data de início.'
+  }
+  return ''
 }
 
 export const SettingsSection = () => {
   const { data: settings, isLoading } = useSchoolSettings()
   const { message: resetSuccessMsg, show: showResetSuccess } = useTransientMessage()
+  const { message: saveSuccessMsg, show: showSaveSuccess } = useTransientMessage()
   if (isLoading) return <div className="d-flex justify-content-center p-5"><CSpinner /></div>
 
-  const editorKey = `${settings?.school_start_date ?? ''}:${settings?.school_hard_end_date ?? ''}:${settings?.repair_stability_window_days ?? ''}`
+  const editorKey = `${settings?.school_start_date ?? ''}:${settings?.school_hard_end_date ?? ''}:${settings?.repair_stability_window_days ?? ''}:${settings?.automatic_holidays_enabled ?? ''}`
   return (
     <>
       {resetSuccessMsg && <CAlert color="success" className="mb-3">{resetSuccessMsg}</CAlert>}
-      <SettingsEditor key={editorKey} settings={settings} onSoftResetSuccess={showResetSuccess} />
+      {saveSuccessMsg && <CAlert color="success" className="mb-3">{saveSuccessMsg}</CAlert>}
+      <SettingsEditor key={editorKey} settings={settings} onSoftResetSuccess={showResetSuccess} onSaveSuccess={showSaveSuccess} />
     </>
   )
 }
 
-const SettingsEditor = ({ settings, onSoftResetSuccess }) => {
-  const { message: successMsg, show: setSuccessMsg } = useTransientMessage()
+const SettingsEditor = ({ settings, onSoftResetSuccess, onSaveSuccess }) => {
   const [savePromptMsg, setSavePromptMsg] = useState(null)
   const [showSaveModal, setShowSaveModal] = useState(false)
   const [form, setForm] = useState(() => toSettingsForm(settings))
@@ -270,12 +306,9 @@ const SettingsEditor = ({ settings, onSoftResetSuccess }) => {
   const upsertMutation = useUpsertSchoolSettings()
 
   const handleSave = () => {
-    if (!form.school_start_date || !form.school_hard_end_date) {
-      setSavePromptMsg('Por favor, preencha todas as datas antes de guardar.')
-      return;
-    }
-    if (form.school_hard_end_date <= form.school_start_date) {
-      setSavePromptMsg('A data-limite deve ser posterior à data de início.')
+    const validationMessage = validateSettingsForm(form)
+    if (validationMessage) {
+      setSavePromptMsg(validationMessage)
       return
     }
     setShowSaveModal(true)
@@ -284,20 +317,53 @@ const SettingsEditor = ({ settings, onSoftResetSuccess }) => {
   const confirmSave = () => {
     upsertMutation.mutate(toSchoolSettingsPayload(form), {
       onSuccess: () => {
-        setSuccessMsg('Período letivo guardado com sucesso.')
+        onSaveSuccess('Período letivo guardado com sucesso.')
         setSavePromptMsg(null)
         setShowSaveModal(false)
       },
+      onError: () => setShowSaveModal(false),
     })
+  }
+
+  const canDisableAutomaticHolidays = getApiErrorCode(upsertMutation.error) === 'HOLIDAY_SYNC_FAILED'
+    && form.automatic_holidays_enabled
+
+  const handleDisableAutomaticHolidays = () => {
+    const validationMessage = validateSettingsForm(form)
+    if (validationMessage) {
+      setSavePromptMsg(validationMessage)
+      return
+    }
+    upsertMutation.mutate(
+      { ...toSchoolSettingsPayload(form), automatic_holidays_enabled: false },
+      {
+        onSuccess: () => {
+          setForm((current) => ({ ...current, automatic_holidays_enabled: false }))
+          onSaveSuccess('Período letivo guardado com os feriados automáticos desativados.')
+          setSavePromptMsg(null)
+        },
+      },
+    )
   }
 
   return (
     <div>
-      {successMsg && <CAlert color="success" className="mb-3">{successMsg}</CAlert>}
       {savePromptMsg && <CAlert color="warning" className="mb-3">{savePromptMsg}</CAlert>}
       {upsertMutation.isError && (
         <CAlert color="danger">
-          {getApiErrorMessage(upsertMutation.error, 'Erro ao guardar configuração.')}
+          <div className="d-flex flex-wrap align-items-center gap-2">
+            <span>{getApiErrorMessage(upsertMutation.error, 'Erro ao guardar configuração.')}</span>
+            {canDisableAutomaticHolidays && (
+              <CButton
+                color="link"
+                className="p-0"
+                onClick={handleDisableAutomaticHolidays}
+                disabled={upsertMutation.isPending}
+              >
+                Desativar feriados automáticos e guardar
+              </CButton>
+            )}
+          </div>
         </CAlert>
       )}
       

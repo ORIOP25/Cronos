@@ -214,7 +214,6 @@ export const useUpdateTimesheetStatus = () => {
  */
 export const useDashboard = ({ enabled = true } = {}) => {
   const apiClient = useApiClient()
-  const queryClient = useQueryClient()
   const orgId = useOrganization().organization?.id
   return useQuery({
     queryKey: ['dashboard', orgId],
@@ -226,16 +225,14 @@ export const useDashboard = ({ enabled = true } = {}) => {
       if (data.mode === 'PREPARATION' && (!data.bases || typeof data.bases !== 'object')) {
         throw new Error('Dashboard contract error: preparation bases are missing.')
       }
-      return data
-    },
-    onError: (error) => {
-      if (error?.response?.status === 409 && error?.response?.data?.detail?.code === 'PREFLIGHT_STALE') {
-        void queryClient.invalidateQueries({ queryKey: ['dashboard', orgId] })
+      if (data.mode === 'PREPARATION' && (!data.prevalidation || typeof data.prevalidation !== 'object')) {
+        throw new Error('Dashboard contract error: preparation prevalidation is missing.')
       }
+      return data
     },
     enabled: Boolean(orgId) && enabled,
     ...DYNAMIC_OPTS,
-    refetchOnWindowFocus: 'always',
+    refetchOnWindowFocus: false,
   })
 }
 

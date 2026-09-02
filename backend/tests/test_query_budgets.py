@@ -69,6 +69,7 @@ def test_dashboard_uses_at_most_four_statements(sync_db):
                 depth=0,
                 complete=False,
             ),
+            prevalidation=schemas.PreflightReport(status="BLOCKED"),
         )
 
     assert len(statements) <= 4
