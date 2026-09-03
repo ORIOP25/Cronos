@@ -157,7 +157,7 @@ const SlotCell = ({ slotEntries, isOperationalEnabled, onOpenOperationalAction }
   if (isSubstituteBlock) {
     statusLabel = 'Substituição'
   } else if (slot.lesson_log_status === 'COMPLETED') {
-    statusLabel = getLessonLogStatus('COMPLETED').label
+    statusLabel = 'Concluído'
   } else if (slot.lesson_log_status === 'OCCURRENCE') {
     statusLabel = getLessonLogStatus('OCCURRENCE').label
   } else if (slot.occurrence_status && slot.occurrence_decided_at) {
@@ -193,7 +193,11 @@ const SlotCell = ({ slotEntries, isOperationalEnabled, onOpenOperationalAction }
         <span className="week-grid__secondary">
           {[slot.teacher?.name, slot.room?.name].filter(Boolean).join(' · ')}
         </span>
-        {canOpenOperationalAction ? (
+        {statusLabel ? (
+          <span className={`week-grid__action${slot.lesson_log_status === 'COMPLETED' ? ' week-grid__action--completed' : ''}`}>
+            {statusLabel}
+          </span>
+        ) : canOpenOperationalAction ? (
           <span className="week-grid__action">
             {isWeekLocked ? 'Consultar' : 'Registar'}
           </span>
@@ -209,7 +213,6 @@ const SlotCell = ({ slotEntries, isOperationalEnabled, onOpenOperationalAction }
           Rascunho
         </div>
       ) : null}
-      {statusLabel ? <div className="week-grid__status">{statusLabel}</div> : null}
       {!canOpenOperationalAction && operationalBlockReason ? (
         <div className="week-grid__secondary">
           {operationalBlockReason}

@@ -217,4 +217,26 @@ describe('WeekGrid (Ponto 8.1)', () => {
     const slotButton = screen.getByRole('button', { name: /programação/i })
     expect(slotButton).toBeInTheDocument()
   })
+
+  it('mostra Concluído na ação e não adiciona linha extra de estado ao concluir aula', () => {
+    const completedSlot = {
+      ...baseSlot,
+      lesson_log_status: 'COMPLETED',
+    }
+
+    const { container } = render(
+      <WeekGrid
+        slots={[completedSlot]}
+        isLoading={false}
+        baseTimeslots={[completedSlot.timeslot]}
+        weekStart="2026-04-20"
+        isOperationalEnabled
+      />
+    )
+
+    expect(screen.getByText('Concluído')).toBeInTheDocument()
+    expect(screen.queryByText('Registar')).not.toBeInTheDocument()
+    expect(container.querySelector('.week-grid__status')).not.toBeInTheDocument()
+    expect(container.querySelector('.week-grid__action--completed')).toHaveTextContent('Concluído')
+  })
 })

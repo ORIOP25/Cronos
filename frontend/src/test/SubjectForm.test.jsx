@@ -71,4 +71,19 @@ describe('SubjectForm', () => {
     expect(screen.queryByRole('button', { name: /guardar disciplina/i })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /editar fundamentos/i })).not.toBeInTheDocument()
   })
+
+  it('mantém botões de editar e remover lado a lado mesmo com nome de módulo muito longo', () => {
+    const { container } = renderForm({
+      initialData: {
+        name: 'Programação',
+        modules: [{ id: 1, name: 'dwadadawdawdawdawdaw', code: '12314', hours_total: 20 }],
+      },
+    })
+
+    const actionsContainer = container.querySelector('.module-item-card .text-nowrap')
+    expect(actionsContainer).toBeInTheDocument()
+    expect(actionsContainer).toHaveClass('d-flex', 'align-items-center', 'flex-shrink-0')
+    expect(screen.getByRole('button', { name: /editar dwadadawdawdawdawdaw/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /remover dwadadawdawdawdawdaw/i })).toBeInTheDocument()
+  })
 })

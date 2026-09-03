@@ -109,8 +109,8 @@ const SubjectForm = ({ initialData, onSubmit, isLoading, onCancel, readOnly = fa
         <div className="mt-3 d-grid gap-2">
           {subject.modules.map((module, index) => (
             <div key={module.id ?? `${module.name}-${index}`} className="module-item-card d-flex justify-content-between align-items-center">
-              <span><strong>{module.name}</strong> · <small className="text-muted">{module.code || 'Sem código'}</small> · <strong>{module.hours_total}h</strong></span>
-              {!readOnly && <div>
+              <span className="me-2 text-break" style={{ minWidth: 0 }}><strong>{module.name}</strong> · <small className="text-muted">{module.code || 'Sem código'}</small> · <strong>{module.hours_total}h</strong></span>
+              {!readOnly && <div className="d-flex align-items-center flex-shrink-0 text-nowrap">
                 <CButton type="button" color="primary" variant="ghost" size="sm" aria-label={`Editar ${module.name}`} onClick={() => startEditing(index)}>Editar</CButton>
                 <CButton type="button" color="danger" variant="ghost" size="sm" aria-label={`Remover ${module.name}`} onClick={() => setSubject((current) => ({ ...current, modules: current.modules.filter((_, moduleIndex) => moduleIndex !== index) }))}>Remover</CButton>
               </div>}
