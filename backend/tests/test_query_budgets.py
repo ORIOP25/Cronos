@@ -1,5 +1,5 @@
 from contextlib import contextmanager
-from datetime import date
+from datetime import date, datetime, time
 
 from sqlalchemy import event
 
@@ -11,6 +11,7 @@ from app.services import (
     schedule_service,
     timesheet_service,
 )
+from tests.conftest import TestingSessionLocal, create_teacher_profile
 
 
 @contextmanager
@@ -195,4 +196,133 @@ async def test_async_dashboard_summary_uses_bounded_statements(db_session):
     assert summary.prevalidation is not None
     assert summary.prevalidation.fingerprint is None
     # Ensure fingerprint generation is excluded and queries remain strictly bounded
+    assert len(statements) <= 20
+
+
+async def test_populated_dashboard_skips_fingerprints_with_bounded_queries(db_session, monkeypatch):
+    organization = models.Organization(
+        name="Populated Dashboard Budget",
+        plan_status="active",
+        foundation_status=models.OrganizationFoundationStatus.COMPLETED,
+        foundation_completed_at=datetime(2026, 1, 1),
+        first_real_schedule_approved_at=None,
+    )
+    db_session.add(organization)
+    await db_session.flush()
+    db_session.add_all(
+        [
+            models.OrganizationSettings(
+                organization_id=organization.id,
+                school_start_date=date(2025, 9, 1),
+                school_hard_end_date=date(2026, 6, 30),
+            ),
+            models.SchedulerSchoolYear(
+                organization_id=organization.id,
+                label="2025/2026",
+                start_date=date(2025, 9, 1),
+                hard_end_date=date(2026, 6, 30),
+                is_active=True,
+            ),
+            models.Timeslot(
+                organization_id=organization.id,
+                day_of_week=0,
+                start_time=time(8, 30),
+                end_time=time(9, 20),
+            ),
+        ]
+    )
+    course = models.Course(
+        organization_id=organization.id,
+        name="Curso Populado",
+        abbreviation="CP",
+    )
+    subject = models.Subject(
+        organization_id=organization.id,
+        name="Disciplina Populada",
+        required_room_type=models.RoomType.normal,
+    )
+    room = models.Room(
+        organization_id=organization.id,
+        name="Sala Populada",
+        type=models.RoomType.normal,
+        capacity=30,
+    )
+    db_session.add_all([course, subject, room])
+    await db_session.flush()
+    db_session.add(
+        models.Module(
+            organization_id=organization.id,
+            subject_id=subject.id,
+            name="Módulo Populado",
+            required_minutes=60,
+            order=0,
+        )
+    )
+
+    teachers = []
+    classes = []
+    links = []
+    for index in range(12):
+        teacher = await create_teacher_profile(
+            db_session,
+            organization_id=organization.id,
+            name=f"Professor {index}",
+            subject_ids=[subject.id],
+        )
+        school_class = models.Class(
+            organization_id=organization.id,
+            course_id=course.id,
+            name=f"Turma {index}",
+            size=20,
+            grade_level=10,
+            start_year=2025,
+            end_year=2028,
+        )
+        db_session.add(school_class)
+        await db_session.flush()
+        teachers.append(teacher)
+        classes.append(school_class)
+        links.append(
+            models.ClassSubjectLink(
+                organization_id=organization.id,
+                class_id=school_class.id,
+                subject_id=subject.id,
+                grade_level=10,
+                teacher_id=teacher.id,
+            )
+        )
+    db_session.add_all(links)
+    await db_session.commit()
+
+    async def fail_if_called(*_args, **_kwargs):
+        raise AssertionError("dashboard readiness must not calculate fingerprints")
+
+    monkeypatch.setattr(
+        "app.services.scheduler_fingerprint_service.SchedulerFingerprintService.generation_input_fingerprint",
+        fail_if_called,
+    )
+
+    async with TestingSessionLocal() as fresh_session:
+        statements: list[str] = []
+        engine = fresh_session.get_bind()
+
+        def record(_connection, _cursor, statement, _parameters, _context, _many):
+            statements.append(statement)
+
+        event.listen(engine, "before_cursor_execute", record)
+        try:
+            summary = await dashboard_service.get_dashboard_summary(
+                fresh_session,
+                organization.id,
+            )
+        finally:
+            event.remove(engine, "before_cursor_execute", record)
+
+    assert summary.bases is not None
+    assert summary.bases.complete is True
+    assert summary.bases.depth == 7
+    assert summary.prevalidation is not None
+    assert summary.prevalidation.status == "READY"
+    assert summary.bases.fingerprint is None
+    assert summary.prevalidation.fingerprint is None
     assert len(statements) <= 20

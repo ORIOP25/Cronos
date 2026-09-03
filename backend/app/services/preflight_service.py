@@ -1,5 +1,5 @@
 import structlog
-from sqlalchemy import func, or_
+from sqlalchemy import and_, func, or_
 from sqlalchemy import select as sa_select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -57,7 +57,6 @@ async def _get_generation_workload_counts(
             models.Class.organization_id == organization_id,
             models.ClassSubjectLink.organization_id == organization_id,
             models.Class.is_archived == False,  # noqa: E712
-            models.ClassSubjectLink.teacher_id.isnot(None),
             models.ClassSubjectLink.grade_level == models.Class.grade_level,
         )
     )
@@ -402,20 +401,31 @@ class PreflightService:
                     .select_from(models.ClassSubjectLink)
                     .join(models.Class, models.Class.id == models.ClassSubjectLink.class_id)
                     .join(models.Subject, models.Subject.id == models.ClassSubjectLink.subject_id)
-                    .join(models.Teacher, models.Teacher.id == models.ClassSubjectLink.teacher_id)
-                    .join(
+                    .outerjoin(
+                        models.Teacher,
+                        and_(
+                            models.Teacher.id == models.ClassSubjectLink.teacher_id,
+                            models.Teacher.organization_id == organization_id,
+                        ),
+                    )
+                    .outerjoin(
                         models.OrganizationMembership,
-                        models.OrganizationMembership.id
-                        == models.Teacher.organization_membership_id,
+                        and_(
+                            models.OrganizationMembership.id
+                            == models.Teacher.organization_membership_id,
+                            models.OrganizationMembership.organization_id == organization_id,
+                        ),
                     )
                     .where(
                         models.ClassSubjectLink.organization_id == organization_id,
                         models.Class.organization_id == organization_id,
                         models.Subject.organization_id == organization_id,
                         models.Class.is_archived.is_(False),
-                        models.ClassSubjectLink.teacher_id.isnot(None),
                         models.ClassSubjectLink.grade_level == models.Class.grade_level,
                         or_(
+                            models.ClassSubjectLink.teacher_id.is_(None),
+                            models.Teacher.id.is_(None),
+                            models.OrganizationMembership.id.is_(None),
                             models.Teacher.organization_id != organization_id,
                             models.OrganizationMembership.organization_id != organization_id,
                             models.OrganizationMembership.lifecycle_status
@@ -438,14 +448,22 @@ class PreflightService:
             ).all()
 
             for inv in invalid_assignment_rows:
+                if inv.teacher_name is None:
+                    message = (
+                        f"Atribuição inválida: a turma {inv.class_name} ({inv.subject_name}) "
+                        "não tem professor atribuído."
+                    )
+                else:
+                    message = (
+                        f"Atribuição inválida: o professor {inv.teacher_name} na turma "
+                        f"{inv.class_name} ({inv.subject_name}) não está ativo ou não tem "
+                        "qualificação na disciplina."
+                    )
                 issues.append(
                     schemas.PreflightIssue(
                         code="INVALID_TEACHER_ASSIGNMENT",
                         severity="BLOCKER",
-                        message=(
-                            f"Atribuição inválida: o professor {inv.teacher_name} na turma {inv.class_name} "
-                            f"({inv.subject_name}) não está ativo ou não tem qualificação na disciplina."
-                        ),
+                        message=message,
                         route=f"/courses/{inv.course_id}/classes/{inv.class_id}/subjects",
                     )
                 )

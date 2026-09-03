@@ -56,6 +56,7 @@ export function FoundationWizard() {
   const [confirmed, setConfirmed] = useState(false)
   const [isRetrying, setIsRetrying] = useState(false)
   const [isRecoveringHolidays, setIsRecoveringHolidays] = useState(false)
+  const [isTransitioning, setIsTransitioning] = useState(false)
   const [isReloadingConflict, setIsReloadingConflict] = useState(false)
   const [conflictReloadError, setConflictReloadError] = useState('')
   const isInitialSync = useRef(false)
@@ -65,6 +66,7 @@ export function FoundationWizard() {
   const pendingSnapshotRef = useRef(null)
   const failedSnapshotRef = useRef(null)
   const saveRunnerRef = useRef(null)
+  const transitionInProgressRef = useRef(false)
 
   // 1. Initial Sync from Server Draft
   useEffect(() => {
@@ -90,21 +92,23 @@ export function FoundationWizard() {
     }
   }, [statusQuery.data?.foundation_status, state.completedThisSession, navigate])
 
-  const persistSnapshot = useCallback((snapshot) => {
+  const persistSnapshot = useCallback((snapshot, { explicitTransition = false } = {}) => {
     if (state.status === 'conflict') return Promise.resolve(false)
     if (autosaveTimerRef.current) {
       clearTimeout(autosaveTimerRef.current)
       autosaveTimerRef.current = null
     }
-    pendingSnapshotRef.current = snapshot
+    if (explicitTransition) isDirtyRef.current = false
+    pendingSnapshotRef.current = { snapshot, explicitTransition }
     if (saveRunnerRef.current) {
       return saveRunnerRef.current
     }
 
     const runner = (async () => {
       while (pendingSnapshotRef.current) {
-        const nextSnapshot = pendingSnapshotRef.current
+        const queuedSnapshot = pendingSnapshotRef.current
         pendingSnapshotRef.current = null
+        const nextSnapshot = queuedSnapshot.snapshot
         dispatch({ type: 'SAVE_STARTED' })
         try {
           const res = await saveDraftMutation.mutateAsync({
@@ -118,7 +122,12 @@ export function FoundationWizard() {
         } catch (err) {
           if (err?.response?.status === 409) {
             // Preserve a newer edit queued while this request was in flight.
-            if (!pendingSnapshotRef.current) pendingSnapshotRef.current = nextSnapshot
+            if (!pendingSnapshotRef.current) {
+              pendingSnapshotRef.current = {
+                snapshot: nextSnapshot,
+                explicitTransition: queuedSnapshot.explicitTransition,
+              }
+            }
             dispatch({ type: 'VERSION_CONFLICT', payload: err.response.data?.detail || {} })
           } else {
             failedSnapshotRef.current = nextSnapshot
@@ -127,6 +136,7 @@ export function FoundationWizard() {
               error: apiErrorMessage(err?.response?.data?.detail, 'Não foi possível guardar o rascunho.'),
               errorCode: getApiErrorCode(err),
             })
+            if (pendingSnapshotRef.current?.explicitTransition) continue
           }
           return false
         }
@@ -142,7 +152,12 @@ export function FoundationWizard() {
 
   // 4. 600ms Debounced Autosave on user input
   useEffect(() => {
-    if (!isInitialSync.current || !isDirtyRef.current || state.status === 'conflict') {
+    if (
+      !isInitialSync.current
+      || !isDirtyRef.current
+      || state.status === 'conflict'
+      || isTransitioning
+    ) {
       return
     }
 
@@ -161,7 +176,7 @@ export function FoundationWizard() {
         clearTimeout(autosaveTimerRef.current)
       }
     }
-  }, [state.values, state.currentStep, state.status, persistSnapshot])
+  }, [state.values, state.currentStep, state.status, isTransitioning, persistSnapshot])
 
   const handleChange = (field, value) => {
     if (state.status === 'conflict') return
@@ -202,12 +217,26 @@ export function FoundationWizard() {
 
   // Navigation handlers
   const persistDestination = async (destinationStep) => {
-    const saved = await persistSnapshot({ step: destinationStep, values: state.values })
-    if (saved) {
-      isDirtyRef.current = false
-      dispatch({ type: 'SET_STEP', step: destinationStep })
+    if (transitionInProgressRef.current || state.status === 'conflict') return false
+    transitionInProgressRef.current = true
+    setIsTransitioning(true)
+    if (autosaveTimerRef.current) {
+      clearTimeout(autosaveTimerRef.current)
+      autosaveTimerRef.current = null
     }
-    return saved
+    try {
+      const saved = await persistSnapshot(
+        { step: destinationStep, values: state.values },
+        { explicitTransition: true },
+      )
+      if (saved) {
+        dispatch({ type: 'SET_STEP', step: destinationStep })
+      }
+      return saved
+    } finally {
+      transitionInProgressRef.current = false
+      setIsTransitioning(false)
+    }
   }
 
   const handleNext = async () => {
@@ -286,7 +315,7 @@ export function FoundationWizard() {
   }
 
   const organizationName = statusQuery.data?.organization_name || 'a sua escola'
-  const isBlocked = state.status === 'conflict' || isRetrying || isRecoveringHolidays
+  const isBlocked = state.status === 'conflict' || isRetrying || isRecoveringHolidays || isTransitioning
 
   if (statusQuery.isError || draftQuery.isError) {
     return (
@@ -440,7 +469,7 @@ export function FoundationWizard() {
           <CButton
             color="secondary"
             variant="outline"
-            disabled={state.currentStep === 1 || isBlocked || state.status === 'saving'}
+            disabled={state.currentStep === 1 || isBlocked}
             onClick={handlePrev}
           >
             ← Anterior
@@ -450,7 +479,7 @@ export function FoundationWizard() {
             {state.currentStep < STEP_CONFIRMATION ? (
               <CButton
                 color="primary"
-                disabled={isBlocked || state.status === 'saving'}
+                disabled={isBlocked}
                 onClick={handleNext}
               >
                 {state.currentStep === STEP_CALENDAR && !state.values.automatic_holidays_enabled
@@ -460,7 +489,7 @@ export function FoundationWizard() {
             ) : (
               <CButton
                 color="success"
-                disabled={isBlocked || state.status === 'saving' || !confirmed}
+                disabled={isBlocked || !confirmed}
                 onClick={handleCompleteActivation}
               >
                 Ativar Escola

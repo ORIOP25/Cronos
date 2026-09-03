@@ -432,6 +432,104 @@ describe('Foundation', () => {
     expect(stabilityInput).not.toBeDisabled()
   })
 
+  it('queues the latest values and destination step during an explicit transition', async () => {
+    let resolveFirstPut
+    let resolveSecondPut
+    const firstPutPromise = new Promise((resolve) => {
+      resolveFirstPut = resolve
+    })
+    const secondPutPromise = new Promise((resolve) => {
+      resolveSecondPut = resolve
+    })
+
+    apiClient.get.mockImplementation((url) => {
+      if (url === '/foundation/status') {
+        return Promise.resolve({
+          foundation_status: 'IN_PROGRESS',
+          foundation_completed_at: null,
+          first_real_schedule_approved_at: null,
+          organization_name: 'Escola Foundation',
+        })
+      }
+      return Promise.resolve({
+        version: 0,
+        current_step: 1,
+        data: {
+          school_start_date: '2025-09-15',
+          school_hard_end_date: '2026-07-31',
+          repair_stability_window_days: 14,
+        },
+      })
+    })
+    apiClient.put
+      .mockReturnValueOnce(firstPutPromise)
+      .mockReturnValueOnce(secondPutPromise)
+
+    renderFoundation()
+    const stabilityInput = await screen.findByLabelText(/janela de estabilidade/i)
+    fireEvent.change(stabilityInput, { target: { value: '21' } })
+    await waitFor(() => expect(apiClient.put).toHaveBeenCalledTimes(1))
+
+    fireEvent.click(screen.getByRole('button', { name: /seguinte/i }))
+    expect(stabilityInput).toBeDisabled()
+    expect(screen.getByText(/1\. Período do Ano Letivo/i)).toBeInTheDocument()
+
+    resolveFirstPut({ version: 1 })
+    await waitFor(() => expect(apiClient.put).toHaveBeenCalledTimes(2))
+    expect(apiClient.put).toHaveBeenLastCalledWith('/foundation/draft', expect.objectContaining({
+      expected_version: 1,
+      current_step: 2,
+      data: expect.objectContaining({ repair_stability_window_days: 21 }),
+    }))
+    expect(screen.getByText(/1\. Período do Ano Letivo/i)).toBeInTheDocument()
+
+    resolveSecondPut({ version: 2 })
+    expect(await screen.findByText(/2\. Dias de Funcionamento Letivo/i)).toBeInTheDocument()
+  })
+
+  it('keeps the current step and local values when an explicit transition fails', async () => {
+    let shouldFail = true
+    apiClient.get.mockImplementation((url) => {
+      if (url === '/foundation/status') {
+        return Promise.resolve({
+          foundation_status: 'IN_PROGRESS',
+          foundation_completed_at: null,
+          first_real_schedule_approved_at: null,
+          organization_name: 'Escola Foundation',
+        })
+      }
+      return Promise.resolve({
+        version: 0,
+        current_step: 1,
+        data: {
+          school_start_date: '2025-09-15',
+          school_hard_end_date: '2026-07-31',
+          repair_stability_window_days: 14,
+        },
+      })
+    })
+    apiClient.put.mockImplementation((_url, payload) => (
+      shouldFail
+        ? Promise.reject({ response: { status: 503, data: { detail: 'transition failed' } } })
+        : Promise.resolve({ version: payload.expected_version + 1 })
+    ))
+
+    renderFoundation()
+    const stabilityInput = await screen.findByLabelText(/janela de estabilidade/i)
+    fireEvent.change(stabilityInput, { target: { value: '21' } })
+    fireEvent.click(screen.getByRole('button', { name: /seguinte/i }))
+
+    await screen.findByText('transition failed')
+    expect(screen.getByText(/1\. Período do Ano Letivo/i)).toBeInTheDocument()
+    expect(stabilityInput).toHaveValue(21)
+    expect(stabilityInput).not.toBeDisabled()
+    expect(screen.getByRole('button', { name: /tentar guardar novamente/i })).toBeInTheDocument()
+
+    shouldFail = false
+    fireEvent.click(screen.getByRole('button', { name: /seguinte/i }))
+    expect(await screen.findByText(/2\. Dias de Funcionamento Letivo/i)).toBeInTheDocument()
+  })
+
   it('retrying a failed save uses the current form values', async () => {
     apiClient.get.mockImplementation((url) => {
       if (url === '/foundation/status') {

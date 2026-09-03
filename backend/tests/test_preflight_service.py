@@ -244,13 +244,20 @@ async def test_preflight_blocks_invalid_teacher_assignment_archived_or_unqualifi
         name="Programação",
         required_room_type=models.RoomType.normal,
     )
+    subject_without_teacher = models.Subject(
+        organization_id=org.id,
+        name="Redes",
+        required_room_type=models.RoomType.normal,
+    )
     room = models.Room(
         organization_id=org.id,
         name="Sala A",
         capacity=30,
         type=models.RoomType.normal,
     )
-    db_session.add_all([school_year, settings, timeslot, course, subject, room])
+    db_session.add_all(
+        [school_year, settings, timeslot, course, subject, subject_without_teacher, room]
+    )
     await db_session.flush()
 
     school_year_state = models.SchedulerSchoolYearState(
@@ -275,7 +282,25 @@ async def test_preflight_blocks_invalid_teacher_assignment_archived_or_unqualifi
         required_minutes=60,
         order=0,
     )
-    db_session.add_all([school_year_state, school_class, module])
+    class_without_teacher = models.Class(
+        organization_id=org.id,
+        course_id=course.id,
+        name="10º Redes",
+        size=20,
+        grade_level=10,
+        start_year=2025,
+        end_year=2028,
+    )
+    module_without_teacher = models.Module(
+        organization_id=org.id,
+        subject_id=subject_without_teacher.id,
+        name="R1",
+        required_minutes=60,
+        order=0,
+    )
+    db_session.add_all(
+        [school_year_state, school_class, module, class_without_teacher, module_without_teacher]
+    )
     await db_session.flush()
 
     teacher = await create_teacher_profile(
@@ -291,24 +316,53 @@ async def test_preflight_blocks_invalid_teacher_assignment_archived_or_unqualifi
         grade_level=10,
         teacher_id=teacher.id,
     )
+    missing_teacher_link = models.ClassSubjectLink(
+        organization_id=org.id,
+        class_id=class_without_teacher.id,
+        subject_id=subject_without_teacher.id,
+        grade_level=10,
+        teacher_id=None,
+    )
     avail = models.Availability(
         organization_id=org.id,
         teacher_id=teacher.id,
         timeslot_id=timeslot.id,
         score=models.PreferenceLevel.PREFERRED.value,
     )
-    db_session.add_all([link, avail])
+    db_session.add_all([link, missing_teacher_link, avail])
     await db_session.flush()
 
-    # Step 1: Baseline valid setup is READY
+    # Step 1: A missing teacher blocks even when another assignment is valid.
+    from sqlalchemy import delete, insert
+
     service = PreflightService(db_session)
+    report = await service.evaluate(organization_id=org.id, school_year_id=school_year.id)
+    assert report.status == "BLOCKED"
+    missing_teacher_issue = next(
+        (i for i in report.issues if i.code == "INVALID_TEACHER_ASSIGNMENT"), None
+    )
+    assert missing_teacher_issue is not None
+    assert missing_teacher_issue.severity == "BLOCKER"
+    assert "não tem professor atribuído" in missing_teacher_issue.message
+    assert missing_teacher_issue.route == (
+        f"/courses/{course.id}/classes/{class_without_teacher.id}/subjects"
+    )
+
+    # Assign an eligible teacher: the same setup is READY again.
+    missing_teacher_link.teacher_id = teacher.id
+    await db_session.execute(
+        insert(models.teacher_subject_link).values(
+            organization_id=org.id,
+            teacher_id=teacher.id,
+            subject_id=subject_without_teacher.id,
+        )
+    )
+    await db_session.flush()
     report = await service.evaluate(organization_id=org.id, school_year_id=school_year.id)
     assert report.status == "READY"
     assert not any(issue.code == "INVALID_TEACHER_ASSIGNMENT" for issue in report.issues)
 
     # Step 2: Unqualified teacher triggers BLOCKER with link to class-subject
-    from sqlalchemy import delete
-
     await db_session.execute(
         delete(models.teacher_subject_link).where(
             models.teacher_subject_link.c.organization_id == org.id,
@@ -330,8 +384,6 @@ async def test_preflight_blocks_invalid_teacher_assignment_archived_or_unqualifi
     assert blocker_unqualified.route == f"/courses/{course.id}/classes/{school_class.id}/subjects"
 
     # Restore qualification
-    from sqlalchemy import insert
-
     await db_session.execute(
         insert(models.teacher_subject_link).values(
             organization_id=org.id,
@@ -471,6 +523,51 @@ async def test_teacher_archive_restore_and_qualifications_invalidate_scheduler(d
     )
     teacher_membership_id = teacher_membership.id
 
+    course = models.Course(
+        organization_id=organization.id,
+        name="Curso Invalidação",
+        abbreviation="CI",
+    )
+    class_ = models.Class(
+        organization_id=organization.id,
+        course_id=course.id,
+        name="10º CI",
+        size=20,
+        grade_level=10,
+        start_year=2025,
+        end_year=2028,
+    )
+    module = models.Module(
+        organization_id=organization.id,
+        subject_id=subject1.id,
+        name="Módulo Invalidação",
+        required_minutes=60,
+        order=0,
+    )
+    db_session.add_all([course, class_, module])
+    await db_session.flush()
+    db_session.add(
+        models.ClassSubjectLink(
+            organization_id=organization.id,
+            class_id=class_.id,
+            subject_id=subject1.id,
+            grade_level=10,
+            teacher_id=teacher.id,
+        )
+    )
+    await db_session.flush()
+
+    from app.services.scheduler_fingerprint_service import SchedulerFingerprintService
+
+    pending_draft.generation_input_fingerprint = (
+        await SchedulerFingerprintService(db_session).generation_input_fingerprint(
+            organization.id,
+            school_year.id,
+            models.ScheduleGenerationStrategy.COMPLETE_GENERATION,
+        )
+    ).value
+    await db_session.flush()
+
     # Give teacher history so remove_member archives rather than hard-deletes
     db_session.add(
         models.TeacherWeeklyTimesheet(
@@ -493,6 +590,14 @@ async def test_teacher_archive_restore_and_qualifications_invalidate_scheduler(d
     mock_clerk.change_membership_role = AsyncMock(return_value=MagicMock(ok=True))
     operation_service = MemberAccessOperationService(TestingSessionLocal, mock_clerk)
 
+    from app.services.scheduler_approval_service import SchedulerApprovalService
+
+    await SchedulerApprovalService(db_session).validate_preconditions(
+        organization.id,
+        pending_draft.id,
+        decided_by_membership_id=admin_actor.membership_id,
+    )
+
     # 1. Archive member -> scheduler state version bumped, pending draft invalidated
     await member_service.remove_member(
         db_session,
@@ -505,10 +610,7 @@ async def test_teacher_archive_restore_and_qualifications_invalidate_scheduler(d
     await db_session.refresh(school_year_state)
     assert school_year_state.scheduler_state_version > initial_version
 
-    from app.services.scheduler_approval_service import (
-        DraftApprovalConflictError,
-        SchedulerApprovalService,
-    )
+    from app.services.scheduler_approval_service import DraftApprovalConflictError
 
     with pytest.raises(DraftApprovalConflictError):
         await SchedulerApprovalService(db_session).validate_preconditions(

@@ -306,6 +306,108 @@ async def _teacher_ids_with_history(
     return set(rows.scalars().all())
 
 
+async def _teacher_ids_with_scheduler_references(
+    db: AsyncSession, organization_id: int, teacher_ids: list[int]
+) -> set[int]:
+    """Return teachers whose state can affect the active scheduler year."""
+    teacher_ids = [teacher_id for teacher_id in teacher_ids if teacher_id]
+    if not teacher_ids:
+        return set()
+    active_year_id = await db.scalar(
+        select(models.SchedulerSchoolYear.id).where(
+            models.SchedulerSchoolYear.organization_id == organization_id,
+            models.SchedulerSchoolYear.is_active.is_(True),
+        )
+    )
+    if active_year_id is None:
+        return set()
+
+    references = [
+        select(models.ClassSubjectLink.teacher_id)
+        .join(models.Class, models.Class.id == models.ClassSubjectLink.class_id)
+        .where(
+            models.ClassSubjectLink.organization_id == organization_id,
+            models.ClassSubjectLink.teacher_id.in_(teacher_ids),
+            models.Class.organization_id == organization_id,
+            models.Class.is_archived.is_(False),
+            models.ClassSubjectLink.grade_level == models.Class.grade_level,
+        ),
+        select(models.ScheduleDraftBlock.teacher_id).where(
+            models.ScheduleDraftBlock.organization_id == organization_id,
+            models.ScheduleDraftBlock.school_year_id == active_year_id,
+            models.ScheduleDraftBlock.teacher_id.in_(teacher_ids),
+        ),
+        select(models.ScheduleDiffEntry.teacher_id).where(
+            models.ScheduleDiffEntry.organization_id == organization_id,
+            models.ScheduleDiffEntry.school_year_id == active_year_id,
+            models.ScheduleDiffEntry.teacher_id.in_(teacher_ids),
+        ),
+        select(models.ActiveScheduleBlock.teacher_id).where(
+            models.ActiveScheduleBlock.organization_id == organization_id,
+            models.ActiveScheduleBlock.school_year_id == active_year_id,
+            models.ActiveScheduleBlock.status == models.ActiveScheduleBlockStatus.ACTIVE,
+            models.ActiveScheduleBlock.teacher_id.in_(teacher_ids),
+        ),
+        select(models.PlannedRecoveryLink.teacher_id).where(
+            models.PlannedRecoveryLink.organization_id == organization_id,
+            models.PlannedRecoveryLink.school_year_id == active_year_id,
+            models.PlannedRecoveryLink.teacher_id.in_(teacher_ids),
+            models.PlannedRecoveryLink.status.notin_(
+                {
+                    models.PlannedRecoveryLinkStatus.CANCELED,
+                    models.PlannedRecoveryLinkStatus.REPLACED,
+                }
+            ),
+        ),
+        select(models.OperationalScheduleBlock.teacher_id).where(
+            models.OperationalScheduleBlock.organization_id == organization_id,
+            models.OperationalScheduleBlock.teacher_id.in_(teacher_ids),
+            models.OperationalScheduleBlock.status == models.OperationalBlockStatus.ACTIVE,
+        ),
+    ]
+    references.extend(
+        select(column)
+        .join(
+            models.ActiveScheduleBlock,
+            models.ActiveScheduleBlock.id == models.LessonOccurrence.active_schedule_block_id,
+        )
+        .where(
+            models.LessonOccurrence.organization_id == organization_id,
+            models.LessonOccurrence.is_active.is_(True),
+            models.ActiveScheduleBlock.organization_id == organization_id,
+            models.ActiveScheduleBlock.school_year_id == active_year_id,
+            column.in_(teacher_ids),
+        )
+        for column in (
+            models.LessonOccurrence.substitute_teacher_id,
+            models.LessonOccurrence.planned_teacher_id,
+            models.LessonOccurrence.executed_teacher_id,
+        )
+    )
+    rows = await db.execute(union_all(*references))
+    return {row[0] for row in rows.all() if row[0] is not None}
+
+
+async def _record_teacher_scheduler_change(
+    db: AsyncSession,
+    organization_id: int,
+    *,
+    teacher_id: int,
+    active_resource: bool | None = None,
+    **change,
+) -> models.SchedulerStateVersionEvent | None:
+    if active_resource is None:
+        active_resource = teacher_id in await _teacher_ids_with_scheduler_references(
+            db, organization_id, [teacher_id]
+        )
+    return await record_scheduler_change(
+        db,
+        organization_id,
+        **change,
+        active_resource=active_resource,
+    )
+
+
 async def _organization(db: AsyncSession, organization_id: int) -> models.Organization:
     org = await db.get(models.Organization, organization_id)
     if org is None:
@@ -358,6 +460,8 @@ async def _sync_teacher_profile(
     capabilities: set[models.MembershipCapability],
     subject_ids: list[int] | None,
     current_admin: Actor,
+    previous_can_teach: bool | None = None,
+    record_change: bool = True,
 ) -> None:
     wants_teacher = models.MembershipCapability.teacher in capabilities
     teacher = await db.scalar(
@@ -367,9 +471,14 @@ async def _sync_teacher_profile(
             models.Teacher.organization_membership_id == member.id,
         )
         .options(
-            selectinload(models.Teacher.availabilities), selectinload(models.Teacher.timesheets)
+            selectinload(models.Teacher.subjects),
+            selectinload(models.Teacher.availabilities),
+            selectinload(models.Teacher.timesheets),
         )
     )
+    teacher_was_created = False
+    before_subjects: list[int] = []
+    scheduler_relevant = False
     if wants_teacher and teacher is None:
         teacher = models.Teacher(
             organization_id=member.organization_id,
@@ -383,42 +492,36 @@ async def _sync_teacher_profile(
             db, organization_id=member.organization_id, teacher_ids=[teacher.id]
         )
         member.teacher_profile = teacher
-        await record_scheduler_change(
-            db,
-            member.organization_id,
-            entity_type="TEACHER_RESOURCE",
-            entity_id=teacher.id,
-            operation=models.SchedulerStateChangeOperation.CREATE,
-            before=None,
-            after={"subject_ids": sorted(subject_ids or [])},
-            changed_by_membership_id=current_admin.membership_id,
-            active_resource=False,
-        )
+        teacher_was_created = True
     elif not wants_teacher and teacher is not None:
+        before_subjects = sorted(teacher.subject_ids)
+        scheduler_relevant = teacher.id in await _teacher_ids_with_scheduler_references(
+            db, member.organization_id, [teacher.id]
+        )
         has_history = bool(teacher.availabilities or teacher.timesheets)
         if not has_history:
             await db.delete(teacher)
-        await record_scheduler_change(
-            db,
-            member.organization_id,
-            entity_type="TEACHER_RESOURCE",
-            entity_id=teacher.id,
-            operation=models.SchedulerStateChangeOperation.DELETE,
-            before={"can_teach": True},
-            after={"can_teach": False},
-            changed_by_membership_id=current_admin.membership_id,
-        )
+        if record_change and previous_can_teach is not False:
+            await _record_teacher_scheduler_change(
+                db,
+                member.organization_id,
+                teacher_id=teacher.id,
+                operation=models.SchedulerStateChangeOperation.DELETE,
+                before={"can_teach": previous_can_teach, "subject_ids": before_subjects},
+                after={"can_teach": False, "subject_ids": before_subjects},
+                changed_by_membership_id=current_admin.membership_id,
+                active_resource=scheduler_relevant,
+            )
         return
 
     if wants_teacher and teacher is not None:
-        if subject_ids is not None:
-            existing_sub_rows = await db.execute(
-                select(models.teacher_subject_link.c.subject_id).where(
-                    models.teacher_subject_link.c.organization_id == member.organization_id,
-                    models.teacher_subject_link.c.teacher_id == teacher.id,
-                )
+        if not teacher_was_created:
+            before_subjects = sorted(teacher.subject_ids)
+            scheduler_relevant = teacher.id in await _teacher_ids_with_scheduler_references(
+                db, member.organization_id, [teacher.id]
             )
-            before_subjects = sorted(row[0] for row in existing_sub_rows.all())
+        after_subjects = before_subjects
+        if subject_ids is not None:
             valid_subject_ids = await _validate_subject_ids(db, member.organization_id, subject_ids)
             after_subjects = sorted(valid_subject_ids)
             if before_subjects != after_subjects:
@@ -441,16 +544,30 @@ async def _sync_teacher_profile(
                             ]
                         )
                     )
-                await record_scheduler_change(
-                    db,
-                    member.organization_id,
-                    entity_type="TEACHER_RESOURCE",
-                    entity_id=teacher.id,
-                    operation=models.SchedulerStateChangeOperation.UPDATE,
-                    before={"subject_ids": before_subjects},
-                    after={"subject_ids": after_subjects},
-                    changed_by_membership_id=current_admin.membership_id,
-                )
+        changed = (
+            teacher_was_created
+            or (previous_can_teach is not None and previous_can_teach is not True)
+            or before_subjects != after_subjects
+        )
+        if record_change and changed:
+            await _record_teacher_scheduler_change(
+                db,
+                member.organization_id,
+                teacher_id=teacher.id,
+                operation=(
+                    models.SchedulerStateChangeOperation.CREATE
+                    if teacher_was_created
+                    else models.SchedulerStateChangeOperation.UPDATE
+                ),
+                before=(
+                    None
+                    if teacher_was_created
+                    else {"can_teach": previous_can_teach, "subject_ids": before_subjects}
+                ),
+                after={"can_teach": True, "subject_ids": after_subjects},
+                changed_by_membership_id=current_admin.membership_id,
+                active_resource=scheduler_relevant,
+            )
 
 
 async def _active_admin_count(
@@ -1449,6 +1566,7 @@ async def update_member(
         raise member_error(409, "stale_member", "This member changed while you were editing.")
 
     current_caps = {cap.capability for cap in member.capabilities}
+    previous_can_teach = member.can_teach
     next_caps = (
         _capability_values(member_in.capabilities)
         if member_in.capabilities is not None
@@ -1523,6 +1641,7 @@ async def update_member(
         capabilities=next_caps,
         subject_ids=member_in.subject_ids,
         current_admin=current_admin,
+        previous_can_teach=previous_can_teach,
     )
     await db.flush()
     member = await _load_member(db, organization_id, member.id)
@@ -1605,6 +1724,13 @@ async def remove_member(
         member.teacher_profile,
         has_history=member.teacher_profile is not None and member.teacher_profile.id in history_ids,
     )
+    teacher_id = member.teacher_profile.id if member.teacher_profile else None
+    teacher_subjects = sorted(member.teacher_profile.subject_ids) if member.teacher_profile else []
+    scheduler_relevant = (
+        teacher_id is not None
+        and teacher_id
+        in await _teacher_ids_with_scheduler_references(db, organization_id, [teacher_id])
+    )
     await _revoke_provider_access(
         db,
         member=member,
@@ -1614,17 +1740,20 @@ async def remove_member(
     )
     if actions.remove_effect == "hard_delete":
         if member.teacher_profile:
-            teacher_id = member.teacher_profile.id
             await db.delete(member.teacher_profile)
-            await record_scheduler_change(
+            await _record_teacher_scheduler_change(
                 db,
                 member.organization_id,
-                entity_type="TEACHER_RESOURCE",
-                entity_id=teacher_id,
+                teacher_id=teacher_id,
                 operation=models.SchedulerStateChangeOperation.DELETE,
-                before={"status": "active"},
+                before={
+                    "status": "active",
+                    "can_teach": member.can_teach,
+                    "subject_ids": teacher_subjects,
+                },
                 after=None,
                 changed_by_membership_id=current_admin.membership_id,
+                active_resource=scheduler_relevant,
             )
         await db.delete(member)
         return {"status": "removed", "remove_effect": "hard_delete"}
@@ -1637,16 +1766,24 @@ async def remove_member(
     member.updated_by_membership_id = current_admin.membership_id
     member.lock_version += 1
     if member.teacher_profile or member.can_teach:
-        teacher_id = member.teacher_profile.id if member.teacher_profile else member.id
-        await record_scheduler_change(
+        teacher_id = teacher_id or member.id
+        await _record_teacher_scheduler_change(
             db,
             member.organization_id,
-            entity_type="TEACHER_RESOURCE",
-            entity_id=teacher_id,
+            teacher_id=teacher_id,
             operation=models.SchedulerStateChangeOperation.DELETE,
-            before={"status": "active", "can_teach": member.can_teach},
-            after={"status": "archived", "can_teach": member.can_teach},
+            before={
+                "status": "active",
+                "can_teach": member.can_teach,
+                "subject_ids": teacher_subjects,
+            },
+            after={
+                "status": "archived",
+                "can_teach": member.can_teach,
+                "subject_ids": teacher_subjects,
+            },
             changed_by_membership_id=current_admin.membership_id,
+            active_resource=scheduler_relevant,
         )
     return {"status": "removed", "remove_effect": "archive"}
 
@@ -1668,6 +1805,14 @@ async def restore_member(
         raise member_error(409, "member_not_archived", "Only archived members can be restored.")
     previous_snapshot = _access_snapshot(member)
     previous_role = member.expected_clerk_role
+    previous_can_teach = member.can_teach
+    previous_teacher_id = member.teacher_profile.id if member.teacher_profile else None
+    previous_subjects = sorted(member.teacher_profile.subject_ids) if member.teacher_profile else []
+    scheduler_relevant_before = (
+        previous_teacher_id is not None
+        and previous_teacher_id
+        in await _teacher_ids_with_scheduler_references(db, organization_id, [previous_teacher_id])
+    )
     if restore_in and restore_in.capabilities is not None:
         next_caps = _capability_values(restore_in.capabilities)
         next_mode = (
@@ -1699,6 +1844,8 @@ async def restore_member(
             capabilities=next_caps,
             subject_ids=restore_in.subject_ids,
             current_admin=current_admin,
+            previous_can_teach=previous_can_teach,
+            record_change=False,
         )
     elif restore_in and not restore_in.restore_access and member.expected_clerk_role is not None:
         raise member_error(
@@ -1710,17 +1857,31 @@ async def restore_member(
     member.updated_by_membership_id = current_admin.membership_id
     member.lock_version += 1
     if member.teacher_profile or member.can_teach:
-        teacher_id = member.teacher_profile.id if member.teacher_profile else member.id
-        await record_scheduler_change(
-            db,
-            member.organization_id,
-            entity_type="TEACHER_RESOURCE",
-            entity_id=teacher_id,
-            operation=models.SchedulerStateChangeOperation.CREATE,
-            before={"status": "archived", "can_teach": member.can_teach},
-            after={"status": "active", "can_teach": member.can_teach},
-            changed_by_membership_id=current_admin.membership_id,
-        )
+        teacher_id = member.teacher_profile.id if member.teacher_profile else previous_teacher_id
+        if teacher_id is not None:
+            scheduler_relevant_after = teacher_id in await _teacher_ids_with_scheduler_references(
+                db, organization_id, [teacher_id]
+            )
+            await _record_teacher_scheduler_change(
+                db,
+                member.organization_id,
+                teacher_id=teacher_id,
+                operation=models.SchedulerStateChangeOperation.CREATE,
+                before={
+                    "status": "archived",
+                    "can_teach": previous_can_teach,
+                    "subject_ids": previous_subjects,
+                },
+                after={
+                    "status": "active",
+                    "can_teach": member.can_teach,
+                    "subject_ids": sorted(member.teacher_profile.subject_ids)
+                    if member.teacher_profile and member.can_teach
+                    else [],
+                },
+                changed_by_membership_id=current_admin.membership_id,
+                active_resource=scheduler_relevant_before or scheduler_relevant_after,
+            )
     if member.expected_clerk_role is None:
         member.access_status = models.MembershipAccessStatus.none
     elif member.account.clerk_user_id and member.clerk_membership_id:
