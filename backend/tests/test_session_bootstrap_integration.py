@@ -244,6 +244,62 @@ async def test_bootstrap_does_not_reclaim_an_existing_clerk_identity(
     )
 
 
+async def test_bootstrap_directory_outage_does_not_modify_local_identities(
+    db_session,
+    monkeypatch,
+):
+    old_account = models.User(
+        email="founder@example.com",
+        clerk_user_id="user_existing",
+        name="Existing Founder",
+    )
+    db_session.add(old_account)
+    existing_org = models.Organization(name="Existing School", clerk_org_id="org_existing")
+    db_session.add(existing_org)
+    await db_session.flush()
+    old_membership = models.OrganizationMembership(
+        account_id=old_account.id,
+        organization_id=existing_org.id,
+        organization_display_name="Existing School",
+        lifecycle_status=models.MembershipLifecycleStatus.active,
+        access_status=models.MembershipAccessStatus.active,
+        can_admin=True,
+        can_teach=False,
+    )
+    db_session.add(old_membership)
+    await db_session.flush()
+
+    await _provider_stubs(
+        monkeypatch,
+        models.Organization(name="New School", clerk_org_id="org_new"),
+    )
+    monkeypatch.setattr(clerk_sync, "clerk_user_exists", AsyncMock(return_value=None))
+
+    from app.services.session_bootstrap_service import ClerkDirectoryUnavailableError
+
+    with pytest.raises(ClerkDirectoryUnavailableError):
+        await SessionBootstrapService(db_session).bootstrap(
+            {
+                "sub": "user_recreated",
+                "o": {"id": "org_new", "rol": "org:admin"},
+            }
+        )
+
+    refreshed_user = await db_session.scalar(
+        select(models.User).where(models.User.id == old_account.id)
+    )
+    assert refreshed_user is not None
+    assert refreshed_user.clerk_user_id == "user_existing"
+
+    refreshed_membership = await db_session.scalar(
+        select(models.OrganizationMembership).where(
+            models.OrganizationMembership.id == old_membership.id
+        )
+    )
+    assert refreshed_membership.lifecycle_status == models.MembershipLifecycleStatus.active
+    assert refreshed_membership.access_status == models.MembershipAccessStatus.active
+
+
 async def test_concurrent_bootstrap_calls_create_exactly_one_founder_graph(
     db_session,
     monkeypatch,

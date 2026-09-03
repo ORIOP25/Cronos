@@ -209,7 +209,11 @@ const Schedules = ({ initialClassId = '', initialWeekStart, persistView = true, 
     isError: weekLoadError,
     refetch: refetchWeekSchedule,
   } = useWeekSchedule(classId, teacherId, weekStart)
-  const { data: classDetails } = useClassDetails(classId)
+  const {
+    data: classDetails,
+    isLoading: loadingClassDetails,
+    isError: classDetailsError,
+  } = useClassDetails(classId)
 
   const classSubjects = classDetails?.subjects ?? []
 
@@ -535,7 +539,13 @@ const Schedules = ({ initialClassId = '', initialWeekStart, persistView = true, 
       {viewMode === 'class' && Boolean(classId) && (
         <CCard className="border-0 shadow-sm">
           <CCardHeader className="bg-transparent fw-semibold">Progresso por disciplina</CCardHeader>
-          <CCardBody><KPISidebar subjects={classSubjects} /></CCardBody>
+          <CCardBody>
+            <KPISidebar
+              subjects={classSubjects}
+              isLoading={loadingClassDetails}
+              isError={classDetailsError}
+            />
+          </CCardBody>
         </CCard>
       )}
     </div>

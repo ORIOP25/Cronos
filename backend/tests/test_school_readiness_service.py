@@ -1,4 +1,4 @@
-from datetime import time
+from datetime import date, time
 
 import pytest
 
@@ -223,3 +223,169 @@ async def test_readiness_counts_scheduler_only_teacher_assignment(db_session):
 
     assert platform_report.depth == 4
     assert platform_report.percentage == 57
+
+
+@pytest.mark.asyncio
+async def test_readiness_mixed_and_fully_impossible_availability(db_session):
+    organization, _ = await create_org_and_user(
+        db_session,
+        clerk_user_id="readiness-avail-user",
+        clerk_org_id="readiness-avail-org",
+    )
+    course = models.Course(
+        organization_id=organization.id,
+        name="Curso Misto",
+        abbreviation="CM",
+    )
+    subject = models.Subject(
+        organization_id=organization.id,
+        name="Disciplina Mista",
+    )
+    room = models.Room(
+        organization_id=organization.id,
+        name="Sala 1",
+        capacity=30,
+        type=models.RoomType.normal,
+    )
+    school_year = models.SchedulerSchoolYear(
+        organization_id=organization.id,
+        label="2025/2026",
+        start_date=date(2025, 9, 1),
+        hard_end_date=date(2026, 6, 30),
+        is_active=True,
+    )
+    db_session.add_all([course, subject, room, school_year])
+    await db_session.flush()
+
+    school_year_state = models.SchedulerSchoolYearState(
+        organization_id=organization.id,
+        school_year_id=school_year.id,
+        school_year_publication_state=models.SchoolYearPublicationState.UNPUBLISHED,
+        scheduler_state_version=1,
+    )
+    db_session.add(school_year_state)
+    await db_session.flush()
+
+    school_class = models.Class(
+        organization_id=organization.id,
+        course_id=course.id,
+        name="Turma Mista",
+        size=20,
+        grade_level=10,
+        start_year=2025,
+        end_year=2028,
+    )
+    module = models.Module(
+        organization_id=organization.id,
+        subject_id=subject.id,
+        name="Módulo Misto",
+        required_minutes=60,
+        order=0,
+    )
+    db_session.add_all([school_class, module])
+    await db_session.flush()
+
+    teacher = await create_teacher_profile(
+        db_session,
+        organization_id=organization.id,
+        name="Professor Misto",
+        subject_ids=[subject.id],
+    )
+    link = models.ClassSubjectLink(
+        organization_id=organization.id,
+        class_id=school_class.id,
+        subject_id=subject.id,
+        grade_level=school_class.grade_level,
+        teacher_id=teacher.id,
+    )
+    db_session.add(link)
+
+    # 2 timeslots
+    slot1 = models.Timeslot(
+        organization_id=organization.id,
+        day_of_week=0,
+        start_time=time(8, 30),
+        end_time=time(9, 20),
+    )
+    slot2 = models.Timeslot(
+        organization_id=organization.id,
+        day_of_week=0,
+        start_time=time(9, 30),
+        end_time=time(10, 20),
+    )
+    db_session.add_all([slot1, slot2])
+    await db_session.flush()
+
+    # Availability from another tenant must never participate in this report.
+    other_organization, _ = await create_org_and_user(
+        db_session,
+        clerk_user_id="readiness-avail-other-user",
+        clerk_org_id="readiness-avail-other-org",
+    )
+    other_teacher = await create_teacher_profile(
+        db_session,
+        organization_id=other_organization.id,
+        name="Professor de Outra Escola",
+    )
+    other_slot = models.Timeslot(
+        organization_id=other_organization.id,
+        day_of_week=0,
+        start_time=time(8, 30),
+        end_time=time(9, 20),
+    )
+    db_session.add(other_slot)
+    await db_session.flush()
+    db_session.add(
+        models.Availability(
+            organization_id=other_organization.id,
+            teacher_id=other_teacher.id,
+            timeslot_id=other_slot.id,
+            score=models.PreferenceLevel.IMPOSSIBLE.value,
+        )
+    )
+    await db_session.flush()
+
+    service = SchoolReadinessService(db_session)
+
+    # Case 1: Neutral availability (no explicit availability records) -> 100%
+    neutral_report = await service.evaluate_bases(organization.id)
+    assert neutral_report.depth == 7
+    assert neutral_report.complete is True
+    assert neutral_report.percentage == 100
+
+    preferred = models.Availability(
+        organization_id=organization.id,
+        teacher_id=teacher.id,
+        timeslot_id=slot2.id,
+        score=models.PreferenceLevel.PREFERRED.value,
+    )
+    db_session.add(preferred)
+    await db_session.flush()
+    preferred_report = await service.evaluate_bases(organization.id)
+    assert preferred_report.depth == 7
+    assert preferred_report.complete is True
+    assert preferred_report.percentage == 100
+
+    # Case 3: Mixed availability (1 impossible slot, 1 preferred slot) -> MUST reach 100%
+    avail_impossible = models.Availability(
+        organization_id=organization.id,
+        teacher_id=teacher.id,
+        timeslot_id=slot1.id,
+        score=models.PreferenceLevel.IMPOSSIBLE.value,
+    )
+    db_session.add(avail_impossible)
+    await db_session.flush()
+
+    mixed_report = await service.evaluate_bases(organization.id)
+    assert mixed_report.depth == 7
+    assert mixed_report.complete is True
+    assert mixed_report.percentage == 100
+
+    # Case 4: Fully impossible availability (both slots impossible) -> blocks level 7 (depth 6)
+    preferred.score = models.PreferenceLevel.IMPOSSIBLE.value
+    await db_session.flush()
+
+    blocked_report = await service.evaluate_bases(organization.id)
+    assert blocked_report.depth == 6
+    assert blocked_report.complete is False
+    assert blocked_report.percentage == 85

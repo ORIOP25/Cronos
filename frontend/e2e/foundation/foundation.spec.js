@@ -1,24 +1,29 @@
+import { createClerkClient } from '@clerk/backend'
 import { expect, test } from '@playwright/test'
 import {
   attachRuntimeGuards,
   expectNoAppCrash,
   expectRouteReady,
-  goTo,
-  loginAsAdminReal,
 } from '../utils/clerk-helpers.js'
+import { cleanupFreshFounder, createFreshFounder } from '../utils/fresh-founder.js'
 
 test.describe.configure({ mode: 'serial' })
 
 test.describe('Foundation — canonical activation', () => {
-  test.beforeEach(async ({ page }) => {
-    attachRuntimeGuards(page)
-    await loginAsAdminReal(page)
-  })
-
   test('validates and activates the complete foundation snapshot', async ({ page }) => {
-    await goTo(page, '/foundation')
-    await expectRouteReady(page, '/foundation')
-    await expect(page.getByText('1. Período do Ano Letivo')).toBeVisible()
+    test.setTimeout(120_000)
+    const secretKey = process.env.CLERK_SECRET_KEY
+    if (!secretKey) throw new Error('CLERK_SECRET_KEY is required for foundation E2E.')
+    const client = createClerkClient({ secretKey })
+    let founder
+    let primaryError = null
+    let cleanupError = null
+    attachRuntimeGuards(page)
+
+    try {
+      founder = await createFreshFounder(page, client, 'Foundation Activation')
+      await expectRouteReady(page, '/foundation')
+      await expect(page.getByText('1. Período do Ano Letivo')).toBeVisible()
 
     await page.locator('#school_start_date').fill('2025-09-15')
     await page.locator('#school_hard_end_date').fill('2026-07-31')
@@ -80,6 +85,19 @@ test.describe('Foundation — canonical activation', () => {
       return response.json()
     })
     expect(settings.automatic_holidays_enabled).toBe(true)
-    await expectNoAppCrash(page)
+      await expectNoAppCrash(page)
+    } catch (error) {
+      primaryError = error
+    } finally {
+      if (founder) {
+        try {
+          await cleanupFreshFounder(client, founder)
+        } catch (error) {
+          cleanupError = error
+        }
+      }
+    }
+    if (primaryError) throw primaryError
+    if (cleanupError) throw cleanupError
   })
 })

@@ -164,3 +164,35 @@ def test_week_schedule_uses_two_statements(sync_db):
 
     assert rows == []
     assert len(statements) == 2
+
+
+async def test_async_dashboard_summary_uses_bounded_statements(db_session):
+    organization = models.Organization(
+        name="Dashboard Async Budget",
+        plan_status="active",
+        first_real_schedule_approved_at=None,
+    )
+    db_session.add(organization)
+    await db_session.flush()
+
+    engine = db_session.get_bind()
+    statements: list[str] = []
+
+    def record(_connection, _cursor, statement, _parameters, _context, _many):
+        statements.append(statement)
+
+    event.listen(engine, "before_cursor_execute", record)
+    try:
+        summary = await dashboard_service.get_dashboard_summary(
+            db_session,
+            organization.id,
+        )
+    finally:
+        event.remove(engine, "before_cursor_execute", record)
+
+    assert summary.bases is not None
+    assert summary.bases.fingerprint is None
+    assert summary.prevalidation is not None
+    assert summary.prevalidation.fingerprint is None
+    # Ensure fingerprint generation is excluded and queries remain strictly bounded
+    assert len(statements) <= 20

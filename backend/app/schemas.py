@@ -1082,7 +1082,7 @@ class ModuleProgressRead(BaseModel):
     id: int
     name: str
     code: str | None = None
-    hours_total: int
+    hours_total: float
     order: int
     hours_completed: float = 0.0
     hours_debt: float = 0.0
@@ -1097,8 +1097,8 @@ class SubjectProgressRead(BaseModel):
     name: str
     required_room_type: RoomType
     modules: list[ModuleProgressRead] = []
-    total_hours: int = 0
-    completed_hours: int = 0
+    total_hours: float = 0.0
+    completed_hours: float = 0.0
     overall_percentage: float = 0.0
 
 
@@ -1856,7 +1856,7 @@ class TeacherModuleProgressRead(BaseModel):
     module_code: str | None = Field(
         default=None, validation_alias=AliasChoices("module_code", "code")
     )
-    hours_total: int
+    hours_total: float
     hours_completed: float
     hours_debt: float
     is_completed: bool
@@ -1870,7 +1870,7 @@ class TeacherSubjectProgressRead(BaseModel):
     subject_name: str = Field(validation_alias=AliasChoices("subject_name", "name"))
     required_room_type: RoomType
     modules: list[TeacherModuleProgressRead] = []
-    total_hours: int = 0
+    total_hours: float = 0.0
     completed_hours: float = 0.0
     overall_percentage: float = 0.0
 

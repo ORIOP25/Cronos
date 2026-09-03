@@ -29,9 +29,10 @@ async def get_dashboard_summary(
             organization_id,
             resolve_fingerprint=False,
         )
-        prevalidation = await PreflightService(db).evaluate(organization_id=organization_id)
-        if prevalidation.fingerprint != bases.fingerprint:
-            bases = bases.model_copy(update={"fingerprint": prevalidation.fingerprint})
+        prevalidation = await PreflightService(db).evaluate(
+            organization_id=organization_id,
+            resolve_fingerprint=False,
+        )
 
     def _run(sync_db):
         snapshot = (

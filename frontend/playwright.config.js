@@ -51,8 +51,10 @@ export default defineConfig({
     },
     {
       name: 'foundation setup',
-      testMatch: /e2e[\\/]foundation[\\/](first-schedule-approval-dashboard|foundation-conflict-recovery|onboarding-foundation-9steps)\.spec\.js/,
+      testMatch: /e2e[\\/]foundation[\\/](foundation-conflict-recovery|onboarding-foundation-9steps|operational-gate-409)\.spec\.js/,
       use: { ...devices['Desktop Chrome'] },
+      fullyParallel: false,
+      workers: 1,
       dependencies: ['global setup', 'onboarding'],
     },
     {
@@ -60,6 +62,14 @@ export default defineConfig({
       testMatch: /e2e[\\/]foundation[\\/]foundation\.spec\.js/,
       use: { ...devices['Desktop Chrome'] },
       dependencies: ['foundation setup'],
+    },
+    {
+      name: 'schedule lifecycle',
+      testMatch: /e2e[\\/]foundation[\\/]first-schedule-approval-dashboard\.spec\.js/,
+      use: { ...devices['Desktop Chrome'] },
+      fullyParallel: false,
+      workers: 1,
+      dependencies: ['foundation activation'],
     },
     {
       name: 'tutorial',
@@ -70,9 +80,9 @@ export default defineConfig({
     },
     {
       name: 'chromium',
-      testIgnore: /global\.setup\.js|e2e[\\/]tutorial[\\/]|e2e[\\/]auth[\\/](local-auth-redirects|onboarding-create-organization)\.spec\.js|e2e[\\/]foundation[\\/](first-schedule-approval-dashboard|foundation-conflict-recovery|onboarding-foundation-9steps|foundation|tutorial-13steps-navigation)\.spec\.js/,
+      testIgnore: /global\.setup\.js|e2e[\\/]tutorial[\\/]|e2e[\\/]auth[\\/](local-auth-redirects|onboarding-create-organization)\.spec\.js|e2e[\\/]foundation[\\/](first-schedule-approval-dashboard|foundation-conflict-recovery|onboarding-foundation-9steps|operational-gate-409|foundation|tutorial-13steps-navigation)\.spec\.js/,
       use: { ...devices['Desktop Chrome'] },
-      dependencies: ['foundation activation'],
+      dependencies: ['schedule lifecycle'],
     },
   ],
 

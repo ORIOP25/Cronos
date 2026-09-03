@@ -368,4 +368,116 @@ describe('Foundation', () => {
     await screen.findByText('other failure')
     expect(screen.queryByRole('button', { name: /desativar feriados automáticos e guardar/i })).not.toBeInTheDocument()
   })
+
+  it('keeps inputs editable during delayed autosave and does not drop subsequent keystrokes', async () => {
+    let resolveFirstPut
+    const firstPutPromise = new Promise((resolve) => {
+      resolveFirstPut = resolve
+    })
+
+    apiClient.get.mockImplementation((url) => {
+      if (url === '/foundation/status') {
+        return Promise.resolve({
+          foundation_status: 'IN_PROGRESS',
+          foundation_completed_at: null,
+          first_real_schedule_approved_at: null,
+          organization_name: 'Escola Foundation',
+        })
+      }
+      return Promise.resolve({
+        version: 0,
+        current_step: 1,
+        data: {
+          school_start_date: '2025-09-15',
+          school_hard_end_date: '2026-07-31',
+          repair_stability_window_days: 14,
+        },
+      })
+    })
+
+    let putCallCount = 0
+    apiClient.put.mockImplementation(() => {
+      putCallCount++
+      if (putCallCount === 1) {
+        return firstPutPromise
+      }
+      return Promise.resolve({ version: 2 })
+    })
+
+    renderFoundation()
+    const stabilityInput = await screen.findByLabelText(/janela de estabilidade/i)
+    expect(stabilityInput).toHaveValue(14)
+
+    // First change: user types 1
+    fireEvent.change(stabilityInput, { target: { value: '1' } })
+
+    // Wait for autosave to start
+    await waitFor(() => expect(apiClient.put).toHaveBeenCalledTimes(1))
+
+    // Form must NOT be disabled while saving
+    expect(stabilityInput).not.toBeDisabled()
+
+    // User types 14 while first save is still in flight
+    fireEvent.change(stabilityInput, { target: { value: '14' } })
+
+    // Resolve first save
+    resolveFirstPut({ version: 1 })
+
+    // Wait for the second save to finish with the latest value
+    await waitFor(() => expect(apiClient.put).toHaveBeenCalledTimes(2))
+    expect(apiClient.put).toHaveBeenLastCalledWith('/foundation/draft', expect.objectContaining({
+      expected_version: 1,
+      data: expect.objectContaining({ repair_stability_window_days: 14 }),
+    }))
+    expect(stabilityInput).not.toBeDisabled()
+  })
+
+  it('retrying a failed save uses the current form values', async () => {
+    apiClient.get.mockImplementation((url) => {
+      if (url === '/foundation/status') {
+        return Promise.resolve({
+          foundation_status: 'IN_PROGRESS',
+          foundation_completed_at: null,
+          first_real_schedule_approved_at: null,
+          organization_name: 'Escola Foundation',
+        })
+      }
+      return Promise.resolve({
+        version: 0,
+        current_step: 1,
+        data: {
+          school_start_date: '2025-09-15',
+          school_hard_end_date: '2026-07-31',
+          repair_stability_window_days: 14,
+        },
+      })
+    })
+
+    let shouldFail = true
+    apiClient.put.mockImplementation(() => {
+      if (shouldFail) {
+        return Promise.reject({
+          response: { status: 500, data: { detail: 'Server Error' } },
+        })
+      }
+      return Promise.resolve({ version: 1 })
+    })
+
+    renderFoundation()
+    const stabilityInput = await screen.findByLabelText(/janela de estabilidade/i)
+
+    // Trigger failed save
+    fireEvent.change(stabilityInput, { target: { value: '7' } })
+    const retryBtn = await screen.findByRole('button', { name: /tentar guardar novamente/i })
+
+    // User modifies to 21 before clicking retry
+    fireEvent.change(stabilityInput, { target: { value: '21' } })
+
+    shouldFail = false
+    fireEvent.click(retryBtn)
+
+    await waitFor(() => expect(apiClient.put).toHaveBeenLastCalledWith('/foundation/draft', expect.objectContaining({
+      data: expect.objectContaining({ repair_stability_window_days: 21 }),
+    })))
+  })
 })

@@ -396,33 +396,60 @@ async def _sync_teacher_profile(
         )
     elif not wants_teacher and teacher is not None:
         has_history = bool(teacher.availabilities or teacher.timesheets)
-        if has_history:
-            return
-        else:
+        if not has_history:
             await db.delete(teacher)
+        await record_scheduler_change(
+            db,
+            member.organization_id,
+            entity_type="TEACHER_RESOURCE",
+            entity_id=teacher.id,
+            operation=models.SchedulerStateChangeOperation.DELETE,
+            before={"can_teach": True},
+            after={"can_teach": False},
+            changed_by_membership_id=current_admin.membership_id,
+        )
         return
 
     if wants_teacher and teacher is not None:
         if subject_ids is not None:
-            valid_subject_ids = await _validate_subject_ids(db, member.organization_id, subject_ids)
-            await db.execute(
-                delete(models.teacher_subject_link).where(
+            existing_sub_rows = await db.execute(
+                select(models.teacher_subject_link.c.subject_id).where(
                     models.teacher_subject_link.c.organization_id == member.organization_id,
                     models.teacher_subject_link.c.teacher_id == teacher.id,
                 )
             )
-            if valid_subject_ids:
+            before_subjects = sorted(row[0] for row in existing_sub_rows.all())
+            valid_subject_ids = await _validate_subject_ids(db, member.organization_id, subject_ids)
+            after_subjects = sorted(valid_subject_ids)
+            if before_subjects != after_subjects:
                 await db.execute(
-                    insert(models.teacher_subject_link).values(
-                        [
-                            {
-                                "organization_id": member.organization_id,
-                                "teacher_id": teacher.id,
-                                "subject_id": subject_id,
-                            }
-                            for subject_id in valid_subject_ids
-                        ]
+                    delete(models.teacher_subject_link).where(
+                        models.teacher_subject_link.c.organization_id == member.organization_id,
+                        models.teacher_subject_link.c.teacher_id == teacher.id,
                     )
+                )
+                if valid_subject_ids:
+                    await db.execute(
+                        insert(models.teacher_subject_link).values(
+                            [
+                                {
+                                    "organization_id": member.organization_id,
+                                    "teacher_id": teacher.id,
+                                    "subject_id": subject_id,
+                                }
+                                for subject_id in valid_subject_ids
+                            ]
+                        )
+                    )
+                await record_scheduler_change(
+                    db,
+                    member.organization_id,
+                    entity_type="TEACHER_RESOURCE",
+                    entity_id=teacher.id,
+                    operation=models.SchedulerStateChangeOperation.UPDATE,
+                    before={"subject_ids": before_subjects},
+                    after={"subject_ids": after_subjects},
+                    changed_by_membership_id=current_admin.membership_id,
                 )
 
 
@@ -1587,7 +1614,18 @@ async def remove_member(
     )
     if actions.remove_effect == "hard_delete":
         if member.teacher_profile:
+            teacher_id = member.teacher_profile.id
             await db.delete(member.teacher_profile)
+            await record_scheduler_change(
+                db,
+                member.organization_id,
+                entity_type="TEACHER_RESOURCE",
+                entity_id=teacher_id,
+                operation=models.SchedulerStateChangeOperation.DELETE,
+                before={"status": "active"},
+                after=None,
+                changed_by_membership_id=current_admin.membership_id,
+            )
         await db.delete(member)
         return {"status": "removed", "remove_effect": "hard_delete"}
     member.lifecycle_status = models.MembershipLifecycleStatus.archived
@@ -1598,6 +1636,18 @@ async def remove_member(
     )
     member.updated_by_membership_id = current_admin.membership_id
     member.lock_version += 1
+    if member.teacher_profile or member.can_teach:
+        teacher_id = member.teacher_profile.id if member.teacher_profile else member.id
+        await record_scheduler_change(
+            db,
+            member.organization_id,
+            entity_type="TEACHER_RESOURCE",
+            entity_id=teacher_id,
+            operation=models.SchedulerStateChangeOperation.DELETE,
+            before={"status": "active", "can_teach": member.can_teach},
+            after={"status": "archived", "can_teach": member.can_teach},
+            changed_by_membership_id=current_admin.membership_id,
+        )
     return {"status": "removed", "remove_effect": "archive"}
 
 
@@ -1659,6 +1709,18 @@ async def restore_member(
     member.lifecycle_status = models.MembershipLifecycleStatus.active
     member.updated_by_membership_id = current_admin.membership_id
     member.lock_version += 1
+    if member.teacher_profile or member.can_teach:
+        teacher_id = member.teacher_profile.id if member.teacher_profile else member.id
+        await record_scheduler_change(
+            db,
+            member.organization_id,
+            entity_type="TEACHER_RESOURCE",
+            entity_id=teacher_id,
+            operation=models.SchedulerStateChangeOperation.CREATE,
+            before={"status": "archived", "can_teach": member.can_teach},
+            after={"status": "active", "can_teach": member.can_teach},
+            changed_by_membership_id=current_admin.membership_id,
+        )
     if member.expected_clerk_role is None:
         member.access_status = models.MembershipAccessStatus.none
     elif member.account.clerk_user_id and member.clerk_membership_id:

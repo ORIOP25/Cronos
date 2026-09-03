@@ -3,7 +3,7 @@ from datetime import UTC, date, datetime, time
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from app import models
+from app import models, schemas
 from app.api import deps
 from app.main import app
 from app.services.preflight_service import PreflightService, _validate_subject_requirements
@@ -207,5 +207,348 @@ async def test_preparation_dashboard_embeds_single_prevalidation_snapshot(
     assert response.status_code == 200
     payload = response.json()
     assert payload["mode"] == "PREPARATION"
-    assert payload["prevalidation"]["status"] == "BLOCKED"
-    assert payload["bases"]["fingerprint"] == payload["prevalidation"]["fingerprint"]
+    assert payload["bases"]["fingerprint"] is None
+    assert payload["prevalidation"]["fingerprint"] is None
+
+
+async def test_preflight_blocks_invalid_teacher_assignment_archived_or_unqualified(db_session):
+    org, user, mem = await _create_org_and_admin(
+        db_session, "Teacher Preflight School", "org_teacher_preflight"
+    )
+
+    school_year = models.SchedulerSchoolYear(
+        organization_id=org.id,
+        label="2025/2026",
+        start_date=date(2025, 9, 1),
+        hard_end_date=date(2026, 6, 30),
+        is_active=True,
+    )
+    settings = models.OrganizationSettings(
+        organization_id=org.id,
+        school_start_date=date(2025, 9, 1),
+        school_hard_end_date=date(2026, 6, 30),
+    )
+    timeslot = models.Timeslot(
+        organization_id=org.id,
+        day_of_week=0,
+        start_time=time(8, 30),
+        end_time=time(9, 20),
+    )
+    course = models.Course(
+        organization_id=org.id,
+        name="Curso Informática",
+        abbreviation="TGPSI",
+    )
+    subject = models.Subject(
+        organization_id=org.id,
+        name="Programação",
+        required_room_type=models.RoomType.normal,
+    )
+    room = models.Room(
+        organization_id=org.id,
+        name="Sala A",
+        capacity=30,
+        type=models.RoomType.normal,
+    )
+    db_session.add_all([school_year, settings, timeslot, course, subject, room])
+    await db_session.flush()
+
+    school_year_state = models.SchedulerSchoolYearState(
+        organization_id=org.id,
+        school_year_id=school_year.id,
+        school_year_publication_state=models.SchoolYearPublicationState.UNPUBLISHED,
+        scheduler_state_version=1,
+    )
+    school_class = models.Class(
+        organization_id=org.id,
+        course_id=course.id,
+        name="10º TGPSI",
+        size=20,
+        grade_level=10,
+        start_year=2025,
+        end_year=2028,
+    )
+    module = models.Module(
+        organization_id=org.id,
+        subject_id=subject.id,
+        name="M1",
+        required_minutes=60,
+        order=0,
+    )
+    db_session.add_all([school_year_state, school_class, module])
+    await db_session.flush()
+
+    teacher = await create_teacher_profile(
+        db_session,
+        organization_id=org.id,
+        name="Prof. Elegível",
+        subject_ids=[subject.id],
+    )
+    link = models.ClassSubjectLink(
+        organization_id=org.id,
+        class_id=school_class.id,
+        subject_id=subject.id,
+        grade_level=10,
+        teacher_id=teacher.id,
+    )
+    avail = models.Availability(
+        organization_id=org.id,
+        teacher_id=teacher.id,
+        timeslot_id=timeslot.id,
+        score=models.PreferenceLevel.PREFERRED.value,
+    )
+    db_session.add_all([link, avail])
+    await db_session.flush()
+
+    # Step 1: Baseline valid setup is READY
+    service = PreflightService(db_session)
+    report = await service.evaluate(organization_id=org.id, school_year_id=school_year.id)
+    assert report.status == "READY"
+    assert not any(issue.code == "INVALID_TEACHER_ASSIGNMENT" for issue in report.issues)
+
+    # Step 2: Unqualified teacher triggers BLOCKER with link to class-subject
+    from sqlalchemy import delete
+
+    await db_session.execute(
+        delete(models.teacher_subject_link).where(
+            models.teacher_subject_link.c.organization_id == org.id,
+            models.teacher_subject_link.c.teacher_id == teacher.id,
+            models.teacher_subject_link.c.subject_id == subject.id,
+        )
+    )
+    await db_session.flush()
+
+    report_unqualified = await service.evaluate(
+        organization_id=org.id, school_year_id=school_year.id
+    )
+    assert report_unqualified.status == "BLOCKED"
+    blocker_unqualified = next(
+        (i for i in report_unqualified.issues if i.code == "INVALID_TEACHER_ASSIGNMENT"), None
+    )
+    assert blocker_unqualified is not None
+    assert blocker_unqualified.severity == "BLOCKER"
+    assert blocker_unqualified.route == f"/courses/{course.id}/classes/{school_class.id}/subjects"
+
+    # Restore qualification
+    from sqlalchemy import insert
+
+    await db_session.execute(
+        insert(models.teacher_subject_link).values(
+            organization_id=org.id,
+            teacher_id=teacher.id,
+            subject_id=subject.id,
+        )
+    )
+    await db_session.flush()
+
+    # Step 3: Archived teacher triggers BLOCKER with link to class-subject
+    teacher_membership = await db_session.get(
+        models.OrganizationMembership, teacher.organization_membership_id
+    )
+    teacher_membership.lifecycle_status = models.MembershipLifecycleStatus.archived
+    await db_session.flush()
+
+    report_archived = await service.evaluate(organization_id=org.id, school_year_id=school_year.id)
+    assert report_archived.status == "BLOCKED"
+    blocker_archived = next(
+        (i for i in report_archived.issues if i.code == "INVALID_TEACHER_ASSIGNMENT"), None
+    )
+    assert blocker_archived is not None
+    assert blocker_archived.severity == "BLOCKER"
+    assert blocker_archived.route == f"/courses/{course.id}/classes/{school_class.id}/subjects"
+
+    # Step 4: Archived teacher is excluded from generator input snapshot
+    from app.services.scheduler_fingerprint_service import SchedulerFingerprintService
+
+    fps = SchedulerFingerprintService(db_session)
+    snapshot = await fps.generation_input_snapshot(
+        organization_id=org.id,
+        school_year_id=school_year.id,
+        strategy=models.ScheduleGenerationStrategy.COMPLETE_GENERATION,
+    )
+    snapshot_teacher_ids = {t["id"] for t in snapshot["teachers"]}
+    assert teacher.id not in snapshot_teacher_ids
+
+    # Step 5: Restore teacher with scheduler_only mode -> passes preflight
+    teacher_membership.lifecycle_status = models.MembershipLifecycleStatus.active
+    teacher_membership.teacher_access_mode = models.TeacherAccessMode.scheduler_only
+    teacher_membership.can_teach = True
+    await db_session.flush()
+
+    report_restored = await service.evaluate(organization_id=org.id, school_year_id=school_year.id)
+    assert report_restored.status == "READY"
+
+
+async def test_teacher_archive_restore_and_qualifications_invalidate_scheduler(db_session):
+    from unittest.mock import AsyncMock, MagicMock
+
+    from app.services import member_service
+
+    organization, user, admin_mem = await _create_org_and_admin(
+        db_session, "Teacher Inval School", "org_teacher_inval"
+    )
+    admin_actor = deps.Actor(
+        account_id=user.id,
+        clerk_user_id=user.clerk_user_id,
+        organization_id=organization.id,
+        membership_id=admin_mem.id,
+        can_admin=True,
+        can_teach=False,
+        teacher_id=None,
+    )
+
+    school_year = models.SchedulerSchoolYear(
+        organization_id=organization.id,
+        label="2025/2026",
+        start_date=date(2025, 9, 1),
+        hard_end_date=date(2026, 6, 30),
+        is_active=True,
+    )
+    db_session.add(school_year)
+    await db_session.flush()
+
+    school_year_state = models.SchedulerSchoolYearState(
+        organization_id=organization.id,
+        school_year_id=school_year.id,
+        school_year_publication_state=models.SchoolYearPublicationState.UNPUBLISHED,
+        scheduler_state_version=1,
+    )
+    job = models.ScheduleGenerationJob(
+        organization_id=organization.id,
+        school_year_id=school_year.id,
+        requested_by_membership_id=admin_mem.id,
+        strategy=models.ScheduleGenerationStrategy.COMPLETE_GENERATION,
+    )
+    db_session.add(job)
+    await db_session.flush()
+
+    pending_draft = models.ScheduleDraft(
+        organization_id=organization.id,
+        school_year_id=school_year.id,
+        generation_job_id=job.id,
+        strategy=models.ScheduleGenerationStrategy.COMPLETE_GENERATION,
+        draft_state=models.ScheduleDraftState.PENDING,
+        result_category=models.ScheduleGenerationResultCategory.COMPLETE_SUCCESS,
+        trigger_type=models.ScheduleGenerationTrigger.FIRST_GENERATION,
+        generation_input_fingerprint="a" * 64,
+        scheduler_state_version_used=school_year_state.scheduler_state_version,
+        projected_completion_date=date(2026, 6, 30),
+        hard_end_date=school_year.hard_end_date,
+        summary_json={},
+        created_by_membership_id=admin_mem.id,
+    )
+    subject1 = models.Subject(organization_id=organization.id, name="Sub1")
+    subject2 = models.Subject(organization_id=organization.id, name="Sub2")
+    db_session.add_all([school_year_state, pending_draft, subject1, subject2])
+    await db_session.flush()
+    school_year_state.pending_draft_id = pending_draft.id
+    await db_session.flush()
+
+    teacher_account = models.User(
+        email="prof.inval@example.com",
+        name="Prof. Inval",
+    )
+    db_session.add(teacher_account)
+    await db_session.flush()
+    teacher_membership = models.OrganizationMembership(
+        organization_id=organization.id,
+        account_id=teacher_account.id,
+        organization_display_name="Prof. Inval",
+        lifecycle_status=models.MembershipLifecycleStatus.active,
+        access_status=models.MembershipAccessStatus.none,
+        teacher_access_mode=models.TeacherAccessMode.scheduler_only,
+        can_admin=False,
+        can_teach=True,
+    )
+    db_session.add(teacher_membership)
+    await db_session.flush()
+    teacher = await create_teacher_profile(
+        db_session,
+        organization_id=organization.id,
+        organization_membership_id=teacher_membership.id,
+        name="Prof. Inval",
+        subject_ids=[subject1.id],
+    )
+    teacher_membership_id = teacher_membership.id
+
+    # Give teacher history so remove_member archives rather than hard-deletes
+    db_session.add(
+        models.TeacherWeeklyTimesheet(
+            organization_id=organization.id,
+            teacher_id=teacher.id,
+            week_start_date=date(2025, 9, 1),
+        )
+    )
+    await db_session.flush()
+
+    initial_version = school_year_state.scheduler_state_version
+
+    from app.services.member_access_operation_service import MemberAccessOperationService
+    from tests.conftest import TestingSessionLocal
+
+    mock_clerk = MagicMock()
+    mock_clerk.revoke_organization_membership = AsyncMock(return_value=MagicMock(ok=True))
+    mock_clerk.get_organization_membership = AsyncMock(return_value=None)
+    mock_clerk.create_organization_invitation = AsyncMock(return_value=MagicMock(ok=True))
+    mock_clerk.change_membership_role = AsyncMock(return_value=MagicMock(ok=True))
+    operation_service = MemberAccessOperationService(TestingSessionLocal, mock_clerk)
+
+    # 1. Archive member -> scheduler state version bumped, pending draft invalidated
+    await member_service.remove_member(
+        db_session,
+        member_id=teacher_membership_id,
+        organization_id=organization.id,
+        current_admin=admin_actor,
+        clerk_access=mock_clerk,
+        operation_service=operation_service,
+    )
+    await db_session.refresh(school_year_state)
+    assert school_year_state.scheduler_state_version > initial_version
+
+    from app.services.scheduler_approval_service import (
+        DraftApprovalConflictError,
+        SchedulerApprovalService,
+    )
+
+    with pytest.raises(DraftApprovalConflictError):
+        await SchedulerApprovalService(db_session).validate_preconditions(
+            organization.id,
+            pending_draft.id,
+            decided_by_membership_id=admin_actor.membership_id,
+        )
+    await db_session.refresh(pending_draft)
+    assert pending_draft.draft_state == models.ScheduleDraftState.STALE
+
+    # 2. Restore member -> scheduler state version bumped again
+    v2 = school_year_state.scheduler_state_version
+    await member_service.restore_member(
+        db_session,
+        member_id=teacher_membership_id,
+        restore_in=schemas.MemberRestore(
+            restore_access=False,
+            capabilities=["teacher"],
+            teacher_access_mode="scheduler_only",
+        ),
+        organization_id=organization.id,
+        current_admin=admin_actor,
+        clerk_access=mock_clerk,
+        operation_service=operation_service,
+    )
+    await db_session.refresh(school_year_state)
+    assert school_year_state.scheduler_state_version > v2
+
+    # 3. Update qualifications (add subject2) -> scheduler state version bumped
+    v3 = school_year_state.scheduler_state_version
+    await member_service.update_member(
+        db_session,
+        member_id=teacher_membership_id,
+        member_in=schemas.MemberUpdate(
+            subject_ids=[subject1.id, subject2.id],
+        ),
+        organization_id=organization.id,
+        current_admin=admin_actor,
+        clerk_access=mock_clerk,
+        operation_service=operation_service,
+    )
+    await db_session.refresh(school_year_state)
+    assert school_year_state.scheduler_state_version > v3

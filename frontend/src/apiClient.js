@@ -6,6 +6,14 @@ export const setClerkTokenGetter = (fn) => {
   getClerkToken = fn;
 };
 
+function hasAuthorizationHeader(headers) {
+  if (!headers) return false;
+  if (typeof headers.has === 'function') {
+    return headers.has('Authorization') || headers.has('authorization');
+  }
+  return Object.keys(headers).some((name) => name.toLowerCase() === 'authorization');
+}
+
 export function createApiClient({
   adapter,
   authenticate = true,
@@ -22,11 +30,16 @@ export function createApiClient({
 
   if (authenticate) {
     client.interceptors.request.use(async (config) => {
-      const token = await getClerkToken();
-      // A caller may provide a freshly minted organization-scoped token. Never
-      // replace it with the application-wide token getter's current value.
-      if (token && !config.headers.Authorization) {
-        config.headers.Authorization = `Bearer ${token}`;
+      if (!hasAuthorizationHeader(config.headers)) {
+        const token = await getClerkToken();
+        if (token) {
+          if (config.headers?.set) {
+            config.headers.set('Authorization', `Bearer ${token}`);
+          } else {
+            config.headers = config.headers || {};
+            config.headers.Authorization = `Bearer ${token}`;
+          }
+        }
       }
       return config;
     });

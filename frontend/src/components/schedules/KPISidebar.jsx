@@ -1,6 +1,24 @@
+import { CSpinner } from '@coreui/react'
 import { getSubjectColor } from '../../utils/subjectColors'
 
-const KPISidebar = ({ subjects }) => {
+const KPISidebar = ({ subjects, isLoading = false, isError = false }) => {
+  if (isLoading) {
+    return (
+      <div className="d-flex align-items-center justify-content-center p-3 text-secondary gap-2" data-testid="kpi-loading">
+        <CSpinner size="sm" />
+        <span style={{ fontSize: '0.85rem' }}>A carregar progresso...</span>
+      </div>
+    )
+  }
+
+  if (isError) {
+    return (
+      <div className="text-danger text-center p-3" style={{ fontSize: '0.85rem' }} data-testid="kpi-error">
+        Erro ao carregar o progresso da turma.
+      </div>
+    )
+  }
+
   if (!subjects || subjects.length === 0) {
     return (
       <div className="text-muted text-center p-3" style={{ fontSize: '0.85rem' }}>

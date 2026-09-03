@@ -82,7 +82,10 @@ async def prepare_generation_request(
         )
     except GenerationConfigurationError as exc:
         preflight_service = PreflightService(db)
-        report = await preflight_service.evaluate(organization_id=organization_id)
+        report = await preflight_service.evaluate(
+            organization_id=organization_id,
+            resolve_fingerprint=False,
+        )
         raise AppError(
             kind="validation",
             code="preflight_failed",
@@ -129,6 +132,7 @@ async def prepare_generation_request(
         organization_id=organization_id,
         school_year_id=selection.school_year_id,
         strategy=selection.strategy,
+        resolve_fingerprint=False,
     )
     if report.status == "BLOCKED" or any(i.severity == "BLOCKER" for i in report.issues):
         raise AppError(

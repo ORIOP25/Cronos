@@ -119,7 +119,7 @@ class SchoolReadinessService:
                         models.Availability.timeslot_id == models.Timeslot.id,
                         models.Availability.score == models.PreferenceLevel.IMPOSSIBLE.value,
                     )
-                ).correlate(link_alias),
+                ).correlate(link_alias, models.Timeslot),
             )
             .correlate(link_alias)
         )

@@ -98,12 +98,7 @@ export function FoundationWizard() {
     }
     pendingSnapshotRef.current = snapshot
     if (saveRunnerRef.current) {
-      const activeRunner = saveRunnerRef.current
-      return activeRunner.then((saved) => (
-        pendingSnapshotRef.current === snapshot
-          ? persistSnapshot(snapshot)
-          : saved
-      ))
+      return saveRunnerRef.current
     }
 
     const runner = (async () => {
@@ -122,7 +117,8 @@ export function FoundationWizard() {
           dispatch({ type: 'SAVE_SUCCEEDED', version: res.version })
         } catch (err) {
           if (err?.response?.status === 409) {
-            pendingSnapshotRef.current = nextSnapshot
+            // Preserve a newer edit queued while this request was in flight.
+            if (!pendingSnapshotRef.current) pendingSnapshotRef.current = nextSnapshot
             dispatch({ type: 'VERSION_CONFLICT', payload: err.response.data?.detail || {} })
           } else {
             failedSnapshotRef.current = nextSnapshot
@@ -146,7 +142,7 @@ export function FoundationWizard() {
 
   // 4. 600ms Debounced Autosave on user input
   useEffect(() => {
-    if (!isInitialSync.current || !isDirtyRef.current || state.status === 'conflict' || state.status === 'saving') {
+    if (!isInitialSync.current || !isDirtyRef.current || state.status === 'conflict') {
       return
     }
 
@@ -168,13 +164,13 @@ export function FoundationWizard() {
   }, [state.values, state.currentStep, state.status, persistSnapshot])
 
   const handleChange = (field, value) => {
-    if (state.status === 'conflict' || state.status === 'saving') return
+    if (state.status === 'conflict') return
     isDirtyRef.current = true
     dispatch({ type: 'SET_FIELD', field, value })
   }
 
   const handleCalendarPreferenceChange = (_field, value) => {
-    if (state.status === 'conflict' || state.status === 'saving') return
+    if (state.status === 'conflict') return
     const nextValues = { ...state.values, automatic_holidays_enabled: value }
     isDirtyRef.current = false
     dispatch({ type: 'SET_FIELD', field: 'automatic_holidays_enabled', value })
@@ -182,7 +178,7 @@ export function FoundationWizard() {
   }
 
   const handleRetrySave = () => {
-    if (failedSnapshotRef.current) void persistSnapshot(failedSnapshotRef.current)
+    void persistSnapshot({ step: state.currentStep, values: state.values })
   }
 
   const canDisableAutomaticHolidays = state.status === 'error'
@@ -290,7 +286,7 @@ export function FoundationWizard() {
   }
 
   const organizationName = statusQuery.data?.organization_name || 'a sua escola'
-  const isBlocked = state.status === 'saving' || state.status === 'conflict' || isRetrying || isRecoveringHolidays
+  const isBlocked = state.status === 'conflict' || isRetrying || isRecoveringHolidays
 
   if (statusQuery.isError || draftQuery.isError) {
     return (
@@ -444,7 +440,7 @@ export function FoundationWizard() {
           <CButton
             color="secondary"
             variant="outline"
-            disabled={state.currentStep === 1 || isBlocked}
+            disabled={state.currentStep === 1 || isBlocked || state.status === 'saving'}
             onClick={handlePrev}
           >
             ← Anterior
@@ -454,7 +450,7 @@ export function FoundationWizard() {
             {state.currentStep < STEP_CONFIRMATION ? (
               <CButton
                 color="primary"
-                disabled={isBlocked}
+                disabled={isBlocked || state.status === 'saving'}
                 onClick={handleNext}
               >
                 {state.currentStep === STEP_CALENDAR && !state.values.automatic_holidays_enabled
@@ -464,7 +460,7 @@ export function FoundationWizard() {
             ) : (
               <CButton
                 color="success"
-                disabled={isBlocked || !confirmed}
+                disabled={isBlocked || state.status === 'saving' || !confirmed}
                 onClick={handleCompleteActivation}
               >
                 Ativar Escola

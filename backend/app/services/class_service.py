@@ -370,10 +370,10 @@ def _build_module_data(module, progress_map: dict) -> dict:
         "id": module.id,
         "name": module.name,
         "code": module.code,
-        "hours_total": module.hours_total,
+        "hours_total": float(module.hours_total),
         "order": module.order,
-        "hours_completed": hours_done,
-        "hours_debt": hours_debt,
+        "hours_completed": round(hours_done, 1),
+        "hours_debt": round(hours_debt, 1),
         "is_completed": completed,
         "percentage": pct,
     }
@@ -382,14 +382,16 @@ def _build_module_data(module, progress_map: dict) -> dict:
 def _build_subject_with_progress(subject, progress_map: dict) -> dict:
     """Constrói dados de uma disciplina com módulos e progresso agregado."""
     modules_data = []
-    subject_total = 0
-    subject_completed = 0
+    subject_total = 0.0
+    subject_completed = 0.0
 
     for module in sorted(subject.modules, key=lambda m: m.order):
         module_data = _build_module_data(module, progress_map)
         modules_data.append(module_data)
         subject_total += module.hours_total
-        subject_completed += module_data["hours_completed"]
+        progress = progress_map.get(module.id)
+        if progress:
+            subject_completed += progress[0] / 60
 
     overall_pct = (
         min(100.0, round((subject_completed / subject_total) * 100, 1))
@@ -402,8 +404,8 @@ def _build_subject_with_progress(subject, progress_map: dict) -> dict:
         "name": subject.name,
         "required_room_type": subject.required_room_type,
         "modules": modules_data,
-        "total_hours": subject_total,
-        "completed_hours": subject_completed,
+        "total_hours": round(subject_total, 1),
+        "completed_hours": round(subject_completed, 1),
         "overall_percentage": overall_pct,
     }
 

@@ -189,8 +189,18 @@ class SchedulerFingerprintService:
         teacher_rows = (
             (
                 await self._db.execute(
-                    select(models.Teacher.id).where(
+                    select(models.Teacher.id)
+                    .join(
+                        models.OrganizationMembership,
+                        models.OrganizationMembership.id
+                        == models.Teacher.organization_membership_id,
+                    )
+                    .where(
                         models.Teacher.organization_id == organization_id,
+                        models.OrganizationMembership.organization_id == organization_id,
+                        models.OrganizationMembership.lifecycle_status
+                        == models.MembershipLifecycleStatus.active,
+                        models.OrganizationMembership.can_teach.is_(True),
                         models.Teacher.id.in_(teacher_ids),
                     )
                 )
@@ -198,6 +208,7 @@ class SchedulerFingerprintService:
             if teacher_ids
             else []
         )
+        eligible_teacher_ids = {row.id for row in teacher_rows}
         qualification_rows = (
             (
                 await self._db.execute(
@@ -206,12 +217,12 @@ class SchedulerFingerprintService:
                         models.teacher_subject_link.c.subject_id,
                     ).where(
                         models.teacher_subject_link.c.organization_id == organization_id,
-                        models.teacher_subject_link.c.teacher_id.in_(teacher_ids),
+                        models.teacher_subject_link.c.teacher_id.in_(eligible_teacher_ids),
                         models.teacher_subject_link.c.subject_id.in_(subject_ids),
                     )
                 )
             ).all()
-            if teacher_ids and subject_ids
+            if eligible_teacher_ids and subject_ids
             else []
         )
 
@@ -289,11 +300,11 @@ class SchedulerFingerprintService:
                         models.Availability.score,
                     ).where(
                         models.Availability.organization_id == organization_id,
-                        models.Availability.teacher_id.in_(teacher_ids),
+                        models.Availability.teacher_id.in_(eligible_teacher_ids),
                     )
                 )
             ).all()
-            if teacher_ids
+            if eligible_teacher_ids
             else []
         )
         room_rows = (

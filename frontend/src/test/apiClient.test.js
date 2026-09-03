@@ -53,7 +53,8 @@ describe('apiClient public contract', () => {
   })
 
   it('preserves an explicitly supplied organization-scoped token', async () => {
-    setClerkTokenGetter(async () => 'tk_stale')
+    const getter = vi.fn(async () => 'tk_stale')
+    setClerkTokenGetter(getter)
     const adapter = vi.fn(async (config) => response(config, null))
 
     await apiClient.get('/contract', {
@@ -62,6 +63,33 @@ describe('apiClient public contract', () => {
     })
 
     expect(adapter.mock.calls[0][0].headers.get('Authorization')).toBe('Bearer tk_fresh_org')
+    expect(getter).not.toHaveBeenCalled()
+  })
+
+  it('preserves lowercase explicit authorization header without calling getter', async () => {
+    const getter = vi.fn(async () => 'tk_stale')
+    setClerkTokenGetter(getter)
+    const adapter = vi.fn(async (config) => response(config, null))
+
+    await apiClient.get('/contract', {
+      adapter,
+      headers: { authorization: 'Bearer tk_lowercase' },
+    })
+
+    expect(adapter.mock.calls[0][0].headers.get('Authorization')).toBe('Bearer tk_lowercase')
+    expect(getter).not.toHaveBeenCalled()
+  })
+
+  it('succeeds with explicit token even if global token getter throws', async () => {
+    setClerkTokenGetter(async () => { throw new Error('getter blew up') })
+    const adapter = vi.fn(async (config) => response(config, { success: true }))
+
+    const res = await apiClient.get('/contract', {
+      adapter,
+      headers: { Authorization: 'Bearer tk_explicit' },
+    })
+
+    expect(res).toEqual({ success: true })
   })
 
   it('rejects before sending a request when token retrieval fails', async () => {

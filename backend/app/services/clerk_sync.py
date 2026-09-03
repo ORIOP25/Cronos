@@ -83,7 +83,7 @@ async def clerk_user_exists(
         else:
             await asyncio.to_thread(lambda: sdk.users.get(user_id=clerk_user_id))
     except Exception as exc:
-        if _provider_status_code(exc) == 404 or "404" in str(exc):
+        if _provider_status_code(exc) == 404:
             return False
         logger.error("BAPI users.get failed while reconciling identity", error=str(exc))
         return None

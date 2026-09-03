@@ -118,6 +118,13 @@ async def _seed_minimal_generation_data_with_settings(
     subject = models.Subject(name="Disciplina Teste", organization_id=organization_id)
     db_session.add(subject)
     await db_session.flush()
+    await db_session.execute(
+        models.teacher_subject_link.insert().values(
+            organization_id=organization_id,
+            teacher_id=teacher.id,
+            subject_id=subject.id,
+        )
+    )
 
     module = models.Module(
         organization_id=organization_id,

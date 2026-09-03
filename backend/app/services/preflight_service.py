@@ -1,5 +1,5 @@
 import structlog
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy import select as sa_select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -69,12 +69,21 @@ async def _collect_generation_teacher_ids(db: AsyncSession, organization_id: int
     class_subject_teacher_rows = await db.execute(
         sa_select(models.ClassSubjectLink.teacher_id)
         .join(models.Class, models.ClassSubjectLink.class_id == models.Class.id)
+        .join(models.Teacher, models.Teacher.id == models.ClassSubjectLink.teacher_id)
+        .join(
+            models.OrganizationMembership,
+            models.OrganizationMembership.id == models.Teacher.organization_membership_id,
+        )
         .where(
             models.Class.organization_id == organization_id,
             models.ClassSubjectLink.organization_id == organization_id,
             models.Class.is_archived == False,  # noqa: E712
             models.ClassSubjectLink.teacher_id.isnot(None),
             models.ClassSubjectLink.grade_level == models.Class.grade_level,
+            models.OrganizationMembership.organization_id == organization_id,
+            models.OrganizationMembership.lifecycle_status
+            == models.MembershipLifecycleStatus.active,
+            models.OrganizationMembership.can_teach.is_(True),
         )
         .distinct()
     )
@@ -241,6 +250,7 @@ class PreflightService:
         organization_id: int,
         school_year_id: int | None = None,
         strategy: models.ScheduleGenerationStrategy = models.ScheduleGenerationStrategy.COMPLETE_GENERATION,
+        resolve_fingerprint: bool = True,
     ) -> schemas.PreflightReport:
         issues: list[schemas.PreflightIssue] = []
 
@@ -380,6 +390,66 @@ class PreflightService:
                     )
                 )
 
+            invalid_assignment_rows = (
+                await self.db.execute(
+                    sa_select(
+                        models.Class.course_id,
+                        models.Class.id.label("class_id"),
+                        models.Class.name.label("class_name"),
+                        models.Subject.name.label("subject_name"),
+                        models.Teacher.name.label("teacher_name"),
+                    )
+                    .select_from(models.ClassSubjectLink)
+                    .join(models.Class, models.Class.id == models.ClassSubjectLink.class_id)
+                    .join(models.Subject, models.Subject.id == models.ClassSubjectLink.subject_id)
+                    .join(models.Teacher, models.Teacher.id == models.ClassSubjectLink.teacher_id)
+                    .join(
+                        models.OrganizationMembership,
+                        models.OrganizationMembership.id
+                        == models.Teacher.organization_membership_id,
+                    )
+                    .where(
+                        models.ClassSubjectLink.organization_id == organization_id,
+                        models.Class.organization_id == organization_id,
+                        models.Subject.organization_id == organization_id,
+                        models.Class.is_archived.is_(False),
+                        models.ClassSubjectLink.teacher_id.isnot(None),
+                        models.ClassSubjectLink.grade_level == models.Class.grade_level,
+                        or_(
+                            models.Teacher.organization_id != organization_id,
+                            models.OrganizationMembership.organization_id != organization_id,
+                            models.OrganizationMembership.lifecycle_status
+                            != models.MembershipLifecycleStatus.active,
+                            models.OrganizationMembership.can_teach.is_(False),
+                            ~sa_select(1)
+                            .select_from(models.teacher_subject_link)
+                            .where(
+                                models.teacher_subject_link.c.organization_id == organization_id,
+                                models.teacher_subject_link.c.teacher_id
+                                == models.ClassSubjectLink.teacher_id,
+                                models.teacher_subject_link.c.subject_id
+                                == models.ClassSubjectLink.subject_id,
+                            )
+                            .exists(),
+                        ),
+                    )
+                    .order_by(models.Class.name, models.Subject.name)
+                )
+            ).all()
+
+            for inv in invalid_assignment_rows:
+                issues.append(
+                    schemas.PreflightIssue(
+                        code="INVALID_TEACHER_ASSIGNMENT",
+                        severity="BLOCKER",
+                        message=(
+                            f"Atribuição inválida: o professor {inv.teacher_name} na turma {inv.class_name} "
+                            f"({inv.subject_name}) não está ativo ou não tem qualificação na disciplina."
+                        ),
+                        route=f"/courses/{inv.course_id}/classes/{inv.class_id}/subjects",
+                    )
+                )
+
         pending_conditions = [
             models.ScheduleDraft.organization_id == organization_id,
             models.ScheduleDraft.draft_state == models.ScheduleDraftState.PENDING,
@@ -445,7 +515,7 @@ class PreflightService:
             status = "READY"
 
         fingerprint = None
-        if school_year_id is not None:
+        if school_year_id is not None and resolve_fingerprint:
             from app.services.scheduler_fingerprint_service import (
                 SchedulerFingerprintService,
             )

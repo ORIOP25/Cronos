@@ -169,11 +169,65 @@ describe('PreparationDashboard tutorial entry points', () => {
     expect(screen.queryByText(/issues de preparação/i)).not.toBeInTheDocument()
   })
 
-  it('keeps generation disabled when prevalidation is blocked', () => {
-    renderWithRouter(<PreparationDashboard bases={completeBases} prevalidation={{ status: 'BLOCKED', issues: [] }} autoStartGuide={false} />)
+  it('keeps generation disabled when prevalidation is blocked and presents the issue with resolution link', () => {
+    renderWithRouter(
+      <PreparationDashboard
+        bases={completeBases}
+        prevalidation={{
+          status: 'BLOCKED',
+          issues: [{
+            code: 'MISSING_TEACHERS',
+            severity: 'BLOCKER',
+            message: 'Nenhum professor registado.',
+            route: '/members',
+          }],
+        }}
+        autoStartGuide={false}
+      />,
+    )
 
     expect(screen.getByRole('button', { name: /gerar horário/i })).toBeDisabled()
-    expect(screen.getByTestId('preparation-levels')).toBeVisible()
+    expect(screen.queryByText(/todas as bases estão prontas/i)).not.toBeInTheDocument()
+    expect(screen.getByText('Nenhum professor registado.')).toBeInTheDocument()
+    const fixLink = screen.getByRole('link', { name: /resolver/i })
+    expect(fixLink).toHaveAttribute('href', '/members')
+  })
+
+  it('displays warnings and keeps generation enabled when bases are complete with warnings', () => {
+    renderWithRouter(
+      <PreparationDashboard
+        bases={completeBases}
+        prevalidation={{
+          status: 'READY_WITH_WARNINGS',
+          issues: [{
+            code: 'PENDING_DRAFT',
+            severity: 'WARNING',
+            message: 'Existe um rascunho de horário pendente de aprovação.',
+            route: '/schedules',
+          }],
+        }}
+        autoStartGuide={false}
+      />,
+    )
+
+    expect(screen.getByRole('button', { name: /gerar horário/i })).toBeEnabled()
+    expect(screen.getByText('Existe um rascunho de horário pendente de aprovação.')).toBeInTheDocument()
+    const warnLink = screen.getByRole('link', { name: /verificar/i })
+    expect(warnLink).toHaveAttribute('href', '/schedules')
+  })
+
+  it('does not display readiness success when bases are incomplete even if prevalidation is not blocked', () => {
+    renderWithRouter(
+      <PreparationDashboard
+        bases={{ ...bases, percentage: 50, depth: 3, complete: false }}
+        prevalidation={{ status: 'READY', issues: [] }}
+        autoStartGuide={false}
+      />,
+    )
+
+    expect(screen.getByRole('button', { name: /gerar horário/i })).toBeDisabled()
+    expect(screen.queryByText(/todas as bases estão prontas/i)).not.toBeInTheDocument()
+    expect(screen.getByText(/Prontidão das Bases: 50%/i)).toBeInTheDocument()
   })
 
 })
