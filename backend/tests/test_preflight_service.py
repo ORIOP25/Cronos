@@ -403,7 +403,13 @@ async def test_preflight_blocks_invalid_teacher_assignment_archived_or_unqualifi
     report_archived = await service.evaluate(organization_id=org.id, school_year_id=school_year.id)
     assert report_archived.status == "BLOCKED"
     blocker_archived = next(
-        (i for i in report_archived.issues if i.code == "INVALID_TEACHER_ASSIGNMENT"), None
+        (
+            i
+            for i in report_archived.issues
+            if i.code == "INVALID_TEACHER_ASSIGNMENT"
+            and i.route == f"/courses/{course.id}/classes/{school_class.id}/subjects"
+        ),
+        None,
     )
     assert blocker_archived is not None
     assert blocker_archived.severity == "BLOCKER"
@@ -528,6 +534,8 @@ async def test_teacher_archive_restore_and_qualifications_invalidate_scheduler(d
         name="Curso Invalidação",
         abbreviation="CI",
     )
+    db_session.add(course)
+    await db_session.flush()
     class_ = models.Class(
         organization_id=organization.id,
         course_id=course.id,
@@ -544,7 +552,7 @@ async def test_teacher_archive_restore_and_qualifications_invalidate_scheduler(d
         required_minutes=60,
         order=0,
     )
-    db_session.add_all([course, class_, module])
+    db_session.add_all([class_, module])
     await db_session.flush()
     db_session.add(
         models.ClassSubjectLink(

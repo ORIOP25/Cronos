@@ -403,6 +403,8 @@ async def _record_teacher_scheduler_change(
     return await record_scheduler_change(
         db,
         organization_id,
+        entity_type="TEACHER_PROFILE",
+        entity_id=teacher_id,
         **change,
         active_resource=active_resource,
     )
