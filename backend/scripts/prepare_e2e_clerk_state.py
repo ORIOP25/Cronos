@@ -3,7 +3,9 @@ from __future__ import annotations
 import asyncio
 import json
 import sys
+from contextlib import redirect_stdout
 from datetime import date, time
+from io import StringIO
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -80,7 +82,11 @@ async def _main() -> int:
                 directory=SdkClerkDirectory(),
                 config=config,
             )
-            await _ensure_default_foundation(db, result)
+            # The workflow parses this script's stdout as JSON. The settings
+            # service emits an informational grid event on stdout, so keep
+            # that implementation detail out of the machine-readable output.
+            with redirect_stdout(StringIO()):
+                await _ensure_default_foundation(db, result)
             await db.commit()
         except E2EClerkPreflightError as exc:
             await db.rollback()
