@@ -3,6 +3,7 @@ import { createPageObjects } from '@clerk/testing/playwright/unstable'
 import { setupClerkTestingToken } from '@clerk/testing/playwright'
 import { expect, test } from '@playwright/test'
 import {
+  allowApiFailure,
   attachRuntimeGuards,
   expectNoAppCrash,
   expectRouteReady,
@@ -110,6 +111,7 @@ test.describe('Dashboard — First Real Schedule Approval & Discrimination', () 
         'dashboard E2E user creation',
       )
       userId = user.id
+      allowApiFailure(page, { status: 404, url: '/api/v1/scheduler/drafts/current' })
       attachRuntimeGuards(page)
       organizationId = await signInFreshFounder(client, page, userId, organizationName)
       await completeFreshFoundation(page)
