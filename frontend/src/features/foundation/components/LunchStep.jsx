@@ -41,7 +41,7 @@ export function LunchStep({ values, fieldErrors, onChange }) {
 
         <CCol md={12} className="mt-4">
           <CFormLabel htmlFor="lunch_min_duration_minutes">
-            Duração Mínima de Almoço Garantida *
+            Duração Mínima de Almoço *
           </CFormLabel>
           <CInputGroup>
             <CFormInput
@@ -58,7 +58,7 @@ export function LunchStep({ values, fieldErrors, onChange }) {
             <CInputGroupText id="lunch_min_duration_minutes-unit">Minutos</CInputGroupText>
           </CInputGroup>
           <small className="text-muted d-block mt-1">
-            Tempo mínimo contínuo que todo o horário terá livre para refeição (omissão: 60 minutos).
+            Tempo mínimo contínuo que todo o horário terá livre para refeição.
           </small>
           {fieldErrors.lunch_min_duration_minutes && (
             <CFormFeedback id="lunch_min_duration_minutes-feedback" className="d-block" invalid>{fieldErrors.lunch_min_duration_minutes}</CFormFeedback>

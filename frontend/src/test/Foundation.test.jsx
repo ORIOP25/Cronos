@@ -67,8 +67,8 @@ describe('Foundation', () => {
     ]) {
       expect(container.querySelector(`#${id}`)).toHaveClass('d-block')
     }
-    expect(screen.getByText('Duração Mínima de Almoço Garantida *')).toBeInTheDocument()
-    expect(screen.queryByText(/Duração Mínima de Almoço Garantida \(Minutos\)/i)).not.toBeInTheDocument()
+    expect(screen.getByText('Duração Mínima de Almoço *')).toBeInTheDocument()
+    expect(screen.queryByText(/Duração Mínima de Almoço \(Minutos\)/i)).not.toBeInTheDocument()
     expect(screen.getAllByText('Minutos')).toHaveLength(3)
   })
 

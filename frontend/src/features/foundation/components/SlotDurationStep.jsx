@@ -22,9 +22,6 @@ export function SlotDurationStep({ values, fieldErrors, onChange }) {
           />
           <CInputGroupText id="slot_duration_minutes-unit">Minutos</CInputGroupText>
         </CInputGroup>
-        <small className="text-muted d-block mt-1">
-          Valor recomendado pelo sistema: 50 minutos.
-        </small>
         {fieldErrors.slot_duration_minutes && (
           <CFormFeedback id="slot_duration_minutes-feedback" className="d-block" invalid>{fieldErrors.slot_duration_minutes}</CFormFeedback>
         )}

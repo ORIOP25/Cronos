@@ -24,9 +24,6 @@ export function BreakDurationStep({ values, fieldErrors, onChange }) {
           />
           <CInputGroupText id="break_duration_minutes-unit">Minutos</CInputGroupText>
         </CInputGroup>
-        <small className="text-muted d-block mt-1">
-          Valor recomendado pelo sistema: 10 minutos.
-        </small>
         {fieldErrors.break_duration_minutes && (
           <CFormFeedback id="break_duration_minutes-feedback" className="d-block" invalid>{fieldErrors.break_duration_minutes}</CFormFeedback>
         )}
