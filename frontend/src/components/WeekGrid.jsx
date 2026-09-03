@@ -221,8 +221,12 @@ const SlotCell = ({ slotEntries, isOperationalEnabled, onOpenOperationalAction }
     </div>
   )
 
+  const ariaStatus = slot?.lesson_log_status === 'COMPLETED'
+    ? 'Concluída'
+    : (statusLabel ?? 'Planeado')
+
   const ariaLabel = slot
-    ? `${slot.subject?.name ?? 'Sem disciplina'}, ${slot.teacher?.name ?? ''}, ${slot.room?.name ?? ''}, ${statusLabel ?? 'Planeado'}`
+    ? `${slot.subject?.name ?? 'Sem disciplina'}, ${slot.teacher?.name ?? ''}, ${slot.room?.name ?? ''}, ${ariaStatus}`
     : 'Célula vazia'
 
   return (
