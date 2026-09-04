@@ -14,7 +14,7 @@
     "test:coverage": "vitest run --coverage",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
-    "test:e2e:public": "playwright test e2e/marketing-public.spec.js --project=chromium --no-deps",
+    "test:e2e:public": "playwright test --project=public",
     "test:e2e:ui": "playwright test --ui",
     "audit:production": "node scripts/audit-production.mjs",
     "test:marketing-assets": "node scripts/audit-marketing-assets.mjs",
@@ -43,6 +43,7 @@
     "@playwright/test": "^1.59.1",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "14.6.7",
     "@types/react": "^19.2.2",
     "@types/react-dom": "^19.2.2",
     "@vitejs/plugin-react": "^6.0.3",
@@ -54,6 +55,7 @@
     "globals": "^16.5.0",
     "jsdom": "^28.1.0",
     "knip": "^6.25.0",
+    "msw": "2.15.0",
     "vite": "^8.1.3",
     "vitest": "^4.1.10"
   }

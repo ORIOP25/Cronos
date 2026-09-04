@@ -1,0 +1,6 @@
+{
+  "revision": "91bd1bcff7c6b2e4008fc6add6369ed968892b03",
+  "backend": {"collected": 616, "fast_passed": 336, "fast_deselected": 280, "fast_duration_ms": 45950},
+  "frontend": {"files": 62, "tests_passed": 353, "duration_ms": 76030},
+  "marketing_scripts": {"tests_passed": 3}
+}

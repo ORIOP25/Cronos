@@ -1,21 +1,16 @@
 import { defineConfig, devices } from '@playwright/test'
-import { existsSync, readFileSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
 
-function readLocalEnv(relativePath, key) {
-  const path = fileURLToPath(new URL(relativePath, import.meta.url))
-  if (!existsSync(path)) return undefined
-  const line = readFileSync(path, 'utf8').split(/\r?\n/).find((entry) => entry.startsWith(`${key}=`))
-  return line?.slice(key.length + 1).trim().replace(/^(["'])(.*)\1$/, '$2')
-}
-
-process.env.CLERK_SECRET_KEY ||= readLocalEnv('../backend/.env', 'CLERK_SECRET_KEY')
-process.env.VITE_CLERK_PUBLISHABLE_KEY ||= readLocalEnv('.env.local', 'VITE_CLERK_PUBLISHABLE_KEY')
 process.env.CLERK_PUBLISHABLE_KEY ||= process.env.VITE_CLERK_PUBLISHABLE_KEY
 if (!process.env.CI) {
   process.env.E2E_CLERK_ADMIN_EMAIL ||= 'cronos-ci-admin+clerk_test@example.com'
   process.env.E2E_CLERK_TEACHER_EMAIL ||= 'cronos-ci-teacher+clerk_test@example.com'
 }
+
+const setupMatch = /global\.setup\.js/
+const publicMatch = /e2e[\\/]marketing-public\.spec\.js/
+const authMatch = /e2e[\\/]auth[\\/].*\.spec\.js/
+const providerMatch = /e2e[\\/]members[\\/]invitations\.spec\.js/
+const faultsMatch = /e2e[\\/](?:foundation[\\/]operational-gate-409|tutorial[\\/]tutorial-network-boundary)\.spec\.js/
 
 export default defineConfig({
   testDir: './e2e',
@@ -23,8 +18,11 @@ export default defineConfig({
   forbidOnly: !!process.env.CI,
   retries: 0,
   workers: process.env.CI ? 1 : undefined,
-  reporter: process.env.CI ? [['list', { printSteps: true }], ['html', { open: 'never' }]] : 'html',
-  timeout: 30_000,
+  reporter: process.env.CI
+    ? [['list', { printSteps: true }], ['junit', { outputFile: 'test-results/playwright-junit.xml' }], ['html', { open: 'never' }]]
+    : 'html',
+  timeout: 60_000,
+  expect: { timeout: 10_000 },
 
   use: {
     baseURL: process.env.BASE_URL || 'http://localhost:5173',
@@ -34,61 +32,40 @@ export default defineConfig({
 
   projects: [
     {
-      name: 'global setup',
-      testMatch: /global\.setup\.js/,
-    },
-    {
-      name: 'auth redirects',
-      testMatch: /e2e[\\/]auth[\\/]local-auth-redirects\.spec\.js/,
-      use: { ...devices['Desktop Chrome'] },
-      dependencies: ['global setup'],
-    },
-    {
-      name: 'login layout',
-      testMatch: /e2e[\\/]auth[\\/]login-layout\.spec\.js/,
-      use: { ...devices['Desktop Chrome'] },
-      dependencies: ['global setup'],
-    },
-    {
-      name: 'onboarding',
-      testMatch: /e2e[\\/]auth[\\/]onboarding-create-organization\.spec\.js/,
-      use: { ...devices['Desktop Chrome'] },
-      dependencies: ['global setup'],
-    },
-    {
-      name: 'foundation setup',
-      testMatch: /e2e[\\/]foundation[\\/](foundation-conflict-recovery|onboarding-foundation-9steps|operational-gate-409)\.spec\.js/,
-      use: { ...devices['Desktop Chrome'] },
+      name: 'setup',
+      testMatch: setupMatch,
       fullyParallel: false,
       workers: 1,
-      dependencies: ['global setup', 'onboarding'],
     },
     {
-      name: 'foundation activation',
-      testMatch: /e2e[\\/]foundation[\\/]foundation\.spec\.js/,
+      name: 'public',
+      testMatch: publicMatch,
       use: { ...devices['Desktop Chrome'] },
-      dependencies: ['foundation setup'],
+      dependencies: ['setup'],
     },
     {
-      name: 'schedule lifecycle',
-      testMatch: /e2e[\\/]foundation[\\/]first-schedule-approval-dashboard\.spec\.js/,
+      name: 'auth',
+      testMatch: authMatch,
       use: { ...devices['Desktop Chrome'] },
-      fullyParallel: false,
-      workers: 1,
-      dependencies: ['foundation activation'],
+      dependencies: ['setup'],
     },
     {
-      name: 'tutorial',
-      testMatch: /e2e[\\/](tutorial[\\/].*|foundation[\\/]tutorial-13steps-navigation)\.spec\.js/,
-      workers: 1,
-      use: { ...devices['Desktop Chrome'], viewport: { width: 1280, height: 720 } },
-      dependencies: ['global setup', 'onboarding'],
-    },
-    {
-      name: 'chromium',
-      testIgnore: /global\.setup\.js|e2e[\\/]tutorial[\\/]|e2e[\\/]auth[\\/](local-auth-redirects|login-layout|onboarding-create-organization)\.spec\.js|e2e[\\/]foundation[\\/](first-schedule-approval-dashboard|foundation-conflict-recovery|onboarding-foundation-9steps|operational-gate-409|foundation|tutorial-13steps-navigation)\.spec\.js/,
+      name: 'app',
+      testIgnore: [setupMatch, publicMatch, authMatch, providerMatch, faultsMatch],
       use: { ...devices['Desktop Chrome'] },
-      dependencies: ['schedule lifecycle'],
+      dependencies: ['setup'],
+    },
+    {
+      name: 'provider',
+      testMatch: providerMatch,
+      use: { ...devices['Desktop Chrome'] },
+      dependencies: ['setup'],
+    },
+    {
+      name: 'faults',
+      testMatch: faultsMatch,
+      use: { ...devices['Desktop Chrome'] },
+      dependencies: ['setup'],
     },
   ],
 

@@ -7,7 +7,7 @@ from uuid import uuid4
 from httpx import AsyncClient
 
 from app.config import settings
-from tests.conftest import create_teacher_user
+from tests._support.db_fixtures import create_teacher_user
 
 API = settings.API_V1_STR
 

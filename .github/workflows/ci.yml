@@ -68,6 +68,14 @@ jobs:
           ALTER DATABASE cronos_test_db OWNER TO cronos_migrator;
           GRANT CONNECT ON DATABASE cronos_test_db TO cronos_app;
           SQL
+          for worker_db in cronos_test_gw0 cronos_test_gw1; do
+            psql postgresql://postgres@localhost/postgres \
+              --set=ON_ERROR_STOP=1 --set=db_name="$worker_db" <<'SQL'
+          SELECT format('CREATE DATABASE %I OWNER cronos_migrator', :'db_name')
+          WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = :'db_name')\gexec
+          GRANT CONNECT ON DATABASE :"db_name" TO cronos_app;
+          SQL
+          done
       - name: Install locked dependencies
         working-directory: backend
         run: python -m pip install --require-hashes -r requirements-dev.txt
@@ -104,24 +112,32 @@ jobs:
         run: |
           python -m scripts.audit_triggers
           python -m scripts.audit_database_integrity
-      - name: Test without Redis contracts
+      - name: Test backend units
         working-directory: backend
         env:
           RATELIMIT_ENABLED: "false"
         run: >-
-          coverage run --branch -m pytest -q -m "not redis"
-          --junitxml=test-results.xml
-      - name: Test Redis contracts and report coverage
+          pytest -q tests/unit --cov=app --cov-branch --cov-report= --cov-fail-under=0
+          --disable-socket --allow-hosts=127.0.0.1,localhost
+          --junitxml=test-results-unit.xml
+      - name: Test backend integrations
+        working-directory: backend
+        env:
+          RATELIMIT_ENABLED: "false"
+        run: >-
+          pytest -q tests/integration --cov=app --cov-branch --cov-report= --cov-fail-under=0 --cov-append
+          -n 2 --dist=loadscope --junitxml=test-results-integration.xml
+      - name: Test backend contracts and report coverage
         working-directory: backend
         env:
           RATELIMIT_ENABLED: "true"
         run: |
-          coverage run --branch --append -m pytest -q -m redis --junitxml=test-results-redis.xml
+          pytest -q tests/contracts --cov=app --cov-branch --cov-report= --cov-fail-under=0 --cov-append --junitxml=test-results-contracts.xml
           coverage report --fail-under=70
           coverage report --include='app/scheduler/domain/constraints.py,app/scheduler/domain/validation.py' --fail-under=100
           python - <<'PY'
           import xml.etree.ElementTree as ET
-          files = ("test-results.xml", "test-results-redis.xml")
+          files = ("test-results-unit.xml", "test-results-integration.xml", "test-results-contracts.xml")
           skipped = sum(
               int(x.attrib.get("skipped", 0))
               for path in files
@@ -132,6 +148,17 @@ jobs:
           PY
       - name: Build hardened backend image
         run: docker build --target runtime -t cronos-backend:test backend
+      - name: Upload backend test artifacts
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: backend-test-artifacts-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            backend/test-results-*.xml
+            backend/htmlcov
+            backend/.coverage*
+          if-no-files-found: warn
+          retention-days: 14
 
   frontend:
     runs-on: ubuntu-latest
@@ -150,6 +177,16 @@ jobs:
         run: |
           npm run audit:production
           npm run verify
+      - name: Upload frontend test artifacts
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: frontend-test-artifacts-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            frontend/coverage
+            frontend/test-results
+          if-no-files-found: warn
+          retention-days: 14
 
   e2e:
     runs-on: ubuntu-latest

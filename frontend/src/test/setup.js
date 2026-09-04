@@ -1,6 +1,25 @@
 import '@testing-library/jest-dom'
 import { createElement } from 'react'
-import { vi } from 'vitest'
+import { afterEach, beforeEach, vi } from 'vitest'
+
+let originalConsoleError
+let unexpectedConsoleErrors
+
+beforeEach(() => {
+  originalConsoleError = console.error
+  unexpectedConsoleErrors = []
+  console.error = (...args) => {
+    unexpectedConsoleErrors.push(args)
+    originalConsoleError(...args)
+  }
+})
+
+afterEach(() => {
+  console.error = originalConsoleError
+  if (unexpectedConsoleErrors.length > 0) {
+    throw new Error(`Unexpected console.error: ${JSON.stringify(unexpectedConsoleErrors)}`)
+  }
+})
 
 if (typeof window !== 'undefined') {
   Object.defineProperty(window, 'scrollTo', { value: vi.fn(), writable: true, configurable: true })
