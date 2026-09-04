@@ -26,15 +26,15 @@ test.describe('Tutorial — network boundary', () => {
     await expect(page.locator('main.app-main')).toBeVisible({ timeout: 30_000 })
     attachRuntimeGuards(page)
 
-    const requests = []
-    page.on('request', (request) => {
-      if (request.url().includes('/api/v1/')) requests.push(request.url())
-    })
-
     await goTo(page, '/guide')
     await expect(page.getByTestId('guide-landing')).toBeVisible()
     await page.getByRole('button', { name: /conhecer o guia/i }).click()
     await expect(page.getByTestId('tutorial-workspace')).toBeVisible()
+
+    const requests = []
+    page.on('request', (request) => {
+      if (request.url().includes('/api/v1/')) requests.push(request.url())
+    })
     await page.getByTestId('tutorial-skip-all-button').click()
     await expect(page.getByTestId('tutorial-workspace')).toHaveCount(0)
 
