@@ -44,6 +44,12 @@ export default defineConfig({
       dependencies: ['global setup'],
     },
     {
+      name: 'login layout',
+      testMatch: /e2e[\\/]auth[\\/]login-layout\.spec\.js/,
+      use: { ...devices['Desktop Chrome'] },
+      dependencies: ['global setup'],
+    },
+    {
       name: 'onboarding',
       testMatch: /e2e[\\/]auth[\\/]onboarding-create-organization\.spec\.js/,
       use: { ...devices['Desktop Chrome'] },
@@ -80,7 +86,7 @@ export default defineConfig({
     },
     {
       name: 'chromium',
-      testIgnore: /global\.setup\.js|e2e[\\/]tutorial[\\/]|e2e[\\/]auth[\\/](local-auth-redirects|onboarding-create-organization)\.spec\.js|e2e[\\/]foundation[\\/](first-schedule-approval-dashboard|foundation-conflict-recovery|onboarding-foundation-9steps|operational-gate-409|foundation|tutorial-13steps-navigation)\.spec\.js/,
+      testIgnore: /global\.setup\.js|e2e[\\/]tutorial[\\/]|e2e[\\/]auth[\\/](local-auth-redirects|login-layout|onboarding-create-organization)\.spec\.js|e2e[\\/]foundation[\\/](first-schedule-approval-dashboard|foundation-conflict-recovery|onboarding-foundation-9steps|operational-gate-409|foundation|tutorial-13steps-navigation)\.spec\.js/,
       use: { ...devices['Desktop Chrome'] },
       dependencies: ['schedule lifecycle'],
     },

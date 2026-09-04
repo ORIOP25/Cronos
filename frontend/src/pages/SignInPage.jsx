@@ -9,7 +9,7 @@ import {
 
 export default function SignInPage() {
   return (
-    <div className="zen-auth-page">
+    <div className="zen-auth-page zen-auth-page--login">
       <div className="zen-auth-layout">
         <BrandPanel tagline={BRAND_TAGLINE_LOGIN} stats={BRAND_STATS_LOGIN} />
 

@@ -1459,3 +1459,100 @@ h1, h2, h3, h4, h5, h6 {
   }
 
 }
+
+/* Login keeps the Clerk form compact on desktop and scrollable when content needs more room. */
+.zen-auth-page--login {
+  height: 100vh;
+  min-height: 100vh;
+  overflow: visible;
+}
+
+.zen-auth-page--login .zen-auth-layout {
+  min-height: 100vh;
+}
+
+@supports (height: 100dvh) {
+  .zen-auth-page--login {
+    height: 100dvh;
+    min-height: 100dvh;
+  }
+
+  .zen-auth-page--login .zen-auth-layout {
+    min-height: 100dvh;
+  }
+}
+
+@media (min-width: 769px) {
+  .zen-auth-page--login .zen-auth-form-side {
+    padding: 24px 48px;
+  }
+
+  .zen-auth-page--login .zen-auth-form-wrapper {
+    max-width: 420px;
+  }
+
+  .zen-auth-page--login .cl-logoBox {
+    display: none;
+  }
+
+  .zen-auth-page--login .cl-card,
+  .zen-auth-page--login .cl-cardBox {
+    padding-top: 0;
+  }
+
+  .zen-auth-page--login .cl-headerTitle {
+    margin-bottom: 6px;
+  }
+
+  .zen-auth-page--login .cl-form {
+    gap: 12px;
+  }
+
+  .zen-auth-page--login .cl-formField {
+    gap: 6px;
+  }
+
+  .zen-auth-page--login .cl-formFieldInput {
+    padding: 10px 12px;
+  }
+
+  .zen-auth-page--login .cl-formButtonPrimary {
+    padding: 11px 24px;
+  }
+
+  .zen-auth-page--login .cl-dividerRow {
+    margin: 16px 0;
+  }
+
+  .zen-auth-page--login .cl-socialButtonsBlockButton {
+    min-height: 42px;
+  }
+
+  .zen-auth-page--login .cl-footer {
+    margin-top: 12px;
+  }
+
+  .zen-auth-page--login .zen-auth-recovery-help {
+    margin-top: 12px;
+    padding: 10px 12px;
+    font-size: 0.78rem;
+  }
+
+  .zen-auth-page--login .zen-auth-recovery-help p {
+    margin-bottom: 4px;
+  }
+
+  .zen-auth-page--login .zen-auth-form-footer {
+    margin-top: 12px;
+  }
+}
+
+@media (max-width: 768px) {
+  .zen-auth-page--login {
+    height: auto;
+  }
+
+  .zen-auth-page--login .zen-auth-layout {
+    min-height: 100vh;
+  }
+}

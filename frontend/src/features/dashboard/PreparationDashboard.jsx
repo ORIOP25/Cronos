@@ -10,7 +10,6 @@ import {
 import { useTutorialSimulation } from '../tutorial/tutorialHooks'
 import PageHeader from '../../components/PageHeader'
 import StatePanel from '../../components/StatePanel'
-import FeedbackBanner from '../../components/FeedbackBanner'
 
 const STEP_LABELS = Object.freeze({
   ACTIVE_CLASSES: '1. Pelo menos uma Turma ativa registada',
@@ -31,7 +30,7 @@ export function PreparationDashboard({
 }) {
   const navigate = useNavigate()
   const tutorial = useTutorialSimulation({ orgId, userId })
-  const validation = prevalidation || { status: 'BLOCKED', issues: [] }
+  const validation = prevalidation || { status: 'BLOCKED' }
 
   if (!bases || typeof bases !== 'object' || !Array.isArray(bases.steps)) {
     return <StatePanel state="error" title="Resposta de readiness inválida" description="As bases de preparação não foram devolvidas pelo servidor." />
@@ -41,31 +40,26 @@ export function PreparationDashboard({
   const depth = bases.depth ?? 0
   const complete = Boolean(bases.complete)
   const steps = bases.steps
-  const issues = Array.isArray(validation.issues) ? validation.issues : []
-  const blockers = issues.filter((i) => i.severity === 'BLOCKER')
-  const warnings = issues.filter((i) => i.severity === 'WARNING')
-  const prevalidationStatus = validation.status || (complete ? (blockers.length ? 'BLOCKED' : 'READY') : 'NOT_READY')
+  const prevalidationStatus = validation.status || 'NOT_READY'
   const canGenerate = complete && ['READY', 'READY_WITH_WARNINGS'].includes(prevalidationStatus)
 
-  const isReadyWithWarnings = canGenerate && prevalidationStatus === 'READY_WITH_WARNINGS'
-  const isReady = canGenerate && prevalidationStatus === 'READY'
   const isBlockedByPrevalidation = complete && !canGenerate
 
-  const cardTitle = isReady
-    ? 'Todas as bases estão prontas para geração.'
-    : isReadyWithWarnings
-      ? 'Bases completas com avisos de validação.'
-      : isBlockedByPrevalidation
-        ? 'Geração bloqueada por validações adicionais.'
-        : `Prontidão das Bases: ${percentage}%`
-
-  const cardDescription = isReady
-    ? 'A escola cumpre todos os invariantes do motor de geração.'
-    : isReadyWithWarnings
-      ? 'A escola cumpre os invariantes base, mas existem avisos a rever.'
-      : isBlockedByPrevalidation
-        ? 'Resolva os impedimentos identificados abaixo para desbloquear a geração.'
-        : 'Complete o próximo nível pendente na lista abaixo para progredir.'
+  let cardTitle = `Prontidão das Bases: ${percentage}%`
+  let cardDescription = 'Complete o próximo nível pendente na lista abaixo para progredir.'
+  if (canGenerate) {
+    cardTitle = 'Todas as bases estão prontas para geração.'
+    cardDescription = 'A escola cumpre os invariantes necessários para iniciar a geração.'
+  } else if (isBlockedByPrevalidation) {
+    cardTitle = 'Geração bloqueada por validações adicionais.'
+    cardDescription = (
+      <>
+        Consulte a validação detalhada em{' '}
+        <Link to="/schedules" className="text-white fw-semibold">Horários</Link>
+        {' '}para rever o bloqueio antes de gerar.
+      </>
+    )
+  }
 
   return (
     <div className="preparation-dashboard p-4" data-testid="preparation-dashboard">
@@ -122,39 +116,6 @@ export function PreparationDashboard({
           </CProgress>
         </CCardBody>
       </CCard>
-
-      {issues.length > 0 && (
-        <div className="d-flex flex-column gap-3 mb-4" data-testid="preparation-issues">
-          {blockers.map((issue) => (
-            <FeedbackBanner
-              key={`${issue.code}-${issue.route || ''}`}
-              tone="danger"
-              title={issue.code}
-              action={issue.route ? (
-                <Link to={issue.route} className="btn btn-sm btn-outline-danger">
-                  Resolver →
-                </Link>
-              ) : null}
-            >
-              {issue.message}
-            </FeedbackBanner>
-          ))}
-          {warnings.map((issue) => (
-            <FeedbackBanner
-              key={`${issue.code}-${issue.route || ''}`}
-              tone="warning"
-              title={issue.code}
-              action={issue.route ? (
-                <Link to={issue.route} className="btn btn-sm btn-outline-warning">
-                  Verificar →
-                </Link>
-              ) : null}
-            >
-              {issue.message}
-            </FeedbackBanner>
-          ))}
-        </div>
-      )}
 
       <CCard className="shadow-sm border-0 mb-4">
         <CCardBody className="p-4">

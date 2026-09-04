@@ -31,6 +31,13 @@ const completeBases = {
   steps: readinessCodes.map((code) => ({ code, status: 'COMPLETE', route: '/config' })),
 }
 
+const missingReadinessIssues = [
+  { code: 'MISSING_CALENDAR', message: 'Datas do ano letivo não configuradas.' },
+  { code: 'MISSING_TIMESLOTS', message: 'Nenhum bloco de horário configurado.' },
+  { code: 'MISSING_TEACHERS', message: 'Nenhum professor registado.' },
+  { code: 'MISSING_CLASSES', message: 'Nenhuma turma ativa registada.' },
+]
+
 function LocationProbe() {
   const location = useLocation()
   return <output data-testid="location-probe">{location.pathname}{location.search}</output>
@@ -151,7 +158,7 @@ describe('PreparationDashboard tutorial entry points', () => {
     expect(resumeButton).toHaveTextContent(/^Retomar guia$/)
   })
 
-  it('sends the complete bases fingerprint and enables READY_WITH_WARNINGS generation', () => {
+  it('keeps READY_WITH_WARNINGS generation enabled without displaying validation issues', () => {
     renderWithRouter(
       <PreparationDashboard
         orgId="org_test"
@@ -167,9 +174,36 @@ describe('PreparationDashboard tutorial entry points', () => {
     expect(screen.getByRole('button', { name: /gerar horário/i })).toBeEnabled()
     expect(screen.getAllByText('Invariante satisfeito')).toHaveLength(7)
     expect(screen.queryByText(/issues de preparação/i)).not.toBeInTheDocument()
+    expect(screen.queryByText('Aviso')).not.toBeInTheDocument()
   })
 
-  it('keeps generation disabled when prevalidation is blocked and presents the issue with resolution link', () => {
+  it.each([
+    ['bases incompletas', bases],
+    ['bases completas', completeBases],
+  ])('does not display missing-resource issues for %s', (_, basesState) => {
+    renderWithRouter(
+      <PreparationDashboard
+        bases={basesState}
+        prevalidation={{
+          status: 'BLOCKED',
+          issues: missingReadinessIssues.map((issue) => ({
+            ...issue,
+            severity: 'BLOCKER',
+            route: '/config',
+          })),
+        }}
+        autoStartGuide={false}
+      />,
+    )
+
+    expect(screen.queryByTestId('preparation-issues')).not.toBeInTheDocument()
+    for (const issue of missingReadinessIssues) {
+      expect(screen.queryByText(issue.code)).not.toBeInTheDocument()
+      expect(screen.queryByText(issue.message)).not.toBeInTheDocument()
+    }
+  })
+
+  it('keeps generation disabled when prevalidation is blocked and links to schedules for review', () => {
     renderWithRouter(
       <PreparationDashboard
         bases={completeBases}
@@ -187,33 +221,10 @@ describe('PreparationDashboard tutorial entry points', () => {
     )
 
     expect(screen.getByRole('button', { name: /gerar horário/i })).toBeDisabled()
-    expect(screen.queryByText(/todas as bases estão prontas/i)).not.toBeInTheDocument()
-    expect(screen.getByText('Nenhum professor registado.')).toBeInTheDocument()
-    const fixLink = screen.getByRole('link', { name: /resolver/i })
-    expect(fixLink).toHaveAttribute('href', '/members')
-  })
-
-  it('displays warnings and keeps generation enabled when bases are complete with warnings', () => {
-    renderWithRouter(
-      <PreparationDashboard
-        bases={completeBases}
-        prevalidation={{
-          status: 'READY_WITH_WARNINGS',
-          issues: [{
-            code: 'PENDING_DRAFT',
-            severity: 'WARNING',
-            message: 'Existe um rascunho de horário pendente de aprovação.',
-            route: '/schedules',
-          }],
-        }}
-        autoStartGuide={false}
-      />,
-    )
-
-    expect(screen.getByRole('button', { name: /gerar horário/i })).toBeEnabled()
-    expect(screen.getByText('Existe um rascunho de horário pendente de aprovação.')).toBeInTheDocument()
-    const warnLink = screen.getByRole('link', { name: /verificar/i })
-    expect(warnLink).toHaveAttribute('href', '/schedules')
+    expect(screen.getByRole('link', { name: /horários/i })).toHaveAttribute('href', '/schedules')
+    expect(screen.queryByText('MISSING_TEACHERS')).not.toBeInTheDocument()
+    expect(screen.queryByText('Nenhum professor registado.')).not.toBeInTheDocument()
+    expect(screen.queryByText(/identificados abaixo/i)).not.toBeInTheDocument()
   })
 
   it('does not display readiness success when bases are incomplete even if prevalidation is not blocked', () => {
