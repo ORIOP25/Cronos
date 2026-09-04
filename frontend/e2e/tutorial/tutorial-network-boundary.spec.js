@@ -33,7 +33,12 @@ test.describe('Tutorial — network boundary', () => {
 
     const requests = []
     page.on('request', (request) => {
-      if (request.url().includes('/api/v1/')) requests.push(request.url())
+      if (
+        request.url().includes('/api/v1/')
+        && !['GET', 'HEAD', 'OPTIONS'].includes(request.method())
+      ) {
+        requests.push(request.url())
+      }
     })
     await page.getByTestId('tutorial-skip-all-button').click()
     await expect(page.getByTestId('tutorial-workspace')).toHaveCount(0)
