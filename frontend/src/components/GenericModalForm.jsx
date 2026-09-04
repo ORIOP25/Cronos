@@ -28,6 +28,8 @@ const GenericModalForm = ({
 
   const errorMessage = error ? getApiErrorMessage(error) : null
 
+  if (!visible) return null
+
   return (
     <CModal className="confirmation-modal" visible={visible} onClose={onClose} backdrop="static" size={size} scrollable data-tutorial-target={tutorialTarget}>
       <CModalHeader onClose={onClose}>
