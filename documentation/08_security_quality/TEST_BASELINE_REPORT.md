@@ -41,7 +41,7 @@ Resultado: redução de **71,54%**, de 109,6 s para 31,2 s. Todas as cinco amost
 3. Remoção da repetição SchoolConfig de dez execuções, mantendo os testes normais.
 4. PostgreSQL 16 em `tmpfs` de 1 GB, Redis real e quatro bases xdist (`cronos_test_gw0..gw3`); contratos continuam seriais.
 5. Os testes de volume mantêm 55/70 requests e ativam o limiter real, isolados por grupo e IP de teste.
-6. Stack E2E local descartável em `localhost:5174`, frontend compilado, worker/beat, validação de chaves Clerk e Playwright no host com 2 workers e zero retries.
+6. Stack E2E local descartável em `localhost:5174`, frontend compilado, worker/beat, validação de chaves Clerk e Playwright no host com 2 workers globais e zero retries; a cadeia que muta o mesmo tenant fica serializada.
 7. CI instala dependências/Chromium explicitamente, executa o runner host e deixou de usar `network_mode: host`/volume de `node_modules` no Compose E2E.
 8. Esperas E2E passaram a marcadores visíveis e `expect.poll`; a matriz pública tornou-se 24 casos parametrizados e os seis testes isolados de `h1` foram removidos.
 

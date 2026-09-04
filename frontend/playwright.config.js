@@ -57,6 +57,8 @@ export default defineConfig({
       name: 'app',
       testIgnore: [setupMatch, publicMatch, authMatch, providerMatch, faultsMatch],
       use: { ...devices['Desktop Chrome'] },
+      // These tests mutate the single disposable E2E organization.
+      workers: 1,
       dependencies: ['setup'],
     },
     {
@@ -64,13 +66,14 @@ export default defineConfig({
       testMatch: providerMatch,
       use: { ...devices['Desktop Chrome'] },
       workers: 1,
-      dependencies: ['setup'],
+      dependencies: ['setup', 'app'],
     },
     {
       name: 'faults',
       testMatch: faultsMatch,
       use: { ...devices['Desktop Chrome'] },
-      dependencies: ['setup'],
+      workers: 1,
+      dependencies: ['setup', 'app', 'provider'],
     },
   ],
 

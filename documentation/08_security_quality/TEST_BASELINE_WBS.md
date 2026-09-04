@@ -46,7 +46,7 @@ O runner usa `spawn` com argumentos separados, relógio monotónico e relatório
 - Vitest separa explicitamente os projetos `node` e `dom`; usa `threads` no Node e `vmThreads` no DOM, quatro workers por projeto, limite VM de 512 MB e optimizer client CoreUI.
 - MSW está disponível para handlers de rede; o servidor falha em requests não tratadas.
 - `@testing-library/user-event` é usado nas interações assíncronas relevantes.
-- Playwright tem cinco projetos independentes (`public`, `auth`, `app`, `provider`, `faults`), dois workers globais, provider serial, `retries: 0`, waits observáveis e apenas a dependência técnica do setup. O runner fornece uma stack descartável compilada em `localhost:5174` localmente e usa a stack CI já preparada no host.
+- Playwright tem cinco projetos (`public`, `auth`, `app`, `provider`, `faults`), dois workers globais para as áreas independentes, e serializa a cadeia mutável `app` → `provider` → `faults` sobre a mesma organização descartável; mantém `retries: 0`, waits observáveis e apenas as dependências de setup/ordenação necessárias. O runner fornece uma stack descartável compilada em `localhost:5174` localmente e usa a stack CI já preparada no host.
 - O gate global de `console.error` falha em ruído inesperado; erros deliberados são silenciados no teste que os espera.
 
 ## CI e evidência
