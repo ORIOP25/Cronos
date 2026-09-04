@@ -1,5 +1,6 @@
 import { defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
+import process from 'node:process'
 
 const nodeTestFiles = [
   'src/test/activateAndBootstrapOrganization.test.js',
