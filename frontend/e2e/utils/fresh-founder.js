@@ -1,7 +1,7 @@
 import { createPageObjects } from '@clerk/testing/playwright/unstable'
 import { setupClerkTestingToken } from '@clerk/testing/playwright'
 import { expect } from '@playwright/test'
-import { E2E_BASE_URL } from './e2e-config.js'
+import { createE2eRunKey, E2E_BASE_URL } from './e2e-config.js'
 
 export function withTimeout(operation, label, timeoutMs = 30_000) {
   let timeoutId
@@ -35,7 +35,7 @@ async function signInWithTicket(page, client, userId, organizationName) {
 }
 
 export async function createFreshFounder(page, client, label) {
-  const runKey = `${Date.now()}-${Math.random().toString(16).slice(2)}`
+  const runKey = createE2eRunKey()
   const emailLabel = label.toLowerCase().replace(/[^a-z0-9]+/g, '-')
   const email = `cronos-${emailLabel.slice(0, 12)}-${runKey}+clerk_test@example.com`
   const organizationName = `Cronos ${label} ${runKey}`

@@ -9,7 +9,7 @@ import {
   expectRouteReady,
 } from '../utils/clerk-helpers.js'
 import { generateAndApproveThroughUi, seedMinimalSchedulerInputs } from '../utils/scheduler-fixtures.js'
-import { E2E_BASE_URL } from '../utils/e2e-config.js'
+import { createE2eRunKey, E2E_BASE_URL } from '../utils/e2e-config.js'
 
 function withTimeout(operation, label, timeoutMs = 30_000) {
   let timeoutId
@@ -92,7 +92,7 @@ test.describe('Dashboard — First Real Schedule Approval & Discrimination', () 
     const secretKey = process.env.CLERK_SECRET_KEY
     if (!secretKey) throw new Error('CLERK_SECRET_KEY is required for dashboard E2E.')
     const client = createClerkClient({ secretKey })
-    const runKey = `${Date.now()}-${Math.random().toString(16).slice(2)}`
+    const runKey = createE2eRunKey()
     const email = `cronos-dashboard-${runKey}+clerk_test@example.com`
     const organizationName = `Cronos Dashboard ${runKey}`
     let userId

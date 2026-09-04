@@ -10,7 +10,7 @@ import {
   loginAsAdminReal,
 } from '../utils/clerk-helpers.js'
 import { waitForJobToSucceed as waitForSchedulerJob } from '../utils/scheduler-fixtures.js'
-import { E2E_BASE_URL } from '../utils/e2e-config.js'
+import { createE2eRunKey, E2E_BASE_URL } from '../utils/e2e-config.js'
 
 const API_PREFIX = '/api/v1'
 const OPERATION_TIMEOUT_MS = 30_000
@@ -562,7 +562,7 @@ test('fresh founder completes Complete Generation and custom-rule Adaptive Repai
   const secretKey = process.env.CLERK_SECRET_KEY
   if (!secretKey) throw new Error('CLERK_SECRET_KEY is required for the beta remediation journey.')
   const client = createClerkClient({ secretKey })
-  const runKey = `${Date.now()}-${Math.random().toString(16).slice(2)}`
+  const runKey = createE2eRunKey()
   const email = `cronos-beta-${runKey}+clerk_test@example.com`
   const schoolName = `Cronos Beta ${runKey}`
   let userId

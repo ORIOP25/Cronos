@@ -74,7 +74,7 @@ test('uses one E2E base URL in Playwright, setup, helpers and URL-building specs
 
   for (const relativePath of consumers) {
     const source = readFileSync(join(ROOT, relativePath), 'utf8')
-    assert.match(source, /import \{ E2E_BASE_URL \} from /)
+    assert.match(source, /import \{[^}]*E2E_BASE_URL[^}]*\} from /)
     assert.doesNotMatch(source, /process\.env\.BASE_URL\s*\|\|/)
   }
 })
