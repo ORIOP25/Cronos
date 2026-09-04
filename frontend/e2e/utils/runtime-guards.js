@@ -65,6 +65,10 @@ function isClerkHostedUrl(parsedUrl) {
   return parsedUrl.hostname.endsWith('.accounts.dev')
 }
 
+function isClerkImageUrl(parsedUrl) {
+  return parsedUrl.hostname === 'img.clerk.com'
+}
+
 function isBenignAbortedRequest({ method, url }, { baseUrl }) {
   const parsedUrl = parseUrl(url, baseUrl)
   if (!parsedUrl) return false
@@ -87,6 +91,9 @@ function isBenignAbortedRequest({ method, url }, { baseUrl }) {
     return true
   }
   if (isGoogleFontsUrl(parsedUrl)) {
+    return true
+  }
+  if (method.toUpperCase() === 'GET' && isClerkImageUrl(parsedUrl)) {
     return true
   }
   return ['GET', 'HEAD'].includes(method.toUpperCase())
