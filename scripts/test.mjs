@@ -20,6 +20,10 @@ export const INTEGRATION_WORKERS = 4
 export const E2E_WORKERS = 2
 export const E2E_PORT = 5174
 
+export function resolveE2eBaseUrl({ externalStack = false, baseUrl } = {}) {
+  return baseUrl || (externalStack ? 'http://localhost:5173' : `http://localhost:${E2E_PORT}`)
+}
+
 export const HELP = `Usage: node scripts/test.mjs <command> [options]
 
 Commands:
@@ -644,9 +648,9 @@ async function startTestStack(context, { full = false } = {}) {
       REDIS_URL: `redis://127.0.0.1:${redisPort}/0`,
       CELERY_BROKER_URL: `redis://127.0.0.1:${redisPort}/0`,
       ...(full ? {
-        BASE_URL: `http://localhost:${E2E_PORT}`,
-        FRONTEND_URL: `http://localhost:${E2E_PORT}`,
-        CLERK_AUTHORIZED_PARTIES: `http://localhost:${E2E_PORT}`,
+        BASE_URL: resolveE2eBaseUrl({ baseUrl: `http://localhost:${E2E_PORT}` }),
+        FRONTEND_URL: resolveE2eBaseUrl({ baseUrl: `http://localhost:${E2E_PORT}` }),
+        CLERK_AUTHORIZED_PARTIES: resolveE2eBaseUrl({ baseUrl: `http://localhost:${E2E_PORT}` }),
         CLERK_SECRET_KEY: e2eEnvironment.secretKey,
         VITE_CLERK_PUBLISHABLE_KEY: e2eEnvironment.publishableKey,
         E2E_CLERK_ADMIN_EMAIL: e2eEnvironment.adminEmail,
@@ -796,7 +800,7 @@ async function runE2e(project, context) {
   const e2eEnv = externalStack
     ? {
         ...process.env,
-        BASE_URL: process.env.BASE_URL || 'http://localhost:5173',
+        BASE_URL: resolveE2eBaseUrl({ externalStack: true, baseUrl: process.env.BASE_URL }),
         PLAYWRIGHT_SKIP_WEB_SERVER: '1',
         PLAYWRIGHT_WORKERS: String(E2E_WORKERS),
       }

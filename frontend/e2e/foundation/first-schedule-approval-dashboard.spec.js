@@ -9,6 +9,7 @@ import {
   expectRouteReady,
 } from '../utils/clerk-helpers.js'
 import { generateAndApproveThroughUi, seedMinimalSchedulerInputs } from '../utils/scheduler-fixtures.js'
+import { E2E_BASE_URL } from '../utils/e2e-config.js'
 
 function withTimeout(operation, label, timeoutMs = 30_000) {
   let timeoutId
@@ -23,7 +24,7 @@ async function signInFreshFounder(client, page, userId, organizationName) {
     () => client.signInTokens.createSignInToken({ userId, expiresInSeconds: 300 }),
     'dashboard E2E sign-in token creation',
   )
-  const baseUrl = process.env.BASE_URL || 'http://localhost:5173'
+  const baseUrl = E2E_BASE_URL
   const ticketUrl = new URL(ticket.url)
   ticketUrl.searchParams.set('redirect_url', new URL('/create-org', baseUrl).toString())
   await setupClerkTestingToken({ page })
@@ -121,7 +122,7 @@ test.describe('Dashboard — First Real Schedule Approval & Discrimination', () 
       const preparationResponse = page.waitForResponse((response) => (
         response.url().includes('/api/v1/dashboard') && response.request().method() === 'GET'
       ))
-      await page.goto(`${process.env.BASE_URL || 'http://localhost:5173'}/dashboard`, { waitUntil: 'domcontentloaded' })
+      await page.goto(`${E2E_BASE_URL}/dashboard`, { waitUntil: 'domcontentloaded' })
       const preparationPayload = await (await preparationResponse).json()
       expect(preparationPayload.mode).toBe('PREPARATION')
       await expect(page.getByTestId('preparation-dashboard')).toBeVisible()
@@ -133,7 +134,7 @@ test.describe('Dashboard — First Real Schedule Approval & Discrimination', () 
       const operationalResponse = page.waitForResponse((response) => (
         response.url().includes('/api/v1/dashboard') && response.request().method() === 'GET'
       ))
-      await page.goto(`${process.env.BASE_URL || 'http://localhost:5173'}/dashboard`, { waitUntil: 'domcontentloaded' })
+      await page.goto(`${E2E_BASE_URL}/dashboard`, { waitUntil: 'domcontentloaded' })
       const operationalPayload = await (await operationalResponse).json()
       expect(operationalPayload.mode).toBe('OPERATIONAL')
       await expect(page.getByRole('heading', { name: /Painel de Controlo Operacional/i })).toBeVisible()

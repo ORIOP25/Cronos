@@ -1,4 +1,5 @@
 import { defineConfig, devices } from '@playwright/test'
+import { E2E_BASE_URL } from './e2e/utils/e2e-config.js'
 
 process.env.CLERK_PUBLISHABLE_KEY ||= process.env.VITE_CLERK_PUBLISHABLE_KEY
 if (!process.env.CI) {
@@ -29,7 +30,7 @@ export default defineConfig({
   expect: { timeout: 10_000 },
 
   use: {
-    baseURL: process.env.BASE_URL || 'http://localhost:5174',
+    baseURL: E2E_BASE_URL,
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
   },
@@ -66,14 +67,14 @@ export default defineConfig({
       testMatch: providerMatch,
       use: { ...devices['Desktop Chrome'] },
       workers: 1,
-      dependencies: ['setup', 'app'],
+      dependencies: ['app'],
     },
     {
       name: 'faults',
       testMatch: faultsMatch,
       use: { ...devices['Desktop Chrome'] },
       workers: 1,
-      dependencies: ['setup', 'app', 'provider'],
+      dependencies: ['app', 'provider'],
     },
   ],
 

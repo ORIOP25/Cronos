@@ -31,7 +31,7 @@ Suite membership is structural. The former fixture/marker collection classifier 
 
 Vitest is configured in `frontend/vitest.config.js` with isolated `node` and `dom` projects, thread pooling, MSW server setup and strict unhandled-request failures. Coverage uses V8 and enforces the configured thresholds. React interactions that cross async boundaries use Testing Library `user-event`.
 
-Playwright is configured in `frontend/playwright.config.js` with five independent projects: `public`, `auth`, `app`, `provider` and `faults`. Only the technical setup project is a dependency. Retries are disabled; traces are retained on failure and screenshots are captured on failure.
+Playwright is configured in `frontend/playwright.config.js` with the project graph `setup → public`, `setup → auth`, and `setup → app → provider → faults`. The `faults` project also depends on `app`. The `app`, `provider` and `faults` projects use one worker because they mutate shared E2E state. Retries are disabled; traces are retained on failure and screenshots are captured on failure. All projects use the shared `E2E_BASE_URL`; the runner supplies `localhost:5173` for an external stack.
 
 ## CI gates
 

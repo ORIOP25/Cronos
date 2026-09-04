@@ -21,14 +21,16 @@
 
 Resultado: redução de **71,54%**, de 109,6 s para 31,2 s. Todas as cinco amostras posteriores foram processos Node novos, com aquecimento separado, e tiveram 654/654 testes aprovados.
 
+O registo formal pertence ao commit `7c206d5`, em 2026-09-04 18:44:10 +01:00. Uma execução local sob carga marcou 120,39 s; a repetição frontend marcou 23,31 s. Este outlier transitório não altera a mediana formal.
+
 ## Suites e gates posteriores
 
 | Área | Resultado |
 | :--- | :--- |
 | Backend unit | 300 passed |
-| Backend integration | 264 passed in full `all`; latest Clerk-prep focus 265 passed with xdist 4 |
+| Backend integration | 264 passed in full `all` (`7c206d5`; 2026-09-04 18:44:10 +01:00); latest Clerk-prep focus 265 (`04a7c4a`; 2026-09-04 19:02:20 +01:00), xdist 4 |
 | Backend contracts | 43 passed; serial; 26,60 s na execução `all` |
-| Integração + contratos | 105,59 s incluindo preparação e limpeza; meta <125 s |
+| Integração + contratos | 307 passed no `all` (`264 + 43`); 105,59 s incluindo preparação e limpeza; meta <125 s. O foco posterior totaliza 308 (`265 + 43`). |
 | Frontend fast | 62 ficheiros, 354 passed |
 | Frontend coverage | 68,04% statements; 59,36% branches; 63,70% functions; 70,81% lines |
 | Frontend quality | ESLint, Knip, scripts, assets, build e audit verdes |

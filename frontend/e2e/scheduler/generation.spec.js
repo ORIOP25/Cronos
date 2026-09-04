@@ -10,6 +10,7 @@ import {
   loginAsAdminReal,
 } from '../utils/clerk-helpers.js'
 import { waitForJobToSucceed as waitForSchedulerJob } from '../utils/scheduler-fixtures.js'
+import { E2E_BASE_URL } from '../utils/e2e-config.js'
 
 const API_PREFIX = '/api/v1'
 const OPERATION_TIMEOUT_MS = 30_000
@@ -169,7 +170,7 @@ async function signInUserWithTicket(
     () => client.signInTokens.createSignInToken({ userId, expiresInSeconds: 300 }),
     'Clerk sign-in token creation',
   )
-  const baseUrl = process.env.BASE_URL || 'http://localhost:5173'
+  const baseUrl = E2E_BASE_URL
   const targetUrl = new URL(path, baseUrl)
   const ticketUrl = new URL(ticket.url)
   ticketUrl.searchParams.set('redirect_url', targetUrl.toString())

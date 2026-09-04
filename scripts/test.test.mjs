@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import test from 'node:test'
+import { join } from 'node:path'
 import {
   childSpec,
   displayArgs,
@@ -8,6 +10,7 @@ import {
   planFor,
   preservePrimaryFailure,
   ROOT,
+  resolveE2eBaseUrl,
   summarizeJunit,
   validateDatabaseTargets,
 } from './test.mjs'
@@ -44,6 +47,36 @@ test('redacts credentials from registered commands', () => {
 test('fast plans never consult Docker or install dependencies implicitly', () => {
   const executables = planFor({ command: 'fast', scope: 'all' }).map((entry) => entry.executable)
   assert.deepEqual(executables, ['python', 'npm'])
+})
+
+test('resolves the owned and external E2E stack origins explicitly', () => {
+  assert.equal(resolveE2eBaseUrl({ baseUrl: 'http://localhost:5174' }), 'http://localhost:5174')
+  assert.equal(resolveE2eBaseUrl({ externalStack: true }), 'http://localhost:5173')
+  assert.equal(
+    resolveE2eBaseUrl({ externalStack: true, baseUrl: 'https://e2e.example.test' }),
+    'https://e2e.example.test',
+  )
+  assert.equal(resolveE2eBaseUrl(), 'http://localhost:5174')
+})
+
+test('uses one E2E base URL in Playwright, setup, helpers and URL-building specs', () => {
+  const consumers = [
+    'frontend/playwright.config.js',
+    'frontend/e2e/global.setup.js',
+    'frontend/e2e/utils/clerk-helpers.js',
+    'frontend/e2e/utils/fresh-founder.js',
+    'frontend/e2e/auth/local-auth-redirects.spec.js',
+    'frontend/e2e/auth/login-layout.spec.js',
+    'frontend/e2e/auth/onboarding-create-organization.spec.js',
+    'frontend/e2e/foundation/first-schedule-approval-dashboard.spec.js',
+    'frontend/e2e/scheduler/generation.spec.js',
+  ]
+
+  for (const relativePath of consumers) {
+    const source = readFileSync(join(ROOT, relativePath), 'utf8')
+    assert.match(source, /import \{ E2E_BASE_URL \} from /)
+    assert.doesNotMatch(source, /process\.env\.BASE_URL\s*\|\|/)
+  }
 })
 
 test('keeps the primary failure when cleanup also fails', () => {
