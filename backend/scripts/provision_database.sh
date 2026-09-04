@@ -30,7 +30,8 @@ ALTER DATABASE :"db_name" OWNER TO cronos_migrator;
 GRANT CONNECT ON DATABASE :"db_name" TO cronos_app;
 SQL
 
-for worker_db in "${POSTGRES_DB}_gw0" "${POSTGRES_DB}_gw1"; do
+for worker in 0 1 2 3; do
+  worker_db="${POSTGRES_DB}_gw${worker}"
   psql --set=ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname postgres \
     --set=db_name="$worker_db" <<'SQL'
 SELECT format('CREATE DATABASE %I OWNER cronos_migrator', :'db_name')

@@ -26,23 +26,25 @@ jobs:
     timeout-minutes: 45
     services:
       postgres:
-        image: postgres:16-alpine
+        image: postgres:16-alpine@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777
         env:
           POSTGRES_USER: postgres
           POSTGRES_HOST_AUTH_METHOD: trust
           POSTGRES_DB: cronos_test_db
         ports: ["5432:5432"]
         options: >-
+          --tmpfs /var/lib/postgresql/data:size=1073741824
           --health-cmd "pg_isready -U postgres -d cronos_test_db"
           --health-interval 5s --health-timeout 5s --health-retries 10
       redis:
-        image: redis:7-alpine
+        image: redis:7-alpine@sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99
         ports: ["6379:6379"]
         options: >-
           --health-cmd "redis-cli ping"
           --health-interval 5s --health-timeout 5s --health-retries 10
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
@@ -68,7 +70,7 @@ jobs:
           ALTER DATABASE cronos_test_db OWNER TO cronos_migrator;
           GRANT CONNECT ON DATABASE cronos_test_db TO cronos_app;
           SQL
-          for worker_db in cronos_test_gw0 cronos_test_gw1; do
+          for worker_db in cronos_test_gw0 cronos_test_gw1 cronos_test_gw2 cronos_test_gw3; do
             psql postgresql://postgres@localhost/postgres \
               --set=ON_ERROR_STOP=1 --set=db_name="$worker_db" <<'SQL'
           SELECT format('CREATE DATABASE %I OWNER cronos_migrator', :'db_name')
@@ -126,7 +128,7 @@ jobs:
           RATELIMIT_ENABLED: "false"
         run: >-
           pytest -q tests/integration --cov=app --cov-branch --cov-report= --cov-fail-under=0 --cov-append
-          -n 2 --dist=loadscope --junitxml=test-results-integration.xml
+          -n 4 --dist=loadscope --junitxml=test-results-integration.xml
       - name: Test backend contracts and report coverage
         working-directory: backend
         env:
@@ -195,11 +197,26 @@ jobs:
     env:
       CI_E2E_CLERK_ADMIN_EMAIL: "cronos-ci-admin+clerk_test@example.com"
       CI_E2E_CLERK_TEACHER_EMAIL: "cronos-ci-teacher+clerk_test@example.com"
-      CI_E2E_CLERK_ORG_ID: ${{ vars.E2E_CLERK_ORG_ID }}
       CI_E2E_CLERK_AUTO_PROVISION: "true"
+      CI_E2E_CLERK_CREATE_ORGANIZATION: "true"
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-      
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend E2E dependencies
+        working-directory: frontend
+        run: npm ci --ignore-scripts
+
+      - name: Install Playwright Chromium
+        working-directory: frontend
+        run: npx --no-install playwright install chromium
+
       - name: Validate Clerk test identities
         run: |
           invite_create_email="e2e-create-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}+clerk_test@example.com"
@@ -231,7 +248,6 @@ jobs:
           CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
           E2E_CLERK_ADMIN_EMAIL: ${{ env.CI_E2E_CLERK_ADMIN_EMAIL }}
           E2E_CLERK_TEACHER_EMAIL: ${{ env.CI_E2E_CLERK_TEACHER_EMAIL }}
-          E2E_CLERK_ORG_ID: ${{ env.CI_E2E_CLERK_ORG_ID }}
           E2E_CLERK_AUTO_PROVISION: ${{ env.CI_E2E_CLERK_AUTO_PROVISION }}
 
       - name: Generate ephemeral CI database credentials
@@ -322,8 +338,8 @@ jobs:
             -e DATABASE_URL="$DATABASE_URL" \
             -e E2E_CLERK_ADMIN_EMAIL="$E2E_CLERK_ADMIN_EMAIL" \
             -e E2E_CLERK_TEACHER_EMAIL="$E2E_CLERK_TEACHER_EMAIL" \
-            -e E2E_CLERK_ORG_ID="$E2E_CLERK_ORG_ID" \
             -e E2E_CLERK_AUTO_PROVISION="$E2E_CLERK_AUTO_PROVISION" \
+            -e E2E_CLERK_CREATE_ORGANIZATION="$E2E_CLERK_CREATE_ORGANIZATION" \
             backend python scripts/prepare_e2e_clerk_state.py)"
           printf '%s\n' "$clerk_state_json"
           clerk_org_id="$(printf '%s' "$clerk_state_json" | jq -r '.clerk_org_id // empty')"
@@ -338,16 +354,17 @@ jobs:
           DATABASE_URL: postgresql+asyncpg://cronos_migrator:${{ env.CI_MIGRATOR_PASSWORD }}@db:5432/cronos_ci_db
           E2E_CLERK_ADMIN_EMAIL: ${{ env.CI_E2E_CLERK_ADMIN_EMAIL }}
           E2E_CLERK_TEACHER_EMAIL: ${{ env.CI_E2E_CLERK_TEACHER_EMAIL }}
-          E2E_CLERK_ORG_ID: ${{ env.CI_E2E_CLERK_ORG_ID }}
           E2E_CLERK_AUTO_PROVISION: ${{ env.CI_E2E_CLERK_AUTO_PROVISION }}
+          E2E_CLERK_CREATE_ORGANIZATION: ${{ env.CI_E2E_CLERK_CREATE_ORGANIZATION }}
 
       - name: Run E2E Tests
-        run: docker compose -f docker-compose.ci.yml run --rm --no-deps e2e
+        run: node scripts/test.mjs e2e
         env:
-          COMPOSE_PROJECT_NAME: cronos-ci-${{ github.run_id }}-${{ github.run_attempt }}
-          POSTGRES_PASSWORD: ${{ env.POSTGRES_PASSWORD }}
-          CRONOS_MIGRATOR_PASSWORD: ${{ env.CI_MIGRATOR_PASSWORD }}
-          CRONOS_APP_PASSWORD: ${{ env.CI_APP_PASSWORD }}
+          CI: "true"
+          E2E_EXTERNAL_STACK: "1"
+          BASE_URL: http://localhost:5173
+          PLAYWRIGHT_SKIP_WEB_SERVER: "1"
+          PLAYWRIGHT_WORKERS: "2"
           VITE_CLERK_PUBLISHABLE_KEY: ${{ vars.VITE_CLERK_PUBLISHABLE_KEY }}
           CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
           E2E_CLERK_ADMIN_EMAIL: ${{ env.CI_E2E_CLERK_ADMIN_EMAIL }}
@@ -364,6 +381,8 @@ jobs:
           path: |
             frontend/playwright-report
             frontend/test-results
+            .test-artifacts
+            !.test-artifacts/**/auth/**
           if-no-files-found: warn
           retention-days: 14
 
@@ -382,6 +401,7 @@ jobs:
               -e E2E_CLERK_ADMIN_EMAIL="$E2E_CLERK_ADMIN_EMAIL" \
               -e E2E_CLERK_INVITE_CREATE_EMAIL="$E2E_CLERK_INVITE_CREATE_EMAIL" \
               -e E2E_CLERK_INVITE_CONVERT_EMAIL="$E2E_CLERK_INVITE_CONVERT_EMAIL" \
+              -e E2E_CLERK_DELETE_ORG=true \
               backend python scripts/cleanup_e2e_clerk_invitations.py
           fi
         env:

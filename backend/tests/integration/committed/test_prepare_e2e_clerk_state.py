@@ -158,6 +158,20 @@ async def test_e2e_env_allows_org_discovery_for_reserved_test_users():
     assert config.clerk_org_id is None
 
 
+async def test_e2e_env_can_require_a_fresh_organization():
+    config = config_from_env(
+        {
+            "CLERK_SECRET_KEY": "sk_test_example",
+            "E2E_CLERK_ADMIN_EMAIL": "cronos-admin+clerk_test@example.com",
+            "E2E_CLERK_TEACHER_EMAIL": "cronos-teacher+clerk_test@example.com",
+            "E2E_CLERK_AUTO_PROVISION": "true",
+            "E2E_CLERK_CREATE_ORGANIZATION": "true",
+        }
+    )
+
+    assert config.create_organization is True
+
+
 async def test_prepare_e2e_clerk_state_creates_admin_teacher_membership_idempotently(db_session):
     directory = _directory()
 
@@ -234,6 +248,21 @@ async def test_prepare_e2e_clerk_state_auto_provisions_empty_directory(db_sessio
         for membership in directory.memberships
         if membership.organization_id == "org_provisioned"
     } == {("user_admin", "org:admin"), ("user_teacher", "org:member")}
+
+
+async def test_prepare_e2e_clerk_state_can_create_a_fresh_org_for_an_existing_admin(db_session):
+    directory = _directory()
+    config = E2EClerkPrepConfig(
+        admin_email="admin@example.com",
+        teacher_email="teacher@example.com",
+        auto_provision=True,
+        create_organization=True,
+    )
+
+    result = await prepare_e2e_clerk_state(db_session, directory=directory, config=config)
+
+    assert result.clerk_org_id == "org_provisioned"
+    assert result.clerk_org_id != "org_e2e"
 
 
 async def test_prepare_e2e_clerk_state_rejects_teacher_without_member_role(db_session):

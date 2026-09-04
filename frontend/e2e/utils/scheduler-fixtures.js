@@ -185,17 +185,23 @@ export async function seedMinimalSchedulerInputs(page, requestedTeacherEmail = p
   return classroom
 }
 
-async function waitForJobToSucceed(page, jobId) {
-  const deadline = Date.now() + JOB_TIMEOUT_MS
-  while (Date.now() < deadline) {
-    const job = await apiRequest(page, 'GET', `/scheduler/jobs/${jobId}`)
-    if (job.job_status === 'SUCCEEDED') return job
-    if (['FAILED', 'NO_VALID_OUTPUT', 'CANCELED'].includes(job.job_status)) {
-      throw new Error(`scheduler job ${jobId} ended with ${job.job_status}`)
-    }
-    await new Promise((resolve) => setTimeout(resolve, 1500))
-  }
-  throw new Error(`scheduler job ${jobId} timed out`)
+export async function waitForJobToSucceed(page, jobId) {
+  let lastJob = null
+  await expect.poll(
+    async () => {
+      lastJob = await apiRequest(page, 'GET', `/scheduler/jobs/${jobId}`)
+      if (['FAILED', 'NO_VALID_OUTPUT', 'CANCELED'].includes(lastJob.job_status)) {
+        throw new Error(`scheduler job ${jobId} ended with ${lastJob.job_status}`)
+      }
+      return lastJob.job_status
+    },
+    {
+      intervals: [100, 250, 500],
+      timeout: JOB_TIMEOUT_MS,
+      message: `scheduler job ${jobId} should succeed`,
+    },
+  ).toBe('SUCCEEDED')
+  return lastJob
 }
 
 export async function generateAndApproveThroughUi(page) {

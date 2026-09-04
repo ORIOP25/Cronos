@@ -69,6 +69,8 @@ async def _main() -> None:
             if not result.ok:
                 raise RuntimeError(f"Could not revoke E2E invitation {invitation.id}.")
             revoked.append(invitation.id)
+    if os.getenv("E2E_CLERK_DELETE_ORG", "").strip().lower() in {"1", "true", "yes"}:
+        await asyncio.to_thread(sdk.organizations.delete, organization_id=org_id)
     print(json.dumps({"revoked_invitation_ids": revoked}, indent=2))
 
 

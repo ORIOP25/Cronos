@@ -1,5 +1,28 @@
 name: cronos-test
 
+x-test-backend-environment: &test-backend-environment
+  ENVIRONMENT: local
+  DATABASE_URL: postgresql+asyncpg://cronos_app:${CRONOS_APP_PASSWORD}@db:5432/cronos_test_db
+  MIGRATION_DATABASE_URL: postgresql+psycopg2://cronos_migrator:${CRONOS_MIGRATOR_PASSWORD}@db:5432/cronos_test_db
+  REDIS_URL: redis://redis:6379/0
+  CELERY_BROKER_URL: redis://redis:6379/0
+  RATELIMIT_ENABLED: "true"
+  DATABASE_POOLING_ENABLED: "false"
+  FRONTEND_URL: http://localhost:5174
+  CLERK_AUTHORIZED_PARTIES: http://localhost:5174
+  CLERK_SECRET_KEY: ${CLERK_SECRET_KEY:-}
+  CLERK_WEBHOOK_SECRET: ${CLERK_WEBHOOK_SECRET:-}
+  E2E_CLERK_ADMIN_EMAIL: ${E2E_CLERK_ADMIN_EMAIL:-}
+  E2E_CLERK_TEACHER_EMAIL: ${E2E_CLERK_TEACHER_EMAIL:-}
+  E2E_CLERK_ORG_ID: ${E2E_CLERK_ORG_ID:-}
+  E2E_CLERK_AUTO_PROVISION: ${E2E_CLERK_AUTO_PROVISION:-true}
+  E2E_CLERK_CREATE_ORGANIZATION: ${E2E_CLERK_CREATE_ORGANIZATION:-false}
+  E2E_CLERK_INVITE_CREATE_EMAIL: ${E2E_CLERK_INVITE_CREATE_EMAIL:-}
+  E2E_CLERK_INVITE_CONVERT_EMAIL: ${E2E_CLERK_INVITE_CONVERT_EMAIL:-}
+  RESEND_API_KEY: test-resend-key
+  TURNSTILE_SECRET_KEY: 1x0000000000000000000000000000000AA
+  TURNSTILE_ALLOWED_HOSTNAMES: localhost
+
 services:
   db:
     image: postgres:16-alpine@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777
@@ -9,6 +32,8 @@ services:
       POSTGRES_DB: cronos_test_db
     ports:
       - "127.0.0.1::5432"
+    tmpfs:
+      - /var/lib/postgresql/data:size=1073741824
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d cronos_test_db"]
       interval: 2s
@@ -23,4 +48,82 @@ services:
       test: ["CMD", "redis-cli", "ping"]
       interval: 2s
       timeout: 5s
+      retries: 30
+
+  provision-db:
+    profiles: [maintenance]
+    image: postgres:16-alpine@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777
+    command: ["/bin/sh", "/scripts/provision_database.sh"]
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_DB: cronos_test_db
+      PGPASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      PGHOST: db
+      CRONOS_MIGRATOR_PASSWORD: ${CRONOS_MIGRATOR_PASSWORD:?CRONOS_MIGRATOR_PASSWORD is required}
+      CRONOS_APP_PASSWORD: ${CRONOS_APP_PASSWORD:?CRONOS_APP_PASSWORD is required}
+    volumes:
+      - ./backend/scripts/provision_database.sh:/scripts/provision_database.sh:ro
+    depends_on:
+      db: {condition: service_healthy}
+
+  db-maintenance:
+    profiles: [maintenance]
+    image: cronos-backend-test:local
+    command: ["alembic", "upgrade", "head"]
+    environment:
+      <<: *test-backend-environment
+      DATABASE_URL: postgresql+psycopg2://cronos_migrator:${CRONOS_MIGRATOR_PASSWORD}@db:5432/cronos_test_db
+    depends_on:
+      db: {condition: service_healthy}
+
+  backend:
+    image: cronos-backend-test:local
+    build:
+      context: ./backend
+      target: ci
+    environment:
+      <<: *test-backend-environment
+    depends_on:
+      db: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/ready', timeout=2)"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  worker:
+    image: cronos-backend-test:local
+    command: ["celery", "-A", "app.celery_worker.celery_app", "worker", "--loglevel=warning", "--include=app.scheduler_worker", "--autoscale=2,1", "--prefetch-multiplier=1", "--max-tasks-per-child=1"]
+    environment:
+      <<: *test-backend-environment
+    depends_on:
+      db: {condition: service_healthy}
+      redis: {condition: service_healthy}
+
+  beat:
+    image: cronos-backend-test:local
+    command: ["celery", "-A", "app.celery_worker.celery_app", "beat", "--loglevel=warning", "--schedule", "/tmp/celerybeat-schedule"]
+    environment:
+      <<: *test-backend-environment
+    depends_on:
+      db: {condition: service_healthy}
+      redis: {condition: service_healthy}
+
+  frontend:
+    build:
+      context: ./frontend
+      target: runtime
+      args:
+        VITE_CLERK_PUBLISHABLE_KEY: ${VITE_CLERK_PUBLISHABLE_KEY:-pk_test_local_placeholder}
+        VITE_API_BASE_URL: /api/v1
+        VITE_TURNSTILE_SITE_KEY: ${VITE_TURNSTILE_SITE_KEY:-1x00000000000000000000AA}
+    ports:
+      - "127.0.0.1:5174:8080"
+    depends_on:
+      backend: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080 || exit 1"]
+      interval: 2s
+      timeout: 3s
       retries: 30

@@ -72,6 +72,7 @@ class E2EClerkPrepConfig:
     teacher_email: str
     clerk_org_id: str | None = None
     auto_provision: bool = False
+    create_organization: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -120,6 +121,8 @@ def config_from_env(env: os._Environ[str] | dict[str, str] = os.environ) -> E2EC
         teacher_email=env["E2E_CLERK_TEACHER_EMAIL"],
         clerk_org_id=env.get("E2E_CLERK_ORG_ID") or None,
         auto_provision=env.get("E2E_CLERK_AUTO_PROVISION", "false").strip().lower()
+        in {"1", "true", "yes"},
+        create_organization=env.get("E2E_CLERK_CREATE_ORGANIZATION", "false").strip().lower()
         in {"1", "true", "yes"},
     )
 
@@ -357,13 +360,14 @@ async def _resolve_clerk_org_id(
     configured_org_id: str | None,
     *,
     auto_provision: bool = False,
+    create_organization: bool = False,
 ) -> str:
     if configured_org_id:
         return configured_org_id
 
     memberships = await directory.list_user_organization_memberships(admin.id)
     org_ids = sorted({membership.organization_id for membership in memberships})
-    if not org_ids and auto_provision:
+    if auto_provision and (not org_ids or create_organization):
         organization = await directory.create_organization(
             name="Cronos CI E2E",
             created_by=admin.id,
@@ -546,6 +550,7 @@ async def prepare_e2e_clerk_state(
         admin,
         config.clerk_org_id,
         auto_provision=config.auto_provision,
+        create_organization=config.create_organization,
     )
     clerk_org = await directory.get_organization(clerk_org_id)
     if clerk_org is None:

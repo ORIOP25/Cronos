@@ -29,6 +29,7 @@ const nodeTestFiles = [
 ]
 
 const supportFiles = [
+  'src/test/streams.setup.js',
   'src/test/setup.js',
   'src/test/msw.setup.js',
   'src/test/msw/**',
@@ -39,7 +40,7 @@ const common = {
   globals: true,
   isolate: true,
   pool: 'threads',
-  maxWorkers: 2,
+  maxWorkers: 4,
   css: false,
   exclude: ['e2e/**', 'scripts/**', 'node_modules/**', ...supportFiles],
 }
@@ -48,8 +49,13 @@ export default defineConfig({
   plugins: [react()],
   envDir: false,
   test: {
-    reporters: process.env.CI ? ['default', 'junit'] : ['default'],
-    outputFile: process.env.CI ? { junit: './test-results/vitest-junit.xml' } : undefined,
+    sequence: { setupFiles: 'list' },
+    reporters: process.env.CI || process.env.VITEST_JUNIT_OUTPUT_FILE
+      ? ['default', 'junit']
+      : ['default'],
+    outputFile: process.env.CI || process.env.VITEST_JUNIT_OUTPUT_FILE
+      ? { junit: process.env.VITEST_JUNIT_OUTPUT_FILE || './test-results/vitest-junit.xml' }
+      : undefined,
     coverage: {
       provider: 'v8',
       reporter: ['lcov', 'text', 'json-summary'],
@@ -83,14 +89,25 @@ export default defineConfig({
           ...common,
           name: 'dom',
           environment: 'jsdom',
-          setupFiles: ['./src/test/setup.js', './src/test/msw.setup.js'],
+          pool: 'vmThreads',
+          maxWorkers: 4,
+          vmMemoryLimit: '512MB',
+          setupFiles: [
+            './src/test/streams.setup.js',
+            './src/test/setup.js',
+            './src/test/msw.setup.js',
+          ],
           exclude: [...common.exclude, ...nodeTestFiles],
           include: ['src/test/**/*.{js,jsx}'],
           deps: {
             optimizer: {
-              web: {
+              client: {
                 enabled: true,
-                include: ['@coreui/react', '@coreui/icons-react'],
+                include: [
+                  '@coreui/react',
+                  '@coreui/icons-react',
+                  '@coreui/icons',
+                ],
               },
             },
           },

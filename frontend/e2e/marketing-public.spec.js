@@ -23,11 +23,6 @@ function parseRgb(value) {
 test.describe('public marketing site', () => {
   test.setTimeout(60_000)
   for (const route of publicRoutes) {
-    test(`${route} has one page heading`, async ({ page }) => {
-      await page.goto(route)
-      await expect(page.locator('h1')).toHaveCount(1, { timeout: 30000 })
-    })
-
     test(`${route} passes the accessibility audit`, async ({ page }) => {
       await page.goto(route)
       await expect(page.locator('h1')).toHaveCount(1, { timeout: 30000 })
@@ -36,10 +31,10 @@ test.describe('public marketing site', () => {
     })
   }
 
-  test('keeps all public routes within the viewport and maintains AA CTA contrast', async ({ page }) => {
-    for (const viewport of publicViewports) {
-      await page.setViewportSize(viewport)
-      for (const route of publicRoutes) {
+  for (const viewport of publicViewports) {
+    for (const route of publicRoutes) {
+      test(`${route} fits ${viewport.name} viewport with accessible CTA`, async ({ page }) => {
+        await page.setViewportSize(viewport)
         await page.goto(route)
         await expect(page.locator('h1')).toHaveCount(1, { timeout: 30000 })
 
@@ -64,9 +59,9 @@ test.describe('public marketing site', () => {
         const foreground = relativeLuminance(parseRgb(contrast.foreground))
         const ratio = (Math.max(background, foreground) + 0.05) / (Math.min(background, foreground) + 0.05)
         expect(ratio).toBeGreaterThanOrEqual(4.5)
-      }
+      })
     }
-  })
+  }
 
   test('mobile navigation closes after route selection', async ({ page }) => {
     await page.setViewportSize({ width: 375, height: 812 })

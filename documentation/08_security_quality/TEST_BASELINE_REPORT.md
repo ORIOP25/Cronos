@@ -1,41 +1,52 @@
-# Relatório da baseline de testes
+# Relatório da otimização da baseline de testes
 
-## Revisão
+## Revisão e escopo
 
-- Branch: `codex/test-baseline`
-- Base: `91bd1bcff7c6b2e4008fc6add6369ed968892b03` (`origin/main`)
-- Main: não alterada
+- Branch de implementação: `codex/test-performance`.
+- Base intocada: `codex/test-baseline` em `8368b1b098f204522f49f03a4a24b9176dd4f8bf`.
+- `main`: não alterada.
+- Máquina de referência: Windows, i7-1165G7, 32 GB RAM, Docker Desktop Linux.
 
-## Antes
+## Comparação formal do `fast --scope all`
+
+| Amostra | Antes (ms) | Depois (ms) |
+| :--- | ---: | ---: |
+| 1 | 119089 | 31592 |
+| 2 | 109608 | 30704 |
+| 3 | 109642 | 31283 |
+| 4 | 109414 | 31197 |
+| 5 | 108266 | 31120 |
+| Mediana | **109608** | **31197** |
+| Mínimo / máximo | 108266 / 119089 | 30704 / 31592 |
+
+Resultado: redução de **71,54%**, de 109,6 s para 31,2 s. Todas as cinco amostras posteriores foram processos Node novos, com aquecimento separado, e tiveram 654/654 testes aprovados.
+
+## Suites e gates posteriores
 
 | Área | Resultado |
 | :--- | :--- |
-| Backend collection | 616 testes |
-| Backend fast legado | 336 passed, 280 deselected; 45,95 s |
-| Frontend Vitest legado | 62 ficheiros, 353 testes; 76,03 s |
-| Scripts de marketing | 3 passed |
+| Backend unit | 300 passed |
+| Backend integration | 264 passed in full `all`; latest Clerk-prep focus 265 passed with xdist 4 |
+| Backend contracts | 43 passed; serial; 26,60 s na execução `all` |
+| Integração + contratos | 105,59 s incluindo preparação e limpeza; meta <125 s |
+| Frontend fast | 62 ficheiros, 354 passed |
+| Frontend coverage | 68,04% statements; 59,36% branches; 63,70% functions; 70,81% lines |
+| Frontend quality | ESLint, Knip, scripts, assets, build e audit verdes |
+| Scheduler Clerk prep | 265 integration + 43 contracts passed |
 
-## Depois
+## Alterações aplicadas
 
-| Área | Resultado |
-| :--- | :--- |
-| Backend unit | 300 passed; 8,34 s |
-| Backend integration | 263 passed; xdist 2; 247,46 s |
-| Backend contracts | 43 passed; serial; 58,35 s |
-| Frontend fast | 62 ficheiros, 353 passed; 104,01 s |
-| Frontend coverage | 67,31% statements; 59,30% branches; 63,63% functions; 70,35% lines |
-| Frontend quality | ESLint, Knip, Knip production, scripts, assets, build e audit verdes |
+1. Runner único com relatórios `run.json`, JUnit, relógio monotónico, contagens por suite, workers efetivos e limpeza ownership-safe.
+2. Vitest DOM em `vmThreads`, 4 workers, limite VM de 512 MB, optimizer client CoreUI e streams nativos antes do DOM/MSW.
+3. Remoção da repetição SchoolConfig de dez execuções, mantendo os testes normais.
+4. PostgreSQL 16 em `tmpfs` de 1 GB, Redis real e quatro bases xdist (`cronos_test_gw0..gw3`); contratos continuam seriais.
+5. Os testes de volume mantêm 55/70 requests e ativam o limiter real, isolados por grupo e IP de teste.
+6. Stack E2E local descartável em `localhost:5174`, frontend compilado, worker/beat, validação de chaves Clerk e Playwright no host com 2 workers e zero retries.
+7. CI instala dependências/Chromium explicitamente, executa o runner host e deixou de usar `network_mode: host`/volume de `node_modules` no Compose E2E.
+8. Esperas E2E passaram a marcadores visíveis e `expect.poll`; a matriz pública tornou-se 24 casos parametrizados e os seis testes isolados de `h1` foram removidos.
 
-Os 10 testes removidos são exclusivamente os testes do classificador automático eliminado pelo plano; os restantes foram movidos para as suites estruturais e a soma final é 606 testes.
+## Limitações e estado
 
-## Correções encontradas durante a execução
-
-1. Launcher Windows passou de wrappers `.cmd` para binários/CLI Node compatíveis com `shell:false`.
-2. O fast backend permite apenas loopback, para que `asyncio` funcione sem permitir rede externa.
-3. Bases xdist foram separadas por worker e o Alembic recebe a URL da base correta.
-4. Clientes ASGI de webhooks/membros passaram a usar o banco temporário do worker.
-5. Interações Guide usam `user-event`; erros de tutorial esperados foram declarados nos testes.
-
-## Estado
-
-Os gates locais disponíveis estão verdes. A validação E2E autenticada depende das credenciais Clerk de CI e será acompanhada após o push.
+- A validação E2E autenticada local não foi executada: este ambiente não possui `VITE_CLERK_PUBLISHABLE_KEY` (`pk_test_`), `CLERK_SECRET_KEY` (`sk_test_`) nem identidades reservadas. O `doctor --profile e2e` falha explicitamente e nenhum mock foi introduzido.
+- O CI deve fornecer as credenciais Clerk reservadas para validar os cenários autenticados e acompanhar a mediana E2E no mesmo runner.
+- A baseline “antes” foi recolhida antes das edições na branch de implementação e os artefactos estruturados “depois” ficam em `.test-artifacts/` (ignorado pelo Git).

@@ -9,6 +9,7 @@ import {
   goTo,
   loginAsAdminReal,
 } from '../utils/clerk-helpers.js'
+import { waitForJobToSucceed as waitForSchedulerJob } from '../utils/scheduler-fixtures.js'
 
 const API_PREFIX = '/api/v1'
 const OPERATION_TIMEOUT_MS = 30_000
@@ -25,10 +26,6 @@ function withTimeout(operation, label, timeoutMs = OPERATION_TIMEOUT_MS) {
   return Promise.race([Promise.resolve().then(operation), timeout]).finally(() => {
     clearTimeout(timeoutId)
   })
-}
-
-function sleep(durationMs) {
-  return new Promise((resolve) => setTimeout(resolve, durationMs))
 }
 
 function toIsoDate(value) {
@@ -387,39 +384,6 @@ export async function seedMinimalSchedulerInputs(page, teacherEmail, dates = FIX
   return { classId: classroom.id, subjectId: subject.id, teacherId: updatedTeacher.teacher_id }
 }
 
-export async function waitForJobToSucceed(page, jobId) {
-  let lastJob = null
-  const startedAt = Date.now()
-  const deadline = startedAt + JOB_TIMEOUT_MS
-  const terminalFailures = new Set(['FAILED', 'NO_VALID_OUTPUT', 'CANCELED'])
-  while (Date.now() < deadline) {
-    const remainingMs = deadline - Date.now()
-    lastJob = await apiRequest(
-      page,
-      'GET',
-      `/scheduler/jobs/${jobId}`,
-      undefined,
-      Math.min(OPERATION_TIMEOUT_MS, remainingMs),
-    )
-    if (lastJob.job_status === 'SUCCEEDED') return lastJob
-    if (terminalFailures.has(lastJob.job_status)) {
-      throw new Error(
-        `scheduler job ${jobId} ended with ${lastJob.job_status}; `
-        + `strategy=${lastJob.strategy}; duration_ms=${lastJob.duration_ms ?? 'unknown'}; `
-        + `payload=${JSON.stringify(lastJob, null, 2)}`,
-      )
-    }
-    await sleep(Math.min(2000, Math.max(0, deadline - Date.now())))
-  }
-  throw new Error(
-    `scheduler job ${jobId} did not finish within ${JOB_TIMEOUT_MS}ms; `
-    + `strategy=${lastJob?.strategy ?? 'unknown'}; `
-    + `state=${lastJob?.job_status ?? 'unknown'}; `
-    + `duration_ms=${lastJob?.duration_ms ?? (Date.now() - startedAt)}; `
-    + `payload=${JSON.stringify(lastJob, null, 2)}`,
-  )
-}
-
 export async function generateAndApproveThroughUi(page) {
   await goTo(page, '/schedules')
   await expectRouteReady(page, '/schedules')
@@ -432,7 +396,7 @@ export async function generateAndApproveThroughUi(page) {
   const response = await generateResponse
   const responseText = await response.text()
   expect(response.ok(), `scheduler generate failed: ${response.status()} ${responseText}`).toBeTruthy()
-  const job = await waitForJobToSucceed(page, JSON.parse(responseText).job_id)
+  const job = await waitForSchedulerJob(page, JSON.parse(responseText).job_id)
   expect(job.job_status).toBe('SUCCEEDED')
   await expect(page.getByText(/Rascunho pronto para revis/i)).toBeVisible({ timeout: 30_000 })
   const approvalResponsePromise = page.waitForResponse(
@@ -498,7 +462,7 @@ test.describe('Scheduler generation', () => {
     expect(response.ok(), `scheduler generate failed: ${response.status()} ${responseText}`).toBeTruthy()
     const { job_id: jobId } = JSON.parse(responseText)
 
-    const job = await waitForJobToSucceed(page, jobId)
+    const job = await waitForSchedulerJob(page, jobId)
     expect(job.job_status).toBe('SUCCEEDED')
 
     await expect(page.getByText(/Rascunho pronto para revis/i)).toBeVisible({ timeout: 30_000 })

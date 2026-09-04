@@ -6,6 +6,7 @@ from httpx import AsyncClient
 
 from app import models
 from app.config import settings
+from app.core.ratelimit import limiter
 from tests._support.db_fixtures import (
     create_teacher_profile,
     create_teacher_user,
@@ -73,9 +74,26 @@ async def _patch_and_call(cid, headers, endpoint, async_client, method="GET", **
 
 
 async def _patch_loop(cid, headers, endpoint, async_client, count, **kwargs):
-    for _ in range(count):
-        response = await async_client.get(endpoint, headers=headers, **kwargs)
+    for index in range(count):
+        request_headers = {
+            **headers,
+            "x-real-ip": f"198.51.100.{(index % 254) + 1}",
+        }
+        response = await async_client.get(endpoint, headers=request_headers, **kwargs)
         assert response.status_code == 200
+
+
+@pytest.fixture
+def enabled_rate_limiter(monkeypatch):
+    monkeypatch.setattr(settings, "TRUSTED_PROXY_IPS", "127.0.0.1/32")
+    previous_enabled = limiter.enabled
+    limiter.enabled = True
+    limiter.reset()
+    try:
+        yield
+    finally:
+        limiter.reset()
+        limiter.enabled = previous_enabled
 
 
 class TestTeacherRoleRegressionContracts:
@@ -202,8 +220,13 @@ class TestTeacherRoleRegressionContracts:
         )
         assert not_found_resp.status_code == 404
 
+    @pytest.mark.xdist_group("rate-limit-volume")
     async def test_teacher_horizon_polling_volume_does_not_trip_old_global_limit(
-        self, async_client: AsyncClient, clerk_admin_headers: dict, db_session
+        self,
+        async_client: AsyncClient,
+        clerk_admin_headers: dict,
+        db_session,
+        enabled_rate_limiter,
     ):
         settings_resp = await async_client.post(
             f"{API}/school/settings/",
@@ -220,8 +243,13 @@ class TestTeacherRoleRegressionContracts:
         )
         await _patch_loop(cid, teacher_headers, f"{API}/schedule/me/horizon", async_client, 55)
 
+    @pytest.mark.xdist_group("rate-limit-volume")
     async def test_teacher_week_navigation_volume_does_not_trip_old_global_limit(
-        self, async_client: AsyncClient, clerk_admin_headers: dict, db_session
+        self,
+        async_client: AsyncClient,
+        clerk_admin_headers: dict,
+        db_session,
+        enabled_rate_limiter,
     ):
         teacher = await create_teacher_profile(
             db_session, organization_id=1, name="Prof. Week Navigation"

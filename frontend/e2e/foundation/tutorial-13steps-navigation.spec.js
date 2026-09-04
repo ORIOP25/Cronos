@@ -14,7 +14,7 @@ test.describe('Tutorial — 13 passos por funcionalidade', () => {
       }
     })
     await loginAsAdminReal(page)
-    await page.waitForLoadState('networkidle')
+    await expect(page.locator('main.app-main')).toBeVisible({ timeout: 30_000 })
     attachRuntimeGuards(page)
   })
 

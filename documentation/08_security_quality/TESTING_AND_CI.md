@@ -22,10 +22,10 @@ node scripts/test.mjs benchmark --profile fast
 | :--- | :--- | :--- |
 | Unit | `backend/tests/unit/` | no database or external network; loopback-only socket policy |
 | Transactional integration | `backend/tests/integration/transactional/` | real PostgreSQL/Redis stack |
-| Committed integration | `backend/tests/integration/committed/` | real PostgreSQL/Redis stack, xdist=2 |
+| Committed integration | `backend/tests/integration/committed/` | real PostgreSQL/Redis stack, xdist=4 |
 | Contracts | `backend/tests/contracts/` | real PostgreSQL/Redis stack, serial |
 
-Suite membership is structural. The former fixture/marker collection classifier and its tests were removed. PostgreSQL migrations always run through Alembic; SQLite and `metadata.create_all` are not valid substitutes. The runner creates `cronos_test_gw0` and `cronos_test_gw1` for xdist and uses separate migrator/runtime credentials. Destructive operations are accepted only for exact test database names.
+Suite membership is structural. The former fixture/marker collection classifier and its tests were removed. PostgreSQL migrations always run through Alembic; SQLite and `metadata.create_all` are not valid substitutes. The runner creates `cronos_test_gw0` through `cronos_test_gw3` for xdist and uses separate migrator/runtime credentials. Destructive operations are accepted only for exact test database names.
 
 ## Frontend suites
 

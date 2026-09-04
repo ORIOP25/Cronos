@@ -1,4 +1,5 @@
 import { defineConfig, devices } from '@playwright/test'
+import { join } from 'node:path'
 
 process.env.CLERK_PUBLISHABLE_KEY ||= process.env.VITE_CLERK_PUBLISHABLE_KEY
 if (!process.env.CI) {
@@ -11,21 +12,27 @@ const publicMatch = /e2e[\\/]marketing-public\.spec\.js/
 const authMatch = /e2e[\\/]auth[\\/].*\.spec\.js/
 const providerMatch = /e2e[\\/]members[\\/]invitations\.spec\.js/
 const faultsMatch = /e2e[\\/](?:foundation[\\/]operational-gate-409|tutorial[\\/]tutorial-network-boundary)\.spec\.js/
+const storageDir = process.env.E2E_STORAGE_DIR || 'test-results/.auth'
+const adminStorageState = join(storageDir, 'admin.json')
 
 export default defineConfig({
   testDir: './e2e',
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: 0,
-  workers: process.env.CI ? 1 : undefined,
-  reporter: process.env.CI
-    ? [['list', { printSteps: true }], ['junit', { outputFile: 'test-results/playwright-junit.xml' }], ['html', { open: 'never' }]]
+  workers: Number(process.env.PLAYWRIGHT_WORKERS || 2),
+  reporter: process.env.CI || process.env.PLAYWRIGHT_JUNIT_OUTPUT_FILE
+    ? [
+        ['list', { printSteps: true }],
+        ['junit', { outputFile: process.env.PLAYWRIGHT_JUNIT_OUTPUT_FILE || 'test-results/playwright-junit.xml' }],
+        ['html', { open: 'never' }],
+      ]
     : 'html',
   timeout: 60_000,
   expect: { timeout: 10_000 },
 
   use: {
-    baseURL: process.env.BASE_URL || 'http://localhost:5173',
+    baseURL: process.env.BASE_URL || 'http://localhost:5174',
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
   },
@@ -52,29 +59,22 @@ export default defineConfig({
     {
       name: 'app',
       testIgnore: [setupMatch, publicMatch, authMatch, providerMatch, faultsMatch],
-      use: { ...devices['Desktop Chrome'] },
+      use: { ...devices['Desktop Chrome'], storageState: adminStorageState },
       dependencies: ['setup'],
     },
     {
       name: 'provider',
       testMatch: providerMatch,
-      use: { ...devices['Desktop Chrome'] },
+      use: { ...devices['Desktop Chrome'], storageState: adminStorageState },
+      workers: 1,
       dependencies: ['setup'],
     },
     {
       name: 'faults',
       testMatch: faultsMatch,
-      use: { ...devices['Desktop Chrome'] },
+      use: { ...devices['Desktop Chrome'], storageState: adminStorageState },
       dependencies: ['setup'],
     },
   ],
 
-  webServer: process.env.PLAYWRIGHT_SKIP_WEB_SERVER === '1'
-    ? undefined
-    : {
-        command: 'npm run dev',
-        port: 5173,
-        reuseExistingServer: !process.env.CI,
-        timeout: 120_000,
-      },
 })
