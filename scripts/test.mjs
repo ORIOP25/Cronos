@@ -799,10 +799,8 @@ async function runE2e(project, context) {
         BASE_URL: process.env.BASE_URL || 'http://localhost:5173',
         PLAYWRIGHT_SKIP_WEB_SERVER: '1',
         PLAYWRIGHT_WORKERS: String(E2E_WORKERS),
-        E2E_STORAGE_DIR: join(context.artifactDir, 'auth'),
       }
     : context.stack.env
-  if (!externalStack) e2eEnv.E2E_STORAGE_DIR = join(context.artifactDir, 'auth')
   await runFrontendTests(
     args,
     `Playwright ${project || 'all'}`,

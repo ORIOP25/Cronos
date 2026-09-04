@@ -70,16 +70,7 @@ async function loginReal(page, emailEnvironmentVariable) {
     () => observeClerkSignIn(async () => {
       await setupClerkTestingToken({ page })
       await page.goto(BASE_URL)
-      await page.waitForFunction(() => window.Clerk?.loaded)
-      const currentEmail = await page.evaluate(
-        () => window.Clerk?.user?.primaryEmailAddress?.emailAddress?.toLowerCase() || null,
-      )
-      if (currentEmail && currentEmail !== emailAddress.toLowerCase()) {
-        await clerk.signOut({ page })
-      }
-      if (currentEmail !== emailAddress.toLowerCase()) {
-        await clerk.signIn({ page, emailAddress })
-      }
+      await clerk.signIn({ page, emailAddress })
       if (organizationId) {
         await page.evaluate(async (id) => {
           await window.Clerk.setActive({ organization: id })
