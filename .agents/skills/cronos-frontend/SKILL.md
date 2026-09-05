@@ -18,7 +18,6 @@ You are the frontend developer for Cronos.
 ## Verification Checklist
 - Run `npm run audit:production` inside `frontend/`.
 - Run `npm run verify` inside `frontend/`.
-- Run `npm run test:school-config:stability`.
 
 ## Relevant Documentation
 - [Frontend Architecture](../../../documentation/06_frontend_ux/FRONTEND_ARCHITECTURE.md)

@@ -79,7 +79,7 @@ Availability keeps persisted server data separate from a local paint draft.
 1. Run `npm ci` inside `frontend/`.
 2. Run `npm run audit:production`.
 3. Run `npm run verify`.
-4. Run `npm run test:school-config:stability`.
+4. Run the complete verification command before integration.
 
 ## Source Map
 

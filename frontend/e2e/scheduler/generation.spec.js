@@ -9,6 +9,8 @@ import {
   goTo,
   loginAsAdminReal,
 } from '../utils/clerk-helpers.js'
+import { waitForJobToSucceed as waitForSchedulerJob } from '../utils/scheduler-fixtures.js'
+import { createE2eRunKey, E2E_BASE_URL } from '../utils/e2e-config.js'
 
 const API_PREFIX = '/api/v1'
 const OPERATION_TIMEOUT_MS = 30_000
@@ -25,10 +27,6 @@ function withTimeout(operation, label, timeoutMs = OPERATION_TIMEOUT_MS) {
   return Promise.race([Promise.resolve().then(operation), timeout]).finally(() => {
     clearTimeout(timeoutId)
   })
-}
-
-function sleep(durationMs) {
-  return new Promise((resolve) => setTimeout(resolve, durationMs))
 }
 
 function toIsoDate(value) {
@@ -172,7 +170,7 @@ async function signInUserWithTicket(
     () => client.signInTokens.createSignInToken({ userId, expiresInSeconds: 300 }),
     'Clerk sign-in token creation',
   )
-  const baseUrl = process.env.BASE_URL || 'http://localhost:5173'
+  const baseUrl = E2E_BASE_URL
   const targetUrl = new URL(path, baseUrl)
   const ticketUrl = new URL(ticket.url)
   ticketUrl.searchParams.set('redirect_url', targetUrl.toString())
@@ -387,39 +385,6 @@ export async function seedMinimalSchedulerInputs(page, teacherEmail, dates = FIX
   return { classId: classroom.id, subjectId: subject.id, teacherId: updatedTeacher.teacher_id }
 }
 
-export async function waitForJobToSucceed(page, jobId) {
-  let lastJob = null
-  const startedAt = Date.now()
-  const deadline = startedAt + JOB_TIMEOUT_MS
-  const terminalFailures = new Set(['FAILED', 'NO_VALID_OUTPUT', 'CANCELED'])
-  while (Date.now() < deadline) {
-    const remainingMs = deadline - Date.now()
-    lastJob = await apiRequest(
-      page,
-      'GET',
-      `/scheduler/jobs/${jobId}`,
-      undefined,
-      Math.min(OPERATION_TIMEOUT_MS, remainingMs),
-    )
-    if (lastJob.job_status === 'SUCCEEDED') return lastJob
-    if (terminalFailures.has(lastJob.job_status)) {
-      throw new Error(
-        `scheduler job ${jobId} ended with ${lastJob.job_status}; `
-        + `strategy=${lastJob.strategy}; duration_ms=${lastJob.duration_ms ?? 'unknown'}; `
-        + `payload=${JSON.stringify(lastJob, null, 2)}`,
-      )
-    }
-    await sleep(Math.min(2000, Math.max(0, deadline - Date.now())))
-  }
-  throw new Error(
-    `scheduler job ${jobId} did not finish within ${JOB_TIMEOUT_MS}ms; `
-    + `strategy=${lastJob?.strategy ?? 'unknown'}; `
-    + `state=${lastJob?.job_status ?? 'unknown'}; `
-    + `duration_ms=${lastJob?.duration_ms ?? (Date.now() - startedAt)}; `
-    + `payload=${JSON.stringify(lastJob, null, 2)}`,
-  )
-}
-
 export async function generateAndApproveThroughUi(page) {
   await goTo(page, '/schedules')
   await expectRouteReady(page, '/schedules')
@@ -432,7 +397,7 @@ export async function generateAndApproveThroughUi(page) {
   const response = await generateResponse
   const responseText = await response.text()
   expect(response.ok(), `scheduler generate failed: ${response.status()} ${responseText}`).toBeTruthy()
-  const job = await waitForJobToSucceed(page, JSON.parse(responseText).job_id)
+  const job = await waitForSchedulerJob(page, JSON.parse(responseText).job_id)
   expect(job.job_status).toBe('SUCCEEDED')
   await expect(page.getByText(/Rascunho pronto para revis/i)).toBeVisible({ timeout: 30_000 })
   const approvalResponsePromise = page.waitForResponse(
@@ -498,7 +463,7 @@ test.describe('Scheduler generation', () => {
     expect(response.ok(), `scheduler generate failed: ${response.status()} ${responseText}`).toBeTruthy()
     const { job_id: jobId } = JSON.parse(responseText)
 
-    const job = await waitForJobToSucceed(page, jobId)
+    const job = await waitForSchedulerJob(page, jobId)
     expect(job.job_status).toBe('SUCCEEDED')
 
     await expect(page.getByText(/Rascunho pronto para revis/i)).toBeVisible({ timeout: 30_000 })
@@ -597,7 +562,7 @@ test('fresh founder completes Complete Generation and custom-rule Adaptive Repai
   const secretKey = process.env.CLERK_SECRET_KEY
   if (!secretKey) throw new Error('CLERK_SECRET_KEY is required for the beta remediation journey.')
   const client = createClerkClient({ secretKey })
-  const runKey = `${Date.now()}-${Math.random().toString(16).slice(2)}`
+  const runKey = createE2eRunKey()
   const email = `cronos-beta-${runKey}+clerk_test@example.com`
   const schoolName = `Cronos Beta ${runKey}`
   let userId

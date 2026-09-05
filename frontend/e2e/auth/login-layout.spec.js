@@ -1,6 +1,5 @@
 import { expect, test } from '@playwright/test'
-
-const BASE_URL = process.env.BASE_URL || 'http://localhost:5173'
+import { E2E_BASE_URL } from '../utils/e2e-config.js'
 
 test.use({ storageState: { cookies: [], origins: [] } })
 
@@ -14,7 +13,7 @@ for (const viewport of [
     const page = await context.newPage()
 
     try {
-      await page.goto(`${BASE_URL}/login`, { waitUntil: 'domcontentloaded' })
+      await page.goto(`${E2E_BASE_URL}/login`, { waitUntil: 'domcontentloaded' })
       await expect(page.locator('.cl-formFieldInput').first()).toBeVisible({ timeout: 15_000 })
       await expect(page.locator('.zen-auth-page--login')).toBeVisible()
 
@@ -42,7 +41,7 @@ for (const viewport of [
     const page = await context.newPage()
 
     try {
-      await page.goto(`${BASE_URL}/login`, { waitUntil: 'domcontentloaded' })
+      await page.goto(`${E2E_BASE_URL}/login`, { waitUntil: 'domcontentloaded' })
       await expect(page.locator('.cl-formFieldInput').first()).toBeVisible({ timeout: 15_000 })
 
       const dimensions = await page.evaluate(() => ({

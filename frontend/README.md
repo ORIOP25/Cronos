@@ -46,7 +46,6 @@ npm run verify
 npm run audit:production
 
 # Check school configuration stability
-npm run test:school-config:stability
 ```
 
 ## Public Marketing Site

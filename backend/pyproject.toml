@@ -10,12 +10,8 @@ asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 addopts = ["--strict-config", "--strict-markers", "-ra", "--tb=short"]
 markers = [
-    "unit: Testes puros sem BD nem rede (schemas, funções puras)",
-    "integration: Testes com BD de teste (requer PostgreSQL)",
     "postgresql: Testes que exigem schema PostgreSQL criado por Alembic",
     "redis: Testes que exigem Redis real",
-    "slow: Testes lentos (>1s) — excluídos por defeito",
-    "solver: Testes do motor de horários (CP-SAT / OR-Tools)",
 ]
 
 [tool.ruff]

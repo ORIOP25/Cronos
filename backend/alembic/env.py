@@ -14,9 +14,10 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from app.config import settings
 
 config = context.config
-if settings.MIGRATION_DATABASE_URL is None:
+configured_url = config.get_main_option("sqlalchemy.url") or settings.MIGRATION_DATABASE_URL
+if configured_url is None:
     raise RuntimeError("MIGRATION_DATABASE_URL is required for Alembic")
-config.set_main_option("sqlalchemy.url", str(settings.MIGRATION_DATABASE_URL))
+config.set_main_option("sqlalchemy.url", str(configured_url))
 
 # Configurar Logs
 if config.config_file_name is not None:

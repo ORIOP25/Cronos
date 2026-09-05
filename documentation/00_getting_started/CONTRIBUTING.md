@@ -72,7 +72,6 @@ Run the frontend stability check only when investigating scheduler settings:
 
 ```bash
 cd frontend
-npm run test:school-config:stability
 ```
 
 This command is diagnostic. Do not treat it as a pre-integration gate.

@@ -21,6 +21,7 @@ coverage/
 frontend/playwright-report/
 frontend/test-results/
 frontend/coverage/
+.test-artifacts/
 
 # --- Frontend (Node) ---
 node_modules/

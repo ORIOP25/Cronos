@@ -1,0 +1,40 @@
+{
+  "policy": "structural-suite-selection",
+  "counts": {
+    "baseline": 616,
+    "after_removals": 606,
+    "removed_classifier_tests": 10,
+    "added_tests": 2,
+    "backend_final": 608,
+    "frontend_final": 354
+  },
+  "suites": {
+    "unit": "backend/tests/unit",
+    "integration_transactional": "backend/tests/integration/transactional",
+    "integration_committed": "backend/tests/integration/committed",
+    "contracts": "backend/tests/contracts"
+  },
+  "removed": [
+    {
+      "path": "backend/tests/test_test_suite_classification.py",
+      "action": "removed",
+      "reason": "the automatic fixture/marker classifier is no longer part of the contract"
+    }
+  ],
+  "added": [
+    {
+      "path": "backend/tests/integration/committed/test_prepare_e2e_clerk_state.py",
+      "action": "added",
+      "reason": "covers the shared E2E Clerk state preparation contract"
+    },
+    {
+      "path": "backend/tests/integration/committed/test_teacher_role_regression.py",
+      "action": "added",
+      "reason": "covers the teacher role regression in committed integration tests"
+    }
+  ],
+  "verification": {
+    "backend": {"unit": 300, "integration": 265, "contracts": 43, "total": 608},
+    "frontend": 354
+  }
+}

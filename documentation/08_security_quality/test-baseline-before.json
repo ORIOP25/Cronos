@@ -1,0 +1,13 @@
+{
+  "branch": "codex/test-performance",
+  "revision": "8368b1b098f204522f49f03a4a24b9176dd4f8bf",
+  "profile": "fast",
+  "scope": "all",
+  "collection": "original runner before implementation edits",
+  "samples_ms": [119089, 109608, 109642, 109414, 108266],
+  "median_ms": 109608,
+  "minimum_ms": 108266,
+  "maximum_ms": 119089,
+  "all_samples_green": true,
+  "warmup_included_in_median": false
+}

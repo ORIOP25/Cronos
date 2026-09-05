@@ -53,6 +53,7 @@ describe('tutorialStorage v3', () => {
   })
 
   it('requires authenticated user and organization identity for persistence', () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
     expect(getTutorialStorageKey(null, 'org_1')).toBeNull()
     expect(getTutorialStorageKey('user_1', null)).toBeNull()
     expect(saveTutorialState(localStorage, null, INITIAL_TUTORIAL_STATE).ok).toBe(false)
@@ -67,6 +68,7 @@ describe('tutorialStorage v3', () => {
   })
 
   it('validates the initial state as a valid not-started checkpoint', () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
     expect(createTutorialState(INITIAL_TUTORIAL_STATE, INITIAL_TUTORIAL_STATE)).toEqual(INITIAL_TUTORIAL_STATE)
     expect(createTutorialState(INITIAL_TUTORIAL_STATE, {
       ...INITIAL_TUTORIAL_STATE,

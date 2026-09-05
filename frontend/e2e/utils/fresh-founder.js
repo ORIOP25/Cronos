@@ -1,8 +1,7 @@
 import { createPageObjects } from '@clerk/testing/playwright/unstable'
 import { setupClerkTestingToken } from '@clerk/testing/playwright'
 import { expect } from '@playwright/test'
-
-const BASE_URL = process.env.BASE_URL || 'http://localhost:5173'
+import { createE2eRunKey, E2E_BASE_URL } from './e2e-config.js'
 
 export function withTimeout(operation, label, timeoutMs = 30_000) {
   let timeoutId
@@ -18,25 +17,25 @@ async function signInWithTicket(page, client, userId, organizationName) {
     'Clerk E2E sign-in token creation',
   )
   const ticketUrl = new URL(ticket.url)
-  ticketUrl.searchParams.set('redirect_url', new URL('/create-org', BASE_URL).toString())
+  ticketUrl.searchParams.set('redirect_url', new URL('/create-org', E2E_BASE_URL).toString())
   await setupClerkTestingToken({ page })
   await page.goto(ticketUrl.toString(), { waitUntil: 'domcontentloaded' })
   await expect.poll(() => page.url(), { timeout: 30_000 }).toMatch(
     /\/(?:create-org|tasks\/choose-organization)(?:[/?#]|$)/,
   )
   if (/\/tasks\/choose-organization(?:[/?#]|$)/.test(page.url())) {
-    const clerkPages = createPageObjects({ page, baseURL: BASE_URL })
+    const clerkPages = createPageObjects({ page, baseURL: E2E_BASE_URL })
     await withTimeout(
       () => clerkPages.sessionTask.resolveForceOrganizationSelectionTask({ name: organizationName }),
       'Clerk E2E organization selection',
     )
   }
-  await page.waitForURL(`${BASE_URL}/create-org`, { timeout: 30_000 })
+  await page.waitForURL(`${E2E_BASE_URL}/create-org`, { timeout: 30_000 })
   await page.waitForFunction(() => window.Clerk?.user != null, null, { timeout: 30_000 })
 }
 
 export async function createFreshFounder(page, client, label) {
-  const runKey = `${Date.now()}-${Math.random().toString(16).slice(2)}`
+  const runKey = createE2eRunKey()
   const emailLabel = label.toLowerCase().replace(/[^a-z0-9]+/g, '-')
   const email = `cronos-${emailLabel.slice(0, 12)}-${runKey}+clerk_test@example.com`
   const organizationName = `Cronos ${label} ${runKey}`
@@ -94,7 +93,7 @@ export async function signInFreshFounder(page, client, founder) {
     founder.organizationId,
     { timeout: 30_000 },
   )
-  await page.goto(`${BASE_URL}/foundation`, { waitUntil: 'domcontentloaded' })
+  await page.goto(`${E2E_BASE_URL}/foundation`, { waitUntil: 'domcontentloaded' })
   await page.waitForURL('**/foundation', { timeout: 30_000 })
   await expect(page.locator('#school_start_date')).toBeEnabled({ timeout: 30_000 })
 }

@@ -29,6 +29,7 @@ describe('E2E runtime guard classifiers', () => {
     ['Clerk browser bundle', 'https://welcome-cat-83.clerk.accounts.dev/npm/@clerk/clerk-js@5/dist/clerk.browser.js'],
     ['Clerk organization memberships read', 'https://welcomed-cat-83.clerk.accounts.dev/v1/me/organization_memberships?limit=10'],
     ['Clerk hosted sign-in navigation', 'https://welcomed-cat-83.accounts.dev/sign-in?__clerk_db_jwt=test-token'],
+    ['Clerk image asset', 'https://img.clerk.com/eyJ0eXBlIjoicHJveHkiLCJzcmMiOiJodHRwczovL2ltYWdlcy5jbGVyay5kZXYvdXBsb2FkZWQvaW1nXzF9?width=200'],
   ])('ignores benign external browser-cancelled %s', (_label, url) => {
     expect(getRequestFailureError({
       method: 'GET',

@@ -1,0 +1,47 @@
+{
+  "branch": "codex/test-performance",
+  "base_revision": "8368b1b098f204522f49f03a4a24b9176dd4f8bf",
+  "profile": "fast",
+  "scope": "all",
+  "warmup_ms": 34096,
+  "samples_ms": [31592, 30704, 31283, 31197, 31120],
+  "median_ms": 31197,
+  "minimum_ms": 30704,
+  "maximum_ms": 31592,
+  "reduction_vs_before_percent": 71.54,
+  "counts": {"collected": 654, "passed": 654, "failed": 0, "skipped": 0, "errors": 0},
+  "backend": {
+    "unit": {"tests_passed": 300},
+    "integration": {"tests_passed": 265, "workers": 4},
+    "contracts": {"tests_passed": 43, "serial": true}
+  },
+  "frontend": {
+    "files": 62,
+    "tests_passed": 354,
+    "coverage": {"statements": 68.04, "branches": 59.36, "functions": 63.7, "lines": 70.81},
+    "quality": {"eslint": "passed", "knip": "passed", "build": "passed", "production_audit": "passed"}
+  },
+  "integration_full_run": {
+    "commit": "7c206d5833d89a2d84943ae1317d4be268a08414",
+    "recorded_at": "2026-09-04T18:44:10+01:00",
+    "scope": "all",
+    "total_ms": 105591,
+    "preparation_ms": 9176,
+    "tests_ms": 94515,
+    "cleanup_ms": 1894,
+    "integration_passed": 264,
+    "contracts_passed": 43,
+    "passed": 307,
+    "workers": 4
+  },
+  "integration_latest_focus": {
+    "commit": "04a7c4a338d3e4916216f6df9bd57f918e5e9aa3",
+    "recorded_at": "2026-09-04T19:02:20+01:00",
+    "scope": "Clerk-prep focus",
+    "integration_passed": 265,
+    "contracts_passed": 43,
+    "passed": 308,
+    "workers": 4
+  },
+  "e2e": {"local_status": "blocked", "reason": "reserved Clerk test credentials are not configured"}
+}

@@ -6,8 +6,7 @@ import {
   getRequestFailureError,
 } from './runtime-guards.js'
 import { observeClerkSignIn } from './clerk-rate-limit.js'
-
-const BASE_URL = process.env.BASE_URL || 'http://localhost:5173'
+import { E2E_BASE_URL } from './e2e-config.js'
 
 function requiredEnv(name) {
   const value = process.env[name]
@@ -47,7 +46,7 @@ export function attachRuntimeGuards(page) {
       method: request.method(),
       url: request.url(),
       errorText: request.failure()?.errorText,
-    }, { baseUrl: BASE_URL })
+    }, { baseUrl: E2E_BASE_URL })
     if (error) {
       throw new Error(error)
     }
@@ -69,7 +68,7 @@ async function loginReal(page, emailEnvironmentVariable) {
   await expect.poll(
     () => observeClerkSignIn(async () => {
       await setupClerkTestingToken({ page })
-      await page.goto(BASE_URL)
+      await page.goto(E2E_BASE_URL)
       await clerk.signIn({ page, emailAddress })
       if (organizationId) {
         await page.evaluate(async (id) => {
@@ -99,7 +98,7 @@ export async function loginAsTeacherReal(page) {
 
 export async function goTo(page, path) {
   await setupClerkTestingToken({ page })
-  await page.goto(`${BASE_URL}${path}`, { waitUntil: 'domcontentloaded' })
+  await page.goto(`${E2E_BASE_URL}${path}`, { waitUntil: 'domcontentloaded' })
   await expectNoAppCrash(page)
 }
 

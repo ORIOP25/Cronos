@@ -3,10 +3,11 @@ import {
   attachRuntimeGuards,
   goTo,
 } from '../utils/clerk-helpers.js'
+import { E2E_BASE_URL } from '../utils/e2e-config.js'
 
 test.use({ storageState: { cookies: [], origins: [] } })
 
-const APP_ORIGIN = new URL(process.env.BASE_URL || 'http://localhost:5173').origin
+const APP_ORIGIN = new URL(E2E_BASE_URL).origin
 
 async function expectLocalPathLink(page, path) {
   const link = page.locator(`a[href$="${path}"]`).first()

@@ -3,6 +3,7 @@ import { setupClerkTestingToken } from '@clerk/testing/playwright'
 import { createPageObjects } from '@clerk/testing/playwright/unstable'
 import { expect, test } from '@playwright/test'
 import { attachRuntimeGuards, expectRouteReady } from '../utils/clerk-helpers.js'
+import { createE2eRunKey, E2E_BASE_URL } from '../utils/e2e-config.js'
 
 const OPERATION_TIMEOUT_MS = 30_000
 
@@ -20,7 +21,7 @@ test('manual founder onboarding creates and activates an organization', async ({
   if (!secretKey) throw new Error('CLERK_SECRET_KEY is required for onboarding E2E.')
 
   const client = createClerkClient({ secretKey })
-  const runKey = `${Date.now()}-${Math.random().toString(16).slice(2)}`
+  const runKey = createE2eRunKey()
   const email = `cronos-onboarding-${runKey}+clerk_test@example.com`
   const schoolName = `Cronos Onboarding ${runKey}`
   let userId
@@ -44,7 +45,7 @@ test('manual founder onboarding creates and activates an organization', async ({
 
     attachRuntimeGuards(page)
     await setupClerkTestingToken({ page })
-    const baseUrl = process.env.BASE_URL || 'http://localhost:5173'
+    const baseUrl = E2E_BASE_URL
     const ticket = await withTimeout(
       () => client.signInTokens.createSignInToken({ userId, expiresInSeconds: 300 }),
       'Clerk onboarding sign-in token creation',
