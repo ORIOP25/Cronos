@@ -122,7 +122,7 @@ function readyMarker(page, path) {
     ['/courses', /Cursos/i],
     ['/rooms', /Salas/i],
     ['/subjects', /Disciplinas/i],
-    ['/config', /Escola/i],
+    ['/config', /Configuração/i],
     ['/schedules', /Horarios escolares|Horários escolares/i],
     ['/absences', /Faltas e\s+Ocorrencias|Faltas e\s+Ocorrências/i],
     ['/timesheets', /Fecho\s+Semanal/i],
@@ -131,7 +131,11 @@ function readyMarker(page, path) {
     ['/my-progress', /Meu\s+Progresso/i],
   ])
   const heading = exactMarkers.get(path)
-  return heading ? page.getByRole('heading', { name: heading }).first() : null
+  if (!heading) return null
+  if (path === '/config') {
+    return page.locator('.page-header__pretitle', { hasText: heading }).first()
+  }
+  return page.getByRole('heading', { name: heading }).first()
 }
 
 export async function expectNoAppCrash(page) {
