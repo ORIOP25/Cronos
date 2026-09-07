@@ -3,7 +3,7 @@
 .app-sidebar.is-collapsed { --sidebar-width: 72px; padding-inline: 8px; }
 .app-sidebar__top { display: flex; flex-direction: column; gap: 16px; margin-bottom: 28px; }
 .app-sidebar__brand-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 44px; }
-.app-sidebar.is-collapsed .app-sidebar__brand-row { justify-content: center; }
+.app-sidebar.is-collapsed .app-sidebar__brand-row { flex-direction: column; justify-content: flex-start; gap: 8px; }
 .app-sidebar__brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .app-sidebar__brand img { width: 32px; height: 32px; object-fit: contain; filter: grayscale(1) brightness(0) invert(1); }
 .app-sidebar.is-collapsed .app-sidebar__brand img { width: 36px; height: 36px; }

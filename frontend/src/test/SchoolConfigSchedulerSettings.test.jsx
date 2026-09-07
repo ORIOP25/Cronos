@@ -40,6 +40,42 @@ describe('SchoolConfig scheduler settings', () => {
     apiClient.post.mockResolvedValue({ message: 'Grelha configurada e regenerada com sucesso.' })
   })
 
+  it('uses the shared page spacing and organization heading', () => {
+    const { container } = renderWithProviders(<SchoolConfig />)
+
+    expect(container.firstChild).toHaveClass('p-4')
+    expect(screen.getByRole('heading', { name: 'Test Org' })).toBeInTheDocument()
+    expect(screen.getByText('Configuração')).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Escola' })).not.toBeInTheDocument()
+    expect(screen.queryByText('Organização: Test Org')).not.toBeInTheDocument()
+  })
+
+  it('exposes units through accessible suffixes without units in labels', async () => {
+    renderWithProviders(<SchoolConfig />)
+
+    const stabilityInput = await screen.findByLabelText('Janela de estabilidade')
+    expect(stabilityInput).toHaveAttribute('aria-describedby', expect.stringContaining('repairWindow-unit'))
+    expect(document.getElementById('repairWindow-unit')).toHaveTextContent('Dias')
+    expect(screen.queryByLabelText(/janela de estabilidade \(dias\)/i)).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('tab', { name: /grelha/i }))
+
+    for (const field of [
+      { label: 'Duração da Aula', unitId: 'slotDuration-unit' },
+      { label: 'Intervalo', unitId: 'breakDuration-unit' },
+      { label: 'Duração Mínima Almoço', unitId: 'lunchMin-unit' },
+    ]) {
+      const input = await screen.findByLabelText(field.label)
+      expect(input).toHaveAttribute('aria-describedby', expect.stringContaining(field.unitId))
+      expect(document.getElementById(field.unitId)).toHaveTextContent('Minutos')
+      expect(input.closest('.input-group')?.previousElementSibling).toHaveTextContent(field.label)
+    }
+
+    expect(screen.queryByLabelText(/duração da aula \(min\)/i)).not.toBeInTheDocument()
+    expect(screen.queryByLabelText(/intervalo \(min\)/i)).not.toBeInTheDocument()
+    expect(screen.queryByLabelText(/duração mínima almoço \(min\)/i)).not.toBeInTheDocument()
+  })
+
   it('requests data only for the active configuration section', async () => {
     renderWithProviders(<SchoolConfig />)
 

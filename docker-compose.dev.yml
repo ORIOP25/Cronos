@@ -3,7 +3,7 @@ services:
   backend:
     environment:
       FRONTEND_URL: http://localhost:5173
-      CLERK_AUTHORIZED_PARTIES: http://localhost:5173
+      CLERK_AUTHORIZED_PARTIES: http://localhost:5173,http://127.0.0.1:5173
 
   frontend:
     build:

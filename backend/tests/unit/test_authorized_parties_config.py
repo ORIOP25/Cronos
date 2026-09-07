@@ -12,7 +12,10 @@ BASE = {
 def test_authorized_parties_default_to_normalized_frontend_origin():
     configured = Settings(**BASE, FRONTEND_URL="HTTP://LOCALHOST:5173/")
     assert configured.FRONTEND_URL == "http://localhost:5173"
-    assert configured.CLERK_AUTHORIZED_PARTIES_LIST == ["http://localhost:5173"]
+    assert configured.CLERK_AUTHORIZED_PARTIES_LIST == [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ]
 
 
 def test_authorized_parties_accept_multiple_exact_origins():

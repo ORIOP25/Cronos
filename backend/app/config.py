@@ -74,6 +74,7 @@ class Settings(BaseSettings):
         if self.ENVIRONMENT == "local":
             return [
                 "http://localhost:5173",
+                "http://127.0.0.1:5173",
                 "http://localhost:3000",
                 "http://localhost",
             ]
@@ -83,13 +84,17 @@ class Settings(BaseSettings):
     @computed_field(return_type=list[str])
     def CLERK_AUTHORIZED_PARTIES_LIST(self) -> list[str]:
         source = self.CLERK_AUTHORIZED_PARTIES or self.FRONTEND_URL
-        return list(
-            dict.fromkeys(
-                _normalize_http_origin(value, "CLERK_AUTHORIZED_PARTIES")
-                for value in source.split(",")
-                if value.strip()
-            )
-        )
+        origins = [
+            _normalize_http_origin(value, "CLERK_AUTHORIZED_PARTIES")
+            for value in source.split(",")
+            if value.strip()
+        ]
+        if self.ENVIRONMENT == "local" and urlparse(self.FRONTEND_URL).hostname in {
+            "localhost",
+            "127.0.0.1",
+        }:
+            origins.extend(["http://localhost:5173", "http://127.0.0.1:5173"])
+        return list(dict.fromkeys(origins))
 
     # --- Infraestrutura (Redis & Celery) ---
     # Se não definires no .env, assume o default do Docker

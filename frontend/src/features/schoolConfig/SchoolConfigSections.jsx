@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import {
   CCard, CCardBody, CCardHeader, CCol, CRow, CForm, CFormInput,
-  CFormCheck, CFormLabel, CButton, CAlert, CBadge,
+  CFormCheck, CFormLabel, CButton, CAlert, CBadge, CInputGroup, CInputGroupText,
   CSpinner, CTable, CTableHead, CTableRow, CTableHeaderCell,
   CTableBody, CTableDataCell, CFormSelect,
   CModal, CModalHeader, CModalTitle, CModalBody, CModalFooter
@@ -389,15 +389,19 @@ const SettingsEditor = ({ settings, onSoftResetSuccess, onSaveSuccess }) => {
           />
         </CCol>
         <CCol md={3}>
-          <CFormLabel htmlFor="repairWindow" className="school-config-field-label">Janela de estabilidade (dias)</CFormLabel>
-          <CFormInput
-            id="repairWindow"
-            type="number"
-            min={0}
-            value={form.repair_stability_window_days}
-            onChange={(e) => updateForm('repair_stability_window_days', e.target.value)}
-            text="Período em que se evita refazer horários"
-          />
+          <CFormLabel htmlFor="repairWindow" className="school-config-field-label">Janela de estabilidade</CFormLabel>
+          <CInputGroup>
+            <CFormInput
+              id="repairWindow"
+              type="number"
+              min={0}
+              value={form.repair_stability_window_days}
+              aria-describedby="repairWindow-unit repairWindow-help"
+              onChange={(e) => updateForm('repair_stability_window_days', e.target.value)}
+            />
+            <CInputGroupText id="repairWindow-unit">Dias</CInputGroupText>
+          </CInputGroup>
+          <div id="repairWindow-help" className="form-text">Período em que se evita refazer horários</div>
         </CCol>
       </CRow>
       
@@ -601,10 +605,18 @@ const GridEditor = ({ orgId, initialFormData, initialGridSettings }) => {
             <CFormInput id="gridEnd" type="time" label="Fecho da Escola" value={formData.end_time} onChange={(e) => setFormData({ ...formData, end_time: e.target.value })} />
           </CCol>
           <CCol md={3}>
-            <CFormInput id="slotDuration" type="number" label="Duração da Aula (min)" value={formData.slot_duration_minutes} onChange={(e) => setFormData({ ...formData, slot_duration_minutes: e.target.value })} />
+            <CFormLabel htmlFor="slotDuration">Duração da Aula</CFormLabel>
+            <CInputGroup>
+              <CFormInput id="slotDuration" type="number" aria-describedby="slotDuration-unit" value={formData.slot_duration_minutes} onChange={(e) => setFormData({ ...formData, slot_duration_minutes: e.target.value })} />
+              <CInputGroupText id="slotDuration-unit">Minutos</CInputGroupText>
+            </CInputGroup>
           </CCol>
           <CCol md={3}>
-            <CFormInput id="breakDuration" type="number" label="Intervalo (min)" value={formData.break_duration_minutes} onChange={(e) => setFormData({ ...formData, break_duration_minutes: e.target.value })} />
+            <CFormLabel htmlFor="breakDuration">Intervalo</CFormLabel>
+            <CInputGroup>
+              <CFormInput id="breakDuration" type="number" aria-describedby="breakDuration-unit" value={formData.break_duration_minutes} onChange={(e) => setFormData({ ...formData, break_duration_minutes: e.target.value })} />
+              <CInputGroupText id="breakDuration-unit">Minutos</CInputGroupText>
+            </CInputGroup>
           </CCol>
         </CRow>
 
@@ -616,7 +628,11 @@ const GridEditor = ({ orgId, initialFormData, initialGridSettings }) => {
             <CFormInput id="lunchEnd" type="time" label="Fim do Almoço" value={gridSettings.lunch_window_end} onChange={(e) => setGridSettings({ ...gridSettings, lunch_window_end: e.target.value })} />
           </CCol>
           <CCol md={4}>
-            <CFormInput id="lunchMin" type="number" label="Duração Mínima Almoço (min)" value={gridSettings.lunch_min_duration_minutes} onChange={(e) => setGridSettings({ ...gridSettings, lunch_min_duration_minutes: e.target.value })} />
+            <CFormLabel htmlFor="lunchMin">Duração Mínima Almoço</CFormLabel>
+            <CInputGroup>
+              <CFormInput id="lunchMin" type="number" aria-describedby="lunchMin-unit" value={gridSettings.lunch_min_duration_minutes} onChange={(e) => setGridSettings({ ...gridSettings, lunch_min_duration_minutes: e.target.value })} />
+              <CInputGroupText id="lunchMin-unit">Minutos</CInputGroupText>
+            </CInputGroup>
           </CCol>
         </CRow>
 

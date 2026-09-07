@@ -40,6 +40,12 @@ describe('Members', () => {
     })
   })
 
+  it('uses the shared page spacing', () => {
+    const { container } = renderWithProviders(<Members />)
+
+    expect(container.firstChild).toHaveClass('p-4')
+  })
+
   it('exposes the member form controls through their visible labels', async () => {
     renderWithProviders(<Members />)
 

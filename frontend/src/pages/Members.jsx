@@ -270,7 +270,7 @@ const Members = ({ readOnly = false, allowedActions }) => {
   const actionError = actionErrorSource ? getApiErrorMessage(actionErrorSource) : null
 
   return (
-    <div>
+    <div className="p-4">
       <PageHeader preTitle="Gestão" title="Equipa" />
       <div className="d-flex justify-content-between align-items-center mb-4 gap-3 flex-wrap">
         <div className="d-flex gap-2 flex-wrap">

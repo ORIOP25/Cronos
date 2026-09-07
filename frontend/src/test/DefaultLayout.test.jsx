@@ -1,4 +1,6 @@
+import { readFileSync } from 'node:fs'
 import { describe, it, expect, vi } from 'vitest'
+import { fireEvent, within } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { renderWithProviders } from './testUtils'
 import { setClerkState } from './setup'
@@ -7,6 +9,8 @@ import DefaultLayout from '../components/DefaultLayout'
 const roleState = vi.hoisted(() => ({ isAdmin: true, isTeacher: false }))
 
 vi.mock('../hooks/useRole', () => ({ useRole: () => roleState }))
+
+const appShellCss = readFileSync('src/styles/app-shell.css', 'utf8')
 
 describe('DefaultLayout', () => {
   it('renders navigation, account actions, and nested route content', () => {
@@ -37,5 +41,31 @@ describe('DefaultLayout', () => {
     )
     expect(getByText('Dashboard')).toBeInTheDocument()
     expect(getByText('Disciplinas')).toBeInTheDocument()
+  })
+
+  it('stacks the logo and toggle when the desktop sidebar is collapsed', () => {
+    roleState.isAdmin = true
+    localStorage.removeItem('hz-sidebar-collapsed')
+    const { getByRole } = renderWithProviders(
+      <MemoryRouter initialEntries={['/dashboard']}>
+        <Routes>
+          <Route element={<DefaultLayout />}>
+            <Route path="/dashboard" element={<span>Content</span>} />
+          </Route>
+        </Routes>
+      </MemoryRouter>
+    )
+
+    const sidebar = getByRole('complementary', { name: 'Navegação principal' })
+    const appSidebar = sidebar.querySelector('.app-sidebar')
+    const brandRow = appSidebar.querySelector('.app-sidebar__brand-row')
+    fireEvent.click(within(sidebar).getByRole('button', { name: 'Colapsar menu' }))
+
+    expect(within(sidebar).getByRole('button', { name: 'Expandir menu' })).toBeVisible()
+    expect(appSidebar).toHaveClass('is-collapsed')
+    expect(within(sidebar).getByRole('img', { name: 'Cronos' })).toBeVisible()
+    expect(brandRow.children[0]).toContainElement(within(sidebar).getByRole('img', { name: 'Cronos' }))
+    expect(brandRow.children[1]).toContainElement(within(sidebar).getByRole('button', { name: 'Expandir menu' }))
+    expect(appShellCss).toMatch(/\.app-sidebar\.is-collapsed \.app-sidebar__brand-row\s*\{[^}]*flex-direction:\s*column[^}]*gap:\s*8px/)
   })
 })

@@ -6,7 +6,7 @@ x-backend-environment: &backend-environment
   REDIS_URL: redis://redis:6379/0
   CELERY_BROKER_URL: redis://redis:6379/0
   FRONTEND_URL: http://localhost:5173
-  CLERK_AUTHORIZED_PARTIES: http://localhost:5173
+  CLERK_AUTHORIZED_PARTIES: http://localhost:5173,http://127.0.0.1:5173
   CONTACT_EMAIL_FROM: website@forms.cronos.pt
   CONTACT_EMAIL_TO: contacto@cronos.pt
   CONTACT_EMAIL_TIMEOUT_SECONDS: "10"
