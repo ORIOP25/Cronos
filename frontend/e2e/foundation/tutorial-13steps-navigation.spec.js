@@ -38,7 +38,8 @@ test.describe('Tutorial — 13 passos por funcionalidade', () => {
     await expect(page.getByTestId('tutorial-workspace')).toBeHidden()
     const savedState = await page.evaluate(() => {
       const entry = Object.entries(localStorage).find(([key]) => key.includes('cronos:tutorial:v3:'))
-      return entry ? JSON.parse(entry[1]) : null
+      const parsed = entry ? JSON.parse(entry[1]) : null
+      return parsed?.value ?? parsed
     })
     expect(savedState).toEqual(expect.objectContaining({ version: 3, status: 'COMPLETED', stepId: 'history' }))
     expect(Object.keys(savedState)).toEqual(['version', 'tutorialRunId', 'status', 'stepId'])

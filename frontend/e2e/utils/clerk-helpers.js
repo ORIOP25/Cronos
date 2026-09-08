@@ -90,6 +90,7 @@ async function loginReal(page, emailEnvironmentVariable) {
 
 export async function loginAsAdminReal(page) {
   await loginReal(page, 'E2E_CLERK_ADMIN_EMAIL')
+  await page.goto(`${E2E_BASE_URL}/dashboard`, { waitUntil: 'domcontentloaded' })
   await acceptCurrentLegalDocuments(page)
 }
 

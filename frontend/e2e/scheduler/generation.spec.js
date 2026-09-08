@@ -4,6 +4,7 @@ import { createPageObjects } from '@clerk/testing/playwright/unstable'
 import { test, expect } from '@playwright/test'
 import {
   allowApiFailure,
+  acceptCurrentLegalDocuments,
   attachRuntimeGuards,
   expectRouteReady,
   goTo,
@@ -594,6 +595,8 @@ test('fresh founder completes Complete Generation and custom-rule Adaptive Repai
 
     await test.step('Foundation', async () => {
       await page.getByRole('button', { name: schoolName }).click()
+      await page.waitForURL(/\/(?:foundation|legal\/aceitar)(?:[/?#]|$)/, { timeout: OPERATION_TIMEOUT_MS })
+      await acceptCurrentLegalDocuments(page)
       await page.waitForURL('**/foundation', { timeout: OPERATION_TIMEOUT_MS })
       await page.waitForFunction(
         (expectedOrganizationId) => window.Clerk?.organization?.id === expectedOrganizationId,
