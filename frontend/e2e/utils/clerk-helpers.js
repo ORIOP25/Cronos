@@ -121,7 +121,9 @@ export async function acceptCurrentLegalDocuments(page) {
           legalState = await page.evaluate(async () => {
             let token = null
             const organizationId = window.Clerk?.organization?.id ?? null
-            const tokenOptions = organizationId ? { organizationId } : undefined
+            const tokenOptions = organizationId
+              ? { organizationId, skipCache: true }
+              : undefined
             try {
               token = await window.Clerk?.session?.getToken?.(tokenOptions)
             } catch {
