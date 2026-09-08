@@ -1,6 +1,6 @@
-import { lazy, Suspense, useEffect } from 'react'
+import { lazy, Suspense, useEffect, useRef } from 'react'
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
-import { useAuth } from '@clerk/react'
+import { useAuth, useOrganization } from '@clerk/react'
 
 import { setClerkTokenGetter } from './apiClient'
 
@@ -28,6 +28,8 @@ const ClassSubjects = lazy(() => import('./pages/ClassSubjects'))
 const Foundation = lazy(() => import('./pages/Foundation'))
 const FoundationWaiting = lazy(() => import('./pages/FoundationWaiting'))
 const Guide = lazy(() => import('./pages/Guide'))
+const LegalAcceptancePage = lazy(() => import('./pages/LegalAcceptancePage'))
+const LegalDocumentLayout = lazy(() => import('./features/legal/LegalDocumentLayout.jsx'))
 
 const MarketingLayout = lazy(() => import('./features/marketing/components/layout/MarketingLayout.jsx'))
 const HomePage = lazy(() => import('./pages/marketing/HomePage.jsx'))
@@ -40,9 +42,30 @@ const ContactPage = lazy(() => import('./pages/marketing/ContactPage.jsx'))
 import DefaultLayout from './components/DefaultLayout'
 import { ROUTE_MY_SCHEDULES } from './roleAccess'
 import { PageLoader, RequireAdmin, RequireFoundationAdmin, RequireAuth, RequireTeacher } from './routeGuards'
+import { clearStorageKeys } from './utils/expiringStorage'
+
+function useStorageScopeCleanup(userId, isSignedIn, organizationId) {
+  const previousUserId = useRef(userId)
+  const previousOrganizationId = useRef(organizationId)
+  useEffect(() => {
+    const previousUser = previousUserId.current
+    const previousOrganization = previousOrganizationId.current
+    if (previousUser && (!isSignedIn || previousUser !== userId)) {
+      clearStorageKeys(localStorage, (key) => key.includes(`:user:${previousUser}:`))
+      clearStorageKeys(sessionStorage, (key) => key.startsWith(`cronos:pending-organization:${previousUser}`))
+    }
+    if (previousOrganization && previousOrganization !== organizationId) {
+      clearStorageKeys(localStorage, (key) => key.includes(`:org:${previousOrganization}`) || key.endsWith(`-org-${previousOrganization}`))
+    }
+    previousUserId.current = userId
+    previousOrganizationId.current = organizationId
+  }, [isSignedIn, organizationId, userId])
+}
 
 function App() {
-  const { getToken, isLoaded } = useAuth()
+  const { getToken, isLoaded, userId, isSignedIn } = useAuth()
+  const { organization } = useOrganization()
+  useStorageScopeCleanup(userId, isSignedIn, organization?.id)
 
   useEffect(() => {
     if (isLoaded && getToken) {
@@ -65,6 +88,13 @@ function App() {
             <Route path="/contacto" element={<ContactPage />} />
           </Route>
 
+          <Route element={<MarketingLayout allowSignedIn />}>
+            <Route path="/privacidade" element={<LegalDocumentLayout kind="privacy" />} />
+            <Route path="/termos" element={<LegalDocumentLayout kind="terms" />} />
+            <Route path="/dpa" element={<LegalDocumentLayout kind="dpa" />} />
+            <Route path="/cookies" element={<Navigate to="/privacidade#cookies" replace />} />
+          </Route>
+
           <Route path="/login/*" element={<SignInPage />} />
           <Route path="/recuperar-palavra-passe" element={<ForgotPasswordPage />} />
           <Route path="/register/*" element={<SignUpPage />} />
@@ -74,6 +104,8 @@ function App() {
           <Route path="/create-org" element={
             <RequireAuth><CreateOrgPage /></RequireAuth>
           } />
+
+          <Route path="/legal/aceitar" element={<RequireAuth><LegalAcceptancePage /></RequireAuth>} />
 
           <Route path="/foundation/waiting" element={
             <RequireAuth><FoundationWaiting /></RequireAuth>

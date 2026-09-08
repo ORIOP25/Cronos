@@ -107,8 +107,9 @@ Clerk identity is external input.
 The backend resolves the local organization and member and applies tenant-scoped authorization before business operations.
 Foundation status does not grant admin capability; it only controls whether a capable administrator may complete setup.
 
-Tutorial telemetry is tenant-scoped, limited to a Foundation administrator, deduplicated by `(organization_id, client_event_id)`, and append-only.
-Tutorial scenario values remain in browser storage and are not trusted as operational records.
+The tutorial stores only a minimal, expiring checkpoint in browser storage. It has no backend telemetry and is not trusted as an operational record.
+
+The organization legal gate is enforced before Foundation and operational dependencies. `GET /legal/status` remains available to members; acceptance requires an administrator and is append-only with forced RLS.
 
 ## Related Documents
 

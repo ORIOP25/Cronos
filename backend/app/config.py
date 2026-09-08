@@ -209,11 +209,6 @@ class Settings(BaseSettings):
                 "CLERK_INVITATION_REDIRECT_URL cannot point to localhost in production."
             )
 
-    # --- Monitorização (Opcional) ---
-    # Pode ser None se estivermos em desenvolvimento local
-    SENTRY_DSN: str | None = None
-    SENTRY_TRACES_SAMPLE_RATE: float = 0.1
-
     # Configuração do Pydantic para ler do .env
     model_config = SettingsConfigDict(
         env_file=".env",

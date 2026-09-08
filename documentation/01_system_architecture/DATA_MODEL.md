@@ -105,11 +105,11 @@ The onboarding lifecycle uses tenant-scoped records and explicit state fields.
 | :--- | :--- | :--- |
 | `organizations` | `foundation_status`, `foundation_completed_at`, `first_real_schedule_approved_at` | A completed Foundation requires `foundation_completed_at`; the first real approval requires a completed Foundation. |
 | `organization_foundation_drafts` | `organization_id`, `version`, `current_step`, JSONB `payload`, `updated_by_membership_id` | One draft exists per organization. `version` is positive and increases on each accepted write. |
-| `tutorial_telemetry_events` | `organization_id`, `tutorial_run_id`, `client_event_id`, `version`, `event`, optional chapter and step | `(organization_id, client_event_id)` is unique. Append-only constraints protect the event history. |
+| `organization_legal_acceptance` | Legal entity, representative, immutable membership-id snapshot, terms version, DPA version, server timestamp | One append-only acceptance exists per organization and current document pair. RLS limits reads and inserts to the active tenant; the organization FK is restrictive so evidence is never cascaded away. |
 
 Foundation settings and generated timeslots are written in the same completion unit of work.
 The API database dependency commits the unit before it returns a successful response.
-The tutorial scenario is not stored in these tables; it remains in browser storage.
+The tutorial scenario and its minimal resumable checkpoint remain in browser storage with a 30-day TTL. No tutorial telemetry table exists.
 
 ## Related Documents
 

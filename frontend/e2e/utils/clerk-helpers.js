@@ -90,6 +90,7 @@ async function loginReal(page, emailEnvironmentVariable) {
 
 export async function loginAsAdminReal(page) {
   await loginReal(page, 'E2E_CLERK_ADMIN_EMAIL')
+  await acceptCurrentLegalDocuments(page)
 }
 
 export async function loginAsTeacherReal(page) {
@@ -100,6 +101,24 @@ export async function goTo(page, path) {
   await setupClerkTestingToken({ page })
   await page.goto(`${E2E_BASE_URL}${path}`, { waitUntil: 'domcontentloaded' })
   await expectNoAppCrash(page)
+}
+
+export async function acceptCurrentLegalDocuments(page) {
+  await expect.poll(() => page.url(), { timeout: 30_000 }).toMatch(
+    /\/(?:legal\/aceitar|foundation|dashboard)(?:[/?#]|$)/,
+  )
+  if (!/\/legal\/aceitar(?:[/?#]|$)/.test(page.url())) return
+
+  await expect(page.getByRole('heading', { name: 'Antes de configurar a escola' })).toBeVisible()
+  await page.getByLabel('Nome legal da entidade').fill('Entidade E2E, ENI')
+  await page.getByLabel('NIF/NIPC').fill('999999990')
+  await page.getByLabel('Morada registada').fill('Rua E2E, 1, 1000-000 Lisboa')
+  await page.getByLabel('Email de contacto').fill('e2e-legal@example.com')
+  await page.getByLabel('Nome do representante').fill('Representante E2E')
+  await page.getByLabel('Cargo do representante').fill('Administrador')
+  for (const checkbox of await page.getByRole('checkbox').all()) await checkbox.check()
+  await page.getByRole('button', { name: 'Aceitar e continuar' }).click()
+  await expect(page).toHaveURL(/\/(?:foundation|dashboard)(?:[/?#]|$)/, { timeout: 30_000 })
 }
 
 export async function clickSidebarRoute(page, path) {

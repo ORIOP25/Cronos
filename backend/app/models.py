@@ -2,10 +2,8 @@ import enum
 from datetime import UTC, datetime, time
 from datetime import date as date_type
 from typing import NamedTuple, Optional
-from uuid import UUID as PyUUID
 
 from sqlalchemy import (
-    BigInteger,
     Boolean,
     CheckConstraint,
     Column,
@@ -21,7 +19,6 @@ from sqlalchemy import (
     Text,
     Time,
     UniqueConstraint,
-    Uuid,
     event,
     func,
     select,
@@ -439,9 +436,6 @@ class Organization(Base):
     foundation_draft: Mapped[Optional["OrganizationFoundationDraft"]] = relationship(
         back_populates="organization", cascade=CASCADE_ALL_DELETE, uselist=False
     )
-    tutorial_telemetry_events: Mapped[list["TutorialTelemetryEvent"]] = relationship(
-        back_populates="organization", cascade=CASCADE_ALL_DELETE
-    )
 
     __table_args__ = (
         CheckConstraint(
@@ -493,62 +487,6 @@ class OrganizationFoundationDraft(Base):
             ["organization_membership.organization_id", "organization_membership.id"],
             name="fk_org_foundation_draft_membership_tenant_scoped",
             ondelete="RESTRICT",
-        ),
-    )
-
-
-class TutorialTelemetryEvent(Base):
-    __tablename__ = "tutorial_telemetry_event"
-
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    organization_id: Mapped[int] = mapped_column(
-        ForeignKey(FK_ORG_ID, ondelete="CASCADE"), nullable=False
-    )
-    tutorial_run_id: Mapped[PyUUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
-    client_event_id: Mapped[PyUUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
-    tutorial_version: Mapped[int] = mapped_column(Integer, nullable=False)
-    event_name: Mapped[str] = mapped_column(String(40), nullable=False)
-    chapter: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
-    step_id: Mapped[str | None] = mapped_column(String(80), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        default=lambda: datetime.now(UTC),
-        server_default=text("CURRENT_TIMESTAMP"),
-        nullable=False,
-    )
-
-    organization: Mapped["Organization"] = relationship(back_populates="tutorial_telemetry_events")
-
-    __table_args__ = (
-        UniqueConstraint(
-            "organization_id",
-            "client_event_id",
-            name="uq_tutorial_telemetry_client_event",
-        ),
-        Index("ix_tutorial_telemetry_event_organization_id", "organization_id"),
-        Index(
-            "ix_tutorial_telemetry_run",
-            "organization_id",
-            "tutorial_run_id",
-            "created_at",
-        ),
-        Index(
-            "ix_tutorial_telemetry_version_event",
-            "organization_id",
-            "tutorial_version",
-            "event_name",
-        ),
-        CheckConstraint(
-            "event_name IN ('tutorial_opened', 'chapter_started', 'tutorial_exited', 'tutorial_completed', 'tutorial_repeated')",
-            name="chk_tutorial_telemetry_event_name",
-        ),
-        CheckConstraint(
-            "chapter IS NULL OR chapter IN (1, 2)",
-            name="chk_tutorial_telemetry_chapter",
-        ),
-        CheckConstraint(
-            "tutorial_version = 3",
-            name="chk_tutorial_telemetry_version",
         ),
     )
 
@@ -762,6 +700,64 @@ class OrganizationMembership(Base):
             "NOT (can_admin AND teacher_access_mode = 'scheduler_only')",
             name="ck_membership_admin_not_scheduler_only",
         ),
+    )
+
+
+class OrganizationLegalAcceptance(Base):
+    """Append-only evidence that an organization accepted current documents."""
+
+    __tablename__ = "organization_legal_acceptance"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    organization_id: Mapped[int] = mapped_column(
+        ForeignKey(FK_ORG_ID, ondelete="RESTRICT"), nullable=False, index=True
+    )
+    accepted_by_membership_id_snapshot: Mapped[int] = mapped_column(Integer, nullable=False)
+    controller_legal_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    controller_registration_number: Mapped[str] = mapped_column(String(50), nullable=False)
+    controller_registered_address: Mapped[str] = mapped_column(String(500), nullable=False)
+    controller_contact_email: Mapped[str] = mapped_column(String(254), nullable=False)
+    representative_name: Mapped[str] = mapped_column(String(150), nullable=False)
+    representative_role: Mapped[str] = mapped_column(String(100), nullable=False)
+    authority_confirmed: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    terms_version: Mapped[str] = mapped_column(String(40), nullable=False)
+    dpa_version: Mapped[str] = mapped_column(String(40), nullable=False)
+    accepted_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=text("CURRENT_TIMESTAMP"), nullable=False
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id",
+            "terms_version",
+            "dpa_version",
+            name="uq_organization_legal_acceptance_versions",
+        ),
+        CheckConstraint(
+            "char_length(trim(controller_legal_name)) BETWEEN 1 AND 200",
+            name="chk_legal_acceptance_controller_name",
+        ),
+        CheckConstraint(
+            "char_length(trim(controller_registration_number)) BETWEEN 1 AND 50",
+            name="chk_legal_acceptance_registration_number",
+        ),
+        CheckConstraint(
+            "char_length(trim(controller_registered_address)) BETWEEN 1 AND 500",
+            name="chk_legal_acceptance_address",
+        ),
+        CheckConstraint(
+            "char_length(trim(controller_contact_email)) BETWEEN 3 AND 254",
+            name="chk_legal_acceptance_contact_email",
+        ),
+        CheckConstraint(
+            "char_length(trim(representative_name)) BETWEEN 1 AND 150",
+            name="chk_legal_acceptance_representative_name",
+        ),
+        CheckConstraint(
+            "char_length(trim(representative_role)) BETWEEN 1 AND 100",
+            name="chk_legal_acceptance_representative_role",
+        ),
+        CheckConstraint("authority_confirmed IS TRUE", name="chk_legal_acceptance_authority"),
     )
 
 

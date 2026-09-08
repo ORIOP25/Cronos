@@ -5,6 +5,7 @@ from httpx import ASGITransport, AsyncClient
 
 from app import models
 from app.api import deps
+from app.legal import CURRENT_DPA_VERSION, CURRENT_TERMS_VERSION
 from app.main import app
 
 pytestmark = pytest.mark.postgresql
@@ -45,6 +46,22 @@ async def _create_org_and_admin(
         can_teach=False,
     )
     db_session.add(mem)
+    await db_session.flush()
+    db_session.add(
+        models.OrganizationLegalAcceptance(
+            organization_id=org.id,
+            accepted_by_membership_id_snapshot=mem.id,
+            controller_legal_name=org_name,
+            controller_registration_number="NIF-TEST",
+            controller_registered_address="Rua de Teste, 1",
+            controller_contact_email=f"legal_{clerk_org}@test.com",
+            representative_name="Gate Admin",
+            representative_role="Administrador",
+            authority_confirmed=True,
+            terms_version=CURRENT_TERMS_VERSION,
+            dpa_version=CURRENT_DPA_VERSION,
+        )
+    )
     await db_session.flush()
     return org, user, mem
 
@@ -100,7 +117,7 @@ async def test_uncompleted_foundation_blocks_operational_endpoints_with_409(
             body = resp.json()
             assert body["detail"]["code"] == "FOUNDATION_REQUIRED"
 
-        # 2. Allowlisted foundation, session, and onboarding telemetry endpoints are ALLOWED
+        # 2. Foundation and session endpoints remain available during onboarding
         status_resp = await ac.get("/api/v1/foundation/status")
         assert status_resp.status_code == 200
         assert status_resp.json()["foundation_status"] == "IN_PROGRESS"
@@ -112,16 +129,9 @@ async def test_uncompleted_foundation_blocks_operational_endpoints_with_409(
         assert me_resp.status_code == 200
         assert me_resp.json()["foundation_status"] == "IN_PROGRESS"
 
-        telemetry_resp = await ac.post(
-            "/api/v1/tutorial/telemetry",
-            json={
-                "tutorial_run_id": "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11",
-                "client_event_id": "b0eebc99-9c0b-4ef8-bb6d-6bb9bd380a22",
-                "tutorial_version": 3,
-                "event_name": "tutorial_opened",
-            },
-        )
-        assert telemetry_resp.status_code == 204
+        legal_resp = await ac.get("/api/v1/legal/status")
+        assert legal_resp.status_code == 200
+        assert legal_resp.json()["accepted"] is True
 
 
 async def test_completed_foundation_allows_operational_endpoints(db_session, override_auth_actor):

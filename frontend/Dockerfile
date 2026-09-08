@@ -33,3 +33,12 @@ EXPOSE 8080
 # be present in the production image's browser policy.
 FROM runtime AS ci
 COPY nginx.ci.conf /etc/nginx/conf.d/default.conf
+
+# Local development uses Clerk's accounts.dev instance from .env.local. Keep
+# those origins out of the production runtime policy.
+FROM runtime AS local
+COPY nginx.local.conf /etc/nginx/conf.d/default.conf
+
+# The unqualified image is always the production policy. CI and local builds
+# opt into their explicit targets above.
+FROM runtime AS production

@@ -176,7 +176,8 @@ All paths below are relative to `/api/v1`.
 | `GET` | `/foundation/draft` | Foundation administrator | Read the current draft, version, step, and data. |
 | `PUT` | `/foundation/draft` | Foundation administrator | Validate and save a draft with `expected_version`. |
 | `POST` | `/foundation/complete` | Foundation administrator | Validate, persist, and complete the Foundation. |
-| `POST` | `/tutorial/telemetry` | Foundation administrator | Append a deduplicated tutorial event. |
+| `GET` | `/legal/status` | Signed-in organization member | Read the current Terms and DPA acceptance status. |
+| `POST` | `/legal/acceptance` | Organization administrator | Record the current Terms and DPA acceptance idempotently. |
 | `GET` | `/readiness/bases` | Active administrator | Read cumulative readiness depth and issues. |
 | `GET` | `/readiness/prevalidation` | Active administrator | Check blockers and warnings before generation. |
 | `GET` | `/dashboard` | Active administrator | Read `PREPARATION` or `OPERATIONAL` dashboard data. |

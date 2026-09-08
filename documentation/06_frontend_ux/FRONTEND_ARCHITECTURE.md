@@ -102,7 +102,7 @@ The onboarding path is split into independent features:
 - `FoundationWizard.jsx` owns the nine-step interaction, autosave queue, version conflict state, and completion navigation.
 - `foundationModel.js` contains pure step and validation rules.
 - `foundationData.js` owns React Query keys and invalidation.
-- `features/tutorial/` owns local scenario state, reducer transitions, normalization, storage, telemetry, and the API boundary.
+- `features/tutorial/` owns local scenario state, reducer transitions, normalization, expiring storage, and the API boundary.
 
 Foundation completion invalidates `foundation-status`, `foundation-draft`, `current-member`, dashboard, and readiness queries as one mutation lifecycle.
 The real dashboard passes `autoStartGuide={false}` so the post-completion destination is stable.

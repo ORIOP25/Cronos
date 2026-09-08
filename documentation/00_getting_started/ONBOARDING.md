@@ -35,7 +35,7 @@ The local tutorial lets users learn the product without mutating the tenant.
 | :--- | :--- |
 | Clerk activation and tenant bootstrap | Clerk provider, session endpoint, organization feature |
 | Foundation validation and persistence | Foundation wizard, Foundation service, organization tables |
-| Tutorial simulation | Tutorial reducer, scenario, storage, telemetry, and API boundary |
+| Tutorial simulation | Tutorial reducer, scenario, expiring local storage, and API boundary |
 | Readiness and dashboard mode | Readiness service and dashboard service |
 | Route access | React route guards and FastAPI actor dependencies |
 
@@ -262,16 +262,10 @@ The boundary serves local API-shaped data and applies only the action allowed by
 Reads and permitted writes update the in-memory snapshot before returning a response.
 Review mode is read-only and rejects mutating requests.
 
-### Tutorial telemetry
+### Tutorial privacy boundary
 
-The frontend emits telemetry to `POST /api/v1/tutorial/telemetry` as the Foundation administrator.
-Telemetry is best effort and never blocks the local tutorial.
-Each event contains a tutorial run ID, a client event ID, version, event name, and optional chapter or step.
-The backend deduplicates the client event ID inside the organization.
-
-Supported event names are:
-
-`tutorial_opened`, `chapter_started`, `tutorial_exited`, `tutorial_completed`, and `tutorial_repeated`.
+The tutorial is local-only. It stores only the resumable checkpoint in browser storage with a 30-day expiry.
+It sends no tutorial telemetry and creates no backend record.
 
 ## Phase 5: Readiness
 
@@ -324,11 +318,11 @@ The following matrix maps the visible symptom to the first recovery action.
 | `409 FOUNDATION_ALREADY_COMPLETED` | A completed organization received another draft write | Refresh member and Foundation status. |
 | Dashboard shows preparation after Foundation | Expected until first real schedule approval | Complete readiness, generate, review, and approve a real schedule. |
 | Tutorial loses progress | Browser storage was cleared or invalid | Start a new local run. The tutorial never owns operational data. |
-| Telemetry request fails | Provider or network error | Continue the tutorial. Inspect logs later; telemetry is non-blocking. |
+| Tutorial loses progress | Browser storage expired or the user changed scope | Start a new local run. |
 
 ## Security and Data Integrity
 
-- Every tenant-owned Foundation, member, readiness, dashboard, and telemetry record is scoped by `organization_id`.
+- Every tenant-owned Foundation, member, readiness, and dashboard record is scoped by `organization_id`.
 - PostgreSQL RLS protects tenant rows for the application role.
 - Clerk provides identity and organization claims; the backend resolves the local member before protected operations.
 - Foundation routes allow an uncompleted organization only through the explicit Foundation administrator allowlist.

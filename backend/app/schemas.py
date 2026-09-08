@@ -3,7 +3,6 @@ from __future__ import annotations
 from datetime import date, datetime, time
 from enum import StrEnum
 from typing import Annotated, Any, Literal
-from uuid import UUID
 
 from pydantic import (
     AliasChoices,
@@ -59,6 +58,52 @@ class ContactSubmission(BaseModel):
     # same successful response as legitimate visitors.
     website: str = Field(default="", max_length=200)
     turnstile_token: str = Field(min_length=1, max_length=2048)
+
+
+class LegalAcceptanceCreate(BaseModel):
+    """Organization legal acceptance command."""
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    controller_legal_name: str = Field(min_length=1, max_length=200)
+    controller_registration_number: str = Field(min_length=1, max_length=50)
+    controller_registered_address: str = Field(min_length=1, max_length=500)
+    controller_contact_email: EmailStr
+    representative_name: str = Field(min_length=1, max_length=150)
+    representative_role: str = Field(min_length=1, max_length=100)
+    authority_confirmed: Literal[True]
+    terms_accepted: Literal[True]
+    dpa_accepted: Literal[True]
+    terms_version: str = Field(min_length=1, max_length=40)
+    dpa_version: str = Field(min_length=1, max_length=40)
+
+
+class LegalAcceptanceRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True, extra="forbid")
+
+    id: int
+    organization_id: int
+    accepted_by_membership_id_snapshot: int
+    controller_legal_name: str
+    controller_registration_number: str
+    controller_registered_address: str
+    controller_contact_email: EmailStr
+    representative_name: str
+    representative_role: str
+    authority_confirmed: Literal[True]
+    terms_version: str
+    dpa_version: str
+    accepted_at: datetime
+
+
+class LegalStatusResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    accepted: bool
+    requires_acceptance: bool
+    terms_version: str
+    dpa_version: str
+    accepted_at: datetime | None = None
 
 
 # ==========================================
@@ -345,23 +390,6 @@ class FoundationCompleteResponse(BaseModel):
     foundation_status: OrganizationFoundationStatus
     foundation_completed_at: datetime
     generated_timeslot_count: int
-
-
-class TutorialTelemetryEventCreate(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    tutorial_run_id: UUID
-    client_event_id: UUID
-    tutorial_version: Literal[3]
-    event_name: Literal[
-        "tutorial_opened",
-        "chapter_started",
-        "tutorial_exited",
-        "tutorial_completed",
-        "tutorial_repeated",
-    ]
-    chapter: int | None = Field(default=None, ge=1, le=2)
-    step_id: str | None = Field(default=None, max_length=80)
 
 
 class PreflightIssue(BaseModel):
@@ -1462,15 +1490,8 @@ class LessonOccurrenceCreate(BaseModel):
         ..., gt=0, description=DESC_OCCURRENCE_CREATE_ACTIVE_BLOCK_ID
     )
     mode: Literal["manual_admin", "lesson_log"] = Field(default="manual_admin", max_length=50)
-    reason: str | None = Field(None, max_length=250)
 
     model_config = ConfigDict(extra="forbid")
-
-    @model_validator(mode="after")
-    def trim_reason(self) -> LessonOccurrenceCreate:
-        if self.reason is not None:
-            self.reason = self.reason.strip() or None
-        return self
 
 
 class LessonOccurrenceUpdate(BaseModel):
@@ -1478,7 +1499,6 @@ class LessonOccurrenceUpdate(BaseModel):
 
     status: LessonOccurrenceStatus = Field(..., description=DESC_OCCURRENCE_STATUS)
     version: int = Field(..., ge=1)
-    reason: str | None = Field(None, max_length=250)
     substitute_teacher_id: int | None = Field(
         None, gt=0, description="ID do professor substituto (obrigatório se status=SUBSTITUTED)"
     )
@@ -1487,12 +1507,6 @@ class LessonOccurrenceUpdate(BaseModel):
     )
 
     model_config = ConfigDict(extra="forbid")
-
-    @model_validator(mode="after")
-    def trim_reason(self) -> LessonOccurrenceUpdate:
-        if self.reason is not None:
-            self.reason = self.reason.strip() or None
-        return self
 
     @model_validator(mode="after")
     def check_substituted_requirements(self) -> LessonOccurrenceUpdate:
@@ -1514,15 +1528,9 @@ class LessonOccurrenceUpdate(BaseModel):
 
 class LessonOccurrenceCancel(BaseModel):
     version: int = Field(..., ge=1)
-    reason: str = Field(..., min_length=1, max_length=250)
     cancel_completed_substitute_log: bool = False
 
-    @model_validator(mode="after")
-    def trim_reason(self) -> LessonOccurrenceCancel:
-        self.reason = self.reason.strip()
-        if not self.reason:
-            raise ValueError("reason não pode ser vazio após trim")
-        return self
+    model_config = ConfigDict(extra="forbid")
 
 
 class DebtItem(BaseModel):

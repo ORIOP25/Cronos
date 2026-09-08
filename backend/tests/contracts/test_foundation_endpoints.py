@@ -6,6 +6,7 @@ from sqlalchemy import select
 
 from app import models
 from app.api import deps
+from app.legal import CURRENT_DPA_VERSION, CURRENT_TERMS_VERSION
 from app.main import app
 from app.services import settings_service
 
@@ -43,6 +44,22 @@ async def _create_org_and_admin(
         can_teach=False,
     )
     db_session.add(mem)
+    await db_session.flush()
+    db_session.add(
+        models.OrganizationLegalAcceptance(
+            organization_id=org.id,
+            accepted_by_membership_id_snapshot=mem.id,
+            controller_legal_name="Entidade Teste, ENI",
+            controller_registration_number="999999990",
+            controller_registered_address="Rua de Teste, 1, 1000-000 Lisboa",
+            controller_contact_email="legal@test.com",
+            representative_name="Representante Teste",
+            representative_role="Administrador",
+            authority_confirmed=True,
+            terms_version=CURRENT_TERMS_VERSION,
+            dpa_version=CURRENT_DPA_VERSION,
+        )
+    )
     await db_session.flush()
     return org, user, mem
 

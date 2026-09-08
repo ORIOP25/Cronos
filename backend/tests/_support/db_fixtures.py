@@ -5,7 +5,6 @@ import os
 
 os.environ.setdefault("RATELIMIT_ENABLED", "false")
 os.environ["DATABASE_POOLING_ENABLED"] = "false"
-os.environ["SENTRY_DSN"] = ""
 
 import re
 from collections.abc import AsyncGenerator
@@ -334,11 +333,14 @@ async def create_org_and_user(
     teacher_id: int | None = None,
     foundation_status: models.OrganizationFoundationStatus = models.OrganizationFoundationStatus.COMPLETED,
     foundation_completed_at: datetime | None = None,
+    legal_accepted: bool = True,
 ) -> tuple[models.Organization, models.User]:
     """Cria org + user. Idempotente: se já existirem, retorna os existentes."""
     from sqlalchemy.future import select as _sel
 
-    async def _ensure_membership(org: models.Organization, user: models.User) -> None:
+    async def _ensure_membership(
+        org: models.Organization, user: models.User
+    ) -> models.OrganizationMembership:
         membership = (
             await db_session.execute(
                 _sel(models.OrganizationMembership).where(
@@ -371,6 +373,39 @@ async def create_org_and_user(
             teacher = await db_session.get(models.Teacher, teacher_id)
             if teacher is not None and teacher.organization_membership_id is None:
                 teacher.organization_membership_id = membership.id
+        return membership
+
+    async def _ensure_legal_acceptance(
+        org: models.Organization, membership: models.OrganizationMembership
+    ) -> None:
+        if not legal_accepted:
+            return
+        from app.legal import CURRENT_DPA_VERSION, CURRENT_TERMS_VERSION
+
+        exists = await db_session.scalar(
+            _sel(models.OrganizationLegalAcceptance).where(
+                models.OrganizationLegalAcceptance.organization_id == org.id,
+                models.OrganizationLegalAcceptance.terms_version == CURRENT_TERMS_VERSION,
+                models.OrganizationLegalAcceptance.dpa_version == CURRENT_DPA_VERSION,
+            )
+        )
+        if exists is None:
+            db_session.add(
+                models.OrganizationLegalAcceptance(
+                    organization_id=org.id,
+                    accepted_by_membership_id_snapshot=membership.id,
+                    controller_legal_name="Entidade Teste, ENI",
+                    controller_registration_number="999999990",
+                    controller_registered_address="Rua de Teste, 1, 1000-000 Lisboa",
+                    controller_contact_email="legal@test.com",
+                    representative_name="Representante Teste",
+                    representative_role="Administrador",
+                    authority_confirmed=True,
+                    terms_version=CURRENT_TERMS_VERSION,
+                    dpa_version=CURRENT_DPA_VERSION,
+                )
+            )
+            await db_session.flush()
 
     # Verificar se user já existe
     existing_user = (
@@ -387,7 +422,8 @@ async def create_org_and_user(
             )
         ).scalar_one_or_none()
         if org is not None:
-            await _ensure_membership(org, existing_user)
+            membership = await _ensure_membership(org, existing_user)
+            await _ensure_legal_acceptance(org, membership)
         return org, existing_user
 
     # Verificar se org já existe
@@ -422,7 +458,8 @@ async def create_org_and_user(
     )
     db_session.add(user)
     await db_session.flush()
-    await _ensure_membership(org, user)
+    membership = await _ensure_membership(org, user)
+    await _ensure_legal_acceptance(org, membership)
     return org, user
 
 

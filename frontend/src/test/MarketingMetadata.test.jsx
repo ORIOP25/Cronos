@@ -5,7 +5,7 @@ import App from '../App'
 import { renderWithProviders } from './testUtils'
 import { resetClerkState, setClerkState } from './setup'
 
-const publicRoutes = ['/', '/vantagens', '/como-funciona', '/sobre', '/ajuda', '/contacto']
+const publicRoutes = ['/', '/vantagens', '/como-funciona', '/sobre', '/ajuda', '/contacto', '/privacidade', '/termos', '/dpa']
 
 function installMetadataFixture() {
   document.head.innerHTML = `

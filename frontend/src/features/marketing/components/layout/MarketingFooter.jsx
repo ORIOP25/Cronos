@@ -19,6 +19,13 @@ export default function MarketingFooter() {
           <h2>Contacto</h2>
           {contactDetails.map((detail) => <a key={detail.id} href={detail.href}>{detail.value}</a>)}
         </div>
+        <div className="cronos-footer__column">
+          <h2>Legal</h2>
+          <Link to="/privacidade">Privacidade</Link>
+          <Link to="/termos">Termos</Link>
+          <Link to="/dpa">DPA</Link>
+          <Link to="/cookies">Cookies</Link>
+        </div>
       </div>
     </footer>
   )

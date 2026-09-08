@@ -2,6 +2,7 @@ import { createPageObjects } from '@clerk/testing/playwright/unstable'
 import { setupClerkTestingToken } from '@clerk/testing/playwright'
 import { expect } from '@playwright/test'
 import { createE2eRunKey, E2E_BASE_URL } from './e2e-config.js'
+import { acceptCurrentLegalDocuments } from './clerk-helpers.js'
 
 export function withTimeout(operation, label, timeoutMs = 30_000) {
   let timeoutId
@@ -71,6 +72,7 @@ export async function createFreshFounder(page, client, label) {
       timeout: 30_000,
     })
     organizationId = await page.evaluate(() => window.Clerk.organization.id)
+    await acceptCurrentLegalDocuments(page)
     await page.waitForURL('**/foundation', { timeout: 30_000 })
     await expect(page.locator('#school_start_date')).toBeEnabled({ timeout: 30_000 })
     return { email, userId: user.id, organizationId, organizationName }
@@ -94,6 +96,7 @@ export async function signInFreshFounder(page, client, founder) {
     { timeout: 30_000 },
   )
   await page.goto(`${E2E_BASE_URL}/foundation`, { waitUntil: 'domcontentloaded' })
+  await acceptCurrentLegalDocuments(page)
   await page.waitForURL('**/foundation', { timeout: 30_000 })
   await expect(page.locator('#school_start_date')).toBeEnabled({ timeout: 30_000 })
 }

@@ -112,7 +112,7 @@ Onboarding is a cross-layer workflow, not a separate bounded context.
 Clerk and the session endpoint establish tenant identity.
 Foundation services validate and persist the school grid.
 Frontend route guards enforce the user journey, while backend actor dependencies enforce authorization.
-The local tutorial remains a frontend simulation with optional telemetry.
+The local tutorial remains a frontend simulation with a minimal, expiring browser checkpoint and no telemetry.
 
 See the [Director Onboarding](../00_getting_started/ONBOARDING.md) guide for the complete contract.
 

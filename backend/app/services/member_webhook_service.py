@@ -223,6 +223,11 @@ async def process_clerk_event(db: AsyncSession, event: models.ClerkWebhookEvent)
             event.processing_status = models.ClerkWebhookProcessingStatus.ignored
         event.error_category = None
         event.processed_at = _now()
+        if event.processing_status in {
+            models.ClerkWebhookProcessingStatus.processed,
+            models.ClerkWebhookProcessingStatus.ignored,
+        }:
+            event.payload_json = {}
     except Exception:
         event.processing_status = (
             models.ClerkWebhookProcessingStatus.dead_letter

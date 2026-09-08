@@ -26,7 +26,22 @@ export const marketingMetadata = Object.freeze({
   }),
   '/contacto': Object.freeze({
     title: 'Pedir Demonstração & Contacto | Cronos',
-    description: 'Fale connosco por email (contacto@cronos.pt) ou telefone (+351 968 348 153) e agende uma demonstração para a sua escola.',
+    description: 'Fale connosco por email (contacto@cronos.pt) e agende uma demonstração para a sua escola.',
     canonicalUrl: 'https://cronos.pt/contacto',
+  }),
+  '/privacidade': Object.freeze({
+    title: 'Política de Privacidade | Cronos',
+    description: 'Política de Privacidade do Cronos, versão 2026-01.',
+    canonicalUrl: 'https://cronos.pt/privacidade',
+  }),
+  '/termos': Object.freeze({
+    title: 'Termos de Serviço | Cronos',
+    description: 'Termos de Serviço do Cronos, versão 2026-01.',
+    canonicalUrl: 'https://cronos.pt/termos',
+  }),
+  '/dpa': Object.freeze({
+    title: 'Acordo de Tratamento de Dados | Cronos',
+    description: 'Acordo de Tratamento de Dados do Cronos, versão 2026-01.',
+    canonicalUrl: 'https://cronos.pt/dpa',
   }),
 })

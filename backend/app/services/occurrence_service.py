@@ -39,6 +39,11 @@ ERR_SUBSTITUTE_IMPOSSIBLE_AVAILABILITY = "Candidato indisponível para o slot (I
 ERR_SUBSTITUTE_ROOM_MISMATCH = "Tipo de sala incompatível com a disciplina substituta"
 ERR_SUBSTITUTE_SAME_PLANNED_TEACHER = "Docente previsto não pode ser confirmado como substituto"
 ERR_SUBSTITUTE_SAME_SUBJECT = "Disciplina substituta não pode ser igual à disciplina planeada"
+OCCURRENCE_REPORTED = "OCCURRENCE_REPORTED"
+DECISION_GIVEN = "DECISION_GIVEN"
+DECISION_GAP = "DECISION_GAP"
+DECISION_SUBSTITUTED = "DECISION_SUBSTITUTED"
+ADMINISTRATIVE_REVERSAL = "ADMINISTRATIVE_REVERSAL"
 ERR_SCHEDULE_OUTPUT_NOT_FOUND = "Bloco planeado não encontrado"
 ERR_SCHEDULE_OUTPUT_IS_DRAFT = "Bloco de rascunho não pode iniciar ocorrência operacional"
 ERR_SCHEDULE_OUTPUT_NO_DATE = "Bloco sem data válida para criação de ocorrência"
@@ -1090,7 +1095,7 @@ def create_occurrence_from_active_block_sync(
     active_schedule_block_id: int,
     created_by_membership_id: int | None = None,
     creation_source: str = "lesson_log",
-    reason: str | None = None,
+    reason: str = OCCURRENCE_REPORTED,
 ) -> tuple[models.LessonOccurrence, bool]:
     """Create or reuse an operational occurrence for a published active block."""
     block = db.execute(
@@ -1237,7 +1242,7 @@ def cancel_open_occurrence_for_active_block_sync(
     occurrence.status = models.LessonOccurrenceStatus.REVOKED
     occurrence.is_active = False
     occurrence.revoked_at = datetime.now(UTC)
-    occurrence.revoked_reason = "Revertido pelo professor"
+    occurrence.revoked_reason = ADMINISTRATIVE_REVERSAL
     _touch_occurrence_version(occurrence)
     db.flush()
     return True
@@ -1249,7 +1254,7 @@ def cancel_occurrence_sync(
     occurrence_id: int,
     cancelled_by_membership_id: int,
     version: int = 1,
-    reason: str = "Reversao administrativa",
+    reason: str = ADMINISTRATIVE_REVERSAL,
     cancel_completed_substitute_log: bool = False,
 ) -> dict:
     """Marca uma LessonOccurrence como REVOKED e reverte o LessonLog.
@@ -1614,6 +1619,11 @@ def update_occurrence_sync(
         occurrence.hours_given = hours_given
         occurrence.decided_by_membership_id = decided_by_membership_id
         occurrence.decided_at = datetime.now(UTC)
+        occurrence.reason = {
+            models.LessonOccurrenceStatus.GIVEN: DECISION_GIVEN,
+            models.LessonOccurrenceStatus.GAP: DECISION_GAP,
+            models.LessonOccurrenceStatus.SUBSTITUTED: DECISION_SUBSTITUTED,
+        }[payload.status]
 
         if payload.status == models.LessonOccurrenceStatus.SUBSTITUTED:
             _ensure_operational_schedule_block(

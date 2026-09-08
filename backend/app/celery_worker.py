@@ -22,8 +22,12 @@ celery_app.conf.update(
             "task": "members.run_scheduled_reconciliation",
             "schedule": 3600.0,
         },
+        "privacy-maintenance-daily": {
+            "task": "privacy.run_maintenance",
+            "schedule": 86400.0,
+        },
     },
-    imports=("app.member_reconciliation_worker",),
+    imports=("app.member_reconciliation_worker", "app.privacy_maintenance_worker"),
 )
 
 if __name__ == "__main__":

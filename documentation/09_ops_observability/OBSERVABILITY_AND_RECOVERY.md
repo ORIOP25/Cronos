@@ -15,7 +15,7 @@ Read [Local Runtime](LOCAL_RUNTIME.md) and [Testing and CI](../08_security_quali
 ## What the System Does
 
 The API exposes liveness and readiness.
-The backend emits structured logs and optional Sentry events.
+The backend emits structured logs. It does not send request data to an external error tracker.
 Scheduler, occurrence, and teacher endpoints store operational telemetry.
 
 ## Why the Behavior Exists
@@ -93,10 +93,10 @@ Monitor these onboarding boundaries:
 - generated timeslot count at completion;
 - readiness blockers and stale prevalidation fingerprints;
 - dashboard mode changes after the first real schedule approval;
-- tutorial telemetry duplicates and provider failures.
+- legal acceptance conflicts and stale document versions;
+- privacy maintenance counts and failures.
 
-The tutorial emits best-effort telemetry but does not block local progress when the request fails.
-The backend logs duplicate client events as ignored inserts.
+The tutorial is local-only and has no backend request to monitor.
 
 When a Foundation completion appears successful but the UI shows the previous state:
 

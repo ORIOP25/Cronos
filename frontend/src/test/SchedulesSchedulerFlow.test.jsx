@@ -2,6 +2,7 @@ import { fireEvent, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import Schedules from '../pages/Schedules'
 import { renderWithRouter } from './testUtils'
+import { writeExpiringValue } from '../utils/expiringStorage'
 
 const mocks = vi.hoisted(() => ({
   status: null,
@@ -129,7 +130,7 @@ describe('Schedules scheduler flow', () => {
   })
 
   it('does not refetch a week when a generation finishes without a selected view', async () => {
-    localStorage.setItem('hz-schedule-active-job-org-1', '91')
+    writeExpiringValue(localStorage, 'hz-schedule-active-job-org-1', '91')
     mocks.status = {
       pending_draft_id: 77,
       primary_action: 'REVIEW_PENDING_DRAFT',

@@ -10,6 +10,7 @@ from app.api.v1.endpoints import (
     dashboard,
     foundation,
     health,
+    legal,
     members,
     occurrences,
     org_settings,
@@ -20,7 +21,6 @@ from app.api.v1.endpoints import (
     session,
     subjects,
     teachers,
-    telemetry,
     timesheets,
     timeslots,
     webhooks,
@@ -52,8 +52,8 @@ api_router.include_router(dashboard.router, tags=["Dashboard"])
 api_router.include_router(readiness.router, prefix="/readiness", tags=["Prontidão"])
 api_router.include_router(webhooks.router, prefix="/webhooks", tags=["Webhooks"])
 api_router.include_router(foundation.router, tags=["Fundação"])
-api_router.include_router(telemetry.router, tags=["Telemetria"])
 api_router.include_router(session.router, prefix="/session", tags=["Session"])
+api_router.include_router(legal.router)
 
 # Health Check (Geralmente não leva prefixo dentro da API ou usa /ops)
 # Mas para ficar organizado, deixamos na raiz da API ou sob /ops

@@ -9,14 +9,13 @@ import {
 test.describe.configure({ mode: 'serial' })
 
 const isAllowedTutorialRequest = (url) => (
-  url.includes('/api/v1/tutorial/telemetry')
-  || url.includes('/api/v1/members/me')
+  url.includes('/api/v1/members/me')
   || url.includes('/api/v1/foundation/status')
   || url.includes('/api/v1/foundation/draft')
 )
 
 test.describe('Tutorial — network boundary', () => {
-  test('uses local simulation only and sends telemetry without operational mutations', async ({ page }) => {
+  test('uses local simulation only without telemetry or operational mutations', async ({ page }) => {
     await page.addInitScript(() => {
       for (const key of Object.keys(localStorage)) {
         if (key.startsWith('cronos:tutorial:')) localStorage.removeItem(key)
@@ -32,7 +31,9 @@ test.describe('Tutorial — network boundary', () => {
     await expect(page.getByTestId('tutorial-workspace')).toBeVisible()
 
     const requests = []
+    const telemetryRequests = []
     page.on('request', (request) => {
+      if (request.url().includes('/api/v1/tutorial/telemetry')) telemetryRequests.push(request.url())
       if (
         request.url().includes('/api/v1/')
         && !['GET', 'HEAD', 'OPTIONS'].includes(request.method())
@@ -45,6 +46,7 @@ test.describe('Tutorial — network boundary', () => {
 
     const operationalRequests = requests.filter((url) => !isAllowedTutorialRequest(url))
     expect(operationalRequests).toEqual([])
+    expect(telemetryRequests).toEqual([])
     await expectNoAppCrash(page)
   })
 })

@@ -30,6 +30,10 @@ export default function SignUpPage() {
               appearance={CLERK_APPEARANCE_AUTH}
             />
 
+            <p className="zen-auth-legal-links">
+              Ao criar uma conta, consulte os <Link to="/termos">Termos de Serviço</Link> e a <Link to="/privacidade">Política de Privacidade</Link>.
+            </p>
+
             <div className="zen-auth-form-footer">
               <Link to="/" className="zen-auth-back-link">
                 <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">

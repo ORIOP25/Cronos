@@ -102,7 +102,7 @@ async def create_occurrence(
             active_schedule_block_id=payload.active_schedule_block_id,
             created_by_membership_id=current_user.membership_id,
             creation_source=payload.mode,
-            reason=payload.reason,
+            reason=occurrence_service.OCCURRENCE_REPORTED,
         )
 
     try:
@@ -352,7 +352,7 @@ async def cancel_occurrence(
             occurrence_id=occurrence_id,
             cancelled_by_membership_id=current_user.membership_id,
             version=payload.version,
-            reason=payload.reason,
+            reason=occurrence_service.ADMINISTRATIVE_REVERSAL,
             cancel_completed_substitute_log=payload.cancel_completed_substitute_log,
         )
 

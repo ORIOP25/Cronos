@@ -18,7 +18,7 @@ export default function ContactMessageStep({ answers, website, error, pending, r
         {pending ? 'A enviar' : 'Pedir demonstração'}
         {!pending && <CIcon icon={cilArrowRight} />}
       </button>
-      <p className="cronos-questionnaire__privacy">Usaremos estes dados apenas para responder ao seu pedido.</p>
+      <p className="cronos-questionnaire__privacy">Ao enviar, o Cronos tratará os seus dados para responder ao pedido. O Cloudflare Turnstile analisa sinais técnicos para prevenir abuso e o Resend entrega a mensagem. Consulte a <a href="/privacidade">Política de Privacidade</a>.</p>
     </form>
   )
 }

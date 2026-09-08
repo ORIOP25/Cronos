@@ -56,11 +56,6 @@ function hasAbortablePath(url, baseUrl) {
   return ABORTABLE_FILE_EXTENSIONS.has(extension)
 }
 
-function isGoogleFontsUrl(parsedUrl) {
-  return parsedUrl.hostname === 'fonts.googleapis.com'
-    || parsedUrl.hostname === 'fonts.gstatic.com'
-}
-
 function isClerkHostedUrl(parsedUrl) {
   return parsedUrl.hostname.endsWith('.accounts.dev')
 }
@@ -73,13 +68,6 @@ function isBenignAbortedRequest({ method, url }, { baseUrl }) {
   const parsedUrl = parseUrl(url, baseUrl)
   if (!parsedUrl) return false
   if (
-    method.toUpperCase() === 'POST'
-    && isSameOrigin(url, baseUrl)
-    && parsedUrl.pathname === '/api/v1/tutorial/telemetry'
-  ) {
-    return true
-  }
-  if (
     ['GET', 'HEAD'].includes(method.toUpperCase())
     && isSameOrigin(url, baseUrl)
     && (
@@ -88,9 +76,6 @@ function isBenignAbortedRequest({ method, url }, { baseUrl }) {
       || parsedUrl.searchParams.has('__clerk_db_jwt')
     )
   ) {
-    return true
-  }
-  if (isGoogleFontsUrl(parsedUrl)) {
     return true
   }
   if (method.toUpperCase() === 'GET' && isClerkImageUrl(parsedUrl)) {
@@ -140,11 +125,6 @@ function failedResourceStatus(text) {
   return match ? Number.parseInt(match[1], 10) : null
 }
 
-function isBenignGoogleFont404(status, url) {
-  const parsedUrl = parseUrl(url, 'http://localhost')
-  return status === 404 && parsedUrl?.hostname === 'fonts.gstatic.com'
-}
-
 export function getConsoleError(consoleMessage, allowedFailures) {
   if (consoleMessage.type !== 'error') return null
 
@@ -155,8 +135,7 @@ export function getConsoleError(consoleMessage, allowedFailures) {
   if (
     status !== null
     && (
-      isBenignGoogleFont404(status, normalizedText(consoleMessage.locationUrl))
-      || isAllowedApiFailure(allowedFailures, {
+      isAllowedApiFailure(allowedFailures, {
         status,
         url: normalizedText(consoleMessage.locationUrl),
       })

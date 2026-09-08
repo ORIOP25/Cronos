@@ -71,11 +71,10 @@ export const useUpdateOccurrence = () => {
   const orgId = useOrganization().organization?.id
 
   return useMutation({
-    mutationFn: async ({ id, status, version, reason, substituteTeacherId, substituteSubjectId }) => {
+    mutationFn: async ({ id, status, version, substituteTeacherId, substituteSubjectId }) => {
       return apiClient.patch(`/occurrences/${id}`, {
         status,
         version,
-        reason,
         substitute_teacher_id: substituteTeacherId ?? null,
         substitute_subject_id: substituteSubjectId ?? null,
       })
@@ -100,10 +99,9 @@ export const useCancelOccurrence = () => {
   const orgId = useOrganization().organization?.id
 
   return useMutation({
-    mutationFn: async ({ id, version, reason, cancelCompletedSubstituteLog = false }) => {
+    mutationFn: async ({ id, version, cancelCompletedSubstituteLog = false }) => {
       return apiClient.post(`/occurrences/${id}/cancel`, {
         version,
-        reason,
         cancel_completed_substitute_log: cancelCompletedSubstituteLog,
       })
     },

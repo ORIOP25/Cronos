@@ -224,7 +224,6 @@ const EditOccurrenceModal = ({
       id: occurrence.id,
       status,
       version: occurrence.version,
-      reason: 'Decisao operacional',
       substituteTeacherId: status === 'SUBSTITUTED' ? selectedRecommendationData?.teacher_id ?? null : null,
       substituteSubjectId: status === 'SUBSTITUTED' ? selectedRecommendationData?.subject_id ?? null : null,
     })
@@ -546,7 +545,6 @@ const OccurrencesPanel = ({
     cancelMutation.mutate({
       id: occurrence.id,
       version: occurrence.version,
-      reason: 'Reversao administrativa',
       cancelCompletedSubstituteLog: hasSubstituteLog,
     }, {
       onSuccess: () => {

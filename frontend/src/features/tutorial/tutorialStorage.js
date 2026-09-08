@@ -3,6 +3,7 @@ import {
   TUTORIAL_STEPS,
 } from './tutorialContent'
 import { validateTutorialState } from './tutorialModel'
+import { readExpiringValue, writeExpiringValue } from '../../utils/expiringStorage'
 
 const PERSISTED_KEYS = ['version', 'tutorialRunId', 'status', 'stepId']
 
@@ -31,8 +32,8 @@ export function createTutorialState(initialState, savedState) {
 export function loadTutorialState(storage, key, initialState) {
   if (!key || !storage) return initialState
   try {
-    const raw = storage.getItem(key)
-    return raw ? createTutorialState(initialState, JSON.parse(raw)) : initialState
+    const savedState = readExpiringValue(storage, key)
+    return savedState ? createTutorialState(initialState, savedState) : initialState
   } catch (error) {
     console.error('Tutorial storage could not be read.', { key, error })
     return initialState
@@ -46,7 +47,9 @@ export function saveTutorialState(storage, key, state) {
     return { ok: false, error }
   }
   try {
-    storage.setItem(key, JSON.stringify(serializeTutorialState(state)))
+    if (!writeExpiringValue(storage, key, serializeTutorialState(state))) {
+      throw new Error('Tutorial storage is unavailable.')
+    }
     return { ok: true }
   } catch (error) {
     console.error('Tutorial storage could not be written.', { key, error })

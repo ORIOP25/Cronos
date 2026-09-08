@@ -183,7 +183,6 @@ function baseTestEnvironment(overrides = {}) {
     CELERY_BROKER_URL: 'redis://127.0.0.1:9/0',
     DATABASE_POOLING_ENABLED: 'false',
     RATELIMIT_ENABLED: 'false',
-    SENTRY_DSN: '',
     PYTHONPATH: BACKEND,
     ...overrides,
   }

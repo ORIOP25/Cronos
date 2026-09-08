@@ -1,10 +1,6 @@
 import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-
-vi.mock('../features/tutorial/tutorialTelemetry', () => ({
-  sendTutorialTelemetryEvent: vi.fn().mockResolvedValue(undefined),
-}))
+import { beforeEach, describe, expect, it } from 'vitest'
 
 import Guide from '../pages/Guide'
 import { renderWithRouter } from './testUtils'

@@ -17,7 +17,6 @@ import {
   saveTutorialState,
 } from './tutorialStorage'
 import { createTutorialScenario } from './tutorialScenario'
-import { sendTutorialTelemetryEvent } from './tutorialTelemetry'
 
 function getStorage() {
   return globalThis.localStorage
@@ -40,10 +39,14 @@ export function useTutorialSimulation({ orgId, userId } = {}) {
   const stateRef = useRef(state)
   const isOpenRef = useRef(isOpen)
 
-  stateRef.current = state
-  isOpenRef.current = isOpen
+  useEffect(() => {
+    stateRef.current = state
+    isOpenRef.current = isOpen
+  }, [isOpen, state])
 
   useEffect(() => {
+    // Hydrate persisted external state when the authenticated scope changes.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setIsOpen(false)
     isOpenRef.current = false
     setHydratedStorageKey(null)
@@ -66,17 +69,7 @@ export function useTutorialSimulation({ orgId, userId } = {}) {
     return result
   }, [storageKey])
 
-  const emit = useCallback((eventName, eventState, step = getTutorialStep(eventState.stepId)) => {
-    if (!eventState?.tutorialRunId) return
-    void sendTutorialTelemetryEvent({
-      tutorialRunId: eventState.tutorialRunId,
-      eventName,
-      chapter: step?.chapter ?? null,
-      stepId: step?.id ?? eventState.stepId,
-    })
-  }, [])
-
-  const transition = useCallback((action, { events = [], force = false, open = false, close = false } = {}) => {
+  const transition = useCallback((action, { force = false, open = false, close = false } = {}) => {
     const current = stateRef.current
     const next = tutorialReducer(current, action)
     if (next === current && !force) return false
@@ -92,11 +85,9 @@ export function useTutorialSimulation({ orgId, userId } = {}) {
       isOpenRef.current = false
       setIsOpen(false)
     }
-    // Persistence is attempted before telemetry, even when storage is unavailable.
     void persistence
-    for (const event of events) emit(event.name, next, event.stepId ? getTutorialStep(event.stepId) : undefined)
     return next
-  }, [emit, persist])
+  }, [persist])
 
   const startTutorial = useCallback(() => {
     const current = stateRef.current
@@ -108,10 +99,6 @@ export function useTutorialSimulation({ orgId, userId } = {}) {
     if (current.status !== 'NOT_STARTED') return current
     const next = transition({ type: 'START' }, {
       open: true,
-      events: [
-        { name: 'tutorial_opened', stepId: TUTORIAL_STEPS[0].id },
-        { name: 'chapter_started', stepId: TUTORIAL_STEPS[0].id },
-      ],
     })
     return next || current
   }, [transition])
@@ -119,28 +106,18 @@ export function useTutorialSimulation({ orgId, userId } = {}) {
   const openTutorial = useCallback(() => {
     const current = stateRef.current
     if (current.status === 'NOT_STARTED') return startTutorial()
-    if (current.status === 'IN_PROGRESS' && !isOpenRef.current) {
-      emit('tutorial_opened', current, getTutorialStep(current.stepId))
-    }
     isOpenRef.current = true
     setIsOpen(true)
     return current
-  }, [emit, startTutorial])
+  }, [startTutorial])
 
   const advanceTutorial = useCallback((expectedStepId) => {
-    const current = stateRef.current
-    const nextStep = getTutorialStep(current.stepId)
-    const nextIndex = currentStepIndex + 1
+    const nextStep = getTutorialStep(stateRef.current.stepId)
     const next = transition({ type: 'ADVANCE', expectedStepId }, {
       close: nextStep?.id === TUTORIAL_STEPS.at(-1)?.id,
-      events: nextStep?.id === TUTORIAL_STEPS.at(-1)?.id
-        ? [{ name: 'tutorial_completed', stepId: nextStep.id }]
-        : TUTORIAL_STEPS[nextIndex]?.chapter !== nextStep?.chapter
-          ? [{ name: 'chapter_started', stepId: TUTORIAL_STEPS[nextIndex]?.id }]
-          : [],
     })
     return Boolean(next)
-  }, [currentStepIndex, transition])
+  }, [transition])
 
   const exitTutorial = useCallback(() => {
     const current = stateRef.current
@@ -148,16 +125,13 @@ export function useTutorialSimulation({ orgId, userId } = {}) {
     transition({ type: 'EXIT' }, {
       force: true,
       close: true,
-      events: [{ name: 'tutorial_exited', stepId: current.stepId }],
     })
     return true
   }, [transition])
 
   const skipTutorial = useCallback(() => {
-    const current = stateRef.current
     const next = transition({ type: 'SKIP_TUTORIAL' }, {
       close: true,
-      events: [{ name: 'tutorial_exited', stepId: current.stepId }],
     })
     return Boolean(next)
   }, [transition])
@@ -165,11 +139,6 @@ export function useTutorialSimulation({ orgId, userId } = {}) {
   const repeatTutorial = useCallback(() => {
     const next = transition({ type: 'REPEAT' }, {
       open: true,
-      events: [
-        { name: 'tutorial_repeated', stepId: TUTORIAL_STEPS[0].id },
-        { name: 'tutorial_opened', stepId: TUTORIAL_STEPS[0].id },
-        { name: 'chapter_started', stepId: TUTORIAL_STEPS[0].id },
-      ],
     })
     return next || stateRef.current
   }, [transition])

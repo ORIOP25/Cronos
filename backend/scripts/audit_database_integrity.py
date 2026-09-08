@@ -160,9 +160,13 @@ def _audit_connection(connection) -> list[str]:
         "chk_organization_first_real_schedule_requires_completed",
         "chk_organization_foundation_draft_version",
         "chk_organization_foundation_draft_current_step",
-        "chk_tutorial_telemetry_event_name",
-        "chk_tutorial_telemetry_chapter",
-        "chk_tutorial_telemetry_version",
+        "chk_legal_acceptance_authority",
+        "chk_legal_acceptance_controller_name",
+        "chk_legal_acceptance_registration_number",
+        "chk_legal_acceptance_address",
+        "chk_legal_acceptance_contact_email",
+        "chk_legal_acceptance_representative_name",
+        "chk_legal_acceptance_representative_role",
     }
     missing_checks = required_checks - existing_checks
     if missing_checks:

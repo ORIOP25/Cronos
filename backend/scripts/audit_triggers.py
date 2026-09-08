@@ -28,7 +28,7 @@ FROM pg_trigger t
 JOIN pg_class c ON c.oid = t.tgrelid
 JOIN pg_namespace n ON n.oid = c.relnamespace
 WHERE n.nspname = 'public'
-  AND t.tgname IN ('trg_organization_foundation_monotonic', 'trg_tutorial_telemetry_append_only')
+  AND t.tgname IN ('trg_organization_foundation_monotonic', 'trg_organization_legal_acceptance_append_only')
   AND NOT t.tgisinternal
 ORDER BY t.tgname
 """
@@ -46,7 +46,7 @@ async def _check_triggers() -> list[str]:
         found_expected = set(expected_result.scalars())
         required_triggers = {
             "trg_organization_foundation_monotonic",
-            "trg_tutorial_telemetry_append_only",
+            "trg_organization_legal_acceptance_append_only",
         }
         missing = required_triggers - found_expected
         if missing:

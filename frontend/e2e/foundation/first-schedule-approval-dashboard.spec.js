@@ -4,6 +4,7 @@ import { setupClerkTestingToken } from '@clerk/testing/playwright'
 import { expect, test } from '@playwright/test'
 import {
   allowApiFailure,
+  acceptCurrentLegalDocuments,
   attachRuntimeGuards,
   expectNoAppCrash,
   expectRouteReady,
@@ -55,6 +56,7 @@ async function signInFreshFounder(client, page, userId, organizationName) {
     await existingOrganization.click()
   }
   await page.waitForFunction(() => window.Clerk?.organization?.id?.startsWith('org_'), null, { timeout: 30_000 })
+  await acceptCurrentLegalDocuments(page)
   return page.evaluate(() => window.Clerk.organization.id)
 }
 

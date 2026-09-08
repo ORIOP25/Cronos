@@ -29,6 +29,7 @@ import StatePanel from '../components/StatePanel'
 import { useOrganization } from '@clerk/react'
 import { getCurrentWeekMonday } from '../utils/formatUtils'
 import { getApiErrorMessage } from '../utils/apiErrors'
+import { readExpiringValue, writeExpiringValue } from '../utils/expiringStorage'
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -54,9 +55,7 @@ function getViewStorageKey(orgId) {
 function readStoredView(storageKey) {
   if (!storageKey) return null
   try {
-    const raw = localStorage.getItem(storageKey)
-    if (!raw) return null
-    return JSON.parse(raw)
+    return readExpiringValue(localStorage, storageKey)
   } catch {
     return null
   }
@@ -65,7 +64,7 @@ function readStoredView(storageKey) {
 function writeStoredView(storageKey, viewState) {
   if (!storageKey) return
   try {
-    localStorage.setItem(storageKey, JSON.stringify(viewState))
+    writeExpiringValue(localStorage, storageKey, viewState)
   } catch {
     // no-op
   }
@@ -79,7 +78,7 @@ function getJobStorageKey(orgId) {
 function readStoredJobId(storageKey) {
   if (!storageKey) return null
   try {
-    return localStorage.getItem(storageKey)
+    return readExpiringValue(localStorage, storageKey)
   } catch {
     return null
   }
@@ -88,7 +87,7 @@ function readStoredJobId(storageKey) {
 function writeStoredJobId(storageKey, jobId) {
   if (!storageKey || !jobId) return
   try {
-    localStorage.setItem(storageKey, String(jobId))
+    writeExpiringValue(localStorage, storageKey, String(jobId))
   } catch {
     // no-op for environments without storage access
   }

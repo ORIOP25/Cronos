@@ -14,4 +14,4 @@ os.environ.setdefault("REDIS_URL", "redis://127.0.0.1:9/0")
 os.environ.setdefault("CELERY_BROKER_URL", "redis://127.0.0.1:9/0")
 os.environ["DATABASE_POOLING_ENABLED"] = "false"
 os.environ["RATELIMIT_ENABLED"] = "false"
-os.environ["SENTRY_DSN"] = ""
+pytest_plugins = ("tests._support.db_fixtures",)

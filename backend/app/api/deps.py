@@ -14,6 +14,7 @@ from app.db.database import SessionLocal
 from app.db.tenant import set_async_tenant_context
 from app.scheduler.infrastructure.task_dispatcher import CelerySchedulerTaskDispatcher
 from app.services.clerk_access_service import ClerkAccessService
+from app.services.legal_acceptance_service import LegalAcceptanceService
 from app.services.member_access_operation_service import MemberAccessOperationService
 
 logger = structlog.get_logger(__name__)
@@ -137,8 +138,26 @@ async def get_current_user(
     )
 
 
-async def get_current_active_user(
+async def get_current_legal_accepted_user(
     current_user: Annotated[Actor, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db, scope="function")],
+) -> Actor:
+    status_value = await LegalAcceptanceService(db).status(current_user.organization_id)
+    if status_value.requires_acceptance:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "LEGAL_ACCEPTANCE_REQUIRED",
+                "message": "A organização deve aceitar os documentos legais antes de continuar.",
+                "terms_version": status_value.terms_version,
+                "dpa_version": status_value.dpa_version,
+            },
+        )
+    return current_user
+
+
+async def get_current_active_user(
+    current_user: Annotated[Actor, Depends(get_current_legal_accepted_user)],
     db: Annotated[AsyncSession, Depends(get_db, scope="function")],
 ) -> Actor:
     status_value = await db.scalar(
@@ -189,12 +208,26 @@ def actor_role(current_user: Actor) -> str:
 
 
 def get_foundation_admin(
-    current_user: Annotated[Actor, Depends(get_current_user)],
+    current_user: Annotated[Actor, Depends(get_current_legal_accepted_user)],
 ) -> Actor:
     if not user_has_admin_capability(current_user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admin access required",
+        )
+    return current_user
+
+
+def get_legal_admin(
+    current_user: Annotated[Actor, Depends(get_current_user)],
+) -> Actor:
+    if not user_has_admin_capability(current_user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "code": "LEGAL_ACCEPTANCE_ADMIN_REQUIRED",
+                "message": "A aceitação exige capacidade de administrador.",
+            },
         )
     return current_user
 
@@ -222,6 +255,8 @@ MemberAccessOperationDep = Annotated[
     Depends(get_member_access_operation_service),
 ]
 SessionActor = Annotated[Actor, Depends(get_current_user)]
+LegalAcceptedActor = Annotated[Actor, Depends(get_current_legal_accepted_user)]
+LegalAdminActor = Annotated[Actor, Depends(get_legal_admin)]
 FoundationAdminActor = Annotated[Actor, Depends(get_foundation_admin)]
 ActiveActor = Annotated[Actor, Depends(get_current_active_user)]
 AdminActor = Annotated[Actor, Depends(get_current_active_admin)]

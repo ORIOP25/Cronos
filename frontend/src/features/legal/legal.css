@@ -1,0 +1,28 @@
+.cronos-legal { background: var(--brand-50); color: var(--rs-heading); min-height: 70vh; padding: 4rem 1.25rem 6rem; }
+.cronos-legal__inner { max-width: 780px; margin: 0 auto; }
+.cronos-legal__back { color: var(--brand-800); font-weight: 600; }
+.cronos-legal__header { border-bottom: 1px solid var(--rs-card-border); margin: 2rem 0; padding-bottom: 2rem; }
+.cronos-legal__header h1 { margin-bottom: 1rem; }
+.cronos-legal__meta { display: flex; gap: 2rem; margin: 1.5rem 0 0; }
+.cronos-legal__meta div { display: grid; gap: .2rem; }
+.cronos-legal__meta dt { color: var(--rs-muted); font-size: .8rem; text-transform: uppercase; }
+.cronos-legal__meta dd { margin: 0; font-weight: 600; }
+.cronos-legal__toc { background: var(--brand-100); border: 1px solid var(--rs-card-border); padding: 1rem 1.25rem; }
+.cronos-legal__toc ol { columns: 2; margin: .75rem 0 0; padding-left: 1.25rem; }
+.cronos-legal__body section { scroll-margin-top: 2rem; }
+.cronos-legal__body h2 { margin-top: 2.5rem; font-size: 1.45rem; }
+.cronos-legal__body p { line-height: 1.75; }
+.cronos-legal__table-wrap { overflow-x: auto; }
+.cronos-legal table { border-collapse: collapse; min-width: 680px; width: 100%; }
+.cronos-legal th, .cronos-legal td { border: 1px solid var(--rs-card-border); padding: .75rem; text-align: left; vertical-align: top; }
+.cronos-legal th { background: var(--brand-100); }
+.legal-acceptance-page { align-items: flex-start; padding: 3rem 1rem; }
+.legal-acceptance-card { background: var(--brand-100); border: 1px solid var(--rs-card-border); border-radius: .75rem; margin: 0 auto; max-width: 720px; padding: 2rem; width: 100%; }
+.legal-acceptance-card form { display: grid; gap: 1rem; }
+.legal-acceptance-field { display: grid; gap: .4rem; }
+.legal-acceptance-field span { font-weight: 600; }
+.legal-acceptance-field input { border: 1px solid var(--rs-card-border); border-radius: .35rem; padding: .7rem; width: 100%; }
+.legal-acceptance-note { font-size: .9rem; }
+.legal-acceptance-actions { align-items: center; display: flex; gap: 1rem; margin-top: 1.5rem; }
+@media print { .cronos-legal { padding: 0; } .cronos-legal__back, .cronos-legal__toc { display: none; } .cronos-legal__body h2 { break-after: avoid; } }
+@media (max-width: 640px) { .cronos-legal__toc ol { columns: 1; } .cronos-legal__meta { gap: 1rem; } }

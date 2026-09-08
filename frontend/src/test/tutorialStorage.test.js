@@ -24,20 +24,20 @@ describe('tutorialStorage v3', () => {
     const key = getTutorialStorageKey('user_1', 'org_1')
 
     expect(saveTutorialState(localStorage, key, next)).toEqual({ ok: true })
-    const raw = JSON.parse(localStorage.getItem(key))
-    expect(raw).toEqual({
+    const envelope = JSON.parse(localStorage.getItem(key))
+    expect(envelope.value).toEqual({
       version: TUTORIAL_VERSION,
       tutorialRunId: 'run-1',
       status: 'IN_PROGRESS',
       stepId: 'courses_classes',
     })
-    expect(Object.keys(raw)).toHaveLength(4)
-    expect(loadTutorialState(localStorage, key, INITIAL_TUTORIAL_STATE)).toEqual(raw)
+    expect(envelope.expiresAt).toBeGreaterThan(Date.now())
+    expect(Object.keys(envelope.value)).toHaveLength(4)
+    expect(loadTutorialState(localStorage, key, INITIAL_TUTORIAL_STATE)).toEqual(envelope.value)
     expect(serializeTutorialState({ ...next, values: { ignored: true } })).not.toHaveProperty('values')
   })
 
   it('rejects malformed or legacy-shaped v3 state', () => {
-    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
     const key = getTutorialStorageKey('user_1', 'org_1')
     localStorage.setItem(key, JSON.stringify({
       version: 3,
@@ -49,7 +49,7 @@ describe('tutorialStorage v3', () => {
     expect(loadTutorialState(localStorage, key, INITIAL_TUTORIAL_STATE)).toBe(INITIAL_TUTORIAL_STATE)
     localStorage.setItem(key, '{invalid-json')
     expect(loadTutorialState(localStorage, key, INITIAL_TUTORIAL_STATE)).toBe(INITIAL_TUTORIAL_STATE)
-    expect(consoleError).toHaveBeenCalled()
+    expect(localStorage.getItem(key)).toBeNull()
   })
 
   it('requires authenticated user and organization identity for persistence', () => {

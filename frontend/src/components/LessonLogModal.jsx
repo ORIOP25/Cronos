@@ -230,6 +230,9 @@ const LessonLogModal = ({ onClose, slot, isAdmin = false, readOnly = false, allo
         {/* Lesson log form */}
         <div className="mb-3">
           <label htmlFor="lessonSummary" className="form-label fw-semibold">Sumário</label>
+          <p id="lesson-log-privacy-note" className="form-text">
+            Não inclua nomes de alunos, dados de saúde, necessidades educativas ou outros dados sensíveis. Registe apenas informação operacional necessária.
+          </p>
           <CFormTextarea
             id="lessonSummary"
             rows={3}
@@ -238,6 +241,7 @@ const LessonLogModal = ({ onClose, slot, isAdmin = false, readOnly = false, allo
             onChange={(e) => setSummary(e.target.value)}
             disabled={!canEditForm}
             maxLength={MAX_SUMMARY_LENGTH}
+            aria-describedby="lesson-log-privacy-note"
           />
           <div className="text-muted text-end small mt-1" style={{ fontSize: '0.7rem' }}>
             {summary.length}/{MAX_SUMMARY_LENGTH}
@@ -253,6 +257,7 @@ const LessonLogModal = ({ onClose, slot, isAdmin = false, readOnly = false, allo
             onChange={(e) => setNotes(e.target.value)}
             disabled={!canEditForm}
             maxLength={MAX_NOTES_LENGTH}
+            aria-describedby="lesson-log-privacy-note"
           />
           <div className="text-muted text-end small mt-1" style={{ fontSize: '0.7rem' }}>
             {notes.length}/{MAX_NOTES_LENGTH}

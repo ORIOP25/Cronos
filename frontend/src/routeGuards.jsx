@@ -10,6 +10,7 @@ import {
   useOrganizationList,
 } from '@clerk/react'
 import { useCurrentMember } from './features/members/data'
+import { useLegalStatus } from './features/legal/data'
 import { recoverOrganizationSession } from './features/members/recoverOrganizationSession'
 import apiClient from './apiClient'
 import {
@@ -79,6 +80,9 @@ function useOrganizationGuardState() {
   const organizationState = useOrganization()
   const list = useOrganizationList({ userMemberships: { infinite: true } })
   const member = useCurrentMember({ enabled: Boolean(organizationState.organization) })
+  const legal = useLegalStatus({
+    enabled: Boolean(organizationState.organization) && Boolean(member.isSuccess),
+  })
   return {
     ...auth,
     organization: organizationState.organization,
@@ -87,6 +91,7 @@ function useOrganizationGuardState() {
     listLoaded: list.isLoaded,
     memberships: list.userMemberships?.data || [],
     member,
+    legal,
     recoverSession: async () => {
       const organizationId = organizationState.organization?.id
       const currentMember = await recoverOrganizationSession({
@@ -104,6 +109,7 @@ function useOrganizationGuardState() {
 
 function MemberGate({ children, capability, requireTeacherId = false, redirectToDefault = false, allowUncompletedFoundation = false }) {
   const state = useOrganizationGuardState()
+  const location = useLocation()
   const { data: member, isLoading: memberLoading, isError, error, refetch } = state.member
   if (!state.isLoaded || !state.orgLoaded || !state.listLoaded) return <PageLoader />
   if (!state.isSignedIn) return <RedirectToCurrentPageSignIn />
@@ -117,6 +123,11 @@ function MemberGate({ children, capability, requireTeacherId = false, redirectTo
     return <Navigate to={ROUTE_CREATE_ORG} replace />
   }
   if (isError) return <MemberQueryFailure error={error} recoverSession={state.recoverSession} refetch={refetch} signOut={state.signOut} />
+  if (state.legal.isLoading) return <PageLoader />
+  if (state.legal.isError) return <MemberQueryFailure error={state.legal.error} recoverSession={state.recoverSession} refetch={state.legal.refetch} signOut={state.signOut} />
+  if (state.legal.data?.requires_acceptance) {
+    return <Navigate to="/legal/aceitar" state={{ from: location.pathname + location.search }} replace />
+  }
   if (redirectToDefault) return <Navigate to={getDefaultRouteForMember(member)} replace />
 
   // Foundation gate: incomplete organizations have no operational routes.

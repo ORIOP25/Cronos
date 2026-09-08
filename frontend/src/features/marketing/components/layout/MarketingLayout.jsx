@@ -8,19 +8,25 @@ import { useScrollToTop } from '../../hooks/useScrollToTop'
 import { useMarketingMetadata } from '../../hooks/useMarketingMetadata'
 import '../../../../pages/MarketingSite.css'
 
-export default function MarketingLayout() {
+export default function MarketingLayout({ allowSignedIn = false }) {
   const { isLoaded, isSignedIn } = useAuth()
   useScrollToTop()
-  useMarketingMetadata(!isLoaded || !isSignedIn)
+  useMarketingMetadata(allowSignedIn || !isLoaded || !isSignedIn)
+
+  const content = (
+    <div className="cronos-marketing">
+      <MarketingHeader />
+      <main><Outlet /></main>
+      <MarketingFooter />
+      <ScrollToTopButton />
+    </div>
+  )
+
+  if (allowSignedIn) return content
 
   return (
     <Show when="signed-out" fallback={<SignedInRedirect />}>
-      <div className="cronos-marketing">
-        <MarketingHeader />
-        <main><Outlet /></main>
-        <MarketingFooter />
-        <ScrollToTopButton />
-      </div>
+      {content}
     </Show>
   )
 }

@@ -3,7 +3,6 @@
 from contextlib import asynccontextmanager
 
 import httpx
-import sentry_sdk
 import structlog
 from fastapi import FastAPI, Request
 from fastapi.encoders import jsonable_encoder
@@ -61,19 +60,6 @@ async def lifespan(app: FastAPI):
 # ==========================================
 # INICIALIZAÇÃO DA APP
 # ==========================================
-
-if settings.SENTRY_DSN:
-    sentry_sdk.init(
-        dsn=settings.SENTRY_DSN,
-        environment=settings.ENVIRONMENT,  # 'local' ou 'production'
-        # --- Performance & Profiling ---
-        traces_sample_rate=settings.SENTRY_TRACES_SAMPLE_RATE,
-        # Dados extra
-        send_default_pii=False,  # Evita PII em produção
-    )
-    logger.info("[OK] Sentry: LIGADO")
-else:
-    logger.warning("[WARN] Sentry: DESLIGADO (DSN não configurado)")
 
 app = FastAPI(
     title=settings.PROJECT_NAME,

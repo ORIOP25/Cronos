@@ -30,16 +30,6 @@ def test_organization_foundation_draft_model(clean_database):
         assert hasattr(models.OrganizationFoundationDraft, "updated_by_membership_id")
 
 
-def test_tutorial_telemetry_event_model(clean_database):
-    with runtime_sync_test_engine.connect() as conn:
-        conn.execute(text("SELECT set_config('app.current_organization_id', '1', true)"))
-        assert hasattr(models, "TutorialTelemetryEvent")
-        assert hasattr(models.TutorialTelemetryEvent, "tutorial_run_id")
-        assert hasattr(models.TutorialTelemetryEvent, "client_event_id")
-        assert hasattr(models.TutorialTelemetryEvent, "event_name")
-        assert hasattr(models.TutorialTelemetryEvent, "tutorial_version")
-
-
 def test_monotonic_foundation_trigger_prevents_reopening(clean_database):
     with sync_test_engine.connect() as conn:
         res = conn.execute(
@@ -82,7 +72,6 @@ def test_monotonic_foundation_trigger_prevents_altering_timestamps(clean_databas
             )
         ).scalar_one()
         conn.commit()
-
         # Cannot delete foundation_completed_at
         with pytest.raises(DBAPIError):
             conn.execute(
@@ -340,102 +329,4 @@ def test_organization_foundation_draft_constraints_and_composite_fk(clean_databa
         conn.commit()
 
 
-def test_tutorial_telemetry_event_append_only_and_idempotency(clean_database):
-    org_marker = uuid.uuid4().hex[:8]
-    with runtime_sync_test_engine.connect() as conn:
-        org_id = conn.execute(
-            text(
-                """
-                SELECT organization_id FROM app_security.bootstrap_organization_admin(
-                    :user_id, :org_id, :org_name, :email, :profile, :membership_id
-                )
-                """
-            ),
-            {
-                "user_id": f"user-{org_marker}",
-                "org_id": f"org-{org_marker}",
-                "org_name": f"Org Telemetry {org_marker}",
-                "email": f"telemetry-{org_marker}@example.test",
-                "profile": "Telemetry Admin",
-                "membership_id": f"mem-{org_marker}",
-            },
-        ).scalar_one()
-        conn.commit()
-
-        conn.execute(
-            text("SELECT set_config('app.current_organization_id', :org, true)"),
-            {"org": str(org_id)},
-        )
-
-        run_id = str(uuid.uuid4())
-        client_event_id = str(uuid.uuid4())
-
-        # Insert telemetry event
-        conn.execute(
-            text(
-                """
-                INSERT INTO tutorial_telemetry_event (
-                    organization_id, tutorial_run_id, client_event_id, tutorial_version, event_name, chapter, step_id
-                ) VALUES (
-                    :org_id, :run_id, :client_event_id, 3, 'tutorial_opened', 1, 'structure_overview'
-                )
-                """
-            ),
-            {
-                "org_id": org_id,
-                "run_id": run_id,
-                "client_event_id": client_event_id,
-            },
-        )
-        conn.commit()
-
-        # Duplicate (organization_id, client_event_id) violates uniqueness
-        with pytest.raises(DBAPIError):
-            conn.execute(
-                text(
-                    """
-                    INSERT INTO tutorial_telemetry_event (
-                        organization_id, tutorial_run_id, client_event_id, tutorial_version, event_name, chapter, step_id
-                    ) VALUES (
-                        :org_id, :run_id, :client_event_id, 3, 'tutorial_opened', 1, 'structure_overview'
-                    )
-                    """
-                ),
-                {
-                    "org_id": org_id,
-                    "run_id": run_id,
-                    "client_event_id": client_event_id,
-                },
-            )
-            conn.commit()
-        conn.rollback()
-
-        conn.execute(
-            text("SELECT set_config('app.current_organization_id', :org, true)"),
-            {"org": str(org_id)},
-        )
-
-        # UPDATE is prohibited for cronos_app
-        with pytest.raises(DBAPIError):
-            conn.execute(
-                text(
-                    "UPDATE tutorial_telemetry_event SET event_name = 'tutorial_completed' WHERE client_event_id = :ceid"
-                ),
-                {"ceid": client_event_id},
-            )
-            conn.commit()
-        conn.rollback()
-
-        conn.execute(
-            text("SELECT set_config('app.current_organization_id', :org, true)"),
-            {"org": str(org_id)},
-        )
-
-        # DELETE is prohibited for cronos_app
-        with pytest.raises(DBAPIError):
-            conn.execute(
-                text("DELETE FROM tutorial_telemetry_event WHERE client_event_id = :ceid"),
-                {"ceid": client_event_id},
-            )
-            conn.commit()
-        conn.rollback()
+# The remaining foundation constraints are covered above.

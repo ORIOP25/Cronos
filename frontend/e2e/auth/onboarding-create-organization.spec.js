@@ -2,7 +2,7 @@ import { createClerkClient } from '@clerk/backend'
 import { setupClerkTestingToken } from '@clerk/testing/playwright'
 import { createPageObjects } from '@clerk/testing/playwright/unstable'
 import { expect, test } from '@playwright/test'
-import { attachRuntimeGuards, expectRouteReady } from '../utils/clerk-helpers.js'
+import { acceptCurrentLegalDocuments, attachRuntimeGuards, expectRouteReady } from '../utils/clerk-helpers.js'
 import { createE2eRunKey, E2E_BASE_URL } from '../utils/e2e-config.js'
 
 const OPERATION_TIMEOUT_MS = 30_000
@@ -91,6 +91,7 @@ test('manual founder onboarding creates and activates an organization', async ({
     )
     const organizationId = await page.evaluate(() => window.Clerk.organization.id)
     organizationIds.add(organizationId)
+    await acceptCurrentLegalDocuments(page)
     await page.waitForURL('**/foundation', { timeout: OPERATION_TIMEOUT_MS })
     expect(organizationId).toMatch(/^org_/)
     await expectRouteReady(page, '/foundation')

@@ -24,8 +24,6 @@ describe('E2E runtime guard classifiers', () => {
   })
 
   it.each([
-    ['Google Fonts stylesheet', 'https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap'],
-    ['Google Fonts file', 'https://fonts.gstatic.com/s/inter/v18/UcCO3FwrK3iLTcviYwYZ8UA3.woff2'],
     ['Clerk browser bundle', 'https://welcome-cat-83.clerk.accounts.dev/npm/@clerk/clerk-js@5/dist/clerk.browser.js'],
     ['Clerk organization memberships read', 'https://welcomed-cat-83.clerk.accounts.dev/v1/me/organization_memberships?limit=10'],
     ['Clerk hosted sign-in navigation', 'https://welcomed-cat-83.accounts.dev/sign-in?__clerk_db_jwt=test-token'],
@@ -69,16 +67,16 @@ describe('E2E runtime guard classifiers', () => {
     expect(error).toBeNull()
   })
 
-  it('ignores only Google Fonts asset 404 console noise', () => {
+  it('keeps unexpected asset failures visible', () => {
     const font404 = getConsoleError({
       type: 'error',
       text: 'Failed to load resource: the server responded with a status of 404 ()',
-      locationUrl: 'https://fonts.gstatic.com/s/outfit/v15/font.woff2',
+      locationUrl: 'https://cdn.example.test/font.woff2',
     }, [])
     const font500 = getConsoleError({
       type: 'error',
       text: 'Failed to load resource: the server responded with a status of 500 ()',
-      locationUrl: 'https://fonts.gstatic.com/s/outfit/v15/font.woff2',
+      locationUrl: 'https://cdn.example.test/font.woff2',
     }, [])
     const other404 = getConsoleError({
       type: 'error',
@@ -86,7 +84,7 @@ describe('E2E runtime guard classifiers', () => {
       locationUrl: 'https://cdn.example.test/font.woff2',
     }, [])
 
-    expect(font404).toBeNull()
+    expect(font404).toContain('Browser console error')
     expect(font500).toContain('Browser console error')
     expect(other404).toContain('Browser console error')
   })

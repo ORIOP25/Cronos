@@ -49,7 +49,7 @@ In accordance with ASD-STE100, technical concepts have single approved terms. Po
 | **Draft version** | Optimistic concurrency version | Monotonic version sent as `expected_version` to prevent overwriting another administrator's draft. |
 | **Current member** | Local organization member | The tenant-scoped membership returned by `/members/me` and used by route guards. |
 | **Tutorial run** | Local tutorial execution | Browser-scoped tutorial state identified by a run ID and separated from operational data. |
-| **Tutorial telemetry** | Tutorial usage event | Best-effort event stored by organization and deduplicated by client event ID. |
+| **Tutorial checkpoint** | Local tutorial progress | Minimal browser-only state with a 30-day expiry; it is not an operational record. |
 | **Preparation dashboard** | Pre-operational dashboard | Dashboard mode shown after Foundation and before the first real schedule approval. |
 | **Operational dashboard** | Active operations dashboard | Dashboard mode shown after the first real schedule approval. |
 
