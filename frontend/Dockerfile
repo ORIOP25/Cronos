@@ -28,3 +28,8 @@ FROM nginxinc/nginx-unprivileged:1.29-alpine@sha256:0c79d56aee561a1d81c63f00eee5
 COPY --from=build /app/dist /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 EXPOSE 8080
+
+# CI uses Clerk's reserved test instance, whose accounts.dev origins must not
+# be present in the production image's browser policy.
+FROM runtime AS ci
+COPY nginx.ci.conf /etc/nginx/conf.d/default.conf
