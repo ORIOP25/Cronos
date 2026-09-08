@@ -120,7 +120,7 @@ export async function acceptCurrentLegalDocuments(page) {
     try {
       await expect.poll(
         async () => {
-          const result = await page.evaluate(async ({ shouldBootstrap }) => {
+          const token = await page.evaluate(async () => {
             let token = null
             const organizationId = window.Clerk?.organization?.id ?? null
             const tokenOptions = organizationId ? { organizationId } : undefined
@@ -139,30 +139,36 @@ export async function acceptCurrentLegalDocuments(page) {
                 token = null
               }
             }
-            if (!token) return { state: null, attemptedBootstrap: false }
-            if (shouldBootstrap) {
-              try {
-                await fetch('/api/v1/session/bootstrap', {
-                  method: 'POST',
-                  headers: { Authorization: `Bearer ${token}` },
-                })
-              } catch {
-                // The next poll can retry status after a transient bootstrap failure.
-              }
+            return token
+          })
+          if (!token) return legalState
+
+          // Use Playwright's API context for the local bootstrap/status calls.
+          // Requests made with page.evaluate can be aborted by the following
+          // route navigation and are then reported as test failures.
+          if (!bootstrapAttempted) {
+            bootstrapAttempted = true
+            try {
+              await page.request.post(`${E2E_BASE_URL}/api/v1/session/bootstrap`, {
+                headers: { Authorization: `Bearer ${token}` },
+              })
+            } catch {
+              // The next status poll can still observe a successful mirror sync.
             }
-            const response = await fetch('/api/v1/legal/status', {
+          }
+
+          let response
+          try {
+            response = await page.request.get(`${E2E_BASE_URL}/api/v1/legal/status`, {
               headers: { Authorization: `Bearer ${token}` },
             })
-            if (!response.ok) return { state: null, attemptedBootstrap: shouldBootstrap }
-            const status = await response.json()
-            if (status.requires_acceptance) {
-              return { state: 'required', attemptedBootstrap: shouldBootstrap }
-            }
-            if (status.accepted) return { state: 'accepted', attemptedBootstrap: shouldBootstrap }
-            return { state: null, attemptedBootstrap: shouldBootstrap }
-          }, { shouldBootstrap: !bootstrapAttempted })
-          if (result.attemptedBootstrap) bootstrapAttempted = true
-          legalState = result.state
+          } catch {
+            return legalState
+          }
+          if (!response.ok()) return legalState
+          const status = await response.json()
+          if (status.requires_acceptance) legalState = 'required'
+          else if (status.accepted) legalState = 'accepted'
           return legalState
         },
         { timeout: 10_000, intervals: [250, 500, 1_000] },
@@ -181,7 +187,24 @@ export async function acceptCurrentLegalDocuments(page) {
     }
 
     const legalHeading = page.getByRole('heading', { name: 'Antes de configurar a escola' })
-    await expect(legalHeading).toBeVisible({ timeout: 10_000 })
+    // The direct status check above can finish before the React route guard has
+    // replaced the previous page. Reload the legal route once more and wait for
+    // the actual form before interacting with it.
+    let legalFormReady = false
+    for (let renderAttempt = 0; renderAttempt < 3; renderAttempt += 1) {
+      if (!page.url().includes('/legal/aceitar')) {
+        await page.goto(`${E2E_BASE_URL}/legal/aceitar`, { waitUntil: 'domcontentloaded' })
+      }
+      try {
+        await expect(legalHeading).toBeVisible({ timeout: 10_000 })
+        legalFormReady = true
+        break
+      } catch {
+        if (renderAttempt === 2) throw new Error('Legal acceptance form did not render for the E2E organization.')
+        await page.goto(`${E2E_BASE_URL}/legal/aceitar`, { waitUntil: 'domcontentloaded' })
+      }
+    }
+    if (!legalFormReady) throw new Error('Legal acceptance form did not render for the E2E organization.')
     await page.getByLabel('Nome legal da entidade').fill('Entidade E2E, ENI')
     await page.getByLabel('NIF/NIPC').fill('999999990')
     await page.getByLabel('Morada registada').fill('Rua E2E, 1, 1000-000 Lisboa')
