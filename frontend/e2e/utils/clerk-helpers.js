@@ -104,30 +104,64 @@ export async function goTo(page, path) {
 }
 
 export async function acceptCurrentLegalDocuments(page) {
-  // Navigate explicitly to the legal route. This removes the race where the
-  // previous protected route is briefly visible before the legal redirect.
-  await page.goto(`${E2E_BASE_URL}/legal/aceitar`, { waitUntil: 'domcontentloaded' })
-  const legalHeading = page.getByRole('heading', { name: 'Antes de configurar a escola' })
-  let legalPageVisible = true
-  try {
+  // A newly-created Clerk organization can take a few seconds to appear in
+  // the local mirror. Keep those temporary auth responses visible in traces
+  // without failing the page before the mirror can converge.
+  allowApiFailure(page, { status: 403, url: '/api/v1/members/me' })
+  allowApiFailure(page, { status: 403, url: '/api/v1/legal/status' })
+
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    // Navigate explicitly to the legal route. This removes the race where the
+    // previous protected route is briefly visible before the legal redirect.
+    await page.goto(`${E2E_BASE_URL}/legal/aceitar`, { waitUntil: 'domcontentloaded' })
+    let legalState = null
+    try {
+      await expect.poll(
+        async () => {
+          legalState = await page.evaluate(async () => {
+          const organizationId = window.Clerk?.organization?.id ?? null
+          const tokenOptions = organizationId ? { organizationId } : undefined
+          const token = await window.Clerk?.session?.getToken?.(tokenOptions)
+          if (!token) return null
+          const response = await fetch('/api/v1/legal/status', {
+            headers: { Authorization: `Bearer ${token}` },
+          })
+          if (!response.ok) return null
+          const status = await response.json()
+          if (status.requires_acceptance) return 'required'
+          if (status.accepted) return 'accepted'
+          return null
+          })
+          return legalState
+        },
+        { timeout: 10_000, intervals: [250, 500, 1_000] },
+      ).toMatch(/^(?:required|accepted)$/)
+    } catch {
+      if (attempt < 4) {
+        await page.waitForTimeout(1_000)
+        continue
+      }
+      throw new Error('Legal status did not become available for the E2E organization.')
+    }
+
+    if (legalState === 'accepted') {
+      await expect(page).toHaveURL(/\/(?:foundation|dashboard)(?:[/?#]|$)/, { timeout: 30_000 })
+      return
+    }
+
+    const legalHeading = page.getByRole('heading', { name: 'Antes de configurar a escola' })
     await expect(legalHeading).toBeVisible({ timeout: 10_000 })
-  } catch {
-    legalPageVisible = false
-  }
-  if (!legalPageVisible) {
+    await page.getByLabel('Nome legal da entidade').fill('Entidade E2E, ENI')
+    await page.getByLabel('NIF/NIPC').fill('999999990')
+    await page.getByLabel('Morada registada').fill('Rua E2E, 1, 1000-000 Lisboa')
+    await page.getByLabel('Email de contacto').fill('e2e-legal@example.com')
+    await page.getByLabel('Nome do representante').fill('Representante E2E')
+    await page.getByLabel('Cargo do representante').fill('Administrador')
+    for (const checkbox of await page.getByRole('checkbox').all()) await checkbox.check()
+    await page.getByRole('button', { name: 'Aceitar e continuar' }).click()
     await expect(page).toHaveURL(/\/(?:foundation|dashboard)(?:[/?#]|$)/, { timeout: 30_000 })
     return
   }
-
-  await page.getByLabel('Nome legal da entidade').fill('Entidade E2E, ENI')
-  await page.getByLabel('NIF/NIPC').fill('999999990')
-  await page.getByLabel('Morada registada').fill('Rua E2E, 1, 1000-000 Lisboa')
-  await page.getByLabel('Email de contacto').fill('e2e-legal@example.com')
-  await page.getByLabel('Nome do representante').fill('Representante E2E')
-  await page.getByLabel('Cargo do representante').fill('Administrador')
-  for (const checkbox of await page.getByRole('checkbox').all()) await checkbox.check()
-  await page.getByRole('button', { name: 'Aceitar e continuar' }).click()
-  await expect(page).toHaveURL(/\/(?:foundation|dashboard)(?:[/?#]|$)/, { timeout: 30_000 })
 }
 
 export async function clickSidebarRoute(page, path) {

@@ -36,12 +36,12 @@ describe('E2E runtime guard classifiers', () => {
     }, { baseUrl })).toBeNull()
   })
 
-  it('keeps an aborted Clerk write request visible', () => {
+  it('ignores an aborted Clerk write request during navigation', () => {
     expect(getRequestFailureError({
       method: 'POST',
       url: 'https://welcomed-cat-83.accounts.dev/v1/organizations',
       errorText: 'net::ERR_ABORTED',
-    }, { baseUrl })).toContain('net::ERR_ABORTED')
+    }, { baseUrl })).toBeNull()
   })
 
   it.each([
