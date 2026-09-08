@@ -105,12 +105,21 @@ export async function goTo(page, path) {
 }
 
 export async function acceptCurrentLegalDocuments(page) {
-  await expect.poll(() => page.url(), { timeout: 30_000 }).toMatch(
-    /\/(?:legal\/aceitar|foundation|dashboard)(?:[/?#]|$)/,
-  )
-  if (!/\/legal\/aceitar(?:[/?#]|$)/.test(page.url())) return
+  // Navigate explicitly to the legal route. This removes the race where the
+  // previous protected route is briefly visible before the legal redirect.
+  await page.goto(`${E2E_BASE_URL}/legal/aceitar`, { waitUntil: 'domcontentloaded' })
+  const legalHeading = page.getByRole('heading', { name: 'Antes de configurar a escola' })
+  let legalPageVisible = true
+  try {
+    await expect(legalHeading).toBeVisible({ timeout: 10_000 })
+  } catch {
+    legalPageVisible = false
+  }
+  if (!legalPageVisible) {
+    await expect(page).toHaveURL(/\/(?:foundation|dashboard)(?:[/?#]|$)/, { timeout: 30_000 })
+    return
+  }
 
-  await expect(page.getByRole('heading', { name: 'Antes de configurar a escola' })).toBeVisible()
   await page.getByLabel('Nome legal da entidade').fill('Entidade E2E, ENI')
   await page.getByLabel('NIF/NIPC').fill('999999990')
   await page.getByLabel('Morada registada').fill('Rua E2E, 1, 1000-000 Lisboa')

@@ -7,6 +7,7 @@ from contextlib import redirect_stdout
 from datetime import date, time
 from io import StringIO
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models, schemas
@@ -19,6 +20,47 @@ from app.services.e2e_clerk_state import (
     prepare_e2e_clerk_state,
 )
 from app.services.foundation_service import FoundationService
+
+
+async def _ensure_default_legal_acceptance(
+    db: AsyncSession,
+    result: E2EClerkPrepResult,
+) -> None:
+    """Seed the shared E2E organization past the legal gate.
+
+    The onboarding tests create fresh organizations and accept the documents
+    through the UI. The shared organization used by the remaining E2E suite
+    is infrastructure, so its current acceptance must be prepared before
+    admin and teacher sessions start in parallel.
+    """
+    from app.legal import CURRENT_DPA_VERSION, CURRENT_TERMS_VERSION
+
+    acceptance = await db.scalar(
+        select(models.OrganizationLegalAcceptance).where(
+            models.OrganizationLegalAcceptance.organization_id == result.organization_id,
+            models.OrganizationLegalAcceptance.terms_version == CURRENT_TERMS_VERSION,
+            models.OrganizationLegalAcceptance.dpa_version == CURRENT_DPA_VERSION,
+        )
+    )
+    if acceptance is not None:
+        return
+
+    db.add(
+        models.OrganizationLegalAcceptance(
+            organization_id=result.organization_id,
+            accepted_by_membership_id_snapshot=result.admin_membership_id,
+            controller_legal_name="Entidade E2E, ENI",
+            controller_registration_number="999999990",
+            controller_registered_address="Rua E2E, 1, 1000-000 Lisboa",
+            controller_contact_email="e2e-legal@example.com",
+            representative_name="Representante E2E",
+            representative_role="Administrador",
+            authority_confirmed=True,
+            terms_version=CURRENT_TERMS_VERSION,
+            dpa_version=CURRENT_DPA_VERSION,
+        )
+    )
+    await db.flush()
 
 
 def _default_foundation_data() -> schemas.FoundationDraftData:
@@ -86,6 +128,7 @@ async def _main() -> int:
             # service emits an informational grid event on stdout, so keep
             # that implementation detail out of the machine-readable output.
             with redirect_stdout(StringIO()):
+                await _ensure_default_legal_acceptance(db, result)
                 await _ensure_default_foundation(db, result)
             await db.commit()
         except E2EClerkPreflightError as exc:
