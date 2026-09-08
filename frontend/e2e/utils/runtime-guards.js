@@ -81,8 +81,10 @@ function isBenignAbortedRequest({ method, url }, { baseUrl }) {
   if (method.toUpperCase() === 'GET' && isClerkImageUrl(parsedUrl)) {
     return true
   }
-  return ['GET', 'HEAD'].includes(method.toUpperCase())
-    && isClerkHostedUrl(parsedUrl)
+  // Clerk can cancel maintenance POSTs (for example sessions/*/touch) when
+  // a test navigates or closes a context. This is the same benign abort as
+  // its cancelled GETs; real Clerk network errors still surface below.
+  return isClerkHostedUrl(parsedUrl)
 }
 
 function normalizedText(value) {
