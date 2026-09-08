@@ -109,21 +109,21 @@ export async function acceptCurrentLegalDocuments(page) {
   // without failing the page before the mirror can converge.
   allowApiFailure(page, { status: 403, url: '/api/v1/members/me' })
   allowApiFailure(page, { status: 403, url: '/api/v1/legal/status' })
+  allowApiFailure(page, { status: 403, url: '/api/v1/session/bootstrap' })
 
   for (let attempt = 0; attempt < 5; attempt += 1) {
     // Navigate explicitly to the legal route. This removes the race where the
     // previous protected route is briefly visible before the legal redirect.
     await page.goto(`${E2E_BASE_URL}/legal/aceitar`, { waitUntil: 'domcontentloaded' })
     let legalState = null
+    let bootstrapAttempted = false
     try {
       await expect.poll(
         async () => {
-          legalState = await page.evaluate(async () => {
+          const result = await page.evaluate(async ({ shouldBootstrap }) => {
             let token = null
             const organizationId = window.Clerk?.organization?.id ?? null
-            const tokenOptions = organizationId
-              ? { organizationId, skipCache: true }
-              : undefined
+            const tokenOptions = organizationId ? { organizationId } : undefined
             try {
               token = await window.Clerk?.session?.getToken?.(tokenOptions)
             } catch {
@@ -139,16 +139,30 @@ export async function acceptCurrentLegalDocuments(page) {
                 token = null
               }
             }
-            if (!token) return null
+            if (!token) return { state: null, attemptedBootstrap: false }
+            if (shouldBootstrap) {
+              try {
+                await fetch('/api/v1/session/bootstrap', {
+                  method: 'POST',
+                  headers: { Authorization: `Bearer ${token}` },
+                })
+              } catch {
+                // The next poll can retry status after a transient bootstrap failure.
+              }
+            }
             const response = await fetch('/api/v1/legal/status', {
               headers: { Authorization: `Bearer ${token}` },
             })
-            if (!response.ok) return null
+            if (!response.ok) return { state: null, attemptedBootstrap: shouldBootstrap }
             const status = await response.json()
-            if (status.requires_acceptance) return 'required'
-            if (status.accepted) return 'accepted'
-            return null
-          })
+            if (status.requires_acceptance) {
+              return { state: 'required', attemptedBootstrap: shouldBootstrap }
+            }
+            if (status.accepted) return { state: 'accepted', attemptedBootstrap: shouldBootstrap }
+            return { state: null, attemptedBootstrap: shouldBootstrap }
+          }, { shouldBootstrap: !bootstrapAttempted })
+          if (result.attemptedBootstrap) bootstrapAttempted = true
+          legalState = result.state
           return legalState
         },
         { timeout: 10_000, intervals: [250, 500, 1_000] },
