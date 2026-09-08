@@ -112,15 +112,11 @@ def upgrade() -> None:
         FOR EACH ROW EXECUTE FUNCTION app_security.trg_fn_organization_legal_acceptance_append_only()
         """
     )
-    op.execute(
-        "GRANT SELECT, INSERT ON public.organization_legal_acceptance TO cronos_app"
-    )
+    op.execute("GRANT SELECT, INSERT ON public.organization_legal_acceptance TO cronos_app")
     op.execute(
         "GRANT USAGE, SELECT ON SEQUENCE public.organization_legal_acceptance_id_seq TO cronos_app"
     )
-    op.execute(
-        "REVOKE UPDATE, DELETE ON public.organization_legal_acceptance FROM cronos_app"
-    )
+    op.execute("REVOKE UPDATE, DELETE ON public.organization_legal_acceptance FROM cronos_app")
 
 
 def downgrade() -> None:

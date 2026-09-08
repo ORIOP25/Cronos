@@ -90,9 +90,7 @@ def downgrade() -> None:
         WITH CHECK (organization_id = app_security.current_organization_id())
         """
     )
-    op.execute(
-        "GRANT SELECT, INSERT ON public.tutorial_telemetry_event TO cronos_app"
-    )
+    op.execute("GRANT SELECT, INSERT ON public.tutorial_telemetry_event TO cronos_app")
     op.execute(
         "GRANT USAGE, SELECT ON SEQUENCE public.tutorial_telemetry_event_id_seq TO cronos_app"
     )
