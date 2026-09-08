@@ -119,18 +119,33 @@ export async function acceptCurrentLegalDocuments(page) {
       await expect.poll(
         async () => {
           legalState = await page.evaluate(async () => {
-          const organizationId = window.Clerk?.organization?.id ?? null
-          const tokenOptions = organizationId ? { organizationId } : undefined
-          const token = await window.Clerk?.session?.getToken?.(tokenOptions)
-          if (!token) return null
-          const response = await fetch('/api/v1/legal/status', {
-            headers: { Authorization: `Bearer ${token}` },
-          })
-          if (!response.ok) return null
-          const status = await response.json()
-          if (status.requires_acceptance) return 'required'
-          if (status.accepted) return 'accepted'
-          return null
+            let token = null
+            const organizationId = window.Clerk?.organization?.id ?? null
+            const tokenOptions = organizationId ? { organizationId } : undefined
+            try {
+              token = await window.Clerk?.session?.getToken?.(tokenOptions)
+            } catch {
+              token = null
+            }
+            if (!token) {
+              try {
+                const activeSession = window.Clerk?.client?.sessions?.find(
+                  (session) => session.status === 'active',
+                ) || window.Clerk?.client?.sessions?.[0]
+                token = await activeSession?.getToken?.(tokenOptions)
+              } catch {
+                token = null
+              }
+            }
+            if (!token) return null
+            const response = await fetch('/api/v1/legal/status', {
+              headers: { Authorization: `Bearer ${token}` },
+            })
+            if (!response.ok) return null
+            const status = await response.json()
+            if (status.requires_acceptance) return 'required'
+            if (status.accepted) return 'accepted'
+            return null
           })
           return legalState
         },
