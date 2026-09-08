@@ -380,32 +380,11 @@ async def create_org_and_user(
     ) -> None:
         if not legal_accepted:
             return
-        from app.legal import CURRENT_DPA_VERSION, CURRENT_TERMS_VERSION
-
-        exists = await db_session.scalar(
-            _sel(models.OrganizationLegalAcceptance).where(
-                models.OrganizationLegalAcceptance.organization_id == org.id,
-                models.OrganizationLegalAcceptance.terms_version == CURRENT_TERMS_VERSION,
-                models.OrganizationLegalAcceptance.dpa_version == CURRENT_DPA_VERSION,
-            )
+        await accept_current_legal_documents(
+            db_session,
+            organization_id=org.id,
+            membership_id=membership.id,
         )
-        if exists is None:
-            db_session.add(
-                models.OrganizationLegalAcceptance(
-                    organization_id=org.id,
-                    accepted_by_membership_id_snapshot=membership.id,
-                    controller_legal_name="Entidade Teste, ENI",
-                    controller_registration_number="999999990",
-                    controller_registered_address="Rua de Teste, 1, 1000-000 Lisboa",
-                    controller_contact_email="legal@test.com",
-                    representative_name="Representante Teste",
-                    representative_role="Administrador",
-                    authority_confirmed=True,
-                    terms_version=CURRENT_TERMS_VERSION,
-                    dpa_version=CURRENT_DPA_VERSION,
-                )
-            )
-            await db_session.flush()
 
     # Verificar se user já existe
     existing_user = (
@@ -461,6 +440,41 @@ async def create_org_and_user(
     membership = await _ensure_membership(org, user)
     await _ensure_legal_acceptance(org, membership)
     return org, user
+
+
+async def accept_current_legal_documents(
+    db_session: AsyncSession,
+    *,
+    organization_id: int,
+    membership_id: int,
+) -> models.OrganizationLegalAcceptance:
+    """Seed the current legal acceptance for tests creating data manually."""
+    from app.legal import CURRENT_DPA_VERSION, CURRENT_TERMS_VERSION
+
+    acceptance = await db_session.scalar(
+        select(models.OrganizationLegalAcceptance).where(
+            models.OrganizationLegalAcceptance.organization_id == organization_id,
+            models.OrganizationLegalAcceptance.terms_version == CURRENT_TERMS_VERSION,
+            models.OrganizationLegalAcceptance.dpa_version == CURRENT_DPA_VERSION,
+        )
+    )
+    if acceptance is None:
+        acceptance = models.OrganizationLegalAcceptance(
+            organization_id=organization_id,
+            accepted_by_membership_id_snapshot=membership_id,
+            controller_legal_name="Entidade Teste, ENI",
+            controller_registration_number="999999990",
+            controller_registered_address="Rua de Teste, 1, 1000-000 Lisboa",
+            controller_contact_email="legal@test.com",
+            representative_name="Representante Teste",
+            representative_role="Administrador",
+            authority_confirmed=True,
+            terms_version=CURRENT_TERMS_VERSION,
+            dpa_version=CURRENT_DPA_VERSION,
+        )
+        db_session.add(acceptance)
+        await db_session.flush()
+    return acceptance
 
 
 async def create_completed_organization(

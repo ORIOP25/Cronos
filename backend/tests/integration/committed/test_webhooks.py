@@ -91,7 +91,7 @@ async def test_webhook_user_created_without_membership_does_not_create_orphan_us
     )
     assert user is None
     assert event.processing_status == models.ClerkWebhookProcessingStatus.ignored
-    assert "email_addresses" not in event.payload_json["data"]
+    assert event.payload_json == {}
 
 
 async def test_webhook_idempotency_uses_svix_event_id(async_client, db_session):

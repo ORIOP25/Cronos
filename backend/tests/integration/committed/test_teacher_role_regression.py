@@ -8,6 +8,7 @@ from app import models
 from app.config import settings
 from app.core.ratelimit import limiter
 from tests._support.db_fixtures import (
+    accept_current_legal_documents,
     create_teacher_profile,
     create_teacher_user,
     ensure_membership_capabilities,
@@ -51,12 +52,24 @@ async def _create_teacher_auth_headers(
             expected_clerk_role=models.ClerkOrganizationRole.member,
             teacher_access_mode=(models.TeacherAccessMode.platform if capabilities else None),
         )
-    if not is_active:
-        from sqlalchemy.future import select as _sel
+    from sqlalchemy import select
 
+    membership = await db_session.scalar(
+        select(models.OrganizationMembership).where(
+            models.OrganizationMembership.organization_id == organization_id,
+            models.OrganizationMembership.account_id == user.id,
+        )
+    )
+    assert membership is not None
+    await accept_current_legal_documents(
+        db_session,
+        organization_id=organization_id,
+        membership_id=membership.id,
+    )
+    if not is_active:
         membership = (
             await db_session.execute(
-                _sel(models.OrganizationMembership).where(
+                select(models.OrganizationMembership).where(
                     models.OrganizationMembership.organization_id == organization_id,
                     models.OrganizationMembership.account_id == user.id,
                 )

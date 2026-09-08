@@ -999,6 +999,13 @@ async def test_mixed_member_can_use_teacher_self_service(async_client, db_sessio
     )
     db_session.add(member)
     await db_session.flush()
+    from tests._support.db_fixtures import accept_current_legal_documents
+
+    await accept_current_legal_documents(
+        db_session,
+        organization_id=org.id,
+        membership_id=member.id,
+    )
     teacher = models.Teacher(
         organization_id=org.id,
         organization_membership_id=member.id,
