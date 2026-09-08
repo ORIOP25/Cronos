@@ -1,6 +1,6 @@
 from datetime import UTC, date, datetime, timedelta
 
-from sqlalchemy import and_
+from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session, joinedload
 
 from app import models
@@ -153,6 +153,92 @@ def list_timesheets_sync(
     status: models.TimesheetStatus | None = None,
 ) -> list[dict]:
     """Admin lista as timesheets, podendo filtrar por semana ou estado."""
+    if week_start_date is not None:
+        roster_query = (
+            db.query(
+                models.Teacher.id.label("teacher_id"),
+                models.Teacher.organization_id.label("organization_id"),
+                models.OrganizationMembership.organization_display_name.label("teacher_name"),
+                models.TeacherWeeklyTimesheet.id.label("timesheet_id"),
+                models.TeacherWeeklyTimesheet.status.label("timesheet_status"),
+                models.TeacherWeeklyTimesheet.submitted_at.label("submitted_at"),
+                models.TeacherWeeklyTimesheet.approved_at.label("approved_at"),
+                models.TeacherWeeklyTimesheet.approved_by_membership_id.label(
+                    "approved_by_membership_id"
+                ),
+                models.TeacherWeeklyTimesheet.created_at.label("created_at"),
+            )
+            .join(
+                models.OrganizationMembership,
+                and_(
+                    models.OrganizationMembership.id == models.Teacher.organization_membership_id,
+                    models.OrganizationMembership.organization_id == organization_id,
+                ),
+            )
+            .outerjoin(
+                models.TeacherWeeklyTimesheet,
+                and_(
+                    models.TeacherWeeklyTimesheet.organization_id == organization_id,
+                    models.TeacherWeeklyTimesheet.teacher_id == models.Teacher.id,
+                    models.TeacherWeeklyTimesheet.week_start_date == week_start_date,
+                ),
+            )
+            .filter(
+                models.Teacher.organization_id == organization_id,
+                models.OrganizationMembership.lifecycle_status
+                == models.MembershipLifecycleStatus.active,
+                models.OrganizationMembership.can_teach.is_(True),
+            )
+        )
+
+        if status is not None:
+            if status == models.TimesheetStatus.OPEN:
+                roster_query = roster_query.filter(
+                    or_(
+                        models.TeacherWeeklyTimesheet.id.is_(None),
+                        models.TeacherWeeklyTimesheet.status == status,
+                    )
+                )
+            else:
+                roster_query = roster_query.filter(models.TeacherWeeklyTimesheet.status == status)
+
+        rows = roster_query.all()
+        teacher_ids = [row.teacher_id for row in rows]
+        slot_counts = (
+            _compute_slot_counts_for_teachers(
+                db,
+                organization_id,
+                teacher_ids,
+                week_start_date,
+            )
+            if teacher_ids
+            else {}
+        )
+
+        result = []
+        for row in rows:
+            counts = slot_counts.get(row.teacher_id, {})
+            result.append(
+                {
+                    "id": row.timesheet_id,
+                    "organization_id": row.organization_id,
+                    "teacher_id": row.teacher_id,
+                    "teacher_name": row.teacher_name,
+                    "week_start_date": week_start_date,
+                    "week_end_date": week_start_date + timedelta(days=6),
+                    "status": row.timesheet_status or models.TimesheetStatus.OPEN,
+                    "submitted_at": row.submitted_at,
+                    "approved_at": row.approved_at,
+                    "approved_by_membership_id": row.approved_by_membership_id,
+                    "created_at": row.created_at,
+                    "total_slots": counts.get("total_slots", 0),
+                    "registered_slots": counts.get("registered_slots", 0),
+                    "completed_slots": counts.get("completed_slots", 0),
+                    "occurrence_slots": counts.get("occurrence_slots", 0),
+                }
+            )
+        return result
+
     query = (
         db.query(models.TeacherWeeklyTimesheet)
         .options(joinedload(models.TeacherWeeklyTimesheet.teacher))

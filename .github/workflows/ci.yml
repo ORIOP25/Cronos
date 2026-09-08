@@ -88,13 +88,7 @@ jobs:
           pip-compile --quiet --allow-unsafe --generate-hashes --output-file=requirements-dev.txt requirements-dev.in
           git diff --exit-code -- requirements.txt requirements-dev.txt
           pip check
-          # ponytail: remove these temporary exceptions when the Clerk lock supports cryptography >=50.
-          # Cronos does not call pkcs7_decrypt_* or cryptography.x509.verification.
-          # Retry the normal Clerk dependency update on every lock refresh.
-          pip-audit -r requirements.txt --progress-spinner off \
-            --ignore-vuln PYSEC-2026-3552 \
-            --ignore-vuln PYSEC-2026-3553 \
-            --ignore-vuln PYSEC-2026-3554
+          pip-audit -r requirements.txt --progress-spinner off
       - name: Ruff
         working-directory: backend
         run: |
@@ -160,7 +154,7 @@ jobs:
             backend/htmlcov
             backend/.coverage*
           if-no-files-found: warn
-          retention-days: 14
+          retention-days: 3
 
   frontend:
     runs-on: ubuntu-latest
@@ -188,9 +182,10 @@ jobs:
             frontend/coverage
             frontend/test-results
           if-no-files-found: warn
-          retention-days: 14
+          retention-days: 3
 
   e2e:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 30
     concurrency: cronos-e2e
@@ -373,8 +368,12 @@ jobs:
           E2E_CLERK_INVITE_CREATE_EMAIL: ${{ env.E2E_CLERK_INVITE_CREATE_EMAIL }}
           E2E_CLERK_INVITE_CONVERT_EMAIL: ${{ env.E2E_CLERK_INVITE_CONVERT_EMAIL }}
 
-      - name: Upload Playwright artifacts
+      - name: Sanitize test artifacts
         if: always()
+        run: node scripts/sanitize-test-artifacts.mjs .test-artifacts frontend/playwright-report frontend/test-results
+
+      - name: Upload Playwright artifacts
+        if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: playwright-artifacts-${{ github.run_id }}-${{ github.run_attempt }}
@@ -383,7 +382,7 @@ jobs:
             frontend/test-results
             .test-artifacts
           if-no-files-found: warn
-          retention-days: 14
+          retention-days: 3
 
       - name: Dump compose logs
         if: failure()

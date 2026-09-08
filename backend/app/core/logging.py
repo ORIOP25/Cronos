@@ -1,10 +1,23 @@
 # Ficheiro: app/core/logging.py
 import logging
 import sys
+import traceback
 
 import structlog
 
 from app.config import settings
+
+
+def safe_exception_frames(exc: BaseException) -> list[dict[str, int | str]]:
+    """Return traceback locations without exception messages or source lines."""
+    return [
+        {
+            "file": frame.filename,
+            "function": frame.name,
+            "line": frame.lineno,
+        }
+        for frame in traceback.extract_tb(exc.__traceback__)
+    ]
 
 
 class _HealthCheckFilter(logging.Filter):

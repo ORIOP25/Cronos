@@ -19,6 +19,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
 from app import models, schemas
+from app.core.logging import safe_exception_frames
 from app.core.task_keys import DEFAULT_REPAIR_WINDOW_DAYS
 
 # ---------------------------------------------------------------------------
@@ -200,8 +201,12 @@ def log_occurrence_event_safe_sync(
                 )
             )
             db.flush()
-    except Exception:
-        logger.warning("occurrence_observability_write_failed", exc_info=True)
+    except Exception as exc:
+        logger.warning(
+            "occurrence_observability_write_failed",
+            error_type=type(exc).__name__,
+            exception_frames=safe_exception_frames(exc),
+        )
 
 
 def get_occurrence_observability_summary_sync(

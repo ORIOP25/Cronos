@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import test from 'node:test'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
   childSpec,
@@ -14,6 +15,7 @@ import {
   summarizeJunit,
   validateDatabaseTargets,
 } from './test.mjs'
+import { redactSecrets, sanitizeDirectory } from './sanitize-test-artifacts.mjs'
 
 test('parses forwarded runner arguments without rebuilding a shell command', () => {
   const parsed = parseArgs(['fast', '--scope', 'backend', '--', 'tests/unit/test name.py', '-q'])
@@ -42,6 +44,51 @@ test('redacts credentials from registered commands', () => {
   assert.doesNotMatch(output, /secret|another-secret|third-secret/)
   assert.match(output, /PGPASSWORD=\[redacted\]/)
   assert.match(output, /PASSWORD '\[redacted\]'/)
+})
+
+test('redacts fake secrets from text artifacts', () => {
+  assert.equal(
+    redactSecrets('token=fake-clerk-secret; keep this', ['fake-clerk-secret']),
+    'token=[REDACTED]; keep this',
+  )
+})
+
+test('removes nested Playwright auth-state directories', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'cronos-artifact-test-'))
+  try {
+    const authDirectory = join(root, '.auth')
+    mkdirSync(authDirectory)
+    writeFileSync(join(authDirectory, 'storage.json'), '{"token":"fake"}\n')
+
+    await sanitizeDirectory(root, [])
+
+    assert.equal(existsSync(authDirectory), false)
+  } finally {
+    rmSync(root, { force: true, recursive: true })
+  }
+})
+
+test('removes nested Playwright traces while preserving safe reports and screenshots', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'cronos-artifact-test-'))
+  try {
+    const nested = join(root, 'failure', 'deep')
+    mkdirSync(nested, { recursive: true })
+    const trace = join(nested, 'trace.zip')
+    const screenshot = join(nested, 'screenshot.png')
+    const junit = join(nested, 'results.xml')
+    writeFileSync(trace, Buffer.from('opaque trace'))
+    writeFileSync(screenshot, Buffer.from([0, 1, 2, 3]))
+    writeFileSync(junit, '<testsuite tests="1" />\n')
+
+    await sanitizeDirectory(root, [])
+
+    assert.equal(existsSync(trace), false)
+    assert.equal(existsSync(screenshot), true)
+    assert.equal(readFileSync(screenshot).toString('hex'), '00010203')
+    assert.equal(readFileSync(junit, 'utf8'), '<testsuite tests="1" />\n')
+  } finally {
+    rmSync(root, { force: true, recursive: true })
+  }
 })
 
 test('fast plans never consult Docker or install dependencies implicitly', () => {

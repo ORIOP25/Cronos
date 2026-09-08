@@ -1,5 +1,5 @@
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from clerk_backend_api.security.types import AuthStatus, RequestState
@@ -13,6 +13,7 @@ from app.api.deps import (
 )
 from app.core.auth import Actor
 from app.core.clerk import ClerkGateway, verify_clerk_request
+from app.services import clerk_sync
 from tests._support.db_fixtures import ensure_membership_capabilities
 
 
@@ -142,6 +143,75 @@ async def test_get_current_user_resolves_immutable_actor(db_session):
     )
     assert request.state.current_organization_id == organization.id
     assert not hasattr(actor, "email")
+
+
+@pytest.mark.parametrize(
+    ("lifecycle_status", "access_status"),
+    [
+        (models.MembershipLifecycleStatus.active, models.MembershipAccessStatus.blocked),
+        (models.MembershipLifecycleStatus.archived, models.MembershipAccessStatus.none),
+        (models.MembershipLifecycleStatus.active, models.MembershipAccessStatus.sync_error),
+    ],
+)
+async def test_denied_membership_is_not_repaired_during_authentication(
+    db_session,
+    monkeypatch,
+    lifecycle_status,
+    access_status,
+):
+    organization = models.Organization(
+        name="Denied School",
+        clerk_org_id=f"org-denied-{access_status.value}",
+        plan_status=models.OrganizationPlanStatus.active,
+    )
+    account = models.User(
+        clerk_user_id=f"user-denied-{access_status.value}",
+        email=f"denied-{access_status.value}@example.com",
+    )
+    db_session.add_all([organization, account])
+    await db_session.flush()
+    member = models.OrganizationMembership(
+        organization_id=organization.id,
+        account_id=account.id,
+        organization_display_name=organization.name,
+        lifecycle_status=lifecycle_status,
+        access_status=access_status,
+        can_admin=True,
+        can_teach=True,
+        teacher_access_mode=models.TeacherAccessMode.platform,
+    )
+    db_session.add(member)
+    await db_session.flush()
+
+    monkeypatch.setattr(
+        clerk_sync,
+        "fetch_clerk_user_profile",
+        AsyncMock(
+            return_value=clerk_sync.ClerkUserProfile(
+                email=account.email,
+                name="Denied User",
+            )
+        ),
+    )
+    ensure_user = AsyncMock(side_effect=AssertionError("generic identity repair was called"))
+    monkeypatch.setattr(clerk_sync, "ensure_user_exists", ensure_user)
+
+    with pytest.raises(HTTPException) as exc:
+        await get_current_user(
+            MagicMock(),
+            db_session,
+            {
+                "sub": account.clerk_user_id,
+                "o": {"id": organization.clerk_org_id, "rol": "admin"},
+            },
+        )
+
+    assert exc.value.status_code == 403
+    assert ensure_user.await_count == 0
+    await db_session.refresh(member)
+    assert member.lifecycle_status == lifecycle_status
+    assert member.access_status == access_status
+    assert member.can_admin is True
 
 
 @pytest.mark.parametrize(

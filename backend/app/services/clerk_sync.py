@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models
 from app.core.clerk import ClerkGateway, get_clerk_sdk
+from app.core.logging import safe_exception_frames
 from app.db.tenant import set_async_tenant_context
 from app.services import member_reconciliation_service
 
@@ -33,7 +34,12 @@ async def fetch_clerk_organization_name(
             )
         )
     except Exception as exc:
-        logger.error("BAPI organizations.get failed", clerk_org_id=clerk_org_id, error=str(exc))
+        logger.error(
+            "clerk_provider_organization_fetch_failed",
+            clerk_org_id=clerk_org_id,
+            error_type=type(exc).__name__,
+            exception_frames=safe_exception_frames(exc),
+        )
         return None
     return organization.name
 
@@ -50,7 +56,12 @@ async def fetch_clerk_user_profile(
             else await asyncio.to_thread(lambda: sdk.users.get(user_id=clerk_user_id))
         )
     except Exception as exc:
-        logger.error("BAPI users.get falhou para %s: %s", clerk_user_id, exc)
+        logger.error(
+            "clerk_provider_user_fetch_failed",
+            clerk_user_id=clerk_user_id,
+            error_type=type(exc).__name__,
+            exception_frames=safe_exception_frames(exc),
+        )
         return None
     email = clerk_user.email_addresses[0].email_address if clerk_user.email_addresses else None
     name = f"{clerk_user.first_name or ''} {clerk_user.last_name or ''}".strip() or None
@@ -85,7 +96,11 @@ async def clerk_user_exists(
     except Exception as exc:
         if _provider_status_code(exc) == 404:
             return False
-        logger.error("BAPI users.get failed while reconciling identity", error=str(exc))
+        logger.error(
+            "clerk_provider_identity_reconciliation_failed",
+            error_type=type(exc).__name__,
+            exception_frames=safe_exception_frames(exc),
+        )
         return None
     return True
 
@@ -237,7 +252,7 @@ async def sync_user_from_clerk_api(
         organization = await db.get(models.Organization, organization_id)
         if organization is None:
             return None
-        user = await member_reconciliation_service.reconcile_first_login_by_email(
+        return await member_reconciliation_service.reconcile_first_login_by_email(
             db,
             clerk_user_id=clerk_user_id,
             email=profile.email,
@@ -245,8 +260,6 @@ async def sync_user_from_clerk_api(
             organization=organization,
             token_role=role,
         )
-        if user is not None:
-            return user
 
     return await ensure_user_exists(
         db=db,
@@ -273,8 +286,13 @@ async def sync_organization_from_clerk_api(
                 lambda: sdk.organizations.get(organization_id=clerk_org_id)
             )
         )
-    except Exception as e:
-        logger.error("BAPI organizations.get falhou para %s: %s", clerk_org_id, e)
+    except Exception as exc:
+        logger.error(
+            "clerk_provider_organization_sync_failed",
+            clerk_org_id=clerk_org_id,
+            error_type=type(exc).__name__,
+            exception_frames=safe_exception_frames(exc),
+        )
         return None
 
     return await ensure_organization_exists(db, clerk_org_id, clerk_org.name)

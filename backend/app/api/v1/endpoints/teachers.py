@@ -78,7 +78,7 @@ async def read_my_availability(
 @limiter.limit("30/minute")
 async def update_my_availability(
     request: Request,
-    availability_data: list[schemas.AvailabilitySelfCreate],
+    availability_data: schemas.TeacherAvailabilityPayload,
     db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
     current_user: deps.ActiveActor,
 ):

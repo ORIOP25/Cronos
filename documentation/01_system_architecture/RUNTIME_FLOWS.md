@@ -61,7 +61,7 @@ Explicit boundaries prevent provider adapters, authentication, and solver work f
 ### Clerk webhook
 
 1. Clerk sends `POST /api/v1/webhooks/clerk` with Svix headers.
-2. The endpoint verifies the signature and body size.
+2. Shared ASGI middleware enforces the 256 KiB webhook body budget before signature verification.
 3. The service stores the event by Svix ID.
 4. Reconciliation processes supported events idempotently.
 
@@ -94,7 +94,8 @@ Scheduler jobs use `QUEUED`, `RUNNING`, `CANCEL_REQUESTED`, `CANCELED`, `SUCCEED
 
 ## Failure Modes
 
-- Body size above 16 KiB returns `413` for the contact route.
+- Body size above the shared 1 MiB default returns `413`; contact retains a 16 KiB budget and
+  Clerk webhooks retain a 256 KiB budget.
 - Invalid Turnstile data returns `400`.
 - Provider timeout or provider failure returns `503`.
 - Invalid webhook signatures return `401`.

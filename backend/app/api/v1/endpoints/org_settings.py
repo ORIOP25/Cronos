@@ -22,6 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import schemas
 from app.api import deps
+from app.core.logging import safe_exception_frames
 from app.services import settings_service
 from app.services.school_year_reset_service import SchoolYearResetService
 
@@ -96,11 +97,13 @@ async def soft_reset_year_endpoint(
             reset_by_membership_id=current_user.membership_id,
         )
         await db.flush()
-    except Exception:
-        logger.exception(
+    except Exception as exc:
+        logger.error(
             "school_year_destructive_reset_failed",
             organization_id=current_user.organization_id,
             actor_membership_id=current_user.membership_id,
+            error_type=type(exc).__name__,
+            exception_frames=safe_exception_frames(exc),
         )
         raise
 

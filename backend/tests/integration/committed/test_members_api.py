@@ -336,6 +336,13 @@ async def test_platform_teacher_invite_and_resend(
     assert resent["actions"]["can_resend_invite"] is True
     assert resent["provider_state"] == "confirmed"
     assert resent["remove_effect"] in {"archive", "hard_delete"}
+
+    cooldown_response = await async_client.post(
+        f"/api/v1/members/{created['id']}/resend-invitation",
+        headers=clerk_admin_headers,
+    )
+    assert cooldown_response.status_code == 409
+    assert cooldown_response.json()["detail"]["code"] == "resend_cooldown"
     operations = list(
         (
             await db_session.scalars(
@@ -350,6 +357,107 @@ async def test_platform_teacher_invite_and_resend(
         operation.operation_status == models.MemberAccessOperationStatus.local_committed
         for operation in operations
     )
+
+
+async def test_platform_resend_is_atomic_under_concurrency(
+    async_client,
+    clerk_admin_headers,
+    db_session,
+    monkeypatch,
+):
+    from sqlalchemy import select
+
+    from app import models
+    from app.services.member_service import ClerkAccessResult
+
+    create_calls = []
+    provider_started = asyncio.Event()
+    release_provider = asyncio.Event()
+    expires_at_ms = 1_786_526_551_827
+
+    async def fake_create_invitation(self, **kwargs):
+        create_calls.append(kwargs)
+        if len(create_calls) == 2:
+            provider_started.set()
+            await release_provider.wait()
+        return ClerkAccessResult(
+            invitation_id="inv_initial" if len(create_calls) == 1 else "inv_resend",
+            invitation_status="pending",
+            expires_at=expires_at_ms,
+        )
+
+    async def fake_find_user(self, **_kwargs):
+        return ClerkAccessResult()
+
+    async def fake_find_pending_invitation(self, **_kwargs):
+        return ClerkAccessResult()
+
+    monkeypatch.setattr(
+        "app.services.member_service.ClerkAccessService.create_organization_invitation",
+        fake_create_invitation,
+    )
+    monkeypatch.setattr(
+        "app.services.member_service.ClerkAccessService.find_user_by_email", fake_find_user
+    )
+    monkeypatch.setattr(
+        "app.services.member_service.ClerkAccessService.find_pending_invitation",
+        fake_find_pending_invitation,
+    )
+
+    create_response = await async_client.post(
+        "/api/v1/members",
+        headers=clerk_admin_headers,
+        json={
+            "organization_display_name": "Concurrent Teacher",
+            "email": "concurrent.teacher@example.com",
+            "capabilities": ["teacher"],
+            "teacher_access_mode": "platform",
+            "subject_ids": [],
+        },
+    )
+    assert create_response.status_code == 201, create_response.text
+    created = create_response.json()
+
+    await db_session.rollback()
+    member = await db_session.get(models.OrganizationMembership, created["id"])
+    assert member is not None
+    member.access_status = models.MembershipAccessStatus.invite_expired
+    member.clerk_invitation_id = None
+    member.clerk_invitation_status = models.ClerkInvitationStatus.expired
+    member.invitation_expires_at = None
+    await db_session.commit()
+
+    endpoint = f"/api/v1/members/{created['id']}/resend-invitation"
+    concurrent_headers = {
+        **clerk_admin_headers,
+        "Authorization": "Bearer test_user_admin_001|org_test_001",
+    }
+    requests = [
+        asyncio.create_task(async_client.post(endpoint, headers=concurrent_headers)),
+        asyncio.create_task(async_client.post(endpoint, headers=concurrent_headers)),
+    ]
+    await asyncio.wait_for(provider_started.wait(), timeout=5)
+    release_provider.set()
+    responses = await asyncio.gather(*requests)
+
+    assert sorted(response.status_code for response in responses) == [200, 409]
+    assert len(create_calls) == 2  # initial invitation plus exactly one resend
+
+    await db_session.rollback()
+    operations = list(
+        (
+            await db_session.scalars(
+                select(models.MemberAccessOperation).where(
+                    models.MemberAccessOperation.organization_id == member.organization_id,
+                    models.MemberAccessOperation.membership_id == member.id,
+                    models.MemberAccessOperation.operation_type
+                    == models.MemberAccessOperationType.resend_invitation,
+                )
+            )
+        ).all()
+    )
+    assert len(operations) == 1
+    assert operations[0].operation_status == models.MemberAccessOperationStatus.local_committed
 
 
 async def test_scheduler_only_teacher_can_be_converted_to_platform_access(

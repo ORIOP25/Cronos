@@ -67,6 +67,8 @@ An administrator can reopen `SUBMITTED` or `APPROVED` records to `OPEN`.
 
 ## Verification Procedure
 
+The selected weekly admin view uses the active teacher roster. It includes teachers with no persisted timesheet as `OPEN` rows. Loading this view is read-only and does not create `teacher_weekly_timesheet` records.
+
 1. Open `/timesheets` as an administrator.
 2. Open a teacher week.
 3. Submit a complete week as the teacher.

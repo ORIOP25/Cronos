@@ -19,6 +19,7 @@ PRODUCTION = {
     "CELERY_BROKER_URL": "redis://redis:6379/0",
     "RESEND_API_KEY": "resend-secret",
     "TURNSTILE_SECRET_KEY": "turnstile-secret",
+    "TRUSTED_PROXY_IPS": "10.0.0.0/8",
 }
 
 
@@ -57,3 +58,14 @@ def test_contact_configuration_bounds_are_enforced(field, value):
 def test_invalid_trusted_proxy_network_prevents_startup():
     with pytest.raises(ValidationError, match="not-a-network"):
         make_settings(TRUSTED_PROXY_IPS="not-a-network")
+
+
+def test_production_requires_explicit_trusted_proxy_network():
+    with pytest.raises(ValidationError, match="TRUSTED_PROXY_IPS"):
+        Settings(**(PRODUCTION | {"TRUSTED_PROXY_IPS": ""}))
+
+
+@pytest.mark.parametrize("network", ["0.0.0.0/0", "::/0"])
+def test_production_rejects_universal_trusted_proxy_network(network):
+    with pytest.raises(ValidationError, match="entire address space"):
+        Settings(**(PRODUCTION | {"TRUSTED_PROXY_IPS": network}))

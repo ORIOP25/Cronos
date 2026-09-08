@@ -4,7 +4,7 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
 
-from tests._support.db_fixtures import runtime_sync_test_engine
+from tests._support.db_fixtures import runtime_sync_test_engine, sync_test_engine
 
 pytestmark = pytest.mark.postgresql
 
@@ -141,3 +141,76 @@ def test_user_rls_exposes_membership_accounts_to_the_current_tenant(clean_databa
 
         assert visible_account.id == account_a
         assert hidden_accounts == []
+
+
+def test_identity_sync_cannot_reactivate_blocked_membership(clean_database):
+    marker = uuid.uuid4().hex
+    with runtime_sync_test_engine.connect() as connection:
+        account_id, organization_id, membership_id = connection.execute(
+            text(
+                """
+                SELECT * FROM app_security.bootstrap_organization_admin(
+                  :user_id, :org_id, :org_name, :email, :profile, :membership_id
+                )
+                """
+            ),
+            {
+                "user_id": f"user-blocked-{marker}",
+                "org_id": f"org-blocked-{marker}",
+                "org_name": "Blocked Organization",
+                "email": f"blocked-{marker}@example.test",
+                "profile": "Blocked User",
+                "membership_id": f"membership-blocked-{marker}",
+            },
+        ).one()
+        connection.commit()
+
+    with sync_test_engine.begin() as connection:
+        connection.execute(
+            text(
+                "UPDATE organization_membership "
+                "SET access_status = 'blocked', can_admin = true "
+                "WHERE id = :membership_id"
+            ),
+            {"membership_id": membership_id},
+        )
+
+    with runtime_sync_test_engine.connect() as connection:
+        synced = connection.execute(
+            text(
+                """
+                SELECT * FROM app_security.ensure_user(
+                  :user_id, :email, :profile, 'admin', :organization_id, NULL
+                )
+                """
+            ),
+            {
+                "user_id": f"user-blocked-{marker}",
+                "email": f"blocked-{marker}@example.test",
+                "profile": "Blocked User Updated",
+                "organization_id": organization_id,
+            },
+        ).one()
+        connection.execute(
+            text("SELECT set_config('app.current_organization_id', :org, true)"),
+            {"org": str(organization_id)},
+        )
+        status = connection.execute(
+            text(
+                "SELECT access_status, lifecycle_status, can_admin "
+                "FROM organization_membership WHERE id = :membership_id"
+            ),
+            {"membership_id": membership_id},
+        ).one()
+        principal = connection.execute(
+            text("SELECT * FROM app_security.resolve_principal(:user_id, :org_id)"),
+            {
+                "user_id": f"user-blocked-{marker}",
+                "org_id": f"org-blocked-{marker}",
+            },
+        ).all()
+
+    assert synced.id == account_id
+    assert synced.organization_id == organization_id
+    assert status == ("blocked", "active", True)
+    assert principal == []

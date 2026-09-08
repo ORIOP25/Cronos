@@ -636,26 +636,29 @@ const GridEditor = ({ orgId, initialFormData, initialGridSettings }) => {
           </CCol>
         </CRow>
 
-        <fieldset className="mb-4">
-          <legend className="form-label fw-bold d-block mb-2">Dias de Funcionamento</legend>
-          <div className="d-flex gap-2 flex-wrap">
-            {daysLabel.map((label, idx) => (
-              <CFormCheck key={label} button={{ color: formData.days[idx] ? 'primary' : 'secondary', variant: formData.days[idx] ? '' : 'outline' }} type="checkbox" id={`day-${idx}`} label={label} checked={formData.days[idx]} onChange={() => toggleDay(idx)} />
-            ))}
-          </div>
-        </fieldset>
-
-        <div className="d-grid gap-2 d-md-flex justify-content-md-end">
-          <CButton
-            color="primary"
-            size="md"
-            type="submit"
-            disabled={mutation.isPending || !orgId}
-          >
-            <CIcon icon={cilSave} className="me-2" />
-             {mutation.isPending ? 'A regenerar' : 'Guardar e regenerar grelha'}
-          </CButton>
-        </div>
+        <CRow className="mb-4 align-items-end">
+          <CCol md={8}>
+            <fieldset className="mb-0">
+              <legend className="form-label fw-bold d-block mb-2">Dias de Funcionamento</legend>
+              <div className="d-flex gap-2 flex-wrap">
+                {daysLabel.map((label, idx) => (
+                  <CFormCheck key={label} button={{ color: formData.days[idx] ? 'primary' : 'secondary', variant: formData.days[idx] ? '' : 'outline' }} type="checkbox" id={`day-${idx}`} label={label} checked={formData.days[idx]} onChange={() => toggleDay(idx)} />
+                ))}
+              </div>
+            </fieldset>
+          </CCol>
+          <CCol md={4} className="d-flex align-items-end justify-content-md-end mt-3 mt-md-0">
+            <CButton
+              color="primary"
+              size="md"
+              type="submit"
+              disabled={mutation.isPending || !orgId}
+            >
+              <CIcon icon={cilSave} className="me-2" />
+              {mutation.isPending ? 'A regenerar' : 'Guardar e regenerar grelha'}
+            </CButton>
+          </CCol>
+        </CRow>
       </CForm>
     </div>
   )

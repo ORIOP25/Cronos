@@ -1,6 +1,5 @@
 # Ficheiro: app/main.py
 
-import traceback
 from contextlib import asynccontextmanager
 
 import httpx
@@ -15,14 +14,13 @@ from redis import asyncio as aioredis
 # --- Imports de Performance e Segurança ---
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
-from slowapi.middleware import SlowAPIMiddleware
 
 from app.api.api import api_router
 from app.config import settings
 from app.core.clerk import ClerkGateway
 from app.core.exceptions import AppError, DomainError
-from app.core.logging import setup_logging
-from app.core.ratelimit import limiter
+from app.core.logging import safe_exception_frames, setup_logging
+from app.core.ratelimit import FailClosedSlowAPIMiddleware, limiter
 from app.db.database import SessionLocal, engine_async
 from app.middleware.request_body_limit import RequestBodyLimitMiddleware
 
@@ -90,14 +88,12 @@ app = FastAPI(
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
-    formatted_traceback = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
     logger.error(
         "Unhandled application error",
         method=request.method,
         path=request.url.path,
         error_type=type(exc).__name__,
-        error=str(exc),
-        traceback=formatted_traceback,
+        exception_frames=safe_exception_frames(exc),
     )
     return JSONResponse(
         status_code=500,
@@ -108,12 +104,14 @@ async def global_exception_handler(request: Request, exc: Exception):
 # --- Configuração do Rate Limiter ---
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
-app.add_middleware(SlowAPIMiddleware)
+app.add_middleware(FailClosedSlowAPIMiddleware)
 app.add_middleware(
     RequestBodyLimitMiddleware,
-    max_bytes=16 * 1024,
-    method="POST",
-    path="/api/v1/contact",
+    default_max_bytes=1024 * 1024,
+    path_limits={
+        ("POST", "/api/v1/contact"): 16 * 1024,
+        ("POST", "/api/v1/webhooks/clerk"): 256 * 1024,
+    },
 )
 
 # --- Configuração de CORS ---

@@ -166,6 +166,10 @@ class Settings(BaseSettings):
             raise ValueError("FRONTEND_URL must appear in CLERK_AUTHORIZED_PARTIES.")
 
     def _validate_production_settings(self) -> None:
+        if not self.TRUSTED_PROXY_NETWORKS:
+            raise ValueError("TRUSTED_PROXY_IPS is required in production.")
+        if any(network.prefixlen == 0 for network in self.TRUSTED_PROXY_NETWORKS):
+            raise ValueError("TRUSTED_PROXY_IPS cannot trust the entire address space.")
         if not self.CORS_ORIGINS_LIST:
             raise ValueError("CORS_ORIGINS is required in production.")
         origins = [

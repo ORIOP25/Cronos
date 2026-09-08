@@ -33,7 +33,7 @@ def _model_to_read_dict(t: models.TeacherWeeklyTimesheet) -> dict:
 
 @router.get(
     "/",
-    response_model=list[schemas.TeacherWeeklyTimesheetRead],
+    response_model=list[schemas.TeacherWeeklyTimesheetListRead],
     summary="Listar timesheets semanais",
 )
 async def list_timesheets(

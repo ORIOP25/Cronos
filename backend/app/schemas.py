@@ -780,6 +780,9 @@ class ConstraintRead(ConstraintBase):
 
 
 # --- Disponibilidade ---
+MAX_WEEKLY_TIMETABLE_SLOTS = 7 * 24 * 60
+
+
 class AvailabilityBase(BaseModel):
     teacher_id: int
     timeslot_id: int
@@ -796,6 +799,11 @@ class AvailabilitySelfCreate(BaseModel):
 
     timeslot_id: int
     score: PreferenceLevel = PreferenceLevel.NEUTRAL
+
+
+TeacherAvailabilityPayload = Annotated[
+    list[AvailabilitySelfCreate], Field(max_length=MAX_WEEKLY_TIMETABLE_SLOTS)
+]
 
 
 class AvailabilitySelfRead(BaseModel):
@@ -1841,6 +1849,13 @@ class TeacherWeeklyTimesheetRead(BaseModel):
     occurrence_slots: int = 0
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class TeacherWeeklyTimesheetListRead(TeacherWeeklyTimesheetRead):
+    """Leitura admin de uma timesheet real ou virtual da semana selecionada."""
+
+    id: int | None
+    created_at: datetime | None = None
 
 
 # ==========================================

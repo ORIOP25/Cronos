@@ -5,11 +5,14 @@ from dataclasses import FrozenInstanceError
 from pathlib import Path
 
 import pytest
+from fastapi.routing import APIRoute
 from sqlalchemy import select
 
 from app import models
 from app.api.deps import Actor
 from app.config import settings
+from app.core.ratelimit import limiter
+from app.main import app
 
 APP = Path(__file__).parents[2] / "app"
 BACKEND = APP.parent
@@ -40,6 +43,36 @@ def test_actor_is_immutable_and_membership_derived() -> None:
 
 def test_rate_limiter_has_explicit_enabled_setting() -> None:
     assert isinstance(settings.RATELIMIT_ENABLED, bool)
+
+
+def test_every_route_is_default_limited_or_intentionally_exempt() -> None:
+    expected_exemptions = {"/health/live", "/health/ready", "/api/v1/health"}
+
+    def iter_routes(route_list, prefix=""):
+        for route in route_list:
+            if isinstance(route, APIRoute):
+                yield route, f"{prefix}{route.path}"
+            elif hasattr(route, "original_router"):
+                include_prefix = route.include_context.prefix
+                yield from iter_routes(
+                    route.original_router.routes,
+                    f"{prefix}{include_prefix}",
+                )
+            elif hasattr(route, "routes"):
+                yield from iter_routes(route.routes, prefix)
+
+    exempt_paths = {
+        path
+        for route, path in iter_routes(app.routes)
+        if f"{route.endpoint.__module__}.{route.endpoint.__name__}" in limiter._exempt_routes
+    }
+    assert exempt_paths == expected_exemptions
+    assert limiter._default_limits
+    assert all(
+        path in expected_exemptions
+        or f"{route.endpoint.__module__}.{route.endpoint.__name__}" not in limiter._exempt_routes
+        for route, path in iter_routes(app.routes)
+    )
 
 
 def test_production_lock_avoids_platform_conditional_uvicorn_extra() -> None:

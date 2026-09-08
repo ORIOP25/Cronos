@@ -7,10 +7,12 @@ Valida regras de negócio em Pydantic schemas.
 """
 
 import pytest
-from pydantic import ValidationError
+from pydantic import TypeAdapter, ValidationError
 
 from app.models import RoomType
 from app.schemas import (
+    MAX_WEEKLY_TIMETABLE_SLOTS,
+    AvailabilitySelfCreate,
     ClassCreateInCourse,
     ClassUpdateInCourse,
     CourseUpdate,
@@ -23,6 +25,7 @@ from app.schemas import (
     ScheduleGenerateRequest,
     SubjectCreate,
     SubjectUpdate,
+    TeacherAvailabilityPayload,
     TimeslotBulkCreate,
 )
 
@@ -109,6 +112,17 @@ class TestSchedulerBaselineContract:
             repair_stability_window_days=0,
         )
         assert settings.repair_stability_window_days == 0
+
+
+class TestAvailabilityPayload:
+    def test_rejects_more_entries_than_the_weekly_timetable_can_support(self):
+        with pytest.raises(ValidationError):
+            TypeAdapter(TeacherAvailabilityPayload).validate_python(
+                [
+                    AvailabilitySelfCreate(timeslot_id=index)
+                    for index in range(MAX_WEEKLY_TIMETABLE_SLOTS + 1)
+                ]
+            )
 
 
 class TestSubjectCreateValidation:

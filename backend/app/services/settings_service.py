@@ -18,6 +18,7 @@ from sqlalchemy import and_, delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models, schemas
+from app.core.logging import safe_exception_frames
 from app.services import timeslot_service
 from app.services.scheduler_state_service import (
     SchedulerStateService,
@@ -624,9 +625,11 @@ async def sync_holidays(
     except HolidaySyncError:
         raise
     except Exception as exc:
-        logger.exception(
+        logger.error(
             "holiday_sync_failed",
             organization_id=organization_id,
             actor_membership_id=changed_by_membership_id,
+            error_type=type(exc).__name__,
+            exception_frames=safe_exception_frames(exc),
         )
         raise HolidaySyncError() from exc

@@ -12,6 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models
+from app.core.logging import safe_exception_frames
 from app.db.tenant import set_async_tenant_context
 from app.scheduler.domain.contracts import (
     DraftBlockSpec,
@@ -195,11 +196,12 @@ class SchedulerJobRuntime:
             raise
         except Exception as exc:
             await self._db.rollback()
-            logger.exception(
+            logger.error(
                 "scheduler_generation_unexpected_failure",
                 job_id=job_id,
                 organization_id=organization_id,
                 error_type=type(exc).__name__,
+                exception_frames=safe_exception_frames(exc),
             )
             return await self._finish_failure(
                 job_id,

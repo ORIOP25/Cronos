@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import structlog
-from sqlalchemy import delete, func, insert, select, text, union_all
+from sqlalchemy import delete, func, insert, or_, select, text, union_all
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -25,6 +25,8 @@ from app.services.member_access_operation_service import (
 from app.services.scheduler_state_service import record_scheduler_change
 
 logger = structlog.get_logger(__name__)
+
+INVITATION_RESEND_COOLDOWN = timedelta(seconds=60)
 
 
 def _require_operation_service(
@@ -252,9 +254,13 @@ async def _link_account_to_clerk(
 
 
 async def _load_member(
-    db: AsyncSession, organization_id: int, member_id: int
+    db: AsyncSession,
+    organization_id: int,
+    member_id: int,
+    *,
+    for_update: bool = False,
 ) -> models.OrganizationMembership | None:
-    return await db.scalar(
+    query = (
         select(models.OrganizationMembership)
         .where(
             models.OrganizationMembership.id == member_id,
@@ -267,6 +273,9 @@ async def _load_member(
             ),
         )
     )
+    if for_update:
+        query = query.with_for_update()
+    return await db.scalar(query)
 
 
 async def _teacher_ids_with_history(
@@ -1925,7 +1934,7 @@ async def resend_invitation(
     clerk_access: ClerkAccessService | None = None,
     operation_service: MemberAccessOperationService | None = None,
 ) -> schemas.MemberRead:
-    member = await _load_member(db, organization_id, member_id)
+    member = await _load_member(db, organization_id, member_id, for_update=True)
     if member is None:
         raise member_error(404, "member_not_found", "Member not found.")
     if member.access_status not in {
@@ -1938,6 +1947,31 @@ async def resend_invitation(
     if member.expected_clerk_role is None:
         raise member_error(
             409, "access_not_required", "This member does not require platform access."
+        )
+    latest_resend_at = await db.scalar(
+        select(models.MemberAccessOperation.created_at)
+        .where(
+            models.MemberAccessOperation.organization_id == organization_id,
+            models.MemberAccessOperation.operation_type
+            == models.MemberAccessOperationType.resend_invitation,
+            or_(
+                models.MemberAccessOperation.membership_id == member.id,
+                func.lower(models.MemberAccessOperation.target_email)
+                == func.lower(member.account.email),
+            ),
+        )
+        .order_by(models.MemberAccessOperation.created_at.desc())
+        .limit(1)
+    )
+    if (
+        latest_resend_at is not None
+        and latest_resend_at > datetime.now(UTC) - INVITATION_RESEND_COOLDOWN
+    ):
+        raise member_error(
+            409,
+            "resend_cooldown",
+            "Invitation resend is temporarily unavailable. Try again later.",
+            retryable=True,
         )
     clerk_access = clerk_access or ClerkAccessService()
     previous_snapshot = _access_snapshot(member)

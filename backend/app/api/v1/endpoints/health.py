@@ -27,7 +27,7 @@ async def readiness(
     except Exception as e:
         health_status["postgres"] = "disconnected"
         health_status["status"] = "error"
-        logger.warning("Health check: Postgres disconnected", error=str(e))
+        logger.warning("Health check: Postgres disconnected", error_type=type(e).__name__)
 
     try:
         if await request.app.state.redis.ping():
@@ -37,7 +37,7 @@ async def readiness(
     except Exception as e:
         health_status["redis"] = "disconnected"
         health_status["status"] = "error"
-        logger.warning("Health check: Redis disconnected", error=str(e))
+        logger.warning("Health check: Redis disconnected", error_type=type(e).__name__)
 
     if health_status["status"] == "error":
         return JSONResponse(

@@ -9,6 +9,7 @@ from sqlalchemy.orm import selectinload
 
 from app import models
 from app.config import settings
+from app.db.tenant import set_async_tenant_context
 from app.services import member_webhook_service
 from app.services.member_service import ClerkAccessService
 
@@ -43,13 +44,8 @@ async def reconcile_first_login(
             models.OrganizationMembership.account_id == user.id,
             models.OrganizationMembership.lifecycle_status
             == models.MembershipLifecycleStatus.active,
-            models.OrganizationMembership.access_status.in_(
-                [
-                    models.MembershipAccessStatus.pending_invite,
-                    models.MembershipAccessStatus.invite_expired,
-                    models.MembershipAccessStatus.sync_error,
-                ]
-            ),
+            models.OrganizationMembership.access_status
+            == models.MembershipAccessStatus.pending_invite,
         )
         .options(selectinload(models.OrganizationMembership.teacher_profile))
     )
@@ -134,13 +130,8 @@ async def reconcile_first_login_by_email(
             models.OrganizationMembership.organization_id == organization.id,
             models.OrganizationMembership.lifecycle_status
             == models.MembershipLifecycleStatus.active,
-            models.OrganizationMembership.access_status.in_(
-                [
-                    models.MembershipAccessStatus.pending_invite,
-                    models.MembershipAccessStatus.invite_expired,
-                    models.MembershipAccessStatus.sync_error,
-                ]
-            ),
+            models.OrganizationMembership.access_status
+            == models.MembershipAccessStatus.pending_invite,
             models.User.clerk_user_id.is_(None),
             models.User.email == normalized_email,
         )
@@ -217,12 +208,15 @@ async def reconcile_first_login_by_email(
 async def run_scheduled_reconciliation(
     db: AsyncSession,
     *,
+    organization_id: int,
     limit: int = 100,
     clerk_access: ClerkAccessService | None = None,
 ) -> dict[str, Any]:
+    await set_async_tenant_context(db, organization_id)
     now = _now()
     expired_result = await db.execute(
         select(models.OrganizationMembership).where(
+            models.OrganizationMembership.organization_id == organization_id,
             models.OrganizationMembership.access_status
             == models.MembershipAccessStatus.pending_invite,
             models.OrganizationMembership.invitation_expires_at.is_not(None),
@@ -238,6 +232,7 @@ async def run_scheduled_reconciliation(
         select(models.OrganizationMembership)
         .join(models.Organization)
         .where(
+            models.OrganizationMembership.organization_id == organization_id,
             models.OrganizationMembership.access_status
             == models.MembershipAccessStatus.pending_invite,
             models.OrganizationMembership.clerk_invitation_id.is_not(None),
@@ -275,7 +270,13 @@ async def run_scheduled_reconciliation(
         member.access_error_safe_message = None
 
     stale_processing_result = await db.execute(
-        select(models.ClerkWebhookEvent).where(
+        select(models.ClerkWebhookEvent)
+        .join(
+            models.Organization,
+            models.Organization.clerk_org_id == models.ClerkWebhookEvent.clerk_org_id,
+        )
+        .where(
+            models.Organization.id == organization_id,
             models.ClerkWebhookEvent.processing_status
             == models.ClerkWebhookProcessingStatus.processing,
             models.ClerkWebhookEvent.last_attempt_at < now - timedelta(minutes=10),
@@ -289,7 +290,12 @@ async def run_scheduled_reconciliation(
 
     retry_result = await db.execute(
         select(models.ClerkWebhookEvent)
+        .join(
+            models.Organization,
+            models.Organization.clerk_org_id == models.ClerkWebhookEvent.clerk_org_id,
+        )
         .where(
+            models.Organization.id == organization_id,
             models.ClerkWebhookEvent.processing_status
             == models.ClerkWebhookProcessingStatus.retryable_failed,
             models.ClerkWebhookEvent.next_retry_at <= now,

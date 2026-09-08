@@ -2,6 +2,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from app import models
+from app.services import clerk_sync
 from app.services.clerk_sync import clerk_user_exists
 
 
@@ -74,3 +76,55 @@ async def test_clerk_user_exists_returns_none_on_timeout_with_404_string():
 
     result = await clerk_user_exists("user_123", gateway=gateway)
     assert result is None
+
+
+@pytest.mark.asyncio
+async def test_clerk_provider_error_log_excludes_raw_payload(monkeypatch):
+    gateway = MagicMock()
+    gateway.sdk.users.get_async = AsyncMock(
+        side_effect=DummyClerkError("Bearer provider-secret-payload", status_code=500)
+    )
+    events = []
+    monkeypatch.setattr(
+        clerk_sync.logger,
+        "error",
+        lambda *args, **kwargs: events.append((args, kwargs)),
+    )
+
+    result = await clerk_user_exists("user_123", gateway=gateway)
+
+    assert result is None
+    assert "provider-secret-payload" not in repr(events)
+    assert events[0][1]["error_type"] == "DummyClerkError"
+    assert events[0][1]["exception_frames"]
+
+
+@pytest.mark.asyncio
+async def test_organization_sync_does_not_fall_back_to_generic_identity_repair(monkeypatch):
+    organization = models.Organization(id=7, name="Tenant", clerk_org_id="org_7")
+    db = MagicMock()
+    db.get = AsyncMock(return_value=organization)
+    safe_reconciliation = AsyncMock(return_value=None)
+    generic_repair = AsyncMock()
+    monkeypatch.setattr(
+        clerk_sync.member_reconciliation_service,
+        "reconcile_first_login_by_email",
+        safe_reconciliation,
+    )
+    monkeypatch.setattr(clerk_sync, "ensure_user_exists", generic_repair)
+    monkeypatch.setattr(
+        clerk_sync,
+        "fetch_clerk_user_profile",
+        AsyncMock(return_value=clerk_sync.ClerkUserProfile("member@example.com", "Member")),
+    )
+
+    result = await clerk_sync.sync_user_from_clerk_api(
+        db,
+        "user_7",
+        organization_id=7,
+        role="member",
+    )
+
+    assert result is None
+    safe_reconciliation.assert_awaited_once()
+    generic_repair.assert_not_awaited()

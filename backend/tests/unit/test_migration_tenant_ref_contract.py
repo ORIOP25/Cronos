@@ -7,6 +7,7 @@ SECURITY = VERSIONS / "0002_security_hardening.py"
 REMOVE_AUTO_CONFIRM = VERSIONS / "0003_remove_auto_confirm_settings.py"
 FOUNDATION_TELEMETRY = VERSIONS / "0004_foundation_telemetry.py"
 AUTOMATIC_HOLIDAYS = VERSIONS / "0005_automatic_holidays.py"
+NON_MUTATING_ENSURE_USER = VERSIONS / "0006_non_mutating_ensure_user.py"
 
 
 def _load_initial():
@@ -25,6 +26,7 @@ def test_migration_history_has_expected_revisions():
         REMOVE_AUTO_CONFIRM,
         FOUNDATION_TELEMETRY,
         AUTOMATIC_HOLIDAYS,
+        NON_MUTATING_ENSURE_USER,
     ]
     source = INITIAL.read_text(encoding="utf-8")
     assert _load_initial().down_revision is None

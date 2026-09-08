@@ -11,6 +11,7 @@ from sqlalchemy import and_, select
 from sqlalchemy.orm import Session
 
 from app import models
+from app.core.logging import safe_exception_frames
 
 logger = structlog.get_logger(__name__)
 
@@ -65,7 +66,8 @@ def log_teacher_endpoint_event_safe_sync(
             organization_id=organization_id,
             endpoint_key=endpoint_key,
             http_status=http_status,
-            error=str(exc),
+            error_type=type(exc).__name__,
+            exception_frames=safe_exception_frames(exc),
         )
 
 

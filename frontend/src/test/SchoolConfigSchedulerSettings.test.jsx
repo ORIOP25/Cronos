@@ -212,6 +212,19 @@ describe('SchoolConfig scheduler settings', () => {
     ]))
   })
 
+  it('keeps the grid action aligned with the operating days', async () => {
+    renderWithProviders(<SchoolConfig />)
+
+    fireEvent.click(await screen.findByRole('tab', { name: /grelha/i }))
+    await screen.findByText('Dias de Funcionamento')
+
+    const daysFieldset = screen.getByText('Dias de Funcionamento').closest('fieldset')
+    const submitButton = screen.getByRole('button', { name: /guardar e regenerar/i })
+
+    expect(daysFieldset?.closest('.row')).toBe(submitButton.closest('.row'))
+    expect(submitButton.closest('.col-md-4')).toHaveClass('d-flex', 'justify-content-md-end', 'align-items-end')
+  })
+
   it('shows only the API error and keeps the button reusable after a conflict', async () => {
     apiClient.post.mockRejectedValueOnce({ response: { status: 409, data: { detail: 'Use Recomeçar Ano Letivo.' } } })
     const { queryClient } = renderWithProviders(<SchoolConfig />)

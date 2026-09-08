@@ -5,10 +5,11 @@ import asyncio
 import json
 from datetime import UTC, datetime
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 from app import models
 from app.db.database import SessionLocal
+from app.db.tenant import set_async_tenant_context
 from app.services import member_reconciliation_service
 from app.services.clerk_access_service import ClerkAccessService
 from app.services.member_access_operation_service import MemberAccessOperationService
@@ -221,7 +222,18 @@ async def _main() -> None:
                 if args.action in {"replay", "replay_dead_letter"}:
                     event.processing_status = models.ClerkWebhookProcessingStatus.retryable_failed
                     event.next_retry_at = datetime.now(UTC)
-                    await member_reconciliation_service.run_scheduled_reconciliation(db, limit=1)
+                    organization_id = await db.scalar(
+                        text("SELECT app_security.resolve_webhook_organization(:clerk_org_id)"),
+                        {"clerk_org_id": event.clerk_org_id},
+                    )
+                    if organization_id is None:
+                        raise RuntimeError("The webhook organization could not be resolved.")
+                    await set_async_tenant_context(db, int(organization_id))
+                    await member_reconciliation_service.run_scheduled_reconciliation(
+                        db,
+                        organization_id=int(organization_id),
+                        limit=1,
+                    )
                 elif args.action == "ignore":
                     event.processing_status = models.ClerkWebhookProcessingStatus.ignored
                     event.processed_at = datetime.now(UTC)
