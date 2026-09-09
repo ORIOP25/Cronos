@@ -73,7 +73,7 @@ describe('E2E runtime guard classifiers', () => {
       text: 'Failed to load resource: the server responded with a status of 403 (Forbidden)',
       locationUrl: 'https://welcomed-cat-83.clerk.accounts.dev/v1/organizations?session=test',
     }, [
-      { status: 403, url: '/v1/organizations' },
+      { status: 403, url: /\.clerk\.accounts\.dev\/v1\/organizations(?:\?|$)/ },
     ])
 
     expect(error).toBeNull()
