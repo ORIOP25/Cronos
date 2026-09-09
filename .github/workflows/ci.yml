@@ -198,7 +198,10 @@ jobs:
       CI_E2E_CLERK_ADMIN_EMAIL: "cronos-ci-admin+clerk_test@example.com"
       CI_E2E_CLERK_TEACHER_EMAIL: "cronos-ci-teacher+clerk_test@example.com"
       CI_E2E_CLERK_AUTO_PROVISION: "true"
-      CI_E2E_CLERK_CREATE_ORGANIZATION: "true"
+      # Reuse the single dedicated E2E organization. Founder onboarding still
+      # creates a fresh organization in the real Clerk flow; CI preparation
+      # only mirrors the shared admin/teacher fixture into the local database.
+      CI_E2E_CLERK_CREATE_ORGANIZATION: "false"
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
