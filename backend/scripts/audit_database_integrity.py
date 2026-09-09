@@ -173,6 +173,22 @@ def _audit_connection(connection) -> list[str]:
         errors.append(f"Missing required check constraints: {sorted(missing_checks)}")
 
     errors.extend(_audit_rls_policies(connection))
+
+    legal_policies = set(
+        connection.execute(
+            text(
+                "SELECT policyname FROM pg_policies "
+                "WHERE schemaname = 'public' AND tablename = 'organization_legal_acceptance'"
+            )
+        ).scalars()
+    )
+    required_legal_policies = {
+        "organization_legal_acceptance_select",
+        "organization_legal_acceptance_insert",
+    }
+    missing_legal_policies = required_legal_policies - legal_policies
+    if missing_legal_policies:
+        errors.append(f"Missing legal acceptance RLS policies: {sorted(missing_legal_policies)}")
     return errors
 
 

@@ -17,7 +17,7 @@ Do not treat this document as proof that an external dashboard is configured.
 
 The repository defines one API service, one worker, one Beat service, and one database bootstrap job for Railway.
 The frontend builds from `frontend/` and produces `frontend/dist`.
-The build emits `index.html`, `vantagens.html`, `como-funciona.html`, `sobre.html`, `ajuda.html`, and `contacto.html`.
+The build emits `index.html`, `vantagens.html`, `como-funciona.html`, `sobre.html`, `ajuda.html`, `contacto.html`, and `cookies.html`.
 
 ## Why the Behavior Exists
 
@@ -76,7 +76,7 @@ Build from `frontend` with `npm ci && npm run build`.
 Publish `dist`.
 Set `VITE_API_BASE_URL`, `VITE_CLERK_PUBLISHABLE_KEY`, and `VITE_TURNSTILE_SITE_KEY` as public build variables.
 Nginx resolves public deep links with `try_files $uri $uri.html $uri/ /index.html`.
-Cloudflare Pages uses `public/_redirects` for the five internal marketing HTML files.
+Cloudflare Pages uses `public/_redirects` for the nine public route HTML files.
 Test every client route on the hosting provider before domain cutover.
 
 ## Contracts and Invariants
@@ -108,9 +108,10 @@ Rollback reverses frontend, API processes, and DNS only when required.
 1. Check API `/health/live` and `/health/ready`.
 2. Confirm worker registration for `scheduler.run_generation_job`.
 3. Confirm Beat schedules `members.run_scheduled_reconciliation`.
-4. Test contact delivery, authentication, invitations, schedule approval, occurrence decisions, and timesheets.
-5. Test `/`, `/login`, `/register`, `/dashboard`, `/schedules`, `/my-schedules`, and `/absences` after refresh.
-6. Record deployment IDs, backup IDs, and rollback target.
+4. Confirm Beat schedules `privacy.run_maintenance`.
+5. Test contact delivery, authentication, invitations, schedule approval, occurrence decisions, and timesheets.
+6. Test `/`, `/login`, `/register`, `/dashboard`, `/schedules`, `/my-schedules`, `/absences`, and `/cookies` after refresh.
+7. Record deployment IDs, backup IDs, and rollback target.
 
 ## Source Map
 

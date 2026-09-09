@@ -143,6 +143,10 @@ jobs:
           PY
       - name: Build hardened backend image
         run: docker build --target runtime -t cronos-backend:test backend
+      - name: Verify privacy maintenance task in rebuilt image
+        run: >-
+          docker run --rm cronos-backend:test python -c
+          "from app.celery_worker import celery_app; import app.privacy_maintenance_worker; assert 'privacy.run_maintenance' in celery_app.tasks"
       - name: Upload backend test artifacts
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

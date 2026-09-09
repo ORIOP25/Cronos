@@ -92,7 +92,7 @@ function App() {
             <Route path="/privacidade" element={<LegalDocumentLayout kind="privacy" />} />
             <Route path="/termos" element={<LegalDocumentLayout kind="terms" />} />
             <Route path="/dpa" element={<LegalDocumentLayout kind="dpa" />} />
-            <Route path="/cookies" element={<Navigate to="/privacidade#cookies" replace />} />
+            <Route path="/cookies" element={<LegalDocumentLayout kind="cookies" />} />
           </Route>
 
           <Route path="/login/*" element={<SignInPage />} />

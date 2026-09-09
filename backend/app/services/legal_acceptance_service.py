@@ -24,6 +24,11 @@ class LegalAcceptanceAuthorityError(LegalAcceptanceError):
     code = "LEGAL_ACCEPTANCE_ADMIN_REQUIRED"
 
 
+class LegalAcceptanceTenantError(LegalAcceptanceError):
+    status_code = 403
+    code = "LEGAL_ACCEPTANCE_TENANT_MISMATCH"
+
+
 class LegalAcceptanceService:
     def __init__(self, db: AsyncSession):
         self.db = db
@@ -52,6 +57,10 @@ class LegalAcceptanceService:
         actor: Actor,
         command: schemas.LegalAcceptanceCreate,
     ) -> schemas.LegalAcceptanceRead:
+        if actor.organization_id != organization_id:
+            raise LegalAcceptanceTenantError(
+                "O ator autenticado não pertence à organização indicada."
+            )
         if not actor.can_admin:
             raise LegalAcceptanceAuthorityError("A aceitação exige capacidade de administrador.")
         if (

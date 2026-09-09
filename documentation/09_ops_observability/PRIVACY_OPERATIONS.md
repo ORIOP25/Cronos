@@ -17,7 +17,9 @@ This is the minimum operating manual for the Cronos launch. It is not legal advi
 | --- | --- |
 | Completed or ignored Clerk webhook payload | Replace with `{}` immediately. |
 | Completed or ignored Clerk webhook event | Delete after 30 days. |
-| Failed webhook | Keep until resolved; delete 30 days after resolution. |
+| `received`, `processing`, or `retryable_failed` webhook | Keep while unresolved. |
+| `sync_error` or `dead_letter` webhook | Delete 30 days after `support_resolved_at`. |
+| Failed webhook payload | Keep until support resolution; never redact an unresolved failure. |
 | Successful/compensated member access operation | Redact technical draft data immediately; delete after 30 days. |
 | Failed member access operation | Keep for 30 days; do not delete while support is pending; delete 30 days after resolution. |
 | Scheduler generation job | Keep operational history; no retention redaction or deletion worker. |
@@ -25,7 +27,7 @@ This is the minimum operating manual for the Cronos launch. It is not legal advi
 | School data | Keep during service or until the school instructs deletion. |
 | Legal acceptance | Keep for the necessary legal evidence period. |
 
-The daily Celery task `privacy.run_maintenance` processes bounded batches and logs counts only.
+The daily Celery task `privacy.run_maintenance` processes batches of at most 500 rows and logs counts only.
 
 ## Rights request procedure
 
@@ -83,6 +85,8 @@ When Terms or DPA versions change, update the backend constants and documents in
 
 - Publish the complete professional address and public email.
 - Complete legal review of Privacy, Terms, and DPA.
+- Approve the Sentry removal and equivalent platform alert coverage.
+- Notify API consumers that occurrence payloads containing `reason` now fail with `422`.
 - Confirm Clerk Legal Compliance links and required cookies.
 - Confirm Turnstile has no preclearance and loads only in the final contact step.
 - Set the shortest Railway log retention available.

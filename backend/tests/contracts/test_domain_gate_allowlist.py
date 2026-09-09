@@ -5,8 +5,8 @@ from httpx import ASGITransport, AsyncClient
 
 from app import models
 from app.api import deps
-from app.legal import CURRENT_DPA_VERSION, CURRENT_TERMS_VERSION
 from app.main import app
+from tests._support.db_fixtures import accept_current_legal_documents
 
 pytestmark = pytest.mark.postgresql
 
@@ -47,22 +47,11 @@ async def _create_org_and_admin(
     )
     db_session.add(mem)
     await db_session.flush()
-    db_session.add(
-        models.OrganizationLegalAcceptance(
-            organization_id=org.id,
-            accepted_by_membership_id_snapshot=mem.id,
-            controller_legal_name=org_name,
-            controller_registration_number="NIF-TEST",
-            controller_registered_address="Rua de Teste, 1",
-            controller_contact_email=f"legal_{clerk_org}@test.com",
-            representative_name="Gate Admin",
-            representative_role="Administrador",
-            authority_confirmed=True,
-            terms_version=CURRENT_TERMS_VERSION,
-            dpa_version=CURRENT_DPA_VERSION,
-        )
+    await accept_current_legal_documents(
+        db_session,
+        organization_id=org.id,
+        membership_id=mem.id,
     )
-    await db_session.flush()
     return org, user, mem
 
 

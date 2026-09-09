@@ -5,7 +5,8 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 import structlog
-from sqlalchemy import delete, func, or_, select, update
+from sqlalchemy import cast, delete, or_, select, update
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models
@@ -40,24 +41,23 @@ class PrivacyMaintenanceService:
                 models.MemberAccessOperationStatus.compensated,
             ]
         )
-        redacted_operations = int(
-            await self.db.scalar(
-                select(func.count())
-                .select_from(models.MemberAccessOperation)
+        operation_redaction_ids = (
+            await self.db.scalars(
+                select(models.MemberAccessOperation.id)
                 .where(
                     models.MemberAccessOperation.organization_id == organization_id,
                     redact_operations,
                     models.MemberAccessOperation.draft_payload_json.is_not(None),
                 )
+                .limit(500)
             )
-            or 0
-        )
+        ).all()
+        redacted_operations = len(operation_redaction_ids)
         if redacted_operations:
             await self.db.execute(
                 update(models.MemberAccessOperation)
                 .where(
-                    models.MemberAccessOperation.organization_id == organization_id,
-                    redact_operations,
+                    models.MemberAccessOperation.id.in_(operation_redaction_ids),
                 )
                 .values(draft_payload_json=None)
             )
@@ -120,35 +120,44 @@ class PrivacyMaintenanceService:
             models.ClerkWebhookProcessingStatus.processed,
             models.ClerkWebhookProcessingStatus.ignored,
         ]
-        redacted_webhook_count = int(
-            await self.db.scalar(
-                select(func.count())
-                .select_from(models.ClerkWebhookEvent)
+        webhook_redaction_ids = (
+            await self.db.scalars(
+                select(models.ClerkWebhookEvent.id)
                 .where(
                     models.ClerkWebhookEvent.processing_status.in_(terminal_statuses),
-                    models.ClerkWebhookEvent.payload_json != {},
+                    cast(models.ClerkWebhookEvent.payload_json, JSONB) != cast({}, JSONB),
                 )
+                .limit(500)
             )
-            or 0
-        )
+        ).all()
+        redacted_webhook_count = len(webhook_redaction_ids)
         if redacted_webhook_count:
             await self.db.execute(
                 update(models.ClerkWebhookEvent)
-                .where(
-                    models.ClerkWebhookEvent.processing_status.in_(terminal_statuses),
-                    models.ClerkWebhookEvent.payload_json != {},
-                )
+                .where(models.ClerkWebhookEvent.id.in_(webhook_redaction_ids))
                 .values(payload_json={})
             )
+
+        terminal_deletion = (
+            models.ClerkWebhookEvent.processing_status.in_(terminal_statuses)
+            & models.ClerkWebhookEvent.processed_at.is_not(None)
+            & (models.ClerkWebhookEvent.processed_at <= cutoff)
+        )
+        resolved_failure_deletion = (
+            models.ClerkWebhookEvent.processing_status.in_(
+                [
+                    models.ClerkWebhookProcessingStatus.sync_error,
+                    models.ClerkWebhookProcessingStatus.dead_letter,
+                ]
+            )
+            & models.ClerkWebhookEvent.support_resolved_at.is_not(None)
+            & (models.ClerkWebhookEvent.support_resolved_at <= cutoff)
+        )
         webhook_ids = (
             await self.db.scalars(
                 select(models.ClerkWebhookEvent.id)
                 .where(
-                    or_(
-                        models.ClerkWebhookEvent.processed_at <= cutoff,
-                        models.ClerkWebhookEvent.support_resolved_at <= cutoff,
-                    ),
-                    models.ClerkWebhookEvent.processing_status.in_(terminal_statuses),
+                    or_(terminal_deletion, resolved_failure_deletion),
                 )
                 .limit(500)
             )

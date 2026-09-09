@@ -1,7 +1,7 @@
 """Internal tenant export and erasure command.
 
-The command is deliberately offline from Clerk. The operator follows the
-provider runbook after the local transaction succeeds.
+The operator exports first, confirms provider deletion second, and runs the
+local erasure transaction last. The command remains offline from Clerk.
 """
 
 from __future__ import annotations
@@ -193,6 +193,9 @@ async def _erase(
     execute: bool,
     provider_deleted: bool,
 ) -> dict[str, Any]:
+    if execute and not provider_deleted:
+        raise ValueError("--execute exige --provider-deleted após confirmação no fornecedor")
+
     async with SessionLocal.begin() as db:
         await set_async_tenant_context(db, organization_id)
         organization = await db.scalar(
@@ -204,9 +207,6 @@ async def _erase(
             raise ValueError("Organização não encontrada")
         if organization.clerk_org_id != confirm_clerk_org_id:
             raise ValueError("--confirm-clerk-org-id não corresponde à organização")
-        if execute and not provider_deleted:
-            raise ValueError("--execute exige --provider-deleted após confirmação no fornecedor")
-
         membership_account_ids = list(
             await db.scalars(
                 select(models.OrganizationMembership.account_id).where(

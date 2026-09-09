@@ -107,6 +107,23 @@ describe('App route polish', () => {
     expect(screen.getByRole('link', { name: /voltar ao início/i })).toHaveAttribute('href', '/')
   })
 
+  it('renders the cookies document as a standalone legal page', async () => {
+    renderAppAt('/cookies')
+
+    expect(await screen.findByRole('heading', { name: /cookies e armazenamento local/i })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: /cookies estritamente necessários/i })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /voltar ao cronos/i })).toHaveAttribute('href', '/')
+  })
+
+  it('renders every DPA annex referenced by the agreement', async () => {
+    renderAppAt('/dpa')
+
+    expect(await screen.findByRole('heading', { name: /acordo de tratamento de dados/i })).toBeInTheDocument()
+    for (const annex of ['Anexo A — Subprocessadores', 'Anexo B — Medidas de segurança', 'Anexo C — Transferências internacionais', 'Anexo D — Instruções documentadas']) {
+      expect(screen.getByRole('heading', { name: annex })).toBeInTheDocument()
+    }
+  })
+
   it('does not expose the removed onboarding route', async () => {
     renderAppAt('/onboarding')
 

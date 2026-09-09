@@ -19,6 +19,13 @@
 - [Ajuda](https://cronos.pt/ajuda): Respostas às dúvidas mais frequentes sobre adequação ao Ensino Profissional, utilização sem instalação local, substituições de professores e segurança.
 - [Contacto](https://cronos.pt/contacto): Formulário para pedir demonstração ou agendar reunião com a equipa.
 
+## Informação legal
+
+- [Política de Privacidade](https://cronos.pt/privacidade): Tratamento de dados pessoais no website e no serviço.
+- [Termos de Serviço](https://cronos.pt/termos): Regras de utilização do Cronos por organizações profissionais.
+- [Acordo de Tratamento de Dados](https://cronos.pt/dpa): Condições de tratamento de dados escolares.
+- [Cookies e armazenamento local](https://cronos.pt/cookies): Tecnologias estritamente necessárias e preferências funcionais.
+
 ## Funcionalidades e Conceitos-Chave
 
 ### 1. Resolução de Faltas em 1 Minuto

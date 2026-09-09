@@ -1,0 +1,36 @@
+{
+  "format": "cronos-legal-manifest-v1",
+  "version": "2026-01",
+  "documents": {
+    "privacy": {
+      "version": "2026-01",
+      "sha256": "09859542c5e47eb3b50c1faf5fe1e4b4d5ace00c24cc92bafd8d1f9a398a9a83"
+    },
+    "terms": {
+      "version": "2026-01",
+      "sha256": "9b2c5f18406908d30de1c61d6e850ba4701f524a42888a519950891c6d445383"
+    },
+    "dpa": {
+      "version": "2026-01",
+      "sha256": "5fba987a529152647a003fee8c72a2c335604725bff6f28cd4411dc481f431e9"
+    },
+    "cookies": {
+      "version": "2026-01",
+      "sha256": "ee78f5a179d56675bc201433f34c05cde6c80006b0d13ca01777e049bedd3347"
+    }
+  },
+  "versions": {
+    "privacy": {
+      "2026-01": "09859542c5e47eb3b50c1faf5fe1e4b4d5ace00c24cc92bafd8d1f9a398a9a83"
+    },
+    "terms": {
+      "2026-01": "9b2c5f18406908d30de1c61d6e850ba4701f524a42888a519950891c6d445383"
+    },
+    "dpa": {
+      "2026-01": "5fba987a529152647a003fee8c72a2c335604725bff6f28cd4411dc481f431e9"
+    },
+    "cookies": {
+      "2026-01": "ee78f5a179d56675bc201433f34c05cde6c80006b0d13ca01777e049bedd3347"
+    }
+  }
+}

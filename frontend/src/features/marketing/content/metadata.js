@@ -44,4 +44,9 @@ export const marketingMetadata = Object.freeze({
     description: 'Acordo de Tratamento de Dados do Cronos, versão 2026-01.',
     canonicalUrl: 'https://cronos.pt/dpa',
   }),
+  '/cookies': Object.freeze({
+    title: 'Cookies e armazenamento local | Cronos',
+    description: 'Cookies estritamente necessários e armazenamento local usados pelo Cronos, versão 2026-01.',
+    canonicalUrl: 'https://cronos.pt/cookies',
+  }),
 })

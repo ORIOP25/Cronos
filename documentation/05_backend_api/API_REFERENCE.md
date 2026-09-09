@@ -200,6 +200,13 @@ Important error codes are `FOUNDATION_DRAFT_VERSION_CONFLICT`, `FOUNDATION_INCOM
 - The contact route returns `204` on accepted or honeypot submissions.
 - Production hides FastAPI documentation routes through settings.
 
+### Occurrence payload compatibility
+
+The public occurrence create, update, and cancel payloads no longer accept the
+free-text `reason` field. Clients that still send it receive `422`; this is an
+intentional incompatible contract change. Consumers must remove the field
+before rollout.
+
 ## States and Transitions
 
 Route-specific state values are defined by `backend/app/models.py` and `backend/app/schemas.py`.

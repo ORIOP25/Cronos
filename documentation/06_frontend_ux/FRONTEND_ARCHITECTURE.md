@@ -55,7 +55,7 @@ React Query manages server state while component state handles form and view sta
 - Teacher routes require a teacher capability and linked profile.
 - Marketing styles use the `cronos-*` namespace.
 - `metadata.js` is the single source for public route metadata.
-- The build emits `index.html` and five route HTML files.
+- The build emits `index.html` and nine public route HTML files.
 - Nginx resolves deep links with `try_files $uri $uri.html $uri/ /index.html`.
 
 ## States and Transitions

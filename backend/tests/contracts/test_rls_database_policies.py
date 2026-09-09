@@ -138,9 +138,68 @@ def test_user_rls_exposes_membership_accounts_to_the_current_tenant(clean_databa
             text('SELECT id FROM "user" WHERE id = :account_id'),
             {"account_id": account_b},
         ).all()
-
         assert visible_account.id == account_a
         assert hidden_accounts == []
+
+
+def test_legal_acceptance_rls_is_tenant_scoped_and_read_only_for_runtime(clean_database):
+    marker = uuid.uuid4().hex
+    with sync_test_engine.begin() as connection:
+        organization_a = connection.execute(
+            text(
+                "INSERT INTO organization(name, clerk_org_id, plan_status) "
+                "VALUES ('Legal A', :clerk_org_id, 'active') RETURNING id"
+            ),
+            {"clerk_org_id": f"legal-a-{marker}"},
+        ).scalar_one()
+        organization_b = connection.execute(
+            text(
+                "INSERT INTO organization(name, clerk_org_id, plan_status) "
+                "VALUES ('Legal B', :clerk_org_id, 'active') RETURNING id"
+            ),
+            {"clerk_org_id": f"legal-b-{marker}"},
+        ).scalar_one()
+        for organization_id in (organization_a, organization_b):
+            connection.execute(
+                text(
+                    "INSERT INTO organization_legal_acceptance ("
+                    "organization_id, accepted_by_membership_id_snapshot, "
+                    "controller_legal_name, controller_registration_number, "
+                    "controller_registered_address, controller_contact_email, "
+                    "representative_name, representative_role, authority_confirmed, "
+                    "terms_version, dpa_version"
+                    ") VALUES (:organization_id, 1, 'Entidade', '999999990', 'Rua 1', "
+                    "'legal@test.com', 'Representante', 'Administrador', true, '2026-01', '2026-01')"
+                ),
+                {"organization_id": organization_id},
+            )
+
+    with runtime_sync_test_engine.connect() as connection:
+        connection.execute(
+            text("SELECT set_config('app.current_organization_id', :organization_id, true)"),
+            {"organization_id": str(organization_a)},
+        )
+        visible = (
+            connection.execute(text("SELECT organization_id FROM organization_legal_acceptance"))
+            .scalars()
+            .all()
+        )
+        hidden = connection.execute(
+            text(
+                "SELECT organization_id FROM organization_legal_acceptance "
+                "WHERE organization_id = :organization_id"
+            ),
+            {"organization_id": organization_b},
+        ).all()
+        assert visible == [organization_a]
+        assert hidden == []
+        with pytest.raises(DBAPIError):
+            connection.execute(
+                text(
+                    "DELETE FROM organization_legal_acceptance WHERE organization_id = :organization_id"
+                ),
+                {"organization_id": organization_a},
+            )
 
 
 def test_identity_sync_cannot_reactivate_blocked_membership(clean_database):

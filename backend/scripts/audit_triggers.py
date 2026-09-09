@@ -67,6 +67,20 @@ async def _check_triggers() -> list[str]:
                 f"trg_organization_foundation_monotonic must cover INSERT, UPDATE and DELETE: tgtype={tgtype}"
             )
 
+        legal_tgtype = await connection.scalar(
+            text(
+                "SELECT tgtype FROM pg_trigger "
+                "WHERE tgname = 'trg_organization_legal_acceptance_append_only' "
+                "AND NOT tgisinternal"
+            )
+        )
+        if legal_tgtype is not None and not (
+            legal_tgtype & 2 and legal_tgtype & 8 and legal_tgtype & 16
+        ):
+            errors.append(
+                "trg_organization_legal_acceptance_append_only must be a BEFORE UPDATE OR DELETE trigger"
+            )
+
         function_body = await connection.scalar(
             text(
                 "SELECT pg_get_functiondef(p.oid) "
@@ -77,6 +91,17 @@ async def _check_triggers() -> list[str]:
         )
         if function_body and "RETURN OLD" not in function_body:
             errors.append("Foundation trigger must return OLD for permitted DELETE operations")
+
+        legal_function_body = await connection.scalar(
+            text(
+                "SELECT pg_get_functiondef(p.oid) "
+                "FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace "
+                "WHERE n.nspname = 'app_security' "
+                "AND p.proname = 'trg_fn_organization_legal_acceptance_append_only'"
+            )
+        )
+        if legal_function_body and "RAISE EXCEPTION" not in legal_function_body:
+            errors.append("Legal acceptance trigger must reject UPDATE and DELETE")
 
         return errors
 

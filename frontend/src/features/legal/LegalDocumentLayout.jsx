@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom'
-import { LEGAL_EFFECTIVE_DATE, LEGAL_VERSION, documents, subprocessors } from './content.jsx'
+import { LEGAL_EFFECTIVE_DATE, documents } from './content.jsx'
+import LegalText from './LegalText.jsx'
 
 export default function LegalDocumentLayout({ kind }) {
   const document = documents[kind]
@@ -12,23 +13,31 @@ export default function LegalDocumentLayout({ kind }) {
           <h1 id="legal-document-title">{document.title}</h1>
           <p>{document.intro}</p>
           <dl className="cronos-legal__meta">
-            <div><dt>Versão</dt><dd>{LEGAL_VERSION}</dd></div>
+            <div><dt>Versão</dt><dd>{document.version}</dd></div>
             <div><dt>Vigência</dt><dd>{LEGAL_EFFECTIVE_DATE}</dd></div>
           </dl>
         </header>
         <nav className="cronos-legal__toc" aria-label="Índice">
           <strong>Índice</strong>
-          <ol>{document.sections.map(([title]) => <li key={title}><a href={`#${slugify(title)}`}>{title}</a></li>)}</ol>
+          <ol>{[...document.sections.map(([title]) => title), ...(document.annexes ?? []).map(({ title }) => title)].map((title) => <li key={title}><a href={`#${slugify(title)}`}>{title}</a></li>)}</ol>
         </nav>
         <div className="cronos-legal__body">
           {document.sections.map(([title, content]) => <section key={title} id={slugify(title)}><h2>{title}</h2><p>{content}</p></section>)}
-          {kind === 'dpa' && <section id="subprocessadores"><h2>Anexo A — Subprocessadores</h2><div className="cronos-legal__table-wrap"><table><thead><tr><th>Fornecedor</th><th>Finalidade</th><th>Localização</th></tr></thead><tbody>{subprocessors.map((item) => <tr key={item.name}><td>{item.name}</td><td>{item.purpose}</td><td>{item.location}</td></tr>)}</tbody></table></div></section>}
-          {kind === 'dpa' && <section id="security-measures"><h2>Anexo B — Medidas de segurança</h2><p>O Cronos aplica autenticação Clerk, tokens de organização, autorização por capacidade, RLS forçado, backups operacionais, limites de pedidos, gestão de segredos e logs estruturados sem conteúdo pessoal.</p></section>}
-          {kind === 'privacy' && <section id="cookies"><h2>Cookies</h2><p>Consulte também a <Link to="/cookies">página de cookies</Link> para o resumo das tecnologias estritamente necessárias.</p></section>}
+          {document.annexes?.map((annex) => (
+            <section key={annex.title} id={slugify(annex.title)}>
+              <h2>{annex.title}</h2>
+              {annex.type === 'table' ? <LegalTable items={annex.items} /> : <p><LegalText text={annex.body} /></p>}
+            </section>
+          ))}
         </div>
       </div>
     </article>
   )
+}
+
+function LegalTable({ items }) {
+  const hasSafeguards = items.some((item) => item.safeguards)
+  return <div className="cronos-legal__table-wrap"><table><thead><tr><th>Fornecedor</th><th>Finalidade</th><th>Localização</th>{hasSafeguards && <th>Salvaguardas</th>}</tr></thead><tbody>{items.map((item) => <tr key={item.name}><td>{item.name}</td><td>{item.purpose}</td><td>{item.location}</td>{hasSafeguards && <td>{item.safeguards}</td>}</tr>)}</tbody></table></div>
 }
 
 function slugify(value) {

@@ -5,10 +5,13 @@ from httpx import ASGITransport, AsyncClient
 
 from app import models, schemas
 from app.api import deps
-from app.legal import CURRENT_DPA_VERSION, CURRENT_TERMS_VERSION
 from app.main import app
 from app.services.preflight_service import PreflightService, _validate_subject_requirements
-from tests._support.db_fixtures import create_org_and_user, create_teacher_profile
+from tests._support.db_fixtures import (
+    accept_current_legal_documents,
+    create_org_and_user,
+    create_teacher_profile,
+)
 
 pytestmark = pytest.mark.postgresql
 
@@ -44,22 +47,11 @@ async def _create_org_and_admin(db_session, org_name: str, clerk_org: str):
     )
     db_session.add(mem)
     await db_session.flush()
-    db_session.add(
-        models.OrganizationLegalAcceptance(
-            organization_id=org.id,
-            accepted_by_membership_id_snapshot=mem.id,
-            controller_legal_name="Entidade Teste, ENI",
-            controller_registration_number="999999990",
-            controller_registered_address="Rua de Teste, 1, 1000-000 Lisboa",
-            controller_contact_email="legal@test.com",
-            representative_name="Representante Teste",
-            representative_role="Administrador",
-            authority_confirmed=True,
-            terms_version=CURRENT_TERMS_VERSION,
-            dpa_version=CURRENT_DPA_VERSION,
-        )
+    await accept_current_legal_documents(
+        db_session,
+        organization_id=org.id,
+        membership_id=mem.id,
     )
-    await db_session.flush()
     return org, user, mem
 
 

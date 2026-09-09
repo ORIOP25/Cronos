@@ -18,6 +18,11 @@ The API exposes liveness and readiness.
 The backend emits structured logs. It does not send request data to an external error tracker.
 Scheduler, occurrence, and teacher endpoints store operational telemetry.
 
+The `rgpd-cookies` rollout removes Sentry request telemetry. Production
+rollout requires an operator approval that platform logs and alerts cover the
+same incident-detection needs. A rollback restores application code only; data
+already excluded from Sentry cannot be recovered.
+
 ## Why the Behavior Exists
 
 Health endpoints separate process availability from dependency readiness.
