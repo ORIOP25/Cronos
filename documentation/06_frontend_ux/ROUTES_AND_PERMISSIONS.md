@@ -49,8 +49,8 @@ Routes use `<RequireAdmin>` and `<RequireTeacher>` capability guards:
 ## Contracts and Invariants
 - Signed-out users accessing protected routes are redirected to `/login`.
 - A signed-in user without an active organization sees the organization selector or `/create-org`.
-- A pending Clerk organization task uses `/register/tasks/choose-organization` for organization selection and legal confirmation.
-- `/create-org` bootstraps the selected organization and stores the safe source route in `location.state.from`.
+- A pending Clerk organization task uses `/register/tasks/choose-organization` for organization selection only.
+- `/create-org` bootstraps the selected organization, collects required legal acceptance locally, and uses the safe source route in `location.state.from`.
 - `/legal/aceitar` is not a client route.
 - Signed-in root visits use `getDefaultRouteForMember`.
 - Public metadata comes from `features/marketing/content/metadata.js`.

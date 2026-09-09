@@ -3,9 +3,8 @@ import { clerk } from '@clerk/testing/playwright'
 import { createPageObjects } from '@clerk/testing/playwright/unstable'
 import { test, expect } from '@playwright/test'
 import {
-  acceptRegistrationTaskLegalDocuments,
+  acceptLegalDocumentsInApp,
   allowApiFailure,
-  acceptCurrentLegalDocuments,
   attachRuntimeGuards,
   expectRouteReady,
   goTo,
@@ -179,7 +178,6 @@ async function signInUserWithTicket(
   await page.goto(ticketUrl.toString(), { waitUntil: 'domcontentloaded' })
   if (organizationName) {
     await page.waitForURL(/\/tasks\/choose-organization(?:[/?#]|$)/, { timeout: 30_000 })
-    await acceptRegistrationTaskLegalDocuments(page)
     const clerkPages = createPageObjects({ page, baseURL: baseUrl })
     await withTimeout(
       () => clerkPages.sessionTask.resolveForceOrganizationSelectionTask({ name: organizationName }),
@@ -187,11 +185,15 @@ async function signInUserWithTicket(
     )
   }
   if (organizationName) {
-    await page.waitForURL('**/foundation', { timeout: 30_000 })
+    await page.waitForURL('**/create-org', { timeout: 30_000 })
   } else {
     await page.waitForURL(targetUrl.toString(), { timeout: 30_000 })
   }
   await page.waitForFunction(() => window.Clerk?.user != null, null, { timeout: 30_000 })
+  if (organizationName) {
+    await acceptLegalDocumentsInApp(page)
+    await page.waitForURL('**/foundation', { timeout: 30_000 })
+  }
   if (!organizationName) await expectRouteReady(page, path)
   if (organizationName) {
     return await page.evaluate((name) => (
@@ -601,7 +603,6 @@ test('fresh founder completes Complete Generation and custom-rule Adaptive Repai
 
     await test.step('Foundation', async () => {
       await page.waitForURL('**/foundation', { timeout: OPERATION_TIMEOUT_MS })
-      await acceptCurrentLegalDocuments(page)
       await page.waitForFunction(
         (expectedOrganizationId) => window.Clerk?.organization?.id === expectedOrganizationId,
         organizationId,

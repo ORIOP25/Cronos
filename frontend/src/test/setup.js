@@ -100,6 +100,7 @@ vi.mock('@clerk/react', () => ({
   useClerk: () => ({
     openUserProfile: vi.fn(),
     openOrganizationProfile: vi.fn(),
+    redirectToTasks: vi.fn(),
     signOut: vi.fn(),
   }),
   useSignIn: () => _signInState,
@@ -116,7 +117,7 @@ vi.mock('@clerk/react', () => ({
     'data-redirect-url': redirectUrl,
   }),
   UserButton: () => null,
-  OrganizationSwitcher: () => null,
+  OrganizationSwitcher: () => createElement('div', { 'data-testid': 'organization-switcher' }),
   Protect: ({ children, role, condition, fallback }) => {
     if (role && _clerkState.role !== role) return fallback || null
     if (condition && !condition({ role: _clerkState.role })) return fallback || null

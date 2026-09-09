@@ -3,7 +3,7 @@ import { setupClerkTestingToken } from '@clerk/testing/playwright'
 import { createPageObjects } from '@clerk/testing/playwright/unstable'
 import { expect, test } from '@playwright/test'
 import {
-  acceptRegistrationTaskLegalDocuments,
+  acceptLegalDocumentsInApp,
   attachRuntimeGuards,
   expectRouteReady,
 } from '../utils/clerk-helpers.js'
@@ -63,7 +63,6 @@ test('manual founder onboarding creates and activates an organization', async ({
       /\/(?:create-org|tasks\/choose-organization)(?:[/?#]|$)/,
     )
     if (/\/tasks\/choose-organization(?:[/?#]|$)/.test(page.url())) {
-      await acceptRegistrationTaskLegalDocuments(page)
       const clerkPages = createPageObjects({ page, baseURL: baseUrl })
       await withTimeout(
         () => clerkPages.sessionTask.resolveForceOrganizationSelectionTask({ name: schoolName }),
@@ -71,17 +70,18 @@ test('manual founder onboarding creates and activates an organization', async ({
       )
     }
     await expect.poll(() => page.url(), { timeout: OPERATION_TIMEOUT_MS }).toMatch(
-      /\/(?:create-org|foundation)(?:[/?#]|$)/,
+      /\/create-org(?:[/?#]|$)/,
     )
     await page.waitForFunction(() => window.Clerk?.user != null, null, {
       timeout: OPERATION_TIMEOUT_MS,
     })
-    await page.waitForURL('**/foundation', { timeout: OPERATION_TIMEOUT_MS })
     await page.waitForFunction(
       () => window.Clerk?.organization?.id?.startsWith('org_'),
       null,
       { timeout: OPERATION_TIMEOUT_MS },
     )
+    await acceptLegalDocumentsInApp(page)
+    await page.waitForURL('**/foundation', { timeout: OPERATION_TIMEOUT_MS })
     const organizationId = await page.evaluate(() => window.Clerk.organization.id)
     organizationIds.add(organizationId)
     await page.waitForURL('**/foundation', { timeout: OPERATION_TIMEOUT_MS })

@@ -3,9 +3,8 @@ import { createPageObjects } from '@clerk/testing/playwright/unstable'
 import { setupClerkTestingToken } from '@clerk/testing/playwright'
 import { expect, test } from '@playwright/test'
 import {
-  acceptRegistrationTaskLegalDocuments,
+  acceptLegalDocumentsInApp,
   allowApiFailure,
-  acceptCurrentLegalDocuments,
   attachRuntimeGuards,
   expectNoAppCrash,
   expectRouteReady,
@@ -35,7 +34,6 @@ async function signInFreshFounder(client, page, userId, organizationName) {
     /\/(?:create-org|tasks\/choose-organization)(?:[/?#]|$)/,
   )
   if (/\/tasks\/choose-organization(?:[/?#]|$)/.test(page.url())) {
-    await acceptRegistrationTaskLegalDocuments(page)
     const clerkPages = createPageObjects({ page, baseURL: baseUrl })
     await withTimeout(
       () => clerkPages.sessionTask.resolveForceOrganizationSelectionTask({ name: organizationName }),
@@ -43,12 +41,12 @@ async function signInFreshFounder(client, page, userId, organizationName) {
     )
   }
   await expect.poll(() => page.url(), { timeout: 30_000 }).toMatch(
-    /\/(?:create-org|foundation)(?:[/?#]|$)/,
+    /\/create-org(?:[/?#]|$)/,
   )
   await page.waitForFunction(() => window.Clerk?.user != null, null, { timeout: 30_000 })
-  await page.waitForURL('**/foundation', { timeout: 30_000 })
   await page.waitForFunction(() => window.Clerk?.organization?.id?.startsWith('org_'), null, { timeout: 30_000 })
-  await acceptCurrentLegalDocuments(page)
+  await acceptLegalDocumentsInApp(page)
+  await page.waitForURL('**/foundation', { timeout: 30_000 })
   return page.evaluate(() => window.Clerk.organization.id)
 }
 

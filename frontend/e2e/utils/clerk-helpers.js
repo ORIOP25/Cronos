@@ -103,27 +103,23 @@ export async function goTo(page, path) {
   await expectNoAppCrash(page)
 }
 
-export async function acceptCurrentLegalDocuments(page) {
-  await expect(page).toHaveURL(/\/(?:foundation|dashboard|create-org)(?:[/?#]|$)/, { timeout: 30_000 })
-}
+export async function acceptLegalDocumentsInApp(page) {
+  await expect(page).toHaveURL(/\/(?:create-org|foundation|dashboard)(?:[/?#]|$)/, { timeout: 30_000 })
+  if (!/\/create-org(?:[/?#]|$)/.test(new URL(page.url()).pathname)) return
+  const checkbox = page.getByRole('checkbox', {
+    name: /Confirmo que tenho poderes para vincular a organização.*Acordo de Tratamento de Dados.*Política de Privacidade/i,
+  })
 
-const registrationTaskLegalName = /Li e concordo com os.*Termos de Serviço.*Política de Privacidade/i
-
-export async function acceptRegistrationTaskLegalDocuments(page) {
-  const currentUrl = new URL(page.url())
-  const appOrigin = new URL(E2E_BASE_URL).origin
-  if (currentUrl.origin !== appOrigin) {
-    await page.goto(`${E2E_BASE_URL}/register/tasks/choose-organization`, {
-      waitUntil: 'domcontentloaded',
-    })
-  }
-  const checkbox = page.getByRole('checkbox', { name: registrationTaskLegalName })
   await expect(checkbox).toBeVisible({ timeout: 30_000 })
+  await expect(page.getByRole('button', { name: 'Confirmar e continuar' })).toBeDisabled()
   await checkbox.check()
-  if (currentUrl.origin !== appOrigin) {
-    await page.goto(currentUrl.toString(), { waitUntil: 'domcontentloaded' })
-    await expect(page).toHaveURL(/\/tasks\/choose-organization(?:[/?#]|$)/, { timeout: 30_000 })
-  }
+  const responsePromise = page.waitForResponse((response) => (
+    response.url().includes('/api/v1/legal/acceptance')
+    && response.request().method() === 'POST'
+  ))
+  await page.getByRole('button', { name: 'Confirmar e continuar' }).click()
+  expect((await responsePromise).status()).toBe(200)
+  await expect(page).toHaveURL(/\/(?:foundation|dashboard)(?:[/?#]|$)/, { timeout: 30_000 })
 }
 
 export async function clickSidebarRoute(page, path) {

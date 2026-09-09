@@ -3,7 +3,6 @@ import react from '@vitejs/plugin-react'
 import process from 'node:process'
 
 const nodeTestFiles = [
-  'src/test/activateAndBootstrapOrganization.test.js',
   'src/test/apiClient.test.js',
   'src/test/apiErrors.test.js',
   'src/test/authDesign.test.js',

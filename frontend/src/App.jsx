@@ -51,8 +51,6 @@ function useStorageScopeCleanup(userId, isSignedIn, organizationId) {
     const previousOrganization = previousOrganizationId.current
     if (previousUser && (!isSignedIn || previousUser !== userId)) {
       clearStorageKeys(localStorage, (key) => key.includes(`:user:${previousUser}:`))
-      clearStorageKeys(sessionStorage, (key) => key.startsWith(`cronos:pending-organization:${previousUser}`))
-      clearStorageKeys(sessionStorage, (key) => key === 'cronos:legal-acceptance:pending')
     }
     if (previousOrganization && previousOrganization !== organizationId) {
       clearStorageKeys(localStorage, (key) => key.includes(`:org:${previousOrganization}`) || key.endsWith(`-org-${previousOrganization}`))

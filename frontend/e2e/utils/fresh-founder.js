@@ -3,8 +3,7 @@ import { setupClerkTestingToken } from '@clerk/testing/playwright'
 import { expect } from '@playwright/test'
 import { createE2eRunKey, E2E_BASE_URL } from './e2e-config.js'
 import {
-  acceptCurrentLegalDocuments,
-  acceptRegistrationTaskLegalDocuments,
+  acceptLegalDocumentsInApp,
 } from './clerk-helpers.js'
 
 export function withTimeout(operation, label, timeoutMs = 30_000) {
@@ -28,7 +27,6 @@ async function signInWithTicket(page, client, userId, organizationName) {
     /\/(?:create-org|tasks\/choose-organization)(?:[/?#]|$)/,
   )
   if (/\/tasks\/choose-organization(?:[/?#]|$)/.test(page.url())) {
-    await acceptRegistrationTaskLegalDocuments(page)
     const clerkPages = createPageObjects({ page, baseURL: E2E_BASE_URL })
     await withTimeout(
       () => clerkPages.sessionTask.resolveForceOrganizationSelectionTask({ name: organizationName }),
@@ -61,13 +59,12 @@ export async function createFreshFounder(page, client, label) {
   let organizationId
   try {
     await signInWithTicket(page, client, user.id, organizationName)
+    await acceptLegalDocumentsInApp(page)
     await page.waitForURL('**/foundation', { timeout: 30_000 })
     await page.waitForFunction(() => window.Clerk?.organization?.id?.startsWith('org_'), null, {
       timeout: 30_000,
     })
     organizationId = await page.evaluate(() => window.Clerk.organization.id)
-    await acceptCurrentLegalDocuments(page)
-    await page.waitForURL('**/foundation', { timeout: 30_000 })
     await expect(page.locator('#school_start_date')).toBeEnabled({ timeout: 30_000 })
     return { email, userId: user.id, organizationId, organizationName }
   } catch (error) {
@@ -90,7 +87,7 @@ export async function signInFreshFounder(page, client, founder) {
     { timeout: 30_000 },
   )
   await page.goto(`${E2E_BASE_URL}/foundation`, { waitUntil: 'domcontentloaded' })
-  await acceptCurrentLegalDocuments(page)
+  await acceptLegalDocumentsInApp(page)
   await page.waitForURL('**/foundation', { timeout: 30_000 })
   await expect(page.locator('#school_start_date')).toBeEnabled({ timeout: 30_000 })
 }

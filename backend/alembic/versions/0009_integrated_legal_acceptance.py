@@ -49,6 +49,29 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    connection = op.get_bind()
+    incompatible_records = connection.execute(
+        sa.text(
+            """
+            SELECT count(*)
+            FROM public.organization_legal_acceptance
+            WHERE privacy_version IS NOT NULL
+               OR controller_legal_name IS NULL
+               OR controller_registration_number IS NULL
+               OR controller_registered_address IS NULL
+               OR controller_contact_email IS NULL
+               OR representative_name IS NULL
+               OR representative_role IS NULL
+            """
+        )
+    ).scalar_one()
+    if incompatible_records:
+        raise RuntimeError(
+            "Downgrade 0009_integrated_legal_acceptance aborted: "
+            f"{incompatible_records} legal acceptance record(s) are incompatible "
+            "with the previous schema; no evidence was changed."
+        )
+
     op.drop_constraint(
         "uq_organization_legal_acceptance_versions",
         "organization_legal_acceptance",
