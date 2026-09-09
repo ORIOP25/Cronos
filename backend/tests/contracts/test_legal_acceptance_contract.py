@@ -70,7 +70,9 @@ def test_legal_acceptance_is_append_only_and_unique(clean_database):
         connection.rollback()
 
 
-def test_historical_acceptance_fields_remain_nullable_and_privacy_requires_new_evidence(clean_database):
+def test_historical_acceptance_fields_remain_nullable_and_privacy_requires_new_evidence(
+    clean_database,
+):
     marker = uuid.uuid4().hex
     with sync_test_engine.begin() as connection:
         organization_id = connection.execute(
