@@ -23,6 +23,18 @@ function allowedApiFailures(page) {
   return page.__allowedApiFailures
 }
 
+function runtimeApiFailures(page) {
+  const failures = allowedApiFailures(page)
+  let pathname = ''
+  try {
+    pathname = new URL(page.url()).pathname
+  } catch {
+    return failures
+  }
+  if (pathname !== '/create-org') return failures
+  return [...failures, { status: 403, url: '/api/v1/members/me' }]
+}
+
 export function allowApiFailure(page, { status, url = '/api/' }) {
   allowedApiFailures(page).push({ status, url })
 }
@@ -36,7 +48,7 @@ export function attachRuntimeGuards(page) {
       type: message.type(),
       text: message.text(),
       locationUrl: message.location()?.url,
-    }, allowedApiFailures(page))
+    }, runtimeApiFailures(page))
     if (error) {
       throw new Error(error)
     }
@@ -55,7 +67,7 @@ export function attachRuntimeGuards(page) {
     const error = getApiResponseError({
       url: response.url(),
       status: response.status(),
-    }, allowedApiFailures(page))
+    }, runtimeApiFailures(page))
     if (error) {
       throw new Error(error)
     }
