@@ -3,6 +3,7 @@ import { createPageObjects } from '@clerk/testing/playwright/unstable'
 import { setupClerkTestingToken } from '@clerk/testing/playwright'
 import { expect, test } from '@playwright/test'
 import {
+  acceptRegistrationTaskLegalDocuments,
   allowApiFailure,
   acceptCurrentLegalDocuments,
   attachRuntimeGuards,
@@ -34,7 +35,7 @@ async function signInFreshFounder(client, page, userId, organizationName) {
     /\/(?:create-org|tasks\/choose-organization)(?:[/?#]|$)/,
   )
   if (/\/tasks\/choose-organization(?:[/?#]|$)/.test(page.url())) {
-    await page.getByRole('checkbox', { name: /Li e concordo com os.*Termos de Serviço.*Política de Privacidade/i }).check()
+    await acceptRegistrationTaskLegalDocuments(page)
     const clerkPages = createPageObjects({ page, baseURL: baseUrl })
     await withTimeout(
       () => clerkPages.sessionTask.resolveForceOrganizationSelectionTask({ name: organizationName }),

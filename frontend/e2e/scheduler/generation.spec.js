@@ -3,6 +3,7 @@ import { clerk } from '@clerk/testing/playwright'
 import { createPageObjects } from '@clerk/testing/playwright/unstable'
 import { test, expect } from '@playwright/test'
 import {
+  acceptRegistrationTaskLegalDocuments,
   allowApiFailure,
   acceptCurrentLegalDocuments,
   attachRuntimeGuards,
@@ -178,7 +179,7 @@ async function signInUserWithTicket(
   await page.goto(ticketUrl.toString(), { waitUntil: 'domcontentloaded' })
   if (organizationName) {
     await page.waitForURL(/\/tasks\/choose-organization(?:[/?#]|$)/, { timeout: 30_000 })
-    await page.getByRole('checkbox', { name: /Li e concordo com os.*Termos de Serviço.*Política de Privacidade/i }).check()
+    await acceptRegistrationTaskLegalDocuments(page)
     const clerkPages = createPageObjects({ page, baseURL: baseUrl })
     await withTimeout(
       () => clerkPages.sessionTask.resolveForceOrganizationSelectionTask({ name: organizationName }),

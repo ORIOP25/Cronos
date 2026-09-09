@@ -2,7 +2,10 @@ import { createPageObjects } from '@clerk/testing/playwright/unstable'
 import { setupClerkTestingToken } from '@clerk/testing/playwright'
 import { expect } from '@playwright/test'
 import { createE2eRunKey, E2E_BASE_URL } from './e2e-config.js'
-import { acceptCurrentLegalDocuments } from './clerk-helpers.js'
+import {
+  acceptCurrentLegalDocuments,
+  acceptRegistrationTaskLegalDocuments,
+} from './clerk-helpers.js'
 
 export function withTimeout(operation, label, timeoutMs = 30_000) {
   let timeoutId
@@ -25,7 +28,7 @@ async function signInWithTicket(page, client, userId, organizationName) {
     /\/(?:create-org|tasks\/choose-organization)(?:[/?#]|$)/,
   )
   if (/\/tasks\/choose-organization(?:[/?#]|$)/.test(page.url())) {
-    await page.getByRole('checkbox', { name: /Li e concordo com os.*Termos de Serviço.*Política de Privacidade/i }).check()
+    await acceptRegistrationTaskLegalDocuments(page)
     const clerkPages = createPageObjects({ page, baseURL: E2E_BASE_URL })
     await withTimeout(
       () => clerkPages.sessionTask.resolveForceOrganizationSelectionTask({ name: organizationName }),

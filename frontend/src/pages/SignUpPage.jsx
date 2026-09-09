@@ -14,13 +14,11 @@ export default function SignUpPage() {
   const location = useLocation()
   const isChooseOrganizationTask = location.pathname.endsWith('/tasks/choose-organization')
   const [acceptedByClick, setAcceptedByClick] = useState(false)
-  const [taskError, setTaskError] = useState('')
   const legalAccepted = hasLegalAcceptance(userId) || acceptedByClick
 
   function handleLegalChange(event) {
     const nextAccepted = event.target.checked
     setAcceptedByClick(nextAccepted)
-    setTaskError('')
     setLegalAcceptance(userId, nextAccepted)
   }
 
@@ -32,7 +30,6 @@ export default function SignUpPage() {
     if (!isSubmit && !isButtonAction) return
     event.preventDefault()
     event.stopPropagation()
-    setTaskError('Leia e confirme os Termos de Serviço e a Política de Privacidade para continuar.')
   }
 
   return (
@@ -63,10 +60,7 @@ export default function SignUpPage() {
             </div>
 
             {isChooseOrganizationTask ? (
-              <>
-                <TaskLegalAcceptance accepted={legalAccepted} onChange={handleLegalChange} />
-                {taskError && <p className="zen-auth-legal-error" role="alert">{taskError}</p>}
-              </>
+              <TaskLegalAcceptance accepted={legalAccepted} onChange={handleLegalChange} />
             ) : (
               <p className="zen-auth-legal-links">
                 Ao criar uma conta, concorda com os <Link to="/termos">Termos de Serviço</Link> e a <Link to="/privacidade">Política de Privacidade</Link>.

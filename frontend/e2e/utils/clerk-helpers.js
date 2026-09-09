@@ -107,6 +107,25 @@ export async function acceptCurrentLegalDocuments(page) {
   await expect(page).toHaveURL(/\/(?:foundation|dashboard|create-org)(?:[/?#]|$)/, { timeout: 30_000 })
 }
 
+const registrationTaskLegalName = /Li e concordo com os.*Termos de Serviço.*Política de Privacidade/i
+
+export async function acceptRegistrationTaskLegalDocuments(page) {
+  const currentUrl = new URL(page.url())
+  const appOrigin = new URL(E2E_BASE_URL).origin
+  if (currentUrl.origin !== appOrigin) {
+    await page.goto(`${E2E_BASE_URL}/register/tasks/choose-organization`, {
+      waitUntil: 'domcontentloaded',
+    })
+  }
+  const checkbox = page.getByRole('checkbox', { name: registrationTaskLegalName })
+  await expect(checkbox).toBeVisible({ timeout: 30_000 })
+  await checkbox.check()
+  if (currentUrl.origin !== appOrigin) {
+    await page.goto(currentUrl.toString(), { waitUntil: 'domcontentloaded' })
+    await expect(page).toHaveURL(/\/tasks\/choose-organization(?:[/?#]|$)/, { timeout: 30_000 })
+  }
+}
+
 export async function clickSidebarRoute(page, path) {
   const sidebarLink = page.locator('aside').locator(`a[href="${path}"]`).first()
   await expect(sidebarLink).toBeVisible({ timeout: 10000 })
