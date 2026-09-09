@@ -600,10 +600,8 @@ test('fresh founder completes Complete Generation and custom-rule Adaptive Repai
     }, { timeout: 120_000 })
 
     await test.step('Foundation', async () => {
-      await page.getByRole('button', { name: schoolName }).click()
-      await page.waitForURL(/\/(?:create-org|foundation|dashboard)(?:[/?#]|$)/, { timeout: OPERATION_TIMEOUT_MS })
-      await acceptCurrentLegalDocuments(page)
       await page.waitForURL('**/foundation', { timeout: OPERATION_TIMEOUT_MS })
+      await acceptCurrentLegalDocuments(page)
       await page.waitForFunction(
         (expectedOrganizationId) => window.Clerk?.organization?.id === expectedOrganizationId,
         organizationId,
