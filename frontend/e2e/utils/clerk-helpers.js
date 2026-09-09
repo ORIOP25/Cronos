@@ -40,10 +40,17 @@ function runtimeApiFailures(page) {
     return failures
   }
   // A new Clerk organization can briefly return 403 for /members/me until the
-  // background bootstrap creates the local member. The route gate owns this
-  // transition; all other API failures remain fatal in E2E.
+  // background bootstrap creates the local member. Clerk's organization detail
+  // request can also return 403 while the testing session settles; it is a
+  // background read and does not block the active organization or Cronos API.
+  // The route gate owns the local transition; all other API failures remain
+  // fatal in E2E.
   if (pathname !== '/foundation') return failures
-  return [...failures, { status: 403, url: '/api/v1/members/me' }]
+  return [
+    ...failures,
+    { status: 403, url: '/api/v1/members/me' },
+    { status: 403, url: '/v1/organizations' },
+  ]
 }
 
 export function allowApiFailure(page, { status, url = '/api/' }) {

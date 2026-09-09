@@ -67,6 +67,18 @@ describe('E2E runtime guard classifiers', () => {
     expect(error).toBeNull()
   })
 
+  it('allows Clerk organization detail settling during foundation onboarding', () => {
+    const error = getConsoleError({
+      type: 'error',
+      text: 'Failed to load resource: the server responded with a status of 403 (Forbidden)',
+      locationUrl: 'https://welcomed-cat-83.clerk.accounts.dev/v1/organizations?session=test',
+    }, [
+      { status: 403, url: '/v1/organizations' },
+    ])
+
+    expect(error).toBeNull()
+  })
+
   it('keeps unexpected asset failures visible', () => {
     const font404 = getConsoleError({
       type: 'error',

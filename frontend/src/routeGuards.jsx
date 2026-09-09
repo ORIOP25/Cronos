@@ -169,8 +169,9 @@ function useOrganizationGuardState() {
 function MemberGate({ children, capability, requireTeacherId = false, redirectToDefault = false, allowUncompletedFoundation = false }) {
   const state = useOrganizationGuardState()
   const { data: member, isLoading: memberLoading, isError, error, refetch } = state.member
-  if (!state.isLoaded || !state.orgLoaded || !state.listLoaded) return <PageLoader />
+  if (!state.isLoaded) return <PageLoader />
   if (!state.isSignedIn) return <RedirectToCurrentPageSignIn />
+  if (!state.orgLoaded || !state.listLoaded) return <PageLoader />
   if (!state.organization) return <OrganizationRequired memberships={state.memberships} />
   if (!state.userLoaded) return <PageLoader />
   if (memberLoading || state.isCompleting || (state.bootstrapRequired && !state.error)) return <PageLoader />
