@@ -65,17 +65,10 @@ class LegalAcceptanceCreate(BaseModel):
 
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
-    controller_legal_name: str = Field(min_length=1, max_length=200)
-    controller_registration_number: str = Field(min_length=1, max_length=50)
-    controller_registered_address: str = Field(min_length=1, max_length=500)
-    controller_contact_email: EmailStr
-    representative_name: str = Field(min_length=1, max_length=150)
-    representative_role: str = Field(min_length=1, max_length=100)
-    authority_confirmed: Literal[True]
-    terms_accepted: Literal[True]
-    dpa_accepted: Literal[True]
+    acceptance_confirmed: Literal[True]
     terms_version: str = Field(min_length=1, max_length=40)
     dpa_version: str = Field(min_length=1, max_length=40)
+    privacy_version: str = Field(min_length=1, max_length=40)
 
 
 class LegalAcceptanceRead(BaseModel):
@@ -84,15 +77,10 @@ class LegalAcceptanceRead(BaseModel):
     id: int
     organization_id: int
     accepted_by_membership_id_snapshot: int
-    controller_legal_name: str
-    controller_registration_number: str
-    controller_registered_address: str
-    controller_contact_email: EmailStr
-    representative_name: str
-    representative_role: str
     authority_confirmed: Literal[True]
     terms_version: str
     dpa_version: str
+    privacy_version: str
     accepted_at: datetime
 
 
@@ -103,6 +91,7 @@ class LegalStatusResponse(BaseModel):
     requires_acceptance: bool
     terms_version: str
     dpa_version: str
+    privacy_version: str
     accepted_at: datetime | None = None
 
 

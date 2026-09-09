@@ -10,6 +10,7 @@ AUTOMATIC_HOLIDAYS = VERSIONS / "0005_automatic_holidays.py"
 NON_MUTATING_ENSURE_USER = VERSIONS / "0006_non_mutating_ensure_user.py"
 LEGAL_ACCEPTANCE = VERSIONS / "0007_legal_acceptance.py"
 REMOVE_TUTORIAL_TELEMETRY = VERSIONS / "0008_remove_tutorial_telemetry.py"
+INTEGRATED_LEGAL_ACCEPTANCE = VERSIONS / "0009_integrated_legal_acceptance.py"
 
 
 def _load_initial():
@@ -31,6 +32,7 @@ def test_migration_history_has_expected_revisions():
         NON_MUTATING_ENSURE_USER,
         LEGAL_ACCEPTANCE,
         REMOVE_TUTORIAL_TELEMETRY,
+        INTEGRATED_LEGAL_ACCEPTANCE,
     ]
     source = INITIAL.read_text(encoding="utf-8")
     assert _load_initial().down_revision is None

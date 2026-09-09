@@ -33,13 +33,14 @@ async def _ensure_default_legal_acceptance(
     is infrastructure, so its current acceptance must be prepared before
     admin and teacher sessions start in parallel.
     """
-    from app.legal import CURRENT_DPA_VERSION, CURRENT_TERMS_VERSION
+    from app.legal import CURRENT_DPA_VERSION, CURRENT_PRIVACY_VERSION, CURRENT_TERMS_VERSION
 
     acceptance = await db.scalar(
         select(models.OrganizationLegalAcceptance).where(
             models.OrganizationLegalAcceptance.organization_id == result.organization_id,
             models.OrganizationLegalAcceptance.terms_version == CURRENT_TERMS_VERSION,
             models.OrganizationLegalAcceptance.dpa_version == CURRENT_DPA_VERSION,
+            models.OrganizationLegalAcceptance.privacy_version == CURRENT_PRIVACY_VERSION,
         )
     )
     if acceptance is not None:
@@ -49,15 +50,10 @@ async def _ensure_default_legal_acceptance(
         models.OrganizationLegalAcceptance(
             organization_id=result.organization_id,
             accepted_by_membership_id_snapshot=result.admin_membership_id,
-            controller_legal_name="Entidade E2E, ENI",
-            controller_registration_number="999999990",
-            controller_registered_address="Rua E2E, 1, 1000-000 Lisboa",
-            controller_contact_email="e2e-legal@example.com",
-            representative_name="Representante E2E",
-            representative_role="Administrador",
             authority_confirmed=True,
             terms_version=CURRENT_TERMS_VERSION,
             dpa_version=CURRENT_DPA_VERSION,
+            privacy_version=CURRENT_PRIVACY_VERSION,
         )
     )
     await db.flush()

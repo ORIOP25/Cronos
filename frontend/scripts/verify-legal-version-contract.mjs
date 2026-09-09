@@ -68,13 +68,14 @@ function allDocumentText(legalContent) {
 export function validateLegalVersionContract({ backendSource, legalContent, legalManifest }) {
   const termsVersion = backendSource.match(/CURRENT_TERMS_VERSION\s*=\s*["']([^"']+)["']/)?.[1]
   const dpaVersion = backendSource.match(/CURRENT_DPA_VERSION\s*=\s*["']([^"']+)["']/)?.[1]
+  const privacyVersion = backendSource.match(/CURRENT_PRIVACY_VERSION\s*=\s*["']([^"']+)["']/)?.[1]
   const errors = []
 
-  if (!termsVersion || !dpaVersion) errors.push('Backend legal versions are missing.')
+  if (!termsVersion || !dpaVersion || !privacyVersion) errors.push('Backend legal versions are missing.')
   if (!legalContent?.version || !legalContent?.documents) errors.push('Canonical legal content is missing.')
   if (legalManifest?.format !== 'cronos-legal-manifest-v1') errors.push('Legal manifest format is invalid.')
-  if (termsVersion !== dpaVersion || termsVersion !== legalContent?.version) {
-    errors.push(`Legal version mismatch: backend terms=${termsVersion}, backend dpa=${dpaVersion}, content=${legalContent?.version}`)
+  if (termsVersion !== dpaVersion || termsVersion !== privacyVersion || termsVersion !== legalContent?.version) {
+    errors.push(`Legal version mismatch: backend terms=${termsVersion}, backend dpa=${dpaVersion}, backend privacy=${privacyVersion}, content=${legalContent?.version}`)
   }
 
   const actualDocuments = Object.keys(legalContent?.documents ?? {}).sort()

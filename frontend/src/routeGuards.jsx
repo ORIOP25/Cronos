@@ -126,7 +126,7 @@ function MemberGate({ children, capability, requireTeacherId = false, redirectTo
   if (state.legal.isLoading) return <PageLoader />
   if (state.legal.isError) return <MemberQueryFailure error={state.legal.error} recoverSession={state.recoverSession} refetch={state.legal.refetch} signOut={state.signOut} />
   if (state.legal.data?.requires_acceptance) {
-    return <Navigate to="/legal/aceitar" state={{ from: location.pathname + location.search }} replace />
+    return <Navigate to={ROUTE_CREATE_ORG} state={{ from: location.pathname + location.search + location.hash }} replace />
   }
   if (redirectToDefault) return <Navigate to={getDefaultRouteForMember(member)} replace />
 

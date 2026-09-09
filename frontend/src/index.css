@@ -1263,6 +1263,71 @@ h1, h2, h3, h4, h5, h6 {
   max-width: 440px;
 }
 
+.zen-auth-legal-links {
+  max-width: 390px;
+  margin: 18px auto 0;
+  padding: 12px 16px 0;
+  border-top: 1px solid rgba(212, 148, 11, 0.35);
+  color: var(--brand-600);
+  font-size: 0.76rem;
+  line-height: 1.55;
+  text-align: center;
+}
+
+.zen-auth-legal-checkbox {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 22px auto 0;
+  max-width: 440px;
+  color: #8b6f5c;
+  font-size: 0.82rem;
+  line-height: 1.55;
+}
+
+.zen-auth-legal-checkbox input {
+  flex: 0 0 auto;
+  width: 17px;
+  height: 17px;
+  margin-top: 2px;
+  accent-color: #d4940b;
+}
+
+.zen-auth-legal-checkbox a {
+  color: #5c3d2e;
+  font-weight: 600;
+  text-decoration: underline;
+  text-decoration-color: rgba(212, 148, 11, 0.55);
+  text-underline-offset: 3px;
+}
+
+.zen-auth-legal-checkbox a:hover {
+  color: #d4940b;
+}
+
+.zen-auth-legal-error {
+  margin: 10px auto 0;
+  max-width: 440px;
+  color: #a33a2b;
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.zen-auth-legal-links a {
+  color: var(--brand-800);
+  font-weight: 650;
+  text-decoration: underline;
+  text-decoration-color: rgba(212, 148, 11, 0.65);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+  transition: color 0.2s ease, text-decoration-color 0.2s ease;
+}
+
+.zen-auth-legal-links a:hover {
+  color: var(--brand-500);
+  text-decoration-color: var(--brand-500);
+}
+
 .zen-auth-form-footer {
   margin-top: 28px;
   text-align: center;

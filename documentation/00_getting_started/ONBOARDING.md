@@ -63,7 +63,8 @@ Do not interpret a loading screen as a missing permission.
 | Condition | Destination | Reason |
 | :--- | :--- | :--- |
 | User is signed out | `/login` | Authentication is required. |
-| User has no organization or membership | `/create-org` | The user must create or join an organization. |
+| User has a pending Clerk organization task | `/register/tasks/choose-organization` | The user must create or select an organization and confirm the legal documents. |
+| User has no organization or membership after the task | `/create-org` | The bridge waits for the active organization and bootstraps it. |
 | User has memberships but no active organization | Organization selector | The user must choose the tenant context. |
 | Active organization, administrator, Foundation incomplete | `/foundation` | The administrator can complete the required setup. |
 | Active organization, non-administrator, Foundation incomplete | `/foundation/waiting` | Only a Foundation administrator can complete setup. |
@@ -80,20 +81,21 @@ The dashboard provides **Repetir guia** and **Retomar guia** actions when applic
 1. Open the application.
 2. Sign in with Clerk.
 3. Wait for Clerk to load the organization list.
-4. Select an active organization, or open `/create-org` when no membership exists.
+4. Complete the Clerk organization task when Clerk requests it.
 
-The frontend does not render the organization creation form while the Clerk membership list is still loading.
-This prevents a transient empty list from replacing the form after the page has started.
+The task page contains one Cronos checkbox for the Terms of Service and Privacy Policy.
+The confirmation is kept in session storage for the signed-in user.
 
 ### Create an organization
 
 When the user has no membership:
 
-1. Enter the school name.
-2. Submit the form.
-3. Wait for Clerk to create the organization and the membership.
-4. Activate the new organization.
-5. Wait for `POST /api/v1/session/bootstrap` to reconcile the local member.
+1. Enter the school name in the Clerk organization task.
+2. Select or create the organization.
+3. Confirm the Terms of Service and Privacy Policy checkbox once.
+4. Wait for Clerk to activate the organization and membership.
+5. Wait for `/create-org` to bootstrap the local member.
+6. Read `/legal/status` and record `/legal/acceptance` with its three current versions.
 
 The activation state is kept in session storage so the user can resume after a transient reload.
 The backend bootstrap requires the Clerk subject, the active organization claim, and an administrator role.

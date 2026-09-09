@@ -2,7 +2,7 @@ import pytest
 from sqlalchemy import func, select
 
 from app import models
-from app.legal import CURRENT_DPA_VERSION, CURRENT_TERMS_VERSION
+from app.legal import CURRENT_DPA_VERSION, CURRENT_PRIVACY_VERSION, CURRENT_TERMS_VERSION
 from tests._support.db_fixtures import create_org_and_user
 
 pytestmark = pytest.mark.postgresql
@@ -10,17 +10,10 @@ pytestmark = pytest.mark.postgresql
 
 def _acceptance_payload() -> dict[str, object]:
     return {
-        "controller_legal_name": "Entidade Teste, ENI",
-        "controller_registration_number": "999999990",
-        "controller_registered_address": "Rua de Teste, 1, 1000-000 Lisboa",
-        "controller_contact_email": "legal@test.com",
-        "representative_name": "Representante Teste",
-        "representative_role": "Administrador",
-        "authority_confirmed": True,
-        "terms_accepted": True,
-        "dpa_accepted": True,
+        "acceptance_confirmed": True,
         "terms_version": CURRENT_TERMS_VERSION,
         "dpa_version": CURRENT_DPA_VERSION,
+        "privacy_version": CURRENT_PRIVACY_VERSION,
     }
 
 
@@ -48,6 +41,16 @@ async def test_legal_gate_requires_admin_acceptance_and_is_idempotent(async_clie
         json=_acceptance_payload(),
     )
     assert accepted_response.status_code == 200
+    assert set(accepted_response.json()) == {
+        "id",
+        "organization_id",
+        "accepted_by_membership_id_snapshot",
+        "authority_confirmed",
+        "terms_version",
+        "dpa_version",
+        "privacy_version",
+        "accepted_at",
+    }
 
     repeated_response = await async_client.post(
         "/api/v1/legal/acceptance",
@@ -61,6 +64,7 @@ async def test_legal_gate_requires_admin_acceptance_and_is_idempotent(async_clie
     assert accepted_status.status_code == 200
     assert accepted_status.json()["accepted"] is True
     assert accepted_status.json()["requires_acceptance"] is False
+    assert accepted_status.json()["privacy_version"] == CURRENT_PRIVACY_VERSION
     assert (
         await db_session.scalar(
             select(func.count())

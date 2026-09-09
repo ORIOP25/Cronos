@@ -5,7 +5,7 @@ from pydantic import ValidationError
 
 from app import schemas
 from app.core.auth import Actor
-from app.legal import CURRENT_DPA_VERSION, CURRENT_TERMS_VERSION
+from app.legal import CURRENT_DPA_VERSION, CURRENT_PRIVACY_VERSION, CURRENT_TERMS_VERSION
 from app.models import LessonOccurrenceStatus
 from app.services.legal_acceptance_service import (
     LegalAcceptanceService,
@@ -34,42 +34,44 @@ def test_occurrence_commands_reject_free_text_reasons():
         schemas.LessonOccurrenceCancel(version=1, reason="texto")
 
 
-def test_legal_acceptance_requires_three_explicit_confirmations():
+def test_legal_acceptance_requires_one_explicit_confirmation_and_versions():
     payload = {
-        "controller_legal_name": "Entidade Teste",
-        "controller_registration_number": "999999990",
-        "controller_registered_address": "Rua de Teste, 1",
-        "controller_contact_email": "legal@test.com",
-        "representative_name": "Representante",
-        "representative_role": "Administrador",
-        "authority_confirmed": True,
+        "acceptance_confirmed": True,
         "terms_version": "2026-01",
         "dpa_version": "2026-01",
+        "privacy_version": "2026-01",
     }
+    accepted = schemas.LegalAcceptanceCreate(**payload)
+    assert accepted.acceptance_confirmed is True
+
+    for field in ("acceptance_confirmed", "terms_version", "dpa_version", "privacy_version"):
+        incomplete = {key: value for key, value in payload.items() if key != field}
+        with pytest.raises(ValidationError):
+            schemas.LegalAcceptanceCreate(**incomplete)
+
     with pytest.raises(ValidationError):
-        schemas.LegalAcceptanceCreate(**payload)
-    accepted = schemas.LegalAcceptanceCreate(
-        **payload,
-        terms_accepted=True,
-        dpa_accepted=True,
-    )
-    assert accepted.terms_accepted is True
-    assert accepted.dpa_accepted is True
+        schemas.LegalAcceptanceCreate(**payload, legacy_field="not accepted")
+    with pytest.raises(ValidationError):
+        schemas.LegalAcceptanceCreate(**{**payload, "acceptance_confirmed": False})
+
+
+def test_legal_acceptance_rejects_legacy_fields():
+    with pytest.raises(ValidationError):
+        schemas.LegalAcceptanceCreate(
+            acceptance_confirmed=True,
+            terms_version=CURRENT_TERMS_VERSION,
+            dpa_version=CURRENT_DPA_VERSION,
+            privacy_version=CURRENT_PRIVACY_VERSION,
+            terms_accepted=True,
+        )
 
 
 def _accepted_legal_command(**overrides):
     payload = {
-        "controller_legal_name": "Entidade Teste",
-        "controller_registration_number": "999999990",
-        "controller_registered_address": "Rua de Teste, 1",
-        "controller_contact_email": "legal@test.com",
-        "representative_name": "Representante",
-        "representative_role": "Administrador",
-        "authority_confirmed": True,
-        "terms_accepted": True,
-        "dpa_accepted": True,
+        "acceptance_confirmed": True,
         "terms_version": CURRENT_TERMS_VERSION,
         "dpa_version": CURRENT_DPA_VERSION,
+        "privacy_version": CURRENT_PRIVACY_VERSION,
         **overrides,
     }
     return schemas.LegalAcceptanceCreate(**payload)

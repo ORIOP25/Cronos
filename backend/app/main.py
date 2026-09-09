@@ -52,7 +52,7 @@ async def lifespan(app: FastAPI):
             logger.info("rate_limit_configured", enabled=settings.RATELIMIT_ENABLED)
             yield
         finally:
-            await redis.aclose()
+            await redis.close()
             await engine_async.dispose()
             logger.info("ZZZ Servidor a desligar...")
 

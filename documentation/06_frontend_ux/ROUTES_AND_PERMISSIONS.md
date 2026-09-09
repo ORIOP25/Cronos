@@ -23,7 +23,7 @@ Read [Members and Access](../02_domain_model/MEMBERS_AND_ACCESS.md).
 | `/register/*` | `SignUpPage.jsx` | Public | Registration view |
 | `/recuperar-palavra-passe` | `ForgotPasswordPage.jsx` | Public | Password recovery view |
 | `/foundation` | `Foundation.jsx` | Foundation admin | Organization setup wizard |
-| `/create-org` | `CreateOrgPage.jsx` | Authenticated | Organization creation view |
+| `/create-org` | `CreateOrgPage.jsx` | Authenticated | Short organization bootstrap transition after the Clerk task |
 | `/dashboard` | `Dashboard.jsx` | Admin | Administrative command center |
 | `/schedules` | `Schedules.jsx` | Admin | Timetable view and solver trigger |
 | `/courses` | `Courses.jsx` | Admin | Course catalog management |
@@ -49,6 +49,9 @@ Routes use `<RequireAdmin>` and `<RequireTeacher>` capability guards:
 ## Contracts and Invariants
 - Signed-out users accessing protected routes are redirected to `/login`.
 - A signed-in user without an active organization sees the organization selector or `/create-org`.
+- A pending Clerk organization task uses `/register/tasks/choose-organization` for organization selection and legal confirmation.
+- `/create-org` bootstraps the selected organization and stores the safe source route in `location.state.from`.
+- `/legal/aceitar` is not a client route.
 - Signed-in root visits use `getDefaultRouteForMember`.
 - Public metadata comes from `features/marketing/content/metadata.js`.
 
@@ -70,9 +73,10 @@ The guard order is significant:
 1. wait for Clerk authentication;
 2. wait for the active organization and membership list;
 3. bootstrap or read the current local member;
-4. send users without a tenant to `/create-org` or the organization selector;
-5. apply the Foundation gate;
-6. apply admin or teacher capability checks.
+4. send users without a tenant to the Clerk organization task or selector;
+5. send users without current legal acceptance to `/create-org`;
+6. apply the Foundation gate;
+7. apply admin or teacher capability checks.
 
 | Route | Access while Foundation is incomplete | Access after Foundation completion |
 | :--- | :--- | :--- |

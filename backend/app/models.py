@@ -713,15 +713,16 @@ class OrganizationLegalAcceptance(Base):
         ForeignKey(FK_ORG_ID, ondelete="RESTRICT"), nullable=False, index=True
     )
     accepted_by_membership_id_snapshot: Mapped[int] = mapped_column(Integer, nullable=False)
-    controller_legal_name: Mapped[str] = mapped_column(String(200), nullable=False)
-    controller_registration_number: Mapped[str] = mapped_column(String(50), nullable=False)
-    controller_registered_address: Mapped[str] = mapped_column(String(500), nullable=False)
-    controller_contact_email: Mapped[str] = mapped_column(String(254), nullable=False)
-    representative_name: Mapped[str] = mapped_column(String(150), nullable=False)
-    representative_role: Mapped[str] = mapped_column(String(100), nullable=False)
+    controller_legal_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    controller_registration_number: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    controller_registered_address: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    controller_contact_email: Mapped[str | None] = mapped_column(String(254), nullable=True)
+    representative_name: Mapped[str | None] = mapped_column(String(150), nullable=True)
+    representative_role: Mapped[str | None] = mapped_column(String(100), nullable=True)
     authority_confirmed: Mapped[bool] = mapped_column(Boolean, nullable=False)
     terms_version: Mapped[str] = mapped_column(String(40), nullable=False)
     dpa_version: Mapped[str] = mapped_column(String(40), nullable=False)
+    privacy_version: Mapped[str | None] = mapped_column(String(40), nullable=True)
     accepted_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=text("CURRENT_TIMESTAMP"), nullable=False
     )
@@ -731,6 +732,7 @@ class OrganizationLegalAcceptance(Base):
             "organization_id",
             "terms_version",
             "dpa_version",
+            "privacy_version",
             name="uq_organization_legal_acceptance_versions",
         ),
         CheckConstraint(

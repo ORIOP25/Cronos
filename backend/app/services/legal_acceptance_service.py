@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models, schemas
 from app.core.auth import Actor
-from app.legal import CURRENT_DPA_VERSION, CURRENT_TERMS_VERSION
+from app.legal import CURRENT_DPA_VERSION, CURRENT_PRIVACY_VERSION, CURRENT_TERMS_VERSION
 
 
 class LegalAcceptanceError(Exception):
@@ -40,6 +40,7 @@ class LegalAcceptanceService:
                 models.OrganizationLegalAcceptance.organization_id == organization_id,
                 models.OrganizationLegalAcceptance.terms_version == CURRENT_TERMS_VERSION,
                 models.OrganizationLegalAcceptance.dpa_version == CURRENT_DPA_VERSION,
+                models.OrganizationLegalAcceptance.privacy_version == CURRENT_PRIVACY_VERSION,
             )
             .order_by(models.OrganizationLegalAcceptance.id.desc())
         )
@@ -48,6 +49,7 @@ class LegalAcceptanceService:
             requires_acceptance=acceptance is None,
             terms_version=CURRENT_TERMS_VERSION,
             dpa_version=CURRENT_DPA_VERSION,
+            privacy_version=CURRENT_PRIVACY_VERSION,
             accepted_at=acceptance.accepted_at if acceptance else None,
         )
 
@@ -66,6 +68,7 @@ class LegalAcceptanceService:
         if (
             command.terms_version != CURRENT_TERMS_VERSION
             or command.dpa_version != CURRENT_DPA_VERSION
+            or command.privacy_version != CURRENT_PRIVACY_VERSION
         ):
             raise LegalDocumentVersionStaleError(
                 "As versões dos documentos já não são atuais. Atualize a página e tente novamente."
@@ -85,6 +88,7 @@ class LegalAcceptanceService:
                 models.OrganizationLegalAcceptance.organization_id == organization_id,
                 models.OrganizationLegalAcceptance.terms_version == CURRENT_TERMS_VERSION,
                 models.OrganizationLegalAcceptance.dpa_version == CURRENT_DPA_VERSION,
+                models.OrganizationLegalAcceptance.privacy_version == CURRENT_PRIVACY_VERSION,
             )
         )
         if existing is not None:
@@ -93,15 +97,10 @@ class LegalAcceptanceService:
         acceptance = models.OrganizationLegalAcceptance(
             organization_id=organization_id,
             accepted_by_membership_id_snapshot=actor.membership_id,
-            controller_legal_name=command.controller_legal_name,
-            controller_registration_number=command.controller_registration_number,
-            controller_registered_address=command.controller_registered_address,
-            controller_contact_email=str(command.controller_contact_email).lower(),
-            representative_name=command.representative_name,
-            representative_role=command.representative_role,
             authority_confirmed=True,
             terms_version=CURRENT_TERMS_VERSION,
             dpa_version=CURRENT_DPA_VERSION,
+            privacy_version=CURRENT_PRIVACY_VERSION,
         )
         self.db.add(acceptance)
         await self.db.flush()

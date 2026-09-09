@@ -34,27 +34,18 @@ async function signInFreshFounder(client, page, userId, organizationName) {
     /\/(?:create-org|tasks\/choose-organization)(?:[/?#]|$)/,
   )
   if (/\/tasks\/choose-organization(?:[/?#]|$)/.test(page.url())) {
+    await page.getByRole('checkbox', { name: /Li e concordo com os.*Termos de Serviço.*Política de Privacidade/i }).check()
     const clerkPages = createPageObjects({ page, baseURL: baseUrl })
     await withTimeout(
       () => clerkPages.sessionTask.resolveForceOrganizationSelectionTask({ name: organizationName }),
       'dashboard E2E organization selection',
     )
   }
-  await page.waitForURL(`${baseUrl}/create-org`, { timeout: 30_000 })
+  await expect.poll(() => page.url(), { timeout: 30_000 }).toMatch(
+    /\/(?:create-org|foundation)(?:[/?#]|$)/,
+  )
   await page.waitForFunction(() => window.Clerk?.user != null, null, { timeout: 30_000 })
-  const schoolInput = page.getByLabel('Nome da escola')
-  const existingOrganization = page.getByRole('button', { name: organizationName, exact: true })
-  await expect.poll(async () => {
-    if (await schoolInput.isVisible()) return 'create'
-    if (await existingOrganization.isVisible()) return 'select'
-    return null
-  }, { timeout: 30_000 }).toMatch(/^(create|select)$/)
-  if (await schoolInput.isVisible()) {
-    await schoolInput.fill(organizationName)
-    await page.getByRole('button', { name: 'Criar organização' }).click()
-  } else {
-    await existingOrganization.click()
-  }
+  await page.waitForURL('**/foundation', { timeout: 30_000 })
   await page.waitForFunction(() => window.Clerk?.organization?.id?.startsWith('org_'), null, { timeout: 30_000 })
   await acceptCurrentLegalDocuments(page)
   return page.evaluate(() => window.Clerk.organization.id)

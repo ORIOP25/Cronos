@@ -178,15 +178,20 @@ async function signInUserWithTicket(
   await page.goto(ticketUrl.toString(), { waitUntil: 'domcontentloaded' })
   if (organizationName) {
     await page.waitForURL(/\/tasks\/choose-organization(?:[/?#]|$)/, { timeout: 30_000 })
+    await page.getByRole('checkbox', { name: /Li e concordo com os.*Termos de Serviço.*Política de Privacidade/i }).check()
     const clerkPages = createPageObjects({ page, baseURL: baseUrl })
     await withTimeout(
       () => clerkPages.sessionTask.resolveForceOrganizationSelectionTask({ name: organizationName }),
       'Clerk organization selection',
     )
   }
-  await page.waitForURL(targetUrl.toString(), { timeout: 30_000 })
+  if (organizationName) {
+    await page.waitForURL('**/foundation', { timeout: 30_000 })
+  } else {
+    await page.waitForURL(targetUrl.toString(), { timeout: 30_000 })
+  }
   await page.waitForFunction(() => window.Clerk?.user != null, null, { timeout: 30_000 })
-  await expectRouteReady(page, path)
+  if (!organizationName) await expectRouteReady(page, path)
   if (organizationName) {
     return await page.evaluate((name) => (
       window.Clerk?.user?.organizationMemberships.find(
@@ -595,7 +600,7 @@ test('fresh founder completes Complete Generation and custom-rule Adaptive Repai
 
     await test.step('Foundation', async () => {
       await page.getByRole('button', { name: schoolName }).click()
-      await page.waitForURL(/\/(?:foundation|legal\/aceitar)(?:[/?#]|$)/, { timeout: OPERATION_TIMEOUT_MS })
+      await page.waitForURL(/\/(?:create-org|foundation|dashboard)(?:[/?#]|$)/, { timeout: OPERATION_TIMEOUT_MS })
       await acceptCurrentLegalDocuments(page)
       await page.waitForURL('**/foundation', { timeout: OPERATION_TIMEOUT_MS })
       await page.waitForFunction(
@@ -690,8 +695,13 @@ test('fresh founder completes Complete Generation and custom-rule Adaptive Repai
       await expectRouteReady(page, '/schedules')
 
       await page.evaluate(async () => window.Clerk.setActive({ organization: null }))
-      await goTo(page, '/create-org')
-      await page.getByRole('button', { name: schoolName }).click()
+      await page.evaluate(async (organizationId) => window.Clerk.setActive({ organization: organizationId }), organizationId)
+      await page.waitForFunction(
+        (expectedOrganizationId) => window.Clerk?.organization?.id === expectedOrganizationId,
+        organizationId,
+        { timeout: OPERATION_TIMEOUT_MS },
+      )
+      await goTo(page, '/dashboard')
       await expectRouteReady(page, '/dashboard')
     }, { timeout: 120_000 })
   } catch (error) {

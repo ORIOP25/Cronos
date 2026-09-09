@@ -2,7 +2,7 @@ import { createClerkClient } from '@clerk/backend'
 import { setupClerkTestingToken } from '@clerk/testing/playwright'
 import { createPageObjects } from '@clerk/testing/playwright/unstable'
 import { expect, test } from '@playwright/test'
-import { acceptCurrentLegalDocuments, attachRuntimeGuards, expectRouteReady } from '../utils/clerk-helpers.js'
+import { attachRuntimeGuards, expectRouteReady } from '../utils/clerk-helpers.js'
 import { createE2eRunKey, E2E_BASE_URL } from '../utils/e2e-config.js'
 
 const OPERATION_TIMEOUT_MS = 30_000
@@ -59,31 +59,20 @@ test('manual founder onboarding creates and activates an organization', async ({
       /\/(?:create-org|tasks\/choose-organization)(?:[/?#]|$)/,
     )
     if (/\/tasks\/choose-organization(?:[/?#]|$)/.test(page.url())) {
+      await page.getByRole('checkbox', { name: /Li e concordo com os.*Termos de Serviço.*Política de Privacidade/i }).check()
       const clerkPages = createPageObjects({ page, baseURL: baseUrl })
       await withTimeout(
         () => clerkPages.sessionTask.resolveForceOrganizationSelectionTask({ name: schoolName }),
         'Clerk organization selection',
       )
     }
-    await page.waitForURL(targetUrl.toString(), { timeout: OPERATION_TIMEOUT_MS })
+    await expect.poll(() => page.url(), { timeout: OPERATION_TIMEOUT_MS }).toMatch(
+      /\/(?:create-org|foundation)(?:[/?#]|$)/,
+    )
     await page.waitForFunction(() => window.Clerk?.user != null, null, {
       timeout: OPERATION_TIMEOUT_MS,
     })
-
-    const schoolInput = page.getByLabel('Nome da escola')
-    const existingOrganization = page.getByRole('button', { name: schoolName, exact: true })
-    await expect.poll(async () => {
-      if (await schoolInput.isVisible()) return 'create'
-      if (await existingOrganization.isVisible()) return 'select'
-      return null
-    }, { timeout: OPERATION_TIMEOUT_MS }).toMatch(/^(create|select)$/)
-
-    if (await schoolInput.isVisible()) {
-      await schoolInput.fill(schoolName)
-      await page.getByRole('button', { name: 'Criar organização' }).click()
-    } else {
-      await existingOrganization.click()
-    }
+    await page.waitForURL('**/foundation', { timeout: OPERATION_TIMEOUT_MS })
     await page.waitForFunction(
       () => window.Clerk?.organization?.id?.startsWith('org_'),
       null,
@@ -91,7 +80,6 @@ test('manual founder onboarding creates and activates an organization', async ({
     )
     const organizationId = await page.evaluate(() => window.Clerk.organization.id)
     organizationIds.add(organizationId)
-    await acceptCurrentLegalDocuments(page)
     await page.waitForURL('**/foundation', { timeout: OPERATION_TIMEOUT_MS })
     expect(organizationId).toMatch(/^org_/)
     await expectRouteReady(page, '/foundation')

@@ -45,6 +45,7 @@ test('accepts a changed document only when its version and digest are updated', 
   const changedBackendSource = backendSource
     .replace('CURRENT_TERMS_VERSION = "2026-01"', 'CURRENT_TERMS_VERSION = "2026-02"')
     .replace('CURRENT_DPA_VERSION = "2026-01"', 'CURRENT_DPA_VERSION = "2026-02"')
+    .replace('CURRENT_PRIVACY_VERSION = "2026-01"', 'CURRENT_PRIVACY_VERSION = "2026-02"')
 
   assert.doesNotThrow(() => validateLegalVersionContract({
     backendSource: changedBackendSource,

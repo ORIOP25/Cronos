@@ -28,7 +28,6 @@ const ClassSubjects = lazy(() => import('./pages/ClassSubjects'))
 const Foundation = lazy(() => import('./pages/Foundation'))
 const FoundationWaiting = lazy(() => import('./pages/FoundationWaiting'))
 const Guide = lazy(() => import('./pages/Guide'))
-const LegalAcceptancePage = lazy(() => import('./pages/LegalAcceptancePage'))
 const LegalDocumentLayout = lazy(() => import('./features/legal/LegalDocumentLayout.jsx'))
 
 const MarketingLayout = lazy(() => import('./features/marketing/components/layout/MarketingLayout.jsx'))
@@ -53,6 +52,7 @@ function useStorageScopeCleanup(userId, isSignedIn, organizationId) {
     if (previousUser && (!isSignedIn || previousUser !== userId)) {
       clearStorageKeys(localStorage, (key) => key.includes(`:user:${previousUser}:`))
       clearStorageKeys(sessionStorage, (key) => key.startsWith(`cronos:pending-organization:${previousUser}`))
+      clearStorageKeys(sessionStorage, (key) => key === 'cronos:legal-acceptance:pending')
     }
     if (previousOrganization && previousOrganization !== organizationId) {
       clearStorageKeys(localStorage, (key) => key.includes(`:org:${previousOrganization}`) || key.endsWith(`-org-${previousOrganization}`))
@@ -104,8 +104,6 @@ function App() {
           <Route path="/create-org" element={
             <RequireAuth><CreateOrgPage /></RequireAuth>
           } />
-
-          <Route path="/legal/aceitar" element={<RequireAuth><LegalAcceptancePage /></RequireAuth>} />
 
           <Route path="/foundation/waiting" element={
             <RequireAuth><FoundationWaiting /></RequireAuth>

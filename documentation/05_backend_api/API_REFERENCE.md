@@ -176,8 +176,8 @@ All paths below are relative to `/api/v1`.
 | `GET` | `/foundation/draft` | Foundation administrator | Read the current draft, version, step, and data. |
 | `PUT` | `/foundation/draft` | Foundation administrator | Validate and save a draft with `expected_version`. |
 | `POST` | `/foundation/complete` | Foundation administrator | Validate, persist, and complete the Foundation. |
-| `GET` | `/legal/status` | Signed-in organization member | Read the current Terms and DPA acceptance status. |
-| `POST` | `/legal/acceptance` | Organization administrator | Record the current Terms and DPA acceptance idempotently. |
+| `GET` | `/legal/status` | Signed-in organization member | Read the current Terms, DPA, and Privacy acceptance status. |
+| `POST` | `/legal/acceptance` | Organization administrator | Record the current combined legal acceptance idempotently. |
 | `GET` | `/readiness/bases` | Active administrator | Read cumulative readiness depth and issues. |
 | `GET` | `/readiness/prevalidation` | Active administrator | Check blockers and warnings before generation. |
 | `GET` | `/dashboard` | Active administrator | Read `PREPARATION` or `OPERATIONAL` dashboard data. |
@@ -186,6 +186,21 @@ All paths below are relative to `/api/v1`.
 The response returns the new version.
 `POST /foundation/complete` accepts the expected version and `confirmed: true`.
 It returns `COMPLETED`, the completion timestamp, and the generated timeslot count.
+
+`POST /legal/acceptance` accepts only the following command:
+
+```json
+{
+  "acceptance_confirmed": true,
+  "terms_version": "2026-01",
+  "dpa_version": "2026-01",
+  "privacy_version": "2026-01"
+}
+```
+
+The response contains the evidence ID, organization ID, accepting membership snapshot,
+authority confirmation, three document versions, and the server timestamp.
+Historical legal identity fields remain nullable and are never required for new records.
 
 The database dependency uses function scope for endpoint transactions.
 The dependency commits after the handler returns and rolls back on error.

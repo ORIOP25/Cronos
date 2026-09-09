@@ -449,28 +449,24 @@ async def accept_current_legal_documents(
     membership_id: int,
 ) -> models.OrganizationLegalAcceptance:
     """Seed the current legal acceptance for tests creating data manually."""
-    from app.legal import CURRENT_DPA_VERSION, CURRENT_TERMS_VERSION
+    from app.legal import CURRENT_DPA_VERSION, CURRENT_PRIVACY_VERSION, CURRENT_TERMS_VERSION
 
     acceptance = await db_session.scalar(
         select(models.OrganizationLegalAcceptance).where(
             models.OrganizationLegalAcceptance.organization_id == organization_id,
             models.OrganizationLegalAcceptance.terms_version == CURRENT_TERMS_VERSION,
             models.OrganizationLegalAcceptance.dpa_version == CURRENT_DPA_VERSION,
+            models.OrganizationLegalAcceptance.privacy_version == CURRENT_PRIVACY_VERSION,
         )
     )
     if acceptance is None:
         acceptance = models.OrganizationLegalAcceptance(
             organization_id=organization_id,
             accepted_by_membership_id_snapshot=membership_id,
-            controller_legal_name="Entidade Teste, ENI",
-            controller_registration_number="999999990",
-            controller_registered_address="Rua de Teste, 1, 1000-000 Lisboa",
-            controller_contact_email="legal@test.com",
-            representative_name="Representante Teste",
-            representative_role="Administrador",
             authority_confirmed=True,
             terms_version=CURRENT_TERMS_VERSION,
             dpa_version=CURRENT_DPA_VERSION,
+            privacy_version=CURRENT_PRIVACY_VERSION,
         )
         db_session.add(acceptance)
         await db_session.flush()

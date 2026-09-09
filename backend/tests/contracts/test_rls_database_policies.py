@@ -167,9 +167,9 @@ def test_legal_acceptance_rls_is_tenant_scoped_and_read_only_for_runtime(clean_d
                     "controller_legal_name, controller_registration_number, "
                     "controller_registered_address, controller_contact_email, "
                     "representative_name, representative_role, authority_confirmed, "
-                    "terms_version, dpa_version"
+                    "terms_version, dpa_version, privacy_version"
                     ") VALUES (:organization_id, 1, 'Entidade', '999999990', 'Rua 1', "
-                    "'legal@test.com', 'Representante', 'Administrador', true, '2026-01', '2026-01')"
+                    "'legal@test.com', 'Representante', 'Administrador', true, '2026-01', '2026-01', '2026-01')"
                 ),
                 {"organization_id": organization_id},
             )

@@ -151,6 +151,7 @@ async def get_current_legal_accepted_user(
                 "message": "A organização deve aceitar os documentos legais antes de continuar.",
                 "terms_version": status_value.terms_version,
                 "dpa_version": status_value.dpa_version,
+                "privacy_version": status_value.privacy_version,
             },
         )
     return current_user

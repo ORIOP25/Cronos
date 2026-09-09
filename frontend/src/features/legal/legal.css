@@ -16,13 +16,5 @@
 .cronos-legal table { border-collapse: collapse; min-width: 680px; width: 100%; }
 .cronos-legal th, .cronos-legal td { border: 1px solid var(--rs-card-border); padding: .75rem; text-align: left; vertical-align: top; }
 .cronos-legal th { background: var(--brand-100); }
-.legal-acceptance-page { align-items: flex-start; padding: 3rem 1rem; }
-.legal-acceptance-card { background: var(--brand-100); border: 1px solid var(--rs-card-border); border-radius: .75rem; margin: 0 auto; max-width: 720px; padding: 2rem; width: 100%; }
-.legal-acceptance-card form { display: grid; gap: 1rem; }
-.legal-acceptance-field { display: grid; gap: .4rem; }
-.legal-acceptance-field span { font-weight: 600; }
-.legal-acceptance-field input { border: 1px solid var(--rs-card-border); border-radius: .35rem; padding: .7rem; width: 100%; }
-.legal-acceptance-note { font-size: .9rem; }
-.legal-acceptance-actions { align-items: center; display: flex; gap: 1rem; margin-top: 1.5rem; }
 @media print { .cronos-legal { padding: 0; } .cronos-legal__back, .cronos-legal__toc { display: none; } .cronos-legal__body h2 { break-after: avoid; } }
 @media (max-width: 640px) { .cronos-legal__toc ol { columns: 1; } .cronos-legal__meta { gap: 1rem; } }

@@ -1,33 +1,54 @@
-import { useState } from 'react'
-import { Link } from 'react-router-dom'
-import { useOrganizationList, useUser } from '@clerk/react'
+import { useEffect, useRef, useState } from 'react'
+import { useAuth, useOrganization } from '@clerk/react'
+import { Link, useLocation } from 'react-router-dom'
 import BrandPanel from '../components/auth/BrandPanel'
+import { clearLegalAcceptance, hasLegalAcceptance } from '../features/legal/acceptanceStorage'
 import { useCreateActiveOrganization } from '../features/organization/useCreateActiveOrganization'
-import { getPendingOrganizationKey } from '../features/organization/activateAndBootstrapOrganization'
+import { getApiErrorMessage } from '../utils/apiErrors'
 import {
   BRAND_STATS_CREATEORG,
   BRAND_TAGLINE_CREATEORG,
 } from '../utils/authDesign'
 
+function safeInternalReturnPath(value, fallback) {
+  return typeof value === 'string'
+    && value.startsWith('/')
+    && !value.startsWith('//')
+    && !value.includes('://')
+    ? value
+    : fallback
+}
 
 export default function CreateOrgPage() {
-  const { isLoaded, userMemberships } = useOrganizationList({
-    userMemberships: { infinite: true },
-  })
-  const { user } = useUser()
+  const location = useLocation()
+  const { userId } = useAuth()
+  const { organization } = useOrganization()
   const { run, isPending, error } = useCreateActiveOrganization()
-  const [name, setName] = useState('')
-  const pendingKey = getPendingOrganizationKey(user?.id)
-  const pendingOrganizationId = pendingKey ? sessionStorage.getItem(pendingKey) : null
-  const memberships = userMemberships?.data || []
-  const membershipsLoading = !isLoaded || userMemberships?.isLoading || userMemberships?.isFetching
+  const [activationError, setActivationError] = useState('')
+  const attemptedOrganizationId = useRef(null)
+  const returnPath = safeInternalReturnPath(location.state?.from, '')
+  const legalAccepted = hasLegalAcceptance(userId)
+  const organizationIsPending = Boolean(organization?.id && isPending)
 
-  const submit = async (event) => {
-    event.preventDefault()
-    await run({ name }).catch(() => {})
-  }
+  useEffect(() => {
+    if (!organization?.id || !legalAccepted || attemptedOrganizationId.current === organization.id) return undefined
 
-  const retry = () => run({ organizationId: pendingOrganizationId }).catch(() => {})
+    const organizationId = organization.id
+    attemptedOrganizationId.current = organizationId
+    run({
+      name: organization.name,
+      organizationId,
+      acceptance_confirmed: true,
+      returnPath,
+    })
+      .then(() => clearLegalAcceptance(userId))
+      .catch((failure) => {
+        setActivationError(getApiErrorMessage(failure, failure?.message || 'Não foi possível ativar a organização.'))
+      })
+  }, [legalAccepted, organization?.id, organization?.name, returnPath, run, userId])
+
+  const displayedError = activationError
+    || (error ? getApiErrorMessage(error, error.message || 'Não foi possível concluir a ação.') : '')
 
   return (
     <div className="zen-auth-page">
@@ -35,50 +56,14 @@ export default function CreateOrgPage() {
         <BrandPanel tagline={BRAND_TAGLINE_CREATEORG} stats={BRAND_STATS_CREATEORG} />
         <div className="zen-auth-form-side">
           <div className="zen-auth-form-wrapper">
-            <h1 className="h3 mb-3">Organização escolar</h1>
-            {membershipsLoading && <p>A carregar organizações…</p>}
-            {error && (
+            <h1 className="h3 mb-3">A preparar a sua escola</h1>
+            {displayedError && (
               <div className="alert alert-danger" role="alert">
-                Não foi possível ativar a organização. Pode tentar novamente sem criar outra.
+                {displayedError}
               </div>
             )}
-            {!membershipsLoading && pendingOrganizationId ? (
-              <button type="button" className="btn btn-primary" disabled={isPending} onClick={retry}>
-                {isPending ? 'A ativar…' : 'Retomar ativação'}
-              </button>
-            ) : !membershipsLoading && memberships.length ? (
-              <div>
-                <p>Selecione a organização que pretende utilizar.</p>
-                <div className="d-grid gap-2">
-                  {memberships.map((membership) => (
-                    <button
-                      type="button"
-                      className="btn btn-outline-primary"
-                      disabled={isPending}
-                      key={membership.organization.id}
-                      onClick={() => run({ organizationId: membership.organization.id }).catch(() => {})}
-                    >
-                      {membership.organization.name}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ) : !membershipsLoading ? (
-              <form onSubmit={submit}>
-                <label htmlFor="organization-name" className="form-label">Nome da escola</label>
-                <input
-                  id="organization-name"
-                  className="form-control mb-3"
-                  required
-                  minLength={2}
-                  value={name}
-                  onChange={(event) => setName(event.target.value)}
-                />
-                <button type="submit" className="btn btn-primary w-100" disabled={isPending}>
-                  {isPending ? 'A criar e ativar…' : 'Criar organização'}
-                </button>
-              </form>
-            ) : null}
+            {organizationIsPending && <p role="status">A sincronizar a organização e a preparar o onboarding…</p>}
+            {!organization && <p role="status">A aguardar a organização selecionada…</p>}
             <div className="zen-auth-form-footer">
               <Link to="/" className="zen-auth-back-link">Voltar ao início</Link>
             </div>

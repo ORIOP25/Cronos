@@ -70,15 +70,18 @@ Explicit boundaries prevent provider adapters, authentication, and solver work f
 1. Clerk supplies the authenticated subject and active organization claim.
 2. `POST /api/v1/session/bootstrap` reconciles the provider organization, membership, and local member.
 3. The route guard reads `/members/me` and `/legal/status` before it selects an authenticated route.
-4. An administrator accepts the current Terms and DPA, creating append-only evidence.
-5. The route guard then reads `foundation_status`; incomplete organizations stay in Foundation.
-6. An administrator reads and saves the Foundation draft with an optimistic `expected_version`.
-7. Foundation completion validates the snapshot, writes settings, regenerates timeslots, flushes the state, and commits before returning.
-8. The frontend invalidates `foundation-status`, `foundation-draft`, `current-member`, dashboard, and readiness queries before navigating to `/dashboard`.
-9. The optional tutorial runs in local browser state. Its API boundary prevents simulated page actions from changing operational data.
-10. Readiness and prevalidation expose the bases required before schedule generation.
+4. `/register/tasks/choose-organization` collects the school name and one legal confirmation.
+5. `/create-org` acts as a short transition bridge after the Clerk task completes.
+6. The helper bootstraps the member, reads legal versions, and records acceptance.
+7. The backend stores append-only evidence for Terms, DPA, and Privacy versions.
+8. The route guard then reads `foundation_status`; incomplete organizations stay in Foundation.
+9. An administrator reads and saves the Foundation draft with an optimistic `expected_version`.
+10. Foundation completion validates the snapshot, writes settings, regenerates timeslots, flushes the state, and commits before returning.
+11. The frontend invalidates `foundation-status`, `foundation-draft`, `current-member`, dashboard, and readiness queries before navigating to `/dashboard`.
+12. The optional tutorial runs in local browser state. Its API boundary prevents simulated page actions from changing operational data.
+13. Readiness and prevalidation expose the bases required before schedule generation.
 
-The route gate allows legal status and acceptance, member status, and Foundation status before legal acceptance.
+The route gate allows legal status, acceptance, member status, and Foundation status before normal access.
 Foundation and normal admin/teacher routes require the current legal acceptance; normal operational routes also require `COMPLETED`.
 
 ## Contracts and Invariants

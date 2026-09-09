@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { screen } from '@testing-library/react'
-import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { renderWithProviders, renderWithRouter } from './testUtils'
 import { setClerkState, resetClerkState } from './setup'
 import {
@@ -24,6 +24,19 @@ const memberState = vi.hoisted(() => ({
   error: null,
 }))
 
+const legalState = vi.hoisted(() => ({
+  value: {
+    accepted: true,
+    requires_acceptance: false,
+    terms_version: '2026-01',
+    dpa_version: '2026-01',
+    privacy_version: '2026-01',
+  },
+  loading: false,
+  error: null,
+  refetch: vi.fn(),
+}))
+
 vi.mock('../features/members/data', () => ({
   useCurrentMember: () => ({
     data: memberState.value,
@@ -34,13 +47,28 @@ vi.mock('../features/members/data', () => ({
   }),
 }))
 
+vi.mock('../features/legal/data', () => ({
+  useLegalStatus: () => ({
+    data: legalState.value,
+    isLoading: legalState.loading,
+    isError: Boolean(legalState.error),
+    error: legalState.error,
+    refetch: legalState.refetch,
+  }),
+}))
+
+function CreateOrgRoute() {
+  const location = useLocation()
+  return <div data-testid="create-org-route">Create Org {location.state?.from || ''}</div>
+}
+
 function renderGuard(ui, initialEntries = ['/protected']) {
   return renderWithRouter(
     <Routes>
       <Route path="/protected" element={ui} />
       <Route path="/dashboard" element={<div data-testid="dashboard-route">Dashboard</div>} />
       <Route path="/my-availability" element={<div data-testid="teacher-route">Teacher</div>} />
-      <Route path="/create-org" element={<div data-testid="create-org-route">Create Org</div>} />
+      <Route path="/create-org" element={<CreateOrgRoute />} />
       <Route path="/login" element={<div data-testid="login-route">Login</div>} />
     </Routes>,
     { initialEntries },
@@ -53,7 +81,7 @@ function renderRedirect() {
       <Route path="/" element={<SignedInRedirect />} />
       <Route path="/dashboard" element={<div data-testid="dashboard-route">Dashboard</div>} />
       <Route path="/my-availability" element={<div data-testid="teacher-route">Teacher</div>} />
-      <Route path="/create-org" element={<div data-testid="create-org-route">Create Org</div>} />
+      <Route path="/create-org" element={<CreateOrgRoute />} />
     </Routes>,
   )
 }
@@ -140,6 +168,16 @@ describe('RequireAdmin', () => {
       teacher_id: null,
       foundation_status: 'COMPLETED',
     }
+    legalState.value = {
+      accepted: true,
+      requires_acceptance: false,
+      terms_version: '2026-01',
+      dpa_version: '2026-01',
+      privacy_version: '2026-01',
+    }
+    legalState.loading = false
+    legalState.error = null
+    legalState.refetch.mockReset()
   })
 
   it('allows active local admin capability', () => {
@@ -270,6 +308,15 @@ describe('SignedInRedirect', () => {
       teacher_id: null,
       foundation_status: 'COMPLETED',
     }
+    legalState.value = {
+      accepted: true,
+      requires_acceptance: false,
+      terms_version: '2026-01',
+      dpa_version: '2026-01',
+      privacy_version: '2026-01',
+    }
+    legalState.loading = false
+    legalState.error = null
   })
 
   it('redirects admin to /dashboard', () => {
@@ -294,6 +341,18 @@ describe('SignedInRedirect', () => {
     memberState.value = null
     renderRedirect()
     expect(screen.getByTestId('create-org-route')).toBeInTheDocument()
+  })
+
+  it('redirects missing legal acceptance to create-org with the safe source route', () => {
+    legalState.value = {
+      accepted: false,
+      requires_acceptance: true,
+      terms_version: '2026-01',
+      dpa_version: '2026-01',
+      privacy_version: '2026-01',
+    }
+    renderGuard(<RequireAdmin><div>Admin</div></RequireAdmin>, ['/protected?tab=week#availability'])
+    expect(screen.getByTestId('create-org-route')).toHaveTextContent('/protected?tab=week#availability')
   })
 
   it('shows loader when Clerk not loaded', () => {

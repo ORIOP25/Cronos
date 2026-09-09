@@ -109,7 +109,7 @@ Foundation status does not grant admin capability; it only controls whether a ca
 
 The tutorial stores only a minimal, expiring checkpoint in browser storage. It has no backend telemetry and is not trusted as an operational record.
 
-The organization legal gate is enforced before Foundation and operational dependencies. `GET /legal/status` remains available to members; acceptance requires an administrator and is append-only with forced RLS.
+The organization legal gate is enforced before Foundation and operational dependencies. `GET /legal/status` remains available to members; acceptance requires an administrator and is append-only with forced RLS. Legal identity fields do not block onboarding.
 
 ## Related Documents
 
