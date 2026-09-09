@@ -204,6 +204,8 @@ class SchedulerDiffService:
 
     @staticmethod
     def _reason_message(spec: DraftBlockSpec) -> str:
+        if spec.reason_code == "NEW_CURRICULUM_DEMAND":
+            return "A new curriculum demand block was added."
         return {
             models.ScheduleDraftBlockChangeType.ADDED: "A new target block was added.",
             models.ScheduleDraftBlockChangeType.MOVED: "The active block was moved.",

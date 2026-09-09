@@ -31,6 +31,7 @@ The runtime makes each solve auditable and keeps long computation outside FastAP
 | Job lifecycle | `backend/app/services/scheduler_job_runtime.py` |
 | Complete generation | `backend/app/services/scheduler_complete_engine.py` |
 | Adaptive repair | `backend/app/services/scheduler_adaptive_engine.py` |
+| Incremental demand | `backend/app/services/scheduler_incremental_demand.py` |
 | Candidate generation | `backend/app/services/scheduler_candidates.py` |
 | Constraints and quality | `backend/app/scheduler/domain/`, `scheduler_constraint_rules.py` |
 | Draft and diff | `scheduler_draft_service.py`, `scheduler_diff_service.py` |
@@ -60,6 +61,8 @@ flowchart TD
 - Every worker solve uses a tenant-scoped session.
 - Draft approval validates the fingerprint before promotion.
 - Recovery links reconcile with approved active blocks.
+- Incremental demand is rebuilt from the immutable snapshot during runtime validation.
+- New curriculum blocks promote without recovery links.
 
 ## States and Transitions
 

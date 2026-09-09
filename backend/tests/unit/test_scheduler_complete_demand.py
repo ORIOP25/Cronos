@@ -1,4 +1,5 @@
 from app.services.scheduler_complete_demand import CompleteDemandLedgerBuilder
+from app.services.scheduler_incremental_demand import IncrementalDemandLedgerBuilder
 
 
 def _snapshot() -> dict:
@@ -80,3 +81,40 @@ def test_complete_demand_reports_teacher_and_room_ineligibility():
     assert ledger.is_complete is False
     assert any("not eligible" in blocker for blocker in ledger.blockers)
     assert any("No eligible room" in blocker for blocker in ledger.blockers)
+
+
+def test_incremental_demand_only_contains_assignments_absent_from_active_schedule():
+    snapshot = _snapshot()
+    snapshot["subjects"].append({"id": 9, "required_room_type": "normal"})
+    snapshot["teachers"].append({"id": 10})
+    snapshot["teacher_subject_eligibility"].append({"teacher_id": 10, "subject_id": 9})
+    snapshot["class_subject_requirements"].append(
+        {"class_id": 1, "subject_id": 9, "grade_level": 10, "teacher_id": 10}
+    )
+    snapshot["module_accounting"].append(
+        {"id": 20, "subject_id": 9, "required_minutes": 180, "sequence": 1}
+    )
+    snapshot["active_schedule"] = [
+        {"class_id": 1, "subject_id": 2},
+    ]
+
+    ledger = IncrementalDemandLedgerBuilder().build(snapshot)
+
+    assert ledger.is_complete is True
+    assert ledger.required_minutes == 180
+    assert [(item.class_id, item.subject_id) for item in ledger.items] == [(1, 9)]
+
+
+def test_incremental_demand_reports_missing_resources_for_new_assignment():
+    snapshot = _snapshot()
+    snapshot["subjects"].append({"id": 9, "required_room_type": "normal"})
+    snapshot["class_subject_requirements"].append(
+        {"class_id": 1, "subject_id": 9, "grade_level": 10, "teacher_id": 99}
+    )
+    snapshot["module_accounting"].append(
+        {"id": 20, "subject_id": 9, "required_minutes": 60, "sequence": 1}
+    )
+    ledger = IncrementalDemandLedgerBuilder().build(snapshot)
+
+    assert ledger.is_complete is False
+    assert any("missing or cross-tenant" in blocker for blocker in ledger.blockers)

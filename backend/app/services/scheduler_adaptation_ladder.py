@@ -164,6 +164,9 @@ class SchedulerChangeAdaptationLadder:
         self,
         boundary: EditableBoundary,
         impact: SchedulerChangeImpact,
+        *,
+        additional_class_ids: set[int] | None = None,
+        additional_teacher_ids: set[int] | None = None,
     ) -> tuple[AdaptationScope, ...]:
         editable = list(boundary.editable_blocks)
         immutable = list(boundary.immutable_blocks)
@@ -176,6 +179,8 @@ class SchedulerChangeAdaptationLadder:
         all_affected = {row["id"] for row in affected}
         related_classes = {row["class_id"] for row in affected}
         related_teachers = {row["teacher_id"] for row in affected}
+        related_classes.update(additional_class_ids or ())
+        related_teachers.update(additional_teacher_ids or ())
 
         def make(
             level: AdaptationLevel,

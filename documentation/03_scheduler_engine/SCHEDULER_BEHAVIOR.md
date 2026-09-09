@@ -14,6 +14,7 @@ The Cronos scheduler generates dated schedules with Google OR-Tools CP-SAT. The 
 
 1. **Complete Generation (`COMPLETE_GENERATION`)**: Places all remaining demand before the hard end date for an unpublished school year.
 2. **Adaptive Repair (`ADAPTIVE_REPAIR`)**: Repairs explicit debt or scheduler-relevant changes after publication.
+   It also places all remaining demand for class-subject assignments absent from the active schedule.
 
 ## Hard Constraints vs. Soft Objectives
 
@@ -44,6 +45,8 @@ The solver minimizes penalty scores for soft objectives to maximize timetable qu
 ## Contracts and Invariants
 - Generation requires explicit confirmation before replacing a pending draft.
 - Adaptive repair preserves past blocks, completed or occurrence logs, and the stability window.
+- Incremental curriculum demand must match generated minutes exactly for every new assignment and module.
+- New curriculum blocks use `ADDED`, have no active lineage, and do not create recovery links.
 - Published state requires an approved scheduler state version.
 - `IMPOSSIBLE` availability removes a candidate; `PREFERRED`, `NEUTRAL`, and `AVOID` affect quality.
 

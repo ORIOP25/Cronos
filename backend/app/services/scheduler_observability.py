@@ -61,6 +61,10 @@ def emit_scheduler_job_event(
         ),
         "failure_category": job.failure_code,
     }
+    for metric_name in ("required_curriculum_minutes", "scheduled_curriculum_minutes"):
+        value = _metric(summary, metrics, metric_name)
+        if value is not None:
+            payload[metric_name] = value
     try:
         logger.info("scheduler_generation_lifecycle", **payload)
     except Exception:

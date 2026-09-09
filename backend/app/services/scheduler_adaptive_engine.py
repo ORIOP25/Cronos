@@ -4,6 +4,7 @@ import asyncio
 from collections import defaultdict
 from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime, time, timedelta
+from enum import StrEnum
 from typing import Any
 
 from ortools.sat.python import cp_model
@@ -33,6 +34,10 @@ from app.services.scheduler_adaptation_ladder import (
 )
 from app.services.scheduler_disruption import DisruptionScore, DisruptionScorer
 from app.services.scheduler_editable_boundary import EditableBoundaryBuilder
+from app.services.scheduler_incremental_demand import (
+    IncrementalDemandLedger,
+    IncrementalDemandLedgerBuilder,
+)
 from app.services.scheduler_job_runtime import (
     GenerationExecutionContext,
 )
@@ -47,6 +52,12 @@ from app.services.scheduler_repair_trigger import RepairTriggerClassifier
 MAX_REPAIR_CANDIDATES = 250_000
 
 
+class RepairTaskOrigin(StrEnum):
+    ACTIVE_BLOCK = "ACTIVE_BLOCK"
+    DEBT_RECOVERY = "DEBT_RECOVERY"
+    CURRICULUM_ADDITION = "CURRICULUM_ADDITION"
+
+
 @dataclass(frozen=True)
 class _RepairTask:
     key: str
@@ -57,10 +68,16 @@ class _RepairTask:
     source_block: dict[str, Any] | None
     debt_item: dict[str, Any] | None
     recovery_index: int | None
+    origin: RepairTaskOrigin
+    module_sequence_index: int | None = None
 
     @property
     def is_recovery(self) -> bool:
-        return self.debt_item is not None
+        return self.origin is RepairTaskOrigin.DEBT_RECOVERY
+
+    @property
+    def is_curriculum_addition(self) -> bool:
+        return self.origin is RepairTaskOrigin.CURRICULUM_ADDITION
 
 
 @dataclass(frozen=True)
@@ -95,6 +112,8 @@ class _ScopeSolution:
     class_overload_excess_minutes: int = 0
     teacher_overload_count: int = 0
     teacher_overload_excess_minutes: int = 0
+    required_curriculum_minutes: int = 0
+    scheduled_curriculum_minutes: int = 0
 
 
 @dataclass(frozen=True)
@@ -147,6 +166,17 @@ class AdaptiveRepairEngine:
         except (KeyError, TypeError, ValueError) as exc:
             return NoValidGenerationOutput(blockers=(str(exc),))
 
+        curriculum = IncrementalDemandLedgerBuilder().build(snapshot)
+        if not curriculum.is_complete:
+            return NoValidGenerationOutput(
+                blockers=curriculum.blockers,
+                metrics={
+                    "required_recovery_minutes": trigger.unresolved_debt_minutes,
+                    "required_curriculum_minutes": curriculum.required_minutes,
+                    "scheduled_curriculum_minutes": 0,
+                },
+            )
+
         total_debt = trigger.unresolved_debt_minutes
         best: _ScopeSolution | None = None
         failures: list[str] = []
@@ -162,9 +192,14 @@ class AdaptiveRepairEngine:
                         f"Immutable block {row.block['id']}: {' '.join(row.reasons)}"
                         for row in impact.immutable_invalid
                     ),
-                    metrics={"immutable_invalid_blocks": len(impact.immutable_invalid)},
+                    metrics={
+                        "immutable_invalid_blocks": len(impact.immutable_invalid),
+                        "required_recovery_minutes": total_debt,
+                        "required_curriculum_minutes": curriculum.required_minutes,
+                        "scheduled_curriculum_minutes": 0,
+                    },
                 )
-            scopes = self._combined_scopes(boundary, debt, impact)
+            scopes = self._combined_scopes(boundary, debt, impact, curriculum)
         else:
             scopes = tuple(
                 self._recovery_scope(scope)
@@ -180,6 +215,7 @@ class AdaptiveRepairEngine:
                 self._solve_scope,
                 snapshot,
                 debt,
+                curriculum,
                 boundary.school_today,
                 boundary.editable_start_date,
                 scope,
@@ -195,7 +231,10 @@ class AdaptiveRepairEngine:
             solution = replace(solution, scope_rank=scope_rank)
             if self._better_partial(solution, best):
                 best = solution
-            if solution.recovered_minutes == total_debt:
+            if (
+                solution.recovered_minutes == total_debt
+                and solution.scheduled_curriculum_minutes == solution.required_curriculum_minutes
+            ):
                 return self._result(
                     snapshot,
                     trigger.summary,
@@ -211,10 +250,33 @@ class AdaptiveRepairEngine:
             )
 
         if best is None:
+            blockers = tuple(failures)
+            if curriculum.required_minutes > 0:
+                blockers = (
+                    "The newly added curriculum could not be fully placed before the "
+                    "hard end date.",
+                    *blockers,
+                )
             return NoValidGenerationOutput(
-                blockers=tuple(failures)
-                or ("No hard-valid adaptive recovery target could be produced.",),
-                metrics={"required_recovery_minutes": total_debt},
+                blockers=blockers or ("No hard-valid adaptive recovery target could be produced.",),
+                metrics={
+                    "required_recovery_minutes": total_debt,
+                    "required_curriculum_minutes": curriculum.required_minutes,
+                    "scheduled_curriculum_minutes": 0,
+                },
+            )
+        if best.scheduled_curriculum_minutes != best.required_curriculum_minutes:
+            return NoValidGenerationOutput(
+                blockers=(
+                    "The newly added curriculum could not be fully placed before the "
+                    "hard end date.",
+                    *failures,
+                ),
+                metrics={
+                    "required_recovery_minutes": total_debt,
+                    "required_curriculum_minutes": best.required_curriculum_minutes,
+                    "scheduled_curriculum_minutes": best.scheduled_curriculum_minutes,
+                },
             )
         return self._result(
             snapshot,
@@ -229,6 +291,7 @@ class AdaptiveRepairEngine:
         self,
         snapshot: dict[str, Any],
         debt: dict[str, Any],
+        curriculum: IncrementalDemandLedger,
         school_today: date,
         editable_start_date: date,
         scope: _SolveScope,
@@ -242,7 +305,7 @@ class AdaptiveRepairEngine:
         fixed_intervals, fixed_blocker = self._fixed_intervals(scope.fixed_blocks, slots)
         if fixed_blocker:
             return None, fixed_blocker
-        tasks, task_blocker = self._build_tasks(snapshot, debt, scope, slots)
+        tasks, task_blocker = self._build_tasks(snapshot, debt, curriculum, scope, slots)
         if task_blocker:
             return None, task_blocker
         placements, placement_blocker = self._build_placements(
@@ -261,7 +324,15 @@ class AdaptiveRepairEngine:
             by_task[placement.task.key].append(placement)
         for task in tasks:
             if not task.is_recovery and not by_task[task.key]:
-                return None, f"Published block {task.source_block['id']} cannot be re-placed."
+                if task.origin is RepairTaskOrigin.ACTIVE_BLOCK:
+                    message = f"Published block {task.source_block['id']} cannot be re-placed."
+                else:
+                    message = (
+                        "Curriculum addition "
+                        f"{task.class_id}/{task.subject_id}/{task.module_sequence_index} "
+                        "cannot be placed."
+                    )
+                return None, message
 
         model = cp_model.CpModel()
         variables = {
@@ -286,6 +357,7 @@ class AdaptiveRepairEngine:
             ordered = sorted(group, key=lambda row: row.recovery_index)
             for previous, current in zip(ordered, ordered[1:], strict=False):
                 model.Add(selected_by_task[previous.key] >= selected_by_task[current.key])
+        self._add_curriculum_order_constraints(model, tasks, by_task, variables)
 
         grouped_intervals: dict[tuple[str, int, date], list[cp_model.IntervalVar]] = defaultdict(
             list
@@ -422,6 +494,12 @@ class AdaptiveRepairEngine:
                 model.Add(expression == optimum)
                 self._hint(model, variables, solver)
         chosen = [row for row in placements if values.get(row.key, 0)]
+        required_curriculum_minutes = sum(
+            task.duration_minutes for task in tasks if task.is_curriculum_addition
+        )
+        scheduled_curriculum_minutes = sum(
+            row.task.duration_minutes for row in chosen if row.task.is_curriculum_addition
+        )
         blocks = self._specs(snapshot, scope.fixed_blocks, chosen)
         proposed = [self._spec_dict(row) for row in blocks]
         disruption = DisruptionScorer().score(
@@ -467,6 +545,8 @@ class AdaptiveRepairEngine:
                 ),
                 stable_signature=stable_signature,
                 workload_override_used=override_used,
+                required_curriculum_minutes=required_curriculum_minutes,
+                scheduled_curriculum_minutes=scheduled_curriculum_minutes,
                 **overload,
             ),
             None,
@@ -476,6 +556,7 @@ class AdaptiveRepairEngine:
         self,
         snapshot: dict[str, Any],
         debt: dict[str, Any],
+        curriculum: IncrementalDemandLedger,
         scope: _SolveScope,
         slots: dict[int, tuple[dict[str, int], ...]],
     ) -> tuple[list[_RepairTask], str | None]:
@@ -501,9 +582,34 @@ class AdaptiveRepairEngine:
                     source_block=block,
                     debt_item=None,
                     recovery_index=None,
+                    origin=RepairTaskOrigin.ACTIVE_BLOCK,
                 )
             )
         minimum_slot = min(row["end"] - row["start"] for rows in slots.values() for row in rows)
+        for item in curriculum.items:
+            for module in item.modules:
+                remaining = module.required_minutes
+                index = 0
+                while remaining:
+                    duration = min(minimum_slot, remaining)
+                    tasks.append(
+                        _RepairTask(
+                            key=(
+                                f"CUR-{item.class_id}-{item.subject_id}-{module.module_id}-{index}"
+                            ),
+                            class_id=item.class_id,
+                            subject_id=item.subject_id,
+                            teacher_id=item.teacher_id,
+                            duration_minutes=duration,
+                            source_block=None,
+                            debt_item=None,
+                            recovery_index=None,
+                            origin=RepairTaskOrigin.CURRICULUM_ADDITION,
+                            module_sequence_index=module.sequence,
+                        )
+                    )
+                    remaining -= duration
+                    index += 1
         for item in debt.get("items", []):
             remaining = max(0, int(item.get("unresolved_debt_minutes", 0)))
             index = 0
@@ -522,6 +628,7 @@ class AdaptiveRepairEngine:
                         source_block=None,
                         debt_item=item,
                         recovery_index=index,
+                        origin=RepairTaskOrigin.DEBT_RECOVERY,
                     )
                 )
                 remaining -= duration
@@ -562,9 +669,17 @@ class AdaptiveRepairEngine:
                 or task.teacher_id not in teachers
                 or (task.teacher_id, task.subject_id) not in qualifications
             ):
-                if task.is_recovery:
+                if task.origin is RepairTaskOrigin.DEBT_RECOVERY:
                     continue
-                return [], (f"Movable block {task.source_block['id']} has no eligible assignment.")
+                if task.origin is RepairTaskOrigin.ACTIVE_BLOCK:
+                    return [], (
+                        f"Movable block {task.source_block['id']} has no eligible assignment."
+                    )
+                return [], (
+                    "Curriculum addition "
+                    f"{task.class_id}/{task.subject_id}/{task.module_sequence_index} "
+                    "has no eligible assignment."
+                )
             required_type = self._value(subject_row.get("required_room_type"))
             eligible_rooms = [
                 row["id"]
@@ -624,6 +739,29 @@ class AdaptiveRepairEngine:
                                 return [], "Adaptive repair candidate limit was exceeded."
                 current += timedelta(days=1)
         return placements, None
+
+    @staticmethod
+    def _add_curriculum_order_constraints(
+        model: cp_model.CpModel,
+        tasks: list[_RepairTask],
+        placements_by_task: dict[str, list[_Placement]],
+        variables: dict[str, cp_model.IntVar],
+    ) -> None:
+        grouped: dict[tuple[int, int], list[_RepairTask]] = defaultdict(list)
+        for task in tasks:
+            if task.is_curriculum_addition:
+                grouped[(task.class_id, task.subject_id)].append(task)
+        for ordered_tasks in grouped.values():
+            for previous, current in zip(ordered_tasks, ordered_tasks[1:], strict=False):
+                previous_start = sum(
+                    (row.output_date.toordinal() * 1440 + row.start_minute) * variables[row.key]
+                    for row in placements_by_task[previous.key]
+                )
+                current_start = sum(
+                    (row.output_date.toordinal() * 1440 + row.start_minute) * variables[row.key]
+                    for row in placements_by_task[current.key]
+                )
+                model.Add(previous_start < current_start)
 
     @staticmethod
     def _date_allowed(
@@ -688,6 +826,24 @@ class AdaptiveRepairEngine:
                         recovery_source_occurrence_id=item["occurrence_id"],
                         recovery_source_occurrence_revision=item["occurrence_revision"],
                         reason_code="EXPLICIT_DEBT_RECOVERY",
+                    )
+                )
+                continue
+            if task.is_curriculum_addition:
+                specs.append(
+                    DraftBlockSpec(
+                        stable_block_key=task.key,
+                        class_id=task.class_id,
+                        subject_id=task.subject_id,
+                        teacher_id=task.teacher_id,
+                        room_id=row.room_id,
+                        room_type_id=subject_types[task.subject_id],
+                        date=row.output_date,
+                        timeslot_id=row.timeslot_id,
+                        duration_minutes=task.duration_minutes,
+                        module_sequence_index=task.module_sequence_index,
+                        change_type=models.ScheduleDraftBlockChangeType.ADDED,
+                        reason_code="NEW_CURRICULUM_DEMAND",
                     )
                 )
                 continue
@@ -791,6 +947,8 @@ class AdaptiveRepairEngine:
             "remaining_unscheduled_minutes": remaining,
             "recovered_hours": solution.recovered_minutes / 60,
             "remaining_unscheduled_hours": remaining / 60,
+            "required_curriculum_minutes": solution.required_curriculum_minutes,
+            "scheduled_curriculum_minutes": solution.scheduled_curriculum_minutes,
             "recovery_escalation_level": solution.recovery_level,
             "adaptation_level": solution.adaptation_level,
             "escalation_history": list(escalation_history),
@@ -840,6 +998,8 @@ class AdaptiveRepairEngine:
                 "required_recovery_minutes": total_debt,
                 "recovered_minutes": solution.recovered_minutes,
                 "residual_debt_minutes": remaining,
+                "required_curriculum_minutes": solution.required_curriculum_minutes,
+                "scheduled_curriculum_minutes": solution.scheduled_curriculum_minutes,
                 **quality_metrics,
                 "quality_completed_stage": solution.quality_completed_stage,
                 "quality_optimization_complete": solution.quality_optimization_complete,
@@ -868,8 +1028,18 @@ class AdaptiveRepairEngine:
         )
 
     @staticmethod
-    def _combined_scopes(boundary, debt, impact) -> tuple[_SolveScope, ...]:
-        adaptation_scopes = SchedulerChangeAdaptationLadder().scopes(boundary, impact)
+    def _combined_scopes(
+        boundary,
+        debt,
+        impact,
+        curriculum: IncrementalDemandLedger,
+    ) -> tuple[_SolveScope, ...]:
+        adaptation_scopes = SchedulerChangeAdaptationLadder().scopes(
+            boundary,
+            impact,
+            additional_class_ids={row.class_id for row in curriculum.items},
+            additional_teacher_ids={row.teacher_id for row in curriculum.items},
+        )
         recovery_scopes = (
             tuple(
                 row
@@ -884,6 +1054,8 @@ class AdaptiveRepairEngine:
         impact_ids = {row.block["id"] for row in impact.affected if not row.immutable}
         affected_classes = {row.block["class_id"] for row in impact.affected}
         affected_teachers = {row.block["teacher_id"] for row in impact.affected}
+        affected_classes.update(row.class_id for row in curriculum.items)
+        affected_teachers.update(row.teacher_id for row in curriculum.items)
         combined: list[_SolveScope] = []
         for adaptation in adaptation_scopes:
             if adaptation.level == AdaptationLevel.IMPOSSIBLE:
@@ -1090,6 +1262,8 @@ class AdaptiveRepairEngine:
     def _disruption_cost(row: _Placement) -> int:
         if row.task.is_recovery:
             return 20
+        if row.task.is_curriculum_addition:
+            return 0
         before = row.task.source_block
         cost = 0
         if before["date"] != row.output_date.isoformat():

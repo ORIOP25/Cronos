@@ -40,6 +40,33 @@ class CompleteDemandLedgerBuilder:
     """Build the annual curriculum demand from an immutable job snapshot."""
 
     def build(self, snapshot: dict[str, Any]) -> CompleteDemandLedger:
+        return self._build(snapshot, snapshot.get("class_subject_requirements", []))
+
+    def build_for_assignments(
+        self,
+        snapshot: dict[str, Any],
+        assignments: list[dict[str, Any]],
+        *,
+        allow_empty: bool = False,
+        ignore_zero_remaining: bool = False,
+    ) -> CompleteDemandLedger:
+        """Build demand for an explicit assignment subset from the immutable snapshot."""
+
+        return self._build(
+            snapshot,
+            assignments,
+            allow_empty=allow_empty,
+            ignore_zero_remaining=ignore_zero_remaining,
+        )
+
+    def _build(
+        self,
+        snapshot: dict[str, Any],
+        assignment_rows: list[dict[str, Any]],
+        *,
+        allow_empty: bool = False,
+        ignore_zero_remaining: bool = False,
+    ) -> CompleteDemandLedger:
         blockers: list[str] = []
         classes = {row["id"]: row for row in snapshot.get("classes", [])}
         subjects = {row["id"]: row for row in snapshot.get("subjects", [])}
@@ -53,7 +80,7 @@ class CompleteDemandLedgerBuilder:
         for module in snapshot.get("module_accounting", []):
             modules_by_subject.setdefault(module["subject_id"], []).append(module)
 
-        assignments = self._assignments(snapshot, blockers)
+        assignments = self._assignments(assignment_rows)
         items: list[CompleteDemandItem] = []
         for assignment in assignments:
             class_id = assignment["class_id"]
@@ -65,7 +92,11 @@ class CompleteDemandLedgerBuilder:
             if class_row is None or subject_row is None:
                 blockers.append(f"Missing tenant-scoped class or subject for {label}.")
                 continue
-            if assignment.get("grade_level") not in (None, class_row["grade_level"]):
+            class_grade_level = class_row.get("grade_level")
+            if class_grade_level is not None and assignment.get("grade_level") not in (
+                None,
+                class_grade_level,
+            ):
                 blockers.append(f"Grade-level assignment mismatch for {label}.")
             if teacher_id is None:
                 blockers.append(f"No teacher is assigned for {label}.")
@@ -106,7 +137,8 @@ class CompleteDemandLedgerBuilder:
                 continue
             subject_required_minutes = sum(row.required_minutes for row in demand_modules)
             if subject_required_minutes <= 0:
-                blockers.append(f"No remaining subject demand is configured for {label}.")
+                if not ignore_zero_remaining:
+                    blockers.append(f"No remaining subject demand is configured for {label}.")
                 continue
 
             room_type = self._enum_value(subject_row["required_room_type"])
@@ -132,7 +164,7 @@ class CompleteDemandLedgerBuilder:
                 )
             )
 
-        if not assignments:
+        if not assignments and not allow_empty:
             blockers.append("No class-subject curriculum assignments are configured.")
         return CompleteDemandLedger(
             items=tuple(sorted(items, key=lambda row: (row.class_id, row.subject_id))),
@@ -141,11 +173,9 @@ class CompleteDemandLedgerBuilder:
 
     @staticmethod
     def _assignments(
-        snapshot: dict[str, Any],
-        blockers: list[str],
+        assignment_rows: list[dict[str, Any]],
     ) -> list[dict[str, Any]]:
-        canonical = snapshot.get("class_subject_requirements", [])
-        return list(canonical)
+        return list(assignment_rows)
 
     @staticmethod
     def _enum_value(value: Any) -> str:

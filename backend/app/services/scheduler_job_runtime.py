@@ -24,6 +24,7 @@ from app.services.scheduler_complete_demand import CompleteDemandLedgerBuilder
 from app.services.scheduler_diff_service import SchedulerDiffService
 from app.services.scheduler_editable_boundary import EditableBoundaryBuilder
 from app.services.scheduler_fingerprint_service import SchedulerFingerprintService
+from app.services.scheduler_incremental_demand import IncrementalDemandLedgerBuilder
 from app.services.scheduler_observability import emit_scheduler_job_event
 from app.services.scheduler_recovery_service import SchedulerRecoveryService
 from app.services.scheduler_target_validator import (
@@ -328,6 +329,18 @@ class SchedulerJobRuntime:
             raise GenerationValidationError("Adaptive repair result category is invalid.")
         snapshot = context.immutable_snapshot["generation_input"]
         active = {row["id"]: row for row in snapshot.get("active_schedule", [])}
+        curriculum = IncrementalDemandLedgerBuilder().build(snapshot)
+        if not curriculum.is_complete:
+            raise GenerationValidationError(
+                "Adaptive curriculum demand is incomplete: " + " ".join(curriculum.blockers)
+            )
+        curriculum_items = {(item.class_id, item.subject_id): item for item in curriculum.items}
+        curriculum_by_pair: dict[tuple[int, int], int] = {}
+        curriculum_by_module: dict[tuple[int, int, int], int] = {}
+        curriculum_sequence_rows: dict[tuple[int, int], list[tuple[str, str, int]]] = {}
+        slot_starts = {
+            row["id"]: str(row.get("start_time", "")) for row in snapshot.get("timetable_grid", [])
+        }
         assignments = {
             (row["class_id"], row["subject_id"]): row.get("teacher_id")
             for row in snapshot.get("class_subject_requirements", [])
@@ -390,6 +403,42 @@ class SchedulerJobRuntime:
                 if block.source_active_block_id is not None:
                     raise GenerationValidationError(
                         "Added repair blocks cannot have active lineage."
+                    )
+                curriculum_item = curriculum_items.get((block.class_id, block.subject_id))
+                if not block.is_recovery_block and (
+                    curriculum_item is not None or block.reason_code == "NEW_CURRICULUM_DEMAND"
+                ):
+                    if curriculum_item is None:
+                        raise GenerationValidationError(
+                            "Curriculum addition references demand outside its snapshot."
+                        )
+                    if block.reason_code != "NEW_CURRICULUM_DEMAND":
+                        raise GenerationValidationError(
+                            "Curriculum addition has an invalid reason code."
+                        )
+                    valid_sequences = {
+                        module.sequence
+                        for module in curriculum_item.modules
+                        if module.required_minutes > 0
+                    }
+                    if block.module_sequence_index not in valid_sequences:
+                        raise GenerationValidationError(
+                            "Curriculum addition module sequence is invalid."
+                        )
+                    pair = (block.class_id, block.subject_id)
+                    module_key = (*pair, block.module_sequence_index)
+                    curriculum_by_pair[pair] = (
+                        curriculum_by_pair.get(pair, 0) + block.duration_minutes
+                    )
+                    curriculum_by_module[module_key] = (
+                        curriculum_by_module.get(module_key, 0) + block.duration_minutes
+                    )
+                    curriculum_sequence_rows.setdefault(pair, []).append(
+                        (
+                            block.date.isoformat(),
+                            slot_starts.get(block.timeslot_id, ""),
+                            block.module_sequence_index,
+                        )
                     )
                 continue
             source = active.get(block.source_active_block_id)
@@ -455,6 +504,54 @@ class SchedulerJobRuntime:
             recovered_by_debt[key] = recovered_by_debt.get(key, 0) + block.duration_minutes
         if any(recovered_by_debt.get(key, 0) > minutes for key, minutes in debt_items.items()):
             raise GenerationValidationError("Repair over-recovers an explicit debt entry.")
+
+        expected_curriculum_by_pair = {
+            (item.class_id, item.subject_id): item.required_minutes for item in curriculum.items
+        }
+        expected_curriculum_by_module = {
+            (item.class_id, item.subject_id, module.sequence): module.required_minutes
+            for item in curriculum.items
+            for module in item.modules
+            if module.required_minutes > 0
+        }
+        if curriculum_by_pair != expected_curriculum_by_pair:
+            raise GenerationValidationError(
+                "Adaptive target does not exactly satisfy incremental curriculum demand."
+            )
+        if curriculum_by_module != expected_curriculum_by_module:
+            raise GenerationValidationError(
+                "Adaptive target does not preserve incremental curriculum module order."
+            )
+        for rows in curriculum_sequence_rows.values():
+            ordered_sequences = [
+                sequence for _, _, sequence in sorted(rows, key=lambda row: (row[0], row[1]))
+            ]
+            if ordered_sequences != sorted(ordered_sequences):
+                raise GenerationValidationError(
+                    "Adaptive target does not preserve incremental curriculum chronology."
+                )
+        scheduled_curriculum_minutes = sum(curriculum_by_pair.values())
+        curriculum_metrics = (
+            ("required_curriculum_minutes", curriculum.required_minutes),
+            ("scheduled_curriculum_minutes", scheduled_curriculum_minutes),
+        )
+        for name, expected_value in curriculum_metrics:
+            summary_value = result.summary.get(name)
+            metrics_value = result.metrics.get(name)
+            if curriculum.required_minutes > 0 and (
+                summary_value != expected_value or metrics_value != expected_value
+            ):
+                raise GenerationValidationError(
+                    "Adaptive curriculum metrics do not match target blocks."
+                )
+            if summary_value is not None and summary_value != expected_value:
+                raise GenerationValidationError(
+                    "Adaptive curriculum summary metrics do not match target blocks."
+                )
+            if metrics_value is not None and metrics_value != expected_value:
+                raise GenerationValidationError(
+                    "Adaptive curriculum metrics do not match target blocks."
+                )
         required = sum(debt_items.values())
         recovered = sum(recovered_by_debt.values())
         residual = required - recovered
