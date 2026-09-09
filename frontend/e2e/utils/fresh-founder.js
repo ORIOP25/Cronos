@@ -3,7 +3,8 @@ import { setupClerkTestingToken } from '@clerk/testing/playwright'
 import { expect } from '@playwright/test'
 import { createE2eRunKey, E2E_BASE_URL } from './e2e-config.js'
 import {
-  acceptLegalDocumentsInApp,
+  CLERK_LEGAL_UNSAFE_METADATA,
+  expectFoundationReady,
 } from './clerk-helpers.js'
 
 export function withTimeout(operation, label, timeoutMs = 30_000) {
@@ -20,11 +21,11 @@ async function signInWithTicket(page, client, userId, organizationName) {
     'Clerk E2E sign-in token creation',
   )
   const ticketUrl = new URL(ticket.url)
-  ticketUrl.searchParams.set('redirect_url', new URL('/create-org', E2E_BASE_URL).toString())
+  ticketUrl.searchParams.set('redirect_url', new URL('/foundation', E2E_BASE_URL).toString())
   await setupClerkTestingToken({ page })
   await page.goto(ticketUrl.toString(), { waitUntil: 'domcontentloaded' })
   await expect.poll(() => page.url(), { timeout: 30_000 }).toMatch(
-    /\/(?:create-org|tasks\/choose-organization)(?:[/?#]|$)/,
+    /\/(?:foundation|tasks\/choose-organization)(?:[/?#]|$)/,
   )
   if (/\/tasks\/choose-organization(?:[/?#]|$)/.test(page.url())) {
     const clerkPages = createPageObjects({ page, baseURL: E2E_BASE_URL })
@@ -34,7 +35,7 @@ async function signInWithTicket(page, client, userId, organizationName) {
     )
   }
   await expect.poll(() => page.url(), { timeout: 30_000 }).toMatch(
-    /\/(?:create-org|foundation)(?:[/?#]|$)/,
+    /\/foundation(?:[/?#]|$)/,
   )
   await page.waitForFunction(() => window.Clerk?.user != null, null, { timeout: 30_000 })
 }
@@ -50,7 +51,8 @@ export async function createFreshFounder(page, client, label) {
       firstName: 'Cronos',
       lastName: 'E2E',
       skipPasswordRequirement: true,
-      skipLegalChecks: true,
+      legalAcceptedAt: new Date(),
+      unsafeMetadata: CLERK_LEGAL_UNSAFE_METADATA,
       createOrganizationEnabled: true,
     }),
     'Clerk E2E user creation',
@@ -59,8 +61,7 @@ export async function createFreshFounder(page, client, label) {
   let organizationId
   try {
     await signInWithTicket(page, client, user.id, organizationName)
-    await acceptLegalDocumentsInApp(page)
-    await page.waitForURL('**/foundation', { timeout: 30_000 })
+    await expectFoundationReady(page)
     await page.waitForFunction(() => window.Clerk?.organization?.id?.startsWith('org_'), null, {
       timeout: 30_000,
     })
@@ -87,8 +88,7 @@ export async function signInFreshFounder(page, client, founder) {
     { timeout: 30_000 },
   )
   await page.goto(`${E2E_BASE_URL}/foundation`, { waitUntil: 'domcontentloaded' })
-  await acceptLegalDocumentsInApp(page)
-  await page.waitForURL('**/foundation', { timeout: 30_000 })
+  await expectFoundationReady(page)
   await expect(page.locator('#school_start_date')).toBeEnabled({ timeout: 30_000 })
 }
 

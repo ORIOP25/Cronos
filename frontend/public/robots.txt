@@ -21,7 +21,6 @@ Disallow: /timesheets
 Disallow: /my-progress
 Disallow: /my-availability
 Disallow: /foundation
-Disallow: /create-org
 Disallow: /my-schedules
 Disallow: /recuperar-palavra-passe
 Disallow: /sign-in

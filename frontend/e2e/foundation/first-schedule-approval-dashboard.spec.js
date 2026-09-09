@@ -3,9 +3,9 @@ import { createPageObjects } from '@clerk/testing/playwright/unstable'
 import { setupClerkTestingToken } from '@clerk/testing/playwright'
 import { expect, test } from '@playwright/test'
 import {
-  acceptLegalDocumentsInApp,
   allowApiFailure,
   attachRuntimeGuards,
+  CLERK_LEGAL_UNSAFE_METADATA,
   expectNoAppCrash,
   expectRouteReady,
 } from '../utils/clerk-helpers.js'
@@ -27,11 +27,11 @@ async function signInFreshFounder(client, page, userId, organizationName) {
   )
   const baseUrl = E2E_BASE_URL
   const ticketUrl = new URL(ticket.url)
-  ticketUrl.searchParams.set('redirect_url', new URL('/create-org', baseUrl).toString())
+  ticketUrl.searchParams.set('redirect_url', new URL('/foundation', baseUrl).toString())
   await setupClerkTestingToken({ page })
   await page.goto(ticketUrl.toString(), { waitUntil: 'domcontentloaded' })
   await expect.poll(() => page.url(), { timeout: 30_000 }).toMatch(
-    /\/(?:create-org|tasks\/choose-organization)(?:[/?#]|$)/,
+    /\/(?:foundation|tasks\/choose-organization)(?:[/?#]|$)/,
   )
   if (/\/tasks\/choose-organization(?:[/?#]|$)/.test(page.url())) {
     const clerkPages = createPageObjects({ page, baseURL: baseUrl })
@@ -41,11 +41,10 @@ async function signInFreshFounder(client, page, userId, organizationName) {
     )
   }
   await expect.poll(() => page.url(), { timeout: 30_000 }).toMatch(
-    /\/create-org(?:[/?#]|$)/,
+    /\/foundation(?:[/?#]|$)/,
   )
   await page.waitForFunction(() => window.Clerk?.user != null, null, { timeout: 30_000 })
   await page.waitForFunction(() => window.Clerk?.organization?.id?.startsWith('org_'), null, { timeout: 30_000 })
-  await acceptLegalDocumentsInApp(page)
   await page.waitForURL('**/foundation', { timeout: 30_000 })
   return page.evaluate(() => window.Clerk.organization.id)
 }
@@ -98,7 +97,8 @@ test.describe('Dashboard — First Real Schedule Approval & Discrimination', () 
           firstName: 'Cronos',
           lastName: 'Dashboard',
           skipPasswordRequirement: true,
-          skipLegalChecks: true,
+          legalAcceptedAt: new Date(),
+          unsafeMetadata: CLERK_LEGAL_UNSAFE_METADATA,
           createOrganizationEnabled: true,
         }),
         'dashboard E2E user creation',

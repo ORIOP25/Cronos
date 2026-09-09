@@ -23,7 +23,6 @@ Read [Members and Access](../02_domain_model/MEMBERS_AND_ACCESS.md).
 | `/register/*` | `SignUpPage.jsx` | Public | Registration view |
 | `/recuperar-palavra-passe` | `ForgotPasswordPage.jsx` | Public | Password recovery view |
 | `/foundation` | `Foundation.jsx` | Foundation admin | Organization setup wizard |
-| `/create-org` | `CreateOrgPage.jsx` | Authenticated | Short organization bootstrap transition after the Clerk task |
 | `/dashboard` | `Dashboard.jsx` | Admin | Administrative command center |
 | `/schedules` | `Schedules.jsx` | Admin | Timetable view and solver trigger |
 | `/courses` | `Courses.jsx` | Admin | Course catalog management |
@@ -48,9 +47,9 @@ Routes use `<RequireAdmin>` and `<RequireTeacher>` capability guards:
 
 ## Contracts and Invariants
 - Signed-out users accessing protected routes are redirected to `/login`.
-- A signed-in user without an active organization sees the organization selector or `/create-org`.
+- A signed-in user without an active organization sees the organization selector.
 - A pending Clerk organization task uses `/register/tasks/choose-organization` for organization selection only.
-- `/create-org` bootstraps the selected organization, collects required legal acceptance locally, and uses the safe source route in `location.state.from`.
+- The route gate bootstraps the selected organization and completes current legal acceptance in the background; the destination remains `/foundation` or the member's normal route.
 - `/legal/aceitar` is not a client route.
 - Signed-in root visits use `getDefaultRouteForMember`.
 - Public metadata comes from `features/marketing/content/metadata.js`.
@@ -74,13 +73,12 @@ The guard order is significant:
 2. wait for the active organization and membership list;
 3. bootstrap or read the current local member;
 4. send users without a tenant to the Clerk organization task or selector;
-5. send users without current legal acceptance to `/create-org`;
+5. complete current legal acceptance in the background for administrators, or show a compact administrator-required state;
 6. apply the Foundation gate;
 7. apply admin or teacher capability checks.
 
 | Route | Access while Foundation is incomplete | Access after Foundation completion |
 | :--- | :--- | :--- |
-| `/create-org` | Signed-in user without an organization or membership | Same condition only. |
 | `/foundation/waiting` | Signed-in non-admin member | Not required. |
 | `/foundation` | Foundation administrator | Foundation administrator; completed state redirects to `/dashboard`. |
 | `/guide` | Foundation administrator only | Foundation administrator; tutorial remains optional. |

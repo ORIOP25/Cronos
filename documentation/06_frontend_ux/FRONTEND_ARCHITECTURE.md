@@ -98,7 +98,7 @@ Availability keeps persisted server data separate from a local paint draft.
 The onboarding path is split into independent features:
 
 - `routeGuards.jsx` waits for Clerk, the active organization, and `/members/me` before routing.
-- `CreateOrgPage.jsx` waits for the Clerk membership list before it renders creation or selection controls.
+- `useOnboardingCompletion.js` waits for the Clerk organization, bootstraps the local member, and completes legal acceptance without an intermediate route.
 - `FoundationWizard.jsx` owns the nine-step interaction, autosave queue, version conflict state, and completion navigation.
 - `foundationModel.js` contains pure step and validation rules.
 - `foundationData.js` owns React Query keys and invalidation.

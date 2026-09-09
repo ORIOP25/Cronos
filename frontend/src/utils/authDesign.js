@@ -6,9 +6,6 @@ export const BRAND_TAGLINE_LOGIN =
 export const BRAND_TAGLINE_REGISTER =
   'Junte-se às escolas profissionais que já simplificaram a gestão de horários. Comece em minutos, sem complicações.'
 
-export const BRAND_TAGLINE_CREATEORG =
-  'Dê um nome à sua organização. É o primeiro passo para ter uma visão completa da sua escola num só lugar.'
-
 export const BRAND_STATS_LOGIN = [
   { value: '< 30 min', label: 'Gerar horário' },
   { value: '0', label: 'Horas perdidas' },
@@ -19,12 +16,6 @@ export const BRAND_STATS_REGISTER = [
   { value: '3 passos', label: 'Começar' },
   { value: 'Ilimitados', label: 'Utilizadores' },
   { value: '24/7', label: 'Disponível' },
-]
-
-export const BRAND_STATS_CREATEORG = [
-  { value: 'Passo 2', label: 'de 3' },
-  { value: '1 min', label: 'Configurar' },
-  { value: 'Pronto', label: 'a usar' },
 ]
 
 export const CLERK_LOCALIZATION_PT = {
@@ -56,6 +47,17 @@ export const CLERK_LOCALIZATION_PT = {
   },
   signUp: {
     ...ptPT.signUp,
+    legalConsent: {
+      ...ptPT.signUp.legalConsent,
+      checkbox: {
+        ...ptPT.signUp.legalConsent.checkbox,
+        label__termsOfServiceAndPrivacyPolicy: 'Ao criar uma escola, confirmo que tenho poderes para a vincular e aceito os {{ termsOfServiceLink || link("Termos de Serviço") }} e a {{ privacyPolicyLink || link("Política de Privacidade") }}.',
+      },
+      continue: {
+        ...ptPT.signUp.legalConsent.continue,
+        subtitle: 'Ao criar uma escola, confirma que tem poderes para a vincular e concorda com os documentos legais acima.',
+      },
+    },
     start: {
       ...ptPT.signUp.start,
       title: 'Criar conta no Cronos',

@@ -7,7 +7,6 @@ import { setClerkTokenGetter } from './apiClient'
 import SignInPage from './pages/SignInPage'
 import SignUpPage from './pages/SignUpPage'
 import ForgotPasswordPage from './pages/ForgotPasswordPage'
-import CreateOrgPage from './pages/CreateOrgPage'
 import NotFoundPage from './pages/NotFoundPage'
 
 const Dashboard = lazy(() => import('./pages/Dashboard'))
@@ -98,10 +97,6 @@ function App() {
           <Route path="/register/*" element={<SignUpPage />} />
           <Route path="/sign-in/*" element={<Navigate to="/login" replace />} />
           <Route path="/sign-up/*" element={<Navigate to="/register" replace />} />
-
-          <Route path="/create-org" element={
-            <RequireAuth><CreateOrgPage /></RequireAuth>
-          } />
 
           <Route path="/foundation/waiting" element={
             <RequireAuth><FoundationWaiting /></RequireAuth>

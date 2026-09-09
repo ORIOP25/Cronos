@@ -25,6 +25,12 @@ if (typeof window !== 'undefined') {
   Object.defineProperty(window, 'scrollTo', { value: vi.fn(), writable: true, configurable: true })
 }
 
+export const DEFAULT_LEGAL_VERSIONS = {
+  terms_version: '2026-01',
+  dpa_version: '2026-01',
+  privacy_version: '2026-01',
+}
+
 const DEFAULT_STATE = {
   isSignedIn: true,
   isLoaded: true,
@@ -33,6 +39,10 @@ const DEFAULT_STATE = {
   orgId: 1,
   orgName: 'Test Org',
   teacherId: null,
+  legalAcceptedAt: '2026-01-01T00:00:00.000Z',
+  unsafeMetadata: {
+    cronos_legal_versions: DEFAULT_LEGAL_VERSIONS,
+  },
 }
 
 let _clerkState = { ...DEFAULT_STATE }
@@ -71,6 +81,8 @@ vi.mock('@clerk/react', () => ({
       id: _clerkState.userId,
       primaryEmailAddress: { emailAddress: 'test@cronos.pt' },
       fullName: 'Test User',
+      legalAcceptedAt: _clerkState.legalAcceptedAt,
+      unsafeMetadata: _clerkState.unsafeMetadata,
     } : null,
     isLoaded: _clerkState.isLoaded,
   }),
@@ -106,8 +118,11 @@ vi.mock('@clerk/react', () => ({
   useSignIn: () => _signInState,
   ClerkProvider: ({ children }) => children,
   SignIn: () => null,
-  SignUp: () => null,
-  CreateOrganization: () => null,
+  SignUp: (props) => createElement('div', {
+    'data-testid': 'clerk-sign-up',
+    'data-fallback-redirect-url': props.fallbackRedirectUrl || '',
+    'data-unsafe-metadata': JSON.stringify(props.unsafeMetadata || null),
+  }),
   Show: ({ children, when, fallback }) => {
     if (when === 'signed-out') return _clerkState.isSignedIn ? (fallback || null) : children
     return children

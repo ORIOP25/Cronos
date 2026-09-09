@@ -6,6 +6,7 @@ import {
   BRAND_TAGLINE_REGISTER,
   CLERK_APPEARANCE_AUTH,
 } from '../utils/authDesign'
+import { CLERK_LEGAL_UNSAFE_METADATA } from '../features/legal/data'
 
 export default function SignUpPage() {
   return (
@@ -26,12 +27,13 @@ export default function SignUpPage() {
               routing="path"
               path="/register"
               signInUrl="/login"
-              afterSignUpUrl="/create-org"
+              fallbackRedirectUrl="/foundation"
+              unsafeMetadata={CLERK_LEGAL_UNSAFE_METADATA}
               appearance={CLERK_APPEARANCE_AUTH}
             />
 
             <p className="zen-auth-legal-links">
-              Ao criar uma conta, concorda com os <Link to="/termos">Termos de Serviço</Link>, o <Link to="/dpa">Acordo de Tratamento de Dados</Link> e a <Link to="/privacidade">Política de Privacidade</Link>.
+              Ao criar uma conta e uma escola, confirma que tem poderes para a vincular. Consulte os <Link to="/termos">Termos de Serviço</Link>, o <Link to="/dpa">Acordo de Tratamento de Dados</Link> e a <Link to="/privacidade">Política de Privacidade</Link>.
             </p>
 
             <div className="zen-auth-form-footer">

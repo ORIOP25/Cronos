@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { screen } from '@testing-library/react'
-import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
+import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { renderWithProviders, renderWithRouter } from './testUtils'
 import { setClerkState, resetClerkState } from './setup'
 import {
@@ -37,6 +37,36 @@ const legalState = vi.hoisted(() => ({
   refetch: vi.fn(),
 }))
 
+const orgAdminState = vi.hoisted(() => ({ value: true }))
+const onboardingErrorState = vi.hoisted(() => ({ value: null, retry: vi.fn() }))
+
+vi.mock('../features/onboarding/useOnboardingCompletion', () => ({
+  useOnboardingCompletion: () => ({
+    member: {
+      data: memberState.value,
+      isLoading: memberState.loading,
+      isError: Boolean(memberState.error),
+      error: memberState.error,
+      refetch: vi.fn(),
+    },
+    legal: {
+      data: legalState.value,
+      isLoading: legalState.loading,
+      isError: Boolean(legalState.error),
+      error: legalState.error,
+      refetch: legalState.refetch,
+    },
+    acceptance: { isPending: false, error: null, mutateAsync: vi.fn(), reset: vi.fn() },
+    userLoaded: true,
+    isAdmin: orgAdminState.value,
+    bootstrapRequired: Boolean(orgAdminState.value && memberState.error?.response?.status === 403),
+    isCompleting: false,
+    error: onboardingErrorState.value,
+    retry: onboardingErrorState.retry,
+    needsManualLegalAcceptance: Boolean(legalState.value?.requires_acceptance),
+  }),
+}))
+
 vi.mock('../features/members/data', () => ({
   useCurrentMember: () => ({
     data: memberState.value,
@@ -47,7 +77,8 @@ vi.mock('../features/members/data', () => ({
   }),
 }))
 
-vi.mock('../features/legal/data', () => ({
+vi.mock('../features/legal/data', async (importOriginal) => ({
+  ...(await importOriginal()),
   useLegalStatus: () => ({
     data: legalState.value,
     isLoading: legalState.loading,
@@ -57,18 +88,13 @@ vi.mock('../features/legal/data', () => ({
   }),
 }))
 
-function CreateOrgRoute() {
-  const location = useLocation()
-  return <div data-testid="create-org-route">Create Org {location.state?.from || ''}</div>
-}
-
 function renderGuard(ui, initialEntries = ['/protected']) {
   return renderWithRouter(
     <Routes>
       <Route path="/protected" element={ui} />
       <Route path="/dashboard" element={<div data-testid="dashboard-route">Dashboard</div>} />
       <Route path="/my-availability" element={<div data-testid="teacher-route">Teacher</div>} />
-      <Route path="/create-org" element={<CreateOrgRoute />} />
+      <Route path="/foundation" element={<div data-testid="foundation-route">Foundation</div>} />
       <Route path="/login" element={<div data-testid="login-route">Login</div>} />
     </Routes>,
     { initialEntries },
@@ -81,7 +107,7 @@ function renderRedirect() {
       <Route path="/" element={<SignedInRedirect />} />
       <Route path="/dashboard" element={<div data-testid="dashboard-route">Dashboard</div>} />
       <Route path="/my-availability" element={<div data-testid="teacher-route">Teacher</div>} />
-      <Route path="/create-org" element={<CreateOrgRoute />} />
+      <Route path="/foundation" element={<div data-testid="foundation-route">Foundation</div>} />
     </Routes>,
   )
 }
@@ -158,6 +184,9 @@ describe('recoverOrganizationSession', () => {
 describe('RequireAdmin', () => {
   beforeEach(() => {
     resetClerkState()
+    orgAdminState.value = true
+    onboardingErrorState.value = null
+    onboardingErrorState.retry.mockReset()
     memberState.loading = false
     memberState.error = null
     memberState.value = {
@@ -210,6 +239,9 @@ describe('RequireAdmin', () => {
 describe('RequireTeacher', () => {
   beforeEach(() => {
     resetClerkState()
+    orgAdminState.value = true
+    onboardingErrorState.value = null
+    onboardingErrorState.retry.mockReset()
     memberState.loading = false
     memberState.error = null
     memberState.value = {
@@ -231,14 +263,15 @@ describe('RequireTeacher', () => {
     expect(screen.queryByText('Admin')).toBeNull()
   })
 
-  it('sends an organization admin without a local member to baseline bootstrap', () => {
+  it('keeps an organization admin in the normal loading state while bootstrap runs', () => {
     memberState.error = { response: { status: 403 } }
     renderGuard(<RequireAdmin><div>Admin</div></RequireAdmin>)
-    expect(screen.getByTestId('create-org-route')).toBeInTheDocument()
+    expect(screen.getByRole('status', { hidden: true })).toBeInTheDocument()
   })
 
   it('shows access denied for a non-admin member-query 403', () => {
     setClerkState({ role: 'org:member' })
+    orgAdminState.value = false
     memberState.error = { response: { status: 403 } }
     renderGuard(<RequireAdmin><div>Admin</div></RequireAdmin>)
     expect(screen.getByText(/não tem acesso a esta organização/i)).toBeInTheDocument()
@@ -298,6 +331,9 @@ describe('RequireTeacher', () => {
 describe('SignedInRedirect', () => {
   beforeEach(() => {
     resetClerkState()
+    orgAdminState.value = true
+    onboardingErrorState.value = null
+    onboardingErrorState.retry.mockReset()
     memberState.loading = false
     memberState.error = null
     memberState.value = {
@@ -319,6 +355,14 @@ describe('SignedInRedirect', () => {
     legalState.error = null
   })
 
+  it('shows a compact retry alert when background onboarding fails', () => {
+    onboardingErrorState.value = new Error('bootstrap failed')
+    renderGuard(<RequireAdmin><div>Admin</div></RequireAdmin>)
+    expect(screen.getByText(/não foi possível concluir a configuração/i)).toBeInTheDocument()
+    screen.getByRole('button', { name: /tentar novamente/i }).click()
+    expect(onboardingErrorState.retry).toHaveBeenCalledTimes(1)
+  })
+
   it('redirects admin to /dashboard', () => {
     renderRedirect()
     expect(screen.getByTestId('dashboard-route')).toBeInTheDocument()
@@ -337,13 +381,13 @@ describe('SignedInRedirect', () => {
     expect(screen.getByTestId('teacher-route')).toBeInTheDocument()
   })
 
-  it('redirects missing member to /create-org', () => {
+  it('redirects missing member to /foundation', () => {
     memberState.value = null
     renderRedirect()
-    expect(screen.getByTestId('create-org-route')).toBeInTheDocument()
+    expect(screen.getByTestId('foundation-route')).toBeInTheDocument()
   })
 
-  it('redirects missing legal acceptance to create-org with the safe source route', () => {
+  it('keeps missing legal acceptance inside the guarded flow', () => {
     legalState.value = {
       accepted: false,
       requires_acceptance: true,
@@ -352,7 +396,8 @@ describe('SignedInRedirect', () => {
       privacy_version: '2026-01',
     }
     renderGuard(<RequireAdmin><div>Admin</div></RequireAdmin>, ['/protected?tab=week#availability'])
-    expect(screen.getByTestId('create-org-route')).toHaveTextContent('/protected?tab=week#availability')
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: /atualização dos documentos legais/i })).toBeInTheDocument()
   })
 
   it('shows loader when Clerk not loaded', () => {

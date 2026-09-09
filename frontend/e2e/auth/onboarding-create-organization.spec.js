@@ -3,8 +3,8 @@ import { setupClerkTestingToken } from '@clerk/testing/playwright'
 import { createPageObjects } from '@clerk/testing/playwright/unstable'
 import { expect, test } from '@playwright/test'
 import {
-  acceptLegalDocumentsInApp,
   attachRuntimeGuards,
+  CLERK_LEGAL_UNSAFE_METADATA,
   expectRouteReady,
 } from '../utils/clerk-helpers.js'
 import { createE2eRunKey, E2E_BASE_URL } from '../utils/e2e-config.js'
@@ -19,7 +19,28 @@ function withTimeout(operation, label, timeoutMs = OPERATION_TIMEOUT_MS) {
   return Promise.race([Promise.resolve().then(operation), timeout]).finally(() => clearTimeout(timeoutId))
 }
 
-test('manual founder onboarding creates and activates an organization', async ({ page }) => {
+test('Clerk blocks registration until the legal consent checkbox is selected', async ({ page }) => {
+  test.setTimeout(60_000)
+  attachRuntimeGuards(page)
+  await setupClerkTestingToken({ page })
+  await page.goto(`${E2E_BASE_URL}/register`, { waitUntil: 'domcontentloaded' })
+
+  const checkbox = page.getByRole('checkbox').first()
+  await expect(checkbox).toBeVisible({ timeout: OPERATION_TIMEOUT_MS })
+  await expect(checkbox).not.toBeChecked()
+
+  const email = page.locator('input[name="emailAddress"]')
+  const password = page.locator('input[name="password"]')
+  await email.fill(`cronos-no-consent-${createE2eRunKey()}@example.com`)
+  if (await password.isVisible()) await password.fill('NotARealPassword-123!')
+  const continueButton = page.getByRole('button', { name: /continuar|criar conta|registar/i }).last()
+  await expect(continueButton).toBeVisible()
+  await continueButton.click()
+  await expect(page).toHaveURL(/\/register(?:[/?#]|$)/)
+  await expect(checkbox).not.toBeChecked()
+})
+
+test('founder onboarding creates and activates an organization directly at foundation', async ({ page }) => {
   test.setTimeout(120_000)
   const secretKey = process.env.CLERK_SECRET_KEY
   if (!secretKey) throw new Error('CLERK_SECRET_KEY is required for onboarding E2E.')
@@ -40,7 +61,8 @@ test('manual founder onboarding creates and activates an organization', async ({
         firstName: 'Cronos',
         lastName: 'Onboarding',
         skipPasswordRequirement: true,
-        skipLegalChecks: true,
+        legalAcceptedAt: new Date(),
+        unsafeMetadata: CLERK_LEGAL_UNSAFE_METADATA,
         createOrganizationEnabled: true,
       }),
       'Clerk onboarding user creation',
@@ -55,12 +77,12 @@ test('manual founder onboarding creates and activates an organization', async ({
       'Clerk onboarding sign-in token creation',
     )
     const ticketUrl = new URL(ticket.url)
-    const targetUrl = new URL('/create-org', baseUrl)
+    const targetUrl = new URL('/foundation', baseUrl)
     ticketUrl.searchParams.set('redirect_url', targetUrl.toString())
     await page.goto(ticketUrl.toString(), { waitUntil: 'domcontentloaded' })
 
     await expect.poll(() => page.url(), { timeout: OPERATION_TIMEOUT_MS }).toMatch(
-      /\/(?:create-org|tasks\/choose-organization)(?:[/?#]|$)/,
+      /\/(?:foundation|tasks\/choose-organization)(?:[/?#]|$)/,
     )
     if (/\/tasks\/choose-organization(?:[/?#]|$)/.test(page.url())) {
       const clerkPages = createPageObjects({ page, baseURL: baseUrl })
@@ -70,7 +92,7 @@ test('manual founder onboarding creates and activates an organization', async ({
       )
     }
     await expect.poll(() => page.url(), { timeout: OPERATION_TIMEOUT_MS }).toMatch(
-      /\/create-org(?:[/?#]|$)/,
+      /\/foundation(?:[/?#]|$)/,
     )
     await page.waitForFunction(() => window.Clerk?.user != null, null, {
       timeout: OPERATION_TIMEOUT_MS,
@@ -80,7 +102,6 @@ test('manual founder onboarding creates and activates an organization', async ({
       null,
       { timeout: OPERATION_TIMEOUT_MS },
     )
-    await acceptLegalDocumentsInApp(page)
     await page.waitForURL('**/foundation', { timeout: OPERATION_TIMEOUT_MS })
     const organizationId = await page.evaluate(() => window.Clerk.organization.id)
     organizationIds.add(organizationId)

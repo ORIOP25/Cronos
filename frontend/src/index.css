@@ -1274,45 +1274,6 @@ h1, h2, h3, h4, h5, h6 {
   text-align: center;
 }
 
-.zen-auth-legal-checkbox {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  margin: 22px auto 0;
-  max-width: 440px;
-  color: #8b6f5c;
-  font-size: 0.82rem;
-  line-height: 1.55;
-}
-
-.zen-auth-legal-checkbox input {
-  flex: 0 0 auto;
-  width: 17px;
-  height: 17px;
-  margin-top: 2px;
-  accent-color: #d4940b;
-}
-
-.zen-auth-legal-checkbox a {
-  color: #5c3d2e;
-  font-weight: 600;
-  text-decoration: underline;
-  text-decoration-color: rgba(212, 148, 11, 0.55);
-  text-underline-offset: 3px;
-}
-
-.zen-auth-legal-checkbox a:hover {
-  color: #d4940b;
-}
-
-.zen-auth-legal-error {
-  margin: 10px auto 0;
-  max-width: 440px;
-  color: #a33a2b;
-  font-size: 0.78rem;
-  line-height: 1.45;
-}
-
 .zen-auth-legal-links a {
   color: var(--brand-800);
   font-weight: 650;

@@ -21,6 +21,22 @@ vi.mock('../features/members/data', async (importOriginal) => ({
   }),
 }))
 
+vi.mock('../features/legal/data', async (importOriginal) => ({
+  ...(await importOriginal()),
+  useLegalStatus: () => ({
+    data: {
+      accepted: true,
+      requires_acceptance: false,
+      terms_version: '2026-01',
+      dpa_version: '2026-01',
+      privacy_version: '2026-01',
+    },
+    isLoading: false,
+    isError: false,
+    refetch: vi.fn(),
+  }),
+}))
+
 function renderAppAt(path) {
   window.history.replaceState({}, '', path)
   return renderWithProviders(<App />)
@@ -126,6 +142,12 @@ describe('App route polish', () => {
 
   it('does not expose the removed onboarding route', async () => {
     renderAppAt('/onboarding')
+
+    expect(await screen.findByRole('heading', { name: /página não encontrada/i })).toBeInTheDocument()
+  })
+
+  it('does not expose the removed create-org route', async () => {
+    renderAppAt('/create-org')
 
     expect(await screen.findByRole('heading', { name: /página não encontrada/i })).toBeInTheDocument()
   })

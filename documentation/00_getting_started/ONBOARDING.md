@@ -34,7 +34,7 @@ The local tutorial lets users learn the product without mutating the tenant.
 | Area | Owner |
 | :--- | :--- |
 | Clerk activation and tenant bootstrap | Clerk provider, session endpoint, organization feature |
-| Legal acceptance | `/create-org`, legal status and acceptance endpoints |
+| Legal acceptance | Clerk `<SignUp />`, the onboarding completion gate, and legal status/acceptance endpoints |
 | Foundation validation and persistence | Foundation wizard, Foundation service, organization tables |
 | Tutorial simulation | Tutorial reducer, scenario, expiring local storage, and API boundary |
 | Readiness and dashboard mode | Readiness service and dashboard service |
@@ -65,7 +65,7 @@ Do not interpret a loading screen as a missing permission.
 | :--- | :--- | :--- |
 | User is signed out | `/login` | Authentication is required. |
 | User has a pending Clerk organization task | `/register/tasks/choose-organization` | The user must create or select an organization. |
-| User has no organization or membership after the task | `/create-org` | The bridge waits for the active organization and bootstraps it. |
+| User has no organization or membership after the task | Organization selector or Foundation route guard | The gate waits for the active organization and bootstraps it. |
 | User has memberships but no active organization | Organization selector | The user must choose the tenant context. |
 | Active organization, administrator, Foundation incomplete | `/foundation` | The administrator can complete the required setup. |
 | Active organization, non-administrator, Foundation incomplete | `/foundation/waiting` | Only a Foundation administrator can complete setup. |
@@ -77,6 +77,12 @@ The dashboard provides **Repetir guia** and **Retomar guia** actions when applic
 
 ## Phase 1: Create or Select the Organization
 
+### Clerk environment configuration
+
+In both the Clerk Development and Production instances, enable **Require express consent to legal documents** under the Clerk Dashboard's legal-compliance settings. The prebuilt `<SignUp />` then renders and enforces the mandatory checkbox. Keep this setting enabled for every environment that serves Cronos; it is provider configuration and cannot be safely enabled from browser code.
+
+Cronos passes the current Terms, DPA, and Privacy versions as `unsafeMetadata` only to correlate the Clerk consent with the server status. Authorization remains enforced by the backend legal endpoints.
+
 ### Start the session
 
 1. Open the application.
@@ -85,8 +91,9 @@ The dashboard provides **Repetir guia** and **Retomar guia** actions when applic
 4. Complete the Clerk organization task when Clerk requests it.
 
 The task page is owned by Clerk and only handles organization selection or creation.
-Cronos shows the legal documents and collects the organization acceptance locally after
-the active organization is available.
+Clerk collects the mandatory legal consent during registration. After the active organization
+is available, Cronos correlates the Clerk document versions and records the organization acceptance
+in the background.
 
 ### Create an organization
 
@@ -95,10 +102,10 @@ When the user has no membership:
 1. Enter the school name in the Clerk organization task.
 2. Select or create the organization.
 3. Wait for Clerk to activate the organization and membership.
-4. Wait for `/create-org` to bootstrap the local member.
+4. Wait for the route guard to bootstrap the local member in the background.
 5. Read `/legal/status`.
-6. If acceptance is required, review the three local document links and submit the single
-   confirmation with the current Terms, DPA, and Privacy versions.
+6. If the Clerk consent matches the current versions, the administrator acceptance is submitted
+   automatically; future version changes use the in-app reacceptance dialog.
 
 The bootstrap and acceptance actions are idempotent and can be retried after a transient
 failure; no legal proof is kept in browser storage.
@@ -361,7 +368,7 @@ Retries remain disabled (`retries: 0`) so a failed test remains visible.
 | :--- | :--- |
 | Route definitions | [`frontend/src/App.jsx`](../../frontend/src/App.jsx) |
 | Route guards | [`frontend/src/routeGuards.jsx`](../../frontend/src/routeGuards.jsx) |
-| Organization activation | [`frontend/src/pages/CreateOrgPage.jsx`](../../frontend/src/pages/CreateOrgPage.jsx) and [`frontend/src/features/organization/useCreateActiveOrganization.js`](../../frontend/src/features/organization/useCreateActiveOrganization.js) |
+| Organization activation | [`frontend/src/features/onboarding/useOnboardingCompletion.js`](../../frontend/src/features/onboarding/useOnboardingCompletion.js) and [`frontend/src/features/organization/useCreateActiveOrganization.js`](../../frontend/src/features/organization/useCreateActiveOrganization.js) |
 | Foundation wizard | [`frontend/src/features/foundation/components/FoundationWizard.jsx`](../../frontend/src/features/foundation/components/FoundationWizard.jsx) |
 | Foundation model | [`frontend/src/features/foundation/foundationModel.js`](../../frontend/src/features/foundation/foundationModel.js) |
 | Foundation data hooks | [`frontend/src/features/foundation/foundationData.js`](../../frontend/src/features/foundation/foundationData.js) |

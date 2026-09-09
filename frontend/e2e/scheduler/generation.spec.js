@@ -3,9 +3,9 @@ import { clerk } from '@clerk/testing/playwright'
 import { createPageObjects } from '@clerk/testing/playwright/unstable'
 import { test, expect } from '@playwright/test'
 import {
-  acceptLegalDocumentsInApp,
   allowApiFailure,
   attachRuntimeGuards,
+  CLERK_LEGAL_UNSAFE_METADATA,
   expectRouteReady,
   goTo,
   loginAsAdminReal,
@@ -185,15 +185,11 @@ async function signInUserWithTicket(
     )
   }
   if (organizationName) {
-    await page.waitForURL('**/create-org', { timeout: 30_000 })
+    await page.waitForURL('**/foundation', { timeout: 30_000 })
   } else {
     await page.waitForURL(targetUrl.toString(), { timeout: 30_000 })
   }
   await page.waitForFunction(() => window.Clerk?.user != null, null, { timeout: 30_000 })
-  if (organizationName) {
-    await acceptLegalDocumentsInApp(page)
-    await page.waitForURL('**/foundation', { timeout: 30_000 })
-  }
   if (!organizationName) await expectRouteReady(page, path)
   if (organizationName) {
     return await page.evaluate((name) => (
@@ -587,7 +583,8 @@ test('fresh founder completes Complete Generation and custom-rule Adaptive Repai
           firstName: 'Cronos',
           lastName: 'Beta',
           skipPasswordRequirement: true,
-          skipLegalChecks: true,
+          legalAcceptedAt: new Date(),
+          unsafeMetadata: CLERK_LEGAL_UNSAFE_METADATA,
           createOrganizationEnabled: true,
         }),
         'Clerk user creation',
@@ -595,7 +592,7 @@ test('fresh founder completes Complete Generation and custom-rule Adaptive Repai
       userId = user.id
       attachRuntimeGuards(page)
       allowApiFailure(page, { status: 404, url: '/api/v1/scheduler/drafts/current' })
-      organizationId = await signInUserWithTicket(client, page, userId, '/create-org', {
+      organizationId = await signInUserWithTicket(client, page, userId, '/foundation', {
         organizationName: schoolName,
       })
       expect(organizationId).toMatch(/^org_/)

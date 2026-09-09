@@ -33,7 +33,7 @@ The worker stores an auditable job and draft before an administrator changes the
 | :--- | :--- |
 | Frontend routes | `frontend/src/App.jsx` |
 | Organization route guards | `frontend/src/routeGuards.jsx` |
-| Organization activation | `frontend/src/pages/CreateOrgPage.jsx` |
+| Organization activation | `frontend/src/features/onboarding/useOnboardingCompletion.js` and `frontend/src/features/organization/useCreateActiveOrganization.js` |
 | Foundation wizard | `frontend/src/features/foundation/components/FoundationWizard.jsx` |
 | Tutorial engine | `frontend/src/features/tutorial/` |
 | Admin schedule page | `frontend/src/pages/Schedules.jsx` |

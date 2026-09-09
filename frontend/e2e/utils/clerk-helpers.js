@@ -8,6 +8,14 @@ import {
 import { observeClerkSignIn } from './clerk-rate-limit.js'
 import { E2E_BASE_URL } from './e2e-config.js'
 
+export const CLERK_LEGAL_UNSAFE_METADATA = Object.freeze({
+  cronos_legal_versions: Object.freeze({
+    terms_version: '2026-01',
+    dpa_version: '2026-01',
+    privacy_version: '2026-01',
+  }),
+})
+
 function requiredEnv(name) {
   const value = process.env[name]
   if (!value) {
@@ -31,7 +39,10 @@ function runtimeApiFailures(page) {
   } catch {
     return failures
   }
-  if (pathname !== '/create-org') return failures
+  // A new Clerk organization can briefly return 403 for /members/me until the
+  // background bootstrap creates the local member. The route gate owns this
+  // transition; all other API failures remain fatal in E2E.
+  if (pathname !== '/foundation') return failures
   return [...failures, { status: 403, url: '/api/v1/members/me' }]
 }
 
@@ -115,23 +126,9 @@ export async function goTo(page, path) {
   await expectNoAppCrash(page)
 }
 
-export async function acceptLegalDocumentsInApp(page) {
-  await expect(page).toHaveURL(/\/(?:create-org|foundation|dashboard)(?:[/?#]|$)/, { timeout: 30_000 })
-  if (!/\/create-org(?:[/?#]|$)/.test(new URL(page.url()).pathname)) return
-  const checkbox = page.getByRole('checkbox', {
-    name: /Confirmo que tenho poderes para vincular a organização.*Acordo de Tratamento de Dados.*Política de Privacidade/i,
-  })
-
-  await expect(checkbox).toBeVisible({ timeout: 30_000 })
-  await expect(page.getByRole('button', { name: 'Confirmar e continuar' })).toBeDisabled()
-  await checkbox.check()
-  const responsePromise = page.waitForResponse((response) => (
-    response.url().includes('/api/v1/legal/acceptance')
-    && response.request().method() === 'POST'
-  ))
-  await page.getByRole('button', { name: 'Confirmar e continuar' }).click()
-  expect((await responsePromise).status()).toBe(200)
-  await expect(page).toHaveURL(/\/(?:foundation|dashboard)(?:[/?#]|$)/, { timeout: 30_000 })
+export async function expectFoundationReady(page) {
+  await expect(page).toHaveURL(/\/foundation(?:[/?#]|$)/, { timeout: 30_000 })
+  await expect(page.locator('#school_start_date')).toBeVisible({ timeout: 30_000 })
 }
 
 export async function clickSidebarRoute(page, path) {

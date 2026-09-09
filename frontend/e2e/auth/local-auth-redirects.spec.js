@@ -26,7 +26,7 @@ function redirectUrlFromLogin(loginUrl) {
 }
 
 test.describe('redirecionamentos de autenticação locais', () => {
-  for (const path of ['/dashboard', '/my-availability', '/create-org']) {
+  for (const path of ['/dashboard', '/my-availability', '/foundation']) {
     test(`encaminha ${path} para login na mesma origem`, async ({ browser }) => {
       const context = await browser.newContext({ storageState: { cookies: [], origins: [] } })
       const page = await context.newPage()

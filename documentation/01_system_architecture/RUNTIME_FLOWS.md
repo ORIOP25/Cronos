@@ -71,8 +71,8 @@ Explicit boundaries prevent provider adapters, authentication, and solver work f
 2. `POST /api/v1/session/bootstrap` reconciles the provider organization, membership, and local member.
 3. The route guard reads `/members/me` and `/legal/status` before it selects an authenticated route.
 4. `/register/tasks/choose-organization` collects the school name and creates or selects the organization.
-5. `/create-org` acts as the authenticated transition bridge after the Clerk task completes.
-6. The bridge bootstraps the member, reads legal versions, and, when required, records the local legal acceptance.
+5. The authenticated route gate completes onboarding in the background after the Clerk task completes.
+6. The gate bootstraps the member, reads legal versions, and, when required, records the organization acceptance without changing the browser route.
 7. The backend stores append-only evidence for Terms, DPA, and Privacy versions.
 8. The route guard then reads `foundation_status`; incomplete organizations stay in Foundation.
 9. An administrator reads and saves the Foundation draft with an optimistic `expected_version`.

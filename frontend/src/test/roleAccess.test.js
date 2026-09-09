@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, it, expect } from 'vitest'
 import {
-  ROUTE_CREATE_ORG,
+  ROUTE_FOUNDATION,
   canAccessTeacherRoutes,
   getDefaultRouteForMember,
   hasMemberCapability,
@@ -18,13 +18,13 @@ describe('roleAccess', () => {
       expect(getDefaultRouteForMember({ default_mode: 'teacher' })).toBe('/my-availability')
     })
 
-    it('modo desconhecido redireciona para create-org', () => {
-      expect(getDefaultRouteForMember({ default_mode: 'student' })).toBe(ROUTE_CREATE_ORG)
+    it('modo desconhecido redireciona para foundation', () => {
+      expect(getDefaultRouteForMember({ default_mode: 'student' })).toBe(ROUTE_FOUNDATION)
     })
 
-    it('null/undefined redireciona para create-org', () => {
-      expect(getDefaultRouteForMember(null)).toBe(ROUTE_CREATE_ORG)
-      expect(getDefaultRouteForMember(undefined)).toBe(ROUTE_CREATE_ORG)
+    it('null/undefined redireciona para foundation', () => {
+      expect(getDefaultRouteForMember(null)).toBe(ROUTE_FOUNDATION)
+      expect(getDefaultRouteForMember(undefined)).toBe(ROUTE_FOUNDATION)
     })
   })
 
