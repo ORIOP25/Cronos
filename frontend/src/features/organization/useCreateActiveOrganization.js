@@ -1,18 +1,16 @@
 import { useCallback, useState } from 'react'
-import { useAuth, useOrganization } from '@clerk/react'
+import { useAuth } from '@clerk/react'
 import { useQueryClient } from '@tanstack/react-query'
 import apiClient from '../../apiClient'
 import { LEGAL_STATUS_KEY } from '../legal/data'
 
-export function useCreateActiveOrganization() {
-  const { organization } = useOrganization()
+export function useCreateActiveOrganization({ organizationId } = {}) {
   const { getToken } = useAuth()
   const queryClient = useQueryClient()
   const [isPending, setIsPending] = useState(false)
   const [error, setError] = useState(null)
 
   const bootstrapActiveOrganization = useCallback(async () => {
-    const organizationId = organization?.id
     if (!organizationId) throw new Error('Selecione uma organização antes de continuar.')
     setIsPending(true)
     setError(null)
@@ -36,7 +34,7 @@ export function useCreateActiveOrganization() {
     } finally {
       setIsPending(false)
     }
-  }, [getToken, organization?.id, queryClient])
+  }, [getToken, organizationId, queryClient])
 
   return { bootstrapActiveOrganization, isPending, error }
 }
