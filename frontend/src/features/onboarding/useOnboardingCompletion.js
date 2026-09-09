@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef } from 'react'
-import { useOrganization, useUser } from '@clerk/react'
+import { useUser } from '@clerk/react'
 import { useCurrentMember } from '../members/data'
 import {
   CLERK_LEGAL_METADATA_KEY,
@@ -33,8 +33,7 @@ function isMemberBootstrapError(error) {
   return error?.response?.status === 403
 }
 
-export function useOnboardingCompletion() {
-  const organizationState = useOrganization()
+export function useOnboardingCompletion(organizationState) {
   const { user, isLoaded: userLoaded } = useUser()
   const organizationId = organizationState.organization?.id
   const member = useCurrentMember({ enabled: Boolean(organizationId) })
@@ -118,6 +117,7 @@ export function useOnboardingCompletion() {
   return {
     organization: organizationState.organization,
     organizationMembership: organizationState.membership,
+    orgLoaded: organizationState.isLoaded,
     user,
     userLoaded,
     member,

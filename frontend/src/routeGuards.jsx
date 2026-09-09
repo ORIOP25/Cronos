@@ -142,7 +142,7 @@ function useOrganizationGuardState() {
   const queryClient = useQueryClient()
   const organizationState = useOrganization()
   const list = useOrganizationList({ userMemberships: { infinite: true } })
-  const onboarding = useOnboardingCompletion()
+  const onboarding = useOnboardingCompletion(organizationState)
   return {
     ...auth,
     organization: organizationState.organization,

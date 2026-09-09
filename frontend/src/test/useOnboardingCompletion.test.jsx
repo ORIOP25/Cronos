@@ -1,5 +1,6 @@
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { describe, expect, it, beforeEach, vi } from 'vitest'
+import { useOrganization } from '@clerk/react'
 import { resetClerkState, setClerkState } from './setup'
 import {
   hasCurrentClerkLegalConsent,
@@ -79,6 +80,10 @@ function userWithVersions(overrides = {}) {
   }
 }
 
+function useCompletion() {
+  return useOnboardingCompletion(useOrganization())
+}
+
 describe('legal consent correlation', () => {
   it('requires Clerk timestamp and all current document versions', () => {
     expect(hasCurrentClerkLegalConsent(userWithVersions())).toBe(true)
@@ -121,7 +126,7 @@ describe('useOnboardingCompletion', () => {
   })
 
   it('automatically accepts once for an administrator with matching Clerk consent', async () => {
-    const { rerender } = renderHook(() => useOnboardingCompletion(), { wrapper })
+    const { rerender } = renderHook(useCompletion, { wrapper })
 
     await waitFor(() => expect(acceptance.mutateAsync).toHaveBeenCalledTimes(1))
     expect(acceptance.mutateAsync).toHaveBeenCalledWith({
@@ -144,7 +149,7 @@ describe('useOnboardingCompletion', () => {
       foundation_status: 'COMPLETED',
     }
 
-    renderHook(() => useOnboardingCompletion(), { wrapper })
+    renderHook(useCompletion, { wrapper })
     await act(async () => {})
     expect(acceptance.mutateAsync).not.toHaveBeenCalled()
   })
@@ -154,7 +159,7 @@ describe('useOnboardingCompletion', () => {
     memberState.isError = true
     memberState.error = { response: { status: 403 } }
 
-    const { result, rerender } = renderHook(() => useOnboardingCompletion(), { wrapper })
+    const { result, rerender } = renderHook(useCompletion, { wrapper })
     await waitFor(() => expect(bootstrap.bootstrapActiveOrganization).toHaveBeenCalledTimes(1))
     rerender()
     expect(bootstrap.bootstrapActiveOrganization).toHaveBeenCalledTimes(1)
