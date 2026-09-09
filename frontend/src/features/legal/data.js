@@ -1,5 +1,4 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useOrganization } from '@clerk/react'
 import apiClient from '../../apiClient'
 import legalManifest from './legal-manifest.json'
 
@@ -17,8 +16,8 @@ export const CLERK_LEGAL_UNSAFE_METADATA = Object.freeze({
   [CLERK_LEGAL_METADATA_KEY]: Object.freeze({ ...CURRENT_LEGAL_VERSIONS }),
 })
 
-export function useLegalStatus({ enabled = true } = {}) {
-  const orgId = useOrganization().organization?.id
+export function useLegalStatus({ enabled = true, organizationId } = {}) {
+  const orgId = organizationId
   return useQuery({
     queryKey: [LEGAL_STATUS_KEY, orgId],
     queryFn: () => apiClient.get('/legal/status'),
@@ -28,8 +27,8 @@ export function useLegalStatus({ enabled = true } = {}) {
   })
 }
 
-export function useAcceptLegalDocuments() {
-  const orgId = useOrganization().organization?.id
+export function useAcceptLegalDocuments({ organizationId } = {}) {
+  const orgId = organizationId
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (payload) => apiClient.post('/legal/acceptance', payload),

@@ -37,8 +37,8 @@ export function useOnboardingCompletion(organizationState) {
   const { user, isLoaded: userLoaded } = useUser()
   const organizationId = organizationState.organization?.id
   const member = useCurrentMember({ enabled: Boolean(organizationId) })
-  const legal = useLegalStatus({ enabled: Boolean(organizationId) && member.isSuccess })
-  const acceptance = useAcceptLegalDocuments()
+  const legal = useLegalStatus({ organizationId, enabled: Boolean(organizationId) && member.isSuccess })
+  const acceptance = useAcceptLegalDocuments({ organizationId })
   const bootstrap = useCreateActiveOrganization()
   const bootstrapAttempt = useRef(null)
   const acceptanceAttempt = useRef(null)
