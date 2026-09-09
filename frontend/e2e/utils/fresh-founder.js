@@ -71,9 +71,26 @@ export async function createFreshFounder(page, client, label) {
   } catch (error) {
     if (organizationId) {
       try { await client.organizations.deleteOrganization(organizationId) } catch { /* best effort */ }
+    } else {
+      try { await cleanupOrganizationByName(client, organizationName) } catch { /* best effort */ }
     }
     try { await client.users.deleteUser(user.id) } catch { /* best effort */ }
     throw error
+  }
+}
+
+export async function cleanupOrganizationByName(client, organizationName) {
+  if (!organizationName) return
+  const result = await withTimeout(
+    () => client.organizations.getOrganizationList({ query: organizationName, limit: 100 }),
+    `Clerk E2E organization lookup ${organizationName}`,
+  )
+  const organization = (result.data ?? []).find((item) => item.name === organizationName)
+  if (organization) {
+    await withTimeout(
+      () => client.organizations.deleteOrganization(organization.id),
+      `Clerk E2E organization cleanup ${organization.id}`,
+    )
   }
 }
 

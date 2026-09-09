@@ -12,6 +12,7 @@ import {
 } from '../utils/clerk-helpers.js'
 import { waitForJobToSucceed as waitForSchedulerJob } from '../utils/scheduler-fixtures.js'
 import { createE2eRunKey, E2E_BASE_URL } from '../utils/e2e-config.js'
+import { cleanupOrganizationByName } from '../utils/fresh-founder.js'
 
 const API_PREFIX = '/api/v1'
 const OPERATION_TIMEOUT_MS = 30_000
@@ -713,6 +714,11 @@ test('fresh founder completes Complete Generation and custom-rule Adaptive Repai
       } catch (error) {
         cleanupErrors.push(error)
       }
+    }
+    try {
+      await cleanupOrganizationByName(client, schoolName)
+    } catch (error) {
+      cleanupErrors.push(error)
     }
     if (userId) {
       try {

@@ -8,6 +8,7 @@ import {
   expectRouteReady,
 } from '../utils/clerk-helpers.js'
 import { createE2eRunKey, E2E_BASE_URL } from '../utils/e2e-config.js'
+import { cleanupOrganizationByName } from '../utils/fresh-founder.js'
 
 const OPERATION_TIMEOUT_MS = 30_000
 
@@ -121,6 +122,11 @@ test('founder onboarding creates and activates an organization directly at found
       } catch (error) {
         cleanupErrors.push(error)
       }
+    }
+    try {
+      await cleanupOrganizationByName(client, schoolName)
+    } catch (error) {
+      cleanupErrors.push(error)
     }
     if (userId) {
       try {

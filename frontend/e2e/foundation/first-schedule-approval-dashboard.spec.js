@@ -11,6 +11,7 @@ import {
 } from '../utils/clerk-helpers.js'
 import { generateAndApproveThroughUi, seedMinimalSchedulerInputs } from '../utils/scheduler-fixtures.js'
 import { createE2eRunKey, E2E_BASE_URL } from '../utils/e2e-config.js'
+import { cleanupOrganizationByName } from '../utils/fresh-founder.js'
 
 function withTimeout(operation, label, timeoutMs = 30_000) {
   let timeoutId
@@ -89,6 +90,7 @@ test.describe('Dashboard — First Real Schedule Approval & Discrimination', () 
     let userId
     let organizationId
     let primaryError = null
+    let cleanupError = null
 
     try {
       const user = await withTimeout(
@@ -136,9 +138,25 @@ test.describe('Dashboard — First Real Schedule Approval & Discrimination', () 
     } catch (error) {
       primaryError = error
     } finally {
-      if (organizationId) await withTimeout(() => client.organizations.deleteOrganization(organizationId), 'dashboard E2E organization cleanup')
-      if (userId) await withTimeout(() => client.users.deleteUser(userId), 'dashboard E2E user cleanup')
+      try {
+        if (organizationId) {
+          await withTimeout(() => client.organizations.deleteOrganization(organizationId), 'dashboard E2E organization cleanup')
+        }
+      } catch (error) {
+        cleanupError = error
+      }
+      try {
+        await cleanupOrganizationByName(client, organizationName)
+      } catch (error) {
+        cleanupError ||= error
+      }
+      try {
+        if (userId) await withTimeout(() => client.users.deleteUser(userId), 'dashboard E2E user cleanup')
+      } catch (error) {
+        cleanupError ||= error
+      }
     }
     if (primaryError) throw primaryError
+    if (cleanupError) throw cleanupError
   })
 })
