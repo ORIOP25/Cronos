@@ -6,7 +6,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models
+from app.scheduler.domain.contracts import DraftBlockSpec
 from app.services.scheduler_debt_service import SchedulerDebtService
+from app.services.scheduler_recovery_validation import validate_recovery_identity
 
 
 class SchedulerRecoveryError(RuntimeError):
@@ -99,6 +101,49 @@ class SchedulerRecoveryService:
                 "The referenced debt is no longer unresolved at this revision."
             )
 
+        assigned_teacher = await self._db.scalar(
+            select(models.ClassSubjectLink.teacher_id).where(
+                models.ClassSubjectLink.organization_id == organization_id,
+                models.ClassSubjectLink.class_id == block.class_id,
+                models.ClassSubjectLink.subject_id == block.subject_id,
+            )
+        )
+        eligible_teacher = await self._db.scalar(
+            select(models.teacher_subject_link.c.teacher_id).where(
+                models.teacher_subject_link.c.organization_id == organization_id,
+                models.teacher_subject_link.c.teacher_id == block.teacher_id,
+                models.teacher_subject_link.c.subject_id == block.subject_id,
+            )
+        )
+        assignments = {(block.class_id, block.subject_id): assigned_teacher}
+        qualifications = (
+            {(block.teacher_id, block.subject_id)} if eligible_teacher is not None else set()
+        )
+        spec = DraftBlockSpec(
+            stable_block_key=block.stable_block_key,
+            source_active_block_id=block.source_active_block_id,
+            class_id=block.class_id,
+            subject_id=block.subject_id,
+            teacher_id=block.teacher_id,
+            room_id=block.room_id,
+            room_type_id=block.room_type_id,
+            date=block.date,
+            timeslot_id=block.timeslot_id,
+            duration_minutes=block.duration_minutes,
+            module_sequence_index=block.module_sequence_index,
+            is_recovery_block=True,
+            recovery_source_occurrence_id=block.recovery_source_occurrence_id,
+            recovery_source_occurrence_revision=block.recovery_source_occurrence_revision,
+            change_type=block.change_type,
+        )
+        debt_row = {
+            "occurrence_id": debt_entry.occurrence_id,
+            "occurrence_revision": debt_entry.occurrence_revision,
+            "class_id": debt_entry.class_id,
+            "subject_id": debt_entry.subject_id,
+            "teacher_id": debt_entry.teacher_id,
+            "unresolved_debt_minutes": debt_entry.remaining_minutes,
+        }
         pending_reserved = await self._db.scalars(
             select(models.PlannedRecoveryLink).where(
                 models.PlannedRecoveryLink.organization_id == organization_id,
@@ -117,6 +162,15 @@ class SchedulerRecoveryService:
             raise RecoveryDebtUnavailableError(
                 f"Only {available_minutes} unresolved debt minutes remain available."
             )
+        identity_violations = validate_recovery_identity(
+            spec,
+            debt_row,
+            assignments,
+            qualifications,
+            requested_minutes=requested_minutes,
+        )
+        if identity_violations:
+            raise RecoveryLinkIntegrityError(identity_violations[0])
 
         link = models.PlannedRecoveryLink(
             organization_id=organization_id,

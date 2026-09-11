@@ -16,7 +16,7 @@ from app.services.scheduler_horizon import AdaptiveHorizonSelector
 from app.services.scheduler_job_runtime import (
     GenerationExecutionContext,
 )
-from app.services.scheduler_near_optimizer import NearFutureOptimizer
+from app.services.scheduler_near_optimizer import NearFutureOptimizer, NearFutureResult
 from app.services.scheduler_quality_service import evaluate_target_quality
 
 
@@ -57,24 +57,45 @@ class CompleteGenerationEngine:
             deadline_at=context.solve_deadline_at,
         )
         await context.ensure_can_continue()
-        if not near_universe.is_usable:
+        local_capacity_blockers = {
+            "Hard pruning removed every placement candidate.",
+            "Candidate window does not intersect the school year.",
+        }
+        terminal_near_blockers = tuple(
+            blocker for blocker in near_universe.blockers if blocker not in local_capacity_blockers
+        )
+        if terminal_near_blockers:
             return NoValidGenerationOutput(
-                blockers=near_universe.blockers,
+                blockers=terminal_near_blockers,
                 metrics={"horizon_days": horizon.horizon_days},
             )
-        optimizer_seconds = max(0.15, self._remaining_seconds(context) * 0.6)
-        near_result = await asyncio.to_thread(
-            NearFutureOptimizer().optimize,
-            near_universe,
-            ledger,
-            snapshot,
-            max_seconds=optimizer_seconds,
-        )
+        if near_universe.is_usable:
+            optimizer_seconds = max(0.15, self._remaining_seconds(context) * 0.6)
+            near_result = await asyncio.to_thread(
+                NearFutureOptimizer().optimize,
+                near_universe,
+                ledger,
+                snapshot,
+                max_seconds=optimizer_seconds,
+            )
+        else:
+            near_result = NearFutureResult(
+                selected=(),
+                status="feasible",
+                scheduled_blocks=0,
+                target_blocks=0,
+                metrics={"scheduled_minutes": 0, "optimization_stages": 0},
+            )
         await context.ensure_can_continue()
-        if near_result.status == "infeasible":
+
+        if near_result.status == "system_validation_failure":
             return NoValidGenerationOutput(
-                blockers=("Near-future optimization found no hard-valid placement.",),
-                metrics={"horizon_days": horizon.horizon_days},
+                blockers=("Near-future optimization failed system validation.",),
+                metrics={
+                    "horizon_days": horizon.horizon_days,
+                    "near_optimizer_status": near_result.status,
+                    **near_result.metrics,
+                },
             )
 
         far_universe = await asyncio.to_thread(
@@ -103,6 +124,29 @@ class CompleteGenerationEngine:
                     "required_minutes": assembly.required_minutes,
                     "scheduled_minutes": assembly.scheduled_minutes,
                     "horizon_days": horizon.horizon_days,
+                    "near_optimizer_status": near_result.status,
+                    **(
+                        {"residual_repair_status": assembly.residual_repair_status}
+                        if assembly.residual_repair_status is not None
+                        else {}
+                    ),
+                    **(
+                        {"residual_repair_solver_status": assembly.residual_repair_solver_status}
+                        if assembly.residual_repair_solver_status is not None
+                        else {}
+                    ),
+                    **(
+                        {"residual_repair_variable_count": assembly.residual_repair_variable_count}
+                        if assembly.residual_repair_variable_count is not None
+                        else {}
+                    ),
+                    **(
+                        {
+                            "residual_repair_constraint_count": assembly.residual_repair_constraint_count
+                        }
+                        if assembly.residual_repair_constraint_count is not None
+                        else {}
+                    ),
                 },
             )
 
@@ -130,6 +174,13 @@ class CompleteGenerationEngine:
         )
         margin_days = (hard_end - assembly.projected_completion_date).days
         quality_metrics = evaluate_target_quality(snapshot, blocks)
+        far_blocks_present = any(block.source == "provisional" for block in assembly.blocks)
+        quality_complete = (
+            near_result.status == "optimal"
+            and not far_blocks_present
+            and assembly.residual_repair_status in (None, "optimal")
+        )
+        quality_scope = "FULL_DECLARED_TARGET" if quality_complete else "NEAR_FUTURE_SCOPE"
         return ValidatedGenerationResult(
             result_category=models.ScheduleGenerationResultCategory.COMPLETE_SUCCESS,
             projected_completion_date=assembly.projected_completion_date,
@@ -158,7 +209,29 @@ class CompleteGenerationEngine:
                 "estimated_near_candidate_count": horizon.estimated_candidate_count,
                 **near_result.metrics,
                 **quality_metrics,
-                "quality_optimization_complete": near_result.status == "optimal",
+                "near_optimizer_status": near_result.status,
+                **(
+                    {"residual_repair_status": assembly.residual_repair_status}
+                    if assembly.residual_repair_status is not None
+                    else {}
+                ),
+                **(
+                    {"residual_repair_solver_status": assembly.residual_repair_solver_status}
+                    if assembly.residual_repair_solver_status is not None
+                    else {}
+                ),
+                **(
+                    {"residual_repair_variable_count": assembly.residual_repair_variable_count}
+                    if assembly.residual_repair_variable_count is not None
+                    else {}
+                ),
+                **(
+                    {"residual_repair_constraint_count": assembly.residual_repair_constraint_count}
+                    if assembly.residual_repair_constraint_count is not None
+                    else {}
+                ),
+                "quality_scope": quality_scope,
+                "quality_optimization_complete": quality_complete,
             },
         )
 

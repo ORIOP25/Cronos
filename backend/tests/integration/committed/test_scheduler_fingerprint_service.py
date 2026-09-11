@@ -385,3 +385,159 @@ async def test_class_subject_requirements_include_scheduler_inputs_and_ignore_ot
         models.ScheduleGenerationStrategy.COMPLETE_GENERATION,
     )
     assert after_irrelevant_event.value == first.value
+
+
+async def test_adaptive_active_schedule_carries_module_identity_from_source_draft(db_session):
+    organization = models.Organization(name="Active Module Fingerprint", plan_status="active")
+    db_session.add(organization)
+    await db_session.flush()
+    school_year = models.SchedulerSchoolYear(
+        organization_id=organization.id,
+        label="2025/2026",
+        start_date=date(2025, 9, 1),
+        hard_end_date=date(2026, 7, 15),
+        timezone="Europe/Lisbon",
+    )
+    db_session.add(school_year)
+    await db_session.flush()
+    state = models.SchedulerSchoolYearState(
+        organization_id=organization.id,
+        school_year_id=school_year.id,
+    )
+    course = models.Course(
+        organization_id=organization.id,
+        name="Module Identity Course",
+        abbreviation="MIC",
+    )
+    subject = models.Subject(
+        organization_id=organization.id,
+        name="Module Identity Subject",
+        required_room_type=models.RoomType.normal,
+    )
+    teacher = await create_teacher_profile(
+        db_session,
+        organization_id=organization.id,
+        name="Module Identity Teacher",
+    )
+    room = models.Room(
+        organization_id=organization.id,
+        name="Module Identity Room",
+        type=models.RoomType.normal,
+        capacity=30,
+    )
+    slot = models.Timeslot(
+        organization_id=organization.id,
+        day_of_week=0,
+        start_time=time(9),
+        end_time=time(10),
+    )
+    db_session.add_all([state, course, subject, room, slot])
+    await db_session.flush()
+    class_ = models.Class(
+        organization_id=organization.id,
+        name="Module Identity Class",
+        size=20,
+        start_year=2025,
+        end_year=2026,
+        grade_level=10,
+        course_id=course.id,
+    )
+    db_session.add(class_)
+    await db_session.flush()
+    db_session.add_all(
+        [
+            models.Module(
+                organization_id=organization.id,
+                subject_id=subject.id,
+                name="Module One",
+                code="MI-1",
+                hours_total=2,
+                order=1,
+            ),
+            models.Module(
+                organization_id=organization.id,
+                subject_id=subject.id,
+                name="Module Two",
+                code="MI-2",
+                hours_total=1,
+                order=2,
+            ),
+            models.ClassSubjectLink(
+                organization_id=organization.id,
+                class_id=class_.id,
+                subject_id=subject.id,
+                grade_level=class_.grade_level,
+                teacher_id=teacher.id,
+            ),
+        ]
+    )
+    await db_session.flush()
+    job = models.ScheduleGenerationJob(
+        organization_id=organization.id,
+        school_year_id=school_year.id,
+        strategy=models.ScheduleGenerationStrategy.COMPLETE_GENERATION,
+        trigger_type=models.ScheduleGenerationTrigger.FIRST_GENERATION,
+        idempotency_key="module-identity-job",
+    )
+    db_session.add(job)
+    await db_session.flush()
+    draft = models.ScheduleDraft(
+        organization_id=organization.id,
+        school_year_id=school_year.id,
+        generation_job_id=job.id,
+        strategy=models.ScheduleGenerationStrategy.COMPLETE_GENERATION,
+        draft_state=models.ScheduleDraftState.PENDING,
+        result_category=models.ScheduleGenerationResultCategory.COMPLETE_SUCCESS,
+        trigger_type=models.ScheduleGenerationTrigger.FIRST_GENERATION,
+        generation_input_fingerprint="0" * 64,
+        projected_completion_date=date(2026, 1, 5),
+        hard_end_date=school_year.hard_end_date,
+        summary_json={},
+        created_by_membership_id=teacher.organization_membership_id,
+    )
+    db_session.add(draft)
+    await db_session.flush()
+    block = models.ScheduleDraftBlock(
+        organization_id=organization.id,
+        school_year_id=school_year.id,
+        draft_id=draft.id,
+        stable_block_key="module-two-source",
+        class_id=class_.id,
+        subject_id=subject.id,
+        teacher_id=teacher.id,
+        room_id=room.id,
+        date=date(2026, 1, 5),
+        timeslot_id=slot.id,
+        duration_minutes=60,
+        module_sequence_index=2,
+        change_type=models.ScheduleDraftBlockChangeType.ADDED,
+    )
+    db_session.add(block)
+    await db_session.flush()
+    db_session.add(
+        models.ActiveScheduleBlock(
+            organization_id=organization.id,
+            school_year_id=school_year.id,
+            schedule_version_id="module-identity-v1",
+            stable_block_key=block.stable_block_key,
+            class_id=class_.id,
+            subject_id=subject.id,
+            teacher_id=teacher.id,
+            room_id=room.id,
+            date=block.date,
+            timeslot_id=slot.id,
+            duration_minutes=block.duration_minutes,
+            source_draft_block_id=block.id,
+            is_recovery_block=False,
+            status=models.ActiveScheduleBlockStatus.ACTIVE,
+        )
+    )
+    await db_session.commit()
+
+    adaptive = await SchedulerFingerprintService(db_session).generation_input_fingerprint(
+        organization.id,
+        school_year.id,
+        models.ScheduleGenerationStrategy.ADAPTIVE_REPAIR,
+    )
+
+    assert adaptive.snapshot["active_schedule"][0]["module_sequence_index"] == 2

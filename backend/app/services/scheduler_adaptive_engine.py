@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import asyncio
+import threading
 from collections import defaultdict
 from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime, time, timedelta
 from enum import StrEnum
+from time import monotonic
 from typing import Any
 
 from ortools.sat.python import cp_model
@@ -25,6 +27,7 @@ from app.scheduler.domain.quality import (
 )
 from app.scheduler.infrastructure.cp_sat_quality import (
     CpSatQualityAdapter,
+    CpSatQualityConstructionStopped,
     SelectableQualityBlock,
 )
 from app.services.scheduler_adaptation_ladder import (
@@ -70,6 +73,9 @@ class _RepairTask:
     recovery_index: int | None
     origin: RepairTaskOrigin
     module_sequence_index: int | None = None
+    module_id: int | None = None
+    lesson_count: int = 1
+    group_order: int = 0
 
     @property
     def is_recovery(self) -> bool:
@@ -103,6 +109,7 @@ class _ScopeSolution:
     candidate_count: int
     quality_completed_stage: str = "RECOVERED_MINUTES"
     quality_optimization_complete: bool = False
+    feasibility_solver_status: str = "UNKNOWN"
     scope_rank: int = 0
     workload_cost_minutes: int = 0
     gap_and_availability_cost_minutes: int = 0
@@ -114,6 +121,14 @@ class _ScopeSolution:
     teacher_overload_excess_minutes: int = 0
     required_curriculum_minutes: int = 0
     scheduled_curriculum_minutes: int = 0
+    construction_duration_ms: int = 0
+    solve_duration_ms: int = 0
+    feasibility_solve_duration_ms: int = 0
+    quality_construction_duration_ms: int = 0
+    quality_solve_duration_ms: int = 0
+    result_extraction_duration_ms: int = 0
+    variable_count: int = 0
+    constraint_count: int = 0
 
 
 @dataclass(frozen=True)
@@ -166,7 +181,10 @@ class AdaptiveRepairEngine:
         except (KeyError, TypeError, ValueError) as exc:
             return NoValidGenerationOutput(blockers=(str(exc),))
 
-        curriculum = IncrementalDemandLedgerBuilder().build(snapshot)
+        curriculum = IncrementalDemandLedgerBuilder().build(
+            snapshot,
+            immutable_block_ids={row["id"] for row in boundary.immutable_blocks},
+        )
         if not curriculum.is_complete:
             return NoValidGenerationOutput(
                 blockers=curriculum.blockers,
@@ -199,7 +217,9 @@ class AdaptiveRepairEngine:
                         "scheduled_curriculum_minutes": 0,
                     },
                 )
-            scopes = self._combined_scopes(boundary, debt, impact, curriculum)
+            scopes = self._deduplicate_scopes(
+                self._combined_scopes(snapshot, boundary, debt, impact, curriculum)
+            )
         else:
             scopes = tuple(
                 self._recovery_scope(scope)
@@ -211,17 +231,22 @@ class AdaptiveRepairEngine:
             if datetime.now(UTC) >= context.solve_deadline_at:
                 failures.append("Adaptive repair exhausted its solve time budget.")
                 break
-            solution, blocker = await asyncio.to_thread(
-                self._solve_scope,
-                snapshot,
-                debt,
-                curriculum,
-                boundary.school_today,
-                boundary.editable_start_date,
-                scope,
-                constraint_policy,
-                max_seconds=max(0.05, min(20.0, self._remaining_seconds(context) / 2)),
-            )
+            try:
+                solution, blocker = await asyncio.to_thread(
+                    self._solve_scope,
+                    snapshot,
+                    debt,
+                    curriculum,
+                    boundary.school_today,
+                    boundary.editable_start_date,
+                    scope,
+                    constraint_policy,
+                    deadline_at=context.solve_deadline_at,
+                    stop_event=context.solver_stop_event,
+                )
+            except asyncio.CancelledError:
+                context.stop_event.set()
+                raise
             await context.ensure_can_continue()
             if blocker:
                 level = scope.adaptation_level or scope.recovery_level or "ADAPTIVE_REPAIR"
@@ -297,8 +322,12 @@ class AdaptiveRepairEngine:
         scope: _SolveScope,
         constraint_policy: SchedulerConstraintPolicy,
         *,
-        max_seconds: float,
+        deadline_at: datetime,
+        stop_event: threading.Event,
     ) -> tuple[_ScopeSolution | None, str | None]:
+        construction_started = monotonic()
+        if self._stop_requested(deadline_at, stop_event):
+            return None, "Adaptive repair exhausted its solve time budget."
         slots, slot_blocker = self._slots(snapshot)
         if slot_blocker:
             return None, slot_blocker
@@ -316,6 +345,8 @@ class AdaptiveRepairEngine:
             fixed_intervals,
             editable_start_date,
             constraint_policy,
+            deadline_at,
+            stop_event,
         )
         if placement_blocker:
             return None, placement_blocker
@@ -323,7 +354,7 @@ class AdaptiveRepairEngine:
         for placement in placements:
             by_task[placement.task.key].append(placement)
         for task in tasks:
-            if not task.is_recovery and not by_task[task.key]:
+            if not task.is_recovery and len(by_task[task.key]) < task.lesson_count:
                 if task.origin is RepairTaskOrigin.ACTIVE_BLOCK:
                     message = f"Published block {task.source_block['id']} cannot be re-placed."
                 else:
@@ -341,14 +372,14 @@ class AdaptiveRepairEngine:
         selected_by_task: dict[str, cp_model.IntVar] = {}
         for index, task in enumerate(tasks):
             task_vars = [variables[row.key] for row in by_task[task.key]]
-            selected = model.NewBoolVar(f"selected_{index}")
+            selected = model.NewIntVar(0, task.lesson_count, f"selected_{index}")
             selected_by_task[task.key] = selected
             if task_vars:
                 model.Add(sum(task_vars) == selected)
             else:
                 model.Add(selected == 0)
             if not task.is_recovery:
-                model.Add(selected == 1)
+                model.Add(selected == task.lesson_count)
         recovery_groups: dict[int, list[_RepairTask]] = defaultdict(list)
         for task in tasks:
             if task.is_recovery:
@@ -396,52 +427,78 @@ class AdaptiveRepairEngine:
                 variables,
             )
 
-        quality_evaluator = ScheduleQualityEvaluator(
-            quality_policy_from_snapshot(snapshot),
-            quality_slots_from_snapshot(snapshot),
-            snapshot.get("lunch_rules"),
-        )
-        quality_rows = tuple(
-            SelectableQualityBlock(
-                row.key,
-                QualityBlock(
-                    class_id=row.task.class_id,
-                    subject_id=row.task.subject_id,
-                    teacher_id=row.task.teacher_id,
-                    room_id=row.room_id,
-                    output_date=row.output_date,
-                    timeslot_id=row.timeslot_id,
-                    duration_minutes=row.task.duration_minutes,
-                    availability_tier=row.availability_score,
-                    is_recovery_block=row.task.is_recovery,
-                ),
-            )
-            for row in placements
-        )
-        fixed_quality = self._fixed_quality_blocks(snapshot, scope.fixed_blocks)
-        quality_expressions = CpSatQualityAdapter(quality_evaluator).add_expressions(
-            model,
-            quality_rows,
-            variables,
-            fixed_quality,
-        )
+        construction_duration_ms = round((monotonic() - construction_started) * 1000)
+        solve_started = monotonic()
 
         recovered = sum(
             task.duration_minutes * selected_by_task[task.key] for task in tasks if task.is_recovery
         )
-        stage_budget = max_seconds / 6
-        solver = self._solver(stage_budget)
+
+        def remaining() -> float:
+            return max(0.0, (deadline_at - datetime.now(UTC)).total_seconds())
+
+        if stop_event.is_set() or remaining() <= 0:
+            return None, "Adaptive repair exhausted its solve time budget."
+        solver = self._solver(remaining())
         model.Maximize(recovered)
-        status = solver.Solve(model)
+        status = self._solve_model(solver, model, stop_event)
+        feasibility_solve_duration_ms = round((monotonic() - solve_started) * 1000)
         if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
-            return None, "No hard-valid placement exists at this recovery level."
+            if status == cp_model.INFEASIBLE:
+                return None, "No hard-valid placement exists at this recovery level."
+            return None, "Adaptive repair search exhausted its solve time budget."
         best_recovered = int(round(solver.ObjectiveValue()))
+        feasibility_solver_status = self._solver_status_name(status)
         values = {key: solver.Value(value) for key, value in variables.items()}
         completed_stage = "RECOVERED_MINUTES"
         optimization_complete = status == cp_model.OPTIMAL
         if optimization_complete:
             model.Add(recovered == best_recovered)
             self._hint(model, variables, solver)
+
+        quality_expressions = None
+        quality_construction_duration_ms = 0
+        quality_solve_duration_ms = 0
+        if optimization_complete and not stop_event.is_set() and remaining() > 0:
+            quality_construction_started = monotonic()
+            quality_evaluator = ScheduleQualityEvaluator(
+                quality_policy_from_snapshot(snapshot),
+                quality_slots_from_snapshot(snapshot),
+                snapshot.get("lunch_rules"),
+            )
+            quality_rows = tuple(
+                SelectableQualityBlock(
+                    row.key,
+                    QualityBlock(
+                        class_id=row.task.class_id,
+                        subject_id=row.task.subject_id,
+                        teacher_id=row.task.teacher_id,
+                        room_id=row.room_id,
+                        output_date=row.output_date,
+                        timeslot_id=row.timeslot_id,
+                        duration_minutes=row.task.duration_minutes,
+                        availability_tier=row.availability_score,
+                        is_recovery_block=row.task.is_recovery,
+                    ),
+                )
+                for row in placements
+            )
+            fixed_quality = self._fixed_quality_blocks(snapshot, scope.fixed_blocks)
+            try:
+                quality_expressions = CpSatQualityAdapter(quality_evaluator).add_expressions(
+                    model,
+                    quality_rows,
+                    variables,
+                    fixed_quality,
+                    should_stop=lambda: stop_event.is_set() or remaining() <= 0,
+                )
+            except CpSatQualityConstructionStopped:
+                quality_expressions = None
+            quality_construction_duration_ms = round(
+                (monotonic() - quality_construction_started) * 1000
+            )
+            if quality_expressions is None:
+                optimization_complete = False
         disruption_cost = sum(self._disruption_cost(row) * variables[row.key] for row in placements)
         first_date = min(
             (row.output_date for row in placements),
@@ -468,18 +525,22 @@ class AdaptiveRepairEngine:
                 )
             )
         )
-        stages = (
-            ("DISRUPTION", disruption_cost),
-            ("EARLIEST_COMPLETION", completion_cost),
-            ("WORKLOAD", quality_expressions.workload_cost),
-            ("GAPS_AVAILABILITY", quality_expressions.gap_and_availability_cost),
-            ("STABLE_TIE", stable_signature),
-        )
-        if optimization_complete:
+        if optimization_complete and quality_expressions is not None:
+            quality_solve_started = monotonic()
+            stages = (
+                ("DISRUPTION", disruption_cost),
+                ("EARLIEST_COMPLETION", completion_cost),
+                ("WORKLOAD", quality_expressions.workload_cost),
+                ("GAPS_AVAILABILITY", quality_expressions.gap_and_availability_cost),
+                ("STABLE_TIE", stable_signature),
+            )
             for stage_name, expression in stages:
+                if stop_event.is_set() or remaining() <= 0:
+                    optimization_complete = False
+                    break
                 model.Minimize(expression)
-                stage_solver = self._solver(stage_budget)
-                stage_status = stage_solver.Solve(model)
+                stage_solver = self._solver(remaining())
+                stage_status = self._solve_model(stage_solver, model, stop_event)
                 if stage_status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
                     optimization_complete = False
                     break
@@ -493,9 +554,13 @@ class AdaptiveRepairEngine:
                 optimum = solver.Value(expression)
                 model.Add(expression == optimum)
                 self._hint(model, variables, solver)
+            quality_solve_duration_ms = round((monotonic() - quality_solve_started) * 1000)
+        extraction_started = monotonic()
         chosen = [row for row in placements if values.get(row.key, 0)]
         required_curriculum_minutes = sum(
-            task.duration_minutes for task in tasks if task.is_curriculum_addition
+            task.duration_minutes * task.lesson_count
+            for task in tasks
+            if task.is_curriculum_addition
         )
         scheduled_curriculum_minutes = sum(
             row.task.duration_minutes for row in chosen if row.task.is_curriculum_addition
@@ -526,6 +591,7 @@ class AdaptiveRepairEngine:
             )
             for row in blocks
         )
+        result_extraction_duration_ms = round((monotonic() - extraction_started) * 1000)
         return (
             _ScopeSolution(
                 blocks=blocks,
@@ -537,6 +603,7 @@ class AdaptiveRepairEngine:
                 candidate_count=len(placements),
                 quality_completed_stage=completed_stage,
                 quality_optimization_complete=optimization_complete,
+                feasibility_solver_status=feasibility_solver_status,
                 workload_cost_minutes=int(quality_metrics.get("workload_cost_minutes", 0)),
                 gap_and_availability_cost_minutes=(
                     int(quality_metrics.get("class_gap_minutes", 0))
@@ -547,6 +614,14 @@ class AdaptiveRepairEngine:
                 workload_override_used=override_used,
                 required_curriculum_minutes=required_curriculum_minutes,
                 scheduled_curriculum_minutes=scheduled_curriculum_minutes,
+                construction_duration_ms=construction_duration_ms,
+                solve_duration_ms=feasibility_solve_duration_ms + quality_solve_duration_ms,
+                feasibility_solve_duration_ms=feasibility_solve_duration_ms,
+                quality_construction_duration_ms=quality_construction_duration_ms,
+                quality_solve_duration_ms=quality_solve_duration_ms,
+                result_extraction_duration_ms=result_extraction_duration_ms,
+                variable_count=len(model.Proto().variables),
+                constraint_count=len(model.Proto().constraints),
                 **overload,
             ),
             None,
@@ -588,14 +663,19 @@ class AdaptiveRepairEngine:
         minimum_slot = min(row["end"] - row["start"] for rows in slots.values() for row in rows)
         for item in curriculum.items:
             for module in item.modules:
-                remaining = module.required_minutes
-                index = 0
-                while remaining:
-                    duration = min(minimum_slot, remaining)
+                full_count, remainder = divmod(module.required_minutes, minimum_slot)
+                grouped_durations = (
+                    (minimum_slot, full_count),
+                    (remainder, int(remainder > 0)),
+                )
+                for group_order, (duration, count) in enumerate(grouped_durations):
+                    if count == 0:
+                        continue
                     tasks.append(
                         _RepairTask(
                             key=(
-                                f"CUR-{item.class_id}-{item.subject_id}-{module.module_id}-{index}"
+                                f"CURG-{item.class_id}-{item.subject_id}-{module.module_id}-"
+                                f"{duration}"
                             ),
                             class_id=item.class_id,
                             subject_id=item.subject_id,
@@ -606,10 +686,11 @@ class AdaptiveRepairEngine:
                             recovery_index=None,
                             origin=RepairTaskOrigin.CURRICULUM_ADDITION,
                             module_sequence_index=module.sequence,
+                            module_id=module.module_id,
+                            lesson_count=count,
+                            group_order=group_order,
                         )
                     )
-                    remaining -= duration
-                    index += 1
         for item in debt.get("items", []):
             remaining = max(0, int(item.get("unresolved_debt_minutes", 0)))
             index = 0
@@ -644,6 +725,8 @@ class AdaptiveRepairEngine:
         fixed_intervals: dict[tuple[str, int, date], list[tuple[int, int]]],
         editable_start_date: date,
         constraint_policy: SchedulerConstraintPolicy,
+        deadline_at: datetime,
+        stop_event: threading.Event,
     ) -> tuple[list[_Placement], str | None]:
         classes = {row["id"]: row for row in snapshot.get("classes", [])}
         subjects = {row["id"]: row for row in snapshot.get("subjects", [])}
@@ -661,6 +744,8 @@ class AdaptiveRepairEngine:
         hard_end = date.fromisoformat(snapshot["hard_end_date"])
         placements: list[_Placement] = []
         for task in tasks:
+            if self._stop_requested(deadline_at, stop_event):
+                return [], "Adaptive repair candidate construction exhausted its time budget."
             class_row = classes.get(task.class_id)
             subject_row = subjects.get(task.subject_id)
             if (
@@ -689,6 +774,8 @@ class AdaptiveRepairEngine:
             ]
             current = editable_start_date
             while current <= hard_end:
+                if self._stop_requested(deadline_at, stop_event):
+                    return [], "Adaptive repair candidate construction exhausted its time budget."
                 if self._date_allowed(task, current, scope, blocked_dates):
                     for slot in slots.get(current.weekday(), ()):
                         if not self._slot_allowed(task, slot, scope):
@@ -751,17 +838,38 @@ class AdaptiveRepairEngine:
         for task in tasks:
             if task.is_curriculum_addition:
                 grouped[(task.class_id, task.subject_id)].append(task)
-        for ordered_tasks in grouped.values():
+        for unordered_tasks in grouped.values():
+            ordered_tasks = sorted(
+                unordered_tasks,
+                key=lambda row: (row.module_sequence_index, row.group_order),
+            )
             for previous, current in zip(ordered_tasks, ordered_tasks[1:], strict=False):
-                previous_start = sum(
-                    (row.output_date.toordinal() * 1440 + row.start_minute) * variables[row.key]
-                    for row in placements_by_task[previous.key]
+                previous_rows = placements_by_task[previous.key]
+                current_rows = placements_by_task[current.key]
+                upper = max(
+                    row.output_date.toordinal() * 1440 + row.start_minute
+                    for row in (*previous_rows, *current_rows)
                 )
-                current_start = sum(
-                    (row.output_date.toordinal() * 1440 + row.start_minute) * variables[row.key]
-                    for row in placements_by_task[current.key]
+                previous_latest = model.NewIntVar(0, upper, f"latest_{previous.key}")
+                model.AddMaxEquality(
+                    previous_latest,
+                    [
+                        (row.output_date.toordinal() * 1440 + row.start_minute) * variables[row.key]
+                        for row in previous_rows
+                    ],
                 )
-                model.Add(previous_start < current_start)
+                current_earliest = model.NewIntVar(0, upper + 1, f"earliest_{current.key}")
+                model.AddMinEquality(
+                    current_earliest,
+                    [
+                        upper
+                        + 1
+                        - (upper + 1 - (row.output_date.toordinal() * 1440 + row.start_minute))
+                        * variables[row.key]
+                        for row in current_rows
+                    ],
+                )
+                model.Add(previous_latest < current_earliest)
 
     @staticmethod
     def _date_allowed(
@@ -803,7 +911,16 @@ class AdaptiveRepairEngine:
             for row in snapshot.get("subjects", [])
         }
         specs = [self._existing_spec(row, subject_types[row["subject_id"]]) for row in fixed]
-        for row in chosen:
+        curriculum_indexes: dict[str, int] = defaultdict(int)
+        for row in sorted(
+            chosen,
+            key=lambda item: (
+                item.output_date,
+                item.start_minute,
+                item.room_id,
+                item.key,
+            ),
+        ):
             task = row.task
             if task.is_recovery:
                 item = task.debt_item
@@ -830,9 +947,14 @@ class AdaptiveRepairEngine:
                 )
                 continue
             if task.is_curriculum_addition:
+                lesson_index = curriculum_indexes[task.key]
+                curriculum_indexes[task.key] += 1
                 specs.append(
                     DraftBlockSpec(
-                        stable_block_key=task.key,
+                        stable_block_key=(
+                            f"CUR-{task.class_id}-{task.subject_id}-{task.module_id}-"
+                            f"{task.duration_minutes}-{lesson_index}"
+                        ),
                         class_id=task.class_id,
                         subject_id=task.subject_id,
                         teacher_id=task.teacher_id,
@@ -871,6 +993,7 @@ class AdaptiveRepairEngine:
                     date=row.output_date,
                     timeslot_id=row.timeslot_id,
                     duration_minutes=task.duration_minutes,
+                    module_sequence_index=before.get("module_sequence_index"),
                     change_type=change,
                     is_recovery_block=bool(before.get("is_recovery_block")),
                     recovery_source_occurrence_id=before.get("recovery_source_occurrence_id"),
@@ -897,6 +1020,7 @@ class AdaptiveRepairEngine:
             date=date.fromisoformat(row["date"]),
             timeslot_id=row["timeslot_id"],
             duration_minutes=row["duration_minutes"],
+            module_sequence_index=row.get("module_sequence_index"),
             change_type=models.ScheduleDraftBlockChangeType.UNCHANGED,
             is_recovery_block=bool(row.get("is_recovery_block")),
             recovery_source_occurrence_id=row.get("recovery_source_occurrence_id"),
@@ -939,7 +1063,10 @@ class AdaptiveRepairEngine:
                 "Allow broader future schedule changes.",
                 "Generate the schedule again.",
             )
-        projected = max(row.date for row in solution.blocks)
+        projected = max(
+            (row.date for row in solution.blocks),
+            default=date.fromisoformat(snapshot["start_date"]),
+        )
         summary = {
             "message": "Partial recovery generated." if partial else "Full recovery generated.",
             "trigger_summary": trigger_summary,
@@ -953,6 +1080,7 @@ class AdaptiveRepairEngine:
             "adaptation_level": solution.adaptation_level,
             "escalation_history": list(escalation_history),
             "quality_completed_stage": solution.quality_completed_stage,
+            "quality_scope": "ADAPTIVE_REPAIR_SCOPE",
             **solution.disruption.to_metrics(),
         }
         quality_metrics = evaluate_target_quality(snapshot, solution.blocks)
@@ -994,14 +1122,24 @@ class AdaptiveRepairEngine:
             metrics={
                 **solution.disruption.to_metrics(),
                 "candidate_count": solution.candidate_count,
+                "variable_count": solution.variable_count,
+                "constraint_count": solution.constraint_count,
                 "solver_status": solution.solver_status,
+                "feasibility_solver_status": solution.feasibility_solver_status,
                 "required_recovery_minutes": total_debt,
                 "recovered_minutes": solution.recovered_minutes,
                 "residual_debt_minutes": remaining,
                 "required_curriculum_minutes": solution.required_curriculum_minutes,
                 "scheduled_curriculum_minutes": solution.scheduled_curriculum_minutes,
+                "construction_duration_ms": solution.construction_duration_ms,
+                "solve_duration_ms": solution.solve_duration_ms,
+                "feasibility_solve_duration_ms": solution.feasibility_solve_duration_ms,
+                "quality_construction_duration_ms": solution.quality_construction_duration_ms,
+                "quality_solve_duration_ms": solution.quality_solve_duration_ms,
+                "result_extraction_duration_ms": solution.result_extraction_duration_ms,
                 **quality_metrics,
                 "quality_completed_stage": solution.quality_completed_stage,
+                "quality_scope": "ADAPTIVE_REPAIR_SCOPE",
                 "quality_optimization_complete": solution.quality_optimization_complete,
                 "workload_override_used": solution.workload_override_used,
                 "class_overload_count": solution.class_overload_count,
@@ -1029,6 +1167,7 @@ class AdaptiveRepairEngine:
 
     @staticmethod
     def _combined_scopes(
+        snapshot,
         boundary,
         debt,
         impact,
@@ -1051,6 +1190,16 @@ class AdaptiveRepairEngine:
         )
         editable = list(boundary.editable_blocks)
         immutable = list(boundary.immutable_blocks)
+        current_assignments = {
+            (row["class_id"], row["subject_id"])
+            for row in snapshot.get("class_subject_requirements", [])
+        }
+        removed_ids = {
+            row["id"]
+            for row in editable
+            if (row["class_id"], row["subject_id"]) not in current_assignments
+        }
+        omitted_ids = set(curriculum.omitted_block_ids)
         impact_ids = {row.block["id"] for row in impact.affected if not row.immutable}
         affected_classes = {row.block["class_id"] for row in impact.affected}
         affected_teachers = {row.block["teacher_id"] for row in impact.affected}
@@ -1067,9 +1216,17 @@ class AdaptiveRepairEngine:
                 recovery_ids = (
                     set() if recovery is None else {row["id"] for row in recovery.movable_blocks}
                 )
-                movable_ids = adaptation_ids | recovery_ids
+                movable_ids = (adaptation_ids | recovery_ids) - removed_ids - omitted_ids
                 movable = [row for row in editable if row["id"] in movable_ids]
-                fixed = immutable + [row for row in editable if row["id"] not in movable_ids]
+                fixed = immutable + [
+                    row
+                    for row in editable
+                    if (
+                        row["id"] not in movable_ids
+                        and row["id"] not in removed_ids
+                        and row["id"] not in omitted_ids
+                    )
+                ]
                 classes = set(affected_classes)
                 teachers = set(affected_teachers)
                 if recovery is not None:
@@ -1098,6 +1255,23 @@ class AdaptiveRepairEngine:
                     )
                 )
         return tuple(combined)
+
+    @staticmethod
+    def _deduplicate_scopes(scopes: tuple[_SolveScope, ...]) -> tuple[_SolveScope, ...]:
+        unique: list[_SolveScope] = []
+        seen: set[tuple[Any, ...]] = set()
+        for scope in scopes:
+            signature = (
+                tuple((row.get("id"), row.get("stable_block_key")) for row in scope.fixed_blocks),
+                tuple((row.get("id"), row.get("stable_block_key")) for row in scope.movable_blocks),
+                scope.workload_mode,
+                scope.keep_date_and_time,
+            )
+            if signature in seen:
+                continue
+            seen.add(signature)
+            unique.append(scope)
+        return tuple(unique)
 
     @staticmethod
     def _better_partial(candidate: _ScopeSolution, current: _ScopeSolution | None) -> bool:
@@ -1421,10 +1595,46 @@ class AdaptiveRepairEngine:
     @staticmethod
     def _solver(seconds: float) -> cp_model.CpSolver:
         solver = cp_model.CpSolver()
-        solver.parameters.max_time_in_seconds = max(0.05, seconds)
+        solver.parameters.max_time_in_seconds = max(0.01, seconds)
         solver.parameters.num_search_workers = 1
         solver.parameters.random_seed = 0
         return solver
+
+    @staticmethod
+    def _solver_status_name(status) -> str:
+        return {
+            cp_model.OPTIMAL: "OPTIMAL",
+            cp_model.FEASIBLE: "FEASIBLE",
+            cp_model.INFEASIBLE: "INFEASIBLE",
+            cp_model.UNKNOWN: "UNKNOWN",
+            cp_model.MODEL_INVALID: "MODEL_INVALID",
+        }.get(status, str(status))
+
+    @staticmethod
+    def _solve_model(
+        solver: cp_model.CpSolver,
+        model: cp_model.CpModel,
+        stop_event: threading.Event,
+    ) -> cp_model.CpSolverStatus:
+        finished = threading.Event()
+
+        def stop_abandoned_search() -> None:
+            while not finished.wait(0.02):
+                if stop_event.is_set():
+                    solver.StopSearch()
+                    return
+
+        watcher = threading.Thread(target=stop_abandoned_search, daemon=True)
+        watcher.start()
+        try:
+            return solver.Solve(model)
+        finally:
+            finished.set()
+            watcher.join(timeout=0.1)
+
+    @staticmethod
+    def _stop_requested(deadline_at: datetime, stop_event: threading.Event) -> bool:
+        return stop_event.is_set() or datetime.now(UTC) >= deadline_at
 
     @staticmethod
     def _hint(

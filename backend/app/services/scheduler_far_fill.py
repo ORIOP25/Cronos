@@ -6,6 +6,8 @@ from datetime import UTC, date, datetime, time
 from math import ceil
 from typing import Any
 
+from ortools.sat.python import cp_model
+
 from app.scheduler.domain.quality import (
     IncrementalQualityState,
     QualityBlock,
@@ -41,10 +43,23 @@ class CompleteScheduleAssembly:
     projected_completion_date: date | None
     required_minutes: int
     scheduled_minutes: int
+    residual_repair_status: str | None = None
+    residual_repair_solver_status: str | None = None
+    residual_repair_variable_count: int | None = None
+    residual_repair_constraint_count: int | None = None
 
     @property
     def is_complete(self) -> bool:
         return self.required_minutes == self.scheduled_minutes and not self.blockers
+
+
+@dataclass(frozen=True)
+class ResidualRepairOutcome:
+    candidates: tuple[PlacementCandidate, ...] | None
+    status: str
+    raw_status: str
+    variable_count: int | None = None
+    constraint_count: int | None = None
 
 
 class FarFutureFiller:
@@ -91,9 +106,6 @@ class FarFutureFiller:
             if placed is not None:
                 quality_state.add(self._quality_block(placed))
 
-        candidates_by_demand: dict[tuple[int, int], int] = defaultdict(int)
-        for candidate in far_universe.candidates:
-            candidates_by_demand[(candidate.class_id, candidate.subject_id)] += 1
         minimum_duration = min(
             (row.duration_minutes for row in far_universe.candidates),
             default=60,
@@ -114,6 +126,10 @@ class FarFutureFiller:
             class_required[item.class_id] += item.required_minutes
 
         timed_out = False
+        residual_repair_status: str | None = None
+        residual_repair_solver_status: str | None = None
+        residual_repair_variable_count: int | None = None
+        residual_repair_constraint_count: int | None = None
         for bucket_key in sorted(time_buckets):
             if deadline_at is not None and datetime.now(UTC) >= deadline_at:
                 blockers.append("Far-future fill exhausted its time budget.")
@@ -121,6 +137,12 @@ class FarFutureFiller:
                 break
             bucket = time_buckets[bucket_key]
             while True:
+                candidates_by_demand = self._available_opportunity_counts(
+                    far_universe.candidates,
+                    remaining,
+                    occupied,
+                    lunch,
+                )
                 usable = [
                     candidate
                     for candidate in bucket
@@ -159,6 +181,46 @@ class FarFutureFiller:
             if all(value <= 0 for value in remaining.values()):
                 break
 
+        if any(value > 0 for value in remaining.values()):
+            repair = self._repair_residual(
+                ledger,
+                near_selected,
+                far_universe.candidates,
+                snapshot,
+                deadline_at,
+            )
+            residual_repair_status = repair.status
+            residual_repair_solver_status = repair.raw_status
+            residual_repair_variable_count = repair.variable_count
+            residual_repair_constraint_count = repair.constraint_count
+            if repair.candidates is not None:
+                remaining = {key: item.required_minutes for key, item in items.items()}
+                blocks = []
+                occupied = defaultdict(list)
+                preferred_room = {}
+                for candidate in sorted(
+                    (*near_selected, *repair.candidates), key=self._candidate_order
+                ):
+                    self._place(
+                        candidate,
+                        "optimized" if candidate in near_selected else "provisional",
+                        items,
+                        remaining,
+                        blocks,
+                        occupied,
+                        lunch,
+                        preferred_room,
+                    )
+
+            if repair.status == "search_exhausted":
+                blockers.append("Residual repair search exhausted its bounded time budget.")
+            elif repair.status == "scope_infeasible":
+                blockers.append(
+                    "Residual repair scope is infeasible under the current constraints."
+                )
+            elif repair.status == "system_validation_failure":
+                blockers.append("Residual repair model failed system validation.")
+
         if not timed_out and all(value <= 0 for value in remaining.values()):
             blocks = self._quality_post_pass(
                 blocks,
@@ -195,7 +257,268 @@ class FarFutureFiller:
             ),
             required_minutes=ledger.required_minutes,
             scheduled_minutes=scheduled_minutes,
+            residual_repair_status=residual_repair_status,
+            residual_repair_solver_status=residual_repair_solver_status,
+            residual_repair_variable_count=residual_repair_variable_count,
+            residual_repair_constraint_count=residual_repair_constraint_count,
         )
+
+    def _available_opportunity_counts(
+        self,
+        candidates: tuple[PlacementCandidate, ...],
+        remaining: dict[tuple[int, int], int],
+        occupied: dict[tuple[str, int, date], list[tuple[int, int]]],
+        lunch: tuple[int, int, int] | None,
+    ) -> dict[tuple[int, int], int]:
+        """Count usable times, not room variants, against current contention."""
+
+        opportunities: dict[tuple[int, int], set[tuple[date, int, int, int]]] = defaultdict(set)
+        for candidate in candidates:
+            key = (candidate.class_id, candidate.subject_id)
+            if remaining.get(key, 0) <= 0:
+                continue
+            if not self._resources_available(candidate, occupied):
+                continue
+            if not self._preserves_lunch(candidate, occupied, lunch):
+                continue
+            opportunities[key].add(
+                (
+                    candidate.output_date,
+                    candidate.start_minute,
+                    candidate.end_minute,
+                    candidate.timeslot_id,
+                )
+            )
+        return {key: len(rows) for key, rows in opportunities.items()}
+
+    def _repair_residual(
+        self,
+        ledger: CompleteDemandLedger,
+        near_selected: tuple[PlacementCandidate, ...],
+        candidates: tuple[PlacementCandidate, ...],
+        snapshot: dict[str, Any],
+        deadline_at: datetime | None,
+    ) -> ResidualRepairOutcome:
+        """Use a bounded exact residual solve after greedy placement strands demand."""
+
+        if not candidates:
+            return ResidualRepairOutcome(None, "scope_infeasible", "INFEASIBLE")
+        module_remaining = self._module_remaining_after(ledger, near_selected)
+        residual = {
+            key: sum(values.values())
+            for key, values in module_remaining.items()
+            if sum(values.values()) > 0
+        }
+        if not residual:
+            return ResidualRepairOutcome((), "optimal", "OPTIMAL")
+
+        occupied: dict[tuple[str, int, date], list[tuple[int, int]]] = defaultdict(list)
+        for candidate in near_selected:
+            for kind, resource_id in (
+                ("class", candidate.class_id),
+                ("teacher", candidate.teacher_id),
+                ("room", candidate.room_id),
+            ):
+                occupied[(kind, resource_id, candidate.output_date)].append(
+                    (candidate.start_minute, candidate.end_minute)
+                )
+
+        options: list[tuple[PlacementCandidate, int, int]] = []
+        for candidate in candidates:
+            pair = (candidate.class_id, candidate.subject_id)
+            if pair not in residual or not self._resources_available(candidate, occupied):
+                continue
+            for sequence, minutes in module_remaining.get(pair, {}).items():
+                if minutes <= 0:
+                    continue
+                options.append((candidate, sequence, min(candidate.duration_minutes, minutes)))
+        if not options:
+            return ResidualRepairOutcome(None, "scope_infeasible", "INFEASIBLE")
+
+        model = cp_model.CpModel()
+        variables = [model.NewBoolVar(f"far_repair_{index}") for index in range(len(options))]
+        by_candidate: dict[str, list[cp_model.IntVar]] = defaultdict(list)
+        for variable, (candidate, _sequence, _minutes) in zip(variables, options, strict=True):
+            by_candidate[candidate.candidate_key].append(variable)
+        for rows in by_candidate.values():
+            model.Add(sum(rows) <= 1)
+
+        grouped: dict[tuple[str, int, date], list[cp_model.IntervalVar]] = defaultdict(list)
+        for index, (candidate, _sequence, _minutes) in enumerate(options):
+            variable = variables[index]
+            for kind, resource_id in (
+                ("class", candidate.class_id),
+                ("teacher", candidate.teacher_id),
+                ("room", candidate.room_id),
+            ):
+                grouped[(kind, resource_id, candidate.output_date)].append(
+                    model.NewOptionalFixedSizeIntervalVar(
+                        candidate.start_minute,
+                        candidate.duration_minutes,
+                        variable,
+                        f"far_repair_{kind}_{index}",
+                    )
+                )
+        for intervals in grouped.values():
+            model.AddNoOverlap(intervals)
+        self._add_residual_lunch_constraints(
+            model,
+            options,
+            variables,
+            occupied,
+            snapshot.get("lunch_rules"),
+        )
+        for pair, modules in module_remaining.items():
+            for sequence, minutes in modules.items():
+                terms = [
+                    credit * variables[index]
+                    for index, (candidate, option_sequence, credit) in enumerate(options)
+                    if (candidate.class_id, candidate.subject_id) == pair
+                    and option_sequence == sequence
+                ]
+                model.Add(sum(terms) == minutes)
+
+        # Exact residual coverage is primary. Stable candidate order is deterministic.
+        tie = sum((index + 1) * variable for index, variable in enumerate(variables))
+        model.Minimize(tie)
+        solver = cp_model.CpSolver()
+        if deadline_at is None:
+            solver.parameters.max_time_in_seconds = 2.0
+        else:
+            solver.parameters.max_time_in_seconds = max(
+                0.05,
+                min(2.0, (deadline_at - datetime.now(UTC)).total_seconds()),
+            )
+        solver.parameters.num_search_workers = 1
+        solver.parameters.random_seed = 0
+        status = solver.Solve(model)
+        raw_status = self._solver_status_name(status)
+        if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
+            return ResidualRepairOutcome(
+                None,
+                self._solver_status_label(status),
+                raw_status,
+                len(model.Proto().variables),
+                len(model.Proto().constraints),
+            )
+        return ResidualRepairOutcome(
+            tuple(
+                sorted(
+                    {
+                        options[index][0]
+                        for index, variable in enumerate(variables)
+                        if solver.Value(variable)
+                    },
+                    key=self._candidate_order,
+                )
+            ),
+            self._solver_status_label(status),
+            raw_status,
+            len(model.Proto().variables),
+            len(model.Proto().constraints),
+        )
+
+    @staticmethod
+    def _solver_status_label(status: int) -> str:
+        return {
+            cp_model.OPTIMAL: "optimal",
+            cp_model.FEASIBLE: "feasible",
+            cp_model.INFEASIBLE: "scope_infeasible",
+            cp_model.UNKNOWN: "search_exhausted",
+            cp_model.MODEL_INVALID: "system_validation_failure",
+        }.get(status, "search_exhausted")
+
+    @staticmethod
+    def _solver_status_name(status: int) -> str:
+        return {
+            cp_model.OPTIMAL: "OPTIMAL",
+            cp_model.FEASIBLE: "FEASIBLE",
+            cp_model.INFEASIBLE: "INFEASIBLE",
+            cp_model.UNKNOWN: "UNKNOWN",
+            cp_model.MODEL_INVALID: "MODEL_INVALID",
+        }.get(status, str(status))
+
+    @staticmethod
+    def _module_remaining_after(
+        ledger: CompleteDemandLedger,
+        selected: tuple[PlacementCandidate, ...],
+    ) -> dict[tuple[int, int], dict[int, int]]:
+        items = {(item.class_id, item.subject_id): item for item in ledger.items}
+        remaining = {
+            (item.class_id, item.subject_id): {
+                module.sequence: module.required_minutes
+                for module in item.modules
+                if module.required_minutes > 0
+            }
+            for item in ledger.items
+        }
+        for candidate in sorted(selected, key=FarFutureFiller._candidate_order):
+            pair = (candidate.class_id, candidate.subject_id)
+            item = items.get(pair)
+            if item is None:
+                continue
+            modules = remaining.get(pair, {})
+            left = min(candidate.duration_minutes, sum(modules.values()))
+            for module in item.modules:
+                if left <= 0:
+                    break
+                available = modules.get(module.sequence, 0)
+                credit = min(left, available)
+                modules[module.sequence] = available - credit
+                left -= credit
+        return remaining
+
+    def _add_residual_lunch_constraints(
+        self,
+        model: cp_model.CpModel,
+        options: list[tuple[PlacementCandidate, int, int]],
+        variables: list[cp_model.IntVar],
+        occupied: dict[tuple[str, int, date], list[tuple[int, int]]],
+        rule: dict[str, Any] | None,
+    ) -> None:
+        lunch = self._lunch_rule(rule)
+        if lunch is None:
+            return
+        lunch_start, lunch_end, minimum = lunch
+        grouped: dict[tuple[str, int, date], list[tuple[PlacementCandidate, cp_model.IntVar]]] = (
+            defaultdict(list)
+        )
+        for (candidate, _sequence, _credit), variable in zip(options, variables, strict=True):
+            grouped[("class", candidate.class_id, candidate.output_date)].append(
+                (candidate, variable)
+            )
+            grouped[("teacher", candidate.teacher_id, candidate.output_date)].append(
+                (candidate, variable)
+            )
+        for group_key, rows in grouped.items():
+            starts = sorted(
+                {
+                    lunch_start,
+                    *(
+                        candidate.end_minute
+                        for candidate, _ in rows
+                        if lunch_start <= candidate.end_minute <= lunch_end
+                    ),
+                }
+            )
+            starts = [start for start in starts if start + minimum <= lunch_end]
+            choices = [
+                model.NewBoolVar(f"far_lunch_{group_key[0]}_{group_key[1]}_{index}")
+                for index in range(len(starts))
+            ]
+            if not choices:
+                for _candidate, variable in rows:
+                    model.Add(variable == 0)
+                continue
+            model.AddExactlyOne(choices)
+            fixed = occupied.get(group_key, ())
+            for choice, break_start in zip(choices, starts, strict=True):
+                break_end = break_start + minimum
+                if any(start < break_end and end > break_start for start, end in fixed):
+                    model.Add(choice == 0)
+                for candidate, variable in rows:
+                    if candidate.start_minute < break_end and candidate.end_minute > break_start:
+                        model.Add(variable + choice <= 1)
 
     def _place(
         self,

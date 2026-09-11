@@ -1,6 +1,8 @@
 from copy import deepcopy
 from datetime import date
 
+from ortools.sat.python import cp_model
+
 from app.services.scheduler_candidates import CandidateUniverseBuilder
 from app.services.scheduler_complete_demand import CompleteDemandLedgerBuilder
 from app.services.scheduler_near_optimizer import NearFutureOptimizer
@@ -35,6 +37,36 @@ def test_optimizer_selects_earliest_feasible_date():
     assert result.status == "optimal"
     assert result.scheduled_blocks == 1
     assert result.selected[0].output_date == date(2025, 9, 1)
+
+
+def test_optimizer_reports_unknown_as_search_exhausted(monkeypatch):
+    snapshot = _snapshot()
+    snapshot["module_accounting"] = [
+        {"id": 7, "subject_id": 2, "required_minutes": 60, "sequence": 1}
+    ]
+    snapshot["lunch_rules"] = None
+    ledger = CompleteDemandLedgerBuilder().build(snapshot)
+    universe = CandidateUniverseBuilder().build(
+        snapshot,
+        ledger,
+        window_start=date.fromisoformat(snapshot["start_date"]),
+        window_end=date.fromisoformat(snapshot["hard_end_date"]),
+    )
+
+    class UnknownSolver:
+        def Solve(self, _model):
+            return cp_model.UNKNOWN
+
+    monkeypatch.setattr(
+        NearFutureOptimizer,
+        "_solver",
+        staticmethod(lambda _seconds: UnknownSolver()),
+    )
+
+    result = NearFutureOptimizer().optimize(universe, ledger, snapshot, max_seconds=1)
+
+    assert result.status == "search_exhausted"
+    assert result.metrics["solver_status"] == "UNKNOWN"
 
 
 def test_optimizer_prevents_teacher_class_and_room_interval_conflicts():

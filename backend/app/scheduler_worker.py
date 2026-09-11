@@ -26,7 +26,7 @@ async def _generation_engine(
 async def _run_job(organization_id: int, job_id: int) -> dict[str, object]:
     async with SessionLocal() as db:
         await set_async_tenant_context(db, organization_id)
-        job = await SchedulerJobRuntime(db).execute(
+        job = await SchedulerJobRuntime(db, session_factory=SessionLocal).execute(
             job_id,
             _generation_engine,
             organization_id=organization_id,

@@ -493,9 +493,23 @@ class SchedulerFingerprintService:
                 await self._db.execute(
                     select(
                         models.ActiveScheduleBlock,
+                        models.ScheduleDraftBlock.module_sequence_index.label(
+                            "module_sequence_index"
+                        ),
                         models.LessonLog.status.label("lesson_log_status"),
                         models.PlannedRecoveryLink.debt_occurrence_id,
                         models.PlannedRecoveryLink.debt_occurrence_revision,
+                    )
+                    .join(
+                        models.ScheduleDraftBlock,
+                        and_(
+                            models.ScheduleDraftBlock.id
+                            == models.ActiveScheduleBlock.source_draft_block_id,
+                            models.ScheduleDraftBlock.organization_id
+                            == models.ActiveScheduleBlock.organization_id,
+                            models.ScheduleDraftBlock.school_year_id
+                            == models.ActiveScheduleBlock.school_year_id,
+                        ),
                     )
                     .outerjoin(
                         models.LessonLog,
@@ -537,6 +551,7 @@ class SchedulerFingerprintService:
                     "date": row.date,
                     "timeslot_id": row.timeslot_id,
                     "duration_minutes": row.duration_minutes,
+                    "module_sequence_index": module_sequence_index,
                     "is_recovery_block": row.is_recovery_block,
                     "recovery_source_occurrence_id": debt_occurrence_id,
                     "recovery_source_occurrence_revision": debt_occurrence_revision,
@@ -544,6 +559,7 @@ class SchedulerFingerprintService:
                 }
                 for (
                     row,
+                    module_sequence_index,
                     lesson_log_status,
                     debt_occurrence_id,
                     debt_occurrence_revision,
