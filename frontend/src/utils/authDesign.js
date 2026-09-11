@@ -55,7 +55,7 @@ export const CLERK_LOCALIZATION_PT = {
       },
       continue: {
         ...ptPT.signUp.legalConsent.continue,
-        subtitle: 'Ao criar uma escola, confirma que tem poderes para a vincular e concorda com os documentos legais acima.',
+        subtitle: '',
       },
     },
     start: {

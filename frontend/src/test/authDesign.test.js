@@ -10,4 +10,9 @@ describe('Clerk Portuguese localization', () => {
     expect(CLERK_LOCALIZATION_PT.formFieldLabel__emailAddress).toBe('Email')
     expect(CLERK_LOCALIZATION_PT.formButtonPrimary).toBe('Continuar')
   })
+
+  it('uses the checkbox as the only legal-consent sentence', () => {
+    expect(CLERK_LOCALIZATION_PT.signUp.legalConsent.continue.subtitle).toBe('')
+    expect(CLERK_LOCALIZATION_PT.signUp.legalConsent.checkbox.label__termsOfServiceAndPrivacyPolicy).toContain('Ao criar uma escola')
+  })
 })
