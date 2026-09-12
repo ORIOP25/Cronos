@@ -54,3 +54,7 @@ USER root
 COPY --from=builder-dev /opt/venv /opt/venv
 COPY scripts ./scripts
 USER cronos
+
+# Keep the production stage as the Dockerfile default. Railway services build
+# this file without a target; CI opts into the explicit `ci` target above.
+FROM runtime AS production

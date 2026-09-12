@@ -129,6 +129,7 @@ services:
     <<: *runtime-security
 
   frontend:
+    image: cronos-frontend:local
     build:
       context: ./frontend
       target: local
