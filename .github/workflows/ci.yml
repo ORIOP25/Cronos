@@ -83,8 +83,8 @@ jobs:
       - name: Verify dependency locks
         working-directory: backend
         run: |
-          pip-compile --quiet --allow-unsafe --generate-hashes --output-file=requirements.txt requirements.in
-          pip-compile --quiet --allow-unsafe --generate-hashes --output-file=requirements-dev.txt requirements-dev.in
+          pip-compile --quiet --allow-unsafe --generate-hashes --no-index --output-file=requirements.txt requirements.in
+          pip-compile --quiet --allow-unsafe --generate-hashes --no-index --output-file=requirements-dev.txt requirements-dev.in
           git diff --exit-code -- requirements.txt requirements-dev.txt
           pip check
           pip-audit -r requirements.txt --progress-spinner off
