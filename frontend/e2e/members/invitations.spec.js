@@ -217,8 +217,27 @@ test.describe.serial('Member invitations — real Clerk', () => {
       skipPasswordRequirement: true,
       legalAcceptedAt: new Date(),
     })
-    const organizationId = await page.evaluate(() => window.Clerk.organization.id)
-    const adminUserId = await page.evaluate(() => window.Clerk.user.id)
+    const configuredOrganizationId = process.env.E2E_CLERK_ORG_ID
+    if (!configuredOrganizationId) {
+      await page.waitForFunction(
+        () => Boolean(window.Clerk?.organization?.id),
+        null,
+        { timeout: 30_000 },
+      )
+    }
+    await page.waitForFunction(
+      () => Boolean(window.Clerk?.user?.id),
+      null,
+      { timeout: 30_000 },
+    )
+    const { organizationId: activeOrganizationId, adminUserId } = await page.evaluate(() => ({
+      organizationId: window.Clerk?.organization?.id,
+      adminUserId: window.Clerk?.user?.id,
+    }))
+    const organizationId = configuredOrganizationId || activeOrganizationId
+    if (!organizationId || !adminUserId) {
+      throw new Error('The authenticated Clerk organization and admin user are required.')
+    }
     try {
       await openMemberForm(page)
       await fillTeacher(page, { name: 'E2E Existing Teacher', email, access: 'platform' })
