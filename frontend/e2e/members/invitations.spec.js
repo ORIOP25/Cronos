@@ -48,9 +48,10 @@ async function saveAndExpect(page, expectedStatus) {
 
 async function completeVisibleInvitationAuth(page, email) {
   await expect(page).toHaveURL(/\/(?:login|register)(?:[/?#].*)?$/, { timeout: 30_000 })
-  const emailInput = page.getByRole('textbox', { name: /email/i }).last()
+  const emailInput = page.locator('input[type="email"]:visible').first()
   if (await emailInput.isVisible().catch(() => false)) {
     await emailInput.fill(email)
+    await expect(emailInput).toHaveValue(email)
     await page.getByRole('button', { name: /continuar|continue|entrar|criar conta/i }).last().click()
   }
 
