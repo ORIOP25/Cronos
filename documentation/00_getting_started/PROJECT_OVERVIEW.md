@@ -28,7 +28,7 @@ Schedules must account for resource conflicts, availability, calendar events, ex
 
 | Component | Responsibility | Technology |
 | :--- | :--- | :--- |
-| Backend API | HTTP, authentication, domain services, persistence | Python 3.12, FastAPI, Async SQLAlchemy |
+| Backend API | HTTP, authentication, domain services, persistence | Python 3.14, FastAPI, Async SQLAlchemy |
 | Frontend | Public site, authenticated UI, client state | React 19, Vite 8, CoreUI, TanStack Query |
 | Scheduler | Complete generation and adaptive repair | Google OR-Tools CP-SAT |
 | Worker | Background generation jobs | Celery and Redis |

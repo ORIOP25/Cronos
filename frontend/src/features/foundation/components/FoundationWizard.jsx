@@ -59,6 +59,8 @@ export function FoundationWizard() {
   const [isTransitioning, setIsTransitioning] = useState(false)
   const [isReloadingConflict, setIsReloadingConflict] = useState(false)
   const [conflictReloadError, setConflictReloadError] = useState('')
+  const [isInitialSynced, setIsInitialSynced] = useState(false)
+  const [hasFailedSnapshot, setHasFailedSnapshot] = useState(false)
   const isInitialSync = useRef(false)
   const isDirtyRef = useRef(false)
   const autosaveTimerRef = useRef(null)
@@ -72,6 +74,7 @@ export function FoundationWizard() {
   useEffect(() => {
     if (statusQuery.data && draftQuery.data && !isInitialSync.current) {
       isInitialSync.current = true
+      setIsInitialSynced(true)
       confirmedVersionRef.current = draftQuery.data.version || 0
       dispatch({ type: 'INIT_FROM_SERVER', payload: draftQuery.data })
     }
@@ -118,6 +121,7 @@ export function FoundationWizard() {
           })
           confirmedVersionRef.current = res.version
           failedSnapshotRef.current = null
+          setHasFailedSnapshot(false)
           dispatch({ type: 'SAVE_SUCCEEDED', version: res.version })
         } catch (err) {
           if (err?.response?.status === 409) {
@@ -131,6 +135,7 @@ export function FoundationWizard() {
             dispatch({ type: 'VERSION_CONFLICT', payload: err.response.data?.detail || {} })
           } else {
             failedSnapshotRef.current = nextSnapshot
+            setHasFailedSnapshot(true)
             dispatch({
               type: 'SAVE_FAILED',
               error: apiErrorMessage(err?.response?.data?.detail, 'Não foi possível guardar o rascunho.'),
@@ -298,6 +303,7 @@ export function FoundationWizard() {
       }
       confirmedVersionRef.current = res.data.version || 0
       failedSnapshotRef.current = null
+      setHasFailedSnapshot(false)
       pendingSnapshotRef.current = null
       isDirtyRef.current = false
       dispatch({ type: 'RESOLVE_CONFLICT_RELOAD', payload: res.data })
@@ -334,7 +340,7 @@ export function FoundationWizard() {
     )
   }
 
-  if (statusQuery.isLoading || draftQuery.isLoading || !isInitialSync.current || isRetrying) {
+  if (statusQuery.isLoading || draftQuery.isLoading || !isInitialSynced || isRetrying) {
     return (
       <div className="guided-form-shell">
         <StatePanel state="loading" title="A carregar a fundação da escola" description="A obter dados e rascunho de configuração..." />
@@ -372,7 +378,7 @@ export function FoundationWizard() {
               tone="danger"
               action={(
                 <div className="d-flex flex-wrap gap-2">
-                  {state.status === 'error' && failedSnapshotRef.current && (
+                  {state.status === 'error' && hasFailedSnapshot && (
                     <button type="button" onClick={handleRetrySave} disabled={isRecoveringHolidays}>
                       Tentar guardar novamente
                     </button>
@@ -392,7 +398,7 @@ export function FoundationWizard() {
           </div>
         )}
 
-        <fieldset disabled={isBlocked || !isInitialSync.current} className="foundation-step-content py-2 border-0 p-0 m-0">
+        <fieldset disabled={isBlocked || !isInitialSynced} className="foundation-step-content py-2 border-0 p-0 m-0">
           {state.currentStep === STEP_PERIOD && (
             <PeriodStep
               values={state.values}

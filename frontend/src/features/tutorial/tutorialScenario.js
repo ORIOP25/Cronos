@@ -5,7 +5,6 @@ import {
   TUTORIAL_ACTIONS,
   TUTORIAL_STEPS,
   getTutorialStep,
-  getTutorialStepIndex,
 } from './tutorialContent'
 
 const DEMO_WEEK_START = '2025-09-15'
@@ -571,4 +570,4 @@ export function tutorialScenarioInvariants(scenario) {
   }
 }
 
-export { TUTORIAL_ACTIONS, TUTORIAL_STEPS, getTutorialStep, getTutorialStepIndex }
+export { TUTORIAL_ACTIONS, TUTORIAL_STEPS, getTutorialStep }
