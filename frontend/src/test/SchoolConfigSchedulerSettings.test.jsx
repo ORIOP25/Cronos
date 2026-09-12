@@ -173,7 +173,7 @@ describe('SchoolConfig scheduler settings', () => {
     fireEvent.click(await screen.findByRole('button', { name: /^guardar alterações$/i }))
     fireEvent.click(screen.getAllByRole('button', { name: /^guardar alterações$/i }).at(-1))
 
-    await screen.findByText('other failure')
+    await screen.findByText('Ocorreu um erro inesperado. Tente novamente.')
     expect(screen.queryByRole('button', { name: /desativar feriados automáticos e guardar/i })).not.toBeInTheDocument()
   })
 
@@ -235,7 +235,7 @@ describe('SchoolConfig scheduler settings', () => {
     const button = screen.getByRole('button', { name: /guardar e regenerar/i })
     fireEvent.click(button)
 
-    expect(await screen.findByText('Use Recomeçar Ano Letivo.')).toBeInTheDocument()
+    expect(await screen.findByText('Atualize a página e tente novamente.')).toBeInTheDocument()
     expect(screen.queryByText('Grelha configurada e regenerada com sucesso.')).not.toBeInTheDocument()
     await waitFor(() => expect(button).toBeEnabled())
     expect(apiClient.post).toHaveBeenCalledTimes(1)

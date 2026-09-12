@@ -1286,6 +1286,7 @@ class ScheduleGenerationJob(Base):
     )
     failure_code: Mapped[str | None] = mapped_column(String(50), nullable=True)
     failure_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    failure_reference: Mapped[str | None] = mapped_column(String(32), nullable=True)
     idempotency_key: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
     __table_args__ = (

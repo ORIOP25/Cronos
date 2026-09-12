@@ -4,20 +4,27 @@ from contextlib import asynccontextmanager
 
 import httpx
 import structlog
-from fastapi import FastAPI, Request
-from fastapi.encoders import jsonable_encoder
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from redis import asyncio as aioredis
 
 # --- Imports de Performance e Segurança ---
-from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
 from app.api.api import api_router
 from app.config import settings
 from app.core.clerk import ClerkGateway
-from app.core.exceptions import AppError, DomainError
+from app.core.exceptions import (
+    PUBLIC_ERROR_CATALOG,
+    REQUEST_ID_HEADER,
+    AppError,
+    DomainError,
+    public_error_detail,
+    request_reference,
+    status_code_for_kind,
+)
 from app.core.logging import safe_exception_frames, setup_logging
 from app.core.ratelimit import FailClosedSlowAPIMiddleware, limiter
 from app.db.database import SessionLocal, engine_async
@@ -36,7 +43,12 @@ async def lifespan(app: FastAPI):
     setup_logging()
 
     # Substituir print por logger.info
-    logger.info("-> Servidor a arrancar...", version="0.5", env=settings.ENVIRONMENT)
+    logger.info(
+        "-> Servidor a arrancar...",
+        version="0.5",
+        env=settings.ENVIRONMENT,
+        revision=settings.RAILWAY_GIT_COMMIT_SHA or settings.DEPLOYED_REVISION or "unknown",
+    )
 
     redis = aioredis.from_url(str(settings.REDIS_URL), socket_connect_timeout=1)
     app.state.redis = redis
@@ -72,24 +84,71 @@ app = FastAPI(
 )
 
 
+def _legacy_public_context(code: str, metadata: dict) -> dict:
+    """Keep explicitly safe fields from pre-contract callers during migration."""
+    if code == "preflight_failed":
+        return {key: metadata[key] for key in ("status", "report", "issues") if key in metadata}
+    return {
+        key: metadata[key]
+        for key in ("job_id", "pending_draft_id", "draft_state")
+        if key in metadata
+    }
+
+
+def _error_response(
+    request: Request,
+    *,
+    status_code: int,
+    code: str,
+    public_context: dict | None = None,
+    fields: dict[str, str] | None = None,
+    retryable: bool | None = None,
+    support_required: bool | None = None,
+    headers: dict[str, str] | None = None,
+    reference: str | None = None,
+) -> JSONResponse:
+    reference = reference or request_reference(request)
+    response = JSONResponse(
+        status_code=status_code,
+        content={
+            "detail": public_error_detail(
+                code=code,
+                reference=reference,
+                status_code=status_code,
+                public_context=public_context,
+                fields=fields,
+                retryable=retryable,
+                support_required=support_required,
+            )
+        },
+        headers=headers,
+    )
+    response.headers[REQUEST_ID_HEADER] = reference
+    return response
+
+
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
+    reference = request_reference(request)
     logger.error(
-        "Unhandled application error",
+        "unhandled_application_error",
         method=request.method,
         path=request.url.path,
+        request_id=reference,
         error_type=type(exc).__name__,
         exception_frames=safe_exception_frames(exc),
     )
-    return JSONResponse(
+    return _error_response(
+        request,
         status_code=500,
-        content={"detail": "Ocorreu um erro inesperado. Tente novamente."},
+        code="unexpected_error",
+        support_required=True,
+        reference=reference,
     )
 
 
 # --- Configuração do Rate Limiter ---
 app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.add_middleware(FailClosedSlowAPIMiddleware)
 app.add_middleware(
     RequestBodyLimitMiddleware,
@@ -108,39 +167,112 @@ app.add_middleware(
     allow_credentials=False,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type"],
+    expose_headers=[REQUEST_ID_HEADER],
 )
+
+
+@app.middleware("http")
+async def request_context(request: Request, call_next):
+    reference = request_reference(request)
+    request.state.request_reference = reference
+    with structlog.contextvars.bound_contextvars(request_id=reference):
+        response = await call_next(request)
+    response.headers[REQUEST_ID_HEADER] = reference
+    return response
+
+
+async def rate_limit_error_handler(request: Request, exc: RateLimitExceeded):
+    return _error_response(
+        request,
+        status_code=429,
+        code="too_many_requests",
+        retryable=True,
+        headers={"Retry-After": "60"},
+    )
+
+
+app.add_exception_handler(RateLimitExceeded, rate_limit_error_handler)
+
+
+@app.exception_handler(HTTPException)
+async def http_error_handler(request: Request, exc: HTTPException):
+    detail = exc.detail if isinstance(exc.detail, dict) else {}
+    code = detail.get("code") or {
+        400: "bad_request",
+        401: "authentication_required",
+        403: "access_forbidden",
+        404: "resource_not_found",
+        409: "conflict",
+        422: "validation_error",
+        429: "too_many_requests",
+    }.get(exc.status_code, "unexpected_error")
+    catalog = PUBLIC_ERROR_CATALOG.get(code, {})
+    context = {
+        key: detail[key]
+        for key in (
+            "foundation_status",
+            "current_version",
+            "terms_version",
+            "dpa_version",
+            "privacy_version",
+        )
+        if key in detail
+    }
+    headers = {
+        key: value
+        for key, value in (exc.headers or {}).items()
+        if key.lower() in {"www-authenticate", "retry-after"}
+    }
+    return _error_response(
+        request,
+        status_code=exc.status_code,
+        code=code,
+        public_context=context,
+        retryable=catalog.get("retryable"),
+        headers=headers or None,
+    )
+
+
+@app.exception_handler(RequestValidationError)
+async def request_validation_error_handler(request: Request, exc: RequestValidationError):
+    fields = {}
+    for item in exc.errors():
+        location = item.get("loc") or ()
+        field_name = ".".join(
+            str(part) for part in location if part not in {"body", "query", "path", "header"}
+        )
+        if field_name:
+            fields[field_name] = "Valor inválido."
+    return _error_response(
+        request,
+        status_code=422,
+        code="validation_error",
+        fields=fields,
+    )
 
 
 # --- Domain Error Handler ---
 @app.exception_handler(DomainError)
 async def domain_error_handler(request: Request, exc: DomainError):
-    return JSONResponse(
+    return _error_response(
+        request,
         status_code=exc.status_code,
-        content={"detail": exc.message},
+        code={404: "resource_not_found", 409: "conflict"}.get(exc.status_code, "bad_request"),
     )
 
 
 @app.exception_handler(AppError)
 async def app_error_handler(request: Request, exc: AppError):
-    status_code = {"preflight_failed": 400}.get(exc.code) or {
-        "bad_request": 400,
-        "validation": 422,
-        "not_found": 404,
-        "conflict": 409,
-        "forbidden": 403,
-        "unavailable": 503,
-    }[exc.kind]
-    if exc.code in {
-        "contact_delivery_unavailable",
-        "turnstile_rejected",
-        "turnstile_unavailable",
-    }:
-        detail = exc.detail
-    else:
-        detail = exc.metadata or {"code": exc.code, "message": exc.detail}
-    return JSONResponse(
+    status_code = status_code_for_kind(exc.kind, exc.code)
+    return _error_response(
+        request,
         status_code=status_code,
-        content=jsonable_encoder({"detail": detail}),
+        code=exc.code,
+        public_context=exc.public_context or _legacy_public_context(exc.code, exc.metadata),
+        fields=exc.public_fields
+        or (exc.metadata.get("fields") if isinstance(exc.metadata.get("fields"), dict) else None),
+        retryable=exc.public_retryable,
+        support_required=exc.public_support_required,
     )
 
 
@@ -179,7 +311,10 @@ def root():
 @app.get("/health/live", include_in_schema=False)
 @limiter.exempt
 async def live():
-    return {"status": "ok"}
+    return {
+        "status": "ok",
+        "revision": settings.RAILWAY_GIT_COMMIT_SHA or settings.DEPLOYED_REVISION or "unknown",
+    }
 
 
 @app.get("/health/ready", include_in_schema=False)

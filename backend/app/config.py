@@ -36,6 +36,8 @@ class Settings(BaseSettings):
     PROJECT_NAME: str = "Cronos API"
     API_V1_STR: str = "/api/v1"
     APP_VERSION: str = "0.1.0"
+    DEPLOYED_REVISION: str = ""
+    RAILWAY_GIT_COMMIT_SHA: str = ""
 
     # --- Ambiente (Validação: Só aceita estas 3 strings) ---
     ENVIRONMENT: Literal["local", "staging", "production"] = "local"

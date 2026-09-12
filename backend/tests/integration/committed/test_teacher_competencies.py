@@ -76,7 +76,7 @@ class TestCompetencies:
             headers=clerk_admin_headers,
         )
         assert resp.status_code == 400
-        detail = resp.json()["detail"].lower()
+        detail = resp.json()["detail"]["message"].lower()
         assert "professor" in detail
         assert "disciplina" in detail
 

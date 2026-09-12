@@ -94,7 +94,7 @@ services:
 
   worker:
     image: cronos-backend-test:local
-    command: ["celery", "-A", "app.celery_worker.celery_app", "worker", "--loglevel=warning", "--include=app.scheduler_worker", "--autoscale=2,1", "--prefetch-multiplier=1", "--max-tasks-per-child=1"]
+    command: ["celery", "-A", "app.celery_worker.celery_app", "worker", "--loglevel=warning", "--include=app.scheduler_worker", "--concurrency=1", "--prefetch-multiplier=1", "--max-tasks-per-child=1"]
     environment:
       <<: *test-backend-environment
     depends_on:

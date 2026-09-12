@@ -1,7 +1,11 @@
 import React from 'react'
+import FailureState from './FailureState'
+import { getApiErrorPresentation } from '../utils/apiErrors'
 
 const AUTO_RECOVERY_KEY = 'cronos:error-boundary:last-reload'
 const AUTO_RECOVERY_COOLDOWN_MS = 30_000
+
+const isChunkLoadFailure = (error) => /chunk|dynamically imported module|importing a module script failed/i.test(error?.message || '')
 
 class ErrorBoundary extends React.Component {
   constructor(props) {
@@ -15,7 +19,7 @@ class ErrorBoundary extends React.Component {
 
   componentDidCatch(error, errorInfo) {
     console.error('Erro capturado pelo ErrorBoundary:', error, errorInfo)
-    this.attemptAutomaticRecovery()
+    if (isChunkLoadFailure(error)) this.attemptAutomaticRecovery()
   }
 
   reloadPage = () => {
@@ -29,10 +33,12 @@ class ErrorBoundary extends React.Component {
 
   attemptAutomaticRecovery = () => {
     try {
-      const lastReload = Number(globalThis.sessionStorage.getItem(AUTO_RECOVERY_KEY) ?? 0)
+      const revision = import.meta.env.VITE_APP_REVISION || 'local'
+      const recoveryKey = `${AUTO_RECOVERY_KEY}:${revision}`
+      const lastReload = Number(globalThis.sessionStorage.getItem(recoveryKey) ?? 0)
       if (Date.now() - lastReload < AUTO_RECOVERY_COOLDOWN_MS) return
 
-      globalThis.sessionStorage.setItem(AUTO_RECOVERY_KEY, String(Date.now()))
+      globalThis.sessionStorage.setItem(recoveryKey, String(Date.now()))
     } catch (storageError) {
       console.error('Não foi possível proteger a recuperação automática:', storageError)
       return
@@ -51,62 +57,11 @@ class ErrorBoundary extends React.Component {
       }
 
       return (
-        <div
-          style={{
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-            minHeight: '60vh',
-            padding: '48px',
-            textAlign: 'center',
-            fontFamily: 'var(--font-body)',
-            color: 'var(--brand-950)',
-          }}
-        >
-          <div
-            style={{
-              width: '64px',
-              height: '64px',
-              borderRadius: '50%',
-              backgroundColor: 'var(--color-state-gap-bg)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              marginBottom: '24px',
-              fontSize: '1.5rem',
-            }}
-          >
-            !
-          </div>
-          <h2
-            className="text-display"
-            style={{ fontSize: '1.5rem', marginBottom: '12px', color: 'var(--brand-950)' }}
-          >
-            Algo correu mal
-          </h2>
-          <p style={{ color: 'var(--brand-600)', marginBottom: '24px', maxWidth: '420px', lineHeight: 1.6 }}>
-            Ocorreu um erro inesperado ao carregar esta página. Pedimos desculpa pelo incómodo.
-          </p>
-          <div style={{ display: 'flex', gap: '12px' }}>
-            <button
-              type="button"
-              className="btn-zen btn-zen-primary"
-              onClick={this.reloadPage}
-            >
-              Tentar novamente
-            </button>
-            <button
-              type="button"
-              className="btn-zen btn-zen-outline"
-              onClick={() => {
-                globalThis.location.href = '/dashboard'
-              }}
-            >
-              Ir para o painel
-            </button>
-          </div>
-        </div>
+        <FailureState
+          presentation={getApiErrorPresentation(this.state.error)}
+          onRetry={this.reloadPage}
+          navigationTo="/dashboard"
+        />
       )
     }
 

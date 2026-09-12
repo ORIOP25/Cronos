@@ -15,7 +15,7 @@ export const ARTIFACTS = join(ROOT, '.test-artifacts')
 const COMPOSE_FILE = join(ROOT, 'docker-compose.test.yml')
 const SCOPES = new Set(['backend', 'frontend', 'all'])
 const PROFILES = new Set(['fast', 'integration', 'e2e', 'all'])
-const E2E_PROJECTS = new Set(['public', 'auth', 'app', 'provider', 'faults'])
+const E2E_PROJECTS = new Set(['public', 'auth', 'app', 'provider', 'faults', 'capacity'])
 export const INTEGRATION_WORKERS = 4
 export const E2E_WORKERS = 2
 export const E2E_PORT = 5174
@@ -32,6 +32,7 @@ Commands:
   fast --scope backend|frontend|all [-- runner arguments]
   integration [-- runner arguments]
   e2e [--project public|auth|app|provider|faults]
+  capacity
   all --scope backend|frontend|all
   benchmark --profile fast|integration|e2e|all [--scope backend|frontend|all]
 `
@@ -55,7 +56,7 @@ export function parseArgs(argv) {
   let scopeWasProvided = false
   let profileWasProvided = false
 
-  if (!['setup', 'doctor', 'fast', 'integration', 'e2e', 'all', 'benchmark'].includes(command)) {
+  if (!['setup', 'doctor', 'fast', 'integration', 'e2e', 'capacity', 'all', 'benchmark'].includes(command)) {
     throw usageError(`Unknown command: ${command}`)
   }
   if (forwarded.length && !['fast', 'integration'].includes(command)) {
@@ -802,8 +803,18 @@ async function runE2e(project, context) {
         BASE_URL: resolveE2eBaseUrl({ externalStack: true, baseUrl: process.env.BASE_URL }),
         PLAYWRIGHT_SKIP_WEB_SERVER: '1',
         PLAYWRIGHT_WORKERS: String(E2E_WORKERS),
+        ...(project === 'capacity' ? {
+          CAPACITY_ENABLED: '1',
+          CAPACITY_REPORT_PATH: join(context.artifactDir, 'capacity.json'),
+        } : {}),
       }
-    : context.stack.env
+    : {
+        ...context.stack.env,
+        ...(project === 'capacity' ? {
+          CAPACITY_ENABLED: '1',
+          CAPACITY_REPORT_PATH: join(context.artifactDir, 'capacity.json'),
+        } : {}),
+      }
   await runFrontendTests(
     args,
     `Playwright ${project || 'all'}`,
@@ -1061,6 +1072,7 @@ export async function main(argv = process.argv.slice(2)) {
     else if (parsed.command === 'fast') await runFast(parsed.scope, parsed.forwarded, context)
     else if (parsed.command === 'integration') await runIntegration(parsed.forwarded, context)
     else if (parsed.command === 'e2e') await runE2e(parsed.project, context)
+    else if (parsed.command === 'capacity') await runE2e('capacity', context)
     else if (parsed.command === 'all') await runAll(parsed.scope, context)
     else if (parsed.command === 'benchmark') await runBenchmark(parsed.profile, parsed.scope, context)
   } catch (error) {

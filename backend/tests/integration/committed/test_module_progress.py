@@ -79,8 +79,7 @@ class TestModuleProgress:
             headers=clerk_admin_headers,
         )
         assert resp.status_code == 400
-        assert "99999" in resp.json()["detail"]
-        assert "disciplinas" in resp.json()["detail"].lower()
+        assert "processar" in resp.json()["detail"]["message"]
 
     async def test_progress_class_not_found_404(
         self, async_client: AsyncClient, clerk_admin_headers: dict

@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models
+from app.core.exceptions import new_error_reference
 from app.services.scheduler_generation_service import GenerationSelection
+from app.services.scheduler_observability import emit_scheduler_job_event
 from app.services.scheduler_state_service import SchedulerStateService
 
 ACTIVE_JOB_STATUSES = (
@@ -180,10 +182,76 @@ class SchedulerJobService:
             job.started_at = now
             job.finished_at = now
             job.duration_ms = 0
-            job.failure_code = "SYSTEM_ERROR"
+            job.failure_code = "DISPATCH_STALLED"
             job.failure_message = message[:2000]
+            job.failure_reference = new_error_reference()
             await self._db.flush()
         return job
+
+    async def recover_stale_jobs(
+        self,
+        organization_id: int,
+        *,
+        now: datetime | None = None,
+    ) -> dict[str, int]:
+        """Finalize abandoned jobs while holding each row lock."""
+        recovered_at = now or datetime.now(UTC)
+        queued_before = recovered_at - timedelta(minutes=2)
+        running_before = recovered_at - timedelta(seconds=30)
+        cancel_before = recovered_at - timedelta(minutes=2)
+        result = await self._db.scalars(
+            select(models.ScheduleGenerationJob)
+            .where(
+                models.ScheduleGenerationJob.organization_id == organization_id,
+                or_(
+                    (
+                        models.ScheduleGenerationJob.job_status
+                        == models.ScheduleGenerationJobStatus.QUEUED
+                    )
+                    & (models.ScheduleGenerationJob.queued_at <= queued_before),
+                    (
+                        models.ScheduleGenerationJob.job_status
+                        == models.ScheduleGenerationJobStatus.RUNNING
+                    )
+                    & (models.ScheduleGenerationJob.deadline_at <= running_before),
+                    (
+                        models.ScheduleGenerationJob.job_status
+                        == models.ScheduleGenerationJobStatus.CANCEL_REQUESTED
+                    )
+                    & (models.ScheduleGenerationJob.cancellation_requested_at <= cancel_before),
+                ),
+            )
+            .with_for_update(skip_locked=True)
+        )
+        jobs = list(result)
+        totals = {"dispatch_stalled": 0, "worker_stalled": 0, "canceled": 0}
+        for job in jobs:
+            if job.job_status == models.ScheduleGenerationJobStatus.QUEUED:
+                job.job_status = models.ScheduleGenerationJobStatus.FAILED
+                job.failure_code = "DISPATCH_STALLED"
+                job.failure_message = "The generation job did not reach a worker."
+                totals["dispatch_stalled"] += 1
+                event_name = "generation_dispatch_stalled"
+            elif job.job_status == models.ScheduleGenerationJobStatus.RUNNING:
+                job.job_status = models.ScheduleGenerationJobStatus.FAILED
+                job.failure_code = "WORKER_STALLED"
+                job.failure_message = "The worker did not complete the generation job."
+                totals["worker_stalled"] += 1
+                event_name = "generation_worker_stalled"
+            else:
+                job.job_status = models.ScheduleGenerationJobStatus.CANCELED
+                job.failure_code = "CANCELED"
+                job.failure_message = "The cancellation request was finalized by recovery."
+                totals["canceled"] += 1
+                event_name = "generation_canceled"
+            job.failure_reference = job.failure_reference or new_error_reference()
+            started_at = job.started_at or job.queued_at or recovered_at
+            job.started_at = started_at
+            job.finished_at = recovered_at
+            job.duration_ms = max(0, int((recovered_at - started_at).total_seconds() * 1000))
+            emit_scheduler_job_event(event_name, job)
+        await self._db.flush()
+        return totals
 
     @staticmethod
     def worker_task_id(job_id: int) -> str:

@@ -37,14 +37,14 @@ import { readExpiringValue, writeExpiringValue } from '../utils/expiringStorage'
 const ACTIVE_JOB_STORAGE_KEY_PREFIX = 'hz-schedule-active-job-org-'
 const VIEW_STORAGE_KEY_PREFIX = 'hz-schedule-view-org-'
 const STALE_DRAFT_MESSAGE = (
-  'This draft is no longer current.\n\n'
-  + 'Schedule conditions changed after it was generated. Regenerate the draft to continue.'
+  'Este rascunho já não está atualizado.\n\n'
+  + 'As condições do horário mudaram. Gere um novo rascunho para continuar.'
 )
 
 function getDraftMutationErrorMessage(error, fallback) {
   const detail = error?.response?.data?.detail
   if (detail?.draft_state === 'STALE') return STALE_DRAFT_MESSAGE
-  return detail?.message || (typeof detail === 'string' ? detail : null) || fallback
+  return getApiErrorMessage(error, fallback, 'schedule.approve')
 }
 
 function getViewStorageKey(orgId) {
@@ -246,16 +246,13 @@ const Schedules = ({ initialClassId = '', initialWeekStart, persistView = true, 
   const startReplacementGeneration = async () => {
     if (!canGenerate) return
     setGenerationConfirmation(null)
-    setGenerationActionError('')
+      setGenerationActionError('')
     setPreflightErrors([])
     try {
       const result = await generateMutation.mutateAsync({ replacePendingDraft: true })
       if (result?.job_id) setActiveJobId(result.job_id)
     } catch (err) {
-      const detail = err?.response?.data?.detail
-      setGenerationActionError(
-        detail?.message || err?.message || 'Não foi possível iniciar a nova geração.'
-      )
+      setGenerationActionError(getApiErrorMessage(err, 'Não foi possível iniciar a nova geração.', 'schedule.generate'))
     }
   }
 
@@ -269,20 +266,16 @@ const Schedules = ({ initialClassId = '', initialWeekStart, persistView = true, 
       if (result?.job_id) setActiveJobId(result.job_id)
     } catch (err) {
       const detail = err?.response?.data?.detail
-      if (detail?.error === 'pending_draft_replacement_required') {
+      if (detail?.code === 'pending_draft_replacement_required') {
         setGenerationConfirmation('replace-pending-draft')
         return
       }
       const issues = detail?.issues || detail?.report?.issues
-      if (!Array.isArray(issues) && detail?.message) {
-        setGenerationActionError(detail.message)
+      if (!Array.isArray(issues)) {
+        setGenerationActionError(getApiErrorMessage(err, 'Não foi possível iniciar a geração.', 'schedule.generate'))
         return
       }
-      if (Array.isArray(issues)) {
-        setPreflightErrors(issues)
-      } else {
-        setGenerationActionError(getApiErrorMessage(err, 'Erro ao iniciar a geração. Verifique a ligação e tente novamente.'))
-      }
+      setPreflightErrors(issues)
     }
   }
 

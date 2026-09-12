@@ -288,7 +288,10 @@ describe('RequireTeacher', () => {
   it('shows organization selection when memberships exist but none is active', () => {
     setClerkState({
       orgId: null,
-      memberships: [{ organization: { id: 'org_other', name: 'Outra escola' } }],
+      memberships: [
+        { organization: { id: 'org_other', name: 'Outra escola' } },
+        { organization: { id: 'org_second', name: 'Outra escola 2' } },
+      ],
     })
     renderGuard(<RequireAdmin><div>Admin</div></RequireAdmin>)
     expect(screen.getByTestId('organization-selector')).toBeInTheDocument()

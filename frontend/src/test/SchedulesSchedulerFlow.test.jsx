@@ -181,8 +181,8 @@ describe('Schedules scheduler flow', () => {
     renderPage()
     fireEvent.click(screen.getByRole('button', { name: 'Aprovar teste' }))
 
-    expect(await screen.findByText(/This draft is no longer current/)).toHaveTextContent(
-      'Regenerate the draft to continue.'
+    expect(await screen.findByText(/Este rascunho já não está atualizado/)).toHaveTextContent(
+      'Gere um novo rascunho para continuar.'
     )
   })
 })

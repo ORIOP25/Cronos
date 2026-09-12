@@ -18,6 +18,7 @@ from app.services.clerk_access_service import (
     normalize_clerk_datetime,
 )
 from app.services.member_access_operation_service import (
+    UNRESOLVED_STATUSES,
     MemberAccessOperationService,
     MemberAccessSagaCoordinator,
     UnresolvedAccessOperationError,
@@ -57,14 +58,10 @@ def member_error(
         kind=kind,
         code=code,
         detail=message,
-        metadata={
-            "code": code,
-            "category": category or code,
-            "message": message,
-            "retryable": retryable,
-            "support_required": support_required,
-            "fields": fields or {},
-        },
+        public_context={"category": category or code},
+        public_fields=fields or {},
+        public_retryable=retryable,
+        public_support_required=support_required,
     )
 
 
@@ -146,6 +143,7 @@ def _to_read(
     *,
     has_history: bool = False,
     reference_time: datetime | None = None,
+    support_reference: str | None = None,
 ) -> schemas.MemberRead:
     account = member.account
     teacher = member.teacher_profile
@@ -189,6 +187,7 @@ def _to_read(
         subject_ids=teacher.subject_ids if teacher else [],
         access_error_category=member.access_error_category,
         access_error_safe_message=member.access_error_safe_message,
+        support_reference=support_reference,
         provider_state=actions.provider_state,
         remove_effect=actions.remove_effect,
         actions=actions,
@@ -739,6 +738,7 @@ async def _send_invitation(
             models.MemberAccessOperationStatus.failed,
             error_category=provider_user.error_category,
             safe_message=provider_user.safe_message,
+            provider_error_reference=provider_user.provider_request_id,
         )
         _raise_provider_failure(provider_user)
     provider_membership = None
@@ -753,6 +753,7 @@ async def _send_invitation(
                 models.MemberAccessOperationStatus.failed,
                 error_category=provider_membership.error_category,
                 safe_message=provider_membership.safe_message,
+                provider_error_reference=provider_membership.provider_request_id,
             )
             _raise_provider_failure(provider_membership)
 
@@ -778,6 +779,7 @@ async def _send_invitation(
                     models.MemberAccessOperationStatus.failed,
                     error_category=result.error_category,
                     safe_message=result.safe_message,
+                    provider_error_reference=result.provider_request_id,
                 )
                 _raise_provider_failure(result)
             changed_role_from = actual_role
@@ -823,6 +825,7 @@ async def _send_invitation(
                 models.MemberAccessOperationStatus.failed,
                 error_category=result.error_category,
                 safe_message=result.safe_message,
+                provider_error_reference=result.provider_request_id,
             )
         _raise_provider_failure(result)
     if provider_membership and provider_membership.membership_id:
@@ -969,6 +972,7 @@ async def _change_provider_role(
             models.MemberAccessOperationStatus.failed,
             error_category=result.error_category,
             safe_message=result.safe_message,
+            provider_error_reference=result.provider_request_id,
         )
         _raise_provider_failure(result)
     await operation_service.transition(
@@ -1055,6 +1059,7 @@ async def _revoke_provider_access(
                 models.MemberAccessOperationStatus.failed,
                 error_category=result.error_category,
                 safe_message=result.safe_message,
+                provider_error_reference=result.provider_request_id,
             )
             _raise_provider_failure(result)
         await operation_service.transition(
@@ -1172,6 +1177,31 @@ async def list_members(
         .limit(limit)
     )
     members = result.scalars().all()
+    member_ids = [member.id for member in members]
+    member_emails = [member.account.email.lower() for member in members]
+    support_references: dict[int | str, str] = {}
+    if member_ids:
+        operations = await db.execute(
+            select(
+                models.MemberAccessOperation.membership_id,
+                models.MemberAccessOperation.target_email,
+                models.MemberAccessOperation.provider_error_reference,
+            )
+            .where(
+                models.MemberAccessOperation.organization_id == organization_id,
+                models.MemberAccessOperation.operation_status.in_(UNRESOLVED_STATUSES),
+                or_(
+                    models.MemberAccessOperation.membership_id.in_(member_ids),
+                    models.MemberAccessOperation.target_email.in_(member_emails),
+                ),
+                models.MemberAccessOperation.provider_error_reference.is_not(None),
+            )
+            .order_by(models.MemberAccessOperation.id.desc())
+        )
+        for membership_id, target_email, reference in operations:
+            if reference is None:
+                continue
+            support_references.setdefault(membership_id or target_email.lower(), reference)
     history_ids = await _teacher_ids_with_history(
         db,
         organization_id,
@@ -1184,6 +1214,8 @@ async def list_members(
                 has_history=member.teacher_profile is not None
                 and member.teacher_profile.id in history_ids,
                 reference_time=now,
+                support_reference=support_references.get(member.id)
+                or support_references.get(member.account.email.lower()),
             )
             for member in members
         ],
@@ -1204,9 +1236,24 @@ async def get_member_read(
         organization_id,
         [member.teacher_profile.id] if member.teacher_profile is not None else [],
     )
+    support_reference = await db.scalar(
+        select(models.MemberAccessOperation.provider_error_reference)
+        .where(
+            models.MemberAccessOperation.organization_id == organization_id,
+            models.MemberAccessOperation.operation_status.in_(UNRESOLVED_STATUSES),
+            or_(
+                models.MemberAccessOperation.membership_id == member_id,
+                models.MemberAccessOperation.target_email == member.account.email.lower(),
+            ),
+            models.MemberAccessOperation.provider_error_reference.is_not(None),
+        )
+        .order_by(models.MemberAccessOperation.id.desc())
+        .limit(1)
+    )
     return _to_read(
         member,
         has_history=member.teacher_profile is not None and member.teacher_profile.id in history_ids,
+        support_reference=support_reference,
     )
 
 

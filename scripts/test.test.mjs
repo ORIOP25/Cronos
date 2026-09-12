@@ -30,6 +30,11 @@ test('rejects invalid arguments with usage code information', () => {
   assert.equal(parseArgs(['benchmark', '--profile', 'fast', '--scope', 'frontend']).scope, 'frontend')
 })
 
+test('keeps capacity as an explicit E2E gate', () => {
+  assert.equal(parseArgs(['capacity']).command, 'capacity')
+  assert.equal(parseArgs(['e2e', '--project', 'capacity']).project, 'capacity')
+})
+
 test('preserves paths and arguments containing spaces as separate child arguments', () => {
   const spec = childSpec('node', [ROOT, 'tests/with spaces/example.test.mjs'])
   assert.deepEqual(spec.args, [ROOT, 'tests/with spaces/example.test.mjs'])

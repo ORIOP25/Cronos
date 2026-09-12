@@ -34,11 +34,11 @@ describe('ErrorBoundary', () => {
     )
     expect(screen.getByText('Algo correu mal')).toBeInTheDocument()
     expect(screen.getByText('Tentar novamente')).toBeInTheDocument()
-    expect(reloadPage).toHaveBeenCalledOnce()
+    expect(reloadPage).not.toHaveBeenCalled()
     spy.mockRestore()
   })
 
-  it('recarrega a página quando o utilizador tenta novamente', () => {
+  it('permite recuperar quando o utilizador tenta novamente', () => {
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
     const reloadPage = vi.fn()
     render(
@@ -54,12 +54,16 @@ describe('ErrorBoundary', () => {
     spy.mockRestore()
   })
 
-  it('limita a recuperação automática para evitar ciclos de reload', () => {
+  it('recupera automaticamente apenas falhas de módulos após uma atualização', () => {
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    function BrokenChunk() {
+      throw new Error('Failed to fetch dynamically imported module')
+    }
+
     const firstReload = vi.fn()
     const firstRender = render(
       <ErrorBoundary onReset={firstReload}>
-        <BrokenComponent />
+        <BrokenChunk />
       </ErrorBoundary>
     )
     expect(firstReload).toHaveBeenCalledOnce()
@@ -68,7 +72,7 @@ describe('ErrorBoundary', () => {
     const secondReload = vi.fn()
     render(
       <ErrorBoundary onReset={secondReload}>
-        <BrokenComponent />
+        <BrokenChunk />
       </ErrorBoundary>
     )
 

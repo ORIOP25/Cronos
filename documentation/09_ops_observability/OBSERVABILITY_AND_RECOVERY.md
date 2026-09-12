@@ -52,13 +52,18 @@ Persisted event summaries support tenant-scoped operational review without loggi
 
 - Liveness returns `200` when the process handles requests.
 - Readiness returns `503` when PostgreSQL or Redis is unavailable.
-- Scheduler jobs expose terminal status, failure code, and duration fields.
+- Scheduler jobs expose terminal status, failure code, duration, and an opaque
+  failure reference. Stored failure messages remain technical and internal.
 - Logs must not contain contact form PII or provider secrets.
 - Database audits run with the migrator role.
 
 ## States and Transitions
 
-Jobs move from queued or running states to success, cancellation, no-valid-output, or failure.
+Jobs move from queued or running states to success, cancellation,
+no-valid-output, or failure. A queued job older than two minutes becomes
+`FAILED / DISPATCH_STALLED`. A running job past its deadline by 30 seconds
+becomes `FAILED / WORKER_STALLED`. A cancel request older than two minutes
+becomes `CANCELED`.
 Provider and webhook states remain queryable through their persisted status fields.
 
 ## Failure Modes and Recovery
@@ -67,17 +72,25 @@ Provider and webhook states remain queryable through their persisted status fiel
 | :--- | :--- |
 | Liveness fails | Inspect API process and restart the API service. |
 | Readiness returns `503` | Check PostgreSQL and Redis connectivity. |
-| Job remains active | Inspect job fields, request cancellation, and inspect worker logs. |
+| Job remains active | Beat recovery finalizes stale jobs. Inspect `failure_reference`, the scheduler event, and worker logs. |
 | Worker task is missing | Inspect Celery registration and worker command. |
 | Migration or trigger audit fails | Stop release, inspect migration state, and restore from verified backup if required. |
 
 ## Verification Procedure
 
 1. Query both health endpoints.
-2. Inspect worker tasks with Celery inspect.
+2. Inspect worker tasks with Celery inspect. Confirm one solver worker and one Beat replica.
 3. Run `python -m scripts.audit_triggers` from `backend/`.
 4. Run `python -m scripts.audit_database_integrity` from `backend/`.
 5. Record incident evidence before changing data.
+
+## Support workflow
+
+Ask only for the visible reference and approximate time. Search structured logs
+for `request_id`, `failure_reference`, or the provider operation reference.
+Identify the failing boundary. Apply the documented retry or recovery action.
+Do not request passwords or screenshots with personal data. Escalate or roll
+back when the reference indicates a systemic failure.
 
 ## Source Map
 

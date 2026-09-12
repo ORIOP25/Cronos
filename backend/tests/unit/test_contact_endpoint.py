@@ -100,7 +100,11 @@ async def test_application_errors_are_mapped(kind, code, status):
     finally:
         app.dependency_overrides.pop(get_contact_service, None)
     assert response.status_code == status
-    assert response.json() == {"detail": "safe"}
+    detail = response.json()["detail"]
+    assert detail["code"] == code
+    assert detail["reference"] == response.headers["X-Request-ID"]
+    assert detail["message"]
+    assert "safe" not in detail["message"]
 
 
 @pytest.mark.asyncio

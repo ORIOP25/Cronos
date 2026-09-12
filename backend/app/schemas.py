@@ -262,6 +262,7 @@ class MemberRead(BaseModel):
     subject_ids: list[int] = Field(default_factory=list)
     access_error_category: str | None = None
     access_error_safe_message: str | None = None
+    support_reference: str | None = None
     provider_state: Literal["confirmed", "unconfirmed", "not_required"] = "confirmed"
     remove_effect: Literal["hard_delete", "archive"] = "archive"
     actions: MemberActionFlags = Field(default_factory=MemberActionFlags)
@@ -907,6 +908,7 @@ class ScheduleGenerationJobResponse(BaseModel):
     duration_ms: int | None
     failure_code: str | None
     failure_message: str | None
+    failure_reference: str | None
 
 
 class ScheduleGenerationCancelResponse(BaseModel):

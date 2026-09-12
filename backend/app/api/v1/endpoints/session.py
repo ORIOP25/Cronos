@@ -33,5 +33,5 @@ async def bootstrap_session(
         )
         raise HTTPException(
             status_code=exc.status_code,
-            detail={"error": exc.code, "message": str(exc)},
+            detail={"code": exc.code},
         ) from exc

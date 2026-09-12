@@ -312,7 +312,7 @@ async def update_class_subject_teacher(
     if result == "NO_COMPETENCY":
         raise HTTPException(
             status_code=400,
-            detail="Este professor nÃ£o tem competÃªncia para lecionar esta disciplina",
+            detail={"code": "teacher_competency_missing"},
         )
 
     # Retornar lista atualizada

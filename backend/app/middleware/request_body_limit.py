@@ -6,14 +6,11 @@ from dataclasses import dataclass
 
 from starlette.types import Message, Receive, Scope, Send
 
+from app.core.exceptions import REQUEST_ID_HEADER, new_error_reference, public_error_detail
+
 ASGIApp = Callable[[Scope, Receive, Send], Awaitable[None]]
 BODY_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
-REQUEST_BODY_TOO_LARGE = {
-    "detail": {
-        "code": "REQUEST_BODY_TOO_LARGE",
-        "message": "Request body exceeds the configured limit.",
-    }
-}
+REQUEST_BODY_TOO_LARGE = "request_body_too_large"
 
 
 @dataclass(frozen=True)
@@ -42,14 +39,14 @@ class RequestBodyLimitMiddleware:
 
         max_bytes = self.path_limits.get((scope["method"], scope["path"]), self.default_max_bytes)
         if self._content_length_exceeds_limit(scope, max_bytes):
-            await self._reject(send)
+            await self._reject(scope, send)
             return
 
         result = await self._read_body(receive, max_bytes)
         if result.disconnected:
             return
         if result.exceeded:
-            await self._reject(send)
+            await self._reject(scope, send)
             return
 
         messages = result.messages
@@ -86,8 +83,18 @@ class RequestBodyLimitMiddleware:
                 return BodyReadResult(messages)
 
     @staticmethod
-    async def _reject(send: Send) -> None:
-        body = json.dumps(REQUEST_BODY_TOO_LARGE, separators=(",", ":")).encode()
+    async def _reject(scope: Scope, send: Send) -> None:
+        headers = {key.lower(): value for key, value in scope.get("headers", [])}
+        incoming = headers.get(REQUEST_ID_HEADER.lower().encode(), b"").decode("ascii", "ignore")
+        reference = (
+            incoming if len(incoming) == 12 and incoming.isalnum() else new_error_reference()
+        )
+        detail = public_error_detail(
+            code=REQUEST_BODY_TOO_LARGE,
+            reference=reference,
+            status_code=413,
+        )
+        body = json.dumps({"detail": detail}, separators=(",", ":"), ensure_ascii=False).encode()
         await send(
             {
                 "type": "http.response.start",
@@ -95,6 +102,7 @@ class RequestBodyLimitMiddleware:
                 "headers": [
                     (b"content-type", b"application/json"),
                     (b"content-length", str(len(body)).encode()),
+                    (REQUEST_ID_HEADER.lower().encode(), reference.encode()),
                 ],
             }
         )

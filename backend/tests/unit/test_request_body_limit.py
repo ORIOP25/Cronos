@@ -56,12 +56,9 @@ async def test_content_length_rejection_happens_before_downstream():
         response = await client.post("/api/data", content=b"x" * 101)
 
     assert response.status_code == 413
-    assert response.json() == {
-        "detail": {
-            "code": "REQUEST_BODY_TOO_LARGE",
-            "message": "Request body exceeds the configured limit.",
-        }
-    }
+    assert response.json()["detail"]["code"] == "request_body_too_large"
+    assert response.json()["detail"]["message"] == "O pedido excede o limite permitido."
+    assert response.headers["X-Request-ID"] == response.json()["detail"]["reference"]
     assert probe.calls == 0
 
 

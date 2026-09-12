@@ -1,58 +1,67 @@
-// @vitest-environment node
 import { describe, expect, it } from 'vitest'
-import { getApiErrorCode, getApiErrorMessage } from '../utils/apiErrors'
+import { getApiErrorCode, getApiErrorMessage, getApiErrorPresentation } from '../utils/apiErrors'
 
-describe('getApiErrorMessage', () => {
-  it('reads a structured backend error code', () => {
-    expect(getApiErrorCode({
-      response: { data: { detail: { code: 'HOLIDAY_SYNC_FAILED', message: 'Falha' } } },
-    })).toBe('HOLIDAY_SYNC_FAILED')
-    expect(getApiErrorCode({ response: { data: { detail: 'Falha' } } })).toBeNull()
-  })
-
-  it('uses plain backend detail strings', () => {
-    expect(getApiErrorMessage({ response: { data: { detail: 'Nome obrigatório' } } })).toBe('Nome obrigatório')
-  })
-
-  it('joins validation detail arrays', () => {
+describe('api error contract', () => {
+  it('uses the safe public message for a known code', () => {
     const error = {
       response: {
         data: {
-          detail: [
-            { loc: ['body', 'name'], msg: 'Nome obrigatório' },
-            { loc: ['body', 'email'], msg: 'Email inválido' },
-          ],
+          detail: {
+            code: 'TIMED_OUT',
+            message: 'technical solver details must not be shown',
+            reference: 'ABC123DEF456',
+          },
         },
       },
     }
 
-    expect(getApiErrorMessage(error)).toBe('Nome obrigatório Email inválido')
+    expect(getApiErrorCode(error)).toBe('TIMED_OUT')
+    expect(getApiErrorMessage(error, 'fallback')).toContain('cinco minutos')
+    expect(getApiErrorMessage(error)).not.toContain('technical solver')
+    expect(getApiErrorPresentation(error).reference).toBe('ABC123DEF456')
   })
 
-  it('reads object message fields', () => {
-    expect(getApiErrorMessage({ response: { data: { detail: { message: 'Rascunho desatualizado' } } } })).toBe('Rascunho desatualizado')
+  it('uses the request header when the body has no reference', () => {
+    const error = {
+      response: {
+        status: 503,
+        headers: { 'x-request-id': 'REQ123ABC789' },
+        data: { detail: { code: 'service_unavailable' } },
+      },
+    }
+
+    const presentation = getApiErrorPresentation(error)
+    expect(presentation.message).toContain('instantes')
+    expect(presentation.reference).toBe('REQ123ABC789')
+    expect(presentation.retryable).toBe(true)
   })
 
-  it('uses a clear message when the server is unreachable', () => {
-    expect(getApiErrorMessage({ code: 'ERR_NETWORK', message: 'Network Error' }))
-      .toBe('Não foi possível ligar ao servidor. Verifique a ligação e tente novamente.')
+  it('maps status and context when the server cannot provide a code', () => {
+    expect(getApiErrorPresentation({ response: { status: 401 } }, 'auth').code)
+      .toBe('authentication_required')
+    expect(getApiErrorPresentation({ response: { status: 403 } }, 'team.sync').code)
+      .toBe('access_forbidden')
+    expect(getApiErrorPresentation({}, 'team.invite').code)
+      .toBe('invitation_delivery_failed')
   })
 
-  it.each([
-    [401, 'A sua sessão terminou. Entre novamente.'],
-    [403, 'Não tem permissão para realizar esta ação.'],
-    [500, 'O servidor encontrou um problema. Tente novamente dentro de instantes.'],
-  ])('maps an empty HTTP %s response to actionable copy', (status, expected) => {
-    expect(getApiErrorMessage({ response: { status, data: {} } })).toBe(expected)
+  it('does not expose arbitrary client or server error text', () => {
+    const error = { message: 'database password and stack trace' }
+    const message = getApiErrorMessage(error, 'Mensagem local')
+    expect(message).toBe('Mensagem local')
+    expect(message).not.toContain('password')
+
+    const unknown = getApiErrorPresentation({
+      response: { data: { detail: { code: 'internal_debug_code', message: 'secret' } } },
+    })
+    expect(unknown.message).toBe('Ocorreu um erro inesperado. Tente novamente.')
+    expect(unknown.message).not.toContain('secret')
   })
 
-  it('does not replace a useful backend detail with a generic status message', () => {
-    expect(getApiErrorMessage({
-      response: { status: 500, data: { detail: 'O motor de cálculo está indisponível.' } },
-    })).toBe('O motor de cálculo está indisponível.')
-  })
-
-  it('uses the provided fallback when no useful message exists', () => {
-    expect(getApiErrorMessage({}, 'Falha controlada')).toBe('Falha controlada')
+  it('identifies network failures without leaking the original message', () => {
+    const presentation = getApiErrorPresentation({ code: 'ERR_NETWORK', message: 'ECONNREFUSED 127.0.0.1' })
+    expect(presentation.title).toBe('Ligação indisponível')
+    expect(presentation.message).toContain('Verifique a ligação')
+    expect(presentation.message).not.toContain('ECONNREFUSED')
   })
 })

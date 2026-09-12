@@ -31,19 +31,21 @@ The bootstrap job creates restricted roles before runtime deployment.
 | :--- | :--- | :--- |
 | API | `backend/railway/api.json` | Alembic pre-deploy, Uvicorn, readiness healthcheck |
 | Worker | `backend/railway/worker.json` | Celery scheduler worker, concurrency one |
-| Beat | `backend/railway/beat.json` | Celery hourly schedule under `/tmp` |
+| Beat | `backend/railway/beat.json` | One replica with reconciliation, maintenance, and stale-job recovery |
 | Bootstrap | `backend/railway/bootstrap.json` | `python -m app.ops.provision_database` |
 | Frontend | `frontend/Dockerfile` or Pages project | Vite build output `dist` |
 
 ## Data or Request Flow
 
-1. Create PostgreSQL and Redis on a private provider network.
-2. Run the bootstrap job with temporary administrator access.
-3. Remove the bootstrap URL after successful idempotent execution.
-4. Deploy the API and confirm health.
-5. Deploy one worker and one Beat replica.
-6. Build and publish the frontend.
-7. Configure domains and verify deep links, CORS, Clerk, and provider flows.
+1. Confirm the exact immutable release SHA and passing test artifacts.
+2. Create a production backup and restore it into a disposable database.
+3. Run the additive migration, trigger audit, and integrity audit on the restore.
+4. Run the bootstrap job with temporary administrator access if required.
+5. Deploy the API and confirm readiness and revision.
+6. Deploy one worker with concurrency `1`.
+7. Deploy one Beat replica and verify all three periodic tasks.
+8. Build and publish the frontend with the same release identity.
+9. Configure domains and verify deep links, CORS, Clerk, and provider flows.
 
 ## Repository Deployment Contract
 
@@ -84,6 +86,8 @@ Test every client route on the hosting provider before domain cutover.
 - Never store secrets in Git, `VITE_*`, images, logs, screenshots, or tickets.
 - Keep Redis private.
 - Keep one Beat replica.
+- Keep exactly one solver worker with concurrency `1` during the initial rollout.
+- Expose and verify the intended SHA on API and readiness health responses.
 - Do not run automatic database downgrades during rollback.
 - Confirm code and schema compatibility before reverting the API.
 - Preserve existing mail records during application DNS changes.
@@ -91,9 +95,10 @@ Test every client route on the hosting provider before domain cutover.
 
 ## States and Transitions
 
-`bootstrap` -> `migrate` -> `api healthy` -> `worker ready` -> `beat ready` -> `frontend verified` -> `DNS cutover`.
+`release verified` -> `backup restore verified` -> `migrate` -> `api healthy` -> `worker ready` -> `beat ready` -> `frontend verified` -> `DNS cutover`.
 
-Rollback reverses frontend, API processes, and DNS only when required.
+Rollback reverses frontend, API processes, and DNS only when required. Do not
+downgrade the additive database migration during rollback.
 
 ## Failure Modes
 
@@ -107,11 +112,11 @@ Rollback reverses frontend, API processes, and DNS only when required.
 
 1. Check API `/health/live` and `/health/ready`.
 2. Confirm worker registration for `scheduler.run_generation_job`.
-3. Confirm Beat schedules `members.run_scheduled_reconciliation`.
-4. Confirm Beat schedules `privacy.run_maintenance`.
+3. Confirm Beat schedules `members.run_scheduled_reconciliation`, `privacy.run_maintenance`, and `scheduler.run_stale_job_recovery`.
+4. Check that API, worker, Beat, frontend, and migration reference the intended SHA.
 5. Test contact delivery, authentication, invitations, schedule approval, occurrence decisions, and timesheets.
 6. Test `/`, `/login`, `/register`, `/dashboard`, `/schedules`, `/my-schedules`, `/absences`, and `/cookies` after refresh.
-7. Record deployment IDs, backup IDs, and rollback target.
+7. Record deployment IDs, backup IDs, restore evidence, and the previous rollback target.
 
 ## Source Map
 

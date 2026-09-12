@@ -361,7 +361,7 @@ class TestTeacherRoleRegressionContracts:
             headers=teacher_headers,
         )
         assert duplicate_resp.status_code == 400
-        assert "duplicado" in duplicate_resp.json()["detail"].lower()
+        assert "duplicado" in duplicate_resp.json()["detail"]["message"].lower()
         persisted_resp = await _patch_and_call(
             cid, teacher_headers, f"{API}/teachers/me/availability", async_client
         )

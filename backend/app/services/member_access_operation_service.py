@@ -13,6 +13,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models
+from app.core.exceptions import new_error_reference
 from app.db.tenant import set_async_tenant_context
 from app.services.clerk_access_service import ClerkAccessResult, ClerkAccessService
 
@@ -231,6 +232,7 @@ class MemberAccessOperationService:
         account_id: int | None = None,
         clerk_invitation_id: str | None = None,
         clerk_membership_id: str | None = None,
+        provider_error_reference: str | None = None,
         error_category: str | None = None,
         safe_message: str | None = None,
         compensation_attempted: bool = False,
@@ -251,6 +253,12 @@ class MemberAccessOperationService:
                 operation.clerk_invitation_id = clerk_invitation_id
             if clerk_membership_id is not None:
                 operation.clerk_membership_id = clerk_membership_id
+            if provider_error_reference is not None:
+                operation.provider_error_reference = provider_error_reference[:120]
+            elif error_category is not None or support_required:
+                operation.provider_error_reference = (
+                    operation.provider_error_reference or new_error_reference()
+                )
             operation.provider_error_category = error_category
             operation.provider_error_safe_message = safe_message
             if compensation_attempted:
@@ -295,6 +303,8 @@ class MemberAccessSagaCoordinator:
             provider_references["clerk_invitation_id"] = clerk_invitation_id
         if clerk_membership_id is not None:
             provider_references["clerk_membership_id"] = clerk_membership_id
+        if compensation.provider_request_id is not None:
+            provider_references["provider_error_reference"] = compensation.provider_request_id
         await self._operations.transition(
             operation_id,
             (
