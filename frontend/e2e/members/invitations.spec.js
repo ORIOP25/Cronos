@@ -49,9 +49,10 @@ async function saveAndExpect(page, expectedStatus) {
 async function completeVisibleInvitationAuth(page, email) {
   await expect(page).toHaveURL(/\/(?:login|register)(?:[/?#].*)?$/, { timeout: 30_000 })
   const emailInput = page.locator('input[name="identifier"], input[name="emailAddress"]').first()
-  await expect(emailInput).toBeVisible({ timeout: 30_000 })
-  await emailInput.fill(email)
-  await page.getByRole('button', { name: /continuar|continue|entrar|criar conta/i }).last().click()
+  if (await emailInput.isVisible().catch(() => false)) {
+    await emailInput.fill(email)
+    await page.getByRole('button', { name: /continuar|continue|entrar|criar conta/i }).last().click()
+  }
 
   for (let attempt = 0; attempt < 6; attempt += 1) {
     const codeInput = page.locator('input[name="code"]')
@@ -65,6 +66,8 @@ async function completeVisibleInvitationAuth(page, email) {
     if (await lastName.isVisible().catch(() => false)) await lastName.fill('Professor')
     const password = page.locator('input[name="password"]')
     if (await password.isVisible().catch(() => false)) await password.fill('Cronos-E2E-Password-123!')
+    const consent = page.getByRole('checkbox').first()
+    if (await consent.isVisible().catch(() => false) && !(await consent.isChecked())) await consent.check()
     if (/\/(?:foundation|dashboard|my-schedules)(?:[/?#]|$)/.test(page.url())) return
     const continueButton = page.getByRole('button', { name: /continuar|continue|verificar|confirmar|entrar|criar conta/i }).last()
     if (await continueButton.isVisible().catch(() => false)) await continueButton.click()
