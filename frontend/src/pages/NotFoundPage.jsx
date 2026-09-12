@@ -1,7 +1,9 @@
 import { Link, useLocation } from 'react-router-dom'
+import { useAuth } from '@clerk/react'
 
 export default function NotFoundPage() {
   const location = useLocation()
+  const { isSignedIn } = useAuth()
 
   return (
     <main className="zen-not-found-page">
@@ -12,8 +14,10 @@ export default function NotFoundPage() {
           Não encontrámos a página <strong>{location.pathname}</strong>. Pode ter sido movida ou o endereço pode estar incompleto.
         </p>
         <div className="zen-not-found-actions">
-          <Link to="/" className="btn-zen btn-zen-primary">Voltar ao início</Link>
-          <Link to="/login" className="btn-zen btn-zen-outline">Entrar</Link>
+          <Link to={isSignedIn ? '/dashboard' : '/'} className="btn-zen btn-zen-primary">
+            {isSignedIn ? 'Ir para o painel' : 'Voltar ao início'}
+          </Link>
+          {!isSignedIn && <Link to="/login" className="btn-zen btn-zen-outline">Entrar</Link>}
         </div>
       </section>
     </main>

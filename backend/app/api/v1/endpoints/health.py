@@ -9,6 +9,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api import deps
+from app.config import settings
 from app.core.ratelimit import limiter
 
 logger = structlog.get_logger(__name__)
@@ -19,7 +20,12 @@ async def readiness(
     request: Request,
     db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
 ):
-    health_status = {"status": "ok", "postgres": "unknown", "redis": "unknown"}
+    health_status = {
+        "status": "ok",
+        "revision": settings.RAILWAY_GIT_COMMIT_SHA or settings.DEPLOYED_REVISION or "unknown",
+        "postgres": "unknown",
+        "redis": "unknown",
+    }
 
     try:
         await db.execute(text("SELECT 1"))

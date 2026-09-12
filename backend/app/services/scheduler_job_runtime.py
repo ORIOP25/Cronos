@@ -13,6 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app import models
+from app.core.exceptions import new_error_reference
 from app.core.logging import safe_exception_frames
 from app.db.tenant import set_async_tenant_context
 from app.scheduler.domain.contracts import (
@@ -741,6 +742,13 @@ class SchedulerJobRuntime:
     ) -> models.ScheduleGenerationJob:
         persistence_started = self._elapsed_clock()
         job = await self._locked_job(context.job_id)
+        if job.job_status != models.ScheduleGenerationJobStatus.RUNNING:
+            if job.job_status in {
+                models.ScheduleGenerationJobStatus.CANCEL_REQUESTED,
+                models.ScheduleGenerationJobStatus.CANCELED,
+            }:
+                raise GenerationCanceledError("Generation cancellation was requested.")
+            raise GenerationRuntimeError("Generation job is no longer running.")
         state = await self._db.scalar(
             select(models.SchedulerSchoolYearState)
             .where(
@@ -918,8 +926,13 @@ class SchedulerJobRuntime:
         if job is None:
             raise GenerationRuntimeError("Generation job no longer exists.")
         await self._db.refresh(job)
-        if job.job_status == models.ScheduleGenerationJobStatus.CANCEL_REQUESTED:
+        if job.job_status in {
+            models.ScheduleGenerationJobStatus.CANCEL_REQUESTED,
+            models.ScheduleGenerationJobStatus.CANCELED,
+        }:
             raise GenerationCanceledError("Generation cancellation was requested.")
+        if job.job_status != models.ScheduleGenerationJobStatus.RUNNING:
+            raise GenerationRuntimeError("Generation job is no longer running.")
         if self._aware_now() >= deadline_at:
             raise GenerationTimedOutError("Generation exceeded its five-minute deadline.")
         if end_transaction and self._organization_id is not None:
@@ -939,10 +952,10 @@ class SchedulerJobRuntime:
                     if self._organization_id is not None:
                         await set_async_tenant_context(monitor_db, self._organization_id)
                     job = await monitor_db.get(models.ScheduleGenerationJob, job_id)
-                    if (
-                        job is not None
-                        and job.job_status == models.ScheduleGenerationJobStatus.CANCEL_REQUESTED
-                    ):
+                    if job is not None and job.job_status in {
+                        models.ScheduleGenerationJobStatus.CANCEL_REQUESTED,
+                        models.ScheduleGenerationJobStatus.CANCELED,
+                    }:
                         context.stop_event.set()
                         context.solver_stop_event.set()
                         return
@@ -965,9 +978,12 @@ class SchedulerJobRuntime:
         result: NoValidGenerationOutput | None = None,
     ) -> models.ScheduleGenerationJob:
         job = await self._locked_job(job_id)
+        if job.job_status != models.ScheduleGenerationJobStatus.RUNNING:
+            return job
         job.job_status = models.ScheduleGenerationJobStatus.NO_VALID_OUTPUT
         job.result_category = models.ScheduleGenerationResultCategory.NO_VALID_OUTPUT
         job.failure_code = FAILURE_NO_VALID_OUTPUT
+        job.failure_reference = job.failure_reference or new_error_reference()
         job.failure_message = (
             "No validated draft could be produced."
             if result is None or not result.blockers
@@ -1004,6 +1020,7 @@ class SchedulerJobRuntime:
         job.job_status = status
         job.result_category = None
         job.failure_code = code
+        job.failure_reference = job.failure_reference or new_error_reference()
         job.failure_message = message[:2000]
         if job.started_at is None:
             job.started_at = finished_at

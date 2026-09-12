@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Navigate, Outlet, useLocation } from 'react-router-dom'
 import { CSpinner } from '@coreui/react'
 import { useQueryClient } from '@tanstack/react-query'
@@ -19,6 +19,8 @@ import {
   getDefaultRouteForMember,
   hasMemberCapability,
 } from './roleAccess'
+import FailureState from './components/FailureState'
+import { getApiErrorPresentation } from './utils/apiErrors'
 
 export const PageLoader = () => (
   <div className="d-flex justify-content-center align-items-center" style={{ minHeight: '40vh' }}>
@@ -49,14 +51,7 @@ function OrganizationRequired({ memberships }) {
 }
 
 function OnboardingFailure({ retry }) {
-  return (
-    <div className="container py-3 text-center" role="alert">
-      <p className="mb-2">Não foi possível concluir a configuração da sessão.</p>
-      <button type="button" className="btn btn-primary btn-sm" onClick={() => void retry()}>
-        Tentar novamente
-      </button>
-    </div>
-  )
+  return <FailureState presentation={{ ...getApiErrorPresentation({}, 'organization'), message: 'Não foi possível concluir a configuração da sessão.' }} onRetry={() => void retry()} variant="inline" />
 }
 
 function LegalAdminRequired() {
@@ -114,23 +109,27 @@ function LegalReacceptanceDialog({ legal, acceptance }) {
 
 function MemberQueryFailure({ error, recoverSession, refetch, signOut }) {
   const status = error?.response?.status
-  const message = status === 401
-    ? 'A sessão da organização precisa de ser atualizada.'
-    : status === 403
-      ? 'A sua conta não tem acesso a esta organização.'
-      : 'Não foi possível confirmar o acesso. Verifique a ligação e tente novamente.'
+  const presentation = {
+    ...getApiErrorPresentation(error, 'organization'),
+    message: status === 401
+      ? 'A sessão da organização precisa de ser atualizada. Entre novamente para continuar.'
+      : status === 403
+        ? 'A sua conta não tem acesso a esta organização.'
+        : 'Não foi possível confirmar o acesso. Verifique a ligação e tente novamente.',
+  }
   return (
-    <div className="container py-5 text-center" role="alert">
-      <p>{message}</p>
-      {status === 401 && (
-        <>
-          <button type="button" className="btn btn-primary" onClick={() => void recoverSession()}>Atualizar sessão</button>
-          <button type="button" className="btn btn-link" onClick={() => void signOut({ redirectUrl: '/login' })}>Terminar sessão</button>
-        </>
-      )}
-      {status !== 401 && status !== 403 && (
-        <button type="button" className="btn btn-primary" onClick={() => void refetch()}>Tentar novamente</button>
-      )}
+    <div className="container py-3">
+      <FailureState
+        presentation={presentation}
+        onRetry={status === 403 ? undefined : status === 401 ? () => void recoverSession() : () => void refetch()}
+        retryLabel={status === 401 ? 'Atualizar sessão' : 'Tentar novamente'}
+        secondaryAction={status === 401 ? (
+          <button type="button" className="btn-zen btn-zen-ghost" onClick={() => void signOut({ redirectUrl: '/login' })}>
+            Terminar sessão
+          </button>
+        ) : null}
+        variant="inline"
+      />
       <div className="mt-3"><OrganizationSwitcher hidePersonal /></div>
     </div>
   )
@@ -143,13 +142,36 @@ function useOrganizationGuardState() {
   const organizationState = useOrganization()
   const list = useOrganizationList({ userMemberships: { infinite: true } })
   const onboarding = useOnboardingCompletion(organizationState)
+  const autoActivationAttempted = useRef(false)
+  const [activationPending, setActivationPending] = useState(false)
+  const [activationError, setActivationError] = useState(null)
+  const membershipData = list.userMemberships?.data
+  const setActive = list.setActive
+  const memberships = useMemo(() => membershipData || [], [membershipData])
+  const soleOrganizationId = useMemo(
+    () => memberships.length === 1 ? memberships[0]?.organization?.id : null,
+    [memberships],
+  )
+  useEffect(() => {
+    if (!list.isLoaded || !organizationState.isLoaded || organizationState.organization || !soleOrganizationId || autoActivationAttempted.current) return
+    autoActivationAttempted.current = true
+    setActivationPending(true)
+    Promise.resolve(setActive({ organization: soleOrganizationId }))
+      .then(() => setActivationPending(false))
+      .catch((error) => {
+        setActivationError(error)
+        setActivationPending(false)
+      })
+  }, [setActive, list.isLoaded, organizationState.isLoaded, organizationState.organization, soleOrganizationId])
   return {
     ...auth,
     organization: organizationState.organization,
     organizationMembership: organizationState.membership,
     orgLoaded: organizationState.isLoaded,
     listLoaded: list.isLoaded,
-    memberships: list.userMemberships?.data || [],
+    memberships,
+    activationPending,
+    activationError,
     ...onboarding,
     recoverSession: async () => {
       const organizationId = organizationState.organization?.id
@@ -172,6 +194,8 @@ function MemberGate({ children, capability, requireTeacherId = false, redirectTo
   if (!state.isLoaded) return <PageLoader />
   if (!state.isSignedIn) return <RedirectToCurrentPageSignIn />
   if (!state.orgLoaded || !state.listLoaded) return <PageLoader />
+  if (state.activationPending && !state.organization) return <PageLoader />
+  if (state.activationError) return <FailureState presentation={getApiErrorPresentation(state.activationError, 'organization')} onRetry={() => globalThis.location.reload()} />
   if (!state.organization) return <OrganizationRequired memberships={state.memberships} />
   if (!state.userLoaded) return <PageLoader />
   if (memberLoading || state.isCompleting || (state.bootstrapRequired && !state.error)) return <PageLoader />

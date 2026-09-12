@@ -14,7 +14,7 @@ from tests._support.db_fixtures import create_teacher_profile
 
 
 def _issue_codes(response):
-    return {issue["code"] for issue in response.json()["detail"]["issues"]}
+    return {issue["code"] for issue in response.json()["detail"]["context"]["issues"]}
 
 
 @pytest.fixture
@@ -206,8 +206,8 @@ async def test_generate_fails_when_settings_missing(async_client, clerk_admin_he
 
     assert response.status_code == 400
     payload = response.json()
-    assert payload["detail"]["error"] == "preflight_failed"
-    assert payload["detail"]["status"] == "BLOCKED"
+    assert payload["detail"]["code"] == "preflight_failed"
+    assert payload["detail"]["context"]["status"] == "BLOCKED"
     assert "MISSING_CALENDAR" in _issue_codes(response)
 
 
@@ -244,7 +244,7 @@ async def test_generate_does_not_sync_holidays_during_preflight(
     assert called["value"] is False
     assert response.status_code == 400
     payload = response.json()
-    assert payload["detail"]["status"] == "BLOCKED"
+    assert payload["detail"]["context"]["status"] == "BLOCKED"
     assert "HOLIDAYS_NOT_SYNCHRONIZED" not in _issue_codes(response)
 
 
@@ -344,7 +344,7 @@ async def test_generate_marks_dispatch_failure_after_commit(
         app.dependency_overrides.pop(deps.get_scheduler_task_dispatcher, None)
 
     assert response.status_code == 503
-    assert response.json()["detail"]["error"] == "generation_dispatch_failed"
+    assert response.json()["detail"]["code"] == "generation_dispatch_failed"
     job = await db_session.scalar(
         select(models.ScheduleGenerationJob)
         .where(models.ScheduleGenerationJob.organization_id == organization_id)
@@ -487,8 +487,8 @@ async def test_generate_explains_when_published_schedule_has_no_trigger(
 
     assert response.status_code == 409
     detail = response.json()["detail"]
-    assert detail["error"] == "no_operational_trigger"
-    assert "no unresolved explicit debt" in detail["message"]
+    assert detail["code"] == "no_operational_trigger"
+    assert "nova geração" in detail["message"]
 
 
 async def test_repair_generate_fails_when_window_blocks_all_future(
@@ -516,7 +516,7 @@ async def test_repair_generate_fails_when_window_blocks_all_future(
 
     assert response.status_code == 400
     payload = response.json()
-    assert payload["detail"]["error"] == "preflight_failed"
+    assert payload["detail"]["code"] == "preflight_failed"
     assert "REPAIR_WINDOW_INFEASIBLE" in _issue_codes(response)
     assert dispatched_tasks == []
 

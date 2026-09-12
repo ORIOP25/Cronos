@@ -61,7 +61,7 @@ async def reconcile_first_login(
     if not provider.ok or _normalize_token_role(provider.role) != member.expected_clerk_role.value:
         member.access_error_category = provider.error_category or "provider_unconfirmed"
         member.access_error_safe_message = (
-            provider.safe_message or "Clerk membership could not be confirmed."
+            provider.safe_message or "Não foi possível confirmar o estado de acesso."
         )
         await db.flush()
         return False
@@ -153,14 +153,14 @@ async def reconcile_first_login_by_email(
     if not provider.ok:
         member.access_error_category = provider.error_category or "provider_unconfirmed"
         member.access_error_safe_message = (
-            provider.safe_message or "Clerk membership could not be confirmed."
+            provider.safe_message or "Não foi possível confirmar o estado de acesso."
         )
         await db.flush()
         return None
     if _normalize_token_role(provider.role) != member.expected_clerk_role.value:
         member.access_status = models.MembershipAccessStatus.sync_error
         member.access_error_category = "provider_role_mismatch"
-        member.access_error_safe_message = "Clerk role does not match the expected local access."
+        member.access_error_safe_message = "Os dados de acesso precisam de ser confirmados."
         await db.flush()
         return None
 
@@ -186,7 +186,7 @@ async def reconcile_first_login_by_email(
     if linked_account_id != account.id:
         member.access_status = models.MembershipAccessStatus.sync_error
         member.access_error_category = "identity_conflict"
-        member.access_error_safe_message = "Clerk identity does not match the local member account."
+        member.access_error_safe_message = "Os dados de acesso precisam de ser confirmados."
         await db.flush()
         return None
     await db.refresh(account)
@@ -253,7 +253,7 @@ async def run_scheduled_reconciliation(
         if not result.ok:
             member.access_error_category = result.error_category or "provider_unconfirmed"
             member.access_error_safe_message = (
-                result.safe_message or "Clerk invitation state could not be confirmed."
+                result.safe_message or "Não foi possível confirmar o estado do convite."
             )
             continue
         if result.invitation_status in {"expired", "revoked"}:

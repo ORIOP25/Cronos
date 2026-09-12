@@ -68,7 +68,7 @@ async def test_clerk_access_service_preserves_safe_provider_diagnostics():
 
     assert result.ok is False
     assert result.safe_message == (
-        "Access could not be synchronized with Clerk. Try again or contact support."
+        "Não foi possível sincronizar o acesso. Tente novamente ou contacte o apoio."
     )
     assert result.provider_status_code == 409
     assert result.provider_error_code == "organization_membership_exists"
@@ -92,7 +92,7 @@ async def test_clerk_access_service_bounds_provider_wait_time():
     assert result.retryable is True
     assert result.error_category == "provider_timeout"
     assert result.safe_message == (
-        "Access could not be synchronized with Clerk. Try again or contact support."
+        "Não foi possível sincronizar o acesso. Tente novamente ou contacte o apoio."
     )
 
 

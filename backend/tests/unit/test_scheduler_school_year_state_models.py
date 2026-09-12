@@ -88,6 +88,7 @@ def test_schedule_generation_job_tracks_lifecycle_and_snapshots():
         "cancellation_requested_at",
         "failure_code",
         "failure_message",
+        "failure_reference",
         "idempotency_key",
     } <= set(table.columns.keys())
     assert any(

@@ -394,5 +394,5 @@ async def test_directory_failure_endpoint_rolls_back_partial_bootstrap(
         app.dependency_overrides.pop(deps.get_clerk_payload, None)
 
     assert response.status_code == 503
-    assert response.json()["detail"]["error"] == "CLERK_DIRECTORY_UNAVAILABLE"
+    assert response.json()["detail"]["code"] == "CLERK_DIRECTORY_UNAVAILABLE"
     assert await db_session.scalar(select(func.count(models.Organization.id))) == 0

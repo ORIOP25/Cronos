@@ -26,8 +26,16 @@ celery_app.conf.update(
             "task": "privacy.run_maintenance",
             "schedule": 86400.0,
         },
+        "scheduler-stale-job-recovery": {
+            "task": "scheduler.run_stale_job_recovery",
+            "schedule": 60.0,
+        },
     },
-    imports=("app.member_reconciliation_worker", "app.privacy_maintenance_worker"),
+    imports=(
+        "app.member_reconciliation_worker",
+        "app.privacy_maintenance_worker",
+        "app.scheduler_recovery_worker",
+    ),
 )
 
 if __name__ == "__main__":

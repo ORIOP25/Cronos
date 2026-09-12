@@ -169,6 +169,14 @@ class MemberErrorEnvelope(BaseModel):
     fields: dict[str, str] = Field(default_factory=dict)
 
 
+class ClientErrorReport(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    reference: str = Field(..., pattern=r"^[A-Z0-9]{12}$")
+    category: Literal["render_error", "chunk_load_error"]
+    revision: str = Field(..., min_length=1, max_length=64, pattern=r"^[A-Za-z0-9._-]+$")
+
+
 class MemberCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -262,6 +270,7 @@ class MemberRead(BaseModel):
     subject_ids: list[int] = Field(default_factory=list)
     access_error_category: str | None = None
     access_error_safe_message: str | None = None
+    support_reference: str | None = None
     provider_state: Literal["confirmed", "unconfirmed", "not_required"] = "confirmed"
     remove_effect: Literal["hard_delete", "archive"] = "archive"
     actions: MemberActionFlags = Field(default_factory=MemberActionFlags)
@@ -907,6 +916,7 @@ class ScheduleGenerationJobResponse(BaseModel):
     duration_ms: int | None
     failure_code: str | None
     failure_message: str | None
+    failure_reference: str | None
 
 
 class ScheduleGenerationCancelResponse(BaseModel):

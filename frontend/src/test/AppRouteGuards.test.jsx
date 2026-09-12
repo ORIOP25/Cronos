@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { screen } from '@testing-library/react'
+import { screen, waitFor } from '@testing-library/react'
+import React from 'react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { renderWithProviders, renderWithRouter } from './testUtils'
 import { setClerkState, resetClerkState } from './setup'
@@ -288,10 +289,60 @@ describe('RequireTeacher', () => {
   it('shows organization selection when memberships exist but none is active', () => {
     setClerkState({
       orgId: null,
-      memberships: [{ organization: { id: 'org_other', name: 'Outra escola' } }],
+      memberships: [
+        { organization: { id: 'org_other', name: 'Outra escola' } },
+        { organization: { id: 'org_second', name: 'Outra escola 2' } },
+      ],
     })
     renderGuard(<RequireAdmin><div>Admin</div></RequireAdmin>)
     expect(screen.getByTestId('organization-selector')).toBeInTheDocument()
+  })
+
+  it('shows organization selection when the account has no memberships', () => {
+    setClerkState({ orgId: null, memberships: [] })
+    renderGuard(<RequireAdmin><div>Admin</div></RequireAdmin>)
+    expect(screen.getByTestId('organization-selector')).toBeInTheDocument()
+  })
+
+  it('activates the only organization once and then removes the loader', async () => {
+    const setActive = vi.fn().mockResolvedValue(undefined)
+    setClerkState({ orgId: null, memberships: [{ organization: { id: 'org_only', name: 'Escola' } }], setActive })
+    renderGuard(<RequireAdmin><div>Admin</div></RequireAdmin>)
+    await waitFor(() => expect(setActive).toHaveBeenCalledTimes(1))
+    expect(screen.getByTestId('organization-selector')).toBeInTheDocument()
+  })
+
+  it('does not auto-activate when multiple organizations need manual selection', () => {
+    const setActive = vi.fn().mockResolvedValue(undefined)
+    setClerkState({ orgId: null, memberships: [
+      { organization: { id: 'org_one', name: 'Uma' } },
+      { organization: { id: 'org_two', name: 'Duas' } },
+    ], setActive })
+    renderGuard(<RequireAdmin><div>Admin</div></RequireAdmin>)
+    expect(screen.getByTestId('organization-selector')).toBeInTheDocument()
+    expect(setActive).not.toHaveBeenCalled()
+  })
+
+  it('shows a retryable failure when sole organization activation fails', async () => {
+    const setActive = vi.fn().mockRejectedValue(new Error('activation failed'))
+    setClerkState({ orgId: null, memberships: [{ organization: { id: 'org_only' } }], setActive })
+    renderGuard(<RequireAdmin><div>Admin</div></RequireAdmin>)
+    await waitFor(() => expect(screen.getByRole('heading', { name: /acesso não disponível/i })).toBeInTheDocument())
+    expect(screen.getByRole('button', { name: /tentar novamente/i })).toBeInTheDocument()
+  })
+
+  it('does not repeat sole organization activation in StrictMode', async () => {
+    const setActive = vi.fn().mockResolvedValue(undefined)
+    setClerkState({ orgId: null, memberships: [{ organization: { id: 'org_only' } }], setActive })
+    renderWithRouter(
+      <React.StrictMode>
+        <Routes>
+          <Route path="/protected" element={<RequireAdmin><div>Admin</div></RequireAdmin>} />
+        </Routes>
+      </React.StrictMode>,
+      { initialEntries: ['/protected'] },
+    )
+    await waitFor(() => expect(setActive).toHaveBeenCalledTimes(1))
   })
 
   it('allows active local teacher capability with teacher profile', () => {

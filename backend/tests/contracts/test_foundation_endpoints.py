@@ -150,7 +150,7 @@ async def test_foundation_endpoints_full_lifecycle(db_session, override_auth_act
         resp = await request("PUT", "/api/v1/foundation/draft", json=put_payload)
         assert resp.status_code == 409
         assert resp.json()["detail"]["code"] == "FOUNDATION_DRAFT_VERSION_CONFLICT"
-        assert resp.json()["detail"]["current_version"] == 1
+        assert resp.json()["detail"]["context"]["current_version"] == 1
 
         # 8. Complete foundation with version 1 -> succeeds
         resp = await request(

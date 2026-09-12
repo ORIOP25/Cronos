@@ -53,6 +53,9 @@ def _selection_conflict(exc: GenerationSelectionError | SchedulerStateError) -> 
                 "message": str(exc),
                 "pending_draft_id": exc.pending_draft_id,
             },
+            public_context={
+                "pending_draft_id": exc.pending_draft_id,
+            },
         )
     return AppError(
         kind="conflict",
@@ -92,6 +95,11 @@ async def prepare_generation_request(
             detail=str(exc),
             metadata={
                 "error": "preflight_failed",
+                "status": report.status,
+                "report": report.model_dump(),
+                "issues": [i.model_dump() for i in report.issues],
+            },
+            public_context={
                 "status": report.status,
                 "report": report.model_dump(),
                 "issues": [i.model_dump() for i in report.issues],
@@ -141,6 +149,11 @@ async def prepare_generation_request(
             detail="Scheduler preflight failed.",
             metadata={
                 "error": "preflight_failed",
+                "status": report.status,
+                "report": report.model_dump(),
+                "issues": [i.model_dump() for i in report.issues],
+            },
+            public_context={
                 "status": report.status,
                 "report": report.model_dump(),
                 "issues": [i.model_dump() for i in report.issues],

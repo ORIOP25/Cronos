@@ -52,7 +52,16 @@ const accessLabels = {
   invite_expired: ['Convite expirado', 'warning'],
   active: ['Com acesso', 'success'],
   blocked: ['Acesso bloqueado', 'dark'],
-  sync_error: ['Erro de sincronizacao', 'danger'],
+  sync_error: ['Erro de sincronização', 'danger'],
+}
+
+const accessErrorMessages = {
+  provider_unavailable: 'Não foi possível confirmar o acesso neste momento.',
+  provider_not_found: 'Não foi possível confirmar o acesso neste momento.',
+  provider_mismatch: 'Os dados de acesso precisam de ser confirmados.',
+  provider_role_mismatch: 'Os dados de acesso precisam de ser confirmados.',
+  identity_conflict: 'Os dados de acesso precisam de ser confirmados.',
+  unknown: 'Não foi possível confirmar o estado de acesso.',
 }
 
 const lifecycleLabels = {
@@ -68,7 +77,7 @@ const capabilitiesToMode = (capabilities = []) => {
 }
 
 const SubjectPicker = ({ subjects, selected, disabled, onChange }) => {
-  if (!subjects?.length) return <div className="text-muted small">Sem competencias registadas.</div>
+  if (!subjects?.length) return <div className="text-muted small">Sem competências registadas.</div>
   const toggle = (subjectId) => {
     const next = selected.includes(subjectId)
       ? selected.filter((id) => id !== subjectId)
@@ -129,8 +138,8 @@ const MemberModal = ({ visible, member, subjects, onClose, onSave, isSaving, err
         <CModalTitle>{member ? 'Editar membro' : 'Adicionar membro'}</CModalTitle>
       </CModalHeader>
       <CModalBody>
-        {error && <CAlert color="danger">{getApiErrorMessage(error)}</CAlert>}
-        {syncBlocked && <CAlert color="warning">Resolva a sincronizacao antes de editar este membro.</CAlert>}
+        {error && <CAlert color="danger">{getApiErrorMessage(error, undefined, member ? 'team.sync' : 'team.invite')}</CAlert>}
+        {syncBlocked && <CAlert color="warning">Resolva a sincronização antes de editar este membro.</CAlert>}
         <div className="d-grid gap-3">
           <CFormInput id="member-name" label="Nome" value={draft.organization_display_name} onChange={(event) => setDraft({ ...draft, organization_display_name: event.target.value })} disabled={isSaving || syncBlocked || competenciesOnly} />
           <CFormInput id="member-email" label="Email" type="email" value={draft.email} onChange={(event) => setDraft({ ...draft, email: event.target.value })} disabled={isSaving || syncBlocked || member?.access_status === 'active' || competenciesOnly} />
@@ -164,7 +173,7 @@ const MemberModal = ({ visible, member, subjects, onClose, onSave, isSaving, err
               />
               {draft.teacher_access_mode === 'scheduler_only' && !hasAdmin && (
                 <CAlert color="info" className="mb-0">
-                  Este professor fica disponivel para horarios, mas nao recebe convite nem acesso para iniciar sessao.
+                  Este professor fica disponível para horários, mas não recebe convite nem acesso para iniciar sessão.
                 </CAlert>
               )}
               <SubjectPicker subjects={subjects} selected={draft.subject_ids} disabled={isSaving || syncBlocked} onChange={(subject_ids) => setDraft({ ...draft, subject_ids })} />
@@ -278,7 +287,7 @@ const Members = ({ readOnly = false, allowedActions }) => {
               { value: 'active', label: 'Com acesso / ativo' },
               { value: 'pending_invite', label: 'Convite pendente' },
               { value: 'invite_expired', label: 'Convite expirado' },
-              { value: 'sync_error', label: 'Erro de sincronizacao' },
+              { value: 'sync_error', label: 'Erro de sincronização' },
               { value: 'blocked', label: 'Acesso bloqueado' },
               { value: 'archived', label: 'Arquivado' },
             ]}
@@ -287,7 +296,7 @@ const Members = ({ readOnly = false, allowedActions }) => {
         </div>
         {canCreate && <CButton color="primary" onClick={() => openModal()} className="d-flex align-items-center gap-2" data-tutorial-target="new-member"><CIcon icon={cilPlus} />Adicionar membro</CButton>}
       </div>
-      {isError && <CAlert color="danger">{getApiErrorMessage(error, 'Nao foi possivel carregar a equipa.')} <CButton color="link" onClick={() => refetch()}>Tentar novamente</CButton></CAlert>}
+      {isError && <CAlert color="danger">{getApiErrorMessage(error, 'Não foi possível carregar a equipa.', 'team.load')} <CButton color="link" onClick={() => refetch()}>Tentar novamente</CButton></CAlert>}
       {actionError && <CAlert color="danger">{actionError}</CAlert>}
       <div className="table-responsive">
         <table className="table align-middle">
@@ -298,6 +307,9 @@ const Members = ({ readOnly = false, allowedActions }) => {
               const [accessLabel, accessColor] = accessLabels[member.access_status] ?? [member.access_status, 'secondary']
               const [lifecycleLabel, lifecycleColor] = lifecycleLabels[member.lifecycle_status] ?? [member.lifecycle_status, 'secondary']
               const providerUnconfirmed = member.provider_state === 'unconfirmed'
+              const accessErrorMessage = member.access_error_category
+                ? accessErrorMessages[member.access_error_category] || accessErrorMessages.unknown
+                : null
               return (
                 <tr key={member.id}>
                   <td className="fw-semibold">{member.organization_display_name}</td>
@@ -309,15 +321,16 @@ const Members = ({ readOnly = false, allowedActions }) => {
                   <td>
                     <CBadge color={lifecycleColor} className="me-1">{lifecycleLabel}</CBadge>
                     <CBadge color={accessColor}>{accessLabel}</CBadge>
-                    {providerUnconfirmed && <CBadge color="warning" className="ms-1">Fornecedor por confirmar</CBadge>}
-                    {member.access_error_safe_message && <div className="text-danger small mt-1">{member.access_error_safe_message}</div>}
+                    {providerUnconfirmed && <CBadge color="warning" className="ms-1">Estado de acesso por confirmar</CBadge>}
+                    {accessErrorMessage && <div className="text-danger small mt-1">{accessErrorMessage}</div>}
+                    {member.support_reference && <div className="text-muted small mt-1">Referência para apoio: <code>{member.support_reference}</code></div>}
                     {member.access_status === 'pending_invite' && (
-                      <div className="text-muted small mt-1">Criado no Clerk; entrega do email por confirmar.</div>
+                      <div className="text-muted small mt-1">Convite enviado; aguarda aceitação.</div>
                     )}
                   </td>
                   <td className="small text-muted">
                     {member.capabilities.includes('teacher')
-                      ? member.subject_ids?.length ? `${member.subject_ids.length} selecionadas` : 'Sem competencias'
+                      ? member.subject_ids?.length ? `${member.subject_ids.length} selecionadas` : 'Sem competências'
                       : '-'}
                   </td>
                   <td className="text-end">

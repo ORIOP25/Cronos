@@ -98,7 +98,7 @@ async def update_my_availability(
     if result == "INVALID_TIMESLOT":
         raise HTTPException(status_code=400, detail="Timeslot inválido ou fora da organização")
     if result == "DUPLICATE_TIMESLOT":
-        raise HTTPException(status_code=400, detail="Payload inválido: timeslot_id duplicado")
+        raise HTTPException(status_code=400, detail={"code": "duplicate_timeslot"})
     return result
 
 

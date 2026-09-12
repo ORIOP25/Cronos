@@ -10,7 +10,7 @@ import structlog
 from app.config import settings
 from app.core.clerk import ClerkGateway, get_clerk_sdk
 
-SAFE_PROVIDER_ERROR = "Access could not be synchronized with Clerk. Try again or contact support."
+SAFE_PROVIDER_ERROR = "Não foi possível sincronizar o acesso. Tente novamente ou contacte o apoio."
 PROVIDER_CONTRACT_ERROR = "provider_contract_error"
 
 logger = structlog.get_logger(__name__)
@@ -195,7 +195,7 @@ class ClerkAccessService:
             )
             return ClerkAccessResult(
                 error_category="provider_duplicate_pending_invitations",
-                safe_message="Multiple pending Clerk invitations require support cleanup.",
+                safe_message="Existem vários convites pendentes. Contacte o apoio para concluir a sincronização.",
             )
         return self._invitation_result(invitations[0])
 

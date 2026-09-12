@@ -12,6 +12,7 @@ const publicMatch = /e2e[\\/]marketing-public\.spec\.js/
 const authMatch = /e2e[\\/]auth[\\/].*\.spec\.js/
 const providerMatch = /e2e[\\/]members[\\/]invitations\.spec\.js/
 const faultsMatch = /e2e[\\/](?:foundation[\\/]operational-gate-409|tutorial[\\/]tutorial-network-boundary)\.spec\.js/
+const capacityMatch = /e2e[\\/]capacity[\\/]capacity\.spec\.js/
 
 export default defineConfig({
   testDir: './e2e',
@@ -56,7 +57,7 @@ export default defineConfig({
     },
     {
       name: 'app',
-      testIgnore: [setupMatch, publicMatch, authMatch, providerMatch, faultsMatch],
+      testIgnore: [setupMatch, publicMatch, authMatch, providerMatch, faultsMatch, capacityMatch],
       use: { ...devices['Desktop Chrome'] },
       // These tests mutate the single disposable E2E organization.
       workers: 1,
@@ -76,6 +77,13 @@ export default defineConfig({
       workers: 1,
       dependencies: ['app', 'provider'],
     },
+    ...(process.env.CAPACITY_ENABLED === '1' ? [{
+      name: 'capacity',
+      testMatch: capacityMatch,
+      use: { ...devices['Desktop Chrome'] },
+      workers: 1,
+      dependencies: ['setup'],
+    }] : []),
   ],
 
 })

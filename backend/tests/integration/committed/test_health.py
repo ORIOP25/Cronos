@@ -37,6 +37,7 @@ def _response_payload(response):
 async def test_readiness_reports_connected_dependencies():
     assert await health_module.readiness(_request(_FakeRedis()), _FakeDb()) == {
         "status": "ok",
+        "revision": "unknown",
         "postgres": "connected",
         "redis": "connected",
     }

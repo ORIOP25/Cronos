@@ -95,7 +95,7 @@ class TestCoursesEndpoints:
         )
 
         assert response.status_code == 400
-        assert "existe" in response.json()["detail"]
+        assert "processar" in response.json()["detail"]["message"]
 
     async def test_patch_course_abbreviation_invalid_length_422(
         self,

@@ -81,6 +81,8 @@ def emit_scheduler_job_event(
         value = _metric(summary, metrics, metric_name)
         if value is not None:
             payload[metric_name] = value
+    if getattr(job, "failure_reference", None) is not None:
+        payload["failure_reference"] = job.failure_reference
     try:
         logger.info("scheduler_generation_lifecycle", **payload)
     except Exception:

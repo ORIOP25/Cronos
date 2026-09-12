@@ -304,7 +304,7 @@ def _mark_identity_conflict(
 ) -> None:
     member.access_status = models.MembershipAccessStatus.sync_error
     member.access_error_category = "identity_conflict"
-    member.access_error_safe_message = "Clerk identity does not match the local member account."
+    member.access_error_safe_message = "Os dados de acesso precisam de ser confirmados."
     if event is not None:
         event.processing_status = models.ClerkWebhookProcessingStatus.sync_error
         event.error_category = "identity_conflict"
@@ -357,7 +357,7 @@ async def _sync_membership(
     if expected_role and provider_role != expected_role:
         member.access_status = models.MembershipAccessStatus.sync_error
         member.access_error_category = "provider_role_mismatch"
-        member.access_error_safe_message = "Clerk role does not match the expected local access."
+        member.access_error_safe_message = "Os dados de acesso precisam de ser confirmados."
         event.processing_status = models.ClerkWebhookProcessingStatus.sync_error
         return True
     linked_account = await clerk_sync.ensure_user_exists(

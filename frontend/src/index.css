@@ -207,6 +207,49 @@
   --zen-table-border: rgba(61, 43, 31, 0.06);
 }
 
+.failure-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  min-height: 40vh;
+  padding: 2rem;
+  color: var(--brand-950);
+  text-align: center;
+}
+
+.failure-state--inline {
+  align-items: flex-start;
+  min-height: 0;
+  padding: 1rem 0;
+  text-align: left;
+}
+
+.failure-state__icon {
+  display: grid;
+  width: 3rem;
+  height: 3rem;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--rs-deep-light);
+  color: var(--rs-deep);
+  font-weight: 700;
+}
+
+.failure-state h1 { margin: 0; font: 700 1.5rem var(--font-display); }
+.failure-state p { max-width: 34rem; margin: 0; color: var(--brand-600); line-height: 1.6; }
+.failure-state__actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.75rem; margin-top: 0.75rem; }
+.failure-state__reference { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 0.5rem; margin-top: 0.5rem; color: var(--brand-600); font-size: 0.875rem; }
+.failure-state__reference code { color: var(--brand-950); font-weight: 700; }
+.failure-state__reference button { min-height: 2.25rem; }
+
+@media (max-width: 480px) {
+  .failure-state { padding: 1.5rem 1rem; }
+  .failure-state__actions { width: 100%; flex-direction: column; }
+  .failure-state__actions > * { width: 100%; }
+}
+
 /* ===========================
    PREMIUM DESIGN UTILITIES
    =========================== */

@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models, schemas
 from app.api import deps
-from app.core.exceptions import AppError
+from app.core.exceptions import PUBLIC_ERROR_CATALOG, AppError
 from app.core.ratelimit import limiter
 from app.scheduler.application.contracts import SchedulerTaskDispatcher
 from app.services.scheduler_approval_service import (
@@ -36,6 +36,18 @@ from app.services.scheduler_request_service import (
 from app.services.scheduler_status_service import SchedulerStatusService
 
 router = APIRouter()
+
+
+def _public_job_response(
+    job: models.ScheduleGenerationJob,
+) -> schemas.ScheduleGenerationJobResponse:
+    response = schemas.ScheduleGenerationJobResponse.model_validate(job)
+    if job.failure_code:
+        message = PUBLIC_ERROR_CATALOG.get(job.failure_code, PUBLIC_ERROR_CATALOG["SYSTEM_ERROR"])[
+            "message"
+        ]
+        response = response.model_copy(update={"failure_message": message})
+    return response
 
 
 @router.post("/generate", response_model=schemas.SchedulerGenerateResponse)
@@ -69,11 +81,9 @@ async def generate_schedule(
                 kind="unavailable",
                 code="generation_dispatch_failed",
                 detail="Generation could not be queued.",
-                metadata={
-                    "error": "generation_dispatch_failed",
-                    "message": "Generation could not be queued.",
-                    "job_id": handle.job.id,
-                },
+                public_context={"job_id": handle.job.id},
+                public_retryable=True,
+                diagnostic_metadata={"job_id": handle.job.id},
             ) from dispatch_error
 
     return {
@@ -95,10 +105,11 @@ async def get_generation_job(
     current_user: deps.ActiveActor,
 ) -> models.ScheduleGenerationJob:
     try:
-        return await SchedulerJobService(db).get_job(
+        job = await SchedulerJobService(db).get_job(
             current_user.organization_id,
             job_id,
         )
+        return _public_job_response(job)
     except SchedulerJobNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 

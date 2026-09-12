@@ -10,27 +10,28 @@ This document targets API consumers and backend developers.
 Read [API Reference](API_REFERENCE.md).
 
 ## What the System Does
-FastAPI handlers return several compatible `detail` shapes. Clients normalize them through `getApiErrorMessage`.
+FastAPI handlers return one safe error shape. Clients may use `code` for control flow and `message` for display.
 
 ## Standard Error Envelope Schema
-Unhandled errors and simple domain errors return a string detail:
-
-```json
-{
-  "detail": "Descriptive error message text"
-}
-```
-
-Structured application errors place code and message fields inside `detail`:
+All non-success responses use this envelope:
 
 ```json
 {
   "detail": {
-    "code": "ERROR_CATEGORY_CODE",
-    "message": "Descriptive error message text"
+    "code": "generation_dispatch_failed",
+    "message": "Não foi possível iniciar a geração do horário. Tente novamente.",
+    "reference": "7A31D98FC2E4",
+    "retryable": true,
+    "support_required": false,
+    "fields": {},
+    "context": {}
   }
 }
 ```
+
+`reference` is opaque and has 12 characters. The same value is present in
+`X-Request-ID`. Clients must not display backend exception text. The `fields`
+and `context` objects contain only safe business guidance.
 
 ## Standard HTTP Status Codes
 
@@ -48,6 +49,9 @@ Structured application errors place code and message fields inside `detail`:
 | `429 Too Many Requests` | Rate Limit | SlowAPI limit is exceeded |
 | `503 Unavailable` | Dependency Failure | Readiness, webhook retry, or unavailable service |
 | `500 Internal Error` | Server Failure | Unhandled backend exception |
+
+The shared response builder handles HTTP, validation, domain, application,
+rate-limit, body-size, and unexpected exceptions. CORS exposes `X-Request-ID`.
 
 ## Transaction Rollback Rules
 
@@ -68,7 +72,9 @@ Return `409 FOUNDATION_ALREADY_COMPLETED` when a completed organization receives
 - Database Integrity Conflict: Services map known dependency conflicts to domain-specific `400` or `409` responses.
 
 ## Verification Procedure
-Send an invalid payload to `/api/v1/classes/`. Verify HTTP `422` and client-side message normalization.
+Send an invalid payload to `/api/v1/classes/`. Verify HTTP `422`, the standard
+envelope, a Portuguese message, and matching `detail.reference` and
+`X-Request-ID`.
 
 ## Source Map
 - Exception Handlers: `backend/app/main.py`

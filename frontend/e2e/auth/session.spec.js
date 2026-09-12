@@ -62,7 +62,7 @@ test.describe('Session resilience', () => {
     )
     await goTo(page, '/members')
     await expect(page).toHaveURL(/\/members(?:[?#].*)?$/)
-    await expect(page.getByText(/Admin access required/i).first()).toBeVisible({ timeout: 10000 })
+    await expect(page.getByText(/não tem permissão para realizar esta ação/i).first()).toBeVisible({ timeout: 10000 })
     await expectNoAppCrash(page)
   })
 })

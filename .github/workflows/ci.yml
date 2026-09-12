@@ -373,6 +373,20 @@ jobs:
           E2E_CLERK_INVITE_CREATE_EMAIL: ${{ env.E2E_CLERK_INVITE_CREATE_EMAIL }}
           E2E_CLERK_INVITE_CONVERT_EMAIL: ${{ env.E2E_CLERK_INVITE_CONVERT_EMAIL }}
 
+      - name: Run capacity smoke
+        run: node scripts/test.mjs capacity-smoke
+        env:
+          CI: "true"
+          E2E_EXTERNAL_STACK: "1"
+          BASE_URL: http://localhost:5173
+          PLAYWRIGHT_SKIP_WEB_SERVER: "1"
+          PLAYWRIGHT_WORKERS: "2"
+          VITE_CLERK_PUBLISHABLE_KEY: ${{ vars.VITE_CLERK_PUBLISHABLE_KEY }}
+          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
+          E2E_CLERK_ADMIN_EMAIL: ${{ env.CI_E2E_CLERK_ADMIN_EMAIL }}
+          E2E_CLERK_TEACHER_EMAIL: ${{ env.CI_E2E_CLERK_TEACHER_EMAIL }}
+          E2E_CLERK_ORG_ID: ${{ steps.prepare-e2e-clerk-state.outputs.clerk_org_id }}
+
       - name: Sanitize test artifacts
         if: always()
         run: node scripts/sanitize-test-artifacts.mjs .test-artifacts frontend/playwright-report frontend/test-results
