@@ -123,11 +123,13 @@ function MemberQueryFailure({ error, recoverSession, refetch, signOut }) {
         presentation={presentation}
         onRetry={status === 403 ? undefined : status === 401 ? () => void recoverSession() : () => void refetch()}
         retryLabel={status === 401 ? 'Atualizar sessão' : 'Tentar novamente'}
+        secondaryAction={status === 401 ? (
+          <button type="button" className="btn-zen btn-zen-ghost" onClick={() => void signOut({ redirectUrl: '/login' })}>
+            Terminar sessão
+          </button>
+        ) : null}
         variant="inline"
       />
-      {status === 401 && (
-        <button type="button" className="btn btn-link" onClick={() => void signOut({ redirectUrl: '/login' })}>Terminar sessão</button>
-      )}
       <div className="mt-3"><OrganizationSwitcher hidePersonal /></div>
     </div>
   )

@@ -6,6 +6,7 @@ export default function FailureState({
   navigationTo,
   navigationLabel = 'Ir para o painel',
   retryLabel = 'Tentar novamente',
+  secondaryAction = null,
   variant = 'full-page',
 }) {
   const [copied, setCopied] = useState(false)
@@ -34,6 +35,7 @@ export default function FailureState({
         {navigationTo && (
           <a href={navigationTo} className="btn-zen btn-zen-outline">{navigationLabel}</a>
         )}
+        {secondaryAction}
       </div>
       {reference && (
         <div className="failure-state__reference">

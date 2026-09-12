@@ -44,6 +44,13 @@ const GenerationStatusPanel = ({ jobId }) => {
 
   const status = job.job_status ?? ''
   const isRunning = ACTIVE_STATUSES.has(status)
+  if (status === 'SUCCEEDED') {
+    return (
+      <CAlert color="success" className="mb-4">
+        <strong>{STATUS_LABELS.SUCCEEDED}</strong>
+      </CAlert>
+    )
+  }
   if (TERMINAL_STATUSES.has(status)) {
     const failureCode = job.failure_code || (status === 'CANCELED' ? 'CANCELED' : status)
     const presentation = getApiErrorPresentation({
