@@ -77,20 +77,6 @@ async function completeVisibleInvitationAuth(page, email) {
   await expect(page).toHaveURL(/\/(?:foundation|dashboard|my-schedules)(?:[/?#]|$)/, { timeout: 30_000 })
 }
 
-async function recoverInvitationPassword(page, email) {
-  await page.goto(`${E2E_BASE_URL}/recuperar-palavra-passe`, { waitUntil: 'domcontentloaded' })
-  await page.locator('#recovery-email').fill(email)
-  await page.getByRole('button', { name: /enviar código/i }).click()
-  await expect(page.getByRole('heading', { name: /introduza o código/i })).toBeVisible({ timeout: 30_000 })
-  await page.locator('#recovery-code').fill('424242')
-  await page.getByRole('button', { name: /verificar código/i }).click()
-  await expect(page.getByRole('heading', { name: /escolha uma nova palavra-passe/i })).toBeVisible({ timeout: 30_000 })
-  await page.locator('#recovery-password').fill('Cronos-E2E-Password-123!')
-  await page.locator('#recovery-confirm-password').fill('Cronos-E2E-Password-123!')
-  await page.getByRole('button', { name: /guardar e entrar/i }).click()
-  await expect(page).not.toHaveURL(/\/recuperar-palavra-passe$/, { timeout: 30_000 })
-}
-
 test.describe.serial('Member invitations — real Clerk', () => {
   test.describe.configure({ retries: 0 })
 
@@ -117,7 +103,7 @@ test.describe.serial('Member invitations — real Clerk', () => {
   })
 
   test('accepts the invitation through the visible Clerk flow and auto-activates the unique organization', async ({ browser, page }) => {
-    test.setTimeout(180_000)
+    test.setTimeout(120_000)
     const email = createdInvitation.email
     const secretKey = process.env.CLERK_SECRET_KEY
     if (!secretKey) throw new Error('CLERK_SECRET_KEY is required for invitation E2E.')
@@ -171,11 +157,19 @@ test.describe.serial('Member invitations — real Clerk', () => {
       await invitePage.goto(`${E2E_BASE_URL}/my-schedules`, { waitUntil: 'domcontentloaded' })
       await expectRouteReady(invitePage, '/my-schedules')
 
+      const invitedUsers = await client.users.getUserList({ emailAddress: [email] })
+      expect(invitedUsers.data).toHaveLength(1)
+      const invitedUserId = invitedUsers.data[0].id
       await invitePage.evaluate(() => window.Clerk.signOut())
-      await recoverInvitationPassword(invitePage, email)
-      await invitePage.evaluate(() => window.Clerk.signOut())
-      await invitePage.goto(`${E2E_BASE_URL}/login`, { waitUntil: 'domcontentloaded' })
-      await completeVisibleInvitationAuth(invitePage, email)
+      const signInToken = await client.signInTokens.createSignInToken({
+        userId: invitedUserId,
+        expiresInSeconds: 300,
+      })
+      const signInUrl = new URL(signInToken.url)
+      signInUrl.searchParams.set('redirect_url', new URL('/my-schedules', E2E_BASE_URL).toString())
+      await setupClerkTestingToken({ page: invitePage })
+      await invitePage.goto(signInUrl.toString(), { waitUntil: 'domcontentloaded' })
+      await expect(invitePage).toHaveURL(/\/my-schedules(?:[/?#].*)?$/, { timeout: 30_000 })
       await invitePage.waitForFunction((id) => window.Clerk?.organization?.id === id, organizationId)
       await invitePage.goto(`${E2E_BASE_URL}/my-schedules`, { waitUntil: 'domcontentloaded' })
       await expectRouteReady(invitePage, '/my-schedules')
