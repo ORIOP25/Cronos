@@ -1,11 +1,15 @@
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 
 import pytest
 
 from app import models
+from app.scheduler.infrastructure.cp_sat_quality import CpSatQualityConstructionStopped
 from app.services.scheduler_adaptive_engine import AdaptiveRepairEngine
+from app.services.scheduler_incremental_demand import IncrementalDemandLedgerBuilder
 from app.services.scheduler_job_runtime import (
+    GenerationCanceledError,
     GenerationExecutionContext,
     GenerationValidationError,
     NoValidGenerationOutput,
@@ -134,6 +138,62 @@ def _change_context(
     )
 
 
+def test_curriculum_tasks_group_identical_lessons_and_keep_remainders_separate():
+    snapshot = _snapshot(hard_end="2026-12-31")
+    snapshot["active_schedule"] = []
+    snapshot["module_accounting"] = [
+        {"id": 16, "subject_id": 2, "required_minutes": 1_500, "sequence": 1},
+        {"id": 17, "subject_id": 2, "required_minutes": 150, "sequence": 2},
+    ]
+    ledger = IncrementalDemandLedgerBuilder().build(snapshot)
+    engine = AdaptiveRepairEngine()
+    slots, blocker = engine._slots(snapshot)
+
+    tasks, task_blocker = engine._build_tasks(
+        snapshot,
+        {"items": []},
+        ledger,
+        SimpleNamespace(movable_blocks=()),
+        slots,
+    )
+
+    assert blocker is None
+    assert task_blocker is None
+    curriculum = [task for task in tasks if task.is_curriculum_addition]
+    assert [(task.duration_minutes, task.lesson_count) for task in curriculum] == [
+        (60, 25),
+        (60, 2),
+        (30, 1),
+    ]
+
+
+async def test_adaptive_generation_honors_cooperative_stop_before_construction():
+    context = _context(hard_end="2026-06-15", stability_days=0)
+    context.stop_event.set()
+
+    with pytest.raises(GenerationCanceledError, match="asked to stop"):
+        await AdaptiveRepairEngine().generate(context)
+
+
+async def test_interrupted_quality_refinement_reports_an_incomplete_optimization(monkeypatch):
+    context = _context(hard_end="2026-06-15", stability_days=7)
+
+    def stop_quality(*_args, **_kwargs):
+        raise CpSatQualityConstructionStopped
+
+    monkeypatch.setattr(
+        "app.services.scheduler_adaptive_engine.CpSatQualityAdapter.add_expressions",
+        stop_quality,
+    )
+
+    result = await AdaptiveRepairEngine().generate(context)
+
+    assert result.result_category == models.ScheduleGenerationResultCategory.COMPLETE_SUCCESS
+    assert result.metrics["quality_completed_stage"] == "RECOVERED_MINUTES"
+    assert result.metrics["quality_optimization_complete"] is False
+    assert result.metrics["feasibility_solver_status"] in {"OPTIMAL", "FEASIBLE"}
+
+
 async def test_full_recovery_produces_complete_target_with_exact_lineage():
     result = await AdaptiveRepairEngine().generate(
         _context(hard_end="2026-06-15", stability_days=7)
@@ -148,6 +208,177 @@ async def test_full_recovery_produces_complete_target_with_exact_lineage():
     assert {block.recovery_source_occurrence_id for block in recovery} == {70}
     assert {block.recovery_source_occurrence_revision for block in recovery} == {2}
     assert result.partial_recovery_blocker_type is None
+
+
+async def test_newly_assigned_subjects_create_complete_module_aware_additions():
+    context = _change_context(current_room_valid=True)
+    snapshot = context.immutable_snapshot["generation_input"]
+    snapshot["subjects"].extend(
+        [
+            {"id": 6, "required_room_type": "normal"},
+            {"id": 7, "required_room_type": "normal"},
+        ]
+    )
+    snapshot["teachers"].extend([{"id": 8}, {"id": 9}])
+    snapshot["teacher_subject_eligibility"].extend(
+        [
+            {"teacher_id": 8, "subject_id": 6},
+            {"teacher_id": 9, "subject_id": 7},
+        ]
+    )
+    snapshot["class_subject_requirements"].extend(
+        [
+            {"class_id": 1, "subject_id": 6, "teacher_id": 8},
+            {"class_id": 1, "subject_id": 7, "teacher_id": 9},
+        ]
+    )
+    snapshot["module_accounting"].extend(
+        [
+            {"id": 16, "subject_id": 6, "required_minutes": 60, "sequence": 1},
+            {"id": 18, "subject_id": 6, "required_minutes": 60, "sequence": 2},
+            {"id": 17, "subject_id": 7, "required_minutes": 60, "sequence": 1},
+        ]
+    )
+    snapshot["timetable_grid"].append(
+        {
+            "id": 11,
+            "day_of_week": 0,
+            "start_time": "10:00:00",
+            "end_time": "11:00:00",
+        }
+    )
+
+    result = await AdaptiveRepairEngine().generate(context)
+
+    assert result.result_category == models.ScheduleGenerationResultCategory.COMPLETE_SUCCESS
+    additions = [block for block in result.blocks if block.reason_code == "NEW_CURRICULUM_DEMAND"]
+    assert {(block.subject_id, block.teacher_id) for block in additions} == {
+        (6, 8),
+        (7, 9),
+    }
+    assert sorted((block.subject_id, block.module_sequence_index) for block in additions) == [
+        (6, 1),
+        (6, 2),
+        (7, 1),
+    ]
+    subject_six = sorted(
+        (block.date, block.timeslot_id, block.module_sequence_index)
+        for block in additions
+        if block.subject_id == 6
+    )
+    assert [sequence for _, _, sequence in subject_six] == [1, 2]
+    assert all(
+        block.change_type == models.ScheduleDraftBlockChangeType.ADDED
+        and not block.is_recovery_block
+        and block.source_active_block_id is None
+        and block.module_sequence_index in {1, 2}
+        for block in additions
+    )
+    assert len({block.stable_block_key for block in additions}) == 3
+    assert result.summary["required_curriculum_minutes"] == 180
+    assert result.summary["scheduled_curriculum_minutes"] == 180
+    assert result.metrics["required_curriculum_minutes"] == 180
+    assert result.metrics["scheduled_curriculum_minutes"] == 180
+    SchedulerJobRuntime._validate_adaptive_repair(context, result)
+
+
+async def test_large_curriculum_addition_uses_one_candidate_set_and_places_all_minutes():
+    context = _change_context(current_room_valid=True)
+    snapshot = context.immutable_snapshot["generation_input"]
+    snapshot["hard_end_date"] = "2026-12-31"
+    snapshot["subjects"].append({"id": 6, "required_room_type": "normal"})
+    snapshot["teachers"].append({"id": 8})
+    snapshot["teacher_subject_eligibility"].append({"teacher_id": 8, "subject_id": 6})
+    snapshot["class_subject_requirements"].append({"class_id": 1, "subject_id": 6, "teacher_id": 8})
+    snapshot["module_accounting"].append(
+        {"id": 16, "subject_id": 6, "required_minutes": 1_500, "sequence": 1}
+    )
+
+    result = await AdaptiveRepairEngine().generate(context)
+
+    assert result.result_category == models.ScheduleGenerationResultCategory.COMPLETE_SUCCESS
+    additions = [block for block in result.blocks if block.reason_code == "NEW_CURRICULUM_DEMAND"]
+    assert len(additions) == 25
+    assert sum(block.duration_minutes for block in additions) == 1_500
+    assert len({block.stable_block_key for block in additions}) == 25
+    assert result.metrics["candidate_count"] < 100
+    assert result.metrics["construction_duration_ms"] >= 0
+    assert result.metrics["solve_duration_ms"] >= 0
+    assert result.metrics["feasibility_solve_duration_ms"] >= 0
+    assert result.metrics["quality_construction_duration_ms"] >= 0
+    assert result.metrics["quality_solve_duration_ms"] >= 0
+    assert result.metrics["result_extraction_duration_ms"] >= 0
+    SchedulerJobRuntime._validate_adaptive_repair(context, result)
+
+
+async def test_new_curriculum_without_capacity_returns_no_valid_output():
+    context = _change_context(current_room_valid=True)
+    snapshot = context.immutable_snapshot["generation_input"]
+    snapshot["subjects"].append({"id": 6, "required_room_type": "normal"})
+    snapshot["teachers"].append({"id": 8})
+    snapshot["teacher_subject_eligibility"].append({"teacher_id": 8, "subject_id": 6})
+    snapshot["class_subject_requirements"].append({"class_id": 1, "subject_id": 6, "teacher_id": 8})
+    snapshot["module_accounting"].append(
+        {"id": 16, "subject_id": 6, "required_minutes": 60, "sequence": 1}
+    )
+    snapshot["hard_end_date"] = "2026-06-01"
+
+    result = await AdaptiveRepairEngine().generate(context)
+
+    assert isinstance(result, NoValidGenerationOutput)
+    assert result.metrics["required_curriculum_minutes"] == 60
+    assert result.metrics["scheduled_curriculum_minutes"] == 0
+    assert any("Curriculum addition" in blocker for blocker in result.blockers)
+
+
+async def test_mixed_repair_keeps_curriculum_and_explicit_debt_metrics_separate():
+    context = _context(hard_end="2026-06-22", stability_days=0)
+    snapshot = context.immutable_snapshot["generation_input"]
+    snapshot["scheduler_state_version"] = 5
+    snapshot["subjects"].append({"id": 6, "required_room_type": "normal"})
+    snapshot["teachers"].append({"id": 8})
+    snapshot["teacher_subject_eligibility"].append({"teacher_id": 8, "subject_id": 6})
+    snapshot["class_subject_requirements"].append({"class_id": 1, "subject_id": 6, "teacher_id": 8})
+    snapshot["module_accounting"].append(
+        {"id": 16, "subject_id": 6, "required_minutes": 60, "sequence": 1}
+    )
+    context = replace(
+        context,
+        trigger_type=models.ScheduleGenerationTrigger.MIXED,
+    )
+
+    result = await AdaptiveRepairEngine().generate(context)
+
+    assert result.result_category == models.ScheduleGenerationResultCategory.COMPLETE_SUCCESS
+    assert result.summary["recovered_minutes"] == 120
+    assert result.summary["remaining_unscheduled_minutes"] == 0
+    assert result.summary["required_curriculum_minutes"] == 60
+    assert result.summary["scheduled_curriculum_minutes"] == 60
+    assert len([block for block in result.blocks if block.is_recovery_block]) == 2
+    assert (
+        len([block for block in result.blocks if block.reason_code == "NEW_CURRICULUM_DEMAND"]) == 1
+    )
+    SchedulerJobRuntime._validate_adaptive_repair(context, result)
+
+
+async def test_runtime_rejects_forged_curriculum_target_that_omits_one_subject():
+    context = _change_context(current_room_valid=True)
+    snapshot = context.immutable_snapshot["generation_input"]
+    snapshot["subjects"].append({"id": 6, "required_room_type": "normal"})
+    snapshot["teachers"].append({"id": 8})
+    snapshot["teacher_subject_eligibility"].append({"teacher_id": 8, "subject_id": 6})
+    snapshot["class_subject_requirements"].append({"class_id": 1, "subject_id": 6, "teacher_id": 8})
+    snapshot["module_accounting"].append(
+        {"id": 16, "subject_id": 6, "required_minutes": 60, "sequence": 1}
+    )
+    result = await AdaptiveRepairEngine().generate(context)
+
+    omitted = replace(
+        result,
+        blocks=tuple(block for block in result.blocks if block.subject_id != 6),
+    )
+    with pytest.raises(GenerationValidationError, match="incremental curriculum"):
+        SchedulerJobRuntime._validate_adaptive_repair(context, omitted)
 
 
 async def test_partial_recovery_reports_stability_window_blocker_exactly():
@@ -267,6 +498,64 @@ async def test_relevant_change_can_produce_valid_unchanged_target():
     assert result.adaptation_level == "SAME_TIME_RESOURCE_ADAPTATION"
     assert result.blocks[0].change_type == models.ScheduleDraftBlockChangeType.UNCHANGED
     assert result.summary["changed_blocks"] == 0
+
+
+async def test_removed_editable_assignment_is_omitted_from_target():
+    context = _change_context(current_room_valid=True)
+    context.immutable_snapshot["generation_input"]["class_subject_requirements"] = []
+
+    result = await AdaptiveRepairEngine().generate(context)
+
+    assert result.result_category == models.ScheduleGenerationResultCategory.COMPLETE_SUCCESS
+    assert result.blocks == ()
+    SchedulerJobRuntime._validate_adaptive_repair(context, result)
+
+
+async def test_reduced_demand_omits_only_excess_editable_future_blocks():
+    context = _change_context(current_room_valid=True)
+    snapshot = context.immutable_snapshot["generation_input"]
+    snapshot["module_accounting"] = [
+        {"id": 16, "subject_id": 2, "required_minutes": 60, "sequence": 1}
+    ]
+    snapshot["active_schedule"][0]["module_sequence_index"] = 1
+    snapshot["active_schedule"].append(
+        {
+            **snapshot["active_schedule"][0],
+            "id": 51,
+            "date": "2026-06-08",
+            "stable_block_key": "published-51",
+        }
+    )
+
+    result = await AdaptiveRepairEngine().generate(context)
+
+    assert result.result_category == models.ScheduleGenerationResultCategory.COMPLETE_SUCCESS
+    assert {block.source_active_block_id for block in result.blocks} == {50}
+    SchedulerJobRuntime._validate_adaptive_repair(context, result)
+
+
+async def test_reduced_demand_protected_excess_is_an_actionable_blocker():
+    context = _change_context(stability_days=7, current_room_valid=True)
+    snapshot = context.immutable_snapshot["generation_input"]
+    snapshot["module_accounting"] = [
+        {"id": 16, "subject_id": 2, "required_minutes": 60, "sequence": 1}
+    ]
+    snapshot["active_schedule"][0]["module_sequence_index"] = 1
+    snapshot["active_schedule"].append(
+        {
+            **snapshot["active_schedule"][0],
+            "id": 51,
+            "stable_block_key": "published-51",
+        }
+    )
+
+    result = await AdaptiveRepairEngine().generate(context)
+
+    assert isinstance(result, NoValidGenerationOutput)
+    assert any(
+        "class 1" in blocker and "subject 2" in blocker and "51" in blocker
+        for blocker in result.blockers
+    )
 
 
 def _custom_rule_context(rule_type: str, payload: dict) -> GenerationExecutionContext:

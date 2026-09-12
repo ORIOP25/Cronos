@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
 from typing import Any
@@ -59,6 +59,10 @@ class _ResourceExpressions:
     gap_minutes: Any
 
 
+class CpSatQualityConstructionStopped(RuntimeError):
+    """Stop quality construction without discarding an existing incumbent."""
+
+
 class CpSatQualityAdapter:
     """CP-SAT representation of the duration-weighted baseline quality policy."""
 
@@ -71,7 +75,10 @@ class CpSatQualityAdapter:
         candidates: Iterable[SelectableQualityBlock],
         variables: Mapping[str, cp_model.IntVar],
         fixed_blocks: Iterable[QualityBlock] = (),
+        should_stop: Callable[[], bool] | None = None,
     ) -> CpSatQualityExpressions:
+        if should_stop is not None and should_stop():
+            raise CpSatQualityConstructionStopped
         rows = tuple(candidates)
         fixed = tuple(fixed_blocks)
         class_quality = self._resource_expressions(
@@ -82,6 +89,7 @@ class CpSatQualityAdapter:
             variables,
             fixed,
             self.evaluator.policy.healthy_class_daily_minutes,
+            should_stop,
         )
         teacher_quality = self._resource_expressions(
             model,
@@ -91,7 +99,10 @@ class CpSatQualityAdapter:
             variables,
             fixed,
             self.evaluator.policy.healthy_teacher_daily_minutes,
+            should_stop,
         )
+        if should_stop is not None and should_stop():
+            raise CpSatQualityConstructionStopped
         availability = sum(
             self.evaluator._availability_multiplier(row.block.availability_tier)
             * row.block.duration_minutes
@@ -102,9 +113,9 @@ class CpSatQualityAdapter:
             * block.duration_minutes
             for block in fixed
         )
-        late = self._late_slot_minutes(rows, variables, fixed)
-        recovery_stack = self._recovery_stack_excess(model, rows, variables, fixed)
-        room_inconsistency = self._room_inconsistency(model, rows, variables, fixed)
+        late = self._late_slot_minutes(rows, variables, fixed, should_stop)
+        recovery_stack = self._recovery_stack_excess(model, rows, variables, fixed, should_stop)
+        room_inconsistency = self._room_inconsistency(model, rows, variables, fixed, should_stop)
         return CpSatQualityExpressions(
             class_daily_excess=class_quality.daily_excess,
             teacher_daily_excess=teacher_quality.daily_excess,
@@ -131,19 +142,28 @@ class CpSatQualityAdapter:
         variables: Mapping[str, cp_model.IntVar],
         fixed: Sequence[QualityBlock],
         healthy_daily: int,
+        should_stop: Callable[[], bool] | None,
     ) -> _ResourceExpressions:
         variable_loads: dict[tuple[int, date, int], list[Any]] = defaultdict(list)
+        variable_sources: dict[tuple[int, date, int], list[cp_model.IntVar]] = defaultdict(list)
+        variable_maximums: dict[tuple[int, date, int], int] = defaultdict(int)
         fixed_loads: dict[tuple[int, date, int], int] = defaultdict(int)
         resource_days: set[tuple[int, date]] = set()
         for row in rows:
+            if should_stop is not None and should_stop():
+                raise CpSatQualityConstructionStopped
             key = (
                 getattr(row.block, attribute),
                 row.block.output_date,
                 row.block.timeslot_id,
             )
             variable_loads[key].append(row.block.duration_minutes * variables[row.key])
+            variable_sources[key].append(variables[row.key])
+            variable_maximums[key] += row.block.duration_minutes
             resource_days.add(key[:2])
         for block in fixed:
+            if should_stop is not None and should_stop():
+                raise CpSatQualityConstructionStopped
             key = (getattr(block, attribute), block.output_date, block.timeslot_id)
             fixed_loads[key] += block.duration_minutes
             resource_days.add(key[:2])
@@ -153,6 +173,8 @@ class CpSatQualityAdapter:
         gap_totals: list[Any] = []
         heavy_by_week: dict[tuple[int, int, int], list[Any]] = defaultdict(list)
         for day_index, (resource_id, output_date) in enumerate(sorted(resource_days)):
+            if should_stop is not None and should_stop():
+                raise CpSatQualityConstructionStopped
             slots = self.evaluator.slots_by_day.get(output_date.weekday(), ())
             if not slots:
                 continue
@@ -167,27 +189,13 @@ class CpSatQualityAdapter:
                 if fixed_minutes:
                     model.Add(occupancy == 1)
                 elif terms:
-                    source_variables = self._variables_for_slot(
-                        rows,
-                        variables,
-                        attribute,
-                        resource_id,
-                        output_date,
-                        slot.id,
-                    )
-                    model.AddMaxEquality(occupancy, source_variables)
+                    model.AddMaxEquality(occupancy, variable_sources[key])
                 else:
                     model.Add(occupancy == 0)
                 load = fixed_minutes + sum(terms)
                 occupancies.append(occupancy)
                 loads.append(load)
-                maximum_daily += fixed_minutes + sum(
-                    row.block.duration_minutes
-                    for row in rows
-                    if getattr(row.block, attribute) == resource_id
-                    and row.block.output_date == output_date
-                    and row.block.timeslot_id == slot.id
-                )
+                maximum_daily += fixed_minutes + variable_maximums.get(key, 0)
 
             daily_load = sum(loads)
             daily_excess = model.NewIntVar(
@@ -212,6 +220,7 @@ class CpSatQualityAdapter:
                     occupancies,
                     loads,
                     maximum_daily,
+                    should_stop,
                 )
             )
             gap_totals.append(
@@ -221,11 +230,14 @@ class CpSatQualityAdapter:
                     day_index,
                     slots,
                     occupancies,
+                    should_stop,
                 )
             )
 
         repeated_heavy: list[Any] = []
         for week_index, values in enumerate(heavy_by_week[key] for key in sorted(heavy_by_week)):
+            if should_stop is not None and should_stop():
+                raise CpSatQualityConstructionStopped
             excess = model.NewIntVar(
                 0,
                 len(values),
@@ -240,23 +252,6 @@ class CpSatQualityAdapter:
             gap_minutes=sum(gap_totals),
         )
 
-    @staticmethod
-    def _variables_for_slot(
-        rows,
-        variables,
-        attribute,
-        resource_id,
-        output_date,
-        timeslot_id,
-    ):
-        return [
-            variables[row.key]
-            for row in rows
-            if getattr(row.block, attribute) == resource_id
-            and row.block.output_date == output_date
-            and row.block.timeslot_id == timeslot_id
-        ]
-
     def _consecutive_run_excess(
         self,
         model,
@@ -266,6 +261,7 @@ class CpSatQualityAdapter:
         occupancies,
         loads,
         maximum_daily,
+        should_stop=None,
     ):
         result = []
         runs = []
@@ -273,6 +269,8 @@ class CpSatQualityAdapter:
         for index, (slot, occupancy, load) in enumerate(
             zip(slots, occupancies, loads, strict=True)
         ):
+            if should_stop is not None and should_stop():
+                raise CpSatQualityConstructionStopped
             run = model.NewIntVar(0, maximum_daily, f"{prefix}_run_{day_index}_{index}")
             if index == 0 or slots[index - 1].end_minute != slot.start_minute:
                 model.Add(run == load).OnlyEnforceIf(occupancy)
@@ -313,10 +311,12 @@ class CpSatQualityAdapter:
             result.append(final_excess)
         return result
 
-    def _gap_minutes(self, model, prefix, day_index, slots, occupancies):
+    def _gap_minutes(self, model, prefix, day_index, slots, occupancies, should_stop=None):
         gap_terms = []
         lunch_terms = []
         for index, slot in enumerate(slots):
+            if should_stop is not None and should_stop():
+                raise CpSatQualityConstructionStopped
             if not index or index == len(slots) - 1:
                 continue
             earlier = model.NewBoolVar(f"{prefix}_earlier_{day_index}_{index}")
@@ -356,19 +356,25 @@ class CpSatQualityAdapter:
             min(slot.end_minute, lunch_end) - max(slot.start_minute, lunch_start),
         )
 
-    def _recovery_stack_excess(self, model, rows, variables, fixed):
+    def _recovery_stack_excess(self, model, rows, variables, fixed, should_stop=None):
         variable_terms: dict[tuple[int, date], list[Any]] = defaultdict(list)
         fixed_minutes: dict[tuple[int, date], int] = defaultdict(int)
         for row in rows:
+            if should_stop is not None and should_stop():
+                raise CpSatQualityConstructionStopped
             if row.block.is_recovery_block:
                 variable_terms[(row.block.class_id, row.block.output_date)].append(
                     row.block.duration_minutes * variables[row.key]
                 )
         for block in fixed:
+            if should_stop is not None and should_stop():
+                raise CpSatQualityConstructionStopped
             if block.is_recovery_block:
                 fixed_minutes[(block.class_id, block.output_date)] += block.duration_minutes
         excesses = []
         for index, key in enumerate(sorted(set(variable_terms) | set(fixed_minutes))):
+            if should_stop is not None and should_stop():
+                raise CpSatQualityConstructionStopped
             maximum = fixed_minutes.get(key, 0) + sum(
                 row.block.duration_minutes
                 for row in rows
@@ -384,34 +390,43 @@ class CpSatQualityAdapter:
             excesses.append(excess)
         return sum(excesses)
 
-    def _late_slot_minutes(self, rows, variables, fixed):
+    def _late_slot_minutes(self, rows, variables, fixed, should_stop=None):
         late_ids = {
             (weekday, slots[-1].id)
             for weekday, slots in self.evaluator.slots_by_day.items()
             if len(slots) >= 3
         }
-        return sum(
-            row.block.duration_minutes * variables[row.key]
-            for row in rows
-            if (row.block.output_date.weekday(), row.block.timeslot_id) in late_ids
-        ) + sum(
-            block.duration_minutes
-            for block in fixed
-            if (block.output_date.weekday(), block.timeslot_id) in late_ids
-        )
+        total = 0
+        for row in rows:
+            if should_stop is not None and should_stop():
+                raise CpSatQualityConstructionStopped
+            if (row.block.output_date.weekday(), row.block.timeslot_id) in late_ids:
+                total += row.block.duration_minutes * variables[row.key]
+        for block in fixed:
+            if should_stop is not None and should_stop():
+                raise CpSatQualityConstructionStopped
+            if (block.output_date.weekday(), block.timeslot_id) in late_ids:
+                total += block.duration_minutes
+        return total
 
     @staticmethod
-    def _room_inconsistency(model, rows, variables, fixed):
+    def _room_inconsistency(model, rows, variables, fixed, should_stop=None):
         grouped: dict[tuple[int, int, int], list[Any]] = defaultdict(list)
         fixed_rooms: set[tuple[int, int, int]] = set()
         for row in rows:
+            if should_stop is not None and should_stop():
+                raise CpSatQualityConstructionStopped
             grouped[(row.block.class_id, row.block.subject_id, row.block.room_id)].append(
                 variables[row.key]
             )
         for block in fixed:
+            if should_stop is not None and should_stop():
+                raise CpSatQualityConstructionStopped
             fixed_rooms.add((block.class_id, block.subject_id, block.room_id))
         pair_rooms: dict[tuple[int, int], list[Any]] = defaultdict(list)
         for index, key in enumerate(sorted(set(grouped) | fixed_rooms)):
+            if should_stop is not None and should_stop():
+                raise CpSatQualityConstructionStopped
             used = model.NewBoolVar(f"quality_room_used_{index}")
             if key in fixed_rooms:
                 model.Add(used == 1)
@@ -420,6 +435,8 @@ class CpSatQualityAdapter:
             pair_rooms[key[:2]].append(used)
         inconsistencies = []
         for index, rooms in enumerate(pair_rooms.values()):
+            if should_stop is not None and should_stop():
+                raise CpSatQualityConstructionStopped
             inconsistency = model.NewIntVar(
                 0,
                 len(rooms),

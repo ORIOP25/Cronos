@@ -1,4 +1,5 @@
 from app.services.scheduler_complete_demand import CompleteDemandLedgerBuilder
+from app.services.scheduler_incremental_demand import IncrementalDemandLedgerBuilder
 
 
 def _snapshot() -> dict:
@@ -80,3 +81,250 @@ def test_complete_demand_reports_teacher_and_room_ineligibility():
     assert ledger.is_complete is False
     assert any("not eligible" in blocker for blocker in ledger.blockers)
     assert any("No eligible room" in blocker for blocker in ledger.blockers)
+
+
+def test_incremental_demand_only_contains_assignments_absent_from_active_schedule():
+    snapshot = _snapshot()
+    snapshot["subjects"].append({"id": 9, "required_room_type": "normal"})
+    snapshot["teachers"].append({"id": 10})
+    snapshot["teacher_subject_eligibility"].append({"teacher_id": 10, "subject_id": 9})
+    snapshot["class_subject_requirements"].append(
+        {"class_id": 1, "subject_id": 9, "grade_level": 10, "teacher_id": 10}
+    )
+    snapshot["module_accounting"].append(
+        {"id": 20, "subject_id": 9, "required_minutes": 180, "sequence": 1}
+    )
+    snapshot["active_schedule"] = [
+        {"class_id": 1, "subject_id": 2},
+    ]
+
+    ledger = IncrementalDemandLedgerBuilder().build(snapshot)
+
+    assert ledger.is_complete is True
+    assert ledger.required_minutes == 180
+    assert [(item.class_id, item.subject_id) for item in ledger.items] == [(1, 9)]
+
+
+def test_incremental_demand_reports_missing_resources_for_new_assignment():
+    snapshot = _snapshot()
+    snapshot["subjects"].append({"id": 9, "required_room_type": "normal"})
+    snapshot["class_subject_requirements"].append(
+        {"class_id": 1, "subject_id": 9, "grade_level": 10, "teacher_id": 99}
+    )
+    snapshot["module_accounting"].append(
+        {"id": 20, "subject_id": 9, "required_minutes": 60, "sequence": 1}
+    )
+    ledger = IncrementalDemandLedgerBuilder().build(snapshot)
+
+    assert ledger.is_complete is False
+    assert any("missing or cross-tenant" in blocker for blocker in ledger.blockers)
+
+
+def test_incremental_demand_reconciles_existing_planned_modules():
+    snapshot = _snapshot()
+    snapshot["module_accounting"] = [
+        {"id": 7, "subject_id": 2, "required_minutes": 120, "sequence": 1},
+        {"id": 8, "subject_id": 2, "required_minutes": 60, "sequence": 2},
+    ]
+    snapshot["active_schedule"] = [
+        {
+            "id": 50,
+            "class_id": 1,
+            "subject_id": 2,
+            "date": "2025-09-01",
+            "timeslot_id": 10,
+            "duration_minutes": 60,
+            "is_recovery_block": False,
+            "lesson_log_status": None,
+        }
+    ]
+
+    ledger = IncrementalDemandLedgerBuilder().build(snapshot)
+
+    assert ledger.required_minutes == 120
+    assert [module.required_minutes for module in ledger.items[0].modules] == [60, 60]
+
+
+def test_incremental_demand_removes_a_reduced_fully_planned_module():
+    snapshot = _snapshot()
+    snapshot["module_accounting"] = [
+        {"id": 7, "subject_id": 2, "required_minutes": 60, "sequence": 1},
+    ]
+    snapshot["active_schedule"] = [
+        {
+            "id": 50,
+            "class_id": 1,
+            "subject_id": 2,
+            "date": "2025-09-01",
+            "timeslot_id": 10,
+            "duration_minutes": 60,
+            "is_recovery_block": False,
+            "lesson_log_status": None,
+        }
+    ]
+
+    ledger = IncrementalDemandLedgerBuilder().build(snapshot)
+
+    assert ledger.items == ()
+    assert ledger.required_minutes == 0
+
+
+def test_incremental_demand_adds_new_modules_after_existing_planned_minutes():
+    snapshot = _snapshot()
+    snapshot["module_accounting"] = [
+        {"id": 7, "subject_id": 2, "required_minutes": 60, "sequence": 1},
+        {"id": 8, "subject_id": 2, "required_minutes": 60, "sequence": 2},
+    ]
+    snapshot["active_schedule"] = [
+        {
+            "id": 50,
+            "class_id": 1,
+            "subject_id": 2,
+            "date": "2025-09-01",
+            "timeslot_id": 10,
+            "duration_minutes": 60,
+            "is_recovery_block": False,
+            "lesson_log_status": None,
+        }
+    ]
+
+    ledger = IncrementalDemandLedgerBuilder().build(snapshot)
+
+    assert ledger.required_minutes == 60
+    assert [(module.sequence, module.required_minutes) for module in ledger.items[0].modules] == [
+        (2, 60)
+    ]
+
+
+def test_incremental_demand_does_not_double_count_completed_active_blocks():
+    snapshot = _snapshot()
+    snapshot["module_accounting"] = [
+        {"id": 7, "subject_id": 2, "required_minutes": 120, "sequence": 1},
+    ]
+    snapshot["class_progress"] = [
+        {"class_id": 1, "module_id": 7, "completed_minutes": 60},
+    ]
+    snapshot["active_schedule"] = [
+        {
+            "id": 50,
+            "class_id": 1,
+            "subject_id": 2,
+            "date": "2025-09-01",
+            "timeslot_id": 10,
+            "duration_minutes": 60,
+            "is_recovery_block": False,
+            "lesson_log_status": "COMPLETED",
+        }
+    ]
+
+    ledger = IncrementalDemandLedgerBuilder().build(snapshot)
+
+    assert ledger.required_minutes == 60
+    assert ledger.items[0].modules[0].required_minutes == 60
+
+
+def test_incremental_demand_reconciles_by_exact_module_identity():
+    snapshot = _snapshot()
+    snapshot["module_accounting"] = [
+        {"id": 7, "subject_id": 2, "required_minutes": 120, "sequence": 1},
+        {"id": 8, "subject_id": 2, "required_minutes": 60, "sequence": 2},
+    ]
+    snapshot["class_progress"] = [
+        {"class_id": 1, "module_id": 7, "completed_minutes": 60},
+    ]
+    snapshot["active_schedule"] = [
+        {
+            "id": 50,
+            "class_id": 1,
+            "subject_id": 2,
+            "date": "2025-09-01",
+            "timeslot_id": 10,
+            "duration_minutes": 60,
+            "module_sequence_index": 2,
+            "is_recovery_block": False,
+            "lesson_log_status": None,
+        }
+    ]
+
+    ledger = IncrementalDemandLedgerBuilder().build(snapshot)
+
+    assert [(module.sequence, module.required_minutes) for module in ledger.items[0].modules] == [
+        (1, 60)
+    ]
+
+
+def test_incremental_demand_reports_excess_editable_blocks_for_removal():
+    snapshot = _snapshot()
+    snapshot["module_accounting"] = [
+        {"id": 7, "subject_id": 2, "required_minutes": 60, "sequence": 1},
+    ]
+    snapshot["active_schedule"] = [
+        {
+            "id": 50,
+            "class_id": 1,
+            "subject_id": 2,
+            "date": "2025-09-01",
+            "timeslot_id": 10,
+            "duration_minutes": 60,
+            "module_sequence_index": 1,
+            "is_recovery_block": False,
+            "lesson_log_status": None,
+        },
+        {
+            "id": 51,
+            "class_id": 1,
+            "subject_id": 2,
+            "date": "2025-09-08",
+            "timeslot_id": 10,
+            "duration_minutes": 60,
+            "module_sequence_index": 1,
+            "is_recovery_block": False,
+            "lesson_log_status": None,
+        },
+    ]
+
+    ledger = IncrementalDemandLedgerBuilder().build(snapshot)
+
+    assert ledger.items == ()
+    assert ledger.omitted_block_ids == (51,)
+    assert ledger.excess_by_module == ((1, 2, 1, 60),)
+
+
+def test_incremental_demand_blocks_excess_immutable_rows_with_actionable_ids():
+    snapshot = _snapshot()
+    snapshot["module_accounting"] = [
+        {"id": 7, "subject_id": 2, "required_minutes": 60, "sequence": 1},
+    ]
+    snapshot["active_schedule"] = [
+        {
+            "id": 50,
+            "class_id": 1,
+            "subject_id": 2,
+            "date": "2025-09-01",
+            "timeslot_id": 10,
+            "duration_minutes": 60,
+            "module_sequence_index": 1,
+            "is_recovery_block": False,
+            "lesson_log_status": None,
+        },
+        {
+            "id": 51,
+            "class_id": 1,
+            "subject_id": 2,
+            "date": "2025-09-08",
+            "timeslot_id": 10,
+            "duration_minutes": 60,
+            "module_sequence_index": 1,
+            "is_recovery_block": False,
+            "lesson_log_status": None,
+        },
+    ]
+
+    ledger = IncrementalDemandLedgerBuilder().build(snapshot, immutable_block_ids={51})
+
+    assert ledger.items == ()
+    assert ledger.omitted_block_ids == ()
+    assert any(
+        "class 1" in blocker and "subject 2" in blocker and "51" in blocker
+        for blocker in ledger.blockers
+    )

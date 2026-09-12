@@ -76,6 +76,22 @@ async def _debt_context(db_session):
     )
     db_session.add(class_)
     await db_session.flush()
+    db_session.add(
+        models.ClassSubjectLink(
+            organization_id=organization.id,
+            class_id=class_.id,
+            subject_id=subject.id,
+            grade_level=class_.grade_level,
+            teacher_id=teacher.id,
+        )
+    )
+    await db_session.execute(
+        models.teacher_subject_link.insert().values(
+            organization_id=organization.id,
+            teacher_id=teacher.id,
+            subject_id=subject.id,
+        )
+    )
     occurrence = models.LessonOccurrence(
         organization_id=organization.id,
         date=date(2026, 1, 12),

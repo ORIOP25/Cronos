@@ -123,7 +123,16 @@ class NearFutureOptimizer:
         model.Maximize(total)
         status = solver.Solve(model)
         if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
-            return NearFutureResult((), "infeasible", 0, target_blocks, {})
+            return NearFutureResult(
+                (),
+                self._status_label(status),
+                0,
+                target_blocks,
+                {
+                    "solver_status": self._status_name(status),
+                    **self._model_counts(model),
+                },
+            )
         best_total = int(round(solver.ObjectiveValue()))
         best_values = {key: solver.Value(variable) for key, variable in variables.items()}
         model.Add(total == best_total)
@@ -148,7 +157,7 @@ class NearFutureOptimizer:
                 candidates,
                 best_values,
                 target_blocks=target_blocks,
-                status="feasible",
+                status=self._status_label(status),
                 metrics={"scheduled_minutes": best_total, "optimization_stages": 1},
             )
         best_values = {key: solver.Value(variable) for key, variable in variables.items()}
@@ -158,7 +167,7 @@ class NearFutureOptimizer:
                 candidates,
                 best_values,
                 target_blocks=target_blocks,
-                status="feasible",
+                status=self._status_label(status),
                 metrics={
                     "scheduled_minutes": best_total,
                     "latest_completion_day": best_latest,
@@ -183,7 +192,7 @@ class NearFutureOptimizer:
                 candidates,
                 best_values,
                 target_blocks=target_blocks,
-                status="feasible",
+                status=self._status_label(status),
                 metrics={
                     "scheduled_minutes": best_total,
                     "latest_completion_day": best_latest,
@@ -197,7 +206,7 @@ class NearFutureOptimizer:
                 candidates,
                 best_values,
                 target_blocks=target_blocks,
-                status="feasible",
+                status=self._status_label(status),
                 metrics={
                     "scheduled_minutes": best_total,
                     "latest_completion_day": best_latest,
@@ -236,7 +245,7 @@ class NearFutureOptimizer:
                 candidates,
                 best_values,
                 target_blocks=target_blocks,
-                status="feasible",
+                status=self._status_label(status),
                 metrics={
                     "scheduled_minutes": best_total,
                     "date_cost": best_date_cost,
@@ -250,7 +259,7 @@ class NearFutureOptimizer:
                 candidates,
                 best_values,
                 target_blocks=target_blocks,
-                status="feasible",
+                status=self._status_label(status),
                 metrics={
                     "scheduled_minutes": best_total,
                     "date_cost": best_date_cost,
@@ -273,7 +282,7 @@ class NearFutureOptimizer:
                 candidates,
                 best_values,
                 target_blocks=target_blocks,
-                status="feasible",
+                status=self._status_label(status),
                 metrics={
                     "scheduled_minutes": best_total,
                     "date_cost": best_date_cost,
@@ -287,7 +296,7 @@ class NearFutureOptimizer:
                 candidates,
                 best_values,
                 target_blocks=target_blocks,
-                status="feasible",
+                status=self._status_label(status),
                 metrics={
                     "scheduled_minutes": best_total,
                     "date_cost": best_date_cost,
@@ -309,7 +318,7 @@ class NearFutureOptimizer:
                 candidates,
                 best_values,
                 target_blocks=target_blocks,
-                status="feasible",
+                status=self._status_label(status),
                 metrics={"scheduled_minutes": best_total, "optimization_stages": 5},
             )
         best_values = {key: solver.Value(variable) for key, variable in variables.items()}
@@ -319,7 +328,7 @@ class NearFutureOptimizer:
                 candidates,
                 best_values,
                 target_blocks=target_blocks,
-                status="feasible",
+                status=self._status_label(status),
                 metrics={
                     "scheduled_minutes": best_total,
                     "workload_cost_minutes": best_workload,
@@ -339,7 +348,7 @@ class NearFutureOptimizer:
                 candidates,
                 best_values,
                 target_blocks=target_blocks,
-                status="feasible",
+                status=self._status_label(status),
                 metrics={"scheduled_minutes": best_total, "optimization_stages": 6},
             )
         best_values = {key: solver.Value(variable) for key, variable in variables.items()}
@@ -349,7 +358,7 @@ class NearFutureOptimizer:
                 candidates,
                 best_values,
                 target_blocks=target_blocks,
-                status="feasible",
+                status=self._status_label(status),
                 metrics={
                     "scheduled_minutes": best_total,
                     "gap_and_availability_cost_minutes": best_gap_and_availability,
@@ -369,7 +378,7 @@ class NearFutureOptimizer:
                 candidates,
                 best_values,
                 target_blocks=target_blocks,
-                status="feasible",
+                status=self._status_label(status),
                 metrics={
                     "scheduled_minutes": best_total,
                     "date_cost": best_date_cost,
@@ -415,6 +424,7 @@ class NearFutureOptimizer:
                 "solver_wall_seconds": round(solver.WallTime(), 4),
                 "optimization_stages": 9,
                 "quality_optimization_complete": status == cp_model.OPTIMAL,
+                **self._model_counts(model),
             },
         )
 
@@ -440,6 +450,16 @@ class NearFutureOptimizer:
             )
         )
         result_metrics = dict(metrics)
+        result_metrics.setdefault(
+            "solver_status",
+            {
+                "optimal": "OPTIMAL",
+                "feasible": "FEASIBLE",
+                "scope_infeasible": "INFEASIBLE",
+                "search_exhausted": "UNKNOWN",
+                "system_validation_failure": "MODEL_INVALID",
+            }.get(status, status),
+        )
         result_metrics["scheduled_blocks"] = len(selected)
         result_metrics["preference_score"] = sum(row.availability_score for row in selected)
         return NearFutureResult(
@@ -524,6 +544,39 @@ class NearFutureOptimizer:
         solver.parameters.num_search_workers = 1
         solver.parameters.random_seed = 0
         return solver
+
+    @staticmethod
+    def _status_label(status) -> str:
+        if status == cp_model.OPTIMAL:
+            return "optimal"
+        if status == cp_model.FEASIBLE:
+            return "feasible"
+        if status == cp_model.INFEASIBLE:
+            return "infeasible"
+        if status == cp_model.UNKNOWN:
+            return "search_exhausted"
+        if status == cp_model.MODEL_INVALID:
+            return "system_validation_failure"
+        return "search_exhausted"
+
+    @staticmethod
+    def _status_name(status) -> str:
+        names = {
+            cp_model.OPTIMAL: "OPTIMAL",
+            cp_model.FEASIBLE: "FEASIBLE",
+            cp_model.INFEASIBLE: "INFEASIBLE",
+            cp_model.UNKNOWN: "UNKNOWN",
+            cp_model.MODEL_INVALID: "MODEL_INVALID",
+        }
+        return names.get(status, str(status))
+
+    @staticmethod
+    def _model_counts(model: cp_model.CpModel) -> dict[str, int]:
+        proto = model.Proto()
+        return {
+            "variable_count": len(proto.variables),
+            "constraint_count": len(proto.constraints),
+        }
 
     @staticmethod
     def _hint(

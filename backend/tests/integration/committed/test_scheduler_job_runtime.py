@@ -5,6 +5,7 @@ import pytest
 from fastapi import HTTPException
 from sqlalchemy import select
 
+import app.scheduler_worker as scheduler_worker
 import app.services.scheduler_job_runtime as runtime_module
 from app import models
 from app.api.v1.endpoints.scheduler import approve_draft as approve_draft_endpoint
@@ -464,6 +465,83 @@ async def test_complete_approval_atomically_publishes_exact_target(db_session):
     )
 
 
+async def test_runtime_accepts_editable_assignment_removal_as_empty_adaptive_target(db_session):
+    ctx = await _runtime_context(db_session)
+    complete_job = await _queue_job(db_session, ctx, "removal-runtime-source")
+    await SchedulerJobRuntime(db_session).execute(complete_job.id, run_complete_generation)
+    complete_draft = await db_session.scalar(
+        select(models.ScheduleDraft).where(
+            models.ScheduleDraft.generation_job_id == complete_job.id
+        )
+    )
+    await SchedulerApprovalService(db_session).approve(
+        ctx["organization"].id,
+        complete_draft.id,
+        decided_by_membership_id=ctx["membership"].id,
+    )
+    active_block = await db_session.scalar(
+        select(models.ActiveScheduleBlock).where(
+            models.ActiveScheduleBlock.organization_id == ctx["organization"].id,
+            models.ActiveScheduleBlock.school_year_id == ctx["school_year"].id,
+            models.ActiveScheduleBlock.status == models.ActiveScheduleBlockStatus.ACTIVE,
+        )
+    )
+    active_block.date = date(2027, 1, 5)
+    db_session.add(
+        models.OrganizationSettings(
+            organization_id=ctx["organization"].id,
+            repair_stability_window_days=0,
+        )
+    )
+    await db_session.flush()
+
+    link = await db_session.scalar(
+        select(models.ClassSubjectLink).where(
+            models.ClassSubjectLink.organization_id == ctx["organization"].id,
+            models.ClassSubjectLink.class_id == ctx["class"].id,
+            models.ClassSubjectLink.subject_id == ctx["subject"].id,
+        )
+    )
+    await db_session.delete(link)
+    ctx["state"].scheduler_state_version += 1
+    await db_session.commit()
+
+    removal_job = await _queue_job(db_session, ctx, "removal-runtime-job")
+    finished = await SchedulerJobRuntime(db_session).execute(
+        removal_job.id,
+        run_adaptive_repair,
+    )
+
+    assert finished.job_status == models.ScheduleGenerationJobStatus.SUCCEEDED, (
+        finished.failure_message
+    )
+    removal_draft = await db_session.scalar(
+        select(models.ScheduleDraft).where(models.ScheduleDraft.generation_job_id == removal_job.id)
+    )
+    assert removal_draft is not None
+    assert removal_draft.strategy == models.ScheduleGenerationStrategy.ADAPTIVE_REPAIR
+    assert not (
+        await db_session.scalars(
+            select(models.ScheduleDraftBlock).where(
+                models.ScheduleDraftBlock.draft_id == removal_draft.id
+            )
+        )
+    ).all()
+    await SchedulerApprovalService(db_session).approve(
+        ctx["organization"].id,
+        removal_draft.id,
+        decided_by_membership_id=ctx["membership"].id,
+    )
+    active_status = await db_session.scalar(
+        select(models.ActiveScheduleBlock.status).where(
+            models.ActiveScheduleBlock.organization_id == ctx["organization"].id,
+            models.ActiveScheduleBlock.school_year_id == ctx["school_year"].id,
+            models.ActiveScheduleBlock.id == active_block.id,
+        )
+    )
+    assert active_status == models.ActiveScheduleBlockStatus.REMOVED
+
+
 async def test_approval_rejects_demand_result_mismatch_without_publication(db_session):
     ctx = await _runtime_context(db_session)
     job = await _queue_job(db_session, ctx, "approval-demand-mismatch")
@@ -660,6 +738,7 @@ async def test_repair_approval_reconciles_moved_added_and_removed_blocks(db_sess
                     date=date(2026, 7, 7),
                     timeslot_id=ctx["slot"].id,
                     duration_minutes=60,
+                    module_sequence_index=1,
                     change_type=models.ScheduleDraftBlockChangeType.MOVED,
                     reason_code="CALENDAR_REFLOW",
                 ),
@@ -1282,6 +1361,90 @@ async def test_deadline_expiry_creates_no_draft(db_session):
         clock=lambda: now[0],
     ).execute(job.id, exceed_deadline)
 
+    assert finished.job_status == models.ScheduleGenerationJobStatus.FAILED
+    assert finished.failure_code == "TIMED_OUT"
+    assert not (await db_session.scalars(select(models.ScheduleDraft))).all()
+
+
+async def test_worker_engine_observes_database_cancellation_promptly(
+    db_session,
+    monkeypatch,
+):
+    ctx = await _runtime_context(db_session)
+    job = await _queue_job(db_session, ctx, "cancel-worker-engine")
+    started = asyncio.Event()
+    incumbent = _valid_result(ctx)
+
+    async def cancellable_generation(execution):
+        started.set()
+        async with TestingSessionLocal() as session:
+            running = await session.get(models.ScheduleGenerationJob, execution.job_id)
+            running.job_status = models.ScheduleGenerationJobStatus.CANCEL_REQUESTED
+            await session.commit()
+        while not execution.stop_event.is_set():
+            await asyncio.sleep(0.005)
+        return incumbent
+
+    monkeypatch.setattr(scheduler_worker, "run_complete_generation", cancellable_generation)
+    finished = await SchedulerJobRuntime(db_session).execute(
+        job.id,
+        scheduler_worker._generation_engine,
+        organization_id=ctx["organization"].id,
+    )
+
+    assert started.is_set()
+    assert finished.job_status == models.ScheduleGenerationJobStatus.CANCELED
+    assert finished.failure_code == "CANCELED"
+    assert not (await db_session.scalars(select(models.ScheduleDraft))).all()
+
+
+async def test_solver_cleanup_incumbent_is_persisted_before_final_reserve(
+    db_session,
+    monkeypatch,
+):
+    monkeypatch.setattr(runtime_module, "GENERATION_CAP_SECONDS", 2.0)
+    monkeypatch.setattr(runtime_module, "FINAL_COMMIT_RESERVE_SECONDS", 0.4)
+    monkeypatch.setattr(runtime_module, "ENGINE_RETURN_RESERVE_SECONDS", 0.1)
+    ctx = await _runtime_context(db_session)
+    job = await _queue_job(db_session, ctx, "cleanup-incumbent")
+    returned = asyncio.Event()
+
+    async def cleanup_incumbent(execution):
+        await asyncio.to_thread(execution.solver_stop_event.wait)
+        returned.set()
+        return _valid_result(ctx)
+
+    finished = await SchedulerJobRuntime(db_session).execute(job.id, cleanup_incumbent)
+
+    assert returned.is_set()
+    assert finished.job_status == models.ScheduleGenerationJobStatus.SUCCEEDED
+    assert finished.failure_code is None
+    assert (
+        await db_session.scalars(
+            select(models.ScheduleDraft).where(models.ScheduleDraft.generation_job_id == job.id)
+        )
+    ).all()
+
+
+async def test_solver_cleanup_overrun_times_out_without_persisting(
+    db_session,
+    monkeypatch,
+):
+    monkeypatch.setattr(runtime_module, "GENERATION_CAP_SECONDS", 2.0)
+    monkeypatch.setattr(runtime_module, "FINAL_COMMIT_RESERVE_SECONDS", 0.4)
+    monkeypatch.setattr(runtime_module, "ENGINE_RETURN_RESERVE_SECONDS", 0.1)
+    ctx = await _runtime_context(db_session)
+    job = await _queue_job(db_session, ctx, "cleanup-overrun")
+    returned = asyncio.Event()
+
+    async def cleanup_overrun(_execution):
+        await asyncio.sleep(2.0)
+        returned.set()
+        return _valid_result(ctx)
+
+    finished = await SchedulerJobRuntime(db_session).execute(job.id, cleanup_overrun)
+
+    assert not returned.is_set()
     assert finished.job_status == models.ScheduleGenerationJobStatus.FAILED
     assert finished.failure_code == "TIMED_OUT"
     assert not (await db_session.scalars(select(models.ScheduleDraft))).all()

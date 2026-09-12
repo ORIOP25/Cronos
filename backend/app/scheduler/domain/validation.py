@@ -40,7 +40,7 @@ class GenerationEnvelopeValidator:
         messages: list[str] = []
         if strategy_value == "COMPLETE_GENERATION" and category_value != "COMPLETE_SUCCESS":
             messages.append("Complete Generation must produce a complete-success draft.")
-        if not result.blocks:
+        if strategy_value == "COMPLETE_GENERATION" and not result.blocks:
             messages.append("A validated draft must contain schedule blocks.")
         if result.projected_completion_date > result.hard_end_date:
             messages.append("Projected completion exceeds the hard end date.")

@@ -1,15 +1,16 @@
 from __future__ import annotations
 
 import asyncio
+import threading
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, date, datetime, timedelta
 from time import monotonic
 from typing import Any
 
 import structlog
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app import models
 from app.core.logging import safe_exception_frames
@@ -21,11 +22,14 @@ from app.scheduler.domain.contracts import (
 )
 from app.scheduler.domain.validation import GenerationEnvelopeValidator
 from app.services.scheduler_complete_demand import CompleteDemandLedgerBuilder
+from app.services.scheduler_curriculum_validation import validate_curriculum_coverage
 from app.services.scheduler_diff_service import SchedulerDiffService
 from app.services.scheduler_editable_boundary import EditableBoundaryBuilder
 from app.services.scheduler_fingerprint_service import SchedulerFingerprintService
+from app.services.scheduler_incremental_demand import IncrementalDemandLedgerBuilder
 from app.services.scheduler_observability import emit_scheduler_job_event
 from app.services.scheduler_recovery_service import SchedulerRecoveryService
+from app.services.scheduler_recovery_validation import validate_recovery_identity
 from app.services.scheduler_target_validator import (
     SchedulerTargetValidationError,
     SchedulerTargetValidator,
@@ -33,6 +37,8 @@ from app.services.scheduler_target_validator import (
 
 GENERATION_CAP_SECONDS = 5 * 60
 FINAL_COMMIT_RESERVE_SECONDS = 15
+ENGINE_RETURN_RESERVE_SECONDS = 1
+CANCELLATION_POLL_SECONDS = 0.05
 
 logger = structlog.get_logger(__name__)
 
@@ -75,12 +81,26 @@ class GenerationExecutionContext:
         repr=False,
         compare=False,
     )
+    stop_event: threading.Event = field(
+        default_factory=threading.Event,
+        repr=False,
+        compare=False,
+    )
+    solver_stop_event: threading.Event = field(
+        default_factory=threading.Event,
+        repr=False,
+        compare=False,
+    )
 
     @property
     def solve_deadline_at(self) -> datetime:
-        return self.deadline_at - timedelta(seconds=FINAL_COMMIT_RESERVE_SECONDS)
+        return self.deadline_at - timedelta(
+            seconds=FINAL_COMMIT_RESERVE_SECONDS + ENGINE_RETURN_RESERVE_SECONDS
+        )
 
     async def ensure_can_continue(self) -> None:
+        if self.stop_event.is_set():
+            raise GenerationCanceledError("Generation work was asked to stop.")
         if self.checkpoint is not None:
             await self.checkpoint()
 
@@ -98,10 +118,17 @@ class SchedulerJobRuntime:
         *,
         clock: Callable[[], datetime] | None = None,
         elapsed_clock: Callable[[], float] | None = None,
+        session_factory: Callable[[], AsyncSession] | None = None,
     ):
         self._db = db
         self._clock = clock or (lambda: datetime.now(UTC))
         self._elapsed_clock = elapsed_clock or monotonic
+        self._session_factory = session_factory or async_sessionmaker(
+            bind=db.bind,
+            class_=AsyncSession,
+            expire_on_commit=False,
+            autoflush=False,
+        )
 
     async def execute(
         self,
@@ -124,15 +151,47 @@ class SchedulerJobRuntime:
                 raise GenerationTimedOutError(
                     "Generation snapshot exhausted the solver time budget."
                 )
+            engine_task = asyncio.create_task(engine(context))
+            cancellation_task = asyncio.create_task(self._monitor_cancellation(job_id, context))
             try:
-                result = await asyncio.wait_for(
-                    engine(context),
-                    timeout=solve_seconds,
-                )
-            except TimeoutError as exc:
-                raise GenerationTimedOutError(
-                    "Generation exceeded its solver time budget."
-                ) from exc
+                completed, _ = await asyncio.wait({engine_task}, timeout=solve_seconds)
+                if not completed:
+                    # Ask solver threads to return without turning a deadline into user cancellation.
+                    context.solver_stop_event.set()
+                    engine_return_deadline = context.deadline_at - timedelta(
+                        seconds=FINAL_COMMIT_RESERVE_SECONDS
+                    )
+                    cleanup_seconds = max(
+                        0.0,
+                        (engine_return_deadline - self._aware_now()).total_seconds(),
+                    )
+                    if cleanup_seconds > 0:
+                        try:
+                            await asyncio.wait_for(engine_task, timeout=cleanup_seconds)
+                        except TimeoutError:
+                            pass
+                        except Exception as exc:
+                            logger.warning(
+                                "scheduler_generation_cleanup_failure",
+                                job_id=job_id,
+                                organization_id=organization_id,
+                                error_type=type(exc).__name__,
+                                exception_frames=safe_exception_frames(exc),
+                            )
+                    if not engine_task.done():
+                        engine_task.cancel()
+                        raise GenerationTimedOutError(
+                            "Generation exceeded its solver time budget before an incumbent returned."
+                        )
+                try:
+                    result = engine_task.result()
+                except asyncio.CancelledError as exc:
+                    raise GenerationTimedOutError(
+                        "Generation exceeded its solver time budget before an incumbent returned."
+                    ) from exc
+            finally:
+                cancellation_task.cancel()
+                await asyncio.gather(cancellation_task, return_exceptions=True)
             await self._assert_can_continue(
                 job_id,
                 context.deadline_at,
@@ -148,10 +207,18 @@ class SchedulerJobRuntime:
                     context.deadline_at,
                     "No-output finalization exceeded the five-minute deadline.",
                 )
+            validation_started = self._elapsed_clock()
             await self._run_before_deadline(
                 lambda: self._validate_result(context, result),
                 context.deadline_at,
                 "Generation validation exceeded the five-minute deadline.",
+            )
+            result = replace(
+                result,
+                metrics={
+                    **result.metrics,
+                    "independent_validation_duration_ms": self._elapsed_ms(validation_started),
+                },
             )
             await self._assert_can_continue(
                 job_id,
@@ -328,6 +395,25 @@ class SchedulerJobRuntime:
             raise GenerationValidationError("Adaptive repair result category is invalid.")
         snapshot = context.immutable_snapshot["generation_input"]
         active = {row["id"]: row for row in snapshot.get("active_schedule", [])}
+        policy = context.immutable_snapshot.get("repair_policy")
+        try:
+            boundary = None if policy is None else EditableBoundaryBuilder().build(snapshot, policy)
+        except (KeyError, TypeError, ValueError) as exc:
+            raise GenerationValidationError(str(exc)) from exc
+        curriculum = IncrementalDemandLedgerBuilder().build(
+            snapshot,
+            immutable_block_ids=(
+                set() if boundary is None else {row["id"] for row in boundary.immutable_blocks}
+            ),
+        )
+        if not curriculum.is_complete:
+            raise GenerationValidationError(
+                "Adaptive curriculum demand is incomplete: " + " ".join(curriculum.blockers)
+            )
+        curriculum_items = {(item.class_id, item.subject_id): item for item in curriculum.items}
+        slot_starts = {
+            row["id"]: str(row.get("start_time", "")) for row in snapshot.get("timetable_grid", [])
+        }
         assignments = {
             (row["class_id"], row["subject_id"]): row.get("teacher_id")
             for row in snapshot.get("class_subject_requirements", [])
@@ -391,6 +477,27 @@ class SchedulerJobRuntime:
                     raise GenerationValidationError(
                         "Added repair blocks cannot have active lineage."
                     )
+                curriculum_item = curriculum_items.get((block.class_id, block.subject_id))
+                if not block.is_recovery_block and (
+                    curriculum_item is not None or block.reason_code == "NEW_CURRICULUM_DEMAND"
+                ):
+                    if curriculum_item is None:
+                        raise GenerationValidationError(
+                            "Curriculum addition references demand outside its snapshot."
+                        )
+                    if block.reason_code != "NEW_CURRICULUM_DEMAND":
+                        raise GenerationValidationError(
+                            "Curriculum addition has an invalid reason code."
+                        )
+                    valid_sequences = {
+                        module.sequence
+                        for module in curriculum_item.modules
+                        if module.required_minutes > 0
+                    }
+                    if block.module_sequence_index not in valid_sequences:
+                        raise GenerationValidationError(
+                            "Curriculum addition module sequence is invalid."
+                        )
                 continue
             source = active.get(block.source_active_block_id)
             if source is None or block.source_active_block_id in source_ids:
@@ -431,11 +538,12 @@ class SchedulerJobRuntime:
                     "Adaptive repair changed or omitted an immutable active block."
                 )
 
-        debt_items = {
-            (int(row["occurrence_id"]), int(row["occurrence_revision"])): int(
-                row.get("unresolved_debt_minutes", 0)
-            )
+        debt_rows = {
+            (int(row["occurrence_id"]), int(row["occurrence_revision"])): row
             for row in (context.immutable_snapshot.get("debt_basis") or {}).get("items", [])
+        }
+        debt_items = {
+            key: int(row.get("unresolved_debt_minutes", 0)) for key, row in debt_rows.items()
         }
         recovered_by_debt: dict[tuple[int, int], int] = {}
         for block in result.blocks:
@@ -452,9 +560,98 @@ class SchedulerJobRuntime:
                 raise GenerationValidationError(
                     "Recovery block references debt outside its snapshot."
                 )
+            identity_violations = validate_recovery_identity(
+                block,
+                debt_rows[key],
+                assignments,
+                qualifications,
+            )
+            if identity_violations:
+                raise GenerationValidationError(identity_violations[0])
             recovered_by_debt[key] = recovered_by_debt.get(key, 0) + block.duration_minutes
         if any(recovered_by_debt.get(key, 0) > minutes for key, minutes in debt_items.items()):
             raise GenerationValidationError("Repair over-recovers an explicit debt entry.")
+
+        curriculum_violations = validate_curriculum_coverage(
+            curriculum,
+            result.blocks,
+            select=lambda block: (
+                block.change_type == models.ScheduleDraftBlockChangeType.ADDED
+                and not block.is_recovery_block
+                and block.reason_code == "NEW_CURRICULUM_DEMAND"
+            ),
+            slot_start_values=slot_starts,
+        )
+        if curriculum_violations:
+            raise GenerationValidationError(
+                "Adaptive target does not exactly satisfy incremental curriculum demand: "
+                + curriculum_violations[0].message
+            )
+        configured_subjects = {
+            row.get("subject_id") for row in snapshot.get("module_accounting", [])
+        }
+        final_ledger = CompleteDemandLedgerBuilder().build_for_assignments(
+            snapshot,
+            [
+                row
+                for row in snapshot.get("class_subject_requirements", [])
+                if row.get("subject_id") in configured_subjects
+            ],
+            allow_empty=True,
+        )
+        if final_ledger.items and not final_ledger.is_complete:
+            raise GenerationValidationError(
+                "Adaptive final curriculum demand is incomplete: " + " ".join(final_ledger.blockers)
+            )
+        final_items = {(item.class_id, item.subject_id) for item in final_ledger.items}
+        final_coverage_violations = validate_curriculum_coverage(
+            final_ledger,
+            result.blocks,
+            select=lambda block: (
+                not block.is_recovery_block
+                and (block.class_id, block.subject_id) in final_items
+                and (
+                    block.source_active_block_id is not None
+                    or block.reason_code == "NEW_CURRICULUM_DEMAND"
+                )
+            ),
+            slot_start_values=slot_starts,
+        )
+        if final_coverage_violations:
+            raise GenerationValidationError(
+                "Adaptive target does not cover delivered, retained, and added curriculum: "
+                + final_coverage_violations[0].message
+            )
+        scheduled_curriculum_minutes = sum(
+            block.duration_minutes
+            for block in result.blocks
+            if (
+                block.change_type == models.ScheduleDraftBlockChangeType.ADDED
+                and not block.is_recovery_block
+                and block.reason_code == "NEW_CURRICULUM_DEMAND"
+            )
+        )
+        curriculum_metrics = (
+            ("required_curriculum_minutes", curriculum.required_minutes),
+            ("scheduled_curriculum_minutes", scheduled_curriculum_minutes),
+        )
+        for name, expected_value in curriculum_metrics:
+            summary_value = result.summary.get(name)
+            metrics_value = result.metrics.get(name)
+            if curriculum.required_minutes > 0 and (
+                summary_value != expected_value or metrics_value != expected_value
+            ):
+                raise GenerationValidationError(
+                    "Adaptive curriculum metrics do not match target blocks."
+                )
+            if summary_value is not None and summary_value != expected_value:
+                raise GenerationValidationError(
+                    "Adaptive curriculum summary metrics do not match target blocks."
+                )
+            if metrics_value is not None and metrics_value != expected_value:
+                raise GenerationValidationError(
+                    "Adaptive curriculum metrics do not match target blocks."
+                )
         required = sum(debt_items.values())
         recovered = sum(recovered_by_debt.values())
         residual = required - recovered
@@ -488,7 +685,6 @@ class SchedulerJobRuntime:
                 "Complete draft was produced from an incomplete demand ledger."
             )
         items = {(item.class_id, item.subject_id): item for item in ledger.items}
-        actual: dict[tuple[int, int], int] = {}
         for block in blocks:
             item = items.get((block.class_id, block.subject_id))
             if item is None or item.teacher_id != block.teacher_id:
@@ -499,15 +695,16 @@ class SchedulerJobRuntime:
                 module.sequence for module in item.modules
             }:
                 raise GenerationValidationError("Draft module sequence is invalid.")
-            key = (block.class_id, block.subject_id)
-            actual[key] = actual.get(key, 0) + block.duration_minutes
-        expected = {
-            (item.class_id, item.subject_id): item.required_minutes for item in ledger.items
-        }
-        if actual != expected:
-            raise GenerationValidationError(
-                "Complete draft does not exactly satisfy the annual demand ledger."
-            )
+        violations = validate_curriculum_coverage(
+            ledger,
+            blocks,
+            slot_start_values={
+                row["id"]: str(row.get("start_time", ""))
+                for row in snapshot.get("timetable_grid", [])
+            },
+        )
+        if violations:
+            raise GenerationValidationError(violations[0].message)
 
     async def _validate_resource_scope(
         self,
@@ -542,6 +739,7 @@ class SchedulerJobRuntime:
         result: ValidatedGenerationResult,
         elapsed_start: float,
     ) -> models.ScheduleGenerationJob:
+        persistence_started = self._elapsed_clock()
         job = await self._locked_job(context.job_id)
         state = await self._db.scalar(
             select(models.SchedulerSchoolYearState)
@@ -668,6 +866,11 @@ class SchedulerJobRuntime:
         )
 
         await self._assert_can_continue(context.job_id, context.deadline_at)
+        persistence_duration_ms = self._elapsed_ms(persistence_started)
+        draft.metrics_json = {
+            **(draft.metrics_json or {}),
+            "draft_persistence_duration_ms": persistence_duration_ms,
+        }
         state.pending_draft_id = draft.id
         state.lock_version += 1
         job.job_status = models.ScheduleGenerationJobStatus.SUCCEEDED
@@ -678,7 +881,13 @@ class SchedulerJobRuntime:
         emit_scheduler_job_event(
             "generation_succeeded",
             job,
-            result=result,
+            result=replace(
+                result,
+                metrics={
+                    **result.metrics,
+                    "draft_persistence_duration_ms": persistence_duration_ms,
+                },
+            ),
             draft_id=draft.id,
         )
         return job
@@ -715,6 +924,39 @@ class SchedulerJobRuntime:
             raise GenerationTimedOutError("Generation exceeded its five-minute deadline.")
         if end_transaction and self._organization_id is not None:
             await self._db.rollback()
+
+    async def _monitor_cancellation(
+        self,
+        job_id: int,
+        context: GenerationExecutionContext,
+    ) -> None:
+        """Poll the durable cancellation flag while solver work runs off-thread."""
+
+        try:
+            async with self._session_factory() as monitor_db:
+                while not context.stop_event.is_set():
+                    await asyncio.sleep(CANCELLATION_POLL_SECONDS)
+                    if self._organization_id is not None:
+                        await set_async_tenant_context(monitor_db, self._organization_id)
+                    job = await monitor_db.get(models.ScheduleGenerationJob, job_id)
+                    if (
+                        job is not None
+                        and job.job_status == models.ScheduleGenerationJobStatus.CANCEL_REQUESTED
+                    ):
+                        context.stop_event.set()
+                        context.solver_stop_event.set()
+                        return
+                    await monitor_db.rollback()
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.warning(
+                "scheduler_generation_cancellation_poll_failure",
+                job_id=job_id,
+                organization_id=self._organization_id,
+                error_type=type(exc).__name__,
+                exception_frames=safe_exception_frames(exc),
+            )
 
     async def _finish_without_output(
         self,

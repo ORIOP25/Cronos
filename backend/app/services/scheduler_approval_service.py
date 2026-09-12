@@ -8,9 +8,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models
 from app.scheduler.domain.contracts import DraftBlockSpec
+from app.services.scheduler_complete_demand import CompleteDemandLedgerBuilder
+from app.services.scheduler_curriculum_validation import validate_curriculum_coverage
+from app.services.scheduler_debt_service import SchedulerDebtService
 from app.services.scheduler_editable_boundary import EditableBoundaryBuilder
 from app.services.scheduler_fingerprint_service import SchedulerFingerprintService
+from app.services.scheduler_incremental_demand import IncrementalDemandLedgerBuilder
 from app.services.scheduler_recovery_service import SchedulerRecoveryService
+from app.services.scheduler_recovery_validation import validate_recovery_identity
 from app.services.scheduler_target_validator import (
     SchedulerTargetValidationError,
     SchedulerTargetValidator,
@@ -156,15 +161,21 @@ class SchedulerApprovalService:
             draft.strategy,
         )
         specs = self._specs(blocks)
-        self._validate_target(current.snapshot, specs, complete=False, draft=draft)
+        boundary = EditableBoundaryBuilder().build(
+            current.snapshot,
+            draft.repair_policy_snapshot_json,
+        )
+        self._validate_target(
+            current.snapshot,
+            specs,
+            complete=False,
+            draft=draft,
+            boundary=boundary,
+        )
         await self._validate_recovery_link_consistency(
             organization_id,
             draft,
             blocks,
-        )
-        boundary = EditableBoundaryBuilder().build(
-            current.snapshot,
-            draft.repair_policy_snapshot_json,
         )
         active_rows = list(
             await self._db.scalars(
@@ -454,7 +465,7 @@ class SchedulerApprovalService:
                 .order_by(models.ScheduleDraftBlock.id)
             )
         )
-        if not blocks:
+        if not blocks and draft.strategy == models.ScheduleGenerationStrategy.COMPLETE_GENERATION:
             raise DraftApprovalConflictError(
                 "An empty schedule draft cannot be approved.",
                 draft.draft_state,
@@ -502,6 +513,18 @@ class SchedulerApprovalService:
                 draft.draft_state,
             )
 
+        debt_entries = {}
+        if expected:
+            debt_entries = {
+                (entry.occurrence_id, entry.occurrence_revision): entry
+                for entry in (
+                    await SchedulerDebtService(self._db).active_debt_ledger(
+                        organization_id,
+                        draft.school_year_id,
+                    )
+                ).entries
+            }
+
         recovered_minutes = 0
         for block_id, block in expected.items():
             link = actual[block_id]
@@ -520,6 +543,44 @@ class SchedulerApprovalService:
                     "A planned recovery link does not match its draft recovery block.",
                     draft.draft_state,
                 )
+            debt_entry = debt_entries.get(
+                (block.recovery_source_occurrence_id, block.recovery_source_occurrence_revision)
+            )
+            if debt_entry is None:
+                raise DraftApprovalConflictError(
+                    "A planned recovery link references debt that is no longer unresolved.",
+                    draft.draft_state,
+                )
+            assigned_teacher = await self._db.scalar(
+                select(models.ClassSubjectLink.teacher_id).where(
+                    models.ClassSubjectLink.organization_id == organization_id,
+                    models.ClassSubjectLink.class_id == block.class_id,
+                    models.ClassSubjectLink.subject_id == block.subject_id,
+                )
+            )
+            eligible_teacher = await self._db.scalar(
+                select(models.teacher_subject_link.c.teacher_id).where(
+                    models.teacher_subject_link.c.organization_id == organization_id,
+                    models.teacher_subject_link.c.teacher_id == block.teacher_id,
+                    models.teacher_subject_link.c.subject_id == block.subject_id,
+                )
+            )
+            identity_violations = validate_recovery_identity(
+                self._specs([block])[0],
+                {
+                    "occurrence_id": debt_entry.occurrence_id,
+                    "occurrence_revision": debt_entry.occurrence_revision,
+                    "class_id": debt_entry.class_id,
+                    "subject_id": debt_entry.subject_id,
+                    "teacher_id": debt_entry.teacher_id,
+                    "unresolved_debt_minutes": debt_entry.remaining_minutes,
+                },
+                {(block.class_id, block.subject_id): assigned_teacher},
+                ({(block.teacher_id, block.subject_id)} if eligible_teacher is not None else set()),
+                requested_minutes=link.planned_recovery_minutes,
+            )
+            if identity_violations:
+                raise DraftApprovalConflictError(identity_violations[0], draft.draft_state)
             recovered_minutes += link.planned_recovery_minutes
 
         if draft.strategy != models.ScheduleGenerationStrategy.ADAPTIVE_REPAIR:
@@ -593,11 +654,87 @@ class SchedulerApprovalService:
         )
 
     @staticmethod
-    def _validate_target(snapshot, specs, *, complete, draft) -> None:
+    def _validate_target(snapshot, specs, *, complete, draft, boundary=None) -> None:
         try:
             SchedulerTargetValidator.validate(snapshot, specs, complete=complete)
         except SchedulerTargetValidationError as exc:
             raise DraftApprovalConflictError(str(exc), draft.draft_state) from exc
+        if complete:
+            return
+        if boundary is None:
+            boundary = EditableBoundaryBuilder().build(
+                snapshot,
+                draft.repair_policy_snapshot_json,
+            )
+        curriculum = IncrementalDemandLedgerBuilder().build(
+            snapshot,
+            immutable_block_ids={row["id"] for row in boundary.immutable_blocks},
+        )
+        if not curriculum.is_complete:
+            raise DraftApprovalConflictError(
+                "Adaptive curriculum demand is incomplete: " + " ".join(curriculum.blockers),
+                draft.draft_state,
+            )
+        violations = validate_curriculum_coverage(
+            curriculum,
+            specs,
+            select=lambda block: (
+                block.change_type == models.ScheduleDraftBlockChangeType.ADDED
+                and not block.is_recovery_block
+                and block.reason_code == "NEW_CURRICULUM_DEMAND"
+            ),
+            slot_start_values={
+                row["id"]: str(row.get("start_time", ""))
+                for row in snapshot.get("timetable_grid", [])
+            },
+        )
+        if violations:
+            raise DraftApprovalConflictError(
+                "Adaptive target does not exactly satisfy incremental curriculum demand: "
+                + violations[0].message,
+                draft.draft_state,
+            )
+        configured_subjects = {
+            row.get("subject_id") for row in snapshot.get("module_accounting", [])
+        }
+        final_ledger = CompleteDemandLedgerBuilder().build_for_assignments(
+            snapshot,
+            [
+                row
+                for row in snapshot.get("class_subject_requirements", [])
+                if row.get("subject_id") in configured_subjects
+            ],
+            allow_empty=True,
+        )
+        if final_ledger.items and not final_ledger.is_complete:
+            raise DraftApprovalConflictError(
+                "Adaptive final curriculum demand is incomplete: "
+                + " ".join(final_ledger.blockers),
+                draft.draft_state,
+            )
+        final_items = {(item.class_id, item.subject_id) for item in final_ledger.items}
+        final_violations = validate_curriculum_coverage(
+            final_ledger,
+            specs,
+            select=lambda block: (
+                not block.is_recovery_block
+                and (block.class_id, block.subject_id) in final_items
+                and (
+                    block.source_active_block_id is not None
+                    or block.reason_code == "NEW_CURRICULUM_DEMAND"
+                )
+            ),
+            slot_start_values={
+                row["id"]: str(row.get("start_time", ""))
+                for row in snapshot.get("timetable_grid", [])
+            },
+        )
+        if final_violations:
+            raise DraftApprovalConflictError(
+                "Adaptive target does not cover delivered, retained, and added curriculum: "
+                + final_violations[0].message,
+                draft.draft_state,
+            )
 
     async def _stale(
         self,

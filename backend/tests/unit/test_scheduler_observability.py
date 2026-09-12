@@ -84,3 +84,48 @@ def test_scheduler_logging_failure_never_breaks_generation(monkeypatch):
     )
 
     scheduler_observability.emit_scheduler_job_event("generation_queued", job)
+
+
+def test_scheduler_event_publishes_available_phase_metrics_without_fabricating_missing_ones(
+    monkeypatch,
+):
+    logger = _CapturingLogger()
+    monkeypatch.setattr(scheduler_observability, "logger", logger)
+    job = models.ScheduleGenerationJob(
+        id=2,
+        organization_id=1,
+        school_year_id=1,
+        strategy=models.ScheduleGenerationStrategy.ADAPTIVE_REPAIR,
+        trigger_type=models.ScheduleGenerationTrigger.MIXED,
+        job_status=models.ScheduleGenerationJobStatus.SUCCEEDED,
+    )
+    result = SimpleNamespace(
+        summary={},
+        metrics={
+            "candidate_count": 3868,
+            "construction_duration_ms": 123,
+            "feasibility_solve_duration_ms": 456,
+            "quality_construction_duration_ms": 17,
+            "quality_solve_duration_ms": 89,
+            "result_extraction_duration_ms": 12,
+            "independent_validation_duration_ms": 8,
+            "draft_persistence_duration_ms": 5,
+            "feasibility_solver_status": "OPTIMAL",
+            "quality_optimization_complete": False,
+        },
+    )
+
+    scheduler_observability.emit_scheduler_job_event("generation_succeeded", job, result=result)
+
+    _event, fields = logger.calls[0]
+    assert fields["candidate_count"] == 3868
+    assert fields["construction_duration_ms"] == 123
+    assert fields["feasibility_solve_duration_ms"] == 456
+    assert fields["quality_construction_duration_ms"] == 17
+    assert fields["quality_solve_duration_ms"] == 89
+    assert fields["result_extraction_duration_ms"] == 12
+    assert fields["independent_validation_duration_ms"] == 8
+    assert fields["draft_persistence_duration_ms"] == 5
+    assert fields["feasibility_solver_status"] == "OPTIMAL"
+    assert fields["quality_optimization_complete"] is False
+    assert "quality_solve_duration_ms_missing" not in fields

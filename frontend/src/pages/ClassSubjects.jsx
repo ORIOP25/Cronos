@@ -50,70 +50,70 @@ const SubjectRow = ({
   return (
     <CCard className="mb-2 border shadow-sm">
       <CCardBody className="py-2 px-3">
-        <div className="d-flex justify-content-between align-items-center">
+        <div className="row align-items-center g-2">
           {/* Info da Disciplina */}
-          <div className="d-flex align-items-center gap-2" style={{ minWidth: '180px' }}>
-            <CIcon icon={cilBook} className="text-info" size="sm" />
-            <span className="fw-medium">{subject.subject_name}</span>
-            <RoomTypeBadge type={subject.required_room_type} />
+          <div className="col-12 col-md-5">
+            <div className="d-flex align-items-center gap-2">
+              <CIcon icon={cilBook} className="text-info flex-shrink-0" size="sm" />
+              <span className="fw-medium text-break" style={{ minWidth: 0 }}>{subject.subject_name}</span>
+              <RoomTypeBadge type={subject.required_room_type} />
+            </div>
           </div>
 
           {/* Dropdown de Professor */}
-          <div className="d-flex align-items-center gap-2" style={{ flex: 1, maxWidth: '280px' }}>
-            {teachersLoading ? (
-              <CSpinner size="sm" />
-            ) : (
-              <CFormSelect
-                size="sm"
-                value={subject.teacher_id || ''}
-                onChange={handleTeacherChange}
-                disabled={isUpdating || !canEditTeacher}
-                data-tutorial-target="class-subject-teacher"
-                style={{ minWidth: '180px' }}
-              >
-                <option value="">
-                  {eligibleTeachers?.length === 0 
-                    ? 'Nenhum professor com competência'
-                    : 'Selecionar professor...'
-                  }
-                </option>
-                {(eligibleTeachers || []).map(teacher => (
-                  <option key={teacher.id} value={teacher.id}>
-                    {teacher.name}
-                    {teacher.current_classes_count > 0 && ` (${teacher.current_classes_count} turmas)`}
+          <div className="col-12 col-md-5">
+            <div className="d-flex align-items-center gap-2">
+              {teachersLoading ? (
+                <CSpinner size="sm" />
+              ) : (
+                <CFormSelect
+                  size="sm"
+                  className="flex-grow-1"
+                  aria-label={`Professor de ${subject.subject_name}`}
+                  value={subject.teacher_id || ''}
+                  onChange={handleTeacherChange}
+                  disabled={isUpdating || !canEditTeacher}
+                  data-tutorial-target="class-subject-teacher"
+                >
+                  <option value="">
+                    {eligibleTeachers?.length === 0
+                      ? 'Nenhum professor com competência'
+                      : 'Selecionar professor...'
+                    }
                   </option>
-                ))}
-              </CFormSelect>
-            )}
-            
-            {/* Indicador de estado */}
-            {subject.teacher_id ? (
-              <CIcon icon={cilCheckCircle} className="text-success" title="Professor atribuído" />
-            ) : (
-              <CIcon icon={cilWarning} className="text-warning" title="Sem professor" />
-            )}
+                  {(eligibleTeachers || []).map(teacher => (
+                    <option key={teacher.id} value={teacher.id}>
+                      {teacher.name}
+                      {teacher.current_classes_count > 0 && ` (${teacher.current_classes_count} turmas)`}
+                    </option>
+                  ))}
+                </CFormSelect>
+              )}
+
+              {/* Indicador de estado */}
+              {subject.teacher_id ? (
+                <CIcon icon={cilCheckCircle} className="text-success flex-shrink-0" title="Professor atribuído" />
+              ) : (
+                <CIcon icon={cilWarning} className="text-warning flex-shrink-0" title="Sem professor" />
+              )}
+            </div>
           </div>
 
           {/* Botão Remover */}
-          {canRemove && <CButton
-            color="danger"
-            variant="ghost"
-            size="sm"
-            onClick={() => onRemove(subject.subject_id)}
-            disabled={isUpdating || !canRemove}
-            title="Remover disciplina"
-          >
-            <CIcon icon={cilTrash} />
-          </CButton>}
+          {canRemove && <div className="col-auto col-md-2 ms-auto text-end">
+            <CButton
+              color="danger"
+              variant="ghost"
+              size="sm"
+              aria-label={`Remover ${subject.subject_name}`}
+              onClick={() => onRemove(subject.subject_id)}
+              disabled={isUpdating || !canRemove}
+              title="Remover disciplina"
+            >
+              <CIcon icon={cilTrash} />
+            </CButton>
+          </div>}
         </div>
-        
-        {/* Info do professor atribuído */}
-        {subject.teacher_name && (
-          <small className="text-success d-block mt-1 ms-4">
-            <CIcon icon={cilCheckCircle} size="sm" className="me-1" />
-            {subject.teacher_name}
-          </small>
-        )}
       </CCardBody>
     </CCard>
   )
@@ -321,7 +321,6 @@ const ClassSubjects = ({ courseIdOverride, classIdOverride, navigationDisabled =
         <CCardHeader className="bg-transparent d-flex align-items-center gap-2">
           <CIcon icon={cilPeople} className="text-primary" />
           <strong>Disciplinas e Professores</strong>
-          <CBadge color="primary" shape="rounded-pill">{stats.total}</CBadge>
         </CCardHeader>
         <CCardBody>
           {classSubjects.subjects.length === 0 ? (

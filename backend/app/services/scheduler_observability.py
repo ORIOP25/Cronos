@@ -61,6 +61,26 @@ def emit_scheduler_job_event(
         ),
         "failure_category": job.failure_code,
     }
+    for metric_name in (
+        "required_curriculum_minutes",
+        "scheduled_curriculum_minutes",
+        "candidate_count",
+        "variable_count",
+        "constraint_count",
+        "construction_duration_ms",
+        "feasibility_solve_duration_ms",
+        "quality_construction_duration_ms",
+        "quality_solve_duration_ms",
+        "result_extraction_duration_ms",
+        "independent_validation_duration_ms",
+        "draft_persistence_duration_ms",
+        "solver_status",
+        "feasibility_solver_status",
+        "quality_optimization_complete",
+    ):
+        value = _metric(summary, metrics, metric_name)
+        if value is not None:
+            payload[metric_name] = value
     try:
         logger.info("scheduler_generation_lifecycle", **payload)
     except Exception:

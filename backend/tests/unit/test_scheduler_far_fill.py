@@ -1,6 +1,8 @@
 from copy import deepcopy
 from datetime import date
 
+from ortools.sat.python import cp_model
+
 from app.services.scheduler_candidates import (
     CandidateUniverse,
     CandidateUniverseBuilder,
@@ -227,3 +229,135 @@ def test_far_fill_post_pass_moves_to_better_availability_on_same_completion_date
 
     assert assembly.is_complete is True
     assert [(row.timeslot_id, row.availability_score) for row in assembly.blocks] == [(2, 2)]
+
+
+def test_far_fill_repairs_greedy_dead_end_with_exact_residual_solver():
+    day = date(2025, 9, 1)
+    items = (
+        CompleteDemandItem(1, 2, 10, "normal", (2,), (DemandModule(2, 1, 60),), 60),
+        CompleteDemandItem(1, 3, 11, "normal", (1, 2, 3), (DemandModule(3, 1, 60),), 60),
+    )
+
+    def candidate(subject, teacher, slot, room):
+        start = 540 if slot == 1 else 660
+        return PlacementCandidate(
+            candidate_key=f"{subject}-{slot}-{room}",
+            class_id=1,
+            subject_id=subject,
+            teacher_id=teacher,
+            room_id=room,
+            output_date=day,
+            timeslot_id=slot,
+            start_minute=start,
+            end_minute=start + 60,
+            duration_minutes=60,
+            availability_score=1,
+        )
+
+    universe = CandidateUniverse(
+        candidates=(
+            candidate(2, 10, 1, 2),
+            candidate(2, 10, 3, 2),
+            candidate(3, 11, 1, 1),
+            candidate(3, 11, 1, 2),
+            candidate(3, 11, 1, 3),
+        ),
+        blockers=(),
+        removed_by_reason={},
+    )
+    assembly = FarFutureFiller().fill(
+        CompleteDemandLedger(items, ()),
+        (),
+        universe,
+        {"lunch_rules": None},
+    )
+
+    assert assembly.is_complete is True
+    assert {(block.subject_id, block.timeslot_id) for block in assembly.blocks} == {(2, 3), (3, 1)}
+
+
+def test_far_residual_repair_preserves_search_exhaustion_status(monkeypatch):
+    day = date(2025, 9, 1)
+    item = CompleteDemandItem(1, 2, 10, "normal", (2,), (DemandModule(2, 1, 60),), 60)
+    candidate = PlacementCandidate(
+        candidate_key="candidate",
+        class_id=1,
+        subject_id=2,
+        teacher_id=10,
+        room_id=2,
+        output_date=day,
+        timeslot_id=1,
+        start_minute=540,
+        end_minute=600,
+        duration_minutes=60,
+        availability_score=1,
+    )
+
+    class UnknownSolver:
+        class _Parameters:
+            max_time_in_seconds = 0
+            num_search_workers = 0
+            random_seed = 0
+
+        parameters = _Parameters()
+
+        def Solve(self, _model):
+            return cp_model.UNKNOWN
+
+    monkeypatch.setattr("app.services.scheduler_far_fill.cp_model.CpSolver", UnknownSolver)
+    outcome = FarFutureFiller()._repair_residual(
+        CompleteDemandLedger((item,), ()),
+        (),
+        (candidate,),
+        {"lunch_rules": None},
+        None,
+    )
+
+    assert outcome.candidates is None
+    assert outcome.status == "search_exhausted"
+    assert outcome.raw_status == "UNKNOWN"
+
+
+def test_far_residual_repair_preserves_scope_and_system_statuses(monkeypatch):
+    day = date(2025, 9, 1)
+    item = CompleteDemandItem(1, 2, 10, "normal", (2,), (DemandModule(2, 1, 60),), 60)
+    candidate = PlacementCandidate(
+        candidate_key="candidate",
+        class_id=1,
+        subject_id=2,
+        teacher_id=10,
+        room_id=2,
+        output_date=day,
+        timeslot_id=1,
+        start_minute=540,
+        end_minute=600,
+        duration_minutes=60,
+        availability_score=1,
+    )
+
+    class StatusSolver:
+        status = cp_model.INFEASIBLE
+
+        class _Parameters:
+            max_time_in_seconds = 0
+            num_search_workers = 0
+            random_seed = 0
+
+        parameters = _Parameters()
+
+        def Solve(self, _model):
+            return self.status
+
+    monkeypatch.setattr("app.services.scheduler_far_fill.cp_model.CpSolver", StatusSolver)
+    outcome = FarFutureFiller()._repair_residual(
+        CompleteDemandLedger((item,), ()), (), (candidate,), {"lunch_rules": None}, None
+    )
+    assert outcome.status == "scope_infeasible"
+    assert outcome.raw_status == "INFEASIBLE"
+
+    StatusSolver.status = cp_model.MODEL_INVALID
+    outcome = FarFutureFiller()._repair_residual(
+        CompleteDemandLedger((item,), ()), (), (candidate,), {"lunch_rules": None}, None
+    )
+    assert outcome.status == "system_validation_failure"
+    assert outcome.raw_status == "MODEL_INVALID"

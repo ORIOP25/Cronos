@@ -7,6 +7,7 @@ from app import models
 from app.scheduler.domain.contracts import DraftBlockSpec
 from app.scheduler.domain.validation import TargetHardConstraintValidator
 from app.services.scheduler_complete_demand import CompleteDemandLedgerBuilder
+from app.services.scheduler_curriculum_validation import validate_curriculum_coverage
 
 
 class SchedulerTargetValidationError(RuntimeError):
@@ -45,7 +46,6 @@ class SchedulerTargetValidator:
                 "Complete draft was produced from an incomplete demand ledger."
             )
         items = {(item.class_id, item.subject_id): item for item in ledger.items}
-        actual: dict[tuple[int, int], int] = {}
         for block in specs:
             item = items.get((block.class_id, block.subject_id))
             if item is None or item.teacher_id != block.teacher_id:
@@ -58,15 +58,16 @@ class SchedulerTargetValidator:
                 module.sequence for module in item.modules
             }:
                 raise SchedulerTargetValidationError("Draft module sequence is invalid.")
-            key = (block.class_id, block.subject_id)
-            actual[key] = actual.get(key, 0) + block.duration_minutes
-        expected = {
-            (item.class_id, item.subject_id): item.required_minutes for item in ledger.items
-        }
-        if actual != expected:
-            raise SchedulerTargetValidationError(
-                "Complete draft does not exactly satisfy the annual demand ledger."
-            )
+        violations = validate_curriculum_coverage(
+            ledger,
+            specs,
+            slot_start_values={
+                row["id"]: str(row.get("start_time", ""))
+                for row in snapshot.get("timetable_grid", [])
+            },
+        )
+        if violations:
+            raise SchedulerTargetValidationError(violations[0].message)
 
     @staticmethod
     def _minute(value: str | time) -> int:

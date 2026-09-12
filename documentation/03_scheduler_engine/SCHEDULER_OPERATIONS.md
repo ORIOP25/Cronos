@@ -43,6 +43,21 @@ The engine reports residual debt when a repair cannot recover all required minut
 | **Job Status NO_VALID_OUTPUT** | Candidate or solve constraints block output | Inspect blocker metadata and recommended actions |
 | **High Backlog Hours** | Capacity cannot recover all debt | Review blockers, resources, and school-year dates |
 | **Stuck Job Status** | Worker interruption | Request cancellation with `POST /api/v1/scheduler/jobs/{id}/cancel` |
+| **Timed-out Adaptive Job** | Construction or search used the solve budget | Inspect phase durations, candidate count, and solver status |
+
+## Deadline Diagnostics
+
+Inspect `construction_duration_ms`, `solve_duration_ms`, `candidate_count`, and `solver_status`.
+Inspect feasibility status, quality stage, and independent validation timing when present.
+When present, inspect `draft_persistence_duration_ms`, `variable_count`, `constraint_count`,
+`quality_scope`, and `residual_repair_status`. Missing phases intentionally have no fabricated
+zero timing.
+The job cap remains 300 seconds. Runtime reserves engine return time and final persistence time.
+Do not increase the cap to handle candidate growth.
+
+`SEARCH_EXHAUSTED` does not prove annual infeasibility. Retry with changed capacity or dates.
+Protected assignment removal identifies the class, subject, and immutable block.
+Approval repeats debt identity checks against current tenant-scoped data.
 
 ## Verification Procedure
 Run scheduler change, disruption, diff, and recovery tests from `backend/tests/`. Inspect one generated draft through the API.

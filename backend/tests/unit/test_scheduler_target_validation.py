@@ -12,6 +12,11 @@ from app.scheduler.domain.validation import (
     TargetHardConstraintValidator,
     TargetViolationCode,
 )
+from app.services.scheduler_job_runtime import GenerationValidationError, SchedulerJobRuntime
+from app.services.scheduler_target_validator import (
+    SchedulerTargetValidationError,
+    SchedulerTargetValidator,
+)
 
 
 def _block(key: str, class_id: int, teacher_id: int, timeslot_id: int) -> DraftBlockSpec:
@@ -99,6 +104,24 @@ def test_generation_envelope_accepts_valid_adaptive_result():
     result = SimpleNamespace(
         result_category="COMPLETE_SUCCESS",
         blocks=(_block("a", 1, 3, 10),),
+        projected_completion_date=date(2026, 6, 1),
+        hard_end_date=date(2026, 7, 1),
+    )
+
+    assert (
+        GenerationEnvelopeValidator.validate(
+            "ADAPTIVE_REPAIR",
+            result,
+            date(2026, 7, 1),
+        )
+        == ()
+    )
+
+
+def test_generation_envelope_accepts_empty_adaptive_removal_target():
+    result = SimpleNamespace(
+        result_category="COMPLETE_SUCCESS",
+        blocks=(),
         projected_completion_date=date(2026, 6, 1),
         hard_end_date=date(2026, 7, 1),
     )
@@ -257,3 +280,28 @@ def test_lunch_validator_ignores_unknown_slots_and_merges_adjacent_intervals():
         spanning_grid,
     )
     assert len(violations) == 2
+
+
+def test_curriculum_validation_rejects_wrong_module_totals_and_chronology():
+    snapshot = _hard_snapshot()
+    snapshot["teachers"] = [{"id": 3}]
+    snapshot["module_accounting"] = [
+        {"id": 5, "subject_id": 2, "required_minutes": 60, "sequence": 0},
+        {"id": 6, "subject_id": 2, "required_minutes": 60, "sequence": 1},
+    ]
+    snapshot["timetable_grid"].append(
+        {"id": 11, "day_of_week": 0, "start_time": "10:00:00", "end_time": "11:00:00"}
+    )
+    first = replace(_valid_hard_block("first"), module_sequence_index=0)
+    second = replace(_valid_hard_block("second"), timeslot_id=11, module_sequence_index=1)
+    with pytest.raises(SchedulerTargetValidationError, match="Module 0"):
+        SchedulerTargetValidator.validate(
+            snapshot,
+            (first, replace(second, module_sequence_index=0)),
+            complete=True,
+        )
+    with pytest.raises(GenerationValidationError, match="chronological"):
+        SchedulerJobRuntime._validate_complete_demand(
+            snapshot,
+            (replace(first, module_sequence_index=1), replace(second, module_sequence_index=0)),
+        )

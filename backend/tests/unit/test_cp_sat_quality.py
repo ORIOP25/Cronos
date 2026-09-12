@@ -1,5 +1,6 @@
 from datetime import date
 
+import pytest
 from ortools.sat.python import cp_model
 
 from app.scheduler.domain.quality import (
@@ -10,8 +11,24 @@ from app.scheduler.domain.quality import (
 )
 from app.scheduler.infrastructure.cp_sat_quality import (
     CpSatQualityAdapter,
+    CpSatQualityConstructionStopped,
     SelectableQualityBlock,
 )
+
+
+def test_quality_construction_honors_cooperative_stop():
+    evaluator = ScheduleQualityEvaluator(
+        SchedulerQualityPolicy(standard_block_minutes=60),
+        (QualitySlot(1, 0, 480, 540),),
+    )
+
+    with pytest.raises(CpSatQualityConstructionStopped):
+        CpSatQualityAdapter(evaluator).add_expressions(
+            cp_model.CpModel(),
+            (),
+            {},
+            should_stop=lambda: True,
+        )
 
 
 def test_daily_excess_and_availability_expressions_match_pure_evaluator():
