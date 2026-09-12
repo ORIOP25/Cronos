@@ -105,10 +105,28 @@ test.describe.serial('Member invitations — real Clerk', () => {
     if (!secretKey) throw new Error('CLERK_SECRET_KEY is required for invitation E2E.')
     if (!createdInvitation?.clerk_invitation_id) throw new Error('The invitation creation response was not captured.')
 
-    const { organizationId, adminUserId } = await page.evaluate(() => ({
-      organizationId: window.Clerk.organization.id,
-      adminUserId: window.Clerk.user.id,
+    const configuredOrganizationId = process.env.E2E_CLERK_ORG_ID
+    if (!configuredOrganizationId) {
+      await page.waitForFunction(
+        () => Boolean(window.Clerk?.organization?.id),
+        null,
+        { timeout: 30_000 },
+      )
+    }
+    await page.waitForFunction(
+      () => Boolean(window.Clerk?.user?.id),
+      null,
+      { timeout: 30_000 },
+    )
+    const { adminUserId } = await page.evaluate(() => ({
+      adminUserId: window.Clerk?.user?.id,
     }))
+    const organizationId = configuredOrganizationId || await page.evaluate(
+      () => window.Clerk?.organization?.id,
+    )
+    if (!organizationId || !adminUserId) {
+      throw new Error('The authenticated Clerk organization and admin user are required.')
+    }
     const client = createClerkClient({ secretKey })
     const invitation = await client.organizations.getOrganizationInvitation({
       organizationId,
