@@ -78,7 +78,7 @@ def test_every_route_is_default_limited_or_intentionally_exempt() -> None:
 def test_production_lock_avoids_platform_conditional_uvicorn_extra() -> None:
     direct_requirements = (BACKEND / "requirements.in").read_text(encoding="utf-8")
 
-    assert "uvicorn==0.38.0" in direct_requirements.splitlines()
+    assert "uvicorn==0.52.4" in direct_requirements.splitlines()
     assert "uvicorn[standard]" not in direct_requirements
 
 
@@ -86,9 +86,9 @@ def test_development_lock_pins_unsafe_build_requirements() -> None:
     direct_requirements = (BACKEND / "requirements-dev.in").read_text(encoding="utf-8")
     lock = (BACKEND / "requirements-dev.txt").read_text(encoding="utf-8")
 
-    assert "pip==25.3" in direct_requirements.splitlines()
+    assert "pip==26.2.1" in direct_requirements.splitlines()
     assert "# WARNING:" not in lock
-    assert "\npip==25.3 " in lock
+    assert "\npip==26.2.1 " in lock
     assert "\nsetuptools==" in lock
 
 

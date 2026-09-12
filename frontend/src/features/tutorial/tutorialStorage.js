@@ -1,5 +1,4 @@
 import {
-  TUTORIAL_VERSION,
   TUTORIAL_STEPS,
 } from './tutorialContent'
 import { validateTutorialState } from './tutorialModel'
@@ -60,5 +59,3 @@ export function saveTutorialState(storage, key, state) {
 export function isValidTutorialStepId(stepId) {
   return TUTORIAL_STEPS.some((step) => step.id === stepId)
 }
-
-export { TUTORIAL_VERSION }

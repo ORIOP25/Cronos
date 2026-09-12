@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import {
   CAlert,
   CBadge,
@@ -92,26 +92,15 @@ const SubjectPicker = ({ subjects, selected, disabled, onChange }) => {
 }
 
 const MemberModal = ({ visible, member, subjects, onClose, onSave, isSaving, error, competenciesOnly = false }) => {
-  const [draft, setDraft] = useState(emptyDraft)
+  const [draft, setDraft] = useState(() => member ? {
+    organization_display_name: member.organization_display_name ?? '',
+    email: member.email ?? '',
+    capability_mode: capabilitiesToMode(member.capabilities),
+    teacher_access_mode: member.teacher_access_mode ?? 'scheduler_only',
+    subject_ids: member.subject_ids ?? [],
+    lock_version: member.lock_version,
+  } : emptyDraft)
   const [adminConfirmed, setAdminConfirmed] = useState(false)
-
-  React.useEffect(() => {
-    if (!visible) return
-    if (!member) {
-      setDraft(emptyDraft)
-      setAdminConfirmed(false)
-      return
-    }
-    setDraft({
-      organization_display_name: member.organization_display_name ?? '',
-      email: member.email ?? '',
-      capability_mode: capabilitiesToMode(member.capabilities),
-      teacher_access_mode: member.teacher_access_mode ?? 'scheduler_only',
-      subject_ids: member.subject_ids ?? [],
-      lock_version: member.lock_version,
-    })
-    setAdminConfirmed(false)
-  }, [visible, member])
 
   const hasTeacher = draft.capability_mode === 'teacher' || draft.capability_mode === 'mixed'
   const hasAdmin = draft.capability_mode === 'admin' || draft.capability_mode === 'mixed'
@@ -365,6 +354,7 @@ const Members = ({ readOnly = false, allowedActions }) => {
         isLoading={removeMember.isPending}
       />
         <MemberModal
+        key={`${modalVisible ? 'open' : 'closed'}-${selectedMember?.id ?? 'new'}`}
         visible={modalVisible}
         member={selectedMember}
         subjects={subjects}

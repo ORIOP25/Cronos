@@ -74,7 +74,6 @@ export default defineConfig({
     },
     projects: [
       {
-        plugins: [react()],
         test: {
           ...common,
           name: 'node',
@@ -83,7 +82,6 @@ export default defineConfig({
         },
       },
       {
-        plugins: [react()],
         test: {
           ...common,
           name: 'dom',

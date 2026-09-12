@@ -76,7 +76,7 @@ Design for:
 
 ## 6. Engineering Guardrails
 ### Backend
-- Python 3.12, FastAPI, SQLAlchemy Async, Pydantic v2.
+- Python 3.14, FastAPI, SQLAlchemy Async, Pydantic v2.
 - Use Annotated for FastAPI dependencies.
 - Use atomic transactions for critical operations.
 - No bare except.
