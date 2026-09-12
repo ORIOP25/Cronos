@@ -55,6 +55,15 @@ const accessLabels = {
   sync_error: ['Erro de sincronização', 'danger'],
 }
 
+const accessErrorMessages = {
+  provider_unavailable: 'Não foi possível confirmar o acesso neste momento.',
+  provider_not_found: 'Não foi possível confirmar o acesso neste momento.',
+  provider_mismatch: 'Os dados de acesso precisam de ser confirmados.',
+  provider_role_mismatch: 'Os dados de acesso precisam de ser confirmados.',
+  identity_conflict: 'Os dados de acesso precisam de ser confirmados.',
+  unknown: 'Não foi possível confirmar o estado de acesso.',
+}
+
 const lifecycleLabels = {
   active: ['Ativo', 'success'],
   archived: ['Arquivado', 'secondary'],
@@ -68,7 +77,7 @@ const capabilitiesToMode = (capabilities = []) => {
 }
 
 const SubjectPicker = ({ subjects, selected, disabled, onChange }) => {
-  if (!subjects?.length) return <div className="text-muted small">Sem competencias registadas.</div>
+  if (!subjects?.length) return <div className="text-muted small">Sem competências registadas.</div>
   const toggle = (subjectId) => {
     const next = selected.includes(subjectId)
       ? selected.filter((id) => id !== subjectId)
@@ -298,6 +307,9 @@ const Members = ({ readOnly = false, allowedActions }) => {
               const [accessLabel, accessColor] = accessLabels[member.access_status] ?? [member.access_status, 'secondary']
               const [lifecycleLabel, lifecycleColor] = lifecycleLabels[member.lifecycle_status] ?? [member.lifecycle_status, 'secondary']
               const providerUnconfirmed = member.provider_state === 'unconfirmed'
+              const accessErrorMessage = member.access_error_category
+                ? accessErrorMessages[member.access_error_category] || accessErrorMessages.unknown
+                : null
               return (
                 <tr key={member.id}>
                   <td className="fw-semibold">{member.organization_display_name}</td>
@@ -309,16 +321,16 @@ const Members = ({ readOnly = false, allowedActions }) => {
                   <td>
                     <CBadge color={lifecycleColor} className="me-1">{lifecycleLabel}</CBadge>
                     <CBadge color={accessColor}>{accessLabel}</CBadge>
-                    {providerUnconfirmed && <CBadge color="warning" className="ms-1">Fornecedor por confirmar</CBadge>}
-                    {member.access_error_safe_message && <div className="text-danger small mt-1">{member.access_error_safe_message}</div>}
+                    {providerUnconfirmed && <CBadge color="warning" className="ms-1">Estado de acesso por confirmar</CBadge>}
+                    {accessErrorMessage && <div className="text-danger small mt-1">{accessErrorMessage}</div>}
                     {member.support_reference && <div className="text-muted small mt-1">Referência para apoio: <code>{member.support_reference}</code></div>}
                     {member.access_status === 'pending_invite' && (
-                      <div className="text-muted small mt-1">Criado no Clerk; entrega do email por confirmar.</div>
+                      <div className="text-muted small mt-1">Convite enviado; aguarda aceitação.</div>
                     )}
                   </td>
                   <td className="small text-muted">
                     {member.capabilities.includes('teacher')
-                      ? member.subject_ids?.length ? `${member.subject_ids.length} selecionadas` : 'Sem competencias'
+                      ? member.subject_ids?.length ? `${member.subject_ids.length} selecionadas` : 'Sem competências'
                       : '-'}
                   </td>
                   <td className="text-end">

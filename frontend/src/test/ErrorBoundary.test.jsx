@@ -1,4 +1,4 @@
-import { beforeEach, describe, it, expect, vi } from 'vitest'
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest'
 import { fireEvent, render, screen } from '@testing-library/react'
 import ErrorBoundary from '../components/ErrorBoundary'
 
@@ -13,7 +13,10 @@ function WorkingComponent() {
 describe('ErrorBoundary', () => {
   beforeEach(() => {
     sessionStorage.clear()
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: true, status: 204 })
   })
+
+  afterEach(() => vi.restoreAllMocks())
 
   it('renderiza children quando não há erro', () => {
     render(
@@ -35,6 +38,24 @@ describe('ErrorBoundary', () => {
     expect(screen.getByText('Algo correu mal')).toBeInTheDocument()
     expect(screen.getByText('Tentar novamente')).toBeInTheDocument()
     expect(reloadPage).not.toHaveBeenCalled()
+    spy.mockRestore()
+  })
+
+  it('creates one searchable client report reference for a render crash', () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    render(
+      <ErrorBoundary onReset={() => {}}>
+        <BrokenComponent />
+      </ErrorBoundary>,
+    )
+
+    expect(globalThis.fetch).toHaveBeenCalledOnce()
+    const [url, options] = globalThis.fetch.mock.calls[0]
+    const payload = JSON.parse(options.body)
+    expect(url).toBe('/api/v1/client-errors')
+    expect(payload).toMatchObject({ category: 'render_error', revision: 'local' })
+    expect(payload.reference).toMatch(/^[A-Z0-9]{12}$/)
+    expect(screen.getByText(new RegExp(payload.reference))).toBeInTheDocument()
     spy.mockRestore()
   })
 

@@ -63,6 +63,49 @@ async def test_content_length_rejection_happens_before_downstream():
 
 
 @pytest.mark.asyncio
+async def test_rejection_reuses_state_reference_before_header_and_logs_without_body(monkeypatch):
+    probe = ProbeApp()
+    events = []
+
+    def capture(event, **context):
+        events.append((event, context))
+
+    monkeypatch.setattr("app.middleware.request_body_limit.logger.info", capture)
+    middleware = RequestBodyLimitMiddleware(probe, default_max_bytes=10)
+    scope = {
+        "type": "http",
+        "method": "POST",
+        "path": "/api/private",
+        "query_string": b"secret=query",
+        "headers": [(b"x-request-id", b"LOWERcase12")],
+        "state": {"request_reference": "STATE12ABC34"},
+    }
+    sent = []
+
+    async def send(message):
+        sent.append(message)
+
+    await middleware._reject(scope, send)
+
+    body = sent[1]["body"]
+    assert scope["state"]["request_reference"] == "STATE12ABC34"
+    assert b"STATE12ABC34" in body
+    assert b"secret" not in body
+    assert events == [
+        (
+            "request_rejected",
+            {
+                "request_id": "STATE12ABC34",
+                "code": "request_body_too_large",
+                "status_code": 413,
+                "method": "POST",
+                "path": "/api/private",
+            },
+        )
+    ]
+
+
+@pytest.mark.asyncio
 async def test_chunked_body_cannot_bypass_the_limit_with_a_small_content_length():
     probe = ProbeApp()
     stream = ChunkedBody([b"x" * 60, b"y" * 41])

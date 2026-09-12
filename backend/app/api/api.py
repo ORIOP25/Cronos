@@ -5,6 +5,7 @@ from fastapi import APIRouter
 from app.api.v1.endpoints import (
     analytics,
     classes,
+    client_errors,
     contact,
     courses,
     dashboard,
@@ -29,6 +30,7 @@ from app.api.v1.endpoints import (
 api_router = APIRouter()
 
 api_router.include_router(contact.router, prefix="/contact", tags=["Contacto"])
+api_router.include_router(client_errors.router, prefix="/client-errors", tags=["Client errors"])
 
 # --- Registar Rotas ---
 # Nota: Aqui definimos apenas o "caminho relativo".

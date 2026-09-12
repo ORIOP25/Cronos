@@ -5,6 +5,7 @@ from fastapi import HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 
 from app.main import (
+    _error_response,
     global_exception_handler,
     http_error_handler,
     request_validation_error_handler,
@@ -44,6 +45,51 @@ async def test_http_exception_uses_safe_envelope_and_preserves_auth_header():
     assert response.headers["X-Request-ID"] == "SAFE12ABC789"
     assert response.headers["WWW-Authenticate"] == "Bearer"
     assert b"secret-token" not in response.body
+
+
+async def test_lowercase_request_id_is_not_accepted():
+    response = await http_error_handler(
+        make_request(("X-Request-ID", "lowercase12")),
+        HTTPException(status_code=400, detail="raw"),
+    )
+    reference = json.loads(response.body)["detail"]["reference"]
+    assert reference != "lowercase12"
+    assert reference.isupper()
+
+
+async def test_every_public_error_response_emits_safe_structured_event(monkeypatch):
+    logged = []
+    monkeypatch.setattr(
+        "app.main.logger.info", lambda event, **context: logged.append((event, context))
+    )
+    request = make_request(("X-Request-ID", "SAFE12ABC789"))
+    request.scope["route"] = SimpleNamespace(path="/api/v1/example")
+
+    response = _error_response(
+        request,
+        status_code=500,
+        code="unexpected_error",
+        public_context={"secret": "do-not-log"},
+        fields={"password": "Valor inválido."},
+    )
+
+    assert response.status_code == 500
+    assert logged == [
+        (
+            "public_error_response",
+            {
+                "request_id": "SAFE12ABC789",
+                "code": "unexpected_error",
+                "status_code": 500,
+                "method": "POST",
+                "route": "/api/v1/example",
+                "retryable": True,
+                "support_required": True,
+            },
+        )
+    ]
+    assert "secret" not in repr(logged)
+    assert "password" not in repr(logged)
 
 
 async def test_malformed_request_id_is_replaced():

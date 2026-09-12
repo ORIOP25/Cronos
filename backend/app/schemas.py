@@ -169,6 +169,14 @@ class MemberErrorEnvelope(BaseModel):
     fields: dict[str, str] = Field(default_factory=dict)
 
 
+class ClientErrorReport(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    reference: str = Field(..., pattern=r"^[A-Z0-9]{12}$")
+    category: Literal["render_error", "chunk_load_error"]
+    revision: str = Field(..., min_length=1, max_length=64, pattern=r"^[A-Za-z0-9._-]+$")
+
+
 class MemberCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

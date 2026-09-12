@@ -31,8 +31,9 @@ Commands:
   doctor --profile fast|integration|e2e|all
   fast --scope backend|frontend|all [-- runner arguments]
   integration [-- runner arguments]
-  e2e [--project public|auth|app|provider|faults]
+  e2e [--project public|auth|app|provider|faults|capacity]
   capacity
+  capacity-smoke
   all --scope backend|frontend|all
   benchmark --profile fast|integration|e2e|all [--scope backend|frontend|all]
 `
@@ -56,7 +57,7 @@ export function parseArgs(argv) {
   let scopeWasProvided = false
   let profileWasProvided = false
 
-  if (!['setup', 'doctor', 'fast', 'integration', 'e2e', 'capacity', 'all', 'benchmark'].includes(command)) {
+  if (!['setup', 'doctor', 'fast', 'integration', 'e2e', 'capacity', 'capacity-smoke', 'all', 'benchmark'].includes(command)) {
     throw usageError(`Unknown command: ${command}`)
   }
   if (forwarded.length && !['fast', 'integration'].includes(command)) {
@@ -783,7 +784,7 @@ async function runIntegration(forwarded = [], context, { coverage = false } = {}
   }
 }
 
-async function runE2e(project, context) {
+async function runE2e(project, context, extraEnv = {}) {
   const externalStack = process.env.E2E_EXTERNAL_STACK === '1'
   const preparationStartedAt = monotonicMs()
   if (externalStack) {
@@ -797,23 +798,27 @@ async function runE2e(project, context) {
   addPhaseTime(context, 'preparation_ms', Math.round(monotonicMs() - preparationStartedAt))
   const args = ['run', 'test:e2e', '--']
   if (project) args.push('--project', project)
+  const capacityEnv = project === 'capacity'
+    ? {
+        CAPACITY_ENABLED: '1',
+        CAPACITY_PROFILE: 'full',
+        CAPACITY_DURATION_SECONDS: '600',
+        CAPACITY_REPORT_PATH: join(context.artifactDir, 'capacity.json'),
+      }
+    : {}
   const e2eEnv = externalStack
     ? {
         ...process.env,
         BASE_URL: resolveE2eBaseUrl({ externalStack: true, baseUrl: process.env.BASE_URL }),
         PLAYWRIGHT_SKIP_WEB_SERVER: '1',
         PLAYWRIGHT_WORKERS: String(E2E_WORKERS),
-        ...(project === 'capacity' ? {
-          CAPACITY_ENABLED: '1',
-          CAPACITY_REPORT_PATH: join(context.artifactDir, 'capacity.json'),
-        } : {}),
+        ...capacityEnv,
+        ...extraEnv,
       }
     : {
         ...context.stack.env,
-        ...(project === 'capacity' ? {
-          CAPACITY_ENABLED: '1',
-          CAPACITY_REPORT_PATH: join(context.artifactDir, 'capacity.json'),
-        } : {}),
+        ...capacityEnv,
+        ...extraEnv,
       }
   await runFrontendTests(
     args,
@@ -1073,6 +1078,14 @@ export async function main(argv = process.argv.slice(2)) {
     else if (parsed.command === 'integration') await runIntegration(parsed.forwarded, context)
     else if (parsed.command === 'e2e') await runE2e(parsed.project, context)
     else if (parsed.command === 'capacity') await runE2e('capacity', context)
+    else if (parsed.command === 'capacity-smoke') {
+      await runE2e('capacity', context, {
+        CAPACITY_ENABLED: '1',
+        CAPACITY_PROFILE: 'smoke',
+        CAPACITY_DURATION_SECONDS: '30',
+        CAPACITY_REPORT_PATH: join(context.artifactDir, 'capacity-smoke.json'),
+      })
+    }
     else if (parsed.command === 'all') await runAll(parsed.scope, context)
     else if (parsed.command === 'benchmark') await runBenchmark(parsed.profile, parsed.scope, context)
   } catch (error) {

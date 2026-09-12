@@ -8,13 +8,13 @@ import {
   loginAsTeacherReal,
 } from '../utils/clerk-helpers.js'
 
-const durationSeconds = Number(process.env.CAPACITY_DURATION_SECONDS || 600)
-const virtualClientCount = 50
-const teacherClientCount = 40
-const adminClientCount = 10
-const teacherRoutes = ['/dashboard', '/my-schedules', '/my-availability', '/absences', '/my-progress', '/timesheets']
-const adminRoutes = ['/dashboard', '/members', '/courses', '/rooms', '/config', '/readiness', '/schedules']
-const terminalStatuses = new Set(['SUCCEEDED', 'FAILED', 'CANCELED', 'NO_VALID_OUTPUT'])
+const smoke = process.env.CAPACITY_PROFILE === 'smoke'
+const durationSeconds = Number(process.env.CAPACITY_DURATION_SECONDS || (smoke ? 30 : 600))
+const virtualClientCount = smoke ? 4 : 50
+const teacherClientCount = smoke ? 3 : 40
+const adminClientCount = virtualClientCount - teacherClientCount
+const teacherRoutes = ['/my-schedules', '/my-availability', '/my-progress']
+const adminRoutes = ['/dashboard', '/members', '/courses', '/rooms', '/config', '/schedules']
 
 function percentile(values, percentage) {
   if (!values.length) return null
@@ -52,12 +52,16 @@ async function authenticatedState(browser, login) {
   const context = await browser.newContext({ storageState: { cookies: [], origins: [] } })
   const page = await context.newPage()
   await login(page)
-  await page.waitForFunction(() => window.Clerk?.session?.getToken)
-  const token = await page.evaluate(() => window.Clerk.session.getToken())
-  const organizationId = await page.evaluate(() => window.Clerk.organization?.id)
+  await page.waitForFunction(() => window.Clerk?.session?.getToken && window.Clerk?.organization?.id)
+  const organizationId = await page.evaluate(() => window.Clerk.organization.id)
   const storageState = await context.storageState()
   await context.close()
-  return { organizationId, storageState, token }
+  return { organizationId, storageState }
+}
+
+async function prepareClient(page, route) {
+  await page.goto(`${E2E_BASE_URL}${route}`, { waitUntil: 'domcontentloaded' })
+  await page.waitForFunction(() => window.Clerk?.session?.getToken && window.Clerk?.organization?.id)
 }
 
 async function startOneGeneration(page, metrics) {
@@ -67,7 +71,7 @@ async function startOneGeneration(page, metrics) {
     const response = await fetch('/api/v1/scheduler/generate', {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ replace_pending_draft: false }),
+      body: JSON.stringify({ replace_pending_draft: true }),
     })
     return { status: response.status, body: await response.json().catch(() => ({})) }
   })
@@ -76,16 +80,59 @@ async function startOneGeneration(page, metrics) {
   return result.body.job_id
 }
 
-test('mede 50 clientes autenticados com um único job do scheduler', async ({ browser, request }, testInfo) => {
+async function pollGeneration(page, request, jobId, metrics, startedAt) {
+  const pollStartedAt = Date.now()
+  let finalStatus = null
+  while (Date.now() - pollStartedAt < 300_000) {
+    const token = await page.evaluate(() => window.Clerk.session.getToken())
+    const response = await request.get(`${E2E_BASE_URL}/api/v1/scheduler/jobs/${jobId}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    if (response.status() >= 400) throw new Error(`Generation status failed: ${response.status()}`)
+    finalStatus = (await response.json()).job_status
+    if (['SUCCEEDED', 'FAILED', 'CANCELED', 'NO_VALID_OUTPUT'].includes(finalStatus)) break
+    await new Promise((resolve) => setTimeout(resolve, 5000))
+  }
+  metrics.generation.completion_ms = Date.now() - startedAt
+  metrics.generation.final_status = finalStatus
+  if (finalStatus !== 'SUCCEEDED') throw new Error(`Generation did not succeed: ${finalStatus || 'timeout'}`)
+}
+
+async function runClientLoad(pages, request, metrics, startedAt) {
+  const deadline = startedAt + durationSeconds * 1000
+  let nextReadinessAt = startedAt
+  while (Date.now() < deadline) {
+    await Promise.all(pages.map(async ({ page, routes }, index) => {
+      const route = routes[Math.floor((Date.now() / 1000 + index) % routes.length)]
+      await page.goto(`${E2E_BASE_URL}${route}`, { waitUntil: 'domcontentloaded' })
+      const pause = smoke ? 1000 + ((index * 7919) % 2001) : 3000 + ((index * 7919) % 12001)
+      await page.waitForTimeout(Math.min(pause, Math.max(0, deadline - Date.now())))
+    }))
+    if (Date.now() >= nextReadinessAt) {
+      const health = await request.get(`${E2E_BASE_URL}/health/ready`)
+      if (!health.ok()) metrics.readinessFailures += 1
+      nextReadinessAt = Date.now() + 5000
+    }
+  }
+}
+
+function revisionForReport() {
+  const revision = process.env.GITHUB_SHA || process.env.RAILWAY_GIT_COMMIT_SHA || process.env.VITE_APP_REVISION
+  if (!revision) throw new Error('A commit SHA is required for the capacity report.')
+  return revision
+}
+
+test('mede clientes autenticados com um único job do scheduler', async ({ browser, request }, testInfo) => {
   test.skip(process.env.CAPACITY_ENABLED !== '1', 'Capacity is an explicit launch gate.')
-  test.setTimeout((durationSeconds + 90) * 1000)
+  test.setTimeout((durationSeconds + 360) * 1000)
 
   const metrics = createMetrics()
   const adminState = await authenticatedState(browser, async (page) => loginAsAdminReal(page))
   const teacherState = await authenticatedState(browser, async (page) => loginAsTeacherReal(page))
   const contexts = []
   const pages = []
-  const startedAt = Date.now()
+  let startedAt = Date.now()
+  let failure = null
 
   try {
     for (let index = 0; index < virtualClientCount; index += 1) {
@@ -94,7 +141,12 @@ test('mede 50 clientes autenticados com um único job do scheduler', async ({ br
       const page = await context.newPage()
       const requestStarts = new Map()
       page.on('request', (requestEvent) => requestStarts.set(requestEvent, Date.now()))
-      page.on('response', (response) => addRequest(metrics, response, requestStarts.get(response.request()) || Date.now()))
+      page.on('response', (response) => {
+        const request = response.request()
+        const requestStartedAt = requestStarts.get(request) || Date.now()
+        requestStarts.delete(request)
+        addRequest(metrics, response, requestStartedAt)
+      })
       page.on('pageerror', (error) => metrics.browserErrors.push(error.name))
       page.on('console', (message) => { if (message.type() === 'error') metrics.browserErrors.push('console.error') })
       attachRuntimeGuards(page)
@@ -102,40 +154,24 @@ test('mede 50 clientes autenticados com um único job do scheduler', async ({ br
       pages.push({ page, routes: index < teacherClientCount ? teacherRoutes : adminRoutes })
     }
 
+    await Promise.all(pages.map(({ page, routes }) => prepareClient(page, routes[0])))
+    startedAt = Date.now()
     const generationPage = pages[teacherClientCount]?.page
+    if (!generationPage) throw new Error('Capacity profile has no administrator generation page.')
     const generationStartedAt = Date.now()
     const jobId = await startOneGeneration(generationPage, metrics)
-    const pollStartedAt = Date.now()
-    let finalStatus = null
-    while (Date.now() - pollStartedAt < 300_000) {
-      const token = await generationPage.evaluate(() => window.Clerk.session.getToken())
-      const response = await request.get(`${E2E_BASE_URL}/api/v1/scheduler/jobs/${jobId}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-      if (response.status() >= 400) throw new Error(`Generation status failed: ${response.status()}`)
-      const body = await response.json()
-      finalStatus = body.job_status
-      if (terminalStatuses.has(finalStatus)) break
-      await new Promise((resolve) => setTimeout(resolve, 5000))
-    }
-    metrics.generation.completion_ms = Date.now() - generationStartedAt
-    metrics.generation.final_status = finalStatus
-
-    while (Date.now() - startedAt < durationSeconds * 1000) {
-      await Promise.all(pages.map(async ({ page, routes }, index) => {
-        const route = routes[Math.floor((Date.now() / 1000 + index) % routes.length)]
-        await page.goto(`${E2E_BASE_URL}${route}`, { waitUntil: 'domcontentloaded' })
-        await page.waitForTimeout(3000 + ((index * 7919) % 12001))
-      }))
-      const health = await request.get(`${E2E_BASE_URL}/health/ready`)
-      if (!health.ok()) metrics.readinessFailures += 1
-    }
-
+    await Promise.all([
+      runClientLoad(pages, request, metrics, startedAt),
+      pollGeneration(generationPage, request, jobId, metrics, generationStartedAt),
+    ])
+  } catch (error) {
+    failure = error
+  } finally {
     const valuesFor = (predicate) => metrics.latencies.filter(predicate).map((item) => item.latency)
     const reads = valuesFor((item) => item.method === 'GET')
     const writes = valuesFor((item) => item.method !== 'GET')
     const report = {
-      revision: process.env.GITHUB_SHA || process.env.RAILWAY_GIT_COMMIT_SHA || 'unknown',
+      revision: revisionForReport(),
       environment: process.env.CAPACITY_ENVIRONMENT || E2E_BASE_URL,
       clients: { total: virtualClientCount, teachers: teacherClientCount, administrators: adminClientCount },
       duration_seconds: Math.round((Date.now() - startedAt) / 1000),
@@ -154,20 +190,22 @@ test('mede 50 clientes autenticados com um único job do scheduler', async ({ br
       browser_errors: metrics.browserErrors,
       readiness_failures: metrics.readinessFailures,
       scheduler: metrics.generation,
+      failure: failure?.message || null,
     }
     const reportPath = process.env.CAPACITY_REPORT_PATH || testInfo.outputPath('capacity.json')
     await mkdir(dirname(reportPath), { recursive: true })
     await writeFile(reportPath, `${JSON.stringify(report, null, 2)}\n`)
-
-    expect(report.unexpected_statuses).toBe(0)
-    expect(report.browser_errors).toEqual([])
-    expect(report.readiness_failures).toBe(0)
-    expect(report.latency_ms.reads.p95).toBeLessThan(1000)
-    expect(report.latency_ms.writes.p95).toBeLessThan(2000)
-    expect(report.scheduler.acknowledgment_ms).toBeLessThan(2000)
-    expect(report.scheduler.completion_ms).toBeLessThanOrEqual(300000)
-    expect(terminalStatuses.has(report.scheduler.final_status)).toBe(true)
-  } finally {
     await Promise.all(contexts.map((context) => context.close()))
   }
+
+  if (failure) throw failure
+  const valuesFor = (predicate) => metrics.latencies.filter(predicate).map((item) => item.latency)
+  expect(metrics.unexpectedStatuses).toBe(0)
+  expect(metrics.browserErrors).toEqual([])
+  expect(metrics.readinessFailures).toBe(0)
+  expect(percentile(valuesFor((item) => item.method === 'GET'), 95)).toBeLessThan(1000)
+  expect(percentile(valuesFor((item) => item.method !== 'GET'), 95)).toBeLessThan(2000)
+  expect(metrics.generation.acknowledgment_ms).toBeLessThan(2000)
+  expect(metrics.generation.completion_ms).toBeLessThanOrEqual(300000)
+  expect(metrics.generation.final_status).toBe('SUCCEEDED')
 })

@@ -99,7 +99,7 @@ vi.mock('@clerk/react', () => ({
   useOrganizationList: () => ({
     isLoaded: _clerkState.isLoaded,
     createOrganization: vi.fn().mockResolvedValue({ id: 'org_created' }),
-    setActive: vi.fn().mockResolvedValue(undefined),
+    setActive: _clerkState.setActive || vi.fn().mockResolvedValue(undefined),
     userMemberships: {
       data: _clerkState.memberships || (_clerkState.orgId ? [{
         organization: {

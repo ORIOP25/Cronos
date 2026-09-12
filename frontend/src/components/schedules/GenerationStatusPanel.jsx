@@ -25,7 +25,7 @@ function alertColor(status) {
 }
 
 const GenerationStatusPanel = ({ jobId }) => {
-  const { data: job } = useScheduleTaskStatus(jobId)
+  const { data: job, isLoading, isError, error, refetch } = useScheduleTaskStatus(jobId)
   const [now, setNow] = useState(() => Date.now())
 
   useEffect(() => {
@@ -33,7 +33,7 @@ const GenerationStatusPanel = ({ jobId }) => {
     return () => globalThis.clearInterval(timer)
   }, [])
 
-  if (!job) {
+  if (isLoading || (!job && !isError)) {
     return (
       <CAlert color="info" className="d-flex align-items-center gap-2 mb-4">
         <CSpinner size="sm" />
@@ -42,6 +42,19 @@ const GenerationStatusPanel = ({ jobId }) => {
     )
   }
 
+  if (isError) {
+    const presentation = getApiErrorPresentation(error, 'schedule.load')
+    const status = error?.response?.status
+    return (
+      <FailureState
+        presentation={presentation}
+        onRetry={status === 403 ? undefined : status === 401 ? undefined : () => void refetch()}
+        navigationTo={status === 401 ? '/login' : undefined}
+        navigationLabel={status === 401 ? 'Entrar novamente' : undefined}
+        variant="inline"
+      />
+    )
+  }
   const status = job.job_status ?? ''
   const isRunning = ACTIVE_STATUSES.has(status)
   if (status === 'SUCCEEDED') {

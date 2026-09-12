@@ -32,6 +32,7 @@ test('rejects invalid arguments with usage code information', () => {
 
 test('keeps capacity as an explicit E2E gate', () => {
   assert.equal(parseArgs(['capacity']).command, 'capacity')
+  assert.equal(parseArgs(['capacity-smoke']).command, 'capacity-smoke')
   assert.equal(parseArgs(['e2e', '--project', 'capacity']).project, 'capacity')
 })
 

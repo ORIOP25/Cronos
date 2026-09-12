@@ -88,4 +88,38 @@ describe('Members', () => {
       expect(screen.getByTitle(description)).toBeVisible()
     }
   })
+
+  it('maps provider error categories to local neutral copy', () => {
+    useMembersMock.mockReturnValue({
+      data: {
+        items: [{
+          id: 8,
+          organization_display_name: 'Ana Silva',
+          email: 'ana@example.test',
+          capabilities: ['teacher'],
+          teacher_access_mode: 'platform',
+          subject_ids: [],
+          access_status: 'sync_error',
+          lifecycle_status: 'active',
+          provider_state: 'unconfirmed',
+          access_error_category: 'provider_role_mismatch',
+          access_error_safe_message: 'Clerk role does not match the expected local access.',
+          can_resend_invitation: false,
+          can_retry_sync: true,
+          can_restore: false,
+          lock_version: 1,
+        }],
+      },
+      error: null,
+      isError: false,
+      isLoading: false,
+      refetch: vi.fn(),
+    })
+
+    renderWithProviders(<Members />)
+
+    expect(screen.getByText('Os dados de acesso precisam de ser confirmados.')).toBeInTheDocument()
+    expect(screen.queryByText('Clerk role does not match the expected local access.')).toBeNull()
+    expect(screen.queryByText('Fornecedor por confirmar')).toBeNull()
+  })
 })

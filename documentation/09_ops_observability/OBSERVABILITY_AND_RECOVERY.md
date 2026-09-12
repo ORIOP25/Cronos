@@ -60,8 +60,9 @@ Persisted event summaries support tenant-scoped operational review without loggi
 ## States and Transitions
 
 Jobs move from queued or running states to success, cancellation,
-no-valid-output, or failure. A queued job older than two minutes becomes
-`FAILED / DISPATCH_STALLED`. A running job past its deadline by 30 seconds
+no-valid-output, or failure. `QUEUED` age alone is an operational signal,
+not proof that a job was lost: recovery never fails a queued job without
+broker or worker evidence. A running job past its deadline by 30 seconds
 becomes `FAILED / WORKER_STALLED`. A cancel request older than two minutes
 becomes `CANCELED`.
 Provider and webhook states remain queryable through their persisted status fields.
@@ -73,6 +74,7 @@ Provider and webhook states remain queryable through their persisted status fiel
 | Liveness fails | Inspect API process and restart the API service. |
 | Readiness returns `503` | Check PostgreSQL and Redis connectivity. |
 | Job remains active | Beat recovery finalizes stale jobs. Inspect `failure_reference`, the scheduler event, and worker logs. |
+| Old queued jobs | Query the queued backlog and verify dispatcher, broker, worker, and deployment revision before taking action. Do not mark the job failed based on age alone. |
 | Worker task is missing | Inspect Celery registration and worker command. |
 | Migration or trigger audit fails | Stop release, inspect migration state, and restore from verified backup if required. |
 
@@ -83,6 +85,19 @@ Provider and webhook states remain queryable through their persisted status fiel
 3. Run `python -m scripts.audit_triggers` from `backend/`.
 4. Run `python -m scripts.audit_database_integrity` from `backend/`.
 5. Record incident evidence before changing data.
+
+For an operational view of queued work, use:
+
+```sql
+SELECT id, organization_id, queued_at, job_status, failure_reference
+FROM schedule_generation_job
+WHERE job_status = 'QUEUED'
+ORDER BY queued_at ASC;
+```
+
+Before recovery or replay, verify that the API, worker, Beat, and frontend
+are running the same intended revision and that the broker contains the
+corresponding dispatch message.
 
 ## Support workflow
 

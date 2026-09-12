@@ -4,13 +4,20 @@ import json
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 
+import structlog
 from starlette.types import Message, Receive, Scope, Send
 
-from app.core.exceptions import REQUEST_ID_HEADER, new_error_reference, public_error_detail
+from app.core.exceptions import (
+    REQUEST_ID_HEADER,
+    REQUEST_ID_PATTERN,
+    new_error_reference,
+    public_error_detail,
+)
 
 ASGIApp = Callable[[Scope, Receive, Send], Awaitable[None]]
 BODY_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 REQUEST_BODY_TOO_LARGE = "request_body_too_large"
+logger = structlog.get_logger()
 
 
 @dataclass(frozen=True)
@@ -86,8 +93,22 @@ class RequestBodyLimitMiddleware:
     async def _reject(scope: Scope, send: Send) -> None:
         headers = {key.lower(): value for key, value in scope.get("headers", [])}
         incoming = headers.get(REQUEST_ID_HEADER.lower().encode(), b"").decode("ascii", "ignore")
-        reference = (
-            incoming if len(incoming) == 12 and incoming.isalnum() else new_error_reference()
+        state = scope.setdefault("state", {})
+        existing = state.get("request_reference")
+        if isinstance(existing, str) and REQUEST_ID_PATTERN.fullmatch(existing):
+            reference = existing
+        elif REQUEST_ID_PATTERN.fullmatch(incoming):
+            reference = incoming
+        else:
+            reference = new_error_reference()
+        state["request_reference"] = reference
+        logger.info(
+            "request_rejected",
+            request_id=reference,
+            code=REQUEST_BODY_TOO_LARGE,
+            status_code=413,
+            method=scope.get("method"),
+            path=scope.get("path"),
         )
         detail = public_error_detail(
             code=REQUEST_BODY_TOO_LARGE,

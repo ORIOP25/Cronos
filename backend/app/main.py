@@ -106,8 +106,30 @@ def _error_response(
     support_required: bool | None = None,
     headers: dict[str, str] | None = None,
     reference: str | None = None,
+    diagnostic_metadata: dict | None = None,
 ) -> JSONResponse:
     reference = reference or request_reference(request)
+    route = getattr(request, "scope", {}).get("route")
+    route_template = getattr(route, "path", None) or "unmatched"
+    diagnostic = {}
+    if isinstance(diagnostic_metadata, dict):
+        job_id = diagnostic_metadata.get("job_id")
+        if isinstance(job_id, int) and not isinstance(job_id, bool):
+            diagnostic["job_id"] = job_id
+    catalog = PUBLIC_ERROR_CATALOG.get(code, {})
+    logger.info(
+        "public_error_response",
+        request_id=reference,
+        code=code,
+        status_code=status_code,
+        method=request.method,
+        route=route_template,
+        retryable=catalog.get("retryable", False) if retryable is None else retryable,
+        support_required=catalog.get("support_required", False)
+        if support_required is None
+        else support_required,
+        **diagnostic,
+    )
     response = JSONResponse(
         status_code=status_code,
         content={
@@ -156,6 +178,7 @@ app.add_middleware(
     path_limits={
         ("POST", "/api/v1/contact"): 16 * 1024,
         ("POST", "/api/v1/webhooks/clerk"): 256 * 1024,
+        ("POST", "/api/v1/client-errors"): 4 * 1024,
     },
 )
 
@@ -273,6 +296,7 @@ async def app_error_handler(request: Request, exc: AppError):
         or (exc.metadata.get("fields") if isinstance(exc.metadata.get("fields"), dict) else None),
         retryable=exc.public_retryable,
         support_required=exc.public_support_required,
+        diagnostic_metadata=exc.diagnostic_metadata,
     )
 
 

@@ -114,6 +114,9 @@ downgrade the additive database migration during rollback.
 2. Confirm worker registration for `scheduler.run_generation_job`.
 3. Confirm Beat schedules `members.run_scheduled_reconciliation`, `privacy.run_maintenance`, and `scheduler.run_stale_job_recovery`.
 4. Check that API, worker, Beat, frontend, and migration reference the intended SHA.
+   If queued jobs are old, treat that as an operational signal and verify the
+   broker/dispatcher and worker on the same SHA; queued age alone does not
+   justify failing a job.
 5. Test contact delivery, authentication, invitations, schedule approval, occurrence decisions, and timesheets.
 6. Test `/`, `/login`, `/register`, `/dashboard`, `/schedules`, `/my-schedules`, `/absences`, and `/cookies` after refresh.
 7. Record deployment IDs, backup IDs, restore evidence, and the previous rollback target.

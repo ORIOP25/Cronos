@@ -129,6 +129,7 @@ export const useScheduleTaskStatus = (jobId) => {
     },
     enabled: Boolean(orgId) && Boolean(jobId),
     refetchInterval: (query) => {
+      if (query.state.error) return false
       const status = query.state.data?.job_status
       if (!status) return 5000
       const terminal = ['SUCCEEDED', 'FAILED', 'CANCELED', 'NO_VALID_OUTPUT']

@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import or_, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models
@@ -196,29 +196,25 @@ class SchedulerJobService:
     ) -> dict[str, int]:
         """Finalize abandoned jobs while holding each row lock."""
         recovered_at = now or datetime.now(UTC)
-        queued_before = recovered_at - timedelta(minutes=2)
         running_before = recovered_at - timedelta(seconds=30)
         cancel_before = recovered_at - timedelta(minutes=2)
         result = await self._db.scalars(
             select(models.ScheduleGenerationJob)
             .where(
                 models.ScheduleGenerationJob.organization_id == organization_id,
-                or_(
-                    (
-                        models.ScheduleGenerationJob.job_status
-                        == models.ScheduleGenerationJobStatus.QUEUED
-                    )
-                    & (models.ScheduleGenerationJob.queued_at <= queued_before),
+                (
                     (
                         models.ScheduleGenerationJob.job_status
                         == models.ScheduleGenerationJobStatus.RUNNING
                     )
-                    & (models.ScheduleGenerationJob.deadline_at <= running_before),
+                    & (models.ScheduleGenerationJob.deadline_at <= running_before)
+                )
+                | (
                     (
                         models.ScheduleGenerationJob.job_status
                         == models.ScheduleGenerationJobStatus.CANCEL_REQUESTED
                     )
-                    & (models.ScheduleGenerationJob.cancellation_requested_at <= cancel_before),
+                    & (models.ScheduleGenerationJob.cancellation_requested_at <= cancel_before)
                 ),
             )
             .with_for_update(skip_locked=True)
@@ -226,13 +222,7 @@ class SchedulerJobService:
         jobs = list(result)
         totals = {"dispatch_stalled": 0, "worker_stalled": 0, "canceled": 0}
         for job in jobs:
-            if job.job_status == models.ScheduleGenerationJobStatus.QUEUED:
-                job.job_status = models.ScheduleGenerationJobStatus.FAILED
-                job.failure_code = "DISPATCH_STALLED"
-                job.failure_message = "The generation job did not reach a worker."
-                totals["dispatch_stalled"] += 1
-                event_name = "generation_dispatch_stalled"
-            elif job.job_status == models.ScheduleGenerationJobStatus.RUNNING:
+            if job.job_status == models.ScheduleGenerationJobStatus.RUNNING:
                 job.job_status = models.ScheduleGenerationJobStatus.FAILED
                 job.failure_code = "WORKER_STALLED"
                 job.failure_message = "The worker did not complete the generation job."

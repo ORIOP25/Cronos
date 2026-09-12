@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 REQUEST_ID_HEADER = "X-Request-ID"
-REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9]{12}$")
+REQUEST_ID_PATTERN = re.compile(r"^[A-Z0-9]{12}$")
 
 
 # Only these messages can cross the API boundary.  Exception text and provider

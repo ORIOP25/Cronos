@@ -146,6 +146,7 @@ function useOrganizationGuardState() {
   const [activationPending, setActivationPending] = useState(false)
   const [activationError, setActivationError] = useState(null)
   const membershipData = list.userMemberships?.data
+  const setActive = list.setActive
   const memberships = useMemo(() => membershipData || [], [membershipData])
   const soleOrganizationId = useMemo(
     () => memberships.length === 1 ? memberships[0]?.organization?.id : null,
@@ -155,12 +156,13 @@ function useOrganizationGuardState() {
     if (!list.isLoaded || !organizationState.isLoaded || organizationState.organization || !soleOrganizationId || autoActivationAttempted.current) return
     autoActivationAttempted.current = true
     setActivationPending(true)
-    Promise.resolve(list.setActive({ organization: soleOrganizationId }))
+    Promise.resolve(setActive({ organization: soleOrganizationId }))
+      .then(() => setActivationPending(false))
       .catch((error) => {
         setActivationError(error)
         setActivationPending(false)
       })
-  }, [list, organizationState.isLoaded, organizationState.organization, soleOrganizationId])
+  }, [setActive, list.isLoaded, organizationState.isLoaded, organizationState.organization, soleOrganizationId])
   return {
     ...auth,
     organization: organizationState.organization,
