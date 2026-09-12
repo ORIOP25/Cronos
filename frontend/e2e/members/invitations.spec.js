@@ -48,7 +48,7 @@ async function saveAndExpect(page, expectedStatus) {
 
 async function completeVisibleInvitationAuth(page, email) {
   await expect(page).toHaveURL(/\/(?:login|register)(?:[/?#].*)?$/, { timeout: 30_000 })
-  const emailInput = page.getByRole('textbox', { name: /email/i }).first()
+  const emailInput = page.getByRole('textbox', { name: /email/i }).last()
   if (await emailInput.isVisible().catch(() => false)) {
     await emailInput.fill(email)
     await page.getByRole('button', { name: /continuar|continue|entrar|criar conta/i }).last().click()
@@ -157,7 +157,6 @@ test.describe.serial('Member invitations — real Clerk', () => {
       await expectRouteReady(invitePage, '/my-schedules')
 
       await invitePage.evaluate(() => window.Clerk.signOut())
-      await setupClerkTestingToken({ page: invitePage })
       await invitePage.goto(`${E2E_BASE_URL}/login`, { waitUntil: 'domcontentloaded' })
       await completeVisibleInvitationAuth(invitePage, email)
       await invitePage.waitForFunction((id) => window.Clerk?.organization?.id === id, organizationId)
