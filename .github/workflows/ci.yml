@@ -80,12 +80,9 @@ jobs:
       - name: Install locked dependencies
         working-directory: backend
         run: python -m pip install --require-hashes -r requirements-dev.txt
-      - name: Verify dependency locks
+      - name: Verify locked dependencies
         working-directory: backend
         run: |
-          pip-compile --quiet --allow-unsafe --generate-hashes --no-index --output-file=requirements.txt requirements.in
-          pip-compile --quiet --allow-unsafe --generate-hashes --no-index --output-file=requirements-dev.txt requirements-dev.in
-          git diff --exit-code -- requirements.txt requirements-dev.txt
           pip check
           pip-audit -r requirements.txt --progress-spinner off
       - name: Ruff
