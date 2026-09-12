@@ -158,10 +158,11 @@ test('mede clientes autenticados com um único job do scheduler', async ({ brows
     startedAt = Date.now()
     const generationPage = pages[teacherClientCount]?.page
     if (!generationPage) throw new Error('Capacity profile has no administrator generation page.')
+    const loadPages = pages.filter(({ page }) => page !== generationPage)
     const generationStartedAt = Date.now()
     const jobId = await startOneGeneration(generationPage, metrics)
     await Promise.all([
-      runClientLoad(pages, request, metrics, startedAt),
+      runClientLoad(loadPages, request, metrics, startedAt),
       pollGeneration(generationPage, request, jobId, metrics, generationStartedAt),
     ])
   } catch (error) {
