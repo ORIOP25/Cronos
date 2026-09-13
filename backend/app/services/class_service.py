@@ -3,7 +3,7 @@ import uuid
 from sqlalchemy import delete, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy.orm import selectinload
 
 from app import models, schemas
 from app.services.scheduler_state_service import record_scheduler_change
@@ -71,29 +71,6 @@ async def get_classes_by_org(db: AsyncSession, organization_id: int):
         .order_by(models.Class.name)
     )
     return result.scalars().all()
-
-
-async def get_class_details(db: AsyncSession, class_id: int, organization_id: int):
-    """
-    Busca turma com o curso associado (Eager Load).
-
-    🔐 Security: Filtra por organization_id - cada organização só vê suas turmas
-    ⚙️ Stability: selectinload previne N+1 queries e lazy loading em async context
-    ⚡ Optimization: Uma query com JOIN retorna tudo de uma vez
-    📈 Scalability: Padrão aplicável a qualquer entity com relationships
-
-    Retorna: Class com course populated, ou None se não encontrada
-    """
-    query = (
-        select(models.Class)
-        .where(models.Class.id == class_id, models.Class.organization_id == organization_id)
-        .options(
-            selectinload(models.Class.course)  # Carrega o curso associado
-        )
-    )
-
-    result = await db.execute(query)
-    return result.scalars().first()
 
 
 async def get_classes_by_course(db: AsyncSession, course_id: int, organization_id: int):
@@ -244,11 +221,6 @@ async def get_class_curriculum(db: AsyncSession, class_id: int, organization_id:
 
     # 4. Retornar as disciplinas do curso
     return course.subjects if course.subjects else []
-
-
-# --- SYNC (SOLVER) ---
-def get_classes_by_org_sync(db: Session, organization_id: int):
-    return db.query(models.Class).filter(models.Class.organization_id == organization_id).all()
 
 
 # ==========================================

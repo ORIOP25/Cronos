@@ -3,7 +3,7 @@
 import structlog
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy.orm import selectinload
 
 from app import models
 from app.models import Availability
@@ -327,16 +327,6 @@ async def set_teacher_availability(
         return {"status": "success", "count": len(new_records)}
     except Exception:
         raise
-
-
-# ==========================================
-#  FUNÇÕES SÍNCRONAS (Para usar no Solver/Celery)
-# ==========================================
-
-
-def get_teachers_by_org_sync(db: Session, organization_id: int):
-    """Retorna todos os professores (Sync - Bloqueante)."""
-    return db.query(models.Teacher).filter(models.Teacher.organization_id == organization_id).all()
 
 
 # ==========================================

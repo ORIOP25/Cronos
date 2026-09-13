@@ -192,33 +192,6 @@ async def delete_constraint(
     return False
 
 
-def get_timeslots_by_org_sync(db: Session, organization_id: int):
-    return (
-        db.query(models.Timeslot).filter(models.Timeslot.organization_id == organization_id).all()
-    )
-
-
-def get_constraints_by_org_sync(db: Session, organization_id: int):
-    return (
-        db.query(models.Constraint)
-        .filter(models.Constraint.organization_id == organization_id)
-        .all()
-    )
-
-
-def get_availabilities_by_org_sync(db: Session, organization_id: int):
-    """
-    Retorna todas as disponibilidades dos professores desta organização.
-    Faz um JOIN com a tabela Teacher para filtrar pelo organization_id.
-    """
-    return (
-        db.query(models.Availability)
-        .join(models.Teacher)
-        .filter(models.Teacher.organization_id == organization_id)
-        .all()
-    )
-
-
 def get_modules_by_subject_sync(db: Session, organization_id: int) -> dict:
     """Retorna {subject_id: [Module ordenado]} para todos os subjects da org."""
     modules = (

@@ -58,6 +58,3 @@ class SchedulerConstraintRules:
     def preference_bonus(self, teacher_id: int, timeslot_id: int) -> int:
         return int((teacher_id, timeslot_id) in self.policy.teacher_preferred_timeslots)
 
-    def violation_for_block(self, block: Any) -> str | None:
-        violations = self.policy.evaluate(placement_facts(block)).hard_violations
-        return violations[0].message if violations else None

@@ -105,16 +105,6 @@ async def clerk_user_exists(
     return True
 
 
-def parse_role(clerk_role: str | None) -> str:
-    if not clerk_role:
-        return "teacher"
-    role_map = {
-        "admin": "admin",
-        "member": "teacher",
-    }
-    return role_map.get(clerk_role, "teacher")
-
-
 async def ensure_organization_exists(
     db: AsyncSession, clerk_org_id: str, org_name: str
 ) -> models.Organization:
@@ -272,27 +262,3 @@ async def sync_user_from_clerk_api(
     )
 
 
-async def sync_organization_from_clerk_api(
-    db: AsyncSession,
-    clerk_org_id: str,
-    gateway: ClerkGateway | None = None,
-) -> models.Organization | None:
-    sdk = gateway.sdk if gateway is not None else get_clerk_sdk()
-    try:
-        clerk_org = (
-            await sdk.organizations.get_async(organization_id=clerk_org_id)
-            if gateway is not None
-            else await asyncio.to_thread(
-                lambda: sdk.organizations.get(organization_id=clerk_org_id)
-            )
-        )
-    except Exception as exc:
-        logger.error(
-            "clerk_provider_organization_sync_failed",
-            clerk_org_id=clerk_org_id,
-            error_type=type(exc).__name__,
-            exception_frames=safe_exception_frames(exc),
-        )
-        return None
-
-    return await ensure_organization_exists(db, clerk_org_id, clerk_org.name)
