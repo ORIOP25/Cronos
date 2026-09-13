@@ -280,10 +280,8 @@ export function createTutorialApiAdapter({
       return read({ id: 1, organization_display_name: 'Prof. António Silva', capabilities: ['admin', 'teacher'], access_status: 'active', teacher_id: 1 })
     }
 
-    if (path === '/subjects') {
-      if (method === 'get') return read(snapshot.subjects)
-      return fail(`Método ${method.toUpperCase()} não permitido em ${path}.`, 405, 'METHOD_NOT_ALLOWED')
-    }
+    const readOnlyCollections = { '/subjects': snapshot.subjects, '/rooms': snapshot.rooms, '/courses': snapshot.courses, '/classes': snapshot.classes, '/teachers': snapshot.teachers, '/timeslots': snapshot.timeslots }
+    if (Object.hasOwn(readOnlyCollections, path)) return method === 'get' ? read(readOnlyCollections[path]) : fail(`Método ${method.toUpperCase()} não permitido em ${path}.`, 405, 'METHOD_NOT_ALLOWED')
     if (/^\/subjects\/\d+$/.test(path)) {
       const id = Number(path.split('/').at(-1))
       if (!findNumeric(scenario.subjects, id)) return fail('A disciplina indicada não existe no exemplo.', 404, 'DEMO_ENTITY_NOT_FOUND')
@@ -292,10 +290,6 @@ export function createTutorialApiAdapter({
       return fail(`Método ${method.toUpperCase()} não permitido em ${path}.`, 405, 'METHOD_NOT_ALLOWED')
     }
 
-    if (path === '/rooms') {
-      if (method === 'get') return read(snapshot.rooms)
-      return fail(`Método ${method.toUpperCase()} não permitido em ${path}.`, 405, 'METHOD_NOT_ALLOWED')
-    }
     if (/^\/rooms\/\d+$/.test(path)) {
       const id = Number(path.split('/').at(-1))
       if (!findNumeric(scenario.rooms, id)) return fail('A sala indicada não existe no exemplo.', 404, 'DEMO_ENTITY_NOT_FOUND')
@@ -304,10 +298,6 @@ export function createTutorialApiAdapter({
       return fail(`Método ${method.toUpperCase()} não permitido em ${path}.`, 405, 'METHOD_NOT_ALLOWED')
     }
 
-    if (path === '/courses') {
-      if (method === 'get') return read(snapshot.courses)
-      return fail(`Método ${method.toUpperCase()} não permitido em ${path}.`, 405, 'METHOD_NOT_ALLOWED')
-    }
     if (/^\/courses\/\d+$/.test(path)) {
       const id = Number(path.split('/').at(-1))
       if (!findNumeric(scenario.courses, id)) return fail('O curso indicado não existe no exemplo.', 404, 'DEMO_ENTITY_NOT_FOUND')
@@ -322,7 +312,6 @@ export function createTutorialApiAdapter({
       return fail(`Método ${method.toUpperCase()} não permitido em ${path}.`, 405, 'METHOD_NOT_ALLOWED')
     }
 
-    if (path === '/classes') return method === 'get' ? read(snapshot.classes) : fail(`Método ${method.toUpperCase()} não permitido em ${path}.`, 405, 'METHOD_NOT_ALLOWED')
     if (/^\/classes\/\d+$/.test(path)) {
       const id = Number(path.split('/').at(-1))
       const cls = findNumeric(scenario.classes, id)
@@ -366,9 +355,6 @@ export function createTutorialApiAdapter({
       if (method === 'patch') return write(TUTORIAL_ACTIONS.UPDATE_MEMBER_COMPETENCIES, { memberId: id, data: body }, (_next, nextSnapshot) => nextSnapshot.members[id - 1])
       return fail(`Método ${method.toUpperCase()} não permitido em ${path}.`, 405, 'METHOD_NOT_ALLOWED')
     }
-    if (path === '/teachers') return method === 'get' ? read(snapshot.teachers) : fail(`Método ${method.toUpperCase()} não permitido em ${path}.`, 405, 'METHOD_NOT_ALLOWED')
-    if (path === '/timeslots') return method === 'get' ? read(snapshot.timeslots) : fail(`Método ${method.toUpperCase()} não permitido em ${path}.`, 405, 'METHOD_NOT_ALLOWED')
-
     if (path === '/teachers/me/availability') {
       if (method === 'get') return read(getAvailability(snapshot, scenario))
       if (method === 'put') return write(TUTORIAL_ACTIONS.UPDATE_AVAILABILITY, { slots: Array.isArray(body) ? body : body.availability }, (_next, nextSnapshot) => getAvailability(nextSnapshot, _next))
