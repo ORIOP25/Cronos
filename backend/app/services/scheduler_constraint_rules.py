@@ -57,4 +57,3 @@ class SchedulerConstraintRules:
 
     def preference_bonus(self, teacher_id: int, timeslot_id: int) -> int:
         return int((teacher_id, timeslot_id) in self.policy.teacher_preferred_timeslots)
-

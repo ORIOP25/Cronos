@@ -17,5 +17,3 @@ async def read_timeslots(
     current_user: deps.ActiveActor,
 ):
     return await timeslot_service.get_timeslots_by_org(db, current_user.organization_id)
-
-

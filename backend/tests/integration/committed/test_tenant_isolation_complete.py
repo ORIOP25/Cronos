@@ -129,26 +129,32 @@ async def test_timeslots_isolated_between_orgs(async_client: AsyncClient, db_ses
 
     r = await async_client.post(
         f"{API}/school/grid-settings/regenerate",
-        json={"grid_settings": {}, "timeslots": {
-            "start_time": "08:00",
-            "end_time": "10:00",
-            "slot_duration_minutes": 50,
-            "break_duration_minutes": 10,
-            "days_of_week": [0],
-        }},
+        json={
+            "grid_settings": {},
+            "timeslots": {
+                "start_time": "08:00",
+                "end_time": "10:00",
+                "slot_duration_minutes": 50,
+                "break_duration_minutes": 10,
+                "days_of_week": [0],
+            },
+        },
         headers=_hdr("user_slots_a"),
     )
     assert r.status_code == 200
 
     r = await async_client.post(
         f"{API}/school/grid-settings/regenerate",
-        json={"grid_settings": {}, "timeslots": {
-            "start_time": "14:00",
-            "end_time": "16:00",
-            "slot_duration_minutes": 50,
-            "break_duration_minutes": 10,
-            "days_of_week": [1],
-        }},
+        json={
+            "grid_settings": {},
+            "timeslots": {
+                "start_time": "14:00",
+                "end_time": "16:00",
+                "slot_duration_minutes": 50,
+                "break_duration_minutes": 10,
+                "days_of_week": [1],
+            },
+        },
         headers=_hdr("user_slots_b"),
     )
     assert r.status_code == 200

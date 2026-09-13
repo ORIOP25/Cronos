@@ -88,8 +88,7 @@ def test_flat_class_routes_are_read_only() -> None:
     assert ("/", "GET") in routes
     assert ("/{class_id}", "GET") in routes
     assert not any(
-        path in {"/", "/{class_id}"}
-        and method in {"POST", "PATCH", "DELETE"}
+        path in {"/", "/{class_id}"} and method in {"POST", "PATCH", "DELETE"}
         for path, method in routes
     )
 

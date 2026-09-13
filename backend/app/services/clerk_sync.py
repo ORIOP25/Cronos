@@ -260,5 +260,3 @@ async def sync_user_from_clerk_api(
         organization_id=organization_id,
         teacher_id=teacher_id,
     )
-
-

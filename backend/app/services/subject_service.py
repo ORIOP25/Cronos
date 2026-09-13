@@ -319,4 +319,3 @@ async def delete_subject(
     )
     await db.flush()
     return "SUCCESS"
-

@@ -432,5 +432,3 @@ async def apply_grid_regeneration(
     )
     await db.flush()
     return len(new_timeslots)
-
-

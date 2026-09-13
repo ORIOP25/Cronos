@@ -43,7 +43,9 @@ class TestClassesCRUD:
             "start_year": 2025,
             "end_year": 2028,
         }
-        resp = await async_client.post(f"{API}/courses/{course_id}/classes", json=payload, headers=clerk_admin_headers)
+        resp = await async_client.post(
+            f"{API}/courses/{course_id}/classes", json=payload, headers=clerk_admin_headers
+        )
         assert resp.status_code == 200
         data = resp.json()
         assert data["name"] == "Turma A"
@@ -62,7 +64,9 @@ class TestClassesCRUD:
             "end_year": 2028,
             "size": 30,
         }
-        resp = await async_client.post(f"{API}/courses/{course_id}/classes", json=payload, headers=clerk_admin_headers)
+        resp = await async_client.post(
+            f"{API}/courses/{course_id}/classes", json=payload, headers=clerk_admin_headers
+        )
         assert resp.status_code == 200
         assert resp.json()["size"] == 30
 
@@ -77,7 +81,9 @@ class TestClassesCRUD:
             "start_year": 2025,
             "end_year": 2025,
         }
-        resp = await async_client.post(f"{API}/courses/{course_id}/classes", json=payload, headers=clerk_admin_headers)
+        resp = await async_client.post(
+            f"{API}/courses/{course_id}/classes", json=payload, headers=clerk_admin_headers
+        )
         assert resp.status_code == 422
 
     async def test_create_class_course_not_found_404(
@@ -90,7 +96,9 @@ class TestClassesCRUD:
             "start_year": 2025,
             "end_year": 2028,
         }
-        resp = await async_client.post(f"{API}/courses/99999/classes", json=payload, headers=clerk_admin_headers)
+        resp = await async_client.post(
+            f"{API}/courses/99999/classes", json=payload, headers=clerk_admin_headers
+        )
         assert resp.status_code == 404
 
     async def test_create_class_invalid_grade_422(
@@ -104,7 +112,9 @@ class TestClassesCRUD:
             "start_year": 2025,
             "end_year": 2028,
         }
-        resp = await async_client.post(f"{API}/courses/{course_id}/classes", json=payload, headers=clerk_admin_headers)
+        resp = await async_client.post(
+            f"{API}/courses/{course_id}/classes", json=payload, headers=clerk_admin_headers
+        )
         assert resp.status_code == 422
 
     # ---------- READ ----------
@@ -341,12 +351,16 @@ class TestClassesCRUD:
         )
         class_id = create.json()["id"]
 
-        resp = await async_client.delete(f"{API}/courses/{course_id}/classes/{class_id}", headers=clerk_admin_headers)
+        resp = await async_client.delete(
+            f"{API}/courses/{course_id}/classes/{class_id}", headers=clerk_admin_headers
+        )
         assert resp.status_code == 200
 
     async def test_delete_class_not_found_404(
         self, async_client: AsyncClient, clerk_admin_headers: dict
     ):
         """❌ Apagar turma inexistente devolve 404"""
-        resp = await async_client.delete(f"{API}/courses/99999/classes/99999", headers=clerk_admin_headers)
+        resp = await async_client.delete(
+            f"{API}/courses/99999/classes/99999", headers=clerk_admin_headers
+        )
         assert resp.status_code == 404

@@ -115,13 +115,16 @@ class TestTeacherRoleRegressionContracts:
     ):
         timeslots_resp = await async_client.post(
             f"{API}/school/grid-settings/regenerate",
-            json={"grid_settings": {}, "timeslots": {
-                "start_time": "08:00",
-                "end_time": "10:00",
-                "slot_duration_minutes": 50,
-                "break_duration_minutes": 10,
-                "days_of_week": [0],
-            }},
+            json={
+                "grid_settings": {},
+                "timeslots": {
+                    "start_time": "08:00",
+                    "end_time": "10:00",
+                    "slot_duration_minutes": 50,
+                    "break_duration_minutes": 10,
+                    "days_of_week": [0],
+                },
+            },
             headers=clerk_admin_headers,
         )
         assert timeslots_resp.status_code == 200
@@ -325,13 +328,16 @@ class TestTeacherRoleRegressionContracts:
     ):
         timeslots_resp = await async_client.post(
             f"{API}/school/grid-settings/regenerate",
-            json={"grid_settings": {}, "timeslots": {
-                "start_time": "08:00",
-                "end_time": "10:00",
-                "slot_duration_minutes": 50,
-                "break_duration_minutes": 10,
-                "days_of_week": [0],
-            }},
+            json={
+                "grid_settings": {},
+                "timeslots": {
+                    "start_time": "08:00",
+                    "end_time": "10:00",
+                    "slot_duration_minutes": 50,
+                    "break_duration_minutes": 10,
+                    "days_of_week": [0],
+                },
+            },
             headers=clerk_admin_headers,
         )
         assert timeslots_resp.status_code == 200

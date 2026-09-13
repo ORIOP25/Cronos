@@ -132,4 +132,3 @@ async def delete_room(
     )
     await db.flush()
     return "SUCCESS"
-
