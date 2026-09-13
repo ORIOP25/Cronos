@@ -3,11 +3,11 @@
 TESTES CRUD DE TURMAS (Classes)
 ===============================
 Valida endpoints da API:
-- POST /classes/ (criar turma com curso obrigatório)
+- POST /courses/{course_id}/classes (criar turma)
 - GET /classes/ (listar)
 - GET /classes/{id} (detalhe completo com progresso)
-- PATCH /classes/{id} (atualizar)
-- DELETE /classes/{id} (apagar)
+- PATCH /courses/{course_id}/classes/{id} (atualizar)
+- DELETE /courses/{course_id}/classes/{id} (apagar)
 - Validação de year range, curso inexistente, 404, 422
 """
 
@@ -39,12 +39,11 @@ class TestClassesCRUD:
         course_id = await _create_course(async_client, clerk_admin_headers)
         payload = {
             "name": "Turma A",
-            "course_id": course_id,
             "grade_level": 10,
             "start_year": 2025,
             "end_year": 2028,
         }
-        resp = await async_client.post(f"{API}/classes/", json=payload, headers=clerk_admin_headers)
+        resp = await async_client.post(f"{API}/courses/{course_id}/classes", json=payload, headers=clerk_admin_headers)
         assert resp.status_code == 200
         data = resp.json()
         assert data["name"] == "Turma A"
@@ -58,13 +57,12 @@ class TestClassesCRUD:
         course_id = await _create_course(async_client, clerk_admin_headers)
         payload = {
             "name": "Turma B",
-            "course_id": course_id,
             "grade_level": 11,
             "start_year": 2025,
             "end_year": 2028,
             "size": 30,
         }
-        resp = await async_client.post(f"{API}/classes/", json=payload, headers=clerk_admin_headers)
+        resp = await async_client.post(f"{API}/courses/{course_id}/classes", json=payload, headers=clerk_admin_headers)
         assert resp.status_code == 200
         assert resp.json()["size"] == 30
 
@@ -75,12 +73,11 @@ class TestClassesCRUD:
         course_id = await _create_course(async_client, clerk_admin_headers)
         payload = {
             "name": "Turma Inválida",
-            "course_id": course_id,
             "grade_level": 10,
             "start_year": 2025,
             "end_year": 2025,
         }
-        resp = await async_client.post(f"{API}/classes/", json=payload, headers=clerk_admin_headers)
+        resp = await async_client.post(f"{API}/courses/{course_id}/classes", json=payload, headers=clerk_admin_headers)
         assert resp.status_code == 422
 
     async def test_create_class_course_not_found_404(
@@ -89,12 +86,11 @@ class TestClassesCRUD:
         """❌ Curso inexistente devolve 404"""
         payload = {
             "name": "Turma Orfã",
-            "course_id": 99999,
             "grade_level": 10,
             "start_year": 2025,
             "end_year": 2028,
         }
-        resp = await async_client.post(f"{API}/classes/", json=payload, headers=clerk_admin_headers)
+        resp = await async_client.post(f"{API}/courses/99999/classes", json=payload, headers=clerk_admin_headers)
         assert resp.status_code == 404
 
     async def test_create_class_invalid_grade_422(
@@ -104,12 +100,11 @@ class TestClassesCRUD:
         course_id = await _create_course(async_client, clerk_admin_headers)
         payload = {
             "name": "Turma Grade",
-            "course_id": course_id,
             "grade_level": 9,  # Inválido: mínimo é 10
             "start_year": 2025,
             "end_year": 2028,
         }
-        resp = await async_client.post(f"{API}/classes/", json=payload, headers=clerk_admin_headers)
+        resp = await async_client.post(f"{API}/courses/{course_id}/classes", json=payload, headers=clerk_admin_headers)
         assert resp.status_code == 422
 
     # ---------- READ ----------
@@ -118,10 +113,9 @@ class TestClassesCRUD:
         """✅ Listar turmas da organização"""
         course_id = await _create_course(async_client, clerk_admin_headers)
         await async_client.post(
-            f"{API}/classes/",
+            f"{API}/courses/{course_id}/classes",
             json={
                 "name": "Turma Lista",
-                "course_id": course_id,
                 "grade_level": 10,
                 "start_year": 2025,
                 "end_year": 2028,
@@ -140,10 +134,9 @@ class TestClassesCRUD:
         """✅ Obter detalhe completo da turma (ClassFullDetailRead)"""
         course_id = await _create_course(async_client, clerk_admin_headers)
         create_resp = await async_client.post(
-            f"{API}/classes/",
+            f"{API}/courses/{course_id}/classes",
             json={
                 "name": "Turma Detalhe",
-                "course_id": course_id,
                 "grade_level": 10,
                 "start_year": 2025,
                 "end_year": 2028,
@@ -168,10 +161,9 @@ class TestClassesCRUD:
         """✅ Valida cálculo de horas fracionárias e percentagem (50 min em módulo de 25h = 3.3%)"""
         course_id = await _create_course(async_client, clerk_admin_headers)
         create_resp = await async_client.post(
-            f"{API}/classes/",
+            f"{API}/courses/{course_id}/classes",
             json={
                 "name": "Turma Progresso Fracionário",
-                "course_id": course_id,
                 "grade_level": 10,
                 "start_year": 2025,
                 "end_year": 2028,
@@ -253,10 +245,9 @@ class TestClassesCRUD:
         """✅ Atualizar nome da turma"""
         course_id = await _create_course(async_client, clerk_admin_headers)
         create = await async_client.post(
-            f"{API}/classes/",
+            f"{API}/courses/{course_id}/classes",
             json={
                 "name": "Antigo",
-                "course_id": course_id,
                 "grade_level": 10,
                 "start_year": 2025,
                 "end_year": 2028,
@@ -266,23 +257,22 @@ class TestClassesCRUD:
         class_id = create.json()["id"]
 
         resp = await async_client.patch(
-            f"{API}/classes/{class_id}",
+            f"{API}/courses/{course_id}/classes/{class_id}",
             json={"name": "Renomeada"},
             headers=clerk_admin_headers,
         )
         assert resp.status_code == 200
         assert resp.json()["name"] == "Renomeada"
 
-    async def test_update_class_invalid_year_range_400(
+    async def test_update_class_invalid_year_range_422(
         self, async_client: AsyncClient, clerk_admin_headers: dict
     ):
-        """❌ Atualizar com end_year <= start_year devolve 400"""
+        """❌ Atualizar com end_year <= start_year devolve 422"""
         course_id = await _create_course(async_client, clerk_admin_headers)
         create = await async_client.post(
-            f"{API}/classes/",
+            f"{API}/courses/{course_id}/classes",
             json={
                 "name": "Turma",
-                "course_id": course_id,
                 "grade_level": 10,
                 "start_year": 2025,
                 "end_year": 2028,
@@ -292,12 +282,11 @@ class TestClassesCRUD:
         class_id = create.json()["id"]
 
         resp = await async_client.patch(
-            f"{API}/classes/{class_id}",
+            f"{API}/courses/{course_id}/classes/{class_id}",
             json={"start_year": 2026, "end_year": 2026},
             headers=clerk_admin_headers,
         )
-        # A service layer valida e devolve "INVALID_YEAR_RANGE" → 400
-        assert resp.status_code == 400
+        assert resp.status_code == 422
 
     async def test_update_class_partial_year_range_invalid_400(
         self, async_client: AsyncClient, clerk_admin_headers: dict
@@ -305,10 +294,9 @@ class TestClassesCRUD:
         """PATCH parcial não pode deixar end_year <= start_year."""
         course_id = await _create_course(async_client, clerk_admin_headers)
         create = await async_client.post(
-            f"{API}/classes/",
+            f"{API}/courses/{course_id}/classes",
             json={
                 "name": "Turma Parcial",
-                "course_id": course_id,
                 "grade_level": 10,
                 "start_year": 2025,
                 "end_year": 2028,
@@ -318,7 +306,7 @@ class TestClassesCRUD:
         class_id = create.json()["id"]
 
         resp = await async_client.patch(
-            f"{API}/classes/{class_id}",
+            f"{API}/courses/{course_id}/classes/{class_id}",
             json={"end_year": 2025},
             headers=clerk_admin_headers,
         )
@@ -330,7 +318,7 @@ class TestClassesCRUD:
     ):
         """❌ Turma inexistente devolve 404"""
         resp = await async_client.patch(
-            f"{API}/classes/99999",
+            f"{API}/courses/99999/classes/99999",
             json={"name": "Fantasma"},
             headers=clerk_admin_headers,
         )
@@ -342,10 +330,9 @@ class TestClassesCRUD:
         """✅ Apagar turma com sucesso"""
         course_id = await _create_course(async_client, clerk_admin_headers)
         create = await async_client.post(
-            f"{API}/classes/",
+            f"{API}/courses/{course_id}/classes",
             json={
                 "name": "Descartável",
-                "course_id": course_id,
                 "grade_level": 10,
                 "start_year": 2025,
                 "end_year": 2028,
@@ -354,12 +341,12 @@ class TestClassesCRUD:
         )
         class_id = create.json()["id"]
 
-        resp = await async_client.delete(f"{API}/classes/{class_id}", headers=clerk_admin_headers)
+        resp = await async_client.delete(f"{API}/courses/{course_id}/classes/{class_id}", headers=clerk_admin_headers)
         assert resp.status_code == 200
 
     async def test_delete_class_not_found_404(
         self, async_client: AsyncClient, clerk_admin_headers: dict
     ):
         """❌ Apagar turma inexistente devolve 404"""
-        resp = await async_client.delete(f"{API}/classes/99999", headers=clerk_admin_headers)
+        resp = await async_client.delete(f"{API}/courses/99999/classes/99999", headers=clerk_admin_headers)
         assert resp.status_code == 404

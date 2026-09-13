@@ -10,6 +10,7 @@ from sqlalchemy import select
 
 from app import models
 from app.api.deps import Actor
+from app.api.v1.endpoints import classes as classes_endpoint
 from app.config import settings
 from app.core.ratelimit import limiter
 from app.main import app
@@ -72,6 +73,23 @@ def test_every_route_is_default_limited_or_intentionally_exempt() -> None:
         path in expected_exemptions
         or f"{route.endpoint.__module__}.{route.endpoint.__name__}" not in limiter._exempt_routes
         for route, path in iter_routes(app.routes)
+    )
+
+
+def test_flat_class_routes_are_read_only() -> None:
+    routes = {
+        (route.path, method)
+        for route in classes_endpoint.router.routes
+        if isinstance(route, APIRoute)
+        for method in route.methods
+    }
+
+    assert ("/", "GET") in routes
+    assert ("/{class_id}", "GET") in routes
+    assert not any(
+        path in {"/", "/{class_id}"}
+        and method in {"POST", "PATCH", "DELETE"}
+        for path, method in routes
     )
 
 
