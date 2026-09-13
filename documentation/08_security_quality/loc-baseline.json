@@ -1,0 +1,10 @@
+{
+  "revision": "4290ad13d7ebbbdd54ea49605a85959198bb89e1",
+  "counts": {
+    "backendProduction": 32790,
+    "frontendProduction": 18506,
+    "backendTests": 19219,
+    "frontendTests": 5966,
+    "e2eTests": 3217
+  }
+}

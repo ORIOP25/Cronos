@@ -16,6 +16,7 @@ import {
   validateDatabaseTargets,
 } from './test.mjs'
 import { redactSecrets, sanitizeDirectory } from './sanitize-test-artifacts.mjs'
+import { classifyPath, collectFiles, countNonBlankLines, measureFiles } from './loc-report.mjs'
 
 test('parses forwarded runner arguments without rebuilding a shell command', () => {
   const parsed = parseArgs(['fast', '--scope', 'backend', '--', 'tests/unit/test name.py', '-q'])
@@ -168,4 +169,29 @@ test('rejects database DDL targets outside the owned test database', () => {
     port: 5432,
     database: 'cronos_test_db',
   }), /outside the owned test database/)
+})
+
+test('counts nonblank source lines and classifies measured code', () => {
+  assert.equal(countNonBlankLines('\nconst value = 1\n  \n'), 1)
+  assert.equal(classifyPath('backend/app/services/example.py'), 'backendProduction')
+  assert.equal(classifyPath('frontend/src/test/example.test.jsx'), 'frontendTests')
+  assert.equal(classifyPath('frontend/e2e/example.spec.js'), 'e2eTests')
+  assert.equal(classifyPath('documentation/README.md'), null)
+})
+
+test('includes untracked source paths in the measured file set', () => {
+  const files = collectFiles('backend/app/new_file.py\nfrontend/src/new_file.jsx\n')
+  const measured = measureFiles(
+    files,
+    (filePath) => filePath.endsWith('.py') ? 'x = 1\n' : 'export const x = 1\n',
+    () => true,
+  )
+  assert.deepEqual(measured.files.map(({ path }) => path), ['backend/app/new_file.py', 'frontend/src/new_file.jsx'])
+  assert.deepEqual(measured.counts, {
+    backendProduction: 1,
+    frontendProduction: 1,
+    backendTests: 0,
+    frontendTests: 0,
+    e2eTests: 0,
+  })
 })
