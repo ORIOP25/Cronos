@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useApiClient } from '../../ApiClientContext'
 import { invalidatePreparationQueries } from '../readiness/data'
+import { invalidateOrgQueries, orgQueryKey } from '../queryKeys'
 import { useOrganization, useAuth } from '@clerk/react'
 
 const STATIC_OPTS = {
@@ -16,7 +17,7 @@ export const useTeachers = ({ enabled = true } = {}) => {
   const apiClient = useApiClient()
   const orgId = useOrganization().organization?.id
   return useQuery({
-    queryKey: ['teachers', orgId],
+    queryKey: orgQueryKey('teachers', orgId),
     queryFn: async () => {
       return apiClient.get('/teachers/')
     },
@@ -34,7 +35,7 @@ export const useCurrentMember = ({
   const orgId = useOrganization().organization?.id
   const { getToken, isLoaded, isSignedIn } = useAuth()
   return useQuery({
-    queryKey: ['current-member', orgId],
+    queryKey: orgQueryKey('current-member', orgId),
     queryFn: async () => {
       const token = await getToken({ organizationId: orgId })
       if (!token) throw new Error('Organization session token unavailable.')
@@ -53,7 +54,7 @@ export const useMembers = ({ includeArchived = false, enabled = true } = {}) => 
   const apiClient = useApiClient()
   const orgId = useOrganization().organization?.id
   return useQuery({
-    queryKey: ['members', orgId, includeArchived],
+    queryKey: orgQueryKey('members', orgId, includeArchived),
     queryFn: async () => {
       return apiClient.get('/members', {
         params: { include_archived: includeArchived },
@@ -66,10 +67,7 @@ export const useMembers = ({ includeArchived = false, enabled = true } = {}) => 
 
 const invalidateMemberQueries = (queryClient, orgId) => {
   return Promise.all([
-    queryClient.invalidateQueries({ queryKey: ['members', orgId] }),
-    queryClient.invalidateQueries({ queryKey: ['current-member', orgId] }),
-    queryClient.invalidateQueries({ queryKey: ['teachers', orgId] }),
-    queryClient.invalidateQueries({ queryKey: ['eligible-teachers', orgId] }),
+    invalidateOrgQueries(queryClient, orgId, ['members', 'current-member', 'teachers', 'eligible-teachers']),
     invalidatePreparationQueries(queryClient, orgId),
   ])
 }
