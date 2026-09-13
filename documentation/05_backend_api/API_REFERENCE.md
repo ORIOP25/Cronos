@@ -88,7 +88,6 @@ Stable route families keep frontend features and provider webhooks independent f
 | `GET` / `POST` | `/api/v1/rooms/` | Active / Admin |
 | `PATCH` / `DELETE` | `/api/v1/rooms/{room_id}` | Admin |
 | `GET` | `/api/v1/timeslots/` | Active |
-| `POST` | `/api/v1/timeslots/generate` | Admin |
 
 ### Members and teachers
 

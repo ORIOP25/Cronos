@@ -11,6 +11,7 @@ from sqlalchemy import select
 from app import models
 from app.api.deps import Actor
 from app.api.v1.endpoints import classes as classes_endpoint
+from app.api.v1.endpoints import timeslots as timeslots_endpoint
 from app.config import settings
 from app.core.ratelimit import limiter
 from app.main import app
@@ -91,6 +92,18 @@ def test_flat_class_routes_are_read_only() -> None:
         and method in {"POST", "PATCH", "DELETE"}
         for path, method in routes
     )
+
+
+def test_timeslot_generation_has_one_public_route() -> None:
+    routes = {
+        (route.path, method)
+        for route in timeslots_endpoint.router.routes
+        if isinstance(route, APIRoute)
+        for method in route.methods
+    }
+
+    assert ("/", "GET") in routes
+    assert not any(path == "/generate" for path, _method in routes)
 
 
 def test_production_lock_avoids_platform_conditional_uvicorn_extra() -> None:
