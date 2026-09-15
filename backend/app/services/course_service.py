@@ -3,6 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app import models, schemas
+from app.core.exceptions import AppError
 from app.services.scheduler_state_service import record_scheduler_change
 
 
@@ -104,7 +105,11 @@ async def create_course(
         models.Course.organization_id == organization_id,
     )
     if (await db.execute(q_check)).scalars().first():
-        return "ABBREVIATION_EXISTS"
+        raise AppError(
+            kind="bad_request",
+            code="bad_request",
+            detail=f"Course abbreviation '{item.abbreviation}' already exists.",
+        )
 
     # 2. Preparar as Disciplinas (ANTES DE CRIAR O CURSO)
     # Buscamos as disciplinas primeiro para injetar logo na criação
@@ -117,7 +122,11 @@ async def create_course(
         subjects_to_link = (await db.execute(q_subjects)).scalars().all()
 
         if len(subjects_to_link) != len(item.subject_ids):
-            return "INVALID_SUBJECTS"
+            raise AppError(
+                kind="bad_request",
+                code="bad_request",
+                detail="One or more subjects do not belong to the organization.",
+            )
 
     # 3. Criar o Objeto Curso (SEM disciplinas, evita lazy loading em async)
     course_data = item.model_dump(
@@ -208,7 +217,11 @@ async def update_course(
     db_item = result.scalars().first()
 
     if not db_item:
-        return None  # Alterado para retornar None (o endpoint trata o 404)
+        raise AppError(
+            kind="not_found",
+            code="resource_not_found",
+            detail=f"Course {course_id} was not found in organization {organization_id}.",
+        )
     before = await _course_demand_snapshot(db, organization_id, course_id)
 
     # SECURITY: Se estão a mudar abbreviation, validar uniqueness
@@ -219,7 +232,11 @@ async def update_course(
             models.Course.id != course_id,
         )
         if (await db.execute(q_check)).scalars().first():
-            return "ABBREVIATION_EXISTS"
+            raise AppError(
+                kind="bad_request",
+                code="bad_request",
+                detail=f"Course abbreviation '{item.abbreviation}' already exists.",
+            )
 
     # 1. Aplicar updates Escalares (Campos simples)
     update_data = item.model_dump(exclude_unset=True, exclude={"subject_ids"})
@@ -300,7 +317,11 @@ async def delete_course(
     )
     course = result.scalars().first()
     if not course:
-        return "NOT_FOUND"
+        raise AppError(
+            kind="not_found",
+            code="resource_not_found",
+            detail=f"Course {course_id} was not found in organization {organization_id}.",
+        )
 
     # 2. Verificar dependências
     result_classes = await db.execute(
@@ -310,7 +331,11 @@ async def delete_course(
         )
     )
     if result_classes.first():
-        return "DEPENDENCY_ERROR"
+        raise AppError(
+            kind="bad_request",
+            code="bad_request",
+            detail=f"Course {course_id} has classes and cannot be deleted.",
+        )
 
     before = await _course_demand_snapshot(db, organization_id, course_id)
     await db.delete(course)
@@ -326,4 +351,3 @@ async def delete_course(
         active_resource=bool(before["subject_ids"]),
     )
     await db.flush()
-    return "SUCCESS"

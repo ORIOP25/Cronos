@@ -42,24 +42,12 @@ async def create_course(
     """
     Cria um novo curso e gera automaticamente a sua estrutura (turmas, matriz).
     """
-    result = await course_service.create_course(
+    return await course_service.create_course(
         db,
         item,
         current_user.organization_id,
         changed_by_membership_id=current_user.membership_id,
     )
-
-    if result == "ABBREVIATION_EXISTS":
-        raise HTTPException(
-            status_code=400, detail=f"A sigla '{item.abbreviation}' jÃ¡ existe nesta organizaÃ§Ã£o."
-        )
-    if result == "INVALID_SUBJECTS":
-        raise HTTPException(
-            status_code=400,
-            detail="Tentativa de associar disciplinas invÃ¡lidas ou de outra escola.",
-        )
-
-    return result
 
 
 # --- 3. Obter Detalhes do Curso (Dashboard) ---
@@ -190,22 +178,13 @@ async def update_course(
 
     4Âº Pilar - Stability: Rejeita se hÃ¡ classes (impede perda de dados)
     """
-    result = await course_service.update_course(
+    return await course_service.update_course(
         db,
         course_id,
         item,
         current_user.organization_id,
         changed_by_membership_id=current_user.membership_id,
     )
-
-    if result == "NOT_FOUND":
-        raise HTTPException(status_code=404, detail=COURSE_NOT_FOUND_MSG)
-    if result == "ABBREVIATION_EXISTS":
-        raise HTTPException(
-            status_code=400, detail="A sigla fornecida jÃ¡ existe nesta organizaÃ§Ã£o"
-        )
-
-    return result
 
 
 # --- 5. Apagar Curso ---
@@ -221,21 +200,11 @@ async def delete_course(
     db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
     current_user: deps.AdminActor,
 ) -> Any:
-    status = await course_service.delete_course(
+    await course_service.delete_course(
         db,
         course_id,
         current_user.organization_id,
         changed_by_membership_id=current_user.membership_id,
     )
-
-    if status == "NOT_FOUND":
-        raise HTTPException(status_code=404, detail=COURSE_NOT_FOUND_MSG)
-
-    if status == "DEPENDENCY_ERROR":
-        # Melhoria de UX: Mensagem mais explicita
-        raise HTTPException(
-            status_code=400,
-            detail="NÃ£o Ã© possÃ­vel apagar: Existem turmas ou histÃ³rico associado a este curso.",
-        )
 
     return {"message": "Curso removido com sucesso"}
