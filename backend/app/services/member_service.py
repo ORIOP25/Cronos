@@ -81,6 +81,56 @@ def _expected_role(
     return None
 
 
+def _normalize_capability_policy(
+    capabilities: set[models.MembershipCapability],
+    teacher_access_mode: models.TeacherAccessMode | None,
+    *,
+    allow_platform_access: bool = True,
+) -> tuple[
+    set[models.MembershipCapability],
+    models.TeacherAccessMode | None,
+    models.ClerkOrganizationRole | None,
+]:
+    """Validate the capability/mode matrix once at the application boundary."""
+    normalized_capabilities = set(capabilities)
+    normalized_mode = teacher_access_mode
+    if models.MembershipCapability.teacher not in normalized_capabilities:
+        if normalized_mode is not None:
+            raise member_error(
+                "validation",
+                "validation_error",
+                "Teacher access mode is only valid for teachers.",
+                fields={"teacher_access_mode": "Remove this value."},
+            )
+        normalized_mode = None
+    elif normalized_mode is None:
+        raise member_error(
+            "validation",
+            "validation_error",
+            "Teacher access mode is required.",
+            fields={"teacher_access_mode": "Required."},
+        )
+    if (
+        models.MembershipCapability.admin in normalized_capabilities
+        and normalized_mode == models.TeacherAccessMode.scheduler_only
+    ):
+        raise member_error(
+            "validation",
+            "validation_error",
+            "Admins require platform access.",
+            fields={"teacher_access_mode": "Use platform."},
+        )
+    expected_role = _expected_role(normalized_capabilities, normalized_mode)
+    if not allow_platform_access and expected_role is not None:
+        raise member_error(
+            "validation",
+            "validation_error",
+            "Choose scheduler-only teacher access or restore platform access.",
+            fields={"capabilities": "Platform capabilities require access."},
+        )
+    return normalized_capabilities, normalized_mode, expected_role
+
+
 def _access_status_for_draft(
     capabilities: set[models.MembershipCapability],
     teacher_access_mode: models.TeacherAccessMode | None,
@@ -1268,7 +1318,9 @@ async def create_member(
         if member_in.teacher_access_mode
         else None
     )
-    expected_role = _expected_role(capabilities, teacher_access_mode)
+    capabilities, teacher_access_mode, expected_role = _normalize_capability_policy(
+        capabilities, teacher_access_mode
+    )
     normalized_email = _normalize_email(str(member_in.email))
     account = await db.scalar(
         select(models.User).where(func.lower(models.User.email) == normalized_email)
@@ -1633,32 +1685,13 @@ async def update_member(
     next_mode = member.teacher_access_mode
     if member_in.teacher_access_mode is not None:
         next_mode = models.TeacherAccessMode(member_in.teacher_access_mode)
-    if models.MembershipCapability.teacher not in next_caps:
-        next_mode = None
-    elif next_mode is None:
-        raise member_error(
-            "validation",
-            "validation_error",
-            "Teacher access mode is required.",
-            fields={"teacher_access_mode": "Required."},
-        )
-    if (
-        models.MembershipCapability.admin in next_caps
-        and next_mode == models.TeacherAccessMode.scheduler_only
-    ):
-        raise member_error(
-            "validation",
-            "validation_error",
-            "Admins require platform access.",
-            fields={"teacher_access_mode": "Use platform."},
-        )
+    next_caps, next_mode, target_role = _normalize_capability_policy(next_caps, next_mode)
 
     await _assert_can_remove_admin_capability(
         db, member, current_admin, next_capabilities=next_caps
     )
     previous_snapshot = _access_snapshot(member)
     previous_role = member.expected_clerk_role
-    target_role = _expected_role(next_caps, next_mode)
     clerk_access = clerk_access or ClerkAccessService()
     if models.MembershipCapability.teacher in next_caps and member_in.subject_ids is not None:
         await _validate_subject_ids(db, organization_id, member_in.subject_ids)
@@ -1880,22 +1913,11 @@ async def restore_member(
             if restore_in.teacher_access_mode
             else member.teacher_access_mode
         )
-        if models.MembershipCapability.teacher not in next_caps:
-            next_mode = None
-        elif next_mode is None:
-            raise member_error(
-                "validation",
-                "validation_error",
-                "Teacher access mode is required.",
-                fields={"teacher_access_mode": "Required."},
-            )
-        if not restore_in.restore_access and _expected_role(next_caps, next_mode) is not None:
-            raise member_error(
-                "validation",
-                "validation_error",
-                "Choose scheduler-only teacher access or restore platform access.",
-                fields={"capabilities": "Platform capabilities require access."},
-            )
+        next_caps, next_mode, _ = _normalize_capability_policy(
+            next_caps,
+            next_mode,
+            allow_platform_access=restore_in.restore_access,
+        )
         member.teacher_access_mode = next_mode
         await _replace_capabilities(db, member, next_caps)
         await _sync_teacher_profile(
@@ -1907,11 +1929,11 @@ async def restore_member(
             previous_can_teach=previous_can_teach,
             record_change=False,
         )
-    elif restore_in and not restore_in.restore_access and member.expected_clerk_role is not None:
-        raise member_error(
-            "validation",
-            "validation_error",
-            "Choose non-platform capabilities before restoring without access.",
+    elif restore_in and not restore_in.restore_access:
+        _normalize_capability_policy(
+            {cap.capability for cap in member.capabilities},
+            member.teacher_access_mode,
+            allow_platform_access=False,
         )
     member.lifecycle_status = models.MembershipLifecycleStatus.active
     member.updated_by_membership_id = current_admin.membership_id
