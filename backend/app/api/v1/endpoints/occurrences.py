@@ -16,11 +16,12 @@ from __future__ import annotations
 from datetime import date
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import schemas
 from app.api import deps
+from app.core.exceptions import AppError, status_code_for_kind
 from app.services import occurrence_service
 
 # Constante reutilizada (SonarQube S1192)
@@ -71,8 +72,8 @@ async def list_occurrences(
 
     try:
         return await db.run_sync(_run)
-    except occurrence_service.OccurrenceServiceError as exc:
-        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+    except AppError:
+        raise
 
 
 @router.post(
@@ -107,8 +108,8 @@ async def create_occurrence(
 
     try:
         occurrence, created_now = await db.run_sync(_run)
-    except occurrence_service.OccurrenceServiceError as exc:
-        error_status = exc.status_code
+    except AppError as exc:
+        error_status = status_code_for_kind(exc.kind, exc.code)
         error_detail = exc.detail
 
         def _emit_failure(sync_db):
@@ -124,7 +125,7 @@ async def create_occurrence(
             )
 
         await db.run_sync(_emit_failure)
-        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+        raise
 
     if not created_now:
         response.status_code = status.HTTP_200_OK
@@ -237,8 +238,8 @@ async def get_substitute_recommendations(
 
     try:
         return await db.run_sync(_run)
-    except occurrence_service.OccurrenceServiceError as exc:
-        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+    except AppError:
+        raise
 
 
 @router.get(
@@ -258,10 +259,7 @@ async def get_occurrence(
     def _run(sync_db):
         return occurrence_service.get_occurrence_sync(sync_db, occurrence_id, organization_id)
 
-    occurrence = await db.run_sync(_run)
-    if occurrence is None:
-        raise HTTPException(status_code=404, detail=OCCURRENCE_NOT_FOUND_MSG)
-    return occurrence
+    return await db.run_sync(_run)
 
 
 @router.patch(
@@ -294,8 +292,8 @@ async def update_occurrence(
 
     try:
         updated = await db.run_sync(_run)
-    except occurrence_service.OccurrenceServiceError as exc:
-        error_status = exc.status_code
+    except AppError as exc:
+        error_status = status_code_for_kind(exc.kind, exc.code)
         error_detail = exc.detail
 
         def _emit_failure(sync_db):
@@ -311,7 +309,7 @@ async def update_occurrence(
             )
 
         await db.run_sync(_emit_failure)
-        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+        raise
 
     def _emit_success(sync_db):
         occurrence_service.log_occurrence_event_safe_sync(
@@ -358,5 +356,5 @@ async def cancel_occurrence(
 
     try:
         return await db.run_sync(_run)
-    except occurrence_service.OccurrenceServiceError as exc:
-        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+    except AppError:
+        raise

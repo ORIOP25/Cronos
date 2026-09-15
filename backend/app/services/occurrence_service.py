@@ -19,6 +19,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
 from app import models, schemas
+from app.core.exceptions import AppError
 from app.core.logging import safe_exception_frames
 from app.core.task_keys import DEFAULT_REPAIR_WINDOW_DAYS
 
@@ -99,11 +100,19 @@ OBS_RESULT_ERROR = "ERROR"
 logger = structlog.get_logger(__name__)
 
 
-class OccurrenceServiceError(Exception):
-    def __init__(self, status_code: int, detail: str):
-        super().__init__(detail)
-        self.status_code = status_code
-        self.detail = detail
+def _occurrence_error(*, status_code: int, detail: str) -> AppError:
+    kind = {
+        400: "bad_request",
+        404: "not_found",
+        409: "conflict",
+        422: "validation",
+    }.get(status_code, "unexpected_error")
+    code = {
+        404: "resource_not_found",
+        409: "conflict",
+        422: "validation_error",
+    }.get(status_code, "bad_request")
+    return AppError(kind=kind, code=code, detail=detail)
 
 
 def classify_occurrence_error_result(status_code: int) -> str:
@@ -128,7 +137,7 @@ def _touch_occurrence_version(occurrence: models.LessonOccurrence) -> None:
 
 def _assert_occurrence_version(occurrence: models.LessonOccurrence, version: int) -> None:
     if int(occurrence.version or 1) != int(version):
-        raise OccurrenceServiceError(status_code=409, detail=ERR_STALE_VERSION)
+        raise _occurrence_error(status_code=409, detail=ERR_STALE_VERSION)
 
 
 def _active_block_occurrence_filter(
@@ -272,11 +281,11 @@ def get_occurrence_observability_summary_sync(
 
 def get_occurrence_sync(
     db: Session, occurrence_id: int, organization_id: int
-) -> models.LessonOccurrence | None:
+) -> models.LessonOccurrence:
     """Devolve uma ocorrência pelo ID, validando o tenant."""
     occurrence = _get_occurrence_with_context_sync(db, occurrence_id, organization_id)
     if occurrence is None:
-        return None
+        raise _occurrence_error(status_code=404, detail=OCCURRENCE_NOT_FOUND)
     _attach_occurrence_read_context(occurrence)
     return occurrence
 
@@ -453,17 +462,17 @@ def _validate_substitute_for_occurrence(
 ) -> None:
     context = _resolve_planned_context(db, occurrence)
     if context is None or context.timeslot is None or context.subject is None:
-        raise OccurrenceServiceError(status_code=422, detail=ERR_MISSING_SCHEDULE_CONTEXT)
+        raise _occurrence_error(status_code=422, detail=ERR_MISSING_SCHEDULE_CONTEXT)
 
     class_id = context.class_id
 
     if substitute_teacher_id == context.teacher_id:
-        raise OccurrenceServiceError(status_code=409, detail=ERR_SUBSTITUTE_SAME_PLANNED_TEACHER)
+        raise _occurrence_error(status_code=409, detail=ERR_SUBSTITUTE_SAME_PLANNED_TEACHER)
 
     # Regra de domínio: substituição exige disciplina diferente da planeada.
     # O substituto dá a sua própria disciplina na mesma turma.
     if substitute_subject_id == context.subject_id:
-        raise OccurrenceServiceError(status_code=422, detail=ERR_SUBSTITUTE_SAME_SUBJECT)
+        raise _occurrence_error(status_code=422, detail=ERR_SUBSTITUTE_SAME_SUBJECT)
 
     link = db.execute(
         select(models.ClassSubjectLink)
@@ -480,14 +489,14 @@ def _validate_substitute_for_occurrence(
         )
     ).scalar_one_or_none()
     if link is None:
-        raise OccurrenceServiceError(status_code=409, detail=ERR_SUBSTITUTE_NOT_ELIGIBLE)
+        raise _occurrence_error(status_code=409, detail=ERR_SUBSTITUTE_NOT_ELIGIBLE)
 
     subject = _resolve_subject_for_org(db, organization_id, substitute_subject_id)
     if not _is_room_compatible(context.room, subject):
-        raise OccurrenceServiceError(status_code=409, detail=ERR_SUBSTITUTE_ROOM_MISMATCH)
+        raise _occurrence_error(status_code=409, detail=ERR_SUBSTITUTE_ROOM_MISMATCH)
 
     if not _teacher_is_available_for_slot(db, substitute_teacher_id, context.timeslot_id):
-        raise OccurrenceServiceError(status_code=409, detail=ERR_SUBSTITUTE_IMPOSSIBLE_AVAILABILITY)
+        raise _occurrence_error(status_code=409, detail=ERR_SUBSTITUTE_IMPOSSIBLE_AVAILABILITY)
 
     if _teacher_is_busy_in_slot(
         db,
@@ -499,7 +508,7 @@ def _validate_substitute_for_occurrence(
             context.active_block.id if context.active_block is not None else None
         ),
     ):
-        raise OccurrenceServiceError(status_code=409, detail=ERR_SUBSTITUTE_SLOT_CONFLICT)
+        raise _occurrence_error(status_code=409, detail=ERR_SUBSTITUTE_SLOT_CONFLICT)
 
 
 def _compute_daily_load_hours(
@@ -634,7 +643,7 @@ def _resolve_subject_for_org(
         .scalar_one_or_none()
     )
     if subject is None:
-        raise OccurrenceServiceError(status_code=422, detail=ERR_SUBJECT_OUTSIDE_ORG)
+        raise _occurrence_error(status_code=422, detail=ERR_SUBJECT_OUTSIDE_ORG)
     return subject
 
 
@@ -706,14 +715,14 @@ def _apply_module_delta(
     if module_id is None:
         return (0.0, 0.0)
     if db.get(models.Module, module_id) is None:
-        raise OccurrenceServiceError(status_code=422, detail=ERR_MISSING_EXECUTED_MODULE)
+        raise _occurrence_error(status_code=422, detail=ERR_MISSING_EXECUTED_MODULE)
     completed_minutes = int(round(completed_delta * 60))
     debt_minutes = int(round(debt_delta * 60))
     current_completed, current_debt = _ledger_totals_minutes(
         db, organization_id, class_id, module_id
     )
     if current_completed + completed_minutes < 0 or current_debt + debt_minutes < 0:
-        raise OccurrenceServiceError(status_code=409, detail=ERR_NEGATIVE_ACCOUNTING)
+        raise _occurrence_error(status_code=409, detail=ERR_NEGATIVE_ACCOUNTING)
     return completed_minutes / 60.0, debt_minutes / 60.0
 
 
@@ -727,7 +736,7 @@ def _apply_sequential_completed_hours(
 ) -> list[tuple[int, float, float]]:
     anchor = db.get(models.Module, anchor_module_id)
     if anchor is None or anchor.organization_id != organization_id:
-        raise OccurrenceServiceError(status_code=422, detail=ERR_MISSING_EXECUTED_MODULE)
+        raise _occurrence_error(status_code=422, detail=ERR_MISSING_EXECUTED_MODULE)
     modules = list(
         db.scalars(
             select(models.Module)
@@ -758,7 +767,7 @@ def _apply_sequential_completed_hours(
             break
     if remaining:
         if hours_delta < 0:
-            raise OccurrenceServiceError(status_code=409, detail=ERR_NEGATIVE_ACCOUNTING)
+            raise _occurrence_error(status_code=409, detail=ERR_NEGATIVE_ACCOUNTING)
         allocations.append((modules[-1].id, remaining / 60.0, 0.0))
     return allocations
 
@@ -867,9 +876,9 @@ def _cancel_operational_blocks_for_occurrence(
                 models.TimesheetStatus.SUBMITTED,
                 models.TimesheetStatus.APPROVED,
             ):
-                raise OccurrenceServiceError(status_code=409, detail=ERR_SUBSTITUTE_LOG_LOCKED)
+                raise _occurrence_error(status_code=409, detail=ERR_SUBSTITUTE_LOG_LOCKED)
             if not cancel_completed_substitute_log:
-                raise OccurrenceServiceError(status_code=409, detail=ERR_SUBSTITUTE_LOG_LOCKED)
+                raise _occurrence_error(status_code=409, detail=ERR_SUBSTITUTE_LOG_LOCKED)
             block_hours = _duration_hours(block.date, block.timeslot)
             if block_hours > 0 and block.module_id is not None:
                 accounting_deltas = _apply_state_accounting(
@@ -946,7 +955,7 @@ def _apply_state_accounting(
 
     if status == models.LessonOccurrenceStatus.SUBSTITUTED:
         if executed_module_id is None:
-            raise OccurrenceServiceError(status_code=422, detail=ERR_MISSING_EXECUTED_MODULE)
+            raise _occurrence_error(status_code=422, detail=ERR_MISSING_EXECUTED_MODULE)
 
         _apply_module_delta(
             db,
@@ -1072,10 +1081,10 @@ def _validate_state_transition(
 ) -> None:
     # V4: REVOKED é terminal — imutável
     if not occurrence.is_active:
-        raise OccurrenceServiceError(status_code=409, detail=ERR_INACTIVE)
+        raise _occurrence_error(status_code=409, detail=ERR_INACTIVE)
 
     if occurrence.status == models.LessonOccurrenceStatus.REVOKED:
-        raise OccurrenceServiceError(status_code=409, detail="OCCURRENCE_REVOKED")
+        raise _occurrence_error(status_code=409, detail="OCCURRENCE_REVOKED")
 
     if occurrence.decided_at is None:
         return
@@ -1083,7 +1092,7 @@ def _validate_state_transition(
     # V4: Enforce ALLOWED_STATE_TRANSITIONS for re-decisions
     allowed_targets = ALLOWED_STATE_TRANSITIONS.get(occurrence.status, set())
     if payload.status not in allowed_targets:
-        raise OccurrenceServiceError(
+        raise _occurrence_error(
             status_code=422,
             detail=f"Transição de {occurrence.status.value} para {payload.status.value} não é permitida.",
         )
@@ -1108,7 +1117,7 @@ def create_occurrence_from_active_block_sync(
         )
     ).scalar_one_or_none()
     if block is None:
-        raise OccurrenceServiceError(status_code=404, detail=ERR_ACTIVE_BLOCK_NOT_FOUND)
+        raise _occurrence_error(status_code=404, detail=ERR_ACTIVE_BLOCK_NOT_FOUND)
 
     completed_log = (
         db.query(models.LessonLog)
@@ -1120,7 +1129,7 @@ def create_occurrence_from_active_block_sync(
         .first()
     )
     if completed_log is not None:
-        raise OccurrenceServiceError(
+        raise _occurrence_error(
             status_code=409,
             detail="Esta aula ja foi registada como dada. Reverta o registo primeiro.",
         )
@@ -1143,7 +1152,7 @@ def create_occurrence_from_active_block_sync(
 
     subject = db.get(models.Subject, block.subject_id)
     if subject is None:
-        raise OccurrenceServiceError(status_code=422, detail=ERR_MISSING_SCHEDULE_CONTEXT)
+        raise _occurrence_error(status_code=422, detail=ERR_MISSING_SCHEDULE_CONTEXT)
 
     planned_module_id = _resolve_active_module_id_for_subject(
         db,
@@ -1271,16 +1280,16 @@ def cancel_occurrence_sync(
     occurrence = _get_occurrence_for_update_sync(db, occurrence_id, organization_id)
 
     if occurrence is None:
-        raise OccurrenceServiceError(status_code=404, detail=OCCURRENCE_NOT_FOUND)
+        raise _occurrence_error(status_code=404, detail=OCCURRENCE_NOT_FOUND)
 
     # V4: REVOKED é imutável
     if occurrence.status == models.LessonOccurrenceStatus.REVOKED:
-        raise OccurrenceServiceError(status_code=409, detail="OCCURRENCE_REVOKED")
+        raise _occurrence_error(status_code=409, detail="OCCURRENCE_REVOKED")
 
     _assert_occurrence_version(occurrence, version)
 
     if not occurrence.is_active:
-        raise OccurrenceServiceError(status_code=409, detail=ERR_INACTIVE)
+        raise _occurrence_error(status_code=409, detail=ERR_INACTIVE)
 
     active_schedule_block_id = occurrence.active_schedule_block_id
     planned_context = _resolve_planned_context(db, occurrence)
@@ -1366,7 +1375,7 @@ def cancel_occurrence_sync(
         _touch_occurrence_version(occurrence)
         db.flush()
 
-    except OccurrenceServiceError:
+    except AppError:
         raise
     except Exception:
         raise
@@ -1390,7 +1399,7 @@ def list_occurrences_sync(
     as_page: bool = False,
 ) -> dict | list[models.LessonOccurrence]:
     if date_from is not None and date_to is not None and date_from > date_to:
-        raise OccurrenceServiceError(status_code=422, detail="OCCURRENCE_INVALID_DATE_RANGE")
+        raise _occurrence_error(status_code=422, detail="OCCURRENCE_INVALID_DATE_RANGE")
     stmt = select(models.LessonOccurrence).where(
         models.LessonOccurrence.organization_id == organization_id
     )
@@ -1413,7 +1422,7 @@ def list_occurrences_sync(
                 models.LessonOccurrence.status == models.LessonOccurrenceStatus(normalized)
             )
         else:
-            raise OccurrenceServiceError(status_code=422, detail="OCCURRENCE_INVALID_STATUS")
+            raise _occurrence_error(status_code=422, detail="OCCURRENCE_INVALID_STATUS")
     stmt = stmt.order_by(models.LessonOccurrence.date, models.LessonOccurrence.id)
     total = db.scalar(select(func.count()).select_from(stmt.order_by(None).subquery()))
     rows = list(db.execute(stmt.offset(max(0, skip)).limit(min(500, max(1, limit)))).scalars())
@@ -1436,7 +1445,7 @@ def update_occurrence_sync(
     """Aplica decisão operacional com máquina de estados e contabilização transacional."""
     occurrence = _get_occurrence_for_update_sync(db, occurrence_id, organization_id)
     if occurrence is None:
-        raise OccurrenceServiceError(status_code=404, detail=OCCURRENCE_NOT_FOUND)
+        raise _occurrence_error(status_code=404, detail=OCCURRENCE_NOT_FOUND)
 
     if _is_idempotent_payload(occurrence, payload):
         occurrence_with_context = _get_occurrence_with_context_sync(
@@ -1482,18 +1491,18 @@ def update_occurrence_sync(
                 is not None
             )
             if has_completed_log:
-                raise OccurrenceServiceError(
+                raise _occurrence_error(
                     status_code=409,
                     detail="SUBSTITUTE_LOG_LOCKED",
                 )
 
     planned_context = _resolve_planned_context(db, occurrence)
     if planned_context is None:
-        raise OccurrenceServiceError(status_code=422, detail=ERR_MISSING_SCHEDULE_CONTEXT)
+        raise _occurrence_error(status_code=422, detail=ERR_MISSING_SCHEDULE_CONTEXT)
 
     class_id = planned_context.class_id
     if planned_context.subject is None:
-        raise OccurrenceServiceError(status_code=422, detail=ERR_MISSING_PLANNED_MODULE)
+        raise _occurrence_error(status_code=422, detail=ERR_MISSING_PLANNED_MODULE)
 
     planned_hours = _resolve_occurrence_planned_hours(occurrence)
 
@@ -1505,7 +1514,7 @@ def update_occurrence_sync(
             subject=planned_context.subject,
         )
     if planned_module_id is None:
-        raise OccurrenceServiceError(status_code=422, detail=ERR_MISSING_PLANNED_MODULE)
+        raise _occurrence_error(status_code=422, detail=ERR_MISSING_PLANNED_MODULE)
 
     if payload.status == models.LessonOccurrenceStatus.SUBSTITUTED:
         _validate_substitute_for_occurrence(
@@ -1523,7 +1532,7 @@ def update_occurrence_sync(
             subject_id=payload.substitute_subject_id,
         )
         if executed_module_id is None:
-            raise OccurrenceServiceError(status_code=422, detail=ERR_MISSING_EXECUTED_MODULE)
+            raise _occurrence_error(status_code=422, detail=ERR_MISSING_EXECUTED_MODULE)
         executed_teacher_id = payload.substitute_teacher_id
         hours_given = 0.0
     elif payload.status == models.LessonOccurrenceStatus.GAP:
@@ -1649,7 +1658,7 @@ def update_occurrence_sync(
 
         db.flush()
         db.refresh(occurrence)
-    except OccurrenceServiceError:
+    except AppError:
         raise
     except Exception:
         raise
@@ -1739,14 +1748,14 @@ def get_substitute_recommendations_sync(
 ) -> list[schemas.SubstituteRecommendationRead]:
     occurrence = _get_occurrence_with_context_sync(db, occurrence_id, organization_id)
     if occurrence is None:
-        raise OccurrenceServiceError(status_code=404, detail=OCCURRENCE_NOT_FOUND)
+        raise _occurrence_error(status_code=404, detail=OCCURRENCE_NOT_FOUND)
 
     planned_context = _resolve_planned_context(db, occurrence)
     if planned_context is None or planned_context.timeslot is None:
-        raise OccurrenceServiceError(status_code=422, detail=ERR_MISSING_SCHEDULE_CONTEXT)
+        raise _occurrence_error(status_code=422, detail=ERR_MISSING_SCHEDULE_CONTEXT)
 
     if planned_context.class_model is None:
-        raise OccurrenceServiceError(status_code=422, detail=ERR_MISSING_SCHEDULE_CONTEXT)
+        raise _occurrence_error(status_code=422, detail=ERR_MISSING_SCHEDULE_CONTEXT)
 
     class_id = planned_context.class_id
     planned_subject_id = planned_context.subject_id

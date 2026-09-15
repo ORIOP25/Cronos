@@ -250,5 +250,6 @@ def status_code_for_kind(kind: str, code: str | None = None) -> int:
         "conflict": 409,
         "forbidden": 403,
         "unauthorized": 401,
+        "too_many_requests": 429,
         "unavailable": 503,
     }.get(kind, 500)

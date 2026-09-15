@@ -39,7 +39,7 @@ def _require_operation_service(
 
 
 def member_error(
-    status_code: int,
+    kind: str,
     code: str,
     message: str,
     *,
@@ -48,12 +48,6 @@ def member_error(
     support_required: bool = False,
     fields: dict[str, str] | None = None,
 ) -> AppError:
-    kind = {
-        403: "forbidden",
-        404: "not_found",
-        409: "conflict",
-        422: "validation",
-    }.get(status_code, "unavailable")
     return AppError(
         kind=kind,
         code=code,
@@ -421,13 +415,13 @@ async def _record_teacher_scheduler_change(
 async def _organization(db: AsyncSession, organization_id: int) -> models.Organization:
     org = await db.get(models.Organization, organization_id)
     if org is None:
-        raise member_error(404, "organization_not_found", "Organization not found.")
+        raise member_error("not_found", "organization_not_found", "Organization not found.")
     return org
 
 
 def _require_clerk_org(org: models.Organization, current_admin: Actor) -> str:
     if not org.clerk_org_id or not current_admin.clerk_user_id:
-        raise member_error(503, "clerk_configuration_required", SAFE_PROVIDER_ERROR)
+        raise member_error("unavailable", "clerk_configuration_required", SAFE_PROVIDER_ERROR)
     return org.clerk_org_id
 
 
@@ -455,7 +449,7 @@ async def _validate_subject_ids(
     valid_subject_ids = [row[0] for row in result.all()]
     if len(valid_subject_ids) != len(set(subject_ids)):
         raise member_error(
-            422,
+            "validation",
             "validation_error",
             "Invalid competencies.",
             fields={"subject_ids": "One or more subjects do not belong to the organization."},
@@ -617,20 +611,22 @@ async def _assert_can_remove_admin_capability(
         return
     if member.account_id == current_admin.account_id:
         raise member_error(
-            409, "self_admin_change_blocked", "You cannot remove your own admin access."
+            "conflict", "self_admin_change_blocked", "You cannot remove your own admin access."
         )
     if await _active_admin_count(db, member.organization_id, exclude_member_id=member.id) == 0:
         raise member_error(
-            409, "last_active_admin_blocked", "At least one active admin must remain."
+            "conflict", "last_active_admin_blocked", "At least one active admin must remain."
         )
 
 
 def _raise_provider_failure(result: ClerkAccessResult) -> None:
-    status_code = 429 if result.error_category == "provider_rate_limited" else 502
-    if result.retryable and status_code != 429:
-        status_code = 503
+    kind = (
+        "too_many_requests" if result.error_category == "provider_rate_limited" else "unavailable"
+    )
+    if result.retryable and kind != "too_many_requests":
+        kind = "unavailable"
     raise member_error(
-        status_code,
+        kind,
         result.error_category or "provider_error",
         result.safe_message or SAFE_PROVIDER_ERROR,
         retryable=result.retryable,
@@ -639,7 +635,7 @@ def _raise_provider_failure(result: ClerkAccessResult) -> None:
 
 def _raise_unresolved_operation(exc: UnresolvedAccessOperationError) -> None:
     raise member_error(
-        409,
+        "conflict",
         "member_access_operation_unresolved",
         "A previous access change still requires reconciliation. Contact support.",
         support_required=True,
@@ -648,7 +644,7 @@ def _raise_unresolved_operation(exc: UnresolvedAccessOperationError) -> None:
 
 def _raise_local_commit_failure(*, support_required: bool) -> None:
     raise member_error(
-        503 if support_required else 500,
+        "unavailable" if support_required else "unexpected_error",
         "member_access_support_required" if support_required else "member_access_commit_failed",
         (
             "Access synchronization requires support before another change can be attempted."
@@ -1230,7 +1226,7 @@ async def get_member_read(
 ) -> schemas.MemberRead:
     member = await _load_member(db, organization_id, member_id)
     if member is None:
-        raise member_error(404, "member_not_found", "Member not found.")
+        raise member_error("not_found", "member_not_found", "Member not found.")
     history_ids = await _teacher_ids_with_history(
         db,
         organization_id,
@@ -1287,7 +1283,9 @@ async def create_member(
         )
         if existing is not None:
             raise member_error(
-                409, "member_already_exists", "This member already exists in the organization."
+                "conflict",
+                "member_already_exists",
+                "This member already exists in the organization.",
             )
 
     clerk_access = clerk_access or ClerkAccessService()
@@ -1613,15 +1611,17 @@ async def update_member(
 ) -> schemas.MemberRead:
     member = await _load_member(db, organization_id, member_id)
     if member is None:
-        raise member_error(404, "member_not_found", "Member not found.")
+        raise member_error("not_found", "member_not_found", "Member not found.")
     if member.lifecycle_status != models.MembershipLifecycleStatus.active:
-        raise member_error(409, "member_archived", "Restore the member before editing.")
+        raise member_error("conflict", "member_archived", "Restore the member before editing.")
     if member.access_status == models.MembershipAccessStatus.sync_error:
         raise member_error(
-            409, "member_sync_error", "Resolve the synchronization error before editing."
+            "conflict", "member_sync_error", "Resolve the synchronization error before editing."
         )
     if member_in.lock_version and member_in.lock_version != member.lock_version:
-        raise member_error(409, "stale_member", "This member changed while you were editing.")
+        raise member_error(
+            "conflict", "stale_member", "This member changed while you were editing."
+        )
 
     current_caps = {cap.capability for cap in member.capabilities}
     previous_can_teach = member.can_teach
@@ -1637,7 +1637,7 @@ async def update_member(
         next_mode = None
     elif next_mode is None:
         raise member_error(
-            422,
+            "validation",
             "validation_error",
             "Teacher access mode is required.",
             fields={"teacher_access_mode": "Required."},
@@ -1647,7 +1647,7 @@ async def update_member(
         and next_mode == models.TeacherAccessMode.scheduler_only
     ):
         raise member_error(
-            422,
+            "validation",
             "validation_error",
             "Admins require platform access.",
             fields={"teacher_access_mode": "Use platform."},
@@ -1683,7 +1683,7 @@ async def update_member(
         await db.refresh(member.account)
     elif member_in.email and _normalize_email(str(member_in.email)) != member.account.email:
         raise member_error(
-            409,
+            "conflict",
             "active_identity_email_locked",
             "The email of an active access account is managed by the user or support.",
             fields={"email": "Locked for active members."},
@@ -1758,18 +1758,18 @@ async def remove_member(
 ) -> dict:
     member = await _load_member(db, organization_id, member_id)
     if member is None:
-        raise member_error(404, "member_not_found", "Member not found.")
+        raise member_error("not_found", "member_not_found", "Member not found.")
     caps = {cap.capability for cap in member.capabilities}
     if member.account_id == current_admin.account_id and models.MembershipCapability.admin in caps:
         raise member_error(
-            409, "self_admin_removal_blocked", "You cannot remove your own admin access."
+            "conflict", "self_admin_removal_blocked", "You cannot remove your own admin access."
         )
     if (
         models.MembershipCapability.admin in caps
         and await _active_admin_count(db, organization_id, exclude_member_id=member.id) == 0
     ):
         raise member_error(
-            409, "last_active_admin_blocked", "At least one active admin must remain."
+            "conflict", "last_active_admin_blocked", "At least one active admin must remain."
         )
 
     history_ids = await _teacher_ids_with_history(
@@ -1858,9 +1858,11 @@ async def restore_member(
 ) -> schemas.MemberRead:
     member = await _load_member(db, organization_id, member_id)
     if member is None:
-        raise member_error(404, "member_not_found", "Member not found.")
+        raise member_error("not_found", "member_not_found", "Member not found.")
     if member.lifecycle_status != models.MembershipLifecycleStatus.archived:
-        raise member_error(409, "member_not_archived", "Only archived members can be restored.")
+        raise member_error(
+            "conflict", "member_not_archived", "Only archived members can be restored."
+        )
     previous_snapshot = _access_snapshot(member)
     previous_role = member.expected_clerk_role
     previous_can_teach = member.can_teach
@@ -1882,14 +1884,14 @@ async def restore_member(
             next_mode = None
         elif next_mode is None:
             raise member_error(
-                422,
+                "validation",
                 "validation_error",
                 "Teacher access mode is required.",
                 fields={"teacher_access_mode": "Required."},
             )
         if not restore_in.restore_access and _expected_role(next_caps, next_mode) is not None:
             raise member_error(
-                422,
+                "validation",
                 "validation_error",
                 "Choose scheduler-only teacher access or restore platform access.",
                 fields={"capabilities": "Platform capabilities require access."},
@@ -1907,7 +1909,7 @@ async def restore_member(
         )
     elif restore_in and not restore_in.restore_access and member.expected_clerk_role is not None:
         raise member_error(
-            422,
+            "validation",
             "validation_error",
             "Choose non-platform capabilities before restoring without access.",
         )
@@ -1983,17 +1985,19 @@ async def resend_invitation(
 ) -> schemas.MemberRead:
     member = await _load_member(db, organization_id, member_id, for_update=True)
     if member is None:
-        raise member_error(404, "member_not_found", "Member not found.")
+        raise member_error("not_found", "member_not_found", "Member not found.")
     if member.access_status not in {
         models.MembershipAccessStatus.pending_invite,
         models.MembershipAccessStatus.invite_expired,
     }:
         raise member_error(
-            409, "resend_not_available", "Invitation resend is not available for this member."
+            "conflict",
+            "resend_not_available",
+            "Invitation resend is not available for this member.",
         )
     if member.expected_clerk_role is None:
         raise member_error(
-            409, "access_not_required", "This member does not require platform access."
+            "conflict", "access_not_required", "This member does not require platform access."
         )
     latest_resend_at = await db.scalar(
         select(models.MemberAccessOperation.created_at)
@@ -2015,7 +2019,7 @@ async def resend_invitation(
         and latest_resend_at > datetime.now(UTC) - INVITATION_RESEND_COOLDOWN
     ):
         raise member_error(
-            409,
+            "conflict",
             "resend_cooldown",
             "Invitation resend is temporarily unavailable. Try again later.",
             retryable=True,
@@ -2059,10 +2063,10 @@ async def retry_sync(
 ) -> schemas.MemberRead:
     member = await _load_member(db, organization_id, member_id)
     if member is None:
-        raise member_error(404, "member_not_found", "Member not found.")
+        raise member_error("not_found", "member_not_found", "Member not found.")
     if member.access_status != models.MembershipAccessStatus.sync_error:
         raise member_error(
-            409, "retry_not_available", "Retry is only available for members in sync error."
+            "conflict", "retry_not_available", "Retry is only available for members in sync error."
         )
     clerk_access = clerk_access or ClerkAccessService()
     previous_snapshot = _access_snapshot(member)
@@ -2116,7 +2120,7 @@ async def current_member(db: AsyncSession, *, current_user: Actor) -> schemas.Cu
         .options(selectinload(models.OrganizationMembership.teacher_profile))
     )
     if member is None:
-        raise member_error(403, "membership_required", "Membership required.")
+        raise member_error("forbidden", "membership_required", "Membership required.")
     caps = sorted(cap.capability.value for cap in member.capabilities)
     modes = []
     if "admin" in caps:
