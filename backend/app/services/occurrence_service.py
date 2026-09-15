@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import uuid as _uuid
 from collections import defaultdict
+from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from types import SimpleNamespace
 
@@ -88,6 +89,53 @@ OP_STATE_BY_STATUS = {
 }
 
 MAX_EVENT_DETAIL_LENGTH = 240
+
+
+@dataclass(frozen=True, slots=True)
+class OccurrenceTransitionPlan:
+    """Pure decision for an occurrence state transition.
+
+    The database mutation and accounting remain in the application service; this
+    value object keeps the state-machine contract independently testable.
+    """
+
+    previous_status: models.LessonOccurrenceStatus | None
+    next_status: models.LessonOccurrenceStatus
+    is_redecision: bool
+    reverses_accounting: bool
+    requires_substitute: bool
+
+
+def build_occurrence_transition_plan(
+    occurrence: models.LessonOccurrence,
+    payload: schemas.LessonOccurrenceUpdate,
+) -> OccurrenceTransitionPlan:
+    if not occurrence.is_active:
+        raise _occurrence_error(status_code=409, detail=ERR_INACTIVE)
+
+    if occurrence.status == models.LessonOccurrenceStatus.REVOKED:
+        raise _occurrence_error(status_code=409, detail="OCCURRENCE_REVOKED")
+
+    is_redecision = occurrence.decided_at is not None
+    if is_redecision:
+        allowed_targets = ALLOWED_STATE_TRANSITIONS.get(occurrence.status, set())
+        if payload.status not in allowed_targets:
+            raise _occurrence_error(
+                status_code=422,
+                detail=(
+                    f"Transição de {occurrence.status.value} para "
+                    f"{payload.status.value} não é permitida."
+                ),
+            )
+
+    return OccurrenceTransitionPlan(
+        previous_status=occurrence.status,
+        next_status=payload.status,
+        is_redecision=is_redecision,
+        reverses_accounting=is_redecision,
+        requires_substitute=payload.status == models.LessonOccurrenceStatus.SUBSTITUTED,
+    )
+
 
 OBS_EVENT_CREATE = "CREATE_OCCURRENCE"
 OBS_EVENT_DECIDE = "DECIDE_OCCURRENCE"
@@ -1078,24 +1126,8 @@ def _is_idempotent_payload(
 def _validate_state_transition(
     occurrence: models.LessonOccurrence,
     payload: schemas.LessonOccurrenceUpdate,
-) -> None:
-    # V4: REVOKED é terminal — imutável
-    if not occurrence.is_active:
-        raise _occurrence_error(status_code=409, detail=ERR_INACTIVE)
-
-    if occurrence.status == models.LessonOccurrenceStatus.REVOKED:
-        raise _occurrence_error(status_code=409, detail="OCCURRENCE_REVOKED")
-
-    if occurrence.decided_at is None:
-        return
-
-    # V4: Enforce ALLOWED_STATE_TRANSITIONS for re-decisions
-    allowed_targets = ALLOWED_STATE_TRANSITIONS.get(occurrence.status, set())
-    if payload.status not in allowed_targets:
-        raise _occurrence_error(
-            status_code=422,
-            detail=f"Transição de {occurrence.status.value} para {payload.status.value} não é permitida.",
-        )
+) -> OccurrenceTransitionPlan:
+    return build_occurrence_transition_plan(occurrence, payload)
 
 
 def create_occurrence_from_active_block_sync(
@@ -1458,7 +1490,7 @@ def update_occurrence_sync(
 
     _assert_occurrence_version(occurrence, payload.version)
 
-    _validate_state_transition(occurrence, payload)
+    transition = _validate_state_transition(occurrence, payload)
 
     # SUBSTITUTED -> SUBSTITUTED redecision: only allow if identical (idempotent retry).
     # If teacher/subject differ and a completed operational log exists, block.
@@ -1560,7 +1592,7 @@ def update_occurrence_sync(
             ).first()
             has_completed_lesson_log = completed_log is not None
 
-        if occurrence.decided_at is not None:
+        if transition.reverses_accounting:
             accounting_deltas = _apply_state_accounting(
                 db,
                 organization_id=organization_id,
