@@ -734,6 +734,7 @@ async def _send_invitation(
     operation_type: models.MemberAccessOperationType,
     operation_service: MemberAccessOperationService | None = None,
     previous_snapshot: dict | None = None,
+    draft_payload: dict | None = None,
 ) -> None:
     org = await _organization(db, member.organization_id)
     clerk_org_id = _require_clerk_org(org, current_admin)
@@ -767,6 +768,7 @@ async def _send_invitation(
             account_id=account_id,
             lock_version=member.lock_version,
             previous_snapshot=previous_snapshot or _access_snapshot(member),
+            draft_payload=draft_payload,
             clerk_org_id=clerk_org_id,
             clerk_user_id=member.account.clerk_user_id,
             clerk_membership_id=member.clerk_membership_id,
@@ -1341,152 +1343,6 @@ async def create_member(
             )
 
     clerk_access = clerk_access or ClerkAccessService()
-    admin_membership_id = current_admin.membership_id
-    admin_clerk_user_id = current_admin.clerk_user_id
-    invite_result: ClerkAccessResult | None = None
-    provider_user: ClerkAccessResult | None = None
-    provider_membership: ClerkAccessResult | None = None
-    operation_id: int | None = None
-    clerk_org_id: str | None = None
-    saga: MemberAccessSagaCoordinator | None = None
-    created_invitation = False
-    created_membership = False
-    changed_role_from: models.ClerkOrganizationRole | None = None
-
-    if expected_role is not None:
-        operation_service = _require_operation_service(operation_service)
-        saga = MemberAccessSagaCoordinator(operation_service)
-        org = await _organization(db, organization_id)
-        clerk_org_id = _require_clerk_org(org, current_admin)
-        intent = {
-            "capabilities": sorted(capability.value for capability in capabilities),
-            "teacher_access_mode": teacher_access_mode.value if teacher_access_mode else None,
-            "subject_ids": sorted(member_in.subject_ids),
-            "expected_role": expected_role.value,
-        }
-        try:
-            operation = await operation_service.create_pending(
-                organization_id=organization_id,
-                target_email=normalized_email,
-                operation_type=models.MemberAccessOperationType.create_invitation,
-                created_by_membership_id=admin_membership_id,
-                intended_capabilities=capabilities,
-                intended_role=expected_role,
-                intent=intent,
-                draft_payload=member_in.model_dump(mode="json"),
-                clerk_org_id=clerk_org_id,
-                clerk_user_id=None,
-            )
-        except UnresolvedAccessOperationError as exc:
-            _raise_unresolved_operation(exc)
-        operation_id = operation.id
-        provider_user = await clerk_access.find_user_by_email(email=normalized_email)
-        if not provider_user.ok:
-            await operation_service.transition(
-                operation_id,
-                models.MemberAccessOperationStatus.failed,
-                error_category=provider_user.error_category,
-                safe_message=provider_user.safe_message,
-            )
-            _raise_provider_failure(provider_user)
-        if provider_user.user_id:
-            provider_membership = await clerk_access.get_membership(
-                clerk_org_id=clerk_org_id,
-                clerk_user_id=provider_user.user_id,
-            )
-            if not provider_membership.ok:
-                await operation_service.transition(
-                    operation_id,
-                    models.MemberAccessOperationStatus.failed,
-                    error_category=provider_membership.error_category,
-                    safe_message=provider_membership.safe_message,
-                )
-                _raise_provider_failure(provider_membership)
-
-        if provider_membership and provider_membership.membership_id:
-            actual_role = (
-                models.ClerkOrganizationRole(provider_membership.role)
-                if provider_membership.role in {role.value for role in models.ClerkOrganizationRole}
-                else None
-            )
-            if actual_role != expected_role:
-                role_result = await clerk_access.change_membership_role(
-                    clerk_org_id=clerk_org_id,
-                    clerk_user_id=provider_user.user_id,
-                    role=expected_role.value,
-                )
-                if not role_result.ok:
-                    await operation_service.transition(
-                        operation_id,
-                        models.MemberAccessOperationStatus.failed,
-                        error_category=role_result.error_category,
-                        safe_message=role_result.safe_message,
-                    )
-                    _raise_provider_failure(role_result)
-                changed_role_from = actual_role
-                provider_membership = role_result
-        elif provider_user.user_id:
-            provider_membership = await clerk_access.create_organization_membership(
-                clerk_org_id=clerk_org_id,
-                clerk_user_id=provider_user.user_id,
-                role=expected_role.value,
-            )
-            if not provider_membership.ok:
-                await operation_service.transition(
-                    operation_id,
-                    models.MemberAccessOperationStatus.failed,
-                    error_category=provider_membership.error_category,
-                    safe_message=provider_membership.safe_message,
-                )
-                _raise_provider_failure(provider_membership)
-            created_membership = True
-        else:
-            invite_result = await clerk_access.find_pending_invitation(
-                clerk_org_id=clerk_org_id,
-                email=normalized_email,
-            )
-            if invite_result.ok and not invite_result.invitation_id:
-                invite_result = await clerk_access.create_organization_invitation(
-                    clerk_org_id=clerk_org_id,
-                    email=normalized_email,
-                    role=expected_role.value,
-                    inviter_user_id=admin_clerk_user_id,
-                    membership_id=None,
-                )
-                created_invitation = invite_result.ok
-        if invite_result is not None and not invite_result.ok:
-            if invite_result.invitation_id:
-                outcome = await saga.compensate_created_invitation(
-                    operation_id=operation_id,
-                    clerk_org_id=clerk_org_id,
-                    invitation_id=invite_result.invitation_id,
-                    requesting_user_id=admin_clerk_user_id,
-                    error_category=invite_result.error_category or "provider_failure",
-                    safe_message=invite_result.safe_message or SAFE_PROVIDER_ERROR,
-                )
-                if outcome.support_required:
-                    _raise_local_commit_failure(support_required=True)
-            else:
-                await operation_service.transition(
-                    operation_id,
-                    models.MemberAccessOperationStatus.failed,
-                    error_category=invite_result.error_category,
-                    safe_message=invite_result.safe_message,
-                )
-            _raise_provider_failure(invite_result)
-        if invite_result is not None:
-            await operation_service.transition(
-                operation_id,
-                models.MemberAccessOperationStatus.clerk_succeeded,
-                clerk_invitation_id=invite_result.invitation_id,
-            )
-        if provider_membership and provider_membership.membership_id:
-            await operation_service.transition(
-                operation_id,
-                models.MemberAccessOperationStatus.clerk_succeeded,
-                clerk_membership_id=provider_membership.membership_id,
-            )
-
     try:
         account_id = (
             account.id
@@ -1498,9 +1354,6 @@ async def create_member(
                 display_name=member_in.organization_display_name,
             )
         )
-        if provider_user and provider_user.user_id and account is not None:
-            if account.clerk_user_id and account.clerk_user_id != provider_user.user_id:
-                raise RuntimeError("The local email is linked to a different Clerk user.")
         membership = models.OrganizationMembership(
             organization_id=organization_id,
             account_id=account_id,
@@ -1515,30 +1368,10 @@ async def create_member(
         )
         db.add(membership)
         await db.flush()
-        if provider_user and provider_user.user_id:
-            linked_account_id = await db.scalar(
-                text(
-                    """
-                    SELECT id
-                    FROM app_security.ensure_user(
-                        :clerk_user_id, :email, :display_name, :role,
-                        :organization_id, NULL
-                    )
-                    """
-                ),
-                {
-                    "clerk_user_id": provider_user.user_id,
-                    "email": normalized_email,
-                    "display_name": member_in.organization_display_name.strip(),
-                    "role": expected_role.value if expected_role else "member",
-                    "organization_id": organization_id,
-                },
-            )
-            if linked_account_id != account_id:
-                raise RuntimeError("The local email is linked to a different Clerk user.")
         account = await db.get(models.User, account_id)
         if account is None:
             raise RuntimeError("The pending member account could not be loaded.")
+        membership.account = account
         await _replace_capabilities(db, membership, capabilities)
         await _sync_teacher_profile(
             db,
@@ -1547,106 +1380,21 @@ async def create_member(
             subject_ids=member_in.subject_ids,
             current_admin=current_admin,
         )
-        if expected_role is not None:
-            if provider_membership and provider_membership.membership_id:
-                membership.clerk_membership_id = provider_membership.membership_id
-                membership.access_status = models.MembershipAccessStatus.active
-            else:
-                assert invite_result is not None
-                membership.clerk_invitation_id = invite_result.invitation_id
-                membership.clerk_invitation_status = models.ClerkInvitationStatus.pending
-                membership.invitation_expires_at = normalize_clerk_datetime(
-                    invite_result.expires_at
-                )
-                membership.access_status = models.MembershipAccessStatus.pending_invite
         await db.flush()
         if expected_role is not None:
-            await db.commit()
-            await set_async_tenant_context(db, organization_id)
-    except Exception as exc:
+            await _send_invitation(
+                db,
+                member=membership,
+                current_admin=current_admin,
+                clerk_access=clerk_access,
+                operation_type=models.MemberAccessOperationType.create_invitation,
+                operation_service=operation_service,
+                draft_payload=member_in.model_dump(mode="json"),
+            )
+    except Exception:
         await db.rollback()
-        if (
-            created_membership
-            and provider_user is not None
-            and provider_user.user_id
-            and operation_id is not None
-            and clerk_org_id is not None
-        ):
-            assert saga is not None
-            outcome = await saga.compensate_created_membership(
-                operation_id=operation_id,
-                clerk_org_id=clerk_org_id,
-                clerk_user_id=provider_user.user_id,
-                clerk_membership_id=(
-                    provider_membership.membership_id if provider_membership else None
-                ),
-                error_category="local_commit_failed",
-                safe_message=type(exc).__name__,
-            )
-            _raise_local_commit_failure(support_required=outcome.support_required)
-        if (
-            created_invitation
-            and invite_result is not None
-            and operation_id is not None
-            and clerk_org_id is not None
-        ):
-            assert saga is not None
-            outcome = await saga.compensate_created_invitation(
-                operation_id=operation_id,
-                clerk_org_id=clerk_org_id,
-                invitation_id=invite_result.invitation_id,
-                requesting_user_id=admin_clerk_user_id,
-                error_category="local_commit_failed",
-                safe_message=type(exc).__name__,
-            )
-            logger.error(
-                "member_access_local_commit_failed",
-                operation_id=operation_id,
-                organization_id=organization_id,
-                compensation_succeeded=not outcome.support_required,
-                error_type=type(exc).__name__,
-            )
-            _raise_local_commit_failure(support_required=outcome.support_required)
-        if (
-            changed_role_from is not None
-            and provider_user is not None
-            and provider_user.user_id
-            and operation_id is not None
-            and clerk_org_id is not None
-        ):
-            assert saga is not None
-            outcome = await saga.compensate_role_change(
-                operation_id=operation_id,
-                clerk_org_id=clerk_org_id,
-                clerk_user_id=provider_user.user_id,
-                previous_role=changed_role_from,
-                clerk_membership_id=(
-                    provider_membership.membership_id if provider_membership else None
-                ),
-                error_category="local_commit_failed",
-                safe_message=type(exc).__name__,
-            )
-            _raise_local_commit_failure(support_required=outcome.support_required)
-        if operation_id is not None:
-            await operation_service.transition(
-                operation_id,
-                models.MemberAccessOperationStatus.failed,
-                error_category="local_commit_failed",
-                safe_message=type(exc).__name__,
-            )
         raise
 
-    if operation_id is not None:
-        await operation_service.transition(
-            operation_id,
-            models.MemberAccessOperationStatus.local_committed,
-            membership_id=membership.id,
-            account_id=account.id,
-            clerk_invitation_id=invite_result.invitation_id if invite_result else None,
-            clerk_membership_id=(
-                provider_membership.membership_id if provider_membership else None
-            ),
-        )
     created = await _load_member(db, organization_id, membership.id)
     return _to_read(created)
 
