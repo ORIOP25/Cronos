@@ -4,11 +4,12 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models, schemas
 from app.api import deps
+from app.core.exceptions import AppError
 from app.services.preflight_service import PreflightService
 from app.services.scheduler_state_service import SchedulerStateService
 from app.services.school_readiness_service import SchoolReadinessService
@@ -60,12 +61,10 @@ async def get_prevalidation(
     )
 
     if fingerprint is not None and fingerprint != initial_report.fingerprint:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail={
-                "code": "PREFLIGHT_STALE",
-                "message": "O estado da escola foi alterado. Recalcule a prontidão das bases.",
-            },
+        raise AppError(
+            kind="conflict",
+            code="PREFLIGHT_STALE",
+            detail="O estado da escola foi alterado. Recalcule a prontidão das bases.",
         )
 
     return initial_report

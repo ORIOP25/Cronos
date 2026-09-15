@@ -1,10 +1,11 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import schemas
 from app.api import deps
+from app.core.exceptions import AppError
 from app.services.foundation_service import (
     FoundationAlreadyCompletedError,
     FoundationDraftVersionConflictError,
@@ -48,26 +49,24 @@ async def save_foundation_draft(
             membership_id=current_user.membership_id,
         )
     except FoundationDraftVersionConflictError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail={
-                "code": "FOUNDATION_DRAFT_VERSION_CONFLICT",
-                "message": "O rascunho da fundação foi modificado por outro administrador.",
-                "current_version": exc.current_version,
-            },
+        raise AppError(
+            kind="conflict",
+            code="FOUNDATION_DRAFT_VERSION_CONFLICT",
+            detail=str(exc),
+            public_context={"current_version": exc.current_version},
         ) from exc
     except FoundationAlreadyCompletedError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail={
-                "code": "FOUNDATION_ALREADY_COMPLETED",
-                "message": str(exc),
-            },
+        raise AppError(
+            kind="conflict",
+            code="FOUNDATION_ALREADY_COMPLETED",
+            detail=str(exc),
         ) from exc
     except HolidaySyncError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail={"code": exc.code, "message": str(exc)},
+        raise AppError(
+            kind="unavailable",
+            code=exc.code,
+            detail=str(exc),
+            public_retryable=True,
         ) from exc
 
 
@@ -85,24 +84,22 @@ async def complete_foundation(
             membership_id=current_user.membership_id,
         )
     except FoundationDraftVersionConflictError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail={
-                "code": "FOUNDATION_DRAFT_VERSION_CONFLICT",
-                "message": "O rascunho da fundação foi modificado antes da confirmação.",
-                "current_version": exc.current_version,
-            },
+        raise AppError(
+            kind="conflict",
+            code="FOUNDATION_DRAFT_VERSION_CONFLICT",
+            detail=str(exc),
+            public_context={"current_version": exc.current_version},
         ) from exc
     except FoundationIncompleteDraftError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail={
-                "code": "FOUNDATION_INCOMPLETE",
-                "message": str(exc),
-            },
+        raise AppError(
+            kind="validation",
+            code="FOUNDATION_INCOMPLETE",
+            detail=str(exc),
         ) from exc
     except HolidaySyncError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail={"code": exc.code, "message": str(exc)},
+        raise AppError(
+            kind="unavailable",
+            code=exc.code,
+            detail=str(exc),
+            public_retryable=True,
         ) from exc

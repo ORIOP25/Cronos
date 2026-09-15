@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models, schemas
@@ -36,6 +36,17 @@ from app.services.scheduler_request_service import (
 from app.services.scheduler_status_service import SchedulerStatusService
 
 router = APIRouter()
+
+
+def _raise_scheduler_error(
+    *, kind: str, code: str, detail: str, public_context: dict | None = None
+) -> None:
+    raise AppError(
+        kind=kind,
+        code=code,
+        detail=detail,
+        public_context=public_context,
+    )
 
 
 def _public_job_response(
@@ -111,7 +122,7 @@ async def get_generation_job(
         )
         return _public_job_response(job)
     except SchedulerJobNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+        _raise_scheduler_error(kind="not_found", code="scheduler_job_not_found", detail=str(exc))
 
 
 @router.post(
@@ -130,7 +141,7 @@ async def cancel_generation_job(
             job_id,
         )
     except SchedulerJobNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+        _raise_scheduler_error(kind="not_found", code="scheduler_job_not_found", detail=str(exc))
     await db.flush()
     emit_scheduler_job_event("generation_cancellation_requested", job)
     return {"job_id": job.id, "job_status": job.job_status.value}
@@ -157,7 +168,7 @@ async def get_current_draft_summary(
     try:
         summary = await SchedulerDraftService(db).current_summary(current_user.organization_id)
     except SchedulerDraftNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+        _raise_scheduler_error(kind="not_found", code="scheduler_draft_not_found", detail=str(exc))
     return schemas.ScheduleDraftSummaryResponse.model_validate(summary)
 
 
@@ -177,7 +188,7 @@ async def get_draft_summary(
             draft_id,
         )
     except SchedulerDraftNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+        _raise_scheduler_error(kind="not_found", code="scheduler_draft_not_found", detail=str(exc))
     return schemas.ScheduleDraftSummaryResponse.model_validate(summary)
 
 
@@ -196,7 +207,11 @@ async def get_draft_diff(
         draft_id,
     )
     if rows is None:
-        raise HTTPException(status_code=404, detail="Schedule draft was not found.")
+        _raise_scheduler_error(
+            kind="not_found",
+            code="scheduler_draft_not_found",
+            detail="Schedule draft was not found.",
+        )
     return [schemas.ScheduleDraftDiffEntryResponse.model_validate(row) for row in rows]
 
 
@@ -220,7 +235,7 @@ async def approve_draft(
             decided_by_membership_id=current_user.membership_id,
         )
     except DraftApprovalNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+        _raise_scheduler_error(kind="not_found", code="scheduler_draft_not_found", detail=str(exc))
     except DraftApprovalConflictError as exc:
         # Only stale/invalid transitions intentionally persist an audit state.
         if exc.draft_state in (
@@ -228,10 +243,12 @@ async def approve_draft(
             models.ScheduleDraftState.INVALIDATED,
         ):
             await db.flush()
-        raise HTTPException(
-            status_code=409,
-            detail={"message": str(exc), "draft_state": exc.draft_state.value},
-        ) from exc
+        _raise_scheduler_error(
+            kind="conflict",
+            code="scheduler_draft_approval_conflict",
+            detail=str(exc),
+            public_context={"draft_state": exc.draft_state.value},
+        )
     except Exception:
         raise
     await db.flush()
@@ -258,9 +275,11 @@ async def reject_draft(
             decided_by_membership_id=current_user.membership_id,
         )
     except SchedulerLifecycleNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+        _raise_scheduler_error(kind="not_found", code="scheduler_draft_not_found", detail=str(exc))
     except SchedulerLifecycleConflictError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
+        _raise_scheduler_error(
+            kind="conflict", code="scheduler_lifecycle_conflict", detail=str(exc)
+        )
     await db.flush()
     return schemas.ScheduleDraftRejectionResponse.model_validate(result)
 
@@ -285,8 +304,10 @@ async def reset_scheduler_year(
             confirmed=payload.confirmed,
         )
     except SchedulerLifecycleNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+        _raise_scheduler_error(
+            kind="not_found", code="scheduler_school_year_not_found", detail=str(exc)
+        )
     except SchedulerLifecycleConflictError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
+        _raise_scheduler_error(kind="conflict", code="scheduler_reset_conflict", detail=str(exc))
     await db.flush()
     return schemas.SchedulerResetYearResponse.model_validate(result)

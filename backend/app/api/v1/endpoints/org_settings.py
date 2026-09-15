@@ -16,12 +16,13 @@ from datetime import date
 from typing import Annotated
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import schemas
 from app.api import deps
+from app.core.exceptions import AppError
 from app.core.logging import safe_exception_frames
 from app.services import settings_service
 from app.services.school_year_reset_service import SchoolYearResetService
@@ -44,7 +45,9 @@ async def get_org_settings(
 ) -> schemas.OrganizationSettingsRead:
     settings = await settings_service.get_settings(db, current_user.organization_id)
     if not settings:
-        raise HTTPException(status_code=404, detail=settings_service.SETTINGS_NOT_FOUND)
+        raise AppError(
+            kind="not_found", code="settings_not_found", detail=settings_service.SETTINGS_NOT_FOUND
+        )
     return settings
 
 
@@ -65,11 +68,13 @@ async def upsert_org_settings(
             changed_by_membership_id=current_user.membership_id,
         )
     except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        raise AppError(kind="validation", code="settings_invalid", detail=str(exc)) from exc
     except settings_service.HolidaySyncError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail={"code": exc.code, "message": str(exc)},
+        raise AppError(
+            kind="unavailable",
+            code=exc.code,
+            detail=str(exc),
+            public_retryable=True,
         ) from exc
 
 
@@ -87,8 +92,10 @@ async def soft_reset_year_endpoint(
     current_user: deps.AdminActor,
 ):
     if payload.confirm_phrase != "Confirmo":
-        raise HTTPException(
-            status_code=400, detail="A frase de confirmaÃ§Ã£o deve ser exatamente 'Confirmo'."
+        raise AppError(
+            kind="bad_request",
+            code="soft_reset_confirmation_required",
+            detail="A frase de confirmaÃ§Ã£o deve ser exatamente 'Confirmo'.",
         )
 
     try:
@@ -133,7 +140,11 @@ async def get_grid_settings(
 ) -> schemas.OrganizationGridSettingsRead:
     settings = await settings_service.get_grid_settings(db, current_user.organization_id)
     if not settings:
-        raise HTTPException(status_code=404, detail="ConfiguraÃ§Ãµes da grelha nÃ£o encontradas")
+        raise AppError(
+            kind="not_found",
+            code="grid_settings_not_found",
+            detail="ConfiguraÃ§Ãµes da grelha nÃ£o encontradas",
+        )
     return settings
 
 
@@ -154,7 +165,7 @@ async def upsert_grid_settings(
             changed_by_membership_id=current_user.membership_id,
         )
     except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        raise AppError(kind="validation", code="grid_settings_invalid", detail=str(exc)) from exc
 
 
 @router.post(
@@ -175,7 +186,7 @@ async def regenerate_grid_settings(
             current_user.membership_id,
         )
     except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        raise AppError(kind="validation", code="grid_settings_invalid", detail=str(exc)) from exc
 
 
 @router.post(
@@ -196,9 +207,11 @@ async def sync_holidays(
             changed_by_membership_id=current_user.membership_id,
         )
     except settings_service.HolidaySyncError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail={"code": exc.code, "message": str(exc)},
+        raise AppError(
+            kind="unavailable",
+            code=exc.code,
+            detail=str(exc),
+            public_retryable=True,
         ) from exc
     return schemas.HolidaysSyncResponse(
         imported_count=count,
@@ -245,7 +258,7 @@ async def create_calendar_event(
             changed_by_membership_id=current_user.membership_id,
         )
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise AppError(kind="bad_request", code="calendar_event_invalid", detail=str(exc)) from exc
 
 
 @router.delete(
@@ -265,5 +278,7 @@ async def delete_calendar_event(
         changed_by_membership_id=current_user.membership_id,
     )
     if not success:
-        raise HTTPException(status_code=404, detail="Evento nÃ£o encontrado")
+        raise AppError(
+            kind="not_found", code="calendar_event_not_found", detail="Evento nÃ£o encontrado"
+        )
     return {"ok": True}
