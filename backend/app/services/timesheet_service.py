@@ -4,7 +4,7 @@ from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session, joinedload
 
 from app import models
-from app.core.exceptions import DomainError, NotFoundError
+from app.core.exceptions import AppError
 
 
 def get_or_create_timesheet_sync(
@@ -44,7 +44,7 @@ def submit_timesheet_sync(
     """Submit a week only after every published block is resolved."""
     timesheet = get_or_create_timesheet_sync(db, organization_id, teacher_id, week_start_date)
     if timesheet.status != models.TimesheetStatus.OPEN:
-        raise DomainError("A semana jÃ¡ nÃ£o estÃ¡ aberta para submissÃ£o.", status_code=400)
+        raise AppError(kind="bad_request", code="bad_request", detail="A semana jÃ¡ nÃ£o estÃ¡ aberta para submissÃ£o.")
 
     week_end = week_start_date + timedelta(days=6)
     rows = (
@@ -66,15 +66,16 @@ def submit_timesheet_sync(
         .all()
     )
     if not rows:
-        raise DomainError("Sem aulas planeadas nesta semana.", status_code=400)
+        raise AppError(kind="bad_request", code="bad_request", detail="Sem aulas planeadas nesta semana.")
     now = datetime.now()
     for block, timeslot, lesson_log in rows:
         if datetime.combine(block.date, timeslot.end_time) > now:
-            raise DomainError("NÃ£o pode submeter semanas com aulas no futuro.", status_code=400)
+            raise AppError(kind="bad_request", code="bad_request", detail="NÃ£o pode submeter semanas com aulas no futuro.")
         if lesson_log is None or lesson_log.status == models.LessonLogStatus.PENDING:
-            raise DomainError(
-                "Todas as aulas devem estar concluÃ­das ou registadas como ocorrÃªncia.",
-                status_code=400,
+            raise AppError(
+                kind="bad_request",
+                code="bad_request",
+                detail="Todas as aulas devem estar concluÃ­das ou registadas como ocorrÃªncia.",
             )
     timesheet.status = models.TimesheetStatus.SUBMITTED
     timesheet.submitted_at = datetime.now(UTC)
@@ -314,14 +315,15 @@ def update_timesheet_status_sync(
     )
 
     if not timesheet:
-        raise NotFoundError("Timesheet nÃ£o encontrada.")
+        raise AppError(kind="not_found", code="resource_not_found", detail="Timesheet nÃ£o encontrada.")
 
     current = timesheet.status
     allowed = ALLOWED_TIMESHEET_TRANSITIONS.get(current, set())
     if status not in allowed:
-        raise DomainError(
-            f"TransiÃ§Ã£o de estado invÃ¡lida: {current.value} â†’ {status.value}.",
-            status_code=400,
+        raise AppError(
+            kind="bad_request",
+            code="bad_request",
+            detail=f"TransiÃ§Ã£o de estado invÃ¡lida: {current.value} â†’ {status.value}.",
         )
 
     timesheet.status = status
@@ -370,7 +372,7 @@ def get_open_occurrences_for_timesheet_sync(
         .first()
     )
     if timesheet is None:
-        raise NotFoundError("Timesheet nÃ£o encontrada.")
+        raise AppError(kind="not_found", code="resource_not_found", detail="Timesheet nÃ£o encontrada.")
     week_end = timesheet.week_start_date + timedelta(days=6)
     occurrences = (
         db.query(models.LessonOccurrence)

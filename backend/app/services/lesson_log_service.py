@@ -4,7 +4,7 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy.orm import Session
 
 from app import models, schemas
-from app.core.exceptions import ConflictError, DomainError, NotFoundError
+from app.core.exceptions import AppError
 from app.services import occurrence_service, schedule_service
 
 
@@ -41,19 +41,19 @@ def _update_recovery_delivery_sync(
         .first()
     )
     if link is None:
-        raise ConflictError("Bloco de recuperacao sem ligacao de divida valida.")
+        raise AppError(kind="conflict", code="conflict", detail="Bloco de recuperacao sem ligacao de divida valida.")
 
     if lesson_log.status == models.LessonLogStatus.COMPLETED:
         if link.status not in (
             models.PlannedRecoveryLinkStatus.PLANNED,
             models.PlannedRecoveryLinkStatus.DELIVERED,
         ):
-            raise ConflictError("A recuperacao ja nao esta disponivel para entrega.")
+            raise AppError(kind="conflict", code="conflict", detail="A recuperacao ja nao esta disponivel para entrega.")
         if (
             link.status == models.PlannedRecoveryLinkStatus.DELIVERED
             and link.delivered_lesson_log_id != lesson_log.id
         ):
-            raise ConflictError("A recuperacao ja foi entregue por outro registo.")
+            raise AppError(kind="conflict", code="conflict", detail="A recuperacao ja foi entregue por outro registo.")
         link.status = models.PlannedRecoveryLinkStatus.DELIVERED
         link.delivered_recovery_minutes = min(block.duration_minutes, link.planned_recovery_minutes)
         link.delivered_lesson_log_id = lesson_log.id
@@ -87,16 +87,17 @@ def upsert_active_lesson_log_sync(
         .first()
     )
     if block is None:
-        raise NotFoundError("Bloco do horario ativo nao encontrado.")
+        raise AppError(kind="not_found", code="resource_not_found", detail="Bloco do horario ativo nao encontrado.")
 
     timeslot = db.get(models.Timeslot, block.timeslot_id)
     if timeslot is None:
-        raise DomainError("Bloco ativo sem horario valido.", status_code=409)
+        raise AppError(kind="conflict", code="conflict", detail="Bloco ativo sem horario valido.")
     end_datetime = datetime.combine(block.date, timeslot.end_time, tzinfo=UTC)
     if payload.status == models.LessonLogStatus.COMPLETED and end_datetime > datetime.now(UTC):
-        raise DomainError(
-            "Nao e possivel registar estado para uma aula que ainda nao terminou.",
-            status_code=400,
+        raise AppError(
+            kind="bad_request",
+            code="bad_request",
+            detail="Nao e possivel registar estado para uma aula que ainda nao terminou.",
         )
 
     week_start_date = block.date - timedelta(days=block.date.weekday())
@@ -113,9 +114,10 @@ def upsert_active_lesson_log_sync(
         models.TimesheetStatus.SUBMITTED,
         models.TimesheetStatus.APPROVED,
     ):
-        raise DomainError(
-            "Esta semana ja foi submetida ou aprovada. Nao e possivel alterar registos.",
-            status_code=400,
+        raise AppError(
+            kind="bad_request",
+            code="bad_request",
+            detail="Esta semana ja foi submetida ou aprovada. Nao e possivel alterar registos.",
         )
 
     occurrence = (
@@ -135,7 +137,11 @@ def upsert_active_lesson_log_sync(
         .first()
     )
     if payload.status == models.LessonLogStatus.COMPLETED and occurrence:
-        raise ConflictError("Nao pode concluir uma aula que tem uma ocorrencia ativa registada.")
+        raise AppError(
+            kind="conflict",
+            code="conflict",
+            detail="Nao pode concluir uma aula que tem uma ocorrencia ativa registada.",
+        )
 
     lesson_log = (
         db.query(models.LessonLog)
@@ -271,12 +277,13 @@ def upsert_operational_lesson_log_sync(
         .first()
     )
     if block is None:
-        raise NotFoundError("Bloco operacional nao encontrado.")
+        raise AppError(kind="not_found", code="resource_not_found", detail="Bloco operacional nao encontrado.")
 
     if payload.status == models.LessonLogStatus.OCCURRENCE:
-        raise DomainError(
-            "Blocos operacionais nao podem originar novas ocorrencias.",
-            status_code=422,
+        raise AppError(
+            kind="validation",
+            code="validation_error",
+            detail="Blocos operacionais nao podem originar novas ocorrencias.",
         )
 
     week_start_date = block.date - timedelta(days=block.date.weekday())
@@ -293,9 +300,10 @@ def upsert_operational_lesson_log_sync(
         models.TimesheetStatus.SUBMITTED,
         models.TimesheetStatus.APPROVED,
     ):
-        raise DomainError(
-            "Esta semana ja foi submetida ou aprovada. Nao e possivel alterar registos.",
-            status_code=400,
+        raise AppError(
+            kind="bad_request",
+            code="bad_request",
+            detail="Esta semana ja foi submetida ou aprovada. Nao e possivel alterar registos.",
         )
 
     old_log = (

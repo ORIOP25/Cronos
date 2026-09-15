@@ -6,7 +6,7 @@ from sqlalchemy import delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models, schemas
-from app.core.exceptions import ConflictError
+from app.core.exceptions import AppError
 from app.services.scheduler_state_service import record_scheduler_change
 
 logger = structlog.get_logger(__name__)
@@ -288,7 +288,7 @@ async def preflight_grid_regeneration(
             blockers=blockers,
         )
         message = SLOT_RULES_MESSAGE if set(blockers) == {"slot_rules"} else PROTECTED_GRID_MESSAGE
-        raise ConflictError(message)
+        raise AppError(kind="conflict", code="conflict", detail=message)
     return plan
 
 
