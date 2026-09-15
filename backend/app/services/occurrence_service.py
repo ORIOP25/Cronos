@@ -12,11 +12,13 @@ import uuid as _uuid
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
+from functools import partial
 from types import SimpleNamespace
 
 import structlog
 from sqlalchemy import and_, func, select
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session, joinedload
 
 from app import models, schemas
@@ -2065,3 +2067,174 @@ def get_available_substitutes_sync(
     ]
 
     return results
+
+
+# ---------------------------------------------------------------------------
+# Async application entry points
+# ---------------------------------------------------------------------------
+
+
+async def get_occurrence(
+    db: AsyncSession, occurrence_id: int, organization_id: int
+) -> models.LessonOccurrence:
+    return await db.run_sync(partial(get_occurrence_sync, occurrence_id, organization_id))
+
+
+async def list_occurrences(
+    db: AsyncSession,
+    organization_id: int,
+    *,
+    class_id: int | None = None,
+    date_from: date | None = None,
+    date_to: date | None = None,
+    skip: int = 0,
+    limit: int = 100,
+    status_filter: str | None = None,
+    as_page: bool = False,
+):
+    return await db.run_sync(
+        partial(
+            list_occurrences_sync,
+            organization_id=organization_id,
+            class_id=class_id,
+            date_from=date_from,
+            date_to=date_to,
+            skip=skip,
+            limit=limit,
+            status_filter=status_filter,
+            as_page=as_page,
+        )
+    )
+
+
+async def create_occurrence_from_active_block(
+    db: AsyncSession,
+    organization_id: int,
+    active_schedule_block_id: int,
+    *,
+    created_by_membership_id: int | None = None,
+    creation_source: str = "lesson_log",
+    reason: str = OCCURRENCE_REPORTED,
+) -> tuple[models.LessonOccurrence, bool]:
+    return await db.run_sync(
+        partial(
+            create_occurrence_from_active_block_sync,
+            organization_id=organization_id,
+            active_schedule_block_id=active_schedule_block_id,
+            created_by_membership_id=created_by_membership_id,
+            creation_source=creation_source,
+            reason=reason,
+        )
+    )
+
+
+async def get_debts(
+    db: AsyncSession, organization_id: int, class_id: int | None = None
+) -> schemas.DebtListRead:
+    return await db.run_sync(partial(get_debts_sync, organization_id, class_id=class_id))
+
+
+async def get_occurrence_observability_summary(
+    db: AsyncSession, *, organization_id: int, window_days: int
+) -> dict:
+    return await db.run_sync(
+        partial(
+            get_occurrence_observability_summary_sync,
+            organization_id=organization_id,
+            window_days=window_days,
+        )
+    )
+
+
+async def get_available_substitutes(
+    db: AsyncSession, organization_id: int, timeslot_id: int, target_date: date
+) -> list[schemas.AvailableSubstituteRead]:
+    return await db.run_sync(
+        partial(
+            get_available_substitutes_sync,
+            organization_id,
+            timeslot_id,
+            target_date,
+        )
+    )
+
+
+async def get_substitute_recommendations(
+    db: AsyncSession, *, organization_id: int, occurrence_id: int
+) -> list[schemas.SubstituteRecommendationRead]:
+    return await db.run_sync(
+        partial(
+            get_substitute_recommendations_sync,
+            organization_id=organization_id,
+            occurrence_id=occurrence_id,
+        )
+    )
+
+
+async def update_occurrence(
+    db: AsyncSession,
+    occurrence_id: int,
+    organization_id: int,
+    payload: schemas.LessonOccurrenceUpdate,
+    *,
+    decided_by_membership_id: int | None = None,
+) -> models.LessonOccurrence:
+    return await db.run_sync(
+        partial(
+            update_occurrence_sync,
+            occurrence_id,
+            organization_id,
+            payload,
+            decided_by_membership_id=decided_by_membership_id,
+        )
+    )
+
+
+async def cancel_occurrence(
+    db: AsyncSession,
+    *,
+    organization_id: int,
+    occurrence_id: int,
+    cancelled_by_membership_id: int | None,
+    version: int,
+    reason: str = ADMINISTRATIVE_REVERSAL,
+    cancel_completed_substitute_log: bool = False,
+) -> models.LessonOccurrence:
+    return await db.run_sync(
+        partial(
+            cancel_occurrence_sync,
+            organization_id=organization_id,
+            occurrence_id=occurrence_id,
+            cancelled_by_membership_id=cancelled_by_membership_id,
+            version=version,
+            reason=reason,
+            cancel_completed_substitute_log=cancel_completed_substitute_log,
+        )
+    )
+
+
+async def log_occurrence_event_safe(
+    db: AsyncSession,
+    *,
+    organization_id: int,
+    event_type: str,
+    result: str,
+    actor_membership_id: int | None = None,
+    occurrence_id: int | None = None,
+    active_schedule_block_id: int | None = None,
+    decision_status: models.LessonOccurrenceStatus | None = None,
+    detail: str | None = None,
+) -> None:
+    await db.run_sync(
+        partial(
+            log_occurrence_event_safe_sync,
+            organization_id=organization_id,
+            event_type=event_type,
+            result=result,
+            actor_membership_id=actor_membership_id,
+            occurrence_id=occurrence_id,
+            active_schedule_block_id=active_schedule_block_id,
+            decision_status=decision_status,
+            detail=detail,
+        )
+    )

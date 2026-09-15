@@ -225,6 +225,23 @@ def test_api_database_dependencies_are_function_scoped() -> None:
     assert offenders == []
 
 
+def test_application_endpoints_do_not_construct_http_exceptions() -> None:
+    allowed = {Path("api/v1/endpoints/webhooks.py")}
+    offenders: list[str] = []
+    for path in _python_files("api/v1/endpoints"):
+        if path.relative_to(APP) in allowed:
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Name)
+                and node.func.id == "HTTPException"
+            ):
+                offenders.append(f"{path.relative_to(APP)}:{node.lineno}")
+    assert offenders == []
+
+
 def test_ordinary_api_and_services_do_not_control_transactions() -> None:
     allowed = {
         Path("api/deps.py"),

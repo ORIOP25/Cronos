@@ -57,9 +57,9 @@ async def list_occurrences(
     """Devolve ocorrÃªncias de aulas com filtros opcionais."""
     organization_id = current_user.organization_id
 
-    def _run(sync_db):
-        return occurrence_service.list_occurrences_sync(
-            sync_db,
+    try:
+        return await occurrence_service.list_occurrences(
+            db,
             organization_id,
             class_id=class_id,
             date_from=date_from,
@@ -69,9 +69,6 @@ async def list_occurrences(
             status_filter=status,
             as_page=True,
         )
-
-    try:
-        return await db.run_sync(_run)
     except AppError:
         raise
 
@@ -96,53 +93,44 @@ async def create_occurrence(
     """Executa comando CREATE_OCCURRENCE (cria/reutiliza) para um bloco do horÃ¡rio."""
     organization_id = current_user.organization_id
 
-    def _run(sync_db):
-        return occurrence_service.create_occurrence_from_active_block_sync(
-            sync_db,
+    try:
+        occurrence, created_now = await occurrence_service.create_occurrence_from_active_block(
+            db,
             organization_id=organization_id,
             active_schedule_block_id=payload.active_schedule_block_id,
             created_by_membership_id=current_user.membership_id,
             creation_source=payload.mode,
             reason=occurrence_service.OCCURRENCE_REPORTED,
         )
-
-    try:
-        occurrence, created_now = await db.run_sync(_run)
     except AppError as exc:
         error_status = status_code_for_kind(exc.kind, exc.code)
         error_detail = exc.detail
 
-        def _emit_failure(sync_db):
-            occurrence_service.log_occurrence_event_safe_sync(
-                sync_db,
-                organization_id=organization_id,
-                event_type=occurrence_service.OBS_EVENT_CREATE,
-                result=occurrence_service.classify_occurrence_error_result(error_status),
-                actor_membership_id=current_user.membership_id,
-                occurrence_id=None,
-                active_schedule_block_id=payload.active_schedule_block_id,
-                detail=f"{error_detail} (active_schedule_block_id={payload.active_schedule_block_id})",
-            )
-
-        await db.run_sync(_emit_failure)
+        await occurrence_service.log_occurrence_event_safe(
+            db,
+            organization_id=organization_id,
+            event_type=occurrence_service.OBS_EVENT_CREATE,
+            result=occurrence_service.classify_occurrence_error_result(error_status),
+            actor_membership_id=current_user.membership_id,
+            occurrence_id=None,
+            active_schedule_block_id=payload.active_schedule_block_id,
+            detail=f"{error_detail} (active_schedule_block_id={payload.active_schedule_block_id})",
+        )
         raise
 
     if not created_now:
         response.status_code = status.HTTP_200_OK
 
-    def _emit_success(sync_db):
-        occurrence_service.log_occurrence_event_safe_sync(
-            sync_db,
-            organization_id=organization_id,
-            event_type=occurrence_service.OBS_EVENT_CREATE,
-            result=occurrence_service.OBS_RESULT_SUCCESS,
-            actor_membership_id=current_user.membership_id,
-            occurrence_id=occurrence.id,
-            active_schedule_block_id=occurrence.active_schedule_block_id,
-            detail=None,
-        )
-
-    await db.run_sync(_emit_success)
+    await occurrence_service.log_occurrence_event_safe(
+        db,
+        organization_id=organization_id,
+        event_type=occurrence_service.OBS_EVENT_CREATE,
+        result=occurrence_service.OBS_RESULT_SUCCESS,
+        actor_membership_id=current_user.membership_id,
+        occurrence_id=occurrence.id,
+        active_schedule_block_id=occurrence.active_schedule_block_id,
+        detail=None,
+    )
     return occurrence
 
 
@@ -159,10 +147,7 @@ async def list_debts(
     """Devolve as horas em dÃ­vida (faltas nÃ£o recuperadas) agrupadas por turma/disciplina."""
     organization_id = current_user.organization_id
 
-    def _run(sync_db):
-        return occurrence_service.get_debts_sync(sync_db, organization_id, class_id=class_id)
-
-    return await db.run_sync(_run)
+    return await occurrence_service.get_debts(db, organization_id, class_id=class_id)
 
 
 @router.get(
@@ -179,14 +164,11 @@ async def get_occurrence_observability_summary(
 ):
     organization_id = current_user.organization_id
 
-    def _run(sync_db):
-        return occurrence_service.get_occurrence_observability_summary_sync(
-            sync_db,
-            organization_id=organization_id,
-            window_days=window_days,
-        )
-
-    return await db.run_sync(_run)
+    return await occurrence_service.get_occurrence_observability_summary(
+        db,
+        organization_id=organization_id,
+        window_days=window_days,
+    )
 
 
 @router.get(
@@ -204,12 +186,9 @@ async def list_available_substitutes(
     """Devolve professores da organizaÃ§Ã£o que estÃ£o disponÃ­veis num dado timeslot/data."""
     organization_id = current_user.organization_id
 
-    def _run(sync_db):
-        return occurrence_service.get_available_substitutes_sync(
-            sync_db, organization_id, timeslot_id, target_date
-        )
-
-    results = await db.run_sync(_run)
+    results = await occurrence_service.get_available_substitutes(
+        db, organization_id, timeslot_id, target_date
+    )
     return results
 
 
@@ -229,15 +208,12 @@ async def get_substitute_recommendations(
 ):
     organization_id = current_user.organization_id
 
-    def _run(sync_db):
-        return occurrence_service.get_substitute_recommendations_sync(
-            sync_db,
+    try:
+        return await occurrence_service.get_substitute_recommendations(
+            db,
             organization_id=organization_id,
             occurrence_id=occurrence_id,
         )
-
-    try:
-        return await db.run_sync(_run)
     except AppError:
         raise
 
@@ -256,10 +232,7 @@ async def get_occurrence(
     """Devolve uma ocorrÃªncia pelo ID."""
     organization_id = current_user.organization_id
 
-    def _run(sync_db):
-        return occurrence_service.get_occurrence_sync(sync_db, occurrence_id, organization_id)
-
-    return await db.run_sync(_run)
+    return await occurrence_service.get_occurrence(db, occurrence_id, organization_id)
 
 
 @router.patch(
@@ -281,50 +254,41 @@ async def update_occurrence(
     """Permite ao diretor marcar uma ocorrÃªncia como GAP ou SUBSTITUTED."""
     organization_id = current_user.organization_id
 
-    def _run(sync_db):
-        return occurrence_service.update_occurrence_sync(
-            sync_db,
+    try:
+        updated = await occurrence_service.update_occurrence(
+            db,
             occurrence_id,
             organization_id,
             payload,
             decided_by_membership_id=current_user.membership_id,
         )
-
-    try:
-        updated = await db.run_sync(_run)
     except AppError as exc:
         error_status = status_code_for_kind(exc.kind, exc.code)
         error_detail = exc.detail
 
-        def _emit_failure(sync_db):
-            occurrence_service.log_occurrence_event_safe_sync(
-                sync_db,
-                organization_id=organization_id,
-                event_type=occurrence_service.OBS_EVENT_DECIDE,
-                result=occurrence_service.classify_occurrence_error_result(error_status),
-                actor_membership_id=current_user.membership_id,
-                occurrence_id=occurrence_id,
-                active_schedule_block_id=None,
-                detail=error_detail,
-            )
-
-        await db.run_sync(_emit_failure)
-        raise
-
-    def _emit_success(sync_db):
-        occurrence_service.log_occurrence_event_safe_sync(
-            sync_db,
+        await occurrence_service.log_occurrence_event_safe(
+            db,
             organization_id=organization_id,
             event_type=occurrence_service.OBS_EVENT_DECIDE,
-            result=occurrence_service.OBS_RESULT_SUCCESS,
+            result=occurrence_service.classify_occurrence_error_result(error_status),
             actor_membership_id=current_user.membership_id,
-            occurrence_id=updated.id,
-            active_schedule_block_id=updated.active_schedule_block_id,
-            decision_status=updated.status,
-            detail=None,
+            occurrence_id=occurrence_id,
+            active_schedule_block_id=None,
+            detail=error_detail,
         )
+        raise
 
-    await db.run_sync(_emit_success)
+    await occurrence_service.log_occurrence_event_safe(
+        db,
+        organization_id=organization_id,
+        event_type=occurrence_service.OBS_EVENT_DECIDE,
+        result=occurrence_service.OBS_RESULT_SUCCESS,
+        actor_membership_id=current_user.membership_id,
+        occurrence_id=updated.id,
+        active_schedule_block_id=updated.active_schedule_block_id,
+        decision_status=updated.status,
+        detail=None,
+    )
 
     return updated
 
@@ -343,9 +307,9 @@ async def cancel_occurrence(
     """Cancela uma ocorrÃªncia (OPEN ou decidida), revertendo o LessonLog para PENDING."""
     organization_id = current_user.organization_id
 
-    def _run(sync_db):
-        return occurrence_service.cancel_occurrence_sync(
-            sync_db,
+    try:
+        return await occurrence_service.cancel_occurrence(
+            db,
             organization_id=organization_id,
             occurrence_id=occurrence_id,
             cancelled_by_membership_id=current_user.membership_id,
@@ -353,8 +317,5 @@ async def cancel_occurrence(
             reason=occurrence_service.ADMINISTRATIVE_REVERSAL,
             cancel_completed_substitute_log=payload.cancel_completed_substitute_log,
         )
-
-    try:
-        return await db.run_sync(_run)
     except AppError:
         raise

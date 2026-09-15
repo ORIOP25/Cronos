@@ -20,7 +20,6 @@ from app.core.exceptions import (
     PUBLIC_ERROR_CATALOG,
     REQUEST_ID_HEADER,
     AppError,
-    DomainError,
     public_error_detail,
     request_reference,
     status_code_for_kind,
@@ -271,16 +270,6 @@ async def request_validation_error_handler(request: Request, exc: RequestValidat
         status_code=422,
         code="validation_error",
         fields=fields,
-    )
-
-
-# --- Domain Error Handler ---
-@app.exception_handler(DomainError)
-async def domain_error_handler(request: Request, exc: DomainError):
-    return _error_response(
-        request,
-        status_code=exc.status_code,
-        code={404: "resource_not_found", 409: "conflict"}.get(exc.status_code, "bad_request"),
     )
 
 
