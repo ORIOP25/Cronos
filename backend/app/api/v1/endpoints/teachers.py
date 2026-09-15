@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import schemas
 from app.api import deps
+from app.core.exceptions import AppError, status_code_for_kind
 from app.core.ratelimit import limiter
 from app.services import teacher_observability_service, teacher_service
 
@@ -39,11 +40,10 @@ async def read_my_availability(
             teacher_id=current_user.teacher_id,
             organization_id=current_user.organization_id,
         )
-        if result == "NOT_FOUND":
-            status_code = 404
-            raise HTTPException(status_code=404, detail=TEACHER_NOT_FOUND_MSG)
-
         return result
+    except AppError as exc:
+        status_code = status_code_for_kind(exc.kind, exc.code)
+        raise
     except HTTPException as exc:
         status_code = exc.status_code
         raise
@@ -93,12 +93,6 @@ async def update_my_availability(
         organization_id=current_user.organization_id,
         changed_by_membership_id=current_user.membership_id,
     )
-    if result == "NOT_FOUND":
-        raise HTTPException(status_code=404, detail=TEACHER_NOT_FOUND_MSG)
-    if result == "INVALID_TIMESLOT":
-        raise HTTPException(status_code=400, detail="Timeslot inválido ou fora da organização")
-    if result == "DUPLICATE_TIMESLOT":
-        raise HTTPException(status_code=400, detail={"code": "duplicate_timeslot"})
     return result
 
 
@@ -124,8 +118,6 @@ async def read_teacher_availability(
         teacher_id=teacher_id,
         organization_id=current_user.organization_id,
     )
-    if result == "NOT_FOUND":
-        raise HTTPException(status_code=404, detail=TEACHER_NOT_FOUND_MSG)
     return result
 
 

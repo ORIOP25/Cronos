@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app import models
+from app.core.exceptions import AppError
 from app.models import Availability
 from app.schemas import AvailabilitySelfCreate
 from app.services.availability_matrix_service import AvailabilityMatrixInspector
@@ -210,7 +211,7 @@ async def get_teacher_availability(
     db: AsyncSession,
     teacher_id: int,
     organization_id: int,
-) -> list[dict] | str:
+) -> list[dict]:
     """Lê disponibilidades de um professor dentro da organização autenticada (sintetiza NEUTRAL em memória)."""
     teacher_query = select(models.Teacher).where(
         models.Teacher.id == teacher_id,
@@ -219,7 +220,11 @@ async def get_teacher_availability(
     teacher_result = await db.execute(teacher_query)
     db_teacher = teacher_result.scalars().first()
     if not db_teacher:
-        return "NOT_FOUND"
+        raise AppError(
+            kind="not_found",
+            code="resource_not_found",
+            detail=f"Teacher {teacher_id} was not found in organization {organization_id}.",
+        )
 
     timeslots_result = await db.execute(
         select(models.Timeslot)
@@ -264,7 +269,11 @@ async def set_teacher_availability(
     db_teacher = teacher_result.scalars().first()
 
     if not db_teacher:
-        return "NOT_FOUND"
+        raise AppError(
+            kind="not_found",
+            code="resource_not_found",
+            detail=f"Teacher {teacher_id} was not found in organization {organization_id}.",
+        )
     active_resource = await _teacher_is_scheduled(db, organization_id, teacher_id)
 
     existing_rows = await db.execute(
@@ -283,10 +292,18 @@ async def set_teacher_availability(
 
     timeslot_ids = [item.timeslot_id for item in availabilities]
     if len(timeslot_ids) != len(set(timeslot_ids)):
-        return "DUPLICATE_TIMESLOT"
+        raise AppError(
+            kind="bad_request",
+            code="duplicate_timeslot",
+            detail=f"Teacher {teacher_id} submitted duplicate timeslots.",
+        )
 
     if set(timeslot_ids) != all_org_timeslot_ids:
-        return "INVALID_TIMESLOT"
+        raise AppError(
+            kind="bad_request",
+            code="bad_request",
+            detail=f"Teacher {teacher_id} submitted an invalid timeslot set.",
+        )
 
     # 4. Mutação transacional
     try:
