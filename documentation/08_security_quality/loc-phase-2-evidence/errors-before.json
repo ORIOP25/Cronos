@@ -1,0 +1,6 @@
+{
+  "source": "Phase 2 correction brief",
+  "legacy_http_exception_construction_sites": 60,
+  "legacy_domain_error_handler": true,
+  "notes": "Baseline reported 60 non-boundary HTTPException construction sites and the legacy DomainError handler."
+}

@@ -293,13 +293,6 @@
   font-weight: 600;
 }
 
-.luxury-line {
-  height: 1px;
-  background: var(--brand-500);
-  width: 60px;
-  margin: 20px 0;
-}
-
 .zen-alert-success {
   background-color: var(--color-state-given-bg);
   border-color: rgba(21, 128, 61, 0.25);
@@ -849,26 +842,9 @@ textarea {
 }
 
 /* ===========================
-   MOBILE: Professor (< 768px)
+   MOBILE: authenticated layout
    =========================== */
 @media (max-width: 768px) {
-  .mobile-week-nav {
-    flex-wrap: wrap;
-    gap: 8px !important;
-    justify-content: center !important;
-  }
-
-  .mobile-week-nav .btn {
-    font-size: 0.75rem !important;
-    padding: 6px 10px !important;
-  }
-
-  .mobile-week-nav .week-label {
-    width: 100%;
-    text-align: center;
-    order: -1;
-  }
-
   /* Login/Register brand panel -> horizontal banner */
   .zen-login-brand-panel {
     min-height: auto !important;

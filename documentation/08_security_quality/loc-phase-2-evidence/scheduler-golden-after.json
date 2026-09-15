@@ -1,0 +1,11 @@
+{
+  "revision": "pending-final-commit",
+  "scheduler_changed_in_phase": false,
+  "fixtures": {
+    "small": {"classes": 3, "requirements": 9},
+    "medium": {"classes": 12, "requirements": 48},
+    "large": {"classes": 30, "requirements": 120},
+    "constrained_rules": ["specific_room", "lock_time", "teacher_unavailable", "teacher_preferred"]
+  },
+  "verification": "backend/tests/unit/test_scheduler_golden_fixtures.py"
+}
