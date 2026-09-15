@@ -1,11 +1,12 @@
 from datetime import date, timedelta
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models, schemas
 from app.api import deps
+from app.core.exceptions import AppError
 from app.services import timesheet_service
 
 router = APIRouter()
@@ -43,7 +44,7 @@ async def list_timesheets(
     status: models.TimesheetStatus | None = None,
 ):
     if not deps.user_has_admin_capability(current_user):
-        raise HTTPException(status_code=403, detail="Acesso negado.")
+        raise AppError(kind="forbidden", code="access_forbidden", detail="Acesso negado.")
 
     def _run(sync_db):
         return timesheet_service.list_timesheets_sync(
@@ -67,8 +68,10 @@ async def get_my_timesheet(
     current_user: deps.ActiveActor,
 ):
     if not deps.user_has_teacher_capability(current_user):
-        raise HTTPException(
-            status_code=403, detail="Apenas professores podem consultar a sua timesheet."
+        raise AppError(
+            kind="forbidden",
+            code="access_forbidden",
+            detail="Apenas professores podem consultar a sua timesheet.",
         )
 
     def _run(sync_db):
@@ -95,8 +98,10 @@ async def submit_my_timesheet(
     current_user: deps.ActiveActor,
 ):
     if not deps.user_has_teacher_capability(current_user):
-        raise HTTPException(
-            status_code=403, detail="Apenas professores podem submeter a sua timesheet."
+        raise AppError(
+            kind="forbidden",
+            code="access_forbidden",
+            detail="Apenas professores podem submeter a sua timesheet.",
         )
 
     def _run(sync_db):
@@ -123,7 +128,7 @@ async def get_pending_occurrences_for_timesheet(
 ):
     """Devolve as ocorrÃªncias OPEN na semana associada Ã  timesheet."""
     if not deps.user_has_admin_capability(current_user):
-        raise HTTPException(status_code=403, detail="Acesso negado.")
+        raise AppError(kind="forbidden", code="access_forbidden", detail="Acesso negado.")
 
     def _run(sync_db):
         return timesheet_service.get_open_occurrences_for_timesheet_sync(
@@ -147,8 +152,10 @@ async def update_timesheet_status(
     current_user: deps.ActiveActor,
 ):
     if not deps.user_has_admin_capability(current_user):
-        raise HTTPException(
-            status_code=403, detail="Apenas admins podem aprovar ou reabrir timesheets."
+        raise AppError(
+            kind="forbidden",
+            code="access_forbidden",
+            detail="Apenas admins podem aprovar ou reabrir timesheets.",
         )
 
     def _run(sync_db):

@@ -1,10 +1,11 @@
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import schemas
 from app.api import deps
+from app.core.exceptions import AppError
 from app.services import class_service
 
 CLASS_NOT_FOUND_MSG = "Turma nÃ£o encontrada"
@@ -47,7 +48,7 @@ async def read_class(
     result = await class_service.get_class_full_details(db, class_id, current_user.organization_id)
 
     if not result:
-        raise HTTPException(status_code=404, detail=CLASS_NOT_FOUND_MSG)
+        raise AppError(kind="not_found", code="resource_not_found", detail=CLASS_NOT_FOUND_MSG)
 
     return result
 
@@ -138,7 +139,7 @@ async def get_class_subjects(
     result = await class_service.get_class_subjects(db, class_id, current_user.organization_id)
 
     if not result:
-        raise HTTPException(status_code=404, detail=CLASS_NOT_FOUND_MSG)
+        raise AppError(kind="not_found", code="resource_not_found", detail=CLASS_NOT_FOUND_MSG)
 
     return result
 

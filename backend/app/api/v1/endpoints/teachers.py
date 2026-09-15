@@ -3,7 +3,7 @@
 from time import perf_counter
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import schemas
@@ -33,7 +33,9 @@ async def read_my_availability(
     try:
         if current_user.teacher_id is None:
             status_code = 403
-            raise HTTPException(status_code=403, detail="Professor sem perfil associado")
+            raise AppError(
+                kind="forbidden", code="access_forbidden", detail="Professor sem perfil associado"
+            )
 
         result = await teacher_service.get_teacher_availability(
             db,
@@ -43,9 +45,6 @@ async def read_my_availability(
         return result
     except AppError as exc:
         status_code = status_code_for_kind(exc.kind, exc.code)
-        raise
-    except HTTPException as exc:
-        status_code = exc.status_code
         raise
     except Exception:
         status_code = 500
@@ -84,7 +83,9 @@ async def update_my_availability(
 ):
     """Atualiza disponibilidade do professor autenticado (self-service)."""
     if current_user.teacher_id is None:
-        raise HTTPException(status_code=403, detail="Professor sem perfil associado")
+        raise AppError(
+            kind="forbidden", code="access_forbidden", detail="Professor sem perfil associado"
+        )
 
     result = await teacher_service.set_teacher_availability(
         db,
@@ -109,8 +110,10 @@ async def read_teacher_availability(
     """Inspetor read-only de disponibilidade para Administrador ou o próprio Professor."""
     is_admin = deps.user_has_admin_capability(current_user)
     if not is_admin and current_user.teacher_id != teacher_id:
-        raise HTTPException(
-            status_code=403, detail="Sem permissões para visualizar outro professor"
+        raise AppError(
+            kind="forbidden",
+            code="access_forbidden",
+            detail="Sem permissões para visualizar outro professor",
         )
 
     result = await teacher_service.get_teacher_availability(
@@ -160,7 +163,9 @@ async def read_my_progress(
     try:
         if current_user.teacher_id is None:
             status_code = 403
-            raise HTTPException(status_code=403, detail="Professor sem perfil associado")
+            raise AppError(
+                kind="forbidden", code="access_forbidden", detail="Professor sem perfil associado"
+            )
 
         result = await teacher_service.get_teacher_progress(
             db,
@@ -168,8 +173,8 @@ async def read_my_progress(
             organization_id=current_user.organization_id,
         )
         return result
-    except HTTPException as exc:
-        status_code = exc.status_code
+    except AppError as exc:
+        status_code = status_code_for_kind(exc.kind, exc.code)
         raise
     except Exception:
         status_code = 500

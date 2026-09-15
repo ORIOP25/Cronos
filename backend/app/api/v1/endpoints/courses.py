@@ -1,10 +1,11 @@
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import schemas
 from app.api import deps
+from app.core.exceptions import AppError
 from app.services import class_service, course_service
 
 COURSE_NOT_FOUND_MSG = "Curso nÃ£o encontrado"
@@ -68,7 +69,7 @@ async def read_course_detail(
     """
     course = await course_service.get_course_details(db, course_id, current_user.organization_id)
     if not course:
-        raise HTTPException(status_code=404, detail=COURSE_NOT_FOUND_MSG)
+        raise AppError(kind="not_found", code="resource_not_found", detail=COURSE_NOT_FOUND_MSG)
     return course
 
 
@@ -84,7 +85,7 @@ async def read_course_classes(
 ) -> Any:
     course = await course_service.get_course_details(db, course_id, current_user.organization_id)
     if not course:
-        raise HTTPException(status_code=404, detail=COURSE_NOT_FOUND_MSG)
+        raise AppError(kind="not_found", code="resource_not_found", detail=COURSE_NOT_FOUND_MSG)
     return await class_service.get_classes_by_course(db, course_id, current_user.organization_id)
 
 
