@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import schemas
@@ -51,16 +51,13 @@ async def update_room(
     db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
     current_user: deps.AdminActor,
 ):
-    room = await room_service.update_room(
+    return await room_service.update_room(
         db,
         room_id,
         room_in,
         current_user.organization_id,
         changed_by_membership_id=current_user.membership_id,
     )
-    if not room:
-        raise HTTPException(status_code=404, detail="Sala nÃ£o encontrada")
-    return room
 
 
 @router.delete(
@@ -75,20 +72,11 @@ async def delete_room(
     db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
     current_user: deps.AdminActor,
 ):
-    status = await room_service.delete_room(
+    await room_service.delete_room(
         db,
         room_id,
         current_user.organization_id,
         changed_by_membership_id=current_user.membership_id,
     )
-
-    if status == "NOT_FOUND":
-        raise HTTPException(status_code=404, detail="Sala nÃ£o encontrada")
-
-    if status == "DEPENDENCY_ERROR":
-        raise HTTPException(
-            status_code=400,
-            detail="NÃ£o Ã© possÃ­vel apagar esta sala pois existem aulas agendadas nela.",
-        )
 
     return {"message": "Sala removida com sucesso"}
