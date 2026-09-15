@@ -2,7 +2,6 @@ import asyncio
 from datetime import UTC, date, datetime, time, timedelta
 
 import pytest
-from fastapi import HTTPException
 from sqlalchemy import select
 
 import app.scheduler_worker as scheduler_worker
@@ -10,6 +9,7 @@ import app.services.scheduler_job_runtime as runtime_module
 from app import models
 from app.api.v1.endpoints.scheduler import approve_draft as approve_draft_endpoint
 from app.core.auth import Actor
+from app.core.exceptions import AppError
 from app.services.scheduler_adaptive_engine import run_adaptive_repair
 from app.services.scheduler_approval_service import (
     DraftApprovalConflictError,
@@ -1570,7 +1570,7 @@ async def test_approval_endpoint_rolls_back_ordinary_integrity_conflicts(
         )
 
     monkeypatch.setattr(SchedulerApprovalService, "approve", fail_after_mutation)
-    with pytest.raises(HTTPException) as raised:
+    with pytest.raises(AppError) as raised:
         async with db_session.begin():
             await approve_draft_endpoint(
                 draft_id=999,
