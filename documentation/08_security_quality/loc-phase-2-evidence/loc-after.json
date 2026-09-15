@@ -1,16 +1,16 @@
 {
-  "revision": "cbb6cd5fcb35e7f2407dd174e75d8d0612af17a8",
+  "revision": "50890071305f85cbebf6ce82c59c9ed658edbafa",
   "counts": {
-    "backendProduction": 32398,
-    "frontendProduction": 18457,
-    "backendTests": 19196,
+    "backendProduction": 32645,
+    "frontendProduction": 18437,
+    "backendTests": 19315,
     "frontendTests": 5966,
     "e2eTests": 3217
   },
   "deltas": {
-    "backendProduction": -392,
-    "frontendProduction": -49,
-    "backendTests": -23,
+    "backendProduction": -145,
+    "frontendProduction": -69,
+    "backendTests": 96,
     "frontendTests": 0,
     "e2eTests": 0
   },
@@ -38,7 +38,7 @@
     {
       "path": "backend/app/api/v1/endpoints/classes.py",
       "category": "backendProduction",
-      "lines": 220
+      "lines": 221
     },
     {
       "path": "backend/app/api/v1/endpoints/client_errors.py",
@@ -53,7 +53,7 @@
     {
       "path": "backend/app/api/v1/endpoints/courses.py",
       "category": "backendProduction",
-      "lines": 185
+      "lines": 186
     },
     {
       "path": "backend/app/api/v1/endpoints/dashboard.py",
@@ -63,7 +63,7 @@
     {
       "path": "backend/app/api/v1/endpoints/foundation.py",
       "category": "backendProduction",
-      "lines": 97
+      "lines": 94
     },
     {
       "path": "backend/app/api/v1/endpoints/health.py",
@@ -73,7 +73,7 @@
     {
       "path": "backend/app/api/v1/endpoints/legal.py",
       "category": "backendProduction",
-      "lines": 43
+      "lines": 38
     },
     {
       "path": "backend/app/api/v1/endpoints/members.py",
@@ -83,17 +83,17 @@
     {
       "path": "backend/app/api/v1/endpoints/occurrences.py",
       "category": "backendProduction",
-      "lines": 305
+      "lines": 279
     },
     {
       "path": "backend/app/api/v1/endpoints/org_settings.py",
       "category": "backendProduction",
-      "lines": 235
+      "lines": 250
     },
     {
       "path": "backend/app/api/v1/endpoints/readiness.py",
       "category": "backendProduction",
-      "lines": 59
+      "lines": 58
     },
     {
       "path": "backend/app/api/v1/endpoints/rooms.py",
@@ -103,17 +103,17 @@
     {
       "path": "backend/app/api/v1/endpoints/schedule.py",
       "category": "backendProduction",
-      "lines": 445
+      "lines": 466
     },
     {
       "path": "backend/app/api/v1/endpoints/scheduler.py",
       "category": "backendProduction",
-      "lines": 265
+      "lines": 284
     },
     {
       "path": "backend/app/api/v1/endpoints/session.py",
       "category": "backendProduction",
-      "lines": 32
+      "lines": 31
     },
     {
       "path": "backend/app/api/v1/endpoints/subjects.py",
@@ -123,12 +123,12 @@
     {
       "path": "backend/app/api/v1/endpoints/teachers.py",
       "category": "backendProduction",
-      "lines": 176
+      "lines": 181
     },
     {
       "path": "backend/app/api/v1/endpoints/timesheets.py",
       "category": "backendProduction",
-      "lines": 138
+      "lines": 145
     },
     {
       "path": "backend/app/api/v1/endpoints/timeslots.py",
@@ -198,7 +198,7 @@
     {
       "path": "backend/app/core/exceptions.py",
       "category": "backendProduction",
-      "lines": 231
+      "lines": 216
     },
     {
       "path": "backend/app/core/logging.py",
@@ -233,7 +233,7 @@
     {
       "path": "backend/app/main.py",
       "category": "backendProduction",
-      "lines": 302
+      "lines": 293
     },
     {
       "path": "backend/app/member_reconciliation_worker.py",
@@ -388,7 +388,7 @@
     {
       "path": "backend/app/services/lesson_log_service.py",
       "category": "backendProduction",
-      "lines": 374
+      "lines": 400
     },
     {
       "path": "backend/app/services/member_access_operation_service.py",
@@ -403,7 +403,7 @@
     {
       "path": "backend/app/services/member_service.py",
       "category": "backendProduction",
-      "lines": 2037
+      "lines": 2057
     },
     {
       "path": "backend/app/services/member_webhook_service.py",
@@ -413,7 +413,7 @@
     {
       "path": "backend/app/services/occurrence_service.py",
       "category": "backendProduction",
-      "lines": 1823
+      "lines": 1999
     },
     {
       "path": "backend/app/services/operational_seed_service.py",
@@ -648,7 +648,7 @@
     {
       "path": "backend/app/services/timesheet_service.py",
       "category": "backendProduction",
-      "lines": 376
+      "lines": 392
     },
     {
       "path": "backend/app/services/timeslot_service.py",
@@ -953,7 +953,7 @@
     {
       "path": "backend/tests/unit/test_backend_foundation_contracts.py",
       "category": "backendTests",
-      "lines": 231
+      "lines": 246
     },
     {
       "path": "backend/tests/unit/test_class_service_validation.py",
@@ -1011,6 +1011,11 @@
       "lines": 66
     },
     {
+      "path": "backend/tests/unit/test_member_capability_policy.py",
+      "category": "backendTests",
+      "lines": 41
+    },
+    {
       "path": "backend/tests/unit/test_member_saga_coordinator.py",
       "category": "backendTests",
       "lines": 96
@@ -1024,6 +1029,11 @@
       "path": "backend/tests/unit/test_migration_tenant_ref_contract.py",
       "category": "backendTests",
       "lines": 70
+    },
+    {
+      "path": "backend/tests/unit/test_occurrence_transition_plan.py",
+      "category": "backendTests",
+      "lines": 63
     },
     {
       "path": "backend/tests/unit/test_provision_database.py",
@@ -2033,7 +2043,7 @@
     {
       "path": "frontend/src/index.css",
       "category": "frontendProduction",
-      "lines": 1384
+      "lines": 1364
     },
     {
       "path": "frontend/src/main.jsx",

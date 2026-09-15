@@ -1,5 +1,5 @@
 {
-  "revision": "pending-final-commit",
+  "revision": "50890071305f85cbebf6ce82c59c9ed658edbafa",
   "scheduler_changed_in_phase": false,
   "fixtures": {
     "small": {"classes": 3, "requirements": 9},
