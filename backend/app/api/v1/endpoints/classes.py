@@ -103,30 +103,9 @@ async def update_class_progress(
     âš¡ Optimization: Upsert batch via ON CONFLICT
     ðŸ“ˆ Scalability: Suporta N mÃ³dulos numa Ãºnica chamada
     """
-    status = await class_service.update_class_progress(
+    await class_service.update_class_progress(
         db, class_id, payload.progress, current_user.organization_id
     )
-
-    if status == "NOT_FOUND":
-        raise HTTPException(status_code=404, detail=CLASS_NOT_FOUND_MSG)
-
-    if status == "NO_SUBJECTS":
-        raise HTTPException(
-            status_code=400,
-            detail="Turma sem disciplinas atribuÃ­das â€” adicione disciplinas primeiro",
-        )
-
-    if status == "NO_COURSE":
-        raise HTTPException(
-            status_code=400,
-            detail="Turma sem curso associado — não é possível registar progresso",
-        )
-
-    if isinstance(status, str) and status.startswith("INVALID_MODULE:"):
-        module_id = status.split(":")[1]
-        raise HTTPException(
-            status_code=400, detail=f"Módulo {module_id} não pertence às disciplinas desta turma"
-        )
 
     # Retornar dados atualizados para refresh na UI
     return await class_service.get_class_full_details(db, class_id, current_user.organization_id)
@@ -183,22 +162,13 @@ async def add_class_subject(
     - Disciplina existe e pertence Ã  organizaÃ§Ã£o
     - Disciplina nÃ£o estÃ¡ jÃ¡ associada Ã  turma
     """
-    result = await class_service.add_class_subject(
+    await class_service.add_class_subject(
         db,
         class_id,
         payload.subject_id,
         current_user.organization_id,
         changed_by_membership_id=current_user.membership_id,
     )
-
-    if result == "CLASS_NOT_FOUND":
-        raise HTTPException(status_code=404, detail=CLASS_NOT_FOUND_MSG)
-
-    if result == "SUBJECT_NOT_FOUND":
-        raise HTTPException(status_code=404, detail="Disciplina nÃ£o encontrada")
-
-    if result == "ALREADY_EXISTS":
-        raise HTTPException(status_code=400, detail="Esta disciplina jÃ¡ estÃ¡ associada Ã  turma")
 
     # Retornar lista atualizada
     return await class_service.get_class_subjects(db, class_id, current_user.organization_id)
@@ -225,7 +195,7 @@ async def update_class_subject_teacher(
 
     Enviar teacher_id=null para remover a atribuiÃ§Ã£o.
     """
-    result = await class_service.update_class_subject_teacher(
+    await class_service.update_class_subject_teacher(
         db,
         class_id,
         subject_id,
@@ -233,21 +203,6 @@ async def update_class_subject_teacher(
         current_user.organization_id,
         changed_by_membership_id=current_user.membership_id,
     )
-
-    if result == "CLASS_NOT_FOUND":
-        raise HTTPException(status_code=404, detail=CLASS_NOT_FOUND_MSG)
-
-    if result == "LINK_NOT_FOUND":
-        raise HTTPException(status_code=404, detail="Esta disciplina nÃ£o estÃ¡ associada Ã  turma")
-
-    if result == "TEACHER_NOT_FOUND":
-        raise HTTPException(status_code=404, detail="Professor nÃ£o encontrado")
-
-    if result == "NO_COMPETENCY":
-        raise HTTPException(
-            status_code=400,
-            detail={"code": "teacher_competency_missing"},
-        )
 
     # Retornar lista atualizada
     return await class_service.get_class_subjects(db, class_id, current_user.organization_id)
@@ -267,19 +222,13 @@ async def remove_class_subject(
     """
     Remove uma disciplina da turma (para o grade_level atual).
     """
-    result = await class_service.remove_class_subject(
+    await class_service.remove_class_subject(
         db,
         class_id,
         subject_id,
         current_user.organization_id,
         changed_by_membership_id=current_user.membership_id,
     )
-
-    if result == "CLASS_NOT_FOUND":
-        raise HTTPException(status_code=404, detail=CLASS_NOT_FOUND_MSG)
-
-    if result == "NOT_FOUND":
-        raise HTTPException(status_code=404, detail="Esta disciplina nÃ£o estÃ¡ associada Ã  turma")
 
     # Retornar lista atualizada
     return await class_service.get_class_subjects(db, class_id, current_user.organization_id)

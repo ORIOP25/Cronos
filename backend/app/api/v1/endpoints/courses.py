@@ -111,16 +111,13 @@ async def create_course_class(
     db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
     current_user: deps.AdminActor,
 ) -> Any:
-    result = await class_service.create_class_in_course(
+    return await class_service.create_class_in_course(
         db,
         course_id,
         item,
         current_user.organization_id,
         changed_by_membership_id=current_user.membership_id,
     )
-    if result == "COURSE_NOT_FOUND":
-        raise HTTPException(status_code=404, detail=COURSE_NOT_FOUND_MSG)
-    return result
 
 
 @router.patch(
@@ -138,7 +135,7 @@ async def update_course_class(
     db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
     current_user: deps.AdminActor,
 ) -> Any:
-    result = await class_service.update_class_in_course(
+    return await class_service.update_class_in_course(
         db,
         course_id,
         class_id,
@@ -146,11 +143,6 @@ async def update_course_class(
         current_user.organization_id,
         changed_by_membership_id=current_user.membership_id,
     )
-    if result == "NOT_FOUND":
-        raise HTTPException(status_code=404, detail="Turma nÃ£o encontrada neste curso")
-    if result == "INVALID_YEAR_RANGE":
-        raise HTTPException(status_code=400, detail="Ano de fim deve ser maior que o ano de inÃ­cio")
-    return result
 
 
 @router.delete(
@@ -163,15 +155,13 @@ async def delete_course_class(
     db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
     current_user: deps.AdminActor,
 ) -> Any:
-    status = await class_service.delete_class_in_course(
+    await class_service.delete_class_in_course(
         db,
         course_id,
         class_id,
         current_user.organization_id,
         changed_by_membership_id=current_user.membership_id,
     )
-    if status == "NOT_FOUND":
-        raise HTTPException(status_code=404, detail="Turma nÃ£o encontrada neste curso")
     return {"message": "Turma removida com sucesso"}
 
 

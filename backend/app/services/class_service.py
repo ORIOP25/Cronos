@@ -6,6 +6,7 @@ from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
 
 from app import models, schemas
+from app.core.exceptions import AppError
 from app.services.scheduler_state_service import record_scheduler_change
 
 
@@ -92,7 +93,11 @@ async def create_class_in_course(
 ):
     db_course = await _get_course_by_org(db, course_id, organization_id)
     if not db_course:
-        return "COURSE_NOT_FOUND"
+        raise AppError(
+            kind="not_found",
+            code="resource_not_found",
+            detail=f"Course {course_id} was not found in organization {organization_id}.",
+        )
 
     db_item = models.Class(
         **item.model_dump(), course_id=course_id, organization_id=organization_id
@@ -125,13 +130,21 @@ async def update_class_in_course(
 ):
     db_class = await _get_class_by_course_and_org(db, class_id, course_id, organization_id)
     if not db_class:
-        return "NOT_FOUND"
+        raise AppError(
+            kind="not_found",
+            code="resource_not_found",
+            detail=f"Class {class_id} was not found in course {course_id}.",
+        )
     update_data = class_in.model_dump(exclude_unset=True)
     next_start_year = update_data.get("start_year", db_class.start_year)
     next_end_year = update_data.get("end_year", db_class.end_year)
 
     if next_end_year <= next_start_year:
-        return "INVALID_YEAR_RANGE"
+        raise AppError(
+            kind="bad_request",
+            code="bad_request",
+            detail="The class end year must be greater than its start year.",
+        )
 
     before = _class_demand_snapshot(db_class)
     for field, value in update_data.items():
@@ -163,7 +176,11 @@ async def delete_class_in_course(
 ):
     db_class = await _get_class_by_course_and_org(db, class_id, course_id, organization_id)
     if not db_class:
-        return "NOT_FOUND"
+        raise AppError(
+            kind="not_found",
+            code="resource_not_found",
+            detail=f"Class {class_id} was not found in course {course_id}.",
+        )
 
     before = _class_demand_snapshot(db_class)
     await _delete_class_with_dependencies(db, db_class.id)
@@ -179,7 +196,6 @@ async def delete_class_in_course(
         active_resource=not db_class.is_archived,
     )
     await db.flush()
-    return "SUCCESS"
 
 
 async def _delete_class_with_dependencies(db: AsyncSession, class_id: int):
@@ -395,7 +411,11 @@ async def update_class_progress(
     db_class = await _get_class_by_org(db, class_id, organization_id)
 
     if not db_class:
-        return "NOT_FOUND"
+        raise AppError(
+            kind="not_found",
+            code="resource_not_found",
+            detail=f"Class {class_id} was not found in organization {organization_id}.",
+        )
 
     # 2. Buscar módulos válidos das disciplinas atribuídas à turma (ClassSubjectLink)
     links_query = (
@@ -411,7 +431,11 @@ async def update_class_progress(
     links = links_result.scalars().all()
 
     if not links:
-        return "NO_SUBJECTS"
+        raise AppError(
+            kind="bad_request",
+            code="bad_request",
+            detail=f"Class {class_id} has no assigned subjects.",
+        )
 
     # 3. Construir mapa de módulos válidos: {module_id: hours_total}
     valid_modules = {}
@@ -423,7 +447,11 @@ async def update_class_progress(
     # 4. Validar que todos os module_ids pertencem às disciplinas da turma
     for update in progress_updates:
         if update.module_id not in valid_modules:
-            return f"INVALID_MODULE:{update.module_id}"
+            raise AppError(
+                kind="bad_request",
+                code="bad_request",
+                detail=f"Module {update.module_id} is not assigned to class {class_id}.",
+            )
 
     # 5. Append adjustments; the ledger is the only stored progress truth.
     for update in progress_updates:
@@ -454,7 +482,6 @@ async def update_class_progress(
             )
 
     await db.flush()
-    return "SUCCESS"
 
 
 # ==========================================
@@ -544,7 +571,11 @@ async def add_class_subject(
     db_class = await _get_class_by_org(db, class_id, organization_id)
 
     if not db_class:
-        return "CLASS_NOT_FOUND"
+        raise AppError(
+            kind="not_found",
+            code="resource_not_found",
+            detail=f"Class {class_id} was not found in organization {organization_id}.",
+        )
 
     # 2. Buscar disciplina
     subject_query = select(models.Subject).where(
@@ -554,7 +585,11 @@ async def add_class_subject(
     db_subject = subject_result.scalars().first()
 
     if not db_subject:
-        return "SUBJECT_NOT_FOUND"
+        raise AppError(
+            kind="not_found",
+            code="resource_not_found",
+            detail=f"Subject {subject_id} was not found in organization {organization_id}.",
+        )
 
     # 3. Verificar se já existe
     existing_query = select(models.ClassSubjectLink).where(
@@ -566,7 +601,11 @@ async def add_class_subject(
     existing_result = await db.execute(existing_query)
 
     if existing_result.scalars().first():
-        return "ALREADY_EXISTS"
+        raise AppError(
+            kind="bad_request",
+            code="bad_request",
+            detail=f"Subject {subject_id} is already assigned to class {class_id}.",
+        )
 
     # 4. Criar associação
     link = models.ClassSubjectLink(
@@ -633,7 +672,11 @@ async def update_class_subject_teacher(
     db_class = await _get_class_by_org(db, class_id, organization_id)
 
     if not db_class:
-        return "CLASS_NOT_FOUND"
+        raise AppError(
+            kind="not_found",
+            code="resource_not_found",
+            detail=f"Class {class_id} was not found in organization {organization_id}.",
+        )
 
     # 2. Buscar associação
     link_query = select(models.ClassSubjectLink).where(
@@ -646,7 +689,11 @@ async def update_class_subject_teacher(
     link = link_result.scalars().first()
 
     if not link:
-        return "LINK_NOT_FOUND"
+        raise AppError(
+            kind="not_found",
+            code="resource_not_found",
+            detail=f"Subject {subject_id} is not assigned to class {class_id}.",
+        )
     before = _class_subject_snapshot(link)
 
     # 3. Se teacher_id foi enviado, validar
@@ -667,12 +714,20 @@ async def update_class_subject_teacher(
             db_teacher = teacher_result.scalars().first()
 
             if not db_teacher:
-                return "TEACHER_NOT_FOUND"
+                raise AppError(
+                    kind="not_found",
+                    code="resource_not_found",
+                    detail=f"Teacher {teacher_id} was not found in organization {organization_id}.",
+                )
 
             # Validar professor tem competência na disciplina
             teacher_subject_ids = [s.id for s in db_teacher.subjects]
             if subject_id not in teacher_subject_ids:
-                return "NO_COMPETENCY"
+                raise AppError(
+                    kind="bad_request",
+                    code="teacher_competency_missing",
+                    detail=f"Teacher {teacher_id} is not qualified for subject {subject_id}.",
+                )
 
     # 4. Aplicar alterações
     for field, value in update_data.items():
@@ -709,7 +764,11 @@ async def remove_class_subject(
     db_class = await _get_class_by_org(db, class_id, organization_id)
 
     if not db_class:
-        return "CLASS_NOT_FOUND"
+        raise AppError(
+            kind="not_found",
+            code="resource_not_found",
+            detail=f"Class {class_id} was not found in organization {organization_id}.",
+        )
 
     # 2. Buscar associação
     link_query = select(models.ClassSubjectLink).where(
@@ -722,7 +781,11 @@ async def remove_class_subject(
     link = link_result.scalars().first()
 
     if not link:
-        return "NOT_FOUND"
+        raise AppError(
+            kind="not_found",
+            code="resource_not_found",
+            detail=f"Subject {subject_id} is not assigned to class {class_id}.",
+        )
     before = _class_subject_snapshot(link)
     # 3. Remover
     await db.delete(link)
@@ -763,8 +826,6 @@ async def remove_class_subject(
         active_resource=not db_class.is_archived,
     )
     await db.flush()
-
-    return "SUCCESS"
 
 
 async def get_available_subjects_for_class(db: AsyncSession, class_id: int, organization_id: int):
