@@ -41,19 +41,31 @@ def _update_recovery_delivery_sync(
         .first()
     )
     if link is None:
-        raise AppError(kind="conflict", code="conflict", detail="Bloco de recuperacao sem ligacao de divida valida.")
+        raise AppError(
+            kind="conflict",
+            code="conflict",
+            detail="Bloco de recuperacao sem ligacao de divida valida.",
+        )
 
     if lesson_log.status == models.LessonLogStatus.COMPLETED:
         if link.status not in (
             models.PlannedRecoveryLinkStatus.PLANNED,
             models.PlannedRecoveryLinkStatus.DELIVERED,
         ):
-            raise AppError(kind="conflict", code="conflict", detail="A recuperacao ja nao esta disponivel para entrega.")
+            raise AppError(
+                kind="conflict",
+                code="conflict",
+                detail="A recuperacao ja nao esta disponivel para entrega.",
+            )
         if (
             link.status == models.PlannedRecoveryLinkStatus.DELIVERED
             and link.delivered_lesson_log_id != lesson_log.id
         ):
-            raise AppError(kind="conflict", code="conflict", detail="A recuperacao ja foi entregue por outro registo.")
+            raise AppError(
+                kind="conflict",
+                code="conflict",
+                detail="A recuperacao ja foi entregue por outro registo.",
+            )
         link.status = models.PlannedRecoveryLinkStatus.DELIVERED
         link.delivered_recovery_minutes = min(block.duration_minutes, link.planned_recovery_minutes)
         link.delivered_lesson_log_id = lesson_log.id
@@ -87,7 +99,11 @@ def upsert_active_lesson_log_sync(
         .first()
     )
     if block is None:
-        raise AppError(kind="not_found", code="resource_not_found", detail="Bloco do horario ativo nao encontrado.")
+        raise AppError(
+            kind="not_found",
+            code="resource_not_found",
+            detail="Bloco do horario ativo nao encontrado.",
+        )
 
     timeslot = db.get(models.Timeslot, block.timeslot_id)
     if timeslot is None:
@@ -277,7 +293,9 @@ def upsert_operational_lesson_log_sync(
         .first()
     )
     if block is None:
-        raise AppError(kind="not_found", code="resource_not_found", detail="Bloco operacional nao encontrado.")
+        raise AppError(
+            kind="not_found", code="resource_not_found", detail="Bloco operacional nao encontrado."
+        )
 
     if payload.status == models.LessonLogStatus.OCCURRENCE:
         raise AppError(

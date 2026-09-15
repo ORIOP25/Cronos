@@ -44,7 +44,11 @@ def submit_timesheet_sync(
     """Submit a week only after every published block is resolved."""
     timesheet = get_or_create_timesheet_sync(db, organization_id, teacher_id, week_start_date)
     if timesheet.status != models.TimesheetStatus.OPEN:
-        raise AppError(kind="bad_request", code="bad_request", detail="A semana jÃ¡ nÃ£o estÃ¡ aberta para submissÃ£o.")
+        raise AppError(
+            kind="bad_request",
+            code="bad_request",
+            detail="A semana jÃ¡ nÃ£o estÃ¡ aberta para submissÃ£o.",
+        )
 
     week_end = week_start_date + timedelta(days=6)
     rows = (
@@ -66,11 +70,17 @@ def submit_timesheet_sync(
         .all()
     )
     if not rows:
-        raise AppError(kind="bad_request", code="bad_request", detail="Sem aulas planeadas nesta semana.")
+        raise AppError(
+            kind="bad_request", code="bad_request", detail="Sem aulas planeadas nesta semana."
+        )
     now = datetime.now()
     for block, timeslot, lesson_log in rows:
         if datetime.combine(block.date, timeslot.end_time) > now:
-            raise AppError(kind="bad_request", code="bad_request", detail="NÃ£o pode submeter semanas com aulas no futuro.")
+            raise AppError(
+                kind="bad_request",
+                code="bad_request",
+                detail="NÃ£o pode submeter semanas com aulas no futuro.",
+            )
         if lesson_log is None or lesson_log.status == models.LessonLogStatus.PENDING:
             raise AppError(
                 kind="bad_request",
@@ -315,7 +325,9 @@ def update_timesheet_status_sync(
     )
 
     if not timesheet:
-        raise AppError(kind="not_found", code="resource_not_found", detail="Timesheet nÃ£o encontrada.")
+        raise AppError(
+            kind="not_found", code="resource_not_found", detail="Timesheet nÃ£o encontrada."
+        )
 
     current = timesheet.status
     allowed = ALLOWED_TIMESHEET_TRANSITIONS.get(current, set())
@@ -372,7 +384,9 @@ def get_open_occurrences_for_timesheet_sync(
         .first()
     )
     if timesheet is None:
-        raise AppError(kind="not_found", code="resource_not_found", detail="Timesheet nÃ£o encontrada.")
+        raise AppError(
+            kind="not_found", code="resource_not_found", detail="Timesheet nÃ£o encontrada."
+        )
     week_end = timesheet.week_start_date + timedelta(days=6)
     occurrences = (
         db.query(models.LessonOccurrence)
