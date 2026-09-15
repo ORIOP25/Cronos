@@ -1,6 +1,8 @@
 # LOC Reduction and Architecture Reset
 
-Implementation details: [LOC Reduction Implementation WBS](LOC_REDUCTION_WBS.md).
+Initial implementation details: [LOC Reduction Implementation WBS](LOC_REDUCTION_WBS.md).
+
+Remaining implementation details: [LOC Reduction Phase 2 WBS](LOC_REDUCTION_PHASE_2_WBS.md).
 
 ## Decision
 
