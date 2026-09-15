@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import schemas
@@ -47,16 +47,13 @@ async def update_subject(
     db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
     current_user: deps.AdminActor,  # Apenas Admin
 ):
-    subject = await subject_service.update_subject(
+    return await subject_service.update_subject(
         db,
         subject_id,
         subject_in,
         current_user.organization_id,
         changed_by_membership_id=current_user.membership_id,
     )
-    if not subject:
-        raise HTTPException(status_code=404, detail="Disciplina nÃ£o encontrada")
-    return subject
 
 
 # --- 4. Apagar Disciplina   ---
@@ -72,20 +69,11 @@ async def delete_subject(
     db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
     current_user: deps.AdminActor,  # Apenas Admin
 ):
-    status = await subject_service.delete_subject(
+    await subject_service.delete_subject(
         db,
         subject_id,
         current_user.organization_id,
         changed_by_membership_id=current_user.membership_id,
     )
-
-    if status == "NOT_FOUND":
-        raise HTTPException(status_code=404, detail="Disciplina nÃ£o encontrada")
-
-    if status == "DEPENDENCY_ERROR":
-        raise HTTPException(
-            status_code=400,
-            detail="NÃ£o Ã© possÃ­vel apagar esta disciplina pois existem aulas associadas a ela.",
-        )
 
     return {"message": "Disciplina removida com sucesso"}

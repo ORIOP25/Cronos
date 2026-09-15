@@ -3,6 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app import models, schemas
+from app.core.exceptions import AppError
 from app.services.scheduler_state_service import record_scheduler_change
 
 
@@ -69,11 +70,10 @@ async def create_subject(
     )
     result_check = await db.execute(query_check)
     if result_check.scalars().first():
-        from app.core.exceptions import DomainError
-
-        raise DomainError(
-            f"A disciplina '{item.name}' já existe nesta escola.",
-            status_code=400,
+        raise AppError(
+            kind="bad_request",
+            code="bad_request",
+            detail=f"Subject '{item.name}' already exists in organization {organization_id}.",
         )
     # 1. Separar dados da Disciplina e dos Módulos
     # O 'pop' remove 'modules' do dicionário para não dar erro ao criar o objeto Subject
@@ -211,7 +211,11 @@ async def update_subject(
     subject = result.scalars().first()
 
     if not subject:
-        return None
+        raise AppError(
+            kind="not_found",
+            code="resource_not_found",
+            detail=f"Subject {subject_id} was not found in organization {organization_id}.",
+        )
     before = _subject_demand_snapshot(subject)
     active_resource = await _subject_is_scheduled(db, organization_id, subject_id)
 
@@ -223,7 +227,11 @@ async def update_subject(
             models.Subject.id != subject_id,
         )
         if (await db.execute(q_check)).scalars().first():
-            return None
+            raise AppError(
+                kind="not_found",
+                code="resource_not_found",
+                detail=f"Subject name '{subject_in.name}' is already in use.",
+            )
 
     # 3. Atualizar campos simples
     update_data = subject_in.model_dump(exclude_unset=True, exclude={"modules"})
@@ -284,7 +292,11 @@ async def delete_subject(
     item = result.scalars().first()
 
     if not item:
-        return "NOT_FOUND"
+        raise AppError(
+            kind="not_found",
+            code="resource_not_found",
+            detail=f"Subject {subject_id} was not found in organization {organization_id}.",
+        )
 
     for model in (
         models.ClassSubjectLink,
@@ -300,7 +312,11 @@ async def delete_subject(
                 )
             )
         ).first():
-            return "DEPENDENCY_ERROR"
+            raise AppError(
+                kind="bad_request",
+                code="bad_request",
+                detail=f"Subject {subject_id} has dependencies and cannot be deleted.",
+            )
 
     # 3. Apagar
     before = _subject_demand_snapshot(item)
@@ -318,4 +334,3 @@ async def delete_subject(
         active_resource=active_resource,
     )
     await db.flush()
-    return "SUCCESS"
