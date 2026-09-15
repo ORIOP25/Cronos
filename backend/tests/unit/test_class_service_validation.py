@@ -1,6 +1,9 @@
 from types import SimpleNamespace
 
+import pytest
+
 from app import schemas
+from app.core.exceptions import AppError
 from app.services import class_service
 
 
@@ -43,14 +46,16 @@ async def test_update_class_in_course_rejects_partial_year_update_without_mutati
     )
 
     db = _NoopDb()
-    result = await class_service.update_class_in_course(
-        db,
-        course_id=1,
-        class_id=1,
-        class_in=schemas.ClassUpdateInCourse(start_year=2028),
-        organization_id=1,
-    )
+    with pytest.raises(AppError) as error:
+        await class_service.update_class_in_course(
+            db,
+            course_id=1,
+            class_id=1,
+            class_in=schemas.ClassUpdateInCourse(start_year=2028),
+            organization_id=1,
+        )
 
-    assert result == "INVALID_YEAR_RANGE"
+    assert error.value.kind == "bad_request"
+    assert error.value.code == "bad_request"
     assert db_class.start_year == 2025
     assert db.commits == 0

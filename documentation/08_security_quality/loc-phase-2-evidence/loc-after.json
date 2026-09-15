@@ -1,16 +1,16 @@
 {
-  "revision": "a359fdef15d81b16864408d317308d799c33c32e",
+  "revision": "cbb6cd5fcb35e7f2407dd174e75d8d0612af17a8",
   "counts": {
     "backendProduction": 32398,
     "frontendProduction": 18457,
-    "backendTests": 19192,
+    "backendTests": 19196,
     "frontendTests": 5966,
     "e2eTests": 3217
   },
   "deltas": {
     "backendProduction": -392,
     "frontendProduction": -49,
-    "backendTests": -27,
+    "backendTests": -23,
     "frontendTests": 0,
     "e2eTests": 0
   },
@@ -958,7 +958,7 @@
     {
       "path": "backend/tests/unit/test_class_service_validation.py",
       "category": "backendTests",
-      "lines": 43
+      "lines": 47
     },
     {
       "path": "backend/tests/unit/test_clerk_sync.py",
