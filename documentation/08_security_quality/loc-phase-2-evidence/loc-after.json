@@ -1,14 +1,14 @@
 {
-  "revision": "50890071305f85cbebf6ce82c59c9ed658edbafa",
+  "revision": "553295056a2c8fd9428af4f84a59e156548a33a6",
   "counts": {
-    "backendProduction": 32645,
+    "backendProduction": 32416,
     "frontendProduction": 18437,
     "backendTests": 19315,
     "frontendTests": 5966,
     "e2eTests": 3217
   },
   "deltas": {
-    "backendProduction": -145,
+    "backendProduction": -374,
     "frontendProduction": -69,
     "backendTests": 96,
     "frontendTests": 0,
@@ -108,12 +108,12 @@
     {
       "path": "backend/app/api/v1/endpoints/scheduler.py",
       "category": "backendProduction",
-      "lines": 284
+      "lines": 296
     },
     {
       "path": "backend/app/api/v1/endpoints/session.py",
       "category": "backendProduction",
-      "lines": 31
+      "lines": 39
     },
     {
       "path": "backend/app/api/v1/endpoints/subjects.py",
@@ -403,7 +403,7 @@
     {
       "path": "backend/app/services/member_service.py",
       "category": "backendProduction",
-      "lines": 2057
+      "lines": 1808
     },
     {
       "path": "backend/app/services/member_webhook_service.py",
