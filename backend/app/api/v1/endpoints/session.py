@@ -32,5 +32,13 @@ async def bootstrap_session(
             "session_bootstrap_outcome",
             outcome=exc.code.lower(),
         )
-        kind = {401: "unauthorized", 403: "forbidden"}.get(exc.status_code, "bad_request")
+        kind = {
+            400: "bad_request",
+            401: "unauthorized",
+            403: "forbidden",
+            409: "conflict",
+            422: "validation",
+            429: "too_many_requests",
+            503: "unavailable",
+        }.get(exc.status_code, "unexpected")
         raise AppError(kind=kind, code=exc.code, detail=str(exc)) from exc
