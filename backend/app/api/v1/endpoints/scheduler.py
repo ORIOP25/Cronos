@@ -1,11 +1,11 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models, schemas
 from app.api import deps
-from app.core.exceptions import PUBLIC_ERROR_CATALOG, AppError
+from app.core.exceptions import PUBLIC_ERROR_CATALOG, AppError, status_code_for_kind
 from app.core.ratelimit import limiter
 from app.scheduler.application.contracts import SchedulerTaskDispatcher
 from app.services.scheduler_approval_service import (
@@ -38,10 +38,25 @@ from app.services.scheduler_status_service import SchedulerStatusService
 router = APIRouter()
 
 
+class _SchedulerEndpointAppError(AppError, HTTPException):
+    """AppError with direct-call HTTPException compatibility for legacy tests."""
+
+    def __init__(self, *, kind: str, code: str, detail: str, public_context: dict | None = None):
+        AppError.__init__(
+            self,
+            kind=kind,
+            code=code,
+            detail=detail,
+            public_context=public_context or {},
+        )
+        self.status_code = status_code_for_kind(kind, code)
+        self.headers = None
+
+
 def _raise_scheduler_error(
     *, kind: str, code: str, detail: str, public_context: dict | None = None
 ) -> None:
-    raise AppError(
+    raise _SchedulerEndpointAppError(
         kind=kind,
         code=code,
         detail=detail,

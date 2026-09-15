@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models, schemas
 from app.api import deps
-from app.core.exceptions import AppError
+from app.core.exceptions import AppError, status_code_for_kind
 from app.core.ratelimit import limiter
 from app.services import schedule_service, teacher_observability_service
 from app.services.school_year_reset_service import SchoolYearResetService
@@ -306,7 +306,7 @@ async def get_teacher_schedule_horizon(
         active_generation_id = horizon_payload.get("active_generation_id")
         return horizon_payload
     except AppError as exc:
-        status_code = exc.status_code
+        status_code = status_code_for_kind(exc.kind, exc.code)
         raise
     except Exception:
         status_code = 500
@@ -399,7 +399,7 @@ async def get_week_schedule(
 
         return await db.run_sync(_run)
     except AppError as exc:
-        status_code = exc.status_code
+        status_code = status_code_for_kind(exc.kind, exc.code)
         raise
     except Exception:
         status_code = 500
