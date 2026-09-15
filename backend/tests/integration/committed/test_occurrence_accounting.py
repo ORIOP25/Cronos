@@ -204,6 +204,15 @@ async def _occurrence_context(db_session, *, suffix: str) -> SimpleNamespace:
     assert created is True
     await db_session.commit()
     return SimpleNamespace(
+        organization_id=organization.id,
+        class_id=class_.id,
+        membership_id=membership.id,
+        occurrence_id=occurrence.id,
+        active_block_id=active_block.id,
+        substitute_teacher_id=substitute_teacher.id,
+        substitute_subject_id=substitute_subject.id,
+        planned_module_id=planned_module.id,
+        substitute_module_id=substitute_module.id,
         organization=organization,
         school_year=school_year,
         class_=class_,
@@ -236,8 +245,8 @@ async def _ledger(db_session, context):
             await db_session.execute(
                 select(models.ProgressLedgerEntry)
                 .where(
-                    models.ProgressLedgerEntry.organization_id == context.organization.id,
-                    models.ProgressLedgerEntry.class_id == context.class_.id,
+                    models.ProgressLedgerEntry.organization_id == context.organization_id,
+                    models.ProgressLedgerEntry.class_id == context.class_id,
                 )
                 .order_by(models.ProgressLedgerEntry.id)
             )
@@ -261,10 +270,10 @@ async def test_occurrence_decisions_apply_exact_forward_ledger_deltas(
 
     await occurrence_service.update_occurrence(
         db_session,
-        context.occurrence.id,
-        context.organization.id,
+        context.occurrence_id,
+        context.organization_id,
         _decision(status, 1),
-        decided_by_membership_id=context.membership.id,
+        decided_by_membership_id=context.membership_id,
     )
     await db_session.commit()
 
@@ -284,31 +293,31 @@ async def test_occurrence_redecision_reverses_then_reapplies_exact_accounting(db
 
     await occurrence_service.update_occurrence(
         db_session,
-        context.occurrence.id,
-        context.organization.id,
+        context.occurrence_id,
+        context.organization_id,
         _decision(models.LessonOccurrenceStatus.GAP, 1),
-        decided_by_membership_id=context.membership.id,
+        decided_by_membership_id=context.membership_id,
     )
     await db_session.commit()
     await occurrence_service.update_occurrence(
         db_session,
-        context.occurrence.id,
-        context.organization.id,
+        context.occurrence_id,
+        context.organization_id,
         _decision(
             models.LessonOccurrenceStatus.SUBSTITUTED,
             2,
-            substitute_teacher_id=context.substitute_teacher.id,
-            substitute_subject_id=context.substitute_subject.id,
+            substitute_teacher_id=context.substitute_teacher_id,
+            substitute_subject_id=context.substitute_subject_id,
         ),
-        decided_by_membership_id=context.membership.id,
+        decided_by_membership_id=context.membership_id,
     )
     await db_session.commit()
     await occurrence_service.update_occurrence(
         db_session,
-        context.occurrence.id,
-        context.organization.id,
+        context.occurrence_id,
+        context.organization_id,
         _decision(models.LessonOccurrenceStatus.GAP, 3),
-        decided_by_membership_id=context.membership.id,
+        decided_by_membership_id=context.membership_id,
     )
     await db_session.commit()
 
@@ -324,7 +333,7 @@ async def test_occurrence_redecision_reverses_then_reapplies_exact_accounting(db
     operational = (
         await db_session.execute(
             select(models.OperationalScheduleBlock).where(
-                models.OperationalScheduleBlock.source_occurrence_id == context.occurrence.id
+                models.OperationalScheduleBlock.source_occurrence_id == context.occurrence_id
             )
         )
     ).scalar_one()
@@ -340,19 +349,19 @@ async def test_occurrence_retry_is_idempotent_and_stale_version_is_rejected(db_s
     given = _decision(models.LessonOccurrenceStatus.GIVEN, 1)
     await occurrence_service.update_occurrence(
         db_session,
-        context.occurrence.id,
-        context.organization.id,
+        context.occurrence_id,
+        context.organization_id,
         given,
-        decided_by_membership_id=context.membership.id,
+        decided_by_membership_id=context.membership_id,
     )
     await db_session.commit()
 
     retried = await occurrence_service.update_occurrence(
         db_session,
-        context.occurrence.id,
-        context.organization.id,
+        context.occurrence_id,
+        context.organization_id,
         given,
-        decided_by_membership_id=context.membership.id,
+        decided_by_membership_id=context.membership_id,
     )
     await db_session.commit()
     assert retried.version == 2
@@ -361,10 +370,10 @@ async def test_occurrence_retry_is_idempotent_and_stale_version_is_rejected(db_s
     with pytest.raises(AppError) as error:
         await occurrence_service.update_occurrence(
             db_session,
-            context.occurrence.id,
-            context.organization.id,
+            context.occurrence_id,
+            context.organization_id,
             _decision(models.LessonOccurrenceStatus.GAP, 1),
-            decided_by_membership_id=context.membership.id,
+            decided_by_membership_id=context.membership_id,
         )
     assert error.value.detail == occurrence_service.ERR_STALE_VERSION
     await db_session.rollback()
@@ -378,20 +387,20 @@ async def test_occurrence_cancellation_reverses_ledger_and_preserves_audit_revis
     context = await _occurrence_context(db_session, suffix="cancel")
     await occurrence_service.update_occurrence(
         db_session,
-        context.occurrence.id,
-        context.organization.id,
+        context.occurrence_id,
+        context.organization_id,
         _decision(models.LessonOccurrenceStatus.GAP, 1),
-        decided_by_membership_id=context.membership.id,
+        decided_by_membership_id=context.membership_id,
     )
     await db_session.commit()
     await occurrence_service.log_occurrence_event_safe(
         db_session,
-        organization_id=context.organization.id,
+        organization_id=context.organization_id,
         event_type=occurrence_service.OBS_EVENT_DECIDE,
         result=occurrence_service.OBS_RESULT_SUCCESS,
-        actor_membership_id=context.membership.id,
-        occurrence_id=context.occurrence.id,
-        active_schedule_block_id=context.active_block.id,
+        actor_membership_id=context.membership_id,
+        occurrence_id=context.occurrence_id,
+        active_schedule_block_id=context.active_block_id,
         decision_status=models.LessonOccurrenceStatus.GAP,
         detail="decision committed",
     )
@@ -399,9 +408,9 @@ async def test_occurrence_cancellation_reverses_ledger_and_preserves_audit_revis
 
     await occurrence_service.cancel_occurrence(
         db_session,
-        organization_id=context.organization.id,
-        occurrence_id=context.occurrence.id,
-        cancelled_by_membership_id=context.membership.id,
+        organization_id=context.organization_id,
+        occurrence_id=context.occurrence_id,
+        cancelled_by_membership_id=context.membership_id,
         version=2,
         reason="test cancellation",
     )
@@ -416,8 +425,8 @@ async def test_occurrence_cancellation_reverses_ledger_and_preserves_audit_revis
         (
             await db_session.execute(
                 select(models.OccurrenceOperationalEvent).where(
-                    models.OccurrenceOperationalEvent.organization_id == context.organization.id,
-                    models.OccurrenceOperationalEvent.occurrence_id == context.occurrence.id,
+                    models.OccurrenceOperationalEvent.organization_id == context.organization_id,
+                    models.OccurrenceOperationalEvent.occurrence_id == context.occurrence_id,
                 )
             )
         )
@@ -438,21 +447,21 @@ async def test_completed_substitute_log_is_protected_then_can_be_reversed(db_ses
     context = await _occurrence_context(db_session, suffix="completed-log")
     await occurrence_service.update_occurrence(
         db_session,
-        context.occurrence.id,
-        context.organization.id,
+        context.occurrence_id,
+        context.organization_id,
         _decision(
             models.LessonOccurrenceStatus.SUBSTITUTED,
             1,
-            substitute_teacher_id=context.substitute_teacher.id,
-            substitute_subject_id=context.substitute_subject.id,
+            substitute_teacher_id=context.substitute_teacher_id,
+            substitute_subject_id=context.substitute_subject_id,
         ),
-        decided_by_membership_id=context.membership.id,
+        decided_by_membership_id=context.membership_id,
     )
     await db_session.commit()
     operational = (
         await db_session.execute(
             select(models.OperationalScheduleBlock).where(
-                models.OperationalScheduleBlock.source_occurrence_id == context.occurrence.id,
+                models.OperationalScheduleBlock.source_occurrence_id == context.occurrence_id,
                 models.OperationalScheduleBlock.status == models.OperationalBlockStatus.ACTIVE,
             )
         )
@@ -460,8 +469,8 @@ async def test_completed_substitute_log_is_protected_then_can_be_reversed(db_ses
     completed_log = await db_session.run_sync(
         lambda sync_db: lesson_log_service.upsert_operational_lesson_log_sync(
             sync_db,
-            context.organization.id,
-            context.membership.id,
+            context.organization_id,
+            context.membership_id,
             operational.id,
             schemas.LessonLogCreate(
                 status=models.LessonLogStatus.COMPLETED,
@@ -475,9 +484,9 @@ async def test_completed_substitute_log_is_protected_then_can_be_reversed(db_ses
     with pytest.raises(AppError) as error:
         await occurrence_service.cancel_occurrence(
             db_session,
-            organization_id=context.organization.id,
-            occurrence_id=context.occurrence.id,
-            cancelled_by_membership_id=context.membership.id,
+            organization_id=context.organization_id,
+            occurrence_id=context.occurrence_id,
+            cancelled_by_membership_id=context.membership_id,
             version=2,
         )
     assert error.value.detail == occurrence_service.ERR_SUBSTITUTE_LOG_LOCKED
@@ -487,9 +496,9 @@ async def test_completed_substitute_log_is_protected_then_can_be_reversed(db_ses
 
     await occurrence_service.cancel_occurrence(
         db_session,
-        organization_id=context.organization.id,
-        occurrence_id=context.occurrence.id,
-        cancelled_by_membership_id=context.membership.id,
+        organization_id=context.organization_id,
+        occurrence_id=context.occurrence_id,
+        cancelled_by_membership_id=context.membership_id,
         version=2,
         cancel_completed_substitute_log=True,
     )
@@ -511,10 +520,10 @@ async def test_completed_substitute_log_is_protected_then_can_be_reversed(db_ses
         )
         for entry in entries
     ] == [
-        ("OCCURRENCE_DECISION", context.planned_module.id, 0, 60),
-        ("LESSON_LOG", context.substitute_module.id, 60, 0),
-        ("OCCURRENCE_REVERSAL", context.planned_module.id, 0, -60),
-        ("LESSON_LOG", context.substitute_module.id, -60, 0),
+        ("OCCURRENCE_DECISION", context.planned_module_id, 0, 60),
+        ("LESSON_LOG", context.substitute_module_id, 60, 0),
+        ("OCCURRENCE_REVERSAL", context.planned_module_id, 0, -60),
+        ("LESSON_LOG", context.substitute_module_id, -60, 0),
     ]
 
 
@@ -527,8 +536,8 @@ async def test_occurrence_reads_and_mutations_are_tenant_scoped(db_session):
     with pytest.raises(AppError) as error:
         await occurrence_service.update_occurrence(
             db_session,
-            first.occurrence.id,
-            second.organization.id,
+            first.occurrence_id,
+            second.organization_id,
             _decision(models.LessonOccurrenceStatus.GAP, 1),
             decided_by_membership_id=second.membership.id,
         )
@@ -540,7 +549,7 @@ async def test_occurrence_reads_and_mutations_are_tenant_scoped(db_session):
     assert (
         await db_session.execute(
             select(models.ProgressLedgerEntry).where(
-                models.ProgressLedgerEntry.organization_id == first.organization.id
+                models.ProgressLedgerEntry.organization_id == first.organization_id
             )
         )
     ).scalars().all() == []
