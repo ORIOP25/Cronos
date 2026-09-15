@@ -2182,9 +2182,9 @@ async def update_occurrence(
     return await db.run_sync(
         partial(
             update_occurrence_sync,
-            occurrence_id,
-            organization_id,
-            payload,
+            occurrence_id=occurrence_id,
+            organization_id=organization_id,
+            payload=payload,
             decided_by_membership_id=decided_by_membership_id,
         )
     )

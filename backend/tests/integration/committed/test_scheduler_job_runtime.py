@@ -1586,7 +1586,8 @@ async def test_approval_endpoint_rolls_back_ordinary_integrity_conflicts(
                 ),
             )
 
-    assert raised.value.status_code == 409
+    assert raised.value.kind == "conflict"
+    assert raised.value.code == "scheduler_draft_approval_conflict"
     state = await db_session.get(models.SchedulerSchoolYearState, state_id)
     await db_session.refresh(state)
     assert state.lock_version == 0
