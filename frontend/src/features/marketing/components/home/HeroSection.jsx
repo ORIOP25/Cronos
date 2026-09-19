@@ -1,9 +1,11 @@
 import { Link } from 'react-router-dom'
 import { cilArrowRight } from '@coreui/icons'
-import CIcon from '@coreui/icons-react'
+import CIconModule from '@coreui/icons-react'
 import { homeHero } from '../../content/home'
 import ResponsivePicture from '../shared/ResponsivePicture'
 import MarketingSection from '../shared/MarketingSection'
+
+const CIcon = CIconModule.CIcon ?? CIconModule.default ?? CIconModule
 
 export default function HeroSection() {
   return (

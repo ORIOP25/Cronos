@@ -8,5 +8,6 @@ export const navigationItems = [
 ]
 
 export const contactDetails = [
-  { id: 'email', label: 'Email', value: 'contacto@cronos.pt', href: 'mailto:contacto@cronos.pt' },
+  { id: 'email', label: 'Email', value: publicIdentity.email, href: `mailto:${publicIdentity.email}` },
 ]
+import { publicIdentity } from './publicIdentity'

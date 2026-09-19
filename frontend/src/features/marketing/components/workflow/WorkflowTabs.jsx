@@ -1,10 +1,12 @@
 import { useRef, useState } from 'react'
-import CIcon from '@coreui/icons-react'
+import CIconModule from '@coreui/icons-react'
 import { cilCalendar, cilCheckCircle, cilLayers } from '@coreui/icons'
 import MarketingSection from '../shared/MarketingSection'
 import SectionHeading from '../shared/SectionHeading'
 import { workflowChapters } from '../../content/workflow'
 import WorkflowVisual from './WorkflowVisual'
+
+const CIcon = CIconModule.CIcon ?? CIconModule.default ?? CIconModule
 
 const chapterIcons = { prepare: cilCalendar, adapt: cilCheckCircle, finish: cilLayers }
 

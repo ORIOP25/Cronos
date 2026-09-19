@@ -34,5 +34,6 @@
 .cronos-marketing button:focus-visible, .cronos-marketing a:focus-visible, .cronos-marketing input:focus-visible, .cronos-marketing textarea:focus-visible { outline: 2px solid var(--marketing-accent); outline-offset: 2px; }
 .cronos-reveal { opacity: 0; transform: translateY(24px); transition: opacity 650ms cubic-bezier(.22, 1, .36, 1), transform 650ms cubic-bezier(.22, 1, .36, 1); }
 .cronos-reveal.is-visible { opacity: 1; transform: translateY(0); }
+.no-js .cronos-reveal { opacity: 1; transform: none; }
 .cronos-button:active { transform: translateY(1px) scale(.985); }
 @media (prefers-reduced-motion: reduce) { .cronos-marketing *, .cronos-marketing *::before, .cronos-marketing *::after { transition-duration: .01ms; animation-duration: .01ms; } .cronos-reveal { opacity: 1; transform: none; } }

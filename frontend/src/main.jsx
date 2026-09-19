@@ -6,6 +6,8 @@ import ErrorBoundary from './components/ErrorBoundary'
 import { UserQueryProvider } from './UserQueryProvider'
 import { CLERK_LOCALIZATION_PT } from './utils/authDesign'
 
+document.documentElement.classList.remove('no-js')
+
 import '@coreui/coreui/dist/css/coreui.min.css'
 import './index.css'
 import './styles/brand.tokens.css'

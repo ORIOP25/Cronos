@@ -676,6 +676,13 @@
   font-weight: 600;
 }
 
+.cronos-about-trust { background: var(--marketing-surface-muted); padding-block: var(--space-8); }
+.cronos-about-trust__inner { display: grid; gap: var(--space-6); }
+.cronos-about-trust__copy { display: grid; gap: var(--space-4); max-width: 72ch; }
+.cronos-about-trust__copy p { margin: 0; color: var(--marketing-ink-muted); font-size: 1.08rem; line-height: 1.7; }
+.cronos-about-trust__copy address { display: grid; gap: .35rem; margin: var(--space-2) 0 0; font-style: normal; font-weight: 600; }
+.cronos-about-trust__copy address a { color: var(--marketing-accent-text); }
+
 .cronos-help { position: relative; overflow: hidden; }
 .cronos-help__container { max-width: 1040px; }
 .cronos-help__intro { display: grid; gap: var(--space-6); }
@@ -692,6 +699,11 @@
 .cronos-contact-page__graphic span:nth-child(3) { height: 48%; animation-delay: -1.6s; }
 .cronos-contact-page__graphic span:nth-child(4) { height: 92%; animation-delay: -2.4s; }
 .cronos-contact-page__graphic span:nth-child(5) { height: 62%; animation-delay: -3.2s; }
+.cronos-contact-page__details { display: grid; gap: var(--space-3); padding-top: var(--space-5); border-top: 1px solid var(--marketing-border); }
+.cronos-contact-page__details h2 { margin: 0; font-size: 1.45rem; }
+.cronos-contact-page__details p { margin: 0; color: var(--marketing-ink-muted); line-height: 1.65; }
+.cronos-contact-page__details a { color: var(--marketing-accent-text); font-weight: 600; }
+.cronos-contact-page__details address { display: grid; gap: .2rem; margin: var(--space-2) 0 0; font-style: normal; }
 .cronos-questionnaire { min-width: 0; padding: var(--space-5); }
 .cronos-questionnaire__step .cronos-button, .cronos-questionnaire__welcome .cronos-button, .cronos-questionnaire__success .cronos-button { width: 100%; }
 

@@ -1,5 +1,7 @@
-import CIcon from '@coreui/icons-react'
 import { cilCalendar, cilCheckCircle, cilClock, cilLayers, cilSchool, cilTask } from '@coreui/icons'
+import CIconModule from '@coreui/icons-react'
+
+const CIcon = CIconModule.CIcon ?? CIconModule.default ?? CIconModule
 
 const iconMap = {
   calendar: cilCalendar,

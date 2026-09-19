@@ -5,6 +5,12 @@ Allow: /como-funciona
 Allow: /sobre
 Allow: /ajuda
 Allow: /contacto
+Allow: /privacidade
+Allow: /termos
+Allow: /dpa
+Allow: /cookies
+Allow: /llms.txt
+Allow: /sitemap.xml
 
 Disallow: /api/
 Disallow: /login

@@ -1,5 +1,7 @@
-import CIcon from '@coreui/icons-react'
 import { cilCheckCircle } from '@coreui/icons'
+import CIconModule from '@coreui/icons-react'
+
+const CIcon = CIconModule.CIcon ?? CIconModule.default ?? CIconModule
 
 export default function ContactSuccess({ name, onReset }) {
   return (

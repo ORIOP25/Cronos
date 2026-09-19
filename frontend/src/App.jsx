@@ -81,12 +81,15 @@ function App() {
             <Route path="/vantagens" element={<VantagensPage />} />
             <Route path="/como-funciona" element={<HowItWorksPage />} />
             <Route path="/sobre" element={<AboutPage />} />
+            <Route path="/about" element={<AboutPage />} />
             <Route path="/ajuda" element={<HelpPage />} />
             <Route path="/contacto" element={<ContactPage />} />
+            <Route path="/contact" element={<ContactPage />} />
           </Route>
 
           <Route element={<MarketingLayout allowSignedIn />}>
             <Route path="/privacidade" element={<LegalDocumentLayout kind="privacy" />} />
+            <Route path="/privacy" element={<LegalDocumentLayout kind="privacy" />} />
             <Route path="/termos" element={<LegalDocumentLayout kind="terms" />} />
             <Route path="/dpa" element={<LegalDocumentLayout kind="dpa" />} />
             <Route path="/cookies" element={<LegalDocumentLayout kind="cookies" />} />

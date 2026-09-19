@@ -3,6 +3,7 @@ import SectionHeading from '../shared/SectionHeading'
 import ResponsivePicture from '../shared/ResponsivePicture'
 import DemoCta from '../shared/DemoCta'
 import { aboutContent } from '../../content/about'
+import { publicIdentity } from '../../content/publicIdentity'
 
 export default function FounderStory() {
   return (
@@ -39,6 +40,23 @@ export default function FounderStory() {
               </div>
             </div>
           </figure>
+        </div>
+      </MarketingSection>
+      <MarketingSection className="cronos-about-trust" labelledBy="cronos-about-trust-title">
+        <div className="cronos-container cronos-about-trust__inner">
+          <SectionHeading
+            as="h2"
+            id="cronos-about-trust-title"
+            eyebrow={aboutContent.trust.eyebrow}
+            title={aboutContent.trust.title}
+          />
+          <div className="cronos-about-trust__copy">
+            {aboutContent.trust.paragraphs.map((paragraph) => <p key={paragraph}>{paragraph}</p>)}
+            <address>
+              <a href={`mailto:${publicIdentity.email}`}>{publicIdentity.email}</a>
+              <span>{publicIdentity.address.street}, {publicIdentity.address.postalCode} {publicIdentity.address.locality}</span>
+            </address>
+          </div>
         </div>
       </MarketingSection>
       <DemoCta source="about" />

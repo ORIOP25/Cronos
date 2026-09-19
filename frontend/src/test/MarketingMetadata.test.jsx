@@ -1,11 +1,11 @@
 import { cleanup, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { marketingMetadata } from '../features/marketing/content/metadata'
+import { canonicalMarketingRoutes, marketingMetadata } from '../features/marketing/content/metadata'
 import App from '../App'
 import { renderWithProviders } from './testUtils'
 import { resetClerkState, setClerkState } from './setup'
 
-const publicRoutes = ['/', '/vantagens', '/como-funciona', '/sobre', '/ajuda', '/contacto', '/privacidade', '/termos', '/dpa', '/cookies']
+const publicRoutes = [...canonicalMarketingRoutes, '/about', '/contact', '/privacy']
 
 function installMetadataFixture() {
   document.head.innerHTML = `
@@ -56,9 +56,12 @@ describe('marketing metadata', () => {
   it('keeps public routes and canonicals one-to-one', () => {
     expect(Object.keys(marketingMetadata)).toEqual(publicRoutes)
 
-    const canonicalUrls = Object.values(marketingMetadata).map(({ canonicalUrl }) => canonicalUrl)
-    expect(new Set(canonicalUrls).size).toBe(publicRoutes.length)
+    const canonicalUrls = canonicalMarketingRoutes.map((route) => marketingMetadata[route].canonicalUrl)
+    expect(new Set(canonicalUrls).size).toBe(canonicalMarketingRoutes.length)
     expect(canonicalUrls.every((url) => url.startsWith('https://cronos.pt'))).toBe(true)
-    expect(publicRoutes.every((route) => marketingMetadata[route].canonicalUrl === `https://cronos.pt${route}`)).toBe(true)
+    expect(canonicalMarketingRoutes.every((route) => marketingMetadata[route].canonicalUrl === `https://cronos.pt${route}`)).toBe(true)
+    expect(marketingMetadata['/about'].canonicalUrl).toBe('https://cronos.pt/sobre')
+    expect(marketingMetadata['/contact'].canonicalUrl).toBe('https://cronos.pt/contacto')
+    expect(marketingMetadata['/privacy'].canonicalUrl).toBe('https://cronos.pt/privacidade')
   })
 })

@@ -5,6 +5,9 @@ import { describe, expect, it } from 'vitest'
 const headers = fs.readFileSync('public/_headers', 'utf8')
 const html = fs.readFileSync('index.html', 'utf8')
 const nginx = fs.readFileSync('nginx.conf', 'utf8')
+const nginxCi = fs.readFileSync('nginx.ci.conf', 'utf8')
+const nginxLocal = fs.readFileSync('nginx.local.conf', 'utf8')
+const worker = fs.readFileSync('public/_worker.js', 'utf8')
 
 describe('production browser boundary', () => {
   it('ships the required static security headers', () => {
@@ -19,5 +22,26 @@ describe('production browser boundary', () => {
     expect(nginx).toContain('add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;')
     expect(nginx).toContain('add_header Strict-Transport-Security $hsts_value always;')
     expect(nginx).toContain('https "max-age=31536000; includeSubDomains";')
+  })
+
+  it('keeps the three host adapters aligned on public routing', () => {
+    for (const config of [nginx, nginxCi, nginxLocal]) {
+      expect(config).toContain('charset_types text/html text/markdown;')
+      expect(config).toContain('error_page 404 =404 $not_found_asset;')
+      expect(config).toContain('try_files $uri $uri.html =404;')
+      expect(config).toContain('text/markdown')
+      expect(config).toContain('location @homepage_markdown')
+      expect(config).toContain('foundation(?:/waiting)?')
+    }
+    expect(fs.existsSync('public/_redirects')).toBe(false)
+  })
+
+  it('applies equivalent browser security policy at the edge', () => {
+    expect(worker).toContain("'Content-Security-Policy'")
+    expect(worker).toContain("'Strict-Transport-Security'")
+    expect(worker).toContain("'X-Frame-Options'")
+    expect(worker).toContain("'X-Content-Type-Options'")
+    expect(worker).toContain("'Referrer-Policy'")
+    expect(worker).toContain("'Permissions-Policy'")
   })
 })

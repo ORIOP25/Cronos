@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom'
 import { LEGAL_EFFECTIVE_DATE, documents } from './content.jsx'
 import LegalText from './LegalText.jsx'
+import { publicIdentity } from '../marketing/content/publicIdentity.js'
 
 export default function LegalDocumentLayout({ kind }) {
   const document = documents[kind]
@@ -22,7 +23,17 @@ export default function LegalDocumentLayout({ kind }) {
           <ol>{[...document.sections.map(([title]) => title), ...(document.annexes ?? []).map(({ title }) => title)].map((title) => <li key={title}><a href={`#${slugify(title)}`}>{title}</a></li>)}</ol>
         </nav>
         <div className="cronos-legal__body">
-          {document.sections.map(([title, content]) => <section key={title} id={slugify(title)}><h2>{title}</h2><p>{content}</p></section>)}
+          {document.sections.map(([title, content], index) => (
+            <section key={title} id={slugify(title)}>
+              <h2>{title}</h2>
+              <p>{content}</p>
+              {kind === 'privacy' && index === 0 && (
+                <address className="cronos-legal__address">
+                  {publicIdentity.address.street}, {publicIdentity.address.postalCode} {publicIdentity.address.locality}, Portugal
+                </address>
+              )}
+            </section>
+          ))}
           {document.annexes?.map((annex) => (
             <section key={annex.title} id={slugify(annex.title)}>
               <h2>{annex.title}</h2>

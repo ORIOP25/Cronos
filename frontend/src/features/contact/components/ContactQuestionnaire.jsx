@@ -5,6 +5,7 @@ import { initialQuestionnaireState, questionnaireReducer, toContactPayload, vali
 import QuestionnaireProgress from './QuestionnaireProgress'
 import QuestionnaireStep from './QuestionnaireStep'
 import ContactSuccess from './ContactSuccess'
+import { publicIdentity } from '../../marketing/content/publicIdentity'
 
 export default function ContactQuestionnaire() {
   const [state, dispatch] = useReducer(questionnaireReducer, initialQuestionnaireState)
@@ -92,6 +93,17 @@ export default function ContactQuestionnaire() {
           <div className="cronos-contact-page__graphic" aria-hidden="true">
             <span /><span /><span /><span /><span />
           </div>
+          <aside className="cronos-contact-page__details" aria-labelledby="cronos-contact-details-title">
+            <h2 id="cronos-contact-details-title">Fale diretamente com a equipa</h2>
+            <p>Use este contacto para pedir uma demonstração, esclarecer dúvidas sobre a gestão de horários ou perceber se o Cronos se adapta à sua escola.</p>
+            <p>Depois de recebermos o seu pedido, respondemos por email para combinar os próximos passos e, se fizer sentido, uma conversa com a equipa.</p>
+            <p>Antes de enviar dados pessoais, consulte a nossa <a href="/privacidade">Política de Privacidade</a>.</p>
+            <address>
+              <a href={`mailto:${publicIdentity.email}`}>{publicIdentity.email}</a>
+              <span>{publicIdentity.address.street}</span>
+              <span>{publicIdentity.address.postalCode} {publicIdentity.address.locality}</span>
+            </address>
+          </aside>
         </div>
         <div className="cronos-questionnaire">
           {state.currentStep === 0 && <Welcome onStart={() => dispatch({ type: 'START' })} />}

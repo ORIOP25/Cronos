@@ -3,7 +3,9 @@
   "ignoreExportsUsedInFile": true,
   "entry": [
     "e2e/global.setup.js",
-    "src/test/**/*.{js,jsx}"
+    "src/test/**/*.{js,jsx}",
+    "src/features/marketing/renderPublicRoute.jsx",
+    "src/pages/NotFoundPage.jsx"
   ],
   "project": [
     "src/**/*.{js,jsx}!",

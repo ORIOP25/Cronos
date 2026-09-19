@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { useLocation } from 'react-router-dom'
-import { marketingMetadata } from '../content/metadata'
+import { canonicalMarketingRoutes, marketingMetadata } from '../content/metadata'
 
 function setAttribute(selector, attribute, value) {
   const element = document.querySelector(selector)
@@ -28,7 +28,8 @@ export function useMarketingMetadata(enabled = true) {
       return undefined
     }
 
-    const metadata = marketingMetadata[pathname]
+    const isPublicRoute = canonicalMarketingRoutes.includes(pathname) || Object.prototype.hasOwnProperty.call(marketingMetadata, pathname)
+    const metadata = isPublicRoute ? marketingMetadata[pathname] : undefined
     if (!metadata) {
       if (import.meta.env.DEV) throw new Error(`Missing marketing metadata for public route: ${pathname}`)
       return

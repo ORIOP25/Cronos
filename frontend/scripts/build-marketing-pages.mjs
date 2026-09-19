@@ -1,10 +1,14 @@
-import { readFile, writeFile } from 'node:fs/promises'
+import { copyFile, readFile, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { marketingMetadata } from '../src/features/marketing/content/metadata.js'
+import { createServer } from 'vite'
+import { canonicalMarketingRoutes, marketingMetadata } from '../src/features/marketing/content/metadata.js'
+import { publicIdentity } from '../src/features/marketing/content/publicIdentity.js'
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url))
 const defaultDistDirectory = join(scriptDirectory, '..', 'dist')
+const projectRoot = resolve(scriptDirectory, '..')
+const notFoundMarkdownPath = join(projectRoot, 'public', '404.md')
 
 const metadataSelectors = [
   ['title', /<title\b[^>]*>[\s\S]*?<\/title>/i],
@@ -39,6 +43,67 @@ function replaceMetadataElement(html, label, pattern, replacement) {
   return html.replace(pattern, replacement)
 }
 
+function organizationJsonLd() {
+  return {
+    '@context': 'https://schema.org',
+    '@graph': [
+      {
+        '@type': 'WebSite',
+        '@id': 'https://cronos.pt/#website',
+        url: 'https://cronos.pt/',
+        name: publicIdentity.brand,
+        alternateName: 'cronos.pt',
+        publisher: { '@id': 'https://cronos.pt/#organization' },
+      },
+      {
+        '@type': 'SoftwareApplication',
+        '@id': 'https://cronos.pt/#software',
+        name: publicIdentity.brand,
+        url: 'https://cronos.pt/',
+        applicationCategory: 'EducationalApplication',
+        operatingSystem: 'Web Browser',
+        description: 'Cronos ajuda escolas profissionais a gerir horários, faltas e substituições.',
+      },
+      {
+        '@type': 'Organization',
+        '@id': 'https://cronos.pt/#organization',
+        name: publicIdentity.brand,
+        url: 'https://cronos.pt/',
+        logo: 'https://cronos.pt/logo.png',
+        founder: {
+          '@type': 'Person',
+          name: publicIdentity.operator.name,
+          jobTitle: publicIdentity.operator.role,
+        },
+        contactPoint: [{
+          '@type': 'ContactPoint',
+          email: publicIdentity.email,
+          contactType: 'customer support',
+          areaServed: publicIdentity.address.country,
+          availableLanguage: 'Portuguese',
+        }],
+        address: {
+          '@type': 'PostalAddress',
+          streetAddress: publicIdentity.address.street,
+          postalCode: publicIdentity.address.postalCode,
+          addressLocality: publicIdentity.address.locality,
+          addressCountry: publicIdentity.address.country,
+        },
+      },
+    ],
+  }
+}
+
+export function renderOrganizationJsonLd(html) {
+  const pattern = /<script\s+id=["']cronos-organization-jsonld["'][^>]*>[\s\S]*?<\/script>/i
+  if (!pattern.test(html)) throw new Error('Missing Organization JSON-LD script marker.')
+  const json = JSON.stringify(organizationJsonLd())
+    .replace(/</g, '\\u003c')
+    .replace(/>/g, '\\u003e')
+    .replace(/&/g, '\\u0026')
+  return html.replace(pattern, `<script id="cronos-organization-jsonld" type="application/ld+json">${json}</script>`)
+}
+
 export function renderMarketingPage(html, metadata) {
   let rendered = html
   rendered = replaceMetadataElement(rendered, 'title', metadataSelectors[0][1], `<title>${escapeHtml(metadata.title)}</title>`)
@@ -57,9 +122,16 @@ function validateMetadataCatalog() {
   if (!routes.includes('/')) throw new Error('Marketing metadata is missing the homepage route.')
   if (routes.some((route) => !route.startsWith('/'))) throw new Error('Marketing metadata contains an invalid route.')
 
-  const canonicalUrls = routes.map((route) => marketingMetadata[route].canonicalUrl)
+  const canonicalUrls = canonicalMarketingRoutes.map((route) => marketingMetadata[route]?.canonicalUrl)
+  if (canonicalUrls.some((url) => !url)) throw new Error('Marketing metadata is missing a canonical route.')
   if (canonicalUrls.some((url) => !url.startsWith('https://cronos.pt'))) throw new Error('Marketing canonical URLs must use https://cronos.pt.')
   if (new Set(canonicalUrls).size !== canonicalUrls.length) throw new Error('Marketing canonical URLs must be unique.')
+  for (const route of routes) {
+    if (!marketingMetadata[route].canonicalUrl.startsWith('https://cronos.pt')) throw new Error('Marketing canonical URLs must use https://cronos.pt.')
+    if (!canonicalMarketingRoutes.some((canonicalRoute) => `https://cronos.pt${canonicalRoute}` === marketingMetadata[route].canonicalUrl)) {
+      throw new Error(`Marketing metadata alias points outside the canonical route set: ${route}`)
+    }
+  }
 }
 
 function validateRenderedMetadata(html, metadata) {
@@ -78,18 +150,73 @@ function validateRenderedMetadata(html, metadata) {
   }
 }
 
+function replaceRootMarkup(html, markup) {
+  const marker = '<div id="root"></div>'
+  const occurrences = html.split(marker).length - 1
+  if (occurrences !== 1) throw new Error(`Expected one root marker, found ${occurrences}.`)
+  return html.replace(marker, `<div id="root">${markup}</div>`)
+}
+
+function stripBuildOnlyMarkup(html) {
+  return html
+    .replace(/<script\b[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style\b[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&(?:amp|lt|gt|quot|#39);/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function validateHeadings(html, route) {
+  const headings = [...html.matchAll(/<h([1-6])\b[^>]*>([\s\S]*?)<\/h\1>/gi)].map(([, level]) => Number(level))
+  if (headings.filter((level) => level === 1).length !== 1) throw new Error(`${route} must contain exactly one H1.`)
+  for (let index = 1; index < headings.length; index += 1) {
+    if (headings[index] - headings[index - 1] > 1) throw new Error(`${route} contains a heading level jump.`)
+  }
+}
+
+function validateSemanticRoute(html, route, minimumCharacters = 0) {
+  validateHeadings(html, route)
+  const text = stripBuildOnlyMarkup(html)
+  if (text.length < minimumCharacters) throw new Error(`${route} contains only ${text.length} meaningful characters; expected at least ${minimumCharacters}.`)
+}
+
+function validateGeneratedRoutes(generatedPages) {
+  for (const [route, html] of generatedPages) {
+    const minimumCharacters = route === '/' || ['/sobre', '/about', '/contacto', '/contact', '/privacidade', '/privacy'].includes(route) ? 500 : 0
+    validateSemanticRoute(html, route, minimumCharacters)
+  }
+}
+
 export async function buildMarketingPages(distDirectory = defaultDistDirectory) {
   validateMetadataCatalog()
   const indexPath = join(distDirectory, 'index.html')
-  const template = await readFile(indexPath, 'utf8')
+  const template = renderOrganizationJsonLd(await readFile(indexPath, 'utf8'))
+  const vite = await createServer({ root: projectRoot, appType: 'custom', server: { middlewareMode: true }, logLevel: 'error' })
+  const generatedPages = new Map()
 
-  for (const [route, metadata] of Object.entries(marketingMetadata)) {
-    const html = renderMarketingPage(template, metadata)
-    validateRenderedMetadata(html, metadata)
-    const filename = route === '/' ? 'index.html' : `${route.slice(1)}.html`
-    await writeFile(join(distDirectory, filename), html)
+  try {
+    const { renderPublicRoute, renderStaticNotFound } = await vite.ssrLoadModule('/src/features/marketing/renderPublicRoute.jsx')
+    for (const [route, metadata] of Object.entries(marketingMetadata)) {
+      const html = renderMarketingPage(replaceRootMarkup(template, renderPublicRoute(route)), metadata)
+      validateRenderedMetadata(html, metadata)
+      generatedPages.set(route, html)
+      const filename = route === '/' ? 'index.html' : `${route.slice(1)}.html`
+      await writeFile(join(distDirectory, filename), html)
+    }
+
+    const notFoundHtml = replaceRootMarkup(template, renderStaticNotFound())
+    validateSemanticRoute(notFoundHtml, '404', 20)
+    await writeFile(join(distDirectory, '404.html'), notFoundHtml)
+    await copyFile(notFoundMarkdownPath, join(distDirectory, '404.md'))
+  } finally {
+    await vite.close()
   }
+
+  validateGeneratedRoutes(generatedPages)
 }
+
+export { organizationJsonLd }
 
 const invokedScript = process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import.meta.url))
 if (invokedScript) {

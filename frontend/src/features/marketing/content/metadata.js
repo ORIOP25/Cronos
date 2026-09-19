@@ -1,3 +1,16 @@
+export const canonicalMarketingRoutes = Object.freeze([
+  '/',
+  '/vantagens',
+  '/como-funciona',
+  '/sobre',
+  '/ajuda',
+  '/contacto',
+  '/privacidade',
+  '/termos',
+  '/dpa',
+  '/cookies',
+])
+
 export const marketingMetadata = Object.freeze({
   '/': Object.freeze({
     title: 'Cronos | Gestão de Horários para o Ensino Profissional',
@@ -48,5 +61,20 @@ export const marketingMetadata = Object.freeze({
     title: 'Cookies e armazenamento local | Cronos',
     description: 'Cookies estritamente necessários e armazenamento local usados pelo Cronos, versão 2026-01.',
     canonicalUrl: 'https://cronos.pt/cookies',
+  }),
+  '/about': Object.freeze({
+    title: 'Sobre Nós | Cronos — Criado para o Ensino Profissional',
+    description: 'Conheça a história do Cronos, criado por Rodrigo Manguinhas para trazer ordem e agilidade à gestão escolar.',
+    canonicalUrl: 'https://cronos.pt/sobre',
+  }),
+  '/contact': Object.freeze({
+    title: 'Pedir Demonstração & Contacto | Cronos',
+    description: 'Fale connosco por email (contacto@cronos.pt) e agende uma demonstração para a sua escola.',
+    canonicalUrl: 'https://cronos.pt/contacto',
+  }),
+  '/privacy': Object.freeze({
+    title: 'Política de Privacidade | Cronos',
+    description: 'Política de Privacidade do Cronos, versão 2026-01.',
+    canonicalUrl: 'https://cronos.pt/privacidade',
   }),
 })

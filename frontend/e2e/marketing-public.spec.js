@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test'
 import AxeBuilder from '@axe-core/playwright'
 
 const publicRoutes = ['/', '/vantagens', '/como-funciona', '/sobre', '/ajuda', '/contacto']
+const trustRoutes = ['/sobre', '/about', '/contacto', '/contact', '/privacidade', '/privacy']
 const publicViewports = [
   { width: 375, height: 812, name: 'mobile' },
   { width: 768, height: 1024, name: 'tablet' },
@@ -79,5 +80,31 @@ test.describe('public marketing site', () => {
     await expect(page.getByText('5 passos, cerca de 1 minuto')).toBeVisible()
     await page.getByRole('button', { name: 'Começar' }).click()
     await expect(page.getByText('Qual é o principal desafio da sua escola?')).toBeVisible()
+  })
+
+  test('serves meaningful trust content when JavaScript is disabled', async ({ browser }) => {
+    const context = await browser.newContext({ javaScriptEnabled: false })
+    try {
+      const noScriptPage = await context.newPage()
+      for (const route of trustRoutes) {
+        const response = await noScriptPage.goto(route)
+        expect(response?.status()).toBe(200)
+        await expect(noScriptPage.locator('h1')).toHaveCount(1)
+        expect((await noScriptPage.locator('body').innerText()).replace(/\s+/g, ' ').trim().length).toBeGreaterThan(500)
+      }
+    } finally {
+      await context.close()
+    }
+  })
+
+  test('keeps alias canonicals and returns a real browser 404', async ({ page }) => {
+    for (const [alias, canonical] of [['/about', '/sobre'], ['/contact', '/contacto'], ['/privacy', '/privacidade']]) {
+      const response = await page.goto(alias)
+      expect(response?.status()).toBe(200)
+      await expect(page.locator('link[rel="canonical"]')).toHaveAttribute('href', `https://cronos.pt${canonical}`)
+    }
+    const response = await page.goto('/agentic-audit-missing-path')
+    expect(response?.status()).toBe(404)
+    await expect(page.getByRole('heading', { name: 'Página não encontrada' })).toBeVisible()
   })
 })

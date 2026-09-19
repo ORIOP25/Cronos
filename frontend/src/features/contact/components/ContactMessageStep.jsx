@@ -1,6 +1,8 @@
 import { cilArrowRight } from '@coreui/icons'
-import CIcon from '@coreui/icons-react'
+import CIconModule from '@coreui/icons-react'
 import TurnstileWidget from './TurnstileWidget'
+
+const CIcon = CIconModule.CIcon ?? CIconModule.default ?? CIconModule
 
 export default function ContactMessageStep({ answers, website, error, pending, resetVersion, onChange, onWebsiteChange, onSubmit, onTurnstileSuccess, onTurnstileExpired, onTurnstileError }) {
   return (

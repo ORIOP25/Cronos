@@ -1,8 +1,10 @@
 import { Link, NavLink } from 'react-router-dom'
-import CIcon from '@coreui/icons-react'
+import CIconModule from '@coreui/icons-react'
 import { cilMenu, cilX } from '@coreui/icons'
 import { navigationItems } from '../../content/navigation'
 import { useMobileMenu } from '../../hooks/useMobileMenu'
+
+const CIcon = CIconModule.CIcon ?? CIconModule.default ?? CIconModule
 
 export default function MarketingHeader() {
   const { isOpen, toggleReference, toggleMenu, closeMenu } = useMobileMenu()

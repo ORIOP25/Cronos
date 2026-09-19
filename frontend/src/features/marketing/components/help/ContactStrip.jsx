@@ -1,6 +1,8 @@
-import CIcon from '@coreui/icons-react'
 import { cilEnvelopeClosed, cilPhone } from '@coreui/icons'
+import CIconModule from '@coreui/icons-react'
 import { contactDetails } from '../../content/navigation'
+
+const CIcon = CIconModule.CIcon ?? CIconModule.default ?? CIconModule
 
 const contactIcons = {
   email: cilEnvelopeClosed,
