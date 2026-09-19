@@ -150,7 +150,7 @@
 .cronos-questionnaire__progress > div:first-child { display: flex; align-items: center; justify-content: space-between; }
 .cronos-questionnaire__progress button { display: inline-flex; align-items: center; gap: var(--space-1); border: 0; background: transparent; color: var(--marketing-ink); cursor: pointer; }
 .cronos-questionnaire__track { height: 4px; overflow: hidden; border-radius: 4px; background: var(--marketing-surface-muted); }
-.cronos-questionnaire__track span { display: block; width: var(--questionnaire-progress); height: 100%; background: var(--marketing-accent); }
+.cronos-questionnaire__track span { display: block; width: var(--guided-form-progress); height: 100%; background: var(--marketing-accent); }
 .cronos-questionnaire__options { display: grid; gap: var(--space-2); }
 .cronos-questionnaire__options button { position: relative; min-height: 56px; padding: 14px 48px 14px var(--space-4); border: 1px solid var(--marketing-border); border-radius: var(--marketing-radius-control); background: transparent; color: var(--marketing-ink); cursor: pointer; text-align: left; transition: border-color 200ms ease, background-color 200ms ease, transform 200ms ease; }
 .cronos-questionnaire__options button::after { position: absolute; top: 50%; right: var(--space-4); width: 8px; height: 8px; border-top: 1px solid currentColor; border-right: 1px solid currentColor; transform: translateY(-50%) rotate(45deg); content: ''; }
