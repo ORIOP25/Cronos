@@ -4,8 +4,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query
-from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import APIRouter, Query
 
 from app import models, schemas
 from app.api import deps
@@ -19,7 +18,7 @@ router = APIRouter()
 
 @router.get("/bases", response_model=schemas.BasesReadinessResponse)
 async def get_bases_readiness(
-    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
+    db: deps.DbSession,
     current_user: deps.AdminActor,
 ):
     """Calcula a prontidão das Bases Escolares em cadeia cumulativa de 7 níveis."""
@@ -29,7 +28,7 @@ async def get_bases_readiness(
 
 @router.get("/prevalidation", response_model=schemas.PreflightReport)
 async def get_prevalidation(
-    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
+    db: deps.DbSession,
     current_user: deps.AdminActor,
     fingerprint: Annotated[
         str | None,

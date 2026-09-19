@@ -1,7 +1,4 @@
-from typing import Annotated
-
-from fastapi import APIRouter, Depends
-from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import APIRouter
 
 from app import schemas
 from app.api import deps
@@ -13,7 +10,7 @@ router = APIRouter()
 # --- 1. Ler Disciplinas ---
 @router.get("/", response_model=list[schemas.SubjectRead])
 async def read_subjects(
-    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
+    db: deps.DbSession,
     current_user: deps.ActiveActor,
 ):
     # Qualquer utilizador autenticado pode ver a lista de disciplinas
@@ -24,7 +21,7 @@ async def read_subjects(
 @router.post("/", response_model=schemas.SubjectRead)
 async def create_subject(
     item: schemas.SubjectCreate,
-    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
+    db: deps.DbSession,
     current_user: deps.AdminActor,
 ):
     return await subject_service.create_subject(
@@ -44,7 +41,7 @@ async def create_subject(
 async def update_subject(
     subject_id: int,
     subject_in: schemas.SubjectUpdate,
-    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
+    db: deps.DbSession,
     current_user: deps.AdminActor,  # Apenas Admin
 ):
     return await subject_service.update_subject(
@@ -66,7 +63,7 @@ async def update_subject(
 )
 async def delete_subject(
     subject_id: int,
-    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
+    db: deps.DbSession,
     current_user: deps.AdminActor,  # Apenas Admin
 ):
     await subject_service.delete_subject(

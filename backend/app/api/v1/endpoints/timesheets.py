@@ -1,8 +1,6 @@
 from datetime import date, timedelta
-from typing import Annotated
 
-from fastapi import APIRouter, Depends
-from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import APIRouter
 
 from app import models, schemas
 from app.api import deps
@@ -38,7 +36,7 @@ def _model_to_read_dict(t: models.TeacherWeeklyTimesheet) -> dict:
     summary="Listar timesheets semanais",
 )
 async def list_timesheets(
-    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
+    db: deps.DbSession,
     current_user: deps.ActiveActor,
     week_start_date: date | None = None,
     status: models.TimesheetStatus | None = None,
@@ -64,7 +62,7 @@ async def list_timesheets(
 )
 async def get_my_timesheet(
     week_start_date: date,
-    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
+    db: deps.DbSession,
     current_user: deps.ActiveActor,
 ):
     if not deps.user_has_teacher_capability(current_user):
@@ -94,7 +92,7 @@ async def get_my_timesheet(
 )
 async def submit_my_timesheet(
     week_start_date: date,
-    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
+    db: deps.DbSession,
     current_user: deps.ActiveActor,
 ):
     if not deps.user_has_teacher_capability(current_user):
@@ -123,7 +121,7 @@ async def submit_my_timesheet(
 )
 async def get_pending_occurrences_for_timesheet(
     timesheet_id: int,
-    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
+    db: deps.DbSession,
     current_user: deps.ActiveActor,
 ):
     """Devolve as ocorrÃªncias OPEN na semana associada Ã  timesheet."""
@@ -148,7 +146,7 @@ async def get_pending_occurrences_for_timesheet(
 async def update_timesheet_status(
     timesheet_id: int,
     payload: schemas.TimesheetStatusUpdate,
-    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
+    db: deps.DbSession,
     current_user: deps.ActiveActor,
 ):
     if not deps.user_has_admin_capability(current_user):

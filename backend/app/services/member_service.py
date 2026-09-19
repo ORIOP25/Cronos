@@ -1528,6 +1528,92 @@ async def update_member(
     return _to_read(updated)
 
 
+async def _assert_member_removal_allowed(
+    db: AsyncSession,
+    member: models.OrganizationMembership,
+    *,
+    organization_id: int,
+    current_admin: Actor,
+) -> None:
+    caps = {cap.capability for cap in member.capabilities}
+    if member.account_id == current_admin.account_id and models.MembershipCapability.admin in caps:
+        raise member_error(
+            "conflict", "self_admin_removal_blocked", "You cannot remove your own admin access."
+        )
+    if models.MembershipCapability.admin not in caps:
+        return
+    if await _active_admin_count(db, organization_id, exclude_member_id=member.id) == 0:
+        raise member_error(
+            "conflict", "last_active_admin_blocked", "At least one active admin must remain."
+        )
+
+
+async def _hard_delete_member(
+    db: AsyncSession,
+    member: models.OrganizationMembership,
+    *,
+    teacher_id: int | None,
+    teacher_subjects: list[int],
+    scheduler_relevant: bool,
+    current_admin: Actor,
+) -> None:
+    if member.teacher_profile:
+        await db.delete(member.teacher_profile)
+        await _record_teacher_scheduler_change(
+            db,
+            member.organization_id,
+            teacher_id=teacher_id,
+            operation=models.SchedulerStateChangeOperation.DELETE,
+            before={
+                "status": "active",
+                "can_teach": member.can_teach,
+                "subject_ids": teacher_subjects,
+            },
+            after=None,
+            changed_by_membership_id=current_admin.membership_id,
+            active_resource=scheduler_relevant,
+        )
+    await db.delete(member)
+
+
+async def _archive_removed_member(
+    db: AsyncSession,
+    member: models.OrganizationMembership,
+    *,
+    teacher_id: int | None,
+    teacher_subjects: list[int],
+    scheduler_relevant: bool,
+    current_admin: Actor,
+) -> None:
+    member.lifecycle_status = models.MembershipLifecycleStatus.archived
+    member.access_status = (
+        models.MembershipAccessStatus.blocked
+        if member.access_status != models.MembershipAccessStatus.none
+        else models.MembershipAccessStatus.none
+    )
+    member.updated_by_membership_id = current_admin.membership_id
+    member.lock_version += 1
+    if member.teacher_profile or member.can_teach:
+        await _record_teacher_scheduler_change(
+            db,
+            member.organization_id,
+            teacher_id=teacher_id or member.id,
+            operation=models.SchedulerStateChangeOperation.DELETE,
+            before={
+                "status": "active",
+                "can_teach": member.can_teach,
+                "subject_ids": teacher_subjects,
+            },
+            after={
+                "status": "archived",
+                "can_teach": member.can_teach,
+                "subject_ids": teacher_subjects,
+            },
+            changed_by_membership_id=current_admin.membership_id,
+            active_resource=scheduler_relevant,
+        )
+
+
 async def remove_member(
     db: AsyncSession,
     member_id: int,
@@ -1540,18 +1626,12 @@ async def remove_member(
     member = await _load_member(db, organization_id, member_id)
     if member is None:
         raise member_error("not_found", "member_not_found", "Member not found.")
-    caps = {cap.capability for cap in member.capabilities}
-    if member.account_id == current_admin.account_id and models.MembershipCapability.admin in caps:
-        raise member_error(
-            "conflict", "self_admin_removal_blocked", "You cannot remove your own admin access."
-        )
-    if (
-        models.MembershipCapability.admin in caps
-        and await _active_admin_count(db, organization_id, exclude_member_id=member.id) == 0
-    ):
-        raise member_error(
-            "conflict", "last_active_admin_blocked", "At least one active admin must remain."
-        )
+    await _assert_member_removal_allowed(
+        db,
+        member,
+        organization_id=organization_id,
+        current_admin=current_admin,
+    )
 
     history_ids = await _teacher_ids_with_history(
         db,
@@ -1578,52 +1658,23 @@ async def remove_member(
         operation_service=operation_service,
     )
     if actions.remove_effect == "hard_delete":
-        if member.teacher_profile:
-            await db.delete(member.teacher_profile)
-            await _record_teacher_scheduler_change(
-                db,
-                member.organization_id,
-                teacher_id=teacher_id,
-                operation=models.SchedulerStateChangeOperation.DELETE,
-                before={
-                    "status": "active",
-                    "can_teach": member.can_teach,
-                    "subject_ids": teacher_subjects,
-                },
-                after=None,
-                changed_by_membership_id=current_admin.membership_id,
-                active_resource=scheduler_relevant,
-            )
-        await db.delete(member)
-        return {"status": "removed", "remove_effect": "hard_delete"}
-    member.lifecycle_status = models.MembershipLifecycleStatus.archived
-    member.access_status = (
-        models.MembershipAccessStatus.blocked
-        if member.access_status != models.MembershipAccessStatus.none
-        else models.MembershipAccessStatus.none
-    )
-    member.updated_by_membership_id = current_admin.membership_id
-    member.lock_version += 1
-    if member.teacher_profile or member.can_teach:
-        teacher_id = teacher_id or member.id
-        await _record_teacher_scheduler_change(
+        await _hard_delete_member(
             db,
-            member.organization_id,
+            member,
             teacher_id=teacher_id,
-            operation=models.SchedulerStateChangeOperation.DELETE,
-            before={
-                "status": "active",
-                "can_teach": member.can_teach,
-                "subject_ids": teacher_subjects,
-            },
-            after={
-                "status": "archived",
-                "can_teach": member.can_teach,
-                "subject_ids": teacher_subjects,
-            },
-            changed_by_membership_id=current_admin.membership_id,
-            active_resource=scheduler_relevant,
+            teacher_subjects=teacher_subjects,
+            scheduler_relevant=scheduler_relevant,
+            current_admin=current_admin,
         )
+        return {"status": "removed", "remove_effect": "hard_delete"}
+    await _archive_removed_member(
+        db,
+        member,
+        teacher_id=teacher_id,
+        teacher_subjects=teacher_subjects,
+        scheduler_relevant=scheduler_relevant,
+        current_admin=current_admin,
+    )
     return {"status": "removed", "remove_effect": "archive"}
 
 
