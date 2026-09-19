@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test'
 import {
   attachRuntimeGuards,
+  allowApiFailure,
   expectNoAppCrash,
   goTo,
   loginAsAdminReal,
@@ -56,6 +57,7 @@ test.describe('Year reset — no legacy onboarding', () => {
     await expect(page).not.toHaveURL(/\/guide/)
     await expectNoAppCrash(page)
 
+    allowApiFailure(page, { status: 404, url: '/onboarding' })
     await goTo(page, '/onboarding')
     await expect(page).toHaveURL(/\/onboarding$/)
     await expect(page.getByText(/página não encontrada|não encontrada/i)).toBeVisible()
