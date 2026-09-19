@@ -66,13 +66,12 @@ export function measureFiles(files, read = (filePath) => readFileSync(filePath, 
 }
 
 function currentRevision() {
-  const safePath = process.platform === 'win32'
-    ? 'C:\\Windows\\System32;C:\\Program Files\\Git\\cmd'
-    : '/usr/local/bin:/usr/bin:/bin'
-  return execFileSync('git', ['rev-parse', 'HEAD'], {
+  const gitExecutable = process.platform === 'win32'
+    ? String.raw`C:\Program Files\Git\cmd\git.exe`
+    : '/usr/bin/git'
+  return execFileSync(gitExecutable, ['rev-parse', 'HEAD'], {
     cwd: ROOT,
     encoding: 'utf8',
-    env: { ...process.env, PATH: safePath },
   }).trim()
 }
 
