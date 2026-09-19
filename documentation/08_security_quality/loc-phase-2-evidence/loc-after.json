@@ -1,16 +1,16 @@
 {
-  "revision": "188987d6915748b929ca5ee5c0486fbf1685f0d7",
+  "revision": "8a442df62f5e1754ed324b4016e197a1631bae8c",
   "counts": {
-    "backendProduction": 32404,
-    "frontendProduction": 18437,
+    "backendProduction": 32513,
+    "frontendProduction": 18512,
     "backendTests": 19847,
     "frontendTests": 5966,
     "e2eTests": 3217
   },
   "deltas": {
-    "backendProduction": -386,
-    "frontendProduction": -69,
-    "backendTests": 628,
+    "backendProduction": 109,
+    "frontendProduction": 75,
+    "backendTests": 0,
     "frontendTests": 0,
     "e2eTests": 0
   },
@@ -33,12 +33,12 @@
     {
       "path": "backend/app/api/v1/endpoints/analytics.py",
       "category": "backendProduction",
-      "lines": 64
+      "lines": 62
     },
     {
       "path": "backend/app/api/v1/endpoints/classes.py",
       "category": "backendProduction",
-      "lines": 221
+      "lines": 220
     },
     {
       "path": "backend/app/api/v1/endpoints/client_errors.py",
@@ -53,87 +53,87 @@
     {
       "path": "backend/app/api/v1/endpoints/courses.py",
       "category": "backendProduction",
-      "lines": 186
+      "lines": 185
     },
     {
       "path": "backend/app/api/v1/endpoints/dashboard.py",
       "category": "backendProduction",
-      "lines": 18
+      "lines": 16
     },
     {
       "path": "backend/app/api/v1/endpoints/foundation.py",
       "category": "backendProduction",
-      "lines": 94
+      "lines": 92
     },
     {
       "path": "backend/app/api/v1/endpoints/health.py",
       "category": "backendProduction",
-      "lines": 48
+      "lines": 46
     },
     {
       "path": "backend/app/api/v1/endpoints/legal.py",
       "category": "backendProduction",
-      "lines": 38
+      "lines": 36
     },
     {
       "path": "backend/app/api/v1/endpoints/members.py",
       "category": "backendProduction",
-      "lines": 133
+      "lines": 132
     },
     {
       "path": "backend/app/api/v1/endpoints/occurrences.py",
       "category": "backendProduction",
-      "lines": 279
+      "lines": 275
     },
     {
       "path": "backend/app/api/v1/endpoints/org_settings.py",
       "category": "backendProduction",
-      "lines": 250
+      "lines": 249
     },
     {
       "path": "backend/app/api/v1/endpoints/readiness.py",
       "category": "backendProduction",
-      "lines": 58
+      "lines": 57
     },
     {
       "path": "backend/app/api/v1/endpoints/rooms.py",
       "category": "backendProduction",
-      "lines": 70
+      "lines": 68
     },
     {
       "path": "backend/app/api/v1/endpoints/schedule.py",
       "category": "backendProduction",
-      "lines": 466
+      "lines": 465
     },
     {
       "path": "backend/app/api/v1/endpoints/scheduler.py",
       "category": "backendProduction",
-      "lines": 284
+      "lines": 283
     },
     {
       "path": "backend/app/api/v1/endpoints/session.py",
       "category": "backendProduction",
-      "lines": 39
+      "lines": 38
     },
     {
       "path": "backend/app/api/v1/endpoints/subjects.py",
       "category": "backendProduction",
-      "lines": 67
+      "lines": 65
     },
     {
       "path": "backend/app/api/v1/endpoints/teachers.py",
       "category": "backendProduction",
-      "lines": 181
+      "lines": 180
     },
     {
       "path": "backend/app/api/v1/endpoints/timesheets.py",
       "category": "backendProduction",
-      "lines": 145
+      "lines": 143
     },
     {
       "path": "backend/app/api/v1/endpoints/timeslots.py",
       "category": "backendProduction",
-      "lines": 14
+      "lines": 12
     },
     {
       "path": "backend/app/api/v1/endpoints/webhooks.py",
@@ -398,12 +398,12 @@
     {
       "path": "backend/app/services/member_reconciliation_service.py",
       "category": "backendProduction",
-      "lines": 219
+      "lines": 259
     },
     {
       "path": "backend/app/services/member_service.py",
       "category": "backendProduction",
-      "lines": 1808
+      "lines": 1853
     },
     {
       "path": "backend/app/services/member_webhook_service.py",
@@ -413,7 +413,7 @@
     {
       "path": "backend/app/services/occurrence_service.py",
       "category": "backendProduction",
-      "lines": 1999
+      "lines": 2038
     },
     {
       "path": "backend/app/services/operational_seed_service.py",
@@ -438,7 +438,7 @@
     {
       "path": "backend/app/services/schedule_service.py",
       "category": "backendProduction",
-      "lines": 566
+      "lines": 585
     },
     {
       "path": "backend/app/services/scheduler_adaptation_ladder.py",
@@ -643,7 +643,7 @@
     {
       "path": "backend/app/services/teacher_service.py",
       "category": "backendProduction",
-      "lines": 392
+      "lines": 389
     },
     {
       "path": "backend/app/services/timesheet_service.py",
@@ -1963,7 +1963,7 @@
     {
       "path": "frontend/src/features/scheduling/data.js",
       "category": "frontendProduction",
-      "lines": 176
+      "lines": 177
     },
     {
       "path": "frontend/src/features/schoolConfig/SchoolConfigSections.jsx",
@@ -2008,7 +2008,7 @@
     {
       "path": "frontend/src/features/tutorial/tutorialApiAdapter.js",
       "category": "frontendProduction",
-      "lines": 424
+      "lines": 498
     },
     {
       "path": "frontend/src/features/tutorial/tutorialContent.js",
