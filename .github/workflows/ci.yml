@@ -390,6 +390,7 @@ jobs:
           E2E_CLERK_ADMIN_EMAIL: ${{ env.CI_E2E_CLERK_ADMIN_EMAIL }}
           E2E_CLERK_TEACHER_EMAIL: ${{ env.CI_E2E_CLERK_TEACHER_EMAIL }}
           E2E_CLERK_ORG_ID: ${{ steps.prepare-e2e-clerk-state.outputs.clerk_org_id }}
+          CAPACITY_HEALTH_URL: http://localhost:8000/health/ready
 
       - name: Sanitize test artifacts
         if: always()

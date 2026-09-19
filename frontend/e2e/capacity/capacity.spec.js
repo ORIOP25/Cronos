@@ -13,6 +13,7 @@ const durationSeconds = Number(process.env.CAPACITY_DURATION_SECONDS || (smoke ?
 const virtualClientCount = smoke ? 4 : 50
 const teacherClientCount = smoke ? 3 : 40
 const adminClientCount = virtualClientCount - teacherClientCount
+const readinessUrl = process.env.CAPACITY_HEALTH_URL || new URL('/health/ready', E2E_BASE_URL).toString()
 const teacherRoutes = ['/my-schedules', '/my-availability', '/my-progress']
 const adminRoutes = ['/dashboard', '/members', '/courses', '/rooms', '/config', '/schedules']
 
@@ -109,7 +110,7 @@ async function runClientLoad(pages, request, metrics, startedAt) {
       await page.waitForTimeout(Math.min(pause, Math.max(0, deadline - Date.now())))
     }))
     if (Date.now() >= nextReadinessAt) {
-      const health = await request.get(`${E2E_BASE_URL}/health/ready`)
+      const health = await request.get(readinessUrl)
       if (!health.ok()) metrics.readinessFailures += 1
       nextReadinessAt = Date.now() + 5000
     }
