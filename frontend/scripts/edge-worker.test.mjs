@@ -3,7 +3,8 @@ import assert from 'node:assert/strict'
 import worker, { acceptsMarkdown, isKnownApplicationRoute } from '../public/_worker.js'
 
 const assets = new Map([
-  ['/index.html', { body: '<html><div id="root">home</div></html>', contentType: 'text/html; charset=utf-8' }],
+  ['/index.html', { body: '<html><div id="root">legacy-index-path</div></html>', contentType: 'text/html; charset=utf-8' }],
+  ['/', { body: '<html><div id="root">home</div></html>', contentType: 'text/html; charset=utf-8' }],
   ['/llms.txt', { body: '# Cronos', contentType: 'text/plain; charset=utf-8' }],
   ['/404.html', { body: '<h1>404</h1>', contentType: 'text/html; charset=utf-8' }],
   ['/404.md', { body: '# 404 — Página não encontrada', contentType: 'text/plain; charset=utf-8' }],
@@ -23,7 +24,7 @@ function createEnvironment() {
           calls.push({ method: request.method, pathname: url.pathname })
           const asset = assets.get(url.pathname)
           if (!asset) return Promise.resolve(new Response('missing', { status: 404 }))
-          return Promise.resolve(new Response(asset.body, { headers: { 'Content-Type': asset.contentType, ...(url.pathname === '/index.html' ? { Vary: 'Accept-Encoding' } : {}) } }))
+          return Promise.resolve(new Response(asset.body, { headers: { 'Content-Type': asset.contentType, ...(url.pathname === '/' ? { Vary: 'Accept-Encoding' } : {}) } }))
         },
       },
     },
@@ -56,7 +57,7 @@ test('returns HTML homepage with merged Vary and security headers', async () => 
   assert.match(response.headers.get('Vary'), /Accept-Encoding/)
   assert.match(response.headers.get('Vary'), /Accept/)
   assert.equal(response.headers.get('X-Frame-Options'), 'DENY')
-  assert.equal(calls[0].pathname, '/index.html')
+  assert.equal(calls[0].pathname, '/')
 })
 
 test('returns the llms file for Markdown homepage requests', async () => {
@@ -79,7 +80,7 @@ test('rewrites every application route family to the application shell', async (
   for (const pathname of ['/dashboard', '/login/test', '/courses/course-id', '/courses/course-id/classes/class-id', '/courses/course-id/classes/class-id/subjects']) {
     const { response, calls } = await request(pathname)
     assert.equal(response.status, 200, pathname)
-    assert.equal(calls.at(-1).pathname, '/index.html', pathname)
+    assert.equal(calls.at(-1).pathname, '/', pathname)
   }
 })
 

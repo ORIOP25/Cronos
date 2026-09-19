@@ -125,7 +125,10 @@ async function handleRequest(request, env) {
 
   if (pathname === '/') {
     if (method !== 'GET' && method !== 'HEAD') return notFoundResponse(env, request, false)
-    const response = await fetchAsset(env, request, markdown ? '/llms.txt' : '/index.html')
+    // Cloudflare Pages canonicalizes `/index.html` to `/`. Asking Assets for
+    // the file path here would return a self-redirect (`308 Location: /`),
+    // which makes the homepage impossible for crawlers to fetch.
+    const response = await fetchAsset(env, request, markdown ? '/llms.txt' : '/')
     return withWorkerHeaders(response, {
       contentType: markdown ? 'text/markdown; charset=utf-8' : 'text/html; charset=utf-8',
       vary: 'Accept',
@@ -141,7 +144,7 @@ async function handleRequest(request, env) {
   }
 
   if (isKnownApplicationRoute(pathname)) {
-    const shell = await fetchAsset(env, request, '/index.html')
+    const shell = await fetchAsset(env, request, '/')
     return withWorkerHeaders(shell, { contentType: 'text/html; charset=utf-8' }, method)
   }
 
