@@ -56,7 +56,7 @@ async def _setup_course_class_subject(client: AsyncClient, headers: dict):
     course_id = course_resp.json()["id"]
 
     class_resp = await client.post(
-        f"{API}/classes/",
+        f"{API}/courses/{course_id}/classes",
         json={
             "name": "Turma TI-A",
             "course_id": course_id,

@@ -1,6 +1,6 @@
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy.orm import selectinload
 
 from app import models, schemas
 from app.services.scheduler_state_service import record_scheduler_change
@@ -319,8 +319,3 @@ async def delete_subject(
     )
     await db.flush()
     return "SUCCESS"
-
-
-# --- SYNC (SOLVER) ---
-def get_subjects_by_org_sync(db: Session, organization_id: int):
-    return db.query(models.Subject).filter(models.Subject.organization_id == organization_id).all()

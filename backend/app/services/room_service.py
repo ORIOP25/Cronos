@@ -1,6 +1,5 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from sqlalchemy.orm import Session
 
 from app import models, schemas
 from app.services.scheduler_state_service import record_scheduler_change
@@ -133,8 +132,3 @@ async def delete_room(
     )
     await db.flush()
     return "SUCCESS"
-
-
-# --- SYNC (SOLVER) ---
-def get_rooms_by_org_sync(db: Session, organization_id: int):
-    return db.query(models.Room).filter(models.Room.organization_id == organization_id).all()

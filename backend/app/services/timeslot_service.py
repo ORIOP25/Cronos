@@ -432,21 +432,3 @@ async def apply_grid_regeneration(
     )
     await db.flush()
     return len(new_timeslots)
-
-
-async def create_bulk_timeslots(
-    db: AsyncSession,
-    settings: schemas.TimeslotBulkCreate,
-    organization_id: int,
-    changed_by_membership_id: int | None = None,
-):
-    """Legacy transactional wrapper around the shared protected replacement."""
-    try:
-        plan = await preflight_grid_regeneration(
-            db, settings, organization_id, changed_by_membership_id
-        )
-        count = await apply_grid_regeneration(db, plan, changed_by_membership_id)
-        await db.flush()
-        return count
-    except Exception:
-        raise

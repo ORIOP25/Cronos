@@ -74,10 +74,7 @@ Stable route families keep frontend features and provider webhooks independent f
 | `PATCH` | `/api/v1/courses/{course_id}/classes/{class_id}` | Admin |
 | `DELETE` | `/api/v1/courses/{course_id}/classes/{class_id}` | Admin |
 | `GET` | `/api/v1/classes/` | Admin |
-| `POST` | `/api/v1/classes/` | Admin |
 | `GET` | `/api/v1/classes/{class_id}` | Admin |
-| `PATCH` | `/api/v1/classes/{class_id}` | Admin |
-| `DELETE` | `/api/v1/classes/{class_id}` | Admin |
 | `GET` | `/api/v1/classes/{class_id}/curriculum` | Admin |
 | `PATCH` | `/api/v1/classes/{class_id}/progress` | Admin |
 | `GET` | `/api/v1/classes/{class_id}/subjects` | Active |
@@ -91,7 +88,6 @@ Stable route families keep frontend features and provider webhooks independent f
 | `GET` / `POST` | `/api/v1/rooms/` | Active / Admin |
 | `PATCH` / `DELETE` | `/api/v1/rooms/{room_id}` | Admin |
 | `GET` | `/api/v1/timeslots/` | Active |
-| `POST` | `/api/v1/timeslots/generate` | Admin |
 
 ### Members and teachers
 

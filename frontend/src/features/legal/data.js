@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import apiClient from '../../apiClient'
 import legalManifest from './legal-manifest.json'
+import { orgQueryKey } from '../queryKeys'
 
 export const LEGAL_STATUS_KEY = 'legal-status'
 
@@ -19,7 +20,7 @@ export const CLERK_LEGAL_UNSAFE_METADATA = Object.freeze({
 export function useLegalStatus({ enabled = true, organizationId } = {}) {
   const orgId = organizationId
   return useQuery({
-    queryKey: [LEGAL_STATUS_KEY, orgId],
+    queryKey: orgQueryKey(LEGAL_STATUS_KEY, orgId),
     queryFn: () => apiClient.get('/legal/status'),
     enabled: Boolean(orgId) && enabled,
     staleTime: 0,
@@ -33,7 +34,7 @@ export function useAcceptLegalDocuments({ organizationId } = {}) {
   return useMutation({
     mutationFn: (payload) => apiClient.post('/legal/acceptance', payload),
     onSuccess: async (acceptance) => {
-      queryClient.setQueryData([LEGAL_STATUS_KEY, orgId], (current) => ({
+      queryClient.setQueryData(orgQueryKey(LEGAL_STATUS_KEY, orgId), (current) => ({
         ...current,
         accepted: true,
         requires_acceptance: false,
@@ -42,7 +43,7 @@ export function useAcceptLegalDocuments({ organizationId } = {}) {
         privacy_version: acceptance.privacy_version,
         accepted_at: acceptance.accepted_at,
       }))
-      await queryClient.invalidateQueries({ queryKey: [LEGAL_STATUS_KEY, orgId] })
+      await queryClient.invalidateQueries({ queryKey: orgQueryKey(LEGAL_STATUS_KEY, orgId) })
     },
   })
 }

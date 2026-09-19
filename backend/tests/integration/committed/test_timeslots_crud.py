@@ -3,7 +3,7 @@
 TESTES CRUD DE BLOCOS HORÁRIOS (Timeslots)
 ==========================================
 Valida endpoints da API:
-- POST /timeslots/generate (gerar em massa com configuração da escola)
+- POST /school/grid-settings/regenerate (guardar e gerar com configuração da escola)
 - GET /timeslots/ (listar)
 - Verificar contagem correta de slots gerados
 """
@@ -13,6 +13,14 @@ from httpx import AsyncClient
 from app.config import settings
 
 API = settings.API_V1_STR
+
+
+async def _regenerate_grid(client: AsyncClient, headers: dict, timeslots: dict):
+    return await client.post(
+        f"{API}/school/grid-settings/regenerate",
+        json={"grid_settings": {}, "timeslots": timeslots},
+        headers=headers,
+    )
 
 
 class TestTimeslotsCRUD:
@@ -29,14 +37,12 @@ class TestTimeslotsCRUD:
             "break_duration_minutes": 10,
             "days_of_week": [0, 1],  # Seg + Ter
         }
-        resp = await async_client.post(
-            f"{API}/timeslots/generate", json=payload, headers=clerk_admin_headers
-        )
+        resp = await _regenerate_grid(async_client, clerk_admin_headers, payload)
         assert resp.status_code == 200
         data = resp.json()
         assert "message" in data
         # 08:00-08:50 (slot 1), 09:00-09:50 (slot 2) → 2 slots x 2 dias = 4
-        assert "4" in data["message"]
+        assert data["generated_count"] == 4
 
     async def test_generate_timeslots_five_days(
         self, async_client: AsyncClient, clerk_admin_headers: dict
@@ -49,12 +55,10 @@ class TestTimeslotsCRUD:
             "break_duration_minutes": 10,
             "days_of_week": [0, 1, 2, 3, 4],
         }
-        resp = await async_client.post(
-            f"{API}/timeslots/generate", json=payload, headers=clerk_admin_headers
-        )
+        resp = await _regenerate_grid(async_client, clerk_admin_headers, payload)
         assert resp.status_code == 200
         # 08:30-09:20, 09:30-10:20, 10:30-11:20, 11:30-12:20, 12:30-13:20 → 5 slots x 5 dias = 25
-        assert "25" in resp.json()["message"]
+        assert resp.json()["generated_count"] == 25
 
     async def test_generate_timeslots_replaces_existing(
         self, async_client: AsyncClient, clerk_admin_headers: dict
@@ -68,14 +72,10 @@ class TestTimeslotsCRUD:
             "days_of_week": [0],
         }
         # 1ª geração: 1 slot x 1 dia = 1
-        await async_client.post(
-            f"{API}/timeslots/generate", json=base_payload, headers=clerk_admin_headers
-        )
+        await _regenerate_grid(async_client, clerk_admin_headers, base_payload)
         # 2ª geração: com 3 dias
         base_payload["days_of_week"] = [0, 1, 2]
-        resp = await async_client.post(
-            f"{API}/timeslots/generate", json=base_payload, headers=clerk_admin_headers
-        )
+        resp = await _regenerate_grid(async_client, clerk_admin_headers, base_payload)
         assert resp.status_code == 200
         # Verificar listagem: deve ter 3, não 4
         list_resp = await async_client.get(f"{API}/timeslots/", headers=clerk_admin_headers)
@@ -92,12 +92,10 @@ class TestTimeslotsCRUD:
             "break_duration_minutes": 0,
             "days_of_week": [0],
         }
-        resp = await async_client.post(
-            f"{API}/timeslots/generate", json=payload, headers=clerk_admin_headers
-        )
+        resp = await _regenerate_grid(async_client, clerk_admin_headers, payload)
         assert resp.status_code == 200
         # 08:00-09:00, 09:00-10:00 → 2 slots x 1 dia = 2
-        assert "2" in resp.json()["message"]
+        assert resp.json()["generated_count"] == 2
 
     async def test_generate_timeslots_missing_days_422(
         self, async_client: AsyncClient, clerk_admin_headers: dict
@@ -109,9 +107,7 @@ class TestTimeslotsCRUD:
             "slot_duration_minutes": 50,
             "break_duration_minutes": 10,
         }
-        resp = await async_client.post(
-            f"{API}/timeslots/generate", json=payload, headers=clerk_admin_headers
-        )
+        resp = await _regenerate_grid(async_client, clerk_admin_headers, payload)
         assert resp.status_code == 422
 
     # ---------- READ ----------
@@ -133,9 +129,7 @@ class TestTimeslotsCRUD:
             "break_duration_minutes": 10,
             "days_of_week": [2],  # Quarta
         }
-        await async_client.post(
-            f"{API}/timeslots/generate", json=payload, headers=clerk_admin_headers
-        )
+        await _regenerate_grid(async_client, clerk_admin_headers, payload)
         resp = await async_client.get(f"{API}/timeslots/", headers=clerk_admin_headers)
         assert resp.status_code == 200
         data = resp.json()

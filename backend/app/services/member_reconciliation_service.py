@@ -26,89 +26,6 @@ def _normalize_token_role(token_role: str | None) -> str | None:
     return token_role
 
 
-async def reconcile_first_login(
-    db: AsyncSession,
-    *,
-    user: models.User,
-    organization: models.Organization | None,
-    token_role: str | None,
-    clerk_access: ClerkAccessService | None = None,
-) -> bool:
-    """Accept delayed Clerk webhooks only when a local pending membership already exists."""
-    if organization is None or user.clerk_user_id is None:
-        return False
-    member = await db.scalar(
-        select(models.OrganizationMembership)
-        .where(
-            models.OrganizationMembership.organization_id == organization.id,
-            models.OrganizationMembership.account_id == user.id,
-            models.OrganizationMembership.lifecycle_status
-            == models.MembershipLifecycleStatus.active,
-            models.OrganizationMembership.access_status
-            == models.MembershipAccessStatus.pending_invite,
-        )
-        .options(selectinload(models.OrganizationMembership.teacher_profile))
-    )
-    if member is None or member.expected_clerk_role is None:
-        return False
-    if _normalize_token_role(token_role) != member.expected_clerk_role.value:
-        return False
-    clerk_access = clerk_access or ClerkAccessService()
-    provider = await clerk_access.get_membership(
-        clerk_org_id=organization.clerk_org_id,
-        clerk_user_id=user.clerk_user_id,
-    )
-    if not provider.ok or _normalize_token_role(provider.role) != member.expected_clerk_role.value:
-        member.access_error_category = provider.error_category or "provider_unconfirmed"
-        member.access_error_safe_message = (
-            provider.safe_message or "Não foi possível confirmar o estado de acesso."
-        )
-        await db.flush()
-        return False
-    member.access_status = models.MembershipAccessStatus.active
-    member.clerk_membership_id = provider.membership_id or member.clerk_membership_id
-    member.clerk_invitation_status = (
-        models.ClerkInvitationStatus.accepted
-        if member.clerk_invitation_id
-        else member.clerk_invitation_status
-    )
-    member.access_error_category = None
-    member.access_error_safe_message = None
-    member.updated_by_membership_id = member.id
-    member.lock_version += 1
-    await db.flush()
-    return True
-
-
-async def confirm_provider_membership(
-    db: AsyncSession,
-    member: models.OrganizationMembership,
-    *,
-    clerk_access: ClerkAccessService | None = None,
-) -> Any | None:
-    if member.organization is None:
-        member = await db.scalar(
-            select(models.OrganizationMembership)
-            .where(models.OrganizationMembership.id == member.id)
-            .options(
-                selectinload(models.OrganizationMembership.organization),
-                selectinload(models.OrganizationMembership.account),
-            )
-        )
-    if member is None or member.organization is None or not member.organization.clerk_org_id:
-        return None
-    if member.account is None or not member.account.clerk_user_id:
-        return None
-    clerk_access = clerk_access or ClerkAccessService()
-    provider = await clerk_access.get_membership(
-        clerk_org_id=member.organization.clerk_org_id,
-        clerk_user_id=member.account.clerk_user_id,
-    )
-    if provider.ok:
-        member.clerk_membership_id = provider.membership_id or member.clerk_membership_id
-    return provider
-
-
 async def reconcile_first_login_by_email(
     db: AsyncSession,
     *,
@@ -205,16 +122,13 @@ async def reconcile_first_login_by_email(
     return account
 
 
-async def run_scheduled_reconciliation(
+async def _expire_pending_invitations(
     db: AsyncSession,
     *,
     organization_id: int,
-    limit: int = 100,
-    clerk_access: ClerkAccessService | None = None,
-) -> dict[str, Any]:
-    await set_async_tenant_context(db, organization_id)
-    now = _now()
-    expired_result = await db.execute(
+    now: datetime,
+) -> int:
+    result = await db.execute(
         select(models.OrganizationMembership).where(
             models.OrganizationMembership.organization_id == organization_id,
             models.OrganizationMembership.access_status
@@ -223,12 +137,21 @@ async def run_scheduled_reconciliation(
             models.OrganizationMembership.invitation_expires_at < now,
         )
     )
-    expired = expired_result.scalars().all()
-    for member in expired:
+    members = result.scalars().all()
+    for member in members:
         member.access_status = models.MembershipAccessStatus.invite_expired
         member.clerk_invitation_status = models.ClerkInvitationStatus.expired
+    return len(members)
 
-    pending_invite_result = await db.execute(
+
+async def _check_pending_invitations(
+    db: AsyncSession,
+    *,
+    organization_id: int,
+    limit: int,
+    clerk_access: ClerkAccessService,
+) -> int:
+    result = await db.execute(
         select(models.OrganizationMembership)
         .join(models.Organization)
         .where(
@@ -240,36 +163,43 @@ async def run_scheduled_reconciliation(
         .options(selectinload(models.OrganizationMembership.organization))
         .limit(limit)
     )
-    checked_invites = 0
-    clerk_access = clerk_access or ClerkAccessService()
-    for member in pending_invite_result.scalars().all():
+    checked = 0
+    for member in result.scalars().all():
         if not member.organization.clerk_org_id:
             continue
-        checked_invites += 1
-        result = await clerk_access.get_invitation(
+        checked += 1
+        invitation = await clerk_access.get_invitation(
             clerk_org_id=member.organization.clerk_org_id,
             invitation_id=member.clerk_invitation_id,
         )
-        if not result.ok:
-            member.access_error_category = result.error_category or "provider_unconfirmed"
+        if not invitation.ok:
+            member.access_error_category = invitation.error_category or "provider_unconfirmed"
             member.access_error_safe_message = (
-                result.safe_message or "Não foi possível confirmar o estado do convite."
+                invitation.safe_message or "Não foi possível confirmar o estado do convite."
             )
             continue
-        if result.invitation_status in {"expired", "revoked"}:
+        if invitation.invitation_status in {"expired", "revoked"}:
             member.access_status = models.MembershipAccessStatus.invite_expired
             member.clerk_invitation_status = (
                 models.ClerkInvitationStatus.revoked
-                if result.invitation_status == "revoked"
+                if invitation.invitation_status == "revoked"
                 else models.ClerkInvitationStatus.expired
             )
-        elif result.invitation_status == "accepted":
+        elif invitation.invitation_status == "accepted":
             member.clerk_invitation_status = models.ClerkInvitationStatus.accepted
-        member.invitation_expires_at = result.expires_at or member.invitation_expires_at
+        member.invitation_expires_at = invitation.expires_at or member.invitation_expires_at
         member.access_error_category = None
         member.access_error_safe_message = None
+    return checked
 
-    stale_processing_result = await db.execute(
+
+async def _requeue_stale_webhooks(
+    db: AsyncSession,
+    *,
+    organization_id: int,
+    now: datetime,
+) -> int:
+    result = await db.execute(
         select(models.ClerkWebhookEvent)
         .join(
             models.Organization,
@@ -282,13 +212,22 @@ async def run_scheduled_reconciliation(
             models.ClerkWebhookEvent.last_attempt_at < now - timedelta(minutes=10),
         )
     )
-    stale_events = stale_processing_result.scalars().all()
-    for event in stale_events:
+    events = result.scalars().all()
+    for event in events:
         event.processing_status = models.ClerkWebhookProcessingStatus.retryable_failed
         event.next_retry_at = now
         event.error_category = "stale_processing"
+    return len(events)
 
-    retry_result = await db.execute(
+
+async def _process_retryable_webhooks(
+    db: AsyncSession,
+    *,
+    organization_id: int,
+    now: datetime,
+    limit: int,
+) -> int:
+    result = await db.execute(
         select(models.ClerkWebhookEvent)
         .join(
             models.Organization,
@@ -303,17 +242,39 @@ async def run_scheduled_reconciliation(
         .order_by(models.ClerkWebhookEvent.created_at)
         .limit(limit)
     )
-    retry_events = retry_result.scalars().all()
-    for event in retry_events:
+    events = result.scalars().all()
+    for event in events:
         if event.attempt_count >= settings.CLERK_WEBHOOK_MAX_ATTEMPTS:
             event.processing_status = models.ClerkWebhookProcessingStatus.dead_letter
             continue
         await member_webhook_service.process_clerk_event(db, event)
+    return len(events)
 
+
+async def run_scheduled_reconciliation(
+    db: AsyncSession,
+    *,
+    organization_id: int,
+    limit: int = 100,
+    clerk_access: ClerkAccessService | None = None,
+) -> dict[str, Any]:
+    await set_async_tenant_context(db, organization_id)
+    now = _now()
+    expired_count = await _expire_pending_invitations(db, organization_id=organization_id, now=now)
+    checked_count = await _check_pending_invitations(
+        db,
+        organization_id=organization_id,
+        limit=limit,
+        clerk_access=clerk_access or ClerkAccessService(),
+    )
+    stale_count = await _requeue_stale_webhooks(db, organization_id=organization_id, now=now)
+    retry_count = await _process_retryable_webhooks(
+        db, organization_id=organization_id, now=now, limit=limit
+    )
     await db.flush()
     return {
-        "expired_invitations": len(expired),
-        "provider_invitations_checked": checked_invites,
-        "stale_processing_requeued": len(stale_events),
-        "retry_events_processed": len(retry_events),
+        "expired_invitations": expired_count,
+        "provider_invitations_checked": checked_count,
+        "stale_processing_requeued": stale_count,
+        "retry_events_processed": retry_count,
     }

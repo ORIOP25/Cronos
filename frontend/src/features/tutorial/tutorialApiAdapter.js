@@ -9,8 +9,8 @@ import {
 } from './tutorialScenario'
 
 function normalizePath(url = '') {
-  const path = String(url).split('?')[0].replace(/^\/+/, '').replace(/\/+$/, '')
-  return `/${path}`
+  const path = String(url).split('?')[0].split('/').filter(Boolean).join('/')
+  return '/' + path
 }
 
 function createTutorialApiError(message, { config, method, path, stepId, status = 400, code = 'TUTORIAL_API_ERROR' } = {}) {
@@ -235,6 +235,260 @@ function createJobResponse(scenario, jobId) {
   }
 }
 
+function methodNotAllowed({ fail, method, path }) {
+  return fail('Método ' + method.toUpperCase() + ' não permitido em ' + path + '.', 405, 'METHOD_NOT_ALLOWED')
+}
+
+function handleBasicRoutes(context) {
+  const { method, path, snapshot, read } = context
+  if (path === '/members/me') {
+    if (method !== 'get') return methodNotAllowed(context)
+    return read({ id: 1, organization_display_name: 'Prof. António Silva', capabilities: ['admin', 'teacher'], access_status: 'active', teacher_id: 1 })
+  }
+  const collections = { '/subjects': snapshot.subjects, '/rooms': snapshot.rooms, '/courses': snapshot.courses, '/classes': snapshot.classes, '/teachers': snapshot.teachers, '/timeslots': snapshot.timeslots }
+  if (Object.hasOwn(collections, path)) return method === 'get' ? read(collections[path]) : methodNotAllowed(context)
+  return null
+}
+
+function handleSubjectRoute(context) {
+  const { method, path, scenario, snapshot, body, read, write, fail } = context
+  if (!/^\/subjects\/\d+$/.test(path)) return null
+  const id = Number(path.split('/').at(-1))
+  if (!findNumeric(scenario.subjects, id)) return fail('A disciplina indicada não existe no exemplo.', 404, 'DEMO_ENTITY_NOT_FOUND')
+  if (method === 'get') return read(snapshot.subjects[id - 1])
+  if (method === 'patch') return write(TUTORIAL_ACTIONS.UPDATE_SUBJECT, { subjectId: id, data: body }, (_next, nextSnapshot) => nextSnapshot.subjects[id - 1])
+  return methodNotAllowed(context)
+}
+
+function handleRoomRoute(context) {
+  const { method, path, scenario, snapshot, body, read, write, fail } = context
+  if (!/^\/rooms\/\d+$/.test(path)) return null
+  const id = Number(path.split('/').at(-1))
+  if (!findNumeric(scenario.rooms, id)) return fail('A sala indicada não existe no exemplo.', 404, 'DEMO_ENTITY_NOT_FOUND')
+  if (method === 'get') return read(snapshot.rooms[id - 1])
+  if (method === 'patch') return write(TUTORIAL_ACTIONS.UPDATE_ROOM, { roomId: id, data: body }, (_next, nextSnapshot) => nextSnapshot.rooms[id - 1])
+  return methodNotAllowed(context)
+}
+
+function handleCourseRoute(context) {
+  const { method, path, scenario, snapshot, body, read, write, fail } = context
+  if (/^\/courses\/\d+$/.test(path)) {
+    const id = Number(path.split('/').at(-1))
+    if (!findNumeric(scenario.courses, id)) return fail('O curso indicado não existe no exemplo.', 404, 'DEMO_ENTITY_NOT_FOUND')
+    if (method === 'get') return read(snapshot.courses[id - 1])
+    return fail('Apenas a edição de uma turma preparada está disponível no guia.', 403, 'DEMO_ACTION_NOT_ALLOWED')
+  }
+  const match = /^\/courses\/(\d+)\/classes\/(\d+)$/.exec(path)
+  if (!match) return null
+  const [, courseId, classId] = match
+  if (!findNumeric(scenario.courses, courseId) || !findNumeric(scenario.classes, classId)) return fail('A turma ou curso indicado não existe no exemplo.', 404, 'DEMO_ENTITY_NOT_FOUND')
+  if (method === 'get') return read(snapshot.classes[Number(classId) - 1])
+  if (method === 'patch') return write(TUTORIAL_ACTIONS.UPDATE_CLASS, { courseId: Number(courseId), classId: Number(classId), data: body }, (_next, nextSnapshot) => nextSnapshot.classes[Number(classId) - 1])
+  return methodNotAllowed(context)
+}
+
+function handleClassDetailRoute(context) {
+  const { method, path, scenario, snapshot, read, fail } = context
+  if (!/^\/classes\/\d+$/.test(path)) return null
+  const id = Number(path.split('/').at(-1))
+  const cls = findNumeric(scenario.classes, id)
+  if (!cls) return fail('A turma indicada não existe no exemplo.', 404, 'DEMO_ENTITY_NOT_FOUND')
+  if (method !== 'get') return methodNotAllowed(context)
+  const course = snapshot.courses.find((item) => item.id === snapshot.classes[id - 1].course_id)
+  const classSubjects = getClassSubjects(snapshot, scenario, cls.id)
+  const subjects = classSubjects.subjects.map((item) => ({ ...snapshot.subjects[item.subject_id - 1], total_hours: snapshot.subjects[item.subject_id - 1].modules.reduce((total, module) => total + module.hours_total, 0), completed_hours: 0, overall_percentage: 0 }))
+  return read({ ...snapshot.classes[id - 1], course, subjects })
+}
+
+function handleClassSubjectsRoute(context) {
+  const { method, path, scenario, snapshot, read, fail } = context
+  if (!/^\/classes\/\d+\/subjects$/.test(path)) return null
+  const id = Number(path.split('/')[2])
+  if (!findNumeric(scenario.classes, id)) return fail('A turma indicada não existe no exemplo.', 404, 'DEMO_ENTITY_NOT_FOUND')
+  if (method === 'get') return read(getClassSubjects(snapshot, scenario, scenario.classes[id - 1].id))
+  return methodNotAllowed(context)
+}
+
+function handleAvailableSubjectsRoute(context) {
+  const { method, path, scenario, snapshot, read, fail } = context
+  if (!/^\/classes\/\d+\/available-subjects$/.test(path)) return null
+  const id = Number(path.split('/')[2])
+  if (method !== 'get' || !findNumeric(scenario.classes, id)) return fail('A turma indicada não existe ou a rota não é de consulta.', method === 'get' ? 404 : 405, 'METHOD_NOT_ALLOWED')
+  const associated = new Set(scenario.classSubjects.filter((item) => item.classId === scenario.classes[id - 1].id).map((item) => item.subjectId))
+  return read(snapshot.subjects.filter((subject) => !associated.has(scenario.subjects[subject.id - 1].id)))
+}
+
+function handleEligibleTeachersRoute(context) {
+  const { method, path, scenario, snapshot, read, fail } = context
+  if (!/^\/classes\/subjects\/\d+\/eligible-teachers$/.test(path)) return null
+  const subjectId = Number(path.split('/')[3])
+  if (method !== 'get' || !findNumeric(scenario.subjects, subjectId)) return fail('A disciplina indicada não existe.', 404, 'DEMO_ENTITY_NOT_FOUND')
+  return read(snapshot.teachers.filter((teacher) => teacher.subject_ids.includes(subjectId)))
+}
+
+function handleClassSubjectTeacherRoute(context) {
+  const { method, path, body, write } = context
+  const match = /^\/classes\/(\d+)\/subjects\/(\d+)$/.exec(path)
+  if (!match) return null
+  const [, classId, subjectId] = match
+  if (method === 'patch') return write(TUTORIAL_ACTIONS.UPDATE_CLASS_SUBJECT_TEACHER, { classId: Number(classId), subjectId: Number(subjectId), teacherId: body.teacher_id }, (_next, nextSnapshot) => getClassSubjects(nextSnapshot, _next, _next.classes[Number(classId) - 1].id))
+  return methodNotAllowed(context)
+}
+
+function handleMemberRoutes(context) {
+  const { method, path, scenario, snapshot, body, read, write, fail } = context
+  if (path === '/members') {
+    if (method === 'get') return read({ items: snapshot.members, total: snapshot.members.length, limit: snapshot.members.length, offset: 0 })
+    return fail('A criação de membros não está disponível no guia.', 403, 'DEMO_ACTION_NOT_ALLOWED')
+  }
+  if (!/^\/members\/\d+$/.test(path)) return null
+  const id = Number(path.split('/').at(-1))
+  if (!findNumeric(scenario.teachers, id)) return fail('O professor indicado não existe no exemplo.', 404, 'DEMO_ENTITY_NOT_FOUND')
+  if (method === 'get') return read(snapshot.members[id - 1])
+  if (method === 'patch') return write(TUTORIAL_ACTIONS.UPDATE_MEMBER_COMPETENCIES, { memberId: id, data: body }, (_next, nextSnapshot) => nextSnapshot.members[id - 1])
+  return methodNotAllowed(context)
+}
+
+function handleAvailabilityRoute(context) {
+  const { method, path, body, snapshot, scenario, read, write } = context
+  if (path !== '/teachers/me/availability') return null
+  if (method === 'get') return read(getAvailability(snapshot, scenario))
+  if (method === 'put') return write(TUTORIAL_ACTIONS.UPDATE_AVAILABILITY, { slots: Array.isArray(body) ? body : body.availability }, (_next, nextSnapshot) => getAvailability(nextSnapshot, _next))
+  return methodNotAllowed(context)
+}
+
+function handleSchedulerStatusRoute(context) {
+  const { method, path, snapshot, scenario, read } = context
+  if (path === '/scheduler/status') return method === 'get' ? read(schedulerStatus(snapshot, scenario)) : methodNotAllowed(context)
+  if (path === '/scheduler/drafts/current') return method === 'get' ? read(snapshot.currentDraft) : methodNotAllowed(context)
+  return null
+}
+
+function handleSchedulerDraftRoute(context) {
+  const { method, path, scenario, read, fail } = context
+  if (!/^\/scheduler\/drafts\/\d+\/diff$/.test(path)) return null
+  if (method !== 'get') return methodNotAllowed(context)
+  const diff = getDraftDiff(scenario, path.split('/')[3])
+  return diff ? read(diff) : fail('O rascunho indicado não existe ou já não está pendente.', 404, 'DRAFT_NOT_FOUND')
+}
+
+function handleSchedulerJobRoute(context) {
+  const { method, path, scenario, read, write, stepId, fail } = context
+  if (path === '/scheduler/generate') {
+    if (method !== 'post') return methodNotAllowed(context)
+    return write(TUTORIAL_ACTIONS.GENERATE_SCHEDULE, {}, (next) => ({ job_id: 81, strategy: next.draft?.strategy ?? 'COMPLETE_GENERATION', trigger_type: next.draft?.triggerType ?? 'FIRST_GENERATION', status: 'SUCCEEDED' }))
+  }
+  if (/^\/scheduler\/jobs\/\d+$/.test(path)) {
+    if (method !== 'get') return methodNotAllowed(context)
+    if (Number(path.split('/')[3]) !== 81) return fail('A tarefa indicada não existe.', 404, 'JOB_NOT_FOUND')
+    const job = createJobResponse(scenario, 'demo-job-schedule')
+    return job ? read(job) : fail('A tarefa indicada não existe.', 404, 'JOB_NOT_FOUND')
+  }
+  if (!/^\/scheduler\/drafts\/\d+\/approve$/.test(path)) return null
+  if (method !== 'post') return methodNotAllowed(context)
+  const draftId = Number(path.split('/')[3])
+  const actionType = stepId === 'recovery' ? TUTORIAL_ACTIONS.APPROVE_RECOVERY : TUTORIAL_ACTIONS.APPROVE_SCHEDULE
+  return write(actionType, { draftId }, (_next, nextSnapshot) => ({ draft_id: draftId, draft_state: 'APPROVED', school_year_publication_state: 'PUBLISHED', active_schedule_version_id: 'demo-schedule-version-' + draftId, active_block_count: nextSnapshot.timeslots.length }))
+}
+
+function handleScheduleRoutes(context) {
+  const { method, path, config, snapshot, scenario, write, read } = context
+  if (path === '/schedule/week') {
+    if (method !== 'get') return methodNotAllowed(context)
+    return read(getScheduleSlots(snapshot, scenario, config.params))
+  }
+  if (!/^\/schedule\/(active|operational)-blocks\/\d+\/log$/.test(path)) return null
+  if (method !== 'put') return methodNotAllowed(context)
+  return write(TUTORIAL_ACTIONS.CREATE_OCCURRENCE, { blockId: Number(path.split('/')[3]), status: context.body.status }, (_next, nextSnapshot) => nextSnapshot)
+}
+
+function handleOccurrenceCollectionRoute(context) {
+  const { method, path, config, snapshot, scenario, read } = context
+  if (path !== '/occurrences') return null
+  if (method !== 'get') return methodNotAllowed(context)
+  const items = scenario.occurrences.map((occurrence) => getOccurrence(snapshot, scenario, occurrence)).filter((occurrence) => !config.params?.status || occurrence.operational_state === config.params.status)
+  return read({ items, total: items.length, limit: items.length, offset: 0 })
+}
+
+function handleOccurrenceDebtsRoute(context) {
+  const { method, path, snapshot, scenario, read } = context
+  if (path !== '/occurrences/debts') return null
+  if (method !== 'get') return methodNotAllowed(context)
+  const cls = snapshot.classes[0]
+  const subject = snapshot.subjects[0]
+  return read({
+    items: [{ class_id: cls.id, class_name: cls.name, subject_id: subject.id, subject_name: subject.name, teacher_id: snapshot.teachers[0].id, teacher_name: snapshot.teachers[0].name, gap_occurrences: 2, hours_owed: 2, hours_owed_overdue: 2 }],
+    total_gaps: 2,
+    total_hours_owed: 2,
+    total_hours_owed_overdue: 2,
+    as_of_date: scenario.debt.asOfDate,
+  })
+}
+
+function handleOccurrenceRecommendationRoute(context) {
+  const { method, path, scenario, snapshot, read, fail } = context
+  if (!/^\/occurrences\/\d+\/substitutes\/recommendations$/.test(path)) return null
+  if (method !== 'get') return methodNotAllowed(context)
+  const occurrence = findNumeric(scenario.occurrences, Number(path.split('/')[2]))
+  if (!occurrence) return fail('A ocorrência indicada não existe.', 404, 'DEMO_ENTITY_NOT_FOUND')
+  return read([{ id: 1, rank: 1, score: 100, teacher_id: 2, teacher_name: snapshot.teachers[1].name, subject_id: 2, subject_name: snapshot.subjects[1].name }])
+}
+
+function handleOccurrenceDetailRoute(context) {
+  const { method, path, scenario, snapshot, body, read, write, fail } = context
+  if (!/^\/occurrences\/\d+$/.test(path)) return null
+  const id = Number(path.split('/').at(-1))
+  if (!findNumeric(scenario.occurrences, id)) return fail('A ocorrência indicada não existe.', 404, 'DEMO_ENTITY_NOT_FOUND')
+  if (method === 'get') return read(getOccurrence(snapshot, scenario, scenario.occurrences[id - 1]))
+  if (method === 'patch') return write(TUTORIAL_ACTIONS.DECIDE_SUBSTITUTION, { occurrenceId: id, status: body.status, substituteTeacherId: body.substitute_teacher_id, substituteSubjectId: body.substitute_subject_id }, (_next, nextSnapshot) => getOccurrence(nextSnapshot, _next, _next.occurrences[id - 1]))
+  return methodNotAllowed(context)
+}
+
+function handleTimesheetRoute(context) {
+  const { method, path, config, snapshot, scenario, read } = context
+  if (path !== '/timesheets') return null
+  if (method !== 'get') return methodNotAllowed(context)
+  const requestedWeek = config.params?.week_start_date || scenario.weekStart
+  const requestedStatus = config.params?.status
+  const requestedWeekEnd = dateAtWeekStart(requestedWeek, 6)
+  const rows = snapshot.teachers.map((teacher, index) => ({
+    id: index + 1,
+    teacher_id: index + 1,
+    teacher_name: teacher.name,
+    week_start_date: requestedWeek,
+    week_end_date: requestedWeekEnd,
+    status: index === 0 ? 'SUBMITTED' : 'OPEN',
+    total_slots: index === 0 ? 2 : 1,
+    registered_slots: index === 0 ? 2 : 1,
+    completed_slots: 1,
+    occurrence_slots: index === 0 ? 1 : 0,
+  })).filter((row) => !requestedStatus || row.status === requestedStatus)
+  return read(rows)
+}
+
+const TUTORIAL_ROUTE_HANDLERS = [
+  handleBasicRoutes,
+  handleSubjectRoute,
+  handleRoomRoute,
+  handleCourseRoute,
+  handleClassDetailRoute,
+  handleClassSubjectsRoute,
+  handleAvailableSubjectsRoute,
+  handleEligibleTeachersRoute,
+  handleClassSubjectTeacherRoute,
+  handleMemberRoutes,
+  handleAvailabilityRoute,
+  handleSchedulerStatusRoute,
+  handleSchedulerDraftRoute,
+  handleSchedulerJobRoute,
+  handleScheduleRoutes,
+  handleOccurrenceCollectionRoute,
+  handleOccurrenceDebtsRoute,
+  handleOccurrenceRecommendationRoute,
+  handleOccurrenceDetailRoute,
+  handleTimesheetRoute,
+]
+
 export function createTutorialApiAdapter({
   stepId: configuredStepId,
   readOnly = false,
@@ -249,21 +503,18 @@ export function createTutorialApiAdapter({
     const scenario = getScenario?.()
     const stepId = configuredStepId || scenario?.stepId
     const metadata = { config, method, path, stepId }
-    if (!scenario) return Promise.reject(createTutorialApiError('O cenário do guia não está disponível.', metadata))
+    if (!scenario) throw createTutorialApiError('O cenário do guia não está disponível.', metadata)
 
-    let body
-    try {
-      body = parseJson(config.data, metadata)
-    } catch (error) {
-      return Promise.reject(error)
-    }
+    const body = parseJson(config.data, metadata)
     const snapshot = createTutorialApiSnapshot(scenario)
-    const fail = (message, status = 400, code = 'TUTORIAL_ROUTE_NOT_DECLARED') => Promise.reject(createTutorialApiError(message, { ...metadata, status, code }))
+    const fail = (message, status = 400, code = 'TUTORIAL_ROUTE_NOT_DECLARED') => {
+      throw createTutorialApiError(message, { ...metadata, status, code })
+    }
     const read = (data) => Promise.resolve(response(config, data))
     const write = (requiredAction, action, dataFactory) => {
       const step = getTutorialStep(stepId)
       if (readOnly) return fail('A revisão do guia é apenas de consulta.', 403, 'DEMO_READ_ONLY')
-      if (!step?.allowedActions.includes(requiredAction)) return fail(`A ação ${requiredAction} não está disponível neste passo.`, 403, 'DEMO_ACTION_NOT_ALLOWED')
+      if (!step?.allowedActions.includes(requiredAction)) return fail('A ação ' + requiredAction + ' não está disponível neste passo.', 403, 'DEMO_ACTION_NOT_ALLOWED')
       let next
       try {
         next = apply({ type: requiredAction, ...action })
@@ -274,191 +525,12 @@ export function createTutorialApiAdapter({
       const nextSnapshot = createTutorialApiSnapshot(next)
       return Promise.resolve(response(config, dataFactory(next, nextSnapshot)))
     }
-
-    if (path === '/members/me') {
-      if (method !== 'get') return fail(`Método ${method.toUpperCase()} não permitido em ${path}.`, 405, 'METHOD_NOT_ALLOWED')
-      return read({ id: 1, organization_display_name: 'Prof. António Silva', capabilities: ['admin', 'teacher'], access_status: 'active', teacher_id: 1 })
+    const context = { config, method, path, scenario, snapshot, body, stepId, read, write, fail }
+    for (const handler of TUTORIAL_ROUTE_HANDLERS) {
+      const result = handler(context)
+      if (result !== null) return result
     }
-
-    if (path === '/subjects') {
-      if (method === 'get') return read(snapshot.subjects)
-      return fail(`Método ${method.toUpperCase()} não permitido em ${path}.`, 405, 'METHOD_NOT_ALLOWED')
-    }
-    if (/^\/subjects\/\d+$/.test(path)) {
-      const id = Number(path.split('/').at(-1))
-      if (!findNumeric(scenario.subjects, id)) return fail('A disciplina indicada não existe no exemplo.', 404, 'DEMO_ENTITY_NOT_FOUND')
-      if (method === 'get') return read(snapshot.subjects[id - 1])
-      if (method === 'patch') return write(TUTORIAL_ACTIONS.UPDATE_SUBJECT, { subjectId: id, data: body }, (_next, nextSnapshot) => nextSnapshot.subjects[id - 1])
-      return fail(`Método ${method.toUpperCase()} não permitido em ${path}.`, 405, 'METHOD_NOT_ALLOWED')
-    }
-
-    if (path === '/rooms') {
-      if (method === 'get') return read(snapshot.rooms)
-      return fail(`Método ${method.toUpperCase()} não permitido em ${path}.`, 405, 'METHOD_NOT_ALLOWED')
-    }
-    if (/^\/rooms\/\d+$/.test(path)) {
-      const id = Number(path.split('/').at(-1))
-      if (!findNumeric(scenario.rooms, id)) return fail('A sala indicada não existe no exemplo.', 404, 'DEMO_ENTITY_NOT_FOUND')
-      if (method === 'get') return read(snapshot.rooms[id - 1])
-      if (method === 'patch') return write(TUTORIAL_ACTIONS.UPDATE_ROOM, { roomId: id, data: body }, (_next, nextSnapshot) => nextSnapshot.rooms[id - 1])
-      return fail(`Método ${method.toUpperCase()} não permitido em ${path}.`, 405, 'METHOD_NOT_ALLOWED')
-    }
-
-    if (path === '/courses') {
-      if (method === 'get') return read(snapshot.courses)
-      return fail(`Método ${method.toUpperCase()} não permitido em ${path}.`, 405, 'METHOD_NOT_ALLOWED')
-    }
-    if (/^\/courses\/\d+$/.test(path)) {
-      const id = Number(path.split('/').at(-1))
-      if (!findNumeric(scenario.courses, id)) return fail('O curso indicado não existe no exemplo.', 404, 'DEMO_ENTITY_NOT_FOUND')
-      if (method === 'get') return read(snapshot.courses[id - 1])
-      return fail(`Apenas a edição de uma turma preparada está disponível no guia.`, 403, 'DEMO_ACTION_NOT_ALLOWED')
-    }
-    if (/^\/courses\/\d+\/classes\/\d+$/.test(path)) {
-      const [, courseId, classId] = path.match(/^\/courses\/(\d+)\/classes\/(\d+)$/)
-      if (!findNumeric(scenario.courses, courseId) || !findNumeric(scenario.classes, classId)) return fail('A turma ou curso indicado não existe no exemplo.', 404, 'DEMO_ENTITY_NOT_FOUND')
-      if (method === 'get') return read(snapshot.classes[Number(classId) - 1])
-      if (method === 'patch') return write(TUTORIAL_ACTIONS.UPDATE_CLASS, { courseId: Number(courseId), classId: Number(classId), data: body }, (_next, nextSnapshot) => nextSnapshot.classes[Number(classId) - 1])
-      return fail(`Método ${method.toUpperCase()} não permitido em ${path}.`, 405, 'METHOD_NOT_ALLOWED')
-    }
-
-    if (path === '/classes') return method === 'get' ? read(snapshot.classes) : fail(`Método ${method.toUpperCase()} não permitido em ${path}.`, 405, 'METHOD_NOT_ALLOWED')
-    if (/^\/classes\/\d+$/.test(path)) {
-      const id = Number(path.split('/').at(-1))
-      const cls = findNumeric(scenario.classes, id)
-      if (!cls) return fail('A turma indicada não existe no exemplo.', 404, 'DEMO_ENTITY_NOT_FOUND')
-      if (method !== 'get') return fail(`Método ${method.toUpperCase()} não permitido em ${path}.`, 405, 'METHOD_NOT_ALLOWED')
-      const course = snapshot.courses.find((item) => item.id === snapshot.classes[id - 1].course_id)
-      const classSubjects = getClassSubjects(snapshot, scenario, cls.id)
-      return read({ ...snapshot.classes[id - 1], course, subjects: classSubjects.subjects.map((item) => ({ ...snapshot.subjects[item.subject_id - 1], total_hours: snapshot.subjects[item.subject_id - 1].modules.reduce((total, module) => total + module.hours_total, 0), completed_hours: 0, overall_percentage: 0 })) })
-    }
-    if (/^\/classes\/\d+\/subjects$/.test(path)) {
-      const id = Number(path.split('/')[2])
-      if (!findNumeric(scenario.classes, id)) return fail('A turma indicada não existe no exemplo.', 404, 'DEMO_ENTITY_NOT_FOUND')
-      if (method === 'get') return read(getClassSubjects(snapshot, scenario, scenario.classes[id - 1].id))
-      return fail(`Método ${method.toUpperCase()} não permitido em ${path}.`, 405, 'METHOD_NOT_ALLOWED')
-    }
-    if (/^\/classes\/\d+\/available-subjects$/.test(path)) {
-      const id = Number(path.split('/')[2])
-      if (method !== 'get' || !findNumeric(scenario.classes, id)) return fail('A turma indicada não existe ou a rota não é de consulta.', method === 'get' ? 404 : 405, 'METHOD_NOT_ALLOWED')
-      const associated = new Set(scenario.classSubjects.filter((item) => item.classId === scenario.classes[id - 1].id).map((item) => item.subjectId))
-      return read(snapshot.subjects.filter((subject) => !associated.has(scenario.subjects[subject.id - 1].id)))
-    }
-    if (/^\/classes\/subjects\/\d+\/eligible-teachers$/.test(path)) {
-      const subjectId = Number(path.split('/')[3])
-      if (method !== 'get' || !findNumeric(scenario.subjects, subjectId)) return fail('A disciplina indicada não existe.', 404, 'DEMO_ENTITY_NOT_FOUND')
-      return read(snapshot.teachers.filter((teacher) => teacher.subject_ids.includes(subjectId)))
-    }
-    if (/^\/classes\/\d+\/subjects\/\d+$/.test(path)) {
-      const [, classId, subjectId] = path.match(/^\/classes\/(\d+)\/subjects\/(\d+)$/)
-      if (method === 'patch') return write(TUTORIAL_ACTIONS.UPDATE_CLASS_SUBJECT_TEACHER, { classId: Number(classId), subjectId: Number(subjectId), teacherId: body.teacher_id }, (_next, nextSnapshot) => getClassSubjects(nextSnapshot, _next, _next.classes[Number(classId) - 1].id))
-      return fail(`Método ${method.toUpperCase()} não permitido em ${path}.`, 405, 'METHOD_NOT_ALLOWED')
-    }
-
-    if (path === '/members') {
-      if (method === 'get') return read({ items: snapshot.members, total: snapshot.members.length, limit: snapshot.members.length, offset: 0 })
-      return fail('A criação de membros não está disponível no guia.', 403, 'DEMO_ACTION_NOT_ALLOWED')
-    }
-    if (/^\/members\/\d+$/.test(path)) {
-      const id = Number(path.split('/').at(-1))
-      if (!findNumeric(scenario.teachers, id)) return fail('O professor indicado não existe no exemplo.', 404, 'DEMO_ENTITY_NOT_FOUND')
-      if (method === 'get') return read(snapshot.members[id - 1])
-      if (method === 'patch') return write(TUTORIAL_ACTIONS.UPDATE_MEMBER_COMPETENCIES, { memberId: id, data: body }, (_next, nextSnapshot) => nextSnapshot.members[id - 1])
-      return fail(`Método ${method.toUpperCase()} não permitido em ${path}.`, 405, 'METHOD_NOT_ALLOWED')
-    }
-    if (path === '/teachers') return method === 'get' ? read(snapshot.teachers) : fail(`Método ${method.toUpperCase()} não permitido em ${path}.`, 405, 'METHOD_NOT_ALLOWED')
-    if (path === '/timeslots') return method === 'get' ? read(snapshot.timeslots) : fail(`Método ${method.toUpperCase()} não permitido em ${path}.`, 405, 'METHOD_NOT_ALLOWED')
-
-    if (path === '/teachers/me/availability') {
-      if (method === 'get') return read(getAvailability(snapshot, scenario))
-      if (method === 'put') return write(TUTORIAL_ACTIONS.UPDATE_AVAILABILITY, { slots: Array.isArray(body) ? body : body.availability }, (_next, nextSnapshot) => getAvailability(nextSnapshot, _next))
-      return fail(`Método ${method.toUpperCase()} não permitido em ${path}.`, 405, 'METHOD_NOT_ALLOWED')
-    }
-
-    if (path === '/scheduler/status') return method === 'get' ? read(schedulerStatus(snapshot, scenario)) : fail(`Método ${method.toUpperCase()} não permitido em ${path}.`, 405, 'METHOD_NOT_ALLOWED')
-    if (path === '/scheduler/drafts/current') return method === 'get' ? read(snapshot.currentDraft) : fail(`Método ${method.toUpperCase()} não permitido em ${path}.`, 405, 'METHOD_NOT_ALLOWED')
-    if (/^\/scheduler\/drafts\/\d+\/diff$/.test(path)) {
-      if (method !== 'get') return fail(`Método ${method.toUpperCase()} não permitido em ${path}.`, 405, 'METHOD_NOT_ALLOWED')
-      const diff = getDraftDiff(scenario, path.split('/')[3])
-      return diff ? read(diff) : fail('O rascunho indicado não existe ou já não está pendente.', 404, 'DRAFT_NOT_FOUND')
-    }
-    if (path === '/scheduler/generate') {
-      if (method !== 'post') return fail(`Método ${method.toUpperCase()} não permitido em ${path}.`, 405, 'METHOD_NOT_ALLOWED')
-      return write(TUTORIAL_ACTIONS.GENERATE_SCHEDULE, {}, (next) => ({ job_id: 81, strategy: next.draft?.strategy ?? 'COMPLETE_GENERATION', trigger_type: next.draft?.triggerType ?? 'FIRST_GENERATION', status: 'SUCCEEDED' }))
-    }
-    if (/^\/scheduler\/jobs\/\d+$/.test(path)) {
-      if (method !== 'get') return fail(`Método ${method.toUpperCase()} não permitido em ${path}.`, 405, 'METHOD_NOT_ALLOWED')
-      if (Number(path.split('/')[3]) !== 81) return fail('A tarefa indicada não existe.', 404, 'JOB_NOT_FOUND')
-      const job = createJobResponse(scenario, 'demo-job-schedule')
-      return job ? read(job) : fail('A tarefa indicada não existe.', 404, 'JOB_NOT_FOUND')
-    }
-    if (/^\/scheduler\/drafts\/\d+\/approve$/.test(path)) {
-      if (method !== 'post') return fail(`Método ${method.toUpperCase()} não permitido em ${path}.`, 405, 'METHOD_NOT_ALLOWED')
-      const draftId = Number(path.split('/')[3])
-      const actionType = stepId === 'recovery' ? TUTORIAL_ACTIONS.APPROVE_RECOVERY : TUTORIAL_ACTIONS.APPROVE_SCHEDULE
-      return write(actionType, { draftId }, (_next, nextSnapshot) => ({ draft_id: draftId, draft_state: 'APPROVED', school_year_publication_state: 'PUBLISHED', active_schedule_version_id: `demo-schedule-version-${draftId}`, active_block_count: nextSnapshot.timeslots.length }))
-    }
-
-    if (path === '/schedule/week') {
-      if (method !== 'get') return fail(`Método ${method.toUpperCase()} não permitido em ${path}.`, 405, 'METHOD_NOT_ALLOWED')
-      return read(getScheduleSlots(snapshot, scenario, config.params))
-    }
-    if (/^\/schedule\/(active|operational)-blocks\/\d+\/log$/.test(path)) {
-      if (method !== 'put') return fail(`Método ${method.toUpperCase()} não permitido em ${path}.`, 405, 'METHOD_NOT_ALLOWED')
-      return write(TUTORIAL_ACTIONS.CREATE_OCCURRENCE, { blockId: Number(path.split('/')[3]), status: body.status }, (_next, nextSnapshot) => nextSnapshot)
-    }
-
-    if (path === '/occurrences') {
-      if (method !== 'get') return fail(`Método ${method.toUpperCase()} não permitido em ${path}.`, 405, 'METHOD_NOT_ALLOWED')
-      const items = scenario.occurrences.map((occurrence) => getOccurrence(snapshot, scenario, occurrence)).filter((occurrence) => !config.params?.status || occurrence.operational_state === config.params.status)
-      return read({ items, total: items.length, limit: items.length, offset: 0 })
-    }
-    if (path === '/occurrences/debts') {
-      if (method !== 'get') return fail(`Método ${method.toUpperCase()} não permitido em ${path}.`, 405, 'METHOD_NOT_ALLOWED')
-      const cls = snapshot.classes[0]
-      const subject = snapshot.subjects[0]
-      return read({
-        items: [{ class_id: cls.id, class_name: cls.name, subject_id: subject.id, subject_name: subject.name, teacher_id: snapshot.teachers[0].id, teacher_name: snapshot.teachers[0].name, gap_occurrences: 2, hours_owed: 2, hours_owed_overdue: 2 }],
-        total_gaps: 2,
-        total_hours_owed: 2,
-        total_hours_owed_overdue: 2,
-        as_of_date: scenario.debt.asOfDate,
-      })
-    }
-    if (/^\/occurrences\/\d+\/substitutes\/recommendations$/.test(path)) {
-      if (method !== 'get') return fail(`Método ${method.toUpperCase()} não permitido em ${path}.`, 405, 'METHOD_NOT_ALLOWED')
-      const occurrence = findNumeric(scenario.occurrences, Number(path.split('/')[2]))
-      if (!occurrence) return fail('A ocorrência indicada não existe.', 404, 'DEMO_ENTITY_NOT_FOUND')
-      return read([{ id: 1, rank: 1, score: 100, teacher_id: 2, teacher_name: snapshot.teachers[1].name, subject_id: 2, subject_name: snapshot.subjects[1].name }])
-    }
-    if (/^\/occurrences\/\d+$/.test(path)) {
-      const id = Number(path.split('/').at(-1))
-      if (!findNumeric(scenario.occurrences, id)) return fail('A ocorrência indicada não existe.', 404, 'DEMO_ENTITY_NOT_FOUND')
-      if (method === 'get') return read(getOccurrence(snapshot, scenario, scenario.occurrences[id - 1]))
-      if (method === 'patch') return write(TUTORIAL_ACTIONS.DECIDE_SUBSTITUTION, { occurrenceId: id, status: body.status, substituteTeacherId: body.substitute_teacher_id, substituteSubjectId: body.substitute_subject_id }, (_next, nextSnapshot) => getOccurrence(nextSnapshot, _next, _next.occurrences[id - 1]))
-      return fail(`Método ${method.toUpperCase()} não permitido em ${path}.`, 405, 'METHOD_NOT_ALLOWED')
-    }
-    if (path === '/timesheets') {
-      if (method !== 'get') return fail(`Método ${method.toUpperCase()} não permitido em ${path}.`, 405, 'METHOD_NOT_ALLOWED')
-      const requestedWeek = config.params?.week_start_date || scenario.weekStart
-      const requestedStatus = config.params?.status
-      const requestedWeekEnd = dateAtWeekStart(requestedWeek, 6)
-      const rows = snapshot.teachers.map((teacher, index) => ({
-        id: index + 1,
-        teacher_id: index + 1,
-        teacher_name: teacher.name,
-        week_start_date: requestedWeek,
-        week_end_date: requestedWeekEnd,
-        status: index === 0 ? 'SUBMITTED' : 'OPEN',
-        total_slots: index === 0 ? 2 : 1,
-        registered_slots: index === 0 ? 2 : 1,
-        completed_slots: index === 0 ? 1 : 1,
-        occurrence_slots: index === 0 ? 1 : 0,
-      })).filter((row) => !requestedStatus || row.status === requestedStatus)
-      return read(rows)
-    }
-
-    return fail(`Rota do guia não declarada: ${method.toUpperCase()} ${path}.`, 400, 'TUTORIAL_ROUTE_NOT_DECLARED')
+    return fail('Rota do guia não declarada: ' + method.toUpperCase() + ' ' + path + '.', 400, 'TUTORIAL_ROUTE_NOT_DECLARED')
   }
 }
 

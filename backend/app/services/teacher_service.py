@@ -3,7 +3,7 @@
 import structlog
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy.orm import selectinload
 
 from app import models
 from app.models import Availability
@@ -289,54 +289,41 @@ async def set_teacher_availability(
         return "INVALID_TIMESLOT"
 
     # 4. Mutação transacional
-    try:
-        # (outras estratégias são possíveis, mas replace-all mantém consistência simples)
-        await db.execute(
-            delete(Availability).where(
-                Availability.organization_id == organization_id,
-                Availability.teacher_id == teacher_id,
-            )
+    # (outras estratégias são possíveis, mas replace-all mantém consistência simples)
+    await db.execute(
+        delete(Availability).where(
+            Availability.organization_id == organization_id,
+            Availability.teacher_id == teacher_id,
         )
+    )
 
-        new_records = [
-            Availability(
-                organization_id=organization_id,
-                teacher_id=teacher_id,
-                timeslot_id=item.timeslot_id,
-                score=item.score.value,  # Guardamos o inteiro (-1, 0, 1, 2)
-            )
-            for item in availabilities
-        ]
-
-        db.add_all(new_records)
-        await record_scheduler_change(
-            db,
-            organization_id,
-            entity_type="TEACHER_AVAILABILITY",
-            entity_id=teacher_id,
-            operation=models.SchedulerStateChangeOperation.BULK_IMPORT,
-            before=before,
-            after=_availability_snapshot(
-                (item.timeslot_id, item.score.value) for item in availabilities
-            ),
-            changed_by_membership_id=changed_by_membership_id,
-            metadata={"item_count": len(new_records)},
-            active_resource=active_resource,
+    new_records = [
+        Availability(
+            organization_id=organization_id,
+            teacher_id=teacher_id,
+            timeslot_id=item.timeslot_id,
+            score=item.score.value,  # Guardamos o inteiro (-1, 0, 1, 2)
         )
-        await db.flush()
-        return {"status": "success", "count": len(new_records)}
-    except Exception:
-        raise
+        for item in availabilities
+    ]
 
-
-# ==========================================
-#  FUNÇÕES SÍNCRONAS (Para usar no Solver/Celery)
-# ==========================================
-
-
-def get_teachers_by_org_sync(db: Session, organization_id: int):
-    """Retorna todos os professores (Sync - Bloqueante)."""
-    return db.query(models.Teacher).filter(models.Teacher.organization_id == organization_id).all()
+    db.add_all(new_records)
+    await record_scheduler_change(
+        db,
+        organization_id,
+        entity_type="TEACHER_AVAILABILITY",
+        entity_id=teacher_id,
+        operation=models.SchedulerStateChangeOperation.BULK_IMPORT,
+        before=before,
+        after=_availability_snapshot(
+            (item.timeslot_id, item.score.value) for item in availabilities
+        ),
+        changed_by_membership_id=changed_by_membership_id,
+        metadata={"item_count": len(new_records)},
+        active_resource=active_resource,
+    )
+    await db.flush()
+    return {"status": "success", "count": len(new_records)}
 
 
 # ==========================================

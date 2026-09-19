@@ -53,6 +53,44 @@ async def create_timeslot(
 
 
 # --- LESSONS ---
+async def _owned_constraint_reference(
+    db: AsyncSession,
+    model,
+    entity_id: int,
+    organization_id: int,
+):
+    return await db.scalar(
+        select(model).where(
+            model.id == entity_id,
+            model.organization_id == organization_id,
+        )
+    )
+
+
+async def _load_constraint_class_subject(
+    db: AsyncSession,
+    payload: dict,
+    organization_id: int,
+):
+    class_row = await _owned_constraint_reference(
+        db, models.Class, payload["class_id"], organization_id
+    )
+    subject_row = await _owned_constraint_reference(
+        db, models.Subject, payload["subject_id"], organization_id
+    )
+    if class_row is None or class_row.is_archived or subject_row is None:
+        return None
+    relationship = await db.scalar(
+        select(models.ClassSubjectLink.id).where(
+            models.ClassSubjectLink.organization_id == organization_id,
+            models.ClassSubjectLink.class_id == payload["class_id"],
+            models.ClassSubjectLink.subject_id == payload["subject_id"],
+            models.ClassSubjectLink.grade_level == class_row.grade_level,
+        )
+    )
+    return (class_row, subject_row) if relationship is not None else None
+
+
 async def _validate_constraint_references(
     db: AsyncSession,
     item: schemas.ConstraintCreate,
@@ -62,54 +100,39 @@ async def _validate_constraint_references(
     rule_type = item.rule_type.value
     invalid = False
 
-    async def owned(model, entity_id: int):
-        return await db.scalar(
-            select(model).where(
-                model.id == entity_id,
-                model.organization_id == organization_id,
-            )
-        )
-
     timeslot_id = payload.get("timeslot_id")
-    if timeslot_id is not None and await owned(models.Timeslot, timeslot_id) is None:
+    if (
+        timeslot_id is not None
+        and await _owned_constraint_reference(db, models.Timeslot, timeslot_id, organization_id)
+        is None
+    ):
         invalid = True
 
     teacher_id = payload.get("teacher_id")
-    if teacher_id is not None:
-        teacher = await owned(models.Teacher, teacher_id)
-        if teacher is None:
+    if (
+        teacher_id is not None
+        and await _owned_constraint_reference(db, models.Teacher, teacher_id, organization_id)
+        is None
+    ):
+        invalid = True
+
+    class_subject = None
+    if rule_type in {"specific_room", "lock_time"}:
+        class_subject = await _load_constraint_class_subject(db, payload, organization_id)
+        if class_subject is None:
             invalid = True
 
-    if rule_type in {"specific_room", "lock_time"}:
-        class_row = await owned(models.Class, payload["class_id"])
-        subject_row = await owned(models.Subject, payload["subject_id"])
-        relationship = await db.scalar(
-            select(models.ClassSubjectLink.id).where(
-                models.ClassSubjectLink.organization_id == organization_id,
-                models.ClassSubjectLink.class_id == payload["class_id"],
-                models.ClassSubjectLink.subject_id == payload["subject_id"],
-                models.ClassSubjectLink.grade_level == class_row.grade_level
-                if class_row is not None
-                else False,
-            )
+    if rule_type == "specific_room" and class_subject is not None:
+        class_row, subject_row = class_subject
+        room = await _owned_constraint_reference(
+            db, models.Room, payload["room_id"], organization_id
         )
         if (
-            class_row is None
-            or class_row.is_archived
-            or subject_row is None
-            or relationship is None
+            room is None
+            or room.capacity < class_row.size
+            or room.type != subject_row.required_room_type
         ):
             invalid = True
-        if rule_type == "specific_room":
-            room = await owned(models.Room, payload["room_id"])
-            if (
-                room is None
-                or class_row is None
-                or subject_row is None
-                or room.capacity < class_row.size
-                or room.type != subject_row.required_room_type
-            ):
-                invalid = True
 
     if invalid:
         raise ConstraintSemanticValidationError(
@@ -190,33 +213,6 @@ async def delete_constraint(
         await db.flush()
         return True
     return False
-
-
-def get_timeslots_by_org_sync(db: Session, organization_id: int):
-    return (
-        db.query(models.Timeslot).filter(models.Timeslot.organization_id == organization_id).all()
-    )
-
-
-def get_constraints_by_org_sync(db: Session, organization_id: int):
-    return (
-        db.query(models.Constraint)
-        .filter(models.Constraint.organization_id == organization_id)
-        .all()
-    )
-
-
-def get_availabilities_by_org_sync(db: Session, organization_id: int):
-    """
-    Retorna todas as disponibilidades dos professores desta organização.
-    Faz um JOIN com a tabela Teacher para filtrar pelo organization_id.
-    """
-    return (
-        db.query(models.Availability)
-        .join(models.Teacher)
-        .filter(models.Teacher.organization_id == organization_id)
-        .all()
-    )
 
 
 def get_modules_by_subject_sync(db: Session, organization_id: int) -> dict:

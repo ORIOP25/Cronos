@@ -428,29 +428,6 @@ class ClassBase(BaseModel):
     size: int = Field(default=25, gt=0, description=DESC_CLASS_SIZE)
 
 
-class ClassCreate(ClassBase):
-    course_id: int = Field(
-        ..., description="ID do curso (obrigatório — turmas pertencem sempre a um curso)"
-    )
-    grade_level: int = Field(..., ge=10, le=12, description=DESC_GRADE_LEVEL)
-    start_year: int = Field(..., description=DESC_START_YEAR)
-    end_year: int = Field(..., description=DESC_END_YEAR)
-
-    @model_validator(mode="after")
-    def validate_year_window(self):
-        if self.end_year <= self.start_year:
-            raise ValueError(ERR_YEAR_RANGE)
-        return self
-
-
-class ClassUpdate(BaseModel):
-    name: str | None = None
-    size: int | None = Field(None, gt=0, description=DESC_CLASS_SIZE)
-    grade_level: int | None = Field(None, ge=10, le=12, description=DESC_GRADE_LEVEL)
-    start_year: int | None = Field(None, description=DESC_START_YEAR)
-    end_year: int | None = Field(None, description=DESC_END_YEAR)
-
-
 class ClassCreateInCourse(ClassBase):
     grade_level: int = Field(..., ge=10, le=12, description=DESC_GRADE_LEVEL)
     start_year: int = Field(..., description=DESC_START_YEAR)

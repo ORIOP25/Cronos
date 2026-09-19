@@ -3,7 +3,7 @@ import uuid
 from sqlalchemy import delete, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy.orm import selectinload
 
 from app import models, schemas
 from app.services.scheduler_state_service import record_scheduler_change
@@ -71,126 +71,6 @@ async def get_classes_by_org(db: AsyncSession, organization_id: int):
         .order_by(models.Class.name)
     )
     return result.scalars().all()
-
-
-async def get_class_details(db: AsyncSession, class_id: int, organization_id: int):
-    """
-    Busca turma com o curso associado (Eager Load).
-
-    🔐 Security: Filtra por organization_id - cada organização só vê suas turmas
-    ⚙️ Stability: selectinload previne N+1 queries e lazy loading em async context
-    ⚡ Optimization: Uma query com JOIN retorna tudo de uma vez
-    📈 Scalability: Padrão aplicável a qualquer entity com relationships
-
-    Retorna: Class com course populated, ou None se não encontrada
-    """
-    query = (
-        select(models.Class)
-        .where(models.Class.id == class_id, models.Class.organization_id == organization_id)
-        .options(
-            selectinload(models.Class.course)  # Carrega o curso associado
-        )
-    )
-
-    result = await db.execute(query)
-    return result.scalars().first()
-
-
-async def create_class(
-    db: AsyncSession,
-    item: schemas.ClassCreate,
-    organization_id: int,
-    changed_by_membership_id: int | None = None,
-):
-    db_course = await _get_course_by_org(db, item.course_id, organization_id)
-    if not db_course:
-        return "COURSE_NOT_FOUND"
-
-    db_item = models.Class(**item.model_dump(), organization_id=organization_id)
-    db.add(db_item)
-    await db.flush()
-    await record_scheduler_change(
-        db,
-        organization_id,
-        entity_type="CLASS_DEMAND",
-        entity_id=db_item.id,
-        operation=models.SchedulerStateChangeOperation.CREATE,
-        before=None,
-        after=_class_demand_snapshot(db_item),
-        changed_by_membership_id=changed_by_membership_id,
-        active_resource=not db_item.is_archived,
-    )
-    await db.flush()
-    await db.refresh(db_item)
-    return db_item
-
-
-async def update_class(
-    db: AsyncSession,
-    class_id: int,
-    class_in: schemas.ClassUpdate,
-    organization_id: int,
-    changed_by_membership_id: int | None = None,
-):
-    db_class = await _get_class_by_org(db, class_id, organization_id)
-
-    if not db_class:
-        return None
-    update_data = class_in.model_dump(exclude_unset=True)
-    next_start_year = update_data.get("start_year", db_class.start_year)
-    next_end_year = update_data.get("end_year", db_class.end_year)
-
-    if next_end_year <= next_start_year:
-        return "INVALID_YEAR_RANGE"
-
-    before = _class_demand_snapshot(db_class)
-    for field, value in update_data.items():
-        setattr(db_class, field, value)
-
-    db.add(db_class)
-    await record_scheduler_change(
-        db,
-        organization_id,
-        entity_type="CLASS_DEMAND",
-        entity_id=db_class.id,
-        operation=models.SchedulerStateChangeOperation.UPDATE,
-        before=before,
-        after=_class_demand_snapshot(db_class),
-        changed_by_membership_id=changed_by_membership_id,
-        active_resource=not db_class.is_archived,
-    )
-    await db.flush()
-    await db.refresh(db_class)
-    return db_class
-
-
-async def delete_class(
-    db: AsyncSession,
-    class_id: int,
-    organization_id: int,
-    changed_by_membership_id: int | None = None,
-):
-    """Remove uma turma e dependências associadas (cascade explícito)."""
-    item = await _get_class_by_org(db, class_id, organization_id)
-
-    if not item:
-        return "NOT_FOUND"
-
-    before = _class_demand_snapshot(item)
-    await _delete_class_with_dependencies(db, item.id)
-    await record_scheduler_change(
-        db,
-        organization_id,
-        entity_type="CLASS_DEMAND",
-        entity_id=item.id,
-        operation=models.SchedulerStateChangeOperation.DELETE,
-        before=before,
-        after=None,
-        changed_by_membership_id=changed_by_membership_id,
-        active_resource=not item.is_archived,
-    )
-    await db.flush()
-    return "SUCCESS"
 
 
 async def get_classes_by_course(db: AsyncSession, course_id: int, organization_id: int):
@@ -341,11 +221,6 @@ async def get_class_curriculum(db: AsyncSession, class_id: int, organization_id:
 
     # 4. Retornar as disciplinas do curso
     return course.subjects if course.subjects else []
-
-
-# --- SYNC (SOLVER) ---
-def get_classes_by_org_sync(db: Session, organization_id: int):
-    return db.query(models.Class).filter(models.Class.organization_id == organization_id).all()
 
 
 # ==========================================

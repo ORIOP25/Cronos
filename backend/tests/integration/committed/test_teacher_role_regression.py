@@ -114,13 +114,16 @@ class TestTeacherRoleRegressionContracts:
         self, async_client: AsyncClient, clerk_admin_headers: dict, db_session
     ):
         timeslots_resp = await async_client.post(
-            f"{API}/timeslots/generate",
+            f"{API}/school/grid-settings/regenerate",
             json={
-                "start_time": "08:00",
-                "end_time": "10:00",
-                "slot_duration_minutes": 50,
-                "break_duration_minutes": 10,
-                "days_of_week": [0],
+                "grid_settings": {},
+                "timeslots": {
+                    "start_time": "08:00",
+                    "end_time": "10:00",
+                    "slot_duration_minutes": 50,
+                    "break_duration_minutes": 10,
+                    "days_of_week": [0],
+                },
             },
             headers=clerk_admin_headers,
         )
@@ -324,13 +327,16 @@ class TestTeacherRoleRegressionContracts:
         self, async_client: AsyncClient, clerk_admin_headers: dict, db_session
     ):
         timeslots_resp = await async_client.post(
-            f"{API}/timeslots/generate",
+            f"{API}/school/grid-settings/regenerate",
             json={
-                "start_time": "08:00",
-                "end_time": "10:00",
-                "slot_duration_minutes": 50,
-                "break_duration_minutes": 10,
-                "days_of_week": [0],
+                "grid_settings": {},
+                "timeslots": {
+                    "start_time": "08:00",
+                    "end_time": "10:00",
+                    "slot_duration_minutes": 50,
+                    "break_duration_minutes": 10,
+                    "days_of_week": [0],
+                },
             },
             headers=clerk_admin_headers,
         )

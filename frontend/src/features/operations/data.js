@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useApiClient } from '../../ApiClientContext'
 import { invalidatePreparationQueries } from '../readiness/data'
+import { invalidateOrgQueries, orgQueryKey } from '../queryKeys'
 import { useOrganization, useAuth } from '@clerk/react'
 
 const DYNAMIC_OPTS = {
@@ -17,7 +18,7 @@ export const useOccurrences = ({ classId, dateFrom, dateTo, status } = {}) => {
   if (status) params.status = status
 
   return useQuery({
-    queryKey: ['occurrences', orgId, classId, dateFrom, dateTo, status],
+    queryKey: orgQueryKey('occurrences', orgId, classId, dateFrom, dateTo, status),
     queryFn: async () => {
       const data = await apiClient.get('/occurrences/', { params })
       if (Array.isArray(data)) return { items: data, total: data.length, limit: data.length, offset: 0 }
@@ -38,7 +39,7 @@ export const useDebts = ({ classId } = {}) => {
   if (classId) params.class_id = classId
 
   return useQuery({
-    queryKey: ['debts', orgId, classId],
+    queryKey: orgQueryKey('debts', orgId, classId),
     queryFn: () => apiClient.get('/occurrences/debts', { params }),
     enabled: Boolean(orgId),
     ...DYNAMIC_OPTS,
@@ -53,7 +54,7 @@ export const useSubstituteRecommendations = ({ occurrenceId } = {}) => {
   const apiClient = useApiClient()
   const orgId = useOrganization().organization?.id
   return useQuery({
-    queryKey: ['substitute-recommendations', orgId, occurrenceId],
+    queryKey: orgQueryKey('substitute-recommendations', orgId, occurrenceId),
     queryFn: async () => {
       return apiClient.get(`/occurrences/${occurrenceId}/substitutes/recommendations`)
     },
@@ -80,11 +81,7 @@ export const useUpdateOccurrence = () => {
       })
     },
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['occurrences', orgId] })
-      void queryClient.invalidateQueries({ queryKey: ['debts', orgId] })
-      void queryClient.invalidateQueries({ queryKey: ['weekSchedule', orgId] })
-      void queryClient.invalidateQueries({ queryKey: ['classes', orgId] })
-      void queryClient.invalidateQueries({ queryKey: ['substitute-recommendations', orgId] })
+      void invalidateOrgQueries(queryClient, orgId, ['occurrences', 'debts', 'weekSchedule', 'classes', 'substitute-recommendations'])
     },
   })
 }
@@ -106,10 +103,7 @@ export const useCancelOccurrence = () => {
       })
     },
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['occurrences', orgId] })
-      void queryClient.invalidateQueries({ queryKey: ['debts', orgId] })
-      void queryClient.invalidateQueries({ queryKey: ['weekSchedule', orgId] })
-      void queryClient.invalidateQueries({ queryKey: ['my-timesheet', orgId] })
+      void invalidateOrgQueries(queryClient, orgId, ['occurrences', 'debts', 'weekSchedule', 'my-timesheet'])
     },
   })
 }
@@ -130,10 +124,7 @@ export const useUpsertLessonLog = () => {
       return apiClient.put(endpoint, payload)
     },
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['weekSchedule', orgId] })
-      void queryClient.invalidateQueries({ queryKey: ['classes', orgId] })
-      void queryClient.invalidateQueries({ queryKey: ['occurrences', orgId] })
-      void queryClient.invalidateQueries({ queryKey: ['debts', orgId] })
+      void invalidateOrgQueries(queryClient, orgId, ['weekSchedule', 'classes', 'occurrences', 'debts'])
     },
   })
 }
@@ -146,7 +137,7 @@ export const useMyTimesheet = (weekStartDate) => {
   const apiClient = useApiClient()
   const orgId = useOrganization().organization?.id
   return useQuery({
-    queryKey: ['my-timesheet', orgId, weekStartDate],
+    queryKey: orgQueryKey('my-timesheet', orgId, weekStartDate),
     queryFn: async () => {
       return apiClient.get(`/timesheets/me/${weekStartDate}`)
     },
@@ -165,8 +156,8 @@ export const useSubmitMyTimesheet = () => {
       return apiClient.post(`/timesheets/me/${weekStartDate}/submit`)
     },
     onSuccess: (_, weekStartDate) => {
-      void queryClient.invalidateQueries({ queryKey: ['my-timesheet', orgId, weekStartDate] })
-      void queryClient.invalidateQueries({ queryKey: ['weekSchedule', orgId] })
+      void queryClient.invalidateQueries({ queryKey: orgQueryKey('my-timesheet', orgId, weekStartDate) })
+      void invalidateOrgQueries(queryClient, orgId, ['weekSchedule'])
     },
   })
 }
@@ -179,7 +170,7 @@ export const useTimesheets = (weekStartDate, status) => {
   if (status) params.status = status
 
   return useQuery({
-    queryKey: ['timesheets', orgId, weekStartDate, status],
+    queryKey: orgQueryKey('timesheets', orgId, weekStartDate, status),
     queryFn: () => apiClient.get('/timesheets/', { params }),
     enabled: Boolean(orgId),
     ...DYNAMIC_OPTS,
@@ -196,9 +187,8 @@ export const useUpdateTimesheetStatus = () => {
       return apiClient.patch(`/timesheets/${timesheetId}/status`, { status })
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['timesheets', orgId] })
-      queryClient.refetchQueries({ queryKey: ['weekSchedule', orgId], type: 'active' })
-      queryClient.invalidateQueries({ queryKey: ['my-timesheet', orgId] })
+      void invalidateOrgQueries(queryClient, orgId, ['timesheets', 'my-timesheet'])
+      void queryClient.refetchQueries({ queryKey: orgQueryKey('weekSchedule', orgId), type: 'active' })
     },
   })
 }
@@ -214,7 +204,7 @@ export const useDashboard = ({ enabled = true } = {}) => {
   const apiClient = useApiClient()
   const orgId = useOrganization().organization?.id
   return useQuery({
-    queryKey: ['dashboard', orgId],
+    queryKey: orgQueryKey('dashboard', orgId),
     queryFn: async () => {
       const data = await apiClient.get('/dashboard')
       if (!data || !['PREPARATION', 'OPERATIONAL'].includes(data.mode)) {
@@ -242,7 +232,7 @@ export const useTeacherProgress = ({ enabled = true } = {}) => {
   const apiClient = useApiClient()
   const orgId = useOrganization().organization?.id
   return useQuery({
-    queryKey: ['teacher-progress', orgId],
+    queryKey: orgQueryKey('teacher-progress', orgId),
     queryFn: async () => {
       return apiClient.get('/teachers/me/progress')
     },
@@ -259,7 +249,7 @@ export const useMyAvailability = ({ enabled = true } = {}) => {
   const orgId = useOrganization().organization?.id
   const { isLoaded } = useAuth()
   return useQuery({
-    queryKey: ['my-availability', orgId],
+    queryKey: orgQueryKey('my-availability', orgId),
     queryFn: async () => {
       return apiClient.get('/teachers/me/availability')
     },
@@ -279,8 +269,8 @@ export const useSaveAvailability = () => {
       return apiClient.put('/teachers/me/availability', payload)
     },
     onSuccess: (_, { payload }) => {
-      queryClient.setQueryData(['my-availability', orgId], payload)
-      void queryClient.invalidateQueries({ queryKey: ['my-availability', orgId] })
+      queryClient.setQueryData(orgQueryKey('my-availability', orgId), payload)
+      void invalidateOrgQueries(queryClient, orgId, ['my-availability'])
       void invalidatePreparationQueries(queryClient, orgId)
     },
   })

@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useApiClient } from '../../ApiClientContext'
 import { invalidatePreparationQueries } from '../readiness/data'
+import { invalidateOrgQueries, orgQueryKey } from '../queryKeys'
 import { useOrganization, useAuth } from '@clerk/react'
 
 const STATIC_OPTS = {
@@ -12,7 +13,7 @@ export const useRooms = () => {
   const apiClient = useApiClient()
   const orgId = useOrganization().organization?.id
   return useQuery({
-    queryKey: ['rooms', orgId],
+    queryKey: orgQueryKey('rooms', orgId),
     queryFn: async () => {
       return apiClient.get('/rooms/')
     },
@@ -25,7 +26,7 @@ export const useSubjects = () => {
   const apiClient = useApiClient()
   const orgId = useOrganization().organization?.id
   return useQuery({
-    queryKey: ['subjects', orgId],
+    queryKey: orgQueryKey('subjects', orgId),
     queryFn: async () => {
       return apiClient.get('/subjects/')
     },
@@ -38,7 +39,7 @@ export const useClasses = ({ enabled = true } = {}) => {
   const apiClient = useApiClient()
   const orgId = useOrganization().organization?.id
   return useQuery({
-    queryKey: ['classes', orgId],
+    queryKey: orgQueryKey('classes', orgId),
     queryFn: async () => {
       return apiClient.get('/classes/')
     },
@@ -53,7 +54,7 @@ export const useTimeslots = () => {
   const orgId = useOrganization().organization?.id
   const { isLoaded } = useAuth()
   return useQuery({
-    queryKey: ['timeslots', orgId],
+    queryKey: orgQueryKey('timeslots', orgId),
     queryFn: async () => {
       return apiClient.get('/timeslots/')
     },
@@ -66,7 +67,7 @@ export const useCourses = () => {
   const apiClient = useApiClient()
   const orgId = useOrganization().organization?.id
   return useQuery({
-    queryKey: ['courses', orgId],
+    queryKey: orgQueryKey('courses', orgId),
     queryFn: async () => {
       return apiClient.get('/courses/')
     },
@@ -100,10 +101,7 @@ const useCreateEntity = (entityKey, dependentRoots = []) => {
       return apiClient.post(`/${entityKey}/`, newItem)
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [entityKey, orgId] })
-      dependentRoots.forEach((root) => {
-        queryClient.invalidateQueries({ queryKey: [root, orgId] })
-      })
+      void invalidateOrgQueries(queryClient, orgId, [entityKey, ...dependentRoots])
       void invalidatePreparationQueries(queryClient, orgId)
     }
   })
@@ -125,10 +123,7 @@ const useUpdateEntity = (entityKey, dependentRoots = []) => {
       return apiClient.patch(`/${entityKey}/${id}`, updateData)
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [entityKey, orgId] })
-      dependentRoots.forEach((root) => {
-        queryClient.invalidateQueries({ queryKey: [root, orgId] })
-      })
+      void invalidateOrgQueries(queryClient, orgId, [entityKey, ...dependentRoots])
       void invalidatePreparationQueries(queryClient, orgId)
     }
   })
@@ -148,10 +143,7 @@ const useDeleteEntity = (entityKey, dependentRoots = []) => {
       await apiClient.delete(`/${entityKey}/${id}`)
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [entityKey, orgId] })
-      dependentRoots.forEach((root) => {
-        queryClient.invalidateQueries({ queryKey: [root, orgId] })
-      })
+      void invalidateOrgQueries(queryClient, orgId, [entityKey, ...dependentRoots])
       void invalidatePreparationQueries(queryClient, orgId)
     }
   })
@@ -188,7 +180,7 @@ export const useCourseDetails = (courseId) => {
   const apiClient = useApiClient()
   const orgId = useOrganization().organization?.id
   return useQuery({
-    queryKey: ['courses', orgId, courseId],
+    queryKey: orgQueryKey('courses', orgId, courseId),
     queryFn: async () => {
       return apiClient.get(`/courses/${courseId}`)
     },
@@ -222,9 +214,8 @@ export const useUpdateCourse = () => {
     mutationFn: async ({ courseId, data }) => {
       return apiClient.patch(`/courses/${courseId}`, data)
     },
-    onSuccess: (data, variables) => {
-      queryClient.invalidateQueries({ queryKey: ['courses', orgId] })
-      queryClient.invalidateQueries({ queryKey: ['courses', orgId, variables.courseId] })
+    onSuccess: () => {
+      void invalidateOrgQueries(queryClient, orgId, ['courses'])
     }
   })
 }
@@ -250,7 +241,7 @@ export const useDeleteCourse = () => {
       await apiClient.delete(`/courses/${courseId}`)
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['courses', orgId] })
+      void invalidateOrgQueries(queryClient, orgId, ['courses'])
     }
   })
 }
@@ -265,10 +256,8 @@ export const useCreateCourseClass = () => {
     mutationFn: async ({ courseId, data }) => {
       return apiClient.post(`/courses/${courseId}/classes`, data)
     },
-    onSuccess: (_data, variables) => {
-      queryClient.invalidateQueries({ queryKey: ['courses', orgId] })
-      queryClient.invalidateQueries({ queryKey: ['courses', orgId, variables.courseId] })
-      queryClient.invalidateQueries({ queryKey: ['classes', orgId] })
+    onSuccess: () => {
+      void invalidateOrgQueries(queryClient, orgId, ['courses', 'classes'])
     }
   })
 }
@@ -284,10 +273,8 @@ export const useUpdateCourseClass = () => {
       return apiClient.patch(`/courses/${courseId}/classes/${classId}`, data)
     },
     onSuccess: (data, variables) => {
-      queryClient.invalidateQueries({ queryKey: ['courses', orgId] })
-      queryClient.invalidateQueries({ queryKey: ['courses', orgId, variables.courseId] })
-      queryClient.invalidateQueries({ queryKey: ['classes', orgId] })
-      queryClient.setQueryData(['classes', orgId, variables.classId], (previous) => (
+      void invalidateOrgQueries(queryClient, orgId, ['courses', 'classes'])
+      queryClient.setQueryData(orgQueryKey('classes', orgId, variables.classId), (previous) => (
         previous ? { ...previous, ...data } : previous
       ))
     }
@@ -305,12 +292,10 @@ export const useDeleteCourseClass = () => {
       await apiClient.delete(`/courses/${courseId}/classes/${classId}`)
     },
     onSuccess: (_data, variables) => {
-      queryClient.invalidateQueries({ queryKey: ['courses', orgId] })
-      queryClient.invalidateQueries({ queryKey: ['courses', orgId, variables.courseId] })
-      queryClient.invalidateQueries({ queryKey: ['classes', orgId] })
-      queryClient.removeQueries({ queryKey: ['classes', orgId, variables.classId] })
-      queryClient.removeQueries({ queryKey: ['class-subjects', orgId, variables.classId] })
-      queryClient.removeQueries({ queryKey: ['available-subjects', orgId, variables.classId] })
+      void invalidateOrgQueries(queryClient, orgId, ['courses', 'classes'])
+      queryClient.removeQueries({ queryKey: orgQueryKey('classes', orgId, variables.classId) })
+      queryClient.removeQueries({ queryKey: orgQueryKey('class-subjects', orgId, variables.classId) })
+      queryClient.removeQueries({ queryKey: orgQueryKey('available-subjects', orgId, variables.classId) })
     }
   })
 }
@@ -337,7 +322,7 @@ export const useClassDetails = (classId) => {
   const apiClient = useApiClient()
   const orgId = useOrganization().organization?.id
   return useQuery({
-    queryKey: ['classes', orgId, classId],
+    queryKey: orgQueryKey('classes', orgId, classId),
     queryFn: async () => {
       return apiClient.get(`/classes/${classId}`)
     },
@@ -374,8 +359,8 @@ export const useUpdateClassProgress = () => {
       return apiClient.patch(`/classes/${classId}/progress`, { progress })
     },
     onSuccess: (data, variables) => {
-      queryClient.setQueryData(['classes', orgId, variables.classId], data)
-      queryClient.invalidateQueries({ queryKey: ['classes', orgId] })
+      queryClient.setQueryData(orgQueryKey('classes', orgId, variables.classId), data)
+      void invalidateOrgQueries(queryClient, orgId, ['classes'])
     }
   })
 }
@@ -395,7 +380,7 @@ export const useClassSubjects = (classId) => {
   const apiClient = useApiClient()
   const orgId = useOrganization().organization?.id
   return useQuery({
-    queryKey: ['class-subjects', orgId, classId],
+    queryKey: orgQueryKey('class-subjects', orgId, classId),
     queryFn: async () => {
       if (!classId) return null
       return apiClient.get(`/classes/${classId}/subjects`)
@@ -414,7 +399,7 @@ export const useAvailableSubjects = (classId) => {
   const apiClient = useApiClient()
   const orgId = useOrganization().organization?.id
   return useQuery({
-    queryKey: ['available-subjects', orgId, classId],
+    queryKey: orgQueryKey('available-subjects', orgId, classId),
     queryFn: async () => {
       if (!classId) return []
       return apiClient.get(`/classes/${classId}/available-subjects`)
@@ -432,7 +417,7 @@ export const useEligibleTeachers = (subjectId) => {
   const apiClient = useApiClient()
   const orgId = useOrganization().organization?.id
   return useQuery({
-    queryKey: ['eligible-teachers', orgId, subjectId],
+    queryKey: orgQueryKey('eligible-teachers', orgId, subjectId),
     queryFn: async () => {
       if (!subjectId) return []
       return apiClient.get(`/classes/subjects/${subjectId}/eligible-teachers`)
@@ -455,10 +440,8 @@ export const useAddClassSubject = () => {
       return apiClient.post(`/classes/${classId}/subjects`, { subject_id: subjectId })
     },
     onSuccess: (data, variables) => {
-      queryClient.setQueryData(['class-subjects', orgId, variables.classId], data)
-      queryClient.invalidateQueries({ queryKey: ['available-subjects', orgId, variables.classId] })
-      queryClient.invalidateQueries({ queryKey: ['classes', orgId, variables.classId] })
-      queryClient.invalidateQueries({ queryKey: ['courses', orgId] })
+      queryClient.setQueryData(orgQueryKey('class-subjects', orgId, variables.classId), data)
+      void invalidateOrgQueries(queryClient, orgId, ['available-subjects', 'classes', 'courses'])
       void invalidatePreparationQueries(queryClient, orgId)
     }
   })
@@ -479,7 +462,7 @@ export const useUpdateClassSubjectTeacher = () => {
       return apiClient.patch(`/classes/${classId}/subjects/${subjectId}`, payload)
     },
     onSuccess: (data, variables) => {
-      queryClient.setQueryData(['class-subjects', orgId, variables.classId], data)
+      queryClient.setQueryData(orgQueryKey('class-subjects', orgId, variables.classId), data)
       void invalidatePreparationQueries(queryClient, orgId)
     }
   })
@@ -498,10 +481,8 @@ export const useRemoveClassSubject = () => {
       return apiClient.delete(`/classes/${classId}/subjects/${subjectId}`)
     },
     onSuccess: (data, variables) => {
-      queryClient.setQueryData(['class-subjects', orgId, variables.classId], data)
-      queryClient.invalidateQueries({ queryKey: ['available-subjects', orgId, variables.classId] })
-      queryClient.invalidateQueries({ queryKey: ['classes', orgId, variables.classId] })
-      queryClient.invalidateQueries({ queryKey: ['courses', orgId] })
+      queryClient.setQueryData(orgQueryKey('class-subjects', orgId, variables.classId), data)
+      void invalidateOrgQueries(queryClient, orgId, ['available-subjects', 'classes', 'courses'])
       void invalidatePreparationQueries(queryClient, orgId)
     }
   })

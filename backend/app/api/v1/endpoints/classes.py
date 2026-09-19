@@ -1,7 +1,6 @@
-from typing import Annotated, Any
+from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import APIRouter, HTTPException
 
 from app import schemas
 from app.api import deps
@@ -14,7 +13,7 @@ router = APIRouter()
 
 @router.get("/", response_model=list[schemas.ClassRead])
 async def read_classes(
-    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
+    db: deps.DbSession,
     current_user: deps.AdminActor,
 ):
     return await class_service.get_classes_by_org(db, current_user.organization_id)
@@ -27,7 +26,7 @@ async def read_classes(
 )
 async def read_class(
     class_id: int,
-    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
+    db: deps.DbSession,
     current_user: deps.AdminActor,
 ) -> Any:
     """
@@ -52,76 +51,10 @@ async def read_class(
     return result
 
 
-@router.post(
-    "/", response_model=schemas.ClassRead, responses={404: {"description": "Curso nÃ£o encontrado"}}
-)
-async def create_class(
-    item: schemas.ClassCreate,
-    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
-    current_user: deps.AdminActor,
-):
-    result = await class_service.create_class(
-        db,
-        item,
-        current_user.organization_id,
-        changed_by_membership_id=current_user.membership_id,
-    )
-    if result == "COURSE_NOT_FOUND":
-        raise HTTPException(status_code=404, detail="Curso nÃ£o encontrado")
-    return result
-
-
-@router.patch(
-    "/{class_id}",
-    response_model=schemas.ClassRead,
-    responses={
-        400: {"description": "Intervalo de anos invÃ¡lido"},
-        404: {"description": CLASS_NOT_FOUND_MSG},
-    },
-)
-async def update_class(
-    class_id: int,
-    item: schemas.ClassUpdate,
-    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
-    current_user: deps.AdminActor,
-):
-    updated = await class_service.update_class(
-        db,
-        class_id,
-        item,
-        current_user.organization_id,
-        changed_by_membership_id=current_user.membership_id,
-    )
-    if updated == "INVALID_YEAR_RANGE":
-        raise HTTPException(status_code=400, detail="Ano de fim deve ser maior que o ano de inÃ­cio")
-    if not updated:
-        raise HTTPException(status_code=404, detail=CLASS_NOT_FOUND_MSG)
-    return updated
-
-
-@router.delete("/{class_id}", responses={404: {"description": CLASS_NOT_FOUND_MSG}})
-async def delete_class(
-    class_id: int,
-    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
-    current_user: deps.AdminActor,
-):
-    status = await class_service.delete_class(
-        db,
-        class_id,
-        current_user.organization_id,
-        changed_by_membership_id=current_user.membership_id,
-    )
-
-    if status == "NOT_FOUND":
-        raise HTTPException(status_code=404, detail=CLASS_NOT_FOUND_MSG)
-
-    return {"message": "Turma removida com sucesso"}
-
-
 @router.get("/{class_id}/curriculum", response_model=list[schemas.SubjectRead])
 async def get_class_curriculum(
     class_id: int,
-    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
+    db: deps.DbSession,
     current_user: deps.AdminActor,
 ):
     """
@@ -152,7 +85,7 @@ async def get_class_curriculum(
 async def update_class_progress(
     class_id: int,
     payload: schemas.ClassProgressBulkUpdate,
-    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
+    db: deps.DbSession,
     current_user: deps.AdminActor,
 ) -> Any:
     """
@@ -211,7 +144,7 @@ async def update_class_progress(
 )
 async def get_class_subjects(
     class_id: int,
-    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
+    db: deps.DbSession,
     current_user: deps.ActiveActor,
 ):
     """
@@ -238,7 +171,7 @@ async def get_class_subjects(
 async def add_class_subject(
     class_id: int,
     payload: schemas.ClassSubjectCreate,
-    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
+    db: deps.DbSession,
     current_user: deps.AdminActor,
 ):
     """
@@ -279,7 +212,7 @@ async def update_class_subject_teacher(
     class_id: int,
     subject_id: int,
     payload: schemas.ClassSubjectUpdate,
-    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
+    db: deps.DbSession,
     current_user: deps.AdminActor,
 ):
     """
@@ -327,7 +260,7 @@ async def update_class_subject_teacher(
 async def remove_class_subject(
     class_id: int,
     subject_id: int,
-    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
+    db: deps.DbSession,
     current_user: deps.AdminActor,
 ):
     """
@@ -354,7 +287,7 @@ async def remove_class_subject(
 @router.get("/{class_id}/available-subjects", response_model=list[schemas.SubjectRead])
 async def get_available_subjects(
     class_id: int,
-    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
+    db: deps.DbSession,
     current_user: deps.ActiveActor,
 ):
     """
@@ -371,7 +304,7 @@ async def get_available_subjects(
 )
 async def get_eligible_teachers(
     subject_id: int,
-    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
+    db: deps.DbSession,
     current_user: deps.ActiveActor,
 ):
     """
