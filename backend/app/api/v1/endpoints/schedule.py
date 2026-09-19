@@ -4,10 +4,10 @@ from typing import Annotated
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models, schemas
 from app.api import deps
+from app.core.exceptions import AppError, status_code_for_kind
 from app.core.ratelimit import limiter
 from app.services import schedule_service, teacher_observability_service
 from app.services.school_year_reset_service import SchoolYearResetService
@@ -18,6 +18,16 @@ ERR_TEACHER_PROFILE_REQUIRED = "Professor sem perfil associado"
 ERR_TEACHER_OWN_SCHEDULE_ONLY = "Professor sÃ³ pode consultar o prÃ³prio horÃ¡rio"
 ERR_TEACHER_HORIZON_NOT_FOUND = "NÃ£o existe horizonte semanal configurado para a organizaÃ§Ã£o"
 ERR_SCHEDULE_RESET_FORBIDDEN = "Sem permissÃµes para apagar os dados de horÃ¡rio"
+
+
+def _raise_schedule_error(status_code: int, code: str, detail: str) -> None:
+    kind = {
+        400: "bad_request",
+        403: "forbidden",
+        404: "not_found",
+        422: "validation",
+    }.get(status_code, "bad_request")
+    raise AppError(kind=kind, code=code, detail=detail)
 
 
 def _extract_request_id(request: Request) -> str | None:
@@ -65,14 +75,18 @@ async def _require_admin_for_schedule_reset(
             status_code=exc.status_code,
             detail=detail,
         )
-        raise HTTPException(status_code=exc.status_code, detail=detail) from exc
+        raise AppError(
+            kind="forbidden" if exc.status_code == 403 else "unauthorized",
+            code="schedule_reset_forbidden",
+            detail=detail,
+        ) from exc
 
 
 # --- CONSTRAINTS (Regras) ---
 @router.post("/constraints/", response_model=schemas.ConstraintRead)
 async def create_constraint(
     item: schemas.ConstraintCreate,
-    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
+    db: deps.DbSession,
     current_user: deps.AdminActor,
 ):
     # Garante que usamos o organization_id do utilizador logado
@@ -84,12 +98,12 @@ async def create_constraint(
             changed_by_membership_id=current_user.membership_id,
         )
     except schedule_service.ConstraintSemanticValidationError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        raise AppError(kind="validation", code="constraint_invalid", detail=str(exc)) from exc
 
 
 @router.get("/constraints/", response_model=list[schemas.ConstraintRead])
 async def read_constraints(
-    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
+    db: deps.DbSession,
     current_user: deps.ActiveActor,
 ):
     return await schedule_service.get_constraints_by_org(db, current_user.organization_id)
@@ -100,7 +114,7 @@ async def read_constraints(
 )
 async def delete_constraint(
     constraint_id: int,
-    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
+    db: deps.DbSession,
     current_user: deps.AdminActor,
 ):
     success = await schedule_service.delete_constraint(
@@ -110,7 +124,7 @@ async def delete_constraint(
         changed_by_membership_id=current_user.membership_id,
     )
     if not success:
-        raise HTTPException(status_code=404, detail="Regra nÃ£o encontrada")
+        _raise_schedule_error(404, "constraint_not_found", "Regra nÃ£o encontrada")
     return {"ok": True}
 
 
@@ -125,7 +139,7 @@ async def delete_constraint(
 )
 async def reset_all_data(
     request: Request,
-    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
+    db: deps.DbSession,
     current_user: Annotated[deps.Actor, Depends(_require_admin_for_schedule_reset)],
 ):
     status_code = 200
@@ -243,7 +257,7 @@ def _resolve_teacher_horizon_payload(
 @limiter.limit("300/hour")
 async def get_teacher_schedule_horizon(
     request: Request,
-    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
+    db: deps.DbSession,
     current_user: deps.ActiveActor,
 ):
     start_ts = perf_counter()
@@ -253,10 +267,10 @@ async def get_teacher_schedule_horizon(
     try:
         if not deps.user_has_teacher_capability(current_user):
             status_code = 403
-            raise HTTPException(status_code=403, detail=ERR_TEACHER_OWN_SCHEDULE_ONLY)
+            _raise_schedule_error(403, "teacher_schedule_forbidden", ERR_TEACHER_OWN_SCHEDULE_ONLY)
         if current_user.teacher_id is None:
             status_code = 403
-            raise HTTPException(status_code=403, detail=ERR_TEACHER_PROFILE_REQUIRED)
+            _raise_schedule_error(403, "teacher_profile_required", ERR_TEACHER_PROFILE_REQUIRED)
 
         def _run(sync_db):
             settings_rows = (
@@ -286,12 +300,12 @@ async def get_teacher_schedule_horizon(
         horizon_payload = await db.run_sync(_run)
         if horizon_payload is None:
             status_code = 404
-            raise HTTPException(status_code=404, detail=ERR_TEACHER_HORIZON_NOT_FOUND)
+            _raise_schedule_error(404, "teacher_horizon_not_found", ERR_TEACHER_HORIZON_NOT_FOUND)
 
         active_generation_id = horizon_payload.get("active_generation_id")
         return horizon_payload
-    except HTTPException as exc:
-        status_code = exc.status_code
+    except AppError as exc:
+        status_code = status_code_for_kind(exc.kind, exc.code)
         raise
     except Exception:
         status_code = 500
@@ -330,7 +344,7 @@ async def get_week_schedule(
         date, Query(description="Data de inÃ­cio da semana (segunda-feira, YYYY-MM-DD)")
     ],
     request: Request,
-    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
+    db: deps.DbSession,
     current_user: deps.ActiveActor,
     class_id: Annotated[int | None, Query(description="ID da turma")] = None,
     teacher_id: Annotated[int | None, Query(description="ID do professor")] = None,
@@ -349,23 +363,27 @@ async def get_week_schedule(
 
         if not is_admin and not is_teacher:
             status_code = 403
-            raise HTTPException(status_code=403, detail=ERR_TEACHER_OWN_SCHEDULE_ONLY)
+            _raise_schedule_error(403, "teacher_schedule_forbidden", ERR_TEACHER_OWN_SCHEDULE_ONLY)
 
         if is_teacher and not is_admin:
             if current_user.teacher_id is None:
                 status_code = 403
-                raise HTTPException(status_code=403, detail=ERR_TEACHER_PROFILE_REQUIRED)
+                _raise_schedule_error(403, "teacher_profile_required", ERR_TEACHER_PROFILE_REQUIRED)
             if class_id is not None:
                 status_code = 403
-                raise HTTPException(status_code=403, detail=ERR_TEACHER_OWN_SCHEDULE_ONLY)
+                _raise_schedule_error(
+                    403, "teacher_schedule_forbidden", ERR_TEACHER_OWN_SCHEDULE_ONLY
+                )
             if teacher_id is not None and teacher_id != current_user.teacher_id:
                 status_code = 403
-                raise HTTPException(status_code=403, detail=ERR_TEACHER_OWN_SCHEDULE_ONLY)
+                _raise_schedule_error(
+                    403, "teacher_schedule_forbidden", ERR_TEACHER_OWN_SCHEDULE_ONLY
+                )
             effective_teacher_id = current_user.teacher_id
 
         if effective_class_id is None and effective_teacher_id is None:
             status_code = 400
-            raise HTTPException(status_code=400, detail=WEEK_FILTER_REQUIRED_MSG)
+            _raise_schedule_error(400, "week_filter_required", WEEK_FILTER_REQUIRED_MSG)
 
         def _run(sync_db):
             from app.services import schedule_service as svc
@@ -379,8 +397,8 @@ async def get_week_schedule(
             )
 
         return await db.run_sync(_run)
-    except HTTPException as exc:
-        status_code = exc.status_code
+    except AppError as exc:
+        status_code = status_code_for_kind(exc.kind, exc.code)
         raise
     except Exception:
         status_code = 500
@@ -420,7 +438,7 @@ def _require_lesson_log_actor(current_user: deps.Actor) -> bool:
     """Return whether the actor is an admin, rejecting unsupported capabilities."""
     is_admin = deps.user_has_admin_capability(current_user)
     if not is_admin and not deps.user_has_teacher_capability(current_user):
-        raise HTTPException(status_code=403, detail=LESSON_LOG_ACCESS_DENIED)
+        _raise_schedule_error(403, "lesson_log_access_denied", LESSON_LOG_ACCESS_DENIED)
     return is_admin
 
 
@@ -432,7 +450,7 @@ def _authorize_lesson_log_teacher(
 ) -> None:
     """Restrict teacher-only actors to blocks assigned to their teacher profile."""
     if not is_admin and block_teacher_id != current_user.teacher_id:
-        raise HTTPException(status_code=403, detail=LESSON_LOG_OTHER_TEACHER_DENIED)
+        _raise_schedule_error(403, "lesson_log_teacher_mismatch", LESSON_LOG_OTHER_TEACHER_DENIED)
 
 
 @router.put(
@@ -443,7 +461,7 @@ def _authorize_lesson_log_teacher(
 async def upsert_active_lesson_log(
     active_schedule_block_id: int,
     payload: schemas.LessonLogCreate,
-    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
+    db: deps.DbSession,
     current_user: deps.ActiveActor,
 ):
     is_admin = _require_lesson_log_actor(current_user)
@@ -461,7 +479,9 @@ async def upsert_active_lesson_log(
             .first()
         )
         if block is None:
-            raise HTTPException(status_code=404, detail="Bloco do horario ativo nao encontrado.")
+            _raise_schedule_error(
+                404, "active_schedule_block_not_found", "Bloco do horario ativo nao encontrado."
+            )
 
         _authorize_lesson_log_teacher(
             current_user,
@@ -488,7 +508,7 @@ async def upsert_active_lesson_log(
 async def upsert_operational_lesson_log(
     operational_block_id: int,
     payload: schemas.LessonLogCreate,
-    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
+    db: deps.DbSession,
     current_user: deps.ActiveActor,
 ):
     is_admin = _require_lesson_log_actor(current_user)
@@ -506,7 +526,9 @@ async def upsert_operational_lesson_log(
             .first()
         )
         if block is None:
-            raise HTTPException(status_code=404, detail="Bloco operacional nao encontrado.")
+            _raise_schedule_error(
+                404, "operational_schedule_block_not_found", "Bloco operacional nao encontrado."
+            )
 
         _authorize_lesson_log_teacher(
             current_user,

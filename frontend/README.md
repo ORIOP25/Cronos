@@ -84,10 +84,10 @@ Marketing site CSS classes use the `cronos-*` namespace to isolate styles from a
 | `/sign-in/*`, `/sign-up/*` | Redirects | Public |
 
 ## Visual Baseline Generation
-Visual snapshot reference graphics reside in `documentation/06_frontend_ux/visual-baselines/`. Run CSS coverage scripts to update execution metrics:
+Visual snapshot reference graphics reside in `documentation/06_frontend_ux/visual-baselines/`. CSS coverage is an explicit opt-in measurement and writes its report to the Phase 2 evidence directory:
 
 ```bash
-node scripts/capture-css-coverage.mjs
+CSS_COVERAGE_ENABLED=1 node scripts/capture-css-coverage.mjs http://127.0.0.1:4173
 ```
 
 The runtime image serves the compiled SPA with Nginx.

@@ -1,5 +1,8 @@
 # LOC Reduction Implementation WBS
 
+Phase-one implementation is complete. Continue the remaining work with the
+[LOC Reduction Phase 2 WBS](LOC_REDUCTION_PHASE_2_WBS.md).
+
 ## Purpose
 
 Implement the [LOC reduction plan](LOC_REDUCTION_PLAN.md) without removing supported behavior.

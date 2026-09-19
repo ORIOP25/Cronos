@@ -225,6 +225,37 @@ def test_api_database_dependencies_are_function_scoped() -> None:
     assert offenders == []
 
 
+def test_application_endpoints_do_not_construct_http_exceptions() -> None:
+    allowed_http_exception_imports = {
+        Path("api/v1/endpoints/schedule.py"),
+        Path("api/v1/endpoints/webhooks.py"),
+    }
+    allowed_http_exception_bases = {Path("api/v1/endpoints/webhooks.py")}
+    offenders: list[str] = []
+    for path in _python_files("api/v1/endpoints"):
+        relative = path.relative_to(APP)
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom) and node.module == "fastapi":
+                if any(alias.name == "HTTPException" for alias in node.names):
+                    if relative not in allowed_http_exception_imports:
+                        offenders.append(f"{relative}:{node.lineno}:import")
+            if isinstance(node, ast.Import):
+                if any(alias.name == "fastapi.HTTPException" for alias in node.names):
+                    if relative not in allowed_http_exception_imports:
+                        offenders.append(f"{relative}:{node.lineno}:import")
+            if isinstance(node, ast.Call):
+                if isinstance(node.func, ast.Name) and node.func.id == "HTTPException":
+                    if relative not in allowed_http_exception_imports:
+                        offenders.append(f"{relative}:{node.lineno}:constructor")
+            if isinstance(node, ast.ClassDef):
+                for base in node.bases:
+                    if isinstance(base, ast.Name) and base.id == "HTTPException":
+                        if relative not in allowed_http_exception_bases:
+                            offenders.append(f"{relative}:{node.lineno}:base")
+    assert offenders == []
+
+
 def test_ordinary_api_and_services_do_not_control_transactions() -> None:
     allowed = {
         Path("api/deps.py"),

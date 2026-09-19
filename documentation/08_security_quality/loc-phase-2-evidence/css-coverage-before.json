@@ -1,0 +1,932 @@
+[
+  {
+    "route": "marketing",
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    },
+    "totalBytes": 378469,
+    "usedBytes": 29512,
+    "usedPercent": 7.8,
+    "files": [
+      {
+        "url": "http://127.0.0.1:4173/assets/index-pyjE6vkV.css",
+        "totalBytes": 335690,
+        "ranges": [
+          {
+            "start": 150,
+            "end": 4701
+          },
+          {
+            "start": 7411,
+            "end": 7450
+          },
+          {
+            "start": 7457,
+            "end": 7525
+          },
+          {
+            "start": 7526,
+            "end": 7866
+          },
+          {
+            "start": 7959,
+            "end": 8137
+          },
+          {
+            "start": 8144,
+            "end": 8184
+          },
+          {
+            "start": 8185,
+            "end": 8224
+          },
+          {
+            "start": 8231,
+            "end": 8269
+          },
+          {
+            "start": 8270,
+            "end": 8307
+          },
+          {
+            "start": 8314,
+            "end": 8355
+          },
+          {
+            "start": 8490,
+            "end": 8524
+          },
+          {
+            "start": 8755,
+            "end": 8855
+          },
+          {
+            "start": 8982,
+            "end": 9067
+          },
+          {
+            "start": 9280,
+            "end": 9372
+          },
+          {
+            "start": 10060,
+            "end": 10113
+          },
+          {
+            "start": 10428,
+            "end": 10478
+          },
+          {
+            "start": 10521,
+            "end": 10660
+          },
+          {
+            "start": 10689,
+            "end": 10713
+          },
+          {
+            "start": 10900,
+            "end": 11097
+          },
+          {
+            "start": 11144,
+            "end": 11169
+          },
+          {
+            "start": 14787,
+            "end": 14975
+          },
+          {
+            "start": 165189,
+            "end": 165480
+          },
+          {
+            "start": 165535,
+            "end": 165834
+          },
+          {
+            "start": 220776,
+            "end": 221166
+          },
+          {
+            "start": 223355,
+            "end": 223386
+          },
+          {
+            "start": 232722,
+            "end": 232779
+          },
+          {
+            "start": 233070,
+            "end": 233119
+          },
+          {
+            "start": 241160,
+            "end": 241375
+          },
+          {
+            "start": 308615,
+            "end": 311908
+          },
+          {
+            "start": 319424,
+            "end": 319633
+          },
+          {
+            "start": 322815,
+            "end": 322863
+          },
+          {
+            "start": 323532,
+            "end": 323595
+          },
+          {
+            "start": 325090,
+            "end": 325410
+          }
+        ]
+      },
+      {
+        "url": "https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;0,900;1,400&family=Outfit:wght@300;400;500;600&display=swap",
+        "totalBytes": 9960,
+        "ranges": []
+      },
+      {
+        "url": "https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;0,900;1,400&family=Outfit:wght@300;400;500;600&display=swap",
+        "totalBytes": 9960,
+        "ranges": []
+      },
+      {
+        "url": "http://127.0.0.1:4173/assets/MarketingSite-CxlBxYMI.css",
+        "totalBytes": 22859,
+        "ranges": [
+          {
+            "start": 0,
+            "end": 2296
+          },
+          {
+            "start": 2434,
+            "end": 2891
+          },
+          {
+            "start": 3145,
+            "end": 3360
+          },
+          {
+            "start": 3512,
+            "end": 3981
+          },
+          {
+            "start": 4072,
+            "end": 5750
+          },
+          {
+            "start": 5833,
+            "end": 13145
+          },
+          {
+            "start": 13266,
+            "end": 14824
+          },
+          {
+            "start": 14950,
+            "end": 15191
+          },
+          {
+            "start": 15290,
+            "end": 17791
+          },
+          {
+            "start": 17940,
+            "end": 19102
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "route": "marketing",
+    "viewport": {
+      "width": 768,
+      "height": 900
+    },
+    "totalBytes": 378469,
+    "usedBytes": 31638,
+    "usedPercent": 8.36,
+    "files": [
+      {
+        "url": "https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;0,900;1,400&family=Outfit:wght@300;400;500;600&display=swap",
+        "totalBytes": 9960,
+        "ranges": []
+      },
+      {
+        "url": "https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;0,900;1,400&family=Outfit:wght@300;400;500;600&display=swap",
+        "totalBytes": 9960,
+        "ranges": []
+      },
+      {
+        "url": "http://127.0.0.1:4173/assets/index-pyjE6vkV.css",
+        "totalBytes": 335690,
+        "ranges": [
+          {
+            "start": 150,
+            "end": 4701
+          },
+          {
+            "start": 7411,
+            "end": 7450
+          },
+          {
+            "start": 7457,
+            "end": 7525
+          },
+          {
+            "start": 7526,
+            "end": 7866
+          },
+          {
+            "start": 7959,
+            "end": 8137
+          },
+          {
+            "start": 8185,
+            "end": 8224
+          },
+          {
+            "start": 8270,
+            "end": 8307
+          },
+          {
+            "start": 8490,
+            "end": 8524
+          },
+          {
+            "start": 8755,
+            "end": 8855
+          },
+          {
+            "start": 8982,
+            "end": 9067
+          },
+          {
+            "start": 9280,
+            "end": 9372
+          },
+          {
+            "start": 10060,
+            "end": 10113
+          },
+          {
+            "start": 10428,
+            "end": 10478
+          },
+          {
+            "start": 10521,
+            "end": 10660
+          },
+          {
+            "start": 10689,
+            "end": 10713
+          },
+          {
+            "start": 10900,
+            "end": 11097
+          },
+          {
+            "start": 11144,
+            "end": 11169
+          },
+          {
+            "start": 14787,
+            "end": 14975
+          },
+          {
+            "start": 165189,
+            "end": 165480
+          },
+          {
+            "start": 165535,
+            "end": 165834
+          },
+          {
+            "start": 220776,
+            "end": 221166
+          },
+          {
+            "start": 223355,
+            "end": 223386
+          },
+          {
+            "start": 232722,
+            "end": 232779
+          },
+          {
+            "start": 233070,
+            "end": 233119
+          },
+          {
+            "start": 241160,
+            "end": 241375
+          },
+          {
+            "start": 308615,
+            "end": 311908
+          },
+          {
+            "start": 319424,
+            "end": 319633
+          },
+          {
+            "start": 322815,
+            "end": 322863
+          },
+          {
+            "start": 323532,
+            "end": 323595
+          },
+          {
+            "start": 325090,
+            "end": 325410
+          }
+        ]
+      },
+      {
+        "url": "http://127.0.0.1:4173/assets/MarketingSite-CxlBxYMI.css",
+        "totalBytes": 22859,
+        "ranges": [
+          {
+            "start": 0,
+            "end": 2296
+          },
+          {
+            "start": 2434,
+            "end": 2891
+          },
+          {
+            "start": 3145,
+            "end": 3360
+          },
+          {
+            "start": 3512,
+            "end": 3981
+          },
+          {
+            "start": 4072,
+            "end": 5750
+          },
+          {
+            "start": 5833,
+            "end": 13145
+          },
+          {
+            "start": 13266,
+            "end": 14824
+          },
+          {
+            "start": 14950,
+            "end": 15191
+          },
+          {
+            "start": 15290,
+            "end": 17791
+          },
+          {
+            "start": 17940,
+            "end": 19102
+          },
+          {
+            "start": 19190,
+            "end": 19982
+          },
+          {
+            "start": 19990,
+            "end": 21443
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "route": "marketing",
+    "viewport": {
+      "width": 375,
+      "height": 812
+    },
+    "totalBytes": 378469,
+    "usedBytes": 32916,
+    "usedPercent": 8.7,
+    "files": [
+      {
+        "url": "http://127.0.0.1:4173/assets/index-pyjE6vkV.css",
+        "totalBytes": 335690,
+        "ranges": [
+          {
+            "start": 150,
+            "end": 4701
+          },
+          {
+            "start": 7411,
+            "end": 7450
+          },
+          {
+            "start": 7457,
+            "end": 7525
+          },
+          {
+            "start": 7526,
+            "end": 7866
+          },
+          {
+            "start": 7959,
+            "end": 8137
+          },
+          {
+            "start": 8185,
+            "end": 8224
+          },
+          {
+            "start": 8270,
+            "end": 8307
+          },
+          {
+            "start": 8490,
+            "end": 8524
+          },
+          {
+            "start": 8755,
+            "end": 8855
+          },
+          {
+            "start": 8982,
+            "end": 9067
+          },
+          {
+            "start": 9280,
+            "end": 9372
+          },
+          {
+            "start": 10060,
+            "end": 10113
+          },
+          {
+            "start": 10428,
+            "end": 10478
+          },
+          {
+            "start": 10521,
+            "end": 10660
+          },
+          {
+            "start": 10689,
+            "end": 10713
+          },
+          {
+            "start": 10900,
+            "end": 11097
+          },
+          {
+            "start": 11144,
+            "end": 11169
+          },
+          {
+            "start": 14787,
+            "end": 14975
+          },
+          {
+            "start": 165189,
+            "end": 165480
+          },
+          {
+            "start": 165535,
+            "end": 165834
+          },
+          {
+            "start": 220776,
+            "end": 221166
+          },
+          {
+            "start": 223355,
+            "end": 223386
+          },
+          {
+            "start": 232722,
+            "end": 232779
+          },
+          {
+            "start": 233070,
+            "end": 233119
+          },
+          {
+            "start": 241160,
+            "end": 241375
+          },
+          {
+            "start": 308615,
+            "end": 311908
+          },
+          {
+            "start": 319424,
+            "end": 319633
+          },
+          {
+            "start": 322815,
+            "end": 322863
+          },
+          {
+            "start": 323532,
+            "end": 323595
+          },
+          {
+            "start": 325090,
+            "end": 325410
+          }
+        ]
+      },
+      {
+        "url": "https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;0,900;1,400&family=Outfit:wght@300;400;500;600&display=swap",
+        "totalBytes": 9960,
+        "ranges": []
+      },
+      {
+        "url": "https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;0,900;1,400&family=Outfit:wght@300;400;500;600&display=swap",
+        "totalBytes": 9960,
+        "ranges": []
+      },
+      {
+        "url": "http://127.0.0.1:4173/assets/MarketingSite-CxlBxYMI.css",
+        "totalBytes": 22859,
+        "ranges": [
+          {
+            "start": 0,
+            "end": 1116
+          },
+          {
+            "start": 1244,
+            "end": 2296
+          },
+          {
+            "start": 2434,
+            "end": 2891
+          },
+          {
+            "start": 3145,
+            "end": 3360
+          },
+          {
+            "start": 3512,
+            "end": 3981
+          },
+          {
+            "start": 4072,
+            "end": 5750
+          },
+          {
+            "start": 5833,
+            "end": 13145
+          },
+          {
+            "start": 13266,
+            "end": 14824
+          },
+          {
+            "start": 14950,
+            "end": 15191
+          },
+          {
+            "start": 15290,
+            "end": 17791
+          },
+          {
+            "start": 17940,
+            "end": 19102
+          },
+          {
+            "start": 19190,
+            "end": 19982
+          },
+          {
+            "start": 19990,
+            "end": 21443
+          },
+          {
+            "start": 21451,
+            "end": 22857
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "route": "login",
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    },
+    "totalBytes": 355610,
+    "usedBytes": 13443,
+    "usedPercent": 3.78,
+    "files": [
+      {
+        "url": "https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;0,900;1,400&family=Outfit:wght@300;400;500;600&display=swap",
+        "totalBytes": 9960,
+        "ranges": []
+      },
+      {
+        "url": "http://127.0.0.1:4173/assets/index-pyjE6vkV.css",
+        "totalBytes": 335690,
+        "ranges": [
+          {
+            "start": 150,
+            "end": 4701
+          },
+          {
+            "start": 7411,
+            "end": 7450
+          },
+          {
+            "start": 7457,
+            "end": 7525
+          },
+          {
+            "start": 7526,
+            "end": 7866
+          },
+          {
+            "start": 7959,
+            "end": 8137
+          },
+          {
+            "start": 8144,
+            "end": 8184
+          },
+          {
+            "start": 8490,
+            "end": 8524
+          },
+          {
+            "start": 9009,
+            "end": 9037
+          },
+          {
+            "start": 9280,
+            "end": 9372
+          },
+          {
+            "start": 10083,
+            "end": 10113
+          },
+          {
+            "start": 14787,
+            "end": 14975
+          },
+          {
+            "start": 308615,
+            "end": 311908
+          },
+          {
+            "start": 319424,
+            "end": 319584
+          },
+          {
+            "start": 325090,
+            "end": 325410
+          },
+          {
+            "start": 325485,
+            "end": 327567
+          },
+          {
+            "start": 327702,
+            "end": 329515
+          },
+          {
+            "start": 330772,
+            "end": 330959
+          }
+        ]
+      },
+      {
+        "url": "https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;0,900;1,400&family=Outfit:wght@300;400;500;600&display=swap",
+        "totalBytes": 9960,
+        "ranges": []
+      }
+    ]
+  },
+  {
+    "route": "login",
+    "viewport": {
+      "width": 768,
+      "height": 900
+    },
+    "totalBytes": 355610,
+    "usedBytes": 13777,
+    "usedPercent": 3.87,
+    "files": [
+      {
+        "url": "https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;0,900;1,400&family=Outfit:wght@300;400;500;600&display=swap",
+        "totalBytes": 9960,
+        "ranges": []
+      },
+      {
+        "url": "http://127.0.0.1:4173/assets/index-pyjE6vkV.css",
+        "totalBytes": 335690,
+        "ranges": [
+          {
+            "start": 150,
+            "end": 4701
+          },
+          {
+            "start": 7411,
+            "end": 7450
+          },
+          {
+            "start": 7457,
+            "end": 7525
+          },
+          {
+            "start": 7526,
+            "end": 7866
+          },
+          {
+            "start": 7959,
+            "end": 8137
+          },
+          {
+            "start": 8490,
+            "end": 8524
+          },
+          {
+            "start": 9009,
+            "end": 9037
+          },
+          {
+            "start": 9280,
+            "end": 9372
+          },
+          {
+            "start": 10083,
+            "end": 10113
+          },
+          {
+            "start": 14787,
+            "end": 14975
+          },
+          {
+            "start": 308615,
+            "end": 311908
+          },
+          {
+            "start": 319424,
+            "end": 319584
+          },
+          {
+            "start": 325090,
+            "end": 325410
+          },
+          {
+            "start": 325485,
+            "end": 327567
+          },
+          {
+            "start": 327702,
+            "end": 328613
+          },
+          {
+            "start": 329068,
+            "end": 329515
+          },
+          {
+            "start": 330772,
+            "end": 330959
+          },
+          {
+            "start": 334554,
+            "end": 334655
+          },
+          {
+            "start": 334742,
+            "end": 334974
+          },
+          {
+            "start": 335017,
+            "end": 335513
+          }
+        ]
+      },
+      {
+        "url": "https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;0,900;1,400&family=Outfit:wght@300;400;500;600&display=swap",
+        "totalBytes": 9960,
+        "ranges": []
+      }
+    ]
+  },
+  {
+    "route": "login",
+    "viewport": {
+      "width": 375,
+      "height": 812
+    },
+    "totalBytes": 355610,
+    "usedBytes": 13777,
+    "usedPercent": 3.87,
+    "files": [
+      {
+        "url": "https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;0,900;1,400&family=Outfit:wght@300;400;500;600&display=swap",
+        "totalBytes": 9960,
+        "ranges": []
+      },
+      {
+        "url": "http://127.0.0.1:4173/assets/index-pyjE6vkV.css",
+        "totalBytes": 335690,
+        "ranges": [
+          {
+            "start": 150,
+            "end": 4701
+          },
+          {
+            "start": 7411,
+            "end": 7450
+          },
+          {
+            "start": 7457,
+            "end": 7525
+          },
+          {
+            "start": 7526,
+            "end": 7866
+          },
+          {
+            "start": 7959,
+            "end": 8137
+          },
+          {
+            "start": 8490,
+            "end": 8524
+          },
+          {
+            "start": 9009,
+            "end": 9037
+          },
+          {
+            "start": 9280,
+            "end": 9372
+          },
+          {
+            "start": 10083,
+            "end": 10113
+          },
+          {
+            "start": 14787,
+            "end": 14975
+          },
+          {
+            "start": 308615,
+            "end": 311908
+          },
+          {
+            "start": 319424,
+            "end": 319584
+          },
+          {
+            "start": 325090,
+            "end": 325410
+          },
+          {
+            "start": 325485,
+            "end": 327567
+          },
+          {
+            "start": 327702,
+            "end": 328613
+          },
+          {
+            "start": 329068,
+            "end": 329515
+          },
+          {
+            "start": 330772,
+            "end": 330959
+          },
+          {
+            "start": 334554,
+            "end": 334655
+          },
+          {
+            "start": 334742,
+            "end": 334974
+          },
+          {
+            "start": 335017,
+            "end": 335513
+          }
+        ]
+      },
+      {
+        "url": "https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;0,900;1,400&family=Outfit:wght@300;400;500;600&display=swap",
+        "totalBytes": 9960,
+        "ranges": []
+      }
+    ]
+  }
+]

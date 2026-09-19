@@ -1,12 +1,10 @@
 # Ficheiro: app/api/endpoints/health.py
 
-from typing import Annotated
 
 import structlog
-from fastapi import APIRouter, Depends, Request, status
+from fastapi import APIRouter, Request, status
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api import deps
 from app.config import settings
@@ -18,7 +16,7 @@ router = APIRouter()
 
 async def readiness(
     request: Request,
-    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
+    db: deps.DbSession,
 ):
     health_status = {
         "status": "ok",

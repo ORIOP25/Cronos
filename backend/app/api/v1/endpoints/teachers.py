@@ -3,16 +3,15 @@
 from time import perf_counter
 from typing import Annotated
 
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, Query, Request
 
 from app import schemas
 from app.api import deps
+from app.core.exceptions import AppError, status_code_for_kind
 from app.core.ratelimit import limiter
 from app.services import teacher_observability_service, teacher_service
 
 TEACHER_NOT_FOUND_MSG = "Professor não encontrado"
-
-TEACHER_PROFILE_REQUIRED_MSG = "Professor sem perfil associado"
 
 router = APIRouter()
 
@@ -33,20 +32,18 @@ async def read_my_availability(
     try:
         if current_user.teacher_id is None:
             status_code = 403
-            raise HTTPException(status_code=403, detail=TEACHER_PROFILE_REQUIRED_MSG)
+            raise AppError(
+                kind="forbidden", code="access_forbidden", detail="Professor sem perfil associado"
+            )
 
         result = await teacher_service.get_teacher_availability(
             db,
             teacher_id=current_user.teacher_id,
             organization_id=current_user.organization_id,
         )
-        if result == "NOT_FOUND":
-            status_code = 404
-            raise HTTPException(status_code=404, detail=TEACHER_NOT_FOUND_MSG)
-
         return result
-    except HTTPException as exc:
-        status_code = exc.status_code
+    except AppError as exc:
+        status_code = status_code_for_kind(exc.kind, exc.code)
         raise
     except Exception:
         status_code = 500
@@ -85,7 +82,9 @@ async def update_my_availability(
 ):
     """Atualiza disponibilidade do professor autenticado (self-service)."""
     if current_user.teacher_id is None:
-        raise HTTPException(status_code=403, detail=TEACHER_PROFILE_REQUIRED_MSG)
+        raise AppError(
+            kind="forbidden", code="access_forbidden", detail="Professor sem perfil associado"
+        )
 
     result = await teacher_service.set_teacher_availability(
         db,
@@ -94,12 +93,6 @@ async def update_my_availability(
         organization_id=current_user.organization_id,
         changed_by_membership_id=current_user.membership_id,
     )
-    if result == "NOT_FOUND":
-        raise HTTPException(status_code=404, detail=TEACHER_NOT_FOUND_MSG)
-    if result == "INVALID_TIMESLOT":
-        raise HTTPException(status_code=400, detail="Timeslot inválido ou fora da organização")
-    if result == "DUPLICATE_TIMESLOT":
-        raise HTTPException(status_code=400, detail={"code": "duplicate_timeslot"})
     return result
 
 
@@ -116,8 +109,10 @@ async def read_teacher_availability(
     """Inspetor read-only de disponibilidade para Administrador ou o próprio Professor."""
     is_admin = deps.user_has_admin_capability(current_user)
     if not is_admin and current_user.teacher_id != teacher_id:
-        raise HTTPException(
-            status_code=403, detail="Sem permissões para visualizar outro professor"
+        raise AppError(
+            kind="forbidden",
+            code="access_forbidden",
+            detail="Sem permissões para visualizar outro professor",
         )
 
     result = await teacher_service.get_teacher_availability(
@@ -125,8 +120,6 @@ async def read_teacher_availability(
         teacher_id=teacher_id,
         organization_id=current_user.organization_id,
     )
-    if result == "NOT_FOUND":
-        raise HTTPException(status_code=404, detail=TEACHER_NOT_FOUND_MSG)
     return result
 
 
@@ -169,7 +162,9 @@ async def read_my_progress(
     try:
         if current_user.teacher_id is None:
             status_code = 403
-            raise HTTPException(status_code=403, detail=TEACHER_PROFILE_REQUIRED_MSG)
+            raise AppError(
+                kind="forbidden", code="access_forbidden", detail="Professor sem perfil associado"
+            )
 
         result = await teacher_service.get_teacher_progress(
             db,
@@ -177,8 +172,8 @@ async def read_my_progress(
             organization_id=current_user.organization_id,
         )
         return result
-    except HTTPException as exc:
-        status_code = exc.status_code
+    except AppError as exc:
+        status_code = status_code_for_kind(exc.kind, exc.code)
         raise
     except Exception:
         status_code = 500

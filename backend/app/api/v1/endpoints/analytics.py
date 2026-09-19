@@ -1,10 +1,8 @@
 # Ficheiro: backend/app/api/endpoints/analytics.py
 
-from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter
 from sqlalchemy import func, select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models
 from app.api import deps
@@ -14,7 +12,7 @@ router = APIRouter()
 
 @router.get("/availability-heatmap")
 async def get_availability_heatmap(
-    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
+    db: deps.DbSession,
     current_user: deps.ActiveActor,
 ):
     """

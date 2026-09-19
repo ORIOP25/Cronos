@@ -3,9 +3,13 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 
 const baseUrl = process.argv[2] || process.env.BASE_URL || 'http://127.0.0.1:5174'
-const outputDir = resolve('../documentation/06_frontend_ux/visual-baselines')
+if (process.env.CSS_COVERAGE_ENABLED !== '1') {
+  throw new Error('CSS coverage is opt-in. Set CSS_COVERAGE_ENABLED=1 to run this measurement.')
+}
+
+const outputDir = resolve('../documentation/08_security_quality/loc-phase-2-evidence')
 const routes = [
-  { name: 'marketing', path: '/', ready: '#cronos-hero-title' },
+  { name: 'marketing', path: '/', ready: '.cronos-hero h1' },
   { name: 'login', path: '/login', ready: '.zen-auth-layout' },
 ]
 const viewports = [
@@ -40,7 +44,7 @@ for (const route of routes) {
 
 await browser.close()
 await mkdir(outputDir, { recursive: true })
-await writeFile(resolve(outputDir, 'css-coverage.json'), `${JSON.stringify(results, null, 2)}\n`)
+await writeFile(resolve(outputDir, 'css-coverage-after.json'), `${JSON.stringify(results, null, 2)}\n`)
 for (const result of results) {
   console.log(`${result.route} ${result.viewport.width}px: ${result.usedPercent}% CSS used`)
 }

@@ -1,7 +1,4 @@
-from typing import Annotated
-
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import APIRouter
 
 from app import schemas
 from app.api import deps
@@ -13,7 +10,7 @@ router = APIRouter()
 @router.get("/", response_model=list[schemas.RoomRead])
 async def read_rooms(
     current_user: deps.ActiveActor,
-    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
+    db: deps.DbSession,
 ):
     return await room_service.get_rooms_by_org(
         db,
@@ -24,7 +21,7 @@ async def read_rooms(
 @router.post("/", response_model=schemas.RoomRead)
 async def create_room(
     room: schemas.RoomCreate,
-    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
+    db: deps.DbSession,
     # A CorreÃ§Ã£o: Pedimos o Utilizador Logado, nÃ£o o org_id direto
     current_user: deps.AdminActor,
 ):
@@ -48,19 +45,16 @@ async def create_room(
 async def update_room(
     room_id: int,
     room_in: schemas.RoomUpdate,
-    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
+    db: deps.DbSession,
     current_user: deps.AdminActor,
 ):
-    room = await room_service.update_room(
+    return await room_service.update_room(
         db,
         room_id,
         room_in,
         current_user.organization_id,
         changed_by_membership_id=current_user.membership_id,
     )
-    if not room:
-        raise HTTPException(status_code=404, detail="Sala nÃ£o encontrada")
-    return room
 
 
 @router.delete(
@@ -72,23 +66,14 @@ async def update_room(
 )
 async def delete_room(
     room_id: int,
-    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
+    db: deps.DbSession,
     current_user: deps.AdminActor,
 ):
-    status = await room_service.delete_room(
+    await room_service.delete_room(
         db,
         room_id,
         current_user.organization_id,
         changed_by_membership_id=current_user.membership_id,
     )
-
-    if status == "NOT_FOUND":
-        raise HTTPException(status_code=404, detail="Sala nÃ£o encontrada")
-
-    if status == "DEPENDENCY_ERROR":
-        raise HTTPException(
-            status_code=400,
-            detail="NÃ£o Ã© possÃ­vel apagar esta sala pois existem aulas agendadas nela.",
-        )
 
     return {"message": "Sala removida com sucesso"}

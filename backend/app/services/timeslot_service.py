@@ -6,7 +6,7 @@ from sqlalchemy import delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models, schemas
-from app.core.exceptions import ConflictError
+from app.core.exceptions import AppError
 from app.services.scheduler_state_service import record_scheduler_change
 
 logger = structlog.get_logger(__name__)
@@ -141,95 +141,6 @@ async def create_timeslot(
     await db.flush()
     await db.refresh(db_item)
     return db_item
-
-
-async def update_timeslot(
-    db: AsyncSession,
-    timeslot_id: int,
-    item: schemas.TimeslotUpdate,
-    organization_id: int,
-    changed_by_membership_id: int | None = None,
-):
-    query = select(models.Timeslot).where(
-        models.Timeslot.id == timeslot_id, models.Timeslot.organization_id == organization_id
-    )
-    result = await db.execute(query)
-    db_item = result.scalars().first()
-
-    if not db_item:
-        return None
-
-    before = _timeslot_snapshot(db_item)
-    update_data = item.model_dump(exclude_unset=True)
-    for field, value in update_data.items():
-        setattr(db_item, field, value)
-
-    db.add(db_item)
-    await record_scheduler_change(
-        db,
-        organization_id,
-        entity_type="TIMESLOT",
-        entity_id=db_item.id,
-        operation=models.SchedulerStateChangeOperation.UPDATE,
-        before=before,
-        after=_timeslot_snapshot(db_item),
-        changed_by_membership_id=changed_by_membership_id,
-    )
-    await db.flush()
-    await db.refresh(db_item)
-    return db_item
-
-
-async def delete_timeslot(
-    db: AsyncSession,
-    timeslot_id: int,
-    organization_id: int,
-    changed_by_membership_id: int | None = None,
-):
-    """
-    Remove um bloco horário individual.
-    Lógica 'Soft': Limpa dependências fracas (Availability) mas bloqueia se houver dados críticos.
-    """
-    result = await db.execute(
-        select(models.Timeslot).where(
-            models.Timeslot.id == timeslot_id, models.Timeslot.organization_id == organization_id
-        )
-    )
-    item = result.scalars().first()
-
-    if not item:
-        return "NOT_FOUND"
-
-    # Verificações de Integridade (Firewall para delete individual)
-
-    for model in (
-        models.ActiveScheduleBlock,
-        models.ScheduleDraftBlock,
-        models.OperationalScheduleBlock,
-    ):
-        query = select(model.id).where(model.timeslot_id == timeslot_id)
-        if (await db.execute(query)).first():
-            return "DEPENDENCY_ERROR_SCHEDULE"
-
-    # Limpeza de dependências fracas (Availability)
-    await db.execute(
-        delete(models.Availability).where(models.Availability.timeslot_id == timeslot_id)
-    )
-
-    before = _timeslot_snapshot(item)
-    await db.delete(item)
-    await record_scheduler_change(
-        db,
-        organization_id,
-        entity_type="TIMESLOT",
-        entity_id=item.id,
-        operation=models.SchedulerStateChangeOperation.DELETE,
-        before=before,
-        after=None,
-        changed_by_membership_id=changed_by_membership_id,
-    )
-    await db.flush()
-    return "SUCCESS"
 
 
 # --- GERAÇÃO EM MASSA (RESET ESTRUTURAL) ---
@@ -377,7 +288,7 @@ async def preflight_grid_regeneration(
             blockers=blockers,
         )
         message = SLOT_RULES_MESSAGE if set(blockers) == {"slot_rules"} else PROTECTED_GRID_MESSAGE
-        raise ConflictError(message)
+        raise AppError(kind="conflict", code="conflict", detail=message)
     return plan
 
 

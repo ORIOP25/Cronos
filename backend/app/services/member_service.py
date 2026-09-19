@@ -39,7 +39,7 @@ def _require_operation_service(
 
 
 def member_error(
-    status_code: int,
+    kind: str,
     code: str,
     message: str,
     *,
@@ -48,12 +48,6 @@ def member_error(
     support_required: bool = False,
     fields: dict[str, str] | None = None,
 ) -> AppError:
-    kind = {
-        403: "forbidden",
-        404: "not_found",
-        409: "conflict",
-        422: "validation",
-    }.get(status_code, "unavailable")
     return AppError(
         kind=kind,
         code=code,
@@ -85,6 +79,56 @@ def _expected_role(
     ):
         return models.ClerkOrganizationRole.member
     return None
+
+
+def _normalize_capability_policy(
+    capabilities: set[models.MembershipCapability],
+    teacher_access_mode: models.TeacherAccessMode | None,
+    *,
+    allow_platform_access: bool = True,
+) -> tuple[
+    set[models.MembershipCapability],
+    models.TeacherAccessMode | None,
+    models.ClerkOrganizationRole | None,
+]:
+    """Validate the capability/mode matrix once at the application boundary."""
+    normalized_capabilities = set(capabilities)
+    normalized_mode = teacher_access_mode
+    if models.MembershipCapability.teacher not in normalized_capabilities:
+        if normalized_mode is not None:
+            raise member_error(
+                "validation",
+                "validation_error",
+                "Teacher access mode is only valid for teachers.",
+                fields={"teacher_access_mode": "Remove this value."},
+            )
+        normalized_mode = None
+    elif normalized_mode is None:
+        raise member_error(
+            "validation",
+            "validation_error",
+            "Teacher access mode is required.",
+            fields={"teacher_access_mode": "Required."},
+        )
+    if (
+        models.MembershipCapability.admin in normalized_capabilities
+        and normalized_mode == models.TeacherAccessMode.scheduler_only
+    ):
+        raise member_error(
+            "validation",
+            "validation_error",
+            "Admins require platform access.",
+            fields={"teacher_access_mode": "Use platform."},
+        )
+    expected_role = _expected_role(normalized_capabilities, normalized_mode)
+    if not allow_platform_access and expected_role is not None:
+        raise member_error(
+            "validation",
+            "validation_error",
+            "Choose scheduler-only teacher access or restore platform access.",
+            fields={"capabilities": "Platform capabilities require access."},
+        )
+    return normalized_capabilities, normalized_mode, expected_role
 
 
 def _access_status_for_draft(
@@ -421,13 +465,13 @@ async def _record_teacher_scheduler_change(
 async def _organization(db: AsyncSession, organization_id: int) -> models.Organization:
     org = await db.get(models.Organization, organization_id)
     if org is None:
-        raise member_error(404, "organization_not_found", "Organization not found.")
+        raise member_error("not_found", "organization_not_found", "Organization not found.")
     return org
 
 
 def _require_clerk_org(org: models.Organization, current_admin: Actor) -> str:
     if not org.clerk_org_id or not current_admin.clerk_user_id:
-        raise member_error(503, "clerk_configuration_required", SAFE_PROVIDER_ERROR)
+        raise member_error("unavailable", "clerk_configuration_required", SAFE_PROVIDER_ERROR)
     return org.clerk_org_id
 
 
@@ -455,7 +499,7 @@ async def _validate_subject_ids(
     valid_subject_ids = [row[0] for row in result.all()]
     if len(valid_subject_ids) != len(set(subject_ids)):
         raise member_error(
-            422,
+            "validation",
             "validation_error",
             "Invalid competencies.",
             fields={"subject_ids": "One or more subjects do not belong to the organization."},
@@ -617,20 +661,22 @@ async def _assert_can_remove_admin_capability(
         return
     if member.account_id == current_admin.account_id:
         raise member_error(
-            409, "self_admin_change_blocked", "You cannot remove your own admin access."
+            "conflict", "self_admin_change_blocked", "You cannot remove your own admin access."
         )
     if await _active_admin_count(db, member.organization_id, exclude_member_id=member.id) == 0:
         raise member_error(
-            409, "last_active_admin_blocked", "At least one active admin must remain."
+            "conflict", "last_active_admin_blocked", "At least one active admin must remain."
         )
 
 
 def _raise_provider_failure(result: ClerkAccessResult) -> None:
-    status_code = 429 if result.error_category == "provider_rate_limited" else 502
-    if result.retryable and status_code != 429:
-        status_code = 503
+    kind = (
+        "too_many_requests" if result.error_category == "provider_rate_limited" else "unavailable"
+    )
+    if result.retryable and kind != "too_many_requests":
+        kind = "unavailable"
     raise member_error(
-        status_code,
+        kind,
         result.error_category or "provider_error",
         result.safe_message or SAFE_PROVIDER_ERROR,
         retryable=result.retryable,
@@ -639,7 +685,7 @@ def _raise_provider_failure(result: ClerkAccessResult) -> None:
 
 def _raise_unresolved_operation(exc: UnresolvedAccessOperationError) -> None:
     raise member_error(
-        409,
+        "conflict",
         "member_access_operation_unresolved",
         "A previous access change still requires reconciliation. Contact support.",
         support_required=True,
@@ -648,7 +694,7 @@ def _raise_unresolved_operation(exc: UnresolvedAccessOperationError) -> None:
 
 def _raise_local_commit_failure(*, support_required: bool) -> None:
     raise member_error(
-        503 if support_required else 500,
+        "unavailable" if support_required else "unexpected_error",
         "member_access_support_required" if support_required else "member_access_commit_failed",
         (
             "Access synchronization requires support before another change can be attempted."
@@ -688,6 +734,7 @@ async def _send_invitation(
     operation_type: models.MemberAccessOperationType,
     operation_service: MemberAccessOperationService | None = None,
     previous_snapshot: dict | None = None,
+    draft_payload: dict | None = None,
 ) -> None:
     org = await _organization(db, member.organization_id)
     clerk_org_id = _require_clerk_org(org, current_admin)
@@ -721,6 +768,7 @@ async def _send_invitation(
             account_id=account_id,
             lock_version=member.lock_version,
             previous_snapshot=previous_snapshot or _access_snapshot(member),
+            draft_payload=draft_payload,
             clerk_org_id=clerk_org_id,
             clerk_user_id=member.account.clerk_user_id,
             clerk_membership_id=member.clerk_membership_id,
@@ -1230,7 +1278,7 @@ async def get_member_read(
 ) -> schemas.MemberRead:
     member = await _load_member(db, organization_id, member_id)
     if member is None:
-        raise member_error(404, "member_not_found", "Member not found.")
+        raise member_error("not_found", "member_not_found", "Member not found.")
     history_ids = await _teacher_ids_with_history(
         db,
         organization_id,
@@ -1272,7 +1320,9 @@ async def create_member(
         if member_in.teacher_access_mode
         else None
     )
-    expected_role = _expected_role(capabilities, teacher_access_mode)
+    capabilities, teacher_access_mode, expected_role = _normalize_capability_policy(
+        capabilities, teacher_access_mode
+    )
     normalized_email = _normalize_email(str(member_in.email))
     account = await db.scalar(
         select(models.User).where(func.lower(models.User.email) == normalized_email)
@@ -1287,156 +1337,12 @@ async def create_member(
         )
         if existing is not None:
             raise member_error(
-                409, "member_already_exists", "This member already exists in the organization."
+                "conflict",
+                "member_already_exists",
+                "This member already exists in the organization.",
             )
 
     clerk_access = clerk_access or ClerkAccessService()
-    admin_membership_id = current_admin.membership_id
-    admin_clerk_user_id = current_admin.clerk_user_id
-    invite_result: ClerkAccessResult | None = None
-    provider_user: ClerkAccessResult | None = None
-    provider_membership: ClerkAccessResult | None = None
-    operation_id: int | None = None
-    clerk_org_id: str | None = None
-    saga: MemberAccessSagaCoordinator | None = None
-    created_invitation = False
-    created_membership = False
-    changed_role_from: models.ClerkOrganizationRole | None = None
-
-    if expected_role is not None:
-        operation_service = _require_operation_service(operation_service)
-        saga = MemberAccessSagaCoordinator(operation_service)
-        org = await _organization(db, organization_id)
-        clerk_org_id = _require_clerk_org(org, current_admin)
-        intent = {
-            "capabilities": sorted(capability.value for capability in capabilities),
-            "teacher_access_mode": teacher_access_mode.value if teacher_access_mode else None,
-            "subject_ids": sorted(member_in.subject_ids),
-            "expected_role": expected_role.value,
-        }
-        try:
-            operation = await operation_service.create_pending(
-                organization_id=organization_id,
-                target_email=normalized_email,
-                operation_type=models.MemberAccessOperationType.create_invitation,
-                created_by_membership_id=admin_membership_id,
-                intended_capabilities=capabilities,
-                intended_role=expected_role,
-                intent=intent,
-                draft_payload=member_in.model_dump(mode="json"),
-                clerk_org_id=clerk_org_id,
-                clerk_user_id=None,
-            )
-        except UnresolvedAccessOperationError as exc:
-            _raise_unresolved_operation(exc)
-        operation_id = operation.id
-        provider_user = await clerk_access.find_user_by_email(email=normalized_email)
-        if not provider_user.ok:
-            await operation_service.transition(
-                operation_id,
-                models.MemberAccessOperationStatus.failed,
-                error_category=provider_user.error_category,
-                safe_message=provider_user.safe_message,
-            )
-            _raise_provider_failure(provider_user)
-        if provider_user.user_id:
-            provider_membership = await clerk_access.get_membership(
-                clerk_org_id=clerk_org_id,
-                clerk_user_id=provider_user.user_id,
-            )
-            if not provider_membership.ok:
-                await operation_service.transition(
-                    operation_id,
-                    models.MemberAccessOperationStatus.failed,
-                    error_category=provider_membership.error_category,
-                    safe_message=provider_membership.safe_message,
-                )
-                _raise_provider_failure(provider_membership)
-
-        if provider_membership and provider_membership.membership_id:
-            actual_role = (
-                models.ClerkOrganizationRole(provider_membership.role)
-                if provider_membership.role in {role.value for role in models.ClerkOrganizationRole}
-                else None
-            )
-            if actual_role != expected_role:
-                role_result = await clerk_access.change_membership_role(
-                    clerk_org_id=clerk_org_id,
-                    clerk_user_id=provider_user.user_id,
-                    role=expected_role.value,
-                )
-                if not role_result.ok:
-                    await operation_service.transition(
-                        operation_id,
-                        models.MemberAccessOperationStatus.failed,
-                        error_category=role_result.error_category,
-                        safe_message=role_result.safe_message,
-                    )
-                    _raise_provider_failure(role_result)
-                changed_role_from = actual_role
-                provider_membership = role_result
-        elif provider_user.user_id:
-            provider_membership = await clerk_access.create_organization_membership(
-                clerk_org_id=clerk_org_id,
-                clerk_user_id=provider_user.user_id,
-                role=expected_role.value,
-            )
-            if not provider_membership.ok:
-                await operation_service.transition(
-                    operation_id,
-                    models.MemberAccessOperationStatus.failed,
-                    error_category=provider_membership.error_category,
-                    safe_message=provider_membership.safe_message,
-                )
-                _raise_provider_failure(provider_membership)
-            created_membership = True
-        else:
-            invite_result = await clerk_access.find_pending_invitation(
-                clerk_org_id=clerk_org_id,
-                email=normalized_email,
-            )
-            if invite_result.ok and not invite_result.invitation_id:
-                invite_result = await clerk_access.create_organization_invitation(
-                    clerk_org_id=clerk_org_id,
-                    email=normalized_email,
-                    role=expected_role.value,
-                    inviter_user_id=admin_clerk_user_id,
-                    membership_id=None,
-                )
-                created_invitation = invite_result.ok
-        if invite_result is not None and not invite_result.ok:
-            if invite_result.invitation_id:
-                outcome = await saga.compensate_created_invitation(
-                    operation_id=operation_id,
-                    clerk_org_id=clerk_org_id,
-                    invitation_id=invite_result.invitation_id,
-                    requesting_user_id=admin_clerk_user_id,
-                    error_category=invite_result.error_category or "provider_failure",
-                    safe_message=invite_result.safe_message or SAFE_PROVIDER_ERROR,
-                )
-                if outcome.support_required:
-                    _raise_local_commit_failure(support_required=True)
-            else:
-                await operation_service.transition(
-                    operation_id,
-                    models.MemberAccessOperationStatus.failed,
-                    error_category=invite_result.error_category,
-                    safe_message=invite_result.safe_message,
-                )
-            _raise_provider_failure(invite_result)
-        if invite_result is not None:
-            await operation_service.transition(
-                operation_id,
-                models.MemberAccessOperationStatus.clerk_succeeded,
-                clerk_invitation_id=invite_result.invitation_id,
-            )
-        if provider_membership and provider_membership.membership_id:
-            await operation_service.transition(
-                operation_id,
-                models.MemberAccessOperationStatus.clerk_succeeded,
-                clerk_membership_id=provider_membership.membership_id,
-            )
-
     try:
         account_id = (
             account.id
@@ -1448,9 +1354,6 @@ async def create_member(
                 display_name=member_in.organization_display_name,
             )
         )
-        if provider_user and provider_user.user_id and account is not None:
-            if account.clerk_user_id and account.clerk_user_id != provider_user.user_id:
-                raise RuntimeError("The local email is linked to a different Clerk user.")
         membership = models.OrganizationMembership(
             organization_id=organization_id,
             account_id=account_id,
@@ -1465,30 +1368,10 @@ async def create_member(
         )
         db.add(membership)
         await db.flush()
-        if provider_user and provider_user.user_id:
-            linked_account_id = await db.scalar(
-                text(
-                    """
-                    SELECT id
-                    FROM app_security.ensure_user(
-                        :clerk_user_id, :email, :display_name, :role,
-                        :organization_id, NULL
-                    )
-                    """
-                ),
-                {
-                    "clerk_user_id": provider_user.user_id,
-                    "email": normalized_email,
-                    "display_name": member_in.organization_display_name.strip(),
-                    "role": expected_role.value if expected_role else "member",
-                    "organization_id": organization_id,
-                },
-            )
-            if linked_account_id != account_id:
-                raise RuntimeError("The local email is linked to a different Clerk user.")
         account = await db.get(models.User, account_id)
         if account is None:
             raise RuntimeError("The pending member account could not be loaded.")
+        membership.account = account
         await _replace_capabilities(db, membership, capabilities)
         await _sync_teacher_profile(
             db,
@@ -1497,106 +1380,21 @@ async def create_member(
             subject_ids=member_in.subject_ids,
             current_admin=current_admin,
         )
-        if expected_role is not None:
-            if provider_membership and provider_membership.membership_id:
-                membership.clerk_membership_id = provider_membership.membership_id
-                membership.access_status = models.MembershipAccessStatus.active
-            else:
-                assert invite_result is not None
-                membership.clerk_invitation_id = invite_result.invitation_id
-                membership.clerk_invitation_status = models.ClerkInvitationStatus.pending
-                membership.invitation_expires_at = normalize_clerk_datetime(
-                    invite_result.expires_at
-                )
-                membership.access_status = models.MembershipAccessStatus.pending_invite
         await db.flush()
         if expected_role is not None:
-            await db.commit()
-            await set_async_tenant_context(db, organization_id)
-    except Exception as exc:
+            await _send_invitation(
+                db,
+                member=membership,
+                current_admin=current_admin,
+                clerk_access=clerk_access,
+                operation_type=models.MemberAccessOperationType.create_invitation,
+                operation_service=operation_service,
+                draft_payload=member_in.model_dump(mode="json"),
+            )
+    except Exception:
         await db.rollback()
-        if (
-            created_membership
-            and provider_user is not None
-            and provider_user.user_id
-            and operation_id is not None
-            and clerk_org_id is not None
-        ):
-            assert saga is not None
-            outcome = await saga.compensate_created_membership(
-                operation_id=operation_id,
-                clerk_org_id=clerk_org_id,
-                clerk_user_id=provider_user.user_id,
-                clerk_membership_id=(
-                    provider_membership.membership_id if provider_membership else None
-                ),
-                error_category="local_commit_failed",
-                safe_message=type(exc).__name__,
-            )
-            _raise_local_commit_failure(support_required=outcome.support_required)
-        if (
-            created_invitation
-            and invite_result is not None
-            and operation_id is not None
-            and clerk_org_id is not None
-        ):
-            assert saga is not None
-            outcome = await saga.compensate_created_invitation(
-                operation_id=operation_id,
-                clerk_org_id=clerk_org_id,
-                invitation_id=invite_result.invitation_id,
-                requesting_user_id=admin_clerk_user_id,
-                error_category="local_commit_failed",
-                safe_message=type(exc).__name__,
-            )
-            logger.error(
-                "member_access_local_commit_failed",
-                operation_id=operation_id,
-                organization_id=organization_id,
-                compensation_succeeded=not outcome.support_required,
-                error_type=type(exc).__name__,
-            )
-            _raise_local_commit_failure(support_required=outcome.support_required)
-        if (
-            changed_role_from is not None
-            and provider_user is not None
-            and provider_user.user_id
-            and operation_id is not None
-            and clerk_org_id is not None
-        ):
-            assert saga is not None
-            outcome = await saga.compensate_role_change(
-                operation_id=operation_id,
-                clerk_org_id=clerk_org_id,
-                clerk_user_id=provider_user.user_id,
-                previous_role=changed_role_from,
-                clerk_membership_id=(
-                    provider_membership.membership_id if provider_membership else None
-                ),
-                error_category="local_commit_failed",
-                safe_message=type(exc).__name__,
-            )
-            _raise_local_commit_failure(support_required=outcome.support_required)
-        if operation_id is not None:
-            await operation_service.transition(
-                operation_id,
-                models.MemberAccessOperationStatus.failed,
-                error_category="local_commit_failed",
-                safe_message=type(exc).__name__,
-            )
         raise
 
-    if operation_id is not None:
-        await operation_service.transition(
-            operation_id,
-            models.MemberAccessOperationStatus.local_committed,
-            membership_id=membership.id,
-            account_id=account.id,
-            clerk_invitation_id=invite_result.invitation_id if invite_result else None,
-            clerk_membership_id=(
-                provider_membership.membership_id if provider_membership else None
-            ),
-        )
     created = await _load_member(db, organization_id, membership.id)
     return _to_read(created)
 
@@ -1613,15 +1411,17 @@ async def update_member(
 ) -> schemas.MemberRead:
     member = await _load_member(db, organization_id, member_id)
     if member is None:
-        raise member_error(404, "member_not_found", "Member not found.")
+        raise member_error("not_found", "member_not_found", "Member not found.")
     if member.lifecycle_status != models.MembershipLifecycleStatus.active:
-        raise member_error(409, "member_archived", "Restore the member before editing.")
+        raise member_error("conflict", "member_archived", "Restore the member before editing.")
     if member.access_status == models.MembershipAccessStatus.sync_error:
         raise member_error(
-            409, "member_sync_error", "Resolve the synchronization error before editing."
+            "conflict", "member_sync_error", "Resolve the synchronization error before editing."
         )
     if member_in.lock_version and member_in.lock_version != member.lock_version:
-        raise member_error(409, "stale_member", "This member changed while you were editing.")
+        raise member_error(
+            "conflict", "stale_member", "This member changed while you were editing."
+        )
 
     current_caps = {cap.capability for cap in member.capabilities}
     previous_can_teach = member.can_teach
@@ -1633,32 +1433,13 @@ async def update_member(
     next_mode = member.teacher_access_mode
     if member_in.teacher_access_mode is not None:
         next_mode = models.TeacherAccessMode(member_in.teacher_access_mode)
-    if models.MembershipCapability.teacher not in next_caps:
-        next_mode = None
-    elif next_mode is None:
-        raise member_error(
-            422,
-            "validation_error",
-            "Teacher access mode is required.",
-            fields={"teacher_access_mode": "Required."},
-        )
-    if (
-        models.MembershipCapability.admin in next_caps
-        and next_mode == models.TeacherAccessMode.scheduler_only
-    ):
-        raise member_error(
-            422,
-            "validation_error",
-            "Admins require platform access.",
-            fields={"teacher_access_mode": "Use platform."},
-        )
+    next_caps, next_mode, target_role = _normalize_capability_policy(next_caps, next_mode)
 
     await _assert_can_remove_admin_capability(
         db, member, current_admin, next_capabilities=next_caps
     )
     previous_snapshot = _access_snapshot(member)
     previous_role = member.expected_clerk_role
-    target_role = _expected_role(next_caps, next_mode)
     clerk_access = clerk_access or ClerkAccessService()
     if models.MembershipCapability.teacher in next_caps and member_in.subject_ids is not None:
         await _validate_subject_ids(db, organization_id, member_in.subject_ids)
@@ -1683,7 +1464,7 @@ async def update_member(
         await db.refresh(member.account)
     elif member_in.email and _normalize_email(str(member_in.email)) != member.account.email:
         raise member_error(
-            409,
+            "conflict",
             "active_identity_email_locked",
             "The email of an active access account is managed by the user or support.",
             fields={"email": "Locked for active members."},
@@ -1747,6 +1528,92 @@ async def update_member(
     return _to_read(updated)
 
 
+async def _assert_member_removal_allowed(
+    db: AsyncSession,
+    member: models.OrganizationMembership,
+    *,
+    organization_id: int,
+    current_admin: Actor,
+) -> None:
+    caps = {cap.capability for cap in member.capabilities}
+    if member.account_id == current_admin.account_id and models.MembershipCapability.admin in caps:
+        raise member_error(
+            "conflict", "self_admin_removal_blocked", "You cannot remove your own admin access."
+        )
+    if models.MembershipCapability.admin not in caps:
+        return
+    if await _active_admin_count(db, organization_id, exclude_member_id=member.id) == 0:
+        raise member_error(
+            "conflict", "last_active_admin_blocked", "At least one active admin must remain."
+        )
+
+
+async def _hard_delete_member(
+    db: AsyncSession,
+    member: models.OrganizationMembership,
+    *,
+    teacher_id: int | None,
+    teacher_subjects: list[int],
+    scheduler_relevant: bool,
+    current_admin: Actor,
+) -> None:
+    if member.teacher_profile:
+        await db.delete(member.teacher_profile)
+        await _record_teacher_scheduler_change(
+            db,
+            member.organization_id,
+            teacher_id=teacher_id,
+            operation=models.SchedulerStateChangeOperation.DELETE,
+            before={
+                "status": "active",
+                "can_teach": member.can_teach,
+                "subject_ids": teacher_subjects,
+            },
+            after=None,
+            changed_by_membership_id=current_admin.membership_id,
+            active_resource=scheduler_relevant,
+        )
+    await db.delete(member)
+
+
+async def _archive_removed_member(
+    db: AsyncSession,
+    member: models.OrganizationMembership,
+    *,
+    teacher_id: int | None,
+    teacher_subjects: list[int],
+    scheduler_relevant: bool,
+    current_admin: Actor,
+) -> None:
+    member.lifecycle_status = models.MembershipLifecycleStatus.archived
+    member.access_status = (
+        models.MembershipAccessStatus.blocked
+        if member.access_status != models.MembershipAccessStatus.none
+        else models.MembershipAccessStatus.none
+    )
+    member.updated_by_membership_id = current_admin.membership_id
+    member.lock_version += 1
+    if member.teacher_profile or member.can_teach:
+        await _record_teacher_scheduler_change(
+            db,
+            member.organization_id,
+            teacher_id=teacher_id or member.id,
+            operation=models.SchedulerStateChangeOperation.DELETE,
+            before={
+                "status": "active",
+                "can_teach": member.can_teach,
+                "subject_ids": teacher_subjects,
+            },
+            after={
+                "status": "archived",
+                "can_teach": member.can_teach,
+                "subject_ids": teacher_subjects,
+            },
+            changed_by_membership_id=current_admin.membership_id,
+            active_resource=scheduler_relevant,
+        )
+
+
 async def remove_member(
     db: AsyncSession,
     member_id: int,
@@ -1758,19 +1625,13 @@ async def remove_member(
 ) -> dict:
     member = await _load_member(db, organization_id, member_id)
     if member is None:
-        raise member_error(404, "member_not_found", "Member not found.")
-    caps = {cap.capability for cap in member.capabilities}
-    if member.account_id == current_admin.account_id and models.MembershipCapability.admin in caps:
-        raise member_error(
-            409, "self_admin_removal_blocked", "You cannot remove your own admin access."
-        )
-    if (
-        models.MembershipCapability.admin in caps
-        and await _active_admin_count(db, organization_id, exclude_member_id=member.id) == 0
-    ):
-        raise member_error(
-            409, "last_active_admin_blocked", "At least one active admin must remain."
-        )
+        raise member_error("not_found", "member_not_found", "Member not found.")
+    await _assert_member_removal_allowed(
+        db,
+        member,
+        organization_id=organization_id,
+        current_admin=current_admin,
+    )
 
     history_ids = await _teacher_ids_with_history(
         db,
@@ -1797,52 +1658,23 @@ async def remove_member(
         operation_service=operation_service,
     )
     if actions.remove_effect == "hard_delete":
-        if member.teacher_profile:
-            await db.delete(member.teacher_profile)
-            await _record_teacher_scheduler_change(
-                db,
-                member.organization_id,
-                teacher_id=teacher_id,
-                operation=models.SchedulerStateChangeOperation.DELETE,
-                before={
-                    "status": "active",
-                    "can_teach": member.can_teach,
-                    "subject_ids": teacher_subjects,
-                },
-                after=None,
-                changed_by_membership_id=current_admin.membership_id,
-                active_resource=scheduler_relevant,
-            )
-        await db.delete(member)
-        return {"status": "removed", "remove_effect": "hard_delete"}
-    member.lifecycle_status = models.MembershipLifecycleStatus.archived
-    member.access_status = (
-        models.MembershipAccessStatus.blocked
-        if member.access_status != models.MembershipAccessStatus.none
-        else models.MembershipAccessStatus.none
-    )
-    member.updated_by_membership_id = current_admin.membership_id
-    member.lock_version += 1
-    if member.teacher_profile or member.can_teach:
-        teacher_id = teacher_id or member.id
-        await _record_teacher_scheduler_change(
+        await _hard_delete_member(
             db,
-            member.organization_id,
+            member,
             teacher_id=teacher_id,
-            operation=models.SchedulerStateChangeOperation.DELETE,
-            before={
-                "status": "active",
-                "can_teach": member.can_teach,
-                "subject_ids": teacher_subjects,
-            },
-            after={
-                "status": "archived",
-                "can_teach": member.can_teach,
-                "subject_ids": teacher_subjects,
-            },
-            changed_by_membership_id=current_admin.membership_id,
-            active_resource=scheduler_relevant,
+            teacher_subjects=teacher_subjects,
+            scheduler_relevant=scheduler_relevant,
+            current_admin=current_admin,
         )
+        return {"status": "removed", "remove_effect": "hard_delete"}
+    await _archive_removed_member(
+        db,
+        member,
+        teacher_id=teacher_id,
+        teacher_subjects=teacher_subjects,
+        scheduler_relevant=scheduler_relevant,
+        current_admin=current_admin,
+    )
     return {"status": "removed", "remove_effect": "archive"}
 
 
@@ -1858,9 +1690,11 @@ async def restore_member(
 ) -> schemas.MemberRead:
     member = await _load_member(db, organization_id, member_id)
     if member is None:
-        raise member_error(404, "member_not_found", "Member not found.")
+        raise member_error("not_found", "member_not_found", "Member not found.")
     if member.lifecycle_status != models.MembershipLifecycleStatus.archived:
-        raise member_error(409, "member_not_archived", "Only archived members can be restored.")
+        raise member_error(
+            "conflict", "member_not_archived", "Only archived members can be restored."
+        )
     previous_snapshot = _access_snapshot(member)
     previous_role = member.expected_clerk_role
     previous_can_teach = member.can_teach
@@ -1878,22 +1712,11 @@ async def restore_member(
             if restore_in.teacher_access_mode
             else member.teacher_access_mode
         )
-        if models.MembershipCapability.teacher not in next_caps:
-            next_mode = None
-        elif next_mode is None:
-            raise member_error(
-                422,
-                "validation_error",
-                "Teacher access mode is required.",
-                fields={"teacher_access_mode": "Required."},
-            )
-        if not restore_in.restore_access and _expected_role(next_caps, next_mode) is not None:
-            raise member_error(
-                422,
-                "validation_error",
-                "Choose scheduler-only teacher access or restore platform access.",
-                fields={"capabilities": "Platform capabilities require access."},
-            )
+        next_caps, next_mode, _ = _normalize_capability_policy(
+            next_caps,
+            next_mode,
+            allow_platform_access=restore_in.restore_access,
+        )
         member.teacher_access_mode = next_mode
         await _replace_capabilities(db, member, next_caps)
         await _sync_teacher_profile(
@@ -1905,11 +1728,11 @@ async def restore_member(
             previous_can_teach=previous_can_teach,
             record_change=False,
         )
-    elif restore_in and not restore_in.restore_access and member.expected_clerk_role is not None:
-        raise member_error(
-            422,
-            "validation_error",
-            "Choose non-platform capabilities before restoring without access.",
+    elif restore_in and not restore_in.restore_access:
+        _normalize_capability_policy(
+            {cap.capability for cap in member.capabilities},
+            member.teacher_access_mode,
+            allow_platform_access=False,
         )
     member.lifecycle_status = models.MembershipLifecycleStatus.active
     member.updated_by_membership_id = current_admin.membership_id
@@ -1983,17 +1806,19 @@ async def resend_invitation(
 ) -> schemas.MemberRead:
     member = await _load_member(db, organization_id, member_id, for_update=True)
     if member is None:
-        raise member_error(404, "member_not_found", "Member not found.")
+        raise member_error("not_found", "member_not_found", "Member not found.")
     if member.access_status not in {
         models.MembershipAccessStatus.pending_invite,
         models.MembershipAccessStatus.invite_expired,
     }:
         raise member_error(
-            409, "resend_not_available", "Invitation resend is not available for this member."
+            "conflict",
+            "resend_not_available",
+            "Invitation resend is not available for this member.",
         )
     if member.expected_clerk_role is None:
         raise member_error(
-            409, "access_not_required", "This member does not require platform access."
+            "conflict", "access_not_required", "This member does not require platform access."
         )
     latest_resend_at = await db.scalar(
         select(models.MemberAccessOperation.created_at)
@@ -2015,7 +1840,7 @@ async def resend_invitation(
         and latest_resend_at > datetime.now(UTC) - INVITATION_RESEND_COOLDOWN
     ):
         raise member_error(
-            409,
+            "conflict",
             "resend_cooldown",
             "Invitation resend is temporarily unavailable. Try again later.",
             retryable=True,
@@ -2059,10 +1884,10 @@ async def retry_sync(
 ) -> schemas.MemberRead:
     member = await _load_member(db, organization_id, member_id)
     if member is None:
-        raise member_error(404, "member_not_found", "Member not found.")
+        raise member_error("not_found", "member_not_found", "Member not found.")
     if member.access_status != models.MembershipAccessStatus.sync_error:
         raise member_error(
-            409, "retry_not_available", "Retry is only available for members in sync error."
+            "conflict", "retry_not_available", "Retry is only available for members in sync error."
         )
     clerk_access = clerk_access or ClerkAccessService()
     previous_snapshot = _access_snapshot(member)
@@ -2116,7 +1941,7 @@ async def current_member(db: AsyncSession, *, current_user: Actor) -> schemas.Cu
         .options(selectinload(models.OrganizationMembership.teacher_profile))
     )
     if member is None:
-        raise member_error(403, "membership_required", "Membership required.")
+        raise member_error("forbidden", "membership_required", "Membership required.")
     caps = sorted(cap.capability.value for cap in member.capabilities)
     modes = []
     if "admin" in caps:

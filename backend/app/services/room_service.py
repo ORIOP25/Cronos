@@ -2,6 +2,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
 from app import models, schemas
+from app.core.exceptions import AppError
 from app.services.scheduler_state_service import record_scheduler_change
 
 
@@ -60,7 +61,11 @@ async def update_room(
     room = result.scalars().first()
 
     if not room:
-        return None
+        raise AppError(
+            kind="not_found",
+            code="resource_not_found",
+            detail=f"Room {room_id} was not found in organization {organization_id}.",
+        )
 
     before = _room_snapshot(room)
     update_data = room_in.model_dump(exclude_unset=True)
@@ -88,7 +93,7 @@ async def delete_room(
     room_id: int,
     organization_id: int,
     changed_by_membership_id: int | None = None,
-) -> str:
+) -> None:
     """
     Remove uma sala. Protege se houver aulas agendadas nela.
     """
@@ -100,7 +105,11 @@ async def delete_room(
     room = result.scalars().first()
 
     if not room:
-        return "NOT_FOUND"
+        raise AppError(
+            kind="not_found",
+            code="resource_not_found",
+            detail=f"Room {room_id} was not found in organization {organization_id}.",
+        )
 
     for model in (
         models.ActiveScheduleBlock,
@@ -115,7 +124,11 @@ async def delete_room(
                 )
             )
         ).first():
-            return "DEPENDENCY_ERROR"
+            raise AppError(
+                kind="conflict",
+                code="conflict",
+                detail=f"Room {room_id} has scheduled blocks and cannot be deleted.",
+            )
 
     # 3. Apagar
     before = _room_snapshot(room)
@@ -131,4 +144,4 @@ async def delete_room(
         changed_by_membership_id=changed_by_membership_id,
     )
     await db.flush()
-    return "SUCCESS"
+    return None
