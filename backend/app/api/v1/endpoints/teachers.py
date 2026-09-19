@@ -13,6 +13,8 @@ from app.services import teacher_observability_service, teacher_service
 
 TEACHER_NOT_FOUND_MSG = "Professor não encontrado"
 
+TEACHER_PROFILE_REQUIRED_MSG = "Professor sem perfil associado"
+
 router = APIRouter()
 
 
@@ -32,7 +34,7 @@ async def read_my_availability(
     try:
         if current_user.teacher_id is None:
             status_code = 403
-            raise HTTPException(status_code=403, detail="Professor sem perfil associado")
+            raise HTTPException(status_code=403, detail=TEACHER_PROFILE_REQUIRED_MSG)
 
         result = await teacher_service.get_teacher_availability(
             db,
@@ -84,7 +86,7 @@ async def update_my_availability(
 ):
     """Atualiza disponibilidade do professor autenticado (self-service)."""
     if current_user.teacher_id is None:
-        raise HTTPException(status_code=403, detail="Professor sem perfil associado")
+        raise HTTPException(status_code=403, detail=TEACHER_PROFILE_REQUIRED_MSG)
 
     result = await teacher_service.set_teacher_availability(
         db,
@@ -168,7 +170,7 @@ async def read_my_progress(
     try:
         if current_user.teacher_id is None:
             status_code = 403
-            raise HTTPException(status_code=403, detail="Professor sem perfil associado")
+            raise HTTPException(status_code=403, detail=TEACHER_PROFILE_REQUIRED_MSG)
 
         result = await teacher_service.get_teacher_progress(
             db,

@@ -16,8 +16,8 @@ function normalize(filePath) {
 function isExcluded(filePath) {
   const path = normalize(filePath).toLowerCase()
   const segments = path.split('/')
-  const excludedDirectory = ['.git', '.venv', 'build', 'coverage', 'dist', 'node_modules', 'playwright-report', 'test-results']
-  return segments.some((segment) => excludedDirectory.includes(segment))
+  const excludedDirectory = new Set(['.git', '.venv', 'build', 'coverage', 'dist', 'node_modules', 'playwright-report', 'test-results'])
+  return segments.some((segment) => excludedDirectory.has(segment))
     || /(^|\/)(generated|migrations|alembic\/versions)(\/|$)/.test(path)
     || /(^|\/)(documentation|\.test-artifacts)(\/|$)/.test(path)
     || /(^|\/)(package-lock\.json|pnpm-lock\.yaml|yarn\.lock|requirements[^/]*\.txt)$/.test(path)
@@ -66,7 +66,14 @@ export function measureFiles(files, read = (filePath) => readFileSync(filePath, 
 }
 
 function currentRevision() {
-  return execFileSync('git', ['rev-parse', 'HEAD'], { cwd: ROOT, encoding: 'utf8' }).trim()
+  const safePath = process.platform === 'win32'
+    ? 'C:\\Windows\\System32;C:\\Program Files\\Git\\cmd'
+    : '/usr/local/bin:/usr/bin:/bin'
+  return execFileSync('git', ['rev-parse', 'HEAD'], {
+    cwd: ROOT,
+    encoding: 'utf8',
+    env: { ...process.env, PATH: safePath },
+  }).trim()
 }
 
 export function report({ baseline = null, revision = currentRevision() } = {}) {

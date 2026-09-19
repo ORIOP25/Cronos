@@ -122,7 +122,8 @@ export const useScheduleTaskStatus = (jobId) => {
       return apiClient.get(`/scheduler/jobs/${jobId}`)
     },
     enabled: Boolean(orgId) && Boolean(jobId),
-    refetchInterval: (query) => {
+    // TanStack Query uses false to disable polling after terminal states.
+    refetchInterval: (query) => { // NOSONAR
       if (query.state.error) return false
       const status = query.state.data?.job_status
       if (!status) return 5000
