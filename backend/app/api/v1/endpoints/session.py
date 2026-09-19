@@ -2,7 +2,6 @@ from typing import Annotated
 
 import structlog
 from fastapi import APIRouter, Depends, Request
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import schemas
 from app.api import deps
@@ -19,7 +18,7 @@ logger = structlog.get_logger(__name__)
 @router.post("/bootstrap", response_model=schemas.SessionBootstrapResponse)
 async def bootstrap_session(
     request: Request,
-    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
+    db: deps.DbSession,
     clerk: deps.ClerkGatewayDep,
     payload: Annotated[dict, Depends(deps.get_clerk_payload)],
 ):

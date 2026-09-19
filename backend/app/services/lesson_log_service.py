@@ -210,19 +210,21 @@ def upsert_active_lesson_log_sync(
             )
             occurrence_service._record_progress_ledger_entries(
                 db,
-                organization_id=organization_id,
-                source_type="LESSON_LOG",
-                source_id=lesson_log.id,
-                source_revision=log_revision,
-                class_id=block.class_id,
-                status=models.LessonOccurrenceStatus.GIVEN,
-                planned_module_id=planned_module_id,
-                executed_module_id=planned_module_id,
-                planned_hours=planned_hours,
-                direction=1,
-                actor_membership_id=membership_id,
-                operation_id=operation_id,
-                accounting_deltas=deltas,
+                occurrence_service.ProgressLedgerContext(
+                    organization_id=organization_id,
+                    source_type="LESSON_LOG",
+                    source_id=lesson_log.id,
+                    source_revision=log_revision,
+                    class_id=block.class_id,
+                    status=models.LessonOccurrenceStatus.GIVEN,
+                    planned_module_id=planned_module_id,
+                    executed_module_id=planned_module_id,
+                    planned_hours=planned_hours,
+                    direction=1,
+                    actor_membership_id=membership_id,
+                    operation_id=operation_id,
+                    accounting_deltas=deltas,
+                ),
             )
         elif old_status == models.LessonLogStatus.COMPLETED:
             deltas = occurrence_service._apply_state_accounting(
@@ -237,19 +239,21 @@ def upsert_active_lesson_log_sync(
             )
             occurrence_service._record_progress_ledger_entries(
                 db,
-                organization_id=organization_id,
-                source_type="LESSON_LOG",
-                source_id=lesson_log.id,
-                source_revision=log_revision,
-                class_id=block.class_id,
-                status=models.LessonOccurrenceStatus.GIVEN,
-                planned_module_id=planned_module_id,
-                executed_module_id=planned_module_id,
-                planned_hours=planned_hours,
-                direction=-1,
-                actor_membership_id=membership_id,
-                operation_id=operation_id,
-                accounting_deltas=deltas,
+                occurrence_service.ProgressLedgerContext(
+                    organization_id=organization_id,
+                    source_type="LESSON_LOG",
+                    source_id=lesson_log.id,
+                    source_revision=log_revision,
+                    class_id=block.class_id,
+                    status=models.LessonOccurrenceStatus.GIVEN,
+                    planned_module_id=planned_module_id,
+                    executed_module_id=planned_module_id,
+                    planned_hours=planned_hours,
+                    direction=-1,
+                    actor_membership_id=membership_id,
+                    operation_id=operation_id,
+                    accounting_deltas=deltas,
+                ),
             )
 
         if payload.status == models.LessonLogStatus.OCCURRENCE:
@@ -377,19 +381,21 @@ def upsert_operational_lesson_log_sync(
             db.flush()
             occurrence_service._record_progress_ledger_entries(
                 db,
-                organization_id=organization_id,
-                source_type="LESSON_LOG",
-                source_id=old_log.id,
-                source_revision=log_revision,
-                class_id=block.class_id,
-                status=models.LessonOccurrenceStatus.GIVEN,
-                planned_module_id=block.module_id,
-                executed_module_id=block.module_id,
-                planned_hours=planned_hours,
-                direction=1,
-                actor_membership_id=membership_id,
-                operation_id=op_log_operation_id,
-                accounting_deltas=accounting_deltas,
+                occurrence_service.ProgressLedgerContext(
+                    organization_id=organization_id,
+                    source_type="LESSON_LOG",
+                    source_id=old_log.id,
+                    source_revision=log_revision,
+                    class_id=block.class_id,
+                    status=models.LessonOccurrenceStatus.GIVEN,
+                    planned_module_id=block.module_id,
+                    executed_module_id=block.module_id,
+                    planned_hours=planned_hours,
+                    direction=1,
+                    actor_membership_id=membership_id,
+                    operation_id=op_log_operation_id,
+                    accounting_deltas=accounting_deltas,
+                ),
             )
             block.execution_status = models.OperationalBlockExecutionStatus.COMPLETED
         elif old_status == models.LessonLogStatus.COMPLETED:
@@ -405,19 +411,21 @@ def upsert_operational_lesson_log_sync(
             )
             occurrence_service._record_progress_ledger_entries(
                 db,
-                organization_id=organization_id,
-                source_type="LESSON_LOG",
-                source_id=old_log.id,
-                source_revision=log_revision,
-                class_id=block.class_id,
-                status=models.LessonOccurrenceStatus.GIVEN,
-                planned_module_id=block.module_id,
-                executed_module_id=block.module_id,
-                planned_hours=planned_hours,
-                direction=-1,
-                actor_membership_id=membership_id,
-                operation_id=op_log_operation_id,
-                accounting_deltas=accounting_deltas,
+                occurrence_service.ProgressLedgerContext(
+                    organization_id=organization_id,
+                    source_type="LESSON_LOG",
+                    source_id=old_log.id,
+                    source_revision=log_revision,
+                    class_id=block.class_id,
+                    status=models.LessonOccurrenceStatus.GIVEN,
+                    planned_module_id=block.module_id,
+                    executed_module_id=block.module_id,
+                    planned_hours=planned_hours,
+                    direction=-1,
+                    actor_membership_id=membership_id,
+                    operation_id=op_log_operation_id,
+                    accounting_deltas=accounting_deltas,
+                ),
             )
             block.execution_status = models.OperationalBlockExecutionStatus.PENDING_LOG
 

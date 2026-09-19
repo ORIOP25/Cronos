@@ -108,6 +108,23 @@ class OccurrenceTransitionPlan:
     requires_substitute: bool
 
 
+@dataclass(frozen=True, slots=True)
+class ProgressLedgerContext:
+    organization_id: int
+    source_type: str
+    source_id: int
+    source_revision: int | None
+    class_id: int
+    status: models.LessonOccurrenceStatus
+    planned_module_id: int | None
+    executed_module_id: int | None
+    planned_hours: float
+    direction: int
+    actor_membership_id: int | None = None
+    operation_id: str | None = None
+    accounting_deltas: list[tuple[int | None, float, float]] | None = None
+
+
 def build_occurrence_transition_plan(
     occurrence: models.LessonOccurrence,
     payload: schemas.LessonOccurrenceUpdate,
@@ -776,18 +793,16 @@ def _apply_module_delta(
     return completed_minutes / 60.0, debt_minutes / 60.0
 
 
-def _apply_sequential_completed_hours(
+def _load_sequential_modules(
     db: Session,
     *,
     organization_id: int,
-    class_id: int,
     anchor_module_id: int,
-    hours_delta: float,
-) -> list[tuple[int, float, float]]:
+) -> list[models.Module]:
     anchor = db.get(models.Module, anchor_module_id)
     if anchor is None or anchor.organization_id != organization_id:
         raise _occurrence_error(status_code=422, detail=ERR_MISSING_EXECUTED_MODULE)
-    modules = list(
+    return list(
         db.scalars(
             select(models.Module)
             .where(
@@ -797,8 +812,18 @@ def _apply_sequential_completed_hours(
             .order_by(models.Module.order, models.Module.id)
         )
     )
+
+
+def _allocate_sequential_completed_hours(
+    db: Session,
+    *,
+    organization_id: int,
+    class_id: int,
+    modules: list[models.Module],
+    hours_delta: float,
+) -> list[tuple[int, float, float]]:
     remaining = abs(int(round(hours_delta * 60)))
-    if not modules or remaining == 0:
+    if remaining == 0:
         return []
     allocations = []
     ordered = modules if hours_delta > 0 else list(reversed(modules))
@@ -820,6 +845,30 @@ def _apply_sequential_completed_hours(
             raise _occurrence_error(status_code=409, detail=ERR_NEGATIVE_ACCOUNTING)
         allocations.append((modules[-1].id, remaining / 60.0, 0.0))
     return allocations
+
+
+def _apply_sequential_completed_hours(
+    db: Session,
+    *,
+    organization_id: int,
+    class_id: int,
+    anchor_module_id: int,
+    hours_delta: float,
+) -> list[tuple[int, float, float]]:
+    modules = _load_sequential_modules(
+        db,
+        organization_id=organization_id,
+        anchor_module_id=anchor_module_id,
+    )
+    if not modules:
+        return []
+    return _allocate_sequential_completed_hours(
+        db,
+        organization_id=organization_id,
+        class_id=class_id,
+        modules=modules,
+        hours_delta=hours_delta,
+    )
 
 
 def _ensure_operational_schedule_block(
@@ -943,19 +992,21 @@ def _cancel_operational_blocks_for_occurrence(
                 )
                 _record_progress_ledger_entries(
                     db,
-                    organization_id=organization_id,
-                    source_type="LESSON_LOG",
-                    source_id=op_log.id,
-                    source_revision=next_log_revision,
-                    class_id=block.class_id,
-                    status=models.LessonOccurrenceStatus.GIVEN,
-                    planned_module_id=block.module_id,
-                    executed_module_id=block.module_id,
-                    planned_hours=block_hours,
-                    direction=-1,
-                    actor_membership_id=cancelled_by_membership_id,
-                    operation_id=block_operation_id,
-                    accounting_deltas=accounting_deltas,
+                    ProgressLedgerContext(
+                        organization_id=organization_id,
+                        source_type="LESSON_LOG",
+                        source_id=op_log.id,
+                        source_revision=next_log_revision,
+                        class_id=block.class_id,
+                        status=models.LessonOccurrenceStatus.GIVEN,
+                        planned_module_id=block.module_id,
+                        executed_module_id=block.module_id,
+                        planned_hours=block_hours,
+                        direction=-1,
+                        actor_membership_id=cancelled_by_membership_id,
+                        operation_id=block_operation_id,
+                        accounting_deltas=accounting_deltas,
+                    ),
                 )
             op_log.status = models.LessonLogStatus.PENDING
             op_log.version = next_log_revision
@@ -1043,38 +1094,26 @@ def _ledger_deltas_for_state(
 
 def _record_progress_ledger_entries(
     db: Session,
-    *,
-    organization_id: int,
-    source_type: str,
-    source_id: int,
-    source_revision: int | None,
-    class_id: int,
-    status: models.LessonOccurrenceStatus,
-    planned_module_id: int | None,
-    executed_module_id: int | None,
-    planned_hours: float,
-    direction: int,
-    actor_membership_id: int | None = None,
-    operation_id: str | None = None,
-    accounting_deltas: list[tuple[int | None, float, float]] | None = None,
+    context: ProgressLedgerContext,
 ) -> None:
-    op_id = operation_id or str(_uuid.uuid4())
+    op_id = context.operation_id or str(_uuid.uuid4())
 
-    deltas = accounting_deltas
+    deltas = context.accounting_deltas
     if deltas is None:
         deltas = _ledger_deltas_for_state(
-            status,
-            planned_module_id,
-            executed_module_id,
-            planned_hours,
-            direction,
+            context.status,
+            context.planned_module_id,
+            context.executed_module_id,
+            context.planned_hours,
+            context.direction,
         )
     for index, (module_id, completed_delta, debt_delta) in enumerate(deltas):
         if module_id is None:
             continue
         idempotency_key = (
-            f"{organization_id}:{source_type}:{source_id}:"
-            f"{source_revision or 0}:{status.value}:{direction}:{module_id}:{index}:"
+            f"{context.organization_id}:{context.source_type}:{context.source_id}:"
+            f"{context.source_revision or 0}:{context.status.value}:{context.direction}:"
+            f"{module_id}:{index}:"
             f"{op_id}"
         )
         exists = (
@@ -1086,16 +1125,16 @@ def _record_progress_ledger_entries(
             continue
         db.add(
             models.ProgressLedgerEntry(
-                organization_id=organization_id,
-                source_type=source_type,
-                source_id=source_id,
-                source_revision=source_revision,
-                class_id=class_id,
+                organization_id=context.organization_id,
+                source_type=context.source_type,
+                source_id=context.source_id,
+                source_revision=context.source_revision,
+                class_id=context.class_id,
                 module_id=module_id,
                 completed_minutes_delta=int(round(completed_delta * 60)),
                 debt_minutes_delta=int(round(debt_delta * 60)),
                 idempotency_key=idempotency_key,
-                created_by_membership_id=actor_membership_id,
+                created_by_membership_id=context.actor_membership_id,
                 created_at=datetime.now(UTC),
             )
         )
@@ -1358,19 +1397,21 @@ def cancel_occurrence_sync(
                     )
                     _record_progress_ledger_entries(
                         db,
-                        organization_id=organization_id,
-                        source_type="OCCURRENCE_REVERSAL",
-                        source_id=occurrence.id,
-                        source_revision=occurrence.revision,
-                        class_id=class_id,
-                        status=occurrence.status,
-                        planned_module_id=planned_module_id,
-                        executed_module_id=executed_module_id,
-                        planned_hours=planned_hours,
-                        direction=-1,
-                        actor_membership_id=cancelled_by_membership_id,
-                        operation_id=cancel_operation_id,
-                        accounting_deltas=accounting_deltas,
+                        ProgressLedgerContext(
+                            organization_id=organization_id,
+                            source_type="OCCURRENCE_REVERSAL",
+                            source_id=occurrence.id,
+                            source_revision=occurrence.revision,
+                            class_id=class_id,
+                            status=occurrence.status,
+                            planned_module_id=planned_module_id,
+                            executed_module_id=executed_module_id,
+                            planned_hours=planned_hours,
+                            direction=-1,
+                            actor_membership_id=cancelled_by_membership_id,
+                            operation_id=cancel_operation_id,
+                            accounting_deltas=accounting_deltas,
+                        ),
                     )
 
             # Se era SUBSTITUTED, cancela os blocos operacionais do substituto.
@@ -1607,19 +1648,21 @@ def update_occurrence_sync(
             )
             _record_progress_ledger_entries(
                 db,
-                organization_id=organization_id,
-                source_type="OCCURRENCE_REVERSAL",
-                source_id=occurrence.id,
-                source_revision=occurrence.revision,
-                class_id=class_id,
-                status=occurrence.status,
-                planned_module_id=planned_module_id,
-                executed_module_id=occurrence.executed_module_id,
-                planned_hours=planned_hours,
-                direction=-1,
-                actor_membership_id=decided_by_membership_id,
-                operation_id=decision_operation_id,
-                accounting_deltas=accounting_deltas,
+                ProgressLedgerContext(
+                    organization_id=organization_id,
+                    source_type="OCCURRENCE_REVERSAL",
+                    source_id=occurrence.id,
+                    source_revision=occurrence.revision,
+                    class_id=class_id,
+                    status=occurrence.status,
+                    planned_module_id=planned_module_id,
+                    executed_module_id=occurrence.executed_module_id,
+                    planned_hours=planned_hours,
+                    direction=-1,
+                    actor_membership_id=decided_by_membership_id,
+                    operation_id=decision_operation_id,
+                    accounting_deltas=accounting_deltas,
+                ),
             )
 
         # PRD §6.6: GIVEN progresso apenas se nao existir log completed equivalente
@@ -1636,19 +1679,21 @@ def update_occurrence_sync(
             )
             _record_progress_ledger_entries(
                 db,
-                organization_id=organization_id,
-                source_type="OCCURRENCE_DECISION",
-                source_id=occurrence.id,
-                source_revision=occurrence.revision,
-                class_id=class_id,
-                status=payload.status,
-                planned_module_id=planned_module_id,
-                executed_module_id=executed_module_id,
-                planned_hours=planned_hours,
-                direction=1,
-                actor_membership_id=decided_by_membership_id,
-                operation_id=decision_operation_id,
-                accounting_deltas=accounting_deltas,
+                ProgressLedgerContext(
+                    organization_id=organization_id,
+                    source_type="OCCURRENCE_DECISION",
+                    source_id=occurrence.id,
+                    source_revision=occurrence.revision,
+                    class_id=class_id,
+                    status=payload.status,
+                    planned_module_id=planned_module_id,
+                    executed_module_id=executed_module_id,
+                    planned_hours=planned_hours,
+                    direction=1,
+                    actor_membership_id=decided_by_membership_id,
+                    operation_id=decision_operation_id,
+                    accounting_deltas=accounting_deltas,
+                ),
             )
 
         occurrence.status = payload.status

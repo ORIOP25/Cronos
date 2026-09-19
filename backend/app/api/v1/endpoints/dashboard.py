@@ -1,9 +1,6 @@
 """Endpoint do Dashboard V1 â€” Command Center para administradores."""
 
-from typing import Annotated
-
-from fastapi import APIRouter, Depends
-from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import APIRouter
 
 from app import schemas
 from app.api import deps
@@ -14,7 +11,7 @@ router = APIRouter()
 
 @router.get("/dashboard", response_model=schemas.DashboardResponse)
 async def get_dashboard(
-    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
+    db: deps.DbSession,
     current_user: deps.AdminActor,
 ):
     """Dashboard V1 â€” Command Center.

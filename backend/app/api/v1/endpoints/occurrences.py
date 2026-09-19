@@ -16,8 +16,7 @@ from __future__ import annotations
 from datetime import date
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query, Response, status
-from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import APIRouter, Query, Response, status
 
 from app import schemas
 from app.api import deps
@@ -42,7 +41,7 @@ router = APIRouter()
     summary="Listar ocorrÃªncias de aulas",
 )
 async def list_occurrences(
-    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
+    db: deps.DbSession,
     current_user: deps.AdminActor,
     class_id: Annotated[int | None, Query(gt=0, description="Filtrar por turma")] = None,
     date_from: Annotated[date | None, Query(description="Data de inÃ­cio (YYYY-MM-DD)")] = None,
@@ -87,7 +86,7 @@ async def list_occurrences(
 async def create_occurrence(
     payload: schemas.LessonOccurrenceCreate,
     response: Response,
-    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
+    db: deps.DbSession,
     current_user: deps.AdminActor,
 ):
     """Executa comando CREATE_OCCURRENCE (cria/reutiliza) para um bloco do horÃ¡rio."""
@@ -140,7 +139,7 @@ async def create_occurrence(
     summary="DÃ­vidas de horas de aulas",
 )
 async def list_debts(
-    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
+    db: deps.DbSession,
     current_user: deps.AdminActor,
     class_id: Annotated[int | None, Query(description="Filtrar por turma")] = None,
 ):
@@ -156,7 +155,7 @@ async def list_debts(
     summary="Resumo de observabilidade operacional de ocorrÃªncias",
 )
 async def get_occurrence_observability_summary(
-    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
+    db: deps.DbSession,
     current_user: deps.AdminActor,
     window_days: Annotated[
         int, Query(ge=1, le=90, description="Janela de agregaÃ§Ã£o em dias")
@@ -178,7 +177,7 @@ async def get_occurrence_observability_summary(
     responses={404: {"description": "Timeslot nÃ£o encontrado"}},
 )
 async def list_available_substitutes(
-    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
+    db: deps.DbSession,
     current_user: deps.AdminActor,
     timeslot_id: Annotated[int, Query(description="ID do timeslot afetado")],
     target_date: Annotated[date, Query(description="Data da aula (YYYY-MM-DD)")],
@@ -203,7 +202,7 @@ async def list_available_substitutes(
 )
 async def get_substitute_recommendations(
     occurrence_id: int,
-    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
+    db: deps.DbSession,
     current_user: deps.AdminActor,
 ):
     organization_id = current_user.organization_id
@@ -226,7 +225,7 @@ async def get_substitute_recommendations(
 )
 async def get_occurrence(
     occurrence_id: int,
-    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
+    db: deps.DbSession,
     current_user: deps.AdminActor,
 ):
     """Devolve uma ocorrÃªncia pelo ID."""
@@ -248,7 +247,7 @@ async def get_occurrence(
 async def update_occurrence(
     occurrence_id: int,
     payload: schemas.LessonOccurrenceUpdate,
-    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
+    db: deps.DbSession,
     current_user: deps.AdminActor,
 ):
     """Permite ao diretor marcar uma ocorrÃªncia como GAP ou SUBSTITUTED."""
@@ -301,21 +300,18 @@ async def update_occurrence(
 async def cancel_occurrence(
     occurrence_id: int,
     payload: schemas.LessonOccurrenceCancel,
-    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
+    db: deps.DbSession,
     current_user: deps.AdminActor,
 ):
     """Cancela uma ocorrÃªncia (OPEN ou decidida), revertendo o LessonLog para PENDING."""
     organization_id = current_user.organization_id
 
-    try:
-        return await occurrence_service.cancel_occurrence(
-            db,
-            organization_id=organization_id,
-            occurrence_id=occurrence_id,
-            cancelled_by_membership_id=current_user.membership_id,
-            version=payload.version,
-            reason=occurrence_service.ADMINISTRATIVE_REVERSAL,
-            cancel_completed_substitute_log=payload.cancel_completed_substitute_log,
-        )
-    except AppError:
-        raise
+    return await occurrence_service.cancel_occurrence(
+        db,
+        organization_id=organization_id,
+        occurrence_id=occurrence_id,
+        cancelled_by_membership_id=current_user.membership_id,
+        version=payload.version,
+        reason=occurrence_service.ADMINISTRATIVE_REVERSAL,
+        cancel_completed_substitute_log=payload.cancel_completed_substitute_log,
+    )

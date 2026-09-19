@@ -1,7 +1,6 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models, schemas
 from app.api import deps
@@ -66,7 +65,7 @@ def _public_job_response(
 async def generate_schedule(
     request: Request,
     payload: schemas.ScheduleGenerateRequest,
-    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
+    db: deps.DbSession,
     current_user: deps.AdminActor,
     dispatcher: Annotated[SchedulerTaskDispatcher, Depends(deps.get_scheduler_task_dispatcher)],
 ):
@@ -112,7 +111,7 @@ async def generate_schedule(
 )
 async def get_generation_job(
     job_id: int,
-    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
+    db: deps.DbSession,
     current_user: deps.ActiveActor,
 ) -> models.ScheduleGenerationJob:
     try:
@@ -132,7 +131,7 @@ async def get_generation_job(
 )
 async def cancel_generation_job(
     job_id: int,
-    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
+    db: deps.DbSession,
     current_user: deps.AdminActor,
 ) -> dict[str, int | str]:
     try:
@@ -149,7 +148,7 @@ async def cancel_generation_job(
 
 @router.get("/status", response_model=schemas.SchedulerStatusResponse)
 async def get_scheduler_status(
-    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
+    db: deps.DbSession,
     current_user: deps.ActiveActor,
 ) -> schemas.SchedulerStatusResponse:
     status = await SchedulerStatusService(db).get_status(current_user.organization_id)
@@ -162,7 +161,7 @@ async def get_scheduler_status(
     responses={404: {"description": "No pending draft"}},
 )
 async def get_current_draft_summary(
-    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
+    db: deps.DbSession,
     current_user: deps.ActiveActor,
 ) -> schemas.ScheduleDraftSummaryResponse:
     try:
@@ -179,7 +178,7 @@ async def get_current_draft_summary(
 )
 async def get_draft_summary(
     draft_id: int,
-    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
+    db: deps.DbSession,
     current_user: deps.ActiveActor,
 ) -> schemas.ScheduleDraftSummaryResponse:
     try:
@@ -199,7 +198,7 @@ async def get_draft_summary(
 )
 async def get_draft_diff(
     draft_id: int,
-    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
+    db: deps.DbSession,
     current_user: deps.ActiveActor,
 ) -> list[schemas.ScheduleDraftDiffEntryResponse]:
     rows = await SchedulerDiffService(db).list_diff(
@@ -225,7 +224,7 @@ async def get_draft_diff(
 )
 async def approve_draft(
     draft_id: int,
-    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
+    db: deps.DbSession,
     current_user: deps.AdminActor,
 ) -> schemas.ScheduleDraftApprovalResponse:
     try:
@@ -265,7 +264,7 @@ async def approve_draft(
 )
 async def reject_draft(
     draft_id: int,
-    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
+    db: deps.DbSession,
     current_user: deps.AdminActor,
 ) -> schemas.ScheduleDraftRejectionResponse:
     try:
@@ -294,7 +293,7 @@ async def reject_draft(
 )
 async def reset_scheduler_year(
     payload: schemas.SchedulerResetYearRequest,
-    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
+    db: deps.DbSession,
     current_user: deps.AdminActor,
 ) -> schemas.SchedulerResetYearResponse:
     try:
