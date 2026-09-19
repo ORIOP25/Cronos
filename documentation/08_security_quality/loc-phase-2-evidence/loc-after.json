@@ -1,16 +1,16 @@
 {
-  "revision": "553295056a2c8fd9428af4f84a59e156548a33a6",
+  "revision": "188987d6915748b929ca5ee5c0486fbf1685f0d7",
   "counts": {
-    "backendProduction": 32416,
+    "backendProduction": 32404,
     "frontendProduction": 18437,
-    "backendTests": 19315,
+    "backendTests": 19847,
     "frontendTests": 5966,
     "e2eTests": 3217
   },
   "deltas": {
-    "backendProduction": -374,
+    "backendProduction": -386,
     "frontendProduction": -69,
-    "backendTests": 96,
+    "backendTests": 628,
     "frontendTests": 0,
     "e2eTests": 0
   },
@@ -108,7 +108,7 @@
     {
       "path": "backend/app/api/v1/endpoints/scheduler.py",
       "category": "backendProduction",
-      "lines": 296
+      "lines": 284
     },
     {
       "path": "backend/app/api/v1/endpoints/session.py",
@@ -786,6 +786,11 @@
       "lines": 104
     },
     {
+      "path": "backend/tests/integration/committed/test_occurrence_accounting.py",
+      "category": "backendTests",
+      "lines": 517
+    },
+    {
       "path": "backend/tests/integration/committed/test_org_settings_endpoints.py",
       "category": "backendTests",
       "lines": 361
@@ -843,7 +848,7 @@
     {
       "path": "backend/tests/integration/committed/test_scheduler_job_runtime.py",
       "category": "backendTests",
-      "lines": 1429
+      "lines": 1430
     },
     {
       "path": "backend/tests/integration/committed/test_scheduler_permissions.py",
@@ -953,7 +958,7 @@
     {
       "path": "backend/tests/unit/test_backend_foundation_contracts.py",
       "category": "backendTests",
-      "lines": 246
+      "lines": 260
     },
     {
       "path": "backend/tests/unit/test_class_service_validation.py",
