@@ -1,7 +1,6 @@
-from typing import Annotated, Any
+from typing import Any
 
-from fastapi import APIRouter, Depends
-from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import APIRouter
 
 from app import schemas
 from app.api import deps
@@ -15,7 +14,7 @@ router = APIRouter()
 
 @router.get("/", response_model=list[schemas.ClassRead])
 async def read_classes(
-    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
+    db: deps.DbSession,
     current_user: deps.AdminActor,
 ):
     return await class_service.get_classes_by_org(db, current_user.organization_id)
@@ -28,7 +27,7 @@ async def read_classes(
 )
 async def read_class(
     class_id: int,
-    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
+    db: deps.DbSession,
     current_user: deps.AdminActor,
 ) -> Any:
     """
@@ -56,7 +55,7 @@ async def read_class(
 @router.get("/{class_id}/curriculum", response_model=list[schemas.SubjectRead])
 async def get_class_curriculum(
     class_id: int,
-    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
+    db: deps.DbSession,
     current_user: deps.AdminActor,
 ):
     """
@@ -87,7 +86,7 @@ async def get_class_curriculum(
 async def update_class_progress(
     class_id: int,
     payload: schemas.ClassProgressBulkUpdate,
-    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
+    db: deps.DbSession,
     current_user: deps.AdminActor,
 ) -> Any:
     """
@@ -125,7 +124,7 @@ async def update_class_progress(
 )
 async def get_class_subjects(
     class_id: int,
-    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
+    db: deps.DbSession,
     current_user: deps.ActiveActor,
 ):
     """
@@ -152,7 +151,7 @@ async def get_class_subjects(
 async def add_class_subject(
     class_id: int,
     payload: schemas.ClassSubjectCreate,
-    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
+    db: deps.DbSession,
     current_user: deps.AdminActor,
 ):
     """
@@ -184,7 +183,7 @@ async def update_class_subject_teacher(
     class_id: int,
     subject_id: int,
     payload: schemas.ClassSubjectUpdate,
-    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
+    db: deps.DbSession,
     current_user: deps.AdminActor,
 ):
     """
@@ -217,7 +216,7 @@ async def update_class_subject_teacher(
 async def remove_class_subject(
     class_id: int,
     subject_id: int,
-    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
+    db: deps.DbSession,
     current_user: deps.AdminActor,
 ):
     """
@@ -238,7 +237,7 @@ async def remove_class_subject(
 @router.get("/{class_id}/available-subjects", response_model=list[schemas.SubjectRead])
 async def get_available_subjects(
     class_id: int,
-    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
+    db: deps.DbSession,
     current_user: deps.ActiveActor,
 ):
     """
@@ -255,7 +254,7 @@ async def get_available_subjects(
 )
 async def get_eligible_teachers(
     subject_id: int,
-    db: Annotated[AsyncSession, Depends(deps.get_db, scope="function")],
+    db: deps.DbSession,
     current_user: deps.ActiveActor,
 ):
     """

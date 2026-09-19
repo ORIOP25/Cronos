@@ -23,8 +23,8 @@ function normalize(filePath) {
 function isExcluded(filePath) {
   const path = normalize(filePath).toLowerCase()
   const segments = path.split('/')
-  const excludedDirectory = ['.git', '.venv', 'build', 'coverage', 'dist', 'node_modules', 'playwright-report', 'test-results']
-  return segments.some((segment) => excludedDirectory.includes(segment))
+  const excludedDirectory = new Set(['.git', '.venv', 'build', 'coverage', 'dist', 'node_modules', 'playwright-report', 'test-results'])
+  return segments.some((segment) => excludedDirectory.has(segment))
     || /(^|\/)(generated|migrations|alembic\/versions)(\/|$)/.test(path)
     || /(^|\/)(documentation|\.test-artifacts)(\/|$)/.test(path)
     || /(^|\/)(package-lock\.json|pnpm-lock\.yaml|yarn\.lock|requirements[^/]*\.txt)$/.test(path)
@@ -72,12 +72,19 @@ export function measureFiles(files, read = (filePath) => readFileSync(filePath, 
   return { counts, files: measuredFiles }
 }
 
+const GIT_EXECUTABLE = process.platform === 'win32'
+  ? String.raw`C:\Program Files\Git\cmd\git.exe`
+  : '/usr/bin/git'
+
 function currentRevision() {
-  return execFileSync('git', ['rev-parse', 'HEAD'], { cwd: ROOT, encoding: 'utf8' }).trim()
+  return execFileSync(GIT_EXECUTABLE, ['rev-parse', 'HEAD'], {
+    cwd: ROOT,
+    encoding: 'utf8',
+  }).trim()
 }
 
 export function report({ baseline = null, revision = currentRevision() } = {}) {
-  const gitOutput = execFileSync('git', ['ls-files', '--cached', '--others', '--exclude-standard'], {
+  const gitOutput = execFileSync(GIT_EXECUTABLE, ['ls-files', '--cached', '--others', '--exclude-standard'], {
     cwd: ROOT,
     encoding: 'utf8',
   })
