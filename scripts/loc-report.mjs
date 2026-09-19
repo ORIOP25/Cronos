@@ -65,18 +65,19 @@ export function measureFiles(files, read = (filePath) => readFileSync(filePath, 
   return { counts, files: measuredFiles }
 }
 
+const GIT_EXECUTABLE = process.platform === 'win32'
+  ? String.raw`C:\Program Files\Git\cmd\git.exe`
+  : '/usr/bin/git'
+
 function currentRevision() {
-  const gitExecutable = process.platform === 'win32'
-    ? String.raw`C:\Program Files\Git\cmd\git.exe`
-    : '/usr/bin/git'
-  return execFileSync(gitExecutable, ['rev-parse', 'HEAD'], {
+  return execFileSync(GIT_EXECUTABLE, ['rev-parse', 'HEAD'], {
     cwd: ROOT,
     encoding: 'utf8',
   }).trim()
 }
 
 export function report({ baseline = null, revision = currentRevision() } = {}) {
-  const gitOutput = execFileSync('git', ['ls-files', '--cached', '--others', '--exclude-standard'], {
+  const gitOutput = execFileSync(GIT_EXECUTABLE, ['ls-files', '--cached', '--others', '--exclude-standard'], {
     cwd: ROOT,
     encoding: 'utf8',
   })
