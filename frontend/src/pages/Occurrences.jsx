@@ -881,11 +881,6 @@ const Occurrences = ({
         </CTabList>
 
         <CCard className="border-0 shadow-sm">
-          <CCardHeader className="bg-transparent fw-semibold">
-            {activeTab === 'occurrences' && 'Decisões Pendentes'}
-            {activeTab === 'historical' && 'Histórico de Ocorrências'}
-            {activeTab === 'debts' && 'Resumo de Dívidas de Horas'}
-          </CCardHeader>
           <CCardBody>
             {activeTab === 'debts' ? (
               <DebtsPanel classId={classFilter} readOnly={readOnly} />
