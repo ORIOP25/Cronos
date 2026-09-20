@@ -113,7 +113,7 @@ test.describe('public marketing site', () => {
       ['/favicon.png?v=20260920', /^image\/png/],
       ['/marketing/product/hero-schedule.webp?v=20260920', /^image\/webp/],
       [stylesheetHref, /^text\/css/],
-      [scriptSrc, /^text\/javascript/],
+      [scriptSrc, /^(?:text|application)\/javascript/],
     ]
     for (const [path, contentType] of checks) {
       const response = await request.get(path)
