@@ -74,6 +74,8 @@ describe('Dashboard', () => {
 
     expect(screen.getByTestId('schedule-health')).toBeInTheDocument()
     expect(screen.getByText(/12 blocos no total/i)).toBeInTheDocument()
+    expect(screen.getByText('Escola Exemplo')).toBeInTheDocument()
+    expect(screen.queryByText('Escola: Escola Exemplo')).not.toBeInTheDocument()
   })
 
   it('renders preparation dashboard when first real schedule is not yet approved', () => {

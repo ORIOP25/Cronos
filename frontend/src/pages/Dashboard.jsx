@@ -23,7 +23,7 @@ export default function Dashboard() {
     <PageHeader
       preTitle="Operação Diária"
       title="Painel de Controlo Operacional"
-      context={data?.organization_name ? `Escola: ${data.organization_name}` : undefined}
+      context={data?.organization_name || undefined}
       description={`Hoje, ${currentDate}.`}
     />
   )
