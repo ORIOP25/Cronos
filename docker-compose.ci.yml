@@ -17,7 +17,7 @@ x-runtime-environment: &runtime-environment
 
 services:
   db:
-    image: postgres:16-alpine@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685
+    image: postgres:16-alpine@sha256:3c5c8892d184f738f4fe282d14ddaa613a38f00f4189d2d94725ebe6f2909ddb
     tmpfs:
       - /var/lib/postgresql/data:size=1073741824
     environment:
@@ -31,7 +31,7 @@ services:
       retries: 12
 
   redis:
-    image: redis:7-alpine@sha256:ff02b58f971e7d7d156a1267e283fcbbeee91773b6aa36c49dac28ecfe28eadf
+    image: redis:7-alpine@sha256:520775a41a63e77e06c73e35d2fd9cc15921a609516818796b4ecbb813078bc7
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -40,7 +40,7 @@ services:
 
   provision-db:
     profiles: [maintenance]
-    image: postgres:16-alpine@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685
+    image: postgres:16-alpine@sha256:3c5c8892d184f738f4fe282d14ddaa613a38f00f4189d2d94725ebe6f2909ddb
     command: ["/bin/sh", "/scripts/provision_database.sh"]
     environment:
       POSTGRES_USER: postgres
