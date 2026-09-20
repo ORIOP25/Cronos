@@ -90,10 +90,35 @@ test.describe('public marketing site', () => {
         const response = await noScriptPage.goto(route)
         expect(response?.status()).toBe(200)
         await expect(noScriptPage.locator('h1')).toHaveCount(1)
+        expect(await noScriptPage.locator('link[rel="stylesheet"][href*="/assets/"]').count()).toBeGreaterThan(0)
+        expect(await noScriptPage.locator('img').evaluateAll((images) => images.every((image) => image.complete && image.naturalWidth > 0))).toBe(true)
         expect((await noScriptPage.locator('body').innerText()).replace(/\s+/g, ' ').trim().length).toBeGreaterThan(500)
       }
     } finally {
       await context.close()
+    }
+  })
+
+  test('serves versioned public assets with their expected MIME types', async ({ request }) => {
+    const htmlResponse = await request.get('/')
+    expect(htmlResponse.status()).toBe(200)
+    const html = await htmlResponse.text()
+    const stylesheetHref = html.match(/<link rel="stylesheet" href="(\/assets\/[^" ]+\.css)" \/>/)?.[1]
+    const scriptSrc = html.match(/<script type="module" crossorigin src="(\/assets\/[^" ]+\.js)"><\/script>/)?.[1]
+    expect(stylesheetHref).toBeTruthy()
+    expect(scriptSrc).toBeTruthy()
+
+    const checks = [
+      ['/logo.png?v=20260920', /^image\/png/],
+      ['/favicon.png?v=20260920', /^image\/png/],
+      ['/marketing/product/hero-schedule.webp?v=20260920', /^image\/webp/],
+      [stylesheetHref, /^text\/css/],
+      [scriptSrc, /^text\/javascript/],
+    ]
+    for (const [path, contentType] of checks) {
+      const response = await request.get(path)
+      expect(response.status(), path).toBe(200)
+      expect(response.headers()['content-type'], path).toMatch(contentType)
     }
   })
 

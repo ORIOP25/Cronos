@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url'
 import { createServer } from 'vite'
 import { canonicalMarketingRoutes, marketingMetadata } from '../src/features/marketing/content/metadata.js'
 import { publicIdentity } from '../src/features/marketing/content/publicIdentity.js'
+import { PUBLIC_ASSET_REVISION, publicAsset } from '../src/utils/publicAsset.js'
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url))
 const defaultDistDirectory = join(scriptDirectory, '..', 'dist')
@@ -69,7 +70,7 @@ function organizationJsonLd() {
         '@id': 'https://cronos.pt/#organization',
         name: publicIdentity.brand,
         url: 'https://cronos.pt/',
-        logo: 'https://cronos.pt/logo.png',
+        logo: `https://cronos.pt${publicAsset('/logo.png')}`,
         founder: {
           '@type': 'Person',
           name: publicIdentity.operator.name,
@@ -104,7 +105,18 @@ export function renderOrganizationJsonLd(html) {
   return html.replace(pattern, `<script id="cronos-organization-jsonld" type="application/ld+json">${json}</script>`)
 }
 
-export function renderMarketingPage(html, metadata) {
+function addMarketingStylesheet(html, href) {
+  if (!href) return html
+  const escapedHref = href.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const linkPattern = new RegExp(`<link\\s+rel=["']stylesheet["']\\s+href=["']${escapedHref}["']\\s*/?>`, 'gi')
+  const matches = [...html.matchAll(linkPattern)]
+  if (matches.length > 1) throw new Error(`Expected one MarketingLayout stylesheet link, found ${matches.length}.`)
+  if (matches.length === 1) return html
+  if (!/<\/head>/i.test(html)) throw new Error('Cannot add MarketingLayout stylesheet without a closing head tag.')
+  return html.replace(/<\/head>/i, `  <link rel="stylesheet" href="${escapeHtml(href)}" />\n</head>`)
+}
+
+export function renderMarketingPage(html, metadata, marketingCssHref) {
   let rendered = html
   rendered = replaceMetadataElement(rendered, 'title', metadataSelectors[0][1], `<title>${escapeHtml(metadata.title)}</title>`)
   rendered = replaceMetadataElement(rendered, 'meta[name="description"]', metadataSelectors[1][1], `<meta name="description" content="${escapeHtml(metadata.description)}" />`)
@@ -114,7 +126,26 @@ export function renderMarketingPage(html, metadata) {
   rendered = replaceMetadataElement(rendered, 'meta[property="og:url"]', metadataSelectors[5][1], `<meta property="og:url" content="${escapeHtml(metadata.canonicalUrl)}" />`)
   rendered = replaceMetadataElement(rendered, 'meta[name="twitter:title"]', metadataSelectors[6][1], `<meta name="twitter:title" content="${escapeHtml(metadata.title)}" />`)
   rendered = replaceMetadataElement(rendered, 'meta[name="twitter:description"]', metadataSelectors[7][1], `<meta name="twitter:description" content="${escapeHtml(metadata.description)}" />`)
-  return rendered
+  return addMarketingStylesheet(rendered, marketingCssHref)
+}
+
+export function resolveMarketingStylesheet(manifest) {
+  const entry = Object.entries(manifest).find(([key, value]) => key === 'src/features/marketing/components/layout/MarketingLayout.jsx' || value?.src === 'src/features/marketing/components/layout/MarketingLayout.jsx')?.[1]
+  const stylesheet = entry?.css?.find((href) => /^assets\/[^/]+-[a-z0-9]+\.css$/i.test(href))
+  if (!stylesheet) throw new Error('Vite manifest is missing the hashed MarketingLayout stylesheet.')
+  return `/${stylesheet}`
+}
+
+async function readMarketingStylesheet(distDirectory) {
+  const manifestPath = join(distDirectory, '.vite', 'manifest.json')
+  return resolveMarketingStylesheet(JSON.parse(await readFile(manifestPath, 'utf8')))
+}
+
+function validatePublicAssetRevision(html, route) {
+  const assetUrls = [...html.matchAll(/(?:src|href|content)=["']([^"']*(?:\/logo\.png|\/favicon\.[^"']+|\/og-cronos\.png|\/marketing\/)[^"']*)["']/gi)].map(([, url]) => url)
+  const expectedRevision = `?v=${PUBLIC_ASSET_REVISION}`
+  if (assetUrls.some((url) => !url.includes(expectedRevision))) throw new Error(`${route} contains an unversioned public asset.`)
+  if (!html.includes(`https://cronos.pt${publicAsset('/logo.png')}`)) throw new Error(`${route} is missing the versioned Organization logo.`)
 }
 
 function validateMetadataCatalog() {
@@ -192,14 +223,16 @@ export async function buildMarketingPages(distDirectory = defaultDistDirectory) 
   validateMetadataCatalog()
   const indexPath = join(distDirectory, 'index.html')
   const template = renderOrganizationJsonLd(await readFile(indexPath, 'utf8'))
+  const marketingCssHref = await readMarketingStylesheet(distDirectory)
   const vite = await createServer({ root: projectRoot, appType: 'custom', server: { middlewareMode: true }, logLevel: 'error' })
   const generatedPages = new Map()
 
   try {
     const { renderPublicRoute, renderStaticNotFound } = await vite.ssrLoadModule('/src/features/marketing/renderPublicRoute.jsx')
     for (const [route, metadata] of Object.entries(marketingMetadata)) {
-      const html = renderMarketingPage(replaceRootMarkup(template, renderPublicRoute(route)), metadata)
+      const html = renderMarketingPage(replaceRootMarkup(template, renderPublicRoute(route)), metadata, marketingCssHref)
       validateRenderedMetadata(html, metadata)
+      validatePublicAssetRevision(html, route)
       generatedPages.set(route, html)
       const filename = route === '/' ? 'index.html' : `${route.slice(1)}.html`
       await writeFile(join(distDirectory, filename), html)

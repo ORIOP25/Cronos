@@ -2,7 +2,7 @@
 import fs from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
-const headers = fs.readFileSync('public/_headers', 'utf8')
+const headers = fs.readFileSync('public/_headers', 'utf8').replaceAll('\r\n', '\n')
 const html = fs.readFileSync('index.html', 'utf8')
 const nginx = fs.readFileSync('nginx.conf', 'utf8')
 const nginxCi = fs.readFileSync('nginx.ci.conf', 'utf8')
@@ -43,5 +43,14 @@ describe('production browser boundary', () => {
     expect(worker).toContain("'X-Content-Type-Options'")
     expect(worker).toContain("'Referrer-Policy'")
     expect(worker).toContain("'Permissions-Policy'")
+  })
+
+  it('declares cache policy by asset class', () => {
+    expect(headers).toContain('/assets/*\n  Cache-Control: public, max-age=31536000, immutable')
+    expect(headers).toContain('/logo.png\n  Cache-Control: no-cache, max-age=0, must-revalidate')
+    expect(headers).toContain('/favicon.*\n  Cache-Control: no-cache, max-age=0, must-revalidate')
+    expect(headers).toContain('/marketing/*\n  Cache-Control: no-cache, max-age=0, must-revalidate')
+    expect(headers).toContain('/index.html\n  Cache-Control: no-store')
+    expect(headers).toContain('/404.html\n  Cache-Control: no-store')
   })
 })

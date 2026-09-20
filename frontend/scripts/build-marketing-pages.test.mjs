@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { renderMarketingPage, renderOrganizationJsonLd } from './build-marketing-pages.mjs'
 import { canonicalMarketingRoutes, marketingMetadata } from '../src/features/marketing/content/metadata.js'
+import { PUBLIC_ASSET_REVISION, publicAsset } from '../src/utils/publicAsset.js'
 
 const fixture = `<!doctype html>
 <html><head>
@@ -39,6 +40,13 @@ test('replaces all route metadata and preserves Vite assets', () => {
   assert.match(html, /href="\/assets\/index\.css"/)
 })
 
+test('adds exactly one hashed MarketingLayout stylesheet to each public page', () => {
+  const html = renderMarketingPage(fixture, metadata, '/assets/marketing-layout-abc12345.css')
+  const links = html.match(/<link rel="stylesheet" href="\/assets\/marketing-layout-[^"]+\.css" \/>/g)
+  assert.equal(links?.length, 1)
+  assert.match(links[0], /marketing-layout-abc12345\.css/)
+})
+
 test('fails explicitly when a required metadata tag is missing', () => {
   assert.throws(
     () => renderMarketingPage(fixture.replace('<meta name="description" content="Original description">', ''), metadata),
@@ -55,6 +63,9 @@ test('keeps the sitemap aligned with public metadata and does not publish a zero
 
   const sourceIndex = readFileSync(resolve('index.html'), 'utf8')
   assert.doesNotMatch(sourceIndex, /"price"\s*:\s*"0"/)
+  assert.match(sourceIndex, new RegExp(`favicon\\.png\\?v=${PUBLIC_ASSET_REVISION}`))
+  assert.match(sourceIndex, new RegExp(`og-cronos\\.png\\?v=${PUBLIC_ASSET_REVISION}`))
+  assert.equal(publicAsset('/logo.png'), `/logo.png?v=${PUBLIC_ASSET_REVISION}`)
 })
 
 test('builds Organization JSON-LD from the approved public identity', () => {

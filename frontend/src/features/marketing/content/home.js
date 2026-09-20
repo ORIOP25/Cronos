@@ -1,9 +1,11 @@
+import { publicAsset } from '../../../utils/publicAsset'
+
 export const homeHero = {
   title: 'Gestão de Horários para o Ensino Profissional',
   body: 'Cronos ajuda escolas profissionais a gerir horários, faltas e substituições.',
   image: {
-    webpSrc: '/marketing/product/hero-schedule.webp',
-    fallbackSrc: '/marketing/product/hero-schedule.png',
+    webpSrc: publicAsset('/marketing/product/hero-schedule.webp'),
+    fallbackSrc: publicAsset('/marketing/product/hero-schedule.png'),
     alt: 'Grelha de horários do Cronos aberta num computador.',
     width: 480,
     height: 600,
@@ -30,10 +32,10 @@ export const adaptiveStates = [
 ]
 
 export const people = {
-  primary: { id: 'direction', title: 'Direção', text: 'Acompanhe a escola com uma visão comum sobre horários, ocorrências e horas por cumprir', image: { webpSrc: '/marketing/direcao-role.webp', fallbackSrc: '/marketing/direcao-role.png', alt: 'Responsável de direção numa escola', width: 500, height: 334 } },
+  primary: { id: 'direction', title: 'Direção', text: 'Acompanhe a escola com uma visão comum sobre horários, ocorrências e horas por cumprir', image: { webpSrc: publicAsset('/marketing/direcao-role.webp'), fallbackSrc: publicAsset('/marketing/direcao-role.png'), alt: 'Responsável de direção numa escola', width: 500, height: 334 } },
   secondary: [
-    { id: 'coordination', title: 'Coordenação', text: 'Organize alterações e decisões com o contexto da aula', image: { webpSrc: '/marketing/secretaria-role.webp', fallbackSrc: '/marketing/secretaria-role.png', alt: 'Responsável de coordenação escolar', width: 500, height: 334 } },
-    { id: 'teachers', title: 'Professores', text: 'Consulte o horário e registe o que aconteceu na sala', image: { webpSrc: '/marketing/professores-role.webp', fallbackSrc: '/marketing/professores-role.png', alt: 'Professor numa sala de aula', width: 500, height: 334 } },
+    { id: 'coordination', title: 'Coordenação', text: 'Organize alterações e decisões com o contexto da aula', image: { webpSrc: publicAsset('/marketing/secretaria-role.webp'), fallbackSrc: publicAsset('/marketing/secretaria-role.png'), alt: 'Responsável de coordenação escolar', width: 500, height: 334 } },
+    { id: 'teachers', title: 'Professores', text: 'Consulte o horário e registe o que aconteceu na sala', image: { webpSrc: publicAsset('/marketing/professores-role.webp'), fallbackSrc: publicAsset('/marketing/professores-role.png'), alt: 'Professor numa sala de aula', width: 500, height: 334 } },
   ],
 }
 

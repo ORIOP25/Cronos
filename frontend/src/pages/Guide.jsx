@@ -6,6 +6,7 @@ import { useSearchParams } from 'react-router-dom'
 import { useTutorialSimulation } from '../features/tutorial/tutorialHooks'
 import { TutorialWorkspace } from '../features/tutorial/TutorialWorkspace'
 import { TUTORIAL_COPY } from '../features/tutorial/tutorialContent'
+import { publicAsset } from '../utils/publicAsset'
 
 function GuideLanding({ status, onStart, onOpen, onRepeat }) {
   const isNew = status === 'NOT_STARTED'
@@ -24,7 +25,7 @@ function GuideLanding({ status, onStart, onOpen, onRepeat }) {
     <div className="tutorial-landing" data-testid="guide-landing">
       <img
         className="tutorial-landing__logo"
-        src="/logo.png"
+        src={publicAsset('/logo.png')}
         alt="Cronos"
         width="62"
         height="62"

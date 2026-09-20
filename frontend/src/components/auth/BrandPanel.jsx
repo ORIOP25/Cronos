@@ -1,3 +1,5 @@
+import { publicAsset } from '../../utils/publicAsset'
+
 const BrandPanel = ({ tagline, stats }) => {
   return (
     <div className="zen-auth-brand-side">
@@ -18,7 +20,7 @@ const BrandPanel = ({ tagline, stats }) => {
 
       <div className="zen-auth-brand-inner">
         <div className="zen-auth-monogram">
-          <img src="/logo.png" alt="Cronos" className="zen-auth-logo" />
+          <img src={publicAsset('/logo.png')} alt="Cronos" className="zen-auth-logo" />
         </div>
 
         <h1 className="zen-auth-brand-name">Cronos</h1>

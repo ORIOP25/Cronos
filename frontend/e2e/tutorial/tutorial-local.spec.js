@@ -34,7 +34,7 @@ test.describe('Tutorial — cenário local v3', () => {
 
     await expect(page.getByTestId('guide-landing')).toBeVisible()
     await expect(page.getByRole('button', { name: /repetir guia/i })).toBeVisible()
-    await expect(page.getByRole('img', { name: 'Cronos' })).toHaveAttribute('src', '/logo.png')
+    await expect(page.getByRole('img', { name: 'Cronos' })).toHaveAttribute('src', /\/logo\.png\?v=20260920$/)
     const savedState = await page.evaluate(() => {
       const entry = Object.entries(localStorage).find(([key]) => key.includes('cronos:tutorial:v3:'))
       const parsed = entry ? JSON.parse(entry[1]) : null

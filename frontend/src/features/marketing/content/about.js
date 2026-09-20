@@ -1,4 +1,5 @@
 import { publicIdentity } from './publicIdentity'
+import { publicAsset } from '../../../utils/publicAsset'
 
 export const aboutContent = {
   eyebrow: 'Sobre o Cronos',
@@ -19,5 +20,5 @@ export const aboutContent = {
       'Para conhecer o produto, esclarecer uma dúvida ou marcar uma demonstração, fale diretamente com a equipa através do contacto público abaixo.',
     ],
   },
-  image: { webpSrc: '/marketing/founder-portrait.webp', fallbackSrc: '/marketing/founder-portrait.png', alt: 'Retrato de Rodrigo Manguinhas, Fundador & CEO do Cronos.', width: 440, height: 550 },
+  image: { webpSrc: publicAsset('/marketing/founder-portrait.webp'), fallbackSrc: publicAsset('/marketing/founder-portrait.png'), alt: 'Retrato de Rodrigo Manguinhas, Fundador & CEO do Cronos.', width: 440, height: 550 },
 }

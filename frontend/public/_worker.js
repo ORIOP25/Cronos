@@ -49,6 +49,12 @@ const SECURITY_HEADERS = {
   'Strict-Transport-Security': 'max-age=31536000; includeSubDomains',
 }
 
+const CACHE_CONTROL = {
+  noStore: 'no-store',
+  publicAsset: 'no-cache, max-age=0, must-revalidate',
+  hashedAsset: 'public, max-age=31536000, immutable',
+}
+
 export function normalizePathname(pathname) {
   return pathname.length > 1 ? pathname.replace(/\/$/, '') : pathname
 }
@@ -79,17 +85,31 @@ function isStaticAssetPath(pathname) {
   return pathname.includes('.') || pathname === '/llms.txt' || pathname === '/robots.txt' || pathname === '/sitemap.xml'
 }
 
+function isPublicAssetPath(pathname) {
+  return pathname === '/logo.png'
+    || pathname === '/og-cronos.png'
+    || /^\/favicon\.[^/]+$/.test(pathname)
+    || pathname.startsWith('/marketing/')
+}
+
+function assetCacheControl(pathname) {
+  if (pathname.startsWith('/assets/')) return CACHE_CONTROL.hashedAsset
+  if (isPublicAssetPath(pathname)) return CACHE_CONTROL.publicAsset
+  return CACHE_CONTROL.noStore
+}
+
 function mergeVary(existingValue, requiredValue) {
   const values = (existingValue || '').split(',').map((value) => value.trim()).filter(Boolean)
   if (!values.some((value) => value.toLowerCase() === requiredValue.toLowerCase())) values.push(requiredValue)
   return values.join(', ')
 }
 
-export function withWorkerHeaders(response, { contentType, status, vary } = {}, method = 'GET') {
+export function withWorkerHeaders(response, { contentType, status, vary, cacheControl } = {}, method = 'GET') {
   const headers = new Headers(response.headers)
   for (const [name, value] of Object.entries(SECURITY_HEADERS)) headers.set(name, value)
   if (contentType) headers.set('Content-Type', contentType)
   if (vary) headers.set('Vary', mergeVary(headers.get('Vary'), vary))
+  if (cacheControl) headers.set('Cache-Control', cacheControl)
   return new Response(method === 'HEAD' ? null : response.body, {
     status: status ?? response.status,
     statusText: response.statusText,
@@ -114,6 +134,7 @@ async function notFoundResponse(env, request, markdown) {
     contentType: markdown ? 'text/markdown; charset=utf-8' : 'text/html; charset=utf-8',
     status: 404,
     vary: 'Accept',
+    cacheControl: CACHE_CONTROL.noStore,
   }, request.method)
 }
 
@@ -132,6 +153,7 @@ async function handleRequest(request, env) {
     return withWorkerHeaders(response, {
       contentType: markdown ? 'text/markdown; charset=utf-8' : 'text/html; charset=utf-8',
       vary: 'Accept',
+      cacheControl: CACHE_CONTROL.noStore,
     }, method)
   }
 
@@ -140,12 +162,17 @@ async function handleRequest(request, env) {
   const assetResponse = await fetchAsset(env, request, pathname)
   const isPublicRoute = PUBLIC_ROUTES.has(pathname)
   if (assetResponse.ok && (isPublicRoute || isStaticAssetPath(pathname))) {
-    return withWorkerHeaders(assetResponse, {}, method)
+    return withWorkerHeaders(assetResponse, {
+      cacheControl: isPublicRoute ? CACHE_CONTROL.noStore : assetCacheControl(pathname),
+    }, method)
   }
 
   if (isKnownApplicationRoute(pathname)) {
     const shell = await fetchAsset(env, request, '/')
-    return withWorkerHeaders(shell, { contentType: 'text/html; charset=utf-8' }, method)
+    return withWorkerHeaders(shell, {
+      contentType: 'text/html; charset=utf-8',
+      cacheControl: CACHE_CONTROL.noStore,
+    }, method)
   }
 
   return notFoundResponse(env, request, markdown)

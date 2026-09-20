@@ -3,6 +3,7 @@ import CIconModule from '@coreui/icons-react'
 import { cilMenu, cilX } from '@coreui/icons'
 import { navigationItems } from '../../content/navigation'
 import { useMobileMenu } from '../../hooks/useMobileMenu'
+import { publicAsset } from '../../../../utils/publicAsset'
 
 const CIcon = CIconModule.CIcon ?? CIconModule.default ?? CIconModule
 
@@ -13,7 +14,7 @@ export default function MarketingHeader() {
     <header className="cronos-header">
       <div className="cronos-container cronos-header__inner">
         <Link to="/" className="cronos-brand" onClick={closeMenu} aria-label="Cronos, página inicial">
-          <img src="/logo.png" alt="Cronos — Logótipo" width="40" height="40" decoding="async" />
+          <img src={publicAsset('/logo.png')} alt="Cronos — Logótipo" width="40" height="40" decoding="async" />
           <span>Cronos</span>
         </Link>
         <button ref={toggleReference} type="button" className="cronos-mobile-toggle" onClick={toggleMenu} aria-expanded={isOpen} aria-controls="cronos-navigation" aria-label={isOpen ? 'Fechar menu de navegação' : 'Abrir menu de navegação'}>

@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 
 import Guide from '../pages/Guide'
 import { renderWithRouter } from './testUtils'
+import { publicAsset } from '../utils/publicAsset'
 
 describe('Guide', () => {
   beforeEach(() => {
@@ -16,7 +17,7 @@ describe('Guide', () => {
 
     await waitFor(() => expect(screen.getByRole('button', { name: /conhecer o guia/i })).toBeInTheDocument())
     expect(screen.queryByTestId('tutorial-workspace')).not.toBeInTheDocument()
-    expect(screen.getByRole('img', { name: 'Cronos' })).toHaveAttribute('src', '/logo.png')
+    expect(screen.getByRole('img', { name: 'Cronos' })).toHaveAttribute('src', publicAsset('/logo.png'))
     expect(screen.queryByText('C')).not.toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: /conhecer o guia/i }))
     await waitFor(() => expect(screen.getByTestId('tutorial-workspace')).toBeInTheDocument())

@@ -5,6 +5,9 @@ import App from './App.jsx'
 import ErrorBoundary from './components/ErrorBoundary'
 import { UserQueryProvider } from './UserQueryProvider'
 import { CLERK_LOCALIZATION_PT } from './utils/authDesign'
+import { registerVitePreloadRecovery } from './utils/vitePreloadRecovery'
+
+registerVitePreloadRecovery()
 
 document.documentElement.classList.remove('no-js')
 

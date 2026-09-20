@@ -1,4 +1,5 @@
 import { ptPT } from '@clerk/localizations'
+import { publicAsset } from './publicAsset'
 
 export const BRAND_TAGLINE_LOGIN =
   'O software de gestão pensado para o Ensino Profissional. Horários dinâmicos, progresso curricular visível e substituições em 1 minuto.'
@@ -83,7 +84,7 @@ export const CLERK_LOCALIZATION_PT = {
 
 export const CLERK_APPEARANCE_AUTH = {
   layout: {
-    logoImageUrl: '/logo.png',
+    logoImageUrl: publicAsset('/logo.png'),
     socialButtonsPlacement: 'top',
     socialButtonsVariant: 'blockButton',
     showOptionalFields: false,

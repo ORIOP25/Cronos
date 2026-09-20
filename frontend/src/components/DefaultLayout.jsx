@@ -8,6 +8,7 @@ import FeedbackBanner from './FeedbackBanner'
 import CIcon from '@coreui/icons-react'
 import { cilMenu, cilX } from '@coreui/icons'
 import { ADMIN_NAVIGATION, SIGN_OUT_ICON, TEACHER_NAVIGATION } from './appNavigation'
+import { publicAsset } from '../utils/publicAsset'
 
 const SIDEBAR_STORAGE_KEY = 'hz-sidebar-collapsed'
 
@@ -37,7 +38,7 @@ function AppSidebarContent({ collapsed, isAdmin, isTeacher, user, roleLabel, onT
       <div className="app-sidebar__top">
         <div className="app-sidebar__brand-row">
           <div className="app-sidebar__brand">
-            <img src="/logo.png" alt={collapsed ? 'Cronos' : 'Cronos — Logótipo'} />
+            <img src={publicAsset('/logo.png')} alt={collapsed ? 'Cronos' : 'Cronos — Logótipo'} />
             {!collapsed && <span className="app-sidebar__brand-name">{TXT.SIDEBAR_BRAND}</span>}
           </div>
           {!mobile && (
@@ -123,7 +124,7 @@ const DefaultLayout = ({ children, activePath, navigationDisabled = false, navig
         <AppSidebarContent collapsed={collapsed} isAdmin={isAdmin} isTeacher={isTeacher} user={user} roleLabel={roleLabel} onToggle={() => setCollapsed((value) => !value)} onNavigate={() => {}} onProfile={openUserProfile} onSignOut={() => signOut()} activePath={activePath} navigationDisabled={navigationDisabled} />
       </aside>
       <header className="app-mobile-header">
-        <div className="app-mobile-header__brand"><img src="/logo.png" alt="Cronos" /> Cronos</div>
+        <div className="app-mobile-header__brand"><img src={publicAsset('/logo.png')} alt="Cronos" /> Cronos</div>
         <button ref={menuButtonRef} type="button" className="app-mobile-header__menu" onClick={() => setMobileOpen(true)} aria-label="Abrir menu de navegação" aria-expanded={mobileOpen}>
           <CIcon icon={cilMenu} size="lg" aria-hidden="true" />
         </button>
