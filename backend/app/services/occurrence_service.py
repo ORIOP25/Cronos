@@ -2122,7 +2122,13 @@ def get_available_substitutes_sync(
 async def get_occurrence(
     db: AsyncSession, occurrence_id: int, organization_id: int
 ) -> models.LessonOccurrence:
-    return await db.run_sync(partial(get_occurrence_sync, occurrence_id, organization_id))
+    return await db.run_sync(
+        partial(
+            get_occurrence_sync,
+            occurrence_id=occurrence_id,
+            organization_id=organization_id,
+        )
+    )
 
 
 async def list_occurrences(
@@ -2176,7 +2182,13 @@ async def create_occurrence_from_active_block(
 async def get_debts(
     db: AsyncSession, organization_id: int, class_id: int | None = None
 ) -> schemas.DebtListRead:
-    return await db.run_sync(partial(get_debts_sync, organization_id, class_id=class_id))
+    return await db.run_sync(
+        partial(
+            get_debts_sync,
+            organization_id=organization_id,
+            class_id=class_id,
+        )
+    )
 
 
 async def get_occurrence_observability_summary(
@@ -2197,9 +2209,9 @@ async def get_available_substitutes(
     return await db.run_sync(
         partial(
             get_available_substitutes_sync,
-            organization_id,
-            timeslot_id,
-            target_date,
+            organization_id=organization_id,
+            timeslot_id=timeslot_id,
+            target_date=target_date,
         )
     )
 
