@@ -1,4 +1,5 @@
 import { CFormLabel, CFormInput, CFormFeedback, CRow, CCol, CInputGroup, CInputGroupText } from '@coreui/react'
+import PortugueseDateInput from '../../../components/PortugueseDateInput'
 
 export function PeriodStep({ values, fieldErrors, onChange }) {
   return (
@@ -11,13 +12,12 @@ export function PeriodStep({ values, fieldErrors, onChange }) {
       <CRow className="g-3">
         <CCol md={6}>
           <CFormLabel htmlFor="school_start_date">Data de Início do Ano Letivo *</CFormLabel>
-          <CFormInput
-            type="date"
+          <PortugueseDateInput
             id="school_start_date"
             name="school_start_date"
             value={values.school_start_date || ''}
             invalid={Boolean(fieldErrors.school_start_date)}
-            onChange={(e) => onChange('school_start_date', e.target.value)}
+            onChange={(value) => onChange('school_start_date', value)}
           />
           {fieldErrors.school_start_date && (
             <CFormFeedback invalid>{fieldErrors.school_start_date}</CFormFeedback>
@@ -26,13 +26,12 @@ export function PeriodStep({ values, fieldErrors, onChange }) {
 
         <CCol md={6}>
           <CFormLabel htmlFor="school_hard_end_date">Data-Limite Rígida *</CFormLabel>
-          <CFormInput
-            type="date"
+          <PortugueseDateInput
             id="school_hard_end_date"
             name="school_hard_end_date"
             value={values.school_hard_end_date || ''}
             invalid={Boolean(fieldErrors.school_hard_end_date)}
-            onChange={(e) => onChange('school_hard_end_date', e.target.value)}
+            onChange={(value) => onChange('school_hard_end_date', value)}
           />
           {fieldErrors.school_hard_end_date && (
             <CFormFeedback invalid>{fieldErrors.school_hard_end_date}</CFormFeedback>

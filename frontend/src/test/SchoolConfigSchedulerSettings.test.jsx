@@ -135,13 +135,13 @@ describe('SchoolConfig scheduler settings', () => {
     })
 
     renderWithProviders(<SchoolConfig />)
-    const endDate = await screen.findByDisplayValue('2027-07-31')
-    fireEvent.change(endDate, { target: { value: '2027-08-31' } })
+    const endDate = await screen.findByDisplayValue('31/07/2027')
+    fireEvent.change(endDate, { target: { value: '31/08/2027' } })
     fireEvent.click(screen.getByRole('button', { name: /^guardar alterações$/i }))
     fireEvent.click(screen.getAllByRole('button', { name: /^guardar alterações$/i }).at(-1))
 
     const recoveryButton = await screen.findByRole('button', { name: /desativar feriados automáticos e guardar/i })
-    expect(screen.getByDisplayValue('2027-08-31')).toBeInTheDocument()
+    expect(screen.getByDisplayValue('31/08/2027')).toBeInTheDocument()
     fireEvent.click(recoveryButton)
 
     await waitFor(() => expect(apiClient.post).toHaveBeenLastCalledWith('/school/settings/', {

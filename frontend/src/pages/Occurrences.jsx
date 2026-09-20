@@ -19,6 +19,7 @@ import { useTeachers } from '../features/members/data'
 import { formatDate, formatDateTime } from '../utils/formatUtils'
 import { TXT, OPERATIONAL_STATE_LABELS, OPERATIONAL_STATE_COLORS } from '../utils/terminology'
 import ConfirmationModal from '../components/ConfirmationModal'
+import PortugueseDateInput from '../components/PortugueseDateInput'
 import { getApiErrorMessage } from '../utils/apiErrors'
 
 // ---------------------------------------------------------------------------
@@ -844,20 +845,18 @@ const Occurrences = ({
             </CCol>
             <CCol md={3}>
               <CFormLabel htmlFor="dateFromFilter">De</CFormLabel>
-              <CFormInput
+              <PortugueseDateInput
                 id="dateFromFilter"
-                type="date"
                 value={dateFrom}
-                onChange={(e) => updateSearchParam('date_from', e.target.value)}
+                onChange={(value) => updateSearchParam('date_from', value)}
               />
             </CCol>
             <CCol md={3}>
               <CFormLabel htmlFor="dateToFilter">Até</CFormLabel>
-              <CFormInput
+              <PortugueseDateInput
                 id="dateToFilter"
-                type="date"
                 value={dateTo}
-                onChange={(e) => updateSearchParam('date_to', e.target.value)}
+                onChange={(value) => updateSearchParam('date_to', value)}
               />
             </CCol>
           </CRow>

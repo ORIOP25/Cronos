@@ -113,7 +113,7 @@ describe('Foundation', () => {
     renderFoundation()
 
     expect(await screen.findByText(/1. Período do Ano Letivo/i)).toBeInTheDocument()
-    expect(await screen.findByDisplayValue('2025-09-15')).toBeInTheDocument()
+    expect(await screen.findByDisplayValue('15/09/2025')).toBeInTheDocument()
 
     for (const step of [
       /2. Dias de Funcionamento Letivo/i,
@@ -262,8 +262,8 @@ describe('Foundation', () => {
     })
 
     renderFoundation()
-    const hardEndDate = await screen.findByDisplayValue('2026-07-31')
-    fireEvent.change(hardEndDate, { target: { value: '2026-08-31' } })
+    const hardEndDate = await screen.findByDisplayValue('31/07/2026')
+    fireEvent.change(hardEndDate, { target: { value: '31/08/2026' } })
 
     await screen.findByRole('button', { name: /desativar feriados automáticos e guardar/i })
     fireEvent.click(screen.getByRole('button', { name: /desativar feriados automáticos e guardar/i }))

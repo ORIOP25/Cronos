@@ -20,6 +20,53 @@ export function formatDate(dateStr) {
 }
 
 /**
+ * Formata uma data ISO para o valor apresentado nos campos de data.
+ * @param {string|null} dateStr - Data no formato YYYY-MM-DD
+ * @returns {string} Data no formato DD/MM/AAAA ou ""
+ */
+export function formatDateInput(dateStr) {
+  if (!dateStr) return ''
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr)
+  if (!match) return dateStr
+  const [, year, month, day] = match
+  return `${day}/${month}/${year}`
+}
+
+/**
+ * Converte uma data introduzida pelo utilizador para ISO.
+ * Aceita DD/MM/AAAA e YYYY-MM-DD para facilitar colagens e testes existentes.
+ * @param {string|null} value
+ * @returns {string|null} Data ISO, "" para vazio ou null para valor inválido
+ */
+export function parseDateInput(value) {
+  const text = String(value ?? '').trim()
+  if (!text) return ''
+
+  let year
+  let month
+  let day
+  const displayMatch = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(text)
+  const isoMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text)
+  if (displayMatch) {
+    [, day, month, year] = displayMatch
+  } else if (isoMatch) {
+    [, year, month, day] = isoMatch
+  } else {
+    return null
+  }
+
+  const date = new Date(Number(year), Number(month) - 1, Number(day), 12)
+  if (
+    date.getFullYear() !== Number(year)
+    || date.getMonth() !== Number(month) - 1
+    || date.getDate() !== Number(day)
+  ) {
+    return null
+  }
+  return `${year}-${month}-${day}`
+}
+
+/**
  * Formata uma data ISO para "04 Abr" (dia + mês abreviado, sem ano).
  * @param {string|null} dateStr - Data no formato YYYY-MM-DD
  * @returns {string} Data formatada ou ""

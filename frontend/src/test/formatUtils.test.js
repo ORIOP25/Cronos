@@ -5,6 +5,8 @@ import {
   formatDateTime,
   formatDateLong,
   formatDateShort,
+  formatDateInput,
+  parseDateInput,
   formatWeekRange,
   normalizeTimeLabel,
   getCurrentWeekMonday,
@@ -15,6 +17,20 @@ import {
 } from '../utils/formatUtils'
 
 describe('formatUtils', () => {
+  describe('date input format', () => {
+    it('formats ISO dates for Portuguese date fields', () => {
+      expect(formatDateInput('2026-05-03')).toBe('03/05/2026')
+      expect(formatDateInput('')).toBe('')
+    })
+
+    it('parses Portuguese dates while preserving the ISO API contract', () => {
+      expect(parseDateInput('03/05/2026')).toBe('2026-05-03')
+      expect(parseDateInput('2026-05-03')).toBe('2026-05-03')
+      expect(parseDateInput('31/02/2026')).toBeNull()
+      expect(parseDateInput('')).toBe('')
+    })
+  })
+
   describe('formatDate', () => {
     it('formata data ISO para DD/MM/AAAA', () => {
       expect(formatDate('2026-05-03')).toBe('03/05/2026')

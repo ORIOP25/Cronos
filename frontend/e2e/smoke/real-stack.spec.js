@@ -12,7 +12,7 @@ import {
 async function ensureFoundationComplete(page) {
   await goTo(page, '/foundation')
 
-  const startDate = page.locator('input[type="date"]').first()
+  const startDate = page.locator('#school_start_date')
   if (await startDate.isVisible({ timeout: 5000 }).catch(() => false)) {
     await startDate.fill('2025-09-15')
     await page.locator('#school_hard_end_date').fill('2026-07-31')

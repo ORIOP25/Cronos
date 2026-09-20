@@ -21,6 +21,7 @@ import { useTransientMessage } from '../../hooks/useTransientMessage'
 import FeedbackBanner from '../../components/FeedbackBanner'
 import StatePanel from '../../components/StatePanel'
 import ConfirmationModal from '../../components/ConfirmationModal'
+import PortugueseDateInput from '../../components/PortugueseDateInput'
 import { useTimeslots } from '../catalog/data'
 import {
   useCalendarEvents,
@@ -144,22 +145,20 @@ export const CalendarSection = () => {
             </CCol>
             <CCol md={2}>
               <CFormLabel htmlFor="eventStart">Início</CFormLabel>
-              <CFormInput
+              <PortugueseDateInput
                 id="eventStart"
-                type="date"
                 value={newEvent.start_date}
-                onChange={(e) => setNewEvent((p) => ({ ...p, start_date: e.target.value }))}
+                onChange={(value) => setNewEvent((p) => ({ ...p, start_date: value }))}
                 invalid={Boolean(fieldErrors.start_date)}
               />
               {fieldErrors.start_date && <div className="text-danger small mt-1">{fieldErrors.start_date}</div>}
             </CCol>
             <CCol md={2}>
               <CFormLabel htmlFor="eventEnd">Fim</CFormLabel>
-              <CFormInput
+              <PortugueseDateInput
                 id="eventEnd"
-                type="date"
                 value={newEvent.end_date}
-                onChange={(e) => setNewEvent((p) => ({ ...p, end_date: e.target.value }))}
+                onChange={(value) => setNewEvent((p) => ({ ...p, end_date: value }))}
                 invalid={Boolean(fieldErrors.end_date)}
               />
               {fieldErrors.end_date && <div className="text-danger small mt-1">{fieldErrors.end_date}</div>}
@@ -370,21 +369,19 @@ const SettingsEditor = ({ settings, onSoftResetSuccess, onSaveSuccess }) => {
       <CRow className="g-3 mb-3 align-items-start">
         <CCol md={3}>
           <CFormLabel htmlFor="startDate" className="school-config-field-label">Início das Aulas</CFormLabel>
-          <CFormInput
+          <PortugueseDateInput
             id="startDate"
-            type="date"
             value={form.school_start_date}
-            onChange={(e) => updateForm('school_start_date', e.target.value)}
+            onChange={(value) => updateForm('school_start_date', value)}
             text="Data oficial de início do semestre"
           />
         </CCol>
         <CCol md={3}>
           <CFormLabel htmlFor="hardEndDate" className="school-config-field-label">Data limite final</CFormLabel>
-          <CFormInput
+          <PortugueseDateInput
             id="hardEndDate"
-            type="date"
             value={form.school_hard_end_date}
-            onChange={(e) => updateForm('school_hard_end_date', e.target.value)}
+            onChange={(value) => updateForm('school_hard_end_date', value)}
             text="Não há aulas após esta data"
           />
         </CCol>
