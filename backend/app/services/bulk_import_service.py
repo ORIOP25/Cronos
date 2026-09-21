@@ -80,9 +80,7 @@ def _parsed_files(request: schemas.BulkImportFilesRequest) -> dict[str, ParsedRe
 
 async def load_snapshot(db: AsyncSession, organization_id: int) -> ImportSnapshot:
     rooms = (
-        await db.scalars(
-            select(models.Room).where(models.Room.organization_id == organization_id)
-        )
+        await db.scalars(select(models.Room).where(models.Room.organization_id == organization_id))
     ).all()
     subjects = (
         await db.scalars(
@@ -131,12 +129,18 @@ async def load_snapshot(db: AsyncSession, organization_id: int) -> ImportSnapsho
         rooms=[ExistingRoom(item.id, item.name) for item in rooms],
         subjects=[ExistingSubject(item.id, item.name) for item in subjects],
         courses=[ExistingCourse(item.id, item.abbreviation, item.name) for item in courses],
-        classes=[ExistingClass(item.id, item.course_id, abbreviation, item.name) for item, abbreviation in class_rows],
+        classes=[
+            ExistingClass(item.id, item.course_id, abbreviation, item.name)
+            for item, abbreviation in class_rows
+        ],
         teachers=[
             ExistingTeacher(item.id, item.organization_membership.account.email, item.name)
             for item in teachers
         ],
-        assignments=[ExistingAssignment(course, class_name, subject) for course, class_name, subject in assignment_rows],
+        assignments=[
+            ExistingAssignment(course, class_name, subject)
+            for course, class_name, subject in assignment_rows
+        ],
     )
 
 
@@ -188,7 +192,8 @@ async def commit_import(
 
     subject_ids = {item.name.casefold(): item.id for item in snapshot.subjects}
     class_ids = {
-        (item.course_abbreviation.upper(), item.name.casefold()): item.id for item in snapshot.classes
+        (item.course_abbreviation.upper(), item.name.casefold()): item.id
+        for item in snapshot.classes
     }
     teacher_ids: dict[str, int] = {}
     created_counts = {resource: 0 for resource in IMPORT_RESOURCES}
@@ -250,7 +255,9 @@ async def commit_import(
     assignments_by_course: dict[str, set[int]] = {}
     for assignment in result.assignments:
         subject_id = subject_ids[assignment.subject_name.casefold()]
-        assignments_by_course.setdefault(assignment.course_abbreviation.upper(), set()).add(subject_id)
+        assignments_by_course.setdefault(assignment.course_abbreviation.upper(), set()).add(
+            subject_id
+        )
 
     for item in result.courses:
         course = await course_service.create_course(
@@ -279,7 +286,9 @@ async def commit_import(
             class_ids[(item.abbreviation.upper(), class_item.name.casefold())] = class_item.id
 
     for assignment in result.assignments:
-        class_id = class_ids[(assignment.course_abbreviation.upper(), assignment.class_name.casefold())]
+        class_id = class_ids[
+            (assignment.course_abbreviation.upper(), assignment.class_name.casefold())
+        ]
         subject_id = subject_ids[assignment.subject_name.casefold()]
         await class_service.add_class_subject(
             db,

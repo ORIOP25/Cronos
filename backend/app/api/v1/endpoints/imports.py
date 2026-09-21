@@ -20,8 +20,7 @@ async def download_template(resource: str, _current_user: deps.AdminActor) -> Re
         media_type="text/csv; charset=utf-8",
         headers={
             "Content-Disposition": (
-                f'attachment; filename="{safe_filename}"; '
-                f"filename*=UTF-8''{quote(safe_filename)}"
+                f"attachment; filename=\"{safe_filename}\"; filename*=UTF-8''{quote(safe_filename)}"
             )
         },
     )

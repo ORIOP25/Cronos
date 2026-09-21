@@ -1057,7 +1057,10 @@ class BulkImportFiles(BaseModel):
 
     @model_validator(mode="after")
     def require_a_file(self):
-        if not any(getattr(self, resource) is not None for resource in ("rooms", "subjects", "courses", "teachers", "assignments")):
+        if not any(
+            getattr(self, resource) is not None
+            for resource in ("rooms", "subjects", "courses", "teachers", "assignments")
+        ):
             raise ValueError("Selecione pelo menos um ficheiro de importação.")
         return self
 

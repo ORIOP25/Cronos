@@ -105,12 +105,10 @@ async def test_bulk_import_rejects_example_without_writing(
 async def test_bulk_import_template_has_bom_and_safe_filename(
     async_client: AsyncClient, clerk_admin_headers: dict
 ):
-    response = await async_client.get(
-        f"{API}/imports/templates/rooms", headers=clerk_admin_headers
-    )
+    response = await async_client.get(f"{API}/imports/templates/rooms", headers=clerk_admin_headers)
     assert response.status_code == 200
     assert response.content.startswith(b"\xef\xbb\xbf")
-    assert "filename=\"salas.csv\"" in response.headers["content-disposition"]
+    assert 'filename="salas.csv"' in response.headers["content-disposition"]
 
     unknown = await async_client.get(
         f"{API}/imports/templates/unknown", headers=clerk_admin_headers

@@ -35,7 +35,9 @@ def test_parser_rejects_missing_bom_wrong_delimiter_and_example_rows():
     wrong_delimiter = parse_resource_file(
         "rooms", "salas.csv", encoded("name,type,capacity\r\nSala,normal,20\r\n")
     )
-    example = parse_resource_file("rooms", "salas.csv", base64.b64encode(render_template("rooms")).decode())
+    example = parse_resource_file(
+        "rooms", "salas.csv", base64.b64encode(render_template("rooms")).decode()
+    )
 
     assert {issue.code for issue in missing_bom.issues} == {"utf8_bom_required"}
     assert {issue.code for issue in wrong_delimiter.issues} == {"delimiter_invalid"}
@@ -113,7 +115,11 @@ def test_policy_returns_all_cross_reference_issues_and_warnings():
     )
 
     codes = {issue.code for issue in result.issues}
-    assert {"teacher_not_in_batch", "course_reference_missing", "subject_reference_missing"} <= codes
+    assert {
+        "teacher_not_in_batch",
+        "course_reference_missing",
+        "subject_reference_missing",
+    } <= codes
     assert "teacher_missing_warning" in codes
     assert result.can_commit is False
 
