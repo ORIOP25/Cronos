@@ -105,6 +105,16 @@ export function renderOrganizationJsonLd(html) {
   return html.replace(pattern, `<script id="cronos-organization-jsonld" type="application/ld+json">${json}</script>`)
 }
 
+export function validateApplicationShell(html) {
+  const marker = '<div id="root"></div>'
+  const occurrences = html.split(marker).length - 1
+  if (occurrences !== 1) throw new Error(`Application shell must contain one empty root marker, found ${occurrences}.`)
+  if (/\bcronos-(?:marketing|hero)\b/i.test(html)) throw new Error('Application shell must not contain marketing markup.')
+  if (!/<script\b[^>]*\bsrc=["']\/assets\/[^"']+\.js["']/i.test(html)) throw new Error('Application shell is missing a hashed Vite script.')
+  if (!/<link\b[^>]*\bhref=["']\/assets\/[^"']+\.css["']/i.test(html)) throw new Error('Application shell is missing a hashed Vite stylesheet.')
+  return html
+}
+
 function addMarketingStylesheet(html, href) {
   if (!href) return html
   const escapedHref = href.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -222,7 +232,9 @@ function validateGeneratedRoutes(generatedPages) {
 export async function buildMarketingPages(distDirectory = defaultDistDirectory) {
   validateMetadataCatalog()
   const indexPath = join(distDirectory, 'index.html')
-  const template = renderOrganizationJsonLd(await readFile(indexPath, 'utf8'))
+  const applicationShell = validateApplicationShell(await readFile(indexPath, 'utf8'))
+  await writeFile(join(distDirectory, 'app-shell.html'), applicationShell)
+  const template = renderOrganizationJsonLd(applicationShell)
   const marketingCssHref = await readMarketingStylesheet(distDirectory)
   const vite = await createServer({ root: projectRoot, appType: 'custom', server: { middlewareMode: true }, logLevel: 'error' })
   const generatedPages = new Map()

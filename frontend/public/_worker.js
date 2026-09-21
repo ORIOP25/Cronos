@@ -168,7 +168,7 @@ async function handleRequest(request, env) {
   }
 
   if (isKnownApplicationRoute(pathname)) {
-    const shell = await fetchAsset(env, request, '/')
+    const shell = await fetchAsset(env, request, '/app-shell')
     return withWorkerHeaders(shell, {
       contentType: 'text/html; charset=utf-8',
       cacheControl: CACHE_CONTROL.noStore,
