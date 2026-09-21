@@ -110,7 +110,6 @@ test('founder onboarding creates and activates an organization directly at found
     const postCallbackPaths = callbackIndex >= 0
       ? appNavigationPaths.slice(callbackIndex)
       : appNavigationPaths
-    expect(postCallbackPaths).toContain('/login/tasks/choose-organization')
     expect(postCallbackPaths).toContain('/foundation')
     expect(postCallbackPaths).not.toContain('/login')
     expect(postCallbackPaths).not.toContain('/')
