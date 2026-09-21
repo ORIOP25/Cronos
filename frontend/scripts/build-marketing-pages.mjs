@@ -12,14 +12,14 @@ const projectRoot = resolve(scriptDirectory, '..')
 const notFoundMarkdownPath = join(projectRoot, 'public', '404.md')
 
 const metadataSelectors = [
-  ['title', /<title\b[^>]*>[\s\S]*?<\/title>/i],
-  ['meta[name="description"]', /<meta\b(?=[^>]*\bname\s*=\s*["']description["'])[^>]*\/?\s*>/i],
-  ['link[rel="canonical"]', /<link\b(?=[^>]*\brel\s*=\s*["']canonical["'])[^>]*\/?\s*>/i],
-  ['meta[property="og:title"]', /<meta\b(?=[^>]*\bproperty\s*=\s*["']og:title["'])[^>]*\/?\s*>/i],
-  ['meta[property="og:description"]', /<meta\b(?=[^>]*\bproperty\s*=\s*["']og:description["'])[^>]*\/?\s*>/i],
-  ['meta[property="og:url"]', /<meta\b(?=[^>]*\bproperty\s*=\s*["']og:url["'])[^>]*\/?\s*>/i],
-  ['meta[name="twitter:title"]', /<meta\b(?=[^>]*\bname\s*=\s*["']twitter:title["'])[^>]*\/?\s*>/i],
-  ['meta[name="twitter:description"]', /<meta\b(?=[^>]*\bname\s*=\s*["']twitter:description["'])[^>]*\/?\s*>/i],
+  ['title', { pattern: /<title\b[^>]*>[\s\S]*?<\/title>/i }],
+  ['meta[name="description"]', { tag: 'meta', attribute: 'name', value: 'description' }],
+  ['link[rel="canonical"]', { tag: 'link', attribute: 'rel', value: 'canonical' }],
+  ['meta[property="og:title"]', { tag: 'meta', attribute: 'property', value: 'og:title' }],
+  ['meta[property="og:description"]', { tag: 'meta', attribute: 'property', value: 'og:description' }],
+  ['meta[property="og:url"]', { tag: 'meta', attribute: 'property', value: 'og:url' }],
+  ['meta[name="twitter:title"]', { tag: 'meta', attribute: 'name', value: 'twitter:title' }],
+  ['meta[name="twitter:description"]', { tag: 'meta', attribute: 'name', value: 'twitter:description' }],
 ]
 
 function escapeHtml(value) {
@@ -32,16 +32,21 @@ function escapeHtml(value) {
   })[character])
 }
 
-function findMetadataElement(html, label, pattern) {
+function findMetadataElement(html, label, selector) {
+  const pattern = selector.pattern ?? new RegExp(String.raw`<${selector.tag}\b[^>]*\/?>`, 'gi')
+  const attributePattern = selector.attribute
+    ? new RegExp(String.raw`\b${selector.attribute}\s*=\s*["']${selector.value}["']`, 'i')
+    : null
   const matches = [...html.matchAll(new RegExp(pattern.source, 'gi'))]
+    .filter(([match]) => !attributePattern || attributePattern.test(match))
   if (matches.length === 0) throw new Error(`Missing metadata element: ${label}`)
   if (matches.length > 1) throw new Error(`Expected one metadata element: ${label}`)
   return matches[0][0]
 }
 
-function replaceMetadataElement(html, label, pattern, replacement) {
-  findMetadataElement(html, label, pattern)
-  return html.replace(pattern, replacement)
+function replaceMetadataElement(html, label, selector, replacement) {
+  const element = findMetadataElement(html, label, selector)
+  return html.replace(element, replacement)
 }
 
 function organizationJsonLd() {
@@ -99,9 +104,9 @@ export function renderOrganizationJsonLd(html) {
   const pattern = /<script\s+id=["']cronos-organization-jsonld["'][^>]*>[\s\S]*?<\/script>/i
   if (!pattern.test(html)) throw new Error('Missing Organization JSON-LD script marker.')
   const json = JSON.stringify(organizationJsonLd())
-    .replace(/</g, '\\u003c')
-    .replace(/>/g, '\\u003e')
-    .replace(/&/g, '\\u0026')
+    .replaceAll('<', String.raw`\u003c`)
+    .replaceAll('>', String.raw`\u003e`)
+    .replaceAll('&', String.raw`\u0026`)
   return html.replace(pattern, `<script id="cronos-organization-jsonld" type="application/ld+json">${json}</script>`)
 }
 
@@ -117,8 +122,8 @@ export function validateApplicationShell(html) {
 
 function addMarketingStylesheet(html, href) {
   if (!href) return html
-  const escapedHref = href.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  const linkPattern = new RegExp(`<link\\s+rel=["']stylesheet["']\\s+href=["']${escapedHref}["']\\s*/?>`, 'gi')
+  const escapedHref = href.replace(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`)
+  const linkPattern = new RegExp(String.raw`<link\s+rel=["']stylesheet["']\s+href=["']${escapedHref}["']\s*/?>`, 'gi')
   const matches = [...html.matchAll(linkPattern)]
   if (matches.length > 1) throw new Error(`Expected one MarketingLayout stylesheet link, found ${matches.length}.`)
   if (matches.length === 1) return html
@@ -199,13 +204,31 @@ function replaceRootMarkup(html, markup) {
 }
 
 function stripBuildOnlyMarkup(html) {
-  return html
-    .replace(/<script\b[\s\S]*?<\/script>/gi, ' ')
-    .replace(/<style\b[\s\S]*?<\/style>/gi, ' ')
+  return removeElementContent(removeElementContent(html, 'script'), 'style')
     .replace(/<[^>]+>/g, ' ')
     .replace(/&(?:amp|lt|gt|quot|#39);/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
+}
+
+function removeElementContent(html, tagName) {
+  const openingToken = `<${tagName}`
+  const closingToken = `</${tagName}>`
+  let rendered = html
+  let lowerCase = rendered.toLowerCase()
+  let openingIndex = lowerCase.indexOf(openingToken)
+
+  while (openingIndex !== -1) {
+    const openingEnd = lowerCase.indexOf('>', openingIndex)
+    if (openingEnd === -1) return rendered.slice(0, openingIndex)
+    const closingIndex = lowerCase.indexOf(closingToken, openingEnd + 1)
+    if (closingIndex === -1) return rendered.slice(0, openingIndex)
+    rendered = `${rendered.slice(0, openingIndex)} ${rendered.slice(closingIndex + closingToken.length)}`
+    lowerCase = rendered.toLowerCase()
+    openingIndex = lowerCase.indexOf(openingToken)
+  }
+
+  return rendered
 }
 
 function validateHeadings(html, route) {
