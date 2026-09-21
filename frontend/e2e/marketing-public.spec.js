@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test'
 import AxeBuilder from '@axe-core/playwright'
+import { PUBLIC_ASSET_REVISION } from '../src/utils/publicAsset.js'
 
 const publicRoutes = ['/', '/vantagens', '/como-funciona', '/sobre', '/ajuda', '/contacto']
 const trustRoutes = ['/sobre', '/about', '/contacto', '/contact', '/privacidade', '/privacy']
@@ -109,9 +110,10 @@ test.describe('public marketing site', () => {
     expect(scriptSrc).toBeTruthy()
 
     const checks = [
-      ['/logo.png?v=20260920', /^image\/png/],
-      ['/favicon.png?v=20260920', /^image\/png/],
-      ['/marketing/product/hero-schedule.webp?v=20260920', /^image\/webp/],
+      [`/logo.png?v=${PUBLIC_ASSET_REVISION}`, /^image\/png/],
+      [`/favicon.ico?v=${PUBLIC_ASSET_REVISION}`, /^image\/(?:x-icon|vnd\.microsoft\.icon)/],
+      [`/favicon.png?v=${PUBLIC_ASSET_REVISION}`, /^image\/png/],
+      [`/marketing/product/hero-schedule.webp?v=${PUBLIC_ASSET_REVISION}`, /^image\/webp/],
       [stylesheetHref, /^text\/css/],
       [scriptSrc, /^(?:text|application)\/javascript/],
     ]

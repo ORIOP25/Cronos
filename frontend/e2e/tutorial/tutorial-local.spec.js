@@ -5,6 +5,7 @@ import {
   goTo,
   loginAsAdminReal,
 } from '../utils/clerk-helpers.js'
+import { PUBLIC_ASSET_REVISION } from '../../src/utils/publicAsset.js'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -34,7 +35,7 @@ test.describe('Tutorial — cenário local v3', () => {
 
     await expect(page.getByTestId('guide-landing')).toBeVisible()
     await expect(page.getByRole('button', { name: /repetir guia/i })).toBeVisible()
-    await expect(page.getByRole('img', { name: 'Cronos' })).toHaveAttribute('src', /\/logo\.png\?v=20260920$/)
+    await expect(page.getByRole('img', { name: 'Cronos' })).toHaveAttribute('src', new RegExp(`\\/logo\\.png\\?v=${PUBLIC_ASSET_REVISION}$`))
     const savedState = await page.evaluate(() => {
       const entry = Object.entries(localStorage).find(([key]) => key.includes('cronos:tutorial:v3:'))
       const parsed = entry ? JSON.parse(entry[1]) : null
