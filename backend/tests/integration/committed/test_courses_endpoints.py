@@ -170,6 +170,10 @@ class TestCoursesEndpoints:
             headers=clerk_admin_headers,
         )
         assert blocked.status_code == 400
+        assert blocked.json()["detail"]["code"] == "course_has_classes"
+        assert blocked.json()["detail"]["message"] == (
+            "Apague primeiro as turmas deste curso."
+        )
 
         await db_session.delete(linked_class)
         await db_session.commit()
@@ -178,3 +182,29 @@ class TestCoursesEndpoints:
             headers=clerk_admin_headers,
         )
         assert deleted.status_code == 200
+
+    async def test_delete_course_with_subjects(
+        self,
+        async_client: AsyncClient,
+        db_session: AsyncSession,
+        clerk_admin_headers,
+    ):
+        subject = models.Subject(name="Matematica", organization_id=1)
+        course = models.Course(name="Curso Misto", abbreviation="CM", organization_id=1)
+        db_session.add_all([subject, course])
+        await db_session.flush()
+        await db_session.execute(
+            insert(models.course_subject_link).values(
+                organization_id=1,
+                course_id=course.id,
+                subject_id=subject.id,
+            )
+        )
+        await db_session.commit()
+
+        response = await async_client.delete(
+            f"/api/v1/courses/{course.id}",
+            headers=clerk_admin_headers,
+        )
+
+        assert response.status_code == 200

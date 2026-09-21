@@ -333,7 +333,7 @@ async def delete_course(
     if result_classes.first():
         raise AppError(
             kind="bad_request",
-            code="bad_request",
+            code="course_has_classes",
             detail=f"Course {course_id} has classes and cannot be deleted.",
         )
 
