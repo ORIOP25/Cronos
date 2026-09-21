@@ -84,13 +84,12 @@ Its simulated page actions are intercepted by `TutorialApiBoundary` and do not w
 ### Readiness before generation
 
 1. The administrator creates an active class.
-2. The administrator creates valid class-subject links for the current grade.
-3. The administrator adds modules with positive required minutes.
-4. The administrator assigns active competent teachers.
+2. The administrator adds modules with positive required minutes.
+3. The administrator registers an active teacher.
+4. The administrator assigns an active competent teacher to a valid class-subject relation.
 5. The administrator creates compatible rooms.
-6. Foundation provides at least one timeslot.
-7. The administrator confirms possible teacher availability.
-8. The administrator runs prevalidation and resolves blockers.
+6. The administrator confirms possible teacher availability.
+7. Foundation provides the timeslot grid and the administrator runs prevalidation to resolve any remaining blockers, including `MISSING_TIMESLOTS`.
 
 ```mermaid
 sequenceDiagram

@@ -12,13 +12,12 @@ import PageHeader from '../../components/PageHeader'
 import StatePanel from '../../components/StatePanel'
 
 const STEP_LABELS = Object.freeze({
-  ACTIVE_CLASSES: '1. Pelo menos uma Turma ativa registada',
-  MODULES: '2. Disciplinas com Módulos UFCD e carga horária definida',
-  CLASS_SUBJECTS: '3. Associação Turma-Disciplina com ano curricular válido',
-  TEACHER_ASSIGNMENT: '4. Professor competente atribuído à disciplina da turma',
-  COMPATIBLE_ROOM: '5. Salas compatíveis com tipologia e lotação da turma',
-  TIMESLOTS: '6. Grelha semanal de tempos letivos configurada',
-  TEACHER_AVAILABILITY: '7. Disponibilidade docente compatível (não impossível)',
+  ACTIVE_CLASSES: 'Pelo menos uma turma ativa registada',
+  MODULES: 'Disciplinas com módulos UFCD e carga horária definida',
+  TEACHERS: 'Pelo menos um professor ativo registado',
+  TEACHER_ASSIGNMENT: 'Professor competente atribuído à disciplina da turma',
+  COMPATIBLE_ROOM: 'Salas compatíveis com tipologia e lotação da turma',
+  TEACHER_AVAILABILITY: 'Disponibilidade docente compatível',
 })
 
 export function PreparationDashboard({
@@ -40,6 +39,7 @@ export function PreparationDashboard({
   const depth = bases.depth ?? 0
   const complete = Boolean(bases.complete)
   const steps = bases.steps
+  const stepCount = steps.length
   const prevalidationStatus = validation.status || 'NOT_READY'
   const canGenerate = complete && ['READY', 'READY_WITH_WARNINGS'].includes(prevalidationStatus)
 
@@ -67,7 +67,7 @@ export function PreparationDashboard({
         preTitle="Fase de Preparação"
         title="Prontidão das Bases Escolares"
         context={organizationName || 'a sua escola'}
-        description="Complete a cadeia cumulativa de 7 níveis antes de lançar a geração de horários."
+        description={`Complete a cadeia cumulativa de ${stepCount} níveis antes de lançar a geração de horários.`}
       />
 
       <CCard className="mb-4 shadow-sm border-0 bg-primary text-white">
@@ -78,9 +78,9 @@ export function PreparationDashboard({
                 color="light"
                 textColor="primary"
                 className="fw-bold mb-2"
-                aria-label={`Prontidão: ${depth} de 7`}
+                aria-label={`Prontidão: ${depth} de ${stepCount}`}
               >
-                {depth}/7
+                {depth}/{stepCount}
               </CBadge>
               <h3 className="h4 fw-bold mb-1">
                 {cardTitle}
@@ -142,7 +142,7 @@ export function PreparationDashboard({
                       {isPassed ? '✓ Concluído' : isCurrentTarget ? 'A Realizar' : 'Bloqueado'}
                     </span>
                     <div>
-                      <h3 className="h6 mb-0 fw-semibold text-dark">{STEP_LABELS[step.code] || step.code}</h3>
+                      <h3 className="h6 mb-0 fw-semibold text-dark">{index + 1}. {STEP_LABELS[step.code] || step.code}</h3>
                       <small className="text-muted">
                         {isPassed
                           ? 'Invariante satisfeito'

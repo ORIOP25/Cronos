@@ -320,7 +320,7 @@ async def test_populated_dashboard_skips_fingerprints_with_bounded_queries(db_se
 
     assert summary.bases is not None
     assert summary.bases.complete is True
-    assert summary.bases.depth == 7
+    assert summary.bases.depth == 6
     assert summary.prevalidation is not None
     assert summary.prevalidation.status == "READY"
     assert summary.bases.fingerprint is None

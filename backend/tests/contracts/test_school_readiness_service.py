@@ -69,7 +69,7 @@ async def test_availability_matrix_repairs_set_and_preserves_impossible_cells(db
 
 
 @pytest.mark.asyncio
-async def test_readiness_evaluates_modules_before_class_subject_links(db_session):
+async def test_readiness_evaluates_teachers_before_class_subject_links(db_session):
     organization, _ = await create_org_and_user(
         db_session,
         clerk_user_id="readiness-order-user",
@@ -110,17 +110,31 @@ async def test_readiness_evaluates_modules_before_class_subject_links(db_session
     report = await service.evaluate_bases(organization.id)
 
     assert report.depth == 2
-    assert report.percentage == 28
+    assert report.percentage == 33
     assert [step.code for step in report.steps] == [
         "ACTIVE_CLASSES",
         "MODULES",
-        "CLASS_SUBJECTS",
+        "TEACHERS",
         "TEACHER_ASSIGNMENT",
         "COMPATIBLE_ROOM",
-        "TIMESLOTS",
         "TEACHER_AVAILABILITY",
     ]
     assert [step.status for step in report.steps[:3]] == ["COMPLETE", "COMPLETE", "PENDING"]
+    assert report.issues[0].code == "TEACHERS_REQUIRED"
+    assert report.issues[0].route == "/members"
+
+    await create_teacher_profile(
+        db_session,
+        organization_id=organization.id,
+        name="Professor sem competências",
+    )
+    teacher_report = await service.evaluate_bases(organization.id)
+
+    assert teacher_report.depth == 3
+    assert teacher_report.percentage == 50
+    assert teacher_report.steps[2].status == "COMPLETE"
+    assert teacher_report.issues[0].code == "TEACHER_ASSIGNMENT_REQUIRED"
+    assert teacher_report.issues[0].route == "/courses"
 
     db_session.add(
         models.ClassSubjectLink(
@@ -128,6 +142,7 @@ async def test_readiness_evaluates_modules_before_class_subject_links(db_session
             class_id=school_class.id,
             subject_id=subject.id,
             grade_level=10,
+            teacher_id=None,
         )
     )
     await db_session.flush()
@@ -135,7 +150,119 @@ async def test_readiness_evaluates_modules_before_class_subject_links(db_session
     linked_report = await service.evaluate_bases(organization.id)
 
     assert linked_report.depth == 3
-    assert linked_report.percentage == 42
+    assert linked_report.percentage == 50
+    assert (
+        linked_report.issues[0].route == f"/courses/{course.id}/classes/{school_class.id}/subjects"
+    )
+
+
+@pytest.mark.asyncio
+async def test_readiness_teacher_step_uses_active_membership_capability_only(db_session):
+    organization, _ = await create_org_and_user(
+        db_session,
+        clerk_user_id="readiness-teacher-fact-user",
+        clerk_org_id="readiness-teacher-fact-org",
+    )
+    course = models.Course(
+        organization_id=organization.id,
+        name="Curso de Professores",
+        abbreviation="CP",
+    )
+    subject = models.Subject(
+        organization_id=organization.id,
+        name="Disciplina de Professores",
+    )
+    db_session.add_all([course, subject])
+    await db_session.flush()
+    db_session.add_all(
+        [
+            models.Class(
+                organization_id=organization.id,
+                course_id=course.id,
+                name="Turma de Professores",
+                size=20,
+                grade_level=10,
+                start_year=2025,
+                end_year=2028,
+            ),
+            models.Module(
+                organization_id=organization.id,
+                subject_id=subject.id,
+                name="Módulo de Professores",
+                required_minutes=60,
+                order=0,
+            ),
+        ]
+    )
+    await db_session.flush()
+
+    teacher = await create_teacher_profile(db_session, organization_id=organization.id)
+    service = SchoolReadinessService(db_session)
+    membership = await db_session.get(
+        models.OrganizationMembership,
+        teacher.organization_membership_id,
+    )
+
+    assert (await service.evaluate_bases(organization.id)).depth == 3
+
+    membership.lifecycle_status = models.MembershipLifecycleStatus.archived
+    await db_session.flush()
+    assert (await service.evaluate_bases(organization.id)).depth == 2
+
+    membership.lifecycle_status = models.MembershipLifecycleStatus.active
+    membership.can_admin = True
+    membership.can_teach = False
+    membership.teacher_access_mode = None
+    await db_session.flush()
+    assert (await service.evaluate_bases(organization.id)).depth == 2
+
+    membership.can_admin = False
+    membership.can_teach = True
+    membership.teacher_access_mode = models.TeacherAccessMode.scheduler_only
+    membership.access_status = models.MembershipAccessStatus.none
+    await db_session.flush()
+    assert (await service.evaluate_bases(organization.id)).depth == 3
+
+    other_organization, _ = await create_org_and_user(
+        db_session,
+        clerk_user_id="readiness-teacher-fact-other-user",
+        clerk_org_id="readiness-teacher-fact-other-org",
+    )
+    other_course = models.Course(
+        organization_id=other_organization.id,
+        name="Curso de Outra Organização",
+        abbreviation="CO",
+    )
+    other_subject = models.Subject(
+        organization_id=other_organization.id,
+        name="Disciplina de Outra Organização",
+    )
+    db_session.add_all([other_course, other_subject])
+    await db_session.flush()
+    db_session.add_all(
+        [
+            models.Class(
+                organization_id=other_organization.id,
+                course_id=other_course.id,
+                name="Turma de Outra Organização",
+                size=20,
+                grade_level=10,
+                start_year=2025,
+                end_year=2028,
+            ),
+            models.Module(
+                organization_id=other_organization.id,
+                subject_id=other_subject.id,
+                name="Módulo de Outra Organização",
+                required_minutes=60,
+                order=0,
+            ),
+        ]
+    )
+    await db_session.flush()
+
+    assert (await service.evaluate_bases(organization.id)).depth == 3
+    assert (await service.evaluate_bases(other_organization.id)).depth == 2
 
 
 @pytest.mark.asyncio
@@ -210,7 +337,7 @@ async def test_readiness_counts_scheduler_only_teacher_assignment(db_session):
     scheduler_only_report = await service.evaluate_bases(organization.id)
 
     assert scheduler_only_report.depth == 4
-    assert scheduler_only_report.percentage == 57
+    assert scheduler_only_report.percentage == 67
 
     membership = await db_session.get(
         models.OrganizationMembership,
@@ -222,7 +349,7 @@ async def test_readiness_counts_scheduler_only_teacher_assignment(db_session):
     platform_report = await service.evaluate_bases(organization.id)
 
     assert platform_report.depth == 4
-    assert platform_report.percentage == 57
+    assert platform_report.percentage == 67
 
 
 @pytest.mark.asyncio
@@ -349,7 +476,7 @@ async def test_readiness_mixed_and_fully_impossible_availability(db_session):
 
     # Case 1: Neutral availability (no explicit availability records) -> 100%
     neutral_report = await service.evaluate_bases(organization.id)
-    assert neutral_report.depth == 7
+    assert neutral_report.depth == 6
     assert neutral_report.complete is True
     assert neutral_report.percentage == 100
 
@@ -362,7 +489,7 @@ async def test_readiness_mixed_and_fully_impossible_availability(db_session):
     db_session.add(preferred)
     await db_session.flush()
     preferred_report = await service.evaluate_bases(organization.id)
-    assert preferred_report.depth == 7
+    assert preferred_report.depth == 6
     assert preferred_report.complete is True
     assert preferred_report.percentage == 100
 
@@ -377,15 +504,15 @@ async def test_readiness_mixed_and_fully_impossible_availability(db_session):
     await db_session.flush()
 
     mixed_report = await service.evaluate_bases(organization.id)
-    assert mixed_report.depth == 7
+    assert mixed_report.depth == 6
     assert mixed_report.complete is True
     assert mixed_report.percentage == 100
 
-    # Case 4: Fully impossible availability (both slots impossible) -> blocks level 7 (depth 6)
+    # Case 4: Fully impossible availability (both slots impossible) -> blocks level 6 (depth 5)
     preferred.score = models.PreferenceLevel.IMPOSSIBLE.value
     await db_session.flush()
 
     blocked_report = await service.evaluate_bases(organization.id)
-    assert blocked_report.depth == 6
+    assert blocked_report.depth == 5
     assert blocked_report.complete is False
-    assert blocked_report.percentage == 85
+    assert blocked_report.percentage == 83

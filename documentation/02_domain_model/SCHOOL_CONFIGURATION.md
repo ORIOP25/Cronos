@@ -93,12 +93,15 @@ Do not use `/config` as a replacement for Foundation when `foundation_status` is
 The readiness service then checks the cumulative bases needed for generation:
 
 1. active class;
-2. valid class-subject link;
-3. module with positive required minutes;
-4. active competent teacher;
+2. module with positive required minutes;
+3. active teacher membership with teaching capability;
+4. valid class-subject link with an active competent teacher;
 5. compatible room;
-6. generated timeslot;
-7. possible teacher availability.
+6. possible teacher availability.
+
+Foundation creates the weekly timeslot grid. It is not a public readiness step;
+final prevalidation still blocks generation with `MISSING_TIMESLOTS` when the grid
+is missing.
 
 ## Related Documents
 

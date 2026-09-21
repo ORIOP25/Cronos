@@ -283,21 +283,23 @@ It sends no tutorial telemetry and creates no backend record.
 ## Phase 5: Readiness
 
 After Foundation, the administrator builds the operational bases.
-`GET /api/v1/readiness/bases` reports cumulative progress in seven depths:
+`GET /api/v1/readiness/bases` reports cumulative progress in six depths:
 
 | Depth | Required base | Percentage |
 | :---: | :--- | :---: |
 | 0 | No base | 0% |
-| 1 | Active non-archived class | 14% |
-| 2 | Module with positive required minutes | 28% |
-| 3 | Valid class-subject link for the current grade on a subject with modules | 42% |
-| 4 | Active competent teacher assigned to the class subject | 57% |
-| 5 | Compatible room type and capacity | 71% |
-| 6 | At least one generated timeslot | 85% |
-| 7 | At least one possible teacher availability score | 100% |
+| 1 | Active non-archived class | 17% |
+| 2 | Module with positive required minutes | 33% |
+| 3 | Active teacher membership with teaching capability | 50% |
+| 4 | Valid current-grade class-subject link with an active competent teacher | 67% |
+| 5 | Compatible room type and capacity | 83% |
+| 6 | At least one possible teacher availability score | 100% |
 
-Depth 7 also requires an active school year.
+Depth 6 also requires an active school year.
 Without one, the report is blocked with `ACTIVE_SCHOOL_YEAR_REQUIRED`.
+
+Foundation creates the weekly timeslot grid before this chain is evaluated.
+The public chain therefore does not expose a separate `TIMESLOTS` step; final prevalidation still blocks generation with `MISSING_TIMESLOTS` if that grid is absent.
 
 `GET /api/v1/readiness/prevalidation?fingerprint=...` performs a pure preflight before generation.
 It returns `BLOCKED`, `READY_WITH_WARNINGS`, or `READY` and includes blocker or warning issues.

@@ -11,10 +11,9 @@ import { renderWithRouter } from './testUtils'
 const readinessCodes = [
   'ACTIVE_CLASSES',
   'MODULES',
-  'CLASS_SUBJECTS',
+  'TEACHERS',
   'TEACHER_ASSIGNMENT',
   'COMPATIBLE_ROOM',
-  'TIMESLOTS',
   'TEACHER_AVAILABILITY',
 ]
 const bases = {
@@ -24,7 +23,7 @@ const bases = {
   steps: readinessCodes.map((code) => ({ code, status: 'PENDING', route: '/config' })),
 }
 const completeBases = {
-  depth: 7,
+  depth: 6,
   percentage: 100,
   complete: true,
   fingerprint: 'fingerprint-v1',
@@ -74,7 +73,7 @@ describe('PreparationDashboard tutorial entry points', () => {
     await waitFor(() => expect(screen.getByTestId('location-probe')).toHaveTextContent('/guide?entry=resume'))
   })
 
-  it('renders the seven-level validation chain and disables generation below depth seven', () => {
+  it('renders the six-level validation chain and disables generation below depth six', () => {
     renderWithRouter(
       <PreparationDashboard
         orgId="org_test"
@@ -85,11 +84,11 @@ describe('PreparationDashboard tutorial entry points', () => {
       />,
     )
 
-    expect(screen.getAllByTestId(/^preparation-level-/)).toHaveLength(7)
+    expect(screen.getAllByTestId(/^preparation-level-/)).toHaveLength(6)
     expect(screen.getByRole('button', { name: /gerar horário/i })).toBeDisabled()
   })
 
-  it('renders modules before class-subject associations', () => {
+  it('renders teachers before teacher assignments', () => {
     renderWithRouter(
       <PreparationDashboard bases={bases} autoStartGuide={false} />,
     )
@@ -98,21 +97,43 @@ describe('PreparationDashboard tutorial entry points', () => {
     expect(levels.map((level) => level.dataset.testid)).toEqual([
       'preparation-level-ACTIVE_CLASSES',
       'preparation-level-MODULES',
-      'preparation-level-CLASS_SUBJECTS',
+      'preparation-level-TEACHERS',
       'preparation-level-TEACHER_ASSIGNMENT',
       'preparation-level-COMPATIBLE_ROOM',
-      'preparation-level-TIMESLOTS',
       'preparation-level-TEACHER_AVAILABILITY',
     ])
-    expect(levels[1]).toHaveTextContent('2. Disciplinas com Módulos UFCD e carga horária definida')
-    expect(levels[2]).toHaveTextContent('3. Associação Turma-Disciplina com ano curricular válido')
+    expect(levels[1]).toHaveTextContent('2. Disciplinas com módulos UFCD e carga horária definida')
+    expect(levels[2]).toHaveTextContent('3. Pelo menos um professor ativo registado')
+  })
+
+  it('sends the teacher registration action to members without requiring competence', () => {
+    const teacherPendingBases = {
+      ...bases,
+      depth: 2,
+      percentage: 33,
+      steps: readinessCodes.map((code, index) => ({
+        code,
+        status: index < 2 ? 'COMPLETE' : 'PENDING',
+        route: code === 'TEACHERS' ? '/members' : '/config',
+      })),
+    }
+
+    renderWithRouter(<PreparationDashboard bases={teacherPendingBases} autoStartGuide={false} />)
+
+    const level = screen.getByTestId('preparation-level-TEACHERS')
+    expect(level).toHaveTextContent('3. Pelo menos um professor ativo registado')
+    expect(level).toHaveTextContent('A Realizar')
+    expect(level.querySelector('a')).toHaveAttribute('href', '/members')
+    expect(level).not.toHaveTextContent(/competên/i)
+    expect(screen.queryByTestId('preparation-level-CLASS_SUBJECTS')).not.toBeInTheDocument()
+    expect(screen.getByTestId('preparation-level-TEACHER_ASSIGNMENT')).toHaveTextContent('Bloqueado')
   })
 
   it('sends the teacher assignment action to the class subject page', () => {
     const teacherPendingBases = {
-      ...bases,
-      depth: 3,
-      percentage: 42,
+        ...bases,
+        depth: 3,
+      percentage: 50,
       steps: readinessCodes.map((code, index) => ({
         code,
         status: index < 3 ? 'COMPLETE' : 'PENDING',
@@ -133,12 +154,12 @@ describe('PreparationDashboard tutorial entry points', () => {
         orgId="org_test"
         userId="user_test"
         organizationName="Escola Teste"
-        bases={{ ...bases, depth: 2, percentage: 28 }}
+        bases={{ ...bases, depth: 2, percentage: 33 }}
         autoStartGuide={false}
       />,
     )
 
-    expect(screen.getByText('2/7')).toBeInTheDocument()
+    expect(screen.getByText('2/6')).toBeInTheDocument()
     expect(screen.queryByText(/nível de prontidão/i)).not.toBeInTheDocument()
     expect(screen.queryByText(/níveis atingidos/i)).not.toBeInTheDocument()
     expect(screen.getByText('Escola Teste')).toBeInTheDocument()
@@ -172,7 +193,7 @@ describe('PreparationDashboard tutorial entry points', () => {
     )
 
     expect(screen.getByRole('button', { name: /gerar horário/i })).toBeEnabled()
-    expect(screen.getAllByText('Invariante satisfeito')).toHaveLength(7)
+    expect(screen.getAllByText('Invariante satisfeito')).toHaveLength(6)
     expect(screen.queryByText(/issues de preparação/i)).not.toBeInTheDocument()
     expect(screen.queryByText('Aviso')).not.toBeInTheDocument()
   })

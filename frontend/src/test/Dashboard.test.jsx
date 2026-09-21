@@ -86,7 +86,7 @@ describe('Dashboard', () => {
         foundation_status: 'COMPLETED',
         foundation_completed_at: '2025-09-15T00:00:00Z',
         bases: {
-          depth: 7,
+          depth: 6,
           percentage: 100,
           complete: true,
           steps: [],

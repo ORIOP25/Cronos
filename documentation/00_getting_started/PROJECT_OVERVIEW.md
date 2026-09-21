@@ -41,7 +41,7 @@ Schedules must account for resource conflicts, availability, calendar events, ex
 1. Clerk authenticates the user and selects an organization.
 2. An organization administrator completes the nine-step Foundation and creates the school grid.
 3. The administrator uses the optional local tutorial or continues with real configuration.
-4. The administrator builds the seven readiness bases: classes, curriculum links, modules, competent teachers, rooms, timeslots, and availability.
+4. The administrator builds the six readiness bases: active classes, positive modules, active teachers, valid teacher assignments, compatible rooms, and availability. Foundation creates the timeslot grid, while final prevalidation protects generation when it is missing.
 5. The administrator starts complete generation or adaptive repair.
 6. The API creates a job and publishes the registered task name `scheduler.run_generation_job` through Redis.
 7. The worker computes a bounded result and stores a schedule draft.

@@ -1,4 +1,4 @@
-"""Seven-level readiness evaluation for schedule generation."""
+"""Six-level readiness evaluation for schedule generation."""
 
 from __future__ import annotations
 
@@ -14,25 +14,21 @@ from app.services.scheduler_state_service import SchedulerStateService
 
 logger = structlog.get_logger(__name__)
 
-PERCENTAGE_MAP = [0, 14, 28, 42, 57, 71, 85, 100]
-
 STEPS_METADATA = [
     ("ACTIVE_CLASSES", "/courses"),
     ("MODULES", "/subjects"),
-    ("CLASS_SUBJECTS", "/courses"),
+    ("TEACHERS", "/members"),
     ("TEACHER_ASSIGNMENT", "/courses"),
     ("COMPATIBLE_ROOM", "/rooms"),
-    ("TIMESLOTS", "/config"),
     ("TEACHER_AVAILABILITY", "/members"),
 ]
 
 READINESS_ISSUE_MESSAGES = {
     "ACTIVE_CLASSES": "Registe pelo menos uma turma ativa.",
-    "CLASS_SUBJECTS": "Associe uma disciplina à turma com o ano curricular atual.",
     "MODULES": "Adicione módulos com carga horária positiva às disciplinas.",
+    "TEACHERS": "Registe pelo menos um professor ativo.",
     "TEACHER_ASSIGNMENT": "Atribua um professor ativo e competente à disciplina da turma.",
     "COMPATIBLE_ROOM": "Registe uma sala compatível com a tipologia e lotação.",
-    "TIMESLOTS": "Configure pelo menos um tempo letivo.",
     "TEACHER_AVAILABILITY": "Registe disponibilidade docente não impossível.",
 }
 
@@ -96,6 +92,20 @@ class SchoolReadinessService:
                 )
             )
         )
+        active_teacher = exists(
+            select(1)
+            .select_from(teacher_alias)
+            .join(
+                membership_alias,
+                membership_alias.id == teacher_alias.organization_membership_id,
+            )
+            .where(
+                teacher_alias.organization_id == organization_id,
+                membership_alias.organization_id == organization_id,
+                membership_alias.lifecycle_status == models.MembershipLifecycleStatus.active,
+                membership_alias.can_teach.is_(True),
+            )
+        )
         compatible_room = exists(
             select(1)
             .select_from(models.Room)
@@ -137,13 +147,7 @@ class SchoolReadinessService:
                     models.Module.required_minutes > 0,
                 )
             ).label("modules"),
-            exists(
-                select(1)
-                .select_from(link_alias)
-                .join(class_alias, class_alias.id == link_alias.class_id)
-                .join(subject_alias, subject_alias.id == link_alias.subject_id)
-                .where(valid_link)
-            ).label("class_subjects"),
+            active_teacher.label("active_teacher"),
             exists(
                 select(1)
                 .select_from(link_alias)
@@ -158,9 +162,6 @@ class SchoolReadinessService:
                 .join(subject_alias, subject_alias.id == link_alias.subject_id)
                 .where(compatible_link)
             ).label("compatible_room"),
-            exists(select(1).where(models.Timeslot.organization_id == organization_id)).label(
-                "timeslots"
-            ),
             exists(
                 select(1)
                 .select_from(link_alias)
@@ -175,10 +176,9 @@ class SchoolReadinessService:
         for fact_name in (
             "active_classes",
             "modules",
-            "class_subjects",
+            "active_teacher",
             "teacher_assignment",
             "compatible_room",
-            "timeslots",
             "teacher_availability",
         ):
             if not facts[fact_name]:
@@ -266,7 +266,7 @@ class SchoolReadinessService:
                     route=routes[code],
                 )
             ]
-        percentage = PERCENTAGE_MAP[min(depth, len(STEPS_METADATA))]
+        percentage = round(depth / len(STEPS_METADATA) * 100)
         steps = [
             schemas.ReadinessStep(
                 code=code,

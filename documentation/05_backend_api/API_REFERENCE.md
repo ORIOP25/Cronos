@@ -178,6 +178,12 @@ All paths below are relative to `/api/v1`.
 | `GET` | `/readiness/prevalidation` | Active administrator | Check blockers and warnings before generation. |
 | `GET` | `/dashboard` | Active administrator | Read `PREPARATION` or `OPERATIONAL` dashboard data. |
 
+`GET /readiness/bases` returns exactly six cumulative public step codes, in this
+order: `ACTIVE_CLASSES`, `MODULES`, `TEACHERS`, `TEACHER_ASSIGNMENT`,
+`COMPATIBLE_ROOM`, and `TEACHER_AVAILABILITY`. `CLASS_SUBJECTS` and `TIMESLOTS`
+are not public readiness steps. Foundation owns the weekly grid and final
+prevalidation continues to report `MISSING_TIMESLOTS` when it is absent.
+
 `PUT /foundation/draft` accepts `expected_version`, `current_step` from 1 to 9, and a strict Foundation data object.
 The response returns the new version.
 `POST /foundation/complete` accepts the expected version and `confirmed: true`.

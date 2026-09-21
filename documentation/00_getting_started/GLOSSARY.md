@@ -44,7 +44,7 @@ In accordance with ASD-STE100, technical concepts have single approved terms. Po
 | **RLS** | Row-Level Security | PostgreSQL feature that enforces tenant isolation per row. |
 | **STE** | Simplified Technical English | Controlled writing standard (ASD-STE100) used for documentation clarity. |
 | **Foundation status** | Organization setup state | `NOT_STARTED`, `IN_PROGRESS`, or `COMPLETED`; it controls the normal authenticated route gate. |
-| **Readiness depth** | Operational readiness level | Cumulative level from 0 to 7 that measures whether the bases for schedule generation exist. |
+| **Readiness depth** | Operational readiness level | Cumulative level from 0 to 6 that measures whether the bases for schedule generation exist. |
 | **Prevalidation** | Generation preflight | Pure check that returns blockers, warnings, and a fingerprint before a generation request. |
 | **Draft version** | Optimistic concurrency version | Monotonic version sent as `expected_version` to prevent overwriting another administrator's draft. |
 | **Current member** | Local organization member | The tenant-scoped membership returned by `/members/me` and used by route guards. |
