@@ -89,6 +89,9 @@ TEMPLATE_DEFINITIONS = {
 FILE_READ_ERROR_MESSAGE = (
     "Não foi possível ler este ficheiro. Descarregue novamente o modelo e guarde-o como CSV."
 )
+RESOURCE_MISMATCH_MESSAGE = (
+    "Este ficheiro não corresponde à secção escolhida. Selecione o modelo correspondente."
+)
 ROOM_TYPE_ERROR_MESSAGE = "Escreva Normal, Laboratório, Ginásio ou Artes."
 
 
@@ -356,6 +359,7 @@ def parse_resource_file(resource: str, filename: str, content_base64: str) -> Pa
         )
 
     delimiter = None
+    resource_mismatch = False
     for candidate in (",", ";"):
         reader = csv.reader(io.StringIO(text, newline=""), delimiter=candidate)
         try:
@@ -365,11 +369,23 @@ def parse_resource_file(resource: str, filename: str, content_base64: str) -> Pa
         if headers == list(definition.headers):
             delimiter = candidate
             break
+        if any(
+            other_resource != resource and headers == list(other_definition.headers)
+            for other_resource, other_definition in TEMPLATE_DEFINITIONS.items()
+        ):
+            resource_mismatch = True
     if delimiter is None:
         return ParsedResourceFile(
             resource,
             filename,
-            issues=(_issue(resource, "header_invalid", FILE_READ_ERROR_MESSAGE, line=1),),
+            issues=(
+                _issue(
+                    resource,
+                    "resource_mismatch" if resource_mismatch else "header_invalid",
+                    RESOURCE_MISMATCH_MESSAGE if resource_mismatch else FILE_READ_ERROR_MESSAGE,
+                    line=1,
+                ),
+            ),
             decoded_bytes=len(raw),
         )
 

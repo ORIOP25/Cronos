@@ -104,6 +104,23 @@ def test_parser_reports_common_read_error_for_invalid_encoding_or_structure():
     assert "Não foi possível ler este ficheiro" in invalid.issues[0].message
 
 
+def test_parser_explains_when_file_belongs_to_another_import_section():
+    parsed = parse_resource_file(
+        "subjects",
+        "professores.csv",
+        encoded(
+            "Nome do professor,Email do professor,Nome da disciplina\r\n"
+            "Ana,ana@example.com,Programação\r\n",
+            bom=False,
+        ),
+    )
+
+    assert parsed.issues[0].code == "resource_mismatch"
+    assert parsed.issues[0].message == (
+        "Este ficheiro não corresponde à secção escolhida. Selecione o modelo correspondente."
+    )
+
+
 def test_room_types_are_normalized_for_rooms_and_subjects():
     rooms = parse_resource_file(
         "rooms",
