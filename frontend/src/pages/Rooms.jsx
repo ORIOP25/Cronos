@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import PageHeader from '../components/PageHeader'
 import { CButton, CAlert, CBadge } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
@@ -19,6 +20,7 @@ import {
 } from '../features/catalog/data'
 
 const Rooms = ({ readOnly = false, allowedActions }) => {
+  const navigate = useNavigate()
   const [modalVisible, setModalVisible] = useState(false)
   const [selectedItem, setSelectedItem] = useState(null)
 
@@ -69,7 +71,8 @@ const Rooms = ({ readOnly = false, allowedActions }) => {
   return (
     <div className="p-4">
       <PageHeader preTitle="Gestão" title="Salas" />
-      {canCreate && <div className="d-flex justify-content-end mb-4">
+      {canCreate && <div className="d-flex justify-content-end gap-2 mb-4">
+        <CButton color="secondary" variant="outline" onClick={() => navigate('/imports?resource=rooms')}>Importar CSV</CButton>
         <CButton color="primary" onClick={handleCreate} className="d-flex align-items-center gap-2" data-tutorial-target="new-room">
           <CIcon icon={cilPlus} />
           Nova Sala

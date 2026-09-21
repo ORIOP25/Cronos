@@ -164,7 +164,7 @@ async def create_course(
     for cls_conf in item.classes_config:
         start_short = cls_conf.start_year % 100
         end_short = cls_conf.end_year % 100
-        class_name = f"{db_course.abbreviation} {start_short}/{end_short}"
+        class_name = cls_conf.name or f"{db_course.abbreviation} {start_short}/{end_short}"
 
         new_class = models.Class(
             name=class_name,

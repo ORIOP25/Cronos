@@ -38,6 +38,7 @@ Read [Members and Access](../02_domain_model/MEMBERS_AND_ACCESS.md).
 | `/my-availability` | `MyAvailability.jsx` | Teacher | Teacher availability grid |
 | `/my-progress` | `MyProgress.jsx` | Teacher | Teacher assigned class progress |
 | `/config` | `SchoolConfig.jsx` | Admin | School parameters & shift settings |
+| `/imports` | `BulkImport.jsx` | Admin | Additive CSV validation and atomic commit |
 
 ## Route Guard Logic
 Routes use `<RequireAdmin>` and `<RequireTeacher>` capability guards:

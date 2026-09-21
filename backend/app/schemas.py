@@ -1000,6 +1000,7 @@ class SchedulerResetYearResponse(BaseModel):
 class ClassConfigCreate(BaseModel):
     """Define as regras para criar uma turma automática"""
 
+    name: str | None = Field(default=None, min_length=1, max_length=100)
     grade_level: int = Field(..., ge=10, le=12, description=DESC_GRADE_LEVEL)
     size: int = Field(25, gt=0, description="Número de alunos")
     start_year: int = Field(..., description=DESC_START_YEAR)
@@ -1036,6 +1037,73 @@ class CourseUpdate(BaseModel):
     name: str | None = None
     abbreviation: str | None = Field(None, min_length=2, max_length=10)
     subject_ids: list[int] | None = None
+
+
+class BulkImportFilePayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    filename: str = Field(..., min_length=1, max_length=255)
+    content_base64: str = Field(..., min_length=1)
+
+
+class BulkImportFiles(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    rooms: BulkImportFilePayload | None = None
+    subjects: BulkImportFilePayload | None = None
+    courses: BulkImportFilePayload | None = None
+    teachers: BulkImportFilePayload | None = None
+    assignments: BulkImportFilePayload | None = None
+
+    @model_validator(mode="after")
+    def require_a_file(self):
+        if not any(
+            getattr(self, resource) is not None
+            for resource in ("rooms", "subjects", "courses", "teachers", "assignments")
+        ):
+            raise ValueError("Selecione pelo menos um ficheiro de importação.")
+        return self
+
+
+class BulkImportFilesRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    files: BulkImportFiles
+
+
+class BulkImportIssue(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    code: str
+    severity: Literal["error", "warning"]
+    resource: str
+    line: int | None = None
+    field: str | None = None
+    message: str
+
+
+class BulkImportPreview(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    counts: dict[str, int] = Field(default_factory=dict)
+    items: list[dict[str, Any]] = Field(default_factory=list)
+    can_commit: bool
+
+
+class BulkImportValidationResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    can_commit: bool
+    preview: BulkImportPreview
+    issues: list[BulkImportIssue] = Field(default_factory=list)
+
+
+class BulkImportCommitResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    created_counts: dict[str, int] = Field(default_factory=dict)
+    warnings: list[BulkImportIssue] = Field(default_factory=list)
+    message: str = "Importação concluída."
 
 
 class SubjectSimple(BaseModel):

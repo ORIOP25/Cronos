@@ -11,6 +11,7 @@ from app.api.v1.endpoints import (
     dashboard,
     foundation,
     health,
+    imports,
     legal,
     members,
     occurrences,
@@ -37,6 +38,7 @@ api_router.include_router(client_errors.router, prefix="/client-errors", tags=["
 # O prefixo "/api/v1" será adicionado no main.py, garantindo centralização.
 
 api_router.include_router(members.router, prefix="/members", tags=["Equipa"])
+api_router.include_router(imports.router, prefix="/imports", tags=["Importação CSV"])
 api_router.include_router(teachers.router, prefix="/teachers", tags=["Teacher self-service/domain"])
 api_router.include_router(classes.router, prefix="/classes", tags=["Turmas"])
 api_router.include_router(subjects.router, prefix="/subjects", tags=["Disciplinas"])

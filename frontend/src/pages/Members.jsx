@@ -294,7 +294,10 @@ const Members = ({ readOnly = false, allowedActions }) => {
           />
           <CFormSwitch label="Mostrar arquivados" checked={includeArchived} onChange={(event) => setIncludeArchived(event.target.checked)} />
         </div>
-        {canCreate && <CButton color="primary" onClick={() => openModal()} className="d-flex align-items-center gap-2" data-tutorial-target="new-member"><CIcon icon={cilPlus} />Adicionar membro</CButton>}
+        {canCreate && <div className="d-flex gap-2">
+          <CButton component="a" href="/imports?resource=teachers" color="secondary" variant="outline">Importar CSV</CButton>
+          <CButton color="primary" onClick={() => openModal()} className="d-flex align-items-center gap-2" data-tutorial-target="new-member"><CIcon icon={cilPlus} />Adicionar membro</CButton>
+        </div>}
       </div>
       {isError && <CAlert color="danger">{getApiErrorMessage(error, 'Não foi possível carregar a equipa.', 'team.load')} <CButton color="link" onClick={() => refetch()}>Tentar novamente</CButton></CAlert>}
       {actionError && <CAlert color="danger">{actionError}</CAlert>}
