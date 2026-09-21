@@ -5,6 +5,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { renderWithProviders } from './testUtils'
 import { setClerkState } from './setup'
 import DefaultLayout from '../components/DefaultLayout'
+import { publicAsset } from '../utils/publicAsset'
 
 const roleState = vi.hoisted(() => ({ isAdmin: true, isTeacher: false }))
 
@@ -63,8 +64,10 @@ describe('DefaultLayout', () => {
 
     expect(within(sidebar).getByRole('button', { name: 'Expandir menu' })).toBeVisible()
     expect(appSidebar).toHaveClass('is-collapsed')
-    expect(within(sidebar).getByRole('img', { name: 'Cronos' })).toBeVisible()
-    expect(brandRow.children[0]).toContainElement(within(sidebar).getByRole('img', { name: 'Cronos' }))
+    const logo = within(sidebar).getByRole('img', { name: 'Cronos' })
+    expect(logo).toBeVisible()
+    expect(logo).toHaveAttribute('src', publicAsset('/logo-white.png'))
+    expect(brandRow.children[0]).toContainElement(logo)
     expect(brandRow.children[1]).toContainElement(within(sidebar).getByRole('button', { name: 'Expandir menu' }))
     expect(appShellCss).toMatch(/\.app-sidebar\.is-collapsed \.app-sidebar__brand-row\s*\{[^}]*flex-direction:\s*column[^}]*gap:\s*8px/)
   })

@@ -5,7 +5,7 @@
 .app-sidebar__brand-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 44px; }
 .app-sidebar.is-collapsed .app-sidebar__brand-row { flex-direction: column; justify-content: flex-start; gap: 8px; }
 .app-sidebar__brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
-.app-sidebar__brand img { width: 32px; height: 32px; object-fit: contain; filter: grayscale(1) brightness(0) invert(1); }
+.app-sidebar__brand img { width: 32px; height: 32px; object-fit: contain; }
 .app-sidebar.is-collapsed .app-sidebar__brand img { width: 36px; height: 36px; }
 .app-sidebar__brand-name { color: #fff; font: 600 1.45rem/1 var(--cronos-font-display); }
 .app-sidebar__toggle { min-width: 44px; min-height: 44px; border: 0; border-radius: 6px; background: transparent; color: rgb(255 255 255 / 72%); cursor: pointer; }
@@ -39,7 +39,7 @@
   .app-sidebar--desktop { display: none; }
   .app-mobile-header { position: sticky; top: 0; z-index: 30; display: flex; align-items: center; justify-content: space-between; min-height: 64px; padding: 10px 16px; background: var(--cronos-ink); color: #fff; }
   .app-mobile-header__brand { display: flex; align-items: center; gap: 10px; color: #fff; font: 600 1.35rem var(--cronos-font-display); }
-  .app-mobile-header__brand img { width: 30px; height: 30px; filter: grayscale(1) brightness(0) invert(1); }
+  .app-mobile-header__brand img { width: 30px; height: 30px; }
   .app-mobile-header__menu { min-width: 44px; min-height: 44px; border: 0; border-radius: 6px; background: transparent; color: #fff; cursor: pointer; }
   .app-main { padding: 24px; }
 }
