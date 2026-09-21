@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { describe, it, expect, vi } from 'vitest'
 import { fireEvent, render, screen } from '@testing-library/react'
 import WeekGrid from '../components/WeekGrid'
@@ -21,6 +22,8 @@ const baseSlot = {
   occurrence_status: null,
   hours_given: null,
 }
+
+const weekGridCss = readFileSync('src/styles/week-grid.css', 'utf8')
 
 describe('buildWeekGridModel', () => {
   it('builds collisions, baseline times, dates, and locked slots', () => {
@@ -55,6 +58,35 @@ describe('WeekGrid (Ponto 8.1)', () => {
     expect(screen.queryByText('Planeado')).not.toBeInTheDocument()
     expect(container.querySelector('.week-grid__time-start')).toHaveTextContent('09:00')
     expect(container.querySelector('.week-grid__time-end')).toHaveTextContent('11:00')
+  })
+
+  it('keeps long content readable at the laptop breakpoint', () => {
+    const longSlot = {
+      ...baseSlot,
+      subject: { id: 1, name: 'Programação Avançada de Aplicações Distribuídas' },
+      teacher: { id: 7, name: 'Professora Ana Maria Fernandes' },
+      room: { id: 3, name: 'Laboratório de Informática 3' },
+    }
+
+    render(
+      <WeekGrid
+        slots={[longSlot]}
+        isLoading={false}
+        baseTimeslots={[longSlot.timeslot]}
+        weekStart="2026-04-20"
+        fitViewport
+      />
+    )
+
+    expect(screen.getByRole('gridcell', {
+      name: /Programação Avançada de Aplicações Distribuídas, Professora Ana Maria Fernandes, Laboratório de Informática 3/i,
+    })).toBeInTheDocument()
+    expect(weekGridCss).toMatch(/@media\s*\(max-width:\s*1399px\)[\s\S]*?week-grid--fit-viewport tbody tr\s*\{[^}]*height:\s*auto/)
+    expect(weekGridCss).toMatch(/@media\s*\(max-width:\s*1399px\)[\s\S]*?week-grid--fit-viewport \.week-grid__card\s*\{[^}]*height:\s*auto[^}]*min-height:\s*52px/)
+    expect(weekGridCss).toMatch(/@media\s*\(max-width:\s*1399px\)[\s\S]*?week-grid__subject[^}]*white-space:\s*normal[^}]*overflow-wrap:\s*anywhere/)
+    expect(weekGridCss).toMatch(/@media\s*\(max-width:\s*1399px\)[\s\S]*?week-grid__secondary[^}]*white-space:\s*normal[^}]*overflow-wrap:\s*anywhere/)
+    expect(weekGridCss).toMatch(/@media\s*\(max-width:\s*1399px\)[\s\S]*?week-grid__details[^}]*flex-direction:\s*column[^}]*gap:\s*3px/)
+    expect(weekGridCss).toMatch(/@media\s*\(max-width:\s*1399px\)[\s\S]*?week-grid__action[^}]*align-self:\s*flex-end/)
   })
 
   it('abre ação operacional ao clicar em bloco elegível', () => {

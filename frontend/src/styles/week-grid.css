@@ -37,7 +37,20 @@
 .week-grid--fit-viewport .week-grid__subject { line-height: 1.15; }
 .week-grid--fit-viewport .week-grid__details { line-height: 1.1; }
 
-@media (max-width: 767px) {
+@media (max-width: 1399px) {
   .week-grid--fit-viewport tbody tr { height: auto; }
-  .week-grid--fit-viewport .week-grid__card { min-height: 52px; height: auto; }
+  .week-grid--fit-viewport .week-grid__card { height: auto; min-height: 52px; }
+  .week-grid--fit-viewport .week-grid__subject,
+  .week-grid--fit-viewport .week-grid__secondary {
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  .week-grid--fit-viewport .week-grid__details {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 3px;
+  }
+  .week-grid--fit-viewport .week-grid__action { align-self: flex-end; }
 }
