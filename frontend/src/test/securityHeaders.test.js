@@ -29,6 +29,8 @@ describe('production browser boundary', () => {
       expect(config).toContain('charset_types text/html text/markdown;')
       expect(config).toContain('error_page 404 =404 $not_found_asset;')
       expect(config).toContain('try_files $uri $uri.html =404;')
+      expect(config.match(/try_files \/index\.html =404;/g)).toHaveLength(1)
+      expect(config.match(/try_files \/app-shell\.html =404;/g)).toHaveLength(5)
       expect(config).toContain('text/markdown')
       expect(config).toContain('location @homepage_markdown')
       expect(config).toContain('foundation(?:/waiting)?')

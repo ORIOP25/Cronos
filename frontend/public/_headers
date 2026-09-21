@@ -9,6 +9,9 @@
 /index.html
   Cache-Control: no-store
 
+/app-shell.html
+  Cache-Control: no-store
+
 /404.html
   Cache-Control: no-store
 

@@ -4,7 +4,8 @@ import worker, { acceptsMarkdown, isKnownApplicationRoute } from '../public/_wor
 
 const assets = new Map([
   ['/index.html', { body: '<html><div id="root">legacy-index-path</div></html>', contentType: 'text/html; charset=utf-8' }],
-  ['/', { body: '<html><div id="root">home</div></html>', contentType: 'text/html; charset=utf-8' }],
+  ['/', { body: '<html><div class="cronos-hero">home</div></html>', contentType: 'text/html; charset=utf-8' }],
+  ['/app-shell', { body: '<html><div id="root"></div></html>', contentType: 'text/html; charset=utf-8' }],
   ['/llms.txt', { body: '# Cronos', contentType: 'text/plain; charset=utf-8' }],
   ['/404.html', { body: '<h1>404</h1>', contentType: 'text/html; charset=utf-8' }],
   ['/404.md', { body: '# 404 — Página não encontrada', contentType: 'text/plain; charset=utf-8' }],
@@ -61,6 +62,7 @@ test('returns HTML homepage with merged Vary and security headers', async () => 
   assert.match(response.headers.get('Vary'), /Accept/)
   assert.equal(response.headers.get('Cache-Control'), 'no-store')
   assert.equal(response.headers.get('X-Frame-Options'), 'DENY')
+  assert.match(await response.text(), /cronos-hero/)
   assert.equal(calls[0].pathname, '/')
 })
 
@@ -89,10 +91,11 @@ test('passes static assets and known public pages through unchanged', async () =
 })
 
 test('rewrites every application route family to the application shell', async () => {
-  for (const pathname of ['/dashboard', '/login/test', '/courses/course-id', '/courses/course-id/classes/class-id', '/courses/course-id/classes/class-id/subjects']) {
+  for (const pathname of ['/foundation', '/login', '/register', '/login/tasks/choose-organization', '/courses/course-id', '/courses/course-id/classes/class-id', '/courses/course-id/classes/class-id/subjects']) {
     const { response, calls } = await request(pathname)
     assert.equal(response.status, 200, pathname)
-    assert.equal(calls.at(-1).pathname, '/', pathname)
+    assert.equal(calls.at(-1).pathname, '/app-shell', pathname)
+    assert.doesNotMatch(await response.text(), /cronos-hero/)
   }
 })
 

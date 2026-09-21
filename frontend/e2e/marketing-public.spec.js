@@ -122,6 +122,18 @@ test.describe('public marketing site', () => {
     }
   })
 
+  test('serves the homepage and application shell from distinct initial responses', async ({ request }) => {
+    const homepage = await request.get('/')
+    expect(homepage.status()).toBe(200)
+    expect(await homepage.text()).toContain('cronos-hero')
+
+    for (const path of ['/foundation', '/login', '/register', '/login/tasks/choose-organization']) {
+      const response = await request.get(path)
+      expect(response.status(), path).toBe(200)
+      expect(await response.text(), path).not.toContain('cronos-hero')
+    }
+  })
+
   test('keeps alias canonicals and returns a real browser 404', async ({ page }) => {
     for (const [alias, canonical] of [['/about', '/sobre'], ['/contact', '/contacto'], ['/privacy', '/privacidade']]) {
       const response = await page.goto(alias)

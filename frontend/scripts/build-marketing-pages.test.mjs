@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { renderMarketingPage, renderOrganizationJsonLd } from './build-marketing-pages.mjs'
+import { renderMarketingPage, renderOrganizationJsonLd, validateApplicationShell } from './build-marketing-pages.mjs'
 import { canonicalMarketingRoutes, marketingMetadata } from '../src/features/marketing/content/metadata.js'
 import { PUBLIC_ASSET_REVISION, publicAsset } from '../src/utils/publicAsset.js'
 
@@ -24,6 +24,23 @@ const metadata = {
   description: 'Uma descrição da página.',
   canonicalUrl: 'https://cronos.pt/vantagens',
 }
+
+const applicationShellFixture = `<!doctype html>
+<html><head>
+<link rel="stylesheet" href="/assets/index-abc12345.css">
+</head><body><script type="module" crossorigin src="/assets/index-abc12345.js"></script><div id="root"></div></body></html>`
+
+test('requires the application shell to keep an empty root and hashed Vite assets', () => {
+  assert.equal(validateApplicationShell(applicationShellFixture), applicationShellFixture)
+  assert.throws(
+    () => validateApplicationShell(applicationShellFixture.replace('<div id="root"></div>', '<div id="root"></div><div class="cronos-hero"></div>')),
+    /must not contain marketing markup/,
+  )
+  assert.throws(
+    () => validateApplicationShell(applicationShellFixture.replace('/assets/index-abc12345.css', '/styles.css')),
+    /hashed Vite stylesheet/,
+  )
+})
 
 test('replaces all route metadata and preserves Vite assets', () => {
   const html = renderMarketingPage(fixture, metadata)
