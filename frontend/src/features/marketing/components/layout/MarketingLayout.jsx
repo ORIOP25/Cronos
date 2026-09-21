@@ -9,7 +9,7 @@ import { useMarketingMetadata } from '../../hooks/useMarketingMetadata'
 import '../../../../pages/MarketingSite.css'
 
 export default function MarketingLayout({ allowSignedIn = false }) {
-  const { isLoaded, isSignedIn } = useAuth()
+  const { isLoaded, isSignedIn } = useAuth({ treatPendingAsSignedOut: false })
   useScrollToTop()
   useMarketingMetadata(allowSignedIn || !isLoaded || !isSignedIn)
 
@@ -25,7 +25,7 @@ export default function MarketingLayout({ allowSignedIn = false }) {
   if (allowSignedIn) return content
 
   return (
-    <Show when="signed-out" fallback={<SignedInRedirect />}>
+    <Show when="signed-out" treatPendingAsSignedOut={false} fallback={<SignedInRedirect />}>
       {content}
     </Show>
   )

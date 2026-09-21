@@ -35,6 +35,8 @@ const DEFAULT_STATE = {
   isSignedIn: true,
   isLoaded: true,
   userId: 'user_test_123',
+  sessionStatus: 'active',
+  currentTask: undefined,
   role: 'org:admin',
   orgId: 1,
   orgName: 'Test Org',
@@ -70,11 +72,23 @@ export function setClerkSignInState(overrides = {}) {
 }
 
 vi.mock('@clerk/react', () => ({
-  useAuth: () => ({
-    isSignedIn: _clerkState.isSignedIn,
+  useAuth: (options = {}) => {
+    const pendingAsSignedOut = options.treatPendingAsSignedOut ?? true
+    const isPending = _clerkState.sessionStatus === 'pending'
+    const isSignedIn = _clerkState.isSignedIn && !(isPending && pendingAsSignedOut)
+    return {
+      isSignedIn,
+      isLoaded: _clerkState.isLoaded,
+      userId: isSignedIn ? _clerkState.userId : null,
+      getToken: async () => isSignedIn ? 'test_token_123' : null,
+    }
+  },
+  useSession: () => ({
     isLoaded: _clerkState.isLoaded,
-    userId: _clerkState.isSignedIn ? _clerkState.userId : null,
-    getToken: async () => _clerkState.isSignedIn ? 'test_token_123' : null,
+    isSignedIn: _clerkState.isSignedIn,
+    session: _clerkState.isSignedIn ? {
+      currentTask: _clerkState.currentTask,
+    } : null,
   }),
   useUser: () => ({
     user: _clerkState.isSignedIn ? {
@@ -117,7 +131,15 @@ vi.mock('@clerk/react', () => ({
   }),
   useSignIn: () => _signInState,
   ClerkProvider: ({ children }) => children,
-  SignIn: () => null,
+  SignIn: (props) => createElement('div', {
+    'data-testid': 'clerk-sign-in',
+    'data-fallback-redirect-url': props.fallbackRedirectUrl || '',
+  }),
+  TaskChooseOrganization: (props) => createElement('div', {
+    'data-testid': 'clerk-task-choose-organization',
+    'data-redirect-url-complete': props.redirectUrlComplete || '',
+    'data-appearance': JSON.stringify(props.appearance || null),
+  }),
   SignUp: (props) => createElement('div', {
     'data-testid': 'clerk-sign-up',
     'data-fallback-redirect-url': props.fallbackRedirectUrl || '',
@@ -131,6 +153,7 @@ vi.mock('@clerk/react', () => ({
     'data-testid': 'redirect-to-sign-in',
     'data-redirect-url': redirectUrl,
   }),
+  RedirectToTasks: () => createElement('div', { 'data-testid': 'redirect-to-tasks' }),
   UserButton: () => null,
   OrganizationSwitcher: () => createElement('div', { 'data-testid': 'organization-switcher' }),
   Protect: ({ children, role, condition, fallback }) => {

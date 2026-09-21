@@ -73,6 +73,17 @@ test('founder onboarding creates and activates an organization directly at found
     attachRuntimeGuards(page)
     await setupClerkTestingToken({ page })
     const baseUrl = E2E_BASE_URL
+    const appOrigin = new URL(baseUrl).origin
+    const appNavigationPaths = []
+    page.on('framenavigated', (frame) => {
+      if (frame !== page.mainFrame()) return
+      try {
+        const url = new URL(frame.url())
+        if (url.origin === appOrigin) appNavigationPaths.push(url.pathname)
+      } catch {
+        // Ignore browser-internal URLs.
+      }
+    })
     const ticket = await withTimeout(
       () => client.signInTokens.createSignInToken({ userId, expiresInSeconds: 300 }),
       'Clerk onboarding sign-in token creation',
@@ -95,6 +106,13 @@ test('founder onboarding creates and activates an organization directly at found
     await expect.poll(() => page.url(), { timeout: OPERATION_TIMEOUT_MS }).toMatch(
       /\/foundation(?:[/?#]|$)/,
     )
+    const callbackIndex = appNavigationPaths.indexOf('/register/sso-callback')
+    const postCallbackPaths = callbackIndex >= 0
+      ? appNavigationPaths.slice(callbackIndex)
+      : appNavigationPaths
+    expect(postCallbackPaths).toContain('/foundation')
+    expect(postCallbackPaths).not.toContain('/login')
+    expect(postCallbackPaths).not.toContain('/')
     await page.waitForFunction(() => window.Clerk?.user != null, null, {
       timeout: OPERATION_TIMEOUT_MS,
     })

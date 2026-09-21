@@ -25,5 +25,8 @@ describe('frontend authentication composition', () => {
     const clerkProvider = reactDom.rendered.props.children
     expect(clerkProvider.props.signInUrl).toBe('/login')
     expect(clerkProvider.props.signUpUrl).toBe('/register')
+    expect(clerkProvider.props.taskUrls).toEqual({
+      'choose-organization': '/login/tasks/choose-organization',
+    })
   }, 15_000)
 })

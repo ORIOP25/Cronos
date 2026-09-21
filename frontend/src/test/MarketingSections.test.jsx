@@ -1,6 +1,8 @@
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react'
+import { Route, Routes } from 'react-router-dom'
 import { renderWithRouter } from './testUtils'
+import { resetClerkState, setClerkState } from './setup'
 import HomePage from '../pages/marketing/HomePage'
 import VantagensPage from '../pages/marketing/VantagensPage'
 import HowItWorksPage from '../pages/marketing/HowItWorksPage'
@@ -9,8 +11,15 @@ import WorkflowTabs from '../features/marketing/components/workflow/WorkflowTabs
 import TeacherWorkflowSection from '../features/marketing/components/workflow/TeacherWorkflowSection'
 import FaqSection from '../features/marketing/components/help/FaqSection'
 import MarketingHeader from '../features/marketing/components/layout/MarketingHeader'
+import MarketingLayout from '../features/marketing/components/layout/MarketingLayout'
+
+vi.mock('../features/marketing/hooks/useMarketingMetadata', () => ({
+  useMarketingMetadata: vi.fn(),
+}))
 
 describe('public marketing sections', () => {
+  beforeEach(() => resetClerkState())
+
   it('renders the homepage sections in the approved narrative order', () => {
     renderWithRouter(<HomePage />)
     const headings = screen.getAllByRole('heading').map((heading) => heading.textContent)
@@ -113,5 +122,20 @@ describe('public marketing sections', () => {
     fireEvent.keyDown(document, { key: 'Escape' })
     expect(toggle).toHaveAttribute('aria-expanded', 'false')
     await waitFor(() => expect(document.activeElement).toBe(toggle))
+  })
+
+  it('routes pending sessions to Clerk tasks without rendering marketing content', () => {
+    setClerkState({ sessionStatus: 'pending', currentTask: { key: 'choose-organization' } })
+    renderWithRouter(
+      <Routes>
+        <Route element={<MarketingLayout />}>
+          <Route path="/" element={<div data-testid="marketing-content">Marketing</div>} />
+        </Route>
+      </Routes>,
+    )
+
+    expect(screen.queryByTestId('marketing-content')).not.toBeInTheDocument()
+    expect(screen.getByTestId('redirect-to-tasks')).toBeInTheDocument()
+    expect(screen.queryByTestId('redirect-to-sign-in')).not.toBeInTheDocument()
   })
 })
