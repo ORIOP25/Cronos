@@ -17,15 +17,15 @@ import {
   createBulkImportReport,
   downloadBlob,
   downloadBulkImportTemplate,
+  formatImportIssue,
+  getImportCountLabel,
   IMPORT_RESOURCES,
   useCommitBulkImport,
   useValidateBulkImport,
 } from '../features/imports/data'
 
-const PAGE_SIZE = 20
-
-function formatBytes(bytes) {
-  return `${(bytes / 1024).toFixed(1)} KiB`
+function formatMegabytes(bytes) {
+  return `${(bytes / 1_000_000).toFixed(2)} MB`
 }
 
 function errorContext(error) {
@@ -44,7 +44,6 @@ const BulkImport = () => {
   const [files, setFiles] = useState({})
   const [validation, setValidation] = useState(null)
   const [localError, setLocalError] = useState('')
-  const [page, setPage] = useState(0)
   const validateMutation = useValidateBulkImport()
   const commitMutation = useCommitBulkImport()
 
@@ -55,7 +54,6 @@ const BulkImport = () => {
   const selectFile = (resource, file) => {
     setLocalError('')
     setValidation(null)
-    setPage(0)
     setFiles((current) => {
       const next = { ...current }
       if (file) next[resource] = file
@@ -92,21 +90,30 @@ const BulkImport = () => {
   const issues = validation?.issues || serverErrorContext.issues || []
   const errors = issues.filter((issue) => issue.severity === 'error')
   const warnings = issues.filter((issue) => issue.severity === 'warning')
-  const previewItems = validation?.preview?.items || []
-  const pageCount = Math.max(1, Math.ceil(previewItems.length / PAGE_SIZE))
-  const pageItems = previewItems.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
 
   return (
     <div className="p-4">
       <PageHeader
         preTitle="Administração"
-        title="Importar CSV"
-        description="Importação aditiva e atómica. O backend valida novamente o lote antes de gravar."
+        title="Importar dados"
+        description="Adicione várias salas, disciplinas, cursos, turmas e professores de uma só vez."
       />
+
+      <section className="mb-4" aria-labelledby="import-steps-title">
+        <h2 id="import-steps-title" className="h5">Como preparar os ficheiros</h2>
+        <ol className="mb-2">
+          <li>Descarregue o modelo da secção pretendida.</li>
+          <li>Substitua a linha de exemplo sem alterar os títulos das colunas.</li>
+          <li>Guarde como CSV, selecione o ficheiro e escolha “Verificar ficheiros”.</li>
+        </ol>
+        <p className="small text-muted mb-0">
+          Pode utilizar Excel ou Google Sheets. São aceites ficheiros separados por vírgulas ou ponto e vírgula, até 1 MB cada.
+        </p>
+      </section>
 
       <div className="mb-3" role="status" aria-live="polite">
         {localError && <CAlert color="warning">{localError}</CAlert>}
-        {validateMutation.isError && <CAlert color="danger">{getApiErrorMessage(validateMutation.error, 'Não foi possível validar os ficheiros.')}</CAlert>}
+        {validateMutation.isError && <CAlert color="danger">{getApiErrorMessage(validateMutation.error, 'Não foi possível verificar os ficheiros.')}</CAlert>}
         {commitMutation.isError && <CAlert color="danger">{getApiErrorMessage(commitMutation.error, 'Não foi possível concluir a importação.')}</CAlert>}
       </div>
 
@@ -118,13 +125,21 @@ const BulkImport = () => {
               <CCard className="h-100">
                 <CCardHeader className="d-flex justify-content-between align-items-center gap-2">
                   <span>{resource.label}</span>
-                  <CButton color="link" size="sm" onClick={() => void downloadBulkImportTemplate(apiClient, resource.key)}>
-                    Descarregar template
+                  <CButton
+                    color="link"
+                    size="sm"
+                    onClick={() => void downloadBulkImportTemplate(apiClient, resource.key)}
+                  >
+                    Descarregar modelo
                   </CButton>
                 </CCardHeader>
                 <CCardBody>
-                  <p className="small text-muted mb-2">UTF-8 com BOM, separado por <code>;</code>, máximo 1 MiB.</p>
-                  <label className="form-label" htmlFor={`import-${resource.key}`}>Ficheiro CSV de {resource.label.toLowerCase()}</label>
+                  <ul className="small text-muted ps-3 mb-3">
+                    {resource.instructions.map((instruction) => <li key={instruction}>{instruction}</li>)}
+                  </ul>
+                  <label className="form-label" htmlFor={`import-${resource.key}`}>
+                    Selecionar ficheiro CSV de {resource.label.toLowerCase()}
+                  </label>
                   <CFormInput
                     ref={resource.key === initialResource ? initialInput : undefined}
                     id={`import-${resource.key}`}
@@ -134,8 +149,10 @@ const BulkImport = () => {
                   />
                   {file && (
                     <div className="d-flex align-items-center justify-content-between mt-2 small">
-                      <span>{file.name} · {formatBytes(file.size)}</span>
-                      <CButton color="link" size="sm" onClick={() => selectFile(resource.key, null)}>Remover</CButton>
+                      <span>{file.name} · {formatMegabytes(file.size)}</span>
+                      <CButton color="link" size="sm" onClick={() => selectFile(resource.key, null)}>
+                        Remover
+                      </CButton>
                     </div>
                   )}
                 </CCardBody>
@@ -146,14 +163,22 @@ const BulkImport = () => {
       </div>
 
       <div className="d-flex flex-wrap gap-2 align-items-center mt-4">
-        <CButton color="primary" disabled={!Object.keys(files).length || validateMutation.isPending || commitMutation.isPending} onClick={() => void validate()}>
-          {validateMutation.isPending ? <><CSpinner size="sm" className="me-2" />A validar…</> : 'Validar lote'}
+        <CButton
+          color="primary"
+          disabled={!Object.keys(files).length || validateMutation.isPending || commitMutation.isPending}
+          onClick={() => void validate()}
+        >
+          {validateMutation.isPending ? <><CSpinner size="sm" className="me-2" />A verificar…</> : 'Verificar ficheiros'}
         </CButton>
         <CButton color="success" disabled={!validation?.can_commit || commitMutation.isPending} onClick={() => void commit()}>
           {commitMutation.isPending ? <><CSpinner size="sm" className="me-2" />A importar…</> : 'Confirmar importação'}
         </CButton>
         {issues.length > 0 && (
-          <CButton color="secondary" variant="outline" onClick={() => downloadBlob(createBulkImportReport(issues), 'relatorio-importacao.csv')}>
+          <CButton
+            color="secondary"
+            variant="outline"
+            onClick={() => downloadBlob(createBulkImportReport(issues), 'Cronos_Relatorio_Importacao.csv')}
+          >
             Descarregar relatório
           </CButton>
         )}
@@ -161,29 +186,27 @@ const BulkImport = () => {
 
       {validation && (
         <section className="mt-4" aria-live="polite" aria-labelledby="import-result-title">
-          <h2 id="import-result-title" className="h5">Resultado da validação</h2>
+          <h2 id="import-result-title" className="h5">Resultado da verificação</h2>
           <div className="d-flex flex-wrap gap-2 mb-3">
-            {Object.entries(validation.preview?.counts || {}).map(([key, value]) => <CBadge color="info" key={key}>{key}: {value}</CBadge>)}
-            <CBadge color={errors.length ? 'danger' : 'success'}>{errors.length ? `${errors.length} erros` : 'Sem erros'}</CBadge>
+            {Object.entries(validation.preview?.counts || {}).map(([key, value]) => (
+              <CBadge color="info" key={key}>{getImportCountLabel(key)}: {value}</CBadge>
+            ))}
+            <CBadge color={errors.length ? 'danger' : 'success'}>
+              {errors.length ? `${errors.length} erros` : 'Sem erros'}
+            </CBadge>
             {warnings.length > 0 && <CBadge color="warning">{warnings.length} avisos</CBadge>}
           </div>
-          {errors.length > 0 && <CAlert color="danger"><strong>Erros que bloqueiam a confirmação</strong><IssueList issues={errors} /></CAlert>}
-          {warnings.length > 0 && <CAlert color="warning"><strong>Avisos que não bloqueiam a confirmação</strong><IssueList issues={warnings} /></CAlert>}
-          {pageItems.length > 0 && (
-            <>
-              <h3 className="h6">Prévia</h3>
-              <div className="table-responsive">
-                <table className="table table-sm">
-                  <thead><tr><th>Recurso</th><th>Dados</th><th>Linha</th></tr></thead>
-                  <tbody>{pageItems.map((item, index) => <tr key={`${item.resource}-${item.line}-${index}`}><td>{item.resource}</td><td>{JSON.stringify(item)}</td><td>{item.line}</td></tr>)}</tbody>
-                </table>
-              </div>
-              <div className="d-flex align-items-center gap-2">
-                <CButton size="sm" color="secondary" variant="outline" disabled={page === 0} onClick={() => setPage((value) => value - 1)}>Anterior</CButton>
-                <span className="small">Página {page + 1} de {pageCount}</span>
-                <CButton size="sm" color="secondary" variant="outline" disabled={page + 1 >= pageCount} onClick={() => setPage((value) => value + 1)}>Seguinte</CButton>
-              </div>
-            </>
+          {errors.length > 0 && (
+            <CAlert color="danger">
+              <strong>Corrija estes problemas antes de importar</strong>
+              <IssueList issues={errors} />
+            </CAlert>
+          )}
+          {warnings.length > 0 && (
+            <CAlert color="warning">
+              <strong>Pode importar, mas tenha atenção a estes avisos</strong>
+              <IssueList issues={warnings} />
+            </CAlert>
           )}
         </section>
       )}
@@ -192,7 +215,11 @@ const BulkImport = () => {
 }
 
 function IssueList({ issues }) {
-  return <ul className="mb-0 mt-2">{issues.map((issue, index) => <li key={`${issue.code}-${issue.line}-${index}`}>{issue.resource}{issue.line ? `, linha ${issue.line}` : ''}{issue.field ? `, ${issue.field}` : ''}: {issue.message}</li>)}</ul>
+  return (
+    <ul className="mb-0 mt-2">
+      {issues.map((issue, index) => <li key={`${issue.code}-${issue.line}-${index}`}>{formatImportIssue(issue)}</li>)}
+    </ul>
+  )
 }
 
 export default BulkImport

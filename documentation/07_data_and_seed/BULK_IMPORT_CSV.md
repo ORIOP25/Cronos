@@ -2,23 +2,44 @@
 
 ## Objetivo
 
-`/imports` permite a um administrador importar dados de forma aditiva. A validação é feita em memória; a confirmação reenvia exatamente os mesmos ficheiros, revalida dentro da transação e só grava no fim.
+`/imports` permite a um administrador adicionar dados em várias secções.
+O sistema verifica todos os ficheiros antes de gravar.
 
-Não existe atualização/substituição, undo automático, histórico de lotes, Excel, multipart ou processamento assíncrono.
+Pode utilizar Excel ou Google Sheets.
+O sistema aceita vírgula ou ponto e vírgula como separador.
+O sistema aceita UTF-8 com ou sem BOM.
+Cada ficheiro pode ter até 1 MB.
 
-## Templates oficiais
+## Modelos oficiais
 
-Todos os templates são descarregados autenticadamente em `/api/v1/imports/templates/{resource}` e usam UTF-8 com BOM, `;`, CRLF e uma linha oficial de exemplo. A linha de exemplo tem de ser substituída.
+Os modelos estão disponíveis em `/api/v1/imports/templates/{resource}`.
+Cada modelo usa ponto e vírgula, CRLF, BOM e uma linha de exemplo.
+Substitua ou apague a linha de exemplo antes de importar.
 
-| Recurso | Ficheiro | Cabeçalho exato |
+| Secção | Ficheiro | Cabeçalhos exatos |
 | --- | --- | --- |
-| `rooms` | `salas.csv` | `name;type;capacity` |
-| `subjects` | `disciplinas.csv` | `name;required_room_type;module_name;module_code;module_hours;module_order` |
-| `courses` | `cursos.csv` | `abbreviation;name;class_name;grade_level;start_year;end_year;size` |
-| `teachers` | `professores.csv` | `name;email;competency_subject` |
-| `assignments` | `atribuicoes.csv` | `course_abbreviation;class_name;subject_name;teacher_email` |
+| Salas | `Cronos_Salas_Template.csv` | `Nome da sala;Tipo de sala;Capacidade` |
+| Disciplinas e módulos | `Cronos_DisciplinasEModulos_Template.csv` | `Nome da disciplina;Tipo de sala;Nome do módulo;Código do módulo;Horas do módulo;Ordem do módulo` |
+| Cursos e turmas | `Cronos_CursosETurmas_Template.csv` | `Sigla do curso;Nome do curso;Nome da turma;Ano escolar;Ano de início;Ano de fim;Número de alunos` |
+| Professores e competências | `Cronos_ProfessoresECompetencias_Template.csv` | `Nome do professor;Email do professor;Nome da disciplina` |
+| Atribuições | `Cronos_Atribuicoes_Template.csv` | `Sigla do curso;Nome da turma;Nome da disciplina;Email do professor` |
 
-Os cabeçalhos podem estar em qualquer ordem, mas não podem faltar, repetir-se ou conter colunas extra. Os módulos usam ordens `1..n` no CSV e são convertidos para o índice interno.
+Os cabeçalhos devem manter nomes, ordem e quantidade.
+Os modelos antigos, com cabeçalhos em inglês, deixam de ser aceites.
+Valores entre aspas podem conter vírgulas ou ponto e vírgula.
+
+## Tipos de sala
+
+Salas e disciplinas aceitam estes valores, sem distinguir maiúsculas ou acentos:
+
+| Valor aceite | Valor guardado |
+| --- | --- |
+| `Normal` | `normal` |
+| `Laboratório` ou `Laboratorio` | `lab` |
+| `Ginásio` ou `Ginasio` | `gym` |
+| `Artes` | `art` |
+
+Os códigos internos `lab`, `gym` e `art` não são aceites no ficheiro.
 
 ## Pedido e respostas
 
@@ -26,49 +47,44 @@ Os cabeçalhos podem estar em qualquer ordem, mas não podem faltar, repetir-se 
 {
   "files": {
     "rooms": {
-      "filename": "salas.csv",
+      "filename": "Cronos_Salas_Template.csv",
       "content_base64": "..."
     }
   }
 }
 ```
 
-`POST /api/v1/imports/validate` devolve `200` mesmo com erros de dados:
+`POST /api/v1/imports/validate` devolve `200`, mesmo com problemas de dados.
+A resposta mantém `can_commit`, `preview.counts` e `issues`.
+A interface apresenta apenas os resumos, problemas e avisos.
 
-- `can_commit`: false quando existe pelo menos um erro;
-- `preview.counts` e `preview.items`;
-- `issues`, com severidade, recurso, linha física, campo, código e mensagem.
+`POST /api/v1/imports/commit` devolve `201` quando grava tudo.
+O pedido volta a ser verificado antes de gravar.
+Uma falha impede qualquer gravação parcial.
 
-`POST /api/v1/imports/commit` devolve `201` quando grava tudo. Se a revalidação encontrar erros, devolve `422` no envelope de erro existente, com a prévia e as issues no `context`. Warnings permitem confirmar.
+## Segurança e integridade
 
-## Regras de segurança e integridade
+- Todos os endpoints exigem `AdminActor` e usam a organização da sessão.
+- O conjunto descodificado pode ter até 5 MB.
+- Cada ficheiro pode ter até 5.000 linhas.
+- Ficheiros inválidos recebem uma mensagem de leitura comum.
+- Salas, disciplinas, cursos e professores novos não podem repetir dados existentes.
+- Cursos, turmas e disciplinas podem ser usados nas atribuições.
+- Um professor existente não pode ser usado numa atribuição.
+- Um professor indicado numa atribuição deve estar no mesmo pedido.
+- O professor importado recebe acesso `scheduler_only`.
+- A validação não grava nem chama serviços externos.
 
-- Todos os endpoints exigem `AdminActor` e usam o tenant da sessão.
-- Cada ficheiro tem no máximo 1 MiB, o lote descodificado no máximo 5 MiB e cada ficheiro no máximo 5.000 linhas.
-- Base64 inválido, BOM ausente, UTF-8 inválido, NUL, separador diferente e estrutura CSV diferente são rejeitados.
-- Salas, disciplinas, cursos e professores são novos; duplicados existentes bloqueiam.
-- Cursos, turmas e disciplinas podem ser referenciados nas atribuições, mas professores existentes não podem ser usados.
-- Professores importados ficam com `teacher` + `scheduler_only`; não há convite nem chamada Clerk.
-- As queries do snapshot filtram sempre `organization_id`. `validate` não faz `flush`, `commit` nem chamadas externas.
-- O commit cria salas, disciplinas/módulos, professores, cursos/turmas e atribuições numa única transação. Uma exceção tardia provoca rollback integral.
+## Relatório
 
-## Correção de falhas
-
-1. Descarregue o template atualizado.
-2. Substitua a linha de exemplo e mantenha os cabeçalhos sem alterar nomes.
-3. Corrija todas as issues; referências de atribuições devem usar a sigla, turma e disciplina corretas.
-4. Inclua cada professor referenciado no mesmo lote e use um email ainda não existente.
-5. Valide novamente e confirme apenas quando `can_commit` for verdadeiro.
-
-O relatório descarregado pela interface é CSV seguro para Excel: inclui BOM, `;`, escaping de aspas e prefixo textual para valores iniciados por `=`, `+`, `-` ou `@`.
-
-## Capacidade
-
-O fluxo permanece síncrono e é limitado pelos limites acima. A aceitação esperada cobre aproximadamente 10 cursos, 30 turmas, 100 disciplinas, 300 módulos, 80 professores e 300 atribuições, sem impor um tempo de execução instável.
+O relatório da interface chama-se `Cronos_Relatorio_Importacao.csv`.
+Usa ponto e vírgula e BOM para compatibilidade com Excel.
+Os cabeçalhos são `Tipo`, `Secção`, `Linha`, `Campo` e `Mensagem`.
+Os valores de tipo são `Erro` e `Aviso`.
 
 ## Source map
 
-- Política pura: `backend/app/services/bulk_import_policy.py`
+- Política e parser: `backend/app/services/bulk_import_policy.py`
 - Serviço transacional: `backend/app/services/bulk_import_service.py`
 - API: `backend/app/api/v1/endpoints/imports.py`
 - Cliente e relatório: `frontend/src/features/imports/data.js`

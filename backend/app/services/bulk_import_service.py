@@ -44,7 +44,7 @@ def template_bytes(resource: str) -> bytes:
         raise AppError(
             kind="not_found",
             code="resource_not_found",
-            detail="Unknown import template.",
+            detail="Secção de importação desconhecida.",
         ) from exc
 
 

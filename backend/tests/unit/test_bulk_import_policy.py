@@ -19,51 +19,139 @@ def encoded(text: str, *, bom: bool = True) -> str:
     return base64.b64encode(value.encode("utf-8")).decode("ascii")
 
 
-def test_templates_are_deterministic_utf8_bom_semicolon_and_coherent_example():
+def test_templates_use_the_official_names_and_are_deterministic():
     rendered = {resource: render_template(resource) for resource in IMPORT_RESOURCES}
+    text = {resource: value.decode("utf-8-sig") for resource, value in rendered.items()}
 
     assert all(value == render_template(resource) for resource, value in rendered.items())
     assert all(value.startswith(b"\xef\xbb\xbf") for value in rendered.values())
-    assert all(b";" in value and b"\r\n" in value for value in rendered.values())
+    assert text["rooms"].splitlines()[0] == "Nome da sala;Tipo de sala;Capacidade"
+    assert text["subjects"].splitlines()[0] == (
+        "Nome da disciplina;Tipo de sala;Nome do módulo;Código do módulo;"
+        "Horas do módulo;Ordem do módulo"
+    )
+    assert text["courses"].splitlines()[0] == (
+        "Sigla do curso;Nome do curso;Nome da turma;Ano escolar;Ano de início;"
+        "Ano de fim;Número de alunos"
+    )
+    assert text["teachers"].splitlines()[0] == (
+        "Nome do professor;Email do professor;Nome da disciplina"
+    )
+    assert text["assignments"].splitlines()[0] == (
+        "Sigla do curso;Nome da turma;Nome da disciplina;Email do professor"
+    )
     assert all(value.count(b"\r\n") == 2 for value in rendered.values())
 
 
-def test_parser_rejects_missing_bom_wrong_delimiter_and_example_rows():
-    missing_bom = parse_resource_file(
-        "rooms", "salas.csv", encoded("name;type;capacity\r\nSala;normal;20\r\n", bom=False)
-    )
-    wrong_delimiter = parse_resource_file(
-        "rooms", "salas.csv", encoded("name,type,capacity\r\nSala,normal,20\r\n")
-    )
-    example = parse_resource_file(
-        "rooms", "salas.csv", base64.b64encode(render_template("rooms")).decode()
-    )
+def test_parser_accepts_both_delimiters_with_or_without_bom():
+    for delimiter in (";", ","):
+        for bom in (True, False):
+            parsed = parse_resource_file(
+                "rooms",
+                "salas.csv",
+                encoded(
+                    f"Nome da sala{delimiter}Tipo de sala{delimiter}Capacidade\r\n"
+                    f"Sala Nova{delimiter}Laboratório{delimiter}20\r\n",
+                    bom=bom,
+                ),
+            )
 
-    assert {issue.code for issue in missing_bom.issues} == {"utf8_bom_required"}
-    assert {issue.code for issue in wrong_delimiter.issues} == {"delimiter_invalid"}
-    assert {issue.code for issue in example.issues} == {"template_example_present"}
+            assert parsed.issues == ()
+            assert parsed.rows == (
+                {"name": "Sala Nova", "type": "Laboratório", "capacity": "20", "line": 2},
+            )
 
 
-def test_parser_accepts_header_order_and_preserves_physical_line_numbers():
+def test_parser_reads_quoted_values_that_contain_either_delimiter():
     parsed = parse_resource_file(
         "rooms",
         "salas.csv",
-        encoded("capacity;name;type\r\n\r\n20;Sala Nova;lab\r\n"),
+        encoded('Nome da sala,Tipo de sala,Capacidade\r\n"Sala, Norte; bloco A",Normal,20\r\n'),
     )
 
-    assert not parsed.issues
-    assert parsed.rows == ({"capacity": "20", "name": "Sala Nova", "type": "lab", "line": 3},)
+    assert parsed.issues == ()
+    assert parsed.rows[0]["name"] == "Sala, Norte; bloco A"
 
 
-def test_parser_rejects_rows_with_missing_columns():
+def test_parser_rejects_old_reordered_missing_and_extra_headers():
+    cases = (
+        "name;type;capacity\r\nSala;Normal;20\r\n",
+        "Capacidade;Nome da sala;Tipo de sala\r\n20;Sala;Normal\r\n",
+        "Nome da sala;Tipo de sala\r\nSala;Normal\r\n",
+        "Nome da sala;Tipo de sala;Capacidade;Outra\r\nSala;Normal;20;X\r\n",
+    )
+
+    for content in cases:
+        parsed = parse_resource_file("rooms", "salas.csv", encoded(content))
+        assert "header_invalid" in {issue.code for issue in parsed.issues}
+
+
+def test_parser_rejects_the_official_example_line():
+    parsed = parse_resource_file(
+        "rooms", "Cronos_Salas_Template.csv", base64.b64encode(render_template("rooms")).decode()
+    )
+
+    assert {issue.code for issue in parsed.issues} == {"template_example_present"}
+
+
+def test_parser_reports_common_read_error_for_invalid_encoding_or_structure():
+    invalid = parse_resource_file("rooms", "salas.csv", base64.b64encode(b"\xff\xfe").decode())
+    malformed = parse_resource_file(
+        "rooms", "salas.csv", encoded("Nome da sala|Tipo de sala|Capacidade\r\nSala|Normal|20\r\n")
+    )
+
+    assert invalid.issues[0].message == malformed.issues[0].message
+    assert "Não foi possível ler este ficheiro" in invalid.issues[0].message
+
+
+def test_room_types_are_normalized_for_rooms_and_subjects():
+    rooms = parse_resource_file(
+        "rooms",
+        "salas.csv",
+        encoded(
+            "Nome da sala;Tipo de sala;Capacidade\r\n"
+            "Sala 1;LABORATORIO;20\r\n"
+            "Sala 2;GINÁSIO;20\r\n"
+            "Sala 3;artes;20\r\n"
+        ),
+    )
+    subjects = parse_resource_file(
+        "subjects",
+        "disciplinas.csv",
+        encoded(
+            "Nome da disciplina;Tipo de sala;Nome do módulo;Código do módulo;Horas do módulo;Ordem do módulo\r\n"
+            "Disciplina;laboratorio;Módulo;M1;30;1\r\n"
+        ),
+    )
+
+    result = validate_import(
+        {"rooms": rooms, "subjects": subjects},
+        ImportSnapshot(),
+    )
+
+    assert result.can_commit is True
+    assert [item.room_type for item in result.rooms] == ["lab", "gym", "art"]
+    assert result.subjects[0].room_type == "lab"
+
+
+def test_room_types_reject_internal_codes_and_unknown_values():
     parsed = parse_resource_file(
         "rooms",
         "salas.csv",
-        encoded("name;type;capacity\r\nSala Nova;lab\r\n"),
+        encoded(
+            "Nome da sala;Tipo de sala;Capacidade\r\nSala 1;lab;20\r\nSala 2;Biblioteca;20\r\n"
+        ),
     )
 
-    assert "column_count_invalid" in {issue.code for issue in parsed.issues}
-    assert parsed.rows == ()
+    result = validate_import({"rooms": parsed}, ImportSnapshot())
+
+    assert result.can_commit is False
+    assert {issue.code for issue in result.issues} >= {"room_type_invalid"}
+    assert all(
+        "Escreva Normal, Laboratório, Ginásio ou Artes." in issue.message
+        for issue in result.issues
+        if issue.code == "room_type_invalid"
+    )
 
 
 def test_policy_returns_all_cross_reference_issues_and_warnings():
@@ -71,28 +159,31 @@ def test_policy_returns_all_cross_reference_issues_and_warnings():
         "subjects",
         "disciplinas.csv",
         encoded(
-            "name;required_room_type;module_name;module_code;module_hours;module_order\r\n"
-            "Programação;lab;Módulo 1;M1;50;1\r\n"
+            "Nome da disciplina;Tipo de sala;Nome do módulo;Código do módulo;Horas do módulo;Ordem do módulo\r\n"
+            "Programação;Laboratório;Módulo 1;M1;50;1\r\n"
         ),
     )
     courses = parse_resource_file(
         "courses",
         "cursos.csv",
         encoded(
-            "abbreviation;name;class_name;grade_level;start_year;end_year;size\r\n"
+            "Sigla do curso;Nome do curso;Nome da turma;Ano escolar;Ano de início;Ano de fim;Número de alunos\r\n"
             "TGEI;Curso;10.º A;10;2025;2028;25\r\n"
         ),
     )
     teachers = parse_resource_file(
         "teachers",
         "professores.csv",
-        encoded("name;email;competency_subject\r\nAna;ana@example.com;Programação\r\n"),
+        encoded(
+            "Nome do professor;Email do professor;Nome da disciplina\r\n"
+            "Ana;ana@example.com;Programação\r\n"
+        ),
     )
     assignments = parse_resource_file(
         "assignments",
         "atribuicoes.csv",
         encoded(
-            "course_abbreviation;class_name;subject_name;teacher_email\r\n"
+            "Sigla do curso;Nome da turma;Nome da disciplina;Email do professor\r\n"
             "TGEI;10.º A;Programação;missing@example.com\r\n"
             "INEX;Turma;Inexistente;\r\n"
         ),
@@ -129,7 +220,7 @@ def test_policy_allows_existing_course_subject_class_references_but_not_existing
         "assignments",
         "atribuicoes.csv",
         encoded(
-            "course_abbreviation;class_name;subject_name;teacher_email\r\n"
+            "Sigla do curso;Nome da turma;Nome da disciplina;Email do professor\r\n"
             "TGEI;10.º A;Programação;new@example.com\r\n"
         ),
     )
@@ -150,7 +241,10 @@ def test_policy_rejects_teacher_competencies_without_a_subject_reference():
     teachers = parse_resource_file(
         "teachers",
         "professores.csv",
-        encoded("name;email;competency_subject\r\nAna;ana@example.com;Inexistente\r\n"),
+        encoded(
+            "Nome do professor;Email do professor;Nome da disciplina\r\n"
+            "Ana;ana@example.com;Inexistente\r\n"
+        ),
     )
 
     result = validate_import({"teachers": teachers}, ImportSnapshot())

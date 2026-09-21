@@ -5,12 +5,135 @@ import { invalidatePreparationQueries } from '../readiness/data'
 import { invalidateOrgQueries } from '../queryKeys'
 
 export const IMPORT_RESOURCES = Object.freeze([
-  { key: 'rooms', label: 'Salas', filename: 'salas.csv', origin: '/rooms' },
-  { key: 'subjects', label: 'Disciplinas e módulos', filename: 'disciplinas.csv', origin: '/subjects' },
-  { key: 'courses', label: 'Cursos e turmas', filename: 'cursos.csv', origin: '/courses' },
-  { key: 'teachers', label: 'Professores e competências', filename: 'professores.csv', origin: '/members' },
-  { key: 'assignments', label: 'Atribuições', filename: 'atribuicoes.csv', origin: '/courses' },
+  {
+    key: 'rooms',
+    label: 'Salas',
+    filename: 'Cronos_Salas_Template.csv',
+    origin: '/rooms',
+    instructions: [
+      'Cada linha cria uma sala.',
+      'Nome da sala: nome único, por exemplo Sala 1.02.',
+      'Tipo de sala: Normal, Laboratório, Ginásio ou Artes.',
+      'Capacidade: número de pessoas, igual ou superior a 1.',
+    ],
+    fields: { name: 'Nome da sala', type: 'Tipo de sala', capacity: 'Capacidade' },
+  },
+  {
+    key: 'subjects',
+    label: 'Disciplinas e módulos',
+    filename: 'Cronos_DisciplinasEModulos_Template.csv',
+    origin: '/subjects',
+    instructions: [
+      'Repita a disciplina numa nova linha por cada módulo.',
+      'Tipo de sala: Normal, Laboratório, Ginásio ou Artes.',
+      'Horas e ordem são números inteiros a partir de 1.',
+      'A ordem dos módulos deve ser contínua: 1, 2, 3…',
+      'Para criar uma disciplina sem módulos, deixe os campos do módulo vazios; será apresentado um aviso.',
+      'Se começar a preencher um módulo, preencha todos os campos desse módulo.',
+    ],
+    fields: {
+      name: 'Nome da disciplina',
+      required_room_type: 'Tipo de sala',
+      module_name: 'Nome do módulo',
+      module_code: 'Código do módulo',
+      module_hours: 'Horas do módulo',
+      module_order: 'Ordem do módulo',
+    },
+  },
+  {
+    key: 'courses',
+    label: 'Cursos e turmas',
+    filename: 'Cronos_CursosETurmas_Template.csv',
+    origin: '/courses',
+    instructions: [
+      'Repita a sigla e o nome do curso numa nova linha por cada turma.',
+      'O ano escolar deve ser 10, 11 ou 12.',
+      'Os anos de início e fim usam quatro algarismos; o ano final deve ser posterior ao inicial.',
+      'O número de alunos deve ser igual ou superior a 1.',
+      'Para criar apenas o curso, deixe os campos da turma vazios; será apresentado um aviso.',
+    ],
+    fields: {
+      abbreviation: 'Sigla do curso',
+      name: 'Nome do curso',
+      class_name: 'Nome da turma',
+      grade_level: 'Ano escolar',
+      start_year: 'Ano de início',
+      end_year: 'Ano de fim',
+      size: 'Número de alunos',
+    },
+  },
+  {
+    key: 'teachers',
+    label: 'Professores e competências',
+    filename: 'Cronos_ProfessoresECompetencias_Template.csv',
+    origin: '/members',
+    instructions: [
+      'Use uma linha por disciplina que o professor pode lecionar.',
+      'Repita o mesmo nome e email quando o professor tiver várias disciplinas.',
+      'A disciplina deve já existir ou estar incluída nos ficheiros selecionados.',
+      'Deixar a disciplina vazia cria o professor sem competências e apresenta um aviso.',
+      'Esta secção serve apenas para professores novos.',
+    ],
+    fields: {
+      name: 'Nome do professor',
+      email: 'Email do professor',
+      competency_subject: 'Nome da disciplina',
+    },
+  },
+  {
+    key: 'assignments',
+    label: 'Atribuições',
+    filename: 'Cronos_Atribuicoes_Template.csv',
+    origin: '/courses',
+    instructions: [
+      'Cada linha associa uma disciplina a uma turma.',
+      'Use exatamente a sigla, turma e disciplina existentes ou incluídas nos ficheiros selecionados.',
+      'O email do professor é opcional.',
+      'Quando indicado, deve corresponder a um professor incluído nos ficheiros selecionados.',
+      'Sem email, a atribuição é criada sem professor e apresenta um aviso.',
+    ],
+    fields: {
+      course_abbreviation: 'Sigla do curso',
+      class_name: 'Nome da turma',
+      subject_name: 'Nome da disciplina',
+      teacher_email: 'Email do professor',
+    },
+  },
 ])
+
+const IMPORT_COUNT_LABELS = Object.freeze({
+  rooms: 'Salas',
+  subjects: 'Disciplinas',
+  modules: 'Módulos',
+  courses: 'Cursos',
+  classes: 'Turmas',
+  teachers: 'Professores',
+  competencies: 'Competências',
+  assignments: 'Atribuições',
+})
+
+export function getImportResource(resource) {
+  return IMPORT_RESOURCES.find((item) => item.key === resource)
+}
+
+export function getImportResourceLabel(resource) {
+  return getImportResource(resource)?.label || 'Secção'
+}
+
+export function getImportFieldLabel(resource, field) {
+  return getImportResource(resource)?.fields?.[field] || 'Campo'
+}
+
+export function getImportCountLabel(resource) {
+  return IMPORT_COUNT_LABELS[resource] || resource
+}
+
+export function formatImportIssue(issue) {
+  const parts = [getImportResourceLabel(issue.resource)]
+  if (issue.line) parts.push(`linha ${issue.line}`)
+  if (issue.field) parts.push(getImportFieldLabel(issue.resource, issue.field))
+  return `${parts.join(', ')}: ${issue.message}`
+}
 
 const IMPORT_INVALIDATIONS = [
   'members', 'teachers', 'eligible-teachers', 'rooms', 'subjects', 'courses',
@@ -23,13 +146,8 @@ function fileError(code, message) {
   return error
 }
 
-function hasUtf8Bom(bytes) {
-  return bytes.length >= 3 && bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf
-}
-
 export async function fileToBase64(file) {
   const bytes = new Uint8Array(await file.arrayBuffer())
-  if (!hasUtf8Bom(bytes)) throw fileError('utf8_bom_required', 'O ficheiro deve usar UTF-8 com BOM.')
   let binary = ''
   for (let offset = 0; offset < bytes.length; offset += 0x8000) {
     binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000))
@@ -55,8 +173,14 @@ function csvValue(value) {
 
 export function createBulkImportReport(issues) {
   const rows = [
-    ['severity', 'resource', 'line', 'field', 'code', 'message'],
-    ...issues.map((issue) => [issue.severity, issue.resource, issue.line, issue.field, issue.code, issue.message]),
+    ['Tipo', 'Secção', 'Linha', 'Campo', 'Mensagem'],
+    ...issues.map((issue) => [
+      issue.severity === 'warning' ? 'Aviso' : 'Erro',
+      getImportResourceLabel(issue.resource),
+      issue.line || '',
+      issue.field ? getImportFieldLabel(issue.resource, issue.field) : '',
+      issue.message,
+    ]),
   ]
   const csv = rows.map((row) => row.map(csvValue).join(';')).join('\r\n') + '\r\n'
   return new Blob([`\ufeff${csv}`], { type: 'text/csv;charset=utf-8' })
@@ -72,8 +196,8 @@ export function downloadBlob(blob, filename) {
 }
 
 export async function downloadBulkImportTemplate(apiClient, resource) {
-  const definition = IMPORT_RESOURCES.find((item) => item.key === resource)
-  if (!definition) throw fileError('resource_unknown', 'Recurso de importação desconhecido.')
+  const definition = getImportResource(resource)
+  if (!definition) throw fileError('resource_unknown', 'Secção de importação desconhecida.')
   const bytes = await apiClient.get(`/imports/templates/${resource}`, { responseType: 'arraybuffer' })
   downloadBlob(new Blob([bytes], { type: 'text/csv;charset=utf-8' }), definition.filename)
 }

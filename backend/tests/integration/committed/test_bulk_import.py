@@ -8,10 +8,12 @@ from app.config import settings
 API = settings.API_V1_STR
 
 
-def csv_payload(filename: str, content: str) -> dict[str, str]:
+def csv_payload(filename: str, content: str, *, bom: bool = True) -> dict[str, str]:
     return {
         "filename": filename,
-        "content_base64": base64.b64encode(("\ufeff" + content).encode("utf-8")).decode("ascii"),
+        "content_base64": base64.b64encode(
+            (("\ufeff" if bom else "") + content).encode("utf-8")
+        ).decode("ascii"),
     }
 
 
@@ -21,24 +23,27 @@ def valid_files() -> dict[str, dict[str, str]]:
     course = f"Curso {suffix}"
     teacher_email = f"teacher.{suffix}@example.com"
     return {
-        "rooms": csv_payload("salas.csv", f"name;type;capacity\r\nSala {suffix};lab;24\r\n"),
+        "rooms": csv_payload(
+            "Cronos_Salas_Template.csv",
+            f"Nome da sala;Tipo de sala;Capacidade\r\nSala {suffix};Laboratório;24\r\n",
+        ),
         "subjects": csv_payload(
-            "disciplinas.csv",
-            f"name;required_room_type;module_name;module_code;module_hours;module_order\r\n"
-            f"{subject};lab;Módulo {suffix};M{suffix};30;1\r\n",
+            "Cronos_DisciplinasEModulos_Template.csv",
+            f"Nome da disciplina;Tipo de sala;Nome do módulo;Código do módulo;Horas do módulo;Ordem do módulo\r\n"
+            f"{subject};Laboratório;Módulo {suffix};M{suffix};30;1\r\n",
         ),
         "courses": csv_payload(
-            "cursos.csv",
-            f"abbreviation;name;class_name;grade_level;start_year;end_year;size\r\n"
+            "Cronos_CursosETurmas_Template.csv",
+            f"Sigla do curso;Nome do curso;Nome da turma;Ano escolar;Ano de início;Ano de fim;Número de alunos\r\n"
             f"C{suffix[:5].upper()};{course};10.º A;10;2025;2028;24\r\n",
         ),
         "teachers": csv_payload(
-            "professores.csv",
-            f"name;email;competency_subject\r\nProfessor {suffix};{teacher_email};{subject}\r\n",
+            "Cronos_ProfessoresECompetencias_Template.csv",
+            f"Nome do professor;Email do professor;Nome da disciplina\r\nProfessor {suffix};{teacher_email};{subject}\r\n",
         ),
         "assignments": csv_payload(
-            "atribuicoes.csv",
-            f"course_abbreviation;class_name;subject_name;teacher_email\r\n"
+            "Cronos_Atribuicoes_Template.csv",
+            f"Sigla do curso;Nome da turma;Nome da disciplina;Email do professor\r\n"
             f"C{suffix[:5].upper()};10.º A;{subject};{teacher_email}\r\n",
         ),
     }
@@ -88,8 +93,8 @@ async def test_bulk_import_rejects_example_without_writing(
         json={
             "files": {
                 "rooms": csv_payload(
-                    "salas.csv",
-                    "name;type;capacity\r\nSala de Exemplo;normal;30\r\n",
+                    "Cronos_Salas_Template.csv",
+                    "Nome da sala;Tipo de sala;Capacidade\r\nSala de Exemplo;Normal;30\r\n",
                 )
             }
         },
@@ -108,7 +113,10 @@ async def test_bulk_import_template_has_bom_and_safe_filename(
     response = await async_client.get(f"{API}/imports/templates/rooms", headers=clerk_admin_headers)
     assert response.status_code == 200
     assert response.content.startswith(b"\xef\xbb\xbf")
-    assert 'filename="salas.csv"' in response.headers["content-disposition"]
+    assert 'filename="Cronos_Salas_Template.csv"' in response.headers["content-disposition"]
+    assert response.content.decode("utf-8-sig").splitlines()[0] == (
+        "Nome da sala;Tipo de sala;Capacidade"
+    )
 
     unknown = await async_client.get(
         f"{API}/imports/templates/unknown", headers=clerk_admin_headers
@@ -124,8 +132,8 @@ async def test_bulk_import_commit_rejects_invalid_revalidation(
         json={
             "files": {
                 "rooms": csv_payload(
-                    "salas.csv",
-                    "name;type;capacity\r\nSala de Exemplo;normal;30\r\n",
+                    "Cronos_Salas_Template.csv",
+                    "Nome da sala;Tipo de sala;Capacidade\r\nSala de Exemplo;Normal;30\r\n",
                 )
             }
         },
@@ -134,3 +142,24 @@ async def test_bulk_import_commit_rejects_invalid_revalidation(
 
     assert response.status_code == 422
     assert response.json()["detail"]["context"]["can_commit"] is False
+
+
+async def test_bulk_import_accepts_comma_delimited_file_without_bom(
+    async_client: AsyncClient, clerk_admin_headers: dict
+):
+    response = await async_client.post(
+        f"{API}/imports/validate",
+        json={
+            "files": {
+                "rooms": csv_payload(
+                    "Cronos_Salas_Template.csv",
+                    'Nome da sala,Tipo de sala,Capacidade\r\n"Sala, Norte; bloco",artes,20\r\n',
+                    bom=False,
+                )
+            }
+        },
+        headers=clerk_admin_headers,
+    )
+
+    assert response.status_code == 200
+    assert response.json()["can_commit"] is True

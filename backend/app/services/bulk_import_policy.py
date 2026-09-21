@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import csv
 import io
+import unicodedata
 from collections import defaultdict
 from dataclasses import dataclass, field
 from email.utils import parseaddr
@@ -20,17 +21,27 @@ IssueSeverity = Literal["error", "warning"]
 @dataclass(frozen=True)
 class TemplateDefinition:
     headers: tuple[str, ...]
+    fields: tuple[str, ...]
     example: tuple[str, ...]
     filename: str
 
 
 TEMPLATE_DEFINITIONS = {
     "rooms": TemplateDefinition(
+        ("Nome da sala", "Tipo de sala", "Capacidade"),
         ("name", "type", "capacity"),
-        ("Sala de Exemplo", "normal", "30"),
-        "salas.csv",
+        ("Sala de Exemplo", "Normal", "30"),
+        "Cronos_Salas_Template.csv",
     ),
     "subjects": TemplateDefinition(
+        (
+            "Nome da disciplina",
+            "Tipo de sala",
+            "Nome do módulo",
+            "Código do módulo",
+            "Horas do módulo",
+            "Ordem do módulo",
+        ),
         (
             "name",
             "required_room_type",
@@ -39,20 +50,31 @@ TEMPLATE_DEFINITIONS = {
             "module_hours",
             "module_order",
         ),
-        ("Disciplina de Exemplo", "normal", "Módulo de Exemplo", "MOD-EXEMPLO", "30", "1"),
-        "disciplinas.csv",
+        ("Disciplina de Exemplo", "Normal", "Módulo de Exemplo", "MOD-EXEMPLO", "30", "1"),
+        "Cronos_DisciplinasEModulos_Template.csv",
     ),
     "courses": TemplateDefinition(
+        (
+            "Sigla do curso",
+            "Nome do curso",
+            "Nome da turma",
+            "Ano escolar",
+            "Ano de início",
+            "Ano de fim",
+            "Número de alunos",
+        ),
         ("abbreviation", "name", "class_name", "grade_level", "start_year", "end_year", "size"),
         ("EXEMPLO", "Curso de Exemplo", "Turma de Exemplo", "10", "2025", "2028", "25"),
-        "cursos.csv",
+        "Cronos_CursosETurmas_Template.csv",
     ),
     "teachers": TemplateDefinition(
+        ("Nome do professor", "Email do professor", "Nome da disciplina"),
         ("name", "email", "competency_subject"),
         ("Professor de Exemplo", "professor.exemplo@example.invalid", "Disciplina de Exemplo"),
-        "professores.csv",
+        "Cronos_ProfessoresECompetencias_Template.csv",
     ),
     "assignments": TemplateDefinition(
+        ("Sigla do curso", "Nome da turma", "Nome da disciplina", "Email do professor"),
         ("course_abbreviation", "class_name", "subject_name", "teacher_email"),
         (
             "EXEMPLO",
@@ -60,9 +82,14 @@ TEMPLATE_DEFINITIONS = {
             "Disciplina de Exemplo",
             "professor.exemplo@example.invalid",
         ),
-        "atribuicoes.csv",
+        "Cronos_Atribuicoes_Template.csv",
     ),
 }
+
+FILE_READ_ERROR_MESSAGE = (
+    "Não foi possível ler este ficheiro. Descarregue novamente o modelo e guarde-o como CSV."
+)
+ROOM_TYPE_ERROR_MESSAGE = "Escreva Normal, Laboratório, Ginásio ou Artes."
 
 
 @dataclass(frozen=True)
@@ -242,6 +269,20 @@ def _key(value: str) -> str:
     return _clean(value).casefold()
 
 
+def normalize_room_type(value: str) -> str | None:
+    plain = "".join(
+        character
+        for character in unicodedata.normalize("NFKD", _clean(value).casefold())
+        if not unicodedata.combining(character)
+    )
+    return {
+        "normal": "normal",
+        "laboratorio": "lab",
+        "ginasio": "gym",
+        "artes": "art",
+    }.get(plain)
+
+
 def _email(value: str) -> str:
     return _clean(value).lower()
 
@@ -249,10 +290,6 @@ def _email(value: str) -> str:
 def _valid_email(value: str) -> bool:
     parsed = parseaddr(value)[1]
     return parsed == value and "@" in value and not value.endswith("@") and " " not in value
-
-
-def _is_blank_row(row: dict) -> bool:
-    return all(not _clean(value) for key, value in row.items() if key is not None)
 
 
 def render_template(resource: str) -> bytes:
@@ -271,7 +308,7 @@ def parse_resource_file(resource: str, filename: str, content_base64: str) -> Pa
         return ParsedResourceFile(
             resource,
             filename,
-            issues=(_issue(resource, "resource_unknown", "Recurso de importação desconhecido."),),
+            issues=(_issue(resource, "resource_unknown", "Secção de importação desconhecida."),),
         )
     definition = TEMPLATE_DEFINITIONS[resource]
     try:
@@ -280,36 +317,33 @@ def parse_resource_file(resource: str, filename: str, content_base64: str) -> Pa
         return ParsedResourceFile(
             resource,
             filename,
-            issues=(_issue(resource, "base64_invalid", "O conteúdo Base64 é inválido."),),
+            issues=(_issue(resource, "base64_invalid", FILE_READ_ERROR_MESSAGE),),
         )
     if len(raw) > MAX_FILE_BYTES:
         return ParsedResourceFile(
             resource,
             filename,
-            issues=(_issue(resource, "file_too_large", "O ficheiro excede 1 MiB."),),
-            decoded_bytes=len(raw),
-        )
-    if not raw.startswith(b"\xef\xbb\xbf"):
-        return ParsedResourceFile(
-            resource,
-            filename,
-            issues=(_issue(resource, "utf8_bom_required", "O ficheiro deve usar UTF-8 com BOM."),),
+            issues=(_issue(resource, "file_too_large", "O ficheiro excede 1 MB."),),
             decoded_bytes=len(raw),
         )
     try:
-        text = raw[3:].decode("utf-8", errors="strict")
+        text = (
+            raw[3:].decode("utf-8", errors="strict")
+            if raw.startswith(b"\xef\xbb\xbf")
+            else raw.decode("utf-8", errors="strict")
+        )
     except UnicodeDecodeError:
         return ParsedResourceFile(
             resource,
             filename,
-            issues=(_issue(resource, "utf8_invalid", "O ficheiro não é UTF-8 válido."),),
+            issues=(_issue(resource, "utf8_invalid", FILE_READ_ERROR_MESSAGE),),
             decoded_bytes=len(raw),
         )
     if "\x00" in text:
         return ParsedResourceFile(
             resource,
             filename,
-            issues=(_issue(resource, "nul_byte", "O ficheiro contém um byte NUL inválido."),),
+            issues=(_issue(resource, "nul_byte", FILE_READ_ERROR_MESSAGE),),
             decoded_bytes=len(raw),
         )
     physical_lines = len(text.splitlines())
@@ -317,67 +351,50 @@ def parse_resource_file(resource: str, filename: str, content_base64: str) -> Pa
         return ParsedResourceFile(
             resource,
             filename,
-            issues=(_issue(resource, "line_limit_exceeded", "O ficheiro excede 5.000 linhas."),),
+            issues=(_issue(resource, "line_limit_exceeded", FILE_READ_ERROR_MESSAGE),),
             decoded_bytes=len(raw),
         )
-    first_line = next((line for line in text.splitlines() if line.strip()), "")
-    if "," in first_line and ";" not in first_line:
+
+    delimiter = None
+    for candidate in (",", ";"):
+        reader = csv.reader(io.StringIO(text, newline=""), delimiter=candidate)
+        try:
+            headers = next(reader)
+        except StopIteration:
+            headers = []
+        if headers == list(definition.headers):
+            delimiter = candidate
+            break
+    if delimiter is None:
         return ParsedResourceFile(
             resource,
             filename,
-            issues=(
-                _issue(resource, "delimiter_invalid", "Use ponto e vírgula (;) como separador."),
-            ),
+            issues=(_issue(resource, "header_invalid", FILE_READ_ERROR_MESSAGE, line=1),),
             decoded_bytes=len(raw),
         )
 
-    reader = csv.DictReader(io.StringIO(text, newline=""), delimiter=";")
-    headers = reader.fieldnames or []
-    header_issues: list[BulkImportIssue] = []
-    normalized_headers = [_key(header) for header in headers]
-    if any(not header.strip() for header in headers):
-        header_issues.append(
-            _issue(resource, "header_empty", "O cabeçalho não pode conter colunas vazias.", line=1)
-        )
-    if len(set(normalized_headers)) != len(normalized_headers):
-        header_issues.append(
-            _issue(resource, "header_duplicate", "O cabeçalho contém colunas repetidas.", line=1)
-        )
-    missing = sorted(set(definition.headers) - set(headers))
-    extra = sorted(set(headers) - set(definition.headers))
-    if missing:
-        header_issues.append(
-            _issue(resource, "header_missing", f"Colunas em falta: {', '.join(missing)}.", line=1)
-        )
-    if extra:
-        header_issues.append(
-            _issue(resource, "header_extra", f"Colunas não previstas: {', '.join(extra)}.", line=1)
-        )
-    if header_issues:
-        return ParsedResourceFile(
-            resource, filename, issues=tuple(header_issues), decoded_bytes=len(raw)
-        )
-
+    reader = csv.reader(io.StringIO(text, newline=""), delimiter=delimiter)
+    next(reader, None)
     rows: list[dict[str, str | int]] = []
     issues: list[BulkImportIssue] = []
-    for raw_row in reader:
+    for values in reader:
         line = reader.line_num
-        if _is_blank_row(raw_row):
+        if not any(_clean(value) for value in values):
             continue
-        if None in raw_row or any(value is None for value in raw_row.values()):
+        if len(values) != len(definition.fields):
             issues.append(
                 _issue(
                     resource,
                     "column_count_invalid",
-                    "A linha não contém o número esperado de colunas.",
+                    FILE_READ_ERROR_MESSAGE,
                     line=line,
                 )
             )
             continue
-        row = {header: _clean(raw_row.get(header, "")) for header in definition.headers}
+        row = {field: _clean(value) for field, value in zip(definition.fields, values, strict=True)}
         row["line"] = line
         rows.append(row)
-        if tuple(row[header] for header in definition.headers) == definition.example:
+        if tuple(row[field] for field in definition.fields) == definition.example:
             issues.append(
                 _issue(
                     resource,
@@ -443,23 +460,26 @@ def _int_value(
 def _validate_rooms(
     parsed: ParsedResourceFile, snapshot: ImportSnapshot, issues: list[BulkImportIssue]
 ) -> tuple[RoomImport, ...]:
-    allowed = {"normal", "lab", "gym", "art"}
     result = []
     seen = set()
     existing = {_key(item.name) for item in snapshot.rooms}
     for row in parsed.rows:
         line = int(row["line"])
         name = _value(row, "name")
-        room_type = _value(row, "type").lower()
+        room_type = normalize_room_type(_value(row, "type"))
         capacity = _int_value(row, "rooms", "capacity", issues, minimum=1)
         if not name:
             issues.append(
                 _issue("rooms", "field_required", "Campo obrigatório.", line=line, field="name")
             )
-        if room_type not in allowed:
+        if room_type is None:
             issues.append(
                 _issue(
-                    "rooms", "room_type_invalid", "Tipo de sala inválido.", line=line, field="type"
+                    "rooms",
+                    "room_type_invalid",
+                    ROOM_TYPE_ERROR_MESSAGE,
+                    line=line,
+                    field="type",
                 )
             )
         normalized = _key(name)
@@ -484,7 +504,7 @@ def _validate_rooms(
                 )
             )
         seen.add(normalized)
-        if name and room_type in allowed and capacity is not None:
+        if name and room_type is not None and capacity is not None:
             result.append(RoomImport(name, room_type, capacity, line))
     return tuple(result)
 
@@ -501,17 +521,17 @@ def _validate_subjects(
         first = rows[0]
         line = int(first["line"])
         name = _value(first, "name")
-        room_type = _value(first, "required_room_type").lower()
+        room_type = normalize_room_type(_value(first, "required_room_type"))
         if not name:
             issues.append(
                 _issue("subjects", "field_required", "Campo obrigatório.", line=line, field="name")
             )
-        if room_type not in {"normal", "lab", "gym", "art"}:
+        if room_type is None:
             issues.append(
                 _issue(
                     "subjects",
                     "room_type_invalid",
-                    "Tipo de sala inválido.",
+                    ROOM_TYPE_ERROR_MESSAGE,
                     line=line,
                     field="required_room_type",
                 )
@@ -530,7 +550,7 @@ def _validate_subjects(
         seen_orders = set()
         for row in rows:
             row_line = int(row["line"])
-            current_type = _value(row, "required_room_type").lower()
+            current_type = normalize_room_type(_value(row, "required_room_type"))
             if current_type != room_type:
                 issues.append(
                     _issue(
@@ -602,7 +622,7 @@ def _validate_subjects(
                     field="module_order",
                 )
             )
-        if name and room_type in {"normal", "lab", "gym", "art"}:
+        if name and room_type is not None:
             result.append(
                 SubjectImport(
                     name, room_type, tuple(sorted(modules, key=lambda item: item.order)), line
