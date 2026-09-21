@@ -12,7 +12,7 @@ export default function PeopleSection() {
           {[people.primary, ...people.secondary].map((person) => (
             <article className="cronos-person" key={person.id}>
               <div className="cronos-person__picture-wrap">
-                <ResponsivePicture {...person.image} className="cronos-person__picture" />
+                <ResponsivePicture {...person.image} loading="eager" className="cronos-person__picture" />
               </div>
               <div className="cronos-person__caption">
                 <h3>{person.title}</h3>

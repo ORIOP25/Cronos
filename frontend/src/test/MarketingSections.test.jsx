@@ -101,6 +101,11 @@ describe('public marketing sections', () => {
     expect(screen.getAllByRole('img')).toHaveLength(4)
   })
 
+  it('loads the people gallery images without lazy-loading delays', () => {
+    renderWithRouter(<HomePage />)
+    expect([...document.querySelectorAll('.cronos-people img')].every((image) => image.getAttribute('loading') === 'eager')).toBe(true)
+  })
+
   it('starts the FAQ closed and keeps one answer open', () => {
     renderWithRouter(<FaqSection />)
     const questions = screen.getAllByRole('button')
