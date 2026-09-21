@@ -16,6 +16,7 @@ const PUBLIC_ROUTES = new Set([
 
 const APPLICATION_ROUTES = new Set([
   '/dashboard',
+  '/imports',
   '/members',
   '/rooms',
   '/subjects',

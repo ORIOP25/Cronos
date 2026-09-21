@@ -91,7 +91,7 @@ test('passes static assets and known public pages through unchanged', async () =
 })
 
 test('rewrites every application route family to the application shell', async () => {
-  for (const pathname of ['/foundation', '/login', '/register', '/login/tasks/choose-organization', '/courses/course-id', '/courses/course-id/classes/class-id', '/courses/course-id/classes/class-id/subjects']) {
+  for (const pathname of ['/foundation', '/imports', '/login', '/register', '/login/tasks/choose-organization', '/courses/course-id', '/courses/course-id/classes/class-id', '/courses/course-id/classes/class-id/subjects']) {
     const { response, calls } = await request(pathname)
     assert.equal(response.status, 200, pathname)
     assert.equal(calls.at(-1).pathname, '/app-shell', pathname)
