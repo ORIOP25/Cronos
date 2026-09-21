@@ -1,5 +1,6 @@
 import { QueryClient, useQuery } from '@tanstack/react-query'
 import { act, render, screen, waitFor } from '@testing-library/react'
+import { useEffect } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { UserQueryProvider } from '../UserQueryProvider'
 import { createQueryClient } from '../queryClient'
@@ -70,5 +71,65 @@ describe('UserQueryProvider', () => {
     await act(async () => resolveUserB({ name: 'User B' }))
     expect(await screen.findByText('User B')).toBeInTheDocument()
     expect(loadMember).toHaveBeenCalledTimes(2)
+  })
+
+  it('keeps the same user query tree and cache while a session task becomes active', async () => {
+    let mounts = 0
+    const loadMember = vi.fn().mockResolvedValue({ name: 'User A' })
+
+    function CurrentMember() {
+      useEffect(() => {
+        mounts += 1
+      }, [])
+      const { data } = useQuery({
+        queryKey: ['current-member', 'org_same'],
+        queryFn: loadMember,
+      })
+      return <div>{data?.name ?? 'Loading member'}</div>
+    }
+
+    const ui = () => (
+      <UserQueryProvider>
+        <CurrentMember />
+      </UserQueryProvider>
+    )
+    const { rerender } = render(ui())
+
+    expect(await screen.findByText('User A')).toBeInTheDocument()
+    expect(mounts).toBe(1)
+
+    setClerkState({ sessionStatus: 'pending' })
+    rerender(ui())
+    expect(screen.getByText('User A')).toBeInTheDocument()
+    expect(mounts).toBe(1)
+
+    setClerkState({ sessionStatus: 'active' })
+    rerender(ui())
+    expect(screen.getByText('User A')).toBeInTheDocument()
+    expect(mounts).toBe(1)
+    expect(loadMember).toHaveBeenCalledOnce()
+  })
+
+  it('replaces the authenticated query client when signing out', async () => {
+    const clearSpy = vi.spyOn(QueryClient.prototype, 'clear')
+    const loadMember = vi.fn().mockResolvedValue({ name: 'User A' })
+
+    function CurrentMember() {
+      const { data } = useQuery({
+        queryKey: ['current-member', 'org_same'],
+        queryFn: loadMember,
+      })
+      return <div>{data?.name ?? 'Loading member'}</div>
+    }
+
+    const ui = () => <UserQueryProvider><CurrentMember /></UserQueryProvider>
+    const { rerender } = render(ui())
+    expect(await screen.findByText('User A')).toBeInTheDocument()
+
+    setClerkState({ isSignedIn: false })
+    rerender(ui())
+
+    expect(screen.queryByText('User A')).not.toBeInTheDocument()
+    await waitFor(() => expect(clearSpy).toHaveBeenCalled())
   })
 })

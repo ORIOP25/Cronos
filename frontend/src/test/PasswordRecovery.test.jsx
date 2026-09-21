@@ -4,6 +4,7 @@ import { renderWithRouter } from './testUtils'
 import { resetClerkState, setClerkSignInState } from './setup'
 import SignInPage from '../pages/SignInPage'
 import ForgotPasswordPage from '../pages/ForgotPasswordPage'
+import { CLERK_APPEARANCE_AUTH } from '../utils/authDesign'
 
 describe('password recovery', () => {
   beforeEach(() => {
@@ -13,11 +14,22 @@ describe('password recovery', () => {
   it('makes the existing-account path explicit on the sign-in page', () => {
     renderWithRouter(<SignInPage />)
 
+    expect(screen.getByTestId('clerk-sign-in')).toHaveAttribute('data-fallback-redirect-url', '/')
     expect(screen.getByRole('link', { name: /recuperar palavra-passe/i })).toHaveAttribute(
       'href',
       '/recuperar-palavra-passe',
     )
     expect(screen.getByText(/entrar com google/i)).toBeInTheDocument()
+  })
+
+  it('renders the organization task on its dedicated route', () => {
+    renderWithRouter(<SignInPage />, { initialEntries: ['/login/tasks/choose-organization'] })
+
+    const task = screen.getByTestId('clerk-task-choose-organization')
+    expect(task).toHaveAttribute('data-redirect-url-complete', '/foundation')
+    expect(task).toHaveAttribute('data-appearance', JSON.stringify(CLERK_APPEARANCE_AUTH))
+    expect(screen.queryByTestId('clerk-sign-in')).not.toBeInTheDocument()
+    expect(screen.queryByText(/recuperar palavra-passe/i)).not.toBeInTheDocument()
   })
 
   it('requests a reset code through the supported Clerk strategy', async () => {

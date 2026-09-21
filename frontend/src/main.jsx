@@ -32,6 +32,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
       publishableKey={import.meta.env.VITE_CLERK_PUBLISHABLE_KEY}
       signInUrl="/login"
       signUpUrl="/register"
+      taskUrls={{ 'choose-organization': '/login/tasks/choose-organization' }}
       afterSignOutUrl="/"
       localization={CLERK_LOCALIZATION_PT}
     >

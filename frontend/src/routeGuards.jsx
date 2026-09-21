@@ -4,11 +4,13 @@ import { CSpinner } from '@coreui/react'
 import { useQueryClient } from '@tanstack/react-query'
 import {
   OrganizationSwitcher,
+  RedirectToTasks,
   RedirectToSignIn,
   useAuth,
   useClerk,
   useOrganization,
   useOrganizationList,
+  useSession,
 } from '@clerk/react'
 import { CURRENT_LEGAL_VERSIONS } from './features/legal/data'
 import { useOnboardingCompletion } from './features/onboarding/useOnboardingCompletion'
@@ -34,8 +36,10 @@ function RedirectToCurrentPageSignIn() {
 }
 
 export function RequireAuth({ children }) {
-  const { isSignedIn, isLoaded } = useAuth()
-  if (!isLoaded) return <PageLoader />
+  const { isSignedIn, isLoaded } = useAuth({ treatPendingAsSignedOut: false })
+  const { session, isLoaded: sessionLoaded } = useSession()
+  if (!isLoaded || !sessionLoaded) return <PageLoader />
+  if (session?.currentTask) return <RedirectToTasks />
   if (!isSignedIn) return <RedirectToCurrentPageSignIn />
   return children ?? <Outlet />
 }
@@ -136,7 +140,8 @@ function MemberQueryFailure({ error, recoverSession, refetch, signOut }) {
 }
 
 function useOrganizationGuardState() {
-  const auth = useAuth()
+  const auth = useAuth({ treatPendingAsSignedOut: false })
+  const sessionState = useSession()
   const clerk = useClerk()
   const queryClient = useQueryClient()
   const organizationState = useOrganization()
@@ -165,6 +170,8 @@ function useOrganizationGuardState() {
   }, [setActive, list.isLoaded, organizationState.isLoaded, organizationState.organization, soleOrganizationId])
   return {
     ...auth,
+    session: sessionState.session,
+    sessionLoaded: sessionState.isLoaded,
     organization: organizationState.organization,
     organizationMembership: organizationState.membership,
     orgLoaded: organizationState.isLoaded,
@@ -191,7 +198,8 @@ function useOrganizationGuardState() {
 function MemberGate({ children, capability, requireTeacherId = false, redirectToDefault = false, allowUncompletedFoundation = false }) {
   const state = useOrganizationGuardState()
   const { data: member, isLoading: memberLoading, isError, error, refetch } = state.member
-  if (!state.isLoaded) return <PageLoader />
+  if (!state.isLoaded || !state.sessionLoaded) return <PageLoader />
+  if (state.session?.currentTask) return <RedirectToTasks />
   if (!state.isSignedIn) return <RedirectToCurrentPageSignIn />
   if (!state.orgLoaded || !state.listLoaded) return <PageLoader />
   if (state.activationPending && !state.organization) return <PageLoader />

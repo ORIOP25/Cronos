@@ -1,5 +1,5 @@
-import { Link } from 'react-router-dom'
-import { SignIn } from '@clerk/react'
+import { Link, useLocation } from 'react-router-dom'
+import { SignIn, TaskChooseOrganization } from '@clerk/react'
 import BrandPanel from '../components/auth/BrandPanel'
 import {
   BRAND_STATS_LOGIN,
@@ -8,6 +8,9 @@ import {
 } from '../utils/authDesign'
 
 export default function SignInPage() {
+  const { pathname } = useLocation()
+  const isChooseOrganizationTask = pathname.replace(/\/+$/, '') === '/login/tasks/choose-organization'
+
   return (
     <div className="zen-auth-page zen-auth-page--login">
       <div className="zen-auth-layout">
@@ -22,24 +25,33 @@ export default function SignInPage() {
           </div>
 
           <div className="zen-auth-form-wrapper">
-            <SignIn
-              routing="path"
-              path="/login"
-              signUpUrl="/register"
-              fallbackRedirectUrl="/"
-              appearance={CLERK_APPEARANCE_AUTH}
-            />
+            {isChooseOrganizationTask ? (
+              <TaskChooseOrganization
+                redirectUrlComplete="/foundation"
+                appearance={CLERK_APPEARANCE_AUTH}
+              />
+            ) : (
+              <>
+                <SignIn
+                  routing="path"
+                  path="/login"
+                  signUpUrl="/register"
+                  fallbackRedirectUrl="/"
+                  appearance={CLERK_APPEARANCE_AUTH}
+                />
 
-            <div className="zen-auth-recovery-help">
-              <p>
-                Já tem conta ou o convite não chegou? O convite não define uma
-                palavra-passe. Pode <strong>entrar com Google</strong> usando o mesmo
-                email.
-              </p>
-              <Link to="/recuperar-palavra-passe" className="zen-auth-recovery-link">
-                Recuperar palavra-passe
-              </Link>
-            </div>
+                <div className="zen-auth-recovery-help">
+                  <p>
+                    Já tem conta ou o convite não chegou? O convite não define uma
+                    palavra-passe. Pode <strong>entrar com Google</strong> usando o mesmo
+                    email.
+                  </p>
+                  <Link to="/recuperar-palavra-passe" className="zen-auth-recovery-link">
+                    Recuperar palavra-passe
+                  </Link>
+                </div>
+              </>
+            )}
 
             <div className="zen-auth-form-footer">
               <Link to="/" className="zen-auth-back-link">

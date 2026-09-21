@@ -7,6 +7,7 @@ import { setClerkState, resetClerkState } from './setup'
 import {
   RequireAdmin,
   RequireAuth,
+  RequireFoundationAdmin,
   RequireTeacher,
   SignedInRedirect,
 } from '../routeGuards'
@@ -136,6 +137,14 @@ describe('RequireAuth', () => {
     expect(screen.getByTestId('redirect-to-sign-in')).toBeInTheDocument()
   })
 
+  it('redirects a pending session to Clerk tasks', () => {
+    setClerkState({ sessionStatus: 'pending', currentTask: { key: 'choose-organization' } })
+    renderGuard(<RequireAuth><div>Content</div></RequireAuth>)
+
+    expect(screen.getByTestId('redirect-to-tasks')).toBeInTheDocument()
+    expect(screen.queryByTestId('redirect-to-sign-in')).toBeNull()
+  })
+
   it('redirects when an active session is lost', () => {
     const view = renderWithProviders(
       <MemoryRouter initialEntries={['/protected']}>
@@ -234,6 +243,17 @@ describe('RequireAdmin', () => {
     renderGuard(<RequireAdmin><div>Admin</div></RequireAdmin>)
     expect(screen.queryByText('Admin')).toBeNull()
     expect(screen.getByTestId('redirect-to-sign-in')).toBeInTheDocument()
+  })
+
+  it.each([
+    ['admin', <RequireAdmin key="admin"><div>Admin</div></RequireAdmin>],
+    ['foundation admin', <RequireFoundationAdmin key="foundation-admin"><div>Foundation admin</div></RequireFoundationAdmin>],
+  ])('redirects a pending %s session to Clerk tasks', (_label, guard) => {
+    setClerkState({ sessionStatus: 'pending', currentTask: { key: 'choose-organization' } })
+    renderGuard(guard)
+
+    expect(screen.getByTestId('redirect-to-tasks')).toBeInTheDocument()
+    expect(screen.queryByTestId('redirect-to-sign-in')).toBeNull()
   })
 })
 
