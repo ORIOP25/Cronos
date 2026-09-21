@@ -108,6 +108,16 @@ Stable route families keep frontend features and provider webhooks independent f
 | `GET` | `/api/v1/teachers/me/progress` | Teacher |
 | `GET` | `/api/v1/teachers/observability/summary` | Admin |
 
+### Administrative CSV import
+
+| Method | Route | Access |
+| :--- | :--- | :--- |
+| `GET` | `/api/v1/imports/templates/{resource}` | Admin |
+| `POST` | `/api/v1/imports/validate` | Admin; body limit 8 MiB |
+| `POST` | `/api/v1/imports/commit` | Admin; body limit 8 MiB; returns `201` |
+
+See [Bulk Import CSV](../07_data_and_seed/BULK_IMPORT_CSV.md) for the exact templates, limits, issues and atomicity rules.
+
 ### School configuration
 
 | Method | Route | Access |

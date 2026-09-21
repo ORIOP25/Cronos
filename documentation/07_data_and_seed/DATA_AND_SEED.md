@@ -57,3 +57,4 @@ Run `pytest tests/test_operational_seed.py -v`. Then run `python -m scripts.audi
 ## Related Documents
 - [Local Runtime](../09_ops_observability/LOCAL_RUNTIME.md)
 - [Testing and CI](../08_security_quality/TESTING_AND_CI.md)
+- [Administrative CSV import](BULK_IMPORT_CSV.md)

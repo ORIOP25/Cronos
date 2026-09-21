@@ -59,7 +59,9 @@ const Courses = () => {
   return (
     <div className="p-4">
       <PageHeader preTitle="Gestão" title="Cursos" />
-      <div className="d-flex justify-content-end mb-4">
+      <div className="d-flex justify-content-end gap-2 mb-4">
+        <CButton color="secondary" variant="outline" onClick={() => navigate('/imports?resource=courses')}>Importar CSV</CButton>
+        <CButton color="secondary" variant="outline" onClick={() => navigate('/imports?resource=assignments')}>Importar atribuições</CButton>
         <CButton color="primary" onClick={handleCreate} className="d-flex align-items-center gap-2" data-tutorial-target="new-course">
           <CIcon icon={cilPlus} />
           Novo Curso

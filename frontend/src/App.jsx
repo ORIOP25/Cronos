@@ -24,6 +24,7 @@ const Courses = lazy(() => import('./pages/Courses'))
 const CourseDetails = lazy(() => import('./pages/CourseDetails'))
 const ClassDetails = lazy(() => import('./pages/ClassDetails'))
 const ClassSubjects = lazy(() => import('./pages/ClassSubjects'))
+const BulkImport = lazy(() => import('./pages/BulkImport'))
 const Foundation = lazy(() => import('./pages/Foundation'))
 const FoundationWaiting = lazy(() => import('./pages/FoundationWaiting'))
 const Guide = lazy(() => import('./pages/Guide'))
@@ -124,6 +125,7 @@ function App() {
               <Route path="schedules" element={<Schedules />} />
               <Route path="absences" element={<Occurrences />} />
               <Route path="timesheets" element={<Timesheets />} />
+              <Route path="imports" element={<BulkImport />} />
             </Route>
             <Route element={<RequireTeacher />}>
               <Route path={ROUTE_MY_SCHEDULES.slice(1)} element={<MySchedules />} />

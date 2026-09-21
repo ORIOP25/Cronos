@@ -178,6 +178,8 @@ app.add_middleware(
         ("POST", "/api/v1/contact"): 16 * 1024,
         ("POST", "/api/v1/webhooks/clerk"): 256 * 1024,
         ("POST", "/api/v1/client-errors"): 4 * 1024,
+        ("POST", "/api/v1/imports/validate"): 8 * 1024 * 1024,
+        ("POST", "/api/v1/imports/commit"): 8 * 1024 * 1024,
     },
 )
 
