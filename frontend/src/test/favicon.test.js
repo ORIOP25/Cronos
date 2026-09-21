@@ -10,8 +10,9 @@ const headers = readFileSync(resolve(frontendRoot, 'public/_headers'), 'utf8').r
 const favicon = readFileSync(resolve(frontendRoot, 'public/favicon.png'))
 
 describe('public favicon contract', () => {
-  it('uses the dedicated favicon instead of the transparent brand logo', () => {
-    expect(indexHtml).toContain(`<link rel="icon" type="image/png" sizes="256x256" href="/favicon.png?v=${PUBLIC_ASSET_REVISION}" />`)
+  it('uses the production-safe ICO as the browser tab icon', () => {
+    expect(indexHtml).toContain(`<link rel="icon" type="image/x-icon" href="/favicon.ico?v=${PUBLIC_ASSET_REVISION}" />`)
+    expect(indexHtml).not.toContain('<link rel="icon" type="image/png"')
     expect(indexHtml).not.toContain('<link rel="icon" type="image/png" sizes="256x256" href="/logo.png" />')
     expect(indexHtml).toContain(`<link rel="apple-touch-icon" sizes="256x256" href="/favicon.png?v=${PUBLIC_ASSET_REVISION}" />`)
   })
