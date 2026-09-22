@@ -171,9 +171,7 @@ class TestCoursesEndpoints:
         )
         assert blocked.status_code == 400
         assert blocked.json()["detail"]["code"] == "course_has_classes"
-        assert blocked.json()["detail"]["message"] == (
-            "Apague primeiro as turmas deste curso."
-        )
+        assert blocked.json()["detail"]["message"] == "Apague primeiro as turmas deste curso."
 
         await db_session.delete(linked_class)
         await db_session.commit()
