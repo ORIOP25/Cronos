@@ -10,6 +10,8 @@ import {
 } from '../utils/clerk-helpers.js'
 import { createE2eRunKey, E2E_BASE_URL } from '../utils/e2e-config.js'
 
+test.use({ storageState: '.auth/admin.json' })
+
 let createdInvitation
 
 function requiredTestEmail(name) {

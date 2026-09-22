@@ -1,6 +1,8 @@
 import { test, expect } from '@playwright/test'
 import { attachRuntimeGuards, expectRouteReady, goTo, loginAsAdminReal } from '../utils/clerk-helpers.js'
 
+test.use({ storageState: '.auth/admin.json' })
+
 async function ensureFoundationComplete(page) {
   await goTo(page, '/foundation')
   const startDate = page.locator('#school_start_date')

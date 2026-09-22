@@ -8,6 +8,7 @@ if (!process.env.CI) {
 }
 
 const setupMatch = /global\.setup\.js/
+const authStateMatch = /auth\.state\.setup\.js/
 const publicMatch = /e2e[\\/]marketing-public\.spec\.js/
 const authMatch = /e2e[\\/]auth[\\/].*\.spec\.js/
 const providerMatch = /e2e[\\/]members[\\/]invitations\.spec\.js/
@@ -50,6 +51,13 @@ export default defineConfig({
       dependencies: ['setup'],
     },
     {
+      name: 'auth-state',
+      testMatch: authStateMatch,
+      fullyParallel: false,
+      workers: 1,
+      dependencies: ['setup'],
+    },
+    {
       name: 'auth',
       testMatch: authMatch,
       use: { ...devices['Desktop Chrome'] },
@@ -57,11 +65,11 @@ export default defineConfig({
     },
     {
       name: 'app',
-      testIgnore: [setupMatch, publicMatch, authMatch, providerMatch, faultsMatch, capacityMatch],
+      testIgnore: [setupMatch, authStateMatch, publicMatch, authMatch, providerMatch, faultsMatch, capacityMatch],
       use: { ...devices['Desktop Chrome'] },
       // These tests mutate the single disposable E2E organization.
       workers: 1,
-      dependencies: ['setup'],
+      dependencies: ['auth-state'],
     },
     {
       name: 'provider',

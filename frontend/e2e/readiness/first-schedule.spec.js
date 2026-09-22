@@ -7,6 +7,7 @@ import {
 } from '../utils/clerk-helpers.js'
 
 test.describe.configure({ mode: 'serial' })
+test.use({ storageState: '.auth/admin.json' })
 
 test.describe('Readiness — first schedule', () => {
   test('exposes the canonical six-level chain before generation', async ({ page }) => {

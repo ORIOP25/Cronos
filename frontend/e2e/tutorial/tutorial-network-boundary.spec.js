@@ -7,6 +7,7 @@ import {
 } from '../utils/clerk-helpers.js'
 
 test.describe.configure({ mode: 'serial' })
+test.use({ storageState: '.auth/admin.json' })
 
 const isAllowedTutorialRequest = (url) => (
   url.includes('/api/v1/members/me')

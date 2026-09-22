@@ -18,7 +18,7 @@ async def test_failed_job_13_snapshot_places_all_new_curriculum_within_job_cap()
         trigger_type=models.ScheduleGenerationTrigger.SCHEDULER_CHANGE,
         immutable_snapshot=snapshot,
         started_at=now,
-        deadline_at=now + timedelta(minutes=5),
+        deadline_at=now + timedelta(seconds=30),
     )
 
     result = await AdaptiveRepairEngine().generate(context)

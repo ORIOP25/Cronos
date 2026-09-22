@@ -8,6 +8,7 @@ import {
 } from '../utils/clerk-helpers.js'
 
 test.describe.configure({ mode: 'serial' })
+test.use({ storageState: '.auth/admin.json' })
 
 test.describe('Year reset — no legacy onboarding', () => {
   test('preserves foundation and tutorial state without reopening onboarding', async ({ page }) => {
