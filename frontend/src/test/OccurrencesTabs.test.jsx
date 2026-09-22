@@ -86,4 +86,61 @@ describe('Occurrences active tab ownership', () => {
     expect(screen.getByRole('button', { name: 'Furo' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Substituída' })).toBeEnabled()
   })
+
+  it('keeps tab labels as the only section headings and preserves panel content', async () => {
+    hooks.occurrences.mockReturnValue({
+      data: {
+        items: [{
+          id: 1,
+          date: '2025-09-15',
+          status: 'GAP',
+          operational_state: 'OPEN_PENDING',
+          planned_teacher_id: 1,
+          class_name: '10.º A',
+          subject_name: 'Programação',
+          version: 1,
+        }],
+      },
+      isLoading: false,
+      isError: false,
+    })
+    hooks.debts.mockReturnValue({
+      data: {
+        total_gaps: 1,
+        total_hours_owed: 2,
+        items: [{
+          class_id: 3,
+          subject_id: 1,
+          class_name: '10.º A',
+          subject_name: 'Programação',
+          teacher_name: 'Prof. António Silva',
+          gap_occurrences: 1,
+          hours_owed: 2,
+        }],
+      },
+      isLoading: false,
+      isError: false,
+    })
+
+    renderWithRouter(<Occurrences />, { initialEntries: ['/absences'] })
+
+    expect(screen.getAllByText('Decisões Pendentes')).toHaveLength(1)
+    expect(screen.getByRole('columnheader', { name: 'Data/Hora' })).toBeInTheDocument()
+    expect(screen.queryByText('1 pendentes')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('tab', { name: /histórico/i }))
+    await waitFor(() => {
+      expect(screen.queryByText('Histórico de Ocorrências')).not.toBeInTheDocument()
+      expect(screen.queryByText('1 no histórico')).not.toBeInTheDocument()
+      expect(screen.getByText('Sem ocorrências no histórico com os filtros atuais.')).toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getByRole('tab', { name: /dívidas de horas/i }))
+    await waitFor(() => {
+      expect(screen.queryByText('Resumo de Dívidas de Horas')).not.toBeInTheDocument()
+      expect(screen.getByText('Furos acumulados')).toBeInTheDocument()
+      expect(screen.getByText('Horas em dívida')).toBeInTheDocument()
+      expect(screen.getByRole('cell', { name: '2h' })).toBeInTheDocument()
+    })
+  })
 })

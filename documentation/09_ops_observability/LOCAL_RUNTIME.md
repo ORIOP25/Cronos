@@ -82,6 +82,14 @@ The development override changes only the frontend runtime and frontend origin.
 - Missing migrations cause application schema errors.
 - Redis failure affects rate limits, readiness, and background dispatch.
 
+## Safe Stop and Cleanup
+
+- Use `docker compose stop` when you only need to stop Cronos.
+- Obtain explicit approval before running `docker compose down`.
+- Never run `docker compose down -v` during repository cleanup or recovery.
+- Never prune Docker volumes during repository cleanup or recovery.
+- Preserve database and Redis volumes until recovery checks pass.
+
 ## Verification Procedure
 
 1. Run `docker compose config` with required variables.

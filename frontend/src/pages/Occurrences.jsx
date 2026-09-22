@@ -478,12 +478,6 @@ const OccurrencesPanel = ({
     [occurrences]
   )
 
-  const pendingCount = useMemo(
-    () => sortedOccurrences.filter((occ) => getOperationalState(occ) === 'OPEN_PENDING').length,
-    [sortedOccurrences]
-  )
-  const resolvedCount = sortedOccurrences.length - pendingCount
-
   const visibleOccurrences = useMemo(
     () => sortedOccurrences.filter((occ) => mode === 'pending'
       ? getOperationalState(occ) === 'OPEN_PENDING'
@@ -626,12 +620,6 @@ const OccurrencesPanel = ({
         isLoading={cancelMutation.isPending}
         variant="warning"
       />
-
-      <div className="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
-        <div className="text-muted small">
-          {mode === 'pending' ? `${pendingCount} pendentes` : `${resolvedCount} no histórico`}
-        </div>
-      </div>
 
       {visibleOccurrences.length === 0 && (
         <CAlert color="light" className="mb-0">

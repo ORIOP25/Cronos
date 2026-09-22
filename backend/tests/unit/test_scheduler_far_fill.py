@@ -3,6 +3,11 @@ from datetime import date
 
 from ortools.sat.python import cp_model
 
+from app.scheduler.domain.quality import (
+    ScheduleQualityEvaluator,
+    quality_policy_from_snapshot,
+    quality_slots_from_snapshot,
+)
 from app.services.scheduler_candidates import (
     CandidateUniverse,
     CandidateUniverseBuilder,
@@ -14,7 +19,7 @@ from app.services.scheduler_complete_demand import (
     CompleteDemandLedgerBuilder,
     DemandModule,
 )
-from app.services.scheduler_far_fill import FarFutureFiller
+from app.services.scheduler_far_fill import AssembledScheduleBlock, FarFutureFiller
 from tests.unit.test_scheduler_candidates import _snapshot
 
 
@@ -229,6 +234,79 @@ def test_far_fill_post_pass_moves_to_better_availability_on_same_completion_date
 
     assert assembly.is_complete is True
     assert [(row.timeslot_id, row.availability_score) for row in assembly.blocks] == [(2, 2)]
+
+
+def test_far_fill_post_pass_rejects_quality_move_that_reorders_modules():
+    output_date = date(2025, 9, 1)
+    snapshot = {
+        "lunch_rules": None,
+        "timetable_grid": [
+            {"id": 1, "day_of_week": 0, "start_time": "09:00:00", "end_time": "10:00:00"},
+            {"id": 2, "day_of_week": 0, "start_time": "10:00:00", "end_time": "11:00:00"},
+            {"id": 3, "day_of_week": 0, "start_time": "11:00:00", "end_time": "12:00:00"},
+        ],
+    }
+    blocks = [
+        AssembledScheduleBlock(
+            stable_block_key="module-1",
+            class_id=1,
+            subject_id=2,
+            teacher_id=3,
+            room_id=5,
+            output_date=output_date,
+            timeslot_id=2,
+            start_minute=600,
+            end_minute=660,
+            duration_minutes=60,
+            module_sequence_index=1,
+            availability_score=1,
+            source="optimized",
+        ),
+        AssembledScheduleBlock(
+            stable_block_key="module-2",
+            class_id=1,
+            subject_id=2,
+            teacher_id=3,
+            room_id=5,
+            output_date=output_date,
+            timeslot_id=3,
+            start_minute=660,
+            end_minute=720,
+            duration_minutes=60,
+            module_sequence_index=2,
+            availability_score=1,
+            source="provisional",
+        ),
+    ]
+    preferred = PlacementCandidate(
+        candidate_key="module-2-preferred",
+        class_id=1,
+        subject_id=2,
+        teacher_id=3,
+        room_id=5,
+        output_date=output_date,
+        timeslot_id=1,
+        start_minute=540,
+        end_minute=600,
+        duration_minutes=60,
+        availability_score=2,
+    )
+    evaluator = ScheduleQualityEvaluator(
+        quality_policy_from_snapshot(snapshot),
+        quality_slots_from_snapshot(snapshot),
+    )
+
+    result = FarFutureFiller()._quality_post_pass(
+        blocks,
+        (preferred,),
+        evaluator,
+        None,
+        None,
+    )
+
+    ordered = sorted(result, key=lambda row: (row.output_date, row.start_minute))
+    assert [row.module_sequence_index for row in ordered] == [1, 2]
+    assert next(row for row in result if row.module_sequence_index == 2).start_minute == 660
 
 
 def test_far_fill_repairs_greedy_dead_end_with_exact_residual_solver():

@@ -98,11 +98,14 @@ class CompleteGenerationEngine:
                 },
             )
 
+        far_window_start = (
+            school_start if not near_result.selected else horizon.end_date + timedelta(days=1)
+        )
         far_universe = await asyncio.to_thread(
             candidate_builder.build,
             snapshot,
             ledger,
-            window_start=horizon.end_date + timedelta(days=1),
+            window_start=far_window_start,
             window_end=hard_end,
             deadline_at=context.solve_deadline_at,
         )

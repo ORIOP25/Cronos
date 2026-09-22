@@ -692,7 +692,13 @@ class FarFutureFiller:
         lunch: tuple[int, int, int] | None,
     ) -> bool:
         occupied: dict[tuple[str, int, date], list[tuple[int, int]]] = defaultdict(list)
+        last_module_by_curriculum: dict[tuple[int, int], int] = {}
         for block in sorted(blocks, key=self._assembled_order):
+            curriculum_key = (block.class_id, block.subject_id)
+            previous = last_module_by_curriculum.get(curriculum_key)
+            if previous is not None and block.module_sequence_index < previous:
+                return False
+            last_module_by_curriculum[curriculum_key] = block.module_sequence_index
             candidate = self._candidate_from_block(block)
             if not self._resources_available(candidate, occupied):
                 return False

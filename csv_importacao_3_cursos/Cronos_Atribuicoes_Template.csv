@@ -1,0 +1,79 @@
+﻿Sigla do curso;Nome da turma;Nome da disciplina;Email do professor
+TGPSI;TGPSI 10;Português;t01.ana.costa@example.com
+TGPSI;TGPSI 10;Inglês;t04.eva.sa@example.com
+TGPSI;TGPSI 10;Matemática;t06.hugo.pires@example.com
+TGPSI;TGPSI 10;Área de Integração;t09.leonor.figueiredo@example.com
+TGPSI;TGPSI 10;Educação Física;t11.olivia.vale@example.com
+TGPSI;TGPSI 10;Programação;t13.rui.martins@example.com
+TGPSI;TGPSI 10;Bases de Dados;t14.sara.faria@example.com
+TGPSI;TGPSI 10;Redes;t15.tomas.neves@example.com
+TGPSI;TGPSI 10;Desenvolvimento Web;t16.vera.lopes@example.com
+TGPSI;TGPSI 11;Português;t02.bernardo.correia@example.com
+TGPSI;TGPSI 11;Inglês;t05.fabio.monteiro@example.com
+TGPSI;TGPSI 11;Matemática;t07.ines.albuquerque@example.com
+TGPSI;TGPSI 11;Área de Integração;t10.mario.cruz@example.com
+TGPSI;TGPSI 11;Educação Física;t12.paulo.loureiro@example.com
+TGPSI;TGPSI 11;Programação;t14.sara.faria@example.com
+TGPSI;TGPSI 11;Bases de Dados;t15.tomas.neves@example.com
+TGPSI;TGPSI 11;Redes;t16.vera.lopes@example.com
+TGPSI;TGPSI 11;Desenvolvimento Web;t13.rui.martins@example.com
+TGPSI;TGPSI 12;Português;t03.catarina.sousa@example.com
+TGPSI;TGPSI 12;Inglês;t04.eva.sa@example.com
+TGPSI;TGPSI 12;Matemática;t08.joao.leal@example.com
+TGPSI;TGPSI 12;Área de Integração;t09.leonor.figueiredo@example.com
+TGPSI;TGPSI 12;Educação Física;t11.olivia.vale@example.com
+TGPSI;TGPSI 12;Programação;t13.rui.martins@example.com
+TGPSI;TGPSI 12;Bases de Dados;t14.sara.faria@example.com
+TGPSI;TGPSI 12;Redes;t15.tomas.neves@example.com
+TGPSI;TGPSI 12;Desenvolvimento Web;t16.vera.lopes@example.com
+TDES;TDES 10;Português;t02.bernardo.correia@example.com
+TDES;TDES 10;Inglês;t05.fabio.monteiro@example.com
+TDES;TDES 10;Matemática;t07.ines.albuquerque@example.com
+TDES;TDES 10;Área de Integração;t10.mario.cruz@example.com
+TDES;TDES 10;Educação Física;t12.paulo.loureiro@example.com
+TDES;TDES 10;Design Gráfico;t17.isa.neves@example.com
+TDES;TDES 10;Tipografia;t19.lara.coelho@example.com
+TDES;TDES 10;Interface e UX;t18.julio.matos@example.com
+TDES;TDES 10;Fotografia;t20.martim.pires@example.com
+TDES;TDES 11;Português;t03.catarina.sousa@example.com
+TDES;TDES 11;Inglês;t04.eva.sa@example.com
+TDES;TDES 11;Matemática;t08.joao.leal@example.com
+TDES;TDES 11;Área de Integração;t09.leonor.figueiredo@example.com
+TDES;TDES 11;Educação Física;t11.olivia.vale@example.com
+TDES;TDES 11;Design Gráfico;t18.julio.matos@example.com
+TDES;TDES 11;Tipografia;t17.isa.neves@example.com
+TDES;TDES 11;Interface e UX;t20.martim.pires@example.com
+TDES;TDES 11;Fotografia;t19.lara.coelho@example.com
+TDES;TDES 12;Português;t01.ana.costa@example.com
+TDES;TDES 12;Inglês;t05.fabio.monteiro@example.com
+TDES;TDES 12;Matemática;t06.hugo.pires@example.com
+TDES;TDES 12;Área de Integração;t10.mario.cruz@example.com
+TDES;TDES 12;Educação Física;t12.paulo.loureiro@example.com
+TDES;TDES 12;Design Gráfico;t17.isa.neves@example.com
+TDES;TDES 12;Tipografia;t19.lara.coelho@example.com
+TDES;TDES 12;Interface e UX;t18.julio.matos@example.com
+TDES;TDES 12;Fotografia;t20.martim.pires@example.com
+TCO;TCO 10;Português;t03.catarina.sousa@example.com
+TCO;TCO 10;Inglês;t04.eva.sa@example.com
+TCO;TCO 10;Matemática;t08.joao.leal@example.com
+TCO;TCO 10;Área de Integração;t09.leonor.figueiredo@example.com
+TCO;TCO 10;Educação Física;t11.olivia.vale@example.com
+TCO;TCO 10;Cozinha;t21.dinis.sousa@example.com
+TCO;TCO 10;Pastelaria;t22.erica.leal@example.com
+TCO;TCO 10;Nutrição;t23.filipe.rocha@example.com
+TCO;TCO 11;Português;t01.ana.costa@example.com
+TCO;TCO 11;Inglês;t05.fabio.monteiro@example.com
+TCO;TCO 11;Matemática;t06.hugo.pires@example.com
+TCO;TCO 11;Área de Integração;t10.mario.cruz@example.com
+TCO;TCO 11;Educação Física;t12.paulo.loureiro@example.com
+TCO;TCO 11;Cozinha;t22.erica.leal@example.com
+TCO;TCO 11;Pastelaria;t21.dinis.sousa@example.com
+TCO;TCO 11;Nutrição;t21.dinis.sousa@example.com
+TCO;TCO 12;Português;t02.bernardo.correia@example.com
+TCO;TCO 12;Inglês;t04.eva.sa@example.com
+TCO;TCO 12;Matemática;t08.joao.leal@example.com
+TCO;TCO 12;Área de Integração;t09.leonor.figueiredo@example.com
+TCO;TCO 12;Educação Física;t11.olivia.vale@example.com
+TCO;TCO 12;Cozinha;t21.dinis.sousa@example.com
+TCO;TCO 12;Pastelaria;t22.erica.leal@example.com
+TCO;TCO 12;Nutrição;t23.filipe.rocha@example.com

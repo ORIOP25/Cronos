@@ -7,7 +7,7 @@ import {
 import CIcon from '@coreui/icons-react'
 import {
   cilArrowLeft, cilPencil, cilSave, cilX,
-  cilPeople, cilBook, cilCheckCircle, cilClock,
+  cilPeople, cilBook, cilCheckCircle,
   cilBookmark, cilChevronRight, cilSettings,
 } from '@coreui/icons'
 
@@ -144,7 +144,7 @@ const SubjectCard = ({ subject, isEditing, editMap, onChangeHours }) => {
         </CProgress>
       </CCardHeader>
       <CCardBody className="py-1 px-3">
-        {subject.modules
+        {[...subject.modules]
           .sort((a, b) => a.order - b.order)
           .map(mod => (
             <ModuleRow
@@ -391,14 +391,6 @@ const ClassDetails = () => {
                     <CIcon icon={cilPeople} size="sm" />
                     <span>{classData.size} alunos</span>
                   </div>
-                  <div className="d-flex align-items-center gap-1 text-muted">
-                    <CIcon icon={cilClock} size="sm" />
-                    <span>{globalStats.completedHours}/{globalStats.totalHours}h</span>
-                  </div>
-                  <div className="d-flex align-items-center gap-1 text-muted">
-                    <CIcon icon={cilCheckCircle} size="sm" />
-                    <span>{globalStats.completedModules}/{globalStats.totalModules} módulos</span>
-                  </div>
                 </div>
               </div>
               <div className="d-flex gap-2">
@@ -412,56 +404,12 @@ const ClassDetails = () => {
         </CCardBody>
       </CCard>
 
-      {/* ==== BARRA GLOBAL DE PROGRESSO ==== */}
-      {globalStats.totalHours > 0 && (
-        <CCard className="mb-4 border-0 shadow-sm">
-          <CCardBody className="py-3">
-            <div className="d-flex justify-content-between align-items-center mb-2">
-              <strong style={{ fontSize: '0.9rem' }}>Progresso Global</strong>
-              <CBadge
-                shape="rounded-pill"
-                className="zen-badge-progress"
-                style={{ fontSize: '0.85rem', backgroundColor: getProgressColor(globalStats.pct) }}
-              >
-                {globalStats.pct}%
-              </CBadge>
-            </div>
-            {/* Barra nativa — substitui CProgress/CProgressBar que não renderizava */}
-            <div
-              className="mb-1"
-              style={{ height: '12px', borderRadius: '6px', backgroundColor: 'var(--color-bg-muted)', overflow: 'hidden' }}
-            >
-              <div
-                style={{
-                  height: '100%',
-                  width: `${Math.min(Number(globalStats.pct) || 0, 100)}%`,
-                  backgroundColor: getProgressColor(globalStats.pct),
-                  borderRadius: '6px',
-                  transition: 'width 0.5s ease',
-                }}
-              />
-            </div>
-            <small className="text-muted">
-              {globalStats.completedHours} de {globalStats.totalHours} horas · {globalStats.completedModules} de {globalStats.totalModules} módulos concluídos
-            </small>
-          </CCardBody>
-        </CCard>
-      )}
-
       {/* ==== RESUMO DISCIPLINAS & PROFESSORES (inline) ==== */}
       <CCard className="mb-4 border-0 shadow-sm">
         <CCardHeader className="bg-transparent d-flex justify-content-between align-items-center">
           <div className="d-flex align-items-center gap-2">
             <CIcon icon={cilSettings} className="text-primary" />
             <strong>Disciplinas &amp; Professores</strong>
-            <CBadge color="primary" shape="rounded-pill">
-              {classSubjects?.subjects?.length || 0}
-            </CBadge>
-            {(classSubjects?.subjects || []).some(s => !s.teacher_id) && (
-              <CBadge color="warning" shape="rounded-pill">
-                {classSubjects.subjects.filter(s => !s.teacher_id).length} sem professor
-              </CBadge>
-            )}
           </div>
           <CButton
             color="primary"
@@ -521,9 +469,6 @@ const ClassDetails = () => {
           <div className="d-flex align-items-center gap-2">
             <CIcon icon={cilBook} className="text-info" />
             <strong>Progresso por Disciplina</strong>
-            <CBadge color="info" shape="rounded-pill">
-              {classData.subjects?.length || 0}
-            </CBadge>
           </div>
           {editingProgress ? (
             <div className="d-flex gap-1">
@@ -553,17 +498,53 @@ const ClassDetails = () => {
               Nenhuma disciplina associada ao curso desta turma.
             </p>
           ) : (
-            classData.subjects
-              .sort((a, b) => a.name.localeCompare(b.name))
-              .map(subject => (
-                <SubjectCard
-                  key={subject.id}
-                  subject={subject}
-                  isEditing={editingProgress}
-                  editMap={progressEdit}
-                  onChangeHours={handleChangeHours}
-                />
-              ))
+            <>
+              <div className="mb-4">
+                <div className="d-flex justify-content-between align-items-center mb-2">
+                  <strong style={{ fontSize: '0.9rem' }}>Progresso Global</strong>
+                  <CBadge
+                    shape="rounded-pill"
+                    className="zen-badge-progress"
+                    style={{ fontSize: '0.85rem', backgroundColor: getProgressColor(globalStats.pct) }}
+                  >
+                    {globalStats.pct}%
+                  </CBadge>
+                </div>
+                <div
+                  className="mb-1"
+                  role="progressbar"
+                  aria-label="Progresso global da turma"
+                  aria-valuemin="0"
+                  aria-valuemax="100"
+                  aria-valuenow={Math.min(Math.max(Number(globalStats.pct) || 0, 0), 100)}
+                  style={{ height: '12px', borderRadius: '6px', backgroundColor: 'var(--color-bg-muted)', overflow: 'hidden' }}
+                >
+                  <div
+                    style={{
+                      height: '100%',
+                      width: `${Math.min(Math.max(Number(globalStats.pct) || 0, 0), 100)}%`,
+                      backgroundColor: getProgressColor(globalStats.pct),
+                      borderRadius: '6px',
+                      transition: 'width 0.5s ease',
+                    }}
+                  />
+                </div>
+                <small className="text-muted">
+                  {globalStats.completedHours} de {globalStats.totalHours} horas · {globalStats.completedModules} de {globalStats.totalModules} módulos concluídos
+                </small>
+              </div>
+              {[...classData.subjects]
+                .sort((a, b) => a.name.localeCompare(b.name))
+                .map(subject => (
+                  <SubjectCard
+                    key={subject.id}
+                    subject={subject}
+                    isEditing={editingProgress}
+                    editMap={progressEdit}
+                    onChangeHours={handleChangeHours}
+                  />
+                ))}
+            </>
           )}
         </CCardBody>
       </CCard>

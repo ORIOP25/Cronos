@@ -39,7 +39,7 @@ const common = {
   globals: true,
   isolate: true,
   pool: 'threads',
-  maxWorkers: 4,
+  maxWorkers: process.env.CI ? 4 : 6,
   css: false,
   exclude: ['e2e/**', 'scripts/**', 'node_modules/**', ...supportFiles],
 }
@@ -87,7 +87,6 @@ export default defineConfig({
           name: 'dom',
           environment: 'jsdom',
           pool: 'threads',
-          maxWorkers: 4,
           setupFiles: [
             './src/test/streams.setup.js',
             './src/test/setup.js',

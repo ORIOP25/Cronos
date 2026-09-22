@@ -1,0 +1,12 @@
+﻿Nome da sala;Tipo de sala;Capacidade
+N-101;Normal;30
+N-102;Normal;28
+N-103;Normal;26
+N-201;Normal;32
+N-202;Normal;24
+L-INF-1;Laboratório;30
+L-INF-2;Laboratório;28
+L-COZ;Laboratório;30
+A-DES-1;Artes;30
+A-ATELIER;Artes;26
+G-PAVILHAO;Ginásio;32

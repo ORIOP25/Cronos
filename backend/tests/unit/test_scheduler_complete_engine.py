@@ -132,6 +132,24 @@ async def test_complete_engine_retains_near_search_exhaustion_scope(monkeypatch)
     assert result.metrics["quality_optimization_complete"] is False
 
 
+async def test_complete_engine_fills_from_school_start_when_near_search_exhausts(monkeypatch):
+    snapshot = _snapshot()
+    snapshot["lunch_rules"] = None
+    snapshot["module_accounting"] = [
+        {"id": 7, "subject_id": 2, "required_minutes": 60, "sequence": 1}
+    ]
+
+    monkeypatch.setattr(
+        "app.services.scheduler_complete_engine.NearFutureOptimizer.optimize",
+        lambda *_args, **_kwargs: NearFutureResult((), "search_exhausted", 0, 1, {}),
+    )
+
+    result = await CompleteGenerationEngine().generate(_context(snapshot))
+
+    assert isinstance(result, ValidatedGenerationResult)
+    assert result.blocks[0].date == date.fromisoformat(snapshot["start_date"])
+
+
 async def test_complete_engine_surfaces_near_model_validation_failure(monkeypatch):
     snapshot = _snapshot()
     snapshot["module_accounting"] = [
