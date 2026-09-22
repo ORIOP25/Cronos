@@ -141,8 +141,10 @@ jobs:
               raise SystemExit(f"{skipped} skipped tests are not allowed")
           PY
       - name: Build hardened backend image
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository
         run: docker build --target runtime -t cronos-backend:test backend
       - name: Verify privacy maintenance task in rebuilt image
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository
         run: >-
           docker run --rm
           -e DATABASE_URL=postgresql+asyncpg://ci:ci@localhost:5432/cronos_test_db
@@ -273,6 +275,14 @@ jobs:
           E2E_CLERK_TEACHER_EMAIL: ${{ env.CI_E2E_CLERK_TEACHER_EMAIL }}
           E2E_CLERK_INVITE_CREATE_EMAIL: ${{ env.E2E_CLERK_INVITE_CREATE_EMAIL }}
           E2E_CLERK_INVITE_CONVERT_EMAIL: ${{ env.E2E_CLERK_INVITE_CONVERT_EMAIL }}
+
+      - name: Verify privacy maintenance task in production image
+        run: |
+          docker build --target runtime -t cronos-backend:test backend
+          docker run --rm \
+            -e DATABASE_URL=postgresql+asyncpg://ci:ci@localhost:5432/cronos_test_db \
+            cronos-backend:test python -c \
+            "from app.celery_worker import celery_app; import app.privacy_maintenance_worker; assert 'privacy.run_maintenance' in celery_app.tasks"
 
       - name: Start CI infrastructure
         run: docker compose -f docker-compose.ci.yml up -d --wait db redis
