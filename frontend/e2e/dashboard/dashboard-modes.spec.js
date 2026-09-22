@@ -7,6 +7,7 @@ import {
 } from '../utils/clerk-helpers.js'
 
 test.describe.configure({ mode: 'serial' })
+test.use({ storageState: '.auth/admin.json' })
 
 test.describe('Dashboard — canonical modes', () => {
   test('renders exactly one preparation or operational mode', async ({ page }) => {

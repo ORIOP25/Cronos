@@ -86,9 +86,8 @@ export default defineConfig({
           ...common,
           name: 'dom',
           environment: 'jsdom',
-          pool: 'vmThreads',
+          pool: 'threads',
           maxWorkers: 4,
-          vmMemoryLimit: '512MB',
           setupFiles: [
             './src/test/streams.setup.js',
             './src/test/setup.js',

@@ -171,7 +171,7 @@ def _quote_identifier(identifier: str) -> str:
     return '"' + identifier.replace('"', '""') + '"'
 
 
-def _truncate_public_tables() -> None:
+def _public_table_list() -> str:
     with sync_test_engine.begin() as conn:
         rows = (
             conn.execute(
@@ -188,8 +188,12 @@ def _truncate_public_tables() -> None:
             .scalars()
             .all()
         )
-        if rows:
-            table_list = ", ".join(f"public.{_quote_identifier(table)}" for table in rows)
+    return ", ".join(f"public.{_quote_identifier(table)}" for table in rows)
+
+
+def _truncate_public_tables(table_list: str) -> None:
+    if table_list:
+        with sync_test_engine.begin() as conn:
             conn.execute(text(f"TRUNCATE TABLE {table_list} RESTART IDENTITY CASCADE"))
 
 
@@ -204,13 +208,13 @@ def migrated_test_database(worker_id):
         conn.execute(text("CREATE SCHEMA public"))
         conn.execute(text("GRANT ALL ON SCHEMA public TO public"))
     command.upgrade(_alembic_config(), "head")
-    yield
+    yield _public_table_list()
 
 
 @pytest.fixture
 def clean_database(migrated_test_database):
     yield
-    _truncate_public_tables()
+    _truncate_public_tables(migrated_test_database)
 
 
 # --- Fixture: BD Assíncrona ---

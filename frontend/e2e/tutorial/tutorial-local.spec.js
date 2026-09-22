@@ -8,6 +8,7 @@ import {
 import { PUBLIC_ASSET_REVISION } from '../../src/utils/publicAsset.js'
 
 test.describe.configure({ mode: 'serial' })
+test.use({ storageState: '.auth/admin.json' })
 
 test.describe('Tutorial — cenário local v3', () => {
   test.beforeEach(async ({ page }) => {

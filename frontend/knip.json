@@ -3,6 +3,7 @@
   "ignoreExportsUsedInFile": true,
   "entry": [
     "e2e/global.setup.js",
+    "e2e/auth.state.setup.js",
     "src/test/**/*.{js,jsx}",
     "src/features/marketing/renderPublicRoute.jsx",
     "src/pages/NotFoundPage.jsx"

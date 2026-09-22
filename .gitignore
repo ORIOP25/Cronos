@@ -21,6 +21,7 @@ coverage/
 frontend/playwright-report/
 frontend/test-results/
 frontend/coverage/
+frontend/.auth/
 .test-artifacts/
 
 # --- Frontend (Node) ---

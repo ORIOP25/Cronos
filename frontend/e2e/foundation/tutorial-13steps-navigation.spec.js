@@ -6,6 +6,8 @@ import {
   loginAsAdminReal,
 } from '../utils/clerk-helpers.js'
 
+test.use({ storageState: '.auth/admin.json' })
+
 test.describe('Tutorial — 13 passos por funcionalidade', () => {
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(() => {

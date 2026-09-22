@@ -445,6 +445,8 @@ async function firstPublishedFutureSlot(page, classId) {
 }
 
 test.describe('Scheduler generation', () => {
+  test.use({ storageState: '.auth/admin.json' })
+
   test('admin publishes and registers completed and occurrence active blocks', async ({ page }) => {
     test.setTimeout(180_000)
 
