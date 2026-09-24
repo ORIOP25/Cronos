@@ -12,4 +12,4 @@ redis==8.1.0
 slowapi==0.1.10
 structlog==26.1.0
 svix==2.5.0
-uvicorn==0.52.4
+uvicorn==0.53.0
