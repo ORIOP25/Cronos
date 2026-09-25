@@ -33,6 +33,55 @@ describe('foundationModel', () => {
     })
   })
 
+  it('normalizes valid hours and blanks incomplete drafts before autosave', () => {
+    expect(serializeFoundationDraftValues({
+      opening_time: '8:30',
+      closing_time: '8:3',
+      lunch_window_start: '12:30:00',
+      lunch_window_end: '',
+    })).toEqual({
+      opening_time: '08:30',
+      closing_time: null,
+      lunch_window_start: '12:30',
+      lunch_window_end: null,
+    })
+  })
+
+  it('rejects incomplete and out-of-range hours in opening and lunch steps', () => {
+    expect(validateFoundationStep(STEP_OPENING, {
+      ...initialFoundationDraftValues,
+      opening_time: '8:3',
+      closing_time: '17:30',
+    })).toHaveProperty('opening_time')
+
+    expect(validateFoundationStep(STEP_OPENING, {
+      ...initialFoundationDraftValues,
+      opening_time: '25:00',
+      closing_time: '17:30',
+    })).toHaveProperty('opening_time')
+
+    expect(validateFoundationStep(STEP_LUNCH, {
+      ...initialFoundationDraftValues,
+      lunch_window_start: '12:30 PM',
+      lunch_window_end: '14:00',
+    })).toHaveProperty('lunch_window_start')
+
+    expect(validateFoundationStep(STEP_OPENING, {
+      ...initialFoundationDraftValues,
+      opening_time: '8:30',
+      closing_time: '17:30',
+    })).toEqual({})
+  })
+
+  it('builds the daily grid from valid 24h hours', () => {
+    const slots = buildDailyTimeslots({
+      ...initialFoundationDraftValues,
+      opening_time: '8:30',
+      closing_time: '10:30',
+    })
+    expect(slots.map(({ start, end }) => `${start}-${end}`)).toEqual(['08:30-09:20', '09:30-10:20'])
+  })
+
   it('requires school start date and hard end date with proper order (Step 1)', () => {
     expect(
       validateFoundationStep(STEP_PERIOD, {

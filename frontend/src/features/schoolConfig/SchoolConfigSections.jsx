@@ -17,11 +17,13 @@ import {
   toGridConfigurationPayload,
   toSchoolSettingsPayload,
 } from '../../utils/schoolConfigPayloads'
+import { timeOfDayToMinutes } from '../../utils/timeOfDay'
 import { useTransientMessage } from '../../hooks/useTransientMessage'
 import FeedbackBanner from '../../components/FeedbackBanner'
 import StatePanel from '../../components/StatePanel'
 import ConfirmationModal from '../../components/ConfirmationModal'
 import PortugueseDateInput from '../../components/PortugueseDateInput'
+import { TimeField } from '../../components/TimeField'
 import { useTimeslots } from '../catalog/data'
 import {
   useCalendarEvents,
@@ -398,7 +400,7 @@ const SettingsEditor = ({ settings, onSoftResetSuccess, onSaveSuccess }) => {
             />
             <CInputGroupText id="repairWindow-unit">Dias</CInputGroupText>
           </CInputGroup>
-          <div id="repairWindow-help" className="form-text">Período em que se evita refazer horários</div>
+          <div id="repairWindow-help" className="form-text">Dias da grelha semanal em que se evita refazer horários. 0 permite alterar hoje; 1 protege o primeiro dia selecionado.</div>
         </CCol>
       </CRow>
       
@@ -528,27 +530,23 @@ const GridEditor = ({ orgId, initialFormData, initialGridSettings }) => {
     const duration = Number(formData.slot_duration_minutes)
     const breakDuration = Number(formData.break_duration_minutes)
     const lunchDuration = Number(gridSettings.lunch_min_duration_minutes)
-    const toMinutes = (value) => {
-      const [hours, minutes] = String(value || '').split(':').map(Number)
-      return Number.isFinite(hours) && Number.isFinite(minutes) ? hours * 60 + minutes : NaN
-    }
-    const lunchStart = toMinutes(gridSettings.lunch_window_start)
-    const lunchEnd = toMinutes(gridSettings.lunch_window_end)
+    const startMinutes = timeOfDayToMinutes(formData.start_time)
+    const endMinutes = timeOfDayToMinutes(formData.end_time)
+    const lunchStart = timeOfDayToMinutes(gridSettings.lunch_window_start)
+    const lunchEnd = timeOfDayToMinutes(gridSettings.lunch_window_end)
     if (
-      !formData.start_time
-      || !formData.end_time
-      || !gridSettings.lunch_window_start
-      || !gridSettings.lunch_window_end
+      !Number.isFinite(startMinutes)
+      || !Number.isFinite(endMinutes)
+      || endMinutes <= startMinutes
+      || !Number.isFinite(lunchStart)
+      || !Number.isFinite(lunchEnd)
+      || lunchEnd <= lunchStart
       || !Number.isFinite(duration)
       || duration <= 0
       || !Number.isFinite(breakDuration)
       || breakDuration < 0
       || !Number.isFinite(lunchDuration)
       || lunchDuration <= 0
-      || !Number.isFinite(lunchStart)
-      || !Number.isFinite(lunchEnd)
-      || lunchEnd <= lunchStart
-      || formData.end_time <= formData.start_time
       || !Object.values(formData.days).some(Boolean)
     ) {
       return 'Preencha uma grelha válida, com pelo menos um dia de funcionamento.'
@@ -596,10 +594,10 @@ const GridEditor = ({ orgId, initialFormData, initialGridSettings }) => {
       <CForm onSubmit={handleSubmit}>
         <CRow className="mb-4 align-items-start">
           <CCol md={3}>
-            <CFormInput id="gridStart" type="time" label="Abertura da Escola" value={formData.start_time} onChange={(e) => setFormData({ ...formData, start_time: e.target.value })} />
+            <TimeField id="gridStart" label="Abertura da Escola" value={formData.start_time} onChange={(value) => setFormData({ ...formData, start_time: value })} />
           </CCol>
           <CCol md={3}>
-            <CFormInput id="gridEnd" type="time" label="Fecho da Escola" value={formData.end_time} onChange={(e) => setFormData({ ...formData, end_time: e.target.value })} />
+            <TimeField id="gridEnd" label="Fecho da Escola" value={formData.end_time} onChange={(value) => setFormData({ ...formData, end_time: value })} />
           </CCol>
           <CCol md={3}>
             <CFormLabel htmlFor="slotDuration">Duração da Aula</CFormLabel>
@@ -619,10 +617,10 @@ const GridEditor = ({ orgId, initialFormData, initialGridSettings }) => {
 
         <CRow className="mb-4 align-items-start">
           <CCol md={4}>
-            <CFormInput id="lunchStart" type="time" label="Início do Almoço" value={gridSettings.lunch_window_start} onChange={(e) => setGridSettings({ ...gridSettings, lunch_window_start: e.target.value })} />
+            <TimeField id="lunchStart" label="Início do Almoço" value={gridSettings.lunch_window_start} onChange={(value) => setGridSettings({ ...gridSettings, lunch_window_start: value })} />
           </CCol>
           <CCol md={4}>
-            <CFormInput id="lunchEnd" type="time" label="Fim do Almoço" value={gridSettings.lunch_window_end} onChange={(e) => setGridSettings({ ...gridSettings, lunch_window_end: e.target.value })} />
+            <TimeField id="lunchEnd" label="Fim do Almoço" value={gridSettings.lunch_window_end} onChange={(value) => setGridSettings({ ...gridSettings, lunch_window_end: value })} />
           </CCol>
           <CCol md={4}>
             <CFormLabel htmlFor="lunchMin">Duração Mínima Almoço</CFormLabel>

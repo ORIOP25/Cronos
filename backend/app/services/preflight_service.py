@@ -4,11 +4,8 @@ from sqlalchemy import select as sa_select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models, schemas
-from app.core.task_keys import (
-    resolve_repair_window_days as _resolve_repair_window_days,
-)
 from app.services.availability_matrix_service import AvailabilityMatrixInspector
-from app.services.scheduler_planning import resolve_expansion_start_date
+from app.services.scheduler_fingerprint_service import SchedulerFingerprintService
 from app.services.scheduler_state_service import SchedulerStateService
 
 logger = structlog.get_logger(__name__)
@@ -26,25 +23,6 @@ async def _get_latest_settings_with_dates(
         )
     )
     return settings_result.scalars().first()
-
-
-def _validate_repair_generation_window(org_settings: models.OrganizationSettings) -> str | None:
-    repair_window_days = _resolve_repair_window_days(org_settings)
-    editable_start_date = resolve_expansion_start_date(
-        org_settings.school_start_date,
-        adaptive_repair=True,
-        repair_window_days=repair_window_days,
-    )
-    hard_end_date = org_settings.school_hard_end_date
-    if hard_end_date is None:
-        return None
-    if hard_end_date < editable_start_date:
-        return (
-            "Reparacao adaptativa bloqueada: nao existe horizonte fora da janela "
-            f"de estabilidade (até {editable_start_date.isoformat()}) antes do hard end date "
-            f"({hard_end_date.isoformat()})."
-        )
-    return None
 
 
 async def _get_generation_workload_counts(
@@ -511,14 +489,27 @@ class PreflightService:
                 )
             )
 
-        if strategy == models.ScheduleGenerationStrategy.ADAPTIVE_REPAIR and org_settings:
-            window_error = _validate_repair_generation_window(org_settings)
-            if window_error:
+        if (
+            strategy == models.ScheduleGenerationStrategy.ADAPTIVE_REPAIR
+            and org_settings is not None
+            and school_year_id is not None
+            and ts_count > 0
+        ):
+            policy = await SchedulerFingerprintService(self.db).repair_policy_snapshot(
+                organization_id,
+                school_year_id,
+            )
+            hard_end_date = org_settings.school_hard_end_date
+            if hard_end_date is not None and hard_end_date < policy.editable_start_date:
                 issues.append(
                     schemas.PreflightIssue(
                         code="REPAIR_WINDOW_INFEASIBLE",
                         severity="BLOCKER",
-                        message=window_error,
+                        message=(
+                            "Reparacao adaptativa bloqueada: nao existe horizonte fora da janela "
+                            f"de estabilidade (até {policy.editable_start_date.isoformat()}) antes "
+                            f"do hard end date ({hard_end_date.isoformat()})."
+                        ),
                         route="/schedules",
                     )
                 )
@@ -534,12 +525,7 @@ class PreflightService:
 
         fingerprint = None
         if school_year_id is not None and resolve_fingerprint:
-            from app.services.scheduler_fingerprint_service import (
-                SchedulerFingerprintService,
-            )
-
-            fps = SchedulerFingerprintService(self.db)
-            fp_result = await fps.generation_input_fingerprint(
+            fp_result = await SchedulerFingerprintService(self.db).generation_input_fingerprint(
                 organization_id=organization_id,
                 school_year_id=school_year_id,
                 strategy=strategy,

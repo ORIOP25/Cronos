@@ -22,6 +22,7 @@ const nodeTestFiles = [
   'src/test/securityHeaders.test.js',
   'src/test/simulationEngine.test.js',
   'src/test/terminology.test.js',
+  'src/test/timeOfDay.test.js',
   'src/test/tutorialApiAdapter.test.js',
   'src/test/tutorialEngine.test.js',
   'src/test/weekSubmission.test.js',

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from sqlalchemy import and_, func, select
@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models
 from app.core.task_keys import resolve_repair_window_days
+from app.scheduler.domain.calendar import first_editable_grid_date
 from app.services.scheduler_serialization import (
     canonical_json_bytes,
     canonical_json_value,
@@ -97,15 +98,27 @@ class SchedulerFingerprintService:
             raise SchedulerFingerprintError("Repair stability window cannot be negative.")
         stability_window_days = resolve_repair_window_days(settings)
         school_today = instant.astimezone(school_timezone).date()
-        editable_start_date = max(
+        grid_days = sorted(
+            (
+                await self._db.scalars(
+                    select(models.Timeslot.day_of_week)
+                    .where(models.Timeslot.organization_id == organization_id)
+                    .distinct()
+                )
+            ).all()
+        )
+        editable_start_date = first_editable_grid_date(
+            school_today,
             school_year.start_date,
-            school_today + timedelta(days=stability_window_days),
+            set(grid_days),
+            stability_window_days,
         )
         snapshot = canonical_json_value(
             {
                 "repair_stability_window_days": stability_window_days,
                 "school_timezone": school_year.timezone,
                 "school_today": school_today,
+                "grid_days": grid_days,
                 "editable_start_date": editable_start_date,
             }
         )

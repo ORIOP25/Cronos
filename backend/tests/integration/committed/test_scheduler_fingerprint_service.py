@@ -202,6 +202,7 @@ async def test_repair_policy_snapshot_uses_school_local_date_and_allows_zero(db_
     assert result.editable_start_date == date(2026, 6, 2)
     assert result.snapshot == {
         "editable_start_date": "2026-06-02",
+        "grid_days": [],
         "repair_stability_window_days": 0,
         "school_timezone": "Europe/Lisbon",
         "school_today": "2026-06-02",
@@ -241,7 +242,18 @@ async def test_repair_policy_change_has_separate_hash_from_generation_inputs(db_
         school_hard_end_date=school_year.hard_end_date,
         repair_stability_window_days=7,
     )
-    db_session.add_all([state, settings])
+    db_session.add_all(
+        [
+            state,
+            settings,
+            models.Timeslot(
+                organization_id=organization.id,
+                day_of_week=0,
+                start_time=time(9, 0),
+                end_time=time(10, 0),
+            ),
+        ]
+    )
     await db_session.commit()
     service = SchedulerFingerprintService(db_session)
     instant = datetime(2026, 1, 5, 12, tzinfo=UTC)
@@ -267,9 +279,71 @@ async def test_repair_policy_change_has_separate_hash_from_generation_inputs(db_
 
     assert generation_after.value == generation_before.value
     assert policy_after.value != policy_before.value
-    assert policy_before.editable_start_date == date(2026, 1, 12)
-    assert policy_after.editable_start_date == date(2026, 1, 19)
+    assert policy_before.editable_start_date == date(2026, 2, 23)
+    assert policy_after.editable_start_date == date(2026, 4, 13)
     assert state.scheduler_state_version == 0
+
+
+async def test_repair_policy_counts_grid_days_and_ignores_calendar_events(db_session):
+    organization = models.Organization(name="Grid Policy", plan_status="active")
+    db_session.add(organization)
+    await db_session.flush()
+    school_year = models.SchedulerSchoolYear(
+        organization_id=organization.id,
+        label="2025/2026",
+        start_date=date(2025, 9, 1),
+        hard_end_date=date(2026, 7, 15),
+        timezone="Europe/Lisbon",
+    )
+    settings = models.OrganizationSettings(
+        organization_id=organization.id,
+        school_start_date=school_year.start_date,
+        school_hard_end_date=school_year.hard_end_date,
+        repair_stability_window_days=2,
+    )
+    db_session.add_all(
+        [
+            school_year,
+            settings,
+            models.Timeslot(
+                organization_id=organization.id,
+                day_of_week=0,
+                start_time=time(9, 0),
+                end_time=time(10, 0),
+            ),
+            models.SchoolCalendarEvent(
+                organization_id=organization.id,
+                name="Feriado na segunda",
+                start_date=date(2026, 1, 12),
+                end_date=date(2026, 1, 12),
+                event_type=models.CalendarEventType.national_holiday,
+                source=models.CalendarEventSource.auto,
+            ),
+        ]
+    )
+    await db_session.commit()
+    service = SchedulerFingerprintService(db_session)
+    instant = datetime(2026, 1, 5, 12, tzinfo=UTC)
+
+    policy = await service.repair_policy_snapshot(organization.id, school_year.id, now=instant)
+
+    assert policy.snapshot["grid_days"] == [0]
+    assert policy.editable_start_date == date(2026, 1, 19)
+
+    db_session.add(
+        models.Timeslot(
+            organization_id=organization.id,
+            day_of_week=1,
+            start_time=time(9, 0),
+            end_time=time(10, 0),
+        )
+    )
+    await db_session.commit()
+    changed = await service.repair_policy_snapshot(organization.id, school_year.id, now=instant)
+
+    assert changed.snapshot["grid_days"] == [0, 1]
+    assert changed.value != policy.value
+    assert changed.editable_start_date == date(2026, 1, 12)
 
 
 async def test_class_subject_requirements_include_scheduler_inputs_and_ignore_other_year_events(

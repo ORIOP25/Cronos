@@ -1,4 +1,5 @@
-import { CFormLabel, CFormInput, CFormFeedback, CRow, CCol } from '@coreui/react'
+import { CRow, CCol } from '@coreui/react'
+import { TimeField } from '../../../components/TimeField'
 
 export function OpeningStep({ values, fieldErrors, onChange }) {
   return (
@@ -10,33 +11,23 @@ export function OpeningStep({ values, fieldErrors, onChange }) {
 
       <CRow className="g-3">
         <CCol md={6}>
-          <CFormLabel htmlFor="opening_time">Hora de Abertura da Escola *</CFormLabel>
-          <CFormInput
-            type="time"
+          <TimeField
             id="opening_time"
-            name="opening_time"
+            label="Hora de Abertura da Escola *"
             value={values.opening_time || '08:30'}
-            invalid={Boolean(fieldErrors.opening_time)}
-            onChange={(e) => onChange('opening_time', e.target.value)}
+            error={fieldErrors.opening_time}
+            onChange={(value) => onChange('opening_time', value)}
           />
-          {fieldErrors.opening_time && (
-            <CFormFeedback invalid>{fieldErrors.opening_time}</CFormFeedback>
-          )}
         </CCol>
 
         <CCol md={6}>
-          <CFormLabel htmlFor="closing_time">Hora de Encerramento da Escola *</CFormLabel>
-          <CFormInput
-            type="time"
+          <TimeField
             id="closing_time"
-            name="closing_time"
+            label="Hora de Encerramento da Escola *"
             value={values.closing_time || '17:30'}
-            invalid={Boolean(fieldErrors.closing_time)}
-            onChange={(e) => onChange('closing_time', e.target.value)}
+            error={fieldErrors.closing_time}
+            onChange={(value) => onChange('closing_time', value)}
           />
-          {fieldErrors.closing_time && (
-            <CFormFeedback invalid>{fieldErrors.closing_time}</CFormFeedback>
-          )}
         </CCol>
       </CRow>
     </div>

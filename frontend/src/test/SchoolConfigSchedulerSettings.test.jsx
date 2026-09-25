@@ -253,6 +253,43 @@ describe('SchoolConfig scheduler settings', () => {
     expect(apiClient.post).not.toHaveBeenCalled()
   })
 
+  it('blocks submit for invalid hours and normalizes typed hours', async () => {
+    renderWithProviders(<SchoolConfig />)
+
+    fireEvent.click(await screen.findByRole('tab', { name: /grelha/i }))
+    const start = await screen.findByLabelText('Abertura da Escola')
+    fireEvent.change(start, { target: { value: '25:00' } })
+    fireEvent.click(screen.getByRole('button', { name: /guardar e regenerar/i }))
+
+    expect(await screen.findByText(/preencha uma grelha válida/i)).toBeInTheDocument()
+    expect(apiClient.post).not.toHaveBeenCalled()
+
+    fireEvent.change(start, { target: { value: '8:30' } })
+    fireEvent.click(screen.getByRole('button', { name: /guardar e regenerar/i }))
+
+    await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith(
+      '/school/grid-settings/regenerate',
+      expect.objectContaining({
+        timeslots: expect.objectContaining({ start_time: '08:30:00' }),
+      }),
+    ))
+  })
+
+  it('compares opening and closing hours in minutes', async () => {
+    renderWithProviders(<SchoolConfig />)
+
+    fireEvent.click(await screen.findByRole('tab', { name: /grelha/i }))
+    fireEvent.change(await screen.findByLabelText('Abertura da Escola'), { target: { value: '9:00' } })
+    fireEvent.click(screen.getByRole('button', { name: /guardar e regenerar/i }))
+
+    await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith(
+      '/school/grid-settings/regenerate',
+      expect.objectContaining({
+        timeslots: expect.objectContaining({ start_time: '09:00:00' }),
+      }),
+    ))
+  })
+
   it('hydrates the real grid and blocks an irregular persisted grid', async () => {
     apiClient.get.mockImplementation((url) => {
       if (url === '/timeslots/') return Promise.resolve([

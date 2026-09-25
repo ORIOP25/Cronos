@@ -42,18 +42,6 @@ def compute_remaining_minutes(
     return remaining
 
 
-def resolve_expansion_start_date(
-    school_start_date: date,
-    *,
-    adaptive_repair: bool,
-    repair_window_days: int,
-) -> date:
-    if not adaptive_repair:
-        return school_start_date
-    editable_start_date = date.today() + timedelta(days=max(0, repair_window_days))
-    return max(school_start_date, editable_start_date)
-
-
 def build_primary_window(
     *,
     window_start_date: date,

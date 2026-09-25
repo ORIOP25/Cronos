@@ -533,7 +533,7 @@ async def test_repair_generate_succeeds_when_horizon_exists_outside_window(
         db_session,
         organization_id,
         school_start_date=today - timedelta(days=30),
-        school_hard_end_date=today + timedelta(days=60),
+        school_hard_end_date=today + timedelta(days=120),
         repair_window_days=14,
     )
     module = await db_session.scalar(

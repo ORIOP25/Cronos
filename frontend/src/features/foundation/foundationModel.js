@@ -1,4 +1,13 @@
+import { normalizeTimeOfDay, timeOfDayToMinutes } from '../../utils/timeOfDay'
+
 export const FOUNDATION_STEP_COUNT = 9
+
+const TIME_FIELDS = new Set([
+  'opening_time',
+  'closing_time',
+  'lunch_window_start',
+  'lunch_window_end',
+])
 
 export const STEP_PERIOD = 1
 export const STEP_DAYS = 2
@@ -37,13 +46,6 @@ export const initialFoundationState = {
   completedThisSession: false,
 }
 
-export function timeToMinutes(val) {
-  if (!val) return NaN
-  const parts = String(val).split(':').map(Number)
-  if (parts.length < 2 || !Number.isFinite(parts[0]) || !Number.isFinite(parts[1])) return NaN
-  return parts[0] * 60 + parts[1]
-}
-
 export function minutesToTime(totalMinutes) {
   const hours = Math.floor(totalMinutes / 60)
   const mins = totalMinutes % 60
@@ -55,13 +57,16 @@ export function serializeFoundationDraftValues(values) {
     if (field === 'repair_stability_window_days') {
       return [field, value === '' || value == null ? 0 : Number(value)]
     }
+    if (TIME_FIELDS.has(field)) {
+      return [field, value === '' || value == null ? null : normalizeTimeOfDay(value)]
+    }
     return [field, value === '' ? null : value]
   }))
 }
 
 export function buildDailyTimeslots(values) {
-  const openMin = timeToMinutes(values.opening_time)
-  const closeMin = timeToMinutes(values.closing_time)
+  const openMin = timeOfDayToMinutes(values.opening_time)
+  const closeMin = timeOfDayToMinutes(values.closing_time)
   const slotDur = values.slot_duration_minutes == null ? 50 : Number(values.slot_duration_minutes)
   const breakDur = values.break_duration_minutes == null ? 10 : Number(values.break_duration_minutes)
 
@@ -133,8 +138,8 @@ export function validateFoundationStep(step, values) {
   }
 
   if (step === STEP_OPENING) {
-    const openMin = timeToMinutes(values.opening_time)
-    const closeMin = timeToMinutes(values.closing_time)
+    const openMin = timeOfDayToMinutes(values.opening_time)
+    const closeMin = timeOfDayToMinutes(values.closing_time)
     if (Number.isNaN(openMin)) errors.opening_time = 'Indique a hora de abertura da escola.'
     if (Number.isNaN(closeMin)) errors.closing_time = 'Indique a hora de fecho da escola.'
     if (!Number.isNaN(openMin) && !Number.isNaN(closeMin) && closeMin <= openMin) {
@@ -157,8 +162,8 @@ export function validateFoundationStep(step, values) {
   }
 
   if (step === STEP_LUNCH) {
-    const lunchStartMin = timeToMinutes(values.lunch_window_start)
-    const lunchEndMin = timeToMinutes(values.lunch_window_end)
+    const lunchStartMin = timeOfDayToMinutes(values.lunch_window_start)
+    const lunchEndMin = timeOfDayToMinutes(values.lunch_window_end)
     const lunchDur = Number(values.lunch_min_duration_minutes)
 
     if (Number.isNaN(lunchStartMin)) errors.lunch_window_start = 'Indique o início do período de almoço.'
@@ -177,8 +182,8 @@ export function validateFoundationStep(step, values) {
     ) {
       errors.lunch_min_duration_minutes = 'A duração mínima de almoço não pode exceder o intervalo de almoço.'
     }
-    const openingMin = timeToMinutes(values.opening_time)
-    const closingMin = timeToMinutes(values.closing_time)
+    const openingMin = timeOfDayToMinutes(values.opening_time)
+    const closingMin = timeOfDayToMinutes(values.closing_time)
     if (!Number.isNaN(openingMin) && !Number.isNaN(lunchStartMin) && lunchStartMin < openingMin) {
       errors.lunch_window_start = 'O almoço deve começar dentro do horário da escola.'
     }

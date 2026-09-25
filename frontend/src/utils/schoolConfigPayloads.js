@@ -1,3 +1,5 @@
+import { normalizeTimeOfDay, timeOfDayToMinutes } from './timeOfDay'
+
 export function toSchoolSettingsPayload(form) {
   const payload = {
     school_start_date: form.school_start_date || null,
@@ -20,11 +22,14 @@ const DEFAULT_GRID_FORM_DATA = {
   days: { 0: true, 1: true, 2: true, 3: true, 4: true, 5: false, 6: false },
 }
 
-const withSeconds = (value) => (value?.length === 5 ? `${value}:00` : value)
+const withSeconds = (value) => {
+  const normalized = normalizeTimeOfDay(value)
+  return normalized ? `${normalized}:00` : null
+}
 const minuteOfDay = (value) => {
-  const match = /^(\d{2}):(\d{2})/.exec(value || '')
-  if (!match) throw new Error('A grelha horária guardada é irregular.')
-  return Number(match[1]) * 60 + Number(match[2])
+  const minutes = timeOfDayToMinutes(value)
+  if (!Number.isFinite(minutes)) throw new Error('A grelha horária guardada é irregular.')
+  return minutes
 }
 
 export function toGridConfigurationPayload({ formData, gridSettings }) {
@@ -59,8 +64,8 @@ export function timeslotsToGridFormData(timeslots) {
     }
     const daySlots = byDay.get(slot.day_of_week) || []
     daySlots.push({
-      start: slot.start_time.slice(0, 5),
-      end: slot.end_time.slice(0, 5),
+      start: normalizeTimeOfDay(slot.start_time),
+      end: normalizeTimeOfDay(slot.end_time),
     })
     byDay.set(slot.day_of_week, daySlots)
   }

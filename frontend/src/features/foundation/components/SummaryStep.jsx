@@ -1,6 +1,7 @@
 import { CCard, CCardBody, CRow, CCol, CFormCheck } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
 import { cilCalendar, cilClock } from '@coreui/icons'
+import { formatTimeOfDay } from '../../../utils/timeOfDay'
 
 const DAY_NAMES = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo']
 
@@ -49,7 +50,7 @@ export function SummaryStep({ values, organizationName, confirmed, onConfirmedCh
               </div>
               <div className="small mb-2">
                 <span className="text-muted d-block">Horário de Funcionamento:</span>
-                <strong>{values.opening_time} às {values.closing_time}</strong>
+                <strong>{formatTimeOfDay(values.opening_time)} às {formatTimeOfDay(values.closing_time)}</strong>
               </div>
               <div className="small mb-2">
                 <span className="text-muted d-block">Bloco / Intervalo:</span>
@@ -57,7 +58,7 @@ export function SummaryStep({ values, organizationName, confirmed, onConfirmedCh
               </div>
               <div className="small">
                 <span className="text-muted d-block">Janela de Almoço:</span>
-                <strong>{values.lunch_window_start} - {values.lunch_window_end} (mín. {values.lunch_min_duration_minutes} min)</strong>
+                <strong>{formatTimeOfDay(values.lunch_window_start)} - {formatTimeOfDay(values.lunch_window_end)} (mín. {values.lunch_min_duration_minutes} min)</strong>
               </div>
             </CCardBody>
           </CCard>

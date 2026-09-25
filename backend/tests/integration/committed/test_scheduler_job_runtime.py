@@ -775,6 +775,8 @@ async def test_repair_approval_reconciles_moved_added_and_removed_blocks(db_sess
     repair_draft = await db_session.scalar(
         select(models.ScheduleDraft).where(models.ScheduleDraft.generation_job_id == repair_job.id)
     )
+    assert repair_draft.repair_policy_snapshot_json["grid_days"] == [1]
+    assert repair_draft.editable_start_date == date(2026, 6, 23)
     diff = await SchedulerDiffService(db_session).list_diff(
         ctx["organization"].id,
         repair_draft.id,

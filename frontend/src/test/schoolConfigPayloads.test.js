@@ -48,6 +48,32 @@ describe('school configuration payloads', () => {
     })
   })
 
+  it('normalizes typed hours to HH:mm:ss in the grid payload', () => {
+    expect(toGridConfigurationPayload({
+      formData: {
+        start_time: '8:30', end_time: '18:00', slot_duration_minutes: '50',
+        break_duration_minutes: '10', days: { 0: true },
+      },
+      gridSettings: {
+        lunch_window_start: '12:30', lunch_window_end: '14:00', lunch_min_duration_minutes: '60',
+      },
+    })).toEqual({
+      grid_settings: {
+        lunch_window_start: '12:30:00', lunch_window_end: '14:00:00', lunch_min_duration_minutes: 60,
+      },
+      timeslots: {
+        start_time: '08:30:00', end_time: '18:00:00', slot_duration_minutes: 50,
+        break_duration_minutes: 10, days_of_week: [0],
+      },
+    })
+  })
+
+  it('rejects persisted hours with non-zero seconds', () => {
+    expect(() => timeslotsToGridFormData([
+      { day_of_week: 0, start_time: '08:00:15', end_time: '08:50:15' },
+    ])).toThrow(/irregular/i)
+  })
+
   it('hydrates the editor from a regular persisted grid', () => {
     expect(timeslotsToGridFormData([
       { day_of_week: 0, start_time: '08:00:00', end_time: '08:50:00' },

@@ -72,6 +72,66 @@ describe('Foundation', () => {
     expect(screen.getAllByText('Minutos')).toHaveLength(3)
   })
 
+  it('keeps an incomplete hour visible, blocks navigation and normalizes valid hours', async () => {
+    apiClient.get.mockImplementation((url) => {
+      if (url === '/foundation/status') {
+        return Promise.resolve({
+          foundation_status: 'IN_PROGRESS',
+          foundation_completed_at: null,
+          first_real_schedule_approved_at: null,
+          organization_name: 'Escola Foundation',
+        })
+      }
+      return Promise.resolve({
+        version: 0,
+        current_step: 1,
+        data: {
+          school_start_date: '2025-09-15',
+          school_hard_end_date: '2026-07-31',
+          repair_stability_window_days: 14,
+          days_of_week: [0, 1, 2, 3, 4],
+          opening_time: '08:30',
+          closing_time: '17:30',
+          slot_duration_minutes: 50,
+          break_duration_minutes: 10,
+          lunch_window_start: '12:30',
+          lunch_window_end: '14:00',
+          lunch_min_duration_minutes: 60,
+        },
+      })
+    })
+    apiClient.put.mockImplementation((_url, payload) => (
+      Promise.resolve({ version: payload.expected_version + 1 })
+    ))
+
+    renderFoundation()
+    await screen.findByText(/1. Período do Ano Letivo/i)
+    fireEvent.click(screen.getByRole('button', { name: /seguinte/i }))
+    await screen.findByText(/2. Dias de Funcionamento Letivo/i)
+    fireEvent.click(screen.getByRole('button', { name: /seguinte/i }))
+    await screen.findByText(/3. Horário de Abertura e Encerramento/i)
+
+    const opening = screen.getByLabelText(/hora de abertura da escola/i)
+    fireEvent.change(opening, { target: { value: '8:3' } })
+    expect(opening).toHaveValue('8:3')
+
+    fireEvent.click(screen.getByRole('button', { name: /seguinte/i }))
+    expect(screen.getByText(/3. Horário de Abertura e Encerramento/i)).toBeInTheDocument()
+    expect(await screen.findByText(/indique a hora de abertura/i)).toBeInTheDocument()
+
+    await waitFor(() => expect(apiClient.put).toHaveBeenCalledWith('/foundation/draft', expect.objectContaining({
+      data: expect.objectContaining({ opening_time: null }),
+    })))
+    expect(apiClient.put).not.toHaveBeenCalledWith('/foundation/draft', expect.objectContaining({
+      data: expect.objectContaining({ opening_time: '8:3' }),
+    }))
+
+    fireEvent.change(opening, { target: { value: '8:45' } })
+    await waitFor(() => expect(apiClient.put).toHaveBeenLastCalledWith('/foundation/draft', expect.objectContaining({
+      data: expect.objectContaining({ opening_time: '08:45' }),
+    })))
+  })
+
   it('shows the foundation wizard and steps through to activation', async () => {
     apiClient.get.mockImplementation((url) => {
       if (url === '/foundation/status') {

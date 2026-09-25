@@ -58,7 +58,7 @@ export function PeriodStep({ values, fieldErrors, onChange }) {
             <CInputGroupText id="repair_stability_window_days-unit">Dias</CInputGroupText>
           </CInputGroup>
           <small className="text-muted d-block mt-1">
-            Número de dias no futuro imediato cujos horários ficam protegidos durante reparações adaptativas.
+            Número de dias da grelha semanal, a partir de hoje, cujos horários ficam protegidos durante reparações adaptativas. 0 permite alterar aulas de hoje; 1 protege o primeiro dia selecionado.
           </small>
           {fieldErrors.repair_stability_window_days && (
             <CFormFeedback id="repair_stability_window_days-feedback" className="d-block" invalid>{fieldErrors.repair_stability_window_days}</CFormFeedback>

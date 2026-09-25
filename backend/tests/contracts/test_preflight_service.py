@@ -1,7 +1,8 @@
-from datetime import UTC, date, datetime, time
+from datetime import UTC, date, datetime, time, timedelta
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import select
 
 from app import models, schemas
 from app.api import deps
@@ -104,6 +105,94 @@ async def test_preflight_service_returns_canonical_report(db_session):
     assert "ACTIVE_SCHOOL_YEAR_REQUIRED" in issue_codes
     assert "MISSING_ROOMS" in issue_codes
     assert "MISSING_TEACHERS" in issue_codes
+
+
+async def _create_repair_org(db_session, org_name: str, clerk_org: str, *, window_days: int):
+    org, _user, _mem = await _create_org_and_admin(db_session, org_name, clerk_org)
+    today = date.today()
+    db_session.add_all(
+        [
+            models.OrganizationSettings(
+                organization_id=org.id,
+                school_start_date=today - timedelta(days=30),
+                school_hard_end_date=today + timedelta(days=60),
+                repair_stability_window_days=window_days,
+            ),
+            models.SchedulerSchoolYear(
+                organization_id=org.id,
+                label="2025/2026",
+                start_date=today - timedelta(days=30),
+                hard_end_date=today + timedelta(days=60),
+                timezone="Europe/Lisbon",
+            ),
+        ]
+    )
+    await db_session.flush()
+    return org
+
+
+async def test_preflight_repair_without_timeslots_keeps_missing_timeslots(db_session):
+    org = await _create_repair_org(
+        db_session, "Repair No Grid School", "org_repair_no_grid", window_days=14
+    )
+
+    report = await PreflightService(db_session).evaluate(
+        organization_id=org.id,
+        strategy=models.ScheduleGenerationStrategy.ADAPTIVE_REPAIR,
+        resolve_fingerprint=False,
+    )
+
+    issue_codes = {issue.code for issue in report.issues}
+    assert "MISSING_TIMESLOTS" in issue_codes
+    assert "REPAIR_WINDOW_INFEASIBLE" not in issue_codes
+
+
+async def test_preflight_repair_window_counts_grid_days(db_session):
+    org = await _create_repair_org(
+        db_session, "Repair Grid School", "org_repair_grid", window_days=5
+    )
+    school_year = await db_session.scalar(
+        select(models.SchedulerSchoolYear).where(
+            models.SchedulerSchoolYear.organization_id == org.id
+        )
+    )
+    db_session.add(
+        models.Timeslot(
+            organization_id=org.id,
+            day_of_week=0,
+            start_time=time(9, 0),
+            end_time=time(10, 0),
+        )
+    )
+    await db_session.flush()
+    school_year.hard_end_date = date.today() + timedelta(days=7)
+    settings = await db_session.scalar(
+        select(models.OrganizationSettings).where(
+            models.OrganizationSettings.organization_id == org.id
+        )
+    )
+    settings.school_hard_end_date = school_year.hard_end_date
+    await db_session.flush()
+
+    blocked = await PreflightService(db_session).evaluate(
+        organization_id=org.id,
+        school_year_id=school_year.id,
+        strategy=models.ScheduleGenerationStrategy.ADAPTIVE_REPAIR,
+        resolve_fingerprint=False,
+    )
+    assert "REPAIR_WINDOW_INFEASIBLE" in {issue.code for issue in blocked.issues}
+
+    school_year.hard_end_date = date.today() + timedelta(days=60)
+    settings.school_hard_end_date = school_year.hard_end_date
+    await db_session.flush()
+
+    allowed = await PreflightService(db_session).evaluate(
+        organization_id=org.id,
+        school_year_id=school_year.id,
+        strategy=models.ScheduleGenerationStrategy.ADAPTIVE_REPAIR,
+        resolve_fingerprint=False,
+    )
+    assert "REPAIR_WINDOW_INFEASIBLE" not in {issue.code for issue in allowed.issues}
 
 
 async def test_preflight_endpoint_returns_report(db_session, override_auth_actor):

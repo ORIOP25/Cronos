@@ -1,4 +1,5 @@
 import { CFormLabel, CFormInput, CFormFeedback, CRow, CCol, CInputGroup, CInputGroupText } from '@coreui/react'
+import { TimeField } from '../../../components/TimeField'
 
 export function LunchStep({ values, fieldErrors, onChange }) {
   return (
@@ -10,33 +11,23 @@ export function LunchStep({ values, fieldErrors, onChange }) {
 
       <CRow className="g-3">
         <CCol md={6}>
-          <CFormLabel htmlFor="lunch_window_start">Início da Janela de Almoço *</CFormLabel>
-          <CFormInput
-            type="time"
+          <TimeField
             id="lunch_window_start"
-            name="lunch_window_start"
+            label="Início da Janela de Almoço *"
             value={values.lunch_window_start || '12:30'}
-            invalid={Boolean(fieldErrors.lunch_window_start)}
-            onChange={(e) => onChange('lunch_window_start', e.target.value)}
+            error={fieldErrors.lunch_window_start}
+            onChange={(value) => onChange('lunch_window_start', value)}
           />
-          {fieldErrors.lunch_window_start && (
-            <CFormFeedback invalid>{fieldErrors.lunch_window_start}</CFormFeedback>
-          )}
         </CCol>
 
         <CCol md={6}>
-          <CFormLabel htmlFor="lunch_window_end">Fim da Janela de Almoço *</CFormLabel>
-          <CFormInput
-            type="time"
+          <TimeField
             id="lunch_window_end"
-            name="lunch_window_end"
+            label="Fim da Janela de Almoço *"
             value={values.lunch_window_end || '14:00'}
-            invalid={Boolean(fieldErrors.lunch_window_end)}
-            onChange={(e) => onChange('lunch_window_end', e.target.value)}
+            error={fieldErrors.lunch_window_end}
+            onChange={(value) => onChange('lunch_window_end', value)}
           />
-          {fieldErrors.lunch_window_end && (
-            <CFormFeedback invalid>{fieldErrors.lunch_window_end}</CFormFeedback>
-          )}
         </CCol>
 
         <CCol md={12} className="mt-4">
