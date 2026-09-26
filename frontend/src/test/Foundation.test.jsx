@@ -72,6 +72,20 @@ describe('Foundation', () => {
     expect(screen.getAllByText('Minutos')).toHaveLength(3)
   })
 
+  it('explains the stability window by what today and the next school day allow', () => {
+    render(
+      <PeriodStep values={{ ...initialFoundationDraftValues }} fieldErrors={{}} onChange={vi.fn()} />,
+    )
+
+    expect(screen.getByLabelText('Janela de Estabilidade')).toBeInTheDocument()
+    expect(
+      screen.getByText(/com 0, as aulas de hoje ainda podem mudar; com 1, hoje fica intacto/),
+    ).toBeInTheDocument()
+    expect(screen.getByText(/o dia letivo seguinte já pode ser reorganizado/)).toBeInTheDocument()
+    expect(screen.getByText(/Uma janela menor dá mais liberdade ao Cronos/)).toBeInTheDocument()
+    expect(screen.queryByText(/reparações adaptativas/i)).not.toBeInTheDocument()
+  })
+
   it('keeps an incomplete hour visible, blocks navigation and normalizes valid hours', async () => {
     apiClient.get.mockImplementation((url) => {
       if (url === '/foundation/status') {

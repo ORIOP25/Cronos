@@ -76,6 +76,15 @@ describe('SchoolConfig scheduler settings', () => {
     expect(screen.queryByLabelText(/duração mínima almoço \(min\)/i)).not.toBeInTheDocument()
   })
 
+  it('explains the stability window by what today allows', async () => {
+    renderWithProviders(<SchoolConfig />)
+
+    expect(
+      await screen.findByText('Com 0, hoje pode mudar; com 1, hoje fica intacto.'),
+    ).toBeInTheDocument()
+    expect(screen.queryByText(/se evita refazer horários/i)).not.toBeInTheDocument()
+  })
+
   it('requests data only for the active configuration section', async () => {
     renderWithProviders(<SchoolConfig />)
 

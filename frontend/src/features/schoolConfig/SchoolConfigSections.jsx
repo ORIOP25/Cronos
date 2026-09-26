@@ -400,7 +400,7 @@ const SettingsEditor = ({ settings, onSoftResetSuccess, onSaveSuccess }) => {
             />
             <CInputGroupText id="repairWindow-unit">Dias</CInputGroupText>
           </CInputGroup>
-          <div id="repairWindow-help" className="form-text">Dias da grelha semanal em que se evita refazer horários. 0 permite alterar hoje; 1 protege o primeiro dia selecionado.</div>
+          <div id="repairWindow-help" className="form-text">Com 0, hoje pode mudar; com 1, hoje fica intacto.</div>
         </CCol>
       </CRow>
       

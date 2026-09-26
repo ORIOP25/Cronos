@@ -39,7 +39,7 @@ export function PeriodStep({ values, fieldErrors, onChange }) {
         </CCol>
 
         <CCol md={12} className="mt-4">
-          <CFormLabel htmlFor="repair_stability_window_days">Janela de Estabilidade de Reparação</CFormLabel>
+          <CFormLabel htmlFor="repair_stability_window_days">Janela de Estabilidade</CFormLabel>
           <CInputGroup>
             <CFormInput
               type="number"
@@ -58,7 +58,8 @@ export function PeriodStep({ values, fieldErrors, onChange }) {
             <CInputGroupText id="repair_stability_window_days-unit">Dias</CInputGroupText>
           </CInputGroup>
           <small className="text-muted d-block mt-1">
-            Número de dias da grelha semanal, a partir de hoje, cujos horários ficam protegidos durante reparações adaptativas. 0 permite alterar aulas de hoje; 1 protege o primeiro dia selecionado.
+            Dias a proteger: com 0, as aulas de hoje ainda podem mudar; com 1, hoje fica intacto e o dia letivo seguinte já pode ser
+            reorganizado. Uma janela menor dá mais liberdade ao Cronos para construir um ano letivo mais consistente.
           </small>
           {fieldErrors.repair_stability_window_days && (
             <CFormFeedback id="repair_stability_window_days-feedback" className="d-block" invalid>{fieldErrors.repair_stability_window_days}</CFormFeedback>
