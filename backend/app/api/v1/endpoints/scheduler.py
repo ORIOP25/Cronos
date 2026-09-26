@@ -1,40 +1,35 @@
+from datetime import UTC, datetime
 from typing import Annotated
 
+import structlog
 from fastapi import APIRouter, Depends, Request
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app import models, schemas
+from app import schemas
 from app.api import deps
-from app.core.exceptions import PUBLIC_ERROR_CATALOG, AppError
+from app.core.exceptions import AppError
 from app.core.ratelimit import limiter
 from app.scheduler.application.contracts import SchedulerTaskDispatcher
-from app.services.scheduler_approval_service import (
-    DraftApprovalConflictError,
-    DraftApprovalNotFoundError,
-    SchedulerApprovalService,
+from app.scheduler.infrastructure import queries
+from app.scheduler.infrastructure.jobs import (
+    GenerationUnavailable,
+    enqueue_generation,
+    request_cancellation,
 )
-from app.services.scheduler_diff_service import SchedulerDiffService
-from app.services.scheduler_draft_service import (
-    SchedulerDraftNotFoundError,
-    SchedulerDraftService,
+from app.scheduler.infrastructure.proposals import (
+    ProposalConflict,
+    approve_proposal,
+    reject_proposal,
 )
-from app.services.scheduler_job_service import (
-    SchedulerJobNotFoundError,
-    SchedulerJobService,
-)
-from app.services.scheduler_lifecycle_service import (
-    SchedulerLifecycleConflictError,
-    SchedulerLifecycleNotFoundError,
-    SchedulerLifecycleService,
-)
-from app.services.scheduler_observability import emit_scheduler_job_event
-from app.services.scheduler_request_service import (
-    persist_dispatch_failure,
-    persist_prepared_generation,
-    prepare_generation_request,
-)
-from app.services.scheduler_status_service import SchedulerStatusService
+from app.scheduler.infrastructure.snapshot import SnapshotConfigurationError
+
+logger = structlog.get_logger(__name__)
 
 router = APIRouter()
+
+
+def _now() -> datetime:
+    return datetime.now(UTC)
 
 
 def _raise_scheduler_error(
@@ -48,265 +43,239 @@ def _raise_scheduler_error(
     )
 
 
-def _public_job_response(
-    job: models.ScheduleGenerationJob,
-) -> schemas.ScheduleGenerationJobResponse:
-    response = schemas.ScheduleGenerationJobResponse.model_validate(job)
-    if job.failure_code:
-        message = PUBLIC_ERROR_CATALOG.get(job.failure_code, PUBLIC_ERROR_CATALOG["SYSTEM_ERROR"])[
-            "message"
-        ]
-        response = response.model_copy(update={"failure_message": message})
-    return response
+async def _job_payload(db: AsyncSession, organization_id: int, job_id: int) -> dict:
+    job = await queries.get_job(db, organization_id, job_id)
+    if job is None:
+        _raise_scheduler_error(
+            kind="not_found",
+            code="scheduler_job_not_found",
+            detail="Generation job was not found.",
+        )
+    return job
 
 
-@router.post("/generate", response_model=schemas.SchedulerGenerateResponse)
+@router.get("/status", response_model=schemas.SchedulerV1StatusRead)
+async def get_scheduler_status(
+    db: deps.DbSession,
+    current_user: deps.ActiveActor,
+) -> dict:
+    """Read the current state, eligibility reasons and pending proposal."""
+    return await queries.scheduler_status(db, current_user.organization_id, now_utc=_now())
+
+
+@router.post(
+    "/generate",
+    response_model=schemas.SchedulerV1GenerateResponse,
+    status_code=202,
+)
 @limiter.limit("5/minute")
 async def generate_schedule(
     request: Request,
-    payload: schemas.ScheduleGenerateRequest,
+    payload: schemas.SchedulerV1GenerateRequest,
     db: deps.DbSession,
     current_user: deps.AdminActor,
     dispatcher: Annotated[SchedulerTaskDispatcher, Depends(deps.get_scheduler_task_dispatcher)],
-):
-    handle = await prepare_generation_request(payload, db, current_user)
-    await persist_prepared_generation(db)
-
-    if handle.created:
-        jobs = SchedulerJobService(db)
+) -> dict:
+    """Admit one manual, idempotent generation request into the global queue."""
+    try:
+        outcome = await enqueue_generation(
+            db,
+            current_user.organization_id,
+            idempotency_key=payload.idempotency_key,
+            requested_by_membership_id=current_user.membership_id,
+            now_utc=_now(),
+            expected_input_revision=payload.expected_input_revision,
+        )
+    except SnapshotConfigurationError as exc:
+        raise AppError(kind="validation", code=exc.code, detail=str(exc)) from exc
+    except GenerationUnavailable as exc:
+        raise AppError(
+            kind="conflict",
+            code=exc.code,
+            detail=str(exc),
+            public_context={
+                "reasons": [reason.value for reason in exc.reasons],
+                "blocker": exc.blocker.value if exc.blocker is not None else None,
+                "job_id": exc.job_id,
+            },
+        ) from exc
+    job = await _job_payload(db, current_user.organization_id, outcome.job.id)
+    if outcome.created or job["status"] == "QUEUED":
         try:
             dispatcher.dispatch(
                 organization_id=current_user.organization_id,
-                job_id=handle.job.id,
-                task_id=jobs.worker_task_id(handle.job.id),
+                job_id=outcome.job.id,
+                task_id=f"scheduler-v1-job-{outcome.job.id}",
             )
         except Exception as dispatch_error:
-            await persist_dispatch_failure(
-                db,
+            logger.exception(
+                "scheduler_v1_dispatch_failed",
                 organization_id=current_user.organization_id,
-                job_id=handle.job.id,
-                reason=f"Could not dispatch generation job: {dispatch_error}",
+                job_id=outcome.job.id,
             )
             raise AppError(
                 kind="unavailable",
                 code="generation_dispatch_failed",
-                detail="Generation could not be queued.",
-                public_context={"job_id": handle.job.id},
+                detail="O pedido ficou em fila e será retomado automaticamente.",
+                public_context={"job_id": outcome.job.id},
                 public_retryable=True,
-                diagnostic_metadata={"job_id": handle.job.id},
+                diagnostic_metadata={"job_id": outcome.job.id},
             ) from dispatch_error
-
-    return {
-        "job_id": handle.job.id,
-        "strategy": handle.job.strategy.value,
-        "trigger_type": handle.job.trigger_type.value,
-        "status": handle.job.job_status.value,
-    }
+    return {"job": job}
 
 
 @router.get(
     "/jobs/{job_id}",
-    response_model=schemas.ScheduleGenerationJobResponse,
+    response_model=schemas.SchedulerV1JobRead,
     responses={404: {"description": "Generation job not found"}},
 )
 async def get_generation_job(
     job_id: int,
     db: deps.DbSession,
     current_user: deps.ActiveActor,
-) -> models.ScheduleGenerationJob:
-    try:
-        job = await SchedulerJobService(db).get_job(
-            current_user.organization_id,
-            job_id,
-        )
-        return _public_job_response(job)
-    except SchedulerJobNotFoundError as exc:
-        _raise_scheduler_error(kind="not_found", code="scheduler_job_not_found", detail=str(exc))
+) -> dict:
+    """Phase, result and summary of one generation request."""
+    return await _job_payload(db, current_user.organization_id, job_id)
 
 
 @router.post(
     "/jobs/{job_id}/cancel",
-    response_model=schemas.ScheduleGenerationCancelResponse,
+    response_model=schemas.SchedulerV1CancelResponse,
     responses={404: {"description": "Generation job not found"}},
 )
 async def cancel_generation_job(
     job_id: int,
     db: deps.DbSession,
     current_user: deps.AdminActor,
-) -> dict[str, int | str]:
+) -> dict:
+    """Request cancellation; repeated requests are idempotent."""
     try:
-        job = await SchedulerJobService(db).request_cancellation(
-            current_user.organization_id,
-            job_id,
-        )
-    except SchedulerJobNotFoundError as exc:
+        await request_cancellation(db, current_user.organization_id, job_id, now_utc=_now())
+    except LookupError as exc:
         _raise_scheduler_error(kind="not_found", code="scheduler_job_not_found", detail=str(exc))
-    await db.flush()
-    emit_scheduler_job_event("generation_cancellation_requested", job)
-    return {"job_id": job.id, "job_status": job.job_status.value}
-
-
-@router.get("/status", response_model=schemas.SchedulerStatusResponse)
-async def get_scheduler_status(
-    db: deps.DbSession,
-    current_user: deps.ActiveActor,
-) -> schemas.SchedulerStatusResponse:
-    status = await SchedulerStatusService(db).get_status(current_user.organization_id)
-    return schemas.SchedulerStatusResponse.model_validate(status)
+    job = await _job_payload(db, current_user.organization_id, job_id)
+    return {"job": job}
 
 
 @router.get(
     "/drafts/current",
-    response_model=schemas.ScheduleDraftSummaryResponse,
-    responses={404: {"description": "No pending draft"}},
+    response_model=schemas.SchedulerV1ProposalRead,
+    responses={404: {"description": "No pending proposal"}},
 )
-async def get_current_draft_summary(
+async def get_current_proposal(
     db: deps.DbSession,
     current_user: deps.ActiveActor,
-) -> schemas.ScheduleDraftSummaryResponse:
-    try:
-        summary = await SchedulerDraftService(db).current_summary(current_user.organization_id)
-    except SchedulerDraftNotFoundError as exc:
-        _raise_scheduler_error(kind="not_found", code="scheduler_draft_not_found", detail=str(exc))
-    return schemas.ScheduleDraftSummaryResponse.model_validate(summary)
-
-
-@router.get(
-    "/drafts/{draft_id}",
-    response_model=schemas.ScheduleDraftSummaryResponse,
-    responses={404: {"description": "Draft not found"}},
-)
-async def get_draft_summary(
-    draft_id: int,
-    db: deps.DbSession,
-    current_user: deps.ActiveActor,
-) -> schemas.ScheduleDraftSummaryResponse:
-    try:
-        summary = await SchedulerDraftService(db).summary(
-            current_user.organization_id,
-            draft_id,
-        )
-    except SchedulerDraftNotFoundError as exc:
-        _raise_scheduler_error(kind="not_found", code="scheduler_draft_not_found", detail=str(exc))
-    return schemas.ScheduleDraftSummaryResponse.model_validate(summary)
-
-
-@router.get(
-    "/drafts/{draft_id}/diff",
-    response_model=list[schemas.ScheduleDraftDiffEntryResponse],
-    responses={404: {"description": "Draft not found"}},
-)
-async def get_draft_diff(
-    draft_id: int,
-    db: deps.DbSession,
-    current_user: deps.ActiveActor,
-) -> list[schemas.ScheduleDraftDiffEntryResponse]:
-    rows = await SchedulerDiffService(db).list_diff(
-        current_user.organization_id,
-        draft_id,
-    )
-    if rows is None:
+) -> dict:
+    """Current pending proposal with product metrics and warnings."""
+    proposal = await queries.current_proposal(db, current_user.organization_id, now_utc=_now())
+    if proposal is None:
         _raise_scheduler_error(
             kind="not_found",
             code="scheduler_draft_not_found",
-            detail="Schedule draft was not found.",
+            detail="Não existe uma proposta pendente.",
         )
-    return [schemas.ScheduleDraftDiffEntryResponse.model_validate(row) for row in rows]
+    return proposal
+
+
+@router.get(
+    "/drafts/{proposal_id}/diff",
+    response_model=schemas.SchedulerV1ProposalDiffRead,
+    responses={404: {"description": "Proposal not found"}},
+)
+async def get_proposal_diff(
+    proposal_id: int,
+    db: deps.DbSession,
+    current_user: deps.ActiveActor,
+) -> dict:
+    """Physical changes and modular projection updates, separated."""
+    diff = await queries.proposal_diff(db, current_user.organization_id, proposal_id)
+    if diff is None:
+        _raise_scheduler_error(
+            kind="not_found",
+            code="scheduler_draft_not_found",
+            detail="Schedule proposal was not found.",
+        )
+    return diff
 
 
 @router.post(
-    "/drafts/{draft_id}/approve",
-    response_model=schemas.ScheduleDraftApprovalResponse,
+    "/drafts/{proposal_id}/approve",
+    response_model=schemas.SchedulerV1ApproveResponse,
     responses={
-        404: {"description": "Draft not found"},
-        409: {"description": "Draft cannot be approved"},
+        404: {"description": "Proposal not found"},
+        409: {"description": "Proposal cannot be approved"},
     },
 )
-async def approve_draft(
-    draft_id: int,
+async def approve_proposal_endpoint(
+    proposal_id: int,
     db: deps.DbSession,
     current_user: deps.AdminActor,
-) -> schemas.ScheduleDraftApprovalResponse:
+    payload: schemas.SchedulerV1ApproveRequest | None = None,
+) -> dict:
+    """Atomic approval with full revalidation of the current data."""
     try:
-        result = await SchedulerApprovalService(db).approve(
-            current_user.organization_id,
-            draft_id,
+        result = await approve_proposal(
+            db,
+            organization_id=current_user.organization_id,
+            proposal_id=proposal_id,
             decided_by_membership_id=current_user.membership_id,
+            now_utc=_now(),
+            expected_input_revision=(
+                payload.expected_input_revision if payload is not None else None
+            ),
         )
-    except DraftApprovalNotFoundError as exc:
+    except LookupError as exc:
         _raise_scheduler_error(kind="not_found", code="scheduler_draft_not_found", detail=str(exc))
-    except DraftApprovalConflictError as exc:
-        # Only stale/invalid transitions intentionally persist an audit state.
-        if exc.draft_state in (
-            models.ScheduleDraftState.STALE,
-            models.ScheduleDraftState.INVALIDATED,
-        ):
-            await db.flush()
+    except ProposalConflict as exc:
         _raise_scheduler_error(
             kind="conflict",
-            code="scheduler_draft_approval_conflict",
+            code=exc.code,
             detail=str(exc),
-            public_context={"draft_state": exc.draft_state.value},
+            public_context=exc.context,
         )
-    except Exception:
-        raise
-    await db.flush()
-    return schemas.ScheduleDraftApprovalResponse.model_validate(result)
+    return {
+        "proposal_id": result.proposal_id,
+        "status": "APPROVED",
+        "active_version_id": result.active_version_id,
+        "approved_at": result.approved_at,
+    }
 
 
 @router.post(
-    "/drafts/{draft_id}/reject",
-    response_model=schemas.ScheduleDraftRejectionResponse,
+    "/drafts/{proposal_id}/reject",
+    response_model=schemas.SchedulerV1RejectResponse,
     responses={
-        404: {"description": "Draft not found"},
-        409: {"description": "Draft cannot be rejected"},
+        404: {"description": "Proposal not found"},
+        409: {"description": "Proposal cannot be rejected"},
     },
 )
-async def reject_draft(
-    draft_id: int,
+async def reject_proposal_endpoint(
+    proposal_id: int,
     db: deps.DbSession,
     current_user: deps.AdminActor,
-) -> schemas.ScheduleDraftRejectionResponse:
+    payload: schemas.SchedulerV1RejectRequest | None = None,
+) -> dict:
+    """Audited rejection; it does not unlock an arbitrary reroll."""
     try:
-        result = await SchedulerLifecycleService(db).reject_draft(
-            current_user.organization_id,
-            draft_id,
+        result = await reject_proposal(
+            db,
+            organization_id=current_user.organization_id,
+            proposal_id=proposal_id,
             decided_by_membership_id=current_user.membership_id,
+            reason=payload.reason if payload is not None else None,
+            now_utc=_now(),
         )
-    except SchedulerLifecycleNotFoundError as exc:
+    except LookupError as exc:
         _raise_scheduler_error(kind="not_found", code="scheduler_draft_not_found", detail=str(exc))
-    except SchedulerLifecycleConflictError as exc:
+    except ProposalConflict as exc:
         _raise_scheduler_error(
-            kind="conflict", code="scheduler_lifecycle_conflict", detail=str(exc)
+            kind="conflict",
+            code=exc.code,
+            detail=str(exc),
+            public_context=exc.context,
         )
-    await db.flush()
-    return schemas.ScheduleDraftRejectionResponse.model_validate(result)
-
-
-@router.post(
-    "/reset-year",
-    response_model=schemas.SchedulerResetYearResponse,
-    responses={
-        404: {"description": "School year not found"},
-        409: {"description": "Reset confirmation required"},
-    },
-)
-async def reset_scheduler_year(
-    payload: schemas.SchedulerResetYearRequest,
-    db: deps.DbSession,
-    current_user: deps.AdminActor,
-) -> schemas.SchedulerResetYearResponse:
-    try:
-        result = await SchedulerLifecycleService(db).reset_year(
-            current_user.organization_id,
-            reset_by_membership_id=current_user.membership_id,
-            confirmed=payload.confirmed,
-        )
-    except SchedulerLifecycleNotFoundError as exc:
-        _raise_scheduler_error(
-            kind="not_found", code="scheduler_school_year_not_found", detail=str(exc)
-        )
-    except SchedulerLifecycleConflictError as exc:
-        _raise_scheduler_error(kind="conflict", code="scheduler_reset_conflict", detail=str(exc))
-    await db.flush()
-    return schemas.SchedulerResetYearResponse.model_validate(result)
+    return {
+        "proposal_id": result.proposal_id,
+        "status": "REJECTED",
+        "rejected_at": result.rejected_at,
+    }

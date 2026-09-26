@@ -1,0 +1,74 @@
+[
+  {
+    "id": "R01-module-chronology",
+    "expected": false,
+    "observed": true,
+    "defect_reproduced": true
+  },
+  {
+    "id": "R02-overlapping-unavailability",
+    "expected": false,
+    "observed": true,
+    "defect_reproduced": true
+  },
+  {
+    "id": "R03-no-school-period-membership",
+    "expected": false,
+    "observed": true,
+    "defect_reproduced": true
+  },
+  {
+    "id": "R04-initial-preferred-limit-unrepresented",
+    "expected": false,
+    "observed": true,
+    "defect_reproduced": true
+  },
+  {
+    "id": "R05-legal-modular-update-protected",
+    "expected": true,
+    "observed": false,
+    "defect_reproduced": true
+  },
+  {
+    "id": "R06-oracle-protected-witness",
+    "expected": true,
+    "observed": false,
+    "defect_reproduced": true
+  },
+  {
+    "id": "R07-snapshot-alias-mutation",
+    "expected": 0,
+    "observed": 60,
+    "defect_reproduced": true
+  },
+  {
+    "id": "R08-resume-stale-case-accepted",
+    "expected": false,
+    "observed": true,
+    "defect_reproduced": true
+  },
+  {
+    "id": "R09-unknown-selection-success",
+    "expected": false,
+    "observed": true,
+    "defect_reproduced": true
+  },
+  {
+    "id": "R10-invalid-input-inconclusive-pass",
+    "expected": false,
+    "observed": true,
+    "defect_reproduced": true
+  },
+  {
+    "id": "R11-comparator-mutation-regression",
+    "expected": false,
+    "observed": true,
+    "defect_reproduced": true
+  },
+  {
+    "id": "R12-nonfinal-partial-credit",
+    "expected": false,
+    "observed": true,
+    "defect_reproduced": true
+  }
+]

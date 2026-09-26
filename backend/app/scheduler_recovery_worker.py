@@ -2,32 +2,32 @@ from __future__ import annotations
 
 import asyncio
 
-from sqlalchemy import text
-
 from app.celery_worker import celery_app
+from app.config import settings
 from app.db.database import SessionLocal
-from app.db.tenant import set_async_tenant_context
-from app.services.scheduler_job_service import SchedulerJobService
+from app.scheduler.infrastructure.jobs import (
+    has_queued_jobs,
+    has_running_job,
+    reconcile_abandoned,
+    scheduler_now,
+)
 
 
-async def _run_once() -> dict[str, int]:
-    async with SessionLocal() as discovery_db:
-        result = await discovery_db.execute(
-            text("SELECT app_security.list_reconciliation_organization_ids()")
+async def _supervise_scheduler_v1() -> dict[str, int | bool]:
+    """Recover abandoned attempts and wake the executor when work is waiting."""
+    async with SessionLocal() as db:
+        reconciled = await reconcile_abandoned(
+            db,
+            stale_after_seconds=settings.SCHEDULER_V1_ABANDONED_SECONDS,
+            now_utc=scheduler_now(),
         )
-        organization_ids = [int(value) for value in result.scalars()]
-
-    totals: dict[str, int] = {"organizations_processed": 0}
-    for organization_id in organization_ids:
-        async with SessionLocal.begin() as db:
-            await set_async_tenant_context(db, organization_id)
-            recovered = await SchedulerJobService(db).recover_stale_jobs(organization_id)
-        totals["organizations_processed"] += 1
-        for key, value in recovered.items():
-            totals[key] = totals.get(key, 0) + value
-    return totals
+        queued = await has_queued_jobs(db)
+        running = await has_running_job(db)
+    if queued and not running:
+        celery_app.send_task("scheduler.v1.run_next_job")
+    return {"reconciled": reconciled, "queued": queued, "running": running}
 
 
-@celery_app.task(name="scheduler.run_stale_job_recovery")
-def run_stale_job_recovery_task() -> dict[str, int]:
-    return asyncio.run(_run_once())
+@celery_app.task(name="scheduler.v1.supervise")
+def supervise_scheduler_v1_task() -> dict[str, int | bool]:
+    return asyncio.run(_supervise_scheduler_v1())

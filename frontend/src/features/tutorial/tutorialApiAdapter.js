@@ -180,58 +180,86 @@ function getDraftDiff(scenario, draftId) {
   if (!scenario.draft) return null
   const numericDraftId = scenario.draft?.id === 'demo-draft-recovery' ? 72 : 71
   if (numericDraftId !== Number(draftId)) return null
-  return [{
-    id: 1,
-    change_type: scenario.draft.kind === 'RECOVERY' ? 'ADDED' : 'MOVED',
-    impact_scope: 'AFFECTED',
-    class_id: 1,
-    subject_id: 1,
-    teacher_id: 1,
-    before_active_block_id: scenario.draft.kind === 'RECOVERY' ? null : 1,
-    after_draft_block_id: scenario.draft.kind === 'RECOVERY' ? 3 : 1,
-    before_snapshot: null,
-    after_snapshot: { date: scenario.draft.projectedCompletionDate },
-    reason_code: scenario.draft.kind === 'RECOVERY' ? 'RECOVERY_BLOCK' : 'SCHEDULE_GENERATION',
-    reason_message: scenario.draft.kind === 'RECOVERY'
-      ? 'Uma hora de Programação fica reservada para recuperação futura.'
-      : 'A proposta distribui as aulas da turma pela semana preparada.',
-    recovery_link_impact: scenario.draft.kind === 'RECOVERY' ? { hours_recovered: 1 } : null,
-  }]
+  const isRecovery = scenario.draft.kind === 'RECOVERY'
+  return {
+    is_first_generation: !isRecovery,
+    physical: [{
+      change_type: isRecovery ? 'ADDED' : 'MOVED',
+      lesson_id: 1,
+      class_id: 1,
+      subject_id: 1,
+      before: isRecovery ? null : { date: '2025-09-16', start: '09:00', end: '10:00', room_id: 1 },
+      after: { date: scenario.draft.projectedCompletionDate, start: '09:00', end: '10:00', room_id: 1 },
+    }],
+    modular: isRecovery ? [] : [{
+      lesson_id: 1,
+      class_id: 1,
+      subject_id: 1,
+      before: [{ module_id: 1, offset_minutes: 0, minutes: 50 }],
+      after: [{ module_id: 1, offset_minutes: 50, minutes: 50 }],
+    }],
+    counts: {
+      added: isRecovery ? 1 : 0,
+      moved: isRecovery ? 0 : 1,
+      removed: 0,
+      room_changed: 0,
+      modular_updates: isRecovery ? 0 : 1,
+    },
+  }
 }
 
 function schedulerStatus(snapshot, scenario) {
-  const draftId = snapshot.currentDraft?.draft_id ?? null
+  const proposal = snapshot.currentDraft
+  const published = Boolean(scenario.publishedRecoveryBlockIds.length)
   return {
-    school_year_id: 1,
-    school_year_publication_state: scenario.publishedRecoveryBlockIds.length || !scenario.draft ? 'PUBLISHED' : 'UNPUBLISHED',
-    pending_draft_id: draftId,
-    primary_action: draftId ? 'REVIEW_PENDING_DRAFT' : 'GENERATE_SCHEDULE',
-    can_generate_new_draft: !draftId,
-    can_regenerate_with_confirmation: Boolean(draftId),
-    blocked_reason: null,
-    trigger_type: snapshot.currentDraft?.trigger_type ?? null,
-    unresolved_debt_hours: scenario.debt.remainingMinutes / 60,
-    scheduler_state_version: 1,
-    approved_scheduler_state_version: scenario.draft ? null : 1,
+    configured: true,
+    school_year: {
+      id: 1,
+      label: '2025/2026',
+      start_date: '2025-09-01',
+      preferred_end_date: '2025-12-19',
+      hard_end_date: scenario.hardEndDate ?? '2026-07-15',
+      timezone: 'Europe/Lisbon',
+    },
+    publication_state: published ? 'PUBLISHED' : 'UNPUBLISHED',
+    active_version_id: published ? 1 : null,
+    revisions: {
+      input: 0,
+      planning: 0,
+      last_completed_planning: null,
+      last_successful_generation_at: null,
+    },
+    eligibility: {
+      can_generate: !proposal,
+      reasons: proposal ? [] : ['FIRST_GENERATION'],
+      blocker: null,
+    },
+    default_strategy: published ? 'ADAPTIVE_RECOVERY' : 'COMPLETE_GENERATION',
+    active_job: null,
+    pending_proposal: proposal,
   }
 }
 
 function createJobResponse(scenario, jobId) {
   const job = Object.values(scenario.jobs).find((item) => item.id === jobId)
   if (!job) return null
+  const proposalId = scenario.draft
+    ? (scenario.draft.id === 'demo-draft-recovery' ? 72 : 71)
+    : null
   return {
     id: 81,
-    strategy: job.strategy ?? 'COMPLETE_GENERATION',
-    trigger_type: job.triggerType ?? 'FIRST_GENERATION',
-    job_status: job.status,
-    result_category: job.resultCategory,
+    strategy: job.strategy ?? scenario.draft?.strategy ?? 'COMPLETE_GENERATION',
+    status: job.status,
+    result_code: job.status === 'SUCCEEDED' ? 'COMPLETE' : job.status,
+    stop_reason: job.status === 'SUCCEEDED' ? 'ROUND_LIMIT' : null,
+    queue_position: null,
     queued_at: '2025-09-15T07:00:00Z',
     started_at: '2025-09-15T07:00:01Z',
     finished_at: '2025-09-15T07:00:02Z',
-    deadline_at: '2025-09-15T07:05:00Z',
-    duration_ms: 1000,
-    failure_code: null,
-    failure_message: null,
+    heartbeat_at: '2025-09-15T07:00:02Z',
+    cancellation_requested: false,
+    proposal_id: proposalId,
+    summary: null,
   }
 }
 
@@ -376,7 +404,7 @@ function handleSchedulerJobRoute(context) {
   const { method, path, scenario, read, write, stepId, fail } = context
   if (path === '/scheduler/generate') {
     if (method !== 'post') return methodNotAllowed(context)
-    return write(TUTORIAL_ACTIONS.GENERATE_SCHEDULE, {}, (next) => ({ job_id: 81, strategy: next.draft?.strategy ?? 'COMPLETE_GENERATION', trigger_type: next.draft?.triggerType ?? 'FIRST_GENERATION', status: 'SUCCEEDED' }))
+    return write(TUTORIAL_ACTIONS.GENERATE_SCHEDULE, {}, (next) => ({ job: createJobResponse(next, 'demo-job-schedule') }))
   }
   if (/^\/scheduler\/jobs\/\d+$/.test(path)) {
     if (method !== 'get') return methodNotAllowed(context)
@@ -388,7 +416,7 @@ function handleSchedulerJobRoute(context) {
   if (method !== 'post') return methodNotAllowed(context)
   const draftId = Number(path.split('/')[3])
   const actionType = stepId === 'recovery' ? TUTORIAL_ACTIONS.APPROVE_RECOVERY : TUTORIAL_ACTIONS.APPROVE_SCHEDULE
-  return write(actionType, { draftId }, (_next, nextSnapshot) => ({ draft_id: draftId, draft_state: 'APPROVED', school_year_publication_state: 'PUBLISHED', active_schedule_version_id: 'demo-schedule-version-' + draftId, active_block_count: nextSnapshot.timeslots.length }))
+  return write(actionType, { draftId }, () => ({ proposal_id: draftId, status: 'APPROVED', active_version_id: 1, approved_at: '2025-09-15T07:05:00Z' }))
 }
 
 function handleScheduleRoutes(context) {

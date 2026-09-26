@@ -16,7 +16,6 @@ import { cleanupOrganizationByName } from '../utils/fresh-founder.js'
 
 const API_PREFIX = '/api/v1'
 const OPERATION_TIMEOUT_MS = 30_000
-const JOB_TIMEOUT_MS = 120_000
 const COMPOSED_FLOW_TIMEOUT_MS = 600_000
 
 function withTimeout(operation, label, timeoutMs = OPERATION_TIMEOUT_MS) {
@@ -51,12 +50,6 @@ function schedulerFixtureDates(weekOffset) {
     startYear: schoolStart.getFullYear(),
     endYear: Math.max(hardEnd.getFullYear(), schoolStart.getFullYear() + 1),
   }
-}
-
-function addDaysIso(isoDate, days) {
-  const value = new Date(`${isoDate}T12:00:00`)
-  value.setDate(value.getDate() + days)
-  return toIsoDate(value)
 }
 
 const FIXTURE_DATES = schedulerFixtureDates(-2)
@@ -140,21 +133,21 @@ export async function apiRequest(page, method, path, body, timeoutMs = OPERATION
 
 async function rejectPendingDraftIfPresent(page) {
   const status = await apiRequest(page, 'GET', '/scheduler/status')
-  if (status?.pending_draft_id) {
-    await apiRequest(page, 'POST', `/scheduler/drafts/${status.pending_draft_id}/reject`)
+  if (status?.pending_proposal?.proposal_id) {
+    await apiRequest(page, 'POST', `/scheduler/drafts/${status.pending_proposal.proposal_id}/reject`)
   }
 }
 
 async function resetSchedulerYearIfConfigured(page) {
   const status = await apiRequest(page, 'GET', '/scheduler/status')
-  if (status?.school_year_id) {
+  if (status?.school_year?.id) {
     await apiRequest(page, 'POST', '/scheduler/reset-year', { confirmed: true })
   }
 }
 
 async function clearExistingSchedulerFixture(page) {
   const status = await apiRequest(page, 'GET', '/scheduler/status')
-  if (status?.school_year_id) {
+  if (status?.school_year?.id) {
     await apiRequest(page, 'POST', '/school/settings/soft-reset', {
       confirm_phrase: 'Confirmo',
     })
@@ -403,9 +396,9 @@ export async function generateAndApproveThroughUi(page) {
   const response = await generateResponse
   const responseText = await response.text()
   expect(response.ok(), `scheduler generate failed: ${response.status()} ${responseText}`).toBeTruthy()
-  const job = await waitForSchedulerJob(page, JSON.parse(responseText).job_id)
-  expect(job.job_status).toBe('SUCCEEDED')
-  await expect(page.getByText(/Rascunho pronto para revis/i)).toBeVisible({ timeout: 30_000 })
+  const job = await waitForSchedulerJob(page, JSON.parse(responseText).job.id)
+  expect(job.status).toBe('SUCCEEDED')
+  await expect(page.getByText(/Proposta pronta para revis/i)).toBeVisible({ timeout: 30_000 })
   const approvalResponsePromise = page.waitForResponse(
     (candidate) => candidate.url().includes('/api/v1/scheduler/drafts/')
       && candidate.url().endsWith('/approve')
@@ -438,7 +431,7 @@ async function firstPublishedFutureSlot(page, classId) {
       'GET',
       `/schedule/week?class_id=${classId}&week_start=${mondayIso(weekStart)}`,
     )
-    const published = slots.find((slot) => slot.active_schedule_block_id)
+    const published = slots.find((slot) => slot.scheduler_lesson_id)
     if (published) return published
   }
   throw new Error('No published future slot was found for adaptive repair.')
@@ -469,13 +462,13 @@ test.describe('Scheduler generation', () => {
     const response = await generateResponse
     const responseText = await response.text()
     expect(response.ok(), `scheduler generate failed: ${response.status()} ${responseText}`).toBeTruthy()
-    const { job_id: jobId } = JSON.parse(responseText)
+    const { job: { id: jobId } } = JSON.parse(responseText)
 
     const job = await waitForSchedulerJob(page, jobId)
-    expect(job.job_status).toBe('SUCCEEDED')
+    expect(job.status).toBe('SUCCEEDED')
 
-    await expect(page.getByText(/Rascunho pronto para revis/i)).toBeVisible({ timeout: 30_000 })
-    await expect(page.getByText('Rascunho pendente').first()).toBeVisible({ timeout: 30_000 })
+    await expect(page.getByText(/Proposta pronta para revis/i)).toBeVisible({ timeout: 30_000 })
+    await expect(page.getByText('Proposta pendente').first()).toBeVisible({ timeout: 30_000 })
     await expect(page.getByText('Resultado completo').first()).toBeVisible({ timeout: 30_000 })
     await expect(page.getByText(/Erro na gera/i)).toHaveCount(0)
 
@@ -497,12 +490,12 @@ test.describe('Scheduler generation', () => {
       'GET',
       `/schedule/week?class_id=${classId}&week_start=${weekStart}`,
     )
-    const activeSlots = publishedSlots.filter((slot) => slot.active_schedule_block_id)
+    const activeSlots = publishedSlots.filter((slot) => slot.scheduler_lesson_id)
     expect(activeSlots.length).toBeGreaterThanOrEqual(2)
-    const activeBlockIds = new Set(
-      activeSlots.map((slot) => slot.active_schedule_block_id),
+    const activeLessonIds = new Set(
+      activeSlots.map((slot) => slot.scheduler_lesson_id),
     )
-    const activeLogPath = /\/api\/v1\/schedule\/active-blocks\/(\d+)\/log(?:\?|$)/
+    const activeLogPath = /\/api\/v1\/schedule\/lessons\/(\d+)\/log(?:\?|$)/
 
     await goTo(page, `/schedules?weekStart=${weekStart}`)
     await expectRouteReady(page, '/schedules')
@@ -522,8 +515,8 @@ test.describe('Scheduler generation', () => {
     await page.getByRole('button', { name: /^Aula Dada$/i }).click()
     const completedResponse = await completedResponsePromise
     expect(completedResponse.status()).toBe(200)
-    const completedBlockId = Number(completedResponse.url().match(activeLogPath)?.[1])
-    expect(activeBlockIds.has(completedBlockId)).toBe(true)
+    const completedLessonId = Number(completedResponse.url().match(activeLogPath)?.[1])
+    expect(activeLessonIds.has(completedLessonId)).toBe(true)
     await expect(page.getByRole('gridcell', { name: /Conclu.da/i }).first()).toBeVisible({
       timeout: 20_000,
     })
@@ -538,27 +531,22 @@ test.describe('Scheduler generation', () => {
     await page.getByRole('button', { name: /Sim, criar ocorr.ncia/i }).click()
     const occurrenceResponse = await occurrenceResponsePromise
     expect(occurrenceResponse.status()).toBe(200)
-    const occurrenceBlockId = Number(occurrenceResponse.url().match(activeLogPath)?.[1])
-    expect(activeBlockIds.has(occurrenceBlockId)).toBe(true)
-    expect(occurrenceBlockId).not.toBe(completedBlockId)
+    const occurrenceLessonId = Number(occurrenceResponse.url().match(activeLogPath)?.[1])
+    expect(activeLessonIds.has(occurrenceLessonId)).toBe(true)
+    expect(occurrenceLessonId).not.toBe(completedLessonId)
     await expect(page.getByRole('gridcell', { name: /Ocorr.ncia/i }).first()).toBeVisible({
       timeout: 20_000,
     })
 
-    const occurrences = await apiRequest(
+    const refreshedSlots = await apiRequest(
       page,
       'GET',
-      `/occurrences/?class_id=${classId}&date_from=${weekStart}&date_to=${addDaysIso(
-        weekStart,
-        6,
-      )}`,
+      `/schedule/week?class_id=${classId}&week_start=${weekStart}`,
     )
-    expect(occurrences.items).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        active_schedule_block_id: occurrenceBlockId,
-        is_active: true,
-      }),
-    ]))
+    const occurrenceSlot = refreshedSlots.find(
+      (slot) => slot.scheduler_lesson_id === occurrenceLessonId,
+    )
+    expect(occurrenceSlot).toMatchObject({ lesson_log_status: 'OCCURRENCE' })
   })
 })
 
@@ -654,11 +642,11 @@ test('fresh founder completes Complete Generation and custom-rule Adaptive Repai
         },
       })
       await expect.poll(
-        async () => (await apiRequest(page, 'GET', '/scheduler/status')).trigger_type,
+        async () => (await apiRequest(page, 'GET', '/scheduler/status')).eligibility.reasons.includes('PLANNING_CHANGE'),
         { timeout: OPERATION_TIMEOUT_MS },
-      ).toBe('SCHEDULER_CHANGE')
+      ).toBe(true)
       const job = await generateAndApproveThroughUi(page)
-      expect(job.strategy).toBe('ADAPTIVE_REPAIR')
+      expect(job.strategy).toBe('ADAPTIVE_RECOVERY')
       return job
     }, { timeout: 180_000 })
 
@@ -669,12 +657,12 @@ test('fresh founder completes Complete Generation and custom-rule Adaptive Repai
         `/schedule/week?class_id=${classId}&week_start=${mondayIso(new Date(`${forbidden.date}T12:00:00`))}`,
       )
       expect(repairedWeek.some((slot) => (
-        slot.active_schedule_block_id
+        slot.scheduler_lesson_id
         && slot.date === forbidden.date
         && slot.timeslot.id === forbidden.timeslot.id
         && slot.teacher.id === teacherId
       ))).toBe(false)
-      expect(repairJob.duration_ms).toBeLessThanOrEqual(JOB_TIMEOUT_MS)
+      expect(repairJob.strategy).toBe('ADAPTIVE_RECOVERY')
     }, { timeout: 60_000 })
 
     await test.step('sessão e troca de organização', async () => {

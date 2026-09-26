@@ -49,8 +49,8 @@ vi.mock('../features/catalog/data', () => ({
 vi.mock('../components/schedules/DraftPanel', () => ({
   default: ({ draft, onApprove }) => (
     <div>
-      Rever rascunho {draft.draft_id}
-      <button type="button" onClick={() => onApprove(draft.draft_id)}>Aprovar teste</button>
+      Rever proposta {draft.proposal_id}
+      <button type="button" onClick={() => onApprove(draft.proposal_id)}>Aprovar teste</button>
     </div>
   ),
 }))
@@ -61,6 +61,20 @@ vi.mock('../components/schedules/GenerationStatusPanel', () => ({ default: () =>
 
 function renderPage() {
   return renderWithRouter(<Schedules />)
+}
+
+function proposalStatus(overrides = {}) {
+  return {
+    configured: true,
+    publication_state: 'UNPUBLISHED',
+    active_version_id: null,
+    revisions: { input: 0, planning: 0, last_completed_planning: null, last_successful_generation_at: null },
+    eligibility: { can_generate: true, reasons: ['FIRST_GENERATION'], blocker: null },
+    default_strategy: 'COMPLETE_GENERATION',
+    active_job: null,
+    pending_proposal: { proposal_id: 77, can_approve: true, is_stale: false, metrics: {} },
+    ...overrides,
+  }
 }
 
 describe('Schedules scheduler flow', () => {
@@ -75,71 +89,55 @@ describe('Schedules scheduler flow', () => {
     mocks.jobData = null
   })
 
-  it('makes pending draft review primary and hides ordinary generation', () => {
-    mocks.status = {
-      pending_draft_id: 77,
-      primary_action: 'REVIEW_PENDING_DRAFT',
-      can_generate_new_draft: false,
-      can_regenerate_with_confirmation: true,
-      blocked_reason: null,
-    }
-    mocks.currentDraft = { draft_id: 77 }
+  it('shows the pending proposal and an update action that requires confirmation', async () => {
+    mocks.status = proposalStatus({
+      publication_state: 'PUBLISHED',
+      active_version_id: 5,
+      default_strategy: 'ADAPTIVE_RECOVERY',
+    })
+    mocks.currentDraft = { proposal_id: 77 }
+    mocks.generate.mockResolvedValue({ job: { id: 91 } })
 
     renderPage()
 
-    expect(screen.getByText('Rever rascunho 77')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Gerar novamente' })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Gerar Horário' })).not.toBeInTheDocument()
-  })
-
-  it('replaces a pending draft only after explicit confirmation', async () => {
-    mocks.status = {
-      pending_draft_id: 77,
-      primary_action: 'REVIEW_PENDING_DRAFT',
-      can_generate_new_draft: false,
-      can_regenerate_with_confirmation: true,
-      blocked_reason: null,
-    }
-    mocks.currentDraft = { draft_id: 77 }
-    mocks.generate.mockResolvedValue({ job_id: 91 })
-
-    renderPage()
-    fireEvent.click(screen.getByRole('button', { name: 'Gerar novamente' }))
-    expect(await screen.findByText(/substituir o rascunho pendente/i)).toBeInTheDocument()
+    expect(screen.getByText('Rever proposta 77')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Atualizar horário' }))
+    expect(await screen.findByText(/substituir a proposta pendente/i)).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /confirmar gera/i }))
 
     await waitFor(() => {
-      expect(mocks.generate).toHaveBeenCalledWith({ replacePendingDraft: true })
+      expect(mocks.generate).toHaveBeenCalledWith({
+        idempotencyKey: expect.any(String),
+        expectedInputRevision: 0,
+      })
     })
   })
 
-  it('shows the only generation action when the status allows it', () => {
-    mocks.status = {
-      pending_draft_id: null,
-      primary_action: 'GENERATE_SCHEDULE',
-      can_generate_new_draft: true,
-      can_regenerate_with_confirmation: false,
-      blocked_reason: null,
-    }
+  it('shows the first generation action when the server allows it', () => {
+    mocks.status = proposalStatus({ pending_proposal: null })
 
     renderPage()
 
-    expect(screen.getByRole('button', { name: 'Gerar Horário' })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Gerar novamente' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('combobox', { name: /modo|estratégia/i })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Gerar horário' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Atualizar horário' })).not.toBeInTheDocument()
   })
 
-  it('does not refetch a week when a generation finishes without a selected view', async () => {
+  it('explains that there is nothing to generate when there is no reason', () => {
+    mocks.status = proposalStatus({
+      eligibility: { can_generate: false, reasons: [], blocker: null },
+      pending_proposal: null,
+    })
+
+    renderPage()
+
+    expect(screen.queryByRole('button', { name: 'Gerar horário' })).not.toBeInTheDocument()
+    expect(screen.getByText(/Não existem alterações por aplicar ao horário/)).toBeInTheDocument()
+  })
+
+  it('refreshes the state when a generation finishes without a selected view', async () => {
     writeExpiringValue(localStorage, 'hz-schedule-active-job-org-1', '91')
-    mocks.status = {
-      pending_draft_id: 77,
-      primary_action: 'REVIEW_PENDING_DRAFT',
-      can_generate_new_draft: false,
-      can_regenerate_with_confirmation: true,
-      blocked_reason: null,
-    }
-    mocks.currentDraft = { draft_id: 77 }
-    mocks.jobData = { job_status: 'SUCCEEDED' }
+    mocks.status = proposalStatus({ pending_proposal: null })
+    mocks.jobData = { status: 'SUCCEEDED' }
 
     renderPage()
 
@@ -150,39 +148,18 @@ describe('Schedules scheduler flow', () => {
     expect(mocks.weekRefetch).not.toHaveBeenCalled()
   })
 
-  it('hides the generation command without showing an unavailable reason', () => {
-    mocks.status = {
-      pending_draft_id: null,
-      primary_action: 'GENERATION_UNAVAILABLE',
-      can_generate_new_draft: false,
-      can_regenerate_with_confirmation: false,
-      blocked_reason: null,
-    }
-
-    renderPage()
-
-    expect(screen.queryByText('No schedule generation needed.')).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Gerar Horário' })).not.toBeInTheDocument()
-  })
-
-  it('explains how to recover when approval finds a stale draft', async () => {
-    mocks.status = {
-      pending_draft_id: 77,
-      primary_action: 'REVIEW_PENDING_DRAFT',
-      can_generate_new_draft: false,
-      can_regenerate_with_confirmation: true,
-      blocked_reason: null,
-    }
-    mocks.currentDraft = { draft_id: 77 }
+  it('explains how to recover when approval finds a stale proposal', async () => {
+    mocks.status = proposalStatus()
+    mocks.currentDraft = { proposal_id: 77 }
     mocks.approve.mockRejectedValue({
-      response: { data: { detail: { draft_state: 'STALE' } } },
+      response: { data: { detail: { code: 'proposal_stale' } } },
     })
 
     renderPage()
     fireEvent.click(screen.getByRole('button', { name: 'Aprovar teste' }))
 
-    expect(await screen.findByText(/Este rascunho já não está atualizado/)).toHaveTextContent(
-      'Gere um novo rascunho para continuar.'
+    expect(await screen.findByText(/Existem alterações mais recentes/)).toHaveTextContent(
+      'Gere uma nova proposta para continuar.'
     )
   })
 })

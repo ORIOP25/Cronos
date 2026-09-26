@@ -1,0 +1,334 @@
+{
+  "schema_version": "scheduler-lab-v3",
+  "campaign_id": "w12-reserved-repair",
+  "cases": [
+    {
+      "case_id": "w12-reserved-01",
+      "family": "RESERVED",
+      "version": 1,
+      "expectation": "EXPLORATORY_UNKNOWN",
+      "mutation": null,
+      "expected_violations": [],
+      "seeds": {
+        "fixture_seed": 7,
+        "event_seed": 1,
+        "solver_seed": 11
+      },
+      "spec": {
+        "strategy": "ADAPTIVE_RECOVERY",
+        "origin": "2026-11-02",
+        "preferred_end_date": "2026-12-04",
+        "hard_end_date": "2027-01-15",
+        "timezone_name": "Europe/Lisbon",
+        "grid_slots": [
+          [
+            0,
+            "10:00",
+            "11:00"
+          ],
+          [
+            1,
+            "10:00",
+            "11:00"
+          ],
+          [
+            2,
+            "10:00",
+            "11:00"
+          ]
+        ],
+        "periods": [
+          [
+            "2026-11-02",
+            "10:00",
+            "11:00"
+          ],
+          [
+            "2026-11-03",
+            "10:00",
+            "11:00"
+          ],
+          [
+            "2026-11-04",
+            "10:00",
+            "11:00"
+          ],
+          [
+            "2026-11-09",
+            "10:00",
+            "11:00"
+          ]
+        ],
+        "assignments": [
+          {
+            "class_id": 1,
+            "teacher_id": 21,
+            "module_minutes": [
+              120
+            ],
+            "eligible_rooms": [
+              700,
+              701
+            ]
+          },
+          {
+            "class_id": 2,
+            "teacher_id": 22,
+            "module_minutes": [
+              60
+            ],
+            "eligible_rooms": [
+              702
+            ]
+          },
+          {
+            "class_id": 3,
+            "teacher_id": 23,
+            "module_minutes": [
+              60
+            ],
+            "eligible_rooms": [
+              703
+            ]
+          },
+          {
+            "class_id": 4,
+            "teacher_id": 21,
+            "module_minutes": [
+              60
+            ],
+            "eligible_rooms": [
+              704
+            ]
+          }
+        ],
+        "blocked_dates": [],
+        "executed_minutes": [],
+        "unavailable": [],
+        "soft_unavailable": [],
+        "protected_dates": [],
+        "now_utc": null,
+        "reservations": [],
+        "open_debt_minutes": [],
+        "claim_assignments": [],
+        "active_version_id": null
+      },
+      "scale": null,
+      "annual": null,
+      "events": [
+        2
+      ],
+      "witness_mode": "oracle"
+    },
+    {
+      "case_id": "w12-reserved-02",
+      "family": "RESERVED",
+      "version": 1,
+      "expectation": "EXPLORATORY_UNKNOWN",
+      "mutation": null,
+      "expected_violations": [],
+      "seeds": {
+        "fixture_seed": 8,
+        "event_seed": 2,
+        "solver_seed": 12
+      },
+      "spec": {
+        "strategy": "ADAPTIVE_RECOVERY",
+        "origin": "2026-11-02",
+        "preferred_end_date": "2026-11-13",
+        "hard_end_date": "2027-01-15",
+        "timezone_name": "Europe/Lisbon",
+        "grid_slots": [
+          [
+            0,
+            "10:00",
+            "11:00"
+          ],
+          [
+            1,
+            "10:00",
+            "11:00"
+          ],
+          [
+            2,
+            "10:00",
+            "11:00"
+          ]
+        ],
+        "periods": [
+          [
+            "2026-11-02",
+            "10:00",
+            "11:00"
+          ],
+          [
+            "2026-11-03",
+            "10:00",
+            "11:00"
+          ],
+          [
+            "2026-11-04",
+            "10:00",
+            "11:00"
+          ]
+        ],
+        "assignments": [
+          {
+            "class_id": 1,
+            "teacher_id": 21,
+            "module_minutes": [
+              120
+            ],
+            "eligible_rooms": [
+              700,
+              701
+            ]
+          },
+          {
+            "class_id": 2,
+            "teacher_id": 22,
+            "module_minutes": [
+              60
+            ],
+            "eligible_rooms": [
+              702
+            ]
+          },
+          {
+            "class_id": 3,
+            "teacher_id": 23,
+            "module_minutes": [
+              60
+            ],
+            "eligible_rooms": [
+              703
+            ]
+          },
+          {
+            "class_id": 4,
+            "teacher_id": 21,
+            "module_minutes": [
+              60
+            ],
+            "eligible_rooms": [
+              704
+            ]
+          }
+        ],
+        "blocked_dates": [],
+        "executed_minutes": [],
+        "unavailable": [],
+        "soft_unavailable": [],
+        "protected_dates": [],
+        "now_utc": null,
+        "reservations": [],
+        "open_debt_minutes": [],
+        "claim_assignments": [],
+        "active_version_id": null
+      },
+      "scale": null,
+      "annual": null,
+      "events": [],
+      "witness_mode": "oracle"
+    },
+    {
+      "case_id": "w12-reserved-03",
+      "family": "RESERVED",
+      "version": 1,
+      "expectation": "EXPLORATORY_UNKNOWN",
+      "mutation": null,
+      "expected_violations": [],
+      "seeds": {
+        "fixture_seed": 9,
+        "event_seed": 0,
+        "solver_seed": 13
+      },
+      "spec": {
+        "strategy": "ADAPTIVE_RECOVERY",
+        "origin": "2026-11-02",
+        "preferred_end_date": "2026-12-04",
+        "hard_end_date": "2027-01-15",
+        "timezone_name": "Europe/Lisbon",
+        "grid_slots": [
+          [
+            0,
+            "10:00",
+            "11:00"
+          ],
+          [
+            1,
+            "10:00",
+            "11:00"
+          ],
+          [
+            2,
+            "10:00",
+            "11:00"
+          ]
+        ],
+        "periods": [
+          [
+            "2026-11-02",
+            "10:00",
+            "11:00"
+          ],
+          [
+            "2026-11-03",
+            "10:00",
+            "11:00"
+          ],
+          [
+            "2026-11-04",
+            "10:00",
+            "11:00"
+          ],
+          [
+            "2026-11-09",
+            "10:00",
+            "11:00"
+          ]
+        ],
+        "assignments": [
+          {
+            "class_id": 1,
+            "teacher_id": 21,
+            "module_minutes": [
+              180
+            ],
+            "eligible_rooms": [
+              700
+            ]
+          },
+          {
+            "class_id": 2,
+            "teacher_id": 24,
+            "module_minutes": [
+              120
+            ],
+            "eligible_rooms": [
+              700,
+              701
+            ]
+          }
+        ],
+        "blocked_dates": [],
+        "executed_minutes": [],
+        "unavailable": [],
+        "soft_unavailable": [],
+        "protected_dates": [],
+        "now_utc": null,
+        "reservations": [],
+        "open_debt_minutes": [],
+        "claim_assignments": [],
+        "active_version_id": null
+      },
+      "scale": null,
+      "annual": null,
+      "events": [
+        1,
+        2
+      ],
+      "witness_mode": "oracle"
+    }
+  ]
+}

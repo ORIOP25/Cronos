@@ -26,9 +26,12 @@ celery_app.conf.update(
             "task": "privacy.run_maintenance",
             "schedule": 86400.0,
         },
-        "scheduler-stale-job-recovery": {
-            "task": "scheduler.run_stale_job_recovery",
+        # The supervisor must run outside the solving worker: a blocked solve
+        # cannot delay the recovery of an abandoned attempt.
+        "scheduler-v1-supervise": {
+            "task": "scheduler.v1.supervise",
             "schedule": 60.0,
+            "options": {"queue": "scheduler-supervisor"},
         },
     },
     imports=(

@@ -1,4 +1,5 @@
 import uuid
+from datetime import UTC, datetime
 
 from sqlalchemy import delete, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -7,6 +8,10 @@ from sqlalchemy.orm import selectinload
 
 from app import models, schemas
 from app.core.exceptions import AppError
+from app.scheduler.infrastructure.operations import (
+    adjust_class_progress,
+    class_progress_map,
+)
 from app.services.scheduler_state_service import record_scheduler_change
 
 
@@ -360,23 +365,24 @@ async def get_class_full_details(db: AsyncSession, class_id: int, organization_i
     if not links:
         return response
 
-    # 4. Buscar progresso EXPLICITAMENTE por class_id (isolamento de turma)
-    #    Query directa em vez de relationship para garantir que não há
-    #    contaminação entre turmas via cache do ORM (identity map).
-    progress_query = (
-        select(
-            models.ProgressLedgerEntry.module_id,
-            func.coalesce(func.sum(models.ProgressLedgerEntry.completed_minutes_delta), 0),
-            func.coalesce(func.sum(models.ProgressLedgerEntry.debt_minutes_delta), 0),
+    # 4. Buscar progresso EXPLICITAMENTE por class_id (isolamento de turma).
+    #    A nova contabilização v1 é a fonte de verdade quando existir.
+    progress_map = await class_progress_map(db, organization_id, class_id)
+    if progress_map is None:
+        progress_query = (
+            select(
+                models.ProgressLedgerEntry.module_id,
+                func.coalesce(func.sum(models.ProgressLedgerEntry.completed_minutes_delta), 0),
+                func.coalesce(func.sum(models.ProgressLedgerEntry.debt_minutes_delta), 0),
+            )
+            .where(
+                models.ProgressLedgerEntry.organization_id == organization_id,
+                models.ProgressLedgerEntry.class_id == class_id,
+            )
+            .group_by(models.ProgressLedgerEntry.module_id)
         )
-        .where(
-            models.ProgressLedgerEntry.organization_id == organization_id,
-            models.ProgressLedgerEntry.class_id == class_id,
-        )
-        .group_by(models.ProgressLedgerEntry.module_id)
-    )
-    progress_result = await db.execute(progress_query)
-    progress_map = {row[0]: (int(row[1]), int(row[2])) for row in progress_result.all()}
+        progress_result = await db.execute(progress_query)
+        progress_map = {row[0]: (int(row[1]), int(row[2])) for row in progress_result.all()}
 
     # 5. Construir árvore de disciplinas com progresso
     for link in sorted(links, key=lambda item: item.subject.name if item.subject else ""):
@@ -393,6 +399,9 @@ async def update_class_progress(
     class_id: int,
     progress_updates: list[schemas.ClassProgressUpdate],
     organization_id: int,
+    *,
+    membership_id: int | None = None,
+    now_utc: datetime | None = None,
 ):
     """
     Atualiza o progresso de módulos para uma turma (upsert).
@@ -417,7 +426,20 @@ async def update_class_progress(
             detail=f"Class {class_id} was not found in organization {organization_id}.",
         )
 
-    # 2. Buscar módulos válidos das disciplinas atribuídas à turma (ClassSubjectLink)
+    # 2. Quando a nova contabilização existe, os acertos vão para o ledger v1.
+    if membership_id is not None:
+        handled = await adjust_class_progress(
+            db,
+            organization_id,
+            class_id,
+            progress_updates,
+            membership_id=membership_id,
+            now_utc=now_utc or datetime.now(UTC),
+        )
+        if handled:
+            return
+
+    # 3. Sem dados v1, mantém o caminho legado (removido na W12).
     links_query = (
         select(models.ClassSubjectLink)
         .where(

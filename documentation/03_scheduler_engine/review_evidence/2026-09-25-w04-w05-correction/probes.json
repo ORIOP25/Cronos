@@ -1,0 +1,334 @@
+{
+  "date": "2026-09-25",
+  "scenario_source": "../2026-09-24-w04-w05/probes.py",
+  "failures": [],
+  "results": {
+    "annual_waste_delays_completion": {
+      "expected": {
+        "outcome": "COMPLETE",
+        "vector": [
+          0
+        ]
+      },
+      "observed": {
+        "outcome": "COMPLETE",
+        "vector": [
+          0
+        ],
+        "valid": true,
+        "bound": 0
+      },
+      "verdict": "PASS",
+      "detail": null
+    },
+    "same_assignment_overlap": {
+      "expected": {
+        "outcome": "COMPLETE",
+        "vector": [
+          1
+        ]
+      },
+      "observed": {
+        "outcome": "COMPLETE",
+        "vector": [
+          1
+        ],
+        "oracle": [
+          1
+        ]
+      },
+      "verdict": "PASS",
+      "detail": null
+    },
+    "period_order": {
+      "expected": {
+        "outcomes": [
+          "COMPLETE",
+          "COMPLETE"
+        ],
+        "vectors": [
+          [
+            1
+          ],
+          [
+            1
+          ]
+        ]
+      },
+      "observed": {
+        "outcomes": [
+          "COMPLETE",
+          "COMPLETE"
+        ],
+        "vectors": [
+          [
+            1
+          ],
+          [
+            1
+          ]
+        ]
+      },
+      "verdict": "PASS",
+      "detail": null
+    },
+    "completion_tail_7_classes": {
+      "expected": {
+        "vector": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          0
+        ]
+      },
+      "observed": {
+        "outcome": "COMPLETE",
+        "vector": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          0
+        ],
+        "oracle": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          0
+        ]
+      },
+      "verdict": "PASS",
+      "detail": null
+    },
+    "completion_tail_9_classes": {
+      "expected": {
+        "vector": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          0
+        ]
+      },
+      "observed": {
+        "outcome": "COMPLETE",
+        "vector": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          0
+        ],
+        "oracle": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          0
+        ]
+      },
+      "verdict": "PASS",
+      "detail": null
+    },
+    "preference_metric_disagreement": {
+      "expected": {
+        "optimized": [
+          60
+        ],
+        "measured": 60
+      },
+      "observed": {
+        "optimized": [
+          60
+        ],
+        "measured": 60
+      },
+      "verdict": "PASS",
+      "detail": null
+    },
+    "protected_date": {
+      "expected": {
+        "outcome": "COMPLETE",
+        "days": [
+          "2026-09-22"
+        ]
+      },
+      "observed": {
+        "outcome": "COMPLETE",
+        "days": [
+          "2026-09-22"
+        ]
+      },
+      "verdict": "PASS",
+      "detail": null
+    },
+    "past_period": {
+      "expected": {
+        "outcome": "COMPLETE",
+        "days": [
+          "2026-09-22"
+        ]
+      },
+      "observed": {
+        "outcome": "COMPLETE",
+        "days": [
+          "2026-09-22"
+        ]
+      },
+      "verdict": "PASS",
+      "detail": null
+    },
+    "margin_without_recovery_capacity": {
+      "expected": {
+        "margin_days": 20,
+        "recovery": "IMPOSSIBLE_PROVEN"
+      },
+      "observed": {
+        "margin_days": 20,
+        "recovery": "IMPOSSIBLE_PROVEN"
+      },
+      "verdict": "PASS",
+      "detail": null
+    },
+    "controlled_unproven_prefix": {
+      "expected": {
+        "certified_stages": 0,
+        "first_stage_proven": false
+      },
+      "observed": {
+        "certified_stages": 0,
+        "stages": [
+          {
+            "stage": "COMPLETION_THRESHOLD:1",
+            "proven": false
+          },
+          {
+            "stage": "PREFERENCE_COST_MINUTES",
+            "proven": true
+          },
+          {
+            "stage": "ROOM_CHANGE_COST",
+            "proven": true
+          }
+        ]
+      },
+      "verdict": "PASS",
+      "detail": null
+    },
+    "scale_seed_diversity": {
+      "expected": {
+        "snapshots_equal": false
+      },
+      "observed": {
+        "snapshots_equal": false,
+        "assignments_equal": false
+      },
+      "verdict": "PASS",
+      "detail": null
+    },
+    "detail_ignores_zero_quotas": {
+      "expected": {
+        "status": "COMPLETE",
+        "assignment_1": [
+          {
+            "duration": 60,
+            "credit": 60
+          }
+        ],
+        "assignment_2": [
+          {
+            "duration": 90,
+            "credit": 90
+          }
+        ]
+      },
+      "observed": {
+        "status": "COMPLETE",
+        "materialized": {
+          "1": [
+            {
+              "duration": 60,
+              "credit": 60
+            }
+          ],
+          "2": [
+            {
+              "duration": 90,
+              "credit": 90
+            }
+          ]
+        }
+      },
+      "verdict": "PASS",
+      "detail": null
+    },
+    "annual_10_loose": {
+      "expected": {
+        "outcome": "COMPLETE",
+        "valid": true
+      },
+      "observed": {
+        "outcome": "COMPLETE",
+        "valid": true,
+        "lessons": 2040,
+        "credit": 102000,
+        "quality": {
+          "teacher_gap_minutes": 0,
+          "class_gap_minutes": 0,
+          "preference_cost_minutes": 0,
+          "room_change_cost": 0
+        },
+        "certified_stages": 58,
+        "bound_week": 23,
+        "stop_reason": "ROUND_LIMIT",
+        "seconds": 34.7
+      },
+      "verdict": "PASS",
+      "detail": null
+    },
+    "annual_60_shared_teacher": {
+      "expected": {
+        "outcome": "COMPLETE",
+        "valid": true
+      },
+      "observed": {
+        "outcome": "COMPLETE",
+        "valid": true,
+        "lessons": 14280,
+        "credit": 714000,
+        "quality": {
+          "teacher_gap_minutes": 0,
+          "class_gap_minutes": 0,
+          "preference_cost_minutes": 0,
+          "room_change_cost": 0
+        },
+        "certified_stages": 85,
+        "bound_week": 35,
+        "stop_reason": "SAFETY_LIMIT",
+        "seconds": 125.3
+      },
+      "verdict": "PASS",
+      "detail": null
+    }
+  }
+}

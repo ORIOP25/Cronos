@@ -1,0 +1,1513 @@
+{
+  "annual_waste_delays_completion": {
+    "result": {
+      "outcome": "COMPLETE",
+      "candidate": {
+        "lessons": [
+          {
+            "lesson_id": 1000001,
+            "assignment_id": 1,
+            "period": {
+              "school_date": "2026-09-22",
+              "start_local": "09:00:00",
+              "end_local": "10:30:00",
+              "timezone_name": "Europe/Lisbon",
+              "start_utc": "2026-09-22 08:00:00+00:00",
+              "end_utc": "2026-09-22 09:30:00+00:00"
+            },
+            "room_id": 1,
+            "credit_minutes": 90,
+            "slices": [
+              {
+                "lesson_id": 1000001,
+                "module_id": 1,
+                "offset_minutes": 0,
+                "credit_minutes": 90
+              }
+            ],
+            "source_lesson_id": null,
+            "teacher_id": null,
+            "class_id": null
+          }
+        ]
+      },
+      "report": {
+        "validator_version": "v2",
+        "violations": [],
+        "credited_minutes": {
+          "1": 90
+        },
+        "completion_dates": {
+          "1": "2026-09-22"
+        },
+        "total_credit_minutes": 90
+      },
+      "message": "",
+      "objective_days": 1,
+      "wall_time_seconds": 0.00923212800262263,
+      "quality": {
+        "completion_dates": {
+          "1": "2026-09-22"
+        },
+        "teacher_gap_minutes": 0,
+        "class_gap_minutes": 0,
+        "preference_cost_minutes": 0,
+        "room_change_cost": 0
+      },
+      "evidence": {
+        "objective_scope": "EXACT_MODEL",
+        "stages": [
+          {
+            "stage": "LATEST_COMPLETION_DAY",
+            "value": 1,
+            "proven": true
+          }
+        ],
+        "certified_stages": 1,
+        "stop_reason": "OPTIMAL",
+        "rounds": 1,
+        "relaxation_bound": 0,
+        "relaxation_proven": true,
+        "relaxation_scope": "ANNUAL_LATEST_WEEK"
+      },
+      "completion": {
+        "completion_dates": {
+          "1": "2026-09-22"
+        },
+        "latest_completion_date": "2026-09-22",
+        "preferred_end_date": "2026-10-11",
+        "margin_days": 19,
+        "classes_after_preferred": [],
+        "recoverable": true
+      }
+    },
+    "oracle_vector": [
+      0
+    ],
+    "oracle_valid": true,
+    "actual_vector": [
+      1
+    ],
+    "unrestricted_detail": {
+      "status": "COMPLETE",
+      "candidate": {
+        "lessons": [
+          {
+            "lesson_id": 1000001,
+            "assignment_id": 1,
+            "period": {
+              "school_date": "2026-09-21",
+              "start_local": "09:00:00",
+              "end_local": "11:00:00",
+              "timezone_name": "Europe/Lisbon",
+              "start_utc": "2026-09-21 08:00:00+00:00",
+              "end_utc": "2026-09-21 10:00:00+00:00"
+            },
+            "room_id": 1,
+            "credit_minutes": 90,
+            "slices": [
+              {
+                "lesson_id": 1000001,
+                "module_id": 1,
+                "offset_minutes": 0,
+                "credit_minutes": 90
+              }
+            ],
+            "source_lesson_id": null,
+            "teacher_id": null,
+            "class_id": null
+          }
+        ]
+      },
+      "objective_days": 0,
+      "wall_time_seconds": 0.0021921219959040172,
+      "proven_scope": "EXACT_MODEL",
+      "statistics": {
+        "variables": 10
+      },
+      "evidence": {
+        "objective_scope": "EXACT_MODEL",
+        "stages": [
+          {
+            "stage": "LATEST_COMPLETION_DAY",
+            "value": 0,
+            "proven": true
+          }
+        ],
+        "certified_stages": 1,
+        "stop_reason": "OPTIMAL",
+        "rounds": 1,
+        "relaxation_bound": null,
+        "relaxation_proven": false,
+        "relaxation_scope": null
+      },
+      "message": ""
+    }
+  },
+  "same_assignment_overlap": {
+    "result": {
+      "outcome": "FAILED",
+      "candidate": null,
+      "report": {
+        "validator_version": "v2",
+        "violations": [
+          {
+            "code": "RESOURCE_CONFLICT",
+            "message": "Two lessons overlap for the same resource.",
+            "assignment_id": null,
+            "lesson_id": null,
+            "resource_type": "class",
+            "resource_id": 1
+          },
+          {
+            "code": "RESOURCE_CONFLICT",
+            "message": "Two lessons overlap for the same resource.",
+            "assignment_id": null,
+            "lesson_id": null,
+            "resource_type": "room",
+            "resource_id": 1
+          },
+          {
+            "code": "RESOURCE_CONFLICT",
+            "message": "Two lessons overlap for the same resource.",
+            "assignment_id": null,
+            "lesson_id": null,
+            "resource_type": "teacher",
+            "resource_id": 1
+          }
+        ],
+        "credited_minutes": {
+          "1": 120
+        },
+        "completion_dates": {
+          "1": "2026-09-21"
+        },
+        "total_credit_minutes": 120
+      },
+      "message": "The solver produced a candidate rejected by the validator.",
+      "objective_days": null,
+      "wall_time_seconds": 0.005407229997217655,
+      "quality": null,
+      "evidence": {
+        "objective_scope": "EXACT_MODEL",
+        "stages": [
+          {
+            "stage": "LATEST_COMPLETION_DAY",
+            "value": 0,
+            "proven": true
+          }
+        ],
+        "certified_stages": 1,
+        "stop_reason": "OPTIMAL",
+        "rounds": 1,
+        "relaxation_bound": 0,
+        "relaxation_proven": true,
+        "relaxation_scope": "ANNUAL_LATEST_WEEK"
+      },
+      "completion": null
+    },
+    "oracle_vector": [
+      1
+    ],
+    "oracle_valid": true
+  },
+  "period_order_sorted": {
+    "result": {
+      "outcome": "COMPLETE",
+      "candidate": {
+        "lessons": [
+          {
+            "lesson_id": 1000001,
+            "assignment_id": 1,
+            "period": {
+              "school_date": "2026-09-21",
+              "start_local": "09:00:00",
+              "end_local": "10:00:00",
+              "timezone_name": "Europe/Lisbon",
+              "start_utc": "2026-09-21 08:00:00+00:00",
+              "end_utc": "2026-09-21 09:00:00+00:00"
+            },
+            "room_id": 1,
+            "credit_minutes": 60,
+            "slices": [
+              {
+                "lesson_id": 1000001,
+                "module_id": 1,
+                "offset_minutes": 0,
+                "credit_minutes": 60
+              }
+            ],
+            "source_lesson_id": null,
+            "teacher_id": null,
+            "class_id": null
+          },
+          {
+            "lesson_id": 1000002,
+            "assignment_id": 1,
+            "period": {
+              "school_date": "2026-09-22",
+              "start_local": "09:00:00",
+              "end_local": "10:00:00",
+              "timezone_name": "Europe/Lisbon",
+              "start_utc": "2026-09-22 08:00:00+00:00",
+              "end_utc": "2026-09-22 09:00:00+00:00"
+            },
+            "room_id": 1,
+            "credit_minutes": 30,
+            "slices": [
+              {
+                "lesson_id": 1000002,
+                "module_id": 1,
+                "offset_minutes": 60,
+                "credit_minutes": 30
+              }
+            ],
+            "source_lesson_id": null,
+            "teacher_id": null,
+            "class_id": null
+          }
+        ]
+      },
+      "report": {
+        "validator_version": "v2",
+        "violations": [],
+        "credited_minutes": {
+          "1": 90
+        },
+        "completion_dates": {
+          "1": "2026-09-22"
+        },
+        "total_credit_minutes": 90
+      },
+      "message": "",
+      "objective_days": 1,
+      "wall_time_seconds": 0.003994450002210215,
+      "quality": {
+        "completion_dates": {
+          "1": "2026-09-22"
+        },
+        "teacher_gap_minutes": 0,
+        "class_gap_minutes": 0,
+        "preference_cost_minutes": 0,
+        "room_change_cost": 0
+      },
+      "evidence": {
+        "objective_scope": "EXACT_MODEL",
+        "stages": [
+          {
+            "stage": "LATEST_COMPLETION_DAY",
+            "value": 1,
+            "proven": true
+          }
+        ],
+        "certified_stages": 1,
+        "stop_reason": "OPTIMAL",
+        "rounds": 1,
+        "relaxation_bound": 0,
+        "relaxation_proven": true,
+        "relaxation_scope": "ANNUAL_LATEST_WEEK"
+      },
+      "completion": {
+        "completion_dates": {
+          "1": "2026-09-22"
+        },
+        "latest_completion_date": "2026-09-22",
+        "preferred_end_date": "2026-10-11",
+        "margin_days": 19,
+        "classes_after_preferred": [],
+        "recoverable": true
+      }
+    },
+    "oracle_vector": [
+      1
+    ],
+    "oracle_valid": true,
+    "actual_vector": [
+      1
+    ]
+  },
+  "period_order_reversed": {
+    "result": {
+      "outcome": "FAILED",
+      "candidate": null,
+      "report": {
+        "validator_version": "v2",
+        "violations": [
+          {
+            "code": "PARTIAL_CREDIT_VIOLATION",
+            "message": "Only the last editable lesson of an assignment may be partial.",
+            "assignment_id": 1,
+            "lesson_id": 1000001,
+            "resource_type": null,
+            "resource_id": null
+          }
+        ],
+        "credited_minutes": {
+          "1": 90
+        },
+        "completion_dates": {
+          "1": "2026-09-22"
+        },
+        "total_credit_minutes": 90
+      },
+      "message": "The solver produced a candidate rejected by the validator.",
+      "objective_days": null,
+      "wall_time_seconds": 0.0036688469990622252,
+      "quality": null,
+      "evidence": {
+        "objective_scope": "EXACT_MODEL",
+        "stages": [
+          {
+            "stage": "LATEST_COMPLETION_DAY",
+            "value": 1,
+            "proven": true
+          }
+        ],
+        "certified_stages": 1,
+        "stop_reason": "OPTIMAL",
+        "rounds": 1,
+        "relaxation_bound": 0,
+        "relaxation_proven": true,
+        "relaxation_scope": "ANNUAL_LATEST_WEEK"
+      },
+      "completion": null
+    },
+    "oracle_vector": [
+      1
+    ],
+    "oracle_valid": true
+  },
+  "completion_tail_7_classes": {
+    "result": {
+      "outcome": "COMPLETE",
+      "candidate": {
+        "lessons": [
+          {
+            "lesson_id": 1000001,
+            "assignment_id": 1,
+            "period": {
+              "school_date": "2026-09-22",
+              "start_local": "09:00:00",
+              "end_local": "10:00:00",
+              "timezone_name": "Europe/Lisbon",
+              "start_utc": "2026-09-22 08:00:00+00:00",
+              "end_utc": "2026-09-22 09:00:00+00:00"
+            },
+            "room_id": 1,
+            "credit_minutes": 60,
+            "slices": [
+              {
+                "lesson_id": 1000001,
+                "module_id": 1,
+                "offset_minutes": 0,
+                "credit_minutes": 60
+              }
+            ],
+            "source_lesson_id": null,
+            "teacher_id": null,
+            "class_id": null
+          },
+          {
+            "lesson_id": 2000001,
+            "assignment_id": 2,
+            "period": {
+              "school_date": "2026-09-22",
+              "start_local": "09:00:00",
+              "end_local": "10:00:00",
+              "timezone_name": "Europe/Lisbon",
+              "start_utc": "2026-09-22 08:00:00+00:00",
+              "end_utc": "2026-09-22 09:00:00+00:00"
+            },
+            "room_id": 2,
+            "credit_minutes": 60,
+            "slices": [
+              {
+                "lesson_id": 2000001,
+                "module_id": 2,
+                "offset_minutes": 0,
+                "credit_minutes": 60
+              }
+            ],
+            "source_lesson_id": null,
+            "teacher_id": null,
+            "class_id": null
+          },
+          {
+            "lesson_id": 3000001,
+            "assignment_id": 3,
+            "period": {
+              "school_date": "2026-09-22",
+              "start_local": "09:00:00",
+              "end_local": "10:00:00",
+              "timezone_name": "Europe/Lisbon",
+              "start_utc": "2026-09-22 08:00:00+00:00",
+              "end_utc": "2026-09-22 09:00:00+00:00"
+            },
+            "room_id": 3,
+            "credit_minutes": 60,
+            "slices": [
+              {
+                "lesson_id": 3000001,
+                "module_id": 3,
+                "offset_minutes": 0,
+                "credit_minutes": 60
+              }
+            ],
+            "source_lesson_id": null,
+            "teacher_id": null,
+            "class_id": null
+          },
+          {
+            "lesson_id": 4000001,
+            "assignment_id": 4,
+            "period": {
+              "school_date": "2026-09-22",
+              "start_local": "09:00:00",
+              "end_local": "10:00:00",
+              "timezone_name": "Europe/Lisbon",
+              "start_utc": "2026-09-22 08:00:00+00:00",
+              "end_utc": "2026-09-22 09:00:00+00:00"
+            },
+            "room_id": 4,
+            "credit_minutes": 60,
+            "slices": [
+              {
+                "lesson_id": 4000001,
+                "module_id": 4,
+                "offset_minutes": 0,
+                "credit_minutes": 60
+              }
+            ],
+            "source_lesson_id": null,
+            "teacher_id": null,
+            "class_id": null
+          },
+          {
+            "lesson_id": 5000001,
+            "assignment_id": 5,
+            "period": {
+              "school_date": "2026-09-22",
+              "start_local": "09:00:00",
+              "end_local": "10:00:00",
+              "timezone_name": "Europe/Lisbon",
+              "start_utc": "2026-09-22 08:00:00+00:00",
+              "end_utc": "2026-09-22 09:00:00+00:00"
+            },
+            "room_id": 5,
+            "credit_minutes": 60,
+            "slices": [
+              {
+                "lesson_id": 5000001,
+                "module_id": 5,
+                "offset_minutes": 0,
+                "credit_minutes": 60
+              }
+            ],
+            "source_lesson_id": null,
+            "teacher_id": null,
+            "class_id": null
+          },
+          {
+            "lesson_id": 6000001,
+            "assignment_id": 6,
+            "period": {
+              "school_date": "2026-09-22",
+              "start_local": "09:00:00",
+              "end_local": "10:00:00",
+              "timezone_name": "Europe/Lisbon",
+              "start_utc": "2026-09-22 08:00:00+00:00",
+              "end_utc": "2026-09-22 09:00:00+00:00"
+            },
+            "room_id": 6,
+            "credit_minutes": 60,
+            "slices": [
+              {
+                "lesson_id": 6000001,
+                "module_id": 6,
+                "offset_minutes": 0,
+                "credit_minutes": 60
+              }
+            ],
+            "source_lesson_id": null,
+            "teacher_id": null,
+            "class_id": null
+          },
+          {
+            "lesson_id": 7000001,
+            "assignment_id": 7,
+            "period": {
+              "school_date": "2026-09-22",
+              "start_local": "09:00:00",
+              "end_local": "10:00:00",
+              "timezone_name": "Europe/Lisbon",
+              "start_utc": "2026-09-22 08:00:00+00:00",
+              "end_utc": "2026-09-22 09:00:00+00:00"
+            },
+            "room_id": 7,
+            "credit_minutes": 60,
+            "slices": [
+              {
+                "lesson_id": 7000001,
+                "module_id": 7,
+                "offset_minutes": 0,
+                "credit_minutes": 60
+              }
+            ],
+            "source_lesson_id": null,
+            "teacher_id": null,
+            "class_id": null
+          }
+        ]
+      },
+      "report": {
+        "validator_version": "v2",
+        "violations": [],
+        "credited_minutes": {
+          "1": 60,
+          "2": 60,
+          "3": 60,
+          "4": 60,
+          "5": 60,
+          "6": 60,
+          "7": 60
+        },
+        "completion_dates": {
+          "1": "2026-09-22",
+          "2": "2026-09-22",
+          "3": "2026-09-22",
+          "4": "2026-09-22",
+          "5": "2026-09-22",
+          "6": "2026-09-22",
+          "7": "2026-09-22"
+        },
+        "total_credit_minutes": 420
+      },
+      "message": "",
+      "objective_days": 1,
+      "wall_time_seconds": 0.02671859599649906,
+      "quality": {
+        "completion_dates": {
+          "1": "2026-09-22",
+          "2": "2026-09-22",
+          "3": "2026-09-22",
+          "4": "2026-09-22",
+          "5": "2026-09-22",
+          "6": "2026-09-22",
+          "7": "2026-09-22"
+        },
+        "teacher_gap_minutes": 0,
+        "class_gap_minutes": 0,
+        "preference_cost_minutes": 0,
+        "room_change_cost": 0
+      },
+      "evidence": {
+        "objective_scope": "EXACT_MODEL",
+        "stages": [
+          {
+            "stage": "LATEST_COMPLETION_DAY",
+            "value": 1,
+            "proven": true
+          },
+          {
+            "stage": "KTH_LATEST_COMPLETION_DAY:2",
+            "value": 1,
+            "proven": true
+          },
+          {
+            "stage": "KTH_LATEST_COMPLETION_DAY:3",
+            "value": 1,
+            "proven": true
+          },
+          {
+            "stage": "KTH_LATEST_COMPLETION_DAY:4",
+            "value": 1,
+            "proven": true
+          },
+          {
+            "stage": "KTH_LATEST_COMPLETION_DAY:5",
+            "value": 1,
+            "proven": true
+          },
+          {
+            "stage": "KTH_LATEST_COMPLETION_DAY:6",
+            "value": 1,
+            "proven": true
+          },
+          {
+            "stage": "PREFERENCE_COST_MINUTES",
+            "value": 0,
+            "proven": true
+          }
+        ],
+        "certified_stages": 7,
+        "stop_reason": "OPTIMAL",
+        "rounds": 1,
+        "relaxation_bound": 0,
+        "relaxation_proven": true,
+        "relaxation_scope": "ANNUAL_LATEST_WEEK"
+      },
+      "completion": {
+        "completion_dates": {
+          "1": "2026-09-22",
+          "2": "2026-09-22",
+          "3": "2026-09-22",
+          "4": "2026-09-22",
+          "5": "2026-09-22",
+          "6": "2026-09-22",
+          "7": "2026-09-22"
+        },
+        "latest_completion_date": "2026-09-22",
+        "preferred_end_date": "2026-10-11",
+        "margin_days": 19,
+        "classes_after_preferred": [],
+        "recoverable": true
+      }
+    },
+    "oracle_vector": [
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      0
+    ],
+    "oracle_valid": true,
+    "actual_vector": [
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1
+    ]
+  },
+  "completion_tail_9_classes": {
+    "result": {
+      "outcome": "COMPLETE",
+      "candidate": {
+        "lessons": [
+          {
+            "lesson_id": 1000001,
+            "assignment_id": 1,
+            "period": {
+              "school_date": "2026-09-22",
+              "start_local": "09:00:00",
+              "end_local": "10:00:00",
+              "timezone_name": "Europe/Lisbon",
+              "start_utc": "2026-09-22 08:00:00+00:00",
+              "end_utc": "2026-09-22 09:00:00+00:00"
+            },
+            "room_id": 1,
+            "credit_minutes": 60,
+            "slices": [
+              {
+                "lesson_id": 1000001,
+                "module_id": 1,
+                "offset_minutes": 0,
+                "credit_minutes": 60
+              }
+            ],
+            "source_lesson_id": null,
+            "teacher_id": null,
+            "class_id": null
+          },
+          {
+            "lesson_id": 2000001,
+            "assignment_id": 2,
+            "period": {
+              "school_date": "2026-09-22",
+              "start_local": "09:00:00",
+              "end_local": "10:00:00",
+              "timezone_name": "Europe/Lisbon",
+              "start_utc": "2026-09-22 08:00:00+00:00",
+              "end_utc": "2026-09-22 09:00:00+00:00"
+            },
+            "room_id": 2,
+            "credit_minutes": 60,
+            "slices": [
+              {
+                "lesson_id": 2000001,
+                "module_id": 2,
+                "offset_minutes": 0,
+                "credit_minutes": 60
+              }
+            ],
+            "source_lesson_id": null,
+            "teacher_id": null,
+            "class_id": null
+          },
+          {
+            "lesson_id": 3000001,
+            "assignment_id": 3,
+            "period": {
+              "school_date": "2026-09-22",
+              "start_local": "09:00:00",
+              "end_local": "10:00:00",
+              "timezone_name": "Europe/Lisbon",
+              "start_utc": "2026-09-22 08:00:00+00:00",
+              "end_utc": "2026-09-22 09:00:00+00:00"
+            },
+            "room_id": 3,
+            "credit_minutes": 60,
+            "slices": [
+              {
+                "lesson_id": 3000001,
+                "module_id": 3,
+                "offset_minutes": 0,
+                "credit_minutes": 60
+              }
+            ],
+            "source_lesson_id": null,
+            "teacher_id": null,
+            "class_id": null
+          },
+          {
+            "lesson_id": 4000001,
+            "assignment_id": 4,
+            "period": {
+              "school_date": "2026-09-22",
+              "start_local": "09:00:00",
+              "end_local": "10:00:00",
+              "timezone_name": "Europe/Lisbon",
+              "start_utc": "2026-09-22 08:00:00+00:00",
+              "end_utc": "2026-09-22 09:00:00+00:00"
+            },
+            "room_id": 4,
+            "credit_minutes": 60,
+            "slices": [
+              {
+                "lesson_id": 4000001,
+                "module_id": 4,
+                "offset_minutes": 0,
+                "credit_minutes": 60
+              }
+            ],
+            "source_lesson_id": null,
+            "teacher_id": null,
+            "class_id": null
+          },
+          {
+            "lesson_id": 5000001,
+            "assignment_id": 5,
+            "period": {
+              "school_date": "2026-09-22",
+              "start_local": "09:00:00",
+              "end_local": "10:00:00",
+              "timezone_name": "Europe/Lisbon",
+              "start_utc": "2026-09-22 08:00:00+00:00",
+              "end_utc": "2026-09-22 09:00:00+00:00"
+            },
+            "room_id": 5,
+            "credit_minutes": 60,
+            "slices": [
+              {
+                "lesson_id": 5000001,
+                "module_id": 5,
+                "offset_minutes": 0,
+                "credit_minutes": 60
+              }
+            ],
+            "source_lesson_id": null,
+            "teacher_id": null,
+            "class_id": null
+          },
+          {
+            "lesson_id": 6000001,
+            "assignment_id": 6,
+            "period": {
+              "school_date": "2026-09-22",
+              "start_local": "09:00:00",
+              "end_local": "10:00:00",
+              "timezone_name": "Europe/Lisbon",
+              "start_utc": "2026-09-22 08:00:00+00:00",
+              "end_utc": "2026-09-22 09:00:00+00:00"
+            },
+            "room_id": 6,
+            "credit_minutes": 60,
+            "slices": [
+              {
+                "lesson_id": 6000001,
+                "module_id": 6,
+                "offset_minutes": 0,
+                "credit_minutes": 60
+              }
+            ],
+            "source_lesson_id": null,
+            "teacher_id": null,
+            "class_id": null
+          },
+          {
+            "lesson_id": 7000001,
+            "assignment_id": 7,
+            "period": {
+              "school_date": "2026-09-22",
+              "start_local": "09:00:00",
+              "end_local": "10:00:00",
+              "timezone_name": "Europe/Lisbon",
+              "start_utc": "2026-09-22 08:00:00+00:00",
+              "end_utc": "2026-09-22 09:00:00+00:00"
+            },
+            "room_id": 7,
+            "credit_minutes": 60,
+            "slices": [
+              {
+                "lesson_id": 7000001,
+                "module_id": 7,
+                "offset_minutes": 0,
+                "credit_minutes": 60
+              }
+            ],
+            "source_lesson_id": null,
+            "teacher_id": null,
+            "class_id": null
+          },
+          {
+            "lesson_id": 8000001,
+            "assignment_id": 8,
+            "period": {
+              "school_date": "2026-09-22",
+              "start_local": "09:00:00",
+              "end_local": "10:00:00",
+              "timezone_name": "Europe/Lisbon",
+              "start_utc": "2026-09-22 08:00:00+00:00",
+              "end_utc": "2026-09-22 09:00:00+00:00"
+            },
+            "room_id": 8,
+            "credit_minutes": 60,
+            "slices": [
+              {
+                "lesson_id": 8000001,
+                "module_id": 8,
+                "offset_minutes": 0,
+                "credit_minutes": 60
+              }
+            ],
+            "source_lesson_id": null,
+            "teacher_id": null,
+            "class_id": null
+          },
+          {
+            "lesson_id": 9000001,
+            "assignment_id": 9,
+            "period": {
+              "school_date": "2026-09-22",
+              "start_local": "09:00:00",
+              "end_local": "10:00:00",
+              "timezone_name": "Europe/Lisbon",
+              "start_utc": "2026-09-22 08:00:00+00:00",
+              "end_utc": "2026-09-22 09:00:00+00:00"
+            },
+            "room_id": 9,
+            "credit_minutes": 60,
+            "slices": [
+              {
+                "lesson_id": 9000001,
+                "module_id": 9,
+                "offset_minutes": 0,
+                "credit_minutes": 60
+              }
+            ],
+            "source_lesson_id": null,
+            "teacher_id": null,
+            "class_id": null
+          }
+        ]
+      },
+      "report": {
+        "validator_version": "v2",
+        "violations": [],
+        "credited_minutes": {
+          "1": 60,
+          "2": 60,
+          "3": 60,
+          "4": 60,
+          "5": 60,
+          "6": 60,
+          "7": 60,
+          "8": 60,
+          "9": 60
+        },
+        "completion_dates": {
+          "1": "2026-09-22",
+          "2": "2026-09-22",
+          "3": "2026-09-22",
+          "4": "2026-09-22",
+          "5": "2026-09-22",
+          "6": "2026-09-22",
+          "7": "2026-09-22",
+          "8": "2026-09-22",
+          "9": "2026-09-22"
+        },
+        "total_credit_minutes": 540
+      },
+      "message": "",
+      "objective_days": 1,
+      "wall_time_seconds": 0.013486345000274014,
+      "quality": {
+        "completion_dates": {
+          "1": "2026-09-22",
+          "2": "2026-09-22",
+          "3": "2026-09-22",
+          "4": "2026-09-22",
+          "5": "2026-09-22",
+          "6": "2026-09-22",
+          "7": "2026-09-22",
+          "8": "2026-09-22",
+          "9": "2026-09-22"
+        },
+        "teacher_gap_minutes": 0,
+        "class_gap_minutes": 0,
+        "preference_cost_minutes": 0,
+        "room_change_cost": 0
+      },
+      "evidence": {
+        "objective_scope": "EXACT_MODEL",
+        "stages": [
+          {
+            "stage": "LATEST_COMPLETION_DAY",
+            "value": 1,
+            "proven": true
+          },
+          {
+            "stage": "PREFERENCE_COST_MINUTES",
+            "value": 0,
+            "proven": true
+          }
+        ],
+        "certified_stages": 2,
+        "stop_reason": "OPTIMAL",
+        "rounds": 1,
+        "relaxation_bound": 0,
+        "relaxation_proven": true,
+        "relaxation_scope": "ANNUAL_LATEST_WEEK"
+      },
+      "completion": {
+        "completion_dates": {
+          "1": "2026-09-22",
+          "2": "2026-09-22",
+          "3": "2026-09-22",
+          "4": "2026-09-22",
+          "5": "2026-09-22",
+          "6": "2026-09-22",
+          "7": "2026-09-22",
+          "8": "2026-09-22",
+          "9": "2026-09-22"
+        },
+        "latest_completion_date": "2026-09-22",
+        "preferred_end_date": "2026-10-11",
+        "margin_days": 19,
+        "classes_after_preferred": [],
+        "recoverable": true
+      }
+    },
+    "oracle_vector": [
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      0
+    ],
+    "oracle_valid": true,
+    "actual_vector": [
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1
+    ]
+  },
+  "preference_metric_disagreement": {
+    "result": {
+      "outcome": "COMPLETE",
+      "candidate": {
+        "lessons": [
+          {
+            "lesson_id": 1000001,
+            "assignment_id": 1,
+            "period": {
+              "school_date": "2026-09-21",
+              "start_local": "09:00:00",
+              "end_local": "10:00:00",
+              "timezone_name": "Europe/Lisbon",
+              "start_utc": "2026-09-21 08:00:00+00:00",
+              "end_utc": "2026-09-21 09:00:00+00:00"
+            },
+            "room_id": 1,
+            "credit_minutes": 60,
+            "slices": [
+              {
+                "lesson_id": 1000001,
+                "module_id": 1,
+                "offset_minutes": 0,
+                "credit_minutes": 60
+              }
+            ],
+            "source_lesson_id": null,
+            "teacher_id": null,
+            "class_id": null
+          }
+        ]
+      },
+      "report": {
+        "validator_version": "v2",
+        "violations": [],
+        "credited_minutes": {
+          "1": 60
+        },
+        "completion_dates": {
+          "1": "2026-09-21"
+        },
+        "total_credit_minutes": 60
+      },
+      "message": "",
+      "objective_days": 0,
+      "wall_time_seconds": 0.004273117003322113,
+      "quality": {
+        "completion_dates": {
+          "1": "2026-09-21"
+        },
+        "teacher_gap_minutes": 0,
+        "class_gap_minutes": 0,
+        "preference_cost_minutes": 60,
+        "room_change_cost": 0
+      },
+      "evidence": {
+        "objective_scope": "EXACT_MODEL",
+        "stages": [
+          {
+            "stage": "LATEST_COMPLETION_DAY",
+            "value": 0,
+            "proven": true
+          },
+          {
+            "stage": "PREFERENCE_COST_MINUTES",
+            "value": 120,
+            "proven": true
+          }
+        ],
+        "certified_stages": 2,
+        "stop_reason": "OPTIMAL",
+        "rounds": 1,
+        "relaxation_bound": 0,
+        "relaxation_proven": true,
+        "relaxation_scope": "ANNUAL_LATEST_WEEK"
+      },
+      "completion": {
+        "completion_dates": {
+          "1": "2026-09-21"
+        },
+        "latest_completion_date": "2026-09-21",
+        "preferred_end_date": "2026-10-11",
+        "margin_days": 20,
+        "classes_after_preferred": [],
+        "recoverable": true
+      }
+    },
+    "oracle_vector": [
+      0
+    ],
+    "oracle_valid": true,
+    "actual_vector": [
+      0
+    ]
+  },
+  "protected_date": {
+    "result": {
+      "outcome": "FAILED",
+      "candidate": null,
+      "report": {
+        "validator_version": "v2",
+        "violations": [
+          {
+            "code": "EDITABLE_WINDOW_VIOLATION",
+            "message": "A new lesson falls inside the protected editable window.",
+            "assignment_id": 1,
+            "lesson_id": 1000001,
+            "resource_type": null,
+            "resource_id": null
+          }
+        ],
+        "credited_minutes": {
+          "1": 60
+        },
+        "completion_dates": {
+          "1": "2026-09-21"
+        },
+        "total_credit_minutes": 60
+      },
+      "message": "The solver produced a candidate rejected by the validator.",
+      "objective_days": null,
+      "wall_time_seconds": 0.007117781999113504,
+      "quality": null,
+      "evidence": {
+        "objective_scope": "EXACT_MODEL",
+        "stages": [
+          {
+            "stage": "LATEST_COMPLETION_DAY",
+            "value": 0,
+            "proven": true
+          }
+        ],
+        "certified_stages": 1,
+        "stop_reason": "OPTIMAL",
+        "rounds": 1,
+        "relaxation_bound": 0,
+        "relaxation_proven": true,
+        "relaxation_scope": "ANNUAL_LATEST_WEEK"
+      },
+      "completion": null
+    },
+    "oracle_vector": [
+      1
+    ],
+    "oracle_valid": true
+  },
+  "past_period": {
+    "result": {
+      "outcome": "FAILED",
+      "candidate": null,
+      "report": {
+        "validator_version": "v2",
+        "violations": [
+          {
+            "code": "EDITABLE_WINDOW_VIOLATION",
+            "message": "A new lesson falls inside the protected editable window.",
+            "assignment_id": 1,
+            "lesson_id": 1000001,
+            "resource_type": null,
+            "resource_id": null
+          }
+        ],
+        "credited_minutes": {
+          "1": 60
+        },
+        "completion_dates": {
+          "1": "2026-09-21"
+        },
+        "total_credit_minutes": 60
+      },
+      "message": "The solver produced a candidate rejected by the validator.",
+      "objective_days": null,
+      "wall_time_seconds": 0.0043753380014095455,
+      "quality": null,
+      "evidence": {
+        "objective_scope": "EXACT_MODEL",
+        "stages": [
+          {
+            "stage": "LATEST_COMPLETION_DAY",
+            "value": 0,
+            "proven": true
+          }
+        ],
+        "certified_stages": 1,
+        "stop_reason": "OPTIMAL",
+        "rounds": 1,
+        "relaxation_bound": 0,
+        "relaxation_proven": true,
+        "relaxation_scope": "ANNUAL_LATEST_WEEK"
+      },
+      "completion": null
+    },
+    "oracle_vector": [
+      1
+    ],
+    "oracle_valid": true
+  },
+  "margin_without_recovery_capacity": {
+    "result": {
+      "outcome": "COMPLETE",
+      "candidate": {
+        "lessons": [
+          {
+            "lesson_id": 1000001,
+            "assignment_id": 1,
+            "period": {
+              "school_date": "2026-09-21",
+              "start_local": "09:00:00",
+              "end_local": "10:00:00",
+              "timezone_name": "Europe/Lisbon",
+              "start_utc": "2026-09-21 08:00:00+00:00",
+              "end_utc": "2026-09-21 09:00:00+00:00"
+            },
+            "room_id": 1,
+            "credit_minutes": 60,
+            "slices": [
+              {
+                "lesson_id": 1000001,
+                "module_id": 1,
+                "offset_minutes": 0,
+                "credit_minutes": 60
+              }
+            ],
+            "source_lesson_id": null,
+            "teacher_id": null,
+            "class_id": null
+          }
+        ]
+      },
+      "report": {
+        "validator_version": "v2",
+        "violations": [],
+        "credited_minutes": {
+          "1": 60
+        },
+        "completion_dates": {
+          "1": "2026-09-21"
+        },
+        "total_credit_minutes": 60
+      },
+      "message": "",
+      "objective_days": 0,
+      "wall_time_seconds": 0.0031671329998061992,
+      "quality": {
+        "completion_dates": {
+          "1": "2026-09-21"
+        },
+        "teacher_gap_minutes": 0,
+        "class_gap_minutes": 0,
+        "preference_cost_minutes": 0,
+        "room_change_cost": 0
+      },
+      "evidence": {
+        "objective_scope": "EXACT_MODEL",
+        "stages": [
+          {
+            "stage": "LATEST_COMPLETION_DAY",
+            "value": 0,
+            "proven": true
+          }
+        ],
+        "certified_stages": 1,
+        "stop_reason": "OPTIMAL",
+        "rounds": 1,
+        "relaxation_bound": 0,
+        "relaxation_proven": true,
+        "relaxation_scope": "ANNUAL_LATEST_WEEK"
+      },
+      "completion": {
+        "completion_dates": {
+          "1": "2026-09-21"
+        },
+        "latest_completion_date": "2026-09-21",
+        "preferred_end_date": "2026-10-11",
+        "margin_days": 20,
+        "classes_after_preferred": [],
+        "recoverable": true
+      }
+    },
+    "oracle_vector": [
+      0
+    ],
+    "oracle_valid": true,
+    "actual_vector": [
+      0
+    ],
+    "after_only_available_lesson_cancelled": {
+      "result": {
+        "outcome": "INFEASIBLE",
+        "candidate": null,
+        "report": null,
+        "message": "Proven minimum deficit: assignment 1: 60 minute(s).",
+        "objective_days": null,
+        "wall_time_seconds": 0.0,
+        "quality": null,
+        "evidence": null,
+        "completion": null
+      },
+      "oracle_vector": null,
+      "oracle_valid": false
+    }
+  },
+  "controlled_unproven_prefix": {
+    "status": "COMPLETE",
+    "candidate": {
+      "lessons": [
+        {
+          "lesson_id": 1000001,
+          "assignment_id": 1,
+          "period": {
+            "school_date": "2026-09-21",
+            "start_local": "09:00:00",
+            "end_local": "10:00:00",
+            "timezone_name": "Europe/Lisbon",
+            "start_utc": "2026-09-21 08:00:00+00:00",
+            "end_utc": "2026-09-21 09:00:00+00:00"
+          },
+          "room_id": 1,
+          "credit_minutes": 60,
+          "slices": [
+            {
+              "lesson_id": 1000001,
+              "module_id": 1,
+              "offset_minutes": 0,
+              "credit_minutes": 60
+            }
+          ],
+          "source_lesson_id": null,
+          "teacher_id": null,
+          "class_id": null
+        }
+      ]
+    },
+    "objective_days": 0,
+    "wall_time_seconds": 0.003019240000867285,
+    "proven_scope": "EXACT_MODEL",
+    "statistics": {
+      "variables": 6
+    },
+    "evidence": {
+      "objective_scope": "EXACT_MODEL",
+      "stages": [
+        {
+          "stage": "LATEST_COMPLETION_DAY",
+          "value": 0,
+          "proven": false
+        },
+        {
+          "stage": "PREFERENCE_COST_MINUTES",
+          "value": 60,
+          "proven": true
+        }
+      ],
+      "certified_stages": 1,
+      "stop_reason": "FEASIBLE",
+      "rounds": 1,
+      "relaxation_bound": null,
+      "relaxation_proven": false,
+      "relaxation_scope": null
+    },
+    "message": ""
+  },
+  "scale_seed_diversity": {
+    "snapshots_equal": true,
+    "periods_equal": true,
+    "witnesses_equal": false
+  },
+  "detail_ignores_zero_quotas": {
+    "supplied_counts": {
+      "1,0,60": 1,
+      "2,0,90": 1
+    },
+    "detail": {
+      "status": "COMPLETE",
+      "candidate": {
+        "lessons": [
+          {
+            "lesson_id": 1000001,
+            "assignment_id": 1,
+            "period": {
+              "school_date": "2026-09-21",
+              "start_local": "09:00:00",
+              "end_local": "10:00:00",
+              "timezone_name": "Europe/Lisbon",
+              "start_utc": "2026-09-21 08:00:00+00:00",
+              "end_utc": "2026-09-21 09:00:00+00:00"
+            },
+            "room_id": 1,
+            "credit_minutes": 60,
+            "slices": [
+              {
+                "lesson_id": 1000001,
+                "module_id": 1,
+                "offset_minutes": 0,
+                "credit_minutes": 60
+              }
+            ],
+            "source_lesson_id": null,
+            "teacher_id": null,
+            "class_id": null
+          },
+          {
+            "lesson_id": 2000001,
+            "assignment_id": 2,
+            "period": {
+              "school_date": "2026-09-21",
+              "start_local": "10:00:00",
+              "end_local": "11:00:00",
+              "timezone_name": "Europe/Lisbon",
+              "start_utc": "2026-09-21 09:00:00+00:00",
+              "end_utc": "2026-09-21 10:00:00+00:00"
+            },
+            "room_id": 2,
+            "credit_minutes": 60,
+            "slices": [
+              {
+                "lesson_id": 2000001,
+                "module_id": 2,
+                "offset_minutes": 0,
+                "credit_minutes": 60
+              }
+            ],
+            "source_lesson_id": null,
+            "teacher_id": null,
+            "class_id": null
+          },
+          {
+            "lesson_id": 2000002,
+            "assignment_id": 2,
+            "period": {
+              "school_date": "2026-09-21",
+              "start_local": "11:00:00",
+              "end_local": "12:30:00",
+              "timezone_name": "Europe/Lisbon",
+              "start_utc": "2026-09-21 10:00:00+00:00",
+              "end_utc": "2026-09-21 11:30:00+00:00"
+            },
+            "room_id": 2,
+            "credit_minutes": 30,
+            "slices": [
+              {
+                "lesson_id": 2000002,
+                "module_id": 2,
+                "offset_minutes": 60,
+                "credit_minutes": 30
+              }
+            ],
+            "source_lesson_id": null,
+            "teacher_id": null,
+            "class_id": null
+          }
+        ]
+      },
+      "objective_days": 0,
+      "wall_time_seconds": 0.005215253004280385,
+      "proven_scope": "EXACT_MODEL",
+      "statistics": {
+        "variables": 15
+      },
+      "evidence": {
+        "objective_scope": "EXACT_MODEL",
+        "stages": [
+          {
+            "stage": "LATEST_COMPLETION_DAY",
+            "value": 0,
+            "proven": true
+          },
+          {
+            "stage": "TEACHER_GAP_MINUTES",
+            "value": 0,
+            "proven": true
+          }
+        ],
+        "certified_stages": 2,
+        "stop_reason": "OPTIMAL",
+        "rounds": 1,
+        "relaxation_bound": null,
+        "relaxation_proven": false,
+        "relaxation_scope": null
+      },
+      "message": ""
+    },
+    "valid": true
+  }
+}

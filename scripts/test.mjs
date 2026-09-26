@@ -13,6 +13,8 @@ export const FRONTEND = join(ROOT, 'frontend')
 export const ARTIFACTS = join(ROOT, '.test-artifacts')
 
 const COMPOSE_FILE = join(ROOT, 'docker-compose.test.yml')
+const BACKEND_TEST_IMAGE = 'cronos-backend-test:local'
+const DOCKER_BACKEND = process.platform === 'win32'
 const SCOPES = new Set(['backend', 'frontend', 'all'])
 const PROFILES = new Set(['fast', 'integration', 'e2e', 'all'])
 const E2E_PROJECTS = new Set(['public', 'auth', 'app', 'provider', 'faults', 'capacity'])
@@ -36,6 +38,7 @@ Commands:
   capacity-smoke
   all --scope backend|frontend|all
   benchmark --profile fast|integration|e2e|all [--scope backend|frontend|all]
+  campaign [--manifest <path>] [--out <dir>] [--case <id>]... [--mode witness|generator|repair|trajectory|longitudinal] [--time-limit <s>] [--workers <n>] [--resume]
 `
 
 export function parseArgs(argv) {
@@ -52,12 +55,19 @@ export function parseArgs(argv) {
         : command === 'all' ? 'all'
           : 'fast',
     project: undefined,
+    manifest: undefined,
+    out: undefined,
+    caseIds: [],
+    mode: 'witness',
+    timeLimit: undefined,
+    workers: undefined,
+    resume: false,
     forwarded,
   }
   let scopeWasProvided = false
   let profileWasProvided = false
 
-  if (!['setup', 'doctor', 'fast', 'integration', 'e2e', 'capacity', 'capacity-smoke', 'all', 'benchmark'].includes(command)) {
+  if (!['setup', 'doctor', 'fast', 'integration', 'e2e', 'capacity', 'capacity-smoke', 'all', 'benchmark', 'campaign'].includes(command)) {
     throw usageError(`Unknown command: ${command}`)
   }
   if (forwarded.length && !['fast', 'integration'].includes(command)) {
@@ -68,6 +78,10 @@ export function parseArgs(argv) {
     const option = options[index]
     if (!option.startsWith('--')) throw usageError(`Unexpected argument: ${option}`)
     const name = option.slice(2)
+    if (name === 'resume') {
+      parsed.resume = true
+      continue
+    }
     const value = options[index + 1]
     if (!value || value.startsWith('--')) throw usageError(`Option --${name} requires a value.`)
     if (name === 'scope') {
@@ -81,10 +95,43 @@ export function parseArgs(argv) {
     } else if (name === 'project') {
       if (parsed.project !== undefined) throw usageError('Only one --project option is allowed.')
       parsed.project = value
+    } else if (name === 'manifest') {
+      parsed.manifest = value
+    } else if (name === 'out') {
+      parsed.out = value
+    } else if (name === 'case') {
+      parsed.caseIds.push(value)
+    } else if (name === 'mode') {
+      if (!['witness', 'generator', 'repair', 'trajectory', 'longitudinal'].includes(value)) throw usageError(`Invalid campaign mode: ${value}`)
+      parsed.mode = value
+    } else if (name === 'time-limit') {
+      if (!Number.isFinite(Number(value)) || Number(value) <= 0) throw usageError(`Invalid time limit: ${value}`)
+      parsed.timeLimit = value
+    } else if (name === 'workers') {
+      if (!Number.isInteger(Number(value)) || Number(value) < 1) throw usageError(`Invalid worker count: ${value}`)
+      parsed.workers = value
     } else {
       throw usageError(`Unknown option: --${name}`)
     }
     index += 1
+  }
+
+  if (command === 'campaign' && (scopeWasProvided || profileWasProvided)) {
+    throw usageError('--scope and --profile are not valid for campaign.')
+  }
+  if (
+    command !== 'campaign'
+    && (
+      parsed.manifest !== undefined
+      || parsed.out !== undefined
+      || parsed.caseIds.length
+      || parsed.mode !== 'witness'
+      || parsed.timeLimit !== undefined
+      || parsed.workers !== undefined
+      || parsed.resume
+    )
+  ) {
+    throw usageError('campaign options are only valid for campaign.')
   }
 
   if (['setup', 'fast', 'all'].includes(command) && !SCOPES.has(parsed.scope)) {
@@ -119,17 +166,6 @@ export function isOwnedResource(resourceId, ownedResourceIds) {
 
 export function childSpec(executable, args) {
   return { executable, args: [...args] }
-}
-
-export function planFor({ command, scope = 'all' }) {
-  if (command === 'fast') {
-    return scope === 'backend'
-      ? [childSpec('python', ['-m', 'pytest', 'tests/unit'])]
-      : scope === 'frontend'
-        ? [childSpec('npm', ['test'])]
-        : [childSpec('python', ['-m', 'pytest', 'tests/unit']), childSpec('npm', ['test'])]
-  }
-  return []
 }
 
 function executable(name) {
@@ -172,6 +208,42 @@ function npxSpec(args) {
 function localPython() {
   const suffix = process.platform === 'win32' ? join('Scripts', 'python.exe') : join('bin', 'python')
   return join(BACKEND, '.venv', suffix)
+}
+
+function backendPythonSpec(args, env, context, stack = null) {
+  if (!DOCKER_BACKEND) return childSpec(localPython(), args)
+  const containerPath = (value) => value
+    .replaceAll(context.artifactDir, '/artifacts')
+    .replaceAll(ROOT, '/workspace')
+    .replaceAll('\\', '/')
+  const containerEnv = {
+    ENVIRONMENT: env.ENVIRONMENT,
+    DATABASE_URL: env.DATABASE_URL,
+    MIGRATION_DATABASE_URL: env.MIGRATION_DATABASE_URL,
+    TEST_DATABASE_URL: env.TEST_DATABASE_URL,
+    REDIS_URL: env.REDIS_URL,
+    CELERY_BROKER_URL: env.CELERY_BROKER_URL,
+    DATABASE_POOLING_ENABLED: env.DATABASE_POOLING_ENABLED,
+    RATELIMIT_ENABLED: env.RATELIMIT_ENABLED,
+    PYTHONPATH: '/workspace/backend',
+  }
+  if (stack) {
+    for (const key of ['DATABASE_URL', 'MIGRATION_DATABASE_URL', 'TEST_DATABASE_URL']) {
+      containerEnv[key] = containerEnv[key].replace(`127.0.0.1:${stack.dbPort}`, 'db:5432')
+    }
+    for (const key of ['REDIS_URL', 'CELERY_BROKER_URL']) {
+      containerEnv[key] = containerEnv[key].replace(`127.0.0.1:${stack.redisPort}`, 'redis:6379')
+    }
+  }
+  return childSpec(executable('docker'), [
+    'run', '--rm',
+    ...(stack ? ['--network', `${stack.project}_default`] : []),
+    '--mount', `type=bind,source=${ROOT},target=/workspace`,
+    '--mount', `type=bind,source=${context.artifactDir},target=/artifacts`,
+    '-w', '/workspace/backend',
+    ...Object.entries(containerEnv).flatMap(([key, value]) => ['-e', `${key}=${value}`]),
+    BACKEND_TEST_IMAGE, 'python', ...args.map(containerPath),
+  ])
 }
 
 function baseTestEnvironment(overrides = {}) {
@@ -309,6 +381,13 @@ async function sha256(path) {
 }
 
 async function setupBackend(context) {
+  if (DOCKER_BACKEND) {
+    await runChecked(childSpec(executable('docker'), [
+      'build', '--target', 'ci', '-t', BACKEND_TEST_IMAGE, BACKEND,
+    ]), { label: 'build locked backend test image', environmentFailure: true })
+    context.prepared.backend = true
+    return
+  }
   const python = executable('python')
   if (!(await access(localPython()).then(() => true).catch(() => false))) {
     await runChecked(childSpec(python, ['-m', 'venv', join(BACKEND, '.venv')]), {
@@ -368,9 +447,11 @@ async function runDoctor(profile, context) {
   const errors = []
   if (profile === 'fast' || profile === 'all') {
     errors.push(await checkVersion(childSpec(process.execPath, ['--version']), /^24\./, 'Node.js'))
-    errors.push(await checkVersion(childSpec(executable('python'), ['--version']), /^3\.12\./, 'Python'))
+    errors.push(await checkVersion(DOCKER_BACKEND
+      ? childSpec(executable('docker'), ['run', '--rm', BACKEND_TEST_IMAGE, 'python', '--version'])
+      : childSpec(executable('python'), ['--version']), /^3\.14\./, 'Python'))
     errors.push(await checkVersion(npmSpec(['--version']), /^11\./, 'npm'))
-    if (!(await access(localPython()).then(() => true).catch(() => false))) {
+    if (!DOCKER_BACKEND && !(await access(localPython()).then(() => true).catch(() => false))) {
       errors.push('Backend virtualenv is missing; run node scripts/test.mjs setup --scope backend.')
     }
     if (!(await access(join(FRONTEND, 'node_modules')).then(() => true).catch(() => false))) {
@@ -399,17 +480,17 @@ async function runDoctor(profile, context) {
   console.log(`[doctor] ${profile}: ok`)
 }
 
-function backendCommand(args, overrides = {}) {
+function backendCommand(args, overrides, context) {
+  const env = baseTestEnvironment(overrides)
   return {
-    spec: childSpec(localPython(), ['-m', 'pytest', '-c', join(BACKEND, 'pyproject.toml'), ...args]),
-    options: { cwd: ROOT, env: baseTestEnvironment(overrides) },
+    spec: backendPythonSpec(['-m', 'pytest', '-c', join(BACKEND, 'pyproject.toml'), ...args], env, context),
+    options: { cwd: ROOT, env },
   }
 }
 
 async function runBackendTests(paths, forwarded = [], overrides = {}, context, name = 'backend-unit') {
   const reportPath = join(context.artifactDir, `${name}.xml`)
-  const { spec, options } = backendCommand([...paths, ...forwarded], overrides)
-  spec.args.push(`--junitxml=${reportPath}`)
+  const { spec, options } = backendCommand([...paths, ...forwarded, `--junitxml=${reportPath}`], overrides, context)
   return runRecorded(spec, { ...options, label: `pytest ${paths.join(' ')}` }, context, {
     name,
     kind: 'pytest',
@@ -462,6 +543,29 @@ async function runFast(scope, forwarded, context) {
       'frontend-fast',
     )
   }
+}
+
+async function runCampaign(parsed, context) {
+  const manifestPath = resolve(parsed.manifest ?? join(BACKEND, 'tests', 'scheduler_lab', 'manifest.json'))
+  const outDir = resolve(parsed.out ?? join(context.artifactDir, 'scheduler-lab'))
+  const env = baseTestEnvironment({ RATELIMIT_ENABLED: 'false' })
+  const codeIdentity = `${context.revision.slice(0, 12)}+${context.git.tree?.slice(0, 12) ?? 'unknown'}`
+  const args = [
+    '-m', 'app.scheduler.lab.campaign',
+    '--manifest', manifestPath,
+    '--out', outDir,
+    '--commit', context.revision,
+    '--code-identity', codeIdentity,
+    '--policy-version', 'quality-v1',
+    '--mode', parsed.mode,
+  ]
+  for (const caseId of parsed.caseIds) args.push('--case', caseId)
+  if (parsed.timeLimit !== undefined) args.push('--time-limit', parsed.timeLimit)
+  if (parsed.workers !== undefined) args.push('--workers', parsed.workers)
+  if (parsed.resume) args.push('--resume')
+  await runRecorded(backendPythonSpec(args, env, context), {
+    cwd: BACKEND, env, label: 'scheduler lab campaign',
+  }, context, { name: 'scheduler-campaign', kind: 'campaign' })
 }
 
 function composeSpec(args) {
@@ -753,7 +857,7 @@ async function runIntegration(forwarded = [], context, { coverage = false } = {}
       `--junitxml=${integrationReport}`,
       ...forwarded,
     ]
-    await runRecorded(childSpec(localPython(), integrationArgs), {
+    await runRecorded(backendPythonSpec(integrationArgs, stack.env, context, stack), {
       cwd: BACKEND, env: stack.env, label: 'backend integration tests',
     }, context, {
       name: 'backend-integration',
@@ -765,13 +869,13 @@ async function runIntegration(forwarded = [], context, { coverage = false } = {}
       ? ['-m', 'pytest', '--cov=app', '--cov-branch', '--cov-report=', '--cov-fail-under=0', '--cov-append']
       : ['-m', 'pytest']
     const contractReport = join(context.artifactDir, 'backend-contracts.xml')
-    await runRecorded(childSpec(localPython(), [
+    await runRecorded(backendPythonSpec([
       ...contractPrefix,
       '-c',
       join(BACKEND, 'pyproject.toml'),
       join(BACKEND, 'tests', 'contracts'),
       `--junitxml=${contractReport}`,
-    ]), {
+    ], stack.env, context, stack), {
       cwd: BACKEND, env: stack.env, label: 'backend infrastructure contracts',
     }, context, {
       name: 'backend-contracts',
@@ -831,18 +935,18 @@ async function runE2e(project, context, extraEnv = {}) {
 }
 
 async function runAllBackend(context) {
-  await runChecked(childSpec(localPython(), ['-m', 'ruff', 'format', '--check', BACKEND]), {
+  await runChecked(backendPythonSpec(['-m', 'ruff', 'format', '--check', BACKEND], baseTestEnvironment(), context), {
     cwd: ROOT, env: baseTestEnvironment(), label: 'Ruff format check',
   })
-  await runChecked(childSpec(localPython(), ['-m', 'ruff', 'check', BACKEND]), {
+  await runChecked(backendPythonSpec(['-m', 'ruff', 'check', BACKEND], baseTestEnvironment(), context), {
     cwd: ROOT, env: baseTestEnvironment(), label: 'Ruff lint',
   })
   const unitReport = join(context.artifactDir, 'backend-unit.xml')
-  await runRecorded(childSpec(localPython(), [
+  await runRecorded(backendPythonSpec([
     '-m', 'pytest', '--cov=app', '--cov-branch', '--cov-report=', '--cov-fail-under=0',
     '-c', join(BACKEND, 'pyproject.toml'), join(BACKEND, 'tests', 'unit'),
     '--disable-socket', '--allow-hosts=127.0.0.1,localhost', `--junitxml=${unitReport}`,
-  ]), {
+  ], baseTestEnvironment(), context), {
     cwd: BACKEND, env: baseTestEnvironment(), label: 'backend unit tests with coverage',
   }, context, {
     name: 'backend-unit',
@@ -852,14 +956,14 @@ async function runAllBackend(context) {
   })
   await runIntegration([], context, { coverage: true })
   const coverageStartedAt = monotonicMs()
-  await runChecked(childSpec(localPython(), ['-m', 'coverage', 'report', '--fail-under=70']), {
+  await runChecked(backendPythonSpec(['-m', 'coverage', 'report', '--fail-under=70'], baseTestEnvironment(), context), {
     cwd: BACKEND, env: baseTestEnvironment(), label: 'backend coverage gate',
   })
-  await runChecked(childSpec(localPython(), [
+  await runChecked(backendPythonSpec([
     '-m', 'coverage', 'report',
-    '--include=app/scheduler/domain/constraints.py,app/scheduler/domain/validation.py',
+    '--include=app/scheduler/domain/constraint_policy.py',
     '--fail-under=100',
-  ]), {
+  ], baseTestEnvironment(), context), {
     cwd: BACKEND, env: baseTestEnvironment(), label: 'scheduler coverage gate',
   })
   addPhaseTime(context, 'coverage_ms', Math.round(monotonicMs() - coverageStartedAt))
@@ -915,12 +1019,31 @@ async function environmentSnapshot() {
 
 async function gitSnapshot() {
   let clean = null
+  let tree = null
   try {
-    clean = (await runCapture(childSpec(executable('git'), ['status', '--porcelain']))).length === 0
+    const status = await runCapture(childSpec(executable('git'), [
+      'status', '--porcelain=v1', '--untracked-files=all',
+    ]))
+    clean = status.length === 0
+    const head = await runCapture(childSpec(executable('git'), ['rev-parse', 'HEAD']))
+    const diff = await runCapture(childSpec(executable('git'), ['diff', '--binary']))
+    const staged = await runCapture(childSpec(executable('git'), ['diff', '--cached', '--binary']))
+    const untracked = status
+      .split(/\r?\n/)
+      .filter((line) => line.startsWith('?? '))
+      .map((line) => line.slice(3).trim())
+    const digests = []
+    for (const relative of untracked) {
+      const content = await readFile(join(ROOT, relative)).catch(() => null)
+      if (content) digests.push(createHash('sha256').update(content).digest('hex'))
+    }
+    tree = createHash('sha256')
+      .update([head, status, diff, staged, ...digests].join('\n'))
+      .digest('hex')
   } catch {
     // The revision remains useful when Git status is unavailable.
   }
-  return { clean }
+  return { clean, tree }
 }
 
 async function writeRunReport(context, parsed, exitCode, cleanupCode) {
@@ -1088,6 +1211,7 @@ export async function main(argv = process.argv.slice(2)) {
     }
     else if (parsed.command === 'all') await runAll(parsed.scope, context)
     else if (parsed.command === 'benchmark') await runBenchmark(parsed.profile, parsed.scope, context)
+    else if (parsed.command === 'campaign') await runCampaign(parsed, context)
   } catch (error) {
     primaryCode = error.runnerCode || 1
     console.error(`[test] ${error.message}`)

@@ -771,9 +771,9 @@ class ConstraintRead(ConstraintBase):
 
     @model_validator(mode="after")
     def derive_generation_compatibility(self):
-        from app.scheduler.domain.constraints import SchedulerConstraintPolicy
+        from app.scheduler.domain.constraint_policy import SchoolConstraintPolicy
 
-        result = SchedulerConstraintPolicy.parse(
+        result = SchoolConstraintPolicy.parse(
             [{"id": self.id, "rule_type": self.rule_type, "rule_payload": self.rule_payload}]
         )
         errors = [row.message for row in result.configuration_violations]
@@ -976,23 +976,6 @@ class ScheduleDraftRejectionResponse(BaseModel):
 
     draft_id: int
     draft_state: Literal["REJECTED"]
-
-
-class SchedulerResetYearRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    confirmed: bool
-
-
-class SchedulerResetYearResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    school_year_id: int
-    school_year_publication_state: Literal["UNPUBLISHED"]
-    canceled_jobs: int = Field(ge=0)
-    invalidated_drafts: int = Field(ge=0)
-    canceled_active_blocks: int = Field(ge=0)
-    canceled_recovery_links: int = Field(ge=0)
 
 
 # --- CURSOS ---
@@ -1802,7 +1785,18 @@ class TeacherScheduleHorizonRead(BaseModel):
 class WeekModuleInfo(BaseModel):
     id: int
     name: str
-    hours_total: int
+    hours_total: float
+
+
+class WeekSliceRead(BaseModel):
+    """Uma parcela curricular de uma aula: módulo, offset e minutos exatos."""
+
+    module_id: int
+    module_name: str | None = None
+    offset_minutes: int
+    minutes: int
+    completed_minutes: int = 0
+    remaining_minutes: int = 0
 
 
 class WeekSlotRead(BaseModel):
@@ -1836,6 +1830,10 @@ class WeekSlotRead(BaseModel):
     timesheet_id: int | None = None
     # WBS V3 Fase 4: indicador de bloco de substituição
     is_substituted_block: bool = False
+    # Scheduler v1: aula com identidade estável e várias parcelas modulares
+    scheduler_lesson_id: int | None = None
+    credit_minutes: int | None = None
+    slices: list[WeekSliceRead] = Field(default_factory=list)
 
 
 # ==========================================
@@ -2034,3 +2032,154 @@ DashboardResponse = Annotated[
     PreparationDashboardResponse | OperationalDashboardResponse,
     Field(discriminator="mode"),
 ]
+
+
+# ==========================================
+#  SCHEDULER v1 — CICLO DE VIDA (W08/W09)
+# ==========================================
+
+
+class SchedulerV1SchoolYearRead(BaseModel):
+    id: int
+    label: str
+    start_date: date
+    preferred_end_date: date | None = None
+    hard_end_date: date
+    timezone: str
+
+
+class SchedulerV1RevisionsRead(BaseModel):
+    input: int
+    planning: int
+    last_completed_planning: int | None = None
+    last_successful_generation_at: str | None = None
+
+
+class SchedulerV1EligibilityRead(BaseModel):
+    can_generate: bool
+    reasons: list[str] = Field(default_factory=list)
+    blocker: str | None = None
+
+
+class SchedulerV1JobRead(BaseModel):
+    id: int
+    strategy: str
+    status: str
+    result_code: str | None = None
+    stop_reason: str | None = None
+    queue_position: int | None = None
+    queued_at: datetime
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+    heartbeat_at: datetime | None = None
+    cancellation_requested: bool = False
+    proposal_id: int | None = None
+    summary: dict | None = None
+
+
+class SchedulerV1ProposalRead(BaseModel):
+    proposal_id: int
+    status: str
+    created_at: datetime
+    decided_at: datetime | None = None
+    base_version_id: int | None = None
+    policy_version: str
+    is_stale: bool = False
+    stale_reason: str | None = None
+    can_approve: bool = False
+    strategy: str | None = None
+    metrics: dict = Field(default_factory=dict)
+    warnings: list[str] = Field(default_factory=list)
+    diagnostics: list[dict] = Field(default_factory=list)
+    quality_summary: dict = Field(default_factory=dict)
+
+
+class SchedulerV1PhysicalChangeRead(BaseModel):
+    change_type: str
+    lesson_id: int
+    class_id: int
+    subject_id: int
+    before: dict | None = None
+    after: dict | None = None
+
+
+class SchedulerV1ModularChangeRead(BaseModel):
+    lesson_id: int
+    class_id: int
+    subject_id: int
+    before: list[dict] = Field(default_factory=list)
+    after: list[dict] = Field(default_factory=list)
+
+
+class SchedulerV1ProposalDiffRead(BaseModel):
+    is_first_generation: bool
+    physical: list[SchedulerV1PhysicalChangeRead] = Field(default_factory=list)
+    modular: list[SchedulerV1ModularChangeRead] = Field(default_factory=list)
+    counts: dict = Field(default_factory=dict)
+
+
+class SchedulerV1StatusRead(BaseModel):
+    configured: bool
+    school_year: SchedulerV1SchoolYearRead | None = None
+    publication_state: str = "UNPUBLISHED"
+    active_version_id: int | None = None
+    revisions: SchedulerV1RevisionsRead
+    eligibility: SchedulerV1EligibilityRead
+    default_strategy: str
+    active_job: SchedulerV1JobRead | None = None
+    pending_proposal: SchedulerV1ProposalRead | None = None
+
+
+class SchedulerV1GenerateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    idempotency_key: str = Field(..., min_length=1, max_length=160)
+    expected_input_revision: int = Field(..., ge=0)
+
+
+class SchedulerV1GenerateResponse(BaseModel):
+    job: SchedulerV1JobRead
+
+
+class SchedulerV1ApproveRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    expected_input_revision: int | None = Field(None, ge=0)
+
+
+class SchedulerV1CancelResponse(BaseModel):
+    job: SchedulerV1JobRead
+
+
+class SchedulerV1ApproveResponse(BaseModel):
+    proposal_id: int
+    status: str
+    active_version_id: int
+    approved_at: datetime
+
+
+class SchedulerV1RejectRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    reason: str | None = Field(None, max_length=500)
+
+
+class SchedulerV1RejectResponse(BaseModel):
+    proposal_id: int
+    status: str
+    rejected_at: datetime
+
+
+class SchedulerV1LessonLogRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    status: Literal["COMPLETED", "OCCURRENCE"]
+    summary: str | None = Field(None, max_length=2000)
+    notes: str | None = Field(None, max_length=1000)
+
+
+class SchedulerV1LessonLogResponse(BaseModel):
+    lesson_id: int
+    status: str
+    credited_minutes: int = 0
+    debt_minutes: int = 0

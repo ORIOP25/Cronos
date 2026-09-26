@@ -5,12 +5,126 @@ from sqlalchemy.orm import Session, joinedload
 
 from app import models
 from app.core.exceptions import AppError
+from app.scheduler.infrastructure.models import (
+    CurricularAssignment,
+    SchedulerLessonLogV1,
+    SchedulerLessonV1,
+    SchedulerVersionV1,
+)
+
+
+def _active_v1_year_and_version(
+    db: Session, organization_id: int
+) -> tuple[int | None, SchedulerVersionV1 | None]:
+    """One indexed lookup for the active year's published v1 version."""
+    row = (
+        db.query(models.SchedulerSchoolYear.id, SchedulerVersionV1)
+        .join(
+            SchedulerVersionV1,
+            and_(
+                SchedulerVersionV1.organization_id == models.SchedulerSchoolYear.organization_id,
+                SchedulerVersionV1.school_year_id == models.SchedulerSchoolYear.id,
+            ),
+        )
+        .filter(
+            models.SchedulerSchoolYear.organization_id == organization_id,
+            models.SchedulerSchoolYear.is_active.is_(True),
+            SchedulerVersionV1.status == "ACTIVE",
+        )
+        .first()
+    )
+    if row is None:
+        return None, None
+    return int(row[0]), row[1]
+
+
+def _v1_week_lessons(
+    db: Session,
+    organization_id: int,
+    year_id: int,
+    version: SchedulerVersionV1,
+    teacher_ids: list[int],
+    week_start_date: date,
+):
+    week_end = week_start_date + timedelta(days=6)
+    return (
+        db.query(CurricularAssignment.teacher_id, SchedulerLessonV1, SchedulerLessonLogV1)
+        .join(
+            CurricularAssignment,
+            and_(
+                CurricularAssignment.organization_id == SchedulerLessonV1.organization_id,
+                CurricularAssignment.school_year_id == SchedulerLessonV1.school_year_id,
+                CurricularAssignment.id == SchedulerLessonV1.assignment_id,
+            ),
+        )
+        .outerjoin(
+            SchedulerLessonLogV1,
+            and_(
+                SchedulerLessonLogV1.organization_id == organization_id,
+                SchedulerLessonLogV1.lesson_id == SchedulerLessonV1.id,
+            ),
+        )
+        .filter(
+            SchedulerLessonV1.organization_id == organization_id,
+            SchedulerLessonV1.school_year_id == year_id,
+            SchedulerLessonV1.version_id == version.id,
+            CurricularAssignment.teacher_id.in_(teacher_ids),
+            SchedulerLessonV1.school_date.between(week_start_date, week_end),
+        )
+        .all()
+    )
+
+
+def _v1_slot_counts(
+    db: Session,
+    organization_id: int,
+    year_id: int,
+    version: SchedulerVersionV1,
+    teacher_ids: list[int],
+    week_start_date: date,
+) -> dict[int, dict]:
+    counts = {
+        teacher_id: {
+            "total_slots": 0,
+            "registered_slots": 0,
+            "completed_slots": 0,
+            "occurrence_slots": 0,
+        }
+        for teacher_id in teacher_ids
+    }
+    if not teacher_ids:
+        return counts
+    for teacher_id, _lesson, lesson_log in _v1_week_lessons(
+        db, organization_id, year_id, version, teacher_ids, week_start_date
+    ):
+        item = counts[teacher_id]
+        item["total_slots"] += 1
+        status = None if lesson_log is None else lesson_log.status
+        if status in ("COMPLETED", "OCCURRENCE"):
+            item["registered_slots"] += 1
+        if status == "COMPLETED":
+            item["completed_slots"] += 1
+        if status == "OCCURRENCE":
+            item["occurrence_slots"] += 1
+    return counts
+
+
+def week_slot_counts_sync(
+    db: Session,
+    organization_id: int,
+    teacher_id: int,
+    week_start_date: date,
+) -> dict:
+    """Slot counts for one teacher, following the v1 ledger when published."""
+    return _compute_slot_counts_for_teachers(db, organization_id, [teacher_id], week_start_date)[
+        teacher_id
+    ]
 
 
 def get_or_create_timesheet_sync(
     db: Session, organization_id: int, teacher_id: int, week_start_date: date
 ) -> models.TeacherWeeklyTimesheet:
-    """ObtÃ©m ou cria a timesheet de uma determinada semana para o professor."""
+    """Obtém ou cria a timesheet de uma determinada semana para o professor."""
     timesheet = (
         db.query(models.TeacherWeeklyTimesheet)
         .filter(
@@ -41,13 +155,19 @@ def submit_timesheet_sync(
     teacher_id: int,
     week_start_date: date,
 ) -> models.TeacherWeeklyTimesheet:
-    """Submit a week only after every published block is resolved."""
+    """Submit a week only after every published lesson is resolved."""
     timesheet = get_or_create_timesheet_sync(db, organization_id, teacher_id, week_start_date)
     if timesheet.status != models.TimesheetStatus.OPEN:
         raise AppError(
             kind="bad_request",
             code="bad_request",
-            detail="A semana jÃ¡ nÃ£o estÃ¡ aberta para submissÃ£o.",
+            detail="A semana já não está aberta para submissão.",
+        )
+
+    year_id, version = _active_v1_year_and_version(db, organization_id)
+    if version is not None:
+        return _submit_v1_week(
+            db, timesheet, organization_id, year_id, version, teacher_id, week_start_date
         )
 
     week_end = week_start_date + timedelta(days=6)
@@ -79,13 +199,49 @@ def submit_timesheet_sync(
             raise AppError(
                 kind="bad_request",
                 code="bad_request",
-                detail="NÃ£o pode submeter semanas com aulas no futuro.",
+                detail="Não pode submeter semanas com aulas no futuro.",
             )
         if lesson_log is None or lesson_log.status == models.LessonLogStatus.PENDING:
             raise AppError(
                 kind="bad_request",
                 code="bad_request",
-                detail="Todas as aulas devem estar concluÃ­das ou registadas como ocorrÃªncia.",
+                detail="Todas as aulas devem estar concluídas ou registadas como ocorrência.",
+            )
+    timesheet.status = models.TimesheetStatus.SUBMITTED
+    timesheet.submitted_at = datetime.now(UTC)
+    db.flush()
+    db.refresh(timesheet)
+    return timesheet
+
+
+def _submit_v1_week(
+    db: Session,
+    timesheet: models.TeacherWeeklyTimesheet,
+    organization_id: int,
+    year_id: int,
+    version: SchedulerVersionV1,
+    teacher_id: int,
+    week_start_date: date,
+) -> models.TeacherWeeklyTimesheet:
+    """Submit against the published v1 lessons and their execution ledger."""
+    rows = _v1_week_lessons(db, organization_id, year_id, version, [teacher_id], week_start_date)
+    if not rows:
+        raise AppError(
+            kind="bad_request", code="bad_request", detail="Sem aulas planeadas nesta semana."
+        )
+    now = datetime.now(UTC)
+    for _teacher_id, lesson, lesson_log in rows:
+        if lesson.ends_at > now:
+            raise AppError(
+                kind="bad_request",
+                code="bad_request",
+                detail="Não pode submeter semanas com aulas no futuro.",
+            )
+        if lesson_log is None or lesson_log.status == "REVOKED":
+            raise AppError(
+                kind="bad_request",
+                code="bad_request",
+                detail="Todas as aulas devem estar concluídas ou registadas como ocorrência.",
             )
     timesheet.status = models.TimesheetStatus.SUBMITTED
     timesheet.submitted_at = datetime.now(UTC)
@@ -100,6 +256,9 @@ def _compute_slot_counts_for_teachers(
     teacher_ids: list[int],
     week_start_date: date,
 ) -> dict[int, dict]:
+    year_id, version = _active_v1_year_and_version(db, organization_id)
+    if version is not None:
+        return _v1_slot_counts(db, organization_id, year_id, version, teacher_ids, week_start_date)
     week_end = week_start_date + timedelta(days=6)
     rows = (
         db.query(
@@ -296,7 +455,7 @@ def list_timesheets_sync(
     return result
 
 
-# TransiÃ§Ãµes vÃ¡lidas do ciclo de vida do fecho semanal
+# Transições válidas do ciclo de vida do fecho semanal
 ALLOWED_TIMESHEET_TRANSITIONS = {
     models.TimesheetStatus.OPEN: {models.TimesheetStatus.OPEN, models.TimesheetStatus.SUBMITTED},
     models.TimesheetStatus.SUBMITTED: {
@@ -326,7 +485,7 @@ def update_timesheet_status_sync(
 
     if not timesheet:
         raise AppError(
-            kind="not_found", code="resource_not_found", detail="Timesheet nÃ£o encontrada."
+            kind="not_found", code="resource_not_found", detail="Timesheet não encontrada."
         )
 
     current = timesheet.status
@@ -335,7 +494,7 @@ def update_timesheet_status_sync(
         raise AppError(
             kind="bad_request",
             code="bad_request",
-            detail=f"TransiÃ§Ã£o de estado invÃ¡lida: {current.value} â†’ {status.value}.",
+            detail=f"Transição de estado inválida: {current.value} â†’ {status.value}.",
         )
 
     timesheet.status = status
@@ -345,7 +504,7 @@ def update_timesheet_status_sync(
 
         # Ocorrencias comunicadas pelo professor permanecem pendentes para decisao admin.
     elif status == models.TimesheetStatus.OPEN:
-        # Se for reaberta, limpa os campos de aprovaÃ§Ã£o mas preserva a data de submissÃ£o
+        # Se for reaberta, limpa os campos de aprovação mas preserva a data de submissão
         timesheet.approved_at = None
         timesheet.approved_by_membership_id = None
 
@@ -385,7 +544,7 @@ def get_open_occurrences_for_timesheet_sync(
     )
     if timesheet is None:
         raise AppError(
-            kind="not_found", code="resource_not_found", detail="Timesheet nÃ£o encontrada."
+            kind="not_found", code="resource_not_found", detail="Timesheet não encontrada."
         )
     week_end = timesheet.week_start_date + timedelta(days=6)
     occurrences = (

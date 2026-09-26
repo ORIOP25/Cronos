@@ -1,0 +1,141 @@
+{
+  "schema_version": "scheduler-lab-v3",
+  "calibration": {
+    "policy_version": "w11-experimental-1",
+    "status": "experimental",
+    "selection_rule": "lossless policy with the largest saved time; otherwise smallest lost gain, then largest saved time",
+    "candidates": [
+      {
+        "candidate_id": "eager",
+        "description": "Stop at the first complete solution; minimum effort.",
+        "exploration": {
+          "policy_version": "w11-eager",
+          "minimum_exploration_seconds": 0.0,
+          "gain_window_seconds": 0.0,
+          "minimum_significant_gain_days": 1,
+          "corpus_expected_gain_days": 0,
+          "minimum_solutions": 1
+        }
+      },
+      {
+        "candidate_id": "balanced",
+        "description": "Require two solutions and a short quiet window.",
+        "exploration": {
+          "policy_version": "w11-balanced",
+          "minimum_exploration_seconds": 0.05,
+          "gain_window_seconds": 0.05,
+          "minimum_significant_gain_days": 1,
+          "corpus_expected_gain_days": 0,
+          "minimum_solutions": 2
+        }
+      },
+      {
+        "candidate_id": "patient",
+        "description": "Require three solutions and a longer quiet window.",
+        "exploration": {
+          "policy_version": "w11-patient",
+          "minimum_exploration_seconds": 0.25,
+          "gain_window_seconds": 1.0,
+          "minimum_significant_gain_days": 1,
+          "corpus_expected_gain_days": 3,
+          "minimum_solutions": 3
+        }
+      },
+      {
+        "candidate_id": "adaptive-a",
+        "description": "Two solutions with a medium quiet window and corpus gain expectation.",
+        "exploration": {
+          "policy_version": "w11-adaptive-a",
+          "minimum_exploration_seconds": 0.1,
+          "gain_window_seconds": 0.5,
+          "minimum_significant_gain_days": 1,
+          "corpus_expected_gain_days": 2,
+          "minimum_solutions": 2
+        }
+      },
+      {
+        "candidate_id": "adaptive-b",
+        "description": "Three solutions, longer window and a significant-gain threshold.",
+        "exploration": {
+          "policy_version": "w11-adaptive-b",
+          "minimum_exploration_seconds": 0.2,
+          "gain_window_seconds": 1.0,
+          "minimum_significant_gain_days": 2,
+          "corpus_expected_gain_days": 3,
+          "minimum_solutions": 3
+        }
+      }
+    ],
+    "training_cases": [
+      "c03-shared-cancel",
+      "c08-intersection",
+      "c10-margin",
+      "c11-urgency",
+      "c12-multi-mutation",
+      "annual-10-loose-cancel"
+    ],
+    "reserved_cases": [
+      "c02-single-cancel",
+      "c04-proven-impossible",
+      "c05-multi-mutation",
+      "c06-teacher-scarce",
+      "c07-scarce-room",
+      "c09-distant-weeks",
+      "c13-partial-credit",
+      "c14-reserved",
+      "c15-protected-window"
+    ],
+    "chosen": {
+      "candidate_id": "eager",
+      "runs": 1,
+      "saved_seconds": 228.488,
+      "lost_gain": 0,
+      "early_stops": 1,
+      "reference_horizon_seconds": 300.0
+    },
+    "blocked_reason": null,
+    "online_evaluation": "Pending: run the owner-approved policy on reserved families and compare saved time against the lost product-vector gain before activation.",
+    "scores": [
+      {
+        "candidate_id": "adaptive-a",
+        "runs": 1,
+        "saved_seconds": 228.488,
+        "lost_gain": 0,
+        "early_stops": 0,
+        "reference_horizon_seconds": 300.0
+      },
+      {
+        "candidate_id": "adaptive-b",
+        "runs": 1,
+        "saved_seconds": 228.488,
+        "lost_gain": 0,
+        "early_stops": 0,
+        "reference_horizon_seconds": 300.0
+      },
+      {
+        "candidate_id": "balanced",
+        "runs": 1,
+        "saved_seconds": 228.488,
+        "lost_gain": 0,
+        "early_stops": 0,
+        "reference_horizon_seconds": 300.0
+      },
+      {
+        "candidate_id": "eager",
+        "runs": 1,
+        "saved_seconds": 228.488,
+        "lost_gain": 0,
+        "early_stops": 1,
+        "reference_horizon_seconds": 300.0
+      },
+      {
+        "candidate_id": "patient",
+        "runs": 1,
+        "saved_seconds": 228.488,
+        "lost_gain": 0,
+        "early_stops": 0,
+        "reference_horizon_seconds": 300.0
+      }
+    ]
+  }
+}

@@ -1,48 +1,18 @@
+"""V1 constraint policy: specific rooms and teacher (un)availability parsing."""
+
 from datetime import date, datetime
 from types import SimpleNamespace
 
 import pytest
 
-from app.scheduler.domain.constraints import (
-    ConstraintEvaluation,
-    ConstraintViolationCode,
-    PlacementFacts,
-    RepairDimension,
-    SchedulerConstraintPolicy,
-    placement_facts,
+from app.scheduler.domain.constraint_policy import (
+    ConfigurationViolationCode,
+    SchoolConstraintPolicy,
 )
 
 
-def test_policy_returns_all_hard_violations_and_broadest_dimension():
-    parsed = SchedulerConstraintPolicy.parse(
-        [
-            {
-                "rule_type": "specific_room",
-                "rule_payload": {"class_id": 1, "subject_id": 2, "room_id": 9},
-            },
-            {
-                "rule_type": "lock_time",
-                "rule_payload": {"class_id": 1, "subject_id": 2, "timeslot_id": 11},
-            },
-            {
-                "rule_type": "teacher_unavailable",
-                "rule_payload": {"teacher_id": 3, "date": "2026-06-01", "timeslot_id": 10},
-            },
-        ]
-    )
-
-    evaluation = parsed.policy.evaluate(PlacementFacts(1, 2, 3, 4, date(2026, 6, 1), 10))
-
-    assert [row.code for row in evaluation.hard_violations] == [
-        ConstraintViolationCode.SPECIFIC_ROOM,
-        ConstraintViolationCode.LOCK_TIME,
-        ConstraintViolationCode.TEACHER_UNAVAILABLE,
-    ]
-    assert evaluation.required_repair_dimension is RepairDimension.TIME
-
-
-def test_multiple_room_and_time_rows_are_allowed_value_unions():
-    parsed = SchedulerConstraintPolicy.parse(
+def test_multiple_room_rows_are_a_value_union_and_teacher_preference_is_soft():
+    parsed = SchoolConstraintPolicy.parse(
         [
             {
                 "rule_type": "specific_room",
@@ -53,57 +23,42 @@ def test_multiple_room_and_time_rows_are_allowed_value_unions():
                 "rule_payload": {"class_id": 1, "subject_id": 2, "room_id": 9},
             },
             {
-                "rule_type": "lock_time",
-                "rule_payload": {"class_id": 1, "subject_id": 2, "timeslot_id": 10},
+                "rule_type": "teacher_preferred",
+                "rule_payload": {"teacher_id": 3, "timeslot_id": 10},
             },
+        ]
+    )
+
+    assert parsed.is_valid is True
+    assert parsed.policy.specific_rooms[(1, 2)] == frozenset({4, 9})
+    assert parsed.policy.teacher_preferred_timeslots == {(3, 10)}
+
+
+def test_lock_time_is_explicitly_unsupported_by_the_v1_policy():
+    parsed = SchoolConstraintPolicy.parse(
+        [
             {
+                "id": 12,
                 "rule_type": "lock_time",
                 "rule_payload": {"class_id": 1, "subject_id": 2, "timeslot_id": 11},
             },
         ]
     )
 
-    assert (
-        parsed.policy.evaluate(PlacementFacts(1, 2, 3, 9, date(2026, 6, 1), 11)).hard_violations
-        == ()
-    )
+    assert parsed.policy is None
+    assert parsed.configuration_violations[0].code is (ConfigurationViolationCode.UNSUPPORTED_TYPE)
+    assert parsed.configuration_violations[0].constraint_id == 12
 
 
-def test_preference_adjustment_is_soft_and_invalid_configuration_has_no_policy():
-    preferred = SchedulerConstraintPolicy.parse(
-        [
-            {
-                "rule_type": "teacher_preferred",
-                "rule_payload": {"teacher_id": 3, "timeslot_id": 10},
-            },
-        ]
-    ).policy.evaluate(PlacementFacts(1, 2, 3, 4, date(2026, 6, 1), 10))
-    invalid = SchedulerConstraintPolicy.parse(
+def test_unsupported_and_unknown_types_have_no_policy():
+    invalid = SchoolConstraintPolicy.parse(
         [
             {"id": 8, "rule_type": "min_gap", "rule_payload": {"class_id": 1, "minutes": 30}},
         ]
     )
 
-    assert preferred.hard_violations == ()
-    assert preferred.preference_tier_adjustment == 1
     assert invalid.policy is None
     assert invalid.configuration_violations[0].constraint_id == 8
-
-
-def test_parse_result_and_repair_dimension_cover_empty_and_resource_only_policies():
-    empty = SchedulerConstraintPolicy.parse([])
-    resource = SchedulerConstraintPolicy.parse(
-        [
-            {
-                "rule_type": "specific_room",
-                "rule_payload": {"class_id": 1, "subject_id": 2, "room_id": 9},
-            }
-        ]
-    ).policy.evaluate(PlacementFacts(1, 2, 3, 4, date(2026, 6, 1), 10))
-
-    assert empty.is_valid is True
-    assert ConstraintEvaluation().required_repair_dimension is None
-    assert resource.required_repair_dimension is RepairDimension.RESOURCE
 
 
 @pytest.mark.parametrize(
@@ -117,10 +72,6 @@ def test_parse_result_and_repair_dimension_cover_empty_and_resource_only_policie
         {
             "rule_type": "specific_room",
             "rule_payload": {"class_id": 1, "subject_id": 2, "room_id": 0},
-        },
-        {
-            "rule_type": "lock_time",
-            "rule_payload": {"class_id": 1, "subject_id": 2},
         },
         {
             "rule_type": "teacher_preferred",
@@ -149,13 +100,13 @@ def test_parse_result_and_repair_dimension_cover_empty_and_resource_only_policie
     ],
 )
 def test_parser_rejects_every_malformed_legacy_shape(row):
-    parsed = SchedulerConstraintPolicy.parse([row])
+    parsed = SchoolConstraintPolicy.parse([row])
     assert parsed.is_valid is False
     assert parsed.configuration_violations[0].code.value == "INVALID_PAYLOAD"
 
 
 def test_parser_accepts_every_unavailable_selector_and_legacy_alias():
-    parsed = SchedulerConstraintPolicy.parse(
+    parsed = SchoolConstraintPolicy.parse(
         [
             {
                 "rule_type": "teacher_unavailable",
@@ -187,36 +138,15 @@ def test_parser_accepts_every_unavailable_selector_and_legacy_alias():
     assert parsed.policy.teacher_unavailable_date_slots == {(3, date(2026, 6, 4), 11)}
 
 
-def test_object_rows_mapping_helpers_snapshot_and_deduplication():
+def test_object_rows_snapshot_and_deduplication():
     invalid_row = SimpleNamespace(
         id=9,
         rule_type=SimpleNamespace(value="unknown"),
         rule_payload={},
     )
-    invalid = SchedulerConstraintPolicy.parse([invalid_row, invalid_row])
-    snapshot = SchedulerConstraintPolicy.from_snapshot({})
-    facts_from_mapping = placement_facts(
-        {
-            "class_id": 1,
-            "subject_id": 2,
-            "teacher_id": 3,
-            "room_id": 4,
-            "output_date": "2026-06-01",
-            "timeslot_id": 10,
-        }
-    )
-    facts_from_object = placement_facts(
-        SimpleNamespace(
-            class_id=1,
-            subject_id=2,
-            teacher_id=3,
-            room_id=4,
-            date=date(2026, 6, 1),
-            timeslot_id=10,
-        )
-    )
+    invalid = SchoolConstraintPolicy.parse([invalid_row, invalid_row])
+    snapshot = SchoolConstraintPolicy.from_snapshot({})
 
     assert len(invalid.configuration_violations) == 1
     assert invalid.configuration_violations[0].code.value == "UNKNOWN_TYPE"
     assert snapshot.is_valid is True
-    assert facts_from_mapping == facts_from_object

@@ -1,0 +1,229 @@
+"""R12.1: weekly timesheet must follow the published v1 ledger."""
+
+from datetime import UTC, date, datetime
+
+import pytest
+from sqlalchemy import select
+
+from app import models
+from app.core.exceptions import AppError
+from app.scheduler.infrastructure.models import SchedulerLessonLogV1
+from app.services import timesheet_service
+from tests._support.scheduler_v1 import (
+    add_lesson,
+    add_version,
+    lesson_interval,
+    seed_generatable_school,
+)
+
+WEEK_START = date(2026, 9, 21)
+PAST_DAY = date(2026, 9, 21)
+
+
+async def _seed_v1_week(db_session, *, suffix: str):
+    seed = await seed_generatable_school(
+        db_session,
+        clerk_user_id=f"timesheet_v1_{suffix}",
+        clerk_org_id=f"org_timesheet_v1_{suffix}",
+    )
+    version = await add_version(db_session, seed)
+    return seed, version
+
+
+async def _add_past_lesson(db_session, seed, version, *, key: str, day=PAST_DAY, hour: int = 9):
+    start, end = lesson_interval(day, hour)
+    return await add_lesson(
+        db_session,
+        seed,
+        version,
+        stable_key=key,
+        school_date=day,
+        start=start,
+        end=end,
+    )
+
+
+def _log_lesson(db_session, seed, lesson, status: str):
+    now = datetime(2026, 9, 21, 18, tzinfo=UTC)
+    db_session.add(
+        SchedulerLessonLogV1(
+            organization_id=seed.organization.id,
+            school_year_id=seed.year.id,
+            lesson_id=lesson.id,
+            status=status,
+            logged_by_membership_id=seed.membership.id,
+            logged_at=now,
+            created_at=now,
+            updated_at=now,
+        )
+    )
+
+
+def _submit(sync_db, seed, week_start=WEEK_START):
+    return timesheet_service.submit_timesheet_sync(
+        sync_db,
+        organization_id=seed.organization.id,
+        teacher_id=seed.assignment.teacher_id,
+        week_start_date=week_start,
+    )
+
+
+async def test_a_v1_week_blocks_submission_until_every_lesson_is_resolved(db_session):
+    seed, version = await _seed_v1_week(db_session, suffix="submit")
+    first = await _add_past_lesson(db_session, seed, version, key="l1")
+    second = await _add_past_lesson(db_session, seed, version, key="l2", day=date(2026, 9, 22))
+    await db_session.commit()
+
+    with pytest.raises(AppError) as unregistered:
+        await db_session.run_sync(lambda sync_db: _submit(sync_db, seed))
+    assert "Sem aulas planeadas" not in unregistered.value.detail
+
+    _log_lesson(db_session, seed, first, "COMPLETED")
+    await db_session.commit()
+    with pytest.raises(AppError) as pending:
+        await db_session.run_sync(lambda sync_db: _submit(sync_db, seed))
+    assert "Sem aulas planeadas" not in pending.value.detail
+
+    _log_lesson(db_session, seed, second, "OCCURRENCE")
+    await db_session.commit()
+    timesheet = await db_session.run_sync(lambda sync_db: _submit(sync_db, seed))
+
+    assert timesheet.status == models.TimesheetStatus.SUBMITTED
+    assert timesheet.submitted_at is not None
+
+
+async def test_a_v1_week_with_a_future_lesson_cannot_be_submitted(db_session, monkeypatch):
+    seed, version = await _seed_v1_week(db_session, suffix="future")
+    past = await _add_past_lesson(db_session, seed, version, key="l1")
+    await _add_past_lesson(db_session, seed, version, key="l2", day=date(2026, 9, 24))
+    _log_lesson(db_session, seed, past, "COMPLETED")
+    await db_session.commit()
+
+    frozen = datetime(2026, 9, 23, 8, 0, tzinfo=UTC)
+
+    class _FrozenDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return frozen
+
+    monkeypatch.setattr(timesheet_service, "datetime", _FrozenDatetime)
+
+    with pytest.raises(AppError) as future:
+        await db_session.run_sync(lambda sync_db: _submit(sync_db, seed))
+
+    assert "futuro" in future.value.detail
+
+
+async def _legacy_duplicate_block(db_session, seed, timeslot_id: int):
+    """A published legacy block for the same teacher and week."""
+    now = datetime(2026, 9, 21, 18, tzinfo=UTC)
+    job = models.ScheduleGenerationJob(
+        organization_id=seed.organization.id,
+        school_year_id=seed.year.id,
+        requested_by_membership_id=seed.membership.id,
+        strategy=models.ScheduleGenerationStrategy.COMPLETE_GENERATION,
+        trigger_type=models.ScheduleGenerationTrigger.FIRST_GENERATION,
+        job_status=models.ScheduleGenerationJobStatus.SUCCEEDED,
+        result_category=models.ScheduleGenerationResultCategory.COMPLETE_SUCCESS,
+        queued_at=now,
+        started_at=now,
+        finished_at=now,
+    )
+    db_session.add(job)
+    await db_session.flush()
+    draft = models.ScheduleDraft(
+        organization_id=seed.organization.id,
+        school_year_id=seed.year.id,
+        generation_job_id=job.id,
+        strategy=models.ScheduleGenerationStrategy.COMPLETE_GENERATION,
+        result_category=models.ScheduleGenerationResultCategory.COMPLETE_SUCCESS,
+        trigger_type=models.ScheduleGenerationTrigger.FIRST_GENERATION,
+        generation_input_fingerprint="a" * 64,
+        scheduler_state_version_used=0,
+        debt_basis_fingerprint="b" * 64,
+        repair_policy_snapshot_json={"repair_stability_window_days": 0},
+        repair_policy_snapshot_hash="c" * 64,
+        editable_start_date=date(2026, 9, 1),
+        projected_completion_date=date(2027, 6, 30),
+        hard_end_date=seed.year.hard_end_date,
+        summary_json={},
+        created_by_membership_id=seed.membership.id,
+    )
+    db_session.add(draft)
+    await db_session.flush()
+    draft_block = models.ScheduleDraftBlock(
+        organization_id=seed.organization.id,
+        school_year_id=seed.year.id,
+        draft_id=draft.id,
+        stable_block_key="legacy-1",
+        class_id=seed.class_.id,
+        subject_id=seed.subject.id,
+        teacher_id=seed.assignment.teacher_id,
+        room_id=seed.room.id,
+        room_type_id=models.RoomType.normal,
+        date=PAST_DAY,
+        timeslot_id=timeslot_id,
+        duration_minutes=50,
+        change_type=models.ScheduleDraftBlockChangeType.ADDED,
+    )
+    db_session.add(draft_block)
+    await db_session.flush()
+    db_session.add(
+        models.ActiveScheduleBlock(
+            organization_id=seed.organization.id,
+            school_year_id=seed.year.id,
+            schedule_version_id="legacy-version",
+            stable_block_key="legacy-1",
+            class_id=seed.class_.id,
+            subject_id=seed.subject.id,
+            teacher_id=seed.assignment.teacher_id,
+            room_id=seed.room.id,
+            date=PAST_DAY,
+            timeslot_id=timeslot_id,
+            duration_minutes=50,
+            source_draft_block_id=draft_block.id,
+        )
+    )
+
+
+async def test_admin_counts_follow_v1_and_ignore_legacy_duplicates(db_session):
+    seed, version = await _seed_v1_week(db_session, suffix="counts")
+    first = await _add_past_lesson(db_session, seed, version, key="l1")
+    second = await _add_past_lesson(db_session, seed, version, key="l2", day=date(2026, 9, 22))
+    _log_lesson(db_session, seed, first, "COMPLETED")
+    _log_lesson(db_session, seed, second, "OCCURRENCE")
+    timeslot_id = await db_session.scalar(
+        select(models.Timeslot.id).where(models.Timeslot.organization_id == seed.organization.id)
+    )
+    await _legacy_duplicate_block(db_session, seed, timeslot_id)
+    await db_session.commit()
+
+    rows = await db_session.run_sync(
+        lambda sync_db: timesheet_service.list_timesheets_sync(
+            sync_db, seed.organization.id, week_start_date=WEEK_START
+        )
+    )
+    row = next(item for item in rows if item["teacher_id"] == seed.assignment.teacher_id)
+
+    assert row["total_slots"] == 2
+    assert row["registered_slots"] == 2
+    assert row["completed_slots"] == 1
+    assert row["occurrence_slots"] == 1
+
+
+async def test_v1_timesheet_counts_stay_inside_the_organization(db_session):
+    org_a, version_a = await _seed_v1_week(db_session, suffix="iso_a")
+    org_b, version_b = await _seed_v1_week(db_session, suffix="iso_b")
+    await _add_past_lesson(db_session, org_a, version_a, key="a1")
+    await _add_past_lesson(db_session, org_b, version_b, key="b1")
+    await db_session.commit()
+
+    rows = await db_session.run_sync(
+        lambda sync_db: timesheet_service.list_timesheets_sync(
+            sync_db, org_a.organization.id, week_start_date=WEEK_START
+        )
+    )
+    by_teacher = {row["teacher_id"]: row for row in rows}
+
+    assert by_teacher[org_a.assignment.teacher_id]["total_slots"] == 1
+    assert org_b.assignment.teacher_id not in by_teacher

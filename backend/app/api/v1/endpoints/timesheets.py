@@ -10,8 +10,8 @@ from app.services import timesheet_service
 router = APIRouter()
 
 
-def _model_to_read_dict(t: models.TeacherWeeklyTimesheet) -> dict:
-    return {
+def _model_to_read_dict(t: models.TeacherWeeklyTimesheet, counts: dict | None = None) -> dict:
+    data = {
         "id": t.id,
         "organization_id": t.organization_id,
         "teacher_id": t.teacher_id,
@@ -28,6 +28,9 @@ def _model_to_read_dict(t: models.TeacherWeeklyTimesheet) -> dict:
         "completed_slots": 0,
         "occurrence_slots": 0,
     }
+    if counts:
+        data.update(counts)
+    return data
 
 
 @router.get(
@@ -80,7 +83,13 @@ async def get_my_timesheet(
             week_start_date=week_start_date,
         )
         sync_db.refresh(t, ["teacher"])
-        return _model_to_read_dict(t)
+        counts = timesheet_service.week_slot_counts_sync(
+            sync_db,
+            organization_id=current_user.organization_id,
+            teacher_id=current_user.teacher_id,
+            week_start_date=week_start_date,
+        )
+        return _model_to_read_dict(t, counts)
 
     return await db.run_sync(_run)
 
@@ -110,7 +119,13 @@ async def submit_my_timesheet(
             week_start_date=week_start_date,
         )
         sync_db.refresh(t, ["teacher"])
-        return _model_to_read_dict(t)
+        counts = timesheet_service.week_slot_counts_sync(
+            sync_db,
+            organization_id=current_user.organization_id,
+            teacher_id=current_user.teacher_id,
+            week_start_date=week_start_date,
+        )
+        return _model_to_read_dict(t, counts)
 
     return await db.run_sync(_run)
 

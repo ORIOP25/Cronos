@@ -70,10 +70,10 @@ export async function apiRequest(page, method, path, body, timeoutMs = REQUEST_T
 
 async function resetSchedulerState(page) {
   const status = await apiRequest(page, 'GET', '/scheduler/status')
-  if (status?.pending_draft_id) {
-    await apiRequest(page, 'POST', `/scheduler/drafts/${status.pending_draft_id}/reject`)
+  if (status?.pending_proposal?.proposal_id) {
+    await apiRequest(page, 'POST', `/scheduler/drafts/${status.pending_proposal.proposal_id}/reject`)
   }
-  if (status?.school_year_id) {
+  if (status?.school_year?.id) {
     await apiRequest(page, 'POST', '/school/settings/soft-reset', { confirm_phrase: 'Confirmo' })
   }
 }
@@ -190,10 +190,10 @@ export async function waitForJobToSucceed(page, jobId) {
   await expect.poll(
     async () => {
       lastJob = await apiRequest(page, 'GET', `/scheduler/jobs/${jobId}`)
-      if (['FAILED', 'NO_VALID_OUTPUT', 'CANCELED'].includes(lastJob.job_status)) {
-        throw new Error(`scheduler job ${jobId} ended with ${lastJob.job_status}`)
+      if (['FAILED', 'STALE', 'CANCELLED', 'INFEASIBLE', 'INCONCLUSIVE'].includes(lastJob.status)) {
+        throw new Error(`scheduler job ${jobId} ended with ${lastJob.status}`)
       }
-      return lastJob.job_status
+      return lastJob.status
     },
     {
       intervals: [100, 250, 500],
@@ -215,8 +215,8 @@ export async function generateAndApproveThroughUi(page) {
   const response = await generateResponse
   const responseText = await response.text()
   expect(response.ok(), `scheduler generate failed: ${response.status()} ${responseText}`).toBeTruthy()
-  const job = await waitForJobToSucceed(page, JSON.parse(responseText).job_id)
-  await expect(page.getByText(/Rascunho pronto para revis/i)).toBeVisible({ timeout: 30_000 })
+  const job = await waitForJobToSucceed(page, JSON.parse(responseText).job.id)
+  await expect(page.getByText(/Proposta pronta para revis/i)).toBeVisible({ timeout: 30_000 })
   const approvalResponse = page.waitForResponse((candidate) => (
     candidate.url().includes('/api/v1/scheduler/drafts/') &&
     candidate.url().endsWith('/approve') && candidate.request().method() === 'POST'

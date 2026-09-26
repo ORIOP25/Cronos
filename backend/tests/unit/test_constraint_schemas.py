@@ -4,7 +4,7 @@ import pytest
 from pydantic import TypeAdapter, ValidationError
 
 from app import schemas
-from app.scheduler.domain.constraints import SchedulerConstraintPolicy
+from app.scheduler.domain.constraint_policy import SchoolConstraintPolicy
 
 adapter = TypeAdapter(schemas.ConstraintCreate)
 
@@ -15,10 +15,6 @@ adapter = TypeAdapter(schemas.ConstraintCreate)
         {
             "rule_type": "specific_room",
             "rule_payload": {"class_id": 1, "subject_id": 2, "room_id": 3},
-        },
-        {
-            "rule_type": "lock_time",
-            "rule_payload": {"class_id": 1, "subject_id": 2, "timeslot_id": 3},
         },
         {"rule_type": "teacher_preferred", "rule_payload": {"teacher_id": 1, "timeslot_id": 2}},
         {"rule_type": "teacher_unavailable", "rule_payload": {"teacher_id": 1, "timeslot_id": 2}},
@@ -38,11 +34,25 @@ def test_supported_constraint_payloads_are_typed(payload):
     stored = result.model_dump(mode="json", exclude_none=True)
 
     assert result.rule_payload.model_dump()
-    assert SchedulerConstraintPolicy.parse([stored]).is_valid is True
+    assert SchoolConstraintPolicy.parse([stored]).is_valid is True
 
     # Pydantic must parse ISO date strings into datetime.date objects
     if hasattr(result.rule_payload, "date") and result.rule_payload.date is not None:
         assert isinstance(result.rule_payload.date, date)
+
+
+def test_lock_time_is_schema_valid_but_unsupported_by_the_v1_policy():
+    result = adapter.validate_python(
+        {
+            "rule_type": "lock_time",
+            "rule_payload": {"class_id": 1, "subject_id": 2, "timeslot_id": 3},
+        }
+    )
+
+    parsed = SchoolConstraintPolicy.parse([result.model_dump(mode="json", exclude_none=True)])
+
+    assert parsed.is_valid is False
+    assert parsed.configuration_violations[0].code.value == "UNSUPPORTED_TYPE"
 
 
 def test_unavailable_date_slot_storage_omits_inactive_selectors():

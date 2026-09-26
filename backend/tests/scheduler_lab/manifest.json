@@ -1,0 +1,208 @@
+{
+  "schema_version": "scheduler-lab-v3",
+  "campaign_id": "w03-minimal",
+  "cases": [
+    {
+      "case_id": "w03-minimal-feasible",
+      "family": "minimal",
+      "version": 1,
+      "expectation": "FEASIBLE_WITH_WITNESS",
+      "mutation": null,
+      "expected_violations": [],
+      "seeds": {
+        "fixture_seed": 1,
+        "event_seed": 2,
+        "solver_seed": 3
+      },
+      "spec": {
+        "strategy": "COMPLETE_GENERATION",
+        "origin": "2026-09-21",
+        "preferred_end_date": "2026-10-30",
+        "hard_end_date": "2026-11-30",
+        "timezone_name": "Europe/Lisbon",
+        "grid_slots": [
+          [
+            0,
+            "09:00",
+            "10:00"
+          ],
+          [
+            2,
+            "09:00",
+            "10:00"
+          ]
+        ],
+        "periods": [
+          [
+            "2026-09-21",
+            "09:00",
+            "10:00"
+          ],
+          [
+            "2026-09-23",
+            "09:00",
+            "10:00"
+          ]
+        ],
+        "assignments": [
+          {
+            "class_id": 1,
+            "teacher_id": 100,
+            "module_minutes": [
+              100
+            ],
+            "eligible_rooms": [
+              500,
+              501
+            ]
+          }
+        ],
+        "blocked_dates": [],
+        "executed_minutes": [],
+        "unavailable": [],
+        "protected_dates": [],
+        "now_utc": null,
+        "reservations": [],
+        "open_debt_minutes": [],
+        "claim_assignments": [],
+        "active_version_id": null
+      },
+      "scale": null
+    },
+    {
+      "case_id": "w03-minimal-infeasible",
+      "family": "frontier",
+      "version": 1,
+      "expectation": "INFEASIBLE_PROVEN",
+      "mutation": null,
+      "expected_violations": [],
+      "seeds": {
+        "fixture_seed": 4,
+        "event_seed": 5,
+        "solver_seed": 6
+      },
+      "spec": {
+        "strategy": "COMPLETE_GENERATION",
+        "origin": "2026-09-21",
+        "preferred_end_date": "2026-10-30",
+        "hard_end_date": "2026-11-30",
+        "timezone_name": "Europe/Lisbon",
+        "grid_slots": [
+          [
+            0,
+            "09:00",
+            "10:00"
+          ],
+          [
+            2,
+            "09:00",
+            "10:00"
+          ]
+        ],
+        "periods": [
+          [
+            "2026-09-21",
+            "09:00",
+            "10:00"
+          ],
+          [
+            "2026-09-23",
+            "09:00",
+            "10:00"
+          ]
+        ],
+        "assignments": [
+          {
+            "class_id": 1,
+            "teacher_id": 100,
+            "module_minutes": [
+              200
+            ],
+            "eligible_rooms": [
+              500
+            ]
+          }
+        ],
+        "blocked_dates": [],
+        "executed_minutes": [],
+        "unavailable": [],
+        "protected_dates": [],
+        "now_utc": null,
+        "reservations": [],
+        "open_debt_minutes": [],
+        "claim_assignments": [],
+        "active_version_id": null
+      },
+      "scale": null
+    },
+    {
+      "case_id": "w03-minimal-mutation-drop",
+      "family": "minimal",
+      "version": 1,
+      "expectation": "FEASIBLE_WITH_WITNESS",
+      "mutation": "DROP_LESSON",
+      "expected_violations": [
+        "COVERAGE_MISMATCH"
+      ],
+      "seeds": {
+        "fixture_seed": 7,
+        "event_seed": 8,
+        "solver_seed": 9
+      },
+      "spec": {
+        "strategy": "COMPLETE_GENERATION",
+        "origin": "2026-09-21",
+        "preferred_end_date": "2026-10-30",
+        "hard_end_date": "2026-11-30",
+        "timezone_name": "Europe/Lisbon",
+        "grid_slots": [
+          [
+            0,
+            "09:00",
+            "10:00"
+          ],
+          [
+            2,
+            "09:00",
+            "10:00"
+          ]
+        ],
+        "periods": [
+          [
+            "2026-09-21",
+            "09:00",
+            "10:00"
+          ],
+          [
+            "2026-09-23",
+            "09:00",
+            "10:00"
+          ]
+        ],
+        "assignments": [
+          {
+            "class_id": 1,
+            "teacher_id": 100,
+            "module_minutes": [
+              100
+            ],
+            "eligible_rooms": [
+              500,
+              501
+            ]
+          }
+        ],
+        "blocked_dates": [],
+        "executed_minutes": [],
+        "unavailable": [],
+        "protected_dates": [],
+        "now_utc": null,
+        "reservations": [],
+        "open_debt_minutes": [],
+        "claim_assignments": [],
+        "active_version_id": null
+      },
+      "scale": null
+    }
+  ]
+}

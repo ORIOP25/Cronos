@@ -1,0 +1,12 @@
+{
+  "$schema": "https://railway.com/railway.schema.json",
+  "build": {
+    "builder": "DOCKERFILE",
+    "dockerfilePath": "Dockerfile"
+  },
+  "deploy": {
+    "startCommand": "celery -A app.celery_worker.celery_app worker --loglevel=info --include=app.scheduler_recovery_worker --concurrency=1 --prefetch-multiplier=1 --queues=scheduler-supervisor --hostname=scheduler-supervisor@%h",
+    "restartPolicyType": "ON_FAILURE",
+    "restartPolicyMaxRetries": 5
+  }
+}

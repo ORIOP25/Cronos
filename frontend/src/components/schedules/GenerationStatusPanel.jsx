@@ -4,23 +4,37 @@ import { useScheduleTaskStatus } from '../../features/scheduling/data'
 import FailureState from '../FailureState'
 import { getApiErrorPresentation } from '../../utils/apiErrors'
 
+const ACTIVE_STATUSES = new Set(['QUEUED', 'RUNNING', 'VALIDATING'])
+const TERMINAL_STATUSES = new Set([
+  'CANCELLED', 'FAILED', 'STALE', 'INFEASIBLE', 'INCONCLUSIVE',
+])
+
 const STATUS_LABELS = {
-  QUEUED: 'Geração em fila',
-  RUNNING: 'A gerar horário',
-  CANCEL_REQUESTED: 'A cancelar geração',
-  CANCELED: 'Geração cancelada',
-  SUCCEEDED: 'Rascunho pronto para revisão',
-  NO_VALID_OUTPUT: 'Não foi possível gerar um horário válido',
-  FAILED: 'Erro na geração',
+  QUEUED: 'Em fila',
+  RUNNING: 'A organizar as aulas',
+  VALIDATING: 'A validar a proposta',
+  SUCCEEDED: 'Proposta pronta para revisão',
+  CANCELLED: 'Geração cancelada',
+  FAILED: 'Não foi possível concluir a geração',
+  STALE: 'Os dados mudaram durante a geração',
+  INFEASIBLE: 'Não é possível colocar todas as aulas com estas condições',
+  INCONCLUSIVE: 'Não foi possível concluir a pesquisa',
 }
 
-const TERMINAL_STATUSES = new Set(['CANCELED', 'FAILED', 'NO_VALID_OUTPUT'])
-const ACTIVE_STATUSES = new Set(['QUEUED', 'RUNNING', 'CANCEL_REQUESTED'])
+const TERMINAL_MESSAGES = {
+  CANCELLED: 'A geração foi cancelada. O horário ativo não foi alterado.',
+  STALE: 'Os dados da escola mudaram durante a geração. Gere uma nova proposta.',
+  INFEASIBLE:
+    'Não é possível colocar todas as aulas com estas condições. Reveja disponibilidades, salas, professor atribuído ou datas.',
+  INCONCLUSIVE:
+    'Não foi possível concluir a pesquisa. Isto não significa que o horário seja impossível.',
+  FAILED: 'Ocorreu um erro durante a geração. Tente novamente.',
+}
 
 function alertColor(status) {
   if (status === 'SUCCEEDED') return 'success'
-  if (status === 'CANCELED' || status === 'CANCEL_REQUESTED') return 'warning'
-  if (status === 'FAILED' || status === 'NO_VALID_OUTPUT') return 'danger'
+  if (status === 'CANCELLED' || status === 'STALE') return 'warning'
+  if (TERMINAL_STATUSES.has(status)) return 'danger'
   return 'info'
 }
 
@@ -55,8 +69,8 @@ const GenerationStatusPanel = ({ jobId }) => {
       />
     )
   }
-  const status = job.job_status ?? ''
-  const isRunning = ACTIVE_STATUSES.has(status)
+  const status = job.status ?? ''
+  const isActive = ACTIVE_STATUSES.has(status)
   if (status === 'SUCCEEDED') {
     return (
       <CAlert color="success" className="mb-4">
@@ -65,13 +79,14 @@ const GenerationStatusPanel = ({ jobId }) => {
     )
   }
   if (TERMINAL_STATUSES.has(status)) {
-    const failureCode = job.failure_code || (status === 'CANCELED' ? 'CANCELED' : status)
-    const presentation = getApiErrorPresentation({
-      response: { data: { detail: { code: failureCode, reference: job.failure_reference } } },
-    }, 'schedule.generate')
-    return <FailureState presentation={presentation} variant="inline" />
+    return (
+      <CAlert color={alertColor(status)} className="mb-4" data-testid="generation-terminal">
+        <strong>{STATUS_LABELS[status] || status}</strong>
+        <div className="small mt-1">{TERMINAL_MESSAGES[status] || ''}</div>
+      </CAlert>
+    )
   }
-  if (!ACTIVE_STATUSES.has(status)) {
+  if (!isActive) {
     return <FailureState presentation={getApiErrorPresentation({}, 'schedule.generate')} variant="inline" />
   }
   const queuedTooLong = status === 'QUEUED'
@@ -80,10 +95,17 @@ const GenerationStatusPanel = ({ jobId }) => {
   return (
     <CAlert color={alertColor(status)} className="mb-4">
       <div className="d-flex align-items-center gap-2">
-        {isRunning && <CSpinner size="sm" />}
+        {isActive && <CSpinner size="sm" />}
         <strong>{STATUS_LABELS[status]}</strong>
+        {status === 'QUEUED' && job.queue_position > 1 && (
+          <span className="small">· posição {job.queue_position} na fila</span>
+        )}
       </div>
-      {queuedTooLong && <div className="small mt-2">A geração está a aguardar execução. Pode sair desta página com segurança.</div>}
+      {queuedTooLong && (
+        <div className="small mt-2">
+          A aguardar a conclusão de outro pedido. Pode sair desta página com segurança.
+        </div>
+      )}
     </CAlert>
   )
 }
