@@ -399,7 +399,7 @@ async def save_and_regenerate_grid(
     except Exception:
         raise
 
-    changed = settings_changed or plan.changed
+    changed = settings_changed or plan.changed or plan.configuration_changed
     logger.info(
         "grid_regeneration_committed",
         organization_id=organization_id,
@@ -409,12 +409,14 @@ async def save_and_regenerate_grid(
         changed=changed,
         grid_regenerated=plan.changed,
     )
+    if plan.changed:
+        message = "Grelha configurada e regenerada com sucesso."
+    elif changed:
+        message = "A configuração da grelha foi atualizada sem alterar os blocos."
+    else:
+        message = "A configuração da grelha já estava atualizada."
     return schemas.GridConfigurationResponse(
-        message=(
-            "Grelha configurada e regenerada com sucesso."
-            if changed
-            else "A configuração da grelha já estava atualizada."
-        ),
+        message=message,
         generated_count=generated_count,
         changed=changed,
         grid_regenerated=plan.changed,

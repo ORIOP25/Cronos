@@ -1,5 +1,6 @@
 import importlib.util
 import inspect
+from datetime import time
 from pathlib import Path
 
 VERSIONS = Path(__file__).resolve().parents[2] / "alembic" / "versions"
@@ -15,6 +16,8 @@ LEGAL_ACCEPTANCE = VERSIONS / "0007_legal_acceptance.py"
 REMOVE_TUTORIAL_TELEMETRY = VERSIONS / "0008_remove_tutorial_telemetry.py"
 INTEGRATED_LEGAL_ACCEPTANCE = VERSIONS / "0009_integrated_legal_acceptance.py"
 SCHEDULER_FAILURE_REFERENCE = VERSIONS / "0010_scheduler_failure_reference.py"
+GRID_VERSIONS = VERSIONS / "0011_grid_versions.py"
+GRID_CHANGE_STRATEGY = VERSIONS / "0012_grid_change_strategy.py"
 
 
 def _load_initial():
@@ -48,11 +51,72 @@ def test_migration_history_has_expected_revisions():
         REMOVE_TUTORIAL_TELEMETRY,
         INTEGRATED_LEGAL_ACCEPTANCE,
         SCHEDULER_FAILURE_REFERENCE,
+        GRID_VERSIONS,
+        GRID_CHANGE_STRATEGY,
     ]
     source = INITIAL.read_text(encoding="utf-8")
     assert _load_initial().down_revision is None
     for forbidden in ("app.models", "Base.metadata", "create_all", "drop_all", "CREATE TRIGGER"):
         assert forbidden not in source
+
+
+def test_grid_version_migration_rebuilds_regular_legacy_configuration():
+    migration = _load_migration(GRID_VERSIONS, "grid_versions")
+
+    regular = migration.derive_grid_configuration(
+        [
+            (0, time(9, 0), time(9, 50)),
+            (0, time(10, 0), time(10, 50)),
+            (4, time(9, 0), time(9, 50)),
+            (4, time(10, 0), time(10, 50)),
+        ]
+    )
+    assert regular == {
+        "opening_time": "09:00",
+        "closing_time": "10:50",
+        "slot_duration_minutes": 50,
+        "break_duration_minutes": 10,
+        "break_overrides": [],
+        "days_of_week": [0, 4],
+    }
+
+    irregular_duration = migration.derive_grid_configuration(
+        [
+            (0, time(9, 0), time(9, 50)),
+            (0, time(10, 0), time(11, 30)),
+        ]
+    )
+    assert irregular_duration is None
+
+    irregular_sequence = migration.derive_grid_configuration(
+        [
+            (0, time(9, 0), time(9, 50)),
+            (0, time(10, 0), time(10, 50)),
+            (1, time(9, 0), time(9, 50)),
+        ]
+    )
+    assert irregular_sequence is None
+
+    assert migration.derive_grid_configuration([]) is None
+    assert migration.derive_grid_configuration([(0, time(9, 0, 30), time(9, 50, 30))]) is None
+    assert (
+        migration.derive_grid_configuration(
+            [
+                (0, time(9, 0), time(9, 50)),
+                (0, time(9, 40), time(10, 30)),
+            ]
+        )
+        is None
+    )
+    assert (
+        migration.derive_grid_configuration(
+            [
+                (0, time(9, 0), time(9, 50)),
+                (0, time(10, 51), time(11, 41)),
+            ]
+        )
+        is None
+    )
 
 
 def test_initial_revision_contains_native_tenant_integrity():

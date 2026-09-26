@@ -19,6 +19,7 @@ import {
   useSubjects,
   useTimeslots,
   useUpdateClassSubjectTeacher,
+  useWeekGridVersions,
 } from '../features/catalog/data'
 import {
   useDebts,
@@ -178,6 +179,33 @@ describe('vertical feature data hooks', () => {
     ]))
     expect(apiClient.get).toHaveBeenCalledWith('/rooms/')
     expect(apiClient.get).toHaveBeenCalledWith('/subjects/')
+  })
+
+  it('loads per-day grid versions for the selected week', async () => {
+    const rangePayload = {
+      days: [{ date: '2026-09-21', version_id: 1, effective_date: '2025-09-15', blocks: [] }],
+      transition_date: null,
+    }
+    apiClient.get.mockImplementation((url) => Promise.resolve(
+      url === '/timeslots/range' ? rangePayload : [],
+    ))
+    const { queryClient, wrapper } = createHarness()
+    const read = renderHook(() => useWeekGridVersions('2026-09-21'), { wrapper })
+
+    await waitFor(() => expect(read.result.current.isSuccess).toBe(true))
+    expect(apiClient.get).toHaveBeenCalledWith('/timeslots/range', {
+      params: { from_date: '2026-09-21', to_date: '2026-09-27' },
+    })
+    expect(read.result.current.data).toEqual(rangePayload)
+    expect(queryClient.getQueryCache().getAll().map(({ queryKey }) => queryKey))
+      .toContainEqual(['timeslots', 'org-a', 'range', '2026-09-21'])
+  })
+
+  it('does not request grid versions without a week', async () => {
+    const { wrapper } = createHarness()
+    renderHook(() => useWeekGridVersions(''), { wrapper })
+
+    await waitFor(() => expect(apiClient.get).not.toHaveBeenCalled())
   })
 
   it('keeps subject-dependent course invalidation inside catalog mutations', async () => {

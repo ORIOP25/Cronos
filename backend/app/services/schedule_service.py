@@ -7,6 +7,7 @@ from sqlalchemy.future import select
 from sqlalchemy.orm import Session
 
 from app import models, schemas
+from app.services import grid_version_service
 from app.services.scheduler_state_service import record_scheduler_change
 
 
@@ -21,10 +22,12 @@ class ConstraintSemanticValidationError(ValueError):
 
 # --- TIMESLOTS ---
 async def get_timeslots_by_org(db: AsyncSession, organization_id: int):
-    result = await db.execute(
-        select(models.Timeslot).where(models.Timeslot.organization_id == organization_id)
+    resolved = await grid_version_service.resolve_grid(
+        db,
+        organization_id,
+        await grid_version_service.school_today(db, organization_id),
     )
-    return result.scalars().all()
+    return list(resolved.blocks)
 
 
 async def create_timeslot(
@@ -34,7 +37,12 @@ async def create_timeslot(
     changed_by_membership_id: int | None = None,
 ):
     # O item.model_dump() já vai ter 'start_time' como objeto time.
-    db_item = models.Timeslot(**item.model_dump(), organization_id=organization_id)
+    version = await grid_version_service.ensure_active_grid_version(db, organization_id)
+    db_item = models.Timeslot(
+        **item.model_dump(),
+        organization_id=organization_id,
+        grid_version_id=version.id,
+    )
     db.add(db_item)
     await db.flush()
     await record_scheduler_change(

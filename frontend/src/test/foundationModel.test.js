@@ -5,6 +5,7 @@ import {
   validateFoundationStep,
   initialFoundationState,
   buildDailyTimeslots,
+  buildDailyTimeline,
   serializeFoundationDraftValues,
   STEP_PERIOD,
   STEP_DAYS,
@@ -288,5 +289,143 @@ describe('foundationModel', () => {
     state = foundationReducer(state, { type: 'SET_FIELD', field: 'school_start_date', value: '2025-09-15' })
     expect(state.error).toBe('')
     expect(state.errorCode).toBe('')
+  })
+
+  describe('variable breaks', () => {
+    const variableValues = {
+      ...initialFoundationDraftValues,
+      opening_time: '09:00',
+      closing_time: '11:45',
+      slot_duration_minutes: 50,
+      break_duration_minutes: 10,
+      break_overrides: [{ after_slot: 2, duration_minutes: 5 }],
+    }
+
+    it('builds the same sequence as the backend contract example', () => {
+      const slots = buildDailyTimeslots(variableValues)
+      expect(slots.map(({ start, end }) => `${start}-${end}`)).toEqual([
+        '09:00-09:50',
+        '10:00-10:50',
+        '10:55-11:45',
+      ])
+      expect(slots.map(({ index }) => index)).toEqual([1, 2, 3])
+      expect(slots.map(({ breakAfter }) => breakAfter)).toEqual([10, 5, 0])
+    })
+
+    it('keeps legacy payloads uniform when overrides are absent or empty', () => {
+      const legacy = { ...initialFoundationDraftValues, opening_time: '08:00', closing_time: '10:00' }
+      const withoutField = buildDailyTimeslots(legacy)
+      expect(withoutField.map(({ start, end }) => `${start}-${end}`)).toEqual([
+        '08:00-08:50',
+        '09:00-09:50',
+      ])
+
+      const withEmpty = buildDailyTimeslots({ ...legacy, break_overrides: [] })
+      expect(withEmpty.map(({ start, end }) => `${start}-${end}`)).toEqual([
+        '08:00-08:50',
+        '09:00-09:50',
+      ])
+    })
+
+    it('honours zero and longer overrides when generating lessons', () => {
+      const zero = buildDailyTimeslots({
+        ...variableValues,
+        opening_time: '09:00',
+        closing_time: '12:00',
+        break_duration_minutes: 0,
+        break_overrides: [{ after_slot: 2, duration_minutes: 30 }],
+      })
+      expect(zero.map(({ start, end }) => `${start}-${end}`)).toEqual([
+        '09:00-09:50',
+        '09:50-10:40',
+        '11:10-12:00',
+      ])
+    })
+
+    it('reports overrides that lost their following lesson', () => {
+      const values = {
+        ...variableValues,
+        opening_time: '09:00',
+        closing_time: '09:50',
+        break_duration_minutes: 0,
+        break_overrides: [{ after_slot: 2, duration_minutes: 5 }],
+      }
+      const errors = validateFoundationStep(STEP_BREAK_DURATION, values)
+      expect(errors).toHaveProperty('break_overrides')
+      expect(errors.break_overrides).toContain('2')
+    })
+
+    it('rejects duplicate and out-of-range overrides', () => {
+      expect(validateFoundationStep(STEP_BREAK_DURATION, {
+        ...variableValues,
+        break_overrides: [
+          { after_slot: 1, duration_minutes: 5 },
+          { after_slot: 1, duration_minutes: 10 },
+        ],
+      })).toHaveProperty('break_overrides')
+
+      expect(validateFoundationStep(STEP_BREAK_DURATION, {
+        ...variableValues,
+        break_overrides: [{ after_slot: 0, duration_minutes: 5 }],
+      })).toHaveProperty('break_overrides')
+
+      expect(validateFoundationStep(STEP_BREAK_DURATION, {
+        ...variableValues,
+        break_overrides: [{ after_slot: 1, duration_minutes: 61 }],
+      })).toHaveProperty('break_overrides')
+
+      expect(validateFoundationStep(STEP_BREAK_DURATION, variableValues)).toEqual({})
+    })
+
+    it('serializes overrides untouched for autosave', () => {
+      expect(serializeFoundationDraftValues({
+        break_overrides: [{ after_slot: 2, duration_minutes: 5 }],
+      }).break_overrides).toEqual([{ after_slot: 2, duration_minutes: 5 }])
+    })
+
+    it('ignores invalid override durations without moving the clock backwards', () => {
+      const timeline = buildDailyTimeline({
+        ...variableValues,
+        break_overrides: [
+          { after_slot: 1, duration_minutes: -50 },
+          { after_slot: 2, duration_minutes: 5 },
+        ],
+      })
+
+      expect(timeline.slots.map(({ start, end }) => `${start}-${end}`)).toEqual([
+        '09:00-09:50',
+        '10:00-10:50',
+        '10:55-11:45',
+      ])
+      expect(timeline.invalidOverrides).toEqual([
+        { after_slot: 1, duration_minutes: -50, reason: 'duration' },
+      ])
+    })
+
+    it('reports malformed positions without blocking the timeline', () => {
+      const timeline = buildDailyTimeline({
+        ...variableValues,
+        break_overrides: [{ after_slot: 0, duration_minutes: 5 }],
+      })
+
+      expect(timeline).not.toBeNull()
+      expect(timeline.slots.length).toBeGreaterThan(0)
+      expect(timeline.invalidOverrides[0].reason).toBe('position')
+    })
+
+    it('separates unused overrides so the interface can remove them', () => {
+      const timeline = buildDailyTimeline({
+        ...initialFoundationDraftValues,
+        opening_time: '09:00',
+        closing_time: '09:50',
+        slot_duration_minutes: 50,
+        break_duration_minutes: 10,
+        break_overrides: [{ after_slot: 2, duration_minutes: 5 }],
+      })
+
+      expect(timeline.slots).toHaveLength(1)
+      expect(timeline.unusedOverrides).toEqual([2])
+      expect(timeline.invalidOverrides).toEqual([])
+    })
   })
 })

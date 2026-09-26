@@ -207,6 +207,7 @@ describe('SchoolConfig scheduler settings', () => {
           end_time: '18:00:00',
           slot_duration_minutes: 50,
           break_duration_minutes: 10,
+          break_overrides: [],
           days_of_week: [0, 1, 2, 3, 4],
         },
       })
@@ -314,5 +315,50 @@ describe('SchoolConfig scheduler settings', () => {
 
     expect(await screen.findByText(/irregular/i)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /guardar e regenerar/i })).toBeDisabled()
+  })
+
+  it('hydrates a variable grid and forwards its overrides on submit', async () => {
+    apiClient.get.mockImplementation((url) => {
+      if (url === '/timeslots/') {
+        return Promise.resolve([
+          { day_of_week: 0, start_time: '09:00:00', end_time: '09:50:00' },
+          { day_of_week: 0, start_time: '10:00:00', end_time: '10:50:00' },
+          { day_of_week: 0, start_time: '10:55:00', end_time: '11:45:00' },
+        ])
+      }
+      if (url === '/school/grid-settings/') {
+        return Promise.resolve({
+          lunch_window_start: '12:00:00',
+          lunch_window_end: '14:00:00',
+          lunch_min_duration_minutes: 60,
+        })
+      }
+      return Promise.resolve([])
+    })
+    renderWithProviders(<SchoolConfig />)
+
+    fireEvent.click(await screen.findByRole('tab', { name: /grelha/i }))
+    await screen.findByLabelText(/duração da aula/i)
+    expect(screen.getByLabelText('Intervalo')).toHaveValue(10)
+
+    fireEvent.click(screen.getByRole('button', { name: /guardar e regenerar/i }))
+
+    await waitFor(() => {
+      expect(apiClient.post).toHaveBeenCalledWith('/school/grid-settings/regenerate', {
+        grid_settings: {
+          lunch_window_start: '12:00:00',
+          lunch_window_end: '14:00:00',
+          lunch_min_duration_minutes: 60,
+        },
+        timeslots: {
+          start_time: '09:00:00',
+          end_time: '11:45:00',
+          slot_duration_minutes: 50,
+          break_duration_minutes: 10,
+          break_overrides: [{ after_slot: 2, duration_minutes: 5 }],
+          days_of_week: [0],
+        },
+      })
+    })
   })
 })

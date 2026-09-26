@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from datetime import date, datetime, time, timedelta
+from datetime import date, time
 
 import structlog
 from sqlalchemy import delete, func, or_, select
@@ -7,6 +7,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models, schemas
 from app.core.exceptions import AppError
+from app.scheduler.domain.timetable import BreakOverride, build_daily_slots
+from app.services import grid_version_service
 from app.services.scheduler_state_service import record_scheduler_change
 
 logger = structlog.get_logger(__name__)
@@ -19,6 +21,10 @@ PROTECTED_GRID_MESSAGE = (
 SLOT_RULES_MESSAGE = (
     "Existem regras associadas aos blocos horários atuais. Remova ou recrie "
     "essas regras antes de substituir a grelha."
+)
+PENDING_PROPOSAL_MESSAGE = (
+    "Existe uma proposta de alteração da grelha pendente. Conclua ou cancele "
+    "a proposta antes de regenerar a grelha."
 )
 
 TIMESLOT_DEPENDENCY_POLICIES = {
@@ -40,6 +46,9 @@ class GridRegenerationPlan:
     desired_signatures: tuple[tuple[int, time, time], ...]
     before_grid: tuple[dict, ...]
     changed: bool
+    configuration: dict | None = None
+    configuration_changed: bool = False
+    replaceable_slot_ids: tuple[int, ...] = ()
 
 
 def _timeslot_snapshot(slot: models.Timeslot) -> dict:
@@ -60,8 +69,11 @@ async def _get_org_teacher_ids(db: AsyncSession, organization_id: int) -> list[i
 async def _get_availability_preferences_by_time(
     db: AsyncSession,
     organization_id: int,
+    timeslot_ids: set[int],
 ) -> dict[tuple[int, int, time, time], int]:
     """Snapshot preferences by (teacher, day, start, end) before timeslot reset."""
+    if not timeslot_ids:
+        return {}
     result = await db.execute(
         select(
             models.Availability.teacher_id,
@@ -71,7 +83,10 @@ async def _get_availability_preferences_by_time(
             models.Availability.score,
         )
         .join(models.Timeslot, models.Timeslot.id == models.Availability.timeslot_id)
-        .where(models.Timeslot.organization_id == organization_id)
+        .where(
+            models.Timeslot.organization_id == organization_id,
+            models.Timeslot.id.in_(timeslot_ids),
+        )
     )
     return {
         (teacher_id, day_of_week, start_time, end_time): score
@@ -108,15 +123,15 @@ def _restore_availabilities_for_new_grid(
             )
 
 
-async def get_timeslots_by_org(db: AsyncSession, organization_id: int):
-    # Ordenar por Dia da Semana e depois Hora de Início
-    stmt = (
-        select(models.Timeslot)
-        .where(models.Timeslot.organization_id == organization_id)
-        .order_by(models.Timeslot.day_of_week, models.Timeslot.start_time)
-    )
-    result = await db.execute(stmt)
-    return result.scalars().all()
+async def get_timeslots_by_org(
+    db: AsyncSession,
+    organization_id: int,
+    on_date: date | None = None,
+):
+    """Return the blocks of the grid version valid on a school date."""
+    target = on_date or await grid_version_service.school_today(db, organization_id)
+    resolved = await grid_version_service.resolve_grid(db, organization_id, target)
+    return list(resolved.blocks)
 
 
 async def create_timeslot(
@@ -125,7 +140,12 @@ async def create_timeslot(
     organization_id: int,
     changed_by_membership_id: int | None = None,
 ):
-    db_item = models.Timeslot(**item.model_dump(), organization_id=organization_id)
+    version = await grid_version_service.ensure_active_grid_version(db, organization_id)
+    db_item = models.Timeslot(
+        **item.model_dump(),
+        organization_id=organization_id,
+        grid_version_id=version.id,
+    )
     db.add(db_item)
     await db.flush()
     await record_scheduler_change(
@@ -150,16 +170,22 @@ def build_timeslot_signatures(
     settings: schemas.TimeslotBulkCreate,
 ) -> list[tuple[int, time, time]]:
     """Pure, canonical implementation of the grid generation math."""
-    signatures: list[tuple[int, time, time]] = []
-    current = datetime.combine(date.min, settings.start_time)
-    limit = datetime.combine(date.min, settings.end_time)
-    while current + timedelta(minutes=settings.slot_duration_minutes) <= limit:
-        end = current + timedelta(minutes=settings.slot_duration_minutes)
-        signatures.extend(
-            (day, current.time(), end.time()) for day in sorted(settings.days_of_week)
-        )
-        current = end + timedelta(minutes=settings.break_duration_minutes)
-    return sorted(signatures)
+    slots = build_daily_slots(
+        opening_time=settings.start_time,
+        closing_time=settings.end_time,
+        slot_duration_minutes=settings.slot_duration_minutes,
+        break_duration_minutes=settings.break_duration_minutes,
+        break_overrides=tuple(
+            BreakOverride(
+                after_slot=override.after_slot,
+                duration_minutes=override.duration_minutes,
+            )
+            for override in settings.break_overrides
+        ),
+    )
+    return sorted(
+        (day, slot.start, slot.end) for day in sorted(settings.days_of_week) for slot in slots
+    )
 
 
 async def _count_for_org(
@@ -254,7 +280,7 @@ async def preflight_grid_regeneration(
             .with_for_update()
         )
 
-    current_slots = list(
+    all_slots = list(
         await db.scalars(
             select(models.Timeslot)
             .where(models.Timeslot.organization_id == organization_id)
@@ -262,21 +288,53 @@ async def preflight_grid_regeneration(
             .with_for_update()
         )
     )
+    active_version = await grid_version_service.get_active_grid_version(db, organization_id)
+    replaceable_slots = [
+        slot
+        for slot in all_slots
+        if slot.grid_version_id is None
+        or (active_version is not None and slot.grid_version_id == active_version.id)
+    ]
     desired = tuple(build_timeslot_signatures(settings))
-    current = tuple((slot.day_of_week, slot.start_time, slot.end_time) for slot in current_slots)
+    current = tuple(
+        (slot.day_of_week, slot.start_time, slot.end_time) for slot in replaceable_slots
+    )
+    configuration = grid_version_service.configuration_from_bulk(settings)
+    configuration_changed = (
+        active_version is None or active_version.configuration_json != configuration
+    )
     plan = GridRegenerationPlan(
         organization_id=organization_id,
         desired_signatures=desired,
-        before_grid=tuple(_timeslot_snapshot(slot) for slot in current_slots),
+        before_grid=tuple(_timeslot_snapshot(slot) for slot in replaceable_slots),
         changed=current != desired,
+        configuration=configuration,
+        configuration_changed=configuration_changed,
+        replaceable_slot_ids=tuple(slot.id for slot in replaceable_slots),
     )
     if not plan.changed:
+        # Configuration-only edits are safe to persist without touching blocks.
         return plan
+
+    pending_version = next(
+        (
+            version
+            for version in await grid_version_service.list_grid_versions(db, organization_id)
+            if version.state == models.GridVersionState.PENDING
+        ),
+        None,
+    )
+    if pending_version is not None:
+        raise AppError(
+            kind="conflict",
+            code="conflict",
+            detail=PENDING_PROPOSAL_MESSAGE,
+        )
 
     blockers = await _protected_dependency_counts(
         db,
         organization_id,
-        {slot.id for slot in current_slots},
+        {slot.id for slot in all_slots},
         state is not None
         and state.school_year_publication_state == models.SchoolYearPublicationState.PUBLISHED,
     )
@@ -297,24 +355,39 @@ async def apply_grid_regeneration(
     plan: GridRegenerationPlan,
     changed_by_membership_id: int | None = None,
 ) -> int:
+    # Regeneration is only reachable without schedule dependencies, so the
+    # active version can still replace its blocks in place.
+    version = await grid_version_service.ensure_active_grid_version(db, plan.organization_id)
+    if plan.configuration is not None and version.configuration_json != plan.configuration:
+        version.configuration_json = plan.configuration
+
     if not plan.changed:
+        await db.flush()
         return len(plan.desired_signatures)
 
     teacher_ids = await _get_org_teacher_ids(db, plan.organization_id)
-    previous_preferences = await _get_availability_preferences_by_time(db, plan.organization_id)
-    await db.execute(
-        delete(models.Availability).where(
-            models.Availability.organization_id == plan.organization_id
+    previous_preferences = await _get_availability_preferences_by_time(
+        db, plan.organization_id, set(plan.replaceable_slot_ids)
+    )
+    if plan.replaceable_slot_ids:
+        await db.execute(
+            delete(models.Availability).where(
+                models.Availability.organization_id == plan.organization_id,
+                models.Availability.timeslot_id.in_(plan.replaceable_slot_ids),
+            )
         )
-    )
-    await db.execute(
-        delete(models.Timeslot).where(models.Timeslot.organization_id == plan.organization_id)
-    )
+        await db.execute(
+            delete(models.Timeslot).where(
+                models.Timeslot.organization_id == plan.organization_id,
+                models.Timeslot.id.in_(plan.replaceable_slot_ids),
+            )
+        )
     await db.flush()
 
     new_timeslots = [
         models.Timeslot(
             organization_id=plan.organization_id,
+            grid_version_id=version.id,
             day_of_week=day,
             start_time=start,
             end_time=end,

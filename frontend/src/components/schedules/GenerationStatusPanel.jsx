@@ -3,16 +3,7 @@ import { useEffect, useState } from 'react'
 import { useScheduleTaskStatus } from '../../features/scheduling/data'
 import FailureState from '../FailureState'
 import { getApiErrorPresentation } from '../../utils/apiErrors'
-
-const STATUS_LABELS = {
-  QUEUED: 'Geração em fila',
-  RUNNING: 'A gerar horário',
-  CANCEL_REQUESTED: 'A cancelar geração',
-  CANCELED: 'Geração cancelada',
-  SUCCEEDED: 'Rascunho pronto para revisão',
-  NO_VALID_OUTPUT: 'Não foi possível gerar um horário válido',
-  FAILED: 'Erro na geração',
-}
+import { GENERATION_STATUS_LABELS } from '../../utils/presentation'
 
 const TERMINAL_STATUSES = new Set(['CANCELED', 'FAILED', 'NO_VALID_OUTPUT'])
 const ACTIVE_STATUSES = new Set(['QUEUED', 'RUNNING', 'CANCEL_REQUESTED'])
@@ -60,7 +51,7 @@ const GenerationStatusPanel = ({ jobId }) => {
   if (status === 'SUCCEEDED') {
     return (
       <CAlert color="success" className="mb-4">
-        <strong>{STATUS_LABELS.SUCCEEDED}</strong>
+        <strong>{GENERATION_STATUS_LABELS.SUCCEEDED}</strong>
       </CAlert>
     )
   }
@@ -81,7 +72,7 @@ const GenerationStatusPanel = ({ jobId }) => {
     <CAlert color={alertColor(status)} className="mb-4">
       <div className="d-flex align-items-center gap-2">
         {isRunning && <CSpinner size="sm" />}
-        <strong>{STATUS_LABELS[status]}</strong>
+        <strong>{GENERATION_STATUS_LABELS[status]}</strong>
       </div>
       {queuedTooLong && <div className="small mt-2">A geração está a aguardar execução. Pode sair desta página com segurança.</div>}
     </CAlert>

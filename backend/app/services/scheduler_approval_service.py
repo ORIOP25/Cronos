@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models
 from app.scheduler.domain.contracts import DraftBlockSpec
+from app.services import grid_version_service
 from app.services.scheduler_complete_demand import CompleteDemandLedgerBuilder
 from app.services.scheduler_curriculum_validation import validate_curriculum_coverage
 from app.services.scheduler_debt_service import SchedulerDebtService
@@ -65,7 +66,19 @@ class SchedulerApprovalService:
             decided_by_membership_id=decided_by_membership_id,
             now=instant,
         )
-        if draft.strategy == models.ScheduleGenerationStrategy.ADAPTIVE_REPAIR:
+        if draft.strategy in (
+            models.ScheduleGenerationStrategy.ADAPTIVE_REPAIR,
+            models.ScheduleGenerationStrategy.GRID_CHANGE,
+        ):
+            if (
+                draft.strategy == models.ScheduleGenerationStrategy.GRID_CHANGE
+                and draft.result_category
+                != models.ScheduleGenerationResultCategory.COMPLETE_SUCCESS
+            ):
+                raise DraftApprovalConflictError(
+                    "A grid change requires complete curriculum coverage before approval.",
+                    draft.draft_state,
+                )
             return await self._approve_repair(
                 organization_id,
                 draft,
@@ -92,6 +105,7 @@ class SchedulerApprovalService:
             organization_id,
             draft.school_year_id,
             draft.strategy,
+            grid_version_id=draft.grid_version_id,
         )
         specs = self._specs(blocks)
         self._validate_target(current.snapshot, specs, complete=True, draft=draft)
@@ -137,6 +151,10 @@ class SchedulerApprovalService:
         state.active_schedule_version_id = version_id
         state.approved_scheduler_state_version = state.scheduler_state_version
         state.lock_version += 1
+        if draft.grid_version_id is not None:
+            await grid_version_service.activate_pending_grid_version(
+                self._db, organization_id, draft.grid_version_id
+            )
         await self._db.flush()
         return ApprovalResult(
             draft_id=draft.id,
@@ -159,6 +177,7 @@ class SchedulerApprovalService:
             organization_id,
             draft.school_year_id,
             draft.strategy,
+            grid_version_id=draft.grid_version_id,
         )
         specs = self._specs(blocks)
         boundary = EditableBoundaryBuilder().build(
@@ -296,6 +315,10 @@ class SchedulerApprovalService:
         state.active_schedule_version_id = version_id
         state.approved_scheduler_state_version = state.scheduler_state_version
         state.lock_version += 1
+        if draft.grid_version_id is not None:
+            await grid_version_service.activate_pending_grid_version(
+                self._db, organization_id, draft.grid_version_id
+            )
         await self._db.flush()
         return ApprovalResult(
             draft_id=draft.id,
@@ -362,6 +385,7 @@ class SchedulerApprovalService:
             organization_id,
             draft.school_year_id,
             draft.strategy,
+            grid_version_id=draft.grid_version_id,
         )
         if current_generation.value != draft.generation_input_fingerprint:
             return await self._stale(
@@ -750,6 +774,10 @@ class SchedulerApprovalService:
         draft.decided_at = instant
         state.pending_draft_id = None
         state.lock_version += 1
+        if draft.grid_version_id is not None:
+            await grid_version_service.reject_pending_grid_version(
+                self._db, draft.organization_id, draft.grid_version_id
+            )
         await SchedulerRecoveryService(self._db).cancel_draft_recovery_links(
             draft.organization_id,
             draft.school_year_id,
@@ -772,6 +800,10 @@ class SchedulerApprovalService:
         draft.decided_at = instant
         state.pending_draft_id = None
         state.lock_version += 1
+        if draft.grid_version_id is not None:
+            await grid_version_service.reject_pending_grid_version(
+                self._db, draft.organization_id, draft.grid_version_id
+            )
         await SchedulerRecoveryService(self._db).cancel_draft_recovery_links(
             draft.organization_id,
             draft.school_year_id,

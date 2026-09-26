@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from sqlalchemy import and_, func, select
@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app import models
 from app.core.task_keys import resolve_repair_window_days
 from app.scheduler.domain.calendar import first_editable_grid_date
+from app.services import grid_version_service
 from app.services.scheduler_serialization import (
     canonical_json_bytes,
     canonical_json_value,
@@ -98,15 +99,10 @@ class SchedulerFingerprintService:
             raise SchedulerFingerprintError("Repair stability window cannot be negative.")
         stability_window_days = resolve_repair_window_days(settings)
         school_today = instant.astimezone(school_timezone).date()
-        grid_days = sorted(
-            (
-                await self._db.scalars(
-                    select(models.Timeslot.day_of_week)
-                    .where(models.Timeslot.organization_id == organization_id)
-                    .distinct()
-                )
-            ).all()
+        resolved_grid = await grid_version_service.resolve_grid(
+            self._db, organization_id, school_today
         )
+        grid_days = sorted({block.day_of_week for block in resolved_grid.blocks})
         editable_start_date = first_editable_grid_date(
             school_today,
             school_year.start_date,
@@ -133,11 +129,13 @@ class SchedulerFingerprintService:
         organization_id: int,
         school_year_id: int,
         strategy: models.ScheduleGenerationStrategy,
+        grid_version_id: int | None = None,
     ) -> SchedulerFingerprint:
         snapshot = await self.generation_input_snapshot(
             organization_id,
             school_year_id,
             strategy,
+            grid_version_id=grid_version_id,
         )
         return SchedulerFingerprint(value=sha256_json(snapshot), snapshot=snapshot)
 
@@ -146,6 +144,7 @@ class SchedulerFingerprintService:
         organization_id: int,
         school_year_id: int,
         strategy: models.ScheduleGenerationStrategy,
+        grid_version_id: int | None = None,
     ) -> dict:
         school_year = await self._db.scalar(
             select(models.SchedulerSchoolYear).where(
@@ -294,16 +293,70 @@ class SchedulerFingerprintService:
             else []
         )
 
-        timeslot_rows = (
-            await self._db.execute(
-                select(
-                    models.Timeslot.id,
-                    models.Timeslot.day_of_week,
-                    models.Timeslot.start_time,
-                    models.Timeslot.end_time,
-                ).where(models.Timeslot.organization_id == organization_id)
+        versions = await grid_version_service.list_grid_versions(self._db, organization_id)
+        included = [
+            version
+            for version in versions
+            if version.state == models.GridVersionState.ACTIVE
+            or (grid_version_id is not None and version.id == grid_version_id)
+        ]
+        if grid_version_id is not None and all(
+            version.id != grid_version_id for version in included
+        ):
+            raise SchedulerFingerprintError("Grid version was not found.")
+        included.sort(key=lambda version: (version.effective_date, version.id))
+
+        grid_rows: list[dict] = []
+        for index, version in enumerate(included):
+            next_effective = (
+                included[index + 1].effective_date if index + 1 < len(included) else None
             )
-        ).all()
+            valid_to = (
+                (next_effective - timedelta(days=1)).isoformat()
+                if next_effective is not None
+                else None
+            )
+            blocks = await grid_version_service.get_version_blocks(
+                self._db, organization_id, version.id
+            )
+            for block in blocks:
+                grid_rows.append(
+                    {
+                        "id": block.id,
+                        "day_of_week": block.day_of_week,
+                        "start_time": block.start_time,
+                        "end_time": block.end_time,
+                        "grid_version_id": version.id,
+                        "valid_from": version.effective_date.isoformat(),
+                        "valid_to": valid_to,
+                    }
+                )
+        if not grid_rows and grid_version_id is None:
+            # ponytail: legacy orgs without versioned blocks keep the flat grid.
+            resolved = await grid_version_service.resolve_grid(
+                self._db, organization_id, school_year.start_date
+            )
+            grid_version = resolved.version
+            grid_rows = [
+                {
+                    "id": block.id,
+                    "day_of_week": block.day_of_week,
+                    "start_time": block.start_time,
+                    "end_time": block.end_time,
+                    "grid_version_id": None,
+                    "valid_from": None,
+                    "valid_to": None,
+                }
+                for block in resolved.blocks
+            ]
+        elif grid_version_id is not None:
+            grid_version = next(version for version in included if version.id == grid_version_id)
+        else:
+            grid_version = await grid_version_service.resolve_grid_version(
+                self._db,
+                organization_id,
+                await grid_version_service.school_today(self._db, organization_id),
+            )
         availability_rows = (
             (
                 await self._db.execute(
@@ -375,15 +428,22 @@ class SchedulerFingerprintService:
             "hard_end_date": school_year.hard_end_date,
             "scheduler_state_version": state.scheduler_state_version,
             "approved_scheduler_state_version": state.approved_scheduler_state_version,
-            "timetable_grid": [
+            "timetable_grid": [dict(row) for row in sorted(grid_rows, key=lambda row: row["id"])],
+            "grid_versions": [
                 {
-                    "id": row.id,
-                    "day_of_week": row.day_of_week,
-                    "start_time": row.start_time,
-                    "end_time": row.end_time,
+                    "id": version.id,
+                    "effective_date": version.effective_date,
+                    "state": version.state.value,
                 }
-                for row in sorted(timeslot_rows, key=lambda row: row.id)
+                for version in included
             ],
+            "grid_version": None
+            if grid_version is None
+            else {
+                "id": grid_version.id,
+                "effective_date": grid_version.effective_date,
+                "state": grid_version.state.value,
+            },
             "calendar_events": [
                 {
                     "start_date": row.start_date,
@@ -501,7 +561,10 @@ class SchedulerFingerprintService:
             ],
         }
 
-        if strategy == models.ScheduleGenerationStrategy.ADAPTIVE_REPAIR:
+        if strategy in (
+            models.ScheduleGenerationStrategy.ADAPTIVE_REPAIR,
+            models.ScheduleGenerationStrategy.GRID_CHANGE,
+        ):
             active_rows = (
                 await self._db.execute(
                     select(

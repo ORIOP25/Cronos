@@ -1,10 +1,11 @@
 import { CCard, CCardBody, CBadge } from '@coreui/react'
-import { buildDailyTimeslots } from '../foundationModel'
+import { buildDailyTimeline } from '../foundationModel'
 
 const DAY_LABELS = ['Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado', 'Domingo']
 
 export function PreviewStep({ values, fieldErrors }) {
-  const slots = buildDailyTimeslots(values)
+  const timeline = buildDailyTimeline(values)
+  const slots = timeline?.slots ?? []
   const days = (values.days_of_week || [0, 1, 2, 3, 4]).map((d) => DAY_LABELS[d] || `Dia ${d}`)
 
   return (
@@ -39,16 +40,22 @@ export function PreviewStep({ values, fieldErrors }) {
           ) : (
             <div className="d-flex flex-column gap-2">
               {slots.map((slot) => (
-                <div
-                  key={slot.id}
-                  className="d-flex justify-content-between align-items-center p-2 bg-white rounded border border-light"
-                >
-                  <span className="fw-semibold text-dark">
-                    {slot.index}.º Tempo Letivo
-                  </span>
-                  <span className="font-monospace text-primary fw-medium">
-                    {slot.start} — {slot.end}
-                  </span>
+                <div key={slot.id}>
+                  <div
+                    className="d-flex justify-content-between align-items-center p-2 bg-white rounded border border-light"
+                  >
+                    <span className="fw-semibold text-dark">
+                      {slot.index}.º Tempo Letivo
+                    </span>
+                    <span className="font-monospace text-primary fw-medium">
+                      {slot.start} — {slot.end}
+                    </span>
+                  </div>
+                  {slot.index < slots.length && (
+                    <div className="text-end small text-muted mt-1 pe-2">
+                      {slot.breakAfter > 0 ? `Pausa de ${slot.breakAfter} min` : 'Sem pausa'}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>

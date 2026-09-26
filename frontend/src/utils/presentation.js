@@ -32,3 +32,13 @@ export const LESSON_LOG_STATUSES = Object.freeze({
 export function getLessonLogStatus(status) {
   return LESSON_LOG_STATUSES[status] ?? LESSON_LOG_STATUSES.PENDING
 }
+
+export const GENERATION_STATUS_LABELS = Object.freeze({
+  QUEUED: 'Geração em fila',
+  RUNNING: 'A gerar horário',
+  CANCEL_REQUESTED: 'A cancelar geração',
+  CANCELED: 'Geração cancelada',
+  SUCCEEDED: 'Rascunho pronto para revisão',
+  NO_VALID_OUTPUT: 'Não foi possível gerar um horário válido',
+  FAILED: 'Erro na geração',
+})

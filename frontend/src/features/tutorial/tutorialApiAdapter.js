@@ -7,6 +7,7 @@ import {
   applyTutorialDemoAction,
   createTutorialApiSnapshot,
 } from './tutorialScenario'
+import { addDays } from '../../utils/formatUtils'
 
 function normalizePath(url = '') {
   const path = String(url).split('?')[0].split('/').filter(Boolean).join('/')
@@ -240,10 +241,33 @@ function methodNotAllowed({ fail, method, path }) {
 }
 
 function handleBasicRoutes(context) {
-  const { method, path, snapshot, read } = context
+  const { method, path, snapshot, read, config, fail } = context
   if (path === '/members/me') {
     if (method !== 'get') return methodNotAllowed(context)
     return read({ id: 1, organization_display_name: 'Prof. António Silva', capabilities: ['admin', 'teacher'], access_status: 'active', teacher_id: 1 })
+  }
+  if (path === '/timeslots/range') {
+    if (method !== 'get') return methodNotAllowed(context)
+    const fromDate = config?.params?.from_date
+    if (!fromDate) return fail('Intervalo de datas em falta.', 422, 'TUTORIAL_ROUTE_NOT_DECLARED')
+    const days = Array.from({ length: 7 }, (_, offset) => {
+      const date = addDays(fromDate, offset)
+      const weekday = (new Date(`${date}T12:00:00`).getDay() + 6) % 7
+      return {
+        date,
+        version_id: null,
+        effective_date: null,
+        blocks: snapshot.timeslots
+          .filter((slot) => slot.day_of_week === weekday)
+          .map((slot) => ({
+            id: slot.id,
+            day_of_week: slot.day_of_week,
+            start_time: slot.start_time,
+            end_time: slot.end_time,
+          })),
+      }
+    })
+    return read({ days, transition_date: null })
   }
   const collections = { '/subjects': snapshot.subjects, '/rooms': snapshot.rooms, '/courses': snapshot.courses, '/classes': snapshot.classes, '/teachers': snapshot.teachers, '/timeslots': snapshot.timeslots }
   if (Object.hasOwn(collections, path)) return method === 'get' ? read(collections[path]) : methodNotAllowed(context)

@@ -3,6 +3,7 @@ import { useApiClient } from '../../ApiClientContext'
 import { invalidatePreparationQueries } from '../readiness/data'
 import { invalidateOrgQueries, orgQueryKey } from '../queryKeys'
 import { useOrganization, useAuth } from '@clerk/react'
+import { addDays } from '../../utils/formatUtils'
 
 const STATIC_OPTS = {
   staleTime: 1000 * 60 * 30,
@@ -59,6 +60,21 @@ export const useTimeslots = () => {
       return apiClient.get('/timeslots/')
     },
     enabled: Boolean(orgId) && isLoaded,
+  })
+}
+
+export const useWeekGridVersions = (weekStart) => {
+  const apiClient = useApiClient()
+  const orgId = useOrganization().organization?.id
+  const { isLoaded } = useAuth()
+  return useQuery({
+    queryKey: orgQueryKey('timeslots', orgId, 'range', weekStart),
+    queryFn: async () => {
+      return apiClient.get('/timeslots/range', {
+        params: { from_date: weekStart, to_date: addDays(weekStart, 6) },
+      })
+    },
+    enabled: Boolean(orgId) && isLoaded && Boolean(weekStart),
   })
 }
 

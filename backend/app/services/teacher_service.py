@@ -9,6 +9,7 @@ from app import models
 from app.core.exceptions import AppError
 from app.models import Availability
 from app.schemas import AvailabilitySelfCreate
+from app.services import grid_version_service
 from app.services.availability_matrix_service import AvailabilityMatrixInspector
 from app.services.scheduler_state_service import record_scheduler_change
 
@@ -226,12 +227,15 @@ async def get_teacher_availability(
             detail=f"Teacher {teacher_id} was not found in organization {organization_id}.",
         )
 
-    timeslots_result = await db.execute(
-        select(models.Timeslot)
-        .where(models.Timeslot.organization_id == organization_id)
-        .order_by(models.Timeslot.day_of_week, models.Timeslot.start_time, models.Timeslot.id)
+    resolved = await grid_version_service.resolve_grid(
+        db,
+        organization_id,
+        await grid_version_service.school_today(db, organization_id),
     )
-    timeslots = timeslots_result.scalars().all()
+    timeslots = sorted(
+        resolved.blocks,
+        key=lambda ts: (ts.day_of_week, ts.start_time, ts.id),
+    )
     timeslot_ids = [ts.id for ts in timeslots]
 
     inspection = await AvailabilityMatrixInspector.inspect(
@@ -284,11 +288,13 @@ async def set_teacher_availability(
     )
     before = _availability_snapshot(existing_rows.all())
 
-    # 2. Validar que o payload contém exatamente todos os timeslots da organização
-    all_timeslots_result = await db.execute(
-        select(models.Timeslot.id).where(models.Timeslot.organization_id == organization_id)
+    # 2. Validar que o payload contém exatamente os blocos da versão visível
+    resolved = await grid_version_service.resolve_grid(
+        db,
+        organization_id,
+        await grid_version_service.school_today(db, organization_id),
     )
-    all_org_timeslot_ids = set(all_timeslots_result.scalars().all())
+    all_org_timeslot_ids = {slot.id for slot in resolved.blocks}
 
     timeslot_ids = [item.timeslot_id for item in availabilities]
     if len(timeslot_ids) != len(set(timeslot_ids)):

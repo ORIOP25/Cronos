@@ -19,6 +19,8 @@
 .week-grid__action { flex: 0 0 auto; color: var(--cronos-ink); font-size: .68rem; font-weight: 700; }
 .week-grid__action--completed { color: var(--color-state-given, #2e7d32); }
 .week-grid__time-end { display: block; color: var(--cronos-ink-muted); font-weight: 400; }
+.week-grid__transition-notice { margin: 0 0 8px; padding: 6px 10px; border-left: 3px solid var(--cronos-border-strong); background: var(--cronos-surface-muted); color: var(--cronos-ink); font-size: .78rem; }
+.week-grid__version-badge { margin-top: 4px; font-size: .6rem; font-weight: 600; }
 .week-grid__button { width: 100%; padding: 0; border: 0; background: transparent; color: inherit; cursor: pointer; text-align: left; }
 .week-grid__button:disabled { cursor: default; }
 .week-grid__button:not(:disabled):focus-visible { outline: 3px solid var(--color-focus-ring); outline-offset: 2px; }

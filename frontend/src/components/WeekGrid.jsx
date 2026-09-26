@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import StatePanel from './StatePanel'
-import { formatDateShort } from '../utils/formatUtils'
+import { addDays, formatDate, formatDateShort } from '../utils/formatUtils'
 import { getSubjectColor } from '../utils/subjectColors'
 import { buildWeekGridModel } from '../utils/weekGridModel'
 import { getLessonLogStatus } from '../utils/presentation'
@@ -260,10 +260,27 @@ const WeekGrid = ({
   isOperationalEnabled = false,
   onOpenOperationalAction,
   fitViewport = false,
+  dayGrids = null,
+  gridTransitionDate = '',
 }) => {
-  const { slotMap, uniqueTimes, activeDays, endTimeMap, dayDateMap } = useMemo(
-    () => buildWeekGridModel(slots, baseTimeslots, weekStart),
-    [slots, baseTimeslots, weekStart],
+  const {
+    slotMap,
+    uniqueTimes,
+    activeDays,
+    endTimeMap,
+    dayDateMap,
+    versionByDay = {},
+    rowEndTime = null,
+  } = useMemo(
+    () => buildWeekGridModel(slots, baseTimeslots, weekStart, dayGrids),
+    [slots, baseTimeslots, weekStart, dayGrids],
+  )
+
+  const transitionInWeek = Boolean(
+    gridTransitionDate
+    && weekStart
+    && gridTransitionDate >= weekStart
+    && gridTransitionDate <= addDays(weekStart, 6)
   )
 
   if (isLoading) {
@@ -276,6 +293,11 @@ const WeekGrid = ({
 
   return (
     <div className="week-grid-scroll" tabIndex="0" role="region" aria-label="Grelha semanal de horários. Use Shift e roda do rato para deslocar horizontalmente.">
+      {transitionInWeek ? (
+        <p className="week-grid__transition-notice" role="status">
+          Nova grelha em vigor a partir de {formatDate(gridTransitionDate)}
+        </p>
+      ) : null}
       <table
         className={`week-grid${fitViewport ? ' week-grid--fit-viewport' : ''}`}
         style={{
@@ -292,42 +314,71 @@ const WeekGrid = ({
             >
               Horário
             </th>
-            {activeDays.map(d => (
-              <th
-                key={d}
-                className="week-grid__day-header"
-                scope="col"
-                aria-label={`${DAY_LABELS[d]} ${formatDateShort(dayDateMap[d])}`}
-              >
-                <div>{DAY_LABELS[d]}</div>
-                <div className="fw-normal" style={{ fontSize: '0.72rem' }}>
-                  {formatDateShort(dayDateMap[d])}
-                </div>
-              </th>
-            ))}
+            {activeDays.map((d, dayIndex) => {
+              const version = versionByDay[d]
+              const previousVersionId = dayIndex > 0
+                ? versionByDay[activeDays[dayIndex - 1]]?.versionId ?? null
+                : null
+              const showVersionBadge = Boolean(
+                version?.effectiveDate
+                && dayIndex > 0
+                && version.versionId !== previousVersionId
+              )
+              const versionLabel = version?.effectiveDate
+                ? `Nova grelha em vigor a partir de ${formatDate(version.effectiveDate)}`
+                : ''
+              return (
+                <th
+                  key={d}
+                  className="week-grid__day-header"
+                  scope="col"
+                  aria-label={`${DAY_LABELS[d]} ${formatDateShort(dayDateMap[d])}`}
+                >
+                  <div>{DAY_LABELS[d]}</div>
+                  <div className="fw-normal" style={{ fontSize: '0.72rem' }}>
+                    {formatDateShort(dayDateMap[d])}
+                  </div>
+                  {showVersionBadge ? (
+                    <span
+                      className="badge text-bg-info week-grid__version-badge"
+                      title={versionLabel}
+                      aria-label={versionLabel}
+                    >
+                      Nova grelha
+                    </span>
+                  ) : null}
+                </th>
+              )
+            })}
           </tr>
         </thead>
         <tbody>
-          {uniqueTimes.map(time => (
-            <tr key={time}>
-              <td
-                className="week-grid__time"
-                scope="row"
-                aria-label={`${time} – ${endTimeMap[time] ?? ''}`}
-              >
-                <span className="week-grid__time-start">{time}</span>
-                <span className="week-grid__time-end">{endTimeMap[time] ?? ''}</span>
-              </td>
-              {activeDays.map(dayIdx => (
-                <SlotCell
-                  key={`${dayIdx}:${time}`}
-                  slotEntries={slotMap[`${dayIdx}:${time}`] ?? []}
-                  isOperationalEnabled={isOperationalEnabled}
-                  onOpenOperationalAction={onOpenOperationalAction}
-                />
-              ))}
-            </tr>
-          ))}
+          {uniqueTimes.map(time => {
+            const rowEnd = rowEndTime ? rowEndTime[time] : endTimeMap[time]
+            const timeAriaLabel = rowEndTime && rowEnd == null
+              ? time
+              : `${time} – ${rowEnd ?? ''}`
+            return (
+              <tr key={time}>
+                <td
+                  className="week-grid__time"
+                  scope="row"
+                  aria-label={timeAriaLabel}
+                >
+                  <span className="week-grid__time-start">{time}</span>
+                  <span className="week-grid__time-end">{rowEnd ?? ''}</span>
+                </td>
+                {activeDays.map(dayIdx => (
+                  <SlotCell
+                    key={`${dayIdx}:${time}`}
+                    slotEntries={slotMap[`${dayIdx}:${time}`] ?? []}
+                    isOperationalEnabled={isOperationalEnabled}
+                    onOpenOperationalAction={onOpenOperationalAction}
+                  />
+                ))}
+              </tr>
+            )
+          })}
         </tbody>
       </table>
     </div>

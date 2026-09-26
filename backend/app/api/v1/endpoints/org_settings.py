@@ -16,14 +16,20 @@ from datetime import date
 from typing import Annotated
 
 import structlog
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 
 from app import schemas
 from app.api import deps
 from app.core.exceptions import AppError
 from app.core.logging import safe_exception_frames
-from app.services import settings_service
+from app.scheduler.application.contracts import SchedulerTaskDispatcher
+from app.services import grid_change_service, grid_version_service, settings_service
+from app.services.scheduler_job_service import SchedulerJobService
+from app.services.scheduler_request_service import (
+    persist_dispatch_failure,
+    persist_prepared_generation,
+)
 from app.services.school_year_reset_service import SchoolYearResetService
 
 router = APIRouter()
@@ -186,6 +192,110 @@ async def regenerate_grid_settings(
         )
     except ValueError as exc:
         raise AppError(kind="validation", code="grid_settings_invalid", detail=str(exc)) from exc
+
+
+@router.get(
+    "/grid-configuration/",
+    response_model=schemas.GridConfigurationRead,
+    summary="Obter a configuraÃ§Ã£o da grelha visÃ­vel (versÃ£o ativa)",
+)
+async def get_grid_configuration(
+    db: deps.DbSession,
+    current_user: deps.AdminActor,
+) -> schemas.GridConfigurationRead:
+    return schemas.GridConfigurationRead.model_validate(
+        await grid_version_service.active_grid_configuration(db, current_user.organization_id)
+    )
+
+
+@router.post(
+    "/grid-changes/preview",
+    response_model=schemas.GridChangePreviewResponse,
+    summary="Analisar uma alteraÃ§Ã£o da grelha sem escrever dados",
+)
+async def preview_grid_change(
+    payload: schemas.GridChangePreviewRequest,
+    db: deps.DbSession,
+    current_user: deps.AdminActor,
+) -> schemas.GridChangePreviewResponse:
+    try:
+        return await grid_change_service.preview_grid_change(
+            db, current_user.organization_id, payload
+        )
+    except grid_change_service.GridChangeError as exc:
+        raise AppError(kind="validation", code=exc.code, detail=str(exc)) from exc
+
+
+@router.post(
+    "/grid-changes",
+    response_model=schemas.GridChangeProposalResponse,
+    summary="Propor uma alteraÃ§Ã£o da grelha e iniciar a geraÃ§Ã£o",
+)
+async def create_grid_change(
+    payload: schemas.GridChangeProposeRequest,
+    db: deps.DbSession,
+    current_user: deps.AdminActor,
+    dispatcher: Annotated[SchedulerTaskDispatcher, Depends(deps.get_scheduler_task_dispatcher)],
+) -> schemas.GridChangeProposalResponse:
+    try:
+        response = await grid_change_service.propose_grid_change(
+            db,
+            current_user.organization_id,
+            payload,
+            membership_id=current_user.membership_id,
+        )
+    except grid_change_service.GridChangeError as exc:
+        kind = (
+            "conflict"
+            if exc.code
+            in {
+                "GRID_CHANGE_STALE",
+                "GRID_CHANGE_BLOCKED",
+                "pending_draft_replacement_required",
+                "grid_change_requires_published_schedule",
+            }
+            else "validation"
+        )
+        raise AppError(kind=kind, code=exc.code, detail=str(exc)) from exc
+
+    if not response.created:
+        return response
+
+    await persist_prepared_generation(db)
+    jobs = SchedulerJobService(db)
+    try:
+        dispatcher.dispatch(
+            organization_id=current_user.organization_id,
+            job_id=response.job_id,
+            task_id=jobs.worker_task_id(response.job_id),
+        )
+    except Exception as dispatch_error:
+        await persist_dispatch_failure(
+            db,
+            organization_id=current_user.organization_id,
+            job_id=response.job_id,
+            reason=f"Could not dispatch grid change job: {dispatch_error}",
+        )
+        raise AppError(
+            kind="unavailable",
+            code="generation_dispatch_failed",
+            detail="A alteraÃ§Ã£o da grelha nÃ£o pÃ´de ser colocada na fila.",
+            public_context={"job_id": response.job_id},
+            public_retryable=True,
+        ) from dispatch_error
+    return response
+
+
+@router.get(
+    "/grid-changes/pending",
+    response_model=schemas.GridChangePendingResponse | None,
+    summary="Obter a proposta de grelha pendente",
+)
+async def get_pending_grid_change(
+    db: deps.DbSession,
+    current_user: deps.AdminActor,
+) -> schemas.GridChangePendingResponse | None:
+    return await grid_change_service.pending_grid_change(db, current_user.organization_id)
 
 
 @router.post(

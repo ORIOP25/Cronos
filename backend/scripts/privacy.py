@@ -27,6 +27,7 @@ from app.db.tenant import set_async_tenant_context
 # fail the contract check instead of silently changing export/erase semantics.
 PRIVACY_TABLES = {
     "course": "delete",
+    "grid_version": "delete",
     "organization_grid_settings": "delete",
     "organization_membership": "delete",
     "organization_settings": "delete",

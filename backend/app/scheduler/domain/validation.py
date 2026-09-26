@@ -65,6 +65,8 @@ class TargetHardConstraintValidator:
                 row["day_of_week"],
                 cls._minute(row["start_time"]),
                 cls._minute(row["end_time"]),
+                cls._iso_date(row.get("valid_from")),
+                cls._iso_date(row.get("valid_to")),
             )
             for row in snapshot.get("timetable_grid", [])
         }
@@ -106,6 +108,8 @@ class TargetHardConstraintValidator:
             invalid = (
                 slot is None
                 or (slot is not None and slot[0] != block.date.weekday())
+                or (slot is not None and slot[3] is not None and block.date < slot[3])
+                or (slot is not None and slot[4] is not None and block.date > slot[4])
                 or block.date < school_start
                 or block.date > hard_end
                 or block.duration_minutes <= 0
@@ -197,6 +201,12 @@ class TargetHardConstraintValidator:
         return parsed.hour * 60 + parsed.minute
 
     @staticmethod
+    def _iso_date(value: Any) -> date | None:
+        if value is None or isinstance(value, date):
+            return value
+        return date.fromisoformat(str(value))
+
+    @staticmethod
     def _value(value: Any) -> str:
         return str(getattr(value, "value", value))
 
@@ -207,7 +217,7 @@ class LunchBreakValidator:
         cls,
         rule: Mapping[str, Any] | None,
         specs: Iterable[Any],
-        grid: Mapping[int, tuple[int, int, int]],
+        grid: Mapping[int, tuple[int, int, int, date | None, date | None]],
     ) -> tuple[TargetViolation, ...]:
         if not rule or not rule.get("window_start") or not rule.get("window_end"):
             return ()

@@ -4,6 +4,7 @@ from sqlalchemy import select as sa_select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models, schemas
+from app.services import grid_version_service
 from app.services.availability_matrix_service import AvailabilityMatrixInspector
 from app.services.scheduler_fingerprint_service import SchedulerFingerprintService
 from app.services.scheduler_state_service import SchedulerStateService
@@ -469,10 +470,12 @@ class PreflightService:
             )
 
         teacher_ids = await _collect_generation_teacher_ids(self.db, organization_id)
-        timeslot_rows = await self.db.execute(
-            sa_select(models.Timeslot.id).where(models.Timeslot.organization_id == organization_id)
+        resolved_grid = await grid_version_service.resolve_grid(
+            self.db,
+            organization_id,
+            await grid_version_service.school_today(self.db, organization_id),
         )
-        timeslot_ids = set(timeslot_rows.scalars().all())
+        timeslot_ids = {slot.id for slot in resolved_grid.blocks}
         teacher_error = await _validate_teacher_availabilities(
             self.db,
             organization_id,
@@ -490,7 +493,11 @@ class PreflightService:
             )
 
         if (
-            strategy == models.ScheduleGenerationStrategy.ADAPTIVE_REPAIR
+            strategy
+            in (
+                models.ScheduleGenerationStrategy.ADAPTIVE_REPAIR,
+                models.ScheduleGenerationStrategy.GRID_CHANGE,
+            )
             and org_settings is not None
             and school_year_id is not None
             and ts_count > 0

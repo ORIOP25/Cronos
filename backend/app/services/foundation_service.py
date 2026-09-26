@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models, schemas
+from app.scheduler.domain.timetable import BreakOverride, TimetableConfigError, build_daily_slots
 from app.services import settings_service
 
 logger = structlog.get_logger(__name__)
@@ -14,6 +15,14 @@ logger = structlog.get_logger(__name__)
 
 class FoundationError(Exception):
     """Base exception for foundation operations."""
+
+
+class FoundationBreakOverrideError(FoundationError):
+    """A break override no longer matches a lesson in the resulting grid."""
+
+    def __init__(self, position: int, message: str):
+        super().__init__(message)
+        self.position = position
 
 
 class FoundationDraftVersionConflictError(FoundationError):
@@ -28,6 +37,32 @@ class FoundationAlreadyCompletedError(FoundationError):
 
 class FoundationIncompleteDraftError(FoundationError):
     pass
+
+
+def _domain_break_overrides(data: schemas.FoundationDraftData) -> tuple[BreakOverride, ...]:
+    return tuple(
+        BreakOverride(after_slot=item.after_slot, duration_minutes=item.duration_minutes)
+        for item in (data.break_overrides or ())
+    )
+
+
+def assert_break_overrides_have_following_lesson(data: schemas.FoundationDraftData) -> None:
+    """Reject overrides that stop matching a lesson after an edit."""
+    if not data.break_overrides:
+        return
+    if data.opening_time is None or data.closing_time is None or data.slot_duration_minutes is None:
+        return
+    try:
+        build_daily_slots(
+            opening_time=data.opening_time,
+            closing_time=data.closing_time,
+            slot_duration_minutes=data.slot_duration_minutes,
+            break_duration_minutes=data.break_duration_minutes or 0,
+            break_overrides=_domain_break_overrides(data),
+        )
+    except TimetableConfigError as exc:
+        if exc.code == "timetable.unused_break_override" and exc.position is not None:
+            raise FoundationBreakOverrideError(exc.position, str(exc)) from exc
 
 
 def validate_foundation_snapshot(data: schemas.FoundationDraftData) -> None:
@@ -80,6 +115,7 @@ def validate_foundation_snapshot(data: schemas.FoundationDraftData) -> None:
     )
     if available_minutes < data.slot_duration_minutes:
         raise ValueError("O horário não permite um bloco completo")
+    assert_break_overrides_have_following_lesson(data)
 
 
 class FoundationService:
@@ -148,6 +184,8 @@ class FoundationService:
         current_version = draft.version if draft is not None else 0
         if write.expected_version != current_version:
             raise FoundationDraftVersionConflictError(current_version=current_version)
+
+        assert_break_overrides_have_following_lesson(write.data)
 
         previous_data = (
             schemas.FoundationDraftData.model_validate(draft.payload_json or {})
@@ -283,6 +321,7 @@ class FoundationService:
                 end_time=data.closing_time,
                 slot_duration_minutes=data.slot_duration_minutes,
                 break_duration_minutes=data.break_duration_minutes,
+                break_overrides=data.break_overrides or [],
             ),
         )
         grid_res = await settings_service.save_and_regenerate_grid(

@@ -97,6 +97,7 @@ class SchoolYearPublicationState(enum.StrEnum):
 class ScheduleGenerationStrategy(enum.StrEnum):
     COMPLETE_GENERATION = "COMPLETE_GENERATION"
     ADAPTIVE_REPAIR = "ADAPTIVE_REPAIR"
+    GRID_CHANGE = "GRID_CHANGE"
 
 
 class ScheduleGenerationTrigger(enum.StrEnum):
@@ -104,6 +105,7 @@ class ScheduleGenerationTrigger(enum.StrEnum):
     EXPLICIT_DEBT = "EXPLICIT_DEBT"
     SCHEDULER_CHANGE = "SCHEDULER_CHANGE"
     MIXED = "MIXED"
+    GRID_CHANGE = "GRID_CHANGE"
 
 
 class ScheduleGenerationJobStatus(enum.StrEnum):
@@ -120,6 +122,12 @@ class ScheduleGenerationResultCategory(enum.StrEnum):
     COMPLETE_SUCCESS = "COMPLETE_SUCCESS"
     PARTIAL_RECOVERY = "PARTIAL_RECOVERY"
     NO_VALID_OUTPUT = "NO_VALID_OUTPUT"
+
+
+class GridVersionState(enum.StrEnum):
+    PENDING = "PENDING"
+    ACTIVE = "ACTIVE"
+    REJECTED = "REJECTED"
 
 
 class ScheduleDraftState(enum.StrEnum):
@@ -1001,7 +1009,44 @@ class Subject(Base):
         return f"<Subject(id={self.id}, name='{self.name}')>"
 
 
-# 9. Modelo "Timeslot" (Bloco Horário)
+# 9. Modelo "GridVersion" (Versão da Grelha Horária)
+class GridVersion(Base):
+    """Date-effective weekly-grid configuration owned by one organization."""
+
+    __tablename__ = "grid_version"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    organization_id: Mapped[int] = mapped_column(
+        ForeignKey(FK_ORG_ID, ondelete="CASCADE"), nullable=False, index=True
+    )
+    effective_date: Mapped[date_type] = mapped_column(Date, nullable=False)
+    state: Mapped[GridVersionState] = mapped_column(
+        SAEnum(
+            GridVersionState,
+            name="gridversionstate",
+            native_enum=True,
+            values_callable=lambda obj: [e.value for e in obj],
+        ),
+        nullable=False,
+        default=GridVersionState.PENDING,
+    )
+    configuration_json: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+
+    organization: Mapped["Organization"] = relationship()
+    timeslots: Mapped[list["Timeslot"]] = relationship(
+        back_populates="grid_version", overlaps="organization,timeslots"
+    )
+
+    __table_args__ = (
+        UniqueConstraint("organization_id", "id", name="uq_grid_version_organization_id"),
+        Index("ix_grid_version_org_effective", "organization_id", "effective_date"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<GridVersion(id={self.id}, effective={self.effective_date}, state='{self.state}')>"
+
+
+# 10. Modelo "Timeslot" (Bloco Horário)
 class Timeslot(Base):
     __tablename__ = "timeslot"
 
@@ -1016,12 +1061,30 @@ class Timeslot(Base):
     # Isto confirma a nossa decisão: cada escola define os seus próprios blocos
     organization_id: Mapped[int] = mapped_column(ForeignKey(FK_ORG_ID))
 
+    # Versão da grelha a que este bloco pertence (FK composta com a organização)
+    grid_version_id: Mapped[int | None] = mapped_column(nullable=True, index=True)
+
     # Relacionamento: Permite-nos fazer my_timeslot.organization
     organization: Mapped["Organization"] = relationship(back_populates="timeslots")
+    grid_version: Mapped["GridVersion | None"] = relationship(
+        back_populates="timeslots", overlaps="organization,timeslots"
+    )
 
-    # Garante que não há blocos duplicados para a mesma organização
+    # Garante que não há blocos duplicados na mesma versão da grelha
     __table_args__ = (
-        UniqueConstraint("day_of_week", "start_time", "organization_id", name="uq_timeslot"),
+        UniqueConstraint(
+            "organization_id",
+            "grid_version_id",
+            "day_of_week",
+            "start_time",
+            name="uq_timeslot_grid_version",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "grid_version_id"],
+            ["grid_version.organization_id", "grid_version.id"],
+            name="fk_timeslot_grid_version_tenant_scoped",
+            ondelete="RESTRICT",
+        ),
     )
 
     def __repr__(self) -> str:
@@ -1288,6 +1351,8 @@ class ScheduleGenerationJob(Base):
     failure_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     failure_reference: Mapped[str | None] = mapped_column(String(32), nullable=True)
     idempotency_key: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # Proposed grid version used by this job's snapshot (NULL = active version)
+    grid_version_id: Mapped[int | None] = mapped_column(nullable=True)
 
     __table_args__ = (
         ForeignKeyConstraint(
@@ -1295,6 +1360,12 @@ class ScheduleGenerationJob(Base):
             ["scheduler_school_year.id", "scheduler_school_year.organization_id"],
             name="fk_schedule_generation_job_year_scope",
             ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "grid_version_id"],
+            ["grid_version.organization_id", "grid_version.id"],
+            name="fk_schedule_generation_job_grid_version_tenant_scoped",
+            ondelete="RESTRICT",
         ),
         UniqueConstraint(
             "id",
@@ -1392,6 +1463,8 @@ class ScheduleDraft(Base):
     repair_policy_snapshot_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     repair_policy_snapshot_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     editable_start_date: Mapped[date_type | None] = mapped_column(Date, nullable=True)
+    # Grid version published together with this draft (grid-change proposals)
+    grid_version_id: Mapped[int | None] = mapped_column(nullable=True)
     recovery_escalation_level: Mapped[str | None] = mapped_column(String(50), nullable=True)
     adaptation_level: Mapped[str | None] = mapped_column(String(50), nullable=True)
     projected_completion_date: Mapped[date_type] = mapped_column(Date, nullable=False)
@@ -1428,6 +1501,12 @@ class ScheduleDraft(Base):
                 "schedule_generation_job.school_year_id",
             ],
             name="fk_schedule_drafts_generation_job_scope",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "grid_version_id"],
+            ["grid_version.organization_id", "grid_version.id"],
+            name="fk_schedule_drafts_grid_version_tenant_scoped",
             ondelete="RESTRICT",
         ),
         UniqueConstraint(

@@ -11,7 +11,7 @@ import {
   useTeacherScheduleHorizon,
   useWeekSchedule,
 } from '../features/scheduling/data'
-import { useTimeslots } from '../features/catalog/data'
+import { useTimeslots, useWeekGridVersions } from '../features/catalog/data'
 import {
   useMyTimesheet,
   useSubmitMyTimesheet,
@@ -123,6 +123,7 @@ function MySchedules() {
   const weekSlots = hasWeekError ? EMPTY_ARRAY : fetchedWeekSlots ?? EMPTY_ARRAY
 
   const { data: timeslots = [] } = useTimeslots()
+  const { data: weekGridVersions } = useWeekGridVersions(weekStart)
 
   const { data: timesheet } = useMyTimesheet(weekStart)
   const submitMutation = useSubmitMyTimesheet()
@@ -237,6 +238,8 @@ function MySchedules() {
       isLoading={isLoadingWeek}
       baseTimeslots={timeslots}
       weekStart={weekStart}
+      dayGrids={weekGridVersions?.days ?? null}
+      gridTransitionDate={weekGridVersions?.transition_date ?? ''}
       isOperationalEnabled={!timesheet || timesheet.status === 'OPEN'}
       onOpenOperationalAction={setSelectedSlot}
     />

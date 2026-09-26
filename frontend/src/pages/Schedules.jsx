@@ -14,7 +14,7 @@ import {
   useGenerateSchedule, useScheduleTaskStatus, useCancelScheduleTask,
   useWeekSchedule,
 } from '../features/scheduling/data'
-import { useClasses, useClassDetails, useTimeslots } from '../features/catalog/data'
+import { useClasses, useClassDetails, useTimeslots, useWeekGridVersions } from '../features/catalog/data'
 import { useTeachers } from '../features/members/data'
 import WeekGrid from '../components/WeekGrid'
 import WeekNavigator from '../components/WeekNavigator'
@@ -175,6 +175,7 @@ const Schedules = ({ initialClassId = '', initialWeekStart, persistView = true, 
   const { data: classes  = [] } = useClasses()
   const { data: teachers = [] } = useTeachers()
   const { data: timeslots = [] } = useTimeslots()
+  const { data: weekGridVersions } = useWeekGridVersions(weekStart)
 
   // Apply URL query params for cross-navigation (Fase 7.4)
   useEffect(() => {
@@ -315,6 +316,8 @@ const Schedules = ({ initialClassId = '', initialWeekStart, persistView = true, 
         isLoading={loadingWeek}
         baseTimeslots={timeslots}
         weekStart={weekStart}
+        dayGrids={weekGridVersions?.days ?? null}
+        gridTransitionDate={weekGridVersions?.transition_date ?? ''}
         isOperationalEnabled
         onOpenOperationalAction={openCreateOccurrenceModal}
         fitViewport

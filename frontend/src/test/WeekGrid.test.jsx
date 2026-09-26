@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { describe, it, expect, vi } from 'vitest'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import WeekGrid from '../components/WeekGrid'
 import { buildWeekGridModel } from '../utils/weekGridModel'
 
@@ -40,6 +40,40 @@ describe('buildWeekGridModel', () => {
   it('supports empty input', () => {
     expect(buildWeekGridModel()).toEqual({ slotMap: {}, uniqueTimes: [], activeDays: [], endTimeMap: {}, dayDateMap: {} })
   })
+
+  it('builds per-day rows from the range days without touching historical slot times', () => {
+    const dayGrids = [
+      { date: '2026-09-21', version_id: 1, effective_date: '2025-09-15', blocks: [{ id: 10, day_of_week: 0, start_time: '09:00:00', end_time: '09:50:00' }] },
+      { date: '2026-09-22', version_id: 1, effective_date: '2025-09-15', blocks: [] },
+      { date: '2026-09-23', version_id: 2, effective_date: '2026-09-23', blocks: [{ id: 11, day_of_week: 2, start_time: '10:00:00', end_time: '10:50:00' }] },
+    ]
+    const historicalSlot = {
+      ...baseSlot,
+      timeslot: { id: 12, day_of_week: 0, start_time: '08:00', end_time: '08:50' },
+    }
+    const model = buildWeekGridModel([baseSlot, historicalSlot], [baseSlot.timeslot], '2026-09-21', dayGrids)
+
+    expect(model.activeDays).toEqual([0, 2])
+    expect(model.uniqueTimes).toEqual(['08:00', '09:00', '10:00'])
+    expect(model.dayDateMap).toEqual({ 0: '2026-09-21', 2: '2026-09-23' })
+    expect(model.endTimeByDay).toEqual({ 0: { '09:00': '09:50' }, 2: { '10:00': '10:50' } })
+    expect(model.rowEndTime).toEqual({ '08:00': '08:50', '09:00': null, '10:00': null })
+    expect(model.versionByDay).toEqual({
+      0: { versionId: 1, effectiveDate: '2025-09-15' },
+      2: { versionId: 2, effectiveDate: '2026-09-23' },
+    })
+    expect(model.slotMap['0:08:00']).toEqual([historicalSlot])
+  })
+
+  it('keeps a single row end time when every active day agrees', () => {
+    const dayGrids = [
+      { date: '2026-09-21', version_id: 3, effective_date: '2026-01-05', blocks: [{ id: 20, day_of_week: 0, start_time: '08:00:00', end_time: '08:50:00' }] },
+      { date: '2026-09-23', version_id: 3, effective_date: '2026-01-05', blocks: [{ id: 21, day_of_week: 2, start_time: '08:00:00', end_time: '08:50:00' }] },
+    ]
+    const model = buildWeekGridModel([], [], '2026-09-21', dayGrids)
+
+    expect(model.rowEndTime).toEqual({ '08:00': '08:50' })
+  })
 })
 
 describe('WeekGrid (Ponto 8.1)', () => {
@@ -58,6 +92,40 @@ describe('WeekGrid (Ponto 8.1)', () => {
     expect(screen.queryByText('Planeado')).not.toBeInTheDocument()
     expect(container.querySelector('.week-grid__time-start')).toHaveTextContent('09:00')
     expect(container.querySelector('.week-grid__time-end')).toHaveTextContent('11:00')
+  })
+
+  it('renders a historical slot whose time is absent from the current weekly grid', () => {
+    const historical = {
+      ...baseSlot,
+      timeslot: { id: 12, day_of_week: 0, start_time: '08:00', end_time: '08:50' },
+    }
+    const dayGrids = [
+      {
+        date: '2026-09-21',
+        version_id: 2,
+        effective_date: '2026-09-23',
+        blocks: [{ id: 11, day_of_week: 0, start_time: '10:00:00', end_time: '10:50:00' }],
+      },
+    ]
+
+    const { container } = render(
+      <WeekGrid
+        slots={[historical]}
+        isLoading={false}
+        baseTimeslots={[]}
+        weekStart="2026-09-21"
+        dayGrids={dayGrids}
+        gridTransitionDate="2026-09-23"
+      />
+    )
+
+    const starts = [...container.querySelectorAll('.week-grid__time-start')]
+      .map((node) => node.textContent)
+    expect(starts).toEqual(['08:00', '10:00'])
+    expect(screen.getByText('Programação')).toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'Nova grelha em vigor a partir de 23/09/2026'
+    )
   })
 
   it('keeps long content readable at the laptop breakpoint', () => {
@@ -270,5 +338,79 @@ describe('WeekGrid (Ponto 8.1)', () => {
     expect(screen.queryByText('Registar')).not.toBeInTheDocument()
     expect(container.querySelector('.week-grid__status')).not.toBeInTheDocument()
     expect(container.querySelector('.week-grid__action--completed')).toHaveTextContent('Concluído')
+  })
+})
+
+describe('WeekGrid (W07.3 grid versions)', () => {
+  const mondaySlot = {
+    ...baseSlot,
+    date: '2026-09-21',
+    active_schedule_block_id: 601,
+    timeslot: { id: 20, day_of_week: 0, start_time: '09:00', end_time: '09:50' },
+    subject: { id: 2, name: 'Programação' },
+  }
+  const wednesdaySlot = {
+    ...baseSlot,
+    date: '2026-09-23',
+    active_schedule_block_id: 602,
+    timeslot: { id: 21, day_of_week: 2, start_time: '10:00', end_time: '10:50' },
+    subject: { id: 3, name: 'Matemática' },
+  }
+  const dayGrids = [
+    { date: '2026-09-21', version_id: 1, effective_date: '2025-09-15', blocks: [{ id: 10, day_of_week: 0, start_time: '09:00:00', end_time: '09:50:00' }] },
+    { date: '2026-09-22', version_id: 1, effective_date: '2025-09-15', blocks: [] },
+    { date: '2026-09-23', version_id: 2, effective_date: '2026-09-23', blocks: [{ id: 11, day_of_week: 2, start_time: '10:00:00', end_time: '10:50:00' }] },
+    { date: '2026-09-24', version_id: 2, effective_date: '2026-09-23', blocks: [] },
+  ]
+
+  it('renders each day with its own grid blocks and marks the effective-date change', () => {
+    const { container } = render(
+      <WeekGrid
+        slots={[mondaySlot, wednesdaySlot]}
+        isLoading={false}
+        baseTimeslots={[mondaySlot.timeslot, wednesdaySlot.timeslot]}
+        weekStart="2026-09-21"
+        dayGrids={dayGrids}
+        gridTransitionDate="2026-09-23"
+      />
+    )
+
+    const rows = container.querySelectorAll('tbody tr')
+    expect(rows).toHaveLength(2)
+    expect(within(rows[0]).getByText('Programação')).toBeInTheDocument()
+    expect(within(rows[0]).queryByText('Matemática')).not.toBeInTheDocument()
+    expect(within(rows[1]).getByText('Matemática')).toBeInTheDocument()
+    expect(within(rows[1]).queryByText('Programação')).not.toBeInTheDocument()
+
+    const timeCells = container.querySelectorAll('.week-grid__time')
+    expect(timeCells).toHaveLength(2)
+    expect(timeCells[0]).toHaveAttribute('aria-label', '09:00')
+    expect(timeCells[0].querySelector('.week-grid__time-end')).toHaveTextContent('')
+    expect(timeCells[1]).toHaveAttribute('aria-label', '10:00')
+    expect(timeCells[1].querySelector('.week-grid__time-end')).toHaveTextContent('')
+
+    expect(screen.getByRole('status')).toHaveTextContent('Nova grelha em vigor a partir de 23/09/2026')
+
+    const badge = screen.getByTitle('Nova grelha em vigor a partir de 23/09/2026')
+    expect(badge).toHaveTextContent('Nova grelha')
+    expect(badge).toHaveAttribute('aria-label', 'Nova grelha em vigor a partir de 23/09/2026')
+    expect(screen.getAllByText('Nova grelha')).toHaveLength(1)
+  })
+
+  it('keeps the previous rendering when dayGrids is absent', () => {
+    const { container } = render(
+      <WeekGrid
+        slots={[baseSlot]}
+        isLoading={false}
+        baseTimeslots={[baseSlot.timeslot]}
+        weekStart="2026-04-20"
+      />
+    )
+
+    const timeCell = container.querySelector('.week-grid__time')
+    expect(timeCell.querySelector('.week-grid__time-start')).toHaveTextContent('09:00')
+    expect(timeCell.querySelector('.week-grid__time-end')).toHaveTextContent('11:00')
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
+    expect(container.querySelector('.week-grid__version-badge')).not.toBeInTheDocument()
   })
 })

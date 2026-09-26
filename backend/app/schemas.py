@@ -25,6 +25,7 @@ from .models import (
     RoomType,
     TimesheetStatus,
 )
+from .scheduler.domain.timetable import BreakOverride, build_daily_slots
 
 
 class OperationalOccurrenceState(StrEnum):
@@ -327,6 +328,15 @@ class SessionBootstrapResponse(BaseModel):
 
 
 # --- Foundation & Readiness Schemas ---
+class BreakOverridePayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    after_slot: int = Field(
+        ..., ge=1, description="Aula após a qual ocorre a pausa (a primeira é 1)"
+    )
+    duration_minutes: int = Field(..., ge=0, le=60, description="Duração da pausa em minutos")
+
+
 class FoundationDraftData(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -338,6 +348,7 @@ class FoundationDraftData(BaseModel):
     closing_time: time | None = None
     slot_duration_minutes: int | None = Field(default=None, ge=15, le=120)
     break_duration_minutes: int | None = Field(default=None, ge=0, le=60)
+    break_overrides: list[BreakOverridePayload] | None = None
     lunch_window_start: time | None = None
     lunch_window_end: time | None = None
     lunch_min_duration_minutes: int | None = Field(default=None, ge=1, le=180)
@@ -347,6 +358,14 @@ class FoundationDraftData(BaseModel):
     @classmethod
     def default_missing_repair_stability_window(cls, value: int | None) -> int:
         return 14 if value is None else value
+
+    @model_validator(mode="after")
+    def validate_unique_break_override_positions(self):
+        overrides = self.break_overrides or []
+        positions = [override.after_slot for override in overrides]
+        if len(set(positions)) != len(positions):
+            raise ValueError("Só pode existir um ajuste de intervalo por aula.")
+        return self
 
 
 class FoundationDraftWrite(BaseModel):
@@ -837,8 +856,10 @@ class ScheduleGenerateRequest(BaseModel):
 
 class SchedulerGenerateResponse(BaseModel):
     job_id: int
-    strategy: Literal["COMPLETE_GENERATION", "ADAPTIVE_REPAIR"]
-    trigger_type: Literal["FIRST_GENERATION", "EXPLICIT_DEBT", "SCHEDULER_CHANGE", "MIXED"]
+    strategy: Literal["COMPLETE_GENERATION", "ADAPTIVE_REPAIR", "GRID_CHANGE"]
+    trigger_type: Literal[
+        "FIRST_GENERATION", "EXPLICIT_DEBT", "SCHEDULER_CHANGE", "MIXED", "GRID_CHANGE"
+    ]
     status: str
 
 
@@ -862,6 +883,7 @@ class SchedulerStatusResponse(BaseModel):
             "EXPLICIT_DEBT",
             "SCHEDULER_CHANGE",
             "MIXED",
+            "GRID_CHANGE",
         ]
         | None
     )
@@ -874,8 +896,11 @@ class ScheduleGenerationJobResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
-    strategy: Literal["COMPLETE_GENERATION", "ADAPTIVE_REPAIR"]
-    trigger_type: Literal["FIRST_GENERATION", "EXPLICIT_DEBT", "SCHEDULER_CHANGE", "MIXED"] | None
+    strategy: Literal["COMPLETE_GENERATION", "ADAPTIVE_REPAIR", "GRID_CHANGE"]
+    trigger_type: (
+        Literal["FIRST_GENERATION", "EXPLICIT_DEBT", "SCHEDULER_CHANGE", "MIXED", "GRID_CHANGE"]
+        | None
+    )
     job_status: Literal[
         "QUEUED",
         "RUNNING",
@@ -905,10 +930,12 @@ class ScheduleDraftSummaryResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     draft_id: int
-    strategy: Literal["COMPLETE_GENERATION", "ADAPTIVE_REPAIR"]
+    strategy: Literal["COMPLETE_GENERATION", "ADAPTIVE_REPAIR", "GRID_CHANGE"]
     draft_state: Literal["PENDING", "APPROVED", "REJECTED", "REPLACED", "STALE", "INVALIDATED"]
     result_category: Literal["COMPLETE_SUCCESS", "PARTIAL_RECOVERY"]
-    trigger_type: Literal["FIRST_GENERATION", "EXPLICIT_DEBT", "SCHEDULER_CHANGE", "MIXED"]
+    trigger_type: Literal[
+        "FIRST_GENERATION", "EXPLICIT_DEBT", "SCHEDULER_CHANGE", "MIXED", "GRID_CHANGE"
+    ]
     recovery_escalation_level: str | None
     adaptation_level: str | None
     projected_completion_date: date
@@ -1362,6 +1389,10 @@ class TimeslotBulkCreate(BaseModel):
     end_time: time
     slot_duration_minutes: int = Field(..., gt=0, description="Duração de cada aula (ex: 50 ou 90)")
     break_duration_minutes: int = Field(0, ge=0, description="Intervalo entre aulas")
+    break_overrides: list[BreakOverridePayload] = Field(
+        default_factory=list,
+        description="Ajustes pontuais da pausa após uma aula (a primeira aula é 1)",
+    )
     days_of_week: list[int] = Field(
         ..., min_length=1, max_length=7, description="Lista de dias (0=Seg, 4=Sex)"
     )
@@ -1374,13 +1405,23 @@ class TimeslotBulkCreate(BaseModel):
             raise ValueError("Os dias da semana devem estar entre 0 e 6.")
         if len(set(self.days_of_week)) != len(self.days_of_week):
             raise ValueError("Os dias da semana não podem estar duplicados.")
-        available_minutes = (
-            self.end_time.hour * 60
-            + self.end_time.minute
-            - self.start_time.hour * 60
-            - self.start_time.minute
+        positions = [override.after_slot for override in self.break_overrides]
+        if len(set(positions)) != len(positions):
+            raise ValueError("Só pode existir um ajuste de intervalo por aula.")
+        slots = build_daily_slots(
+            opening_time=self.start_time,
+            closing_time=self.end_time,
+            slot_duration_minutes=self.slot_duration_minutes,
+            break_duration_minutes=self.break_duration_minutes,
+            break_overrides=tuple(
+                BreakOverride(
+                    after_slot=override.after_slot,
+                    duration_minutes=override.duration_minutes,
+                )
+                for override in self.break_overrides
+            ),
         )
-        if available_minutes < self.slot_duration_minutes:
+        if not slots:
             raise ValueError("A janela horária deve permitir pelo menos uma aula completa.")
         return self
 
@@ -1405,6 +1446,159 @@ class GridConfigurationResponse(BaseModel):
     generated_count: int
     changed: bool
     grid_regenerated: bool
+
+
+# --- GRID CHANGE PREVIEW (W05) ---
+class GridChangePreviewRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    timeslots: TimeslotBulkCreate
+
+
+class GridConfigurationRead(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    version_id: int | None = None
+    effective_date: date | None = None
+    state: str | None = None
+    configuration: dict | None = None
+    source: Literal["VERSION", "BLOCKS", "NONE"]
+
+
+class GridChangeDailyDifference(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    day_of_week: int
+    current_lessons: int
+    proposed_lessons: int
+    delta: int
+
+
+class GridChangeTimeslotRef(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    day_of_week: int
+    start_time: time
+    end_time: time
+
+
+class GridChangeAffectedAvailability(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    current_timeslot_id: int
+    current: GridChangeTimeslotRef
+    proposed: GridChangeTimeslotRef | None = None
+    match: Literal["EXACT", "MOVED", "REMOVED"]
+    ambiguous: bool = False
+    requires_decision: bool
+    teachers: list[dict]
+
+
+class GridChangeAffectedConstraint(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    constraint_id: int
+    current_timeslot_id: int
+    rule_type: str
+    rule_payload: dict
+    proposed: GridChangeTimeslotRef | None = None
+    proposed_timeslot_id: int | None = None
+    match: Literal["EXACT", "MOVED", "REMOVED"]
+    ambiguous: bool = False
+    requires_decision: bool
+
+
+class GridChangePendingLesson(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    occurrence_id: int
+    date: date
+    class_id: int | None = None
+    subject_id: int | None = None
+
+
+class GridChangePreviewResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    first_editable_date: date
+    current_configuration: dict | None = None
+    proposed_configuration: dict
+    daily: list[GridChangeDailyDifference]
+    affected_availabilities: list[GridChangeAffectedAvailability]
+    affected_constraints: list[GridChangeAffectedConstraint]
+    lessons_without_closure: list[GridChangePendingLesson]
+    minutes_completed: int
+    minutes_protected: int
+    minutes_planned_after_boundary: int
+    minutes_remaining: int
+    fingerprint: str
+    pending_grid_version_id: int | None = None
+    can_propose: bool
+    blockers: list[str] = Field(default_factory=list)
+
+
+class GridChangeDecision(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    current_timeslot_id: int = Field(..., ge=1)
+    action: Literal["COPY", "DISCARD"]
+
+
+class GridChangeProposeRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    timeslots: TimeslotBulkCreate
+    fingerprint: str = Field(..., min_length=64, max_length=64)
+    decisions: list[GridChangeDecision] = Field(default_factory=list)
+    idempotency_key: str | None = Field(None, min_length=1, max_length=100)
+
+
+class GridBlockRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    day_of_week: int
+    start_time: time
+    end_time: time
+
+
+class WeekGridDayRead(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    date: date
+    version_id: int | None = None
+    effective_date: date | None = None
+    blocks: list[GridBlockRead]
+
+
+class WeekGridVersionsResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    days: list[WeekGridDayRead]
+    transition_date: date | None = None
+
+
+class GridChangeProposalResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    grid_version_id: int
+    job_id: int
+    strategy: Literal["GRID_CHANGE"]
+    effective_date: date
+    first_editable_date: date
+    status: str
+    created: bool
+
+
+class GridChangePendingResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    grid_version_id: int
+    effective_date: date
+    configuration: dict | None = None
+    job_id: int | None = None
+    job_status: str | None = None
+    blocks: list[GridBlockRead]
 
 
 # ==========================================

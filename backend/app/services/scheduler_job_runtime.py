@@ -22,6 +22,7 @@ from app.scheduler.domain.contracts import (
     ValidatedGenerationResult,
 )
 from app.scheduler.domain.validation import GenerationEnvelopeValidator
+from app.services import grid_version_service
 from app.services.scheduler_complete_demand import CompleteDemandLedgerBuilder
 from app.services.scheduler_curriculum_validation import validate_curriculum_coverage
 from app.services.scheduler_diff_service import SchedulerDiffService
@@ -298,6 +299,7 @@ class SchedulerJobRuntime:
             job.organization_id,
             job.school_year_id,
             job.strategy,
+            grid_version_id=job.grid_version_id,
         )
         debt = None
         policy = None
@@ -306,6 +308,10 @@ class SchedulerJobRuntime:
                 job.organization_id,
                 job.school_year_id,
             )
+        if job.strategy in (
+            models.ScheduleGenerationStrategy.ADAPTIVE_REPAIR,
+            models.ScheduleGenerationStrategy.GRID_CHANGE,
+        ):
             policy = await fingerprints.repair_policy_snapshot(
                 job.organization_id,
                 job.school_year_id,
@@ -971,6 +977,14 @@ class SchedulerJobRuntime:
                 exception_frames=safe_exception_frames(exc),
             )
 
+    async def _reject_grid_change_proposal(self, job: models.ScheduleGenerationJob) -> None:
+        grid_version_id = getattr(job, "grid_version_id", None)
+        if grid_version_id is None:
+            return
+        await grid_version_service.reject_pending_grid_version(
+            self._db, job.organization_id, grid_version_id
+        )
+
     async def _finish_without_output(
         self,
         job_id: int,
@@ -991,6 +1005,7 @@ class SchedulerJobRuntime:
         )
         job.finished_at = self._aware_now()
         job.duration_ms = self._elapsed_ms(elapsed_start)
+        await self._reject_grid_change_proposal(job)
         await self._db.commit()
         emit_scheduler_job_event(
             "generation_no_valid_output",
@@ -1026,6 +1041,7 @@ class SchedulerJobRuntime:
             job.started_at = finished_at
         job.finished_at = finished_at
         job.duration_ms = self._elapsed_ms(elapsed_start)
+        await self._reject_grid_change_proposal(job)
         await self._db.commit()
         event_name = {
             FAILURE_CANCELED: "generation_canceled",

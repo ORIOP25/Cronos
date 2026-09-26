@@ -2,11 +2,16 @@ import { CCard, CCardBody, CRow, CCol, CFormCheck } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
 import { cilCalendar, cilClock } from '@coreui/icons'
 import { formatTimeOfDay } from '../../../utils/timeOfDay'
+import { normalizeBreakOverrides } from '../foundationModel'
 
 const DAY_NAMES = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo']
 
 export function SummaryStep({ values, organizationName, confirmed, onConfirmedChange }) {
   const days = (values.days_of_week || []).map((d) => DAY_NAMES[d] || `Dia ${d}`).join(', ')
+  const overrides = normalizeBreakOverrides(values.break_overrides)
+  const adjustments = overrides.length
+    ? overrides.map((override) => `após aula ${override.after_slot} (${override.duration_minutes} min)`).join(', ')
+    : 'nenhum'
 
   return (
     <div className="foundation-step-summary">
@@ -55,6 +60,10 @@ export function SummaryStep({ values, organizationName, confirmed, onConfirmedCh
               <div className="small mb-2">
                 <span className="text-muted d-block">Bloco / Intervalo:</span>
                 <strong>{values.slot_duration_minutes} min / {values.break_duration_minutes} min</strong>
+              </div>
+              <div className="small mb-2">
+                <span className="text-muted d-block">Pausas entre Aulas:</span>
+                <strong>Pausa habitual: {values.break_duration_minutes} min · Ajustes: {adjustments}</strong>
               </div>
               <div className="small">
                 <span className="text-muted d-block">Janela de Almoço:</span>

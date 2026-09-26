@@ -5,6 +5,7 @@ from app.api import deps
 from app.core.exceptions import AppError
 from app.services.foundation_service import (
     FoundationAlreadyCompletedError,
+    FoundationBreakOverrideError,
     FoundationDraftVersionConflictError,
     FoundationIncompleteDraftError,
     FoundationService,
@@ -58,6 +59,13 @@ async def save_foundation_draft(
             code="FOUNDATION_ALREADY_COMPLETED",
             detail=str(exc),
         ) from exc
+    except FoundationBreakOverrideError as exc:
+        raise AppError(
+            kind="validation",
+            code="FOUNDATION_BREAK_OVERRIDE_UNUSED",
+            detail=str(exc),
+            public_context={"after_slot": exc.position},
+        ) from exc
     except HolidaySyncError as exc:
         raise AppError(
             kind="unavailable",
@@ -92,6 +100,13 @@ async def complete_foundation(
             kind="validation",
             code="FOUNDATION_INCOMPLETE",
             detail=str(exc),
+        ) from exc
+    except FoundationBreakOverrideError as exc:
+        raise AppError(
+            kind="validation",
+            code="FOUNDATION_BREAK_OVERRIDE_UNUSED",
+            detail=str(exc),
+            public_context={"after_slot": exc.position},
         ) from exc
     except HolidaySyncError as exc:
         raise AppError(

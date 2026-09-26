@@ -13,8 +13,10 @@ import { formatDate } from '../../utils/formatUtils'
 import { TXT, EVENT_TYPE_LABELS } from '../../utils/terminology'
 import { getApiErrorCode, getApiErrorMessage } from '../../utils/apiErrors'
 import {
+  gridConfigurationToFormData,
   timeslotsToGridFormData,
   toGridConfigurationPayload,
+  toGridTimeslotsPayload,
   toSchoolSettingsPayload,
 } from '../../utils/schoolConfigPayloads'
 import { timeOfDayToMinutes } from '../../utils/timeOfDay'
@@ -24,11 +26,19 @@ import StatePanel from '../../components/StatePanel'
 import ConfirmationModal from '../../components/ConfirmationModal'
 import PortugueseDateInput from '../../components/PortugueseDateInput'
 import { TimeField } from '../../components/TimeField'
+import { GENERATION_STATUS_LABELS } from '../../utils/presentation'
 import { useTimeslots } from '../catalog/data'
+import { useSchedulerStatus } from '../scheduling/data'
+import { BreakTimelineEditor } from '../timetable/BreakTimelineEditor'
+import { validateBreakOverrides } from '../timetable/breakTimeline'
 import {
   useCalendarEvents,
   useCreateCalendarEvent,
   useDeleteCalendarEvent,
+  useGridChangePending,
+  useGridChangePreview,
+  useGridChangePropose,
+  useGridConfiguration,
   useGridSettings,
   useRegenerateGrid,
   useSchoolSettings,
@@ -480,20 +490,35 @@ const SettingsEditor = ({ settings, onSoftResetSuccess, onSaveSuccess }) => {
 
 export const GridSection = () => {
   const orgId = useOrganization().organization?.id
+  const configurationQuery = useGridConfiguration()
   const settingsQuery = useGridSettings()
   const timeslotsQuery = useTimeslots()
+  const statusQuery = useSchedulerStatus()
+  const pendingQuery = useGridChangePending()
 
-  if (settingsQuery.isLoading || timeslotsQuery.isLoading) {
+  if (
+    configurationQuery.isLoading
+    || settingsQuery.isLoading
+    || timeslotsQuery.isLoading
+    || statusQuery.isLoading
+  ) {
     return <div className="school-config-skeleton" aria-busy="true"><span className="skeleton" /><span className="skeleton" /><span className="skeleton" /><span className="skeleton" /></div>
   }
-  const queryError = settingsQuery.error || timeslotsQuery.error
+  const queryError = configurationQuery.error || settingsQuery.error || timeslotsQuery.error
   if (queryError) {
     return <CAlert color="danger">{getApiErrorMessage(queryError, 'Erro ao carregar a grelha.')}</CAlert>
   }
 
+  const storedConfiguration = configurationQuery.data?.source === 'VERSION'
+    && configurationQuery.data.configuration
+    ? configurationQuery.data.configuration
+    : null
+
   let initialFormData
   try {
-    initialFormData = timeslotsToGridFormData(timeslotsQuery.data)
+    initialFormData = storedConfiguration
+      ? gridConfigurationToFormData(storedConfiguration)
+      : timeslotsToGridFormData(timeslotsQuery.data)
   } catch (error) {
     return (
       <div>
@@ -515,16 +540,187 @@ export const GridSection = () => {
       orgId={orgId}
       initialFormData={initialFormData}
       initialGridSettings={initialGridSettings}
+      schoolYearPublished={statusQuery.data?.school_year_publication_state === 'PUBLISHED'}
+      pendingProposal={pendingQuery.data}
     />
   )
 }
 
-const GridEditor = ({ orgId, initialFormData, initialGridSettings }) => {
+const DAY_LABELS = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo']
+
+const shortTime = (value) => String(value ?? '').slice(0, 5)
+
+const PendingProposalBanner = ({ proposal }) => {
+  if (!proposal?.grid_version_id) return null
+  const statusLabel = GENERATION_STATUS_LABELS[proposal.job_status] ?? proposal.job_status
+  return (
+    <CAlert color="info" className="d-flex flex-wrap align-items-center justify-content-between gap-2">
+      <span>
+        <strong>Proposta de grelha pendente</strong>
+        {' — '}efetiva a {formatDate(proposal.effective_date)}
+        {statusLabel ? ` · ${statusLabel}` : ''}. O cancelamento da proposta é feito em Horários.
+      </span>
+      <a href="/schedules" className="alert-link">Ir para Horários</a>
+    </CAlert>
+  )
+}
+
+const GridChangeImpactPanel = ({ preview, decisions, onDecision, onPropose, isProposing }) => {
+  const decisionTargets = []
+  const seen = new Set()
+  for (const entry of [...preview.affected_availabilities, ...preview.affected_constraints]) {
+    if (!entry.requires_decision || seen.has(entry.current_timeslot_id)) continue
+    seen.add(entry.current_timeslot_id)
+    decisionTargets.push(entry)
+  }
+  const missing = decisionTargets.filter((target) => !decisions[target.current_timeslot_id])
+  const changedDays = preview.daily.filter((day) => day.delta !== 0)
+
+  return (
+    <CCard className="border-0 shadow-sm mb-4">
+      <CCardHeader className="bg-white fw-bold py-2">Impacto da alteração</CCardHeader>
+      <CCardBody>
+        <p className="mb-2">
+          Primeira data editável: <strong>{formatDate(preview.first_editable_date)}</strong>
+        </p>
+        <p className="text-muted small mb-3">
+          {preview.minutes_completed} min concluídos · {preview.minutes_protected} min protegidos ·{' '}
+          {preview.minutes_planned_after_boundary} min planeados após a fronteira ·{' '}
+          {preview.minutes_remaining} min por colocar
+        </p>
+
+        {!preview.can_propose && (
+          <CAlert color="warning">
+            <strong>Esta alteração não pode ser proposta:</strong>
+            <ul className="mb-0">
+              {preview.blockers.map((blocker) => <li key={blocker}>{blocker}</li>)}
+            </ul>
+          </CAlert>
+        )}
+
+        <h6 className="fw-bold text-secondary mb-2">Diferença de aulas por dia</h6>
+        {changedDays.length === 0 ? (
+          <p className="text-muted small">Sem alterações no número de aulas por dia.</p>
+        ) : (
+          <CTable small responsive className="mb-3">
+            <CTableHead>
+              <CTableRow>
+                <CTableHeaderCell>Dia</CTableHeaderCell>
+                <CTableHeaderCell>Aulas atuais</CTableHeaderCell>
+                <CTableHeaderCell>Aulas propostas</CTableHeaderCell>
+                <CTableHeaderCell>Diferença</CTableHeaderCell>
+              </CTableRow>
+            </CTableHead>
+            <CTableBody>
+              {changedDays.map((day) => (
+                <CTableRow key={day.day_of_week}>
+                  <CTableDataCell>{DAY_LABELS[day.day_of_week]}</CTableDataCell>
+                  <CTableDataCell>{day.current_lessons}</CTableDataCell>
+                  <CTableDataCell>{day.proposed_lessons}</CTableDataCell>
+                  <CTableDataCell>{day.delta > 0 ? `+${day.delta}` : day.delta}</CTableDataCell>
+                </CTableRow>
+              ))}
+            </CTableBody>
+          </CTable>
+        )}
+
+        {decisionTargets.length > 0 && (
+          <>
+            <h6 className="fw-bold text-secondary mb-2">Aulas, disponibilidades e regras afetadas</h6>
+            <p className="text-muted small mb-3">
+              Escolha se cada bloco afetado é copiado para a nova grelha ou descartado.
+            </p>
+            {decisionTargets.map((target) => {
+              const isAvailability = Array.isArray(target.teachers)
+              return (
+                <fieldset key={target.current_timeslot_id} className="border rounded p-3 mb-3">
+                  <legend className="fs-6 fw-semibold">
+                    {isAvailability
+                      ? `${DAY_LABELS[target.current.day_of_week]} ${shortTime(target.current.start_time)}-${shortTime(target.current.end_time)}`
+                      : `Regra ${target.rule_type}`}
+                  </legend>
+                  <div className="text-muted small mb-2">
+                    {isAvailability
+                      ? `${target.teachers.length} professor(es) com disponibilidade neste bloco.`
+                      : `Regra aplicada ao bloco atual #${target.current_timeslot_id}.`}
+                    {' '}
+                    {target.proposed
+                      ? `Novo bloco: ${DAY_LABELS[target.proposed.day_of_week]} ${shortTime(target.proposed.start_time)}-${shortTime(target.proposed.end_time)}.`
+                      : 'Sem bloco de destino.'}
+                  </div>
+                  <CFormCheck
+                    type="radio"
+                    name={`grid-change-decision-${target.current_timeslot_id}`}
+                    id={`grid-change-decision-${target.current_timeslot_id}-copy`}
+                    label="Copiar"
+                    checked={decisions[target.current_timeslot_id] === 'COPY'}
+                    onChange={() => onDecision(target.current_timeslot_id, 'COPY')}
+                  />
+                  <CFormCheck
+                    type="radio"
+                    name={`grid-change-decision-${target.current_timeslot_id}`}
+                    id={`grid-change-decision-${target.current_timeslot_id}-discard`}
+                    label="Descartar"
+                    checked={decisions[target.current_timeslot_id] === 'DISCARD'}
+                    onChange={() => onDecision(target.current_timeslot_id, 'DISCARD')}
+                  />
+                </fieldset>
+              )
+            })}
+          </>
+        )}
+
+        <div className="d-flex justify-content-end align-items-center gap-3">
+          {preview.can_propose && missing.length > 0 && (
+            <span className="text-danger small" role="status">
+              Faltam decisões para {missing.length} bloco(s) afetado(s).
+            </span>
+          )}
+          <CButton
+            type="button"
+            color="primary"
+            disabled={!preview.can_propose || missing.length > 0 || isProposing}
+            onClick={onPropose}
+          >
+            {isProposing ? 'A propor' : 'Propor alteração'}
+          </CButton>
+        </div>
+      </CCardBody>
+    </CCard>
+  )
+}
+
+const GridEditor = ({
+  orgId,
+  initialFormData,
+  initialGridSettings,
+  schoolYearPublished,
+  pendingProposal,
+}) => {
   const { message: feedback, show: showFeedback, clear: clearFeedback } = useTransientMessage()
   const [formData, setFormData] = useState(initialFormData)
   const [gridSettings, setGridSettings] = useState(initialGridSettings)
+  const [preview, setPreview] = useState(null)
+  const [decisions, setDecisions] = useState({})
+  const [proposal, setProposal] = useState(null)
 
-  const mutation = useRegenerateGrid()
+  const regenerateMutation = useRegenerateGrid()
+  const previewMutation = useGridChangePreview()
+  const proposeMutation = useGridChangePropose()
+
+  const applyFormData = (updater) => {
+    setFormData(updater)
+    setPreview(null)
+    setDecisions({})
+  }
+
+  const timeslotValues = {
+    opening_time: formData.start_time,
+    closing_time: formData.end_time,
+    slot_duration_minutes: formData.slot_duration_minutes,
+    break_duration_minutes: formData.break_duration_minutes,
+    break_overrides: formData.break_overrides,
+  }
 
   const validateForm = () => {
     const duration = Number(formData.slot_duration_minutes)
@@ -552,19 +748,81 @@ const GridEditor = ({ orgId, initialFormData, initialGridSettings }) => {
       return 'Preencha uma grelha válida, com pelo menos um dia de funcionamento.'
     }
     if (lunchDuration > lunchEnd - lunchStart) return 'A duração mínima do almoço não pode exceder a janela configurada.'
-    return null
+    return validateBreakOverrides(timeslotValues) || null
   }
 
-  const handleSubmit = (event) => {
-    event.preventDefault()
-    clearFeedback()
-    mutation.reset()
+  const handlePreview = () => {
     const validationError = validateForm()
     if (validationError) {
       showFeedback({ color: 'danger', message: validationError }, 6000)
       return
     }
-    mutation.mutate(toGridConfigurationPayload({ formData, gridSettings }), {
+    previewMutation.reset()
+    setProposal(null)
+    previewMutation.mutate({ timeslots: toGridTimeslotsPayload(formData) }, {
+      onSuccess: (data) => {
+        setPreview(data)
+        setDecisions({})
+      },
+      onError: (error) => {
+        showFeedback({
+          color: 'danger',
+          message: getApiErrorMessage(error, 'Erro ao pré-visualizar a alteração da grelha.'),
+        }, 6000)
+      },
+    })
+  }
+
+  const handlePropose = () => {
+    if (!preview) return
+    clearFeedback()
+    proposeMutation.reset()
+    const decisionsPayload = Object.entries(decisions).map(([timeslotId, action]) => ({
+      current_timeslot_id: Number(timeslotId),
+      action,
+    }))
+    proposeMutation.mutate({
+      timeslots: toGridTimeslotsPayload(formData),
+      fingerprint: preview.fingerprint,
+      decisions: decisionsPayload,
+    }, {
+      onSuccess: (data) => {
+        setProposal(data)
+        setPreview(null)
+        setDecisions({})
+      },
+      onError: (error) => {
+        if (getApiErrorCode(error) === 'GRID_CHANGE_STALE') {
+          setPreview(null)
+          setDecisions({})
+          showFeedback({
+            color: 'warning',
+            message: 'A análise mudou desde a pré-visualização. Repita a pré-visualização antes de propor a alteração.',
+          }, 8000)
+          return
+        }
+        showFeedback({
+          color: 'danger',
+          message: getApiErrorMessage(error, 'Erro ao propor a alteração da grelha.'),
+        }, 6000)
+      },
+    })
+  }
+
+  const handleSubmit = (event) => {
+    event.preventDefault()
+    clearFeedback()
+    if (schoolYearPublished) {
+      handlePreview()
+      return
+    }
+    regenerateMutation.reset()
+    const validationError = validateForm()
+    if (validationError) {
+      showFeedback({ color: 'danger', message: validationError }, 6000)
+      return
+    }
+    regenerateMutation.mutate(toGridConfigurationPayload({ formData, gridSettings }), {
       onSuccess: (payload) => {
         showFeedback({ color: 'success', message: payload.message })
       },
@@ -578,42 +836,65 @@ const GridEditor = ({ orgId, initialFormData, initialGridSettings }) => {
   }
 
   const toggleDay = (idx) => {
-    setFormData((prev) => ({ ...prev, days: { ...prev.days, [idx]: !prev.days[idx] } }))
+    applyFormData((prev) => ({ ...prev, days: { ...prev.days, [idx]: !prev.days[idx] } }))
   }
 
-  const daysLabel = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo']
+  const isSubmitting = schoolYearPublished ? previewMutation.isPending : regenerateMutation.isPending
+  let submitLabel
+  if (schoolYearPublished) {
+    submitLabel = preview ? 'Repetir pré-visualização' : 'Pré-visualizar alteração'
+  } else {
+    submitLabel = regenerateMutation.isPending ? 'A regenerar' : 'Guardar e regenerar grelha'
+  }
 
   return (
     <div>
       {feedback && <CAlert color={feedback.color}>{feedback.message}</CAlert>}
+      <PendingProposalBanner proposal={pendingProposal} />
+      {proposal && (
+        <CAlert color="success">
+          <strong>Proposta de grelha criada.</strong>
+          {' '}Fica efetiva a {formatDate(proposal.effective_date)}. Estado da geração:{' '}
+          {GENERATION_STATUS_LABELS[proposal.status] ?? proposal.status}.
+          {' '}<a href="/schedules" className="alert-link">Ir para Horários</a> para acompanhar a proposta.
+        </CAlert>
+      )}
 
       <p className="text-muted mb-4">
-        Defina aqui o funcionamento geral da escola. Ao guardar, o sistema irá <strong>regenerar todos os blocos horários</strong> base.
+        {schoolYearPublished
+          ? 'O ano letivo está publicado. As alterações à grelha são analisadas e propostas antes de serem aplicadas.'
+          : <>Defina aqui o funcionamento geral da escola. Ao guardar, o sistema irá <strong>regenerar todos os blocos horários</strong> base.</>}
       </p>
 
       <CForm onSubmit={handleSubmit}>
         <CRow className="mb-4 align-items-start">
           <CCol md={3}>
-            <TimeField id="gridStart" label="Abertura da Escola" value={formData.start_time} onChange={(value) => setFormData({ ...formData, start_time: value })} />
+            <TimeField id="gridStart" label="Abertura da Escola" value={formData.start_time} onChange={(value) => applyFormData((prev) => ({ ...prev, start_time: value }))} />
           </CCol>
           <CCol md={3}>
-            <TimeField id="gridEnd" label="Fecho da Escola" value={formData.end_time} onChange={(value) => setFormData({ ...formData, end_time: value })} />
+            <TimeField id="gridEnd" label="Fecho da Escola" value={formData.end_time} onChange={(value) => applyFormData((prev) => ({ ...prev, end_time: value }))} />
           </CCol>
           <CCol md={3}>
             <CFormLabel htmlFor="slotDuration">Duração da Aula</CFormLabel>
             <CInputGroup>
-              <CFormInput id="slotDuration" type="number" aria-describedby="slotDuration-unit" value={formData.slot_duration_minutes} onChange={(e) => setFormData({ ...formData, slot_duration_minutes: e.target.value })} />
+              <CFormInput id="slotDuration" type="number" aria-describedby="slotDuration-unit" value={formData.slot_duration_minutes} onChange={(e) => applyFormData((prev) => ({ ...prev, slot_duration_minutes: e.target.value }))} />
               <CInputGroupText id="slotDuration-unit">Minutos</CInputGroupText>
             </CInputGroup>
           </CCol>
           <CCol md={3}>
             <CFormLabel htmlFor="breakDuration">Intervalo</CFormLabel>
             <CInputGroup>
-              <CFormInput id="breakDuration" type="number" aria-describedby="breakDuration-unit" value={formData.break_duration_minutes} onChange={(e) => setFormData({ ...formData, break_duration_minutes: e.target.value })} />
+              <CFormInput id="breakDuration" type="number" aria-describedby="breakDuration-unit" value={formData.break_duration_minutes} onChange={(e) => applyFormData((prev) => ({ ...prev, break_duration_minutes: e.target.value }))} />
               <CInputGroupText id="breakDuration-unit">Minutos</CInputGroupText>
             </CInputGroup>
           </CCol>
         </CRow>
+
+        <BreakTimelineEditor
+          values={timeslotValues}
+          showUsualBreak={false}
+          onChange={(field, value) => applyFormData((prev) => ({ ...prev, [field]: value }))}
+        />
 
         <CRow className="mb-4 align-items-start">
           <CCol md={4}>
@@ -636,7 +917,7 @@ const GridEditor = ({ orgId, initialFormData, initialGridSettings }) => {
             <fieldset className="mb-0">
               <legend className="form-label fw-bold d-block mb-2">Dias de Funcionamento</legend>
               <div className="d-flex gap-2 flex-wrap">
-                {daysLabel.map((label, idx) => (
+                {DAY_LABELS.map((label, idx) => (
                   <CFormCheck key={label} button={{ color: formData.days[idx] ? 'primary' : 'secondary', variant: formData.days[idx] ? '' : 'outline' }} type="checkbox" id={`day-${idx}`} label={label} checked={formData.days[idx]} onChange={() => toggleDay(idx)} />
                 ))}
               </div>
@@ -647,14 +928,26 @@ const GridEditor = ({ orgId, initialFormData, initialGridSettings }) => {
               color="primary"
               size="md"
               type="submit"
-              disabled={mutation.isPending || !orgId}
+              disabled={isSubmitting || !orgId}
             >
               <CIcon icon={cilSave} className="me-2" />
-              {mutation.isPending ? 'A regenerar' : 'Guardar e regenerar grelha'}
+              {submitLabel}
             </CButton>
           </CCol>
         </CRow>
       </CForm>
+
+      {preview && (
+        <GridChangeImpactPanel
+          preview={preview}
+          decisions={decisions}
+          onDecision={(timeslotId, action) => {
+            setDecisions((current) => ({ ...current, [timeslotId]: action }))
+          }}
+          onPropose={handlePropose}
+          isProposing={proposeMutation.isPending}
+        />
+      )}
     </div>
   )
 }

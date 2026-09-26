@@ -9,7 +9,10 @@ vi.mock('../components/WeekGrid', () => ({
 }))
 vi.mock('../components/LessonLogModal', () => ({ default: () => null }))
 vi.mock('../features/members/data', () => ({ useCurrentMember: () => ({ data: { teacher_id: 7 } }) }))
-vi.mock('../features/catalog/data', () => ({ useTimeslots: () => ({ data: [] }) }))
+vi.mock('../features/catalog/data', () => ({
+  useTimeslots: () => ({ data: [] }),
+  useWeekGridVersions: () => ({ data: null }),
+}))
 vi.mock('../features/operations/data', () => ({
   useMyTimesheet: () => ({ data: null }),
   useSubmitMyTimesheet: () => ({ isPending: false, mutateAsync: vi.fn() }),

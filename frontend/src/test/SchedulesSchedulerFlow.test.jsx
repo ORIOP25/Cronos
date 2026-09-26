@@ -44,6 +44,7 @@ vi.mock('../features/catalog/data', () => ({
   useClasses: () => ({ data: [] }),
   useClassDetails: () => ({ data: null }),
   useTimeslots: () => ({ data: [] }),
+  useWeekGridVersions: () => ({ data: null }),
 }))
 
 vi.mock('../components/schedules/DraftPanel', () => ({

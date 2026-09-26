@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models
 from app.core.exceptions import new_error_reference
+from app.services import grid_version_service
 from app.services.scheduler_generation_service import GenerationSelection
 from app.services.scheduler_observability import emit_scheduler_job_event
 from app.services.scheduler_state_service import SchedulerStateService
@@ -111,9 +112,11 @@ class SchedulerJobService:
                 selection.debt_basis.value if selection.debt_basis is not None else None
             ),
             idempotency_key=normalized_key,
+            grid_version_id=selection.grid_version_id,
             input_snapshot_json={
                 "request": {
                     "replace_pending_draft_id": selection.pending_draft_id,
+                    "grid_version_id": selection.grid_version_id,
                 }
             },
         )
@@ -185,8 +188,17 @@ class SchedulerJobService:
             job.failure_code = "DISPATCH_STALLED"
             job.failure_message = message[:2000]
             job.failure_reference = new_error_reference()
+            await self._reject_grid_change_proposal(job)
             await self._db.flush()
         return job
+
+    async def _reject_grid_change_proposal(self, job: models.ScheduleGenerationJob) -> None:
+        grid_version_id = getattr(job, "grid_version_id", None)
+        if grid_version_id is None:
+            return
+        await grid_version_service.reject_pending_grid_version(
+            self._db, job.organization_id, grid_version_id
+        )
 
     async def recover_stale_jobs(
         self,
@@ -239,6 +251,7 @@ class SchedulerJobService:
             job.started_at = started_at
             job.finished_at = recovered_at
             job.duration_ms = max(0, int((recovered_at - started_at).total_seconds() * 1000))
+            await self._reject_grid_change_proposal(job)
             emit_scheduler_job_event(event_name, job)
         await self._db.flush()
         return totals
@@ -270,6 +283,7 @@ class SchedulerJobService:
             job.strategy != selection.strategy
             or job.trigger_type != selection.trigger_type
             or request_metadata.get("replace_pending_draft_id") != selection.pending_draft_id
+            or job.grid_version_id != selection.grid_version_id
         ):
             raise SchedulerJobIdempotencyConflictError(
                 "The existing job key belongs to a different generation request."

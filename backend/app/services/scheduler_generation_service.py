@@ -35,6 +35,10 @@ class PendingDraftReplacementRequiredError(GenerationSelectionError):
     code = "pending_draft_replacement_required"
 
 
+class GridChangeUnavailableError(GenerationSelectionError):
+    code = "grid_change_requires_published_schedule"
+
+
 @dataclass(frozen=True)
 class GenerationSelection:
     organization_id: int
@@ -46,6 +50,7 @@ class GenerationSelection:
     debt_basis: DebtBasisFingerprint | None
     pending_draft_id: int | None
     replaces_pending_draft: bool
+    grid_version_id: int | None = None
 
     @property
     def reason(self) -> str:
@@ -61,6 +66,9 @@ class GenerationSelection:
             ),
             models.ScheduleGenerationTrigger.MIXED: (
                 "Unresolved explicit debt and scheduler-relevant changes both require repair."
+            ),
+            models.ScheduleGenerationTrigger.GRID_CHANGE: (
+                "An administrator proposed a new weekly grid for this school year."
             ),
         }[self.trigger_type]
 
@@ -147,4 +155,40 @@ class SchedulerGenerationService:
             debt_basis=debt_basis,
             pending_draft_id=(pending_draft.id if pending_draft is not None else None),
             replaces_pending_draft=pending_draft is not None,
+        )
+
+    async def select_grid_change_strategy(
+        self,
+        organization_id: int,
+    ) -> GenerationSelection:
+        """Selection for an administrator-proposed grid change (W04)."""
+        school_year = await self._state.get_active_school_year(organization_id)
+        if school_year is None:
+            raise GenerationConfigurationError("No active scheduler school year is configured.")
+        state = await self._state.get_state(organization_id, school_year.id)
+        if state is None:
+            raise GenerationConfigurationError(
+                "The active school year has no scheduler lifecycle state."
+            )
+        if state.school_year_publication_state != models.SchoolYearPublicationState.PUBLISHED:
+            raise GridChangeUnavailableError("A grid change requires a published schedule.")
+        pending_draft = await self._state.get_pending_draft(
+            organization_id,
+            school_year.id,
+        )
+        if pending_draft is not None:
+            raise PendingDraftReplacementRequiredError(
+                "A pending draft exists. Review or reject it before proposing a grid change.",
+                pending_draft_id=pending_draft.id,
+            )
+        return GenerationSelection(
+            organization_id=organization_id,
+            school_year_id=school_year.id,
+            strategy=models.ScheduleGenerationStrategy.GRID_CHANGE,
+            trigger_type=models.ScheduleGenerationTrigger.GRID_CHANGE,
+            scheduler_state_version=state.scheduler_state_version,
+            approved_scheduler_state_version=state.approved_scheduler_state_version,
+            debt_basis=None,
+            pending_draft_id=None,
+            replaces_pending_draft=False,
         )

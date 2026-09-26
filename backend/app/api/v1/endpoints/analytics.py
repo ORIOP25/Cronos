@@ -6,6 +6,7 @@ from sqlalchemy import func, select
 
 from app import models
 from app.api import deps
+from app.services import grid_version_service
 
 router = APIRouter()
 
@@ -34,11 +35,13 @@ async def get_availability_heatmap(
     if total_teachers == 0:
         return []
 
-    # 2. Todos os Timeslots
-    result_slots = await db.execute(
-        select(models.Timeslot).where(models.Timeslot.organization_id == organization_id)
+    # 2. Blocos da versão visível da grelha
+    resolved = await grid_version_service.resolve_grid(
+        db,
+        organization_id,
+        await grid_version_service.school_today(db, organization_id),
     )
-    timeslots = result_slots.scalars().all()
+    timeslots = sorted(resolved.blocks, key=lambda slot: (slot.day_of_week, slot.start_time))
 
     # 3. Contar Apenas os IMPOSSÃVEIS (Score == -1)
     # Agora o 'Evitar' (0) nÃ£o entra aqui, logo Ã© contado como 'DisponÃ­vel' em baixo.

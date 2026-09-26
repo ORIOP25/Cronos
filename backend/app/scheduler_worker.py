@@ -18,7 +18,7 @@ from app.services.scheduler_job_runtime import (
 async def _generation_engine(
     context: GenerationExecutionContext,
 ) -> ValidatedGenerationResult | NoValidGenerationOutput:
-    if context.strategy.value == "ADAPTIVE_REPAIR":
+    if context.strategy.value in {"ADAPTIVE_REPAIR", "GRID_CHANGE"}:
         return await run_adaptive_repair(context)
     return await run_complete_generation(context)
 

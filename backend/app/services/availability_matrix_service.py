@@ -17,8 +17,25 @@ from app.models import (
     Teacher,
     Timeslot,
 )
+from app.services import grid_version_service
 
 logger = structlog.get_logger(__name__)
+
+
+async def _effective_timeslot_ids(
+    db: AsyncSession,
+    organization_id: int,
+    timeslot_ids: list[int] | set[int] | None,
+) -> list[int]:
+    """Explicit ids win; otherwise use the blocks of the visible grid version."""
+    if timeslot_ids is not None:
+        return list(timeslot_ids)
+    resolved = await grid_version_service.resolve_grid(
+        db,
+        organization_id,
+        await grid_version_service.school_today(db, organization_id),
+    )
+    return [slot.id for slot in resolved.blocks]
 
 
 @dataclass(frozen=True)
@@ -74,11 +91,14 @@ class AvailabilityMatrixInspector:
         t_result = await db.execute(t_stmt)
         valid_teacher_ids = set(t_result.scalars().all())
 
-        # 2. Fetch active timeslots of the org
-        ts_stmt = select(Timeslot.id).where(Timeslot.organization_id == organization_id)
-        if timeslot_ids is not None:
-            ts_stmt = ts_stmt.where(Timeslot.id.in_(timeslot_ids))
-        ts_result = await db.execute(ts_stmt)
+        # 2. Fetch active timeslots of the org (visible version when unspecified)
+        effective_ids = await _effective_timeslot_ids(db, organization_id, timeslot_ids)
+        ts_result = await db.execute(
+            select(Timeslot.id).where(
+                Timeslot.organization_id == organization_id,
+                Timeslot.id.in_(effective_ids),
+            )
+        )
         valid_timeslot_ids = set(ts_result.scalars().all())
 
         if not valid_teacher_ids or not valid_timeslot_ids:
@@ -141,9 +161,10 @@ class AvailabilityMatrixInspector:
         if teacher_ids is not None:
             teacher_query = teacher_query.where(Teacher.id.in_(teacher_ids))
 
-        timeslot_query = select(Timeslot.id).where(Timeslot.organization_id == organization_id)
-        if timeslot_ids is not None:
-            timeslot_query = timeslot_query.where(Timeslot.id.in_(timeslot_ids))
+        timeslot_query = select(Timeslot.id).where(
+            Timeslot.organization_id == organization_id,
+            Timeslot.id.in_(await _effective_timeslot_ids(db, organization_id, timeslot_ids)),
+        )
 
         teachers = teacher_query.subquery("teachers")
         timeslots = timeslot_query.subquery("timeslots")
@@ -192,9 +213,10 @@ class AvailabilityMatrixInspector:
         if teacher_ids is not None:
             teacher_query = teacher_query.where(Teacher.id.in_(teacher_ids))
 
-        timeslot_query = select(Timeslot.id).where(Timeslot.organization_id == organization_id)
-        if timeslot_ids is not None:
-            timeslot_query = timeslot_query.where(Timeslot.id.in_(timeslot_ids))
+        timeslot_query = select(Timeslot.id).where(
+            Timeslot.organization_id == organization_id,
+            Timeslot.id.in_(await _effective_timeslot_ids(db, organization_id, timeslot_ids)),
+        )
 
         teachers = teacher_query.subquery("teachers")
         timeslots = timeslot_query.subquery("timeslots")
@@ -252,9 +274,10 @@ class AvailabilityMatrixRepairService:
             teacher_query = teacher_query.where(Teacher.id.in_(teacher_ids))
         valid_teachers = teacher_query.subquery("valid_teachers")
 
-        timeslot_query = select(Timeslot.id).where(Timeslot.organization_id == organization_id)
-        if timeslot_ids is not None:
-            timeslot_query = timeslot_query.where(Timeslot.id.in_(timeslot_ids))
+        timeslot_query = select(Timeslot.id).where(
+            Timeslot.organization_id == organization_id,
+            Timeslot.id.in_(await _effective_timeslot_ids(db, organization_id, timeslot_ids)),
+        )
         valid_timeslots = timeslot_query.subquery("valid_timeslots")
 
         candidate_rows = select(

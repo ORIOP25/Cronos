@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models
+from app.services import grid_version_service
 from app.services.scheduler_recovery_service import SchedulerRecoveryService
 
 
@@ -91,6 +92,10 @@ class SchedulerLifecycleService:
         draft.invalidated_reason = None
         draft.decided_by_membership_id = decided_by_membership_id
         draft.decided_at = instant
+        if draft.grid_version_id is not None:
+            await grid_version_service.reject_pending_grid_version(
+                self._db, organization_id, draft.grid_version_id
+            )
         await self._db.flush()
         return DraftRejectionResult(draft_id=draft.id, draft_state="REJECTED")
 

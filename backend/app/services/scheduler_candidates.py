@@ -83,6 +83,9 @@ class CandidateUniverseBuilder:
             if current not in blocked_dates:
                 for item in ledger.items:
                     for slot in slots.get(current.weekday(), ()):
+                        if not self._slot_valid_on(slot, current):
+                            self._removed(removed, "slot_outside_validity")
+                            continue
                         score = availability.get((item.teacher_id, slot["id"]), 1)
                         if score == -1:
                             self._removed(removed, "teacher_impossible")
@@ -151,8 +154,8 @@ class CandidateUniverseBuilder:
     def _validated_slots(
         self,
         rows: list[dict[str, Any]],
-    ) -> tuple[dict[int, tuple[dict[str, int], ...]], list[str]]:
-        by_day: dict[int, list[dict[str, int]]] = {}
+    ) -> tuple[dict[int, tuple[dict[str, Any], ...]], list[str]]:
+        by_day: dict[int, list[dict[str, Any]]] = {}
         blockers: list[str] = []
         seen_ids: set[int] = set()
         for row in rows:
@@ -170,16 +173,32 @@ class CandidateUniverseBuilder:
                     "start_minute": start,
                     "end_minute": end,
                     "duration_minutes": end - start,
+                    "valid_from": row.get("valid_from"),
+                    "valid_to": row.get("valid_to"),
                 }
             )
-        validated: dict[int, tuple[dict[str, int], ...]] = {}
+        validated: dict[int, tuple[dict[str, Any], ...]] = {}
         for weekday, slots in by_day.items():
             ordered = sorted(slots, key=lambda row: (row["start_minute"], row["id"]))
-            for previous, current in zip(ordered, ordered[1:], strict=False):
-                if current["start_minute"] < previous["end_minute"]:
-                    blockers.append(f"Timetable slots overlap on weekday {weekday}.")
+            by_validity: dict[tuple[Any, Any], list[dict[str, Any]]] = {}
+            for slot in ordered:
+                by_validity.setdefault((slot["valid_from"], slot["valid_to"]), []).append(slot)
+            for validity_slots in by_validity.values():
+                for previous, current in zip(validity_slots, validity_slots[1:], strict=False):
+                    if current["start_minute"] < previous["end_minute"]:
+                        blockers.append(f"Timetable slots overlap on weekday {weekday}.")
             validated[weekday] = tuple(ordered)
         return validated, blockers
+
+    @staticmethod
+    def _slot_valid_on(slot: dict[str, Any], candidate_date: date) -> bool:
+        valid_from = slot.get("valid_from")
+        valid_to = slot.get("valid_to")
+        if valid_from is not None and candidate_date < date.fromisoformat(str(valid_from)):
+            return False
+        if valid_to is not None and candidate_date > date.fromisoformat(str(valid_to)):
+            return False
+        return True
 
     @staticmethod
     def _blocked_dates(rows: list[dict[str, Any]]) -> set[date]:

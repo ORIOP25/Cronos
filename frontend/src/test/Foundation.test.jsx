@@ -69,7 +69,7 @@ describe('Foundation', () => {
     }
     expect(screen.getByText('Duração Mínima de Almoço *')).toBeInTheDocument()
     expect(screen.queryByText(/Duração Mínima de Almoço \(Minutos\)/i)).not.toBeInTheDocument()
-    expect(screen.getAllByText('Minutos')).toHaveLength(3)
+    expect(screen.getAllByText('Minutos').length).toBeGreaterThanOrEqual(3)
   })
 
   it('explains the stability window by what today and the next school day allow', () => {

@@ -219,6 +219,24 @@ def test_shared_hard_validator_accepts_valid_target_and_time_values():
                 recovery_source_occurrence_revision=1,
             ),
         ),
+        (
+            lambda row: row["timetable_grid"][0].update(
+                valid_from="2026-06-02", valid_to="2026-06-30"
+            ),
+            lambda block: block,
+        ),
+        (
+            lambda row: row["timetable_grid"][0].update(
+                valid_from=date(2026, 6, 2), valid_to=date(2026, 6, 30)
+            ),
+            lambda block: block,
+        ),
+        (
+            lambda row: row["timetable_grid"][0].update(
+                valid_from="2026-05-01", valid_to="2026-05-31"
+            ),
+            lambda block: block,
+        ),
     ],
 )
 def test_shared_hard_validator_reports_each_hard_invalid_shape(
@@ -232,6 +250,18 @@ def test_shared_hard_validator_reports_each_hard_invalid_shape(
         (mutate_block(_valid_hard_block()),),
     )
     assert violations[0].code is TargetViolationCode.HARD_CONSTRAINT_VIOLATION
+
+
+def test_shared_hard_validator_accepts_a_block_inside_its_version_window():
+    snapshot = _hard_snapshot()
+    snapshot["timetable_grid"][0].update(valid_from="2026-06-01", valid_to="2026-06-30")
+
+    assert TargetHardConstraintValidator.validate(snapshot, (_valid_hard_block(),)) == ()
+
+    open_ended = _hard_snapshot()
+    open_ended["timetable_grid"][0].update(valid_from="2026-06-01", valid_to=None)
+
+    assert TargetHardConstraintValidator.validate(open_ended, (_valid_hard_block(),)) == ()
 
 
 def test_shared_hard_validator_reports_duplicate_conflicts_custom_and_configuration():

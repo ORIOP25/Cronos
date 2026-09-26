@@ -11,7 +11,7 @@ import {
   useTimesheets, useUpdateTimesheetStatus,
 } from '../features/operations/data'
 import { useWeekSchedule } from '../features/scheduling/data'
-import { useTimeslots } from '../features/catalog/data'
+import { useTimeslots, useWeekGridVersions } from '../features/catalog/data'
 import WeekGrid from '../components/WeekGrid'
 import LessonLogModal from '../components/LessonLogModal'
 import TeacherCard from '../components/timesheets/TeacherCard'
@@ -48,6 +48,7 @@ const Timesheets = ({ initialWeekStart, readOnly = false, allowedActions, naviga
   const selectedTeacherId = selectedTeacher?.teacher_id ?? null
 
   const { data: timeslots = [] } = useTimeslots()
+  const { data: weekGridVersions } = useWeekGridVersions(weekFilter)
 
   const {
     data: weekSlots = [],
@@ -282,6 +283,8 @@ const Timesheets = ({ initialWeekStart, readOnly = false, allowedActions, naviga
                     isLoading={loadingWeek}
                     baseTimeslots={timeslots}
                     weekStart={weekFilter}
+                    dayGrids={weekGridVersions?.days ?? null}
+                    gridTransitionDate={weekGridVersions?.transition_date ?? ''}
                     isOperationalEnabled
                     onOpenOperationalAction={handleOpenSlot}
                   />

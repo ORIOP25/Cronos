@@ -6,6 +6,8 @@ import { invalidatePreparationQueries } from '../readiness/data'
 
 const RESOURCES = {
   calendar: 'calendar-events',
+  gridChangesPending: 'grid-change-pending',
+  gridConfiguration: 'grid-configuration',
   gridSettings: 'org-grid-settings',
   heatmap: 'heatmap',
   settings: 'org-settings',
@@ -13,6 +15,8 @@ const RESOURCES = {
 
 const GRID_DEPENDENCIES = [
   RESOURCES.gridSettings,
+  RESOURCES.gridConfiguration,
+  RESOURCES.gridChangesPending,
   'timeslots',
   'my-availability',
   RESOURCES.heatmap,
@@ -107,6 +111,42 @@ export function useGridSettings() {
         if (error.response?.status === 404) return null
         throw error
       }
+    },
+  })
+}
+
+export function useGridConfiguration() {
+  const orgId = useOrganizationId()
+  return useQuery({
+    queryKey: orgQueryKey(RESOURCES.gridConfiguration, orgId),
+    enabled: Boolean(orgId),
+    queryFn: () => apiClient.get('/school/grid-configuration/'),
+  })
+}
+
+export function useGridChangePending() {
+  const orgId = useOrganizationId()
+  return useQuery({
+    queryKey: orgQueryKey(RESOURCES.gridChangesPending, orgId),
+    enabled: Boolean(orgId),
+    queryFn: () => apiClient.get('/school/grid-changes/pending'),
+  })
+}
+
+export function useGridChangePreview() {
+  return useMutation({
+    mutationFn: (payload) => apiClient.post('/school/grid-changes/preview', payload),
+  })
+}
+
+export function useGridChangePropose() {
+  const orgId = useOrganizationId()
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (payload) => apiClient.post('/school/grid-changes', payload),
+    onSuccess: () => {
+      void invalidateOrgQueries(queryClient, orgId, GRID_DEPENDENCIES)
+      void invalidatePreparationQueries(queryClient, orgId)
     },
   })
 }

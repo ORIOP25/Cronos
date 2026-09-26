@@ -149,7 +149,10 @@ class AdaptiveRepairEngine:
         context: GenerationExecutionContext,
     ) -> ValidatedGenerationResult | NoValidGenerationOutput:
         await context.ensure_can_continue()
-        if context.strategy != models.ScheduleGenerationStrategy.ADAPTIVE_REPAIR:
+        if context.strategy not in (
+            models.ScheduleGenerationStrategy.ADAPTIVE_REPAIR,
+            models.ScheduleGenerationStrategy.GRID_CHANGE,
+        ):
             return NoValidGenerationOutput(
                 blockers=("Adaptive repair engine received a complete-generation job.",)
             )
@@ -778,7 +781,7 @@ class AdaptiveRepairEngine:
                     return [], "Adaptive repair candidate construction exhausted its time budget."
                 if self._date_allowed(task, current, scope, blocked_dates):
                     for slot in slots.get(current.weekday(), ()):
-                        if not self._slot_allowed(task, slot, scope):
+                        if not self._slot_allowed(task, slot, scope, current):
                             continue
                         score = availability.get((task.teacher_id, slot["id"]), 1)
                         if score == -1:
@@ -889,9 +892,16 @@ class AdaptiveRepairEngine:
     @staticmethod
     def _slot_allowed(
         task: _RepairTask,
-        slot: dict[str, int],
+        slot: dict[str, Any],
         scope: _SolveScope,
+        candidate_date: date,
     ) -> bool:
+        valid_from = slot.get("valid_from")
+        valid_to = slot.get("valid_to")
+        if valid_from is not None and candidate_date < date.fromisoformat(str(valid_from)):
+            return False
+        if valid_to is not None and candidate_date > date.fromisoformat(str(valid_to)):
+            return False
         if task.duration_minutes > slot["end"] - slot["start"]:
             return False
         return not (
@@ -1324,8 +1334,8 @@ class AdaptiveRepairEngine:
     @staticmethod
     def _slots(
         snapshot: dict[str, Any],
-    ) -> tuple[dict[int, tuple[dict[str, int], ...]], str | None]:
-        slots: dict[int, list[dict[str, int]]] = defaultdict(list)
+    ) -> tuple[dict[int, tuple[dict[str, Any], ...]], str | None]:
+        slots: dict[int, list[dict[str, Any]]] = defaultdict(list)
         seen: set[int] = set()
         for row in snapshot.get("timetable_grid", []):
             start = AdaptiveRepairEngine._minute(row["start_time"])
@@ -1333,16 +1343,28 @@ class AdaptiveRepairEngine:
             if row["id"] in seen or row["day_of_week"] not in range(7) or end <= start:
                 return {}, f"Timeslot {row['id']} is invalid or duplicated."
             seen.add(row["id"])
-            slots[row["day_of_week"]].append({"id": row["id"], "start": start, "end": end})
+            slots[row["day_of_week"]].append(
+                {
+                    "id": row["id"],
+                    "start": start,
+                    "end": end,
+                    "valid_from": row.get("valid_from"),
+                    "valid_to": row.get("valid_to"),
+                }
+            )
         if not slots:
             return {}, "No valid timetable slots are configured."
         for weekday, rows in slots.items():
             rows.sort(key=lambda row: (row["start"], row["id"]))
-            if any(
-                current["start"] < previous["end"]
-                for previous, current in zip(rows, rows[1:], strict=False)
-            ):
-                return {}, f"Timetable slots overlap on weekday {weekday}."
+            by_validity: dict[tuple[Any, Any], list[dict[str, Any]]] = {}
+            for row in rows:
+                by_validity.setdefault((row["valid_from"], row["valid_to"]), []).append(row)
+            for validity_rows in by_validity.values():
+                if any(
+                    current["start"] < previous["end"]
+                    for previous, current in zip(validity_rows, validity_rows[1:], strict=False)
+                ):
+                    return {}, f"Timetable slots overlap on weekday {weekday}."
         return {key: tuple(value) for key, value in slots.items()}, None
 
     @staticmethod

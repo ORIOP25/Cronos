@@ -1,4 +1,11 @@
 import { normalizeTimeOfDay, timeOfDayToMinutes } from '../../utils/timeOfDay'
+import {
+  buildDailyTimeline,
+  normalizeBreakOverrides,
+  validateBreakOverrides,
+} from '../timetable/breakTimeline'
+
+export { buildDailyTimeline, normalizeBreakOverrides }
 
 export const FOUNDATION_STEP_COUNT = 9
 
@@ -28,6 +35,7 @@ export const initialFoundationDraftValues = {
   closing_time: '17:30',
   slot_duration_minutes: 50,
   break_duration_minutes: 10,
+  break_overrides: [],
   lunch_window_start: '12:30',
   lunch_window_end: '14:00',
   lunch_min_duration_minutes: 60,
@@ -46,12 +54,6 @@ export const initialFoundationState = {
   completedThisSession: false,
 }
 
-export function minutesToTime(totalMinutes) {
-  const hours = Math.floor(totalMinutes / 60)
-  const mins = totalMinutes % 60
-  return `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}`
-}
-
 export function serializeFoundationDraftValues(values) {
   return Object.fromEntries(Object.entries(values).map(([field, value]) => {
     if (field === 'repair_stability_window_days') {
@@ -65,41 +67,7 @@ export function serializeFoundationDraftValues(values) {
 }
 
 export function buildDailyTimeslots(values) {
-  const openMin = timeOfDayToMinutes(values.opening_time)
-  const closeMin = timeOfDayToMinutes(values.closing_time)
-  const slotDur = values.slot_duration_minutes == null ? 50 : Number(values.slot_duration_minutes)
-  const breakDur = values.break_duration_minutes == null ? 10 : Number(values.break_duration_minutes)
-
-  if (
-    Number.isNaN(openMin) ||
-    Number.isNaN(closeMin) ||
-    closeMin <= openMin ||
-    !Number.isInteger(slotDur) ||
-    !Number.isInteger(breakDur) ||
-    slotDur <= 0 ||
-    breakDur < 0
-  ) {
-    return []
-  }
-
-  const slots = []
-  let cur = openMin
-  let slotIndex = 1
-
-  while (cur + slotDur <= closeMin) {
-    const slotEnd = cur + slotDur
-
-    slots.push({
-      id: `${minutesToTime(cur)}-${minutesToTime(slotEnd)}`,
-      index: slotIndex++,
-      start: minutesToTime(cur),
-      end: minutesToTime(slotEnd),
-    })
-
-    cur = slotEnd + breakDur
-  }
-
-  return slots
+  return buildDailyTimeline(values)?.slots ?? []
 }
 
 export function validateFoundationStep(step, values) {
@@ -158,6 +126,11 @@ export function validateFoundationStep(step, values) {
     const breakDur = Number(values.break_duration_minutes)
     if (!Number.isInteger(breakDur) || breakDur < 0 || breakDur > 60) {
       errors.break_duration_minutes = 'O intervalo deve ser entre 0 e 60 minutos.'
+    }
+
+    const overrideError = validateBreakOverrides(values)
+    if (overrideError) {
+      errors.break_overrides = overrideError
     }
   }
 

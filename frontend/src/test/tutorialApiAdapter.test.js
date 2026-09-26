@@ -42,6 +42,22 @@ describe('tutorial v3 local API adapter', () => {
     ])
   })
 
+  it('serves per-date weekly blocks through the range endpoint', async () => {
+    const runtime = makeRuntime('schedule')
+    const response = await runtime.request('/timeslots/range', {
+      params: { from_date: '2026-04-20', to_date: '2026-04-26' },
+    })
+
+    expect(response.status).toBe(200)
+    expect(response.data.days).toHaveLength(7)
+    expect(response.data.transition_date).toBeNull()
+    const monday = response.data.days[0]
+    expect(monday.date).toBe('2026-04-20')
+    expect(monday.blocks.length).toBeGreaterThan(0)
+    expect(monday.blocks[0]).toMatchObject({ day_of_week: 0 })
+    expect(monday.blocks[0]).toHaveProperty('start_time')
+  })
+
   it('applies a declared catalog mutation in-memory before returning its response', async () => {
     const runtime = makeRuntime('rooms')
     const response = await runtime.request('/rooms/1', {
