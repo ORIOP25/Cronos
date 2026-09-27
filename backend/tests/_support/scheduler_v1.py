@@ -103,6 +103,15 @@ async def seed_v1_assignment(
             required_minutes=module_minutes,
         )
     )
+    db_session.add(
+        models.ClassSubjectLink(
+            organization_id=organization.id,
+            class_id=class_.id,
+            subject_id=subject.id,
+            grade_level=class_.grade_level,
+            teacher_id=teacher.id,
+        )
+    )
     await db_session.flush()
     return V1Seed(
         organization, membership, year, assignment, module, state, room, course, subject, class_

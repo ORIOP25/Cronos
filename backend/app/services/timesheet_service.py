@@ -1,6 +1,7 @@
 from datetime import UTC, date, datetime, timedelta
 
 from sqlalchemy import and_, or_
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session, joinedload
 
 from app import models
@@ -125,28 +126,30 @@ def get_or_create_timesheet_sync(
     db: Session, organization_id: int, teacher_id: int, week_start_date: date
 ) -> models.TeacherWeeklyTimesheet:
     """Obtém ou cria a timesheet de uma determinada semana para o professor."""
-    timesheet = (
-        db.query(models.TeacherWeeklyTimesheet)
-        .filter(
-            models.TeacherWeeklyTimesheet.organization_id == organization_id,
-            models.TeacherWeeklyTimesheet.teacher_id == teacher_id,
-            models.TeacherWeeklyTimesheet.week_start_date == week_start_date,
-        )
-        .first()
+    filters = (
+        models.TeacherWeeklyTimesheet.organization_id == organization_id,
+        models.TeacherWeeklyTimesheet.teacher_id == teacher_id,
+        models.TeacherWeeklyTimesheet.week_start_date == week_start_date,
     )
+    timesheet = db.query(models.TeacherWeeklyTimesheet).filter(*filters).first()
+    if timesheet is not None:
+        return timesheet
 
-    if not timesheet:
-        timesheet = models.TeacherWeeklyTimesheet(
+    # Concurrent first reads race on this week; the unique constraint keeps one
+    # row and the loser reads it back instead of failing the request.
+    db.execute(
+        pg_insert(models.TeacherWeeklyTimesheet)
+        .values(
             organization_id=organization_id,
             teacher_id=teacher_id,
             week_start_date=week_start_date,
             status=models.TimesheetStatus.OPEN,
         )
-        db.add(timesheet)
-        db.flush()
-        db.refresh(timesheet)
-
-    return timesheet
+        .on_conflict_do_nothing(
+            index_elements=["organization_id", "teacher_id", "week_start_date"],
+        )
+    )
+    return db.query(models.TeacherWeeklyTimesheet).filter(*filters).one()
 
 
 def submit_timesheet_sync(

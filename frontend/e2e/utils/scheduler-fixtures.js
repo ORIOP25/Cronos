@@ -1,7 +1,4 @@
 import { expect } from '@playwright/test'
-import { execFile } from 'node:child_process'
-import { fileURLToPath } from 'node:url'
-import { promisify } from 'node:util'
 import {
   expectRouteReady,
   goTo,
@@ -10,8 +7,6 @@ import {
 const API_PREFIX = '/api/v1'
 const REQUEST_TIMEOUT_MS = 30_000
 const JOB_TIMEOUT_MS = 120_000
-const execFileAsync = promisify(execFile)
-const repoRoot = fileURLToPath(new URL('../../../', import.meta.url))
 const FIXTURE = {
   subjectName: 'E2E Dashboard Subject',
   moduleName: 'E2E Dashboard Module',
@@ -73,19 +68,45 @@ export async function apiRequest(page, method, path, body, timeoutMs = REQUEST_T
   )
 }
 
-export async function seedSchedulerV1Records(page, { classId, subjectId, preferredEndDate }) {
-  const composeFile = process.env.E2E_COMPOSE_FILE
-  const composeProject = process.env.COMPOSE_PROJECT_NAME
-  if (!composeFile || !composeProject) throw new Error('E2E Docker stack is required.')
-  const member = await apiRequest(page, 'GET', '/members/me')
-  await execFileAsync(process.platform === 'win32' ? 'docker.exe' : 'docker', [
-    'compose', '-f', composeFile, '-p', composeProject, 'exec', '-T', 'backend',
-    'python', '-m', 'scripts.seed_scheduler_e2e',
-    '--organization-id', String(member.organization_id),
-    '--class-id', String(classId),
-    '--subject-id', String(subjectId),
-    '--preferred-end-date', preferredEndDate,
-  ], { cwd: repoRoot, env: process.env, timeout: REQUEST_TIMEOUT_MS })
+export async function seedMinimalSchedulerInputs(page, requestedTeacherEmail = process.env.E2E_CLERK_TEACHER_EMAIL) {
+  const dates = fixtureDates()
+  await resetSchedulerState(page)
+  const subject = await ensureSubject(page)
+  const members = await apiRequest(page, 'GET', '/members')
+  const teacherEmail = requestedTeacherEmail
+  if (!teacherEmail) throw new Error('E2E_CLERK_TEACHER_EMAIL is required for scheduler E2E.')
+  const teacherMember = members.items.find((member) => (
+    member.email.toLowerCase() === teacherEmail.toLowerCase()
+  ))
+  if (!teacherMember) throw new Error(`Prepared E2E teacher member not found: ${teacherEmail}`)
+  const subjectIds = Array.from(new Set([...(teacherMember.subject_ids || []), subject.id]))
+  const capabilities = Array.from(new Set([...teacherMember.capabilities, 'teacher']))
+  const teacher = await apiRequest(page, 'PATCH', `/members/${teacherMember.id}`, {
+    capabilities,
+    teacher_access_mode: capabilities.includes('admin') ? 'platform' : teacherMember.teacher_access_mode || 'scheduler_only',
+    subject_ids: subjectIds,
+    lock_version: teacherMember.lock_version,
+  })
+  if (!teacher.teacher_id) throw new Error('Prepared E2E teacher has no teacher_id.')
+
+  await apiRequest(page, 'POST', '/school/settings/', {
+    school_start_date: dates.schoolStartDate,
+    school_hard_end_date: dates.schoolHardEndDate,
+    preferred_end_date: dates.schoolHardEndDate,
+    repair_stability_window_days: 0,
+  })
+  await apiRequest(page, 'POST', '/school/grid-settings/regenerate', {
+    grid_settings: { lunch_window_start: '12:30', lunch_window_end: '14:00', lunch_min_duration_minutes: 60 },
+    timeslots: {
+      start_time: '09:00', end_time: '14:00', slot_duration_minutes: 60,
+      break_duration_minutes: 0, days_of_week: [0, 1, 2, 3, 4],
+    },
+  })
+  await ensureRoom(page)
+  const course = await ensureCourse(page, subject.id)
+  const classroom = await ensureClass(page, course.id, dates)
+  await ensureClassSubject(page, classroom.id, subject.id, teacher.teacher_id)
+  return classroom
 }
 
 async function resetSchedulerState(page) {
@@ -163,51 +184,6 @@ async function ensureClassSubject(page, classId, subjectId, teacherId) {
     }
   }
   await apiRequest(page, 'PATCH', `/classes/${classId}/subjects/${subjectId}`, { teacher_id: teacherId })
-}
-
-export async function seedMinimalSchedulerInputs(page, requestedTeacherEmail = process.env.E2E_CLERK_TEACHER_EMAIL) {
-  const dates = fixtureDates()
-  await resetSchedulerState(page)
-  const subject = await ensureSubject(page)
-  const members = await apiRequest(page, 'GET', '/members')
-  const teacherEmail = requestedTeacherEmail
-  if (!teacherEmail) throw new Error('E2E_CLERK_TEACHER_EMAIL is required for scheduler E2E.')
-  const teacherMember = members.items.find((member) => (
-    member.email.toLowerCase() === teacherEmail.toLowerCase()
-  ))
-  if (!teacherMember) throw new Error(`Prepared E2E teacher member not found: ${teacherEmail}`)
-  const subjectIds = Array.from(new Set([...(teacherMember.subject_ids || []), subject.id]))
-  const capabilities = Array.from(new Set([...teacherMember.capabilities, 'teacher']))
-  const teacher = await apiRequest(page, 'PATCH', `/members/${teacherMember.id}`, {
-    capabilities,
-    teacher_access_mode: capabilities.includes('admin') ? 'platform' : teacherMember.teacher_access_mode || 'scheduler_only',
-    subject_ids: subjectIds,
-    lock_version: teacherMember.lock_version,
-  })
-  if (!teacher.teacher_id) throw new Error('Prepared E2E teacher has no teacher_id.')
-
-  await apiRequest(page, 'POST', '/school/settings/', {
-    school_start_date: dates.schoolStartDate,
-    school_hard_end_date: dates.schoolHardEndDate,
-    repair_stability_window_days: 0,
-  })
-  await apiRequest(page, 'POST', '/school/grid-settings/regenerate', {
-    grid_settings: { lunch_window_start: '12:30', lunch_window_end: '14:00', lunch_min_duration_minutes: 60 },
-    timeslots: {
-      start_time: '09:00', end_time: '14:00', slot_duration_minutes: 60,
-      break_duration_minutes: 0, days_of_week: [0, 1, 2, 3, 4],
-    },
-  })
-  await ensureRoom(page)
-  const course = await ensureCourse(page, subject.id)
-  const classroom = await ensureClass(page, course.id, dates)
-  await ensureClassSubject(page, classroom.id, subject.id, teacher.teacher_id)
-  await seedSchedulerV1Records(page, {
-    classId: classroom.id,
-    subjectId: subject.id,
-    preferredEndDate: dates.schoolHardEndDate,
-  })
-  return classroom
 }
 
 export async function waitForJobToSucceed(page, jobId) {

@@ -233,6 +233,7 @@ function toSettingsForm(settings) {
   const form = {
     school_start_date: settings?.school_start_date || '',
     school_hard_end_date: settings?.school_hard_end_date || '',
+    preferred_end_date: settings?.preferred_end_date || '',
     repair_stability_window_days: settings?.repair_stability_window_days?.toString() || '14',
   }
   if (settings?.automatic_holidays_enabled !== undefined) {
@@ -248,6 +249,15 @@ function validateSettingsForm(form) {
   if (form.school_hard_end_date <= form.school_start_date) {
     return 'A data-limite deve ser posterior à data de início.'
   }
+  if (
+    form.preferred_end_date
+    && (
+      form.preferred_end_date < form.school_start_date
+      || form.preferred_end_date > form.school_hard_end_date
+    )
+  ) {
+    return 'A data preferencial deve ficar entre o início das aulas e a data-limite.'
+  }
   return ''
 }
 
@@ -257,7 +267,7 @@ export const SettingsSection = () => {
   const { message: saveSuccessMsg, show: showSaveSuccess } = useTransientMessage()
   if (isLoading) return <div className="d-flex justify-content-center p-5"><CSpinner /></div>
 
-  const editorKey = `${settings?.school_start_date ?? ''}:${settings?.school_hard_end_date ?? ''}:${settings?.repair_stability_window_days ?? ''}:${settings?.automatic_holidays_enabled ?? ''}`
+  const editorKey = `${settings?.school_start_date ?? ''}:${settings?.school_hard_end_date ?? ''}:${settings?.preferred_end_date ?? ''}:${settings?.repair_stability_window_days ?? ''}:${settings?.automatic_holidays_enabled ?? ''}`
   return (
     <>
       {resetSuccessMsg && <CAlert color="success" className="mb-3">{resetSuccessMsg}</CAlert>}
@@ -383,6 +393,15 @@ const SettingsEditor = ({ settings, onSoftResetSuccess, onSaveSuccess }) => {
             value={form.school_hard_end_date}
             onChange={(value) => updateForm('school_hard_end_date', value)}
             text="Não há aulas após esta data"
+          />
+        </CCol>
+        <CCol md={3}>
+          <CFormLabel htmlFor="preferredEndDate" className="school-config-field-label">Data preferencial de fim</CFormLabel>
+          <PortugueseDateInput
+            id="preferredEndDate"
+            value={form.preferred_end_date}
+            onChange={(value) => updateForm('preferred_end_date', value)}
+            text="Alvo do gerador; tem de ficar antes da data limite"
           />
         </CCol>
         <CCol md={3}>

@@ -1243,6 +1243,9 @@ class OrganizationSettingsUpsert(BaseModel):
 
     school_start_date: date | None = Field(None, description="Primeiro dia de aulas")
     school_hard_end_date: date | None = Field(None, description=DESC_HARD_END_DATE)
+    preferred_end_date: date | None = Field(
+        None, description="Data-alvo preferencial para a conclusão das aulas"
+    )
     repair_stability_window_days: int | None = Field(
         None,
         ge=0,
@@ -1257,15 +1260,21 @@ class OrganizationSettingsUpsert(BaseModel):
     def _validate_school_dates(
         start_date: date | None,
         hard_end_date: date | None,
+        preferred_end_date: date | None = None,
     ) -> None:
         if start_date and hard_end_date and hard_end_date < start_date:
             raise ValueError(ERR_HARD_BEFORE_START)
+        if start_date and preferred_end_date and preferred_end_date < start_date:
+            raise ValueError(ERR_TARGET_BEFORE_START)
+        if hard_end_date and preferred_end_date and hard_end_date < preferred_end_date:
+            raise ValueError(ERR_HARD_BEFORE_TARGET)
 
     @model_validator(mode="after")
     def validate_school_dates_only(self):
         self._validate_school_dates(
             self.school_start_date,
             self.school_hard_end_date,
+            self.preferred_end_date,
         )
         return self
 
@@ -1275,6 +1284,7 @@ class OrganizationSettingsRead(BaseModel):
     organization_id: int
     school_start_date: date | None = None
     school_hard_end_date: date | None = None
+    preferred_end_date: date | None = None
     repair_stability_window_days: int | None = None
     automatic_holidays_enabled: bool = False
     model_config = ConfigDict(from_attributes=True)

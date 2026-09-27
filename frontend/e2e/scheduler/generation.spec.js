@@ -11,7 +11,6 @@ import {
   loginAsAdminReal,
 } from '../utils/clerk-helpers.js'
 import {
-  seedSchedulerV1Records,
   waitForJobToSucceed as waitForSchedulerJob,
 } from '../utils/scheduler-fixtures.js'
 import { createE2eRunKey, E2E_BASE_URL } from '../utils/e2e-config.js'
@@ -356,6 +355,7 @@ export async function seedMinimalSchedulerInputs(page, teacherEmail, dates = FIX
   await apiRequest(page, 'POST', '/school/settings/', {
     school_start_date: dates.schoolStartDate,
     school_hard_end_date: dates.schoolHardEndDate,
+    preferred_end_date: dates.schoolHardEndDate,
     repair_stability_window_days: 0,
   })
   await apiRequest(page, 'POST', '/school/grid-settings/regenerate', {
@@ -376,12 +376,6 @@ export async function seedMinimalSchedulerInputs(page, teacherEmail, dates = FIX
   const course = await ensureFixtureCourse(page, subject.id)
   const classroom = await ensureFixtureClass(page, course.id, dates)
   await ensureFixtureClassSubject(page, classroom.id, subject.id, updatedTeacher.teacher_id)
-
-  await seedSchedulerV1Records(page, {
-    classId: classroom.id,
-    subjectId: subject.id,
-    preferredEndDate: dates.schoolHardEndDate,
-  })
 
   return { classId: classroom.id, subjectId: subject.id, teacherId: updatedTeacher.teacher_id }
 }

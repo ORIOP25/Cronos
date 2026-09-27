@@ -26,6 +26,7 @@ from app.scheduler.domain.eligibility import (
     EligibilityReason,
     generation_eligibility,
 )
+from app.scheduler.infrastructure.curriculum import sync_curricular_projection
 from app.scheduler.infrastructure.models import (
     JOB_ACTIVE_STATUSES,
     JOB_TERMINAL_STATUSES,
@@ -191,6 +192,7 @@ async def enqueue_generation(
         if active_version_id is not None
         else SchedulingStrategy.COMPLETE_GENERATION
     )
+    await sync_curricular_projection(db, organization_id, year)
     bundle = await load_snapshot(
         db,
         organization_id,

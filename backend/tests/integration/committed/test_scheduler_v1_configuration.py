@@ -1,9 +1,11 @@
 from datetime import date
 
 import pytest
+from sqlalchemy import select
 
-from app import models
+from app import models, schemas
 from app.scheduler.infrastructure.progress import configure_school_year
+from app.services import settings_service
 from tests._support.db_fixtures import TestingSessionLocal, create_completed_organization
 
 pytestmark = pytest.mark.postgresql
@@ -105,3 +107,97 @@ async def test_configuration_rejects_another_school_year(db_session):
             db_session, organization.id, other_year.id, preferred_end_date=date(2027, 6, 11)
         )
     assert other_year.preferred_end_date is None
+
+
+async def _active_year_state(db_session, organization_id: int):
+    year = await db_session.scalar(
+        select(models.SchedulerSchoolYear).where(
+            models.SchedulerSchoolYear.organization_id == organization_id,
+            models.SchedulerSchoolYear.is_active.is_(True),
+        )
+    )
+    state = await db_session.scalar(
+        select(models.SchedulerSchoolYearState).where(
+            models.SchedulerSchoolYearState.organization_id == organization_id,
+            models.SchedulerSchoolYearState.school_year_id == year.id,
+        )
+    )
+    return year, state
+
+
+@pytest.mark.asyncio
+async def test_settings_configure_the_preferred_end_date(db_session):
+    organization, _ = await create_completed_organization(
+        db_session, clerk_user_id="w02_pref_a", clerk_org_id="w02_pref_org_a"
+    )
+    payload = schemas.OrganizationSettingsUpsert(
+        school_start_date=date(2026, 9, 1),
+        school_hard_end_date=date(2027, 7, 31),
+        preferred_end_date=date(2027, 6, 11),
+    )
+
+    await settings_service.upsert_settings(db_session, organization.id, payload)
+
+    year, state = await _active_year_state(db_session, organization.id)
+    assert year.preferred_end_date == date(2027, 6, 11)
+    assert state.input_revision == 2
+    assert state.planning_revision == 2
+
+    await settings_service.upsert_settings(db_session, organization.id, payload)
+    await db_session.refresh(state)
+    assert state.input_revision == 2
+    assert state.planning_revision == 2
+
+
+@pytest.mark.asyncio
+async def test_settings_accept_a_partial_preferred_update_inside_the_year(db_session):
+    organization, _ = await create_completed_organization(
+        db_session, clerk_user_id="w02_pref_b", clerk_org_id="w02_pref_org_b"
+    )
+    await settings_service.upsert_settings(
+        db_session,
+        organization.id,
+        schemas.OrganizationSettingsUpsert(
+            school_start_date=date(2026, 9, 1),
+            school_hard_end_date=date(2027, 7, 31),
+            preferred_end_date=date(2027, 6, 11),
+        ),
+    )
+
+    await settings_service.upsert_settings(
+        db_session,
+        organization.id,
+        schemas.OrganizationSettingsUpsert(preferred_end_date=date(2027, 5, 31)),
+    )
+
+    year, _ = await _active_year_state(db_session, organization.id)
+    assert year.preferred_end_date == date(2027, 5, 31)
+
+
+@pytest.mark.asyncio
+async def test_settings_reject_a_preferred_date_outside_the_school_year(db_session):
+    organization, _ = await create_completed_organization(
+        db_session, clerk_user_id="w02_pref_c", clerk_org_id="w02_pref_org_c"
+    )
+    organization_id = organization.id
+    await settings_service.upsert_settings(
+        db_session,
+        organization_id,
+        schemas.OrganizationSettingsUpsert(
+            school_start_date=date(2026, 9, 1),
+            school_hard_end_date=date(2027, 7, 31),
+            preferred_end_date=date(2027, 6, 11),
+        ),
+    )
+    await db_session.commit()
+
+    with pytest.raises(ValueError, match="data-alvo"):
+        await settings_service.upsert_settings(
+            db_session,
+            organization_id,
+            schemas.OrganizationSettingsUpsert(preferred_end_date=date(2027, 8, 15)),
+        )
+
+    await db_session.rollback()
+    year, _ = await _active_year_state(db_session, organization_id)
+    assert year.preferred_end_date == date(2027, 6, 11)

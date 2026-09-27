@@ -18,8 +18,9 @@ from typing import Annotated
 import structlog
 from fastapi import APIRouter, Query
 from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app import schemas
+from app import models, schemas
 from app.api import deps
 from app.core.exceptions import AppError
 from app.core.logging import safe_exception_frames
@@ -32,6 +33,17 @@ logger = structlog.get_logger(__name__)
 # ==========================================
 #  ORGANIZATION SETTINGS
 # ==========================================
+
+
+async def _settings_read(
+    db: AsyncSession,
+    organization_id: int,
+    settings: models.OrganizationSettings,
+) -> schemas.OrganizationSettingsRead:
+    preferred = await settings_service.get_preferred_end_date(db, organization_id)
+    return schemas.OrganizationSettingsRead.model_validate(settings).model_copy(
+        update={"preferred_end_date": preferred}
+    )
 
 
 @router.get(
@@ -47,7 +59,7 @@ async def get_org_settings(
         raise AppError(
             kind="not_found", code="settings_not_found", detail=settings_service.SETTINGS_NOT_FOUND
         )
-    return settings
+    return await _settings_read(db, current_user.organization_id, settings)
 
 
 @router.post(
@@ -60,12 +72,13 @@ async def upsert_org_settings(
     current_user: deps.AdminActor,
 ) -> schemas.OrganizationSettingsRead:
     try:
-        return await settings_service.upsert_settings(
+        settings = await settings_service.upsert_settings(
             db,
             current_user.organization_id,
             payload,
             changed_by_membership_id=current_user.membership_id,
         )
+        return await _settings_read(db, current_user.organization_id, settings)
     except ValueError as exc:
         raise AppError(kind="validation", code="settings_invalid", detail=str(exc)) from exc
     except settings_service.HolidaySyncError as exc:

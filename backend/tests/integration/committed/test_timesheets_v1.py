@@ -1,5 +1,6 @@
 """R12.1: weekly timesheet must follow the published v1 ledger."""
 
+import asyncio
 from datetime import UTC, date, datetime
 
 import pytest
@@ -9,6 +10,7 @@ from app import models
 from app.core.exceptions import AppError
 from app.scheduler.infrastructure.models import SchedulerLessonLogV1
 from app.services import timesheet_service
+from tests._support.db_fixtures import TestingSessionLocal
 from tests._support.scheduler_v1 import (
     add_lesson,
     add_version,
@@ -224,6 +226,32 @@ async def test_v1_timesheet_counts_stay_inside_the_organization(db_session):
         )
     )
     by_teacher = {row["teacher_id"]: row for row in rows}
-
     assert by_teacher[org_a.assignment.teacher_id]["total_slots"] == 1
     assert org_b.assignment.teacher_id not in by_teacher
+
+
+async def test_concurrent_first_reads_create_one_timesheet(db_session):
+    seed, _ = await _seed_v1_week(db_session, suffix="race")
+    await db_session.commit()
+    organization_id = seed.organization.id
+    teacher_id = seed.assignment.teacher_id
+
+    def _create(sync_db):
+        return timesheet_service.get_or_create_timesheet_sync(
+            sync_db, organization_id, teacher_id, WEEK_START
+        ).id
+
+    first = TestingSessionLocal()
+    second = TestingSessionLocal()
+    try:
+        first_id = await first.run_sync(_create)
+        blocked = asyncio.create_task(second.run_sync(_create))
+        await asyncio.sleep(0.2)
+        await first.commit()
+        second_id = await blocked
+        await second.commit()
+    finally:
+        await first.close()
+        await second.close()
+
+    assert first_id == second_id
