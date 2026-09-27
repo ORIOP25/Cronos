@@ -132,7 +132,12 @@ export const CalendarSection = () => {
         setSuccessMsg(editingFlowId
           ? 'Fluxo de estágio atualizado com sucesso.'
           : 'Fluxo de estágio criado com sucesso.')
-        setLastFlowResult({ name: payload.name, removedCount, scopeChanged })
+        setLastFlowResult({
+          name: payload.name,
+          removedCount,
+          scopeChanged,
+          isEdit: Boolean(editingFlowId),
+        })
         setPreviewState(null)
         resetForm()
       },
@@ -315,7 +320,9 @@ export const CalendarSection = () => {
               ? `${lastFlowResult.removedCount} aula(s) saíram do horário ativo. `
               : lastFlowResult.scopeChanged
                 ? 'As datas ficaram bloqueadas para as turmas associadas. '
-                : 'O nome foi atualizado sem alterar o horário. '}
+                : lastFlowResult.isEdit
+                  ? 'O nome foi atualizado sem alterar o horário. '
+                  : 'O fluxo ficou sem turmas associadas e não altera o horário. '}
             Fluxo “{lastFlowResult.name}” guardado.
           </FeedbackBanner>
         </div>

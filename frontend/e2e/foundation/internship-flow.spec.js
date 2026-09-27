@@ -55,8 +55,8 @@ test.describe('Fluxos de estágio — criação manual', () => {
 
       expect((await createResponse).status()).toBe(200)
       await expect(page.getByText(/fluxo de estágio criado com sucesso/i)).toBeVisible()
-      await expect(page.getByRole('cell', { name: 'Estágio 10A' })).toBeVisible()
-      await expect(page.getByText('Sem turmas')).toBeVisible()
+      await expect(page.getByRole('cell', { name: 'Estágio 10A', exact: true })).toBeVisible()
+      await expect(page.getByText('Sem turmas', { exact: true })).toBeVisible()
       await expectNoAppCrash(page)
     } catch (error) {
       primaryError = error
