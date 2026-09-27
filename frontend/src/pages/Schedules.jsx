@@ -23,7 +23,6 @@ import LessonLogModal from '../components/LessonLogModal'
 import KPISidebar from '../components/schedules/KPISidebar'
 import DraftPanel from '../components/schedules/DraftPanel'
 import GenerationStatusPanel from '../components/schedules/GenerationStatusPanel'
-import PreflightErrorPanel from '../components/schedules/PreflightErrorPanel'
 import ConfirmationModal from '../components/ConfirmationModal'
 import PageHeader from '../components/PageHeader'
 import StatePanel from '../components/StatePanel'
@@ -39,13 +38,32 @@ import { readExpiringValue, writeExpiringValue } from '../utils/expiringStorage'
 const ACTIVE_JOB_STORAGE_KEY_PREFIX = 'hz-schedule-active-job-org-'
 const VIEW_STORAGE_KEY_PREFIX = 'hz-schedule-view-org-'
 const STALE_DRAFT_MESSAGE = (
-  'Este rascunho já não está atualizado.\n\n'
-  + 'As condições do horário mudaram. Gere um novo rascunho para continuar.'
+  'Existem alterações mais recentes.\n\n'
+  + 'Esta proposta já não pode ser aprovada. Gere uma nova proposta para continuar.'
 )
+
+const ELIGIBILITY_MESSAGES = {
+  ACTIVE_JOB: 'Já existe um pedido de geração em curso.',
+}
+
+const NO_REASON_MESSAGE = (
+  'Não existem alterações por aplicar ao horário. '
+  + 'Pode otimizar as próximas semanas quando passarem 28 dias.'
+)
+
+function eligibilityMessage(eligibility) {
+  if (!eligibility || eligibility.can_generate) return ''
+  if (eligibility.blocker) {
+    return ELIGIBILITY_MESSAGES[eligibility.blocker] || 'A geração não está disponível de momento.'
+  }
+  return NO_REASON_MESSAGE
+}
 
 function getDraftMutationErrorMessage(error, fallback) {
   const detail = error?.response?.data?.detail
-  if (detail?.draft_state === 'STALE') return STALE_DRAFT_MESSAGE
+  if (detail?.code === 'proposal_stale' || detail?.context?.proposal_status === 'STALE') {
+    return STALE_DRAFT_MESSAGE
+  }
   return getApiErrorMessage(error, fallback, 'schedule.approve')
 }
 
@@ -132,7 +150,6 @@ const Schedules = ({ initialClassId = '', initialWeekStart, persistView = true, 
     const storedJobId = readStoredJobId(jobStorageKey)
     return storedJobId ? Number(storedJobId) : null
   })
-  const [preflightErrors, setPreflightErrors] = useState([])
 
   // Sprint 4 state
   const [viewMode, setViewMode]                   = useState(
@@ -163,7 +180,7 @@ const Schedules = ({ initialClassId = '', initialWeekStart, persistView = true, 
 
   // Sprint 3 hooks
   const { data: schedulerStatus, refetch: refetchSchedulerStatus } = useSchedulerStatus()
-  const hasPendingDraft = Boolean(schedulerStatus?.pending_draft_id)
+  const hasPendingDraft = Boolean(schedulerStatus?.pending_proposal)
   const { data: currentDraft, refetch: refetchCurrentDraft } = useCurrentDraftSummary(
     hasPendingDraft
   )
@@ -171,7 +188,12 @@ const Schedules = ({ initialClassId = '', initialWeekStart, persistView = true, 
   const cancelGenerationMutation = useCancelScheduleTask()
   const approveMutation  = useApproveDraft()
   const rejectMutation   = useRejectDraft()
-  const { data: jobData } = useScheduleTaskStatus(activeJobId)
+  const serverJobId = schedulerStatus?.active_job?.id ?? null
+  const effectiveJobId = activeJobId ?? serverJobId
+  const { data: jobData } = useScheduleTaskStatus(effectiveJobId)
+  const eligibility = schedulerStatus?.eligibility
+  const canGenerateNow = Boolean(eligibility?.can_generate)
+  const isFirstGeneration = schedulerStatus?.publication_state !== 'PUBLISHED'
 
   // Sprint 4 hooks
   const { data: classes  = [] } = useClasses()
@@ -228,9 +250,9 @@ const Schedules = ({ initialClassId = '', initialWeekStart, persistView = true, 
 
   // Refresh scheduler state after a durable generation job finishes.
   useEffect(() => {
-    const status = jobData?.job_status
-    const terminal = ['SUCCEEDED', 'FAILED', 'CANCELED', 'NO_VALID_OUTPUT']
-    if (activeJobId && terminal.includes(status)) {
+    const status = jobData?.status
+    const terminal = ['SUCCEEDED', 'FAILED', 'CANCELLED', 'STALE', 'INFEASIBLE', 'INCONCLUSIVE']
+    if (effectiveJobId && terminal.includes(status)) {
       void refetchSchedulerStatus()
       void refetchCurrentDraft()
       clearStoredJobId(jobStorageKey)
@@ -238,7 +260,7 @@ const Schedules = ({ initialClassId = '', initialWeekStart, persistView = true, 
     }
   }, [
     jobData,
-    activeJobId,
+    effectiveJobId,
     classId,
     teacherId,
     refetchSchedulerStatus,
@@ -253,63 +275,56 @@ const Schedules = ({ initialClassId = '', initialWeekStart, persistView = true, 
     }
   }, [activeJobId, jobStorageKey])
 
-  const startReplacementGeneration = async () => {
-    if (!canGenerate) return
+  const runGeneration = async () => {
+    if (!canGenerate || !canGenerateNow) return
     setGenerationConfirmation(null)
-      setGenerationActionError('')
-    setPreflightErrors([])
-    try {
-      const result = await generateMutation.mutateAsync({ replacePendingDraft: true })
-      if (result?.job_id) setActiveJobId(result.job_id)
-    } catch (err) {
-      setGenerationActionError(getApiErrorMessage(err, 'Não foi possível iniciar a nova geração.', 'schedule.generate'))
-    }
-  }
-
-  const handleGenerate = async () => {
-    if (!canGenerate) return
     setGenerationActionError('')
-    setPreflightErrors([])
-    setActiveJobId(null)
     try {
-      const result = await generateMutation.mutateAsync()
-      if (result?.job_id) setActiveJobId(result.job_id)
+      const result = await generateMutation.mutateAsync({
+        idempotencyKey: globalThis.crypto.randomUUID(),
+        expectedInputRevision: schedulerStatus?.revisions?.input ?? 0,
+      })
+      const jobId = result?.job?.id
+      if (jobId) setActiveJobId(jobId)
     } catch (err) {
       const detail = err?.response?.data?.detail
-      if (detail?.code === 'pending_draft_replacement_required') {
-        setGenerationConfirmation('replace-pending-draft')
+      if (detail?.code === 'active_job' && detail?.context?.job_id) {
+        setActiveJobId(detail.context.job_id)
         return
       }
-      const issues = detail?.issues || detail?.report?.issues
-      if (!Array.isArray(issues)) {
-        setGenerationActionError(getApiErrorMessage(err, 'Não foi possível iniciar a geração.', 'schedule.generate'))
-        return
+      if (detail?.code === 'scheduler_state_changed') {
+        void refetchSchedulerStatus()
       }
-      setPreflightErrors(issues)
+      setGenerationActionError(
+        getApiErrorMessage(err, 'Não foi possível iniciar a geração.', 'schedule.generate')
+      )
     }
   }
 
-  const handleRegenerate = () => {
+  const handleGenerate = () => {
     if (!canGenerate) return
-    setGenerationConfirmation('regenerate')
+    if (hasPendingDraft) {
+      setGenerationConfirmation('regenerate')
+      return
+    }
+    void runGeneration()
   }
 
   const handleCancelGeneration = () => {
-    if (!activeJobId) {
+    if (!effectiveJobId) {
       return
     }
 
     setGenerationActionError('')
-    cancelGenerationMutation.mutate(activeJobId, {
+    cancelGenerationMutation.mutate(effectiveJobId, {
       onError: () => {
         setGenerationActionError('Não foi possível cancelar a geração. Tente novamente.')
       },
     })
+    setActiveJobId(null)
   }
 
-  const isGenerating = ['QUEUED', 'RUNNING', 'CANCEL_REQUESTED'].includes(
-    jobData?.job_status
-  )
+  const isGenerating = ['QUEUED', 'RUNNING', 'VALIDATING'].includes(jobData?.status)
   const hasSelection = Boolean(classId || teacherId)
 
   const openCreateOccurrenceModal = (slot) => {
@@ -357,13 +372,9 @@ const Schedules = ({ initialClassId = '', initialWeekStart, persistView = true, 
       <ConfirmationModal
         visible={Boolean(generationConfirmation)}
         onClose={() => setGenerationConfirmation(null)}
-        onConfirm={() => { void startReplacementGeneration() }}
+        onConfirm={() => { void runGeneration() }}
         title="Confirmar nova geração"
-        message={
-          generationConfirmation === 'replace-pending-draft'
-            ? 'Já existe um rascunho pendente. Pretende substituí-lo por uma nova geração?'
-            : 'Gerar novamente irá substituir o rascunho pendente apenas quando a nova geração terminar com sucesso. Continuar?'
-        }
+        message="Gerar novamente irá substituir a proposta pendente apenas quando a nova geração terminar com sucesso. Continuar?"
         confirmText="Confirmar geração"
         isLoading={generateMutation.isPending}
         variant="warning"
@@ -375,33 +386,18 @@ const Schedules = ({ initialClassId = '', initialWeekStart, persistView = true, 
       >
         {/* Status-driven generation controls */}
         <div className="d-flex align-items-center gap-2 flex-wrap">
-                {!hasPendingDraft && schedulerStatus?.can_generate_new_draft && canGenerate && (
+                {canGenerateNow && !isGenerating && canGenerate && (
                   <CButton
                     color="primary" size="sm"
-                    disabled={isGenerating || generateMutation.isPending}
-                    onClick={() => { void handleGenerate() }}
-                    data-tutorial-target="generate-schedule"
+                    disabled={generateMutation.isPending}
+                    onClick={handleGenerate}
+                    data-tutorial-target={isFirstGeneration ? 'generate-schedule' : 'regenerate-schedule'}
                   >
-                    {isGenerating
-                      ? <><CSpinner size="sm" className="me-1" />A gerar…</>
-                      : <><CIcon icon={cilReload} className="me-1" />Gerar Horário</>
-                    }
+                    <CIcon icon={cilReload} className="me-1" />
+                    {isFirstGeneration ? 'Gerar horário' : 'Atualizar horário'}
                   </CButton>
                 )}
-                {hasPendingDraft && schedulerStatus?.can_regenerate_with_confirmation && canGenerate && (
-                    <CButton
-                      color="secondary"
-                      variant="outline"
-                      size="sm"
-                      disabled={isGenerating || generateMutation.isPending}
-                      onClick={() => { void handleRegenerate() }}
-                      data-tutorial-target="regenerate-schedule"
-                    >
-                      <CIcon icon={cilReload} className="me-1" />
-                      Gerar novamente
-                    </CButton>
-                )}
-                {activeJobId && isGenerating && canGenerate && (
+                {effectiveJobId && isGenerating && canGenerate && (
                     <CButton
                       color="danger"
                       variant="outline"
@@ -419,34 +415,38 @@ const Schedules = ({ initialClassId = '', initialWeekStart, persistView = true, 
       </PageHeader>
 
       <div data-tutorial-target="schedule-draft">
-          {preflightErrors.length > 0 && <PreflightErrorPanel issues={preflightErrors} />}
           {generationActionError && (
             <CAlert color="danger" className="mb-4" style={{ whiteSpace: 'pre-line' }}>
               {generationActionError}
             </CAlert>
           )}
-          {activeJobId && <GenerationStatusPanel jobId={activeJobId} />}
-          {!hasPendingDraft && schedulerStatus?.blocked_reason && !isGenerating && (
+          {effectiveJobId && <GenerationStatusPanel jobId={effectiveJobId} />}
+          {!hasPendingDraft && !isGenerating && eligibilityMessage(eligibility) && (
             <CAlert color="secondary" className="mb-4" style={{ whiteSpace: 'pre-line' }}>
-              {schedulerStatus.blocked_reason}
+              {eligibilityMessage(eligibility)}
             </CAlert>
           )}
-          {hasPendingDraft && currentDraft && (
+          {hasPendingDraft && (currentDraft || schedulerStatus?.pending_proposal) && (
             <DraftPanel
-              draft={currentDraft}
-              onApprove={async (draftId) => {
-                try { await approveMutation.mutateAsync(draftId) }
+              draft={currentDraft || schedulerStatus.pending_proposal}
+              onApprove={async (proposalId) => {
+                try {
+                  await approveMutation.mutateAsync({
+                    proposalId,
+                    expectedInputRevision: schedulerStatus?.revisions?.input ?? null,
+                  })
+                }
                 catch (err) {
                   setGenerationActionError(
-                    getDraftMutationErrorMessage(err, 'Erro ao aprovar rascunho.')
+                    getDraftMutationErrorMessage(err, 'Erro ao aprovar proposta.')
                   )
                 }
               }}
-              onReject={async (draftId) => {
-                try { await rejectMutation.mutateAsync(draftId) }
+              onReject={async (proposalId) => {
+                try { await rejectMutation.mutateAsync(proposalId) }
                 catch (err) {
                   setGenerationActionError(
-                    getDraftMutationErrorMessage(err, 'Erro ao rejeitar rascunho.')
+                    getDraftMutationErrorMessage(err, 'Erro ao rejeitar proposta.')
                   )
                 }
               }}
@@ -534,7 +534,7 @@ const Schedules = ({ initialClassId = '', initialWeekStart, persistView = true, 
         <CCardHeader className="bg-transparent fw-semibold d-flex align-items-center justify-content-between py-2">
           <span>
             Grelha semanal
-            {hasPendingDraft && <CBadge color="warning" className="ms-2">Rascunho pendente</CBadge>}
+            {hasPendingDraft && <CBadge color="warning" className="ms-2">Proposta pendente</CBadge>}
           </span>
           {loadingWeek && <CSpinner size="sm" className="text-secondary" />}
         </CCardHeader>

@@ -57,7 +57,11 @@ describe('TutorialWorkspace v3', () => {
     expect(await clients[0].get('/scheduler/drafts/current')).toBeNull()
     rerender(<TutorialApiBoundary stepId="recovery" scenario={after}><Probe /></TutorialApiBoundary>)
     await waitFor(() => expect(clients).toHaveLength(2))
-    expect(await clients[1].get('/scheduler/drafts/current')).toMatchObject({ result_category: 'PARTIAL_RECOVERY' })
+    expect(await clients[1].get('/scheduler/drafts/current')).toMatchObject({
+      status: 'PENDING',
+      strategy: 'ADAPTIVE_REPAIR',
+      metrics: { disruption_cost: 2 },
+    })
   })
 
   it('advances only from the instruction panel with the current expected step', async () => {

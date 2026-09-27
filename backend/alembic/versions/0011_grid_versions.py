@@ -14,7 +14,7 @@ from sqlalchemy.dialects import postgresql
 from alembic import op
 
 revision = "0011_grid_versions"
-down_revision = "0010_scheduler_failure_reference"
+down_revision = "0001_scheduler_v1_baseline"
 branch_labels = None
 depends_on = None
 

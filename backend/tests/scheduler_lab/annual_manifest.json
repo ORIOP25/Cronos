@@ -1,0 +1,306 @@
+{
+  "schema_version": "scheduler-lab-v3",
+  "campaign_id": "w04-annual",
+  "cases": [
+    {
+      "case_id": "gen-annual-10-loose",
+      "family": "A-loose",
+      "version": 1,
+      "expectation": "FEASIBLE_WITH_WITNESS",
+      "mutation": null,
+      "expected_violations": [],
+      "seeds": {
+        "fixture_seed": 101,
+        "event_seed": 201,
+        "solver_seed": 301
+      },
+      "spec": null,
+      "scale": null,
+      "annual": {
+        "class_count": 10,
+        "profile": "loose",
+        "seed": 1
+      }
+    },
+    {
+      "case_id": "gen-annual-10-shared-teacher",
+      "family": "A-shared-teacher",
+      "version": 1,
+      "expectation": "FEASIBLE_WITH_WITNESS",
+      "mutation": null,
+      "expected_violations": [],
+      "seeds": {
+        "fixture_seed": 102,
+        "event_seed": 202,
+        "solver_seed": 302
+      },
+      "spec": null,
+      "scale": null,
+      "annual": {
+        "class_count": 10,
+        "profile": "shared-teacher",
+        "seed": 2
+      }
+    },
+    {
+      "case_id": "gen-annual-10-scarce-rooms",
+      "family": "A-scarce-rooms",
+      "version": 1,
+      "expectation": "FEASIBLE_WITH_WITNESS",
+      "mutation": null,
+      "expected_violations": [],
+      "seeds": {
+        "fixture_seed": 103,
+        "event_seed": 203,
+        "solver_seed": 303
+      },
+      "spec": null,
+      "scale": null,
+      "annual": {
+        "class_count": 10,
+        "profile": "scarce-rooms",
+        "seed": 3
+      }
+    },
+    {
+      "case_id": "gen-annual-30-loose",
+      "family": "A-loose",
+      "version": 1,
+      "expectation": "FEASIBLE_WITH_WITNESS",
+      "mutation": null,
+      "expected_violations": [],
+      "seeds": {
+        "fixture_seed": 104,
+        "event_seed": 204,
+        "solver_seed": 304
+      },
+      "spec": null,
+      "scale": null,
+      "annual": {
+        "class_count": 30,
+        "profile": "loose",
+        "seed": 1
+      }
+    },
+    {
+      "case_id": "gen-annual-30-shared-teacher",
+      "family": "A-shared-teacher",
+      "version": 1,
+      "expectation": "FEASIBLE_WITH_WITNESS",
+      "mutation": null,
+      "expected_violations": [],
+      "seeds": {
+        "fixture_seed": 105,
+        "event_seed": 205,
+        "solver_seed": 305
+      },
+      "spec": null,
+      "scale": null,
+      "annual": {
+        "class_count": 30,
+        "profile": "shared-teacher",
+        "seed": 2
+      }
+    },
+    {
+      "case_id": "gen-annual-30-scarce-rooms",
+      "family": "A-scarce-rooms",
+      "version": 1,
+      "expectation": "FEASIBLE_WITH_WITNESS",
+      "mutation": null,
+      "expected_violations": [],
+      "seeds": {
+        "fixture_seed": 106,
+        "event_seed": 206,
+        "solver_seed": 306
+      },
+      "spec": null,
+      "scale": null,
+      "annual": {
+        "class_count": 30,
+        "profile": "scarce-rooms",
+        "seed": 3
+      }
+    },
+    {
+      "case_id": "gen-annual-45-loose",
+      "family": "A-loose",
+      "version": 1,
+      "expectation": "FEASIBLE_WITH_WITNESS",
+      "mutation": null,
+      "expected_violations": [],
+      "seeds": {
+        "fixture_seed": 107,
+        "event_seed": 207,
+        "solver_seed": 307
+      },
+      "spec": null,
+      "scale": null,
+      "annual": {
+        "class_count": 45,
+        "profile": "loose",
+        "seed": 1
+      }
+    },
+    {
+      "case_id": "gen-annual-45-shared-teacher",
+      "family": "A-shared-teacher",
+      "version": 1,
+      "expectation": "FEASIBLE_WITH_WITNESS",
+      "mutation": null,
+      "expected_violations": [],
+      "seeds": {
+        "fixture_seed": 108,
+        "event_seed": 208,
+        "solver_seed": 308
+      },
+      "spec": null,
+      "scale": null,
+      "annual": {
+        "class_count": 45,
+        "profile": "shared-teacher",
+        "seed": 2
+      }
+    },
+    {
+      "case_id": "gen-annual-45-scarce-rooms",
+      "family": "A-scarce-rooms",
+      "version": 1,
+      "expectation": "FEASIBLE_WITH_WITNESS",
+      "mutation": null,
+      "expected_violations": [],
+      "seeds": {
+        "fixture_seed": 109,
+        "event_seed": 209,
+        "solver_seed": 309
+      },
+      "spec": null,
+      "scale": null,
+      "annual": {
+        "class_count": 45,
+        "profile": "scarce-rooms",
+        "seed": 3
+      }
+    },
+    {
+      "case_id": "gen-annual-60-loose",
+      "family": "A-loose",
+      "version": 1,
+      "expectation": "FEASIBLE_WITH_WITNESS",
+      "mutation": null,
+      "expected_violations": [],
+      "seeds": {
+        "fixture_seed": 110,
+        "event_seed": 210,
+        "solver_seed": 310
+      },
+      "spec": null,
+      "scale": null,
+      "annual": {
+        "class_count": 60,
+        "profile": "loose",
+        "seed": 1
+      }
+    },
+    {
+      "case_id": "gen-annual-60-shared-teacher",
+      "family": "A-shared-teacher",
+      "version": 1,
+      "expectation": "FEASIBLE_WITH_WITNESS",
+      "mutation": null,
+      "expected_violations": [],
+      "seeds": {
+        "fixture_seed": 111,
+        "event_seed": 211,
+        "solver_seed": 311
+      },
+      "spec": null,
+      "scale": null,
+      "annual": {
+        "class_count": 60,
+        "profile": "shared-teacher",
+        "seed": 2
+      }
+    },
+    {
+      "case_id": "gen-annual-60-scarce-rooms",
+      "family": "A-scarce-rooms",
+      "version": 1,
+      "expectation": "FEASIBLE_WITH_WITNESS",
+      "mutation": null,
+      "expected_violations": [],
+      "seeds": {
+        "fixture_seed": 112,
+        "event_seed": 212,
+        "solver_seed": 312
+      },
+      "spec": null,
+      "scale": null,
+      "annual": {
+        "class_count": 60,
+        "profile": "scarce-rooms",
+        "seed": 3
+      }
+    },
+    {
+      "case_id": "gen-annual-10-connected",
+      "family": "A-connected",
+      "version": 1,
+      "expectation": "FEASIBLE_WITH_WITNESS",
+      "mutation": null,
+      "expected_violations": [],
+      "seeds": {
+        "fixture_seed": 113,
+        "event_seed": 213,
+        "solver_seed": 313
+      },
+      "spec": null,
+      "scale": null,
+      "annual": {
+        "class_count": 10,
+        "profile": "connected",
+        "seed": 1
+      }
+    },
+    {
+      "case_id": "gen-annual-30-connected",
+      "family": "E-connected",
+      "version": 1,
+      "expectation": "EXPLORATORY_UNKNOWN",
+      "mutation": null,
+      "expected_violations": [],
+      "seeds": {
+        "fixture_seed": 114,
+        "event_seed": 214,
+        "solver_seed": 314
+      },
+      "spec": null,
+      "scale": null,
+      "annual": {
+        "class_count": 30,
+        "profile": "connected",
+        "seed": 1
+      }
+    },
+    {
+      "case_id": "gen-annual-60-connected",
+      "family": "E-connected",
+      "version": 1,
+      "expectation": "EXPLORATORY_UNKNOWN",
+      "mutation": null,
+      "expected_violations": [],
+      "seeds": {
+        "fixture_seed": 115,
+        "event_seed": 215,
+        "solver_seed": 315
+      },
+      "spec": null,
+      "scale": null,
+      "annual": {
+        "class_count": 60,
+        "profile": "connected",
+        "seed": 1
+      }
+    }
+  ]
+}

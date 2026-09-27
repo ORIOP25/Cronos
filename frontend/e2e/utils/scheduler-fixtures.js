@@ -68,12 +68,53 @@ export async function apiRequest(page, method, path, body, timeoutMs = REQUEST_T
   )
 }
 
+export async function seedMinimalSchedulerInputs(page, requestedTeacherEmail = process.env.E2E_CLERK_TEACHER_EMAIL) {
+  const dates = fixtureDates()
+  await resetSchedulerState(page)
+  const subject = await ensureSubject(page)
+  const members = await apiRequest(page, 'GET', '/members')
+  const teacherEmail = requestedTeacherEmail
+  if (!teacherEmail) throw new Error('E2E_CLERK_TEACHER_EMAIL is required for scheduler E2E.')
+  const teacherMember = members.items.find((member) => (
+    member.email.toLowerCase() === teacherEmail.toLowerCase()
+  ))
+  if (!teacherMember) throw new Error(`Prepared E2E teacher member not found: ${teacherEmail}`)
+  const subjectIds = Array.from(new Set([...(teacherMember.subject_ids || []), subject.id]))
+  const capabilities = Array.from(new Set([...teacherMember.capabilities, 'teacher']))
+  const teacher = await apiRequest(page, 'PATCH', `/members/${teacherMember.id}`, {
+    capabilities,
+    teacher_access_mode: capabilities.includes('admin') ? 'platform' : teacherMember.teacher_access_mode || 'scheduler_only',
+    subject_ids: subjectIds,
+    lock_version: teacherMember.lock_version,
+  })
+  if (!teacher.teacher_id) throw new Error('Prepared E2E teacher has no teacher_id.')
+
+  await apiRequest(page, 'POST', '/school/settings/', {
+    school_start_date: dates.schoolStartDate,
+    school_hard_end_date: dates.schoolHardEndDate,
+    preferred_end_date: dates.schoolHardEndDate,
+    repair_stability_window_days: 0,
+  })
+  await apiRequest(page, 'POST', '/school/grid-settings/regenerate', {
+    grid_settings: { lunch_window_start: '12:30', lunch_window_end: '14:00', lunch_min_duration_minutes: 60 },
+    timeslots: {
+      start_time: '09:00', end_time: '14:00', slot_duration_minutes: 60,
+      break_duration_minutes: 0, days_of_week: [0, 1, 2, 3, 4],
+    },
+  })
+  await ensureRoom(page)
+  const course = await ensureCourse(page, subject.id)
+  const classroom = await ensureClass(page, course.id, dates)
+  await ensureClassSubject(page, classroom.id, subject.id, teacher.teacher_id)
+  return classroom
+}
+
 async function resetSchedulerState(page) {
   const status = await apiRequest(page, 'GET', '/scheduler/status')
-  if (status?.pending_draft_id) {
-    await apiRequest(page, 'POST', `/scheduler/drafts/${status.pending_draft_id}/reject`)
+  if (status?.pending_proposal?.proposal_id) {
+    await apiRequest(page, 'POST', `/scheduler/drafts/${status.pending_proposal.proposal_id}/reject`)
   }
-  if (status?.school_year_id) {
+  if (status?.school_year?.id) {
     await apiRequest(page, 'POST', '/school/settings/soft-reset', { confirm_phrase: 'Confirmo' })
   }
 }
@@ -145,55 +186,15 @@ async function ensureClassSubject(page, classId, subjectId, teacherId) {
   await apiRequest(page, 'PATCH', `/classes/${classId}/subjects/${subjectId}`, { teacher_id: teacherId })
 }
 
-export async function seedMinimalSchedulerInputs(page, requestedTeacherEmail = process.env.E2E_CLERK_TEACHER_EMAIL) {
-  const dates = fixtureDates()
-  await resetSchedulerState(page)
-  const subject = await ensureSubject(page)
-  const members = await apiRequest(page, 'GET', '/members')
-  const teacherEmail = requestedTeacherEmail
-  if (!teacherEmail) throw new Error('E2E_CLERK_TEACHER_EMAIL is required for scheduler E2E.')
-  const teacherMember = members.items.find((member) => (
-    member.email.toLowerCase() === teacherEmail.toLowerCase()
-  ))
-  if (!teacherMember) throw new Error(`Prepared E2E teacher member not found: ${teacherEmail}`)
-  const subjectIds = Array.from(new Set([...(teacherMember.subject_ids || []), subject.id]))
-  const capabilities = Array.from(new Set([...teacherMember.capabilities, 'teacher']))
-  const teacher = await apiRequest(page, 'PATCH', `/members/${teacherMember.id}`, {
-    capabilities,
-    teacher_access_mode: capabilities.includes('admin') ? 'platform' : teacherMember.teacher_access_mode || 'scheduler_only',
-    subject_ids: subjectIds,
-    lock_version: teacherMember.lock_version,
-  })
-  if (!teacher.teacher_id) throw new Error('Prepared E2E teacher has no teacher_id.')
-
-  await apiRequest(page, 'POST', '/school/settings/', {
-    school_start_date: dates.schoolStartDate,
-    school_hard_end_date: dates.schoolHardEndDate,
-    repair_stability_window_days: 0,
-  })
-  await apiRequest(page, 'POST', '/school/grid-settings/regenerate', {
-    grid_settings: { lunch_window_start: '12:30', lunch_window_end: '14:00', lunch_min_duration_minutes: 60 },
-    timeslots: {
-      start_time: '09:00', end_time: '14:00', slot_duration_minutes: 60,
-      break_duration_minutes: 0, days_of_week: [0, 1, 2, 3, 4],
-    },
-  })
-  await ensureRoom(page)
-  const course = await ensureCourse(page, subject.id)
-  const classroom = await ensureClass(page, course.id, dates)
-  await ensureClassSubject(page, classroom.id, subject.id, teacher.teacher_id)
-  return classroom
-}
-
 export async function waitForJobToSucceed(page, jobId) {
   let lastJob = null
   await expect.poll(
     async () => {
       lastJob = await apiRequest(page, 'GET', `/scheduler/jobs/${jobId}`)
-      if (['FAILED', 'NO_VALID_OUTPUT', 'CANCELED'].includes(lastJob.job_status)) {
-        throw new Error(`scheduler job ${jobId} ended with ${lastJob.job_status}`)
+      if (['FAILED', 'STALE', 'CANCELLED', 'INFEASIBLE', 'INCONCLUSIVE'].includes(lastJob.status)) {
+        throw new Error(`scheduler job ${jobId} ended with ${lastJob.status}`)
       }
-      return lastJob.job_status
+      return lastJob.status
     },
     {
       intervals: [100, 250, 500],
@@ -211,12 +212,12 @@ export async function generateAndApproveThroughUi(page) {
     response.url().includes('/api/v1/scheduler/generate') &&
     response.request().method() === 'POST'
   ))
-  await page.getByRole('button', { name: /Gerar Hor.rio/i }).click()
+  await page.getByRole('button', { name: /(?:Gerar|Atualizar) Hor.rio/i }).click()
   const response = await generateResponse
   const responseText = await response.text()
   expect(response.ok(), `scheduler generate failed: ${response.status()} ${responseText}`).toBeTruthy()
-  const job = await waitForJobToSucceed(page, JSON.parse(responseText).job_id)
-  await expect(page.getByText(/Rascunho pronto para revis/i)).toBeVisible({ timeout: 30_000 })
+  const job = await waitForJobToSucceed(page, JSON.parse(responseText).job.id)
+  await expect(page.getByText(/Proposta pronta para revis/i)).toBeVisible({ timeout: 30_000 })
   const approvalResponse = page.waitForResponse((candidate) => (
     candidate.url().includes('/api/v1/scheduler/drafts/') &&
     candidate.url().endsWith('/approve') && candidate.request().method() === 'POST'

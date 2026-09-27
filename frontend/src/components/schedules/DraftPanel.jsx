@@ -7,20 +7,46 @@ import { useScheduleDiff } from '../../features/scheduling/data'
 const CHANGE_LABELS = {
   ADDED: 'Adicionado',
   MOVED: 'Movido',
-  CHANGED: 'Alterado',
   REMOVED: 'Removido',
-  UNCHANGED_IMPACTED: 'Sem alteração',
+  ROOM_CHANGED: 'Sala alterada',
+}
+
+const WARNING_LABELS = {
+  COMPLETION_AFTER_PREFERENCE:
+    'Algumas turmas terminam depois da data preferencial. O aviso mantém-se enquanto a situação existir.',
+  SEARCH_INTERRUPTED:
+    'A pesquisa foi interrompida pelo limite de segurança. A proposta é válida, mas pode ser possível melhorá-la.',
+}
+
+const STALE_TEXT =
+  'Existem alterações mais recentes. Esta proposta já não pode ser aprovada. Gere uma nova proposta.'
+
+function changeSummary(diff) {
+  const counts = diff?.counts || {}
+  const rows = [
+    ['added', 'Adicionado'],
+    ['moved', 'Movido'],
+    ['removed', 'Removido'],
+    ['room_changed', 'Sala alterada'],
+  ]
+  return rows
+    .filter(([key]) => Number(counts[key] || 0) > 0)
+    .map(([key, label]) => `${label}: ${counts[key]}`)
 }
 
 const DraftPanel = ({ draft, onApprove, onReject, isApproving, isRejecting, allowApprove = true, allowReject = true }) => {
   const [showDiff, setShowDiff] = useState(false)
-  const { data: diff = [], isLoading } = useScheduleDiff(draft.draft_id, showDiff)
-  const counts = useMemo(() => diff.reduce((result, row) => ({
-    ...result,
-    [row.change_type]: (result[row.change_type] || 0) + 1,
-  }), {}), [diff])
+  const proposalId = draft.proposal_id
+  const { data: diff, isLoading } = useScheduleDiff(proposalId, showDiff)
+  const metrics = draft.metrics || {}
+  const quality = draft.quality_summary || {}
+  const certifiedStages = Number(quality.certified_stages ?? 0)
+  const totalStages = Number(quality.total_stages ?? 0)
   const isWorking = isApproving || isRejecting
-  const isPartial = draft.result_category === 'PARTIAL_RECOVERY'
+  const isFirstGeneration = diff?.is_first_generation === true
+  const summaries = useMemo(() => changeSummary(diff), [diff])
+  const stale = draft.is_stale || draft.status === 'STALE'
+  const canApprove = allowApprove && draft.can_approve && !stale
 
   return (
     <CAlert color="warning" className="border border-warning mb-4">
@@ -28,60 +54,47 @@ const DraftPanel = ({ draft, onApprove, onReject, isApproving, isRejecting, allo
         <div className="flex-grow-1">
           <div className="fw-bold mb-2">
             <CIcon icon={cilWarning} className="me-2" />
-            Rascunho pendente
+            Proposta pendente
           </div>
           <div className="d-flex flex-wrap gap-2 mb-3">
-            <CBadge color="primary">{draft.strategy === 'ADAPTIVE_REPAIR' ? 'Reparação' : 'Primeiro horário'}</CBadge>
-            <CBadge color={isPartial ? 'warning' : 'success'}>
-              {isPartial ? 'Recuperação parcial' : 'Resultado completo'}
+            <CBadge color="primary">
+              {draft.strategy === 'ADAPTIVE_RECOVERY' ? 'Atualização do horário' : 'Primeiro horário'}
             </CBadge>
-            {draft.recovery_escalation_level && (
-              <CBadge color="secondary">{draft.recovery_escalation_level}</CBadge>
-            )}
-            {draft.adaptation_level && (
-              <CBadge color="secondary">{draft.adaptation_level}</CBadge>
-            )}
+            {!stale && <CBadge color="success">Resultado completo</CBadge>}
+            {stale && <CBadge color="danger">Desatualizada</CBadge>}
           </div>
 
-          <div className="d-flex flex-wrap gap-4 small mb-3">
-            <span><strong>{draft.changed_blocks}</strong> blocos alterados</span>
-            <span><strong>{draft.affected_classes}</strong> turmas</span>
-            <span><strong>{draft.affected_teachers}</strong> professores</span>
-            <span><strong>{draft.affected_days}</strong> dias</span>
-            <span><strong>{draft.disruption_score}</strong> perturbação</span>
-          </div>
-
-          {(draft.debt_hours_before > 0 || isPartial) && (
-            <div className="small mb-3">
-              <strong>{draft.debt_hours_recovered}h</strong> previstas para recuperação;{' '}
-              <strong>{draft.debt_hours_remaining}h</strong> ainda por agendar.
+          {stale ? (
+            <div className="small mb-3" data-testid="stale-proposal-warning">{STALE_TEXT}</div>
+          ) : (
+            <div className="d-flex flex-wrap gap-4 small mb-3">
+              <span><strong>{metrics.changed_lessons ?? 0}</strong> aulas alteradas</span>
+              <span><strong>{metrics.disruption_cost ?? 0}</strong> perturbação</span>
+              <span>
+                <strong>{metrics.excess_days ?? 0}</strong> dias depois da data preferencial
+              </span>
+              <span><strong>{metrics.margin_days ?? 0}</strong> dias de margem</span>
             </div>
           )}
 
-          {isPartial && (
-            <div className="border-start border-3 border-warning ps-3 mb-3">
-              <div className="fw-semibold">Bloqueio principal</div>
-              <div className="small mb-2">{draft.main_blocker_message}</div>
-              <div className="fw-semibold small">Ações recomendadas</div>
-              <ul className="small mb-0 ps-3">
-                {draft.recommended_actions.map(action => <li key={action}>{action}</li>)}
-              </ul>
+          {totalStages > 0 && (
+            <div className="small text-muted mb-2" data-testid="quality-certification">
+              {quality.claims_optimum
+                ? 'Qualidade certificada dentro do âmbito calculado.'
+                : `Qualidade certificada em ${certifiedStages} de ${totalStages} etapas.`}
             </div>
           )}
 
-          {draft.workload_override_used && (
-            <CAlert color="danger" className="mb-3" data-testid="deadline-rescue-warning">
-              <div className="fw-bold">Resgate de prazo com sobrecarga</div>
-              <div className="small">
-                Para recuperar as horas antes do prazo, este rascunho excede o limite confortável em{' '}
-                {draft.class_overload_count || 0} dia(s) de turma ({draft.class_overload_excess_minutes || 0} min) e{' '}
-                {draft.teacher_overload_count || 0} dia(s) de professor ({draft.teacher_overload_excess_minutes || 0} min).
-              </div>
+          {Number(metrics.excess_days || 0) > 0 && (
+            <CAlert color="danger" className="py-2 small" data-testid="deadline-excess-warning">
+              Algumas turmas terminam depois da data preferencial definida pela escola.
             </CAlert>
           )}
 
-          {draft.warnings.map(warning => (
-            <div key={warning} className="small text-warning-emphasis mb-1">{warning}</div>
+          {(draft.warnings || []).map((warning) => (
+            <div key={warning} className="small text-warning-emphasis mb-1">
+              {WARNING_LABELS[warning] || warning}
+            </div>
           ))}
 
           <CButton
@@ -101,18 +114,34 @@ const DraftPanel = ({ draft, onApprove, onReject, isApproving, isRejecting, allo
               {isLoading ? <CSpinner size="sm" /> : (
                 <>
                   <div className="d-flex flex-wrap gap-2 mb-2">
-                    {Object.entries(counts).map(([type, count]) => (
-                      <CBadge color="light" textColor="dark" key={type}>
-                        {CHANGE_LABELS[type] || type}: {count}
+                    {isFirstGeneration && (
+                      <CBadge color="light" textColor="dark">
+                        Primeiro horário completo
                       </CBadge>
+                    )}
+                    {summaries.map(summary => (
+                      <CBadge color="light" textColor="dark" key={summary}>{summary}</CBadge>
                     ))}
+                    {Number(diff?.counts?.modular_updates || 0) > 0 && (
+                      <CBadge color="light" textColor="dark">
+                        Previsão modular atualizada: {diff.counts.modular_updates}
+                      </CBadge>
+                    )}
                   </div>
                   <div className="d-flex flex-column gap-2">
-                    {diff.map(row => (
-                      <div key={row.id} className="small border-top pt-2">
+                    {(diff?.physical || []).map(row => (
+                      <div key={`physical-${row.lesson_id}-${row.change_type}`} className="small border-top pt-2">
                         <strong>{CHANGE_LABELS[row.change_type] || row.change_type}</strong>
                         {' · '}Turma {row.class_id} · Disciplina {row.subject_id}
-                        {row.reason_message ? <div className="text-muted">{row.reason_message}</div> : null}
+                        {row.before?.date && row.after?.date && row.before.date !== row.after.date
+                          ? <span className="text-muted"> · {row.before.date} → {row.after.date}</span>
+                          : null}
+                      </div>
+                    ))}
+                    {(diff?.modular || []).slice(0, 20).map(row => (
+                      <div key={`modular-${row.lesson_id}`} className="small border-top pt-2">
+                        <strong>Previsão modular</strong>
+                        {' · '}Turma {row.class_id} · Disciplina {row.subject_id}
                       </div>
                     ))}
                   </div>
@@ -128,7 +157,7 @@ const DraftPanel = ({ draft, onApprove, onReject, isApproving, isRejecting, allo
             variant="outline"
             size="sm"
             disabled={isWorking}
-            onClick={() => onReject(draft.draft_id)}
+            onClick={() => onReject(proposalId)}
           >
             {isRejecting ? <CSpinner size="sm" className="me-1" /> : <CIcon icon={cilBan} className="me-1" />}
             Rejeitar
@@ -136,8 +165,8 @@ const DraftPanel = ({ draft, onApprove, onReject, isApproving, isRejecting, allo
           {allowApprove && <CButton
             color="success"
             size="sm"
-            disabled={isWorking || !draft.can_approve}
-            onClick={() => onApprove(draft.draft_id)}
+            disabled={isWorking || !canApprove}
+            onClick={() => onApprove(proposalId)}
             data-tutorial-target="approve-schedule"
           >
             {isApproving ? <CSpinner size="sm" className="me-1" /> : <CIcon icon={cilCheckCircle} className="me-1" />}

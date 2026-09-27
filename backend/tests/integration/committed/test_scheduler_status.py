@@ -1,121 +1,58 @@
-from datetime import UTC, date, datetime
+"""W09: /scheduler/status reports state and eligibility without writing."""
+
+from __future__ import annotations
+
+from datetime import UTC, datetime
+
+from sqlalchemy import select
 
 from app import models
-from app.services.scheduler_status_service import SchedulerStatusService
+from app.scheduler.infrastructure.queries import scheduler_status
+from tests._support.scheduler_v1 import seed_generatable_school
+
+MOMENT = datetime(2026, 9, 1, 8, 0, tzinfo=UTC)
 
 
-async def _status_context(db_session):
-    organization = models.Organization(name="Status School", plan_status="active")
-    db_session.add(organization)
-    await db_session.flush()
-    user = models.User(
-        email="status-admin@example.com",
+async def test_status_reports_first_generation_for_a_configured_year(db_session):
+    seed = await seed_generatable_school(
+        db_session, clerk_user_id="status_admin", clerk_org_id="status_org"
     )
-    school_year = models.SchedulerSchoolYear(
-        organization_id=organization.id,
-        label="2025/2026",
-        start_date=date(2025, 9, 1),
-        hard_end_date=date(2026, 7, 15),
-        timezone="Europe/Lisbon",
-    )
-    db_session.add_all([user, school_year])
-    await db_session.flush()
-    membership = models.OrganizationMembership(
-        organization_id=organization.id,
-        account_id=user.id,
-        organization_display_name="Status Admin",
-        lifecycle_status=models.MembershipLifecycleStatus.active,
-        access_status=models.MembershipAccessStatus.active,
-        can_admin=True,
-        can_teach=False,
-    )
-    db_session.add(membership)
-    await db_session.flush()
-    state = models.SchedulerSchoolYearState(
-        organization_id=organization.id,
-        school_year_id=school_year.id,
-    )
-    db_session.add(state)
-    await db_session.commit()
-    return organization, membership, school_year, state
-
-
-async def test_status_exposes_first_generation_as_primary_action(db_session):
-    organization, _user, school_year, _state = await _status_context(db_session)
-
-    status = await SchedulerStatusService(db_session).get_status(organization.id)
-
-    assert status.school_year_id == school_year.id
-    assert status.school_year_publication_state == "UNPUBLISHED"
-    assert status.primary_action == "GENERATE_SCHEDULE"
-    assert status.can_generate_new_draft is True
-    assert status.can_regenerate_with_confirmation is False
-    assert status.trigger_type == "FIRST_GENERATION"
-
-
-async def test_pending_draft_review_outranks_regeneration(db_session):
-    organization, membership, school_year, state = await _status_context(db_session)
-    now = datetime.now(UTC)
-    job = models.ScheduleGenerationJob(
-        organization_id=organization.id,
-        school_year_id=school_year.id,
-        requested_by_membership_id=membership.id,
-        strategy=models.ScheduleGenerationStrategy.COMPLETE_GENERATION,
-        trigger_type=models.ScheduleGenerationTrigger.FIRST_GENERATION,
-        job_status=models.ScheduleGenerationJobStatus.SUCCEEDED,
-        result_category=models.ScheduleGenerationResultCategory.COMPLETE_SUCCESS,
-        queued_at=now,
-        started_at=now,
-        finished_at=now,
-    )
-    db_session.add(job)
-    await db_session.flush()
-    draft = models.ScheduleDraft(
-        organization_id=organization.id,
-        school_year_id=school_year.id,
-        generation_job_id=job.id,
-        strategy=models.ScheduleGenerationStrategy.COMPLETE_GENERATION,
-        result_category=models.ScheduleGenerationResultCategory.COMPLETE_SUCCESS,
-        trigger_type=models.ScheduleGenerationTrigger.FIRST_GENERATION,
-        generation_input_fingerprint="a" * 64,
-        scheduler_state_version_used=0,
-        projected_completion_date=date(2026, 6, 30),
-        hard_end_date=school_year.hard_end_date,
-        summary_json={},
-        created_by_membership_id=membership.id,
-    )
-    db_session.add(draft)
-    await db_session.flush()
-    state.pending_draft_id = draft.id
     await db_session.commit()
 
-    status = await SchedulerStatusService(db_session).get_status(organization.id)
+    status = await scheduler_status(db_session, seed.organization.id, now_utc=MOMENT)
 
-    assert status.pending_draft_id == draft.id
-    assert status.primary_action == "REVIEW_PENDING_DRAFT"
-    assert status.can_generate_new_draft is False
-    assert status.can_regenerate_with_confirmation is True
+    assert status["configured"] is True
+    assert status["school_year"]["id"] == seed.year.id
+    assert status["publication_state"] == "UNPUBLISHED"
+    assert status["active_version_id"] is None
+    assert status["default_strategy"] == "COMPLETE_GENERATION"
+    assert status["eligibility"]["can_generate"] is True
+    assert status["eligibility"]["reasons"] == ["FIRST_GENERATION"]
+    assert status["eligibility"]["blocker"] is None
+    assert status["active_job"] is None
+    assert status["pending_proposal"] is None
 
 
-async def test_published_status_distinguishes_no_trigger_and_scheduler_change(db_session):
-    organization, _user, _school_year, state = await _status_context(db_session)
-    state.school_year_publication_state = models.SchoolYearPublicationState.PUBLISHED
-    state.active_schedule_version_id = "v1"
-    state.scheduler_state_version = 4
-    state.approved_scheduler_state_version = 4
+async def test_status_does_not_write(db_session):
+    seed = await seed_generatable_school(
+        db_session, clerk_user_id="status_nowrite", clerk_org_id="status_nowrite_org"
+    )
     await db_session.commit()
+    before = await db_session.scalar(
+        select(models.SchedulerSchoolYearState.input_revision).where(
+            models.SchedulerSchoolYearState.organization_id == seed.organization.id
+        )
+    )
 
-    blocked = await SchedulerStatusService(db_session).get_status(organization.id)
-    assert blocked.primary_action == "GENERATION_UNAVAILABLE"
-    assert blocked.blocked_reason is None
-    assert blocked.can_generate_new_draft is False
+    await scheduler_status(db_session, seed.organization.id, now_utc=MOMENT)
+    await scheduler_status(db_session, seed.organization.id, now_utc=MOMENT)
 
-    state.scheduler_state_version = 5
-    await db_session.commit()
-    changed = await SchedulerStatusService(db_session).get_status(organization.id)
-    assert changed.primary_action == "GENERATE_SCHEDULE"
-    assert changed.trigger_type == "SCHEDULER_CHANGE"
-    assert changed.can_generate_new_draft is True
+    after = await db_session.scalar(
+        select(models.SchedulerSchoolYearState.input_revision).where(
+            models.SchedulerSchoolYearState.organization_id == seed.organization.id
+        )
+    )
+    assert before == after
 
 
 async def test_status_endpoint_returns_unconfigured_state(
@@ -129,9 +66,9 @@ async def test_status_endpoint_returns_unconfigured_state(
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["primary_action"] == "GENERATION_UNAVAILABLE"
-    assert payload["can_generate_new_draft"] is False
-    assert payload["blocked_reason"] == "The scheduler school year is not configured."
+    assert payload["configured"] is False
+    assert payload["eligibility"]["can_generate"] is False
+    assert payload["school_year"] is None
 
     draft_response = await async_client.get(
         "/api/v1/scheduler/drafts/current",

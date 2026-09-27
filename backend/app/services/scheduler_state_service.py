@@ -364,6 +364,10 @@ class SchedulerStateService:
             version_after += 1
             state.scheduler_state_version = version_after
             state.lock_version += 1
+            state.input_revision += 1
+            state.planning_revision += 1
+        elif change_scope == models.SchedulerStateChangeScope.PAST_ONLY:
+            state.input_revision += 1
 
         event = models.SchedulerStateVersionEvent(
             organization_id=organization_id,

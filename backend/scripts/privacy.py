@@ -10,17 +10,45 @@ import argparse
 import asyncio
 import hashlib
 import json
+import os
 import zipfile
 from datetime import date, datetime
 from enum import Enum
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, text
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.pool import NullPool
 
 from app import models
+from app.config import settings
 from app.db.database import Base, SessionLocal
 from app.db.tenant import set_async_tenant_context
+
+_admin_engine = None
+
+
+def _administrative_url() -> str:
+    url = os.environ.get("MIGRATION_DATABASE_URL") or str(
+        settings.MIGRATION_DATABASE_URL or settings.DATABASE_URL or ""
+    )
+    if not url:
+        raise ValueError("An administrative database URL is required for erasure.")
+    return url.replace("+psycopg2", "+asyncpg")
+
+
+def _administrative_sessions():
+    """Table-owner session used only by the explicit erasure command.
+
+    The runtime role keeps its append-only contract. Broad DELETE grants are
+    never given to it.
+    """
+    global _admin_engine
+    if _admin_engine is None:
+        _admin_engine = create_async_engine(_administrative_url(), poolclass=NullPool)
+    return async_sessionmaker(_admin_engine, expire_on_commit=False)
+
 
 # Every tenant table must be classified here.  This is intentionally explicit:
 # adding a model with organization_id without updating the privacy runbook must
@@ -62,6 +90,20 @@ PRIVACY_TABLES = {
     "operational_schedule_block": "delete",
     "lesson_log": "delete",
     "planned_recovery_links": "delete",
+    "curricular_assignment": "delete",
+    "curricular_requirement": "delete",
+    "curricular_execution": "delete",
+    "curricular_execution_credit": "delete",
+    "curricular_debt": "delete",
+    "curricular_debt_revision": "delete",
+    "curricular_debt_settlement": "delete",
+    "scheduler_version_v1": "delete",
+    "scheduler_lesson_v1": "delete",
+    "scheduler_lesson_log_v1": "delete",
+    "scheduler_lesson_slice_v1": "delete",
+    "scheduler_recovery_reservation_v1": "delete",
+    "scheduler_job_v1": "delete",
+    "scheduler_proposal_v1": "delete",
     "organization_legal_acceptance": "preserve",
 }
 PRESERVED_TABLES = {"organization", "organization_legal_acceptance", "alembic_version"}
@@ -189,6 +231,18 @@ def _write_export(output: Path, data: dict[str, list[dict[str, Any]]]) -> dict[s
     }
 
 
+async def _counts(db, organization_id: int) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for table in _tenant_tables():
+        total = await db.scalar(
+            select(func.count())
+            .select_from(table)
+            .where(table.c.organization_id == organization_id)
+        )
+        counts[table.name] = int(total or 0)
+    return counts
+
+
 async def _erase(
     organization_id: int,
     confirm_clerk_org_id: str,
@@ -198,8 +252,8 @@ async def _erase(
     if execute and not provider_deleted:
         raise ValueError("--execute exige --provider-deleted após confirmação no fornecedor")
 
-    async with SessionLocal.begin() as db:
-        await set_async_tenant_context(db, organization_id)
+    async with _administrative_sessions().begin() as db:
+        await db.execute(text("SET LOCAL row_security = off"))
         organization = await db.scalar(
             select(models.Organization)
             .where(models.Organization.id == organization_id)
@@ -209,6 +263,10 @@ async def _erase(
             raise ValueError("Organização não encontrada")
         if organization.clerk_org_id != confirm_clerk_org_id:
             raise ValueError("--confirm-clerk-org-id não corresponde à organização")
+        counts = await _counts(db, organization_id)
+        if not execute:
+            return {"dry_run": True, "organization_id": organization_id, "counts": counts}
+
         membership_account_ids = list(
             await db.scalars(
                 select(models.OrganizationMembership.account_id).where(
@@ -216,25 +274,6 @@ async def _erase(
                 )
             )
         )
-        counts: dict[str, int] = {}
-        for table in _tenant_tables():
-            count = await db.scalar(
-                select(table.c.organization_id)
-                .where(table.c.organization_id == organization_id)
-                .limit(500)
-            )
-            if count is not None:
-                counts[table.name] = int(
-                    await db.scalar(
-                        select(func.count())
-                        .select_from(table)
-                        .where(table.c.organization_id == organization_id)
-                    )
-                )
-
-        if not execute:
-            return {"dry_run": True, "organization_id": organization_id, "counts": counts}
-
         organization.plan_status = models.OrganizationPlanStatus.inactive
         organization.clerk_org_id = None
         for table in reversed(_tenant_tables()):
@@ -246,10 +285,9 @@ async def _erase(
                     ~models.User.memberships.any(),
                 )
             )
+        # The monotonic foundation trigger forbids regressing the status, so the
+        # erasure leaves a de-identified tombstone instead of resetting it.
         organization.name = "Organização eliminada"
-        organization.foundation_status = models.OrganizationFoundationStatus.NOT_STARTED
-        organization.foundation_completed_at = None
-        organization.first_real_schedule_approved_at = None
         return {
             "dry_run": False,
             "organization_id": organization_id,

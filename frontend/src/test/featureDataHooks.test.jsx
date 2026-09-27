@@ -283,7 +283,7 @@ describe('vertical feature data hooks', () => {
 
   it('defines scheduling keys, prerequisites, polling, and week params explicitly', async () => {
     apiClient.get.mockImplementation((url) => Promise.resolve(
-      url.includes('/scheduler/jobs/') ? { job_status: 'RUNNING' } : {},
+      url.includes('/scheduler/jobs/') ? { status: 'RUNNING' } : {},
     ))
     const { queryClient, wrapper } = createHarness()
     const reads = renderHook(() => ({
@@ -302,8 +302,9 @@ describe('vertical feature data hooks', () => {
     const jobQuery = queryClient.getQueryCache().find({
       queryKey: ['scheduler-job', 'org-a', 22],
     })
-    expect(jobQuery.options.refetchInterval({ state: { data: { job_status: 'RUNNING' } } })).toBe(5000)
-    expect(jobQuery.options.refetchInterval({ state: { data: { job_status: 'SUCCEEDED' } } })).toBe(false)
+    expect(jobQuery.options.refetchInterval({ state: { data: { status: 'RUNNING' } } })).toBe(5000)
+    expect(jobQuery.options.refetchInterval({ state: { data: { status: 'SUCCEEDED' } } })).toBe(false)
+    expect(jobQuery.options.refetchInterval({ state: { data: { status: 'STALE' } } })).toBe(false)
   })
 
   it('owns draft and cancellation invalidation in scheduling mutations', async () => {
@@ -312,7 +313,7 @@ describe('vertical feature data hooks', () => {
     const approve = renderHook(() => useApproveDraft(), { wrapper })
     const cancel = renderHook(() => useCancelScheduleTask(), { wrapper })
 
-    await act(() => approve.result.current.mutateAsync(11))
+    await act(() => approve.result.current.mutateAsync({ proposalId: 11 }))
     await act(() => cancel.result.current.mutateAsync(22))
 
     expect(invalidate.mock.calls.map(([options]) => options.queryKey)).toEqual(expect.arrayContaining([

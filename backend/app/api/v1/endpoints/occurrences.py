@@ -56,6 +56,20 @@ async def list_occurrences(
     """Devolve ocorrÃªncias de aulas com filtros opcionais."""
     organization_id = current_user.organization_id
 
+    from app.scheduler.infrastructure import occurrences as occurrences_v1
+
+    if await occurrences_v1.is_active(db, organization_id):
+        return await occurrences_v1.list_occurrences(
+            db,
+            organization_id,
+            class_id=class_id,
+            date_from=date_from,
+            date_to=date_to,
+            status_filter=status,
+            skip=skip,
+            limit=limit,
+        )
+
     try:
         return await occurrence_service.list_occurrences(
             db,
@@ -146,6 +160,11 @@ async def list_debts(
     """Devolve as horas em dÃ­vida (faltas nÃ£o recuperadas) agrupadas por turma/disciplina."""
     organization_id = current_user.organization_id
 
+    from app.scheduler.infrastructure import occurrences as occurrences_v1
+
+    if await occurrences_v1.is_active(db, organization_id):
+        return await occurrences_v1.get_debts(db, organization_id, class_id=class_id)
+
     return await occurrence_service.get_debts(db, organization_id, class_id=class_id)
 
 
@@ -207,6 +226,13 @@ async def get_substitute_recommendations(
 ):
     organization_id = current_user.organization_id
 
+    from app.scheduler.infrastructure import occurrences as occurrences_v1
+
+    if await occurrences_v1.is_active(db, organization_id):
+        return await occurrences_v1.get_substitute_recommendations(
+            db, organization_id, occurrence_id
+        )
+
     try:
         return await occurrence_service.get_substitute_recommendations(
             db,
@@ -231,6 +257,11 @@ async def get_occurrence(
     """Devolve uma ocorrÃªncia pelo ID."""
     organization_id = current_user.organization_id
 
+    from app.scheduler.infrastructure import occurrences as occurrences_v1
+
+    if await occurrences_v1.is_active(db, organization_id):
+        return await occurrences_v1.get_occurrence(db, organization_id, occurrence_id)
+
     return await occurrence_service.get_occurrence(db, occurrence_id, organization_id)
 
 
@@ -252,6 +283,43 @@ async def update_occurrence(
 ):
     """Permite ao diretor marcar uma ocorrÃªncia como GAP ou SUBSTITUTED."""
     organization_id = current_user.organization_id
+
+    from app.scheduler.infrastructure import occurrences as occurrences_v1
+
+    if await occurrences_v1.is_active(db, organization_id):
+        try:
+            updated_v1 = await occurrences_v1.update_occurrence(
+                db,
+                organization_id,
+                occurrence_id,
+                payload,
+                decided_by_membership_id=current_user.membership_id,
+            )
+        except AppError as exc:
+            error_status = status_code_for_kind(exc.kind, exc.code)
+            await occurrence_service.log_occurrence_event_safe(
+                db,
+                organization_id=organization_id,
+                event_type=occurrence_service.OBS_EVENT_DECIDE,
+                result=occurrence_service.classify_occurrence_error_result(error_status),
+                actor_membership_id=current_user.membership_id,
+                occurrence_id=occurrence_id,
+                active_schedule_block_id=None,
+                detail=exc.detail,
+            )
+            raise
+        await occurrence_service.log_occurrence_event_safe(
+            db,
+            organization_id=organization_id,
+            event_type=occurrence_service.OBS_EVENT_DECIDE,
+            result=occurrence_service.OBS_RESULT_SUCCESS,
+            actor_membership_id=current_user.membership_id,
+            occurrence_id=occurrence_id,
+            active_schedule_block_id=None,
+            decision_status=updated_v1.get("status"),
+            detail=None,
+        )
+        return updated_v1
 
     try:
         updated = await occurrence_service.update_occurrence(
@@ -305,6 +373,19 @@ async def cancel_occurrence(
 ):
     """Cancela uma ocorrÃªncia (OPEN ou decidida), revertendo o LessonLog para PENDING."""
     organization_id = current_user.organization_id
+
+    from app.scheduler.infrastructure import occurrences as occurrences_v1
+
+    if await occurrences_v1.is_active(db, organization_id):
+        return await occurrences_v1.cancel_occurrence(
+            db,
+            organization_id,
+            occurrence_id,
+            version=payload.version,
+            reason=occurrence_service.ADMINISTRATIVE_REVERSAL,
+            cancelled_by_membership_id=current_user.membership_id,
+            cancel_completed_substitute_log=payload.cancel_completed_substitute_log,
+        )
 
     return await occurrence_service.cancel_occurrence(
         db,

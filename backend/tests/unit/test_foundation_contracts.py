@@ -116,7 +116,7 @@ def test_current_member_requires_foundation_status():
 
 
 def test_head_migration_has_no_legacy_bootstrap_or_backfill():
-    migration = Path(__file__).parents[2] / "alembic" / "versions" / "0004_foundation_telemetry.py"
+    migration = Path(__file__).parents[2] / "alembic" / "versions" / "0001_scheduler_v1_baseline.py"
     source = migration.read_text(encoding="utf-8").lower()
 
     assert (

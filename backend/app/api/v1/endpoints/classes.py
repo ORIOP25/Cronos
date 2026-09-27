@@ -104,7 +104,11 @@ async def update_class_progress(
     ðŸ“ˆ Scalability: Suporta N mÃ³dulos numa Ãºnica chamada
     """
     await class_service.update_class_progress(
-        db, class_id, payload.progress, current_user.organization_id
+        db,
+        class_id,
+        payload.progress,
+        current_user.organization_id,
+        membership_id=current_user.membership_id,
     )
 
     # Retornar dados atualizados para refresh na UI

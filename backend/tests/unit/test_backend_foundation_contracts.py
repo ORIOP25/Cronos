@@ -181,7 +181,9 @@ def test_tenant_audit_columns_reference_memberships() -> None:
 
 
 def test_migration_scopes_tenant_audit_keys_to_the_same_organization() -> None:
-    migration = (BACKEND / "alembic" / "versions" / "0001_initial.py").read_text(encoding="utf-8")
+    migration = (BACKEND / "alembic" / "versions" / "0001_scheduler_v1_baseline.py").read_text(
+        encoding="utf-8"
+    )
     expected_constraints = {
         "fk_organization_membership_created_by_membership_id_org",
         "fk_organization_membership_updated_by_membership_id_org",
@@ -261,9 +263,6 @@ def test_ordinary_api_and_services_do_not_control_transactions() -> None:
         Path("api/deps.py"),
         Path("services/member_service.py"),
         Path("services/member_access_operation_service.py"),
-        Path("services/operational_seed_service.py"),
-        Path("services/scheduler_job_runtime.py"),
-        Path("services/scheduler_request_service.py"),
     }
     offenders: list[str] = []
     for scope in ("api", "services"):
@@ -309,5 +308,19 @@ def test_clean_architecture_import_boundaries() -> None:
                 if name and (name == "fastapi" or name.startswith("fastapi.")):
                     offenders.append(f"{path.relative_to(APP)} imports {name}")
                 if name and (name.endswith("_worker") or ".celery_worker" in name):
+                    offenders.append(f"{path.relative_to(APP)} imports {name}")
+
+    for path in _python_files("scheduler/application"):
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            module = node.module if isinstance(node, ast.ImportFrom) else None
+            names = [alias.name for alias in node.names] if isinstance(node, ast.Import) else []
+            imported = [module] if module else names
+            for name in imported:
+                if name and (
+                    name == "ortools"
+                    or name.startswith("ortools.")
+                    or ".scheduler.infrastructure" in name
+                ):
                     offenders.append(f"{path.relative_to(APP)} imports {name}")
     assert offenders == []

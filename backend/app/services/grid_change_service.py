@@ -2,28 +2,32 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
-from datetime import date, time
+from dataclasses import dataclass
+from datetime import UTC, date, datetime, time
+from typing import NamedTuple
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models, schemas
 from app.core.task_keys import DEFAULT_REPAIR_WINDOW_DAYS, resolve_repair_window_days
 from app.scheduler.domain.calendar import first_editable_grid_date
 from app.scheduler.domain.timetable import BreakOverride, build_daily_slots
+from app.scheduler.infrastructure.jobs import (
+    GenerationUnavailable,
+    enqueue_grid_change,
+)
+from app.scheduler.infrastructure.models import (
+    CurricularAssignment,
+    CurricularRequirement,
+    SchedulerJobV1,
+    SchedulerLessonLogV1,
+    SchedulerLessonV1,
+    SchedulerVersionV1,
+)
+from app.scheduler.infrastructure.progress import load_executed_minutes
+from app.scheduler.infrastructure.snapshot import SnapshotConfigurationError
 from app.services import grid_version_service, settings_service
-from app.services.scheduler_complete_demand import CompleteDemandLedgerBuilder
-from app.services.scheduler_fingerprint_service import (
-    SchedulerFingerprintError,
-    SchedulerFingerprintService,
-)
-from app.services.scheduler_generation_service import (
-    GenerationConfigurationError,
-    GenerationSelectionError,
-    SchedulerGenerationService,
-)
-from app.services.scheduler_job_service import SchedulerJobError, SchedulerJobService
 from app.services.scheduler_serialization import canonical_json_value, sha256_json
 
 ProposedSignature = tuple[int, time, time]
@@ -99,10 +103,6 @@ def _proposed_signatures(
     )
 
 
-def _minutes(start: time, end: time) -> int:
-    return _minute_of_day(end) - _minute_of_day(start)
-
-
 def _classify(
     block,
     proposed_by_signature: dict[ProposedSignature, ProposedSignature],
@@ -141,8 +141,13 @@ async def _canonical_minutes(
     *,
     first_editable: date,
     school_today: date,
-) -> tuple[int, int, int, int] | None:
-    """Completed/protected/after-boundary/remaining from the canonical demand ledger."""
+) -> tuple[int, int, int, int]:
+    """Completed/protected/after-boundary/remaining from the v1 canonical state.
+
+    Credited execution comes from the append-only ledger capped by the module
+    requirement; protected and plannable minutes come from the published v1
+    lessons, not from the legacy schedule tables.
+    """
     school_year_id = await db.scalar(
         select(models.SchedulerSchoolYear.id).where(
             models.SchedulerSchoolYear.organization_id == organization_id,
@@ -150,135 +155,120 @@ async def _canonical_minutes(
         )
     )
     if school_year_id is None:
-        return None
-    try:
-        snapshot = await SchedulerFingerprintService(db).generation_input_snapshot(
-            organization_id,
-            school_year_id,
-            models.ScheduleGenerationStrategy.COMPLETE_GENERATION,
-        )
-    except SchedulerFingerprintError:
-        return None
-
-    ledger = CompleteDemandLedgerBuilder().build(snapshot)
-    required_by_module = {
-        row["id"]: row.get("required_minutes", 0) for row in snapshot.get("module_accounting", [])
-    }
-    progress_by_key = {
-        (row.get("class_id"), row.get("module_id")): max(0, int(row.get("completed_minutes", 0)))
-        for row in snapshot.get("class_progress", [])
-    }
-    completed_credited = sum(
-        min(
-            progress_by_key.get((item.class_id, module.module_id), 0),
-            required_by_module.get(module.module_id, 0),
-        )
-        for item in ledger.items
-        for module in item.modules
-    )
-    remaining = ledger.required_minutes
-
-    block_rows = (
-        await db.execute(
-            select(
-                models.ActiveScheduleBlock.date,
-                models.Timeslot.start_time,
-                models.Timeslot.end_time,
-            )
-            .join(
-                models.Timeslot,
-                models.Timeslot.id == models.ActiveScheduleBlock.timeslot_id,
-            )
-            .where(
-                models.ActiveScheduleBlock.organization_id == organization_id,
-                models.ActiveScheduleBlock.status == models.ActiveScheduleBlockStatus.ACTIVE,
-            )
-        )
-    ).all()
-    protected = sum(
-        _minutes(row.start_time, row.end_time)
-        for row in block_rows
-        if school_today <= row.date < first_editable
-    )
-    after_boundary = sum(
-        _minutes(row.start_time, row.end_time) for row in block_rows if row.date >= first_editable
-    )
-    return completed_credited, protected, after_boundary, remaining
-
-
-async def _fallback_minutes(
-    db: AsyncSession,
-    organization_id: int,
-    *,
-    first_editable: date,
-    school_today: date,
-) -> tuple[int, int, int, int]:
+        return 0, 0, 0, 0
     requirement_rows = (
         await db.execute(
             select(
-                models.ClassSubjectLink.class_id,
-                models.Module.id,
-                models.Module.required_minutes,
-            )
-            .join(models.Subject, models.Subject.id == models.ClassSubjectLink.subject_id)
-            .join(models.Module, models.Module.subject_id == models.Subject.id)
-            .where(
-                models.ClassSubjectLink.organization_id == organization_id,
-                models.Module.organization_id == organization_id,
-            )
-            .distinct()
-        )
-    ).all()
-    progress_rows = (
-        await db.execute(
-            select(
-                models.ProgressLedgerEntry.class_id,
-                models.ProgressLedgerEntry.module_id,
-                func.sum(models.ProgressLedgerEntry.completed_minutes_delta),
-            )
-            .where(models.ProgressLedgerEntry.organization_id == organization_id)
-            .group_by(
-                models.ProgressLedgerEntry.class_id,
-                models.ProgressLedgerEntry.module_id,
-            )
-        )
-    ).all()
-    progress_by_key = {
-        (row.class_id, row.module_id): max(0, int(row[2] or 0)) for row in progress_rows
-    }
-    completed = sum(
-        min(progress_by_key.get((row.class_id, row.id), 0), row.required_minutes)
-        for row in requirement_rows
-    )
-    required = sum(row.required_minutes for row in requirement_rows)
-    remaining = max(0, required - completed)
-
-    block_rows = (
-        await db.execute(
-            select(
-                models.ActiveScheduleBlock.date,
-                models.Timeslot.start_time,
-                models.Timeslot.end_time,
+                CurricularRequirement.assignment_id,
+                CurricularRequirement.module_id,
+                CurricularRequirement.required_minutes,
             )
             .join(
-                models.Timeslot,
-                models.Timeslot.id == models.ActiveScheduleBlock.timeslot_id,
+                CurricularAssignment,
+                and_(
+                    CurricularAssignment.organization_id == CurricularRequirement.organization_id,
+                    CurricularAssignment.id == CurricularRequirement.assignment_id,
+                ),
             )
             .where(
-                models.ActiveScheduleBlock.organization_id == organization_id,
-                models.ActiveScheduleBlock.status == models.ActiveScheduleBlockStatus.ACTIVE,
+                CurricularAssignment.organization_id == organization_id,
+                CurricularAssignment.school_year_id == school_year_id,
             )
         )
     ).all()
-    protected = sum(
-        _minutes(row.start_time, row.end_time)
-        for row in block_rows
-        if school_today <= row.date < first_editable
+    required = sum(row.required_minutes for row in requirement_rows)
+    executed = await load_executed_minutes(
+        db, organization_id, [row.assignment_id for row in requirement_rows]
     )
-    after_boundary = sum(
-        _minutes(row.start_time, row.end_time) for row in block_rows if row.date >= first_editable
+    completed_credited = sum(
+        min(
+            executed.get(row.assignment_id, {}).get(row.module_id, 0),
+            row.required_minutes,
+        )
+        for row in requirement_rows
     )
-    return completed, protected, after_boundary, remaining
+
+    active_version = await db.scalar(
+        select(SchedulerVersionV1.id).where(
+            SchedulerVersionV1.organization_id == organization_id,
+            SchedulerVersionV1.school_year_id == school_year_id,
+            SchedulerVersionV1.status == "ACTIVE",
+        )
+    )
+    lesson_rows: list[tuple[date, int]] = []
+    if active_version is not None:
+        lesson_rows = [
+            (row[0], row[1])
+            for row in (
+                await db.execute(
+                    select(
+                        SchedulerLessonV1.school_date,
+                        SchedulerLessonV1.physical_minutes,
+                    ).where(
+                        SchedulerLessonV1.organization_id == organization_id,
+                        SchedulerLessonV1.school_year_id == school_year_id,
+                        SchedulerLessonV1.version_id == active_version,
+                    )
+                )
+            ).all()
+        ]
+    protected = sum(minutes for day, minutes in lesson_rows if school_today <= day < first_editable)
+    after_boundary = sum(minutes for day, minutes in lesson_rows if day >= first_editable)
+    return completed_credited, protected, after_boundary, required
+
+
+class UndecidedLesson(NamedTuple):
+    id: int
+    date: date
+    class_id: int
+    subject_id: int
+
+
+async def _past_lessons_without_decision(
+    db: AsyncSession,
+    organization_id: int,
+    *,
+    school_today: date,
+) -> list[UndecidedLesson]:
+    """Published lessons before today without a final log decision."""
+    active = await db.scalar(
+        select(SchedulerVersionV1).where(
+            SchedulerVersionV1.organization_id == organization_id,
+            SchedulerVersionV1.status == "ACTIVE",
+        )
+    )
+    if active is None:
+        return []
+    rows = await db.execute(
+        select(
+            SchedulerLessonV1.id,
+            SchedulerLessonV1.school_date,
+            CurricularAssignment.class_id,
+            CurricularAssignment.subject_id,
+        )
+        .join(
+            CurricularAssignment,
+            and_(
+                CurricularAssignment.organization_id == SchedulerLessonV1.organization_id,
+                CurricularAssignment.id == SchedulerLessonV1.assignment_id,
+            ),
+        )
+        .outerjoin(
+            SchedulerLessonLogV1,
+            and_(
+                SchedulerLessonLogV1.organization_id == SchedulerLessonV1.organization_id,
+                SchedulerLessonLogV1.lesson_id == SchedulerLessonV1.id,
+            ),
+        )
+        .where(
+            SchedulerLessonV1.organization_id == organization_id,
+            SchedulerLessonV1.school_year_id == active.school_year_id,
+            SchedulerLessonV1.version_id == active.id,
+            SchedulerLessonV1.school_date < school_today,
+            SchedulerLessonLogV1.id.is_(None),
+        )
+    )
+    return [UndecidedLesson(row[0], row[1], row[2], row[3]) for row in rows.all()]
 
 
 async def analyze_grid_change(
@@ -407,38 +397,20 @@ async def analyze_grid_change(
             }
         )
 
-    pending_lessons = (
-        await db.execute(
-            select(
-                models.LessonOccurrence.id,
-                models.LessonOccurrence.date,
-                models.LessonOccurrence.class_id,
-                models.LessonOccurrence.subject_id,
-            ).where(
-                models.LessonOccurrence.organization_id == organization_id,
-                models.LessonOccurrence.is_active.is_(True),
-                models.LessonOccurrence.revoked_at.is_(None),
-                models.LessonOccurrence.status.is_(None),
-                models.LessonOccurrence.date < school_today,
-            )
-        )
-    ).all()
+    pending_lessons = await _past_lessons_without_decision(
+        db, organization_id, school_today=school_today
+    )
 
-    canonical = await _canonical_minutes(
+    (
+        minutes_completed,
+        minutes_protected,
+        minutes_after,
+        minutes_remaining,
+    ) = await _canonical_minutes(
         db,
         organization_id,
         first_editable=first_editable,
         school_today=school_today,
-    )
-    minutes_completed, minutes_protected, minutes_after, minutes_remaining = (
-        canonical
-        if canonical is not None
-        else await _fallback_minutes(
-            db,
-            organization_id,
-            first_editable=first_editable,
-            school_today=school_today,
-        )
     )
     minutes_to_place = max(0, minutes_remaining - minutes_protected)
 
@@ -538,10 +510,13 @@ async def _idempotent_proposal(
     if idempotency_key is None:
         return None
     job = await db.scalar(
-        select(models.ScheduleGenerationJob).where(
-            models.ScheduleGenerationJob.organization_id == organization_id,
-            models.ScheduleGenerationJob.idempotency_key == idempotency_key,
+        select(SchedulerJobV1)
+        .where(
+            SchedulerJobV1.organization_id == organization_id,
+            SchedulerJobV1.origin == idempotency_key,
+            SchedulerJobV1.grid_version_id.is_not(None),
         )
+        .order_by(SchedulerJobV1.id.desc())
     )
     if job is None or job.grid_version_id is None:
         return None
@@ -554,7 +529,7 @@ async def _idempotent_proposal(
         strategy="GRID_CHANGE",
         effective_date=version.effective_date,
         first_editable_date=version.effective_date,
-        status=job.job_status.value,
+        status=job.status,
         created=False,
     )
 
@@ -699,20 +674,17 @@ async def propose_grid_change(
         )
     await db.flush()
 
-    generation = SchedulerGenerationService(db)
+    idempotency_key = payload.idempotency_key or f"grid-change:{version.id}"
     try:
-        selection = await generation.select_grid_change_strategy(organization_id)
-    except (GenerationConfigurationError, GenerationSelectionError) as exc:
-        raise GridChangeError(exc.code, str(exc)) from exc
-    selection = replace(selection, grid_version_id=version.id)
-
-    try:
-        handle = await SchedulerJobService(db).create_or_get_job(
-            selection,
+        handle = await enqueue_grid_change(
+            db,
+            organization_id,
+            grid_version_id=version.id,
+            idempotency_key=idempotency_key,
             requested_by_membership_id=membership_id,
-            idempotency_key=payload.idempotency_key,
+            now_utc=datetime.now(UTC),
         )
-    except SchedulerJobError as exc:
+    except (GenerationUnavailable, SnapshotConfigurationError) as exc:
         raise GridChangeError(exc.code, str(exc)) from exc
 
     return schemas.GridChangeProposalResponse(
@@ -721,7 +693,7 @@ async def propose_grid_change(
         strategy="GRID_CHANGE",
         effective_date=version.effective_date,
         first_editable_date=analysis.first_editable_date,
-        status=handle.job.job_status.value,
+        status=handle.job.status,
         created=handle.created,
     )
 
@@ -739,12 +711,12 @@ async def pending_grid_change(
         return None
     blocks = await grid_version_service.get_version_blocks(db, organization_id, pending.id)
     job = await db.scalar(
-        select(models.ScheduleGenerationJob)
+        select(SchedulerJobV1)
         .where(
-            models.ScheduleGenerationJob.organization_id == organization_id,
-            models.ScheduleGenerationJob.grid_version_id == pending.id,
+            SchedulerJobV1.organization_id == organization_id,
+            SchedulerJobV1.grid_version_id == pending.id,
         )
-        .order_by(models.ScheduleGenerationJob.id.desc())
+        .order_by(SchedulerJobV1.id.desc())
         .limit(1)
     )
     return schemas.GridChangePendingResponse(
@@ -752,7 +724,7 @@ async def pending_grid_change(
         effective_date=pending.effective_date,
         configuration=pending.configuration_json,
         job_id=None if job is None else job.id,
-        job_status=None if job is None else job.job_status.value,
+        job_status=None if job is None else job.status,
         blocks=[
             schemas.GridBlockRead(
                 id=block.id,

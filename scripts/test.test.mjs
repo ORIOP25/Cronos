@@ -8,7 +8,6 @@ import {
   displayArgs,
   isOwnedResource,
   parseArgs,
-  planFor,
   preservePrimaryFailure,
   ROOT,
   resolveE2eBaseUrl,
@@ -35,6 +34,38 @@ test('keeps capacity as an explicit E2E gate', () => {
   assert.equal(parseArgs(['capacity']).command, 'capacity')
   assert.equal(parseArgs(['capacity-smoke']).command, 'capacity-smoke')
   assert.equal(parseArgs(['e2e', '--project', 'capacity']).project, 'capacity')
+})
+
+test('parses scheduler lab campaign options and rejects them elsewhere', () => {
+  const parsed = parseArgs([
+    'campaign',
+    '--manifest', 'backend/tests/scheduler_lab/manifest.json',
+    '--out', '.test-artifacts/lab',
+    '--case', 'case-a',
+    '--case', 'case-b',
+    '--resume',
+  ])
+  assert.equal(parsed.command, 'campaign')
+  assert.equal(parsed.manifest, 'backend/tests/scheduler_lab/manifest.json')
+  assert.equal(parsed.out, '.test-artifacts/lab')
+  assert.deepEqual(parsed.caseIds, ['case-a', 'case-b'])
+  assert.equal(parsed.resume, true)
+  assert.throws(() => parseArgs(['campaign', '--scope', 'backend']), /not valid for campaign/)
+  assert.throws(() => parseArgs(['fast', '--manifest', 'x']), /only valid for campaign/)
+  assert.throws(() => parseArgs(['campaign', '--unknown', 'x']), /Unknown option/)
+
+  const generator = parseArgs(['campaign', '--mode', 'generator', '--time-limit', '5', '--workers', '2'])
+  assert.equal(generator.mode, 'generator')
+  assert.equal(generator.timeLimit, '5')
+  assert.equal(generator.workers, '2')
+  const repair = parseArgs(['campaign', '--mode', 'repair'])
+  assert.equal(repair.mode, 'repair')
+  const trajectory = parseArgs(['campaign', '--mode', 'trajectory'])
+  assert.equal(trajectory.mode, 'trajectory')
+  const longitudinal = parseArgs(['campaign', '--mode', 'longitudinal'])
+  assert.equal(longitudinal.mode, 'longitudinal')
+  assert.throws(() => parseArgs(['campaign', '--mode', 'unknown']), /Invalid campaign mode/)
+  assert.throws(() => parseArgs(['campaign', '--workers', '0']), /Invalid worker count/)
 })
 
 test('preserves paths and arguments containing spaces as separate child arguments', () => {
@@ -96,11 +127,6 @@ test('removes nested Playwright traces while preserving safe reports and screens
   } finally {
     rmSync(root, { force: true, recursive: true })
   }
-})
-
-test('fast plans never consult Docker or install dependencies implicitly', () => {
-  const executables = planFor({ command: 'fast', scope: 'all' }).map((entry) => entry.executable)
-  assert.deepEqual(executables, ['python', 'npm'])
 })
 
 test('resolves the owned and external E2E stack origins explicitly', () => {

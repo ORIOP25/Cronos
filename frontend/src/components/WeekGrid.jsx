@@ -137,7 +137,7 @@ const SlotCell = ({ slotEntries, isOperationalEnabled, onOpenOperationalAction }
   const canOpenOperationalAction = Boolean(
     isOperationalEnabled
     && !hasCollision
-    && (slot.active_schedule_block_id || slot.operational_block_id)
+    && (slot.active_schedule_block_id || slot.operational_block_id || slot.scheduler_lesson_id)
     && slot.date
     && typeof onOpenOperationalAction === 'function'
   )

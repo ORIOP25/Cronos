@@ -1,1 +1,1 @@
-"""Scheduler infrastructure adapters."""
+"""Persistence adapters for the scheduler."""

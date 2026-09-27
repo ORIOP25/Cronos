@@ -5,9 +5,311 @@ from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date, time
 from enum import StrEnum
+from types import MappingProxyType
 from typing import Any
 
+from app.scheduler.domain.candidate import (
+    Assignment,
+    CandidateSchedule,
+    GridSlot,
+    PlanningSnapshot,
+    ScheduledLesson,
+    UnavailableResource,
+)
+
 QUALITY_POLICY_VERSION = "baseline-v1"
+
+
+@dataclass(frozen=True, order=True)
+class InitialQualityVector:
+    completion_days_desc: tuple[int, ...]
+    teacher_gap_minutes: int
+    class_gap_minutes: int
+    preference_cost: int
+    room_change_cost: int
+
+
+def _completion_days_desc(
+    completion_dates: Mapping[int, date], class_ids: Sequence[int], origin: date, end: date
+) -> tuple[int, ...]:
+    if type(origin) is not date or type(end) is not date or origin > end:
+        raise ValueError("Scheduling dates are invalid.")
+    if (
+        not class_ids
+        or len(set(class_ids)) != len(class_ids)
+        or set(completion_dates) != set(class_ids)
+    ):
+        raise ValueError("Every expected class needs one completion date.")
+    days = []
+    for completion in completion_dates.values():
+        if type(completion) is not date or not origin <= completion <= end:
+            raise ValueError("Class completion is outside the scheduling dates.")
+        days.append((completion - origin).days)
+    return tuple(sorted(days, reverse=True))
+
+
+def initial_quality_vector(
+    completion_dates: Mapping[int, date],
+    *,
+    class_ids: Sequence[int],
+    origin: date,
+    preferred_end_date: date,
+    teacher_gap_minutes: int,
+    class_gap_minutes: int,
+    preference_cost: int,
+    room_change_cost: int,
+) -> InitialQualityVector:
+    """Compare only complete initial schedules under the preferred end date."""
+    days = _completion_days_desc(completion_dates, class_ids, origin, preferred_end_date)
+    costs = (teacher_gap_minutes, class_gap_minutes, preference_cost, room_change_cost)
+    if any(type(cost) is not int or cost < 0 for cost in costs):
+        raise ValueError("Initial quality costs must be nonnegative integer values.")
+    return InitialQualityVector(days, *costs)
+
+
+@dataclass(frozen=True)
+class StageEvidence:
+    """One optimized quality component with the scope of its proof."""
+
+    stage: str
+    value: int
+    proven: bool
+    reused: bool = False
+
+    def __post_init__(self) -> None:
+        if not self.stage or type(self.value) is not int or self.value < 0:
+            raise ValueError("Stage evidence needs a name and a nonnegative integer value.")
+
+
+@dataclass(frozen=True)
+class SearchEvidence:
+    """Objective, certified prefix, bounds and stop reason of one search."""
+
+    objective_scope: str
+    stages: tuple[StageEvidence, ...]
+    certified_stages: int
+    stop_reason: str
+    rounds: int = 1
+    proposals_excluded: int = 0
+    relaxation_bound: int | None = None
+    relaxation_incumbent: int | None = None
+    relaxation_proven: bool = False
+    relaxation_scope: str | None = None
+
+    def __post_init__(self) -> None:
+        if not self.objective_scope or not self.stop_reason:
+            raise ValueError("Search evidence needs an objective scope and a stop reason.")
+        if not 0 <= self.certified_stages <= len(self.stages):
+            raise ValueError("The certified prefix cannot exceed the recorded stages.")
+        if any(not stage.proven for stage in self.stages[: self.certified_stages]):
+            raise ValueError("A certified prefix only contains proven stages.")
+        if self.certified_stages < len(self.stages):
+            if self.stages[self.certified_stages].proven:
+                raise ValueError("The certified prefix must be contiguous.")
+        if self.rounds < 1 or self.proposals_excluded < 0:
+            raise ValueError("Search evidence needs a positive round count.")
+        if (
+            self.relaxation_bound is not None
+            and self.relaxation_incumbent is not None
+            and self.relaxation_bound > self.relaxation_incumbent
+        ):
+            raise ValueError("A relaxation lower bound cannot exceed its incumbent.")
+
+
+@dataclass(frozen=True)
+class InitialQualityMetrics:
+    """Recalculated quality components of a materialized initial schedule."""
+
+    completion_dates: Mapping[int, date]
+    teacher_gap_minutes: int
+    class_gap_minutes: int
+    preference_cost_minutes: int
+    room_change_cost: int
+
+    def vector(self, *, origin: date, preferred_end_date: date) -> InitialQualityVector:
+        return initial_quality_vector(
+            self.completion_dates,
+            class_ids=tuple(sorted(self.completion_dates)),
+            origin=origin,
+            preferred_end_date=preferred_end_date,
+            teacher_gap_minutes=self.teacher_gap_minutes,
+            class_gap_minutes=self.class_gap_minutes,
+            preference_cost=self.preference_cost_minutes,
+            room_change_cost=self.room_change_cost,
+        )
+
+
+def _slot_position(grid_slots: Sequence[GridSlot], period) -> int | None:
+    slots = sorted(
+        (slot for slot in grid_slots if slot.day_of_week == period.school_date.weekday()),
+        key=lambda slot: (slot.start_local, slot.end_local),
+    )
+    for position, slot in enumerate(slots):
+        if slot.matches(period):
+            return position
+    return None
+
+
+def _gap_minutes(
+    grid_slots: Sequence[GridSlot],
+    occupied: Mapping[tuple[int, date], set[int]],
+) -> int:
+    total = 0
+    for (_resource_id, school_date), positions in occupied.items():
+        if len(positions) < 2:
+            continue
+        slots = sorted(
+            (slot for slot in grid_slots if slot.day_of_week == school_date.weekday()),
+            key=lambda slot: (slot.start_local, slot.end_local),
+        )
+        first, last = min(positions), max(positions)
+        total += sum(
+            (slots[position].end_local.hour * 60 + slots[position].end_local.minute)
+            - (slots[position].start_local.hour * 60 + slots[position].start_local.minute)
+            for position in range(first + 1, last)
+            if position not in positions
+        )
+    return total
+
+
+def _teacher_for(lesson: ScheduledLesson, assignment: Assignment) -> int:
+    return lesson.teacher_id if lesson.teacher_id is not None else assignment.teacher_id
+
+
+def _is_dispreferred(
+    snapshot: PlanningSnapshot, assignment: Assignment, lesson: ScheduledLesson
+) -> bool:
+    for resource_type, resource_id in (
+        (UnavailableResource.CLASS, assignment.class_id),
+        (UnavailableResource.TEACHER, _teacher_for(lesson, assignment)),
+        (UnavailableResource.ROOM, lesson.room_id),
+    ):
+        if any(
+            row.overlaps(lesson.period)
+            for row in snapshot.soft_unavailable_on(
+                resource_type, resource_id, lesson.period.school_date
+            )
+        ):
+            return True
+    return False
+
+
+def measure_initial_quality(
+    snapshot: PlanningSnapshot, candidate: CandidateSchedule
+) -> InitialQualityMetrics:
+    """Recalculate the initial quality components without consulting the solver."""
+    if type(snapshot) is not PlanningSnapshot or type(candidate) is not CandidateSchedule:
+        raise ValueError("Quality measurement needs a snapshot and a candidate schedule.")
+    assignments = {row.assignment_id: row for row in snapshot.assignments}
+    completion_dates = {row.class_id: snapshot.origin for row in snapshot.assignments}
+    teacher_days: dict[tuple[int, date], set[int]] = defaultdict(set)
+    class_days: dict[tuple[int, date], set[int]] = defaultdict(set)
+    rooms: dict[tuple[int, int], set[int]] = defaultdict(set)
+    preference_cost = 0
+    for lesson in candidate.lessons:
+        assignment = assignments.get(lesson.assignment_id)
+        if assignment is None:
+            raise ValueError("The candidate references an assignment outside the snapshot.")
+        previous = completion_dates.get(assignment.class_id, lesson.period.school_date)
+        completion_dates[assignment.class_id] = max(previous, lesson.period.school_date)
+        position = _slot_position(snapshot.grid_slots, lesson.period)
+        if position is not None:
+            teacher_days[(_teacher_for(lesson, assignment), lesson.period.school_date)].add(
+                position
+            )
+            class_days[(assignment.class_id, lesson.period.school_date)].add(position)
+        if _is_dispreferred(snapshot, assignment, lesson):
+            preference_cost += lesson.period.duration_minutes
+        rooms[(assignment.class_id, assignment.subject_id)].add(lesson.room_id)
+    return InitialQualityMetrics(
+        completion_dates=MappingProxyType(dict(sorted(completion_dates.items()))),
+        teacher_gap_minutes=_gap_minutes(snapshot.grid_slots, teacher_days),
+        class_gap_minutes=_gap_minutes(snapshot.grid_slots, class_days),
+        preference_cost_minutes=preference_cost,
+        room_change_cost=sum(max(0, len(room_ids) - 1) for room_ids in rooms.values()),
+    )
+
+
+@dataclass(frozen=True)
+class AdaptiveQualityPolicy:
+    version: str
+    daily_slopes: tuple[int, ...]
+    disruption_weight: int
+
+    def __post_init__(self) -> None:
+        if (
+            not self.version
+            or type(self.disruption_weight) is not int
+            or self.disruption_weight <= 0
+        ):
+            raise ValueError("Adaptive quality needs a version and positive disruption weight.")
+        if type(self.daily_slopes) is not tuple or any(
+            type(slope) is not int or slope <= 0 for slope in self.daily_slopes
+        ):
+            raise ValueError("Margin slopes must be positive integers.")
+        if any(
+            left >= right
+            for left, right in zip(self.daily_slopes, self.daily_slopes[1:], strict=False)
+        ):
+            raise ValueError("Margin slopes must increase toward the preferred end date.")
+
+
+@dataclass(frozen=True, order=True)
+class AdaptiveQualityVector:
+    excess_days_desc: tuple[int, ...]
+    progressive_cost_desc: tuple[int, ...]
+    completion_days_desc: tuple[int, ...]
+    disruption_cost: int
+    teacher_gap_minutes: int
+    class_gap_minutes: int
+    preference_cost: int
+    room_change_cost: int
+
+
+def adaptive_quality_vector(
+    completion_dates: Mapping[int, date],
+    *,
+    class_ids: Sequence[int],
+    origin: date,
+    preferred_end_date: date,
+    hard_end_date: date,
+    disruption_cost: int,
+    teacher_gap_minutes: int,
+    class_gap_minutes: int,
+    preference_cost: int,
+    room_change_cost: int,
+    policy: AdaptiveQualityPolicy,
+) -> AdaptiveQualityVector:
+    """Compare complete repairs using explicit experimental policy parameters."""
+    if (
+        type(origin) is not date
+        or type(preferred_end_date) is not date
+        or type(hard_end_date) is not date
+        or not origin <= preferred_end_date <= hard_end_date
+    ):
+        raise ValueError("Adaptive scheduling dates are invalid.")
+    days = _completion_days_desc(completion_dates, class_ids, origin, hard_end_date)
+    preferred_day = (preferred_end_date - origin).days
+    if len(policy.daily_slopes) != preferred_day:
+        raise ValueError("Margin slopes must cover every day before the preference.")
+    costs = (
+        disruption_cost,
+        teacher_gap_minutes,
+        class_gap_minutes,
+        preference_cost,
+        room_change_cost,
+    )
+    if any(type(cost) is not int or cost < 0 for cost in costs):
+        raise ValueError("Adaptive quality costs must be nonnegative integer values.")
+    margin_cost = [0]
+    for slope in policy.daily_slopes:
+        margin_cost.append(margin_cost[-1] + slope)
+    excess = tuple(max(0, day - preferred_day) for day in days)
+    progressive = tuple(
+        margin_cost[min(day, preferred_day)] + policy.disruption_weight * disruption_cost
+        for day in days
+    )
+    return AdaptiveQualityVector(excess, progressive, days, *costs)
 
 
 class SolveWorkloadMode(StrEnum):

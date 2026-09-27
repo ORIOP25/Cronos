@@ -112,7 +112,7 @@ describe('SchoolConfig scheduler settings', () => {
     renderWithProviders(<SchoolConfig />)
 
     const repairWindow = await screen.findByLabelText(/janela de estabilidade/i)
-    expect(screen.queryByLabelText(/fim previsto|data preferida/i)).not.toBeInTheDocument()
+    expect(screen.getByLabelText(/data preferencial de fim/i)).toBeInTheDocument()
 
     fireEvent.change(repairWindow, { target: { value: '0' } })
     fireEvent.click(screen.getByRole('button', { name: /guardar alterações/i }))
@@ -122,6 +122,7 @@ describe('SchoolConfig scheduler settings', () => {
       expect(apiClient.post).toHaveBeenCalledWith('/school/settings/', {
         school_start_date: '2026-09-15',
         school_hard_end_date: '2027-07-31',
+        preferred_end_date: null,
         repair_stability_window_days: 0,
       })
     })
@@ -156,6 +157,7 @@ describe('SchoolConfig scheduler settings', () => {
     await waitFor(() => expect(apiClient.post).toHaveBeenLastCalledWith('/school/settings/', {
       school_start_date: '2026-09-15',
       school_hard_end_date: '2027-08-31',
+      preferred_end_date: null,
       repair_stability_window_days: 14,
       automatic_holidays_enabled: false,
     }))

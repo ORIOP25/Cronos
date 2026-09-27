@@ -117,10 +117,15 @@ export const useUpsertLessonLog = () => {
   const orgId = useOrganization().organization?.id
 
   return useMutation({
-    mutationFn: async ({ activeScheduleBlockId, operationalBlockId, payload }) => {
-      const endpoint = operationalBlockId
-        ? `/schedule/operational-blocks/${operationalBlockId}/log`
-        : `/schedule/active-blocks/${activeScheduleBlockId}/log`
+    mutationFn: async ({ activeScheduleBlockId, operationalBlockId, schedulerLessonId, payload }) => {
+      let endpoint
+      if (schedulerLessonId) {
+        endpoint = `/schedule/lessons/${schedulerLessonId}/log`
+      } else if (operationalBlockId) {
+        endpoint = `/schedule/operational-blocks/${operationalBlockId}/log`
+      } else {
+        endpoint = `/schedule/active-blocks/${activeScheduleBlockId}/log`
+      }
       return apiClient.put(endpoint, payload)
     },
     onSuccess: () => {

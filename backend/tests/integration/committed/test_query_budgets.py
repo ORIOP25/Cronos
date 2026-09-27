@@ -101,7 +101,9 @@ def test_timesheet_listing_uses_at_most_two_statements(sync_db):
         )
 
     assert len(rows) == 1
-    assert len(statements) <= 2
+    # Roster, active-v1 lookup and slot counts: the v1 ledger requires one
+    # extra indexed lookup over the legacy-only path.
+    assert len(statements) <= 3
 
 
 async def test_teacher_history_detection_uses_one_statement(db_session):

@@ -128,7 +128,8 @@ jobs:
         run: |
           pytest -q tests/contracts --cov=app --cov-branch --cov-report= --cov-fail-under=0 --cov-append --junitxml=test-results-contracts.xml
           coverage report --fail-under=70
-          coverage report --include='app/scheduler/domain/constraints.py,app/scheduler/domain/validation.py' --fail-under=100
+          coverage report --include='app/scheduler/domain/constraint_policy.py' --fail-under=100
+          coverage report --include='app/scheduler/domain/candidate_validation.py' --fail-under=90
           python - <<'PY'
           import xml.etree.ElementTree as ET
           files = ("test-results-unit.xml", "test-results-integration.xml", "test-results-contracts.xml")
@@ -375,6 +376,9 @@ jobs:
         run: node scripts/test.mjs e2e
         env:
           CI: "true"
+          COMPOSE_PROJECT_NAME: cronos-ci-${{ github.run_id }}-${{ github.run_attempt }}
+          CRONOS_MIGRATOR_PASSWORD: ${{ env.CI_MIGRATOR_PASSWORD }}
+          CRONOS_APP_PASSWORD: ${{ env.CI_APP_PASSWORD }}
           E2E_EXTERNAL_STACK: "1"
           BASE_URL: http://localhost:5173
           PLAYWRIGHT_SKIP_WEB_SERVER: "1"

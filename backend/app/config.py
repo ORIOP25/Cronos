@@ -136,6 +136,12 @@ class Settings(BaseSettings):
     # Permitimos que seja None para não obrigar a ter no .env
     CELERY_BROKER_URL: RedisDsn | None = None
 
+    # --- Scheduler v1: limites de laboratório explícitos (W11 calibra) ---
+    SCHEDULER_V1_JOB_TIMEOUT_SECONDS: int = 900
+    SCHEDULER_V1_HEARTBEAT_SECONDS: float = 5.0
+    SCHEDULER_V1_ABANDONED_SECONDS: int = 120
+    SCHEDULER_V1_NUM_WORKERS: int = 1
+
     # --- Lógica Inteligente: Validador ---
     # Este código corre DEPOIS de carregar o .env
     @model_validator(mode="after")
@@ -157,6 +163,14 @@ class Settings(BaseSettings):
             raise ValueError("CONTACT_EMAIL_TIMEOUT_SECONDS must be between 1 and 30.")
         if not 1 <= self.TURNSTILE_TIMEOUT_SECONDS <= 30:
             raise ValueError("TURNSTILE_TIMEOUT_SECONDS must be between 1 and 30.")
+        if not 1 <= self.SCHEDULER_V1_JOB_TIMEOUT_SECONDS <= 86_400:
+            raise ValueError("SCHEDULER_V1_JOB_TIMEOUT_SECONDS must be between 1 and 86400.")
+        if not 0.5 <= self.SCHEDULER_V1_HEARTBEAT_SECONDS <= 60:
+            raise ValueError("SCHEDULER_V1_HEARTBEAT_SECONDS must be between 0.5 and 60.")
+        if not 1 <= self.SCHEDULER_V1_ABANDONED_SECONDS <= 86_400:
+            raise ValueError("SCHEDULER_V1_ABANDONED_SECONDS must be between 1 and 86400.")
+        if not 1 <= self.SCHEDULER_V1_NUM_WORKERS <= 64:
+            raise ValueError("SCHEDULER_V1_NUM_WORKERS must be between 1 and 64.")
 
     def _validate_shared_settings(self) -> None:
         if not self.TURNSTILE_ALLOWED_HOSTNAMES_LIST:

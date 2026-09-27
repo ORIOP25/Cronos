@@ -1186,6 +1186,7 @@ class SchedulerSchoolYear(Base):
     )
     label: Mapped[str] = mapped_column(String(20), nullable=False)
     start_date: Mapped[date_type] = mapped_column(Date, nullable=False)
+    preferred_end_date: Mapped[date_type | None] = mapped_column(Date, nullable=True)
     hard_end_date: Mapped[date_type] = mapped_column(Date, nullable=False)
     timezone: Mapped[str] = mapped_column(String(64), nullable=False, default="Europe/Lisbon")
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
@@ -1205,6 +1206,11 @@ class SchedulerSchoolYear(Base):
         UniqueConstraint("id", "organization_id", name="uq_scheduler_school_year_id_org"),
         UniqueConstraint("organization_id", "label", name="uq_scheduler_school_year_org_label"),
         CheckConstraint("hard_end_date >= start_date", name="ck_scheduler_school_year_date_order"),
+        CheckConstraint(
+            "preferred_end_date IS NULL OR "
+            "(start_date <= preferred_end_date AND preferred_end_date <= hard_end_date)",
+            name="ck_scheduler_school_year_preferred_order",
+        ),
         Index(
             "uq_scheduler_school_year_active_org",
             "organization_id",
@@ -1239,6 +1245,16 @@ class SchedulerSchoolYearState(Base):
         nullable=True,
     )
     scheduler_state_version: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    input_revision: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
+    planning_revision: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
+    last_completed_planning_revision: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    last_successful_generation_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     approved_scheduler_state_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
     reset_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     reset_by_membership_id: Mapped[int | None] = mapped_column(
@@ -1273,6 +1289,16 @@ class SchedulerSchoolYearState(Base):
         CheckConstraint(
             "scheduler_state_version >= 0",
             name="ck_scheduler_school_year_state_version_nonnegative",
+        ),
+        CheckConstraint(
+            "input_revision >= 0", name="ck_scheduler_state_input_revision_nonnegative"
+        ),
+        CheckConstraint(
+            "planning_revision >= 0", name="ck_scheduler_state_planning_revision_nonnegative"
+        ),
+        CheckConstraint(
+            "last_completed_planning_revision IS NULL OR last_completed_planning_revision >= 0",
+            name="ck_scheduler_state_completed_revision_nonnegative",
         ),
         CheckConstraint(
             "lock_version >= 0",
@@ -2786,3 +2812,7 @@ class ProgressLedgerEntry(Base):
             name="ck_progress_ledger_nonzero_delta",
         ),
     )
+
+
+# Register the replacement curricular tables in the shared Alembic metadata.
+from app.scheduler.infrastructure import models as scheduler_v1_models  # noqa: E402,F401

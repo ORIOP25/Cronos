@@ -1,11 +1,11 @@
 from app.scheduler.infrastructure import task_dispatcher
 
 
-def test_dispatch_sends_named_scheduler_task(monkeypatch):
+def test_dispatch_wakes_the_v1_executor_task(monkeypatch):
     calls = []
 
-    def send_task(name, *, args, task_id):
-        calls.append((name, args, task_id))
+    def send_task(name, **kwargs):
+        calls.append((name, kwargs))
 
     monkeypatch.setattr(task_dispatcher.celery_app, "send_task", send_task)
 
@@ -16,5 +16,5 @@ def test_dispatch_sends_named_scheduler_task(monkeypatch):
     )
 
     assert calls == [
-        ("scheduler.run_generation_job", [7, 42], "scheduler-job-42"),
+        ("scheduler.v1.run_next_job", {"task_id": "scheduler-job-42"}),
     ]

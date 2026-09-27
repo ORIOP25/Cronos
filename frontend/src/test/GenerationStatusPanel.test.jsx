@@ -11,29 +11,35 @@ describe('GenerationStatusPanel', () => {
   afterEach(cleanup)
 
   it.each([
-    ['NO_VALID_OUTPUT', 'Não foi possível gerar um horário válido'],
-    ['CANCELED', 'Geração cancelada'],
-    ['FAILED', 'Erro na geração'],
-  ])('shows a clear terminal message for %s', (jobStatus, expected) => {
-    useScheduleTaskStatus.mockReturnValue({ data: { job_status: jobStatus } })
+    ['CANCELLED', 'Geração cancelada'],
+    ['FAILED', 'Não foi possível concluir a geração'],
+    ['STALE', 'Os dados mudaram durante a geração'],
+    ['INFEASIBLE', 'Não é possível colocar todas as aulas com estas condições'],
+    ['INCONCLUSIVE', 'Não foi possível concluir a pesquisa'],
+  ])('shows a clear terminal message for %s', (status, expected) => {
+    useScheduleTaskStatus.mockReturnValue({ data: { status } })
 
     render(<GenerationStatusPanel jobId={12} />)
 
     expect(screen.getByText(expected)).toBeInTheDocument()
   })
 
-  it('shows the server failure detail for a timed-out job', () => {
-    useScheduleTaskStatus.mockReturnValue({
-      data: {
-        job_status: 'FAILED',
-        failure_code: 'TIMED_OUT',
-        failure_message: 'A geração excedeu o limite de cinco minutos.',
-      },
-    })
+  it('explains that an inconclusive search is not an impossibility', () => {
+    useScheduleTaskStatus.mockReturnValue({ data: { status: 'INCONCLUSIVE' } })
 
     render(<GenerationStatusPanel jobId={13} />)
 
-    expect(screen.getByText(/excedeu o limite de cinco minutos/i)).toBeInTheDocument()
+    expect(screen.getByText(/não significa que o horário seja impossível/i)).toBeInTheDocument()
+  })
+
+  it('shows an honest queue position without fake progress', () => {
+    useScheduleTaskStatus.mockReturnValue({
+      data: { status: 'QUEUED', queue_position: 3, queued_at: new Date().toISOString() },
+    })
+
+    render(<GenerationStatusPanel jobId={14} />)
+
+    expect(screen.getByText(/posição 3 na fila/i)).toBeInTheDocument()
   })
 
   it('offers a retry when loading the job fails temporarily', () => {
@@ -46,7 +52,7 @@ describe('GenerationStatusPanel', () => {
       refetch,
     })
 
-    render(<GenerationStatusPanel jobId={14} />)
+    render(<GenerationStatusPanel jobId={15} />)
 
     screen.getByRole('button', { name: /tentar novamente/i }).click()
     expect(refetch).toHaveBeenCalledOnce()
@@ -60,7 +66,7 @@ describe('GenerationStatusPanel', () => {
       refetch: vi.fn(),
     })
 
-    render(<GenerationStatusPanel jobId={15} />)
+    render(<GenerationStatusPanel jobId={16} />)
 
     expect(screen.getByRole('link', { name: /entrar novamente/i })).toHaveAttribute('href', '/login')
     expect(screen.queryByRole('button', { name: /tentar novamente/i })).toBeNull()
@@ -74,17 +80,17 @@ describe('GenerationStatusPanel', () => {
       refetch: vi.fn(),
     })
 
-    render(<GenerationStatusPanel jobId={16} />)
+    render(<GenerationStatusPanel jobId={17} />)
 
     expect(screen.getByText(/não tem permissão/i)).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /tentar novamente/i })).toBeNull()
   })
 
   it('keeps the success state when the job completes', () => {
-    useScheduleTaskStatus.mockReturnValue({ data: { job_status: 'SUCCEEDED' }, isLoading: false })
+    useScheduleTaskStatus.mockReturnValue({ data: { status: 'SUCCEEDED' }, isLoading: false })
 
-    render(<GenerationStatusPanel jobId={17} />)
+    render(<GenerationStatusPanel jobId={18} />)
 
-    expect(screen.getByText(/rascunho pronto/i)).toBeInTheDocument()
+    expect(screen.getByText(/proposta pronta/i)).toBeInTheDocument()
   })
 })

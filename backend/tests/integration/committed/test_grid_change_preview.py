@@ -7,6 +7,12 @@ from app import models, schemas
 from app.config import settings
 from app.services import grid_change_service, grid_version_service
 from tests._support.db_fixtures import create_teacher_profile
+from tests._support.scheduler_v1 import (
+    add_lesson,
+    add_version,
+    lesson_interval,
+    seed_generatable_school,
+)
 
 API = settings.API_V1_STR
 
@@ -120,9 +126,12 @@ class TestGridChangePreviewEndpoint:
 
 
 async def test_analysis_reports_moved_availability_and_pending_lessons(db_session):
-    organization = models.Organization(name="Preview School", plan_status="active")
-    db_session.add(organization)
-    await db_session.flush()
+    seed = await seed_generatable_school(
+        db_session,
+        clerk_user_id="preview-admin",
+        clerk_org_id="preview-org",
+    )
+    organization = seed.organization
     version = await grid_version_service.ensure_active_grid_version(
         db_session, organization.id, effective_date=date(2026, 1, 1)
     )
@@ -146,21 +155,28 @@ async def test_analysis_reports_moved_availability_and_pending_lessons(db_sessio
             score=models.PreferenceLevel.IMPOSSIBLE.value,
         )
     )
-    db_session.add(
-        models.LessonOccurrence(
-            organization_id=organization.id,
-            date=date(2020, 1, 1),
-            status=None,
-            is_active=True,
-        )
+    active_schedule = await add_version(db_session, seed, status="ACTIVE")
+    past = date(2020, 1, 1)
+    future = date(2030, 1, 1)
+    start, end = lesson_interval(past, 9)
+    await add_lesson(
+        db_session,
+        seed,
+        active_schedule,
+        stable_key="1",
+        school_date=past,
+        start=start,
+        end=end,
     )
-    db_session.add(
-        models.LessonOccurrence(
-            organization_id=organization.id,
-            date=date(2030, 1, 1),
-            status=None,
-            is_active=True,
-        )
+    start, end = lesson_interval(future, 9)
+    await add_lesson(
+        db_session,
+        seed,
+        active_schedule,
+        stable_key="2",
+        school_date=future,
+        start=start,
+        end=end,
     )
     await db_session.flush()
 
@@ -170,7 +186,7 @@ async def test_analysis_reports_moved_availability_and_pending_lessons(db_sessio
     analysis = await grid_change_service.analyze_grid_change(db_session, organization.id, proposal)
 
     assert analysis.can_propose is False
-    assert [row["date"] for row in analysis.lessons_without_closure] == [date(2020, 1, 1)]
+    assert [row["date"] for row in analysis.lessons_without_closure] == [past]
     moved = [
         entry
         for entry in analysis.affected_availabilities

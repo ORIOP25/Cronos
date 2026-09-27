@@ -11,9 +11,15 @@ import {
 describe('school configuration payloads', () => {
   it('serializes scheduler settings', () => {
     expect(toSchoolSettingsPayload({
-      school_start_date: '2026-09-01', school_hard_end_date: '2027-07-31', repair_stability_window_days: '14',
+      school_start_date: '2026-09-01',
+      school_hard_end_date: '2027-07-31',
+      preferred_end_date: '2027-06-11',
+      repair_stability_window_days: '14',
     })).toEqual({
-      school_start_date: '2026-09-01', school_hard_end_date: '2027-07-31', repair_stability_window_days: 14,
+      school_start_date: '2026-09-01',
+      school_hard_end_date: '2027-07-31',
+      preferred_end_date: '2027-06-11',
+      repair_stability_window_days: 14,
     })
   })
 
@@ -26,6 +32,7 @@ describe('school configuration payloads', () => {
     })).toEqual({
       school_start_date: '2026-09-01',
       school_hard_end_date: '2027-07-31',
+      preferred_end_date: null,
       repair_stability_window_days: 0,
       automatic_holidays_enabled: false,
     })

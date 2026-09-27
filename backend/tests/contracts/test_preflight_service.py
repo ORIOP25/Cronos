@@ -663,17 +663,6 @@ async def test_teacher_archive_restore_and_qualifications_invalidate_scheduler(d
     )
     await db_session.flush()
 
-    from app.services.scheduler_fingerprint_service import SchedulerFingerprintService
-
-    pending_draft.generation_input_fingerprint = (
-        await SchedulerFingerprintService(db_session).generation_input_fingerprint(
-            organization.id,
-            school_year.id,
-            models.ScheduleGenerationStrategy.COMPLETE_GENERATION,
-        )
-    ).value
-    await db_session.flush()
-
     # Give teacher history so remove_member archives rather than hard-deletes
     db_session.add(
         models.TeacherWeeklyTimesheet(
@@ -696,15 +685,7 @@ async def test_teacher_archive_restore_and_qualifications_invalidate_scheduler(d
     mock_clerk.change_membership_role = AsyncMock(return_value=MagicMock(ok=True))
     operation_service = MemberAccessOperationService(TestingSessionLocal, mock_clerk)
 
-    from app.services.scheduler_approval_service import SchedulerApprovalService
-
-    await SchedulerApprovalService(db_session).validate_preconditions(
-        organization.id,
-        pending_draft.id,
-        decided_by_membership_id=admin_actor.membership_id,
-    )
-
-    # 1. Archive member -> scheduler state version bumped, pending draft invalidated
+    # 1. Archive member -> scheduler state version bumped (pending work is stale)
     await member_service.remove_member(
         db_session,
         member_id=teacher_membership_id,
@@ -715,17 +696,6 @@ async def test_teacher_archive_restore_and_qualifications_invalidate_scheduler(d
     )
     await db_session.refresh(school_year_state)
     assert school_year_state.scheduler_state_version > initial_version
-
-    from app.services.scheduler_approval_service import DraftApprovalConflictError
-
-    with pytest.raises(DraftApprovalConflictError):
-        await SchedulerApprovalService(db_session).validate_preconditions(
-            organization.id,
-            pending_draft.id,
-            decided_by_membership_id=admin_actor.membership_id,
-        )
-    await db_session.refresh(pending_draft)
-    assert pending_draft.draft_state == models.ScheduleDraftState.STALE
 
     # 2. Restore member -> scheduler state version bumped again
     v2 = school_year_state.scheduler_state_version

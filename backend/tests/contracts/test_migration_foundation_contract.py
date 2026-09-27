@@ -12,25 +12,20 @@ from tests._support.db_fixtures import runtime_sync_test_engine
 
 pytestmark = pytest.mark.postgresql
 
+BASELINE = Path(__file__).parents[2] / "alembic" / "versions" / "0001_scheduler_v1_baseline.py"
+
 
 def _alembic_config() -> Config:
     backend_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
     return Config(os.path.join(backend_root, "alembic.ini"))
 
 
-def test_foundation_migration_does_not_backfill_or_publish_legacy_wrapper():
-    source = (
-        (Path(__file__).parents[2] / "alembic" / "versions" / "0004_foundation_telemetry.py")
-        .read_text(encoding="utf-8")
-        .lower()
-    )
+def test_baseline_does_not_install_legacy_bootstrap_wrapper():
+    source = BASELINE.read_text(encoding="utf-8").lower()
 
     assert "backfill" not in source
-    assert (
-        "create or replace function app_security.bootstrap_founder"
-        not in source.split("def downgrade", 1)[0]
-    )
-    assert "create or replace function app_security.bootstrap_organization_admin" in source
+    assert "function app_security.bootstrap_founder" not in source
+    assert "function app_security.bootstrap_organization_admin" in source
 
 
 def test_head_exposes_only_the_canonical_bootstrap_function(clean_database):
@@ -61,12 +56,8 @@ def test_head_exposes_only_the_canonical_bootstrap_function(clean_database):
         assert marker
 
 
-def test_foundation_migration_owns_bootstrap_membership_audit():
-    source = (
-        (Path(__file__).parents[2] / "alembic" / "versions" / "0004_foundation_telemetry.py")
-        .read_text(encoding="utf-8")
-        .lower()
-    )
+def test_baseline_owns_bootstrap_membership_audit():
+    source = BASELINE.read_text(encoding="utf-8").lower()
     normalized_source = re.sub(r"\s+", " ", source)
 
     assert "requested_membership_id, null, null" in normalized_source

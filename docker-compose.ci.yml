@@ -91,7 +91,17 @@ services:
       retries: 24
   worker:
     image: cronos-backend-ci:local
-    command: ["celery", "-A", "app.celery_worker.celery_app", "worker", "--loglevel=info", "--include=app.scheduler_worker", "--concurrency=1", "--prefetch-multiplier=1", "--max-tasks-per-child=1"]
+    command: ["celery", "-A", "app.celery_worker.celery_app", "worker", "--loglevel=info", "--include=app.scheduler_v1_worker", "--concurrency=1", "--prefetch-multiplier=1", "--max-tasks-per-child=1"]
+    environment:
+      <<: *runtime-environment
+      DATABASE_POOLING_ENABLED: "false"
+    depends_on:
+      db: {condition: service_healthy}
+      redis: {condition: service_healthy}
+
+  scheduler-supervisor:
+    image: cronos-backend-ci:local
+    command: ["celery", "-A", "app.celery_worker.celery_app", "worker", "--loglevel=info", "--include=app.scheduler_recovery_worker", "--concurrency=1", "--prefetch-multiplier=1", "--queues=scheduler-supervisor", "--hostname=scheduler-supervisor@%h"]
     environment:
       <<: *runtime-environment
       DATABASE_POOLING_ENABLED: "false"

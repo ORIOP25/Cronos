@@ -61,8 +61,10 @@ export const useApproveDraft = () => {
   const orgId = useOrganization().organization?.id
 
   return useMutation({
-    mutationFn: async (draftId) => {
-      return apiClient.post(`/scheduler/drafts/${draftId}/approve`)
+    mutationFn: async ({ proposalId, expectedInputRevision = null }) => {
+      return apiClient.post(`/scheduler/drafts/${proposalId}/approve`, {
+        expected_input_revision: expectedInputRevision,
+      })
     },
     onSuccess: () => {
       void invalidateOrgQueries(queryClient, orgId, ['scheduler-status', 'scheduler-current-draft', 'schedule-diff', 'weekSchedule'])
@@ -99,9 +101,11 @@ export const useGenerateSchedule = () => {
   const orgId = useOrganization().organization?.id
 
   return useMutation({
-    mutationFn: async ({ replacePendingDraft = false } = {}) => {
+    mutationFn: async ({ idempotencyKey, expectedInputRevision = 0 } = {}) => {
+      const key = idempotencyKey || globalThis.crypto.randomUUID()
       return apiClient.post('/scheduler/generate', {
-        replace_pending_draft: replacePendingDraft,
+        idempotency_key: key,
+        expected_input_revision: expectedInputRevision,
       })
     },
     onSuccess: () => {
@@ -125,9 +129,9 @@ export const useScheduleTaskStatus = (jobId) => {
     // TanStack Query uses false to disable polling after terminal states.
     refetchInterval: (query) => { // NOSONAR
       if (query.state.error) return false
-      const status = query.state.data?.job_status
+      const status = query.state.data?.status
       if (!status) return 5000
-      const terminal = ['SUCCEEDED', 'FAILED', 'CANCELED', 'NO_VALID_OUTPUT']
+      const terminal = ['SUCCEEDED', 'FAILED', 'CANCELLED', 'STALE', 'INFEASIBLE', 'INCONCLUSIVE']
       return terminal.includes(status) ? false : 5000
     },
     ...DYNAMIC_OPTS,

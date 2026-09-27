@@ -401,7 +401,11 @@ async def test_settings_service_validates_combined_partial_date_update(monkeypat
     async def fake_get_settings(*_args):
         return existing
 
+    async def fake_get_preferred_end_date(*_args):
+        return None
+
     monkeypatch.setattr(settings_service, "get_settings", fake_get_settings)
+    monkeypatch.setattr(settings_service, "get_preferred_end_date", fake_get_preferred_end_date)
 
     with pytest.raises(ValueError):
         await settings_service.upsert_settings(

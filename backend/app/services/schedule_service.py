@@ -148,6 +148,16 @@ async def _validate_constraint_references(
         )
 
 
+def _constraint_affects_future(payload: dict) -> bool:
+    """A rule tied to one past date cannot change the editable future."""
+    constraint_date = payload.get("date")
+    if constraint_date is None:
+        return True
+    if isinstance(constraint_date, str):
+        constraint_date = date.fromisoformat(constraint_date)
+    return constraint_date >= date.today()
+
+
 async def create_constraint(
     db: AsyncSession,
     item: schemas.ConstraintCreate,
@@ -178,6 +188,7 @@ async def create_constraint(
         before=None,
         after={"rule_type": db_item.rule_type, "rule_payload": db_item.rule_payload},
         changed_by_membership_id=changed_by_membership_id,
+        future_impacting=_constraint_affects_future(rule_payload),
     )
     await db.flush()
     await db.refresh(db_item)
@@ -217,6 +228,7 @@ async def delete_constraint(
             before=before,
             after=None,
             changed_by_membership_id=changed_by_membership_id,
+            future_impacting=_constraint_affects_future(before["rule_payload"]),
         )
         await db.flush()
         return True

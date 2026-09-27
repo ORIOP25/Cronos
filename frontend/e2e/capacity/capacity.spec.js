@@ -65,20 +65,71 @@ async function prepareClient(page, route) {
   await page.waitForFunction(() => window.Clerk?.session?.getToken && window.Clerk?.organization?.id)
 }
 
+async function schedulerStatus(page) {
+  return page.evaluate(async () => {
+    const token = await window.Clerk.session.getToken()
+    const response = await fetch('/api/v1/scheduler/status', {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    return { status: response.status, body: await response.json().catch(() => ({})) }
+  })
+}
+
+function shiftDate(value, days) {
+  const date = new Date(`${value}T12:00:00`)
+  date.setDate(date.getDate() + days)
+  return date.toISOString().slice(0, 10)
+}
+
+async function ensureGenerationReason(page) {
+  const status = await schedulerStatus(page)
+  if (status.status >= 400) throw new Error(`Scheduler status failed: ${status.status}`)
+  const eligibility = status.body?.eligibility
+  if (eligibility?.reasons?.length && !eligibility.blocker) {
+    return status.body?.revisions?.input ?? 0
+  }
+  const year = status.body?.school_year
+  if (!year) throw new Error('Capacity smoke requires a configured school year.')
+  let preferred = shiftDate(year.preferred_end_date || year.hard_end_date, -1)
+  if (preferred < year.start_date) preferred = shiftDate(year.start_date, 1)
+  const result = await page.evaluate(async (payload) => {
+    const token = await window.Clerk.session.getToken()
+    const response = await fetch('/api/v1/school/settings/', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+    return { status: response.status, body: await response.json().catch(() => ({})) }
+  }, {
+    school_start_date: year.start_date,
+    school_hard_end_date: year.hard_end_date,
+    preferred_end_date: preferred,
+  })
+  if (result.status >= 400) throw new Error(`Planning change was rejected: ${result.status}`)
+  const refreshed = await schedulerStatus(page)
+  if (refreshed.status >= 400) throw new Error(`Scheduler status failed: ${refreshed.status}`)
+  return refreshed.body?.revisions?.input ?? 0
+}
+
 async function startOneGeneration(page, metrics) {
+  const expectedInputRevision = await ensureGenerationReason(page)
   const startedAt = Date.now()
-  const result = await page.evaluate(async () => {
+  const result = await page.evaluate(async (expectedInputRevisionValue) => {
     const token = await window.Clerk.session.getToken()
     const response = await fetch('/api/v1/scheduler/generate', {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ replace_pending_draft: true }),
+      body: JSON.stringify({
+        idempotency_key: crypto.randomUUID(),
+        expected_input_revision: expectedInputRevisionValue,
+      }),
     })
     return { status: response.status, body: await response.json().catch(() => ({})) }
-  })
+  }, expectedInputRevision)
   metrics.generation.acknowledgment_ms = Date.now() - startedAt
-  if (result.status >= 400 || !result.body.job_id) throw new Error(`Generation was not acknowledged: ${result.status}`)
-  return result.body.job_id
+  const jobId = result.body?.job?.id
+  if (result.status >= 400 || !jobId) throw new Error(`Generation was not acknowledged: ${result.status}`)
+  return jobId
 }
 
 async function pollGeneration(page, request, jobId, metrics, startedAt) {
@@ -90,8 +141,8 @@ async function pollGeneration(page, request, jobId, metrics, startedAt) {
       headers: { Authorization: `Bearer ${token}` },
     })
     if (response.status() >= 400) throw new Error(`Generation status failed: ${response.status()}`)
-    finalStatus = (await response.json()).job_status
-    if (['SUCCEEDED', 'FAILED', 'CANCELED', 'NO_VALID_OUTPUT'].includes(finalStatus)) break
+    finalStatus = (await response.json()).status
+    if (['SUCCEEDED', 'FAILED', 'STALE', 'CANCELLED', 'INFEASIBLE', 'INCONCLUSIVE'].includes(finalStatus)) break
     await new Promise((resolve) => setTimeout(resolve, 5000))
   }
   metrics.generation.completion_ms = Date.now() - startedAt

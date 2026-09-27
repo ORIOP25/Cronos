@@ -122,7 +122,8 @@ describe('SchoolConfig internship flows', () => {
     fireEvent.click(buttons.at(-1))
 
     await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith('/scheduler/generate', {
-      replace_pending_draft: false,
+      idempotency_key: expect.any(String),
+      expected_input_revision: expect.any(Number),
     }))
   })
 

@@ -84,30 +84,37 @@ describe('tutorial v3 local API adapter', () => {
 
   it('supports complete schedule generation and approval without network requests', async () => {
     const runtime = makeRuntime('schedule')
-    expect((await runtime.request('/scheduler/status')).data).toMatchObject({ pending_draft_id: null, can_generate_new_draft: true })
-    const generated = await runtime.request('/scheduler/generate', { method: 'post', data: '{}' })
-    expect(generated.data).toMatchObject({ job_id: 81, status: 'SUCCEEDED' })
-    expect((await runtime.request('/scheduler/drafts/current')).data).toMatchObject({
-      draft_id: 71,
-      result_category: 'COMPLETE_SUCCESS',
+    expect((await runtime.request('/scheduler/status')).data).toMatchObject({
+      eligibility: { can_generate: true },
+      pending_proposal: null,
+      default_strategy: 'COMPLETE_GENERATION',
     })
-    expect((await runtime.request('/scheduler/drafts/71/diff')).data[0]).toMatchObject({ change_type: 'MOVED' })
+    const generated = await runtime.request('/scheduler/generate', { method: 'post', data: '{}' })
+    expect(generated.data.job).toMatchObject({ id: 81, status: 'SUCCEEDED', result_code: 'COMPLETE' })
+    expect((await runtime.request('/scheduler/drafts/current')).data).toMatchObject({
+      proposal_id: 71,
+      status: 'PENDING',
+      strategy: 'COMPLETE_GENERATION',
+    })
+    expect((await runtime.request('/scheduler/drafts/71/diff')).data).toMatchObject({
+      is_first_generation: true,
+      counts: { moved: 1 },
+    })
     const approved = await runtime.request('/scheduler/drafts/71/approve', { method: 'post' })
-    expect(approved.data).toMatchObject({ draft_id: 71, draft_state: 'APPROVED' })
+    expect(approved.data).toMatchObject({ proposal_id: 71, status: 'APPROVED' })
     expect((await runtime.request('/scheduler/drafts/current')).data).toBeNull()
   })
 
   it('starts recovery with a pending partial draft and only publishes it on approval', async () => {
     const runtime = makeRuntime('recovery')
     expect((await runtime.request('/scheduler/drafts/current')).data).toMatchObject({
-      draft_id: 72,
-      result_category: 'PARTIAL_RECOVERY',
-      debt_hours_before: 2,
-      debt_hours_recovered: 1,
-      debt_hours_remaining: 1,
+      proposal_id: 72,
+      status: 'PENDING',
+      strategy: 'ADAPTIVE_REPAIR',
+      metrics: { disruption_cost: 2, excess_days: 1 },
     })
     const response = await runtime.request('/scheduler/drafts/72/approve', { method: 'post' })
-    expect(response.data).toMatchObject({ draft_id: 72, draft_state: 'APPROVED' })
+    expect(response.data).toMatchObject({ proposal_id: 72, status: 'APPROVED' })
     expect((await runtime.request('/scheduler/drafts/current')).data).toBeNull()
     expect(runtime.getScenario().publishedRecoveryBlockIds).toEqual(['demo-block-recovery-1'])
 

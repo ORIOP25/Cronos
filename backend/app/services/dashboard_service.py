@@ -8,6 +8,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
 from app import models, schemas
+from app.scheduler.infrastructure.models import (
+    CurricularAssignment,
+    SchedulerLessonV1,
+    SchedulerProposalV1,
+    SchedulerVersionV1,
+)
 from app.services import occurrence_service
 from app.services.preflight_service import PreflightService
 from app.services.school_readiness_service import SchoolReadinessService
@@ -179,12 +185,20 @@ def _get_overview(
             rooms_by_type,
         ).where(models.Organization.id == organization_id)
     ).one()
+    v1_pending_proposals = db.execute(
+        select(func.count())
+        .select_from(SchedulerProposalV1)
+        .where(
+            SchedulerProposalV1.organization_id == organization_id,
+            SchedulerProposalV1.status == "PENDING",
+        )
+    ).scalar_one()
     return (
         schemas.AlertCounts(
             pending_occurrences_today=row[2],
             pending_occurrences_total=row[3],
             pending_timesheets=row[4],
-            pending_drafts=row[5],
+            pending_drafts=row[5] + int(v1_pending_proposals or 0),
             active_substitutions_today=row[6],
         ),
         schemas.ResourceCounts(
@@ -205,6 +219,9 @@ def _get_schedule_health(
     organization_id: int,
     today: date,
 ) -> schemas.ScheduleHealthWidget | None:
+    v1_health = _get_v1_schedule_health(db, organization_id, today)
+    if v1_health is not None:
+        return v1_health
     latest_version = (
         select(models.ActiveScheduleBlock.schedule_version_id)
         .where(
@@ -264,6 +281,82 @@ def _get_schedule_health(
         duplicate_class_slots=sum(count > 1 for count in class_slots.values()),
         weekly_fairness_spread=round(variance**0.5, 1),
         teacher_week_slots_avg=(round(blocks_count / len(teacher_ids), 1) if teacher_ids else 0.0),
+    )
+
+
+def _get_v1_schedule_health(
+    db: Session,
+    organization_id: int,
+    today: date,
+) -> schemas.ScheduleHealthWidget | None:
+    """Health from the v1 published version when it exists (preferred)."""
+    version = db.execute(
+        select(SchedulerVersionV1.id, SchedulerVersionV1.school_year_id).where(
+            SchedulerVersionV1.organization_id == organization_id,
+            SchedulerVersionV1.status == "ACTIVE",
+        )
+    ).first()
+    if version is None:
+        return None
+    version_id, school_year_id = version
+    rows = db.execute(
+        select(
+            CurricularAssignment.class_id,
+            CurricularAssignment.teacher_id,
+            SchedulerLessonV1.school_date,
+            SchedulerLessonV1.starts_at,
+            SchedulerLessonV1.ends_at,
+        )
+        .join(
+            SchedulerLessonV1,
+            and_(
+                SchedulerLessonV1.organization_id == CurricularAssignment.organization_id,
+                SchedulerLessonV1.school_year_id == CurricularAssignment.school_year_id,
+                SchedulerLessonV1.assignment_id == CurricularAssignment.id,
+            ),
+        )
+        .where(
+            SchedulerLessonV1.organization_id == organization_id,
+            SchedulerLessonV1.version_id == version_id,
+        )
+    ).all()
+    class_ids = set(
+        db.execute(
+            select(CurricularAssignment.class_id).where(
+                CurricularAssignment.organization_id == organization_id,
+                CurricularAssignment.school_year_id == school_year_id,
+            )
+        ).scalars()
+    )
+    if not rows or not class_ids:
+        return None
+    teacher_ids = {row.teacher_id for row in rows}
+    week_start = today - timedelta(days=today.weekday())
+    weekly_counts = defaultdict(int)
+    teacher_slots = defaultdict(int)
+    class_slots = defaultdict(int)
+    for row in rows:
+        if row.school_date >= week_start:
+            weekly_counts[row.class_id] += 1
+        teacher_slots[(row.teacher_id, row.school_date, row.starts_at, row.ends_at)] += 1
+        class_slots[(row.class_id, row.school_date, row.starts_at, row.ends_at)] += 1
+    classes_total = len(class_ids)
+    values = list(weekly_counts.values())
+    week_total = sum(values)
+    mean = week_total / classes_total if classes_total else 0.0
+    variance = (
+        sum((count - mean) ** 2 for count in values) / classes_total if classes_total > 1 else 0.0
+    )
+    return schemas.ScheduleHealthWidget(
+        generation_id=f"v1-{version_id}",
+        blocks_count=len(rows),
+        classes_total=classes_total,
+        classes_empty_week=classes_total - len(weekly_counts),
+        week_slots_avg=round(mean, 1),
+        duplicate_teacher_slots=sum(count > 1 for count in teacher_slots.values()),
+        duplicate_class_slots=sum(count > 1 for count in class_slots.values()),
+        weekly_fairness_spread=round(variance**0.5, 1),
+        teacher_week_slots_avg=(round(len(rows) / len(teacher_ids), 1) if teacher_ids else 0.0),
     )
 
 

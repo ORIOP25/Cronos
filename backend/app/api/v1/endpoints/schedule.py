@@ -1,14 +1,17 @@
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 from time import perf_counter
 from typing import Annotated
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from sqlalchemy import select
 
 from app import models, schemas
 from app.api import deps
 from app.core.exceptions import AppError, status_code_for_kind
 from app.core.ratelimit import limiter
+from app.scheduler.infrastructure import operations
+from app.scheduler.infrastructure.models import SchedulerVersionV1
 from app.services import schedule_service, teacher_observability_service
 from app.services.school_year_reset_service import SchoolYearResetService
 
@@ -283,6 +286,15 @@ async def get_teacher_schedule_horizon(
             if payload is None:
                 return None
 
+            v1_version_id = sync_db.execute(
+                select(SchedulerVersionV1.id).where(
+                    SchedulerVersionV1.organization_id == current_user.organization_id,
+                    SchedulerVersionV1.status == "ACTIVE",
+                )
+            ).scalar()
+            if v1_version_id is not None:
+                payload["active_generation_id"] = f"v1-{v1_version_id}"
+                return payload
             latest_generation_row = (
                 sync_db.query(models.ActiveScheduleBlock.schedule_version_id)
                 .filter(
@@ -384,6 +396,16 @@ async def get_week_schedule(
         if effective_class_id is None and effective_teacher_id is None:
             status_code = 400
             _raise_schedule_error(400, "week_filter_required", WEEK_FILTER_REQUIRED_MSG)
+
+        v1_slots = await operations.week_schedule(
+            db,
+            current_user.organization_id,
+            week_start=week_start,
+            class_id=effective_class_id,
+            teacher_id=effective_teacher_id,
+        )
+        if v1_slots is not None:
+            return v1_slots
 
         def _run(sync_db):
             from app.services import schedule_service as svc
@@ -545,3 +567,49 @@ async def upsert_operational_lesson_log(
         )
 
     return await db.run_sync(_run)
+
+
+@router.put(
+    "/lessons/{lesson_id}/log",
+    response_model=schemas.SchedulerV1LessonLogResponse,
+    summary="Registar execucao ou ocorrencia de uma aula do horario v1",
+)
+async def upsert_scheduler_v1_lesson_log(
+    lesson_id: int,
+    payload: schemas.SchedulerV1LessonLogRequest,
+    db: deps.DbSession,
+    current_user: deps.ActiveActor,
+):
+    is_admin = _require_lesson_log_actor(current_user)
+    try:
+        context = await operations.lesson_context(db, current_user.organization_id, lesson_id)
+    except operations.OperationsError as exc:
+        _raise_operations_error(exc)
+    _authorize_lesson_log_teacher(
+        current_user,
+        block_teacher_id=context.assignment.teacher_id,
+        is_admin=is_admin,
+    )
+    try:
+        return await operations.record_lesson_log(
+            db,
+            current_user.organization_id,
+            membership_id=current_user.membership_id,
+            lesson_id=lesson_id,
+            status=payload.status,
+            summary=payload.summary,
+            notes=payload.notes,
+            now_utc=datetime.now(UTC),
+            planning_relevant=payload.status == "OCCURRENCE",
+        )
+    except operations.OperationsError as exc:
+        _raise_operations_error(exc)
+
+
+def _raise_operations_error(exc: operations.OperationsError) -> None:
+    kinds = {400: "bad_request", 403: "forbidden", 404: "not_found", 409: "conflict"}
+    raise AppError(
+        kind=kinds.get(exc.status_code, "validation"),
+        code=exc.code,
+        detail=str(exc),
+    ) from exc
