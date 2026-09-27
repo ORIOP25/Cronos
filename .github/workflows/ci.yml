@@ -376,6 +376,9 @@ jobs:
         run: node scripts/test.mjs e2e
         env:
           CI: "true"
+          COMPOSE_PROJECT_NAME: cronos-ci-${{ github.run_id }}-${{ github.run_attempt }}
+          CRONOS_MIGRATOR_PASSWORD: ${{ env.CI_MIGRATOR_PASSWORD }}
+          CRONOS_APP_PASSWORD: ${{ env.CI_APP_PASSWORD }}
           E2E_EXTERNAL_STACK: "1"
           BASE_URL: http://localhost:5173
           PLAYWRIGHT_SKIP_WEB_SERVER: "1"

@@ -75,7 +75,7 @@ export async function apiRequest(page, method, path, body, timeoutMs = REQUEST_T
 
 export async function seedSchedulerV1Records(page, { classId, subjectId, preferredEndDate }) {
   const composeFile = process.env.E2E_COMPOSE_FILE
-  const composeProject = process.env.E2E_COMPOSE_PROJECT
+  const composeProject = process.env.COMPOSE_PROJECT_NAME
   if (!composeFile || !composeProject) throw new Error('E2E Docker stack is required.')
   const member = await apiRequest(page, 'GET', '/members/me')
   await execFileAsync(process.platform === 'win32' ? 'docker.exe' : 'docker', [
