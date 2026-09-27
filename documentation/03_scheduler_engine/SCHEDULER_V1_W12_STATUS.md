@@ -1,6 +1,6 @@
 # W12 — Candidate local: remoção, baseline e gate (registo as-built)
 
-> Revisão independente e correções: [SCHEDULER_V1_W10_W12_REVIEW_CORRECTION_STATUS.md](SCHEDULER_V1_W10_W12_REVIEW_CORRECTION_STATUS.md). O veredicto atual do gate é o do registo de correção (bloqueado); este documento permanece como o registo original de W12.
+> Revisão independente e correções: [SCHEDULER_V1_W10_W12_REVIEW_CORRECTION_STATUS.md](SCHEDULER_V1_W10_W12_REVIEW_CORRECTION_STATUS.md). O veredicto atual do gate é o do registo de correção (fechado em 27/09/2026); este documento permanece como o registo original de W12.
 
 Data: 26 de setembro de 2026.
 Branch: `codex/scheduler-v1-revamp`.
@@ -81,7 +81,7 @@ Evidência (base temporária `cronos_baseline_v1`, PostgreSQL 16 do Docker local
 | Frontend `npm run lint` | verde |
 | Frontend `npm run test` | 73 ficheiros, 411 testes verdes |
 | Matrizes W10 | `w10-combined` e `w10-boundaries` com `complete=True problems=0` |
-| E2E Playwright com Clerk | não executado neste ambiente; percurso do proprietário registado como pendente |
+| E2E Playwright com Clerk | executado localmente e na CI; backend, frontend, E2E e capacity smoke verdes (`9582ff4`, `99f0340`) |
 
 ## 5. W12.4 — Avaliação reservada
 
@@ -99,15 +99,15 @@ A falha inicial da fixture reservada 03 (base sem testemunho) foi reduzida com `
 | # | Condição | Estado | Evidência/limitação |
 | :--- | :--- | :--- | :--- |
 | 1 | Instalação vazia e reset da baseline reproduzíveis | Cumprida | Base temporária vazia, ciclos downgrade/upgrade, auditorias. |
-| 2 | Domínio, validação independente, integração e E2E locais | Parcial | 687 unitários, 295 integração, 47 contratos; E2E com Clerk não executado. |
+| 2 | Domínio, validação independente, integração e E2E locais | Cumprida | 713 unitários, 313 integração, 47 contratos; E2E e capacity smoke verdes na CI (`9582ff4`, `99f0340`). |
 | 3 | Geração anual completa em várias instâncias, incluindo 60 turmas | Cumprida | Campanhas anuais W04–W11 e replays 10/30/45/60 W10/W12. |
 | 4 | Recuperações de volumes e dificuldades diferentes | Cumprida | `repair_manifest`, `combined_manifest`, `reserved_manifest` (incl. recursos críticos e impossibilidades provadas). |
 | 5 | Simulações longitudinais sem perda de minutos | Cumprida | 4 + 2 replays anuais `completed`/`conserved` com validação por passo. |
 | 6 | Comparação local de qualidade/tempo, workers, CPU e memória | Cumprida (local) | Relatórios W11; pico de memória é Python-level (sem RSS C++). Railway é da W13. |
-| 7 | Política de paragem avaliada com referências longas e dados reservados | Bloqueada com registo | Trajetórias de um ponto; calibração inconclusiva; nenhum default silencioso ativado. |
+| 7 | Política de paragem avaliada com referências longas e dados reservados | Fechada com decisão | Avaliação reservada a 300 s em três famílias longas e três pequenas; `eager` sem poupança e com perda de vetor; política conservadora mantida ([avaliação](SCHEDULER_V1_W12_R2_STOP_POLICY_EVALUATION.md)). |
 | 8 | Fila única, cancelamento, falhas, proposta desatualizada e aprovação testados | Cumprida | W08/W09 + integração na baseline. |
 | 9 | Legado removido e candidata identificada | Cumprida no âmbito | Remoção do motor/fronteira; carve-out operacional declarado na secção 2. |
-| 10 | Horários locais satisfatórios para o proprietário | Pendente de aceitação | Resultados concretos disponíveis nos relatórios; aceitação é ato do proprietário. |
+| 10 | Horários locais satisfatórios para o proprietário | Aceite em 27/09/2026 | Aceitação registada no [registo de correção](SCHEDULER_V1_W10_W12_REVIEW_CORRECTION_STATUS.md) §6.4; gate local fechado. |
 
 ## 7. Limitações conhecidas
 
@@ -115,4 +115,4 @@ A falha inicial da fixture reservada 03 (base sem testemunho) foi reduzida com `
 - A política de paragem não foi calibrada por falta de trajetórias com melhorias múltiplas; a exploração completa dentro do orçamento de segurança mantém-se explícita.
 - O pico de memória medido é de alocação Python; a memória nativa do OR-Tools não é capturada.
 - A stack local de desenvolvimento não foi recriada com a baseline nova nesta W12; a instalação limpa foi demonstrada em bases temporárias e nos containers de teste. O reset/instalação final é da W14.
-- E2E Playwright requer Clerk e fica para o proprietário com a pilha local.
+- E2E Playwright corre com Clerk de teste localmente e na CI; o percurso completo do proprietário fica coberto pelo gate fechado.

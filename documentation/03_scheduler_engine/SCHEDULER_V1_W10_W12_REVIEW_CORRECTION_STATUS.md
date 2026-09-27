@@ -1,7 +1,7 @@
 # W10–W12 — Correção da revisão independente (registo as-built)
 
 Data: 26 de setembro de 2026 (atualizado a 27 de setembro de 2026 com W12.R1–W12.R3).
-Branch: `codex/scheduler-v1-revamp`. Commit da revisão mais recente: `9582ff4`.
+Branch: `codex/scheduler-v1-revamp`. Commit da revisão de código avaliada: `9582ff4` (a CI desta revisão e do registo documental seguinte está verde).
 Estado: R10.1–R12.3 aplicados no âmbito corrigido. O gate local de W12 tem as condições 2, 7 e 10 atualizadas por W12.R1–R12.3; a aceitação do proprietário (condição 10) é o último ato antes de W13. W13 não foi iniciado.
 Documentos de referência: [plano v2](SCHEDULER_V1_REVAMP_PLAN_V2.md), [WBS v2](SCHEDULER_V1_WBS_V2.md), [especificação v2](SCHEDULER_V1_TECH_SPEC_V2.md), [W10–W11](SCHEDULER_V1_W10_W11_STATUS.md), [W12](SCHEDULER_V1_W12_STATUS.md), [avaliação da paragem](SCHEDULER_V1_W12_R2_STOP_POLICY_EVALUATION.md), [remediação CI #509](SCHEDULER_V1_CI_509_REMEDIATION_STATUS.md).
 
@@ -12,9 +12,9 @@ A candidate melhorou substancialmente: os defeitos F01–F05 e F10 têm correç�
 - **Condição 2 (domínio, validação independente, integração e E2E locais)**: fechada. Os três cenários E2E que falhavam na CI #509 foram corrigidos e passam localmente e na CI; o commit `9582ff4` tem backend, frontend, E2E e capacity smoke verdes ([execução](https://github.com/ORIOP25/Cronos/actions/runs/36325073140)).
 - **Condição 7 (política de paragem com referências longas e dados reservados)**: fechada com decisão explícita. A avaliação reservada com orçamento de 300 s não confirmou poupança do candidato `eager` e registou perda de vetor numa família; a política conservadora mantém-se e o orçamento de segurança fica integral ([avaliação](SCHEDULER_V1_W12_R2_STOP_POLICY_EVALUATION.md)).
 - **W12.R1 (percurso de produto)**: fechado. A data preferencial configura-se pelo produto e a projeção curricular é materializada a partir das atribuições escolares no pedido de geração; o E2E deixou de depender do seed de teste.
-- **Condição 10 (aceitação do proprietário)**: pronta para decisão. Os horários concretos, o vetor de qualidade e o compromisso tempo/custo estão resumidos na secção 6; falta a aceitação explícita.
+- **Condição 10 (aceitação do proprietário)**: fechada. O proprietário aprovou os horários e o compromisso qualidade/tempo/custo em 27 de setembro de 2026 (secção 6).
 
-Consequência: W13 permanece interdito até à aceitação explícita da condição 10 pelo proprietário.
+Consequência: o gate local de W12 está fechado. O W13 (Railway/Cloudflare) fica autorizado, mas não iniciado.
 
 ## 2. Correções por defeito
 
@@ -87,3 +87,7 @@ Correção adicional descoberta pela bateria de oráculo após F02: movimentos e
 ### 6.3 Decisão pedida
 
 O proprietário deve aceitar expressamente as condições 2, 7 e 10 do gate local (plano §17.1) para autorizar o início de W13 (Railway/Cloudflare). Sem essa aceitação, W13 permanece interdito.
+
+### 6.4 Decisão registada
+
+O proprietário aprovou as condições 2, 7 e 10 em 27 de setembro de 2026. O gate local de W12 fica fechado; o W13 fica autorizado, mas só começa por pedido explícito.
