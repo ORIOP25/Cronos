@@ -68,6 +68,7 @@ async function completeFreshFoundation(page) {
   await automaticHolidays.check()
   await save
   await page.getByRole('button', { name: /seguinte/i }).click()
+  await page.getByRole('button', { name: /ignorar por agora/i }).click()
   await page.getByRole('checkbox', { name: /confirmo que revi/i }).check()
   const activate = page.waitForResponse((response) => (
     response.url().includes('/api/v1/foundation/complete') &&

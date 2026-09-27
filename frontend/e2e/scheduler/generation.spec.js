@@ -624,6 +624,7 @@ test('fresh founder completes Complete Generation and custom-rule Adaptive Repai
       await automaticHolidays.check()
       await draftSaveResponse
       await page.getByRole('button', { name: /seguinte/i }).click()
+      await page.getByRole('button', { name: /ignorar por agora/i }).click()
       await page.locator('#foundation-confirmation').check()
       await page.getByRole('button', { name: /^ativar escola$/i }).click()
       await expectRouteReady(page, '/dashboard')

@@ -63,7 +63,10 @@ test.describe('Foundation — canonical activation', () => {
     await draftSaveResponse
     await page.getByRole('button', { name: /Seguinte/i }).click()
 
-    await expect(page.getByText('9. Confirmação e Ativação da Fundação')).toBeVisible()
+    await expect(page.getByText('9. Fluxos de Estágio (opcional)')).toBeVisible()
+    await page.getByRole('button', { name: /Ignorar por agora/i }).click()
+
+    await expect(page.getByText('10. Confirmação e Ativação da Fundação')).toBeVisible()
     const confirmation = page.getByRole('checkbox', { name: /Confirmo que revi/i })
     await expect(confirmation).not.toBeChecked()
     await expect(page.getByRole('button', { name: /^Ativar Escola$/i })).toBeDisabled()

@@ -28,6 +28,7 @@ async function ensureFoundationComplete(page) {
     await automaticHolidays.check()
     await draftSaveResponse
     await page.getByRole('button', { name: /seguinte/i }).click()
+    await page.getByRole('button', { name: /ignorar por agora/i }).click()
     await page.getByRole('button', { name: /^ativar escola$/i }).click()
     await page.waitForURL(/\/dashboard/, { timeout: 15000 })
   }
