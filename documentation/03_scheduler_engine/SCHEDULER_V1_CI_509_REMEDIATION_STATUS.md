@@ -57,5 +57,5 @@ Evidência da base de dados depois da aprovação do teste admin:
 
 ## 6. Pendente
 
-- CI desta revisão no GitHub (backend, frontend, E2E e capacity smoke no mesmo commit).
-- Gate W12: `W12.R1` (percurso de produto para data preferencial e projeção curricular) aplicado; `W12.R2` (avaliação reservada da política de paragem) e `W12.R3` (aceitação do proprietário) pendentes.
+- CI desta revisão no GitHub: verde no commit `9582ff4` ([execução](https://github.com/ORIOP25/Cronos/actions/runs/36325073140)), com backend, frontend, E2E e capacity smoke no mesmo commit.
+- Gate W12: `W12.R1` e `W12.R2` concluídos; `W12.R3` (aceitação do proprietário) pendente — ver [registo do gate](SCHEDULER_V1_W10_W12_REVIEW_CORRECTION_STATUS.md) e [avaliação da paragem](SCHEDULER_V1_W12_R2_STOP_POLICY_EVALUATION.md).

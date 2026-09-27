@@ -94,7 +94,47 @@
       "reference_horizon_seconds": 300.0
     },
     "blocked_reason": null,
-    "online_evaluation": "Pending: run the owner-approved policy on reserved families and compare saved time against the lost product-vector gain before activation.",
+    "activation": "not-activated",
+    "activation_reason": "The reserved online evaluation did not confirm a lossless saving; activation needs explicit owner acceptance of a quality/time trade-off or new evidence.",
+    "online_evaluation": {
+      "status": "completed",
+      "decision": "keep-conservative",
+      "decision_reason": "On the reserved long-budget families the eager policy never saved meaningful time; on w12-reserved-annual-15-connected and w12-reserved-01 it lost product-vector gain. The full safety budget stays active.",
+      "budget_seconds": 300,
+      "workers": 2,
+      "mode": "repair",
+      "artifact_directory": ".test-artifacts/w12r2",
+      "comparisons": [
+        {
+          "family": "w12-reserved-annual-20",
+          "conservative_search_seconds": 298.033,
+          "eager_search_seconds": 298.978,
+          "conservative_vector": {"disruption_cost": 38040, "changed_lessons": 3804, "excess_days": 0},
+          "eager_vector": {"disruption_cost": 38040, "changed_lessons": 3804, "excess_days": 0}
+        },
+        {
+          "family": "w12-reserved-annual-15-connected",
+          "conservative_search_seconds": 298.202,
+          "eager_search_seconds": 298.868,
+          "conservative_vector": {"disruption_cost": 28490, "changed_lessons": 2849, "excess_days": 0},
+          "eager_vector": {"disruption_cost": 28510, "changed_lessons": 2851, "excess_days": 0}
+        },
+        {
+          "family": "w12r-holdout-annual-15",
+          "conservative_search_seconds": 299.099,
+          "eager_search_seconds": 298.673,
+          "conservative_vector": {"disruption_cost": 28550, "changed_lessons": 2855, "excess_days": 0},
+          "eager_vector": {"disruption_cost": 28550, "changed_lessons": 2855, "excess_days": 0}
+        },
+        {
+          "family": "w12-reserved-01",
+          "conservative_search_seconds": 0.505,
+          "eager_search_seconds": 0.086,
+          "conservative_vector": {"disruption_cost": 20, "changed_lessons": 2, "excess_days": 0},
+          "eager_vector": {"disruption_cost": 30, "changed_lessons": 3, "excess_days": 0}
+        }
+      ]
+    },
     "scores": [
       {
         "candidate_id": "adaptive-a",
