@@ -913,6 +913,8 @@ async function runE2e(project, context, extraEnv = {}) {
   const e2eEnv = externalStack
     ? {
         ...process.env,
+        E2E_COMPOSE_FILE: join(ROOT, 'docker-compose.ci.yml'),
+        E2E_COMPOSE_PROJECT: 'cronos-ci',
         BASE_URL: resolveE2eBaseUrl({ externalStack: true, baseUrl: process.env.BASE_URL }),
         PLAYWRIGHT_SKIP_WEB_SERVER: '1',
         PLAYWRIGHT_WORKERS: String(E2E_WORKERS),
@@ -921,6 +923,8 @@ async function runE2e(project, context, extraEnv = {}) {
       }
     : {
         ...context.stack.env,
+        E2E_COMPOSE_FILE: COMPOSE_FILE,
+        E2E_COMPOSE_PROJECT: context.stack.project,
         ...capacityEnv,
         ...extraEnv,
       }

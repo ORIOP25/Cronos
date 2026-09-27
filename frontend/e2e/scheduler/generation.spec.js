@@ -10,7 +10,10 @@ import {
   goTo,
   loginAsAdminReal,
 } from '../utils/clerk-helpers.js'
-import { waitForJobToSucceed as waitForSchedulerJob } from '../utils/scheduler-fixtures.js'
+import {
+  seedSchedulerV1Records,
+  waitForJobToSucceed as waitForSchedulerJob,
+} from '../utils/scheduler-fixtures.js'
 import { createE2eRunKey, E2E_BASE_URL } from '../utils/e2e-config.js'
 import { cleanupOrganizationByName } from '../utils/fresh-founder.js'
 
@@ -135,13 +138,6 @@ async function rejectPendingDraftIfPresent(page) {
   const status = await apiRequest(page, 'GET', '/scheduler/status')
   if (status?.pending_proposal?.proposal_id) {
     await apiRequest(page, 'POST', `/scheduler/drafts/${status.pending_proposal.proposal_id}/reject`)
-  }
-}
-
-async function resetSchedulerYearIfConfigured(page) {
-  const status = await apiRequest(page, 'GET', '/scheduler/status')
-  if (status?.school_year?.id) {
-    await apiRequest(page, 'POST', '/scheduler/reset-year', { confirmed: true })
   }
 }
 
@@ -379,7 +375,11 @@ export async function seedMinimalSchedulerInputs(page, teacherEmail, dates = FIX
   const classroom = await ensureFixtureClass(page, course.id, dates)
   await ensureFixtureClassSubject(page, classroom.id, subject.id, updatedTeacher.teacher_id)
 
-  await resetSchedulerYearIfConfigured(page)
+  await seedSchedulerV1Records(page, {
+    classId: classroom.id,
+    subjectId: subject.id,
+    preferredEndDate: dates.schoolHardEndDate,
+  })
 
   return { classId: classroom.id, subjectId: subject.id, teacherId: updatedTeacher.teacher_id }
 }

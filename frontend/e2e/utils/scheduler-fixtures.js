@@ -1,4 +1,7 @@
 import { expect } from '@playwright/test'
+import { execFile } from 'node:child_process'
+import { fileURLToPath } from 'node:url'
+import { promisify } from 'node:util'
 import {
   expectRouteReady,
   goTo,
@@ -7,6 +10,8 @@ import {
 const API_PREFIX = '/api/v1'
 const REQUEST_TIMEOUT_MS = 30_000
 const JOB_TIMEOUT_MS = 120_000
+const execFileAsync = promisify(execFile)
+const repoRoot = fileURLToPath(new URL('../../../', import.meta.url))
 const FIXTURE = {
   subjectName: 'E2E Dashboard Subject',
   moduleName: 'E2E Dashboard Module',
@@ -66,6 +71,21 @@ export async function apiRequest(page, method, path, body, timeoutMs = REQUEST_T
     },
     { apiPrefix: API_PREFIX, method, path, body, timeout: timeoutMs },
   )
+}
+
+export async function seedSchedulerV1Records(page, { classId, subjectId, preferredEndDate }) {
+  const composeFile = process.env.E2E_COMPOSE_FILE
+  const composeProject = process.env.E2E_COMPOSE_PROJECT
+  if (!composeFile || !composeProject) throw new Error('E2E Docker stack is required.')
+  const member = await apiRequest(page, 'GET', '/members/me')
+  await execFileAsync(process.platform === 'win32' ? 'docker.exe' : 'docker', [
+    'compose', '-f', composeFile, '-p', composeProject, 'exec', '-T', 'backend',
+    'python', '-m', 'scripts.seed_scheduler_e2e',
+    '--organization-id', String(member.organization_id),
+    '--class-id', String(classId),
+    '--subject-id', String(subjectId),
+    '--preferred-end-date', preferredEndDate,
+  ], { cwd: repoRoot, env: process.env, timeout: REQUEST_TIMEOUT_MS })
 }
 
 async function resetSchedulerState(page) {
@@ -182,6 +202,11 @@ export async function seedMinimalSchedulerInputs(page, requestedTeacherEmail = p
   const course = await ensureCourse(page, subject.id)
   const classroom = await ensureClass(page, course.id, dates)
   await ensureClassSubject(page, classroom.id, subject.id, teacher.teacher_id)
+  await seedSchedulerV1Records(page, {
+    classId: classroom.id,
+    subjectId: subject.id,
+    preferredEndDate: dates.schoolHardEndDate,
+  })
   return classroom
 }
 

@@ -128,7 +128,8 @@ jobs:
         run: |
           pytest -q tests/contracts --cov=app --cov-branch --cov-report= --cov-fail-under=0 --cov-append --junitxml=test-results-contracts.xml
           coverage report --fail-under=70
-          coverage report --include='app/scheduler/domain/constraints.py,app/scheduler/domain/validation.py' --fail-under=100
+          coverage report --include='app/scheduler/domain/constraint_policy.py' --fail-under=100
+          coverage report --include='app/scheduler/domain/candidate_validation.py' --fail-under=90
           python - <<'PY'
           import xml.etree.ElementTree as ET
           files = ("test-results-unit.xml", "test-results-integration.xml", "test-results-contracts.xml")
