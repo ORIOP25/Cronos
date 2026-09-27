@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session, aliased
 
 from app import models, schemas
+from app.core.logging import safe_exception_frames
 from app.services.scheduler_serialization import sha256_json
 from app.services.scheduler_state_service import (
     SchedulerStateService,
@@ -444,14 +445,25 @@ async def _record_internship_occurrences(
     from app.services import occurrence_service
 
     for lesson in lessons:
-        occurrence, _ = await occurrence_service.create_occurrence_from_active_block(
-            db,
-            organization_id,
-            lesson.active_schedule_block_id,
-            created_by_membership_id=changed_by_membership_id,
-            creation_source="internship_flow",
-            reason=INTERNSHIP_FLOW_OCCURRENCE_REASON,
-        )
+        try:
+            async with db.begin_nested():
+                occurrence, _ = await occurrence_service.create_occurrence_from_active_block(
+                    db,
+                    organization_id,
+                    lesson.active_schedule_block_id,
+                    created_by_membership_id=changed_by_membership_id,
+                    creation_source="internship_flow",
+                    reason=INTERNSHIP_FLOW_OCCURRENCE_REASON,
+                )
+        except Exception as exc:
+            logger.warning(
+                "internship_flow_occurrence_creation_failed",
+                organization_id=organization_id,
+                active_schedule_block_id=lesson.active_schedule_block_id,
+                error_type=type(exc).__name__,
+                exception_frames=safe_exception_frames(exc),
+            )
+            continue
         if occurrence is None or occurrence.status is not None:
             continue
         try:
@@ -474,6 +486,7 @@ async def _record_internship_occurrences(
                 active_schedule_block_id=lesson.active_schedule_block_id,
                 occurrence_id=occurrence.id,
                 error_type=type(exc).__name__,
+                exception_frames=safe_exception_frames(exc),
             )
 
 

@@ -1,4 +1,5 @@
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, time
+from types import SimpleNamespace
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -38,7 +39,7 @@ def override_auth_actor(db_session):
     app.dependency_overrides.pop(deps.get_db, None)
 
 
-async def _prepare_org(db_session):
+async def _prepare_context(db_session):
     org = models.Organization(
         name="Flow API Org",
         clerk_org_id="org_flow_api",
@@ -84,7 +85,24 @@ async def _prepare_org(db_session):
         grade_level=10,
         course_id=course.id,
     )
-    db_session.add(class_)
+    subject = models.Subject(
+        organization_id=org.id,
+        name="Subject",
+        required_room_type=models.RoomType.normal,
+    )
+    room = models.Room(
+        organization_id=org.id,
+        name="Room",
+        type=models.RoomType.normal,
+        capacity=30,
+    )
+    slot = models.Timeslot(
+        organization_id=org.id,
+        day_of_week=FLOW_START.weekday(),
+        start_time=time(9),
+        end_time=time(10),
+    )
+    db_session.add_all([class_, subject, room, slot])
     db_session.add(
         models.OrganizationSettings(
             organization_id=org.id,
@@ -107,6 +125,62 @@ async def _prepare_org(db_session):
             school_year_id=school_year.id,
         )
     )
+    teacher = models.Teacher(
+        organization_id=org.id,
+        organization_membership_id=membership.id,
+    )
+    db_session.add(teacher)
+    await db_session.flush()
+    db_session.add_all(
+        [
+            models.Module(
+                organization_id=org.id,
+                name="Module",
+                code="FLW-1",
+                hours_total=1,
+                order=1,
+                subject_id=subject.id,
+            ),
+            models.ClassSubjectLink(
+                organization_id=org.id,
+                class_id=class_.id,
+                subject_id=subject.id,
+                grade_level=10,
+                teacher_id=teacher.id,
+            ),
+        ]
+    )
+    await db_session.execute(
+        models.teacher_subject_link.insert().values(
+            organization_id=org.id,
+            teacher_id=teacher.id,
+            subject_id=subject.id,
+        )
+    )
+    job = models.ScheduleGenerationJob(
+        organization_id=org.id,
+        school_year_id=school_year.id,
+        strategy=models.ScheduleGenerationStrategy.COMPLETE_GENERATION,
+        trigger_type=models.ScheduleGenerationTrigger.FIRST_GENERATION,
+        idempotency_key="flow-api-job",
+    )
+    db_session.add(job)
+    await db_session.flush()
+    draft = models.ScheduleDraft(
+        organization_id=org.id,
+        school_year_id=school_year.id,
+        generation_job_id=job.id,
+        strategy=models.ScheduleGenerationStrategy.COMPLETE_GENERATION,
+        draft_state=models.ScheduleDraftState.PENDING,
+        result_category=models.ScheduleGenerationResultCategory.COMPLETE_SUCCESS,
+        trigger_type=models.ScheduleGenerationTrigger.FIRST_GENERATION,
+        generation_input_fingerprint="0" * 64,
+        projected_completion_date=FLOW_END,
+        hard_end_date=school_year.hard_end_date,
+        summary_json={},
+        created_by_membership_id=membership.id,
+    )
+    db_session.add(draft)
     await db_session.commit()
     actor = deps.Actor(
         account_id=user.id,
@@ -117,12 +191,61 @@ async def _prepare_org(db_session):
         can_teach=False,
         teacher_id=None,
     )
-    return org, class_, actor
+    return SimpleNamespace(
+        org=org,
+        class_=class_,
+        subject=subject,
+        room=room,
+        slot=slot,
+        teacher=teacher,
+        membership=membership,
+        school_year=school_year,
+        draft=draft,
+        actor=actor,
+    )
+
+
+async def _publish_block(db_session, ctx, block_date, key):
+    draft_block = models.ScheduleDraftBlock(
+        organization_id=ctx.org.id,
+        school_year_id=ctx.school_year.id,
+        draft_id=ctx.draft.id,
+        stable_block_key=key,
+        class_id=ctx.class_.id,
+        subject_id=ctx.subject.id,
+        teacher_id=ctx.teacher.id,
+        room_id=ctx.room.id,
+        date=block_date,
+        timeslot_id=ctx.slot.id,
+        duration_minutes=60,
+        module_sequence_index=1,
+        change_type=models.ScheduleDraftBlockChangeType.ADDED,
+    )
+    db_session.add(draft_block)
+    await db_session.flush()
+    active = models.ActiveScheduleBlock(
+        organization_id=ctx.org.id,
+        school_year_id=ctx.school_year.id,
+        schedule_version_id="flow-api-v1",
+        stable_block_key=key,
+        class_id=ctx.class_.id,
+        subject_id=ctx.subject.id,
+        teacher_id=ctx.teacher.id,
+        room_id=ctx.room.id,
+        date=block_date,
+        timeslot_id=ctx.slot.id,
+        duration_minutes=60,
+        source_draft_block_id=draft_block.id,
+        status=models.ActiveScheduleBlockStatus.ACTIVE,
+    )
+    db_session.add(active)
+    await db_session.commit()
+    return active
 
 
 async def test_internship_flow_endpoint_lifecycle(db_session, override_auth_actor):
-    org, class_, actor = await _prepare_org(db_session)
-    override_auth_actor(actor)
+    ctx = await _prepare_context(db_session)
+    override_auth_actor(ctx.actor)
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         preview = await ac.post(
@@ -132,7 +255,7 @@ async def test_internship_flow_endpoint_lifecycle(db_session, override_auth_acto
                 "name": "Estágio 10A",
                 "start_date": FLOW_START.isoformat(),
                 "end_date": FLOW_END.isoformat(),
-                "class_ids": [class_.id],
+                "class_ids": [ctx.class_.id],
             },
         )
         assert preview.status_code == 200
@@ -145,11 +268,11 @@ async def test_internship_flow_endpoint_lifecycle(db_session, override_auth_acto
                 "start_date": FLOW_START.isoformat(),
                 "end_date": FLOW_END.isoformat(),
                 "event_type": "internship_flow",
-                "class_ids": [class_.id],
+                "class_ids": [ctx.class_.id],
             },
         )
         assert created.status_code == 200
-        assert created.json()["class_ids"] == [class_.id]
+        assert created.json()["class_ids"] == [ctx.class_.id]
         assert created.json()["school_year_start_year"] == 2025
 
         listed = await ac.get("/api/v1/school/calendar-events/")
@@ -175,9 +298,77 @@ async def test_internship_flow_endpoint_lifecycle(db_session, override_auth_acto
         assert (await db_session.scalars(select(models.SchoolCalendarEvent))).all() == []
 
 
+async def test_flow_creation_with_classes_removes_lessons_and_records_absences(
+    db_session, override_auth_actor
+):
+    ctx = await _prepare_context(db_session)
+    first = await _publish_block(db_session, ctx, FLOW_START, "flow-api-first")
+    second = await _publish_block(db_session, ctx, FLOW_END, "flow-api-second")
+    db_session.add_all(
+        [
+            models.LessonLog(
+                organization_id=ctx.org.id,
+                active_schedule_block_id=first.id,
+                status=models.LessonLogStatus.PENDING,
+            ),
+            models.LessonLog(
+                organization_id=ctx.org.id,
+                active_schedule_block_id=second.id,
+                status=models.LessonLogStatus.PENDING,
+            ),
+        ]
+    )
+    await db_session.commit()
+    override_auth_actor(ctx.actor)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        preview = await ac.post(
+            "/api/v1/school/calendar-events/preview",
+            json={
+                "operation": "create",
+                "name": "Estágio com aulas",
+                "start_date": FLOW_START.isoformat(),
+                "end_date": FLOW_END.isoformat(),
+                "class_ids": [ctx.class_.id],
+            },
+        )
+        assert preview.status_code == 200
+        body = preview.json()
+        assert body["requires_confirmation"] is True
+        assert len(body["affected_lessons"]) == 2
+
+        created = await ac.post(
+            "/api/v1/school/calendar-events/",
+            json={
+                "name": "Estágio com aulas",
+                "start_date": FLOW_START.isoformat(),
+                "end_date": FLOW_END.isoformat(),
+                "event_type": "internship_flow",
+                "class_ids": [ctx.class_.id],
+                "confirmation_fingerprint": body["confirmation_fingerprint"],
+            },
+        )
+        assert created.status_code == 200
+
+    await db_session.refresh(first)
+    await db_session.refresh(second)
+    assert first.status is models.ActiveScheduleBlockStatus.REMOVED
+    assert second.status is models.ActiveScheduleBlockStatus.REMOVED
+
+    occurrences = (
+        await db_session.scalars(
+            select(models.LessonOccurrence).where(
+                models.LessonOccurrence.active_schedule_block_id.in_([first.id, second.id])
+            )
+        )
+    ).all()
+    assert len(occurrences) == 2
+    assert all(item.status is models.LessonOccurrenceStatus.GAP for item in occurrences)
+
+
 async def test_flow_endpoint_maps_validation_and_missing_event(db_session, override_auth_actor):
-    org, class_, actor = await _prepare_org(db_session)
-    override_auth_actor(actor)
+    ctx = await _prepare_context(db_session)
+    override_auth_actor(ctx.actor)
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         outside = await ac.post(
@@ -187,7 +378,7 @@ async def test_flow_endpoint_maps_validation_and_missing_event(db_session, overr
                 "start_date": "2025-01-01",
                 "end_date": "2025-01-05",
                 "event_type": "internship_flow",
-                "class_ids": [class_.id],
+                "class_ids": [ctx.class_.id],
             },
         )
         assert outside.status_code == 400

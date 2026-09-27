@@ -1,7 +1,7 @@
 from datetime import UTC, date, datetime, time
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 
 from app import models, schemas
@@ -898,6 +898,66 @@ async def test_rename_only_does_not_bump_scheduler_state_version(db_session):
     assert state.scheduler_state_version == version_before
     updated = await db_session.get(models.SchoolCalendarEvent, event.id)
     assert updated.name == "Estágio renomeado"
+
+
+async def test_flow_survives_duplicate_active_occurrences(db_session):
+    ctx = await _flow_context(db_session)
+    block = await _publish_block(db_session, ctx, ctx["class_a"], FLOW_DATE, "flow-duplicate")
+    for revision in (1, 2):
+        db_session.add(
+            models.LessonOccurrence(
+                organization_id=ctx["organization"].id,
+                date=FLOW_DATE,
+                class_id=ctx["class_a"].id,
+                subject_id=ctx["subject"].id,
+                active_schedule_block_id=block.id,
+                status=None,
+                revision=revision,
+                planned_hours=1,
+                hours_given=0,
+                planned_minutes=60,
+            )
+        )
+    await db_session.commit()
+
+    event = await _create_confirmed(db_session, ctx, class_ids=[ctx["class_a"].id])
+    await db_session.commit()
+
+    await db_session.refresh(block)
+    assert block.status is models.ActiveScheduleBlockStatus.REMOVED
+    assert event.class_ids == [ctx["class_a"].id]
+
+
+async def test_flow_keeps_open_absence_when_module_is_missing(db_session):
+    ctx = await _flow_context(db_session)
+    block = await _publish_block(db_session, ctx, ctx["class_a"], FLOW_DATE, "flow-no-module")
+    occurrence = models.LessonOccurrence(
+        organization_id=ctx["organization"].id,
+        date=FLOW_DATE,
+        class_id=ctx["class_a"].id,
+        subject_id=ctx["subject"].id,
+        active_schedule_block_id=block.id,
+        status=None,
+        revision=1,
+        planned_hours=1,
+        hours_given=0,
+        planned_minutes=60,
+    )
+    db_session.add(occurrence)
+    await db_session.execute(
+        delete(models.Module).where(models.Module.organization_id == ctx["organization"].id)
+    )
+    await db_session.commit()
+
+    event = await _create_confirmed(db_session, ctx, class_ids=[ctx["class_a"].id])
+    await db_session.commit()
+
+    await db_session.refresh(block)
+    await db_session.refresh(occurrence)
+    assert block.status is models.ActiveScheduleBlockStatus.REMOVED
+    assert occurrence.status is None
+    assert occurrence.is_active is True
+    assert event.class_ids == [ctx["class_a"].id]
 
 
 async def test_each_removed_lesson_gets_one_absence_record(db_session):
