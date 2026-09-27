@@ -8,7 +8,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models, schemas
 from app.scheduler.domain.timetable import BreakOverride, TimetableConfigError, build_daily_slots
-from app.services import settings_service
+from app.services import internship_flow_service, settings_service
+from app.services.scheduler_state_service import record_scheduler_change
 
 logger = structlog.get_logger(__name__)
 
@@ -83,6 +84,18 @@ def validate_foundation_snapshot(data: schemas.FoundationDraftData) -> None:
     missing = [name for name, value in required.items() if value is None]
     if missing:
         raise ValueError(f"Campos obrigatórios em falta: {', '.join(missing)}")
+    for flow in data.internship_flows:
+        if (
+            not flow.name
+            or not flow.name.strip()
+            or flow.start_date is None
+            or flow.end_date is None
+        ):
+            raise ValueError(
+                "Preencha o nome e as datas de todos os fluxos de estágio, ou remova-os."
+            )
+        if flow.start_date < data.school_start_date or flow.end_date > data.school_hard_end_date:
+            raise ValueError("Os fluxos de estágio devem estar dentro do período letivo.")
     if data.school_hard_end_date <= data.school_start_date:
         raise ValueError("A data-limite deve ser posterior à data de início")
     if not 0 <= data.repair_stability_window_days <= 60:
@@ -335,7 +348,14 @@ class FoundationService:
                 "Nenhum bloco de horário pôde ser gerado com a configuração fornecida"
             )
 
-        # 3. Transition to COMPLETED
+        # 3. Create the optional internship flows without classes
+        await self._create_internship_flows(
+            organization_id,
+            data.internship_flows,
+            membership_id,
+        )
+
+        # 4. Transition to COMPLETED
         now = datetime.now(UTC)
         org.foundation_status = models.OrganizationFoundationStatus.COMPLETED
         org.foundation_completed_at = now
@@ -346,3 +366,39 @@ class FoundationService:
             foundation_completed_at=now,
             generated_timeslot_count=grid_res.generated_count,
         )
+
+    async def _create_internship_flows(
+        self,
+        organization_id: int,
+        flows: list[schemas.FoundationInternshipFlow],
+        membership_id: int,
+    ) -> None:
+        if not flows:
+            return
+        school_year_start_year = await internship_flow_service.resolve_school_start_year(
+            self.db, organization_id
+        )
+        for flow in flows:
+            event = models.SchoolCalendarEvent(
+                organization_id=organization_id,
+                school_year_start_year=school_year_start_year,
+                name=flow.name,
+                start_date=flow.start_date,
+                end_date=flow.end_date,
+                event_type=models.CalendarEventType.internship_flow,
+                source=models.CalendarEventSource.manual,
+            )
+            self.db.add(event)
+            await self.db.flush()
+            await record_scheduler_change(
+                self.db,
+                organization_id,
+                entity_type="INTERNSHIP_FLOW",
+                entity_id=event.id,
+                operation=models.SchedulerStateChangeOperation.CREATE,
+                before=None,
+                after=internship_flow_service.flow_snapshot(event, []),
+                changed_by_membership_id=membership_id,
+                metadata={"removed_lesson_count": 0, "foundation_step": True},
+            )
+        await self.db.flush()

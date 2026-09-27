@@ -24,7 +24,12 @@ from app.api import deps
 from app.core.exceptions import AppError
 from app.core.logging import safe_exception_frames
 from app.scheduler.application.contracts import SchedulerTaskDispatcher
-from app.services import grid_change_service, grid_version_service, settings_service
+from app.services import (
+    grid_change_service,
+    grid_version_service,
+    internship_flow_service,
+    settings_service,
+)
 from app.services.scheduler_job_service import SchedulerJobService
 from app.services.scheduler_request_service import (
     persist_dispatch_failure,
@@ -350,9 +355,46 @@ async def list_calendar_events(
     )
 
 
+def _raise_calendar_event_error(exc: Exception) -> None:
+    if isinstance(exc, internship_flow_service.InternshipFlowError):
+        kind = (
+            "conflict"
+            if exc.code
+            in {
+                "CALENDAR_EVENT_CONFIRMATION_REQUIRED",
+                "CALENDAR_EVENT_STALE",
+            }
+            else "bad_request"
+        )
+        code = exc.code
+    else:
+        kind = "bad_request"
+        code = "calendar_event_invalid"
+    raise AppError(kind=kind, code=code, detail=str(exc)) from exc
+
+
+@router.post(
+    "/calendar-events/preview",
+    response_model=schemas.CalendarEventChangePreviewRead,
+    responses={409: {"description": "Evento desatualizado ou não encontrado"}},
+    summary="Pré-visualizar as aulas afetadas por um fluxo de estágio",
+)
+async def preview_calendar_event_change(
+    payload: schemas.CalendarEventChangePreviewRequest,
+    db: deps.DbSession,
+    current_user: deps.AdminActor,
+) -> schemas.CalendarEventChangePreviewRead:
+    try:
+        return await settings_service.preview_calendar_event_change(
+            db, current_user.organization_id, payload
+        )
+    except internship_flow_service.InternshipFlowError as exc:
+        _raise_calendar_event_error(exc)
+
+
 @router.post(
     "/calendar-events/",
-    summary="Criar evento manual (pausa escolar, exames, etc.)",
+    summary="Criar evento manual (pausa escolar, exames, fluxo de estágio)",
 )
 async def create_calendar_event(
     payload: schemas.SchoolCalendarEventCreate,
@@ -366,8 +408,34 @@ async def create_calendar_event(
             payload,
             changed_by_membership_id=current_user.membership_id,
         )
-    except ValueError as exc:
-        raise AppError(kind="bad_request", code="calendar_event_invalid", detail=str(exc)) from exc
+    except (internship_flow_service.InternshipFlowError, ValueError) as exc:
+        _raise_calendar_event_error(exc)
+
+
+@router.put(
+    "/calendar-events/{event_id}",
+    responses={
+        404: {"description": "Evento não encontrado"},
+        409: {"description": "Aulas afetadas mudaram desde a pré-visualização"},
+    },
+    summary="Editar um fluxo de estágio",
+)
+async def update_calendar_event(
+    event_id: int,
+    payload: schemas.SchoolCalendarEventUpdate,
+    db: deps.DbSession,
+    current_user: deps.AdminActor,
+) -> schemas.SchoolCalendarEventRead:
+    try:
+        return await settings_service.update_calendar_event(
+            db,
+            current_user.organization_id,
+            event_id,
+            payload,
+            changed_by_membership_id=current_user.membership_id,
+        )
+    except (internship_flow_service.InternshipFlowError, ValueError) as exc:
+        _raise_calendar_event_error(exc)
 
 
 @router.delete(

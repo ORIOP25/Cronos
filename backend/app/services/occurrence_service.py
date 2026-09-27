@@ -25,6 +25,7 @@ from app import models, schemas
 from app.core.exceptions import AppError
 from app.core.logging import safe_exception_frames
 from app.core.task_keys import DEFAULT_REPAIR_WINDOW_DAYS
+from app.services import internship_flow_service
 
 # ---------------------------------------------------------------------------
 # Constantes
@@ -56,6 +57,7 @@ ERR_ACTIVE_BLOCK_NOT_FOUND = "Bloco ativo nao encontrado"
 ERR_STALE_VERSION = "OCCURRENCE_STALE_VERSION"
 ERR_INACTIVE = "OCCURRENCE_INACTIVE"
 ERR_SUBSTITUTE_LOG_LOCKED = "SUBSTITUTE_LOG_LOCKED"
+ERR_INTERNSHIP_FLOW_BLOCKED = "INTERNSHIP_FLOW_BLOCKS_LESSON"
 
 ALLOWED_STATE_TRANSITIONS: dict[
     models.LessonOccurrenceStatus, set[models.LessonOccurrenceStatus]
@@ -1576,6 +1578,28 @@ def update_occurrence_sync(
         raise _occurrence_error(status_code=422, detail=ERR_MISSING_SCHEDULE_CONTEXT)
 
     class_id = planned_context.class_id
+    if payload.status == models.LessonOccurrenceStatus.SUBSTITUTED:
+        # Lock the planned block so internship-flow changes and this decision serialize.
+        locked_status = db.execute(
+            select(models.ActiveScheduleBlock.status)
+            .where(models.ActiveScheduleBlock.id == planned_context.active_block.id)
+            .with_for_update()
+        ).scalar_one_or_none()
+        if (
+            locked_status != models.ActiveScheduleBlockStatus.ACTIVE
+            or internship_flow_service.class_blocked_on_sync(
+                db, organization_id, class_id, planned_context.date
+            )
+        ):
+            raise AppError(
+                kind="conflict",
+                code=ERR_INTERNSHIP_FLOW_BLOCKED,
+                detail=(
+                    "Este dia de estágio não permite criar aulas para a turma. "
+                    "Ajuste ou remova o fluxo primeiro."
+                ),
+            )
+
     if planned_context.subject is None:
         raise _occurrence_error(status_code=422, detail=ERR_MISSING_PLANNED_MODULE)
 

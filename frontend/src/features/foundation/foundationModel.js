@@ -7,7 +7,7 @@ import {
 
 export { buildDailyTimeline, normalizeBreakOverrides }
 
-export const FOUNDATION_STEP_COUNT = 9
+export const FOUNDATION_STEP_COUNT = 10
 
 const TIME_FIELDS = new Set([
   'opening_time',
@@ -24,7 +24,8 @@ export const STEP_BREAK_DURATION = 5
 export const STEP_LUNCH = 6
 export const STEP_PREVIEW = 7
 export const STEP_CALENDAR = 8
-export const STEP_CONFIRMATION = 9
+export const STEP_INTERNSHIP = 9
+export const STEP_CONFIRMATION = 10
 
 export const initialFoundationDraftValues = {
   school_start_date: '',
@@ -40,6 +41,7 @@ export const initialFoundationDraftValues = {
   lunch_window_end: '14:00',
   lunch_min_duration_minutes: 60,
   automatic_holidays_enabled: false,
+  internship_flows: [],
 }
 
 export const initialFoundationState = {
@@ -58,6 +60,16 @@ export function serializeFoundationDraftValues(values) {
   return Object.fromEntries(Object.entries(values).map(([field, value]) => {
     if (field === 'repair_stability_window_days') {
       return [field, value === '' || value == null ? 0 : Number(value)]
+    }
+    if (field === 'internship_flows') {
+      const flows = (Array.isArray(value) ? value : [])
+        .filter((flow) => flow.name?.trim() || flow.start_date || flow.end_date)
+        .map((flow) => ({
+          name: flow.name?.trim() ? flow.name.trim() : null,
+          start_date: flow.start_date || null,
+          end_date: flow.end_date || null,
+        }))
+      return [field, flows]
     }
     if (TIME_FIELDS.has(field)) {
       return [field, value === '' || value == null ? null : normalizeTimeOfDay(value)]
@@ -172,9 +184,33 @@ export function validateFoundationStep(step, values) {
     }
   }
 
+  if (step === STEP_INTERNSHIP) {
+    const flows = Array.isArray(values.internship_flows) ? values.internship_flows : []
+    const incomplete = flows.some((flow) => {
+      const filled = [flow.name, flow.start_date, flow.end_date].filter((item) => item && String(item).trim())
+      return filled.length > 0 && filled.length < 3
+    })
+    const invalidOrder = flows.some(
+      (flow) => flow.start_date && flow.end_date && flow.end_date < flow.start_date,
+    )
+    const outOfRange = flows.some(
+      (flow) => flow.start_date && flow.end_date && (
+        (values.school_start_date && flow.start_date < values.school_start_date)
+        || (values.school_hard_end_date && flow.end_date > values.school_hard_end_date)
+      ),
+    )
+    if (incomplete) {
+      errors.internship_flows = 'Preencha o nome e as datas de cada fluxo, ou remova-o.'
+    } else if (invalidOrder) {
+      errors.internship_flows = 'A data de fim de cada fluxo deve ser posterior ou igual à data de início.'
+    } else if (outOfRange) {
+      errors.internship_flows = 'Os fluxos de estágio devem estar dentro do período letivo.'
+    }
+  }
+
   if (step === STEP_CONFIRMATION) {
     // Cumulative check for all preceding steps
-    for (let s = 1; s <= STEP_LUNCH; s++) {
+    for (let s = 1; s <= STEP_INTERNSHIP; s++) {
       const stepErrs = validateFoundationStep(s, values)
       Object.assign(errors, stepErrs)
     }

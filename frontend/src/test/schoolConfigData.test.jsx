@@ -5,6 +5,7 @@ import { renderWithProviders } from './testUtils'
 import {
   useAvailabilityHeatmap,
   useCalendarEvents,
+  useCreateCalendarEvent,
   useSchoolSettings,
   useSoftResetSchoolYear,
 } from '../features/schoolConfig/data'
@@ -37,6 +38,15 @@ function SchoolConfigDataProbe() {
 function SoftResetProbe() {
   const softReset = useSoftResetSchoolYear()
   return <button onClick={() => softReset.mutate({ confirm_phrase: 'Confirmo' })}>Reset</button>
+}
+
+function CreateEventProbe() {
+  const createEvent = useCreateCalendarEvent()
+  return (
+    <button onClick={() => createEvent.mutate({ name: 'Estágio', event_type: 'internship_flow' })}>
+      Criar fluxo
+    </button>
+  )
 }
 
 describe('school configuration data hooks', () => {
@@ -84,6 +94,27 @@ describe('school configuration data hooks', () => {
     renderWithProviders(<SchoolConfigDataProbe />)
 
     await waitFor(() => expect(apiClient.get).not.toHaveBeenCalled())
+  })
+
+  it('invalidates the week schedule and removed-history caches after saving a flow', async () => {
+    const { queryClient } = renderWithProviders(<CreateEventProbe />)
+    const invalidate = vi.spyOn(queryClient, 'invalidateQueries')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Criar fluxo' }))
+
+    await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith(
+      '/school/calendar-events/',
+      expect.objectContaining({ event_type: 'internship_flow' }),
+    ))
+    await waitFor(() => {
+      expect(invalidate.mock.calls.map(([options]) => options.queryKey)).toEqual(
+        expect.arrayContaining([
+          ['removedBlocks', activeOrgId],
+          ['weekSchedule', activeOrgId],
+          ['scheduler-status', activeOrgId],
+        ]),
+      )
+    })
   })
 
   it('resets only queries belonging to the active organization after a soft reset', async () => {

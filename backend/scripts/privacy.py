@@ -34,6 +34,7 @@ PRIVACY_TABLES = {
     "room": "delete",
     "scheduler_school_year": "delete",
     "school_calendar_event": "delete",
+    "school_calendar_event_class": "delete",
     "subject": "delete",
     "teacher": "delete",
     "timeslot": "delete",

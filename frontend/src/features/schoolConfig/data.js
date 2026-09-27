@@ -13,6 +13,14 @@ const RESOURCES = {
   settings: 'org-settings',
 }
 
+const CALENDAR_DEPENDENCIES = [
+  RESOURCES.calendar,
+  'removedBlocks',
+  'weekSchedule',
+  'scheduler-status',
+  'scheduler-current-draft',
+]
+
 const GRID_DEPENDENCIES = [
   RESOURCES.gridSettings,
   RESOURCES.gridConfiguration,
@@ -45,7 +53,25 @@ export function useCreateCalendarEvent() {
   return useMutation({
     mutationFn: (payload) => apiClient.post('/school/calendar-events/', payload),
     onSuccess: () => {
-      void invalidateOrgQueries(queryClient, orgId, [RESOURCES.calendar])
+      void invalidateOrgQueries(queryClient, orgId, CALENDAR_DEPENDENCIES)
+      void invalidatePreparationQueries(queryClient, orgId)
+    },
+  })
+}
+
+export function usePreviewCalendarEventChange() {
+  return useMutation({
+    mutationFn: (payload) => apiClient.post('/school/calendar-events/preview', payload),
+  })
+}
+
+export function useUpdateCalendarEvent() {
+  const orgId = useOrganizationId()
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, ...payload }) => apiClient.put(`/school/calendar-events/${id}`, payload),
+    onSuccess: () => {
+      void invalidateOrgQueries(queryClient, orgId, CALENDAR_DEPENDENCIES)
       void invalidatePreparationQueries(queryClient, orgId)
     },
   })
@@ -57,7 +83,7 @@ export function useDeleteCalendarEvent() {
   return useMutation({
     mutationFn: (id) => apiClient.delete(`/school/calendar-events/${id}`),
     onSuccess: () => {
-      void invalidateOrgQueries(queryClient, orgId, [RESOURCES.calendar])
+      void invalidateOrgQueries(queryClient, orgId, CALENDAR_DEPENDENCIES)
       void invalidatePreparationQueries(queryClient, orgId)
     },
   })

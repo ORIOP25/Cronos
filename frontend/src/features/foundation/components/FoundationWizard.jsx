@@ -21,6 +21,7 @@ import {
   STEP_LUNCH,
   STEP_PREVIEW,
   STEP_CALENDAR,
+  STEP_INTERNSHIP,
   STEP_CONFIRMATION,
 } from '../foundationModel'
 import { PeriodStep } from './PeriodStep'
@@ -31,6 +32,7 @@ import { BreakDurationStep } from './BreakDurationStep'
 import { LunchStep } from './LunchStep'
 import { PreviewStep } from './PreviewStep'
 import { SchoolCalendarStep } from './SchoolCalendarStep'
+import { InternshipFlowsStep } from './InternshipFlowsStep'
 import { SummaryStep } from './SummaryStep'
 import { ConflictResolutionModal } from './ConflictResolutionModal'
 import GuidedFormShell from '../../../components/GuidedFormShell'
@@ -461,6 +463,14 @@ export function FoundationWizard() {
             />
           )}
 
+          {state.currentStep === STEP_INTERNSHIP && (
+            <InternshipFlowsStep
+              values={state.values}
+              fieldErrors={state.fieldErrors}
+              onChange={handleChange}
+            />
+          )}
+
           {state.currentStep === STEP_CONFIRMATION && (
             <SummaryStep
               values={state.values}
@@ -488,7 +498,10 @@ export function FoundationWizard() {
                 disabled={isBlocked}
                 onClick={handleNext}
               >
-                {state.currentStep === STEP_CALENDAR && !state.values.automatic_holidays_enabled
+                {(state.currentStep === STEP_CALENDAR
+                  && !state.values.automatic_holidays_enabled)
+                || (state.currentStep === STEP_INTERNSHIP
+                  && (state.values.internship_flows || []).length === 0)
                   ? 'Ignorar por agora'
                   : 'Seguinte →'}
               </CButton>

@@ -252,6 +252,42 @@ def test_shared_hard_validator_reports_each_hard_invalid_shape(
     assert violations[0].code is TargetViolationCode.HARD_CONSTRAINT_VIOLATION
 
 
+def test_internship_flow_blocks_only_its_associated_classes():
+    snapshot = _hard_snapshot()
+    snapshot["classes"].append({"id": 5, "size": 20})
+    snapshot["class_subject_requirements"].append({"class_id": 5, "subject_id": 2, "teacher_id": 3})
+    snapshot["calendar_events"] = [
+        {
+            "start_date": "2026-06-01",
+            "end_date": "2026-06-01",
+            "event_type": "internship_flow",
+            "class_ids": [1],
+        }
+    ]
+
+    blocked = TargetHardConstraintValidator.validate(snapshot, (_valid_hard_block(),))
+    other_class = TargetHardConstraintValidator.validate(
+        snapshot, (replace(_valid_hard_block("other"), class_id=5),)
+    )
+
+    assert blocked[0].code is TargetViolationCode.HARD_CONSTRAINT_VIOLATION
+    assert other_class == ()
+
+
+def test_empty_internship_flow_blocks_no_class():
+    snapshot = _hard_snapshot()
+    snapshot["calendar_events"] = [
+        {
+            "start_date": "2026-06-01",
+            "end_date": "2026-06-01",
+            "event_type": "internship_flow",
+            "class_ids": [],
+        }
+    ]
+
+    assert TargetHardConstraintValidator.validate(snapshot, (_valid_hard_block(),)) == ()
+
+
 def test_shared_hard_validator_accepts_a_block_inside_its_version_window():
     snapshot = _hard_snapshot()
     snapshot["timetable_grid"][0].update(valid_from="2026-06-01", valid_to="2026-06-30")

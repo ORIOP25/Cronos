@@ -7,7 +7,7 @@ import {
   CModal, CModalHeader, CModalTitle, CModalBody, CModalFooter
 } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
-import { cilSave, cilTrash, cilCalendar } from '@coreui/icons'
+import { cilSave, cilTrash, cilCalendar, cilPencil } from '@coreui/icons'
 import { useOrganization } from '@clerk/react'
 import { formatDate } from '../../utils/formatUtils'
 import { TXT, EVENT_TYPE_LABELS } from '../../utils/terminology'
@@ -27,8 +27,8 @@ import ConfirmationModal from '../../components/ConfirmationModal'
 import PortugueseDateInput from '../../components/PortugueseDateInput'
 import { TimeField } from '../../components/TimeField'
 import { GENERATION_STATUS_LABELS } from '../../utils/presentation'
-import { useTimeslots } from '../catalog/data'
-import { useSchedulerStatus } from '../scheduling/data'
+import { useClasses, useTimeslots } from '../catalog/data'
+import { useGenerateSchedule, useSchedulerStatus } from '../scheduling/data'
 import { BreakTimelineEditor } from '../timetable/BreakTimelineEditor'
 import { validateBreakOverrides } from '../timetable/breakTimeline'
 import {
@@ -40,23 +40,38 @@ import {
   useGridChangePropose,
   useGridConfiguration,
   useGridSettings,
+  usePreviewCalendarEventChange,
   useRegenerateGrid,
   useSchoolSettings,
   useSoftResetSchoolYear,
+  useUpdateCalendarEvent,
   useUpsertSchoolSettings,
 } from './data'
 
+const EMPTY_CALENDAR_EVENT = {
+  name: '', start_date: '', end_date: '', event_type: 'school_break', class_ids: [],
+}
+
 export const CalendarSection = () => {
-  const [newEvent, setNewEvent] = useState({
-    name: '', start_date: '', end_date: '', event_type: 'school_break',
-  })
+  const [newEvent, setNewEvent] = useState(EMPTY_CALENDAR_EVENT)
+  const [editingFlowId, setEditingFlowId] = useState(null)
+  const [editingFlowOriginal, setEditingFlowOriginal] = useState(null)
+  const [classFilter, setClassFilter] = useState('')
+  const [previewState, setPreviewState] = useState(null)
+  const [lastFlowResult, setLastFlowResult] = useState(null)
+  const [showGenerateConfirm, setShowGenerateConfirm] = useState(false)
   const { message: successMsg, show: setSuccessMsg } = useTransientMessage()
+  const { message: feedbackMsg, show: setFeedbackMsg } = useTransientMessage()
 
   const { data: events = [], isLoading } = useCalendarEvents()
+  const { data: classes = [] } = useClasses()
   const settingsQuery = useSchoolSettings()
   const settingsMutation = useUpsertSchoolSettings()
   const createMutation = useCreateCalendarEvent()
+  const updateMutation = useUpdateCalendarEvent()
   const deleteMutation = useDeleteCalendarEvent()
+  const previewMutation = usePreviewCalendarEventChange()
+  const generateMutation = useGenerateSchedule()
   const [fieldErrors, setFieldErrors] = useState({})
   const [deleteTarget, setDeleteTarget] = useState(null)
   const [automaticHolidaysOverride, setAutomaticHolidaysOverride] = useState(null)
@@ -64,18 +79,152 @@ export const CalendarSection = () => {
     settingsQuery.data?.automatic_holidays_enabled,
   )
 
-  const handleCreate = () => {
+  const isFlow = newEvent.event_type === 'internship_flow'
+  const classesById = new Map(classes.map((item) => [item.id, item.name]))
+  const isSavingFlow = createMutation.isPending || updateMutation.isPending
+
+  const resetForm = () => {
+    setNewEvent(EMPTY_CALENDAR_EVENT)
+    setEditingFlowId(null)
+    setEditingFlowOriginal(null)
+    setClassFilter('')
+    setFieldErrors({})
+  }
+
+  const validateForm = () => {
     const errors = {}
     if (!newEvent.name.trim()) errors.name = 'Indique o nome do evento.'
     if (!newEvent.start_date) errors.start_date = 'Indique a data de início.'
     if (!newEvent.end_date) errors.end_date = 'Indique a data de fim.'
     if (newEvent.start_date && newEvent.end_date && newEvent.end_date < newEvent.start_date) errors.end_date = 'A data de fim deve ser posterior ou igual à data de início.'
     setFieldErrors(errors)
-    if (Object.keys(errors).length) return
-    createMutation.mutate(newEvent, {
-      onSuccess: () => { setNewEvent({ name: '', start_date: '', end_date: '', event_type: 'school_break' }); setFieldErrors({}); setSuccessMsg('Evento adicionado com sucesso.') },
+    return Object.keys(errors).length === 0
+  }
+
+  const handleMutationError = (error) => {
+    if (getApiErrorCode(error) === 'CALENDAR_EVENT_STALE') {
+      setPreviewState(null)
+      setFeedbackMsg('As aulas afetadas mudaram. Repita a pré-visualização antes de guardar.')
+      return
+    }
+    setFeedbackMsg(getApiErrorMessage(error, 'Erro ao guardar o fluxo de estágio.'))
+  }
+
+  const submitFlow = (fingerprint, removedCount = 0) => {
+    const payload = {
+      name: newEvent.name.trim(),
+      start_date: newEvent.start_date,
+      end_date: newEvent.end_date,
+      class_ids: newEvent.class_ids,
+      confirmation_fingerprint: fingerprint ?? null,
+    }
+    const sortedClassIds = (ids) => [...ids].sort((left, right) => left - right).join(',')
+    const scopeChanged = editingFlowOriginal
+      ? (
+        editingFlowOriginal.start_date !== newEvent.start_date
+        || editingFlowOriginal.end_date !== newEvent.end_date
+        || sortedClassIds(editingFlowOriginal.class_ids) !== sortedClassIds(newEvent.class_ids)
+      )
+      : newEvent.class_ids.length > 0
+    const options = {
+      onSuccess: () => {
+        setSuccessMsg(editingFlowId
+          ? 'Fluxo de estágio atualizado com sucesso.'
+          : 'Fluxo de estágio criado com sucesso.')
+        setLastFlowResult({ name: payload.name, removedCount, scopeChanged })
+        setPreviewState(null)
+        resetForm()
+      },
+      onError: handleMutationError,
+    }
+    if (editingFlowId) {
+      updateMutation.mutate({ id: editingFlowId, ...payload }, options)
+    } else {
+      createMutation.mutate(payload, options)
+    }
+  }
+
+  const prepareFlowPreview = () => {
+    previewMutation.reset()
+    previewMutation.mutate({
+      operation: editingFlowId ? 'update' : 'create',
+      event_id: editingFlowId,
+      name: newEvent.name.trim(),
+      start_date: newEvent.start_date,
+      end_date: newEvent.end_date,
+      class_ids: newEvent.class_ids,
+    }, {
+      onSuccess: (data) => {
+        if (data.requires_confirmation) {
+          setPreviewState(data)
+        } else {
+          submitFlow(data.confirmation_fingerprint, 0)
+        }
+      },
+      onError: handleMutationError,
     })
   }
+
+  const handleSubmit = () => {
+    if (!validateForm()) return
+    if (isFlow) {
+      prepareFlowPreview()
+      return
+    }
+    createMutation.mutate(
+      {
+        name: newEvent.name.trim(),
+        start_date: newEvent.start_date,
+        end_date: newEvent.end_date,
+        event_type: newEvent.event_type,
+      },
+      {
+        onSuccess: () => {
+          resetForm()
+          setSuccessMsg('Evento adicionado com sucesso.')
+        },
+      },
+    )
+  }
+
+  const startEditingFlow = (event) => {
+    setEditingFlowId(event.id)
+    setEditingFlowOriginal({
+      start_date: event.start_date,
+      end_date: event.end_date,
+      class_ids: event.class_ids || [],
+    })
+    setNewEvent({
+      name: event.name,
+      start_date: event.start_date,
+      end_date: event.end_date,
+      event_type: 'internship_flow',
+      class_ids: event.class_ids || [],
+    })
+    setClassFilter('')
+    setFieldErrors({})
+    window.scrollTo(0, 0)
+  }
+
+  const handleGenerate = () => {
+    generateMutation.reset()
+    generateMutation.mutate({}, {
+      onSuccess: () => setFeedbackMsg('Regeneração pedida. Acompanhe a proposta em Horários.'),
+      onError: (error) => setFeedbackMsg(
+        getApiErrorMessage(error, 'Não foi possível regenerar o horário.', 'schedule.generate'),
+      ),
+    })
+  }
+
+  const appliesToLabel = (event) => {
+    if (event.event_type !== 'internship_flow') return 'Toda a escola'
+    if (!event.class_ids?.length) return 'Sem turmas'
+    return event.class_ids.map((id) => classesById.get(id) ?? `Turma ${id}`).join(', ')
+  }
+
+  const visibleClasses = classes.filter((item) => (
+    item.name?.toLowerCase().includes(classFilter.trim().toLowerCase())
+  ))
 
   const sortedEvents = [...events].sort((left, right) => left.start_date.localeCompare(right.start_date))
   let eventListContent
@@ -89,6 +238,7 @@ export const CalendarSection = () => {
             <CTableHeaderCell>Início</CTableHeaderCell>
             <CTableHeaderCell>Fim</CTableHeaderCell>
             <CTableHeaderCell>Tipo</CTableHeaderCell>
+            <CTableHeaderCell>Aplica-se a</CTableHeaderCell>
             <CTableHeaderCell>Origem</CTableHeaderCell>
             <CTableHeaderCell />
           </CTableRow>
@@ -101,11 +251,30 @@ export const CalendarSection = () => {
               <CTableDataCell className="text-nowrap">{formatDate(ev.end_date)}</CTableDataCell>
               <CTableDataCell>{EVENT_TYPE_LABELS[ev.event_type] ?? ev.event_type}</CTableDataCell>
               <CTableDataCell>
+                {appliesToLabel(ev)}
+                {ev.applies_to_current_school_year === false && (
+                  <CBadge color="secondary" className="ms-2">Ano letivo anterior</CBadge>
+                )}
+              </CTableDataCell>
+              <CTableDataCell>
                 <CBadge color={ev.source === 'auto' ? 'info' : 'secondary'}>
                   {ev.source === 'auto' ? 'Automático' : 'Manual'}
                 </CBadge>
               </CTableDataCell>
-              <CTableDataCell>
+              <CTableDataCell className="text-nowrap">
+                {ev.event_type === 'internship_flow'
+                  && ev.source === 'manual'
+                  && ev.applies_to_current_school_year !== false && (
+                  <CButton
+                    color="primary"
+                    variant="ghost"
+                    size="sm"
+                    aria-label={`Editar ${ev.name}`}
+                    onClick={() => startEditingFlow(ev)}
+                  >
+                    <CIcon icon={cilPencil} />
+                  </CButton>
+                )}
                 <CButton
                   color="danger"
                   variant="ghost"
@@ -123,32 +292,67 @@ export const CalendarSection = () => {
       </CTable>
     )
 
+  let submitLabel = 'Adicionar evento'
+  if (editingFlowId) submitLabel = isSavingFlow ? 'A guardar' : 'Guardar fluxo'
+  else if (isFlow) submitLabel = previewMutation.isPending ? 'A analisar' : 'Pré-visualizar e guardar'
+
   return (
     <div>
       {successMsg && <div className="mb-3"><FeedbackBanner tone="success">{successMsg}</FeedbackBanner></div>}
+      {feedbackMsg && <div className="mb-3"><FeedbackBanner tone="warning">{feedbackMsg}</FeedbackBanner></div>}
+      {lastFlowResult && (
+        <div className="mb-3">
+          <FeedbackBanner
+            tone="info"
+            action={lastFlowResult.scopeChanged ? (
+              <button type="button" onClick={() => setShowGenerateConfirm(true)}>
+                Regenerar horário
+              </button>
+            ) : null}
+          >
+            {lastFlowResult.removedCount > 0
+              ? `${lastFlowResult.removedCount} aula(s) saíram do horário ativo. `
+              : lastFlowResult.scopeChanged
+                ? 'As datas ficaram bloqueadas para as turmas associadas. '
+                : 'O nome foi atualizado sem alterar o horário. '}
+            Fluxo “{lastFlowResult.name}” guardado.
+          </FeedbackBanner>
+        </div>
+      )}
       {settingsMutation.isError && (
         <FeedbackBanner tone="danger">
           {getApiErrorMessage(settingsMutation.error, 'Erro ao guardar a preferência de feriados automáticos.')}
         </FeedbackBanner>
       )}
-      {createMutation.isError && (
+      {createMutation.isError && !isFlow && (
         <FeedbackBanner tone="danger">
           {getApiErrorMessage(createMutation.error, 'Erro ao adicionar evento. Verifique as datas e tente novamente.')}
+        </FeedbackBanner>
+      )}
+      {updateMutation.isError && (
+        <FeedbackBanner tone="danger">
+          {getApiErrorMessage(updateMutation.error, 'Erro ao guardar o fluxo de estágio.')}
         </FeedbackBanner>
       )}
 
       <CCard className="border-0 shadow-sm mb-4 calendar-event-editor">
         <CCardHeader className="bg-white fw-bold py-2 calendar-event-editor__header">
-          <span><CIcon icon={cilCalendar} className="me-2" />Adicionar Evento</span>
+          <span>
+            <CIcon icon={cilCalendar} className="me-2" />
+            {editingFlowId ? 'Editar Fluxo de Estágio' : 'Adicionar Evento'}
+          </span>
         </CCardHeader>
         <CCardBody>
-          <p className="text-muted mb-3">Registe uma interrupção específica da escola. Os feriados nacionais são sincronizados através da opção automática.</p>
+          <p className="text-muted mb-3">
+            Registe uma interrupção específica da escola ou um fluxo de estágio.
+            {' '}Os feriados nacionais são sincronizados através da opção automática.
+          </p>
           <CRow className="g-3">
             <CCol md={4}>
               <CFormLabel htmlFor="eventName">Nome do evento</CFormLabel>
               <CFormInput
                 id="eventName"
-                placeholder="Ex: Férias de Natal"
+                placeholder={isFlow ? 'Ex: Estágio 10.º ano' : 'Ex: Férias de Natal'}
                 value={newEvent.name}
                 onChange={(e) => setNewEvent((p) => ({ ...p, name: e.target.value }))}
                 invalid={Boolean(fieldErrors.name)}
@@ -175,24 +379,80 @@ export const CalendarSection = () => {
               />
               {fieldErrors.end_date && <div className="text-danger small mt-1">{fieldErrors.end_date}</div>}
             </CCol>
-            <CCol md={3}>
+            <CCol md={2}>
               <CFormLabel htmlFor="eventType">Tipo</CFormLabel>
               <CFormSelect
                 id="eventType"
                 value={newEvent.event_type}
-                onChange={(e) => setNewEvent((p) => ({ ...p, event_type: e.target.value }))}
+                disabled={Boolean(editingFlowId)}
+                onChange={(e) => setNewEvent((p) => ({ ...p, event_type: e.target.value, class_ids: [] }))}
               >
                 <option value="school_break">Pausa Escolar</option>
                 <option value="exam_period">Período de Exames</option>
+                <option value="internship_flow">Fluxo de Estágio</option>
                 <option value="other">Outro</option>
               </CFormSelect>
             </CCol>
-            <CCol md={1} className="d-flex align-items-end">
-              <CButton color="primary" onClick={handleCreate} disabled={createMutation.isPending}>
-                {createMutation.isPending ? 'A adicionar' : 'Adicionar evento'}
+            <CCol md={2} className="d-flex align-items-end">
+              <CButton
+                color="primary"
+                onClick={handleSubmit}
+                disabled={createMutation.isPending || updateMutation.isPending || previewMutation.isPending}
+              >
+                {submitLabel}
               </CButton>
             </CCol>
           </CRow>
+
+          {isFlow && (
+            <CRow className="g-3 mt-1">
+              <CCol md={8}>
+                <CFormLabel htmlFor="eventClassSearch">Turmas abrangidas (opcional)</CFormLabel>
+                <CFormInput
+                  id="eventClassSearch"
+                  placeholder="Pesquisar turma..."
+                  value={classFilter}
+                  onChange={(e) => setClassFilter(e.target.value)}
+                  aria-describedby="eventClassSearchHelp"
+                />
+                <div
+                  id="eventClassOptions"
+                  role="group"
+                  aria-label="Turmas abrangidas"
+                  className="border rounded p-2 mt-2"
+                  style={{ maxHeight: '180px', overflowY: 'auto' }}
+                >
+                  {visibleClasses.length === 0 && (
+                    <span className="text-muted small">Sem turmas para o filtro indicado.</span>
+                  )}
+                  {visibleClasses.map((item) => (
+                    <CFormCheck
+                      key={item.id}
+                      id={`event-class-${item.id}`}
+                      label={item.name}
+                      checked={newEvent.class_ids.includes(item.id)}
+                      onChange={(e) => setNewEvent((p) => ({
+                        ...p,
+                        class_ids: e.target.checked
+                          ? [...p.class_ids, item.id]
+                          : p.class_ids.filter((id) => id !== item.id),
+                      }))}
+                    />
+                  ))}
+                </div>
+                <div id="eventClassSearchHelp" className="form-text">
+                  Sem turmas, o fluxo não bloqueia aulas. As aulas afetadas saem do horário quando guardar.
+                </div>
+              </CCol>
+              {editingFlowId && (
+                <CCol md={4} className="d-flex align-items-end">
+                  <CButton color="secondary" variant="outline" onClick={resetForm}>
+                    Cancelar edição
+                  </CButton>
+                </CCol>
+              )}
+            </CRow>
+          )}
         </CCardBody>
       </CCard>
 
@@ -229,12 +489,83 @@ export const CalendarSection = () => {
       </CCard>
 
       {eventListContent}
+
+      <CModal
+        visible={Boolean(previewState)}
+        onClose={() => setPreviewState(null)}
+        size="lg"
+        backdrop="static"
+      >
+        <CModalHeader>
+          <CModalTitle>Confirmar alteração do horário</CModalTitle>
+        </CModalHeader>
+        <CModalBody>
+          <CAlert color="warning">{previewState?.message}</CAlert>
+          <CTable small responsive>
+            <CTableHead>
+              <CTableRow>
+                <CTableHeaderCell>Turma</CTableHeaderCell>
+                <CTableHeaderCell>Data</CTableHeaderCell>
+                <CTableHeaderCell>Disciplina</CTableHeaderCell>
+              </CTableRow>
+            </CTableHead>
+            <CTableBody>
+              {previewState?.affected_lessons.map((lesson) => (
+                <CTableRow key={lesson.active_schedule_block_id}>
+                  <CTableDataCell>{lesson.class_name ?? `Turma ${lesson.class_id}`}</CTableDataCell>
+                  <CTableDataCell className="text-nowrap">{formatDate(lesson.date)}</CTableDataCell>
+                  <CTableDataCell>{lesson.subject_name ?? `Disciplina ${lesson.subject_id}`}</CTableDataCell>
+                </CTableRow>
+              ))}
+            </CTableBody>
+          </CTable>
+        </CModalBody>
+        <CModalFooter>
+          <CButton
+            color="secondary"
+            variant="outline"
+            onClick={() => setPreviewState(null)}
+            disabled={isSavingFlow}
+          >
+            {TXT.CANCEL}
+          </CButton>
+          <CButton
+            color="primary"
+            onClick={() => submitFlow(
+              previewState?.confirmation_fingerprint,
+              previewState?.affected_lessons?.length ?? 0,
+            )}
+            disabled={isSavingFlow}
+          >
+            {isSavingFlow ? 'A guardar' : 'Confirmar e guardar'}
+          </CButton>
+        </CModalFooter>
+      </CModal>
+
+      <ConfirmationModal
+        visible={showGenerateConfirm}
+        onClose={() => setShowGenerateConfirm(false)}
+        onConfirm={() => {
+          setShowGenerateConfirm(false)
+          handleGenerate()
+        }}
+        title="Regenerar horário"
+        message="A regeneração analisa o horário com o estágio já aplicado e propõe as alterações necessárias. Pretende continuar?"
+        confirmText="Regenerar horário"
+        isLoading={generateMutation.isPending}
+        variant="warning"
+      />
+
       <ConfirmationModal
         visible={Boolean(deleteTarget)}
         onClose={() => setDeleteTarget(null)}
         onConfirm={() => { deleteMutation.mutate(deleteTarget.id, { onSuccess: () => setDeleteTarget(null) }) }}
         title="Eliminar evento"
-        message={deleteTarget ? `O evento “${deleteTarget.name}” será eliminado. Esta ação não pode ser desfeita.` : ''}
+        message={deleteTarget
+          ? (deleteTarget.event_type === 'internship_flow'
+            ? `O fluxo “${deleteTarget.name}” será eliminado. As aulas já retiradas não são repostas automaticamente.`
+            : `O evento “${deleteTarget.name}” será eliminado. Esta ação não pode ser desfeita.`)
+          : ''}
         confirmText="Eliminar evento"
         isLoading={deleteMutation.isPending}
       />

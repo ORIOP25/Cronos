@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models, schemas
 from app.core.logging import safe_exception_frames
-from app.services import timeslot_service
+from app.services import internship_flow_service, timeslot_service
 from app.services.scheduler_state_service import (
     SchedulerStateService,
     record_scheduler_change,
@@ -62,6 +62,8 @@ def _calendar_event_snapshot(event: models.SchoolCalendarEvent) -> dict:
         "end_date": event.end_date,
         "event_type": event.event_type,
         "source": event.source,
+        "school_year_start_year": event.school_year_start_year,
+        "class_ids": event.class_ids,
     }
 
 
@@ -444,7 +446,19 @@ async def list_calendar_events(
         query = query.where(models.SchoolCalendarEvent.start_date <= to_date)
     query = query.order_by(models.SchoolCalendarEvent.start_date)
     result = await db.execute(query)
-    return result.scalars().all()
+    events = result.scalars().all()
+    settings = await get_settings(db, organization_id)
+    active_start_year = (
+        None
+        if settings is None or settings.school_start_date is None
+        else settings.school_start_date.year
+    )
+    for event in events:
+        event.applies_to_current_school_year = (
+            event.school_year_start_year is None
+            or event.school_year_start_year == active_start_year
+        )
+    return events
 
 
 async def create_calendar_event(
@@ -453,6 +467,15 @@ async def create_calendar_event(
     data: schemas.SchoolCalendarEventCreate,
     changed_by_membership_id: int | None = None,
 ) -> models.SchoolCalendarEvent:
+    if data.event_type == models.CalendarEventType.internship_flow:
+        return await internship_flow_service.create_flow(
+            db,
+            organization_id,
+            data,
+            changed_by_membership_id=changed_by_membership_id,
+        )
+    if data.class_ids:
+        raise ValueError("Só um fluxo de estágio pode abranger turmas.")
     settings = await get_settings(db, organization_id)
     if settings:
         min_date = settings.school_start_date
@@ -509,6 +532,14 @@ async def delete_calendar_event(
     event = result.scalar_one_or_none()
     if not event:
         return False
+    if event.event_type == models.CalendarEventType.internship_flow:
+        await internship_flow_service.delete_flow(
+            db,
+            organization_id,
+            event_id,
+            changed_by_membership_id=changed_by_membership_id,
+        )
+        return True
     before = _calendar_event_snapshot(event)
     await db.delete(event)
     await record_scheduler_change(
@@ -523,6 +554,31 @@ async def delete_calendar_event(
     )
     await db.flush()
     return True
+
+
+async def update_calendar_event(
+    db: AsyncSession,
+    organization_id: int,
+    event_id: int,
+    data: schemas.SchoolCalendarEventUpdate,
+    changed_by_membership_id: int | None = None,
+) -> models.SchoolCalendarEvent:
+    """Atualiza um fluxo de estágio. Eventos gerais e automáticos não são editáveis."""
+    return await internship_flow_service.update_flow(
+        db,
+        organization_id,
+        event_id,
+        data,
+        changed_by_membership_id=changed_by_membership_id,
+    )
+
+
+async def preview_calendar_event_change(
+    db: AsyncSession,
+    organization_id: int,
+    data: schemas.CalendarEventChangePreviewRequest,
+) -> schemas.CalendarEventChangePreviewRead:
+    return await internship_flow_service.preview_change(db, organization_id, data)
 
 
 # ==========================================

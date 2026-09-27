@@ -3,10 +3,11 @@ from __future__ import annotations
 from collections import defaultdict
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
-from datetime import date, time, timedelta
+from datetime import date, time
 from enum import StrEnum
 from typing import Any
 
+from app.scheduler.domain.calendar import blocked_dates_by_class
 from app.scheduler.domain.constraints import SchedulerConstraintPolicy, placement_facts
 
 
@@ -70,7 +71,10 @@ class TargetHardConstraintValidator:
             )
             for row in snapshot.get("timetable_grid", [])
         }
-        blocked = cls._blocked_dates(snapshot.get("calendar_events", []))
+        blocked_by_class = blocked_dates_by_class(
+            snapshot.get("calendar_events", []),
+            (block.class_id for block in blocks),
+        )
         assignments = {
             (row["class_id"], row["subject_id"]): row.get("teacher_id")
             for row in snapshot.get("class_subject_requirements", [])
@@ -114,7 +118,7 @@ class TargetHardConstraintValidator:
                 or block.date > hard_end
                 or block.duration_minutes <= 0
                 or (slot is not None and block.duration_minutes > slot[2] - slot[1])
-                or block.date in blocked
+                or block.date in blocked_by_class.get(block.class_id, ())
                 or not block.stable_block_key.strip()
                 or block.stable_block_key in stable_keys
                 or class_row is None
@@ -183,17 +187,6 @@ class TargetHardConstraintValidator:
             )
         )
         return tuple(violations)
-
-    @staticmethod
-    def _blocked_dates(rows: Iterable[Mapping[str, Any]]) -> set[date]:
-        blocked: set[date] = set()
-        for row in rows:
-            current = date.fromisoformat(row["start_date"])
-            end = date.fromisoformat(row["end_date"])
-            while current <= end:
-                blocked.add(current)
-                current += timedelta(days=1)
-        return blocked
 
     @staticmethod
     def _minute(value: str | time) -> int:

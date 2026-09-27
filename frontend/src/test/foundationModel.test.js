@@ -14,6 +14,7 @@ import {
   STEP_BREAK_DURATION,
   STEP_LUNCH,
   STEP_PREVIEW,
+  STEP_INTERNSHIP,
   STEP_CONFIRMATION,
 } from '../features/foundation/foundationModel'
 
@@ -189,13 +190,62 @@ describe('foundationModel', () => {
     ).toEqual({})
   })
 
-  it('validates confirmation cumulative requirements (Step 9)', () => {
+  it('validates confirmation cumulative requirements (Step 10)', () => {
     expect(
       validateFoundationStep(STEP_CONFIRMATION, {
         ...initialFoundationDraftValues,
         school_start_date: '',
       }),
     ).toHaveProperty('school_start_date')
+  })
+
+  it('accepts the optional internship step without flows (Step 9)', () => {
+    expect(
+      validateFoundationStep(STEP_INTERNSHIP, {
+        ...initialFoundationDraftValues,
+        school_start_date: '2025-09-15',
+        school_hard_end_date: '2026-07-31',
+      }),
+    ).toEqual({})
+  })
+
+  it('validates internship flow rows inside the school period', () => {
+    const base = {
+      ...initialFoundationDraftValues,
+      school_start_date: '2025-09-15',
+      school_hard_end_date: '2026-07-31',
+    }
+    expect(validateFoundationStep(STEP_INTERNSHIP, {
+      ...base,
+      internship_flows: [{ name: 'Estágio', start_date: '2026-02-02', end_date: '2026-02-13' }],
+    })).toEqual({})
+    expect(validateFoundationStep(STEP_INTERNSHIP, {
+      ...base,
+      internship_flows: [{ name: '', start_date: '2026-02-02', end_date: '2026-02-13' }],
+    })).toHaveProperty('internship_flows')
+    expect(validateFoundationStep(STEP_INTERNSHIP, {
+      ...base,
+      internship_flows: [{ name: 'Estágio', start_date: '2026-02-13', end_date: '2026-02-02' }],
+    })).toHaveProperty('internship_flows')
+    expect(validateFoundationStep(STEP_INTERNSHIP, {
+      ...base,
+      internship_flows: [{ name: 'Estágio', start_date: '2026-08-01', end_date: '2026-08-10' }],
+    })).toHaveProperty('internship_flows')
+  })
+
+  it('persists partially filled internship flows and drops empty rows', () => {
+    expect(serializeFoundationDraftValues({
+      internship_flows: [
+        { name: '  Estágio A  ', start_date: '2026-02-02', end_date: '2026-02-13' },
+        { name: 'Incompleto', start_date: '', end_date: '' },
+        { name: '', start_date: '', end_date: '' },
+      ],
+    })).toEqual({
+      internship_flows: [
+        { name: 'Estágio A', start_date: '2026-02-02', end_date: '2026-02-13' },
+        { name: 'Incompleto', start_date: null, end_date: null },
+      ],
+    })
   })
 
   it('accepts zero days of stability and preserves an explicit zero break', () => {

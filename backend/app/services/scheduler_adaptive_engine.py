@@ -12,6 +12,7 @@ from typing import Any
 from ortools.sat.python import cp_model
 
 from app import models
+from app.scheduler.domain.calendar import blocked_dates_by_class
 from app.scheduler.domain.constraints import PlacementFacts, SchedulerConstraintPolicy
 from app.scheduler.domain.contracts import (
     DraftBlockSpec,
@@ -743,7 +744,10 @@ class AdaptiveRepairEngine:
             (row["teacher_id"], row["timeslot_id"]): int(row["score"])
             for row in snapshot.get("teacher_availability", [])
         }
-        blocked_dates = self._blocked_dates(snapshot.get("calendar_events", []))
+        blocked_by_class = blocked_dates_by_class(
+            snapshot.get("calendar_events", []),
+            (task.class_id for task in tasks),
+        )
         hard_end = date.fromisoformat(snapshot["hard_end_date"])
         placements: list[_Placement] = []
         for task in tasks:
@@ -779,7 +783,7 @@ class AdaptiveRepairEngine:
             while current <= hard_end:
                 if self._stop_requested(deadline_at, stop_event):
                     return [], "Adaptive repair candidate construction exhausted its time budget."
-                if self._date_allowed(task, current, scope, blocked_dates):
+                if self._date_allowed(task, current, scope, blocked_by_class):
                     for slot in slots.get(current.weekday(), ()):
                         if not self._slot_allowed(task, slot, scope, current):
                             continue
@@ -879,9 +883,9 @@ class AdaptiveRepairEngine:
         task: _RepairTask,
         candidate_date: date,
         scope: _SolveScope,
-        blocked_dates: set[date],
+        blocked_by_class: dict[int, set[date]],
     ) -> bool:
-        if candidate_date in blocked_dates:
+        if candidate_date in blocked_by_class.get(task.class_id, ()):
             return False
         return not (
             scope.keep_date_and_time
@@ -1590,17 +1594,6 @@ class AdaptiveRepairEngine:
                 result[f"{prefix}_overload_count"] += 1
                 result[f"{prefix}_overload_excess_minutes"] += excess
         return result
-
-    @staticmethod
-    def _blocked_dates(rows: list[dict[str, Any]]) -> set[date]:
-        blocked: set[date] = set()
-        for row in rows:
-            current = date.fromisoformat(row["start_date"])
-            end = date.fromisoformat(row["end_date"])
-            while current <= end:
-                blocked.add(current)
-                current += timedelta(days=1)
-        return blocked
 
     @staticmethod
     def _spec_dict(row: DraftBlockSpec) -> dict[str, Any]:

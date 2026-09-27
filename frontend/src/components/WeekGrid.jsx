@@ -262,6 +262,7 @@ const WeekGrid = ({
   fitViewport = false,
   dayGrids = null,
   gridTransitionDate = '',
+  internshipDays = [],
 }) => {
   const {
     slotMap,
@@ -275,6 +276,8 @@ const WeekGrid = ({
     () => buildWeekGridModel(slots, baseTimeslots, weekStart, dayGrids),
     [slots, baseTimeslots, weekStart, dayGrids],
   )
+
+  const internshipSet = useMemo(() => new Set(internshipDays), [internshipDays])
 
   const transitionInWeek = Boolean(
     gridTransitionDate
@@ -345,6 +348,14 @@ const WeekGrid = ({
                       aria-label={versionLabel}
                     >
                       Nova grelha
+                    </span>
+                  ) : null}
+                  {internshipSet.has(dayDateMap[d]) ? (
+                    <span
+                      className="badge text-bg-warning week-grid__internship-badge"
+                      title="Dia de estágio previsto para esta turma"
+                    >
+                      Estágio
                     </span>
                   ) : null}
                 </th>

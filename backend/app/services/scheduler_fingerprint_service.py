@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from sqlalchemy import and_, func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models
@@ -390,13 +390,42 @@ class SchedulerFingerprintService:
                     models.SchoolCalendarEvent.end_date,
                     models.SchoolCalendarEvent.event_type,
                     models.SchoolCalendarEvent.source,
+                    models.SchoolCalendarEvent.school_year_start_year,
                 ).where(
                     models.SchoolCalendarEvent.organization_id == organization_id,
                     models.SchoolCalendarEvent.end_date >= school_year.start_date,
                     models.SchoolCalendarEvent.start_date <= school_year.hard_end_date,
+                    or_(
+                        models.SchoolCalendarEvent.school_year_start_year.is_(None),
+                        models.SchoolCalendarEvent.school_year_start_year
+                        == school_year.start_date.year,
+                    ),
                 )
             )
         ).all()
+        event_class_rows = []
+        if event_rows:
+            event_class_rows = (
+                await self._db.execute(
+                    select(
+                        models.SchoolCalendarEventClass.calendar_event_id,
+                        models.SchoolCalendarEventClass.class_id,
+                    )
+                    .where(
+                        models.SchoolCalendarEventClass.organization_id == organization_id,
+                        models.SchoolCalendarEventClass.calendar_event_id.in_(
+                            [row.id for row in event_rows]
+                        ),
+                    )
+                    .order_by(
+                        models.SchoolCalendarEventClass.calendar_event_id,
+                        models.SchoolCalendarEventClass.class_id,
+                    )
+                )
+            ).all()
+        class_ids_by_event: dict[int, list[int]] = {}
+        for link in event_class_rows:
+            class_ids_by_event.setdefault(link.calendar_event_id, []).append(link.class_id)
         constraint_rows = (
             await self._db.execute(
                 select(
@@ -450,6 +479,8 @@ class SchedulerFingerprintService:
                     "end_date": row.end_date,
                     "event_type": row.event_type,
                     "source": row.source,
+                    "school_year_start_year": row.school_year_start_year,
+                    "class_ids": class_ids_by_event.get(row.id, []),
                 }
                 for row in sorted(
                     event_rows,
@@ -458,6 +489,7 @@ class SchedulerFingerprintService:
                         row.end_date,
                         row.event_type.value,
                         row.source.value,
+                        tuple(class_ids_by_event.get(row.id, [])),
                     ),
                 )
             ],

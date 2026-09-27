@@ -422,6 +422,28 @@ async def get_week_schedule(
             await db.run_sync(_emit)
 
 
+@router.get(
+    "/removed-blocks",
+    response_model=list[schemas.RemovedScheduleBlockRead],
+    summary="Histórico de aulas retiradas do horário ativo de uma turma",
+)
+async def list_removed_blocks(
+    class_id: Annotated[int, Query(description="ID da turma")],
+    from_date: Annotated[date, Query(description="Início do intervalo (YYYY-MM-DD)")],
+    to_date: Annotated[date, Query(description="Fim do intervalo (YYYY-MM-DD)")],
+    db: deps.DbSession,
+    current_user: deps.AdminActor,
+) -> list[schemas.RemovedScheduleBlockRead]:
+    """Consulta apenas de leitura. Os registos de aula nunca são eliminados."""
+    return await schedule_service.list_removed_blocks(
+        db,
+        current_user.organization_id,
+        class_id,
+        from_date,
+        to_date,
+    )
+
+
 # ==========================================
 #  AUDITORIA TÃ‰CNICA POR GERAÃ‡ÃƒO
 # ==========================================

@@ -27,6 +27,7 @@ export const TXT = {
   CALENDAR_NATIONAL_HOLIDAY: 'Feriado Nacional',
   CALENDAR_SCHOOL_BREAK: 'Pausa Escolar',
   CALENDAR_EXAM_PERIOD: 'Período de Exames',
+  CALENDAR_INTERNSHIP_FLOW: 'Fluxo de Estágio',
   CALENDAR_OTHER: 'Outro',
   SIDEBAR_BRAND: 'Cronos',
 }
@@ -52,6 +53,7 @@ export const EVENT_TYPE_LABELS = {
   national_holiday: TXT.CALENDAR_NATIONAL_HOLIDAY,
   school_break: TXT.CALENDAR_SCHOOL_BREAK,
   exam_period: TXT.CALENDAR_EXAM_PERIOD,
+  internship_flow: TXT.CALENDAR_INTERNSHIP_FLOW,
   other: TXT.CALENDAR_OTHER,
 }
 

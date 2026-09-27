@@ -285,14 +285,14 @@ def test_organization_foundation_draft_constraints_and_composite_fk(clean_databa
             conn.commit()
         conn.rollback()
 
-        # 3. current_step = 10 fails
+        # 3. current_step = 11 fails (the wizard has ten steps)
         with pytest.raises(DBAPIError):
             conn.execute(
                 text(
                     """
                     INSERT INTO organization_foundation_draft (
                         organization_id, version, current_step, payload_json, updated_by_membership_id
-                    ) VALUES (:org_id, 1, 10, '{}'::jsonb, :mem_id)
+                    ) VALUES (:org_id, 1, 11, '{}'::jsonb, :mem_id)
                     """
                 ),
                 {"org_id": p1["organization_id"], "mem_id": p1["membership_id"]},

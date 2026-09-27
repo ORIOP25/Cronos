@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useLocation } from 'react-router-dom'
 import {
   CCard, CCardBody, CCardHeader, CAlert, CBadge, CSpinner,
@@ -12,11 +12,13 @@ import {
 import {
   useSchedulerStatus, useCurrentDraftSummary, useApproveDraft, useRejectDraft,
   useGenerateSchedule, useScheduleTaskStatus, useCancelScheduleTask,
-  useWeekSchedule,
+  useRemovedBlocks, useWeekSchedule,
 } from '../features/scheduling/data'
 import { useClasses, useClassDetails, useTimeslots, useWeekGridVersions } from '../features/catalog/data'
+import { useCalendarEvents } from '../features/schoolConfig/data'
 import { useTeachers } from '../features/members/data'
 import WeekGrid from '../components/WeekGrid'
+import RemovedBlocksPanel from '../components/RemovedBlocksPanel'
 import WeekNavigator from '../components/WeekNavigator'
 import LessonLogModal from '../components/LessonLogModal'
 import KPISidebar from '../components/schedules/KPISidebar'
@@ -27,7 +29,8 @@ import ConfirmationModal from '../components/ConfirmationModal'
 import PageHeader from '../components/PageHeader'
 import StatePanel from '../components/StatePanel'
 import { useOrganization } from '@clerk/react'
-import { getCurrentWeekMonday } from '../utils/formatUtils'
+import { addDays, getCurrentWeekMonday } from '../utils/formatUtils'
+import { collectInternshipDays } from '../utils/internshipDays'
 import { getApiErrorMessage } from '../utils/apiErrors'
 import { readExpiringValue, writeExpiringValue } from '../utils/expiringStorage'
 
@@ -202,6 +205,15 @@ const Schedules = ({ initialClassId = '', initialWeekStart, persistView = true, 
 
   const classId   = viewMode === 'class'   && selectedClassId   ? Number.parseInt(selectedClassId, 10)   : null
   const teacherId = viewMode === 'teacher' && selectedTeacherId ? Number.parseInt(selectedTeacherId, 10) : null
+  const weekEnd = addDays(weekStart, 6)
+
+  const { data: calendarEvents = [] } = useCalendarEvents()
+  const internshipDays = useMemo(
+    () => collectInternshipDays(calendarEvents, classId, weekStart, weekEnd),
+    [calendarEvents, classId, weekStart, weekEnd],
+  )
+
+  const { data: removedBlocks = [] } = useRemovedBlocks(classId, weekStart, weekEnd)
 
   const {
     data: weekSlots = [],
@@ -320,6 +332,7 @@ const Schedules = ({ initialClassId = '', initialWeekStart, persistView = true, 
         gridTransitionDate={weekGridVersions?.transition_date ?? ''}
         isOperationalEnabled
         onOpenOperationalAction={openCreateOccurrenceModal}
+        internshipDays={internshipDays}
         fitViewport
       />
     )
@@ -530,6 +543,10 @@ const Schedules = ({ initialClassId = '', initialWeekStart, persistView = true, 
         </CCardHeader>
         <CCardBody className="p-0">{weekGridContent}</CCardBody>
       </CCard>
+
+      {viewMode === 'class' && Boolean(classId) && (
+        <RemovedBlocksPanel blocks={removedBlocks} />
+      )}
 
       {viewMode === 'class' && Boolean(classId) && (
         <CCard className="border-0 shadow-sm">

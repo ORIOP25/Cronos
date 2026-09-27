@@ -7,8 +7,8 @@ import {
 } from '../utils/clerk-helpers.js'
 import { cleanupFreshFounder, createFreshFounder } from '../utils/fresh-founder.js'
 
-test.describe('Foundation — 9-Step Wizard Flow', () => {
-  test('reaches the summary with automatic holidays explicitly disabled', async ({ page }) => {
+test.describe('Foundation — 10-Step Wizard Flow', () => {
+  test('reaches the summary with automatic holidays disabled and no internship flows', async ({ page }) => {
     test.setTimeout(120_000)
     const secretKey = process.env.CLERK_SECRET_KEY
     if (!secretKey) throw new Error('CLERK_SECRET_KEY is required for foundation E2E.')
@@ -58,9 +58,14 @@ test.describe('Foundation — 9-Step Wizard Flow', () => {
       await expect(automaticHolidays).not.toBeChecked()
       await page.getByRole('button', { name: /ignorar por agora/i }).click()
 
-      // Step 9: Summary & Activation
-      await expect(page.locator('text=9. Confirmação e Ativação da Fundação')).toBeVisible({ timeout: 10000 })
+      // Step 9: Internship flows (optional)
+      await expect(page.locator('text=9. Fluxos de Estágio (opcional)')).toBeVisible({ timeout: 10000 })
+      await page.getByRole('button', { name: /ignorar por agora/i }).click()
+
+      // Step 10: Summary & Activation
+      await expect(page.locator('text=10. Confirmação e Ativação da Fundação')).toBeVisible({ timeout: 10000 })
       await expect(page.getByText('Feriados automáticos:').locator('..')).toContainText('Desativados')
+      await expect(page.getByText('Fluxos de estágio:').locator('..')).toContainText('Nenhum')
       await expectNoAppCrash(page)
     } catch (error) {
       primaryError = error

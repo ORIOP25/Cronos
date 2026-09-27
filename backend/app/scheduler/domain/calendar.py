@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Mapping
 from datetime import date, timedelta
+from typing import Any
+
+INTERNSHIP_FLOW_EVENT_TYPE = "internship_flow"
 
 
 def grid_dates(first: date, last: date, weekdays: set[int]) -> tuple[date, ...]:
@@ -16,6 +20,59 @@ def grid_dates(first: date, last: date, weekdays: set[int]) -> tuple[date, ...]:
         for offset in range(days)
         if (day := first + timedelta(days=offset)).weekday() in weekdays
     )
+
+
+def event_blocks_class(event: Mapping[str, Any], class_id: int) -> bool:
+    """A general event blocks the school; a flow blocks only its classes."""
+    if _value(event.get("event_type")) != INTERNSHIP_FLOW_EVENT_TYPE:
+        return True
+    return class_id in (event.get("class_ids") or ())
+
+
+def event_dates(event: Mapping[str, Any]) -> tuple[date, ...]:
+    start = _event_date(event["start_date"])
+    end = _event_date(event["end_date"])
+    if end < start:
+        return ()
+    return tuple(start + timedelta(days=offset) for offset in range((end - start).days + 1))
+
+
+def blocked_dates_for_class(events: Iterable[Mapping[str, Any]], class_id: int) -> set[date]:
+    blocked: set[date] = set()
+    for event in events:
+        if event_blocks_class(event, class_id):
+            blocked.update(event_dates(event))
+    return blocked
+
+
+def blocked_dates_by_class(
+    events: Iterable[Mapping[str, Any]],
+    class_ids: Iterable[int],
+) -> dict[int, set[date]]:
+    wanted = tuple(dict.fromkeys(class_ids))
+    blocked: dict[int, set[date]] = {class_id: set() for class_id in wanted}
+    for event in events:
+        dates = event_dates(event)
+        if not dates:
+            continue
+        if _value(event.get("event_type")) != INTERNSHIP_FLOW_EVENT_TYPE:
+            for class_id in wanted:
+                blocked[class_id].update(dates)
+            continue
+        for class_id in event.get("class_ids") or ():
+            if class_id in blocked:
+                blocked[class_id].update(dates)
+    return blocked
+
+
+def _event_date(value: Any) -> date:
+    if isinstance(value, date):
+        return value
+    return date.fromisoformat(str(value))
+
+
+def _value(value: Any) -> str:
+    return str(getattr(value, "value", value))
 
 
 def first_editable_grid_date(

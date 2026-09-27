@@ -16,6 +16,7 @@ from app import models
 from app.core.exceptions import new_error_reference
 from app.core.logging import safe_exception_frames
 from app.db.tenant import set_async_tenant_context
+from app.scheduler.domain.calendar import blocked_dates_by_class
 from app.scheduler.domain.contracts import (
     DraftBlockSpec,
     NoValidGenerationOutput,
@@ -437,13 +438,10 @@ class SchedulerJobRuntime:
             for row in snapshot.get("teacher_availability", [])
             if int(row.get("score", 0)) == -1
         }
-        blocked_dates: set[date] = set()
-        for event in snapshot.get("calendar_events", []):
-            current = date.fromisoformat(event["start_date"])
-            event_end = date.fromisoformat(event["end_date"])
-            while current <= event_end:
-                blocked_dates.add(current)
-                current += timedelta(days=1)
+        blocked_by_class = blocked_dates_by_class(
+            snapshot.get("calendar_events", []),
+            (block.class_id for block in result.blocks),
+        )
         source_ids: set[int] = set()
         for block in result.blocks:
             class_row = classes.get(block.class_id)
@@ -474,7 +472,7 @@ class SchedulerJobRuntime:
                 or int(room_row.get("capacity") or 0) < int(class_row["size"])
                 or actual_room_type != required_room_type
                 or (block.teacher_id, block.timeslot_id) in impossible
-                or block.date in blocked_dates
+                or block.date in blocked_by_class.get(block.class_id, ())
             ):
                 raise GenerationValidationError(
                     "Adaptive target violates the latest scheduler inputs."

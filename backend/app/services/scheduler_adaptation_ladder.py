@@ -5,6 +5,7 @@ from datetime import date
 from enum import StrEnum
 from typing import Any
 
+from app.scheduler.domain.calendar import blocked_dates_by_class
 from app.scheduler.domain.constraints import (
     RepairDimension,
     SchedulerConstraintPolicy,
@@ -73,14 +74,18 @@ class SchedulerChangeImpactAnalyzer:
             for row in snapshot.get("teacher_availability", [])
             if row.get("score") == -1
         }
-        blocked_dates = self._blocked_dates(snapshot.get("calendar_events", []))
+        active_schedule = snapshot.get("active_schedule", [])
+        blocked_by_class = blocked_dates_by_class(
+            snapshot.get("calendar_events", []),
+            (row.get("class_id") for row in active_schedule if row.get("class_id") is not None),
+        )
         hard_end = date.fromisoformat(snapshot["hard_end_date"])
         scoped = {row.block["id"]: row for row in boundary.blocks}
         if constraint_policy is None:
             parsed_policy = SchedulerConstraintPolicy.from_snapshot(snapshot)
             constraint_policy = parsed_policy.policy or SchedulerConstraintPolicy()
         impacts = []
-        for block in snapshot.get("active_schedule", []):
+        for block in active_schedule:
             reasons: list[str] = []
             violation_codes: list[str] = []
             category = "RESOURCE"
@@ -116,7 +121,7 @@ class SchedulerChangeImpactAnalyzer:
             slot = grid.get(block["timeslot_id"])
             if (
                 block_date > hard_end
-                or block_date in blocked_dates
+                or block_date in blocked_by_class.get(block["class_id"], ())
                 or slot is None
                 or slot["day_of_week"] != block_date.weekday()
             ):
@@ -142,17 +147,6 @@ class SchedulerChangeImpactAnalyzer:
         return SchedulerChangeImpact(
             affected=tuple(sorted(impacts, key=lambda row: row.block["id"]))
         )
-
-    @staticmethod
-    def _blocked_dates(rows: list[dict[str, Any]]) -> set[date]:
-        blocked = set()
-        for row in rows:
-            current = date.fromisoformat(row["start_date"])
-            end = date.fromisoformat(row["end_date"])
-            while current <= end:
-                blocked.add(current)
-                current = current.fromordinal(current.toordinal() + 1)
-        return blocked
 
     @staticmethod
     def _value(value: Any) -> str:

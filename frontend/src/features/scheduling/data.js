@@ -172,6 +172,21 @@ export const useTeacherScheduleHorizon = ({ enabled = true, refetchInterval = fa
   })
 }
 
+export const useRemovedBlocks = (classId, fromDate, toDate) => {
+  const apiClient = useApiClient()
+  const orgId = useOrganization().organization?.id
+  return useQuery({
+    queryKey: orgQueryKey('removedBlocks', orgId, classId, fromDate, toDate),
+    queryFn: async () => {
+      return apiClient.get('/schedule/removed-blocks', {
+        params: { class_id: classId, from_date: fromDate, to_date: toDate },
+      })
+    },
+    enabled: Boolean(orgId) && Boolean(classId) && Boolean(fromDate) && Boolean(toDate),
+    ...DYNAMIC_OPTS,
+  })
+}
+
 export const useWeekSchedule = (classId, teacherId, weekStart) => {
   const apiClient = useApiClient()
   const orgId = useOrganization().organization?.id

@@ -7,6 +7,7 @@ from app import models, schemas
 from app.services import settings_service
 from app.services.foundation_service import (
     FoundationDraftVersionConflictError,
+    FoundationIncompleteDraftError,
     FoundationService,
 )
 
@@ -244,3 +245,131 @@ async def test_foundation_complete_transactional_generates_grid(db_session):
     # Idempotent completion call returns same result
     repeat = await service.complete_foundation(org.id, command, membership_id=mem.id)
     assert repeat.foundation_status == "COMPLETED"
+
+
+async def test_foundation_complete_creates_internship_flows_once(db_session):
+    org, mem = await _create_test_org(db_session, "org_found_flows")
+    service = FoundationService(db_session)
+    full_data = schemas.FoundationDraftData(
+        school_start_date=date(2025, 9, 15),
+        school_hard_end_date=date(2026, 7, 31),
+        repair_stability_window_days=14,
+        days_of_week=[0, 1, 2, 3, 4],
+        opening_time=time(8, 30),
+        closing_time=time(17, 30),
+        slot_duration_minutes=50,
+        break_duration_minutes=10,
+        lunch_window_start=time(12, 30),
+        lunch_window_end=time(14, 0),
+        lunch_min_duration_minutes=60,
+        internship_flows=[
+            schemas.FoundationInternshipFlow(
+                name="Estágio 10A",
+                start_date=date(2026, 2, 2),
+                end_date=date(2026, 2, 13),
+            )
+        ],
+    )
+    saved = await service.save_draft(
+        org.id,
+        schemas.FoundationDraftWrite(expected_version=0, current_step=10, data=full_data),
+        membership_id=mem.id,
+    )
+    command = schemas.FoundationCompleteCommand(expected_version=saved.version, confirmed=True)
+    await service.complete_foundation(org.id, command, membership_id=mem.id)
+    await db_session.commit()
+
+    events = (
+        await db_session.scalars(
+            select(models.SchoolCalendarEvent).where(
+                models.SchoolCalendarEvent.event_type == models.CalendarEventType.internship_flow
+            )
+        )
+    ).all()
+    assert [event.name for event in events] == ["Estágio 10A"]
+    assert events[0].class_ids == []
+    assert events[0].school_year_start_year == 2025
+
+    await service.complete_foundation(org.id, command, membership_id=mem.id)
+    await db_session.commit()
+    assert (
+        await db_session.scalar(
+            select(models.SchoolCalendarEvent.id).where(
+                models.SchoolCalendarEvent.event_type == models.CalendarEventType.internship_flow
+            )
+        )
+        is not None
+    )
+    assert (
+        len(
+            (
+                await db_session.scalars(
+                    select(models.SchoolCalendarEvent).where(
+                        models.SchoolCalendarEvent.event_type
+                        == models.CalendarEventType.internship_flow
+                    )
+                )
+            ).all()
+        )
+        == 1
+    )
+
+
+async def test_foundation_partial_flow_survives_and_blocks_completion(db_session):
+    org, mem = await _create_test_org(db_session, "org_found_partial_flow")
+    service = FoundationService(db_session)
+    full_data = schemas.FoundationDraftData(
+        school_start_date=date(2025, 9, 15),
+        school_hard_end_date=date(2026, 7, 31),
+        repair_stability_window_days=14,
+        days_of_week=[0, 1, 2, 3, 4],
+        opening_time=time(8, 30),
+        closing_time=time(17, 30),
+        slot_duration_minutes=50,
+        break_duration_minutes=10,
+        lunch_window_start=time(12, 30),
+        lunch_window_end=time(14, 0),
+        lunch_min_duration_minutes=60,
+        internship_flows=[
+            schemas.FoundationInternshipFlow(name="Estágio 10A"),
+        ],
+    )
+    saved = await service.save_draft(
+        org.id,
+        schemas.FoundationDraftWrite(expected_version=0, current_step=9, data=full_data),
+        membership_id=mem.id,
+    )
+
+    draft = await service.get_draft(org.id)
+    assert draft.data.internship_flows[0].name == "Estágio 10A"
+    assert draft.data.internship_flows[0].start_date is None
+
+    with pytest.raises(FoundationIncompleteDraftError):
+        await service.complete_foundation(
+            org.id,
+            schemas.FoundationCompleteCommand(expected_version=saved.version, confirmed=True),
+            membership_id=mem.id,
+        )
+
+
+async def test_foundation_draft_accepts_old_payload_without_flows(db_session):
+    org, mem = await _create_test_org(db_session, "org_found_old_draft")
+    service = FoundationService(db_session)
+
+    saved = await service.save_draft(
+        org.id,
+        schemas.FoundationDraftWrite(
+            expected_version=0,
+            current_step=9,
+            data=schemas.FoundationDraftData(
+                school_start_date=date(2025, 9, 15),
+                school_hard_end_date=date(2026, 7, 31),
+            ),
+        ),
+        membership_id=mem.id,
+    )
+
+    assert saved.data.internship_flows == []
+    draft = await service.get_draft(org.id)
+    assert draft.current_step == 9
+    assert draft.data.internship_flows == []

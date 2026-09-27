@@ -12,10 +12,11 @@ export function SummaryStep({ values, organizationName, confirmed, onConfirmedCh
   const adjustments = overrides.length
     ? overrides.map((override) => `após aula ${override.after_slot} (${override.duration_minutes} min)`).join(', ')
     : 'nenhum'
+  const flows = (values.internship_flows || []).filter((flow) => flow.name && flow.start_date && flow.end_date)
 
   return (
     <div className="foundation-step-summary">
-      <h4 tabIndex="-1" className="h5 mb-3 text-dark fw-bold">9. Confirmação e Ativação da Fundação</h4>
+      <h4 tabIndex="-1" className="h5 mb-3 text-dark fw-bold">10. Confirmação e Ativação da Fundação</h4>
       <p className="text-muted small mb-4">
         Reveja os parâmetros base para <strong>{organizationName}</strong>. Ao clicar em &quot;Ativar Escola&quot;, a fundação será concluída de forma definitiva e irreversível, criando a grelha horária canónica e desbloqueando a fase de preparação.
       </p>
@@ -40,6 +41,14 @@ export function SummaryStep({ values, organizationName, confirmed, onConfirmedCh
               <div className="small mt-2">
                 <span className="text-muted d-block">Feriados automáticos:</span>
                 <strong>{values.automatic_holidays_enabled ? 'Ativados' : 'Desativados'}</strong>
+              </div>
+              <div className="small mt-2">
+                <span className="text-muted d-block">Fluxos de estágio:</span>
+                <strong>
+                  {flows.length
+                    ? flows.map((flow) => `${flow.name} (${flow.start_date} a ${flow.end_date})`).join('; ')
+                    : 'Nenhum'}
+                </strong>
               </div>
             </CCardBody>
           </CCard>

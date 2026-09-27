@@ -337,6 +337,22 @@ class BreakOverridePayload(BaseModel):
     duration_minutes: int = Field(..., ge=0, le=60, description="Duração da pausa em minutos")
 
 
+class FoundationInternshipFlow(BaseModel):
+    """Draft-friendly row: a partially filled flow survives autosave."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str | None = Field(default=None, max_length=150)
+    start_date: date | None = None
+    end_date: date | None = None
+
+    @model_validator(mode="after")
+    def validate_date_range(self):
+        if self.start_date and self.end_date and self.end_date < self.start_date:
+            raise ValueError("A data de fim do fluxo não pode ser anterior à data de início")
+        return self
+
+
 class FoundationDraftData(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -353,6 +369,7 @@ class FoundationDraftData(BaseModel):
     lunch_window_end: time | None = None
     lunch_min_duration_minutes: int | None = Field(default=None, ge=1, le=180)
     automatic_holidays_enabled: bool = False
+    internship_flows: list[FoundationInternshipFlow] = Field(default_factory=list)
 
     @field_validator("repair_stability_window_days", mode="before")
     @classmethod
@@ -365,6 +382,15 @@ class FoundationDraftData(BaseModel):
         positions = [override.after_slot for override in overrides]
         if len(set(positions)) != len(positions):
             raise ValueError("Só pode existir um ajuste de intervalo por aula.")
+        if self.school_start_date and self.school_hard_end_date:
+            for flow in self.internship_flows:
+                if flow.start_date is None or flow.end_date is None:
+                    continue
+                if (
+                    flow.start_date < self.school_start_date
+                    or flow.end_date > self.school_hard_end_date
+                ):
+                    raise ValueError("Os fluxos de estágio devem estar dentro do período letivo.")
         return self
 
 
@@ -372,7 +398,7 @@ class FoundationDraftWrite(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     expected_version: int = Field(..., ge=0)
-    current_step: int = Field(default=1, ge=1, le=9)
+    current_step: int = Field(default=1, ge=1, le=10)
     data: FoundationDraftData
 
 
@@ -380,7 +406,7 @@ class FoundationDraftRead(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     version: int
-    current_step: int = Field(default=1, ge=1, le=9)
+    current_step: int = Field(default=1, ge=1, le=10)
     data: FoundationDraftData
     updated_at: datetime | None = None
 
@@ -1363,22 +1389,87 @@ class SchoolCalendarEventCreate(BaseModel):
     start_date: date
     end_date: date
     event_type: CalendarEventType
+    class_ids: list[int] = Field(default_factory=list)
+    confirmation_fingerprint: str | None = None
 
     @model_validator(mode="after")
-    def validate_date_range(self):
+    def validate_payload(self):
         if self.end_date < self.start_date:
             raise ValueError("A data de fim não pode ser anterior à data de início")
+        if self.class_ids and self.event_type != CalendarEventType.internship_flow:
+            raise ValueError("Só um fluxo de estágio pode abranger turmas.")
+        if len(set(self.class_ids)) != len(self.class_ids):
+            raise ValueError("As turmas não podem estar duplicadas.")
         return self
+
+
+class SchoolCalendarEventUpdate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=150)
+    start_date: date
+    end_date: date
+    class_ids: list[int] = Field(default_factory=list)
+    confirmation_fingerprint: str | None = None
+
+    @model_validator(mode="after")
+    def validate_payload(self):
+        if self.end_date < self.start_date:
+            raise ValueError("A data de fim não pode ser anterior à data de início")
+        if len(set(self.class_ids)) != len(self.class_ids):
+            raise ValueError("As turmas não podem estar duplicadas.")
+        return self
+
+
+class CalendarEventChangePreviewRequest(BaseModel):
+    operation: Literal["create", "update", "delete"]
+    event_id: int | None = None
+    name: str | None = Field(default=None, min_length=1, max_length=150)
+    start_date: date | None = None
+    end_date: date | None = None
+    class_ids: list[int] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_payload(self):
+        if self.operation in ("update", "delete") and self.event_id is None:
+            raise ValueError("Indique o fluxo a alterar.")
+        if self.operation in ("create", "update"):
+            if self.name is None or self.start_date is None or self.end_date is None:
+                raise ValueError("Indique o nome e as datas do fluxo.")
+            if self.end_date < self.start_date:
+                raise ValueError("A data de fim não pode ser anterior à data de início")
+        if len(set(self.class_ids)) != len(self.class_ids):
+            raise ValueError("As turmas não podem estar duplicadas.")
+        return self
+
+
+class AffectedLessonRead(BaseModel):
+    active_schedule_block_id: int
+    class_id: int
+    class_name: str | None = None
+    subject_id: int
+    subject_name: str | None = None
+    date: date
+    timeslot_id: int
+    duration_minutes: int
+
+
+class CalendarEventChangePreviewRead(BaseModel):
+    requires_confirmation: bool
+    confirmation_fingerprint: str | None = None
+    affected_lessons: list[AffectedLessonRead] = Field(default_factory=list)
+    message: str
 
 
 class SchoolCalendarEventRead(BaseModel):
     id: int
     organization_id: int
+    school_year_start_year: int | None = None
+    applies_to_current_school_year: bool = True
     name: str
     start_date: date
     end_date: date
     event_type: CalendarEventType
     source: CalendarEventSource
+    class_ids: list[int] = Field(default_factory=list)
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -1991,6 +2082,30 @@ class TeacherScheduleHorizonRead(BaseModel):
     week_start_recommended: date
     hard_end_date: date
     active_generation_id: str | None = None
+
+
+class RemovedScheduleBlockRead(BaseModel):
+    """Registo de leitura de um bloco retirado do horário ativo."""
+
+    id: int
+    class_id: int
+    class_name: str | None = None
+    subject_id: int
+    subject_name: str | None = None
+    teacher_id: int
+    teacher_name: str | None = None
+    room_id: int
+    room_name: str | None = None
+    date: date
+    timeslot_id: int
+    start_time: time | None = None
+    duration_minutes: int
+    status: str
+    schedule_version_id: str
+    updated_at: datetime
+    occurrence_status: str | None = None
+    lesson_log_status: str | None = None
+    lesson_log_summary: str | None = None
 
 
 class WeekModuleInfo(BaseModel):

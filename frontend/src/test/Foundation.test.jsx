@@ -197,7 +197,8 @@ describe('Foundation', () => {
       /6. Período e Duração de Almoço/i,
       /7. Pré-visualização da Grelha Horária/i,
       /8. Feriados e Pausas Letivas/i,
-      /9. Confirmação e Ativação da Fundação/i,
+      /9. Fluxos de Estágio \(opcional\)/i,
+      /10. Confirmação e Ativação da Fundação/i,
     ]) {
       fireEvent.click(screen.getByRole('button', { name: /seguinte|ignorar/i }))
       expect(await screen.findByText(step)).toBeInTheDocument()
@@ -397,11 +398,12 @@ describe('Foundation', () => {
       /6\. Período e Duração de Almoço/i,
       /7\. Pré-visualização da Grelha Horária/i,
       /8\. Feriados e Pausas Letivas/i,
-      /9\. Confirmação e Ativação da Fundação/i,
+      /9\. Fluxos de Estágio \(opcional\)/i,
+      /10\. Confirmação e Ativação da Fundação/i,
     ]
 
     for (const heading of nextStepHeadings) {
-      fireEvent.click(screen.getByRole('button', { name: /seguinte/i }))
+      fireEvent.click(screen.getByRole('button', { name: /seguinte|ignorar/i }))
       await waitFor(() => expect(screen.getByText(heading)).toBeInTheDocument())
     }
 
@@ -412,7 +414,7 @@ describe('Foundation', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /desativar feriados automáticos e guardar/i }))
     await waitFor(() => expect(apiClient.put).toHaveBeenLastCalledWith('/foundation/draft', expect.objectContaining({
-      current_step: 9,
+      current_step: 10,
       data: expect.objectContaining({ automatic_holidays_enabled: false }),
     })))
     expect(apiClient.post).toHaveBeenCalledTimes(1)

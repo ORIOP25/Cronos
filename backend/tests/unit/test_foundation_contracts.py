@@ -4,7 +4,12 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from app.schemas import CurrentMemberRead, FoundationDraftData
+from app.schemas import (
+    CurrentMemberRead,
+    FoundationDraftData,
+    FoundationDraftWrite,
+    FoundationInternshipFlow,
+)
 from app.services.foundation_service import validate_foundation_snapshot
 
 
@@ -57,6 +62,43 @@ def test_foundation_snapshot_rejects_invalid_complete_configuration(changes):
 
     with pytest.raises(ValueError):
         validate_foundation_snapshot(snapshot)
+
+
+def test_foundation_draft_accepts_payload_without_internship_flows():
+    draft = FoundationDraftData.model_validate(
+        {"school_start_date": "2025-09-15", "school_hard_end_date": "2026-07-31"}
+    )
+
+    assert draft.internship_flows == []
+
+
+def test_foundation_internship_flow_requires_chronological_dates():
+    with pytest.raises(ValidationError):
+        FoundationInternshipFlow(
+            name="Estágio",
+            start_date=date(2026, 2, 3),
+            end_date=date(2026, 2, 2),
+        )
+
+
+def test_foundation_internship_flows_must_fit_the_school_period():
+    with pytest.raises(ValidationError):
+        FoundationDraftData(
+            school_start_date=date(2025, 9, 15),
+            school_hard_end_date=date(2026, 7, 31),
+            internship_flows=[
+                FoundationInternshipFlow(
+                    name="Estágio",
+                    start_date=date(2026, 8, 1),
+                    end_date=date(2026, 8, 10),
+                )
+            ],
+        )
+
+
+def test_foundation_draft_step_cannot_exceed_ten():
+    with pytest.raises(ValidationError):
+        FoundationDraftWrite(expected_version=0, current_step=11, data=FoundationDraftData())
 
 
 def test_current_member_requires_foundation_status():

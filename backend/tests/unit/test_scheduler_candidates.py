@@ -67,6 +67,46 @@ def test_candidates_use_real_dates_and_prune_calendar_and_lunch():
     assert universe.removed_by_reason == {"lunch_hard": 2}
 
 
+def test_candidates_skip_flow_dates_only_for_associated_classes():
+    snapshot = _snapshot()
+    snapshot["classes"].append({"id": 7, "size": 20, "grade_level": 10})
+    snapshot["class_subject_requirements"].append(
+        {"class_id": 7, "subject_id": 2, "grade_level": 10, "teacher_id": 3}
+    )
+    snapshot["calendar_events"] = [
+        {
+            "start_date": "2025-09-08",
+            "end_date": "2025-09-08",
+            "event_type": "internship_flow",
+            "class_ids": [1],
+        }
+    ]
+
+    universe = _build(snapshot)
+
+    dates_by_class = {}
+    for candidate in universe.candidates:
+        dates_by_class.setdefault(candidate.class_id, set()).add(candidate.output_date)
+    assert date(2025, 9, 8) not in dates_by_class[1]
+    assert date(2025, 9, 8) in dates_by_class[7]
+
+
+def test_candidates_ignore_empty_flow_calendar_events():
+    snapshot = _snapshot()
+    snapshot["calendar_events"] = [
+        {
+            "start_date": "2025-09-08",
+            "end_date": "2025-09-08",
+            "event_type": "internship_flow",
+            "class_ids": [],
+        }
+    ]
+
+    universe = _build(snapshot)
+
+    assert date(2025, 9, 8) in {row.output_date for row in universe.candidates}
+
+
 def test_candidates_prune_impossible_availability_and_fixed_conflicts():
     snapshot = _snapshot()
     snapshot["teacher_availability"] = [{"teacher_id": 3, "timeslot_id": 10, "score": -1}]

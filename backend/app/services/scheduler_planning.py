@@ -7,16 +7,6 @@ MIN_NEAR_FUTURE_HORIZON_WEEKS = 1
 MAX_NEAR_FUTURE_HORIZON_WEEKS = 12
 
 
-def build_blocked_dates(calendar_events: list) -> set[date]:
-    blocked: set[date] = set()
-    for event in calendar_events:
-        current = event.start_date
-        while current <= event.end_date:
-            blocked.add(current)
-            current += timedelta(days=1)
-    return blocked
-
-
 def compute_remaining_minutes(
     lesson,
     modules_by_subject: dict,

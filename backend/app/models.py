@@ -56,6 +56,7 @@ class CalendarEventType(enum.StrEnum):
     school_break = "school_break"
     exam_period = "exam_period"
     other = "other"
+    internship_flow = "internship_flow"
 
 
 class CalendarEventSource(enum.StrEnum):
@@ -487,7 +488,7 @@ class OrganizationFoundationDraft(Base):
     __table_args__ = (
         CheckConstraint("version > 0", name="chk_organization_foundation_draft_version"),
         CheckConstraint(
-            "current_step BETWEEN 1 AND 9",
+            "current_step BETWEEN 1 AND 10",
             name="chk_organization_foundation_draft_current_step",
         ),
         ForeignKeyConstraint(
@@ -2094,6 +2095,7 @@ class SchoolCalendarEvent(Base):
     organization_id: Mapped[int] = mapped_column(
         ForeignKey(FK_ORG_ID, ondelete="CASCADE"), index=True
     )
+    school_year_start_year: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     name: Mapped[str] = mapped_column(String(150), nullable=False)
     start_date: Mapped[date_type] = mapped_column(Date, nullable=False)
     end_date: Mapped[date_type] = mapped_column(Date, nullable=False)
@@ -2103,9 +2105,65 @@ class SchoolCalendarEvent(Base):
     )
 
     organization: Mapped["Organization"] = relationship(back_populates="calendar_events")
+    class_links: Mapped[list["SchoolCalendarEventClass"]] = relationship(
+        back_populates="calendar_event",
+        cascade=CASCADE_ALL_DELETE,
+        lazy="selectin",
+    )
+
+    @property
+    def class_ids(self) -> list[int]:
+        # Never trigger a lazy load: callers outside a greenlet may not await it.
+        links = self.__dict__.get("class_links")
+        if links is None:
+            return []
+        return sorted(link.class_id for link in links)
 
     def __repr__(self) -> str:
         return f"<SchoolCalendarEvent(id={self.id}, name='{self.name}', date='{self.start_date}')>"
+
+
+class SchoolCalendarEventClass(Base):
+    """Turmas abrangidas por um evento do calendário (fluxo de estágio)."""
+
+    __tablename__ = "school_calendar_event_class"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    organization_id: Mapped[int] = mapped_column(
+        ForeignKey(FK_ORG_ID, ondelete="CASCADE"), nullable=False, index=True
+    )
+    calendar_event_id: Mapped[int] = mapped_column(nullable=False, index=True)
+    class_id: Mapped[int] = mapped_column(nullable=False, index=True)
+
+    calendar_event: Mapped["SchoolCalendarEvent"] = relationship(back_populates="class_links")
+    class_: Mapped["Class"] = relationship(viewonly=True, overlaps="calendar_event,class_links")
+
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["organization_id", "calendar_event_id"],
+            ["school_calendar_event.organization_id", "school_calendar_event.id"],
+            name="fk_school_calendar_event_class_event_scope",
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "class_id"],
+            ["class.organization_id", "class.id"],
+            name="fk_school_calendar_event_class_class_scope",
+            ondelete="CASCADE",
+        ),
+        UniqueConstraint(
+            "organization_id",
+            "calendar_event_id",
+            "class_id",
+            name="uq_school_calendar_event_class",
+        ),
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<SchoolCalendarEventClass(event_id={self.calendar_event_id}, "
+            f"class_id={self.class_id})>"
+        )
 
 
 # -- SUBSTITUIÇÕES --

@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
 from typing import Any
 
+from app.scheduler.domain.calendar import blocked_dates_by_class
 from app.services.scheduler_complete_demand import CompleteDemandLedger
 from app.services.scheduler_constraint_rules import SchedulerConstraintRules
 
@@ -63,7 +64,10 @@ class CandidateUniverseBuilder:
             blockers.append("No valid timetable slots are configured.")
         constraint_rules = SchedulerConstraintRules.from_snapshot(snapshot)
         blockers.extend(constraint_rules.blockers)
-        blocked_dates = self._blocked_dates(snapshot.get("calendar_events", []))
+        blocked_by_class = blocked_dates_by_class(
+            snapshot.get("calendar_events", []),
+            (item.class_id for item in ledger.items),
+        )
         availability = {
             (row["teacher_id"], row["timeslot_id"]): row["score"]
             for row in snapshot.get("teacher_availability", [])
@@ -80,8 +84,8 @@ class CandidateUniverseBuilder:
             if deadline_at is not None and datetime.now(UTC) >= deadline_at:
                 blockers.append("Candidate generation exhausted its time budget.")
                 break
-            if current not in blocked_dates:
-                for item in ledger.items:
+            for item in ledger.items:
+                if current not in blocked_by_class[item.class_id]:
                     for slot in slots.get(current.weekday(), ()):
                         if not self._slot_valid_on(slot, current):
                             self._removed(removed, "slot_outside_validity")
@@ -199,17 +203,6 @@ class CandidateUniverseBuilder:
         if valid_to is not None and candidate_date > date.fromisoformat(str(valid_to)):
             return False
         return True
-
-    @staticmethod
-    def _blocked_dates(rows: list[dict[str, Any]]) -> set[date]:
-        blocked: set[date] = set()
-        for row in rows:
-            current = date.fromisoformat(row["start_date"])
-            end = date.fromisoformat(row["end_date"])
-            while current <= end:
-                blocked.add(current)
-                current += timedelta(days=1)
-        return blocked
 
     @classmethod
     def _lunch_rule(cls, row: dict[str, Any] | None) -> tuple[int, int, int] | None:

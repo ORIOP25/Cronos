@@ -18,6 +18,8 @@ INTEGRATED_LEGAL_ACCEPTANCE = VERSIONS / "0009_integrated_legal_acceptance.py"
 SCHEDULER_FAILURE_REFERENCE = VERSIONS / "0010_scheduler_failure_reference.py"
 GRID_VERSIONS = VERSIONS / "0011_grid_versions.py"
 GRID_CHANGE_STRATEGY = VERSIONS / "0012_grid_change_strategy.py"
+INTERNSHIP_FLOWS = VERSIONS / "0013_internship_flows.py"
+FOUNDATION_INTERNSHIP_STEP = VERSIONS / "0014_foundation_internship_step.py"
 
 
 def _load_initial():
@@ -53,6 +55,8 @@ def test_migration_history_has_expected_revisions():
         SCHEDULER_FAILURE_REFERENCE,
         GRID_VERSIONS,
         GRID_CHANGE_STRATEGY,
+        INTERNSHIP_FLOWS,
+        FOUNDATION_INTERNSHIP_STEP,
     ]
     source = INITIAL.read_text(encoding="utf-8")
     assert _load_initial().down_revision is None

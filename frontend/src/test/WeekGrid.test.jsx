@@ -77,6 +77,20 @@ describe('buildWeekGridModel', () => {
 })
 
 describe('WeekGrid (Ponto 8.1)', () => {
+  it('marks internship days on the class week grid', () => {
+    render(
+      <WeekGrid
+        slots={[baseSlot]}
+        isLoading={false}
+        baseTimeslots={[baseSlot.timeslot]}
+        weekStart="2026-04-20"
+        internshipDays={['2026-04-20']}
+      />,
+    )
+
+    expect(screen.getByText('Estágio')).toBeInTheDocument()
+  })
+
   it('uses the viewport-fit density without repeating planned metadata', () => {
     const { container } = render(
       <WeekGrid

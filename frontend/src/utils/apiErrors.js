@@ -24,6 +24,8 @@ const PRESENTATIONS = {
   member_sync_error: { title: 'Sincronização pendente', message: 'A sincronização do acesso está pendente. Tente novamente dentro de instantes.', retryable: true, supportRequired: true },
   invitation_delivery_failed: { title: 'Convite não enviado', message: 'Não foi possível enviar o convite. Tente novamente dentro de instantes.', retryable: true },
   HOLIDAY_SYNC_FAILED: { title: 'Calendário não sincronizado', message: 'Não foi possível sincronizar os feriados. Desative a sincronização automática ou tente novamente.', retryable: true },
+  CALENDAR_EVENT_CONFIRMATION_REQUIRED: { title: 'Confirmação necessária', message: 'O estágio remove aulas do horário. Pré-visualize e confirme a alteração.' },
+  CALENDAR_EVENT_STALE: { title: 'O horário mudou', message: 'As aulas afetadas mudaram desde a pré-visualização. Repita a pré-visualização antes de guardar.', retryable: true },
   teacher_competency_missing: { title: 'Competência não atribuída', message: 'O professor não tem competência para lecionar esta disciplina.' },
   duplicate_timeslot: { title: 'Horário repetido', message: 'A disponibilidade contém um horário duplicado. Reveja os horários e tente novamente.' },
   LEGAL_ACCEPTANCE_REQUIRED: { title: 'Aceitação necessária', message: 'A organização deve aceitar os documentos legais antes de continuar.' },
