@@ -297,6 +297,25 @@ async def test_flow_removes_only_lessons_of_associated_classes(db_session):
     assert change is not None
     assert change.change_scope is models.SchedulerStateChangeScope.FUTURE_IMPACTING
 
+    absence = await db_session.scalar(
+        select(models.LessonOccurrence).where(
+            models.LessonOccurrence.active_schedule_block_id == block_a.id,
+            models.LessonOccurrence.is_active.is_(True),
+        )
+    )
+    assert absence is not None
+    assert absence.status is models.LessonOccurrenceStatus.GAP
+    assert absence.reason == internship_flow_service.INTERNSHIP_FLOW_OCCURRENCE_REASON
+    assert absence.creation_source == "internship_flow"
+    assert (
+        await db_session.scalar(
+            select(models.LessonOccurrence.id).where(
+                models.LessonOccurrence.active_schedule_block_id == block_b.id
+            )
+        )
+        is None
+    )
+
 
 async def test_empty_flow_does_not_block_or_require_confirmation(db_session):
     ctx = await _flow_context(db_session)
@@ -396,6 +415,17 @@ async def test_given_lessons_are_preserved_and_absences_keep_their_history(db_se
     assert occurrence.status is models.LessonOccurrenceStatus.GAP
     assert occurrence.is_active is True
 
+    occurrences = (
+        await db_session.scalars(
+            select(models.LessonOccurrence).where(
+                models.LessonOccurrence.active_schedule_block_id.in_([given.id, missing.id]),
+                models.LessonOccurrence.is_active.is_(True),
+            )
+        )
+    ).all()
+    assert len(occurrences) == 1
+    assert occurrences[0].active_schedule_block_id == missing.id
+
     debt = await SchedulerFingerprintService(db_session).debt_basis_fingerprint(
         ctx["organization"].id, ctx["school_year"].id
     )
@@ -458,7 +488,7 @@ async def test_update_and_delete_do_not_restore_removed_lessons(db_session):
     )
 
 
-async def test_removed_blocks_are_queryable_as_history(db_session):
+async def test_removed_lesson_is_recorded_as_absence(db_session):
     ctx = await _flow_context(db_session)
     block_a = await _publish_block(db_session, ctx, ctx["class_a"], FLOW_DATE, "flow-a")
     await _create_confirmed(db_session, ctx, class_ids=[ctx["class_a"].id])
@@ -467,19 +497,18 @@ async def test_removed_blocks_are_queryable_as_history(db_session):
     history = await settings_service.list_calendar_events(db_session, ctx["organization"].id)
     assert [event.name for event in history] == ["Estágio 10A"]
 
-    from app.services import schedule_service
-
-    rows = await schedule_service.list_removed_blocks(
+    occurrences = await occurrence_service.list_occurrences(
         db_session,
         ctx["organization"].id,
-        ctx["class_a"].id,
-        FLOW_DATE,
-        FLOW_END,
+        class_id=ctx["class_a"].id,
+        date_from=FLOW_DATE,
+        date_to=FLOW_END,
     )
-    assert [row.id for row in rows] == [block_a.id]
-    assert rows[0].status == "REMOVED"
-    assert rows[0].class_name == "10A"
-    assert rows[0].subject_name == "Subject"
+    removed = [item for item in occurrences if item.active_schedule_block_id == block_a.id]
+    assert len(removed) == 1
+    assert removed[0].status is models.LessonOccurrenceStatus.GAP
+    assert removed[0].reason == internship_flow_service.INTERNSHIP_FLOW_OCCURRENCE_REASON
+    assert removed[0].creation_source == "internship_flow"
 
 
 async def test_flow_validation_rejects_foreign_classes_and_out_of_range_dates(db_session):
@@ -871,34 +900,33 @@ async def test_rename_only_does_not_bump_scheduler_state_version(db_session):
     assert updated.name == "Estágio renomeado"
 
 
-async def test_history_includes_occurrence_and_log_state(db_session):
+async def test_each_removed_lesson_gets_one_absence_record(db_session):
     ctx = await _flow_context(db_session)
-    gap_block = await _publish_block(db_session, ctx, ctx["class_a"], FLOW_DATE, "flow-history-gap")
-    log_block = await _publish_block(db_session, ctx, ctx["class_a"], FLOW_END, "flow-history-log")
-    await _gap_occurrence(db_session, ctx, gap_block)
-    db_session.add(
-        models.LessonLog(
-            organization_id=ctx["organization"].id,
-            active_schedule_block_id=log_block.id,
-            status=models.LessonLogStatus.OCCURRENCE,
-            summary="Sumário preservado",
-        )
-    )
+    first_block = await _publish_block(db_session, ctx, ctx["class_a"], FLOW_DATE, "flow-one")
+    second_block = await _publish_block(db_session, ctx, ctx["class_a"], FLOW_END, "flow-two")
+    existing = await _gap_occurrence(db_session, ctx, first_block)
     await db_session.commit()
 
     await _create_confirmed(db_session, ctx, class_ids=[ctx["class_a"].id])
     await db_session.commit()
 
-    from app.services import schedule_service
-
-    rows = await schedule_service.list_removed_blocks(
-        db_session,
-        ctx["organization"].id,
-        ctx["class_a"].id,
-        FLOW_DATE,
-        FLOW_END,
-    )
-    by_id = {row.id: row for row in rows}
-    assert by_id[gap_block.id].occurrence_status == "GAP"
-    assert by_id[log_block.id].lesson_log_status == "OCCURRENCE"
-    assert by_id[log_block.id].lesson_log_summary == "Sumário preservado"
+    occurrences = (
+        await db_session.scalars(
+            select(models.LessonOccurrence)
+            .where(
+                models.LessonOccurrence.active_schedule_block_id.in_(
+                    [first_block.id, second_block.id]
+                )
+            )
+            .order_by(models.LessonOccurrence.active_schedule_block_id)
+        )
+    ).all()
+    assert [item.active_schedule_block_id for item in occurrences] == [
+        first_block.id,
+        second_block.id,
+    ]
+    assert all(item.status is models.LessonOccurrenceStatus.GAP for item in occurrences)
+    assert occurrences[0].id == existing.id
+    assert occurrences[0].reason == existing.reason
+    assert occurrences[1].creation_source == "internship_flow"
+    assert occurrences[1].reason == internship_flow_service.INTERNSHIP_FLOW_OCCURRENCE_REASON

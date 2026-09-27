@@ -96,7 +96,7 @@ describe('school configuration data hooks', () => {
     await waitFor(() => expect(apiClient.get).not.toHaveBeenCalled())
   })
 
-  it('invalidates the week schedule and removed-history caches after saving a flow', async () => {
+  it('invalidates the schedule, occurrences and draft caches after saving a flow', async () => {
     const { queryClient } = renderWithProviders(<CreateEventProbe />)
     const invalidate = vi.spyOn(queryClient, 'invalidateQueries')
 
@@ -109,9 +109,10 @@ describe('school configuration data hooks', () => {
     await waitFor(() => {
       expect(invalidate.mock.calls.map(([options]) => options.queryKey)).toEqual(
         expect.arrayContaining([
-          ['removedBlocks', activeOrgId],
           ['weekSchedule', activeOrgId],
+          ['occurrences', activeOrgId],
           ['scheduler-status', activeOrgId],
+          ['scheduler-current-draft', activeOrgId],
         ]),
       )
     })

@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from typing import Any
 
+import structlog
 from sqlalchemy import and_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session, aliased
@@ -30,6 +31,9 @@ BLOCKED_LESSON_MESSAGE = (
     "Este dia de estágio não permite criar aulas para a turma. Ajuste ou remova o fluxo primeiro."
 )
 MISSING_SCHOOL_YEAR_MESSAGE = "Configure o ano letivo antes de criar fluxos de estágio."
+INTERNSHIP_FLOW_OCCURRENCE_REASON = "Aula retirada por fluxo de estágio"
+
+logger = structlog.get_logger(__name__)
 
 
 class InternshipFlowError(RuntimeError):
@@ -386,6 +390,27 @@ async def _lock_affected_blocks(
     )
 
 
+async def _lock_affected_occurrences(
+    db: AsyncSession,
+    organization_id: int,
+    block_ids: list[int],
+) -> None:
+    """Occurrences are locked before blocks to match the decision-service order."""
+    ids = sorted(set(block_ids))
+    if not ids:
+        return
+    await db.execute(
+        select(models.LessonOccurrence.id)
+        .where(
+            models.LessonOccurrence.organization_id == organization_id,
+            models.LessonOccurrence.active_schedule_block_id.in_(ids),
+            models.LessonOccurrence.is_active.is_(True),
+        )
+        .order_by(models.LessonOccurrence.id)
+        .with_for_update()
+    )
+
+
 async def _stable_impact(
     db: AsyncSession,
     organization_id: int,
@@ -397,12 +422,59 @@ async def _stable_impact(
     impact = await compute_impact(db, organization_id, class_ids, start_date, end_date)
     for _ in range(3):
         ids = [lesson.active_schedule_block_id for lesson in impact.lessons]
+        await _lock_affected_occurrences(db, organization_id, ids)
         await _lock_affected_blocks(db, organization_id, ids)
         refreshed = await compute_impact(db, organization_id, class_ids, start_date, end_date)
         if [lesson.active_schedule_block_id for lesson in refreshed.lessons] == ids:
             return refreshed
         impact = refreshed
     raise InternshipFlowStale(STALE_MESSAGE)
+
+
+async def _record_internship_occurrences(
+    db: AsyncSession,
+    organization_id: int,
+    lessons: tuple[AffectedLesson, ...],
+    changed_by_membership_id: int | None,
+) -> None:
+    """Turn every removed lesson into an absence record visible in /absences."""
+    if not lessons:
+        return
+    # Local import avoids the occurrence-service <-> internship-flow import cycle.
+    from app.services import occurrence_service
+
+    for lesson in lessons:
+        occurrence, _ = await occurrence_service.create_occurrence_from_active_block(
+            db,
+            organization_id,
+            lesson.active_schedule_block_id,
+            created_by_membership_id=changed_by_membership_id,
+            creation_source="internship_flow",
+            reason=INTERNSHIP_FLOW_OCCURRENCE_REASON,
+        )
+        if occurrence is None or occurrence.status is not None:
+            continue
+        try:
+            async with db.begin_nested():
+                decided = await occurrence_service.update_occurrence(
+                    db,
+                    occurrence.id,
+                    organization_id,
+                    schemas.LessonOccurrenceUpdate(
+                        status=models.LessonOccurrenceStatus.GAP,
+                        version=occurrence.version,
+                    ),
+                    decided_by_membership_id=changed_by_membership_id,
+                )
+                decided.reason = INTERNSHIP_FLOW_OCCURRENCE_REASON
+        except Exception as exc:
+            logger.warning(
+                "internship_flow_occurrence_decision_failed",
+                organization_id=organization_id,
+                active_schedule_block_id=lesson.active_schedule_block_id,
+                occurrence_id=occurrence.id,
+                error_type=type(exc).__name__,
+            )
 
 
 async def _cancel_pending_operational_blocks(
@@ -502,6 +574,9 @@ async def create_flow(
     )
     db.add(event)
     await db.flush()
+    await _record_internship_occurrences(
+        db, organization_id, impact.lessons, changed_by_membership_id
+    )
     await remove_affected_blocks(db, organization_id, impact.lessons)
     await _cancel_pending_operational_blocks(
         db, organization_id, data.class_ids, data.start_date, data.end_date
@@ -549,6 +624,9 @@ async def update_flow(
     event.end_date = data.end_date
     after_scope = flow_blocking_snapshot(event, data.class_ids)
     await _replace_class_links(db, event, organization_id, data.class_ids)
+    await _record_internship_occurrences(
+        db, organization_id, impact.lessons, changed_by_membership_id
+    )
     await remove_affected_blocks(db, organization_id, impact.lessons)
     await _cancel_pending_operational_blocks(
         db, organization_id, data.class_ids, data.start_date, data.end_date

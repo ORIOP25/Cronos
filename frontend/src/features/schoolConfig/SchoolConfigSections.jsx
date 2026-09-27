@@ -118,6 +118,7 @@ export const CalendarSection = () => {
       class_ids: newEvent.class_ids,
       confirmation_fingerprint: fingerprint ?? null,
     }
+    if (!editingFlowId) payload.event_type = 'internship_flow'
     const sortedClassIds = (ids) => [...ids].sort((left, right) => left - right).join(',')
     const scopeChanged = editingFlowOriginal
       ? (

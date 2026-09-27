@@ -12,13 +12,12 @@ import {
 import {
   useSchedulerStatus, useCurrentDraftSummary, useApproveDraft, useRejectDraft,
   useGenerateSchedule, useScheduleTaskStatus, useCancelScheduleTask,
-  useRemovedBlocks, useWeekSchedule,
+  useWeekSchedule,
 } from '../features/scheduling/data'
 import { useClasses, useClassDetails, useTimeslots, useWeekGridVersions } from '../features/catalog/data'
 import { useCalendarEvents } from '../features/schoolConfig/data'
 import { useTeachers } from '../features/members/data'
 import WeekGrid from '../components/WeekGrid'
-import RemovedBlocksPanel from '../components/RemovedBlocksPanel'
 import WeekNavigator from '../components/WeekNavigator'
 import LessonLogModal from '../components/LessonLogModal'
 import KPISidebar from '../components/schedules/KPISidebar'
@@ -212,8 +211,6 @@ const Schedules = ({ initialClassId = '', initialWeekStart, persistView = true, 
     () => collectInternshipDays(calendarEvents, classId, weekStart, weekEnd),
     [calendarEvents, classId, weekStart, weekEnd],
   )
-
-  const { data: removedBlocks = [] } = useRemovedBlocks(classId, weekStart, weekEnd)
 
   const {
     data: weekSlots = [],
@@ -543,10 +540,6 @@ const Schedules = ({ initialClassId = '', initialWeekStart, persistView = true, 
         </CCardHeader>
         <CCardBody className="p-0">{weekGridContent}</CCardBody>
       </CCard>
-
-      {viewMode === 'class' && Boolean(classId) && (
-        <RemovedBlocksPanel blocks={removedBlocks} />
-      )}
 
       {viewMode === 'class' && Boolean(classId) && (
         <CCard className="border-0 shadow-sm">

@@ -4,7 +4,7 @@ from datetime import date, timedelta
 from sqlalchemy import and_, case, func, true
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from sqlalchemy.orm import Session, aliased
+from sqlalchemy.orm import Session
 
 from app import models, schemas
 from app.services import grid_version_service
@@ -36,7 +36,7 @@ async def create_timeslot(
     organization_id: int,
     changed_by_membership_id: int | None = None,
 ):
-    # O item.model_dump() já vai ter 'start_time' como objeto time.
+    # O item.model_dump() jÃ¡ vai ter 'start_time' como objeto time.
     version = await grid_version_service.ensure_active_grid_version(db, organization_id)
     db_item = models.Timeslot(
         **item.model_dump(),
@@ -185,7 +185,7 @@ async def create_constraint(
 
 
 async def get_constraints_by_org(db: AsyncSession, organization_id: int):
-    """Lista todas as restrições."""
+    """Lista todas as restriÃ§Ãµes."""
     result = await db.execute(
         select(models.Constraint).where(models.Constraint.organization_id == organization_id)
     )
@@ -198,7 +198,7 @@ async def delete_constraint(
     organization_id: int,
     changed_by_membership_id: int | None = None,
 ):
-    """Apaga uma regra de horário."""
+    """Apaga uma regra de horÃ¡rio."""
     query = select(models.Constraint).where(
         models.Constraint.id == constraint_id, models.Constraint.organization_id == organization_id
     )
@@ -270,7 +270,7 @@ def get_org_settings_sync(db: Session, organization_id: int):
 
 
 def get_grid_settings_sync(db: Session, organization_id: int):
-    """Retorna as OrganizationGridSettings desta org (única por org), ou None."""
+    """Retorna as OrganizationGridSettings desta org (Ãºnica por org), ou None."""
     return (
         db.query(models.OrganizationGridSettings)
         .filter(models.OrganizationGridSettings.organization_id == organization_id)
@@ -654,148 +654,3 @@ def get_week_schedule_sync(
     return [_build_active_week_slot(row, today) for row in active_rows] + [
         _build_operational_week_slot(row, today) for row in operational_rows
     ]
-
-
-# ==========================================
-#  HISTÓRICO DE BLOCOS RETIRADOS
-# ==========================================
-
-
-async def list_removed_blocks(
-    db: AsyncSession,
-    organization_id: int,
-    class_id: int,
-    from_date: date,
-    to_date: date,
-) -> list[schemas.RemovedScheduleBlockRead]:
-    """Consulta apenas de leitura dos blocos retirados ou cancelados de uma turma."""
-    if to_date < from_date:
-        return []
-    class_alias = aliased(models.Class)
-    subject_alias = aliased(models.Subject)
-    teacher_alias = aliased(models.Teacher)
-    room_alias = aliased(models.Room)
-    timeslot_alias = aliased(models.Timeslot)
-    rows = (
-        await db.execute(
-            select(
-                models.ActiveScheduleBlock,
-                class_alias.name,
-                subject_alias.name,
-                teacher_alias.name,
-                room_alias.name,
-                timeslot_alias.start_time,
-                models.LessonOccurrence.status,
-                models.LessonLog.status,
-                models.LessonLog.summary,
-            )
-            .outerjoin(
-                class_alias,
-                and_(
-                    class_alias.id == models.ActiveScheduleBlock.class_id,
-                    class_alias.organization_id == organization_id,
-                ),
-            )
-            .outerjoin(
-                subject_alias,
-                and_(
-                    subject_alias.id == models.ActiveScheduleBlock.subject_id,
-                    subject_alias.organization_id == organization_id,
-                ),
-            )
-            .outerjoin(
-                teacher_alias,
-                and_(
-                    teacher_alias.id == models.ActiveScheduleBlock.teacher_id,
-                    teacher_alias.organization_id == organization_id,
-                ),
-            )
-            .outerjoin(
-                room_alias,
-                and_(
-                    room_alias.id == models.ActiveScheduleBlock.room_id,
-                    room_alias.organization_id == organization_id,
-                ),
-            )
-            .outerjoin(
-                timeslot_alias,
-                and_(
-                    timeslot_alias.id == models.ActiveScheduleBlock.timeslot_id,
-                    timeslot_alias.organization_id == organization_id,
-                ),
-            )
-            .outerjoin(
-                models.LessonOccurrence,
-                and_(
-                    models.LessonOccurrence.organization_id == organization_id,
-                    models.LessonOccurrence.active_schedule_block_id
-                    == models.ActiveScheduleBlock.id,
-                    models.LessonOccurrence.is_active.is_(True),
-                ),
-            )
-            .outerjoin(
-                models.LessonLog,
-                and_(
-                    models.LessonLog.organization_id == organization_id,
-                    models.LessonLog.active_schedule_block_id == models.ActiveScheduleBlock.id,
-                ),
-            )
-            .where(
-                models.ActiveScheduleBlock.organization_id == organization_id,
-                models.ActiveScheduleBlock.class_id == class_id,
-                models.ActiveScheduleBlock.status.in_(
-                    (
-                        models.ActiveScheduleBlockStatus.REMOVED,
-                        models.ActiveScheduleBlockStatus.CANCELED,
-                    )
-                ),
-                models.ActiveScheduleBlock.date >= from_date,
-                models.ActiveScheduleBlock.date <= to_date,
-            )
-            .distinct()
-            .order_by(
-                models.ActiveScheduleBlock.date.desc(),
-                models.ActiveScheduleBlock.timeslot_id,
-            )
-        )
-    ).all()
-    return [
-        schemas.RemovedScheduleBlockRead(
-            id=block.id,
-            class_id=block.class_id,
-            class_name=class_name,
-            subject_id=block.subject_id,
-            subject_name=subject_name,
-            teacher_id=block.teacher_id,
-            teacher_name=teacher_name,
-            room_id=block.room_id,
-            room_name=room_name,
-            date=block.date,
-            timeslot_id=block.timeslot_id,
-            start_time=start_time,
-            duration_minutes=block.duration_minutes,
-            status=block.status.value,
-            schedule_version_id=block.schedule_version_id,
-            updated_at=block.updated_at,
-            occurrence_status=_status_value(occurrence_status),
-            lesson_log_status=_status_value(log_status),
-            lesson_log_summary=log_summary,
-        )
-        for (
-            block,
-            class_name,
-            subject_name,
-            teacher_name,
-            room_name,
-            start_time,
-            occurrence_status,
-            log_status,
-            log_summary,
-        ) in rows
-    ]
-
-
-def _status_value(value) -> str | None:
-    if value is None:
-        return None
-    return str(getattr(value, "value", value))

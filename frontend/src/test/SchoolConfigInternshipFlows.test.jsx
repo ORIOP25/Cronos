@@ -185,6 +185,7 @@ describe('SchoolConfig internship flows', () => {
       start_date: '2026-02-02',
       end_date: '2026-02-13',
       class_ids: [1],
+      event_type: 'internship_flow',
       confirmation_fingerprint: 'fp-1',
     }))
     expect(await screen.findByText(/1 aula\(s\) saíram do horário ativo/i)).toBeInTheDocument()
@@ -223,6 +224,7 @@ describe('SchoolConfig internship flows', () => {
       start_date: '2026-02-02',
       end_date: '2026-02-13',
       class_ids: [],
+      event_type: 'internship_flow',
       confirmation_fingerprint: null,
     }))
     expect(screen.queryByText('Confirmar alteração do horário')).not.toBeInTheDocument()

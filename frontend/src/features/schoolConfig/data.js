@@ -15,10 +15,10 @@ const RESOURCES = {
 
 const CALENDAR_DEPENDENCIES = [
   RESOURCES.calendar,
-  'removedBlocks',
   'weekSchedule',
   'scheduler-status',
   'scheduler-current-draft',
+  'occurrences',
 ]
 
 const GRID_DEPENDENCIES = [

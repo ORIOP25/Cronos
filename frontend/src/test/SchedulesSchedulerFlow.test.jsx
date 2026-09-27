@@ -33,7 +33,6 @@ vi.mock('../features/scheduling/data', () => ({
     isError: false,
     refetch: mocks.weekRefetch,
   }),
-  useRemovedBlocks: () => ({ data: [] }),
 }))
 
 vi.mock('../features/members/data', () => ({

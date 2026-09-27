@@ -2084,30 +2084,6 @@ class TeacherScheduleHorizonRead(BaseModel):
     active_generation_id: str | None = None
 
 
-class RemovedScheduleBlockRead(BaseModel):
-    """Registo de leitura de um bloco retirado do horário ativo."""
-
-    id: int
-    class_id: int
-    class_name: str | None = None
-    subject_id: int
-    subject_name: str | None = None
-    teacher_id: int
-    teacher_name: str | None = None
-    room_id: int
-    room_name: str | None = None
-    date: date
-    timeslot_id: int
-    start_time: time | None = None
-    duration_minutes: int
-    status: str
-    schedule_version_id: str
-    updated_at: datetime
-    occurrence_status: str | None = None
-    lesson_log_status: str | None = None
-    lesson_log_summary: str | None = None
-
-
 class WeekModuleInfo(BaseModel):
     id: int
     name: str
