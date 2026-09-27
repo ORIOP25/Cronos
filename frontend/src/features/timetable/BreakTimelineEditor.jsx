@@ -2,6 +2,8 @@ import { CFormLabel, CFormInput, CFormFeedback, CInputGroup, CInputGroupText } f
 import {
   buildDailyTimeline,
   normalizeBreakOverrides,
+  removeBreakOverride,
+  setBreakOverride,
   validateBreakOverrides,
 } from './breakTimeline'
 
@@ -28,20 +30,14 @@ export function BreakTimelineEditor({
   const overrideError = fieldErrors.break_overrides || liveError
 
   const setOverride = (afterSlot, durationMinutes) => {
-    const next = overrides.filter((override) => override.after_slot !== afterSlot)
-    if (durationMinutes !== usualBreak) {
-      next.push({ after_slot: afterSlot, duration_minutes: durationMinutes })
-    }
-    next.sort((a, b) => a.after_slot - b.after_slot)
-    onChange('break_overrides', next)
-  }
-
-  const removeOverride = (afterSlot) => {
-    const raw = Array.isArray(values.break_overrides) ? values.break_overrides : []
     onChange(
       'break_overrides',
-      raw.filter((entry) => Number(entry?.after_slot) !== afterSlot),
+      setBreakOverride(values.break_overrides, afterSlot, durationMinutes, usualBreak),
     )
+  }
+
+  const resetOverride = (afterSlot) => {
+    onChange('break_overrides', removeBreakOverride(values.break_overrides, afterSlot))
   }
 
   const orphanOverrides = timeline?.unusedOverrides ?? []
@@ -138,7 +134,7 @@ export function BreakTimelineEditor({
                   type="button"
                   className="btn btn-link btn-sm p-0"
                   aria-label={`Remover ajuste após a aula ${position}`}
-                  onClick={() => removeOverride(position)}
+                  onClick={() => resetOverride(position)}
                 >
                   Remover ajuste
                 </button>
@@ -154,7 +150,7 @@ export function BreakTimelineEditor({
                     type="button"
                     className="btn btn-link btn-sm p-0"
                     aria-label={`Remover ajuste após a aula ${override.after_slot}`}
-                    onClick={() => removeOverride(override.after_slot)}
+                    onClick={() => resetOverride(override.after_slot)}
                   >
                     Remover ajuste
                   </button>

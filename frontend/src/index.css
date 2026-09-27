@@ -981,6 +981,37 @@ textarea {
   line-height: 1.2;
 }
 
+.school-config-break-label {
+  position: relative;
+}
+
+.school-config-break-customize {
+  position: absolute;
+  top: 50%;
+  right: 0;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  color: var(--brand-600);
+  background: transparent;
+}
+
+.school-config-break-customize:hover {
+  color: var(--brand-800);
+  background: var(--brand-100);
+}
+
+.school-config-break-customize:focus-visible {
+  outline: 3px solid var(--cui-focus-ring-color, rgba(13, 110, 253, 0.35));
+  outline-offset: 2px;
+}
+
 
 /* ===========================
    CARDS

@@ -29,8 +29,8 @@ import { TimeField } from '../../components/TimeField'
 import { GENERATION_STATUS_LABELS } from '../../utils/presentation'
 import { useClasses, useTimeslots } from '../catalog/data'
 import { useGenerateSchedule, useSchedulerStatus } from '../scheduling/data'
-import { BreakTimelineEditor } from '../timetable/BreakTimelineEditor'
-import { validateBreakOverrides } from '../timetable/breakTimeline'
+import { normalizeBreakOverrides, validateBreakOverrides } from '../timetable/breakTimeline'
+import { BreakTimelineModal } from './BreakTimelineModal'
 import {
   useCalendarEvents,
   useCreateCalendarEvent,
@@ -1034,6 +1034,7 @@ const GridEditor = ({
   const [preview, setPreview] = useState(null)
   const [decisions, setDecisions] = useState({})
   const [proposal, setProposal] = useState(null)
+  const [breaksModalOpen, setBreaksModalOpen] = useState(false)
 
   const regenerateMutation = useRegenerateGrid()
   const previewMutation = useGridChangePreview()
@@ -1170,6 +1171,7 @@ const GridEditor = ({
     applyFormData((prev) => ({ ...prev, days: { ...prev.days, [idx]: !prev.days[idx] } }))
   }
 
+  const customBreakCount = normalizeBreakOverrides(formData.break_overrides).length
   const isSubmitting = schoolYearPublished ? previewMutation.isPending : regenerateMutation.isPending
   let submitLabel
   if (schoolYearPublished) {
@@ -1213,19 +1215,26 @@ const GridEditor = ({
             </CInputGroup>
           </CCol>
           <CCol md={3}>
-            <CFormLabel htmlFor="breakDuration">Intervalo</CFormLabel>
+            <div className="school-config-break-label">
+              <CFormLabel htmlFor="breakDuration">Intervalo</CFormLabel>
+              <button
+                type="button"
+                className="school-config-break-customize"
+                aria-label="Personalizar intervalos"
+                onClick={() => setBreaksModalOpen(true)}
+              >
+                <CIcon icon={cilPencil} size="sm" />
+              </button>
+            </div>
             <CInputGroup>
               <CFormInput id="breakDuration" type="number" aria-describedby="breakDuration-unit" value={formData.break_duration_minutes} onChange={(e) => applyFormData((prev) => ({ ...prev, break_duration_minutes: e.target.value }))} />
               <CInputGroupText id="breakDuration-unit">Minutos</CInputGroupText>
             </CInputGroup>
+            {customBreakCount > 0 && (
+              <div className="form-text">Pausas personalizadas: {customBreakCount}</div>
+            )}
           </CCol>
         </CRow>
-
-        <BreakTimelineEditor
-          values={timeslotValues}
-          showUsualBreak={false}
-          onChange={(field, value) => applyFormData((prev) => ({ ...prev, [field]: value }))}
-        />
 
         <CRow className="mb-4 align-items-start">
           <CCol md={4}>
@@ -1277,6 +1286,17 @@ const GridEditor = ({
           }}
           onPropose={handlePropose}
           isProposing={proposeMutation.isPending}
+        />
+      )}
+
+      {breaksModalOpen && (
+        <BreakTimelineModal
+          values={timeslotValues}
+          onClose={() => setBreaksModalOpen(false)}
+          onApply={(breakOverrides) => {
+            applyFormData((prev) => ({ ...prev, break_overrides: breakOverrides }))
+            setBreaksModalOpen(false)
+          }}
         />
       )}
     </div>

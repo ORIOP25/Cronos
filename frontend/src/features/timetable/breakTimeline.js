@@ -36,6 +36,23 @@ export function normalizeBreakOverrides(raw) {
   return splitBreakOverrides(raw).valid
 }
 
+export function setBreakOverride(raw, afterSlot, durationMinutes, usualBreak) {
+  const next = (Array.isArray(raw) ? raw : []).filter(
+    (entry) => Number(entry?.after_slot) !== afterSlot,
+  )
+  if (durationMinutes !== usualBreak) {
+    next.push({ after_slot: afterSlot, duration_minutes: durationMinutes })
+  }
+  next.sort((a, b) => Number(a?.after_slot) - Number(b?.after_slot))
+  return next
+}
+
+export function removeBreakOverride(raw, afterSlot) {
+  return (Array.isArray(raw) ? raw : []).filter(
+    (entry) => Number(entry?.after_slot) !== afterSlot,
+  )
+}
+
 export function buildDailyTimeline(values) {
   const openMin = timeOfDayToMinutes(values.opening_time)
   const closeMin = timeOfDayToMinutes(values.closing_time)

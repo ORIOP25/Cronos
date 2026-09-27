@@ -136,7 +136,10 @@ describe('SchoolConfig grid changes', () => {
     await openGridTab()
 
     expect(screen.getByLabelText('Fecho da Escola')).toHaveValue('18:30')
-    expect(screen.getByLabelText('Pausa após a aula 2 (09:30-10:20)')).toHaveValue(5)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Personalizar intervalos' }))
+    expect(await screen.findByLabelText('Pausa após a aula 2 (09:30-10:20)')).toHaveValue(5)
+    fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }))
 
     fireEvent.click(screen.getByRole('button', { name: /guardar e regenerar/i }))
 
