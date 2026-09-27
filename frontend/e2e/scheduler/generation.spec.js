@@ -55,7 +55,9 @@ function schedulerFixtureDates(weekOffset) {
   }
 }
 
-const FIXTURE_DATES = schedulerFixtureDates(-2)
+// The engine never publishes into periods that already started, so the
+// scenario starts on the next Monday and queries a week with real lessons.
+const FIXTURE_DATES = schedulerFixtureDates(1)
 const FRESH_FOUNDER_DATES = schedulerFixtureDates(1)
 const FIXTURE = {
   subjectName: 'E2E Scheduler Subject',
@@ -392,7 +394,7 @@ export async function generateAndApproveThroughUi(page) {
       && response.request().method() === 'POST',
     { timeout: OPERATION_TIMEOUT_MS },
   )
-  await page.getByRole('button', { name: /Gerar Hor.rio/i }).click()
+  await page.getByRole('button', { name: /(?:Gerar|Atualizar) Hor.rio/i }).click()
   const response = await generateResponse
   const responseText = await response.text()
   expect(response.ok(), `scheduler generate failed: ${response.status()} ${responseText}`).toBeTruthy()
@@ -495,7 +497,21 @@ test.describe('Scheduler generation', () => {
     const activeLessonIds = new Set(
       activeSlots.map((slot) => slot.scheduler_lesson_id),
     )
-    const activeLogPath = /\/api\/v1\/schedule\/lessons\/(\d+)\/log(?:\?|$)/
+
+    // The engine publishes only periods that did not start, so the UI keeps
+    // "Aula Dada" disabled on this freshly published week. Register the
+    // completion through the same endpoint the modal uses and keep the UI
+    // assertions that prove the rendered state and the credited minutes.
+    const completedLog = await apiRequest(
+      page,
+      'PUT',
+      `/schedule/lessons/${activeSlots[0].scheduler_lesson_id}/log`,
+      { status: 'COMPLETED', summary: 'E2E active lesson completed' },
+    )
+    const completedLessonId = completedLog.lesson_id
+    expect(completedLog.status).toBe('COMPLETED')
+    expect(completedLog.credited_minutes).toBeGreaterThan(0)
+    expect(activeLessonIds.has(completedLessonId)).toBe(true)
 
     await goTo(page, `/schedules?weekStart=${weekStart}`)
     await expectRouteReady(page, '/schedules')
@@ -505,18 +521,6 @@ test.describe('Scheduler generation', () => {
       name: new RegExp(`Abrir registo de ${FIXTURE.subjectName}`, 'i'),
     })
     await expect(lessonButtons).toHaveCount(activeSlots.length, { timeout: 20_000 })
-
-    await lessonButtons.nth(0).click()
-    await page.getByLabel(/Sum.rio/i).fill('E2E active lesson completed')
-    const completedResponsePromise = page.waitForResponse(
-      (candidate) => candidate.request().method() === 'PUT'
-        && activeLogPath.test(candidate.url()),
-    )
-    await page.getByRole('button', { name: /^Aula Dada$/i }).click()
-    const completedResponse = await completedResponsePromise
-    expect(completedResponse.status()).toBe(200)
-    const completedLessonId = Number(completedResponse.url().match(activeLogPath)?.[1])
-    expect(activeLessonIds.has(completedLessonId)).toBe(true)
     await expect(page.getByRole('gridcell', { name: /Conclu.da/i }).first()).toBeVisible({
       timeout: 20_000,
     })
@@ -526,12 +530,15 @@ test.describe('Scheduler generation', () => {
     await page.getByRole('button', { name: /^Criar Ocorr.ncia$/i }).click()
     const occurrenceResponsePromise = page.waitForResponse(
       (candidate) => candidate.request().method() === 'PUT'
-        && activeLogPath.test(candidate.url()),
+        && /\/api\/v1\/schedule\/lessons\/\d+\/log(?:\?|$)/.test(candidate.url()),
     )
     await page.getByRole('button', { name: /Sim, criar ocorr.ncia/i }).click()
     const occurrenceResponse = await occurrenceResponsePromise
     expect(occurrenceResponse.status()).toBe(200)
-    const occurrenceLessonId = Number(occurrenceResponse.url().match(activeLogPath)?.[1])
+    const occurrencePayload = await occurrenceResponse.json()
+    const occurrenceLessonId = occurrencePayload.lesson_id
+    expect(occurrencePayload.status).toBe('OCCURRENCE')
+    expect(occurrencePayload.debt_minutes).toBeGreaterThan(0)
     expect(activeLessonIds.has(occurrenceLessonId)).toBe(true)
     expect(occurrenceLessonId).not.toBe(completedLessonId)
     await expect(page.getByRole('gridcell', { name: /Ocorr.ncia/i }).first()).toBeVisible({
@@ -543,10 +550,20 @@ test.describe('Scheduler generation', () => {
       'GET',
       `/schedule/week?class_id=${classId}&week_start=${weekStart}`,
     )
+    const completedSlot = refreshedSlots.find(
+      (slot) => slot.scheduler_lesson_id === completedLessonId,
+    )
+    expect(completedSlot).toMatchObject({ lesson_log_status: 'COMPLETED' })
+    expect(
+      completedSlot.slices.reduce((total, slice) => total + slice.completed_minutes, 0),
+    ).toBeGreaterThanOrEqual(completedLog.credited_minutes)
     const occurrenceSlot = refreshedSlots.find(
       (slot) => slot.scheduler_lesson_id === occurrenceLessonId,
     )
     expect(occurrenceSlot).toMatchObject({ lesson_log_status: 'OCCURRENCE' })
+
+    const debts = await apiRequest(page, 'GET', `/occurrences/debts?class_id=${classId}`)
+    expect(debts.total_hours_owed).toBeGreaterThan(0)
   })
 })
 

@@ -34,6 +34,7 @@ from app.scheduler.infrastructure.proposals import (
     reject_proposal,
 )
 from app.scheduler.infrastructure.queries import current_proposal, scheduler_status
+from app.services.dashboard_service import get_dashboard_summary
 from app.services.scheduler_state_service import SchedulerStateService
 from tests._support.db_fixtures import TestingSessionLocal, test_engine
 from tests._support.scheduler_v1 import V1Seed, seed_generatable_school
@@ -453,6 +454,91 @@ async def test_repeated_approval_returns_the_same_activation(db_session, monkeyp
     assert superseded.value.code == "proposal_superseded"
 
 
+async def test_first_approval_marks_the_organization_operational_once(db_session, monkeypatch):
+    seed = await _minimal_school(db_session)
+    await db_session.commit()
+    await _enqueue(db_session, seed)
+    await db_session.commit()
+    await _run_worker(monkeypatch, db_session)
+    proposal = await current_proposal(db_session, seed.organization.id, now_utc=MOMENT)
+    assert proposal is not None
+
+    first = await approve_proposal(
+        db_session,
+        organization_id=seed.organization.id,
+        proposal_id=proposal["proposal_id"],
+        decided_by_membership_id=seed.membership.id,
+        now_utc=MOMENT,
+    )
+    organization = await db_session.get(models.Organization, seed.organization.id)
+    await db_session.refresh(organization)
+    assert organization.first_real_schedule_approved_at == MOMENT
+
+    dashboard = await get_dashboard_summary(db_session, seed.organization.id)
+    assert dashboard.mode == "OPERATIONAL"
+
+    repeated = await approve_proposal(
+        db_session,
+        organization_id=seed.organization.id,
+        proposal_id=proposal["proposal_id"],
+        decided_by_membership_id=seed.membership.id,
+        now_utc=MOMENT,
+    )
+    assert repeated.active_version_id == first.active_version_id
+    await db_session.refresh(organization)
+    assert organization.first_real_schedule_approved_at == MOMENT
+
+    state = await SchedulerStateService(db_session).get_state(seed.organization.id, seed.year.id)
+    await db_session.refresh(state)
+    state.input_revision += 1
+    state.planning_revision += 1
+    await db_session.commit()
+    await _enqueue(db_session, seed, key="operational-update")
+    await db_session.commit()
+    await _run_worker(monkeypatch, db_session)
+    second = await current_proposal(db_session, seed.organization.id, now_utc=MOMENT)
+    assert second is not None
+    later = MOMENT + timedelta(minutes=5)
+    await approve_proposal(
+        db_session,
+        organization_id=seed.organization.id,
+        proposal_id=second["proposal_id"],
+        decided_by_membership_id=seed.membership.id,
+        now_utc=later,
+    )
+    await db_session.refresh(organization)
+    assert organization.first_real_schedule_approved_at == MOMENT
+
+
+async def test_the_operational_marker_stays_inside_the_approved_organization(
+    db_session, monkeypatch
+):
+    first = await _minimal_school(db_session, clerk_user_id="w08_m1", clerk_org_id="w08_m_org1")
+    second = await _minimal_school(
+        db_session, clerk_user_id="w08_m2", clerk_org_id="w08_m_org2", module_minutes=50
+    )
+    await db_session.commit()
+    await _enqueue(db_session, first, key="marker-a")
+    await db_session.commit()
+    await _run_worker(monkeypatch, db_session)
+    proposal = await current_proposal(db_session, first.organization.id, now_utc=MOMENT)
+    assert proposal is not None
+
+    await approve_proposal(
+        db_session,
+        organization_id=first.organization.id,
+        proposal_id=proposal["proposal_id"],
+        decided_by_membership_id=first.membership.id,
+        now_utc=MOMENT,
+    )
+
+    other = await db_session.get(models.Organization, second.organization.id)
+    await db_session.refresh(other)
+    assert other.first_real_schedule_approved_at is None
+    other_dashboard = await get_dashboard_summary(db_session, second.organization.id)
+    assert other_dashboard.mode == "PREPARATION"
+
+
 async def test_rejection_keeps_the_clock_and_does_not_unlock_a_reroll(db_session, monkeypatch):
     seed = await _minimal_school(db_session)
     await db_session.commit()
@@ -648,6 +734,9 @@ async def test_a_failure_during_approval_rolls_everything_back(db_session, monke
     await db_session.refresh(state)
     assert state.active_schedule_version_id is None
     assert state.school_year_publication_state == models.SchoolYearPublicationState.UNPUBLISHED
+    organization = await db_session.get(models.Organization, organization_id)
+    await db_session.refresh(organization)
+    assert organization.first_real_schedule_approved_at is None
     refreshed = await db_session.get(SchedulerProposalV1, proposal_id)
     await db_session.refresh(refreshed)
     assert refreshed.status == "PENDING"

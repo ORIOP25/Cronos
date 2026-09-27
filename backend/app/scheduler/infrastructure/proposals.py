@@ -506,6 +506,15 @@ async def approve_proposal(
     proposal.status = "APPROVED"
     proposal.decided_at = now_utc
     proposal.decided_by_membership_id = decided_by_membership_id
+    organization = await db.scalar(
+        select(models.Organization).where(models.Organization.id == organization_id)
+    )
+    if (
+        organization is not None
+        and organization.first_real_schedule_approved_at is None
+        and organization.foundation_status == models.OrganizationFoundationStatus.COMPLETED
+    ):
+        organization.first_real_schedule_approved_at = now_utc
     await db.flush()
     result = ApprovalResult(
         proposal_id=proposal.id,
