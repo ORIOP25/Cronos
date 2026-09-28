@@ -903,7 +903,7 @@ Critérios objetivos para aceitar a candidate local:
 | P10 | Corpus amplo, replays anuais, calibração, otimizações e workers. | Por iniciar (W10–W11) | Relatório reproduzível de qualidade versus recursos; decisão sobre agrupamento de salas e workers. |
 | P11 | Remoção final do legado e release candidate. | Por iniciar (W12) | Gate local integral aprovado. |
 | P12A | Validação Railway/Cloudflare. | Concluída (W13) | Baseline remota separada, integrações e recursos reais confirmados. [Registo](SCHEDULER_V1_W13_STATUS.md) |
-| P12B | Merge, CI, limpeza de ensaio e ativação. | Por iniciar (W14) | Revisão publicada verificada e aceitação final. |
+| P12B | Merge, CI, limpeza de ensaio e ativação. | Concluída (W14) | Revisão publicada verificada e aceitação final. [Registo](SCHEDULER_V1_W14_STATUS.md) |
 
 Remover chamadas e implementações antigas por fatia em W12, com consumidores e testes correspondentes.
 Não manter duas implementações selecionáveis em produção.

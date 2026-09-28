@@ -2,7 +2,7 @@
 
 Data de consolidação: 25 de setembro de 2026.
 
-Estado: W00–W13 executados e fechados; W14 por iniciar. Esta revisão substitui o plano de 23 de setembro de 2026 a partir de W06; o documento original permanece como referência histórica. Registos: [W08–W09](SCHEDULER_V1_W08_W09_STATUS.md), [W10–W11](SCHEDULER_V1_W10_W11_STATUS.md), [W12](SCHEDULER_V1_W12_STATUS.md), [W13](SCHEDULER_V1_W13_STATUS.md).
+Estado: W00–W14 executados e fechados. Esta revisão substitui o plano de 23 de setembro de 2026 a partir de W06; o documento original permanece como referência histórica. Registos: [W08–W09](SCHEDULER_V1_W08_W09_STATUS.md), [W10–W11](SCHEDULER_V1_W10_W11_STATUS.md), [W12](SCHEDULER_V1_W12_STATUS.md), [W13](SCHEDULER_V1_W13_STATUS.md), [W14](SCHEDULER_V1_W14_STATUS.md).
 
 Branch de trabalho: `codex/scheduler-v1-revamp`.
 
@@ -575,7 +575,7 @@ O proprietário aceita o compromisso de qualidade, duração e custo com evidên
 | P10 — Escala e calibração local | Concluído (W10–W11) | Corpus amplo, replays anuais com eventos, workers 1/2/4/8, quotas CPU/RAM, agrupamento de salas equivalentes, política de paragem e simulação anual. | Evidência local sólida; configurações candidatas e critérios de validação remota documentados. [Registo](SCHEDULER_V1_W10_W11_STATUS.md) |
 | P11 — Remoção e candidate local | Concluído (W12) no âmbito corrigido | Remover código antigo, consolidar baseline Alembic, avaliação reservada. | Instalação Docker limpa, gates funcionais; aceitação do proprietário pendente. [Registo](SCHEDULER_V1_W12_STATUS.md) |
 | P12A — Validação em produção | Concluído (W13) | Candidate publicada na API; validação remota e frontend Cloudflare confirmados. | Baseline remota e configuração final demonstradas; regressões resolvidas. [Registo](SCHEDULER_V1_W13_STATUS.md) |
-| P12B — Merge e ativação final | Por iniciar (W14) | Fixar release, acompanhar CI, limpar dados e instalar baseline final. | Critérios de lançamento satisfeitos e revisão efetivamente publicada verificada. |
+| P12B — Merge e ativação final | Concluído (W14) | Release fixada, CI verde, dados de ensaio limpos e baseline final instalada; smoke validado. | Critérios de lançamento satisfeitos e revisão efetivamente publicada verificada. [Registo](SCHEDULER_V1_W14_STATUS.md) |
 
 P6 é a primeira fase nova. Não compensar uma arquitetura inviável acrescentando workers ou timeout.
 Se a decomposição falhar sistematicamente na reparação, parar a expansão funcional e rever o modelo com o contraexemplo medido.
@@ -726,8 +726,8 @@ Código antigo removido, CI verde, reset ensaiado e release Railway/Cloudflare v
 
 W06 e W07 foram concluídos e registados em [SCHEDULER_V1_W06_W07_STATUS.md](SCHEDULER_V1_W06_W07_STATUS.md).
 W10–W12 foram concluídos e registados em [SCHEDULER_V1_W10_W11_STATUS.md](SCHEDULER_V1_W10_W11_STATUS.md) e [SCHEDULER_V1_W12_STATUS.md](SCHEDULER_V1_W12_STATUS.md).
-A próxima ação é W13 (validação remota Railway/Cloudflare), apenas após a aceitação do gate local.
-Não começar por otimizar desempenho nem por calibrar workers sem nova medição.
+W13 e W14 foram concluídos e registados em [SCHEDULER_V1_W13_STATUS.md](SCHEDULER_V1_W13_STATUS.md) e [SCHEDULER_V1_W14_STATUS.md](SCHEDULER_V1_W14_STATUS.md).
+A v1 está ativa em produção. Não começar por otimizar desempenho nem por calibrar workers sem nova medição.
 
 ### Rastreabilidade das decisões
 

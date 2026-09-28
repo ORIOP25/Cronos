@@ -30,7 +30,8 @@ The bootstrap job creates restricted roles before runtime deployment.
 | Service | Configuration | Command or purpose |
 | :--- | :--- | :--- |
 | API | `backend/railway/api.json` | Alembic pre-deploy, Uvicorn, readiness healthcheck |
-| Worker | `backend/railway/worker.json` | Celery scheduler worker, concurrency one |
+| Worker | `backend/railway/worker.json` | Celery scheduler solver worker, concurrency one |
+| Supervisor | `backend/railway/supervisor.json` | Celery recovery supervisor on the `scheduler-supervisor` queue |
 | Beat | `backend/railway/beat.json` | One replica with reconciliation, maintenance, and stale-job recovery |
 | Bootstrap | `backend/railway/bootstrap.json` | `python -m app.ops.provision_database` |
 | Frontend | `frontend/Dockerfile` or Pages project | Vite build output `dist` |
@@ -81,12 +82,26 @@ Nginx resolves public deep links with `try_files $uri $uri.html $uri/ /index.htm
 Cloudflare Pages uses `public/_redirects` for the nine public route HTML files.
 Test every client route on the hosting provider before domain cutover.
 
+### Scheduler v1 baseline reset
+
+To reinstall an empty consolidated baseline before real use, run the tested downgrade/upgrade cycle on the API service. The config file limits `preDeployCommand` to one shell line.
+
+1. Stop job intake and scale the solver, supervisor, and Beat services to zero replicas.
+2. Set the API `preDeployCommand` to `["alembic downgrade base && alembic upgrade head"]`.
+3. Deploy the API at that revision. The pre-deploy drops every table and reinstalls the baseline.
+4. Restore the API `preDeployCommand` to `["alembic upgrade head"]` and deploy again.
+5. Restore the solver, supervisor, and Beat replicas.
+
+Never run this cycle after real school data exists. Confirm that no generation job is active before step 2.
+
 ## Contracts and Invariants
 
 - Never store secrets in Git, `VITE_*`, images, logs, screenshots, or tickets.
 - Keep Redis private.
 - Keep one Beat replica.
 - Keep exactly one solver worker with concurrency `1` during the initial rollout.
+- Keep `SCHEDULER_V1_NUM_WORKERS` at `2` on the solver worker. This sets the CP-SAT search workers, not the Celery concurrency.
+- Run exactly one `scheduler-supervisor` replica on the `scheduler-supervisor` queue.
 - Expose and verify the intended SHA on API and readiness health responses.
 - Do not run automatic database downgrades during rollback.
 - Confirm code and schema compatibility before reverting the API.
