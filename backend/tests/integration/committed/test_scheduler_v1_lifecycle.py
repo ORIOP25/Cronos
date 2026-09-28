@@ -702,6 +702,63 @@ async def test_finalization_rejects_a_candidate_that_the_current_clock_invalidat
     assert proposal is None
 
 
+async def test_finalization_accepts_a_same_day_clock_advance_across_a_period(db_session):
+    from zoneinfo import ZoneInfo
+
+    from app.scheduler.application.publishing import ProposalPayload
+    from app.scheduler.composition import generate_schedule
+    from app.scheduler.domain.candidate import SchedulingStrategy
+    from app.scheduler.infrastructure.proposals import persist_proposal
+    from app.scheduler.infrastructure.snapshot import load_snapshot
+
+    seed = await _minimal_school(db_session)
+    await db_session.commit()
+    # The school year starts on 1 September but its first grid day after the
+    # queueing moment is the following Monday. Generate from that day so the
+    # first lesson is on the same school day as the generation clock.
+    moment = datetime(2026, 9, 7, 7, 0, tzinfo=UTC)
+    bundle = await load_snapshot(
+        db_session,
+        seed.organization.id,
+        strategy=SchedulingStrategy.COMPLETE_GENERATION,
+        now_utc=moment,
+        school_year_id=seed.year.id,
+    )
+    result = generate_schedule(
+        bundle.snapshot,
+        bundle.periods,
+        assess_recovery=False,
+        time_limit_seconds=30.0,
+        num_workers=1,
+        random_seed=1,
+    )
+    assert result.outcome == "COMPLETE"
+    # A long job crosses the first lesson's period boundary. The same-day clock
+    # advance must not reject a schedule that was future when it was generated.
+    first_start = min(lesson.period.start_utc for lesson in result.candidate.lessons)
+    zone = ZoneInfo("Europe/Lisbon")
+    late = first_start + timedelta(minutes=1)
+    assert late.astimezone(zone).date() == moment.astimezone(zone).date()
+    queued = await _enqueue(db_session, seed)
+    await db_session.commit()
+    claim = await claim_next_job(db_session, now_utc=moment)
+    assert claim is not None
+
+    outcome = await persist_proposal(
+        db_session,
+        organization_id=seed.organization.id,
+        job_id=queued.job.id,
+        attempt_token=claim.attempt_token,
+        bundle=bundle,
+        candidate=result.candidate,
+        payload=ProposalPayload(metrics={"stop_reason": "TEST"}, diff={}),
+        policy_version="baseline-v1",
+        now_utc=late,
+    )
+    assert outcome.refused is None
+    assert outcome.proposal_id is not None
+
+
 async def test_a_failure_during_approval_rolls_everything_back(db_session, monkeypatch):
     from app.scheduler.infrastructure import proposals as proposals_module
 

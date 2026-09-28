@@ -8,7 +8,7 @@ the current data is marked STALE and never approved silently.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -199,7 +199,22 @@ async def persist_proposal(
         await _reject_pending_grid_version(db, organization_id, job)
         await db.commit()
         return PersistOutcome(None, "STALE")
-    report = validate_candidate(fresh.snapshot, candidate)
+    # Revalidate against the generation clock, not the persist clock. A long
+    # job can cross a grid period boundary; the current clock would then protect
+    # a lesson that was future when the candidate was built. Data freshness is
+    # already enforced by the digest and revision comparison above, and a change
+    # of school day still invalidates the proposal.
+    generation_now = bundle.snapshot.now_utc
+    zone = ZoneInfo(fresh.snapshot.timezone_name)
+    if fresh.snapshot.now_utc.astimezone(zone).date() != generation_now.astimezone(zone).date():
+        job.status = "STALE"
+        job.result_code = "STALE"
+        job.stop_reason = "INPUT_CHANGED"
+        job.finished_at = now_utc
+        await _reject_pending_grid_version(db, organization_id, job)
+        await db.commit()
+        return PersistOutcome(None, "STALE")
+    report = validate_candidate(replace(fresh.snapshot, now_utc=generation_now), candidate)
     if not report.valid:
         job.status = "STALE"
         job.result_code = "STALE"
