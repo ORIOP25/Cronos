@@ -6,9 +6,9 @@ Documentos de referência: [plano v2](SCHEDULER_V1_REVAMP_PLAN_V2.md), [WBS v2](
 
 ## 1. Release e CI (W14.1)
 
-- Revisão candidata: `f8ce03681a936e815f6ad493f54f4fed4c39a29e` na `main`. Inclui o merge `a9c6f34`, as correções do W13.4 (`53f0e43`) e os registos (`f8ce036`).
-- CI do GitHub na revisão `f8ce036`: run `36361438796`. As tarefas `backend`, `frontend` e `e2e` passaram.
-- Os quatro serviços Railway (`api`, `worker`, `supervisor`, `beat`) servem a revisão `f8ce036`.
+- Revisão candidata de código: `f8ce03681a936e815f6ad493f54f4fed4c39a29e`. Inclui o merge `a9c6f34`, as correções do W13.4 (`53f0e43`) e os registos.
+- A `main` passou CI verde em dois pushes: run `36361438796` (`f8ce036`) e run `36364367621` (commit de documentação). As tarefas `backend`, `frontend` e `e2e` passaram em ambos.
+- Os quatro serviços Railway (`api`, `worker`, `supervisor`, `beat`) servem a revisão final da `main`.
 - O frontend público em `https://cronos.pt` foi publicado com o mesmo código. O bundle contém a proteção da data preferencial de fim e a lista de turmas ativas.
 - `https://api.cronos.pt/health/ready` responde `ok` com `revision=f8ce036`, PostgreSQL e Redis ligados.
 
