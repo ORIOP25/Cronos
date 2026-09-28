@@ -217,6 +217,15 @@ const Schedules = ({ initialClassId = '', initialWeekStart, persistView = true, 
     }
   }, [urlTeacherId, teachers])
 
+  // Drop a persisted class that no longer belongs to the current organization.
+  useEffect(() => {
+    if (!selectedClassId || classes.length === 0) return
+    if (!classes.some((row) => String(row.id) === String(selectedClassId))) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setSelectedClassId('')
+    }
+  }, [classes, selectedClassId])
+
   // Persist view state so the user returns to the same class/teacher
   useEffect(() => {
     if (hasUrlParams || !persistView) return

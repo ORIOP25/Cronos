@@ -120,22 +120,19 @@ def _availability_minutes(
     """Union of eligible period minutes per class/teacher, room and week.
 
     Reuses the periods already computed for the demand groups instead of
-    recomputing the joint eligibility intersection a second time.
+    recomputing the joint eligibility intersection a second time. Every eligible
+    room of every assignment contributes, so a shared room set has a physical
+    capacity bound instead of being treated as unlimited.
     """
     available: dict[tuple[str, int, int], set[tuple]] = defaultdict(set)
     room_available: dict[tuple[int, int], set[tuple]] = defaultdict(set)
     for assignment, _remaining, groups in demands:
-        room_id = (
-            next(iter(assignment.eligible_room_ids))
-            if len(assignment.eligible_room_ids) == 1
-            else None
-        )
         for (week, _duration), rows in groups.items():
             for period in rows:
                 row = (period.start_utc, period.end_utc, period.duration_minutes)
                 available[("class", assignment.class_id, week)].add(row)
                 available[("teacher", assignment.teacher_id, week)].add(row)
-                if room_id is not None:
+                for room_id in assignment.eligible_room_ids:
                     room_available[(room_id, week)].add(row)
     return (
         {key: sum(row[2] for row in rows) for key, rows in sorted(available.items())},
@@ -221,6 +218,43 @@ def _greedy_hint(
     return q, final, waste, last_weeks
 
 
+def _impose_room_set_capacity(
+    model: cp_model.CpModel,
+    room_set_terms: Mapping[tuple[frozenset[int], int], list[Any]],
+    room_minutes: Mapping[tuple[int, int], int],
+) -> int:
+    """Necessary capacity bound per eligible room set and week.
+
+    For every distinct eligible room set ``E`` (and the global set), the minutes
+    any subset of ``E`` may consume in a week cannot exceed the physical minutes
+    of the rooms in ``E``. This is Hall's necessary condition for matching
+    assignments to rooms; an over-counted capacity only weakens the bound, so a
+    viable distribution is never cut.
+    """
+    if not room_set_terms:
+        return 0
+    room_sets = {rooms for rooms, _week in room_set_terms}
+    weeks = {week for _rooms, week in room_set_terms}
+    global_rooms = frozenset().union(*room_sets)
+    targets = set(room_sets)
+    targets.add(global_rooms)
+    imposed = 0
+    for target in sorted(targets, key=lambda rooms: (len(rooms), sorted(rooms))):
+        for week in sorted(weeks):
+            terms = [
+                term
+                for (rooms, term_week), group in room_set_terms.items()
+                if term_week == week and rooms <= target
+                for term in group
+            ]
+            if not terms:
+                continue
+            capacity = sum(room_minutes.get((room_id, week), 0) for room_id in target)
+            model.Add(sum(terms) <= capacity)
+            imposed += 1
+    return imposed
+
+
 def plan_annual_quotas(
     snapshot: PlanningSnapshot,
     periods: tuple[Period, ...],
@@ -282,7 +316,7 @@ def plan_annual_quotas(
     last_week_vars: list[Any] = []
     last_week_by_assignment: dict[int, Any] = {}
     load_terms: dict[tuple[str, int, int], list[Any]] = defaultdict(list)
-    room_terms: dict[tuple[int, int], list[Any]] = defaultdict(list)
+    room_set_terms: dict[tuple[frozenset[int], int], list[Any]] = defaultdict(list)
     max_week = max((week for _, _, groups in demands for week, _ in groups), default=0)
     for assignment, remaining, groups in demands:
         if monotonic() >= deadline:
@@ -306,9 +340,7 @@ def plan_annual_quotas(
             model.Add(waste[key] <= (duration - 1) * final[key])
             load_terms[("class", assignment.class_id, week)].append(duration * q[key])
             load_terms[("teacher", assignment.teacher_id, week)].append(duration * q[key])
-            if len(assignment.eligible_room_ids) == 1:
-                room_id = next(iter(assignment.eligible_room_ids))
-                room_terms[(room_id, week)].append(duration * q[key])
+            room_set_terms[(assignment.eligible_room_ids, week)].append(duration * q[key])
         keys = sorted((assignment.assignment_id, week, duration) for week, duration in groups)
         model.Add(sum(final[key] for key in keys) == 1)
         model.Add(sum(key[2] * q[key] - waste[key] for key in keys) == remaining)
@@ -329,10 +361,7 @@ def plan_annual_quotas(
         terms = load_terms.get(key)
         if terms:
             model.Add(sum(terms) <= minutes)
-    for key, minutes in sorted(room_minutes.items()):
-        terms = room_terms.get(key)
-        if terms:
-            model.Add(sum(terms) <= minutes)
+    room_set_constraints = _impose_room_set_capacity(model, room_set_terms, room_minutes)
 
     hint = _greedy_hint(demands, available, room_minutes)
     if hint is not None:
@@ -389,6 +418,7 @@ def plan_annual_quotas(
         "variables": len(model.Proto().variables),
         "build_ms": int((monotonic() - build_start) * 1000),
         "solve_ms": 0,
+        "room_set_constraints": room_set_constraints,
     }
     solve_start = monotonic()
     solver.parameters.max_time_in_seconds = max(0.0, deadline - monotonic())

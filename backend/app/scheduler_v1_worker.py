@@ -123,6 +123,7 @@ async def _execute_claim(claim: JobClaim, lock_connection=None) -> dict[str, obj
         monitor.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await monitor
+    _log_search_outcome(claim, result)
     if result.outcome == OUTCOME_COMPLETE and result.candidate is not None:
         payload = _build_payload(claim, bundle, result)
         async with SessionLocal() as db:
@@ -178,6 +179,26 @@ def _run_search(claim: JobClaim, bundle, cancel_event: threading.Event):
         bundle.policy,
         should_cancel=cancel_event.is_set,
         **settings_values,
+    )
+
+
+def _log_search_outcome(claim: JobClaim, result) -> None:
+    """Emit one structured line per job so a failed search stays diagnosable."""
+    evidence = getattr(result, "evidence", None)
+    logger.info(
+        "scheduler_v1_search_finished",
+        job_id=claim.job_id,
+        organization_id=claim.organization_id,
+        strategy=claim.strategy.value,
+        outcome=result.outcome,
+        stop_reason=getattr(evidence, "stop_reason", None),
+        rounds=getattr(evidence, "rounds", None),
+        certified_stages=getattr(evidence, "certified_stages", None),
+        proposals_excluded=getattr(evidence, "proposals_excluded", None),
+        search_seconds=round(float(getattr(result, "search_seconds", 0.0)), 3),
+        statistics={
+            key: int(value) for key, value in (getattr(result, "statistics", None) or {}).items()
+        },
     )
 
 

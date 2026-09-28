@@ -19,6 +19,7 @@ exploration controller may finish the search early with an explicit reason.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from time import monotonic
@@ -56,12 +57,16 @@ from app.scheduler.infrastructure.annual_model import (
 from app.scheduler.infrastructure.annual_model import (
     QuotaDistribution,
     plan_annual_quotas,
+    week_index,
 )
+from app.scheduler.infrastructure.constructive import construct_schedule
 from app.scheduler.infrastructure.placement_model import (
     STATUS_CANCELLED,
     STATUS_COMPLETE,
     STATUS_FAILED,
+    STATUS_INCONCLUSIVE,
     STATUS_INFEASIBLE,
+    NoEligiblePeriodsError,
     _replace_lesson,
     solve_placement,
 )
@@ -69,6 +74,18 @@ from app.scheduler.infrastructure.placement_model import (
 MAX_FEEDBACK_ROUNDS = 6
 MIN_SEARCH_SECONDS = 0.05
 MAX_STABILITY_MOVES = 50
+
+# At most half of the remaining budget goes to the annual relaxation per
+# feedback round; the detailed placement needs the rest to certify a candidate.
+MASTER_BUDGET_SHARE = 0.5
+
+# A search that exhausts the annual feedback rounds or stops on an inconclusive
+# phase without an incumbent keeps its remaining budget to place the residual
+# demand directly, without an annual quota distribution, over growing week
+# horizons. The seasonal search is the first choice; this path only exists so a
+# real school still receives a complete schedule when the relaxation cannot
+# certify a distribution.
+FALLBACK_HORIZON_FRACTIONS = (0.25, 0.5, 0.75, 1.0)
 
 RELAXATION_SCOPE = "ANNUAL_LATEST_WEEK_LOWER_BOUND"
 
@@ -378,7 +395,8 @@ def _joint_search(
     trajectory_out: list[TrajectoryPoint] | None = None,
 ) -> SearchOutcome:
     start = monotonic()
-    deadline = start + time_limit_seconds
+    hard_deadline = start + time_limit_seconds
+    deadline = hard_deadline
     excluded: list[QuotaDistribution] = []
     window_cache: dict = {}
     incumbent: SearchOutcome | None = None
@@ -398,6 +416,9 @@ def _joint_search(
         trajectory.append(start_point)
         if trajectory_out is not None:
             trajectory_out.append(start_point)
+    # Build the guaranteed candidate before the expensive search so its cost is
+    # inside the budget: a failed search can always return it within the limit.
+    constructed = construct_schedule(snapshot, periods) if incumbent is None else None
     phase_totals: dict[str, int] = {}
     while rounds < max_feedback_rounds:
         if should_cancel is not None and should_cancel():
@@ -407,12 +428,15 @@ def _joint_search(
             interrupted = True
             break
         limit = _prune_week_limit(snapshot, profile, best_vector)
+        # Reserve the other half of the budget for the detailed placement: a
+        # master that consumes the whole window starves the detail and returns
+        # no candidate even when one exists.
         plan = plan_annual_quotas(
             snapshot,
             periods,
             excluded=tuple(excluded),
             latest_week_limit=limit,
-            time_limit_seconds=remaining,
+            time_limit_seconds=max(MIN_SEARCH_SECONDS, remaining * MASTER_BUDGET_SHARE),
             num_workers=num_workers,
             random_seed=random_seed,
         )
@@ -500,6 +524,39 @@ def _joint_search(
             )
         interrupted = True
         break
+    if incumbent is None and constructed is not None:
+        return _constructive_outcome(
+            snapshot,
+            profile,
+            constructed,
+            start=start,
+            exploration=exploration,
+            trajectory_out=trajectory_out,
+            phase_totals=phase_totals,
+            excluded=excluded,
+            rounds=rounds,
+            best_bound=best_bound,
+            best_bound_proven=best_bound_proven,
+        )
+    if incumbent is None and monotonic() < hard_deadline - MIN_SEARCH_SECONDS:
+        fallback = _unrestricted_fallback(
+            snapshot,
+            periods,
+            profile,
+            start=start,
+            deadline=hard_deadline,
+            num_workers=num_workers,
+            random_seed=random_seed,
+            room_cost=room_cost,
+            should_cancel=should_cancel,
+            exploration=exploration,
+            trajectory_out=trajectory_out,
+            phase_totals=phase_totals,
+            excluded=excluded,
+            rounds=rounds,
+        )
+        if fallback is not None:
+            return fallback
     if incumbent is None:
         if exhausted:
             return SearchOutcome(
@@ -518,16 +575,27 @@ def _joint_search(
                 ),
                 "The annual quota relaxation is infeasible.",
                 monotonic() - start,
-                {},
+                dict(phase_totals),
             )
         return SearchOutcome(
             OUTCOME_INCONCLUSIVE,
             None,
             None,
-            None,
+            SearchEvidence(
+                objective_scope="ANNUAL_QUOTA_SEARCH",
+                stages=(),
+                certified_stages=0,
+                stop_reason="SEARCH_STOPPED",
+                rounds=max(rounds, 1),
+                proposals_excluded=len(excluded),
+                relaxation_bound=best_bound,
+                relaxation_incumbent=None,
+                relaxation_proven=best_bound_proven,
+                relaxation_scope=RELAXATION_SCOPE,
+            ),
             "The search stopped before a complete candidate or a proof.",
             monotonic() - start,
-            {},
+            dict(phase_totals),
         )
     if controller_reason is not None:
         stop_reason = controller_reason
@@ -541,7 +609,7 @@ def _joint_search(
     if evidence is not None:
         evidence = replace(
             evidence,
-            rounds=rounds,
+            rounds=max(rounds, 1),
             proposals_excluded=len(excluded),
             relaxation_bound=best_bound,
             relaxation_incumbent=(
@@ -567,6 +635,166 @@ def _joint_search(
         wall_time_seconds=monotonic() - start,
         evidence=evidence,
     )
+
+
+def _constructive_outcome(
+    snapshot: PlanningSnapshot,
+    profile: _SearchProfile,
+    candidate: CandidateSchedule,
+    *,
+    start: float,
+    exploration: ExplorationPolicy | None,
+    trajectory_out: list[TrajectoryPoint] | None,
+    phase_totals: dict[str, int],
+    excluded: list[QuotaDistribution],
+    rounds: int,
+    best_bound: int | None,
+    best_bound_proven: bool,
+) -> SearchOutcome:
+    """Wrap an already validated constructive candidate as a search outcome.
+
+    A fast greedy construction is validated independently before it is accepted,
+    so a real school still receives a complete schedule when the master/detail
+    search cannot settle one within the budget. It never claims a quality
+    certificate.
+    """
+    evidence = SearchEvidence(
+        objective_scope="CONSTRUCTIVE_INITIAL",
+        stages=(),
+        certified_stages=0,
+        stop_reason="CONSTRUCTIVE",
+        rounds=max(rounds, 1),
+        proposals_excluded=len(excluded),
+        relaxation_bound=best_bound,
+        relaxation_incumbent=_latest_week(snapshot, candidate),
+        relaxation_proven=best_bound_proven,
+        relaxation_scope=RELAXATION_SCOPE,
+    )
+    if trajectory_out is not None or exploration is not None:
+        point = TrajectoryPoint(
+            monotonic() - start,
+            _flatten_vector(profile.vector(snapshot, candidate)),
+            complete=True,
+        )
+        if trajectory_out is not None:
+            trajectory_out.append(point)
+        if exploration is not None:
+            decide_stop([point], exploration)
+    return SearchOutcome(
+        OUTCOME_COMPLETE,
+        candidate,
+        _latest_days(snapshot, candidate),
+        evidence,
+        "The constructive route found a complete candidate without a quota certificate.",
+        monotonic() - start,
+        dict(phase_totals),
+        measure_initial_quality(snapshot, candidate),
+    )
+
+
+def _unrestricted_fallback(
+    snapshot: PlanningSnapshot,
+    periods: tuple[Period, ...],
+    profile: _SearchProfile,
+    *,
+    start: float,
+    deadline: float,
+    num_workers: int,
+    random_seed: int,
+    room_cost: Callable[[Assignment, Period, int], int] | None,
+    should_cancel: Callable[[], bool] | None,
+    exploration: ExplorationPolicy | None,
+    trajectory_out: list[TrajectoryPoint] | None,
+    phase_totals: dict[str, int],
+    excluded: list[QuotaDistribution],
+    rounds: int,
+) -> SearchOutcome | None:
+    """Place the residual demand without an annual quota distribution.
+
+    The seasonal search can exhaust its feedback rounds or stop on an
+    inconclusive window without an incumbent. This path solves the detail model
+    directly over progressively larger week horizons, returning the first
+    complete candidate. It never claims a quality certificate.
+    """
+    weeks = sorted({week_index(snapshot.origin, period) for period in periods})
+    if not weeks:
+        return None
+    horizons = sorted(
+        {
+            weeks[min(len(weeks) - 1, max(0, math.ceil(fraction * len(weeks)) - 1))]
+            for fraction in FALLBACK_HORIZON_FRACTIONS
+        }
+    )
+    for index, horizon_week in enumerate(horizons):
+        if should_cancel is not None and should_cancel():
+            return _cancelled(start, "The request was cancelled during the fallback search.")
+        remaining = deadline - monotonic()
+        if remaining <= MIN_SEARCH_SECONDS:
+            break
+        horizon_periods = tuple(
+            period for period in periods if week_index(snapshot.origin, period) <= horizon_week
+        )
+        if not horizon_periods:
+            continue
+        budget = remaining / (len(horizons) - index)
+        try:
+            placement = solve_placement(
+                snapshot,
+                horizon_periods,
+                distribution=None,
+                time_limit_seconds=budget,
+                num_workers=num_workers,
+                random_seed=random_seed,
+                should_cancel=should_cancel,
+                quality_of=profile.refine_quality(snapshot),
+                room_cost=room_cost,
+            )
+        except NoEligiblePeriodsError:
+            continue
+        _merge_statistics(phase_totals, placement.statistics)
+        if placement.status == STATUS_CANCELLED:
+            return _cancelled(start, placement.message)
+        if placement.status == STATUS_COMPLETE and placement.candidate is not None:
+            candidate = placement.candidate
+            if profile.adaptive:
+                candidate = _stabilize_recovery(
+                    snapshot, periods, profile, candidate, deadline=deadline
+                )
+            evidence = placement.evidence
+            if evidence is not None:
+                evidence = replace(
+                    evidence,
+                    stop_reason="FALLBACK_UNRESTRICTED",
+                    rounds=max(rounds, 1),
+                    proposals_excluded=len(excluded),
+                    relaxation_scope=RELAXATION_SCOPE,
+                    relaxation_proven=False,
+                )
+            if trajectory_out is not None or exploration is not None:
+                point = TrajectoryPoint(
+                    monotonic() - start,
+                    _flatten_vector(profile.vector(snapshot, candidate)),
+                    complete=True,
+                )
+                if trajectory_out is not None:
+                    trajectory_out.append(point)
+                if exploration is not None:
+                    decide_stop([point], exploration)
+            return SearchOutcome(
+                OUTCOME_COMPLETE,
+                candidate,
+                placement.objective_days,
+                evidence,
+                "The fallback placement returned a complete candidate without a quota certificate.",
+                monotonic() - start,
+                dict(phase_totals),
+                measure_initial_quality(snapshot, candidate),
+            )
+        if placement.status == STATUS_INCONCLUSIVE:
+            continue
+        if placement.status == STATUS_FAILED:
+            break
+    return None
 
 
 def _profile_cache_salt(profile: _SearchProfile, snapshot: PlanningSnapshot) -> str:

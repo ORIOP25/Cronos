@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   status: null,
   currentDraft: null,
   jobData: null,
+  classes: [],
   generate: vi.fn(),
   approve: vi.fn(),
   schedulerStatusRefetch: vi.fn(),
@@ -41,7 +42,7 @@ vi.mock('../features/members/data', () => ({
 }))
 
 vi.mock('../features/catalog/data', () => ({
-  useClasses: () => ({ data: [] }),
+  useClasses: () => ({ data: mocks.classes }),
   useClassDetails: () => ({ data: null }),
   useTimeslots: () => ({ data: [] }),
   useWeekGridVersions: () => ({ data: null }),
@@ -89,6 +90,7 @@ describe('Schedules scheduler flow', () => {
     mocks.weekRefetch.mockReset()
     mocks.currentDraft = null
     mocks.jobData = null
+    mocks.classes = []
   })
 
   it('shows the pending proposal and an update action that requires confirmation', async () => {
@@ -176,5 +178,21 @@ describe('Schedules scheduler flow', () => {
     expect(await screen.findByText(/Existem alterações mais recentes/)).toHaveTextContent(
       'Gere uma nova proposta para continuar.'
     )
+  })
+
+  it('drops a persisted class that is not part of the current organization', async () => {
+    writeExpiringValue(localStorage, 'hz-schedule-view-org-1', {
+      viewMode: 'class',
+      selectedClassId: '33',
+      selectedTeacherId: '',
+      weekStart: '2026-09-21',
+    })
+    mocks.status = proposalStatus({ pending_proposal: null })
+    mocks.classes = [1, 2, 3, 4, 5, 6].map((id) => ({ id, name: `Turma ${id}` }))
+
+    renderPage()
+
+    const select = await screen.findByLabelText('Turma')
+    await waitFor(() => expect(select).toHaveValue(''))
   })
 })

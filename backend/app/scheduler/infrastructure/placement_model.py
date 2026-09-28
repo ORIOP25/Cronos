@@ -854,7 +854,12 @@ def _solve_scope(
     pre_solve_budget = deadline - monotonic()
     if pre_solve_budget > MIN_STAGE_SECONDS:
         model.Minimize(0)
-        solver.parameters.max_time_in_seconds = min(2.0, pre_solve_budget * 0.25)
+        # Feasibility comes before the lexicographic quality stages. A window
+        # that cannot find any selection is worth less than a lower-quality one,
+        # so the probe gets a real share of the window instead of a fixed 2s.
+        solver.parameters.max_time_in_seconds = min(
+            pre_solve_budget, max(2.0, pre_solve_budget * 0.5)
+        )
         pre_status = solver.Solve(model)
         if pre_status == cp_model.INFEASIBLE:
             return STATUS_INFEASIBLE, None, records, STOP_SAFETY
@@ -1368,6 +1373,8 @@ def solve_placement(
                 room_cost=room_cost,
             )
             statistics["solve_ms"] += int((monotonic() - solve_start) * 1000)
+            if selections is not None and "first_candidate_ms" not in statistics:
+                statistics["first_candidate_ms"] = int((monotonic() - start) * 1000)
             records.extend(scope_records)
             if (
                 selections is not None

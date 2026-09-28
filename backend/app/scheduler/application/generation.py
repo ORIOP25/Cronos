@@ -252,6 +252,7 @@ def generate_complete(
             wall_time_seconds=monotonic() - started,
             search_seconds=search_seconds,
             evidence=outcome.evidence,
+            statistics=dict(outcome.statistics),
         )
     return GenerationResult(
         outcome.status,
@@ -260,4 +261,5 @@ def generate_complete(
         wall_time_seconds=monotonic() - started,
         search_seconds=search_seconds,
         evidence=outcome.evidence,
+        statistics=dict(outcome.statistics),
     )
