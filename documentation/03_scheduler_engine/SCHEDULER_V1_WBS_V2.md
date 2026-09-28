@@ -2,7 +2,7 @@
 
 Data: 25 de setembro de 2026.
 
-Estado: W00–W12 concluídos; resíduos do audit (R55.00–R55.10, B01–B05) fechados. W13–W14 por iniciar. Esta revisão substitui o WBS de 23 de setembro de 2026 a partir de W06; o original permanece como referência histórica. Registos: [W08–W09](SCHEDULER_V1_W08_W09_STATUS.md), [W10–W11](SCHEDULER_V1_W10_W11_STATUS.md), [W12](SCHEDULER_V1_W12_STATUS.md).
+Estado: W00–W13 concluídos; resíduos do audit (R55.00–R55.10, B01–B05) fechados; W14 por iniciar. Esta revisão substitui o WBS de 23 de setembro de 2026 a partir de W06; o original permanece como referência histórica. Registos: [W08–W09](SCHEDULER_V1_W08_W09_STATUS.md), [W10–W11](SCHEDULER_V1_W10_W11_STATUS.md), [W12](SCHEDULER_V1_W12_STATUS.md), [W13](SCHEDULER_V1_W13_STATUS.md).
 
 Documentos de referência: [plano v2](SCHEDULER_V1_REVAMP_PLAN_V2.md) e [especificação técnica v2](SCHEDULER_V1_TECH_SPEC_V2.md).
 Branch de execução: `codex/scheduler-v1-revamp`.
@@ -92,7 +92,7 @@ Uma alteração de fixture é uma nova versão; não apaga o resultado anterior.
 | W10 | Campanhas combinadas e anuais | P6–P10 | W06; completar com W07–W09 | Concluído ([registo](SCHEDULER_V1_W10_W11_STATUS.md)) |
 | W11 | Calibração e recursos | P10 | W07, W10 | Concluído ([registo](SCHEDULER_V1_W10_W11_STATUS.md)) |
 | W12 | Remoção de legado e candidate local | P11 | W00–W11 | Concluído ([registo](SCHEDULER_V1_W12_STATUS.md)) |
-| W13 | Validação remota | P12A | W12 aceite | Por iniciar |
+| W13 | Validação remota | P12A | W12 aceite | Concluído ([registo](SCHEDULER_V1_W13_STATUS.md)) |
 | W14 | Corte final e entrega | P12B | W13 aceite | Por iniciar |
 
 Os pacotes descrevem dependências, não obrigam a PRs gigantes.
@@ -256,7 +256,7 @@ Repetir campanha ampla quando o algoritmo, política, schema ou fronteira de con
 Bloquear o gate por violações de integridade, isolamento, cobertura ou publicação incorreta.
 Não compensar um erro crítico com uma média de qualidade alta.
 
-### W13 — Validação remota, apenas após W12 (por iniciar)
+### W13 — Validação remota, apenas após W12 (concluída)
 
 | ID | Trabalho e entrega concreta | Teste/evidência para fecho |
 | :--- | :--- | :--- |
