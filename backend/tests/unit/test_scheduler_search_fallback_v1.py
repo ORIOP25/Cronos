@@ -108,3 +108,41 @@ def test_stop_at_first_complete_returns_the_constructor_without_optimizing():
     assert validate_candidate(fixture.snapshot, outcome.candidate).valid
     assert outcome.evidence is not None
     assert outcome.evidence.stop_reason == "CONSTRUCTIVE"
+
+
+def test_the_search_never_returns_worse_than_the_constructor(monkeypatch):
+    from dataclasses import replace
+
+    from app.scheduler.domain.candidate import CandidateSchedule
+    from app.scheduler.infrastructure.constructive import construct_schedule
+    from app.scheduler.lab.typology import build_typology_fixture
+
+    fixture = build_typology_fixture(3)
+    snapshot, periods = fixture.snapshot, fixture.periods
+    better = construct_schedule(snapshot, periods)
+    assert better is not None
+    latest = max(better.lessons, key=lambda lesson: lesson.period.start_utc)
+    moved = replace(latest, period=periods[-1])
+    worse = CandidateSchedule(
+        tuple(
+            moved if lesson.lesson_id == latest.lesson_id else lesson for lesson in better.lessons
+        )
+    )
+    assert validate_candidate(snapshot, worse).valid
+
+    def worse_placement(*_args, **_kwargs) -> PlacementOutcome:
+        return PlacementOutcome("COMPLETE", worse, None, 0.0, "UNRESTRICTED", {})
+
+    monkeypatch.setattr(search_module, "solve_placement", worse_placement)
+    outcome = search_module.search_complete_schedule(
+        snapshot, periods, time_limit_seconds=10.0, num_workers=1, random_seed=1
+    )
+
+    assert outcome.status == "COMPLETE"
+    assert outcome.candidate is not None
+    assert validate_candidate(snapshot, outcome.candidate).valid
+    assert outcome.evidence is not None
+    assert outcome.evidence.stop_reason == "CONSTRUCTIVE"
+    assert max(lesson.period.school_date for lesson in outcome.candidate.lessons) == max(
+        lesson.period.school_date for lesson in better.lessons
+    )

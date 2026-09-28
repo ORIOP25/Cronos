@@ -421,7 +421,9 @@ def _joint_search(
     # inside the budget: a failed search can always return it within the limit.
     constructed = construct_schedule(snapshot, periods) if incumbent is None else None
     phase_totals: dict[str, int] = {}
-    if constructed is not None and stop_at_first_complete:
+
+    def constructive_outcome() -> SearchOutcome:
+        assert constructed is not None
         return _constructive_outcome(
             snapshot,
             profile,
@@ -435,6 +437,9 @@ def _joint_search(
             best_bound=best_bound,
             best_bound_proven=best_bound_proven,
         )
+
+    if constructed is not None and stop_at_first_complete:
+        return constructive_outcome()
     while rounds < max_feedback_rounds:
         if should_cancel is not None and should_cancel():
             return _cancelled(start, "The request was cancelled during the search.")
@@ -540,19 +545,16 @@ def _joint_search(
         interrupted = True
         break
     if incumbent is None and constructed is not None:
-        return _constructive_outcome(
-            snapshot,
-            profile,
-            constructed,
-            start=start,
-            exploration=exploration,
-            trajectory_out=trajectory_out,
-            phase_totals=phase_totals,
-            excluded=excluded,
-            rounds=rounds,
-            best_bound=best_bound,
-            best_bound_proven=best_bound_proven,
-        )
+        return constructive_outcome()
+    # The search only replaces the guaranteed candidate when it is strictly
+    # better by the full quality vector. Without this the first detailed
+    # candidate would win over a better constructor when the search is cut short.
+    if (
+        incumbent is not None
+        and constructed is not None
+        and profile.vector(snapshot, constructed) < best_vector
+    ):
+        return constructive_outcome()
     if incumbent is None and monotonic() < hard_deadline - MIN_SEARCH_SECONDS:
         fallback = _unrestricted_fallback(
             snapshot,
