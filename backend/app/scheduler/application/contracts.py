@@ -24,6 +24,7 @@ class ScheduleSearch(Protocol):
         num_workers: int,
         random_seed: int,
         should_cancel: Callable[[], bool] | None = None,
+        stop_at_first_complete: bool = False,
     ) -> SearchOutcome: ...
 
 

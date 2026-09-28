@@ -144,6 +144,7 @@ def generate_complete(
     time_limit_seconds: float = 10.0,
     num_workers: int = 1,
     random_seed: int = 1,
+    stop_at_first_complete: bool = False,
 ) -> GenerationResult:
     """Produce a complete, independently validated schedule or an honest outcome."""
     if type(snapshot) is not PlanningSnapshot:
@@ -182,6 +183,7 @@ def generate_complete(
         num_workers=num_workers,
         random_seed=random_seed,
         should_cancel=should_cancel,
+        stop_at_first_complete=stop_at_first_complete,
     )
     search_seconds = outcome.wall_time_seconds
     if should_cancel is not None and should_cancel():

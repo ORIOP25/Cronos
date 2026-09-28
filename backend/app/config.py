@@ -141,6 +141,8 @@ class Settings(BaseSettings):
     SCHEDULER_V1_HEARTBEAT_SECONDS: float = 5.0
     SCHEDULER_V1_ABANDONED_SECONDS: int = 120
     SCHEDULER_V1_NUM_WORKERS: int = 1
+    # Experiment: return the first complete candidate without optimizing it.
+    SCHEDULER_V1_STOP_AT_FIRST_COMPLETE: bool = False
 
     # --- Lógica Inteligente: Validador ---
     # Este código corre DEPOIS de carregar o .env

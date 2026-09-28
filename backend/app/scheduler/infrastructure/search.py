@@ -393,6 +393,7 @@ def _joint_search(
     exploration: ExplorationPolicy | None = None,
     should_cancel: Callable[[], bool] | None = None,
     trajectory_out: list[TrajectoryPoint] | None = None,
+    stop_at_first_complete: bool = False,
 ) -> SearchOutcome:
     start = monotonic()
     hard_deadline = start + time_limit_seconds
@@ -420,6 +421,20 @@ def _joint_search(
     # inside the budget: a failed search can always return it within the limit.
     constructed = construct_schedule(snapshot, periods) if incumbent is None else None
     phase_totals: dict[str, int] = {}
+    if constructed is not None and stop_at_first_complete:
+        return _constructive_outcome(
+            snapshot,
+            profile,
+            constructed,
+            start=start,
+            exploration=exploration,
+            trajectory_out=trajectory_out,
+            phase_totals=phase_totals,
+            excluded=excluded,
+            rounds=rounds,
+            best_bound=best_bound,
+            best_bound_proven=best_bound_proven,
+        )
     while rounds < max_feedback_rounds:
         if should_cancel is not None and should_cancel():
             return _cancelled(start, "The request was cancelled during the search.")
@@ -823,6 +838,7 @@ def search_complete_schedule(
     random_seed: int = 1,
     max_feedback_rounds: int = MAX_FEEDBACK_ROUNDS,
     should_cancel: Callable[[], bool] | None = None,
+    stop_at_first_complete: bool = False,
 ) -> SearchOutcome:
     if type(snapshot) is not PlanningSnapshot:
         raise ValueError("The search needs a planning snapshot.")
@@ -839,6 +855,7 @@ def search_complete_schedule(
         random_seed=random_seed,
         max_feedback_rounds=max_feedback_rounds,
         should_cancel=should_cancel,
+        stop_at_first_complete=stop_at_first_complete,
     )
 
 

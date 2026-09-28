@@ -166,6 +166,7 @@ def _run_search(claim: JobClaim, bundle, cancel_event: threading.Event):
             assess_recovery=True,
             should_cancel=cancel_event.is_set,
             recovery_time_limit_seconds=RECOVERY_ASSESSMENT_SECONDS,
+            stop_at_first_complete=bool(settings.SCHEDULER_V1_STOP_AT_FIRST_COMPLETE),
             **settings_values,
         )
     if bundle.policy is None or bundle.baseline is None:

@@ -89,3 +89,22 @@ def test_the_constructive_fallback_settles_a_viable_case(monkeypatch):
     assert validate_candidate(fixture.snapshot, outcome.candidate).valid
     assert outcome.evidence is not None
     assert outcome.evidence.stop_reason == "CONSTRUCTIVE"
+
+
+def test_stop_at_first_complete_returns_the_constructor_without_optimizing():
+    fixture = build_scale_fixture(6, seed=1)
+
+    outcome = search_module.search_complete_schedule(
+        fixture.snapshot,
+        fixture.periods,
+        time_limit_seconds=10.0,
+        num_workers=2,
+        random_seed=3,
+        stop_at_first_complete=True,
+    )
+
+    assert outcome.status == "COMPLETE"
+    assert outcome.candidate is not None
+    assert validate_candidate(fixture.snapshot, outcome.candidate).valid
+    assert outcome.evidence is not None
+    assert outcome.evidence.stop_reason == "CONSTRUCTIVE"
