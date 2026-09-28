@@ -26,6 +26,7 @@ const PRESENTATIONS = {
   HOLIDAY_SYNC_FAILED: { title: 'Calendário não sincronizado', message: 'Não foi possível sincronizar os feriados. Desative a sincronização automática ou tente novamente.', retryable: true },
   CALENDAR_EVENT_CONFIRMATION_REQUIRED: { title: 'Confirmação necessária', message: 'O estágio remove aulas do horário. Pré-visualize e confirme a alteração.' },
   CALENDAR_EVENT_STALE: { title: 'O horário mudou', message: 'As aulas afetadas mudaram desde a pré-visualização. Repita a pré-visualização antes de guardar.', retryable: true },
+  INTERNSHIP_FLOW_INVALID: { title: 'Dados do fluxo inválidos', message: 'Verifique o ano letivo, as datas e se selecionou apenas turmas ativas da escola.' },
   teacher_competency_missing: { title: 'Competência não atribuída', message: 'O professor não tem competência para lecionar esta disciplina.' },
   duplicate_timeslot: { title: 'Horário repetido', message: 'A disponibilidade contém um horário duplicado. Reveja os horários e tente novamente.' },
   LEGAL_ACCEPTANCE_REQUIRED: { title: 'Aceitação necessária', message: 'A organização deve aceitar os documentos legais antes de continuar.' },

@@ -510,6 +510,7 @@ class ClassRead(ClassBase):
     grade_level: int
     start_year: int
     end_year: int
+    is_archived: bool = False
     model_config = model_config
 
 

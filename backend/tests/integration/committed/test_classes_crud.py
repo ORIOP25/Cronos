@@ -119,10 +119,15 @@ class TestClassesCRUD:
 
     # ---------- READ ----------
 
-    async def test_list_classes(self, async_client: AsyncClient, clerk_admin_headers: dict):
+    async def test_list_classes(
+        self,
+        async_client: AsyncClient,
+        clerk_admin_headers: dict,
+        db_session: AsyncSession,
+    ):
         """✅ Listar turmas da organização"""
         course_id = await _create_course(async_client, clerk_admin_headers)
-        await async_client.post(
+        created = await async_client.post(
             f"{API}/courses/{course_id}/classes",
             json={
                 "name": "Turma Lista",
@@ -132,11 +137,16 @@ class TestClassesCRUD:
             },
             headers=clerk_admin_headers,
         )
+        school_class = await db_session.get(models.Class, created.json()["id"])
+        school_class.is_archived = True
+        await db_session.commit()
+
         resp = await async_client.get(f"{API}/classes/", headers=clerk_admin_headers)
         assert resp.status_code == 200
         data = resp.json()
         assert isinstance(data, list)
         assert any(c["name"] == "Turma Lista" for c in data)
+        assert next(c for c in data if c["name"] == "Turma Lista")["is_archived"] is True
 
     async def test_get_class_full_detail(
         self, async_client: AsyncClient, clerk_admin_headers: dict

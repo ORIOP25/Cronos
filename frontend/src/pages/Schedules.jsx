@@ -51,7 +51,10 @@ const NO_REASON_MESSAGE = (
   + 'Pode otimizar as próximas semanas quando passarem 28 dias.'
 )
 
-function eligibilityMessage(eligibility) {
+function eligibilityMessage(eligibility, schoolYear) {
+  if (schoolYear && !schoolYear.preferred_end_date) {
+    return 'Defina a data preferencial de fim em Configuração antes de gerar o horário.'
+  }
   if (!eligibility || eligibility.can_generate) return ''
   if (eligibility.blocker) {
     return ELIGIBILITY_MESSAGES[eligibility.blocker] || 'A geração não está disponível de momento.'
@@ -192,7 +195,8 @@ const Schedules = ({ initialClassId = '', initialWeekStart, persistView = true, 
   const effectiveJobId = activeJobId ?? serverJobId
   const { data: jobData } = useScheduleTaskStatus(effectiveJobId)
   const eligibility = schedulerStatus?.eligibility
-  const canGenerateNow = Boolean(eligibility?.can_generate)
+  const schoolYear = schedulerStatus?.school_year
+  const canGenerateNow = Boolean(eligibility?.can_generate && schoolYear?.preferred_end_date)
   const isFirstGeneration = schedulerStatus?.publication_state !== 'PUBLISHED'
 
   // Sprint 4 hooks
@@ -421,9 +425,9 @@ const Schedules = ({ initialClassId = '', initialWeekStart, persistView = true, 
             </CAlert>
           )}
           {effectiveJobId && <GenerationStatusPanel jobId={effectiveJobId} />}
-          {!hasPendingDraft && !isGenerating && eligibilityMessage(eligibility) && (
+          {!hasPendingDraft && !isGenerating && eligibilityMessage(eligibility, schoolYear) && (
             <CAlert color="secondary" className="mb-4" style={{ whiteSpace: 'pre-line' }}>
-              {eligibilityMessage(eligibility)}
+              {eligibilityMessage(eligibility, schoolYear)}
             </CAlert>
           )}
           {hasPendingDraft && (currentDraft || schedulerStatus?.pending_proposal) && (

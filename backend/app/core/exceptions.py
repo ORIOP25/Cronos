@@ -63,6 +63,9 @@ PUBLIC_ERROR_CATALOG: dict[str, dict[str, Any]] = {
     "duplicate_timeslot": {
         "message": "A disponibilidade contém um horário duplicado.",
     },
+    "INTERNSHIP_FLOW_INVALID": {
+        "message": "Verifique o ano letivo, as datas e se selecionou apenas turmas ativas da escola."
+    },
     "FOUNDATION_DRAFT_VERSION_CONFLICT": {
         "message": "O rascunho foi alterado por outro administrador. Atualize e tente novamente.",
         "retryable": True,

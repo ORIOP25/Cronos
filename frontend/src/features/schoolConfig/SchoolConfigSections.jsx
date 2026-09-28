@@ -229,7 +229,8 @@ export const CalendarSection = () => {
   }
 
   const visibleClasses = classes.filter((item) => (
-    item.name?.toLowerCase().includes(classFilter.trim().toLowerCase())
+    (!item.is_archived || newEvent.class_ids.includes(item.id))
+    && item.name?.toLowerCase().includes(classFilter.trim().toLowerCase())
   ))
 
   const sortedEvents = [...events].sort((left, right) => left.start_date.localeCompare(right.start_date))

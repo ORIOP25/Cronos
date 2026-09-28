@@ -36,6 +36,17 @@ describe('api error contract', () => {
     expect(presentation.retryable).toBe(true)
   })
 
+  it('presents invalid internship flow input as a validation error', () => {
+    const presentation = getApiErrorPresentation({
+      response: { status: 400, data: { detail: { code: 'INTERNSHIP_FLOW_INVALID' } } },
+    })
+
+    expect(presentation.code).toBe('INTERNSHIP_FLOW_INVALID')
+    expect(presentation.title).toContain('fluxo')
+    expect(presentation.message).toContain('turmas')
+    expect(presentation.supportRequired).toBe(false)
+  })
+
   it('maps status and context when the server cannot provide a code', () => {
     expect(getApiErrorPresentation({ response: { status: 401 } }, 'auth').code)
       .toBe('authentication_required')

@@ -82,6 +82,27 @@ describe('SchoolConfig internship flows', () => {
     expect(screen.queryByRole('button', { name: /editar estágio 10a/i })).not.toBeInTheDocument()
   })
 
+  it('does not offer archived classes when creating an internship flow', async () => {
+    apiClient.get.mockImplementation((url) => {
+      if (url === '/school/calendar-events/') return Promise.resolve([])
+      if (url === '/classes/') {
+        return Promise.resolve([
+          { id: 1, name: '10A', is_archived: false },
+          { id: 2, name: '9A arquivada', is_archived: true },
+        ])
+      }
+      if (url === '/school/settings/') return Promise.resolve(settingsResponse())
+      return Promise.resolve([])
+    })
+
+    renderWithProviders(<CalendarSection />)
+    await screen.findByText('Adicionar Evento')
+    fireEvent.change(screen.getByLabelText('Tipo'), { target: { value: 'internship_flow' } })
+
+    expect(screen.getByRole('checkbox', { name: '10A' })).toBeInTheDocument()
+    expect(screen.queryByRole('checkbox', { name: '9A arquivada' })).not.toBeInTheDocument()
+  })
+
   it('asks for confirmation before regenerating the schedule', async () => {
     apiClient.get.mockImplementation((url) => {
       if (url === '/school/calendar-events/') return Promise.resolve([])

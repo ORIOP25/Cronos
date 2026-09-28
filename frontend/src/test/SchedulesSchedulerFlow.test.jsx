@@ -67,6 +67,7 @@ function renderPage() {
 function proposalStatus(overrides = {}) {
   return {
     configured: true,
+    school_year: { preferred_end_date: '2027-06-15' },
     publication_state: 'UNPUBLISHED',
     active_version_id: null,
     revisions: { input: 0, planning: 0, last_completed_planning: null, last_successful_generation_at: null },
@@ -121,6 +122,19 @@ describe('Schedules scheduler flow', () => {
 
     expect(screen.getByRole('button', { name: 'Gerar horário' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Atualizar horário' })).not.toBeInTheDocument()
+  })
+
+  it('explains the missing preferred end date before generation', () => {
+    mocks.status = proposalStatus({
+      school_year: { preferred_end_date: null },
+      pending_proposal: null,
+    })
+
+    renderPage()
+
+    expect(screen.queryByRole('button', { name: 'Gerar horário' })).not.toBeInTheDocument()
+    expect(screen.getByText(/Defina a data preferencial de fim/i)).toBeInTheDocument()
+    expect(mocks.generate).not.toHaveBeenCalled()
   })
 
   it('explains that there is nothing to generate when there is no reason', () => {
