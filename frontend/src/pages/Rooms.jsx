@@ -98,6 +98,7 @@ const Rooms = ({ readOnly = false, allowedActions }) => {
             allowEdit={canUpdate}
             allowDelete={canDelete}
             getRowLabel={(room) => room.name}
+            deleteMessage="Remover esta sala? As regras de configuração que a usam serão retiradas e o histórico de horários será preservado. Se estiver no horário atual, a remoção é bloqueada."
           />
 
       <GenericModalForm

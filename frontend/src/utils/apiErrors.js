@@ -5,6 +5,8 @@ const PRESENTATIONS = {
   access_forbidden: { title: 'Acesso não disponível', message: 'Não tem permissão para realizar esta ação.' },
   resource_not_found: { title: 'Não encontramos esse recurso', message: 'O recurso pedido já não existe ou não está disponível.' },
   conflict: { title: 'Os dados foram alterados', message: 'Atualize a página e tente novamente.', retryable: true },
+  resource_in_use: { title: 'Recurso em utilização', message: 'Este recurso está a ser utilizado no horário atual. Remova ou republique o horário primeiro.' },
+  course_has_classes: { title: 'Turmas atuais', message: 'Apague primeiro as turmas atuais deste curso.' },
   validation_error: { title: 'Reveja os dados', message: 'Reveja os dados indicados e tente novamente.' },
   bad_request: { title: 'Não foi possível concluir', message: 'Não foi possível processar o pedido.' },
   too_many_requests: { title: 'Aguarde um momento', message: 'Foram efetuadas demasiadas tentativas. Aguarde e tente novamente.', retryable: true },

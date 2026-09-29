@@ -281,6 +281,70 @@ async def test_preflight_rejects_room_that_cannot_fit_assigned_class(db_session)
     assert "Turma grande / Laboratório (30 lugares)" in errors[0]
 
 
+async def test_preflight_ignores_archived_room(db_session):
+    org, _ = await create_org_and_user(
+        db_session,
+        clerk_user_id="preflight-archived-room-user",
+        clerk_org_id="preflight-archived-room-org",
+    )
+    course = models.Course(organization_id=org.id, name="Curso Sala", abbreviation="CSA")
+    subject = models.Subject(
+        organization_id=org.id,
+        name="Laboratório Arquivado",
+        required_room_type=models.RoomType.lab,
+    )
+    db_session.add_all([course, subject])
+    await db_session.flush()
+    school_class = models.Class(
+        organization_id=org.id,
+        course_id=course.id,
+        name="Turma média",
+        size=20,
+        grade_level=10,
+        start_year=2025,
+        end_year=2028,
+    )
+    room = models.Room(
+        organization_id=org.id,
+        name="Lab arquivado",
+        type=models.RoomType.lab,
+        capacity=30,
+        is_archived=True,
+    )
+    db_session.add_all([school_class, room])
+    await db_session.flush()
+    db_session.add(
+        models.Module(
+            organization_id=org.id,
+            subject_id=subject.id,
+            name="Módulo Sala",
+            required_minutes=60,
+            order=0,
+        )
+    )
+    teacher = await create_teacher_profile(
+        db_session, organization_id=org.id, subject_ids=[subject.id]
+    )
+    db_session.add(
+        models.ClassSubjectLink(
+            organization_id=org.id,
+            class_id=school_class.id,
+            subject_id=subject.id,
+            grade_level=10,
+            teacher_id=teacher.id,
+        )
+    )
+    await db_session.flush()
+
+    blocked = await _validate_subject_requirements(db_session, org.id, {subject.id})
+    assert blocked and "Turmas sem sala compatível" in blocked[0]
+
+    room.is_archived = False
+    await db_session.flush()
+    allowed = await _validate_subject_requirements(db_session, org.id, {subject.id})
+    assert allowed == []
+
+
 async def test_preparation_dashboard_embeds_single_prevalidation_snapshot(
     db_session, override_auth_actor
 ):

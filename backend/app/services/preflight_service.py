@@ -184,6 +184,7 @@ async def _validate_subject_requirements(
         models.Room.organization_id == organization_id,
         models.Room.type == models.Subject.required_room_type,
         models.Room.capacity >= models.Class.size,
+        models.Room.is_archived.is_(False),
     )
     incompatible_rows = await db.execute(
         sa_select(models.Class.name, models.Subject.name, models.Class.size)

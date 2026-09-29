@@ -608,6 +608,7 @@ class SubjectRead(SubjectBase):
     id: int
     organization_id: int
     modules: list[ModuleRead] = []
+    is_archived: bool = False
     model_config = model_config
 
 
@@ -631,6 +632,7 @@ class RoomUpdate(BaseModel):
 class RoomRead(RoomBase):
     id: int
     organization_id: int
+    is_archived: bool = False
     model_config = model_config
 
 
@@ -1155,6 +1157,7 @@ class SubjectSimple(BaseModel):
 class CourseRead(CourseBase):
     id: int
     organization_id: int
+    is_archived: bool = False
     model_config = ConfigDict(from_attributes=True)
 
 

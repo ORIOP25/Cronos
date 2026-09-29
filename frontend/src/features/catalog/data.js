@@ -156,7 +156,7 @@ const useDeleteEntity = (entityKey, dependentRoots = []) => {
 
   return useMutation({
     mutationFn: async (id) => {
-      await apiClient.delete(`/${entityKey}/${id}`)
+      return apiClient.delete(`/${entityKey}/${id}`)
     },
     onSuccess: () => {
       void invalidateOrgQueries(queryClient, orgId, [entityKey, ...dependentRoots])
@@ -254,7 +254,7 @@ export const useDeleteCourse = () => {
 
   return useMutation({
     mutationFn: async (courseId) => {
-      await apiClient.delete(`/courses/${courseId}`)
+      return apiClient.delete(`/courses/${courseId}`)
     },
     onSuccess: () => {
       void invalidateOrgQueries(queryClient, orgId, ['courses'])
@@ -305,7 +305,7 @@ export const useDeleteCourseClass = () => {
 
   return useMutation({
     mutationFn: async ({ courseId, classId }) => {
-      await apiClient.delete(`/courses/${courseId}/classes/${classId}`)
+      return apiClient.delete(`/courses/${courseId}/classes/${classId}`)
     },
     onSuccess: (_data, variables) => {
       void invalidateOrgQueries(queryClient, orgId, ['courses', 'classes'])

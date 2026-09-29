@@ -4,6 +4,7 @@ from sqlalchemy.orm import selectinload
 
 from app import models, schemas
 from app.core.exceptions import AppError
+from app.services import resource_removal
 from app.services.scheduler_state_service import record_scheduler_change
 
 
@@ -47,7 +48,10 @@ async def _subject_is_scheduled(db: AsyncSession, organization_id: int, subject_
 async def get_subjects_by_org(db: AsyncSession, organization_id: int):
     stmt = (
         select(models.Subject)
-        .where(models.Subject.organization_id == organization_id)
+        .where(
+            models.Subject.organization_id == organization_id,
+            models.Subject.is_archived.is_(False),
+        )
         .order_by(models.Subject.name)
         .options(selectinload(models.Subject.modules))
     )
@@ -276,11 +280,15 @@ async def delete_subject(
     subject_id: int,
     organization_id: int,
     changed_by_membership_id: int | None = None,
-):
+) -> str:
+    """Remove uma disciplina da gestão atual e devolve o efeito aplicado.
+
+    Uma disciplina publicada ou com operação em curso fica bloqueada. Com
+    histórico (horários, sumários ou progresso) é arquivada, preservando os
+    módulos e o ledger. Sem referências é eliminada fisicamente. As
+    associações de configuração (turmas, cursos e regras) são sempre
+    retiradas na mesma transação.
     """
-    Remove uma disciplina. Protege se existirem aulas associadas.
-    """
-    # 1. Buscar disciplina
     result = await db.execute(
         select(models.Subject)
         .where(
@@ -298,39 +306,40 @@ async def delete_subject(
             detail=f"Subject {subject_id} was not found in organization {organization_id}.",
         )
 
-    for model in (
-        models.ClassSubjectLink,
-        models.ActiveScheduleBlock,
-        models.ScheduleDraftBlock,
-        models.OperationalScheduleBlock,
-    ):
-        if (
-            await db.execute(
-                select(model.id).where(
-                    model.organization_id == organization_id,
-                    model.subject_id == subject_id,
-                )
-            )
-        ).first():
-            raise AppError(
-                kind="bad_request",
-                code="bad_request",
-                detail=f"Subject {subject_id} has dependencies and cannot be deleted.",
-            )
+    if await resource_removal.subject_in_use(db, organization_id, subject_id):
+        raise AppError(
+            kind="conflict",
+            code="resource_in_use",
+            detail=f"Subject {subject_id} is used by the active schedule.",
+        )
 
-    # 3. Apagar
     before = _subject_demand_snapshot(item)
-    active_resource = await _subject_is_scheduled(db, organization_id, subject_id)
-    await db.delete(item)
+    effect = (
+        "archive"
+        if await resource_removal.subject_has_history(db, organization_id, subject_id)
+        else "hard_delete"
+    )
+    await resource_removal.remove_subject_configuration(db, organization_id, subject_id)
+
+    if effect == "hard_delete":
+        operation = models.SchedulerStateChangeOperation.DELETE
+        after = None
+        await db.delete(item)
+    else:
+        operation = models.SchedulerStateChangeOperation.UPDATE
+        item.is_archived = True
+        after = {**before, "is_archived": True}
+
     await record_scheduler_change(
         db,
         organization_id,
         entity_type="SUBJECT_DEMAND",
         entity_id=item.id,
-        operation=models.SchedulerStateChangeOperation.DELETE,
+        operation=operation,
         before=before,
-        after=None,
+        after=after,
         changed_by_membership_id=changed_by_membership_id,
-        active_resource=active_resource,
+        active_resource=False,
     )
     await db.flush()
+    return effect

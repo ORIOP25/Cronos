@@ -135,7 +135,10 @@ def _get_overview(
             cast(models.Room.type, String).label("room_type"),
             func.count(models.Room.id).label("room_count"),
         )
-        .where(models.Room.organization_id == organization_id)
+        .where(
+            models.Room.organization_id == organization_id,
+            models.Room.is_archived.is_(False),
+        )
         .group_by(models.Room.type)
         .subquery()
     )
@@ -178,10 +181,26 @@ def _get_overview(
                 models.LessonOccurrence.status == models.LessonOccurrenceStatus.SUBSTITUTED,
             ),
             _count(models.Teacher, models.Teacher.organization_id == organization_id),
-            _count(models.Class, models.Class.organization_id == organization_id),
-            _count(models.Course, models.Course.organization_id == organization_id),
-            _count(models.Subject, models.Subject.organization_id == organization_id),
-            _count(models.Room, models.Room.organization_id == organization_id),
+            _count(
+                models.Class,
+                models.Class.organization_id == organization_id,
+                models.Class.is_archived.is_(False),
+            ),
+            _count(
+                models.Course,
+                models.Course.organization_id == organization_id,
+                models.Course.is_archived.is_(False),
+            ),
+            _count(
+                models.Subject,
+                models.Subject.organization_id == organization_id,
+                models.Subject.is_archived.is_(False),
+            ),
+            _count(
+                models.Room,
+                models.Room.organization_id == organization_id,
+                models.Room.is_archived.is_(False),
+            ),
             rooms_by_type,
         ).where(models.Organization.id == organization_id)
     ).one()
@@ -404,7 +423,10 @@ def _get_class_progress(
                 ledger.c.module_id == models.Module.id,
             ),
         )
-        .where(models.Class.organization_id == organization_id)
+        .where(
+            models.Class.organization_id == organization_id,
+            models.Class.is_archived.is_(False),
+        )
         .group_by(
             models.Class.id,
             models.Class.name,

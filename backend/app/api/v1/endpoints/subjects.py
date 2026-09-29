@@ -66,11 +66,11 @@ async def delete_subject(
     db: deps.DbSession,
     current_user: deps.AdminActor,  # Apenas Admin
 ):
-    await subject_service.delete_subject(
+    remove_effect = await subject_service.delete_subject(
         db,
         subject_id,
         current_user.organization_id,
         changed_by_membership_id=current_user.membership_id,
     )
 
-    return {"message": "Disciplina removida com sucesso"}
+    return {"message": "Disciplina removida com sucesso", "remove_effect": remove_effect}

@@ -80,23 +80,37 @@ def _parsed_files(request: schemas.BulkImportFilesRequest) -> dict[str, ParsedRe
 
 async def load_snapshot(db: AsyncSession, organization_id: int) -> ImportSnapshot:
     rooms = (
-        await db.scalars(select(models.Room).where(models.Room.organization_id == organization_id))
+        await db.scalars(
+            select(models.Room).where(
+                models.Room.organization_id == organization_id,
+                models.Room.is_archived.is_(False),
+            )
+        )
     ).all()
     subjects = (
         await db.scalars(
-            select(models.Subject).where(models.Subject.organization_id == organization_id)
+            select(models.Subject).where(
+                models.Subject.organization_id == organization_id,
+                models.Subject.is_archived.is_(False),
+            )
         )
     ).all()
     courses = (
         await db.scalars(
-            select(models.Course).where(models.Course.organization_id == organization_id)
+            select(models.Course).where(
+                models.Course.organization_id == organization_id,
+                models.Course.is_archived.is_(False),
+            )
         )
     ).all()
     class_rows = (
         await db.execute(
             select(models.Class, models.Course.abbreviation)
             .join(models.Course, models.Course.id == models.Class.course_id)
-            .where(models.Class.organization_id == organization_id)
+            .where(
+                models.Class.organization_id == organization_id,
+                models.Class.is_archived.is_(False),
+            )
         )
     ).all()
     teachers = (
@@ -196,7 +210,7 @@ async def commit_import(
         for item in snapshot.classes
     }
     teacher_ids: dict[str, int] = {}
-    created_counts = {resource: 0 for resource in IMPORT_RESOURCES}
+    created_counts = dict.fromkeys(IMPORT_RESOURCES, 0)
     created_counts.update({"classes": 0, "modules": 0, "competencies": 0})
 
     for item in result.rooms:

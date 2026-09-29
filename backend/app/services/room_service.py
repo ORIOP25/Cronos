@@ -3,6 +3,7 @@ from sqlalchemy.future import select
 
 from app import models, schemas
 from app.core.exceptions import AppError
+from app.services import resource_removal
 from app.services.scheduler_state_service import record_scheduler_change
 
 
@@ -13,7 +14,10 @@ def _room_snapshot(room: models.Room) -> dict:
 # --- ASYNC (API) ---
 async def get_rooms_by_org(db: AsyncSession, organization_id: int):
     result = await db.execute(
-        select(models.Room).where(models.Room.organization_id == organization_id)
+        select(models.Room).where(
+            models.Room.organization_id == organization_id,
+            models.Room.is_archived.is_(False),
+        )
     )
     return result.scalars().all()
 
@@ -93,11 +97,14 @@ async def delete_room(
     room_id: int,
     organization_id: int,
     changed_by_membership_id: int | None = None,
-) -> None:
+) -> str:
+    """Remove uma sala da gestão atual e devolve o efeito aplicado.
+
+    Uma sala publicada ou com operação em curso fica bloqueada. Uma sala com
+    histórico é arquivada; sem qualquer referência é eliminada fisicamente.
+    As regras de configuração que apontam para a sala são retiradas na mesma
+    transação.
     """
-    Remove uma sala. Protege se houver aulas agendadas nela.
-    """
-    # 1. Buscar sala
     query = select(models.Room).where(
         models.Room.id == room_id, models.Room.organization_id == organization_id
     )
@@ -111,37 +118,40 @@ async def delete_room(
             detail=f"Room {room_id} was not found in organization {organization_id}.",
         )
 
-    for model in (
-        models.ActiveScheduleBlock,
-        models.ScheduleDraftBlock,
-        models.OperationalScheduleBlock,
-    ):
-        if (
-            await db.execute(
-                select(model.id).where(
-                    model.room_id == room_id,
-                    model.organization_id == organization_id,
-                )
-            )
-        ).first():
-            raise AppError(
-                kind="conflict",
-                code="conflict",
-                detail=f"Room {room_id} has scheduled blocks and cannot be deleted.",
-            )
+    if await resource_removal.room_in_use(db, organization_id, room_id):
+        raise AppError(
+            kind="conflict",
+            code="resource_in_use",
+            detail=f"Room {room_id} is used by the active schedule.",
+        )
 
-    # 3. Apagar
     before = _room_snapshot(room)
-    await db.delete(room)
+    effect = (
+        "archive"
+        if await resource_removal.room_has_history(db, organization_id, room_id)
+        else "hard_delete"
+    )
+    await resource_removal.remove_room_configuration(db, organization_id, room_id)
+
+    if effect == "hard_delete":
+        operation = models.SchedulerStateChangeOperation.DELETE
+        after = None
+        await db.delete(room)
+    else:
+        operation = models.SchedulerStateChangeOperation.UPDATE
+        room.is_archived = True
+        after = {**before, "is_archived": True}
+
     await record_scheduler_change(
         db,
         organization_id,
         entity_type="ROOM",
         entity_id=room.id,
-        operation=models.SchedulerStateChangeOperation.DELETE,
+        operation=operation,
         before=before,
-        after=None,
+        after=after,
         changed_by_membership_id=changed_by_membership_id,
+        active_resource=False,
     )
     await db.flush()
-    return None
+    return effect

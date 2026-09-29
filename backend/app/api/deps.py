@@ -5,11 +5,13 @@ from typing import Annotated
 import structlog
 from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models
 from app.core.auth import Actor
 from app.core.clerk import ClerkGateway, verify_clerk_request
+from app.core.exceptions import AppError
 from app.db.database import SessionLocal
 from app.db.tenant import set_async_tenant_context
 from app.scheduler.infrastructure.task_dispatcher import CelerySchedulerTaskDispatcher
@@ -26,6 +28,18 @@ async def get_db() -> AsyncGenerator:
         try:
             yield db
             await db.commit()
+        except IntegrityError as exc:
+            # Recognised database constraint violations are a data conflict, not
+            # an unexpected failure. Keep unknown errors as 500.
+            await db.rollback()
+            logger.warning(
+                "database_integrity_conflict", constraint=getattr(exc.orig, "pgcode", None)
+            )
+            raise AppError(
+                kind="conflict",
+                code="conflict",
+                detail="The operation conflicts with existing data.",
+            ) from exc
         except Exception:
             await db.rollback()
             raise
@@ -68,7 +82,7 @@ async def get_clerk_payload(
 
 async def get_current_user(
     request: Request,
-    db: Annotated[AsyncSession, Depends(get_db, scope="function")],
+    db: Annotated[AsyncSession, Depends(get_db, scope="function")],  # NOSONAR
     payload: Annotated[dict | None, Depends(get_clerk_payload)] = None,
 ) -> Actor:
     if payload is None:
@@ -140,7 +154,7 @@ async def get_current_user(
 
 async def get_current_legal_accepted_user(
     current_user: Annotated[Actor, Depends(get_current_user)],
-    db: Annotated[AsyncSession, Depends(get_db, scope="function")],
+    db: Annotated[AsyncSession, Depends(get_db, scope="function")],  # NOSONAR
 ) -> Actor:
     status_value = await LegalAcceptanceService(db).status(current_user.organization_id)
     if status_value.requires_acceptance:
@@ -159,7 +173,7 @@ async def get_current_legal_accepted_user(
 
 async def get_current_active_user(
     current_user: Annotated[Actor, Depends(get_current_legal_accepted_user)],
-    db: Annotated[AsyncSession, Depends(get_db, scope="function")],
+    db: Annotated[AsyncSession, Depends(get_db, scope="function")],  # NOSONAR
 ) -> Actor:
     status_value = await db.scalar(
         select(models.Organization.foundation_status).where(

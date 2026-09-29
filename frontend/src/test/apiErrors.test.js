@@ -69,6 +69,15 @@ describe('api error contract', () => {
     expect(unknown.message).not.toContain('secret')
   })
 
+  it('explains that a resource in use cannot be removed', () => {
+    const presentation = getApiErrorPresentation({
+      response: { status: 409, data: { detail: { code: 'resource_in_use' } } },
+    })
+    expect(presentation.code).toBe('resource_in_use')
+    expect(presentation.title).toContain('utilização')
+    expect(presentation.message).toContain('horário')
+  })
+
   it('identifies network failures without leaking the original message', () => {
     const presentation = getApiErrorPresentation({ code: 'ERR_NETWORK', message: 'ECONNREFUSED 127.0.0.1' })
     expect(presentation.title).toBe('Ligação indisponível')

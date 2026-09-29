@@ -8,6 +8,52 @@ import { getApiErrorMessage } from '../utils/apiErrors'
 import StatePanel from './StatePanel'
 import FeedbackBanner from './FeedbackBanner'
 
+const RowActions = ({
+  item,
+  actions,
+  isClickable,
+  allowEdit,
+  allowDelete,
+  readOnly,
+  onEdit,
+  onRequestDelete,
+  getRowLabel,
+}) => {
+  const label = getRowLabel?.(item) ?? item.name ?? ''
+  return (
+    <td className="text-end">
+      <div className="d-flex justify-content-end align-items-center gap-2">
+        {actions && (
+          <>
+            {allowEdit && <button
+              className="btn-zen-ghost zen-table-action-trigger"
+              onClick={(e) => { e.stopPropagation(); onEdit(item) }}
+              title={readOnly ? 'Consultar' : TXT.EDIT}
+              data-tutorial-target={`edit-record-${item.id}`}
+              aria-label={`${readOnly ? 'Consultar' : TXT.EDIT} ${label}`.trim()}
+              type="button"
+            >
+              <CIcon icon={cilPencil} size="sm"/>
+            </button>}
+            {allowDelete && <button
+              className="btn-zen-ghost zen-table-action-trigger text-danger"
+              onClick={(e) => { e.stopPropagation(); onRequestDelete(item.id) }}
+              title={TXT.REMOVE}
+              aria-label={`${TXT.REMOVE} ${label}`.trim()}
+              type="button"
+            >
+              <CIcon icon={cilTrash} size="sm"/>
+            </button>}
+          </>
+        )}
+        {isClickable && !actions && (
+          <CIcon icon={cilChevronRight} size="sm" className="text-muted zen-table-action-trigger" />
+        )}
+      </div>
+    </td>
+  )
+}
+
 const SmartTable = ({ 
   columns, 
   data, 
@@ -21,6 +67,7 @@ const SmartTable = ({
   onRowClick,
   getRowLabel,
   emptyAction,
+  deleteMessage,
   allowEdit = true,
   allowDelete = true,
   readOnly = false,
@@ -29,13 +76,20 @@ const SmartTable = ({
   const [deleteTarget, setDeleteTarget] = useState(null)
   const [isDeleting, setIsDeleting] = useState(false)
   const [deleteError, setDeleteError] = useState('')
+  const [deleteNotice, setDeleteNotice] = useState('')
 
   const handleDeleteConfirm = async () => {
     if (!deleteTarget || !onDelete) return
     setIsDeleting(true)
     setDeleteError('')
+    setDeleteNotice('')
     try {
-      await onDelete(deleteTarget)
+      const result = await onDelete(deleteTarget)
+      setDeleteNotice(
+        result?.remove_effect === 'archive'
+          ? 'Registo arquivado. O histórico (horários, sumários e progresso) foi preservado.'
+          : 'Registo removido.'
+      )
       setDeleteTarget(null)
     } catch (error) {
       setDeleteError(getApiErrorMessage(error, 'Não foi possível remover o registo.'))
@@ -94,36 +148,17 @@ const SmartTable = ({
                 ))}
                 
                 {(actions || isClickable) && (
-                  <td className="text-end">
-                    <div className="d-flex justify-content-end align-items-center gap-2">
-                      {actions && (
-                        <>
-                          {allowEdit && <button
-                            className="btn-zen-ghost zen-table-action-trigger"
-                            onClick={(e) => { e.stopPropagation(); onEdit(item) }}
-                            title={readOnly ? 'Consultar' : TXT.EDIT}
-                            data-tutorial-target={`edit-record-${item.id}`}
-                            aria-label={`${readOnly ? 'Consultar' : TXT.EDIT} ${getRowLabel?.(item) ?? item.name ?? ''}`.trim()}
-                            type="button"
-                          >
-                            <CIcon icon={cilPencil} size="sm"/>
-                          </button>}
-                          {allowDelete && <button
-                            className="btn-zen-ghost zen-table-action-trigger text-danger"
-                            onClick={(e) => { e.stopPropagation(); setDeleteError(''); setDeleteTarget(item.id) }}
-                            title={TXT.REMOVE}
-                            aria-label={`${TXT.REMOVE} ${getRowLabel?.(item) ?? item.name ?? ''}`.trim()}
-                            type="button"
-                          >
-                            <CIcon icon={cilTrash} size="sm"/>
-                          </button>}
-                        </>
-                      )}
-                      {isClickable && !actions && (
-                        <CIcon icon={cilChevronRight} size="sm" className="text-muted zen-table-action-trigger" />
-                      )}
-                    </div>
-                  </td>
+                  <RowActions
+                    item={item}
+                    actions={actions}
+                    isClickable={isClickable}
+                    allowEdit={allowEdit}
+                    allowDelete={allowDelete}
+                    readOnly={readOnly}
+                    onEdit={onEdit}
+                    onRequestDelete={(id) => { setDeleteError(''); setDeleteTarget(id) }}
+                    getRowLabel={getRowLabel}
+                  />
                 )}
               </tr>
             ))}
@@ -132,11 +167,13 @@ const SmartTable = ({
       </CCardBody></CCard>
 
       {deleteError && <div className="mt-3"><FeedbackBanner tone="danger">{deleteError}</FeedbackBanner></div>}
+      {deleteNotice && <div className="mt-3"><FeedbackBanner tone="success" onDismiss={() => setDeleteNotice('')}>{deleteNotice}</FeedbackBanner></div>}
 
       <ConfirmationModal
         visible={deleteTarget !== null}
         onClose={() => setDeleteTarget(null)}
         onConfirm={handleDeleteConfirm}
+        message={deleteMessage}
         isLoading={isDeleting}
       />
     </>

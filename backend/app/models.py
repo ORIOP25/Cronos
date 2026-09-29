@@ -964,6 +964,9 @@ class Room(Base):
         SAEnum(RoomType), nullable=False, default=RoomType.normal
     )
 
+    # Removida da gestão atual mas preservada para referências históricas.
+    is_archived: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
     # Chave Estrangeira: Liga a Sala à sua Organization
     organization_id: Mapped[int] = mapped_column(ForeignKey(FK_ORG_ID))
 
@@ -986,6 +989,9 @@ class Subject(Base):
     required_room_type: Mapped[RoomType] = mapped_column(
         SAEnum(RoomType), default=RoomType.normal, nullable=False
     )
+
+    # Removida da gestão atual mas preservada para referências históricas.
+    is_archived: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     modules: Mapped[list["Module"]] = relationship(
         back_populates="subject", cascade=CASCADE_ALL_DELETE
@@ -2703,6 +2709,10 @@ class Course(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(150), nullable=False)
     abbreviation: Mapped[str] = mapped_column(String(10), nullable=False)
+
+    # Removido da gestão atual mas preservado para referências históricas.
+    is_archived: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
     organization_id: Mapped[int] = mapped_column(ForeignKey(FK_ORG_ID))
 
     organization: Mapped["Organization"] = relationship(back_populates="courses")

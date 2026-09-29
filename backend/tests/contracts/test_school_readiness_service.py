@@ -516,3 +516,131 @@ async def test_readiness_mixed_and_fully_impossible_availability(db_session):
     assert blocked_report.depth == 5
     assert blocked_report.complete is False
     assert blocked_report.percentage == 83
+
+
+@pytest.mark.asyncio
+async def test_readiness_ignores_archived_class_and_subject(db_session):
+    organization, _ = await create_org_and_user(
+        db_session,
+        clerk_user_id="readiness-archived-user",
+        clerk_org_id="readiness-archived-org",
+    )
+    course = models.Course(
+        organization_id=organization.id,
+        name="Curso Arquivado",
+        abbreviation="CA",
+    )
+    subject = models.Subject(
+        organization_id=organization.id,
+        name="Disciplina Arquivada",
+    )
+    db_session.add_all([course, subject])
+    await db_session.flush()
+
+    school_class = models.Class(
+        organization_id=organization.id,
+        course_id=course.id,
+        name="Turma Arquivada",
+        size=20,
+        grade_level=10,
+        start_year=2025,
+        end_year=2028,
+    )
+    module = models.Module(
+        organization_id=organization.id,
+        subject_id=subject.id,
+        name="Módulo Arquivado",
+        required_minutes=60,
+        order=0,
+    )
+    db_session.add_all([school_class, module])
+    await db_session.flush()
+
+    subject.is_archived = True
+    school_class.is_archived = True
+    await db_session.flush()
+
+    report = await SchoolReadinessService(db_session).evaluate_bases(organization.id)
+
+    assert report.depth == 0
+    assert report.percentage == 0
+    assert report.issues[0].code == "ACTIVE_CLASSES_REQUIRED"
+
+
+@pytest.mark.asyncio
+async def test_readiness_requires_an_active_compatible_room(db_session):
+    organization, _ = await create_org_and_user(
+        db_session,
+        clerk_user_id="readiness-room-archive-user",
+        clerk_org_id="readiness-room-archive-org",
+    )
+    course = models.Course(organization_id=organization.id, name="Curso Sala", abbreviation="CS")
+    subject = models.Subject(organization_id=organization.id, name="Disciplina Sala")
+    room = models.Room(
+        organization_id=organization.id,
+        name="Sala Compatível",
+        capacity=30,
+        type=models.RoomType.normal,
+    )
+    db_session.add_all([course, subject, room])
+    await db_session.flush()
+
+    school_class = models.Class(
+        organization_id=organization.id,
+        course_id=course.id,
+        name="Turma Sala",
+        size=20,
+        grade_level=10,
+        start_year=2025,
+        end_year=2028,
+    )
+    module = models.Module(
+        organization_id=organization.id,
+        subject_id=subject.id,
+        name="Módulo Sala",
+        required_minutes=60,
+        order=0,
+    )
+    db_session.add_all([school_class, module])
+    await db_session.flush()
+
+    teacher = await create_teacher_profile(
+        db_session,
+        organization_id=organization.id,
+        name="Professor Sala",
+        subject_ids=[subject.id],
+    )
+    db_session.add(
+        models.ClassSubjectLink(
+            organization_id=organization.id,
+            class_id=school_class.id,
+            subject_id=subject.id,
+            grade_level=school_class.grade_level,
+            teacher_id=teacher.id,
+        )
+    )
+    db_session.add(
+        models.Timeslot(
+            organization_id=organization.id,
+            day_of_week=0,
+            start_time=time(8, 30),
+            end_time=time(9, 20),
+        )
+    )
+    await db_session.flush()
+
+    service = SchoolReadinessService(db_session)
+
+    room.is_archived = True
+    await db_session.flush()
+    archived_report = await service.evaluate_bases(organization.id)
+
+    assert archived_report.depth == 4
+    assert archived_report.issues[0].code == "COMPATIBLE_ROOM_REQUIRED"
+
+    room.is_archived = False
+    await db_session.flush()
+    active_report = await service.evaluate_bases(organization.id)
+
+    assert active_report.depth == 6
+    assert "COMPATIBLE_ROOM_REQUIRED" not in {issue.code for issue in active_report.issues}

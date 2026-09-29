@@ -48,6 +48,23 @@ describe('SmartTable', () => {
     expect(screen.getByRole('button', { name: 'Confirmar' })).toBeEnabled()
   })
 
+  it('explains when the record is archived and history is preserved', async () => {
+    const onDelete = vi.fn().mockResolvedValue({ remove_effect: 'archive' })
+    render(<SmartTable columns={[{ key: 'name', label: 'Nome' }]} data={[{ id: 5, name: 'Sala C' }]} actions onEdit={vi.fn()} onDelete={onDelete} />)
+    fireEvent.click(screen.getByRole('button', { name: /remover sala c/i }))
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar' }))
+    expect(await screen.findByText(/arquivado/i)).toBeInTheDocument()
+    expect(screen.getByText(/histórico/i)).toBeInTheDocument()
+  })
+
+  it('confirms a physical removal', async () => {
+    const onDelete = vi.fn().mockResolvedValue({ remove_effect: 'hard_delete' })
+    render(<SmartTable columns={[{ key: 'name', label: 'Nome' }]} data={[{ id: 6, name: 'Sala D' }]} actions onEdit={vi.fn()} onDelete={onDelete} />)
+    fireEvent.click(screen.getByRole('button', { name: /remover sala d/i }))
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar' }))
+    expect(await screen.findByText('Registo removido.')).toBeInTheDocument()
+  })
+
   it('activates labeled rows with Enter and Space', () => {
     const row = { id: 3, name: 'Curso A' }
     const onRowClick = vi.fn()
