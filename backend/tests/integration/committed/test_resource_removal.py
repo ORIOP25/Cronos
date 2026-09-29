@@ -23,7 +23,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models
 from app.config import settings
+from app.services import class_service, room_service, subject_service
 from tests._support.db_fixtures import create_teacher_profile
+from tests._support.scheduler_v1 import (
+    add_lesson,
+    add_version,
+    lesson_interval,
+    seed_v1_assignment,
+)
 
 pytestmark = pytest.mark.postgresql
 
@@ -435,3 +442,67 @@ class TestErrorResponseCors:
 
         assert response.status_code == 500
         assert "access-control-allow-origin" not in response.headers
+
+
+class TestSchedulerV1References:
+    """Production keeps scheduler v1 records that must not be destroyed."""
+
+    async def test_subject_with_curricular_assignment_is_archived(self, db_session: AsyncSession):
+        seed = await seed_v1_assignment(db_session)
+        await db_session.commit()
+
+        effect = await subject_service.delete_subject(
+            db_session, seed.subject.id, seed.organization.id
+        )
+        await db_session.commit()
+
+        assert effect == "archive"
+        await db_session.refresh(seed.subject)
+        assert seed.subject.is_archived is True
+
+    async def test_class_with_curricular_assignment_is_archived(self, db_session: AsyncSession):
+        seed = await seed_v1_assignment(db_session)
+        await db_session.commit()
+
+        effect = await class_service.delete_class_in_course(
+            db_session, seed.course.id, seed.class_.id, seed.organization.id
+        )
+        await db_session.commit()
+
+        assert effect == "archive"
+        await db_session.refresh(seed.class_)
+        assert seed.class_.is_archived is True
+
+    async def test_room_with_scheduler_lesson_is_archived(self, db_session: AsyncSession):
+        seed = await seed_v1_assignment(db_session)
+        version = await add_version(db_session, seed)
+        start, end = lesson_interval(date(2026, 9, 22), 9)
+        await add_lesson(
+            db_session,
+            seed,
+            version,
+            stable_key="lesson-1",
+            school_date=date(2026, 9, 22),
+            start=start,
+            end=end,
+        )
+        await db_session.commit()
+
+        effect = await room_service.delete_room(db_session, seed.room.id, seed.organization.id)
+        await db_session.commit()
+
+        assert effect == "archive"
+        await db_session.refresh(seed.room)
+        assert seed.room.is_archived is True
+
+    async def test_room_without_references_is_hard_deleted(self, db_session: AsyncSession):
+        seed = await seed_v1_assignment(db_session)
+        await db_session.commit()
+
+        effect = await room_service.delete_room(db_session, seed.room.id, seed.organization.id)
+        await db_session.commit()
+
+        assert effect == "hard_delete"
+        assert (
+            await db_session.scalar(select(models.Room.id).where(models.Room.id == seed.room.id))
+        ) is None

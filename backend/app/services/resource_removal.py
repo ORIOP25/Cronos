@@ -16,6 +16,7 @@ from sqlalchemy import delete, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models
+from app.scheduler.infrastructure import models as scheduler_models
 
 _ACTIVE_BLOCK = models.ActiveScheduleBlockStatus.ACTIVE
 _ACTIVE_OPERATIONAL = models.OperationalBlockStatus.ACTIVE
@@ -82,6 +83,10 @@ async def room_has_history(db: AsyncSession, organization_id: int, room_id: int)
                     models.ScheduleDiffEntry.after_room_id == room_id,
                 ),
             ),
+            select(scheduler_models.SchedulerLessonV1.id).where(
+                scheduler_models.SchedulerLessonV1.organization_id == organization_id,
+                scheduler_models.SchedulerLessonV1.room_id == room_id,
+            ),
         ],
     )
 
@@ -113,6 +118,10 @@ async def subject_has_history(db: AsyncSession, organization_id: int, subject_id
             models.ProgressLedgerEntry.organization_id == organization_id,
             models.Module.subject_id == subject_id,
         )
+    )
+    module_ids = select(models.Module.id).where(
+        models.Module.organization_id == organization_id,
+        models.Module.subject_id == subject_id,
     )
     return await _any(
         db,
@@ -148,6 +157,33 @@ async def subject_has_history(db: AsyncSession, organization_id: int, subject_id
                 models.LessonOccurrence.subject_id == subject_id,
             ),
             progress,
+            select(scheduler_models.CurricularAssignment.id).where(
+                scheduler_models.CurricularAssignment.organization_id == organization_id,
+                scheduler_models.CurricularAssignment.subject_id == subject_id,
+            ),
+            select(scheduler_models.CurricularRequirement.id).where(
+                scheduler_models.CurricularRequirement.organization_id == organization_id,
+                scheduler_models.CurricularRequirement.module_id.in_(module_ids),
+            ),
+            select(scheduler_models.CurricularExecutionCredit.id).where(
+                scheduler_models.CurricularExecutionCredit.organization_id == organization_id,
+                scheduler_models.CurricularExecutionCredit.module_id.in_(module_ids),
+            ),
+            select(scheduler_models.SchedulerLessonSliceV1.id).where(
+                scheduler_models.SchedulerLessonSliceV1.organization_id == organization_id,
+                scheduler_models.SchedulerLessonSliceV1.module_id.in_(module_ids),
+            ),
+            select(models.OperationalScheduleBlock.id).where(
+                models.OperationalScheduleBlock.organization_id == organization_id,
+                models.OperationalScheduleBlock.module_id.in_(module_ids),
+            ),
+            select(models.LessonOccurrence.id).where(
+                models.LessonOccurrence.organization_id == organization_id,
+                or_(
+                    models.LessonOccurrence.planned_module_id.in_(module_ids),
+                    models.LessonOccurrence.executed_module_id.in_(module_ids),
+                ),
+            ),
         ],
     )
 
@@ -215,6 +251,10 @@ async def class_has_history(db: AsyncSession, organization_id: int, class_id: in
                 organization_id,
                 models.SchoolCalendarEventClass.class_id == class_id,
             ),
+            select(scheduler_models.CurricularAssignment.id).where(
+                scheduler_models.CurricularAssignment.organization_id == organization_id,
+                scheduler_models.CurricularAssignment.class_id == class_id,
+            ),
         ],
     )
 
@@ -248,6 +288,12 @@ async def remove_subject_configuration(
         delete(models.Constraint).where(
             models.Constraint.organization_id == organization_id,
             models.Constraint.subject_id == subject_id,
+        )
+    )
+    await db.execute(
+        delete(models.teacher_subject_link).where(
+            models.teacher_subject_link.c.organization_id == organization_id,
+            models.teacher_subject_link.c.subject_id == subject_id,
         )
     )
 
