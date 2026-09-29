@@ -20,10 +20,18 @@ from app.scheduler.domain.candidate import (
     PlanningSnapshot,
     ScheduledLesson,
     allocate_lesson_identity,
+    continuous_break_minutes,
 )
 from app.scheduler.domain.candidate_validation import validate_candidate
 from app.scheduler.domain.capacity import available_rooms, eligible_periods, residual_minutes
 from app.scheduler.domain.projection import ModuleSlice
+
+
+def _local_interval(period: Period) -> tuple[int, int]:
+    return (
+        period.start_local.hour * 60 + period.start_local.minute,
+        period.end_local.hour * 60 + period.end_local.minute,
+    )
 
 
 def _next_module(modules, cursor: dict[int, int]) -> int | None:
@@ -50,6 +58,23 @@ def construct_schedule(
     }
     busy: dict[tuple, dict[str, set[int]]] = {}
     used_ids: set[int] = {lesson.lesson_id for lesson in snapshot.protected_lessons}
+    lunch = snapshot.lunch_rule
+    occupancy: dict[tuple, list[tuple[int, int]]] = {}
+    if lunch is not None:
+        for lesson in snapshot.protected_lessons:
+            assignment = snapshot.assignment_for(lesson.assignment_id)
+            if assignment is None:
+                continue
+            interval = _local_interval(lesson.period)
+            teacher_id = (
+                lesson.teacher_id if lesson.teacher_id is not None else assignment.teacher_id
+            )
+            occupancy.setdefault(
+                ("class", assignment.class_id, lesson.period.school_date), []
+            ).append(interval)
+            occupancy.setdefault(("teacher", teacher_id, lesson.period.school_date), []).append(
+                interval
+            )
     lessons: list[ScheduledLesson] = []
     for assignment in assignments:
         remaining = residual_minutes(snapshot, assignment.assignment_id)
@@ -76,6 +101,16 @@ def construct_schedule(
                 None,
             )
             if room_id is None:
+                continue
+            class_key = ("class", assignment.class_id, period.school_date)
+            teacher_key = ("teacher", assignment.teacher_id, period.school_date)
+            interval = _local_interval(period)
+            if lunch is not None and (
+                continuous_break_minutes([*occupancy.get(class_key, ()), interval], lunch)
+                < lunch.minimum_minutes
+                or continuous_break_minutes([*occupancy.get(teacher_key, ()), interval], lunch)
+                < lunch.minimum_minutes
+            ):
                 continue
             credit = min(remaining, period.duration_minutes)
             rank += 1
@@ -111,6 +146,9 @@ def construct_schedule(
                 )
             )
             remaining -= credit
+            if lunch is not None:
+                occupancy.setdefault(class_key, []).append(interval)
+                occupancy.setdefault(teacher_key, []).append(interval)
         if remaining > 0:
             return None
     candidate = CandidateSchedule((*snapshot.protected_lessons, *lessons))

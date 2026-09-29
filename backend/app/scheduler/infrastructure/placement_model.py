@@ -183,6 +183,17 @@ def _scope_cache_key(scope: _WindowScope, salt: str = "") -> tuple:
     )
 
 
+def _lunch_cache_salt(snapshot: PlanningSnapshot, salt: str) -> str:
+    """Bind cached windows to the lunch rule, which constrains the same windows."""
+    lunch = snapshot.lunch_rule
+    if lunch is None:
+        return salt
+    return (
+        f"{salt}|lunch:{lunch.window_start_minutes}-{lunch.window_end_minutes}"
+        f":{lunch.minimum_minutes}"
+    )
+
+
 def _overlaps(left: Period, right: Period) -> bool:
     return left.start_utc < right.end_utc and right.start_utc < left.end_utc
 
@@ -579,6 +590,7 @@ def _build_scope_state(snapshot: PlanningSnapshot, scope: _WindowScope) -> _Scop
                 sum(key[1].duration_minutes * state.x[key] for key in keys) == row.credit_target
             )
     _add_conflicts(state)
+    _add_lunch(state)
     _add_completion_measure(state)
     return state
 
@@ -623,6 +635,101 @@ def _add_conflicts(state: _ScopeState) -> None:
                     + state.room_choice[(assignment_b, period_b, room_id)]
                     <= 1
                 )
+
+
+def _period_minutes(period: Period) -> tuple[int, int]:
+    return (
+        period.start_local.hour * 60 + period.start_local.minute,
+        period.end_local.hour * 60 + period.end_local.minute,
+    )
+
+
+def _lunch_options(
+    boundaries: list[int], window_start: int, window_end: int, minimum: int
+) -> list[tuple[int, int]]:
+    """Minimal windows of at least the minimum length, anchored at a boundary.
+
+    A maximal free run always starts at a boundary. Its first boundary at or
+    after ``origin + minimum`` lies inside the run, so requiring one of these
+    minimal anchors to stay free is exact and keeps the option count linear.
+    """
+    options = []
+    for origin in boundaries:
+        if origin + minimum > window_end:
+            continue
+        closing = next(value for value in boundaries if value >= origin + minimum)
+        options.append((origin, closing))
+    return options
+
+
+def _add_lunch(state: _ScopeState) -> None:
+    """Require one continuous lunch window per class and teacher on active days.
+
+    Each option is a boolean "this interval is free". It is forced off whenever
+    a lesson overlapping it is placed, so at least one option must remain free.
+    Protected lessons can block an option permanently; a resource with no free
+    option makes the window infeasible instead of silently ignoring the rule.
+    """
+    rule = state.snapshot.lunch_rule
+    if rule is None:
+        return
+    model = state.model
+    window_start = rule.window_start_minutes
+    window_end = rule.window_end_minutes
+    by_resource: dict[tuple[str, int, date], list[tuple[Period, Any]]] = defaultdict(list)
+    for (assignment_id, period), variable in state.x.items():
+        assignment = state.assignment_by_id[assignment_id]
+        by_resource[("class", assignment.class_id, period.school_date)].append((period, variable))
+        by_resource[("teacher", assignment.teacher_id, period.school_date)].append(
+            (period, variable)
+        )
+    for lesson in state.snapshot.protected_lessons:
+        assignment = state.assignment_by_id.get(lesson.assignment_id)
+        if assignment is None:
+            continue
+        if (
+            state.scope.week is not None
+            and week_index(state.snapshot.origin, lesson.period) != state.scope.week
+        ):
+            continue
+        teacher_id = lesson.teacher_id if lesson.teacher_id is not None else assignment.teacher_id
+        by_resource[("class", assignment.class_id, lesson.period.school_date)].append(
+            (lesson.period, 1)
+        )
+        by_resource[("teacher", teacher_id, lesson.period.school_date)].append((lesson.period, 1))
+    for (kind, resource_id, school_date), rows in sorted(by_resource.items()):
+        boundaries = {window_start, window_end}
+        for period, _variable in rows:
+            period_start, period_end = _period_minutes(period)
+            if window_start < period_start < window_end:
+                boundaries.add(period_start)
+            if window_start < period_end < window_end:
+                boundaries.add(period_end)
+        options = []
+        for option_start, option_end in _lunch_options(
+            sorted(boundaries), window_start, window_end, rule.minimum_minutes
+        ):
+            terms = []
+            blocked = False
+            for period, variable in rows:
+                period_start, period_end = _period_minutes(period)
+                if period_start < option_end and option_start < period_end:
+                    if type(variable) is int:
+                        blocked = True
+                        break
+                    terms.append(variable)
+            if blocked:
+                continue
+            flag = model.NewBoolVar(
+                f"lunch_{kind}_{resource_id}_{school_date.isoformat()}_{option_start}"
+            )
+            for term in terms:
+                model.Add(flag + term <= 1)
+            options.append(flag)
+        if options:
+            model.Add(sum(options) >= 1)
+        else:
+            model.AddBoolOr([])
 
 
 def _add_completion_measure(state: _ScopeState) -> None:
@@ -1343,7 +1450,7 @@ def solve_placement(
                 incomplete = True
                 break
             window_deadline = now + remaining / (len(ordered_scopes) - index)
-            cache_key = _scope_cache_key(scope, cache_salt)
+            cache_key = _scope_cache_key(scope, _lunch_cache_salt(snapshot, cache_salt))
             cached = cache.get(cache_key)
             if (
                 cached is not None

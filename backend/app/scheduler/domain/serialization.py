@@ -18,6 +18,7 @@ from app.scheduler.domain.candidate import (
     Assignment,
     CandidateSchedule,
     GridSlot,
+    LunchRule,
     PlanningSnapshot,
     ScheduledLesson,
     SchedulingStrategy,
@@ -155,6 +156,13 @@ def snapshot_to_dict(snapshot: PlanningSnapshot) -> dict[str, Any]:
             for claim_id, assignment_id in snapshot.claim_assignments.items()
         ),
         "active_version_id": snapshot.active_version_id,
+        "lunch_rule": None
+        if snapshot.lunch_rule is None
+        else [
+            time_token(snapshot.lunch_rule.window_start),
+            time_token(snapshot.lunch_rule.window_end),
+            snapshot.lunch_rule.minimum_minutes,
+        ],
     }
     if snapshot.class_blocked_dates:
         payload["class_blocked_dates"] = {
@@ -212,6 +220,15 @@ def snapshot_from_dict(data: Mapping[str, Any]) -> PlanningSnapshot:
             claim_id: assignment_id for claim_id, assignment_id in data.get("claim_assignments", ())
         },
         active_version_id=data.get("active_version_id"),
+        lunch_rule=(
+            None
+            if data.get("lunch_rule") is None
+            else LunchRule(
+                window_start=time.fromisoformat(data["lunch_rule"][0]),
+                window_end=time.fromisoformat(data["lunch_rule"][1]),
+                minimum_minutes=data["lunch_rule"][2],
+            )
+        ),
         class_blocked_dates={
             int(class_id): frozenset(date.fromisoformat(day) for day in days)
             for class_id, days in data.get("class_blocked_dates", {}).items()

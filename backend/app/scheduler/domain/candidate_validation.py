@@ -21,9 +21,10 @@ from app.scheduler.domain.candidate import (
     ScheduledLesson,
     SchedulingStrategy,
     UnavailableResource,
+    continuous_break_minutes,
 )
 
-VALIDATOR_VERSION = "v3"
+VALIDATOR_VERSION = "v4"
 
 
 class ValidationViolationCode(StrEnum):
@@ -47,6 +48,7 @@ class ValidationViolationCode(StrEnum):
     RESERVATION_ASSIGNMENT_MISMATCH = "RESERVATION_ASSIGNMENT_MISMATCH"
     RESERVATION_DUPLICATE = "RESERVATION_DUPLICATE"
     DEBT_OVERFLOW = "DEBT_OVERFLOW"
+    LUNCH_BREAK_VIOLATION = "LUNCH_BREAK_VIOLATION"
 
 
 @dataclass(frozen=True)
@@ -288,6 +290,44 @@ def _physical_key(lesson: ScheduledLesson) -> tuple:
         lesson.teacher_id,
         lesson.class_id,
     )
+
+
+def _local_minutes(value) -> int:
+    return value.hour * 60 + value.minute
+
+
+def _check_lunch(
+    snapshot: PlanningSnapshot,
+    candidate: CandidateSchedule,
+    violations: list[ValidationViolation],
+) -> None:
+    """Reject any class or teacher without a continuous break inside the window."""
+    rule = snapshot.lunch_rule
+    if rule is None:
+        return
+    assignments = {row.assignment_id: row for row in snapshot.assignments}
+    occupied: dict[tuple[str, int, date], list[tuple[int, int]]] = defaultdict(list)
+    for lesson in candidate.lessons:
+        assignment = assignments.get(lesson.assignment_id)
+        if assignment is None:
+            continue
+        teacher_id = lesson.teacher_id if lesson.teacher_id is not None else assignment.teacher_id
+        interval = (
+            _local_minutes(lesson.period.start_local),
+            _local_minutes(lesson.period.end_local),
+        )
+        occupied[("class", assignment.class_id, lesson.period.school_date)].append(interval)
+        occupied[("teacher", teacher_id, lesson.period.school_date)].append(interval)
+    for (resource_type, resource_id, _), intervals in sorted(occupied.items()):
+        if continuous_break_minutes(intervals, rule) < rule.minimum_minutes:
+            violations.append(
+                ValidationViolation(
+                    ValidationViolationCode.LUNCH_BREAK_VIOLATION,
+                    "A resource has no continuous lunch break inside the window.",
+                    resource_type=resource_type,
+                    resource_id=resource_id,
+                )
+            )
 
 
 def _check_reservations(
@@ -585,6 +625,7 @@ def validate_candidate(
             )
 
     _check_reservations(snapshot, lesson_by_id, violations)
+    _check_lunch(snapshot, candidate, violations)
 
     credited_minutes = {
         assignment.assignment_id: sum(

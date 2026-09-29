@@ -33,6 +33,7 @@ from app.scheduler.domain.candidate import (
     Assignment,
     CandidateSchedule,
     GridSlot,
+    LunchRule,
     PlanningSnapshot,
     ScheduledLesson,
     SchedulingStrategy,
@@ -205,9 +206,7 @@ async def load_snapshot(
         db, organization_id, [row.assignment_id for row in domain_assignments]
     )
     school_today = now_utc.astimezone(zone).date()
-    protected_dates = _stability_protected_dates(
-        year, calendar, school_today, await _stability_window(db, organization_id)
-    )
+    lunch_rule = await _load_lunch_rule(db, organization_id)
     active_version = await db.scalar(
         select(SchedulerVersionV1).where(
             SchedulerVersionV1.organization_id == organization_id,
@@ -219,6 +218,25 @@ async def load_snapshot(
         raise SnapshotConfigurationError(
             "ACTIVE_VERSION_REQUIRED", "Não existe horário publicado para reparar."
         )
+    if (
+        strategy is SchedulingStrategy.COMPLETE_GENERATION
+        and active_version is not None
+        and grid_version_id is None
+    ):
+        raise SnapshotConfigurationError(
+            "ACTIVE_VERSION_PUBLISHED",
+            "Já existe um horário publicado. A primeira geração não o pode substituir.",
+        )
+    # The stability window protects only a schedule that is already published.
+    # A first generation has no published lessons to preserve, so it must not
+    # lose future days to a window that protects nothing.
+    protected_dates = (
+        _stability_protected_dates(
+            year, calendar, school_today, await _stability_window(db, organization_id)
+        )
+        if active_version is not None
+        else frozenset()
+    )
     baseline_lessons, protected_lessons, reservations, base_lesson_ids = await _load_baseline(
         db,
         organization_id,
@@ -252,6 +270,7 @@ async def load_snapshot(
             open_debt_minutes=open_debt,
             claim_assignments=claim_assignments,
             active_version_id=active_version.id if active_version is not None else None,
+            lunch_rule=lunch_rule,
         )
     except ValueError as exc:
         raise SnapshotConfigurationError(
@@ -282,6 +301,40 @@ async def load_snapshot(
         digest=digest,
         policy=policy,
     )
+
+
+async def _load_lunch_rule(db: AsyncSession, organization_id: int) -> LunchRule | None:
+    """Read the mandatory lunch rule, or fail loudly on a partial configuration.
+
+    A school without a grid-settings row never configured a lunch window, so the
+    rule is absent. A row with some but not all fields is an incomplete
+    configuration and is reported instead of silently ignored.
+    """
+    settings = await db.scalar(
+        select(models.OrganizationGridSettings).where(
+            models.OrganizationGridSettings.organization_id == organization_id
+        )
+    )
+    if settings is None:
+        return None
+    values = (
+        settings.lunch_window_start,
+        settings.lunch_window_end,
+        settings.lunch_min_duration_minutes,
+    )
+    if all(value is None for value in values):
+        return None
+    if any(value is None for value in values):
+        raise SnapshotConfigurationError(
+            "LUNCH_CONFIGURATION_INCOMPLETE",
+            "A configuração de almoço da escola está incompleta.",
+        )
+    try:
+        return LunchRule(values[0], values[1], values[2])
+    except ValueError as exc:
+        raise SnapshotConfigurationError(
+            "INVALID_LUNCH_RULE", "A configuração de almoço da escola é inválida."
+        ) from exc
 
 
 async def _stability_window(db: AsyncSession, organization_id: int) -> int:

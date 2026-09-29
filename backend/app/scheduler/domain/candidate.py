@@ -41,6 +41,66 @@ def _minute(value: time, name: str) -> None:
         raise ValueError(f"{name} must be a naive minute-precision local time.")
 
 
+def _minute_of_day(value: time) -> int:
+    return value.hour * 60 + value.minute
+
+
+@dataclass(frozen=True)
+class LunchRule:
+    """Mandatory continuous lunch break inside a local window.
+
+    The rule is a fixed school policy, so it is an immutable snapshot value.
+    School hours sit between 08:00 and 20:00 and are unaffected by local clock
+    changes, so the break is measured in local minutes of the same school date.
+    """
+
+    window_start: time
+    window_end: time
+    minimum_minutes: int
+
+    def __post_init__(self) -> None:
+        _minute(self.window_start, "window_start")
+        _minute(self.window_end, "window_end")
+        if self.window_start >= self.window_end:
+            raise ValueError("A lunch window must have a positive duration.")
+        if type(self.minimum_minutes) is not int or self.minimum_minutes <= 0:
+            raise ValueError("A lunch minimum must be a positive integer.")
+        if self.minimum_minutes > _minute_of_day(self.window_end) - _minute_of_day(
+            self.window_start
+        ):
+            raise ValueError("A lunch minimum cannot exceed its window duration.")
+
+    @property
+    def window_start_minutes(self) -> int:
+        return _minute_of_day(self.window_start)
+
+    @property
+    def window_end_minutes(self) -> int:
+        return _minute_of_day(self.window_end)
+
+
+def continuous_break_minutes(occupied: Sequence[tuple[int, int]], rule: LunchRule) -> int:
+    """Longest continuous free interval inside the window, in local minutes.
+
+    Short separated gaps never sum: only a single uninterrupted interval can
+    satisfy the rule. A resource free during the whole window returns the full
+    window length.
+    """
+    start = rule.window_start_minutes
+    end = rule.window_end_minutes
+    cursor = start
+    longest = 0
+    for occupied_start, occupied_end in sorted(occupied):
+        if occupied_end <= start:
+            continue
+        if occupied_start >= end:
+            break
+        if occupied_start > cursor:
+            longest = max(longest, occupied_start - cursor)
+        cursor = max(cursor, min(occupied_end, end))
+    return max(longest, end - cursor)
+
+
 LESSON_IDENTITY_STRIDE = 1_000_000
 
 
@@ -404,6 +464,7 @@ class PlanningSnapshot:
     open_debt_minutes: Mapping[int, int] = field(default_factory=dict)
     claim_assignments: Mapping[int, int] = field(default_factory=dict)
     active_version_id: int | None = None
+    lunch_rule: LunchRule | None = None
 
     def __post_init__(self) -> None:
         if type(self.strategy) is not SchedulingStrategy:
@@ -462,6 +523,8 @@ class PlanningSnapshot:
             type(self.active_version_id) is not int or self.active_version_id <= 0
         ):
             raise ValueError("The active version ID must be positive when present.")
+        if self.lunch_rule is not None and type(self.lunch_rule) is not LunchRule:
+            raise ValueError("The lunch rule must be a LunchRule when present.")
         claim_ids = {claim_id for claim_id, _ in self.open_debt_minutes.items()}
         if claim_ids != set(self.claim_assignments):
             raise ValueError("Every open debt claim needs its assignment.")

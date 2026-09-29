@@ -26,7 +26,11 @@ from app.scheduler.domain.candidate import (
     Unavailability,
     UnavailableResource,
 )
-from app.scheduler.domain.candidate_validation import ValidationReport, validate_candidate
+from app.scheduler.domain.candidate_validation import (
+    ValidationReport,
+    ValidationViolationCode,
+    validate_candidate,
+)
 from app.scheduler.domain.capacity import aggregate_capacity_check, residual_minutes
 from app.scheduler.domain.quality import (
     InitialQualityMetrics,
@@ -209,11 +213,20 @@ def generate_complete(
     if outcome.status == OUTCOME_COMPLETE and outcome.candidate is not None:
         report = validate_candidate(snapshot, outcome.candidate)
         if not report.valid:
+            message = "The solver produced a candidate rejected by the validator."
+            if any(
+                violation.code is ValidationViolationCode.LUNCH_BREAK_VIOLATION
+                for violation in report.violations
+            ):
+                message = (
+                    "The candidate cannot satisfy the mandatory lunch break with the "
+                    "protected lessons and available resources."
+                )
             return GenerationResult(
                 OUTCOME_FAILED,
                 None,
                 report=report,
-                message="The solver produced a candidate rejected by the validator.",
+                message=message,
                 wall_time_seconds=monotonic() - started,
                 search_seconds=search_seconds,
                 evidence=outcome.evidence,
