@@ -14,7 +14,8 @@ RESOURCE_ARCHIVE_FLAGS = VERSIONS / "0016_resource_archive_flags.py"
 
 def _load_migration(path: Path, module_name: str):
     spec = importlib.util.spec_from_file_location(module_name, path)
-    assert spec is not None and spec.loader is not None
+    assert spec is not None
+    assert spec.loader is not None
     migration = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(migration)
     return migration

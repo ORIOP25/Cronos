@@ -224,7 +224,8 @@ class TestRoomRemoval:
         assert response.status_code == 409
         assert response.json()["detail"]["code"] == "resource_in_use"
         room = await db_session.get(models.Room, ctx["room"].id)
-        assert room is not None and room.is_archived is False
+        assert room is not None
+        assert room.is_archived is False
 
     async def test_room_with_removed_schedule_is_archived_and_hidden(
         self, async_client: AsyncClient, db_session: AsyncSession, clerk_admin_headers: dict

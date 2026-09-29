@@ -210,7 +210,7 @@ async def commit_import(
         for item in snapshot.classes
     }
     teacher_ids: dict[str, int] = {}
-    created_counts = {resource: 0 for resource in IMPORT_RESOURCES}
+    created_counts = dict.fromkeys(IMPORT_RESOURCES, 0)
     created_counts.update({"classes": 0, "modules": 0, "competencies": 0})
 
     for item in result.rooms:

@@ -82,7 +82,7 @@ async def get_clerk_payload(
 
 async def get_current_user(
     request: Request,
-    db: Annotated[AsyncSession, Depends(get_db, scope="function")],
+    db: Annotated[AsyncSession, Depends(get_db, scope="function")],  # NOSONAR
     payload: Annotated[dict | None, Depends(get_clerk_payload)] = None,
 ) -> Actor:
     if payload is None:
@@ -154,7 +154,7 @@ async def get_current_user(
 
 async def get_current_legal_accepted_user(
     current_user: Annotated[Actor, Depends(get_current_user)],
-    db: Annotated[AsyncSession, Depends(get_db, scope="function")],
+    db: Annotated[AsyncSession, Depends(get_db, scope="function")],  # NOSONAR
 ) -> Actor:
     status_value = await LegalAcceptanceService(db).status(current_user.organization_id)
     if status_value.requires_acceptance:
@@ -173,7 +173,7 @@ async def get_current_legal_accepted_user(
 
 async def get_current_active_user(
     current_user: Annotated[Actor, Depends(get_current_legal_accepted_user)],
-    db: Annotated[AsyncSession, Depends(get_db, scope="function")],
+    db: Annotated[AsyncSession, Depends(get_db, scope="function")],  # NOSONAR
 ) -> Actor:
     status_value = await db.scalar(
         select(models.Organization.foundation_status).where(
