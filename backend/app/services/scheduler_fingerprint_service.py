@@ -243,6 +243,7 @@ class SchedulerFingerprintService:
                 await self._db.execute(
                     select(models.Subject.id, models.Subject.required_room_type).where(
                         models.Subject.organization_id == organization_id,
+                        models.Subject.is_archived.is_(False),
                         models.Subject.id.in_(subject_ids),
                     )
                 )
@@ -379,7 +380,10 @@ class SchedulerFingerprintService:
                     models.Room.id,
                     models.Room.capacity,
                     models.Room.type,
-                ).where(models.Room.organization_id == organization_id)
+                ).where(
+                    models.Room.organization_id == organization_id,
+                    models.Room.is_archived.is_(False),
+                )
             )
         ).all()
         event_rows = (

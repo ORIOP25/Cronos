@@ -654,7 +654,10 @@ async def _build_assignments(
     rooms = (
         await db.scalars(
             select(models.Room)
-            .where(models.Room.organization_id == organization_id)
+            .where(
+                models.Room.organization_id == organization_id,
+                models.Room.is_archived.is_(False),
+            )
             .order_by(models.Room.id)
         )
     ).all()

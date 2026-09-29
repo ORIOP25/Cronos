@@ -12,6 +12,7 @@ from app.scheduler.infrastructure.operations import (
     adjust_class_progress,
     class_progress_map,
 )
+from app.services import resource_removal
 from app.services.scheduler_state_service import record_scheduler_change
 
 
@@ -73,7 +74,10 @@ async def get_classes_by_org(db: AsyncSession, organization_id: int):
     # Ordenar por nome
     result = await db.execute(
         select(models.Class)
-        .where(models.Class.organization_id == organization_id)
+        .where(
+            models.Class.organization_id == organization_id,
+            models.Class.is_archived.is_(False),
+        )
         .order_by(models.Class.name)
     )
     return result.scalars().all()
@@ -82,7 +86,11 @@ async def get_classes_by_org(db: AsyncSession, organization_id: int):
 async def get_classes_by_course(db: AsyncSession, course_id: int, organization_id: int):
     query = (
         select(models.Class)
-        .where(models.Class.course_id == course_id, models.Class.organization_id == organization_id)
+        .where(
+            models.Class.course_id == course_id,
+            models.Class.organization_id == organization_id,
+            models.Class.is_archived.is_(False),
+        )
         .order_by(models.Class.grade_level, models.Class.name)
     )
     result = await db.execute(query)
@@ -102,6 +110,12 @@ async def create_class_in_course(
             kind="not_found",
             code="resource_not_found",
             detail=f"Course {course_id} was not found in organization {organization_id}.",
+        )
+    if db_course.is_archived:
+        raise AppError(
+            kind="bad_request",
+            code="bad_request",
+            detail=f"Course {course_id} is archived and cannot receive new classes.",
         )
 
     db_item = models.Class(
@@ -139,6 +153,12 @@ async def update_class_in_course(
             kind="not_found",
             code="resource_not_found",
             detail=f"Class {class_id} was not found in course {course_id}.",
+        )
+    if db_class.is_archived:
+        raise AppError(
+            kind="bad_request",
+            code="bad_request",
+            detail=f"Class {class_id} is archived and cannot be edited.",
         )
     update_data = class_in.model_dump(exclude_unset=True)
     next_start_year = update_data.get("start_year", db_class.start_year)
@@ -178,7 +198,14 @@ async def delete_class_in_course(
     class_id: int,
     organization_id: int,
     changed_by_membership_id: int | None = None,
-):
+) -> str:
+    """Remove uma turma da gestão atual e devolve o efeito aplicado.
+
+    Uma turma publicada ou com operação em curso fica bloqueada. Com histórico
+    (horários, sumários, progresso ou fluxos) é arquivada; sem referências é
+    eliminada fisicamente. As disciplinas atribuídas e as regras são retiradas
+    na mesma transação.
+    """
     db_class = await _get_class_by_course_and_org(db, class_id, course_id, organization_id)
     if not db_class:
         raise AppError(
@@ -187,24 +214,43 @@ async def delete_class_in_course(
             detail=f"Class {class_id} was not found in course {course_id}.",
         )
 
+    if await resource_removal.class_in_use(db, organization_id, class_id):
+        raise AppError(
+            kind="conflict",
+            code="resource_in_use",
+            detail=f"Class {class_id} is used by the active schedule.",
+        )
+
     before = _class_demand_snapshot(db_class)
-    await _delete_class_with_dependencies(db, db_class.id)
+    effect = (
+        "archive"
+        if await resource_removal.class_has_history(db, organization_id, class_id)
+        else "hard_delete"
+    )
+    await resource_removal.remove_class_configuration(db, organization_id, class_id)
+
+    if effect == "hard_delete":
+        operation = models.SchedulerStateChangeOperation.DELETE
+        after = None
+        await db.execute(delete(models.Class).where(models.Class.id == class_id))
+    else:
+        operation = models.SchedulerStateChangeOperation.UPDATE
+        db_class.is_archived = True
+        after = _class_demand_snapshot(db_class)
+
     await record_scheduler_change(
         db,
         organization_id,
         entity_type="CLASS_DEMAND",
         entity_id=db_class.id,
-        operation=models.SchedulerStateChangeOperation.DELETE,
+        operation=operation,
         before=before,
-        after=None,
+        after=after,
         changed_by_membership_id=changed_by_membership_id,
-        active_resource=not db_class.is_archived,
+        active_resource=False,
     )
     await db.flush()
-
-
-async def _delete_class_with_dependencies(db: AsyncSession, class_id: int):
-    await db.execute(delete(models.Class).where(models.Class.id == class_id))
+    return effect
 
 
 async def get_class_curriculum(db: AsyncSession, class_id: int, organization_id: int):
@@ -598,6 +644,12 @@ async def add_class_subject(
             code="resource_not_found",
             detail=f"Class {class_id} was not found in organization {organization_id}.",
         )
+    if db_class.is_archived:
+        raise AppError(
+            kind="bad_request",
+            code="bad_request",
+            detail=f"Class {class_id} is archived and cannot receive new subjects.",
+        )
 
     # 2. Buscar disciplina
     subject_query = select(models.Subject).where(
@@ -611,6 +663,12 @@ async def add_class_subject(
             kind="not_found",
             code="resource_not_found",
             detail=f"Subject {subject_id} was not found in organization {organization_id}.",
+        )
+    if db_subject.is_archived:
+        raise AppError(
+            kind="bad_request",
+            code="bad_request",
+            detail=f"Subject {subject_id} is archived and cannot be assigned.",
         )
 
     # 3. Verificar se já existe
@@ -698,6 +756,12 @@ async def update_class_subject_teacher(
             kind="not_found",
             code="resource_not_found",
             detail=f"Class {class_id} was not found in organization {organization_id}.",
+        )
+    if db_class.is_archived:
+        raise AppError(
+            kind="bad_request",
+            code="bad_request",
+            detail=f"Class {class_id} is archived and cannot be edited.",
         )
 
     # 2. Buscar associação
@@ -877,6 +941,7 @@ async def get_available_subjects_for_class(db: AsyncSession, class_id: int, orga
             .options(selectinload(models.Subject.modules))
             .where(
                 models.Subject.organization_id == organization_id,
+                models.Subject.is_archived.is_(False),
                 models.Subject.id.notin_(existing_ids),
             )
             .order_by(models.Subject.name)
@@ -885,7 +950,10 @@ async def get_available_subjects_for_class(db: AsyncSession, class_id: int, orga
         subjects_query = (
             select(models.Subject)
             .options(selectinload(models.Subject.modules))
-            .where(models.Subject.organization_id == organization_id)
+            .where(
+                models.Subject.organization_id == organization_id,
+                models.Subject.is_archived.is_(False),
+            )
             .order_by(models.Subject.name)
         )
 

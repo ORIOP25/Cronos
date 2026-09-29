@@ -5,11 +5,13 @@ from typing import Annotated
 import structlog
 from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models
 from app.core.auth import Actor
 from app.core.clerk import ClerkGateway, verify_clerk_request
+from app.core.exceptions import AppError
 from app.db.database import SessionLocal
 from app.db.tenant import set_async_tenant_context
 from app.scheduler.infrastructure.task_dispatcher import CelerySchedulerTaskDispatcher
@@ -26,6 +28,18 @@ async def get_db() -> AsyncGenerator:
         try:
             yield db
             await db.commit()
+        except IntegrityError as exc:
+            # Recognised database constraint violations are a data conflict, not
+            # an unexpected failure. Keep unknown errors as 500.
+            await db.rollback()
+            logger.warning(
+                "database_integrity_conflict", constraint=getattr(exc.orig, "pgcode", None)
+            )
+            raise AppError(
+                kind="conflict",
+                code="conflict",
+                detail="The operation conflicts with existing data.",
+            ) from exc
         except Exception:
             await db.rollback()
             raise

@@ -1,9 +1,10 @@
 from sqlalchemy import delete, insert, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import selectinload, with_loader_criteria
 
 from app import models, schemas
 from app.core.exceptions import AppError
+from app.services import resource_removal
 from app.services.scheduler_state_service import record_scheduler_change
 
 
@@ -64,7 +65,10 @@ async def get_courses_by_org(
 
     query = (
         select(models.Course)
-        .where(models.Course.organization_id == organization_id)
+        .where(
+            models.Course.organization_id == organization_id,
+            models.Course.is_archived.is_(False),
+        )
         .options(selectinload(models.Course.subjects), selectinload(models.Course.classes))
         .order_by(models.Course.name)
         .offset(skip)
@@ -82,6 +86,8 @@ async def get_course_details(db: AsyncSession, course_id: int, organization_id: 
         .options(
             selectinload(models.Course.subjects),
             selectinload(models.Course.classes),  # Carregar turmas
+            with_loader_criteria(models.Class, models.Class.is_archived.is_(False)),
+            with_loader_criteria(models.Subject, models.Subject.is_archived.is_(False)),
         )
     )
     result = await db.execute(query)
@@ -308,8 +314,14 @@ async def delete_course(
     course_id: int,
     organization_id: int,
     changed_by_membership_id: int | None = None,
-):
-    # 1. Verificar existência
+) -> str:
+    """Remove um curso da gestão atual e devolve o efeito aplicado.
+
+    A regra do domínio mantém-se: as turmas atuais têm de ser removidas
+    primeiro. Um curso cujas turmas estejam apenas arquivadas é arquivado; um
+    curso sem turmas é eliminado fisicamente. As ligações curriculares são
+    retiradas na mesma transação.
+    """
     result = await db.execute(
         select(models.Course).where(
             models.Course.id == course_id, models.Course.organization_id == organization_id
@@ -323,31 +335,53 @@ async def delete_course(
             detail=f"Course {course_id} was not found in organization {organization_id}.",
         )
 
-    # 2. Verificar dependências
-    result_classes = await db.execute(
-        select(models.Class).where(
+    active_class = await db.scalar(
+        select(models.Class.id)
+        .where(
             models.Class.course_id == course_id,
             models.Class.organization_id == organization_id,
+            models.Class.is_archived.is_(False),
         )
+        .limit(1)
     )
-    if result_classes.first():
+    if active_class is not None:
         raise AppError(
             kind="bad_request",
             code="course_has_classes",
             detail=f"Course {course_id} has classes and cannot be deleted.",
         )
 
+    archived_class = await db.scalar(
+        select(models.Class.id)
+        .where(
+            models.Class.course_id == course_id,
+            models.Class.organization_id == organization_id,
+        )
+        .limit(1)
+    )
     before = await _course_demand_snapshot(db, organization_id, course_id)
-    await db.delete(course)
+    effect = "archive" if archived_class is not None else "hard_delete"
+    await resource_removal.remove_course_configuration(db, organization_id, course_id)
+
+    if effect == "hard_delete":
+        operation = models.SchedulerStateChangeOperation.DELETE
+        after = None
+        await db.delete(course)
+    else:
+        operation = models.SchedulerStateChangeOperation.UPDATE
+        course.is_archived = True
+        after = {**before, "is_archived": True}
+
     await record_scheduler_change(
         db,
         organization_id,
         entity_type="COURSE_DEMAND",
         entity_id=course_id,
-        operation=models.SchedulerStateChangeOperation.DELETE,
+        operation=operation,
         before=before,
-        after=None,
+        after=after,
         changed_by_membership_id=changed_by_membership_id,
-        active_resource=bool(before["subject_ids"]),
+        active_resource=False,
     )
     await db.flush()
+    return effect

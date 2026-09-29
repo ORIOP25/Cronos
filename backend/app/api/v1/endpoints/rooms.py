@@ -69,11 +69,11 @@ async def delete_room(
     db: deps.DbSession,
     current_user: deps.AdminActor,
 ):
-    await room_service.delete_room(
+    remove_effect = await room_service.delete_room(
         db,
         room_id,
         current_user.organization_id,
         changed_by_membership_id=current_user.membership_id,
     )
 
-    return {"message": "Sala removida com sucesso"}
+    return {"message": "Sala removida com sucesso", "remove_effect": remove_effect}

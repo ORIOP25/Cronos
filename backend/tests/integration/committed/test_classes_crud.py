@@ -125,19 +125,29 @@ class TestClassesCRUD:
         clerk_admin_headers: dict,
         db_session: AsyncSession,
     ):
-        """✅ Listar turmas da organização"""
+        """✅ Listar turmas da organização esconde as arquivadas."""
         course_id = await _create_course(async_client, clerk_admin_headers)
-        created = await async_client.post(
+        archived = await async_client.post(
             f"{API}/courses/{course_id}/classes",
             json={
-                "name": "Turma Lista",
+                "name": "Turma Arquivada",
                 "grade_level": 10,
                 "start_year": 2025,
                 "end_year": 2028,
             },
             headers=clerk_admin_headers,
         )
-        school_class = await db_session.get(models.Class, created.json()["id"])
+        await async_client.post(
+            f"{API}/courses/{course_id}/classes",
+            json={
+                "name": "Turma Ativa",
+                "grade_level": 11,
+                "start_year": 2025,
+                "end_year": 2028,
+            },
+            headers=clerk_admin_headers,
+        )
+        school_class = await db_session.get(models.Class, archived.json()["id"])
         school_class.is_archived = True
         await db_session.commit()
 
@@ -145,8 +155,9 @@ class TestClassesCRUD:
         assert resp.status_code == 200
         data = resp.json()
         assert isinstance(data, list)
-        assert any(c["name"] == "Turma Lista" for c in data)
-        assert next(c for c in data if c["name"] == "Turma Lista")["is_archived"] is True
+        names = [c["name"] for c in data]
+        assert "Turma Arquivada" not in names
+        assert "Turma Ativa" in names
 
     async def test_get_class_full_detail(
         self, async_client: AsyncClient, clerk_admin_headers: dict

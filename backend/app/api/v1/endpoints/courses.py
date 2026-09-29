@@ -143,14 +143,14 @@ async def delete_course_class(
     db: deps.DbSession,
     current_user: deps.AdminActor,
 ) -> Any:
-    await class_service.delete_class_in_course(
+    remove_effect = await class_service.delete_class_in_course(
         db,
         course_id,
         class_id,
         current_user.organization_id,
         changed_by_membership_id=current_user.membership_id,
     )
-    return {"message": "Turma removida com sucesso"}
+    return {"message": "Turma removida com sucesso", "remove_effect": remove_effect}
 
 
 # --- 4. Atualizar Curso (PATCH - AtualizaÃ§Ã£o Parcial) ---
@@ -200,11 +200,11 @@ async def delete_course(
     db: deps.DbSession,
     current_user: deps.AdminActor,
 ) -> Any:
-    await course_service.delete_course(
+    remove_effect = await course_service.delete_course(
         db,
         course_id,
         current_user.organization_id,
         changed_by_membership_id=current_user.membership_id,
     )
 
-    return {"message": "Curso removido com sucesso"}
+    return {"message": "Curso removido com sucesso", "remove_effect": remove_effect}

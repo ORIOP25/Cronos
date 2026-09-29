@@ -56,6 +56,7 @@ class SchoolReadinessService:
             & (class_alias.organization_id == organization_id)
             & (subject_alias.organization_id == organization_id)
             & class_alias.is_archived.is_(False)
+            & subject_alias.is_archived.is_(False)
             & (link_alias.grade_level == class_alias.grade_level)
             & exists(
                 select(1).where(
@@ -113,6 +114,7 @@ class SchoolReadinessService:
                 models.Room.organization_id == organization_id,
                 models.Room.type == subject_alias.required_room_type,
                 models.Room.capacity >= class_alias.size,
+                models.Room.is_archived.is_(False),
             )
             .correlate(class_alias, subject_alias)
         )
@@ -142,9 +144,13 @@ class SchoolReadinessService:
                 )
             ).label("active_classes"),
             exists(
-                select(1).where(
+                select(1)
+                .select_from(models.Module)
+                .join(models.Subject, models.Subject.id == models.Module.subject_id)
+                .where(
                     models.Module.organization_id == organization_id,
                     models.Module.required_minutes > 0,
+                    models.Subject.is_archived.is_(False),
                 )
             ).label("modules"),
             active_teacher.label("active_teacher"),

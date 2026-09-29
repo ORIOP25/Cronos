@@ -116,6 +116,7 @@ const CourseDetails = ({ courseIdOverride, readOnly = false, allowedActions, nav
   const [classModalVisible, setClassModalVisible] = useState(false)
   const [selectedClass, setSelectedClass] = useState(null)
   const [deleteConfirmation, setDeleteConfirmation] = useState(null)
+  const [deleteNotice, setDeleteNotice] = useState('')
 
   // --- MEMOIZED: Turmas agrupadas por grade_level ---
   // eslint-disable-next-line react-hooks/preserve-manual-memoization
@@ -213,6 +214,7 @@ const CourseDetails = ({ courseIdOverride, readOnly = false, allowedActions, nav
   }
 
   const handleConfirmDelete = () => {
+    setDeleteNotice('')
     if (deleteConfirmation?.type === 'course') {
       deleteCourse.mutate(courseId, {
         onSuccess: () => { navigate('/courses') },
@@ -224,14 +226,23 @@ const CourseDetails = ({ courseIdOverride, readOnly = false, allowedActions, nav
     if (deleteConfirmation?.type === 'class') {
       deleteCourseClass.mutate(
         { courseId, classId: deleteConfirmation.classData.id },
-        { onSettled: () => setDeleteConfirmation(null) }
+        {
+          onSuccess: (data) => {
+            setDeleteNotice(
+              data?.remove_effect === 'archive'
+                ? 'Turma arquivada. O histórico (horários, sumários e progresso) foi preservado.'
+                : 'Turma removida.'
+            )
+          },
+          onSettled: () => setDeleteConfirmation(null),
+        }
       )
     }
   }
 
   const deleteMessage = deleteConfirmation?.type === 'class'
-    ? `Apagar a turma ${deleteConfirmation.classData.name}? Esta ação elimina aulas, agendamentos e substituições associados.`
-    : 'Apagar este curso? Esta ação é irreversível e pode falhar se houver turmas.'
+    ? `Remover a turma ${deleteConfirmation.classData.name}? As associações de configuração serão retiradas e o histórico (horários, sumários e progresso) será preservado. Se estiver no horário atual, a remoção é bloqueada.`
+    : 'Remover este curso? As associações de configuração serão retiradas e o histórico será preservado. Apague primeiro as turmas atuais.'
 
   // ==========================================
   //  RENDER: Loading / Error
@@ -297,6 +308,11 @@ const CourseDetails = ({ courseIdOverride, readOnly = false, allowedActions, nav
           {getApiErrorMessage(
             createCourseClass.error || updateCourseClass.error || deleteCourseClass.error
           )}
+        </CAlert>
+      )}
+      {deleteNotice && (
+        <CAlert color="success" dismissible onClose={() => setDeleteNotice('')}>
+          {deleteNotice}
         </CAlert>
       )}
 

@@ -34,6 +34,7 @@ async def test_update_class_in_course_rejects_partial_year_update_without_mutati
         grade_level=10,
         start_year=2025,
         end_year=2028,
+        is_archived=False,
     )
 
     async def fake_get_class_by_course_and_org(*_args):

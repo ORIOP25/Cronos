@@ -94,6 +94,25 @@ def _legacy_public_context(code: str, metadata: dict) -> dict:
     }
 
 
+def _cors_headers(request: Request) -> dict[str, str]:
+    """Expose error responses to the exact browser origins already allowed.
+
+    Unexpected exceptions are rendered by the outermost server-error middleware,
+    which sits outside the CORS middleware. Without this, a cross-origin browser
+    sees a network failure instead of the real HTTP status. Only origins already
+    allowed by configuration receive the header; everything else stays rejected.
+    """
+    headers = getattr(request, "headers", None)
+    origin = headers.get("origin") if headers is not None else None
+    if origin and origin in settings.CORS_ORIGINS_LIST:
+        return {
+            "Access-Control-Allow-Origin": origin,
+            "Access-Control-Expose-Headers": REQUEST_ID_HEADER,
+            "Vary": "Origin",
+        }
+    return {}
+
+
 def _error_response(
     request: Request,
     *,
@@ -108,6 +127,7 @@ def _error_response(
     diagnostic_metadata: dict | None = None,
 ) -> JSONResponse:
     reference = reference or request_reference(request)
+    headers = {**(headers or {}), **_cors_headers(request)}
     route = getattr(request, "scope", {}).get("route")
     route_template = getattr(route, "path", None) or "unmatched"
     diagnostic = {}

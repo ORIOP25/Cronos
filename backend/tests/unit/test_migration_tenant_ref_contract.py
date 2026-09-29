@@ -9,6 +9,7 @@ GRID_CHANGE_STRATEGY = VERSIONS / "0012_grid_change_strategy.py"
 INTERNSHIP_FLOWS = VERSIONS / "0013_internship_flows.py"
 FOUNDATION_INTERNSHIP_STEP = VERSIONS / "0014_foundation_internship_step.py"
 SCHEDULER_V1_GRID_CHANGE = VERSIONS / "0015_scheduler_v1_grid_change.py"
+RESOURCE_ARCHIVE_FLAGS = VERSIONS / "0016_resource_archive_flags.py"
 
 
 def _load_migration(path: Path, module_name: str):
@@ -27,6 +28,7 @@ def test_migration_history_keeps_the_consolidated_baseline_and_its_dependents():
         INTERNSHIP_FLOWS,
         FOUNDATION_INTERNSHIP_STEP,
         SCHEDULER_V1_GRID_CHANGE,
+        RESOURCE_ARCHIVE_FLAGS,
     ]
     baseline = _load_migration(BASELINE, "baseline_migration")
     grid_versions = _load_migration(GRID_VERSIONS, "grid_versions")
@@ -34,6 +36,7 @@ def test_migration_history_keeps_the_consolidated_baseline_and_its_dependents():
     internship_flows = _load_migration(INTERNSHIP_FLOWS, "internship_flows")
     foundation_step = _load_migration(FOUNDATION_INTERNSHIP_STEP, "foundation_internship_step")
     v1_grid_change = _load_migration(SCHEDULER_V1_GRID_CHANGE, "v1_grid_change")
+    resource_archive_flags = _load_migration(RESOURCE_ARCHIVE_FLAGS, "resource_archive_flags")
 
     assert baseline.revision == "0001_scheduler_v1_baseline"
     assert baseline.down_revision is None
@@ -42,6 +45,7 @@ def test_migration_history_keeps_the_consolidated_baseline_and_its_dependents():
     assert internship_flows.down_revision == grid_change.revision
     assert foundation_step.down_revision == internship_flows.revision
     assert v1_grid_change.down_revision == foundation_step.revision
+    assert resource_archive_flags.down_revision == v1_grid_change.revision
 
     source = BASELINE.read_text(encoding="utf-8")
     for forbidden in ("app.models", "Base.metadata", "create_all", "drop_all"):

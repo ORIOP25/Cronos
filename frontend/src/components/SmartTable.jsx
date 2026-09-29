@@ -21,6 +21,7 @@ const SmartTable = ({
   onRowClick,
   getRowLabel,
   emptyAction,
+  deleteMessage,
   allowEdit = true,
   allowDelete = true,
   readOnly = false,
@@ -29,13 +30,20 @@ const SmartTable = ({
   const [deleteTarget, setDeleteTarget] = useState(null)
   const [isDeleting, setIsDeleting] = useState(false)
   const [deleteError, setDeleteError] = useState('')
+  const [deleteNotice, setDeleteNotice] = useState('')
 
   const handleDeleteConfirm = async () => {
     if (!deleteTarget || !onDelete) return
     setIsDeleting(true)
     setDeleteError('')
+    setDeleteNotice('')
     try {
-      await onDelete(deleteTarget)
+      const result = await onDelete(deleteTarget)
+      setDeleteNotice(
+        result?.remove_effect === 'archive'
+          ? 'Registo arquivado. O histórico (horários, sumários e progresso) foi preservado.'
+          : 'Registo removido.'
+      )
       setDeleteTarget(null)
     } catch (error) {
       setDeleteError(getApiErrorMessage(error, 'Não foi possível remover o registo.'))
@@ -132,11 +140,13 @@ const SmartTable = ({
       </CCardBody></CCard>
 
       {deleteError && <div className="mt-3"><FeedbackBanner tone="danger">{deleteError}</FeedbackBanner></div>}
+      {deleteNotice && <div className="mt-3"><FeedbackBanner tone="success" onDismiss={() => setDeleteNotice('')}>{deleteNotice}</FeedbackBanner></div>}
 
       <ConfirmationModal
         visible={deleteTarget !== null}
         onClose={() => setDeleteTarget(null)}
         onConfirm={handleDeleteConfirm}
+        message={deleteMessage}
         isLoading={isDeleting}
       />
     </>

@@ -19,6 +19,9 @@ PUBLIC_ERROR_CATALOG: dict[str, dict[str, Any]] = {
     },
     "resource_not_found": {"message": "O recurso pedido não foi encontrado."},
     "conflict": {"message": "Não foi possível concluir a operação porque os dados mudaram."},
+    "resource_in_use": {
+        "message": "Este recurso está a ser utilizado no horário atual. Remova ou republique o horário primeiro.",
+    },
     "validation_error": {"message": "Reveja os dados indicados e tente novamente."},
     "bad_request": {"message": "Não foi possível processar o pedido."},
     "course_has_classes": {"message": "Apague primeiro as turmas deste curso."},
