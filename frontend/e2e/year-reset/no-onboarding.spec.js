@@ -32,9 +32,9 @@ test.describe('Year reset — no legacy onboarding', () => {
 
     await goTo(page, '/config')
     await page.getByRole('button', { name: 'Recomeçar ano letivo' }).click()
-    await page.getByRole('checkbox', { name: /Compreendo que irei apagar/i }).check()
+    await page.getByRole('checkbox', { name: /Compreendo que os horários ativos/i }).check()
     await page.getByLabel(/digite exatamente a palavra/i).fill('Confirmo')
-    await page.getByRole('button', { name: 'Remover dados e recomeçar' }).click()
+    await page.getByRole('button', { name: 'Confirmar reinício' }).click()
     await expect(page.getByText(/Ano letivo recomeçado com sucesso/i)).toBeVisible()
 
     const tutorialStorageAfter = await page.evaluate(() => Object.fromEntries(

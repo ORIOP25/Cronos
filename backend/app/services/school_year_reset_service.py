@@ -8,9 +8,22 @@ from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models
+from app.scheduler.infrastructure.models import (
+    JOB_ACTIVE_STATUSES,
+    CurricularAssignment,
+    SchedulerJobV1,
+    SchedulerProposalV1,
+    SchedulerVersionV1,
+)
+from app.scheduler.infrastructure.progress import (
+    reverse_outstanding_credits,
+    settle_open_debt,
+)
 from app.services.scheduler_state_service import SchedulerStateService
 
 logger = structlog.get_logger(__name__)
+
+RESET_REASON = "Reinício do ano letivo pelo administrador."
 
 
 @dataclass(frozen=True)
@@ -37,6 +50,14 @@ class SchoolYearResetService:
         settings = await self._load_settings(organization_id)
         active_year = await self._load_active_year_for_update(organization_id)
         previous_school_year_id = active_year.id if active_year is not None else None
+        state_service = SchedulerStateService(self._db)
+        # The year state lock is taken before any transition so a concurrent
+        # generation cannot publish old data between cleanup steps.
+        state = (
+            await state_service.get_state(organization_id, active_year.id, for_update=True)
+            if active_year is not None
+            else None
+        )
 
         logger.info(
             "school_year_destructive_reset_started",
@@ -94,24 +115,33 @@ class SchoolYearResetService:
             draft.decided_at = now
         affected["pending_drafts"] = len(pending_drafts)
 
+        if active_year is not None:
+            affected.update(
+                await self._reset_v1_year(
+                    organization_id,
+                    active_year.id,
+                    reset_by_membership_id=reset_by_membership_id,
+                    now=now,
+                )
+            )
+
         reset_progress_rows = await self._append_progress_reversals(
             organization_id,
             school_year_id=previous_school_year_id,
             reset_by_membership_id=reset_by_membership_id,
         )
-        if active_year is not None:
-            state = await SchedulerStateService(self._db).get_state(
+        if state is not None and active_year is not None:
+            state = await state_service.reset_year(
                 organization_id,
                 active_year.id,
-                for_update=True,
+                reset_by_membership_id=reset_by_membership_id,
+                reset_at=now,
             )
-            if state is not None:
-                state.pending_draft_id = None
-                state.school_year_publication_state = models.SchoolYearPublicationState.UNPUBLISHED
-                state.active_schedule_version_id = None
-                state.approved_scheduler_state_version = None
-                state.scheduler_state_version += 1
-                state.lock_version += 1
+            state.input_revision = 0
+            state.planning_revision = 0
+            state.last_completed_planning_revision = None
+            state.last_successful_generation_at = None
+            state.scheduler_state_version += 1
 
         new_school_year_id = (
             active_year.id
@@ -136,6 +166,136 @@ class SchoolYearResetService:
             new_school_year_id=new_school_year_id,
         )
         return reset_result
+
+    async def _reset_v1_year(
+        self,
+        organization_id: int,
+        school_year_id: int,
+        *,
+        reset_by_membership_id: int,
+        now: datetime,
+    ) -> dict[str, int]:
+        """Discard the active v1 generation and its operational progress."""
+        summary: dict[str, int] = {}
+        result = await self._db.execute(
+            update(SchedulerVersionV1)
+            .where(
+                SchedulerVersionV1.organization_id == organization_id,
+                SchedulerVersionV1.school_year_id == school_year_id,
+                SchedulerVersionV1.status == "ACTIVE",
+            )
+            .values(status="SUPERSEDED")
+        )
+        summary["v1_versions_superseded"] = result.rowcount or 0
+
+        result = await self._db.execute(
+            update(SchedulerProposalV1)
+            .where(
+                SchedulerProposalV1.organization_id == organization_id,
+                SchedulerProposalV1.school_year_id == school_year_id,
+                SchedulerProposalV1.status == "PENDING",
+            )
+            .values(
+                status="SUPERSEDED",
+                reason="school_year_reset",
+                decided_at=now,
+                decided_by_membership_id=reset_by_membership_id,
+            )
+        )
+        summary["v1_proposals_superseded"] = result.rowcount or 0
+
+        jobs = list(
+            (
+                await self._db.scalars(
+                    select(SchedulerJobV1)
+                    .where(
+                        SchedulerJobV1.organization_id == organization_id,
+                        SchedulerJobV1.school_year_id == school_year_id,
+                        SchedulerJobV1.status.in_(JOB_ACTIVE_STATUSES),
+                    )
+                    .with_for_update()
+                )
+            ).all()
+        )
+        grid_version_ids = sorted(
+            {job.grid_version_id for job in jobs if job.grid_version_id is not None}
+        )
+        for job in jobs:
+            job.status = "CANCELLED"
+            job.result_code = "CANCELLED"
+            job.stop_reason = "CANCELLED"
+            job.cancellation_requested_at = now
+            job.finished_at = now
+        summary["v1_jobs_cancelled"] = len(jobs)
+        rejected_grid_versions = 0
+        if grid_version_ids:
+            rejected = await self._db.execute(
+                update(models.GridVersion)
+                .where(
+                    models.GridVersion.organization_id == organization_id,
+                    models.GridVersion.id.in_(grid_version_ids),
+                    models.GridVersion.state == models.GridVersionState.PENDING,
+                )
+                .values(state=models.GridVersionState.REJECTED)
+            )
+            rejected_grid_versions = rejected.rowcount or 0
+        summary["v1_grid_versions_rejected"] = rejected_grid_versions
+
+        reversed_executions, settled_minutes = await self._reverse_v1_progress(
+            organization_id,
+            school_year_id,
+            reset_by_membership_id=reset_by_membership_id,
+            now=now,
+        )
+        summary["v1_executions_reversed"] = reversed_executions
+        summary["v1_debt_settled_minutes"] = settled_minutes
+        return summary
+
+    async def _reverse_v1_progress(
+        self,
+        organization_id: int,
+        school_year_id: int,
+        *,
+        reset_by_membership_id: int,
+        now: datetime,
+    ) -> tuple[int, int]:
+        assignment_ids = list(
+            (
+                await self._db.scalars(
+                    select(CurricularAssignment.id)
+                    .where(
+                        CurricularAssignment.organization_id == organization_id,
+                        CurricularAssignment.school_year_id == school_year_id,
+                    )
+                    .order_by(CurricularAssignment.id)
+                )
+            ).all()
+        )
+        if not assignment_ids:
+            return 0, 0
+        settled_minutes = 0
+        for assignment_id in assignment_ids:
+            settled_minutes += await settle_open_debt(
+                self._db,
+                organization_id,
+                school_year_id,
+                assignment_id,
+                membership_id=reset_by_membership_id,
+                reason=RESET_REASON,
+                now_utc=now,
+            )
+        reversed_executions = 0
+        for assignment_id in assignment_ids:
+            reversed_executions += await reverse_outstanding_credits(
+                self._db,
+                organization_id,
+                school_year_id,
+                assignment_id,
+                membership_id=reset_by_membership_id,
+                reason=RESET_REASON,
+                now_utc=now,
+            )
+        return reversed_executions, settled_minutes
 
     async def _lock_organization(self, organization_id: int) -> None:
         organization = await self._db.scalar(

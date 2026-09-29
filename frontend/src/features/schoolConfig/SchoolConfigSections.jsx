@@ -647,7 +647,7 @@ const SettingsEditor = ({ settings, onSoftResetSuccess, onSaveSuccess }) => {
     if (resetConfirmText !== 'Confirmo' || !resetChecked) return
     resetMutation.mutate({ confirm_phrase: resetConfirmText }, {
       onSuccess: () => {
-        onSoftResetSuccess('Ano letivo recomeçado com sucesso. Todas as gerações, ocorrências e registos foram apagados.', 10_000)
+        onSoftResetSuccess('Ano letivo recomeçado com sucesso. Os horários deixam de estar ativos e o progresso volta a zero; o histórico auditável é conservado.', 10_000)
         setShowResetModal(false)
         setResetConfirmText('')
         setResetChecked(false)
@@ -805,7 +805,7 @@ const SettingsEditor = ({ settings, onSoftResetSuccess, onSaveSuccess }) => {
         </CModalHeader>
         <CModalBody>
           <CAlert color="warning">
-              Esta ação não pode ser desfeita. Todos os dados do ano letivo anterior, incluindo horários, ocorrências e registos de aulas, serão removidos permanentemente.
+              Esta ação repõe o ano letivo no estado inicial: os horários publicados deixam de estar ativos, as propostas pendentes são invalidadas e o progresso do motor volta a zero. O histórico auditável é conservado, mas deixa de influenciar novas gerações.
             </CAlert>
           
           {resetError && <CAlert color="danger">{resetError}</CAlert>}
@@ -813,7 +813,7 @@ const SettingsEditor = ({ settings, onSoftResetSuccess, onSaveSuccess }) => {
           <div className="mb-3 mt-4">
             <CFormCheck 
               id="resetCheck"
-              label="Compreendo que irei apagar todos os horários e registos."
+              label="Compreendo que os horários ativos e o progresso passam a zero."
               checked={resetChecked}
               onChange={(e) => setResetChecked(e.target.checked)}
             />
@@ -839,7 +839,7 @@ const SettingsEditor = ({ settings, onSoftResetSuccess, onSaveSuccess }) => {
             disabled={resetConfirmText !== 'Confirmo' || !resetChecked || resetMutation.isPending}
             onClick={handleSoftReset}
           >
-            {resetMutation.isPending ? 'A remover dados' : 'Remover dados e recomeçar'}
+            {resetMutation.isPending ? 'A recomeçar' : 'Confirmar reinício'}
           </CButton>
         </CModalFooter>
       </CModal>

@@ -2,7 +2,8 @@
 
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
-from datetime import date
+from datetime import date, datetime
+from uuid import uuid4
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -606,6 +607,145 @@ async def record_execution(
         state.planning_revision += 1
     await db.flush()
     return record.id
+
+
+async def reverse_outstanding_credits(
+    db: AsyncSession,
+    organization_id: int,
+    school_year_id: int,
+    assignment_id: int,
+    *,
+    membership_id: int,
+    reason: str,
+    now_utc: datetime,
+) -> int:
+    """Append one audited reversal per execution with remaining credit.
+
+    The append-only ledger stays intact: every reversal references its source
+    execution and opposes only the credit that is still effective, so a replayed
+    balance returns to zero. Returns the number of reversal events written.
+    """
+    stored, credits_by_execution, entries = await _execution_history(
+        db, organization_id, assignment_id
+    )
+    source_id_by_key = {(row.origin, row.revision): row.id for row in stored}
+    reversed_by_source: dict[int, dict[int, int]] = defaultdict(lambda: defaultdict(int))
+    for row, entry in zip(stored, entries, strict=True):
+        if entry.reversal_of is None:
+            continue
+        source_id = source_id_by_key.get(entry.reversal_of)
+        if source_id is None:
+            raise ValueError("Execution reversal references an unknown entry.")
+        for credit in credits_by_execution.get(row.id, ()):
+            reversed_by_source[source_id][credit.module_id] += abs(credit.delta_minutes)
+
+    written = 0
+    for row, entry in zip(stored, entries, strict=True):
+        if entry.reversal_of is not None:
+            continue
+        credits = tuple(
+            ModuleCredit(
+                credit.module_id,
+                -(credit.minutes - reversed_by_source[row.id].get(credit.module_id, 0)),
+            )
+            for credit in entry.credits
+            if credit.minutes - reversed_by_source[row.id].get(credit.module_id, 0) > 0
+        )
+        if not credits:
+            continue
+        revision = (
+            max(
+                (candidate.revision for candidate in entries if candidate.origin == entry.origin),
+                default=0,
+            )
+            + 1
+        )
+        await record_execution(
+            db,
+            organization_id,
+            school_year_id,
+            assignment_id,
+            ExecutionEntry(
+                entry.origin,
+                revision,
+                membership_id,
+                reason,
+                credits,
+                reversal_of=entry.key,
+                recorded_at=now_utc,
+            ),
+            planning_relevant=True,
+            # Settlements stay untouched: the debt they already closed must not
+            # reopen for a reset that later settles the remaining open balance.
+            settlements=(),
+        )
+        written += 1
+    return written
+
+
+async def settle_open_debt(
+    db: AsyncSession,
+    organization_id: int,
+    school_year_id: int,
+    assignment_id: int,
+    *,
+    membership_id: int,
+    reason: str,
+    now_utc: datetime,
+) -> int:
+    """Close every open claim of one assignment with one audited credit.
+
+    A negative debt revision cannot close a claim whose older settlements were
+    reversed, so the open balance is settled with recorded execution credit.
+    The caller annuls that credit in the same transaction; the executed balance
+    then returns to zero while the debt stays closed. Returns settled minutes.
+    """
+    open_debt, _ = await load_open_debt(db, organization_id, [assignment_id])
+    total = sum(open_debt.values())
+    if total == 0:
+        return 0
+    executed = (await load_executed_minutes(db, organization_id, [assignment_id])).get(
+        assignment_id, {}
+    )
+    requirement_rows = (
+        await db.execute(
+            select(CurricularRequirement.module_id, CurricularRequirement.required_minutes)
+            .where(
+                CurricularRequirement.organization_id == organization_id,
+                CurricularRequirement.assignment_id == assignment_id,
+            )
+            .order_by(CurricularRequirement.sequence)
+        )
+    ).all()
+    credits: list[ModuleCredit] = []
+    remaining = total
+    for module_id, required_minutes in requirement_rows:
+        available = required_minutes - int(executed.get(module_id, 0))
+        if available <= 0:
+            continue
+        taken = min(remaining, available)
+        credits.append(ModuleCredit(module_id, taken))
+        remaining -= taken
+        if remaining == 0:
+            break
+    if remaining > 0:
+        raise ValueError("Open debt exceeds the remaining curricular demand.")
+    await record_execution(
+        db,
+        organization_id,
+        school_year_id,
+        assignment_id,
+        ExecutionEntry(
+            f"school-year-reset-settlement:{school_year_id}:{uuid4().hex}",
+            1,
+            membership_id,
+            reason,
+            tuple(credits),
+            recorded_at=now_utc,
+        ),
+        planning_relevant=True,
+    )
+    return total
 
 
 async def configure_school_year(
