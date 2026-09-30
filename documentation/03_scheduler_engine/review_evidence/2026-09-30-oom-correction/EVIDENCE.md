@@ -45,6 +45,12 @@ Gate `C(32) <= 2 * C(16)`: before `4255 > 2206` (red), after `275 <= 282`
 The `all --scope backend` run covers Ruff, unit tests, integration tests,
 infrastructure contracts and the coverage gates.
 
+## Continuous integration
+
+- Commit: `000e4d9ec404cc0b60e06f58539cdc94e44eeab7` on `main`.
+- CI run: https://github.com/ORIOP25/Cronos/actions/runs/36730219027
+- Result: `success`. The `frontend`, `backend` and `e2e` jobs passed.
+
 ## Limitations
 
 - OOM.05: the isolated measurement with the organization 27 snapshot was not
