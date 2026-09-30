@@ -60,6 +60,7 @@ from app.scheduler.infrastructure.annual_model import (
     week_index,
 )
 from app.scheduler.infrastructure.constructive import construct_schedule
+from app.scheduler.infrastructure.diagnostics import phase_finished, phase_started
 from app.scheduler.infrastructure.placement_model import (
     STATUS_CANCELLED,
     STATUS_COMPLETE,
@@ -419,7 +420,14 @@ def _joint_search(
             trajectory_out.append(start_point)
     # Build the guaranteed candidate before the expensive search so its cost is
     # inside the budget: a failed search can always return it within the limit.
+    constructive_start = monotonic()
+    phase_started("CONSTRUCTIVE")
     constructed = construct_schedule(snapshot, periods) if incumbent is None else None
+    phase_finished(
+        "CONSTRUCTIVE",
+        started_at=constructive_start,
+        status="BUILT" if constructed is not None else "NONE",
+    )
     phase_totals: dict[str, int] = {}
 
     def constructive_outcome() -> SearchOutcome:

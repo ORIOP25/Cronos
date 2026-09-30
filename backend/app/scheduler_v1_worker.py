@@ -12,6 +12,7 @@ import asyncio
 import contextlib
 import threading
 from datetime import UTC, datetime
+from time import monotonic
 
 import structlog
 
@@ -34,6 +35,7 @@ from app.scheduler.domain.results import (
     OUTCOME_INFEASIBLE,
     OUTCOME_INVALID_INPUT,
 )
+from app.scheduler.infrastructure import diagnostics
 from app.scheduler.infrastructure.jobs import (
     AttemptState,
     JobClaim,
@@ -112,45 +114,58 @@ async def _execute_claim(claim: JobClaim, lock_connection=None) -> dict[str, obj
         return {"job_id": claim.job_id, "status": written, "code": exc.code}
     cancel_event = threading.Event()
     monitor = asyncio.create_task(_monitor_attempt(claim, cancel_event, lock_connection))
-    try:
-        result = await asyncio.to_thread(
-            _run_search,
-            claim,
-            bundle,
-            cancel_event,
-        )
-    finally:
-        monitor.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await monitor
-    _log_search_outcome(claim, result)
-    if result.outcome == OUTCOME_COMPLETE and result.candidate is not None:
-        payload = _build_payload(claim, bundle, result)
-        async with SessionLocal() as db:
-            await set_async_tenant_context(db, claim.organization_id)
-            outcome = await persist_proposal(
-                db,
-                organization_id=claim.organization_id,
-                job_id=claim.job_id,
-                attempt_token=claim.attempt_token,
-                bundle=bundle,
-                candidate=result.candidate,
-                payload=payload,
-                policy_version=_policy_version(claim, bundle),
-                now_utc=_now(),
+    with structlog.contextvars.bound_contextvars(
+        job_id=claim.job_id,
+        organization_id=claim.organization_id,
+        strategy=claim.strategy.value,
+    ):
+        try:
+            result = await asyncio.to_thread(
+                _run_search,
+                claim,
+                bundle,
+                cancel_event,
             )
-        if outcome.proposal_id is not None:
-            return {
-                "job_id": claim.job_id,
-                "status": "SUCCEEDED",
-                "proposal_id": outcome.proposal_id,
-            }
-        return {"job_id": claim.job_id, "status": outcome.refused or "LOST"}
-    status, result_code, stop_reason = _TERMINAL_BY_OUTCOME.get(
-        result.outcome, ("FAILED", "SYSTEM_ERROR", "FAILED")
-    )
-    written = await _finish(claim, status, result_code, stop_reason)
-    return {"job_id": claim.job_id, "status": written, "calculated": status}
+        finally:
+            monitor.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await monitor
+        _log_search_outcome(claim, result)
+        if result.outcome == OUTCOME_COMPLETE and result.candidate is not None:
+            payload = _build_payload(claim, bundle, result)
+            diagnostics.phase_started("PERSISTENCE")
+            persist_start = monotonic()
+            async with SessionLocal() as db:
+                await set_async_tenant_context(db, claim.organization_id)
+                outcome = await persist_proposal(
+                    db,
+                    organization_id=claim.organization_id,
+                    job_id=claim.job_id,
+                    attempt_token=claim.attempt_token,
+                    bundle=bundle,
+                    candidate=result.candidate,
+                    payload=payload,
+                    policy_version=_policy_version(claim, bundle),
+                    now_utc=_now(),
+                )
+            if outcome.proposal_id is not None:
+                diagnostics.phase_finished(
+                    "PERSISTENCE", started_at=persist_start, status="PERSISTED"
+                )
+                return {
+                    "job_id": claim.job_id,
+                    "status": "SUCCEEDED",
+                    "proposal_id": outcome.proposal_id,
+                }
+            diagnostics.phase_finished(
+                "PERSISTENCE", started_at=persist_start, status=outcome.refused or "LOST"
+            )
+            return {"job_id": claim.job_id, "status": outcome.refused or "LOST"}
+        status, result_code, stop_reason = _TERMINAL_BY_OUTCOME.get(
+            result.outcome, ("FAILED", "SYSTEM_ERROR", "FAILED")
+        )
+        written = await _finish(claim, status, result_code, stop_reason)
+        return {"job_id": claim.job_id, "status": written, "calculated": status}
 
 
 def _run_search(claim: JobClaim, bundle, cancel_event: threading.Event):

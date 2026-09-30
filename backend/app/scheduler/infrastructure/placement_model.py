@@ -16,7 +16,7 @@ prove it, and the evidence marks the contiguous certified prefix.
 from __future__ import annotations
 
 from collections import Counter, defaultdict
-from collections.abc import Callable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import date
 from time import monotonic
@@ -47,6 +47,7 @@ from app.scheduler.domain.quality import (
     StageEvidence,
     measure_initial_quality,
 )
+from app.scheduler.infrastructure import diagnostics
 from app.scheduler.infrastructure.annual_model import (
     QuotaDistribution,
     week_index,
@@ -192,10 +193,6 @@ def _lunch_cache_salt(snapshot: PlanningSnapshot, salt: str) -> str:
         f"{salt}|lunch:{lunch.window_start_minutes}-{lunch.window_end_minutes}"
         f":{lunch.minimum_minutes}"
     )
-
-
-def _overlaps(left: Period, right: Period) -> bool:
-    return left.start_utc < right.end_utc and right.start_utc < left.end_utc
 
 
 def _module_completed(snapshot: PlanningSnapshot, assignment_id: int) -> dict[int, int]:
@@ -595,46 +592,51 @@ def _build_scope_state(snapshot: PlanningSnapshot, scope: _WindowScope) -> _Scop
     return state
 
 
-def _conflict_pairs(
-    state: _ScopeState, keys: Sequence[tuple[int, Period]]
-) -> Iterator[tuple[Any, Any]]:
-    ordered = sorted(keys, key=lambda row: (row[1].start_utc, row[1].end_utc))
-    for index, (assignment_a, period_a) in enumerate(ordered):
-        for assignment_b, period_b in ordered[index + 1 :]:
-            if period_b.start_utc >= period_a.end_utc:
-                break
-            yield state.x[(assignment_a, period_a)], state.x[(assignment_b, period_b)]
+def _add_resource_exclusivity(model: cp_model.CpModel, rows: Sequence[tuple[Period, Any]]) -> None:
+    """At most one option per resource and period, without one restriction per pair.
+
+    Options with the same exact interval form one group. Partially overlapping
+    groups share one restriction over the union of their literals. Groups that
+    overlap only through transitivity are never merged, so the ends of an
+    overlap chain stay available. Repeated constants stay conflicting.
+    """
+    groups: dict[tuple, list[Any]] = defaultdict(list)
+    for period, literal in rows:
+        groups[(period.start_utc, period.end_utc)].append(literal)
+    ordered = sorted(groups.items())
+    for _interval, literals in ordered:
+        if len(literals) >= 2:
+            model.AddAtMostOne(literals)
+    for index in range(len(ordered)):
+        start, end = ordered[index][0]
+        literals = ordered[index][1]
+        other = index + 1
+        while other < len(ordered) and ordered[other][0][0] < end:
+            model.AddAtMostOne([*literals, *ordered[other][1]])
+            other += 1
 
 
 def _add_conflicts(state: _ScopeState) -> None:
     model = state.model
-    by_class: dict[int, list[tuple[int, Period]]] = defaultdict(list)
-    by_teacher: dict[int, list[tuple[int, Period]]] = defaultdict(list)
-    by_room: dict[int, list[tuple[int, Period]]] = defaultdict(list)
+    by_class: dict[int, list[tuple[Period, Any]]] = defaultdict(list)
+    by_teacher: dict[int, list[tuple[Period, Any]]] = defaultdict(list)
+    by_room: dict[int, list[tuple[Period, Any]]] = defaultdict(list)
     for assignment_id, row in state.scope.assignments.items():
         assignment = state.assignment_by_id[assignment_id]
         for period in row.periods:
-            by_class[assignment.class_id].append((assignment_id, period))
-            by_teacher[assignment.teacher_id].append((assignment_id, period))
+            variable = state.x[(assignment_id, period)]
+            by_class[assignment.class_id].append((period, variable))
+            by_teacher[assignment.teacher_id].append((period, variable))
             for room_id in state.rooms_of[(assignment_id, period)]:
-                by_room[room_id].append((assignment_id, period))
-    for keys in by_class.values():
-        for left, right in _conflict_pairs(state, keys):
-            model.Add(left + right <= 1)
-    for keys in by_teacher.values():
-        for left, right in _conflict_pairs(state, keys):
-            model.Add(left + right <= 1)
-    for room_id, keys in sorted(by_room.items()):
-        ordered = sorted(keys, key=lambda row: (row[1].start_utc, row[1].end_utc))
-        for index, (assignment_a, period_a) in enumerate(ordered):
-            for assignment_b, period_b in ordered[index + 1 :]:
-                if period_b.start_utc >= period_a.end_utc:
-                    break
-                model.Add(
-                    state.room_choice[(assignment_a, period_a, room_id)]
-                    + state.room_choice[(assignment_b, period_b, room_id)]
-                    <= 1
+                by_room[room_id].append(
+                    (period, state.room_choice[(assignment_id, period, room_id)])
                 )
+    for rows in by_class.values():
+        _add_resource_exclusivity(model, rows)
+    for rows in by_teacher.values():
+        _add_resource_exclusivity(model, rows)
+    for _room_id, rows in sorted(by_room.items()):
+        _add_resource_exclusivity(model, rows)
 
 
 def _period_minutes(period: Period) -> tuple[int, int]:
@@ -958,6 +960,21 @@ def _solve_scope(
     records: list[_StageRecord] = []
     selections: dict[int, list] | None = None
     stop_reason = STOP_OPTIMAL
+    window = state.scope.week
+
+    def run_solve(stage: str):
+        diagnostics.phase_started("PLACEMENT_SOLVE", window=window, stage=stage)
+        started = monotonic()
+        result = solver.Solve(model)
+        diagnostics.phase_finished(
+            "PLACEMENT_SOLVE",
+            window=window,
+            stage=stage,
+            started_at=started,
+            status=solver.StatusName(result),
+        )
+        return result
+
     pre_solve_budget = deadline - monotonic()
     if pre_solve_budget > MIN_STAGE_SECONDS:
         model.Minimize(0)
@@ -967,7 +984,7 @@ def _solve_scope(
         solver.parameters.max_time_in_seconds = min(
             pre_solve_budget, max(2.0, pre_solve_budget * 0.5)
         )
-        pre_status = solver.Solve(model)
+        pre_status = run_solve("FEASIBILITY")
         if pre_status == cp_model.INFEASIBLE:
             return STATUS_INFEASIBLE, None, records, STOP_SAFETY
         if pre_status in (cp_model.OPTIMAL, cp_model.FEASIBLE):
@@ -984,7 +1001,7 @@ def _solve_scope(
                 return "INTERRUPTED"
             model.Minimize(expression)
             solver.parameters.max_time_in_seconds = remaining
-            status = solver.Solve(model)
+            status = run_solve(name)
             if status == cp_model.INFEASIBLE and selections is None:
                 return "INFEASIBLE"
             if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
@@ -1048,7 +1065,7 @@ def _solve_scope(
             return STATUS_INCONCLUSIVE, None, records, STOP_SAFETY
         model.Minimize(0)
         solver.parameters.max_time_in_seconds = remaining
-        status = solver.Solve(model)
+        status = run_solve("FEASIBILITY")
         if status == cp_model.INFEASIBLE:
             return STATUS_INFEASIBLE, None, records, STOP_SAFETY
         if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
@@ -1088,6 +1105,7 @@ def _optimize_rooms(
     random_seed: int,
     room_cost: Callable[[Assignment, Period, int], int] | None = None,
 ) -> tuple[CandidateSchedule, _StageRecord]:
+    room_start = monotonic()
     lessons = candidate.lessons
     lesson_by_id = {lesson.lesson_id: lesson for lesson in lessons}
     protected_ids = {lesson.lesson_id for lesson in snapshot.protected_lessons}
@@ -1121,6 +1139,7 @@ def _optimize_rooms(
             window=None,
         )
     model = cp_model.CpModel()
+    diagnostics.phase_started("ROOMS")
     choice = {
         (lesson_id, room_id): model.NewBoolVar(f"room_{lesson_id}_{room_id}")
         for lesson_id, rooms in variable_rooms.items()
@@ -1143,13 +1162,8 @@ def _optimize_rooms(
                     else 1,
                 )
             )
-    for rows in exclusive.values():
-        ordered = sorted(rows, key=lambda row: (row[0].start_utc, row[0].end_utc))
-        for index, (period, variable) in enumerate(ordered):
-            for other, other_variable in ordered[index + 1 :]:
-                if other.start_utc >= period.end_utc:
-                    break
-                model.Add(variable + other_variable <= 1)
+    for _room_id, rows in exclusive.items():
+        _add_resource_exclusivity(model, rows)
 
     room_preference = 0
     for lesson in lessons:
@@ -1210,6 +1224,7 @@ def _optimize_rooms(
         model.Add(excess <= len(used))
         continuity_expressions.append(excess)
 
+    diagnostics.model_built("ROOMS", model)
     solver = cp_model.CpSolver()
     solver.parameters.num_search_workers = num_workers
     solver.parameters.random_seed = random_seed
@@ -1234,14 +1249,22 @@ def _optimize_rooms(
         stages.append(sum(continuity_expressions))
     if stages:
         incumbent = None
-        for expression in stages:
+        for stage_index, expression in enumerate(stages):
             remaining = deadline - monotonic()
             if remaining <= MIN_STAGE_SECONDS:
                 proven = False
                 break
             model.Minimize(expression)
             solver.parameters.max_time_in_seconds = remaining
+            diagnostics.phase_started("ROOMS", stage=f"STAGE_{stage_index}")
+            solve_start = monotonic()
             status = solver.Solve(model)
+            diagnostics.phase_finished(
+                "ROOMS",
+                stage=f"STAGE_{stage_index}",
+                started_at=solve_start,
+                status=solver.StatusName(status),
+            )
             if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
                 proven = False
                 break
@@ -1259,6 +1282,7 @@ def _optimize_rooms(
     candidate = CandidateSchedule(
         tuple(replace(row, room_id=current_rooms[row.lesson_id]) for row in lessons)
     )
+    diagnostics.phase_finished("ROOMS", started_at=room_start, status=STAGE_ROOM_CHANGES)
     return candidate, _StageRecord(
         stage=STAGE_ROOM_CHANGES,
         value=_room_change_value(lessons, assignment_by_id, current_rooms),
@@ -1462,7 +1486,9 @@ def solve_placement(
                     combined[assignment_id].extend(rows)
                 continue
             build_start = monotonic()
+            diagnostics.phase_started("PLACEMENT", window=scope.week)
             state = _build_scope_state(snapshot, scope)
+            diagnostics.model_built("PLACEMENT", state.model, window=scope.week)
             statistics["build_ms"] += int((monotonic() - build_start) * 1000)
             statistics["variables"] += len(state.model.Proto().variables)
             solver = cp_model.CpSolver()

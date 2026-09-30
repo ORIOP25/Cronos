@@ -27,6 +27,7 @@ from ortools.sat.python import cp_model
 from app.scheduler.domain.calendar import Period
 from app.scheduler.domain.candidate import PlanningSnapshot
 from app.scheduler.domain.capacity import eligible_periods, residual_minutes
+from app.scheduler.infrastructure import diagnostics
 
 STATUS_FEASIBLE = "FEASIBLE"
 STATUS_INFEASIBLE = "INFEASIBLE"
@@ -309,6 +310,7 @@ def plan_annual_quotas(
         demands.append((assignment, remaining, dict(groups)))
 
     build_start = monotonic()
+    diagnostics.phase_started("ANNUAL")
     model = cp_model.CpModel()
     q: dict[QuotaKey, Any] = {}
     final: dict[QuotaKey, Any] = {}
@@ -414,6 +416,7 @@ def plan_annual_quotas(
             raise ValueError("The latest-week limit must be a nonnegative integer.")
         model.Add(latest <= latest_week_limit)
     model.Minimize(latest)
+    diagnostics.model_built("ANNUAL", model)
     statistics = {
         "variables": len(model.Proto().variables),
         "build_ms": int((monotonic() - build_start) * 1000),
@@ -421,14 +424,23 @@ def plan_annual_quotas(
         "room_set_constraints": room_set_constraints,
     }
     solve_start = monotonic()
+    diagnostics.phase_started("ANNUAL", stage="LATEST_WEEK")
     solver.parameters.max_time_in_seconds = max(0.0, deadline - monotonic())
     status = solver.Solve(model)
+    diagnostics.phase_finished(
+        "ANNUAL",
+        stage="LATEST_WEEK",
+        started_at=solve_start,
+        status=solver.StatusName(status),
+    )
     statistics["solve_ms"] += int((monotonic() - solve_start) * 1000)
     if status == cp_model.INFEASIBLE:
+        diagnostics.phase_finished("ANNUAL", started_at=start, status=STATUS_INFEASIBLE)
         return AnnualPlan(
             STATUS_INFEASIBLE, None, None, None, 0, True, monotonic() - start, statistics
         )
     if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
+        diagnostics.phase_finished("ANNUAL", started_at=start, status=STATUS_INCONCLUSIVE)
         return AnnualPlan(
             STATUS_INCONCLUSIVE, None, None, None, 0, False, monotonic() - start, statistics
         )
@@ -447,8 +459,12 @@ def plan_annual_quotas(
     remaining_time = deadline - monotonic()
     if remaining_time > 0:
         solve_start = monotonic()
+        diagnostics.phase_started("ANNUAL", stage="WASTE")
         solver.parameters.max_time_in_seconds = remaining_time
         status = solver.Solve(model)
+        diagnostics.phase_finished(
+            "ANNUAL", stage="WASTE", started_at=solve_start, status=solver.StatusName(status)
+        )
         statistics["solve_ms"] += int((monotonic() - solve_start) * 1000)
         if status in (cp_model.OPTIMAL, cp_model.FEASIBLE):
             counts = _counts(q, solver)
@@ -458,6 +474,7 @@ def plan_annual_quotas(
                 if solver.Value(variable)
             }
             waste_minutes = sum(solver.Value(variable) for variable in waste.values())
+    diagnostics.phase_finished("ANNUAL", started_at=start, status=STATUS_FEASIBLE)
     return AnnualPlan(
         STATUS_FEASIBLE,
         QuotaDistribution(counts, finals),
