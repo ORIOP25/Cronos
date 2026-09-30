@@ -70,7 +70,9 @@ async def create_subject(
     """
     # 0. Verificar duplicados
     query_check = select(models.Subject).where(
-        models.Subject.name == item.name, models.Subject.organization_id == organization_id
+        models.Subject.name == item.name,
+        models.Subject.organization_id == organization_id,
+        models.Subject.is_archived.is_(False),
     )
     result_check = await db.execute(query_check)
     if result_check.scalars().first():
@@ -229,6 +231,7 @@ async def update_subject(
             models.Subject.name == subject_in.name,
             models.Subject.organization_id == organization_id,
             models.Subject.id != subject_id,
+            models.Subject.is_archived.is_(False),
         )
         if (await db.execute(q_check)).scalars().first():
             raise AppError(

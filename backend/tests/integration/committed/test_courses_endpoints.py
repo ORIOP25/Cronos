@@ -1,8 +1,29 @@
+import pytest
 from httpx import AsyncClient
 from sqlalchemy import insert
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models
+
+
+@pytest.mark.usefixtures("clerk_admin_headers")
+async def test_course_abbreviation_is_unique_among_active_courses(db_session: AsyncSession):
+    db_session.add(
+        models.Course(
+            name="Curso Histórico", abbreviation="CSV", organization_id=1, is_archived=True
+        )
+    )
+    await db_session.flush()
+    db_session.add(models.Course(name="Curso Atual", abbreviation="CSV", organization_id=1))
+    await db_session.flush()
+
+    with pytest.raises(IntegrityError, match="uq_course_active_org_abbreviation"):
+        async with db_session.begin_nested():
+            db_session.add(
+                models.Course(name="Curso Duplicado", abbreviation="CSV", organization_id=1)
+            )
+            await db_session.flush()
 
 
 class TestCoursesEndpoints:
