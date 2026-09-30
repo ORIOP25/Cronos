@@ -1,8 +1,14 @@
 import base64
+import csv
+import io
 from uuid import uuid4
 
+import pytest
 from httpx import AsyncClient
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app import models
 from app.config import settings
 
 API = settings.API_V1_STR
@@ -82,6 +88,86 @@ async def test_bulk_import_validate_and_commit_is_atomic_and_tenant_scoped(
     members = await async_client.get(f"{API}/members", headers=clerk_admin_headers)
     imported = [item for item in members.json()["items"] if item["email"].startswith("teacher.")]
     assert imported and imported[0]["teacher_access_mode"] == "scheduler_only"
+
+
+@pytest.mark.parametrize("resource", ["subjects", "courses"])
+async def test_bulk_import_reuses_archived_names_without_changing_history(
+    async_client: AsyncClient, db_session: AsyncSession, clerk_admin_headers: dict, resource: str
+):
+    files = valid_files()
+    row = next(
+        csv.DictReader(
+            io.StringIO(base64.b64decode(files[resource]["content_base64"]).decode("utf-8-sig")),
+            delimiter=";",
+        )
+    )
+    if resource == "subjects":
+        archived = models.Subject(
+            organization_id=1, name=row["Nome da disciplina"], is_archived=True
+        )
+    else:
+        archived = models.Course(
+            organization_id=1,
+            name=row["Nome do curso"],
+            abbreviation=row["Sigla do curso"],
+            is_archived=True,
+        )
+    db_session.add(archived)
+    await db_session.commit()
+
+    validation = await async_client.post(
+        f"{API}/imports/validate", json={"files": files}, headers=clerk_admin_headers
+    )
+    assert validation.status_code == 200
+    assert validation.json()["can_commit"] is True
+
+    commit = await async_client.post(
+        f"{API}/imports/commit", json={"files": files}, headers=clerk_admin_headers
+    )
+    assert commit.status_code == 201, commit.text
+    assert commit.json()["created_counts"][resource] == 1
+
+    await db_session.refresh(archived)
+    assert archived.is_archived is True
+    active = await db_session.scalar(
+        select(type(archived)).where(
+            type(archived).organization_id == 1,
+            type(archived).name == archived.name,
+            type(archived).is_archived.is_(False),
+        )
+    )
+    assert active is not None
+    assert active.id != archived.id
+
+    repeated = await async_client.post(
+        f"{API}/imports/commit", json={"files": files}, headers=clerk_admin_headers
+    )
+    assert repeated.status_code == 422
+
+
+@pytest.mark.parametrize("resource", ["subjects", "courses"])
+async def test_resource_update_reuses_archived_names(
+    async_client: AsyncClient, db_session: AsyncSession, clerk_admin_headers: dict, resource: str
+):
+    if resource == "subjects":
+        archived = models.Subject(organization_id=1, name="Nome Livre", is_archived=True)
+        active = models.Subject(organization_id=1, name="Nome Atual")
+        payload = {"name": archived.name}
+    else:
+        archived = models.Course(
+            organization_id=1, name="Curso Histórico", abbreviation="LIVRE", is_archived=True
+        )
+        active = models.Course(organization_id=1, name="Curso Atual", abbreviation="ATUAL")
+        payload = {"abbreviation": archived.abbreviation}
+    db_session.add_all([archived, active])
+    await db_session.commit()
+
+    response = await async_client.patch(
+        f"{API}/{resource}/{active.id}", json=payload, headers=clerk_admin_headers
+    )
+    assert response.status_code == 200, response.text
+    await db_session.refresh(archived)
+    assert archived.is_archived is True
 
 
 async def test_bulk_import_rejects_example_without_writing(

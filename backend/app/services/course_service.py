@@ -109,6 +109,7 @@ async def create_course(
     q_check = select(models.Course).where(
         models.Course.abbreviation == item.abbreviation.upper(),
         models.Course.organization_id == organization_id,
+        models.Course.is_archived.is_(False),
     )
     if (await db.execute(q_check)).scalars().first():
         raise AppError(
@@ -236,6 +237,7 @@ async def update_course(
             models.Course.abbreviation == item.abbreviation.upper(),
             models.Course.organization_id == organization_id,
             models.Course.id != course_id,
+            models.Course.is_archived.is_(False),
         )
         if (await db.execute(q_check)).scalars().first():
             raise AppError(

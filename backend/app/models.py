@@ -2723,7 +2723,13 @@ class Course(Base):
     )
 
     __table_args__ = (
-        UniqueConstraint("organization_id", "abbreviation", name="uq_course_org_abbreviation"),
+        Index(
+            "uq_course_active_org_abbreviation",
+            "organization_id",
+            "abbreviation",
+            unique=True,
+            postgresql_where=is_archived.is_(False),
+        ),
     )
 
     @property

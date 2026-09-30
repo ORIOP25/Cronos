@@ -69,6 +69,7 @@ Uma falha impede qualquer gravação parcial.
 - Cada ficheiro pode ter até 5.000 linhas.
 - Ficheiros inválidos recebem uma mensagem de leitura comum.
 - Salas, disciplinas, cursos e professores novos não podem repetir dados existentes.
+- Nomes de disciplinas e siglas de cursos arquivados podem ser reutilizados; o histórico mantém os registos originais.
 - Cursos, turmas e disciplinas podem ser usados nas atribuições.
 - Um professor existente não pode ser usado numa atribuição.
 - Um professor indicado numa atribuição deve estar no mesmo pedido.
