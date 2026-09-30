@@ -37,7 +37,7 @@ const PRESENTATIONS = {
   FOUNDATION_REQUIRED: { title: 'Configuração ainda não concluída', message: 'Conclua a configuração inicial da escola antes de continuar.' },
 }
 
-const STATUS_CODES = { 400: 'bad_request', 401: 'authentication_required', 403: 'access_forbidden', 404: 'resource_not_found', 409: 'conflict', 422: 'validation_error', 429: 'too_many_requests', 500: 'unexpected_error', 502: 'service_unavailable', 503: 'service_unavailable', 504: 'service_unavailable' }
+const STATUS_CODES = { 400: 'bad_request', 401: 'authentication_required', 403: 'access_forbidden', 404: 'resource_not_found', 409: 'conflict', 422: 'validation_error', 429: 'too_many_requests' }
 const CONTEXT_FALLBACKS = {
   auth: ['authentication_required', 'unexpected_error'],
   organization: ['access_forbidden', 'service_unavailable'],
@@ -105,7 +105,10 @@ export function getApiErrorPresentation(error, context = 'generic') {
   const detailObject = detail && typeof detail === 'object' && !Array.isArray(detail) ? detail : {}
   const statusCode = error?.response?.status
   const detailCode = detailObject.code && PRESENTATIONS[detailObject.code] ? detailObject.code : null
-  const code = detailCode || STATUS_CODES[statusCode] || null
+  // An unrecognized code leans on the status: 422 reads as validation, while
+  // internal failures keep the generic message instead of a specific one.
+  const statusFallback = statusCode >= 500 ? 'unexpected_error' : STATUS_CODES[statusCode]
+  const code = detailCode || statusFallback || null
   const candidates = code ? [code] : (CONTEXT_FALLBACKS[context] || CONTEXT_FALLBACKS.generic)
   const knownCode = candidates.find((candidate) => PRESENTATIONS[candidate]) || 'unexpected_error'
   const copy = PRESENTATIONS[knownCode]
