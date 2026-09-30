@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
-import { useLocation } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 import {
   CCard, CCardBody, CCardHeader, CAlert, CBadge, CSpinner,
   CButton, CButtonGroup, CFormSelect, CFormLabel, CRow, CCol,
@@ -14,6 +14,7 @@ import {
   useGenerateSchedule, useScheduleTaskStatus, useCancelScheduleTask,
   useWeekSchedule,
 } from '../features/scheduling/data'
+import { usePrevalidation } from '../features/readiness/data'
 import { useClasses, useClassDetails, useTimeslots, useWeekGridVersions } from '../features/catalog/data'
 import { useCalendarEvents } from '../features/schoolConfig/data'
 import { useTeachers } from '../features/members/data'
@@ -24,12 +25,13 @@ import KPISidebar from '../components/schedules/KPISidebar'
 import DraftPanel from '../components/schedules/DraftPanel'
 import GenerationStatusPanel from '../components/schedules/GenerationStatusPanel'
 import ConfirmationModal from '../components/ConfirmationModal'
+import FailureState from '../components/FailureState'
 import PageHeader from '../components/PageHeader'
 import StatePanel from '../components/StatePanel'
 import { useOrganization } from '@clerk/react'
 import { addDays, getCurrentWeekMonday } from '../utils/formatUtils'
 import { collectInternshipDays } from '../utils/internshipDays'
-import { getApiErrorMessage } from '../utils/apiErrors'
+import { getApiErrorMessage, getApiErrorPresentation } from '../utils/apiErrors'
 import { readExpiringValue, writeExpiringValue } from '../utils/expiringStorage'
 
 // ---------------------------------------------------------------------------
@@ -178,7 +180,7 @@ const Schedules = ({ initialClassId = '', initialWeekStart, persistView = true, 
     }
   }, [urlWeekStart, weekStart])
   const [adminLessonLogSlot, setAdminLessonLogSlot] = useState(null)
-  const [generationActionError, setGenerationActionError] = useState('')
+  const [generationActionError, setGenerationActionError] = useState(null)
   const [generationConfirmation, setGenerationConfirmation] = useState(null)
 
   // Sprint 3 hooks
@@ -198,6 +200,21 @@ const Schedules = ({ initialClassId = '', initialWeekStart, persistView = true, 
   const schoolYear = schedulerStatus?.school_year
   const canGenerateNow = Boolean(eligibility?.can_generate && schoolYear?.preferred_end_date)
   const isFirstGeneration = schedulerStatus?.publication_state !== 'PUBLISHED'
+
+  // Pre-generation diagnosis: only complete generation validates room compatibility.
+  const {
+    data: prevalidation,
+    isFetching: prevalidationLoading,
+    isError: prevalidationError,
+    refetch: refetchPrevalidation,
+  } = usePrevalidation({
+    enabled: canGenerate
+      && Boolean(schedulerStatus)
+      && schedulerStatus?.default_strategy === 'COMPLETE_GENERATION',
+  })
+  const prevalidationIssues = Array.isArray(prevalidation?.issues) ? prevalidation.issues : []
+  const prevalidationBlocked = prevalidation?.status === 'BLOCKED'
+  const prevalidationNotReady = prevalidationLoading || prevalidationBlocked || prevalidationError
 
   // Sprint 4 hooks
   const { data: classes  = [] } = useClasses()
@@ -270,6 +287,9 @@ const Schedules = ({ initialClassId = '', initialWeekStart, persistView = true, 
       void refetchCurrentDraft()
       clearStoredJobId(jobStorageKey)
       if (classId || teacherId) void refetchWeekSchedule()
+      if (jobData?.result_code === 'INVALID_INPUT') {
+        void refetchPrevalidation()
+      }
     }
   }, [
     jobData,
@@ -278,6 +298,7 @@ const Schedules = ({ initialClassId = '', initialWeekStart, persistView = true, 
     teacherId,
     refetchSchedulerStatus,
     refetchCurrentDraft,
+    refetchPrevalidation,
     refetchWeekSchedule,
     jobStorageKey,
   ])
@@ -288,10 +309,16 @@ const Schedules = ({ initialClassId = '', initialWeekStart, persistView = true, 
     }
   }, [activeJobId, jobStorageKey])
 
+  // A stale generation error must not follow the user into another organization.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setGenerationActionError(null)
+  }, [orgId])
+
   const runGeneration = async () => {
     if (!canGenerate || !canGenerateNow) return
     setGenerationConfirmation(null)
-    setGenerationActionError('')
+    setGenerationActionError(null)
     try {
       const result = await generateMutation.mutateAsync({
         idempotencyKey: globalThis.crypto.randomUUID(),
@@ -305,12 +332,11 @@ const Schedules = ({ initialClassId = '', initialWeekStart, persistView = true, 
         setActiveJobId(detail.context.job_id)
         return
       }
-      if (detail?.code === 'scheduler_state_changed') {
+      if (detail?.code === 'scheduler_state_changed' || detail?.code === 'NO_ELIGIBLE_ROOM') {
         void refetchSchedulerStatus()
+        void refetchPrevalidation()
       }
-      setGenerationActionError(
-        getApiErrorMessage(err, 'Não foi possível iniciar a geração.', 'schedule.generate')
-      )
+      setGenerationActionError(getApiErrorPresentation(err, 'schedule.generate'))
     }
   }
 
@@ -402,7 +428,7 @@ const Schedules = ({ initialClassId = '', initialWeekStart, persistView = true, 
                 {canGenerateNow && !isGenerating && canGenerate && (
                   <CButton
                     color="primary" size="sm"
-                    disabled={generateMutation.isPending}
+                    disabled={generateMutation.isPending || prevalidationNotReady}
                     onClick={handleGenerate}
                     data-tutorial-target={isFirstGeneration ? 'generate-schedule' : 'regenerate-schedule'}
                   >
@@ -428,10 +454,49 @@ const Schedules = ({ initialClassId = '', initialWeekStart, persistView = true, 
       </PageHeader>
 
       <div data-tutorial-target="schedule-draft">
-          {generationActionError && (
+          {typeof generationActionError === 'string' && (
             <CAlert color="danger" className="mb-4" style={{ whiteSpace: 'pre-line' }}>
               {generationActionError}
             </CAlert>
+          )}
+          {generationActionError && typeof generationActionError === 'object' && (
+            <div className="mb-4">
+              <FailureState
+                variant="inline"
+                presentation={generationActionError}
+                navigationTo={generationActionError.code === 'NO_ELIGIBLE_ROOM' ? '/rooms' : undefined}
+                navigationLabel="Abrir Salas"
+              />
+            </div>
+          )}
+          {prevalidationIssues.length > 0 && (
+            <CAlert color={prevalidationBlocked ? 'danger' : 'warning'} className="mb-4">
+              <strong>
+                {prevalidationBlocked
+                  ? 'Geração bloqueada antes de começar'
+                  : 'Avisos antes de gerar'}
+              </strong>
+              <ul className="mb-0 mt-1 ps-3">
+                {prevalidationIssues.map((issue, index) => (
+                  <li key={`${issue.code}-${index}`}>
+                    <Link to={issue.route}>{issue.message}</Link>
+                  </li>
+                ))}
+              </ul>
+            </CAlert>
+          )}
+          {prevalidationError && (
+            <div className="mb-4">
+              <FailureState
+                variant="inline"
+                presentation={{
+                  title: 'Não foi possível verificar a preparação',
+                  message: 'Não foi possível confirmar se a escola está pronta para gerar. Repita a verificação.',
+                }}
+                onRetry={() => void refetchPrevalidation()}
+                retryLabel="Repetir verificação"
+              />
+            </div>
           )}
           {effectiveJobId && <GenerationStatusPanel jobId={effectiveJobId} />}
           {!hasPendingDraft && !isGenerating && eligibilityMessage(eligibility, schoolYear) && (

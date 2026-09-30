@@ -44,6 +44,12 @@ PUBLIC_ERROR_CATALOG: dict[str, dict[str, Any]] = {
     "preflight_failed": {
         "message": "Não é possível iniciar a geração. Reveja os bloqueios indicados.",
     },
+    "NO_ELIGIBLE_ROOM": {
+        "message": (
+            "Existem turmas sem sala compatível com o tipo e a lotação. "
+            "Corrija as salas e volte a tentar."
+        ),
+    },
     "generation_dispatch_failed": {
         "message": "Não foi possível iniciar a geração do horário. Tente novamente.",
         "retryable": True,

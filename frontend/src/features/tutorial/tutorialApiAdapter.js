@@ -270,6 +270,10 @@ function methodNotAllowed({ fail, method, path }) {
 
 function handleBasicRoutes(context) {
   const { method, path, snapshot, read, config, fail } = context
+  if (path === '/readiness/prevalidation') {
+    if (method !== 'get') return methodNotAllowed(context)
+    return read({ status: 'READY', fingerprint: null, issues: [] })
+  }
   if (path === '/members/me') {
     if (method !== 'get') return methodNotAllowed(context)
     return read({ id: 1, organization_display_name: 'Prof. António Silva', capabilities: ['admin', 'teacher'], access_status: 'active', teacher_id: 1 })

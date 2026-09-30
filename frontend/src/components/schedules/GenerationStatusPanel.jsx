@@ -1,5 +1,6 @@
 import { CAlert, CSpinner } from '@coreui/react'
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { useScheduleTaskStatus } from '../../features/scheduling/data'
 import FailureState from '../FailureState'
 import { getApiErrorPresentation } from '../../utils/apiErrors'
@@ -79,10 +80,18 @@ const GenerationStatusPanel = ({ jobId }) => {
     )
   }
   if (TERMINAL_STATUSES.has(status)) {
+    const roomBlocked = job.stop_reason === 'NO_ELIGIBLE_ROOM'
     return (
       <CAlert color={alertColor(status)} className="mb-4" data-testid="generation-terminal">
         <strong>{STATUS_LABELS[status] || status}</strong>
-        <div className="small mt-1">{TERMINAL_MESSAGES[status] || ''}</div>
+        {roomBlocked ? (
+          <div className="small mt-1">
+            Existem turmas sem sala compatível com o tipo e a lotação.{' '}
+            <Link to="/rooms">Abrir Salas</Link> para corrigir e voltar a gerar.
+          </div>
+        ) : (
+          <div className="small mt-1">{TERMINAL_MESSAGES[status] || ''}</div>
+        )}
       </CAlert>
     )
   }

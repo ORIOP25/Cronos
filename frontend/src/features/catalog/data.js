@@ -274,6 +274,7 @@ export const useCreateCourseClass = () => {
     },
     onSuccess: () => {
       void invalidateOrgQueries(queryClient, orgId, ['courses', 'classes'])
+      void invalidatePreparationQueries(queryClient, orgId)
     }
   })
 }
@@ -290,6 +291,7 @@ export const useUpdateCourseClass = () => {
     },
     onSuccess: (data, variables) => {
       void invalidateOrgQueries(queryClient, orgId, ['courses', 'classes'])
+      void invalidatePreparationQueries(queryClient, orgId)
       queryClient.setQueryData(orgQueryKey('classes', orgId, variables.classId), (previous) => (
         previous ? { ...previous, ...data } : previous
       ))
@@ -309,6 +311,7 @@ export const useDeleteCourseClass = () => {
     },
     onSuccess: (_data, variables) => {
       void invalidateOrgQueries(queryClient, orgId, ['courses', 'classes'])
+      void invalidatePreparationQueries(queryClient, orgId)
       queryClient.removeQueries({ queryKey: orgQueryKey('classes', orgId, variables.classId) })
       queryClient.removeQueries({ queryKey: orgQueryKey('class-subjects', orgId, variables.classId) })
       queryClient.removeQueries({ queryKey: orgQueryKey('available-subjects', orgId, variables.classId) })

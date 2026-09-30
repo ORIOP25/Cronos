@@ -7,7 +7,7 @@ max_days) are configuration violations, not silent omissions.
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from enum import StrEnum
@@ -195,6 +195,62 @@ class SchoolConstraintPolicy:
     @classmethod
     def from_snapshot(cls, snapshot: Mapping[str, Any]) -> PolicyParseResult:
         return cls.parse(snapshot.get("constraints", ()))
+
+
+class RoomEligibilityReason(StrEnum):
+    NO_ROOM_OF_TYPE = "NO_ROOM_OF_TYPE"
+    INSUFFICIENT_CAPACITY = "INSUFFICIENT_CAPACITY"
+    SPECIFIC_ROOM_RESTRICTION = "SPECIFIC_ROOM_RESTRICTION"
+
+
+@dataclass(frozen=True)
+class RoomEligibility:
+    """Which rooms of the required type can host a class of the given size."""
+
+    eligible_room_ids: frozenset[int]
+    max_available_capacity: int | None
+    reason: RoomEligibilityReason | None
+
+
+def assess_room_eligibility(
+    rooms: Sequence[tuple[int, Any, int]],
+    *,
+    required_room_type: Any,
+    required_capacity: int,
+    allowed_room_ids: Iterable[int] | None = None,
+) -> RoomEligibility:
+    """Classify room compatibility for one class/subject pair.
+
+    ``rooms`` holds ``(id, type, capacity)`` values loaded by infrastructure.
+    ``allowed_room_ids=None`` means no ``specific_room`` restriction; an empty
+    set still blocks every assignment.
+    """
+    required = _value(required_room_type)
+    of_type = [
+        (room_id, capacity)
+        for room_id, room_type, capacity in rooms
+        if _value(room_type) == required
+    ]
+    if not of_type:
+        return RoomEligibility(frozenset(), None, RoomEligibilityReason.NO_ROOM_OF_TYPE)
+
+    max_capacity = max(capacity for _room_id, capacity in of_type)
+    by_capacity = frozenset(
+        room_id for room_id, capacity in of_type if capacity >= required_capacity
+    )
+    if not by_capacity:
+        return RoomEligibility(
+            frozenset(), max_capacity, RoomEligibilityReason.INSUFFICIENT_CAPACITY
+        )
+
+    eligible = (
+        by_capacity if allowed_room_ids is None else by_capacity & frozenset(allowed_room_ids)
+    )
+    if not eligible:
+        return RoomEligibility(
+            frozenset(), max_capacity, RoomEligibilityReason.SPECIFIC_ROOM_RESTRICTION
+        )
+    return RoomEligibility(eligible, max_capacity, None)
 
 
 def _mapping(value: Mapping[str, Any] | Any) -> Mapping[str, Any]:

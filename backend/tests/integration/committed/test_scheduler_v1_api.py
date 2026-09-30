@@ -160,6 +160,41 @@ async def test_generate_conflicts_with_a_stale_revision(async_client, db_session
     assert response.json()["detail"]["code"] == "scheduler_state_changed"
 
 
+async def test_generate_rejects_incompatible_room_without_dispatching(
+    async_client, db_session, dispatched_tasks
+):
+    seed = await _configured_school(db_session)
+    seed.room.capacity = 10
+    await db_session.commit()
+
+    response = await async_client.post(
+        "/api/v1/scheduler/generate",
+        json={"idempotency_key": "room-block", "expected_input_revision": 0},
+        headers=HEADERS,
+    )
+
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert detail["code"] == "NO_ELIGIBLE_ROOM"
+    assert detail["retryable"] is False
+    assert detail["support_required"] is False
+    assert detail["context"]["room_issues"] == [
+        {
+            "class_id": seed.class_.id,
+            "class_name": "A",
+            "subject_id": seed.subject.id,
+            "subject_name": "Subject",
+            "required_room_type": "normal",
+            "required_capacity": 20,
+            "max_available_capacity": 10,
+            "reason": "INSUFFICIENT_CAPACITY",
+        }
+    ]
+    assert dispatched_tasks == []
+    jobs = (await db_session.scalars(select(SchedulerJobV1))).all()
+    assert jobs == []
+
+
 async def test_generate_without_a_reason_conflicts(async_client, db_session, monkeypatch):
     seed = await _configured_school(db_session)
     state = await db_session.scalar(

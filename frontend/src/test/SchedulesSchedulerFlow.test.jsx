@@ -14,6 +14,12 @@ const mocks = vi.hoisted(() => ({
   schedulerStatusRefetch: vi.fn(),
   currentDraftRefetch: vi.fn(),
   weekRefetch: vi.fn(),
+  prevalidation: { data: null, isFetching: false, isError: false, refetch: vi.fn() },
+}))
+
+vi.mock('../features/readiness/data', () => ({
+  usePrevalidation: () => mocks.prevalidation,
+  invalidatePreparationQueries: vi.fn(),
 }))
 
 vi.mock('../hooks/useRole', () => ({
@@ -91,6 +97,12 @@ describe('Schedules scheduler flow', () => {
     mocks.currentDraft = null
     mocks.jobData = null
     mocks.classes = []
+    mocks.prevalidation = {
+      data: { status: 'READY', fingerprint: null, issues: [] },
+      isFetching: false,
+      isError: false,
+      refetch: vi.fn(),
+    }
   })
 
   it('shows the pending proposal and an update action that requires confirmation', async () => {
@@ -178,6 +190,111 @@ describe('Schedules scheduler flow', () => {
     expect(await screen.findByText(/Existem alterações mais recentes/)).toHaveTextContent(
       'Gere uma nova proposta para continuar.'
     )
+  })
+
+  it('blocks generation and shows the shortcut before it starts', () => {
+    mocks.status = proposalStatus({ pending_proposal: null })
+    mocks.prevalidation = {
+      data: {
+        status: 'BLOCKED',
+        issues: [{
+          code: 'NO_ELIGIBLE_ROOM',
+          severity: 'BLOCKER',
+          message: 'TDESP 10 / Treino Desportivo (27 alunos) sem sala compatível.',
+          route: '/rooms',
+        }],
+      },
+      isFetching: false,
+      isError: false,
+      refetch: vi.fn(),
+    }
+
+    renderPage()
+
+    expect(screen.getByRole('button', { name: 'Gerar horário' })).toBeDisabled()
+    expect(screen.getByText(/Geração bloqueada antes de começar/)).toBeInTheDocument()
+    expect(screen.getByText(/TDESP 10 \/ Treino Desportivo/).closest('a')).toHaveAttribute('href', '/rooms')
+  })
+
+  it('keeps generation available with warnings and shows the shortcut', () => {
+    mocks.status = proposalStatus({ pending_proposal: null })
+    mocks.prevalidation = {
+      data: {
+        status: 'READY_WITH_WARNINGS',
+        issues: [{
+          code: 'PENDING_DRAFT',
+          severity: 'WARNING',
+          message: 'Existe um rascunho pendente.',
+          route: '/schedules',
+        }],
+      },
+      isFetching: false,
+      isError: false,
+      refetch: vi.fn(),
+    }
+
+    renderPage()
+
+    expect(screen.getByRole('button', { name: 'Gerar horário' })).toBeEnabled()
+    expect(screen.getByText(/Avisos antes de gerar/)).toBeInTheDocument()
+  })
+
+  it('offers a retry when the preparation check fails', () => {
+    mocks.status = proposalStatus({ pending_proposal: null })
+    mocks.prevalidation = { data: null, isFetching: false, isError: true, refetch: vi.fn() }
+
+    renderPage()
+
+    expect(screen.getByRole('button', { name: 'Gerar horário' })).toBeDisabled()
+    fireEvent.click(screen.getByRole('button', { name: 'Repetir verificação' }))
+    expect(mocks.prevalidation.refetch).toHaveBeenCalled()
+  })
+
+  it('explains a refused generation with the room diagnosis and a shortcut', async () => {
+    mocks.status = proposalStatus({ pending_proposal: null })
+    mocks.generate.mockRejectedValue({
+      response: {
+        status: 422,
+        data: {
+          detail: {
+            code: 'NO_ELIGIBLE_ROOM',
+            reference: 'ROOMREF12345',
+            context: {
+              room_issues: [{
+                class_name: 'TDESP 10',
+                subject_name: 'Treino Desportivo',
+                required_room_type: 'gym',
+                required_capacity: 27,
+                max_available_capacity: 26,
+                reason: 'INSUFFICIENT_CAPACITY',
+              }],
+            },
+          },
+        },
+      },
+    })
+
+    renderPage()
+    fireEvent.click(screen.getByRole('button', { name: 'Gerar horário' }))
+
+    expect(await screen.findByText(/27 alunos/)).toBeInTheDocument()
+    expect(screen.getByText('Abrir Salas')).toHaveAttribute('href', '/rooms')
+    expect(screen.getByText('ROOMREF12345')).toBeInTheDocument()
+  })
+
+  it('refreshes preparation and scheduler state when the data changed meanwhile', async () => {
+    mocks.status = proposalStatus({ pending_proposal: null })
+    mocks.generate.mockRejectedValue({
+      response: { data: { detail: { code: 'scheduler_state_changed' } } },
+    })
+
+    renderPage()
+    fireEvent.click(screen.getByRole('button', { name: 'Gerar horário' }))
+
+    await waitFor(() => {
+      expect(mocks.schedulerStatusRefetch).toHaveBeenCalled()
+      expect(mocks.prevalidation.refetch).toHaveBeenCalled()
+    })
   })
 
   it('drops a persisted class that is not part of the current organization', async () => {

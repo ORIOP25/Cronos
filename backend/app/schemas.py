@@ -441,6 +441,7 @@ class PreflightIssue(BaseModel):
     severity: Literal["BLOCKER", "WARNING"]
     message: str
     route: str
+    context: dict[str, str | int | None] = Field(default_factory=dict)
 
 
 class PreflightReport(BaseModel):

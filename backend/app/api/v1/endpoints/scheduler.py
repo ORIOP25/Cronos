@@ -87,7 +87,12 @@ async def generate_schedule(
             expected_input_revision=payload.expected_input_revision,
         )
     except SnapshotConfigurationError as exc:
-        raise AppError(kind="validation", code=exc.code, detail=str(exc)) from exc
+        raise AppError(
+            kind="validation",
+            code=exc.code,
+            detail=str(exc),
+            public_context=exc.public_context or None,
+        ) from exc
     except GenerationUnavailable as exc:
         raise AppError(
             kind="conflict",

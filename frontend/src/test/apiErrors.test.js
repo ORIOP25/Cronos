@@ -84,4 +84,80 @@ describe('api error contract', () => {
     expect(presentation.message).toContain('Verifique a ligação')
     expect(presentation.message).not.toContain('ECONNREFUSED')
   })
+
+  it('explains an incompatible room with the public compatibility fields', () => {
+    const presentation = getApiErrorPresentation({
+      response: {
+        status: 422,
+        data: {
+          detail: {
+            code: 'NO_ELIGIBLE_ROOM',
+            reference: 'ROOMREF12345',
+            context: {
+              room_issues: [{
+                class_name: 'TDESP 10',
+                subject_name: 'Treino Desportivo',
+                required_room_type: 'gym',
+                required_capacity: 27,
+                max_available_capacity: 26,
+                reason: 'INSUFFICIENT_CAPACITY',
+              }],
+            },
+          },
+        },
+      },
+    })
+
+    expect(presentation.code).toBe('NO_ELIGIBLE_ROOM')
+    expect(presentation.message).toContain('TDESP 10')
+    expect(presentation.message).toContain('Treino Desportivo')
+    expect(presentation.message).toContain('27 alunos')
+    expect(presentation.message).toContain('26 lugares')
+    expect(presentation.message).toContain('Ginásio')
+    expect(presentation.message).toContain('Salas')
+    expect(presentation.reference).toBe('ROOMREF12345')
+    expect(presentation.supportRequired).toBe(false)
+  })
+
+  it('falls back to a safe room message when the context is incomplete', () => {
+    const presentation = getApiErrorPresentation({
+      response: { status: 422, data: { detail: { code: 'NO_ELIGIBLE_ROOM', context: {} } } },
+    })
+
+    expect(presentation.code).toBe('NO_ELIGIBLE_ROOM')
+    expect(presentation.message).toContain('sala compatível')
+  })
+
+  it('ignores technical room payloads that fail validation', () => {
+    const presentation = getApiErrorPresentation({
+      response: {
+        status: 422,
+        data: {
+          detail: {
+            code: 'NO_ELIGIBLE_ROOM',
+            context: { room_issues: [{ class_name: 99, reason: 'UNKNOWN_CODE', required_capacity: 'x' }] },
+          },
+        },
+      },
+    })
+
+    expect(presentation.message).toBe(
+      'Existem turmas sem sala compatível com o tipo e a lotação. Ajuste as salas e tente novamente.'
+    )
+    expect(presentation.message).not.toContain('UNKNOWN_CODE')
+  })
+
+  it('falls back to the HTTP status for an unknown code', () => {
+    const presentation = getApiErrorPresentation({
+      response: { status: 422, data: { detail: { code: 'internal_debug_code' } } },
+    })
+
+    expect(presentation.code).toBe('validation_error')
+    expect(presentation.message).toContain('Reveja os dados')
+
+    const internal = getApiErrorPresentation({
+      response: { status: 500, data: { detail: { code: 'internal_debug_code' } } },
+    })
+    expect(internal.message).toBe('Ocorreu um erro inesperado. Tente novamente.')
+  })
 })

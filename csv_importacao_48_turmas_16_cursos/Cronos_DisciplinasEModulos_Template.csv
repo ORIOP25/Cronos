@@ -1,0 +1,209 @@
+﻿Nome da disciplina;Tipo de sala;Nome do módulo;Código do módulo;Horas do módulo;Ordem do módulo
+Português;Normal;Fundamentos;P-01;15;1
+Português;Normal;Desenvolvimento;P-02;15;2
+Português;Normal;Aprofundamento;P-03;15;3
+Português;Normal;Projeto;P-04;15;4
+Inglês;Normal;Fundamentos;I-01;15;1
+Inglês;Normal;Desenvolvimento;I-02;15;2
+Inglês;Normal;Aprofundamento;I-03;15;3
+Inglês;Normal;Projeto;I-04;15;4
+Matemática;Normal;Fundamentos;M-01;15;1
+Matemática;Normal;Desenvolvimento;M-02;15;2
+Matemática;Normal;Aprofundamento;M-03;15;3
+Matemática;Normal;Projeto;M-04;15;4
+Área de Integração;Normal;Fundamentos;ADI-01;15;1
+Área de Integração;Normal;Desenvolvimento;ADI-02;15;2
+Área de Integração;Normal;Aprofundamento;ADI-03;15;3
+Área de Integração;Normal;Projeto;ADI-04;15;4
+Programação;Laboratório;Fundamentos;P2-01;15;1
+Programação;Laboratório;Desenvolvimento;P2-02;15;2
+Programação;Laboratório;Aprofundamento;P2-03;15;3
+Programação;Laboratório;Projeto;P2-04;15;4
+Redes;Laboratório;Fundamentos;R-01;15;1
+Redes;Laboratório;Desenvolvimento;R-02;15;2
+Redes;Laboratório;Aprofundamento;R-03;15;3
+Redes;Laboratório;Projeto;R-04;15;4
+Bases de Dados;Laboratório;Fundamentos;BDD-01;15;1
+Bases de Dados;Laboratório;Desenvolvimento;BDD-02;15;2
+Bases de Dados;Laboratório;Aprofundamento;BDD-03;15;3
+Bases de Dados;Laboratório;Projeto;BDD-04;15;4
+Design Multimédia;Artes;Fundamentos;DM-01;15;1
+Design Multimédia;Artes;Desenvolvimento;DM-02;15;2
+Design Multimédia;Artes;Aprofundamento;DM-03;15;3
+Design Multimédia;Artes;Projeto;DM-04;15;4
+Vídeo;Artes;Fundamentos;V-01;15;1
+Vídeo;Artes;Desenvolvimento;V-02;15;2
+Vídeo;Artes;Aprofundamento;V-03;15;3
+Vídeo;Artes;Projeto;V-04;15;4
+Animação;Artes;Fundamentos;A-01;15;1
+Animação;Artes;Desenvolvimento;A-02;15;2
+Animação;Artes;Aprofundamento;A-03;15;3
+Animação;Artes;Projeto;A-04;15;4
+Design Gráfico;Artes;Fundamentos;DG-01;15;1
+Design Gráfico;Artes;Desenvolvimento;DG-02;15;2
+Design Gráfico;Artes;Aprofundamento;DG-03;15;3
+Design Gráfico;Artes;Projeto;DG-04;15;4
+Fotografia;Artes;Fundamentos;F-01;15;1
+Fotografia;Artes;Desenvolvimento;F-02;15;2
+Fotografia;Artes;Aprofundamento;F-03;15;3
+Fotografia;Artes;Projeto;F-04;15;4
+Tipografia;Artes;Fundamentos;T-01;15;1
+Tipografia;Artes;Desenvolvimento;T-02;15;2
+Tipografia;Artes;Aprofundamento;T-03;15;3
+Tipografia;Artes;Projeto;T-04;15;4
+Marketing Digital;Normal;Fundamentos;MD-01;15;1
+Marketing Digital;Normal;Desenvolvimento;MD-02;15;2
+Marketing Digital;Normal;Aprofundamento;MD-03;15;3
+Marketing Digital;Normal;Projeto;MD-04;15;4
+Comportamento do Consumidor;Normal;Fundamentos;CDC-01;15;1
+Comportamento do Consumidor;Normal;Desenvolvimento;CDC-02;15;2
+Comportamento do Consumidor;Normal;Aprofundamento;CDC-03;15;3
+Comportamento do Consumidor;Normal;Projeto;CDC-04;15;4
+Vendas;Normal;Fundamentos;V2-01;15;1
+Vendas;Normal;Desenvolvimento;V2-02;15;2
+Vendas;Normal;Aprofundamento;V2-03;15;3
+Vendas;Normal;Projeto;V2-04;15;4
+Contabilidade;Normal;Fundamentos;C-01;15;1
+Contabilidade;Normal;Desenvolvimento;C-02;15;2
+Contabilidade;Normal;Aprofundamento;C-03;15;3
+Contabilidade;Normal;Projeto;C-04;15;4
+Gestão de Recursos Humanos;Normal;Fundamentos;GDR-01;15;1
+Gestão de Recursos Humanos;Normal;Desenvolvimento;GDR-02;15;2
+Gestão de Recursos Humanos;Normal;Aprofundamento;GDR-03;15;3
+Gestão de Recursos Humanos;Normal;Projeto;GDR-04;15;4
+Economia;Normal;Fundamentos;E-01;15;1
+Economia;Normal;Desenvolvimento;E-02;15;2
+Economia;Normal;Aprofundamento;E-03;15;3
+Economia;Normal;Projeto;E-04;15;4
+Contabilidade Financeira;Normal;Fundamentos;CF-01;15;1
+Contabilidade Financeira;Normal;Desenvolvimento;CF-02;15;2
+Contabilidade Financeira;Normal;Aprofundamento;CF-03;15;3
+Contabilidade Financeira;Normal;Projeto;CF-04;15;4
+Fiscalidade;Normal;Fundamentos;F2-01;15;1
+Fiscalidade;Normal;Desenvolvimento;F2-02;15;2
+Fiscalidade;Normal;Aprofundamento;F2-03;15;3
+Fiscalidade;Normal;Projeto;F2-04;15;4
+Análise Financeira;Normal;Fundamentos;AF-01;15;1
+Análise Financeira;Normal;Desenvolvimento;AF-02;15;2
+Análise Financeira;Normal;Aprofundamento;AF-03;15;3
+Análise Financeira;Normal;Projeto;AF-04;15;4
+Saúde e Higiene;Normal;Fundamentos;SEH-01;15;1
+Saúde e Higiene;Normal;Desenvolvimento;SEH-02;15;2
+Saúde e Higiene;Normal;Aprofundamento;SEH-03;15;3
+Saúde e Higiene;Normal;Projeto;SEH-04;15;4
+Cuidados Básicos;Normal;Fundamentos;CB-01;15;1
+Cuidados Básicos;Normal;Desenvolvimento;CB-02;15;2
+Cuidados Básicos;Normal;Aprofundamento;CB-03;15;3
+Cuidados Básicos;Normal;Projeto;CB-04;15;4
+Anatomia e Fisiologia;Normal;Fundamentos;AEF-01;15;1
+Anatomia e Fisiologia;Normal;Desenvolvimento;AEF-02;15;2
+Anatomia e Fisiologia;Normal;Aprofundamento;AEF-03;15;3
+Anatomia e Fisiologia;Normal;Projeto;AEF-04;15;4
+Farmacologia;Laboratório;Fundamentos;F3-01;15;1
+Farmacologia;Laboratório;Desenvolvimento;F3-02;15;2
+Farmacologia;Laboratório;Aprofundamento;F3-03;15;3
+Farmacologia;Laboratório;Projeto;F3-04;15;4
+Dermofarmácia;Laboratório;Fundamentos;D-01;15;1
+Dermofarmácia;Laboratório;Desenvolvimento;D-02;15;2
+Dermofarmácia;Laboratório;Aprofundamento;D-03;15;3
+Dermofarmácia;Laboratório;Projeto;D-04;15;4
+Dispensa de Medicamentos;Normal;Fundamentos;DDM-01;15;1
+Dispensa de Medicamentos;Normal;Desenvolvimento;DDM-02;15;2
+Dispensa de Medicamentos;Normal;Aprofundamento;DDM-03;15;3
+Dispensa de Medicamentos;Normal;Projeto;DDM-04;15;4
+Cozinha;Laboratório;Fundamentos;C2-01;15;1
+Cozinha;Laboratório;Desenvolvimento;C2-02;15;2
+Cozinha;Laboratório;Aprofundamento;C2-03;15;3
+Cozinha;Laboratório;Projeto;C2-04;15;4
+Pastelaria;Laboratório;Fundamentos;P3-01;15;1
+Pastelaria;Laboratório;Desenvolvimento;P3-02;15;2
+Pastelaria;Laboratório;Aprofundamento;P3-03;15;3
+Pastelaria;Laboratório;Projeto;P3-04;15;4
+Nutrição;Normal;Fundamentos;N-01;15;1
+Nutrição;Normal;Desenvolvimento;N-02;15;2
+Nutrição;Normal;Aprofundamento;N-03;15;3
+Nutrição;Normal;Projeto;N-04;15;4
+Serviço de Mesa;Normal;Fundamentos;SDM-01;15;1
+Serviço de Mesa;Normal;Desenvolvimento;SDM-02;15;2
+Serviço de Mesa;Normal;Aprofundamento;SDM-03;15;3
+Serviço de Mesa;Normal;Projeto;SDM-04;15;4
+Bar e Cocktails;Normal;Fundamentos;BEC-01;15;1
+Bar e Cocktails;Normal;Desenvolvimento;BEC-02;15;2
+Bar e Cocktails;Normal;Aprofundamento;BEC-03;15;3
+Bar e Cocktails;Normal;Projeto;BEC-04;15;4
+Enologia;Normal;Fundamentos;E2-01;15;1
+Enologia;Normal;Desenvolvimento;E2-02;15;2
+Enologia;Normal;Aprofundamento;E2-03;15;3
+Enologia;Normal;Projeto;E2-04;15;4
+Turismo e Lazer;Normal;Fundamentos;TEL-01;15;1
+Turismo e Lazer;Normal;Desenvolvimento;TEL-02;15;2
+Turismo e Lazer;Normal;Aprofundamento;TEL-03;15;3
+Turismo e Lazer;Normal;Projeto;TEL-04;15;4
+Informação Turística;Normal;Fundamentos;IT-01;15;1
+Informação Turística;Normal;Desenvolvimento;IT-02;15;2
+Informação Turística;Normal;Aprofundamento;IT-03;15;3
+Informação Turística;Normal;Projeto;IT-04;15;4
+Geografia de Destinos;Normal;Fundamentos;GDD-01;15;1
+Geografia de Destinos;Normal;Desenvolvimento;GDD-02;15;2
+Geografia de Destinos;Normal;Aprofundamento;GDD-03;15;3
+Geografia de Destinos;Normal;Projeto;GDD-04;15;4
+Eletrónica;Laboratório;Fundamentos;E3-01;15;1
+Eletrónica;Laboratório;Desenvolvimento;E3-02;15;2
+Eletrónica;Laboratório;Aprofundamento;E3-03;15;3
+Eletrónica;Laboratório;Projeto;E3-04;15;4
+Telecomunicações;Laboratório;Fundamentos;T2-01;15;1
+Telecomunicações;Laboratório;Desenvolvimento;T2-02;15;2
+Telecomunicações;Laboratório;Aprofundamento;T2-03;15;3
+Telecomunicações;Laboratório;Projeto;T2-04;15;4
+Sistemas Digitais;Laboratório;Fundamentos;SD-01;15;1
+Sistemas Digitais;Laboratório;Desenvolvimento;SD-02;15;2
+Sistemas Digitais;Laboratório;Aprofundamento;SD-03;15;3
+Sistemas Digitais;Laboratório;Projeto;SD-04;15;4
+Automação e Robótica;Laboratório;Fundamentos;AER-01;15;1
+Automação e Robótica;Laboratório;Desenvolvimento;AER-02;15;2
+Automação e Robótica;Laboratório;Aprofundamento;AER-03;15;3
+Automação e Robótica;Laboratório;Projeto;AER-04;15;4
+Mecânica;Laboratório;Fundamentos;M2-01;15;1
+Mecânica;Laboratório;Desenvolvimento;M2-02;15;2
+Mecânica;Laboratório;Aprofundamento;M2-03;15;3
+Mecânica;Laboratório;Projeto;M2-04;15;4
+Eletricidade;Laboratório;Fundamentos;E4-01;15;1
+Eletricidade;Laboratório;Desenvolvimento;E4-02;15;2
+Eletricidade;Laboratório;Aprofundamento;E4-03;15;3
+Eletricidade;Laboratório;Projeto;E4-04;15;4
+Painéis Solares;Laboratório;Fundamentos;PS-01;15;1
+Painéis Solares;Laboratório;Desenvolvimento;PS-02;15;2
+Painéis Solares;Laboratório;Aprofundamento;PS-03;15;3
+Painéis Solares;Laboratório;Projeto;PS-04;15;4
+Armazenamento de Energia;Laboratório;Fundamentos;ADE-01;15;1
+Armazenamento de Energia;Laboratório;Desenvolvimento;ADE-02;15;2
+Armazenamento de Energia;Laboratório;Aprofundamento;ADE-03;15;3
+Armazenamento de Energia;Laboratório;Projeto;ADE-04;15;4
+Eficiência Energética;Normal;Fundamentos;EE-01;15;1
+Eficiência Energética;Normal;Desenvolvimento;EE-02;15;2
+Eficiência Energética;Normal;Aprofundamento;EE-03;15;3
+Eficiência Energética;Normal;Projeto;EE-04;15;4
+Treino Desportivo;Ginásio;Fundamentos;TD-01;15;1
+Treino Desportivo;Ginásio;Desenvolvimento;TD-02;15;2
+Treino Desportivo;Ginásio;Aprofundamento;TD-03;15;3
+Treino Desportivo;Ginásio;Projeto;TD-04;15;4
+Anatomia Desportiva;Normal;Fundamentos;AD-01;15;1
+Anatomia Desportiva;Normal;Desenvolvimento;AD-02;15;2
+Anatomia Desportiva;Normal;Aprofundamento;AD-03;15;3
+Anatomia Desportiva;Normal;Projeto;AD-04;15;4
+Fisiologia do Exercício;Normal;Fundamentos;FDE-01;15;1
+Fisiologia do Exercício;Normal;Desenvolvimento;FDE-02;15;2
+Fisiologia do Exercício;Normal;Aprofundamento;FDE-03;15;3
+Fisiologia do Exercício;Normal;Projeto;FDE-04;15;4
+Gestão de Armazém;Normal;Fundamentos;GDA-01;15;1
+Gestão de Armazém;Normal;Desenvolvimento;GDA-02;15;2
+Gestão de Armazém;Normal;Aprofundamento;GDA-03;15;3
+Gestão de Armazém;Normal;Projeto;GDA-04;15;4
+Transportes;Normal;Fundamentos;T3-01;15;1
+Transportes;Normal;Desenvolvimento;T3-02;15;2
+Transportes;Normal;Aprofundamento;T3-03;15;3
+Transportes;Normal;Projeto;T3-04;15;4
+Logística Digital;Laboratório;Fundamentos;LD-01;15;1
+Logística Digital;Laboratório;Desenvolvimento;LD-02;15;2
+Logística Digital;Laboratório;Aprofundamento;LD-03;15;3
+Logística Digital;Laboratório;Projeto;LD-04;15;4

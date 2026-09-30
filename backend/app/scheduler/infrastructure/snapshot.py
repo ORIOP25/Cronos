@@ -41,7 +41,10 @@ from app.scheduler.domain.candidate import (
     UnavailableResource,
     split_consumed_lessons,
 )
-from app.scheduler.domain.constraint_policy import SchoolConstraintPolicy
+from app.scheduler.domain.constraint_policy import (
+    SchoolConstraintPolicy,
+    assess_room_eligibility,
+)
 from app.scheduler.domain.debt import RecoveryAllocation
 from app.scheduler.domain.grid_versions import (
     GridVersionRef,
@@ -64,9 +67,15 @@ from app.scheduler.infrastructure.progress import load_executed_minutes, load_op
 class SnapshotConfigurationError(ValueError):
     """The persisted configuration cannot produce a valid planning snapshot."""
 
-    def __init__(self, code: str, message: str) -> None:
+    def __init__(
+        self,
+        code: str,
+        message: str,
+        public_context: Mapping[str, object] | None = None,
+    ) -> None:
         super().__init__(message)
         self.code = code
+        self.public_context = dict(public_context or {})
 
 
 def recovery_policy(snapshot: PlanningSnapshot) -> RecoveryPolicy:
@@ -631,73 +640,95 @@ async def _build_assignments(
     *,
     constraints: SchoolConstraintPolicy,
 ) -> tuple[Assignment, ...]:
-    class_sizes = dict(
-        (
+    class_sizes = {
+        class_id: (size, name)
+        for class_id, size, name in (
             await db.execute(
-                select(models.Class.id, models.Class.size).where(
+                select(models.Class.id, models.Class.size, models.Class.name).where(
                     models.Class.organization_id == organization_id,
                     models.Class.id.in_({row.class_id for row in assignments}),
                 )
             )
         ).all()
-    )
-    subject_types = dict(
-        (
+    }
+    subject_types = {
+        subject_id: (required_room_type, name)
+        for subject_id, required_room_type, name in (
             await db.execute(
-                select(models.Subject.id, models.Subject.required_room_type).where(
+                select(
+                    models.Subject.id,
+                    models.Subject.required_room_type,
+                    models.Subject.name,
+                ).where(
                     models.Subject.organization_id == organization_id,
                     models.Subject.id.in_({row.subject_id for row in assignments}),
                 )
             )
         ).all()
-    )
-    rooms = (
-        await db.scalars(
-            select(models.Room)
-            .where(
-                models.Room.organization_id == organization_id,
-                models.Room.is_archived.is_(False),
+    }
+    rooms = [
+        (room.id, room.type.value, room.capacity)
+        for room in (
+            await db.scalars(
+                select(models.Room)
+                .where(
+                    models.Room.organization_id == organization_id,
+                    models.Room.is_archived.is_(False),
+                )
+                .order_by(models.Room.id)
             )
-            .order_by(models.Room.id)
-        )
-    ).all()
-    rooms_by_type: dict[str, list[models.Room]] = defaultdict(list)
-    for room in rooms:
-        rooms_by_type[room.type.value].append(room)
+        ).all()
+    ]
     result: list[Assignment] = []
+    room_issues: list[dict[str, object]] = []
     for row in assignments:
-        required_type = subject_types.get(row.subject_id)
-        if required_type is None:
+        subject = subject_types.get(row.subject_id)
+        if subject is None:
             raise SnapshotConfigurationError(
                 "UNKNOWN_SUBJECT", "Uma atribuição curricular refere uma disciplina desconhecida."
             )
-        class_size = class_sizes.get(row.class_id)
-        if class_size is None:
+        required_type, subject_name = subject
+        course_class = class_sizes.get(row.class_id)
+        if course_class is None:
             raise SnapshotConfigurationError(
                 "UNKNOWN_CLASS", "Uma atribuição curricular refere uma turma desconhecida."
             )
-        candidate_rooms = tuple(
-            room.id
-            for room in rooms_by_type.get(required_type.value, ())
-            if room.capacity >= class_size
+        class_size, class_name = course_class
+        eligibility = assess_room_eligibility(
+            rooms,
+            required_room_type=required_type.value,
+            required_capacity=class_size,
+            allowed_room_ids=constraints.specific_rooms.get((row.class_id, row.subject_id)),
         )
-        specific = constraints.specific_rooms.get((row.class_id, row.subject_id))
-        if specific is not None:
-            candidate_rooms = tuple(room_id for room_id in candidate_rooms if room_id in specific)
-        if not candidate_rooms:
-            raise SnapshotConfigurationError(
-                "NO_ELIGIBLE_ROOM",
-                "Existem disciplinas sem sala compatível com o tipo e a lotação da turma.",
+        if eligibility.reason is not None:
+            room_issues.append(
+                {
+                    "class_id": row.class_id,
+                    "class_name": class_name,
+                    "subject_id": row.subject_id,
+                    "subject_name": subject_name,
+                    "required_room_type": required_type.value,
+                    "required_capacity": class_size,
+                    "max_available_capacity": eligibility.max_available_capacity,
+                    "reason": eligibility.reason.value,
+                }
             )
+            continue
         result.append(
             Assignment(
                 assignment_id=row.id,
                 class_id=row.class_id,
                 subject_id=row.subject_id,
                 teacher_id=row.teacher_id,
-                eligible_room_ids=frozenset(candidate_rooms),
+                eligible_room_ids=eligibility.eligible_room_ids,
                 modules=requirements[row.id],
             )
+        )
+    if room_issues:
+        raise SnapshotConfigurationError(
+            "NO_ELIGIBLE_ROOM",
+            "Existem disciplinas sem sala compatível com o tipo e a lotação da turma.",
+            public_context={"room_issues": room_issues},
         )
     return tuple(result)
 

@@ -7,12 +7,19 @@ from sqlalchemy import select
 from app import models, schemas
 from app.api import deps
 from app.main import app
-from app.services.preflight_service import PreflightService, _validate_subject_requirements
+from app.scheduler.domain.candidate import SchedulingStrategy
+from app.scheduler.infrastructure.snapshot import SnapshotConfigurationError, load_snapshot
+from app.services.preflight_service import (
+    PreflightService,
+    _validate_room_requirements,
+    _validate_subject_requirements,
+)
 from tests._support.db_fixtures import (
     accept_current_legal_documents,
     create_org_and_user,
     create_teacher_profile,
 )
+from tests._support.scheduler_v1 import MOMENT, seed_generatable_school
 
 pytestmark = pytest.mark.postgresql
 
@@ -275,10 +282,25 @@ async def test_preflight_rejects_room_that_cannot_fit_assigned_class(db_session)
     )
     await db_session.flush()
 
-    errors = await _validate_subject_requirements(db_session, org.id, {subject.id})
+    issues = await _validate_room_requirements(db_session, org.id)
 
-    assert errors and "Turmas sem sala compatível" in errors[0]
-    assert "Turma grande / Laboratório (30 lugares)" in errors[0]
+    assert issues and issues[0].code == "NO_ELIGIBLE_ROOM"
+    assert issues[0].severity == "BLOCKER"
+    assert issues[0].route == "/rooms"
+    assert issues[0].context == {
+        "class_id": school_class.id,
+        "class_name": "Turma grande",
+        "subject_id": subject.id,
+        "subject_name": "Laboratório",
+        "required_room_type": "lab",
+        "required_capacity": 30,
+        "max_available_capacity": 20,
+        "reason": "INSUFFICIENT_CAPACITY",
+    }
+    assert "30 alunos" in issues[0].message
+    assert "20 lugares" in issues[0].message
+
+    assert await _validate_subject_requirements(db_session, org.id, {subject.id}) == []
 
 
 async def test_preflight_ignores_archived_room(db_session):
@@ -336,13 +358,158 @@ async def test_preflight_ignores_archived_room(db_session):
     )
     await db_session.flush()
 
-    blocked = await _validate_subject_requirements(db_session, org.id, {subject.id})
-    assert blocked and "Turmas sem sala compatível" in blocked[0]
+    blocked = await _validate_room_requirements(db_session, org.id)
+    assert blocked and blocked[0].code == "NO_ELIGIBLE_ROOM"
+    assert blocked[0].context["reason"] == "NO_ROOM_OF_TYPE"
 
     room.is_archived = False
     await db_session.flush()
-    allowed = await _validate_subject_requirements(db_session, org.id, {subject.id})
+    allowed = await _validate_room_requirements(db_session, org.id)
     assert allowed == []
+
+
+async def _create_gym_scenario(
+    db_session,
+    *,
+    suffix: str,
+    class_name: str = "TDESP 10",
+    size: int = 27,
+    gym_capacities: tuple[int, ...] = (25, 26),
+):
+    org, _ = await create_org_and_user(
+        db_session,
+        clerk_user_id=f"gym-{suffix}-user",
+        clerk_org_id=f"gym-{suffix}-org",
+    )
+    course = models.Course(organization_id=org.id, name=f"Curso {suffix}", abbreviation="TDESP")
+    subject = models.Subject(
+        organization_id=org.id,
+        name="Treino Desportivo",
+        required_room_type=models.RoomType.gym,
+    )
+    db_session.add_all([course, subject])
+    await db_session.flush()
+    school_class = models.Class(
+        organization_id=org.id,
+        course_id=course.id,
+        name=class_name,
+        size=size,
+        grade_level=10,
+        start_year=2025,
+        end_year=2028,
+    )
+    db_session.add(school_class)
+    await db_session.flush()
+    db_session.add(
+        models.Module(
+            organization_id=org.id,
+            subject_id=subject.id,
+            name="M1",
+            required_minutes=60,
+            order=0,
+        )
+    )
+    teacher = await create_teacher_profile(
+        db_session, organization_id=org.id, subject_ids=[subject.id]
+    )
+    db_session.add(
+        models.ClassSubjectLink(
+            organization_id=org.id,
+            class_id=school_class.id,
+            subject_id=subject.id,
+            grade_level=10,
+            teacher_id=teacher.id,
+        )
+    )
+    rooms = []
+    for index, capacity in enumerate(gym_capacities):
+        room = models.Room(
+            organization_id=org.id,
+            name=f"G-{index + 1:02d}",
+            type=models.RoomType.gym,
+            capacity=capacity,
+        )
+        db_session.add(room)
+        rooms.append(room)
+    await db_session.flush()
+    return org, school_class, subject, rooms
+
+
+async def test_preflight_reports_the_exact_room_shortage(db_session):
+    org, school_class, subject, rooms = await _create_gym_scenario(db_session, suffix="shortage")
+
+    issues = await _validate_room_requirements(db_session, org.id)
+
+    assert len(issues) == 1
+    issue = issues[0]
+    assert issue.code == "NO_ELIGIBLE_ROOM"
+    assert issue.severity == "BLOCKER"
+    assert issue.route == "/rooms"
+    assert issue.context == {
+        "class_id": school_class.id,
+        "class_name": "TDESP 10",
+        "subject_id": subject.id,
+        "subject_name": "Treino Desportivo",
+        "required_room_type": "gym",
+        "required_capacity": 27,
+        "max_available_capacity": 26,
+        "reason": "INSUFFICIENT_CAPACITY",
+    }
+
+    # Raising the largest room unblocks generation without a restart.
+    rooms[1].capacity = 27
+    await db_session.flush()
+
+    assert await _validate_room_requirements(db_session, org.id) == []
+
+
+async def test_preflight_room_issues_are_sorted_and_tenant_scoped(db_session):
+    blocked_org, _class, _subject, _rooms = await _create_gym_scenario(db_session, suffix="blocked")
+    other_org, _healthy_class, _healthy_subject, _healthy_rooms = await _create_gym_scenario(
+        db_session,
+        suffix="healthy",
+        gym_capacities=(40,),
+    )
+
+    issues = await _validate_room_requirements(db_session, blocked_org.id)
+    assert len(issues) == 1
+    assert issues[0].context["class_name"] == "TDESP 10"
+
+    # A different organization with a compatible room reports nothing.
+    assert await _validate_room_requirements(db_session, other_org.id) == []
+
+
+async def test_load_snapshot_carries_public_room_context(db_session):
+    seed = await seed_generatable_school(
+        db_session,
+        clerk_user_id="room-snapshot-user",
+        clerk_org_id="room-snapshot-org",
+    )
+    seed.room.capacity = 10
+    await db_session.flush()
+
+    with pytest.raises(SnapshotConfigurationError) as error:
+        await load_snapshot(
+            db_session,
+            seed.organization.id,
+            strategy=SchedulingStrategy.COMPLETE_GENERATION,
+            now_utc=MOMENT,
+            school_year_id=seed.year.id,
+        )
+
+    assert error.value.code == "NO_ELIGIBLE_ROOM"
+    assert error.value.public_context["room_issues"] == [
+        {
+            "class_id": seed.class_.id,
+            "class_name": "A",
+            "subject_id": seed.subject.id,
+            "subject_name": "Subject",
+            "required_room_type": "normal",
+            "required_capacity": 20,
+            "max_available_capacity": 10,
+            "reason": "INSUFFICIENT_CAPACITY",
+        }
+    ]
 
 
 async def test_preparation_dashboard_embeds_single_prevalidation_snapshot(

@@ -1,4 +1,5 @@
 import { cleanup, render, screen } from '@testing-library/react'
+import { MemoryRouter } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import GenerationStatusPanel from '../components/schedules/GenerationStatusPanel'
 import { useScheduleTaskStatus } from '../features/scheduling/data'
@@ -92,5 +93,20 @@ describe('GenerationStatusPanel', () => {
     render(<GenerationStatusPanel jobId={18} />)
 
     expect(screen.getByText(/proposta pronta/i)).toBeInTheDocument()
+  })
+
+  it('points to rooms when generation stopped for an incompatible room', () => {
+    useScheduleTaskStatus.mockReturnValue({
+      data: { status: 'FAILED', stop_reason: 'NO_ELIGIBLE_ROOM' },
+      isLoading: false,
+    })
+
+    render(
+      <MemoryRouter>
+        <GenerationStatusPanel jobId={19} />
+      </MemoryRouter>,
+    )
+
+    expect(screen.getByRole('link', { name: /abrir salas/i })).toHaveAttribute('href', '/rooms')
   })
 })

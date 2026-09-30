@@ -4,6 +4,11 @@ from sqlalchemy import select as sa_select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models, schemas
+from app.scheduler.domain.constraint_policy import (
+    RoomEligibilityReason,
+    SchoolConstraintPolicy,
+    assess_room_eligibility,
+)
 from app.services import grid_version_service
 from app.services.availability_matrix_service import AvailabilityMatrixInspector
 from app.services.scheduler_fingerprint_service import SchedulerFingerprintService
@@ -180,43 +185,118 @@ async def _validate_subject_requirements(
                 "Corrija a carga horária dos módulos."
             )
 
-    room_exists = sa_select(models.Room.id).where(
-        models.Room.organization_id == organization_id,
-        models.Room.type == models.Subject.required_room_type,
-        models.Room.capacity >= models.Class.size,
-        models.Room.is_archived.is_(False),
-    )
-    incompatible_rows = await db.execute(
-        sa_select(models.Class.name, models.Subject.name, models.Class.size)
-        .select_from(models.ClassSubjectLink)
-        .join(models.Class, models.Class.id == models.ClassSubjectLink.class_id)
-        .join(models.Subject, models.Subject.id == models.ClassSubjectLink.subject_id)
-        .where(
-            models.ClassSubjectLink.organization_id == organization_id,
-            models.Class.organization_id == organization_id,
-            models.Subject.organization_id == organization_id,
-            models.Class.is_archived.is_(False),
-            models.ClassSubjectLink.teacher_id.is_not(None),
-            models.ClassSubjectLink.grade_level == models.Class.grade_level,
-            models.ClassSubjectLink.subject_id.in_(subject_ids),
-            ~room_exists.where(models.Room.organization_id == organization_id)
-            .correlate(models.Class, models.Subject)
-            .exists(),
-        )
-        .order_by(models.Class.name, models.Subject.name)
-    )
-    incompatible = incompatible_rows.all()
-    if incompatible:
-        errors.append(
-            "Turmas sem sala compatível (tipo e lotação): "
-            + ", ".join(
-                f"{class_name} / {subject_name} ({size} lugares)"
-                for class_name, subject_name, size in incompatible
-            )
-            + ". Adicione salas compatíveis em Salas."
-        )
-
     return errors
+
+
+def _room_issue_message(issue: dict[str, object]) -> str:
+    class_name = issue["class_name"]
+    subject_name = issue["subject_name"]
+    room_type = issue["required_room_type"]
+    reason = issue["reason"]
+    if reason == RoomEligibilityReason.NO_ROOM_OF_TYPE.value:
+        return (
+            f"{class_name} / {subject_name}: não existe uma sala do tipo «{room_type}». "
+            "Adicione uma sala desse tipo em Salas."
+        )
+    if reason == RoomEligibilityReason.INSUFFICIENT_CAPACITY.value:
+        return (
+            f"{class_name} / {subject_name} ({issue['required_capacity']} alunos): "
+            f"a maior sala do tipo «{room_type}» tem "
+            f"{issue['max_available_capacity']} lugares. Aumente a lotação em Salas."
+        )
+    return (
+        f"{class_name} / {subject_name} ({issue['required_capacity']} alunos): "
+        "as salas permitidas pelas regras não têm lugares suficientes. "
+        "Ajuste as regras ou as salas em Salas."
+    )
+
+
+async def _validate_room_requirements(
+    db: AsyncSession,
+    organization_id: int,
+) -> list[schemas.PreflightIssue]:
+    """One structured NO_ELIGIBLE_ROOM diagnosis per active class/subject pair."""
+    rooms = [
+        (room.id, room.type.value, room.capacity)
+        for room in (
+            await db.scalars(
+                sa_select(models.Room)
+                .where(
+                    models.Room.organization_id == organization_id,
+                    models.Room.is_archived.is_(False),
+                )
+                .order_by(models.Room.id)
+            )
+        ).all()
+    ]
+    constraint_rows = (
+        await db.scalars(
+            sa_select(models.Constraint).where(models.Constraint.organization_id == organization_id)
+        )
+    ).all()
+    parsed = SchoolConstraintPolicy.parse(constraint_rows)
+    specific_rooms = parsed.policy.specific_rooms if parsed.policy is not None else {}
+
+    rows = (
+        await db.execute(
+            sa_select(
+                models.Class.id.label("class_id"),
+                models.Class.name.label("class_name"),
+                models.Class.size.label("class_size"),
+                models.Subject.id.label("subject_id"),
+                models.Subject.name.label("subject_name"),
+                models.Subject.required_room_type.label("required_room_type"),
+            )
+            .select_from(models.ClassSubjectLink)
+            .join(models.Class, models.Class.id == models.ClassSubjectLink.class_id)
+            .join(models.Subject, models.Subject.id == models.ClassSubjectLink.subject_id)
+            .where(
+                models.ClassSubjectLink.organization_id == organization_id,
+                models.Class.organization_id == organization_id,
+                models.Subject.organization_id == organization_id,
+                models.Class.is_archived.is_(False),
+                models.ClassSubjectLink.teacher_id.is_not(None),
+                models.ClassSubjectLink.grade_level == models.Class.grade_level,
+            )
+            .order_by(
+                models.Class.name,
+                models.Subject.name,
+                models.Class.id,
+                models.Subject.id,
+            )
+        )
+    ).all()
+
+    issues: list[schemas.PreflightIssue] = []
+    for row in rows:
+        eligibility = assess_room_eligibility(
+            rooms,
+            required_room_type=row.required_room_type.value,
+            required_capacity=row.class_size,
+            allowed_room_ids=specific_rooms.get((row.class_id, row.subject_id)),
+        )
+        if eligibility.reason is None:
+            continue
+        context = {
+            "class_id": row.class_id,
+            "class_name": row.class_name,
+            "subject_id": row.subject_id,
+            "subject_name": row.subject_name,
+            "required_room_type": row.required_room_type.value,
+            "required_capacity": row.class_size,
+            "max_available_capacity": eligibility.max_available_capacity,
+            "reason": eligibility.reason.value,
+        }
+        issues.append(
+            schemas.PreflightIssue(
+                code="NO_ELIGIBLE_ROOM",
+                severity="BLOCKER",
+                message=_room_issue_message(context),
+                route="/rooms",
+                context=context,
+            )
+        )
+    return issues
 
 
 class PreflightService:
@@ -368,6 +448,8 @@ class PreflightService:
                         route="/subjects",
                     )
                 )
+
+            issues.extend(await _validate_room_requirements(self.db, organization_id))
 
             invalid_assignment_rows = (
                 await self.db.execute(

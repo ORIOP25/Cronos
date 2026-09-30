@@ -327,4 +327,6 @@ async def test_populated_dashboard_skips_fingerprints_with_bounded_queries(db_se
     assert summary.prevalidation.status == "READY"
     assert summary.bases.fingerprint is None
     assert summary.prevalidation.fingerprint is None
-    assert len(statements) <= 20
+    # Room prevalidation adds two constant set queries (rooms and rules); the
+    # budget stays bounded and independent of the number of assignments.
+    assert len(statements) <= 22
