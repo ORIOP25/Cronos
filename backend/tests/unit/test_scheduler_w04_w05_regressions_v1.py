@@ -270,6 +270,27 @@ def test_f09_recovery_is_demonstrated_when_a_perturbed_schedule_exists():
     assert result.completion.recovery.status == "DEMONSTRATED"
 
 
+def test_first_complete_generation_does_not_start_a_second_recovery_search(monkeypatch):
+    import app.scheduler.application.generation as generation
+
+    def unexpected_recovery(*_args, **_kwargs):
+        raise AssertionError("First-complete generation must stop after validation.")
+
+    monkeypatch.setattr(generation, "recovery_assessment", unexpected_recovery)
+    periods = (period(0), period(1))
+
+    result = generate_schedule(
+        snapshot(periods),
+        periods,
+        time_limit_seconds=10,
+        assess_recovery=True,
+        stop_at_first_complete=True,
+    )
+
+    assert result.outcome == "COMPLETE"
+    assert result.completion.recovery.status == "NOT_ASSESSED"
+
+
 def test_l12_extra_eligible_options_do_not_worsen_the_certified_optimum():
     narrow_periods = (period(0),)
     wide_periods = (period(0), period(1))

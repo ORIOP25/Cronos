@@ -224,7 +224,9 @@ def _build_candidate(
     selections: Mapping[int, list[tuple[Period, int, int]]],
 ) -> CandidateSchedule:
     lessons: list[ScheduledLesson] = []
-    used = {lesson.lesson_id for lesson in snapshot.protected_lessons}
+    used = {lesson.lesson_id for lesson in snapshot.protected_lessons} | set(
+        snapshot.reserved_lesson_ids
+    )
     sources = _baseline_sources(snapshot)
     for assignment in snapshot.assignments:
         rows = sorted(
@@ -951,6 +953,7 @@ def _solve_scope(
     num_workers: int,
     random_seed: int,
     solver: cp_model.CpSolver,
+    stop_at_first_complete: bool = False,
     optimize_room_continuity: bool = False,
     should_cancel: Callable[[], bool] | None = None,
     room_cost: Callable[[Assignment, Period, int], int] | None = None,
@@ -961,6 +964,7 @@ def _solve_scope(
     selections: dict[int, list] | None = None
     stop_reason = STOP_OPTIMAL
     window = state.scope.week
+    solver.parameters.stop_after_first_solution = stop_at_first_complete
 
     def run_solve(stage: str):
         diagnostics.phase_started("PLACEMENT_SOLVE", window=window, stage=stage)
@@ -981,14 +985,23 @@ def _solve_scope(
         # Feasibility comes before the lexicographic quality stages. A window
         # that cannot find any selection is worth less than a lower-quality one,
         # so the probe gets a real share of the window instead of a fixed 2s.
-        solver.parameters.max_time_in_seconds = min(
-            pre_solve_budget, max(2.0, pre_solve_budget * 0.5)
+        solver.parameters.max_time_in_seconds = (
+            pre_solve_budget
+            if stop_at_first_complete
+            else min(pre_solve_budget, max(2.0, pre_solve_budget * 0.5))
         )
         pre_status = run_solve("FEASIBILITY")
         if pre_status == cp_model.INFEASIBLE:
             return STATUS_INFEASIBLE, None, records, STOP_SAFETY
         if pre_status in (cp_model.OPTIMAL, cp_model.FEASIBLE):
             selections = _extract_selections(state, solver)
+
+    if should_cancel is not None and should_cancel():
+        return STATUS_CANCELLED, None, records, "CANCELLED"
+    if stop_at_first_complete:
+        if selections is None:
+            return STATUS_INCONCLUSIVE, None, records, STOP_SAFETY
+        return STATUS_COMPLETE, selections, records, STOP_FEASIBLE
 
     def run_stages(stages: list[tuple[str, Any, int | None]]) -> str:
         nonlocal selections, stop_reason
@@ -1425,6 +1438,7 @@ def solve_placement(
     should_cancel: Callable[[], bool] | None = None,
     quality_of: Callable[[CandidateSchedule], Any] | None = None,
     room_cost: Callable[[Assignment, Period, int], int] | None = None,
+    stop_at_first_complete: bool = False,
 ) -> PlacementOutcome:
     if type(snapshot) is not PlanningSnapshot:
         raise ValueError("Placement needs a planning snapshot.")
@@ -1452,7 +1466,7 @@ def solve_placement(
     cache = {} if reuse is None else reuse
     global_stop = STOP_OPTIMAL
     incomplete = False
-    optimize_room_continuity = len(scopes) == 1
+    optimize_room_continuity = len(scopes) == 1 and not stop_at_first_complete
     ordered_scopes = sorted(scopes, key=lambda row: -(row.week or 0))
     reserve = min(2.0, max(0.0, deadline - start) * 0.1)
     try:
@@ -1504,6 +1518,7 @@ def solve_placement(
                 optimize_room_continuity=optimize_room_continuity,
                 should_cancel=should_cancel,
                 room_cost=room_cost,
+                stop_at_first_complete=stop_at_first_complete,
             )
             statistics["solve_ms"] += int((monotonic() - solve_start) * 1000)
             if selections is not None and "first_candidate_ms" not in statistics:
@@ -1586,7 +1601,7 @@ def solve_placement(
             )
     candidate = _build_candidate(snapshot, combined)
     room_start = monotonic()
-    if not optimize_room_continuity:
+    if not optimize_room_continuity and not stop_at_first_complete:
         candidate, room_record = _optimize_rooms(
             snapshot,
             candidate,

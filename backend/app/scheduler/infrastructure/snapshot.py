@@ -280,6 +280,9 @@ async def load_snapshot(
             claim_assignments=claim_assignments,
             active_version_id=active_version.id if active_version is not None else None,
             lunch_rule=lunch_rule,
+            reserved_lesson_ids=frozenset(base_lesson_ids.values()).difference(
+                lesson.lesson_id for lesson in baseline_lessons
+            ),
         )
     except ValueError as exc:
         raise SnapshotConfigurationError(

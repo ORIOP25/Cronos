@@ -414,6 +414,8 @@ async def test_a_completed_lesson_log_follows_the_lesson_into_the_next_version(
     assert len(rows) == 1
     log, new_lesson = rows[0]
     assert new_lesson.stable_key == target.stable_key
+    assert new_lesson.school_date == target.school_date
+    assert new_lesson.starts_at == target.starts_at
     assert log.status == "COMPLETED"
     assert log.summary == "Sumário persistente."
 

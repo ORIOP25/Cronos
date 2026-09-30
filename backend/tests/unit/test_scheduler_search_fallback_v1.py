@@ -110,6 +110,83 @@ def test_stop_at_first_complete_returns_the_constructor_without_optimizing():
     assert outcome.evidence.stop_reason == "CONSTRUCTIVE"
 
 
+def test_search_passes_its_deadline_and_cancellation_to_construction(monkeypatch):
+    from time import monotonic
+
+    fixture = build_scale_fixture(6, seed=1)
+    constructor = search_module.construct_schedule
+    before = monotonic()
+
+    def should_cancel():
+        return False
+
+    def measured_construction(snapshot, periods, *, deadline, should_cancel):
+        assert before < deadline <= monotonic() + 10
+        assert should_cancel is cancellation
+        return constructor(snapshot, periods, deadline=deadline, should_cancel=should_cancel)
+
+    cancellation = should_cancel
+    monkeypatch.setattr(search_module, "construct_schedule", measured_construction)
+
+    outcome = search_module.search_complete_schedule(
+        fixture.snapshot,
+        fixture.periods,
+        time_limit_seconds=10,
+        should_cancel=should_cancel,
+        stop_at_first_complete=True,
+    )
+
+    assert outcome.status == "COMPLETE"
+
+
+def test_first_complete_policy_reaches_fallback_placement(monkeypatch):
+    fixture = build_scale_fixture(6, seed=1)
+    candidate = search_module.construct_schedule(fixture.snapshot, fixture.periods)
+    calls = []
+
+    def first_placement(*_args, **kwargs):
+        calls.append(kwargs["stop_at_first_complete"])
+        return PlacementOutcome("COMPLETE", candidate, None, 0.0, "UNRESTRICTED", {})
+
+    monkeypatch.setattr(search_module, "construct_schedule", _no_construction)
+    monkeypatch.setattr(search_module, "plan_annual_quotas", _inconclusive_plan)
+    monkeypatch.setattr(search_module, "solve_placement", first_placement)
+
+    outcome = search_module.search_complete_schedule(
+        fixture.snapshot, fixture.periods, time_limit_seconds=10, stop_at_first_complete=True
+    )
+
+    assert outcome.status == "COMPLETE"
+    assert calls == [True]
+
+
+def test_first_complete_policy_stops_after_the_first_annual_placement(monkeypatch):
+    fixture = build_scale_fixture(6, seed=1)
+    candidate = search_module.construct_schedule(fixture.snapshot, fixture.periods)
+    annual = search_module.plan_annual_quotas
+    calls = []
+
+    def first_plan(*args, **kwargs):
+        assert kwargs["stop_at_first_complete"] is True
+        assert not calls
+        return annual(*args, **kwargs)
+
+    def first_placement(*_args, **kwargs):
+        calls.append(kwargs["stop_at_first_complete"])
+        return PlacementOutcome("COMPLETE", candidate, None, 0.0, "UNRESTRICTED", {})
+
+    monkeypatch.setattr(search_module, "construct_schedule", _no_construction)
+    monkeypatch.setattr(search_module, "plan_annual_quotas", first_plan)
+    monkeypatch.setattr(search_module, "solve_placement", first_placement)
+
+    outcome = search_module.search_complete_schedule(
+        fixture.snapshot, fixture.periods, time_limit_seconds=10, stop_at_first_complete=True
+    )
+
+    assert outcome.status == "COMPLETE"
+    assert calls == [True]
+
+
 def test_the_search_never_returns_worse_than_the_constructor(monkeypatch):
     from dataclasses import replace
 

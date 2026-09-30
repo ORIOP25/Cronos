@@ -465,6 +465,7 @@ class PlanningSnapshot:
     claim_assignments: Mapping[int, int] = field(default_factory=dict)
     active_version_id: int | None = None
     lunch_rule: LunchRule | None = None
+    reserved_lesson_ids: frozenset[int] = frozenset()
 
     def __post_init__(self) -> None:
         if type(self.strategy) is not SchedulingStrategy:
@@ -525,6 +526,8 @@ class PlanningSnapshot:
             raise ValueError("The active version ID must be positive when present.")
         if self.lunch_rule is not None and type(self.lunch_rule) is not LunchRule:
             raise ValueError("The lunch rule must be a LunchRule when present.")
+        if any(type(identity) is not int or identity <= 0 for identity in self.reserved_lesson_ids):
+            raise ValueError("Reserved lesson identities must be positive integers.")
         claim_ids = {claim_id for claim_id, _ in self.open_debt_minutes.items()}
         if claim_ids != set(self.claim_assignments):
             raise ValueError("Every open debt claim needs its assignment.")
@@ -545,6 +548,7 @@ class PlanningSnapshot:
         object.__setattr__(self, "reservations", tuple(self.reservations))
         object.__setattr__(self, "blocked_dates", frozenset(self.blocked_dates))
         object.__setattr__(self, "protected_dates", frozenset(self.protected_dates))
+        object.__setattr__(self, "reserved_lesson_ids", frozenset(self.reserved_lesson_ids))
         object.__setattr__(
             self,
             "class_blocked_dates",

@@ -51,6 +51,28 @@ def test_annual_quotas_cover_the_exact_residual_with_partial_waste():
     assert all(week == 0 for _, week, _ in plan.distribution.counts)
 
 
+def test_first_complete_annual_planning_skips_subsequent_waste_search(monkeypatch):
+    from ortools.sat.python import cp_model
+
+    original = cp_model.CpSolver.Solve
+    calls = []
+
+    def first_solve(solver, model, *args, **kwargs):
+        assert solver.parameters.stop_after_first_solution
+        calls.append(True)
+        return original(solver, model, *args, **kwargs)
+
+    monkeypatch.setattr(cp_model.CpSolver, "Solve", first_solve)
+    snapshot = _snapshot(module_minutes=(100,))
+    periods = _periods((ORIGIN, time(9), time(10)), (ORIGIN, time(10), time(11)))
+
+    plan = plan_annual_quotas(snapshot, periods, stop_at_first_complete=True)
+
+    assert plan.status == STATUS_FEASIBLE
+    assert plan.distribution.total_physical_minutes() - plan.waste_minutes == 100
+    assert calls == [True]
+
+
 def test_no_quota_is_placed_after_the_final_week():
     snapshot = _snapshot(module_minutes=(120,))
     periods = _periods(

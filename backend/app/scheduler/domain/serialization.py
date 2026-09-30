@@ -169,6 +169,8 @@ def snapshot_to_dict(snapshot: PlanningSnapshot) -> dict[str, Any]:
             str(class_id): sorted(day.isoformat() for day in days)
             for class_id, days in sorted(snapshot.class_blocked_dates.items())
         }
+    if snapshot.reserved_lesson_ids:
+        payload["reserved_lesson_ids"] = sorted(snapshot.reserved_lesson_ids)
     return payload
 
 
@@ -220,6 +222,7 @@ def snapshot_from_dict(data: Mapping[str, Any]) -> PlanningSnapshot:
             claim_id: assignment_id for claim_id, assignment_id in data.get("claim_assignments", ())
         },
         active_version_id=data.get("active_version_id"),
+        reserved_lesson_ids=frozenset(data.get("reserved_lesson_ids", ())),
         lunch_rule=(
             None
             if data.get("lunch_rule") is None

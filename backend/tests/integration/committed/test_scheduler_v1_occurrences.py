@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import date
+
 import pytest
 from sqlalchemy import select
 
@@ -219,6 +221,13 @@ async def test_open_debts_aggregate_occurrence_claims(db_session, monkeypatch):
     lessons = await _lessons(db_session, seed)
     await _occurrence(db_session, seed, lessons[0])
     await _occurrence(db_session, seed, lessons[1])
+
+    class ReferenceDate(date):
+        @classmethod
+        def today(cls):
+            return max(row.school_date for row in lessons)
+
+    monkeypatch.setattr(occurrences_v1, "date", ReferenceDate)
 
     debts = await occurrences_v1.get_debts(db_session, seed.organization.id)
     assert debts["total_gaps"] == 2

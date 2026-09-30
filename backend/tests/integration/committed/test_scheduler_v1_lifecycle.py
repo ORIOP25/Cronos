@@ -335,9 +335,10 @@ async def test_successful_generation_persists_a_proposal_and_restarts_the_clock(
     assert status["pending_proposal"]["can_approve"] is True
     quality = status["pending_proposal"]["quality_summary"]
     assert quality["policy_version"] == "baseline-v1"
-    assert quality["total_stages"] >= 1
-    assert quality["certified_stages"] <= quality["total_stages"]
-    assert isinstance(quality["claims_optimum"], bool)
+    assert quality["total_stages"] == 0
+    assert quality["certified_stages"] == 0
+    assert quality["claims_optimum"] is False
+    assert proposal.metrics_json["evidence"]["stop_reason"] == "CONSTRUCTIVE"
     assert status["active_job"] is None
 
 

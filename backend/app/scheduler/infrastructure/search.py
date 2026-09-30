@@ -422,7 +422,11 @@ def _joint_search(
     # inside the budget: a failed search can always return it within the limit.
     constructive_start = monotonic()
     phase_started("CONSTRUCTIVE")
-    constructed = construct_schedule(snapshot, periods) if incumbent is None else None
+    constructed = (
+        construct_schedule(snapshot, periods, deadline=hard_deadline, should_cancel=should_cancel)
+        if incumbent is None
+        else None
+    )
     phase_finished(
         "CONSTRUCTIVE",
         started_at=constructive_start,
@@ -467,6 +471,7 @@ def _joint_search(
             time_limit_seconds=max(MIN_SEARCH_SECONDS, remaining * MASTER_BUDGET_SHARE),
             num_workers=num_workers,
             random_seed=random_seed,
+            stop_at_first_complete=stop_at_first_complete,
         )
         _merge_statistics(phase_totals, plan.statistics)
         if plan.status == ANNUAL_INFEASIBLE:
@@ -496,6 +501,7 @@ def _joint_search(
             should_cancel=should_cancel,
             quality_of=profile.refine_quality(snapshot),
             room_cost=room_cost,
+            stop_at_first_complete=stop_at_first_complete,
         )
         _merge_statistics(phase_totals, placement.statistics)
         rounds += 1
@@ -508,6 +514,17 @@ def _joint_search(
                     snapshot, periods, profile, candidate, deadline=deadline
                 )
             vector = profile.vector(snapshot, candidate)
+            if stop_at_first_complete:
+                return SearchOutcome(
+                    OUTCOME_COMPLETE,
+                    candidate,
+                    placement.objective_days,
+                    placement.evidence,
+                    "The first complete placement was returned without further search.",
+                    monotonic() - start,
+                    dict(phase_totals),
+                    measure_initial_quality(snapshot, candidate),
+                )
             if best_vector is None or vector < best_vector:
                 best_vector = vector
                 incumbent = SearchOutcome(
@@ -579,6 +596,7 @@ def _joint_search(
             phase_totals=phase_totals,
             excluded=excluded,
             rounds=rounds,
+            stop_at_first_complete=stop_at_first_complete,
         )
         if fallback is not None:
             return fallback
@@ -733,6 +751,7 @@ def _unrestricted_fallback(
     phase_totals: dict[str, int],
     excluded: list[QuotaDistribution],
     rounds: int,
+    stop_at_first_complete: bool = False,
 ) -> SearchOutcome | None:
     """Place the residual demand without an annual quota distribution.
 
@@ -773,6 +792,7 @@ def _unrestricted_fallback(
                 should_cancel=should_cancel,
                 quality_of=profile.refine_quality(snapshot),
                 room_cost=room_cost,
+                stop_at_first_complete=stop_at_first_complete,
             )
         except NoEligiblePeriodsError:
             continue

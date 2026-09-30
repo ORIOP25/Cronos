@@ -235,7 +235,7 @@ def generate_complete(
         recovery_budget = time_limit_seconds - (monotonic() - started)
         if recovery_time_limit_seconds is not None:
             recovery_budget = min(recovery_budget, recovery_time_limit_seconds)
-        if assess_recovery and recovery_budget > 0:
+        if assess_recovery and not stop_at_first_complete and recovery_budget > 0:
             recovery = recovery_assessment(
                 snapshot,
                 periods,

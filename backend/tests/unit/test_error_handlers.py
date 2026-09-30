@@ -47,14 +47,17 @@ async def test_http_exception_uses_safe_envelope_and_preserves_auth_header():
     assert b"secret-token" not in response.body
 
 
-async def test_lowercase_request_id_is_not_accepted():
+async def test_lowercase_request_id_is_not_accepted(monkeypatch):
+    monkeypatch.setattr(
+        "app.core.exceptions.uuid.uuid4", lambda: SimpleNamespace(hex="358611408361" + "0" * 20)
+    )
     response = await http_error_handler(
         make_request(("X-Request-ID", "lowercase12")),
         HTTPException(status_code=400, detail="raw"),
     )
     reference = json.loads(response.body)["detail"]["reference"]
     assert reference != "lowercase12"
-    assert reference.isupper()
+    assert reference == "358611408361"
 
 
 async def test_every_public_error_response_emits_safe_structured_event(monkeypatch):

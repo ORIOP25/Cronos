@@ -265,6 +265,7 @@ def plan_annual_quotas(
     time_limit_seconds: float = 10.0,
     num_workers: int = 1,
     random_seed: int = 1,
+    stop_at_first_complete: bool = False,
 ) -> AnnualPlan:
     """Plan a weekly quota distribution, excluding proven-infeasible ones."""
     if type(snapshot) is not PlanningSnapshot:
@@ -406,6 +407,7 @@ def plan_annual_quotas(
     solver = cp_model.CpSolver()
     solver.parameters.num_search_workers = num_workers
     solver.parameters.random_seed = random_seed
+    solver.parameters.stop_after_first_solution = stop_at_first_complete
     latest = model.NewIntVar(0, max_week, "latest_week")
     if last_week_vars:
         model.AddMaxEquality(latest, last_week_vars)
@@ -457,7 +459,7 @@ def plan_annual_quotas(
     model.Add(latest == latest_value)
     model.Minimize(sum(waste.values()) if waste else 0)
     remaining_time = deadline - monotonic()
-    if remaining_time > 0:
+    if remaining_time > 0 and not stop_at_first_complete:
         solve_start = monotonic()
         diagnostics.phase_started("ANNUAL", stage="WASTE")
         solver.parameters.max_time_in_seconds = remaining_time
