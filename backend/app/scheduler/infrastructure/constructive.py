@@ -1,7 +1,7 @@
 """Chronological construction with parallel curricular progress.
 
-Subjects advance together at the pace allowed by shared resources.
-Within that cadence, adjacent teacher and class lessons take priority.
+Subjects with less progress take priority when competing for shared resources.
+Free resource combinations remain eligible even when other subjects must wait.
 Construction failure is inconclusive; every returned plan is independently valid.
 """
 
@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from collections import defaultdict
 from collections.abc import Callable
-from datetime import date
 from fractions import Fraction
 from time import monotonic
 
@@ -31,7 +30,6 @@ from app.scheduler.domain.capacity import (
     canonical_periods,
     eligible_periods,
     residual_minutes,
-    room_free,
 )
 from app.scheduler.domain.projection import ModuleSlice
 
@@ -48,111 +46,6 @@ def _next_module(modules, cursor: dict[int, int]) -> int | None:
         if cursor[module.module_id] < module.required_minutes:
             return index
     return None
-
-
-def _progress_targets(
-    snapshot: PlanningSnapshot,
-    eligible: dict[int, tuple[Period, ...]],
-    remaining: dict[int, int],
-    occupied: dict[tuple, list[tuple[int, int]]],
-) -> dict[tuple[int, date], Fraction]:
-    """Estimate a shared resource pace, without stretching demand to year end.
-
-    Independent resource groups can finish independently. Capacity is a pacing
-    estimate, not proof that those resources can be allocated simultaneously.
-    """
-    members: dict[tuple[str, int], set[int]] = defaultdict(set)
-    resources: dict[int, tuple[tuple[str, int], ...]] = {}
-    availability: dict[tuple[str, int], set[Period]] = defaultdict(set)
-    demand: dict[tuple[str, int], int] = defaultdict(int)
-    for identity, periods in eligible.items():
-        assignment = snapshot.assignment_for(identity)
-        keys = (("class", assignment.class_id), ("teacher", assignment.teacher_id))
-        resources[identity] = (*keys, *(("room", room) for room in assignment.eligible_room_ids))
-        for key in resources[identity]:
-            members[key].add(identity)
-            availability[key].update(periods)
-        for key in keys:
-            demand[key] += remaining[identity]
-
-    days = sorted({period.school_date for periods in eligible.values() for period in periods})
-    capacity: dict[tuple[str, int], dict[date, int]] = {}
-    capacity_by_calendar: dict[tuple, dict[date, int]] = {}
-    for key, periods in availability.items():
-        if key[0] == "room":
-            periods = {period for period in periods if room_free(snapshot, key[1], period)}
-        protected = tuple(
-            (day, tuple(occupied[(*key, day)])) for day in days if occupied.get((*key, day))
-        )
-        calendar_key = (frozenset(periods), protected, key[0] != "room")
-        if calendar_key in capacity_by_calendar:
-            capacity[key] = capacity_by_calendar[calendar_key]
-            continue
-        daily: dict[date, list[tuple[int, int]]] = defaultdict(list)
-        minutes: dict[date, int] = defaultdict(int)
-        for period in sorted(periods, key=lambda row: (row.start_utc, row.end_utc)):
-            day = period.school_date
-            interval = _local_interval(period)
-            intervals = [*occupied.get((*key, day), ()), *daily[day]]
-            if any(interval[0] < end and start < interval[1] for start, end in intervals):
-                continue
-            if key[0] != "room" and snapshot.lunch_rule is not None:
-                if (
-                    continuous_break_minutes([*intervals, interval], snapshot.lunch_rule)
-                    < snapshot.lunch_rule.minimum_minutes
-                ):
-                    continue
-            daily[day].append(interval)
-            minutes[day] += period.duration_minutes
-        elapsed = 0
-        capacity[key] = {}
-        for day in days:
-            elapsed += minutes[day]
-            capacity[key][day] = elapsed
-        capacity_by_calendar[calendar_key] = capacity[key]
-
-    targets = {}
-    unseen = set(eligible)
-    while unseen:
-        group = {min(unseen)}
-        pending = list(group)
-        shared: set[tuple[str, int]] = set()
-        while pending:
-            identity = pending.pop()
-            for key in resources[identity]:
-                if key in shared:
-                    continue
-                shared.add(key)
-                additions = members[key] - group
-                group.update(additions)
-                pending.extend(sorted(additions))
-        unseen.difference_update(group)
-        room_sets = {snapshot.assignment_for(identity).eligible_room_ids for identity in group}
-        room_sets.add(frozenset(key[1] for key in shared if key[0] == "room"))
-        room_demands = {
-            rooms: sum(
-                remaining[identity]
-                for identity in group
-                if snapshot.assignment_for(identity).eligible_room_ids <= rooms
-            )
-            for rooms in room_sets
-        }
-        for day in days:
-            pace = min(
-                (Fraction(capacity[key][day], demand[key]) for key in shared if key in demand),
-                default=Fraction(1),
-            )
-            pace = min(
-                pace,
-                *(
-                    Fraction(sum(capacity[("room", room)][day] for room in rooms), need)
-                    for rooms, need in room_demands.items()
-                    if need > 0
-                ),
-            )
-            for identity in group:
-                targets[(identity, day)] = min(Fraction(1), pace)
-    return targets
 
 
 def _flow_selection(
@@ -358,7 +251,6 @@ def construct_schedule(
     room_pressure: dict[int, Fraction] = defaultdict(Fraction)
     class_remaining: dict[int, int] = defaultdict(int)
     teacher_remaining: dict[int, int] = defaultdict(int)
-    eligible_by_assignment: dict[int, tuple[Period, ...]] = {}
     for identity, assignment in assignments.items():
         if (should_cancel is not None and should_cancel()) or (
             deadline is not None and monotonic() >= deadline
@@ -367,7 +259,6 @@ def construct_schedule(
         if remaining[identity] <= 0:
             continue
         eligible = eligible_periods(snapshot, assignment, canonical)
-        eligible_by_assignment[identity] = eligible
         for period in eligible:
             options_by_period[period].append(assignment)
         class_remaining[assignment.class_id] += remaining[identity]
@@ -375,7 +266,6 @@ def construct_schedule(
         for room in assignment.eligible_room_ids:
             room_pressure[room] += Fraction(remaining[identity], len(assignment.eligible_room_ids))
 
-    targets = _progress_targets(snapshot, eligible_by_assignment, initial_remaining, occupancy)
     ranks: dict[int, int] = defaultdict(int)
     lessons: list[ScheduledLesson] = []
     for period in canonical:
@@ -409,8 +299,8 @@ def construct_schedule(
             return (
                 assignment.class_id in started_classes,
                 initial_remaining[identity] != remaining[identity],
-                -adjacent,
                 Fraction(required[identity] - remaining[identity], required[identity]),
+                -adjacent,
                 -teacher_remaining[assignment.teacher_id],
                 -class_remaining[assignment.class_id],
                 len(assignment.eligible_room_ids),
@@ -420,9 +310,6 @@ def construct_schedule(
         options = []
         for assignment in sorted(active, key=priority):
             identity = assignment.assignment_id
-            placed = initial_remaining[identity] - remaining[identity]
-            if placed >= initial_remaining[identity] * targets[(identity, period.school_date)]:
-                continue
             keys = (
                 ("class", assignment.class_id, period.school_date),
                 ("teacher", assignment.teacher_id, period.school_date),

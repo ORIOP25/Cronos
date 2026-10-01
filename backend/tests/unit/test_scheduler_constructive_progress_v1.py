@@ -150,6 +150,18 @@ def test_subject_progress_is_proportional_to_different_required_minutes():
     assert {row.assignment_id for row in candidate.lessons[:2]} == {1, 2}
 
 
+def test_teacher_adjacency_does_not_override_a_lagging_subject():
+    periods = tuple(period(0, start=hour, end=hour + 1) for hour in range(9, 17))
+    target = plan(periods, [assignment(1, 1, 1, {1}, 240), assignment(2, 1, 2, {1}, 240)])
+
+    candidate = construct(target, periods)
+
+    credited = {1: 0, 2: 0}
+    for row in sorted(candidate.lessons, key=lambda lesson: lesson.period.start_utc):
+        credited[row.assignment_id] += row.credit_minutes
+        assert abs(credited[1] - credited[2]) <= 60
+
+
 def test_shared_resources_do_not_finish_one_subject_before_others_start():
     rows = (
         (1, 1, 2, (1, 2, 4), 180),
@@ -192,7 +204,7 @@ def test_shared_resources_do_not_finish_one_subject_before_others_start():
                 assert all(credited[row.assignment_id] > 0 for row in members)
 
 
-def test_a_shared_room_subset_sets_the_pace_of_flexible_subjects_too():
+def test_a_scarce_room_is_shared_between_subjects_with_less_progress():
     periods = tuple(period(day) for day in range(12))
     assignments = [
         assignment(identity, class_id, identity, rooms, 180)
@@ -208,9 +220,33 @@ def test_a_shared_room_subset_sets_the_pace_of_flexible_subjects_too():
         for row in candidate.lessons:
             if row.period.school_date == when.school_date:
                 credit[row.assignment_id] += row.credit_minutes
-        for class_id in (1, 2, 3):
-            assert abs(credit[2 * class_id - 1] - credit[2 * class_id]) <= 60
+        restricted = [credit[identity] for identity in (1, 3, 5)]
+        assert max(restricted) - min(restricted) <= 60
+    assert {row.period for row in candidate.lessons if row.room_id == 1} == set(periods[:9])
     assert max(row.period.school_date for row in candidate.lessons) <= periods[9].school_date
+
+
+def test_shared_room_pressure_does_not_block_an_earlier_free_resource_combination():
+    periods = tuple(
+        period(day, start=hour, end=hour + 1) for day in range(4) for hour in (9, 10, 11)
+    )
+    target = plan(
+        periods,
+        [
+            assignment(1, 1, 1, {1}, 180),
+            assignment(2, 1, 2, {2}, 180),
+            assignment(3, 2, 3, {1}, 180),
+            assignment(4, 3, 4, {1}, 180),
+        ],
+    )
+
+    candidate = construct(target, periods)
+
+    first_day = [
+        row for row in candidate.lessons if row.period.school_date == periods[0].school_date
+    ]
+    assert len(first_day) == 6
+    assert {row.period for row in first_day if row.room_id == 2} == set(periods[:3])
 
 
 def test_a_shared_resource_favors_the_class_with_later_projected_completion():
