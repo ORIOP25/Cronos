@@ -82,9 +82,42 @@ Private inputs, candidates and reports remain outside version control under `.te
 The reports are `adaptive-absence-report.json`, `adaptive-calendar-report.json`, `adaptive-teacher-report.json` and `adaptive-manual-report.json`.
 No production data or published schedule was changed.
 
+## 1,000-hour recovery experiment
+
+The same private harness also tested 60,000 minutes of missed execution.
+It selected 1,200 historical lessons of 50 minutes, distributed across 348 curricular assignments and 54 classes.
+The missing lessons occurred between 27 October and 11 November 2026.
+Resources, current planning inputs and the ten-day stability window remained the same.
+
+The result was `COMPLETE` and passed independent validation, exact coverage and frozen-lesson equality checks.
+The candidate contained 18,036 lessons, including 1,200 insertions and 2,880 unchanged frozen lessons.
+It preserved every original future position, including its room.
+The additional physical lessons ran from 25 November 2026 through 12 February 2027.
+The global completion date moved from 8 February to 12 February 2027.
+
+All 60,000 debt minutes received future reservations after the frozen boundary of 24 November.
+These reservations cover curricular debt; their dates differ from the dates of additional physical capacity.
+Planning still does not settle the debt.
+
+| Metric | Before | After | Change |
+| :--- | ---: | ---: | ---: |
+| Future class gaps, minutes | 231,550 | 245,650 | +6.09% |
+| Future teacher gaps, minutes | 105,250 | 114,450 | +8.74% |
+| Original future positions retained | 16,836 | 16,836 | 100% |
+
+The measured wall time was 97.006 seconds.
+Retained-position construction took 21.709 seconds; future reconstruction took 39.994 seconds.
+The full wall time also includes preparation, evaluation, validation and report generation.
+The container peak was 228,421,632 bytes; process peak RSS was 279,351,296 bytes.
+The private report is `adaptive-debt1000-report.json` in the same authorized artifact directory.
+
+The first attempt exposed a report comparison error for classes that had already finished before November.
+The comparator was corrected to use the full annual reference, and the unchanged generation scenario was repeated successfully.
+No production algorithm was changed for this experiment.
+
 ## Limits and delivery
 
-These experiments validate four changes against one organization-scale snapshot.
+These experiments validate five scenarios against one organization-scale snapshot.
 They do not certify global optimality or guarantee a feasible repair for every input.
 The bounded route compares two complete constructions and reports `INCONCLUSIVE` when neither succeeds.
 Disabling `SCHEDULER_V1_STOP_AT_FIRST_COMPLETE` retains the existing annual master/detail search.
