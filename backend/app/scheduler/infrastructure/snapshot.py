@@ -11,12 +11,12 @@ from __future__ import annotations
 
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, datetime, time
 from types import MappingProxyType
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models
@@ -50,12 +50,18 @@ from app.scheduler.domain.grid_versions import (
     GridVersionRef,
     select_effective_grid_version,
 )
-from app.scheduler.domain.projection import ModuleRequirement, ModuleSlice
+from app.scheduler.domain.projection import (
+    FutureLesson,
+    ModuleRequirement,
+    ModuleSlice,
+    project_module_slices,
+)
 from app.scheduler.domain.recovery import RecoveryPolicy
 from app.scheduler.domain.serialization import payload_digest, period_to_dict, snapshot_to_dict
 from app.scheduler.infrastructure.models import (
     CurricularAssignment,
     CurricularRequirement,
+    SchedulerLessonLogV1,
     SchedulerLessonSliceV1,
     SchedulerLessonV1,
     SchedulerRecoveryReservationV1,
@@ -114,7 +120,7 @@ class SnapshotBundle:
 
     @property
     def baseline(self) -> CandidateSchedule | None:
-        if not self.snapshot.baseline_lessons:
+        if self.base_version_id is None:
             return None
         return CandidateSchedule(self.snapshot.baseline_lessons)
 
@@ -865,12 +871,22 @@ async def _load_baseline(
     )
     if assignments is not None and executed is not None:
         try:
-            _, baseline = split_consumed_lessons(baseline, assignments, executed)
+            _, baseline = await split_version_history(
+                db,
+                organization_id,
+                school_year_id,
+                active_version,
+                baseline,
+                assignments,
+                executed,
+                now_utc=now_utc,
+            )
         except ValueError as exc:
             raise SnapshotConfigurationError(
                 "EXECUTION_OVERLAPS_PROTECTED",
                 "O progresso registado sobrepõe-se a meio de uma aula publicada.",
             ) from exc
+        baseline = _reproject_baseline(baseline, assignments, executed)
     protected = [
         lesson
         for lesson in baseline
@@ -900,6 +916,96 @@ async def _load_baseline(
         allocations,
         MappingProxyType(dict(identity_by_db_id)),
     )
+
+
+async def split_version_history(
+    db: AsyncSession,
+    organization_id: int,
+    school_year_id: int,
+    version: SchedulerVersionV1,
+    lessons: Sequence[ScheduledLesson],
+    assignments: Mapping[int, Assignment],
+    executed: Mapping[int, Mapping[int, int]],
+    *,
+    now_utc: datetime,
+) -> tuple[tuple[ScheduledLesson, ...], tuple[ScheduledLesson, ...]]:
+    """Separate logged history, including missed lessons, from planned credit.
+
+    Candidate history still points to the previous version's operational log.
+    Completed lessons are history even when another earlier lesson was missed.
+    """
+    logged = set(
+        (
+            await db.scalars(
+                select(SchedulerLessonV1.stable_key)
+                .join(
+                    SchedulerLessonLogV1,
+                    or_(
+                        SchedulerLessonLogV1.lesson_id == SchedulerLessonV1.id,
+                        SchedulerLessonLogV1.lesson_id == SchedulerLessonV1.source_lesson_id,
+                    ),
+                )
+                .where(
+                    SchedulerLessonV1.organization_id == organization_id,
+                    SchedulerLessonV1.school_year_id == school_year_id,
+                    SchedulerLessonV1.version_id == version.id,
+                    SchedulerLessonLogV1.organization_id == organization_id,
+                    SchedulerLessonLogV1.school_year_id == school_year_id,
+                    SchedulerLessonLogV1.status.in_(("COMPLETED", "OCCURRENCE")),
+                )
+            )
+        ).all()
+    )
+    history = tuple(row for row in lessons if str(row.lesson_id) in logged)
+    unlogged = tuple(row for row in lessons if str(row.lesson_id) not in logged)
+    past = tuple(row for row in unlogged if row.period.start_utc <= now_utc)
+    future = tuple(row for row in unlogged if row.period.start_utc > now_utc)
+    consumed, protected = split_consumed_lessons(past, assignments, executed)
+    # Manual ledger corrections change future demand. A hypothetical future
+    # lesson covered by those minutes was never operational history.
+    return (*history, *consumed), (*protected, *future)
+
+
+def _reproject_baseline(
+    lessons: Sequence[ScheduledLesson],
+    assignments: Mapping[int, Assignment],
+    executed: Mapping[int, Mapping[int, int]],
+) -> tuple[ScheduledLesson, ...]:
+    """Keep physical positions while a missed lesson shifts future module credit."""
+    by_assignment: dict[int, list[ScheduledLesson]] = defaultdict(list)
+    for lesson in lessons:
+        by_assignment[lesson.assignment_id].append(lesson)
+    revised = {}
+    for identity, rows in by_assignment.items():
+        assignment = assignments[identity]
+        completed = executed.get(identity, {})
+        residual = sum(module.required_minutes for module in assignment.modules) - sum(
+            completed.values()
+        )
+        if sum(row.credit_minutes for row in rows) > residual:
+            # Excess movable credit is diagnosed and removed by recovery.
+            continue
+        slices = project_module_slices(
+            assignment.modules,
+            completed_minutes=completed,
+            lessons=tuple(
+                FutureLesson(
+                    row.lesson_id,
+                    row.period.school_date,
+                    row.period.start_local.hour * 60 + row.period.start_local.minute,
+                    row.period.duration_minutes,
+                    row.credit_minutes,
+                )
+                for row in rows
+            ),
+            require_complete=False,
+        )
+        by_lesson: dict[int, list[ModuleSlice]] = defaultdict(list)
+        for slice_ in slices:
+            by_lesson[slice_.lesson_id].append(slice_)
+        for row in rows:
+            revised[row.lesson_id] = replace(row, slices=tuple(by_lesson[row.lesson_id]))
+    return tuple(revised.get(row.lesson_id, row) for row in lessons)
 
 
 async def load_version_lessons(

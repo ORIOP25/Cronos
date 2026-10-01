@@ -44,6 +44,7 @@ class AdaptiveSearch(Protocol):
         random_seed: int,
         exploration: ExplorationPolicy | None,
         should_cancel: Callable[[], bool] | None,
+        stop_at_first_complete: bool = False,
     ) -> SearchOutcome: ...
 
 

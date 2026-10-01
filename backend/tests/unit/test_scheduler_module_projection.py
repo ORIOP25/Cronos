@@ -77,6 +77,27 @@ def test_partial_progress_and_mixed_durations_preserve_exact_minutes():
     )
 
 
+def test_incomplete_published_future_can_be_reprojected_without_crediting_missing_hours():
+    slices = project_module_slices(
+        MODULES,
+        completed_minutes={1: 50},
+        lessons=(lesson(20, 23, 9 * 60),),
+        require_complete=False,
+    )
+
+    assert slices == (ModuleSlice(20, 1, 50, 25), ModuleSlice(20, 2, 0, 25))
+
+
+def test_partial_projection_still_rejects_excess_credit():
+    with pytest.raises(ValueError, match="residual demand"):
+        project_module_slices(
+            MODULES,
+            completed_minutes={1: 75, 2: 50},
+            lessons=(lesson(20, 23, 9 * 60),),
+            require_complete=False,
+        )
+
+
 @pytest.mark.parametrize(
     ("completed", "lessons"),
     [

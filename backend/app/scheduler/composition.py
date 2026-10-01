@@ -55,6 +55,7 @@ def repair_published_schedule(
     time_limit_seconds: float = 10.0,
     num_workers: int = 1,
     random_seed: int = 1,
+    stop_at_first_complete: bool = False,
 ) -> RepairResult:
     return repair_schedule(
         snapshot,
@@ -69,4 +70,5 @@ def repair_published_schedule(
         time_limit_seconds=time_limit_seconds,
         num_workers=num_workers,
         random_seed=random_seed,
+        stop_at_first_complete=stop_at_first_complete,
     )

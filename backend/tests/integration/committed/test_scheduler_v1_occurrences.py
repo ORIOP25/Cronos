@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 
 import pytest
 from sqlalchemy import select
@@ -12,27 +12,31 @@ from app.scheduler.infrastructure import occurrences as occurrences_v1
 from app.scheduler.infrastructure.models import (
     CurricularAssignment,
     CurricularRequirement,
+    SchedulerLessonLogV1,
     SchedulerLessonV1,
+    SchedulerRecoveryReservationV1,
 )
 from app.scheduler.infrastructure.operations import record_lesson_log
 from app.scheduler.infrastructure.progress import load_executed_minutes, load_open_debt
+from app.scheduler.infrastructure.snapshot import load_snapshot
 from tests._support.db_fixtures import create_teacher_profile
 from tests._support.scheduler_v1 import (
     MOMENT,
     V1Seed,
     publish_schedule,
+    run_generation,
     seed_generatable_school,
 )
 
 pytestmark = pytest.mark.postgresql
 
 
-async def _school(db_session, *, suffix: str = "") -> V1Seed:
+async def _school(db_session, *, suffix: str = "", minutes: int = 100) -> V1Seed:
     return await seed_generatable_school(
         db_session,
         clerk_user_id=f"w09_occ_a{suffix}",
         clerk_org_id=f"w09_occ_org{suffix}",
-        module_minutes=100,
+        module_minutes=minutes,
     )
 
 
@@ -99,6 +103,153 @@ async def _occurrence(db_session, seed: V1Seed, lesson: SchedulerLessonV1) -> No
         planning_relevant=True,
     )
     await db_session.commit()
+
+
+@pytest.mark.parametrize("stability_days", [0, 2])
+async def test_a_missed_past_lesson_leaves_its_minutes_to_recover(
+    db_session, monkeypatch, stability_days
+):
+    from app.scheduler.domain.candidate import SchedulingStrategy
+    from app.scheduler.domain.recovery import assess_baseline
+
+    seed = await _school(db_session, suffix="_repair_snapshot")
+    db_session.add(
+        models.OrganizationSettings(
+            organization_id=seed.organization.id, repair_stability_window_days=stability_days
+        )
+    )
+    await db_session.commit()
+    await publish_schedule(db_session, monkeypatch, seed)
+    lessons = await _lessons(db_session, seed)
+    missed = lessons[0]
+    now = missed.ends_at + timedelta(minutes=1)
+    await record_lesson_log(
+        db_session,
+        seed.organization.id,
+        membership_id=seed.membership.id,
+        lesson_id=missed.id,
+        status="OCCURRENCE",
+        summary="Aula não realizada.",
+        notes=None,
+        now_utc=now,
+        planning_relevant=True,
+    )
+    await db_session.commit()
+
+    bundle = await load_snapshot(
+        db_session,
+        seed.organization.id,
+        strategy=SchedulingStrategy.ADAPTIVE_RECOVERY,
+        now_utc=now,
+        school_year_id=seed.year.id,
+    )
+
+    assert sum(bundle.snapshot.open_debt_minutes.values()) == missed.credit_minutes
+    assert all(row.lesson_id != int(missed.stable_key) for row in bundle.snapshot.protected_lessons)
+    assert bundle.baseline is not None
+    assessment = assess_baseline(bundle.snapshot, bundle.baseline.lessons)
+    assert assessment.missing_minutes == missed.credit_minutes
+
+    frozen = {
+        row.lesson_id: (row.period.start_utc, row.period.end_utc, row.room_id)
+        for row in bundle.snapshot.protected_lessons
+    }
+    await run_generation(
+        db_session, monkeypatch, seed, key=f"repair:{seed.organization.id}", now=now
+    )
+    version_id = int(seed.state.active_schedule_version_id)
+    published = (
+        await db_session.scalars(
+            select(SchedulerLessonV1).where(
+                SchedulerLessonV1.organization_id == seed.organization.id,
+                SchedulerLessonV1.version_id == version_id,
+            )
+        )
+    ).all()
+    history = next(row for row in published if row.stable_key == missed.stable_key)
+    assert (history.starts_at, history.ends_at, history.room_id) == (
+        missed.starts_at,
+        missed.ends_at,
+        missed.room_id,
+    )
+    log = await db_session.scalar(
+        select(SchedulerLessonLogV1).where(SchedulerLessonLogV1.lesson_id == history.id)
+    )
+    assert log.status == "OCCURRENCE"
+    assert sum(row.credit_minutes for row in published if row.id != history.id) == 100
+    for identity, physical in frozen.items():
+        row = next(row for row in published if row.stable_key == str(identity))
+        assert (row.starts_at, row.ends_at, row.room_id) == physical
+    reservations = (
+        await db_session.scalars(
+            select(SchedulerRecoveryReservationV1).where(
+                SchedulerRecoveryReservationV1.organization_id == seed.organization.id,
+                SchedulerRecoveryReservationV1.version_id == version_id,
+            )
+        )
+    ).all()
+    assert sum(row.minutes for row in reservations) == missed.credit_minutes
+    recovery = next(row for row in published if row.id == reservations[0].lesson_id)
+    assert recovery.starts_at > now
+    assert recovery.school_date not in bundle.snapshot.protected_dates
+    debt, _ = await load_open_debt(db_session, seed.organization.id, [seed.assignment.id])
+    assert sum(debt.values()) == missed.credit_minutes
+    await record_lesson_log(
+        db_session,
+        seed.organization.id,
+        membership_id=seed.membership.id,
+        lesson_id=recovery.id,
+        status="COMPLETED",
+        summary="Reposição realizada.",
+        notes=None,
+        now_utc=recovery.ends_at,
+        planning_relevant=True,
+    )
+    debt, _ = await load_open_debt(db_session, seed.organization.id, [seed.assignment.id])
+    assert sum(debt.values()) == 0
+
+
+async def test_execution_after_a_missed_lesson_keeps_history_out_of_frozen_credit(
+    db_session, monkeypatch
+):
+    from app.scheduler.domain.candidate import SchedulingStrategy
+    from app.scheduler.domain.recovery import assess_baseline
+
+    seed = await _school(db_session, suffix="_later_execution", minutes=150)
+    db_session.add(
+        models.OrganizationSettings(
+            organization_id=seed.organization.id, repair_stability_window_days=2
+        )
+    )
+    await db_session.commit()
+    await publish_schedule(db_session, monkeypatch, seed)
+    missed, completed, frozen = await _lessons(db_session, seed)
+    now = completed.ends_at + timedelta(minutes=1)
+    for row, status in ((missed, "OCCURRENCE"), (completed, "COMPLETED")):
+        await record_lesson_log(
+            db_session,
+            seed.organization.id,
+            membership_id=seed.membership.id,
+            lesson_id=row.id,
+            status=status,
+            summary="Registo da aula.",
+            notes=None,
+            now_utc=now,
+            planning_relevant=True,
+        )
+    await db_session.commit()
+    bundle = await load_snapshot(
+        db_session,
+        seed.organization.id,
+        strategy=SchedulingStrategy.ADAPTIVE_RECOVERY,
+        now_utc=now,
+        school_year_id=seed.year.id,
+    )
+
+    assert [row.lesson_id for row in bundle.snapshot.protected_lessons] == [int(frozen.stable_key)]
+    assert sum(bundle.snapshot.executed_minutes[seed.assignment.id].values()) == 50
+    assert bundle.snapshot.protected_lessons[0].slices[0].offset_minutes == 50
+    assert assess_baseline(bundle.snapshot, bundle.baseline.lessons).missing_minutes == 50
 
 
 async def test_a_v1_occurrence_is_listed_and_decided_as_given(db_session, monkeypatch):

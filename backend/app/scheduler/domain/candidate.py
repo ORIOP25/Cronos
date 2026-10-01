@@ -557,6 +557,15 @@ class PlanningSnapshot:
             ),
         )
         object.__setattr__(self, "_unavailable_days", _unavailability_days(self.unavailable))
+        object.__setattr__(self, "_assignments_by_id", MappingProxyType(assignments))
+        protected_days: dict[date, list[ScheduledLesson]] = {}
+        for lesson in self.protected_lessons:
+            protected_days.setdefault(lesson.period.school_date, []).append(lesson)
+        object.__setattr__(
+            self,
+            "_protected_days",
+            MappingProxyType({day: tuple(rows) for day, rows in protected_days.items()}),
+        )
         object.__setattr__(
             self, "_soft_unavailable_days", _unavailability_days(self.soft_unavailable)
         )
@@ -575,7 +584,10 @@ class PlanningSnapshot:
         return self.executed_minutes.get(assignment_id, MappingProxyType({}))
 
     def assignment_for(self, assignment_id: int) -> Assignment | None:
-        return next((row for row in self.assignments if row.assignment_id == assignment_id), None)
+        return self._assignments_by_id.get(assignment_id)
+
+    def protected_on(self, school_date: date) -> tuple[ScheduledLesson, ...]:
+        return self._protected_days.get(school_date, ())
 
     def hard_unavailable_on(
         self, resource_type: UnavailableResource, resource_id: int, school_date: date

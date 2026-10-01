@@ -194,6 +194,7 @@ def _run_search(claim: JobClaim, bundle, cancel_event: threading.Event):
         bundle.baseline,
         bundle.policy,
         should_cancel=cancel_event.is_set,
+        stop_at_first_complete=bool(settings.SCHEDULER_V1_STOP_AT_FIRST_COMPLETE),
         **settings_values,
     )
 

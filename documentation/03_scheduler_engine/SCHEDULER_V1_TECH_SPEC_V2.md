@@ -521,6 +521,24 @@ O número de rondas de realimentação é finito e registado; limites honestos d
 
 ### 10.2 AdaptiveRecovery (implementado)
 
+A configuração de produção `SCHEDULER_V1_STOP_AT_FIRST_COMPLETE=True` usa construção limitada pelo orçamento existente.
+Retém posições publicadas válidas e preenche a procura residual nos primeiros recursos disponíveis.
+Compara essa reparação com uma reconstrução densa do futuro, usando a referência semanal publicada.
+O avaliador global escolhe o candidato; ambos passam validação independente e não recebem certificado de optimalidade.
+Sem candidato completo, devolve `INCONCLUSIVE`; uma tentativa construtiva falhada nunca prova impossibilidade.
+
+Ambas as alternativas leem calendário, pausas, indisponibilidades, preferências, elegibilidade de salas e execução corrigida.
+As posições físicas protegidas permanecem intactas; a projeção modular futura pode mudar.
+As consultas de capacidade indexam as aulas protegidas por data, evitando varrer toda a janela em cada consulta.
+
+Registos `COMPLETED` e `OCCURRENCE` são histórico operacional preservado entre versões.
+Uma aula não realizada deixa procura por cobrir e nunca conta como crédito previsto protegido.
+Acertos manuais não classificam aulas futuras sem registo operacional como histórico executado.
+Novas reservas de dívida ficam depois da janela; reservas anteriores já congeladas são conservadas.
+A execução efetiva liquida a dívida; a proposta apenas reserva reposições.
+
+A pesquisa master/detail seguinte mantém-se disponível com `SCHEDULER_V1_STOP_AT_FIRST_COMPLETE=False`.
+
 Compilar residual contra execução efetiva e horário publicado.
 Detetar falta de cobertura, excesso, recursos inválidos e alterações relevantes.
 Começar por inserção e movimentos nos recursos afetados.

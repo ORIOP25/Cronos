@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+from datetime import date
 
 from app.scheduler.domain.calendar import Period
 from app.scheduler.domain.candidate import (
@@ -96,7 +97,7 @@ def room_free(snapshot: PlanningSnapshot, room_id: int, period: Period) -> bool:
         return False
     return not any(
         lesson.room_id == room_id and _overlaps(period, lesson.period)
-        for lesson in snapshot.protected_lessons
+        for lesson in snapshot.protected_on(period.school_date)
     )
 
 
@@ -141,6 +142,9 @@ def eligible_periods(
         else snapshot.hard_end_date
     )
     fixed = fixed_periods(snapshot, assignment)
+    fixed_by_date: dict[date, list[Period]] = {}
+    for occupied in fixed:
+        fixed_by_date.setdefault(occupied.school_date, []).append(occupied)
     protected_end = max(
         (
             lesson.period.end_utc
@@ -160,7 +164,10 @@ def eligible_periods(
             or not any(slot.matches(period) for slot in snapshot.grid_slots)
             or _is_unavailable(snapshot, assignment, period)
             or not available_rooms(snapshot, assignment, period)
-            or any(_overlaps(period, occupied) for occupied in fixed)
+            or any(
+                _overlaps(period, occupied)
+                for occupied in fixed_by_date.get(period.school_date, ())
+            )
             or (protected_end is not None and period.start_utc < protected_end)
         ):
             continue

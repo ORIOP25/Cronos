@@ -9,6 +9,7 @@ The scheduler v1 is active and delivered. W00–W14 concluded; W14 closed on 28 
 - [SCHEDULER_V1_REVAMP_PLAN_V2.md](SCHEDULER_V1_REVAMP_PLAN_V2.md): Execution plan rev 2 — product decisions, revamp boundary, as-built W00–W14.
 - [SCHEDULER_V1_WBS_V2.md](SCHEDULER_V1_WBS_V2.md): Work packages rev 2 — W00–W14, campaigns and gates.
 - [SCHEDULER_V1_TECH_SPEC_V2.md](SCHEDULER_V1_TECH_SPEC_V2.md): Technical specification rev 2 — implemented contracts, models, API and operations.
+- [Adaptive recovery evidence](review_evidence/2026-10-01-adaptive-recovery/EVIDENCE.md): Regression checks and isolated planning-change experiments.
 
 ## Engine
 
@@ -28,6 +29,22 @@ Stability window. The stability window protects only an already-published schedu
 Balanced classroom progression. Constructive priority favors subjects with less curricular progress and classes that have not started. Annual quotas are planned by `infrastructure/annual_model.py` `plan_annual_quotas`. Quality exposes `minimum_class_progress_per_mille` and `class_progress_spread_per_mille`.
 
 Weekly pattern. The constructor remembers the first assignment and room used for each class, weekday and local grid interval. Repeating that assignment can compensate for one lesson of progress. Progress ties favor contiguous class and teacher lessons, then baseline intervals and assignments. The same room is preferred when available. These preferences never remove otherwise eligible resource combinations. Mandatory rules and simultaneous lesson capacity still apply; the pattern can change when resources or curricular progress require it.
+
+Adaptive recovery. The production route compares two validated candidates within the existing budget.
+One retains valid published positions and fills missing credit at the earliest available capacity.
+The other rebuilds the editable future using the published weekly reference and parallel curricular progress.
+The global recovery vector chooses between completion impact, disruption, gaps and preferences.
+Both candidates use current calendar, teacher availability, room eligibility and manually corrected execution.
+The default route avoids annual placement models and claims no optimality certificate.
+Disabling `SCHEDULER_V1_STOP_AT_FIRST_COMPLETE` retains the existing master/detail optimization route.
+
+Operational history. Logged `COMPLETED` and `OCCURRENCE` lessons remain visible across published versions.
+Missed lessons contribute no planned credit, and completed lessons contribute through the execution ledger.
+Future module slices are reprojected without moving frozen physical positions.
+Manual ledger corrections never turn hypothetical future lessons into executed history.
+New debt reservations use editable future lessons after the stability window.
+Previously approved recovery reservations entering that window remain attached to their frozen lessons.
+Planning a recovery never settles debt; actual execution does.
 
 Compact resource exclusivity. `infrastructure/placement_model.py` `_add_resource_exclusivity` adds at most one option per resource and period with `AddAtMostOne`, grouped by equal interval. It merges only partially overlapping groups and never groups that overlap only through transitivity, so the ends of an overlap chain stay available. It is used for class, teacher and room exclusivity and during room optimization. This replaced pairwise constraints to avoid `OOM`.
 

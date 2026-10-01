@@ -112,6 +112,7 @@ def repair_schedule(
     time_limit_seconds: float = 10.0,
     num_workers: int = 1,
     random_seed: int = 1,
+    stop_at_first_complete: bool = False,
 ) -> RepairResult:
     """Produce a complete, independently validated repair or an honest outcome."""
     if type(snapshot) is not PlanningSnapshot:
@@ -180,6 +181,7 @@ def repair_schedule(
         exploration=exploration,
         should_cancel=should_cancel,
         trajectory_out=trajectory_out,
+        **({"stop_at_first_complete": True} if stop_at_first_complete else {}),
     )
     charge(BudgetPhase.SEARCH)
     search_seconds = outcome.wall_time_seconds

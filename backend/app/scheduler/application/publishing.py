@@ -18,6 +18,7 @@ from app.scheduler.domain.candidate import (
     ScheduledLesson,
 )
 from app.scheduler.domain.candidate_validation import ValidationReport
+from app.scheduler.domain.capacity import is_physically_protected
 from app.scheduler.domain.debt import RecoveryAllocation
 from app.scheduler.domain.diagnostics import Diagnosis
 from app.scheduler.domain.quality import InitialQualityMetrics, SearchEvidence
@@ -199,6 +200,7 @@ def plan_recovery_allocations(
         return ()
     assignments = {row.assignment_id: row for row in snapshot.assignments}
     lessons_by_assignment: dict[int, list[ScheduledLesson]] = {}
+    protected_ids = {row.lesson_id for row in snapshot.protected_lessons}
     for lesson in candidate.lessons:
         if lesson.assignment_id not in assignments:
             continue
@@ -219,6 +221,19 @@ def plan_recovery_allocations(
             if remaining <= 0:
                 break
             capacity = lesson.credit_minutes - used_by_lesson.get(lesson.lesson_id, 0)
+            if lesson.lesson_id in protected_ids or is_physically_protected(
+                snapshot, lesson.period
+            ):
+                # Carry a committed recovery without adding new reservations
+                # inside the frozen window.
+                committed = sum(
+                    row.minutes
+                    for row in snapshot.reservations
+                    if row.version_id == snapshot.active_version_id
+                    and row.lesson_id == lesson.lesson_id
+                    and row.claim_id == claim_id
+                )
+                capacity = min(capacity, committed)
             if capacity <= 0:
                 continue
             take = min(remaining, capacity)

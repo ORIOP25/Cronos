@@ -64,6 +64,7 @@ def project_module_slices(
     *,
     completed_minutes: Mapping[int, int],
     lessons: Sequence[FutureLesson],
+    require_complete: bool = True,
 ) -> tuple[ModuleSlice, ...]:
     """Allocate exact residual minutes in module and lesson chronology."""
     ordered_modules = sorted(modules, key=lambda module: (module.sequence, module.module_id))
@@ -91,7 +92,9 @@ def project_module_slices(
     )
     if len({lesson.lesson_id for lesson in ordered_lessons}) != len(ordered_lessons):
         raise ValueError("Lesson IDs must be unique.")
-    if sum(lesson.credit_minutes for lesson in ordered_lessons) != sum(remaining.values()):
+    credit = sum(lesson.credit_minutes for lesson in ordered_lessons)
+    demand = sum(remaining.values())
+    if credit > demand or (require_complete and credit != demand):
         raise ValueError("Future curricular credit must equal residual demand.")
 
     slices = []

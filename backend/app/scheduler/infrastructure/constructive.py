@@ -193,6 +193,7 @@ def construct_schedule(
     *,
     deadline: float | None = None,
     should_cancel: Callable[[], bool] | None = None,
+    weekly_reference: CandidateSchedule | None = None,
 ) -> CandidateSchedule | None:
     """Construct one complete plan, preserving hard rules and protected credit."""
     canonical = canonical_periods(periods)
@@ -222,6 +223,19 @@ def construct_schedule(
     busy: dict[tuple, list[Period]] = defaultdict(list)
     occupancy: dict[tuple, list[tuple[int, int]]] = defaultdict(list)
     weekly_pattern: dict[tuple, tuple[int, int]] = {}
+    if weekly_reference is not None:
+        for row in weekly_reference.lessons:
+            assignment = assignments.get(row.assignment_id)
+            if assignment is not None:
+                weekly_pattern.setdefault(
+                    (
+                        assignment.class_id,
+                        row.period.school_date.weekday(),
+                        row.period.start_local,
+                        row.period.end_local,
+                    ),
+                    (row.assignment_id, row.room_id),
+                )
     used_ids = {row.lesson_id for row in snapshot.protected_lessons} | set(
         snapshot.reserved_lesson_ids
     )

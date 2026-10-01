@@ -15,6 +15,7 @@ from app.scheduler.domain.candidate import (
     ScheduledLesson,
     SchedulingStrategy,
 )
+from app.scheduler.domain.debt import RecoveryAllocation
 from app.scheduler.domain.projection import ModuleRequirement, ModuleSlice
 
 GRID = (GridSlot(0, time(9, 0), time(9, 50)), GridSlot(1, time(9, 0), time(9, 50)))
@@ -143,6 +144,38 @@ def test_allocations_follow_the_claim_order_from_the_caller():
 
     assert allocations[0].claim_id == 2
     assert allocations[0].minutes == 40
+
+
+def test_recovery_debt_is_reserved_only_after_the_stability_window():
+    frozen = _credit_lesson(1, date(2026, 9, 7), 50)
+    snapshot = replace(
+        _adaptive_snapshot({7: 50}, {7: 1}),
+        protected_dates=frozenset({frozen.period.school_date}),
+        protected_lessons=(frozen,),
+    )
+    candidate = CandidateSchedule((frozen, _credit_lesson(2, date(2026, 9, 8), 50)))
+
+    allocations = plan_recovery_allocations(snapshot, candidate)
+
+    assert [(row.lesson_id, row.minutes) for row in allocations] == [(2, 50)]
+
+
+def test_an_approved_recovery_that_enters_the_window_keeps_its_reservation():
+    frozen = _credit_lesson(1, date(2026, 9, 7), 50)
+    snapshot = replace(
+        _adaptive_snapshot({7: 50, 8: 50}, {7: 1, 8: 1}),
+        protected_dates=frozenset({frozen.period.school_date}),
+        protected_lessons=(frozen,),
+        reservations=(RecoveryAllocation(1, frozen.lesson_id, 7, 50),),
+    )
+    candidate = CandidateSchedule((frozen, _credit_lesson(2, date(2026, 9, 8), 50)))
+
+    allocations = plan_recovery_allocations(snapshot, candidate, claim_order=[8, 7])
+
+    assert [(row.claim_id, row.lesson_id, row.minutes) for row in allocations] == [
+        (8, 2, 50),
+        (7, 1, 50),
+    ]
 
 
 def test_allocations_never_exceed_a_lesson_credit():

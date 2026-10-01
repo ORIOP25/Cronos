@@ -20,7 +20,6 @@ from app.scheduler.application.publishing import ProposalPayload, plan_recovery_
 from app.scheduler.domain.candidate import (
     CandidateSchedule,
     SchedulingStrategy,
-    split_consumed_lessons,
 )
 from app.scheduler.domain.candidate_validation import validate_candidate
 from app.scheduler.infrastructure.models import (
@@ -38,6 +37,7 @@ from app.scheduler.infrastructure.snapshot import (
     SnapshotConfigurationError,
     load_snapshot,
     load_version_lessons,
+    split_version_history,
 )
 
 
@@ -285,6 +285,7 @@ async def persist_proposal(
         zone=ZoneInfo(bundle.snapshot.timezone_name),
         lesson_db_ids=lesson_db_ids,
         lesson_assignments=lesson_assignments,
+        now_utc=now_utc,
     )
     claim_ids = sorted(bundle.snapshot.open_debt_minutes)
     claim_order: list[int] = []
@@ -525,10 +526,15 @@ async def approve_proposal(
         ZoneInfo(bundle.snapshot.timezone_name),
     )
     try:
-        consumed, plannable = split_consumed_lessons(
+        consumed, plannable = await split_version_history(
+            db,
+            organization_id,
+            proposal.school_year_id,
+            version,
             lessons,
             {row.assignment_id: row for row in bundle.snapshot.assignments},
             bundle.snapshot.executed_minutes,
+            now_utc=now_utc,
         )
     except ValueError as exc:
         await _mark_stale(
@@ -632,12 +638,12 @@ async def _carry_consumed_lessons(
     zone: ZoneInfo,
     lesson_db_ids: dict[int, int],
     lesson_assignments: dict[int, int],
+    now_utc: datetime,
 ) -> None:
-    """Copy executed history into the new version under the stable identity.
+    """Copy executed and missed history under the stable identity.
 
-    Lessons fully covered by executed minutes stay out of the plannable
-    baseline, but the published version keeps them frozen so the weekly map
-    and the lesson logs keep showing what was actually taught.
+    Logged history stays outside planned credit. The new version retains its
+    physical positions, original slices and operational logs.
     """
     if previous_version_id is None:
         return
@@ -651,7 +657,16 @@ async def _carry_consumed_lessons(
     if previous is None:
         return
     lessons, _, _ = await load_version_lessons(db, organization_id, school_year_id, previous, zone)
-    consumed, _ = split_consumed_lessons(lessons, assignments, executed)
+    consumed, _ = await split_version_history(
+        db,
+        organization_id,
+        school_year_id,
+        previous,
+        lessons,
+        assignments,
+        executed,
+        now_utc=now_utc,
+    )
     old_db_ids = {
         row.stable_key: row.id
         for row in (
@@ -707,7 +722,7 @@ async def _check_consumed_history(
     consumed,
     zone: ZoneInfo,
 ) -> None:
-    """Executed history in the proposal must match the previous version exactly.
+    """Operational history must match the previous version exactly.
 
     A consumed lesson is frozen: same identity, period, room, credit and
     slices. Any divergence means the persisted history was rewritten.
