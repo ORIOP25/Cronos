@@ -32,7 +32,8 @@ The scheduler uses remaining module minutes when it builds demand.
 | Curriculum API | `backend/app/api/v1/endpoints/courses.py`, `classes.py`, `subjects.py` |
 | Progress ledger | `backend/app/models.py` (`ProgressLedgerEntry`) |
 | Progress services | `backend/app/services/class_service.py`, `teacher_service.py` |
-| Curriculum UI | `frontend/src/pages/Courses.jsx`, `CourseDetails.jsx`, `ClassDetails.jsx` |
+| Scheduler v1 curriculum | `backend/app/scheduler/infrastructure/models.py` (`CurricularAssignment`, `CurricularRequirement`, `CurricularExecution`, `CurricularDebt`) |
+| Curriculum UI | `frontend/src/pages/Courses.jsx`, `CourseDetails.jsx`, `ClassDetails.jsx`, `ClassSubjects.jsx` |
 
 ## Data or Request Flow
 
@@ -47,6 +48,8 @@ The scheduler uses remaining module minutes when it builds demand.
 
 - Module `required_minutes` must be greater than zero.
 - Module order is unique within an organization and subject.
+- A curricular requirement sequence is unique per assignment and greater than zero.
+- Curricular requirement and debt minutes must be greater than zero.
 - Remaining demand starts at the first incomplete module.
 - Completed minutes cannot exceed the module requirement in progress views.
 - Ledger entries use idempotency keys and preserve source evidence.
@@ -72,9 +75,10 @@ Recovery delivery reduces outstanding debt through a linked execution record.
 ## Source Map
 
 - Models: `backend/app/models.py`
+- Scheduler v1 models: `backend/app/scheduler/infrastructure/models.py`
 - Schemas: `backend/app/schemas.py`
 - Curriculum endpoints: `backend/app/api/v1/endpoints/classes.py`, `courses.py`, `subjects.py`
-- Tests: `backend/tests/test_module_progress.py`, `test_class_subjects.py`
+- Tests: `backend/tests/integration/committed/test_module_progress.py`, `backend/tests/integration/committed/test_class_subjects.py`
 
 ## Related Documents
 

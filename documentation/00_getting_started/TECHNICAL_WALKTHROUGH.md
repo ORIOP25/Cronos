@@ -24,7 +24,7 @@ The optional tutorial explains the same product sequence with local demo state.
 
 The API keeps long solver work outside the HTTP request.
 The API dispatcher imports only `app.celery_worker.celery_app` and publishes the registered task name.
-The worker imports `app.scheduler_worker` and the solver dependencies when it starts.
+The worker imports `app.scheduler_v1_worker` and the solver dependencies when it starts.
 The worker stores an auditable job and draft before an administrator changes the active schedule.
 
 ## Components and Ownership
@@ -44,7 +44,8 @@ The worker stores an auditable job and draft before an administrator changes the
 | Scheduler router | `backend/app/api/v1/endpoints/scheduler.py` |
 | Task dispatcher | `backend/app/scheduler/infrastructure/task_dispatcher.py` |
 | Weekly schedule router | `backend/app/api/v1/endpoints/schedule.py` |
-| Worker task | `backend/app/scheduler_worker.py` |
+| Worker task | `backend/app/scheduler_v1_worker.py` |
+| Supervisor task | `backend/app/scheduler_recovery_worker.py` |
 
 ## Data or Request Flow
 
@@ -65,7 +66,7 @@ sequenceDiagram
     API-->>FE: organization, current member, foundation_status
     FE->>API: GET /api/v1/foundation/status
     FE->>API: GET /api/v1/foundation/draft
-    Admin->>FE: Complete nine Foundation steps
+    Admin->>FE: Complete ten Foundation steps
     FE->>API: PUT /api/v1/foundation/draft
     FE->>API: POST /api/v1/foundation/complete
     API->>DB: Commit settings, grid, status, and timestamp
@@ -103,7 +104,7 @@ sequenceDiagram
     Admin->>FE: Open /schedules
     FE->>API: POST /api/v1/scheduler/generate
     API->>DB: Store QUEUED job
-    API->>Redis: send_task("scheduler.run_generation_job")
+    API->>Redis: send_task("scheduler.v1.run_next_job")
     Worker->>Redis: Consume job
     Worker->>Worker: Register task and load OR-Tools
     Worker->>DB: Read snapshot and write draft
@@ -143,7 +144,7 @@ Approval changes a pending draft to `APPROVED` and publishes its active blocks.
 
 1. Open `http://localhost:5173`.
 2. Sign in with an administrator identity and select an organization.
-3. If the organization is new, complete `/foundation` and confirm the nine steps.
+3. If the organization is new, complete `/foundation` and confirm the ten steps.
 4. Verify that the response lands on `/dashboard` and that the sidebar shows Dashboard.
 5. Open `/guide` and complete, skip, exit, resume, and repeat the local tutorial actions.
 6. Configure the readiness bases and inspect the readiness percentage and prevalidation issues.
@@ -169,10 +170,12 @@ Approval changes a pending draft to `APPROVED` and publishes its active blocks.
 - `backend/app/api/v1/endpoints/schedule.py`
 - `backend/app/scheduler/infrastructure/task_dispatcher.py`
 - `backend/app/celery_worker.py`
-- `backend/app/scheduler_worker.py`
+- `backend/app/scheduler_v1_worker.py`
+- `backend/app/scheduler_recovery_worker.py`
 
 ## Related Documents
 
 - [Project Overview](PROJECT_OVERVIEW.md)
-- [Scheduler Behavior](../03_scheduler_engine/SCHEDULER_BEHAVIOR.md)
+- [Scheduler Engine Index](../03_scheduler_engine/README.md)
+- [Scheduler V1 Technical Specification](../03_scheduler_engine/SCHEDULER_V1_TECH_SPEC_V2.md)
 - [Lesson Execution](../04_operational_features/LESSON_EXECUTION.md)

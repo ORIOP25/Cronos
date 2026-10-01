@@ -10,7 +10,7 @@ This document targets backend engineers, frontend engineers, and school administ
 
 ## Prerequisites
 
-Read [Lesson Execution](LESSON_EXECUTION.md) and [Scheduler Operations](../03_scheduler_engine/SCHEDULER_OPERATIONS.md).
+Read [Lesson Execution](LESSON_EXECUTION.md) and [Scheduler Engine](../03_scheduler_engine/README.md).
 
 ## What the System Does
 
@@ -28,7 +28,7 @@ Operational blocks separate cover work from the curriculum schedule.
 | :--- | :--- |
 | API | `backend/app/api/v1/endpoints/occurrences.py` |
 | Domain service | `backend/app/services/occurrence_service.py` |
-| Recovery service | `backend/app/services/scheduler_recovery_service.py` |
+| Recovery and progress | `backend/app/scheduler/infrastructure/progress.py` |
 | Models | `LessonOccurrence`, `OperationalScheduleBlock` |
 | UI | `frontend/src/pages/Occurrences.jsx` |
 
@@ -74,12 +74,12 @@ The API can revise a decided occurrence while the revision remains active.
 
 - `backend/app/api/v1/endpoints/occurrences.py`
 - `backend/app/services/occurrence_service.py`
-- `backend/app/services/scheduler_recovery_service.py`
+- `backend/app/scheduler/infrastructure/progress.py`
 - `backend/app/models.py`
 - `frontend/src/pages/Occurrences.jsx`
-- Tests: `backend/tests/test_debt_basis_fingerprint.py`, `backend/tests/test_scheduler_disruption.py`
+- Tests: `backend/tests/unit/test_occurrence_transition_plan.py`, `backend/tests/integration/committed/test_occurrence_accounting.py`, `backend/tests/integration/committed/test_scheduler_v1_occurrences.py`
 
 ## Related Documents
 
 - [Lesson Execution](LESSON_EXECUTION.md)
-- [Scheduler Operations](../03_scheduler_engine/SCHEDULER_OPERATIONS.md)
+- [Scheduler Engine](../03_scheduler_engine/README.md)

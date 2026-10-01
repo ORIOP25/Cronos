@@ -25,7 +25,7 @@ In accordance with ASD-STE100, technical concepts have single approved terms. Po
 | **Substituição** | Cover / Substitution | Arrangement assigning a replacement teacher or subject to an absence block. |
 | **Bloco** | Schedule Block | A dated timeslot assigned to a class, subject, teacher, and room. |
 | **Horário** | Schedule / Timetable | The weekly distribution of schedule blocks across classes and teachers. |
-| **Fundação (Foundation)** | Foundation | Required nine-step organization setup that validates the calendar and generates the initial timeslot grid. |
+| **Fundação (Foundation)** | Foundation | Required ten-step organization setup that validates the calendar and generates the initial timeslot grid. |
 | **Professor competente** | Competent teacher | Active teacher assigned to a subject with the required competency. |
 | **Disponibilidade** | Availability | Teacher availability score used to determine whether a generated assignment is possible. |
 

@@ -39,11 +39,11 @@ Schedules must account for resource conflicts, availability, calendar events, ex
 ## Data or Request Flow
 
 1. Clerk authenticates the user and selects an organization.
-2. An organization administrator completes the nine-step Foundation and creates the school grid.
+2. An organization administrator completes the ten-step Foundation and creates the school grid.
 3. The administrator uses the optional local tutorial or continues with real configuration.
 4. The administrator builds the six readiness bases: active classes, positive modules, active teachers, valid teacher assignments, compatible rooms, and availability. Foundation creates the timeslot grid, while final prevalidation protects generation when it is missing.
 5. The administrator starts complete generation or adaptive repair.
-6. The API creates a job and publishes the registered task name `scheduler.run_generation_job` through Redis.
+6. The API creates a job and publishes the registered task name `scheduler.v1.run_next_job` through Redis.
 7. The worker computes a bounded result and stores a schedule draft.
 8. An administrator reviews the draft and approves or rejects it.
 9. The first real approval changes the dashboard from `PREPARATION` to `OPERATIONAL`.
@@ -87,7 +87,7 @@ Schedules must account for resource conflicts, availability, calendar events, ex
 - Models: `backend/app/models.py`
 - Scheduler services: `backend/app/services/scheduler_*.py`
 - Scheduler dispatch boundary: `backend/app/scheduler/infrastructure/task_dispatcher.py`
-- Worker task registration: `backend/app/scheduler_worker.py`
+- Worker task registration: `backend/app/scheduler_v1_worker.py`
 - Local runtime: `docker-compose.yml`
 
 ## Related Documents

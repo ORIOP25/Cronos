@@ -10,7 +10,7 @@ Cronos is a Software-as-a-Service (SaaS) platform for course scheduling and oper
 | **Frontend UI** | React 19, Vite 8, CoreUI, React Query, Clerk Auth |
 | **Database** | PostgreSQL 16 with forced Row-Level Security |
 | **Cache / Queue** | Redis 7 |
-| **Scheduler Engine** | Google OR-Tools CP-SAT (Solver V2 Engine) |
+| **Scheduler Engine** | Google OR-Tools CP-SAT (Scheduler v1) |
 
 ## Supported User Roles
 - **Administrator (`admin`)**: Full access to school settings, curriculum, team management (`Equipa`), solver execution, and draft approvals.
@@ -39,10 +39,12 @@ Cronos is a Software-as-a-Service (SaaS) platform for course scheduling and oper
    docker compose up -d --build
    ```
 
-5. **Seed realistic test data from the backend workspace**:
+5. **Bootstrap application data**:
+   The application bootstraps the first organization and administrator at the first admin login. The backend exposes this through `POST /api/v1/session/bootstrap`.
+   For test or E2E fixtures, prepare Clerk-linked local state from the backend workspace:
    ```bash
    cd backend
-   python seed_data.py
+   python scripts/prepare_e2e_clerk_state.py
    ```
 
 6. **Access application services**:
@@ -59,7 +61,7 @@ Use the fast suites during the TDD cycle:
 ```powershell
 # Backend TDD cycle. Requires no PostgreSQL or Redis.
 cd backend
-pytest -m "unit and not slow" -q
+pytest tests/unit -q
 
 # Frontend TDD cycle.
 cd ..\frontend

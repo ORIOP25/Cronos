@@ -2,9 +2,9 @@
 
 Data de consolidação: 25 de setembro de 2026.
 
-Estado: W00–W14 executados e fechados. Esta revisão substitui o plano de 23 de setembro de 2026 a partir de W06; o documento original permanece como referência histórica. Registos: [W08–W09](SCHEDULER_V1_W08_W09_STATUS.md), [W10–W11](SCHEDULER_V1_W10_W11_STATUS.md), [W12](SCHEDULER_V1_W12_STATUS.md), [W13](SCHEDULER_V1_W13_STATUS.md), [W14](SCHEDULER_V1_W14_STATUS.md).
+Estado: W00–W14 executados e fechados; a v1 está ativa em produção. Esta revisão substitui o plano de 23 de setembro de 2026 a partir de W06; o documento original permanece como referência histórica.
 
-Branch de trabalho: `codex/scheduler-v1-revamp`.
+Integração: `main` (revisão entregue na W14).
 
 Especificação de implementação: [SCHEDULER_V1_TECH_SPEC_V2.md](SCHEDULER_V1_TECH_SPEC_V2.md).
 Decomposição de trabalho: [SCHEDULER_V1_WBS_V2.md](SCHEDULER_V1_WBS_V2.md).
@@ -16,7 +16,7 @@ Decomposição de trabalho: [SCHEDULER_V1_WBS_V2.md](SCHEDULER_V1_WBS_V2.md).
 | What — O quê? | Substituir integralmente o planeamento de horários por uma nova v1. Adaptar dados, API, execução, progresso e interface ao novo domínio. |
 | Why — Porquê? | Gerar horários anuais completos para escolas até 60 turmas. Recuperar perturbações durante o ano com qualidade, conservação de minutos e diagnóstico honesto. |
 | Who — Quem? | O responsável técnico implementa, testa e produz evidência. O proprietário do produto valida comportamentos, realiza os testes de utilização e aceita a entrega. |
-| When — Quando? | W00–W05 concluídos. W06–W14 por etapas com critérios de saída. Não há datas de calendário nem metas de duração inventadas. |
+| When — Quando? | W00–W14 concluídos por etapas com critérios de saída. Não há datas de calendário nem metas de duração inventadas. |
 | Where — Onde? | P0–P11 no Docker local do proprietário. CI sem deployment. P12 valida Railway e Cloudflare antes da ativação final. |
 
 O desenvolvimento e os primeiros benchmarks decorrem exclusivamente no Docker local do proprietário.
@@ -26,20 +26,20 @@ O lançamento exige demonstração em várias instâncias anuais realistas, incl
 
 ## 1.1 Execução consolidada até W05 (registo as-built)
 
-Sumário por pacote. O detalhe diário está nos registos de status, revisões e audits referidos na secção 20.
+Sumário por pacote.
 
 | Pacote | Pedido | Entregue | Como | Evidência principal |
 | :--- | :--- | :--- | :--- | :--- |
-| W00 — Ambiente e inventário | Inventário de consumidores, confirmação do Docker local de testes, bloqueio de deployments e checks atuais. | Inventário de chamadas e contratos; imagem `cronos-backend-test:local` (Python 3.14.7, OR-Tools 9.15.6755); runner reparado; suites de backend de 399 para 444 testes; limites de laboratório. | Execução de setup/doctor; falhas pré-existentes registadas à parte. Nenhum push nem deployment remoto. | [SCHEDULER_V1_W00_STATUS.md](SCHEDULER_V1_W00_STATUS.md) |
-| W01 — Domínio curricular e temporal | Valores imutáveis, procura `Q-E`, ledger de execução, dívida e reservas, projeção modular, calendário e estabilidade, qualidade e elegibilidade. | Pacote de domínio puro (`domain/`): `calendar`, `candidate`, `demand`, `debt`, `projection`, `quality`, `eligibility`, `capacity`, `constraints`, `oracle`, `results`. Sem ORM, solver, HTTP ou relógio global. | TDD com os exemplos da entrevista; 458 testes unitários no registo; casos pequenos de C01, C09 e C13. | T01–T09, T13–T14, T21–T22, T29–T30 verdes; [SCHEDULER_V1_W01_STATUS.md](SCHEDULER_V1_W01_STATUS.md) |
-| W02 — Baseline de dados | Schema novo, RLS, constraints, transações de progresso e reset local. | Migração provisória `0011_scheduler_v1_curricular`: 13 tabelas relacionais com RLS forçada, evidência append-only, `scheduler_job_v1` e `scheduler_proposal_v1`, revisões `input_revision`/`planning_revision` no estado. Transações de execução, dívida e recuperação sob lock de estado (`infrastructure/progress`). | Integração em PostgreSQL real do Docker em bases de teste temporárias; instalação vazia reproduzível. Consolidação da baseline Alembic é da W12. | Testes `test_scheduler_v1_*`; [SCHEDULER_V1_W02_STATUS.md](SCHEDULER_V1_W02_STATUS.md); [SCHEDULER_V1_ALEMBIC_CONSOLIDATION_PLAN.md](SCHEDULER_V1_ALEMBIC_CONSOLIDATION_PLAN.md) |
-| W03 — Oráculos, validador e laboratório | Validador independente, oráculo enumerativo, fixtures com testemunhos, manifests, modo de campanhas e comparador. | Validador `candidate_validation` (versão 3, 20 códigos tipados); oráculo enumerativo (limite de 50 000 combinações); `lab/`: fixtures mínimas com 13 mutações de testemunho, fixtures de escala e anuais com testemunhos construídos, manifests com digests SHA-256, CLI de campanhas com retoma por proveniência, comparador de regressões e revalidação independente. | Validador testado com candidatos deliberadamente adulterados; modo `campaign` no runner existente. | [SCHEDULER_V1_W03_STATUS.md](SCHEDULER_V1_W03_STATUS.md); suites `test_scheduler_lab_*` |
+| W00 — Ambiente e inventário | Inventário de consumidores, confirmação do Docker local de testes, bloqueio de deployments e checks atuais. | Inventário de chamadas e contratos; imagem `cronos-backend-test:local` (Python 3.14.7, OR-Tools 9.15.6755); runner reparado; suites de backend de 399 para 444 testes; limites de laboratório. | Execução de setup/doctor; falhas pré-existentes registadas à parte. Nenhum push nem deployment remoto. | Registo W00 (arquivo). |
+| W01 — Domínio curricular e temporal | Valores imutáveis, procura `Q-E`, ledger de execução, dívida e reservas, projeção modular, calendário e estabilidade, qualidade e elegibilidade. | Pacote de domínio puro (`domain/`): `calendar`, `candidate`, `demand`, `debt`, `projection`, `quality`, `eligibility`, `capacity`, `constraint_policy`, `oracle`, `results`. Sem ORM, solver, HTTP ou relógio global. | TDD com os exemplos da entrevista; 458 testes unitários no registo; casos pequenos de C01, C09 e C13. | T01–T09, T13–T14, T21–T22, T29–T30 verdes; Registo W01 (arquivo). |
+| W02 — Baseline de dados | Schema novo, RLS, constraints, transações de progresso e reset local. | Migração provisória `0011_scheduler_v1_curricular`: 13 tabelas relacionais com RLS forçada, evidência append-only, `scheduler_job_v1` e `scheduler_proposal_v1`, revisões `input_revision`/`planning_revision` no estado. Transações de execução, dívida e recuperação sob lock de estado (`infrastructure/progress`). | Integração em PostgreSQL real do Docker em bases de teste temporárias; instalação vazia reproduzível. Baseline Alembic consolidada na W12. | Testes `test_scheduler_v1_*`; Registo W02 (arquivo). |
+| W03 — Oráculos, validador e laboratório | Validador independente, oráculo enumerativo, fixtures com testemunhos, manifests, modo de campanhas e comparador. | Validador `candidate_validation` (versão 4, 21 códigos tipados); oráculo enumerativo (limite de 50 000 combinações); `lab/`: fixtures mínimas com 13 mutações de testemunho, fixtures de escala e anuais com testemunhos construídos, manifests com digests SHA-256, CLI de campanhas com retoma por proveniência, comparador de regressões e revalidação independente. | Validador testado com candidatos deliberadamente adulterados; modo `campaign` no runner existente. | Registo W03 (arquivo); suites `test_scheduler_lab_*` |
 | W04 — CompleteGeneration correto | Disponibilidade conjunta, quotas anuais exatas, detalhe com realimentação, salas com matching completo, materialização validada. | `capacity` (interseção conjunta de elegibilidade e pré-verificação com défices mínimos provados); master anual `annual_model` (quotas por duração com crédito exato, hint greedy earliest-week, no-goods completos); detalhe `placement_model` (janelas, pré-solve, limiares, congelamento, orçamento por janela, cache de janelas provadas, verificação de materialização, salas); coordenação `search`; caso de uso `application/generation` e composição. | Pacote RC07 do ciclo de correção W00–W04; campanhas em modo gerador. | T10–T14 verdes; campanha `w04-generation` {válido 20, inviável 6}; campanha `w04-annual` {válido 12} |
-| W05 — Qualidade da geração inicial | Vetor de conclusões ordenado, furos docentes antes de turmas, incumbente anual com âmbito explícito, relatório de conclusão e margem. | `InitialQualityVector` lexicográfico; conclusões por contagens de limiar com equivalência ao vetor ordenado verificada contra o oráculo; congelamento de etapas provadas com distinção provado/conservado; incumbente pelo vetor completo; poda pela semana do incumbente; matching global de salas com refinamento; relatório de conclusão com avaliação de recuperabilidade de um cenário. | Revisão independente rejeitou o primeiro fecho (falhas F01–F11 reproduzidas); correções R45.00–R45.09; audit A01–A12 fixado com 16 regressões vermelho-primeiro (validador v2→v3); pacotes R55 e resíduos B01–B05 fechados. | 613 unitários, 321 de integração e 47 de contratos no registo de fecho; T15–T19 verdes; `test_scheduler_w05_audit`; [SCHEDULER_V1_W04_W05_STATUS.md](SCHEDULER_V1_W04_W05_STATUS.md); [SCHEDULER_V1_W04_W05_G2_REVIEW.md](SCHEDULER_V1_W04_W05_G2_REVIEW.md); [SCHEDULER_V1_W00_W05_AUDIT_PLAN.md](SCHEDULER_V1_W00_W05_AUDIT_PLAN.md) |
+| W05 — Qualidade da geração inicial | Vetor de conclusões ordenado, furos docentes antes de turmas, incumbente anual com âmbito explícito, relatório de conclusão e margem. | `InitialQualityVector` lexicográfico; conclusões por contagens de limiar com equivalência ao vetor ordenado verificada contra o oráculo; congelamento de etapas provadas com distinção provado/conservado; incumbente pelo vetor completo; poda pela semana do incumbente; matching global de salas com refinamento; relatório de conclusão com avaliação de recuperabilidade de um cenário. | Revisão independente rejeitou o primeiro fecho (falhas F01–F11 reproduzidas); correções R45.00–R45.09; audit A01–A12 fixado com 16 regressões vermelho-primeiro (validador v2→v3); pacotes R55 e resíduos B01–B05 fechados; validador atual v4. | 613 unitários, 321 de integração e 47 de contratos no registo de fecho; T15–T19 verdes; `test_scheduler_w05_audit`; Registo W04/W05 (arquivo) |
 
-Percursos de validação executados até W05: revisão independente de W00–W03 (correções RC00–RC08), revisão independente de W04/W05 que rejeitou o fecho (correções R45.00–R45.09) e audit final com contraexemplos A01–A12 fixados localmente com testes vermelho-primeiro. O gate G2 foi aceite no âmbito corrigido. Os registos completos constam da secção 20.
+Percursos de validação executados até W05: revisão independente de W00–W03 (correções RC00–RC08), revisão independente de W04/W05 que rejeitou o fecho (correções R45.00–R45.09) e audit final com contraexemplos A01–A12 fixados localmente com testes vermelho-primeiro. O gate G2 foi aceite no âmbito corrigido.
 
-Produção ainda executa o motor legado em `app/services/`. O cablage do motor v1 à fila e à persistência é da W08; a remoção do legado é da W12.
+A produção executa o motor v1. O legado foi removido na W12.
 
 Medições históricas: os registos de campanha de 24–25 de setembro de 2026 (Docker local, um worker CP-SAT) mostram geração semanal de 60 turmas em segundos e anuais de 60 turmas entre cerca de 51 e 125 segundos, conforme o perfil e o registo; o master anual de 60 turmas passou de mais de 90 para cerca de 22 segundos com o hint greedy. Estes números pertencem às medições anteriores. Esta revisão não os apresenta como nova comparação controlada nem como garantia universal.
 
@@ -47,7 +47,7 @@ Medições históricas: os registos de campanha de 24–25 de setembro de 2026 (
 
 1. Medições históricas não são metas nem garantias. A calibração quantitativa decorre das campanhas de W10–W11 e da validação remota de W13, com baselines separadas por ambiente.
 2. A antecipação das conclusões resulta da política aprovada (D10–D12). Distribuir procura ao longo do ano exige uma decisão explícita de produto. Não introduzir limites semanais ou penalizações de antecipação para obter uma aparência mais uniforme.
-3. O agrupamento de salas equivalentes e a calibração 1/2/4/8 workers continuam dependentes de medições em W11. Não são trabalho de W06–W10.
+3. O agrupamento de salas equivalentes e a calibração 1/2/4/8 workers foram fechados nas campanhas de W10–W11.
 
 ## 1.3 Otimizações consolidadas do gerador
 
@@ -115,7 +115,7 @@ Inalteradas desde 23 de setembro de 2026. Continuam vinculativas para W06–W14.
 - Validador independente, oráculo enumerativo, laboratório de campanhas e corpus de testemunhos.
 - Baseline relacional provisória com transações de progresso auditadas.
 
-### Pendente (W06–W14)
+### Concluído (W06–W14)
 
 - AdaptiveRecovery com formulação própria, reconciliação de dívida e justiça entre turmas.
 - Diagnósticos completos, controlador adaptativo de paragem e certificados por âmbito global.
@@ -143,18 +143,18 @@ Preservar autenticação, isolamento de organizações, acessibilidade e integri
 
 | Área atual | Destino | Estado |
 | :--- | :--- | :--- |
-| `scheduler_candidates.py` | Domínios temporais compactos e capacidades de salas. | Substituído no motor v1 (`capacity`, `placement_model`). Legado aguarda remoção em W12. |
-| `scheduler_complete_engine.py` | Coordenação anual com detalhe revisível. | Substituído (`search`, `annual_model`, `placement_model`). Legado aguarda W12. |
-| `scheduler_near_optimizer.py` | Viabilidade anual antes de refinamento opcional. | Substituído. Legado aguarda W12. |
-| `scheduler_far_fill.py` | Remover este caminho no corte para a v1. | Pendente: remoção em W12. |
-| `scheduler_adaptive_engine.py` | Reparação por conflitos, melhor solução conservada e avaliação comum. | Substituição é a W06; o legado continua em produção até W08. |
-| `scheduler_recovery_ladder.py` | Expansão dirigida por conflitos reais. | Substituição é a W06. |
-| `scheduler_incremental_demand.py` | Procura residual por disciplina e projeção derivada. | Substituído (`demand`, `projection`, `capacity`). Legado aguarda W12. |
-| Contratos de domínio antigos | Contratos novos, independentes de ORM e solver. | Substituídos; a fronteira legada (`domain/validation.py`, `domain/contracts.py`, `domain/constraints.py`) sai em W12. |
-| Tetos automáticos de conforto | Política aprovada e versionada. | Removidos no motor v1; limpeza final em W12. |
+| `scheduler_candidates.py` | Domínios temporais compactos e capacidades de salas. | Substituído no motor v1 (`capacity`, `placement_model`). Legado removido na W12. |
+| `scheduler_complete_engine.py` | Coordenação anual com detalhe revisível. | Substituído (`search`, `annual_model`, `placement_model`). Legado removido na W12. |
+| `scheduler_near_optimizer.py` | Viabilidade anual antes de refinamento opcional. | Substituído. Legado removido na W12. |
+| `scheduler_far_fill.py` | Remover este caminho no corte para a v1. | Removido na W12. |
+| `scheduler_adaptive_engine.py` | Reparação por conflitos, melhor solução conservada e avaliação comum. | Substituído na W06; o legado foi removido na W12. |
+| `scheduler_recovery_ladder.py` | Expansão dirigida por conflitos reais. | Substituído na W06. |
+| `scheduler_incremental_demand.py` | Procura residual por disciplina e projeção derivada. | Substituído (`demand`, `projection`, `capacity`). Legado removido na W12. |
+| Contratos de domínio antigos | Contratos novos, independentes de ORM e solver. | Substituídos; a fronteira legada foi removida na W12. |
+| Tetos automáticos de conforto | Política aprovada e versionada. | Removidos no motor v1 e limpos na W12. |
 | Estabilidade por dias corridos | Um único cálculo segundo a grelha semanal. | Implementado (`calendar`). |
-| Ciclo de vida e aprovação | Reescrever mantendo atomicidade e concorrência. | Implementado (W08; [registo](SCHEDULER_V1_W08_W09_STATUS.md)). |
-| Testes de escola grande | Corpus com procura anual e validação completa. | Completo: corpora de escala e anual e replays anuais com eventos (W10; [registo](SCHEDULER_V1_W10_W11_STATUS.md)). |
+| Ciclo de vida e aprovação | Reescrever mantendo atomicidade e concorrência. | Implementado (W08). |
+| Testes de escola grande | Corpus com procura anual e validação completa. | Completo: corpora de escala e anual e replays anuais com eventos (W10). |
 
 Antes de remover uma unidade em W12, pesquisar definições, importações, chamadas, testes, documentação e consumidores de API.
 
@@ -238,7 +238,7 @@ flowchart TD
     J --> K[Horário ativo]
 ```
 
-Estrutura real do pacote `backend/app/scheduler/`: `composition.py`; `application/` (`contracts`, `generation`); `domain/` (`candidate`, `candidate_validation`, `calendar`, `capacity`, `demand`, `debt`, `projection`, `quality`, `eligibility`, `oracle`, `results` e a fronteira legada `constraints`, `validation`, `contracts`); `infrastructure/` (`models`, `progress`, `annual_model`, `placement_model`, `search`, `cp_sat_quality` legado, `task_dispatcher`); `lab/` (fixtures, manifests, campanhas, relatórios, revalidação).
+Estrutura real do pacote `backend/app/scheduler/`: `composition.py`; `application/` (`contracts`, `generation`, `recovery`, `publishing`); `domain/` (`candidate`, `candidate_validation`, `calendar`, `capacity`, `constraint_policy`, `demand`, `debt`, `diagnostics`, `projection`, `quality`, `recovery`, `eligibility`, `grid_versions`, `oracle`, `results`, `serialization`, `stop`, `timetable`); `infrastructure/` (`models`, `progress`, `annual_model`, `constructive`, `placement_model`, `search`, `snapshot`, `jobs`, `proposals`, `operations`, `occurrences`, `queries`, `diagnostics`, `curriculum`, `task_dispatcher`); `lab/` (fixtures, manifests, campanhas, relatórios, revalidação, matriz, calibração, replays).
 
 | Camada | Responsabilidade | Não pode depender de |
 | :--- | :--- | :--- |
@@ -296,7 +296,7 @@ Implementado, testado e revisto. As nove otimizações consolidadas (secção 1.
 - Candidatos são sempre revalidados pelo validador independente antes de aceites; métricas são recalculadas fora do solver.
 - O relatório de conclusão inclui margem, excessos e uma avaliação de recuperabilidade de um cenário (cancelamento da última aula planeada seguida de nova resolução).
 
-## 8. AdaptiveRecovery — plano W06
+## 8. AdaptiveRecovery — implementado
 
 ### 8.1 Entrada e identidade
 
@@ -401,7 +401,7 @@ Cobrir CPU, memória, duração extrema, cancelamento, construção, retorno, va
 O orçamento de execução conta construção, pesquisa e finalização. Uma execução que excede o orçamento nunca é reportada como dentro do orçamento. Etapas omitidas por orçamento ficam sem certificado.
 Timeout, perda de worker e interrupção deixam estados recuperáveis e não corrompem o horário ativo.
 
-## 10. Elegibilidade, fila, propostas e aprovação — plano W08
+## 10. Elegibilidade, fila, propostas e aprovação — implementado
 
 ### 10.1 Motivos para gerar
 
@@ -416,7 +416,7 @@ Timeout, perda de worker e interrupção deixam estados recuperáveis e não cor
 | 28 dias desde geração completa persistida | Disponibilizar otimização manual. |
 | Tentativa falhada, inconclusiva ou cancelada | Permitir nova tentativa; não consumir o motivo. |
 
-A regra de domínio `generation_eligibility` está implementada e testada (T21–T22). O cablage à fila e ao relógio persistido é da W08.
+A regra de domínio `generation_eligibility` está implementada e testada (T21–T22). O cablage à fila e ao relógio persistido está implementado (W08).
 
 ### 10.2 Concorrência
 
@@ -439,7 +439,7 @@ Reconciliar vínculos de recuperação e ativar o novo horário numa única tran
 Uma proposta desatualizada não pode ser aprovada silenciosamente.
 Reiniciar o relógio de 28 dias na conclusão válida da geração, não na aprovação.
 
-## 11. Interface e contratos públicos — plano W09
+## 11. Interface e contratos públicos — implementado
 
 Inventariar todos os consumidores antes de alterar modelos e respostas.
 Incluir configuração, horários, detalhe de turma, progresso, sumários, ocorrências, substituições e mapas semanais.
@@ -505,7 +505,7 @@ Continuar a cumprir navegação por teclado, contraste, leitores de ecrã e esta
 - Verificador independente para todos os resultados de benchmark; oráculo enumerativo para instâncias mínimas.
 - Não exigir soluções idênticas entre contagens de workers; exigir validade e qualidade comparáveis.
 - Propriedades metamórficas: renomear entidades não altera qualidade; mais disponibilidade não destrói testemunho válido; permutar entradas não altera o comparador.
-- Níveis executados até W05: unitários, pequenos solves com oráculo, propriedades, integração PostgreSQL. Pendentes: contratos de API, E2E, falhas operacionais e longitudinais completos.
+- Níveis executados: unitários, pequenos solves com oráculo, propriedades, integração PostgreSQL, contratos de API, E2E, falhas operacionais e longitudinais completos.
 
 ## 13. Corpus e protocolo de benchmarks
 
@@ -515,7 +515,7 @@ Continuar a cumprir navegação por teclado, contraste, leitores de ecrã e esta
 - Corpus de geração: 26 casos (famílias C01–C10, contraexemplos T10–T14/T19, escala 10/30/45/60 turmas).
 - Corpus anual: 12 casos (10/30/45/60 turmas × perfis `loose`, `shared-teacher`, `scarce-rooms`), testemunhos construídos por construção, validação independente de cada candidato e revalidação de digests.
 - Manifests com digests SHA-256; seeds de fixture, eventos e solver separadas; retoma de campanha por proveniência.
-- Pendente: corpus de reparações (W06), sequências anuais com eventos (W10), avaliação reservada final (W12).
+- Entregues: corpus de reparações, sequências anuais com eventos e avaliação reservada final.
 
 ### 13.2 Registo por execução
 
@@ -564,18 +564,18 @@ O proprietário aceita o compromisso de qualidade, duração e custo com evidên
 | :--- | :--- | :--- | :--- |
 | P0 — Preparação local | Concluído (W00) | Inventário, Docker local de testes, limites de laboratório. | Ambiente reproduzível; nenhum deployment remoto. |
 | P1 — Contrato de domínio | Concluído (W01) | Procura, execução, acertos, dívida e projeção. | Conservação de minutos e exemplos da entrevista demonstrados. |
-| P2 — Baseline de dados | Concluído (W02) | Schema provisório, migração, RLS, constraints, transações. | Instalação vazia reproduzível e auditorias aprovadas. Consolidação em W12. |
+| P2 — Baseline de dados | Concluído (W02) | Schema provisório, migração, RLS, constraints, transações. | Instalação vazia reproduzível e auditorias aprovadas. Baseline consolidada em W12. |
 | P3 — Validador e medição | Concluído (W03) | Validador independente, oráculo, corpus mínimo, campanhas. | Rejeita resultados forjados; artefactos reproduzíveis. |
 | P4 — Geração anual viável | Concluído (W04) | Master anual, detalhe reabrível, cortes válidos, salas e projeção. | Horários completos nas instâncias conhecidas; T10–T12 resolvidos. |
 | P5 — Qualidade da geração | Concluído (W05) | Conclusões ordenadas, prioridade docente, incumbente conservado. | Testemunhos de qualidade e baseline de escala registadas. |
-| P6 — Reparação | Concluído (W06) | Procura residual, bairros, cadeias, expansão por conflitos, comparação uniforme e integração das nove otimizações (W06.6). | T15–T20 no solver e cenários de dívida completos, sem dupla contagem. [Registo](SCHEDULER_V1_W06_W07_STATUS.md) |
-| P7 — Pesquisa e diagnósticos | Concluído (W07) | Provas por âmbito, paragem adaptativa, segurança, explicações, métricas de trajetória e honestidade de orçamento. | Nenhum timeout tratado como impossível; T26; política comparada com referências longas. [Registo](SCHEDULER_V1_W06_W07_STATUS.md) |
-| P8 — Ciclo de vida e operações | Por iniciar (W08) | Elegibilidade persistida, fila única, idempotência, cancelamento, persistência e aprovação. Cablage do motor v1 à produção. | T21–T28 e testes de falha aprovados. |
-| P9 — API e experiência | Por iniciar (W09) | Configuração, horários, módulos previstos, execução, acertos, motivos e propostas. | Percurso completo utilizável e E2E aprovados. |
-| P10 — Escala e calibração local | Concluído (W10–W11) | Corpus amplo, replays anuais com eventos, workers 1/2/4/8, quotas CPU/RAM, agrupamento de salas equivalentes, política de paragem e simulação anual. | Evidência local sólida; configurações candidatas e critérios de validação remota documentados. [Registo](SCHEDULER_V1_W10_W11_STATUS.md) |
-| P11 — Remoção e candidate local | Concluído (W12) no âmbito corrigido | Remover código antigo, consolidar baseline Alembic, avaliação reservada. | Instalação Docker limpa, gates funcionais; aceitação do proprietário pendente. [Registo](SCHEDULER_V1_W12_STATUS.md) |
-| P12A — Validação em produção | Concluído (W13) | Candidate publicada na API; validação remota e frontend Cloudflare confirmados. | Baseline remota e configuração final demonstradas; regressões resolvidas. [Registo](SCHEDULER_V1_W13_STATUS.md) |
-| P12B — Merge e ativação final | Concluído (W14) | Release fixada, CI verde, dados de ensaio limpos e baseline final instalada; smoke validado. | Critérios de lançamento satisfeitos e revisão efetivamente publicada verificada. [Registo](SCHEDULER_V1_W14_STATUS.md) |
+| P6 — Reparação | Concluído (W06) | Procura residual, bairros, cadeias, expansão por conflitos, comparação uniforme e integração das nove otimizações (W06.6). | T15–T20 no solver e cenários de dívida completos, sem dupla contagem. |
+| P7 — Pesquisa e diagnósticos | Concluído (W07) | Provas por âmbito, paragem adaptativa, segurança, explicações, métricas de trajetória e honestidade de orçamento. | Nenhum timeout tratado como impossível; T26; política comparada com referências longas. |
+| P8 — Ciclo de vida e operações | Concluído (W08) | Elegibilidade persistida, fila única, idempotência, cancelamento, persistência e aprovação. Cablage do motor v1 à produção. | T21–T28 e testes de falha aprovados. |
+| P9 — API e experiência | Concluído (W09) | Configuração, horários, módulos previstos, execução, acertos, motivos e propostas. | Percurso completo utilizável e E2E aprovados. |
+| P10 — Escala e calibração local | Concluído (W10–W11) | Corpus amplo, replays anuais com eventos, workers 1/2/4/8, quotas CPU/RAM, agrupamento de salas equivalentes, política de paragem e simulação anual. | Evidência local sólida; configurações candidatas e critérios de validação remota documentados. |
+| P11 — Remoção e candidate local | Concluído (W12) no âmbito corrigido | Remover código antigo, consolidar baseline Alembic, avaliação reservada. | Instalação Docker limpa, gates funcionais e aceitação final concluída. |
+| P12A — Validação em produção | Concluído (W13) | Candidate publicada na API; validação remota e frontend Cloudflare confirmados. | Baseline remota e configuração final demonstradas; regressões resolvidas. |
+| P12B — Merge e ativação final | Concluído (W14) | Release fixada, CI verde, dados de ensaio limpos e baseline final instalada; smoke validado. | Critérios de lançamento satisfeitos e revisão efetivamente publicada verificada. |
 
 P6 é a primeira fase nova. Não compensar uma arquitetura inviável acrescentando workers ou timeout.
 Se a decomposição falhar sistematicamente na reparação, parar a expansão funcional e rever o modelo com o contraexemplo medido.
@@ -724,9 +724,9 @@ O proprietário deve conseguir executar o percurso completo sem linguagem técni
 O compromisso de qualidade, tempo e recursos deve estar sustentado por artefactos reproduzíveis.
 Código antigo removido, CI verde, reset ensaiado e release Railway/Cloudflare verificada são requisitos de conclusão.
 
-W06 e W07 foram concluídos e registados em [SCHEDULER_V1_W06_W07_STATUS.md](SCHEDULER_V1_W06_W07_STATUS.md).
-W10–W12 foram concluídos e registados em [SCHEDULER_V1_W10_W11_STATUS.md](SCHEDULER_V1_W10_W11_STATUS.md) e [SCHEDULER_V1_W12_STATUS.md](SCHEDULER_V1_W12_STATUS.md).
-W13 e W14 foram concluídos e registados em [SCHEDULER_V1_W13_STATUS.md](SCHEDULER_V1_W13_STATUS.md) e [SCHEDULER_V1_W14_STATUS.md](SCHEDULER_V1_W14_STATUS.md).
+W06 e W07 foram concluídos.
+W10–W12 foram concluídos.
+W13 e W14 foram concluídos.
 A v1 está ativa em produção. Não começar por otimizar desempenho nem por calibrar workers sem nova medição.
 
 ### Rastreabilidade das decisões
@@ -749,24 +749,11 @@ A v1 está ativa em produção. Não começar por otimizar desempenho nem por ca
 
 Documentos atuais desta revisão:
 
-- [Especificação técnica v2](SCHEDULER_V1_TECH_SPEC_V2.md): contratos implementados e especificação W06+.
+- [Especificação técnica v2](SCHEDULER_V1_TECH_SPEC_V2.md): contratos implementados e operações.
 - [WBS técnico v2](SCHEDULER_V1_WBS_V2.md): pacotes, campanhas e gates.
-
-Plano original de 23 de setembro de 2026 (referência histórica):
-
-- [Plano v1](SCHEDULER_V1_REVAMP_PLAN.md), [WBS v1](SCHEDULER_V1_WBS.md), [Tech spec v1](SCHEDULER_V1_TECH_SPEC.md).
-
-Registos de execução e revisão (evidência as-built):
-
-- [W00](SCHEDULER_V1_W00_STATUS.md), [W01](SCHEDULER_V1_W01_STATUS.md), [W02](SCHEDULER_V1_W02_STATUS.md), [W03](SCHEDULER_V1_W03_STATUS.md).
-- [Revisão W00–W04](SCHEDULER_V1_W00_W04_REVIEW.md) e [correções RC](SCHEDULER_V1_W00_W04_CORRECTION_WBS.md).
-- [Registo W04/W05](SCHEDULER_V1_W04_W05_STATUS.md), [revisão W04/W05](SCHEDULER_V1_W04_W05_REVIEW.md), [correções R45](SCHEDULER_V1_W04_W05_CORRECTION_WBS.md) e [decisão G2](SCHEDULER_V1_W04_W05_G2_REVIEW.md).
-- [Audit W00–W05](SCHEDULER_V1_W00_W05_AUDIT_PLAN.md) e [WBS do audit](SCHEDULER_V1_W00_W05_AUDIT_WBS.md); resíduos R55/B01–B05 fechados.
-- [Consolidação Alembic](SCHEDULER_V1_ALEMBIC_CONSOLIDATION_PLAN.md).
 
 Contexto de domínio e operações:
 
-- [Comportamento atual](SCHEDULER_BEHAVIOR.md) e [arquitetura atual](SCHEDULER_ARCHITECTURE.md): referências de partida, a substituir onde este plano diverge.
 - [Domínio profissional](../02_domain_model/PROFESSIONAL_EDUCATION.md).
 - [Execução de aulas](../04_operational_features/LESSON_EXECUTION.md) e [ocorrências e substituições](../04_operational_features/OCCURRENCES_AND_SUBSTITUTIONS.md).
 - [Testes e CI](../08_security_quality/TESTING_AND_CI.md) e [deployment](../09_ops_observability/DEPLOYMENT_RUNBOOK.md).

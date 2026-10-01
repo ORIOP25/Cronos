@@ -24,20 +24,25 @@ MeuProjeto/
 │   ├── README.md                 # Agent suite documentation
 │   └── skills/                   # Cronos skills and protected imported skills
 ├── .github/                      # GitHub Action workflows and agent definitions
-│   ├── agents/                   # Agent_Cronos.md router
-│   └── workflows/                # CI workflow specifications
+│   ├── agents/                   # Agent_Cronos.md router and Agent_HorarioZen.md
+│   ├── workflows/                # CI workflow specifications
+│   └── dependabot.yml            # Automated dependency update configuration
 ├── backend/                      # Python FastAPI application
-│   ├── alembic/                  # Database migration scripts
+│   ├── alembic/                  # Database migrations (head 0017_active_course_abbreviations)
 │   ├── app/                      # Backend application source
 │   │   ├── api/                  # API routers (v1 endpoints)
+│   │   ├── contact/              # Contact service, ports, and provider gateways
 │   │   ├── core/                 # Authentication, exceptions, logging, and rate limits
 │   │   ├── db/                   # Database engine and tenant context
+│   │   ├── middleware/           # Request body limit middleware
+│   │   ├── ops/                  # Database provisioning operations
 │   │   ├── models.py             # SQLAlchemy ORM models
 │   │   ├── schemas.py            # Pydantic data schemas
 │   │   ├── services/             # Business logic and domain services
 │   │   └── scheduler/            # Scheduler domain and infrastructure adapters
+│   ├── railway/                  # Railway service deployment definitions
+│   │   └── *.json                # api, beat, bootstrap, supervisor, and worker services
 │   ├── scripts/                  # Database audits, support, and E2E preparation
-│   ├── seed_data.py              # Canonical operational seed entry point
 │   ├── tests/                    # Pytest test suite
 │   ├── Dockerfile                # Multi-stage BuildKit backend image file
 │   └── README.md                 # Backend workspace documentation
@@ -47,10 +52,12 @@ MeuProjeto/
 │   ├── scripts/                  # Quality and CSS coverage scripts
 │   ├── src/                      # React source code
 │   │   ├── components/           # Reusable UI components
-│   │   ├── data/                 # Extracted static content data
 │   │   ├── features/             # Feature-specific logic and hooks
 │   │   ├── hooks/                # Custom React hooks
 │   │   ├── pages/                # Top-level page views
+│   │   ├── styles/               # Page and component style sheets
+│   │   ├── test/                 # Vitest unit and component tests
+│   │   ├── utils/                # Shared browser utility modules
 │   │   ├── App.jsx               # Route definitions and layout router
 │   │   ├── index.css             # Global design tokens and styles
 │   │   └── main.jsx              # React entry point
@@ -69,10 +76,15 @@ MeuProjeto/
 │   ├── 07_data_and_seed/         # Seed scenarios and test data
 │   ├── 08_security_quality/      # Security controls, RLS, and CI workflows
 │   └── 09_ops_observability/     # Local runtime and observability runbooks
+├── scripts/                      # Root test and quality runners
+│   ├── test.mjs                  # Unified local and CI test runner
+│   ├── loc-report.mjs            # Measured lines-of-code report
+│   └── sanitize-test-artifacts.mjs # Test artifact sanitizer
 ├── .env.example                  # Template root environment variable file
 ├── docker-compose.yml             # Production-like local Compose deployment
 ├── docker-compose.dev.yml         # Development override for Vite hot reload
 ├── docker-compose.ci.yml          # CI workflow Compose deployment
+├── docker-compose.test.yml        # Isolated test Compose deployment
 ├── README.md                      # Root repository quick start guide
 ├── skills-lock.json               # Version lockfile for AI skills
 └── sonar-project.properties       # SonarQube quality analysis configuration
@@ -96,7 +108,7 @@ MeuProjeto/
 - Tutorial feature: `frontend/src/features/tutorial/`
 - Onboarding API: `backend/app/api/v1/endpoints/session.py`, `backend/app/api/v1/endpoints/foundation.py`, `backend/app/api/v1/endpoints/readiness.py`
 - Onboarding services: `backend/app/services/foundation_service.py`, `backend/app/services/school_readiness_service.py`, `backend/app/services/dashboard_service.py`
-- Compose configurations: `docker-compose.yml`, `docker-compose.dev.yml`, `docker-compose.ci.yml`
+- Compose configurations: `docker-compose.yml`, `docker-compose.dev.yml`, `docker-compose.ci.yml`, `docker-compose.test.yml`
 - Railway service definitions: `backend/railway/*.json`
 
 ## Related Documents

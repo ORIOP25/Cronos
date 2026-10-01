@@ -11,9 +11,11 @@ Read [Frontend Architecture](FRONTEND_ARCHITECTURE.md).
 
 ## Aesthetic Foundation: The 60-30-10 Color Rule
 Cronos employs a warm, authoritative visual identity designed for educational trust and operational clarity:
-- **60% Dominant Base Surfaces**: Warm light surfaces, including `#faf8f5`.
-- **30% Structural Navigation**: Deep brown, including `#3d2b1f`.
-- **10% Action Accents**: Amber gold, including `#d4940b`.
+- **60% Dominant Base Surfaces**: Warm light yellow, `#fef9e7`.
+- **30% Structural Navigation**: Deep brown, `#3B2415`.
+- **10% Action Accents**: Amber gold, `#d4940b`.
+
+`frontend/src/index.css` defines these values. `frontend/src/styles/brand.tokens.css` defines the `--cronos-*` tokens and their aliases.
 
 ## Color Palette Tokens Table
 
@@ -40,7 +42,7 @@ Cronos employs a warm, authoritative visual identity designed for educational tr
 ## Visual Evidence Baseline Standards
 The repository maintains visual snapshot baselines under `documentation/06_frontend_ux/visual-baselines/`:
 - `css-coverage.json`: CSS execution coverage metrics.
-- `login-1440.png`, `marketing-1440.png`: Visual reference screenshots.
+- `login-{,375,768,1440}.png`, `marketing-{,375,768,1440}.png`: Visual reference screenshots.
 
 *Note: Visual snapshots serve as design review evidence and baseline references.*
 

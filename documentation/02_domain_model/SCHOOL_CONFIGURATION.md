@@ -10,7 +10,7 @@ This document targets backend engineers and frontend engineers maintaining confi
 
 ## Prerequisites
 
-Read [Data Model](../01_system_architecture/DATA_MODEL.md) and [Scheduler Behavior](../03_scheduler_engine/SCHEDULER_BEHAVIOR.md).
+Read [Data Model](../01_system_architecture/DATA_MODEL.md) and the [Scheduler Engine](../03_scheduler_engine/README.md).
 
 ## What the System Does
 
@@ -30,6 +30,8 @@ State-version events detect changes that can invalidate a published schedule.
 | School settings | `organization_settings`, `backend/app/services/settings_service.py` |
 | Grid settings | `organization_grid_settings`, `backend/app/api/v1/endpoints/org_settings.py` |
 | Calendar events | `school_calendar_event`, `org_settings.py` |
+| Internship flows | `school_calendar_event_class`, `backend/app/services/internship_flow_service.py` |
+| Foundation status | `organization_foundation_draft`, `backend/app/services/foundation_service.py` |
 | Rooms | `backend/app/api/v1/endpoints/rooms.py` |
 | Timeslots | `backend/app/api/v1/endpoints/timeslots.py` |
 | Configuration UI | `frontend/src/pages/SchoolConfig.jsx` |
@@ -45,17 +47,21 @@ State-version events detect changes that can invalidate a published schedule.
 ## Contracts and Invariants
 
 - `school_hard_end_date` cannot precede `school_start_date`.
-- `repair_stability_window_days` cannot be negative.
+- `repair_stability_window_days` stays between 0 and 60.
+- `automatic_holidays_enabled` refreshes national holidays for the school period.
 - Lunch start and end must appear together.
 - Lunch end must follow lunch start.
 - Lunch minimum duration cannot exceed the configured window.
 - Room types are `normal`, `lab`, `gym`, or `art`.
-- Calendar events use `national_holiday`, `school_break`, `exam_period`, or `other`.
+- Calendar events use `national_holiday`, `school_break`, `exam_period`, `other`, or `internship_flow`.
+- Only an `internship_flow` event can link classes.
+- Foundation status is `NOT_STARTED`, `IN_PROGRESS`, or `COMPLETED`.
 
 ## States and Transitions
 
 Configuration changes produce scheduler state scopes: `FUTURE_IMPACTING`, `PAST_ONLY`, `NO_OP`, or `INACTIVE_RESOURCE`.
 Grid replacement is blocked when scheduler lifecycle rules do not permit it.
+Foundation moves from `NOT_STARTED` to `IN_PROGRESS` on the first draft write and to `COMPLETED` on completion.
 
 ## Failure Modes
 
@@ -79,7 +85,7 @@ Grid replacement is blocked when scheduler lifecycle rules do not permit it.
 - Settings router: `backend/app/api/v1/endpoints/org_settings.py`
 - Room router: `backend/app/api/v1/endpoints/rooms.py`
 - Timeslot router: `backend/app/api/v1/endpoints/timeslots.py`
-- Tests: `backend/tests/test_org_settings_endpoints.py`, `test_timeslots_crud.py`
+- Tests: `backend/tests/integration/committed/test_org_settings_endpoints.py`, `backend/tests/integration/committed/test_timeslots_crud.py`
 
 ## Foundation and School Configuration Boundary
 
@@ -106,4 +112,5 @@ is missing.
 ## Related Documents
 
 - [Professional Education](PROFESSIONAL_EDUCATION.md)
-- [Scheduler Operations](../03_scheduler_engine/SCHEDULER_OPERATIONS.md)
+- [Scheduler Engine](../03_scheduler_engine/README.md)
+- [Scheduler V1 Technical Specification](../03_scheduler_engine/SCHEDULER_V1_TECH_SPEC_V2.md)

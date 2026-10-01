@@ -40,7 +40,8 @@ Separating them preserves schedule history and supports occurrence decisions.
 5. The service validates ownership, week state, and time rules.
 6. The service stores the log and related ledger changes.
 
-The endpoints are `/api/v1/schedule/active-blocks/{id}/log` and `/api/v1/schedule/operational-blocks/{id}/log`.
+The write endpoints are `/api/v1/schedule/active-blocks/{id}/log`, `/api/v1/schedule/operational-blocks/{id}/log`, and the v1 route `/api/v1/schedule/lessons/{lesson_id}/log`.
+All three use `PUT` and return a lesson log.
 
 ## Contracts and Invariants
 
@@ -49,6 +50,7 @@ The endpoints are `/api/v1/schedule/active-blocks/{id}/log` and `/api/v1/schedul
 - Notes have a maximum length of 1,000 characters.
 - Teachers can edit only blocks assigned to their linked profile.
 - Administrators can edit tenant blocks.
+- An operational block cannot produce a new occurrence.
 - Submitted or approved weekly timesheets block later edits.
 
 ## States and Transitions
@@ -76,6 +78,7 @@ A completed log credits the executed block through the progress service.
 
 - `backend/app/api/v1/endpoints/schedule.py`
 - `backend/app/services/lesson_log_service.py`
+- `backend/app/scheduler/infrastructure/operations.py`
 - `backend/app/models.py`
 - `frontend/src/components/LessonLogModal.jsx`
 - Tests: `frontend/src/test/MySchedules.test.jsx`, `frontend/src/test/WeekGrid.test.jsx`, `frontend/src/test/weekSubmission.test.js`

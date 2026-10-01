@@ -2,15 +2,15 @@
 
 Data: 25 de setembro de 2026.
 
-Estado: W00–W14 concluídos; resíduos do audit (R55.00–R55.10, B01–B05) fechados. Esta revisão substitui o WBS de 23 de setembro de 2026 a partir de W06; o original permanece como referência histórica. Registos: [W08–W09](SCHEDULER_V1_W08_W09_STATUS.md), [W10–W11](SCHEDULER_V1_W10_W11_STATUS.md), [W12](SCHEDULER_V1_W12_STATUS.md), [W13](SCHEDULER_V1_W13_STATUS.md).
+Estado: W00–W14 concluídos; resíduos do audit (R55.00–R55.10, B01–B05) fechados; a v1 está ativa em produção. Esta revisão substitui o WBS de 23 de setembro de 2026 a partir de W06; o original permanece como referência histórica.
 
 Documentos de referência: [plano v2](SCHEDULER_V1_REVAMP_PLAN_V2.md) e [especificação técnica v2](SCHEDULER_V1_TECH_SPEC_V2.md).
-Branch de execução: `codex/scheduler-v1-revamp`.
+Integração: `main` (revisão entregue na W14).
 
 ## 1. Objetivo e utilização
 
 Este WBS transforma a especificação em pacotes de trabalho verificáveis.
-Os pacotes W00–W05 são registo as-built do trabalho executado. Os pacotes W06–W14 são plano revisto com as nove otimizações consolidadas do gerador.
+Os pacotes W00–W14 são o registo as-built do trabalho executado, com as nove otimizações consolidadas do gerador.
 As campanhas C01–C20 continuam obrigatórias; os casos T01–T30 do plano continuam obrigatórios.
 
 O objetivo é demonstrar correção, qualidade e recuperação operacional em ambientes diversos.
@@ -33,7 +33,7 @@ Uma regressão reabre o pacote responsável e regista os pacotes afetados.
 
 1. Os ganhos históricos de aproximadamente 90 para 22 segundos pertencem às medições anteriores (registos de campanha de 24–25 de setembro de 2026, Docker local, um worker). Esta revisão não os apresenta como nova comparação controlada nem como garantia universal.
 2. A antecipação das conclusões resulta da política aprovada (D10–D12). Distribuir procura ao longo do ano exige decisão explícita de produto. Não introduzir limites semanais ou penalizações de antecipação para obter uma aparência mais uniforme.
-3. O agrupamento de salas equivalentes e a calibração 1/2/4/8 workers continuam dependentes de medições em W11.
+3. O agrupamento de salas equivalentes e a calibração 1/2/4/8 workers foram fechados nas medições de W11.
 
 ## 2. Regras transversais
 
@@ -85,15 +85,15 @@ Uma alteração de fixture é uma nova versão; não apaga o resultado anterior.
 | W03 | Oráculos, validador e laboratório | P3 | W01; W02 para integração | Concluído |
 | W04 | CompleteGeneration correto | P4 | W01, W03 | Concluído |
 | W05 | Qualidade inicial e datas coletivas | P5 | W04 | Concluído |
-| W06 | AdaptiveRecovery e reconciliação | P6 | W02, W05 | Concluído ([registo](SCHEDULER_V1_W06_W07_STATUS.md)) |
-| W07 | Paragem e diagnóstico sustentados | P7 | W03–W06 | Concluído ([registo](SCHEDULER_V1_W06_W07_STATUS.md)) |
-| W08 | Fila, snapshots e publicação | P8 | W02, W04; integração final com W06–W07 | Concluído ([registo](SCHEDULER_V1_W08_W09_STATUS.md)) |
-| W09 | API e aplicação escolar | P9 | W01, W02, W08 | Concluído ([registo](SCHEDULER_V1_W08_W09_STATUS.md)) |
-| W10 | Campanhas combinadas e anuais | P6–P10 | W06; completar com W07–W09 | Concluído ([registo](SCHEDULER_V1_W10_W11_STATUS.md)) |
-| W11 | Calibração e recursos | P10 | W07, W10 | Concluído ([registo](SCHEDULER_V1_W10_W11_STATUS.md)) |
-| W12 | Remoção de legado e candidate local | P11 | W00–W11 | Concluído ([registo](SCHEDULER_V1_W12_STATUS.md)) |
-| W13 | Validação remota | P12A | W12 aceite | Concluído ([registo](SCHEDULER_V1_W13_STATUS.md)) |
-| W14 | Corte final e entrega | P12B | W13 aceite | Concluído ([registo](SCHEDULER_V1_W14_STATUS.md)) |
+| W06 | AdaptiveRecovery e reconciliação | P6 | W02, W05 | Concluído |
+| W07 | Paragem e diagnóstico sustentados | P7 | W03–W06 | Concluído |
+| W08 | Fila, snapshots e publicação | P8 | W02, W04; integração final com W06–W07 | Concluído |
+| W09 | API e aplicação escolar | P9 | W01, W02, W08 | Concluído |
+| W10 | Campanhas combinadas e anuais | P6–P10 | W06; completar com W07–W09 | Concluído |
+| W11 | Calibração e recursos | P10 | W07, W10 | Concluído |
+| W12 | Remoção de legado e candidate local | P11 | W00–W11 | Concluído |
+| W13 | Validação remota | P12A | W12 aceite | Concluído |
+| W14 | Corte final e entrega | P12B | W13 aceite | Concluído |
 
 Os pacotes descrevem dependências, não obrigam a PRs gigantes.
 Entregar fatias verticais pequenas quando as suas dependências estiverem prontas.
@@ -105,7 +105,7 @@ Executar campanhas progressivamente; não adiar a descoberta de problemas para W
 
 | ID | Pedido | Entregue | Evidência |
 | :--- | :--- | :--- | :--- |
-| W00.1 | Mapear chamadas do gerador, ledger, módulos, mapas, UI, scripts e migrations. | Inventário com consumidor, contrato atual e destino novo. | [W00 status](SCHEDULER_V1_W00_STATUS.md) |
+| W00.1 | Mapear chamadas do gerador, ledger, módulos, mapas, UI, scripts e migrations. | Inventário com consumidor, contrato atual e destino novo. | Registo W00 (arquivo) |
 | W00.2 | Confirmar branch, imagens, volumes e serviços locais. | Imagem `cronos-backend-test:local` manifestada: Python 3.14.7, OR-Tools 9.15.6755, Docker local. | idem |
 | W00.3 | Impedir deployments automáticos da branch. | Branch sem pushes durante P0–P11; nenhum deployment remoto provocado. | idem |
 | W00.4 | Executar setup/doctor e checks atuais. | Runner reparado; suites de backend de 399 para 444 testes; falhas pré-existentes registadas à parte. | idem |
@@ -115,7 +115,7 @@ Executar campanhas progressivamente; não adiar a descoberta de problemas para W
 
 | ID | Pedido | Entregue | Evidência |
 | :--- | :--- | :--- | :--- |
-| W01.1 | Valores imutáveis, minutos inteiros e intervalos semiabertos. | `domain/calendar` e `domain/candidate`; intervalos adjacentes permitidos; negativos e durações inválidas rejeitados; horários ambíguos em transição de timezone falham na normalização. | T01–T03, T08–T09 verdes; [W01 status](SCHEDULER_V1_W01_STATUS.md) |
+| W01.1 | Valores imutáveis, minutos inteiros e intervalos semiabertos. | `domain/calendar` e `domain/candidate`; intervalos adjacentes permitidos; negativos e durações inválidas rejeitados; horários ambíguos em transição de timezone falham na normalização. | T01–T03, T08–T09 verdes; Registo W01 (arquivo) |
 | W01.2 | Procura `Q-E`, crédito parcial e módulos cronológicos. | `domain/demand` e `domain/projection`; nenhum arredondamento por módulo; 75+75 em períodos de 50 com parcelas 50; 25+25; 50. | T01–T03 verdes |
 | W01.3 | Execução, reversões e acertos auditados. | Ledger append-only com reversões idempotentes; execução repetida não credita duas vezes. | T04–T07, T29–T30 verdes |
 | W01.4 | Dívida, reservas e liquidação muitos-para-muitos. | `domain/debt`; cancelar recuperação não duplica dívida; reconciliação mais antiga primeiro com associação auditável. | T05 verde |
@@ -126,9 +126,9 @@ Executar campanhas progressivamente; não adiar a descoberta de problemas para W
 
 | ID | Pedido | Entregue | Evidência |
 | :--- | :--- | :--- | :--- |
-| W02.1 | Schema de atribuições, ledger, parcelas e dívida. | Migração provisória `0011_scheduler_v1_curricular`: 13 tabelas com constraints e RLS forçada; equações verificadas após comandos e reversões. | `test_scheduler_v1_baseline`; [W02 status](SCHEDULER_V1_W02_STATUS.md) |
+| W02.1 | Schema de atribuições, ledger, parcelas e dívida. | Migração provisória `0011_scheduler_v1_curricular`: 13 tabelas com constraints e RLS forçada; equações verificadas após comandos e reversões. | `test_scheduler_v1_baseline`; Registo W02 (arquivo) |
 | W02.2 | Versões, aulas, propostas, jobs e revisões. | `scheduler_version_v1` (uma ativa), `scheduler_lesson_v1` (identidade estável), `scheduler_job_v1` (um ativo por ano), `scheduler_proposal_v1` (uma pendente por ano); revisões `input/planning` no estado. | idem |
-| W02.3 | Baseline Alembic, grants, RLS e índices. | Instalação vazia em bases de teste temporárias; FKs com organização; auditorias de RLS. Consolidação em baseline nova é da W12. | [Consolidação Alembic](SCHEDULER_V1_ALEMBIC_CONSOLIDATION_PLAN.md) |
+| W02.3 | Baseline Alembic, grants, RLS e índices. | Instalação vazia em bases de teste temporárias; FKs com organização; auditorias de RLS. Baseline Alembic consolidada na W12. | Auditorias de RLS e constraints. |
 | W02.4 | Transações de progresso e mudanças de configuração. | `infrastructure/progress` sob lock de estado: execução, dívida, recuperação e configuração; escritas concorrentes não perdem revisão nem duplicam crédito. | `test_scheduler_v1_progress`, `test_scheduler_v1_configuration` |
 | W02.5 | Procedimento local de reset com alvos explícitos. | Reset repetível apenas em dados de teste; autenticação externa não atingida. | Registado no ciclo RC; scripts de reset/erasure |
 
@@ -136,7 +136,7 @@ Executar campanhas progressivamente; não adiar a descoberta de problemas para W
 
 | ID | Pedido | Entregue | Evidência |
 | :--- | :--- | :--- | :--- |
-| W03.1 | Validador de cobertura, recursos, datas e estabilidade. | `candidate_validation` versão 3 com 20 códigos tipados; candidatos adulterados rejeitados pelo motivo correto. | `test_scheduler_candidate_validation` (26 testes) |
+| W03.1 | Validador de cobertura, recursos, datas e estabilidade. | `candidate_validation` versão 4 com 21 códigos tipados; candidatos adulterados rejeitados pelo motivo correto. | `test_scheduler_candidate_validation` (26 testes) |
 | W03.2 | Oráculo enumerativo para instâncias mínimas. | `domain/oracle`: enumeração até 50 000 combinações; viabilidade e ótimo sem reutilizar restrições CP-SAT; objetivo pelo vetor de conclusões. | `test_scheduler_lab_fixtures` |
 | W03.3 | Gerador de fixtures com testemunhos e variantes. | `lab/fixtures` (13 mutações rastreáveis), `lab/scale` (semana única por seed), `lab/annual` (testemunhos construídos por construção, oráculo nunca chamado para gerar). | `test_scheduler_lab_scale`, `test_scheduler_lab_annual_v1` |
 | W03.4 | Manifests, seeds separadas e reprodução de casos. | `lab/manifest`: schema `scheduler-lab-v3`, digests SHA-256 de inputs e candidatos; seeds de fixture, eventos e solver separadas. | `test_scheduler_lab_manifest` |
@@ -147,11 +147,11 @@ Executar campanhas progressivamente; não adiar a descoberta de problemas para W
 
 | ID | Pedido | Entregue | Evidência |
 | :--- | :--- | :--- | :--- |
-| W04.1 | Compilar atribuições e disponibilidade conjunta. | `capacity.eligible_periods`: interseção única (timezone, datas, bloqueios, proteção, grelha, turma, docente, salas livres, períodos fixados por protegidas); preferência soft mantém elegibilidade. | T13–T14 verdes; [W04/W05 status](SCHEDULER_V1_W04_W05_STATUS.md) |
+| W04.1 | Compilar atribuições e disponibilidade conjunta. | `capacity.eligible_periods`: interseção única (timezone, datas, bloqueios, proteção, grelha, turma, docente, salas livres, períodos fixados por protegidas); preferência soft mantém elegibilidade. | T13–T14 verdes; Registo W04/W05 (arquivo) |
 | W04.2 | Quotas anuais por duração e crédito final. | `annual_model.plan_annual_quotas`: equações exatas com grupos finais e desperdício; capacidades semanais por recurso; hint greedy earliest-week; no-goods completos. | T10 verde |
 | W04.3 | Colocação detalhada e realimentação de conflitos. | `search` + `placement_model`: janelas reabríveis; pré-solve; cortes apenas de inviabilidade provada; timeout não produz corte falso; verificação de materialização exata. | T11 verde; `test_scheduler_search_v1` |
 | W04.4 | Salas elegíveis e matching completo. | `placement_model._optimize_rooms`: matching global após posições com sobreposições físicas incluindo fixas/protegidas; refinamento de continuidade. | T12 verde |
-| W04.5 | Materializar, projetar módulos e validar ano completo. | `_build_candidate` com projeção modular; validador independente antes de aceitar; campanhas de escala e anuais com candidatos completos e revalidação de digests. | Campanha `w04-generation` {válido 20, inviável 6}; campanha `w04-annual` {válido 12}; T30 verde. Persistência atómica de propostas é da W08 (T27 parcial). |
+| W04.5 | Materializar, projetar módulos e validar ano completo. | `_build_candidate` com projeção modular; validador independente antes de aceitar; campanhas de escala e anuais com candidatos completos e revalidação de digests. | Campanha `w04-generation` {válido 20, inviável 6}; campanha `w04-annual` {válido 12}; T30 verde. Persistência atómica de propostas implementada em W08. |
 
 ### W05 — Qualidade da geração inicial (as-built, concluído)
 
@@ -164,7 +164,7 @@ Executar campanhas progressivamente; não adiar a descoberta de problemas para W
 
 Propriedades do motor entregues e fechadas em W05 (as nove otimizações consolidadas): master/detalhe reabrível, hint greedy, limiares, congelamento provado/conservado, orçamento por janela e pré-solve, poda pela semana do incumbente, matching global de salas com refinamento, elegibilidade conjunta e cache de janelas provadas. Regressões: `test_scheduler_w05_audit` (28), `test_scheduler_w04_w05_regressions` (F01–F09), `test_scheduler_search_v1`, `test_scheduler_generation_v1`.
 
-Percurso de validação de W04–W05: revisão independente rejeitou o primeiro fecho (falhas F01–F11); correções R45.00–R45.09; audit A01–A12 fixado com 16 regressões vermelho-primeiro e validador v2→v3; G2 aceite no âmbito corrigido; resíduos R55/B01–B05 fechados. Registos: [revisão](SCHEDULER_V1_W04_W05_REVIEW.md), [correções](SCHEDULER_V1_W04_W05_CORRECTION_WBS.md), [status](SCHEDULER_V1_W04_W05_STATUS.md), [G2](SCHEDULER_V1_W04_W05_G2_REVIEW.md), [audit](SCHEDULER_V1_W00_W05_AUDIT_PLAN.md).
+Percurso de validação de W04–W05: revisão independente rejeitou o primeiro fecho (falhas F01–F11); correções R45.00–R45.09; audit A01–A12 fixado com 16 regressões vermelho-primeiro e validador v2→v3; G2 aceite no âmbito corrigido; resíduos R55/B01–B05 fechados. O validador atual é v4.
 
 ### W06 — AdaptiveRecovery (concluído; revisto nesta revisão)
 
@@ -191,9 +191,9 @@ Guardar melhores resultados e evidência de alternativas exploradas.
 
 Fecho: política explicável e mensurada, sem p95 como comando de paragem.
 
-### W08 — Execução e publicação (concluído; registo em [SCHEDULER_V1_W08_W09_STATUS.md](SCHEDULER_V1_W08_W09_STATUS.md))
+### W08 — Execução e publicação (concluído)
 
-A produção ainda executa o motor legado. Este pacote liga o motor v1 à fila, à persistência e à publicação.
+A produção executa o motor v1. Este pacote ligou o motor v1 à fila, à persistência e à publicação.
 
 | ID | Trabalho e entrega concreta | Teste/evidência para fecho |
 | :--- | :--- | :--- |
@@ -205,7 +205,7 @@ A produção ainda executa o motor legado. Este pacote liga o motor v1 à fila, 
 
 Fecho: C16–C17 em containers reais, incluindo falhas induzidas.
 
-### W09 — API e aplicação escolar (concluído; registo em [SCHEDULER_V1_W08_W09_STATUS.md](SCHEDULER_V1_W08_W09_STATUS.md))
+### W09 — API e aplicação escolar (concluído)
 
 | ID | Trabalho e entrega concreta | Teste/evidência para fecho |
 | :--- | :--- | :--- |
@@ -217,7 +217,7 @@ Fecho: C16–C17 em containers reais, incluindo falhas induzidas.
 
 Fecho: percurso manual do proprietário sobre dados locais e E2E reproduzível.
 
-### W10 — Campanhas integradas (por iniciar)
+### W10 — Campanhas integradas (concluído)
 
 | ID | Trabalho e entrega concreta | Teste/evidência para fecho |
 | :--- | :--- | :--- |
@@ -229,9 +229,9 @@ Fecho: percurso manual do proprietário sobre dados locais e E2E reproduzível.
 
 Fecho: matriz obrigatória concluída, resultados analisados e defeitos resolvidos ou explicitamente bloqueantes.
 
-### W11 — Desempenho e calibração (por iniciar)
+### W11 — Desempenho e calibração (concluído)
 
-O agrupamento de salas equivalentes e a calibração 1/2/4/8 workers continuam dependentes das medições deste pacote.
+O agrupamento de salas equivalentes e a calibração 1/2/4/8 workers foram fechados com as medições deste pacote.
 
 | ID | Trabalho e entrega concreta | Teste/evidência para fecho |
 | :--- | :--- | :--- |
@@ -243,7 +243,7 @@ O agrupamento de salas equivalentes e a calibração 1/2/4/8 workers continuam d
 Após otimização, repetir a falha, vizinhos da matriz e regressões relevantes.
 Repetir campanha ampla quando o algoritmo, política, schema ou fronteira de concorrência mudar.
 
-### W12 — Candidate e gate local (por iniciar)
+### W12 — Candidate e gate local (concluído)
 
 | ID | Trabalho e entrega concreta | Teste/evidência para fecho |
 | :--- | :--- | :--- |
@@ -349,7 +349,7 @@ Não usar uma razão agregada procura/capacidade como certificado de viabilidade
 
 ## 7. Catálogo de campanhas iterativas
 
-Estado do corpus executado até W05 (modo gerador): 3 casos witness, 26 casos de geração (famílias C01–C10, contraexemplos T10–T14/T19, escala 10/30/45/60) e 12 casos anuais (10/30/45/60 turmas × perfis `loose`/`shared-teacher`/`scarce-rooms`). Os passos que exigem reparação, fila ou API executam-se em W06+.
+Estado do corpus: 3 casos witness, 26 casos de geração (famílias C01–C10, contraexemplos T10–T14/T19, escala 10/30/45/60) e 12 casos anuais (10/30/45/60 turmas × perfis `loose`/`shared-teacher`/`scarce-rooms`). Os passos de reparação, fila e API foram executados em W06–W14.
 
 Todas as sequências seguintes incluem executar, validar e analisar entre cada seta.
 Nas campanhas de reparação, começar sempre por uma versão publicada e execução coerente com a data simulada.
@@ -527,7 +527,7 @@ Quando uma operação é inválida, exigir rollback integral e explicação; nã
 
 ### C14 — Ano letivo completo
 
-**Pacotes:** W06, W10–W12. **Estado:** por executar (requer W06). **Regressões:** T01–T30 conforme eventos.
+**Pacotes:** W06, W10–W12. **Estado:** executada em W10–W12. **Regressões:** T01–T30 conforme eventos.
 
 X: gerar, aprovar e executar semanas sem ocorrências.
 → Y: introduzir faltas dispersas, substituições e acertos reais simulados.
@@ -542,7 +542,7 @@ Não pedir ao solver para resolver uma impossibilidade física.
 
 ### C15 — Diagnóstico e recuperação administrativa
 
-**Pacotes:** W07, W09. **Estado:** por executar. **Regressões:** T20, T26.
+**Pacotes:** W07, W09. **Estado:** executada em W07–W09. **Regressões:** T20, T26.
 
 X: caso viável conhecido.
 → Y: remover capacidade indispensável e provar o défice.
@@ -555,7 +555,7 @@ Acrescentar casos com várias causas simultâneas e quantidades mínimas apenas 
 
 ### C16 — Falhas e concorrência operacional
 
-**Pacotes:** W07–W08, W12. **Estado:** por executar. **Regressões:** T23–T26.
+**Pacotes:** W07–W08, W12. **Estado:** executada em W12. **Regressões:** T23–T26.
 
 X: duas escolas pedem geração; confirmar FIFO e um cálculo global.
 → Y: duplicar mensagem, repetir pedido HTTP e interromper dispatch.
@@ -570,7 +570,7 @@ Verificar CPU anterior terminado antes de começar outra geração; fencing de e
 
 ### C17 — Isolamento, instalação e integridade
 
-**Pacotes:** W02, W08–W09, W12. **Estado:** RLS e instalação auditadas em W02; restantes na W08–W09. **Regressões:** T28.
+**Pacotes:** W02, W08–W09, W12. **Estado:** executada (W02, W08–W09, W12). **Regressões:** T28.
 
 X: instalar base vazia e criar duas escolas.
 → Y: tentar referências, consultas e aprovações cruzadas.
@@ -582,7 +582,7 @@ O executor global pode escolher jobs sem ganhar acesso indiscriminado aos dados 
 
 ### C18 — Escala e hardware
 
-**Pacotes:** W11; repetição selecionada em W13. **Estado:** por executar. **Regressões:** T27.
+**Pacotes:** W11; repetição selecionada em W13. **Estado:** executada em W11 e W13. **Regressões:** T27.
 
 X: mesmo caso com um worker interno.
 → Y: repetir com 2/4/8, intercalando ordem das configurações.
@@ -595,7 +595,7 @@ Guardar configurações que falharam por OOM ou segurança; não descartá-las d
 
 ### C19 — Qualidade versus tempo
 
-**Pacotes:** W07, W11. **Estado:** por executar. **Regressões:** nenhuma adicional.
+**Pacotes:** W07, W11. **Estado:** executada em W11. **Regressões:** nenhuma adicional.
 
 X: trajetórias prolongadas com limites finitos de laboratório.
 → Y: simular offline diferentes critérios de paragem sobre as mesmas trajetórias.
@@ -608,7 +608,7 @@ Não transformar ausência recente de melhoria em prova de proximidade do ótimo
 
 ### C20 — Percurso escolar completo
 
-**Pacotes:** W09, W12; smoke em W13–W14. **Estado:** por executar. **Regressões:** T21–T24.
+**Pacotes:** W09, W12; smoke em W13–W14. **Estado:** executada em W12–W14. **Regressões:** T21–T24.
 
 X: configurar escola, gerar, rever e aprovar.
 → Y: professor regista aula/ocorrência; administrador acumula motivos e pede atualização.
@@ -749,15 +749,15 @@ Criar nova amostra reservada para avaliar generalização da candidate seguinte.
 
 | Gate | Pacotes/campanhas | Estado | Evidência obrigatória |
 | :--- | :--- | :--- | :--- |
-| G1 — Domínio | W01–W03; C01, C09, C13 (casos pequenos) | Cumprido | Minutos, estabilidade, ledger e validador independentes; 20 códigos de violação; oráculo enumerativo. |
+| G1 — Domínio | W01–W03; C01, C09, C13 (casos pequenos) | Cumprido | Minutos, estabilidade, ledger e validador independentes; 21 códigos de violação; oráculo enumerativo. |
 | G2 — Geração | W04–W05; C01–C08, C10 (modo gerador) | Aceite no âmbito corrigido e auditado | Cobertura completa, salas e qualidade coletiva demonstradas; A01–A12 fixados; R55/B01–B05 fechados; nove otimizações com regressões. |
-| G3 — Recuperação | W06–W07; C02–C15, C19 | Pendente | Reparação, justiça, margem, diagnóstico, paragem e preservação das nove propriedades (W06.6). |
-| G4 — Aplicação | W08–W09; C12–C13, C16–C17, C20 | Pendente | Ciclo manual, isolamento e publicação atómica. |
-| G5 — Candidate local | W10–W12; C01–C20 | Evidência recolhida; aceitação do proprietário pendente | Matriz, replays anuais, hardware, limpeza e avaliação reservada. Registo: [W12](SCHEDULER_V1_W12_STATUS.md). |
-| G6 — Remoto | W13; subconjunto declarado C14, C16, C18, C20 | Pendente | Baseline Railway/Cloudflare e integrações reais. |
-| G7 — Lançamento | W14 | Pendente | CI verde, baseline final, smoke e aceitação. |
+| G3 — Recuperação | W06–W07; C02–C15, C19 | Cumprido | Reparação, justiça, margem, diagnóstico, paragem e preservação das nove propriedades (W06.6). |
+| G4 — Aplicação | W08–W09; C12–C13, C16–C17, C20 | Cumprido | Ciclo manual, isolamento e publicação atómica. |
+| G5 — Candidate local | W10–W12; C01–C20 | Cumprido; aceitação final concluída | Matriz, replays anuais, hardware, limpeza e avaliação reservada. |
+| G6 — Remoto | W13; subconjunto declarado C14, C16, C18, C20 | Cumprido | Baseline Railway/Cloudflare e integrações reais. |
+| G7 — Lançamento | W14 | Cumprido | CI verde, baseline final, smoke e aceitação. |
 
-G1–G2 estão fechados. G3 é o próximo gate. G5 é a fronteira obrigatória entre Docker local e validação remota.
+G1–G7 estão fechados. G5 é a fronteira obrigatória entre Docker local e validação remota.
 G6 e G7 não substituem G5.
 
 | Regressões do plano | Campanhas principais | Estado |
@@ -765,12 +765,12 @@ G6 e G7 não substituem G5.
 | T01–T07 | C01, C09, C13, C14 | Verdes |
 | T08–T09 | C09, C14, C20 | Verdes |
 | T10–T14 | C01, C04, C06–C08 | Verdes |
-| T15–T19 | C03, C06–C07, C10–C11, C14–C15 | Verdes (comparador); solver na W06 para T15–T18 |
-| T20 | C06–C07, C10, C15 | Pendente: W06 |
-| T21–T22 | C12, C20 | Verdes (domínio); percurso persistido na W08 |
-| T23–T26 | C04, C08, C15–C16 | Pendentes: W07–W08 |
-| T27 | C01, C05, C14, C18 | Parcial; completo na W08 |
-| T28 | C17, C20 | RLS auditada em W02; completo na W08–W09 |
+| T15–T19 | C03, C06–C07, C10–C11, C14–C15 | Verdes |
+| T20 | C06–C07, C10, C15 | Verde |
+| T21–T22 | C12, C20 | Verdes |
+| T23–T26 | C04, C08, C15–C16 | Verdes |
+| T27 | C01, C05, C14, C18 | Verde |
+| T28 | C17, C20 | Verde |
 | T29–T30 | C01, C13–C14 | Verdes |
 
 O dossier final reúne cobertura por decisão D01–D31, regressão T01–T30, pacote W00–W14 e campanha C01–C20.

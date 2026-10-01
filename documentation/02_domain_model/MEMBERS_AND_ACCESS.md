@@ -28,7 +28,8 @@ Local state supports tenant queries, route guards, operational permissions, and 
 | Access models | `backend/app/models.py` |
 | Auth dependencies | `backend/app/api/deps.py` |
 | Member API | `backend/app/api/v1/endpoints/members.py` |
-| Clerk webhook | `backend/app/api/v1/endpoints/webhooks.py` |
+| Clerk webhook | `backend/app/api/v1/endpoints/webhooks.py`, `backend/app/services/member_webhook_service.py` |
+| Clerk sync | `backend/app/services/clerk_sync.py`, `backend/app/services/member_reconciliation_service.py` |
 | Access operations | `backend/app/services/member_access_operation_service.py` |
 | Frontend guards | `frontend/src/routeGuards.jsx`, `frontend/src/roleAccess.js` |
 
@@ -44,6 +45,7 @@ Local state supports tenant queries, route guards, operational permissions, and 
 
 - Active access requires `lifecycle_status=active` and `access_status=active`.
 - Capabilities are `admin` and `teacher`.
+- Clerk organization roles are `org:member` and `org:admin`.
 - A teacher route requires a linked `teacher_id`.
 - A member can hold both capabilities.
 - `scheduler_only` teacher access does not imply platform login access.
@@ -53,7 +55,11 @@ Local state supports tenant queries, route guards, operational permissions, and 
 
 Lifecycle states are `active` and `archived`.
 Access states are `none`, `pending_invite`, `invite_expired`, `active`, `blocked`, and `sync_error`.
+Teacher access modes are `platform` and `scheduler_only`.
+Access operation types are `create_invitation`, `revoke_invitation`, `revoke_membership`, `change_role`, `resend_invitation`, `restore_access`, and `block_access`.
+Access operation statuses are `pending`, `clerk_succeeded`, `local_committed`, `failed`, `compensated`, `compensation_failed`, and `support_required`.
 Access operations use compensating states when provider and local commits diverge.
+Clerk webhook events use `received`, `processing`, `processed`, `ignored`, `retryable_failed`, `sync_error`, and `dead_letter`.
 
 ## Failure Modes
 
@@ -74,8 +80,8 @@ Access operations use compensating states when provider and local commits diverg
 - Models: `backend/app/models.py`
 - Dependencies: `backend/app/api/deps.py`
 - API: `backend/app/api/v1/endpoints/members.py`
-- Services: `backend/app/services/member_service.py`, `member_access_operation_service.py`
-- Tests: `backend/tests/test_members_api.py`, `test_webhooks.py`
+- Services: `backend/app/services/member_service.py`, `clerk_sync.py`, `member_webhook_service.py`, `member_reconciliation_service.py`, `member_access_operation_service.py`
+- Tests: `backend/tests/integration/committed/test_members_api.py`, `backend/tests/integration/committed/test_webhooks.py`, `backend/tests/unit/test_clerk_sync.py`
 
 ## Related Documents
 

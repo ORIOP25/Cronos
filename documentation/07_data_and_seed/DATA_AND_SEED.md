@@ -1,58 +1,95 @@
 # Data and Seed Specifications
 
 ## Purpose
-This document specifies the deterministic operational seed, generated records, and execution routine.
+This document specifies how Cronos creates application data: session bootstrap, foundation setup, bulk CSV import, and test-data preparation.
 
 ## Intended Reader
 This document targets developers, QA engineers, and automated test runners.
 
 ## Prerequisites
-Set up backend environment variables and start PostgreSQL.
+Set up backend environment variables, start PostgreSQL, and run the current migrations.
 
 ## What the System Does
-The backend provides `backend/seed_data.py`. It creates two isolated tenants and publishes one generated schedule per tenant.
+Cronos does not ship a standalone seed script.
+The application creates data through the authenticated session and through administrator actions.
+Test and E2E environments prepare their own disposable data.
 
-## Available Seed Scenarios
+## Data Creation Paths
 
-| Profile Name | Included Entities | Primary Purpose |
+| Path | Trigger | Result |
 | :--- | :--- | :--- |
-| `canonical_operational_v1` | 2 organizations, 2 admin-teachers, 2 courses, 2 classes, 2 subjects, 2 rooms | Tenant isolation and scheduler lifecycle testing |
+| Session bootstrap | First admin visit for an active organization | Local organization, membership, and account rows |
+| Foundation completion | Admin completes the wizard | Operational school configuration and `COMPLETED` status |
+| Bulk CSV import | Admin uses `/imports` | Rooms, subjects, courses, classes, teachers, and assignments |
+| E2E preparation | `prepare_e2e_clerk_state.py` | A disposable organization with legal acceptance and a default foundation |
+| Test reset | `reset_test_data.py` | Deleted scheduler test targets on a test database |
 
-## Seed Identities
+## Session Bootstrap
+The frontend calls `POST /api/v1/session/bootstrap` with an active Clerk organization.
+`SessionBootstrapService` requires an administrator role in the Clerk token.
+The service reconciles the local organization, account, and membership from Clerk claims and directory data.
+It returns the organization, the current member, and the foundation status.
+The frontend then reads `GET /api/v1/members/me` for the current member.
+The bootstrap reconciles existing rows and is safe to repeat.
 
-| Role | Email Address | Password | Organization |
-| :--- | :--- | :--- | :--- |
-| **Admin and Teacher** | `admin.operacional.a@seed.pt` | None | Escola Piloto Operacional A |
-| **Admin and Teacher** | `admin.operacional.b@seed.pt` | None | Escola Piloto Operacional B |
+## Foundation Draft and Completion
+The foundation wizard uses `GET /api/v1/foundation/draft`, `PUT /api/v1/foundation/draft`, and `POST /api/v1/foundation/complete`.
+`FOUNDATION_STEP_COUNT` is 10 in `frontend/src/features/foundation/foundationModel.js`.
+The draft stores a version. A stale version causes a conflict state.
+Completion sets the organization foundation status to `COMPLETED`.
+Completion invalidates the foundation, member, dashboard, and readiness queries.
 
-The seed creates local account rows and synthetic Clerk identifiers. It does not create Clerk passwords or interactive login users.
+## Bulk CSV Import
+Administrators add data through `/imports`.
+The backend renders the templates and validates the files.
+See [Administrative CSV import](BULK_IMPORT_CSV.md) for the templates and endpoints.
 
-## Seed Execution Command
-Execute the seed script using Python:
+## Test and E2E Data Preparation
+`backend/scripts/prepare_e2e_clerk_state.py` prepares the shared E2E organization.
+It creates the Clerk-linked accounts and memberships.
+It also seeds current legal acceptance and a default foundation through `FoundationService`.
+The CI workflow and the local test runner invoke this script before E2E execution.
 
 ```bash
 cd backend
-python seed_data.py
+python scripts/prepare_e2e_clerk_state.py
 ```
 
-The command is idempotent. It prints a signature containing the profile, reference date, counts, and active stable keys.
+`backend/scripts/reset_test_data.py` deletes named scheduler test targets.
+The command refuses any database that is not an owned test database.
+It deletes children before parents and never contacts an external provider.
+
+```bash
+cd backend
+python -m scripts.reset_test_data --database-url <test-url> --target scheduler-v1
+```
 
 ## Contracts and Invariants
-- Seeding scripts must generate valid foreign key relationships and set mandatory `organization_id` values.
-- Each seed tenant receives its own `organization_id` and forced RLS context.
-- The seed uses the canonical generation and approval services.
-- Repeated execution preserves the same signature and does not duplicate active blocks.
+- No source file named `seed_data.py` exists.
+- Bootstrap requires an active organization and an administrator token role.
+- Each organization receives its own `organization_id` and forced RLS context.
+- Foundation completion requires the current draft version.
+- The bulk import commit is atomic. A failure prevents partial writes.
+- Test preparation scripts are idempotent and never contact external providers, except the Clerk directory for E2E state.
 
 ## Failure Modes
-- Database Not Migrated: Running the seed without current migrations raises schema or security-function errors.
-- No Valid Schedule: The seed raises an error if canonical generation produces no draft.
+- Missing Clerk configuration blocks bootstrap.
+- A stale foundation draft version raises a conflict.
+- A database without current migrations raises schema or security-function errors.
+- The reset command raises an error for a non-test database.
 
 ## Verification Procedure
-Run `pytest tests/test_operational_seed.py -v`. Then run `python -m scripts.audit_database_integrity`.
+Run the focused backend tests for bootstrap, foundation, and imports.
+Then run `pytest backend/tests/integration/committed/test_prepare_e2e_clerk_state.py -v`.
 
 ## Source Map
-- Seed Runner: `backend/seed_data.py`
-- Seed Service: `backend/app/services/operational_seed_service.py`
+- Session bootstrap: `backend/app/services/session_bootstrap_service.py`
+- Foundation service: `backend/app/services/foundation_service.py`
+- E2E state service: `backend/app/services/e2e_clerk_state.py`
+- E2E preparation script: `backend/scripts/prepare_e2e_clerk_state.py`
+- Test reset script: `backend/scripts/reset_test_data.py`
+- Bulk import policy: `backend/app/services/bulk_import_policy.py`
+- Bulk import service: `backend/app/services/bulk_import_service.py`
 
 ## Related Documents
 - [Local Runtime](../09_ops_observability/LOCAL_RUNTIME.md)

@@ -38,7 +38,7 @@ The local tutorial lets users learn the product without mutating the tenant.
 | Foundation validation and persistence | Foundation wizard, Foundation service, organization tables |
 | Tutorial simulation | Tutorial reducer, scenario, expiring local storage, and API boundary |
 | Readiness and dashboard mode | Readiness service and dashboard service |
-| Route access | React route guards and FastAPI actor dependencies |
+| Route access | `MemberGate` React route guards and FastAPI actor dependencies |
 
 ## Data or Request Flow
 
@@ -54,6 +54,7 @@ Cronos uses four separate milestones:
 4. The school configures the operational bases and approves the first real schedule.
 
 Foundation completion is required before normal authenticated features become available.
+`MemberGate` enforces legal acceptance first and the Foundation gate second for normal authenticated routes.
 The tutorial is optional and does not replace Foundation or create operational data.
 
 ## States and Transitions
@@ -64,7 +65,7 @@ Do not interpret a loading screen as a missing permission.
 | Condition | Destination | Reason |
 | :--- | :--- | :--- |
 | User is signed out | `/login` | Authentication is required. |
-| User has a pending Clerk organization task | `/register/tasks/choose-organization` | The user must create or select an organization. |
+| User has a pending Clerk organization task | `/login/tasks/choose-organization` | The user must create or select an organization. |
 | User has no organization or membership after the task | Organization selector or Foundation route guard | The gate waits for the active organization and bootstraps it. |
 | User has memberships but no active organization | Organization selector | The user must choose the tenant context. |
 | Active organization, administrator, Foundation incomplete | `/foundation` | The administrator can complete the required setup. |
@@ -138,19 +139,20 @@ The Foundation has three states:
 The Foundation administrator can open the draft before completion.
 Other members see `/foundation/waiting` until an administrator completes it.
 
-### Nine wizard steps
+### Ten wizard steps
 
-The wizard uses nine ordered steps:
+The wizard uses ten ordered steps:
 
-1. **Period** — set `school_start_date` and `school_hard_end_date`.
+1. **Period** — set `school_start_date`, `school_hard_end_date`, and `repair_stability_window_days`.
 2. **Days** — select one or more `days_of_week` values from `0` to `6`.
 3. **Opening** — set `opening_time` and `closing_time`.
 4. **Slot duration** — set `slot_duration_minutes` from `15` to `120`.
-5. **Break duration** — set `break_duration_minutes` from `0` to `60`.
+5. **Break duration** — set `break_duration_minutes` from `0` to `60` and optional break overrides.
 6. **Lunch** — set lunch start, end, and minimum duration.
 7. **Preview** — inspect the calculated grid.
-8. **Calendar** — confirm the calendar period and available days.
-9. **Confirmation** — confirm the complete snapshot.
+8. **Calendar** — confirm the calendar period, available days, and automatic holidays.
+9. **Internship** — add optional internship flows with a name, a start date, and an end date.
+10. **Confirmation** — confirm the complete snapshot.
 
 The backend rejects an incomplete snapshot.
 It also rejects duplicate or empty weekdays, an end time before the opening time, invalid lunch intervals, and a grid that cannot contain one slot.

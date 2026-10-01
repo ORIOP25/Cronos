@@ -15,14 +15,14 @@ Do not treat this document as proof that an external dashboard is configured.
 
 ## What the System Does
 
-The repository defines one API service, one worker, one Beat service, and one database bootstrap job for Railway.
+The repository defines one API service, one worker, one supervisor, one Beat service, and one database bootstrap job for Railway.
 The frontend builds from `frontend/` and produces `frontend/dist`.
-The build emits `index.html`, `vantagens.html`, `como-funciona.html`, `sobre.html`, `ajuda.html`, `contacto.html`, and `cookies.html`.
+The build emits `index.html`, `app-shell.html`, one marketing HTML file per route, and the `_worker.js` edge handler.
 
 ## Why the Behavior Exists
 
 The API applies migrations before startup.
-The worker and Beat reuse the backend image with separate commands.
+The worker, supervisor, and Beat reuse the backend image with separate commands.
 The bootstrap job creates restricted roles before runtime deployment.
 
 ## Components and Ownership
@@ -32,7 +32,7 @@ The bootstrap job creates restricted roles before runtime deployment.
 | API | `backend/railway/api.json` | Alembic pre-deploy, Uvicorn, readiness healthcheck |
 | Worker | `backend/railway/worker.json` | Celery scheduler solver worker, concurrency one |
 | Supervisor | `backend/railway/supervisor.json` | Celery recovery supervisor on the `scheduler-supervisor` queue |
-| Beat | `backend/railway/beat.json` | One replica with reconciliation, maintenance, and stale-job recovery |
+| Beat | `backend/railway/beat.json` | One replica with reconciliation, maintenance, and supervisor dispatch |
 | Bootstrap | `backend/railway/bootstrap.json` | `python -m app.ops.provision_database` |
 | Frontend | `frontend/Dockerfile` or Pages project | Vite build output `dist` |
 
@@ -56,8 +56,8 @@ Use root directory `/backend` and `backend/railway/api.json`.
 Set `DATABASE_POOLING_ENABLED=true` and `PORT=8000`.
 Use the `cronos_app` URL for runtime access.
 Use the `cronos_migrator` URL for migrations.
-The API publishes `scheduler.run_generation_job` through `celery_app.send_task`.
-Do not import `app.scheduler_worker` in the API process.
+The API publishes `scheduler.v1.run_next_job` through `celery_app.send_task`.
+Do not import `app.scheduler_v1_worker` in the API process.
 
 ### Railway worker and Beat
 
@@ -65,7 +65,8 @@ Use root directory `/backend` and their matching JSON files.
 Set `DATABASE_POOLING_ENABLED=false`.
 Use private PostgreSQL and Redis URLs.
 Run one worker and one Beat replica.
-The worker command includes `--include=app.scheduler_worker`; this process owns the scheduler task and OR-Tools imports.
+The worker command includes `--include=app.scheduler_v1_worker`; this process owns the scheduler task and OR-Tools imports.
+The supervisor command includes `--include=app.scheduler_recovery_worker` and consumes only the `scheduler-supervisor` queue.
 
 ### Database bootstrap
 
@@ -78,9 +79,18 @@ Run it twice to verify idempotency.
 Build from `frontend` with `npm ci && npm run build`.
 Publish `dist`.
 Set `VITE_API_BASE_URL`, `VITE_CLERK_PUBLISHABLE_KEY`, and `VITE_TURNSTILE_SITE_KEY` as public build variables.
-Nginx resolves public deep links with `try_files $uri $uri.html $uri/ /index.html`.
-Cloudflare Pages uses `public/_redirects` for the nine public route HTML files.
+Nginx serves public routes with `try_files $uri $uri.html =404` and application routes with `app-shell.html`.
+Cloudflare Pages uses `public/_worker.js` to route public, application, and static paths.
 Test every client route on the hosting provider before domain cutover.
+
+### Secrets and environment
+
+Set these names in the provider secret store. Never store them in Git.
+Runtime: `DATABASE_URL`, `REDIS_URL`, `CELERY_BROKER_URL`, `CLERK_SECRET_KEY`,
+`CLERK_WEBHOOK_SECRET`, `RESEND_API_KEY`, `TURNSTILE_SECRET_KEY`, and
+`TRUSTED_PROXY_IPS`.
+Migrations: `MIGRATION_DATABASE_URL`.
+Release identity: `RAILWAY_GIT_COMMIT_SHA` or `DEPLOYED_REVISION`.
 
 ### Scheduler v1 baseline reset
 
@@ -100,7 +110,7 @@ Never run this cycle after real school data exists. Confirm that no generation j
 - Keep Redis private.
 - Keep one Beat replica.
 - Keep exactly one solver worker with concurrency `1` during the initial rollout.
-- Keep `SCHEDULER_V1_NUM_WORKERS` at `2` on the solver worker. This sets the CP-SAT search workers, not the Celery concurrency.
+- `SCHEDULER_V1_NUM_WORKERS` sets the CP-SAT search workers, not the Celery concurrency. Confirm the intended provider value before rollout.
 - Run exactly one `scheduler-supervisor` replica on the `scheduler-supervisor` queue.
 - Expose and verify the intended SHA on API and readiness health responses.
 - Do not run automatic database downgrades during rollback.
@@ -126,25 +136,30 @@ downgrade the additive database migration during rollback.
 ## Verification Procedure
 
 1. Check API `/health/live` and `/health/ready`.
-2. Confirm worker registration for `scheduler.run_generation_job`.
-3. Confirm Beat schedules `members.run_scheduled_reconciliation`, `privacy.run_maintenance`, and `scheduler.run_stale_job_recovery`.
-4. Check that API, worker, Beat, frontend, and migration reference the intended SHA.
+2. Confirm the migration chain head is `0017_active_course_abbreviations`.
+3. Confirm worker registration for `scheduler.v1.run_next_job`.
+4. Confirm Beat schedules `members.run_scheduled_reconciliation`, `privacy.run_maintenance`, and `scheduler.v1.supervise`.
+5. Check that API, worker, Beat, frontend, and migration reference the intended SHA.
    If queued jobs are old, treat that as an operational signal and verify the
    broker/dispatcher and worker on the same SHA; queued age alone does not
    justify failing a job.
-5. Test contact delivery, authentication, invitations, schedule approval, occurrence decisions, and timesheets.
-6. Test `/`, `/login`, `/register`, `/dashboard`, `/schedules`, `/my-schedules`, `/absences`, and `/cookies` after refresh.
-7. Record deployment IDs, backup IDs, restore evidence, and the previous rollback target.
+6. Test contact delivery, authentication, invitations, schedule approval, occurrence decisions, and timesheets.
+7. Test `/`, `/login`, `/register`, `/dashboard`, `/schedules`, `/my-schedules`, `/absences`, and `/cookies` after refresh.
+8. Record deployment IDs, backup IDs, restore evidence, and the previous rollback target.
 
 ## Source Map
 
 - `backend/railway/api.json`
 - `backend/railway/worker.json`
+- `backend/railway/supervisor.json`
 - `backend/railway/beat.json`
 - `backend/railway/bootstrap.json`
 - `backend/app/ops/provision_database.py`
+- `backend/app/main.py`
+- `backend/app/api/v1/endpoints/health.py`
 - `frontend/Dockerfile`
 - `frontend/nginx.conf`
+- `frontend/public/_worker.js`
 - `frontend/public/_headers`
 - `.env.example`, `backend/.env.example`
 

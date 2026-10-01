@@ -5,10 +5,11 @@ React 19 single-page application (SPA) for Cronos, built with Vite 8.
 ## Technology Stack
 - React 19
 - Vite 8
-- React Router
+- React Router 7 (`react-router-dom`)
 - Clerk Authentication (`@clerk/react`)
 - CoreUI
 - TanStack React Query (`@tanstack/react-query`)
+- Axios
 - Vitest
 - Playwright E2E
 
@@ -21,7 +22,7 @@ npm install
 # Start local dev server
 npm run dev
 
-# Build production bundle
+# Build production bundle and pre-render marketing HTML pages
 npm run build
 
 # Run Vitest unit tests
@@ -44,51 +45,54 @@ npm run verify
 
 # Check production-only source rules
 npm run audit:production
-
-# Check school configuration stability
 ```
 
-## Public Marketing Site
-The public marketing landing page resides in:
-- Page Assembler: `src/pages/MarketingSite.jsx`
-- Section Components: `src/components/marketing/` (`TestimonialsMarquee.jsx`, `ContactQuestionnaire.jsx`, etc.)
-- Static Data: `src/data/marketingData.js`
-- Styles: `src/pages/MarketingSite.css`
-- Optimized WebP Graphics: `public/marketing/*.webp`
+`npm run build` runs `vite build` and `node scripts/build-marketing-pages.mjs`.
+`npm run verify` runs lint, both Knip checks, the legal contract check, the marketing build test, the edge worker test, the marketing asset check, coverage, and the build.
 
-Marketing site CSS classes use the `cronos-*` namespace to isolate styles from authenticated application pages. Continuous animations use GPU hardware layer promotion (`translate3d`). Below-the-fold sections use `content-visibility: auto`.
+## Public Marketing Site
+The public marketing site resides in `src/features/marketing/`:
+- Layout: `src/features/marketing/components/layout/MarketingLayout.jsx`
+- Sections: `src/features/marketing/components/`
+- Content and metadata: `src/features/marketing/content/`
+- Page components: `src/pages/marketing/`
+- Styles: `src/features/marketing/styles/` and `src/pages/MarketingSite.css`
+- Optimized WebP graphics: `public/marketing/*.webp`
+
+Marketing pages render on the client and as build-time static HTML.
+The build renders one HTML file per route in `src/features/marketing/content/metadata.js`.
+Marketing CSS classes use the `cronos-*` namespace to isolate styles from authenticated application pages. Continuous animations use GPU hardware layer promotion (`translate3d`). Below-the-fold sections use `content-visibility: auto`.
 
 ## Route Summary Table
 
 | Path | View Component | Access Requirement |
 | :--- | :--- | :--- |
-| `/` | `MarketingSite.jsx` | Public |
+| `/` | `pages/marketing/HomePage.jsx` | Public |
+| `/vantagens`, `/como-funciona`, `/ajuda` | `VantagensPage.jsx`, `HowItWorksPage.jsx`, `HelpPage.jsx` | Public |
+| `/sobre`, `/about` | `pages/marketing/AboutPage.jsx` | Public |
+| `/contacto`, `/contact` | `pages/marketing/ContactPage.jsx` | Public |
 | `/login/*` | `SignInPage.jsx` | Public |
 | `/register/*` | `SignUpPage.jsx` | Public |
 | `/recuperar-palavra-passe` | `ForgotPasswordPage.jsx` | Public |
+| `/foundation/waiting` | `FoundationWaiting.jsx` | Signed in |
 | `/foundation` | `Foundation.jsx` | Foundation admin |
-| `/dashboard` | `Dashboard.jsx` | Authenticated |
-| `/schedules` | `Schedules.jsx` | Authenticated |
+| `/guide` | `Guide.jsx` | Foundation admin |
+| `/dashboard`, `/schedules`, `/rooms`, `/subjects`, `/config`, `/imports` | `Dashboard.jsx`, `Schedules.jsx`, `Rooms.jsx`, `Subjects.jsx`, `SchoolConfig.jsx`, `BulkImport.jsx` | Admin |
 | `/members` | `Members.jsx` | Admin (`Equipa`) |
-| `/config` | `SchoolConfig.jsx` | Admin |
-| `/my-availability` | `MyAvailability.jsx` | Teacher |
-| `/my-schedules` | `MySchedules.jsx` | Teacher |
-| `/my-progress` | `MyProgress.jsx` | Teacher |
-| `/absences` | `Occurrences.jsx` | Admin |
-| `/timesheets` | `Timesheets.jsx` | Admin |
-| `/rooms` | `Rooms.jsx` | Admin |
-| `/subjects` | `Subjects.jsx` | Admin |
-| `/courses/:id` | `CourseDetails.jsx` | Admin |
+| `/absences`, `/timesheets` | `Occurrences.jsx`, `Timesheets.jsx` | Admin |
+| `/courses`, `/courses/:id` | `Courses.jsx`, `CourseDetails.jsx` | Admin |
 | `/courses/:courseId/classes/:classId` | `ClassDetails.jsx` | Admin |
 | `/courses/:courseId/classes/:classId/subjects` | `ClassSubjects.jsx` | Admin |
+| `/my-availability`, `/my-schedules`, `/my-progress` | `MyAvailability.jsx`, `MySchedules.jsx`, `MyProgress.jsx` | Teacher |
 | `/sign-in/*`, `/sign-up/*` | Redirects | Public |
 
 ## Visual Baseline Generation
-Visual snapshot reference graphics reside in `documentation/06_frontend_ux/visual-baselines/`. CSS coverage is an explicit opt-in measurement and writes its report to the Phase 2 evidence directory:
+Visual snapshot reference graphics reside in `documentation/06_frontend_ux/visual-baselines/`. CSS coverage is an explicit opt-in measurement and writes its report to `documentation/08_security_quality/loc-phase-2-evidence/`:
 
 ```bash
 CSS_COVERAGE_ENABLED=1 node scripts/capture-css-coverage.mjs http://127.0.0.1:4173
 ```
 
 The runtime image serves the compiled SPA with Nginx.
-Nginx proxies `/api/` to the backend and falls back to `index.html` for client routes.
+Nginx proxies `/api/` to the backend.
+Nginx serves pre-rendered marketing pages with `try_files $uri $uri.html =404` and application routes from `app-shell.html`.

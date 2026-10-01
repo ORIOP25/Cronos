@@ -41,22 +41,29 @@ Stable route families keep frontend features and provider webhooks independent f
 
 ## Endpoint Inventory
 
-`Public` routes do not require a membership. `Active` routes require active access.
-`Admin` routes require the `admin` capability. `Teacher` routes also require a linked teacher profile.
+`Public` routes do not require a membership.
+`Signed in` routes require a Clerk session and an active organization membership.
+`Active` routes also require accepted legal documents and a `COMPLETED` Foundation.
+`Admin` routes require the `admin` capability.
+`Teacher` routes also require a linked teacher profile.
+`Foundation admin` routes require the `admin` capability but not a completed Foundation.
 
-### Public, health, session, and Foundation
+### Public, health, session, Foundation, and legal
 
 | Method | Route | Access |
 | :--- | :--- | :--- |
 | `GET` | `/health/live` | Public |
 | `GET` | `/health/ready` | Public; returns `503` when dependencies fail |
-| `GET` | `/api/v1/health` | Public |
-| `POST` | `/api/v1/contact` | Public; Turnstile and rate limits |
+| `GET` | `/api/v1/health` | Public; rate-limit exempt |
+| `POST` | `/api/v1/contact` | Public; Turnstile; body limit 16 KiB |
+| `POST` | `/api/v1/client-errors` | Public; body limit 4 KiB |
 | `POST` | `/api/v1/session/bootstrap` | Signed in |
 | `GET` | `/api/v1/foundation/status` | Signed in |
 | `GET` | `/api/v1/foundation/draft` | Foundation admin |
 | `PUT` | `/api/v1/foundation/draft` | Foundation admin |
 | `POST` | `/api/v1/foundation/complete` | Foundation admin |
+| `GET` | `/api/v1/legal/status` | Signed in |
+| `POST` | `/api/v1/legal/acceptance` | Legal admin |
 
 ### Dashboard, analytics, and catalog
 
@@ -88,14 +95,15 @@ Stable route families keep frontend features and provider webhooks independent f
 | `GET` / `POST` | `/api/v1/rooms/` | Active / Admin |
 | `PATCH` / `DELETE` | `/api/v1/rooms/{room_id}` | Admin |
 | `GET` | `/api/v1/timeslots/` | Active |
+| `GET` | `/api/v1/timeslots/range` | Active |
 
 ### Members and teachers
 
 | Method | Route | Access |
 | :--- | :--- | :--- |
 | `GET` | `/api/v1/members/` and `/api/v1/members` | Admin |
-| `GET` | `/api/v1/members/me` | Active |
-| `POST` | `/api/v1/members/` and `/api/v1/members` | Admin |
+| `GET` | `/api/v1/members/me` | Signed in |
+| `POST` | `/api/v1/members/` and `/api/v1/members` | Admin; returns `201` |
 | `GET` | `/api/v1/members/{member_id}` | Admin |
 | `PATCH` | `/api/v1/members/{member_id}` | Admin |
 | `POST` | `/api/v1/members/{member_id}/remove` | Admin |
@@ -104,7 +112,8 @@ Stable route families keep frontend features and provider webhooks independent f
 | `POST` | `/api/v1/members/{member_id}/restore` | Admin |
 | `GET` | `/api/v1/teachers/` | Admin |
 | `GET` | `/api/v1/teachers/me/availability` | Teacher |
-| `POST` | `/api/v1/teachers/{teacher_id}/availability` | Active; self or admin |
+| `PUT` | `/api/v1/teachers/me/availability` | Teacher; rate limit `30/minute` |
+| `GET` | `/api/v1/teachers/{teacher_id}/availability` | Active; self or admin |
 | `GET` | `/api/v1/teachers/me/progress` | Teacher |
 | `GET` | `/api/v1/teachers/observability/summary` | Admin |
 
@@ -127,36 +136,43 @@ See [Bulk Import CSV](../07_data_and_seed/BULK_IMPORT_CSV.md) for the exact temp
 | `POST` | `/api/v1/school/settings/sync-holidays` | Admin |
 | `GET` / `POST` | `/api/v1/school/grid-settings/` | Admin |
 | `POST` | `/api/v1/school/grid-settings/regenerate` | Admin |
-| `GET` / `POST` | `/api/v1/school/calendar-events/` | Active / Admin |
+| `GET` | `/api/v1/school/grid-configuration/` | Admin |
+| `POST` | `/api/v1/school/grid-changes/preview` | Admin |
+| `POST` | `/api/v1/school/grid-changes` | Admin |
+| `GET` | `/api/v1/school/grid-changes/pending` | Admin |
+| `GET` | `/api/v1/school/calendar-events/` | Active |
+| `POST` | `/api/v1/school/calendar-events/preview` | Admin |
+| `POST` | `/api/v1/school/calendar-events/` | Admin |
+| `PUT` | `/api/v1/school/calendar-events/{event_id}` | Admin |
 | `DELETE` | `/api/v1/school/calendar-events/{event_id}` | Admin |
 
 ### Scheduler and schedule operations
 
 | Method | Route | Access |
 | :--- | :--- | :--- |
-| `POST` | `/api/v1/scheduler/generate` | Admin |
+| `POST` | `/api/v1/scheduler/generate` | Admin; rate limit `5/minute`; returns `202` |
 | `GET` | `/api/v1/scheduler/status` | Active |
 | `GET` | `/api/v1/scheduler/jobs/{job_id}` | Active |
 | `POST` | `/api/v1/scheduler/jobs/{job_id}/cancel` | Admin |
 | `GET` | `/api/v1/scheduler/drafts/current` | Active |
-| `GET` | `/api/v1/scheduler/drafts/{draft_id}` | Active |
-| `GET` | `/api/v1/scheduler/drafts/{draft_id}/diff` | Active |
-| `POST` | `/api/v1/scheduler/drafts/{draft_id}/approve` | Admin |
-| `POST` | `/api/v1/scheduler/drafts/{draft_id}/reject` | Admin |
-| `POST` | `/api/v1/scheduler/reset-year` | Admin |
-| `GET` / `POST` | `/api/v1/schedule/constraints/` | Active / Admin |
+| `GET` | `/api/v1/scheduler/drafts/{proposal_id}/diff` | Active |
+| `POST` | `/api/v1/scheduler/drafts/{proposal_id}/approve` | Admin |
+| `POST` | `/api/v1/scheduler/drafts/{proposal_id}/reject` | Admin |
+| `POST` | `/api/v1/schedule/constraints/` | Admin |
+| `GET` | `/api/v1/schedule/constraints/` | Active |
 | `DELETE` | `/api/v1/schedule/constraints/{constraint_id}` | Admin |
-| `GET` | `/api/v1/schedule/week` | Active; teacher scope is restricted |
-| `GET` | `/api/v1/schedule/me/horizon` | Teacher |
+| `DELETE` | `/api/v1/schedule/reset` | Admin |
+| `GET` | `/api/v1/schedule/week` | Active; teacher scope is restricted; rate limit `60/minute;600/hour` |
+| `GET` | `/api/v1/schedule/me/horizon` | Teacher; rate limit `300/hour` |
 | `PUT` | `/api/v1/schedule/active-blocks/{id}/log` | Active; assigned teacher or admin |
 | `PUT` | `/api/v1/schedule/operational-blocks/{id}/log` | Active; assigned teacher or admin |
-| `DELETE` | `/api/v1/schedule/reset` | Admin |
+| `PUT` | `/api/v1/schedule/lessons/{lesson_id}/log` | Active; assigned teacher or admin |
 
 ### Occurrences, timesheets, and webhooks
 
 | Method | Route | Access |
 | :--- | :--- | :--- |
-| `GET` / `POST` | `/api/v1/occurrences/` | Admin |
+| `GET` / `POST` | `/api/v1/occurrences/` | Admin; create returns `201` or `200` on reuse |
 | `GET` | `/api/v1/occurrences/{occurrence_id}` | Admin |
 | `PATCH` | `/api/v1/occurrences/{occurrence_id}` | Admin |
 | `POST` | `/api/v1/occurrences/{occurrence_id}/cancel` | Admin |
@@ -169,7 +185,7 @@ See [Bulk Import CSV](../07_data_and_seed/BULK_IMPORT_CSV.md) for the exact temp
 | `POST` | `/api/v1/timesheets/me/{week_start_date}/submit` | Teacher |
 | `GET` | `/api/v1/timesheets/{timesheet_id}/pending-occurrences` | Admin |
 | `PATCH` | `/api/v1/timesheets/{timesheet_id}/status` | Admin |
-| `POST` | `/api/v1/webhooks/clerk` | Public; Svix signature required |
+| `POST` | `/api/v1/webhooks/clerk` | Public; Svix signature required; body limit 256 KiB |
 
 ## Onboarding API Contract
 
@@ -194,7 +210,7 @@ order: `ACTIVE_CLASSES`, `MODULES`, `TEACHERS`, `TEACHER_ASSIGNMENT`,
 are not public readiness steps. Foundation owns the weekly grid and final
 prevalidation continues to report `MISSING_TIMESLOTS` when it is absent.
 
-`PUT /foundation/draft` accepts `expected_version`, `current_step` from 1 to 9, and a strict Foundation data object.
+`PUT /foundation/draft` accepts `expected_version`, `current_step` from 1 to 10, and a strict Foundation data object.
 The response returns the new version.
 `POST /foundation/complete` accepts the expected version and `confirmed: true`.
 It returns `COMPLETED`, the completion timestamp, and the generated timeslot count.
@@ -234,6 +250,38 @@ free-text `reason` field. Clients that still send it receive `422`; this is an
 intentional incompatible contract change. Consumers must remove the field
 before rollout.
 
+### Rate limits
+
+SlowAPI enforces a default of `200 per day` and `50 per hour` per client.
+The fail-closed middleware returns `503 RATE_LIMIT_UNAVAILABLE` when Redis
+storage fails. Endpoint-specific limits are:
+
+| Route | Limit |
+| :--- | :--- |
+| `POST /api/v1/contact` | `20/day` and `5/hour` |
+| `POST /api/v1/client-errors` | `5/minute` |
+| `PUT /api/v1/teachers/me/availability` | `30/minute` |
+| `POST /api/v1/scheduler/generate` | `5/minute` |
+| `GET /api/v1/schedule/week` | `60/minute` and `600/hour` |
+| `GET /api/v1/schedule/me/horizon` | `300/hour` |
+
+`GET /api/v1/health` is rate-limit exempt.
+
+### Request body limits
+
+`RequestBodyLimitMiddleware` bounds the body before parsing. The default limit is
+`1 MiB`. Route overrides are:
+
+| Route | Limit |
+| :--- | :--- |
+| `POST /api/v1/contact` | `16 KiB` |
+| `POST /api/v1/webhooks/clerk` | `256 KiB` |
+| `POST /api/v1/client-errors` | `4 KiB` |
+| `POST /api/v1/imports/validate` | `8 MiB` |
+| `POST /api/v1/imports/commit` | `8 MiB` |
+
+A body over its limit returns `413 request_body_too_large`.
+
 ## States and Transitions
 
 Route-specific state values are defined by `backend/app/models.py` and `backend/app/schemas.py`.
@@ -249,7 +297,7 @@ Do not infer state names from UI labels.
 - `413`: protected body exceeds its route limit.
 - `422`: invalid JSON or Pydantic payload.
 - `429`: rate limit exceeded.
-- `503`: provider or dependency unavailable.
+- `503`: provider, dependency, or rate-limit storage unavailable.
 
 ## Verification Procedure
 

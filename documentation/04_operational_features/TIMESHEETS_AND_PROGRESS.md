@@ -30,7 +30,7 @@ Ledger entries preserve idempotent evidence for progress and recovery.
 | :--- | :--- |
 | Timesheet API | `backend/app/api/v1/endpoints/timesheets.py` |
 | Timesheet service | `backend/app/services/timesheet_service.py` |
-| Progress service | `backend/app/services/teacher_service.py`, `class_service.py` |
+| Progress services | `backend/app/services/teacher_service.py`, `class_service.py`, `backend/app/scheduler/infrastructure/progress.py` |
 | Ledger model | `backend/app/models.py` (`ProgressLedgerEntry`) |
 | UI | `frontend/src/pages/Timesheets.jsx`, `MyProgress.jsx` |
 
@@ -82,7 +82,7 @@ The selected weekly admin view uses the active teacher roster. It includes teach
 - `backend/app/models.py`
 - `frontend/src/pages/Timesheets.jsx`
 - `frontend/src/pages/MyProgress.jsx`
-- Tests: `backend/tests/test_module_progress.py`, `frontend/src/test/weekSubmission.test.js`
+- Tests: `backend/tests/integration/committed/test_module_progress.py`, `backend/tests/integration/committed/test_timesheets.py`, `backend/tests/integration/committed/test_timesheets_v1.py`, `frontend/src/test/weekSubmission.test.js`
 
 ## Related Documents
 

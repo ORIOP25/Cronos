@@ -14,9 +14,11 @@ Read [Local Runtime](LOCAL_RUNTIME.md) and [Testing and CI](../08_security_quali
 
 ## What the System Does
 
-The API exposes liveness and readiness.
+The API exposes liveness, readiness, and a public API health route.
 The backend emits structured logs. It does not send request data to an external error tracker.
-Scheduler, occurrence, and teacher endpoints store operational telemetry.
+It writes colored console logs locally and JSON logs in every other environment.
+A request-id context variable binds each log line to the `X-Request-ID` response header.
+Scheduler, occurrence, and teacher services store operational telemetry.
 
 The `rgpd-cookies` rollout removes Sentry request telemetry. Production
 rollout requires an operator approval that platform logs and alerts cover the
@@ -34,24 +36,35 @@ Persisted event summaries support tenant-scoped operational review without loggi
 | :--- | :--- |
 | Liveness | `backend/app/main.py` (`/health/live`) |
 | Readiness | `backend/app/main.py`, `backend/app/api/v1/endpoints/health.py` |
+| Public API health | `backend/app/api/v1/endpoints/health.py` (`/health`) |
 | Structured logging | `backend/app/core/logging.py` |
-| Scheduler telemetry | `backend/app/services/scheduler_observability.py` |
-| Occurrence telemetry | `backend/app/models.py`, `occurrence_service.py` |
+| Request identity | `backend/app/main.py` (`X-Request-ID` context variable) |
+| Scheduler diagnostics | `backend/app/scheduler/infrastructure/diagnostics.py`, `backend/app/scheduler_v1_worker.py` |
+| Occurrence telemetry | `backend/app/models.py`, `backend/app/services/occurrence_service.py` |
 | Teacher telemetry | `backend/app/services/teacher_observability_service.py` |
-| Integrity audits | `backend/scripts/audit_triggers.py`, `audit_database_integrity.py` |
+| Rate limiting | `backend/app/core/ratelimit.py` |
+| Integrity audits | `backend/scripts/audit_triggers.py`, `backend/scripts/audit_database_integrity.py` |
 
 ## Data or Request Flow
 
 1. A monitor calls `/health/live`.
-2. A readiness check queries PostgreSQL and Redis.
-3. Services record scheduler, occurrence, or teacher operational events.
+2. A readiness check runs PostgreSQL `SELECT 1` and a Redis ping.
+3. Scheduler phases and services record structured operational events.
 4. Operators inspect logs, job fields, and event summaries.
 5. Operators use the recovery procedure for the affected component.
 
 ## Contracts and Invariants
 
 - Liveness returns `200` when the process handles requests.
+- Liveness and readiness are rate-limit exempt.
+- Readiness returns `revision`, `postgres`, and `redis` fields.
 - Readiness returns `503` when PostgreSQL or Redis is unavailable.
+- Health access lines are filtered from the access log.
+- Scheduler diagnostics emit `scheduler_v1_phase_started`, `scheduler_v1_model_built`,
+  `scheduler_v1_phase_finished`, and `scheduler_v1_search_finished`. These events
+  include container memory and OOM metrics from `/sys/fs/cgroup`.
+- When Redis cannot enforce a limit, the API returns `503` with code
+  `RATE_LIMIT_UNAVAILABLE`.
 - Scheduler jobs expose terminal status, failure code, duration, and an opaque
   failure reference. Stored failure messages remain technical and internal.
 - Logs must not contain contact form PII or provider secrets.
@@ -111,8 +124,12 @@ back when the reference indicates a systemic failure.
 
 - `backend/app/main.py`
 - `backend/app/api/v1/endpoints/health.py`
-- `backend/app/services/scheduler_observability.py`
+- `backend/app/core/logging.py`
+- `backend/app/core/ratelimit.py`
+- `backend/app/scheduler/infrastructure/diagnostics.py`
+- `backend/app/scheduler_v1_worker.py`
 - `backend/app/services/teacher_observability_service.py`
+- `backend/app/services/occurrence_service.py`
 - `backend/scripts/audit_triggers.py`
 - `backend/scripts/audit_database_integrity.py`
 

@@ -30,7 +30,8 @@ React Query manages server state while component state handles form and view sta
 | Routes | `frontend/src/App.jsx` |
 | Auth guards | `frontend/src/routeGuards.jsx`, `roleAccess.js` |
 | API transport | `frontend/src/apiClient.js` |
-| Server state | `frontend/src/queryClient.js`, `features/*/data.js` |
+| Server state | `frontend/src/queryClient.js`, `frontend/src/features/*/data.js` |
+| Feature directories | `frontend/src/features/` |
 | Authenticated layout | `frontend/src/components/DefaultLayout.jsx` |
 | Shared application states | `frontend/src/components/FeedbackBanner.jsx`, `StatePanel.jsx` |
 | Guided forms | `frontend/src/components/GuidedFormShell.jsx`, `GuidedFormProgress.jsx` |
@@ -53,16 +54,22 @@ React Query manages server state while component state handles form and view sta
 - Mutations do not retry.
 - Queries retry at most twice for network, `408`, `429`, and `5xx` errors.
 - Teacher routes require a teacher capability and linked profile.
+- Pages and components must not import TanStack hooks or `apiClient` directly.
+  They compose feature data hooks. The ESLint configuration enforces this rule.
+- Feature data hooks live in the feature directories, for example `frontend/src/features/*/data.js`.
 - Marketing styles use the `cronos-*` namespace.
 - `metadata.js` is the single source for public route metadata.
-- The build emits `index.html` and nine public route HTML files.
-- Nginx resolves deep links with `try_files $uri $uri.html $uri/ /index.html`.
+- The build emits one HTML file for each route in `metadata.js`, plus `404.html`.
+- Marketing pages render on the client and as build-time static HTML.
+- Nginx serves pre-rendered marketing pages with `try_files $uri $uri.html =404`.
+- Nginx serves application routes from `app-shell.html`.
+- The tutorial uses `TUTORIAL_VERSION` 3 and a 13-step guide.
 
 ## States and Transitions
 
 Route guards move through loading, signed-out, organization selection, member error, or authorized states.
 Contact submission moves through questionnaire steps, pending, error, and success states.
-Foundation moves through nine validated steps, draft persistence, conflict, and completion states.
+Foundation moves through ten validated steps, draft persistence, conflict, and completion states.
 Availability keeps persisted server data separate from a local paint draft.
 
 ## Failure Modes
@@ -99,10 +106,11 @@ The onboarding path is split into independent features:
 
 - `routeGuards.jsx` waits for Clerk, the active organization, and `/members/me` before routing.
 - `useOnboardingCompletion.js` waits for the Clerk organization, bootstraps the local member, and completes legal acceptance without an intermediate route.
-- `FoundationWizard.jsx` owns the nine-step interaction, autosave queue, version conflict state, and completion navigation.
+- `FoundationWizard.jsx` owns the ten-step interaction, autosave queue, version conflict state, and completion navigation.
 - `foundationModel.js` contains pure step and validation rules.
 - `foundationData.js` owns React Query keys and invalidation.
 - `features/tutorial/` owns local scenario state, reducer transitions, normalization, expiring storage, and the API boundary.
+  It renders a 13-step guide under `TUTORIAL_VERSION` 3 and uses a mock Axios adapter.
 
 Foundation completion invalidates `foundation-status`, `foundation-draft`, `current-member`, dashboard, and readiness queries as one mutation lifecycle.
 The real dashboard passes `autoStartGuide={false}` so the post-completion destination is stable.

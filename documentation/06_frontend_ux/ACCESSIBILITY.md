@@ -31,6 +31,10 @@ The repository does not run an automated full-page WCAG audit in CI.
 | **Live feedback** | Errors alert immediately. Other feedback announces politely. | `FeedbackBanner.jsx` uses `role="alert"` or `role="status"`. |
 | **Availability grid** | Only one cell is in the normal tab order. Arrows move between available cells. | `AvailabilityGrid.jsx` uses roving `tabIndex`. |
 | **Scrollable grids** | Grid scrolling stays inside a labelled focusable region. | `WeekGrid.jsx` and `AvailabilityGrid.jsx` use contained scroll regions. |
+| **Landmarks** | Content sits in labelled semantic regions. | The layout uses `main`, `nav`, and labelled regions. |
+| **Current page** | The active breadcrumb is announced. | `Breadcrumbs.jsx` sets `aria-current="page"`. |
+| **Motion** | Reduced-motion preferences remove transitions. | `@media (prefers-reduced-motion: reduce)` in `app-components.css` and `marketing.base.css`. |
+| **Target size** | Primary controls approach 44 by 44 pixels. | Sidebar, modal, guided-form, and marketing controls use `44px` minimums. |
 
 ## Failure Modes
 - Regression Risk: CI runs component tests but no automated full-page WCAG or contrast audit.

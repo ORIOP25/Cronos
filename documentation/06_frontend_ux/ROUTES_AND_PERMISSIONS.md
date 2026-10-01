@@ -16,13 +16,20 @@ Read [Members and Access](../02_domain_model/MEMBERS_AND_ACCESS.md).
 | `/` | `pages/marketing/HomePage.jsx` | Public | Public landing page for signed-out users |
 | `/vantagens` | `pages/marketing/VantagensPage.jsx` | Public | Marketing comparison and benefits |
 | `/como-funciona` | `pages/marketing/HowItWorksPage.jsx` | Public | Marketing workflow explanation |
-| `/sobre` | `pages/marketing/AboutPage.jsx` | Public | Cronos story and founder information |
+| `/sobre`, `/about` | `pages/marketing/AboutPage.jsx` | Public | Cronos story and founder information |
 | `/ajuda` | `pages/marketing/HelpPage.jsx` | Public | Frequently asked questions |
-| `/contacto` | `pages/marketing/ContactPage.jsx` | Public | Demonstration request questionnaire |
+| `/contacto`, `/contact` | `pages/marketing/ContactPage.jsx` | Public | Demonstration request questionnaire |
+| `/privacidade`, `/privacy` | `features/legal/LegalDocumentLayout.jsx` | Public | Privacy policy document |
+| `/termos` | `features/legal/LegalDocumentLayout.jsx` | Public | Terms of service document |
+| `/dpa` | `features/legal/LegalDocumentLayout.jsx` | Public | Data processing agreement |
+| `/cookies` | `features/legal/LegalDocumentLayout.jsx` | Public | Cookies and local storage document |
 | `/login/*` | `SignInPage.jsx` | Public | Authentication sign-in view |
 | `/register/*` | `SignUpPage.jsx` | Public | Registration view |
 | `/recuperar-palavra-passe` | `ForgotPasswordPage.jsx` | Public | Password recovery view |
+| `/sign-in/*`, `/sign-up/*` | Redirect | Public | Redirect to `/login` or `/register` |
+| `/foundation/waiting` | `FoundationWaiting.jsx` | Signed in | Waiting view for non-admin members |
 | `/foundation` | `Foundation.jsx` | Foundation admin | Organization setup wizard |
+| `/guide` | `Guide.jsx` | Foundation admin | Optional tutorial guide |
 | `/dashboard` | `Dashboard.jsx` | Admin | Administrative command center |
 | `/schedules` | `Schedules.jsx` | Admin | Timetable view and solver trigger |
 | `/courses` | `Courses.jsx` | Admin | Course catalog management |
@@ -39,17 +46,21 @@ Read [Members and Access](../02_domain_model/MEMBERS_AND_ACCESS.md).
 | `/my-progress` | `MyProgress.jsx` | Teacher | Teacher assigned class progress |
 | `/config` | `SchoolConfig.jsx` | Admin | School parameters & shift settings |
 | `/imports` | `BulkImport.jsx` | Admin | Additive CSV validation and atomic commit |
+| `*` | `NotFoundPage.jsx` | Public | Not found view (404) |
 
 ## Route Guard Logic
-Routes use `<RequireAdmin>` and `<RequireTeacher>` capability guards:
+Routes use `<RequireAuth>`, `<RequireAdmin>`, `<RequireTeacher>`, and `<RequireFoundationAdmin>`:
+- `<RequireAuth>` requires a signed-in session with no pending Clerk task.
 - A member without admin capability is redirected to its default route from administrative routes.
 - A member needs the teacher capability and a linked `teacher_id` for teacher routes.
 - A member with both capabilities uses the admin default route.
+- `getDefaultRouteForMember` maps `default_mode` `admin` to `/dashboard`, `teacher` to `/my-availability`, and any other value to `/foundation`.
+- `MemberGate` checks the session, organization activation, legal gate, Foundation gate, and capability in that order.
 
 ## Contracts and Invariants
 - Signed-out users accessing protected routes are redirected to `/login`.
 - A signed-in user without an active organization sees the organization selector.
-- A pending Clerk organization task uses `/register/tasks/choose-organization` for organization selection only.
+- A pending Clerk organization task uses `/login/tasks/choose-organization` for organization selection only.
 - The route gate bootstraps the selected organization and completes current legal acceptance in the background; the destination remains `/foundation` or the member's normal route.
 - `/legal/aceitar` is not a client route.
 - Signed-in root visits use `getDefaultRouteForMember`.

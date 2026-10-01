@@ -17,9 +17,9 @@ Read the [Project Overview](../00_getting_started/PROJECT_OVERVIEW.md).
 Cronos combines a React SPA, a FastAPI API, PostgreSQL, Redis, and Celery processes.
 
 The API serves HTTP requests and publishes named Celery tasks.
-It does not import `app.scheduler_worker` or OR-Tools to dispatch a job.
+It does not import the solver or OR-Tools to dispatch a job.
 The worker executes generation and repair.
-Beat dispatches hourly member reconciliation.
+Beat dispatches member reconciliation hourly, privacy maintenance daily, and scheduler supervision every 60 seconds.
 
 ## Why the Behavior Exists
 
@@ -35,10 +35,13 @@ PostgreSQL RLS protects tenant-owned data.
 | API | `backend/app/main.py` | HTTP lifecycle, middleware, routers |
 | Domain services | `backend/app/services/` | Business rules and transactions |
 | Scheduler domain | `backend/app/scheduler/` | Solver contracts, constraints, quality |
-| Task dispatcher | `backend/app/scheduler/infrastructure/task_dispatcher.py` | Publish registered task names without loading the solver |
-| Worker | `backend/app/scheduler_worker.py` | Complete and adaptive jobs |
-| Beat | `backend/app/celery_worker.py` | Hourly reconciliation schedule |
-| Persistence | `backend/app/models.py` and `backend/alembic/` | Schema and records |
+| Task dispatcher | `backend/app/scheduler/infrastructure/task_dispatcher.py` | Publish `scheduler.v1.run_next_job` without loading the solver |
+| Worker | `backend/app/scheduler_v1_worker.py` | Global executor: complete and adaptive jobs |
+| Supervisor | `backend/app/scheduler_recovery_worker.py` | Recover abandoned attempts and wake the executor |
+| Member worker | `backend/app/member_reconciliation_worker.py` | Hourly member reconciliation |
+| Privacy worker | `backend/app/privacy_maintenance_worker.py` | Daily privacy maintenance |
+| Beat | `backend/app/celery_worker.py` | Reconciliation, privacy, and supervisor schedules |
+| Persistence | `backend/app/models.py`, `backend/app/scheduler/infrastructure/models.py`, and `backend/alembic/` | Schema and records |
 | Local runtime | `docker-compose.yml` | Containers and maintenance profiles |
 
 ## Data or Request Flow
@@ -51,10 +54,11 @@ flowchart TD
     API --> Services[Application services]
     Services --> DB[(PostgreSQL 16 + forced RLS)]
     API --> Dispatcher[Celery task dispatcher]
-    Dispatcher -->|scheduler.run_generation_job| Redis[(Redis)]
+    Dispatcher -->|scheduler.v1.run_next_job| Redis[(Redis)]
     Redis --> Worker[Celery worker]
     Worker --> Solver[OR-Tools CP-SAT]
     Worker --> DB
+    Supervisor[Scheduler supervisor] --> Redis
     Beat[Celery Beat] --> Redis
     Clerk[Clerk] -->|Svix webhook| API
 ```
@@ -63,14 +67,18 @@ flowchart TD
 2. Authenticated dependencies verify Clerk and resolve the active membership.
 3. The database dependency installs the tenant context before protected queries.
 4. Services validate domain rules and commit a transaction.
-5. The API publishes `scheduler.run_generation_job` through the lightweight dispatcher.
-6. The worker registers that task, loads OR-Tools, and runs the solve in a separate process.
+5. The API publishes `scheduler.v1.run_next_job` through the lightweight dispatcher.
+6. The global executor claims the next eligible job, loads OR-Tools, and runs the solve in a worker thread.
 
 ## Contracts and Invariants
 
 - Tenant queries use the active `organization_id` and PostgreSQL tenant context.
-- The runtime application role is `NOBYPASSRLS`.
+- The runtime application role is `cronos_app` with `NOBYPASSRLS`.
 - The migrator role is separate and uses `BYPASSRLS`.
+- The `app_security` schema holds `SECURITY DEFINER` helper functions.
+- The API mounts every route under `/api/v1`.
+- Middleware runs outermost to innermost: security headers, request context, CORS, body limit, rate limit.
+- Exception handlers return one standard error envelope with a request reference.
 - The API does not run Alembic migrations during application startup.
 - The API exposes `/health/live` and `/health/ready` outside `/api/v1`.
 
@@ -78,9 +86,9 @@ flowchart TD
 
 The main asynchronous path is:
 
-`HTTP request` -> `QUEUED job` -> `RUNNING job` -> `draft or explicit failure`.
+`HTTP request` -> `QUEUED job` -> `RUNNING job` -> `VALIDATING` -> `PENDING proposal` -> `APPROVED` or `REJECTED`.
 
-The Beat path dispatches `members.run_scheduled_reconciliation` hourly.
+The Beat path dispatches `members.run_scheduled_reconciliation` hourly, `privacy.run_maintenance` daily, and `scheduler.v1.supervise` every 60 seconds.
 
 ## Failure Modes
 
@@ -101,7 +109,8 @@ The Beat path dispatches `members.run_scheduled_reconciliation` hourly.
 - API lifecycle: `backend/app/main.py`
 - API router: `backend/app/api/api.py`
 - Tenant context: `backend/app/db/tenant.py`
-- Worker task: `backend/app/scheduler_worker.py`
+- Worker task: `backend/app/scheduler_v1_worker.py`
+- Scheduler supervisor: `backend/app/scheduler_recovery_worker.py`
 - Beat schedule: `backend/app/celery_worker.py`
 - Frontend entry: `frontend/src/main.jsx`
 - Runtime contract: `docker-compose.yml`

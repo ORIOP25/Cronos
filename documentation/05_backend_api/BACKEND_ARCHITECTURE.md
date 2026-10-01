@@ -39,10 +39,12 @@ Provider adapters isolate external HTTP calls from application services.
 
 ```mermaid
 flowchart TD
-    Request[HTTP request] --> CORS[CORS middleware]
-    CORS --> Limit[Route body limit and rate limit]
-    Limit --> Headers[Security headers]
-    Headers --> Auth[Clerk dependency]
+    Request[HTTP request] --> Headers[Security headers]
+    Headers --> Context[Request context and X-Request-ID]
+    Context --> CORS[CORS middleware]
+    CORS --> Limit[Route body limit]
+    Limit --> Rate[Fail-closed rate limit]
+    Rate --> Auth[Clerk dependency]
     Auth --> Tenant[Resolve actor and tenant context]
     Tenant --> Handler[Endpoint handler]
     Handler --> Service[Application service]
@@ -50,11 +52,12 @@ flowchart TD
     Service --> Provider[Provider adapter when required]
 ```
 
-1. FastAPI validates the request and applies route middleware.
-2. Protected dependencies verify Clerk and resolve the active actor.
-3. The database session installs tenant context.
-4. A handler calls a service and returns a schema or error.
-5. The session commits on success and rolls back on failure.
+1. The outermost server-error middleware catches unhandled exceptions.
+2. Security headers, request context, CORS, body limit, and rate limit wrap every request.
+3. Protected dependencies verify Clerk and resolve the active actor.
+4. The database session installs tenant context.
+5. A handler calls a service and returns a schema or error.
+6. The session commits on success and rolls back on failure.
 
 ## Contracts and Invariants
 
@@ -67,8 +70,9 @@ flowchart TD
 
 ## States and Transitions
 
-Application errors map to `400`, `422`, `404`, `409`, `403`, or `503` by error kind.
+Application errors map to `400`, `401`, `403`, `404`, `409`, `422`, `429`, or `503` by error kind.
 Unhandled errors log a traceback and return a safe `500` response.
+Rate-limit storage failure returns `503 RATE_LIMIT_UNAVAILABLE`.
 
 ## Failure Modes
 
@@ -92,7 +96,9 @@ Unhandled errors log a traceback and return a safe `500` response.
 - `backend/app/db/tenant.py`
 - `backend/app/scheduler/infrastructure/task_dispatcher.py`
 - `backend/app/contact/`
-- `backend/tests/test_error_handlers.py`
+- `backend/app/middleware/request_body_limit.py`
+- `backend/app/core/ratelimit.py`
+- `backend/tests/unit/test_error_handlers.py`
 
 ## Onboarding Backend Boundary
 

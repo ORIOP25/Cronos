@@ -27,7 +27,9 @@ This is the minimum operating manual for the Cronos launch. It is not legal advi
 | School data | Keep during service or until the school instructs deletion. |
 | Legal acceptance | Keep for the necessary legal evidence period. |
 
-The daily Celery task `privacy.run_maintenance` processes batches of at most 500 rows and logs counts only.
+The daily Celery task `privacy.run_maintenance` calls `PrivacyMaintenanceService` in
+`backend/app/services/privacy_maintenance_service.py`. It processes batches of at
+most 500 rows and logs counts only.
 
 ## Rights request procedure
 
@@ -46,6 +48,7 @@ python -m scripts.privacy export --organization-id <id> --output <explicit-file.
 ```
 
 The command writes one UTF-8 JSON member per relevant table, a manifest, and SHA-256 hashes. It excludes secrets, tokens, passwords, and other tenants.
+The command reads the administrative connection from `MIGRATION_DATABASE_URL`.
 
 ## Erasure
 
@@ -62,6 +65,8 @@ python -m scripts.privacy erase --organization-id <id> --confirm-clerk-org-id <c
 ```
 
 Execution suspends the organization, deletes operational tenant records in one transaction, deletes orphaned user profiles, preserves legal acceptance, and leaves a minimum tombstone. Disable the organization in Clerk through the runbook. The command prints counts, never deleted content.
+The explicit `PRIVACY_TABLES` registry classifies every tenant table. The preserved
+tables are `organization`, `organization_legal_acceptance`, and `alembic_version`.
 
 The required sequence is export first, confirmed provider deletion second, and
 the local transaction last. Execution requires both `--execute` and
@@ -80,6 +85,7 @@ the local transaction last. Execution requires both `--execute` and
 Before changing Clerk, Railway, Resend, or Cloudflare configuration, update the public supplier list, assess transfer safeguards, and review the DPA.
 
 When Terms or DPA versions change, update the backend constants and documents in the same change. The legal gate then requires fresh organization acceptance.
+The current backend versions are Terms `2026-01`, DPA `2026-01`, and Privacy `2026-01` in `backend/app/legal.py`.
 
 ## Launch checklist
 

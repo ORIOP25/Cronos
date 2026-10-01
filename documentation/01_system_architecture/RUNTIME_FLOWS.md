@@ -28,7 +28,7 @@ Explicit boundaries prevent provider adapters, authentication, and solver work f
 | :--- | :--- |
 | Authentication and tenant context | `backend/app/api/deps.py`, `backend/app/db/tenant.py` |
 | Contact request | `backend/app/api/v1/endpoints/contact.py`, `backend/app/contact/` |
-| Scheduler job | `backend/app/api/v1/endpoints/scheduler.py`, `backend/app/scheduler/infrastructure/task_dispatcher.py`, `backend/app/scheduler_worker.py` |
+| Scheduler job | `backend/app/api/v1/endpoints/scheduler.py`, `backend/app/scheduler/infrastructure/task_dispatcher.py`, `backend/app/scheduler_v1_worker.py` |
 | Clerk webhook | `backend/app/api/v1/endpoints/webhooks.py`, `backend/app/services/member_webhook_service.py` |
 
 ## Data or Request Flow
@@ -51,12 +51,12 @@ Explicit boundaries prevent provider adapters, authentication, and solver work f
 
 ### Scheduler request
 
-1. The admin endpoint selects the strategy from school-year state.
-2. The API records a `QUEUED` job.
-3. The lightweight dispatcher calls `celery_app.send_task` with `scheduler.run_generation_job`.
-4. The worker starts with `app.scheduler_worker`, registers the task, and creates an independent session and tenant context.
-5. The selected engine builds candidates and runs CP-SAT.
-6. The runtime stores a draft, diff data, and result category.
+1. The admin endpoint admits one idempotent request into the global queue.
+2. The API records a `QUEUED` scheduler v1 job.
+3. The lightweight dispatcher calls `celery_app.send_task` with `scheduler.v1.run_next_job`.
+4. The global executor acquires an advisory lock, claims the next eligible job, and creates an independent session and tenant context.
+5. The selected engine builds candidates and runs CP-SAT in a worker thread.
+6. The runtime stores a proposal with metrics, diff data, and a result category.
 
 ### Clerk webhook
 
@@ -70,7 +70,7 @@ Explicit boundaries prevent provider adapters, authentication, and solver work f
 1. Clerk supplies the authenticated subject and active organization claim.
 2. `POST /api/v1/session/bootstrap` reconciles the provider organization, membership, and local member.
 3. The route guard reads `/members/me` and `/legal/status` before it selects an authenticated route.
-4. `/register/tasks/choose-organization` collects the school name and creates or selects the organization.
+4. `/login/tasks/choose-organization` collects the school name and creates or selects the organization.
 5. The authenticated route gate completes onboarding in the background after the Clerk task completes.
 6. The gate bootstraps the member, reads legal versions, and, when required, records the organization acceptance without changing the browser route.
 7. The backend stores append-only evidence for Terms, DPA, and Privacy versions.
@@ -95,7 +95,9 @@ Foundation and normal admin/teacher routes require the current legal acceptance;
 
 Clerk webhook events use `received`, `processing`, `processed`, `ignored`, `retryable_failed`, `sync_error`, or `dead_letter`.
 
-Scheduler jobs use `QUEUED`, `RUNNING`, `CANCEL_REQUESTED`, `CANCELED`, `SUCCEEDED`, `FAILED`, or `NO_VALID_OUTPUT`.
+Scheduler v1 jobs use `QUEUED`, `RUNNING`, `VALIDATING`, `SUCCEEDED`, `CANCELLED`, `STALE`, `FAILED`, `INFEASIBLE`, or `INCONCLUSIVE`.
+
+Scheduler v1 proposals use `PENDING`, `APPROVED`, `REJECTED`, `STALE`, or `SUPERSEDED`.
 
 ## Failure Modes
 
@@ -122,7 +124,8 @@ Scheduler jobs use `QUEUED`, `RUNNING`, `CANCEL_REQUESTED`, `CANCELED`, `SUCCEED
 - `backend/app/api/v1/endpoints/webhooks.py`
 - `backend/app/scheduler/infrastructure/task_dispatcher.py`
 - `backend/app/celery_worker.py`
-- `backend/app/scheduler_worker.py`
+- `backend/app/scheduler_v1_worker.py`
+- `backend/app/scheduler_recovery_worker.py`
 
 ## Related Documents
 

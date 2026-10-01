@@ -30,11 +30,12 @@ Database policies provide a second boundary when application code or a query is 
 | Clerk verification | `backend/app/core/clerk.py`, `backend/app/api/deps.py` |
 | Actor and capability checks | `backend/app/api/deps.py` |
 | Tenant context | `backend/app/db/tenant.py` |
-| RLS policies and functions | `backend/alembic/versions/0001_initial.py` |
+| RLS policies and functions | `backend/alembic/versions/0001_scheduler_v1_baseline.py` |
 | Request body protection | `backend/app/middleware/request_body_limit.py` |
+| Rate limiting | `backend/app/core/ratelimit.py` |
 | Proxy IP policy | `backend/app/core/client_ip.py` |
 | HTTP headers and CORS | `backend/app/main.py` |
-| Webhook signature | `backend/app/api/v1/endpoints/webhooks.py` |
+| Webhook signature and idempotency | `backend/app/api/v1/endpoints/webhooks.py` |
 
 ## Data or Request Flow
 
@@ -58,10 +59,20 @@ flowchart TD
 
 - The application role is `cronos_app LOGIN NOSUPERUSER NOBYPASSRLS`.
 - The migration role is `cronos_migrator LOGIN NOSUPERUSER BYPASSRLS`.
+- The definer role is `cronos_auth_definer NOLOGIN NOSUPERUSER BYPASSRLS`.
+- Tenant tables use `ENABLE ROW LEVEL SECURITY` and `FORCE ROW LEVEL SECURITY`.
 - Tenant context uses `app.current_organization_id`.
 - Policies compare tenant rows with `app_security.current_organization_id()`.
+- Tenant context is transaction-local through `set_config(..., true)`.
 - Production requires HTTPS origins and Clerk secrets.
+- CORS allows only configured origins and denies credentials.
+- CORS permits `Authorization` and `Content-Type`, and exposes `X-Request-ID`.
+- API responses set `nosniff`, `DENY`, `no-referrer`, and `Permissions-Policy`.
+- API responses set `Cache-Control: no-store` for paths under `/api/`.
+- Request bodies default to 1 MiB, except contact at 16 KiB, Clerk webhook at 256 KiB, client errors at 4 KiB, and imports at 8 MiB.
+- Rate limiting fails closed when the Redis store is unavailable.
 - Only configured trusted proxy networks may provide client IP headers.
+- The Clerk webhook verifies `CLERK_WEBHOOK_SECRET` and keys events by Svix ID.
 
 ## States and Transitions
 
@@ -74,12 +85,13 @@ Webhook events move through received, processing, processed, ignored, retryable,
 - Invalid authorized parties return `401`.
 - Missing capability returns `403`.
 - Invalid webhook signatures return `401`.
-- Excessive contact bodies return `413`.
+- Excessive request bodies return `413`.
+- An unavailable rate limit store returns `503`.
 
 ## Verification Procedure
 
-1. Run `pytest backend/tests/test_rls_database_policies.py -v`.
-2. Run tenant isolation tests.
+1. Run `pytest backend/tests/contracts/test_rls_database_policies.py -v`.
+2. Run `pytest backend/tests/integration/committed/test_tenant_isolation_complete.py -v`.
 3. Run `python -m scripts.audit_triggers` from `backend/`.
 4. Inspect security headers in frontend and API tests.
 
@@ -87,9 +99,9 @@ Webhook events move through received, processing, processed, ignored, retryable,
 
 - `backend/app/api/deps.py`
 - `backend/app/db/tenant.py`
-- `backend/alembic/versions/0001_initial.py`
-- `backend/tests/test_rls_database_policies.py`
-- `backend/tests/test_tenant_isolation_complete.py`
+- `backend/alembic/versions/0001_scheduler_v1_baseline.py`
+- `backend/tests/contracts/test_rls_database_policies.py`
+- `backend/tests/integration/committed/test_tenant_isolation_complete.py`
 - `frontend/public/_headers`
 
 ## Onboarding Security Boundaries

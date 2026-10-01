@@ -15,9 +15,9 @@ Copy `.env.example` to `.env` and `backend/.env.example` to `backend/.env`.
 
 ## What the System Does
 
-The root Compose file runs PostgreSQL, Redis, API, worker, Beat, and the production-like Nginx SPA.
+The root Compose file runs PostgreSQL, Redis, API, worker, scheduler supervisor, Beat, and the production-like Nginx SPA.
 The development override replaces the frontend runtime with Vite hot reload.
-The API publishes the scheduler task name through Redis; the worker imports and executes the scheduler task.
+The API dispatches `scheduler.v1.run_next_job` through Redis; the worker imports and executes that task.
 
 ## Why the Behavior Exists
 
@@ -33,8 +33,9 @@ This prevents concurrent services from changing production-like schemas during s
 | `provision-db` | Maintenance profile | Create and rotate database roles |
 | `db-maintenance` | Maintenance profile | Run Alembic migrations |
 | `backend` | `127.0.0.1:8000` | FastAPI API |
-| `worker` | Internal only | Generation and repair tasks |
-| `beat` | Internal only | Hourly reconciliation dispatch |
+| `worker` | Internal only | Scheduler v1 generation tasks |
+| `scheduler-supervisor` | Internal only | Recovery-only worker on the `scheduler-supervisor` queue |
+| `beat` | Internal only | Hourly reconciliation, daily maintenance, and 60-second supervision |
 | `frontend` | `127.0.0.1:5173` | Nginx SPA and `/api/` proxy |
 
 ## Data or Request Flow
@@ -45,8 +46,9 @@ flowchart TD
     Nginx -->|/api/| API[Backend :8000]
     API --> DB[(PostgreSQL)]
     API --> Dispatcher[Named task dispatcher]
-    Dispatcher -->|scheduler.run_generation_job| Redis[(Redis)]
+    Dispatcher -->|scheduler.v1.run_next_job| Redis[(Redis)]
     Redis --> Worker[Celery worker]
+    Redis --> Supervisor[Recovery supervisor]
     Beat[Celery Beat] --> Redis
     Worker --> DB
 ```
@@ -65,13 +67,14 @@ flowchart TD
 - The API image exposes port `8000`.
 - The frontend runtime exposes host port `5173` and listens on container port `8080`.
 - The worker command uses `--max-tasks-per-child=1`.
-- The API process does not import `app.scheduler_worker` or OR-Tools.
-- The worker process includes `app.scheduler_worker` and owns solver imports.
+- The API process does not import `app.scheduler_v1_worker` or OR-Tools.
+- The worker process includes `app.scheduler_v1_worker` and owns solver imports.
+- The supervisor process includes `app.scheduler_recovery_worker` and consumes only the `scheduler-supervisor` queue.
 - Beat stores its schedule under `/tmp`.
 
 ## States and Transitions
 
-`provision-db` -> `db-maintenance` -> `backend`, `worker`, `beat`, `frontend`.
+`provision-db` -> `db-maintenance` -> `backend`, `worker`, `scheduler-supervisor`, `beat`, `frontend`.
 
 The development override changes only the frontend runtime and frontend origin.
 
@@ -97,14 +100,19 @@ The development override changes only the frontend runtime and frontend origin.
 3. Run `docker compose --profile maintenance run --rm db-maintenance`.
 4. Run `docker compose up -d --build`.
 5. Check `docker compose ps`.
-6. Query `http://127.0.0.1:8000/health/live` and `/health/ready`.
+6. Query `http://127.0.0.1:8000/health/live`, `/health/ready`, and `/api/v1/health`.
 7. Inspect registered tasks with `docker compose exec worker celery -A app.celery_worker.celery_app inspect registered`.
+
+The test stack uses `docker-compose.test.yml` under project `cronos-test`.
+`scripts/test.mjs` starts it and serves the frontend on port `5174`.
 
 ## Source Map
 
 - `docker-compose.yml`
 - `docker-compose.dev.yml`
 - `docker-compose.ci.yml`
+- `docker-compose.test.yml`
+- `scripts/test.mjs`
 - `backend/scripts/provision_database.sh`
 - `backend/Dockerfile`
 - `frontend/Dockerfile`

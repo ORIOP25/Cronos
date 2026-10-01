@@ -2,11 +2,11 @@
 
 Data: 25 de setembro de 2026.
 
-Estado: as secções 2–11 e 16–17 descrevem, para W00–W09, o comportamento implementado e testado (o código e os testes são a fonte da verdade). As secções 12–15 descrevem o ciclo de vida e a API v1 implementados em W08–W09; o restante de W10–W14 é especificação por implementar. Esta revisão substitui a especificação de 23 de setembro de 2026 a partir de W06; a original permanece como referência histórica. Registo de W08–W09: [SCHEDULER_V1_W08_W09_STATUS.md](SCHEDULER_V1_W08_W09_STATUS.md).
+Estado: W00–W14 concluídos; a v1 está ativa em produção. Todas as secções descrevem o comportamento implementado e testado (o código e os testes são a fonte da verdade). Esta revisão substitui a especificação de 23 de setembro de 2026 a partir de W06; a original permanece como referência histórica.
 
 Base: [plano de execução v2](SCHEDULER_V1_REVAMP_PLAN_V2.md), decisões D01–D31 e fases P0–P12B.
 
-Branch: `codex/scheduler-v1-revamp`.
+Integração: `main` (revisão entregue na W14).
 
 Decomposição de trabalho: [WBS técnico v2](SCHEDULER_V1_WBS_V2.md).
 
@@ -26,13 +26,13 @@ Os parâmetros experimentais têm critérios de seleção explícitos. Não cons
 | Porquê? | Produzir horários completos com boas datas de conclusão, estabilidade controlada e contabilização correta. |
 | Quem? | Implementação por quem executar este plano; validação funcional e aceitação pelo proprietário. |
 | Onde? | Docker local até P11; Railway e Cloudflare apenas em P12A, após o gate local. |
-| Quando? | W00–W09 concluídos; W10–W14 pela ordem das dependências, sem prazos de desempenho inventados. |
+| Quando? | W00–W14 concluídos, pela ordem das dependências e sem prazos de desempenho inventados. |
 
 Notas normativas desta revisão:
 
 1. Os ganhos históricos de aproximadamente 90 para 22 segundos pertencem às medições anteriores (registos de campanha de 24–25 de setembro de 2026, Docker local, um worker). Esta revisão não os apresenta como nova comparação controlada nem como garantia universal.
 2. A antecipação das conclusões resulta da política aprovada (D10–D12). Distribuir procura ao longo do ano exige decisão explícita de produto. Não introduzir limites semanais ou penalizações de antecipação para obter uma aparência mais uniforme.
-3. O agrupamento de salas equivalentes e a calibração 1/2/4/8 workers continuam dependentes de medições em W11.
+3. O agrupamento de salas equivalentes e a calibração 1/2/4/8 workers foram fechados nas campanhas de W11.
 
 Manter FastAPI, SQLAlchemy, PostgreSQL, Celery, Redis, React e OR-Tools já presentes.
 Não adicionar microserviços, outro broker, framework de otimização ou modelo de aprendizagem automática.
@@ -44,39 +44,57 @@ Estrutura implementada em `backend/app/scheduler/`:
 
 ```text
 backend/app/scheduler/
-  composition.py             # Raiz de composição: injeta a pesquisa no caso de uso
+  composition.py             # Raiz de composição: generate_schedule e repair_published_schedule
   application/
     contracts.py             # Portas (pesquisa, dispatch, avaliação) e contratos de resultado
     generation.py            # CompleteGeneration, avaliação de recuperabilidade e relatório
+    recovery.py              # AdaptiveRecovery, perturbação e comparação de qualidade
+    publishing.py            # Payload de proposta inicial e de reparação
   domain/
-    candidate.py             # Snapshot, candidato, identidades estáveis e estratégias
-    candidate_validation.py  # Validador independente (v3, 20 códigos tipados)
+    candidate.py             # Snapshot, candidato, identidades estáveis, almoço e estratégias
+    candidate_validation.py  # Validador independente (v4, 21 códigos tipados)
     calendar.py              # Períodos, grelha e fronteira de estabilidade
     capacity.py              # Elegibilidade conjunta e pré-verificação agregada
+    constraint_policy.py     # Política de restrições configuradas
     demand.py                # Ledger de execução append-only com reversões
     debt.py                  # Dívida, reservas, liquidações e reconciliação
+    diagnostics.py           # Diagnósticos de défice por recurso
     projection.py            # Projeção modular exata
     quality.py               # Vetores de qualidade, evidência de pesquisa e comparadores
+    recovery.py              # Política de reparação e custo de perturbação
     eligibility.py           # Motivos para geração manual
-    oracle.py                # Oráculo enumerativo para instâncias mínimas
+    grid_versions.py         # Versionamento da grelha escolar
+    oracle.py                # Oráculo enumerativo para instâncias mínimas (50 000 combinações)
     results.py               # Resultados tipados do motor
-    constraints.py           # Política de restrições da fronteira legada (sai em W12)
-    validation.py            # Validadores da fronteira de blocos legada (sai em W12)
-    contracts.py             # Contratos da fronteira legada (sai em W12)
+    serialization.py         # Representação canónica do snapshot
+    stop.py                  # Política de exploração e paragem
+    timetable.py             # Estruturas de horário auxiliares
   infrastructure/
     models.py                # Modelos SQLAlchemy v1 (13 tabelas)
     progress.py              # Transações de execução/dívida/recuperação sob lock de estado
-    annual_model.py          # Master anual CP-SAT (quotas, hint, no-goods, poda)
-    placement_model.py       # Detalhe por janelas, salas, orçamento e cache
+    annual_model.py          # Master anual CP-SAT (plan_annual_quotas, hint, no-goods, poda)
+    constructive.py          # Construção cronológica e prioridade de progresso
+    placement_model.py       # Detalhe por janelas, salas, orçamento, cache e exclusividade
     search.py                # Coordenação master/detalhe com realimentação de cortes
-    cp_sat_quality.py        # Adaptador CP-SAT do avaliador legado (sai em W12)
-    task_dispatcher.py        # Transporte Celery existente
+    snapshot.py              # Carregamento de snapshot, almoço e janela de estabilidade
+    jobs.py                  # Fila, claim, heartbeat, cancelamento e recuperação
+    proposals.py             # Persistência, aprovação e rejeição de propostas
+    operations.py            # Sumários e ocorrências
+    occurrences.py           # Ocorrências operacionais
+    queries.py               # Estado, fila e diffs para a API
+    diagnostics.py           # Fases, tamanho de modelo e memória de cgroup
+    curriculum.py            # Apoio à compilação curricular
+    task_dispatcher.py       # Transporte Celery
   lab/
     fixtures.py              # Fixtures mínimas com testemunhos e 13 mutações
     scale.py                 # Fixtures de semana única por seed (10–60 turmas)
     annual.py                # Fixtures anuais com testemunhos construídos
+    combined.py, boundaries.py, baseline.py, calibration.py  # Campanhas combinadas e calibração
+    construct.py             # Testemunhos construtivos independentes
+    longitudinal.py          # Replays anuais com eventos
     manifest.py              # Manifests, digests SHA-256 e serialização de snapshots
     campaign.py              # CLI de campanhas com retoma por proveniência
+    matrix.py                # Matriz de fatores a partir de relatórios
     reports.py               # Relatórios e comparação de regressões
     revalidate.py            # Revalidação independente de candidatos armazenados
     payload.py               # Serialização de validação/qualidade/evidência
@@ -94,7 +112,7 @@ Usar dataclasses imutáveis, enums próprios, inteiros e coleções ordenadas.
 Não transportar modelos ORM, `Any`, objetos CP-SAT ou sessões SQLAlchemy nos contratos de domínio.
 O validador verifica blocos materializados. Não consulta variáveis ou restrições construídas pelo solver.
 O oráculo enumerativo é implementação de teste; nunca é fallback de produção.
-Produção ainda executa o motor legado em `app/services/`; o cablage é da W08 e a remoção da W12.
+A produção executa o motor v1. O motor legado foi removido na W12; não existe caminho de fallback.
 
 ## 3. Vocabulário e contratos imutáveis (implementado)
 
@@ -209,6 +227,7 @@ AdaptiveRecovery usa `hard_end_date` e penaliza o excesso sobre a preferência. 
 
 `grid_dates` são as datas cujo dia da semana existe na grelha escolar.
 Feriados impedem colocação, mas a contagem da janela segue os dias da grelha.
+A janela de estabilidade protege apenas um horário já publicado. O snapshot calcula `protected_dates` apenas quando existe uma `SchedulerVersionV1` ACTIVE; a primeira geração tem `protected_dates` vazio.
 
 ```text
 protected_dates = primeiras N grid_dates a partir de school_today, inclusive
@@ -223,9 +242,9 @@ Uma ocorrência pode registar que uma aula protegida não aconteceu; isso não a
 A aprovação recalcula a fronteira com a data atual.
 Uma proposta antes editável pode tornar-se inválida enquanto aguarda aprovação.
 
-## 6. Modelo de dados da nova baseline (implementado; consolidação em W12)
+## 6. Modelo de dados da nova baseline (implementado; baseline Alembic consolidada em W12)
 
-Migração provisória `0011_scheduler_v1_curricular`. Consolidação numa baseline Alembic nova é da W12.
+A migração provisória `0011_scheduler_v1_curricular` foi consolidada numa baseline Alembic nova na W12.
 
 | Entidade | Campos ou relações essenciais |
 | :--- | :--- |
@@ -255,7 +274,7 @@ Constraints implementadas:
 O deployment deve detetar schema antigo e falhar com orientação de reset após a consolidação.
 Inventariar identidades, autenticação e integrações externas antes do reset final.
 
-## 7. Snapshot, revisões e consistência (domínio implementado; cablage na W08)
+## 7. Snapshot, revisões e consistência (implementado)
 
 Duas revisões com finalidades distintas:
 
@@ -269,7 +288,7 @@ Executar normalmente uma aula incrementa `input_revision`, mas não cria motivo 
 O snapshot é imutável, com representação canónica serializável e digest SHA-256 (implementado em `lab/manifest`).
 Coleções ordenadas; configuração, restrições, progresso, dívida, aulas e políticas relevantes incluídos.
 Nomes de apresentação sem impacto matemático são excluídos.
-O pedido grava as revisões e a versão ativa observadas; a verificação de atualidade na fila é da W08 (T24).
+O pedido grava as revisões e a versão ativa observadas; a verificação de atualidade na fila está implementada (T24).
 
 ## 8. Modelo matemático de colocação (implementado com as nove otimizações)
 
@@ -295,13 +314,17 @@ x[a,p] ∈ {0,1} = atribuição colocada no período
 - Novas aulas não começam antes de a última aula protegida terminar.
 
 O validador e o oráculo recompõem esta interseção de forma independente. Não criar o produto cartesiano anual atribuição × período × sala.
-Não copiar limites de quatro aulas diárias, três consecutivas ou duas recuperações. Manter almoço e exclusões realmente configuradas.
+Não copiar limites de quatro aulas diárias, três consecutivas ou duas recuperações.
+
+O almoço é um intervalo contínuo obrigatório dentro da janela configurada, por turma e por docente nos dias com atividade. Intervalos separados nunca somam; só um intervalo ininterrupto satisfaz a regra. O modelo CP-SAT constrói opções de almoço e o validador impõe `LUNCH_BREAK_VIOLATION`. Uma configuração parcial falha o snapshot com `LUNCH_CONFIGURATION_INCOMPLETE`.
 
 Para cada recurso e conjunto de períodos fisicamente sobrepostos:
 
 ```text
 soma(ocupações selecionadas e fixas) <= 1
 ```
+
+A implementação compacta agrupa opções com o mesmo intervalo exato (turma, docente e sala) e aplica `AddAtMostOne`; grupos que só se sobrepõem por transitividade nunca são fundidos, para manter disponíveis os extremos de uma cadeia de sobreposições. Esta forma substituiu as restrições par a par para evitar `OOM`.
 
 ### 8.2 Créditos sem arredondamento
 
@@ -334,6 +357,7 @@ Capacidades semanais por turma, docente e conjuntos de salas, descontando ocupa�
 Uma soma semanal suficiente não prova que as aulas cabem nos mesmos períodos disponíveis; o detalhe certifica cada distribuição.
 
 Hint greedy earliest-week: construção gulosa a partir da semana mais precoce, respeitando capacidade por turma, docente e sala; injetada por `AddHint`. É um arranque de pesquisa; não prova viabilidade detalhada.
+A construção cronológica prioriza as turmas menos avançadas, usando a fração de progresso `(required - remaining) / required` e `started_classes`; as quotas anuais são planeadas por `annual_model.plan_annual_quotas`.
 
 Objetivo do master: minimizar a semana de conclusão mais tardia; depois, com essa fixada, minimizar o desperdício.
 Poda: `latest <= semana_do_incumbente`, com a mesma semana permitida para melhorar os restantes componentes. O limite relaxado é conservado separadamente do incumbente.
@@ -349,7 +373,7 @@ Para instâncias pequenas, o oráculo enumerativo mantém-se como referência ex
 
 ### 8.5 Salas: matching global após posições
 
-Agrupar apenas salas com elegibilidade realmente equivalente para o contexto. Lotação, equipamento, reservas e restrições específicas participam na equivalência. O agrupamento adicional de salas equivalentes como otimização de simetria continua dependente de medições em W11.
+Agrupar apenas salas com elegibilidade realmente equivalente para o contexto. Lotação, equipamento, reservas e restrições específicas participam na equivalência. O agrupamento adicional de salas equivalentes como otimização de simetria foi fechado nas medições de W11.
 
 Após escolher posições, resolver o matching aula–sala como modelo global:
 
@@ -420,6 +444,7 @@ Excluir almoço e períodos inexistentes na grelha.
 Contar furos de professores antes dos das turmas.
 Indisponibilidade obrigatória não é violação de preferência; o relatório decompõe os intervalos contados.
 `measure_initial_quality` recalcula todas as componentes a partir de snapshot e candidato, sem consultar o solver.
+A qualidade agregada expõe ainda `minimum_class_progress_per_mille` e `class_progress_spread_per_mille` como medida de progresso equilibrado entre turmas.
 
 ### 9.2 Geração inicial (implementado)
 
@@ -437,7 +462,7 @@ Não atrasar uma turma apenas para igualar datas.
 Não usar pesos gigantes: a lexicografia é implementada por etapas e congelamento, com equivalência ao oráculo verificada.
 Fixar um prefixo como ótimo apenas quando houver prova; um prefixo conservado heuristicamente limita a pesquisa, não certifica optimalidade global.
 
-### 9.3 Recuperação: datas e perturbação (especificação W06)
+### 9.3 Recuperação: datas e perturbação (implementado)
 
 Definir `O[c] = max(0, C[c] - preferred_end_date)` e ordenar `O↓`.
 Minimizar primeiro `O↓`, antes de qualquer perturbação do futuro editável.
@@ -494,7 +519,7 @@ A primeira solução completa é um marco de pesquisa, não o critério automát
 Guardar o incumbente fora do objeto solver para sobreviver ao encerramento de uma fase.
 O número de rondas de realimentação é finito e registado; limites honestos de fim: distribuições esgotadas, limite de segurança, limite de rondas.
 
-### 10.2 AdaptiveRecovery (especificação W06)
+### 10.2 AdaptiveRecovery (implementado)
 
 Compilar residual contra execução efetiva e horário publicado.
 Detetar falta de cobertura, excesso, recursos inválidos e alterações relevantes.
@@ -526,15 +551,15 @@ Só uma prova válida para todo o espaço autorizado permite declarar impossibil
 
 ## 11. Paragem, certificados e diagnóstico
 
-### 11.1 Resultado tipado (implementado no motor; CANCELLED/STALE completam-se na W08)
+### 11.1 Resultado tipado (implementado)
 
 | Resultado | Proposta | Significado | Estado |
 | :--- | :--- | :--- | :--- |
 | `COMPLETE` | Sim | Solução completa, validada e atual. | Implementado. |
 | `INFEASIBLE` | Não | Impossibilidade demonstrada no âmbito integral aplicável. | Implementado (pré-verificação e detalhe provado). |
 | `INCONCLUSIVE` | Não | Não existe solução completa nem prova de impossibilidade. | Implementado. |
-| `CANCELLED` | Não | Cancelamento administrativo ganhou a corrida de finalização. | W08. |
-| `STALE` | Não | Dados ou fronteira já não permitem finalizar aquela proposta. | W08. |
+| `CANCELLED` | Não | Cancelamento administrativo ganhou a corrida de finalização. | Implementado. |
+| `STALE` | Não | Dados ou fronteira já não permitem finalizar aquela proposta. | Implementado. |
 | `FAILED` | Não | Erro de execução, infraestrutura ou validação interna. | Implementado. |
 
 Input inválido (residual negativo, configuração inconsistente) é rejeitado na fronteira com `INVALID_INPUT`, sem entrar no solver.
@@ -551,7 +576,7 @@ O limite relaxado do master é conservado separadamente do incumbente; nunca sub
 Tolerâncias nativas requerem registar os valores, além do status retornado.
 Os estados CP-SAT e os campos de limites pertencem ao contrato do solver; verificar o comportamento na versão fixada antes de expor certificados.
 
-### 11.3 Controlo por retorno adicional (especificação W07)
+### 11.3 Controlo por retorno adicional (implementado)
 
 Entradas: trajetória de incumbentes, limites, esforço, bairros explorados e família de dificuldade.
 Saídas: continuar, mudar bairro/fase ou finalizar com motivo explícito.
@@ -592,9 +617,9 @@ Quantidades só aparecem quando suportadas pelo cálculo.
 "Rever horas registadas" significa corrigir execução real ou trabalho reconhecido pela escola.
 Nunca recomendar inventar horas para satisfazer o solver.
 Não prometer que aumentar a data resolve um conflito de professor ou sala sem validar essa hipótese.
-Explicações completas por conflito identificado são da W07 (C15).
+Explicações completas por conflito identificado estão implementadas (C15).
 
-## 12. Fila global e execução operacional (especificação W08)
+## 12. Fila global e execução operacional (implementado)
 
 Uma réplica do serviço solver; Celery com concorrência um e prefetch um.
 Um job pode configurar `num_search_workers` com vários workers CP-SAT.
@@ -623,7 +648,7 @@ No arranque, reconciliar jobs abandonados antes de consumir novos pedidos.
 Falhas de dispatch deixam o pedido recuperável.
 Reenviar o mesmo pedido autorizado é permitido; criar uma nova geração sem ação administrativa não é.
 
-## 13. Elegibilidade e máquina de estados (domínio implementado; fila na W08)
+## 13. Elegibilidade e máquina de estados (implementado)
 
 ```text
 QUEUED -> RUNNING -> VALIDATING -> SUCCEEDED
@@ -646,12 +671,12 @@ Elegibilidade exige ausência de job ativo e pelo menos uma condição (implemen
 - Passaram 28 dias corridos desde `last_successful_generation_at`.
 
 Contar os 28 dias pela data local da escola, mantendo o instante UTC auditável.
-Persistir proposta completa e atualizar o relógio na mesma transação (W08).
+Persistir proposta completa e atualizar o relógio na mesma transação.
 Aprovação e rejeição não reiniciam o relógio.
 Uma rejeição sem mudança de dados não cria motivo novo.
 Revalidar motivos ao submeter; o frontend não é a autoridade de elegibilidade.
 
-## 14. Transações de proposta e aprovação (especificação W08)
+## 14. Transações de proposta e aprovação (implementado)
 
 ### 14.1 Finalização
 
@@ -681,7 +706,7 @@ Qualquer conflito causa rollback integral e resposta estruturada.
 Pedidos repetidos de aprovação devolvem o mesmo resultado quando já aprovados pelo mesmo comando idempotente.
 Leitores nunca observam meio horário antigo e meio horário novo.
 
-## 15. API e adaptação do frontend (especificação W09)
+## 15. API e adaptação do frontend (implementado)
 
 Reutilizar a área `/api/v1/scheduler`, atualizando schemas sem adaptadores de payload legado.
 O servidor escolhe CompleteGeneration ou AdaptiveRecovery conforme exista baseline publicada.
@@ -715,7 +740,7 @@ Preservar acessibilidade, navegação por teclado e erros junto dos campos.
 
 ## 16. Validador independente e estratégia TDD
 
-### 16.1 Verificações obrigatórias (implementado, versão 3)
+### 16.1 Verificações obrigatórias (implementado, versão 4)
 
 O validador recebe snapshot e candidato, sem acesso à construção do modelo.
 Recalcula:
@@ -729,11 +754,12 @@ Recalcula:
 7. Reservas de dívida sem dupla liquidação.
 8. Cronologia das aulas protegidas e prestação de contas do crédito protegido.
 9. Métricas de conclusão, perturbação e furos (via `measure_initial_quality`).
+10. Almoço: pausa contínua obrigatória por turma e docente dentro da janela (`LUNCH_BREAK_VIOLATION`).
 
 Indexar por recurso/data e ordenar intervalos; evitar comparação quadrática.
 Guardar versão do validador e digest do candidato.
 Métricas declaradas pelo solver nunca substituem métricas recalculadas.
-Cada um dos 20 códigos de violação tem teste próprio; candidatos deliberadamente adulterados são rejeitados pelo motivo correto.
+Cada um dos 21 códigos de violação tem teste próprio; candidatos deliberadamente adulterados são rejeitados pelo motivo correto.
 
 ### 16.2 Ciclo TDD por fatia (aplicado em W01–W05; mantém-se para W06+)
 
@@ -752,12 +778,12 @@ Testes CP-SAT verificam validade e qualidade, não sequências exatas de callbac
 | Recursos | Verde | Mesmo professor em turmas distintas; salas específicas; intervalos sobrepostos; preferência soft. |
 | Capacidade | Verde | Semana agregada suficiente com períodos conjuntos insuficientes (T10). |
 | Qualidade inicial | Verde | Oráculo enumerado com vetor de conclusões, não soma de datas; limiares equivalentes ao vetor com seeds. |
-| Qualidade adaptativa | Comparador verde; solver na W06 | Ceder recursos à turma atrasada; estabilidade versus margem; excesso domina perturbação (T15–T18). |
-| Diagnóstico | Parcial | Impossível conhecido; bairro impossível mas global viável; timeout sem prova (T26 na W07). |
-| Ciclo de vida | Pendente (W08) | Duplo clique, entrega duplicada, dados alterados em fila/solve/aprovação (T23–T25, T27–T28). |
-| Recuperação operacional | Pendente (W08) | Processo morto, lock perdido, dispatch falhado, cancelamento durante validação. |
-| Isolamento | RLS verde em W02; restante na W08–W09 | Consultas e FKs entre escolas; role RLS real; org do cliente ignorada (T28). |
-| UI/E2E | Pendente (W09) | Configurar → gerar → aprovar → ocorrência → reparar → executar → acertar → renovar. |
+| Qualidade adaptativa | Verde (solver) | Ceder recursos à turma atrasada; estabilidade versus margem; excesso domina perturbação (T15–T18). |
+| Diagnóstico | Verde | Impossível conhecido; bairro impossível mas global viável; timeout sem prova (T26). |
+| Ciclo de vida | Verde | Duplo clique, entrega duplicada, dados alterados em fila/solve/aprovação (T23–T25, T27–T28). |
+| Recuperação operacional | Verde | Processo morto, lock perdido, dispatch falhado, cancelamento durante validação. |
+| Isolamento | Verde | Consultas e FKs entre escolas; role RLS real; org do cliente ignorada (T28). |
+| UI/E2E | Verde | Configurar → gerar → aprovar → ocorrência → reparar → executar → acertar → renovar. |
 
 Propriedades metamórficas verificadas: renomear entidades não altera qualidade; permutar entradas não altera o comparador; mais disponibilidade não destrói testemunho válido; o vetor completo iguala o ótimo enumerado em instâncias mínimas (40 casos comparados, zero divergências no audit).
 
@@ -780,7 +806,7 @@ Implementado: fixtures canónicas no repositório; manifests `scheduler-lab-v3` 
 - `generation_manifest.json`: 26 casos de geração (campanha `w04-generation`; famílias C01–C10, contraexemplos T10–T14/T19, escala 10/30/45/60).
 - `annual_manifest.json`: 12 casos anuais (campanha `w04-annual`; 10/30/45/60 turmas × perfis `loose`/`shared-teacher`/`scarce-rooms`).
 
-Pendente: corpus de reparações (W06), sequências anuais com eventos (W10), conjunto reservado final (W12).
+Entregues: corpus de reparações (`repair_manifest.json`), sequências anuais com eventos (`annual_replay_manifest.json`), matriz combinada e conjunto reservado final (`reserved_manifest.json`, `reserved_annual_manifest.json`).
 Cobertura continua a exigir 10/30/45/60 turmas, partilha docente, salas escassas, calendários restritos, reparações de 1h/10h/50h com distribuições de conflito diferentes e replays anuais (tranquilo, irregular, crises, saturação).
 
 Explorar pouca/muita procura com pouco/muito espaço efetivamente elegível, capacidade exata, um minuto além, conflitos de interseção e abundância de alternativas equivalentes.
@@ -896,14 +922,14 @@ Critérios objetivos para aceitar a candidate local:
 | P3 | Validador, oráculos, fixtures e medição. | Concluída (W03) | Distingue soluções inválidas e mede métricas independentemente. |
 | P4 | Master anual, detalhe reabrível e salas. | Concluída (W04) | Soluções completas corretas em todo o corpus obrigatório de geração. |
 | P5 | Conclusões coletivas e objetivos subordinados. | Concluída (W05) | Comparação com ótimos pequenos e baseline mensurada registada. |
-| P6 | Reparação, bairros, dívida e estabilidade. | Por iniciar (W06) | Sequências anuais e política progressiva validadas; nove propriedades preservadas (W06.6). |
-| P7 | Paragem, bounds e diagnósticos. | Por iniciar (W07) | Sem confusão entre local/global ou unknown/infeasible. |
+| P6 | Reparação, bairros, dívida e estabilidade. | Concluída (W06) | Sequências anuais e política progressiva validadas; nove propriedades preservadas (W06.6). |
+| P7 | Paragem, bounds e diagnósticos. | Concluída (W07) | Sem confusão entre local/global ou unknown/infeasible. |
 | P8 | Fila, snapshots, cancelamento e publicação. | Concluída (W08) | Falhas e concorrência testadas com PostgreSQL real; ensaios de container completos em W10. |
 | P9 | APIs e todos os consumidores escolares. | Concluída (W09) | Contratos e interface revistos; E2E executável pelo proprietário com a pilha local. |
-| P10 | Corpus amplo, replays anuais, calibração, otimizações e workers. | Por iniciar (W10–W11) | Relatório reproduzível de qualidade versus recursos; decisão sobre agrupamento de salas e workers. |
-| P11 | Remoção final do legado e release candidate. | Por iniciar (W12) | Gate local integral aprovado. |
-| P12A | Validação Railway/Cloudflare. | Concluída (W13) | Baseline remota separada, integrações e recursos reais confirmados. [Registo](SCHEDULER_V1_W13_STATUS.md) |
-| P12B | Merge, CI, limpeza de ensaio e ativação. | Concluída (W14) | Revisão publicada verificada e aceitação final. [Registo](SCHEDULER_V1_W14_STATUS.md) |
+| P10 | Corpus amplo, replays anuais, calibração, otimizações e workers. | Concluída (W10–W11) | Relatório reproduzível de qualidade versus recursos; decisão sobre agrupamento de salas e workers. |
+| P11 | Remoção final do legado e release candidate. | Concluída (W12) | Gate local integral aprovado. |
+| P12A | Validação Railway/Cloudflare. | Concluída (W13) | Baseline remota separada, integrações e recursos reais confirmados. |
+| P12B | Merge, CI, limpeza de ensaio e ativação. | Concluída (W14) | Revisão publicada verificada e aceitação final. |
 
 Remover chamadas e implementações antigas por fatia em W12, com consumidores e testes correspondentes.
 Não manter duas implementações selecionáveis em produção.
@@ -940,15 +966,15 @@ Não definir rollback para o solver antigo como estratégia de recuperação da 
 
 | Decisões | Secções desta especificação | Evidência principal | Estado |
 | :--- | :--- | :--- | :--- |
-| D01–D02 | 1, 6, 19 | Instalação vazia, inventário e remoção de consumidores antigos. | Parcial; remoção na W12. |
-| D03–D04 | 12, 17 | Exclusão global e comparação 1/2/4/8 workers. | Especificação W08/W11. |
-| D05–D08 | 11, 17 | Trajetórias, limites, censura e paragem calibrada. | Etapas/certificados implementados; controlador na W07. |
-| D09–D13 | 5, 8–10 | Oráculos de conclusão e cedência de capacidade. | Geração implementada; cedência na reparação W06. |
+| D01–D02 | 1, 6, 19 | Instalação vazia, inventário e remoção de consumidores antigos. | Concluído; remoção executada na W12. |
+| D03–D04 | 12, 17 | Exclusão global e comparação 1/2/4/8 workers. | Implementado em W08; calibração em W11. |
+| D05–D08 | 11, 17 | Trajetórias, limites, censura e paragem calibrada. | Implementado (W07). |
+| D09–D13 | 5, 8–10 | Oráculos de conclusão e cedência de capacidade. | Implementado (W06). |
 | D14–D18 | 4–5, 14 | Estabilidade, projeção e preservação de execução. | Implementado. |
 | D19–D22 | 8–9 | Disponibilidade, carga densa, docente fixo e prioridade de furos. | Implementado. |
-| D23–D26 | 7, 12–15 | Pedidos manuais, elegibilidade, 28 dias e snapshots. | Domínio implementado; fila W08. |
-| D27–D28 | 4, 11, 16 | Diagnósticos sustentados e acertos conservativos. | Pré-verificação implementada; explicações W07. |
-| D29–D30 | 14–15 | Aprovação atómica, E2E e revisão de linguagem. | Especificação W08–W09. |
+| D23–D26 | 7, 12–15 | Pedidos manuais, elegibilidade, 28 dias e snapshots. | Implementado (W08). |
+| D27–D28 | 4, 11, 16 | Diagnósticos sustentados e acertos conservativos. | Implementado (W07). |
+| D29–D30 | 14–15 | Aprovação atómica, E2E e revisão de linguagem. | Implementado (W08–W09). |
 | D31 | 17–19 | Gate local e relatório remoto separado. | Em vigor. |
 
 A entrega inclui código, testes, corpus, manifests, relatórios e runbook de operação.
