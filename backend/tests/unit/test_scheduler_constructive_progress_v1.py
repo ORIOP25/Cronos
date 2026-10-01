@@ -162,6 +162,106 @@ def test_teacher_adjacency_does_not_override_a_lagging_subject():
         assert abs(credited[1] - credited[2]) <= 60
 
 
+def test_a_weekly_pattern_repeats_without_delaying_completion():
+    periods = tuple(period(7 * week + day) for week in range(4) for day in range(5))
+    target = replace(
+        plan(periods, [assignment(1, 1, 1, {1}, 540), assignment(2, 1, 2, {1}, 540)]),
+        preferred_end_date=periods[-1].school_date,
+    )
+
+    candidate = construct(target, periods)
+
+    by_period = {row.period: row.assignment_id for row in candidate.lessons}
+    assert [by_period[row] for row in periods[:5]] == [by_period[row] for row in periods[5:10]]
+    assert max(row.period.start_utc for row in candidate.lessons) == periods[17].start_utc
+    credited = {1: 0, 2: 0}
+    for row in sorted(candidate.lessons, key=lambda lesson: lesson.period.start_utc):
+        credited[row.assignment_id] += row.credit_minutes
+        assert abs(credited[1] - credited[2]) <= 120
+
+
+def test_an_unavailable_weekly_teacher_does_not_leave_a_fillable_period_empty():
+    periods = tuple(period(7 * week + day) for week in range(4) for day in range(5))
+    target = replace(
+        plan(
+            periods,
+            [assignment(1, 1, 1, {1}, 540), assignment(2, 1, 2, {1}, 540)],
+            unavailable=(Unavailability(UnavailableResource.TEACHER, 2, periods[6]),),
+        ),
+        preferred_end_date=periods[-1].school_date,
+    )
+
+    candidate = construct(target, periods)
+
+    by_period = {row.period: row.assignment_id for row in candidate.lessons}
+    assert by_period[periods[1]] == 2
+    assert by_period[periods[6]] == 1
+    assert by_period[periods[11]] == 2
+    assert set(by_period) == set(periods[:18])
+
+
+def test_a_weekly_room_is_reused_when_it_is_still_available():
+    periods = tuple(period(7 * week + day) for week in range(2) for day in range(5))
+    target = plan(
+        periods,
+        [assignment(1, 1, 1, {1, 2}, 600)],
+        unavailable=(Unavailability(UnavailableResource.ROOM, 1, periods[1]),),
+    )
+
+    candidate = construct(target, periods)
+
+    by_period = {row.period: row.room_id for row in candidate.lessons}
+    assert by_period[periods[1]] == by_period[periods[6]] == 2
+
+
+def test_weekly_progress_ties_keep_class_lessons_contiguous():
+    from app.scheduler.domain.quality import measure_initial_quality
+
+    periods = tuple(
+        period(7 * week + day, start=hour, end=hour + 1)
+        for week in range(3)
+        for day in range(5)
+        for hour in (9, 10, 11)
+    )
+    rows = (
+        (1, 1, 2, {1, 2}, 420),
+        (2, 1, 2, {1, 2}, 360),
+        (3, 2, 2, {1, 2}, 360),
+        (4, 2, 2, {1, 2}, 360),
+        (5, 3, 2, {1, 2}, 480),
+        (6, 3, 1, {1, 2}, 420),
+    )
+    target = replace(
+        plan(periods, [assignment(*row) for row in rows]),
+        preferred_end_date=periods[-1].school_date,
+    )
+
+    candidate = construct(target, periods)
+
+    assert measure_initial_quality(target, candidate).class_gap_minutes == 0
+    assert max(row.period.school_date for row in candidate.lessons) == period(14).school_date
+
+
+def test_weekly_preferences_yield_to_two_simultaneous_resource_combinations():
+    periods = tuple(period(7 * week) for week in range(3))
+    target = plan(
+        periods,
+        [
+            assignment(1, 1, 1, {1}, 120),
+            assignment(2, 1, 2, {1}, 60),
+            assignment(3, 2, 1, {3}, 60),
+            assignment(4, 2, 2, {2}, 120),
+        ],
+        unavailable=(Unavailability(UnavailableResource.ROOM, 2, periods[1]),),
+    )
+
+    candidate = construct(target, periods)
+
+    assert {row.assignment_id for row in candidate.lessons if row.period == periods[0]} == {1, 4}
+    assert {row.assignment_id for row in candidate.lessons if row.period == periods[1]} == {2, 3}
+    assert len(candidate.lessons) == 6
+
+
 def test_shared_resources_do_not_finish_one_subject_before_others_start():
     rows = (
         (1, 1, 2, (1, 2, 4), 180),

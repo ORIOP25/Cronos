@@ -1,6 +1,7 @@
 """Chronological construction with parallel curricular progress.
 
 Subjects with less progress take priority when competing for shared resources.
+Repeating the weekly pattern may compensate for one lesson of progress.
 Free resource combinations remain eligible even when other subjects must wait.
 Construction failure is inconclusive; every returned plan is independently valid.
 """
@@ -220,6 +221,7 @@ def construct_schedule(
     }
     busy: dict[tuple, list[Period]] = defaultdict(list)
     occupancy: dict[tuple, list[tuple[int, int]]] = defaultdict(list)
+    weekly_pattern: dict[tuple, tuple[int, int]] = {}
     used_ids = {row.lesson_id for row in snapshot.protected_lessons} | set(
         snapshot.reserved_lesson_ids
     )
@@ -230,6 +232,15 @@ def construct_schedule(
     }
 
     def occupy(assignment: Assignment, period: Period, room: int, teacher: int) -> None:
+        weekly_pattern.setdefault(
+            (
+                assignment.class_id,
+                period.school_date.weekday(),
+                period.start_local,
+                period.end_local,
+            ),
+            (assignment.assignment_id, room),
+        )
         for kind, identity in (
             ("class", assignment.class_id),
             ("teacher", teacher),
@@ -279,13 +290,17 @@ def construct_schedule(
         preceding_end = preceding_ends.get(
             (period.school_date.weekday(), period.start_local, period.end_local)
         )
+        signature = (period.school_date.weekday(), period.start_local, period.end_local)
 
         def priority(
             assignment: Assignment,
             current_period: Period = period,
             previous_end: int | None = preceding_end,
+            current_signature: tuple = signature,
         ):
             identity = assignment.assignment_id
+            preferred = weekly_pattern.get((assignment.class_id, *current_signature))
+            repeats = preferred is not None and preferred[0] == identity
             adjacent = sum(
                 any(
                     end == previous_end
@@ -299,8 +314,15 @@ def construct_schedule(
             return (
                 assignment.class_id in started_classes,
                 initial_remaining[identity] != remaining[identity],
-                Fraction(required[identity] - remaining[identity], required[identity]),
+                Fraction(
+                    required[identity]
+                    - remaining[identity]
+                    - (min(remaining[identity], current_period.duration_minutes) if repeats else 0),
+                    required[identity],
+                ),
                 -adjacent,
+                preferred is None,
+                not repeats,
                 -teacher_remaining[assignment.teacher_id],
                 -class_remaining[assignment.class_id],
                 len(assignment.eligible_room_ids),
@@ -310,6 +332,10 @@ def construct_schedule(
         options = []
         for assignment in sorted(active, key=priority):
             identity = assignment.assignment_id
+            preferred = weekly_pattern.get((assignment.class_id, *signature))
+            preferred_room = (
+                preferred[1] if preferred is not None and preferred[0] == identity else None
+            )
             keys = (
                 ("class", assignment.class_id, period.school_date),
                 ("teacher", assignment.teacher_id, period.school_date),
@@ -334,7 +360,7 @@ def construct_schedule(
                             for occupied in busy[("room", room, period.school_date)]
                         )
                     ),
-                    key=lambda room: (room_pressure[room], room),
+                    key=lambda room: (room != preferred_room, room_pressure[room], room),
                 )
             )
             if rooms:

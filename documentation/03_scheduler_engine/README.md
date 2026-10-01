@@ -25,7 +25,9 @@ Lunch break (mandatory). A configured lunch rule is a mandatory continuous break
 
 Stability window. The stability window protects only an already-published schedule. The snapshot computes `protected_dates` only when an ACTIVE `SchedulerVersionV1` exists; a first generation has empty `protected_dates`. The window counts grid days, not calendar days, and always preserves executed and past lessons.
 
-Balanced classroom progression. Constructive priority favors less-advanced classes: it uses the progress fraction `(required - remaining) / required` and `started_classes` so classes that have not started gain priority. Annual quotas are planned by `infrastructure/annual_model.py` `plan_annual_quotas`. Quality exposes `minimum_class_progress_per_mille` and `class_progress_spread_per_mille`.
+Balanced classroom progression. Constructive priority favors subjects with less curricular progress and classes that have not started. Annual quotas are planned by `infrastructure/annual_model.py` `plan_annual_quotas`. Quality exposes `minimum_class_progress_per_mille` and `class_progress_spread_per_mille`.
+
+Weekly pattern. The constructor remembers the first assignment and room used for each class, weekday and local grid interval. Repeating that assignment can compensate for one lesson of progress. Progress ties favor contiguous class and teacher lessons, then baseline intervals and assignments. The same room is preferred when available. These preferences never remove otherwise eligible resource combinations. Mandatory rules and simultaneous lesson capacity still apply; the pattern can change when resources or curricular progress require it.
 
 Compact resource exclusivity. `infrastructure/placement_model.py` `_add_resource_exclusivity` adds at most one option per resource and period with `AddAtMostOne`, grouped by equal interval. It merges only partially overlapping groups and never groups that overlap only through transitivity, so the ends of an overlap chain stay available. It is used for class, teacher and room exclusivity and during room optimization. This replaced pairwise constraints to avoid `OOM`.
 
