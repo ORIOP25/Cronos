@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import PageHeader from '../components/PageHeader'
-import { CButton, CAlert, CBadge } from '@coreui/react'
+import { CButton, CBadge } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
 import { cilPlus } from '@coreui/icons'
 
@@ -9,7 +9,6 @@ import SmartTable from '../components/SmartTable'
 import GenericModalForm from '../components/GenericModalForm'
 import RoomForm from '../components/Forms/RoomForm'
 import RoomTypeBadge from '../components/RoomTypeBadge'
-import { getApiErrorMessage } from '../utils/apiErrors'
 
 // Hooks (Factory)
 import { 
@@ -78,12 +77,6 @@ const Rooms = ({ readOnly = false, allowedActions }) => {
           Nova Sala
         </CButton>
       </div>}
-
-      {deleteMutation.isError && (
-        <CAlert color="danger" dismissible onClose={deleteMutation.reset}>
-          <strong>Erro ao remover:</strong> {getApiErrorMessage(deleteMutation.error, 'Erro de dependência.')}
-        </CAlert>
-      )}
 
       <SmartTable
             columns={columns}

@@ -2,11 +2,14 @@ import { useState } from 'react'
 import { CCard, CCardBody } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
 import { cilPencil, cilTrash, cilChevronRight } from '@coreui/icons'
+import { toast } from 'react-hot-toast'
 import ConfirmationModal from './ConfirmationModal'
 import { TXT } from '../utils/terminology'
-import { getApiErrorMessage } from '../utils/apiErrors'
+import { getApiErrorCode, getApiErrorMessage } from '../utils/apiErrors'
 import StatePanel from './StatePanel'
 import FeedbackBanner from './FeedbackBanner'
+
+const DELETE_BLOCK_CODES = new Set(['resource_in_use', 'course_has_classes'])
 
 const RowActions = ({
   item,
@@ -76,23 +79,26 @@ const SmartTable = ({
   const [deleteTarget, setDeleteTarget] = useState(null)
   const [isDeleting, setIsDeleting] = useState(false)
   const [deleteError, setDeleteError] = useState('')
-  const [deleteNotice, setDeleteNotice] = useState('')
 
   const handleDeleteConfirm = async () => {
     if (!deleteTarget || !onDelete) return
     setIsDeleting(true)
     setDeleteError('')
-    setDeleteNotice('')
     try {
       const result = await onDelete(deleteTarget)
-      setDeleteNotice(
+      toast.success(
         result?.remove_effect === 'archive'
           ? 'Registo arquivado. O histórico (horários, sumários e progresso) foi preservado.'
           : 'Registo removido.'
       )
       setDeleteTarget(null)
     } catch (error) {
-      setDeleteError(getApiErrorMessage(error, 'Não foi possível remover o registo.'))
+      if (DELETE_BLOCK_CODES.has(getApiErrorCode(error))) {
+        setDeleteError(getApiErrorMessage(error))
+        setDeleteTarget(null)
+      } else {
+        toast.error(getApiErrorMessage(error, 'Não foi possível remover. Tente novamente.'))
+      }
     } finally {
       setIsDeleting(false)
     }
@@ -167,7 +173,6 @@ const SmartTable = ({
       </CCardBody></CCard>
 
       {deleteError && <div className="mt-3"><FeedbackBanner tone="danger">{deleteError}</FeedbackBanner></div>}
-      {deleteNotice && <div className="mt-3"><FeedbackBanner tone="success" onDismiss={() => setDeleteNotice('')}>{deleteNotice}</FeedbackBanner></div>}
 
       <ConfirmationModal
         visible={deleteTarget !== null}

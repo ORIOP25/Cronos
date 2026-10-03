@@ -94,12 +94,6 @@ const Subjects = ({ readOnly = false, allowedActions }) => {
         </CAlert>
       )}
 
-      {deleteMutation.isError && (
-        <CAlert color="danger" dismissible onClose={deleteMutation.reset}>
-          <strong>Erro ao remover:</strong> {getApiErrorMessage(deleteMutation.error, 'Erro de dependência.')}
-        </CAlert>
-      )}
-
       <SmartTable
             columns={columns}
             data={subjects || []}
