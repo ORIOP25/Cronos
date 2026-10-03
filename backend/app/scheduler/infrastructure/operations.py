@@ -159,90 +159,101 @@ async def week_schedule(
     if teacher_id is not None:
         lessons_query = lessons_query.where(CurricularAssignment.teacher_id == teacher_id)
     rows = (await db.execute(lessons_query)).all()
-    blocks_query = (
-        select(
-            models.OperationalScheduleBlock,
-            SchedulerLessonV1,
-            SchedulerLessonLogV1,
-            models.Subject,
-            models.Teacher,
-            models.Class,
-            models.Room,
-            models.Module,
-        )
-        .join(
-            SchedulerLessonLogV1,
-            and_(
-                SchedulerLessonLogV1.organization_id
-                == models.OperationalScheduleBlock.organization_id,
-                SchedulerLessonLogV1.id == models.OperationalScheduleBlock.source_v1_lesson_log_id,
-            ),
-        )
-        .join(
-            SchedulerLessonV1,
-            and_(
-                SchedulerLessonV1.organization_id == SchedulerLessonLogV1.organization_id,
-                SchedulerLessonV1.school_year_id == SchedulerLessonLogV1.school_year_id,
-                SchedulerLessonV1.id == SchedulerLessonLogV1.lesson_id,
-            ),
-        )
-        .join(
-            models.Subject,
-            and_(
-                models.Subject.organization_id == models.OperationalScheduleBlock.organization_id,
-                models.Subject.id == models.OperationalScheduleBlock.subject_id,
-            ),
-        )
-        .join(
-            models.Teacher,
-            and_(
-                models.Teacher.organization_id == models.OperationalScheduleBlock.organization_id,
-                models.Teacher.id == models.OperationalScheduleBlock.teacher_id,
-            ),
-        )
-        .join(
-            models.Class,
-            and_(
-                models.Class.organization_id == models.OperationalScheduleBlock.organization_id,
-                models.Class.id == models.OperationalScheduleBlock.class_id,
-            ),
-        )
-        .outerjoin(
-            models.Room,
-            and_(
-                models.Room.organization_id == models.OperationalScheduleBlock.organization_id,
-                models.Room.id == models.OperationalScheduleBlock.room_id,
-            ),
-        )
-        .outerjoin(
-            models.Module,
-            and_(
-                models.Module.organization_id == models.OperationalScheduleBlock.organization_id,
-                models.Module.id == models.OperationalScheduleBlock.module_id,
-            ),
-        )
+    block_query = (
+        select(models.OperationalScheduleBlock)
         .where(
             models.OperationalScheduleBlock.organization_id == organization_id,
             models.OperationalScheduleBlock.status == models.OperationalBlockStatus.ACTIVE,
             models.OperationalScheduleBlock.origin_kind == models.OperationalBlockOrigin.V1,
             models.OperationalScheduleBlock.date.between(week_start, week_end),
         )
-        .order_by(
-            models.OperationalScheduleBlock.date,
-            models.OperationalScheduleBlock.timeslot_id,
-            models.OperationalScheduleBlock.id,
-        )
+        .order_by(models.OperationalScheduleBlock.date, models.OperationalScheduleBlock.id)
     )
     if class_id is not None:
-        blocks_query = blocks_query.where(models.OperationalScheduleBlock.class_id == class_id)
-    all_block_rows = (await db.execute(blocks_query)).all()
+        block_query = block_query.where(models.OperationalScheduleBlock.class_id == class_id)
+    block_models = (await db.scalars(block_query)).all()
+    if not rows and not block_models:
+        return []
+    all_block_rows: list = []
+    if block_models:
+        # The heavy detail join only runs when a substitution exists this week.
+        all_block_rows = (
+            await db.execute(
+                select(
+                    models.OperationalScheduleBlock,
+                    SchedulerLessonV1,
+                    SchedulerLessonLogV1,
+                    models.Subject,
+                    models.Teacher,
+                    models.Class,
+                    models.Room,
+                    models.Module,
+                )
+                .join(
+                    SchedulerLessonLogV1,
+                    and_(
+                        SchedulerLessonLogV1.organization_id
+                        == models.OperationalScheduleBlock.organization_id,
+                        SchedulerLessonLogV1.id
+                        == models.OperationalScheduleBlock.source_v1_lesson_log_id,
+                    ),
+                )
+                .join(
+                    SchedulerLessonV1,
+                    and_(
+                        SchedulerLessonV1.organization_id == SchedulerLessonLogV1.organization_id,
+                        SchedulerLessonV1.school_year_id == SchedulerLessonLogV1.school_year_id,
+                        SchedulerLessonV1.id == SchedulerLessonLogV1.lesson_id,
+                    ),
+                )
+                .join(
+                    models.Subject,
+                    and_(
+                        models.Subject.organization_id
+                        == models.OperationalScheduleBlock.organization_id,
+                        models.Subject.id == models.OperationalScheduleBlock.subject_id,
+                    ),
+                )
+                .join(
+                    models.Teacher,
+                    and_(
+                        models.Teacher.organization_id
+                        == models.OperationalScheduleBlock.organization_id,
+                        models.Teacher.id == models.OperationalScheduleBlock.teacher_id,
+                    ),
+                )
+                .join(
+                    models.Class,
+                    and_(
+                        models.Class.organization_id
+                        == models.OperationalScheduleBlock.organization_id,
+                        models.Class.id == models.OperationalScheduleBlock.class_id,
+                    ),
+                )
+                .outerjoin(
+                    models.Room,
+                    and_(
+                        models.Room.organization_id
+                        == models.OperationalScheduleBlock.organization_id,
+                        models.Room.id == models.OperationalScheduleBlock.room_id,
+                    ),
+                )
+                .outerjoin(
+                    models.Module,
+                    and_(
+                        models.Module.organization_id
+                        == models.OperationalScheduleBlock.organization_id,
+                        models.Module.id == models.OperationalScheduleBlock.module_id,
+                    ),
+                )
+                .where(models.OperationalScheduleBlock.id.in_([row.id for row in block_models]))
+            )
+        ).all()
     # The original lesson leaves every active view, not only the substitute's.
     hidden_lesson_ids = {lesson.id for _block, lesson, *_rest in all_block_rows}
     block_rows = [
         row for row in all_block_rows if teacher_id is None or row[0].teacher_id == teacher_id
     ]
-    if not rows and not block_rows:
-        return []
     lesson_ids = [row[0].id for row in rows]
     assignment_ids = sorted({row[0].assignment_id for row in rows})
     executed = await load_executed_minutes(db, organization_id, assignment_ids)
