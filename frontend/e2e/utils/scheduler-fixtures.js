@@ -213,6 +213,7 @@ export async function generateAndApproveThroughUi(page) {
     response.request().method() === 'POST'
   ))
   await page.getByRole('button', { name: /(?:Gerar|Atualizar) Hor.rio/i }).click()
+  await page.getByRole('button', { name: /Iniciar gera/i }).click()
   const response = await generateResponse
   const responseText = await response.text()
   expect(response.ok(), `scheduler generate failed: ${response.status()} ${responseText}`).toBeTruthy()
