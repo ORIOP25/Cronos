@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useState } from 'react'
 import {
   CButton,
   CCol,
@@ -44,9 +44,6 @@ const CourseForm = ({ onSubmit, isLoading, onCancel }) => {
   const [classDraft, setClassDraft] = useState(createClassDraft)
   const [formError, setFormError] = useState(null)
   const [classError, setClassError] = useState(null)
-  const fieldRefs = useRef({})
-
-  const setFieldRef = (key) => (element) => { fieldRefs.current[key] = element }
 
   const updateCourse = (field, value) => {
     const next = { ...course, [field]: value }
@@ -66,8 +63,7 @@ const CourseForm = ({ onSubmit, isLoading, onCancel }) => {
   }
 
   const focusInvalidClassField = (field) => {
-    const target = field === 'date_range' ? fieldRefs.current.start_year : fieldRefs.current[field]
-    target?.focus()
+    document.getElementById(CLASS_FIELDS[field] ?? CLASS_FIELDS.start_year)?.focus()
   }
 
   const addClass = () => {
@@ -90,7 +86,7 @@ const CourseForm = ({ onSubmit, isLoading, onCancel }) => {
     const nextError = validateCourseFields(course)
     setFormError(nextError)
     if (nextError) {
-      fieldRefs.current[COURSE_FIELDS[nextError.field]]?.focus()
+      document.getElementById(COURSE_FIELDS[nextError.field])?.focus()
       return
     }
     onSubmit({ name: course.name.trim(), abbreviation: course.abbreviation.trim(), classes_config: course.classes_config })
@@ -102,7 +98,6 @@ const CourseForm = ({ onSubmit, isLoading, onCancel }) => {
   const classInputProps = (field) => ({
     'aria-invalid': isClassInvalid(field) || undefined,
     'aria-describedby': isClassInvalid(field) ? CLASS_FEEDBACK_ID : undefined,
-    ref: setFieldRef(field),
   })
 
   const classFeedback = (field) => (
@@ -125,7 +120,6 @@ const CourseForm = ({ onSubmit, isLoading, onCancel }) => {
               required
               aria-invalid={formError?.field === 'name' || undefined}
               aria-describedby={formError?.field === 'name' ? COURSE_FEEDBACK_ID : undefined}
-              ref={setFieldRef('course-name')}
             />
             {formError?.field === 'name' && (
               <CFormFeedback id={COURSE_FEEDBACK_ID} invalid className="d-block" role="alert">{formError.message}</CFormFeedback>
@@ -141,7 +135,6 @@ const CourseForm = ({ onSubmit, isLoading, onCancel }) => {
               required
               aria-invalid={formError?.field === 'abbreviation' || undefined}
               aria-describedby={formError?.field === 'abbreviation' ? COURSE_FEEDBACK_ID : undefined}
-              ref={setFieldRef('course-abbreviation')}
             />
             {formError?.field === 'abbreviation' && (
               <CFormFeedback id={COURSE_FEEDBACK_ID} invalid className="d-block" role="alert">{formError.message}</CFormFeedback>

@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useState } from 'react'
 import {
   CForm,
   CRow,
@@ -27,7 +27,6 @@ const toValidation = (result) => (
 const ClassInCourseForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
   const [formData, setFormData] = useState(() => createClassDraft(initialData))
   const [validation, setValidation] = useState(null)
-  const fieldRefs = useRef({})
 
   const isInvalid = (field) => validation?.field === field
     || (validation?.field === 'date_range' && (field === 'start_year' || field === 'end_year'))
@@ -35,8 +34,11 @@ const ClassInCourseForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
   const inputProps = (field) => ({
     'aria-invalid': isInvalid(field) || undefined,
     'aria-describedby': isInvalid(field) ? FEEDBACK_ID : undefined,
-    ref: (element) => { fieldRefs.current[field] = element },
   })
+
+  const focusField = (field) => {
+    document.getElementById(FIELD_IDS[field])?.focus()
+  }
 
   const fieldFeedback = (field) => (
     validation?.field === field
@@ -57,10 +59,7 @@ const ClassInCourseForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
     const nextValidation = toValidation(result)
     setValidation(nextValidation)
     if (nextValidation) {
-      const target = nextValidation.field === 'date_range'
-        ? fieldRefs.current.start_year
-        : fieldRefs.current[nextValidation.field]
-      target?.focus()
+      focusField(nextValidation.field)
       return
     }
     onSubmit(result.value)

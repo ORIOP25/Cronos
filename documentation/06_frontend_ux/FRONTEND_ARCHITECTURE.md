@@ -33,6 +33,7 @@ React Query manages server state while component state handles form and view sta
 | Server state | `frontend/src/queryClient.js`, `frontend/src/features/*/data.js` |
 | Feature directories | `frontend/src/features/` |
 | Authenticated layout | `frontend/src/components/DefaultLayout.jsx` |
+| Global transient feedback | `frontend/src/components/AppToaster.jsx` |
 | Shared application states | `frontend/src/components/FeedbackBanner.jsx`, `StatePanel.jsx` |
 | Guided forms | `frontend/src/components/GuidedFormShell.jsx`, `GuidedFormProgress.jsx` |
 | Marketing layout | `frontend/src/features/marketing/components/layout/MarketingLayout.jsx` |
@@ -41,12 +42,13 @@ React Query manages server state while component state handles form and view sta
 
 ## Data or Request Flow
 
-1. `main.jsx` mounts `ClerkProvider`, `ErrorBoundary`, and `UserQueryProvider`.
+1. `main.jsx` mounts `ClerkProvider`, `ErrorBoundary`, `UserQueryProvider`, and one `AppToaster`.
 2. `App.jsx` selects public, signed-in, admin, or teacher routes.
 3. Clerk provides an organization-scoped token getter.
 4. `apiClient` attaches the token to authenticated Axios requests.
 5. Feature hooks read or mutate API data through React Query.
-6. Public contact uses `fetch` and does not use the Clerk interceptor.
+6. Pages and components emit short results with `react-hot-toast` after an attempt.
+7. Public contact uses `fetch` and does not use the Clerk interceptor.
 
 ## Contracts and Invariants
 
@@ -57,6 +59,11 @@ React Query manages server state while component state handles form and view sta
 - Pages and components must not import TanStack hooks or `apiClient` directly.
   They compose feature data hooks. The ESLint configuration enforces this rule.
 - Feature data hooks live in the feature directories, for example `frontend/src/features/*/data.js`.
+- One `AppToaster` instance owns durations, position, and theming for transient feedback.
+- Success and information toasts last 4000 ms. Transient error toasts last 6000 ms.
+- The toast position is `top-right` from 768 px and `top-center` below that width.
+- `App.jsx` removes visible toasts when the user or organization changes.
+- Field validation stays next to the field or group. Validation never uses a toast.
 - Marketing styles use the `cronos-*` namespace.
 - `metadata.js` is the single source for public route metadata.
 - The build emits one HTML file for each route in `metadata.js`, plus `404.html`.
@@ -79,7 +86,8 @@ Availability keeps persisted server data separate from a local paint draft.
 - A `403` member request displays an access message.
 - API errors use normalized messages from `frontend/src/utils/apiErrors.js`.
 - Shared state panels render loading, error, and empty states.
-- Feedback banners render mutation success and error messages near the affected action.
+- Persistent warnings and business blocks use `FeedbackBanner` near the affected content.
+- Business blocks stay in context. Transient recoverable failures use toasts.
 
 ## Verification Procedure
 
@@ -92,6 +100,7 @@ Availability keeps persisted server data separate from a local paint draft.
 
 - `frontend/src/main.jsx`
 - `frontend/src/App.jsx`
+- `frontend/src/components/AppToaster.jsx`
 - `frontend/src/apiClient.js`
 - `frontend/src/queryClient.js`
 - `frontend/src/styles/brand.tokens.css`

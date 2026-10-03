@@ -22,7 +22,7 @@ export default function FailureState({
   }
 
   return (
-    <section className={`failure-state failure-state--${variant}`} role="alert" aria-live="polite">
+    <section className={`failure-state failure-state--${variant}`} role="alert">
       <div className="failure-state__icon" aria-hidden="true">!</div>
       <h1>{presentation?.title || 'Algo correu mal'}</h1>
       <p>{presentation?.message || 'Ocorreu um erro inesperado. Tente novamente.'}</p>

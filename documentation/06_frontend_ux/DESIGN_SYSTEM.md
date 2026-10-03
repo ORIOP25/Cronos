@@ -46,6 +46,12 @@ The repository maintains visual snapshot baselines under `documentation/06_front
 
 *Note: Visual snapshots serve as design review evidence and baseline references.*
 
+## Feedback Components
+- Transient toasts use the `--cronos-font-body` font, the `--cronos-surface` background, and the `--cronos-ink` text.
+- Toast icons use the `--cronos-success` and `--cronos-danger` semantic tokens.
+- Contextual warnings and business blocks use `FeedbackBanner` without a filled box or lateral border.
+- The banner shows a decorative icon, readable text, and an optional adjacent action.
+
 ## Contracts and Invariants
 - Authenticated application tokens live in `frontend/src/index.css`.
 - Canonical shared tokens live in `frontend/src/styles/brand.tokens.css`.

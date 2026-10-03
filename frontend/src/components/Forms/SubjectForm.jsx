@@ -95,11 +95,10 @@ const SubjectForm = ({ initialData, onSubmit, isLoading, onCancel, readOnly = fa
   }
 
   const modulesInvalid = validation?.field === 'modules'
-  const moduleInputProps = (ref) => ({
+  const moduleInputProps = {
     'aria-invalid': modulesInvalid || undefined,
     'aria-describedby': modulesInvalid ? MODULES_FEEDBACK_ID : undefined,
-    ref,
-  })
+  }
 
   return (
     <CForm onSubmit={submit}>
@@ -133,9 +132,9 @@ const SubjectForm = ({ initialData, onSubmit, isLoading, onCancel, readOnly = fa
       <fieldset>
         <legend className="h6 mb-3">Módulos</legend>
         {!readOnly && <CRow className="g-2 align-items-end">
-          <CCol md={4}><CFormInput id="subject-module-name" label="Nome do módulo" value={moduleDraft.name} onChange={(event) => updateModule('name', event.target.value)} {...moduleInputProps(firstModuleRef)} /></CCol>
-          <CCol md={3}><CFormInput id="subject-module-code" label="Código UFCD" value={moduleDraft.code} onChange={(event) => updateModule('code', event.target.value)} {...moduleInputProps()} /></CCol>
-          <CCol md={2}><CFormInput id="subject-module-hours" label="Horas" type="number" min={1} value={moduleDraft.hours_total} onChange={(event) => updateModule('hours_total', event.target.value)} {...moduleInputProps()} /></CCol>
+          <CCol md={4}><CFormInput id="subject-module-name" label="Nome do módulo" value={moduleDraft.name} onChange={(event) => updateModule('name', event.target.value)} ref={firstModuleRef} {...moduleInputProps} /></CCol>
+          <CCol md={3}><CFormInput id="subject-module-code" label="Código UFCD" value={moduleDraft.code} onChange={(event) => updateModule('code', event.target.value)} {...moduleInputProps} /></CCol>
+          <CCol md={2}><CFormInput id="subject-module-hours" label="Horas" type="number" min={1} value={moduleDraft.hours_total} onChange={(event) => updateModule('hours_total', event.target.value)} {...moduleInputProps} /></CCol>
           <CCol md={3} className="d-grid"><CButton type="button" color="secondary" variant="outline" onClick={saveModule}>{editingIndex == null ? 'Adicionar' : 'Guardar'}</CButton></CCol>
         </CRow>}
         {modulesInvalid && (
