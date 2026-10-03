@@ -2,7 +2,6 @@ import { useMemo, useState } from 'react'
 import { toast } from 'react-hot-toast'
 import { useSearchParams } from 'react-router-dom'
 import {
-  CAlert,
   CBadge,
   CButton,
   CFormCheck,
@@ -20,6 +19,7 @@ import {
 import CIcon from '@coreui/icons-react'
 import { cilActionUndo, cilPencil, cilPlus, cilReload, cilTrash } from '@coreui/icons'
 import PageHeader from '../components/PageHeader'
+import FeedbackBanner from '../components/FeedbackBanner'
 import { getApiErrorMessage, isApiErrorTransient } from '../utils/apiErrors'
 import { useAttemptScope } from '../hooks/useAttemptScope'
 import {
@@ -143,8 +143,12 @@ const MemberModal = ({ visible, member, subjects, onClose, onSave, isSaving, err
         <CModalTitle>{member ? 'Editar membro' : 'Adicionar membro'}</CModalTitle>
       </CModalHeader>
       <CModalBody>
-        {error && <CAlert color="danger">{getApiErrorMessage(error, undefined, member ? 'team.sync' : 'team.invite')}</CAlert>}
-        {syncBlocked && <CAlert color="warning">Resolva a sincronização antes de editar este membro.</CAlert>}
+        {error && (
+          <div className="mb-3"><FeedbackBanner tone="danger">{getApiErrorMessage(error, undefined, member ? 'team.sync' : 'team.invite')}</FeedbackBanner></div>
+        )}
+        {syncBlocked && (
+          <div className="mb-3"><FeedbackBanner tone="warning">Resolva a sincronização antes de editar este membro.</FeedbackBanner></div>
+        )}
         <div className="d-grid gap-3">
           <CFormInput id="member-name" label="Nome" value={draft.organization_display_name} onChange={(event) => setDraft({ ...draft, organization_display_name: event.target.value })} disabled={isSaving || syncBlocked || competenciesOnly} />
           <CFormInput id="member-email" label="Email" type="email" value={draft.email} onChange={(event) => setDraft({ ...draft, email: event.target.value })} disabled={isSaving || syncBlocked || member?.access_status === 'active' || competenciesOnly} />
@@ -177,9 +181,9 @@ const MemberModal = ({ visible, member, subjects, onClose, onSave, isSaving, err
                 ]}
               />
               {draft.teacher_access_mode === 'scheduler_only' && !hasAdmin && (
-                <CAlert color="info" className="mb-0">
+                <FeedbackBanner tone="info">
                   Este professor fica disponível para horários, mas não recebe convite nem acesso para iniciar sessão.
-                </CAlert>
+                </FeedbackBanner>
               )}
               <SubjectPicker subjects={subjects} selected={draft.subject_ids} disabled={isSaving || syncBlocked} onChange={(subject_ids) => setDraft({ ...draft, subject_ids })} />
             </>
@@ -350,8 +354,17 @@ const Members = ({ readOnly = false, allowedActions }) => {
           <CButton color="primary" onClick={() => openModal()} className="d-flex align-items-center gap-2" data-tutorial-target="new-member"><CIcon icon={cilPlus} />Adicionar membro</CButton>
         </div>}
       </div>
-      {isError && <CAlert color="danger">{getApiErrorMessage(error, 'Não foi possível carregar a equipa.', 'team.load')} <CButton color="link" onClick={() => refetch()}>Tentar novamente</CButton></CAlert>}
-      {actionError && <CAlert color="danger">{actionError}</CAlert>}
+      {isError && (
+        <div className="mb-3">
+          <FeedbackBanner
+            tone="danger"
+            action={<CButton color="link" className="p-0" onClick={() => refetch()}>Tentar novamente</CButton>}
+          >
+            {getApiErrorMessage(error, 'Não foi possível carregar a equipa.', 'team.load')}
+          </FeedbackBanner>
+        </div>
+      )}
+      {actionError && <div className="mb-3"><FeedbackBanner tone="danger">{actionError}</FeedbackBanner></div>}
       <div className="table-responsive">
         <table className="table align-middle">
           <thead><tr><th>Nome</th><th>Email</th><th>Tipo</th><th>Estado</th><th>Competências</th><th className="text-end">Ações</th></tr></thead>

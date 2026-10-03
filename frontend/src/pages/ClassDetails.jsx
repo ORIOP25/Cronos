@@ -2,7 +2,7 @@ import { useState, useMemo, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { toast } from 'react-hot-toast'
 import {
-  CCard, CCardBody, CCardHeader, CCol, CRow, CButton, CAlert,
+  CCard, CCardBody, CCardHeader, CCol, CRow, CButton,
   CBadge, CSpinner, CFormInput, CProgress, CProgressBar,
 } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
@@ -19,6 +19,7 @@ import {
   useClassSubjects,
 } from '../features/catalog/data'
 import Breadcrumbs from '../components/Breadcrumbs'
+import FeedbackBanner from '../components/FeedbackBanner'
 import RoomTypeBadge from '../components/RoomTypeBadge'
 import { getApiErrorMessage } from '../utils/apiErrors'
 import { useAttemptScope } from '../hooks/useAttemptScope'
@@ -309,9 +310,9 @@ const ClassDetails = () => {
   if (error || !classData) {
     return (
       <div className="p-4">
-        <CAlert color="danger">
+        <div className="mb-3"><FeedbackBanner tone="danger">
           <strong>Erro:</strong> {getApiErrorMessage(error, 'Turma não encontrada.')}
-        </CAlert>
+        </FeedbackBanner></div>
         <CButton color="light" onClick={() => navigate(`/courses/${numCourseId}`)}>
           <CIcon icon={cilArrowLeft} className="me-1" /> Voltar ao Curso
         </CButton>

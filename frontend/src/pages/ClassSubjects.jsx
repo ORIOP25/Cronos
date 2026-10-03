@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { toast } from 'react-hot-toast'
 import {
-  CCard, CCardBody, CCardHeader, CButton, CAlert,
+  CCard, CCardBody, CCardHeader, CButton,
   CBadge, CSpinner, CFormFeedback, CFormSelect,
   CModal, CModalHeader, CModalTitle,
   CModalBody, CModalFooter,
@@ -242,9 +242,9 @@ const ClassSubjects = ({ courseIdOverride, classIdOverride, navigationDisabled =
     }
     if (availableSubjects?.length === 0) {
       return (
-        <CAlert color="info" className="mb-0">
+        <FeedbackBanner tone="info">
           Todas as disciplinas já estão associadas a esta turma.
-        </CAlert>
+        </FeedbackBanner>
       )
     }
     return (
@@ -276,9 +276,9 @@ const ClassSubjects = ({ courseIdOverride, classIdOverride, navigationDisabled =
   if (error || !classSubjects) {
     return (
       <div className="p-4">
-        <CAlert color="danger">
+        <div className="mb-3"><FeedbackBanner tone="danger">
           <strong>Erro:</strong> {getApiErrorMessage(error, 'Turma não encontrada.')}
-        </CAlert>
+        </FeedbackBanner></div>
         <CButton color="light" onClick={() => { if (!navigationDisabled) navigate(`/courses/${numCourseId}`) }} disabled={navigationDisabled}>
           <CIcon icon={cilArrowLeft} className="me-1" /> Voltar ao Curso
         </CButton>

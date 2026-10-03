@@ -9,12 +9,12 @@ import {
   CModalFooter,
   CButton,
   CFormTextarea,
-  CAlert,
   CBadge,
   CSpinner,
 } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
-import { cilCheckCircle, cilXCircle, cilActionUndo, cilWarning } from '@coreui/icons'
+import { cilCheckCircle, cilXCircle, cilActionUndo } from '@coreui/icons'
+import FeedbackBanner from './FeedbackBanner'
 import { useUpsertLessonLog, useUpdateTimesheetStatus } from '../features/operations/data'
 import { getApiErrorMessage, isApiErrorTransient } from '../utils/apiErrors'
 import { useAttemptScope } from '../hooks/useAttemptScope'
@@ -158,71 +158,74 @@ const LessonLogModal = ({ onClose, slot, isAdmin = false, readOnly = false, allo
 
         {/* Single permission-aware occurrence warning */}
         {hasOccurrence && (
-          <CAlert color={occurrenceDecided ? 'secondary' : 'warning'} className="mb-3 small py-2">
-            <CIcon icon={cilWarning} className="me-1" />
-            {isAdmin ? (
-              <>
-                Esta aula tem uma ocorrência. Consulte ou reverta em Faltas e Ocorrências.{' '}
-                {hasActiveOccurrence && (
-                  <Link to={`/absences?occurrence_id=${slot.occurrence_id}`}>Abrir ocorrência</Link>
-                )}
-              </>
-            ) : (
-              'Esta aula tem uma ocorrência. A Direção gere a decisão e a reversão.'
-            )}
-          </CAlert>
+          <div className="mb-3">
+            <FeedbackBanner tone={occurrenceDecided ? 'info' : 'warning'}>
+              {isAdmin ? (
+                <>
+                  Esta aula tem uma ocorrência. Consulte ou reverta em Faltas e Ocorrências.{' '}
+                  {hasActiveOccurrence && (
+                    <Link to={`/absences?occurrence_id=${slot.occurrence_id}`}>Abrir ocorrência</Link>
+                  )}
+                </>
+              ) : (
+                'Esta aula tem uma ocorrência. A Direção gere a decisão e a reversão.'
+              )}
+            </FeedbackBanner>
+          </div>
         )}
 
         {errorMessage && (
-          <CAlert color="danger" className="mb-3">
-            {errorMessage}
-          </CAlert>
+          <div className="mb-3"><FeedbackBanner tone="danger">{errorMessage}</FeedbackBanner></div>
         )}
 
         {isFuture && isPending && (
-          <CAlert color="info" className="mb-3 small">
-            Só pode concluir esta aula depois do seu término. Pode preencher o sumário e criar ocorrência antecipadamente.
-          </CAlert>
+          <div className="mb-3">
+            <FeedbackBanner tone="info">
+              Só pode concluir esta aula depois do seu término. Pode preencher o sumário e criar ocorrência antecipadamente.
+            </FeedbackBanner>
+          </div>
         )}
 
         {/* Locked week — read-only mode */}
         {isWeekLocked && (
-          <CAlert color="secondary" className="mb-3 d-flex align-items-center justify-content-between flex-wrap gap-2">
-            <span>
+          <div className="mb-3">
+            <FeedbackBanner
+              tone="info"
+              action={isAdmin && canEditTimesheet && (
+                <CButton
+                  color="warning"
+                  size="sm"
+                  className="text-white"
+                  onClick={handleReopenWeek}
+                  disabled={!canEditTimesheet || updateTimesheetStatusMutation.isPending}
+                >
+                  {updateTimesheetStatusMutation.isPending && <CSpinner size="sm" className="me-1" />}
+                  <CIcon icon={cilActionUndo} className="me-1" />
+                  Reabrir Semana
+                </CButton>
+              )}
+            >
               <strong>Semana {slot.week_timesheet_status === 'SUBMITTED' ? 'submetida' : 'aprovada'}</strong>
               {' — Modo de consulta.'}
               {!isAdmin && ' Os campos estão bloqueados para edição.'}
-            </span>
-            {isAdmin && canEditTimesheet && (
-              <CButton
-                color="warning"
-                size="sm"
-                className="text-white"
-                onClick={handleReopenWeek}
-                disabled={!canEditTimesheet || updateTimesheetStatusMutation.isPending}
-              >
-                {updateTimesheetStatusMutation.isPending && <CSpinner size="sm" className="me-1" />}
-                <CIcon icon={cilActionUndo} className="me-1" />
-                Reabrir Semana
-              </CButton>
-            )}
-          </CAlert>
+            </FeedbackBanner>
+          </div>
         )}
 
         {/* COMPLETED editable banner */}
         {canEdit && (
-          <CAlert color="success" className="mb-3 small py-2">
-            <CIcon icon={cilCheckCircle} className="me-1" />
-            Aula registada. Pode editar o sumário e notas.
-          </CAlert>
+          <div className="mb-3">
+            <FeedbackBanner tone="success">Aula registada. Pode editar o sumário e notas.</FeedbackBanner>
+          </div>
         )}
 
         {/* COMPLETED read-only banner (locked week) */}
         {isCompleted && isWeekLocked && (
-          <CAlert color="success" className="mb-3 small py-2">
-            <CIcon icon={cilCheckCircle} className="me-1" />
-            Aula registada. Semana {slot.week_timesheet_status === 'SUBMITTED' ? 'submetida' : 'aprovada'} — modo de consulta.
-          </CAlert>
+          <div className="mb-3">
+            <FeedbackBanner tone="success">
+              Aula registada. Semana {slot.week_timesheet_status === 'SUBMITTED' ? 'submetida' : 'aprovada'} — modo de consulta.
+            </FeedbackBanner>
+          </div>
         )}
 
         {/* Lesson log form */}
@@ -264,47 +267,55 @@ const LessonLogModal = ({ onClose, slot, isAdmin = false, readOnly = false, allo
       </CModalBody>
 
       {showReopenConfirm && (
-        <CAlert color="warning" className="mx-3 mb-0 d-flex align-items-center justify-content-between flex-wrap gap-2">
-          <span>
+        <div className="mx-3 mb-0">
+          <FeedbackBanner
+            tone="warning"
+            action={(
+              <div className="d-flex gap-2">
+                <CButton color="secondary" variant="outline" size="sm" onClick={() => setShowReopenConfirm(false)}>
+                  Cancelar
+                </CButton>
+                <CButton
+                  color="warning" size="sm" className="text-white"
+                  onClick={handleConfirmReopen}
+                  disabled={updateTimesheetStatusMutation.isPending}
+                >
+                  {updateTimesheetStatusMutation.isPending && <CSpinner size="sm" className="me-1" />}
+                  Sim, reabrir
+                </CButton>
+              </div>
+            )}
+          >
             <strong>Reabrir semana?</strong>{' '}
             O professor poderá editar as aulas novamente.
-          </span>
-          <div className="d-flex gap-2">
-            <CButton color="secondary" variant="outline" size="sm" onClick={() => setShowReopenConfirm(false)}>
-              Cancelar
-            </CButton>
-            <CButton
-              color="warning" size="sm" className="text-white"
-              onClick={handleConfirmReopen}
-              disabled={updateTimesheetStatusMutation.isPending}
-            >
-              {updateTimesheetStatusMutation.isPending && <CSpinner size="sm" className="me-1" />}
-              Sim, reabrir
-            </CButton>
-          </div>
-        </CAlert>
+          </FeedbackBanner>
+        </div>
       )}
 
       {showOccurrenceConfirm && (
-        <CAlert color="warning" className="mx-3 mb-0 d-flex align-items-center justify-content-between flex-wrap gap-2">
-          <span>
+        <div className="mx-3 mb-0">
+          <FeedbackBanner
+            tone="warning"
+            action={(
+              <div className="d-flex gap-2">
+                <CButton color="secondary" variant="outline" size="sm" onClick={() => setShowOccurrenceConfirm(false)}>
+                  Cancelar
+                </CButton>
+                <CButton
+                  color="warning" size="sm" className="text-white"
+                  onClick={() => { setShowOccurrenceConfirm(false); handleSubmit('OCCURRENCE') }}
+                  disabled={upsertLogMutation.isPending}
+                >
+                  {upsertLogMutation.isPending && <CSpinner size="sm" className="me-1" />}
+                  Sim, criar ocorrência
+                </CButton>
+              </div>
+            )}
+          >
             <strong>Criar ocorrência?</strong>{' '}
             Esta ação irá gerar uma ocorrência que requer intervenção administrativa. Tem a certeza?
-          </span>
-          <div className="d-flex gap-2">
-            <CButton color="secondary" variant="outline" size="sm" onClick={() => setShowOccurrenceConfirm(false)}>
-              Cancelar
-            </CButton>
-            <CButton
-              color="warning" size="sm" className="text-white"
-              onClick={() => { setShowOccurrenceConfirm(false); handleSubmit('OCCURRENCE') }}
-              disabled={upsertLogMutation.isPending}
-            >
-              {upsertLogMutation.isPending && <CSpinner size="sm" className="me-1" />}
-              Sim, criar ocorrência
-            </CButton>
-          </div>
-        </CAlert>
+          </FeedbackBanner>
+        </div>
       )}
 
       <CModalFooter>

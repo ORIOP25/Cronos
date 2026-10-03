@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import PageHeader from '../components/PageHeader'
-import { CAlert, CBadge, CCard, CCardBody, CCardHeader, CSpinner } from '@coreui/react'
+import FeedbackBanner from '../components/FeedbackBanner'
+import { CBadge, CCard, CCardBody, CCardHeader, CSpinner } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
 import { cilBook, cilEducation } from '@coreui/icons'
 import { useCurrentMember } from '../features/members/data'
@@ -139,9 +140,9 @@ function MyProgress() {
   if (!teacherId) {
     return (
       <div className="p-4">
-        <CAlert color="danger" className="mb-0">
+        <FeedbackBanner tone="danger">
           Conta de professor sem perfil associado. Contacte um admin para associar o perfil docente.
-        </CAlert>
+        </FeedbackBanner>
       </div>
     )
   }
@@ -162,11 +163,11 @@ function MyProgress() {
   if (isError) {
     return (
       <div className="p-4">
-        <CAlert color="danger" className="mb-0">
+        <FeedbackBanner tone="danger">
           {error?.response?.status === 403
             ? 'Sem permissões para consultar o progresso curricular.'
             : 'Não foi possível carregar o progresso. Tente novamente em alguns minutos.'}
-        </CAlert>
+        </FeedbackBanner>
       </div>
     )
   }

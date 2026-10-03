@@ -1,7 +1,7 @@
 import { useState, useMemo, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
-  CCard, CCardBody, CCardHeader, CCol, CRow, CButton, CAlert,
+  CCard, CCardBody, CCardHeader, CCol, CRow, CButton,
   CBadge, CSpinner, CFormInput,
 } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
@@ -10,6 +10,7 @@ import {
   cilPeople, cilPlus,
 } from '@coreui/icons'
 import { toast } from 'react-hot-toast'
+import FeedbackBanner from '../components/FeedbackBanner'
 import GenericModalForm from '../components/GenericModalForm'
 import ClassInCourseForm from '../components/Forms/ClassInCourseForm'
 import ConfirmationModal from '../components/ConfirmationModal'
@@ -258,9 +259,9 @@ const CourseDetails = ({ courseIdOverride, readOnly = false, allowedActions, nav
   if (error || !course) {
     return (
       <div className="p-4">
-        <CAlert color="danger">
+        <div className="mb-3"><FeedbackBanner tone="danger">
           <strong>Erro:</strong> {getApiErrorMessage(error, 'Curso não encontrado.')}
-        </CAlert>
+        </FeedbackBanner></div>
         <CButton color="light" onClick={() => navigate('/courses')}>
           <CIcon icon={cilArrowLeft} className="me-1" /> Voltar aos Cursos
         </CButton>
@@ -281,16 +282,16 @@ const CourseDetails = ({ courseIdOverride, readOnly = false, allowedActions, nav
 
       {/* ---- ALERTAS DE BLOQUEIOS PERSISTENTES ---- */}
       {deleteCourse.isError && (
-        <CAlert color="danger" dismissible onClose={() => deleteCourse.reset()}>
+        <div className="mb-3"><FeedbackBanner tone="danger">
           <strong>Erro ao apagar:</strong>{' '}
           {getApiErrorMessage(deleteCourse.error, 'Não é possível apagar este curso.')}
-        </CAlert>
+        </FeedbackBanner></div>
       )}
       {deleteCourseClass.isError && (
-        <CAlert color="danger" dismissible onClose={() => deleteCourseClass.reset()}>
+        <div className="mb-3"><FeedbackBanner tone="danger">
           <strong>Erro ao remover turma:</strong>{' '}
           {getApiErrorMessage(deleteCourseClass.error)}
-        </CAlert>
+        </FeedbackBanner></div>
       )}
 
       {/* ==== HEADER DO CURSO ==== */}

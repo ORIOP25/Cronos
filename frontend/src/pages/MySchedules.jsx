@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'react-hot-toast'
 import PageHeader from '../components/PageHeader'
-import { CAlert, CBadge, CButton, CCard, CCardBody, CCardHeader, CSpinner } from '@coreui/react'
+import { CBadge, CButton, CCard, CCardBody, CCardHeader, CSpinner } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
 import { cilArrowLeft, cilArrowRight, cilCalendar } from '@coreui/icons'
 import WeekGrid from '../components/WeekGrid'
 import LessonLogModal from '../components/LessonLogModal'
+import FeedbackBanner from '../components/FeedbackBanner'
 import ConfirmationModal from '../components/ConfirmationModal'
 import { TXT } from '../utils/terminology'
 import {
@@ -211,9 +212,9 @@ function MySchedules() {
     return (
       <div className="p-4">
         {pageHeader}
-        <CAlert color="danger" className="mb-0">
+        <FeedbackBanner tone="danger">
           Conta de professor sem perfil associado. Contacte um admin para associar o perfil docente.
-        </CAlert>
+        </FeedbackBanner>
       </div>
     )
   }
@@ -236,9 +237,9 @@ function MySchedules() {
     return (
       <div className="p-4">
         {pageHeader}
-        <CAlert color="danger" className="mb-0">
+        <FeedbackBanner tone="danger">
           {resolveHorizonErrorMessage(horizonError)}
-        </CAlert>
+        </FeedbackBanner>
       </div>
     )
   }
@@ -338,15 +339,11 @@ function MySchedules() {
           </div>
 
           {submitError && (
-            <CAlert color="danger" className="mb-3">
-              {submitError}
-            </CAlert>
+            <div className="mb-3"><FeedbackBanner tone="danger">{submitError}</FeedbackBanner></div>
           )}
 
           {limitFeedback ? (
-            <CAlert color="warning" className="mb-3">
-              {limitFeedback}
-            </CAlert>
+            <div className="mb-3"><FeedbackBanner tone="warning">{limitFeedback}</FeedbackBanner></div>
           ) : null}
 
           {weekContent}

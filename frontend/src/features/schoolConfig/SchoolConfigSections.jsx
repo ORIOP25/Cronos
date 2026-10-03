@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { toast } from 'react-hot-toast'
 import {
   CCard, CCardBody, CCardHeader, CCol, CRow, CForm, CFormInput,
-  CFormCheck, CFormLabel, CButton, CAlert, CBadge, CInputGroup, CInputGroupText,
+  CFormCheck, CFormLabel, CButton, CBadge, CInputGroup, CInputGroupText,
   CSpinner, CTable, CTableHead, CTableRow, CTableHeaderCell,
   CTableBody, CTableDataCell, CFormSelect,
   CModal, CModalHeader, CModalTitle, CModalBody, CModalFooter
@@ -503,7 +503,7 @@ export const CalendarSection = () => {
           <CModalTitle>Confirmar alteração do horário</CModalTitle>
         </CModalHeader>
         <CModalBody>
-          <CAlert color="warning">{previewState?.message}</CAlert>
+          <div className="mb-3"><FeedbackBanner tone="warning">{previewState?.message}</FeedbackBanner></div>
           <CTable small responsive>
             <CTableHead>
               <CTableRow>
@@ -707,12 +707,12 @@ const SettingsEditor = ({ settings }) => {
 
   return (
     <div>
-      {savePromptMsg && <CAlert color="warning" className="mb-3">{savePromptMsg}</CAlert>}
+      {savePromptMsg && <div className="mb-3"><FeedbackBanner tone="warning">{savePromptMsg}</FeedbackBanner></div>}
       {upsertMutation.isError && (
-        <CAlert color="danger">
-          <div className="d-flex flex-wrap align-items-center gap-2">
-            <span>{getApiErrorMessage(upsertMutation.error, 'Erro ao guardar configuração.')}</span>
-            {canDisableAutomaticHolidays && (
+        <div className="mb-3">
+          <FeedbackBanner
+            tone="danger"
+            action={canDisableAutomaticHolidays && (
               <CButton
                 color="link"
                 className="p-0"
@@ -722,8 +722,10 @@ const SettingsEditor = ({ settings }) => {
                 Desativar feriados automáticos e guardar
               </CButton>
             )}
-          </div>
-        </CAlert>
+          >
+            {getApiErrorMessage(upsertMutation.error, 'Erro ao guardar configuração.')}
+          </FeedbackBanner>
+        </div>
       )}
       
       <CRow className="g-3 mb-3 align-items-start">
@@ -802,11 +804,13 @@ const SettingsEditor = ({ settings }) => {
           <CModalTitle className="text-danger fw-bold">Recomeçar ano letivo</CModalTitle>
         </CModalHeader>
         <CModalBody>
-          <CAlert color="warning">
+          <div className="mb-3">
+            <FeedbackBanner tone="warning">
               Esta ação repõe o ano letivo no estado inicial: os horários publicados deixam de estar ativos, as propostas pendentes são invalidadas e o progresso do motor volta a zero. O histórico auditável é conservado, mas deixa de influenciar novas gerações.
-            </CAlert>
-          
-          {resetError && <CAlert color="danger">{resetError}</CAlert>}
+            </FeedbackBanner>
+          </div>
+
+          {resetError && <div className="mb-3"><FeedbackBanner tone="danger">{resetError}</FeedbackBanner></div>}
 
           <div className="mb-3 mt-4">
             <CFormCheck 
@@ -863,7 +867,7 @@ export const GridSection = () => {
   }
   const queryError = configurationQuery.error || settingsQuery.error || timeslotsQuery.error
   if (queryError) {
-    return <CAlert color="danger">{getApiErrorMessage(queryError, 'Erro ao carregar a grelha.')}</CAlert>
+    return <FeedbackBanner tone="danger">{getApiErrorMessage(queryError, 'Erro ao carregar a grelha.')}</FeedbackBanner>
   }
 
   const storedConfiguration = configurationQuery.data?.source === 'VERSION'
@@ -879,7 +883,7 @@ export const GridSection = () => {
   } catch (error) {
     return (
       <div>
-        <CAlert color="danger">{error.message}</CAlert>
+        <div className="mb-3"><FeedbackBanner tone="danger">{error.message}</FeedbackBanner></div>
         <CButton color="primary" disabled>Guardar e Regenerar Grelha</CButton>
       </div>
     )
@@ -947,12 +951,14 @@ const GridChangeImpactPanel = ({ preview, decisions, onDecision, onPropose, isPr
         </p>
 
         {!preview.can_propose && (
-          <CAlert color="warning">
-            <strong>Esta alteração não pode ser proposta:</strong>
-            <ul className="mb-0">
-              {preview.blockers.map((blocker) => <li key={blocker}>{blocker}</li>)}
-            </ul>
-          </CAlert>
+          <div className="mb-3">
+            <FeedbackBanner tone="warning">
+              <strong>Esta alteração não pode ser proposta:</strong>
+              <ul className="mb-0">
+                {preview.blockers.map((blocker) => <li key={blocker}>{blocker}</li>)}
+              </ul>
+            </FeedbackBanner>
+          </div>
         )}
 
         <h6 className="fw-bold text-secondary mb-2">Diferença de aulas por dia</h6>

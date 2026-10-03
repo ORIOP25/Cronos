@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import {
-  CAlert, CForm, CRow, CCol, CFormInput, CButton, CModalFooter, CFormSelect
+  CForm, CFormFeedback, CRow, CCol, CFormInput, CButton, CModalFooter, CFormSelect
 } from '@coreui/react'
 import { portugueseValidityProps } from '../../utils/formValidity'
 import { ROOM_TYPES } from '../../utils/presentation'
@@ -27,6 +27,7 @@ const RoomForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
     const name = String(formData.name ?? '').trim()
     if (!name) {
       setError('Nome da sala é obrigatório.')
+      document.getElementById('room-name')?.focus()
       return
     }
     onSubmit({
@@ -42,7 +43,6 @@ const RoomForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
 
   return (
     <CForm onSubmit={handleSubmit}>
-      {error && <CAlert color="danger" id="room-form-error">{error}</CAlert>}
       <CRow className="g-3">
         <CCol md={8}>
           <CFormInput
@@ -55,9 +55,11 @@ const RoomForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
             required
             placeholder="Ex: C4, Lab Química"
             invalid={Boolean(error)}
+            aria-invalid={Boolean(error) || undefined}
             aria-describedby={error ? 'room-form-error' : undefined}
             {...portugueseValidityProps}
           />
+          {error && <CFormFeedback id="room-form-error" invalid className="d-block" role="alert">{error}</CFormFeedback>}
         </CCol>
         
         <CCol md={4}>

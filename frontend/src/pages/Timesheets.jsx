@@ -3,7 +3,7 @@ import { toast } from 'react-hot-toast'
 import PageHeader from '../components/PageHeader'
 import { useNavigate } from 'react-router-dom'
 import {
-  CCard, CCardBody, CAlert, CBadge, CSpinner, CButton,
+  CCard, CCardBody, CBadge, CSpinner, CButton,
   CFormSelect, CRow, CCol,
 } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
@@ -15,6 +15,7 @@ import { useWeekSchedule } from '../features/scheduling/data'
 import { useTimeslots, useWeekGridVersions } from '../features/catalog/data'
 import WeekGrid from '../components/WeekGrid'
 import LessonLogModal from '../components/LessonLogModal'
+import FeedbackBanner from '../components/FeedbackBanner'
 import TeacherCard from '../components/timesheets/TeacherCard'
 import { formatWeekRange, toWeekMonday } from '../utils/formatUtils'
 import { TXT } from '../utils/terminology'
@@ -131,15 +132,11 @@ const Timesheets = ({ initialWeekStart, readOnly = false, allowedActions, naviga
       </CCard>
 
       {statusActionError && (
-        <CAlert color="danger" className="mb-4">
-          {statusActionError}
-        </CAlert>
+        <div className="mb-4"><FeedbackBanner tone="danger">{statusActionError}</FeedbackBanner></div>
       )}
 
       {timesheetsError && (
-        <CAlert color="danger" className="mb-4">
-          Erro ao carregar as aprovações semanais.
-        </CAlert>
+        <div className="mb-4"><FeedbackBanner tone="danger">Erro ao carregar as aprovações semanais.</FeedbackBanner></div>
       )}
 
       {/* Two-panel layout */}
@@ -163,9 +160,7 @@ const Timesheets = ({ initialWeekStart, readOnly = false, allowedActions, naviga
               )}
 
               {!loadingTimesheets && timesheets.length === 0 && (
-                <CAlert color="info" className="small py-2">
-                  Nenhum professor com timesheet nesta semana.
-                </CAlert>
+                <FeedbackBanner tone="info">Nenhum professor com timesheet nesta semana.</FeedbackBanner>
               )}
 
               <div style={{ maxHeight: '70vh', overflowY: 'auto' }}>

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import TeacherAvailabilityModal from '../components/TeacherAvailabilityModal'
+import { renderWithProviders } from './testUtils'
 
 const mocks = vi.hoisted(() => ({ save: vi.fn() }))
 
@@ -24,7 +25,7 @@ vi.mock('../features/operations/data', () => ({
 describe('TeacherAvailabilityModal', () => {
   it('lets the direction edit availability without sending an invite', async () => {
     mocks.save.mockResolvedValue({ status: 'success', count: 1 })
-    render(<TeacherAvailabilityModal teacher={{ id: 7, name: 'Prof. QA' }} onClose={vi.fn()} />)
+    renderWithProviders(<TeacherAvailabilityModal teacher={{ id: 7, name: 'Prof. QA' }} onClose={vi.fn()} />, { withToaster: true })
 
     expect(screen.getByText('Disponibilidade — Prof. QA')).toBeInTheDocument()
     expect(screen.getByText(/Não envia convite/i)).toBeInTheDocument()
@@ -42,6 +43,6 @@ describe('TeacherAvailabilityModal', () => {
         payload: [{ timeslot_id: 11, score: 1 }],
       })
     })
-    expect(await screen.findByText(/Disponibilidade guardada/i)).toBeInTheDocument()
+    expect(await within(document.querySelector('[data-rht-toaster]')).findByText(/Disponibilidade guardada/i)).toBeInTheDocument()
   })
 })

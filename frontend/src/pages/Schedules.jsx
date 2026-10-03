@@ -27,6 +27,7 @@ import DraftPanel from '../components/schedules/DraftPanel'
 import GenerationStatusPanel from '../components/schedules/GenerationStatusPanel'
 import ConfirmationModal from '../components/ConfirmationModal'
 import FailureState from '../components/FailureState'
+import FeedbackBanner from '../components/FeedbackBanner'
 import PageHeader from '../components/PageHeader'
 import StatePanel from '../components/StatePanel'
 import { useOrganization } from '@clerk/react'
@@ -485,9 +486,9 @@ const Schedules = ({ initialClassId = '', initialWeekStart, persistView = true, 
 
       <div data-tutorial-target="schedule-draft">
           {typeof generationActionError === 'string' && (
-            <CAlert color="danger" className="mb-4" style={{ whiteSpace: 'pre-line' }}>
-              {generationActionError}
-            </CAlert>
+            <div className="mb-4">
+              <FeedbackBanner tone="danger">{generationActionError}</FeedbackBanner>
+            </div>
           )}
           {generationActionError && typeof generationActionError === 'object' && (
             <div className="mb-4">
@@ -530,9 +531,11 @@ const Schedules = ({ initialClassId = '', initialWeekStart, persistView = true, 
           )}
           {effectiveJobId && <GenerationStatusPanel jobId={effectiveJobId} />}
           {!hasPendingDraft && !isGenerating && eligibilityMessage(eligibility, schoolYear) && (
-            <CAlert color="secondary" className="mb-4" style={{ whiteSpace: 'pre-line' }}>
-              {eligibilityMessage(eligibility, schoolYear)}
-            </CAlert>
+            <div className="mb-4">
+              <FeedbackBanner tone="info">
+                {eligibilityMessage(eligibility, schoolYear)}
+              </FeedbackBanner>
+            </div>
           )}
           {hasPendingDraft && (currentDraft || schedulerStatus?.pending_proposal) && (
             <DraftPanel

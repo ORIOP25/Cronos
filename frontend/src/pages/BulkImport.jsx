@@ -11,6 +11,7 @@ import {
   CFormInput,
   CSpinner,
 } from '@coreui/react'
+import FeedbackBanner from '../components/FeedbackBanner'
 import PageHeader from '../components/PageHeader'
 import { useApiClient } from '../ApiClientContext'
 import { useAttemptScope } from '../hooks/useAttemptScope'
@@ -138,7 +139,7 @@ const BulkImport = () => {
         </p>
       </section>
 
-      {localError && <div className="mb-3"><CAlert color="warning">{localError}</CAlert></div>}
+      {localError && <div className="mb-3"><FeedbackBanner tone="warning">{localError}</FeedbackBanner></div>}
 
       <div className="row g-3">
         {IMPORT_RESOURCES.map((resource) => {

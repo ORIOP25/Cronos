@@ -13,7 +13,7 @@
 .feedback-banner--info .feedback-banner__icon { color: var(--cronos-accent-text); }
 .feedback-banner__content { min-width: 0; }
 .feedback-banner__title { margin: 0 0 2px; font-weight: 700; }
-.feedback-banner__message { margin: 0; color: var(--cronos-ink-muted); }
+.feedback-banner__message { margin: 0; color: var(--cronos-ink-muted); white-space: pre-line; }
 .feedback-banner__action { flex: 0 0 auto; margin-left: auto; }
 
 .draft-panel {
