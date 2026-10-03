@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { toast } from 'react-hot-toast'
+import { Link } from 'react-router-dom'
 import {
   CModal,
   CModalHeader,
@@ -18,13 +19,6 @@ import { useUpsertLessonLog, useUpdateTimesheetStatus } from '../features/operat
 import { getApiErrorMessage } from '../utils/apiErrors'
 import { formatDateLong } from '../utils/formatUtils'
 import { getLessonLogStatus } from '../utils/presentation'
-
-const OCCURRENCE_STATUS_LABELS = {
-  GIVEN:       'Dada ✓',
-  GAP:         'Furo ✗',
-  SUBSTITUTED: 'Substituída ↔',
-  REVOKED:     'Revertida',
-}
 
 /**
  * LessonLogModal — V4 simplified registration modal.
@@ -92,16 +86,17 @@ const LessonLogModal = ({ onClose, slot, isAdmin = false, readOnly = false, allo
 
   const currentStatus = slot.lesson_log_status || 'PENDING'
   const isCompleted = currentStatus === 'COMPLETED'
-  const isOccurrence = currentStatus === 'OCCURRENCE'
   const isPending = currentStatus === 'PENDING'
 
   const hasActiveOccurrence = Boolean(slot.occurrence_id) && slot.occurrence_status !== 'REVOKED'
   const isOperationalBlock = slot.block_source === 'operational' || Boolean(slot.operational_block_id)
   const occurrenceDecided = Boolean(slot.occurrence_decided_at)
-  const occurrenceStatusLabel = OCCURRENCE_STATUS_LABELS[slot.occurrence_status] ?? slot.occurrence_status
+  const hasOccurrence = hasActiveOccurrence || currentStatus === 'OCCURRENCE'
 
   let isFuture = false
-  if (slot.date && slot.timeslot?.end_time) {
+  if (slot.ends_at) {
+    isFuture = new Date(slot.ends_at) > new Date(referenceDate || defaultReferenceDate)
+  } else if (slot.date && slot.timeslot?.end_time) {
     const endDateTime = new Date(`${slot.date}T${slot.timeslot.end_time}`)
     isFuture = endDateTime > new Date(referenceDate || defaultReferenceDate)
   } else {
@@ -149,25 +144,20 @@ const LessonLogModal = ({ onClose, slot, isAdmin = false, readOnly = false, allo
           {slot.room && <div><strong>Sala:</strong> {slot.room?.name}</div>}
         </div>
 
-        {/* Informative banner for occurrences */}
-        {hasActiveOccurrence && !occurrenceDecided && (
-          <CAlert color="warning" className="mb-3 small py-2">
+        {/* Single permission-aware occurrence warning */}
+        {hasOccurrence && (
+          <CAlert color={occurrenceDecided ? 'secondary' : 'warning'} className="mb-3 small py-2">
             <CIcon icon={cilWarning} className="me-1" />
-            Ocorrência registada. Geria em Faltas &amp; Ocorrências.
-          </CAlert>
-        )}
-        {hasActiveOccurrence && occurrenceDecided && (
-          <CAlert color="secondary" className="mb-3 small py-2">
-            <CIcon icon={cilWarning} className="me-1" />
-            Ocorrência decidida: {occurrenceStatusLabel}. Consulte Faltas &amp; Ocorrências.
-          </CAlert>
-        )}
-
-        {/* OCCURRENCE read-only banner */}
-        {isOccurrence && !hasActiveOccurrence && (
-          <CAlert color="warning" className="mb-3 small py-2">
-            <CIcon icon={cilWarning} className="me-1" />
-            Esta aula tem uma ocorrência registada. Contacte um administrador para reverter.
+            {isAdmin ? (
+              <>
+                Esta aula tem uma ocorrência. Consulte ou reverta em Faltas e Ocorrências.{' '}
+                {hasActiveOccurrence && (
+                  <Link to={`/absences?occurrence_id=${slot.occurrence_id}`}>Abrir ocorrência</Link>
+                )}
+              </>
+            ) : (
+              'Esta aula tem uma ocorrência. A Direção gere a decisão e a reversão.'
+            )}
           </CAlert>
         )}
 
@@ -179,7 +169,7 @@ const LessonLogModal = ({ onClose, slot, isAdmin = false, readOnly = false, allo
 
         {isFuture && isPending && (
           <CAlert color="info" className="mb-3 small">
-            Esta aula ainda não terminou. Pode preencher o sumário e criar ocorrência antecipadamente.
+            Só pode concluir esta aula depois do seu término. Pode preencher o sumário e criar ocorrência antecipadamente.
           </CAlert>
         )}
 
@@ -220,14 +210,6 @@ const LessonLogModal = ({ onClose, slot, isAdmin = false, readOnly = false, allo
           <CAlert color="success" className="mb-3 small py-2">
             <CIcon icon={cilCheckCircle} className="me-1" />
             Aula registada. Semana {slot.week_timesheet_status === 'SUBMITTED' ? 'submetida' : 'aprovada'} — modo de consulta.
-          </CAlert>
-        )}
-
-        {/* OCCURRENCE read-only banner */}
-        {isOccurrence && (
-          <CAlert color="warning" className="mb-3 small py-2">
-            <CIcon icon={cilXCircle} className="me-1" />
-            Ocorrência registada. Não é possível alterar. Contacte um administrador para reverter em Faltas &amp; Ocorrências.
           </CAlert>
         )}
 

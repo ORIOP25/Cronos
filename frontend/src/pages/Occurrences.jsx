@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'react-hot-toast'
 import PageHeader from '../components/PageHeader'
 import { useSearchParams } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 import {
   CCard, CCardBody, CCol, CRow, CAlert, CBadge, CSpinner,
   CButton, CFormSelect, CFormLabel, CTabs, CTabList, CTab,
@@ -13,15 +14,35 @@ import CIcon from '@coreui/icons-react'
 import { cilWarning, cilCheckCircle, cilBan, cilClock } from '@coreui/icons'
 import {
   useOccurrences, useDebts, useUpdateOccurrence, useCancelOccurrence,
-  useSubstituteRecommendations,
+  useSubstituteRecommendations, useSubstituteDiagnostics,
 } from '../features/operations/data'
 import { useClasses, useSubjects } from '../features/catalog/data'
 import { useTeachers } from '../features/members/data'
-import { formatDate, formatDateTime } from '../utils/formatUtils'
+import { formatDate, formatDateTime, formatDurationHours, isAfterDate } from '../utils/formatUtils'
 import { TXT, OPERATIONAL_STATE_LABELS, OPERATIONAL_STATE_COLORS } from '../utils/terminology'
 import ConfirmationModal from '../components/ConfirmationModal'
 import PortugueseDateInput from '../components/PortugueseDateInput'
 import { getApiErrorMessage } from '../utils/apiErrors'
+
+const HISTORY_TABLE_MEDIA_QUERY = '(min-width: 1000px)'
+
+const useWideHistoryLayout = () => {
+  const [isWide, setIsWide] = useState(() => (
+    typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+      ? window.matchMedia(HISTORY_TABLE_MEDIA_QUERY).matches
+      : true
+  ))
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return undefined
+    const mediaQuery = window.matchMedia(HISTORY_TABLE_MEDIA_QUERY)
+    const handleChange = (event) => setIsWide(event.matches)
+    mediaQuery.addEventListener('change', handleChange)
+    return () => mediaQuery.removeEventListener('change', handleChange)
+  }, [])
+
+  return isWide
+}
 
 // ---------------------------------------------------------------------------
 // Constantes
@@ -85,8 +106,12 @@ const buildExecutionSummary = (occurrence, teacherById, subjectById) => {
   if (occurrence.status === 'SUBSTITUTED') {
     const teacherName = occurrence.executed_teacher_name
       ?? resolveName(teacherById, occurrence.substitute_teacher_id, 'Prof.')
-    const subjectName = resolveName(subjectById, occurrence.substitute_subject_id, 'Disciplina')
-    return `${teacherName} (${subjectName})`
+    const subjectName = occurrence.substitute_subject_name
+      ?? resolveName(subjectById, occurrence.substitute_subject_id, 'Disciplina')
+    const execution = occurrence.substitute_execution_status === 'COMPLETED'
+      ? 'Concluída'
+      : 'Planeada'
+    return `${teacherName} (${subjectName}) — ${execution}`
   }
 
   const effectiveTeacherId = occurrence.executed_teacher_id ?? occurrence.planned_teacher_id
@@ -164,6 +189,20 @@ const EditOccurrenceModal = ({
   } = useSubstituteRecommendations({
     occurrenceId: occurrence.id,
   })
+  const { data: diagnostics } = useSubstituteDiagnostics({ occurrenceId: occurrence.id })
+  const exclusionMessages = useMemo(() => {
+    const candidates = diagnostics?.candidates ?? []
+    const seen = new Set()
+    const messages = []
+    for (const candidate of candidates) {
+      for (const exclusion of candidate.exclusions ?? []) {
+        if (seen.has(exclusion.message)) continue
+        seen.add(exclusion.message)
+        messages.push({ ...exclusion, teacher_id: candidate.teacher_id })
+      }
+    }
+    return messages.slice(0, 4)
+  }, [diagnostics])
 
   useEffect(() => {
     if (status !== 'SUBSTITUTED') {
@@ -304,7 +343,27 @@ const EditOccurrenceModal = ({
               )}
               {!loadingRecommendations && !recommendationsError && recommendations.length === 0 && (
                 <CAlert color="warning" className="mb-0">
-                  Sem elegíveis para este slot. Registe como GAP.
+                  <div className="fw-semibold">Sem elegíveis para este período.</div>
+                  {exclusionMessages.length > 0 && (
+                    <ul className="mb-1 mt-1 ps-3 small">
+                      {exclusionMessages.map((item) => (
+                        <li key={`${item.teacher_id}-${item.code}`}>
+                          {item.message}{' '}
+                          {item.setup === 'availability' && (
+                            <Link
+                              to={`/members?teacher_id=${item.teacher_id}&panel=availability`}
+                              onClick={onClose}
+                            >
+                              Editar disponibilidade
+                            </Link>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  <div className="small">
+                    Pode decidir “Furo” ou corrigir a configuração indicada.
+                  </div>
                 </CAlert>
               )}
               {!loadingRecommendations && !recommendationsError && recommendations.length > 0 && (
@@ -396,7 +455,7 @@ const DebtsPanel = ({ classId }) => {
         </CCol>
         <CCol sm={6} md={4}>
           <div className="p-3 bg-warning bg-opacity-10 border border-warning rounded text-center">
-            <div className="fs-2 fw-bold text-warning">{debtData.total_hours_owed}h</div>
+            <div className="fs-2 fw-bold text-warning">{formatDurationHours(debtData.total_hours_owed)}</div>
             <div className="text-muted small">Horas em dívida</div>
           </div>
         </CCol>
@@ -422,7 +481,7 @@ const DebtsPanel = ({ classId }) => {
                 <CBadge color="danger">{item.gap_occurrences}</CBadge>
               </CTableDataCell>
               <CTableDataCell className="text-end fw-bold text-danger">
-                {item.hours_owed}h
+                {formatDurationHours(item.hours_owed)}
               </CTableDataCell>
             </CTableRow>
           ))}
@@ -431,6 +490,97 @@ const DebtsPanel = ({ classId }) => {
     </>
   )
 }
+
+// ---------------------------------------------------------------------------
+// Cartões de histórico (abaixo de 1000 px)
+// ---------------------------------------------------------------------------
+const OccurrenceHistoryCards = ({
+  occurrences,
+  teacherById,
+  subjectById,
+  expandedId,
+  setExpandedId,
+  canDecide,
+  canRevert,
+  revertingId,
+  onDecide,
+  onRevert,
+}) => (
+  <div className="occurrence-history__cards">
+    {occurrences.map((occ) => {
+      const operationalState = getOperationalState(occ)
+      const executionSummary = buildExecutionSummary(occ, teacherById, subjectById)
+      const isUndecided = operationalState === 'OPEN_PENDING'
+      const isDecided = ['DECIDED_GIVEN', 'DECIDED_GAP', 'DECIDED_SUBSTITUTED'].includes(operationalState)
+      const hasDetail = Boolean(occ.lesson_log_summary || occ.lesson_log_notes)
+      const isExpanded = expandedId === occ.id
+      const timeRange = occ.timeslot_start_time && occ.timeslot_end_time
+        ? `${occ.timeslot_start_time.slice(0, 5)}–${occ.timeslot_end_time.slice(0, 5)}`
+        : ''
+      return (
+        <div key={occ.id} className="border rounded p-3 mb-2">
+          <div className="d-flex justify-content-between align-items-start gap-2">
+            <div>
+              <div className="fw-semibold">
+                {formatDate(occ.date)}{timeRange ? `, ${timeRange}` : ''}
+              </div>
+              <div className="small">
+                {occ.class_name ?? '—'} · {occ.subject_name ?? '—'}
+              </div>
+            </div>
+            <CBadge color={OPERATIONAL_STATE_COLORS[operationalState] ?? 'secondary'}>
+              <CIcon icon={OPERATIONAL_STATE_ICONS[operationalState] ?? cilClock} className="me-1" />
+              {OPERATIONAL_STATE_LABELS[operationalState] ?? operationalState}
+            </CBadge>
+          </div>
+          <div className="small text-muted mt-2">
+            Docente efetivo: <span className="fw-semibold text-body">{executionSummary}</span>
+          </div>
+          {hasDetail && (
+            <>
+              <CButton
+                color="link"
+                size="sm"
+                className="px-0 mt-1"
+                aria-expanded={isExpanded}
+                onClick={() => setExpandedId(isExpanded ? null : occ.id)}
+              >
+                {isExpanded ? 'Ocultar sumário completo' : 'Ver sumário completo'}
+              </CButton>
+              {isExpanded && (
+                <div className="small mt-1">
+                  {occ.lesson_log_summary && <p className="mb-1">{occ.lesson_log_summary}</p>}
+                  {occ.lesson_log_notes && (
+                    <p className="mb-1 text-muted">Notas: {occ.lesson_log_notes}</p>
+                  )}
+                </div>
+              )}
+            </>
+          )}
+          <div className="d-flex gap-1 mt-2">
+            {isUndecided && canDecide && (
+              <CButton color="primary" size="sm" variant="outline" onClick={() => onDecide(occ)}>
+                Decidir
+              </CButton>
+            )}
+            {isDecided && canRevert && (
+              <CButton
+                color="secondary"
+                size="sm"
+                variant="outline"
+                disabled={revertingId === occ.id}
+                onClick={() => onRevert(occ)}
+              >
+                {revertingId === occ.id ? <CSpinner size="sm" className="me-1" /> : null}
+                Reverter
+              </CButton>
+            )}
+          </div>
+        </div>
+      )
+    })}
+  </div>
+)
 
 // ---------------------------------------------------------------------------
 // Painel de Ocorrências
@@ -443,6 +593,7 @@ const OccurrencesPanel = ({
   mode,
   readOnly = false,
   allowedActions,
+  filtersValid = true,
 }) => {
   const [editingOccurrence, setEditingOccurrence] = useState(null)
   const [saveErrorMessage, setSaveErrorMessage] = useState('')
@@ -454,6 +605,7 @@ const OccurrencesPanel = ({
     dateFrom: dateFrom || undefined,
     dateTo: dateTo || undefined,
     status: mode === 'pending' ? 'OPEN_PENDING' : undefined,
+    enabled: filtersValid,
   })
   const occurrences = occurrencesPage?.items ?? EMPTY_ARRAY
   const { data: teachers = EMPTY_ARRAY } = useTeachers()
@@ -461,6 +613,7 @@ const OccurrencesPanel = ({
   const updateMutation = useUpdateOccurrence()
   const cancelMutation = useCancelOccurrence()
   const [expandedId, setExpandedId] = useState(null)
+  const isWideHistory = useWideHistoryLayout()
   const isTutorial = Array.isArray(allowedActions)
   const canDecide = !readOnly && (!isTutorial || allowedActions.includes('DECIDE_SUBSTITUTION'))
   const canRevert = !readOnly && !isTutorial
@@ -633,6 +786,9 @@ const OccurrencesPanel = ({
       )}
 
       {visibleOccurrences.length > 0 && (
+        <div className="occurrence-history">
+        {isWideHistory ? (
+        <div className="occurrence-history__table">
         <CTable hover responsive className="mb-0">
         <CTableHead color="light">
           <CTableRow>
@@ -667,7 +823,7 @@ const OccurrencesPanel = ({
             return (
             <React.Fragment key={occ.id}>
             <CTableRow
-              className={`${occ.status === 'REVOKED' ? 'opacity-50' : ''} ${hasDetail ? 'cursor-pointer' : ''}`}
+              className={`${occ.status === 'REVOKED' ? 'table-secondary' : ''} ${hasDetail ? 'cursor-pointer' : ''}`}
               onClick={() => hasDetail && setExpandedId(isExpanded ? null : occ.id)}
               role={hasDetail ? 'button' : undefined}
               tabIndex={hasDetail ? 0 : undefined}
@@ -764,6 +920,22 @@ const OccurrencesPanel = ({
           })}
         </CTableBody>
       </CTable>
+        </div>
+        ) : (
+        <OccurrenceHistoryCards
+          occurrences={visibleOccurrences}
+          teacherById={teacherById}
+          subjectById={subjectById}
+          expandedId={expandedId}
+          setExpandedId={setExpandedId}
+          canDecide={canDecide}
+          canRevert={canRevert}
+          revertingId={revertingId}
+          onDecide={openEditModal}
+          onRevert={handleRevert}
+        />
+        )}
+        </div>
       )}
     </>
   )
@@ -807,6 +979,7 @@ const Occurrences = ({
   }
 
   const { data: classes = EMPTY_ARRAY } = useClasses()
+  const invalidDateRange = Boolean(dateFrom && dateTo && isAfterDate(dateFrom, dateTo))
 
   return (
     <div
@@ -851,6 +1024,11 @@ const Occurrences = ({
               />
             </CCol>
           </CRow>
+          {invalidDateRange && (
+            <CAlert color="danger" className="mb-0 mt-3" role="alert">
+              A data “De” tem de ser anterior ou igual à data “Até”.
+            </CAlert>
+          )}
         </CCardBody>
       </CCard>
 
@@ -884,6 +1062,7 @@ const Occurrences = ({
                 mode={activeTab === 'historical' ? 'historical' : 'pending'}
                 readOnly={readOnly}
                 allowedActions={allowedActions}
+                filtersValid={!invalidDateRange}
               />
             )}
           </CCardBody>

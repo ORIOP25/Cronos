@@ -11,16 +11,16 @@ from __future__ import annotations
 from collections import defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import date, datetime, time, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import select
+from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models, schemas
-from app.scheduler.domain.debt import DebtOrigin
-from app.scheduler.domain.demand import ExecutionEntry, ModuleCredit
+from app.scheduler.domain.demand import ExecutionEntry, ModuleCredit, frontier_credit
+from app.scheduler.domain.lesson_time import execution_allowed
 from app.scheduler.domain.projection import ModuleRequirement
 from app.scheduler.infrastructure.models import (
     CurricularAssignment,
@@ -34,12 +34,13 @@ from app.scheduler.infrastructure.progress import (
     load_executed_minutes,
     load_execution_entries,
     load_open_debt,
-    record_debt,
     record_execution,
 )
 
 LESSON_LOG_ORIGIN = "lesson-log:{lesson_id}"
 LESSON_OCCURRENCE_ORIGIN = "lesson-occurrence:{lesson_id}"
+SUBSTITUTION_ORIGIN = "substitution:{occurrence_id}:{teacher_id}"
+SUBSTITUTION_LIKE = "substitution:{occurrence_id}:%"
 
 
 class OperationsError(ValueError):
@@ -92,6 +93,7 @@ async def week_schedule(
     class_id: int | None,
     teacher_id: int | None,
     today: date | None = None,
+    now_utc: datetime | None = None,
 ) -> list[dict] | None:
     """Published v1 lessons of one week with their modular slices.
 
@@ -103,6 +105,7 @@ async def week_schedule(
         return None
     zone = ZoneInfo(year.timezone)
     reference_today = today if today is not None else date.today()
+    moment = now_utc or datetime.now(UTC)
     week_end = week_start + timedelta(days=6)
     lessons_query = (
         select(
@@ -156,7 +159,89 @@ async def week_schedule(
     if teacher_id is not None:
         lessons_query = lessons_query.where(CurricularAssignment.teacher_id == teacher_id)
     rows = (await db.execute(lessons_query)).all()
-    if not rows:
+    blocks_query = (
+        select(
+            models.OperationalScheduleBlock,
+            SchedulerLessonV1,
+            SchedulerLessonLogV1,
+            models.Subject,
+            models.Teacher,
+            models.Class,
+            models.Room,
+            models.Module,
+        )
+        .join(
+            SchedulerLessonLogV1,
+            and_(
+                SchedulerLessonLogV1.organization_id
+                == models.OperationalScheduleBlock.organization_id,
+                SchedulerLessonLogV1.id == models.OperationalScheduleBlock.source_v1_lesson_log_id,
+            ),
+        )
+        .join(
+            SchedulerLessonV1,
+            and_(
+                SchedulerLessonV1.organization_id == SchedulerLessonLogV1.organization_id,
+                SchedulerLessonV1.school_year_id == SchedulerLessonLogV1.school_year_id,
+                SchedulerLessonV1.id == SchedulerLessonLogV1.lesson_id,
+            ),
+        )
+        .join(
+            models.Subject,
+            and_(
+                models.Subject.organization_id == models.OperationalScheduleBlock.organization_id,
+                models.Subject.id == models.OperationalScheduleBlock.subject_id,
+            ),
+        )
+        .join(
+            models.Teacher,
+            and_(
+                models.Teacher.organization_id == models.OperationalScheduleBlock.organization_id,
+                models.Teacher.id == models.OperationalScheduleBlock.teacher_id,
+            ),
+        )
+        .join(
+            models.Class,
+            and_(
+                models.Class.organization_id == models.OperationalScheduleBlock.organization_id,
+                models.Class.id == models.OperationalScheduleBlock.class_id,
+            ),
+        )
+        .outerjoin(
+            models.Room,
+            and_(
+                models.Room.organization_id == models.OperationalScheduleBlock.organization_id,
+                models.Room.id == models.OperationalScheduleBlock.room_id,
+            ),
+        )
+        .outerjoin(
+            models.Module,
+            and_(
+                models.Module.organization_id == models.OperationalScheduleBlock.organization_id,
+                models.Module.id == models.OperationalScheduleBlock.module_id,
+            ),
+        )
+        .where(
+            models.OperationalScheduleBlock.organization_id == organization_id,
+            models.OperationalScheduleBlock.status == models.OperationalBlockStatus.ACTIVE,
+            models.OperationalScheduleBlock.origin_kind == models.OperationalBlockOrigin.V1,
+            models.OperationalScheduleBlock.date.between(week_start, week_end),
+        )
+        .order_by(
+            models.OperationalScheduleBlock.date,
+            models.OperationalScheduleBlock.timeslot_id,
+            models.OperationalScheduleBlock.id,
+        )
+    )
+    if class_id is not None:
+        blocks_query = blocks_query.where(models.OperationalScheduleBlock.class_id == class_id)
+    all_block_rows = (await db.execute(blocks_query)).all()
+    # The original lesson leaves every active view, not only the substitute's.
+    hidden_lesson_ids = {lesson.id for _block, lesson, *_rest in all_block_rows}
+    block_rows = [
+        row for row in all_block_rows if teacher_id is None or row[0].teacher_id == teacher_id
+    ]
+    if not rows and not block_rows:
         return []
     lesson_ids = [row[0].id for row in rows]
     assignment_ids = sorted({row[0].assignment_id for row in rows})
@@ -225,12 +310,28 @@ async def week_schedule(
     }
     slots: list[dict] = []
     for lesson, _assignment, subject, teacher, class_model, room in rows:
+        if lesson.id in hidden_lesson_ids:
+            continue
         start_local, end_local = _local_times(lesson, zone)
         position = slices_by_lesson.get(lesson.id, [])
         module_id = position[0][1].id if position else None
         module_minutes = position[0][1].required_minutes if position else None
         log = logs.get(lesson.id)
         timesheet = timesheet_status.get(teacher.id)
+        lesson_finished = execution_allowed(moment, lesson.ends_at)
+        timesheet_locked = timesheet is not None and timesheet.status in (
+            models.TimesheetStatus.SUBMITTED,
+            models.TimesheetStatus.APPROVED,
+        )
+        can_complete = (
+            lesson_finished and not timesheet_locked and (log is None or log.status != "COMPLETED")
+        )
+        if not lesson_finished:
+            blocked_reason = "lesson_not_finished"
+        elif timesheet_locked:
+            blocked_reason = "week_locked"
+        else:
+            blocked_reason = None
         slots.append(
             {
                 "scheduler_lesson_id": lesson.id,
@@ -250,10 +351,19 @@ async def week_schedule(
                 "class_info": {"id": class_model.id, "name": class_model.name},
                 "module": _module_summary(module_id, module_minutes, module_names.get(module_id)),
                 "is_past": lesson.school_date < reference_today,
-                "occurrence_status": None,
+                "occurrence_status": (
+                    None
+                    if log is None
+                    else (log.decision or ("REVOKED" if log.status == "REVOKED" else "PENDING"))
+                ),
                 "hours_given": None,
-                "occurrence_id": None,
-                "occurrence_decided_at": None,
+                "occurrence_id": (
+                    log.id
+                    if log is not None
+                    and (log.status in ("OCCURRENCE", "REVOKED") or log.decision is not None)
+                    else None
+                ),
+                "occurrence_decided_at": log.decided_at if log is not None else None,
                 "can_create_occurrence": log is None,
                 "can_decide_occurrence": False,
                 "lesson_log_id": log.id if log else None,
@@ -273,7 +383,105 @@ async def week_schedule(
                     )
                     for slice_row, module in position
                 ],
+                "substitute_execution_status": None,
+                "ends_at": lesson.ends_at,
+                "can_complete": can_complete,
+                "blocked_reason": blocked_reason,
             }
+        )
+    if block_rows:
+        block_logs = {
+            row.operational_block_id: row
+            for row in (
+                await db.scalars(
+                    select(models.LessonLog).where(
+                        models.LessonLog.organization_id == organization_id,
+                        models.LessonLog.operational_block_id.in_(
+                            [block.id for block, *_rest in block_rows]
+                        ),
+                    )
+                )
+            ).all()
+        }
+        for (
+            block,
+            source_lesson,
+            source_log,
+            subject,
+            teacher,
+            class_model,
+            room,
+            module,
+        ) in block_rows:
+            local_start, local_end = _local_times(source_lesson, zone)
+            timesheet = timesheet_status.get(block.teacher_id)
+            timesheet_locked = timesheet is not None and timesheet.status in (
+                models.TimesheetStatus.SUBMITTED,
+                models.TimesheetStatus.APPROVED,
+            )
+            lesson_finished = execution_allowed(moment, source_lesson.ends_at)
+            pending = block.execution_status == models.OperationalBlockExecutionStatus.PENDING_LOG
+            can_complete = pending and lesson_finished and not timesheet_locked
+            if not pending:
+                blocked_reason = None
+            elif not lesson_finished:
+                blocked_reason = "lesson_not_finished"
+            elif timesheet_locked:
+                blocked_reason = "week_locked"
+            else:
+                blocked_reason = None
+            block_log = block_logs.get(block.id)
+            slots.append(
+                {
+                    "scheduler_lesson_id": None,
+                    "active_schedule_block_id": None,
+                    "operational_block_id": block.id,
+                    "block_source": "operational",
+                    "date": block.date.isoformat(),
+                    "timeslot": {
+                        "id": block.timeslot_id,
+                        "day_of_week": block.date.weekday(),
+                        "start_time": local_start.strftime("%H:%M"),
+                        "end_time": local_end.strftime("%H:%M"),
+                    },
+                    "subject": {"id": subject.id, "name": subject.name},
+                    "teacher": {"id": teacher.id, "name": teacher.name},
+                    "room": {"id": room.id, "name": room.name} if room is not None else None,
+                    "class_info": {"id": class_model.id, "name": class_model.name},
+                    "module": _module_summary(
+                        block.module_id,
+                        module.required_minutes if module else None,
+                        module.name if module else None,
+                    ),
+                    "is_past": block.date < reference_today,
+                    "occurrence_status": "SUBSTITUTED",
+                    "hours_given": None,
+                    "occurrence_id": block.source_v1_lesson_log_id,
+                    "occurrence_decided_at": source_log.decided_at,
+                    "can_create_occurrence": False,
+                    "can_decide_occurrence": False,
+                    "lesson_log_id": block_log.id if block_log else None,
+                    "lesson_log_status": block_log.status if block_log else None,
+                    "lesson_log_summary": block_log.summary if block_log else None,
+                    "lesson_log_notes": block_log.notes if block_log else None,
+                    "lesson_log_logged_at": block_log.logged_at if block_log else None,
+                    "week_timesheet_status": timesheet.status.value if timesheet else "OPEN",
+                    "timesheet_id": timesheet.id if timesheet else None,
+                    "is_substituted_block": True,
+                    "credit_minutes": source_lesson.credit_minutes,
+                    "slices": [],
+                    "substitute_execution_status": block.execution_status.value,
+                    "ends_at": source_lesson.ends_at,
+                    "can_complete": can_complete,
+                    "blocked_reason": blocked_reason,
+                }
+            )
+        slots.sort(
+            key=lambda row: (
+                row["date"],
+                row["timeslot"]["start_time"],
+                row["operational_block_id"] or 0,
+            )
         )
     return slots
 
@@ -376,6 +584,32 @@ async def lesson_context(db: AsyncSession, organization_id: int, lesson_id: int)
     )
 
 
+async def assert_week_open(
+    db: AsyncSession,
+    organization_id: int,
+    *,
+    teacher_id: int | None,
+    lesson_date: date,
+) -> None:
+    """Reject operations that would change a submitted or approved week."""
+    if teacher_id is None:
+        return
+    week_start = lesson_date - timedelta(days=lesson_date.weekday())
+    status = await db.scalar(
+        select(models.TeacherWeeklyTimesheet.status).where(
+            models.TeacherWeeklyTimesheet.organization_id == organization_id,
+            models.TeacherWeeklyTimesheet.teacher_id == teacher_id,
+            models.TeacherWeeklyTimesheet.week_start_date == week_start,
+        )
+    )
+    if status in (models.TimesheetStatus.SUBMITTED, models.TimesheetStatus.APPROVED):
+        raise OperationsError(
+            "week_locked",
+            "Esta semana já foi submetida ou aprovada. Não é possível alterar registos.",
+            status_code=409,
+        )
+
+
 async def record_lesson_log(
     db: AsyncSession,
     organization_id: int,
@@ -387,11 +621,23 @@ async def record_lesson_log(
     notes: str | None,
     now_utc: datetime,
     planning_relevant: bool = False,
+    allow_decision_override: bool = False,
 ) -> dict:
     """Register or update one lesson log and move the v1 ledger accordingly."""
     if status not in ("COMPLETED", "OCCURRENCE"):
         raise OperationsError("invalid_lesson_log_status", "Estado de aula inválido.")
     context = await lesson_context(db, organization_id, lesson_id)
+    if status == "COMPLETED" and not execution_allowed(now_utc, context.lesson.ends_at):
+        raise OperationsError(
+            "lesson_not_finished",
+            "Só pode concluir esta aula depois do seu término.",
+        )
+    await assert_week_open(
+        db,
+        organization_id,
+        teacher_id=context.assignment.teacher_id,
+        lesson_date=context.lesson.school_date,
+    )
     state = await db.scalar(
         select(models.SchedulerSchoolYearState)
         .where(
@@ -413,6 +659,18 @@ async def record_lesson_log(
     previous_status = log.status if log is not None else None
     if (
         log is not None
+        and log.status != "REVOKED"
+        and log.decision is not None
+        and status != log.status
+        and not allow_decision_override
+    ):
+        raise OperationsError(
+            "occurrence_active",
+            "Esta aula tem uma ocorrência ativa. Gira a decisão em Faltas e Ocorrências.",
+            status_code=409,
+        )
+    if (
+        log is not None
         and log.status == status
         and (log.summary or None) == (summary or None)
         and (log.notes or None) == (notes or None)
@@ -424,11 +682,16 @@ async def record_lesson_log(
             "debt_minutes": 0,
             "revision": log.revision,
         }
+    if log is not None and previous_status == "REVOKED" and status == "OCCURRENCE":
+        # A new occurrence cycle starts; the revocation audit stays on the row.
+        log.decision = None
+        log.decided_at = None
+        log.decided_by_membership_id = None
     revision = (log.revision + 1) if log is not None else 1
     credited = 0
     debt_minutes = 0
     if previous_status == "COMPLETED" and status != "COMPLETED":
-        await _reverse_lesson_execution(
+        await reverse_lesson_execution(
             db, organization_id, context, membership_id=membership_id, now_utc=now_utc
         )
     if status == "COMPLETED" and previous_status != "COMPLETED":
@@ -455,23 +718,8 @@ async def record_lesson_log(
             planning_relevant=planning_relevant,
         )
         credited = sum(credit.minutes for credit in credits)
-    if status == "OCCURRENCE" and previous_status != "OCCURRENCE":
-        await record_debt(
-            db,
-            organization_id,
-            context.year.id,
-            context.assignment.id,
-            DebtOrigin(
-                origin=LESSON_OCCURRENCE_ORIGIN.format(lesson_id=lesson_id),
-                revision=revision,
-                origin_date=context.lesson.school_date,
-                minutes=context.lesson.credit_minutes,
-                author_id=membership_id,
-                reason=(summary or "Falta registada").strip() or "Falta registada",
-                recorded_at=now_utc,
-            ),
-        )
-        debt_minutes = context.lesson.credit_minutes
+    # A pending occurrence only signals a problem. Debt is created by the
+    # direction decision, never by the registration itself.
     if log is None:
         db.add(
             SchedulerLessonLogV1(
@@ -506,7 +754,7 @@ async def record_lesson_log(
     }
 
 
-async def _reverse_lesson_execution(
+async def reverse_lesson_execution(
     db: AsyncSession,
     organization_id: int,
     context: LessonContext,
@@ -560,6 +808,230 @@ async def _reverse_lesson_execution(
         ),
         planning_relevant=True,
     )
+
+
+async def _reverse_origin_executions(
+    db: AsyncSession,
+    organization_id: int,
+    school_year_id: int,
+    assignment_id: int,
+    *,
+    origin: str,
+    membership_id: int,
+    reason: str,
+    now_utc: datetime,
+) -> None:
+    """Append reversals for the remaining credit of one execution origin."""
+    entries = await load_execution_entries(db, organization_id, assignment_id)
+    reversed_by: dict[tuple[tuple[str, int], int], int] = defaultdict(int)
+    for entry in entries:
+        if entry.reversal_of is None:
+            continue
+        for credit in entry.credits:
+            reversed_by[(entry.reversal_of, credit.module_id)] += abs(credit.minutes)
+    next_revision = (
+        max((entry.revision for entry in entries if entry.origin == origin), default=0) + 1
+    )
+    for entry in entries:
+        if entry.origin != origin or entry.reversal_of is not None:
+            continue
+        credits = tuple(
+            ModuleCredit(
+                credit.module_id,
+                -(credit.minutes - reversed_by.get((entry.key, credit.module_id), 0)),
+            )
+            for credit in entry.credits
+            if credit.minutes - reversed_by.get((entry.key, credit.module_id), 0) > 0
+        )
+        if not credits:
+            continue
+        await record_execution(
+            db,
+            organization_id,
+            school_year_id,
+            assignment_id,
+            ExecutionEntry(
+                origin,
+                next_revision,
+                membership_id,
+                reason,
+                credits,
+                reversal_of=entry.key,
+                recorded_at=now_utc,
+            ),
+            planning_relevant=True,
+        )
+        next_revision += 1
+
+
+async def record_operational_lesson_log(
+    db: AsyncSession,
+    organization_id: int,
+    *,
+    membership_id: int,
+    operational_block_id: int,
+    payload: schemas.LessonLogCreate,
+    now_utc: datetime,
+) -> models.LessonLog:
+    """Register execution of a v1-origin substitute block in the v1 ledger."""
+    block = await db.scalar(
+        select(models.OperationalScheduleBlock)
+        .where(
+            models.OperationalScheduleBlock.id == operational_block_id,
+            models.OperationalScheduleBlock.organization_id == organization_id,
+            models.OperationalScheduleBlock.status == models.OperationalBlockStatus.ACTIVE,
+        )
+        .with_for_update()
+    )
+    if block is None:
+        raise OperationsError(
+            "operational_block_not_found", "Bloco operacional não encontrado.", status_code=404
+        )
+    if (
+        block.origin_kind != models.OperationalBlockOrigin.V1
+        or block.source_v1_lesson_log_id is None
+        or block.substitute_curricular_assignment_id is None
+    ):
+        raise OperationsError(
+            "operational_block_not_v1", "Bloco operacional não pertence ao horário v1."
+        )
+    status = payload.status.value if hasattr(payload.status, "value") else str(payload.status)
+    if status == "OCCURRENCE":
+        raise OperationsError(
+            "operational_occurrence_unsupported",
+            "Blocos operacionais não podem originar novas ocorrências.",
+        )
+    source_log = await db.scalar(
+        select(SchedulerLessonLogV1).where(
+            SchedulerLessonLogV1.id == block.source_v1_lesson_log_id,
+            SchedulerLessonLogV1.organization_id == organization_id,
+        )
+    )
+    lesson = (
+        await db.get(SchedulerLessonV1, source_log.lesson_id) if source_log is not None else None
+    )
+    if lesson is None:
+        raise OperationsError(
+            "scheduler_lesson_not_found", "Aula de origem não encontrada.", status_code=404
+        )
+    if status == "COMPLETED" and not execution_allowed(now_utc, lesson.ends_at):
+        raise OperationsError(
+            "lesson_not_finished",
+            "Só pode concluir esta aula depois do seu término.",
+        )
+    week_start = block.date - timedelta(days=block.date.weekday())
+    timesheet = await db.scalar(
+        select(models.TeacherWeeklyTimesheet).where(
+            models.TeacherWeeklyTimesheet.organization_id == organization_id,
+            models.TeacherWeeklyTimesheet.teacher_id == block.teacher_id,
+            models.TeacherWeeklyTimesheet.week_start_date == week_start,
+        )
+    )
+    if timesheet is not None and timesheet.status in (
+        models.TimesheetStatus.SUBMITTED,
+        models.TimesheetStatus.APPROVED,
+    ):
+        raise OperationsError(
+            "week_locked",
+            "Esta semana já foi submetida ou aprovada. Não é possível alterar registos.",
+        )
+    log = await db.scalar(
+        select(models.LessonLog)
+        .where(models.LessonLog.operational_block_id == operational_block_id)
+        .with_for_update()
+    )
+    previous = log.status if log is not None else models.LessonLogStatus.PENDING
+    current = models.LessonLogStatus(status)
+    if log is None:
+        log = models.LessonLog(
+            organization_id=organization_id,
+            operational_block_id=operational_block_id,
+            status=current,
+            summary=payload.summary,
+            notes=payload.notes,
+            logged_by_membership_id=membership_id,
+            logged_at=now_utc,
+            version=1,
+        )
+        db.add(log)
+    else:
+        log.version = int(log.version or 1) + 1
+        log.status = current
+        log.summary = payload.summary
+        log.notes = payload.notes
+        log.logged_by_membership_id = membership_id
+        log.logged_at = now_utc
+    await db.flush()
+    if previous != current:
+        assignment_id = block.substitute_curricular_assignment_id
+        year_id = await db.scalar(
+            select(CurricularAssignment.school_year_id).where(
+                CurricularAssignment.id == assignment_id,
+                CurricularAssignment.organization_id == organization_id,
+            )
+        )
+        if year_id is None:
+            raise OperationsError(
+                "substitute_assignment_missing",
+                "A disciplina substituta não tem ano letivo válido.",
+            )
+        origin = SUBSTITUTION_ORIGIN.format(
+            occurrence_id=block.source_v1_lesson_log_id, teacher_id=block.teacher_id
+        )
+        if current == models.LessonLogStatus.COMPLETED:
+            requirements = (
+                await _requirements_for_assignments(db, organization_id, [assignment_id])
+            ).get(assignment_id, [])
+            if not requirements:
+                raise OperationsError(
+                    "substitute_without_requirements",
+                    "A disciplina substituta não tem módulos configurados.",
+                )
+            executed = (await load_executed_minutes(db, organization_id, [assignment_id])).get(
+                assignment_id, {}
+            )
+            try:
+                credits = frontier_credit(requirements, executed, lesson.credit_minutes)
+            except ValueError as exc:
+                raise OperationsError(
+                    "substitute_without_capacity",
+                    "A disciplina substituta não tem minutos curriculares disponíveis.",
+                ) from exc
+            entries = await load_execution_entries(db, organization_id, assignment_id)
+            revision = (
+                max((entry.revision for entry in entries if entry.origin == origin), default=0) + 1
+            )
+            await record_execution(
+                db,
+                organization_id,
+                year_id,
+                assignment_id,
+                ExecutionEntry(
+                    origin,
+                    revision,
+                    membership_id,
+                    "Aula substituta concluída",
+                    credits,
+                    recorded_at=now_utc,
+                ),
+                planning_relevant=True,
+            )
+            block.execution_status = models.OperationalBlockExecutionStatus.COMPLETED
+        else:
+            await _reverse_origin_executions(
+                db,
+                organization_id,
+                year_id,
+                assignment_id,
+                origin=origin,
+                membership_id=membership_id,
+                reason="Aula substituta revertida",
+                now_utc=now_utc,
+            )
+            block.execution_status = models.OperationalBlockExecutionStatus.PENDING_LOG
+    await db.flush()
+    await db.refresh(log)
+    return log
 
 
 async def adjust_class_progress(

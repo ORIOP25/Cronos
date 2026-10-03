@@ -76,6 +76,51 @@ def _v1_week_lessons(
     )
 
 
+def _v1_week_operational_blocks(
+    db: Session,
+    organization_id: int,
+    year_id: int,
+    teacher_ids: list[int],
+    week_start_date: date,
+):
+    """Active v1 substitute blocks with their source lesson and execution log."""
+    week_end = week_start_date + timedelta(days=6)
+    return (
+        db.query(models.OperationalScheduleBlock, SchedulerLessonV1, models.LessonLog)
+        .join(
+            SchedulerLessonLogV1,
+            and_(
+                SchedulerLessonLogV1.organization_id == organization_id,
+                SchedulerLessonLogV1.id == models.OperationalScheduleBlock.source_v1_lesson_log_id,
+            ),
+        )
+        .join(
+            SchedulerLessonV1,
+            and_(
+                SchedulerLessonV1.organization_id == SchedulerLessonLogV1.organization_id,
+                SchedulerLessonV1.school_year_id == SchedulerLessonLogV1.school_year_id,
+                SchedulerLessonV1.id == SchedulerLessonLogV1.lesson_id,
+                SchedulerLessonV1.school_year_id == year_id,
+            ),
+        )
+        .outerjoin(
+            models.LessonLog,
+            and_(
+                models.LessonLog.organization_id == organization_id,
+                models.LessonLog.operational_block_id == models.OperationalScheduleBlock.id,
+            ),
+        )
+        .filter(
+            models.OperationalScheduleBlock.organization_id == organization_id,
+            models.OperationalScheduleBlock.origin_kind == models.OperationalBlockOrigin.V1,
+            models.OperationalScheduleBlock.status == models.OperationalBlockStatus.ACTIVE,
+            models.OperationalScheduleBlock.teacher_id.in_(teacher_ids),
+            models.OperationalScheduleBlock.date.between(week_start_date, week_end),
+        )
+        .all()
+    )
+
+
 def _v1_slot_counts(
     db: Session,
     organization_id: int,
@@ -101,6 +146,18 @@ def _v1_slot_counts(
         item = counts[teacher_id]
         item["total_slots"] += 1
         status = None if lesson_log is None else lesson_log.status
+        if status in ("COMPLETED", "OCCURRENCE"):
+            item["registered_slots"] += 1
+        if status == "COMPLETED":
+            item["completed_slots"] += 1
+        if status == "OCCURRENCE":
+            item["occurrence_slots"] += 1
+    for block, _lesson, lesson_log in _v1_week_operational_blocks(
+        db, organization_id, year_id, teacher_ids, week_start_date
+    ):
+        item = counts[block.teacher_id]
+        item["total_slots"] += 1
+        status = None if lesson_log is None else lesson_log.status.value
         if status in ("COMPLETED", "OCCURRENCE"):
             item["registered_slots"] += 1
         if status == "COMPLETED":
@@ -228,7 +285,10 @@ def _submit_v1_week(
 ) -> models.TeacherWeeklyTimesheet:
     """Submit against the published v1 lessons and their execution ledger."""
     rows = _v1_week_lessons(db, organization_id, year_id, version, [teacher_id], week_start_date)
-    if not rows:
+    blocks = _v1_week_operational_blocks(
+        db, organization_id, year_id, [teacher_id], week_start_date
+    )
+    if not rows and not blocks:
         raise AppError(
             kind="bad_request", code="bad_request", detail="Sem aulas planeadas nesta semana."
         )
@@ -241,6 +301,19 @@ def _submit_v1_week(
                 detail="Não pode submeter semanas com aulas no futuro.",
             )
         if lesson_log is None or lesson_log.status == "REVOKED":
+            raise AppError(
+                kind="bad_request",
+                code="bad_request",
+                detail="Todas as aulas devem estar concluídas ou registadas como ocorrência.",
+            )
+    for _block, lesson, lesson_log in blocks:
+        if lesson.ends_at > now:
+            raise AppError(
+                kind="bad_request",
+                code="bad_request",
+                detail="Não pode submeter semanas com aulas no futuro.",
+            )
+        if lesson_log is None or lesson_log.status != models.LessonLogStatus.COMPLETED:
             raise AppError(
                 kind="bad_request",
                 code="bad_request",

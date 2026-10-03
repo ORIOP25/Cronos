@@ -76,6 +76,8 @@ export default function AvailabilityGrid({ timeslots = [], availabilityMap, onCh
   }
 
   return (
+    <>
+    <p className="small text-muted d-lg-none mb-1">Deslize horizontalmente para ver todos os dias.</p>
     <div className="availability-grid-scroll" role="region" aria-label="Grelha de preferências de disponibilidade" tabIndex="0">
       <div className="availability-grid" style={{ '--availability-days': model.days.length }}>
         <div className="availability-grid__header">Hora</div>
@@ -123,5 +125,6 @@ export default function AvailabilityGrid({ timeslots = [], availabilityMap, onCh
         ))}
       </div>
     </div>
+    </>
   )
 }

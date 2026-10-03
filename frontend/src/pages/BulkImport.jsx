@@ -45,8 +45,23 @@ const BulkImport = () => {
   const [files, setFiles] = useState({})
   const [validation, setValidation] = useState(null)
   const [localError, setLocalError] = useState('')
+  const [downloadingResource, setDownloadingResource] = useState('')
   const validateMutation = useValidateBulkImport()
   const commitMutation = useCommitBulkImport()
+
+  const downloadTemplate = async (resourceKey) => {
+    if (downloadingResource) return
+    setLocalError('')
+    setDownloadingResource(resourceKey)
+    try {
+      await downloadBulkImportTemplate(apiClient, resourceKey)
+      toast.success('Download pedido ao browser. Verifique a pasta de transferências.')
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, 'Não foi possível preparar o modelo.'))
+    } finally {
+      setDownloadingResource('')
+    }
+  }
 
   useEffect(() => {
     initialInput.current?.focus()
@@ -126,9 +141,14 @@ const BulkImport = () => {
                   <CButton
                     color="link"
                     size="sm"
-                    onClick={() => void downloadBulkImportTemplate(apiClient, resource.key)}
+                    disabled={Boolean(downloadingResource)}
+                    onClick={() => void downloadTemplate(resource.key)}
                   >
-                    Descarregar modelo
+                    {downloadingResource === resource.key ? (
+                      <><CSpinner size="sm" className="me-1" />A preparar…</>
+                    ) : (
+                      'Descarregar modelo'
+                    )}
                   </CButton>
                 </CCardHeader>
                 <CCardBody>

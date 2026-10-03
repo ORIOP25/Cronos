@@ -26,7 +26,8 @@ export default function AnalyticsHeatmap() {
   return <div className="availability-heatmap">
     <p className="text-muted small mb-3">{summary}</p>
     <div className="availability-heatmap__legend" aria-label="Legenda da disponibilidade"><span><i className="is-good" /> Boa</span><span><i className="is-medium" /> Intermédia</span><span><i className="is-critical" /> Crítica</span></div>
-    <div className="availability-heatmap__days">
+    <p className="availability-heatmap__hint d-lg-none small text-muted mb-1">Deslize horizontalmente para ver todos os dias.</p>
+    <div className="availability-heatmap__days" role="region" aria-label="Disponibilidade por dia" tabIndex={0}>
       {Object.entries(slotsByDay).sort(([a], [b]) => Number(a) - Number(b)).map(([day, slots]) => <div className="availability-heatmap__day" key={day}><div className="availability-heatmap__day-label">{DAYS[day] ?? `Dia ${Number(day) + 1}`}</div>{slots.map((slot) => { const stats = heatmapData.find((item) => item.timeslot_id === slot.id); const available = stats?.available_count ?? '-'; const total = stats?.total_teachers ?? '-'; return <CTooltip content={`Disponíveis: ${available} / ${total}`} key={slot.id}><div className="availability-heatmap__slot" style={getHeatmapStyle(stats)} aria-label={`${DAYS[day] ?? `Dia ${Number(day) + 1}`} às ${slot.start_time.slice(0, 5)}: ${available} de ${total} professores disponíveis`}><strong>{slot.start_time.slice(0, 5)}</strong><span>{available}/{total}</span></div></CTooltip> })}</div>)}
     </div>
   </div>

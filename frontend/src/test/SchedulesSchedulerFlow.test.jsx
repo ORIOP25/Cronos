@@ -118,14 +118,37 @@ describe('Schedules scheduler flow', () => {
 
     expect(screen.getByText('Rever proposta 77')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Atualizar horário' }))
-    expect(await screen.findByText(/substituir a proposta pendente/i)).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: /confirmar gera/i }))
+    expect(await screen.findByText(/proposta pendente é substituída/i)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /iniciar gera/i }))
 
     await waitFor(() => {
       expect(mocks.generate).toHaveBeenCalledWith({
         idempotencyKey: expect.any(String),
         expectedInputRevision: 0,
       })
+    })
+  })
+
+  it('opens the generation review on the first click and only generates after confirmation', async () => {
+    mocks.status = proposalStatus({ pending_proposal: null })
+    mocks.generate.mockResolvedValue({ job: { id: 92 } })
+
+    renderPage()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Gerar horário' }))
+    expect(await screen.findByText(/toda a escola/i)).toBeInTheDocument()
+    expect(mocks.generate).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('button', { name: /cancelar/i }))
+    await waitFor(() => {
+      expect(screen.queryByText(/toda a escola/i)).not.toBeInTheDocument()
+    })
+    expect(mocks.generate).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Gerar horário' }))
+    fireEvent.click(await screen.findByRole('button', { name: /iniciar gera/i }))
+    await waitFor(() => {
+      expect(mocks.generate).toHaveBeenCalledTimes(1)
     })
   })
 
@@ -276,6 +299,7 @@ describe('Schedules scheduler flow', () => {
 
     renderPage()
     fireEvent.click(screen.getByRole('button', { name: 'Gerar horário' }))
+    fireEvent.click(await screen.findByRole('button', { name: /iniciar gera/i }))
 
     expect(await screen.findByText(/27 alunos/)).toBeInTheDocument()
     expect(screen.getByText('Abrir Salas')).toHaveAttribute('href', '/rooms')
@@ -290,6 +314,7 @@ describe('Schedules scheduler flow', () => {
 
     renderPage()
     fireEvent.click(screen.getByRole('button', { name: 'Gerar horário' }))
+    fireEvent.click(await screen.findByRole('button', { name: /iniciar gera/i }))
 
     await waitFor(() => {
       expect(mocks.schedulerStatusRefetch).toHaveBeenCalled()

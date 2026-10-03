@@ -47,12 +47,18 @@ describe('Dashboard', () => {
         schedule_health: {
           generation_id: 'generation-123',
           blocks_count: 12,
+          classes_total: 3,
           classes_empty_week: 0,
           week_slots_avg: 3,
           duplicate_teacher_slots: 0,
           teacher_week_slots_avg: 4,
           weekly_fairness_spread: 1,
           duplicate_class_slots: 0,
+          annual_class_average: 4,
+          annual_teacher_average: 6,
+          teachers_total: 2,
+          period_start: '2026-09-14',
+          period_end: '2027-06-18',
         },
         class_progress: [],
         debts: {
@@ -74,6 +80,9 @@ describe('Dashboard', () => {
 
     expect(screen.getByTestId('schedule-health')).toBeInTheDocument()
     expect(screen.getByText(/12 blocos no total/i)).toBeInTheDocument()
+    expect(screen.getByText('Média anual por turma')).toBeInTheDocument()
+    expect(screen.getByText(/3 turmas e 2 professores no horário aprovado/i)).toBeInTheDocument()
+    expect(screen.getByText(/14\/09\/2026/)).toBeInTheDocument()
     expect(screen.getByText('Escola Exemplo')).toBeInTheDocument()
     expect(screen.queryByText('Escola: Escola Exemplo')).not.toBeInTheDocument()
   })

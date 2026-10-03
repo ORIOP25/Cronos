@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
@@ -110,3 +110,25 @@ def remaining_minutes(
 ) -> int:
     completed = completed_by_module(modules, entries)
     return sum(module.required_minutes - completed[module.module_id] for module in modules)
+
+
+def frontier_credit(
+    modules: Sequence[ModuleRequirement],
+    completed: Mapping[int, int],
+    minutes: int,
+) -> tuple[ModuleCredit, ...]:
+    """Sequential residual credit for one subject, without rounding."""
+    credits: list[ModuleCredit] = []
+    remaining = minutes
+    for module in sorted(modules, key=lambda row: row.sequence):
+        capacity = module.required_minutes - completed.get(module.module_id, 0)
+        if capacity <= 0:
+            continue
+        take = min(remaining, capacity)
+        credits.append(ModuleCredit(module.module_id, take))
+        remaining -= take
+        if remaining <= 0:
+            break
+    if remaining > 0:
+        raise ValueError("Not enough residual curricular minutes for the credit.")
+    return tuple(credits)

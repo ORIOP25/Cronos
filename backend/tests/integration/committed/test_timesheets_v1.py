@@ -1,7 +1,7 @@
 """R12.1: weekly timesheet must follow the published v1 ledger."""
 
 import asyncio
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 
 import pytest
 from sqlalchemy import select
@@ -255,3 +255,150 @@ async def test_concurrent_first_reads_create_one_timesheet(db_session):
         await second.close()
 
     assert first_id == second_id
+
+
+async def _add_substitute(db_session, seed):
+    from app.scheduler.infrastructure.models import CurricularAssignment, CurricularRequirement
+    from tests._support.db_fixtures import create_teacher_profile
+
+    subject = models.Subject(name="Matemática", organization_id=seed.organization.id)
+    db_session.add(subject)
+    await db_session.flush()
+    module = models.Module(
+        organization_id=seed.organization.id,
+        subject_id=subject.id,
+        name="Módulo M",
+        required_minutes=100,
+        order=1,
+    )
+    teacher = await create_teacher_profile(
+        db_session, organization_id=seed.organization.id, name="Prof. Matemática"
+    )
+    db_session.add(module)
+    await db_session.flush()
+    assignment = CurricularAssignment(
+        organization_id=seed.organization.id,
+        school_year_id=seed.year.id,
+        class_id=seed.class_.id,
+        subject_id=subject.id,
+        teacher_id=teacher.id,
+    )
+    db_session.add(assignment)
+    await db_session.flush()
+    db_session.add(
+        CurricularRequirement(
+            organization_id=seed.organization.id,
+            assignment_id=assignment.id,
+            module_id=module.id,
+            sequence=1,
+            required_minutes=100,
+        )
+    )
+    await db_session.commit()
+    return subject, module, teacher, assignment
+
+
+async def test_a_v1_timesheet_follows_the_planned_substitution(db_session, monkeypatch):
+    from app import schemas
+    from app.scheduler.infrastructure import occurrences as occurrences_v1
+    from app.scheduler.infrastructure import operations
+    from app.scheduler.infrastructure.models import SchedulerLessonV1
+    from tests._support.scheduler_v1 import publish_schedule
+
+    seed = await seed_generatable_school(
+        db_session,
+        clerk_user_id="timesheet_opblock",
+        clerk_org_id="org_timesheet_opblock",
+        module_minutes=500,
+    )
+    await db_session.commit()
+    await publish_schedule(db_session, monkeypatch, seed)
+    lesson = await db_session.scalar(
+        select(SchedulerLessonV1)
+        .where(
+            SchedulerLessonV1.organization_id == seed.organization.id,
+            SchedulerLessonV1.school_date.between(WEEK_START, WEEK_START + timedelta(days=6)),
+        )
+        .order_by(SchedulerLessonV1.school_date)
+        .limit(1)
+    )
+    assert lesson is not None
+    subject, _module, teacher, _assignment = await _add_substitute(db_session, seed)
+    await db_session.commit()
+
+    await operations.record_lesson_log(
+        db_session,
+        seed.organization.id,
+        membership_id=seed.membership.id,
+        lesson_id=lesson.id,
+        status="OCCURRENCE",
+        summary="Falta.",
+        notes=None,
+        now_utc=lesson.ends_at,
+        planning_relevant=True,
+    )
+    await db_session.commit()
+    item = (await occurrences_v1.list_occurrences(db_session, seed.organization.id))["items"][0]
+    decided = await occurrences_v1.update_occurrence(
+        db_session,
+        seed.organization.id,
+        item["id"],
+        schemas.LessonOccurrenceUpdate(
+            status=models.LessonOccurrenceStatus.SUBSTITUTED,
+            version=item["version"],
+            substitute_teacher_id=teacher.id,
+            substitute_subject_id=subject.id,
+        ),
+        decided_by_membership_id=seed.membership.id,
+        now_utc=lesson.ends_at,
+    )
+    await db_session.commit()
+
+    counts = await db_session.run_sync(
+        lambda sync_db: timesheet_service.week_slot_counts_sync(
+            sync_db, seed.organization.id, teacher.id, WEEK_START
+        )
+    )
+    assert counts["total_slots"] == 1
+    assert counts["completed_slots"] == 0
+
+    with pytest.raises(AppError):
+        await db_session.run_sync(
+            lambda sync_db: timesheet_service.submit_timesheet_sync(
+                sync_db,
+                organization_id=seed.organization.id,
+                teacher_id=teacher.id,
+                week_start_date=WEEK_START,
+            )
+        )
+
+    await operations.record_operational_lesson_log(
+        db_session,
+        seed.organization.id,
+        membership_id=seed.membership.id,
+        operational_block_id=decided["substitute_block_id"],
+        payload=schemas.LessonLogCreate(
+            status=models.LessonLogStatus.COMPLETED,
+            summary="Substituição dada.",
+            notes=None,
+        ),
+        now_utc=lesson.ends_at,
+    )
+    await db_session.commit()
+
+    counts = await db_session.run_sync(
+        lambda sync_db: timesheet_service.week_slot_counts_sync(
+            sync_db, seed.organization.id, teacher.id, WEEK_START
+        )
+    )
+    assert counts["total_slots"] == 1
+    assert counts["completed_slots"] == 1
+    timesheet = await db_session.run_sync(
+        lambda sync_db: timesheet_service.submit_timesheet_sync(
+            sync_db,
+            organization_id=seed.organization.id,
+            teacher_id=teacher.id,
+            week_start_date=WEEK_START,
+        )
+    )
+    assert timesheet.status == models.TimesheetStatus.SUBMITTED

@@ -61,6 +61,19 @@ describe('ConfirmationModal', () => {
     expect(screen.getByText('A guardar…')).toBeInTheDocument()
   })
 
+  it('anuncia que o pedido continua em processamento após cinco segundos', () => {
+    render(<ConfirmationModal {...defaultProps} isLoading={true} />)
+    expect(screen.getByText('Pedido em processamento.')).toBeInTheDocument()
+
+    act(() => {
+      vi.advanceTimersByTime(5000)
+    })
+
+    expect(
+      screen.getByText('O pedido continua em processamento. Aguarde, por favor.')
+    ).toBeInTheDocument()
+  })
+
   it('usa variant para a cor do botão de confirmação', () => {
     render(<ConfirmationModal {...defaultProps} variant="warning" />)
     const confirmButton = screen.getByText('Confirmar')

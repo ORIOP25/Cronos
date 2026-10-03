@@ -8,3 +8,4 @@ This section documents local runtime deployment, health signals, structured logs
 - [OBSERVABILITY_AND_RECOVERY.md](OBSERVABILITY_AND_RECOVERY.md): Health checks, structured logs, scheduler diagnostics, and failure recovery runbooks.
 - [PRIVACY_OPERATIONS.md](PRIVACY_OPERATIONS.md): Retention, export, erasure, rights, and launch review procedures.
 - [DEPLOYMENT_RUNBOOK.md](DEPLOYMENT_RUNBOOK.md): Railway service definitions, secrets, frontend hosting, and rollback procedures.
+- [OCCURRENCE_RECONCILIATION.md](OCCURRENCE_RECONCILIATION.md): Inventory, classification, and explicit correction of historical occurrences, debts, and substitutions.

@@ -8,3 +8,8 @@
   .zen-table tbody td:last-child::before { display: none; }
   .zen-table .zen-table-action-trigger { opacity: 1; }
 }
+
+@media (max-width: 767px) {
+  .zen-table tbody td { padding: 5px 0; gap: 10px; }
+  .zen-table tbody tr { padding: 8px 10px; }
+}

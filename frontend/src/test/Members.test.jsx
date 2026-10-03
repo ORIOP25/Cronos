@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { fireEvent, screen, within } from '@testing-library/react'
 import { beforeEach } from 'vitest'
-import { renderWithProviders } from './testUtils'
+import { renderWithRouter } from './testUtils'
 import Members from '../pages/Members'
 
 const { useMembersMock } = vi.hoisted(() => ({ useMembersMock: vi.fn() }))
@@ -16,6 +16,7 @@ vi.mock('../features/members/data', () => {
 
   return {
     useMembers: () => useMembersMock(),
+    useTeachers: () => ({ data: [] }),
     useCreateMember: mutation,
     useUpdateMember: mutation,
     useRemoveMember: mutation,
@@ -41,13 +42,13 @@ describe('Members', () => {
   })
 
   it('uses the shared page spacing', () => {
-    const { container } = renderWithProviders(<Members />)
+    const { container } = renderWithRouter(<Members />)
 
     expect(container.firstChild).toHaveClass('p-4')
   })
 
   it('exposes the member form controls through their visible labels', async () => {
-    renderWithProviders(<Members />)
+    renderWithRouter(<Members />)
 
     fireEvent.click(screen.getByRole('button', { name: /adicionar membro/i }))
 
@@ -82,7 +83,7 @@ describe('Members', () => {
       refetch: vi.fn(),
     })
 
-    renderWithProviders(<Members />)
+    renderWithRouter(<Members />)
 
     for (const description of ['Reenviar convite', 'Tentar sincronização novamente', 'Restaurar membro']) {
       expect(screen.getByTitle(description)).toBeVisible()
@@ -116,7 +117,7 @@ describe('Members', () => {
       refetch: vi.fn(),
     })
 
-    renderWithProviders(<Members />)
+    renderWithRouter(<Members />)
 
     expect(screen.getByText('Os dados de acesso precisam de ser confirmados.')).toBeInTheDocument()
     expect(screen.queryByText('Clerk role does not match the expected local access.')).toBeNull()

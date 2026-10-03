@@ -244,6 +244,49 @@ async def get_substitute_recommendations(
 
 
 @router.get(
+    "/{occurrence_id}/substitutes/diagnostics",
+    response_model=schemas.SubstituteDiagnosticsRead,
+    summary="Diagnóstico de elegibilidade de substitutos",
+    responses={404: {"description": OCCURRENCE_NOT_FOUND_MSG}},
+)
+async def get_substitute_diagnostics(
+    occurrence_id: int,
+    db: deps.DbSession,
+    current_user: deps.AdminActor,
+):
+    """Devolve candidatos e os motivos estruturados que os excluem."""
+    organization_id = current_user.organization_id
+
+    from app.scheduler.infrastructure import occurrences as occurrences_v1
+
+    if await occurrences_v1.is_active(db, organization_id):
+        return await occurrences_v1.get_substitute_diagnostics(db, organization_id, occurrence_id)
+
+    recommendations = await occurrence_service.get_substitute_recommendations(
+        db,
+        organization_id=organization_id,
+        occurrence_id=occurrence_id,
+    )
+    candidates = [
+        {
+            "teacher_id": row.teacher_id,
+            "teacher_name": row.teacher_name,
+            "subject_id": row.subject_id,
+            "subject_name": row.subject_name,
+            "eligible": True,
+            "exclusions": [],
+        }
+        for row in recommendations
+    ]
+    return {
+        "occurrence_id": occurrence_id,
+        "eligible_count": len(candidates),
+        "candidates": candidates,
+        "setup_actions": [],
+    }
+
+
+@router.get(
     "/{occurrence_id}",
     response_model=schemas.LessonOccurrenceRead,
     summary="Detalhe de uma ocorrÃªncia",

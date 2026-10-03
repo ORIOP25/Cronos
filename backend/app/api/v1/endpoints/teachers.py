@@ -96,6 +96,30 @@ async def update_my_availability(
     return result
 
 
+@router.put(
+    "/{teacher_id}/availability",
+    responses={
+        403: {"description": "Sem permissões"},
+        404: {"description": TEACHER_NOT_FOUND_MSG},
+        400: {"description": "Timeslot inválido"},
+    },
+)
+async def update_teacher_availability(
+    teacher_id: int,
+    availability_data: schemas.TeacherAvailabilityPayload,
+    db: deps.DbSession,
+    current_user: deps.AdminActor,
+):
+    """Direção atualiza a disponibilidade de um professor, sem convite."""
+    return await teacher_service.set_teacher_availability(
+        db,
+        teacher_id,
+        availability_data,
+        organization_id=current_user.organization_id,
+        changed_by_membership_id=current_user.membership_id,
+    )
+
+
 @router.get(
     "/{teacher_id}/availability",
     response_model=list[schemas.AvailabilitySelfRead],

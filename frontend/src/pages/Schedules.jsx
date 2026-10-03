@@ -30,7 +30,7 @@ import FailureState from '../components/FailureState'
 import PageHeader from '../components/PageHeader'
 import StatePanel from '../components/StatePanel'
 import { useOrganization } from '@clerk/react'
-import { addDays, getCurrentWeekMonday } from '../utils/formatUtils'
+import { addDays, formatDate, getCurrentWeekMonday } from '../utils/formatUtils'
 import { collectInternshipDays } from '../utils/internshipDays'
 import { getApiErrorMessage, getApiErrorPresentation } from '../utils/apiErrors'
 import { readExpiringValue, writeExpiringValue } from '../utils/expiringStorage'
@@ -268,7 +268,7 @@ const Schedules = ({ initialClassId = '', initialWeekStart, persistView = true, 
   const {
     data: weekSlots = [],
     isFetching: loadingWeek,
-    isError: weekLoadError,
+    error: weekLoadError,
     refetch: refetchWeekSchedule,
   } = useWeekSchedule(classId, teacherId, weekStart)
   const {
@@ -346,11 +346,23 @@ const Schedules = ({ initialClassId = '', initialWeekStart, persistView = true, 
 
   const handleGenerate = () => {
     if (!canGenerate) return
-    if (hasPendingDraft) {
-      setGenerationConfirmation('regenerate')
-      return
-    }
-    void runGeneration()
+    setGenerationConfirmation(hasPendingDraft ? 'regenerate' : 'generate')
+  }
+
+  const generationConfirmationMessage = () => {
+    const preferredEnd = schedulerStatus?.school_year?.preferred_end_date
+    const yearLabel = preferredEnd
+      ? `Ano letivo com fim previsto em ${formatDate(preferredEnd)}. `
+      : ''
+    const versionLabel = schedulerStatus?.active_version_id
+      ? `Versão atual: v${schedulerStatus.active_version_id}. `
+      : 'Ainda não existe versão publicada. '
+    const effect = hasPendingDraft
+      ? 'A proposta pendente é substituída apenas quando a nova geração terminar com sucesso.'
+      : isFirstGeneration
+        ? 'Cria a primeira versão publicada do horário.'
+        : 'Cria uma nova versão do horário; a versão atual mantém-se no histórico.'
+    return `Âmbito: toda a escola. ${yearLabel}${versionLabel}${effect}`
   }
 
   const handleCancelGeneration = () => {
@@ -393,7 +405,17 @@ const Schedules = ({ initialClassId = '', initialWeekStart, persistView = true, 
   }
 
   if (hasSelection && weekLoadError) {
-    weekGridContent = <StatePanel state="error" title="Não foi possível carregar o horário" description="Tente novamente quando a ligação estiver disponível." action={<button type="button" className="btn btn-outline-primary" onClick={() => refetchWeekSchedule()}>Tentar novamente</button>} />
+    weekGridContent = (
+      <FailureState
+        variant="inline"
+        presentation={{
+          ...getApiErrorPresentation(weekLoadError, 'schedule.week'),
+          title: 'Não foi possível carregar o horário',
+          message: 'A seleção mantém-se. Verifique a ligação e tente novamente.',
+        }}
+        onRetry={() => refetchWeekSchedule()}
+      />
+    )
   }
 
   return (
@@ -415,9 +437,9 @@ const Schedules = ({ initialClassId = '', initialWeekStart, persistView = true, 
         visible={Boolean(generationConfirmation)}
         onClose={() => setGenerationConfirmation(null)}
         onConfirm={() => { void runGeneration() }}
-        title="Confirmar nova geração"
-        message="Gerar novamente irá substituir a proposta pendente apenas quando a nova geração terminar com sucesso. Continuar?"
-        confirmText="Confirmar geração"
+        title={generationConfirmation === 'regenerate' ? 'Confirmar nova geração' : 'Confirmar geração'}
+        message={generationConfirmationMessage()}
+        confirmText="Iniciar geração"
         isLoading={generateMutation.isPending}
         variant="warning"
       />

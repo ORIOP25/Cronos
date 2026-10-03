@@ -34,7 +34,9 @@ vi.mock('../features/scheduling/data', () => ({
     return {
       data: [{ id: 'week-a', date: '2026-05-04', timeslot: { day_of_week: 0, start_time: '09:00', end_time: '10:00' } }],
       isFetching: state.sameWeekError,
-      isError,
+      error: isError
+        ? { response: { status: 503, headers: { 'x-request-id': 'REQWEEK123' } } }
+        : null,
       refetch: vi.fn(),
     }
   },
@@ -48,6 +50,7 @@ describe('MySchedules query-key failures', () => {
     expect(screen.getByTestId('week-grid')).toHaveTextContent('week-a')
     fireEvent.click(screen.getByRole('button', { name: /próxima semana/i }))
     expect(screen.getByText(/não foi possível carregar o seu horário semanal/i)).toBeInTheDocument()
+    expect(screen.getByText('REQWEEK123')).toBeInTheDocument()
     expect(screen.queryByTestId('week-grid')).not.toBeInTheDocument()
     expect(screen.queryByText('week-a')).not.toBeInTheDocument()
   })

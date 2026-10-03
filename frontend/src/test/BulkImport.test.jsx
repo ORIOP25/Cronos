@@ -7,6 +7,7 @@ import BulkImport from '../pages/BulkImport'
 const mocks = vi.hoisted(() => ({
   validate: vi.fn(),
   commit: vi.fn(),
+  download: vi.fn(),
 }))
 
 vi.mock('../ApiClientContext', () => ({
@@ -17,6 +18,7 @@ vi.mock('../features/imports/data', async () => {
   const actual = await vi.importActual('../features/imports/data')
   return {
     ...actual,
+    downloadBulkImportTemplate: mocks.download,
     useValidateBulkImport: () => ({ mutateAsync: mocks.validate, isPending: false, isError: false }),
     useCommitBulkImport: () => ({ mutateAsync: mocks.commit, isPending: false, isError: false }),
   }
@@ -26,6 +28,8 @@ describe('BulkImport', () => {
   beforeEach(() => {
     mocks.validate.mockReset()
     mocks.commit.mockReset()
+    mocks.download.mockReset()
+    mocks.download.mockResolvedValue(undefined)
     mocks.validate.mockResolvedValue({
       can_commit: true,
       preview: { counts: { rooms: 1 }, items: [] },
@@ -68,5 +72,25 @@ describe('BulkImport', () => {
 
     await user.click(screen.getByRole('button', { name: 'Confirmar importação' }))
     await waitFor(() => expect(mocks.commit).toHaveBeenCalledWith({ rooms: file }))
+  })
+
+  it('confirms only that the browser was asked to download and blocks duplicate requests', async () => {
+    const user = userEvent.setup()
+    let resolveDownload
+    mocks.download.mockImplementation(() => new Promise((resolve) => { resolveDownload = resolve }))
+    renderPage()
+
+    const buttons = screen.getAllByRole('button', { name: 'Descarregar modelo' })
+    await user.click(buttons[0])
+    expect(mocks.download).toHaveBeenCalledTimes(1)
+    expect(screen.getByText('A preparar…')).toBeInTheDocument()
+
+    await user.click(buttons[1])
+    expect(mocks.download).toHaveBeenCalledTimes(1)
+
+    resolveDownload()
+    expect(
+      await screen.findByText(/Download pedido ao browser/i)
+    ).toBeInTheDocument()
   })
 })

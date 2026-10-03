@@ -1786,6 +1786,9 @@ class LessonOccurrenceRead(BaseModel):
     executed_module_id: int | None = None
     substitute_teacher_id: int | None = None
     substitute_subject_id: int | None = None
+    substitute_subject_name: str | None = None
+    substitute_block_id: int | None = None
+    substitute_execution_status: str | None = None
     hours_given: float
     decided_by_membership_id: int | None = None
     decided_by_membership_name: str | None = None
@@ -1798,6 +1801,9 @@ class LessonOccurrenceRead(BaseModel):
     reason: str | None = None
     creation_source: str | None = None
     created_at: datetime
+    ends_at: datetime | None = None
+    can_complete: bool = False
+    blocked_reason: str | None = None
 
     model_config = model_config
 
@@ -1921,6 +1927,30 @@ class SubstituteRecommendationRead(BaseModel):
     daily_load_hours: float
     days_since_last_substitution: int | None = None
     justification: str
+
+
+class SubstituteExclusionRead(BaseModel):
+    """Motivo estruturado de exclusão de um candidato a substituto."""
+
+    code: str
+    message: str
+    setup: str
+
+
+class SubstituteDiagnosticCandidateRead(BaseModel):
+    teacher_id: int
+    teacher_name: str
+    subject_id: int
+    subject_name: str
+    eligible: bool
+    exclusions: list[SubstituteExclusionRead]
+
+
+class SubstituteDiagnosticsRead(BaseModel):
+    occurrence_id: int
+    eligible_count: int
+    candidates: list[SubstituteDiagnosticCandidateRead]
+    setup_actions: list[str]
 
 
 class OccurrenceObservabilitySummaryRead(BaseModel):
@@ -2134,6 +2164,11 @@ class WeekSlotRead(BaseModel):
     scheduler_lesson_id: int | None = None
     credit_minutes: int | None = None
     slices: list[WeekSliceRead] = Field(default_factory=list)
+    # Scheduler v1: estado da substituição planeada e guarda temporal
+    substitute_execution_status: str | None = None
+    ends_at: datetime | None = None
+    can_complete: bool = False
+    blocked_reason: str | None = None
 
 
 # ==========================================
@@ -2284,6 +2319,11 @@ class ScheduleHealthWidget(BaseModel):
     duplicate_class_slots: int = 0
     weekly_fairness_spread: float = 0.0
     teacher_week_slots_avg: float = 0.0
+    annual_class_average: float = 0.0
+    annual_teacher_average: float = 0.0
+    teachers_total: int = 0
+    period_start: date | None = None
+    period_end: date | None = None
 
 
 class ClassProgressSummary(BaseModel):

@@ -217,6 +217,11 @@ async def load_snapshot(
     executed = await load_executed_minutes(
         db, organization_id, [row.assignment_id for row in domain_assignments]
     )
+    operational_unavailable, operational_demand = await _load_operational_reservations(
+        db, organization_id, year.id, year.timezone
+    )
+    executed = _apply_operational_demand(executed, domain_assignments, operational_demand)
+    unavailable = (*unavailable, *operational_unavailable)
     open_debt, claim_assignments = await load_open_debt(
         db, organization_id, [row.assignment_id for row in domain_assignments]
     )
@@ -319,6 +324,110 @@ async def load_snapshot(
         digest=digest,
         policy=policy,
     )
+
+
+async def _load_operational_reservations(
+    db: AsyncSession,
+    organization_id: int,
+    school_year_id: int,
+    timezone_name: str,
+) -> tuple[list[Unavailability], dict[int, dict[int, int]]]:
+    """Active v1 substitute blocks as physical reservations and planned demand.
+
+    A planned substitution occupies the teacher, the room and the class in its
+    period. Its minutes consume the substitute subject demand without entering
+    the execution ledger.
+    """
+    rows = (
+        await db.execute(
+            select(
+                models.OperationalScheduleBlock,
+                models.Timeslot.start_time,
+                models.Timeslot.end_time,
+                SchedulerLessonV1.credit_minutes,
+            )
+            .join(
+                SchedulerLessonLogV1,
+                (
+                    SchedulerLessonLogV1.organization_id
+                    == models.OperationalScheduleBlock.organization_id
+                )
+                & (
+                    SchedulerLessonLogV1.id
+                    == models.OperationalScheduleBlock.source_v1_lesson_log_id
+                ),
+            )
+            .join(
+                SchedulerLessonV1,
+                (SchedulerLessonV1.organization_id == SchedulerLessonLogV1.organization_id)
+                & (SchedulerLessonV1.school_year_id == SchedulerLessonLogV1.school_year_id)
+                & (SchedulerLessonV1.id == SchedulerLessonLogV1.lesson_id),
+            )
+            .join(
+                models.Timeslot,
+                (models.Timeslot.organization_id == models.OperationalScheduleBlock.organization_id)
+                & (models.Timeslot.id == models.OperationalScheduleBlock.timeslot_id),
+            )
+            .where(
+                models.OperationalScheduleBlock.organization_id == organization_id,
+                models.OperationalScheduleBlock.origin_kind == models.OperationalBlockOrigin.V1,
+                models.OperationalScheduleBlock.status == models.OperationalBlockStatus.ACTIVE,
+                SchedulerLessonLogV1.school_year_id == school_year_id,
+            )
+        )
+    ).all()
+    unavailable: list[Unavailability] = []
+    demand: dict[int, dict[int, int]] = defaultdict(dict)
+    for block, start_time, end_time, credit_minutes in rows:
+        period = normalize_period(block.date, start_time, end_time, timezone_name)
+        for resource_type, resource_id in (
+            (UnavailableResource.TEACHER, block.teacher_id),
+            (UnavailableResource.ROOM, block.room_id),
+            (UnavailableResource.CLASS, block.class_id),
+        ):
+            if resource_id:
+                unavailable.append(Unavailability(resource_type, int(resource_id), period))
+        if block.execution_status == models.OperationalBlockExecutionStatus.COMPLETED:
+            continue
+        assignment_id = block.substitute_curricular_assignment_id
+        if assignment_id is None or block.module_id is None:
+            continue
+        demand[assignment_id][block.module_id] = (
+            demand[assignment_id].get(block.module_id, 0) + credit_minutes
+        )
+    return unavailable, {key: dict(value) for key, value in demand.items()}
+
+
+def _apply_operational_demand(
+    executed: Mapping[int, Mapping[int, int]],
+    assignments: Sequence[Assignment],
+    demand: Mapping[int, Mapping[int, int]],
+) -> dict[int, dict[int, int]]:
+    """Fold planned substitution minutes into the consumed demand.
+
+    The frontier is capped per module by the curricular requirement: an
+    out-of-date plan can never push the snapshot outside its required minutes.
+    ponytail: per-module cap; upgrade to a sequential frontier if a block ever
+    needs capacity from several modules.
+    """
+    result: dict[int, dict[int, int]] = {
+        assignment_id: dict(modules) for assignment_id, modules in executed.items()
+    }
+    by_id = {row.assignment_id: row for row in assignments}
+    for assignment_id, modules in demand.items():
+        assignment = by_id.get(assignment_id)
+        if assignment is None:
+            continue
+        required = {module.module_id: module.required_minutes for module in assignment.modules}
+        for module_id, minutes in modules.items():
+            if module_id not in required:
+                continue
+            current = result.setdefault(assignment_id, {}).get(module_id, 0)
+            capacity = required[module_id] - current
+            if capacity <= 0:
+                continue
+            result[assignment_id][module_id] = current + min(minutes, capacity)
+    return result
 
 
 async def _load_lunch_rule(db: AsyncSession, organization_id: int) -> LunchRule | None:
