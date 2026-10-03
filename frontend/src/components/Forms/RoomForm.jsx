@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import {
-  CForm, CRow, CCol, CFormInput, CButton, CModalFooter, CFormSelect
+  CAlert, CForm, CRow, CCol, CFormInput, CButton, CModalFooter, CFormSelect
 } from '@coreui/react'
+import { portugueseValidityProps } from '../../utils/formValidity'
 import { ROOM_TYPES } from '../../utils/presentation'
 
 const RoomForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
@@ -10,9 +11,11 @@ const RoomForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
     type: initialData?.type || 'normal',
     capacity: initialData?.capacity || 30,
   }))
+  const [error, setError] = useState('')
 
   const handleChange = (e) => {
     const { name, value } = e.target
+    setError('')
     setFormData(prev => ({
       ...prev,
       [name]: name === 'capacity' && value !== '' ? Number(value) : value,
@@ -21,8 +24,14 @@ const RoomForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
 
   const handleSubmit = (e) => {
     e.preventDefault()
+    const name = String(formData.name ?? '').trim()
+    if (!name) {
+      setError('Nome da sala é obrigatório.')
+      return
+    }
     onSubmit({
       ...formData,
+      name,
       capacity: Number(formData.capacity),
     })
   }
@@ -33,6 +42,7 @@ const RoomForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
 
   return (
     <CForm onSubmit={handleSubmit}>
+      {error && <CAlert color="danger" id="room-form-error">{error}</CAlert>}
       <CRow className="g-3">
         <CCol md={8}>
           <CFormInput
@@ -44,6 +54,9 @@ const RoomForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
             onChange={handleChange}
             required
             placeholder="Ex: C4, Lab Química"
+            invalid={Boolean(error)}
+            aria-describedby={error ? 'room-form-error' : undefined}
+            {...portugueseValidityProps}
           />
         </CCol>
         
@@ -57,6 +70,7 @@ const RoomForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
             onChange={handleChange}
             min="1"
             required
+            {...portugueseValidityProps}
           />
         </CCol>
 

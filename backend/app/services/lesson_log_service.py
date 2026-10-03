@@ -1,11 +1,40 @@
 import uuid as _uuid
 from datetime import UTC, datetime, timedelta
+from zoneinfo import ZoneInfo
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app import models, schemas
 from app.core.exceptions import AppError
+from app.scheduler.domain.lesson_time import execution_allowed
 from app.services import occurrence_service, schedule_service
+
+
+def _lesson_end_datetime(db: Session, organization_id: int, lesson_date, end_time) -> datetime:
+    """Normalize a legacy lesson end to the configured school timezone."""
+    timezone_name = db.scalar(
+        select(models.SchedulerSchoolYear.timezone).where(
+            models.SchedulerSchoolYear.organization_id == organization_id,
+            models.SchedulerSchoolYear.is_active.is_(True),
+        )
+    )
+    zone = ZoneInfo(timezone_name or "Europe/Lisbon")
+    return datetime.combine(lesson_date, end_time, tzinfo=zone)
+
+
+def _require_lesson_finished(
+    db: Session, organization_id: int, lesson_date, end_time, status: models.LessonLogStatus
+) -> None:
+    if status != models.LessonLogStatus.COMPLETED:
+        return
+    end_datetime = _lesson_end_datetime(db, organization_id, lesson_date, end_time)
+    if not execution_allowed(datetime.now(UTC), end_datetime):
+        raise AppError(
+            kind="validation",
+            code="lesson_not_finished",
+            detail="Só pode concluir esta aula depois do seu término.",
+        )
 
 
 def _get_active_module_id(db: Session, class_id: int, subject_id: int) -> int | None:
@@ -108,13 +137,7 @@ def upsert_active_lesson_log_sync(
     timeslot = db.get(models.Timeslot, block.timeslot_id)
     if timeslot is None:
         raise AppError(kind="conflict", code="conflict", detail="Bloco ativo sem horario valido.")
-    end_datetime = datetime.combine(block.date, timeslot.end_time, tzinfo=UTC)
-    if payload.status == models.LessonLogStatus.COMPLETED and end_datetime > datetime.now(UTC):
-        raise AppError(
-            kind="bad_request",
-            code="bad_request",
-            detail="Nao e possivel registar estado para uma aula que ainda nao terminou.",
-        )
+    _require_lesson_finished(db, organization_id, block.date, timeslot.end_time, payload.status)
 
     week_start_date = block.date - timedelta(days=block.date.weekday())
     timesheet = (
@@ -307,6 +330,13 @@ def upsert_operational_lesson_log_sync(
             code="validation_error",
             detail="Blocos operacionais nao podem originar novas ocorrencias.",
         )
+
+    timeslot = db.get(models.Timeslot, block.timeslot_id)
+    if timeslot is None:
+        raise AppError(
+            kind="conflict", code="conflict", detail="Bloco operacional sem horario valido."
+        )
+    _require_lesson_finished(db, organization_id, block.date, timeslot.end_time, payload.status)
 
     week_start_date = block.date - timedelta(days=block.date.weekday())
     timesheet = (

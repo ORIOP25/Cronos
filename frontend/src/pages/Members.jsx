@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import {
   CAlert,
   CBadge,
@@ -26,10 +27,12 @@ import {
   useResendMemberInvitation,
   useRestoreMember,
   useRetryMemberSync,
+  useTeachers,
   useUpdateMember,
 } from '../features/members/data'
 import { useSubjects } from '../features/catalog/data'
 import ConfirmationModal from '../components/ConfirmationModal'
+import TeacherAvailabilityModal from '../components/TeacherAvailabilityModal'
 
 const emptyDraft = {
   organization_display_name: '',
@@ -220,8 +223,26 @@ const Members = ({ readOnly = false, allowedActions }) => {
   const [selectedMember, setSelectedMember] = useState(null)
   const [modalVisible, setModalVisible] = useState(false)
   const [removeTarget, setRemoveTarget] = useState(null)
+  const [searchParams, setSearchParams] = useSearchParams()
   const { data, isLoading, isError, error, refetch } = useMembers({ includeArchived })
   const { data: subjects = [] } = useSubjects()
+  const { data: teachers = [] } = useTeachers()
+  const availabilityTeacherId = Number.parseInt(searchParams.get('teacher_id') ?? '', 10)
+  const showAvailability = searchParams.get('panel') === 'availability'
+    && !Number.isNaN(availabilityTeacherId)
+  const availabilityTeacher = useMemo(() => {
+    if (!showAvailability) return null
+    return teachers.find((teacher) => teacher.id === availabilityTeacherId)
+      ?? { id: availabilityTeacherId, name: `Professor #${availabilityTeacherId}` }
+  }, [showAvailability, teachers, availabilityTeacherId])
+  const closeAvailability = () => {
+    setSearchParams((previous) => {
+      const next = new URLSearchParams(previous)
+      next.delete('panel')
+      next.delete('teacher_id')
+      return next
+    }, { replace: true })
+  }
   const createMember = useCreateMember()
   const updateMember = useUpdateMember()
   const removeMember = useRemoveMember()
@@ -333,7 +354,11 @@ const Members = ({ readOnly = false, allowedActions }) => {
                   </td>
                   <td className="small text-muted">
                     {member.capabilities.includes('teacher')
-                      ? member.subject_ids?.length ? `${member.subject_ids.length} selecionadas` : 'Sem competências'
+                      ? member.subject_ids?.length === 1
+                        ? '1 selecionada'
+                        : member.subject_ids?.length
+                          ? `${member.subject_ids.length} selecionadas`
+                          : 'Sem competências'
                       : '-'}
                   </td>
                   <td className="text-end">
@@ -369,6 +394,12 @@ const Members = ({ readOnly = false, allowedActions }) => {
         confirmText="Remover"
         isLoading={removeMember.isPending}
       />
+      {availabilityTeacher && (
+        <TeacherAvailabilityModal
+          teacher={availabilityTeacher}
+          onClose={closeAvailability}
+        />
+      )}
         <MemberModal
         key={`${modalVisible ? 'open' : 'closed'}-${selectedMember?.id ?? 'new'}`}
         visible={modalVisible}

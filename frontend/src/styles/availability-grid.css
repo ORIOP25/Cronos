@@ -9,3 +9,6 @@
 .availability-grid__cell { touch-action: none; cursor: crosshair; transition: outline 150ms ease, filter 150ms ease; }
 .availability-grid__cell:hover, .availability-grid__cell:focus-visible { filter: saturate(1.12); outline: 3px solid var(--cronos-accent); outline-offset: 1px; }
 .availability-grid__empty { display: grid; place-items: center; border-style: dashed; color: var(--cronos-ink-muted); }
+
+.availability-grid-scroll { scrollbar-width: thin; }
+.availability-grid-scroll:focus-visible { outline: 2px solid var(--cronos-accent); outline-offset: 2px; }

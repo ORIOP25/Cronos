@@ -8,7 +8,7 @@ const DYNAMIC_OPTS = {
   staleTime: 1000 * 60 * 5, // 5 minutos de "frescura"
 }
 
-export const useOccurrences = ({ classId, dateFrom, dateTo, status } = {}) => {
+export const useOccurrences = ({ classId, dateFrom, dateTo, status, enabled = true } = {}) => {
   const apiClient = useApiClient()
   const orgId = useOrganization().organization?.id
   const params = {}
@@ -24,7 +24,7 @@ export const useOccurrences = ({ classId, dateFrom, dateTo, status } = {}) => {
       if (Array.isArray(data)) return { items: data, total: data.length, limit: data.length, offset: 0 }
       return { items: data.items ?? [], total: data.total ?? 0, limit: data.limit ?? 100, offset: data.offset ?? 0 }
     },
-    enabled: Boolean(orgId),
+    enabled: Boolean(orgId) && enabled,
     ...DYNAMIC_OPTS,
   })
 }
@@ -81,7 +81,7 @@ export const useUpdateOccurrence = () => {
       })
     },
     onSuccess: () => {
-      void invalidateOrgQueries(queryClient, orgId, ['occurrences', 'debts', 'weekSchedule', 'classes', 'substitute-recommendations'])
+      void invalidateOrgQueries(queryClient, orgId, ['occurrences', 'debts', 'weekSchedule', 'classes', 'substitute-recommendations', 'substitute-diagnostics', 'dashboard', 'teacher-progress', 'my-timesheet', 'timesheets'])
     },
   })
 }
@@ -103,7 +103,7 @@ export const useCancelOccurrence = () => {
       })
     },
     onSuccess: () => {
-      void invalidateOrgQueries(queryClient, orgId, ['occurrences', 'debts', 'weekSchedule', 'my-timesheet'])
+      void invalidateOrgQueries(queryClient, orgId, ['occurrences', 'debts', 'weekSchedule', 'classes', 'substitute-diagnostics', 'dashboard', 'teacher-progress', 'my-timesheet', 'timesheets'])
     },
   })
 }
@@ -129,7 +129,7 @@ export const useUpsertLessonLog = () => {
       return apiClient.put(endpoint, payload)
     },
     onSuccess: () => {
-      void invalidateOrgQueries(queryClient, orgId, ['weekSchedule', 'classes', 'occurrences', 'debts'])
+      void invalidateOrgQueries(queryClient, orgId, ['weekSchedule', 'classes', 'occurrences', 'debts', 'dashboard', 'teacher-progress', 'my-timesheet', 'timesheets'])
     },
   })
 }
@@ -278,5 +278,60 @@ export const useSaveAvailability = () => {
       void invalidateOrgQueries(queryClient, orgId, ['my-availability'])
       void invalidatePreparationQueries(queryClient, orgId)
     },
+  })
+}
+
+/**
+ * Disponibilidade de um professor vista pela Direção.
+ */
+export const useTeacherAvailability = ({ teacherId } = {}) => {
+  const apiClient = useApiClient()
+  const orgId = useOrganization().organization?.id
+  return useQuery({
+    queryKey: orgQueryKey('teacher-availability', orgId, teacherId),
+    queryFn: async () => apiClient.get(`/teachers/${teacherId}/availability`),
+    enabled: Boolean(orgId) && Boolean(teacherId),
+    ...DYNAMIC_OPTS,
+  })
+}
+
+/**
+ * Direção edita a disponibilidade de um professor sem convite.
+ */
+export const useSaveTeacherAvailability = () => {
+  const apiClient = useApiClient()
+  const queryClient = useQueryClient()
+  const orgId = useOrganization().organization?.id
+  return useMutation({
+    mutationFn: async ({ teacherId, payload }) => {
+      return apiClient.put(`/teachers/${teacherId}/availability`, payload)
+    },
+    onSuccess: (_, { teacherId, payload }) => {
+      queryClient.setQueryData(orgQueryKey('teacher-availability', orgId, teacherId), payload)
+      void invalidateOrgQueries(queryClient, orgId, [
+        'teacher-availability',
+        'substitute-recommendations',
+        'occurrences',
+        'dashboard',
+        'teacher-progress',
+      ])
+      void invalidatePreparationQueries(queryClient, orgId)
+    },
+  })
+}
+
+/**
+ * Diagnóstico estruturado de candidatos a substituto.
+ */
+export const useSubstituteDiagnostics = ({ occurrenceId } = {}) => {
+  const apiClient = useApiClient()
+  const orgId = useOrganization().organization?.id
+  return useQuery({
+    queryKey: orgQueryKey('substitute-diagnostics', orgId, occurrenceId),
+    queryFn: async () => (
+      apiClient.get(`/occurrences/${occurrenceId}/substitutes/diagnostics`)
+    ),
+    enabled: Boolean(orgId) && Boolean(occurrenceId),
+    ...DYNAMIC_OPTS,
   })
 }

@@ -12,6 +12,7 @@ vi.mock('../features/operations/data', () => ({
   useCancelOccurrence: () => ({ isPending: false, mutate: vi.fn() }),
   useDebts: (filters) => hooks.debts(filters),
   useOccurrences: (filters) => hooks.occurrences(filters),
+  useSubstituteDiagnostics: () => ({ data: { candidates: [], setup_actions: [] } }),
   useSubstituteRecommendations: () => ({
     data: [{ rank: 1, teacher_id: 2, teacher_name: 'Prof.ª Maria Santos', subject_id: 2, subject_name: 'Matemática' }],
   }),
@@ -140,7 +141,7 @@ describe('Occurrences active tab ownership', () => {
       expect(screen.queryByText('Resumo de Dívidas de Horas')).not.toBeInTheDocument()
       expect(screen.getByText('Furos acumulados')).toBeInTheDocument()
       expect(screen.getByText('Horas em dívida')).toBeInTheDocument()
-      expect(screen.getByRole('cell', { name: '2h' })).toBeInTheDocument()
+      expect(screen.getByRole('cell', { name: '2 h' })).toBeInTheDocument()
     })
   })
 })

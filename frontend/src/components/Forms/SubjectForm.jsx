@@ -10,6 +10,7 @@ import {
   CRow,
 } from '@coreui/react'
 import { EMPTY_MODULE, normalizeModule } from '../../utils/subjectModules'
+import { portugueseValidityProps } from '../../utils/formValidity'
 import { ROOM_TYPES } from '../../utils/presentation'
 
 function createInitialSubject(initialData) {
@@ -80,13 +81,13 @@ const SubjectForm = ({ initialData, onSubmit, isLoading, onCancel, readOnly = fa
 
   return (
     <CForm onSubmit={submit}>
-      {error && <CAlert color="danger">{error}</CAlert>}
+      {error && <CAlert color="danger" id="subject-form-error">{error}</CAlert>}
 
       <fieldset className="mb-4">
         <legend className="h6 mb-3">Dados gerais</legend>
         <CRow className="g-3">
           <CCol md={8}>
-            <CFormInput id="subject-name" label="Nome da Disciplina" value={subject.name} onChange={(event) => updateSubject('name', event.target.value)} disabled={readOnly} required />
+            <CFormInput id="subject-name" label="Nome da Disciplina" value={subject.name} onChange={(event) => updateSubject('name', event.target.value)} disabled={readOnly} required invalid={Boolean(error)} aria-describedby={error ? 'subject-form-error' : undefined} {...portugueseValidityProps} />
           </CCol>
           <CCol md={4}>
             <CFormSelect id="subject-room-type" label="Sala Preferencial" value={subject.required_room_type} onChange={(event) => updateSubject('required_room_type', event.target.value)} disabled={readOnly}>

@@ -30,3 +30,6 @@
 .availability-heatmap__slot { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 4px; padding: 7px 8px; border: 1px solid; border-radius: 4px; font-size: .72rem; }
 @media (max-width: 900px) { .attention-panel__items, .dashboard-secondary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 600px) { .attention-panel__items, .dashboard-secondary-grid { grid-template-columns: 1fr; } }
+
+.availability-heatmap__days { scrollbar-width: thin; }
+.availability-heatmap__days:focus-visible { outline: 2px solid var(--cronos-accent, #321fdb); outline-offset: 2px; }

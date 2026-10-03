@@ -18,7 +18,8 @@ import {
 } from '../features/operations/data'
 import { useCurrentMember } from '../features/members/data'
 import { getCurrentWeekMonday, addDays, formatWeekRange, formatDate, toWeekMonday, isAfterDate } from '../utils/formatUtils'
-import { getApiErrorMessage } from '../utils/apiErrors'
+import { getApiErrorMessage, getApiErrorPresentation } from '../utils/apiErrors'
+import FailureState from '../components/FailureState'
 import { getWeekSubmissionBlockers } from '../features/operations/weekSubmission'
 
 const HORIZON_NOT_CONFIGURED_MESSAGE =
@@ -95,9 +96,10 @@ function MySchedules() {
   const {
     data: fetchedWeekSlots,
     isFetching: isLoadingWeek,
-    isError: hasWeekError,
+    error: weekError,
     refetch: refetchWeekSchedule,
   } = useWeekSchedule(null, effectiveTeacherId, weekStart)
+  const hasWeekError = Boolean(weekError)
 
   useEffect(() => {
     if (!effectiveTeacherId || isLoadingHorizon || hasHorizonError) return
@@ -256,9 +258,15 @@ function MySchedules() {
 
   if (hasWeekError) {
     weekContent = (
-      <div className="text-center p-5 text-danger" style={{ fontSize: '0.9rem' }}>
-        Não foi possível carregar o seu horário semanal. Verifique a ligação e volte a tentar dentro de alguns minutos.
-      </div>
+      <FailureState
+        variant="inline"
+        presentation={{
+          ...getApiErrorPresentation(weekError, 'schedule.week'),
+          title: 'Não foi possível carregar o seu horário semanal',
+          message: 'Verifique a ligação e volte a tentar. A semana selecionada mantém-se.',
+        }}
+        onRetry={() => refetchWeekSchedule()}
+      />
     )
   }
 

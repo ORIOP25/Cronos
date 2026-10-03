@@ -274,11 +274,12 @@ def _get_schedule_health(
     class_ids = {row.class_id for row in blocks}
     teacher_ids = {row.teacher_id for row in blocks}
     week_start = today - timedelta(days=today.weekday())
+    week_end = week_start + timedelta(days=6)
     weekly_counts = defaultdict(int)
     teacher_slots = defaultdict(int)
     class_slots = defaultdict(int)
     for row in blocks:
-        if row.date >= week_start:
+        if week_start <= row.date <= week_end:
             weekly_counts[row.class_id] += 1
         teacher_slots[(row.teacher_id, row.date, row.timeslot_id)] += 1
         class_slots[(row.class_id, row.date, row.timeslot_id)] += 1
@@ -290,6 +291,8 @@ def _get_schedule_health(
     variance = (
         sum((count - mean) ** 2 for count in values) / classes_total if classes_total > 1 else 0.0
     )
+    period_start = min(row.date for row in blocks)
+    period_end = max(row.date for row in blocks)
     return schemas.ScheduleHealthWidget(
         generation_id=generation_id,
         blocks_count=blocks_count,
@@ -299,7 +302,12 @@ def _get_schedule_health(
         duplicate_teacher_slots=sum(count > 1 for count in teacher_slots.values()),
         duplicate_class_slots=sum(count > 1 for count in class_slots.values()),
         weekly_fairness_spread=round(variance**0.5, 1),
-        teacher_week_slots_avg=(round(blocks_count / len(teacher_ids), 1) if teacher_ids else 0.0),
+        teacher_week_slots_avg=(round(week_total / len(teacher_ids), 1) if teacher_ids else 0.0),
+        annual_class_average=round(blocks_count / classes_total, 1) if classes_total else 0.0,
+        annual_teacher_average=(round(blocks_count / len(teacher_ids), 1) if teacher_ids else 0.0),
+        teachers_total=len(teacher_ids),
+        period_start=period_start,
+        period_end=period_end,
     )
 
 
@@ -339,23 +347,19 @@ def _get_v1_schedule_health(
             SchedulerLessonV1.version_id == version_id,
         )
     ).all()
-    class_ids = set(
-        db.execute(
-            select(CurricularAssignment.class_id).where(
-                CurricularAssignment.organization_id == organization_id,
-                CurricularAssignment.school_year_id == school_year_id,
-            )
-        ).scalars()
-    )
-    if not rows or not class_ids:
+    if not rows:
         return None
+    # The annual denominator is the population present in the approved version,
+    # not every assignment configured for the school year.
+    class_ids = {row.class_id for row in rows}
     teacher_ids = {row.teacher_id for row in rows}
     week_start = today - timedelta(days=today.weekday())
+    week_end = week_start + timedelta(days=6)
     weekly_counts = defaultdict(int)
     teacher_slots = defaultdict(int)
     class_slots = defaultdict(int)
     for row in rows:
-        if row.school_date >= week_start:
+        if week_start <= row.school_date <= week_end:
             weekly_counts[row.class_id] += 1
         teacher_slots[(row.teacher_id, row.school_date, row.starts_at, row.ends_at)] += 1
         class_slots[(row.class_id, row.school_date, row.starts_at, row.ends_at)] += 1
@@ -366,6 +370,8 @@ def _get_v1_schedule_health(
     variance = (
         sum((count - mean) ** 2 for count in values) / classes_total if classes_total > 1 else 0.0
     )
+    period_start = min(row.school_date for row in rows)
+    period_end = max(row.school_date for row in rows)
     return schemas.ScheduleHealthWidget(
         generation_id=f"v1-{version_id}",
         blocks_count=len(rows),
@@ -375,7 +381,12 @@ def _get_v1_schedule_health(
         duplicate_teacher_slots=sum(count > 1 for count in teacher_slots.values()),
         duplicate_class_slots=sum(count > 1 for count in class_slots.values()),
         weekly_fairness_spread=round(variance**0.5, 1),
-        teacher_week_slots_avg=(round(len(rows) / len(teacher_ids), 1) if teacher_ids else 0.0),
+        teacher_week_slots_avg=(round(week_total / len(teacher_ids), 1) if teacher_ids else 0.0),
+        annual_class_average=round(len(rows) / classes_total, 1) if classes_total else 0.0,
+        annual_teacher_average=round(len(rows) / len(teacher_ids), 1) if teacher_ids else 0.0,
+        teachers_total=len(teacher_ids),
+        period_start=period_start,
+        period_end=period_end,
     )
 
 

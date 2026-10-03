@@ -436,7 +436,7 @@ async function firstPublishedFutureSlot(page, classId) {
 test.describe('Scheduler generation', () => {
   test.use({ storageState: '.auth/admin.json' })
 
-  test('admin publishes and registers completed and occurrence active blocks', async ({ page }) => {
+  test('admin publishes and manages occurrence decisions', async ({ page }) => {
     test.setTimeout(180_000)
 
     attachRuntimeGuards(page)
@@ -492,49 +492,42 @@ test.describe('Scheduler generation', () => {
       activeSlots.map((slot) => slot.scheduler_lesson_id),
     )
 
-    // The engine publishes only periods that did not start, so the UI keeps
-    // "Aula Dada" disabled on this freshly published week. Register the
-    // completion through the same endpoint the modal uses and keep the UI
-    // assertions that prove the rendered state and the credited minutes.
-    const completedLog = await apiRequest(
+    const futureSlot = activeSlots.find(
+      (slot) => new Date(slot.ends_at).getTime() > Date.now(),
+    )
+    expect(futureSlot, 'a published future lesson is required').toBeTruthy()
+
+    // A future lesson cannot be completed before it ends.
+    allowApiFailure(page, { status: 422, url: '/api/v1/schedule/lessons/' })
+    let completionRejected = false
+    try {
+      await apiRequest(
+        page,
+        'PUT',
+        `/schedule/lessons/${futureSlot.scheduler_lesson_id}/log`,
+        { status: 'COMPLETED', summary: 'E2E too early' },
+      )
+    } catch (error) {
+      completionRejected = /422/.test(String(error))
+        && /lesson_not_finished/.test(String(error))
+    }
+    expect(completionRejected).toBe(true)
+
+    // Registering the occurrence creates neither debt nor execution.
+    const occurrenceLog = await apiRequest(
       page,
       'PUT',
-      `/schedule/lessons/${activeSlots[0].scheduler_lesson_id}/log`,
-      { status: 'COMPLETED', summary: 'E2E active lesson completed' },
+      `/schedule/lessons/${futureSlot.scheduler_lesson_id}/log`,
+      { status: 'OCCURRENCE', summary: 'E2E occurrence registration' },
     )
-    const completedLessonId = completedLog.lesson_id
-    expect(completedLog.status).toBe('COMPLETED')
-    expect(completedLog.credited_minutes).toBeGreaterThan(0)
-    expect(activeLessonIds.has(completedLessonId)).toBe(true)
+    expect(occurrenceLog.status).toBe('OCCURRENCE')
+    expect(occurrenceLog.debt_minutes).toBe(0)
+    const occurrenceLessonId = occurrenceLog.lesson_id
+    expect(activeLessonIds.has(occurrenceLessonId)).toBe(true)
 
     await goTo(page, `/schedules?weekStart=${weekStart}`)
     await expectRouteReady(page, '/schedules')
     await page.getByLabel('Turma').selectOption(String(classId))
-
-    const lessonButtons = page.getByRole('button', {
-      name: new RegExp(`Abrir registo de ${FIXTURE.subjectName}`, 'i'),
-    })
-    await expect(lessonButtons).toHaveCount(activeSlots.length, { timeout: 20_000 })
-    await expect(page.getByRole('gridcell', { name: /Conclu.da/i }).first()).toBeVisible({
-      timeout: 20_000,
-    })
-
-    await lessonButtons.nth(1).click()
-    await page.getByLabel(/Sum.rio/i).fill('E2E active lesson occurrence')
-    await page.getByRole('button', { name: /^Criar Ocorr.ncia$/i }).click()
-    const occurrenceResponsePromise = page.waitForResponse(
-      (candidate) => candidate.request().method() === 'PUT'
-        && /\/api\/v1\/schedule\/lessons\/\d+\/log(?:\?|$)/.test(candidate.url()),
-    )
-    await page.getByRole('button', { name: /Sim, criar ocorr.ncia/i }).click()
-    const occurrenceResponse = await occurrenceResponsePromise
-    expect(occurrenceResponse.status()).toBe(200)
-    const occurrencePayload = await occurrenceResponse.json()
-    const occurrenceLessonId = occurrencePayload.lesson_id
-    expect(occurrencePayload.status).toBe('OCCURRENCE')
-    expect(occurrencePayload.debt_minutes).toBeGreaterThan(0)
-    expect(activeLessonIds.has(occurrenceLessonId)).toBe(true)
-    expect(occurrenceLessonId).not.toBe(completedLessonId)
     await expect(page.getByRole('gridcell', { name: /Ocorr.ncia/i }).first()).toBeVisible({
       timeout: 20_000,
     })
@@ -544,20 +537,31 @@ test.describe('Scheduler generation', () => {
       'GET',
       `/schedule/week?class_id=${classId}&week_start=${weekStart}`,
     )
-    const completedSlot = refreshedSlots.find(
-      (slot) => slot.scheduler_lesson_id === completedLessonId,
-    )
-    expect(completedSlot).toMatchObject({ lesson_log_status: 'COMPLETED' })
-    expect(
-      completedSlot.slices.reduce((total, slice) => total + slice.completed_minutes, 0),
-    ).toBeGreaterThanOrEqual(completedLog.credited_minutes)
     const occurrenceSlot = refreshedSlots.find(
       (slot) => slot.scheduler_lesson_id === occurrenceLessonId,
     )
     expect(occurrenceSlot).toMatchObject({ lesson_log_status: 'OCCURRENCE' })
 
-    const debts = await apiRequest(page, 'GET', `/occurrences/debts?class_id=${classId}`)
-    expect(debts.total_hours_owed).toBeGreaterThan(0)
+    // A pending occurrence creates no debt. The GAP decision creates it once.
+    const debtsBefore = await apiRequest(page, 'GET', `/occurrences/debts?class_id=${classId}`)
+    const pending = await apiRequest(
+      page,
+      'GET',
+      `/occurrences/?class_id=${classId}&status=OPEN_PENDING`,
+    )
+    const occurrence = pending.items.find(
+      (item) => item.class_id === classId && item.date === occurrenceSlot.date,
+    ) ?? pending.items[0]
+    expect(occurrence).toBeTruthy()
+    const decided = await apiRequest(
+      page,
+      'PATCH',
+      `/occurrences/${occurrence.id}`,
+      { status: 'GAP', version: occurrence.version },
+    )
+    expect(decided.operational_state).toBe('DECIDED_GAP')
+    const debtsAfter = await apiRequest(page, 'GET', `/occurrences/debts?class_id=${classId}`)
+    expect(debtsAfter.total_hours_owed).toBeGreaterThan(debtsBefore.total_hours_owed)
   })
 })
 

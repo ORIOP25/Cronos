@@ -9,6 +9,7 @@ import {
   CRow,
 } from '@coreui/react'
 import { createClassDraft, validateClassDraft } from '../../utils/classDraft'
+import { portugueseValidityProps } from '../../utils/formValidity'
 
 const CourseForm = ({ onSubmit, isLoading, onCancel }) => {
   const [course, setCourse] = useState({ name: '', abbreviation: '', classes_config: [] })
@@ -47,16 +48,16 @@ const CourseForm = ({ onSubmit, isLoading, onCancel }) => {
 
   return (
     <CForm onSubmit={submit}>
-      {formError && <CAlert color="danger">{formError}</CAlert>}
+      {formError && <CAlert color="danger" id="course-form-error">{formError}</CAlert>}
 
       <fieldset className="mb-4">
         <legend className="h6 mb-3">Dados gerais</legend>
         <CRow className="g-3">
           <CCol md={8}>
-            <CFormInput id="course-name" label="Nome do Curso" value={course.name} onChange={(event) => updateCourse('name', event.target.value)} required />
+            <CFormInput id="course-name" label="Nome do Curso" value={course.name} onChange={(event) => updateCourse('name', event.target.value)} required invalid={Boolean(formError)} aria-describedby={formError ? 'course-form-error' : undefined} {...portugueseValidityProps} />
           </CCol>
           <CCol md={4}>
-            <CFormInput id="course-abbreviation" label="Sigla" value={course.abbreviation} maxLength={10} onChange={(event) => updateCourse('abbreviation', event.target.value)} required />
+            <CFormInput id="course-abbreviation" label="Sigla" value={course.abbreviation} maxLength={10} onChange={(event) => updateCourse('abbreviation', event.target.value)} required invalid={Boolean(formError)} aria-describedby={formError ? 'course-form-error' : undefined} {...portugueseValidityProps} />
           </CCol>
         </CRow>
       </fieldset>

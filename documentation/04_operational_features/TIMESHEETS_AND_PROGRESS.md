@@ -48,6 +48,8 @@ Ledger entries preserve idempotent evidence for progress and recovery.
 - Timesheet status is `OPEN`, `SUBMITTED`, or `APPROVED`.
 - Submission requires a linked teacher and a valid week.
 - Missing or `PENDING` lesson logs block submission.
+- Active v1 substitute blocks count in the teacher week.
+- A planned substitution blocks submission until its lesson is completed.
 - Future blocks do not satisfy week closure.
 - Approval sets approver identity and freezes later edits.
 - Reopening returns the week to `OPEN`.

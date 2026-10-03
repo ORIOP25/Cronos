@@ -119,6 +119,30 @@ async def _first_lesson(db_session, seed: V1Seed) -> SchedulerLessonV1:
     )
 
 
+async def _first_occurrence(db_session, seed: V1Seed) -> dict:
+    from app.scheduler.infrastructure import occurrences as occurrences_v1
+
+    page = await occurrences_v1.list_occurrences(db_session, seed.organization.id)
+    return page["items"][0]
+
+
+async def _decide_gap(db_session, seed: V1Seed, item: dict, *, now: datetime) -> dict:
+    from app.scheduler.infrastructure import occurrences as occurrences_v1
+
+    decided = await occurrences_v1.update_occurrence(
+        db_session,
+        seed.organization.id,
+        item["id"],
+        schemas.LessonOccurrenceUpdate(
+            status=models.LessonOccurrenceStatus.GAP, version=item["version"]
+        ),
+        decided_by_membership_id=seed.membership.id,
+        now_utc=now,
+    )
+    await db_session.commit()
+    return decided
+
+
 async def test_a_completed_lesson_log_credits_the_ledger_once(db_session, monkeypatch):
     seed = await _minimal_school(db_session)
     await db_session.commit()
@@ -133,7 +157,7 @@ async def test_a_completed_lesson_log_credits_the_ledger_once(db_session, monkey
         status="COMPLETED",
         summary="Primeira aula.",
         notes=None,
-        now_utc=MOMENT,
+        now_utc=lesson.ends_at,
     )
     await db_session.commit()
     assert result["credited_minutes"] == lesson.credit_minutes
@@ -149,7 +173,7 @@ async def test_a_completed_lesson_log_credits_the_ledger_once(db_session, monkey
         status="COMPLETED",
         summary="Primeira aula.",
         notes=None,
-        now_utc=MOMENT,
+        now_utc=lesson.ends_at,
     )
     await db_session.commit()
     assert replay["credited_minutes"] == 0
@@ -163,7 +187,7 @@ async def test_a_completed_lesson_log_credits_the_ledger_once(db_session, monkey
     assert log.revision == 1
 
 
-async def test_an_occurrence_creates_audited_debt_and_completion_settles_it(
+async def test_an_occurrence_defers_debt_until_the_decision_and_completion_settles_it(
     db_session, monkeypatch
 ):
     seed = await _minimal_school(db_session)
@@ -179,24 +203,33 @@ async def test_an_occurrence_creates_audited_debt_and_completion_settles_it(
         status="OCCURRENCE",
         summary="Falta do professor.",
         notes=None,
-        now_utc=MOMENT,
+        now_utc=lesson.ends_at,
         planning_relevant=True,
     )
     await db_session.commit()
     open_debt, _ = await load_open_debt(db_session, seed.organization.id, [lesson.assignment_id])
+    assert sum(open_debt.values()) == 0, "Ocorrência pendente não cria dívida."
+
+    item = await _first_occurrence(db_session, seed)
+    decided = await _decide_gap(db_session, seed, item, now=lesson.ends_at)
+    assert decided["operational_state"] == "DECIDED_GAP"
+    open_debt, _ = await load_open_debt(db_session, seed.organization.id, [lesson.assignment_id])
     assert sum(open_debt.values()) == lesson.credit_minutes
 
-    await record_lesson_log(
+    from app.scheduler.infrastructure import occurrences as occurrences_v1
+
+    given = await occurrences_v1.update_occurrence(
         db_session,
         seed.organization.id,
-        membership_id=seed.membership.id,
-        lesson_id=lesson.id,
-        status="COMPLETED",
-        summary="Aula reposta.",
-        notes=None,
-        now_utc=MOMENT,
+        item["id"],
+        schemas.LessonOccurrenceUpdate(
+            status=models.LessonOccurrenceStatus.GIVEN, version=decided["version"]
+        ),
+        decided_by_membership_id=seed.membership.id,
+        now_utc=lesson.ends_at,
     )
     await db_session.commit()
+    assert given["operational_state"] == "DECIDED_GIVEN"
     open_debt, _ = await load_open_debt(db_session, seed.organization.id, [lesson.assignment_id])
     assert sum(open_debt.values()) == 0
     executed = await load_executed_minutes(db_session, seed.organization.id, [lesson.assignment_id])
@@ -283,7 +316,7 @@ async def test_manual_reductions_are_per_module_on_a_crossing_lesson(db_session,
         status="COMPLETED",
         summary="Aula cruzando módulos.",
         notes=None,
-        now_utc=MOMENT,
+        now_utc=lesson.ends_at,
     )
     await db_session.commit()
     executed = await load_executed_minutes(db_session, seed.organization.id, [seed.assignment.id])
@@ -320,7 +353,7 @@ async def test_an_occurrence_reverses_only_the_remaining_module_balance(db_sessi
         status="COMPLETED",
         summary="Aula dada.",
         notes=None,
-        now_utc=MOMENT,
+        now_utc=lesson.ends_at,
     )
     await db_session.commit()
     await adjust_class_progress(
@@ -341,10 +374,12 @@ async def test_an_occurrence_reverses_only_the_remaining_module_balance(db_sessi
         status="OCCURRENCE",
         summary="Aula não dada.",
         notes=None,
-        now_utc=MOMENT,
+        now_utc=lesson.ends_at,
         planning_relevant=True,
     )
     await db_session.commit()
+    item = await _first_occurrence(db_session, seed)
+    await _decide_gap(db_session, seed, item, now=lesson.ends_at)
     executed = await load_executed_minutes(db_session, seed.organization.id, [seed.assignment.id])
     assert executed[seed.assignment.id][seed.module.id] == 0
     assert executed[seed.assignment.id][second.id] == 0
@@ -375,7 +410,7 @@ async def test_a_completed_lesson_log_follows_the_lesson_into_the_next_version(
         status="COMPLETED",
         summary="Sumário persistente.",
         notes=None,
-        now_utc=MOMENT,
+        now_utc=target.ends_at,
     )
     await db_session.commit()
     executed_before = await load_executed_minutes(
@@ -460,6 +495,10 @@ async def test_a_repair_persists_planned_recovery_allocations(db_session, monkey
         planning_relevant=True,
     )
     await db_session.commit()
+    open_debt, _ = await load_open_debt(db_session, seed.organization.id, [seed.assignment.id])
+    assert sum(open_debt.values()) == 0
+    item = await _first_occurrence(db_session, seed)
+    await _decide_gap(db_session, seed, item, now=lessons[0].ends_at)
     open_debt, _ = await load_open_debt(db_session, seed.organization.id, [seed.assignment.id])
     owed = sum(open_debt.values())
     assert owed == lessons[0].credit_minutes

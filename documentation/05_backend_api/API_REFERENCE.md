@@ -114,6 +114,7 @@ Stable route families keep frontend features and provider webhooks independent f
 | `GET` | `/api/v1/teachers/me/availability` | Teacher |
 | `PUT` | `/api/v1/teachers/me/availability` | Teacher; rate limit `30/minute` |
 | `GET` | `/api/v1/teachers/{teacher_id}/availability` | Active; self or admin |
+| `PUT` | `/api/v1/teachers/{teacher_id}/availability` | Admin |
 | `GET` | `/api/v1/teachers/me/progress` | Teacher |
 | `GET` | `/api/v1/teachers/observability/summary` | Admin |
 
@@ -179,6 +180,7 @@ See [Bulk Import CSV](../07_data_and_seed/BULK_IMPORT_CSV.md) for the exact temp
 | `GET` | `/api/v1/occurrences/debts` | Admin |
 | `GET` | `/api/v1/occurrences/substitutes` | Admin |
 | `GET` | `/api/v1/occurrences/{occurrence_id}/substitutes/recommendations` | Admin |
+| `GET` | `/api/v1/occurrences/{occurrence_id}/substitutes/diagnostics` | Admin |
 | `GET` | `/api/v1/occurrences/observability/summary` | Admin |
 | `GET` | `/api/v1/timesheets/` | Admin |
 | `GET` | `/api/v1/timesheets/me/{week_start_date}` | Teacher |
@@ -249,6 +251,40 @@ The public occurrence create, update, and cancel payloads no longer accept the
 free-text `reason` field. Clients that still send it receive `422`; this is an
 intentional incompatible contract change. Consumers must remove the field
 before rollout.
+
+### Occurrence decisions and lesson execution
+
+A pending occurrence creates no debt and no execution. The decision stores the
+decision, instant, author, and reversal reason on the v1 lesson log. Clients
+must not infer the decision from a debt balance.
+
+- `GIVEN` requires the lesson end instant. Before it the API returns `422` with
+  code `lesson_not_finished` and persists no effect.
+- `GAP` creates the debt claim once for the original subject.
+- `SUBSTITUTED` creates the same debt claim and a planned operational block.
+  Planning credits no execution and reports `hours_given` as zero.
+- Completing the operational block credits only the substitute subject.
+- Reversing a completed substitute block requires
+  `cancel_completed_substitute_log=true`; otherwise the API returns `409`.
+
+The occurrence read exposes `substitute_block_id`,
+`substitute_execution_status`, `ends_at`, `can_complete`, and
+`blocked_reason`. The weekly read returns operational substitution slots with
+`block_source="operational"` and hides the original lesson.
+
+`GET /api/v1/occurrences/{id}/substitutes/diagnostics` returns every candidate
+with `eligible`, structured `exclusions`, and `setup_actions`.
+`PUT /api/v1/teachers/{teacher_id}/availability` lets an administrator update a
+teacher availability grid without sending an invite.
+
+The server rejects decisions, revisions, and reversals that would change a
+submitted or approved weekly timesheet. The normal summary route cannot change
+the state of a lesson with an active occurrence decision.
+
+The `schedule_health` widget exposes `annual_class_average`,
+`annual_teacher_average`, `classes_total`, `teachers_total`, `period_start`, and
+`period_end`. The annual denominator is the population present in the approved
+schedule version. The weekly indicators use a closed Monday-to-Sunday window.
 
 ### Rate limits
 

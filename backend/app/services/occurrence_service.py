@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from functools import partial
 from types import SimpleNamespace
+from zoneinfo import ZoneInfo
 
 import structlog
 from sqlalchemy import and_, func, select
@@ -25,6 +26,7 @@ from app import models, schemas
 from app.core.exceptions import AppError
 from app.core.logging import safe_exception_frames
 from app.core.task_keys import DEFAULT_REPAIR_WINDOW_DAYS
+from app.scheduler.domain.lesson_time import execution_allowed
 from app.services import internship_flow_service
 
 # ---------------------------------------------------------------------------
@@ -245,6 +247,30 @@ def _resolve_planned_context(
         room=db.get(models.Room, block.room_id),
         planned_generation_id=block.schedule_version_id,
     )
+
+
+def _require_lesson_finished_for_given(
+    db: Session,
+    occurrence: models.LessonOccurrence,
+    planned_context: SimpleNamespace,
+) -> None:
+    """Reject GIVEN before the planned lesson ends, in the school timezone."""
+    if planned_context.timeslot is None:
+        raise _occurrence_error(status_code=422, detail=ERR_MISSING_SCHEDULE_CONTEXT)
+    timezone_name = db.scalar(
+        select(models.SchedulerSchoolYear.timezone).where(
+            models.SchedulerSchoolYear.organization_id == occurrence.organization_id,
+            models.SchedulerSchoolYear.is_active.is_(True),
+        )
+    )
+    zone = ZoneInfo(timezone_name or "Europe/Lisbon")
+    ends_at = datetime.combine(occurrence.date, planned_context.timeslot.end_time, tzinfo=zone)
+    if not execution_allowed(datetime.now(UTC), ends_at):
+        raise AppError(
+            kind="validation",
+            code="lesson_not_finished",
+            detail="Só pode concluir esta aula depois do seu término.",
+        )
 
 
 def _sanitize_event_detail(detail: str | None) -> str | None:
@@ -1576,6 +1602,8 @@ def update_occurrence_sync(
     planned_context = _resolve_planned_context(db, occurrence)
     if planned_context is None:
         raise _occurrence_error(status_code=422, detail=ERR_MISSING_SCHEDULE_CONTEXT)
+    if payload.status == models.LessonOccurrenceStatus.GIVEN:
+        _require_lesson_finished_for_given(db, occurrence, planned_context)
 
     class_id = planned_context.class_id
     if payload.status == models.LessonOccurrenceStatus.SUBSTITUTED:

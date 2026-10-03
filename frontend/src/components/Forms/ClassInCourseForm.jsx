@@ -9,6 +9,7 @@ import {
   CAlert,
 } from '@coreui/react'
 import { createClassDraft, validateClassDraft } from '../../utils/classDraft'
+import { portugueseValidityProps } from '../../utils/formValidity'
 
 const ClassInCourseForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
   const [formData, setFormData] = useState(() => createClassDraft(initialData))
@@ -33,7 +34,7 @@ const ClassInCourseForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
 
   return (
     <CForm onSubmit={handleSubmit}>
-      {error && <CAlert color="danger">{error}</CAlert>}
+      {error && <CAlert color="danger" id="class-form-error">{error}</CAlert>}
 
       <CRow className="g-3">
         <CCol md={8}>
@@ -46,6 +47,9 @@ const ClassInCourseForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
             onChange={handleChange}
             required
             placeholder="Ex: TGPSI 10A"
+            invalid={Boolean(error)}
+            aria-describedby={error ? 'class-form-error' : undefined}
+            {...portugueseValidityProps}
           />
         </CCol>
 
@@ -60,6 +64,7 @@ const ClassInCourseForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
             min="1"
             max="100"
             required
+            {...portugueseValidityProps}
           />
         </CCol>
 
@@ -74,6 +79,7 @@ const ClassInCourseForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
             min="10"
             max="12"
             required
+            {...portugueseValidityProps}
           />
         </CCol>
 
@@ -87,6 +93,7 @@ const ClassInCourseForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
             onChange={handleChange}
             min="2000"
             required
+            {...portugueseValidityProps}
           />
         </CCol>
 
@@ -100,6 +107,7 @@ const ClassInCourseForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
             onChange={handleChange}
             min="2001"
             required
+            {...portugueseValidityProps}
           />
         </CCol>
       </CRow>

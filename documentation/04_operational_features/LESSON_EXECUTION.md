@@ -42,6 +42,7 @@ Separating them preserves schedule history and supports occurrence decisions.
 
 The write endpoints are `/api/v1/schedule/active-blocks/{id}/log`, `/api/v1/schedule/operational-blocks/{id}/log`, and the v1 route `/api/v1/schedule/lessons/{lesson_id}/log`.
 All three use `PUT` and return a lesson log.
+The operational-block route uses the v1 ledger when the block origin is `V1`.
 
 ## Contracts and Invariants
 
@@ -52,12 +53,19 @@ All three use `PUT` and return a lesson log.
 - Administrators can edit tenant blocks.
 - An operational block cannot produce a new occurrence.
 - Submitted or approved weekly timesheets block later edits.
+- Execution is registered only when `now_utc >= ends_at_utc`.
+- A lesson before its end instant returns `422 lesson_not_finished` and persists no effect.
+- The weekly read exposes `ends_at`, `can_complete`, and `blocked_reason` per slot.
+- A planned substitution exposes `substitute_execution_status` and `block_source="operational"`.
+- The normal summary route cannot change the state of a lesson with an active occurrence decision.
+- An open week guard blocks creation, completion, and reversal with `409 week_locked`.
 
 ## States and Transitions
 
 `PENDING` -> `COMPLETED` or `OCCURRENCE`.
 An occurrence log creates or reuses an active occurrence.
 A completed log credits the executed block through the progress service.
+Completing a `V1` operational block credits the substitute curricular assignment once.
 
 ## Failure Modes
 
@@ -65,6 +73,7 @@ A completed log credits the executed block through the progress service.
 - A teacher cannot update another teacher's block.
 - An inactive block returns not found.
 - A closed week rejects changes.
+- A completed substitution block needs an explicit reversal confirmation.
 
 ## Verification Procedure
 

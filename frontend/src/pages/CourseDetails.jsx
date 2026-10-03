@@ -7,7 +7,7 @@ import {
 import CIcon from '@coreui/icons-react'
 import {
   cilArrowLeft, cilPencil, cilSave, cilX, cilTrash,
-  cilPeople, cilChevronRight, cilPlus,
+  cilPeople, cilPlus,
 } from '@coreui/icons'
 import GenericModalForm from '../components/GenericModalForm'
 import ClassInCourseForm from '../components/Forms/ClassInCourseForm'
@@ -32,23 +32,19 @@ const ClassCard = ({ cls, onNavigate, onEdit, onDelete, navigationDisabled = fal
   const yearLabel = `${cls.start_year}/${cls.end_year}`
 
   return (
-    <CCard
-      className="border h-100 shadow-sm class-card"
-      style={{ cursor: 'pointer', transition: 'box-shadow 0.2s, transform 0.15s' }}
-      onClick={() => { if (!navigationDisabled) onNavigate(cls) }}
-      onMouseEnter={(e) => {
-      e.currentTarget.style.boxShadow = '0 4px 15px var(--rs-card-shadow-hover)'
-        e.currentTarget.style.transform = 'translateY(-2px)'
-      }}
-      onMouseLeave={(e) => {
-        e.currentTarget.style.boxShadow = ''
-        e.currentTarget.style.transform = ''
-      }}
-    >
+    <CCard className="border h-100 shadow-sm class-card">
       <CCardBody className="d-flex flex-column">
         <div className="d-flex justify-content-between align-items-start mb-2">
           <div>
-            <h6 className="mb-0 fw-bold">{cls.name}</h6>
+            <button
+              type="button"
+              className="btn btn-link p-0 text-start text-decoration-none"
+              onClick={() => onNavigate(cls)}
+              disabled={navigationDisabled}
+              aria-label={`Abrir turma ${cls.name}`}
+            >
+              <h6 className="mb-0 fw-bold">{cls.name}</h6>
+            </button>
             <small className="text-muted">{formatGradeLevel(cls.grade_level)}</small>
           </div>
           <CBadge color="primary" shape="rounded-pill">{yearLabel}</CBadge>
@@ -61,10 +57,7 @@ const ClassCard = ({ cls, onNavigate, onEdit, onDelete, navigationDisabled = fal
               size="sm"
               color="light"
               className="d-flex align-items-center gap-1 text-primary"
-              onClick={(e) => {
-                e.stopPropagation()
-                onEdit(cls)
-              }}
+              onClick={() => onEdit(cls)}
               aria-label={`Editar ${cls.name}`}
               data-tutorial-target={`edit-class-${cls.id}`}
             >
@@ -74,14 +67,11 @@ const ClassCard = ({ cls, onNavigate, onEdit, onDelete, navigationDisabled = fal
               size="sm"
               color="danger"
               variant="ghost"
-              onClick={(e) => {
-                e.stopPropagation()
-                onDelete(cls)
-              }}
+              onClick={() => onDelete(cls)}
+              aria-label={`Remover ${cls.name}`}
             >
               <CIcon icon={cilTrash} size="sm" />
             </CButton>}
-            <CIcon icon={cilChevronRight} size="sm" />
           </div>
         </div>
       </CCardBody>

@@ -535,28 +535,39 @@ async def upsert_operational_lesson_log(
 ):
     is_admin = _require_lesson_log_actor(current_user)
 
+    block = await db.scalar(
+        select(models.OperationalScheduleBlock).where(
+            models.OperationalScheduleBlock.id == operational_block_id,
+            models.OperationalScheduleBlock.organization_id == current_user.organization_id,
+            models.OperationalScheduleBlock.status == models.OperationalBlockStatus.ACTIVE,
+        )
+    )
+    if block is None:
+        _raise_schedule_error(
+            404, "operational_schedule_block_not_found", "Bloco operacional nao encontrado."
+        )
+
+    _authorize_lesson_log_teacher(
+        current_user,
+        block_teacher_id=block.teacher_id,
+        is_admin=is_admin,
+    )
+
+    if block.origin_kind == models.OperationalBlockOrigin.V1:
+        try:
+            return await operations.record_operational_lesson_log(
+                db,
+                current_user.organization_id,
+                membership_id=current_user.membership_id,
+                operational_block_id=operational_block_id,
+                payload=payload,
+                now_utc=datetime.now(UTC),
+            )
+        except operations.OperationsError as exc:
+            _raise_operations_error(exc)
+
     def _run(sync_db):
         from app.services import lesson_log_service
-
-        block = (
-            sync_db.query(models.OperationalScheduleBlock)
-            .filter(
-                models.OperationalScheduleBlock.id == operational_block_id,
-                models.OperationalScheduleBlock.organization_id == current_user.organization_id,
-                models.OperationalScheduleBlock.status == models.OperationalBlockStatus.ACTIVE,
-            )
-            .first()
-        )
-        if block is None:
-            _raise_schedule_error(
-                404, "operational_schedule_block_not_found", "Bloco operacional nao encontrado."
-            )
-
-        _authorize_lesson_log_teacher(
-            current_user,
-            block_teacher_id=block.teacher_id,
-            is_admin=is_admin,
-        )
 
         return lesson_log_service.upsert_operational_lesson_log_sync(
             sync_db,

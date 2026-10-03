@@ -10,6 +10,7 @@ import {
 import CIcon from '@coreui/icons-react'
 import { cilWarning } from '@coreui/icons'
 import { TXT } from '../utils/terminology'
+import { useSlowRequest } from '../utils/useSlowRequest'
 
 /**
  * Modal de confirmação reutilizável para ações destrutivas.
@@ -27,8 +28,18 @@ const ConfirmationModal = ({
   variant = 'danger',
   pendingText = TXT.SAVING,
 }) => {
+  const isSlowRequest = useSlowRequest(isLoading)
+
   return (
-    <CModal className="confirmation-modal" visible={visible} onClose={onClose} alignment="center" scrollable>
+    <CModal
+      className="confirmation-modal"
+      visible={visible}
+      onClose={() => { if (!isLoading) onClose?.() }}
+      alignment="center"
+      scrollable
+      backdrop={isLoading ? 'static' : true}
+      keyboard={!isLoading}
+    >
       <CModalHeader>
         <CModalTitle className="d-flex align-items-center gap-2">
           <CIcon icon={cilWarning} className="text-warning" />
@@ -39,6 +50,13 @@ const ConfirmationModal = ({
         <p className="confirmation-modal__message">
           {message}
         </p>
+        {isLoading && (
+          <p className="small text-muted mb-0 mt-2" role="status" aria-live="polite">
+            {isSlowRequest
+              ? 'O pedido continua em processamento. Aguarde, por favor.'
+              : 'Pedido em processamento.'}
+          </p>
+        )}
       </CModalBody>
       <CModalFooter>
         <CButton color="secondary" variant="outline" onClick={onClose} disabled={isLoading}>

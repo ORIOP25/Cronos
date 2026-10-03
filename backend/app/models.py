@@ -90,6 +90,13 @@ class OperationalBlockExecutionStatus(enum.StrEnum):
     CANCELLED = "CANCELLED"
 
 
+class OperationalBlockOrigin(enum.StrEnum):
+    """Fonte da ocorrência que criou o bloco operacional."""
+
+    LEGACY = "LEGACY"
+    V1 = "V1"
+
+
 class SchoolYearPublicationState(enum.StrEnum):
     UNPUBLISHED = "UNPUBLISHED"
     PUBLISHED = "PUBLISHED"
@@ -2433,8 +2440,8 @@ class OperationalScheduleBlock(Base):
     organization_id: Mapped[int] = mapped_column(
         ForeignKey(FK_ORG_ID, ondelete="CASCADE"), nullable=False, index=True
     )
-    source_occurrence_id: Mapped[int] = mapped_column(
-        ForeignKey("lesson_occurrence.id", ondelete="CASCADE"), nullable=False, index=True
+    source_occurrence_id: Mapped[int | None] = mapped_column(
+        ForeignKey("lesson_occurrence.id", ondelete="CASCADE"), nullable=True, index=True
     )
     source_occurrence_revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     planned_active_schedule_block_id: Mapped[int | None] = mapped_column(
@@ -2442,6 +2449,14 @@ class OperationalScheduleBlock(Base):
         nullable=True,
         index=True,
     )
+    origin_kind: Mapped[OperationalBlockOrigin] = mapped_column(
+        SAEnum(OperationalBlockOrigin),
+        nullable=False,
+        default=OperationalBlockOrigin.LEGACY,
+        server_default=OperationalBlockOrigin.LEGACY.value,
+    )
+    source_v1_lesson_log_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    substitute_curricular_assignment_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     date: Mapped[date_type] = mapped_column(Date, nullable=False, index=True)
     timeslot_id: Mapped[int] = mapped_column(ForeignKey(FK_TIMESLOT_ID), nullable=False, index=True)
     room_id: Mapped[int | None] = mapped_column(
@@ -2481,6 +2496,33 @@ class OperationalScheduleBlock(Base):
     created_by_membership: Mapped[Optional["OrganizationMembership"]] = relationship()
 
     __table_args__ = (
+        ForeignKeyConstraint(
+            ["organization_id", "source_v1_lesson_log_id"],
+            ["scheduler_lesson_log_v1.organization_id", "scheduler_lesson_log_v1.id"],
+            name="fk_operational_block_v1_log_org",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "substitute_curricular_assignment_id"],
+            ["curricular_assignment.organization_id", "curricular_assignment.id"],
+            name="fk_operational_block_substitute_assignment_org",
+            ondelete="RESTRICT",
+        ),
+        CheckConstraint(
+            "(origin_kind = 'LEGACY' AND source_occurrence_id IS NOT NULL "
+            "AND planned_active_schedule_block_id IS NOT NULL "
+            "AND source_v1_lesson_log_id IS NULL "
+            "AND substitute_curricular_assignment_id IS NULL) "
+            "OR (origin_kind = 'V1' AND source_v1_lesson_log_id IS NOT NULL "
+            "AND substitute_curricular_assignment_id IS NOT NULL "
+            "AND source_occurrence_id IS NULL "
+            "AND planned_active_schedule_block_id IS NULL)",
+            name="ck_operational_block_origin_exclusive",
+        ),
+        CheckConstraint(
+            "source_occurrence_revision > 0",
+            name="ck_operational_block_revision_positive",
+        ),
         Index(
             "ix_operational_block_org_teacher_date_slot",
             "organization_id",
@@ -2489,6 +2531,22 @@ class OperationalScheduleBlock(Base):
             "timeslot_id",
         ),
         Index("ix_operational_block_org_class_date", "organization_id", "class_id", "date"),
+        Index(
+            "uq_operational_block_active_legacy",
+            "organization_id",
+            "source_occurrence_id",
+            "source_occurrence_revision",
+            unique=True,
+            postgresql_where=text("status = 'ACTIVE' AND origin_kind = 'LEGACY'"),
+        ),
+        Index(
+            "uq_operational_block_active_v1",
+            "organization_id",
+            "source_v1_lesson_log_id",
+            "source_occurrence_revision",
+            unique=True,
+            postgresql_where=text("status = 'ACTIVE' AND origin_kind = 'V1'"),
+        ),
     )
 
 

@@ -557,6 +557,12 @@ class SchedulerLessonLogV1(Base):
     school_year_id: Mapped[int] = mapped_column(Integer, nullable=False)
     lesson_id: Mapped[int] = mapped_column(Integer, nullable=False)
     status: Mapped[str] = mapped_column(String(20), nullable=False)
+    decision: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    decided_by_membership_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revoked_by_membership_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    revoked_reason: Mapped[str | None] = mapped_column(String(250), nullable=True)
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
@@ -580,11 +586,30 @@ class SchedulerLessonLogV1(Base):
             ["organization_membership.organization_id", "organization_membership.id"],
             name="fk_scheduler_lesson_log_v1_author_org",
         ),
+        ForeignKeyConstraint(
+            ["organization_id", "decided_by_membership_id"],
+            ["organization_membership.organization_id", "organization_membership.id"],
+            name="fk_scheduler_lesson_log_v1_decider_org",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "revoked_by_membership_id"],
+            ["organization_membership.organization_id", "organization_membership.id"],
+            name="fk_scheduler_lesson_log_v1_revoker_org",
+        ),
         UniqueConstraint("lesson_id", name="uq_scheduler_lesson_log_v1_lesson"),
+        UniqueConstraint("organization_id", "id", name="uq_scheduler_lesson_log_v1_org_id"),
         CheckConstraint("revision > 0", name="ck_scheduler_lesson_log_v1_revision"),
         CheckConstraint(
             "status IN ('COMPLETED', 'OCCURRENCE', 'REVOKED')",
             name="ck_scheduler_lesson_log_v1_status",
+        ),
+        CheckConstraint(
+            "decision IS NULL OR decision IN ('GIVEN', 'GAP', 'SUBSTITUTED')",
+            name="ck_scheduler_lesson_log_v1_decision",
+        ),
+        CheckConstraint(
+            "(decision IS NULL) = (decided_at IS NULL)",
+            name="ck_scheduler_lesson_log_v1_decision_metadata",
         ),
     )
 

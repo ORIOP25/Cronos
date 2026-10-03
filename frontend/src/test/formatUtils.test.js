@@ -14,6 +14,8 @@ import {
   toIsoDate,
   toWeekMonday,
   isAfterDate,
+  formatDurationHours,
+  formatDurationMinutes,
 } from '../utils/formatUtils'
 
 describe('formatUtils', () => {
@@ -134,6 +136,22 @@ describe('formatUtils', () => {
       expect(isAfterDate('2026-05-10', '2026-05-01')).toBe(true)
       expect(isAfterDate('2026-05-01', '2026-05-10')).toBe(false)
       expect(isAfterDate('2026-05-01', '2026-05-01')).toBe(false)
+    })
+  })
+
+  describe('formatDuration', () => {
+    it('presents internal decimals as Portuguese durations', () => {
+      expect(formatDurationHours(0.8333333333333334)).toBe('50 min')
+      expect(formatDurationHours(1.6666666666666667)).toBe('1 h 40 min')
+      expect(formatDurationHours(2)).toBe('2 h')
+      expect(formatDurationHours(0)).toBe('0 min')
+    })
+
+    it('formats minutes directly and tolerates missing values', () => {
+      expect(formatDurationMinutes(50)).toBe('50 min')
+      expect(formatDurationMinutes(100)).toBe('1 h 40 min')
+      expect(formatDurationMinutes(null)).toBe('0 min')
+      expect(formatDurationMinutes('bad')).toBe('0 min')
     })
   })
 

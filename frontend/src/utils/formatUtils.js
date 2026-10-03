@@ -204,6 +204,29 @@ export function normalizeTimeLabel(value) {
 }
 
 /**
+ * Formata minutos como duração legível em português: "50 min" ou "1 h 40 min".
+ * @param {number|null} minutes
+ * @returns {string}
+ */
+export function formatDurationMinutes(minutes) {
+  const total = Math.round(Number(minutes) || 0)
+  if (total <= 0) return '0 min'
+  if (total < 60) return `${total} min`
+  const hours = Math.floor(total / 60)
+  const rest = total % 60
+  return rest === 0 ? `${hours} h` : `${hours} h ${rest} min`
+}
+
+/**
+ * Formata horas decimais do backend como duração legível.
+ * @param {number|null} hours
+ * @returns {string}
+ */
+export function formatDurationHours(hours) {
+  return formatDurationMinutes((Number(hours) || 0) * 60)
+}
+
+/**
  * Verifica se uma data é posterior a outra (comparação apenas por dia).
  * @param {string} leftDate - YYYY-MM-DD
  * @param {string} rightDate - YYYY-MM-DD

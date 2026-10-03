@@ -357,7 +357,7 @@ export const CalendarSection = () => {
             {' '}Os feriados nacionais são sincronizados através da opção automática.
           </p>
           <CRow className="g-3">
-            <CCol md={4}>
+            <CCol md={3}>
               <CFormLabel htmlFor="eventName">Nome do evento</CFormLabel>
               <CFormInput
                 id="eventName"
@@ -388,7 +388,7 @@ export const CalendarSection = () => {
               />
               {fieldErrors.end_date && <div className="text-danger small mt-1">{fieldErrors.end_date}</div>}
             </CCol>
-            <CCol md={2}>
+            <CCol md={3}>
               <CFormLabel htmlFor="eventType">Tipo</CFormLabel>
               <CFormSelect
                 id="eventType"
