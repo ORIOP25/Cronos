@@ -248,6 +248,7 @@ test('mede clientes autenticados com um único job do scheduler', async ({ brows
     const reportPath = process.env.CAPACITY_REPORT_PATH || testInfo.outputPath('capacity.json')
     await mkdir(dirname(reportPath), { recursive: true })
     await writeFile(reportPath, `${JSON.stringify(report, null, 2)}\n`)
+    console.log(`capacity report: ${JSON.stringify(report)}`)
     await Promise.all(contexts.map((context) => context.close()))
   }
 
