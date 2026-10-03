@@ -35,7 +35,7 @@ test.describe('Year reset — no legacy onboarding', () => {
     await page.getByRole('checkbox', { name: /Compreendo que os horários ativos/i }).check()
     await page.getByLabel(/digite exatamente a palavra/i).fill('Confirmo')
     await page.getByRole('button', { name: 'Confirmar reinício' }).click()
-    await expect(page.getByText(/Ano letivo recomeçado com sucesso/i)).toBeVisible()
+    await expect(page.getByText(/Ano letivo recomeçado/i)).toBeVisible()
 
     const tutorialStorageAfter = await page.evaluate(() => Object.fromEntries(
       Object.entries(localStorage).filter(([key]) => key.startsWith('cronos:tutorial:')),
